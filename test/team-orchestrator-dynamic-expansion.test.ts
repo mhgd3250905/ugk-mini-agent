@@ -431,3 +431,139 @@ test("resume uses original generated input.text, not title fallback", async () =
 		await rm(root, { recursive: true });
 	}
 });
+
+// ── P15 Review Fix: injected TaskExpansionPlanner ──
+
+import type { TaskExpansionPlanner, TaskExpansionContext, TaskExpansionResult } from "../src/team/task-expansion-planner.js";
+
+class CustomPlanner implements TaskExpansionPlanner {
+	readonly calls: TaskExpansionContext[] = [];
+	async expand(context: TaskExpansionContext): Promise<TaskExpansionResult> {
+		this.calls.push(context);
+		return {
+			parentTaskId: context.parentTask.id,
+			children: [{
+				id: `${context.parentTask.id}__custom`,
+				type: "normal",
+				title: `Custom child for ${context.items.length} items`,
+				input: { text: `Custom processing with injected planner` },
+				acceptance: { rules: ["custom rule"] },
+				parentTaskId: context.parentTask.id,
+				sourceItemId: "custom",
+				generated: true,
+			}],
+		};
+	}
+}
+
+test("custom TaskExpansionPlanner is used for for_each expansion", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const customPlanner = new CustomPlanner();
+		const runner = new DiscoveryMockRunner(JSON.stringify({ items: [{ id: "a", title: "A" }] }));
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "injected planner",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{
+					id: "discover", type: "discovery", title: "Discover",
+					input: { text: "Find" }, acceptance: { rules: ["ok"] },
+					discovery: { outputKey: "items" },
+				},
+				{
+					id: "process", type: "for_each", title: "Process",
+					input: { text: "p" }, acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "discover.items", mode: "sequential",
+						taskTemplate: {
+							title: "Process {{item.title}}",
+							input: { text: "p" },
+							acceptance: { rules: ["ok"] },
+						},
+					},
+				},
+			],
+			outputContract: { text: "report" },
+		});
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: runner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+			taskExpansionPlanner: customPlanner,
+		});
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.status, "completed");
+		assert.equal(customPlanner.calls.length, 1, "custom planner should be called once");
+		assert.equal(customPlanner.calls[0]!.parentTask.id, "process");
+		assert.ok(final.taskStates["process__custom"], "custom planner child should exist");
+		assert.equal(final.taskStates["process__custom"]!.status, "succeeded");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+class FailingPlanner implements TaskExpansionPlanner {
+	async expand(): Promise<TaskExpansionResult> {
+		throw new Error("planner intentionally failed");
+	}
+}
+
+test("failing custom planner fails for_each parent clearly", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const runner = new DiscoveryMockRunner(JSON.stringify({ items: [{ id: "a", title: "A" }] }));
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "failing planner",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{
+					id: "discover", type: "discovery", title: "Discover",
+					input: { text: "Find" }, acceptance: { rules: ["ok"] },
+					discovery: { outputKey: "items" },
+				},
+				{
+					id: "process", type: "for_each", title: "Process",
+					input: { text: "p" }, acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "discover.items", mode: "sequential",
+						taskTemplate: { title: "T", input: { text: "p" }, acceptance: { rules: ["ok"] } },
+					},
+				},
+			],
+			outputContract: { text: "report" },
+		});
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: runner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+			taskExpansionPlanner: new FailingPlanner(),
+		});
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.taskStates["process"]!.status, "failed");
+		assert.match(final.taskStates["process"]!.errorSummary ?? "", /planner intentionally failed/);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});

@@ -5,7 +5,7 @@ import { RunWorkspace } from "./run-workspace.js";
 import type { TeamRoleRunner } from "./role-runner.js";
 import { writeTimingSpan } from "./timing.js";
 import { progressMessages } from "./progress.js";
-import { TemplateTaskExpansionPlanner } from "./task-expansion-planner.js";
+import { TaskExpansionPlanner, TemplateTaskExpansionPlanner } from "./task-expansion-planner.js";
 
 export interface PhaseTimeouts {
 	workerMs: number;
@@ -32,6 +32,7 @@ export interface TeamOrchestratorOptions {
 	maxRunDurationMinutes: number;
 	maxConcurrentRuns?: number;
 	phaseTimeouts?: PhaseTimeouts;
+	taskExpansionPlanner?: TaskExpansionPlanner;
 }
 
 const now = () => new Date().toISOString();
@@ -115,6 +116,7 @@ export class TeamOrchestrator {
 	private readonly maxRunDurationMs: number;
 	private readonly phaseTimeouts: PhaseTimeouts;
 	private readonly maxConcurrentRuns: number;
+	private readonly taskExpansionPlanner: TaskExpansionPlanner;
 	private elapsedOffset = 0;
 	private abortController: AbortController | null = null;
 	private leaseOwnerId: string | null = null;
@@ -130,6 +132,7 @@ export class TeamOrchestrator {
 		this.maxRunDurationMs = options.maxRunDurationMinutes * 60 * 1000;
 		this.phaseTimeouts = options.phaseTimeouts ?? DEFAULT_PHASE_TIMEOUTS;
 		this.maxConcurrentRuns = Math.max(1, Math.floor(options.maxConcurrentRuns ?? 1));
+		this.taskExpansionPlanner = options.taskExpansionPlanner ?? new TemplateTaskExpansionPlanner();
 	}
 
 	async createRun(planId: string): Promise<TeamRunState> {
@@ -880,7 +883,7 @@ export class TeamOrchestrator {
 					return;
 				}
 
-				const planner = new TemplateTaskExpansionPlanner();
+				const planner = this.taskExpansionPlanner;
 				const result = await planner.expand({
 					runId: state.runId,
 					planId: plan.planId,
