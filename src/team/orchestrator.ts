@@ -1,10 +1,11 @@
-import type { TeamRunState, TeamTask, TeamTaskState } from "./types.js";
+import type { TeamRunState, TeamTask, TeamTaskState, TeamPlan } from "./types.js";
 import { PlanStore } from "./plan-store.js";
 import { TeamUnitStore } from "./team-unit-store.js";
 import { RunWorkspace } from "./run-workspace.js";
 import type { TeamRoleRunner } from "./role-runner.js";
 import { writeTimingSpan } from "./timing.js";
 import { progressMessages } from "./progress.js";
+import { TemplateTaskExpansionPlanner } from "./task-expansion-planner.js";
 
 export interface PhaseTimeouts {
 	workerMs: number;
@@ -185,13 +186,20 @@ export class TeamOrchestrator {
 			const plan = await this.planStore.get(state.planId);
 			if (!plan) throw new Error(`plan not found: ${state.planId}`);
 
+			const discoveryResults: Record<string, Array<Record<string, unknown>>> = {};
+
 			for (const task of plan.tasks) {
 				state = (await this.workspace.getState(runId))!;
 				if (state.status !== "running" || this.shouldStop(state)) break;
 
-				// Skip tasks that already reached a terminal state (resume safety)
 				const taskState = state.taskStates[task.id];
 				if (taskState && TERMINAL_TASK_STATUSES.has(taskState.status)) {
+					if (task.type === "discovery" && taskState.status === "succeeded") {
+						await this.loadDiscoveryResult(state.runId, task, discoveryResults);
+					}
+					if (task.type === "for_each") {
+						await this.executeExpandedChildren(state, task, plan, signal);
+					}
 					continue;
 				}
 
@@ -201,7 +209,17 @@ export class TeamOrchestrator {
 				}
 
 				if (signal.aborted) break;
-				await this.executeTask(state, task, signal);
+
+				const taskType = task.type ?? "normal";
+				if (taskType === "normal" || taskType === "discovery") {
+					await this.executeTask(state, task, signal);
+					state = (await this.workspace.getState(runId))!;
+					if (taskType === "discovery" && state.taskStates[task.id]?.status === "succeeded") {
+						await this.loadDiscoveryResult(state.runId, task, discoveryResults);
+					}
+				} else if (taskType === "for_each") {
+					await this.executeForEachTask(state, task, plan, discoveryResults, signal);
+				}
 			}
 
 			state = (await this.workspace.getState(runId))!;
@@ -651,15 +669,12 @@ export class TeamOrchestrator {
 		const state = (await this.workspace.getState(staleState.runId))!;
 		if (this.shouldStop(state)) return;
 
-		const taskResults = plan.tasks.map(t => {
-			const ts = state.taskStates[t.id]!;
-			return {
-				taskId: t.id,
-				status: (ts.status === "succeeded" ? "succeeded" : "failed") as "succeeded" | "failed",
-				resultRef: ts.resultRef,
-				errorSummary: ts.errorSummary,
-			};
-		});
+		const taskResults = Object.entries(state.taskStates).map(([taskId, ts]) => ({
+			taskId,
+			status: (ts.status === "succeeded" ? "succeeded" : "failed") as "succeeded" | "failed",
+			resultRef: ts.resultRef,
+			errorSummary: ts.errorSummary,
+		}));
 
 		let finalReport: string;
 		let finalizerError: string | null = null;
@@ -710,8 +725,7 @@ export class TeamOrchestrator {
 	}
 
 	private async handleTimeout(state: TeamRunState, plan: import("./types.js").TeamPlan): Promise<void> {
-		for (const task of plan.tasks) {
-			const ts = state.taskStates[task.id]!;
+		for (const [tid, ts] of Object.entries(state.taskStates)) {
 			if (ts.status === "running" || ts.status === "pending") {
 				ts.status = "failed";
 				ts.errorSummary = "run timeout";
@@ -780,7 +794,224 @@ export class TeamOrchestrator {
 		}
 	}
 
-	private shouldStop(state: TeamRunState | null | undefined): boolean {
+	private async loadDiscoveryResult(runId: string, task: TeamTask, results: Record<string, Array<Record<string, unknown>>>): Promise<void> {
+			if (!task.discovery) return;
+			const state = await this.workspace.getState(runId);
+			if (!state) return;
+			const ts = state.taskStates[task.id];
+			if (!ts?.activeAttemptId) return;
+
+			let content = await this.workspace.readAttemptFile(
+				runId, task.id,
+				ts.activeAttemptId,
+				"accepted-result.md",
+			);
+			if (!content) {
+				content = await this.workspace.readAttemptFile(
+					runId, task.id,
+					ts.activeAttemptId,
+					"worker-output-001.md",
+				);
+			}
+			if (!content) return;
+			const items = this.extractDiscoveryItems(content, task.discovery.outputKey);
+			if (items) {
+				results[task.id] = items;
+			}
+		}
+
+		private extractDiscoveryItems(content: string, outputKey: string): Array<Record<string, unknown>> | null {
+			const parsed = this.extractJsonFromContent(content);
+			if (!parsed) return null;
+			const arr = parsed[outputKey];
+			if (!Array.isArray(arr)) return null;
+			return arr.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null);
+		}
+
+		private extractJsonFromContent(content: string): Record<string, unknown> | null {
+			try { return JSON.parse(content); } catch { /* not pure JSON */ }
+			const fenceMatch = content.match(/```json\s*([\s\S]*?)```/);
+			if (fenceMatch) {
+				try { return JSON.parse(fenceMatch[1]!); } catch { /* fenced parse failed */ }
+			}
+			const braceStart = content.indexOf("{");
+			const braceEnd = content.lastIndexOf("}");
+			if (braceStart !== -1 && braceEnd > braceStart) {
+				try { return JSON.parse(content.slice(braceStart, braceEnd + 1)); } catch { /* brace extract failed */ }
+			}
+			return null;
+		}
+
+		private async executeForEachTask(
+			state: TeamRunState,
+			task: TeamTask,
+			plan: TeamPlan,
+			discoveryResults: Record<string, Array<Record<string, unknown>>>,
+			signal: AbortSignal,
+		): Promise<void> {
+			if (!task.forEach) return;
+
+			const existing = await this.workspace.readExpansion(state.runId, task.id);
+			let childTasks: TeamTask[];
+
+			if (existing) {
+				childTasks = existing.children.map(c => ({
+					id: c.taskId,
+					type: "normal" as const,
+					title: c.title,
+					input: { text: c.title },
+					acceptance: { rules: ["output is valid"] },
+					parentTaskId: task.id,
+					sourceItemId: c.sourceItemId,
+					generated: true,
+				}));
+			} else {
+				const items = this.resolveDiscoveryItems(task.forEach.itemsFrom, discoveryResults);
+				if (items === null) {
+					const s = (await this.workspace.getState(state.runId))!;
+					s.taskStates[task.id]!.status = "failed";
+					s.taskStates[task.id]!.errorSummary = `failed to resolve discovery items from '${task.forEach.itemsFrom}'`;
+					s.taskStates[task.id]!.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
+					s.summary.failedTasks++;
+					s.updatedAt = now();
+					await this.workspace.saveState(s);
+					return;
+				}
+
+				const planner = new TemplateTaskExpansionPlanner();
+				const result = await planner.expand({
+					runId: state.runId,
+					planId: plan.planId,
+					parentTask: task,
+					items,
+				});
+				childTasks = result.children;
+
+				await this.workspace.writeExpansion(state.runId, {
+					schemaVersion: "team/task-expansion-1",
+					parentTaskId: task.id,
+					itemsFrom: task.forEach.itemsFrom,
+					expandedAt: now(),
+					children: childTasks.map(c => ({
+						taskId: c.id,
+						sourceItemId: c.sourceItemId ?? "",
+						title: c.title,
+					})),
+				});
+				await this.workspace.appendChildTaskStates(state.runId, childTasks);
+			}
+
+			state = (await this.workspace.getState(state.runId))!;
+			state.currentTaskId = task.id;
+			state.taskStates[task.id]!.status = "running";
+			state.taskStates[task.id]!.progress = { phase: "worker_running", message: `expanding ${childTasks.length} child tasks`, updatedAt: now() };
+			state.updatedAt = now();
+			await this.workspace.saveState(state);
+
+			if (childTasks.length === 0) {
+				state = (await this.workspace.getState(state.runId))!;
+				state.taskStates[task.id]!.status = "succeeded";
+				state.taskStates[task.id]!.progress = { phase: "succeeded", message: "no items to expand", updatedAt: now() };
+				state.summary.succeededTasks++;
+				state.updatedAt = now();
+				await this.workspace.saveState(state);
+				return;
+			}
+
+			for (const child of childTasks) {
+				state = (await this.workspace.getState(state.runId))!;
+				if (state.status !== "running" || this.shouldStop(state)) break;
+				if (TERMINAL_TASK_STATUSES.has(state.taskStates[child.id]?.status ?? "pending")) continue;
+				if (signal.aborted) break;
+				if (this.isTimedOut(state)) {
+					await this.handleTimeout(state, plan);
+					return;
+				}
+				await this.executeTask(state, child, signal);
+			}
+
+			state = (await this.workspace.getState(state.runId))!;
+			if (state.status !== "running" || this.shouldStop(state)) return;
+			const allDone = childTasks.every(c => {
+				const cs = state.taskStates[c.id];
+				return cs && TERMINAL_TASK_STATUSES.has(cs.status);
+			});
+			if (!allDone) return;
+			const anyFailed = childTasks.some(c => state.taskStates[c.id]?.status === "failed");
+			state.taskStates[task.id]!.status = anyFailed ? "failed" : "succeeded";
+			state.taskStates[task.id]!.errorSummary = anyFailed ? "one or more child tasks failed" : null;
+			state.taskStates[task.id]!.progress = anyFailed
+				? { phase: "failed", message: progressMessages.failed, updatedAt: now() }
+				: { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
+			if (anyFailed) {
+				state.summary.failedTasks++;
+			} else {
+				state.summary.succeededTasks++;
+			}
+			state.updatedAt = now();
+			await this.workspace.saveState(state);
+		}
+
+		private async executeExpandedChildren(
+			state: TeamRunState,
+			task: TeamTask,
+			plan: TeamPlan,
+			signal: AbortSignal,
+		): Promise<void> {
+			const existing = await this.workspace.readExpansion(state.runId, task.id);
+			if (!existing) return;
+			const childTasks: TeamTask[] = existing.children.map(c => ({
+				id: c.taskId,
+				type: "normal" as const,
+				title: c.title,
+				input: { text: c.title },
+				acceptance: { rules: ["output is valid"] },
+				parentTaskId: task.id,
+				sourceItemId: c.sourceItemId,
+				generated: true,
+			}));
+			for (const child of childTasks) {
+				state = (await this.workspace.getState(state.runId))!;
+				if (state.status !== "running" || this.shouldStop(state)) break;
+				if (TERMINAL_TASK_STATUSES.has(state.taskStates[child.id]?.status ?? "pending")) continue;
+				if (signal.aborted) break;
+				await this.executeTask(state, child, signal);
+			}
+			state = (await this.workspace.getState(state.runId))!;
+			if (state.status !== "running" || this.shouldStop(state)) return;
+			const allDone = childTasks.every(c => {
+				const cs = state.taskStates[c.id];
+				return cs && TERMINAL_TASK_STATUSES.has(cs.status);
+			});
+			if (!allDone) return;
+			const anyFailed = childTasks.some(c => state.taskStates[c.id]?.status === "failed");
+			const ts = state.taskStates[task.id]!;
+			if (TERMINAL_TASK_STATUSES.has(ts.status)) return;
+			ts.status = anyFailed ? "failed" : "succeeded";
+			ts.errorSummary = anyFailed ? "one or more child tasks failed" : null;
+			ts.progress = anyFailed
+				? { phase: "failed", message: progressMessages.failed, updatedAt: now() }
+				: { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
+			if (anyFailed && ts.status === "failed") {
+				state.summary.failedTasks++;
+			} else if (!anyFailed && ts.status === "succeeded") {
+				state.summary.succeededTasks++;
+			}
+			state.updatedAt = now();
+			await this.workspace.saveState(state);
+		}
+
+		private resolveDiscoveryItems(
+			itemsFrom: string,
+			discoveryResults: Record<string, Array<Record<string, unknown>>>,
+		): Array<Record<string, unknown>> | null {
+			const parts = itemsFrom.split(".");
+			if (parts.length < 2) return null;
+			const taskId = parts[0]!;
+			return discoveryResults[taskId] ?? null;
+		}
+
+		private shouldStop(state: TeamRunState | null | undefined): boolean {
 		if (!state) return true;
 		if (isRunExternallyStopped(state.status)) return true;
 		if (this.leaseOwnerId && state.lease?.ownerId !== this.leaseOwnerId) return true;
