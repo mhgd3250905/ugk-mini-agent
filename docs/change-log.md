@@ -12,6 +12,23 @@
 
 ---
 
+## 2026-05-17 — P18 Browser Binding Smoke
+
+- **主题**: Team Runtime 多 AgentProfile 浏览器绑定自动化 smoke 脚本
+- **影响范围**: `scripts/team-browser-binding-smoke.mjs`, `test/team-browser-binding-smoke.test.ts`, `package.json`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - 新增 `scripts/team-browser-binding-smoke.mjs`：通过 HTTP Team API 创建 TeamUnit/Plan/Run，轮询至 terminal，校验四个角色的 `requestedProfileId`、`browserId`、`browserScope`
+  - 新增 `test/team-browser-binding-smoke.test.ts`：覆盖 CLI 解析、HTTP 流程（mocked fetch）、超时/失败拒绝、严格 runtime context 断言
+  - `package.json` 新增 `team:browser-smoke` npm script
+  - CLI 参数支持 `--worker-profile`/`--expect-worker-browser` 等，同时支持 `TEAM_SMOKE_*` 环境变量 fallback
+  - 脚本不删除创建的数据，保留供排查
+- **提交**:
+  - `bc3326e feat(team): add browser binding smoke CLI validation`
+  - `docs(team): document browser binding smoke workflow`
+- **测试**: `npm run test:team` 新增 16 个测试
+
+---
+
 ## 2026-05-17 — P17 Team Browser Binding Audit
 
 - **主题**: Team Runtime 多 AgentProfile 多浏览器绑定确定性审计

@@ -1,6 +1,6 @@
 # Team Runtime v2
 
-更新时间：2026-05-16
+更新时间：2026-05-17
 
 本文档是 Team Runtime v2 的唯一权威源。v0.1 域名调查历史见文末归档章节。
 
@@ -572,7 +572,7 @@ Cancel/pause always takes priority over phase timeout — if a run is already ca
 
 ## 后续计划
 
-1. 真实多 AgentProfile + 多 browserId 的 Team smoke test：验证两个 profile 的 role session 分别命中既有 browser registry 中的不同 CDP endpoint。
+1. ~~真实多 AgentProfile + 多 browserId 的 Team smoke test~~（P18 已完成，提供 `npm run team:browser-smoke` 命令）
 
 ### P17 审计覆盖（2026-05-17）
 
@@ -600,6 +600,42 @@ Cancel/pause always takes priority over phase timeout — if a run is already ca
 8. 检查 run state 中的 `finalizerRuntimeContext`：应包含 finalizer profile 的 browserId
 
 Team 不创建 Chrome 实例，不复制 cookie 或登录态，不调度浏览器。browserId 到真实 CDP endpoint 的映射仍由 `UGK_BROWSER_INSTANCES_JSON` / Browser Registry 决定。
+
+### P18 Browser Binding Smoke（2026-05-17）
+
+自动化 smoke 脚本 `scripts/team-browser-binding-smoke.mjs` 通过 HTTP API 验证真实 Team run 的浏览器绑定：
+
+```bash
+npm run team:browser-smoke -- \
+  --worker-profile smoke-worker \
+  --checker-profile smoke-checker \
+  --watcher-profile smoke-watcher \
+  --finalizer-profile smoke-finalizer \
+  --expect-worker-browser browser-a \
+  --expect-checker-browser browser-b \
+  --expect-watcher-browser browser-a \
+  --expect-finalizer-browser browser-b
+```
+
+前提条件：
+
+- `TEAM_RUNTIME_ENABLED=true`
+- `TEAM_USE_MOCK_RUNNER=false`
+- `UGK_BROWSER_INSTANCES_JSON` 包含所有期望的 browser ID
+- HTTP server 和 `ugk-pi-team-worker` 正在运行
+- 四个 AgentProfile 已存在且设置了匹配的 `defaultBrowserId`
+
+脚本行为：
+
+1. 创建临时 TeamUnit（绑定四个 profile）
+2. 创建单任务 Plan
+3. 创建 Run 并轮询至 terminal
+4. 读取 task_1 的 attempt metadata
+5. 校验 worker/checker/watcher 的 `requestedProfileId`、`browserId`、`browserScope`
+6. 校验 run state 中的 `finalizerRuntimeContext`
+7. 脚本不会删除创建的 TeamUnit/Plan/Run，保留供排查
+
+所有 CLI 参数均可通过环境变量覆盖（`TEAM_SMOKE_WORKER_PROFILE` 等）。测试覆盖了 CLI 解析、HTTP 流程（mocked fetch）、超时/失败拒绝、以及严格的 runtime context 校验。
 
 ---
 
