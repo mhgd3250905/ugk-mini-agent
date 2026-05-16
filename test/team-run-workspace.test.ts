@@ -344,3 +344,105 @@ test("lifecycle methods are no-op for non-existent attempt", async () => {
 		await rm(root, { recursive: true });
 	}
 });
+
+// ── P15: Expansion persistence ──
+
+test("writeExpansion and readExpansion round-trip", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		const record: import("../src/team/types.js").TaskExpansionRecord = {
+			schemaVersion: "team/task-expansion-1",
+			parentTaskId: "task_1",
+			itemsFrom: "discover.items",
+			expandedAt: new Date().toISOString(),
+			children: [
+				{ taskId: "task_1__item_01", sourceItemId: "item_01", title: "Process item_01" },
+			],
+		};
+		await ws.writeExpansion(state.runId, record);
+		const loaded = await ws.readExpansion(state.runId, "task_1");
+		assert.ok(loaded);
+		assert.equal(loaded.parentTaskId, "task_1");
+		assert.equal(loaded.children.length, 1);
+		assert.equal(loaded.children[0]!.taskId, "task_1__item_01");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("readExpansion returns null for missing expansion", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		const loaded = await ws.readExpansion(state.runId, "nonexistent");
+		assert.equal(loaded, null);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("expansion is stable across workspace re-instantiation", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws1 = new RunWorkspace(root);
+		const state = await ws1.createRun(plan, "team_1");
+		const record: import("../src/team/types.js").TaskExpansionRecord = {
+			schemaVersion: "team/task-expansion-1",
+			parentTaskId: "task_1",
+			itemsFrom: "discover.items",
+			expandedAt: new Date().toISOString(),
+			children: [
+				{ taskId: "task_1__x", sourceItemId: "x", title: "X" },
+			],
+		};
+		await ws1.writeExpansion(state.runId, record);
+
+		const ws2 = new RunWorkspace(root);
+		const loaded = await ws2.readExpansion(state.runId, "task_1");
+		assert.ok(loaded);
+		assert.equal(loaded.children[0]!.taskId, "task_1__x");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("appendChildTaskStates adds child states and updates totalTasks", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		assert.equal(state.summary.totalTasks, 2);
+
+		const children: import("../src/team/types.js").TeamTask[] = [
+			{ id: "task_1__a", title: "A", input: { text: "a" }, acceptance: { rules: ["ok"] }, parentTaskId: "task_1", sourceItemId: "a", generated: true },
+			{ id: "task_1__b", title: "B", input: { text: "b" }, acceptance: { rules: ["ok"] }, parentTaskId: "task_1", sourceItemId: "b", generated: true },
+		];
+		const updated = await ws.appendChildTaskStates(state.runId, children);
+		assert.equal(updated.summary.totalTasks, 4);
+		assert.equal(updated.taskStates["task_1__a"]?.status, "pending");
+		assert.equal(updated.taskStates["task_1__b"]?.status, "pending");
+		assert.equal(updated.taskStates["task_1"]?.status, "pending");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("appendChildTaskStates is idempotent for duplicate child ids", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		const child: import("../src/team/types.js").TeamTask = {
+			id: "task_1__dup", title: "Dup", input: { text: "d" }, acceptance: { rules: ["ok"] },
+		};
+		const u1 = await ws.appendChildTaskStates(state.runId, [child]);
+		assert.equal(u1.summary.totalTasks, 3);
+		const u2 = await ws.appendChildTaskStates(state.runId, [child]);
+		assert.equal(u2.summary.totalTasks, 3);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});

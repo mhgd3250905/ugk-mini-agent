@@ -1,7 +1,7 @@
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { join } from "node:path";
-import type { TeamPlan, TeamProgress, TeamRunState, TeamTaskState, TeamAttemptMetadata, AttemptStatus, AttemptLifecyclePhase } from "./types.js";
+import type { TeamPlan, TeamProgress, TeamRunState, TeamTaskState, TeamAttemptMetadata, AttemptStatus, AttemptLifecyclePhase, TeamTask, TaskExpansionRecord } from "./types.js";
 import { generateRunId, generateAttemptId } from "./ids.js";
 import { progressMessages } from "./progress.js";
 import { RunStateEvents } from "./run-state-events.js";
@@ -328,6 +328,40 @@ export class RunWorkspace {
 	async deleteRun(runId: string): Promise<void> {
 		const runDir = join(this.rootDir, "runs", runId);
 		await rm(runDir, { recursive: true, force: true });
+	}
+
+	async writeExpansion(runId: string, record: TaskExpansionRecord): Promise<void> {
+		const dir = join(this.rootDir, "runs", runId, "expansions");
+		await mkdir(dir, { recursive: true });
+		const filePath = join(dir, `${record.parentTaskId}.json`);
+		const tmp = filePath + ".tmp";
+		await writeFile(tmp, JSON.stringify(record, null, 2), "utf8");
+		await rename(tmp, filePath);
+	}
+
+	async readExpansion(runId: string, parentTaskId: string): Promise<TaskExpansionRecord | null> {
+		return this.readJson<TaskExpansionRecord>(join(this.rootDir, "runs", runId, "expansions", `${parentTaskId}.json`));
+	}
+
+	async appendChildTaskStates(runId: string, children: TeamTask[]): Promise<TeamRunState> {
+		const state = await this.getState(runId);
+		if (!state) throw new Error(`run not found: ${runId}`);
+		const ts = new Date().toISOString();
+		for (const child of children) {
+			if (state.taskStates[child.id]) continue;
+			state.taskStates[child.id] = {
+				status: "pending",
+				attemptCount: 0,
+				activeAttemptId: null,
+				resultRef: null,
+				errorSummary: null,
+				progress: { phase: "pending", message: progressMessages.pending, updatedAt: ts },
+			};
+		}
+		state.summary.totalTasks = Object.keys(state.taskStates).length;
+		state.updatedAt = ts;
+		await this.saveState(state);
+		return state;
 	}
 
 	private async withAdmissionLock<T>(fn: () => Promise<T>): Promise<T> {

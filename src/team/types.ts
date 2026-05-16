@@ -181,3 +181,15 @@ export interface TeamRunLease {
 	heartbeatAt: string;
 	expiresAt: string;
 }
+
+export interface TaskExpansionRecord {
+	schemaVersion: "team/task-expansion-1";
+	parentTaskId: string;
+	itemsFrom: string;
+	expandedAt: string;
+	children: Array<{
+		taskId: string;
+		sourceItemId: string;
+		title: string;
+	}>;
+}
