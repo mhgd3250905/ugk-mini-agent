@@ -1149,6 +1149,14 @@ async function savePlan() {
 		if (!discInstruction) { showError('请输入发现指令'); return; }
 		if (!childInstruction) { showError('请输入子任务指令模板'); return; }
 		payload = buildDynamicPlanPayload();
+		var previewJson = JSON.stringify(payload, null, 2);
+		var previewWrap = $('plan-preview-wrap');
+		var previewPre = $('plan-preview-json');
+		if (!previewWrap || !previewPre || previewWrap.style.display === 'none' || previewPre.textContent !== previewJson) {
+			renderPlanPreview(payload);
+			showError('请先检查 Plan JSON 预览，确认无误后再次点击创建');
+			return;
+		}
 	} else {
 		payload = buildNormalPlanPayload();
 	}

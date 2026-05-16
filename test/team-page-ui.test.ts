@@ -1443,6 +1443,19 @@ test("P16-T1: for_each itemsFrom is derived from discovery task id + output key"
 		assert.match(match[0], /子任务指令模板/);
 	});
 
+	test("P16-fix: dynamic save requires matching JSON preview before API submit", () => {
+		const script = extractScript();
+		const match = script.match(/async function savePlan[\s\S]*?^}/m);
+		assert.ok(match, "should find savePlan");
+		assert.match(match[0], /previewPre\.textContent !== previewJson/);
+		assert.match(match[0], /renderPlanPreview\(payload\)/);
+		assert.match(match[0], /请先检查 Plan JSON 预览/);
+		assert.ok(
+			match[0].indexOf("previewPre.textContent !== previewJson") < match[0].indexOf("await api('/plans'"),
+			"preview guard must run before POST /plans",
+		);
+	});
+
 	test("P16-T2: inline scripts remain valid after P16-T2 changes", () => {
 		const html = renderTeamPage();
 		const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
