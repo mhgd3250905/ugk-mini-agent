@@ -100,11 +100,29 @@ export interface TeamUnit {
 	updatedAt: string;
 }
 
+export type TeamTaskType = "normal" | "discovery" | "for_each";
+
 export interface TeamTask {
 	id: string;
+	type?: TeamTaskType;
 	title: string;
 	input: { text: string; payload?: Record<string, unknown> };
 	acceptance: { rules: string[] };
+	discovery?: {
+		outputKey: string;
+	};
+	forEach?: {
+		itemsFrom: string;
+		mode: "sequential";
+		taskTemplate: {
+			title: string;
+			input: { text: string; payload?: Record<string, unknown> };
+			acceptance: { rules: string[] };
+		};
+	};
+	parentTaskId?: string;
+	sourceItemId?: string;
+	generated?: boolean;
 }
 
 export interface TeamPlan {

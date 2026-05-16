@@ -9,11 +9,27 @@ function validateCreateInput(input: { title?: string; goal?: { text: string }; t
 	if (!input.goal?.text?.trim()) throw new Error("goal text is required");
 	if (!input.tasks?.length) throw new Error("at least one task is required");
 	if (!input.outputContract?.text?.trim()) throw new Error("outputContract text is required");
-	for (const task of input.tasks as Array<{ id?: string; title?: string; input?: { text?: string }; acceptance?: { rules?: string[] } }>) {
+	for (const task of input.tasks as Array<{
+		id?: string; type?: string; title?: string; input?: { text?: string }; acceptance?: { rules?: string[] };
+		discovery?: { outputKey?: string };
+		forEach?: { itemsFrom?: string; mode?: string; taskTemplate?: unknown };
+	}>) {
 		if (!task.id?.trim()) throw new Error("task id is required");
 		if (!task.title?.trim()) throw new Error("task title is required");
 		if (!task.input?.text?.trim()) throw new Error("task input text is required");
 		if (!task.acceptance?.rules?.length) throw new Error("task acceptance rules are required");
+		const taskType = task.type ?? "normal";
+		if (taskType === "discovery") {
+			if (!task.discovery?.outputKey?.trim()) throw new Error("discovery task requires discovery.outputKey");
+		}
+		if (taskType === "for_each") {
+			if (!task.forEach?.itemsFrom?.trim()) throw new Error("for_each task requires forEach.itemsFrom");
+			if (task.forEach.mode !== "sequential") throw new Error("for_each task requires forEach.mode 'sequential'");
+			const tmpl = task.forEach.taskTemplate as { title?: string; input?: { text?: string }; acceptance?: { rules?: string[] } } | undefined;
+			if (!tmpl?.title?.trim()) throw new Error("for_each task requires forEach.taskTemplate.title");
+			if (!tmpl?.input?.text?.trim()) throw new Error("for_each task requires forEach.taskTemplate.input.text");
+			if (!tmpl?.acceptance?.rules?.length) throw new Error("for_each task requires forEach.taskTemplate.acceptance.rules");
+		}
 	}
 	const ids = (input.tasks as Array<{ id: string }>).map(t => t.id);
 	if (new Set(ids).size !== ids.length) throw new Error("duplicate task id");

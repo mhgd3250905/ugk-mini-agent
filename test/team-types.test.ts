@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { TeamPlan, TeamRunState, TeamUnit, TeamAttemptMetadata, AttemptLifecyclePhase, AttemptStatus } from "../src/team/types.js";
+import type { TeamPlan, TeamRunState, TeamUnit, TeamAttemptMetadata, AttemptLifecyclePhase, AttemptStatus, TeamTask, TeamTaskType } from "../src/team/types.js";
 
 test("TeamUnit has exactly four role profile slots", () => {
 	const team: TeamUnit = {
@@ -215,4 +215,83 @@ test("TeamAttemptMetadata watcher can be set to a summary object", () => {
 	assert.equal(meta.watcher.decision, "accept_task");
 	assert.equal(meta.watcher.runtimeContext?.browserScope, "team:run_1:watcher:attempt_1:watcher_profile");
 	assert.equal(meta.finishedAt, "2026-05-16T01:00:00.000Z");
+});
+
+// ── P15: Dynamic task expansion types ──
+
+test("P15: old task without type is valid and treated as normal", () => {
+	const task: TeamTask = {
+		id: "task_1",
+		title: "Test task",
+		input: { text: "Do something" },
+		acceptance: { rules: ["output is valid"] },
+	};
+	assert.equal(task.type, undefined);
+	assert.equal(task.discovery, undefined);
+	assert.equal(task.forEach, undefined);
+	assert.equal(task.parentTaskId, undefined);
+	assert.equal(task.sourceItemId, undefined);
+	assert.equal(task.generated, undefined);
+});
+
+test("P15: normal task with explicit type is valid", () => {
+	const task: TeamTask = {
+		id: "task_1",
+		type: "normal",
+		title: "Test task",
+		input: { text: "Do something" },
+		acceptance: { rules: ["output is valid"] },
+	};
+	assert.equal(task.type, "normal");
+});
+
+test("P15: discovery task with outputKey is valid", () => {
+	const task: TeamTask = {
+		id: "discover_items",
+		type: "discovery",
+		title: "Discover items",
+		input: { text: "Find all items" },
+		acceptance: { rules: ["output contains JSON with items array"] },
+		discovery: { outputKey: "items" },
+	};
+	assert.equal(task.type, "discovery");
+	assert.equal(task.discovery?.outputKey, "items");
+});
+
+test("P15: for_each task with sequential mode is valid", () => {
+	const task: TeamTask = {
+		id: "process_each",
+		type: "for_each",
+		title: "Process each item",
+		input: { text: "Placeholder" },
+		acceptance: { rules: ["placeholder"] },
+		forEach: {
+			itemsFrom: "discover_items.items",
+			mode: "sequential",
+			taskTemplate: {
+				title: "Process {{item.title}}",
+				input: { text: "Process item {{item.id}}" },
+				acceptance: { rules: ["output is valid"] },
+			},
+		},
+	};
+	assert.equal(task.type, "for_each");
+	assert.equal(task.forEach?.mode, "sequential");
+	assert.equal(task.forEach?.itemsFrom, "discover_items.items");
+});
+
+test("P15: generated child task has parent metadata", () => {
+	const task: TeamTask = {
+		id: "process_each__item_01",
+		type: "normal",
+		title: "Process item 01",
+		input: { text: "Process item 01" },
+		acceptance: { rules: ["output is valid"] },
+		parentTaskId: "process_each",
+		sourceItemId: "item_01",
+		generated: true,
+	};
+	assert.equal(task.parentTaskId, "process_each");
+	assert.equal(task.sourceItemId, "item_01");
+	assert.equal(task.generated, true);
 });

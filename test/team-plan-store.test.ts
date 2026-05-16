@@ -132,3 +132,208 @@ test("list returns plans sorted by updatedAt desc", async () => {
 		await rm(root, { recursive: true });
 	}
 });
+
+// ── P15: Dynamic task validation ──
+
+test("discovery task requires discovery.outputKey", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		await assert.rejects(
+			() => store.create({
+				...validInput,
+				tasks: [{
+					id: "t1", type: "discovery", title: "Discover",
+					input: { text: "Find items" },
+					acceptance: { rules: ["must produce JSON"] },
+					discovery: { outputKey: "" },
+				}],
+			}),
+			{ message: "discovery task requires discovery.outputKey" },
+		);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("discovery task with outputKey is accepted", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		const plan = await store.create({
+			...validInput,
+			tasks: [{
+				id: "t1", type: "discovery", title: "Discover",
+				input: { text: "Find items" },
+				acceptance: { rules: ["must produce JSON"] },
+				discovery: { outputKey: "items" },
+			}],
+		});
+		assert.equal(plan.tasks[0]!.type, "discovery");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("for_each task requires forEach.itemsFrom", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		await assert.rejects(
+			() => store.create({
+				...validInput,
+				tasks: [{
+					id: "t1", type: "for_each", title: "Process each",
+					input: { text: "placeholder" },
+					acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "",
+						mode: "sequential",
+						taskTemplate: {
+							title: "Process {{item.title}}",
+							input: { text: "Process item" },
+							acceptance: { rules: ["ok"] },
+						},
+					},
+				}],
+			}),
+			{ message: "for_each task requires forEach.itemsFrom" },
+		);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("for_each task requires mode sequential", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		await assert.rejects(
+			() => store.create({
+				...validInput,
+				tasks: [{
+					id: "t1", type: "for_each", title: "Process each",
+					input: { text: "placeholder" },
+					acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "t0.items",
+						mode: "parallel",
+						taskTemplate: {
+							title: "Process",
+							input: { text: "Process" },
+							acceptance: { rules: ["ok"] },
+						},
+					},
+				}] as any,
+			}),
+			{ message: "for_each task requires forEach.mode 'sequential'" },
+		);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("for_each task requires complete taskTemplate", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		await assert.rejects(
+			() => store.create({
+				...validInput,
+				tasks: [{
+					id: "t1", type: "for_each", title: "Process each",
+					input: { text: "placeholder" },
+					acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "t0.items",
+						mode: "sequential",
+						taskTemplate: {
+							title: "",
+							input: { text: "Process" },
+							acceptance: { rules: ["ok"] },
+						},
+					},
+				}],
+			}),
+			{ message: "for_each task requires forEach.taskTemplate.title" },
+		);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("for_each task requires taskTemplate.acceptance.rules", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		await assert.rejects(
+			() => store.create({
+				...validInput,
+				tasks: [{
+					id: "t1", type: "for_each", title: "Process each",
+					input: { text: "placeholder" },
+					acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "t0.items",
+						mode: "sequential",
+						taskTemplate: {
+							title: "Process",
+							input: { text: "Process" },
+							acceptance: { rules: [] },
+						},
+					},
+				}],
+			}),
+			{ message: "for_each task requires forEach.taskTemplate.acceptance.rules" },
+		);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("valid for_each task with sequential mode is accepted", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		const plan = await store.create({
+			...validInput,
+			tasks: [{
+				id: "t1", type: "for_each", title: "Process each",
+				input: { text: "placeholder" },
+				acceptance: { rules: ["ok"] },
+				forEach: {
+					itemsFrom: "t0.items",
+					mode: "sequential",
+					taskTemplate: {
+						title: "Process {{item.title}}",
+						input: { text: "Process item {{item.id}}" },
+						acceptance: { rules: ["output is valid"] },
+					},
+				},
+			}],
+		});
+		assert.equal(plan.tasks[0]!.type, "for_each");
+		assert.equal(plan.tasks[0]!.forEach?.mode, "sequential");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("duplicate static task ids are still rejected", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		await assert.rejects(
+			() => store.create({
+				...validInput,
+				tasks: [
+					{ id: "t1", title: "First", input: { text: "a" }, acceptance: { rules: ["ok"] } },
+					{ id: "t1", title: "Duplicate", input: { text: "b" }, acceptance: { rules: ["ok"] } },
+				],
+			}),
+			{ message: "duplicate task id" },
+		);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
