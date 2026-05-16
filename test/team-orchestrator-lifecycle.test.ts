@@ -641,3 +641,132 @@ test("P17: orchestrator.runNextQueued injects TeamUnit profile IDs", async () =>
 		await rm(root, { recursive: true });
 	}
 });
+
+
+// ── P17: persisted runtime context through orchestrator ──
+
+test('P17: orchestrator persists worker/checker/watcher runtime context in attempt metadata', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'team-p17-rc-'));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+
+		const unit = await unitStore.create({
+			title: 'rc team', description: 'd',
+			workerProfileId: 'rc-worker', checkerProfileId: 'rc-checker',
+			watcherProfileId: 'rc-watcher', finalizerProfileId: 'rc-finalizer',
+		});
+		const plan = await planStore.create({
+			title: 'P17 rc persist',
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: 'test' },
+			tasks: [{ id: 'task_1', title: 't1', input: { text: 'do' }, acceptance: { rules: ['r1'] } }],
+			outputContract: { text: 'output' },
+		});
+
+		const roleRuntimes: Record<string, import('../src/team/types.js').TeamRoleRuntimeContext> = {
+			worker: { requestedProfileId: 'rc-worker', resolvedProfileId: 'rc-worker', fallbackUsed: false, browserId: 'bw-rc', browserScope: 'scope:rc-worker' },
+			checker: { requestedProfileId: 'rc-checker', resolvedProfileId: 'rc-checker', fallbackUsed: false, browserId: 'bc-rc', browserScope: 'scope:rc-checker' },
+			watcher: { requestedProfileId: 'rc-watcher', resolvedProfileId: 'rc-watcher', fallbackUsed: false, browserId: 'bwa-rc', browserScope: 'scope:rc-watcher' },
+			finalizer: { requestedProfileId: 'rc-finalizer', resolvedProfileId: 'rc-finalizer', fallbackUsed: false, browserId: 'bf-rc', browserScope: 'scope:rc-finalizer' },
+		};
+
+		const runner = new (class extends MockRoleRunner implements ProfileAwareTeamRoleRunner {
+			override async runWorker(input: import('../src/team/role-runner.js').WorkerInput) {
+				const out = await super.runWorker(input);
+				return { ...out, runtimeContext: roleRuntimes.worker };
+			}
+			override async runChecker(input: import('../src/team/role-runner.js').CheckerInput) {
+				const out = await super.runChecker(input);
+				return { ...out, runtimeContext: roleRuntimes.checker };
+			}
+			override async runWatcher(input: import('../src/team/role-runner.js').WatcherInput) {
+				const out = await super.runWatcher(input);
+				return { ...out, runtimeContext: roleRuntimes.watcher };
+			}
+			override async runFinalizer(input: import('../src/team/role-runner.js').FinalizerInput) {
+				const out = await super.runFinalizer(input);
+				return { ...out, runtimeContext: roleRuntimes.finalizer };
+			}
+			setProfileIds() {}
+		})();
+
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace, roleRunner: runner,
+			dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+
+		const state = await orchestrator.createRun(plan.planId);
+		const result = await orchestrator.runToCompletion(state.runId);
+
+		// Verify attempt metadata persisted
+		const attempts = await workspace.listAttempts(state.runId, 'task_1');
+		assert.equal(attempts.length, 1);
+		const attempt = attempts[0]!;
+
+		// Worker runtime context persisted
+		assert.equal(attempt.worker[0]!.runtimeContext?.requestedProfileId, 'rc-worker');
+		assert.equal(attempt.worker[0]!.runtimeContext?.browserId, 'bw-rc');
+		assert.equal(attempt.worker[0]!.runtimeContext?.browserScope, 'scope:rc-worker');
+
+		// Checker runtime context persisted
+		assert.equal(attempt.checker[0]!.runtimeContext?.requestedProfileId, 'rc-checker');
+		assert.equal(attempt.checker[0]!.runtimeContext?.browserId, 'bc-rc');
+		assert.equal(attempt.checker[0]!.runtimeContext?.browserScope, 'scope:rc-checker');
+
+		// Watcher runtime context persisted
+		assert.equal(attempt.watcher?.runtimeContext?.requestedProfileId, 'rc-watcher');
+		assert.equal(attempt.watcher?.runtimeContext?.browserId, 'bwa-rc');
+		assert.equal(attempt.watcher?.runtimeContext?.browserScope, 'scope:rc-watcher');
+
+		// Finalizer runtime context persisted in run state
+		assert.equal(result.finalizerRuntimeContext?.requestedProfileId, 'rc-finalizer');
+		assert.equal(result.finalizerRuntimeContext?.browserId, 'bf-rc');
+		assert.equal(result.finalizerRuntimeContext?.browserScope, 'scope:rc-finalizer');
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test('P17: old attempts without runtime context remain readable', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'team-p17-old-'));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+
+		const unit = await unitStore.create({
+			title: 'old compat', description: 'd',
+			workerProfileId: 'w', checkerProfileId: 'c', watcherProfileId: 'w', finalizerProfileId: 'f',
+		});
+		const plan = await planStore.create({
+			title: 'P17 old compat',
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: 'test' },
+			tasks: [{ id: 'task_1', title: 't1', input: { text: 'do' }, acceptance: { rules: ['r1'] } }],
+			outputContract: { text: 'output' },
+		});
+
+		// MockRoleRunner does not return runtimeContext — simulates old behavior
+		const runner = new MockRoleRunner();
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace, roleRunner: runner,
+			dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+
+		const state = await orchestrator.createRun(plan.planId);
+		const result = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(result.status, 'completed');
+		const attempts = await workspace.listAttempts(state.runId, 'task_1');
+		assert.equal(attempts.length, 1);
+		// runtimeContext is undefined for old-style mock runner — no crash
+		assert.equal(attempts[0]!.worker[0]!.runtimeContext, undefined);
+		assert.equal(attempts[0]!.checker[0]!.runtimeContext, undefined);
+		assert.equal(attempts[0]!.watcher?.runtimeContext, undefined);
+		assert.equal(result.finalizerRuntimeContext, null);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
