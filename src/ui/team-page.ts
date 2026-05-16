@@ -798,7 +798,9 @@ async function toggleRunDetail(runId) {
 		window._latestPlanForRun[runId] = plan;
 		var attemptsMap = {};
 		try {
-			var taskIds = plan.tasks ? plan.tasks.map(function(t) { return t.id; }) : [];
+			var planTaskIds = plan.tasks ? plan.tasks.map(function(t) { return t.id; }) : [];
+				var generatedIds = Object.keys(state.taskStates || {}).filter(function(id) { return planTaskIds.indexOf(id) === -1; });
+				var taskIds = planTaskIds.concat(generatedIds);
 			await Promise.all(taskIds.map(async function(tid) {
 				var res = await api('/runs/' + runId + '/tasks/' + tid + '/attempts');
 				attemptsMap[tid] = res.attempts || [];
@@ -871,6 +873,38 @@ function renderTaskDetail(state, plan, attemptsMap) {
 				attemptsHtml +
 				'</td></tr>';
 		}).join('') +
+		(function() {
+			var planIdSet = {};
+			plan.tasks.forEach(function(t) { planIdSet[t.id] = true; });
+			var childIds = Object.keys(state.taskStates || {}).filter(function(id) { return !planIdSet[id]; });
+			if (childIds.length === 0) return '';
+			var rows = '<tr><td colspan="3" style="padding:6px 8px;font-weight:600;color:var(--muted);font-size:12px;border-top:1px solid var(--border)">子任务</td></tr>';
+			childIds.forEach(function(cid) {
+				var ts = state.taskStates[cid];
+				var phaseHtml = ts.progress ? '<span class="phase-label ' + phaseColor(ts.progress.phase) + '">' + escapeHtml(phaseLabel(ts.progress.phase)) + '</span>' : '';
+				var detailParts = [];
+				if (ts.attemptCount > 0) detailParts.push('尝试 ' + ts.attemptCount + ' 次');
+				if (ts.activeAttemptId) detailParts.push('尝试ID: ' + escapeHtml(ts.activeAttemptId.slice(0, 12)) + '...');
+				if (ts.resultRef) detailParts.push('<span style="color:var(--success)">结果: ' + escapeHtml(ts.resultRef) + '</span>');
+				if (ts.errorSummary) detailParts.push('<span class="attempt-error">错误: ' + escapeHtml(ts.errorSummary) + '</span>');
+				var childAttemptsHtml = '';
+				var attempts = attemptsMap && attemptsMap[cid];
+				if (attempts && attempts.length > 0) {
+					childAttemptsHtml = attempts.map(function(a) {
+						var sc = a.status === 'succeeded' ? 'var(--success)' : a.status === 'failed' ? 'var(--fail)' : 'var(--muted)';
+						return '<div class="attempt-card"><span style="color:' + sc + '">' + escapeHtml(a.status) + '</span> ' + escapeHtml(a.attemptId.slice(0, 12)) + '... <span class="ts">' + formatTimestamp(a.createdAt) + '</span></div>';
+					}).join('');
+				}
+				rows += '<tr>' +
+					'<td style="font-size:12px">' + escapeHtml(cid) + '</td>' +
+					'<td>' + statusBadge(ts.status) + '<br/>' + phaseHtml + '</td>' +
+					'<td style="font-size:12px">' +
+					(detailParts.length ? '<div>' + detailParts.join(' / ') + '</div>' : '') +
+					childAttemptsHtml +
+					'</td></tr>';
+			});
+			return rows;
+		})() +
 		'</table>';
 }
 

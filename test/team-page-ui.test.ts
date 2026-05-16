@@ -1258,3 +1258,89 @@ test("P15: old plan without type does not crash UI", () => {
 	assert.match(html, /task-row/);
 	assert.ok(!html.includes('type="discovery"'));
 });
+
+// ── P15 Review Fix: generated child task rendering ──
+
+test("P15-fix: renderTaskDetail shows generated child tasks not in plan.tasks", () => {
+	const script = extractScript();
+	const helperStart = script.indexOf("function escapeHtml");
+	const helperEnd = script.indexOf("async function editTeamUnit");
+	assert.ok(helperStart >= 0);
+	assert.ok(helperEnd > helperStart);
+	const helperSource = script.slice(helperStart, helperEnd);
+	const renderFn = new Function(helperSource + "\nreturn renderTaskDetail;")() as (state: any, plan: any, attemptsMap: any) => string;
+	const state = {
+		runId: "run_test",
+		taskStates: {
+			process: { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 0, activeAttemptId: null },
+			"process__a": { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 1, activeAttemptId: null },
+			"process__b": { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 1, activeAttemptId: null },
+		},
+	};
+	const plan = {
+		tasks: [
+			{ id: "process", title: "Process each", type: "for_each" },
+		],
+	};
+	const attemptsMap = {
+		"process__a": [{ status: "succeeded", attemptId: "attempt_a", createdAt: "", phase: "succeeded", worker: [], checker: [], files: [] }],
+		"process__b": [{ status: "succeeded", attemptId: "attempt_b", createdAt: "", phase: "succeeded", worker: [], checker: [], files: [] }],
+	};
+	const html = renderFn(state, plan, attemptsMap);
+	assert.match(html, /process__a/, "generated child task a should appear");
+	assert.match(html, /process__b/, "generated child task b should appear");
+});
+
+test("P15-fix: generated child tasks are labeled as sub-tasks", () => {
+	const script = extractScript();
+	const helperStart = script.indexOf("function escapeHtml");
+	const helperEnd = script.indexOf("async function editTeamUnit");
+	const helperSource = script.slice(helperStart, helperEnd);
+	const renderFn = new Function(helperSource + "\nreturn renderTaskDetail;")() as (state: any, plan: any, attemptsMap: any) => string;
+	const state = {
+		runId: "run_test",
+		taskStates: {
+			fe: { status: "succeeded", progress: { phase: "succeeded", message: "" }, attemptCount: 0, activeAttemptId: null },
+			"fe__x": { status: "succeeded", progress: { phase: "succeeded", message: "" }, attemptCount: 1, activeAttemptId: null },
+		},
+	};
+	const plan = { tasks: [{ id: "fe", title: "ForEach Task" }] };
+	const html = renderFn(state, plan, {});
+	assert.match(html, /子任务|sub.?task/i, "generated children should be labeled");
+});
+
+test("P15-fix: generated child task ids are escaped", () => {
+	const script = extractScript();
+	const helperStart = script.indexOf("function escapeHtml");
+	const helperEnd = script.indexOf("async function editTeamUnit");
+	const helperSource = script.slice(helperStart, helperEnd);
+	const renderFn = new Function(helperSource + "\nreturn renderTaskDetail;")() as (state: any, plan: any, attemptsMap: any) => string;
+	const state = {
+		runId: "run_test",
+		taskStates: {
+			t1: { status: "pending", progress: null, attemptCount: 0, activeAttemptId: null },
+			"t1__<script>": { status: "pending", progress: null, attemptCount: 0, activeAttemptId: null },
+		},
+	};
+	const plan = { tasks: [{ id: "t1", title: "T1" }] };
+	const html = renderFn(state, plan, {});
+	assert.doesNotMatch(html, /<script>/, "child task id should be escaped");
+});
+
+test("P15-fix: old runs without generated tasks render as before", () => {
+	const script = extractScript();
+	const helperStart = script.indexOf("function escapeHtml");
+	const helperEnd = script.indexOf("async function editTeamUnit");
+	const helperSource = script.slice(helperStart, helperEnd);
+	const renderFn = new Function(helperSource + "\nreturn renderTaskDetail;")() as (state: any, plan: any, attemptsMap: any) => string;
+	const state = {
+		runId: "run_old",
+		taskStates: {
+			t1: { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 1, activeAttemptId: null },
+		},
+	};
+	const plan = { tasks: [{ id: "t1", title: "Task 1" }] };
+	const html = renderFn(state, plan, {});
+	assert.match(html, /Task 1/);
+	assert.doesNotMatch(html, /子任务|sub.?task/i, "no sub-task label for normal runs");
+});
