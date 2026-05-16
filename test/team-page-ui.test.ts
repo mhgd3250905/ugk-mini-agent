@@ -769,14 +769,14 @@ test("P12-T2: savePlan shows error on empty title", () => {
 	assert.match(match[0], /showError.*计划名称/);
 });
 
-test("P12-T2: savePlan escapes dynamic values in acceptance rules", () => {
+test("P12-T2: savePlan uses buildNormalPlanPayload for value reading", () => {
 	const script = extractScript();
-	// savePlan uses .value from DOM elements, not innerHTML injection
 	const match = script.match(/async function savePlan[\s\S]*?^}/m);
 	assert.ok(match, "should find savePlan");
-	// Should use .value for reading fields
-	assert.match(match[0], /\$\('plan-title'\)\.value/);
-	assert.match(match[0], /\$\('plan-goal'\)\.value/);
+	assert.match(match[0], /buildNormalPlanPayload|buildDynamicPlanPayload/);
+	// buildNormalPlanPayload reads .value from DOM elements
+	assert.match(script, /buildNormalPlanPayload[\s\S]*?plan-title.*\.value/);
+	assert.match(script, /buildNormalPlanPayload[\s\S]*?plan-goal.*\.value/);
 });
 
 // ── P12 Task 3: Console overview and summary ──
@@ -1344,3 +1344,74 @@ test("P15-fix: old runs without generated tasks render as before", () => {
 	assert.match(html, /Task 1/);
 	assert.doesNotMatch(html, /子任务|sub.?task/i, "no sub-task label for normal runs");
 });
+
+	// ── P16 Task 1: Dynamic plan authoring mode ──
+
+	test("P16-T1: plan modal contains mode selector for normal vs dynamic", () => {
+		const html = renderTeamPage();
+		assert.match(html, /plan-mode/);
+		assert.match(html, /普通计划/);
+		assert.match(html, /发现后逐项处理/);
+	});
+
+	test("P16-T1: normal mode still renders existing fields and save path", () => {
+		const html = renderTeamPage();
+		// Existing fields still present
+		assert.match(html, /id="plan-title"/);
+		assert.match(html, /id="plan-goal"/);
+		assert.match(html, /id="plan-task-title"/);
+		assert.match(html, /id="plan-task-text"/);
+		assert.match(html, /id="plan-acceptance"/);
+		assert.match(html, /id="plan-output-contract"/);
+		// savePlan function still exists
+		const script = extractScript();
+		assert.match(script, /async function savePlan\(\)/);
+	});
+
+	test("P16-T1: dynamic mode renders fields for discovery and child task template", () => {
+		const html = renderTeamPage();
+		// Dynamic-specific fields
+		assert.match(html, /id="plan-dynamic-fields"/);
+		assert.match(html, /id="plan-disc-title"/);
+		assert.match(html, /id="plan-disc-instruction"/);
+		assert.match(html, /id="plan-disc-output-key"/);
+		assert.match(html, /id="plan-disc-acceptance"/);
+		assert.match(html, /id="plan-child-title"/);
+		assert.match(html, /id="plan-child-instruction"/);
+		assert.match(html, /id="plan-child-acceptance"/);
+	});
+
+test("P16-T1: buildDynamicPlanPayload generates discovery + for_each tasks", () => {
+	const script = extractScript();
+	assert.match(script, /function buildDynamicPlanPayload\(\)/);
+	const helperStart = script.indexOf("function escapeHtml");
+	const helperEnd = script.indexOf("async function startRun");
+	const source = script.slice(helperStart, helperEnd);
+	const stubDollar = 'function $(id) { return { value: id === "plan-disc-output-key" ? "items" : "test", style: {}, classList: { add: function(){}, remove: function(){} } }; }';
+	const fn = new Function(stubDollar + "\n" + source + "\nreturn buildDynamicPlanPayload;")() as () => any;
+	const payload = fn();
+	assert.ok(payload, "buildDynamicPlanPayload should return a value");
+	assert.equal(payload.tasks.length, 2, "should have exactly 2 tasks");
+	assert.equal(payload.tasks[0].type, "discovery");
+	assert.equal(payload.tasks[1].type, "for_each");
+});
+
+test("P16-T1: for_each itemsFrom is derived from discovery task id + output key", () => {
+	const script = extractScript();
+	const helperStart = script.indexOf("function escapeHtml");
+	const helperEnd = script.indexOf("async function startRun");
+	const source = script.slice(helperStart, helperEnd);
+	const stubDollar = 'function $(id) { return { value: id === "plan-disc-output-key" ? "items" : "test", style: {}, classList: { add: function(){}, remove: function(){} } }; }';
+	const fn = new Function(stubDollar + "\n" + source + "\nreturn buildDynamicPlanPayload;")() as () => any;
+	const payload = fn();
+	const discTask = payload.tasks[0];
+	const feTask = payload.tasks[1];
+	assert.equal(feTask.forEach.itemsFrom, discTask.id + "." + discTask.discovery.outputKey);
+});
+
+	test("P16-T1: user dynamic field values are escaped in HTML preview", () => {
+		const script = extractScript();
+		assert.match(script, /function renderPlanPreview\(/);
+		// Preview uses textContent, not innerHTML
+		assert.match(script, /renderPlanPreview[\s\S]*?textContent[\s\S]*?JSON\.stringify/);
+	});

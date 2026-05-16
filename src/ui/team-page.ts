@@ -261,24 +261,60 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 
 <!-- Plan Modal -->
 <div id="plan-modal" class="modal-overlay">
-	<div class="modal">
+	<div class="modal" style="width:560px">
 		<h2>新建计划</h2>
 		<label>计划名称</label>
 		<input id="plan-title" placeholder="计划名称" />
 		<label>默认团队</label>
 		<select id="plan-teamunit"></select>
+		<label>创建模式</label>
+		<select id="plan-mode" onchange="onPlanModeChange()">
+			<option value="normal">普通计划</option>
+			<option value="dynamic">发现后逐项处理</option>
+		</select>
 		<label>目标</label>
 		<textarea id="plan-goal" placeholder="计划目标"></textarea>
-		<label>任务标题</label>
-		<input id="plan-task-title" placeholder="任务标题" value="任务1" />
-		<label>任务内容</label>
-		<textarea id="plan-task-text" placeholder="任务内容"></textarea>
-		<label>验收标准（每行一条）</label>
-		<textarea id="plan-acceptance" placeholder="完成目标"></textarea>
+
+		<div id="plan-normal-fields">
+			<label>任务标题</label>
+			<input id="plan-task-title" placeholder="任务标题" value="任务1" />
+			<label>任务内容</label>
+			<textarea id="plan-task-text" placeholder="任务内容"></textarea>
+			<label>验收标准（每行一条）</label>
+			<textarea id="plan-acceptance" placeholder="完成目标"></textarea>
+		</div>
+
+		<div id="plan-dynamic-fields" style="display:none">
+			<label style="margin-top:12px;font-weight:600;color:var(--accent)">发现任务</label>
+			<label>发现任务标题</label>
+			<input id="plan-disc-title" placeholder="发现相关条目" value="发现条目" />
+			<label>发现指令</label>
+			<textarea id="plan-disc-instruction" placeholder="搜索并收集相关条目，输出 JSON 格式"></textarea>
+			<label>输出键名（JSON 中 item 数组的键名）</label>
+			<input id="plan-disc-output-key" placeholder="items" value="items" />
+			<label>发现验收标准（每行一条）</label>
+			<textarea id="plan-disc-acceptance" placeholder="输出为有效 JSON&#10;包含 items 数组"></textarea>
+
+			<label style="margin-top:12px;font-weight:600;color:var(--accent)">逐项处理模板</label>
+			<label>子任务标题模板</label>
+			<input id="plan-child-title" placeholder="处理 {{item.title}}" value="处理 {{item.title}}" />
+			<label>子任务指令模板</label>
+			<textarea id="plan-child-instruction" placeholder="对 {{item.title}}（ID: {{item.id}}）执行分析"></textarea>
+			<label>子任务验收标准（每行一条）</label>
+			<textarea id="plan-child-acceptance" placeholder="输出包含对 {{item.id}} 的分析结果"></textarea>
+		</div>
+
 		<label>输出契约</label>
 		<textarea id="plan-output-contract" placeholder="中文汇总"></textarea>
+
+		<div id="plan-preview-wrap" style="display:none">
+			<label>预览 Plan JSON</label>
+			<pre id="plan-preview-json" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:12px;max-height:260px;overflow:auto;white-space:pre-wrap;word-break:break-all"></pre>
+		</div>
+
 		<div class="modal-actions">
 			<button class="btn" style="background:var(--border);color:var(--text)" onclick="closePlanModal()">取消</button>
+			<button class="btn btn-sm" style="background:var(--border);color:var(--text)" onclick="previewPlanJson()">预览 JSON</button>
 			<button class="btn btn-primary" onclick="savePlan()">创建</button>
 		</div>
 	</div>
@@ -940,10 +976,20 @@ async function createPlan() {
 	}
 	$('plan-title').value = '';
 	$('plan-goal').value = '';
+	$('plan-mode').value = 'normal';
 	$('plan-task-title').value = '任务1';
 	$('plan-task-text').value = '';
 	$('plan-acceptance').value = '完成目标';
 	$('plan-output-contract').value = '中文汇总';
+	$('plan-disc-title').value = '发现条目';
+	$('plan-disc-instruction').value = '';
+	$('plan-disc-output-key').value = 'items';
+	$('plan-disc-acceptance').value = '';
+	$('plan-child-title').value = '处理 {{item.title}}';
+	$('plan-child-instruction').value = '';
+	$('plan-child-acceptance').value = '';
+	onPlanModeChange();
+	$('plan-preview-wrap').style.display = 'none';
 	$('plan-modal').classList.add('open');
 }
 
@@ -951,9 +997,23 @@ function closePlanModal() {
 	$('plan-modal').classList.remove('open');
 }
 
-async function savePlan() {
+function currentPlanMode() {
+	var sel = $('plan-mode');
+	return sel ? sel.value : 'normal';
+}
+
+function onPlanModeChange() {
+	var mode = currentPlanMode();
+	var normalFields = $('plan-normal-fields');
+	var dynamicFields = $('plan-dynamic-fields');
+	var previewWrap = $('plan-preview-wrap');
+	if (normalFields) normalFields.style.display = mode === 'normal' ? '' : 'none';
+	if (dynamicFields) dynamicFields.style.display = mode === 'dynamic' ? '' : 'none';
+	if (previewWrap) previewWrap.style.display = 'none';
+}
+
+function buildNormalPlanPayload() {
 	var title = $('plan-title').value;
-	if (!title) { showError('请输入计划名称'); return; }
 	var unitId = $('plan-teamunit').value;
 	var goalText = $('plan-goal').value;
 	var taskTitle = $('plan-task-title').value || '任务1';
@@ -961,8 +1021,94 @@ async function savePlan() {
 	var acceptanceText = $('plan-acceptance').value || '完成目标';
 	var rules = acceptanceText.split(String.fromCharCode(10)).map(function(l) { return l.trim(); }).filter(function(l) { return l; });
 	var outputContract = $('plan-output-contract').value || '中文汇总';
+	return {
+		title: title,
+		defaultTeamUnitId: unitId,
+		goal: { text: goalText },
+		tasks: [{ id: 'task_1', title: taskTitle, input: { text: taskText }, acceptance: { rules: rules } }],
+		outputContract: { text: outputContract },
+	};
+}
+
+function buildDynamicPlanPayload() {
+	var title = $('plan-title').value;
+	var unitId = $('plan-teamunit').value;
+	var goalText = $('plan-goal').value;
+	var discTitle = $('plan-disc-title').value || '发现条目';
+	var discInstruction = $('plan-disc-instruction').value || goalText;
+	var discOutputKey = $('plan-disc-output-key').value || 'items';
+	var discAccText = $('plan-disc-acceptance').value || '输出为有效 JSON';
+	var discRules = discAccText.split(String.fromCharCode(10)).map(function(l) { return l.trim(); }).filter(function(l) { return l; });
+	var childTitleTmpl = $('plan-child-title').value || '处理 {{item.title}}';
+	var childInstrTmpl = $('plan-child-instruction').value || '处理条目 {{item.id}}';
+	var childAccText = $('plan-child-acceptance').value || '输出有效';
+	var childRules = childAccText.split(String.fromCharCode(10)).map(function(l) { return l.trim(); }).filter(function(l) { return l; });
+	var outputContract = $('plan-output-contract').value || '中文汇总';
+	var discTaskId = 'discover';
+	return {
+		title: title,
+		defaultTeamUnitId: unitId,
+		goal: { text: goalText },
+		tasks: [
+			{
+				id: discTaskId,
+				type: 'discovery',
+				title: discTitle,
+				input: { text: discInstruction },
+				acceptance: { rules: discRules.length ? discRules : ['输出为有效 JSON'] },
+				discovery: { outputKey: discOutputKey },
+			},
+			{
+				id: 'process_each',
+				type: 'for_each',
+				title: '逐项处理',
+				input: { text: 'Placeholder' },
+				acceptance: { rules: childRules.length ? childRules : ['ok'] },
+				forEach: {
+					itemsFrom: discTaskId + '.' + discOutputKey,
+					mode: 'sequential',
+					taskTemplate: {
+						title: childTitleTmpl,
+						input: { text: childInstrTmpl },
+						acceptance: { rules: childRules.length ? childRules : ['ok'] },
+					},
+				},
+			},
+		],
+		outputContract: { text: outputContract },
+	};
+}
+
+function renderPlanPreview(payload) {
+	var wrap = $('plan-preview-wrap');
+	var pre = $('plan-preview-json');
+	if (!wrap || !pre) return;
+	pre.textContent = JSON.stringify(payload, null, 2);
+	wrap.style.display = '';
+}
+
+function previewPlanJson() {
+	var mode = currentPlanMode();
+	var payload = mode === 'dynamic' ? buildDynamicPlanPayload() : buildNormalPlanPayload();
+	renderPlanPreview(payload);
+}
+
+async function savePlan() {
+	var title = $('plan-title').value;
+	if (!title) { showError('请输入计划名称'); return; }
+	var mode = currentPlanMode();
+	var payload;
+	if (mode === 'dynamic') {
+		var discInstruction = $('plan-disc-instruction').value;
+		var childInstruction = $('plan-child-instruction').value;
+		if (!discInstruction) { showError('请输入发现指令'); return; }
+		if (!childInstruction) { showError('请输入子任务指令模板'); return; }
+		payload = buildDynamicPlanPayload();
+	} else {
+		payload = buildNormalPlanPayload();
+	}
 	try {
-		await api('/plans', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: title, defaultTeamUnitId: unitId, goal: { text: goalText }, tasks: [{ id: 'task_1', title: taskTitle, input: { text: taskText }, acceptance: { rules: rules } }], outputContract: { text: outputContract } }) });
+		await api('/plans', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
 		closePlanModal();
 		showSuccess('计划已创建');
 		loadPlans();
