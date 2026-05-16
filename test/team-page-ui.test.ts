@@ -1415,3 +1415,39 @@ test("P16-T1: for_each itemsFrom is derived from discovery task id + output key"
 		// Preview uses textContent, not innerHTML
 		assert.match(script, /renderPlanPreview[\s\S]*?textContent[\s\S]*?JSON\.stringify/);
 	});
+
+	// ── P16 Task 2: Dynamic plan submission ──
+
+	test("P16-T2: savePlan sends dynamic payload when dynamic mode is active", () => {
+		const script = extractScript();
+		const match = script.match(/async function savePlan[\s\S]*?^}/m);
+		assert.ok(match, "should find savePlan");
+		assert.match(match[0], /currentPlanMode/);
+		assert.match(match[0], /buildDynamicPlanPayload/);
+		assert.match(match[0], /buildNormalPlanPayload/);
+	});
+
+	test("P16-T2: dynamic mode requires discovery instruction", () => {
+		const script = extractScript();
+		const match = script.match(/async function savePlan[\s\S]*?^}/m);
+		assert.ok(match, "should find savePlan");
+		assert.match(match[0], /plan-disc-instruction/);
+		assert.match(match[0], /发现指令/);
+	});
+
+	test("P16-T2: dynamic mode requires child instruction template", () => {
+		const script = extractScript();
+		const match = script.match(/async function savePlan[\s\S]*?^}/m);
+		assert.ok(match, "should find savePlan");
+		assert.match(match[0], /plan-child-instruction/);
+		assert.match(match[0], /子任务指令模板/);
+	});
+
+	test("P16-T2: inline scripts remain valid after P16-T2 changes", () => {
+		const html = renderTeamPage();
+		const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+		assert.ok(scripts.length > 0);
+		for (const script of scripts) {
+			assert.doesNotThrow(() => new Function(script), "inline script should be valid JS");
+		}
+	});
