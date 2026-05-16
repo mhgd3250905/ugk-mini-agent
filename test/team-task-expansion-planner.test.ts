@@ -1,0 +1,207 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { TemplateTaskExpansionPlanner } from "../src/team/task-expansion-planner.js";
+import type { TeamTask } from "../src/team/types.js";
+
+const makeParentTask = (): TeamTask => ({
+	id: "process_each",
+	type: "for_each",
+	title: "Process each item",
+	input: { text: "Placeholder" },
+	acceptance: { rules: ["placeholder"] },
+	forEach: {
+		itemsFrom: "discover.items",
+		mode: "sequential",
+		taskTemplate: {
+			title: "Process {{item.title}}",
+			input: { text: "Process item {{item.id}}" },
+			acceptance: { rules: ["output for {{item.id}} is valid"] },
+		},
+	},
+});
+
+test("expands one item into one child task", async () => {
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask: makeParentTask(),
+		items: [{ id: "item_01", title: "First item" }],
+	});
+	assert.equal(result.children.length, 1);
+	assert.equal(result.children[0]!.id, "process_each__item_01");
+	assert.equal(result.children[0]!.title, "Process First item");
+});
+
+test("expands multiple items in stable order", async () => {
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask: makeParentTask(),
+		items: [
+			{ id: "b_item", title: "B" },
+			{ id: "a_item", title: "A" },
+			{ id: "c_item", title: "C" },
+		],
+	});
+	assert.equal(result.children.length, 3);
+	assert.equal(result.children[0]!.sourceItemId, "b_item");
+	assert.equal(result.children[1]!.sourceItemId, "a_item");
+	assert.equal(result.children[2]!.sourceItemId, "c_item");
+});
+
+test("child id is deterministic and safe", async () => {
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask: makeParentTask(),
+		items: [{ id: "item/with:special chars!", title: "Special" }],
+	});
+	assert.equal(result.children[0]!.id, "process_each__item_with_special_chars_");
+	assert.ok(/^[a-zA-Z0-9_-]+$/.test(result.children[0]!.id));
+});
+
+test("child records parentTaskId, sourceItemId, generated: true", async () => {
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask: makeParentTask(),
+		items: [{ id: "x1", title: "X" }],
+	});
+	const child = result.children[0]!;
+	assert.equal(child.parentTaskId, "process_each");
+	assert.equal(child.sourceItemId, "x1");
+	assert.equal(child.generated, true);
+	assert.equal(child.type, "normal");
+});
+
+test("template replacement supports item.id and item.title", async () => {
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask: makeParentTask(),
+		items: [{ id: "abc", title: "Hello World" }],
+	});
+	const child = result.children[0]!;
+	assert.equal(child.title, "Process Hello World");
+	assert.equal(child.input.text, "Process item abc");
+	assert.equal(child.acceptance.rules[0], "output for abc is valid");
+});
+
+test("template replacement supports {{item}} as JSON string", async () => {
+	const parentTask: TeamTask = {
+		id: "fe",
+		type: "for_each",
+		title: "FE",
+		input: { text: "p" },
+		acceptance: { rules: ["ok"] },
+		forEach: {
+			itemsFrom: "d.items",
+			mode: "sequential",
+			taskTemplate: {
+				title: "Item: {{item}}",
+				input: { text: "Data: {{item}}" },
+				acceptance: { rules: ["ok"] },
+			},
+		},
+	};
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask: parentTask,
+		items: [{ id: "i1", title: "Test" }],
+	});
+	const child = result.children[0]!;
+	assert.ok(child.title.includes('"id":"i1"'));
+	assert.ok(child.input.text.includes('"title":"Test"'));
+});
+
+test("rejects item missing stable id", async () => {
+	const planner = new TemplateTaskExpansionPlanner();
+	await assert.rejects(
+		() => planner.expand({
+			runId: "run_1",
+			planId: "plan_1",
+			parentTask: makeParentTask(),
+			items: [{ title: "No id" }],
+		}),
+		{ message: "each item must have a stable non-empty string 'id'" },
+	);
+});
+
+test("rejects empty string id", async () => {
+	const planner = new TemplateTaskExpansionPlanner();
+	await assert.rejects(
+		() => planner.expand({
+			runId: "run_1",
+			planId: "plan_1",
+			parentTask: makeParentTask(),
+			items: [{ id: "", title: "Empty id" }],
+		}),
+		{ message: "each item must have a stable non-empty string 'id'" },
+	);
+});
+
+test("rejects duplicate item ids", async () => {
+	const planner = new TemplateTaskExpansionPlanner();
+	await assert.rejects(
+		() => planner.expand({
+			runId: "run_1",
+			planId: "plan_1",
+			parentTask: makeParentTask(),
+			items: [
+				{ id: "dup", title: "First" },
+				{ id: "dup", title: "Second" },
+			],
+		}),
+		{ message: "duplicate item id: dup" },
+	);
+});
+
+test("falls back to item.id for title when item.title is missing", async () => {
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask: makeParentTask(),
+		items: [{ id: "no_title" }],
+	});
+	assert.equal(result.children[0]!.title, "Process no_title");
+});
+
+test("escapes unsafe characters in task ids", async () => {
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask: makeParentTask(),
+		items: [{ id: "path/with/slashes", title: "Slash" }],
+	});
+	assert.equal(result.children[0]!.id, "process_each__path_with_slashes");
+	assert.ok(!result.children[0]!.id.includes("/"));
+});
+
+test("rejects parent without forEach config", async () => {
+	const planner = new TemplateTaskExpansionPlanner();
+	const parent: TeamTask = {
+		id: "normal_task",
+		type: "normal",
+		title: "Normal",
+		input: { text: "Do" },
+		acceptance: { rules: ["ok"] },
+	};
+	await assert.rejects(
+		() => planner.expand({
+			runId: "run_1",
+			planId: "plan_1",
+			parentTask: parent,
+			items: [{ id: "x", title: "X" }],
+		}),
+		{ message: "parent task has no forEach config" },
+	);
+});
