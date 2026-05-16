@@ -611,8 +611,26 @@ async function saveTeamUnit() {
 				if (rules.length) detailsHtml += renderAcceptanceRules(rules);
 				detailsHtml += '</div></details>';
 			}
+			var typeBadge = '';
+			if (safeTask.type === 'discovery') {
+				typeBadge = ' <span class="badge badge-info" style="font-size:11px;padding:1px 6px;border-radius:3px;background:#2563eb;color:#fff">discovery</span>';
+			} else if (safeTask.type === 'for_each') {
+				var feInfo = safeTask.forEach ? (' &larr; ' + escapeHtml(safeTask.forEach.itemsFrom || '')) : '';
+				typeBadge = ' <span class="badge badge-info" style="font-size:11px;padding:1px 6px;border-radius:3px;background:#7c3aed;color:#fff">for_each' + feInfo + '</span>';
+			}
+			var detailsHtml = '';
+			if (inputText || rules.length) {
+				detailsHtml = '<details class="plan-task-details"><summary>展开详情</summary><div class="plan-task-detail-content">';
+				if (inputText) detailsHtml += '<p class="plan-task-detail-input">' + escapeHtml(inputText) + '</p>';
+				if (rules.length) detailsHtml += renderAcceptanceRules(rules);
+				if (safeTask.type === 'for_each' && safeTask.forEach && safeTask.forEach.taskTemplate) {
+					var tmpl = safeTask.forEach.taskTemplate;
+					detailsHtml += '<p class="plan-task-detail-input" style="color:#7c3aed">模板: ' + escapeHtml(tmpl.title || '') + '</p>';
+				}
+				detailsHtml += '</div></details>';
+			}
 			return '<div class="plan-task-row">' +
-				'<div class="plan-task-row-head"><span class="plan-task-num">#' + (index + 1) + '</span> ' + escapeHtml(safeTask.title || safeTask.id || '') + metaHtml + '</div>' +
+				'<div class="plan-task-row-head"><span class="plan-task-num">#' + (index + 1) + '</span> ' + typeBadge + escapeHtml(safeTask.title || safeTask.id || '') + metaHtml + '</div>' +
 				detailsHtml +
 				'</div>';
 		}

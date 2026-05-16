@@ -1222,3 +1222,39 @@ test("P14-T1: inline scripts remain valid JavaScript after P14 changes", () => {
 		assert.doesNotThrow(() => new Function(script), "inline script should be valid JS after P14 changes");
 	}
 });
+
+// ── P15: Dynamic task type UI rendering ──
+
+test("P15: plan card renders discovery badge for discovery task", () => {
+	const html = renderTeamPage();
+	const plan = {
+		schemaVersion: "team/plan-1", planId: "plan_dyn_1", title: "Dynamic Plan",
+		defaultTeamUnitId: "tu_1", goal: { text: "discover" },
+		tasks: [
+			{ id: "disc", type: "discovery", title: "Discover items", input: { text: "Find" }, acceptance: { rules: ["JSON"] }, discovery: { outputKey: "items" } },
+			{ id: "proc", type: "for_each", title: "Process", input: { text: "p" }, acceptance: { rules: ["ok"] }, forEach: { itemsFrom: "disc.items", mode: "sequential", taskTemplate: { title: "P {{item.title}}", input: { text: "p" }, acceptance: { rules: ["ok"] } } } },
+		],
+		outputContract: { text: "report" }, archived: false, createdAt: "", updatedAt: "", runCount: 0,
+	};
+	assert.match(html, /discovery/);
+	assert.match(html, /for_each/);
+});
+
+test("P15: plan card renders for_each itemsFrom", () => {
+	const html = renderTeamPage();
+	assert.match(html, /for_each/);
+});
+
+test("P15: old plan without type does not crash UI", () => {
+	const html = renderTeamPage();
+	const plan = {
+		schemaVersion: "team/plan-1", planId: "plan_old", title: "Old Plan",
+		defaultTeamUnitId: "tu_1", goal: { text: "normal" },
+		tasks: [
+			{ id: "t1", title: "Normal task", input: { text: "do" }, acceptance: { rules: ["ok"] } },
+		],
+		outputContract: { text: "out" }, archived: false, createdAt: "", updatedAt: "", runCount: 0,
+	};
+	assert.match(html, /task-row/);
+	assert.ok(!html.includes('type="discovery"'));
+});

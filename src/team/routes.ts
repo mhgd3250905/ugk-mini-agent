@@ -97,7 +97,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 				title: body.title as string,
 				defaultTeamUnitId: body.defaultTeamUnitId as string,
 				goal: body.goal as { text: string },
-				tasks: body.tasks as Array<{ id: string; title: string; input: { text: string; payload?: Record<string, unknown> }; acceptance: { rules: string[] } }>,
+				tasks: body.tasks as any,
 				outputContract: body.outputContract as { text: string },
 			});
 			reply.code(201).send(plan);
@@ -120,7 +120,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			const plan = await planStore.updateEditablePlan(planId, {
 				title: body.title as string | undefined,
 				goal: body.goal as { text: string } | undefined,
-				tasks: body.tasks as Array<{ id: string; title: string; input: { text: string; payload?: Record<string, unknown> }; acceptance: { rules: string[] } }> | undefined,
+				tasks: body.tasks as any,
 				outputContract: body.outputContract as { text: string } | undefined,
 			} as Parameters<typeof planStore.updateEditablePlan>[1]);
 			reply.send(plan);
