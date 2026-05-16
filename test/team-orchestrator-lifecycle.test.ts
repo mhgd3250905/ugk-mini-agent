@@ -8,6 +8,7 @@ import { PlanStore } from "../src/team/plan-store.js";
 import { TeamUnitStore } from "../src/team/team-unit-store.js";
 import { RunWorkspace } from "../src/team/run-workspace.js";
 import { MockRoleRunner } from "../src/team/role-runner.js";
+import type { ProfileAwareTeamRoleRunner, WorkerInput, CheckerInput, WatcherInput, FinalizerInput, WorkerOutput, CheckerOutput, WatcherOutput, FinalizerOutput } from "../src/team/role-runner.js";
 
 async function setup(runnerOverrides: Record<string, unknown[]> = {}) {
 	const root = await mkdtemp(join(tmpdir(), "team-lc-"));
@@ -495,6 +496,147 @@ test("lifecycle: records finalizer runtime context in run state", async () => {
 		assert.equal(result.finalizerRuntimeContext?.resolvedProfileId, "main");
 		assert.equal(result.finalizerRuntimeContext?.fallbackReason, "profile_not_found");
 		assert.equal(result.finalizerRuntimeContext?.browserId, "browser_finalizer");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+// ── P17: profile injection explicit contract ──
+
+class FakeProfileAwareRunner implements ProfileAwareTeamRoleRunner {
+	public injectedProfiles: { workerProfileId: string; checkerProfileId: string; watcherProfileId: string; finalizerProfileId: string } | null = null;
+	public workerCalled = false;
+
+	setProfileIds(profiles: { workerProfileId: string; checkerProfileId: string; watcherProfileId: string; finalizerProfileId: string }): void {
+		this.injectedProfiles = { ...profiles };
+	}
+
+	async runWorker(input: WorkerInput): Promise<WorkerOutput> {
+		this.workerCalled = true;
+		return { content: `worker:${input.task.id}`, artifactRefs: [] };
+	}
+	async runChecker(_input: CheckerInput): Promise<CheckerOutput> {
+		return { verdict: "pass", reason: "ok", resultContent: "accepted" };
+	}
+	async runWatcher(_input: WatcherInput): Promise<WatcherOutput> {
+		return { decision: "accept_task", reason: "ok" };
+	}
+	async runFinalizer(input: FinalizerInput): Promise<FinalizerOutput> {
+		return { finalReport: `report for ${input.runId}` };
+	}
+}
+
+test("P17: orchestrator injects TeamUnit profile IDs via setProfileIds before execution", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p17-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+
+		const unit = await unitStore.create({
+			title: "profile test team",
+			description: "distinct profiles",
+			workerProfileId: "profile-worker",
+			checkerProfileId: "profile-checker",
+			watcherProfileId: "profile-watcher",
+			finalizerProfileId: "profile-finalizer",
+		});
+		const plan = await planStore.create({
+			title: "P17 profile injection",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [{ id: "task_1", title: "t1", input: { text: "do" }, acceptance: { rules: ["r1"] } }],
+			outputContract: { text: "output" },
+		});
+
+		const runner = new FakeProfileAwareRunner();
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace, roleRunner: runner,
+			dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+
+		const state = await orchestrator.createRun(plan.planId);
+		await orchestrator.runToCompletion(state.runId);
+
+		assert.ok(runner.injectedProfiles, "setProfileIds should have been called");
+		assert.equal(runner.injectedProfiles.workerProfileId, "profile-worker");
+		assert.equal(runner.injectedProfiles.checkerProfileId, "profile-checker");
+		assert.equal(runner.injectedProfiles.watcherProfileId, "profile-watcher");
+		assert.equal(runner.injectedProfiles.finalizerProfileId, "profile-finalizer");
+		assert.ok(runner.workerCalled, "worker should have executed after profile injection");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("P17: MockRoleRunner (no setProfileIds) still works via runToCompletion", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p17-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+
+		const unit = await unitStore.create({
+			title: "mock team", description: "d",
+			workerProfileId: "w", checkerProfileId: "c", watcherProfileId: "w", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "P17 mock compat",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [{ id: "task_1", title: "t1", input: { text: "do" }, acceptance: { rules: ["r1"] } }],
+			outputContract: { text: "output" },
+		});
+
+		const runner = new MockRoleRunner();
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace, roleRunner: runner,
+			dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+
+		const state = await orchestrator.createRun(plan.planId);
+		const result = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(result.status, "completed");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("P17: orchestrator.runNextQueued injects TeamUnit profile IDs", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p17-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+
+		const unit = await unitStore.create({
+			title: "queued team", description: "d",
+			workerProfileId: "qp-worker", checkerProfileId: "qp-checker",
+			watcherProfileId: "qp-watcher", finalizerProfileId: "qp-finalizer",
+		});
+		const plan = await planStore.create({
+			title: "P17 queued",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [{ id: "task_1", title: "t1", input: { text: "do" }, acceptance: { rules: ["r1"] } }],
+			outputContract: { text: "output" },
+		});
+
+		const runner = new FakeProfileAwareRunner();
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace, roleRunner: runner,
+			dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+
+		await orchestrator.createRun(plan.planId);
+		const result = await orchestrator.runNextQueued();
+
+		assert.ok(result, "runNextQueued should find and execute the queued run");
+		assert.equal(result!.status, "completed");
+		assert.ok(runner.injectedProfiles, "setProfileIds should have been called");
+		assert.equal(runner.injectedProfiles.workerProfileId, "qp-worker");
+		assert.equal(runner.injectedProfiles.checkerProfileId, "qp-checker");
 	} finally {
 		await rm(root, { recursive: true });
 	}

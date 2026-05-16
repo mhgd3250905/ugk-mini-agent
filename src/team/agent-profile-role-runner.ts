@@ -1,6 +1,6 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { TeamRoleRunner, WorkerInput, WorkerOutput, CheckerInput, CheckerOutput, WatcherInput, WatcherOutput, FinalizerInput, FinalizerOutput } from "./role-runner.js";
+import type { TeamRoleRunner, ProfileAwareTeamRoleRunner, WorkerInput, WorkerOutput, CheckerInput, CheckerOutput, WatcherInput, WatcherOutput, FinalizerInput, FinalizerOutput } from "./role-runner.js";
 import type { TeamTask, TeamPlan, TeamRoleRuntimeContext } from "./types.js";
 import type { BackgroundAgentSessionFactory } from "../agent/background-agent-runner.js";
 import { BackgroundAgentProfileResolver } from "../agent/background-agent-profile.js";
@@ -318,7 +318,7 @@ async function promptWithAbort(session: AgentSessionLike, prompt: string, signal
 	}
 }
 
-export class AgentProfileRoleRunner implements TeamRoleRunner {
+export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 	private readonly options: AgentProfileRoleRunnerOptions;
 	private readonly sessionFactory: BackgroundAgentSessionFactory;
 	private readonly profileResolver: BackgroundAgentProfileResolver;

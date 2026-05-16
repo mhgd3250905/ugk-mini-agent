@@ -2,7 +2,7 @@ import type { TeamRunState, TeamTask, TeamTaskState, TeamPlan } from "./types.js
 import { PlanStore } from "./plan-store.js";
 import { TeamUnitStore } from "./team-unit-store.js";
 import { RunWorkspace } from "./run-workspace.js";
-import type { TeamRoleRunner } from "./role-runner.js";
+import type { TeamRoleRunner, ProfileAwareTeamRoleRunner } from "./role-runner.js";
 import { writeTimingSpan } from "./timing.js";
 import { progressMessages } from "./progress.js";
 import { TaskExpansionPlanner, TemplateTaskExpansionPlanner } from "./task-expansion-planner.js";
@@ -173,8 +173,8 @@ export class TeamOrchestrator {
 		const signal = this.abortController.signal;
 
 		const teamUnit = await this.teamUnitStore.get(state.teamUnitId);
-		if (teamUnit && "setProfileIds" in this.roleRunner) {
-			(this.roleRunner as import("./agent-profile-role-runner.js").AgentProfileRoleRunner).setProfileIds({
+		if (teamUnit && "setProfileIds" in this.roleRunner && typeof (this.roleRunner as ProfileAwareTeamRoleRunner).setProfileIds === "function") {
+			(this.roleRunner as ProfileAwareTeamRoleRunner).setProfileIds({
 				workerProfileId: teamUnit.workerProfileId,
 				checkerProfileId: teamUnit.checkerProfileId,
 				watcherProfileId: teamUnit.watcherProfileId,

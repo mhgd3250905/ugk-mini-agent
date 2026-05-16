@@ -71,6 +71,10 @@ export interface TeamRoleRunner {
 	runFinalizer(input: FinalizerInput): Promise<FinalizerOutput>;
 }
 
+export interface ProfileAwareTeamRoleRunner extends TeamRoleRunner {
+	setProfileIds(profiles: { workerProfileId: string; checkerProfileId: string; watcherProfileId: string; finalizerProfileId: string }): void;
+}
+
 export interface MockRoleRunnerConfig {
 	workerOutputs?: string[];
 	checkerOutputs?: CheckerOutput[];
