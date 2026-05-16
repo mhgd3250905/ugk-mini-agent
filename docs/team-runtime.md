@@ -91,6 +91,8 @@ Plan 支持三种任务类型：
 - 每个 item 必须有稳定的非空字符串 `id` 字段
 - 子任务 ID 格式：`{parentTaskId}__{sanitizedItemId}`
 - 扩展记录持久化在 `runs/<runId>/expansions/<parentTaskId>.json`
+- 扩展记录包含完整子任务定义（`task` 字段），确保 resume/reclaim 后子任务 input/acceptance 不漂移
+- 旧格式记录（无 `task` 字段）仍可读取，fallback 为 title-based input
 - 幂等扩展：pause/resume 不会重复生成子任务
 - `for_each` 父任务状态由子任务结果推导：全部成功→succeeded，有失败→failed
 - 0 个 item 时，`for_each` 直接标记为 succeeded
@@ -101,7 +103,20 @@ Plan 支持三种任务类型：
 |------|------|
 | `src/team/task-expansion-planner.ts` | `TaskExpansionPlanner` 接口和 `TemplateTaskExpansionPlanner` 模板实现 |
 | `src/team/run-workspace.ts` | `writeExpansion` / `readExpansion` / `appendChildTaskStates` 持久化方法 |
-| `src/team/orchestrator.ts` | 按 task type 分发执行：normal / discovery / for_each |
+| `src/team/orchestrator.ts` | 按 task type 分发执行：normal / discovery / for_each；`TaskExpansionPlanner` 通过构造函数注入 |
+
+#### Plan 验证
+
+- `PlanStore.create()` 和 `PlanStore.updateEditablePlan()` 都调用 `validateTasks()` 检查任务列表
+- 未知 `task.type` 被拒绝（只允许 `normal`、`discovery`、`for_each`）
+- `PATCH /v1/team/plans/:planId` 在 `runCount=0` 时验证新 tasks
+- 旧无 type 计划仍兼容（默认 `normal`）
+
+#### 扩展策略注入
+
+- `TeamOrchestratorOptions.taskExpansionPlanner?: TaskExpansionPlanner`
+- 构造函数默认使用 `TemplateTaskExpansionPlanner`
+- 自定义实现可通过选项注入
 
 ### Run
 
@@ -442,7 +457,7 @@ docker compose up -d --scale ugk-pi-team-worker=2  # 多 worker 验证
 | `src/team/config-locks.ts` | 活跃 run 对 Plan / TeamUnit / AgentProfile 的锁计算 |
 | `src/team/agent-profile-role-runner.ts` | 真实 AgentProfile runner |
 | `src/team/role-runner.ts` | mock runner 与 runner interface |
-| `src/team/task-expansion-planner.ts` | 动态任务扩展：模板替换、ID 清洗、重复检测 |
+| `src/team/task-expansion-planner.ts` | 动态任务扩展：`TaskExpansionPlanner` 接口、`TemplateTaskExpansionPlanner` 模板实现 |
 | `src/team/ids.ts` | ID 生成 |
 | `src/team/path-refs.ts` | resultRef 路径验证和解析 |
 | `src/team/progress.ts` | progress phase/message 常量 |
@@ -475,6 +490,7 @@ docker compose up -d --scale ugk-pi-team-worker=2  # 多 worker 验证
   - 任务进度条 + 成功/失败/取消统计
   - SSE 实时更新（active run 自动订阅，terminal 自动断开）
   - 展开/收起任务详情表格
+  - 动态生成的子任务在父任务下方以「子任务」分组展示，ID 和标签经 HTML 转义
   - 活跃运行排在列表前面
   - 空状态包含下一步操作引导
 - **运行操作**：

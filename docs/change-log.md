@@ -12,6 +12,25 @@
 
 ---
 
+## 2026-05-17 — P15 Review Fixes
+
+- **主题**: 修复 P15 Dynamic Task Expansion 的 4 个审核问题
+- **影响范围**: `src/team/types.ts`, `src/team/plan-store.ts`, `src/team/orchestrator.ts`, `src/team/task-expansion-planner.ts`, `src/ui/team-page.ts`, `test/team-*.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - Finding 1: `TaskExpansionRecord.children[]` 持久化完整 `TeamTask` 定义；resume/reclaim 后子任务 input/acceptance 不漂移；旧格式记录兼容
+  - Finding 2: Run detail UI 显示动态生成的子任务 attempts，以「子任务」分组
+  - Finding 3: `PlanStore.create()` 和 `updateEditablePlan()` 拒绝未知 `task.type`；PATCH 在 `runCount=0` 时验证 tasks
+  - Finding 4: `TeamOrchestratorOptions` 接受 `taskExpansionPlanner` 注入；默认使用 `TemplateTaskExpansionPlanner`
+- **提交**:
+  - `53cc573 fix(team): preserve generated child task definitions`
+  - `c1dfc5e fix(team): validate dynamic plan tasks on update`
+  - `f980451 fix(team): inject task expansion planner`
+  - `867c356 fix(team-ui): show generated child task attempts`
+  - `docs(team): document dynamic expansion fixes`
+- **测试**: `npm run test:team` 全量通过，新增 13 个回归测试
+
+---
+
 ## 2026-05-16 — P15: Dynamic Task Expansion
 
 - **主题**: Team Runtime 支持运行时动态任务扩展：discovery 任务发现未知数量的 item，for_each 任务按模板展开为子任务
