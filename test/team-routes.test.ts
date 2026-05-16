@@ -379,3 +379,51 @@ test("POST plan rejects for_each without mode sequential", async () => {
 		try { await rm(root, { recursive: true, force: true }); } catch {}
 	}
 });
+
+// ── P15 Review Fix: unknown task type validation ──
+
+test("POST plan rejects unknown task.type", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+		const unitId = unitRes.json().teamUnitId;
+		const res = await app.inject({ method: "POST", url: "/v1/team/plans", payload: {
+			title: "Bad type",
+			defaultTeamUnitId: unitId,
+			goal: { text: "test" },
+			tasks: [
+				{ id: "t1", type: "custom" as any, title: "Custom", input: { text: "x" }, acceptance: { rules: ["ok"] } },
+			],
+			outputContract: { text: "out" },
+		}});
+		assert.equal(res.statusCode, 400);
+		assert.match(res.json().error, /unknown task type/);
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch {}
+	}
+});
+
+test("PATCH plan rejects unknown task.type when runCount=0", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+		const unitId = unitRes.json().teamUnitId;
+		const createRes = await app.inject({ method: "POST", url: "/v1/team/plans", payload: {
+			title: "Valid",
+			defaultTeamUnitId: unitId,
+			goal: { text: "test" },
+			tasks: [{ id: "t1", title: "T", input: { text: "x" }, acceptance: { rules: ["ok"] } }],
+			outputContract: { text: "out" },
+		}});
+		const planId = createRes.json().planId;
+		const res = await app.inject({ method: "PATCH", url: `/v1/team/plans/${planId}`, payload: {
+			tasks: [{ id: "t1", type: "bogus" as any, title: "Bogus", input: { text: "x" }, acceptance: { rules: ["ok"] } }],
+		}});
+		assert.equal(res.statusCode, 400);
+		assert.match(res.json().error, /unknown task type/);
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch {}
+	}
+});

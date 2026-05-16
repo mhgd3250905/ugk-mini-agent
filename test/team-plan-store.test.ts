@@ -337,3 +337,63 @@ test("duplicate static task ids are still rejected", async () => {
 		await rm(root, { recursive: true });
 	}
 });
+
+// ── P15 Review Fix: unknown task type validation ──
+
+test("PlanStore.create rejects unknown task.type", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		await assert.rejects(
+			() => store.create({
+				...validInput,
+				tasks: [{
+					id: "t1", type: "custom_type" as any, title: "Custom",
+					input: { text: "do" }, acceptance: { rules: ["ok"] },
+				}],
+			}),
+			{ message: /unknown task type/ },
+		);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("PlanStore.updateEditablePlan validates tasks when runCount=0", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		const plan = await store.create(validInput);
+		await assert.rejects(
+			() => store.updateEditablePlan(plan.planId, {
+				tasks: [{
+					id: "t1", type: "unknown_type" as any, title: "Bad",
+					input: { text: "x" }, acceptance: { rules: ["ok"] },
+				}],
+			}),
+			{ message: /unknown task type/ },
+		);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("PlanStore.updateEditablePlan accepts valid dynamic tasks when runCount=0", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		const plan = await store.create(validInput);
+		const updated = await store.updateEditablePlan(plan.planId, {
+			tasks: [
+				{
+					id: "discover", type: "discovery", title: "Discover",
+					input: { text: "Find" }, acceptance: { rules: ["ok"] },
+					discovery: { outputKey: "items" },
+				},
+			],
+		});
+		assert.equal(updated.tasks[0]!.type, "discovery");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
