@@ -39,6 +39,70 @@
 - `outputContract` — 最终输出格式
 - `runCount` — 已产生的 run 数量；`runCount > 0` 后任务主体不可改
 
+### Dynamic Task Expansion (P15)
+
+Plan 支持三种任务类型：
+
+- `normal`（默认）— 标准 worker→checker→watcher 顺序执行
+- `discovery` — 执行标准 worker→checker→watcher 循环，但输出被期望为包含可提取 JSON 的内容。JSON 中由 `discovery.outputKey` 指定的键值是一个数组，提供给下游 `for_each` 任务。
+- `for_each` — 运行时动态扩展：根据上游 `discovery` 任务发现的 item 数组，从模板生成子任务。所有子任务顺序执行，每个子任务经历完整的 worker→checker→watcher 生命周期。
+
+#### discovery 任务
+
+```json
+{
+  "id": "discover",
+  "type": "discovery",
+  "title": "Discover items",
+  "input": { "text": "Find all items related to X" },
+  "acceptance": { "rules": ["output is valid JSON with 'items' array"] },
+  "discovery": { "outputKey": "items" }
+}
+```
+
+- `discovery.outputKey`（必填）— worker 输出 JSON 中包含 item 数组的键名
+- worker 输出必须包含可提取的 JSON（raw JSON、fenced code block、或 brace-matched）
+- 系统按 `outputKey` 提取数组后，供 `for_each` 任务引用
+
+#### for_each 任务
+
+```json
+{
+  "id": "process_each",
+  "type": "for_each",
+  "title": "Process each item",
+  "input": { "text": "Placeholder" },
+  "acceptance": { "rules": ["ok"] },
+  "forEach": {
+    "itemsFrom": "discover.items",
+    "mode": "sequential",
+    "taskTemplate": {
+      "title": "Process {{item.title}}",
+      "input": { "text": "Process item {{item.id}}" },
+      "acceptance": { "rules": ["output valid for {{item.id}}"] }
+    }
+  }
+}
+```
+
+- `forEach.itemsFrom`（必填）— dot-path 格式 `{upstreamTaskId}.{outputKey}`
+- `forEach.mode`（必填）— 当前仅支持 `"sequential"`
+- `forEach.taskTemplate`（必填）— 子任务模板，支持 `{{item.id}}`、`{{item.title}}`、`{{item}}`（完整 JSON）占位符
+- 每个 item 必须有稳定的非空字符串 `id` 字段
+- 子任务 ID 格式：`{parentTaskId}__{sanitizedItemId}`
+- 扩展记录持久化在 `runs/<runId>/expansions/<parentTaskId>.json`
+- 幂等扩展：pause/resume 不会重复生成子任务
+- `for_each` 父任务状态由子任务结果推导：全部成功→succeeded，有失败→failed
+- 0 个 item 时，`for_each` 直接标记为 succeeded
+
+#### 实现组件
+
+| 文件 | 职责 |
+|------|------|
+| `src/team/task-expansion-planner.ts` | `TaskExpansionPlanner` 接口和 `TemplateTaskExpansionPlanner` 模板实现 |
+| `src/team/run-workspace.ts` | `writeExpansion` / `readExpansion` / `appendChildTaskStates` 持久化方法 |
+| `src/team/orchestrator.ts` | 按 task type 分发执行：normal / discovery / for_each |
+
 ### Run
 
 一次 Plan 的执行实例。生命周期：
@@ -361,23 +425,24 @@ docker compose up -d --scale ugk-pi-team-worker=2  # 多 worker 验证
 验证结果：
 
 - `npx tsc --noEmit`：通过
-- `npm run test:team`：101 pass（P1.5 后更新为 133 pass）
+- `npm run test:team`：101 pass（P1.5 后 133 pass，P15 后 169 pass）
 - `npm test`：819 pass
 
 ## 文件清单
 
 | 文件 | 职责 |
 |------|------|
-| `src/team/types.ts` | TeamUnit / Plan / Run / role result 类型 |
+| `src/team/types.ts` | TeamUnit / Plan / Run / role result 类型（含 discovery / for_each task types） |
 | `src/team/routes.ts` | v2 TeamUnit / Plan / Run / SSE / Attempt HTTP API |
-| `src/team/orchestrator.ts` | run 创建、状态迁移、worker/checker/watcher/finalizer 编排 |
-| `src/team/run-workspace.ts` | run 目录、state、attempt、resultRef、final-report、attempt 文件读取 持久化 |
+| `src/team/orchestrator.ts` | run 创建、状态迁移、worker/checker/watcher/finalizer 编排（含 discovery / for_each 动态扩展） |
+| `src/team/run-workspace.ts` | run 目录、state、attempt、resultRef、final-report、attempt 文件读取、expansion 持久化 |
 | `src/team/run-state-events.ts` | 进程内 run state 变更通知（subscribe/notify） |
 | `src/team/team-unit-store.ts` | TeamUnit 存储 |
 | `src/team/plan-store.ts` | Plan 存储和 runCount 不变式 |
 | `src/team/config-locks.ts` | 活跃 run 对 Plan / TeamUnit / AgentProfile 的锁计算 |
 | `src/team/agent-profile-role-runner.ts` | 真实 AgentProfile runner |
 | `src/team/role-runner.ts` | mock runner 与 runner interface |
+| `src/team/task-expansion-planner.ts` | 动态任务扩展：模板替换、ID 清洗、重复检测 |
 | `src/team/ids.ts` | ID 生成 |
 | `src/team/path-refs.ts` | resultRef 路径验证和解析 |
 | `src/team/progress.ts` | progress phase/message 常量 |

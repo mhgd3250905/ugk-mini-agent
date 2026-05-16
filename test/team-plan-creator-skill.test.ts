@@ -79,3 +79,32 @@ test("team-plan-creator skill does not auto-activate on casual team plan mention
 	assert.match(skill, /团队计划/);
 	assert.match(skill, /ask whether they want to start with "\/team-plan"/);
 });
+
+test("team-plan-creator skill documents discovery task type", async () => {
+	const skill = await readSkill();
+	assert.match(skill, /discovery/);
+	assert.match(skill, /outputKey/);
+});
+
+test("team-plan-creator skill documents for_each task type", async () => {
+	const skill = await readSkill();
+	assert.match(skill, /for_each/);
+	assert.match(skill, /itemsFrom/);
+	assert.match(skill, /taskTemplate/);
+});
+
+test("team-plan-creator skill documents template placeholders", async () => {
+	const skill = await readSkill();
+	assert.match(skill, /\{\{item\.id\}\}/);
+	assert.match(skill, /\{\{item\.title\}\}/);
+});
+
+test("team-plan-creator skill documents sequential mode requirement", async () => {
+	const skill = await readSkill();
+	assert.match(skill, /sequential/);
+});
+
+test("team-plan-creator skill recommends discovery+for_each for unknown item counts", async () => {
+	const skill = await readSkill();
+	assert.match(skill, /not known at plan creation time|unknown.*number/i);
+});

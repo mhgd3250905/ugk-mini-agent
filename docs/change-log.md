@@ -12,6 +12,30 @@
 
 ---
 
+## 2026-05-16 — P15: Dynamic Task Expansion
+
+- **主题**: Team Runtime 支持运行时动态任务扩展：discovery 任务发现未知数量的 item，for_each 任务按模板展开为子任务
+- **影响范围**: `src/team/types.ts`, `src/team/plan-store.ts`, `src/team/task-expansion-planner.ts`（新增）, `src/team/run-workspace.ts`, `src/team/orchestrator.ts`, `src/team/routes.ts`, `src/ui/team-page.ts`, `.pi/skills/team-plan-creator/SKILL.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - 新增三种任务类型：`normal`（默认）、`discovery`（发现 item）、`for_each`（按模板展开子任务）
+  - `TaskExpansionRecord` 持久化扩展记录到 `runs/<runId>/expansions/<parentTaskId>.json`
+  - `TemplateTaskExpansionPlanner`：模板替换（`{{item.id}}`/`{{item.title}}`/`{{item}}`）、ID 清洗、重复检测
+  - Orchestrator 按 task type 分发：discovery 提取 JSON 结果，for_each 动态生成子任务并顺序执行
+  - 幂等扩展：pause/resume 不重复生成子任务；0 item 时 for_each 标记 succeeded
+  - Plan Store 验证扩展：discovery 必须有 outputKey，for_each 必须有 itemsFrom + mode=sequential + taskTemplate
+  - UI 渲染：discovery 显示蓝色 badge，for_each 显示紫色 badge + itemsFrom 引用
+  - Skill 文档：新增 Task types 章节，包含 discovery/for_each 示例
+- **提交**:
+  - `feat(team): add dynamic task schema`
+  - `feat(team): add template task expansion planner`
+  - `feat(team): persist dynamic task expansions`
+  - `feat(team): execute sequential dynamic task expansion`
+  - `feat(team-ui): render dynamic task plans and runs`
+  - `docs(team): document dynamic task expansion`
+- **测试**: `npm run test:team` (169 pass), 42 个新增测试覆盖类型、验证、扩展规划、持久化、编排、路由、UI
+
+---
+
 ## 2026-05-16 — P14: Compact Plan Card Layout
 
 - **主题**: `/playground/team` 计划卡片从文本墙升级为紧凑、分层、可扫描的信息架构

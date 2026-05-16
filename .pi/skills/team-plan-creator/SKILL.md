@@ -90,6 +90,107 @@ POST /v1/team/plans
 
 Tasks execute sequentially. Each task goes through worker → checker → watcher phases.
 
+## Task types
+
+Plans support three task types:
+
+### normal (default)
+
+Standard sequential task. Each task goes through worker → checker → watcher.
+
+```json
+{
+  "id": "task_1",
+  "title": "任务标题",
+  "input": { "text": "任务详细描述" },
+  "acceptance": { "rules": ["验收标准1"] }
+}
+```
+
+### discovery
+
+A discovery task runs the worker→checker→watcher cycle, but its output is expected to contain JSON with an array of discovered items. The discovered items feed into a downstream `for_each` task.
+
+```json
+{
+  "id": "discover_domains",
+  "type": "discovery",
+  "title": "Discover relevant domains",
+  "input": { "text": "Search for all domains related to the keyword" },
+  "acceptance": { "rules": ["output is valid JSON with an 'items' array"] },
+  "discovery": { "outputKey": "items" }
+}
+```
+
+- `discovery.outputKey` — the JSON key whose value is the array of items (required).
+- The worker output must contain extractable JSON. The system extracts the array at `outputKey` and makes it available to `for_each` tasks.
+
+### for_each
+
+A `for_each` task expands dynamically at run time: for each item discovered by an upstream `discovery` task, it generates a child task from a template. All children run sequentially.
+
+```json
+{
+  "id": "process_each",
+  "type": "for_each",
+  "title": "Process each discovered item",
+  "input": { "text": "Placeholder — replaced by template" },
+  "acceptance": { "rules": ["output is valid"] },
+  "forEach": {
+    "itemsFrom": "discover_domains.items",
+    "mode": "sequential",
+    "taskTemplate": {
+      "title": "Process {{item.title}}",
+      "input": { "text": "Analyze item {{item.id}} in detail" },
+      "acceptance": { "rules": ["output contains analysis for {{item.id}}"] }
+    }
+  }
+}
+```
+
+- `forEach.itemsFrom` — dot-path referencing `{upstreamTaskId}.{outputKey}` (required).
+- `forEach.mode` — must be `"sequential"` (required; parallel not yet supported).
+- `forEach.taskTemplate` — template for each child task (required). Supports `{{item.id}}`, `{{item.title}}`, and `{{item}}` (full JSON) placeholders.
+- Each discovered item must have a stable non-empty string `id` field.
+- Child task IDs are `{parentTaskId}__{sanitizedItemId}`.
+- Each child runs the full worker → checker → watcher lifecycle independently.
+
+### Example: discovery + for_each plan
+
+```json
+{
+  "title": "Domain investigation",
+  "goal": { "text": "Investigate all domains for a given keyword" },
+  "tasks": [
+    {
+      "id": "discover",
+      "type": "discovery",
+      "title": "Discover domains",
+      "input": { "text": "Find all domains related to the target keyword" },
+      "acceptance": { "rules": ["output is valid JSON with 'items' array"] },
+      "discovery": { "outputKey": "domains" }
+    },
+    {
+      "id": "analyze_each",
+      "type": "for_each",
+      "title": "Analyze each domain",
+      "input": { "text": "Placeholder" },
+      "acceptance": { "rules": ["ok"] },
+      "forEach": {
+        "itemsFrom": "discover.domains",
+        "mode": "sequential",
+        "taskTemplate": {
+          "title": "Analyze {{item.title}}",
+          "input": { "text": "Investigate domain {{item.id}}" },
+          "acceptance": { "rules": ["report includes domain status"] }
+        }
+      }
+    }
+  ],
+  "outputContract": { "text": "Summary report of all domain investigations" }
+}
+```
+
 ## Task splitting rules
 
 - One task = one coherent unit of work with a clear deliverable.
@@ -98,6 +199,7 @@ Tasks execute sequentially. Each task goes through worker → checker → watche
 - `outputContract.text` must clearly describe the expected final format and content.
 - Avoid tasks that are too broad (one task should not try to do everything) or too narrow (one task per trivial step).
 - If a task depends on a previous task's output, state the dependency in `input.text`.
+- Use `discovery` + `for_each` when the number of work items is not known at plan creation time (e.g., "search and then process each result").
 
 ## Prohibitions
 
