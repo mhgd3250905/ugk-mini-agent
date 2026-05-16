@@ -293,3 +293,141 @@ test("for_each child results individually persisted", async () => {
 		await rm(root, { recursive: true });
 	}
 });
+
+// ── P15 Review Fix: child task input/acceptance preservation ──
+
+class InputCaptureMockRunner extends MockRoleRunner {
+	readonly capturedInputs: Array<{ taskId: string; inputText: string; acceptanceRules: string[] }> = [];
+
+	async runWorker(input: import("../src/team/role-runner.js").WorkerInput): Promise<import("../src/team/role-runner.js").WorkerOutput> {
+		this.capturedInputs.push({
+			taskId: input.task.id,
+			inputText: input.task.input.text,
+			acceptanceRules: input.task.acceptance.rules,
+		});
+		if (input.task.type === "discovery") {
+			return { content: JSON.stringify({ items: [{ id: "x", title: "X" }] }), artifactRefs: [] };
+		}
+		return { content: `done ${input.task.id}`, artifactRefs: [] };
+	}
+
+	async runChecker(input: import("../src/team/role-runner.js").CheckerInput): Promise<import("../src/team/role-runner.js").CheckerOutput> {
+		if (input.task.type === "discovery") {
+			return { verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: [{ id: "x", title: "X" }] }) };
+		}
+		return { verdict: "pass", reason: "ok", resultContent: "accepted" };
+	}
+}
+
+test("expansion record persists full child task definitions after initial run", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const runner = new DiscoveryMockRunner(JSON.stringify({ items: [{ id: "alpha", title: "Alpha" }] }));
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "full child def",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{
+					id: "discover", type: "discovery", title: "Discover",
+					input: { text: "Find" }, acceptance: { rules: ["ok"] },
+					discovery: { outputKey: "items" },
+				},
+				{
+					id: "process", type: "for_each", title: "Process",
+					input: { text: "p" }, acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "discover.items", mode: "sequential",
+						taskTemplate: {
+							title: "Process {{item.title}}",
+							input: { text: "Detailed analysis for {{item.id}}" },
+							acceptance: { rules: ["must mention {{item.id}}", "include risk score"] },
+						},
+					},
+				},
+			],
+			outputContract: { text: "report" },
+		});
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: runner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+		const state = await orchestrator.createRun(plan.planId);
+		await orchestrator.runToCompletion(state.runId);
+
+		const expansion = await workspace.readExpansion(state.runId, "process");
+		assert.ok(expansion);
+		const childEntry = expansion.children[0];
+		assert.ok(childEntry);
+		assert.ok("task" in childEntry && childEntry.task, "child entry should have full task definition");
+		assert.equal(childEntry.task!.input.text, "Detailed analysis for alpha");
+		assert.deepEqual(childEntry.task!.acceptance.rules, ["must mention alpha", "include risk score"]);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("resume uses original generated input.text, not title fallback", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const captureRunner = new InputCaptureMockRunner();
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "resume input test",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{
+					id: "discover", type: "discovery", title: "Discover",
+					input: { text: "Find" }, acceptance: { rules: ["ok"] },
+					discovery: { outputKey: "items" },
+				},
+				{
+					id: "process", type: "for_each", title: "Process",
+					input: { text: "p" }, acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "discover.items", mode: "sequential",
+						taskTemplate: {
+							title: "Process {{item.title}}",
+							input: { text: "Custom input for {{item.id}} with specifics" },
+							acceptance: { rules: ["rule A for {{item.id}}", "rule B"] },
+						},
+					},
+				},
+			],
+			outputContract: { text: "report" },
+		});
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: captureRunner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+		const state = await orchestrator.createRun(plan.planId);
+		await orchestrator.runToCompletion(state.runId);
+
+		const childCalls = captureRunner.capturedInputs.filter(c => c.taskId === "process__x");
+		assert.equal(childCalls.length, 1, "child task should have been called exactly once");
+		assert.equal(childCalls[0]!.inputText, "Custom input for x with specifics",
+			"resume path should use original generated input.text, not title");
+		assert.deepEqual(childCalls[0]!.acceptanceRules, ["rule A for x", "rule B"],
+			"resume path should preserve original acceptance.rules");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});

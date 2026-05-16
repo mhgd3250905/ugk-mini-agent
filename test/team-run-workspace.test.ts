@@ -446,3 +446,71 @@ test("appendChildTaskStates is idempotent for duplicate child ids", async () => 
 		await rm(root, { recursive: true });
 	}
 });
+
+// ── P15 Review Fix: Full child task persistence ──
+
+test("expansion record persists full generated child task definitions", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		const record: import("../src/team/types.js").TaskExpansionRecord = {
+			schemaVersion: "team/task-expansion-1",
+			parentTaskId: "task_1",
+			itemsFrom: "discover.items",
+			expandedAt: new Date().toISOString(),
+			children: [
+				{
+					taskId: "task_1__a",
+					sourceItemId: "a",
+					title: "Process Alpha",
+					task: {
+						id: "task_1__a",
+						type: "normal",
+						title: "Process Alpha",
+						input: { text: "Detailed analysis for item Alpha with context" },
+						acceptance: { rules: ["report mentions Alpha", "includes risk score"] },
+						parentTaskId: "task_1",
+						sourceItemId: "a",
+						generated: true,
+					},
+				},
+			],
+		};
+		await ws.writeExpansion(state.runId, record);
+		const loaded = await ws.readExpansion(state.runId, "task_1");
+		assert.ok(loaded);
+		assert.equal(loaded.children[0]!.taskId, "task_1__a");
+		const child = loaded.children[0];
+		assert.ok("task" in child && child.task, "expansion record should include full task definition");
+		assert.equal(child.task!.input.text, "Detailed analysis for item Alpha with context");
+		assert.deepEqual(child.task!.acceptance.rules, ["report mentions Alpha", "includes risk score"]);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("expansion record with old minimal shape still reads without crashing", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		// Write old-format expansion without task field
+		const record: import("../src/team/types.js").TaskExpansionRecord = {
+			schemaVersion: "team/task-expansion-1",
+			parentTaskId: "task_1",
+			itemsFrom: "discover.items",
+			expandedAt: new Date().toISOString(),
+			children: [
+				{ taskId: "task_1__old", sourceItemId: "old", title: "Old Format" },
+			],
+		};
+		await ws.writeExpansion(state.runId, record);
+		const loaded = await ws.readExpansion(state.runId, "task_1");
+		assert.ok(loaded);
+		assert.equal(loaded.children[0]!.taskId, "task_1__old");
+		assert.equal(loaded.children[0]!.title, "Old Format");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});

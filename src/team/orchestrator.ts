@@ -855,16 +855,18 @@ export class TeamOrchestrator {
 			let childTasks: TeamTask[];
 
 			if (existing) {
-				childTasks = existing.children.map(c => ({
-					id: c.taskId,
-					type: "normal" as const,
-					title: c.title,
-					input: { text: c.title },
-					acceptance: { rules: ["output is valid"] },
-					parentTaskId: task.id,
-					sourceItemId: c.sourceItemId,
-					generated: true,
-				}));
+				childTasks = existing.children.map(c =>
+					c.task ?? {
+						id: c.taskId,
+						type: "normal" as const,
+						title: c.title,
+						input: { text: c.title },
+						acceptance: { rules: ["output is valid"] },
+						parentTaskId: task.id,
+						sourceItemId: c.sourceItemId,
+						generated: true,
+					}
+				);
 			} else {
 				const items = this.resolveDiscoveryItems(task.forEach.itemsFrom, discoveryResults);
 				if (items === null) {
@@ -896,6 +898,7 @@ export class TeamOrchestrator {
 						taskId: c.id,
 						sourceItemId: c.sourceItemId ?? "",
 						title: c.title,
+						task: c,
 					})),
 				});
 				await this.workspace.appendChildTaskStates(state.runId, childTasks);
@@ -960,16 +963,18 @@ export class TeamOrchestrator {
 		): Promise<void> {
 			const existing = await this.workspace.readExpansion(state.runId, task.id);
 			if (!existing) return;
-			const childTasks: TeamTask[] = existing.children.map(c => ({
-				id: c.taskId,
-				type: "normal" as const,
-				title: c.title,
-				input: { text: c.title },
-				acceptance: { rules: ["output is valid"] },
-				parentTaskId: task.id,
-				sourceItemId: c.sourceItemId,
-				generated: true,
-			}));
+			const childTasks: TeamTask[] = existing.children.map(c =>
+				c.task ?? {
+					id: c.taskId,
+					type: "normal" as const,
+					title: c.title,
+					input: { text: c.title },
+					acceptance: { rules: ["output is valid"] },
+					parentTaskId: task.id,
+					sourceItemId: c.sourceItemId,
+					generated: true,
+				}
+			);
 			for (const child of childTasks) {
 				state = (await this.workspace.getState(state.runId))!;
 				if (state.status !== "running" || this.shouldStop(state)) break;
