@@ -12,6 +12,28 @@
 
 ---
 
+## 2026-05-17 — P17 Team Browser Binding Audit
+
+- **主题**: Team Runtime 多 AgentProfile 多浏览器绑定确定性审计
+- **影响范围**: `src/team/role-runner.ts`, `src/team/orchestrator.ts`, `src/team/agent-profile-role-runner.ts`, `test/team-orchestrator-lifecycle.test.ts`, `test/team-agent-profile-runner.test.ts`, `test/team-worker.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - 新增 `ProfileAwareTeamRoleRunner` 接口，替代 `orchestrator` 中对 `AgentProfileRoleRunner` 的 class cast
+  - 证明 orchestrator 在执行前通过 `setProfileIds` 注入 TeamUnit 的 4 个 profile ID
+  - 证明 worker/checker/watcher/finalizer 分别解析各自的 profile，获得不同的 browserId 和 browserScope
+  - 证明 route setup/cleanup/clear 使用匹配的 scope 和 browserId
+  - 证明 attempt metadata 和 finalizerRuntimeContext 正确持久化角色浏览器绑定
+  - 证明 worker 构造时的 `main` 占位符会被 TeamUnit profile IDs 覆盖
+  - 不引入新的浏览器调度系统、不改变 Chrome sidecar 拓扑、不复制 cookie
+- **提交**:
+  - `cda3534 test(team): cover team unit profile injection`
+  - `29cb593 test(team): cover multi-role browser bindings`
+  - `8099afa test(team): persist role browser runtime context`
+  - `ecd05f0 test(team-worker): cover real runner profile browser routing`
+  - `docs(team): document multi-profile browser binding audit`
+- **测试**: `npm run test:team` 新增 13 个测试
+
+---
+
 ## 2026-05-17 — P16 Dynamic Plan Authoring UX
 
 - **主题**: Team Console 动态计划创作 UI + `/team-plan` 技能指导强化
