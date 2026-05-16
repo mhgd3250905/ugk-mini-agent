@@ -477,8 +477,11 @@ docker compose up -d --scale ugk-pi-team-worker=2  # 多 worker 验证
 - **计划管理**：
   - 页面内 modal 表单创建计划（名称、目标、任务、验收标准、输出契约）
   - 验收标准按行拆分为 `acceptance.rules`
+  - 两种创建模式：**普通计划**（单任务顺序执行）、**发现后逐项处理**（discovery + for_each 动态计划）
+  - 动态模式：填写发现任务和子任务模板，自动生成 canonical Plan JSON，预览后再提交
   - 结构化 Plan 卡片：每个计划直接展示 goal、outputContract、每个 Task 的 title / input.text 摘要 / acceptance.rules 验收标准清单
   - P14 紧凑信息架构：卡片默认展示标题+芯片（任务数/运行数），goal/output 截断为摘要行，任务行显示元数据（字数/验收数），长文本通过 `<details>` 折叠
+  - 动态计划卡片：紧凑展示 discovery → for_each 结构，outputKey / itemsFrom / 子任务模板通过 `<details>` 折叠
   - 长任务列表默认展示 3 个，超过时显示「展开全部任务」按钮
   - 「查看 JSON」弹层：使用 `textContent` 安全展示完整 Plan JSON
   - 删除未使用计划（需确认）
@@ -561,6 +564,9 @@ Cancel/pause always takes priority over phase timeout — if a run is already ca
 3. **默认单活跃 run** — `TEAM_MAX_CONCURRENT_RUNS` 默认为 `1`，即全局只允许一个 queued/running/paused run。设置为更大的值可允许并发 active run，但单个 worker 进程仍顺序执行；多 worker 进程可通过 lease 机制分别 claim 不同的 queued run。
 4. **Timeout 60 分钟** — 超时 run 标记为 failed。
 5. **浏览器实例由既有 browser registry/env 决定** — Team 复用 chat/conn 的 browser binding 链路，不负责创建或调度 Chrome profile。多个 role 是否真正落到不同浏览器实例，取决于 AgentProfile 的 `defaultBrowserId` 与 `UGK_BROWSER_INSTANCES_JSON` 等既有配置。
+6. **动态计划仅支持 discovery → for_each 常见模式** — UI builder 覆盖「先发现再逐项处理」的标准场景；高级 plan 结构（如多 discovery、嵌套 for_each）仍需通过 JSON/API 直接创建。
+7. **for_each 仅顺序执行** — 并行执行和嵌套 for_each 尚未支持。
+8. **无 AgentTaskExpansionPlanner** — 动态任务扩展目前使用模板展开（`TemplateTaskExpansionPlanner`），尚无 AI 驱动的智能扩展。
 
 ## 后续计划
 

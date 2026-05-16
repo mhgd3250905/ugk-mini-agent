@@ -108,3 +108,18 @@ test("team-plan-creator skill recommends discovery+for_each for unknown item cou
 	const skill = await readSkill();
 	assert.match(skill, /not known at plan creation time|unknown.*number/i);
 });
+
+test("P16-T4: skill prohibits guessing static task counts for unknown item sets", async () => {
+	const skill = await readSkill();
+	assert.match(skill, /do not guess|must not guess|禁止猜测|不要猜测/i);
+});
+
+test("P16-T4: skill requires discovery output to contain stable item ids", async () => {
+	const skill = await readSkill();
+	assert.match(skill, /stable.*id|stable.*non-empty.*id/i);
+});
+
+test("P16-T4: skill dynamic example is generic not domain-specific", async () => {
+	const skill = await readSkill();
+	assert.doesNotMatch(skill, /乔峰|Qiao Feng|qiaofeng/i);
+});

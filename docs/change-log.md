@@ -12,6 +12,25 @@
 
 ---
 
+## 2026-05-17 — P16 Dynamic Plan Authoring UX
+
+- **主题**: Team Console 动态计划创作 UI + `/team-plan` 技能指导强化
+- **影响范围**: `src/ui/team-page.ts`, `test/team-page-ui.test.ts`, `test/team-routes.test.ts`, `.pi/skills/team-plan-creator/SKILL.md`, `test/team-plan-creator-skill.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - 计划创建 modal 支持两种模式：普通计划 / 发现后逐项处理
+  - 动态模式自动生成 discovery + for_each canonical Plan JSON，预览后再提交
+  - 动态计划卡片：紧凑展示 discovery → for_each 结构，子任务模板可折叠
+  - `/team-plan` 技能新增「禁止猜测未知数量静态任务」规则
+  - 已知限制文档补充：UI builder 仅覆盖 discovery → for_each 标准场景
+- **提交**:
+  - `6bb09b7 feat(team-ui): add dynamic plan authoring mode`
+  - `3bf230f feat(team-ui): create dynamic plans from console`
+  - `69f0bf8 style(team-ui): clarify dynamic plan cards`
+  - `docs(team): refine dynamic plan creator guidance`
+- **测试**: `npm run test:team` 全量通过，新增 14 个测试
+
+---
+
 ## 2026-05-17 — P15 Review Fixes
 
 - **主题**: 修复 P15 Dynamic Task Expansion 的 4 个审核问题

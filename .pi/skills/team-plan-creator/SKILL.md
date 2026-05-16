@@ -200,6 +200,7 @@ A `for_each` task expands dynamically at run time: for each item discovered by a
 - Avoid tasks that are too broad (one task should not try to do everything) or too narrow (one task per trivial step).
 - If a task depends on a previous task's output, state the dependency in `input.text`.
 - Use `discovery` + `for_each` when the number of work items is not known at plan creation time (e.g., "search and then process each result").
+- **Do not guess** an arbitrary number of static tasks when the real item count is unknown. Use `discovery` + `for_each` instead of hard-coding N placeholder tasks.
 
 ## Prohibitions
 
