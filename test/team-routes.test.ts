@@ -467,7 +467,7 @@ test("P16-T2: API rejects dynamic plan with empty child template acceptance rule
 		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
 		const unitId = unitRes.json().teamUnitId;
 		const body = dynamicPlanBody(unitId);
-		body.tasks[1].forEach.taskTemplate.acceptance = { rules: [] };
+		body.tasks[1]!.forEach!.taskTemplate!.acceptance = { rules: [] };
 		const res = await app.inject({ method: "POST", url: "/v1/team/plans", payload: body });
 		assert.equal(res.statusCode, 400);
 		assert.match(res.json().error, /acceptance/i);

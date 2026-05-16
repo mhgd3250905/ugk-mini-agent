@@ -1451,3 +1451,98 @@ test("P16-T1: for_each itemsFrom is derived from discovery task id + output key"
 			assert.doesNotThrow(() => new Function(script), "inline script should be valid JS");
 		}
 	});
+
+	// ── P16 Task 3: Dynamic plan card information hierarchy ──
+
+	test("P16-T3: dynamic plan card shows compact discovery-foreach structure", () => {
+		const renderPlanCard = extractRenderPlanCard();
+		const plan = {
+			planId: "plan_dyn", title: "Dynamic Plan", goal: { text: "discover and process" },
+			tasks: [
+				{ id: "disc", type: "discovery", title: "Discover items", input: { text: "Find items" }, acceptance: { rules: ["JSON"] }, discovery: { outputKey: "items" } },
+				{ id: "proc", type: "for_each", title: "Process", input: { text: "p" }, acceptance: { rules: ["ok"] }, forEach: { itemsFrom: "disc.items", mode: "sequential", taskTemplate: { title: "P {{item.title}}", input: { text: "p" }, acceptance: { rules: ["ok"] } } } },
+			],
+			outputContract: { text: "report" }, runCount: 0,
+		};
+		const html = renderPlanCard(plan);
+		// Should show compact structure marker
+		assert.match(html, /发现.*逐项处理|discovery.*for_each/);
+	});
+
+	test("P16-T3: dynamic plan card shows discovery outputKey", () => {
+		const renderPlanCard = extractRenderPlanCard();
+		const plan = {
+			planId: "plan_dyn2", title: "Dyn", goal: { text: "g" },
+			tasks: [
+				{ id: "d", type: "discovery", title: "Disc", input: { text: "d" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "domains" } },
+				{ id: "p", type: "for_each", title: "Proc", input: { text: "p" }, acceptance: { rules: ["ok"] }, forEach: { itemsFrom: "d.domains", mode: "sequential", taskTemplate: { title: "T", input: { text: "t" }, acceptance: { rules: ["ok"] } } } },
+			],
+			outputContract: { text: "o" }, runCount: 0,
+		};
+		const html = renderPlanCard(plan);
+		assert.match(html, /domains/);
+	});
+
+	test("P16-T3: dynamic plan card shows itemsFrom reference", () => {
+		const renderPlanCard = extractRenderPlanCard();
+		const plan = {
+			planId: "plan_dyn3", title: "Dyn", goal: { text: "g" },
+			tasks: [
+				{ id: "d", type: "discovery", title: "Disc", input: { text: "d" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "items" } },
+				{ id: "p", type: "for_each", title: "Proc", input: { text: "p" }, acceptance: { rules: ["ok"] }, forEach: { itemsFrom: "d.items", mode: "sequential", taskTemplate: { title: "T", input: { text: "t" }, acceptance: { rules: ["ok"] } } } },
+			],
+			outputContract: { text: "o" }, runCount: 0,
+		};
+		const html = renderPlanCard(plan);
+		assert.match(html, /d\.items/);
+	});
+
+	test("P16-T3: dynamic plan card shows child task template title in compact section", () => {
+		const renderPlanCard = extractRenderPlanCard();
+		const plan = {
+			planId: "plan_dyn4", title: "Dyn", goal: { text: "g" },
+			tasks: [
+				{ id: "d", type: "discovery", title: "Disc", input: { text: "d" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "items" } },
+				{ id: "p", type: "for_each", title: "Proc", input: { text: "p" }, acceptance: { rules: ["ok"] }, forEach: { itemsFrom: "d.items", mode: "sequential", taskTemplate: { title: "Analyze {{item.title}}", input: { text: "t" }, acceptance: { rules: ["ok"] } } } },
+			],
+			outputContract: { text: "o" }, runCount: 0,
+		};
+		const html = renderPlanCard(plan);
+		assert.match(html, /Analyze/);
+	});
+
+	test("P16-T3: long instructions remain collapsed by default", () => {
+		const renderPlanCard = extractRenderPlanCard();
+		const longInstruction = "This is a very long instruction that should not be fully visible in the default card view ".repeat(5);
+		const plan = {
+			planId: "plan_dyn5", title: "Dyn", goal: { text: longInstruction },
+			tasks: [
+				{ id: "d", type: "discovery", title: "Disc", input: { text: longInstruction }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "items" } },
+			],
+			outputContract: { text: "o" }, runCount: 0,
+		};
+		const html = renderPlanCard(plan);
+		// Long text should be truncated in summary
+		assert.match(html, /plan-summary-text/);
+	});
+
+	test("P16-T3: dynamic plan card text is HTML-escaped", () => {
+		const renderPlanCard = extractRenderPlanCard();
+		const plan = {
+			planId: "plan_dyn6", title: '<script>xss</script>', goal: { text: "g" },
+			tasks: [
+				{ id: "d", type: "discovery", title: '<b>evil</b>', input: { text: "d" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: '<img onerror=bad>' } },
+			],
+			outputContract: { text: "o" }, runCount: 0,
+		};
+		const html = renderPlanCard(plan);
+		assert.doesNotMatch(html, /<script>xss/);
+		assert.doesNotMatch(html, /<b>evil/);
+		assert.doesNotMatch(html, /<img onerror/);
+	});
+
+	test("P16-T3: old static plans and malformed data still render without throwing", () => {
+		const renderPlanCard = extractRenderPlanCard();
+		assert.doesNotThrow(() => renderPlanCard({ planId: "old", tasks: [{ id: "t1", title: "T" }] }));
+		assert.doesNotThrow(() => renderPlanCard({ planId: "old2", tasks: [] }));
+	});

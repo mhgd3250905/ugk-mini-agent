@@ -695,22 +695,67 @@ async function saveTeamUnit() {
 		}
 
 
-		function renderPlanCard(plan) {
-			var safePlan = plan || {};
-			var tasks = Array.isArray(safePlan.tasks) ? safePlan.tasks : [];
-			var allTaskHtml = tasks.map(function(t, i) { return renderPlanTaskPreview(t, i); }).join('');
-			var summaryHtml = renderPlanSummary(safePlan);
-			return '<div class="card plan-card">' +
-				'<div class="plan-card-header"><span class="plan-card-title">' + escapeHtml(safePlan.title || '') + '</span><div class="plan-card-chips"><span class="plan-chip">' + tasks.length + ' 个任务</span><span class="plan-chip">' + (safePlan.runCount || 0) + ' 次运行</span></div></div>' +
-				summaryHtml +
-				(tasks.length ? '<div class="plan-task-extra" data-plan-extra="' + escapeHtml(safePlan.planId || '') + '" style="display:none">' + allTaskHtml + '</div>' +
-					'<button class="btn btn-sm detail-toggle" onclick="togglePlanTasks(this, ' + jsArg(safePlan.planId) + ')">展开任务列表</button>' : '') +
-				'<div class="plan-actions">' +
-				'<button class="btn btn-sm" onclick="viewPlanJson(' + jsArg(safePlan.planId) + ')">查看 JSON</button>' +
-				'<button class="btn btn-primary" onclick="startRun(\\x27' + safePlan.planId + '\\x27)">创建运行</button>' +
-				(safePlan.runCount === 0 ? '<button class="btn btn-danger" onclick="deletePlan(\\x27' + safePlan.planId + '\\x27)">删除</button>' : '') +
-				'</div></div>';
-		}
+			function isDynamicPlan(tasks) {
+				if (!tasks || tasks.length < 2) return false;
+				var hasDiscovery = false, hasForEach = false;
+				for (var i = 0; i < tasks.length; i++) {
+					if (tasks[i].type === 'discovery') hasDiscovery = true;
+					if (tasks[i].type === 'for_each') hasForEach = true;
+				}
+				return hasDiscovery && hasForEach;
+			}
+
+			function renderDynamicPlanStructure(tasks) {
+				var discTask = null, feTask = null;
+				for (var i = 0; i < tasks.length; i++) {
+					if (tasks[i].type === 'discovery') discTask = tasks[i];
+					if (tasks[i].type === 'for_each') feTask = tasks[i];
+				}
+				var html = '<div class="plan-summary" style="margin-bottom:8px">';
+				html += '<div class="plan-summary-row"><span class="plan-chip" style="background:rgba(37,99,235,0.15);color:#3b82f6">discovery</span> <span style="font-size:13px">' + escapeHtml(discTask ? discTask.title || '' : '') + '</span>';
+				if (discTask && discTask.discovery) {
+					html += ' <span class="plan-chip" style="font-size:10px">output: ' + escapeHtml(discTask.discovery.outputKey || '') + '</span>';
+				}
+				html += '</div>';
+				html += '<div class="plan-summary-row" style="margin-top:2px"><span style="color:var(--muted);font-size:12px">&#8595;</span></div>';
+				if (feTask) {
+					html += '<div class="plan-summary-row"><span class="plan-chip" style="background:rgba(124,58,237,0.15);color:#7c3aed">for_each</span> <span style="font-size:13px">' + escapeHtml(feTask.title || '') + '</span>';
+					if (feTask.forEach) {
+						html += ' <span class="plan-chip" style="font-size:10px">' + escapeHtml(feTask.forEach.itemsFrom || '') + '</span>';
+					}
+					html += '</div>';
+					if (feTask.forEach && feTask.forEach.taskTemplate) {
+						var tmpl = feTask.forEach.taskTemplate;
+						html += '<details class="plan-task-details" style="margin-top:4px"><summary>子任务模板</summary><div class="plan-task-detail-content">';
+						html += '<p class="plan-task-detail-input" style="color:#7c3aed">标题: ' + escapeHtml(tmpl.title || '') + '</p>';
+						if (tmpl.input && tmpl.input.text) html += '<p class="plan-task-detail-input">指令: ' + escapeHtml(tmpl.input.text) + '</p>';
+						html += '</div></details>';
+					}
+				}
+				html += '</div>';
+				return html;
+			}
+
+			function renderPlanCard(plan) {
+				var safePlan = plan || {};
+				var tasks = Array.isArray(safePlan.tasks) ? safePlan.tasks : [];
+				var allTaskHtml = tasks.map(function(t, i) { return renderPlanTaskPreview(t, i); }).join('');
+				var summaryHtml = renderPlanSummary(safePlan);
+				var dynamic = isDynamicPlan(tasks);
+				var dynamicHtml = dynamic ? renderDynamicPlanStructure(tasks) : '';
+				var chipLabel = dynamic ? '发现-逐项' : (tasks.length + ' 个任务');
+				return '<div class="card plan-card">' +
+					'<div class="plan-card-header"><span class="plan-card-title">' + escapeHtml(safePlan.title || '') + '</span><div class="plan-card-chips"><span class="plan-chip">' + chipLabel + '</span><span class="plan-chip">' + (safePlan.runCount || 0) + ' 次运行</span></div></div>' +
+					summaryHtml +
+					(dynamic ? dynamicHtml : '') +
+					(tasks.length ? '<div class="plan-task-extra" data-plan-extra="' + escapeHtml(safePlan.planId || '') + '" style="display:none">' + allTaskHtml + '</div>' +
+						'<button class="btn btn-sm detail-toggle" onclick="togglePlanTasks(this, ' + jsArg(safePlan.planId) + ')">展开任务列表</button>' : '') +
+					'<div class="plan-actions">' +
+					'<button class="btn btn-sm" onclick="viewPlanJson(' + jsArg(safePlan.planId) + ')">查看 JSON</button>' +
+					'<button class="btn btn-primary" onclick="startRun(\\x27' + safePlan.planId + '\\x27)">创建运行</button>' +
+					(safePlan.runCount === 0 ? '<button class="btn btn-danger" onclick="deletePlan(\\x27' + safePlan.planId + '\\x27)">删除</button>' : '') +
+					'</div></div>';
+			}
 
 async function loadPlans() {
 	var el = $('plans-list');
