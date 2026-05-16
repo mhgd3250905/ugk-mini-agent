@@ -378,6 +378,20 @@ test("PlanStore.updateEditablePlan validates tasks when runCount=0", async () =>
 	}
 });
 
+test("PlanStore.updateEditablePlan rejects empty tasks when runCount=0", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		const plan = await store.create(validInput);
+		await assert.rejects(
+			() => store.updateEditablePlan(plan.planId, { tasks: [] }),
+			{ message: "at least one task is required" },
+		);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
 test("PlanStore.updateEditablePlan accepts valid dynamic tasks when runCount=0", async () => {
 	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
 	try {

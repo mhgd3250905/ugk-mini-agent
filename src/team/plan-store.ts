@@ -6,6 +6,7 @@ import { generatePlanId } from "./ids.js";
 const VALID_TASK_TYPES = new Set(["normal", "discovery", "for_each"]);
 
 function validateTasks(tasks: unknown[]): void {
+	if (!tasks.length) throw new Error("at least one task is required");
 	for (const task of tasks as Array<{
 		id?: string; type?: string; title?: string; input?: { text?: string }; acceptance?: { rules?: string[] };
 		discovery?: { outputKey?: string };
@@ -37,7 +38,7 @@ function validateCreateInput(input: { title?: string; goal?: { text: string }; t
 	if (!input.title?.trim()) throw new Error("plan title is required");
 	if (!input.defaultTeamUnitId?.trim()) throw new Error("defaultTeamUnitId is required");
 	if (!input.goal?.text?.trim()) throw new Error("goal text is required");
-	if (!input.tasks?.length) throw new Error("at least one task is required");
+	if (!input.tasks) throw new Error("at least one task is required");
 	if (!input.outputContract?.text?.trim()) throw new Error("outputContract text is required");
 	validateTasks(input.tasks);
 }
