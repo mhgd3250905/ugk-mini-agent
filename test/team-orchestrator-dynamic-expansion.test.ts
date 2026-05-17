@@ -12,10 +12,12 @@ import { MockRoleRunner } from "../src/team/role-runner.js";
 class DiscoveryMockRunner extends MockRoleRunner {
 	private callIndex = 0;
 	private readonly discoveryOutput: string;
+	private readonly discoveryAcceptedResult: string;
 
-	constructor(discoveryOutput: string) {
+	constructor(discoveryOutput: string, discoveryAcceptedResult = discoveryOutput) {
 		super();
 		this.discoveryOutput = discoveryOutput;
+		this.discoveryAcceptedResult = discoveryAcceptedResult;
 	}
 
 	async runWorker(input: import("../src/team/role-runner.js").WorkerInput): Promise<import("../src/team/role-runner.js").WorkerOutput> {
@@ -28,18 +30,18 @@ class DiscoveryMockRunner extends MockRoleRunner {
 
 	async runChecker(input: import("../src/team/role-runner.js").CheckerInput): Promise<import("../src/team/role-runner.js").CheckerOutput> {
 		if (input.task.type === "discovery") {
-			return { verdict: "pass", reason: "ok", resultContent: this.discoveryOutput };
+			return { verdict: "pass", reason: "ok", resultContent: this.discoveryAcceptedResult };
 		}
 		return { verdict: "pass", reason: "ok", resultContent: "accepted result" };
 	}
 }
 
-async function setupDiscoveryPlan(discoveryOutput: string) {
+async function setupDiscoveryPlan(discoveryOutput: string, discoveryAcceptedResult?: string) {
 	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
 	const planStore = new PlanStore(root);
 	const unitStore = new TeamUnitStore(root);
 	const workspace = new RunWorkspace(root);
-	const runner = new DiscoveryMockRunner(discoveryOutput);
+	const runner = new DiscoveryMockRunner(discoveryOutput, discoveryAcceptedResult);
 	const unit = await unitStore.create({
 		title: "t", description: "d",
 		watcherProfileId: "w", workerProfileId: "wo",
@@ -116,6 +118,34 @@ test("discovery + for_each: expands 3 items to 3 child tasks, all succeed", asyn
 			const attempts = await workspace.listAttempts(state.runId, `process_each__${suffix}`);
 			assert.equal(attempts.length, 1);
 		}
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("discovery + for_each: falls back to worker output when accepted result is a natural-language summary", async () => {
+	const { root, plan, orchestrator, workspace } = await setupDiscoveryPlan(
+		JSON.stringify({
+			items: [
+				{ id: "battle_01", title: "Alpha" },
+				{ id: "battle_02", title: "Beta" },
+			],
+		}),
+		"总共 2 项，按时间线排列：Alpha → Beta。每项包含 id 和 title。",
+	);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.status, "completed");
+		assert.equal(final.taskStates["discover"]?.status, "succeeded");
+		assert.equal(final.taskStates["process_each"]?.status, "succeeded");
+		assert.equal(final.taskStates["process_each__battle_01"]?.status, "succeeded");
+		assert.equal(final.taskStates["process_each__battle_02"]?.status, "succeeded");
+
+		const expansion = await workspace.readExpansion(state.runId, "process_each");
+		assert.equal(expansion?.children.length, 2);
+		assert.deepEqual(expansion?.children.map(c => c.sourceItemId), ["battle_01", "battle_02"]);
 	} finally {
 		await rm(root, { recursive: true });
 	}

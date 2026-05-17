@@ -940,6 +940,42 @@ test("decomposed discovery parent feeds downstream for_each from child object ou
 	}
 });
 
+test("decomposed discovery aggregation falls back to worker output when accepted child result is a summary", async () => {
+	const runner = new DecompositionCaptureRunner([
+		{
+			decision: "split",
+			reason: "split discovery",
+			children: [
+				{ id: "discover__a", title: "Discover A", input: { text: "discover a" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+			],
+		},
+	], {
+		workerOutputs: [
+			JSON.stringify({ items: [{ id: "a", title: "A" }] }),
+			"processed A",
+		],
+		checkerOutputs: [
+			{ verdict: "pass", reason: "summary accepted", resultContent: "总共 1 项：A。每项包含 id 和 title。" },
+		],
+	});
+	const { root, plan, orchestrator, workspace } = await setupTasks(decomposedDiscoveryPlan(), runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.status, "completed");
+		assert.equal(final.taskStates.discover?.status, "succeeded");
+		assert.equal(final.taskStates.process_each?.status, "succeeded");
+		assert.equal(final.taskStates["process_each__a"]?.status, "succeeded");
+
+		const expansion = await workspace.readExpansion(state.runId, "process_each");
+		assert.equal(expansion?.children.length, 1);
+		assert.equal(expansion?.children[0]?.sourceItemId, "a");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
 test("decomposed discovery aggregation supports direct array child output", async () => {
 	const runner = new DecompositionCaptureRunner([
 		{

@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-17 — P21 Runtime Fix: Discovery Result Fallback
+
+- **主题**: 修复 discovery → for_each 在 accepted result 为自然语言摘要时无法展开的问题
+- **影响范围**: `src/team/orchestrator.ts`, `test/team-orchestrator-dynamic-expansion.test.ts`, `test/team-orchestrator-decomposition.test.ts`, `docs/team-runtime.md`
+- **变更**:
+  - discovery 结果解析不再“读到 accepted-result.md 就停止”；现在会依次尝试 `accepted-result.md` 和 `worker-output-001.md`
+  - 只有某个候选内容能按 `discovery.outputKey` 解析出 item array，才作为下游 `for_each` 的数据源
+  - decomposed discovery child aggregation 复用同一读取契约，避免 split discovery 在 child accepted summary 上复发
+- **测试**: 新增普通 discovery 和 decomposed discovery 两条回归测试，覆盖 accepted result 是中文摘要、worker output 才含 JSON 的真实失败形态
+
+---
+
 ## 2026-05-17 — P21-D Review Fix: Run Detail Task Definitions
 
 - **主题**: 修复 Run timeline 层级展示依赖前端伪字段的问题
