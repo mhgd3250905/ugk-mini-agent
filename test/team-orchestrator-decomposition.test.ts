@@ -1043,3 +1043,56 @@ test("existing decomposed discovery record aggregates on resume path without rer
 		await rm(root, { recursive: true });
 	}
 });
+
+test("reclaimed decomposed discovery aggregates existing child results without duplicating child states", async () => {
+	const runner = new DecompositionCaptureRunner([
+		{ decision: "no_split", reason: "should not run", children: [] },
+	]);
+	const { root, plan, orchestrator, workspace } = await setupTasks(decomposedDiscoveryPlan(), runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const childTasks: TeamTask[] = [
+			{ id: "discover__a", title: "Discover A", input: { text: "discover a" }, acceptance: { rules: ["ok"] }, parentTaskId: "discover", generated: true, decomposer: { mode: "none" } },
+			{ id: "discover__b", title: "Discover B", input: { text: "discover b" }, acceptance: { rules: ["ok"] }, parentTaskId: "discover", generated: true, decomposer: { mode: "none" } },
+		];
+		await workspace.writeDecomposition(state.runId, {
+			schemaVersion: "team/task-decomposition-1",
+			parentTaskId: "discover",
+			mode: "leaf",
+			decision: "split",
+			reason: "persisted split",
+			decomposedAt: new Date().toISOString(),
+			children: childTasks.map(task => ({ taskId: task.id, title: task.title, task })),
+		});
+		await workspace.appendChildTaskStates(state.runId, childTasks);
+		const attemptA = await workspace.createAttempt(state.runId, "discover__a");
+		const resultA = await workspace.writeAcceptedResult(state.runId, "discover__a", attemptA.attemptId, JSON.stringify({ items: [{ id: "a", title: "A" }] }));
+		await workspace.finishAttempt(state.runId, "discover__a", attemptA.attemptId, { status: "succeeded", phase: "succeeded", resultRef: resultA });
+		const attemptB = await workspace.createAttempt(state.runId, "discover__b");
+		const resultB = await workspace.writeAcceptedResult(state.runId, "discover__b", attemptB.attemptId, JSON.stringify({ items: [{ id: "b", title: "B" }] }));
+		await workspace.finishAttempt(state.runId, "discover__b", attemptB.attemptId, { status: "succeeded", phase: "succeeded", resultRef: resultB });
+		const reclaimed = (await workspace.getState(state.runId))!;
+		reclaimed.taskStates["discover__a"]!.status = "succeeded";
+		reclaimed.taskStates["discover__a"]!.attemptCount = 1;
+		reclaimed.taskStates["discover__a"]!.activeAttemptId = attemptA.attemptId;
+		reclaimed.taskStates["discover__a"]!.resultRef = resultA;
+		reclaimed.taskStates["discover__b"]!.status = "succeeded";
+		reclaimed.taskStates["discover__b"]!.attemptCount = 1;
+		reclaimed.taskStates["discover__b"]!.activeAttemptId = attemptB.attemptId;
+		reclaimed.taskStates["discover__b"]!.resultRef = resultB;
+		reclaimed.summary.succeededTasks = 2;
+		await workspace.saveState(reclaimed);
+
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.status, "completed");
+		assert.deepEqual(runner.decomposerTaskIds, []);
+		assert.deepEqual(runner.workerTaskIds, ["process_each__a", "process_each__b"]);
+		assert.equal(final.taskStates.process_each?.status, "succeeded");
+		assert.equal(final.taskStates["process_each__a"]?.status, "succeeded");
+		assert.equal(final.taskStates["process_each__b"]?.status, "succeeded");
+		assert.equal(Object.keys(final.taskStates).filter(taskId => taskId.startsWith("discover__")).length, 2);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
