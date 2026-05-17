@@ -2053,3 +2053,142 @@ test("P19-T4: dynamic design escapes outputKey and template text", () => {
 	const html = renderDynamicPlanDesign(malicious);
 	assert.equal(html.indexOf("<script>"), -1, "should escape script in template");
 });
+
+
+// ──
+
+// -- P19 Task 5: Run cards and expandable run timeline ----------
+
+function extractRunCardRenderer(): (run: any, plan: any) => string {
+	const script = extractScript();
+	const start = script.indexOf("function escapeHtml");
+	const end = script.indexOf("async function loadPlans");
+	assert.ok(start >= 0, "should find escapeHtml start");
+	assert.ok(end > start, "should find loadPlans boundary");
+	const source = script.slice(start, end);
+	const fn = new Function(source + "\nreturn renderPlanRunCard;");
+	return fn();
+}
+
+const runCardPlan = {
+	planId: "plan_rc", title: "Run Card Plan",
+	goal: { text: "test" }, tasks: [
+		{ id: "t1", title: "Task One", input: { text: "do" }, acceptance: { rules: ["ok"] } },
+		{ id: "t2", title: "Task Two", input: { text: "do2" }, acceptance: { rules: ["ok2"] } },
+		{ id: "t3", title: "Task Three", input: { text: "do3" }, acceptance: { rules: ["ok3"] } },
+		{ id: "t4", title: "Task Four", input: { text: "do4" }, acceptance: { rules: ["ok4"] } },
+		{ id: "t5", title: "Task Five", input: { text: "do5" }, acceptance: { rules: ["ok5"] } },
+	],
+	outputContract: { text: "out" }, runCount: 1,
+};
+
+const runningRun = {
+	runId: "run_running_001", planId: "plan_rc", status: "running",
+	summary: { totalTasks: 5, succeededTasks: 1, failedTasks: 0, cancelledTasks: 0 },
+	currentTaskId: "t2", activeElapsedMs: 30000, lastError: null,
+};
+
+const completedRun = {
+	runId: "run_completed_001", planId: "plan_rc", status: "completed",
+	summary: { totalTasks: 5, succeededTasks: 5, failedTasks: 0, cancelledTasks: 0 },
+	currentTaskId: null, activeElapsedMs: 120000, lastError: null,
+};
+
+const failedRun = {
+	runId: "run_failed_001", planId: "plan_rc", status: "failed",
+	summary: { totalTasks: 5, succeededTasks: 2, failedTasks: 2, cancelledTasks: 1 },
+	currentTaskId: null, activeElapsedMs: 90000, lastError: "worker timeout exceeded",
+};
+
+test("P19-T5: running run card has active class, status badge, progress, elapsed, current task, action buttons", () => {
+	const render = extractRunCardRenderer();
+	const html = render(runningRun, runCardPlan);
+	assert.match(html, /plan-card-active/);
+	assert.match(html, /run-badge/);
+	assert.match(html, /running/);
+	assert.match(html, /run-progress/);
+	assert.match(html, /run-elapsed/);
+	assert.match(html, /run-current/);
+	assert.match(html, /controlRun/);
+	assert.match(html, /pause/);
+	assert.match(html, /cancelRunWithConfirm/);
+	assert.match(html, /progress-bar/);
+});
+
+test("P19-T5: completed run card has terminal status, no active class, report button", () => {
+	const render = extractRunCardRenderer();
+	const html = render(completedRun, runCardPlan);
+	assert.doesNotMatch(html, /plan-card-active/);
+	assert.match(html, /completed/);
+	assert.match(html, /viewReport/);
+	assert.match(html, /deleteRun/);
+	assert.doesNotMatch(html, /controlRun.*pause/);
+});
+
+test("P19-T5: failed run card shows lastError, fail badge, report button", () => {
+	const render = extractRunCardRenderer();
+	const html = render(failedRun, runCardPlan);
+	assert.match(html, /run-error/);
+	assert.match(html, /worker timeout exceeded/);
+	assert.match(html, /failed/);
+	assert.match(html, /viewReport/);
+	assert.match(html, /deleteRun/);
+});
+
+test("P19-T5: run card has detail container with run-detail-{runId}", () => {
+	const render = extractRunCardRenderer();
+	const html = render(runningRun, runCardPlan);
+	assert.match(html, /id="run-detail-run_running_001"/);
+	assert.match(html, /class="run-detail"/);
+});
+
+test("P19-T5: malicious run data is escaped (XSS prevention)", () => {
+	const render = extractRunCardRenderer();
+	const maliciousRun = {
+		runId: '<script>alert(1)</script>',
+		planId: "plan_rc",
+		status: "running",
+		summary: { totalTasks: 1, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0 },
+		currentTaskId: "t1", activeElapsedMs: 1000,
+		lastError: '<img src=x onerror=bad>',
+	};
+	const maliciousPlan = {
+		planId: "plan_rc", title: "test",
+		tasks: [{ id: "t1", title: '<script>evil</script>' }],
+	};
+	const html = render(maliciousRun, maliciousPlan);
+	assert.doesNotMatch(html, /<script>alert/);
+	assert.doesNotMatch(html, /<script>evil/);
+	assert.doesNotMatch(html, /<img[^>]+onerror/);
+	assert.match(html, /&lt;script&gt;/);
+});
+
+test("P19-T5: card creates detail container for togglePlanRunDetail to populate", () => {
+	const render = extractRunCardRenderer();
+	const html = render(runningRun, runCardPlan);
+	assert.match(html, /run-detail-run_running_001/);
+	const detailMatch = html.match(/id="run-detail-run_running_001"[^>]*><\/div>/);
+	assert.ok(detailMatch, "detail container should be empty div");
+});
+
+test("P19-T5: updateRunCard function exists and references expected CSS selectors", () => {
+	const script = extractScript();
+	assert.match(script, /function updateRunCard/);
+	assert.match(script, /\.run-badge/);
+	assert.match(script, /\.run-progress/);
+	assert.match(script, /\.run-elapsed/);
+	assert.match(script, /\.run-current/);
+	assert.match(script, /\.run-error/);
+	assert.match(script, /\.run-actions/);
+	assert.match(script, /updateRunCard[\s\S]*?_selectedPlanId === null/);
+	assert.match(script, /updateRunCard[\s\S]*?loadPlans/);
+});
+
+test("P19-T5: inline scripts remain valid after P19-T5 changes", () => {
+	const html = renderTeamPage();
+	const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+	assert.ok(scripts.length > 0);
+	for (const script of scripts) {
+		assert.doesNotThrow(() => new Function(script), "inline script should be valid JS after P19-T5 changes");
+	}
+});

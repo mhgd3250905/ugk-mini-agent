@@ -989,24 +989,70 @@ async function saveTeamUnit() {
 				if (!run) return '';
 				var prog = runProgressSummary(run);
 				var isActive = isActiveRunStatus(run.status);
+				var isTerminal = isTerminalRunStatus(run.status);
 				var cardClass = 'card' + (isActive ? ' plan-card-active' : '');
-				var expanded = _expandedRunIds[run.runId];
 				var html = '<div class="' + cardClass + '" data-run-id="' + escapeHtml(run.runId) + '" style="margin-bottom:8px;cursor:pointer" onclick="togglePlanRunDetail(this, ' + jsArg(run.runId) + ')">';
 				html += '<div style="display:flex;justify-content:space-between;align-items:center">';
 				html += '<div><span class="run-id">' + escapeHtml(run.runId.slice(0, 12)) + '...</span> <span class="run-badge">' + statusBadge(run.status) + '</span></div>';
-				html += '<span style="font-size:12px;color:var(--muted)">' + formatDuration(run.activeElapsedMs) + '</span>';
+				html += '<span class="run-elapsed" style="font-size:12px;color:var(--muted)">' + formatDuration(run.activeElapsedMs) + '</span>';
 				html += '</div>';
-				html += '<div class="run-progress" style="font-size:12px;color:var(--muted);margin-top:4px">\u4efb\u52a1\u8fdb\u5ea6\uff1a' + prog.done + '/' + prog.total + '</div>';
+				html += '<div class="run-progress" style="font-size:12px;color:var(--muted);margin-top:4px">任务进度：' + prog.done + '/' + prog.total + '</div>';
 				if (isActive) {
 					html += '<div class="progress-bar" style="margin-top:4px"><div class="progress-bar-fill" style="width:' + prog.pct + '%"></div></div>';
 				}
+				// Current task display
+				var currentTaskTitle = '';
+				if (run.currentTaskId && plan && plan.tasks) {
+					var task = plan.tasks.find(function(t) { return t.id === run.currentTaskId; });
+					currentTaskTitle = task ? task.title : run.currentTaskId;
+				} else if (run.currentTaskId) {
+					currentTaskTitle = run.currentTaskId;
+				}
+				html += currentTaskTitle
+					? '<p class="run-current" style="font-size:12px;color:var(--muted);margin-top:4px">当前任务：' + escapeHtml(currentTaskTitle) + '</p>'
+					: '<p class="run-current" style="display:none;font-size:12px;color:var(--muted);margin-top:4px"></p>';
+				// Error display
+				html += run.lastError
+					? '<p class="run-error" style="font-size:12px;color:var(--fail);margin-top:4px">错误：' + escapeHtml(run.lastError) + '</p>'
+					: '<p class="run-error" style="display:none;font-size:12px;color:var(--fail);margin-top:4px"></p>';
+				// Action buttons
+				html += '<div class="run-actions" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap" onclick="event.stopPropagation()">';
+				if (run.status === 'running') {
+					html += '<button class="btn btn-primary btn-sm" onclick="controlRun(\\x27' + escapeHtml(run.runId) + '\\x27, \\x27pause\\x27)">暂停</button>';
+					html += '<button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(\\x27' + escapeHtml(run.runId) + '\\x27)">取消</button>';
+				}
+				if (run.status === 'paused') {
+					html += '<button class="btn btn-primary btn-sm" onclick="controlRun(\\x27' + escapeHtml(run.runId) + '\\x27, \\x27resume\\x27)">恢复</button>';
+					html += '<button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(\\x27' + escapeHtml(run.runId) + '\\x27)">取消</button>';
+				}
+				if (isTerminal) {
+					if (run.status !== 'cancelled') {
+						html += '<button class="btn btn-primary btn-sm" onclick="viewReport(\\x27' + escapeHtml(run.runId) + '\\x27)">查看报告</button>';
+					}
+					html += '<button class="btn btn-danger btn-sm" onclick="deleteRun(\\x27' + escapeHtml(run.runId) + '\\x27)">删除</button>';
+				}
+				html += '</div>';
+				// Embedded detail container
+				html += '<div id="run-detail-' + escapeHtml(run.runId) + '" class="run-detail"></div>';
 				html += '</div>';
 				return html;
 			}
 
 			function togglePlanRunDetail(el, runId) {
 				_expandedRunIds[runId] = !_expandedRunIds[runId];
-				toggleRunDetail(runId);
+				var detailEl = $("run-detail-" + runId);
+				if (!detailEl) return;
+				if (!_expandedRunIds[runId]) {
+					detailEl.style.display = "none";
+					return;
+				}
+				// If detail is empty, populate it for the first time
+				if (!detailEl.innerHTML || detailEl.style.display !== "block") {
+					// Delegate to existing toggleRunDetail which fetches state and populates
+					toggleRunDetail(runId);
+				} else {
+					detailEl.style.display = "block";
+				}
 			}
 
 
@@ -1644,6 +1690,11 @@ function updateRunCard(r) {
 	if (TERMINAL[r.status]) {
 		unsubscribeRunSSE(r.runId);
 		loadRuns();
+	}
+
+	// Refresh dashboard plan cards when on dashboard view
+	if (_selectedPlanId === null) {
+		loadPlans();
 	}
 }
 
