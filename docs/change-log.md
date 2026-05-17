@@ -12,6 +12,21 @@
 
 ---
 
+## 2026-05-17 — Team Runtime Discovery Result Standardization (P22)
+
+- **主题**: 将 discovery → for_each 数据合约从 ad-hoc Markdown 解析升级为标准化 `discovery-result.json`
+- **影响范围**: `src/team/types.ts`, `src/team/run-workspace.ts`, `src/team/orchestrator.ts`, `docs/team-runtime.md`
+- **变更**:
+  - 新增 `TeamDiscoveryResultRecord` 类型（schemaVersion: `team/discovery-result-1`）
+  - `RunWorkspace` 新增 `writeDiscoveryResult` / `readDiscoveryResult` 方法，按 attempt 路径写入/读取标准化文件
+  - orchestrator 在 discovery task 被 watcher accept 后，调用 `writeStandardDiscoveryResult` 写入标准化合约
+  - 标准化使用 `strictItems` 模式：非对象值（string、null、array）不再静默过滤，而是导致 discovery task 失败
+  - `for_each.itemsFrom` 解析优先读取 `discovery-result.json`，验证 `outputKey` 与引用一致；旧 run 回退到传统 `accepted-result.md` / `worker-output-001.md` 解析
+  - decomposed discovery 聚合后同样写入标准化合约
+- **测试**: 新增 18 个 P22 测试覆盖 workspace round-trip、orchestrator 标准化写入、for_each 优先读取、decomposed 聚合、strictItems 验证、legacy fallback
+
+---
+
 ## 2026-05-17 — Team Runtime Discovery Referenced Output
 
 - **主题**: 修复 discovery 结果 JSON 写在 agent workspace 输出文件中时 `for_each` 无法解析的问题

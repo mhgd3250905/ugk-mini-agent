@@ -99,6 +99,7 @@ Plan task 可声明受控拆分策略：
 - pause/cancel/timeout 使用现有 run control 机制；split parent 没有 active attempt，未完成 parent/children 会按 run 状态统一标记。
 - parent 状态由 child 汇总：全部 child 成功则 parent `succeeded`，任一 child 失败则 parent `failed`，错误摘要指向失败 child。
 - 当 `discovery` parent 被 `split` 时，parent 仍不执行 worker/checker/watcher；runtime 会按 decomposition record 中的 child 顺序尝试读取每个 normal child 的 `accepted-result.md` 和 `worker-output-001.md`，以第一个能解析出 item 数组的内容为准，并聚合为 parent 的 `discovery.outputKey` 结果供下游 `for_each.itemsFrom` 使用。
+- decomposed discovery child 输出聚合后写入标准化 `discovery-result.json`（与普通 discovery 相同），供 `for_each` 引用。
 - decomposed discovery child 输出支持两种形状：包含 parent `discovery.outputKey` 数组的 JSON object，例如 `{ "items": [...] }`；或直接输出 item object 数组，例如 `[{"id":"a"}]`。
 - decomposed discovery child 输出必须提供 item object 数组；任一 child 输出 malformed、缺少目标数组、或数组元素不是 object 时，discovery parent 会失败，downstream `for_each` 不会从 partial data 扩展。
 - finalizer 输入来自完整 `state.taskStates`，因此能看到 decomposed child 的 result/error 信息。
@@ -127,8 +128,22 @@ Plan 支持三种任务类型：
 - `discovery.outputKey`（必填）— worker 输出 JSON 中包含 item 数组的键名
 - worker 输出必须包含可提取的 JSON（raw JSON、fenced code block、或 brace-matched）
 - 系统按 `outputKey` 提取数组后，供 `for_each` 任务引用
-- 结构化 discovery 数据以“可解析内容”为准：runtime 会依次尝试 `accepted-result.md` 和 `worker-output-001.md`。如果 checker/watcher 的 accepted result 是自然语言摘要，但 worker 原始输出保留了 JSON，`for_each` 仍应能展开。
-- 如果 accepted/worker 摘要只包含“输出文件位于 ...”这类引用，runtime 会继续读取当前 run 范围内的 `/app/.data/team/runs/<runId>/...` 或 `runs/<runId>/...` 文件，并从该文件提取 `outputKey` 数组。读取边界限制在当前 run 根目录内。
+
+#### discovery-result.json 标准化合约
+
+discovery 任务通过 checker/watcher 后，runtime 会将提取到的 items 写入标准化文件 `discovery-result.json`：
+
+```
+tasks/<taskId>/attempts/<attemptId>/discovery-result.json
+```
+
+文件内容为 `TeamDiscoveryResultRecord`（schemaVersion: `team/discovery-result-1`），包含 `taskId`、`attemptId`、`outputKey`、`items`（对象数组）、`sourceRef`、`createdAt`。
+
+- `items` 必须为对象数组（`Record<string, unknown>[]`），且每个 item 必须有 `string` 类型的 `id` 字段
+- 标准化失败时（items 含非对象值、缺少 id、outputKey 不匹配），discovery task 会标记为 `failed`
+- `for_each.itemsFrom` 解析时优先读取 `discovery-result.json`，并验证 `outputKey` 与 `itemsFrom` 引用一致
+- 若 run 无 `discovery-result.json`（旧 run 或旧 attempt），runtime 回退到传统解析：依次尝试 `accepted-result.md`、`worker-output-001.md`、以及其中引用的 run-scoped 文件路径。legacy fallback 纯为向后兼容，新 run 一律走标准化路径
+- `accepted-result.md` 仍是人类可读结果（checker/watcher 产出），不再是 `for_each` 的主数据源
 
 #### for_each 任务
 
