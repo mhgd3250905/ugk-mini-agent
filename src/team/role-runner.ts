@@ -64,11 +64,27 @@ export interface FinalizerOutput {
 	runtimeContext?: TeamRoleRuntimeContext;
 }
 
+export interface DecomposerInput {
+	runId: string;
+	plan: TeamPlan;
+	task: TeamTask;
+	maxChildren: number;
+	signal?: AbortSignal;
+}
+
+export interface DecomposerOutput {
+	decision: "split" | "no_split";
+	reason: string;
+	children?: TeamTask[];
+	runtimeContext?: TeamRoleRuntimeContext;
+}
+
 export interface TeamRoleRunner {
 	runWorker(input: WorkerInput): Promise<WorkerOutput>;
 	runChecker(input: CheckerInput): Promise<CheckerOutput>;
 	runWatcher(input: WatcherInput): Promise<WatcherOutput>;
 	runFinalizer(input: FinalizerInput): Promise<FinalizerOutput>;
+	runDecomposer(input: DecomposerInput): Promise<DecomposerOutput>;
 }
 
 export interface ProfileAwareTeamRoleRunner extends TeamRoleRunner {
@@ -79,6 +95,7 @@ export interface MockRoleRunnerConfig {
 	workerOutputs?: string[];
 	checkerOutputs?: CheckerOutput[];
 	watcherOutputs?: WatcherOutput[];
+	decomposerOutputs?: DecomposerOutput[];
 	finalReport?: string;
 }
 
@@ -86,15 +103,18 @@ export class MockRoleRunner implements TeamRoleRunner {
 	private workerCallIndex = 0;
 	private checkerCallIndex = 0;
 	private watcherCallIndex = 0;
+	private decomposerCallIndex = 0;
 	private readonly workerOutputs: string[];
 	private readonly checkerOutputs: CheckerOutput[];
 	private readonly watcherOutputs: WatcherOutput[];
+	private readonly decomposerOutputs: DecomposerOutput[];
 	private readonly finalReportContent: string;
 
 	constructor(config: MockRoleRunnerConfig = {}) {
 		this.workerOutputs = config.workerOutputs ?? [];
 		this.checkerOutputs = config.checkerOutputs ?? [];
 		this.watcherOutputs = config.watcherOutputs ?? [];
+		this.decomposerOutputs = config.decomposerOutputs ?? [];
 		this.finalReportContent = config.finalReport ?? "# 最终汇总\n\n全部任务已完成。";
 	}
 
@@ -122,9 +142,16 @@ export class MockRoleRunner implements TeamRoleRunner {
 		return { finalReport: report };
 	}
 
+	async runDecomposer(_input: DecomposerInput): Promise<DecomposerOutput> {
+		const output = this.decomposerOutputs[this.decomposerCallIndex] ?? { decision: "no_split" as const, reason: "mock decomposer no split", children: [] };
+		this.decomposerCallIndex++;
+		return output;
+	}
+
 	reset(): void {
 		this.workerCallIndex = 0;
 		this.checkerCallIndex = 0;
 		this.watcherCallIndex = 0;
+		this.decomposerCallIndex = 0;
 	}
 }
