@@ -2,7 +2,7 @@ import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promise
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { join } from "node:path";
-import type { TeamPlan, TeamProgress, TeamRunState, TeamTaskState, TeamAttemptMetadata, AttemptStatus, AttemptLifecyclePhase, TeamTask, TaskExpansionRecord, TaskDecompositionRecord } from "./types.js";
+import type { TeamPlan, TeamProgress, TeamRunState, TeamTaskState, TeamAttemptMetadata, AttemptStatus, AttemptLifecyclePhase, TeamTask, TaskExpansionRecord, TaskDecompositionRecord, TeamDiscoveryResultRecord } from "./types.js";
 import { generateRunId, generateAttemptId } from "./ids.js";
 import { progressMessages } from "./progress.js";
 import { RunStateEvents } from "./run-state-events.js";
@@ -336,6 +336,25 @@ export class RunWorkspace {
 	async writeWatcherReview(runId: string, taskId: string, attemptId: string, review: unknown): Promise<string> {
 		await this.writeAttemptFile(runId, taskId, attemptId, "watcher-review.json", JSON.stringify(review, null, 2));
 		return `tasks/${taskId}/attempts/${attemptId}/watcher-review.json`;
+	}
+
+	async writeDiscoveryResult(runId: string, taskId: string, attemptId: string, record: TeamDiscoveryResultRecord): Promise<string> {
+		await this.writeAttemptFile(runId, taskId, attemptId, "discovery-result.json", JSON.stringify(record, null, 2));
+		return `tasks/${taskId}/attempts/${attemptId}/discovery-result.json`;
+	}
+
+	async readDiscoveryResult(runId: string, taskId: string, attemptId: string): Promise<TeamDiscoveryResultRecord | null> {
+		const content = await this.readAttemptFile(runId, taskId, attemptId, "discovery-result.json");
+		if (!content) return null;
+		try {
+			const parsed = JSON.parse(content);
+			if (parsed && typeof parsed === "object" && parsed.schemaVersion === "team/discovery-result-1") {
+				return parsed as TeamDiscoveryResultRecord;
+			}
+			return null;
+		} catch {
+			return null;
+		}
 	}
 
 	async writeFinalReport(runId: string, content: string): Promise<string> {

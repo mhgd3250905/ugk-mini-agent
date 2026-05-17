@@ -685,6 +685,100 @@ test("readDecomposition returns null for missing decomposition", async () => {
 	}
 });
 
+// ── P22: discovery result persistence ──
+
+test("writeDiscoveryResult and readDiscoveryResult round-trip", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		const { attemptId } = await ws.createAttempt(state.runId, "task_1");
+		const record: import("../src/team/types.js").TeamDiscoveryResultRecord = {
+			schemaVersion: "team/discovery-result-1",
+			taskId: "task_1",
+			attemptId,
+			outputKey: "items",
+			items: [{ id: "battle_01", title: "Alpha" }, { id: "battle_02", title: "Beta" }],
+			sourceRef: `tasks/task_1/attempts/${attemptId}/accepted-result.md`,
+			createdAt: new Date().toISOString(),
+		};
+		const ref = await ws.writeDiscoveryResult(state.runId, "task_1", attemptId, record);
+		assert.equal(ref, `tasks/task_1/attempts/${attemptId}/discovery-result.json`);
+
+		const loaded = await ws.readDiscoveryResult(state.runId, "task_1", attemptId);
+		assert.ok(loaded);
+		assert.equal(loaded.schemaVersion, "team/discovery-result-1");
+		assert.equal(loaded.taskId, "task_1");
+		assert.equal(loaded.attemptId, attemptId);
+		assert.equal(loaded.outputKey, "items");
+		assert.equal(loaded.items.length, 2);
+		assert.equal(loaded.items[0]!.id, "battle_01");
+		assert.equal(loaded.sourceRef, `tasks/task_1/attempts/${attemptId}/accepted-result.md`);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("readDiscoveryResult returns null for missing file", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		const { attemptId } = await ws.createAttempt(state.runId, "task_1");
+		const loaded = await ws.readDiscoveryResult(state.runId, "task_1", attemptId);
+		assert.equal(loaded, null);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("discovery result file names encode task and attempt safely", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		const { attemptId } = await ws.createAttempt(state.runId, "task_1");
+		const record: import("../src/team/types.js").TeamDiscoveryResultRecord = {
+			schemaVersion: "team/discovery-result-1",
+			taskId: "task_1",
+			attemptId,
+			outputKey: "items",
+			items: [],
+			sourceRef: null,
+			createdAt: new Date().toISOString(),
+		};
+		const ref = await ws.writeDiscoveryResult(state.runId, "task_1", attemptId, record);
+		assert.ok(ref.includes("task_1"));
+		assert.ok(ref.includes(attemptId));
+		assert.ok(ref.endsWith("discovery-result.json"));
+
+		// File exists at expected location
+		const raw = await readFile(join(root, "runs", state.runId, "tasks", "task_1", "attempts", attemptId, "discovery-result.json"), "utf8");
+		assert.ok(raw.includes("team/discovery-result-1"));
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("old run without discovery result remains readable", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		const { attemptId } = await ws.createAttempt(state.runId, "task_1");
+		// Write accepted result without discovery result
+		await ws.writeAcceptedResult(state.runId, "task_1", attemptId, JSON.stringify({ items: [{ id: "a", title: "A" }] }));
+		// readDiscoveryResult returns null, but attempt is still valid
+		const discoveryResult = await ws.readDiscoveryResult(state.runId, "task_1", attemptId);
+		assert.equal(discoveryResult, null);
+		const attempts = await ws.listAttempts(state.runId, "task_1");
+		assert.equal(attempts.length, 1);
+		assert.equal(attempts[0]!.attemptId, attemptId);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
 test("old run without decompositions directory still reads state and attempts", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
 	try {

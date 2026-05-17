@@ -221,3 +221,13 @@ export interface TaskDecompositionRecord {
 	}>;
 	runtimeContext?: TeamRoleRuntimeContext;
 }
+
+export interface TeamDiscoveryResultRecord {
+	schemaVersion: "team/discovery-result-1";
+	taskId: string;
+	attemptId: string;
+	outputKey: string;
+	items: Array<Record<string, unknown>>;
+	sourceRef: string | null;
+	createdAt: string;
+}
