@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-17 — Team Runtime Discovery Referenced Output
+
+- **主题**: 修复 discovery 结果 JSON 写在 agent workspace 输出文件中时 `for_each` 无法解析的问题
+- **影响范围**: `src/team/orchestrator.ts`, `src/team/run-workspace.ts`, `test/team-orchestrator-dynamic-expansion.test.ts`
+- **变更**:
+  - discovery 解析在 `accepted-result.md` / `worker-output-001.md` 自身无 JSON 时，会读取其中引用的当前 run 范围内输出文件
+  - 支持 `/app/.data/team/runs/<runId>/...` 和 `runs/<runId>/...` 两类 run-scoped 引用
+  - 文件读取限制在当前 run 根目录内，避免把任意宿主路径读取暴露给 runtime
+- **测试**: 新增回归测试覆盖 checker 只返回“输出文件位于 ...”而 JSON 实际保存在 `agent-workspaces/<attemptId>/worker/output/*.md` 的真实失败形态
+
+---
+
 ## 2026-05-17 — Team Runtime State Write Lock
 
 - **主题**: 修复真实运行中并发保存 run state 导致 `getState()` 瞬时返回 null 的问题

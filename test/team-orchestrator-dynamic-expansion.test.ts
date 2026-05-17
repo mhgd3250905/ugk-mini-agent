@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { TeamOrchestrator } from "../src/team/orchestrator.js";
@@ -31,6 +31,40 @@ class DiscoveryMockRunner extends MockRoleRunner {
 	async runChecker(input: import("../src/team/role-runner.js").CheckerInput): Promise<import("../src/team/role-runner.js").CheckerOutput> {
 		if (input.task.type === "discovery") {
 			return { verdict: "pass", reason: "ok", resultContent: this.discoveryAcceptedResult };
+		}
+		return { verdict: "pass", reason: "ok", resultContent: "accepted result" };
+	}
+}
+
+class ReferencedFileDiscoveryRunner extends MockRoleRunner {
+	constructor(private readonly root: string) {
+		super();
+	}
+
+	async runWorker(input: import("../src/team/role-runner.js").WorkerInput): Promise<import("../src/team/role-runner.js").WorkerOutput> {
+		if (input.task.type === "discovery") {
+			const outputDir = join(this.root, "runs", input.runId, "agent-workspaces", input.attemptId, "worker", "output");
+			await mkdir(outputDir, { recursive: true });
+			await writeFile(join(outputDir, "items.md"), [
+				"# Items",
+				"",
+				"```json",
+				JSON.stringify({ items: [{ id: "battle_01", title: "Alpha" }, { id: "battle_02", title: "Beta" }] }),
+				"```",
+				"",
+			].join("\n"), "utf8");
+			return { content: "JSON written to output/items.md", artifactRefs: [] };
+		}
+		return { content: `任务 ${input.task.id} 完成`, artifactRefs: [] };
+	}
+
+	async runChecker(input: import("../src/team/role-runner.js").CheckerInput): Promise<import("../src/team/role-runner.js").CheckerOutput> {
+		if (input.task.type === "discovery") {
+			return {
+				verdict: "pass",
+				reason: "ok",
+				resultContent: `输出文件位于 \`/app/.data/team/runs/${input.runId}/agent-workspaces/${input.attemptId}/worker/output/items.md\`，JSON结构完整可解析。`,
+			};
 		}
 		return { verdict: "pass", reason: "ok", resultContent: "accepted result" };
 	}
@@ -145,6 +179,71 @@ test("discovery + for_each: falls back to worker output when accepted result is 
 
 		const expansion = await workspace.readExpansion(state.runId, "process_each");
 		assert.equal(expansion?.children.length, 2);
+		assert.deepEqual(expansion?.children.map(c => c.sourceItemId), ["battle_01", "battle_02"]);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("discovery + for_each: resolves JSON from run-scoped output file referenced by accepted result", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const runner = new ReferencedFileDiscoveryRunner(root);
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "referenced discovery",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "discover and process" },
+			tasks: [
+				{
+					id: "discover",
+					type: "discovery",
+					title: "Discover",
+					input: { text: "Find" },
+					acceptance: { rules: ["ok"] },
+					discovery: { outputKey: "items" },
+				},
+				{
+					id: "process_each",
+					type: "for_each",
+					title: "Process",
+					input: { text: "p" },
+					acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "discover.items",
+						mode: "sequential",
+						taskTemplate: {
+							title: "Process {{item.title}}",
+							input: { text: "Process {{item.id}}" },
+							acceptance: { rules: ["ok"] },
+						},
+					},
+				},
+			],
+			outputContract: { text: "done" },
+		});
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: runner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1,
+			maxRunDurationMinutes: 60,
+		});
+
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.status, "completed");
+		assert.equal(final.taskStates["process_each"]?.status, "succeeded");
+		assert.equal(final.taskStates["process_each__battle_01"]?.status, "succeeded");
+		assert.equal(final.taskStates["process_each__battle_02"]?.status, "succeeded");
+		const expansion = await workspace.readExpansion(state.runId, "process_each");
 		assert.deepEqual(expansion?.children.map(c => c.sourceItemId), ["battle_01", "battle_02"]);
 	} finally {
 		await rm(root, { recursive: true });

@@ -483,6 +483,28 @@ export class RunWorkspace {
 		try { return await readFile(filePath, "utf8"); } catch { return null; }
 	}
 
+	async readRunScopedFile(runId: string, ref: string): Promise<string | null> {
+		if (/[^a-zA-Z0-9_-]/.test(runId) || runId.includes("..")) return null;
+		const runRoot = join(this.rootDir, "runs", runId);
+		const normalized = ref.trim().replace(/^["'`]+|["'`,.;:，。；：）)]+$/g, "").replace(/\\/g, "/");
+		const appPrefix = `/app/.data/team/runs/${runId}/`;
+		const runsPrefix = `runs/${runId}/`;
+		let relative: string | null = null;
+		if (normalized.startsWith(appPrefix)) {
+			relative = normalized.slice(appPrefix.length);
+		} else if (normalized.startsWith(runsPrefix)) {
+			relative = normalized.slice(runsPrefix.length);
+		} else if (!normalized.startsWith("/") && !/^[a-zA-Z]:\//.test(normalized)) {
+			relative = normalized;
+		}
+		if (!relative || relative.includes("..")) return null;
+		const filePath = join(runRoot, ...relative.split("/").filter(Boolean));
+		const resolved = path.resolve(filePath);
+		const root = path.resolve(runRoot);
+		if (!resolved.startsWith(root + path.sep) && resolved !== root) return null;
+		try { return await readFile(filePath, "utf8"); } catch { return null; }
+	}
+
 	private async writeAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string, content: string): Promise<void> {
 		const dir = join(this.rootDir, "runs", runId, "tasks", taskId, "attempts", attemptId);
 		await mkdir(dir, { recursive: true });

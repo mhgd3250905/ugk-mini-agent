@@ -128,6 +128,7 @@ Plan 支持三种任务类型：
 - worker 输出必须包含可提取的 JSON（raw JSON、fenced code block、或 brace-matched）
 - 系统按 `outputKey` 提取数组后，供 `for_each` 任务引用
 - 结构化 discovery 数据以“可解析内容”为准：runtime 会依次尝试 `accepted-result.md` 和 `worker-output-001.md`。如果 checker/watcher 的 accepted result 是自然语言摘要，但 worker 原始输出保留了 JSON，`for_each` 仍应能展开。
+- 如果 accepted/worker 摘要只包含“输出文件位于 ...”这类引用，runtime 会继续读取当前 run 范围内的 `/app/.data/team/runs/<runId>/...` 或 `runs/<runId>/...` 文件，并从该文件提取 `outputKey` 数组。读取边界限制在当前 run 根目录内。
 
 #### for_each 任务
 

@@ -1067,8 +1067,41 @@ export class TeamOrchestrator {
 			if (!content) continue;
 			const items = this.extractDiscoveryItems(content, outputKey, options);
 			if (items) return items;
+			const referencedItems = await this.readDiscoveryItemsFromReferencedFiles(runId, content, outputKey, options);
+			if (referencedItems) return referencedItems;
 		}
 		return null;
+	}
+
+	private async readDiscoveryItemsFromReferencedFiles(
+		runId: string,
+		content: string,
+		outputKey: string,
+		options: { allowDirectArray?: boolean; strictItems?: boolean } = {},
+	): Promise<Array<Record<string, unknown>> | null> {
+		for (const ref of this.extractRunScopedRefs(runId, content)) {
+			const referencedContent = await this.workspace.readRunScopedFile(runId, ref);
+			if (!referencedContent) continue;
+			const items = this.extractDiscoveryItems(referencedContent, outputKey, options);
+			if (items) return items;
+		}
+		return null;
+	}
+
+	private extractRunScopedRefs(runId: string, content: string): string[] {
+		const refs: string[] = [];
+		const seen = new Set<string>();
+		const add = (ref: string) => {
+			const clean = ref.trim().replace(/^["'`]+|["'`,.;:，。；：）)]+$/g, "");
+			if (!clean || seen.has(clean)) return;
+			seen.add(clean);
+			refs.push(clean);
+		};
+		const absolutePattern = new RegExp(`/app/\\.data/team/runs/${runId}/[^\\s\\])"'` + "`" + `，。；：]+`, "g");
+		for (const match of content.matchAll(absolutePattern)) add(match[0]!);
+		const relativePattern = new RegExp(`runs/${runId}/[^\\s\\])"'` + "`" + `，。；：]+`, "g");
+		for (const match of content.matchAll(relativePattern)) add(match[0]!);
+		return refs;
 	}
 
 	private async failDecomposedDiscoveryAggregation(runId: string, parentTaskId: string, childTaskId: string): Promise<void> {
