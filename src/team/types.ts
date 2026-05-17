@@ -95,6 +95,7 @@ export interface TeamUnit {
 	workerProfileId: string;
 	checkerProfileId: string;
 	finalizerProfileId: string;
+	decomposerProfileId: string;
 	archived: boolean;
 	createdAt: string;
 	updatedAt: string;

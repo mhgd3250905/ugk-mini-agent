@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { TeamPlan, TeamRunState, TeamUnit, TeamAttemptMetadata, AttemptLifecyclePhase, AttemptStatus, TeamTask, TeamTaskType } from "../src/team/types.js";
 
-test("TeamUnit has exactly four role profile slots", () => {
+test("TeamUnit has five role profile slots", () => {
 	const team: TeamUnit = {
 		schemaVersion: "team/team-unit-1",
 		teamUnitId: "team_web_research",
@@ -12,6 +12,7 @@ test("TeamUnit has exactly four role profile slots", () => {
 		workerProfileId: "profile_worker",
 		checkerProfileId: "profile_checker",
 		finalizerProfileId: "profile_finalizer",
+		decomposerProfileId: "profile_decomposer",
 		archived: false,
 		createdAt: "2026-05-15T00:00:00.000Z",
 		updatedAt: "2026-05-15T00:00:00.000Z",
@@ -20,6 +21,7 @@ test("TeamUnit has exactly four role profile slots", () => {
 	assert.equal(team.watcherProfileId, "profile_watcher");
 	assert.equal(team.checkerProfileId, "profile_checker");
 	assert.equal(team.finalizerProfileId, "profile_finalizer");
+	assert.equal(team.decomposerProfileId, "profile_decomposer");
 });
 
 test("Plan stores ordered human readable tasks", () => {

@@ -23,6 +23,7 @@ function makeTeam(teamUnitId: string, profileBase: string): TeamUnit {
 		workerProfileId: `${profileBase}_wo`,
 		checkerProfileId: `${profileBase}_c`,
 		finalizerProfileId: `${profileBase}_f`,
+		decomposerProfileId: `${profileBase}_d`,
 		archived: false, createdAt: "", updatedAt: "",
 	};
 }

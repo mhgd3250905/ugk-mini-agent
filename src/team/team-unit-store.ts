@@ -6,7 +6,7 @@ import { generateTeamUnitId } from "./ids.js";
 export class TeamUnitStore {
 	constructor(private readonly rootDir: string) {}
 
-	async create(input: Omit<TeamUnit, "schemaVersion" | "teamUnitId" | "archived" | "createdAt" | "updatedAt">): Promise<TeamUnit> {
+	async create(input: Omit<TeamUnit, "schemaVersion" | "teamUnitId" | "archived" | "createdAt" | "updatedAt" | "decomposerProfileId"> & { decomposerProfileId?: string }): Promise<TeamUnit> {
 		const now = new Date().toISOString();
 		const teamUnit: TeamUnit = {
 			schemaVersion: "team/team-unit-1",
@@ -17,6 +17,7 @@ export class TeamUnitStore {
 			workerProfileId: input.workerProfileId,
 			checkerProfileId: input.checkerProfileId,
 			finalizerProfileId: input.finalizerProfileId,
+			decomposerProfileId: input.decomposerProfileId ?? input.workerProfileId,
 			archived: false,
 			createdAt: now,
 			updatedAt: now,
@@ -34,7 +35,7 @@ export class TeamUnitStore {
 			for (const f of files) {
 				if (!f.endsWith(".json")) continue;
 				const data = await this.readJson<TeamUnit>(join(dir, f));
-				if (data) units.push(data);
+				if (data) units.push(this.normalize(data));
 			}
 			return units.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 		} catch {
@@ -44,10 +45,11 @@ export class TeamUnitStore {
 
 	async get(teamUnitId: string): Promise<TeamUnit | null> {
 		const filePath = join(this.rootDir, "team-units", `${teamUnitId}.json`);
-		return this.readJson<TeamUnit>(filePath);
+		const data = await this.readJson<TeamUnit>(filePath);
+		return data ? this.normalize(data) : null;
 	}
 
-	async update(teamUnitId: string, patch: Partial<Pick<TeamUnit, "title" | "description" | "watcherProfileId" | "workerProfileId" | "checkerProfileId" | "finalizerProfileId">>): Promise<TeamUnit> {
+	async update(teamUnitId: string, patch: Partial<Pick<TeamUnit, "title" | "description" | "watcherProfileId" | "workerProfileId" | "checkerProfileId" | "finalizerProfileId" | "decomposerProfileId">>): Promise<TeamUnit> {
 		const existing = await this.get(teamUnitId);
 		if (!existing) throw new Error(`team unit not found: ${teamUnitId}`);
 		if (existing.archived) throw new Error(`archived team unit cannot be edited: ${teamUnitId}`);
@@ -79,6 +81,13 @@ export class TeamUnitStore {
 		const tmp = filePath + ".tmp";
 		await writeFile(tmp, JSON.stringify(teamUnit, null, 2), "utf8");
 		await rename(tmp, filePath);
+	}
+
+	private normalize(unit: TeamUnit): TeamUnit {
+		if (!unit.decomposerProfileId) {
+			return { ...unit, decomposerProfileId: unit.workerProfileId };
+		}
+		return unit;
 	}
 
 	private async readJson<T>(filePath: string): Promise<T | null> {
