@@ -12,6 +12,30 @@
 
 ---
 
+## 2026-05-17 — P21-A Decomposer Role Foundation
+
+- **主题**: TeamUnit 增加第五角色 Decomposer 工位
+- **影响范围**: `src/team/types.ts`, `src/team/team-unit-store.ts`, `src/team/routes.ts`, `src/team/config-locks.ts`, `src/team/role-runner.ts`, `src/team/agent-profile-role-runner.ts`, `src/team/orchestrator.ts`, `src/workers/team-worker.ts`, `src/ui/team-page.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - `TeamUnit` 增加 `decomposerProfileId` 字段
+  - 旧 TeamUnit JSON 缺失 `decomposerProfileId` 时 fallback 到 `workerProfileId`
+  - API create/update 支持 `decomposerProfileId`，create 缺失时默认为 `workerProfileId`
+  - Profile validation 和 active run locks 纳入 decomposer profile
+  - `ProfileAwareTeamRoleRunner.setProfileIds` 包含 `decomposerProfileId`
+  - `AgentProfileRoleRunnerOptions` 存储 `decomposerProfileId`
+  - Worker 和 route 构造时 decomposer 默认为 `"main"` 占位符
+  - Team UI modal 增加「任务拆分 Agent (Decomposer)」下拉选择
+  - Team 卡片展示 decomposer profile（旧数据 fallback 到 worker）
+  - **本阶段只增加工位，不执行任务拆分**，controlled decomposition runtime 留到 P21-B/P21-C
+- **提交**:
+  - `4587814 feat(team): add decomposer profile to team units`
+  - `5f49094 feat(team): validate and lock decomposer profile`
+  - `0f460ca feat(team): wire decomposer profile through role runners`
+  - `c3657d9 feat(team-ui): expose decomposer team role`
+- **测试**: 新增 13 个测试（store 4 + routes 5 + config-locks 1 + worker/lifecycle 类型更新 + UI 4）
+
+---
+
 ## 2026-05-17 — P20 Review Fixes
 
 - **主题**: 修复 P20 run timeout UI 默认值覆盖和页面脏字符

@@ -19,14 +19,17 @@
 
 ### TeamUnit
 
-可复用的团队预设，绑定 4 个 AgentProfile 到 4 个角色：
+可复用的团队预设，绑定 5 个 AgentProfile 到 5 个角色：
 
 - `workerProfileId` — 执行 Agent，负责完成 task
 - `checkerProfileId` — 验收 Agent，评审 worker 输出（pass / revise / fail）
 - `watcherProfileId` — 复盘 Agent，post-task review（accept_task / confirm_failed / request_revision）
 - `finalizerProfileId` — 汇总 Agent，生成最终报告
+- `decomposerProfileId` — 任务拆分 Agent（P21-A 已增加工位，运行时拆分行为将在 P21-C 实现）
 
 同一 AgentProfile 可填充多个角色。归档后的 TeamUnit 不能用于新 run。
+
+旧 TeamUnit JSON 缺失 `decomposerProfileId` 时自动 fallback 到 `workerProfileId`。
 
 ### Plan
 
@@ -385,7 +388,7 @@ checker 和 watcher 输出 JSON。`parseJsonResponse` 使用三层提取：
 
 - **Plan**：锁住期间不允许归档或删除
 - **TeamUnit**：锁住期间不允许修改、归档或删除
-- **AgentProfile**：锁住 TeamUnit 中四个 AgentProfile，不允许编辑、归档、安装/删除/启停技能或修改规则文件
+- **AgentProfile**：锁住 TeamUnit 中五个 AgentProfile（含 decomposer），不允许编辑、归档、安装/删除/启停技能或修改规则文件
 
 锁计算由 `computeTeamConfigLocks()` 在路由层执行。违反锁的写操作返回 409 Conflict。
 
