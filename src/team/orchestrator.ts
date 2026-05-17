@@ -39,6 +39,7 @@ const now = () => new Date().toISOString();
 
 const TERMINAL_TASK_STATUSES = new Set(["succeeded", "failed", "cancelled"]);
 const DEFAULT_DECOMPOSER_MAX_CHILDREN = 8;
+const MAX_TOTAL_TASKS_PER_RUN = 50;
 
 function isRunExternallyStopped(status: string): boolean {
 	return status === "cancelled" || status === "paused";
@@ -404,6 +405,11 @@ export class TeamOrchestrator {
 			parentTaskId: task.id,
 			generated: true,
 		}));
+		const validationError = this.validateDecomposedChildren(state, task, childTasks);
+		if (validationError) {
+			await this.failTaskSafely(state.runId, task.id, validationError);
+			return;
+		}
 		await this.workspace.writeDecomposition(state.runId, {
 			schemaVersion: "team/task-decomposition-1",
 			parentTaskId: task.id,
@@ -422,6 +428,50 @@ export class TeamOrchestrator {
 		state = (await this.workspace.getState(state.runId))!;
 		if (this.shouldStop(state)) return;
 		await this.executeDecomposedChildren(state, task, plan, childTasks, signal);
+	}
+
+	private validateDecomposedChildren(state: TeamRunState, parentTask: TeamTask, childTasks: TeamTask[]): string | null {
+		const maxChildren = parentTask.decomposer?.maxChildren ?? DEFAULT_DECOMPOSER_MAX_CHILDREN;
+		if (childTasks.length > maxChildren) {
+			return `decomposer returned ${childTasks.length} children, exceeds maxChildren ${maxChildren}`;
+		}
+		if (Object.keys(state.taskStates).length + childTasks.length > MAX_TOTAL_TASKS_PER_RUN) {
+			return `decomposer would exceed total task limit ${MAX_TOTAL_TASKS_PER_RUN}`;
+		}
+
+		const seen = new Set<string>();
+		const parentMode = parentTask.decomposer?.mode ?? "none";
+		for (const child of childTasks) {
+			if (!child.id.trim()) return "decomposer child task id is required";
+			if (seen.has(child.id) || state.taskStates[child.id]) {
+				return `duplicate child task id: ${child.id}`;
+			}
+			seen.add(child.id);
+			if ((child.type ?? "normal") !== "normal") {
+				return `decomposer child task must be normal: ${child.id}`;
+			}
+			const childMode = child.decomposer?.mode ?? "none";
+			if (parentMode === "leaf" && childMode !== "none") {
+				return `leaf child must use decomposer mode none: ${child.id}`;
+			}
+			if (parentMode === "propagate" && childMode === "propagate") {
+				return `propagate child cannot use decomposer mode propagate: ${child.id}`;
+			}
+		}
+		return null;
+	}
+
+	private async failTaskSafely(runId: string, taskId: string, errorSummary: string): Promise<void> {
+		const state = (await this.workspace.getState(runId))!;
+		if (this.shouldStop(state)) return;
+		const ts = state.taskStates[taskId];
+		if (!ts || TERMINAL_TASK_STATUSES.has(ts.status)) return;
+		ts.status = "failed";
+		ts.errorSummary = errorSummary;
+		ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
+		state.summary.failedTasks++;
+		state.updatedAt = now();
+		await this.workspace.saveState(state);
 	}
 
 	private async executeDecomposedChildren(
