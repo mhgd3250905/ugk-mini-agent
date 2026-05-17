@@ -26,10 +26,11 @@
   - 旧扩展记录（无 `sourceItem`）仍兼容
 - **测试**: 新增 17 个测试覆盖 source item 持久化、prompt 注入、acceptance rules、item drift rejection 行为、resume 兼容性
 - **commits**:
-  - `82d9623` feat(team): persist for-each source item snapshots
+  - `0802500` feat(team): persist for-each source item snapshots
   - `b772c06` feat(team): inject for-each item identity into role prompts
   - `a0e34a3` feat(team): add item identity acceptance rules for for-each children
   - `6d56261` test(team): reject for-each child item drift
+  - `162292e` docs(team): document for-each item isolation
 
 ---
 
