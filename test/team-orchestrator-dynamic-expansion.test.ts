@@ -499,7 +499,7 @@ test("expansion record persists full child task definitions after initial run", 
 		assert.ok(childEntry);
 		assert.ok("task" in childEntry && childEntry.task, "child entry should have full task definition");
 		assert.equal(childEntry.task!.input.text, "Detailed analysis for alpha");
-		assert.deepEqual(childEntry.task!.acceptance.rules, ["must mention alpha", "include risk score"]);
+		assert.deepEqual(childEntry.task!.acceptance.rules, ["must mention alpha", "include risk score", "输出必须对应 item.id=\"alpha\" 的任务，不得处理其他 item", "输出必须对应\"Alpha\"(item.id=\"alpha\")，不得替换为其他条目"]);
 	} finally {
 		await rm(root, { recursive: true });
 	}
@@ -554,7 +554,7 @@ test("resume uses original generated input.text, not title fallback", async () =
 		assert.equal(childCalls.length, 1, "child task should have been called exactly once");
 		assert.equal(childCalls[0]!.inputText, "Custom input for x with specifics",
 			"resume path should use original generated input.text, not title");
-		assert.deepEqual(childCalls[0]!.acceptanceRules, ["rule A for x", "rule B"],
+		assert.deepEqual(childCalls[0]!.acceptanceRules, ["rule A for x", "rule B", "输出必须对应 item.id=\"x\" 的任务，不得处理其他 item", "输出必须对应\"X\"(item.id=\"x\")，不得替换为其他条目"],
 			"resume path should preserve original acceptance.rules");
 	} finally {
 		await rm(root, { recursive: true });

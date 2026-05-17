@@ -50,6 +50,18 @@ function replaceTemplate(
 	return result;
 }
 
+function buildIdentityAcceptanceRules(item: Record<string, unknown>): string[] {
+	const itemId = item.id as string;
+	const display = item.title ?? item.name ?? item.label;
+	const rules = [
+		`输出必须对应 item.id="${itemId}" 的任务，不得处理其他 item`,
+	];
+	if (typeof display === "string" && display !== itemId) {
+		rules.push(`输出必须对应"${display}"(item.id="${itemId}")，不得替换为其他条目`);
+	}
+	return rules;
+}
+
 export class TemplateTaskExpansionPlanner implements TaskExpansionPlanner {
 	async expand(context: TaskExpansionContext): Promise<TaskExpansionResult> {
 		const { parentTask, items } = context;
@@ -82,6 +94,8 @@ export class TemplateTaskExpansionPlanner implements TaskExpansionPlanner {
 			const title = replaceTemplate(template.title, item, itemJson, scopedVars);
 			const inputText = replaceTemplate(template.input.text, item, itemJson, scopedVars);
 			const acceptanceRules = template.acceptance.rules.map(r => replaceTemplate(r, item, itemJson, scopedVars));
+			const identityRules = buildIdentityAcceptanceRules(item);
+			const allRules = [...acceptanceRules, ...identityRules];
 			const payload = template.input.payload
 				? Object.fromEntries(
 					Object.entries(template.input.payload).map(([k, v]) => [k, typeof v === "string" ? replaceTemplate(v, item, itemJson, scopedVars) : v]),
@@ -93,7 +107,7 @@ export class TemplateTaskExpansionPlanner implements TaskExpansionPlanner {
 				type: "normal" as const,
 				title,
 				input: { text: inputText, ...(payload ? { payload } : {}) },
-				acceptance: { rules: acceptanceRules },
+				acceptance: { rules: allRules },
 				parentTaskId: parentTask.id,
 				sourceItemId: itemId,
 				sourceItem: { id: itemId, data: { ...item } },

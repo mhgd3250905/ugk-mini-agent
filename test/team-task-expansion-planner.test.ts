@@ -531,3 +531,63 @@ test("multiple generated children each have their own sourceItem", async () => {
 	assert.equal(result.children[1]!.sourceItem!.id, "b");
 	assert.deepEqual(result.children[1]!.sourceItem!.data, { id: "b", title: "Beta" });
 });
+
+// ── P23 Task 3: item identity acceptance rules ──
+
+test("generated child acceptance rules include template rules plus identity rules", async () => {
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask: makeParentTask(),
+		items: [{ id: "battle_08", title: "藏经阁大战" }],
+	});
+	const rules = result.children[0]!.acceptance.rules;
+	// First rule from template
+	assert.equal(rules[0], "output for battle_08 is valid");
+	// Identity rules appended after template rules
+	assert.ok(rules.some(r => r.includes("item.id=\"battle_08\"")), `must include item.id rule, got: ${JSON.stringify(rules)}`);
+	assert.ok(rules.some(r => r.includes("藏经阁大战")), `must include title identity rule, got: ${JSON.stringify(rules)}`);
+});
+
+test("identity rules mention display value when item has title", async () => {
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask: makeParentTask(),
+		items: [{ id: "x1", title: "Alpha" }],
+	});
+	const rules = result.children[0]!.acceptance.rules;
+	const displayRule = rules.find(r => r.includes("Alpha") && r.includes("x1"));
+	assert.ok(displayRule, `must have display rule with title, got: ${JSON.stringify(rules)}`);
+});
+
+test("identity rules mention display value when item has name instead of title", async () => {
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask: makeParentTask(),
+		items: [{ id: "y1", name: "Beta" }],
+	});
+	const rules = result.children[0]!.acceptance.rules;
+	const displayRule = rules.find(r => r.includes("Beta") && r.includes("y1"));
+	assert.ok(displayRule, `must have display rule with name, got: ${JSON.stringify(rules)}`);
+});
+
+test("child from item with only id gets id-based identity rule only", async () => {
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask: makeParentTask(),
+		items: [{ id: "bare_id" }],
+	});
+	const rules = result.children[0]!.acceptance.rules;
+	const idRule = rules.find(r => r.includes("bare_id"));
+	assert.ok(idRule, "must have id-based identity rule");
+	// No duplicate display rule since display === id
+	const displayRule = rules.find(r => r.includes("bare_id") && r.includes("不得替换"));
+	assert.equal(displayRule, undefined, "no display rule when display equals id");
+});
