@@ -2239,3 +2239,27 @@ test("P20-fix: timeout prompt leaves default blank and has clean modal text", ()
 	assert.match(html, /id="prompt-cancel">取消<\/button>/);
 	assert.doesNotMatch(html, /ȡ消/);
 });
+
+
+// ── P21-A: decomposer UI tests ──
+
+test("P21-A: team page contains decomposer agent label and select", () => {
+	const html = renderTeamPage();
+	assert.match(html, /任务拆分 Agent/);
+	assert.match(html, /tu-decomposer/);
+});
+
+test("P21-A: saveTeamUnit payload includes decomposerProfileId", () => {
+	const html = renderTeamPage();
+	assert.match(html, /decomposerProfileId.*tu-decomposer/);
+});
+
+test("P21-A: openTeamUnitModal renders decomposer profile options", () => {
+	const html = renderTeamPage();
+	assert.match(html, /renderProfileOptions.*tu-decomposer/);
+});
+
+test("P21-A: renderTeamCard shows decomposer profile row", () => {
+	const html = renderTeamPage();
+	assert.match(html, /任务拆分 Agent.*escapeHtml.*decomposerProfileId/);
+});

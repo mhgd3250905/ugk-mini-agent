@@ -284,6 +284,10 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 				<label>汇总 Agent (Finalizer)</label>
 				<select id="tu-finalizer"></select>
 			</div>
+			<div class="field">
+				<label>任务拆分 Agent (Decomposer)</label>
+				<select id="tu-decomposer"></select>
+			</div>
 		</div>
 		<div class="modal-actions">
 			<button class="btn" style="background:var(--border);color:var(--text)" onclick="closeTeamUnitModal()">取消</button>
@@ -598,6 +602,7 @@ function openTeamUnitModal(unit) {
 	renderProfileOptions('tu-checker', unit ? unit.checkerProfileId : 'main');
 	renderProfileOptions('tu-watcher', unit ? unit.watcherProfileId : 'main');
 	renderProfileOptions('tu-finalizer', unit ? unit.finalizerProfileId : 'main');
+	renderProfileOptions('tu-decomposer', unit ? (unit.decomposerProfileId || unit.workerProfileId) : 'main');
 	$('teamunit-modal').classList.add('open');
 }
 
@@ -614,6 +619,7 @@ async function saveTeamUnit() {
 		checkerProfileId: $('tu-checker').value,
 		watcherProfileId: $('tu-watcher').value,
 		finalizerProfileId: $('tu-finalizer').value,
+	decomposerProfileId: $('tu-decomposer').value,
 	};
 	if (!payload.title) { showError('请输入名称'); return; }
 	try {
@@ -1104,7 +1110,8 @@ async function loadTeams() {
 					'<table><tr><td>执行 Agent</td><td>' + escapeHtml(profileName(t.workerProfileId)) + '</td></tr>' +
 					'<tr><td>验收 Agent</td><td>' + escapeHtml(profileName(t.checkerProfileId)) + '</td></tr>' +
 					'<tr><td>复盘 Agent</td><td>' + escapeHtml(profileName(t.watcherProfileId)) + '</td></tr>' +
-					'<tr><td>汇总 Agent</td><td>' + escapeHtml(profileName(t.finalizerProfileId)) + '</td></tr></table>' +
+					'<tr><td>汇总 Agent</td><td>' + escapeHtml(profileName(t.finalizerProfileId)) + '</td></tr>' +
+					'<tr><td>任务拆分 Agent</td><td>' + escapeHtml(profileName(t.decomposerProfileId || t.workerProfileId)) + '</td></tr></table>' +
 					(showActions ? '<div style="margin-top:8px;display:flex;gap:8px"><button class="btn btn-sm" style="background:var(--border);color:var(--text)" onclick="editTeamUnit(\\'' + t.teamUnitId + '\\')">编辑</button>' +
 					'<button class="btn btn-sm btn-primary" onclick="archiveTeamUnit(\\'' + t.teamUnitId + '\\')">归档</button></div>' : '') +
 					'</div>';
