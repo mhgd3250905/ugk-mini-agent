@@ -26,8 +26,18 @@ function formatItemValue(value: unknown): string {
 	return String(value);
 }
 
-function replaceTemplate(template: string, item: Record<string, unknown>, itemJson: string): string {
+function replaceTemplate(
+	template: string,
+	item: Record<string, unknown>,
+	itemJson: string,
+	scopedVars: { runId: string; planId: string; parentTaskId: string; outputDir: string },
+): string {
 	let result = template;
+	// Run-scoped: {{run.id}}, {{plan.id}}, {{parentTask.id}}, {{task.outputDir}}
+	result = result.replace(/\{\{run\.id\}\}/g, scopedVars.runId);
+	result = result.replace(/\{\{plan\.id\}\}/g, scopedVars.planId);
+	result = result.replace(/\{\{parentTask\.id\}\}/g, scopedVars.parentTaskId);
+	result = result.replace(/\{\{task\.outputDir\}\}/g, scopedVars.outputDir);
 	// Generic {{item.<field>}} — replace for any top-level key
 	result = result.replace(/\{\{item\.([a-zA-Z_][a-zA-Z0-9_]*)\}\}/g, (_match, field: string) => {
 		if (field === "title" && (item[field] === undefined || item[field] === null)) {
@@ -59,16 +69,22 @@ export class TemplateTaskExpansionPlanner implements TaskExpansionPlanner {
 		}
 
 		const template = parentTask.forEach.taskTemplate;
+		const scopedVars = {
+			runId: context.runId,
+			planId: context.planId,
+			parentTaskId: parentTask.id,
+			outputDir: `.data/team/runs/${context.runId}/generated/${parentTask.id}`,
+		};
 		const children: TeamTask[] = items.map((item) => {
 			const itemId = item.id as string;
 			const safeId = sanitizeIdPart(itemId);
 			const itemJson = JSON.stringify(item);
-			const title = replaceTemplate(template.title, item, itemJson);
-			const inputText = replaceTemplate(template.input.text, item, itemJson);
-			const acceptanceRules = template.acceptance.rules.map(r => replaceTemplate(r, item, itemJson));
+			const title = replaceTemplate(template.title, item, itemJson, scopedVars);
+			const inputText = replaceTemplate(template.input.text, item, itemJson, scopedVars);
+			const acceptanceRules = template.acceptance.rules.map(r => replaceTemplate(r, item, itemJson, scopedVars));
 			const payload = template.input.payload
 				? Object.fromEntries(
-					Object.entries(template.input.payload).map(([k, v]) => [k, typeof v === "string" ? replaceTemplate(v, item, itemJson) : v]),
+					Object.entries(template.input.payload).map(([k, v]) => [k, typeof v === "string" ? replaceTemplate(v, item, itemJson, scopedVars) : v]),
 				)
 				: undefined;
 

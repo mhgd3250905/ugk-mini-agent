@@ -375,3 +375,95 @@ test("generic {{item.<field>}} in payload string values is replaced", async () =
 	assert.equal(payload!.target, "https://example.com");
 	assert.equal(payload!.note, "test desc");
 });
+
+// ── P20 Task 2: run-scoped placeholders ──
+
+test("{{task.outputDir}} expands to run-scoped path containing run ID and parent task ID", async () => {
+	const parentTask: TeamTask = {
+		id: "process",
+		type: "for_each",
+		title: "FE",
+		input: { text: "p" },
+		acceptance: { rules: ["ok"] },
+		forEach: {
+			itemsFrom: "d.items",
+			mode: "sequential",
+			taskTemplate: {
+				title: "Process {{item.id}}",
+				input: { text: "Write to {{task.outputDir}}/{{item.id}}.md" },
+				acceptance: { rules: ["ok"] },
+			},
+		},
+	};
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_abc123",
+		planId: "plan_1",
+		parentTask,
+		items: [{ id: "i1", title: "T" }],
+	});
+	const text = result.children[0]!.input.text;
+	assert.ok(text.includes("run_abc123"), `expected run ID in "${text}"`);
+	assert.ok(text.includes("process"), `expected parent task ID in "${text}"`);
+	assert.ok(text.includes("i1.md"), `expected item id in "${text}"`);
+	assert.ok(!text.includes("{{"), `no raw placeholders in "${text}"`);
+});
+
+test("{{run.id}}, {{plan.id}}, and {{parentTask.id}} are replaced in payload and rules", async () => {
+	const parentTask: TeamTask = {
+		id: "scan",
+		type: "for_each",
+		title: "FE",
+		input: { text: "p" },
+		acceptance: { rules: ["ok"] },
+		forEach: {
+			itemsFrom: "d.items",
+			mode: "sequential",
+			taskTemplate: {
+				title: "Scan {{item.id}}",
+				input: { text: "Go", payload: { ref: "run={{run.id}} plan={{plan.id}} parent={{parentTask.id}}" } },
+				acceptance: { rules: ["output for {{run.id}}/{{plan.id}}/{{parentTask.id}}"] },
+			},
+		},
+	};
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_r1",
+		planId: "plan_p1",
+		parentTask,
+		items: [{ id: "x", title: "X" }],
+	});
+	const child = result.children[0]!;
+	assert.equal(child.input.payload!.ref, "run=run_r1 plan=plan_p1 parent=scan");
+	assert.equal(child.acceptance.rules[0], "output for run_r1/plan_p1/scan");
+});
+
+test("generated output path does not contain raw {{...}}", async () => {
+	const parentTask: TeamTask = {
+		id: "proc",
+		type: "for_each",
+		title: "FE",
+		input: { text: "p" },
+		acceptance: { rules: ["ok"] },
+		forEach: {
+			itemsFrom: "d.items",
+			mode: "sequential",
+			taskTemplate: {
+				title: "Proc {{item.id}}",
+				input: { text: "Dir: {{task.outputDir}}" },
+				acceptance: { rules: ["check {{task.outputDir}}"] },
+			},
+		},
+	};
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_test1",
+		planId: "plan_1",
+		parentTask,
+		items: [{ id: "a1", title: "A" }, { id: "b2", title: "B" }],
+	});
+	for (const child of result.children) {
+		assert.ok(!child.input.text.includes("{{"), `no raw placeholder in "${child.input.text}"`);
+		assert.ok(!child.acceptance.rules[0]!.includes("{{"), `no raw placeholder in "${child.acceptance.rules[0]}"`);
+	}
+});
