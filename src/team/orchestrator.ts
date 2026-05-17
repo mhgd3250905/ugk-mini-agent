@@ -384,14 +384,109 @@ export class TeamOrchestrator {
 		if (this.shouldStop(state)) return;
 
 		if (output.decision === "no_split") {
+			await this.workspace.writeDecomposition(state.runId, {
+				schemaVersion: "team/task-decomposition-1",
+				parentTaskId: task.id,
+				mode,
+				decision: "no_split",
+				reason: output.reason,
+				decomposedAt: now(),
+				children: [],
+				runtimeContext: output.runtimeContext,
+			});
 			await this.executeTask(state, task, signal);
 			return;
 		}
 
-		const ts = state.taskStates[task.id]!;
-		ts.status = "succeeded";
-		ts.progress = { phase: "succeeded", message: `decomposed into ${output.children?.length ?? 0} child tasks`, updatedAt: now() };
-		state.summary.succeededTasks++;
+		const childTasks = (output.children ?? []).map(child => ({
+			...child,
+			type: child.type ?? "normal",
+			parentTaskId: task.id,
+			generated: true,
+		}));
+		await this.workspace.writeDecomposition(state.runId, {
+			schemaVersion: "team/task-decomposition-1",
+			parentTaskId: task.id,
+			mode,
+			decision: "split",
+			reason: output.reason,
+			decomposedAt: now(),
+			children: childTasks.map(child => ({
+				taskId: child.id,
+				title: child.title,
+				task: child,
+			})),
+			runtimeContext: output.runtimeContext,
+		});
+		await this.workspace.appendChildTaskStates(state.runId, childTasks);
+		state = (await this.workspace.getState(state.runId))!;
+		if (this.shouldStop(state)) return;
+		await this.executeDecomposedChildren(state, task, plan, childTasks, signal);
+	}
+
+	private async executeDecomposedChildren(
+		initialState: TeamRunState,
+		parentTask: TeamTask,
+		plan: TeamPlan,
+		childTasks: TeamTask[],
+		signal: AbortSignal,
+	): Promise<void> {
+		let state = initialState;
+		state.currentTaskId = parentTask.id;
+		state.taskStates[parentTask.id]!.status = "running";
+		state.taskStates[parentTask.id]!.progress = {
+			phase: "worker_running",
+			message: `decomposed into ${childTasks.length} child tasks`,
+			updatedAt: now(),
+		};
+		state.updatedAt = now();
+		await this.workspace.saveState(state);
+
+		if (childTasks.length === 0) {
+			state = (await this.workspace.getState(state.runId))!;
+			state.taskStates[parentTask.id]!.status = "succeeded";
+			state.taskStates[parentTask.id]!.progress = { phase: "succeeded", message: "no child tasks returned", updatedAt: now() };
+			state.summary.succeededTasks++;
+			state.updatedAt = now();
+			await this.workspace.saveState(state);
+			return;
+		}
+
+		for (const child of childTasks) {
+			state = (await this.workspace.getState(state.runId))!;
+			if (state.status !== "running" || this.shouldStop(state)) break;
+			if (TERMINAL_TASK_STATUSES.has(state.taskStates[child.id]?.status ?? "pending")) continue;
+			if (signal.aborted) break;
+			if (this.isTimedOut(state)) {
+				await this.handleTimeout(state, plan);
+				return;
+			}
+			await this.executeMaybeDecomposedTask(state, child, plan, signal);
+		}
+
+		state = (await this.workspace.getState(initialState.runId))!;
+		if (state.status !== "running" || this.shouldStop(state)) return;
+		const allDone = childTasks.every(child => {
+			const childState = state.taskStates[child.id];
+			return childState && TERMINAL_TASK_STATUSES.has(childState.status);
+		});
+		if (!allDone) return;
+
+		const failedChild = childTasks.find(child => state.taskStates[child.id]?.status === "failed");
+		const ts = state.taskStates[parentTask.id]!;
+		if (failedChild) {
+			const childState = state.taskStates[failedChild.id]!;
+			ts.status = "failed";
+			ts.errorSummary = `decomposed child ${failedChild.id} failed: ${childState.errorSummary ?? "unknown error"}`;
+			ts.resultRef = childState.resultRef;
+			ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
+			state.summary.failedTasks++;
+		} else {
+			ts.status = "succeeded";
+			ts.errorSummary = null;
+			ts.progress = { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
+			state.summary.succeededTasks++;
+		}
 		state.updatedAt = now();
 		await this.workspace.saveState(state);
 	}
@@ -983,7 +1078,7 @@ export class TeamOrchestrator {
 					await this.handleTimeout(state, plan);
 					return;
 				}
-				await this.executeTask(state, child, signal);
+				await this.executeMaybeDecomposedTask(state, child, plan, signal);
 			}
 
 			state = (await this.workspace.getState(state.runId))!;
@@ -1033,7 +1128,7 @@ export class TeamOrchestrator {
 				if (state.status !== "running" || this.shouldStop(state)) break;
 				if (TERMINAL_TASK_STATUSES.has(state.taskStates[child.id]?.status ?? "pending")) continue;
 				if (signal.aborted) break;
-				await this.executeTask(state, child, signal);
+				await this.executeMaybeDecomposedTask(state, child, plan, signal);
 			}
 			state = (await this.workspace.getState(state.runId))!;
 			if (state.status !== "running" || this.shouldStop(state)) return;

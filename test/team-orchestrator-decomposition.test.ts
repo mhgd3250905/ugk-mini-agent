@@ -7,7 +7,7 @@ import { TeamOrchestrator } from "../src/team/orchestrator.js";
 import { PlanStore } from "../src/team/plan-store.js";
 import { TeamUnitStore } from "../src/team/team-unit-store.js";
 import { RunWorkspace } from "../src/team/run-workspace.js";
-import { MockRoleRunner, type DecomposerInput, type DecomposerOutput, type WorkerInput } from "../src/team/role-runner.js";
+import { MockRoleRunner, type DecomposerInput, type DecomposerOutput, type MockRoleRunnerConfig, type WorkerInput } from "../src/team/role-runner.js";
 import type { TeamTask } from "../src/team/types.js";
 
 class DecompositionCaptureRunner extends MockRoleRunner {
@@ -15,8 +15,8 @@ class DecompositionCaptureRunner extends MockRoleRunner {
 	readonly workerTaskIds: string[] = [];
 	readonly decomposerTaskIds: string[] = [];
 
-	constructor(private readonly outputs: DecomposerOutput[] = []) {
-		super();
+	constructor(private readonly outputs: DecomposerOutput[] = [], config: MockRoleRunnerConfig = {}) {
+		super(config);
 	}
 
 	override async runDecomposer(input: DecomposerInput): Promise<DecomposerOutput> {
@@ -161,6 +161,161 @@ test("decomposer runs before worker for decomposable task", async () => {
 		await orchestrator.runToCompletion(state.runId);
 
 		assert.deepEqual(runner.events.slice(0, 2), ["decomposer:task_1", "worker:task_1"]);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("split writes decomposition record", async () => {
+	const runner = new DecompositionCaptureRunner([
+		{
+			decision: "split",
+			reason: "needs independent work",
+			children: [
+				{ id: "task_1__a", title: "Child A", input: { text: "do a" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+			],
+		},
+	]);
+	const { root, plan, orchestrator, workspace } = await setup({
+		id: "task_1",
+		title: "Task 1",
+		input: { text: "do task" },
+		acceptance: { rules: ["ok"] },
+		decomposer: { mode: "leaf" },
+	}, runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		await orchestrator.runToCompletion(state.runId);
+
+		const record = await workspace.readDecomposition(state.runId, "task_1");
+		assert.ok(record);
+		assert.equal(record.decision, "split");
+		assert.equal(record.reason, "needs independent work");
+		assert.equal(record.children[0]?.task.id, "task_1__a");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("split appends child task states", async () => {
+	const runner = new DecompositionCaptureRunner([
+		{
+			decision: "split",
+			reason: "split",
+			children: [
+				{ id: "task_1__a", title: "Child A", input: { text: "do a" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+				{ id: "task_1__b", title: "Child B", input: { text: "do b" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+			],
+		},
+	]);
+	const { root, plan, orchestrator } = await setup({
+		id: "task_1",
+		title: "Task 1",
+		input: { text: "do task" },
+		acceptance: { rules: ["ok"] },
+		decomposer: { mode: "leaf" },
+	}, runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.summary.totalTasks, 3);
+		assert.equal(final.taskStates["task_1__a"]?.status, "succeeded");
+		assert.equal(final.taskStates["task_1__b"]?.status, "succeeded");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("decomposed children execute sequentially in persisted order", async () => {
+	const runner = new DecompositionCaptureRunner([
+		{
+			decision: "split",
+			reason: "split",
+			children: [
+				{ id: "task_1__a", title: "Child A", input: { text: "do a" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+				{ id: "task_1__b", title: "Child B", input: { text: "do b" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+			],
+		},
+	]);
+	const { root, plan, orchestrator } = await setup({
+		id: "task_1",
+		title: "Task 1",
+		input: { text: "do task" },
+		acceptance: { rules: ["ok"] },
+		decomposer: { mode: "leaf" },
+	}, runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		await orchestrator.runToCompletion(state.runId);
+
+		assert.deepEqual(runner.events.filter(e => e.startsWith("worker:")), ["worker:task_1__a", "worker:task_1__b"]);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("decomposed parent succeeds when all children succeed", async () => {
+	const runner = new DecompositionCaptureRunner([
+		{
+			decision: "split",
+			reason: "split",
+			children: [
+				{ id: "task_1__a", title: "Child A", input: { text: "do a" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+				{ id: "task_1__b", title: "Child B", input: { text: "do b" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+			],
+		},
+	]);
+	const { root, plan, orchestrator } = await setup({
+		id: "task_1",
+		title: "Task 1",
+		input: { text: "do task" },
+		acceptance: { rules: ["ok"] },
+		decomposer: { mode: "leaf" },
+	}, runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.status, "completed");
+		assert.equal(final.taskStates.task_1?.status, "succeeded");
+		assert.equal(final.summary.succeededTasks, 3);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("decomposed parent fails when any child fails and points to child outcome", async () => {
+	const runner = new DecompositionCaptureRunner([
+		{
+			decision: "split",
+			reason: "split",
+			children: [
+				{ id: "task_1__a", title: "Child A", input: { text: "do a" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+				{ id: "task_1__b", title: "Child B", input: { text: "do b" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+			],
+		},
+	], {
+		checkerOutputs: [
+			{ verdict: "fail", reason: "child failure", resultContent: "bad result" },
+			{ verdict: "pass", reason: "ok", resultContent: "accepted result" },
+		],
+	});
+	const { root, plan, orchestrator } = await setup({
+		id: "task_1",
+		title: "Task 1",
+		input: { text: "do task" },
+		acceptance: { rules: ["ok"] },
+		decomposer: { mode: "leaf" },
+	}, runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.status, "completed_with_failures");
+		assert.equal(final.taskStates.task_1?.status, "failed");
+		assert.match(final.taskStates.task_1?.errorSummary ?? "", /task_1__a/);
+		assert.match(final.taskStates.task_1?.errorSummary ?? "", /child failure/);
 	} finally {
 		await rm(root, { recursive: true });
 	}
