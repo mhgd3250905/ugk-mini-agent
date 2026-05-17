@@ -182,6 +182,21 @@ tasks/<taskId>/attempts/<attemptId>/discovery-result.json
 - `for_each` 父任务状态由子任务结果推导：全部成功→succeeded，有失败→failed
 - 0 个 item 时，`for_each` 直接标记为 succeeded
 
+#### for_each 子任务 item 身份隔离 (P23)
+
+Discovery 任务可以看到完整的 item 列表——它的职责是找到这个列表。`for_each` 展开后，每个生成的子任务**只能绑定一个 source item**。
+
+- 每个生成的子任务携带 `sourceItem` 快照（`{ id, data }`），包含完整的 discovery item 副本
+- 扩展记录（expansion JSON）中持久化 `sourceItem`，resume/reclaim 使用存储的快照，不会从可能已变化的 discovery 结果重新渲染
+- Worker/checker/watcher 的 prompt 中注入**权威 source item 身份块**，明确声明当前 item 的 `id` 和 `title`/`name`/`label`
+- Prompt 指令：任何参考资料、历史文件、全局清单、编号表如果与当前 item 冲突，必须以当前 item 为准
+- Checker prompt 要求：如果 worker 输出处理了错误的 item（与 source item 不匹配），verdict 必须为 `fail`
+- Watcher prompt 包含任务描述（`task.input.text`），不得认可切换了 item 的结果
+- 自动追加的 acceptance rules 包含 item identity 约束（基于 `item.id` 和 display field）
+- 旧扩展记录（无 `sourceItem`）仍兼容，fallback 使用已有的 `sourceItemId` 和存储的 `task`
+
+**典型 incident**：如果 `item.id=battle_08` 且 `item.title=藏经阁大战`，worker 读到一份共享评分表说 `8=雁门关外自尽`，worker 不得将任务主体切换到"雁门关外自尽"。Checker 必须拒绝这种输出。
+
 #### 实现组件
 
 | 文件 | 职责 |

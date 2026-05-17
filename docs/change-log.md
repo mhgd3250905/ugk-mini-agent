@@ -12,6 +12,27 @@
 
 ---
 
+## 2026-05-17 — Team Runtime P23: for_each Item Isolation
+
+- **主题**: 修复 `for_each` 生成的子任务 item 身份边界过软的问题——worker 可被共享参考文档误导切换到错误 item
+- **影响范围**: `src/team/types.ts`, `src/team/task-expansion-planner.ts`, `src/team/orchestrator.ts`, `src/team/agent-profile-role-runner.ts`, `docs/team-runtime.md`
+- **变更**:
+  - `TeamTask` 新增 `sourceItem?: TeamTaskSourceItem`（`{ id, data }`），`TaskExpansionChildEntry` 同步新增
+  - `TemplateTaskExpansionPlanner` 生成的子任务携带完整 source item 快照（shallow copy）
+  - expansion record 持久化 `sourceItem`，resume 使用存储快照而非重新渲染
+  - Worker/checker/watcher prompt 注入权威 source item 身份块，明确声明当前 item 的 id 和 display field
+  - Checker prompt 要求 item 不匹配时 verdict 为 `fail`；watcher prompt 包含任务描述并拒绝切换 item 的结果
+  - 自动追加 item identity acceptance rules（基于 `item.id` 和 `title`/`name`/`label`）
+  - 旧扩展记录（无 `sourceItem`）仍兼容
+- **测试**: 新增 17 个测试覆盖 source item 持久化、prompt 注入、acceptance rules、item drift rejection 行为、resume 兼容性
+- **commits**:
+  - `82d9623` feat(team): persist for-each source item snapshots
+  - `b772c06` feat(team): inject for-each item identity into role prompts
+  - `a0e34a3` feat(team): add item identity acceptance rules for for-each children
+  - `6d56261` test(team): reject for-each child item drift
+
+---
+
 ## 2026-05-17 — Team Runtime P22 Review Fix: Decomposed Discovery Standard Persistence
 
 - **主题**: 修复 decomposed discovery parent 聚合后未持久化 `discovery-result.json` 的问题；修复 validation error 硬编码 `outputKey 'items'`
