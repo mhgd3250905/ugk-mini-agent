@@ -504,10 +504,10 @@ test("lifecycle: records finalizer runtime context in run state", async () => {
 // ── P17: profile injection explicit contract ──
 
 class FakeProfileAwareRunner implements ProfileAwareTeamRoleRunner {
-	public injectedProfiles: { workerProfileId: string; checkerProfileId: string; watcherProfileId: string; finalizerProfileId: string } | null = null;
+	public injectedProfiles: { workerProfileId: string; checkerProfileId: string; watcherProfileId: string; finalizerProfileId: string; decomposerProfileId: string } | null = null;
 	public workerCalled = false;
 
-	setProfileIds(profiles: { workerProfileId: string; checkerProfileId: string; watcherProfileId: string; finalizerProfileId: string }): void {
+	setProfileIds(profiles: { workerProfileId: string; checkerProfileId: string; watcherProfileId: string; finalizerProfileId: string; decomposerProfileId: string }): void {
 		this.injectedProfiles = { ...profiles };
 	}
 
@@ -689,7 +689,7 @@ test('P17: orchestrator persists worker/checker/watcher runtime context in attem
 				const out = await super.runFinalizer(input);
 				return { ...out, runtimeContext: roleRuntimes.finalizer };
 			}
-			setProfileIds() {}
+			setProfileIds(_profiles: { workerProfileId: string; checkerProfileId: string; watcherProfileId: string; finalizerProfileId: string; decomposerProfileId: string }): void {}
 		})();
 
 		const orchestrator = new TeamOrchestrator({

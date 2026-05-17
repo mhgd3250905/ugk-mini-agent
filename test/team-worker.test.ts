@@ -201,6 +201,7 @@ test('P17: worker real runner profile placeholders are overridden by setProfileI
 			checkerProfileId: 'actual-checker',
 			watcherProfileId: 'actual-watcher',
 			finalizerProfileId: 'actual-finalizer',
+			decomposerProfileId: 'actual-decomposer',
 		});
 
 		const workerOut = await runner.runWorker({

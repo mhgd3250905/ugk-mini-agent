@@ -19,6 +19,7 @@ export interface AgentProfileRoleRunnerOptions {
 	checkerProfileId: string;
 	watcherProfileId: string;
 	finalizerProfileId: string;
+	decomposerProfileId?: string;
 	profileResolver?: BackgroundAgentProfileResolver;
 	sessionFactory?: BackgroundAgentSessionFactory;
 	defaultBrowserId?: string;
@@ -329,11 +330,12 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 		this.profileResolver = options.profileResolver ?? new BackgroundAgentProfileResolver({ projectRoot: options.projectRoot });
 	}
 
-	setProfileIds(profiles: { workerProfileId: string; checkerProfileId: string; watcherProfileId: string; finalizerProfileId: string }): void {
+	setProfileIds(profiles: { workerProfileId: string; checkerProfileId: string; watcherProfileId: string; finalizerProfileId: string; decomposerProfileId: string }): void {
 		this.options.workerProfileId = profiles.workerProfileId;
 		this.options.checkerProfileId = profiles.checkerProfileId;
 		this.options.watcherProfileId = profiles.watcherProfileId;
 		this.options.finalizerProfileId = profiles.finalizerProfileId;
+		this.options.decomposerProfileId = profiles.decomposerProfileId;
 	}
 
 	async runWorker(input: WorkerInput): Promise<WorkerOutput> {

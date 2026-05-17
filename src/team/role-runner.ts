@@ -72,7 +72,7 @@ export interface TeamRoleRunner {
 }
 
 export interface ProfileAwareTeamRoleRunner extends TeamRoleRunner {
-	setProfileIds(profiles: { workerProfileId: string; checkerProfileId: string; watcherProfileId: string; finalizerProfileId: string }): void;
+	setProfileIds(profiles: { workerProfileId: string; checkerProfileId: string; watcherProfileId: string; finalizerProfileId: string; decomposerProfileId: string }): void;
 }
 
 export interface MockRoleRunnerConfig {

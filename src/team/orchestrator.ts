@@ -179,6 +179,7 @@ export class TeamOrchestrator {
 				checkerProfileId: teamUnit.checkerProfileId,
 				watcherProfileId: teamUnit.watcherProfileId,
 				finalizerProfileId: teamUnit.finalizerProfileId,
+				decomposerProfileId: teamUnit.decomposerProfileId,
 			});
 		}
 

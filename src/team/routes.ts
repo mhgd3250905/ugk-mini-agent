@@ -31,6 +31,7 @@ function createRoleRunner(options: TeamRouteOptions): TeamRoleRunner {
 		checkerProfileId: "main",
 		watcherProfileId: "main",
 		finalizerProfileId: "main",
+		decomposerProfileId: "main",
 		setBrowserScopeRoute,
 		closeBrowserTargetsForScope,
 	});

@@ -34,6 +34,7 @@ export function createTeamWorkerRoleRunner(
 		checkerProfileId: "main",
 		watcherProfileId: "main",
 		finalizerProfileId: "main",
+		decomposerProfileId: "main",
 		...(deps.profileResolver ? { profileResolver: deps.profileResolver } : {}),
 		...(deps.sessionFactory ? { sessionFactory: deps.sessionFactory } : {}),
 		setBrowserScopeRoute: deps.setBrowserScopeRoute ?? setBrowserScopeRoute,
