@@ -1,7 +1,7 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { TeamRoleRunner, ProfileAwareTeamRoleRunner, WorkerInput, WorkerOutput, CheckerInput, CheckerOutput, WatcherInput, WatcherOutput, FinalizerInput, FinalizerOutput, DecomposerInput, DecomposerOutput } from "./role-runner.js";
-import type { TeamTask, TeamPlan, TeamRoleRuntimeContext, TeamTaskDecomposerMode } from "./types.js";
+import type { TeamTask, TeamPlan, TeamRoleRuntimeContext, TeamTaskDecomposerMode, TeamTaskSourceItem } from "./types.js";
 import type { BackgroundAgentSessionFactory } from "../agent/background-agent-runner.js";
 import { BackgroundAgentProfileResolver } from "../agent/background-agent-profile.js";
 import type { ResolvedBackgroundAgentSnapshot, BackgroundAgentProfileRef } from "../agent/background-agent-profile.js";
@@ -37,6 +37,55 @@ function buildDefaultRef(profileId: string): BackgroundAgentProfileRef {
 	};
 }
 
+function buildSourceItemIdentityBlock(task: TeamTask): string {
+	if (!task.generated || !task.sourceItem) return "";
+	const item = task.sourceItem;
+	const displayFields: string[] = [`- item.id: ${item.id}`];
+	const title = item.data.title ?? item.data.name ?? item.data.label;
+	if (typeof title === "string") {
+		displayFields.push(`- item.title: ${title}`);
+	}
+	return `
+
+## 当前 for_each item 身份（最高优先级）
+${displayFields.join("\n")}
+
+只能处理这个 item。任何参考资料、历史文件、全局清单、编号表如果与当前 item 冲突，必须以当前 item 为准。不得改成其他 item。
+
+完整 item 数据：
+\`\`\`json
+${JSON.stringify(item.data, null, 2)}
+\`\`\`
+`;
+}
+
+function buildCheckerSourceItemBlock(task: TeamTask): string {
+	const base = buildSourceItemIdentityBlock(task);
+	if (!base) return "";
+	return `${base}
+如果 worker 输出处理了错误的 item（item.id 或 item.title 不匹配当前 item），必须 verdict 为 "fail"。
+`;
+}
+
+function buildWatcherSourceItemBlock(task: TeamTask): string {
+	if (!task.generated || !task.sourceItem) return "";
+	const item = task.sourceItem;
+	const displayFields: string[] = [`- item.id: ${item.id}`];
+	const title = item.data.title ?? item.data.name ?? item.data.label;
+	if (typeof title === "string") {
+		displayFields.push(`- item.title: ${title}`);
+	}
+	return `
+
+## 当前 for_each item 身份（最高优先级）
+${displayFields.join("\n")}
+
+任务描述：${task.input.text}
+
+如果 worker 输出处理了错误的 item，不得认可（不得 accept_task）。如果确认 item 不匹配，decision 必须为 "confirm_failed" 或 "request_revision"。
+`;
+}
+
 function buildWorkerPrompt(task: TeamTask, acceptanceRules: string[], feedback?: string): string {
 	let prompt = `你是一个执行 Agent（worker）。请完成以下任务。
 
@@ -52,12 +101,12 @@ ${acceptanceRules.map((r, i) => `${i + 1}. ${r}`).join("\n")}
 - 自由输出你的工作结果（markdown 格式）
 - 产出的文件放在当前工作目录
 ${feedback ? `\n## 上次反馈（请针对反馈修改）\n${feedback}` : ""}`;
-
+	prompt += buildSourceItemIdentityBlock(task);
 	return prompt;
 }
 
 function buildCheckerPrompt(task: TeamTask, acceptanceRules: string[], workerOutput: string): string {
-	return `你是一个验收 Agent（checker）。请评审 worker 的输出。
+	const base = `你是一个验收 Agent（checker）。请评审 worker 的输出。
 
 ## 任务
 标题：${task.title}
@@ -84,13 +133,15 @@ JSON 格式：
 - resultContent / feedback 如存在必须是 string
 - 字符串中的双引号必须转义为 \\"
 - 不要在 JSON 前后添加任何文字`;
+	return base + buildCheckerSourceItemBlock(task);
 }
 
 function buildWatcherPrompt(task: TeamTask, workUnitStatus: "passed" | "failed", resultRef: string | null, errorSummary: string | null): string {
-	return `你是一个复盘 Agent（watcher）。请审核当前任务的工作结果。
+	const base = `你是一个复盘 Agent（watcher）。请审核当前任务的工作结果。
 
 ## 任务
 标题：${task.title}
+${task.input.text ? `描述：${task.input.text}` : ""}
 
 ## 工作单元结果
 状态：${workUnitStatus === "passed" ? "通过" : "失败"}
@@ -111,6 +162,7 @@ JSON 格式：
 - revisionMode 只能是 "amend" 或 "redo"
 - 字符串中的双引号必须转义为 \\"
 - 不要在 JSON 前后添加任何文字`;
+	return base + buildWatcherSourceItemBlock(task);
 }
 
 function buildFinalizerPrompt(plan: TeamPlan, taskResults: Array<{ taskId: string; status: "succeeded" | "failed"; resultRef: string | null; errorSummary: string | null; resultContent: string | null }>): string {
