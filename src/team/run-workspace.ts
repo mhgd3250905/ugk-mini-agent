@@ -1,7 +1,7 @@
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { join } from "node:path";
-import type { TeamPlan, TeamProgress, TeamRunState, TeamTaskState, TeamAttemptMetadata, AttemptStatus, AttemptLifecyclePhase, TeamTask, TaskExpansionRecord } from "./types.js";
+import type { TeamPlan, TeamProgress, TeamRunState, TeamTaskState, TeamAttemptMetadata, AttemptStatus, AttemptLifecyclePhase, TeamTask, TaskExpansionRecord, TaskDecompositionRecord } from "./types.js";
 import { generateRunId, generateAttemptId } from "./ids.js";
 import { progressMessages } from "./progress.js";
 import { RunStateEvents } from "./run-state-events.js";
@@ -343,6 +343,19 @@ export class RunWorkspace {
 
 	async readExpansion(runId: string, parentTaskId: string): Promise<TaskExpansionRecord | null> {
 		return this.readJson<TaskExpansionRecord>(join(this.rootDir, "runs", runId, "expansions", `${parentTaskId}.json`));
+	}
+
+	async writeDecomposition(runId: string, record: TaskDecompositionRecord): Promise<void> {
+		const dir = join(this.rootDir, "runs", runId, "decompositions");
+		await mkdir(dir, { recursive: true });
+		const filePath = join(dir, `${record.parentTaskId}.json`);
+		const tmp = filePath + ".tmp";
+		await writeFile(tmp, JSON.stringify(record, null, 2), "utf8");
+		await rename(tmp, filePath);
+	}
+
+	async readDecomposition(runId: string, parentTaskId: string): Promise<TaskDecompositionRecord | null> {
+		return this.readJson<TaskDecompositionRecord>(join(this.rootDir, "runs", runId, "decompositions", `${parentTaskId}.json`));
 	}
 
 	async appendChildTaskStates(runId: string, children: TeamTask[]): Promise<TeamRunState> {

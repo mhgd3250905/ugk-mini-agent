@@ -514,3 +514,110 @@ test("expansion record with old minimal shape still reads without crashing", asy
 		await rm(root, { recursive: true });
 	}
 });
+
+// ── P21-B: decomposition record persistence ──
+
+test("writeDecomposition writes record under decompositions directory", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		const record: import("../src/team/types.js").TaskDecompositionRecord = {
+			schemaVersion: "team/task-decomposition-1",
+			parentTaskId: "task_1",
+			mode: "leaf",
+			decision: "split",
+			reason: "task is too broad",
+			decomposedAt: "2026-05-17T00:00:00.000Z",
+			children: [
+				{
+					taskId: "task_1__child",
+					title: "Child",
+					task: { id: "task_1__child", title: "Child", input: { text: "do child" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+				},
+			],
+		};
+		await ws.writeDecomposition(state.runId, record);
+		const raw = await readFile(join(root, "runs", state.runId, "decompositions", "task_1.json"), "utf8");
+		assert.match(raw, /team\/task-decomposition-1/);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("readDecomposition returns full child task definitions and runtime context", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		const record: import("../src/team/types.js").TaskDecompositionRecord = {
+			schemaVersion: "team/task-decomposition-1",
+			parentTaskId: "task_1",
+			mode: "propagate",
+			decision: "split",
+			reason: "needs independent evidence collection",
+			decomposedAt: "2026-05-17T00:00:00.000Z",
+			children: [
+				{
+					taskId: "task_1__collect_ips",
+					title: "Collect IPs",
+					task: {
+						id: "task_1__collect_ips",
+						title: "Collect IPs",
+						input: { text: "Collect known IPs", payload: { source: "seed" } },
+						acceptance: { rules: ["IPs listed", "sources cited"] },
+						decomposer: { mode: "leaf", maxChildren: 3 },
+						parentTaskId: "task_1",
+						generated: true,
+					},
+				},
+			],
+			runtimeContext: {
+				requestedProfileId: "decomposer-profile",
+				resolvedProfileId: "main",
+				fallbackUsed: true,
+				fallbackReason: "profile_not_found",
+				browserId: "browser-a",
+				browserScope: "scope-a",
+			},
+		};
+		await ws.writeDecomposition(state.runId, record);
+		const loaded = await ws.readDecomposition(state.runId, "task_1");
+		assert.ok(loaded);
+		assert.equal(loaded.children[0]!.task.input.text, "Collect known IPs");
+		assert.deepEqual(loaded.children[0]!.task.acceptance.rules, ["IPs listed", "sources cited"]);
+		assert.equal(loaded.children[0]!.task.decomposer?.mode, "leaf");
+		assert.equal(loaded.runtimeContext?.requestedProfileId, "decomposer-profile");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("readDecomposition returns null for missing decomposition", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		const loaded = await ws.readDecomposition(state.runId, "missing");
+		assert.equal(loaded, null);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("old run without decompositions directory still reads state and attempts", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		const { attemptId } = await ws.createAttempt(state.runId, "task_1");
+		const loadedState = await ws.getState(state.runId);
+		const attempts = await ws.listAttempts(state.runId, "task_1");
+		const decomposition = await ws.readDecomposition(state.runId, "task_1");
+		assert.equal(loadedState?.runId, state.runId);
+		assert.equal(attempts[0]!.attemptId, attemptId);
+		assert.equal(decomposition, null);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});

@@ -206,3 +206,18 @@ export interface TaskExpansionRecord {
 	expandedAt: string;
 	children: Array<TaskExpansionChildEntry>;
 }
+
+export interface TaskDecompositionRecord {
+	schemaVersion: "team/task-decomposition-1";
+	parentTaskId: string;
+	mode: "leaf" | "propagate";
+	decision: "split" | "no_split";
+	reason: string;
+	decomposedAt: string;
+	children: Array<{
+		taskId: string;
+		title: string;
+		task: TeamTask;
+	}>;
+	runtimeContext?: TeamRoleRuntimeContext;
+}
