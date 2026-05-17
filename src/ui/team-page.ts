@@ -1036,7 +1036,7 @@ async function saveTeamUnit() {
 				var isActive = isActiveRunStatus(run.status);
 				var isTerminal = isTerminalRunStatus(run.status);
 				var cardClass = 'card' + (isActive ? ' plan-card-active' : '');
-				var html = '<div class="' + cardClass + '" data-run-id="' + escapeHtml(run.runId) + '" style="margin-bottom:8px;cursor:pointer" onclick="togglePlanRunDetail(this, ' + jsArg(run.runId) + ')">';
+				var html = '<div class="' + cardClass + '" data-run-id="' + escapeHtml(run.runId) + '" data-run-status="' + escapeHtml(run.status) + '"' + (run.startedAt ? ' data-started-at="' + escapeHtml(run.startedAt) + '"' : '') + ' style="margin-bottom:8px;cursor:pointer" onclick="togglePlanRunDetail(this, ' + jsArg(run.runId) + ')">';
 				html += '<div style="display:flex;justify-content:space-between;align-items:center">';
 				html += '<div><span class="run-id">' + escapeHtml(run.runId.slice(0, 12)) + '...</span> <span class="run-badge">' + statusBadge(run.status) + '</span></div>';
 				html += '<span class="run-elapsed" style="font-size:12px;color:var(--muted)">' + formatDuration(run.activeElapsedMs) + '</span>';
@@ -1078,7 +1078,7 @@ async function saveTeamUnit() {
 				}
 				html += '</div>';
 				// Embedded detail container
-				html += '<div id="run-detail-' + escapeHtml(run.runId) + '" class="run-detail"></div>';
+				html += '<div id="run-detail-' + escapeHtml(run.runId) + '" class="run-detail" onclick="event.stopPropagation()"></div>';
 				html += '</div>';
 				return html;
 			}
@@ -1191,7 +1191,7 @@ async function loadRuns() {
 			if (r.startedAt) timesHtml += '<span class="ts">开始：' + formatTimestamp(r.startedAt) + '</span>';
 			if (r.finishedAt) timesHtml += '<span class="ts">完成：' + formatTimestamp(r.finishedAt) + '</span>';
 			timesHtml += '</p>';
-			return '<div class="card" data-run-id="' + r.runId + '">' +
+			return '<div class="card" data-run-id="' + r.runId + '" data-run-status="' + r.status + '"' + (r.startedAt ? ' data-started-at="' + r.startedAt + '"' : '') + '>' +
 				'<h3>' + (planTitle ? '<span class="plan-title">' + escapeHtml(planTitle) + '</span> ' : '') + '<span class="run-id">' + escapeHtml(r.runId.slice(0, 12)) + '...</span> <span class="run-badge">' + statusBadge(r.status) + '</span></h3>' +
 				'<p class="run-progress" style="font-size:13px;color:var(--muted)">任务进度：' + done + '/' + total + '（' + summaryStr + '）</p>' +
 				'<p class="run-elapsed" style="font-size:13px;color:var(--muted)">耗时：' + formatDuration(r.activeElapsedMs) + '</p>' +
@@ -1788,12 +1788,14 @@ function updateRunCard(r) {
 	if (r.summary.cancelledTasks) summaryParts.push("取消 " + r.summary.cancelledTasks);
 	var summaryStr = summaryParts.length ? summaryParts.join(" / ") : "无完成";
 
-	var badgeEl = card.querySelector(".run-badge");
+	card.setAttribute("data-run-status", r.status);
+		if (r.startedAt) card.setAttribute("data-started-at", r.startedAt);
+		var badgeEl = card.querySelector(".run-badge");
 	if (badgeEl) badgeEl.innerHTML = statusBadge(r.status);
 	var progressText = card.querySelector(".run-progress");
 	if (progressText) progressText.textContent = "任务进度：" + done + "/" + total + "（" + summaryStr + "）";
 	var elapsedEl = card.querySelector(".run-elapsed");
-	if (elapsedEl) elapsedEl.textContent = "耗时：" + formatDuration(r.activeElapsedMs);
+	if (elapsedEl) { var aMs = r.activeElapsedMs || 0; if (r.status === "running" && r.startedAt) aMs = Math.max(aMs, Date.now() - new Date(r.startedAt).getTime()); elapsedEl.textContent = "耗时：" + formatDuration(aMs); }
 	var currentEl = card.querySelector(".run-current");
 	if (currentEl) {
 		var plan = _planCache[r.planId];
@@ -1817,19 +1819,25 @@ function updateRunCard(r) {
 	var actionsEl = card.querySelector(".run-actions");
 	if (actionsEl) actionsEl.innerHTML = renderRunActions(r);
 
-	// Update task detail if expanded
-	var detailEl = card.querySelector(".run-detail");
-	if (detailEl && detailEl.style.display === "block" && window._latestPlanForRun) {
-	var plan2 = window._latestPlanForRun[r.runId];
-	if (plan2) {
-		if (!window._latestRunTaskDefinitions) window._latestRunTaskDefinitions = {};
-		if (Array.isArray(r.taskDefinitions)) window._latestRunTaskDefinitions[r.runId] = r.taskDefinitions;
-		var detailState = r;
-		if (!Array.isArray(detailState.taskDefinitions) && Array.isArray(window._latestRunTaskDefinitions[r.runId])) {
-			detailState = Object.assign({}, r, { taskDefinitions: window._latestRunTaskDefinitions[r.runId] });
+		// Update task detail if expanded (only when content changes)
+		var detailEl = card.querySelector(".run-detail");
+		if (detailEl && detailEl.style.display === "block" && window._latestPlanForRun) {
+		var plan2 = window._latestPlanForRun[r.runId];
+		if (plan2) {
+			if (!window._latestRunTaskDefinitions) window._latestRunTaskDefinitions = {};
+			if (Array.isArray(r.taskDefinitions)) window._latestRunTaskDefinitions[r.runId] = r.taskDefinitions;
+			var detailState = r;
+			if (!Array.isArray(detailState.taskDefinitions) && Array.isArray(window._latestRunTaskDefinitions[r.runId])) {
+				detailState = Object.assign({}, r, { taskDefinitions: window._latestRunTaskDefinitions[r.runId] });
+			}
+			var newHtml = renderTaskDetail(detailState, plan2, window._latestAttemptsForRun ? window._latestAttemptsForRun[r.runId] : null);
+			var hash = String(newHtml.length) + "_" + String(done) + "_" + r.status;
+			if (detailEl.getAttribute("data-detail-hash") !== hash) {
+				detailEl.setAttribute("data-detail-hash", hash);
+				detailEl.innerHTML = newHtml;
+			}
 		}
-		detailEl.innerHTML = renderTaskDetail(detailState, plan2, window._latestAttemptsForRun ? window._latestAttemptsForRun[r.runId] : null);
-	}
+		}
 	}
 
 	var TERMINAL = { completed: 1, completed_with_failures: 1, failed: 1, cancelled: 1 };
@@ -1840,6 +1848,19 @@ function updateRunCard(r) {
 
 }
 
+var _elapsedTimer = null;
+function startElapsedTimer() {
+	if (_elapsedTimer) return;
+	_elapsedTimer = setInterval(function() {
+		var cards = document.querySelectorAll("[data-run-status=running][data-started-at]");
+		cards.forEach(function(card) {
+			var s = card.getAttribute("data-started-at");
+			if (!s) return;
+			var e = card.querySelector(".run-elapsed");
+			if (e) e.textContent = "耗时：" + formatDuration(Date.now() - new Date(s).getTime());
+		});
+	}, 1000);
+}
 function subscribeActiveRuns(runs) {
 	var ACTIVE = { queued: 1, running: 1, paused: 1 };
 	var currentActiveIds = {};
@@ -1852,6 +1873,7 @@ function subscribeActiveRuns(runs) {
 	Object.keys(_sseConnections).forEach(function(k) {
 		if (!currentActiveIds[k]) unsubscribeRunSSE(k);
 	});
+		startElapsedTimer();
 }
 
 // Click outside modals to close
