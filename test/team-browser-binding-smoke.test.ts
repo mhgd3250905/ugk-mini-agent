@@ -483,6 +483,45 @@ test("Task 3: wrong requestedProfileId fails even if browserId matches", async (
 	);
 });
 
+test("Task 3: validation chooses succeeded attempt over earlier interrupted attempt", async () => {
+	const { validateRuntimeContexts } = await getSmoke();
+
+	// Should not throw. The first attempt is an earlier watcher revision and
+	// deliberately contains wrong/missing contexts; the terminal attempt wins.
+	validateRuntimeContexts(
+		{
+			status: "completed",
+			runId: "run_multi_attempt",
+			finalizerRuntimeContext: {
+				requestedProfileId: "f", resolvedProfileId: "f",
+				browserId: "bf", browserScope: "team:run:finalizer",
+			},
+		},
+		[
+			{
+				attemptId: "attempt_old",
+				status: "interrupted",
+				updatedAt: "2026-05-17T00:00:00.000Z",
+				worker: [{ runtimeContext: { requestedProfileId: "WRONG", resolvedProfileId: "w", browserId: "WRONG", browserScope: "team:run:worker-old" } }],
+				checker: [],
+				watcher: null,
+			},
+			{
+				attemptId: "attempt_new",
+				status: "succeeded",
+				updatedAt: "2026-05-17T00:01:00.000Z",
+				worker: [{ runtimeContext: { requestedProfileId: "w", resolvedProfileId: "w", browserId: "bw", browserScope: "team:run:worker" } }],
+				checker: [{ runtimeContext: { requestedProfileId: "c", resolvedProfileId: "c", browserId: "bc", browserScope: "team:run:checker" } }],
+				watcher: { runtimeContext: { requestedProfileId: "wa", resolvedProfileId: "wa", browserId: "bwa", browserScope: "team:run:watcher" } },
+			},
+		],
+		{
+			workerProfile: "w", checkerProfile: "c", watcherProfile: "wa", finalizerProfile: "f",
+			expectWorkerBrowser: "bw", expectCheckerBrowser: "bc", expectWatcherBrowser: "bwa", expectFinalizerBrowser: "bf",
+		},
+	);
+});
+
 test("Task 3: all correct contexts pass validation", async () => {
 	const { validateRuntimeContexts } = await getSmoke();
 

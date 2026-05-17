@@ -107,16 +107,56 @@ export function buildSmokePlanPayload(teamUnitId) {
 
 // ── Runtime Context Validation ──
 
+function attemptTimestamp(attempt) {
+	const values = [attempt?.finishedAt, attempt?.updatedAt, attempt?.createdAt]
+		.map((value) => Date.parse(String(value || "")))
+		.filter((value) => Number.isFinite(value));
+	return values.length ? Math.max(...values) : 0;
+}
+
+function hasRoleRuntimeContexts(attempt) {
+	return Boolean(
+		attempt?.worker?.some?.((entry) => entry?.runtimeContext) &&
+		attempt?.checker?.some?.((entry) => entry?.runtimeContext) &&
+		attempt?.watcher?.runtimeContext,
+	);
+}
+
+/**
+ * Pick the attempt that best represents the terminal task result.
+ *
+ * `listAttempts()` currently returns filesystem `readdir()` order, so callers
+ * must not assume `attempts[0]` is the newest or successful attempt.
+ *
+ * @param {Array<object>} attempts
+ * @returns {object}
+ */
+export function selectAttemptForRuntimeContexts(attempts) {
+	if (!Array.isArray(attempts) || attempts.length === 0) {
+		throw new Error("no attempts found for task_1");
+	}
+
+	const withContexts = attempts.filter(hasRoleRuntimeContexts);
+	const contextPool = withContexts.length > 0 ? withContexts : attempts;
+	const succeeded = contextPool.filter((attempt) => attempt?.status === "succeeded");
+	const pool = succeeded.length > 0 ? succeeded : contextPool;
+
+	return [...pool].sort((a, b) => {
+		const byTime = attemptTimestamp(a) - attemptTimestamp(b);
+		if (byTime !== 0) return byTime;
+		return String(a?.attemptId || "").localeCompare(String(b?.attemptId || ""));
+	}).at(-1);
+}
+
 /**
  * @param {object} finalRun
  * @param {Array<object>} attempts
  * @param {object} expected
  */
 export function validateRuntimeContexts(finalRun, attempts, expected) {
-	const attempt = attempts[0];
-	if (!attempt) throw new Error("no attempts found for task_1");
+	const attempt = selectAttemptForRuntimeContexts(attempts);
 
-	// Worker context: first attempt's worker array, last entry (latest revision)
+	// Worker context: selected attempt's worker array, last entry (latest revision)
 	const workerEntries = attempt.worker ?? [];
 	const workerCtx = workerEntries[workerEntries.length - 1]?.runtimeContext;
 	if (!workerCtx) throw new Error("worker runtimeContext missing");
@@ -130,7 +170,7 @@ export function validateRuntimeContexts(finalRun, attempts, expected) {
 		throw new Error(`worker browserScope is empty\n  observed: ${JSON.stringify(workerCtx)}`);
 	}
 
-	// Checker context: first attempt's checker array, last entry
+	// Checker context: selected attempt's checker array, last entry
 	const checkerEntries = attempt.checker ?? [];
 	const checkerCtx = checkerEntries[checkerEntries.length - 1]?.runtimeContext;
 	if (!checkerCtx) throw new Error("checker runtimeContext missing");
@@ -144,7 +184,7 @@ export function validateRuntimeContexts(finalRun, attempts, expected) {
 		throw new Error(`checker browserScope is empty\n  observed: ${JSON.stringify(checkerCtx)}`);
 	}
 
-	// Watcher context: first attempt's watcher object
+	// Watcher context: selected attempt's watcher object
 	const watcherCtx = attempt.watcher?.runtimeContext;
 	if (!watcherCtx) throw new Error("watcher runtimeContext missing");
 	if (watcherCtx.requestedProfileId !== expected.watcherProfile) {
