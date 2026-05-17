@@ -1643,3 +1643,147 @@ test("generated child with only id still produces clear identity block", async (
 		await rm(root, { recursive: true }).catch(() => {});
 	}
 });
+
+// ── P23 Review Task 1: sourceItemId-only fallback identity prompts ──
+
+test("worker prompt for sourceItemId-only generated child includes identity block", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p23r-"));
+	try {
+		let capturedPrompt = "";
+		const sessionFactory = {
+			createSession: async () => ({
+				prompt: async (p: string) => { capturedPrompt = p; },
+				subscribe: () => () => {},
+				messages: [{ role: "assistant", content: [{ type: "text", text: "done" }], stopReason: "end_turn" }],
+			}),
+		} as unknown as BackgroundAgentSessionFactory;
+
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root, teamDataDir: root,
+			watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f",
+			profileResolver: fakeProfileResolver as never, sessionFactory,
+		});
+
+		await runner.runWorker({
+			runId: "run_p23r_w",
+			task: {
+				id: "score__battle_08", title: "Score battle_08",
+				input: { text: "Score the battle" }, acceptance: { rules: ["output is valid"] },
+				parentTaskId: "score", sourceItemId: "battle_08",
+				generated: true,
+			},
+			attemptId: "att_1", workDir: join(root, "work"), outputDir: join(root, "output"),
+			acceptanceRules: ["output is valid"],
+		});
+
+		assert.ok(capturedPrompt.includes("battle_08"), "worker prompt must mention item id from sourceItemId fallback");
+		assert.ok(capturedPrompt.includes("最高优先级"), "worker prompt must include identity enforcement");
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
+test("checker prompt for sourceItemId-only generated child includes identity and fail instruction", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p23r-"));
+	try {
+		let capturedPrompt = "";
+		const sessionFactory = {
+			createSession: async () => ({
+				prompt: async (p: string) => { capturedPrompt = p; },
+				subscribe: () => () => {},
+				messages: [{ role: "assistant", content: [{ type: "text", text: '{"verdict":"pass","reason":"ok"}' }], stopReason: "end_turn" }],
+			}),
+		} as unknown as BackgroundAgentSessionFactory;
+
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root, teamDataDir: root,
+			watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f",
+			profileResolver: fakeProfileResolver as never, sessionFactory,
+		});
+
+		await runner.runChecker({
+			runId: "run_p23r_c",
+			task: {
+				id: "score__battle_08", title: "Score battle_08",
+				input: { text: "Score the battle" }, acceptance: { rules: ["output is valid"] },
+				sourceItemId: "battle_08",
+				generated: true,
+			},
+			attemptId: "att_1", workerOutputRef: "output/w1.md",
+			acceptanceRules: ["output is valid"],
+		});
+
+		assert.ok(capturedPrompt.includes("battle_08"), "checker prompt must mention item id from sourceItemId fallback");
+		assert.ok(capturedPrompt.includes("fail"), "checker prompt must say mismatch leads to fail");
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
+test("watcher prompt for sourceItemId-only generated child includes identity and reject instruction", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p23r-"));
+	try {
+		let capturedPrompt = "";
+		const sessionFactory = {
+			createSession: async () => ({
+				prompt: async (p: string) => { capturedPrompt = p; },
+				subscribe: () => () => {},
+				messages: [{ role: "assistant", content: [{ type: "text", text: '{"decision":"accept_task","reason":"ok"}' }], stopReason: "end_turn" }],
+			}),
+		} as unknown as BackgroundAgentSessionFactory;
+
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root, teamDataDir: root,
+			watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f",
+			profileResolver: fakeProfileResolver as never, sessionFactory,
+		});
+
+		await runner.runWatcher({
+			runId: "run_p23r_wa",
+			task: {
+				id: "score__battle_08", title: "Score battle_08",
+				input: { text: "Score the battle" }, acceptance: { rules: ["ok"] },
+				sourceItemId: "battle_08",
+				generated: true,
+			},
+			attemptId: "att_1", workUnitStatus: "passed", resultRef: "r.md", errorSummary: null,
+		});
+
+		assert.ok(capturedPrompt.includes("battle_08"), "watcher prompt must mention item id from sourceItemId fallback");
+		assert.ok(capturedPrompt.includes("不得认可") || capturedPrompt.includes("不得接受"), "watcher must reject switched-item");
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
+test("normal task with coincidental sourceItemId must not get identity block", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p23r-"));
+	try {
+		let capturedPrompt = "";
+		const sessionFactory = {
+			createSession: async () => ({
+				prompt: async (p: string) => { capturedPrompt = p; },
+				subscribe: () => () => {},
+				messages: [{ role: "assistant", content: [{ type: "text", text: "done" }], stopReason: "end_turn" }],
+			}),
+		} as unknown as BackgroundAgentSessionFactory;
+
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root, teamDataDir: root,
+			watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f",
+			profileResolver: fakeProfileResolver as never, sessionFactory,
+		});
+
+		// generated is false/undefined but sourceItemId happens to be set
+		await runner.runWorker({
+			runId: "run_normal_sid",
+			task: { id: "task_1", title: "Normal", input: { text: "do work" }, acceptance: { rules: ["ok"] }, sourceItemId: "battle_08" },
+			attemptId: "att_1", workDir: join(root, "work"), outputDir: join(root, "output"),
+			acceptanceRules: ["ok"],
+		});
+
+		assert.ok(!capturedPrompt.includes("最高优先级"), "non-generated task must not have identity block even with sourceItemId");
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});

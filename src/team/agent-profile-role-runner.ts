@@ -37,9 +37,16 @@ function buildDefaultRef(profileId: string): BackgroundAgentProfileRef {
 	};
 }
 
+function getEffectiveSourceItem(task: TeamTask): TeamTaskSourceItem | null {
+	if (!task.generated) return null;
+	if (task.sourceItem) return task.sourceItem;
+	if (task.sourceItemId) return { id: task.sourceItemId, data: { id: task.sourceItemId } };
+	return null;
+}
+
 function buildSourceItemIdentityBlock(task: TeamTask): string {
-	if (!task.generated || !task.sourceItem) return "";
-	const item = task.sourceItem;
+	const item = getEffectiveSourceItem(task);
+	if (!item) return "";
 	const displayFields: string[] = [`- item.id: ${item.id}`];
 	const title = item.data.title ?? item.data.name ?? item.data.label;
 	if (typeof title === "string") {
@@ -68,8 +75,8 @@ function buildCheckerSourceItemBlock(task: TeamTask): string {
 }
 
 function buildWatcherSourceItemBlock(task: TeamTask): string {
-	if (!task.generated || !task.sourceItem) return "";
-	const item = task.sourceItem;
+	const item = getEffectiveSourceItem(task);
+	if (!item) return "";
 	const displayFields: string[] = [`- item.id: ${item.id}`];
 	const title = item.data.title ?? item.data.name ?? item.data.label;
 	if (typeof title === "string") {
