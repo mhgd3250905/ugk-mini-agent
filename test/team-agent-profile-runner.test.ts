@@ -1260,3 +1260,140 @@ test("P17: worker and checker with different browserId must not silently share",
 		await rm(root, { recursive: true }).catch(() => {});
 	}
 });
+
+// ── P21-B: decomposer runner ──
+
+test("runDecomposer uses decomposerProfileId and decomposer browser scope", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-decomposer-"));
+	try {
+		const { factory, captured } = makeCapturingSessionFactory(['{"decision":"no_split","reason":"small enough"}']);
+		const resolver = makeFakeProfileResolver({
+			"p-worker": { defaultBrowserId: "browser-worker" },
+			"p-decomposer": { defaultBrowserId: "browser-decomposer" },
+		});
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root, teamDataDir: root,
+			workerProfileId: "p-worker", checkerProfileId: "p-checker",
+			watcherProfileId: "p-watcher", finalizerProfileId: "p-finalizer",
+			decomposerProfileId: "p-decomposer",
+			profileResolver: resolver as never, sessionFactory: factory,
+		});
+
+		const out = await runner.runDecomposer({
+			runId: "run_decomp_profile",
+			plan: { schemaVersion: "team/plan-1", planId: "plan_1", title: "Plan", defaultTeamUnitId: "tu", goal: { text: "Goal text" }, tasks: [], outputContract: { text: "out" }, archived: false, createdAt: "", updatedAt: "", runCount: 0 },
+			task: { id: "task_1", title: "Task", input: { text: "do" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "leaf" } },
+			maxChildren: 8,
+		});
+
+		assert.equal(captured.length, 1);
+		assert.equal(captured[0]!.snapshot.profileId, "p-decomposer");
+		assert.equal(captured[0]!.browserId, "browser-decomposer");
+		assert.ok(captured[0]!.browserScope?.includes("decomposer"));
+		assert.equal(out.runtimeContext?.requestedProfileId, "p-decomposer");
+		assert.equal(out.runtimeContext?.browserId, "browser-decomposer");
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
+test("runDecomposer prompt includes plan task policy and strict JSON schema", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-decomposer-"));
+	try {
+		let capturedPrompt = "";
+		const sessionFactory = {
+			createSession: async () => ({
+				prompt: async (p: string) => { capturedPrompt = p; },
+				subscribe: () => () => {},
+				messages: [{ role: "assistant", content: [{ type: "text", text: '{"decision":"no_split","reason":"ok"}' }], stopReason: "end_turn" }],
+			}),
+		} as unknown as BackgroundAgentSessionFactory;
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root, teamDataDir: root,
+			workerProfileId: "p-worker", checkerProfileId: "p-checker",
+			watcherProfileId: "p-watcher", finalizerProfileId: "p-finalizer",
+			decomposerProfileId: "p-decomposer",
+			profileResolver: fakeProfileResolver as never, sessionFactory,
+		});
+
+		await runner.runDecomposer({
+			runId: "run_decomp_prompt",
+			plan: { schemaVersion: "team/plan-1", planId: "plan_1", title: "Plan", defaultTeamUnitId: "tu", goal: { text: "Investigate domains" }, tasks: [], outputContract: { text: "out" }, archived: false, createdAt: "", updatedAt: "", runCount: 0 },
+			task: { id: "reverse_dns", title: "Reverse DNS lookup", input: { text: "Check reverse DNS" }, acceptance: { rules: ["must cite sources"] }, decomposer: { mode: "propagate", maxChildren: 5 } },
+			maxChildren: 5,
+		});
+
+		assert.ok(capturedPrompt.includes("Investigate domains"));
+		assert.ok(capturedPrompt.includes("Reverse DNS lookup"));
+		assert.ok(capturedPrompt.includes("Check reverse DNS"));
+		assert.ok(capturedPrompt.includes("must cite sources"));
+		assert.ok(capturedPrompt.includes("propagate"));
+		assert.ok(capturedPrompt.includes("maxChildren"));
+		assert.ok(capturedPrompt.includes('"decision":"split|no_split"'));
+		assert.ok(capturedPrompt.includes("只输出一个 JSON object"));
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
+test("runDecomposer parses strict no_split and split JSON", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-decomposer-"));
+	try {
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root, teamDataDir: root,
+			workerProfileId: "p-worker", checkerProfileId: "p-checker",
+			watcherProfileId: "p-watcher", finalizerProfileId: "p-finalizer",
+			decomposerProfileId: "p-decomposer",
+			profileResolver: fakeProfileResolver as never,
+			sessionFactory: makeFakeSessionFactory([
+				'{"decision":"no_split","reason":"already atomic"}',
+				'{"decision":"split","reason":"needs steps","children":[{"id":"collect_ips","title":"Collect IPs","input":{"text":"Collect known IPs"},"acceptance":{"rules":["IPs listed"]},"decomposer":{"mode":"none"}}]}',
+			]),
+		});
+		const input = {
+			runId: "run_decomp_parse",
+			plan: { schemaVersion: "team/plan-1" as const, planId: "plan_1", title: "Plan", defaultTeamUnitId: "tu", goal: { text: "Goal" }, tasks: [], outputContract: { text: "out" }, archived: false, createdAt: "", updatedAt: "", runCount: 0 },
+			task: { id: "task_1", title: "Task", input: { text: "do" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "leaf" as const } },
+			maxChildren: 8,
+		};
+
+		const noSplit = await runner.runDecomposer(input);
+		assert.equal(noSplit.decision, "no_split");
+		assert.deepEqual(noSplit.children, []);
+
+		const split = await runner.runDecomposer(input);
+		assert.equal(split.decision, "split");
+		assert.equal(split.children?.[0]?.id, "collect_ips");
+		assert.equal(split.children?.[0]?.decomposer?.mode, "none");
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
+test("runDecomposer returns safe no_split on invalid JSON", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-decomposer-"));
+	try {
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root, teamDataDir: root,
+			workerProfileId: "p-worker", checkerProfileId: "p-checker",
+			watcherProfileId: "p-watcher", finalizerProfileId: "p-finalizer",
+			decomposerProfileId: "p-decomposer",
+			profileResolver: fakeProfileResolver as never,
+			sessionFactory: makeFakeSessionFactory(["not json"]),
+		});
+
+		const out = await runner.runDecomposer({
+			runId: "run_decomp_bad",
+			plan: { schemaVersion: "team/plan-1", planId: "plan_1", title: "Plan", defaultTeamUnitId: "tu", goal: { text: "Goal" }, tasks: [], outputContract: { text: "out" }, archived: false, createdAt: "", updatedAt: "", runCount: 0 },
+			task: { id: "task_1", title: "Task", input: { text: "do" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "leaf" } },
+			maxChildren: 8,
+		});
+
+		assert.equal(out.decision, "no_split");
+		assert.match(out.reason, /parse error/);
+		assert.deepEqual(out.children, []);
+		assert.ok(out.runtimeContext);
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});

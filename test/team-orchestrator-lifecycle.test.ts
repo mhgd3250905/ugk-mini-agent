@@ -8,7 +8,7 @@ import { PlanStore } from "../src/team/plan-store.js";
 import { TeamUnitStore } from "../src/team/team-unit-store.js";
 import { RunWorkspace } from "../src/team/run-workspace.js";
 import { MockRoleRunner } from "../src/team/role-runner.js";
-import type { ProfileAwareTeamRoleRunner, WorkerInput, CheckerInput, WatcherInput, FinalizerInput, WorkerOutput, CheckerOutput, WatcherOutput, FinalizerOutput } from "../src/team/role-runner.js";
+import type { ProfileAwareTeamRoleRunner, WorkerInput, CheckerInput, WatcherInput, FinalizerInput, WorkerOutput, CheckerOutput, WatcherOutput, FinalizerOutput, DecomposerInput, DecomposerOutput } from "../src/team/role-runner.js";
 
 async function setup(runnerOverrides: Record<string, unknown[]> = {}) {
 	const root = await mkdtemp(join(tmpdir(), "team-lc-"));
@@ -523,6 +523,9 @@ class FakeProfileAwareRunner implements ProfileAwareTeamRoleRunner {
 	}
 	async runFinalizer(input: FinalizerInput): Promise<FinalizerOutput> {
 		return { finalReport: `report for ${input.runId}` };
+	}
+	async runDecomposer(_input: DecomposerInput): Promise<DecomposerOutput> {
+		return { decision: "no_split", reason: "not used in P21-B", children: [] };
 	}
 }
 

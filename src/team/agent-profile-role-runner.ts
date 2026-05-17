@@ -1,7 +1,7 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { TeamRoleRunner, ProfileAwareTeamRoleRunner, WorkerInput, WorkerOutput, CheckerInput, CheckerOutput, WatcherInput, WatcherOutput, FinalizerInput, FinalizerOutput } from "./role-runner.js";
-import type { TeamTask, TeamPlan, TeamRoleRuntimeContext } from "./types.js";
+import type { TeamRoleRunner, ProfileAwareTeamRoleRunner, WorkerInput, WorkerOutput, CheckerInput, CheckerOutput, WatcherInput, WatcherOutput, FinalizerInput, FinalizerOutput, DecomposerInput, DecomposerOutput } from "./role-runner.js";
+import type { TeamTask, TeamPlan, TeamRoleRuntimeContext, TeamTaskDecomposerMode } from "./types.js";
 import type { BackgroundAgentSessionFactory } from "../agent/background-agent-runner.js";
 import { BackgroundAgentProfileResolver } from "../agent/background-agent-profile.js";
 import type { ResolvedBackgroundAgentSnapshot, BackgroundAgentProfileRef } from "../agent/background-agent-profile.js";
@@ -140,6 +140,46 @@ ${taskSummary}
 4. 下次准备建议`;
 }
 
+function buildDecomposerPrompt(input: DecomposerInput): string {
+	const policy = input.task.decomposer ?? { mode: "none" as const };
+	return `你是一个任务拆分 Agent（decomposer）。请判断当前 Team task 是否需要拆成更小的可执行任务。
+
+## 计划目标
+${input.plan.goal.text}
+
+## 当前任务
+ID：${input.task.id}
+标题：${input.task.title}
+描述：${input.task.input.text}
+${input.task.input.payload ? `\n附加数据：\n\`\`\`json\n${JSON.stringify(input.task.input.payload, null, 2)}\n\`\`\`` : ""}
+
+## 验收标准
+${input.task.acceptance.rules.map((r, i) => `${i + 1}. ${r}`).join("\n")}
+
+## 拆分策略
+mode：${policy.mode}
+maxChildren：${input.maxChildren}
+
+## 输出要求
+只输出一个 JSON object，不要输出其他任何内容（不要输出 markdown、解释文字或代码围栏）。
+
+JSON 格式：
+- 不拆分：{"decision":"no_split","reason":"原因","children":[]}
+- 拆分：{"decision":"split","reason":"原因","children":[{"id":"child_task_id","title":"子任务标题","input":{"text":"子任务描述"},"acceptance":{"rules":["验收标准"]},"decomposer":{"mode":"none"}}]}
+
+约束：
+- 顶层必须是 JSON object
+- "decision":"split|no_split"
+- reason 必须是 string
+- no_split 时 children 必须为空数组或省略
+- split 时 children 必须是数组，长度不能超过 maxChildren
+- child.id / child.title / child.input.text 必须是非空 string
+- child.acceptance.rules 必须是非空 string 数组
+- child.decomposer.mode 只能是 "none"、"leaf" 或 "propagate"
+- 字符串中的双引号必须转义为 \\"
+- 不要在 JSON 前后添加任何文字`;
+}
+
 function parseJsonResponse<T>(text: string): T {
 	// Fast path: entire text is JSON after stripping fences
 	const stripped = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
@@ -237,9 +277,17 @@ interface WatcherJsonOutput {
 	feedback?: string;
 }
 
+interface DecomposerJsonOutput {
+	decision: "split" | "no_split";
+	reason: string;
+	children?: unknown[];
+}
+
 const VALID_CHECKER_VERDICTS = new Set<string>(["pass", "revise", "fail"]);
 const VALID_WATCHER_DECISIONS = new Set<string>(["accept_task", "confirm_failed", "request_revision"]);
 const VALID_REVISION_MODES = new Set<string>(["amend", "redo"]);
+const VALID_DECOMPOSER_DECISIONS = new Set<string>(["split", "no_split"]);
+const VALID_DECOMPOSER_MODES = new Set<string>(["none", "leaf", "propagate"]);
 
 function normalizeCheckerOutput(parsed: unknown): CheckerOutput | null {
 	if (!parsed || typeof parsed !== "object") return null;
@@ -270,6 +318,54 @@ function normalizeWatcherOutput(parsed: unknown): WatcherOutput | null {
 		return { decision, reason, revisionMode, feedback: "watcher requested revision" };
 	}
 	return { decision, reason, revisionMode, feedback };
+}
+
+function normalizeDecomposerTask(raw: unknown): TeamTask | null {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+	const obj = raw as Record<string, unknown>;
+	if (typeof obj.id !== "string" || !obj.id.trim()) return null;
+	if (typeof obj.title !== "string" || !obj.title.trim()) return null;
+	const input = obj.input as { text?: unknown; payload?: unknown } | undefined;
+	if (!input || typeof input !== "object" || typeof input.text !== "string" || !input.text.trim()) return null;
+	const acceptance = obj.acceptance as { rules?: unknown } | undefined;
+	if (!acceptance || !Array.isArray(acceptance.rules) || acceptance.rules.length === 0 || !acceptance.rules.every(rule => typeof rule === "string" && rule.trim())) return null;
+	const rawType = typeof obj.type === "string" ? obj.type : undefined;
+	if (rawType && rawType !== "normal" && rawType !== "discovery" && rawType !== "for_each") return null;
+	const rawDecomposer = obj.decomposer as { mode?: unknown; maxChildren?: unknown } | undefined;
+	let decomposer: TeamTask["decomposer"] | undefined;
+	if (rawDecomposer !== undefined) {
+		if (!rawDecomposer || typeof rawDecomposer !== "object" || typeof rawDecomposer.mode !== "string" || !VALID_DECOMPOSER_MODES.has(rawDecomposer.mode)) return null;
+		if (rawDecomposer.maxChildren !== undefined && (typeof rawDecomposer.maxChildren !== "number" || !Number.isInteger(rawDecomposer.maxChildren) || rawDecomposer.maxChildren < 1)) return null;
+		decomposer = {
+			mode: rawDecomposer.mode as TeamTaskDecomposerMode,
+			...(rawDecomposer.maxChildren !== undefined ? { maxChildren: rawDecomposer.maxChildren as number } : {}),
+		};
+	}
+	return {
+		id: obj.id,
+		...(rawType ? { type: rawType as TeamTask["type"] } : {}),
+		title: obj.title,
+		input: {
+			text: input.text,
+			...(input.payload && typeof input.payload === "object" && !Array.isArray(input.payload) ? { payload: input.payload as Record<string, unknown> } : {}),
+		},
+		acceptance: { rules: acceptance.rules as string[] },
+		...(decomposer ? { decomposer } : {}),
+	};
+}
+
+function normalizeDecomposerOutput(parsed: unknown, maxChildren: number): DecomposerOutput | null {
+	if (!parsed || typeof parsed !== "object") return null;
+	const obj = parsed as Record<string, unknown>;
+	const rawDecision = typeof obj.decision === "string" ? obj.decision : "";
+	if (!VALID_DECOMPOSER_DECISIONS.has(rawDecision)) return null;
+	const decision = rawDecision as DecomposerOutput["decision"];
+	const reason = typeof obj.reason === "string" ? obj.reason : "";
+	if (decision === "no_split") return { decision, reason, children: [] };
+	if (!Array.isArray(obj.children) || obj.children.length === 0 || obj.children.length > maxChildren) return null;
+	const children = obj.children.map(normalizeDecomposerTask);
+	if (children.some(child => child === null)) return null;
+	return { decision, reason, children: children as TeamTask[] };
 }
 
 function sanitizeScopePart(value: string): string {
@@ -412,6 +508,26 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 		const sessionResult = await this.runSession(snapshot, this.options.finalizerProfileId, input.runId, workspace, prompt, input.signal, { role: "finalizer", roleKey: "finalizer" });
 
 		return { finalReport: sessionResult.content, runtimeContext: sessionResult.runtimeContext };
+	}
+
+	async runDecomposer(input: DecomposerInput): Promise<DecomposerOutput> {
+		const requestedProfileId = this.options.decomposerProfileId ?? this.options.workerProfileId;
+		const snapshot = await this.resolveProfile(requestedProfileId);
+		const roleKey = `decompose_${input.task.id}`;
+		const workspace = await this.createRoleWorkspace(input.runId, roleKey, "decomposer");
+		const prompt = buildDecomposerPrompt(input);
+
+		const sessionResult = await this.runSession(snapshot, requestedProfileId, input.runId, workspace, prompt, input.signal, { role: "decomposer", roleKey });
+		const content = sessionResult.content;
+
+		try {
+			const parsed = parseJsonResponse<DecomposerJsonOutput>(content);
+			const normalized = normalizeDecomposerOutput(parsed, input.maxChildren);
+			if (normalized) return { ...normalized, runtimeContext: sessionResult.runtimeContext };
+			return { decision: "no_split", reason: "decomposer output parse error: invalid schema", children: [], runtimeContext: sessionResult.runtimeContext };
+		} catch {
+			return { decision: "no_split", reason: "decomposer output parse error", children: [], runtimeContext: sessionResult.runtimeContext };
+		}
 	}
 
 	private async resolveProfile(profileId: string): Promise<ResolvedBackgroundAgentSnapshot> {

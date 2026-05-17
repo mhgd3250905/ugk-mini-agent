@@ -17,7 +17,7 @@ function validateDecomposerPolicy(policy: unknown, fieldPath: string): void {
 		throw new Error(`${fieldPath}.mode must be none, leaf, or propagate`);
 	}
 	if (obj.maxChildren !== undefined) {
-		if (!Number.isInteger(obj.maxChildren) || obj.maxChildren < 1 || obj.maxChildren > MAX_DECOMPOSER_CHILDREN) {
+		if (typeof obj.maxChildren !== "number" || !Number.isInteger(obj.maxChildren) || obj.maxChildren < 1 || obj.maxChildren > MAX_DECOMPOSER_CHILDREN) {
 			throw new Error(`${fieldPath}.maxChildren must be an integer between 1 and ${MAX_DECOMPOSER_CHILDREN}`);
 		}
 	}
