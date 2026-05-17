@@ -38,6 +38,7 @@ export interface TeamOrchestratorOptions {
 const now = () => new Date().toISOString();
 
 const TERMINAL_TASK_STATUSES = new Set(["succeeded", "failed", "cancelled"]);
+const DEFAULT_DECOMPOSER_MAX_CHILDREN = 8;
 
 function isRunExternallyStopped(status: string): boolean {
 	return status === "cancelled" || status === "paused";
@@ -216,7 +217,7 @@ export class TeamOrchestrator {
 
 				const taskType = task.type ?? "normal";
 				if (taskType === "normal" || taskType === "discovery") {
-					await this.executeTask(state, task, signal);
+					await this.executeMaybeDecomposedTask(state, task, plan, signal);
 					state = (await this.workspace.getState(runId))!;
 					if (taskType === "discovery" && state.taskStates[task.id]?.status === "succeeded") {
 						await this.loadDiscoveryResult(state.runId, task, discoveryResults);
@@ -348,6 +349,51 @@ export class TeamOrchestrator {
 		state.updatedAt = now();
 		await this.workspace.saveState(state);
 		return state;
+	}
+
+	private async executeMaybeDecomposedTask(
+		initialState: TeamRunState,
+		task: TeamTask,
+		plan: TeamPlan,
+		signal: AbortSignal,
+	): Promise<void> {
+		const mode = task.decomposer?.mode ?? "none";
+		if (mode === "none") {
+			await this.executeTask(initialState, task, signal);
+			return;
+		}
+
+		let state = initialState;
+		state.currentTaskId = task.id;
+		state.taskStates[task.id]!.status = "running";
+		state.taskStates[task.id]!.progress = { phase: "worker_running", message: "running decomposer", updatedAt: now() };
+		state.updatedAt = now();
+		await this.workspace.saveState(state);
+
+		const output = await runWithTimeout("decomposer", this.phaseTimeouts.workerMs, signal, async (localSignal) => {
+			return this.roleRunner.runDecomposer({
+				runId: state.runId,
+				plan,
+				task,
+				maxChildren: task.decomposer?.maxChildren ?? DEFAULT_DECOMPOSER_MAX_CHILDREN,
+				signal: localSignal,
+			});
+		});
+
+		state = (await this.workspace.getState(initialState.runId))!;
+		if (this.shouldStop(state)) return;
+
+		if (output.decision === "no_split") {
+			await this.executeTask(state, task, signal);
+			return;
+		}
+
+		const ts = state.taskStates[task.id]!;
+		ts.status = "succeeded";
+		ts.progress = { phase: "succeeded", message: `decomposed into ${output.children?.length ?? 0} child tasks`, updatedAt: now() };
+		state.summary.succeededTasks++;
+		state.updatedAt = now();
+		await this.workspace.saveState(state);
 	}
 
 	private async executeTask(initialState: TeamRunState, task: TeamTask, signal: AbortSignal): Promise<void> {
