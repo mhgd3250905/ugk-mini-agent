@@ -1162,6 +1162,29 @@ test("decomposed discovery parent writes discovery-result.json after aggregating
 		assert.equal(final.taskStates["process_each__a"]?.status, "succeeded");
 		assert.equal(final.taskStates["process_each__b"]?.status, "succeeded");
 
+		// P22 review: directly assert parent discovery-result.json
+		const parentAttemptId = final.taskStates.discover?.activeAttemptId;
+		assert.ok(parentAttemptId, "parent must have an activeAttemptId pointing to aggregation attempt");
+		const record = await workspace.readDiscoveryResult(state.runId, "discover", parentAttemptId);
+		assert.ok(record, "parent discovery-result.json must exist");
+		assert.equal(record.schemaVersion, "team/discovery-result-1");
+		assert.equal(record.taskId, "discover");
+		assert.equal(record.attemptId, parentAttemptId);
+		assert.equal(record.outputKey, "items");
+		assert.deepEqual(record.items.map(i => i.id), ["a", "b"]);
+		assert.ok(record.sourceRef, "sourceRef should identify aggregation source");
+
+		// Parent aggregation attempt: succeeded, no worker/checker/watcher
+		const attemptRaw = await workspace.readAttemptFile(state.runId, "discover", parentAttemptId, "attempt.json");
+		assert.ok(attemptRaw);
+		const attemptMeta = JSON.parse(attemptRaw);
+		assert.equal(attemptMeta.status, "succeeded");
+		assert.equal(attemptMeta.worker.length, 0, "parent aggregation attempt must not have worker entries");
+		assert.equal(attemptMeta.checker.length, 0, "parent aggregation attempt must not have checker entries");
+		assert.equal(attemptMeta.watcher, null, "parent aggregation attempt must not have watcher entry");
+
+		assert.ok(!runner.workerTaskIds.includes("discover"), "split discovery parent must not run worker");
+
 		const expansion = await workspace.readExpansion(state.runId, "process_each");
 		assert.ok(expansion);
 		assert.equal(expansion.children.length, 2);
@@ -1199,6 +1222,14 @@ test("decomposed discovery aggregation falls back to worker output and writes pa
 		assert.equal(final.taskStates.process_each?.status, "succeeded");
 		assert.equal(final.taskStates["process_each__a"]?.status, "succeeded");
 
+		// P22 review: directly assert parent standard result
+		const parentAttemptId = final.taskStates.discover?.activeAttemptId;
+		assert.ok(parentAttemptId, "parent must have activeAttemptId");
+		const record = await workspace.readDiscoveryResult(state.runId, "discover", parentAttemptId);
+		assert.ok(record, "parent discovery-result.json must exist");
+		assert.equal(record.outputKey, "items");
+		assert.deepEqual(record.items.map(i => i.id), ["a"]);
+
 		const expansion = await workspace.readExpansion(state.runId, "process_each");
 		assert.equal(expansion?.children.length, 1);
 		assert.equal(expansion?.children[0]?.sourceItemId, "a");
@@ -1231,6 +1262,14 @@ test("malformed decomposed child output fails parent without writing partial sta
 		assert.equal(final.taskStates.discover?.status, "failed");
 		assert.match(final.taskStates.discover?.errorSummary ?? "", /failed to aggregate decomposed discovery output from child discover__b/);
 		assert.equal(final.taskStates.process_each?.status, "failed");
+
+		// P22 review: no parent standard result written on malformed child
+		const parentAttemptId = final.taskStates.discover?.activeAttemptId;
+		if (parentAttemptId) {
+			const record = await workspace.readDiscoveryResult(state.runId, "discover", parentAttemptId);
+			assert.equal(record, null, "no parent discovery-result.json must exist on malformed child output");
+		}
+
 		const expansion = await workspace.readExpansion(state.runId, "process_each");
 		assert.equal(expansion, null);
 	} finally {
@@ -1287,9 +1326,21 @@ test("reclaimed decomposed discovery aggregates existing child results into stan
 		const final = await orchestrator.runToCompletion(state.runId);
 
 		assert.equal(final.status, "completed");
+		assert.equal(final.taskStates.discover?.status, "succeeded");
 		assert.equal(final.taskStates.process_each?.status, "succeeded");
 		assert.equal(final.taskStates["process_each__a"]?.status, "succeeded");
 		assert.equal(final.taskStates["process_each__b"]?.status, "succeeded");
+
+		// P22 review: reclaimed run must have parent standard result
+		const parentAttemptId = final.taskStates.discover?.activeAttemptId;
+		assert.ok(parentAttemptId, "parent must have activeAttemptId after reclaim");
+		const record = await workspace.readDiscoveryResult(state.runId, "discover", parentAttemptId);
+		assert.ok(record, "parent discovery-result.json must exist after reclaim");
+		assert.equal(record.outputKey, "items");
+		assert.deepEqual(record.items.map(i => i.id), ["a", "b"]);
+
+		assert.deepEqual(runner.decomposerTaskIds, [], "decomposer must not rerun on reclaim");
+
 		const expansion = await workspace.readExpansion(state.runId, "process_each");
 		assert.ok(expansion);
 		assert.equal(expansion.children.length, 2);

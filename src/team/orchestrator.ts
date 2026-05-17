@@ -1027,10 +1027,26 @@ export class TeamOrchestrator {
 		const outputKey = task.discovery.outputKey;
 		const decomposition = await this.workspace.readDecomposition(runId, task.id);
 		if (decomposition?.decision === "split") {
+			// Prefer existing parent standard result (resume/reclaim path)
+			const state = await this.workspace.getState(runId);
+			const parentTs = state?.taskStates[task.id];
+			const existingAttemptId = parentTs?.activeAttemptId;
+			if (existingAttemptId) {
+				const existingResult = await this.workspace.readDiscoveryResult(runId, task.id, existingAttemptId);
+				if (existingResult && existingResult.outputKey === outputKey) {
+					results[task.id] = { outputKey, items: existingResult.items };
+					return;
+				}
+			}
+
+			// Aggregate child outputs
 			const aggregated = await this.loadDecomposedDiscoveryResult(runId, task, decomposition.children.map(child => child.task));
 			if (!aggregated) {
 				return;
 			}
+
+			// Create parent aggregation attempt and persist standard result
+			await this.writeAggregatedDiscoveryResult(runId, task, aggregated, `decompositions/${task.id}.json`);
 			results[task.id] = { outputKey, items: aggregated };
 			return;
 		}
@@ -1180,7 +1196,44 @@ export class TeamOrchestrator {
 		return null;
 	}
 
-	private async writeStandardDiscoveryResult(runId: string, task: TeamTask, attemptId: string): Promise<boolean> {
+	private async writeAggregatedDiscoveryResult(runId: string, parentTask: TeamTask, items: Array<Record<string, unknown>>, sourceRef: string): Promise<void> {
+		if (!parentTask.discovery) return;
+		const outputKey = parentTask.discovery.outputKey;
+
+		// Create parent aggregation attempt
+		const { attemptId } = await this.workspace.createAttempt(runId, parentTask.id);
+
+		const record: TeamDiscoveryResultRecord = {
+			schemaVersion: "team/discovery-result-1",
+			taskId: parentTask.id,
+			attemptId,
+			outputKey,
+			items,
+			sourceRef,
+			createdAt: now(),
+		};
+		await this.workspace.writeDiscoveryResult(runId, parentTask.id, attemptId, record);
+
+		// Finish the attempt as succeeded (no worker/checker/watcher)
+		await this.workspace.finishAttempt(runId, parentTask.id, attemptId, {
+			status: "succeeded",
+			phase: "succeeded",
+			resultRef: `tasks/${parentTask.id}/attempts/${attemptId}/discovery-result.json`,
+		});
+
+		// Update parent task state
+		const state = (await this.workspace.getState(runId))!;
+		const ts = state.taskStates[parentTask.id];
+		if (ts) {
+			ts.activeAttemptId = attemptId;
+			ts.attemptCount = (ts.attemptCount ?? 0) + 1;
+			ts.resultRef = `tasks/${parentTask.id}/attempts/${attemptId}/discovery-result.json`;
+		}
+		state.updatedAt = now();
+		await this.workspace.saveState(state);
+	}
+
+		private async writeStandardDiscoveryResult(runId: string, task: TeamTask, attemptId: string): Promise<boolean> {
 		if (!task.discovery) return false;
 		const outputKey = task.discovery.outputKey;
 		const items = await this.readDiscoveryItemsFromAttempt(runId, task.id, attemptId, outputKey, { strictItems: true });
