@@ -597,10 +597,11 @@ export class TeamOrchestrator {
 				if (workUnitResult === "passed") {
 					if (task.type === "discovery" && task.discovery) {
 						const standardized = await this.writeStandardDiscoveryResult(state.runId, task, attemptId);
+						const valErr = `discovery result validation failed: expected outputKey '${task.discovery.outputKey}' to be an array with stable item ids`;
 						if (!standardized) {
-							await this.workspace.finishAttempt(state.runId, task.id, attemptId, { status: "failed", phase: "failed", errorSummary: "discovery result validation failed: expected outputKey 'items' to be an array with stable item ids" });
+							await this.workspace.finishAttempt(state.runId, task.id, attemptId, { status: "failed", phase: "failed", errorSummary: valErr });
 							ts.status = "failed";
-							ts.errorSummary = "discovery result validation failed: expected outputKey 'items' to be an array with stable item ids";
+							ts.errorSummary = valErr;
 							ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
 							state.summary.failedTasks++;
 							taskDone = true;
