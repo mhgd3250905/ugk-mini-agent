@@ -1132,3 +1132,169 @@ test("reclaimed decomposed discovery aggregates existing child results without d
 		await rm(root, { recursive: true });
 	}
 });
+
+// ── P22 Task 4: decomposed discovery standard aggregation ──
+
+test("decomposed discovery parent writes discovery-result.json after aggregating child outputs", async () => {
+	const runner = new DecompositionCaptureRunner([
+		{
+			decision: "split",
+			reason: "split discovery",
+			children: [
+				{ id: "discover__a", title: "Discover A", input: { text: "discover a" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+				{ id: "discover__b", title: "Discover B", input: { text: "discover b" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+			],
+		},
+	], {
+		checkerOutputs: [
+			{ verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: [{ id: "a", title: "A" }] }) },
+			{ verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: [{ id: "b", title: "B" }] }) },
+		],
+	});
+	const { root, plan, orchestrator, workspace } = await setupTasks(decomposedDiscoveryPlan(), runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.status, "completed");
+		assert.equal(final.taskStates.discover?.status, "succeeded");
+		assert.equal(final.taskStates.process_each?.status, "succeeded");
+		assert.equal(final.taskStates["process_each__a"]?.status, "succeeded");
+		assert.equal(final.taskStates["process_each__b"]?.status, "succeeded");
+
+		const expansion = await workspace.readExpansion(state.runId, "process_each");
+		assert.ok(expansion);
+		assert.equal(expansion.children.length, 2);
+		assert.deepEqual(expansion.children.map(c => c.sourceItemId), ["a", "b"]);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("decomposed discovery aggregation falls back to worker output and writes parent standard result", async () => {
+	const runner = new DecompositionCaptureRunner([
+		{
+			decision: "split",
+			reason: "split discovery",
+			children: [
+				{ id: "discover__a", title: "Discover A", input: { text: "discover a" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+			],
+		},
+	], {
+		workerOutputs: [
+			JSON.stringify({ items: [{ id: "a", title: "A" }] }),
+			"processed A",
+		],
+		checkerOutputs: [
+			{ verdict: "pass", reason: "summary accepted", resultContent: "总共 1 项：A。" },
+		],
+	});
+	const { root, plan, orchestrator, workspace } = await setupTasks(decomposedDiscoveryPlan(), runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.status, "completed");
+		assert.equal(final.taskStates.discover?.status, "succeeded");
+		assert.equal(final.taskStates.process_each?.status, "succeeded");
+		assert.equal(final.taskStates["process_each__a"]?.status, "succeeded");
+
+		const expansion = await workspace.readExpansion(state.runId, "process_each");
+		assert.equal(expansion?.children.length, 1);
+		assert.equal(expansion?.children[0]?.sourceItemId, "a");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("malformed decomposed child output fails parent without writing partial standard result", async () => {
+	const runner = new DecompositionCaptureRunner([
+		{
+			decision: "split",
+			reason: "split discovery",
+			children: [
+				{ id: "discover__a", title: "Discover A", input: { text: "discover a" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+				{ id: "discover__b", title: "Discover B", input: { text: "discover b" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+			],
+		},
+	], {
+		checkerOutputs: [
+			{ verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: [{ id: "a", title: "A" }] }) },
+			{ verdict: "pass", reason: "ok", resultContent: JSON.stringify({ nope: [{ id: "b", title: "B" }] }) },
+		],
+	});
+	const { root, plan, orchestrator, workspace } = await setupTasks(decomposedDiscoveryPlan(), runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.taskStates.discover?.status, "failed");
+		assert.match(final.taskStates.discover?.errorSummary ?? "", /failed to aggregate decomposed discovery output from child discover__b/);
+		assert.equal(final.taskStates.process_each?.status, "failed");
+		const expansion = await workspace.readExpansion(state.runId, "process_each");
+		assert.equal(expansion, null);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("reclaimed decomposed discovery aggregates existing child results into standard result", async () => {
+	const runner = new DecompositionCaptureRunner([
+		{ decision: "no_split", reason: "should not run", children: [] },
+	], {
+		checkerOutputs: [
+			{ verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: [{ id: "a", title: "A" }] }) },
+			{ verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: [{ id: "b", title: "B" }] }) },
+		],
+	});
+	const { root, plan, orchestrator, workspace } = await setupTasks(decomposedDiscoveryPlan(), runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const childTasks: TeamTask[] = [
+			{ id: "discover__a", title: "Discover A", input: { text: "discover a" }, acceptance: { rules: ["ok"] }, parentTaskId: "discover", generated: true, decomposer: { mode: "none" } },
+			{ id: "discover__b", title: "Discover B", input: { text: "discover b" }, acceptance: { rules: ["ok"] }, parentTaskId: "discover", generated: true, decomposer: { mode: "none" } },
+		];
+		await workspace.writeDecomposition(state.runId, {
+			schemaVersion: "team/task-decomposition-1",
+			parentTaskId: "discover",
+			mode: "leaf",
+			decision: "split",
+			reason: "persisted split",
+			decomposedAt: new Date().toISOString(),
+			children: childTasks.map(task => ({ taskId: task.id, title: task.title, task })),
+		});
+		await workspace.appendChildTaskStates(state.runId, childTasks);
+
+		const attemptA = await workspace.createAttempt(state.runId, "discover__a");
+		const resultA = await workspace.writeAcceptedResult(state.runId, "discover__a", attemptA.attemptId, JSON.stringify({ items: [{ id: "a", title: "A" }] }));
+		await workspace.finishAttempt(state.runId, "discover__a", attemptA.attemptId, { status: "succeeded", phase: "succeeded", resultRef: resultA });
+		const attemptB = await workspace.createAttempt(state.runId, "discover__b");
+		const resultB = await workspace.writeAcceptedResult(state.runId, "discover__b", attemptB.attemptId, JSON.stringify({ items: [{ id: "b", title: "B" }] }));
+		await workspace.finishAttempt(state.runId, "discover__b", attemptB.attemptId, { status: "succeeded", phase: "succeeded", resultRef: resultB });
+
+		const reclaimed = (await workspace.getState(state.runId))!;
+		reclaimed.taskStates["discover__a"]!.status = "succeeded";
+		reclaimed.taskStates["discover__a"]!.attemptCount = 1;
+		reclaimed.taskStates["discover__a"]!.activeAttemptId = attemptA.attemptId;
+		reclaimed.taskStates["discover__a"]!.resultRef = resultA;
+		reclaimed.taskStates["discover__b"]!.status = "succeeded";
+		reclaimed.taskStates["discover__b"]!.attemptCount = 1;
+		reclaimed.taskStates["discover__b"]!.activeAttemptId = attemptB.attemptId;
+		reclaimed.taskStates["discover__b"]!.resultRef = resultB;
+		reclaimed.summary.succeededTasks = 2;
+		await workspace.saveState(reclaimed);
+
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.status, "completed");
+		assert.equal(final.taskStates.process_each?.status, "succeeded");
+		assert.equal(final.taskStates["process_each__a"]?.status, "succeeded");
+		assert.equal(final.taskStates["process_each__b"]?.status, "succeeded");
+		const expansion = await workspace.readExpansion(state.runId, "process_each");
+		assert.ok(expansion);
+		assert.equal(expansion.children.length, 2);
+		assert.deepEqual(expansion.children.map(c => c.sourceItemId), ["a", "b"]);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
