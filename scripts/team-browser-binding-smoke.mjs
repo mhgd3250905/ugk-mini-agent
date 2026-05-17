@@ -251,7 +251,7 @@ export async function runSmoke(config, deps = {}) {
 	console.log(`[smoke] Plan created: ${plan.planId}`);
 
 	// 3. Create Run
-	const run = await jsonFetch(fetchFn, "POST", `${base}/v1/team/plans/${plan.planId}/runs`);
+	const run = await jsonFetch(fetchFn, "POST", `${base}/v1/team/plans/${plan.planId}/runs`, {});
 	console.log(`[smoke] Run created: ${run.runId}`);
 
 	// 4. Poll until terminal or timeout

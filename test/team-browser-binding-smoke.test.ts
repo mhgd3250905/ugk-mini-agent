@@ -136,14 +136,14 @@ test("Task 1: buildSmokePlanPayload returns valid plan structure", async () => {
 test("Task 2: happy path calls endpoints in correct order and exits success", async () => {
 	const { runSmoke } = await getSmoke();
 
-	const calls: Array<{ method: string; path: string }> = [];
+	const calls: Array<{ method: string; path: string; body?: string | null }> = [];
 	const teamUnitId = "tu_smoke_1";
 	const planId = "plan_smoke_1";
 	const runId = "run_smoke_1";
 
 	const mockFetch = async (url: string, init?: RequestInit) => {
 		const parsed = new URL(url);
-		calls.push({ method: init?.method ?? "GET", path: parsed.pathname });
+		calls.push({ method: init?.method ?? "GET", path: parsed.pathname, body: init?.body?.toString() });
 
 		if (parsed.pathname === "/v1/team/team-units" && init?.method === "POST") {
 			return new Response(JSON.stringify({
@@ -221,6 +221,7 @@ test("Task 2: happy path calls endpoints in correct order and exits success", as
 	assert.ok(calls[1]!.path.endsWith("/plans"));
 	assert.equal(calls[2]!.method, "POST");
 	assert.ok(calls[2]!.path.includes("/runs"));
+	assert.equal(calls[2]!.body, "{}");
 });
 
 test("Task 2: HTTP 400 from create endpoint produces a clear error", async () => {
