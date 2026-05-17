@@ -364,6 +364,22 @@ export class TeamOrchestrator {
 			return;
 		}
 
+		const existing = await this.workspace.readDecomposition(initialState.runId, task.id);
+		if (existing) {
+			let state = (await this.workspace.getState(initialState.runId))!;
+			if (this.shouldStop(state)) return;
+			if (existing.decision === "no_split") {
+				await this.executeTask(state, task, signal);
+				return;
+			}
+			const childTasks = existing.children.map(child => child.task);
+			await this.workspace.appendChildTaskStates(state.runId, childTasks);
+			state = (await this.workspace.getState(state.runId))!;
+			if (this.shouldStop(state)) return;
+			await this.executeDecomposedChildren(state, task, plan, childTasks, signal);
+			return;
+		}
+
 		let state = initialState;
 		state.currentTaskId = task.id;
 		state.taskStates[task.id]!.status = "running";

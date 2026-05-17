@@ -571,3 +571,245 @@ test("decomposer split rejects non-normal child tasks", async () => {
 		await rm(root, { recursive: true });
 	}
 });
+
+function hangOnSignal(signal: AbortSignal | undefined): Promise<never> {
+	return new Promise<never>((_, reject) => {
+		if (!signal) return reject(new Error("no signal"));
+		if (signal.aborted) {
+			reject(signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason)));
+			return;
+		}
+		signal.addEventListener("abort", () => {
+			reject(signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason)));
+		}, { once: true });
+	});
+}
+
+test("existing decomposition record skips decomposer and resumes children", async () => {
+	const runner = new DecompositionCaptureRunner([
+		{ decision: "no_split", reason: "should not be called", children: [] },
+	]);
+	const { root, plan, orchestrator, workspace } = await setup({
+		id: "task_1",
+		title: "Task 1",
+		input: { text: "do task" },
+		acceptance: { rules: ["ok"] },
+		decomposer: { mode: "leaf" },
+	}, runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		await workspace.writeDecomposition(state.runId, {
+			schemaVersion: "team/task-decomposition-1",
+			parentTaskId: "task_1",
+			mode: "leaf",
+			decision: "split",
+			reason: "persisted split",
+			decomposedAt: new Date().toISOString(),
+			children: [
+				{
+					taskId: "task_1__a",
+					title: "Child A",
+					task: { id: "task_1__a", title: "Child A", input: { text: "do a" }, acceptance: { rules: ["ok"] }, parentTaskId: "task_1", generated: true, decomposer: { mode: "none" } },
+				},
+			],
+		});
+
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.status, "completed");
+		assert.deepEqual(runner.decomposerTaskIds, []);
+		assert.deepEqual(runner.workerTaskIds, ["task_1__a"]);
+		assert.equal(final.taskStates["task_1__a"]?.status, "succeeded");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("resume continues remaining decomposed child tasks without rerunning decomposer", async () => {
+	let hangChildB = true;
+	class ResumeRunner extends DecompositionCaptureRunner {
+		override async runWorker(input: WorkerInput) {
+			if (input.task.id === "task_1__b" && hangChildB) {
+				this.events.push(`worker:${input.task.id}`);
+				this.workerTaskIds.push(input.task.id);
+				await hangOnSignal(input.signal);
+			}
+			return super.runWorker(input);
+		}
+	}
+	const runner = new ResumeRunner([
+		{
+			decision: "split",
+			reason: "split",
+			children: [
+				{ id: "task_1__a", title: "Child A", input: { text: "do a" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+				{ id: "task_1__b", title: "Child B", input: { text: "do b" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+			],
+		},
+	]);
+	const { root, plan, orchestrator } = await setup({
+		id: "task_1",
+		title: "Task 1",
+		input: { text: "do task" },
+		acceptance: { rules: ["ok"] },
+		decomposer: { mode: "leaf" },
+	}, runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const runPromise = orchestrator.runToCompletion(state.runId);
+		await new Promise<void>((resolve) => {
+			const check = () => runner.workerTaskIds.includes("task_1__b") ? resolve() : setTimeout(check, 10);
+			check();
+		});
+		await orchestrator.pauseRun(state.runId, "pause at child b");
+		const paused = await runPromise;
+		assert.equal(paused.status, "paused");
+		assert.equal(paused.taskStates["task_1__a"]?.status, "succeeded");
+
+		hangChildB = false;
+		runner.workerTaskIds.length = 0;
+		await orchestrator.resumeRun(state.runId);
+		const resumed = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(resumed.status, "completed");
+		assert.equal(resumed.taskStates.task_1?.status, "succeeded");
+		assert.deepEqual(runner.decomposerTaskIds, ["task_1"]);
+		assert.deepEqual(runner.workerTaskIds, ["task_1__b"]);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("pause during decomposer leaves interrupted state without stale decomposition write", async () => {
+	let decomposerStartedResolve: () => void;
+	const decomposerStarted = new Promise<void>(resolve => { decomposerStartedResolve = resolve; });
+	class HangingDecomposerRunner extends DecompositionCaptureRunner {
+		override async runDecomposer(input: DecomposerInput): Promise<DecomposerOutput> {
+			this.decomposerTaskIds.push(input.task.id);
+			decomposerStartedResolve();
+			await hangOnSignal(input.signal);
+		}
+	}
+	const runner = new HangingDecomposerRunner();
+	const { root, plan, orchestrator, workspace } = await setup({
+		id: "task_1",
+		title: "Task 1",
+		input: { text: "do task" },
+		acceptance: { rules: ["ok"] },
+		decomposer: { mode: "leaf" },
+	}, runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const runPromise = orchestrator.runToCompletion(state.runId);
+		await decomposerStarted;
+		await orchestrator.pauseRun(state.runId, "pause during decomposer");
+		const paused = await runPromise;
+
+		assert.equal(paused.status, "paused");
+		assert.equal(paused.taskStates.task_1?.status, "interrupted");
+		assert.equal(await workspace.readDecomposition(state.runId, "task_1"), null);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("cancel during decomposed child task wins over timeout", async () => {
+	let childStartedResolve: () => void;
+	const childStarted = new Promise<void>(resolve => { childStartedResolve = resolve; });
+	class HangingChildRunner extends DecompositionCaptureRunner {
+		override async runWorker(input: WorkerInput) {
+			if (input.task.id === "task_1__a") {
+				this.workerTaskIds.push(input.task.id);
+				childStartedResolve();
+				await hangOnSignal(input.signal);
+			}
+			return super.runWorker(input);
+		}
+	}
+	const runner = new HangingChildRunner([
+		{
+			decision: "split",
+			reason: "split",
+			children: [
+				{ id: "task_1__a", title: "Child A", input: { text: "do a" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+			],
+		},
+	]);
+	const { root, plan, workspace } = await setup({
+		id: "task_1",
+		title: "Task 1",
+		input: { text: "do task" },
+		acceptance: { rules: ["ok"] },
+		decomposer: { mode: "leaf" },
+	}, runner);
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const orchestrator = new TeamOrchestrator({
+			planStore,
+			teamUnitStore: unitStore,
+			workspace,
+			roleRunner: runner,
+			dataDir: root,
+			maxCheckerRevisions: 3,
+			maxWatcherRevisions: 1,
+			maxRunDurationMinutes: 60,
+			phaseTimeouts: { workerMs: 60_000, checkerMs: 60_000, watcherMs: 60_000, finalizerMs: 60_000 },
+		});
+		const state = await orchestrator.createRun(plan.planId);
+		const runPromise = orchestrator.runToCompletion(state.runId);
+		await childStarted;
+		await orchestrator.cancelRun(state.runId, "user cancel");
+		const final = await runPromise;
+
+		assert.equal(final.status, "cancelled");
+		assert.equal(final.taskStates.task_1?.status, "cancelled");
+		assert.equal(final.taskStates["task_1__a"]?.status, "cancelled");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("run timeout fails unfinished decomposed children and parent", async () => {
+	class SlowFirstChildRunner extends DecompositionCaptureRunner {
+		override async runWorker(input: WorkerInput) {
+			if (input.task.id === "task_1__a") {
+				await new Promise(resolve => setTimeout(resolve, 80));
+			}
+			return super.runWorker(input);
+		}
+	}
+	const runner = new SlowFirstChildRunner([
+		{
+			decision: "split",
+			reason: "split",
+			children: [
+				{ id: "task_1__a", title: "Child A", input: { text: "do a" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+				{ id: "task_1__b", title: "Child B", input: { text: "do b" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+			],
+		},
+	]);
+	const { root, plan, orchestrator, workspace } = await setup({
+		id: "task_1",
+		title: "Task 1",
+		input: { text: "do task" },
+		acceptance: { rules: ["ok"] },
+		decomposer: { mode: "leaf" },
+	}, runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const patched = (await workspace.getState(state.runId))!;
+		patched.maxRunDurationMinutes = 0.0005;
+		await workspace.saveState(patched);
+
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.status, "failed");
+		assert.equal(final.taskStates.task_1?.status, "failed");
+		assert.equal(final.taskStates["task_1__b"]?.status, "failed");
+		assert.equal(final.taskStates.task_1?.errorSummary, "run timeout");
+		assert.equal(final.taskStates["task_1__b"]?.errorSummary, "run timeout");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
