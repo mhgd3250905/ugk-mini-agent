@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-17 — P21-C Review Fix: Decomposed Discovery Aggregation
+
+- **主题**: 修复 decomposed discovery parent 的 child result aggregation
+- **影响范围**: `src/team/orchestrator.ts`, `test/team-orchestrator-decomposition.test.ts`, `docs/team-runtime.md`
+- **变更**:
+  - `discovery` task 被 decomposer `split` 后，会从 normal child 的 accepted result 聚合 parent `discovery.outputKey`
+  - child 输出支持 `{ "items": [...] }` 和直接数组 `[ ... ]` 两种形状
+  - malformed child output 会让 discovery parent 明确失败，避免 downstream `for_each` 使用 partial data
+  - resume/reclaim 复用既有 decomposition record 和 child result，不重复调用 decomposer、不重复 append child state
+- **测试**: 新增 decomposed discovery → downstream `for_each` 真实流程测试，覆盖 object output、array output、malformed output 和 reclaim/resume path
+
+---
+
 ## 2026-05-17 — P21-C Controlled Runtime Decomposition
 
 - **主题**: Orchestrator 启用受控运行时拆分

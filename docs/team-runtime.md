@@ -80,6 +80,9 @@ Plan task 可声明受控拆分策略：
 - 既有 decomposition record 会优先于再次调用 decomposer；resume/reclaim 时会复用 record 中的完整 child `TeamTask` 定义。
 - pause/cancel/timeout 使用现有 run control 机制；split parent 没有 active attempt，未完成 parent/children 会按 run 状态统一标记。
 - parent 状态由 child 汇总：全部 child 成功则 parent `succeeded`，任一 child 失败则 parent `failed`，错误摘要指向失败 child。
+- 当 `discovery` parent 被 `split` 时，parent 仍不执行 worker/checker/watcher；runtime 会按 decomposition record 中的 child 顺序读取每个 normal child 的 `accepted-result.md`，缺失时 fallback 到 `worker-output-001.md`，并聚合为 parent 的 `discovery.outputKey` 结果供下游 `for_each.itemsFrom` 使用。
+- decomposed discovery child 输出支持两种形状：包含 parent `discovery.outputKey` 数组的 JSON object，例如 `{ "items": [...] }`；或直接输出 item object 数组，例如 `[{"id":"a"}]`。
+- decomposed discovery child 输出必须提供 item object 数组；任一 child 输出 malformed、缺少目标数组、或数组元素不是 object 时，discovery parent 会失败，downstream `for_each` 不会从 partial data 扩展。
 - finalizer 输入来自完整 `state.taskStates`，因此能看到 decomposed child 的 result/error 信息。
 
 ### Dynamic Task Expansion (P15)
