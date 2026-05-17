@@ -1249,92 +1249,122 @@ async function toggleRunDetail(runId) {
 function renderTaskDetail(state, plan, attemptsMap) {
 	if (!plan || !plan.tasks || !plan.tasks.length) return '<p style="color:var(--muted);font-size:13px">无任务数据。</p>';
 	var finalizerRuntimeHtml = state.finalizerRuntimeContext ? '<div class="finalizer-runtime" style="margin-bottom:8px">' + renderRuntimeContext('finalizer', state.finalizerRuntimeContext) + '</div>' : '';
+	var generatedTasks = [];
+	if (Array.isArray(state.generatedTasks)) generatedTasks = generatedTasks.concat(state.generatedTasks);
+	if (Array.isArray(state.taskDefinitions)) generatedTasks = generatedTasks.concat(state.taskDefinitions);
+	if (Array.isArray(state.tasks)) generatedTasks = generatedTasks.concat(state.tasks.filter(function(t) { return t && t.generated; }));
+	var planIdSet = {};
+	var taskById = {};
+	plan.tasks.forEach(function(t) { planIdSet[t.id] = true; taskById[t.id] = t; });
+	generatedTasks.forEach(function(t) { if (t && t.id) taskById[t.id] = t; });
+	var childrenByParent = {};
+	generatedTasks.forEach(function(t) {
+		if (!t || !t.id || !t.parentTaskId) return;
+		if (!childrenByParent[t.parentTaskId]) childrenByParent[t.parentTaskId] = [];
+		if (childrenByParent[t.parentTaskId].indexOf(t.id) === -1) childrenByParent[t.parentTaskId].push(t.id);
+	});
+	Object.keys(state.taskStates || {}).forEach(function(id) {
+		if (planIdSet[id]) return;
+		plan.tasks.forEach(function(parent) {
+			if (id.indexOf(parent.id + '__') === 0) {
+				if (!childrenByParent[parent.id]) childrenByParent[parent.id] = [];
+				if (childrenByParent[parent.id].indexOf(id) === -1) childrenByParent[parent.id].push(id);
+				if (!taskById[id]) taskById[id] = { id: id, title: id, parentTaskId: parent.id, generated: true };
+			}
+		});
+	});
+	var renderedTaskIds = {};
+
+	function renderStateRow(task, opts) {
+		var ts = state.taskStates[task.id];
+		var rowClass = opts && opts.rowClass ? ' class="' + opts.rowClass + '"' : '';
+		var titlePrefix = opts && opts.titlePrefix ? opts.titlePrefix : '';
+		var escapedTaskTitle = task.title ? escapeHtml(task.title) : escapeHtml(task.id || '');
+		if (!ts) return '<tr' + rowClass + '><td>' + titlePrefix + escapedTaskTitle + '</td><td colspan="2">待执行</td></tr>';
+		var phaseHtml = ts.progress ? '<span class="phase-label ' + phaseColor(ts.progress.phase) + '">' + escapeHtml(phaseLabel(ts.progress.phase)) + '</span>' : '';
+		var msgStr = ts.progress ? escapeHtml(ts.progress.message) : '';
+		var detailParts = [];
+		if (ts.attemptCount > 0) detailParts.push('尝试 ' + ts.attemptCount + ' 次');
+		if (ts.activeAttemptId) detailParts.push('尝试ID: ' + escapeHtml(ts.activeAttemptId.slice(0, 12)) + '...');
+		if (ts.resultRef) detailParts.push('<span style="color:var(--success)">结果: ' + escapeHtml(ts.resultRef) + '</span>');
+		if (ts.errorSummary) detailParts.push('<span class="attempt-error">错误: ' + escapeHtml(ts.errorSummary) + '</span>');
+		var attemptsHtml = '';
+		var attempts = attemptsMap && attemptsMap[task.id];
+		if (attempts && attempts.length > 0) {
+			attemptsHtml = attempts.map(function(a) {
+				var statusColor = a.status === 'succeeded' ? 'var(--success)' : a.status === 'failed' ? 'var(--fail)' : 'var(--muted)';
+				var files = Array.isArray(a.files) ? a.files : [];
+				var filesHtml = files.map(function(f) {
+					return '<span class="file-chip" onclick="viewAttemptFile(' + jsArg(state.runId) + ',' + jsArg(task.id) + ',' + jsArg(a.attemptId) + ',' + jsArg(f) + ')">' + escapeHtml(f) + '</span>';
+				}).join('');
+				var lcLines = [];
+				if (a.phase) lcLines.push('阶段: ' + escapeHtml(phaseLabel(a.phase)));
+				if (a.worker && a.worker.length) lcLines.push('worker: ' + a.worker.length + ' 次输出');
+				if (a.checker && a.checker.length) {
+					var verdicts = a.checker.map(function(c) { return escapeHtml(c.verdict); }).join(' → ');
+					lcLines.push('checker: ' + verdicts);
+				}
+				if (a.watcher) lcLines.push('watcher: ' + escapeHtml(a.watcher.decision));
+				if (a.resultRef) lcLines.push('结果: ' + escapeHtml(a.resultRef));
+				if (a.errorSummary) lcLines.push('<span class="attempt-error">错误: ' + escapeHtml(a.errorSummary) + '</span>');
+				var lcHtml = lcLines.length ? '<div style="font-size:11px;color:var(--muted);margin-top:2px">' + lcLines.join(' / ') + '</div>' : '';
+				var runtimeHtml = '';
+				if (a.worker && a.worker.length) runtimeHtml += a.worker.map(function(w) { return renderRuntimeContext('worker', w.runtimeContext); }).join('');
+				if (a.checker && a.checker.length) runtimeHtml += a.checker.map(function(c) { return renderRuntimeContext('checker', c.runtimeContext); }).join('');
+				if (a.watcher) runtimeHtml += renderRuntimeContext('watcher', a.watcher.runtimeContext);
+				return '<div class="attempt-card">' +
+					'<span style="color:' + statusColor + '">' + escapeHtml(a.status) + '</span> ' +
+					escapeHtml(a.attemptId.slice(0, 12)) + '... ' +
+					'<span class="ts">' + formatTimestamp(a.createdAt) + '</span>' +
+					lcHtml +
+					runtimeHtml +
+					(files.length > 0 ? '<div class="file-chips">' + filesHtml + '</div>' : '') +
+					'</div>';
+			}).join('');
+		}
+		renderedTaskIds[task.id] = true;
+		return '<tr' + rowClass + '>' +
+			'<td>' + titlePrefix + escapedTaskTitle + '</td>' +
+			'<td>' + statusBadge(ts.status) + '<br/>' + phaseHtml + '</td>' +
+			'<td style="font-size:12px">' +
+			(msgStr ? '<div style="color:var(--muted)">' + msgStr + '</div>' : '') +
+			(detailParts.length ? '<div>' + detailParts.join(' / ') + '</div>' : '') +
+			attemptsHtml +
+			'</td></tr>';
+	}
+
+	function childGroupLabel(parent) {
+		if (parent && parent.type === 'for_each') return '动态子任务';
+		if (taskDecomposerMode(parent) !== 'none') return '拆分子任务';
+		return '子任务';
+	}
+
+	var rows = plan.tasks.map(function(task) {
+		var childIds = childrenByParent[task.id] || [];
+		var parentClass = childIds.length && taskDecomposerMode(task) !== 'none' ? 'decomposed-parent' : '';
+		var parentPrefix = parentClass ? '<span class="plan-chip" style="margin-right:6px">拆分容器</span>' : '';
+		var html = renderStateRow(task, { rowClass: parentClass, titlePrefix: parentPrefix });
+		if (childIds.length) {
+			html += '<tr class="' + (task.type === 'for_each' ? 'dynamic-child-group' : 'decomposed-child-group') + '"><td colspan="3" style="padding:6px 8px 4px 22px;font-weight:600;color:var(--muted);font-size:12px;border-top:1px solid var(--border)">' + childGroupLabel(task) + '</td></tr>';
+			childIds.forEach(function(cid) {
+				var childTask = taskById[cid] || { id: cid, title: cid, parentTaskId: task.id, generated: true };
+				html += renderStateRow(childTask, { rowClass: task.type === 'for_each' ? 'dynamic-child' : 'decomposed-child', titlePrefix: '<span style="color:var(--muted);margin-right:6px">↳</span>' });
+			});
+		}
+		return html;
+	}).join('');
+
+	var orphanIds = Object.keys(state.taskStates || {}).filter(function(id) { return !planIdSet[id] && !renderedTaskIds[id]; });
+	if (orphanIds.length) {
+		rows += '<tr><td colspan="3" style="padding:6px 8px;font-weight:600;color:var(--muted);font-size:12px;border-top:1px solid var(--border)">子任务</td></tr>';
+		orphanIds.forEach(function(cid) {
+			rows += renderStateRow(taskById[cid] || { id: cid, title: cid }, {});
+		});
+	}
+
 	return finalizerRuntimeHtml + '<table class="task-table">' +
 		'<tr><th>任务</th><th>状态</th><th>详情</th></tr>' +
-		plan.tasks.map(function(task) {
-			var ts = state.taskStates[task.id];
-			if (!ts) return '<tr><td>' + escapeHtml(task.title) + '</td><td colspan="2">待执行</td></tr>';
-			var phaseHtml = ts.progress ? '<span class="phase-label ' + phaseColor(ts.progress.phase) + '">' + escapeHtml(phaseLabel(ts.progress.phase)) + '</span>' : '';
-			var msgStr = ts.progress ? escapeHtml(ts.progress.message) : '';
-			var detailParts = [];
-			if (ts.attemptCount > 0) detailParts.push('尝试 ' + ts.attemptCount + ' 次');
-			if (ts.activeAttemptId) detailParts.push('尝试ID: ' + escapeHtml(ts.activeAttemptId.slice(0, 12)) + '...');
-			if (ts.resultRef) detailParts.push('<span style="color:var(--success)">结果: ' + escapeHtml(ts.resultRef) + '</span>');
-			if (ts.errorSummary) detailParts.push('<span class="attempt-error">错误: ' + escapeHtml(ts.errorSummary) + '</span>');
-			var attemptsHtml = '';
-			var attempts = attemptsMap && attemptsMap[task.id];
-			if (attempts && attempts.length > 0) {
-				attemptsHtml = attempts.map(function(a) {
-					var statusColor = a.status === 'succeeded' ? 'var(--success)' : a.status === 'failed' ? 'var(--fail)' : 'var(--muted)';
-					var filesHtml = a.files.map(function(f) {
-						return '<span class="file-chip" onclick="viewAttemptFile(' + jsArg(state.runId) + ',' + jsArg(task.id) + ',' + jsArg(a.attemptId) + ',' + jsArg(f) + ')">' + escapeHtml(f) + '</span>';
-					}).join('');
-					var lcLines = [];
-					if (a.phase) lcLines.push('阶段: ' + escapeHtml(phaseLabel(a.phase)));
-					if (a.worker && a.worker.length) lcLines.push('worker: ' + a.worker.length + ' 次输出');
-					if (a.checker && a.checker.length) {
-						var verdicts = a.checker.map(function(c) { return escapeHtml(c.verdict); }).join(' → ');
-						lcLines.push('checker: ' + verdicts);
-					}
-					if (a.watcher) lcLines.push('watcher: ' + escapeHtml(a.watcher.decision));
-					if (a.resultRef) lcLines.push('结果: ' + escapeHtml(a.resultRef));
-					if (a.errorSummary) lcLines.push('<span class="attempt-error">错误: ' + escapeHtml(a.errorSummary) + '</span>');
-					var lcHtml = lcLines.length ? '<div style="font-size:11px;color:var(--muted);margin-top:2px">' + lcLines.join(' / ') + '</div>' : '';
-					var runtimeHtml = '';
-					if (a.worker && a.worker.length) runtimeHtml += a.worker.map(function(w) { return renderRuntimeContext('worker', w.runtimeContext); }).join('');
-					if (a.checker && a.checker.length) runtimeHtml += a.checker.map(function(c) { return renderRuntimeContext('checker', c.runtimeContext); }).join('');
-					if (a.watcher) runtimeHtml += renderRuntimeContext('watcher', a.watcher.runtimeContext);
-					return '<div class="attempt-card">' +
-						'<span style="color:' + statusColor + '">' + escapeHtml(a.status) + '</span> ' +
-						escapeHtml(a.attemptId.slice(0, 12)) + '... ' +
-						'<span class="ts">' + formatTimestamp(a.createdAt) + '</span>' +
-						lcHtml +
-						runtimeHtml +
-						(a.files.length > 0 ? '<div class="file-chips">' + filesHtml + '</div>' : '') +
-						'</div>';
-				}).join('');
-			}
-			return '<tr>' +
-				'<td>' + escapeHtml(task.title) + '</td>' +
-				'<td>' + statusBadge(ts.status) + '<br/>' + phaseHtml + '</td>' +
-				'<td style="font-size:12px">' +
-				(msgStr ? '<div style="color:var(--muted)">' + msgStr + '</div>' : '') +
-				(detailParts.length ? '<div>' + detailParts.join(' / ') + '</div>' : '') +
-				attemptsHtml +
-				'</td></tr>';
-		}).join('') +
-		(function() {
-			var planIdSet = {};
-			plan.tasks.forEach(function(t) { planIdSet[t.id] = true; });
-			var childIds = Object.keys(state.taskStates || {}).filter(function(id) { return !planIdSet[id]; });
-			if (childIds.length === 0) return '';
-			var rows = '<tr><td colspan="3" style="padding:6px 8px;font-weight:600;color:var(--muted);font-size:12px;border-top:1px solid var(--border)">子任务</td></tr>';
-			childIds.forEach(function(cid) {
-				var ts = state.taskStates[cid];
-				var phaseHtml = ts.progress ? '<span class="phase-label ' + phaseColor(ts.progress.phase) + '">' + escapeHtml(phaseLabel(ts.progress.phase)) + '</span>' : '';
-				var detailParts = [];
-				if (ts.attemptCount > 0) detailParts.push('尝试 ' + ts.attemptCount + ' 次');
-				if (ts.activeAttemptId) detailParts.push('尝试ID: ' + escapeHtml(ts.activeAttemptId.slice(0, 12)) + '...');
-				if (ts.resultRef) detailParts.push('<span style="color:var(--success)">结果: ' + escapeHtml(ts.resultRef) + '</span>');
-				if (ts.errorSummary) detailParts.push('<span class="attempt-error">错误: ' + escapeHtml(ts.errorSummary) + '</span>');
-				var childAttemptsHtml = '';
-				var attempts = attemptsMap && attemptsMap[cid];
-				if (attempts && attempts.length > 0) {
-					childAttemptsHtml = attempts.map(function(a) {
-						var sc = a.status === 'succeeded' ? 'var(--success)' : a.status === 'failed' ? 'var(--fail)' : 'var(--muted)';
-						return '<div class="attempt-card"><span style="color:' + sc + '">' + escapeHtml(a.status) + '</span> ' + escapeHtml(a.attemptId.slice(0, 12)) + '... <span class="ts">' + formatTimestamp(a.createdAt) + '</span></div>';
-					}).join('');
-				}
-				rows += '<tr>' +
-					'<td style="font-size:12px">' + escapeHtml(cid) + '</td>' +
-					'<td>' + statusBadge(ts.status) + '<br/>' + phaseHtml + '</td>' +
-					'<td style="font-size:12px">' +
-					(detailParts.length ? '<div>' + detailParts.join(' / ') + '</div>' : '') +
-					childAttemptsHtml +
-					'</td></tr>';
-			});
-			return rows;
-		})() +
+		rows +
 		'</table>';
 }
 

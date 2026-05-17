@@ -2367,3 +2367,120 @@ test("P21-D1: dynamic plan detail shows template decomposer badge and escapes te
 	assert.doesNotMatch(html, /<img[^>]+onerror/);
 	assert.match(html, /&lt;img src=x onerror=bad&gt;/);
 });
+
+// ── P21-D Task 2: Run Timeline Decomposition Hierarchy ──
+
+function extractP21DTaskDetailRenderer(): (state: any, plan: any, attemptsMap: any) => string {
+	const script = extractScript();
+	const start = script.indexOf("function escapeHtml");
+	const end = script.indexOf("async function editTeamUnit");
+	assert.ok(start >= 0, "should find helper source start");
+	assert.ok(end > start, "should find helper source end");
+	const source = script.slice(start, end);
+	return new Function(source + "\nreturn renderTaskDetail;")() as (state: any, plan: any, attemptsMap: any) => string;
+}
+
+test("P21-D2: decomposed parent renders as container with children below it", () => {
+	const renderTaskDetail = extractP21DTaskDetailRenderer();
+	const plan = {
+		tasks: [
+			{
+				id: "reverse_dns",
+				title: "Reverse DNS",
+				input: { text: "investigate" },
+				acceptance: { rules: ["ok"] },
+				decomposer: { mode: "leaf" },
+			},
+			{ id: "summary", title: "Summary", input: { text: "sum" }, acceptance: { rules: ["ok"] } },
+		],
+	};
+	const state = {
+		runId: "run_decomp",
+		taskStates: {
+			reverse_dns: { status: "succeeded", progress: { phase: "succeeded", message: "decomposed" }, attemptCount: 0, activeAttemptId: null },
+			collect_ips: { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 1, activeAttemptId: null },
+			ptr_lookup: { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 1, activeAttemptId: null },
+			summary: { status: "pending", progress: null, attemptCount: 0, activeAttemptId: null },
+		},
+		generatedTasks: [
+			{ id: "collect_ips", title: "Collect known IPs", parentTaskId: "reverse_dns", generated: true, input: { text: "collect" }, acceptance: { rules: ["ok"] } },
+			{ id: "ptr_lookup", title: "PTR lookup", parentTaskId: "reverse_dns", generated: true, input: { text: "lookup" }, acceptance: { rules: ["ok"] } },
+		],
+	};
+	const html = renderTaskDetail(state, plan, {});
+	assert.match(html, /decomposed-parent/);
+	assert.match(html, /拆分容器/);
+	assert.match(html, /decomposed-child/);
+	assert.match(html, /Collect known IPs/);
+	assert.match(html, /PTR lookup/);
+	assert.ok(html.indexOf("Reverse DNS") < html.indexOf("Collect known IPs"));
+	assert.ok(html.indexOf("Collect known IPs") < html.indexOf("Summary"));
+});
+
+test("P21-D2: failed decomposed child shows error without marking siblings", () => {
+	const renderTaskDetail = extractP21DTaskDetailRenderer();
+	const plan = {
+		tasks: [
+			{ id: "passive_dns", title: "Passive DNS", input: { text: "investigate" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "leaf" } },
+		],
+	};
+	const state = {
+		runId: "run_decomp_fail",
+		taskStates: {
+			passive_dns: { status: "failed", progress: { phase: "failed", message: "child failed" }, attemptCount: 0, activeAttemptId: null, errorSummary: "child failed" },
+			otx: { status: "failed", progress: { phase: "failed", message: "bad token" }, attemptCount: 1, activeAttemptId: null, errorSummary: "OTX lookup failed" },
+			hackertarget: { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 1, activeAttemptId: null },
+		},
+		generatedTasks: [
+			{ id: "otx", title: "OTX passive DNS", parentTaskId: "passive_dns", generated: true, input: { text: "otx" }, acceptance: { rules: ["ok"] } },
+			{ id: "hackertarget", title: "Hackertarget reverse IP", parentTaskId: "passive_dns", generated: true, input: { text: "ht" }, acceptance: { rules: ["ok"] } },
+		],
+	};
+	const html = renderTaskDetail(state, plan, {});
+	assert.match(html, /OTX lookup failed/);
+	assert.match(html, /Hackertarget reverse IP/);
+	assert.match(html, /succeeded/);
+});
+
+test("P21-D2: dynamic for_each and decomposed parents render with distinct labels", () => {
+	const renderTaskDetail = extractP21DTaskDetailRenderer();
+	const plan = {
+		tasks: [
+			{ id: "process_each", type: "for_each", title: "Process each", input: { text: "placeholder" }, acceptance: { rules: ["ok"] }, forEach: { itemsFrom: "discover.items", mode: "sequential", taskTemplate: { title: "Process {{item.id}}", input: { text: "x" }, acceptance: { rules: ["ok"] } } } },
+			{ id: "reverse_dns", title: "Reverse DNS", input: { text: "rdns" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "leaf" } },
+		],
+	};
+	const state = {
+		runId: "run_mixed",
+		taskStates: {
+			process_each: { status: "succeeded", progress: { phase: "succeeded", message: "" }, attemptCount: 0, activeAttemptId: null },
+			process_each__a: { status: "succeeded", progress: { phase: "succeeded", message: "" }, attemptCount: 1, activeAttemptId: null },
+			reverse_dns: { status: "succeeded", progress: { phase: "succeeded", message: "" }, attemptCount: 0, activeAttemptId: null },
+			ptr_lookup: { status: "succeeded", progress: { phase: "succeeded", message: "" }, attemptCount: 1, activeAttemptId: null },
+		},
+		generatedTasks: [
+			{ id: "process_each__a", title: "Process a", parentTaskId: "process_each", generated: true, input: { text: "a" }, acceptance: { rules: ["ok"] } },
+			{ id: "ptr_lookup", title: "PTR lookup", parentTaskId: "reverse_dns", generated: true, input: { text: "ptr" }, acceptance: { rules: ["ok"] } },
+		],
+	};
+	const html = renderTaskDetail(state, plan, {});
+	assert.match(html, /动态子任务/);
+	assert.match(html, /拆分子任务/);
+	assert.match(html, /Process a/);
+	assert.match(html, /PTR lookup/);
+});
+
+test("P21-D2: old runs without decomposition metadata still render", () => {
+	const renderTaskDetail = extractP21DTaskDetailRenderer();
+	const plan = { tasks: [{ id: "t1", title: "Old Task", input: { text: "do" }, acceptance: { rules: ["ok"] } }] };
+	const state = {
+		runId: "run_old_p21d",
+		taskStates: {
+			t1: { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 1, activeAttemptId: null },
+		},
+	};
+	const html = renderTaskDetail(state, plan, {});
+	assert.match(html, /Old Task/);
+	assert.match(html, /succeeded/);
+	assert.doesNotMatch(html, /拆分容器|动态子任务|拆分子任务/);
+});
