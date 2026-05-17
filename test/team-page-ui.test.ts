@@ -2213,7 +2213,9 @@ test("P19-T5: inline scripts remain valid after P19-T5 changes", () => {
 test("P20-T4: startRun function sends maxRunDurationMinutes in request body", () => {
 	const html = renderTeamPage();
 	assert.match(html, /maxRunDurationMinutes/, "startRun should reference maxRunDurationMinutes");
-	assert.match(html, /JSON\.stringify\(\s*\{\s*maxRunDurationMinutes/, "startRun should JSON.stringify with maxRunDurationMinutes");
+	assert.match(html, /timeoutStr\.trim\(\)\s*!==\s*''/, "startRun should only send override when user enters a value");
+	assert.match(html, /JSON\.stringify\(\s*\{\s*maxRunDurationMinutes/, "startRun should JSON.stringify with maxRunDurationMinutes when overridden");
+	assert.match(html, /api\('\/plans\/'\s*\+\s*planId\s*\+\s*'\/runs',\s*runRequest\)/, "startRun should use the request options built from user input");
 });
 
 test("P20-T4: startRun validates timeout range 1-1440", () => {
@@ -2226,4 +2228,14 @@ test("P20-T4: all startRun call sites use same planId-only signature", () => {
 	const html = renderTeamPage();
 		const calls = [...html.matchAll(/startRun\(.*?planId/g)];
 		assert.ok(calls.length >= 3, `expected at least 3 startRun(planId) calls, found ${calls.length}`);
+});
+
+test("P20-fix: timeout prompt leaves default blank and has clean modal text", () => {
+	const html = renderTeamPage();
+	assert.match(html, /留空使用服务端默认值/);
+	assert.match(html, /default:\s*''/);
+	assert.match(html, /<div id="team-prompt-modal"/);
+	assert.doesNotMatch(html, /t<div id="team-prompt-modal"/);
+	assert.match(html, /id="prompt-cancel">取消<\/button>/);
+	assert.doesNotMatch(html, /ȡ消/);
 });

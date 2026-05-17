@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-17 — P20 Review Fixes
+
+- **主题**: 修复 P20 run timeout UI 默认值覆盖和页面脏字符
+- **影响范围**: `src/ui/team-page.ts`, `test/team-page-ui.test.ts`, `test/team-orchestrator-timeout.test.ts`, `docs/change-log.md`
+- **变更**:
+  - UI 创建运行时，timeout 输入留空不再发送 `maxRunDurationMinutes`，改为尊重服务端 `TEAM_MAX_RUN_DURATION_MINUTES` 默认值
+  - 清理 timeout prompt modal 前的 stray `t` 文本节点，并修复“取消”按钮乱码
+  - 规范 `test/team-orchestrator-timeout.test.ts` 换行，避免 `git diff --check` 被 CRLF 噪音刷屏
+- **测试**: `test/team-page-ui.test.ts` 增加回归断言，覆盖留空默认和 modal 文案
+
+---
+
 ## 2026-05-17 — P20 Timeout and Expansion Patch
 
 - **主题**: Team Runtime timeout 配置增强和 for_each 模板扩展修复

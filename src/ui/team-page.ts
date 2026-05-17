@@ -1515,15 +1515,20 @@ function promptAction(opts) {
 }
 
 async function startRun(planId) {
-	var timeoutStr = await promptAction({ message: '设置运行超时（分钟），留空使用默认值 100 分钟', default: 100 });
+	var timeoutStr = await promptAction({ message: '设置运行超时（分钟），留空使用服务端默认值', default: '' });
 	if (timeoutStr === null) return;
-	var timeout = timeoutStr.trim() === '' ? 100 : Number(timeoutStr);
-	if (!Number.isFinite(timeout) || timeout <= 0 || timeout > 1440) {
-		showError('超时值必须为 1~1440 之间的数字');
-		return;
+	var runRequest = { method: 'POST' };
+	if (timeoutStr.trim() !== '') {
+		var timeout = Number(timeoutStr);
+		if (!Number.isFinite(timeout) || timeout <= 0 || timeout > 1440) {
+			showError('超时值必须为 1~1440 之间的数字');
+			return;
+		}
+		runRequest.headers = { 'Content-Type': 'application/json' };
+		runRequest.body = JSON.stringify({ maxRunDurationMinutes: timeout });
 	}
 	try {
-		await api('/plans/' + planId + '/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ maxRunDurationMinutes: timeout }) });
+		await api('/plans/' + planId + '/runs', runRequest);
 		if (_selectedPlanId) {
 			loadRuns();
 			setTimeout(function() { openPlanDetail(planId); }, 1500);
@@ -1796,12 +1801,12 @@ loadAgents().then(function() {
 		</div>
 	</div>
 </div>
-t<div id="team-prompt-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:150;justify-content:center;align-items:center">
+<div id="team-prompt-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:150;justify-content:center;align-items:center">
 		<div class="confirm-box">
 			<p id="prompt-message"></p>
 			<input type="number" id="prompt-input" min="1" max="1440" style="width:100%;padding:8px;margin:8px 0;border:1px solid var(--border);border-radius:6px;font-size:14px" />
 			<div class="confirm-actions">
-				<button class="btn" style="background:var(--border);color:var(--text)" id="prompt-cancel">ȡ消</button>
+				<button class="btn" style="background:var(--border);color:var(--text)" id="prompt-cancel">取消</button>
 				<button class="btn btn-primary" id="prompt-ok">确定</button>
 			</div>
 		</div>
