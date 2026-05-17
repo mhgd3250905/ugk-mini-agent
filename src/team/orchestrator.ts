@@ -1,4 +1,4 @@
-import type { TeamRunState, TeamTask, TeamTaskState, TeamPlan } from "./types.js";
+import type { TeamRunState, TeamTask, TeamTaskState, TeamPlan, TeamDiscoveryResultRecord } from "./types.js";
 import { PlanStore } from "./plan-store.js";
 import { TeamUnitStore } from "./team-unit-store.js";
 import { RunWorkspace } from "./run-workspace.js";
@@ -595,6 +595,20 @@ export class TeamOrchestrator {
 
 			if (watcherResult.decision === "accept_task") {
 				if (workUnitResult === "passed") {
+					if (task.type === "discovery" && task.discovery) {
+						const standardized = await this.writeStandardDiscoveryResult(state.runId, task, attemptId);
+						if (!standardized) {
+							await this.workspace.finishAttempt(state.runId, task.id, attemptId, { status: "failed", phase: "failed", errorSummary: "discovery result validation failed: expected outputKey 'items' to be an array with stable item ids" });
+							ts.status = "failed";
+							ts.errorSummary = "discovery result validation failed: expected outputKey 'items' to be an array with stable item ids";
+							ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
+							state.summary.failedTasks++;
+							taskDone = true;
+							state.updatedAt = now();
+							await this.workspace.saveState(state);
+							return;
+						}
+					}
 					await this.workspace.finishAttempt(state.runId, task.id, attemptId, { status: "succeeded", phase: "succeeded", resultRef: ts.resultRef });
 					ts.status = "succeeded";
 					ts.progress = { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
@@ -1154,6 +1168,31 @@ export class TeamOrchestrator {
 			try { return JSON.parse(content.slice(bracketStart, bracketEnd + 1)); } catch { /* bracket extract failed */ }
 		}
 		return null;
+	}
+
+	private async writeStandardDiscoveryResult(runId: string, task: TeamTask, attemptId: string): Promise<boolean> {
+		if (!task.discovery) return false;
+		const outputKey = task.discovery.outputKey;
+		const items = await this.readDiscoveryItemsFromAttempt(runId, task.id, attemptId, outputKey, { strictItems: true });
+		if (!items) return false;
+		for (const item of items) {
+			if (typeof item !== "object" || item === null || Array.isArray(item)) return false;
+			const id = item.id;
+			if (typeof id !== "string" || !id) return false;
+		}
+		const state = await this.workspace.getState(runId);
+		const resultRef = state?.taskStates[task.id]?.resultRef ?? null;
+		const record: TeamDiscoveryResultRecord = {
+			schemaVersion: "team/discovery-result-1",
+			taskId: task.id,
+			attemptId,
+			outputKey,
+			items,
+			sourceRef: resultRef,
+			createdAt: now(),
+		};
+		await this.workspace.writeDiscoveryResult(runId, task.id, attemptId, record);
+		return true;
 	}
 
 		private async executeForEachTask(

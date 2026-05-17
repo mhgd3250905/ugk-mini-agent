@@ -342,11 +342,11 @@ test("discovery + for_each: malformed discovery output causes for_each failure",
 		const state = await orchestrator.createRun(plan.planId);
 		const final = await orchestrator.runToCompletion(state.runId);
 
-		// discovery succeeds (mock checker passes it), but for_each fails because
-		// the discovery result has no extractable JSON
-		assert.equal(final.taskStates["discover"]?.status, "succeeded");
+		// With P22, discovery itself should fail because it can't standardize
+		assert.equal(final.taskStates["discover"]?.status, "failed");
+		assert.match(final.taskStates["discover"]?.errorSummary ?? "", /discovery result validation failed/);
+		// for_each should also fail because discovery didn't succeed
 		assert.equal(final.taskStates["process_each"]?.status, "failed");
-		assert.ok(final.taskStates["process_each"]?.errorSummary?.includes("failed to resolve discovery items"));
 	} finally {
 		await rm(root, { recursive: true });
 	}
@@ -692,6 +692,227 @@ test("failing custom planner fails for_each parent clearly", async () => {
 
 		assert.equal(final.taskStates["process"]!.status, "failed");
 		assert.match(final.taskStates["process"]!.errorSummary ?? "", /planner intentionally failed/);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+// ── P22 Task 2: standardize discovery results before success ──
+
+test("discovery writes discovery-result.json when accepted result contains items object", async () => {
+	const { root, plan, orchestrator, workspace } = await setupDiscoveryPlan(
+		JSON.stringify({ items: [{ id: "alpha", title: "Alpha" }] }),
+	);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.taskStates["discover"]?.status, "succeeded");
+		const ts = final.taskStates["discover"]!;
+		assert.ok(ts.activeAttemptId);
+		const discoveryResult = await workspace.readDiscoveryResult(state.runId, "discover", ts.activeAttemptId!);
+		assert.ok(discoveryResult, "discovery-result.json should exist for standard accepted result");
+		assert.equal(discoveryResult!.outputKey, "items");
+		assert.equal(discoveryResult!.items.length, 1);
+		assert.equal(discoveryResult!.items[0]!.id, "alpha");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("discovery writes discovery-result.json when accepted result is summary but worker output has JSON", async () => {
+	const { root, plan, orchestrator, workspace } = await setupDiscoveryPlan(
+		JSON.stringify({ items: [{ id: "battle_01", title: "Alpha" }] }),
+		"总共 1 项，按时间线排列。每项包含 id 和 title。",
+	);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.taskStates["discover"]?.status, "succeeded");
+		const ts = final.taskStates["discover"]!;
+		assert.ok(ts.activeAttemptId);
+		const discoveryResult = await workspace.readDiscoveryResult(state.runId, "discover", ts.activeAttemptId!);
+		assert.ok(discoveryResult, "discovery-result.json should exist when worker output provides items");
+		assert.equal(discoveryResult!.items[0]!.id, "battle_01");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("discovery writes discovery-result.json when accepted result references run-scoped file", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const runner = new ReferencedFileDiscoveryRunner(root);
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "referenced discovery",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "discover and process" },
+			tasks: [
+				{
+					id: "discover", type: "discovery", title: "Discover",
+					input: { text: "Find" }, acceptance: { rules: ["ok"] },
+					discovery: { outputKey: "items" },
+				},
+				{
+					id: "process_each", type: "for_each", title: "Process",
+					input: { text: "p" }, acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "discover.items", mode: "sequential",
+						taskTemplate: { title: "P", input: { text: "p" }, acceptance: { rules: ["ok"] } },
+					},
+				},
+			],
+			outputContract: { text: "done" },
+		});
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: runner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.taskStates["discover"]?.status, "succeeded");
+		const ts = final.taskStates["discover"]!;
+		assert.ok(ts.activeAttemptId);
+		const discoveryResult = await workspace.readDiscoveryResult(state.runId, "discover", ts.activeAttemptId!);
+		assert.ok(discoveryResult, "discovery-result.json should exist for referenced file discovery");
+		assert.equal(discoveryResult!.items.length, 2);
+		assert.equal(discoveryResult!.items[0]!.id, "battle_01");
+		assert.equal(discoveryResult!.items[1]!.id, "battle_02");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("discovery task fails when outputKey not found in result", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const runner = new DiscoveryMockRunner(JSON.stringify({ wrong_key: [{ id: "a", title: "A" }] }));
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "missing outputKey",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{
+					id: "discover", type: "discovery", title: "Discover",
+					input: { text: "Find" }, acceptance: { rules: ["ok"] },
+					discovery: { outputKey: "items" },
+				},
+			],
+			outputContract: { text: "report" },
+		});
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: runner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.taskStates["discover"]?.status, "failed");
+		assert.match(final.taskStates["discover"]?.errorSummary ?? "", /discovery result validation failed/);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("discovery task fails when items lack string id", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const runner = new DiscoveryMockRunner(JSON.stringify({ items: [{ title: "NoId" }, { id: "", title: "EmptyId" }] }));
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "missing ids",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{
+					id: "discover", type: "discovery", title: "Discover",
+					input: { text: "Find" }, acceptance: { rules: ["ok"] },
+					discovery: { outputKey: "items" },
+				},
+			],
+			outputContract: { text: "report" },
+		});
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: runner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.taskStates["discover"]?.status, "failed");
+		assert.match(final.taskStates["discover"]?.errorSummary ?? "", /discovery result validation failed/);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("discovery task fails when items contain non-object values", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const runner = new DiscoveryMockRunner(JSON.stringify({ items: ["string_item", null, [1, 2], { id: "ok", title: "OK" }] }));
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "non-object items",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{
+					id: "discover", type: "discovery", title: "Discover",
+					input: { text: "Find" }, acceptance: { rules: ["ok"] },
+					discovery: { outputKey: "items" },
+				},
+			],
+			outputContract: { text: "report" },
+		});
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: runner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.taskStates["discover"]?.status, "failed");
+		assert.match(final.taskStates["discover"]?.errorSummary ?? "", /discovery result validation failed/);
 	} finally {
 		await rm(root, { recursive: true });
 	}
