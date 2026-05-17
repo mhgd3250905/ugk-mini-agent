@@ -1928,3 +1928,128 @@ test("P19-T3: inline scripts remain valid after P19-T3 changes", () => {
 		assert.doesNotThrow(() => new Function(script), "inline script should be valid JS after P19-T3 changes");
 	}
 });
+
+// ── P19 Task 4: Dynamic plan design diagram ────────────────────────────
+
+function extractDesignRenderers(): Record<string, Function> {
+	const script = extractScript();
+	const start = script.indexOf("function escapeHtml");
+	const end = script.indexOf("async function loadPlans");
+	assert.ok(start >= 0, "should find escapeHtml start");
+	assert.ok(end > start, "should find loadPlans boundary");
+	const source = script.slice(start, end);
+	const fn = new Function(source + "\n\t\treturn { renderDynamicPlanDesign, renderNormalPlanDesign };\n\t");
+	return fn();
+}
+
+const designTasks = [
+	{
+		id: "disc-1", type: "discovery", title: "Discover Services",
+		discovery: { outputKey: "serviceList" },
+		input: { text: "Find all services in the codebase" },
+		acceptance: { rules: ["must return an array"] }
+	},
+	{
+		id: "fe-1", type: "for_each", title: "Process Each Service",
+		forEach: {
+			itemsFrom: "serviceList",
+			taskTemplate: {
+				title: "Analyze ${item.name}",
+				input: { text: "Analyze the service and generate documentation for it." },
+				acceptance: { rules: ["must include method signatures"] }
+			}
+		}
+	}
+];
+
+test("P19-T4: dynamic design shows discovery node title", () => {
+	const { renderDynamicPlanDesign } = extractDesignRenderers();
+	const html = renderDynamicPlanDesign(designTasks);
+	assert.match(html, /Discover Services/);
+});
+
+test("P19-T4: dynamic design shows outputKey", () => {
+	const { renderDynamicPlanDesign } = extractDesignRenderers();
+	const html = renderDynamicPlanDesign(designTasks);
+	assert.match(html, /serviceList/);
+	assert.match(html, /output/);
+});
+
+test("P19-T4: dynamic design shows for_each itemsFrom", () => {
+	const { renderDynamicPlanDesign } = extractDesignRenderers();
+	const html = renderDynamicPlanDesign(designTasks);
+	assert.match(html, /itemsFrom|serviceList/);
+});
+
+test("P19-T4: dynamic design shows task template title", () => {
+	const { renderDynamicPlanDesign } = extractDesignRenderers();
+	const html = renderDynamicPlanDesign(designTasks);
+	assert.match(html, /Analyze/);
+});
+
+test("P19-T4: dynamic design indicates runtime-generated children concept", () => {
+	const { renderDynamicPlanDesign } = extractDesignRenderers();
+	const html = renderDynamicPlanDesign(designTasks);
+	assert.match(html, /运行时展开为子任务/);
+});
+
+test("P19-T4: dynamic design collapses long instructions behind details element", () => {
+	const { renderDynamicPlanDesign } = extractDesignRenderers();
+	const html = renderDynamicPlanDesign(designTasks);
+	assert.match(html, /<details[^>]*>/);
+	assert.match(html, /子任务模板/);
+});
+
+test("P19-T4: normal design renders ordered task steps", () => {
+	const { renderNormalPlanDesign } = extractDesignRenderers();
+	const normalTasks = [
+		{ id: "t1", title: "Step One", input: { text: "Do first thing" }, acceptance: { rules: ["ok"] } },
+		{ id: "t2", title: "Step Two", input: { text: "Do second thing" }, acceptance: { rules: [] } },
+		{ id: "t3", title: "Step Three", input: { text: "Do third thing" }, acceptance: { rules: ["must pass"] } }
+	];
+	const html = renderNormalPlanDesign(normalTasks);
+	assert.match(html, /#1/);
+	assert.match(html, /#2/);
+	assert.match(html, /#3/);
+	assert.match(html, /Step One/);
+	assert.match(html, /Step Two/);
+	assert.match(html, /Step Three/);
+});
+
+test("P19-T4: normal design has no dynamic connector labels", () => {
+	const { renderNormalPlanDesign } = extractDesignRenderers();
+	const normalTasks = [
+		{ id: "t1", title: "Step One", input: { text: "do it" }, acceptance: { rules: [] } }
+	];
+	const html = renderNormalPlanDesign(normalTasks);
+	assert.equal(html.indexOf("discovery"), -1, "should not contain discovery");
+	assert.equal(html.indexOf("for_each"), -1, "should not contain for_each");
+	assert.equal(html.indexOf("itemsFrom"), -1, "should not contain itemsFrom");
+});
+
+test("P19-T4: normal design handles empty tasks gracefully", () => {
+	const { renderNormalPlanDesign } = extractDesignRenderers();
+	const html = renderNormalPlanDesign([]);
+	assert.ok(html.length > 0, "should return non-empty output");
+});
+
+test("P19-T4: dynamic design escapes malicious task titles", () => {
+	const { renderDynamicPlanDesign } = extractDesignRenderers();
+	const malicious = [
+		{ id: "d1", type: "discovery", title: "<script>alert('xss')</script>", discovery: { outputKey: "key<a>" }, input: { text: "" }, acceptance: { rules: [] } },
+		{ id: "f1", type: "for_each", title: "<img onerror=alert(1)>", forEach: { itemsFrom: "items", taskTemplate: { title: "<b>evil</b>", input: { text: "test" } } } }
+	];
+	const html = renderDynamicPlanDesign(malicious);
+	assert.equal(html.indexOf("<script>"), -1, "should not have unescaped script tag");
+	assert.equal(html.indexOf("<img onerror"), -1, "should not have unescaped img tag");
+});
+
+test("P19-T4: dynamic design escapes outputKey and template text", () => {
+	const { renderDynamicPlanDesign } = extractDesignRenderers();
+	const malicious = [
+		{ id: "d1", type: "discovery", title: "Safe", discovery: { outputKey: "key\"onload=\"alert(1)" }, input: { text: "" }, acceptance: { rules: [] } },
+		{ id: "f1", type: "for_each", title: "Safe", forEach: { itemsFrom: "src", taskTemplate: { title: "Tmpl<script>", input: { text: "Instr\" onclick=\"bad" } } } }
+	];
+	const html = renderDynamicPlanDesign(malicious);
+	assert.equal(html.indexOf("<script>"), -1, "should escape script in template");
+});
