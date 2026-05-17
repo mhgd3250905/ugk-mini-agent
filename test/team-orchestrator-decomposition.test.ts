@@ -1277,6 +1277,40 @@ test("malformed decomposed child output fails parent without writing partial sta
 	}
 });
 
+test("decomposed discovery child item without stable id fails parent without standard result", async () => {
+	const runner = new DecompositionCaptureRunner([
+		{
+			decision: "split",
+			reason: "split discovery",
+			children: [
+				{ id: "discover__a", title: "Discover A", input: { text: "discover a" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+			],
+		},
+	], {
+		checkerOutputs: [
+			{ verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: [{ title: "No stable id" }] }) },
+		],
+	});
+	const { root, plan, orchestrator, workspace } = await setupTasks(decomposedDiscoveryPlan(), runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.taskStates.discover?.status, "failed");
+		assert.match(final.taskStates.discover?.errorSummary ?? "", /failed to aggregate decomposed discovery output from child discover__a/);
+		assert.equal(final.taskStates.process_each?.status, "failed");
+		const parentAttemptId = final.taskStates.discover?.activeAttemptId;
+		if (parentAttemptId) {
+			const record = await workspace.readDiscoveryResult(state.runId, "discover", parentAttemptId);
+			assert.equal(record, null, "no parent discovery-result.json must exist when child item lacks a stable id");
+		}
+		const expansion = await workspace.readExpansion(state.runId, "process_each");
+		assert.equal(expansion, null);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
 test("reclaimed decomposed discovery aggregates existing child results into standard result", async () => {
 	const runner = new DecompositionCaptureRunner([
 		{ decision: "no_split", reason: "should not run", children: [] },

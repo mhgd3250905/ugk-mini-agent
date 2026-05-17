@@ -1091,6 +1091,10 @@ export class TeamOrchestrator {
 				await this.failDecomposedDiscoveryAggregation(runId, parentTask.id, child.id);
 				return null;
 			}
+			if (!this.hasStableDiscoveryItemIds(childItems)) {
+				await this.failDecomposedDiscoveryAggregation(runId, parentTask.id, child.id);
+				return null;
+			}
 			items.push(...childItems);
 		}
 		return items;
@@ -1234,16 +1238,12 @@ export class TeamOrchestrator {
 		await this.workspace.saveState(state);
 	}
 
-		private async writeStandardDiscoveryResult(runId: string, task: TeamTask, attemptId: string): Promise<boolean> {
+	private async writeStandardDiscoveryResult(runId: string, task: TeamTask, attemptId: string): Promise<boolean> {
 		if (!task.discovery) return false;
 		const outputKey = task.discovery.outputKey;
 		const items = await this.readDiscoveryItemsFromAttempt(runId, task.id, attemptId, outputKey, { strictItems: true });
 		if (!items) return false;
-		for (const item of items) {
-			if (typeof item !== "object" || item === null || Array.isArray(item)) return false;
-			const id = item.id;
-			if (typeof id !== "string" || !id) return false;
-		}
+		if (!this.hasStableDiscoveryItemIds(items)) return false;
 		const state = await this.workspace.getState(runId);
 		const resultRef = state?.taskStates[task.id]?.resultRef ?? null;
 		const record: TeamDiscoveryResultRecord = {
@@ -1257,6 +1257,10 @@ export class TeamOrchestrator {
 		};
 		await this.workspace.writeDiscoveryResult(runId, task.id, attemptId, record);
 		return true;
+	}
+
+	private hasStableDiscoveryItemIds(items: Array<Record<string, unknown>>): boolean {
+		return items.every(item => typeof item.id === "string" && item.id.trim().length > 0);
 	}
 
 		private async executeForEachTask(

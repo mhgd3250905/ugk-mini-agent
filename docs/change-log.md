@@ -21,8 +21,9 @@
   - parent aggregation attempt 不含 worker/checker/watcher 条目
   - resume/reclaim 优先读取已有标准文件，不重新聚合子级输出
   - discovery validation error 信息使用实际 `task.discovery.outputKey` 而非硬编码 `'items'`
+  - decomposed discovery child item 必须和普通 discovery 一样包含非空 string `id`，否则 parent 失败且不写标准结果
   - 旧 decomposed run（无 parent 标准文件）仍使用传统子级聚合 fallback
-- **测试**: 4 个 P22 decomposed 测试增强为直接断言 `workspace.readDiscoveryResult()`；新增 1 个 outputKey error 回归测试
+- **测试**: 4 个 P22 decomposed 测试增强为直接断言 `workspace.readDiscoveryResult()`；新增 outputKey error 与缺失 stable item id 回归测试
 
 ---
 
