@@ -163,6 +163,15 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 .acceptance-list { list-style: none; padding: 0; margin: 4px 0 0; }
 .acceptance-list .acceptance-rule { font-size: 12px; color: var(--muted); padding: 1px 0 1px 16px; position: relative; overflow-wrap: break-word; }
 .acceptance-list .acceptance-rule::before { content: "\\2713"; position: absolute; left: 0; color: var(--success); font-size: 11px; }
+	/* Plan dashboard grid */
+	.plan-dashboard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+	.plan-dashboard-card { position: relative; transition: border-color 0.2s; }
+	.plan-dashboard-card:hover { border-color: var(--accent); }
+	.plan-card-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+	.plan-card-failed { border-color: var(--fail); }
+	.plan-card-run-summary { margin-top: 8px; padding: 8px; background: var(--bg); border-radius: 4px; }
+	.plan-kind-badge { font-weight: 500; }
+	.plan-dashboard-empty { grid-column: 1 / -1; }
 
 /* Mobile responsive */
 @media (max-width: 720px) {
@@ -800,14 +809,73 @@ async function saveTeamUnit() {
 					'</div></div>';
 			}
 
+			var _planCache = {};
+
+			function renderPlanDashboardCard(plan, runs) {
+				var safePlan = plan || {};
+				var tasks = Array.isArray(safePlan.tasks) ? safePlan.tasks : [];
+				var kind = planKindLabel(safePlan);
+				var activeRun = activeRunForPlan(safePlan.planId, runs);
+				var latestRun = activeRun ? activeRun : (latestRunForPlan(safePlan.planId, runs) || (runs && runs.length ? runs[0] : null));
+				var runCount = runsForPlan(safePlan.planId, runs).length || safePlan.runCount || 0;
+				var isActive = !!activeRun;
+				var isFailed = latestRun && (latestRun.status === 'failed' || latestRun.status === 'completed_with_failures');
+				var goalText = safePlan.goal && safePlan.goal.text ? safePlan.goal.text : '';
+				var cardClass = 'card plan-dashboard-card' + (isActive ? ' plan-card-active' : '') + (isFailed ? ' plan-card-failed' : '');
+				var kindBadge = kind !== 'normal'
+					? '<span class="plan-chip plan-kind-badge" style="background:rgba(124,58,237,0.15);color:#7c3aed">' + escapeHtml(kind) + '</span>'
+					: '<span class="plan-chip plan-kind-badge">' + tasks.length + ' 个任务</span>';
+				var runChip = '<span class="plan-chip">' + runCount + ' 次运行</span>';
+				var summaryRow = goalText ? '<div class="plan-summary-row"><span class="plan-summary-text">' + escapeHtml(truncateText(goalText, 120)) + '</span></div>' : '';
+				var activeSummary = '';
+				if (activeRun) {
+					var prog = runProgressSummary(activeRun);
+					var taskTitle = activeRun.currentTaskId || '';
+					var planForTask = _planCache[activeRun.planId] || safePlan;
+					if (planForTask && activeRun.currentTaskId) {
+						var task = planForTask.tasks ? planForTask.tasks.find(function(t) { return t.id === activeRun.currentTaskId; }) : null;
+						if (task) taskTitle = task.title;
+					}
+					activeSummary = '<div class="plan-card-run-summary">'
+						+ statusBadge(activeRun.status)
+						+ ' <span style="font-size:12px;color:var(--muted)">' + prog.done + '/' + prog.total + '</span>'
+						+ (taskTitle ? ' <span style="font-size:12px;color:var(--accent)">→ ' + escapeHtml(taskTitle) + '</span>' : '')
+						+ '<div class="progress-bar" style="margin-top:4px"><div class="progress-bar-fill" style="width:' + prog.pct + '%"></div></div>'
+						+ '</div>';
+				} else if (latestRun && isFailed) {
+					activeSummary = '<div class="plan-card-run-summary">'
+						+ statusBadge(latestRun.status)
+						+ (latestRun.lastError ? ' <span style="font-size:11px;color:var(--fail)">' + escapeHtml(truncateText(latestRun.lastError, 60)) + '</span>' : '')
+						+ '</div>';
+				} else if (latestRun) {
+					activeSummary = '<div class="plan-card-run-summary">'
+						+ statusBadge(latestRun.status)
+						+ '</div>';
+				}
+				return '<div class="' + cardClass + '" data-plan-id="' + escapeHtml(safePlan.planId || '') + '">'
+					+ '<div class="plan-card-header"><span class="plan-card-title">' + escapeHtml(safePlan.title || '') + '</span><div class="plan-card-chips">' + kindBadge + runChip + '</div></div>'
+					+ (summaryRow ? '<div class="plan-summary">' + summaryRow + '</div>' : '')
+					+ activeSummary
+					+ '<div class="plan-actions">'
+					+ '<button class="btn btn-sm btn-primary" onclick="openPlanDetail(' + jsArg(safePlan.planId) + ')">查看详情</button>'
+					+ '<button class="btn btn-sm" onclick="startRun(\\x27' + safePlan.planId + '\\x27)">创建运行</button>'
+					+ (runCount === 0 ? '<button class="btn btn-danger btn-sm" onclick="deletePlan(\\x27' + safePlan.planId + '\\x27)">删除</button>' : '')
+					+ '</div></div>';
+			}
+
 async function loadPlans() {
 	var el = $('plans-list');
 	el.innerHTML = '<div class="loading"><div class="spinner"></div> 加载中...</div>';
 	try {
 		var plans = await api('/plans');
+			if (!_latestRuns || !_latestRuns.length) {
+				try { _latestRuns = await api('/runs'); } catch(e2) { _latestRuns = []; }
+			}
 		_latestPlans = plans; updateSummary(plans, _latestTeams, _latestRuns);
-		if (!plans.length) { el.innerHTML = '<div class="empty">暂无计划。<span class="detail-toggle" onclick="createPlan()">新建计划</span> 开始。</div>'; return; }
-		el.innerHTML = plans.map(renderPlanCard).join('');
+		if (!plans.length) { el.innerHTML = '<div class="empty plan-dashboard-empty">暂无计划。<span class="detail-toggle" onclick="createPlan()">新建计划</span> 开始。</div>'; return; }
+		var _legacyCards = plans.map(renderPlanCard);
+		el.innerHTML = '<div class="plan-dashboard-grid">' + plans.map(function(p) { return renderPlanDashboardCard(p, _latestRuns); }).join('') + '</div>';
+			subscribeActiveRuns(_latestRuns);
 	} catch (e) {
 		el.innerHTML = '<div class="empty" style="color:var(--fail)">加载失败：' + escapeHtml(e.message) + ' <span class="detail-toggle" onclick="loadPlans()">重试</span></div>';
 	}
@@ -843,7 +911,6 @@ async function loadTeams() {
 		}
 	}
 
-var _planCache = {};
 
 async function loadRuns() {
 	var el = $('runs-list');

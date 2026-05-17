@@ -1694,3 +1694,148 @@ test("P19-T1: planKindLabel handles missing/malformed tasks", () => {
 	assert.doesNotThrow(() => h.planKindLabel({ tasks: "not array" }));
 	assert.equal(h.planKindLabel({ tasks: [] }), "normal");
 });
+
+// ── P19 Task 2: Plan dashboard cards ──
+
+// Helper: extract renderPlanDashboardCard from inline script
+function extractDashboardCardRenderer(): (plan: any, runs?: any[]) => string {
+	const script = extractScript();
+	const start = script.indexOf("function escapeHtml");
+	const end = script.indexOf("async function loadPlans");
+	assert.ok(start >= 0, "should find escapeHtml start");
+	assert.ok(end > start, "should find loadPlans boundary");
+	const source = script.slice(start, end);
+	const fn = new Function(source + "\nreturn renderPlanDashboardCard;");
+	return fn();
+}
+
+const dashPlan = {
+	planId: "plan_dash", title: "Dashboard Plan",
+	goal: { text: "A goal that should be clipped in the dashboard card view to avoid text walls" },
+	tasks: [
+		{ id: "t1", title: "Task One", input: { text: "do something useful" }, acceptance: { rules: ["must work", "must be fast", "must be correct"] } },
+		{ id: "t2", title: "Task Two", input: { text: "do another thing" }, acceptance: { rules: ["must pass"] } },
+		{ id: "t3", title: "Task Three", input: { text: "final task" }, acceptance: { rules: ["done"] } },
+	],
+	outputContract: { text: "Summary report" }, runCount: 3,
+};
+
+const dashDynamicPlan = {
+	planId: "plan_dyn_dash", title: "Dynamic Dash Plan",
+	goal: { text: "Discover and process" },
+	tasks: [
+		{ id: "disc", type: "discovery", title: "Discover items", input: { text: "Find all items" }, acceptance: { rules: ["valid JSON"] }, discovery: { outputKey: "items" } },
+		{ id: "proc", type: "for_each", title: "Process each", input: { text: "process" }, acceptance: { rules: ["ok"] }, forEach: { itemsFrom: "disc.items", mode: "sequential", taskTemplate: { title: "P {{item.title}}", input: { text: "p" }, acceptance: { rules: ["ok"] } } } },
+	],
+	outputContract: { text: "report" }, runCount: 1,
+};
+
+const dashRuns = [
+	{ runId: "run_r1", planId: "plan_dash", status: "running", summary: { totalTasks: 3, succeededTasks: 1, failedTasks: 0, cancelledTasks: 0 }, currentTaskId: "t2", activeElapsedMs: 45000, lastError: null },
+	{ runId: "run_c1", planId: "plan_dash", status: "completed", summary: { totalTasks: 3, succeededTasks: 3, failedTasks: 0, cancelledTasks: 0 }, currentTaskId: null, activeElapsedMs: 120000 },
+	{ runId: "run_f1", planId: "plan_dash", status: "failed", summary: { totalTasks: 3, succeededTasks: 1, failedTasks: 2, cancelledTasks: 0 }, currentTaskId: null, activeElapsedMs: 90000, lastError: "worker timeout" },
+];
+
+test("P19-T2: renderPlanDashboardCard produces dashboard card classes", () => {
+	const render = extractDashboardCardRenderer();
+	const html = render(dashPlan, dashRuns);
+	assert.match(html, /plan-dashboard-card/);
+	assert.match(html, /plan-card-header/);
+	assert.match(html, /plan-card-title/);
+});
+
+test("P19-T2: dashboard card shows task count and run count chips", () => {
+	const render = extractDashboardCardRenderer();
+	const html = render(dashPlan, dashRuns);
+	assert.match(html, /3 个任务/);
+	assert.match(html, /3 次运行/);
+});
+
+test("P19-T2: dashboard card shows plan type badge", () => {
+	const render = extractDashboardCardRenderer();
+	const normalHtml = render(dashPlan, dashRuns);
+	assert.match(normalHtml, /plan-kind-badge/);
+	const dynamicHtml = render(dashDynamicPlan, dashRuns);
+	assert.match(dynamicHtml, /discovery.*for_each|发现.*逐项/);
+});
+
+test("P19-T2: active run card includes active marker and progress", () => {
+	const render = extractDashboardCardRenderer();
+	const html = render(dashPlan, dashRuns);
+	assert.match(html, /plan-card-active/);
+	assert.match(html, /progress-bar/);
+	assert.match(html, /running/);
+});
+
+test("P19-T2: active run card shows current task summary", () => {
+	const render = extractDashboardCardRenderer();
+	const html = render(dashPlan, dashRuns);
+	assert.match(html, /Task Two/);
+});
+
+test("P19-T2: failed plan card is visually distinct from normal completed", () => {
+	const render = extractDashboardCardRenderer();
+	// Only failed run as latest
+	const failedOnly = dashRuns.filter(r => r.status === "failed");
+	// Reset runCount for the failed plan to be more comparable
+	const failedPlan = { ...dashPlan, planId: "plan_failed", runCount: 1 };
+	const html = render(failedPlan, failedOnly);
+	assert.match(html, /plan-card-failed|badge-fail/);
+});
+
+test("P19-T2: dashboard card does not show task input/acceptance by default", () => {
+	const render = extractDashboardCardRenderer();
+	const html = render(dashPlan, dashRuns);
+	// The full input text should NOT appear directly in the default card
+	assert.doesNotMatch(html, /must work.*must be fast.*must be correct/s);
+});
+
+test("P19-T2: dashboard card without runs shows empty state summary", () => {
+	const render = extractDashboardCardRenderer();
+	const noRunPlan = { ...dashPlan, runCount: 0 };
+	const html = render(noRunPlan, []);
+	assert.match(html, /plan-dashboard-card/);
+	assert.match(html, /0 次运行/);
+});
+
+test("P19-T2: dynamic plan dashboard card labels discovery+for_each", () => {
+	const render = extractDashboardCardRenderer();
+	const html = render(dashDynamicPlan, []);
+	assert.match(html, /discovery.*for_each|发现.*逐项/);
+});
+
+test("P19-T2: dashboard card escapes malicious content", () => {
+	const render = extractDashboardCardRenderer();
+	const malicious = {
+		planId: "p_evil", title: '<script>alert(1)</script>',
+		goal: { text: '"><img src=x onerror=bad>' },
+		tasks: [{ id: "t1", title: '<b>evil</b>' }],
+		outputContract: { text: "ok" }, runCount: 0,
+	};
+	const html = render(malicious, []);
+	assert.doesNotMatch(html, /<script>/);
+	assert.doesNotMatch(html, /<img src=x/);
+	assert.doesNotMatch(html, /onclick="bad/);
+	assert.match(html, /&lt;script&gt;/);
+});
+
+test("P19-T2: dashboard card includes primary actions", () => {
+	const render = extractDashboardCardRenderer();
+	const html = render(dashPlan, dashRuns);
+	assert.match(html, /查看详情|openPlanDetail/);
+	assert.match(html, /创建运行/);
+});
+
+test("P19-T2: loadPlans uses renderPlanDashboardCard with runs data", () => {
+	const script = extractScript();
+	const loadPlansMatch = script.match(/async function loadPlans[\s\S]*?^[\t]}/m);
+	assert.ok(loadPlansMatch, "should find loadPlans");
+	const body = loadPlansMatch[0];
+	assert.match(body, /renderPlanDashboardCard/);
+	assert.match(body, /_latestRuns/);
+});
+
+test("P19-T2: dashboard grid CSS class exists", () => {
+	const html = renderTeamPage();
+	assert.match(html, /plan-dashboard-grid/);
+});
