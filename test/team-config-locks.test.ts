@@ -28,7 +28,7 @@ function makeTeam(teamUnitId: string, profileBase: string): TeamUnit {
 	};
 }
 
-test("active run locks Plan, TeamUnit, and all four profiles", () => {
+test("active run locks Plan, TeamUnit, and all five profiles", () => {
 	const states = [makeState("running", "plan_1", "team_1")];
 	const teams = [makeTeam("team_1", "p")];
 	const locks = computeTeamConfigLocks(states, teams);

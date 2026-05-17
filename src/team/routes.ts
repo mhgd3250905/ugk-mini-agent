@@ -203,11 +203,13 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	app.post("/v1/team/team-units", async (request, reply) => {
 		const body = request.body as Record<string, unknown>;
 		try {
+			const decomposerProfileId = (body.decomposerProfileId as string | undefined) ?? body.workerProfileId as string;
 			validateTeamUnitProfileIds(options, [
 				body.watcherProfileId as string,
 				body.workerProfileId as string,
 				body.checkerProfileId as string,
 				body.finalizerProfileId as string,
+				decomposerProfileId,
 			]);
 			const unit = await unitStore.create({
 				title: body.title as string,
@@ -216,6 +218,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 				workerProfileId: body.workerProfileId as string,
 				checkerProfileId: body.checkerProfileId as string,
 				finalizerProfileId: body.finalizerProfileId as string,
+				decomposerProfileId,
 			});
 			reply.code(201).send(unit);
 		} catch (err) {
@@ -242,6 +245,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 				(body.workerProfileId as string | undefined) ?? existing?.workerProfileId ?? "",
 				(body.checkerProfileId as string | undefined) ?? existing?.checkerProfileId ?? "",
 				(body.finalizerProfileId as string | undefined) ?? existing?.finalizerProfileId ?? "",
+				(body.decomposerProfileId as string | undefined) ?? existing?.decomposerProfileId ?? "",
 			]);
 			const unit = await unitStore.update(teamUnitId, {
 				title: body.title as string | undefined,
@@ -250,6 +254,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 				workerProfileId: body.workerProfileId as string | undefined,
 				checkerProfileId: body.checkerProfileId as string | undefined,
 				finalizerProfileId: body.finalizerProfileId as string | undefined,
+				...(body.decomposerProfileId != null ? { decomposerProfileId: body.decomposerProfileId as string } : {}),
 			});
 			reply.send(unit);
 		} catch (err) {

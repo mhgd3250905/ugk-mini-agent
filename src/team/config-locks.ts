@@ -26,6 +26,9 @@ export function computeTeamConfigLocks(states: TeamRunState[], teams: TeamUnit[]
 			lockedProfileIds.add(team.workerProfileId);
 			lockedProfileIds.add(team.checkerProfileId);
 			lockedProfileIds.add(team.finalizerProfileId);
+			if (team.decomposerProfileId) {
+				lockedProfileIds.add(team.decomposerProfileId);
+			}
 		}
 	}
 
