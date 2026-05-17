@@ -87,7 +87,11 @@ Plan 支持三种任务类型：
 
 - `forEach.itemsFrom`（必填）— dot-path 格式 `{upstreamTaskId}.{outputKey}`
 - `forEach.mode`（必填）— 当前仅支持 `"sequential"`
-- `forEach.taskTemplate`（必填）— 子任务模板，支持 `{{item.id}}`、`{{item.title}}`、`{{item}}`（完整 JSON）占位符
+- `forEach.taskTemplate`（必填）— 子任务模板，支持以下占位符：
+  - `{{item.<field>}}` — 任意 top-level item 字段；对象/数组 JSON-stringified；null/缺失为空字符串
+  - `{{item}}` — 完整 item JSON
+  - `{{run.id}}`、`{{plan.id}}`、`{{parentTask.id}}` — run-scoped 变量
+  - `{{task.outputDir}}` — run-scoped 输出目录（`.data/team/runs/<runId>/generated/<parentTaskId>`）
 - 每个 item 必须有稳定的非空字符串 `id` 字段
 - 子任务 ID 格式：`{parentTaskId}__{sanitizedItemId}`
 - 扩展记录持久化在 `runs/<runId>/expansions/<parentTaskId>.json`
@@ -397,6 +401,11 @@ checker 和 watcher 输出 JSON。`parseJsonResponse` 使用三层提取：
 | `TEAM_WORKER_HEARTBEAT_INTERVAL_MS` | 10000 | worker heartbeat 间隔；实际值会被限制在 lease TTL 的一半以内 |
 | `TEAM_MAX_CONCURRENT_RUNS` | 1 | 最大并发 active run 数（queued/running/paused）；通过原子 admission lock 执行；多个 worker 进程可通过 lease 机制 claim 不同的 queued run |
 | `TEAM_WORKER_ID` | 自动生成 | 单 worker 排障时可覆盖；多 worker 扩容时不要在共享 `.env` 中写死同一个值 |
+| `TEAM_WORKER_PHASE_TIMEOUT_MS` | 900000 | Worker phase 超时（默认 15 分钟） |
+| `TEAM_CHECKER_PHASE_TIMEOUT_MS` | 300000 | Checker phase 超时（默认 5 分钟） |
+| `TEAM_WATCHER_PHASE_TIMEOUT_MS` | 300000 | Watcher phase 超时（默认 5 分钟） |
+| `TEAM_FINALIZER_PHASE_TIMEOUT_MS` | 300000 | Finalizer phase 超时（默认 5 分钟） |
+| `TEAM_MAX_RUN_DURATION_MINUTES` | 100 | Run 最大持续时间（分钟）；可 per-run override |
 
 Docker Compose 默认设置：
 
@@ -593,16 +602,24 @@ Both checker and watcher agents must output **strict JSON only** — no markdown
 ### Phase Timeout
 
 Each role phase has an independent timeout:
-- `TEAM_WORKER_PHASE_TIMEOUT_MS` (default 600000 = 10 min)
+- `TEAM_WORKER_PHASE_TIMEOUT_MS` (default 900000 = 15 min)
 - `TEAM_CHECKER_PHASE_TIMEOUT_MS` (default 300000 = 5 min)
 - `TEAM_WATCHER_PHASE_TIMEOUT_MS` (default 300000 = 5 min)
 - `TEAM_FINALIZER_PHASE_TIMEOUT_MS` (default 300000 = 5 min)
+
+### Run Timeout
+
+- Default max run duration: `TEAM_MAX_RUN_DURATION_MINUTES` (default 100)
+- Per-run override: `POST /v1/team/plans/:planId/runs` accepts `maxRunDurationMinutes` (1–1440)
+- `TeamRunState.maxRunDurationMinutes` persists per-run override; old states without this field fall back to constructor default
+- UI create-run flow prompts for timeout before starting
 
 Timeout behavior:
 - Worker timeout: task marked failed, `errorSummary="worker timeout"`
 - Checker timeout: work unit failed, `errorSummary="checker timeout"`
 - Watcher timeout: treated as `confirm_failed` with `reason="watcher timeout"`
 - Finalizer timeout: deterministic fallback report, run status `completed_with_failures`, `lastError="finalizer timeout"`
+- Run timeout: all unfinished tasks marked failed, run status `failed`, `lastError="run timeout"`
 
 Cancel/pause always takes priority over phase timeout — if a run is already cancelled/paused when timeout resolves, the cancelled/paused status is preserved.
 
@@ -615,7 +632,7 @@ Cancel/pause always takes priority over phase timeout — if a run is already ca
 1. **默认 mock runner** — 真实 runner 需显式 `TEAM_USE_MOCK_RUNNER=false`。
 2. **SSE 跨进程 fallback 延迟** — 同进程状态变更通过 `RunStateEvents` 立即推送；独立 worker 进程写入的状态变更通过 1 秒 change-detect fallback 捕获，因此跨进程更新可能有短暂延迟。
 3. **默认单活跃 run** — `TEAM_MAX_CONCURRENT_RUNS` 默认为 `1`，即全局只允许一个 queued/running/paused run。设置为更大的值可允许并发 active run，但单个 worker 进程仍顺序执行；多 worker 进程可通过 lease 机制分别 claim 不同的 queued run。
-4. **Timeout 60 分钟** — 超时 run 标记为 failed。
+4. **默认 run timeout 100 分钟** — 可通过 `TEAM_MAX_RUN_DURATION_MINUTES` 或 per-run override 调整。
 5. **浏览器实例由既有 browser registry/env 决定** — Team 复用 chat/conn 的 browser binding 链路，不负责创建或调度 Chrome profile。多个 role 是否真正落到不同浏览器实例，取决于 AgentProfile 的 `defaultBrowserId` 与 `UGK_BROWSER_INSTANCES_JSON` 等既有配置。
 6. **动态计划仅支持 discovery → for_each 常见模式** — UI builder 覆盖「先发现再逐项处理」的标准场景；高级 plan 结构（如多 discovery、嵌套 for_each）仍需通过 JSON/API 直接创建。
 7. **for_each 仅顺序执行** — 并行执行和嵌套 for_each 尚未支持。

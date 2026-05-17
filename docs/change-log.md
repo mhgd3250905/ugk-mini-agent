@@ -12,6 +12,28 @@
 
 ---
 
+## 2026-05-17 — P20 Timeout and Expansion Patch
+
+- **主题**: Team Runtime timeout 配置增强和 for_each 模板扩展修复
+- **影响范围**: `src/team/task-expansion-planner.ts`, `src/team/types.ts`, `src/team/orchestrator.ts`, `src/team/run-workspace.ts`, `src/team/routes.ts`, `src/config.ts`, `src/workers/team-worker.ts`, `src/server.ts`, `src/ui/team-page.ts`, `.env.example`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - `{{item.description}}` 和任意 `{{item.<field>}}` 占位符现在正确替换（之前只支持 id/title）
+  - 新增 run-scoped 占位符：`{{run.id}}`、`{{plan.id}}`、`{{parentTask.id}}`、`{{task.outputDir}}`
+  - Worker phase timeout 默认从 10 分钟改为 15 分钟（`TEAM_WORKER_PHASE_TIMEOUT_MS=900000`）
+  - Run timeout 默认从 60 分钟改为 100 分钟（`TEAM_MAX_RUN_DURATION_MINUTES=100`）
+  - `POST /v1/team/plans/:planId/runs` 支持 `maxRunDurationMinutes` per-run override（1-1440）
+  - Per-run timeout 持久化在 `TeamRunState.maxRunDurationMinutes`
+  - UI 创建运行前弹出设置超时时间的输入框
+  - 旧 run state 无 `maxRunDurationMinutes` 字段时 fallback 到 constructor default
+- **提交**:
+  - `ca57b9e fix(team): expand generic for-each item placeholders`
+  - `f127658 feat(team): expose run-scoped paths in task expansion templates`
+  - `9966ec1 feat(team): support configurable per-run timeout`
+  - `d6b1ef5 feat(team-ui): allow run timeout override before start`
+- **测试**: 新增 14 个测试（expansion planner 6 + orchestrator timeout 2 + routes 3 + UI 3）
+
+---
+
 ## 2026-05-17 — P19 Team Console Dashboard Redesign
 
 - **主题**: Team Runtime 控制台从工程调试页升级为生产级仪表盘
