@@ -1534,3 +1534,231 @@ test("resume with stored sourceItem preserves identity even if discovery would c
 		await rm(root, { recursive: true });
 	}
 });
+
+// ── P23 Review Task 2: resume hydration for legacy expansions ──
+
+class TaskCapturingRunner extends MockRoleRunner {
+	readonly capturedTasks: Array<{ role: string; task: import("../src/team/role-runner.js").WorkerInput["task"] }> = [];
+
+	async runWorker(input: import("../src/team/role-runner.js").WorkerInput): Promise<import("../src/team/role-runner.js").WorkerOutput> {
+		this.capturedTasks.push({ role: "worker", task: input.task });
+		return { content: `done ${input.task.id}`, artifactRefs: [] };
+	}
+
+	async runChecker(input: import("../src/team/role-runner.js").CheckerInput): Promise<import("../src/team/role-runner.js").CheckerOutput> {
+		this.capturedTasks.push({ role: "checker", task: input.task });
+		return { verdict: "pass", reason: "ok", resultContent: "accepted" };
+	}
+
+	async runWatcher(input: import("../src/team/role-runner.js").WatcherInput): Promise<import("../src/team/role-runner.js").WatcherOutput> {
+		this.capturedTasks.push({ role: "watcher", task: input.task });
+		return { decision: "accept_task", reason: "ok" };
+	}
+}
+
+test("resume from expansion with stored task but no task.sourceItem hydrates identity", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const captureRunner = new TaskCapturingRunner();
+
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "resume hydration test",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{
+					id: "process", type: "for_each", title: "Process",
+					input: { text: "p" }, acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "discover.items",
+						mode: "sequential",
+						taskTemplate: {
+							title: "Score {{item.title}}",
+							input: { text: "Score card for {{item.title}}" },
+							acceptance: { rules: ["output valid"] },
+						},
+					},
+				},
+			],
+			outputContract: { text: "done" },
+		});
+
+		// Manually create a run with an old-style expansion:
+		// child entry has sourceItem, but stored task lacks it (pre-P23 format)
+		const state = await (new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: captureRunner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		})).createRun(plan.planId);
+
+		// Write expansion with stored task missing sourceItem (simulating pre-P23 format)
+		await workspace.writeExpansion(state.runId, {
+			schemaVersion: "team/task-expansion-1",
+			parentTaskId: "process",
+			itemsFrom: "discover.items",
+			expandedAt: new Date().toISOString(),
+			children: [{
+				taskId: "process__battle_08",
+				sourceItemId: "battle_08",
+				sourceItem: { id: "battle_08", data: { id: "battle_08", title: "藏经阁大战" } },
+				title: "Score 藏经阁大战",
+				task: {
+					id: "process__battle_08",
+					type: "normal",
+					title: "Score 藏经阁大战",
+					input: { text: "Score card for 藏经阁大战" },
+					acceptance: { rules: ["output valid"] },
+					parentTaskId: "process",
+					sourceItemId: "battle_08",
+					// sourceItem is intentionally MISSING — pre-P23 stored task
+					// generated is also missing — pre-P23 didn't set this
+				},
+			}],
+		});
+
+
+			// Initialize child task states so the run can execute them
+			await workspace.appendChildTaskStates(state.runId, [{
+				id: "process__battle_08",
+				type: "normal",
+				title: "Score 藏经阁大战",
+				input: { text: "Score card for 藏经阁大战" },
+				acceptance: { rules: ["output valid"] },
+				parentTaskId: "process",
+				sourceItemId: "battle_08",
+				generated: true,
+			}]);
+		// Resume the run
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: captureRunner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+		await orchestrator.runToCompletion(state.runId);
+
+		// Verify all three roles received the task with proper identity
+		const workerCapture = captureRunner.capturedTasks.find(c => c.role === "worker");
+		const checkerCapture = captureRunner.capturedTasks.find(c => c.role === "checker");
+		const watcherCapture = captureRunner.capturedTasks.find(c => c.role === "watcher");
+
+		assert.ok(workerCapture, "worker must have been called");
+		assert.ok(checkerCapture, "checker must have been called");
+		assert.ok(watcherCapture, "watcher must have been called");
+
+		// All roles must see generated: true
+		assert.equal(workerCapture!.task.generated, true, "worker task must have generated=true");
+		assert.equal(checkerCapture!.task.generated, true, "checker task must have generated=true");
+		assert.equal(watcherCapture!.task.generated, true, "watcher task must have generated=true");
+
+		// All roles must see sourceItemId
+		assert.equal(workerCapture!.task.sourceItemId, "battle_08", "worker task must have sourceItemId");
+		assert.equal(checkerCapture!.task.sourceItemId, "battle_08", "checker task must have sourceItemId");
+		assert.equal(watcherCapture!.task.sourceItemId, "battle_08", "watcher task must have sourceItemId");
+
+		// sourceItem must be hydrated from expansion record
+		assert.ok(workerCapture!.task.sourceItem, "worker task must have sourceItem hydrated");
+		assert.equal(workerCapture!.task.sourceItem!.id, "battle_08", "hydrated sourceItem.id must match");
+		assert.equal(workerCapture!.task.sourceItem!.data.title, "藏经阁大战", "hydrated sourceItem.data.title must match");
+
+		const finalState = await workspace.getState(state.runId);
+		assert.ok(finalState);
+		assert.equal(finalState.taskStates["process__battle_08"]?.status, "succeeded");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("resume from minimal expansion without sourceItem and without stored task still succeeds", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const captureRunner = new TaskCapturingRunner();
+
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "minimal expansion",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{
+					id: "process", type: "for_each", title: "Process",
+					input: { text: "p" }, acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "discover.items",
+						mode: "sequential",
+						taskTemplate: {
+							title: "Do {{item.id}}",
+							input: { text: "Work on {{item.id}}" },
+							acceptance: { rules: ["ok"] },
+						},
+					},
+				},
+			],
+			outputContract: { text: "done" },
+		});
+
+		const state = await (new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: captureRunner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		})).createRun(plan.planId);
+
+		// Minimal old expansion: no sourceItem, no task
+		await workspace.writeExpansion(state.runId, {
+			schemaVersion: "team/task-expansion-1",
+			parentTaskId: "process",
+			itemsFrom: "discover.items",
+			expandedAt: new Date().toISOString(),
+			children: [{
+				taskId: "process__x1",
+				sourceItemId: "x1",
+				title: "Do x1",
+			}],
+		});
+
+			// Initialize child task states
+			await workspace.appendChildTaskStates(state.runId, [{
+				id: "process__x1",
+				type: "normal",
+				title: "Do x1",
+				input: { text: "Do x1" },
+				acceptance: { rules: ["output is valid"] },
+				parentTaskId: "process",
+				sourceItemId: "x1",
+				generated: true,
+			}]);
+
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: captureRunner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+		await orchestrator.runToCompletion(state.runId);
+
+		const workerCapture = captureRunner.capturedTasks.find(c => c.role === "worker");
+		assert.ok(workerCapture, "worker must have been called");
+		assert.equal(workerCapture!.task.generated, true, "minimal child must be generated=true");
+		assert.equal(workerCapture!.task.sourceItemId, "x1", "minimal child must have sourceItemId");
+		// No sourceItem in minimal expansion — prompt fallback handles it via sourceItemId
+
+		const finalState = await workspace.getState(state.runId);
+		assert.ok(finalState);
+		assert.equal(finalState.taskStates["process__x1"]?.status, "succeeded");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
