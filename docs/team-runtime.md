@@ -67,6 +67,24 @@ Plan task 可声明受控拆分策略：
 - `leaf` — 可拆成普通 child task；child task 必须是 `decomposer.mode="none"`
 - `propagate` — 可拆成普通 child task；child task 只能是 `none | leaf`，不能继续生成 `propagate`
 
+权限矩阵：
+
+| parent mode | child mode | 结果 |
+|-------------|------------|------|
+| `propagate` | `leaf` | 允许 |
+| `propagate` | `none` | 允许 |
+| `propagate` | `propagate` | 拒绝 |
+| `leaf` | `none` | 允许 |
+| `leaf` | `leaf` / `propagate` | 拒绝 |
+| `none` | 任意 child | 不调用 decomposer |
+
+`decomposer` 和 `for_each` 是两件事，别混着用，混了就是给未来的自己挖坑：
+
+- `for_each` 适合未知数量 item：先用 `discovery` 找到数组，再按模板生成同构任务。
+- `decomposer.leaf` 适合某个已知大任务太粗：例如某个方法内还要拆 `collect-known-ips`、`ptr-lookup`、`passive-dns-otx`。
+- `decomposer.propagate` 只给少数顶层任务使用：它最多生成一层 `leaf` child，不能无限传播。
+- Medtrum 风格推荐：`discover_methods -> for_each(methods)`，每个 method task 如 reverse DNS / passive DNS 可设 `decomposer.leaf`，leaf children 正常顺序执行并进入 finalizer 汇总。
+
 ### Controlled Runtime Decomposition (P21-C)
 
 `TeamOrchestrator` 对 `normal`、`discovery` 和动态生成的 normal child task 使用同一条受控拆分入口：
@@ -603,6 +621,9 @@ Run 卡片可展开，点击后展示该 Run 的 **任务时间线**：
 
 - 有序任务节点，每个节点显示状态图标和标题
 - 动态生成的子任务在父任务下方缩进展示
+- `decomposer.mode="leaf"` / `propagate` 的 Plan task 在任务结构中显示紧凑 badge；`none` 不额外刷屏
+- 被 decomposer split 的 parent 在时间线中标记为「拆分容器」，child task 以「拆分子任务」分组缩进展示
+- `for_each` 生成的 child task 标记为「动态子任务」，和 decomposed child 区分展示
 - 中文 phase 标签和颜色编码
 
 #### 运行记录 tab
@@ -644,6 +665,7 @@ CRUD + 归档，每个角色绑定 AgentProfile 下拉选择。与 P19 前行为
 - 尝试历史卡片（状态、ID、时间戳、file-chip 文件按钮）
 - `runtimeContext` 默认折叠（`<details>/<summary>`），点击展开详情
 - 错误摘要使用高亮样式
+- split parent 本身没有 worker attempt；如果 child 失败，parent 错误摘要和失败 child 会同时出现在时间线中，方便定位卡住的子任务
 - 文件内容弹窗查看（调用 Attempt API，统一 modal-panel 样式）
 
 #### 最终报告
@@ -721,7 +743,8 @@ Cancel/pause always takes priority over phase timeout — if a run is already ca
 6. **动态计划仅支持 discovery → for_each 常见模式** — UI builder 覆盖「先发现再逐项处理」的标准场景；高级 plan 结构（如多 discovery、嵌套 for_each）仍需通过 JSON/API 直接创建。
 7. **for_each 仅顺序执行** — 并行执行和嵌套 for_each 尚未支持。
 8. **Controlled decomposition 只支持有界顺序执行** — 运行时只允许 `propagate -> leaf | none`、`leaf -> none`；child task 必须是 normal；不支持并行 child execution、无限传播或 nested for_each。
-9. **无 AgentTaskExpansionPlanner** — 动态任务扩展目前使用模板展开（`TemplateTaskExpansionPlanner`），尚无 AI 驱动的智能扩展。
+9. **Decomposition UI 只展示，不编辑** — `/playground/team` 只显示 decomposer badge 和 split hierarchy；不提供可视化编辑器。当前 run state API 不直接暴露 decomposition record 列表，UI 优先使用可见的 generated task metadata / `parentTaskId`，旧 run 或缺少 metadata 的 run 会退回为普通「子任务」分组。
+10. **无 AgentTaskExpansionPlanner** — 动态任务扩展目前使用模板展开（`TemplateTaskExpansionPlanner`），尚无 AI 驱动的智能扩展。
 
 ## 后续计划
 

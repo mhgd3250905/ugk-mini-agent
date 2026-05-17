@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-17 — P21-D Decomposer UI and Docs
+
+- **主题**: Team Console 展示 controlled decomposition 的 Plan badge 和运行层级
+- **影响范围**: `src/ui/team-page.ts`, `test/team-page-ui.test.ts`, `docs/team-runtime.md`
+- **变更**:
+  - Plan Detail 的任务结构展示 `leaf` / `propagate` decomposer badge；`none` 保持安静不刷屏
+  - Run timeline 将 split parent 标记为「拆分容器」，将 decomposed child 缩进到 parent 下方
+  - `for_each` child 使用「动态子任务」标签，与 decomposed child 的「拆分子任务」区分
+  - 文档补齐 decomposer 权限矩阵、与 `for_each` 的差异、Medtrum 风格使用方式和 UI 限制
+- **测试**: `test/team-page-ui.test.ts` 增加 Plan badge 和 decomposed hierarchy 行为测试，使用真实 plan/run/state 形状渲染 helper
+
+---
+
 ## 2026-05-17 — P21-C Review Fix: Decomposed Discovery Aggregation
 
 - **主题**: 修复 decomposed discovery parent 的 child result aggregation
