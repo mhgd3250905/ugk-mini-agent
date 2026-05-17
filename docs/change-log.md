@@ -12,6 +12,20 @@
 
 ---
 
+## 2026-05-17 — Team Runtime P22 Review Fix: Decomposed Discovery Standard Persistence
+
+- **主题**: 修复 decomposed discovery parent 聚合后未持久化 `discovery-result.json` 的问题；修复 validation error 硬编码 `outputKey 'items'`
+- **影响范围**: `src/team/orchestrator.ts`, `docs/team-runtime.md`
+- **变更**:
+  - decomposed discovery parent 聚合子级输出后，创建 parent aggregation attempt 并写入标准化 `discovery-result.json`
+  - parent aggregation attempt 不含 worker/checker/watcher 条目
+  - resume/reclaim 优先读取已有标准文件，不重新聚合子级输出
+  - discovery validation error 信息使用实际 `task.discovery.outputKey` 而非硬编码 `'items'`
+  - 旧 decomposed run（无 parent 标准文件）仍使用传统子级聚合 fallback
+- **测试**: 4 个 P22 decomposed 测试增强为直接断言 `workspace.readDiscoveryResult()`；新增 1 个 outputKey error 回归测试
+
+---
+
 ## 2026-05-17 — Team Runtime Discovery Result Standardization (P22)
 
 - **主题**: 将 discovery → for_each 数据合约从 ad-hoc Markdown 解析升级为标准化 `discovery-result.json`

@@ -96,10 +96,10 @@ Plan task 可声明受控拆分策略：
 - runtime 强制模式矩阵：`propagate -> leaf | none`，`leaf -> none`，`none` 不拆。
 - `maxChildren` 默认 8，单 task policy 可设 `1..20`；单 run 当前最多 50 个 task state，避免无限扩张。
 - 既有 decomposition record 会优先于再次调用 decomposer；resume/reclaim 时会复用 record 中的完整 child `TeamTask` 定义。
-- pause/cancel/timeout 使用现有 run control 机制；split parent 没有 active attempt，未完成 parent/children 会按 run 状态统一标记。
+- pause/cancel/timeout 使用现有 run control 机制；未完成 parent/children 会按 run 状态统一标记。
 - parent 状态由 child 汇总：全部 child 成功则 parent `succeeded`，任一 child 失败则 parent `failed`，错误摘要指向失败 child。
 - 当 `discovery` parent 被 `split` 时，parent 仍不执行 worker/checker/watcher；runtime 会按 decomposition record 中的 child 顺序尝试读取每个 normal child 的 `accepted-result.md` 和 `worker-output-001.md`，以第一个能解析出 item 数组的内容为准，并聚合为 parent 的 `discovery.outputKey` 结果供下游 `for_each.itemsFrom` 使用。
-- decomposed discovery child 输出聚合后写入标准化 `discovery-result.json`（与普通 discovery 相同），供 `for_each` 引用。
+- 聚合成功后，runtime 为 parent 创建一个 **聚合 attempt**（无 worker/checker/watcher），写入标准化 `discovery-result.json`（`tasks/<parentTaskId>/attempts/<attemptId>/discovery-result.json`），parent task state 的 `activeAttemptId` 指向该聚合 attempt。resume/reclaim 时优先读取此标准文件，不再重新聚合子级输出。旧 run 无此文件时回退到传统子级聚合。
 - decomposed discovery child 输出支持两种形状：包含 parent `discovery.outputKey` 数组的 JSON object，例如 `{ "items": [...] }`；或直接输出 item object 数组，例如 `[{"id":"a"}]`。
 - decomposed discovery child 输出必须提供 item object 数组；任一 child 输出 malformed、缺少目标数组、或数组元素不是 object 时，discovery parent 会失败，downstream `for_each` 不会从 partial data 扩展。
 - finalizer 输入来自完整 `state.taskStates`，因此能看到 decomposed child 的 result/error 信息。
