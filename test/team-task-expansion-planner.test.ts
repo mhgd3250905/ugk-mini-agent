@@ -467,3 +467,67 @@ test("generated output path does not contain raw {{...}}", async () => {
 		assert.ok(!child.acceptance.rules[0]!.includes("{{"), `no raw placeholder in "${child.acceptance.rules[0]}"`);
 	}
 });
+
+
+// ── P23 Task 1: source item snapshot persistence ──
+
+test("generated child includes sourceItem with id and full data snapshot", async () => {
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask: makeParentTask(),
+		items: [{ id: "battle_08", title: "藏经阁大战", chapter: "第8章" }],
+	});
+	const child = result.children[0]!;
+	assert.equal(child.sourceItemId, "battle_08");
+	assert.ok(child.sourceItem, "child must have sourceItem");
+	assert.equal(child.sourceItem!.id, "battle_08");
+	assert.deepEqual(child.sourceItem!.data, { id: "battle_08", title: "藏经阁大战", chapter: "第8章" });
+});
+
+test("sourceItem.data is a shallow copy, not the original item reference", async () => {
+	const planner = new TemplateTaskExpansionPlanner();
+	const originalItem = { id: "x1", title: "Original", meta: { nested: true } };
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask: makeParentTask(),
+		items: [originalItem],
+	});
+	const child = result.children[0]!;
+	assert.deepEqual(child.sourceItem!.data, originalItem);
+	originalItem.title = "Mutated";
+	assert.equal(child.sourceItem!.data.title, "Original", "sourceItem.data must not be mutated by external changes");
+});
+
+test("generated child from item with only id still has sourceItem", async () => {
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask: makeParentTask(),
+		items: [{ id: "bare_id" }],
+	});
+	const child = result.children[0]!;
+	assert.ok(child.sourceItem);
+	assert.equal(child.sourceItem!.id, "bare_id");
+	assert.deepEqual(child.sourceItem!.data, { id: "bare_id" });
+});
+
+test("multiple generated children each have their own sourceItem", async () => {
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask: makeParentTask(),
+		items: [
+			{ id: "a", title: "Alpha" },
+			{ id: "b", title: "Beta" },
+		],
+	});
+	assert.equal(result.children[0]!.sourceItem!.id, "a");
+	assert.deepEqual(result.children[0]!.sourceItem!.data, { id: "a", title: "Alpha" });
+	assert.equal(result.children[1]!.sourceItem!.id, "b");
+	assert.deepEqual(result.children[1]!.sourceItem!.data, { id: "b", title: "Beta" });
+});

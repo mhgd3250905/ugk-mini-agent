@@ -1125,3 +1125,136 @@ test("discovery validation error includes actual outputKey not hardcoded 'items'
 		await rm(root, { recursive: true });
 	}
 });
+
+
+// ── P23 Task 1: orchestrator persists sourceItem in expansion records ──
+
+test("for_each expansion persists sourceItem snapshot for each child", async () => {
+	const { root, plan, orchestrator, workspace } = await setupDiscoveryPlan(
+		JSON.stringify({
+			items: [
+				{ id: "battle_08", title: "藏经阁大战", chapter: "第8章" },
+				{ id: "battle_09", title: "雁门关外自尽", chapter: "第9章" },
+			],
+		}),
+	);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.status, "completed");
+		const expansion = await workspace.readExpansion(state.runId, "process_each");
+		assert.ok(expansion);
+
+		const child08 = expansion.children.find(c => c.sourceItemId === "battle_08")!;
+		assert.ok(child08, "battle_08 child must exist");
+		assert.ok(child08.sourceItem, "child entry must have sourceItem");
+		assert.equal(child08.sourceItem!.id, "battle_08");
+		assert.equal(child08.sourceItem!.data.title, "藏经阁大战");
+		assert.equal(child08.sourceItem!.data.chapter, "第8章");
+
+		const child09 = expansion.children.find(c => c.sourceItemId === "battle_09")!;
+		assert.ok(child09, "battle_09 child must exist");
+		assert.ok(child09.sourceItem);
+		assert.equal(child09.sourceItem!.data.title, "雁门关外自尽");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("resume from old expansion without sourceItem uses stored task without crashing", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const runner = new MockRoleRunner();
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "old expansion resume",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{
+					id: "discover", type: "discovery", title: "Discover",
+					input: { text: "Find" }, acceptance: { rules: ["ok"] },
+					discovery: { outputKey: "items" },
+				},
+				{
+					id: "process", type: "for_each", title: "Process",
+					input: { text: "p" }, acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "discover.items", mode: "sequential",
+						taskTemplate: { title: "P {{item.title}}", input: { text: "p" }, acceptance: { rules: ["ok"] } },
+					},
+				},
+			],
+			outputContract: { text: "report" },
+		});
+
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: runner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+
+		const state = await orchestrator.createRun(plan.planId);
+
+		// Set up succeeded discovery
+		const attemptId = "attempt_old_expand";
+		await mkdir(join(root, "runs", state.runId, "tasks", "discover", "attempts", attemptId), { recursive: true });
+		await writeFile(
+			join(root, "runs", state.runId, "tasks", "discover", "attempts", attemptId, "attempt.json"),
+			JSON.stringify({
+				attemptId, taskId: "discover", status: "succeeded", phase: "succeeded",
+				createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+				finishedAt: new Date().toISOString(), worker: [], checker: [], watcher: null,
+				resultRef: "tasks/discover/attempts/" + attemptId + "/accepted-result.md", errorSummary: null,
+			}),
+			"utf8",
+		);
+		await workspace.writeDiscoveryResult(state.runId, "discover", attemptId, {
+			schemaVersion: "team/discovery-result-1",
+			taskId: "discover", attemptId, outputKey: "items",
+			items: [{ id: "old_a", title: "OldA" }],
+			sourceRef: null, createdAt: new Date().toISOString(),
+		});
+
+		// Write OLD-format expansion without sourceItem or full task
+		await workspace.writeExpansion(state.runId, {
+			schemaVersion: "team/task-expansion-1",
+			parentTaskId: "process",
+			itemsFrom: "discover.items",
+			expandedAt: new Date().toISOString(),
+			children: [{ taskId: "process__old_a", sourceItemId: "old_a", title: "P OldA" }],
+		});
+
+		// Set discovery as succeeded
+		const patched = (await workspace.getState(state.runId))!;
+		patched.taskStates["discover"]!.status = "succeeded";
+		patched.taskStates["discover"]!.attemptCount = 1;
+		patched.taskStates["discover"]!.activeAttemptId = attemptId;
+		patched.taskStates["discover"]!.resultRef = "tasks/discover/attempts/" + attemptId + "/accepted-result.md";
+		patched.taskStates["discover"]!.progress = { phase: "succeeded", message: "succeeded", updatedAt: new Date().toISOString() };
+		patched.summary.succeededTasks = 1;
+		await workspace.saveState(patched);
+
+		// Append child task state
+		await workspace.appendChildTaskStates(state.runId, [
+			{ id: "process__old_a", type: "normal", title: "P OldA", input: { text: "P OldA" }, acceptance: { rules: ["ok"] }, parentTaskId: "process", sourceItemId: "old_a", generated: true },
+		]);
+
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		// Old expansion resume should work without crashing
+		assert.equal(final.status, "completed");
+		assert.ok(final.taskStates["process__old_a"], "old format child task should execute");
+		assert.equal(final.taskStates["process__old_a"]!.status, "succeeded");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});

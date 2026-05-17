@@ -131,6 +131,7 @@ export interface TeamTask {
 	};
 	parentTaskId?: string;
 	sourceItemId?: string;
+	sourceItem?: TeamTaskSourceItem;
 	generated?: boolean;
 }
 
@@ -192,9 +193,15 @@ export interface TeamRunLease {
 	expiresAt: string;
 }
 
+export interface TeamTaskSourceItem {
+	id: string;
+	data: Record<string, unknown>;
+}
+
 export interface TaskExpansionChildEntry {
 	taskId: string;
 	sourceItemId: string;
+	sourceItem?: TeamTaskSourceItem;
 	title: string;
 	task?: TeamTask;
 }

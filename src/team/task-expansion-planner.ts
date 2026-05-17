@@ -96,6 +96,7 @@ export class TemplateTaskExpansionPlanner implements TaskExpansionPlanner {
 				acceptance: { rules: acceptanceRules },
 				parentTaskId: parentTask.id,
 				sourceItemId: itemId,
+				sourceItem: { id: itemId, data: { ...item } },
 				generated: true,
 			};
 		});

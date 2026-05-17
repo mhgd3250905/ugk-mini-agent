@@ -795,3 +795,69 @@ test("old run without decompositions directory still reads state and attempts", 
 		await rm(root, { recursive: true });
 	}
 });
+
+
+// ── P23 Task 1: sourceItem in expansion record ──
+
+test("expansion record persists sourceItem on children", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		const record: import("../src/team/types.js").TaskExpansionRecord = {
+			schemaVersion: "team/task-expansion-1",
+			parentTaskId: "task_1",
+			itemsFrom: "discover.items",
+			expandedAt: new Date().toISOString(),
+			children: [{
+				taskId: "task_1__battle_08",
+				sourceItemId: "battle_08",
+				sourceItem: { id: "battle_08", data: { id: "battle_08", title: "藏经阁大战" } },
+				title: "Process battle_08",
+				task: {
+					id: "task_1__battle_08", type: "normal", title: "Process battle_08",
+					input: { text: "Score battle_08" }, acceptance: { rules: ["ok"] },
+					parentTaskId: "task_1", sourceItemId: "battle_08",
+					sourceItem: { id: "battle_08", data: { id: "battle_08", title: "藏经阁大战" } },
+					generated: true,
+				},
+			}],
+		};
+		await ws.writeExpansion(state.runId, record);
+		const loaded = await ws.readExpansion(state.runId, "task_1");
+		assert.ok(loaded);
+		const child = loaded.children[0]!;
+		assert.ok(child.sourceItem, "child entry should have sourceItem");
+		assert.equal(child.sourceItem!.id, "battle_08");
+		assert.equal(child.sourceItem!.data.title, "藏经阁大战");
+		assert.ok(child.task?.sourceItem, "child task should have sourceItem");
+		assert.equal(child.task!.sourceItem!.id, "battle_08");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("old expansion record without sourceItem still reads correctly", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		const record: import("../src/team/types.js").TaskExpansionRecord = {
+			schemaVersion: "team/task-expansion-1",
+			parentTaskId: "task_1",
+			itemsFrom: "discover.items",
+			expandedAt: new Date().toISOString(),
+			children: [
+				{ taskId: "task_1__old", sourceItemId: "old_item", title: "Old Format" },
+			],
+		};
+		await ws.writeExpansion(state.runId, record);
+		const loaded = await ws.readExpansion(state.runId, "task_1");
+		assert.ok(loaded);
+		assert.equal(loaded.children[0]!.taskId, "task_1__old");
+		assert.equal(loaded.children[0]!.sourceItemId, "old_item");
+		assert.equal(loaded.children[0]!.sourceItem, undefined, "old records have no sourceItem");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});

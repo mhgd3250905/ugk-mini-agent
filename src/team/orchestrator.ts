@@ -1285,6 +1285,7 @@ export class TeamOrchestrator {
 						acceptance: { rules: ["output is valid"] },
 						parentTaskId: task.id,
 						sourceItemId: c.sourceItemId,
+						sourceItem: c.sourceItem,
 						generated: true,
 					}
 				);
@@ -1318,6 +1319,7 @@ export class TeamOrchestrator {
 					children: childTasks.map(c => ({
 						taskId: c.id,
 						sourceItemId: c.sourceItemId ?? "",
+						sourceItem: c.sourceItem,
 						title: c.title,
 						task: c,
 					})),
@@ -1393,6 +1395,7 @@ export class TeamOrchestrator {
 					acceptance: { rules: ["output is valid"] },
 					parentTaskId: task.id,
 					sourceItemId: c.sourceItemId,
+						sourceItem: c.sourceItem,
 					generated: true,
 				}
 			);
