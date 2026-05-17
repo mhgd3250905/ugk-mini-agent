@@ -917,3 +917,166 @@ test("discovery task fails when items contain non-object values", async () => {
 		await rm(root, { recursive: true });
 	}
 });
+
+// ── P22 Task 3: for_each prefers standard discovery results ──
+
+test("for_each uses discovery-result.json even when accepted result is unparseable summary", async () => {
+	// Simulate a pre-existing run where discovery already succeeded with
+	// discovery-result.json written, but accepted-result.md is a natural-language
+	// summary. On resume/reclaim, for_each should use the standard file.
+	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const runner = new MockRoleRunner();
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "standard result priority",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{
+					id: "discover", type: "discovery", title: "Discover",
+					input: { text: "Find" }, acceptance: { rules: ["ok"] },
+					discovery: { outputKey: "items" },
+				},
+				{
+					id: "process", type: "for_each", title: "Process",
+					input: { text: "p" }, acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "discover.items", mode: "sequential",
+						taskTemplate: { title: "P {{item.title}}", input: { text: "p" }, acceptance: { rules: ["ok"] } },
+					},
+				},
+			],
+			outputContract: { text: "report" },
+		});
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: runner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+
+		const state = await orchestrator.createRun(plan.planId);
+
+		// Manually set up a succeeded discovery task with standard result file
+		// but an unparseable accepted-result.md
+		const attemptId = "attempt_std_test";
+		await mkdir(join(root, "runs", state.runId, "tasks", "discover", "attempts", attemptId), { recursive: true });
+		await writeFile(
+			join(root, "runs", state.runId, "tasks", "discover", "attempts", attemptId, "attempt.json"),
+			JSON.stringify({
+				attemptId, taskId: "discover", status: "succeeded", phase: "succeeded",
+				createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+				finishedAt: new Date().toISOString(), worker: [], checker: [], watcher: null,
+				resultRef: `tasks/discover/attempts/${attemptId}/accepted-result.md`, errorSummary: null,
+			}),
+			"utf8",
+		);
+		await writeFile(
+			join(root, "runs", state.runId, "tasks", "discover", "attempts", attemptId, "accepted-result.md"),
+			"这是一个纯文本摘要，没有任何 JSON。",
+			"utf8",
+		);
+		await workspace.writeDiscoveryResult(state.runId, "discover", attemptId, {
+			schemaVersion: "team/discovery-result-1",
+			taskId: "discover",
+			attemptId,
+			outputKey: "items",
+			items: [{ id: "std_a", title: "StdA" }, { id: "std_b", title: "StdB" }],
+			sourceRef: `tasks/discover/attempts/${attemptId}/accepted-result.md`,
+			createdAt: new Date().toISOString(),
+		});
+
+		// Set discovery task state to succeeded
+		const patched = (await workspace.getState(state.runId))!;
+		patched.taskStates["discover"]!.status = "succeeded";
+		patched.taskStates["discover"]!.attemptCount = 1;
+		patched.taskStates["discover"]!.activeAttemptId = attemptId;
+		patched.taskStates["discover"]!.resultRef = `tasks/discover/attempts/${attemptId}/accepted-result.md`;
+		patched.taskStates["discover"]!.progress = { phase: "succeeded", message: "succeeded", updatedAt: new Date().toISOString() };
+		patched.summary.succeededTasks = 1;
+		await workspace.saveState(patched);
+
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.taskStates["discover"]?.status, "succeeded");
+		assert.equal(final.taskStates["process"]?.status, "succeeded");
+		assert.ok(final.taskStates["process__std_a"], "should use standardized items from discovery-result.json");
+		assert.ok(final.taskStates["process__std_b"], "should use standardized items from discovery-result.json");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("for_each falls back to legacy parsing when discovery-result.json does not exist", async () => {
+	const { root, plan, orchestrator } = await setupDiscoveryPlan(
+		JSON.stringify({ items: [{ id: "legacy_a", title: "LegacyA" }] }),
+		"总共 1 项：LegacyA。每项包含 id 和 title。",
+	);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.taskStates["discover"]?.status, "succeeded");
+		assert.equal(final.taskStates["process_each"]?.status, "succeeded");
+		assert.ok(final.taskStates["process_each__legacy_a"]);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("for_each with wrong itemsFrom outputKey does not use discovery result", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const runner = new DiscoveryMockRunner(JSON.stringify({ items: [{ id: "a", title: "A" }] }));
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "wrong itemsFrom key",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{
+					id: "discover", type: "discovery", title: "Discover",
+					input: { text: "Find" }, acceptance: { rules: ["ok"] },
+					discovery: { outputKey: "items" },
+				},
+				{
+					id: "process", type: "for_each", title: "Process",
+					input: { text: "p" }, acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "discover.wrong_key", mode: "sequential",
+						taskTemplate: { title: "P", input: { text: "p" }, acceptance: { rules: ["ok"] } },
+					},
+				},
+			],
+			outputContract: { text: "report" },
+		});
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: runner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.taskStates["discover"]?.status, "succeeded");
+		assert.equal(final.taskStates["process"]?.status, "failed");
+		assert.match(final.taskStates["process"]?.errorSummary ?? "", /failed to resolve discovery items/);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});

@@ -192,7 +192,7 @@ export class TeamOrchestrator {
 			const plan = await this.planStore.get(state.planId);
 			if (!plan) throw new Error(`plan not found: ${state.planId}`);
 
-			const discoveryResults: Record<string, Array<Record<string, unknown>>> = {};
+			const discoveryResults: Record<string, { outputKey: string; items: Array<Record<string, unknown>> }> = {};
 
 			for (const task of plan.tasks) {
 				state = (await this.workspace.getState(runId))!;
@@ -1022,15 +1022,16 @@ export class TeamOrchestrator {
 		}
 	}
 
-	private async loadDiscoveryResult(runId: string, task: TeamTask, results: Record<string, Array<Record<string, unknown>>>): Promise<void> {
+	private async loadDiscoveryResult(runId: string, task: TeamTask, results: Record<string, { outputKey: string; items: Array<Record<string, unknown>> }>): Promise<void> {
 		if (!task.discovery) return;
+		const outputKey = task.discovery.outputKey;
 		const decomposition = await this.workspace.readDecomposition(runId, task.id);
 		if (decomposition?.decision === "split") {
 			const aggregated = await this.loadDecomposedDiscoveryResult(runId, task, decomposition.children.map(child => child.task));
 			if (!aggregated) {
 				return;
 			}
-			results[task.id] = aggregated;
+			results[task.id] = { outputKey, items: aggregated };
 			return;
 		}
 
@@ -1038,10 +1039,19 @@ export class TeamOrchestrator {
 		if (!state) return;
 		const ts = state.taskStates[task.id];
 		if (!ts?.activeAttemptId) return;
+		const attemptId = ts.activeAttemptId;
 
-		const items = await this.readDiscoveryItemsFromAttempt(runId, task.id, ts.activeAttemptId, task.discovery.outputKey);
+		// Prefer standardized discovery-result.json
+		const standardResult = await this.workspace.readDiscoveryResult(runId, task.id, attemptId);
+		if (standardResult && standardResult.outputKey === outputKey) {
+			results[task.id] = { outputKey, items: standardResult.items };
+			return;
+		}
+
+		// Fallback to legacy parsing for old runs/attempts
+		const items = await this.readDiscoveryItemsFromAttempt(runId, task.id, attemptId, outputKey);
 		if (items) {
-			results[task.id] = items;
+			results[task.id] = { outputKey, items };
 		}
 	}
 
@@ -1199,7 +1209,7 @@ export class TeamOrchestrator {
 			state: TeamRunState,
 			task: TeamTask,
 			plan: TeamPlan,
-			discoveryResults: Record<string, Array<Record<string, unknown>>>,
+			discoveryResults: Record<string, { outputKey: string; items: Array<Record<string, unknown>> }>,
 			signal: AbortSignal,
 		): Promise<void> {
 			if (!task.forEach) return;
@@ -1361,12 +1371,16 @@ export class TeamOrchestrator {
 
 		private resolveDiscoveryItems(
 			itemsFrom: string,
-			discoveryResults: Record<string, Array<Record<string, unknown>>>,
+			discoveryResults: Record<string, { outputKey: string; items: Array<Record<string, unknown>> }>,
 		): Array<Record<string, unknown>> | null {
 			const parts = itemsFrom.split(".");
 			if (parts.length < 2) return null;
 			const taskId = parts[0]!;
-			return discoveryResults[taskId] ?? null;
+			const requestedOutputKey = parts[1]!;
+			const entry = discoveryResults[taskId];
+			if (!entry) return null;
+			if (entry.outputKey !== requestedOutputKey) return null;
+			return entry.items;
 		}
 
 		private shouldStop(state: TeamRunState | null | undefined): boolean {
