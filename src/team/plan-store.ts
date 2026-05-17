@@ -4,11 +4,30 @@ import type { TeamPlan } from "./types.js";
 import { generatePlanId } from "./ids.js";
 
 const VALID_TASK_TYPES = new Set(["normal", "discovery", "for_each"]);
+const VALID_DECOMPOSER_MODES = new Set(["none", "leaf", "propagate"]);
+const MAX_DECOMPOSER_CHILDREN = 20;
+
+function validateDecomposerPolicy(policy: unknown, fieldPath: string): void {
+	if (policy === undefined) return;
+	if (!policy || typeof policy !== "object" || Array.isArray(policy)) {
+		throw new Error(`${fieldPath} must be an object`);
+	}
+	const obj = policy as { mode?: unknown; maxChildren?: unknown };
+	if (typeof obj.mode !== "string" || !VALID_DECOMPOSER_MODES.has(obj.mode)) {
+		throw new Error(`${fieldPath}.mode must be none, leaf, or propagate`);
+	}
+	if (obj.maxChildren !== undefined) {
+		if (!Number.isInteger(obj.maxChildren) || obj.maxChildren < 1 || obj.maxChildren > MAX_DECOMPOSER_CHILDREN) {
+			throw new Error(`${fieldPath}.maxChildren must be an integer between 1 and ${MAX_DECOMPOSER_CHILDREN}`);
+		}
+	}
+}
 
 function validateTasks(tasks: unknown[]): void {
 	if (!tasks.length) throw new Error("at least one task is required");
 	for (const task of tasks as Array<{
 		id?: string; type?: string; title?: string; input?: { text?: string }; acceptance?: { rules?: string[] };
+		decomposer?: unknown;
 		discovery?: { outputKey?: string };
 		forEach?: { itemsFrom?: string; mode?: string; taskTemplate?: unknown };
 	}>) {
@@ -16,6 +35,7 @@ function validateTasks(tasks: unknown[]): void {
 		if (!task.title?.trim()) throw new Error("task title is required");
 		if (!task.input?.text?.trim()) throw new Error("task input text is required");
 		if (!task.acceptance?.rules?.length) throw new Error("task acceptance rules are required");
+		validateDecomposerPolicy(task.decomposer, "task decomposer");
 		const taskType = task.type ?? "normal";
 		if (!VALID_TASK_TYPES.has(taskType)) throw new Error(`unknown task type: ${taskType}`);
 		if (taskType === "discovery") {
@@ -24,10 +44,11 @@ function validateTasks(tasks: unknown[]): void {
 		if (taskType === "for_each") {
 			if (!task.forEach?.itemsFrom?.trim()) throw new Error("for_each task requires forEach.itemsFrom");
 			if (task.forEach.mode !== "sequential") throw new Error("for_each task requires forEach.mode 'sequential'");
-			const tmpl = task.forEach.taskTemplate as { title?: string; input?: { text?: string }; acceptance?: { rules?: string[] } } | undefined;
+			const tmpl = task.forEach.taskTemplate as { title?: string; input?: { text?: string }; acceptance?: { rules?: string[] }; decomposer?: unknown } | undefined;
 			if (!tmpl?.title?.trim()) throw new Error("for_each task requires forEach.taskTemplate.title");
 			if (!tmpl?.input?.text?.trim()) throw new Error("for_each task requires forEach.taskTemplate.input.text");
 			if (!tmpl?.acceptance?.rules?.length) throw new Error("for_each task requires forEach.taskTemplate.acceptance.rules");
+			validateDecomposerPolicy(tmpl.decomposer, "forEach.taskTemplate.decomposer");
 		}
 	}
 	const ids = (tasks as Array<{ id: string }>).map(t => t.id);

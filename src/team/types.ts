@@ -102,6 +102,12 @@ export interface TeamUnit {
 }
 
 export type TeamTaskType = "normal" | "discovery" | "for_each";
+export type TeamTaskDecomposerMode = "none" | "leaf" | "propagate";
+
+export interface TeamTaskDecomposerPolicy {
+	mode: TeamTaskDecomposerMode;
+	maxChildren?: number;
+}
 
 export interface TeamTask {
 	id: string;
@@ -109,6 +115,7 @@ export interface TeamTask {
 	title: string;
 	input: { text: string; payload?: Record<string, unknown> };
 	acceptance: { rules: string[] };
+	decomposer?: TeamTaskDecomposerPolicy;
 	discovery?: {
 		outputKey: string;
 	};
@@ -119,6 +126,7 @@ export interface TeamTask {
 			title: string;
 			input: { text: string; payload?: Record<string, unknown> };
 			acceptance: { rules: string[] };
+			decomposer?: TeamTaskDecomposerPolicy;
 		};
 	};
 	parentTaskId?: string;

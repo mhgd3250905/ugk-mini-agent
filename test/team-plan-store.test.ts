@@ -411,3 +411,128 @@ test("PlanStore.updateEditablePlan accepts valid dynamic tasks when runCount=0",
 		await rm(root, { recursive: true });
 	}
 });
+
+// ── P21-B: task decomposer policy validation ──
+
+test("PlanStore.create accepts leaf and propagate task decomposer policies", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		const plan = await store.create({
+			...validInput,
+			tasks: [
+				{ id: "leaf", title: "Leaf split", input: { text: "split leaf" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "leaf", maxChildren: 3 } },
+				{ id: "propagate", title: "Propagate split", input: { text: "split propagate" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "propagate", maxChildren: 8 } },
+			],
+		});
+		assert.equal(plan.tasks[0]!.decomposer?.mode, "leaf");
+		assert.equal(plan.tasks[1]!.decomposer?.mode, "propagate");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("PlanStore.create accepts missing task decomposer policy", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		const plan = await store.create(validInput);
+		assert.equal(plan.tasks[0]!.decomposer, undefined);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("PlanStore.create rejects invalid task decomposer mode and maxChildren", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		await assert.rejects(
+			() => store.create({
+				...validInput,
+				tasks: [{ id: "t1", title: "Bad", input: { text: "x" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "deep" as any } }],
+			}),
+			{ message: "task decomposer.mode must be none, leaf, or propagate" },
+		);
+		for (const maxChildren of [0, -1, 1.5, 21]) {
+			await assert.rejects(
+				() => store.create({
+					...validInput,
+					tasks: [{ id: "t1", title: "Bad", input: { text: "x" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "leaf", maxChildren } }],
+				}),
+				{ message: "task decomposer.maxChildren must be an integer between 1 and 20" },
+			);
+		}
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("PlanStore.updateEditablePlan validates task decomposer when runCount=0", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		const plan = await store.create(validInput);
+		await assert.rejects(
+			() => store.updateEditablePlan(plan.planId, {
+				tasks: [{ id: "t1", title: "Bad", input: { text: "x" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "deep" as any } }],
+			}),
+			{ message: "task decomposer.mode must be none, leaf, or propagate" },
+		);
+		const updated = await store.updateEditablePlan(plan.planId, {
+			tasks: [{ id: "t1", title: "Good", input: { text: "x" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "leaf", maxChildren: 2 } }],
+		});
+		assert.equal(updated.tasks[0]!.decomposer?.mode, "leaf");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("PlanStore validates forEach.taskTemplate.decomposer", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		await assert.rejects(
+			() => store.create({
+				...validInput,
+				tasks: [{
+					id: "process_each", type: "for_each", title: "Process each",
+					input: { text: "placeholder" },
+					acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "discover.items",
+						mode: "sequential",
+						taskTemplate: {
+							title: "Process {{item.title}}",
+							input: { text: "Process item {{item.id}}" },
+							acceptance: { rules: ["output is valid"] },
+							decomposer: { mode: "bad" as any },
+						},
+					},
+				}],
+			}),
+			{ message: "forEach.taskTemplate.decomposer.mode must be none, leaf, or propagate" },
+		);
+		const plan = await store.create({
+			...validInput,
+			tasks: [{
+				id: "process_each", type: "for_each", title: "Process each",
+				input: { text: "placeholder" },
+				acceptance: { rules: ["ok"] },
+				forEach: {
+					itemsFrom: "discover.items",
+					mode: "sequential",
+					taskTemplate: {
+						title: "Process {{item.title}}",
+						input: { text: "Process item {{item.id}}" },
+						acceptance: { rules: ["output is valid"] },
+						decomposer: { mode: "leaf", maxChildren: 4 },
+					},
+				},
+			}],
+		});
+		assert.equal(plan.tasks[0]!.forEach?.taskTemplate.decomposer?.mode, "leaf");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});

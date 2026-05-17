@@ -491,6 +491,84 @@ test("P16-T2: normal one-task plan still works via API", async () => {
 	}
 });
 
+// ── P21-B: task decomposer plan API validation ──
+
+test("POST plan accepts task decomposer policy", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+		const unitId = unitRes.json().teamUnitId;
+		const res = await app.inject({ method: "POST", url: "/v1/team/plans", payload: {
+			title: "Decomposer plan",
+			defaultTeamUnitId: unitId,
+			goal: { text: "split where needed" },
+			tasks: [
+				{ id: "t1", title: "Split task", input: { text: "do" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "propagate", maxChildren: 5 } },
+			],
+			outputContract: { text: "out" },
+		}});
+		assert.equal(res.statusCode, 201);
+		assert.equal(res.json().tasks[0].decomposer.mode, "propagate");
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch {}
+	}
+});
+
+test("POST plan rejects invalid task decomposer policy", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+		const unitId = unitRes.json().teamUnitId;
+		const res = await app.inject({ method: "POST", url: "/v1/team/plans", payload: {
+			title: "Bad decomposer plan",
+			defaultTeamUnitId: unitId,
+			goal: { text: "split where needed" },
+			tasks: [
+				{ id: "t1", title: "Split task", input: { text: "do" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "recursive_forever", maxChildren: 5 } },
+			],
+			outputContract: { text: "out" },
+		}});
+		assert.equal(res.statusCode, 400);
+		assert.match(res.json().error, /decomposer\.mode/);
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch {}
+	}
+});
+
+test("PATCH plan rejects invalid forEach taskTemplate decomposer policy when runCount=0", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+		const unitId = unitRes.json().teamUnitId;
+		const createRes = await app.inject({ method: "POST", url: "/v1/team/plans", payload: planBody(unitId) });
+		const planId = createRes.json().planId;
+		const res = await app.inject({ method: "PATCH", url: `/v1/team/plans/${planId}`, payload: {
+			tasks: [{
+				id: "process_each", type: "for_each", title: "Process each",
+				input: { text: "placeholder" },
+				acceptance: { rules: ["ok"] },
+				forEach: {
+					itemsFrom: "discover.items",
+					mode: "sequential",
+					taskTemplate: {
+						title: "Process {{item.title}}",
+						input: { text: "Process" },
+						acceptance: { rules: ["ok"] },
+						decomposer: { mode: "bad" },
+					},
+				},
+			}],
+		}});
+		assert.equal(res.statusCode, 400);
+		assert.match(res.json().error, /taskTemplate\.decomposer\.mode/);
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch {}
+	}
+});
+
 // ── P20 Task 3: per-run timeout override ──
 
 test("POST /v1/team/plans/:planId/runs with no body persists maxRunDurationMinutes default", async () => {
