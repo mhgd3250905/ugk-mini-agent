@@ -841,7 +841,7 @@ async function saveTeamUnit() {
 				var tasks = Array.isArray(safePlan.tasks) ? safePlan.tasks : [];
 				var kind = planKindLabel(safePlan);
 				var activeRun = activeRunForPlan(safePlan.planId, runs);
-				var latestRun = activeRun ? activeRun : (latestRunForPlan(safePlan.planId, runs) || (runs && runs.length ? runs[0] : null));
+				var latestRun = activeRun ? activeRun : latestRunForPlan(safePlan.planId, runs);
 				var runCount = runsForPlan(safePlan.planId, runs).length || safePlan.runCount || 0;
 				var isActive = !!activeRun;
 				var isFailed = latestRun && (latestRun.status === 'failed' || latestRun.status === 'completed_with_failures');
@@ -1487,9 +1487,43 @@ async function savePlan() {
 	} catch (e) { showError(e.message); }
 }
 
+function promptAction(opts) {
+	return new Promise(function(resolve) {
+		var modal = document.getElementById('team-prompt-modal');
+		var msg = document.getElementById('prompt-message');
+		var input = document.getElementById('prompt-input');
+		var okBtn = document.getElementById('prompt-ok');
+		var cancelBtn = document.getElementById('prompt-cancel');
+		if (!modal || !input) { resolve(null); return; }
+		if (msg) msg.textContent = opts.message || '';
+		input.value = opts.default != null ? String(opts.default) : '';
+		modal.style.display = 'flex';
+		input.focus();
+		function cleanup() {
+			modal.style.display = 'none';
+			okBtn.removeEventListener('click', onOk);
+			cancelBtn.removeEventListener('click', onCancel);
+			modal.removeEventListener('click', onBg);
+		}
+		function onOk() { var v = input.value; cleanup(); resolve(v); }
+		function onCancel() { cleanup(); resolve(null); }
+		function onBg(e) { if (e.target === modal) { cleanup(); resolve(null); } }
+		okBtn.addEventListener('click', onOk);
+		cancelBtn.addEventListener('click', onCancel);
+		modal.addEventListener('click', onBg);
+	});
+}
+
 async function startRun(planId) {
+	var timeoutStr = await promptAction({ message: '设置运行超时（分钟），留空使用默认值 100 分钟', default: 100 });
+	if (timeoutStr === null) return;
+	var timeout = timeoutStr.trim() === '' ? 100 : Number(timeoutStr);
+	if (!Number.isFinite(timeout) || timeout <= 0 || timeout > 1440) {
+		showError('超时值必须为 1~1440 之间的数字');
+		return;
+	}
 	try {
-		await api('/plans/' + planId + '/runs', { method: 'POST' });
+		await api('/plans/' + planId + '/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ maxRunDurationMinutes: timeout }) });
 		if (_selectedPlanId) {
 			loadRuns();
 			setTimeout(function() { openPlanDetail(planId); }, 1500);
@@ -1762,6 +1796,16 @@ loadAgents().then(function() {
 		</div>
 	</div>
 </div>
+t<div id="team-prompt-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:150;justify-content:center;align-items:center">
+		<div class="confirm-box">
+			<p id="prompt-message"></p>
+			<input type="number" id="prompt-input" min="1" max="1440" style="width:100%;padding:8px;margin:8px 0;border:1px solid var(--border);border-radius:6px;font-size:14px" />
+			<div class="confirm-actions">
+				<button class="btn" style="background:var(--border);color:var(--text)" id="prompt-cancel">ȡ消</button>
+				<button class="btn btn-primary" id="prompt-ok">确定</button>
+			</div>
+		</div>
+	</div>
 </body>
 </html>`;
 }

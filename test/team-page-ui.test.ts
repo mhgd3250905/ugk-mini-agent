@@ -1776,9 +1776,11 @@ test("P19-T2: active run card shows current task summary", () => {
 test("P19-T2: failed plan card is visually distinct from normal completed", () => {
 	const render = extractDashboardCardRenderer();
 	// Only failed run as latest
-	const failedOnly = dashRuns.filter(r => r.status === "failed");
 	// Reset runCount for the failed plan to be more comparable
 	const failedPlan = { ...dashPlan, planId: "plan_failed", runCount: 1 };
+	const failedOnly = dashRuns
+		.filter(r => r.status === "failed")
+		.map(r => ({ ...r, planId: failedPlan.planId }));
 	const html = render(failedPlan, failedOnly);
 	assert.match(html, /plan-card-failed|badge-fail/);
 });
@@ -1796,6 +1798,19 @@ test("P19-T2: dashboard card without runs shows empty state summary", () => {
 	const html = render(noRunPlan, []);
 	assert.match(html, /plan-dashboard-card/);
 	assert.match(html, /0 次运行/);
+});
+
+test("P19-fix: dashboard card without own runs does not show another plan run", () => {
+	const render = extractDashboardCardRenderer();
+	const noRunPlan = { ...dashPlan, planId: "plan_without_runs", runCount: 0 };
+	const otherPlanRuns = [
+		{ runId: "run_other_failed", planId: "other_plan", status: "failed", summary: { totalTasks: 1, succeededTasks: 0, failedTasks: 1, cancelledTasks: 0 }, currentTaskId: null, activeElapsedMs: 1000, lastError: "other plan failed" },
+	];
+	const html = render(noRunPlan, otherPlanRuns);
+	assert.match(html, /0 次运行/);
+	assert.doesNotMatch(html, /failed/);
+	assert.doesNotMatch(html, /other plan failed/);
+	assert.doesNotMatch(html, /plan-card-failed/);
 });
 
 test("P19-T2: dynamic plan dashboard card labels discovery+for_each", () => {
@@ -2191,4 +2206,24 @@ test("P19-T5: inline scripts remain valid after P19-T5 changes", () => {
 	for (const script of scripts) {
 		assert.doesNotThrow(() => new Function(script), "inline script should be valid JS after P19-T5 changes");
 	}
+});
+
+// ── P20 Task 4: UI create-run timeout override ──
+
+test("P20-T4: startRun function sends maxRunDurationMinutes in request body", () => {
+	const html = renderTeamPage();
+	assert.match(html, /maxRunDurationMinutes/, "startRun should reference maxRunDurationMinutes");
+	assert.match(html, /JSON\.stringify\(\s*\{\s*maxRunDurationMinutes/, "startRun should JSON.stringify with maxRunDurationMinutes");
+});
+
+test("P20-T4: startRun validates timeout range 1-1440", () => {
+	const html = renderTeamPage();
+	assert.match(html, /timeout\s*<=\s*0\s*\|\|\s*timeout\s*>\s*1440/, "should validate 1-1440 range");
+	assert.match(html, /1~1440/, "should show range error message");
+});
+
+test("P20-T4: all startRun call sites use same planId-only signature", () => {
+	const html = renderTeamPage();
+		const calls = [...html.matchAll(/startRun\(.*?planId/g)];
+		assert.ok(calls.length >= 3, `expected at least 3 startRun(planId) calls, found ${calls.length}`);
 });
