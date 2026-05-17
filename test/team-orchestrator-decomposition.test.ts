@@ -66,6 +66,70 @@ async function setup(task: TeamTask, runner: DecompositionCaptureRunner) {
 	return { root, plan, orchestrator, workspace };
 }
 
+async function setupTasks(tasks: TeamTask[], runner: DecompositionCaptureRunner) {
+	const root = await mkdtemp(join(tmpdir(), "team-decomp-"));
+	const planStore = new PlanStore(root);
+	const unitStore = new TeamUnitStore(root);
+	const workspace = new RunWorkspace(root);
+	const unit = await unitStore.create({
+		title: "unit",
+		description: "unit",
+		watcherProfileId: "watcher",
+		workerProfileId: "worker",
+		checkerProfileId: "checker",
+		finalizerProfileId: "finalizer",
+		decomposerProfileId: "decomposer",
+	});
+	const plan = await planStore.create({
+		title: "decomposition plan",
+		defaultTeamUnitId: unit.teamUnitId,
+		goal: { text: "test decomposition" },
+		tasks,
+		outputContract: { text: "final report" },
+	});
+	const orchestrator = new TeamOrchestrator({
+		planStore,
+		teamUnitStore: unitStore,
+		workspace,
+		roleRunner: runner,
+		dataDir: root,
+		maxCheckerRevisions: 3,
+		maxWatcherRevisions: 1,
+		maxRunDurationMinutes: 60,
+	});
+	return { root, plan, orchestrator, workspace };
+}
+
+function decomposedDiscoveryPlan(): TeamTask[] {
+	return [
+		{
+			id: "discover",
+			type: "discovery",
+			title: "Discover items",
+			input: { text: "discover items" },
+			acceptance: { rules: ["output items"] },
+			discovery: { outputKey: "items" },
+			decomposer: { mode: "leaf" },
+		},
+		{
+			id: "process_each",
+			type: "for_each",
+			title: "Process each item",
+			input: { text: "process each" },
+			acceptance: { rules: ["ok"] },
+			forEach: {
+				itemsFrom: "discover.items",
+				mode: "sequential",
+				taskTemplate: {
+					title: "Process {{item.title}}",
+					input: { text: "Process item {{item.id}}" },
+					acceptance: { rules: ["processed {{item.id}}"] },
+				},
+			},
+		},
+	];
+}
+
 test("task with no decomposer executes worker normally", async () => {
 	const runner = new DecompositionCaptureRunner();
 	const { root, plan, orchestrator } = await setup({
@@ -838,6 +902,143 @@ test("decomposed child results are visible in finalizer report", async () => {
 		assert.equal(final.status, "completed");
 		const report = await readFile(join(root, "runs", state.runId, "final-report.md"), "utf8");
 		assert.match(report, /task_1__a: succeeded/);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("decomposed discovery parent feeds downstream for_each from child object outputs", async () => {
+	const runner = new DecompositionCaptureRunner([
+		{
+			decision: "split",
+			reason: "split discovery",
+			children: [
+				{ id: "discover__a", title: "Discover A", input: { text: "discover a" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+				{ id: "discover__b", title: "Discover B", input: { text: "discover b" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+			],
+		},
+	], {
+		checkerOutputs: [
+			{ verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: [{ id: "a", title: "A" }] }) },
+			{ verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: [{ id: "b", title: "B" }] }) },
+		],
+	});
+	const { root, plan, orchestrator } = await setupTasks(decomposedDiscoveryPlan(), runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.status, "completed");
+		assert.equal(final.taskStates.discover?.status, "succeeded");
+		assert.equal(final.taskStates.process_each?.status, "succeeded");
+		assert.equal(final.taskStates["process_each__a"]?.status, "succeeded");
+		assert.equal(final.taskStates["process_each__b"]?.status, "succeeded");
+		assert.ok(!runner.workerTaskIds.includes("discover"), "split discovery parent must not run worker");
+		assert.deepEqual(runner.workerTaskIds, ["discover__a", "discover__b", "process_each__a", "process_each__b"]);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("decomposed discovery aggregation supports direct array child output", async () => {
+	const runner = new DecompositionCaptureRunner([
+		{
+			decision: "split",
+			reason: "split discovery",
+			children: [
+				{ id: "discover__a", title: "Discover A", input: { text: "discover a" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+			],
+		},
+	], {
+		checkerOutputs: [
+			{ verdict: "pass", reason: "ok", resultContent: JSON.stringify([{ id: "a", title: "A" }]) },
+		],
+	});
+	const { root, plan, orchestrator } = await setupTasks(decomposedDiscoveryPlan(), runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.status, "completed");
+		assert.equal(final.taskStates.process_each?.status, "succeeded");
+		assert.equal(final.taskStates["process_each__a"]?.status, "succeeded");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("malformed decomposed discovery child output fails parent without partial for_each expansion", async () => {
+	const runner = new DecompositionCaptureRunner([
+		{
+			decision: "split",
+			reason: "split discovery",
+			children: [
+				{ id: "discover__a", title: "Discover A", input: { text: "discover a" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+				{ id: "discover__b", title: "Discover B", input: { text: "discover b" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+			],
+		},
+	], {
+		checkerOutputs: [
+			{ verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: [{ id: "a", title: "A" }] }) },
+			{ verdict: "pass", reason: "ok", resultContent: JSON.stringify({ nope: [{ id: "b", title: "B" }] }) },
+		],
+	});
+	const { root, plan, orchestrator, workspace } = await setupTasks(decomposedDiscoveryPlan(), runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.taskStates.discover?.status, "failed");
+		assert.match(final.taskStates.discover?.errorSummary ?? "", /failed to aggregate decomposed discovery output from child discover__b/);
+		assert.equal(final.taskStates.process_each?.status, "failed");
+		assert.equal(final.taskStates["process_each__a"], undefined);
+		const expansion = await workspace.readExpansion(state.runId, "process_each");
+		assert.equal(expansion, null);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("existing decomposed discovery record aggregates on resume path without rerunning decomposer", async () => {
+	const runner = new DecompositionCaptureRunner([
+		{ decision: "no_split", reason: "should not run", children: [] },
+	], {
+		checkerOutputs: [
+			{ verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: [{ id: "a", title: "A" }] }) },
+			{ verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: [{ id: "b", title: "B" }] }) },
+		],
+	});
+	const { root, plan, orchestrator, workspace } = await setupTasks(decomposedDiscoveryPlan(), runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		await workspace.writeDecomposition(state.runId, {
+			schemaVersion: "team/task-decomposition-1",
+			parentTaskId: "discover",
+			mode: "leaf",
+			decision: "split",
+			reason: "persisted split",
+			decomposedAt: new Date().toISOString(),
+			children: [
+				{
+					taskId: "discover__a",
+					title: "Discover A",
+					task: { id: "discover__a", title: "Discover A", input: { text: "discover a" }, acceptance: { rules: ["ok"] }, parentTaskId: "discover", generated: true, decomposer: { mode: "none" } },
+				},
+				{
+					taskId: "discover__b",
+					title: "Discover B",
+					task: { id: "discover__b", title: "Discover B", input: { text: "discover b" }, acceptance: { rules: ["ok"] }, parentTaskId: "discover", generated: true, decomposer: { mode: "none" } },
+				},
+			],
+		});
+
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.status, "completed");
+		assert.deepEqual(runner.decomposerTaskIds, []);
+		assert.equal(final.taskStates.process_each?.status, "succeeded");
+		assert.equal(final.taskStates["process_each__a"]?.status, "succeeded");
+		assert.equal(final.taskStates["process_each__b"]?.status, "succeeded");
 	} finally {
 		await rm(root, { recursive: true });
 	}
