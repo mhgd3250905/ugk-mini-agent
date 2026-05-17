@@ -694,6 +694,49 @@ async function saveTeamUnit() {
 			$('plan-json-modal').classList.remove('open');
 		}
 
+			// P19 Dashboard helpers
+			var ACTIVE_RUN_STATUSES = { queued: 1, running: 1, paused: 1 };
+			var TERMINAL_RUN_STATUSES = { completed: 1, completed_with_failures: 1, failed: 1, cancelled: 1 };
+
+			function isActiveRunStatus(status) { return !!ACTIVE_RUN_STATUSES[status]; }
+			function isTerminalRunStatus(status) { return !!TERMINAL_RUN_STATUSES[status]; }
+
+			function runsForPlan(planId, runs) {
+				if (!runs) return [];
+				return runs.filter(function(r) { return r.planId === planId; });
+			}
+
+			function activeRunForPlan(planId, runs) {
+				var planRuns = runsForPlan(planId, runs);
+				for (var i = 0; i < planRuns.length; i++) {
+					if (isActiveRunStatus(planRuns[i].status)) return planRuns[i];
+				}
+				return null;
+			}
+
+			function latestRunForPlan(planId, runs) {
+				var planRuns = runsForPlan(planId, runs);
+				if (!planRuns.length) return null;
+				return planRuns[0];
+			}
+
+			function runProgressSummary(run) {
+				if (!run || !run.summary) return { done: 0, total: 0, pct: 0, succeeded: 0, failed: 0, cancelled: 0 };
+				var s = run.summary;
+				var done = (s.succeededTasks || 0) + (s.failedTasks || 0) + (s.cancelledTasks || 0);
+				var total = s.totalTasks || 0;
+				return { done: done, total: total, pct: total ? Math.round(done / total * 100) : 0, succeeded: s.succeededTasks || 0, failed: s.failedTasks || 0, cancelled: s.cancelledTasks || 0 };
+			}
+
+			function planKindLabel(plan) {
+				var tasks = plan && Array.isArray(plan.tasks) ? plan.tasks : [];
+				if (isDynamicPlan(tasks)) return 'discovery + for_each';
+				return 'normal';
+			}
+
+			// P19 Dashboard UI state
+			var _selectedPlanId = null;
+			var _expandedRunIds = {};
 
 			function isDynamicPlan(tasks) {
 				if (!tasks || tasks.length < 2) return false;

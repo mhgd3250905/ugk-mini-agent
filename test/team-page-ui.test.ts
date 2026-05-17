@@ -1559,3 +1559,138 @@ test("P16-T1: for_each itemsFrom is derived from discovery task id + output key"
 		assert.doesNotThrow(() => renderPlanCard({ planId: "old", tasks: [{ id: "t1", title: "T" }] }));
 		assert.doesNotThrow(() => renderPlanCard({ planId: "old2", tasks: [] }));
 	});
+
+// ── P19 Task 1: Dashboard data model helpers ──
+
+function extractDashboardHelpers(): Record<string, Function> {
+	const script = extractScript();
+	const start = script.indexOf("function escapeHtml");
+	const end = script.indexOf("async function loadPlans");
+	assert.ok(start >= 0, "should find escapeHtml start");
+	assert.ok(end > start, "should find loadPlans boundary");
+	const source = script.slice(start, end);
+	const fn = new Function(source + `
+		return {
+			isActiveRunStatus, isTerminalRunStatus,
+			runsForPlan, latestRunForPlan, activeRunForPlan,
+			runProgressSummary, planKindLabel
+		};
+	`);
+	return fn();
+}
+
+const samplePlan = {
+	planId: "plan_test", title: "Test Plan",
+	goal: { text: "Test goal" }, tasks: [
+		{ id: "t1", title: "Task 1", input: { text: "do" }, acceptance: { rules: ["ok"] } },
+		{ id: "t2", title: "Task 2", input: { text: "do2" }, acceptance: { rules: ["ok2"] } },
+	],
+	outputContract: { text: "out" }, runCount: 2,
+};
+
+const sampleDynamicPlan = {
+	planId: "plan_dyn", title: "Dynamic Plan",
+	goal: { text: "discover" }, tasks: [
+		{ id: "disc", type: "discovery", title: "Discover", input: { text: "find" }, acceptance: { rules: ["JSON"] }, discovery: { outputKey: "items" } },
+		{ id: "proc", type: "for_each", title: "Process", input: { text: "p" }, acceptance: { rules: ["ok"] }, forEach: { itemsFrom: "disc.items", mode: "sequential", taskTemplate: { title: "P {{item.title}}", input: { text: "p" }, acceptance: { rules: ["ok"] } } } },
+	],
+	outputContract: { text: "report" }, runCount: 1,
+};
+
+const sampleRuns = [
+	{ runId: "run_active", planId: "plan_test", status: "running", summary: { totalTasks: 2, succeededTasks: 1, failedTasks: 0, cancelledTasks: 0 }, currentTaskId: "t2", activeElapsedMs: 30000 },
+	{ runId: "run_completed", planId: "plan_test", status: "completed", summary: { totalTasks: 2, succeededTasks: 2, failedTasks: 0, cancelledTasks: 0 }, currentTaskId: null, activeElapsedMs: 60000 },
+	{ runId: "run_other", planId: "plan_other", status: "queued", summary: { totalTasks: 1, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0 }, currentTaskId: null, activeElapsedMs: 0 },
+];
+
+test("P19-T1: isActiveRunStatus returns true for queued/running/paused", () => {
+	const h = extractDashboardHelpers();
+	assert.equal(h.isActiveRunStatus("queued"), true);
+	assert.equal(h.isActiveRunStatus("running"), true);
+	assert.equal(h.isActiveRunStatus("paused"), true);
+	assert.equal(h.isActiveRunStatus("completed"), false);
+	assert.equal(h.isActiveRunStatus("failed"), false);
+	assert.equal(h.isActiveRunStatus("cancelled"), false);
+});
+
+test("P19-T1: isTerminalRunStatus returns true for terminal statuses", () => {
+	const h = extractDashboardHelpers();
+	assert.equal(h.isTerminalRunStatus("completed"), true);
+	assert.equal(h.isTerminalRunStatus("completed_with_failures"), true);
+	assert.equal(h.isTerminalRunStatus("failed"), true);
+	assert.equal(h.isTerminalRunStatus("cancelled"), true);
+	assert.equal(h.isTerminalRunStatus("running"), false);
+	assert.equal(h.isTerminalRunStatus("queued"), false);
+	assert.equal(h.isTerminalRunStatus("paused"), false);
+});
+
+test("P19-T1: runsForPlan filters runs by planId", () => {
+	const h = extractDashboardHelpers();
+	const result = h.runsForPlan("plan_test", sampleRuns) as any[];
+	assert.equal(result.length, 2);
+	assert.equal(result[0].runId, "run_active");
+	assert.equal(result[1].runId, "run_completed");
+	const empty = h.runsForPlan("nonexistent", sampleRuns) as any[];
+	assert.equal(empty.length, 0);
+});
+
+test("P19-T1: activeRunForPlan selects active over terminal", () => {
+	const h = extractDashboardHelpers();
+	const run = h.activeRunForPlan("plan_test", sampleRuns) as any;
+	assert.ok(run, "should find an active run");
+	assert.equal(run.runId, "run_active");
+	assert.equal(run.status, "running");
+});
+
+test("P19-T1: latestRunForPlan returns most recent run when no active", () => {
+	const h = extractDashboardHelpers();
+	const onlyCompleted = sampleRuns.filter(r => r.planId === "plan_test" && r.status === "completed");
+	const run = h.latestRunForPlan("plan_test", onlyCompleted) as any;
+	assert.ok(run, "should find latest run");
+	assert.equal(run.runId, "run_completed");
+});
+
+test("P19-T1: latestRunForPlan returns null when no runs exist", () => {
+	const h = extractDashboardHelpers();
+	const run = h.latestRunForPlan("nonexistent", sampleRuns);
+	assert.equal(run, null);
+});
+
+test("P19-T1: runProgressSummary computes done/total/pct", () => {
+	const h = extractDashboardHelpers();
+	const summary = h.runProgressSummary(sampleRuns[0]) as any;
+	assert.equal(summary.done, 1);
+	assert.equal(summary.total, 2);
+	assert.equal(summary.pct, 50);
+	assert.equal(summary.succeeded, 1);
+	assert.equal(summary.failed, 0);
+	assert.equal(summary.cancelled, 0);
+});
+
+test("P19-T1: runProgressSummary handles zero tasks", () => {
+	const h = extractDashboardHelpers();
+	const run = { runId: "r1", planId: "p1", status: "completed", summary: { totalTasks: 0, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0 } };
+	const summary = h.runProgressSummary(run) as any;
+	assert.equal(summary.done, 0);
+	assert.equal(summary.total, 0);
+	assert.equal(summary.pct, 0);
+});
+
+test("P19-T1: planKindLabel returns normal for normal plan", () => {
+	const h = extractDashboardHelpers();
+	assert.equal(h.planKindLabel(samplePlan), "normal");
+});
+
+test("P19-T1: planKindLabel returns discovery label for dynamic plan", () => {
+	const h = extractDashboardHelpers();
+	const label = h.planKindLabel(sampleDynamicPlan) as string;
+	assert.match(label, /discovery|发现|动态/);
+});
+
+test("P19-T1: planKindLabel handles missing/malformed tasks", () => {
+	const h = extractDashboardHelpers();
+	assert.doesNotThrow(() => h.planKindLabel({}));
+	assert.doesNotThrow(() => h.planKindLabel({ tasks: null }));
+	assert.doesNotThrow(() => h.planKindLabel({ tasks: "not array" }));
+	assert.equal(h.planKindLabel({ tasks: [] }), "normal");
+});
