@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-17 — Team Runtime State Write Lock
+
+- **主题**: 修复真实运行中并发保存 run state 导致 `getState()` 瞬时返回 null 的问题
+- **影响范围**: `src/team/run-workspace.ts`, `test/team-run-workspace.test.ts`
+- **变更**:
+  - `saveState()` 使用 run-scoped `.state.lock` 串行化 `state.json` 写入，避免 worker heartbeat / orchestrator / HTTP control 并发 rename 同一个 state 文件
+  - `saveState()` 使用唯一 temp 文件名，不再共享 `state.json.tmp`
+  - `getState()` 对短暂读取失败做小幅重试，避免把 rename 窗口误判为 run 不存在
+- **测试**: 新增并发 `saveState()` 回归测试，覆盖 Windows 下 rename 竞争和遗留 tmp 文件清理
+
+---
+
 ## 2026-05-17 — P21 Runtime Fix: Discovery Result Fallback
 
 - **主题**: 修复 discovery → for_each 在 accepted result 为自然语言摘要时无法展开的问题

@@ -129,6 +129,36 @@ test("listStates returns created runs", async () => {
 	}
 });
 
+test("concurrent saveState calls keep state readable and do not share temp files", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		const writes = Array.from({ length: 20 }, (_, index) => {
+			const next = {
+				...state,
+				status: "running" as const,
+				currentTaskId: index % 2 === 0 ? "task_1" : "task_2",
+				updatedAt: `2026-05-17T00:00:${String(index).padStart(2, "0")}.000Z`,
+			};
+			return ws.saveState(next);
+		});
+
+		await Promise.all(writes);
+
+		const got = await ws.getState(state.runId);
+		assert.ok(got);
+		assert.equal(got.runId, state.runId);
+		assert.equal(got.status, "running");
+		assert.ok(got.taskStates["task_1"]);
+		assert.ok(got.taskStates["task_2"]);
+		const files = await import("node:fs/promises").then(fs => fs.readdir(join(root, "runs", state.runId)));
+		assert.equal(files.filter(file => file.includes("state.json.") && file.endsWith(".tmp")).length, 0);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
 // ── P5: attempt metadata tests ──
 
 test("createAttempt writes full metadata defaults", async () => {

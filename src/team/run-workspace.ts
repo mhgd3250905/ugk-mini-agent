@@ -1,4 +1,5 @@
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { join } from "node:path";
 import type { TeamPlan, TeamProgress, TeamRunState, TeamTaskState, TeamAttemptMetadata, AttemptStatus, AttemptLifecyclePhase, TeamTask, TaskExpansionRecord, TaskDecompositionRecord } from "./types.js";
@@ -104,15 +105,27 @@ export class RunWorkspace {
 	}
 
 	async getState(runId: string): Promise<TeamRunState | null> {
-		return this.readJson<TeamRunState>(join(this.rootDir, "runs", runId, "state.json"));
+		const filePath = join(this.rootDir, "runs", runId, "state.json");
+		for (let attempt = 0; attempt < 3; attempt++) {
+			const state = await this.readJson<TeamRunState>(filePath);
+			if (state) return state;
+			if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 5));
+		}
+		return null;
 	}
 
 	async saveState(state: TeamRunState): Promise<void> {
-		const filePath = join(this.rootDir, "runs", state.runId, "state.json");
-		const tmp = filePath + ".tmp";
-		await writeFile(tmp, JSON.stringify(state, null, 2), "utf8");
-		await rename(tmp, filePath);
-		this.events.notify(state);
+		await this.withStateWriteLock(state.runId, async () => {
+			const filePath = join(this.rootDir, "runs", state.runId, "state.json");
+			const tmp = `${filePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
+			try {
+				await writeFile(tmp, JSON.stringify(state, null, 2), "utf8");
+				await rename(tmp, filePath);
+			} finally {
+				await rm(tmp, { force: true }).catch(() => {});
+			}
+			this.events.notify(state);
+		});
 	}
 
 	async claimNextRunnableRun(ownerId: string, leaseTtlMs: number): Promise<TeamRunState | null> {
@@ -422,6 +435,27 @@ export class RunWorkspace {
 			}
 		}
 		throw new Error(`run lock busy: ${runId}`);
+	}
+
+	private async withStateWriteLock<T>(runId: string, fn: () => Promise<T>): Promise<T> {
+		const runDir = join(this.rootDir, "runs", runId);
+		await mkdir(runDir, { recursive: true });
+		const lockDir = join(runDir, ".state.lock");
+		for (let attempt = 0; attempt < 100; attempt++) {
+			try {
+				await mkdir(lockDir);
+				try {
+					return await fn();
+				} finally {
+					await rm(lockDir, { recursive: true, force: true });
+				}
+			} catch (error) {
+				const code = (error as NodeJS.ErrnoException).code;
+				if (code !== "EEXIST" && code !== "EPERM") throw error;
+				await new Promise(resolve => setTimeout(resolve, 10));
+			}
+		}
+		throw new Error(`state write lock busy: ${runId}`);
 	}
 	async listAttempts(runId: string, taskId: string): Promise<Array<TeamAttemptMetadata & { files: string[] }>> {
 		const attemptsDir = join(this.rootDir, "runs", runId, "tasks", taskId, "attempts");

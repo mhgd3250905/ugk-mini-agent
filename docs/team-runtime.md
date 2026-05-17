@@ -316,6 +316,7 @@ final report 优先由 finalizer agent 生成。若 finalizer 失败，orchestra
 - Content-Type: `text/event-stream`
 - 连接建立后立即发送当前 state snapshot（`{ type: "snapshot", data: <TeamRunState> }`）
 - 对于 active run（queued/running/paused），服务端优先通过 `RunStateEvents` 订阅同进程 `saveState()` 通知，状态变更后立即推送 snapshot；同时保留 1 秒 change-detect fallback 读取磁盘 state，覆盖独立 worker 进程写入的状态变更
+- `saveState()` 使用 run-scoped `.state.lock` 串行化 `state.json` 写入，并为每次写入使用唯一 temp 文件；`getState()` 会短暂重试 transient 读取失败，避免 Windows rename 窗口或 heartbeat/progress/control 并发写入被误判为 run 丢失
 - run 进入 terminal 状态后发送最终 snapshot 并关闭连接
 - 15 秒 SSE heartbeat 保持连接活跃
 - 客户端断开自动清理 subscription 和 heartbeat
