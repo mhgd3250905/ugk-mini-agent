@@ -2272,3 +2272,98 @@ test("P21-A: renderTeamCard shows decomposer profile row", () => {
 	const html = renderTeamPage();
 	assert.match(html, /任务拆分 Agent.*escapeHtml.*decomposerProfileId/);
 });
+
+// ── P21-D Task 1: Plan Detail Decomposer Badges ──
+
+function extractP21DRenderers(): Record<string, Function> {
+	const script = extractScript();
+	const start = script.indexOf("function escapeHtml");
+	const end = script.indexOf("async function loadPlans");
+	assert.ok(start >= 0, "should find helper source start");
+	assert.ok(end > start, "should find helper source end");
+	const source = script.slice(start, end);
+	const fn = new Function(source + "\nreturn { renderNormalPlanDesign, renderDynamicPlanDesign };\n");
+	return fn();
+}
+
+test("P21-D1: normal plan detail shows leaf decomposer badge", () => {
+	const { renderNormalPlanDesign } = extractP21DRenderers();
+	const html = renderNormalPlanDesign([
+		{
+			id: "reverse_dns",
+			title: "Reverse DNS",
+			input: { text: "Analyze reverse DNS evidence" },
+			acceptance: { rules: ["summarize findings"] },
+			decomposer: { mode: "leaf", maxChildren: 6 },
+		},
+	]);
+	assert.match(html, /decomposer-badge/);
+	assert.match(html, /leaf/);
+	assert.match(html, /任务可拆分/);
+});
+
+test("P21-D1: normal plan detail shows propagate decomposer badge", () => {
+	const { renderNormalPlanDesign } = extractP21DRenderers();
+	const html = renderNormalPlanDesign([
+		{
+			id: "method_planner",
+			title: "Plan per method",
+			input: { text: "Plan method investigation" },
+			acceptance: { rules: ["children are bounded"] },
+			decomposer: { mode: "propagate", maxChildren: 4 },
+		},
+	]);
+	assert.match(html, /propagate/);
+	assert.match(html, /可生成可拆任务/);
+});
+
+test("P21-D1: normal plan detail keeps none decomposer quiet", () => {
+	const { renderNormalPlanDesign } = extractP21DRenderers();
+	const html = renderNormalPlanDesign([
+		{
+			id: "summary",
+			title: "Summarize",
+			input: { text: "Write summary" },
+			acceptance: { rules: ["clear"] },
+			decomposer: { mode: "none" },
+		},
+	]);
+	assert.doesNotMatch(html, /decomposer-badge/);
+	assert.doesNotMatch(html, /任务可拆分|可生成可拆任务/);
+});
+
+test("P21-D1: dynamic plan detail shows template decomposer badge and escapes text", () => {
+	const { renderDynamicPlanDesign } = extractP21DRenderers();
+	const html = renderDynamicPlanDesign([
+		{
+			id: "discover",
+			type: "discovery",
+			title: "<script>discover</script>",
+			input: { text: "find methods" },
+			acceptance: { rules: ["json"] },
+			discovery: { outputKey: "methods" },
+		},
+		{
+			id: "process_each",
+			type: "for_each",
+			title: "Process each",
+			input: { text: "placeholder" },
+			acceptance: { rules: ["ok"] },
+			forEach: {
+				itemsFrom: "discover.methods",
+				mode: "sequential",
+				taskTemplate: {
+					title: "Investigate <img src=x onerror=bad>",
+					input: { text: "Check method" },
+					acceptance: { rules: ["done"] },
+					decomposer: { mode: "leaf" },
+				},
+			},
+		},
+	]);
+	assert.match(html, /leaf/);
+	assert.match(html, /任务可拆分/);
+	assert.doesNotMatch(html, /<script>/);
+	assert.doesNotMatch(html, /<img[^>]+onerror/);
+	assert.match(html, /&lt;img src=x onerror=bad&gt;/);
+});

@@ -779,6 +779,20 @@ async function saveTeamUnit() {
 				return 'normal';
 			}
 
+			function taskDecomposerMode(task) {
+				var mode = task && task.decomposer && task.decomposer.mode ? String(task.decomposer.mode) : 'none';
+				return mode === 'leaf' || mode === 'propagate' ? mode : 'none';
+			}
+
+			function renderDecomposerModeBadge(task) {
+				var mode = taskDecomposerMode(task);
+				if (mode === 'none') return '';
+				var label = mode === 'leaf' ? '任务可拆分' : '可生成可拆任务';
+				var color = mode === 'leaf' ? 'var(--warn)' : 'var(--accent)';
+				var bg = mode === 'leaf' ? 'rgba(245,158,11,0.15)' : 'rgba(59,130,246,0.15)';
+				return ' <span class="badge decomposer-badge" style="background:' + bg + ';color:' + color + ';font-size:11px">' + escapeHtml(mode) + ' · ' + label + '</span>';
+			}
+
 			// P19 Dashboard UI state
 			var _selectedPlanId = null;
 			var _expandedRunIds = {};
@@ -969,6 +983,7 @@ async function saveTeamUnit() {
 				html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
 				html += '<span class="badge" style="background:rgba(37,99,235,0.15);color:#3b82f6;font-size:11px">discovery</span>';
 				html += '<span style="font-size:13px">' + escapeHtml(discTask ? discTask.title || '' : '') + '</span>';
+				if (discTask) html += renderDecomposerModeBadge(discTask);
 				if (discTask && discTask.discovery) {
 					html += '<span class="plan-chip" style="font-size:10px">output: ' + escapeHtml(discTask.discovery.outputKey || '') + '</span>';
 				}
@@ -977,6 +992,7 @@ async function saveTeamUnit() {
 				html += '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">';
 				html += '<span class="badge" style="background:rgba(124,58,237,0.15);color:#7c3aed;font-size:11px">for_each</span>';
 				html += '<span style="font-size:13px">' + escapeHtml(feTask ? feTask.title || '' : '') + '</span>';
+				if (feTask) html += renderDecomposerModeBadge(feTask);
 				if (feTask && feTask.forEach) {
 					html += '<span class="plan-chip" style="font-size:10px">\u2190 ' + escapeHtml(feTask.forEach.itemsFrom || '') + '</span>';
 				}
@@ -985,6 +1001,7 @@ async function saveTeamUnit() {
 					var tmpl = feTask.forEach.taskTemplate;
 					html += '<details class="plan-task-details" style="margin-top:8px"><summary>\u5b50\u4efb\u52a1\u6a21\u677f</summary><div class="plan-task-detail-content">';
 					html += '<p class="plan-task-detail-input" style="color:#7c3aed">\u6807\u9898: ' + escapeHtml(tmpl.title || '') + '</p>';
+					html += renderDecomposerModeBadge(tmpl);
 					if (tmpl.input && tmpl.input.text) html += '<p class="plan-task-detail-input">\u6307\u4ee4: ' + escapeHtml(tmpl.input.text) + '</p>';
 					html += '</div></details>';
 				}
@@ -1000,6 +1017,7 @@ async function saveTeamUnit() {
 					html += '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-top:1px solid var(--border)">';
 					html += '<span style="color:var(--muted);font-size:11px;min-width:24px">#' + (i + 1) + '</span>';
 					html += '<span style="font-size:13px">' + escapeHtml(t.title || t.id || '') + '</span>';
+					html += renderDecomposerModeBadge(t);
 					var inputText = t.input && t.input.text ? t.input.text : '';
 					var rules = t.acceptance && Array.isArray(t.acceptance.rules) ? t.acceptance.rules : [];
 					var meta = [];
