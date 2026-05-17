@@ -2254,6 +2254,15 @@ test("P21-A: saveTeamUnit payload includes decomposerProfileId", () => {
 	assert.match(html, /decomposerProfileId.*tu-decomposer/);
 });
 
+test("P21-A-fix: new team decomposer defaults to selected worker and follows worker changes", () => {
+	const html = renderTeamPage();
+	assert.match(html, /renderProfileOptions\('tu-decomposer', unit \? \(unit\.decomposerProfileId \|\| unit\.workerProfileId\) : \$\('tu-worker'\)\.value\)/);
+	assert.match(html, /function syncDecomposerWithWorker\(\)/);
+	assert.match(html, /if \(\$\('tu-editing-id'\)\.value\) return/);
+	assert.match(html, /\$\('tu-decomposer'\)\.value = \$\('tu-worker'\)\.value/);
+	assert.match(html, /id="tu-worker" onchange="syncDecomposerWithWorker\(\)"/);
+});
+
 test("P21-A: openTeamUnitModal renders decomposer profile options", () => {
 	const html = renderTeamPage();
 	assert.match(html, /renderProfileOptions.*tu-decomposer/);

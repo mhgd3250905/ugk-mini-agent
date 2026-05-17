@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-17 — P21-A Review Fixes
+
+- **主题**: 修复 Decomposer role foundation 的 UI 默认值和换行噪音
+- **影响范围**: `src/ui/team-page.ts`, `test/team-page-ui.test.ts`, P21-A 相关源码/测试文件换行规范化
+- **变更**:
+  - TeamUnit 新建弹窗中，Decomposer Agent 默认跟随 Worker Agent；新建模式下切换 Worker 时同步 Decomposer
+  - 编辑已有 TeamUnit 时不自动覆盖 decomposer 配置
+  - 统一 P21-A 涉及文件的 LF 换行，恢复 `git diff --check` 可用性
+- **测试**: 增加 UI 回归断言，覆盖新建团队的 decomposer 默认跟随逻辑
+
+---
+
 ## 2026-05-17 — P21-A Decomposer Role Foundation
 
 - **主题**: TeamUnit 增加第五角色 Decomposer 工位

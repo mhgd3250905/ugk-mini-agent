@@ -270,7 +270,7 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 		<div class="profile-grid" style="margin-top:12px">
 			<div class="field">
 				<label>执行 Agent (Worker)</label>
-				<select id="tu-worker"></select>
+				<select id="tu-worker" onchange="syncDecomposerWithWorker()"></select>
 			</div>
 			<div class="field">
 				<label>验收 Agent (Checker)</label>
@@ -602,8 +602,13 @@ function openTeamUnitModal(unit) {
 	renderProfileOptions('tu-checker', unit ? unit.checkerProfileId : 'main');
 	renderProfileOptions('tu-watcher', unit ? unit.watcherProfileId : 'main');
 	renderProfileOptions('tu-finalizer', unit ? unit.finalizerProfileId : 'main');
-	renderProfileOptions('tu-decomposer', unit ? (unit.decomposerProfileId || unit.workerProfileId) : 'main');
+	renderProfileOptions('tu-decomposer', unit ? (unit.decomposerProfileId || unit.workerProfileId) : $('tu-worker').value);
 	$('teamunit-modal').classList.add('open');
+}
+
+function syncDecomposerWithWorker() {
+	if ($('tu-editing-id').value) return;
+	$('tu-decomposer').value = $('tu-worker').value;
 }
 
 function closeTeamUnitModal() {
@@ -619,7 +624,7 @@ async function saveTeamUnit() {
 		checkerProfileId: $('tu-checker').value,
 		watcherProfileId: $('tu-watcher').value,
 		finalizerProfileId: $('tu-finalizer').value,
-	decomposerProfileId: $('tu-decomposer').value,
+		decomposerProfileId: $('tu-decomposer').value,
 	};
 	if (!payload.title) { showError('请输入名称'); return; }
 	try {
