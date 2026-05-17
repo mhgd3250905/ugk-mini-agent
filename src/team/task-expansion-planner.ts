@@ -20,10 +20,22 @@ function sanitizeIdPart(raw: string): string {
 	return raw.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
 }
 
+function formatItemValue(value: unknown): string {
+	if (value === null || value === undefined) return "";
+	if (typeof value === "object") return JSON.stringify(value);
+	return String(value);
+}
+
 function replaceTemplate(template: string, item: Record<string, unknown>, itemJson: string): string {
 	let result = template;
-	result = result.replace(/\{\{item\.id\}\}/g, String(item.id ?? ""));
-	result = result.replace(/\{\{item\.title\}\}/g, String(item.title ?? item.id ?? ""));
+	// Generic {{item.<field>}} — replace for any top-level key
+	result = result.replace(/\{\{item\.([a-zA-Z_][a-zA-Z0-9_]*)\}\}/g, (_match, field: string) => {
+		if (field === "title" && (item[field] === undefined || item[field] === null)) {
+			return formatItemValue(item.id);
+		}
+		return formatItemValue(item[field]);
+	});
+	// {{item}} — full JSON
 	result = result.replace(/\{\{item\}\}/g, itemJson);
 	return result;
 }

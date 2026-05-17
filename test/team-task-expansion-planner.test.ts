@@ -205,3 +205,173 @@ test("rejects parent without forEach config", async () => {
 		{ message: "parent task has no forEach config" },
 	);
 });
+
+// ── P20 Task 1: generic {{item.<field>}} replacement ──
+
+test("{{item.description}} in input.text is replaced", async () => {
+	const parentTask: TeamTask = {
+		id: "fe",
+		type: "for_each",
+		title: "FE",
+		input: { text: "p" },
+		acceptance: { rules: ["ok"] },
+		forEach: {
+			itemsFrom: "d.items",
+			mode: "sequential",
+			taskTemplate: {
+				title: "Process {{item.id}}",
+				input: { text: "Description: {{item.description}}" },
+				acceptance: { rules: ["ok"] },
+			},
+		},
+	};
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask,
+		items: [{ id: "i1", title: "T", description: "A detailed description" }],
+	});
+	assert.equal(result.children[0]!.input.text, "Description: A detailed description");
+});
+
+test("custom field {{item.estimatedMinutes}} is replaced in acceptance rules", async () => {
+	const parentTask: TeamTask = {
+		id: "fe",
+		type: "for_each",
+		title: "FE",
+		input: { text: "p" },
+		acceptance: { rules: ["ok"] },
+		forEach: {
+			itemsFrom: "d.items",
+			mode: "sequential",
+			taskTemplate: {
+				title: "Process {{item.id}}",
+				input: { text: "Do work" },
+				acceptance: { rules: ["complete within {{item.estimatedMinutes}} minutes"] },
+			},
+		},
+	};
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask,
+		items: [{ id: "i1", title: "T", estimatedMinutes: 30 }],
+	});
+	assert.equal(result.children[0]!.acceptance.rules[0], "complete within 30 minutes");
+});
+
+test("missing {{item.unknown}} becomes empty string", async () => {
+	const parentTask: TeamTask = {
+		id: "fe",
+		type: "for_each",
+		title: "FE",
+		input: { text: "p" },
+		acceptance: { rules: ["ok"] },
+		forEach: {
+			itemsFrom: "d.items",
+			mode: "sequential",
+			taskTemplate: {
+				title: "Process {{item.id}}",
+				input: { text: "Value: {{item.unknown}}" },
+				acceptance: { rules: ["ok"] },
+			},
+		},
+	};
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask,
+		items: [{ id: "i1", title: "T" }],
+	});
+	assert.equal(result.children[0]!.input.text, "Value: ");
+});
+
+test("object field {{item.meta}} becomes JSON text", async () => {
+	const parentTask: TeamTask = {
+		id: "fe",
+		type: "for_each",
+		title: "FE",
+		input: { text: "p" },
+		acceptance: { rules: ["ok"] },
+		forEach: {
+			itemsFrom: "d.items",
+			mode: "sequential",
+			taskTemplate: {
+				title: "Process {{item.id}}",
+				input: { text: "Meta: {{item.meta}}" },
+				acceptance: { rules: ["ok"] },
+			},
+		},
+	};
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask,
+		items: [{ id: "i1", title: "T", meta: { key: "val", nested: true } }],
+	});
+	const text = result.children[0]!.input.text;
+	assert.ok(text.includes('"key":"val"'), `expected JSON in "${text}"`);
+	assert.ok(text.includes('"nested":true'), `expected nested in "${text}"`);
+});
+
+test("{{item}} still inserts the full item JSON after generic replacement", async () => {
+	const parentTask: TeamTask = {
+		id: "fe",
+		type: "for_each",
+		title: "FE",
+		input: { text: "p" },
+		acceptance: { rules: ["ok"] },
+		forEach: {
+			itemsFrom: "d.items",
+			mode: "sequential",
+			taskTemplate: {
+				title: "Item: {{item}}",
+				input: { text: "Full: {{item}}" },
+				acceptance: { rules: ["ok"] },
+			},
+		},
+	};
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask,
+		items: [{ id: "i1", description: "hello" }],
+	});
+	const child = result.children[0]!;
+	assert.ok(child.title.includes('"description":"hello"'), "full item JSON in title");
+	assert.ok(child.input.text.includes('"id":"i1"'), "full item JSON in input.text");
+});
+
+test("generic {{item.<field>}} in payload string values is replaced", async () => {
+	const parentTask: TeamTask = {
+		id: "fe",
+		type: "for_each",
+		title: "FE",
+		input: { text: "p" },
+		acceptance: { rules: ["ok"] },
+		forEach: {
+			itemsFrom: "d.items",
+			mode: "sequential",
+			taskTemplate: {
+				title: "Process {{item.id}}",
+				input: { text: "Do work", payload: { target: "{{item.url}}", note: "{{item.description}}" } },
+				acceptance: { rules: ["ok"] },
+			},
+		},
+	};
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_1",
+		planId: "plan_1",
+		parentTask,
+		items: [{ id: "i1", url: "https://example.com", description: "test desc" }],
+	});
+	const payload = result.children[0]!.input.payload!;
+	assert.equal(payload!.target, "https://example.com");
+	assert.equal(payload!.note, "test desc");
+});
