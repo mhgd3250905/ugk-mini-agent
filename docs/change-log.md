@@ -12,6 +12,27 @@
 
 ---
 
+## 2026-05-17 — P21-B Decomposer Schema, Runner, and Persistence
+
+- **主题**: 增加 task-level decomposer schema、runner contract 和 decomposition record 持久化
+- **影响范围**: `src/team/types.ts`, `src/team/plan-store.ts`, `src/team/role-runner.ts`, `src/team/agent-profile-role-runner.ts`, `src/team/run-workspace.ts`, Team 相关测试, `docs/team-runtime.md`
+- **变更**:
+  - `TeamTask` 增加可选 `decomposer: { mode: "none" | "leaf" | "propagate"; maxChildren?: number }`
+  - `PlanStore.create()` / `updateEditablePlan()` 校验 task decomposer 和 `forEach.taskTemplate.decomposer`
+  - `TeamRoleRunner` 增加 `runDecomposer()`；`MockRoleRunner` 默认返回 `no_split`
+  - `AgentProfileRoleRunner.runDecomposer()` 使用 `decomposerProfileId`，通过 strict JSON prompt/parser 解析 `split` / `no_split`
+  - decomposer 解析失败安全返回 `no_split`，同时保留 role `runtimeContext`
+  - `RunWorkspace` 增加 `writeDecomposition()` / `readDecomposition()`，记录完整 child `TeamTask` 定义
+  - **本阶段不在 orchestrator 中调用 decomposer，不生成或执行 child task states**
+- **提交**:
+  - `f005c1f feat(team): add task decomposer schema validation`
+  - `a212b24 feat(team): add decomposer runner contract`
+  - `b7c1328 feat(team): run decomposer with agent profile`
+  - `ce3c3e2 feat(team): persist task decomposition records`
+- **测试**: 新增/更新 plan store、routes、mock runner、真实 runner、workspace persistence 和 fake runner 类型覆盖；重点证明 create/PATCH/runner/persistence 的真实流程
+
+---
+
 ## 2026-05-17 — P21-A Review Fixes
 
 - **主题**: 修复 Decomposer role foundation 的 UI 默认值和换行噪音
