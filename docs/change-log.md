@@ -12,6 +12,22 @@
 
 ---
 
+## 2026-05-17 — P21-C Controlled Runtime Decomposition
+
+- **主题**: Orchestrator 启用受控运行时拆分
+- **影响范围**: `src/team/orchestrator.ts`, Team decomposition/orchestrator 测试, `docs/team-runtime.md`
+- **变更**:
+  - `decomposer.mode="leaf" | "propagate"` 的 task 会在 worker 前调用 `runDecomposer()`
+  - `no_split` 记录 decomposition decision 后按原 task 正常执行
+  - `split` 将 parent 作为 container，持久化 decomposition record，append normal child task states，并按记录顺序执行 child
+  - parent worker/checker/watcher 不会在 `split` 后运行；parent 状态由 children 汇总
+  - runtime 强制 `propagate -> leaf | none`、`leaf -> none`，拒绝 non-normal child、重复 child id、超限 child 和超过 50 个 task state 的扩张
+  - resume/reclaim 优先读取既有 decomposition record，避免重复调用 decomposer 或重复生成 child task
+  - pause/cancel/timeout 路径覆盖 decomposer phase 和 decomposed child task，finalizer 可见 child task 结果
+- **测试**: 新增 `test/team-orchestrator-decomposition.test.ts`，覆盖真实 run state、decomposition record、resume、control、timeout 和 finalizer child visibility
+
+---
+
 ## 2026-05-17 — P21-B Review Fixes
 
 - **主题**: 收紧 decomposer child task 解析和 expansion/decomposition 记录落盘路径

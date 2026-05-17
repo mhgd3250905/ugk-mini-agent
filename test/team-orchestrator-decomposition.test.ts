@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { TeamOrchestrator } from "../src/team/orchestrator.js";
@@ -687,7 +687,7 @@ test("pause during decomposer leaves interrupted state without stale decompositi
 		override async runDecomposer(input: DecomposerInput): Promise<DecomposerOutput> {
 			this.decomposerTaskIds.push(input.task.id);
 			decomposerStartedResolve();
-			await hangOnSignal(input.signal);
+			return await hangOnSignal(input.signal);
 		}
 	}
 	const runner = new HangingDecomposerRunner();
@@ -809,6 +809,35 @@ test("run timeout fails unfinished decomposed children and parent", async () => 
 		assert.equal(final.taskStates["task_1__b"]?.status, "failed");
 		assert.equal(final.taskStates.task_1?.errorSummary, "run timeout");
 		assert.equal(final.taskStates["task_1__b"]?.errorSummary, "run timeout");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("decomposed child results are visible in finalizer report", async () => {
+	const runner = new DecompositionCaptureRunner([
+		{
+			decision: "split",
+			reason: "split",
+			children: [
+				{ id: "task_1__a", title: "Child A", input: { text: "do a" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "none" } },
+			],
+		},
+	]);
+	const { root, plan, orchestrator } = await setup({
+		id: "task_1",
+		title: "Task 1",
+		input: { text: "do task" },
+		acceptance: { rules: ["ok"] },
+		decomposer: { mode: "leaf" },
+	}, runner);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.status, "completed");
+		const report = await readFile(join(root, "runs", state.runId, "final-report.md"), "utf8");
+		assert.match(report, /task_1__a: succeeded/);
 	} finally {
 		await rm(root, { recursive: true });
 	}
