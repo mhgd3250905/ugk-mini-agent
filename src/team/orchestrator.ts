@@ -1010,6 +1010,16 @@ export class TeamOrchestrator {
 
 	private async loadDiscoveryResult(runId: string, task: TeamTask, results: Record<string, Array<Record<string, unknown>>>): Promise<void> {
 			if (!task.discovery) return;
+			const decomposition = await this.workspace.readDecomposition(runId, task.id);
+			if (decomposition?.decision === "split") {
+				const aggregated = await this.loadDecomposedDiscoveryResult(runId, task, decomposition.children.map(child => child.task));
+				if (!aggregated) {
+					return;
+				}
+				results[task.id] = aggregated;
+				return;
+			}
+
 			const state = await this.workspace.getState(runId);
 			if (!state) return;
 			const ts = state.taskStates[task.id];
@@ -1034,15 +1044,66 @@ export class TeamOrchestrator {
 			}
 		}
 
-		private extractDiscoveryItems(content: string, outputKey: string): Array<Record<string, unknown>> | null {
-			const parsed = this.extractJsonFromContent(content);
-			if (!parsed) return null;
-			const arr = parsed[outputKey];
-			if (!Array.isArray(arr)) return null;
-			return arr.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null);
+		private async loadDecomposedDiscoveryResult(runId: string, parentTask: TeamTask, childTasks: TeamTask[]): Promise<Array<Record<string, unknown>> | null> {
+			if (!parentTask.discovery) return null;
+			const items: Array<Record<string, unknown>> = [];
+			for (const child of childTasks) {
+				const content = await this.readTaskResultContent(runId, child.id);
+				const childItems = content
+					? this.extractDiscoveryItems(content, parentTask.discovery.outputKey, { allowDirectArray: true, strictItems: true })
+					: null;
+				if (!childItems) {
+					await this.failDecomposedDiscoveryAggregation(runId, parentTask.id, child.id);
+					return null;
+				}
+				items.push(...childItems);
+			}
+			return items;
 		}
 
-		private extractJsonFromContent(content: string): Record<string, unknown> | null {
+		private async readTaskResultContent(runId: string, taskId: string): Promise<string | null> {
+			const state = await this.workspace.getState(runId);
+			const attemptId = state?.taskStates[taskId]?.activeAttemptId;
+			if (!attemptId) return null;
+			const accepted = await this.workspace.readAttemptFile(runId, taskId, attemptId, "accepted-result.md");
+			if (accepted) return accepted;
+			return this.workspace.readAttemptFile(runId, taskId, attemptId, "worker-output-001.md");
+		}
+
+		private async failDecomposedDiscoveryAggregation(runId: string, parentTaskId: string, childTaskId: string): Promise<void> {
+			const state = await this.workspace.getState(runId);
+			if (!state || this.shouldStop(state)) return;
+			const ts = state.taskStates[parentTaskId];
+			if (!ts) return;
+			ts.status = "failed";
+			ts.errorSummary = `failed to aggregate decomposed discovery output from child ${childTaskId}`;
+			ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
+			state.summary.succeededTasks = Math.max(0, state.summary.succeededTasks - 1);
+			state.summary.failedTasks++;
+			state.updatedAt = now();
+			await this.workspace.saveState(state);
+		}
+
+		private extractDiscoveryItems(
+			content: string,
+			outputKey: string,
+			options: { allowDirectArray?: boolean; strictItems?: boolean } = {},
+		): Array<Record<string, unknown>> | null {
+			const parsed = this.extractJsonFromContent(content);
+			if (parsed == null) return null;
+			const arr = options.allowDirectArray && Array.isArray(parsed)
+				? parsed
+				: typeof parsed === "object" && !Array.isArray(parsed)
+					? (parsed as Record<string, unknown>)[outputKey]
+					: null;
+			if (!Array.isArray(arr)) return null;
+			if (options.strictItems && arr.some(item => typeof item !== "object" || item === null || Array.isArray(item))) {
+				return null;
+			}
+			return arr.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null && !Array.isArray(item));
+		}
+
+		private extractJsonFromContent(content: string): unknown | null {
 			try { return JSON.parse(content); } catch { /* not pure JSON */ }
 			const fenceMatch = content.match(/```json\s*([\s\S]*?)```/);
 			if (fenceMatch) {
@@ -1052,6 +1113,11 @@ export class TeamOrchestrator {
 			const braceEnd = content.lastIndexOf("}");
 			if (braceStart !== -1 && braceEnd > braceStart) {
 				try { return JSON.parse(content.slice(braceStart, braceEnd + 1)); } catch { /* brace extract failed */ }
+			}
+			const bracketStart = content.indexOf("[");
+			const bracketEnd = content.lastIndexOf("]");
+			if (bracketStart !== -1 && bracketEnd > bracketStart) {
+				try { return JSON.parse(content.slice(bracketStart, bracketEnd + 1)); } catch { /* bracket extract failed */ }
 			}
 			return null;
 		}
