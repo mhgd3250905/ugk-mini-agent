@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-17 — P21-D Review Fix: Run Detail Task Definitions
+
+- **主题**: 修复 Run timeline 层级展示依赖前端伪字段的问题
+- **影响范围**: `src/team/routes.ts`, `src/ui/team-page.ts`, `test/team-routes.test.ts`, `test/team-page-ui.test.ts`, `docs/team-runtime.md`
+- **变更**:
+  - `GET /v1/team/runs/:runId` 现在返回 additive `taskDefinitions`，由 expansion/decomposition records 汇总生成
+  - `taskDefinitions` 标记 `generatedSource="for_each" | "decomposition"`，供 UI 区分「动态子任务」和「拆分子任务」
+  - Run detail UI 改为优先使用真实 API 返回的 `taskDefinitions`，保留旧 run / prefix fallback
+  - Route 测试覆盖无 parent 前缀的 decomposed child，例如 `collect_ips` / `ptr_lookup`
+- **测试**: 增加 run detail API contract 测试，并更新 P21-D UI hierarchy 测试使用真实响应形状
+
+---
+
 ## 2026-05-17 — P21-D Decomposer UI and Docs
 
 - **主题**: Team Console 展示 controlled decomposition 的 Plan badge 和运行层级

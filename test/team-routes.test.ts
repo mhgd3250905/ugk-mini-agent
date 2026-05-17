@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { buildServer } from "../src/server.js";
 import type { AgentService } from "../src/agent/agent-service.js";
 import { RunWorkspace } from "../src/team/run-workspace.js";
+import type { TeamTask } from "../src/team/types.js";
 
 function createAgentServiceStub() {
 	return {
@@ -190,6 +191,134 @@ test("GET /v1/team/runs/:runId returns finalizer runtime context", async () => {
 
 		assert.equal(stateRes.statusCode, 200);
 		assert.deepEqual(stateRes.json().finalizerRuntimeContext, state.finalizerRuntimeContext);
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch { /* concurrent write */ }
+	}
+});
+
+test("GET /v1/team/runs/:runId returns decomposition task definitions for run detail", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+		const planRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/plans",
+			payload: {
+				title: "decomposition detail",
+				defaultTeamUnitId: unitRes.json().teamUnitId,
+				goal: { text: "test" },
+				tasks: [{
+					id: "reverse_dns",
+					title: "Reverse DNS",
+					input: { text: "Investigate reverse DNS" },
+					acceptance: { rules: ["ok"] },
+					decomposer: { mode: "leaf" },
+				}],
+				outputContract: { text: "output" },
+			},
+		});
+		const runRes = await app.inject({ method: "POST", url: `/v1/team/plans/${planRes.json().planId}/runs` });
+		const runId = runRes.json().runId;
+		const workspace = new RunWorkspace(teamDir);
+		const children: TeamTask[] = [
+			{ id: "collect_ips", title: "Collect known IPs", input: { text: "collect" }, acceptance: { rules: ["ok"] }, parentTaskId: "reverse_dns", generated: true, decomposer: { mode: "none" } },
+			{ id: "ptr_lookup", title: "PTR lookup", input: { text: "ptr" }, acceptance: { rules: ["ok"] }, parentTaskId: "reverse_dns", generated: true, decomposer: { mode: "none" } },
+		];
+		await workspace.writeDecomposition(runId, {
+			schemaVersion: "team/task-decomposition-1",
+			parentTaskId: "reverse_dns",
+			mode: "leaf",
+			decision: "split",
+			reason: "split",
+			decomposedAt: new Date().toISOString(),
+			children: children.map(task => ({ taskId: task.id, title: task.title, task })),
+		});
+		await workspace.appendChildTaskStates(runId, children);
+
+		const stateRes = await app.inject({ method: "GET", url: `/v1/team/runs/${runId}` });
+
+		assert.equal(stateRes.statusCode, 200);
+		const body = stateRes.json();
+		assert.equal(body.runId, runId);
+		assert.ok(body.taskStates.reverse_dns);
+		assert.equal(body.taskDefinitions.length, 2);
+		assert.deepEqual(body.taskDefinitions.map((task: any) => task.id), ["collect_ips", "ptr_lookup"]);
+		assert.equal(body.taskDefinitions[0].parentTaskId, "reverse_dns");
+		assert.equal(body.taskDefinitions[0].generatedSource, "decomposition");
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch { /* concurrent write */ }
+	}
+});
+
+test("GET /v1/team/runs/:runId returns for_each task definitions for run detail", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+		const planRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/plans",
+			payload: {
+				title: "for each detail",
+				defaultTeamUnitId: unitRes.json().teamUnitId,
+				goal: { text: "test" },
+				tasks: [{
+					id: "process_each",
+					type: "for_each",
+					title: "Process each",
+					input: { text: "placeholder" },
+					acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "discover.items",
+						mode: "sequential",
+						taskTemplate: { title: "Process {{item.id}}", input: { text: "process" }, acceptance: { rules: ["ok"] } },
+					},
+				}],
+				outputContract: { text: "output" },
+			},
+		});
+		const runRes = await app.inject({ method: "POST", url: `/v1/team/plans/${planRes.json().planId}/runs` });
+		const runId = runRes.json().runId;
+		const workspace = new RunWorkspace(teamDir);
+		const child: TeamTask = { id: "process_each__a", title: "Process A", input: { text: "process a" }, acceptance: { rules: ["ok"] }, parentTaskId: "process_each", sourceItemId: "a", generated: true };
+		await workspace.writeExpansion(runId, {
+			schemaVersion: "team/task-expansion-1",
+			parentTaskId: "process_each",
+			itemsFrom: "discover.items",
+			expandedAt: new Date().toISOString(),
+			children: [{ taskId: child.id, sourceItemId: "a", title: child.title, task: child }],
+		});
+		await workspace.appendChildTaskStates(runId, [child]);
+
+		const stateRes = await app.inject({ method: "GET", url: `/v1/team/runs/${runId}` });
+
+		assert.equal(stateRes.statusCode, 200);
+		const body = stateRes.json();
+		assert.equal(body.taskDefinitions.length, 1);
+		assert.equal(body.taskDefinitions[0].id, "process_each__a");
+		assert.equal(body.taskDefinitions[0].parentTaskId, "process_each");
+		assert.equal(body.taskDefinitions[0].generatedSource, "for_each");
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch { /* concurrent write */ }
+	}
+});
+
+test("GET /v1/team/runs/:runId preserves old run shape when no generated definitions exist", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+		const planRes = await app.inject({ method: "POST", url: "/v1/team/plans", payload: planBody(unitRes.json().teamUnitId) });
+		const runRes = await app.inject({ method: "POST", url: `/v1/team/plans/${planRes.json().planId}/runs` });
+
+		const stateRes = await app.inject({ method: "GET", url: `/v1/team/runs/${runRes.json().runId}` });
+
+		assert.equal(stateRes.statusCode, 200);
+		const body = stateRes.json();
+		assert.equal(body.runId, runRes.json().runId);
+		assert.ok(body.taskStates.t1);
+		assert.deepEqual(body.taskDefinitions, []);
 		await app.close();
 	} finally {
 		try { await rm(root, { recursive: true, force: true }); } catch { /* concurrent write */ }

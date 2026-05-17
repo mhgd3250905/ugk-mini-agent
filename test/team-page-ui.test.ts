@@ -2402,9 +2402,9 @@ test("P21-D2: decomposed parent renders as container with children below it", ()
 			ptr_lookup: { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 1, activeAttemptId: null },
 			summary: { status: "pending", progress: null, attemptCount: 0, activeAttemptId: null },
 		},
-		generatedTasks: [
-			{ id: "collect_ips", title: "Collect known IPs", parentTaskId: "reverse_dns", generated: true, input: { text: "collect" }, acceptance: { rules: ["ok"] } },
-			{ id: "ptr_lookup", title: "PTR lookup", parentTaskId: "reverse_dns", generated: true, input: { text: "lookup" }, acceptance: { rules: ["ok"] } },
+		taskDefinitions: [
+			{ id: "collect_ips", title: "Collect known IPs", parentTaskId: "reverse_dns", generated: true, generatedSource: "decomposition", input: { text: "collect" }, acceptance: { rules: ["ok"] } },
+			{ id: "ptr_lookup", title: "PTR lookup", parentTaskId: "reverse_dns", generated: true, generatedSource: "decomposition", input: { text: "lookup" }, acceptance: { rules: ["ok"] } },
 		],
 	};
 	const html = renderTaskDetail(state, plan, {});
@@ -2431,9 +2431,9 @@ test("P21-D2: failed decomposed child shows error without marking siblings", () 
 			otx: { status: "failed", progress: { phase: "failed", message: "bad token" }, attemptCount: 1, activeAttemptId: null, errorSummary: "OTX lookup failed" },
 			hackertarget: { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 1, activeAttemptId: null },
 		},
-		generatedTasks: [
-			{ id: "otx", title: "OTX passive DNS", parentTaskId: "passive_dns", generated: true, input: { text: "otx" }, acceptance: { rules: ["ok"] } },
-			{ id: "hackertarget", title: "Hackertarget reverse IP", parentTaskId: "passive_dns", generated: true, input: { text: "ht" }, acceptance: { rules: ["ok"] } },
+		taskDefinitions: [
+			{ id: "otx", title: "OTX passive DNS", parentTaskId: "passive_dns", generated: true, generatedSource: "decomposition", input: { text: "otx" }, acceptance: { rules: ["ok"] } },
+			{ id: "hackertarget", title: "Hackertarget reverse IP", parentTaskId: "passive_dns", generated: true, generatedSource: "decomposition", input: { text: "ht" }, acceptance: { rules: ["ok"] } },
 		],
 	};
 	const html = renderTaskDetail(state, plan, {});
@@ -2458,9 +2458,9 @@ test("P21-D2: dynamic for_each and decomposed parents render with distinct label
 			reverse_dns: { status: "succeeded", progress: { phase: "succeeded", message: "" }, attemptCount: 0, activeAttemptId: null },
 			ptr_lookup: { status: "succeeded", progress: { phase: "succeeded", message: "" }, attemptCount: 1, activeAttemptId: null },
 		},
-		generatedTasks: [
-			{ id: "process_each__a", title: "Process a", parentTaskId: "process_each", generated: true, input: { text: "a" }, acceptance: { rules: ["ok"] } },
-			{ id: "ptr_lookup", title: "PTR lookup", parentTaskId: "reverse_dns", generated: true, input: { text: "ptr" }, acceptance: { rules: ["ok"] } },
+		taskDefinitions: [
+			{ id: "process_each__a", title: "Process a", parentTaskId: "process_each", generated: true, generatedSource: "for_each", input: { text: "a" }, acceptance: { rules: ["ok"] } },
+			{ id: "ptr_lookup", title: "PTR lookup", parentTaskId: "reverse_dns", generated: true, generatedSource: "decomposition", input: { text: "ptr" }, acceptance: { rules: ["ok"] } },
 		],
 	};
 	const html = renderTaskDetail(state, plan, {});
@@ -2483,4 +2483,11 @@ test("P21-D2: old runs without decomposition metadata still render", () => {
 	assert.match(html, /Old Task/);
 	assert.match(html, /succeeded/);
 	assert.doesNotMatch(html, /拆分容器|动态子任务|拆分子任务/);
+});
+
+test("P21-D-fix: SSE detail refresh preserves route-provided taskDefinitions cache", () => {
+	const script = extractScript();
+	assert.match(script, /_latestRunTaskDefinitions/);
+	assert.match(script, /window\._latestRunTaskDefinitions\[runId\] = Array\.isArray\(state\.taskDefinitions\) \? state\.taskDefinitions : \[\]/);
+	assert.match(script, /Object\.assign\(\{\}, r, \{ taskDefinitions: window\._latestRunTaskDefinitions\[r\.runId\] \}\)/);
 });

@@ -6,7 +6,7 @@ import { TeamOrchestrator, DEFAULT_PHASE_TIMEOUTS } from "./orchestrator.js";
 import { computeTeamConfigLocks } from "./config-locks.js";
 import { MockRoleRunner } from "./role-runner.js";
 import type { TeamRoleRunner } from "./role-runner.js";
-import type { TeamRunState } from "./types.js";
+import type { TeamPlan, TeamRunState, TeamTask } from "./types.js";
 import { AgentProfileRoleRunner } from "./agent-profile-role-runner.js";
 import { closeBrowserTargetsForScope } from "../agent/browser-cleanup.js";
 import { loadAgentProfilesSync } from "../agent/agent-profile-catalog.js";
@@ -19,6 +19,14 @@ export interface TeamRouteOptions {
 	maxConcurrentRuns?: number;
 	maxRunDurationMinutes?: number;
 }
+
+type TeamRunDetailTaskDefinition = TeamTask & {
+	generatedSource?: "for_each" | "decomposition";
+};
+
+type TeamRunDetailResponse = TeamRunState & {
+	taskDefinitions?: TeamRunDetailTaskDefinition[];
+};
 
 function createRoleRunner(options: TeamRouteOptions): TeamRoleRunner {
 	if (process.env.TEAM_USE_MOCK_RUNNER !== "false") {
@@ -57,6 +65,65 @@ async function validateUsableTeamUnit(unitStore: TeamUnitStore, teamUnitId: stri
 	if (teamUnit.archived) {
 		throw new Error("archived team unit cannot be used");
 	}
+}
+
+function expansionChildFallback(parentTask: TeamTask, child: { taskId: string; sourceItemId: string; title: string; task?: TeamTask }): TeamTask {
+	return child.task ?? {
+		id: child.taskId,
+		type: "normal",
+		title: child.title,
+		input: { text: child.title },
+		acceptance: { rules: ["output is valid"] },
+		parentTaskId: parentTask.id,
+		sourceItemId: child.sourceItemId,
+		generated: true,
+	};
+}
+
+async function buildRunDetailResponse(
+	state: TeamRunState,
+	plan: TeamPlan | null,
+	workspace: RunWorkspace,
+): Promise<TeamRunDetailResponse> {
+	if (!plan) return state;
+	const definitions = new Map<string, TeamRunDetailTaskDefinition>();
+	const queue: TeamTask[] = [...plan.tasks];
+	const seen = new Set<string>();
+
+	while (queue.length) {
+		const task = queue.shift()!;
+		if (seen.has(task.id)) continue;
+		seen.add(task.id);
+
+		if ((task.type ?? "normal") === "for_each") {
+			const expansion = await workspace.readExpansion(state.runId, task.id).catch(() => null);
+			for (const child of expansion?.children ?? []) {
+				const childTask: TeamRunDetailTaskDefinition = {
+					...expansionChildFallback(task, child),
+					generatedSource: "for_each",
+				};
+				definitions.set(childTask.id, childTask);
+				queue.push(childTask);
+			}
+		}
+
+		const decomposition = await workspace.readDecomposition(state.runId, task.id).catch(() => null);
+		if (decomposition?.decision === "split") {
+			for (const child of decomposition.children) {
+				const childTask: TeamRunDetailTaskDefinition = {
+					...child.task,
+					generatedSource: "decomposition",
+				};
+				definitions.set(childTask.id, childTask);
+				queue.push(childTask);
+			}
+		}
+	}
+
+	return {
+		...state,
+		taskDefinitions: [...definitions.values()],
+	};
 }
 
 export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptions): void {
@@ -298,7 +365,8 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		const { runId } = request.params as { runId: string };
 		const state = await workspace.getState(runId);
 		if (!state) { reply.code(404).send({ error: "run not found" }); return; }
-		reply.send(state);
+		const plan = await planStore.get(state.planId);
+		reply.send(await buildRunDetailResponse(state, plan, workspace));
 	});
 
 	app.post("/v1/team/runs/:runId/pause", async (request, reply) => {

@@ -624,6 +624,7 @@ Run 卡片可展开，点击后展示该 Run 的 **任务时间线**：
 - `decomposer.mode="leaf"` / `propagate` 的 Plan task 在任务结构中显示紧凑 badge；`none` 不额外刷屏
 - 被 decomposer split 的 parent 在时间线中标记为「拆分容器」，child task 以「拆分子任务」分组缩进展示
 - `for_each` 生成的 child task 标记为「动态子任务」，和 decomposed child 区分展示
+- `GET /v1/team/runs/:runId` 返回 additive `taskDefinitions`，由 expansion/decomposition records 汇总生成；UI 优先使用该真实契约，不再靠 child id 前缀猜 parent
 - 中文 phase 标签和颜色编码
 
 #### 运行记录 tab
@@ -743,7 +744,7 @@ Cancel/pause always takes priority over phase timeout — if a run is already ca
 6. **动态计划仅支持 discovery → for_each 常见模式** — UI builder 覆盖「先发现再逐项处理」的标准场景；高级 plan 结构（如多 discovery、嵌套 for_each）仍需通过 JSON/API 直接创建。
 7. **for_each 仅顺序执行** — 并行执行和嵌套 for_each 尚未支持。
 8. **Controlled decomposition 只支持有界顺序执行** — 运行时只允许 `propagate -> leaf | none`、`leaf -> none`；child task 必须是 normal；不支持并行 child execution、无限传播或 nested for_each。
-9. **Decomposition UI 只展示，不编辑** — `/playground/team` 只显示 decomposer badge 和 split hierarchy；不提供可视化编辑器。当前 run state API 不直接暴露 decomposition record 列表，UI 优先使用可见的 generated task metadata / `parentTaskId`，旧 run 或缺少 metadata 的 run 会退回为普通「子任务」分组。
+9. **Decomposition UI 只展示，不编辑** — `/playground/team` 只显示 decomposer badge 和 split hierarchy；不提供可视化编辑器。Run detail API 通过 `taskDefinitions` 暴露由 expansion/decomposition records 汇总出的 generated child definitions；旧 run 或缺少记录的 run 会退回为普通「子任务」分组。
 10. **无 AgentTaskExpansionPlanner** — 动态任务扩展目前使用模板展开（`TemplateTaskExpansionPlanner`），尚无 AI 驱动的智能扩展。
 
 ## 后续计划

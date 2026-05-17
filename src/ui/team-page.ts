@@ -1238,6 +1238,8 @@ async function toggleRunDetail(runId) {
 		} catch (e) { /* ignore */ }
 		if (!window._latestAttemptsForRun) window._latestAttemptsForRun = {};
 		window._latestAttemptsForRun[runId] = attemptsMap;
+		if (!window._latestRunTaskDefinitions) window._latestRunTaskDefinitions = {};
+		window._latestRunTaskDefinitions[runId] = Array.isArray(state.taskDefinitions) ? state.taskDefinitions : [];
 		detailEl.innerHTML = renderTaskDetail(state, plan, attemptsMap);
 		detailEl.style.display = 'block';
 	} catch (e) {
@@ -1250,8 +1252,8 @@ function renderTaskDetail(state, plan, attemptsMap) {
 	if (!plan || !plan.tasks || !plan.tasks.length) return '<p style="color:var(--muted);font-size:13px">无任务数据。</p>';
 	var finalizerRuntimeHtml = state.finalizerRuntimeContext ? '<div class="finalizer-runtime" style="margin-bottom:8px">' + renderRuntimeContext('finalizer', state.finalizerRuntimeContext) + '</div>' : '';
 	var generatedTasks = [];
-	if (Array.isArray(state.generatedTasks)) generatedTasks = generatedTasks.concat(state.generatedTasks);
 	if (Array.isArray(state.taskDefinitions)) generatedTasks = generatedTasks.concat(state.taskDefinitions);
+	if (!generatedTasks.length && Array.isArray(state.generatedTasks)) generatedTasks = generatedTasks.concat(state.generatedTasks);
 	if (Array.isArray(state.tasks)) generatedTasks = generatedTasks.concat(state.tasks.filter(function(t) { return t && t.generated; }));
 	var planIdSet = {};
 	var taskById = {};
@@ -1333,22 +1335,35 @@ function renderTaskDetail(state, plan, attemptsMap) {
 			'</td></tr>';
 	}
 
-	function childGroupLabel(parent) {
-		if (parent && parent.type === 'for_each') return '动态子任务';
-		if (taskDecomposerMode(parent) !== 'none') return '拆分子任务';
+	function childSourceFor(parent, childIds) {
+		if (parent && parent.type === 'for_each') return 'for_each';
+		for (var i = 0; i < childIds.length; i++) {
+			var child = taskById[childIds[i]];
+			if (child && child.generatedSource) return child.generatedSource;
+		}
+		if (taskDecomposerMode(parent) !== 'none') return 'decomposition';
+		return 'unknown';
+	}
+
+	function childGroupLabel(parent, childIds) {
+		var source = childSourceFor(parent, childIds);
+		if (source === 'for_each') return '动态子任务';
+		if (source === 'decomposition') return '拆分子任务';
 		return '子任务';
 	}
 
 	var rows = plan.tasks.map(function(task) {
 		var childIds = childrenByParent[task.id] || [];
-		var parentClass = childIds.length && taskDecomposerMode(task) !== 'none' ? 'decomposed-parent' : '';
+		var childSource = childSourceFor(task, childIds);
+		var parentClass = childIds.length && childSource === 'decomposition' ? 'decomposed-parent' : '';
 		var parentPrefix = parentClass ? '<span class="plan-chip" style="margin-right:6px">拆分容器</span>' : '';
 		var html = renderStateRow(task, { rowClass: parentClass, titlePrefix: parentPrefix });
 		if (childIds.length) {
-			html += '<tr class="' + (task.type === 'for_each' ? 'dynamic-child-group' : 'decomposed-child-group') + '"><td colspan="3" style="padding:6px 8px 4px 22px;font-weight:600;color:var(--muted);font-size:12px;border-top:1px solid var(--border)">' + childGroupLabel(task) + '</td></tr>';
+			html += '<tr class="' + (childSource === 'for_each' ? 'dynamic-child-group' : childSource === 'decomposition' ? 'decomposed-child-group' : 'child-group') + '"><td colspan="3" style="padding:6px 8px 4px 22px;font-weight:600;color:var(--muted);font-size:12px;border-top:1px solid var(--border)">' + childGroupLabel(task, childIds) + '</td></tr>';
 			childIds.forEach(function(cid) {
 				var childTask = taskById[cid] || { id: cid, title: cid, parentTaskId: task.id, generated: true };
-				html += renderStateRow(childTask, { rowClass: task.type === 'for_each' ? 'dynamic-child' : 'decomposed-child', titlePrefix: '<span style="color:var(--muted);margin-right:6px">↳</span>' });
+				var childRowClass = childSource === 'for_each' ? 'dynamic-child' : childSource === 'decomposition' ? 'decomposed-child' : 'child-task';
+				html += renderStateRow(childTask, { rowClass: childRowClass, titlePrefix: '<span style="color:var(--muted);margin-right:6px">↳</span>' });
 			});
 		}
 		return html;
@@ -1795,10 +1810,16 @@ function updateRunCard(r) {
 	// Update task detail if expanded
 	var detailEl = card.querySelector(".run-detail");
 	if (detailEl && detailEl.style.display === "block" && window._latestPlanForRun) {
-		var plan2 = window._latestPlanForRun[r.runId];
-		if (plan2) {
-			detailEl.innerHTML = renderTaskDetail(r, plan2, window._latestAttemptsForRun ? window._latestAttemptsForRun[r.runId] : null);
+	var plan2 = window._latestPlanForRun[r.runId];
+	if (plan2) {
+		if (!window._latestRunTaskDefinitions) window._latestRunTaskDefinitions = {};
+		if (Array.isArray(r.taskDefinitions)) window._latestRunTaskDefinitions[r.runId] = r.taskDefinitions;
+		var detailState = r;
+		if (!Array.isArray(detailState.taskDefinitions) && Array.isArray(window._latestRunTaskDefinitions[r.runId])) {
+			detailState = Object.assign({}, r, { taskDefinitions: window._latestRunTaskDefinitions[r.runId] });
 		}
+		detailEl.innerHTML = renderTaskDetail(detailState, plan2, window._latestAttemptsForRun ? window._latestAttemptsForRun[r.runId] : null);
+	}
 	}
 
 	var TERMINAL = { completed: 1, completed_with_failures: 1, failed: 1, cancelled: 1 };
