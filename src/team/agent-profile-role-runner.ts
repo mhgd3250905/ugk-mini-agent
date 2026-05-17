@@ -288,6 +288,7 @@ const VALID_WATCHER_DECISIONS = new Set<string>(["accept_task", "confirm_failed"
 const VALID_REVISION_MODES = new Set<string>(["amend", "redo"]);
 const VALID_DECOMPOSER_DECISIONS = new Set<string>(["split", "no_split"]);
 const VALID_DECOMPOSER_MODES = new Set<string>(["none", "leaf", "propagate"]);
+const MAX_DECOMPOSER_CHILDREN = 20;
 
 function normalizeCheckerOutput(parsed: unknown): CheckerOutput | null {
 	if (!parsed || typeof parsed !== "object") return null;
@@ -330,12 +331,12 @@ function normalizeDecomposerTask(raw: unknown): TeamTask | null {
 	const acceptance = obj.acceptance as { rules?: unknown } | undefined;
 	if (!acceptance || !Array.isArray(acceptance.rules) || acceptance.rules.length === 0 || !acceptance.rules.every(rule => typeof rule === "string" && rule.trim())) return null;
 	const rawType = typeof obj.type === "string" ? obj.type : undefined;
-	if (rawType && rawType !== "normal" && rawType !== "discovery" && rawType !== "for_each") return null;
+	if (rawType && rawType !== "normal") return null;
 	const rawDecomposer = obj.decomposer as { mode?: unknown; maxChildren?: unknown } | undefined;
 	let decomposer: TeamTask["decomposer"] | undefined;
 	if (rawDecomposer !== undefined) {
 		if (!rawDecomposer || typeof rawDecomposer !== "object" || typeof rawDecomposer.mode !== "string" || !VALID_DECOMPOSER_MODES.has(rawDecomposer.mode)) return null;
-		if (rawDecomposer.maxChildren !== undefined && (typeof rawDecomposer.maxChildren !== "number" || !Number.isInteger(rawDecomposer.maxChildren) || rawDecomposer.maxChildren < 1)) return null;
+		if (rawDecomposer.maxChildren !== undefined && (typeof rawDecomposer.maxChildren !== "number" || !Number.isInteger(rawDecomposer.maxChildren) || rawDecomposer.maxChildren < 1 || rawDecomposer.maxChildren > MAX_DECOMPOSER_CHILDREN)) return null;
 		decomposer = {
 			mode: rawDecomposer.mode as TeamTaskDecomposerMode,
 			...(rawDecomposer.maxChildren !== undefined ? { maxChildren: rawDecomposer.maxChildren as number } : {}),

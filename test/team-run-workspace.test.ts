@@ -384,6 +384,30 @@ test("readExpansion returns null for missing expansion", async () => {
 	}
 });
 
+test("expansion record file names encode parent task ids", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		const record: import("../src/team/types.js").TaskExpansionRecord = {
+			schemaVersion: "team/task-expansion-1",
+			parentTaskId: "../escape",
+			itemsFrom: "discover.items",
+			expandedAt: new Date().toISOString(),
+			children: [],
+		};
+		await ws.writeExpansion(state.runId, record);
+
+		const loaded = await ws.readExpansion(state.runId, "../escape");
+		assert.equal(loaded?.parentTaskId, "../escape");
+		const raw = await readFile(join(root, "runs", state.runId, "expansions", "..%2Fescape.json"), "utf8");
+		assert.match(raw, /discover\.items/);
+		await assert.rejects(() => readFile(join(root, "runs", state.runId, "escape.json"), "utf8"));
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
 test("expansion is stable across workspace re-instantiation", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
 	try {
@@ -588,6 +612,32 @@ test("readDecomposition returns full child task definitions and runtime context"
 		assert.deepEqual(loaded.children[0]!.task.acceptance.rules, ["IPs listed", "sources cited"]);
 		assert.equal(loaded.children[0]!.task.decomposer?.mode, "leaf");
 		assert.equal(loaded.runtimeContext?.requestedProfileId, "decomposer-profile");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("decomposition record file names encode parent task ids", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		const record: import("../src/team/types.js").TaskDecompositionRecord = {
+			schemaVersion: "team/task-decomposition-1",
+			parentTaskId: "../escape",
+			mode: "leaf",
+			decision: "no_split",
+			reason: "already small",
+			decomposedAt: "2026-05-17T00:00:00.000Z",
+			children: [],
+		};
+		await ws.writeDecomposition(state.runId, record);
+
+		const loaded = await ws.readDecomposition(state.runId, "../escape");
+		assert.equal(loaded?.parentTaskId, "../escape");
+		const raw = await readFile(join(root, "runs", state.runId, "decompositions", "..%2Fescape.json"), "utf8");
+		assert.match(raw, /already small/);
+		await assert.rejects(() => readFile(join(root, "runs", state.runId, "escape.json"), "utf8"));
 	} finally {
 		await rm(root, { recursive: true });
 	}

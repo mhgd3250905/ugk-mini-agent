@@ -1397,3 +1397,61 @@ test("runDecomposer returns safe no_split on invalid JSON", async () => {
 		await rm(root, { recursive: true }).catch(() => {});
 	}
 });
+
+test("runDecomposer rejects child task decomposer policy above schema cap", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-decomposer-"));
+	try {
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root, teamDataDir: root,
+			workerProfileId: "p-worker", checkerProfileId: "p-checker",
+			watcherProfileId: "p-watcher", finalizerProfileId: "p-finalizer",
+			decomposerProfileId: "p-decomposer",
+			profileResolver: fakeProfileResolver as never,
+			sessionFactory: makeFakeSessionFactory([
+				'{"decision":"split","reason":"too broad","children":[{"id":"child_1","title":"Child","input":{"text":"do child"},"acceptance":{"rules":["ok"]},"decomposer":{"mode":"leaf","maxChildren":21}}]}',
+			]),
+		});
+
+		const out = await runner.runDecomposer({
+			runId: "run_decomp_child_cap",
+			plan: { schemaVersion: "team/plan-1", planId: "plan_1", title: "Plan", defaultTeamUnitId: "tu", goal: { text: "Goal" }, tasks: [], outputContract: { text: "out" }, archived: false, createdAt: "", updatedAt: "", runCount: 0 },
+			task: { id: "task_1", title: "Task", input: { text: "do" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "leaf" } },
+			maxChildren: 8,
+		});
+
+		assert.equal(out.decision, "no_split");
+		assert.match(out.reason, /invalid schema/);
+		assert.deepEqual(out.children, []);
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
+test("runDecomposer rejects non-normal generated child tasks", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-decomposer-"));
+	try {
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root, teamDataDir: root,
+			workerProfileId: "p-worker", checkerProfileId: "p-checker",
+			watcherProfileId: "p-watcher", finalizerProfileId: "p-finalizer",
+			decomposerProfileId: "p-decomposer",
+			profileResolver: fakeProfileResolver as never,
+			sessionFactory: makeFakeSessionFactory([
+				'{"decision":"split","reason":"needs discovery","children":[{"id":"child_1","type":"discovery","title":"Child","input":{"text":"do child"},"acceptance":{"rules":["ok"]},"decomposer":{"mode":"none"}}]}',
+			]),
+		});
+
+		const out = await runner.runDecomposer({
+			runId: "run_decomp_child_type",
+			plan: { schemaVersion: "team/plan-1", planId: "plan_1", title: "Plan", defaultTeamUnitId: "tu", goal: { text: "Goal" }, tasks: [], outputContract: { text: "out" }, archived: false, createdAt: "", updatedAt: "", runCount: 0 },
+			task: { id: "task_1", title: "Task", input: { text: "do" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "leaf" } },
+			maxChildren: 8,
+		});
+
+		assert.equal(out.decision, "no_split");
+		assert.match(out.reason, /invalid schema/);
+		assert.deepEqual(out.children, []);
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});

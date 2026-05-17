@@ -34,6 +34,10 @@ function isLeaseExpired(state: TeamRunState): boolean {
 	return !state.lease || new Date(state.lease.expiresAt).getTime() <= Date.now();
 }
 
+function taskRecordFileName(taskId: string): string {
+	return `${encodeURIComponent(taskId)}.json`;
+}
+
 export class RunWorkspace {
 	readonly events = new RunStateEvents();
 
@@ -335,27 +339,27 @@ export class RunWorkspace {
 	async writeExpansion(runId: string, record: TaskExpansionRecord): Promise<void> {
 		const dir = join(this.rootDir, "runs", runId, "expansions");
 		await mkdir(dir, { recursive: true });
-		const filePath = join(dir, `${record.parentTaskId}.json`);
+		const filePath = join(dir, taskRecordFileName(record.parentTaskId));
 		const tmp = filePath + ".tmp";
 		await writeFile(tmp, JSON.stringify(record, null, 2), "utf8");
 		await rename(tmp, filePath);
 	}
 
 	async readExpansion(runId: string, parentTaskId: string): Promise<TaskExpansionRecord | null> {
-		return this.readJson<TaskExpansionRecord>(join(this.rootDir, "runs", runId, "expansions", `${parentTaskId}.json`));
+		return this.readJson<TaskExpansionRecord>(join(this.rootDir, "runs", runId, "expansions", taskRecordFileName(parentTaskId)));
 	}
 
 	async writeDecomposition(runId: string, record: TaskDecompositionRecord): Promise<void> {
 		const dir = join(this.rootDir, "runs", runId, "decompositions");
 		await mkdir(dir, { recursive: true });
-		const filePath = join(dir, `${record.parentTaskId}.json`);
+		const filePath = join(dir, taskRecordFileName(record.parentTaskId));
 		const tmp = filePath + ".tmp";
 		await writeFile(tmp, JSON.stringify(record, null, 2), "utf8");
 		await rename(tmp, filePath);
 	}
 
 	async readDecomposition(runId: string, parentTaskId: string): Promise<TaskDecompositionRecord | null> {
-		return this.readJson<TaskDecompositionRecord>(join(this.rootDir, "runs", runId, "decompositions", `${parentTaskId}.json`));
+		return this.readJson<TaskDecompositionRecord>(join(this.rootDir, "runs", runId, "decompositions", taskRecordFileName(parentTaskId)));
 	}
 
 	async appendChildTaskStates(runId: string, children: TeamTask[]): Promise<TeamRunState> {

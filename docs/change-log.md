@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-17 — P21-B Review Fixes
+
+- **主题**: 收紧 decomposer child task 解析和 expansion/decomposition 记录落盘路径
+- **影响范围**: `src/team/agent-profile-role-runner.ts`, `src/team/run-workspace.ts`, Team runner/workspace 测试
+- **变更**:
+  - `AgentProfileRoleRunner.runDecomposer()` 只接受 normal child task，避免 agent 输出未完整校验的 `discovery` / `for_each` child task
+  - child task 的 `decomposer.maxChildren` 上限与 PlanStore schema 对齐为 `1..20`
+  - expansion/decomposition record 文件名使用 `encodeURIComponent(parentTaskId)`，避免 task id 中的路径分隔符影响落盘路径
+- **测试**: 增加 runner parser 和 workspace persistence 回归测试，覆盖非法 child policy、非 normal child task、危险 parentTaskId 编码
+
+---
+
 ## 2026-05-17 — P21-B Decomposer Schema, Runner, and Persistence
 
 - **主题**: 增加 task-level decomposer schema、runner contract 和 decomposition record 持久化
