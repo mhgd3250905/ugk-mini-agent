@@ -1063,11 +1063,11 @@ async function saveTeamUnit() {
 				// Action buttons
 				html += '<div class="run-actions" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap" onclick="event.stopPropagation()">';
 				if (run.status === 'running') {
-					html += '<button class="btn btn-primary btn-sm" onclick="controlRun(\\x27' + escapeHtml(run.runId) + '\\x27, \\x27pause\\x27)">暂停</button>';
+					html += '<button class="btn btn-primary btn-sm" onclick="pauseRunWithConfirm(\\x27' + escapeHtml(run.runId) + '\\x27)">暂停</button>';
 					html += '<button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(\\x27' + escapeHtml(run.runId) + '\\x27)">取消</button>';
 				}
 				if (run.status === 'paused') {
-					html += '<button class="btn btn-primary btn-sm" onclick="controlRun(\\x27' + escapeHtml(run.runId) + '\\x27, \\x27resume\\x27)">恢复</button>';
+					html += '<button class="btn btn-primary btn-sm" onclick="resumeRunWithConfirm(\\x27' + escapeHtml(run.runId) + '\\x27)">恢复</button>';
 					html += '<button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(\\x27' + escapeHtml(run.runId) + '\\x27)">取消</button>';
 				}
 				if (isTerminal) {
@@ -1103,7 +1103,7 @@ async function saveTeamUnit() {
 
 async function loadPlans() {
 	var el = $('plans-list');
-	el.innerHTML = '<div class="loading"><div class="spinner"></div> 加载中...</div>';
+	if (!el.innerHTML.trim()) el.innerHTML = '<div class="loading"><div class="spinner"></div> 加载中...</div>';
 	try {
 		var plans = await api('/plans');
 			if (!_latestRuns || !_latestRuns.length) {
@@ -1121,7 +1121,7 @@ async function loadPlans() {
 
 async function loadTeams() {
 		var el = $('teams-list');
-		el.innerHTML = '<div class="loading"><div class="spinner"></div> 加载中...</div>';
+		if (!el.innerHTML.trim()) el.innerHTML = '<div class="loading"><div class="spinner"></div> 加载中...</div>';
 		try {
 			var teams = await api('/team-units');
 			_latestTeams = teams; updateSummary(_latestPlans, teams, _latestRuns);
@@ -1153,7 +1153,7 @@ async function loadTeams() {
 
 async function loadRuns() {
 	var el = $('runs-list');
-	el.innerHTML = '<div class="loading"><div class="spinner"></div> 加载中...</div>';
+	if (!el.innerHTML.trim()) el.innerHTML = '<div class="loading"><div class="spinner"></div> 加载中...</div>';
 	try {
 		var runs = await api('/runs');
 		_latestRuns = runs; updateSummary(_latestPlans, _latestTeams, runs);
@@ -1757,10 +1757,20 @@ async function cancelRunWithConfirm(runId) {
 	if (ok) controlRun(runId, "cancel");
 }
 
+async function pauseRunWithConfirm(runId) {
+	var ok = await confirmAction({ message: "确认暂停此运行？当前任务会被中断，恢复后继续。", confirmText: "暂停运行" });
+	if (ok) controlRun(runId, "pause");
+}
+
+async function resumeRunWithConfirm(runId) {
+	var ok = await confirmAction({ message: "确认恢复此运行？", confirmText: "恢复运行" });
+	if (ok) controlRun(runId, "resume");
+}
+
 function renderRunActions(r) {
 	var html = '<span class="detail-toggle" onclick="toggleRunDetail(\\'' + r.runId + '\\')">展开任务详情</span>';
-	if (r.status === 'running') html += '<button class="btn btn-primary btn-sm" onclick="controlRun(\\'' + r.runId + '\\', \\'pause\\')">暂停</button><button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(\\'' + r.runId + '\\')">取消</button>';
-	if (r.status === 'paused') html += '<button class="btn btn-primary btn-sm" onclick="controlRun(\\'' + r.runId + '\\', \\'resume\\')">恢复</button><button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(\\'' + r.runId + '\\')">取消</button>';
+	if (r.status === 'running') html += '<button class="btn btn-primary btn-sm" onclick="pauseRunWithConfirm(\\'' + r.runId + '\\')">暂停</button><button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(\\'' + r.runId + '\\')">取消</button>';
+	if (r.status === 'paused') html += '<button class="btn btn-primary btn-sm" onclick="resumeRunWithConfirm(\\'' + r.runId + '\\')">恢复</button><button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(\\'' + r.runId + '\\')">取消</button>';
 	if (r.status === 'completed' || r.status === 'completed_with_failures' || r.status === 'failed') html += '<button class="btn btn-primary btn-sm" onclick="viewReport(\\'' + r.runId + '\\')">查看报告</button><button class="btn btn-danger btn-sm" onclick="deleteRun(\\'' + r.runId + '\\')">删除</button>';
 	if (r.status === 'cancelled') html += '<button class="btn btn-danger btn-sm" onclick="deleteRun(\\'' + r.runId + '\\')">删除</button>';
 	return html;
@@ -1828,10 +1838,6 @@ function updateRunCard(r) {
 		loadRuns();
 	}
 
-	// Refresh dashboard plan cards when on dashboard view
-	if (_selectedPlanId === null) {
-		loadPlans();
-	}
 }
 
 function subscribeActiveRuns(runs) {
