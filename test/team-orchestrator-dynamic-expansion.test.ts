@@ -1258,3 +1258,279 @@ test("resume from old expansion without sourceItem uses stored task without cras
 		await rm(root, { recursive: true });
 	}
 });
+
+// ── P23 Task 4: mismatch rejection behavior ──
+
+class ItemDriftDetectingRunner extends MockRoleRunner {
+	private readonly discoveryItems: Array<Record<string, unknown>>;
+	private checkerWorkerOutputs: string[] = [];
+
+	constructor(discoveryItems: Array<Record<string, unknown>>) {
+		super();
+		this.discoveryItems = discoveryItems;
+	}
+
+	async runWorker(input: import("../src/team/role-runner.js").WorkerInput): Promise<import("../src/team/role-runner.js").WorkerOutput> {
+		if (input.task.type === "discovery") {
+			return { content: JSON.stringify({ items: this.discoveryItems }), artifactRefs: [] };
+		}
+		if (input.task.generated && input.task.sourceItem) {
+			const itemId = input.task.sourceItem.id;
+			if (itemId === "battle_08") {
+				const output = `处理了雁门关外自尽的相关内容`;
+				this.checkerWorkerOutputs.push(output);
+				return { content: output, artifactRefs: [] };
+			}
+		}
+		const output = `done ${input.task.id}`;
+		this.checkerWorkerOutputs.push(output);
+		return { content: output, artifactRefs: [] };
+	}
+
+	async runChecker(input: import("../src/team/role-runner.js").CheckerInput): Promise<import("../src/team/role-runner.js").CheckerOutput> {
+		if (input.task.type === "discovery") {
+			return { verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: this.discoveryItems }) };
+		}
+		if (input.task.generated && input.task.sourceItem) {
+			const sourceId = input.task.sourceItem.id;
+			const sourceTitle = input.task.sourceItem.data.title ?? input.task.sourceItem.data.name;
+			const workerOutput = this.checkerWorkerOutputs[this.checkerWorkerOutputs.length - 1] ?? "";
+			const mentionsSourceId = workerOutput.includes(sourceId);
+			const mentionsSourceTitle = typeof sourceTitle === "string" && workerOutput.includes(sourceTitle);
+			if (!mentionsSourceId && !mentionsSourceTitle) {
+				return {
+					verdict: "fail",
+					reason: `worker output does not match source item ${sourceId}`,
+					resultContent: workerOutput,
+				};
+			}
+		}
+		return { verdict: "pass", reason: "ok", resultContent: "accepted" };
+	}
+
+	async runWatcher(input: import("../src/team/role-runner.js").WatcherInput): Promise<import("../src/team/role-runner.js").WatcherOutput> {
+		if (input.task.generated && input.task.sourceItem) {
+			if (input.workUnitStatus === "failed") {
+				const sourceId = input.task.sourceItem.id;
+				return { decision: "confirm_failed", reason: `task failed for item ${sourceId}` };
+			}
+		}
+		return { decision: "accept_task", reason: "ok" };
+	}
+}
+
+test("worker output switches item - checker rejects - child task fails", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const runner = new ItemDriftDetectingRunner([
+			{ id: "battle_08", title: "藏经阁大战" },
+		]);
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "item drift test",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{
+					id: "discover", type: "discovery", title: "Discover",
+					input: { text: "Find" }, acceptance: { rules: ["ok"] },
+					discovery: { outputKey: "items" },
+				},
+				{
+					id: "process", type: "for_each", title: "Process",
+					input: { text: "p" }, acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "discover.items",
+						mode: "sequential",
+						taskTemplate: {
+							title: "Score {{item.title}}",
+							input: { text: "Score card for {{item.title}}" },
+							acceptance: { rules: ["output valid"] },
+						},
+					},
+				},
+			],
+			outputContract: { text: "done" },
+		});
+
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: runner, dataDir: root,
+			maxCheckerRevisions: 1, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+		const state = await orchestrator.createRun(plan.planId);
+		await orchestrator.runToCompletion(state.runId);
+
+		const finalState = await workspace.getState(state.runId);
+		assert.ok(finalState);
+		const childTaskId = "process__battle_08";
+		const childState = finalState.taskStates[childTaskId];
+		assert.ok(childState, `child task ${childTaskId} must exist in task states`);
+		assert.equal(childState.status, "failed",
+			`child task should be failed because worker switched to wrong item, got: ${childState.status}`);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("worker output matches item - checker passes - child task succeeds", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+
+		const runner = new (class extends MockRoleRunner {
+			async runWorker(input: import("../src/team/role-runner.js").WorkerInput): Promise<import("../src/team/role-runner.js").WorkerOutput> {
+				if (input.task.type === "discovery") {
+					return { content: JSON.stringify({ items: [{ id: "battle_08", title: "藏经阁大战" }] }), artifactRefs: [] };
+				}
+				if (input.task.generated && input.task.sourceItem) {
+					const title = input.task.sourceItem.data.title ?? input.task.sourceItem.id;
+					return { content: `处理了${title}的相关内容`, artifactRefs: [] };
+				}
+				return { content: `done ${input.task.id}`, artifactRefs: [] };
+			}
+			async runChecker(input: import("../src/team/role-runner.js").CheckerInput): Promise<import("../src/team/role-runner.js").CheckerOutput> {
+				if (input.task.type === "discovery") {
+					return { verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: [{ id: "battle_08", title: "藏经阁大战" }] }) };
+				}
+				return { verdict: "pass", reason: "ok", resultContent: "accepted" };
+			}
+		})();
+
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "positive control",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{
+					id: "discover", type: "discovery", title: "Discover",
+					input: { text: "Find" }, acceptance: { rules: ["ok"] },
+					discovery: { outputKey: "items" },
+				},
+				{
+					id: "process", type: "for_each", title: "Process",
+					input: { text: "p" }, acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "discover.items",
+						mode: "sequential",
+						taskTemplate: {
+							title: "Score {{item.title}}",
+							input: { text: "Score card for {{item.title}}" },
+							acceptance: { rules: ["output valid"] },
+						},
+					},
+				},
+			],
+			outputContract: { text: "done" },
+		});
+
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: runner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+		const state = await orchestrator.createRun(plan.planId);
+		await orchestrator.runToCompletion(state.runId);
+
+		const finalState = await workspace.getState(state.runId);
+		assert.ok(finalState);
+		const childTaskId = "process__battle_08";
+		const childState = finalState.taskStates[childTaskId];
+		assert.ok(childState);
+		assert.equal(childState.status, "succeeded",
+			`child task should succeed when worker output matches item, got: ${childState.status}`);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("resume with stored sourceItem preserves identity even if discovery would change", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+
+		const runner = new (class extends MockRoleRunner {
+			async runWorker(input: import("../src/team/role-runner.js").WorkerInput): Promise<import("../src/team/role-runner.js").WorkerOutput> {
+				if (input.task.type === "discovery") {
+					return { content: JSON.stringify({ items: [{ id: "battle_08", title: "藏经阁大战" }] }), artifactRefs: [] };
+				}
+				return { content: `done ${input.task.id}`, artifactRefs: [] };
+			}
+			async runChecker(input: import("../src/team/role-runner.js").CheckerInput): Promise<import("../src/team/role-runner.js").CheckerOutput> {
+				if (input.task.type === "discovery") {
+					return { verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: [{ id: "battle_08", title: "藏经阁大战" }] }) };
+				}
+				return { verdict: "pass", reason: "ok", resultContent: "accepted" };
+			}
+		})();
+
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "resume identity",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{
+					id: "discover", type: "discovery", title: "Discover",
+					input: { text: "Find" }, acceptance: { rules: ["ok"] },
+					discovery: { outputKey: "items" },
+				},
+				{
+					id: "process", type: "for_each", title: "Process",
+					input: { text: "p" }, acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "discover.items",
+						mode: "sequential",
+						taskTemplate: {
+							title: "Score {{item.title}}",
+							input: { text: "Score card for {{item.title}}" },
+							acceptance: { rules: ["output valid"] },
+						},
+					},
+				},
+			],
+			outputContract: { text: "done" },
+		});
+
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: runner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+		const state = await orchestrator.createRun(plan.planId);
+		await orchestrator.runToCompletion(state.runId);
+
+		const expansion = await workspace.readExpansion(state.runId, "process");
+		assert.ok(expansion);
+		assert.equal(expansion.children.length, 1);
+		assert.ok(expansion.children[0]!.sourceItem);
+		assert.equal(expansion.children[0]!.sourceItem!.id, "battle_08");
+		assert.equal(expansion.children[0]!.sourceItem!.data.title, "藏经阁大战");
+
+		const finalState = await workspace.getState(state.runId);
+		assert.ok(finalState);
+		assert.equal(finalState.taskStates["process__battle_08"]?.status, "succeeded");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
