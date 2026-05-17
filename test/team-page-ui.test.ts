@@ -1839,3 +1839,92 @@ test("P19-T2: dashboard grid CSS class exists", () => {
 	const html = renderTeamPage();
 	assert.match(html, /plan-dashboard-grid/);
 });
+
+// ── P19 Task 3: Plan detail view ──
+
+test("P19-T3: page has plan-detail container", () => {
+	const html = renderTeamPage();
+	assert.match(html, /id="plan-detail"/);
+	assert.match(html, /plan-detail-content/);
+	assert.match(html, /plan-detail-actions/);
+});
+
+test("P19-T3: openPlanDetail function exists", () => {
+	const script = extractScript();
+	assert.match(script, /function openPlanDetail\(planId\)/);
+});
+
+test("P19-T3: closePlanDetail function exists", () => {
+	const script = extractScript();
+	assert.match(script, /function closePlanDetail\(\)/);
+});
+
+test("P19-T3: renderPlanDetailContent function exists", () => {
+	const script = extractScript();
+	assert.match(script, /function renderPlanDetailContent\(plan,\s*runs\)/);
+});
+
+test("P19-T3: renderPlanDetailActions function exists", () => {
+	const script = extractScript();
+	assert.match(script, /function renderPlanDetailActions\(plan\)/);
+});
+
+test("P19-T3: renderDynamicPlanDesign function exists", () => {
+	const script = extractScript();
+	assert.match(script, /function renderDynamicPlanDesign\(tasks\)/);
+});
+
+test("P19-T3: renderNormalPlanDesign function exists", () => {
+	const script = extractScript();
+	assert.match(script, /function renderNormalPlanDesign\(tasks\)/);
+});
+
+test("P19-T3: renderPlanRunCard function exists", () => {
+	const script = extractScript();
+	assert.match(script, /function renderPlanRunCard\(run,\s*plan\)/);
+});
+
+test("P19-T3: plan detail shows goal and output contract", () => {
+	const script = extractScript();
+	assert.match(script, /renderPlanDetailContent[\s\S]*?goalText/);
+	assert.match(script, /renderPlanDetailContent[\s\S]*?outputText/);
+});
+
+test("P19-T3: plan detail run list is scoped by planId", () => {
+	const script = extractScript();
+	assert.match(script, /openPlanDetail[\s\S]*?runsForPlan\(planId/);
+});
+
+test("P19-T3: plan detail has back button with closePlanDetail", () => {
+	const html = renderTeamPage();
+	assert.match(html, /closePlanDetail/);
+	assert.match(html, /返回/);
+});
+
+test("P19-T3: plan detail start run refreshes and stays in detail", () => {
+	const script = extractScript();
+	assert.match(script, /startRun[\s\S]*?_selectedPlanId/);
+	assert.match(script, /openPlanDetail/);
+});
+
+test("P19-T3: plan detail dynamic design section exists separately from run timeline", () => {
+	const script = extractScript();
+	assert.match(script, /renderDynamicPlanDesign/);
+	assert.match(script, /renderNormalPlanDesign/);
+	assert.match(script, /renderPlanRunCard/);
+});
+
+test("P19-T3: plan detail content values are escaped", () => {
+	const script = extractScript();
+	assert.match(script, /renderPlanDetailContent[\s\S]*?escapeHtml\(safePlan\.title/);
+	assert.match(script, /renderPlanDetailContent[\s\S]*?escapeHtml\(goalText\)/);
+});
+
+test("P19-T3: inline scripts remain valid after P19-T3 changes", () => {
+	const html = renderTeamPage();
+	const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+	assert.ok(scripts.length > 0);
+	for (const script of scripts) {
+		assert.doesNotThrow(() => new Function(script), "inline script should be valid JS after P19-T3 changes");
+	}
+});

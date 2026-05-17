@@ -172,6 +172,8 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 	.plan-card-run-summary { margin-top: 8px; padding: 8px; background: var(--bg); border-radius: 4px; }
 	.plan-kind-badge { font-weight: 500; }
 	.plan-dashboard-empty { grid-column: 1 / -1; }
+	#plan-detail { max-width: 960px; margin: 0 auto; }
+	.plan-design-diagram { background: var(--bg); border-radius: 6px; }
 
 /* Mobile responsive */
 @media (max-width: 720px) {
@@ -215,6 +217,13 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 			<button class="btn btn-primary" onclick="createPlan()">新建计划</button>
 		</div>
 		<div id="plans-list"><div class="loading"><div class="spinner"></div> 加载中...</div></div>
+		<div id="plan-detail" style="display:none">
+			<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+				<button class="btn" style="background:var(--border);color:var(--text)" onclick="closePlanDetail()">← 返回</button>
+				<div id="plan-detail-actions" style="display:flex;gap:8px"></div>
+			</div>
+			<div id="plan-detail-content"></div>
+		</div>
 	</div>
 
 	<!-- Teams -->
@@ -863,6 +872,144 @@ async function saveTeamUnit() {
 					+ '</div></div>';
 			}
 
+			function openPlanDetail(planId) {
+				var plan = _latestPlans.find(function(p) { return p.planId === planId; });
+				if (!plan) { showError('Plan \u672a\u627e\u5230'); return; }
+				_selectedPlanId = planId;
+				var runs = runsForPlan(planId, _latestRuns);
+				$('plans-list').style.display = 'none';
+				$('plan-detail').style.display = '';
+				$('plan-detail-content').innerHTML = renderPlanDetailContent(plan, runs);
+				$('plan-detail-actions').innerHTML = renderPlanDetailActions(plan);
+			}
+
+			function closePlanDetail() {
+				_selectedPlanId = null;
+				$('plans-list').style.display = '';
+				$('plan-detail').style.display = 'none';
+			}
+
+			function renderPlanDetailContent(plan, runs) {
+				var safePlan = plan || {};
+				var tasks = Array.isArray(safePlan.tasks) ? safePlan.tasks : [];
+				var goalText = safePlan.goal && safePlan.goal.text ? safePlan.goal.text : '';
+				var outputText = safePlan.outputContract && safePlan.outputContract.text ? safePlan.outputContract.text : '';
+				var dynamic = isDynamicPlan(tasks);
+				var html = '<div class="card">';
+				html += '<h2 style="font-size:18px;margin-bottom:8px">' + escapeHtml(safePlan.title || '') + '</h2>';
+				html += '<div style="display:flex;gap:8px;margin-bottom:12px">';
+				html += '<span class="plan-chip plan-kind-badge">' + escapeHtml(planKindLabel(safePlan)) + '</span>';
+				html += '<span class="plan-chip">' + tasks.length + ' \u4e2a\u4efb\u52a1</span>';
+				html += '<span class="plan-chip">' + (runs ? runs.length : 0) + ' \u6b21\u8fd0\u884c</span>';
+				html += '</div>';
+				if (goalText) html += '<div class="plan-summary-row" style="margin-bottom:8px"><span class="plan-summary-label">\u76ee\u6807</span><span style="overflow-wrap:break-word">' + escapeHtml(goalText) + '</span></div>';
+				if (outputText) html += '<div class="plan-summary-row" style="margin-bottom:8px"><span class="plan-summary-label">\u8f93\u51fa\u5951\u7ea6</span><span style="overflow-wrap:break-word">' + escapeHtml(outputText) + '</span></div>';
+				html += '</div>';
+				html += '<div class="card" style="margin-top:12px">';
+				html += '<h3 style="font-size:15px;margin-bottom:8px">\u4efb\u52a1\u7ed3\u6784</h3>';
+				if (dynamic) {
+					html += renderDynamicPlanDesign(tasks);
+				} else {
+					html += renderNormalPlanDesign(tasks);
+				}
+				html += '</div>';
+				html += '<div class="card" style="margin-top:12px">';
+				html += '<h3 style="font-size:15px;margin-bottom:8px">\u8fd0\u884c\u8bb0\u5f55</h3>';
+				if (runs && runs.length) {
+					html += runs.map(function(r) { return renderPlanRunCard(r, plan); }).join('');
+				} else {
+					html += '<div class="empty" style="padding:20px 0">\u6682\u65e0\u8fd0\u884c\u8bb0\u5f55</div>';
+				}
+				html += '</div>';
+				return html;
+			}
+
+			function renderPlanDetailActions(plan) {
+				if (!plan) return '';
+				var html = '<button class="btn btn-sm" onclick="viewPlanJson(' + jsArg(plan.planId) + ')">\u67e5\u770b JSON</button>';
+				html += '<button class="btn btn-primary btn-sm" onclick="startRun(\\x27' + plan.planId + '\\x27)">\u521b\u5efa\u8fd0\u884c</button>';
+				if (plan.runCount === 0) html += '<button class="btn btn-danger btn-sm" onclick="deletePlan(\\x27' + plan.planId + '\\x27)">\u5220\u9664</button>';
+				return html;
+			}
+
+			function renderDynamicPlanDesign(tasks) {
+				var discTask = null, feTask = null;
+				for (var i = 0; i < tasks.length; i++) {
+					if (tasks[i].type === 'discovery') discTask = tasks[i];
+					if (tasks[i].type === 'for_each') feTask = tasks[i];
+				}
+				var html = '<div class="plan-design-diagram" style="padding:8px">';
+				html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
+				html += '<span class="badge" style="background:rgba(37,99,235,0.15);color:#3b82f6;font-size:11px">discovery</span>';
+				html += '<span style="font-size:13px">' + escapeHtml(discTask ? discTask.title || '' : '') + '</span>';
+				if (discTask && discTask.discovery) {
+					html += '<span class="plan-chip" style="font-size:10px">output: ' + escapeHtml(discTask.discovery.outputKey || '') + '</span>';
+				}
+				html += '</div>';
+				html += '<div style="margin-left:16px;color:var(--muted);font-size:12px">\u2193 \u8fd0\u884c\u65f6\u5c55\u5f00\u4e3a\u5b50\u4efb\u52a1</div>';
+				html += '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">';
+				html += '<span class="badge" style="background:rgba(124,58,237,0.15);color:#7c3aed;font-size:11px">for_each</span>';
+				html += '<span style="font-size:13px">' + escapeHtml(feTask ? feTask.title || '' : '') + '</span>';
+				if (feTask && feTask.forEach) {
+					html += '<span class="plan-chip" style="font-size:10px">\u2190 ' + escapeHtml(feTask.forEach.itemsFrom || '') + '</span>';
+				}
+				html += '</div>';
+				if (feTask && feTask.forEach && feTask.forEach.taskTemplate) {
+					var tmpl = feTask.forEach.taskTemplate;
+					html += '<details class="plan-task-details" style="margin-top:8px"><summary>\u5b50\u4efb\u52a1\u6a21\u677f</summary><div class="plan-task-detail-content">';
+					html += '<p class="plan-task-detail-input" style="color:#7c3aed">\u6807\u9898: ' + escapeHtml(tmpl.title || '') + '</p>';
+					if (tmpl.input && tmpl.input.text) html += '<p class="plan-task-detail-input">\u6307\u4ee4: ' + escapeHtml(tmpl.input.text) + '</p>';
+					html += '</div></details>';
+				}
+				html += '</div>';
+				return html;
+			}
+
+			function renderNormalPlanDesign(tasks) {
+				if (!tasks || !tasks.length) return '<div style="color:var(--muted)">\u65e0\u4efb\u52a1</div>';
+				var html = '<div style="padding:4px 0">';
+				for (var i = 0; i < tasks.length; i++) {
+					var t = tasks[i];
+					html += '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-top:1px solid var(--border)">';
+					html += '<span style="color:var(--muted);font-size:11px;min-width:24px">#' + (i + 1) + '</span>';
+					html += '<span style="font-size:13px">' + escapeHtml(t.title || t.id || '') + '</span>';
+					var inputText = t.input && t.input.text ? t.input.text : '';
+					var rules = t.acceptance && Array.isArray(t.acceptance.rules) ? t.acceptance.rules : [];
+					var meta = [];
+					if (inputText) meta.push(inputText.length + '\u5b57');
+					if (rules.length) meta.push(rules.length + ' \u6761\u9a8c\u6536');
+					if (meta.length) html += '<span class="plan-task-meta">' + meta.join(' / ') + '</span>';
+					html += '</div>';
+				}
+				html += '</div>';
+				return html;
+			}
+
+			function renderPlanRunCard(run, plan) {
+				if (!run) return '';
+				var prog = runProgressSummary(run);
+				var isActive = isActiveRunStatus(run.status);
+				var cardClass = 'card' + (isActive ? ' plan-card-active' : '');
+				var expanded = _expandedRunIds[run.runId];
+				var html = '<div class="' + cardClass + '" data-run-id="' + escapeHtml(run.runId) + '" style="margin-bottom:8px;cursor:pointer" onclick="togglePlanRunDetail(this, ' + jsArg(run.runId) + ')">';
+				html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+				html += '<div><span class="run-id">' + escapeHtml(run.runId.slice(0, 12)) + '...</span> <span class="run-badge">' + statusBadge(run.status) + '</span></div>';
+				html += '<span style="font-size:12px;color:var(--muted)">' + formatDuration(run.activeElapsedMs) + '</span>';
+				html += '</div>';
+				html += '<div class="run-progress" style="font-size:12px;color:var(--muted);margin-top:4px">\u4efb\u52a1\u8fdb\u5ea6\uff1a' + prog.done + '/' + prog.total + '</div>';
+				if (isActive) {
+					html += '<div class="progress-bar" style="margin-top:4px"><div class="progress-bar-fill" style="width:' + prog.pct + '%"></div></div>';
+				}
+				html += '</div>';
+				return html;
+			}
+
+			function togglePlanRunDetail(el, runId) {
+				_expandedRunIds[runId] = !_expandedRunIds[runId];
+				toggleRunDetail(runId);
+			}
+
+
 async function loadPlans() {
 	var el = $('plans-list');
 	el.innerHTML = '<div class="loading"><div class="spinner"></div> 加载中...</div>';
@@ -1281,9 +1428,14 @@ async function savePlan() {
 async function startRun(planId) {
 	try {
 		await api('/plans/' + planId + '/runs', { method: 'POST' });
-		showSection('runs');
-		loadRuns();
-		setTimeout(loadRuns, 2000);
+		if (_selectedPlanId) {
+			loadRuns();
+			setTimeout(function() { openPlanDetail(planId); }, 1500);
+		} else {
+			showSection('runs');
+			loadRuns();
+			setTimeout(loadRuns, 2000);
+		}
 	} catch (e) { showError(e.message); }
 }
 
