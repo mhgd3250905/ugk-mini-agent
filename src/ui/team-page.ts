@@ -151,13 +151,13 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 .plan-task-row { border-top: 1px solid var(--border); padding: 6px 0; }
 .plan-task-row-head { font-size: 13px; font-weight: 500; overflow-wrap: break-word; }
 .plan-task-num { color: var(--muted); font-size: 11px; margin-right: 4px; }
-.plan-task-meta { color: var(--muted); font-size: 11px; font-weight: 400; }
+.plan-task-meta { color: var(--muted); font-size: 11px; font-weight: 400; margin-left: auto; }
 .plan-task-details { font-size: 12px; color: var(--muted); margin-top: 4px; }
-.plan-task-details summary { cursor: pointer; font-size: 12px; color: var(--accent); list-style: none; }
+.plan-task-details summary { cursor: pointer; font-size: 13px; color: var(--accent); list-style: none; }
 .plan-task-details summary::-webkit-details-marker { display: none; }
 .plan-task-details summary::before { content: "\\25B8 "; }
 .plan-task-details[open] summary::before { content: "\\25BE "; }
-.plan-task-detail-content { margin-top: 4px; padding-left: 12px; }
+.plan-task-detail-content { margin-top: 4px; padding-left: 12px; padding: 8px; background: var(--bg); border-radius: 4px; }
 .plan-task-detail-input { font-size: 12px; color: var(--muted); margin-bottom: 4px; overflow-wrap: break-word; white-space: pre-wrap; }
 .plan-actions { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
 .acceptance-list { list-style: none; padding: 0; margin: 4px 0 0; }
@@ -167,13 +167,23 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 	.plan-dashboard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
 	.plan-dashboard-card { position: relative; transition: border-color 0.2s; }
 	.plan-dashboard-card:hover { border-color: var(--accent); }
-	.plan-card-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-	.plan-card-failed { border-color: var(--fail); }
+	.plan-card-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); animation: pulse-border 2s ease-in-out infinite; }
+	.plan-card-failed { border-color: var(--fail); border-left: 3px solid var(--fail); }
 	.plan-card-run-summary { margin-top: 8px; padding: 8px; background: var(--bg); border-radius: 4px; }
 	.plan-kind-badge { font-weight: 500; }
 	.plan-dashboard-empty { grid-column: 1 / -1; }
 	#plan-detail { max-width: 960px; margin: 0 auto; }
-	.plan-design-diagram { background: var(--bg); border-radius: 6px; }
+	.plan-design-diagram { background: var(--bg); border-radius: 6px; border: 1px solid var(--border); }
+
+/* P19 responsive and polish */
+@keyframes pulse-border { 0%,100% { box-shadow: 0 0 0 1px var(--accent); } 50% { box-shadow: 0 0 8px 2px var(--accent); } }
+.plan-dashboard-card .plan-card-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.plan-dashboard-card .plan-card-actions button { font-size: 12px; padding: 3px 10px; }
+.run-detail { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; }
+.run-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.run-actions button { font-size: 12px; padding: 2px 8px; }
+#plan-detail .plan-detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+#plan-detail .plan-detail-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* Mobile responsive */
 @media (max-width: 720px) {
@@ -188,6 +198,12 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 	.profile-grid { grid-template-columns: 1fr; }
 	.plan-task-row { padding: 4px 0; }
 	.plan-summary-text { font-size: 12px; }
+	.plan-dashboard-grid { grid-template-columns: 1fr; }
+	#plan-detail { padding: 8px; }
+	}
+@media (max-width: 390px) {
+	.plan-dashboard-grid { grid-template-columns: 1fr; }
+	.plan-dashboard-card { padding: 10px; }
 	}
 </style>
 </head>

@@ -12,6 +12,32 @@
 
 ---
 
+## 2026-05-17 — P19 Team Console Dashboard Redesign
+
+- **主题**: Team Runtime 控制台从工程调试页升级为生产级仪表盘
+- **影响范围**: `src/ui/team-page.ts`, `test/team-page-ui.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - 首页默认展示 Plan Dashboard 响应式卡片网格（替代旧列表）
+  - Plan 卡片显示标题、目标摘要、任务数、计划类型、活跃/最新 Run 摘要和进度条
+  - 活跃 Run 卡片 accent 边框脉冲动画，失败 Plan 卡片红色左边框
+  - 点击 Plan 卡片进入 Plan Detail 视图（含返回导航）
+  - Plan Detail 展示完整 goal、outputContract、任务结构设计图、Run 列表
+  - Dynamic Plan 设计图可视化：discovery 节点 → outputKey → for_each 模板 → 运行时展开概念
+  - Normal Plan 设计图：有序任务步骤列表
+  - Run 卡片可展开为任务时间线（含动态生成的子任务）
+  - SSE `updateRunCard` 同时更新 Dashboard、Plan Detail、全局运行记录三个视图
+  - Plan 创建 modal 无变更（仅视觉验证一致性）
+  - 全局 运行记录 tab 保留为辅助审计视图
+- **提交**:
+  - `042d0af feat(team-ui): add dashboard run summary helpers`
+  - `33f2977 feat(team-ui): render plan dashboard cards`
+  - `8066d8e feat(team-ui): add plan detail view`
+  - `236d981 feat(team-ui): visualize dynamic plan structure`
+  - `1f6e788 feat(team-ui): add expandable run timeline cards`
+- **测试**: 225 个测试（含 12 T1 helpers + 14 T2 cards + 15 T3 detail + 11 T4 design + 8 T5 run cards）
+
+---
+
 ## 2026-05-17 — P18 Browser Binding Smoke
 
 - **主题**: Team Runtime 多 AgentProfile 浏览器绑定自动化 smoke 脚本

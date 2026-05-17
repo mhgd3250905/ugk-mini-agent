@@ -471,46 +471,97 @@ docker compose up -d --scale ugk-pi-team-worker=2  # 多 worker 验证
 
 ### /playground/team 控制台
 
-独立页面提供 Team Runtime 的可视化管理（P12 Console UX Refresh + P13 Structured Plan Cards + P14 Compact Card Layout）：
+独立页面提供 Team Runtime 的可视化管理。P19 Dashboard Redesign 重构为以 Plan 为中心的导航架构（P12 Console UX Refresh + P13 Structured Plan Cards + P14 Compact Card Layout + P19 Dashboard Redesign）。
 
-- **控制台头部**：标题 + 副标题 + 三个摘要计数器（计划/团队/活跃运行），实时更新
-- **页面内反馈**：所有操作反馈通过 toast 通知（success/error/info），不再使用浏览器原生 `alert()`/`confirm()`/`prompt()`
-- **自定义确认弹窗**：危险操作（取消运行、删除运行、归档团队、删除计划）使用 `confirmAction()` 自定义 modal，带影响说明文案
-- **计划管理**：
-  - 页面内 modal 表单创建计划（名称、目标、任务、验收标准、输出契约）
-  - 验收标准按行拆分为 `acceptance.rules`
-  - 两种创建模式：**普通计划**（单任务顺序执行）、**发现后逐项处理**（discovery + for_each 动态计划）
-  - 动态模式：填写发现任务和子任务模板，自动生成 canonical Plan JSON，预览后再提交
-  - 结构化 Plan 卡片：每个计划直接展示 goal、outputContract、每个 Task 的 title / input.text 摘要 / acceptance.rules 验收标准清单
-  - P14 紧凑信息架构：卡片默认展示标题+芯片（任务数/运行数），goal/output 截断为摘要行，任务行显示元数据（字数/验收数），长文本通过 `<details>` 折叠
-  - 动态计划卡片：紧凑展示 discovery → for_each 结构，outputKey / itemsFrom / 子任务模板通过 `<details>` 折叠
-  - 长任务列表默认展示 3 个，超过时显示「展开全部任务」按钮
-  - 「查看 JSON」弹层：使用 `textContent` 安全展示完整 Plan JSON
-  - 删除未使用计划（需确认）
-- **预设团队管理**：CRUD + 归档，每个角色绑定 AgentProfile 下拉选择
-- **运行记录**：
-  - 显示关联 Plan 标题、runId、状态 badge
-  - 人性化耗时格式（X时Y分 / X分Y秒）
-  - 格式化时间戳（创建/开始/完成）
-  - 任务进度条 + 成功/失败/取消统计
-  - SSE 实时更新（active run 自动订阅，terminal 自动断开）
-  - 展开/收起任务详情表格
-  - 动态生成的子任务在父任务下方以「子任务」分组展示，ID 和标签经 HTML 转义
-  - 活跃运行排在列表前面
-  - 空状态包含下一步操作引导
-- **运行操作**：
-  - 暂停/恢复直接执行，不需要二次确认
-  - 取消使用 `cancelRunWithConfirm()`，带不可恢复影响说明
-  - 删除使用 `confirmAction()`，仅允许 terminal run
-  - 操作期间按钮 disabled
-- **任务详情**：
-  - 中文 phase 标签（执行中/验收中/复盘中/生成报告等），带颜色编码
-  - 尝试历史卡片（状态、ID、时间戳、file-chip 文件按钮）
-  - `runtimeContext` 默认折叠（`<details>/<summary>`），点击展开详情
-  - 错误摘要使用 `attempt-error` 高亮样式
-  - 文件内容弹窗查看（调用 Attempt API，统一 modal-panel 样式）
-- **最终报告**：统一 modal 弹窗，支持一键复制报告文本
-- **移动端响应式**：`@media (max-width: 720px)` 适配（modal 全宽、摘要隐藏、按钮换行、表格缩窄）
+#### 页面结构
+
+页面顶部为控制台头部（标题 + 副标题 + 三个摘要计数器），下方为 tab 导航：
+
+1. **计划仪表盘**（默认视图）
+2. **运行记录**（全局辅助审计视图）
+3. **预设团队**（不变）
+
+#### 计划仪表盘（默认视图）
+
+响应式卡片网格展示所有 Plan。每张卡片包含：
+
+- 标题 + 芯片（任务数 / 运行数）
+- 目标摘要（截断显示）
+- 计划类型标签：`普通` 或 `动态`（含 discovery → for_each 的 Plan）
+- 活跃/最新 Run 摘要：状态 badge、当前任务、耗时
+- 活跃 Run 进度条：已成功 / 已失败 / 总任务数
+- 有活跃 Run 的 Plan 卡片：accent 色边框动画高亮
+- 最近 Run 状态为 failed 的 Plan 卡片：红色左边框
+
+点击 Plan 卡片进入 **计划详情视图**。
+
+##### 计划详情视图
+
+替换卡片网格，显示单个 Plan 的完整信息：
+
+- **顶部**：返回按钮（回到仪表盘）+ Plan 标题
+- **基本信息**：完整 goal、outputContract
+- **任务结构**：
+  - 普通计划：有序步骤列表，每步显示 title 和 input 摘要
+  - 动态计划：**设计图**，可视化展示 discovery 节点 → `outputKey` → `for_each` 模板 → 运行时扩展概念
+- **Run 列表**：仅展示该 Plan 关联的 Run（复用运行记录的卡片样式）
+
+Run 卡片可展开，点击后展示该 Run 的 **任务时间线**：
+
+- 有序任务节点，每个节点显示状态图标和标题
+- 动态生成的子任务在父任务下方缩进展示
+- 中文 phase 标签和颜色编码
+
+#### 运行记录 tab
+
+全局辅助审计视图，展示所有 Run（不区分 Plan）：
+
+- 关联 Plan 标题、runId、状态 badge
+- 人性化耗时格式（X时Y分 / X分Y秒）
+- 格式化时间戳（创建/开始/完成）
+- 任务进度条 + 成功/失败/取消统计
+- SSE 实时更新（active run 自动订阅，terminal 自动断开）
+- 动态生成的子任务在父任务下方以「子任务」分组展示
+- 活跃运行排在列表前面
+- 空状态包含下一步操作引导
+
+#### 运行操作（全局）
+
+- 暂停/恢复直接执行，不需要二次确认
+- 取消使用自定义确认弹窗，带不可恢复影响说明
+- 删除仅允许 terminal run，需确认
+- 操作期间按钮 disabled
+
+#### 计划管理
+
+- 页面内 modal 表单创建计划（名称、目标、任务、验收标准、输出契约）
+- 验收标准按行拆分为 `acceptance.rules`
+- 两种创建模式：**普通计划**（单任务顺序执行）、**发现后逐项处理**（discovery + for_each 动态计划）
+- 动态模式：填写发现任务和子任务模板，自动生成 canonical Plan JSON，预览后再提交
+- 删除未使用计划（需确认）
+- 「查看 JSON」弹层：使用 `textContent` 安全展示完整 Plan JSON
+
+#### 预设团队 tab
+
+CRUD + 归档，每个角色绑定 AgentProfile 下拉选择。与 P19 前行为一致。
+
+#### 任务详情
+
+- 中文 phase 标签（执行中/验收中/复盘中/生成报告等），带颜色编码
+- 尝试历史卡片（状态、ID、时间戳、file-chip 文件按钮）
+- `runtimeContext` 默认折叠（`<details>/<summary>`），点击展开详情
+- 错误摘要使用高亮样式
+- 文件内容弹窗查看（调用 Attempt API，统一 modal-panel 样式）
+
+#### 最终报告
+
+统一 modal 弹窗，支持一键复制报告文本。
+
+#### 通用特性
+
+- **页面内反馈**：所有操作反馈通过 toast 通知（success/error/info），不使用浏览器原生 `alert()`/`confirm()`/`prompt()`
+- **自定义确认弹窗**：危险操作使用 `confirmAction()` modal，带影响说明文案
+- **移动端响应式**：`@media (max-width: 720px)` 适配（modal 全宽、摘要隐藏、按钮换行、表格缩窄、卡片网格单列）
 - **安全性**：所有动态文本经过 `escapeHtml()` 转义，toast 使用 `textContent`
 
 ### Checker/Watcher JSON Output Format
