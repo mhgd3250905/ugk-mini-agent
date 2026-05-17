@@ -32,6 +32,7 @@ Before touching any API, ask the user:
 2. **Deliverable** — What should the final output look like?
 3. **Existing resources** — Do you have a TeamUnit you want to reuse?
 4. **Task granularity** — Roughly how many steps do you want to break this into?
+5. **Unknown item count** — Does the work involve an unknown number of items that should first be discovered as a list and then processed one by one? If yes, propose `discovery` + `for_each` instead of asking the user to guess a static step count.
 
 Do not proceed to API calls until the user has answered at least the goal and deliverable questions.
 

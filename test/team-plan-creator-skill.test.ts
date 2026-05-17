@@ -114,6 +114,14 @@ test("P16-T4: skill prohibits guessing static task counts for unknown item sets"
 	assert.match(skill, /do not guess|must not guess|禁止猜测|不要猜测/i);
 });
 
+test("team-plan-creator skill asks whether unknown item counts need discovery plus for_each", async () => {
+	const skill = await readSkill();
+	assert.match(skill, /Unknown item count/);
+	assert.match(skill, /first be discovered as a list/);
+	assert.match(skill, /processed one by one/);
+	assert.match(skill, /discovery[\s\S]*for_each/);
+});
+
 test("P16-T4: skill requires discovery output to contain stable item ids", async () => {
 	const skill = await readSkill();
 	assert.match(skill, /stable.*id|stable.*non-empty.*id/i);
