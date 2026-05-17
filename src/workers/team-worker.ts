@@ -77,7 +77,7 @@ async function main() {
 				dataDir: config.teamDataDir,
 				maxCheckerRevisions: 3,
 				maxWatcherRevisions: 1,
-				maxRunDurationMinutes: 60,
+				maxRunDurationMinutes: config.teamMaxRunDurationMinutes,
 				phaseTimeouts: {
 					workerMs: config.teamWorkerPhaseTimeoutMs,
 					checkerMs: config.teamCheckerPhaseTimeoutMs,

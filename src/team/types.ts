@@ -171,6 +171,7 @@ export interface TeamRunState {
 	pauseReason: string | null;
 	lastError: string | null;
 	finalizerRuntimeContext?: TeamRoleRuntimeContext | null;
+	maxRunDurationMinutes?: number;
 	lease?: TeamRunLease | null;
 	updatedAt: string;
 }

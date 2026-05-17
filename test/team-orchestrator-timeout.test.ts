@@ -309,3 +309,65 @@ test("pause takes priority over checker timeout", async () => {
 		await rm(root, { recursive: true });
 	}
 });
+
+// ── P20 Task 3: per-run timeout ──
+
+test("state-level maxRunDurationMinutes overrides constructor default", async () => {
+	const { root, planStore, unitStore, workspace } = await setup();
+	try {
+		// Create a 2-task plan so timeout can hit between tasks
+		const plan = await planStore.create({
+			title: "timeout override", defaultTeamUnitId: (await unitStore.list())[0]!.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{ id: "task_1", title: "t1", input: { text: "do 1" }, acceptance: { rules: ["r1"] } },
+				{ id: "task_2", title: "t2", input: { text: "do 2" }, acceptance: { rules: ["r2"] } },
+			],
+			outputContract: { text: "output" },
+		});
+		// Slow worker to ensure elapsed time accumulates past the short timeout
+		class SlowWorker extends MockRoleRunner {
+			override async runWorker(input: WorkerInput) {
+				await new Promise(r => setTimeout(r, 80));
+				return super.runWorker(input);
+			}
+		}
+		const runner = new SlowWorker();
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+		const state = await orchestrator.createRun(plan.planId);
+		// Patch state to set a very short timeout (0.003 min = 180ms, enough for 1 slow task but not 2)
+		const patched = (await workspace.getState(state.runId))!;
+		patched.maxRunDurationMinutes = 0.003;
+		await workspace.saveState(patched);
+
+		const result = await orchestrator.runToCompletion(state.runId);
+		assert.equal(result.status, "failed");
+		assert.equal(result.lastError, "run timeout");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("old state without maxRunDurationMinutes falls back to constructor default", async () => {
+	const { root, plan, planStore, unitStore, workspace } = await setup();
+	try {
+		const runner = new MockRoleRunner();
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+		const state = await orchestrator.createRun(plan.planId);
+		// Old state: no maxRunDurationMinutes field
+		const patched = (await workspace.getState(state.runId))!;
+		delete (patched as any).maxRunDurationMinutes;
+		await workspace.saveState(patched);
+
+		const result = await orchestrator.runToCompletion(state.runId);
+		assert.equal(result.status, "completed", "should complete normally with constructor default 60 min");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});

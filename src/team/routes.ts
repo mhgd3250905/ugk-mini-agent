@@ -17,6 +17,7 @@ export interface TeamRouteOptions {
 	teamDataDir: string;
 	projectRoot: string;
 	maxConcurrentRuns?: number;
+	maxRunDurationMinutes?: number;
 }
 
 function createRoleRunner(options: TeamRouteOptions): TeamRoleRunner {
@@ -72,7 +73,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			dataDir: options.teamDataDir,
 			maxCheckerRevisions: 3,
 			maxWatcherRevisions: 1,
-			maxRunDurationMinutes: 60,
+			maxRunDurationMinutes: options.maxRunDurationMinutes ?? 100,
 			maxConcurrentRuns: options.maxConcurrentRuns,
 		});
 	}
@@ -171,8 +172,20 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	app.post("/v1/team/plans/:planId/runs", async (request, reply) => {
 		const { planId } = request.params as { planId: string };
 		try {
+			const body = request.body as Record<string, unknown> | undefined;
+			let perRunTimeout: number | undefined;
+			if (body?.maxRunDurationMinutes != null) {
+				const raw = body.maxRunDurationMinutes;
+				const num = Number(raw);
+				if (!Number.isFinite(num) || num <= 0 || num > 1440) {
+					reply.code(400).send({ error: "maxRunDurationMinutes must be a positive number up to 1440" });
+					return;
+				}
+				perRunTimeout = num;
+			}
 			const orchestrator = makeOrchestrator();
-			const state = await orchestrator.createRun(planId);
+			const runOptions = perRunTimeout != null ? { maxRunDurationMinutes: perRunTimeout } : { maxRunDurationMinutes: options.maxRunDurationMinutes ?? 100 };
+			const state = await orchestrator.createRun(planId, runOptions);
 			reply.code(201).send(state);
 		} catch (err) {
 			const msg = (err as Error).message;

@@ -490,3 +490,71 @@ test("P16-T2: normal one-task plan still works via API", async () => {
 		try { await rm(root, { recursive: true, force: true }); } catch {}
 	}
 });
+
+// ── P20 Task 3: per-run timeout override ──
+
+test("POST /v1/team/plans/:planId/runs with no body persists maxRunDurationMinutes default", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+		const planRes = await app.inject({ method: "POST", url: "/v1/team/plans", payload: planBody(unitRes.json().teamUnitId) });
+		const planId = planRes.json().planId;
+
+		const runRes = await app.inject({ method: "POST", url: `/v1/team/plans/${planId}/runs` });
+		assert.equal(runRes.statusCode, 201);
+		const state = runRes.json();
+		assert.equal(state.maxRunDurationMinutes, 100, "default should be 100");
+
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch { /* concurrent write */ }
+	}
+});
+
+test("POST /v1/team/plans/:planId/runs with maxRunDurationMinutes override persists value", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+		const planRes = await app.inject({ method: "POST", url: "/v1/team/plans", payload: planBody(unitRes.json().teamUnitId) });
+		const planId = planRes.json().planId;
+
+		const runRes = await app.inject({ method: "POST", url: `/v1/team/plans/${planId}/runs`, payload: { maxRunDurationMinutes: 120 } });
+		assert.equal(runRes.statusCode, 201);
+		const state = runRes.json();
+		assert.equal(state.maxRunDurationMinutes, 120);
+
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch { /* concurrent write */ }
+	}
+});
+
+test("POST /v1/team/plans/:planId/runs rejects invalid maxRunDurationMinutes", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+		const planRes = await app.inject({ method: "POST", url: "/v1/team/plans", payload: planBody(unitRes.json().teamUnitId) });
+		const planId = planRes.json().planId;
+
+		// negative
+		const neg = await app.inject({ method: "POST", url: `/v1/team/plans/${planId}/runs`, payload: { maxRunDurationMinutes: -1 } });
+		assert.equal(neg.statusCode, 400);
+		assert.match(neg.json().error, /maxRunDurationMinutes/i);
+
+		// zero
+		const zero = await app.inject({ method: "POST", url: `/v1/team/plans/${planId}/runs`, payload: { maxRunDurationMinutes: 0 } });
+		assert.equal(zero.statusCode, 400);
+
+		// string junk
+		const junk = await app.inject({ method: "POST", url: `/v1/team/plans/${planId}/runs`, payload: { maxRunDurationMinutes: "abc" } });
+		assert.equal(junk.statusCode, 400);
+
+		// absurdly large
+		const big = await app.inject({ method: "POST", url: `/v1/team/plans/${planId}/runs`, payload: { maxRunDurationMinutes: 99999 } });
+		assert.equal(big.statusCode, 400);
+
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch { /* concurrent write */ }
+	}
+});

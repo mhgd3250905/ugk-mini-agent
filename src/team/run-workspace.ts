@@ -39,7 +39,7 @@ export class RunWorkspace {
 
 	constructor(private readonly rootDir: string) {}
 
-	async createRun(plan: TeamPlan, teamUnitId: string): Promise<TeamRunState> {
+	async createRun(plan: TeamPlan, teamUnitId: string, options?: { maxRunDurationMinutes?: number }): Promise<TeamRunState> {
 		const runId = generateRunId();
 		const now = new Date().toISOString();
 		const runDir = join(this.rootDir, "runs", runId);
@@ -71,6 +71,7 @@ export class RunWorkspace {
 			lastError: null,
 			finalizerRuntimeContext: null,
 			lease: null,
+			...(options?.maxRunDurationMinutes != null ? { maxRunDurationMinutes: options.maxRunDurationMinutes } : {}),
 			updatedAt: now,
 		};
 
@@ -84,6 +85,7 @@ export class RunWorkspace {
 		plan: TeamPlan,
 		teamUnitId: string,
 		maxConcurrentRuns: number,
+		options?: { maxRunDurationMinutes?: number },
 	): Promise<TeamRunState> {
 		const effectiveLimit = Math.max(1, Math.floor(maxConcurrentRuns || 1));
 		return this.withAdmissionLock(async () => {
@@ -93,7 +95,7 @@ export class RunWorkspace {
 				throw new Error("active run limit reached");
 			}
 
-			return this.createRun(plan, teamUnitId);
+			return this.createRun(plan, teamUnitId, options);
 		});
 	}
 

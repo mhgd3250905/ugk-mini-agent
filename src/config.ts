@@ -30,6 +30,7 @@ export interface AppConfig {
 	teamCheckerPhaseTimeoutMs: number;
 	teamWatcherPhaseTimeoutMs: number;
 	teamFinalizerPhaseTimeoutMs: number;
+	teamMaxRunDurationMinutes: number;
 }
 
 export function loadApiKeyFromApiTxt(
@@ -119,9 +120,10 @@ export function getAppConfig(projectRoot: string = process.cwd()): AppConfig {
 		teamWorkerLeaseTtlMs: Number(process.env.TEAM_WORKER_LEASE_TTL_MS ?? "60000"),
 		teamWorkerHeartbeatIntervalMs: Number(process.env.TEAM_WORKER_HEARTBEAT_INTERVAL_MS ?? "10000"),
 		teamMaxConcurrentRuns: Number(process.env.TEAM_MAX_CONCURRENT_RUNS ?? "1"),
-		teamWorkerPhaseTimeoutMs: Number(process.env.TEAM_WORKER_PHASE_TIMEOUT_MS ?? "600000"),
+		teamWorkerPhaseTimeoutMs: Number(process.env.TEAM_WORKER_PHASE_TIMEOUT_MS ?? "900000"),
 		teamCheckerPhaseTimeoutMs: Number(process.env.TEAM_CHECKER_PHASE_TIMEOUT_MS ?? "300000"),
 		teamWatcherPhaseTimeoutMs: Number(process.env.TEAM_WATCHER_PHASE_TIMEOUT_MS ?? "300000"),
 		teamFinalizerPhaseTimeoutMs: Number(process.env.TEAM_FINALIZER_PHASE_TIMEOUT_MS ?? "300000"),
+		teamMaxRunDurationMinutes: Number(process.env.TEAM_MAX_RUN_DURATION_MINUTES ?? "100"),
 	};
 }

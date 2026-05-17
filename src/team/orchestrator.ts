@@ -15,7 +15,7 @@ export interface PhaseTimeouts {
 }
 
 export const DEFAULT_PHASE_TIMEOUTS: PhaseTimeouts = {
-	workerMs: 600_000,
+	workerMs: 900_000,
 	checkerMs: 300_000,
 	watcherMs: 300_000,
 	finalizerMs: 300_000,
@@ -135,7 +135,7 @@ export class TeamOrchestrator {
 		this.taskExpansionPlanner = options.taskExpansionPlanner ?? new TemplateTaskExpansionPlanner();
 	}
 
-	async createRun(planId: string): Promise<TeamRunState> {
+	async createRun(planId: string, options?: { maxRunDurationMinutes?: number }): Promise<TeamRunState> {
 		const plan = await this.planStore.get(planId);
 		if (!plan) throw new Error(`plan not found: ${planId}`);
 
@@ -143,7 +143,7 @@ export class TeamOrchestrator {
 		if (!teamUnit) throw new Error(`team unit not found: ${plan.defaultTeamUnitId}`);
 		if (teamUnit.archived) throw new Error("archived team unit cannot be used");
 
-		const state = await this.workspace.createRunWithAdmission(plan, teamUnit.teamUnitId, this.maxConcurrentRuns);
+		const state = await this.workspace.createRunWithAdmission(plan, teamUnit.teamUnitId, this.maxConcurrentRuns, options);
 		await this.planStore.incrementRunCount(planId);
 		return state;
 	}
@@ -724,7 +724,10 @@ export class TeamOrchestrator {
 
 	private isTimedOut(state: TeamRunState): boolean {
 		const elapsed = this.accumulateElapsed(state);
-		return elapsed >= this.maxRunDurationMs;
+		const limitMs = state.maxRunDurationMinutes != null
+			? state.maxRunDurationMinutes * 60 * 1000
+			: this.maxRunDurationMs;
+		return elapsed >= limitMs;
 	}
 
 	private async handleTimeout(state: TeamRunState, plan: import("./types.js").TeamPlan): Promise<void> {
