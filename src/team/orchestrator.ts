@@ -79,15 +79,13 @@ function generateFallbackReport(
 		"## 任务执行结果",
 		"",
 	];
-	for (const task of plan.tasks) {
-		const ts = state.taskStates[task.id];
-		if (!ts) {
-			lines.push(`- ${task.id}（${task.title}）：待执行`);
-		} else {
-			lines.push(`- ${task.id}（${task.title}）：${statusLabel(ts.status)}`);
-			if (ts.resultRef) lines.push(`  - 结果：${ts.resultRef}`);
-			if (ts.errorSummary) lines.push(`  - 错误：${ts.errorSummary}`);
-		}
+	const taskTitleLookup = new Map(plan.tasks.map(t => [t.id, t.title]));
+	for (const [taskId, ts] of Object.entries(state.taskStates)) {
+		const title = taskTitleLookup.get(taskId) ?? taskId;
+		lines.push(`- ${taskId}（${title}）：${statusLabel(ts.status)}`);
+		if (ts.resultRef) lines.push(`  - 结果：${ts.resultRef}`);
+		if (ts.errorSummary) lines.push(`  - 错误：${ts.errorSummary}`);
+		if (ts.previousErrorSummary) lines.push(`  - 原始错误（跳过前）：${ts.previousErrorSummary}`);
 	}
 	lines.push("", `生成时间：${now()}`, "");
 	return lines.join("\n");
@@ -374,6 +372,7 @@ export class TeamOrchestrator {
 			const disposition = getManualDisposition(ts);
 			if (disposition === "skip") {
 				ts.status = "skipped";
+				if (ts.errorSummary) ts.previousErrorSummary = ts.errorSummary;
 				ts.errorSummary = null;
 				ts.progress = { phase: "skipped", message: progressMessages.skipped, updatedAt: now() };
 			} else if (shouldExecuteOnRerun(ts)) {
@@ -381,6 +380,7 @@ export class TeamOrchestrator {
 				ts.activeAttemptId = null;
 				ts.resultRef = null;
 				ts.errorSummary = null;
+				ts.previousErrorSummary = null;
 				ts.progress = { phase: "pending", message: progressMessages.pending, updatedAt: now() };
 			}
 			// else: default+succeeded → preserve resultRef, status stays succeeded
@@ -1013,7 +1013,7 @@ export class TeamOrchestrator {
 				status: (ts.status === "succeeded" ? "succeeded" : ts.status === "skipped" ? "skipped" : ts.status === "cancelled" ? "cancelled" : "failed") as "succeeded" | "failed" | "cancelled" | "skipped",
 				resultRef: ts.resultRef,
 				errorSummary: isSkipped ? null : ts.errorSummary,
-				previousErrorSummary: isSkipped && ts.errorSummary ? ts.errorSummary : undefined,
+				previousErrorSummary: ts.previousErrorSummary ?? undefined,
 				manualDisposition: ts.manualDisposition,
 			};
 		});
