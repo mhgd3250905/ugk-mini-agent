@@ -300,6 +300,58 @@ test("P15: generated child task has parent metadata", () => {
 	assert.equal(task.generated, true);
 });
 
+// ── P26: outputCheck contract types ──
+
+test("P26: TeamTask can declare json/html/file outputCheck contracts", () => {
+	const jsonItemsTask: TeamTask = {
+		id: "scan_vendors",
+		type: "discovery",
+		title: "Scan vendors",
+		input: { text: "Find vendors" },
+		acceptance: { rules: ["vendors are structured"] },
+		discovery: { outputKey: "vendors" },
+		outputCheck: { type: "json_items", outputKey: "vendors", requiredFields: ["id", "name"] },
+	};
+	const htmlTask: TeamTask = {
+		id: "render_card",
+		title: "Render card",
+		input: { text: "Render a vendor card" },
+		acceptance: { rules: ["valid fragment"] },
+		outputCheck: { type: "html_fragment", requiredSubstrings: ["vendor-card"], forbiddenTags: ["html", "head", "body"] },
+	};
+	const fileTask: TeamTask = {
+		id: "write_report",
+		title: "Write report",
+		input: { text: "Write report" },
+		acceptance: { rules: ["file exists"] },
+		outputCheck: { type: "file_exists", path: "worker/report.html" },
+	};
+	assert.equal(jsonItemsTask.outputCheck?.type, "json_items");
+	assert.equal(htmlTask.outputCheck?.type, "html_fragment");
+	assert.equal(fileTask.outputCheck?.type, "file_exists");
+});
+
+test("P26: for_each taskTemplate can declare outputCheck", () => {
+	const task: TeamTask = {
+		id: "render_each",
+		type: "for_each",
+		title: "Render each vendor",
+		input: { text: "Placeholder" },
+		acceptance: { rules: ["placeholder"] },
+		forEach: {
+			itemsFrom: "scan_vendors.vendors",
+			mode: "sequential",
+			taskTemplate: {
+				title: "Render {{item.name}}",
+				input: { text: "Render {{item.id}}" },
+				acceptance: { rules: ["must render current vendor"] },
+				outputCheck: { type: "html_fragment", requiredSubstrings: ["vendor-card", "{{item.id}}"], forbiddenTags: ["html", "body"] },
+			},
+		},
+	};
+	assert.equal(task.forEach?.taskTemplate.outputCheck?.type, "html_fragment");
+});
+
 // ── P24: Manual disposition and rerun decision table ──
 
 function makeTaskState(overrides: Partial<TeamTaskState> = {}): TeamTaskState {

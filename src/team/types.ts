@@ -106,6 +106,12 @@ export interface TeamUnit {
 export type TeamTaskType = "normal" | "discovery" | "for_each";
 export type TeamTaskDecomposerMode = "none" | "leaf" | "propagate";
 
+export type TeamTaskOutputCheck =
+	| { type: "json_items"; outputKey?: string; allowDirectArray?: boolean; requiredFields?: string[] }
+	| { type: "json_object"; requiredFields?: string[] }
+	| { type: "html_fragment"; requiredSubstrings?: string[]; requiredSelectors?: string[]; forbiddenTags?: string[]; requireFence?: boolean }
+	| { type: "file_exists"; path?: string };
+
 export interface TeamTaskDecomposerPolicy {
 	mode: TeamTaskDecomposerMode;
 	maxChildren?: number;
@@ -118,6 +124,7 @@ export interface TeamTask {
 	input: { text: string; payload?: Record<string, unknown> };
 	acceptance: { rules: string[] };
 	decomposer?: TeamTaskDecomposerPolicy;
+	outputCheck?: TeamTaskOutputCheck;
 	discovery?: {
 		outputKey: string;
 	};
@@ -129,6 +136,7 @@ export interface TeamTask {
 			input: { text: string; payload?: Record<string, unknown> };
 			acceptance: { rules: string[] };
 			decomposer?: TeamTaskDecomposerPolicy;
+			outputCheck?: TeamTaskOutputCheck;
 		};
 	};
 	parentTaskId?: string;

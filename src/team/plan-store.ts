@@ -5,6 +5,7 @@ import { generatePlanId } from "./ids.js";
 
 const VALID_TASK_TYPES = new Set(["normal", "discovery", "for_each"]);
 const VALID_DECOMPOSER_MODES = new Set(["none", "leaf", "propagate"]);
+const VALID_OUTPUT_CHECK_TYPES = new Set(["json_items", "json_object", "html_fragment", "file_exists"]);
 const MAX_DECOMPOSER_CHILDREN = 20;
 
 function validateDecomposerPolicy(policy: unknown, fieldPath: string): void {
@@ -23,11 +24,60 @@ function validateDecomposerPolicy(policy: unknown, fieldPath: string): void {
 	}
 }
 
+function validateStringArray(value: unknown, fieldPath: string): void {
+	if (value === undefined) return;
+	if (!Array.isArray(value) || value.some(item => typeof item !== "string" || !item.trim())) {
+		throw new Error(`${fieldPath} must contain non-empty strings`);
+	}
+}
+
+function validateOutputCheck(outputCheck: unknown, fieldPath: string): void {
+	if (outputCheck === undefined) return;
+	if (!outputCheck || typeof outputCheck !== "object" || Array.isArray(outputCheck)) {
+		throw new Error(`${fieldPath} must be an object`);
+	}
+	const obj = outputCheck as {
+		type?: unknown;
+		outputKey?: unknown;
+		requiredFields?: unknown;
+		requiredSubstrings?: unknown;
+		requiredSelectors?: unknown;
+		forbiddenTags?: unknown;
+		path?: unknown;
+		allowDirectArray?: unknown;
+		requireFence?: unknown;
+	};
+	if (typeof obj.type !== "string" || !VALID_OUTPUT_CHECK_TYPES.has(obj.type)) {
+		throw new Error(`${fieldPath}.type must be json_items, json_object, html_fragment, or file_exists`);
+	}
+	if (obj.outputKey !== undefined && (typeof obj.outputKey !== "string" || !obj.outputKey.trim())) {
+		throw new Error(`${fieldPath}.outputKey must be a non-empty string`);
+	}
+	if (obj.path !== undefined && (typeof obj.path !== "string" || !obj.path.trim())) {
+		throw new Error(`${fieldPath}.path must be a non-empty string`);
+	}
+	if (obj.allowDirectArray !== undefined && typeof obj.allowDirectArray !== "boolean") {
+		throw new Error(`${fieldPath}.allowDirectArray must be boolean`);
+	}
+	if (obj.requireFence !== undefined && typeof obj.requireFence !== "boolean") {
+		throw new Error(`${fieldPath}.requireFence must be boolean`);
+	}
+	validateStringArray(obj.requiredFields, `${fieldPath}.requiredFields`);
+	validateStringArray(obj.requiredSubstrings, `${fieldPath}.requiredSubstrings`);
+	validateStringArray(obj.requiredSelectors, `${fieldPath}.requiredSelectors`);
+	if (obj.forbiddenTags !== undefined) {
+		validateStringArray(obj.forbiddenTags, `${fieldPath}.forbiddenTags`);
+		const safe = (obj.forbiddenTags as string[]).every(tag => /^[a-zA-Z][a-zA-Z0-9-]*$/.test(tag));
+		if (!safe) throw new Error(`${fieldPath}.forbiddenTags must contain safe tag names`);
+	}
+}
+
 function validateTasks(tasks: unknown[]): void {
 	if (!tasks.length) throw new Error("at least one task is required");
 	for (const task of tasks as Array<{
 		id?: string; type?: string; title?: string; input?: { text?: string }; acceptance?: { rules?: string[] };
 		decomposer?: unknown;
+		outputCheck?: unknown;
 		discovery?: { outputKey?: string };
 		forEach?: { itemsFrom?: string; mode?: string; taskTemplate?: unknown };
 	}>) {
@@ -36,6 +86,7 @@ function validateTasks(tasks: unknown[]): void {
 		if (!task.input?.text?.trim()) throw new Error("task input text is required");
 		if (!task.acceptance?.rules?.length) throw new Error("task acceptance rules are required");
 		validateDecomposerPolicy(task.decomposer, "task decomposer");
+		validateOutputCheck(task.outputCheck, "task outputCheck");
 		const taskType = task.type ?? "normal";
 		if (!VALID_TASK_TYPES.has(taskType)) throw new Error(`unknown task type: ${taskType}`);
 		if (taskType === "discovery") {
@@ -44,11 +95,12 @@ function validateTasks(tasks: unknown[]): void {
 		if (taskType === "for_each") {
 			if (!task.forEach?.itemsFrom?.trim()) throw new Error("for_each task requires forEach.itemsFrom");
 			if (task.forEach.mode !== "sequential") throw new Error("for_each task requires forEach.mode 'sequential'");
-			const tmpl = task.forEach.taskTemplate as { title?: string; input?: { text?: string }; acceptance?: { rules?: string[] }; decomposer?: unknown } | undefined;
+			const tmpl = task.forEach.taskTemplate as { title?: string; input?: { text?: string }; acceptance?: { rules?: string[] }; decomposer?: unknown; outputCheck?: unknown } | undefined;
 			if (!tmpl?.title?.trim()) throw new Error("for_each task requires forEach.taskTemplate.title");
 			if (!tmpl?.input?.text?.trim()) throw new Error("for_each task requires forEach.taskTemplate.input.text");
 			if (!tmpl?.acceptance?.rules?.length) throw new Error("for_each task requires forEach.taskTemplate.acceptance.rules");
 			validateDecomposerPolicy(tmpl.decomposer, "forEach.taskTemplate.decomposer");
+			validateOutputCheck(tmpl.outputCheck, "forEach.taskTemplate.outputCheck");
 		}
 	}
 	const ids = (tasks as Array<{ id: string }>).map(t => t.id);

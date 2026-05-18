@@ -536,3 +536,140 @@ test("PlanStore validates forEach.taskTemplate.decomposer", async () => {
 		await rm(root, { recursive: true });
 	}
 });
+
+// ── P26: outputCheck validation ──
+
+test("P26: PlanStore.create accepts valid task outputCheck contracts", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		const plan = await store.create({
+			...validInput,
+			tasks: [
+				{
+					id: "scan_vendors",
+					type: "discovery",
+					title: "Scan vendors",
+					input: { text: "Find vendors" },
+					acceptance: { rules: ["output vendors"] },
+					discovery: { outputKey: "vendors" },
+					outputCheck: { type: "json_items", outputKey: "vendors", requiredFields: ["id", "name"] },
+				},
+				{
+					id: "render_card",
+					title: "Render card",
+					input: { text: "Render card" },
+					acceptance: { rules: ["valid fragment"] },
+					outputCheck: { type: "html_fragment", requiredSubstrings: ["vendor-card"], forbiddenTags: ["html", "head", "body"] },
+				},
+				{
+					id: "report_file",
+					title: "Report file",
+					input: { text: "Write file" },
+					acceptance: { rules: ["file exists"] },
+					outputCheck: { type: "file_exists", path: "worker/report.html" },
+				},
+			],
+		} as any);
+		assert.equal(plan.tasks[0]!.outputCheck?.type, "json_items");
+		assert.equal(plan.tasks[1]!.outputCheck?.type, "html_fragment");
+		assert.equal(plan.tasks[2]!.outputCheck?.type, "file_exists");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("P26: PlanStore rejects invalid outputCheck on create and update", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		await assert.rejects(
+			() => store.create({
+				...validInput,
+				tasks: [{ id: "t1", title: "Bad", input: { text: "x" }, acceptance: { rules: ["ok"] }, outputCheck: { type: "yaml_items" } }],
+			} as any),
+			{ message: "task outputCheck.type must be json_items, json_object, html_fragment, or file_exists" },
+		);
+		await assert.rejects(
+			() => store.create({
+				...validInput,
+				tasks: [{ id: "t1", title: "Bad", input: { text: "x" }, acceptance: { rules: ["ok"] }, outputCheck: { type: "json_items", requiredFields: ["id", ""] } }],
+			} as any),
+			{ message: "task outputCheck.requiredFields must contain non-empty strings" },
+		);
+		await assert.rejects(
+			() => store.create({
+				...validInput,
+				tasks: [{ id: "t1", title: "Bad", input: { text: "x" }, acceptance: { rules: ["ok"] }, outputCheck: { type: "html_fragment", forbiddenTags: ["body", "script>alert"] } }],
+			} as any),
+			{ message: "task outputCheck.forbiddenTags must contain safe tag names" },
+		);
+
+		const plan = await store.create(validInput);
+		await assert.rejects(
+			() => store.updateEditablePlan(plan.planId, {
+				tasks: [{ id: "t1", title: "Bad", input: { text: "x" }, acceptance: { rules: ["ok"] }, outputCheck: { type: "yaml_items" } } as any],
+			}),
+			{ message: "task outputCheck.type must be json_items, json_object, html_fragment, or file_exists" },
+		);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("P26: PlanStore validates forEach.taskTemplate.outputCheck and preserves old plans without it", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		const oldPlan = await store.create(validInput);
+		assert.equal(oldPlan.tasks[0]!.outputCheck, undefined);
+
+		await assert.rejects(
+			() => store.create({
+				...validInput,
+				tasks: [{
+					id: "process_each",
+					type: "for_each",
+					title: "Process each",
+					input: { text: "placeholder" },
+					acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "discover.items",
+						mode: "sequential",
+						taskTemplate: {
+							title: "Process {{item.id}}",
+							input: { text: "Process" },
+							acceptance: { rules: ["ok"] },
+							outputCheck: { type: "html_fragment", forbiddenTags: ["html/body"] },
+						},
+					},
+				}],
+			} as any),
+			{ message: "forEach.taskTemplate.outputCheck.forbiddenTags must contain safe tag names" },
+		);
+
+		const plan = await store.create({
+			...validInput,
+			tasks: [{
+				id: "process_each",
+				type: "for_each",
+				title: "Process each",
+				input: { text: "placeholder" },
+				acceptance: { rules: ["ok"] },
+				forEach: {
+					itemsFrom: "discover.items",
+					mode: "sequential",
+					taskTemplate: {
+						title: "Process {{item.id}}",
+						input: { text: "Process" },
+						acceptance: { rules: ["ok"] },
+						outputCheck: { type: "json_object", requiredFields: ["id", "summary"] },
+					},
+				},
+			}],
+		} as any);
+		assert.equal(plan.tasks[0]!.forEach?.taskTemplate.outputCheck?.type, "json_object");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
