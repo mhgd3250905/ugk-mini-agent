@@ -364,6 +364,11 @@ export class RunWorkspace {
 		return "final-report.md";
 	}
 
+	async removeFinalReport(runId: string): Promise<void> {
+		const filePath = join(this.rootDir, "runs", runId, "final-report.md");
+		await rm(filePath, { force: true });
+	}
+
 	async deleteRun(runId: string): Promise<void> {
 		const runDir = join(this.rootDir, "runs", runId);
 		await rm(runDir, { recursive: true, force: true });

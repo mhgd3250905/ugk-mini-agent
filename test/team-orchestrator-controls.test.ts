@@ -496,3 +496,189 @@ test("resume skips already succeeded tasks", async () => {
 		await rm(root, { recursive: true });
 	}
 });
+
+// ── P24: rerun core tests ──
+
+test("rerun rejects active queued run", async () => {
+	const { root, plan, orchestrator } = await setup();
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		await assert.rejects(() => orchestrator.rerunRun(state.runId), { message: /cannot rerun run with status: queued/ });
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("rerun rejects active running run", async () => {
+	const { root, plan, orchestrator } = await setup();
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const runPromise = orchestrator.runToCompletion(state.runId);
+		await new Promise(r => setTimeout(r, 30));
+		await assert.rejects(() => orchestrator.rerunRun(state.runId), { message: /cannot rerun run with status: running/ });
+		await runPromise;
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("rerun rejects cancelled run", async () => {
+	const { root, plan, orchestrator } = await setup();
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		await orchestrator.cancelRun(state.runId, "done");
+		await assert.rejects(() => orchestrator.rerunRun(state.runId), { message: /cannot rerun run with status: cancelled/ });
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("rerun resets failed run to queued and re-executes only failed tasks", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ctrl-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+		const plan = await planStore.create({
+			title: "rerun test",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{ id: "task_1", title: "t1", input: { text: "do 1" }, acceptance: { rules: ["r1"] } },
+				{ id: "task_2", title: "t2", input: { text: "do 2" }, acceptance: { rules: ["r2"] } },
+			],
+			outputContract: { text: "output" },
+		});
+
+		let workerCallCount = 0;
+		class CountingRunner extends MockRoleRunner {
+			override async runWorker(input: import("../src/team/role-runner.js").WorkerInput) {
+				workerCallCount++;
+				return super.runWorker(input);
+			}
+		}
+
+		const runner = new CountingRunner();
+		const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+
+		// First run: complete successfully
+		workerCallCount = 0;
+		const state = await orchestrator.createRun(plan.planId);
+		const firstRun = await orchestrator.runToCompletion(state.runId);
+		assert.equal(firstRun.status, "completed");
+		assert.equal(workerCallCount, 2, "first run should execute both tasks");
+		assert.equal(firstRun.taskStates.task_1?.status, "succeeded");
+		assert.equal(firstRun.taskStates.task_2?.status, "succeeded");
+
+		// Mark task_2 as force_rerun
+		const afterSet = await workspace.getState(state.runId);
+		afterSet!.taskStates.task_2!.manualDisposition = "force_rerun";
+		afterSet!.taskStates.task_2!.manualDispositionUpdatedAt = new Date().toISOString();
+		await workspace.saveState(afterSet!);
+
+		// Rerun
+		workerCallCount = 0;
+		const rerunState = await orchestrator.rerunRun(state.runId);
+		assert.equal(rerunState.status, "queued");
+		assert.equal(rerunState.taskStates.task_1?.status, "succeeded", "task_1 should stay succeeded");
+		assert.equal(rerunState.taskStates.task_2?.status, "pending", "task_2 should be reset to pending");
+
+		// Execute rerun
+		const finalState = await orchestrator.runToCompletion(state.runId);
+		assert.equal(finalState.status, "completed");
+		assert.equal(workerCallCount, 1, "rerun should only execute task_2");
+		assert.equal(finalState.taskStates.task_2?.status, "succeeded");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("rerun with skip disposition marks task as skipped and does not execute", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ctrl-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+		const plan = await planStore.create({
+			title: "skip test",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{ id: "task_1", title: "t1", input: { text: "do 1" }, acceptance: { rules: ["r1"] } },
+				{ id: "task_2", title: "t2", input: { text: "do 2" }, acceptance: { rules: ["r2"] } },
+			],
+			outputContract: { text: "output" },
+		});
+
+		let workerCallCount = 0;
+		class CountingRunner extends MockRoleRunner {
+			override async runWorker(input: import("../src/team/role-runner.js").WorkerInput) {
+				workerCallCount++;
+				return super.runWorker(input);
+			}
+		}
+
+		const runner = new CountingRunner();
+		const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+
+		// First run: both succeed
+		const state = await orchestrator.createRun(plan.planId);
+		await orchestrator.runToCompletion(state.runId);
+
+		// Mark task_2 as skip
+		const afterSet = await workspace.getState(state.runId);
+		afterSet!.taskStates.task_2!.manualDisposition = "skip";
+		afterSet!.taskStates.task_2!.manualDispositionUpdatedAt = new Date().toISOString();
+		await workspace.saveState(afterSet!);
+
+		// Rerun
+		workerCallCount = 0;
+		await orchestrator.rerunRun(state.runId);
+		const finalState = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(finalState.status, "completed");
+		assert.equal(workerCallCount, 0, "no worker should run since both tasks are reused/skipped");
+		assert.equal(finalState.taskStates.task_1?.status, "succeeded");
+		assert.equal(finalState.taskStates.task_2?.status, "skipped");
+		assert.equal(finalState.summary.skippedTasks, 1);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("rerun clears stale final report", async () => {
+	const { root, plan, orchestrator, workspace } = await setup();
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		await orchestrator.runToCompletion(state.runId);
+
+		// Verify final report exists
+		await workspace.writeFinalReport(state.runId, "# old report");
+		const { readFile } = await import("node:fs/promises");
+		const { join: joinPath } = await import("node:path");
+		const oldReport = await readFile(joinPath(root, "runs", state.runId, "final-report.md"), "utf8");
+		assert.ok(oldReport.includes("old report"));
+
+		// Rerun should remove stale report
+		await orchestrator.rerunRun(state.runId);
+		await assert.rejects(() => readFile(joinPath(root, "runs", state.runId, "final-report.md"), "utf8"), { code: "ENOENT" });
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("rerun preserves activeElapsedMs", async () => {
+	const { root, plan, orchestrator } = await setup();
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const first = await orchestrator.runToCompletion(state.runId);
+		assert.ok(first.activeElapsedMs >= 0);
+
+		const rerunState = await orchestrator.rerunRun(state.runId);
+		assert.equal(rerunState.activeElapsedMs, first.activeElapsedMs, "activeElapsedMs should be preserved");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});

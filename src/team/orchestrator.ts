@@ -354,6 +354,61 @@ export class TeamOrchestrator {
 		await this.workspace.deleteRun(runId);
 	}
 
+	async rerunRun(runId: string): Promise<TeamRunState> {
+		const state = await this.workspace.getState(runId);
+		if (!state) throw new Error(`run not found: ${runId}`);
+		const rerunnable = ["completed", "completed_with_failures", "failed"] as const;
+		if (!rerunnable.includes(state.status as (typeof rerunnable)[number])) {
+			throw new Error(`cannot rerun run with status: ${state.status}`);
+		}
+
+		// Reset task states based on rerun semantics
+		for (const [taskId, ts] of Object.entries(state.taskStates)) {
+			const disposition = getManualDisposition(ts);
+			if (disposition === "skip") {
+				ts.status = "skipped";
+				ts.progress = { phase: "skipped", message: progressMessages.skipped, updatedAt: now() };
+			} else if (shouldExecuteOnRerun(ts)) {
+				ts.status = "pending";
+				ts.activeAttemptId = null;
+				ts.resultRef = null;
+				ts.errorSummary = null;
+				ts.progress = { phase: "pending", message: progressMessages.pending, updatedAt: now() };
+			}
+			// else: default+succeeded → preserve resultRef, status stays succeeded
+		}
+
+		// Recompute summary
+		const succeededTasks = Object.values(state.taskStates).filter(ts => ts.status === "succeeded").length;
+		const failedTasks = Object.values(state.taskStates).filter(ts => ts.status === "failed").length;
+		const cancelledTasks = Object.values(state.taskStates).filter(ts => ts.status === "cancelled").length;
+		const skippedTasks = Object.values(state.taskStates).filter(ts => ts.status === "skipped").length;
+		state.summary = {
+			totalTasks: state.summary.totalTasks,
+			succeededTasks,
+			failedTasks,
+			cancelledTasks,
+			skippedTasks,
+		};
+
+		// Reset run-level terminal fields
+		state.status = "queued";
+		state.finishedAt = null;
+		state.lastError = null;
+		state.pauseReason = null;
+		state.currentTaskId = null;
+		state.finalizerRuntimeContext = null;
+		state.lease = null;
+		state.queuedAt = now();
+		state.updatedAt = now();
+		await this.workspace.saveState(state);
+
+		// Remove stale final report so it cannot be served as fresh
+		await this.workspace.removeFinalReport(runId);
+
+		return state;
+	}
+
 	private async transitionToRunning(state: TeamRunState): Promise<TeamRunState> {
 		if (state.status === "running") return state;
 		state.status = "running";
@@ -908,7 +963,7 @@ export class TeamOrchestrator {
 
 		const taskResults = Object.entries(state.taskStates).map(([taskId, ts]) => ({
 			taskId,
-			status: (ts.status === "succeeded" ? "succeeded" : "failed") as "succeeded" | "failed",
+			status: (ts.status === "succeeded" ? "succeeded" : ts.status === "skipped" ? "skipped" : "failed") as "succeeded" | "failed" | "skipped",
 			resultRef: ts.resultRef,
 			errorSummary: ts.errorSummary,
 		}));
