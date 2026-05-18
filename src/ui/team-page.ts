@@ -829,9 +829,10 @@ async function saveTeamUnit() {
 				detailEl.innerHTML = renderRunDetailShell(runId, state, plan, attempts);
 			}
 
-			window.toggleMindmapNode = function(runId, taskId) {
+			window.toggleMindmapNode = function(runId, taskId, nodeStatus) {
 				var key = runId + '::' + taskId;
-				_mindmapExpandedNodes[key] = !_mindmapExpandedNodes[key];
+				var currentlyExpanded = isMindmapNodeExpanded(runId, taskId, nodeStatus);
+				_mindmapExpandedNodes[key] = !currentlyExpanded;
 				rerenderMindmap(runId);
 			};
 
@@ -1503,7 +1504,7 @@ function renderMindmapNode(node, depth, runId, attemptsMap) {
 	var expanded = depth === 0 ? false : isMindmapNodeExpanded(runId, node.id, node.status);
 	var html = '<div class="' + cls + (expanded ? ' mindmap-node-expanded' : '') + '" data-node-status="' + escapedStatus + '" data-node-type="' + escapedType + '" style="margin-left:' + (depth * 20) + 'px;margin-bottom:4px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);font-size:13px">';
 	if (depth > 0) {
-		html += '<button class="mindmap-node-toggle" onclick="event.stopPropagation();toggleMindmapNode(' + jsArg(runId) + ',' + jsArg(node.id) + ')" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;width:100%;text-align:left;background:none;border:none;color:var(--text);cursor:pointer;padding:0;font-size:inherit">';
+		html += '<button class="mindmap-node-toggle" onclick="event.stopPropagation();toggleMindmapNode(' + jsArg(runId) + ',' + jsArg(node.id) + ',' + jsArg(node.status) + ')" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;width:100%;text-align:left;background:none;border:none;color:var(--text);cursor:pointer;padding:0;font-size:inherit">';
 	} else {
 		html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
 	}

@@ -6841,3 +6841,61 @@ test("GET /playground/team caches run state for safe detail view switching", asy
 
 		await app.close();
 	});
+
+	test("GET /playground/team failed mindmap node first click collapses", async () => {
+		const app = await buildServer({
+			agentService: createAgentServiceStub(),
+		});
+
+		const response = await app.inject({
+			method: "GET",
+			url: "/playground/team",
+		});
+
+		assert.equal(response.statusCode, 200);
+
+		// The click handler must pass node.status so toggle can compute visible state
+		// Source uses: toggleMindmapNode(' + jsArg(runId) + ',' + jsArg(node.id) + ',' + jsArg(node.status) + ')
+		assert.match(
+			response.body,
+			/jsArg\(node\.status\)/,
+		);
+
+		// The onclick contains toggleMindmapNode with three arguments via jsArg
+		assert.match(
+			response.body,
+			/toggleMindmapNode\(' \+ jsArg\(runId\) \+ ',' \+ jsArg\(node\.id\) \+ ',' \+ jsArg\(node\.status\) \+ '\)/,
+		);
+
+		// toggleMindmapNode must accept a nodeStatus (or equivalent) third argument
+		assert.match(
+			response.body,
+			/window\.toggleMindmapNode\s*=\s*function\s*\(\s*runId\s*,\s*taskId\s*,\s*nodeStatus\s*\)/,
+		);
+
+		// toggle must compute currentlyExpanded from isMindmapNodeExpanded, not bare flip
+		assert.match(
+			response.body,
+			/var currentlyExpanded\s*=\s*isMindmapNodeExpanded\(/,
+		);
+
+		// toggle writes the inverse of the computed visible state
+		assert.match(
+			response.body,
+			/_mindmapExpandedNodes\[key\]\s*=\s*!currentlyExpanded/,
+		);
+
+		// Verify the old bare-flip pattern is gone
+		assert.doesNotMatch(
+			response.body,
+			/_mindmapExpandedNodes\[key\]\s*=\s*!_mindmapExpandedNodes\[key\]/,
+		);
+
+		// Failed nodes still default expanded when never interacted with
+		assert.match(
+			response.body,
+			/nodeStatus === 'failed' && _mindmapExpandedNodes\[key\] === undefined/,
+		);
+
+		await app.close();
+	});
