@@ -12,6 +12,45 @@
 
 ---
 
+## 2026-05-18 — Team Runtime P24: Run Rerun with Manual Task Control
+
+- **主题**: 终态运行可按任务标记重跑——支持跳过、强制重跑、恢复默认三种 disposition
+- **影响范围**: `src/team/types.ts`, `src/team/orchestrator.ts`, `src/team/run-workspace.ts`, `src/team/role-runner.ts`, `src/team/agent-profile-role-runner.ts`, `src/team/routes.ts`, `src/team/progress.ts`, `src/ui/team-page.ts`
+- **变更**:
+  - 类型新增 `TaskManualDisposition`（default/skip/force_rerun）、`"skipped"` 状态、`ProgressPhase.skipped`、`summary.skippedTasks`
+  - `shouldExecuteOnRerun()` 决策表：skip→不执行、force_rerun→执行、default+succeeded→复用、default+非succeeded→执行
+  - `rerunRun()` 重开终态运行，按 disposition 重置任务状态，清除旧 final report，保留 activeElapsedMs
+  - 父任务在子任务变更时自动重置为 pending，确保重跑时重新聚合
+  - API 路由：单任务/批量 disposition PATCH、POST rerun
+  - UI 控件：终态 run 显示"按标记重跑"按钮，任务行显示跳过/强制重跑/恢复默认操作
+  - Finalizer 区分 skipped 与 failed，parent 聚合支持 all-skipped→skipped
+- **测试**: 新增 34 个测试覆盖 disposition 决策表、rerun 生命周期、API 路由、parent 聚合
+
+---
+
+## 2026-05-18 — Team Page Inline Script Syntax Fix
+
+- **主题**: 修复 Team 页面运行卡片增量更新脚本多余闭合括号导致页面无法加载的问题
+- **影响范围**: `src/ui/team-page.ts`
+- **变更**:
+  - 移除 `updateRunCard` 中提前闭合函数体的多余 `}`，避免 inline script 在浏览器中抛出 `Unexpected token`
+  - 保持终态 run 的 SSE 退订与刷新逻辑在 `updateRunCard` 内执行
+
+---
+
+## 2026-05-18 — Team Plan Creator Skill Dynamic Plan Guidance
+
+- **主题**: 更新运行时 `team-plan-creator` skill 的 TeamUnit 五角色和 dynamic plan 创建口径
+- **影响范围**: `.pi/skills/team-plan-creator/SKILL.md`
+- **变更**:
+  - TeamUnit 创建说明从 4 角色更新为 5 角色，补齐 `decomposerProfileId`，无专用 decomposer 时默认跟随 worker
+  - Plan 设计阶段明确区分固定顺序 `normal`、未知清单 `discovery + for_each`、已知大任务 `decomposer`
+  - `for_each.taskTemplate` 文档同步通用 `{{item.<field>}}`、`{{item}}` 和 run-scoped placeholders
+  - 补充 P23 item identity 口径：共享参考资料不能覆盖当前 child task 的 `sourceItem` 身份
+  - 强化 discovery item 必须有稳定 string `id`，建议提供 `title` / `name` / `label`
+
+---
+
 ## 2026-05-17 — Team Runtime P23: for_each Item Isolation
 
 - **主题**: 修复 `for_each` 生成的子任务 item 身份边界过软的问题——worker 可被共享参考文档误导切换到错误 item
