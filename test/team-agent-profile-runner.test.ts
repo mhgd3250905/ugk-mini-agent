@@ -1856,6 +1856,75 @@ test("P25: finalizer prompt includes authoritative run summary and previous erro
 	}
 });
 
+// ── P25 Task 3: limited success stays out of failure summary ──
+
+test("P25: finalizer prompt keeps limited successful task out of failure section", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p25-t3-"));
+	try {
+		let capturedPrompt = "";
+		const resultsDir = join(root, "runs", "run_p25_limited", "results");
+		await mkdir(resultsDir, { recursive: true });
+		const limitedContent = "# Query Result\n\nThe SecurityTrails API required authentication. Only partial data was available from the public endpoint. Found 3 subdomains instead of expected 15.";
+		await writeFile(join(resultsDir, "accepted-limited.md"), limitedContent, "utf8");
+
+		const sessionFactory = {
+			createSession: async () => ({
+				prompt: async (p: string) => { capturedPrompt = p; },
+				subscribe: () => () => {},
+				messages: [{ role: "assistant", content: [{ type: "text", text: "report" }], stopReason: "end_turn" }],
+			}),
+		} as unknown as BackgroundAgentSessionFactory;
+
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root, teamDataDir: root,
+			watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f",
+			profileResolver: fakeProfileResolver as never, sessionFactory,
+		});
+
+		await runner.runFinalizer({
+			runId: "run_p25_limited",
+			plan: {
+				schemaVersion: "team/plan-1", planId: "plan_1", title: "P25 limited",
+				defaultTeamUnitId: "tu_1", goal: { text: "Medtrum" },
+				tasks: [
+					{ id: "t_limited", title: "SecurityTrails query", input: { text: "query subdomains" }, acceptance: { rules: ["r"] } },
+					{ id: "t_normal", title: "Normal task", input: { text: "do" }, acceptance: { rules: ["r"] } },
+				],
+				outputContract: { text: "output" }, runCount: 0, archived: false,
+				createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+			},
+			runSummary: { totalTasks: 2, succeededTasks: 2, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+			taskResults: [
+				{ taskId: "t_limited", status: "succeeded", resultRef: "results/accepted-limited.md", errorSummary: null },
+				{ taskId: "t_normal", status: "succeeded", resultRef: null, errorSummary: null },
+			],
+		});
+
+		// Both tasks must show as 成功
+		const tLimitedLines = capturedPrompt.split("\n").filter(l => l.includes("t_limited"));
+		assert.ok(tLimitedLines.some(l => l.includes("成功")), "limited task must show 成功");
+		assert.ok(tLimitedLines.every(l => !l.includes("失败")), "limited task must NOT show 失败");
+
+		// Summary must show 0 failures
+		assert.match(capturedPrompt, /失败：0/, "summary must show failedTasks=0");
+
+		// Prompt must include limitation warning instruction
+		assert.ok(
+			capturedPrompt.includes("限制与警告") || capturedPrompt.includes("限制"),
+			"prompt must include limitations/warnings section instruction",
+		);
+		assert.ok(
+			capturedPrompt.includes("外部数据源限制") || capturedPrompt.includes("部分数据"),
+			"prompt must mention external data source limitation guidance",
+		);
+
+		// The actual limited content must be present for the finalizer to cite
+		assert.ok(capturedPrompt.includes("partial data"), "limited result content must be in prompt");
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
 test("P24: finalizer prompt includes skipped distinctly from failed", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-ap-p24-"));
 	try {
