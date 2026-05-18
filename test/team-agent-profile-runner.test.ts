@@ -1795,7 +1795,7 @@ test("P24: finalizer prompt includes skipped distinctly from failed", async () =
 		let capturedPrompt = "";
 		const sessionFactory = {
 			createSession: async () => ({
-				prompt: async (p) => { capturedPrompt = p; },
+				prompt: async (p: string) => { capturedPrompt = p; },
 				subscribe: () => () => {},
 				messages: [{ role: "assistant", content: [{ type: "text", text: "report" }], stopReason: "end_turn" }],
 			}),

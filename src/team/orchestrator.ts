@@ -215,7 +215,11 @@ export class TeamOrchestrator {
 						await this.loadDiscoveryResult(state.runId, task, discoveryResults);
 					}
 					if (task.type === "for_each") {
-						await this.executeExpandedChildren(state, task, plan, signal);
+						if (taskState.status === "skipped") {
+							await this.skipExpandedChildren(state, task);
+						} else {
+							await this.executeExpandedChildren(state, task, plan, signal);
+						}
 					}
 					continue;
 				}
@@ -1493,6 +1497,21 @@ export class TeamOrchestrator {
 					state.taskStates[task.id]!.errorSummary = null;
 					state.taskStates[task.id]!.progress = { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
 					state.summary.succeededTasks++;
+				}
+			}
+			state.updatedAt = now();
+			await this.workspace.saveState(state);
+		}
+
+		private async skipExpandedChildren(state: TeamRunState, task: TeamTask): Promise<void> {
+			const existing = await this.workspace.readExpansion(state.runId, task.id);
+			if (!existing) return;
+			for (const child of existing.children) {
+				const cs = state.taskStates[child.taskId];
+				if (cs && !TERMINAL_TASK_STATUSES.has(cs.status)) {
+					cs.status = "skipped";
+					cs.progress = { phase: "skipped", message: progressMessages.skipped, updatedAt: now() };
+					state.summary.skippedTasks = (state.summary.skippedTasks ?? 0) + 1;
 				}
 			}
 			state.updatedAt = now();
