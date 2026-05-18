@@ -378,6 +378,33 @@ export class TeamOrchestrator {
 			// else: default+succeeded → preserve resultRef, status stays succeeded
 		}
 
+		// Reset parent tasks whose children were modified
+		const parentsToReset = new Set<string>();
+		for (const [taskId, ts] of Object.entries(state.taskStates)) {
+			if (ts.status === "pending" || ts.status === "skipped") {
+				for (const [parentId] of Object.entries(state.taskStates)) {
+					const expansion = await this.workspace.readExpansion(runId, parentId).catch(() => null);
+					if (expansion?.children.some(c => c.taskId === taskId)) {
+						parentsToReset.add(parentId);
+					}
+					const decomposition = await this.workspace.readDecomposition(runId, parentId).catch(() => null);
+					if (decomposition?.children.some(c => c.taskId === taskId)) {
+						parentsToReset.add(parentId);
+					}
+				}
+			}
+		}
+		for (const parentId of parentsToReset) {
+			const pts = state.taskStates[parentId];
+			if (pts && pts.status !== "pending" && pts.status !== "skipped") {
+				pts.status = "pending";
+				pts.activeAttemptId = null;
+				pts.resultRef = null;
+				pts.errorSummary = null;
+				pts.progress = { phase: "pending", message: progressMessages.pending, updatedAt: now() };
+			}
+		}
+
 		// Recompute summary
 		const succeededTasks = Object.values(state.taskStates).filter(ts => ts.status === "succeeded").length;
 		const failedTasks = Object.values(state.taskStates).filter(ts => ts.status === "failed").length;
@@ -614,10 +641,18 @@ export class TeamOrchestrator {
 			ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
 			state.summary.failedTasks++;
 		} else {
-			ts.status = "succeeded";
-			ts.errorSummary = null;
-			ts.progress = { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
-			state.summary.succeededTasks++;
+			const allSkipped = childTasks.every(child => state.taskStates[child.id]?.status === "skipped");
+			if (allSkipped) {
+				ts.status = "skipped";
+				ts.errorSummary = null;
+				ts.progress = { phase: "skipped", message: progressMessages.skipped, updatedAt: now() };
+				state.summary.skippedTasks = (state.summary.skippedTasks ?? 0) + 1;
+			} else {
+				ts.status = "succeeded";
+				ts.errorSummary = null;
+				ts.progress = { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
+				state.summary.succeededTasks++;
+			}
 		}
 		state.updatedAt = now();
 		await this.workspace.saveState(state);
@@ -1441,15 +1476,24 @@ export class TeamOrchestrator {
 			});
 			if (!allDone) return;
 			const anyFailed = childTasks.some(c => state.taskStates[c.id]?.status === "failed");
-			state.taskStates[task.id]!.status = anyFailed ? "failed" : "succeeded";
-			state.taskStates[task.id]!.errorSummary = anyFailed ? "one or more child tasks failed" : null;
-			state.taskStates[task.id]!.progress = anyFailed
-				? { phase: "failed", message: progressMessages.failed, updatedAt: now() }
-				: { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
 			if (anyFailed) {
+				state.taskStates[task.id]!.status = "failed";
+				state.taskStates[task.id]!.errorSummary = "one or more child tasks failed";
+				state.taskStates[task.id]!.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
 				state.summary.failedTasks++;
 			} else {
-				state.summary.succeededTasks++;
+				const allSkipped = childTasks.every(c => state.taskStates[c.id]?.status === "skipped");
+				if (allSkipped) {
+					state.taskStates[task.id]!.status = "skipped";
+					state.taskStates[task.id]!.errorSummary = null;
+					state.taskStates[task.id]!.progress = { phase: "skipped", message: progressMessages.skipped, updatedAt: now() };
+					state.summary.skippedTasks = (state.summary.skippedTasks ?? 0) + 1;
+				} else {
+					state.taskStates[task.id]!.status = "succeeded";
+					state.taskStates[task.id]!.errorSummary = null;
+					state.taskStates[task.id]!.progress = { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
+					state.summary.succeededTasks++;
+				}
 			}
 			state.updatedAt = now();
 			await this.workspace.saveState(state);
@@ -1502,15 +1546,24 @@ export class TeamOrchestrator {
 			const anyFailed = childTasks.some(c => state.taskStates[c.id]?.status === "failed");
 			const ts = state.taskStates[task.id]!;
 			if (TERMINAL_TASK_STATUSES.has(ts.status)) return;
-			ts.status = anyFailed ? "failed" : "succeeded";
-			ts.errorSummary = anyFailed ? "one or more child tasks failed" : null;
-			ts.progress = anyFailed
-				? { phase: "failed", message: progressMessages.failed, updatedAt: now() }
-				: { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
-			if (anyFailed && ts.status === "failed") {
+			if (anyFailed) {
+				ts.status = "failed";
+				ts.errorSummary = "one or more child tasks failed";
+				ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
 				state.summary.failedTasks++;
-			} else if (!anyFailed && ts.status === "succeeded") {
-				state.summary.succeededTasks++;
+			} else {
+				const allSkipped = childTasks.every(c => state.taskStates[c.id]?.status === "skipped");
+				if (allSkipped) {
+					ts.status = "skipped";
+					ts.errorSummary = null;
+					ts.progress = { phase: "skipped", message: progressMessages.skipped, updatedAt: now() };
+					state.summary.skippedTasks = (state.summary.skippedTasks ?? 0) + 1;
+				} else {
+					ts.status = "succeeded";
+					ts.errorSummary = null;
+					ts.progress = { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
+					state.summary.succeededTasks++;
+				}
 			}
 			state.updatedAt = now();
 			await this.workspace.saveState(state);
