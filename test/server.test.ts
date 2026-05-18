@@ -6708,3 +6708,75 @@ test("GET /playground/team caches run state for safe detail view switching", asy
 
 	await app.close();
 });
+
+	test("GET /playground/team includes mindmap view-model helpers and node structure", async () => {
+		const app = await buildServer({
+			agentService: createAgentServiceStub(),
+		});
+
+		const response = await app.inject({
+			method: "GET",
+			url: "/playground/team",
+		});
+
+		assert.equal(response.statusCode, 200);
+
+		// View-model helpers exist
+		assert.match(response.body, /function buildMindmapNodes/);
+		assert.match(response.body, /function collectRunTaskDefinitions/);
+		assert.match(response.body, /function getMindmapChildrenByParent/);
+		assert.match(response.body, /function describeMindmapNodeType/);
+
+		// Renderer uses stable CSS classes / data attributes
+		assert.match(response.body, /team-mindmap/);
+		assert.match(response.body, /mindmap-root-node/);
+		assert.match(response.body, /mindmap-task-node/);
+		assert.match(response.body, /mindmap-children/);
+		assert.match(response.body, /data-node-status/);
+		assert.match(response.body, /data-node-type/);
+
+		// Renderer uses parentTaskId metadata for child attribution
+		assert.match(response.body, /parentTaskId/);
+
+		// Renderer uses sourceItemId for generated children
+		assert.match(response.body, /sourceItemId/);
+
+		// buildMindmapNodes consumes taskDefinitions from state
+		assert.match(response.body, /state\.taskDefinitions/);
+
+		// buildMindmapNodes reads attemptsMap for attempt counts
+		assert.match(response.body, /attemptsMap/);
+
+		// Failed nodes show error summary in compact view
+		assert.match(response.body, /errorSummary/);
+		assert.match(response.body, /mindmap-node-error/);
+
+		await app.close();
+	});
+
+	test("GET /playground/team mindmap uses parent metadata priority chain", async () => {
+		const app = await buildServer({
+			agentService: createAgentServiceStub(),
+		});
+
+		const response = await app.inject({
+			method: "GET",
+			url: "/playground/team",
+		});
+
+		assert.equal(response.statusCode, 200);
+
+		// The buildMindmapNodes function checks task.parentTaskId first
+		assert.match(response.body, /task\.parentTaskId/);
+
+		// Falls back to taskDefinitions metadata
+		assert.match(response.body, /taskDefinitions/);
+
+		// SourceItemId is used for generated child metadata
+		assert.match(response.body, /sourceItemId/);
+
+		// Has a fallback path (id prefix or "generated" group)
+		assert.match(response.body, /fallback/);
+
+		await app.close();
+	});

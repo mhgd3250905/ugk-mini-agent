@@ -1269,14 +1269,160 @@ async function toggleRunDetail(runId) {
 	}
 }
 
+function collectRunTaskDefinitions(state, plan) {
+	var defs = [];
+	if (Array.isArray(state.taskDefinitions)) defs = defs.concat(state.taskDefinitions);
+	if (!defs.length && Array.isArray(state.generatedTasks)) defs = defs.concat(state.generatedTasks);
+	if (Array.isArray(state.tasks)) defs = defs.concat(state.tasks.filter(function(t) { return t && t.generated; }));
+	return defs;
+}
+
+function getMindmapChildrenByParent(planTasks, generatedDefs, taskStates) {
+	var planIdSet = {};
+	planTasks.forEach(function(t) { planIdSet[t.id] = true; });
+	var byParent = {};
+	generatedDefs.forEach(function(t) {
+		if (!t || !t.id) return;
+		var pid = t.parentTaskId;
+		if (pid) {
+			if (!byParent[pid]) byParent[pid] = [];
+			if (byParent[pid].indexOf(t.id) === -1) byParent[pid].push(t.id);
+		}
+	});
+	Object.keys(taskStates || {}).forEach(function(id) {
+		if (planIdSet[id]) return;
+		var alreadyChild = false;
+		Object.keys(byParent).forEach(function(pid) {
+			if (byParent[pid].indexOf(id) !== -1) alreadyChild = true;
+		});
+		if (alreadyChild) return;
+		planTasks.forEach(function(parent) {
+			if (id.indexOf(parent.id + '__') === 0) {
+				if (!byParent[parent.id]) byParent[parent.id] = [];
+				if (byParent[parent.id].indexOf(id) === -1) byParent[parent.id].push(id);
+			}
+		});
+	});
+	return byParent;
+}
+
+function describeMindmapNodeType(task, isGenerated) {
+	if (!task) return '任务';
+	if (task.type === 'discovery') return '发现';
+	if (task.type === 'for_each') return '逐项处理';
+	if (isGenerated) {
+		if (task.generatedSource === 'for_each') return '动态子任务';
+		if (task.generatedSource === 'decomposition') return '拆分子任务';
+		return '生成任务';
+	}
+	return '任务';
+}
+
+function buildMindmapNodes(state, plan, attemptsMap) {
+	var planTasks = (plan && plan.tasks) ? plan.tasks : [];
+	var taskStates = state.taskStates || {};
+	var generatedDefs = collectRunTaskDefinitions(state, plan);
+	var taskById = {};
+	planTasks.forEach(function(t) { taskById[t.id] = t; });
+	generatedDefs.forEach(function(t) { if (t && t.id) taskById[t.id] = t; });
+	var childrenByParent = getMindmapChildrenByParent(planTasks, generatedDefs, taskStates);
+	var s = state.summary || {};
+	var rootNode = {
+		id: state.runId || '',
+		title: 'Run ' + (state.runId || '').slice(0, 12),
+		status: state.status || 'queued',
+		nodeType: 'root',
+		summary: '总 ' + (s.totalTasks || 0) + ' | 成功 ' + (s.succeededTasks || 0) + ' | 失败 ' + (s.failedTasks || 0) + ' | 跳过 ' + (s.skippedTasks || 0),
+		children: []
+	};
+	planTasks.forEach(function(task) {
+		var ts = taskStates[task.id];
+		var attempts = attemptsMap && attemptsMap[task.id] ? attemptsMap[task.id] : [];
+		var childIds = childrenByParent[task.id] || [];
+		var errorLine = '';
+		if (ts && ts.errorSummary) errorLine = ts.errorSummary.split('
+')[0];
+		var taskNode = {
+			id: task.id,
+			title: task.title || task.id,
+			status: ts ? ts.status : 'pending',
+			nodeType: describeMindmapNodeType(task, false),
+			attemptCount: ts ? ts.attemptCount : 0,
+			errorSummary: errorLine,
+			resultRef: ts ? ts.resultRef : null,
+			parentTaskId: task.parentTaskId || null,
+			sourceItemId: task.sourceItemId || null,
+			generated: false,
+			children: []
+		};
+		childIds.forEach(function(cid) {
+			var childDef = taskById[cid] || null;
+			var childTs = taskStates[cid];
+			var childAttempts = attemptsMap && attemptsMap[cid] ? attemptsMap[cid] : [];
+			var childErrorLine = '';
+			if (childTs && childTs.errorSummary) childErrorLine = childTs.errorSummary.split('
+')[0];
+			var childNode = {
+				id: cid,
+				title: childDef ? (childDef.title || cid) : cid,
+				status: childTs ? childTs.status : 'pending',
+				nodeType: describeMindmapNodeType(childDef, true),
+				attemptCount: childTs ? childTs.attemptCount : 0,
+				errorSummary: childErrorLine,
+				resultRef: childTs ? childTs.resultRef : null,
+				parentTaskId: childDef ? (childDef.parentTaskId || task.id) : task.id,
+				sourceItemId: childDef ? (childDef.sourceItemId || null) : null,
+				generated: true,
+				fallback: !childDef
+			};
+			taskNode.children.push(childNode);
+		});
+		rootNode.children.push(taskNode);
+	});
+	return rootNode;
+}
+
+function renderMindmapNode(node, depth) {
+	var cls = depth === 0 ? 'mindmap-root-node' : 'mindmap-task-node';
+	var escapedTitle = escapeHtml(node.title || '');
+	var escapedStatus = escapeHtml(node.status || 'pending');
+	var escapedType = escapeHtml(node.nodeType || '任务');
+	var html = '<div class="' + cls + '" data-node-status="' + escapedStatus + '" data-node-type="' + escapedType + '" style="margin-left:' + (depth * 20) + 'px;margin-bottom:4px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);font-size:13px">';
+	html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
+	html += '<span style="font-weight:600">' + escapedTitle + '</span>';
+	html += '<span class="badge" style="font-size:10px">' + escapedType + '</span>';
+	html += statusBadge(escapedStatus);
+	if (node.attemptCount > 0) html += '<span style="font-size:11px;color:var(--muted)">x' + node.attemptCount + '</span>';
+	html += '</div>';
+	if (node.errorSummary) {
+		var errLine = escapeHtml(node.errorSummary);
+		html += '<div class="mindmap-node-error" style="margin-top:2px;font-size:11px;color:var(--fail);word-break:break-all">' + errLine + '</div>';
+	}
+	if (node.summary) {
+		html += '<div style="margin-top:2px;font-size:11px;color:var(--muted)">' + escapeHtml(node.summary) + '</div>';
+	}
+	if (node.sourceItemId) {
+		html += '<div style="font-size:10px;color:var(--muted)">sourceItemId: ' + escapeHtml(node.sourceItemId) + '</div>';
+	}
+	if (node.fallback) {
+		html += '<div style="font-size:10px;color:var(--warn)">fallback</div>';
+	}
+	html += '</div>';
+	if (node.children && node.children.length) {
+		html += '<div class="mindmap-children" style="margin-left:' + (depth * 20) + 'px">';
+		node.children.forEach(function(child) {
+			html += renderMindmapNode(child, depth + 1);
+		});
+		html += '</div>';
+	}
+	return html;
+}
+
 function renderTeamMindmap(state, plan, attemptsMap) {
-	var runId = escapeHtml(state.runId || '');
-	var statusBadgeHtml = statusBadge(state.status || 'queued');
+	var root = buildMindmapNodes(state, plan, attemptsMap);
 	return '<div class="team-mindmap" data-run-detail-view="mindmap">' +
-		'<div class="mindmap-shell-placeholder" style="padding:16px;text-align:center;color:var(--muted);font-size:13px">' +
-		'<div style="margin-bottom:8px">' + statusBadgeHtml + ' ' + runId.slice(0, 12) + '</div>' +
-		'<div>脑图视图将在后续版本中渲染完整节点树</div>' +
-		'</div></div>';
+		renderMindmapNode(root, 0) +
+		'</div>';
 }
 
 function renderRunDetailShell(runId, state, plan, attemptsMap) {
