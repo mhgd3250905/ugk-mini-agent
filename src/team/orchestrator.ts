@@ -62,11 +62,19 @@ function generateFallbackReport(
 	error: unknown,
 ): string {
 	const message = error instanceof Error ? error.message : String(error);
+	const statusLabel = (s: string) => s === "succeeded" ? "成功" : s === "skipped" ? "跳过" : s === "cancelled" ? "取消" : s === "failed" ? "失败" : s;
 	const lines: string[] = [
 		"# 系统汇总报告",
 		"",
 		"> 注意：这是系统自动生成的 fallback 报告，不是 finalizer Agent 原始输出。",
 		`> finalizer 执行失败：${message}`,
+		"",
+		"## 运行汇总",
+		`- 总任务数：${state.summary.totalTasks}`,
+		`- 成功：${state.summary.succeededTasks}`,
+		`- 失败：${state.summary.failedTasks}`,
+		`- 跳过：${state.summary.skippedTasks}`,
+		`- 取消：${state.summary.cancelledTasks}`,
 		"",
 		"## 任务执行结果",
 		"",
@@ -75,11 +83,8 @@ function generateFallbackReport(
 		const ts = state.taskStates[task.id];
 		if (!ts) {
 			lines.push(`- ${task.id}（${task.title}）：待执行`);
-		} else if (ts.status === "succeeded") {
-			lines.push(`- ${task.id}（${task.title}）：成功`);
-			if (ts.resultRef) lines.push(`  - 结果：${ts.resultRef}`);
 		} else {
-			lines.push(`- ${task.id}（${task.title}）：${ts.status}`);
+			lines.push(`- ${task.id}（${task.title}）：${statusLabel(ts.status)}`);
 			if (ts.resultRef) lines.push(`  - 结果：${ts.resultRef}`);
 			if (ts.errorSummary) lines.push(`  - 错误：${ts.errorSummary}`);
 		}

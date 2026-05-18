@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { access, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { TeamOrchestrator } from "../src/team/orchestrator.js";
@@ -896,6 +896,72 @@ test("P25: rerun skips previously failed task and clears errorSummary", async ()
 		assert.equal(finalState.summary.failedTasks, 0, "no tasks should be failed");
 		assert.equal(finalState.summary.skippedTasks, 1, "one task should be skipped");
 		assert.equal(workerCallCount, 0, "no worker should run for skipped task");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+// ── P25 Task 4: fallback report parity ──
+
+test("P25: fallback report matches summary semantics with skipped tasks", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p25-t4-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+		const plan = await planStore.create({
+			title: "fallback test",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{ id: "task_1", title: "t1", input: { text: "do 1" }, acceptance: { rules: ["r1"] } },
+				{ id: "task_2", title: "t2", input: { text: "do 2" }, acceptance: { rules: ["r2"] } },
+				{ id: "task_3", title: "t3", input: { text: "do 3" }, acceptance: { rules: ["r3"] } },
+			],
+			outputContract: { text: "output" },
+		});
+
+		// Runner that succeeds for worker but throws in finalizer
+		class FinalizerCrashRunner extends MockRoleRunner {
+			override async runFinalizer(): Promise<import("../src/team/role-runner.js").FinalizerOutput> {
+				throw new Error("finalizer OOM");
+			}
+		}
+
+		const runner = new FinalizerCrashRunner();
+		const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+
+		// First run: both succeed, then mark task_2 as skip and rerun
+		const state = await orchestrator.createRun(plan.planId);
+		await orchestrator.runToCompletion(state.runId);
+
+		// Mark task_2 as skip
+		const afterRun = (await workspace.getState(state.runId))!;
+		afterRun.taskStates.task_2!.manualDisposition = "skip";
+		afterRun.taskStates.task_2!.manualDispositionUpdatedAt = new Date().toISOString();
+		await workspace.saveState(afterRun);
+
+		// Rerun with skip
+		await orchestrator.rerunRun(state.runId);
+		const finalState = await orchestrator.runToCompletion(state.runId);
+
+		// Run should complete_with_failures (because finalizer crashed)
+		assert.equal(finalState.status, "completed_with_failures");
+		assert.equal(finalState.summary.failedTasks, 0, "no tasks should be failed");
+		assert.equal(finalState.summary.skippedTasks, 1, "one task should be skipped");
+		assert.equal(finalState.summary.succeededTasks, 2, "two tasks should be succeeded");
+
+		// Read fallback report
+		const report = await readFile(join(root, "runs", state.runId, "final-report.md"), "utf8");
+
+		// Verify fallback report content
+		assert.ok(report.includes("task_1"), "report must mention task_1");
+		assert.ok(report.includes("task_2"), "report must mention task_2");
+		assert.ok(report.includes("task_3"), "report must mention task_3");
+		assert.ok(report.includes("跳过"), "report must show skipped");
+		assert.ok(!report.includes("task_2").toString().includes("失败"), "task_2 must NOT show as failed");
+		assert.ok(report.includes("fallback"), "report must indicate it is a fallback");
 	} finally {
 		await rm(root, { recursive: true });
 	}
