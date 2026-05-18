@@ -55,7 +55,8 @@ export interface WatcherOutput {
 export interface FinalizerInput {
 	runId: string;
 	plan: TeamPlan;
-	taskResults: Array<{ taskId: string; status: "succeeded" | "failed" | "skipped"; resultRef: string | null; errorSummary: string | null }>;
+	runSummary?: { totalTasks: number; succeededTasks: number; failedTasks: number; cancelledTasks: number; skippedTasks: number };
+	taskResults: Array<{ taskId: string; status: "succeeded" | "failed" | "cancelled" | "skipped"; resultRef: string | null; errorSummary: string | null; previousErrorSummary?: string | null; manualDisposition?: string }>;
 	signal?: AbortSignal;
 }
 

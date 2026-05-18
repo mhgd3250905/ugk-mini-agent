@@ -1789,6 +1789,73 @@ test("normal task with coincidental sourceItemId must not get identity block", a
 });
 
 
+// ── P25 Task 1: authoritative run summary in finalizer prompt ──
+
+test("P25: finalizer prompt includes authoritative run summary and previous error audit", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p25-t1-"));
+	try {
+		let capturedPrompt = "";
+		const sessionFactory = {
+			createSession: async () => ({
+				prompt: async (p: string) => { capturedPrompt = p; },
+				subscribe: () => () => {},
+				messages: [{ role: "assistant", content: [{ type: "text", text: "report" }], stopReason: "end_turn" }],
+			}),
+		} as unknown as BackgroundAgentSessionFactory;
+
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root, teamDataDir: root,
+			watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f",
+			profileResolver: fakeProfileResolver as never, sessionFactory,
+		});
+
+		await runner.runFinalizer({
+			runId: "run_p25_auth",
+			plan: {
+				schemaVersion: "team/plan-1", planId: "plan_1", title: "P25 auth",
+				defaultTeamUnitId: "tu_1", goal: { text: "Medtrum investigation" },
+				tasks: [
+					{ id: "t_ok", title: "OK task", input: { text: "do" }, acceptance: { rules: ["r"] } },
+					{ id: "t_skip", title: "Skipped task", input: { text: "do" }, acceptance: { rules: ["r"] } },
+					{ id: "t_fail", title: "Failed task", input: { text: "do" }, acceptance: { rules: ["r"] } },
+				],
+				outputContract: { text: "output" }, runCount: 0, archived: false,
+				createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+			},
+			runSummary: { totalTasks: 3, succeededTasks: 1, failedTasks: 1, cancelledTasks: 0, skippedTasks: 1 },
+			taskResults: [
+				{ taskId: "t_ok", status: "succeeded", resultRef: null, errorSummary: null },
+				{ taskId: "t_skip", status: "skipped", resultRef: null, errorSummary: null, previousErrorSummary: "worker timeout" },
+				{ taskId: "t_fail", status: "failed", resultRef: null, errorSummary: "some error" },
+			],
+		});
+
+		// 1. Authoritative summary with exact counts
+		assert.ok(capturedPrompt.includes("总任务数：3"), "prompt must include totalTasks=3");
+		assert.match(capturedPrompt, /成功：1/, "prompt must include succeededTasks=1");
+		assert.match(capturedPrompt, /跳过：1/, "prompt must include skippedTasks=1");
+		assert.match(capturedPrompt, /失败：1/, "prompt must include failedTasks=1");
+
+		// 2. Instruction not to recalculate
+		assert.ok(capturedPrompt.includes("不得") && capturedPrompt.includes("重新计算"), "must instruct not to recalculate");
+
+		// 3. Skipped task rendered as 跳过, not 失败
+		const tSkipLines = capturedPrompt.split("\n").filter(l => l.includes("t_skip"));
+		assert.ok(tSkipLines.length > 0, "prompt must mention t_skip");
+		assert.ok(tSkipLines.some(l => l.includes("跳过")), "t_skip must show 跳过");
+		assert.ok(tSkipLines.every(l => !l.includes("失败")), "t_skip must NOT show 失败");
+
+		// 4. Previous error labeled as audit context, not current failure
+		assert.ok(capturedPrompt.includes("worker timeout"), "previous error must be preserved for audit");
+		assert.ok(
+			capturedPrompt.includes("历史错误") || capturedPrompt.includes("原始错误"),
+			"previous error must be labeled as history/audit, not current failure",
+		);
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
 test("P24: finalizer prompt includes skipped distinctly from failed", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-ap-p24-"));
 	try {

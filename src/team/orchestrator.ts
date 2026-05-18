@@ -428,6 +428,8 @@ export class TeamOrchestrator {
 		state.currentTaskId = null;
 		state.finalizerRuntimeContext = null;
 		state.lease = null;
+		state.startedAt = null;
+		state.activeElapsedMs = 0;
 		state.queuedAt = now();
 		state.updatedAt = now();
 		await this.workspace.saveState(state);
@@ -998,12 +1000,17 @@ export class TeamOrchestrator {
 		const state = (await this.workspace.getState(staleState.runId))!;
 		if (this.shouldStop(state)) return;
 
-		const taskResults = Object.entries(state.taskStates).map(([taskId, ts]) => ({
-			taskId,
-			status: (ts.status === "succeeded" ? "succeeded" : ts.status === "skipped" ? "skipped" : "failed") as "succeeded" | "failed" | "skipped",
-			resultRef: ts.resultRef,
-			errorSummary: ts.errorSummary,
-		}));
+		const taskResults = Object.entries(state.taskStates).map(([taskId, ts]) => {
+			const isSkipped = ts.status === "skipped";
+			return {
+				taskId,
+				status: (ts.status === "succeeded" ? "succeeded" : ts.status === "skipped" ? "skipped" : ts.status === "cancelled" ? "cancelled" : "failed") as "succeeded" | "failed" | "cancelled" | "skipped",
+				resultRef: ts.resultRef,
+				errorSummary: isSkipped ? null : ts.errorSummary,
+				previousErrorSummary: isSkipped && ts.errorSummary ? ts.errorSummary : undefined,
+				manualDisposition: ts.manualDisposition,
+			};
+		});
 
 		let finalReport: string;
 		let finalizerError: string | null = null;
@@ -1011,7 +1018,7 @@ export class TeamOrchestrator {
 		const finalizerStarted = new Date();
 		try {
 			const finalizerOut = await runWithTimeout("finalizer", this.phaseTimeouts.finalizerMs, signal, async (localSignal) => {
-				return this.roleRunner.runFinalizer({ runId: state.runId, plan, taskResults, signal: localSignal });
+				return this.roleRunner.runFinalizer({ runId: state.runId, plan, taskResults, runSummary: state.summary, signal: localSignal });
 			});
 			finalReport = finalizerOut.finalReport;
 			finalizerRuntimeContext = finalizerOut.runtimeContext ?? null;
@@ -1034,7 +1041,7 @@ export class TeamOrchestrator {
 
 		freshState.currentTaskId = null;
 		freshState.finalizerRuntimeContext = finalizerRuntimeContext;
-		const hasTaskFailures = taskResults.some(r => r.status === "failed");
+		const hasTaskFailures = taskResults.some(r => r.status === "failed" || r.status === "cancelled");
 		if (finalizerError) {
 			freshState.status = "completed_with_failures";
 			freshState.lastError = finalizerError;

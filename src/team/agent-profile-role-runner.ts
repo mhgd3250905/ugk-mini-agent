@@ -172,16 +172,34 @@ JSON 格式：
 	return base + buildWatcherSourceItemBlock(task);
 }
 
-function buildFinalizerPrompt(plan: TeamPlan, taskResults: Array<{ taskId: string; status: "succeeded" | "failed" | "skipped"; resultRef: string | null; errorSummary: string | null; resultContent: string | null }>): string {
+function buildFinalizerPrompt(plan: TeamPlan, taskResults: Array<{ taskId: string; status: "succeeded" | "failed" | "cancelled" | "skipped"; resultRef: string | null; errorSummary: string | null; previousErrorSummary?: string | null; manualDisposition?: string; resultContent: string | null }>, runSummary?: { totalTasks: number; succeededTasks: number; failedTasks: number; cancelledTasks: number; skippedTasks: number }): string {
+	const statusLabel = (s: string) => s === "succeeded" ? "成功" : s === "skipped" ? "跳过" : s === "cancelled" ? "取消" : "失败";
+
 	const taskSummary = taskResults.map(r => {
-		let line = `- ${r.taskId}: ${r.status === "succeeded" ? "成功" : r.status === "skipped" ? "跳过" : "失败"}`;
-		if (r.errorSummary) line += `（${r.errorSummary}）`;
+		let line = `- ${r.taskId}: ${statusLabel(r.status)}`;
+		if (r.errorSummary) line += `（错误：${r.errorSummary}）`;
+		if (r.previousErrorSummary) line += `\n  原始错误（跳过前）：${r.previousErrorSummary}`;
 		if (r.resultContent) line += `\n  产出：\n${r.resultContent}`;
 		return line;
 	}).join("\n");
 
-	return `你是一个汇总 Agent（finalizer）。请根据任务执行结果生成最终报告。
+	let authoritativeBlock = "";
+	if (runSummary) {
+		authoritativeBlock = `
+## 权威运行汇总（不得修改）
+总任务数：${runSummary.totalTasks}
+- 成功：${runSummary.succeededTasks}
+- 失败：${runSummary.failedTasks}
+- 取消：${runSummary.cancelledTasks}
+- 跳过：${runSummary.skippedTasks}
 
+以上计数来自运行时状态，是权威数据。你不得重新计算或改写这些数字。报告中引用任务计数时必须使用上方数字。
+
+`;
+	}
+
+	return `你是一个汇总 Agent（finalizer）。请根据任务执行结果生成最终报告。
+${authoritativeBlock}
 ## 计划目标
 ${plan.goal.text}
 
@@ -195,8 +213,15 @@ ${taskSummary}
 用中文输出 markdown 格式的最终汇总报告，包括：
 1. 总结
 2. 已完成任务
-3. 失败/未完成任务
-4. 下次准备建议`;
+3. 跳过的任务（如有，与失败任务分开列出）
+4. 失败/未完成任务
+5. 限制与警告（如有）
+
+## 重要规则
+- 任务计数必须与上方"权威运行汇总"完全一致（如提供了该汇总）。不得自行重新计算。
+- 跳过的任务不得归入"失败/未完成"。
+- 如果某个成功任务提到了外部数据源限制（如 API 需要登录、只有部分数据可用），应将其列入"限制与警告"，但仍归入"已完成"。
+- 只有运行时状态为 failed 或 cancelled 的任务才能出现在"失败/未完成"部分。`;
 }
 
 function buildDecomposerPrompt(input: DecomposerInput): string {
@@ -563,7 +588,7 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 			return { ...r, resultContent };
 		}));
 
-		const prompt = buildFinalizerPrompt(input.plan, taskResultsWithContent);
+		const prompt = buildFinalizerPrompt(input.plan, taskResultsWithContent, input.runSummary);
 
 		const sessionResult = await this.runSession(snapshot, this.options.finalizerProfileId, input.runId, workspace, prompt, input.signal, { role: "finalizer", roleKey: "finalizer" });
 
