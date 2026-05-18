@@ -6771,3 +6771,73 @@ test("GET /playground/team caches run state for safe detail view switching", asy
 
 		await app.close();
 	});
+
+	test("GET /playground/team includes mindmap adaptive node interactions", async () => {
+		const app = await buildServer({
+			agentService: createAgentServiceStub(),
+		});
+
+		const response = await app.inject({
+			method: "GET",
+			url: "/playground/team",
+		});
+
+		assert.equal(response.statusCode, 200);
+
+		// Interaction state variables
+		assert.match(response.body, /_mindmapExpandedNodes/);
+		assert.match(response.body, /_mindmapExpandedGroups/);
+
+		// Toggle functions exposed on window
+		assert.match(response.body, /window\.toggleMindmapNode/);
+		assert.match(response.body, /window\.toggleMindmapGroup/);
+
+		// Helper predicates
+		assert.match(response.body, /function isMindmapNodeExpanded/);
+		assert.match(response.body, /function isMindmapGroupExpanded/);
+		assert.match(response.body, /function rerenderMindmap/);
+
+		// Failed nodes default expanded
+		assert.match(response.body, /nodeStatus === 'failed'/);
+
+		// Node toggle button class and click handler with stopPropagation
+		assert.match(response.body, /mindmap-node-toggle/);
+		assert.match(response.body, /event\.stopPropagation\(\);toggleMindmapNode/);
+
+		// Expanded node details container
+		assert.match(response.body, /mindmap-node-details/);
+
+		// Expanded state indicator
+		assert.match(response.body, /mindmap-node-expanded/);
+
+		// Large child group controls
+		assert.match(response.body, /MINDMAP_GROUP_LIMIT/);
+		assert.match(response.body, /展开全部/);
+		assert.match(response.body, /收起/);
+
+		// Failed node error visible in compact mode
+		assert.match(response.body, /mindmap-node-error/);
+
+		// File chip uses button element and calls viewAttemptFile with stopPropagation
+		assert.match(response.body, /<button class="file-chip" onclick="event\.stopPropagation\(\);viewAttemptFile\(/);
+
+		// Group toggle uses stopPropagation to prevent run card collapse
+		assert.match(response.body, /event\.stopPropagation\(\);toggleMindmapGroup/);
+
+		// renderMindmapNode accepts runId and attemptsMap
+		assert.match(response.body, /function renderMindmapNode\(node, depth, runId, attemptsMap\)/);
+
+		// renderTeamMindmap passes runId through
+		assert.match(response.body, /function renderTeamMindmap\(runId, state, plan, attemptsMap\)/);
+
+		// Node progress and activeAttemptId rendering in expanded mode
+		assert.match(response.body, /node\.progress/);
+		assert.match(response.body, /node\.activeAttemptId/);
+		assert.match(response.body, /node\.resultRef/);
+
+		// Expanded node shows metadata: generated, parentTaskId, sourceItemId
+		assert.match(response.body, /node\.generated/);
+		assert.match(response.body, /node\.parentTaskId/);
+
+		await app.close();
+	});

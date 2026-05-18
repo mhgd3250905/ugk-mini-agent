@@ -797,6 +797,8 @@ async function saveTeamUnit() {
 			var _selectedPlanId = null;
 			var _expandedRunIds = {};
 			var _runDetailViewByRunId = {};
+			var _mindmapExpandedNodes = {};
+			var _mindmapExpandedGroups = {};
 
 			function getRunDetailView(runId) {
 				return _runDetailViewByRunId[runId] || 'mindmap';
@@ -805,6 +807,39 @@ async function saveTeamUnit() {
 			function setRunDetailView(runId, view) {
 				_runDetailViewByRunId[runId] = view;
 			}
+
+			function isMindmapNodeExpanded(runId, taskId, nodeStatus) {
+				var key = runId + '::' + taskId;
+				if (_mindmapExpandedNodes[key]) return true;
+				if (nodeStatus === 'failed' && _mindmapExpandedNodes[key] === undefined) return true;
+				return false;
+			}
+
+			function isMindmapGroupExpanded(runId, parentTaskId) {
+				return !!_mindmapExpandedGroups[runId + '::' + parentTaskId];
+			}
+
+			function rerenderMindmap(runId) {
+				var detailEl = $('run-detail-' + runId);
+				if (!detailEl) return;
+				var state = window._latestRunStateForRun ? window._latestRunStateForRun[runId] : null;
+				var plan = window._latestPlanForRun ? window._latestPlanForRun[runId] : null;
+				var attempts = window._latestAttemptsForRun ? window._latestAttemptsForRun[runId] : null;
+				if (!state || !plan) return;
+				detailEl.innerHTML = renderRunDetailShell(runId, state, plan, attempts);
+			}
+
+			window.toggleMindmapNode = function(runId, taskId) {
+				var key = runId + '::' + taskId;
+				_mindmapExpandedNodes[key] = !_mindmapExpandedNodes[key];
+				rerenderMindmap(runId);
+			};
+
+			window.toggleMindmapGroup = function(runId, parentTaskId) {
+				var key = runId + '::' + parentTaskId;
+				_mindmapExpandedGroups[key] = !_mindmapExpandedGroups[key];
+				rerenderMindmap(runId);
+			};
 
 			function isDynamicPlan(tasks) {
 				if (!tasks || tasks.length < 2) return false;
@@ -1383,6 +1418,8 @@ function buildMindmapNodes(state, plan, attemptsMap) {
 			status: ts ? ts.status : 'pending',
 			nodeType: describeMindmapNodeType(task, false),
 			attemptCount: ts ? ts.attemptCount : 0,
+			progress: ts ? ts.progress : null,
+			activeAttemptId: ts ? ts.activeAttemptId : null,
 			errorSummary: errorLine,
 			resultRef: ts ? ts.resultRef : null,
 			parentTaskId: task.parentTaskId || null,
@@ -1404,6 +1441,8 @@ function buildMindmapNodes(state, plan, attemptsMap) {
 				status: childTs ? childTs.status : 'pending',
 				nodeType: describeMindmapNodeType(childDef, true),
 				attemptCount: childTs ? childTs.attemptCount : 0,
+				progress: childTs ? childTs.progress : null,
+				activeAttemptId: childTs ? childTs.activeAttemptId : null,
 				errorSummary: childErrorLine,
 				resultRef: childTs ? childTs.resultRef : null,
 				parentTaskId: childDef ? (childDef.parentTaskId || task.id) : task.id,
@@ -1433,6 +1472,8 @@ function buildMindmapNodes(state, plan, attemptsMap) {
 				status: ts ? ts.status : 'pending',
 				nodeType: describeMindmapNodeType(def, true),
 				attemptCount: ts ? ts.attemptCount : 0,
+				progress: ts ? ts.progress : null,
+				activeAttemptId: ts ? ts.activeAttemptId : null,
 				errorSummary: errLine,
 				resultRef: ts ? ts.resultRef : null,
 				generated: true,
@@ -1453,48 +1494,107 @@ function buildMindmapNodes(state, plan, attemptsMap) {
 
 	return rootNode;
 }
-function renderMindmapNode(node, depth) {
+function renderMindmapNode(node, depth, runId, attemptsMap) {
+	var MINDMAP_GROUP_LIMIT = 6;
 	var cls = depth === 0 ? 'mindmap-root-node' : 'mindmap-task-node';
 	var escapedTitle = escapeHtml(node.title || '');
 	var escapedStatus = escapeHtml(node.status || 'pending');
 	var escapedType = escapeHtml(node.nodeType || '任务');
-	var html = '<div class="' + cls + '" data-node-status="' + escapedStatus + '" data-node-type="' + escapedType + '" style="margin-left:' + (depth * 20) + 'px;margin-bottom:4px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);font-size:13px">';
-	html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
+	var expanded = depth === 0 ? false : isMindmapNodeExpanded(runId, node.id, node.status);
+	var html = '<div class="' + cls + (expanded ? ' mindmap-node-expanded' : '') + '" data-node-status="' + escapedStatus + '" data-node-type="' + escapedType + '" style="margin-left:' + (depth * 20) + 'px;margin-bottom:4px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);font-size:13px">';
+	if (depth > 0) {
+		html += '<button class="mindmap-node-toggle" onclick="event.stopPropagation();toggleMindmapNode(' + jsArg(runId) + ',' + jsArg(node.id) + ')" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;width:100%;text-align:left;background:none;border:none;color:var(--text);cursor:pointer;padding:0;font-size:inherit">';
+	} else {
+		html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
+	}
 	html += '<span style="font-weight:600">' + escapedTitle + '</span>';
 	html += '<span class="badge" style="font-size:10px">' + escapedType + '</span>';
 	html += statusBadge(escapedStatus);
 	if (node.attemptCount > 0) html += '<span style="font-size:11px;color:var(--muted)">x' + node.attemptCount + '</span>';
-	html += '</div>';
+	if (depth > 0) {
+		html += '<span style="font-size:11px;color:var(--muted)">' + (expanded ? '▼' : '▶') + '</span>';
+		html += '</button>';
+	} else {
+		html += '</div>';
+	}
 	if (node.errorSummary) {
-		var errLine = escapeHtml(node.errorSummary);
-		html += '<div class="mindmap-node-error" style="margin-top:2px;font-size:11px;color:var(--fail);word-break:break-all">' + errLine + '</div>';
+		html += '<div class="mindmap-node-error" style="margin-top:2px;font-size:11px;color:var(--fail);word-break:break-all">' + escapeHtml(node.errorSummary) + '</div>';
 	}
 	if (node.summary) {
 		html += '<div style="margin-top:2px;font-size:11px;color:var(--muted)">' + escapeHtml(node.summary) + '</div>';
 	}
-	if (node.sourceItemId) {
+	if (expanded && depth > 0) {
+		html += '<div class="mindmap-node-details" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border);font-size:12px">';
+		var meta = [];
+		if (node.generated) meta.push('generated');
+		if (node.parentTaskId) meta.push('parent: ' + escapeHtml(node.parentTaskId.slice(0, 12)) + '...');
+		if (node.sourceItemId) meta.push('item: ' + escapeHtml(node.sourceItemId));
+		if (meta.length) html += '<div style="color:var(--muted);margin-bottom:4px">' + meta.join(' · ') + '</div>';
+		if (node.progress) {
+			html += '<div style="margin-bottom:4px"><span class="phase-label ' + phaseColor(node.progress.phase) + '">' + escapeHtml(phaseLabel(node.progress.phase)) + '</span>' + (node.progress.message ? ' ' + escapeHtml(node.progress.message) : '') + '</div>';
+		}
+		if (node.activeAttemptId) {
+			html += '<div style="color:var(--muted);margin-bottom:2px">activeAttemptId: ' + escapeHtml(node.activeAttemptId.slice(0, 12)) + '...</div>';
+		}
+		if (node.resultRef) {
+			html += '<div style="color:var(--success);margin-bottom:2px">resultRef: ' + escapeHtml(node.resultRef) + '</div>';
+		}
+		if (runId && attemptsMap && attemptsMap[node.id]) {
+			var attempts = attemptsMap[node.id];
+			attempts.forEach(function(a) {
+				var files = Array.isArray(a.files) ? a.files : [];
+				if (files.length) {
+					html += '<div class="file-chips" style="margin-top:2px">';
+					files.forEach(function(f) {
+						html += '<button class="file-chip" onclick="event.stopPropagation();viewAttemptFile(' + jsArg(runId) + ',' + jsArg(node.id) + ',' + jsArg(a.attemptId) + ',' + jsArg(f) + ')">' + escapeHtml(f) + '</button>';
+					});
+					html += '</div>';
+				}
+				if (a.worker && a.worker.length) {
+					a.worker.forEach(function(w) {
+						if (w.runtimeContext) html += renderRuntimeContext('worker', w.runtimeContext);
+					});
+				}
+			});
+		}
+		html += '</div>';
+	}
+	if (!expanded && depth > 0 && node.sourceItemId) {
 		html += '<div style="font-size:10px;color:var(--muted)">sourceItemId: ' + escapeHtml(node.sourceItemId) + '</div>';
 	}
-	if (node.fallback) {
+	if (!expanded && node.fallback) {
 		html += '<div style="font-size:10px;color:var(--warn)">fallback</div>';
 	}
 	html += '</div>';
 	if (node.children && node.children.length) {
+		var totalChildren = node.children.length;
+		var groupExpanded = isMindmapGroupExpanded(runId, node.id);
+		var visibleChildren = totalChildren <= MINDMAP_GROUP_LIMIT || groupExpanded ? totalChildren : MINDMAP_GROUP_LIMIT;
 		html += '<div class="mindmap-children" style="margin-left:' + (depth * 20) + 'px">';
-		node.children.forEach(function(child) {
-			html += renderMindmapNode(child, depth + 1);
-		});
+		for (var i = 0; i < visibleChildren; i++) {
+			html += renderMindmapNode(node.children[i], depth + 1, runId, attemptsMap);
+		}
 		html += '</div>';
+		if (totalChildren > MINDMAP_GROUP_LIMIT) {
+			html += '<div style="margin-left:' + ((depth + 1) * 20) + 'px;margin-bottom:4px">';
+			if (groupExpanded) {
+				html += '<button class="btn btn-sm" onclick="event.stopPropagation();toggleMindmapGroup(' + jsArg(runId) + ',' + jsArg(node.id) + ')" style="font-size:11px;padding:2px 8px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;border-radius:4px">收起</button>';
+			} else {
+				html += '<button class="btn btn-sm" onclick="event.stopPropagation();toggleMindmapGroup(' + jsArg(runId) + ',' + jsArg(node.id) + ')" style="font-size:11px;padding:2px 8px;border:1px solid var(--border);background:var(--surface);color:var(--accent);cursor:pointer;border-radius:4px">展开全部 ' + totalChildren + ' 个</button>';
+			}
+			html += '</div>';
+		}
 	}
 	return html;
 }
 
-function renderTeamMindmap(state, plan, attemptsMap) {
+function renderTeamMindmap(runId, state, plan, attemptsMap) {
 	var root = buildMindmapNodes(state, plan, attemptsMap);
 	return '<div class="team-mindmap" data-run-detail-view="mindmap">' +
-		renderMindmapNode(root, 0) +
+		renderMindmapNode(root, 0, runId, attemptsMap) +
 		'</div>';
 }
+
 
 function renderRunDetailShell(runId, state, plan, attemptsMap) {
 	var currentView = getRunDetailView(runId);
@@ -1506,7 +1606,7 @@ function renderRunDetailShell(runId, state, plan, attemptsMap) {
 		'</div>';
 	var contentHtml = currentView === 'detail'
 		? '<div data-run-detail-view="detail">' + renderTaskDetail(state, plan, attemptsMap) + '</div>'
-		: renderTeamMindmap(state, plan, attemptsMap);
+		: renderTeamMindmap(runId, state, plan, attemptsMap);
 	return switchHtml + contentHtml;
 }
 
