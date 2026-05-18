@@ -742,3 +742,181 @@ test("P24: skipped for_each parent skips children on rerun without calling worke
 		await rm(root, { recursive: true });
 	}
 });
+
+	test("P24: skipped for_each parent skips ALL children regardless of prior status", async () => {
+		const root = await mkdtemp(join(tmpdir(), "team-p24-skip-fe-mixed-"));
+		try {
+			let workerCallCount = 0;
+			class CountingRunner extends MockRoleRunner {
+				override async runWorker(input: import("../src/team/role-runner.js").WorkerInput) {
+					workerCallCount++;
+					return super.runWorker(input);
+				}
+			}
+			const planStore = new PlanStore(root);
+			const unitStore = new TeamUnitStore(root);
+			const workspace = new RunWorkspace(root);
+			const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+			const plan = await planStore.create({
+				title: "skip-fe-mixed test",
+				defaultTeamUnitId: unit.teamUnitId,
+				goal: { text: "test" },
+				tasks: [
+					{ id: "discover", type: "discovery", title: "find items", input: { text: "find" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "items" } },
+					{
+						id: "process", type: "for_each", title: "process items", input: { text: "placeholder" },
+						acceptance: { rules: ["ok"] },
+						forEach: { itemsFrom: "discover.items", mode: "sequential", taskTemplate: { title: "item", input: { text: "process" }, acceptance: { rules: ["ok"] } } },
+					},
+				],
+				outputContract: { text: "output" },
+			});
+			const runner = new CountingRunner({ workerOutputs: [JSON.stringify({ items: [{ id: "a", title: "A" }, { id: "b", title: "B" }, { id: "c", title: "C" }] })] });
+			const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+
+			// First run: all succeed
+			const state1 = await orchestrator.createRun(plan.planId);
+			const result1 = await orchestrator.runToCompletion(state1.runId);
+			assert.equal(result1.status, "completed");
+
+			// Get child task IDs from expansion
+			const expansion = await workspace.readExpansion(state1.runId, "process");
+			assert.ok(expansion, "expansion should exist");
+			const childIds = expansion.children.map(c => c.taskId);
+			assert.equal(childIds.length, 3);
+
+			// Manually set children to mixed statuses
+			const preRerun = (await workspace.getState(state1.runId))!;
+			preRerun.taskStates[childIds[0]]!.status = "succeeded";
+			preRerun.taskStates[childIds[1]]!.status = "failed";
+			preRerun.taskStates[childIds[1]]!.errorSummary = "child failed";
+			preRerun.taskStates[childIds[2]]!.status = "pending";
+			preRerun.summary.succeededTasks = 2;
+			preRerun.summary.failedTasks = 1;
+			preRerun.summary.skippedTasks = 0;
+			preRerun.summary.totalTasks = Object.keys(preRerun.taskStates).length;
+			await workspace.saveState(preRerun);
+
+			// Mark parent as skip
+			const preRerun2 = (await workspace.getState(state1.runId))!;
+			preRerun2.taskStates["process"]!.manualDisposition = "skip";
+			await workspace.saveState(preRerun2);
+
+			// Rerun
+			workerCallCount = 0;
+			const rerunResult = await orchestrator.rerunRun(state1.runId);
+			assert.equal(rerunResult.taskStates["process"]?.status, "skipped");
+
+			const finalState = await orchestrator.runToCompletion(rerunResult.runId);
+			assert.equal(finalState.taskStates["process"]?.status, "skipped", "parent should be skipped");
+
+			// ALL children must be skipped regardless of prior status
+			for (const childId of childIds) {
+				assert.equal(finalState.taskStates[childId]?.status, "skipped", `child ${childId} should be skipped`);
+			}
+
+			assert.equal(workerCallCount, 0, "worker must not be called when parent is skipped");
+			assert.equal(finalState.summary.skippedTasks, 4, "summary.skippedTasks: 1 parent + 3 children");
+			assert.equal(finalState.summary.succeededTasks, 1, "only discover should be succeeded");
+		} finally {
+			await rm(root, { recursive: true });
+		}
+	});
+
+	test("P24: skipped decomposer parent skips ALL children regardless of prior status", async () => {
+		const root = await mkdtemp(join(tmpdir(), "team-p24-skip-decomp-"));
+		try {
+			let workerCallCount = 0;
+			let decomposerCalled = false;
+
+			class DecomposerCountingRunner extends MockRoleRunner {
+				override async runWorker(input: import("../src/team/role-runner.js").WorkerInput) {
+					workerCallCount++;
+					return super.runWorker(input);
+				}
+				override async runDecomposer(): Promise<import("../src/team/role-runner.js").DecomposerOutput> {
+					decomposerCalled = true;
+					return {
+						decision: "split",
+						reason: "test split",
+						children: [
+							{ id: "child_a", title: "Child A", input: { text: "do A" }, acceptance: { rules: ["ok"] } },
+							{ id: "child_b", title: "Child B", input: { text: "do B" }, acceptance: { rules: ["ok"] } },
+							{ id: "child_c", title: "Child C", input: { text: "do C" }, acceptance: { rules: ["ok"] } },
+						],
+					};
+				}
+			}
+
+			const planStore = new PlanStore(root);
+			const unitStore = new TeamUnitStore(root);
+			const workspace = new RunWorkspace(root);
+			const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+			const plan = await planStore.create({
+				title: "skip-decomp test",
+				defaultTeamUnitId: unit.teamUnitId,
+				goal: { text: "test" },
+				tasks: [
+					{
+						id: "task_1", title: "decomposable task", input: { text: "do" },
+						acceptance: { rules: ["ok"] },
+						decomposer: { mode: "leaf" },
+					},
+				],
+				outputContract: { text: "output" },
+			});
+
+			const runner = new DecomposerCountingRunner();
+			const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+
+			// First run: decomposer splits, all children succeed
+			const state1 = await orchestrator.createRun(plan.planId);
+			const result1 = await orchestrator.runToCompletion(state1.runId);
+			assert.equal(result1.status, "completed");
+			assert.ok(decomposerCalled);
+
+			const decomp = await workspace.readDecomposition(state1.runId, "task_1");
+			assert.ok(decomp);
+			assert.equal(decomp.decision, "split");
+			const childIds = decomp.children.map(c => c.taskId);
+			assert.equal(childIds.length, 3);
+
+			// Manually set children to mixed statuses
+			const preRerun = (await workspace.getState(state1.runId))!;
+			preRerun.taskStates[childIds[0]]!.status = "succeeded";
+			preRerun.taskStates[childIds[1]]!.status = "failed";
+			preRerun.taskStates[childIds[1]]!.errorSummary = "child failed";
+			preRerun.taskStates[childIds[2]]!.status = "pending";
+			preRerun.summary.succeededTasks = 2;
+			preRerun.summary.failedTasks = 1;
+			preRerun.summary.skippedTasks = 0;
+			preRerun.summary.totalTasks = Object.keys(preRerun.taskStates).length;
+			await workspace.saveState(preRerun);
+
+			// Mark parent as skip
+			const preRerun2 = (await workspace.getState(state1.runId))!;
+			preRerun2.taskStates["task_1"]!.manualDisposition = "skip";
+			await workspace.saveState(preRerun2);
+
+			// Rerun
+			workerCallCount = 0;
+			decomposerCalled = false;
+			const rerunResult = await orchestrator.rerunRun(state1.runId);
+			assert.equal(rerunResult.taskStates["task_1"]?.status, "skipped");
+
+			const finalState = await orchestrator.runToCompletion(rerunResult.runId);
+			assert.equal(finalState.taskStates["task_1"]?.status, "skipped", "parent should be skipped");
+
+			// ALL children must be skipped
+			for (const childId of childIds) {
+				assert.equal(finalState.taskStates[childId]?.status, "skipped", `child ${childId} should be skipped`);
+			}
+
+			assert.equal(workerCallCount, 0, "worker must not be called when parent is skipped");
+			assert.equal(decomposerCalled, false, "decomposer must not be called on rerun");
+			assert.equal(finalState.summary.skippedTasks, 4, "summary.skippedTasks: 1 parent + 3 children");
+			assert.equal(finalState.summary.succeededTasks, 0, "no tasks should be succeeded");
+		} finally {
+			await rm(root, { recursive: true });
+		}
+	});

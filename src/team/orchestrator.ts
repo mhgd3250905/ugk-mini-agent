@@ -214,12 +214,10 @@ export class TeamOrchestrator {
 					if (task.type === "discovery" && taskState.status === "succeeded") {
 						await this.loadDiscoveryResult(state.runId, task, discoveryResults);
 					}
-					if (task.type === "for_each") {
-						if (taskState.status === "skipped") {
-							await this.skipExpandedChildren(state, task);
-						} else {
-							await this.executeExpandedChildren(state, task, plan, signal);
-						}
+					if (taskState.status === "skipped") {
+						await this.skipGeneratedChildren(state, task);
+					} else if (task.type === "for_each") {
+						await this.executeExpandedChildren(state, task, plan, signal);
 					}
 					continue;
 				}
@@ -1503,19 +1501,56 @@ export class TeamOrchestrator {
 			await this.workspace.saveState(state);
 		}
 
-		private async skipExpandedChildren(state: TeamRunState, task: TeamTask): Promise<void> {
-			const existing = await this.workspace.readExpansion(state.runId, task.id);
-			if (!existing) return;
-			for (const child of existing.children) {
-				const cs = state.taskStates[child.taskId];
-				if (cs && !TERMINAL_TASK_STATUSES.has(cs.status)) {
-					cs.status = "skipped";
-					cs.progress = { phase: "skipped", message: progressMessages.skipped, updatedAt: now() };
-					state.summary.skippedTasks = (state.summary.skippedTasks ?? 0) + 1;
+		private async skipGeneratedChildren(state: TeamRunState, task: TeamTask): Promise<void> {
+			const childTaskIds: string[] = [];
+
+			const expansion = await this.workspace.readExpansion(state.runId, task.id);
+			if (expansion) {
+				for (const child of expansion.children) {
+					childTaskIds.push(child.taskId);
 				}
 			}
+
+			const decomposition = await this.workspace.readDecomposition(state.runId, task.id);
+			if (decomposition) {
+				for (const child of decomposition.children) {
+					childTaskIds.push(child.taskId);
+				}
+			}
+
+			if (childTaskIds.length === 0) return;
+
+			for (const childId of childTaskIds) {
+				const cs = state.taskStates[childId];
+				if (cs) {
+					cs.status = "skipped";
+					cs.progress = { phase: "skipped", message: progressMessages.skipped, updatedAt: now() };
+					cs.errorSummary = null;
+				}
+			}
+
+			this.recomputeSummary(state);
 			state.updatedAt = now();
 			await this.workspace.saveState(state);
+		}
+
+		private recomputeSummary(state: TeamRunState): void {
+			let succeeded = 0, failed = 0, cancelled = 0, skipped = 0;
+			for (const ts of Object.values(state.taskStates)) {
+				switch (ts.status) {
+					case "succeeded": succeeded++; break;
+					case "failed": failed++; break;
+					case "cancelled": cancelled++; break;
+					case "skipped": skipped++; break;
+				}
+			}
+			state.summary = {
+				totalTasks: state.summary.totalTasks,
+				succeededTasks: succeeded,
+				failedTasks: failed,
+				cancelledTasks: cancelled,
+				skippedTasks: skipped,
+			};
 		}
 
 		private async executeExpandedChildren(

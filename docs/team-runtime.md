@@ -406,8 +406,8 @@ final report 优先由 finalizer agent 生成。若 finalizer 失败，orchestra
 
 ### Expanded Task 行为
 
-- **for_each parent 标 skip**：所有子任务标记为 skipped，worker 不被调用
-- **decomposition parent 标 skip**：同上
+- **parent 标 skip**：无论 `for_each` 还是 `decomposer` parent，所有子任务标记为 `skipped`（包括之前 succeeded/failed/pending/cancelled 的子任务），worker 和 decomposer 均不被调用。子任务 `errorSummary` 置 null，`resultRef` 保留可审计
+- **summary 重算**：`skipGeneratedChildren` 调用 `recomputeSummary` 从全量 taskStates 重新计数，不依赖 `++`，避免重复计数
 - **子任务标 skip**：仅该子任务跳过，不影响兄弟任务；parent 聚合时按 all-skipped → skipped、any-failed → failed、otherwise → succeeded 规则判断
 - **Expansion/decomposition record**：rerun 复用已有记录，不重复生成子任务
 
