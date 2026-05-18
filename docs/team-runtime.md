@@ -377,6 +377,7 @@ final report 优先由 finalizer agent 生成。若 finalizer 失败，orchestra
 | 任务状态 | 保持不变 | 按 disposition 决策表重置 |
 | run ID | 不变 | 不变（不创建新 run） |
 | plan.runCount | 不变 | 不变（不递增） |
+| active elapsed timer | 保留累计活跃时间 | 清零，重新计算本次执行窗口 |
 | final report | 保留 | 清除旧的 final-report.md |
 
 ### Manual Disposition
@@ -475,6 +476,21 @@ P10 已补齐独立 worker 的真实 runner 接线：`src/workers/team-worker.ts
 ### finalizer
 
 所有 task 完成后运行。读取每个 task 的 `resultRef` 文件内容，传入 finalizer prompt，生成中文 Markdown 汇总报告写入 `final-report.md`。
+
+#### P25: 权威运行汇总
+
+Finalizer prompt 包含来自 `TeamRunState.summary` 的权威运行汇总（totalTasks / succeededTasks / failedTasks / cancelledTasks / skippedTasks）。finalizer 被指示不得重新计算或改写这些计数，报告中引用任务计数时必须使用权威数据。
+
+#### P25: Skipped 任务语义
+
+- `skipped` 是独立于 `failed` 的状态。当前 `errorSummary` 为 null（不携带旧错误）。
+- 跳过前的原始错误作为 `previousErrorSummary` 传入 finalizer prompt，标记为历史/审计上下文，不得作为当前失败。
+- `completed` + `skippedTasks > 0` + `failedTasks === 0` 的 run 是合法终态。
+- Fallback report 遵循同一套语义：包含权威运行汇总，skipped 任务显示为"跳过"。
+
+#### P25: Succeeded-but-limited 汇总口径
+
+如果某个 `succeeded` 任务的产出提到外部数据源限制（如 API 需要登录、只有部分数据可用），finalizer 应将其列入"限制与警告"部分，但必须归入"已完成"区域。只有运行时状态为 `failed` 或 `cancelled` 的任务才能出现在"失败/未完成"部分。
 
 ### pause / resume / cancel
 

@@ -12,6 +12,26 @@
 
 ---
 
+## 2026-05-18 — Team Runtime P25: Finalizer Authoritative Summary and Skipped Semantics
+
+- **主题**: Finalizer 接收权威运行汇总禁止重算；skipped 任务与失败分离；succeeded-but-limited 外部数据源不入失败汇总
+- **影响范围**: `src/team/role-runner.ts`, `src/team/agent-profile-role-runner.ts`, `src/team/orchestrator.ts`, `docs/team-runtime.md`
+- **变更**:
+  - `FinalizerInput` 新增 `runSummary`（来自 `TeamRunState.summary`），`taskResults` 扩展支持 `cancelled` 状态、`previousErrorSummary`、`manualDisposition`
+  - `buildFinalizerPrompt` 生成权威运行汇总块并指示 finalizer 不得重新计算计数
+  - 跳过任务在 finalizer 输入中 `errorSummary` 置 null，旧错误移入 `previousErrorSummary` 标记为历史/审计上下文
+  - `rerunRun` 对 skip disposition 的 task 清除 `errorSummary`
+  - `generateFallbackReport` 包含权威运行汇总、中文状态标签、skipped 任务显示为"跳过"
+  - Finalizer prompt 添加限制/警告指令：succeeded 任务提到外部数据源限制时列入"限制与警告"而非"失败/未完成"
+- **测试**: 新增 3 个测试覆盖权威汇总 prompt、skipped error 语义、limited success 口径、fallback report 一致性
+- **commits**:
+  - `8993867` fix(team): pass authoritative run summary to finalizer
+  - `29eb931` fix(team): separate skipped task state from previous errors
+  - `b7c0e93` fix(team): keep limited successful tasks out of failure summaries
+  - `d3f3343` fix(team): align fallback finalizer report with task summary semantics
+
+---
+
 ## 2026-05-18 — Team Runtime P24: Run Rerun with Manual Task Control
 
 - **主题**: 终态运行可按任务标记重跑——支持跳过、强制重跑、恢复默认三种 disposition
@@ -19,7 +39,7 @@
 - **变更**:
   - 类型新增 `TaskManualDisposition`（default/skip/force_rerun）、`"skipped"` 状态、`ProgressPhase.skipped`、`summary.skippedTasks`
   - `shouldExecuteOnRerun()` 决策表：skip→不执行、force_rerun→执行、default+succeeded→复用、default+非succeeded→执行
-  - `rerunRun()` 重开终态运行，按 disposition 重置任务状态，清除旧 final report，保留 activeElapsedMs
+  - `rerunRun()` 重开终态运行，按 disposition 重置任务状态，清除旧 final report，并重置 activeElapsedMs/startedAt，避免旧执行窗口导致重跑秒超时
   - 父任务在子任务变更时自动重置为 pending，确保重跑时重新聚合
   - API 路由：单任务/批量 disposition PATCH、POST rerun
   - UI 控件：终态 run 显示"按标记重跑"按钮，任务行显示跳过/强制重跑/恢复默认操作
