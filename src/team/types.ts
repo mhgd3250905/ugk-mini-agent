@@ -165,6 +165,7 @@ export interface TeamTaskState {
 	activeAttemptId: string | null;
 	resultRef: string | null;
 	errorSummary: string | null;
+	previousErrorSummary?: string | null;
 	progress: TeamProgress;
 }
 
