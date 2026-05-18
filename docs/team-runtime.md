@@ -829,7 +829,7 @@ CRUD + 归档，每个角色绑定 AgentProfile 下拉选择。与 P19 前行为
   - 失败节点默认展开
   - 超过 6 个子节点时折叠，`展开全部 N 个` / `收起`
 - **移动端**：`@media (max-width: 720px)` 收口为纵向树卡片，隐藏连接线，无横向滚动
-- **通用特性**
+#### 通用特性
 
 - **页面内反馈**：所有操作反馈通过 toast 通知（success/error/info），不使用浏览器原生 `alert()`/`confirm()`/`prompt()`
 - **自定义确认弹窗**：危险操作使用 `confirmAction()` modal，带影响说明文案
