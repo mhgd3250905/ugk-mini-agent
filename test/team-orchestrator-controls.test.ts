@@ -933,7 +933,7 @@ test("P25: skipped task without previousErrorSummary field loads and runs", asyn
 		afterRun.taskStates.task_1!.status = "skipped";
 		afterRun.taskStates.task_1!.errorSummary = null;
 		// Explicitly delete to simulate old data
-		delete (afterRun.taskStates.task_1! as Record<string, unknown>).previousErrorSummary;
+		delete (afterRun.taskStates.task_1! as unknown as Record<string, unknown>).previousErrorSummary;
 		await workspace.saveState(afterRun);
 
 		// Re-run should not throw
@@ -1001,7 +1001,8 @@ test("P25: finalizer input receives previousErrorSummary from real rerun path", 
 
 		// Verify finalizer received the correct data
 		assert.ok(capturedInput, "finalizer must have been called");
-		const task2Result = capturedInput!.taskResults.find(r => r.taskId === "task_2");
+		const ci: import("../src/team/role-runner.js").FinalizerInput = capturedInput!;
+		const task2Result = ci.taskResults.find((r: { taskId: string }) => r.taskId === "task_2");
 		assert.ok(task2Result, "finalizer input must contain task_2");
 		assert.equal(task2Result!.status, "skipped", "task_2 status in finalizer input");
 		assert.equal(task2Result!.errorSummary, null, "task_2 errorSummary must be null in finalizer input");

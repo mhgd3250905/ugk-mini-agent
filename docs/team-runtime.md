@@ -484,9 +484,10 @@ Finalizer prompt 包含来自 `TeamRunState.summary` 的权威运行汇总（tot
 #### P25: Skipped 任务语义
 
 - `skipped` 是独立于 `failed` 的状态。当前 `errorSummary` 为 null（不携带旧错误）。
-- 跳过前的原始错误作为 `previousErrorSummary` 传入 finalizer prompt，标记为历史/审计上下文，不得作为当前失败。
+- 跳过前的原始错误持久化在 `TeamTaskState.previousErrorSummary` 中，作为审计上下文传入 finalizer prompt，标记为历史/审计数据，不得作为当前失败。旧 persisted state 无此字段时兼容加载。
+- 重新执行（非 skip）的任务清除 `previousErrorSummary`。
 - `completed` + `skippedTasks > 0` + `failedTasks === 0` 的 run 是合法终态。
-- Fallback report 遵循同一套语义：包含权威运行汇总，skipped 任务显示为"跳过"。
+- Fallback report 遍历 `state.taskStates`（含 generated/decomposed 子任务），不限于 `plan.tasks`。summary 来自 `TeamRunState.summary`，detail 中 skipped 任务显示"跳过"并附上 `previousErrorSummary`（如有）。
 
 #### P25: Succeeded-but-limited 汇总口径
 

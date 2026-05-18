@@ -32,6 +32,24 @@
 
 ---
 
+## 2026-05-18 — Team Runtime P25 Review Fixes: Skipped Audit Persistence and Fallback Detail Parity
+
+- **主题**: 修复 P25 审核发现的三个 wiring 缺陷：previousErrorSummary 未持久化、finalizer 从已清空的 errorSummary 读取、fallback report 只遍历 plan.tasks
+- **影响范围**: `src/team/types.ts`, `src/team/orchestrator.ts`, `test/team-orchestrator-controls.test.ts`, `docs/team-runtime.md`
+- **变更**:
+  - `TeamTaskState` 新增 `previousErrorSummary?: string | null`，旧 persisted state 无此字段时兼容加载
+  - `rerunRun()` skip 路径在清除 `errorSummary` 前保存到 `previousErrorSummary`；重新执行路径清除 `previousErrorSummary`
+  - `runFinalizer()` 从持久化 `previousErrorSummary` 读取，而非已清空的 `errorSummary`
+  - `generateFallbackReport()` 改为遍历 `state.taskStates`（含 generated/decomposed 子任务），用 `plan.tasks` 做 title 查找
+  - 修复 bad `boolean.toString()` 测试断言
+- **测试**: 新增 5 个测试覆盖 previousErrorSummary 持久化、旧数据兼容、真实 rerun 路径 finalizer 输入捕获、generated child fallback 报告、previousErrorSummary fallback 展示
+- **commits**:
+  - `9cd72be` fix(team): preserve previous error when skipping task on rerun
+  - `da27b3f` fix(team): pass skipped task audit error to finalizer
+  - `687869b` test(team): verify previousErrorSummary persistence and fallback report parity
+
+---
+
 ## 2026-05-18 — Team Runtime P24: Run Rerun with Manual Task Control
 
 - **主题**: 终态运行可按任务标记重跑——支持跳过、强制重跑、恢复默认三种 disposition
