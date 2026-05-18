@@ -6628,3 +6628,48 @@ test("POST /v1/chat/stream returns 409 before SSE hijack when the main agent is 
 	assert.equal(response.json().error.activeConversationId, "manual:active");
 	await app.close();
 });
+
+test("GET /playground/team includes run detail mindmap view shell", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/team",
+	});
+
+	assert.equal(response.statusCode, 200);
+	assert.match(response.headers["content-type"] ?? "", /^text\/html/);
+
+	// View state for per-run mindmap/detail switch
+	assert.match(response.body, /_runDetailViewByRunId/);
+	assert.match(response.body, /function getRunDetailView/);
+	assert.match(response.body, /function setRunDetailView/);
+
+	// Shell function that wraps both views
+	assert.match(response.body, /function renderRunDetailShell/);
+
+	// Mindmap placeholder function
+	assert.match(response.body, /function renderTeamMindmap/);
+
+	// Segmented switch labels
+	assert.match(response.body, /脑图/);
+	assert.match(response.body, /详情/);
+
+	// Switch uses data attribute for stable CSS targeting
+	assert.match(response.body, /data-run-detail-view="mindmap"/);
+	assert.match(response.body, /data-run-detail-view="detail"/);
+
+	// Old detail renderer still exists and is reachable from shell
+	assert.match(response.body, /function renderTaskDetail/);
+
+	// toggleRunDetail and updateRunCard render through the shell, not directly
+	// Verify toggleRunDetail calls renderRunDetailShell (not bare renderTaskDetail)
+	assert.match(response.body, /detailEl\.innerHTML\s*=\s*renderRunDetailShell\(/);
+
+	// updateRunCard also routes through the shell
+	assert.match(response.body, /var newHtml\s*=\s*renderRunDetailShell\(/);
+
+	await app.close();
+});

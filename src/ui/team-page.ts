@@ -796,6 +796,15 @@ async function saveTeamUnit() {
 			// P19 Dashboard UI state
 			var _selectedPlanId = null;
 			var _expandedRunIds = {};
+			var _runDetailViewByRunId = {};
+
+			function getRunDetailView(runId) {
+				return _runDetailViewByRunId[runId] || 'mindmap';
+			}
+
+			function setRunDetailView(runId, view) {
+				_runDetailViewByRunId[runId] = view;
+			}
 
 			function isDynamicPlan(tasks) {
 				if (!tasks || tasks.length < 2) return false;
@@ -1205,6 +1214,13 @@ async function loadRuns() {
 				'<div id="run-detail-' + r.runId + '" class="run-detail"></div>' +
 				'</div>';
 		}).join('');
+		Object.keys(_expandedRunIds).forEach(function(runId) {
+			if (!_expandedRunIds[runId]) return;
+			var detailEl = $('run-detail-' + runId);
+			if (!detailEl) return;
+			detailEl.style.display = 'none';
+			toggleRunDetail(runId);
+		});
 		subscribeActiveRuns(runs);
 	} catch (e) {
 		el.innerHTML = '<div class="empty" style="color:var(--fail)">加载失败：' + escapeHtml(e.message) + ' <span class="detail-toggle" onclick="loadRuns()">重试</span></div>';
@@ -1217,8 +1233,12 @@ async function toggleRunDetail(runId) {
 	if (!detailEl) return;
 	if (detailEl.style.display === 'block') {
 		detailEl.style.display = 'none';
+		_expandedRunIds[runId] = false;
 		return;
 	}
+	_expandedRunIds[runId] = true;
+	detailEl.innerHTML = '<div class="loading"><div class="spinner"></div> 加载中...</div>';
+	detailEl.style.display = 'block';
 	try {
 		var state = await api('/runs/' + runId);
 		if (!_planCache[state.planId]) {
@@ -1241,13 +1261,48 @@ async function toggleRunDetail(runId) {
 		window._latestAttemptsForRun[runId] = attemptsMap;
 		if (!window._latestRunTaskDefinitions) window._latestRunTaskDefinitions = {};
 		window._latestRunTaskDefinitions[runId] = Array.isArray(state.taskDefinitions) ? state.taskDefinitions : [];
-		detailEl.innerHTML = renderTaskDetail(state, plan, attemptsMap);
-		detailEl.style.display = 'block';
+		detailEl.innerHTML = renderRunDetailShell(runId, state, plan, attemptsMap);
 	} catch (e) {
 		detailEl.innerHTML = '<p style="color:var(--fail);font-size:13px">加载失败：' + escapeHtml(e.message) + '</p>';
-		detailEl.style.display = 'block';
 	}
 }
+
+function renderTeamMindmap(state, plan, attemptsMap) {
+	var runId = escapeHtml(state.runId || '');
+	var statusBadgeHtml = statusBadge(state.status || 'queued');
+	return '<div class="team-mindmap" data-run-detail-view="mindmap">' +
+		'<div class="mindmap-shell-placeholder" style="padding:16px;text-align:center;color:var(--muted);font-size:13px">' +
+		'<div style="margin-bottom:8px">' + statusBadgeHtml + ' ' + runId.slice(0, 12) + '</div>' +
+		'<div>脑图视图将在后续版本中渲染完整节点树</div>' +
+		'</div></div>';
+}
+
+function renderRunDetailShell(runId, state, plan, attemptsMap) {
+	var currentView = getRunDetailView(runId);
+	var mindmapActive = currentView === 'mindmap' ? ' active' : '';
+	var detailActive = currentView === 'detail' ? ' active' : '';
+	var switchHtml = '<div class="run-detail-view-toggle" style="display:flex;gap:0;margin-bottom:12px;border:1px solid var(--border);border-radius:6px;overflow:hidden">' +
+		'<button class="run-detail-view-btn' + mindmapActive + '" data-view="mindmap" onclick="switchRunDetailView(\'' + escapeHtml(runId) + '\',\'mindmap\')" style="flex:1;padding:6px 12px;border:none;background:' + (currentView === 'mindmap' ? 'var(--accent)' : 'var(--surface)') + ';color:' + (currentView === 'mindmap' ? '#fff' : 'var(--text)') + ';font-size:12px;cursor:pointer">脑图</button>' +
+		'<button class="run-detail-view-btn' + detailActive + '" data-view="detail" onclick="switchRunDetailView(\'' + escapeHtml(runId) + '\',\'detail\')" style="flex:1;padding:6px 12px;border:none;border-left:1px solid var(--border);background:' + (currentView === 'detail' ? 'var(--accent)' : 'var(--surface)') + ';color:' + (currentView === 'detail' ? '#fff' : 'var(--text)') + ';font-size:12px;cursor:pointer">详情</button>' +
+		'</div>';
+	var contentHtml = currentView === 'detail'
+		? '<div data-run-detail-view="detail">' + renderTaskDetail(state, plan, attemptsMap) + '</div>'
+		: renderTeamMindmap(state, plan, attemptsMap);
+	return switchHtml + contentHtml;
+}
+
+window.switchRunDetailView = function(runId, view) {
+	setRunDetailView(runId, view);
+	var detailEl = $('run-detail-' + runId);
+	if (!detailEl) return;
+	var plan2 = window._latestPlanForRun ? window._latestPlanForRun[runId] : null;
+	var attempts = window._latestAttemptsForRun ? window._latestAttemptsForRun[runId] : null;
+	var taskDefs = window._latestRunTaskDefinitions ? window._latestRunTaskDefinitions[runId] : [];
+	if (!plan2) return;
+	var state = { runId: runId };
+	if (Array.isArray(taskDefs)) state.taskDefinitions = taskDefs;
+	detailEl.innerHTML = renderRunDetailShell(runId, state, plan2, attempts);
+};
 
 function renderTaskDetail(state, plan, attemptsMap) {
 	if (!plan || !plan.tasks || !plan.tasks.length) return '<p style="color:var(--muted);font-size:13px">无任务数据。</p>';
@@ -1874,7 +1929,7 @@ function updateRunCard(r) {
 			if (!Array.isArray(detailState.taskDefinitions) && Array.isArray(window._latestRunTaskDefinitions[r.runId])) {
 				detailState = Object.assign({}, r, { taskDefinitions: window._latestRunTaskDefinitions[r.runId] });
 			}
-			var newHtml = renderTaskDetail(detailState, plan2, window._latestAttemptsForRun ? window._latestAttemptsForRun[r.runId] : null);
+			var newHtml = renderRunDetailShell(r.runId, detailState, plan2, window._latestAttemptsForRun ? window._latestAttemptsForRun[r.runId] : null);
 			var hash = String(newHtml.length) + "_" + String(done) + "_" + r.status;
 			if (detailEl.getAttribute("data-detail-hash") !== hash) {
 				detailEl.setAttribute("data-detail-hash", hash);
