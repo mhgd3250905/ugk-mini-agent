@@ -108,11 +108,67 @@ ${acceptanceRules.map((r, i) => `${i + 1}. ${r}`).join("\n")}
 - 自由输出你的工作结果（markdown 格式）
 - 产出的文件放在当前工作目录
 ${feedback ? `\n## 上次反馈（请针对反馈修改）\n${feedback}` : ""}`;
+	prompt += buildOutputContractBlock(task);
 	prompt += buildSourceItemIdentityBlock(task);
 	return prompt;
 }
 
-function buildCheckerPrompt(task: TeamTask, acceptanceRules: string[], workerOutput: string): string {
+function buildOutputContractBlock(task: TeamTask): string {
+	if (task.type === "discovery" && task.discovery?.outputKey) {
+		return `
+
+## 机器可消费输出协议（必须满足）
+- 最终可接受结果必须能被 runtime 机器解析，不只是人类可读总结。
+- 输出必须包含 parseable JSON object，顶层 key 必须是 "${task.discovery.outputKey}"。
+- "${task.discovery.outputKey}" 必须是 array。
+- array 每一项必须是 object，且必须有稳定的非空 string 字段 "id"。
+- 可以把 JSON 写入当前 run 范围内文件，但最终回答必须清楚引用该文件路径，例如 worker/vendors.json 或 worker/output/vendors.json。
+`;
+	}
+	if (!task.outputCheck) return "";
+	if (task.outputCheck.type === "html_fragment") {
+		return `
+
+## 机器可消费输出协议（必须满足）
+- 最终可接受结果必须包含可验证的 HTML fragment。
+- 不要输出完整 HTML 页面，除非任务明确要求。
+${task.outputCheck.requiredSubstrings?.length ? `- fragment 必须包含这些标记：${task.outputCheck.requiredSubstrings.join(", ")}\n` : ""}${task.outputCheck.forbiddenTags?.length ? `- fragment 不得包含这些 page-level tags：${task.outputCheck.forbiddenTags.join(", ")}\n` : ""}`;
+	}
+	if (task.outputCheck.type === "json_items" || task.outputCheck.type === "json_object") {
+		return `
+
+## 机器可消费输出协议（必须满足）
+- 最终可接受结果必须包含 parseable JSON。
+${task.outputCheck.type === "json_items" && task.outputCheck.outputKey ? `- 顶层 key "${task.outputCheck.outputKey}" 必须是 array。\n` : ""}${task.outputCheck.requiredFields?.length ? `- 必须包含字段：${task.outputCheck.requiredFields.join(", ")}\n` : ""}`;
+	}
+	if (task.outputCheck.type === "file_exists") {
+		return `
+
+## 机器可消费输出协议（必须满足）
+- 最终可接受结果必须生成并引用 run-scoped 文件${task.outputCheck.path ? `：${task.outputCheck.path}` : ""}。
+`;
+	}
+	return "";
+}
+
+function buildValidationEvidenceBlock(validation: CheckerInput["outputValidation"] | WatcherInput["outputValidation"], role: "checker" | "watcher"): string {
+	if (!validation) return "";
+	const serialized = JSON.stringify(validation);
+	const forbidden = role === "checker"
+		? '如果 outputValidation.ok=false，verdict 不得为 "pass"；必须 fail 或 revise，并说明缺少机器可消费输出。'
+		: '如果 outputValidation.ok=false，decision 不得为 "accept_task"；必须 confirm_failed 或 request_revision。';
+	return `
+
+## Runtime deterministic output validation
+\`\`\`json
+${serialized}
+\`\`\`
+
+${forbidden}
+`;
+}
+
+function buildCheckerPrompt(task: TeamTask, acceptanceRules: string[], workerOutput: string, outputValidation?: CheckerInput["outputValidation"]): string {
 	const base = `你是一个验收 Agent（checker）。请评审 worker 的输出。
 
 ## 任务
@@ -140,10 +196,10 @@ JSON 格式：
 - resultContent / feedback 如存在必须是 string
 - 字符串中的双引号必须转义为 \\"
 - 不要在 JSON 前后添加任何文字`;
-	return base + buildCheckerSourceItemBlock(task);
+	return base + buildValidationEvidenceBlock(outputValidation, "checker") + buildCheckerSourceItemBlock(task);
 }
 
-function buildWatcherPrompt(task: TeamTask, workUnitStatus: "passed" | "failed", resultRef: string | null, errorSummary: string | null): string {
+function buildWatcherPrompt(task: TeamTask, workUnitStatus: "passed" | "failed", resultRef: string | null, errorSummary: string | null, outputValidation?: WatcherInput["outputValidation"]): string {
 	const base = `你是一个复盘 Agent（watcher）。请审核当前任务的工作结果。
 
 ## 任务
@@ -169,7 +225,7 @@ JSON 格式：
 - revisionMode 只能是 "amend" 或 "redo"
 - 字符串中的双引号必须转义为 \\"
 - 不要在 JSON 前后添加任何文字`;
-	return base + buildWatcherSourceItemBlock(task);
+	return base + buildValidationEvidenceBlock(outputValidation, "watcher") + buildWatcherSourceItemBlock(task);
 }
 
 function buildFinalizerPrompt(plan: TeamPlan, taskResults: Array<{ taskId: string; status: "succeeded" | "failed" | "cancelled" | "skipped"; resultRef: string | null; errorSummary: string | null; previousErrorSummary?: string | null; manualDisposition?: string; resultContent: string | null }>, runSummary?: { totalTasks: number; succeededTasks: number; failedTasks: number; cancelledTasks: number; skippedTasks: number }): string {
@@ -533,7 +589,7 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 		const snapshot = await this.resolveProfile(this.options.checkerProfileId);
 		const workspace = await this.createRoleWorkspace(input.runId, input.attemptId, "checker");
 		const workerOutput = await readRefContent(this.options.teamDataDir, input.runId, input.workerOutputRef);
-		const prompt = buildCheckerPrompt(input.task, input.acceptanceRules, workerOutput);
+		const prompt = buildCheckerPrompt(input.task, input.acceptanceRules, workerOutput, input.outputValidation);
 
 		const sessionResult = await this.runSession(snapshot, this.options.checkerProfileId, input.runId, workspace, prompt, input.signal, { role: "checker", roleKey: input.attemptId });
 		const content = sessionResult.content;
@@ -556,7 +612,7 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 	async runWatcher(input: WatcherInput): Promise<WatcherOutput> {
 		const snapshot = await this.resolveProfile(this.options.watcherProfileId);
 		const workspace = await this.createRoleWorkspace(input.runId, input.attemptId, "watcher");
-		const prompt = buildWatcherPrompt(input.task, input.workUnitStatus, input.resultRef, input.errorSummary);
+		const prompt = buildWatcherPrompt(input.task, input.workUnitStatus, input.resultRef, input.errorSummary, input.outputValidation);
 
 		const sessionResult = await this.runSession(snapshot, this.options.watcherProfileId, input.runId, workspace, prompt, input.signal, { role: "watcher", roleKey: input.attemptId });
 		const content = sessionResult.content;

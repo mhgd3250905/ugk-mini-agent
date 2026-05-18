@@ -1788,6 +1788,93 @@ test("normal task with coincidental sourceItemId must not get identity block", a
 	}
 });
 
+// ── P26: output contract prompt evidence ──
+
+test("P26: worker discovery prompt includes machine-consumable output contract", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p26-prompt-"));
+	try {
+		let capturedPrompt = "";
+		const sessionFactory = {
+			createSession: async () => ({
+				prompt: async (p: string) => { capturedPrompt = p; },
+				subscribe: () => () => {},
+				messages: [{ role: "assistant", content: [{ type: "text", text: "done" }], stopReason: "end_turn" }],
+			}),
+		} as unknown as BackgroundAgentSessionFactory;
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root, teamDataDir: root,
+			watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f",
+			profileResolver: fakeProfileResolver as never, sessionFactory,
+		});
+
+		await runner.runWorker({
+			runId: "run_p26_worker",
+			task: { id: "scan_vendors", type: "discovery", title: "Scan", input: { text: "scan" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "vendors" } },
+			attemptId: "attempt_1",
+			workDir: join(root, "work"),
+			outputDir: join(root, "output"),
+			acceptanceRules: ["ok"],
+		});
+
+		assert.ok(capturedPrompt.includes("vendors"), "prompt must mention outputKey");
+		assert.ok(capturedPrompt.includes("machine-consumable") || capturedPrompt.includes("机器可消费"), "prompt must require machine-consumable output");
+		assert.ok(capturedPrompt.includes("id"), "prompt must mention stable item id");
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
+test("P26: checker and watcher prompts include validation evidence and forbid pass/accept on ok=false", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p26-prompt-"));
+	try {
+		const prompts: string[] = [];
+		const sessionFactory = {
+			createSession: async () => ({
+				prompt: async (p: string) => { prompts.push(p); },
+				subscribe: () => () => {},
+				messages: [{ role: "assistant", content: [{ type: "text", text: prompts.length === 1 ? '{"verdict":"fail","reason":"validation failed"}' : '{"decision":"confirm_failed","reason":"validation failed"}' }], stopReason: "end_turn" }],
+			}),
+		} as unknown as BackgroundAgentSessionFactory;
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root, teamDataDir: root,
+			watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f",
+			profileResolver: fakeProfileResolver as never, sessionFactory,
+		});
+		const validation = {
+			ok: false,
+			kind: "discovery" as const,
+			sourceRef: null,
+			checks: [{ name: "json_parse", ok: false, message: "no parseable JSON found" }],
+			normalizedRef: null,
+		};
+
+		await runner.runChecker({
+			runId: "run_p26_checker",
+			task: { id: "scan_vendors", type: "discovery", title: "Scan", input: { text: "scan" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "vendors" } },
+			attemptId: "attempt_1",
+			workerOutputRef: "missing.md",
+			acceptanceRules: ["ok"],
+			outputValidation: validation,
+		});
+		await runner.runWatcher({
+			runId: "run_p26_watcher",
+			task: { id: "scan_vendors", type: "discovery", title: "Scan", input: { text: "scan" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "vendors" } },
+			attemptId: "attempt_1",
+			workUnitStatus: "failed",
+			resultRef: null,
+			errorSummary: "validation failed",
+			outputValidation: validation,
+		});
+
+		assert.ok(prompts[0]!.includes('"ok":false'), "checker prompt must include serialized validation result");
+		assert.ok(prompts[0]!.includes("不得") && prompts[0]!.includes("pass"), "checker must not pass ok=false");
+		assert.ok(prompts[1]!.includes('"ok":false'), "watcher prompt must include serialized validation result");
+		assert.ok(prompts[1]!.includes("不得") && prompts[1]!.includes("accept_task"), "watcher must not accept ok=false");
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
 
 // ── P25 Task 1: authoritative run summary in finalizer prompt ──
 
