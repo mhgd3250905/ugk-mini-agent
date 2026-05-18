@@ -773,3 +773,107 @@ test('P17: old attempts without runtime context remain readable', async () => {
 		await rm(root, { recursive: true });
 	}
 });
+
+// ── P26: output validation gates checker / watcher acceptance ──
+
+test("P26: invalid discovery validation overrides checker pass and reaches watcher as failed work", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p26-validation-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({
+			title: "p26", description: "d",
+			workerProfileId: "w", checkerProfileId: "c", watcherProfileId: "wa", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "P26 invalid discovery",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "discover vendors" },
+			tasks: [{ id: "scan_vendors", type: "discovery", title: "Scan vendors", input: { text: "scan" }, acceptance: { rules: ["valid vendors"] }, discovery: { outputKey: "vendors" } }],
+			outputContract: { text: "out" },
+		});
+		const seen: { checkerValidationOk?: boolean; watcherValidationOk?: boolean; watcherStatus?: string } = {};
+		const runner = new (class extends MockRoleRunner {
+			override async runWorker(): Promise<WorkerOutput> {
+				return { content: "只是一段总结，没有 JSON，也没有文件引用。", artifactRefs: [] };
+			}
+			override async runChecker(input: CheckerInput): Promise<CheckerOutput> {
+				seen.checkerValidationOk = input.outputValidation?.ok;
+				return { verdict: "pass", reason: "LLM says ok", resultContent: "looks good" };
+			}
+			override async runWatcher(input: WatcherInput): Promise<WatcherOutput> {
+				seen.watcherValidationOk = input.outputValidation?.ok;
+				seen.watcherStatus = input.workUnitStatus;
+				return { decision: "confirm_failed", reason: "validation failed" };
+			}
+		})();
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace, roleRunner: runner,
+			dataDir: root, maxCheckerRevisions: 1, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(seen.checkerValidationOk, false);
+		assert.equal(seen.watcherValidationOk, false);
+		assert.equal(seen.watcherStatus, "failed");
+		assert.equal(final.taskStates.scan_vendors?.status, "failed");
+		assert.match(final.taskStates.scan_vendors?.errorSummary ?? "", /output validation failed|discovery result validation failed/);
+		const discovery = await workspace.readDiscoveryResult(state.runId, "scan_vendors", final.taskStates.scan_vendors!.activeAttemptId!);
+		assert.equal(discovery, null);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("P26: checker resultContent can provide valid machine-readable discovery output", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p26-validation-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({
+			title: "p26", description: "d",
+			workerProfileId: "w", checkerProfileId: "c", watcherProfileId: "wa", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "P26 checker fixes discovery",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "discover vendors" },
+			tasks: [{ id: "scan_vendors", type: "discovery", title: "Scan vendors", input: { text: "scan" }, acceptance: { rules: ["valid vendors"] }, discovery: { outputKey: "vendors" } }],
+			outputContract: { text: "out" },
+		});
+		const seen: { checkerValidationOk?: boolean; watcherValidationOk?: boolean } = {};
+		const runner = new (class extends MockRoleRunner {
+			override async runWorker(): Promise<WorkerOutput> {
+				return { content: "worker wrote prose only", artifactRefs: [] };
+			}
+			override async runChecker(input: CheckerInput): Promise<CheckerOutput> {
+				seen.checkerValidationOk = input.outputValidation?.ok;
+				return { verdict: "pass", reason: "fixed", resultContent: JSON.stringify({ vendors: [{ id: "vultr", name: "Vultr" }] }) };
+			}
+			override async runWatcher(input: WatcherInput): Promise<WatcherOutput> {
+				seen.watcherValidationOk = input.outputValidation?.ok;
+				return { decision: "accept_task", reason: "ok" };
+			}
+		})();
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace, roleRunner: runner,
+			dataDir: root, maxCheckerRevisions: 1, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(seen.checkerValidationOk, false, "checker sees worker output was not consumable yet");
+		assert.equal(seen.watcherValidationOk, true, "watcher sees accepted result is now consumable");
+		assert.equal(final.taskStates.scan_vendors?.status, "succeeded");
+		const discovery = await workspace.readDiscoveryResult(state.runId, "scan_vendors", final.taskStates.scan_vendors!.activeAttemptId!);
+		assert.equal(discovery?.items.length, 1);
+		assert.equal(discovery?.items[0]!.id, "vultr");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});

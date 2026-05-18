@@ -1,4 +1,4 @@
-import type { TeamRunState, TeamTask, TeamTaskState, TeamPlan, TeamDiscoveryResultRecord, TaskManualDisposition } from "./types.js";
+import type { TeamRunState, TeamTask, TeamTaskState, TeamPlan, TeamDiscoveryResultRecord, TaskManualDisposition, TeamOutputValidationResult } from "./types.js";
 import { PlanStore } from "./plan-store.js";
 import { TeamUnitStore } from "./team-unit-store.js";
 import { RunWorkspace } from "./run-workspace.js";
@@ -6,6 +6,7 @@ import type { TeamRoleRunner, ProfileAwareTeamRoleRunner } from "./role-runner.j
 import { writeTimingSpan } from "./timing.js";
 import { progressMessages } from "./progress.js";
 import { TaskExpansionPlanner, TemplateTaskExpansionPlanner } from "./task-expansion-planner.js";
+import { validateTeamOutput } from "./output-validator.js";
 
 export interface PhaseTimeouts {
 	workerMs: number;
@@ -39,6 +40,11 @@ const now = () => new Date().toISOString();
 
 const TERMINAL_TASK_STATUSES = new Set(["succeeded", "failed", "cancelled", "skipped"]);
 
+interface WorkUnitRunResult {
+	status: "passed" | "failed";
+	outputValidation: TeamOutputValidationResult;
+}
+
 export function getManualDisposition(taskState: TeamTaskState): TaskManualDisposition {
 	return taskState.manualDisposition ?? "default";
 }
@@ -54,6 +60,16 @@ const MAX_TOTAL_TASKS_PER_RUN = 50;
 
 function isRunExternallyStopped(status: string): boolean {
 	return status === "cancelled" || status === "paused";
+}
+
+function noOutputValidation(): TeamOutputValidationResult {
+	return { ok: true, kind: "none", sourceRef: null, checks: [{ name: "no_output_check", ok: true }], normalizedRef: null };
+}
+
+function summarizeOutputValidationFailure(result: TeamOutputValidationResult): string {
+	const failed = result.checks.find(check => !check.ok);
+	const detail = failed?.message ?? failed?.name ?? "unknown validation failure";
+	return `output validation failed: ${detail}`;
 }
 
 function generateFallbackReport(
@@ -705,7 +721,7 @@ export class TeamOrchestrator {
 			const ts = state.taskStates[task.id]!;
 
 			if (watcherResult.decision === "accept_task") {
-				if (workUnitResult === "passed") {
+				if (workUnitResult.status === "passed") {
 					if (task.type === "discovery" && task.discovery) {
 						const standardized = await this.writeStandardDiscoveryResult(state.runId, task, attemptId);
 						const valErr = `discovery result validation failed: expected outputKey '${task.discovery.outputKey}' to be an array with stable item ids`;
@@ -765,14 +781,14 @@ export class TeamOrchestrator {
 		}
 	}
 
-	private async runWorkUnit(state: TeamRunState, task: TeamTask, attemptId: string, attemptRoot: string, signal: AbortSignal): Promise<"passed" | "failed"> {
+	private async runWorkUnit(state: TeamRunState, task: TeamTask, attemptId: string, attemptRoot: string, signal: AbortSignal): Promise<WorkUnitRunResult> {
 		const runId = state.runId;
 		let checkerRevision = 0;
 		let lastFeedback: string | undefined;
 
 		while (true) {
 			const freshState = await this.workspace.getState(runId);
-			if (!freshState || freshState.status !== "running" || this.shouldStop(freshState)) return "failed";
+			if (!freshState || freshState.status !== "running" || this.shouldStop(freshState)) return { status: "failed", outputValidation: noOutputValidation() };
 
 			await this.workspace.updateAttemptPhase(runId, task.id, attemptId, "worker_running");
 
@@ -798,19 +814,19 @@ export class TeamOrchestrator {
 				});
 				if (error instanceof Error && error.message === "worker timeout") {
 					const s = (await this.workspace.getState(runId))!;
-					if (this.shouldStop(s)) return "failed";
+					if (this.shouldStop(s)) return { status: "failed", outputValidation: noOutputValidation() };
 					const failRef = await this.workspace.writeFailedResult(runId, task.id, attemptId, "worker timeout");
 					await this.workspace.finishAttempt(runId, task.id, attemptId, { status: "failed", phase: "failed", resultRef: failRef, errorSummary: "worker timeout" });
 					s.taskStates[task.id]!.resultRef = failRef;
 					s.taskStates[task.id]!.errorSummary = "worker timeout";
 					await this.workspace.saveState(s);
-					return "failed";
+					return { status: "failed", outputValidation: noOutputValidation() };
 				}
 				throw error;
 			}
 
 			// Re-read after worker returns — cancel may have landed during execution
-			if (this.shouldStop((await this.workspace.getState(runId)))) return "failed";
+			if (this.shouldStop((await this.workspace.getState(runId)))) return { status: "failed", outputValidation: noOutputValidation() };
 
 			const workerOutputIdx = checkerRevision + 1;
 			const workerRef = await this.workspace.writeWorkerOutput(runId, task.id, attemptId, workerOutputIdx, workerOut.content);
@@ -820,6 +836,13 @@ export class TeamOrchestrator {
 				runtimeContext: workerOut.runtimeContext,
 			});
 			await this.workspace.updateAttemptPhase(runId, task.id, attemptId, "worker_completed");
+			const workerValidation = await validateTeamOutput({
+				workspace: this.workspace,
+				runId,
+				task,
+				attemptId,
+				contents: [{ ref: workerRef, content: workerOut.content }],
+			});
 
 			const workerFinished = new Date();
 			await writeTimingSpan(this.dataDir, {
@@ -845,6 +868,7 @@ export class TeamOrchestrator {
 						runId, task, attemptId,
 						workerOutputRef: workerRef,
 						acceptanceRules: task.acceptance.rules,
+						outputValidation: workerValidation,
 						signal: localSignal,
 					});
 				});
@@ -857,19 +881,19 @@ export class TeamOrchestrator {
 				});
 				if (error instanceof Error && error.message === "checker timeout") {
 					const s = (await this.workspace.getState(runId))!;
-					if (this.shouldStop(s)) return "failed";
+					if (this.shouldStop(s)) return { status: "failed", outputValidation: workerValidation };
 					const failRef = await this.workspace.writeFailedResult(runId, task.id, attemptId, "checker timeout");
 					await this.workspace.finishAttempt(runId, task.id, attemptId, { status: "failed", phase: "failed", resultRef: failRef, errorSummary: "checker timeout" });
 					s.taskStates[task.id]!.resultRef = failRef;
 					s.taskStates[task.id]!.errorSummary = "checker timeout";
 					await this.workspace.saveState(s);
-					return "failed";
+					return { status: "failed", outputValidation: workerValidation };
 				}
 				throw error;
 			}
 
 			// Re-read after checker returns — cancel may have landed during execution
-			if (this.shouldStop((await this.workspace.getState(runId)))) return "failed";
+			if (this.shouldStop((await this.workspace.getState(runId)))) return { status: "failed", outputValidation: workerValidation };
 
 			const checkerIdx = checkerRevision + 1;
 			await this.workspace.writeCheckerVerdict(runId, task.id, attemptId, checkerIdx, checkerOut);
@@ -897,24 +921,42 @@ export class TeamOrchestrator {
 			if (checkerOut.verdict === "pass") {
 				const resultContent = checkerOut.resultContent ?? workerOut.content;
 				const s = (await this.workspace.getState(runId))!;
-				if (this.shouldStop(s)) return "failed";
+				if (this.shouldStop(s)) return { status: "failed", outputValidation: workerValidation };
+				const acceptedValidation = await validateTeamOutput({
+					workspace: this.workspace,
+					runId,
+					task,
+					attemptId,
+					contents: [
+						{ ref: "checker.resultContent", content: resultContent },
+						{ ref: workerRef, content: workerOut.content },
+					],
+				});
+				if (!acceptedValidation.ok) {
+					const errorSummary = summarizeOutputValidationFailure(acceptedValidation);
+					const failRef = await this.workspace.writeFailedResult(runId, task.id, attemptId, errorSummary);
+					s.taskStates[task.id]!.resultRef = failRef;
+					s.taskStates[task.id]!.errorSummary = errorSummary;
+					await this.workspace.saveState(s);
+					return { status: "failed", outputValidation: acceptedValidation };
+				}
 				const resultRef = await this.workspace.writeAcceptedResult(runId, task.id, attemptId, resultContent);
 				await this.workspace.updateAttemptPhase(runId, task.id, attemptId, "checker_passed");
 				s.taskStates[task.id]!.resultRef = resultRef;
 				await this.workspace.saveState(s);
-				return "passed";
+				return { status: "passed", outputValidation: acceptedValidation };
 			}
 
 			if (checkerOut.verdict === "fail") {
 				const failContent = checkerOut.resultContent ?? checkerOut.reason;
 				const s = (await this.workspace.getState(runId))!;
-				if (this.shouldStop(s)) return "failed";
+				if (this.shouldStop(s)) return { status: "failed", outputValidation: workerValidation };
 				const failRef = await this.workspace.writeFailedResult(runId, task.id, attemptId, failContent);
 				await this.workspace.finishAttempt(runId, task.id, attemptId, { status: "failed", phase: "failed", resultRef: failRef, errorSummary: checkerOut.reason });
 				s.taskStates[task.id]!.resultRef = failRef;
 				s.taskStates[task.id]!.errorSummary = checkerOut.reason;
 				await this.workspace.saveState(s);
-				return "failed";
+				return { status: "failed", outputValidation: workerValidation };
 			}
 
 			await this.workspace.updateAttemptPhase(runId, task.id, attemptId, "checker_revising");
@@ -922,18 +964,18 @@ export class TeamOrchestrator {
 			lastFeedback = checkerOut.feedback;
 			if (checkerRevision >= this.maxCheckerRevisions) {
 				const s = (await this.workspace.getState(runId))!;
-				if (this.shouldStop(s)) return "failed";
+				if (this.shouldStop(s)) return { status: "failed", outputValidation: workerValidation };
 				const failRef = await this.workspace.writeFailedResult(runId, task.id, attemptId, `checker revision limit (${this.maxCheckerRevisions}) exceeded`);
 				await this.workspace.finishAttempt(runId, task.id, attemptId, { status: "failed", phase: "failed", resultRef: failRef, errorSummary: "checker revision limit exceeded" });
 				s.taskStates[task.id]!.resultRef = failRef;
 				s.taskStates[task.id]!.errorSummary = "checker revision limit exceeded";
 				await this.workspace.saveState(s);
-				return "failed";
+				return { status: "failed", outputValidation: workerValidation };
 			}
 		}
 	}
 
-	private async runWatcherPhase(state: TeamRunState, task: TeamTask, attemptId: string, workUnitStatus: "passed" | "failed", signal: AbortSignal) {
+	private async runWatcherPhase(state: TeamRunState, task: TeamTask, attemptId: string, workUnitResult: WorkUnitRunResult, signal: AbortSignal) {
 		const preAttempts = await this.workspace.listAttempts(state.runId, task.id);
 		const preAttempt = preAttempts.find(a => a.attemptId === attemptId);
 		if (preAttempt && !preAttempt.finishedAt) {
@@ -956,9 +998,10 @@ export class TeamOrchestrator {
 					runId: state.runId,
 					task,
 					attemptId,
-					workUnitStatus,
+					workUnitStatus: workUnitResult.status,
 					resultRef: ts?.resultRef ?? null,
 					errorSummary: ts?.errorSummary ?? null,
+					outputValidation: workUnitResult.outputValidation,
 					signal: localSignal,
 				});
 			});
@@ -1230,7 +1273,7 @@ export class TeamOrchestrator {
 			if (!content) continue;
 			const items = this.extractDiscoveryItems(content, outputKey, options);
 			if (items) return items;
-			const referencedItems = await this.readDiscoveryItemsFromReferencedFiles(runId, content, outputKey, options);
+			const referencedItems = await this.readDiscoveryItemsFromReferencedFiles(runId, attemptId, content, outputKey, options);
 			if (referencedItems) return referencedItems;
 		}
 		return null;
@@ -1238,12 +1281,19 @@ export class TeamOrchestrator {
 
 	private async readDiscoveryItemsFromReferencedFiles(
 		runId: string,
+		attemptId: string,
 		content: string,
 		outputKey: string,
 		options: { allowDirectArray?: boolean; strictItems?: boolean } = {},
 	): Promise<Array<Record<string, unknown>> | null> {
 		for (const ref of this.extractRunScopedRefs(runId, content)) {
-			const referencedContent = await this.workspace.readRunScopedFile(runId, ref);
+			const roleMatch = ref.match(/^(worker|checker|watcher)\/(.+)$/);
+			const workerRelativeMatch = ref.match(/^(output|work)\/(.+)$/);
+			const referencedContent = roleMatch
+				? (await this.workspace.readAttemptRoleWorkspaceFile(runId, attemptId, roleMatch[1] as "worker" | "checker" | "watcher", roleMatch[2]!))?.content ?? null
+				: workerRelativeMatch
+					? (await this.workspace.readAttemptRoleWorkspaceFile(runId, attemptId, "worker", ref))?.content ?? null
+					: await this.workspace.readRunScopedFile(runId, ref);
 			if (!referencedContent) continue;
 			const items = this.extractDiscoveryItems(referencedContent, outputKey, options);
 			if (items) return items;
@@ -1264,6 +1314,8 @@ export class TeamOrchestrator {
 		for (const match of content.matchAll(absolutePattern)) add(match[0]!);
 		const relativePattern = new RegExp(`runs/${runId}/[^\\s\\])"'` + "`" + `，。；：]+`, "g");
 		for (const match of content.matchAll(relativePattern)) add(match[0]!);
+		const rolePattern = /(?:^|[\s（(])((?:worker|checker|watcher|output|work)\/[^\s\])"'`，。；：]+)/g;
+		for (const match of content.matchAll(rolePattern)) add(match[1]!);
 		return refs;
 	}
 
@@ -1359,6 +1411,13 @@ export class TeamOrchestrator {
 	private async writeStandardDiscoveryResult(runId: string, task: TeamTask, attemptId: string): Promise<boolean> {
 		if (!task.discovery) return false;
 		const outputKey = task.discovery.outputKey;
+		const validation = await validateTeamOutput({
+			workspace: this.workspace,
+			runId,
+			task,
+			attemptId,
+		});
+		if (!validation.ok) return false;
 		const items = await this.readDiscoveryItemsFromAttempt(runId, task.id, attemptId, outputKey, { strictItems: true });
 		if (!items) return false;
 		if (!this.hasStableDiscoveryItemIds(items)) return false;
@@ -1370,7 +1429,7 @@ export class TeamOrchestrator {
 			attemptId,
 			outputKey,
 			items,
-			sourceRef: resultRef,
+			sourceRef: validation.sourceRef ?? resultRef,
 			createdAt: now(),
 		};
 		await this.workspace.writeDiscoveryResult(runId, task.id, attemptId, record);

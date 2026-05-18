@@ -1,4 +1,4 @@
-import type { TeamTask, TeamPlan, TeamRoleRuntimeContext } from "./types.js";
+import type { TeamTask, TeamPlan, TeamRoleRuntimeContext, TeamOutputValidationResult } from "./types.js";
 
 export interface WorkerInput {
 	runId: string;
@@ -23,6 +23,7 @@ export interface CheckerInput {
 	attemptId: string;
 	workerOutputRef: string;
 	acceptanceRules: string[];
+	outputValidation?: TeamOutputValidationResult;
 	signal?: AbortSignal;
 }
 
@@ -41,6 +42,7 @@ export interface WatcherInput {
 	workUnitStatus: "passed" | "failed";
 	resultRef: string | null;
 	errorSummary: string | null;
+	outputValidation?: TeamOutputValidationResult;
 	signal?: AbortSignal;
 }
 
