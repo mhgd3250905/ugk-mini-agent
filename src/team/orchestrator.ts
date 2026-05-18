@@ -369,6 +369,7 @@ export class TeamOrchestrator {
 			const disposition = getManualDisposition(ts);
 			if (disposition === "skip") {
 				ts.status = "skipped";
+				ts.errorSummary = null;
 				ts.progress = { phase: "skipped", message: progressMessages.skipped, updatedAt: now() };
 			} else if (shouldExecuteOnRerun(ts)) {
 				ts.status = "pending";

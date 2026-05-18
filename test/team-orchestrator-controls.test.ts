@@ -669,15 +669,18 @@ test("rerun clears stale final report", async () => {
 	}
 });
 
-test("rerun preserves activeElapsedMs", async () => {
-	const { root, plan, orchestrator } = await setup();
+test("rerun resets active elapsed timer", async () => {
+	const { root, plan, orchestrator, workspace } = await setup();
 	try {
 		const state = await orchestrator.createRun(plan.planId);
 		const first = await orchestrator.runToCompletion(state.runId);
-		assert.ok(first.activeElapsedMs >= 0);
+		first.activeElapsedMs = 7_200_000;
+		first.startedAt = "2026-05-17T16:38:42.183Z";
+		await workspace.saveState(first);
 
 		const rerunState = await orchestrator.rerunRun(state.runId);
-		assert.equal(rerunState.activeElapsedMs, first.activeElapsedMs, "activeElapsedMs should be preserved");
+		assert.equal(rerunState.activeElapsedMs, 0, "rerun should start a fresh timeout window");
+		assert.equal(rerunState.startedAt, null, "rerun should set a fresh startedAt when execution resumes");
 	} finally {
 		await rm(root, { recursive: true });
 	}
@@ -822,6 +825,81 @@ test("P24: skipped for_each parent skips children on rerun without calling worke
 			await rm(root, { recursive: true });
 		}
 	});
+
+// ── P25 Task 2: skipped task error semantics ──
+
+test("P25: rerun skips previously failed task and clears errorSummary", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p25-t2-"));
+	try {
+		let workerCallCount = 0;
+		class CountingRunner extends MockRoleRunner {
+			override async runWorker(input: import("../src/team/role-runner.js").WorkerInput) {
+				workerCallCount++;
+				return super.runWorker(input);
+			}
+		}
+
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+		const plan = await planStore.create({
+			title: "skip error test",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{ id: "task_1", title: "t1", input: { text: "do 1" }, acceptance: { rules: ["r1"] } },
+				{ id: "task_2", title: "t2", input: { text: "do 2" }, acceptance: { rules: ["r2"] } },
+			],
+			outputContract: { text: "output" },
+		});
+
+		const runner = new CountingRunner();
+		const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+
+		// First run: complete successfully
+		const state = await orchestrator.createRun(plan.planId);
+		await orchestrator.runToCompletion(state.runId);
+
+		// Simulate: set task_2 to failed with errorSummary, then mark skip
+		const afterRun = (await workspace.getState(state.runId))!;
+		afterRun.taskStates.task_2!.status = "failed";
+		afterRun.taskStates.task_2!.errorSummary = "worker timeout";
+		afterRun.taskStates.task_2!.resultRef = "tasks/task_2/attempts/att_old/result.md";
+		afterRun.summary.succeededTasks = 1;
+		afterRun.summary.failedTasks = 1;
+		afterRun.summary.skippedTasks = 0;
+		await workspace.saveState(afterRun);
+
+		// Mark task_2 as skip
+		const preRerun = (await workspace.getState(state.runId))!;
+		preRerun.taskStates.task_2!.manualDisposition = "skip";
+		preRerun.taskStates.task_2!.manualDispositionUpdatedAt = new Date().toISOString();
+		await workspace.saveState(preRerun);
+
+		// Rerun
+		workerCallCount = 0;
+		const rerunState = await orchestrator.rerunRun(state.runId);
+
+		// Verify rerun state
+		assert.equal(rerunState.taskStates.task_2!.status, "skipped", "task should be skipped after rerun");
+		assert.equal(rerunState.taskStates.task_2!.errorSummary, null, "current errorSummary should be null for skipped task");
+		assert.equal(rerunState.summary.skippedTasks, 1, "skipped count should be 1");
+		assert.equal(rerunState.summary.failedTasks, 0, "failed count should be 0 since task was moved to skipped");
+		assert.equal(rerunState.summary.succeededTasks, 1, "succeeded count unchanged");
+
+		// Execute rerun to completion — verify final state
+		const finalState = await orchestrator.runToCompletion(state.runId);
+		assert.equal(finalState.status, "completed");
+		assert.equal(finalState.taskStates.task_2!.status, "skipped");
+		assert.equal(finalState.taskStates.task_2!.errorSummary, null, "skipped task must not have current errorSummary");
+		assert.equal(finalState.summary.failedTasks, 0, "no tasks should be failed");
+		assert.equal(finalState.summary.skippedTasks, 1, "one task should be skipped");
+		assert.equal(workerCallCount, 0, "no worker should run for skipped task");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
 
 	test("P24: skipped decomposer parent skips ALL children regardless of prior status", async () => {
 		const root = await mkdtemp(join(tmpdir(), "team-p24-skip-decomp-"));
