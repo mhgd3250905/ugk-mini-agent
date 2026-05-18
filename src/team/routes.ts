@@ -403,6 +403,81 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		}
 	});
 
+
+	// ── P24: Manual task disposition and rerun ──
+
+	const ACTIVE_RUN_STATUSES = new Set(["queued", "running", "paused"]);
+
+	app.patch("/v1/team/runs/:runId/tasks/:taskId/manual-disposition", async (request, reply) => {
+		const { runId, taskId } = request.params as { runId: string; taskId: string };
+		const body = request.body as { disposition?: string };
+		const validDispositions = new Set(["default", "skip", "force_rerun"]);
+		if (!body.disposition || !validDispositions.has(body.disposition)) {
+		reply.code(400).send({ error: "disposition must be one of: default, skip, force_rerun" });
+		return;
+		}
+		const state = await workspace.getState(runId);
+		if (!state) { reply.code(404).send({ error: "run not found" }); return; }
+		if (!state.taskStates[taskId]) { reply.code(404).send({ error: "task not found" }); return; }
+		if (ACTIVE_RUN_STATUSES.has(state.status)) { reply.code(409).send({ error: "cannot modify disposition of active run" }); return; }
+
+		state.taskStates[taskId]!.manualDisposition = body.disposition as "default" | "skip" | "force_rerun";
+		state.taskStates[taskId]!.manualDispositionUpdatedAt = new Date().toISOString();
+		state.updatedAt = new Date().toISOString();
+		await workspace.saveState(state);
+
+		const plan = await planStore.get(state.planId);
+		reply.send(await buildRunDetailResponse(state, plan, workspace));
+	});
+
+	app.patch("/v1/team/runs/:runId/tasks/manual-dispositions", async (request, reply) => {
+		const { runId } = request.params as { runId: string };
+		const body = request.body as { updates?: Array<{ taskId: string; disposition: string }> };
+		if (!Array.isArray(body.updates) || body.updates.length === 0) {
+		reply.code(400).send({ error: "updates must be a non-empty array of { taskId, disposition }" });
+		return;
+		}
+		const validDispositions = new Set(["default", "skip", "force_rerun"]);
+		for (const u of body.updates) {
+		if (!u.taskId || !u.disposition || !validDispositions.has(u.disposition)) {
+			reply.code(400).send({ error: "invalid update: taskId=" + u.taskId + ", disposition=" + u.disposition });
+			return;
+		}
+		}
+		const state = await workspace.getState(runId);
+		if (!state) { reply.code(404).send({ error: "run not found" }); return; }
+		if (ACTIVE_RUN_STATUSES.has(state.status)) { reply.code(409).send({ error: "cannot modify disposition of active run" }); return; }
+		for (const u of body.updates) {
+		if (!state.taskStates[u.taskId]) {
+			reply.code(404).send({ error: "task not found: " + u.taskId });
+			return;
+		}
+		}
+		for (const u of body.updates) {
+		state.taskStates[u.taskId]!.manualDisposition = u.disposition as "default" | "skip" | "force_rerun";
+		state.taskStates[u.taskId]!.manualDispositionUpdatedAt = new Date().toISOString();
+		}
+		state.updatedAt = new Date().toISOString();
+		await workspace.saveState(state);
+
+		const plan = await planStore.get(state.planId);
+		reply.send(await buildRunDetailResponse(state, plan, workspace));
+	});
+
+	app.post("/v1/team/runs/:runId/rerun", async (request, reply) => {
+		const { runId } = request.params as { runId: string };
+		try {
+		const orchestrator = makeOrchestrator();
+		const state = await orchestrator.rerunRun(runId);
+		const plan = await planStore.get(state.planId);
+		reply.send(await buildRunDetailResponse(state, plan, workspace));
+		} catch (err) {
+		const msg = (err as Error).message;
+		reply.code(msg.includes("cannot rerun") ? 409 : 400).send({ error: msg });
+		}
+	});
+
+
 	app.delete("/v1/team/runs/:runId", async (request, reply) => {
 		const { runId } = request.params as { runId: string };
 		try {

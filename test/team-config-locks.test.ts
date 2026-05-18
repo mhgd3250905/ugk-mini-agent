@@ -9,7 +9,7 @@ function makeState(status: TeamRunState["status"], planId: string, teamUnitId: s
 		runId: "run_1", planId, teamUnitId, status,
 		createdAt: "", queuedAt: "", startedAt: null, finishedAt: null,
 		activeElapsedMs: 0, currentTaskId: null, taskStates: {},
-		summary: { totalTasks: 0, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0 },
+		summary: { totalTasks: 0, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
 		pauseReason: null, lastError: null, updatedAt: "",
 	};
 }

@@ -172,7 +172,7 @@ JSON 格式：
 	return base + buildWatcherSourceItemBlock(task);
 }
 
-function buildFinalizerPrompt(plan: TeamPlan, taskResults: Array<{ taskId: string; status: "succeeded" | "failed"; resultRef: string | null; errorSummary: string | null; resultContent: string | null }>): string {
+function buildFinalizerPrompt(plan: TeamPlan, taskResults: Array<{ taskId: string; status: "succeeded" | "failed" | "skipped"; resultRef: string | null; errorSummary: string | null; resultContent: string | null }>): string {
 	const taskSummary = taskResults.map(r => {
 		let line = `- ${r.taskId}: ${r.status === "succeeded" ? "成功" : "失败"}`;
 		if (r.errorSummary) line += `（${r.errorSummary}）`;

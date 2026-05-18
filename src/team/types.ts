@@ -85,7 +85,8 @@ export type ProgressPhase =
 	| "succeeded"
 	| "failed"
 	| "interrupted"
-	| "cancelled";
+	| "cancelled"
+	| "skipped";
 
 export interface TeamUnit {
 	schemaVersion: "team/team-unit-1";
