@@ -1787,3 +1787,62 @@ test("normal task with coincidental sourceItemId must not get identity block", a
 		await rm(root, { recursive: true }).catch(() => {});
 	}
 });
+
+
+test("P24: finalizer prompt includes skipped distinctly from failed", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ap-p24-"));
+	try {
+		let capturedPrompt = "";
+		const sessionFactory = {
+			createSession: async () => ({
+				prompt: async (p) => { capturedPrompt = p; },
+				subscribe: () => () => {},
+				messages: [{ role: "assistant", content: [{ type: "text", text: "report" }], stopReason: "end_turn" }],
+			}),
+		} as unknown as BackgroundAgentSessionFactory;
+
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root,
+			teamDataDir: root,
+			watcherProfileId: "w",
+			workerProfileId: "wo",
+			checkerProfileId: "c",
+			finalizerProfileId: "f",
+			profileResolver: fakeProfileResolver as never,
+			sessionFactory,
+		});
+
+		await runner.runFinalizer({
+			runId: "run_p24",
+			plan: {
+				schemaVersion: "team/plan-1",
+				planId: "plan_1",
+				title: "P24 test",
+				defaultTeamUnitId: "tu_1",
+				goal: { text: "test" },
+				tasks: [
+					{ id: "t_ok", title: "OK", input: { text: "do" }, acceptance: { rules: ["r"] } },
+					{ id: "t_skip", title: "Skipped", input: { text: "do" }, acceptance: { rules: ["r"] } },
+					{ id: "t_fail", title: "Failed", input: { text: "do" }, acceptance: { rules: ["r"] } },
+				],
+				outputContract: { text: "output" },
+				runCount: 0,
+				archived: false,
+				createdAt: new Date().toISOString(),
+				updatedAt: new Date().toISOString(),
+			},
+			taskResults: [
+				{ taskId: "t_ok", status: "succeeded", resultRef: null, errorSummary: null },
+				{ taskId: "t_skip", status: "skipped", resultRef: null, errorSummary: null },
+				{ taskId: "t_fail", status: "failed", resultRef: null, errorSummary: "timeout" },
+			],
+		});
+
+		assert.ok(capturedPrompt.includes("t_ok: 成功"), "succeeded task shows 成功");
+		assert.ok(capturedPrompt.includes("t_skip: 跳过"), "skipped task shows 跳过, not 失败");
+		assert.ok(capturedPrompt.includes("t_fail: 失败"), "failed task shows 失败");
+		assert.ok(!capturedPrompt.includes("t_skip: 失败"), "skipped must NOT show as 失败");
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});

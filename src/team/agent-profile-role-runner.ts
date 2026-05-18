@@ -174,7 +174,7 @@ JSON 格式：
 
 function buildFinalizerPrompt(plan: TeamPlan, taskResults: Array<{ taskId: string; status: "succeeded" | "failed" | "skipped"; resultRef: string | null; errorSummary: string | null; resultContent: string | null }>): string {
 	const taskSummary = taskResults.map(r => {
-		let line = `- ${r.taskId}: ${r.status === "succeeded" ? "成功" : "失败"}`;
+		let line = `- ${r.taskId}: ${r.status === "succeeded" ? "成功" : r.status === "skipped" ? "跳过" : "失败"}`;
 		if (r.errorSummary) line += `（${r.errorSummary}）`;
 		if (r.resultContent) line += `\n  产出：\n${r.resultContent}`;
 		return line;
