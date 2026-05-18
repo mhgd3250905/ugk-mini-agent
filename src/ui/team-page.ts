@@ -972,7 +972,7 @@ async function saveTeamUnit() {
 					'<div class="plan-actions">' +
 					'<button class="btn btn-sm" onclick="viewPlanJson(' + jsArg(safePlan.planId) + ')">查看 JSON</button>' +
 					'<button class="btn btn-primary" onclick="startRun(\\x27' + safePlan.planId + '\\x27)">创建运行</button>' +
-					(safePlan.runCount === 0 ? '<button class="btn btn-danger" onclick="deletePlan(\\x27' + safePlan.planId + '\\x27)">删除</button>' : '') +
+					'<button class="btn btn-danger" onclick="deletePlan(\\x27' + safePlan.planId + '\\x27)">删除</button>' +
 					'</div></div>';
 			}
 
@@ -1026,7 +1026,7 @@ async function saveTeamUnit() {
 					+ '<div class="plan-actions">'
 					+ '<button class="btn btn-sm btn-primary" onclick="openPlanDetail(' + jsArg(safePlan.planId) + ')">查看详情</button>'
 					+ '<button class="btn btn-sm" onclick="startRun(\\x27' + safePlan.planId + '\\x27)">创建运行</button>'
-					+ (runCount === 0 ? '<button class="btn btn-danger btn-sm" onclick="deletePlan(\\x27' + safePlan.planId + '\\x27)">删除</button>' : '')
+					+ '<button class="btn btn-danger btn-sm" onclick="deletePlan(\\x27' + safePlan.planId + '\\x27)">删除</button>'
 					+ '</div></div>';
 			}
 
@@ -1086,7 +1086,7 @@ async function saveTeamUnit() {
 				if (!plan) return '';
 				var html = '<button class="btn btn-sm" onclick="viewPlanJson(' + jsArg(plan.planId) + ')">\u67e5\u770b JSON</button>';
 				html += '<button class="btn btn-primary btn-sm" onclick="startRun(\\x27' + plan.planId + '\\x27)">\u521b\u5efa\u8fd0\u884c</button>';
-				if (plan.runCount === 0) html += '<button class="btn btn-danger btn-sm" onclick="deletePlan(\\x27' + plan.planId + '\\x27)">\u5220\u9664</button>';
+				html += '<button class="btn btn-danger btn-sm" onclick="deletePlan(\\x27' + plan.planId + '\\x27)">\u5220\u9664</button>';
 				return html;
 			}
 

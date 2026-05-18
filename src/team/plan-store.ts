@@ -204,7 +204,6 @@ export class PlanStore {
 	async deleteUnused(planId: string): Promise<void> {
 		const existing = await this.get(planId);
 		if (!existing) throw new Error(`plan not found: ${planId}`);
-		if (existing.runCount > 0) throw new Error("used plan cannot be deleted");
 		const planDir = join(this.rootDir, "plans", planId);
 		await unlink(join(planDir, "plan.json"));
 		try { await import("node:fs/promises").then(fs => fs.rmdir(planDir)); } catch { /* ok if non-empty */ }
