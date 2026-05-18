@@ -12,6 +12,33 @@
 
 ---
 
+## 2026-05-18 — Team Runtime P26: Output Contract Validation
+
+- **主题**: 为 Team Runtime 增加确定性的输出协议校验，阻止 discovery / structured child 输出被 checker/watcher 口头通过绕过
+- **影响范围**: `src/team/types.ts`, `src/team/output-validator.ts`, `src/team/orchestrator.ts`, `src/team/run-workspace.ts`, `src/team/role-runner.ts`, `src/team/agent-profile-role-runner.ts`, `src/team/task-expansion-planner.ts`, `docs/team-runtime.md`
+- **变更**:
+  - `TeamTask` 新增 `outputCheck`，`forEach.taskTemplate.outputCheck` 可随生成子任务持久化到 expansion record；旧 plan / 旧 expansion 缺失字段时兼容读取
+  - 新增 deterministic `TeamOutputValidationResult` 与 `src/team/output-validator.ts`，覆盖 `json_items`、`json_object`、`html_fragment`、`file_exists`
+  - discovery 自动派生 `{ type: "json_items", outputKey, requiredFields: ["id"] }` 硬校验；校验失败会让 work unit failed，checker/watcher 不能用自然语言 pass/accept 绕过
+  - checker/watcher prompt 注入 validation evidence；`ok=false` 时明确禁止 `pass` / `accept_task`
+  - 支持安全解析 run-scoped 引用文件，包含 `worker/foo.json`、`checker/...`、`watcher/...`、`output/...`、`work/...` 和当前 run 下的绝对/相对路径；拒绝 `worker/../../.env`、`/etc/passwd`、Windows drive path 等越界引用
+  - 回归覆盖 `run_943b995d6adc` 失败形状：checker 只引用 `worker/hk-cloud-server-scan.json（...）` 时 runtime 能读取 role workspace JSON 并展开 `evaluate_each`
+- **测试**:
+  - `test/team-output-validator.test.ts`
+  - `test/team-output-contract-regression.test.ts`
+  - `test/team-agent-profile-runner.test.ts`
+  - `test/team-task-expansion-planner.test.ts`
+  - `test/team-orchestrator-lifecycle.test.ts`
+- **commits**:
+  - `9bbb424` feat(team): add output check contract types
+  - `c0c1603` feat(team): add deterministic output validator
+  - `526c9bc` fix(team): enforce output validation before acceptance
+  - `32dfe61` fix(team): inject output validation into role prompts
+  - `d9209a5` feat(team): validate structured outputs for generated children
+  - `5365197` test(team): lock discovery referenced file regression
+
+---
+
 ## 2026-05-18 — Team Runtime P25: Finalizer Authoritative Summary and Skipped Semantics
 
 - **主题**: Finalizer 接收权威运行汇总禁止重算；skipped 任务与失败分离；succeeded-but-limited 外部数据源不入失败汇总
