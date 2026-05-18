@@ -89,6 +89,24 @@ test("P26: validator resolves worker role workspace referenced JSON", async () =
 	}
 });
 
+test("P26: validator trims Chinese prose after worker role workspace reference", async () => {
+	const { root, workspace, runId, attemptId, task } = await setup();
+	try {
+		await writeRoleFile(root, runId, attemptId, "worker", "hk-cloud-server-scan.json", JSON.stringify({ vendors: [{ id: "dmit", name: "DMIT" }] }));
+		const result = await validateTeamOutput({
+			workspace,
+			runId,
+			task,
+			attemptId,
+			contents: [{ ref: "accepted-result.md", content: "验收通过。JSON 数据文件：worker/hk-cloud-server-scan.json（10 家厂商完整结构化数据）" }],
+		});
+		assert.equal(result.ok, true);
+		assert.equal(result.sourceRef, "worker/hk-cloud-server-scan.json");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
 test("P26: validator rejects missing outputKey array and missing item ids", async () => {
 	const { root, workspace, runId, attemptId, task } = await setup();
 	try {

@@ -67,7 +67,8 @@ function noOutputValidation(): TeamOutputValidationResult {
 }
 
 function summarizeOutputValidationFailure(result: TeamOutputValidationResult): string {
-	const failed = result.checks.find(check => !check.ok);
+	const failed = result.checks.find(check => !check.ok && check.name !== "json_parse")
+		?? result.checks.find(check => !check.ok);
 	const detail = failed?.message ?? failed?.name ?? "unknown validation failure";
 	return `output validation failed: ${detail}`;
 }
@@ -1305,7 +1306,7 @@ export class TeamOrchestrator {
 		const refs: string[] = [];
 		const seen = new Set<string>();
 		const add = (ref: string) => {
-			const clean = ref.trim().replace(/^["'`]+|["'`,.;:，。；：）)]+$/g, "");
+		const clean = ref.trim().replace(/^["'`]+|["'`,.;:，。；：（）)]+$/g, "");
 			if (!clean || seen.has(clean)) return;
 			seen.add(clean);
 			refs.push(clean);
@@ -1314,7 +1315,7 @@ export class TeamOrchestrator {
 		for (const match of content.matchAll(absolutePattern)) add(match[0]!);
 		const relativePattern = new RegExp(`runs/${runId}/[^\\s\\])"'` + "`" + `，。；：]+`, "g");
 		for (const match of content.matchAll(relativePattern)) add(match[0]!);
-		const rolePattern = /(?:^|[\s（(])((?:worker|checker|watcher|output|work)\/[^\s\])"'`，。；：]+)/g;
+		const rolePattern = /(?:^|[\s（(：:])((?:worker|checker|watcher|output|work)\/[^\s（）\])"'`，。；：]+)/g;
 		for (const match of content.matchAll(rolePattern)) add(match[1]!);
 		return refs;
 	}

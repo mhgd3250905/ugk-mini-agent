@@ -259,13 +259,13 @@ function extractReferencedPaths(content: string): string[] {
 		refs.push(clean);
 	};
 	for (const match of content.matchAll(/`([^`]+)`/g)) add(match[1]!);
-	for (const match of content.matchAll(/(?:^|[\s（(])((?:\/app\/\.data\/team\/runs\/|runs\/|worker\/|checker\/|watcher\/|output\/|work\/)[^\s）)\]，。；：,;]+)/g)) add(match[1]!);
+	for (const match of content.matchAll(/(?:^|[\s（(：:])((?:\/app\/\.data\/team\/runs\/|runs\/|worker\/|checker\/|watcher\/|output\/|work\/)[^\s（）)\]，。；：,;]+)/g)) add(match[1]!);
 	for (const match of content.matchAll(/`(\/[^`]+)`/g)) add(match[1]!);
 	return refs;
 }
 
 function cleanRef(ref: string): string {
-	return ref.trim().replace(/^["'`]+|["'`,.;:，。；：）)]+$/g, "").replace(/\\/g, "/");
+	return ref.trim().replace(/^["'`]+|["'`,.;:，。；：（）)]+$/g, "").replace(/\\/g, "/");
 }
 
 function compactChecks(checks: ValidationCheck[]): ValidationCheck[] {
