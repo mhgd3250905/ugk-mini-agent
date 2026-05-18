@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { TeamPlan, TeamRunState, TeamUnit, TeamAttemptMetadata, AttemptLifecyclePhase, AttemptStatus, TeamTask, TeamTaskType } from "../src/team/types.js";
+import { getManualDisposition, shouldExecuteOnRerun } from "../src/team/orchestrator.js";
+import type { TeamTaskState } from "../src/team/types.js";
 
 test("TeamUnit has five role profile slots", () => {
 	const team: TeamUnit = {
@@ -74,7 +76,7 @@ test("Run state stores refs instead of large outputs", () => {
 				},
 			},
 		},
-		summary: { totalTasks: 1, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0 },
+		summary: { totalTasks: 1, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
 		pauseReason: null,
 		lastError: null,
 		finalizerRuntimeContext: {
@@ -296,4 +298,92 @@ test("P15: generated child task has parent metadata", () => {
 	assert.equal(task.parentTaskId, "process_each");
 	assert.equal(task.sourceItemId, "item_01");
 	assert.equal(task.generated, true);
+});
+
+// ── P24: Manual disposition and rerun decision table ──
+
+function makeTaskState(overrides: Partial<TeamTaskState> = {}): TeamTaskState {
+	return {
+		status: "pending",
+		attemptCount: 0,
+		activeAttemptId: null,
+		resultRef: null,
+		errorSummary: null,
+		progress: { phase: "pending", message: "等待执行", updatedAt: new Date().toISOString() },
+		...overrides,
+	};
+}
+
+test("P24: getManualDisposition returns default when undefined", () => {
+	assert.equal(getManualDisposition(makeTaskState()), "default");
+});
+
+test("P24: getManualDisposition returns default when explicitly default", () => {
+	assert.equal(getManualDisposition(makeTaskState({ manualDisposition: "default" })), "default");
+});
+
+test("P24: getManualDisposition returns skip", () => {
+	assert.equal(getManualDisposition(makeTaskState({ manualDisposition: "skip" })), "skip");
+});
+
+test("P24: getManualDisposition returns force_rerun", () => {
+	assert.equal(getManualDisposition(makeTaskState({ manualDisposition: "force_rerun" })), "force_rerun");
+});
+
+test("P24: default+succeeded → reuse", () => {
+	assert.equal(shouldExecuteOnRerun(makeTaskState({ status: "succeeded" })), false);
+});
+
+test("P24: default+pending → execute", () => {
+	assert.equal(shouldExecuteOnRerun(makeTaskState({ status: "pending" })), true);
+});
+
+test("P24: default+failed → execute", () => {
+	assert.equal(shouldExecuteOnRerun(makeTaskState({ status: "failed" })), true);
+});
+
+test("P24: default+interrupted → execute", () => {
+	assert.equal(shouldExecuteOnRerun(makeTaskState({ status: "interrupted" })), true);
+});
+
+test("P24: default+cancelled → execute", () => {
+	assert.equal(shouldExecuteOnRerun(makeTaskState({ status: "cancelled" })), true);
+});
+
+test("P24: skip overrides succeeded → do not execute", () => {
+	assert.equal(shouldExecuteOnRerun(makeTaskState({ status: "succeeded", manualDisposition: "skip" })), false);
+});
+
+test("P24: skip overrides failed → do not execute", () => {
+	assert.equal(shouldExecuteOnRerun(makeTaskState({ status: "failed", manualDisposition: "skip" })), false);
+});
+
+test("P24: force_rerun overrides succeeded → execute", () => {
+	assert.equal(shouldExecuteOnRerun(makeTaskState({ status: "succeeded", manualDisposition: "force_rerun" })), true);
+});
+
+test("P24: force_rerun on pending → execute", () => {
+	assert.equal(shouldExecuteOnRerun(makeTaskState({ status: "pending", manualDisposition: "force_rerun" })), true);
+});
+
+test("P24: RunState summary includes skippedTasks", () => {
+	const state: TeamRunState = {
+		schemaVersion: "team/state-1",
+		runId: "run_p24",
+		planId: "plan_1",
+		teamUnitId: "team_1",
+		status: "completed",
+		createdAt: "",
+		queuedAt: "",
+		startedAt: null,
+		finishedAt: null,
+		activeElapsedMs: 0,
+		currentTaskId: null,
+		taskStates: {},
+		summary: { totalTasks: 3, succeededTasks: 1, failedTasks: 1, cancelledTasks: 0, skippedTasks: 1 },
+		pauseReason: null,
+		lastError: null,
+		updatedAt: "",
+	};
+	assert.equal(state.summary.skippedTasks, 1);
 });

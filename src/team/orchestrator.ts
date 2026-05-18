@@ -1,4 +1,4 @@
-import type { TeamRunState, TeamTask, TeamTaskState, TeamPlan, TeamDiscoveryResultRecord } from "./types.js";
+import type { TeamRunState, TeamTask, TeamTaskState, TeamPlan, TeamDiscoveryResultRecord, TaskManualDisposition } from "./types.js";
 import { PlanStore } from "./plan-store.js";
 import { TeamUnitStore } from "./team-unit-store.js";
 import { RunWorkspace } from "./run-workspace.js";
@@ -37,7 +37,18 @@ export interface TeamOrchestratorOptions {
 
 const now = () => new Date().toISOString();
 
-const TERMINAL_TASK_STATUSES = new Set(["succeeded", "failed", "cancelled"]);
+const TERMINAL_TASK_STATUSES = new Set(["succeeded", "failed", "cancelled", "skipped"]);
+
+export function getManualDisposition(taskState: TeamTaskState): TaskManualDisposition {
+	return taskState.manualDisposition ?? "default";
+}
+
+export function shouldExecuteOnRerun(taskState: TeamTaskState): boolean {
+	const d = getManualDisposition(taskState);
+	if (d === "skip") return false;
+	if (d === "force_rerun") return true;
+	return taskState.status !== "succeeded";
+}
 const DEFAULT_DECOMPOSER_MAX_CHILDREN = 8;
 const MAX_TOTAL_TASKS_PER_RUN = 50;
 
@@ -991,11 +1002,13 @@ export class TeamOrchestrator {
 		const failedTasks = Object.values(state.taskStates).filter((taskState) => taskState.status === "failed").length;
 		const succeededTasks = Object.values(state.taskStates).filter((taskState) => taskState.status === "succeeded").length;
 		const cancelledTasks = Object.values(state.taskStates).filter((taskState) => taskState.status === "cancelled").length;
+		const skippedTasks = Object.values(state.taskStates).filter((taskState) => taskState.status === "skipped").length;
 		state.summary = {
 			totalTasks: state.summary.totalTasks,
 			succeededTasks,
 			failedTasks,
 			cancelledTasks,
+			skippedTasks,
 		};
 		state.status = succeededTasks > 0 ? "completed_with_failures" : "failed";
 		state.lastError = message;

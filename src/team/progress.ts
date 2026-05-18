@@ -12,6 +12,7 @@ export const progressMessages = {
 	failed: "失败",
 	interrupted: "已中断",
 	cancelled: "已取消",
+	skipped: "已跳过",
 } as const;
 
 export type ProgressPhase = keyof typeof progressMessages;

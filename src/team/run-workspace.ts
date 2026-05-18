@@ -71,6 +71,7 @@ export class RunWorkspace {
 				succeededTasks: 0,
 				failedTasks: 0,
 				cancelledTasks: 0,
+				skippedTasks: 0,
 			},
 			pauseReason: null,
 			lastError: null,

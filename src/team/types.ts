@@ -1,5 +1,6 @@
 export type RunStatus = "queued" | "running" | "paused" | "completed" | "completed_with_failures" | "failed" | "cancelled";
-export type TaskStatus = "pending" | "running" | "interrupted" | "succeeded" | "failed" | "cancelled";
+export type TaskStatus = "pending" | "running" | "interrupted" | "succeeded" | "failed" | "cancelled" | "skipped";
+export type TaskManualDisposition = "default" | "skip" | "force_rerun";
 export type AttemptStatus = "running" | "succeeded" | "failed" | "interrupted" | "cancelled";
 
 export type AttemptLifecyclePhase =
@@ -157,6 +158,8 @@ export interface TeamProgress {
 
 export interface TeamTaskState {
 	status: TaskStatus;
+	manualDisposition?: TaskManualDisposition;
+	manualDispositionUpdatedAt?: string | null;
 	attemptCount: number;
 	activeAttemptId: string | null;
 	resultRef: string | null;
@@ -177,7 +180,7 @@ export interface TeamRunState {
 	activeElapsedMs: number;
 	currentTaskId: string | null;
 	taskStates: Record<string, TeamTaskState>;
-	summary: { totalTasks: number; succeededTasks: number; failedTasks: number; cancelledTasks: number };
+	summary: { totalTasks: number; succeededTasks: number; failedTasks: number; cancelledTasks: number; skippedTasks: number };
 	pauseReason: string | null;
 	lastError: string | null;
 	finalizerRuntimeContext?: TeamRoleRuntimeContext | null;
