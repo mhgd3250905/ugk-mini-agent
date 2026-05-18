@@ -6899,3 +6899,76 @@ test("GET /playground/team caches run state for safe detail view switching", asy
 
 		await app.close();
 	});
+
+	test("GET /playground/team includes mindmap visual polish CSS classes", async () => {
+		const app = await buildServer({
+			agentService: createAgentServiceStub(),
+		});
+
+		const response = await app.inject({
+			method: "GET",
+			url: "/playground/team",
+		});
+
+		assert.equal(response.statusCode, 200);
+
+		// View toggle uses CSS class
+		assert.match(response.body, /mindmap-view-toggle["\s>]/);
+		assert.match(response.body, /mindmap-view-toggle-btn/);
+
+		// Mindmap canvas wrapper
+		assert.match(response.body, /class="team-mindmap"/);
+		assert.match(response.body, /class="mindmap-canvas"/);
+
+		// CSS class definitions exist in style block
+		assert.match(response.body, /\.mindmap-root-node\b/);
+		assert.match(response.body, /\.mindmap-task-node\b/);
+		assert.match(response.body, /\.mindmap-children\b/);
+		assert.match(response.body, /\.mindmap-node-error\b/);
+		assert.match(response.body, /\.mindmap-node-details\b/);
+		assert.match(response.body, /\.mindmap-node-toggle\b/);
+
+		// Status-specific CSS selectors exist
+		assert.match(response.body, /data-node-status="running"]/);
+		assert.match(response.body, /data-node-status="succeeded"]/);
+		assert.match(response.body, /data-node-status="failed"]/);
+		assert.match(response.body, /data-node-status="skipped"]/);
+
+		// Running pulse animation
+		assert.match(response.body, /@keyframes mindmap-pulse/);
+
+		// Connector trunk and branch selectors
+		assert.match(response.body, /\.mindmap-children::before/);
+		assert.match(response.body, /\.mindmap-task-node::before/);
+
+		// Mobile media query covers mindmap
+		assert.match(
+			response.body,
+			/@media \(max-width: 720px\)[\s\S]*?\.team-mindmap/,
+		);
+		assert.match(
+			response.body,
+			/@media \(max-width: 720px\)[\s\S]*?\.mindmap-children::before/,
+		);
+
+		// Group toggle uses CSS class
+		assert.match(response.body, /class="mindmap-group-toggle"/);
+		assert.match(response.body, /\.mindmap-group-toggle\b/);
+
+		// No native alert/confirm/prompt
+		assert.doesNotMatch(response.body, /\balert\s*\(/);
+		assert.doesNotMatch(response.body, /\bconfirm\s*\(/);
+		assert.doesNotMatch(response.body, /\bprompt\s*\(/);
+
+		// Node rendering uses CSS classes (no inline padding/border on task nodes)
+		assert.doesNotMatch(
+			response.body,
+			/mindmap-task-node[^"]*"[^>]*padding:6px 10px/,
+		);
+		assert.doesNotMatch(
+			response.body,
+			/mindmap-task-node[^"]*"[^>]*border:1px solid/,
+		);
+
+		await app.close();
+	});

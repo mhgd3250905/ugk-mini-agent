@@ -185,6 +185,74 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 #plan-detail .plan-detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 #plan-detail .plan-detail-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
+/* Mindmap view toggle */
+.mindmap-view-toggle { display: flex; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.mindmap-view-toggle-btn { flex: 1; padding: 6px 12px; border: none; font-size: 12px; cursor: pointer; background: var(--surface); color: var(--text); transition: background 0.15s, color 0.15s; }
+.mindmap-view-toggle-btn:hover { background: var(--border); }
+.mindmap-view-toggle-btn.active { background: var(--accent); color: #fff; }
+.mindmap-view-toggle-btn + .mindmap-view-toggle-btn { border-left: 1px solid var(--border); }
+
+/* Team mindmap */
+.team-mindmap { padding: 4px 0; overflow-x: auto; }
+.mindmap-canvas { position: relative; }
+
+/* Mindmap nodes — base card */
+.mindmap-root-node { padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); font-size: 13px; margin-bottom: 6px; word-break: break-word; }
+.mindmap-task-node { padding: 6px 10px; border: 1px solid var(--border); border-left: 2px solid var(--muted); border-radius: 6px; background: var(--surface); font-size: 13px; margin-bottom: 4px; word-break: break-word; transition: border-color 0.15s; }
+.mindmap-task-node:hover { border-color: var(--accent); border-left-color: var(--accent); }
+
+/* Root status accents */
+.mindmap-root-node[data-node-status="running"] { border-color: var(--accent); }
+.mindmap-root-node[data-node-status="completed"], .mindmap-root-node[data-node-status="completed_with_failures"] { border-color: var(--success); }
+.mindmap-root-node[data-node-status="failed"] { border-color: var(--fail); }
+
+/* Task status accents */
+.mindmap-task-node[data-node-status="running"] { border-left-color: var(--accent); animation: mindmap-pulse 2.5s ease-in-out infinite; }
+.mindmap-task-node[data-node-status="succeeded"] { border-left-color: var(--success); }
+.mindmap-task-node[data-node-status="failed"] { border-left-color: var(--fail); }
+.mindmap-task-node[data-node-status="skipped"], .mindmap-task-node[data-node-status="cancelled"] { border-left-color: var(--muted); opacity: 0.65; }
+.mindmap-task-node[data-node-status="pending"] { border-left-color: var(--muted); }
+
+@keyframes mindmap-pulse {
+  0%, 100% { border-left-color: var(--accent); }
+  50% { border-left-color: rgba(59,130,246,0.3); }
+}
+
+/* Node toggle button */
+.mindmap-node-toggle { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%; text-align: left; background: none; border: none; color: var(--text); cursor: pointer; padding: 0; font-size: inherit; }
+.mindmap-node-toggle:hover { opacity: 0.85; }
+
+/* Expanded state */
+.mindmap-node-expanded { border-color: rgba(59,130,246,0.35); }
+
+/* Root content row */
+.mindmap-root-node > div:first-child { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* Node error */
+.mindmap-node-error { margin-top: 2px; font-size: 11px; color: var(--fail); word-break: break-all; overflow-wrap: break-word; }
+
+/* Node details (expanded) */
+.mindmap-node-details { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); font-size: 12px; word-break: break-word; }
+.mindmap-node-details .mindmap-meta { color: var(--muted); margin-bottom: 4px; }
+.mindmap-node-details .mindmap-ref { margin-bottom: 2px; word-break: break-all; }
+
+/* Node summary line */
+.mindmap-node-summary { margin-top: 2px; font-size: 11px; color: var(--muted); }
+
+/* Compact metadata */
+.mindmap-compact-meta { font-size: 10px; color: var(--muted); }
+.mindmap-compact-warn { font-size: 10px; color: var(--warn); }
+
+/* Children container with connector trunk */
+.mindmap-children { position: relative; margin-top: 2px; }
+.mindmap-children::before { content: ''; position: absolute; left: 9px; top: 0; bottom: 8px; width: 1px; background: var(--border); }
+.mindmap-children > .mindmap-task-node { position: relative; }
+.mindmap-children > .mindmap-task-node::before { content: ''; position: absolute; left: -11px; top: 13px; width: 11px; height: 1px; background: var(--border); }
+
+/* Group expand/collapse */
+.mindmap-group-toggle { display: block; font-size: 11px; padding: 2px 8px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; border-radius: 4px; margin-bottom: 4px; color: var(--muted); }
+.mindmap-group-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
 /* Mobile responsive */
 @media (max-width: 720px) {
 	.modal-panel, .report-content, .file-viewer-content, .modal, .confirm-box { width: 100% !important; max-width: 100% !important; border-radius: 0 !important; max-height: 100vh !important; }
@@ -200,6 +268,10 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 	.plan-summary-text { font-size: 12px; }
 	.plan-dashboard-grid { grid-template-columns: 1fr; }
 	#plan-detail { padding: 8px; }
+	.team-mindmap { overflow-x: hidden; }
+	.mindmap-children::before, .mindmap-children > .mindmap-task-node::before { display: none; }
+	.mindmap-root-node, .mindmap-task-node { font-size: 12px; padding: 4px 8px; border-radius: 4px; }
+	.mindmap-view-toggle { margin-bottom: 8px; }
 	}
 @media (max-width: 390px) {
 	.plan-dashboard-grid { grid-template-columns: 1fr; }
@@ -1502,11 +1574,11 @@ function renderMindmapNode(node, depth, runId, attemptsMap) {
 	var escapedStatus = escapeHtml(node.status || 'pending');
 	var escapedType = escapeHtml(node.nodeType || '任务');
 	var expanded = depth === 0 ? false : isMindmapNodeExpanded(runId, node.id, node.status);
-	var html = '<div class="' + cls + (expanded ? ' mindmap-node-expanded' : '') + '" data-node-status="' + escapedStatus + '" data-node-type="' + escapedType + '" style="margin-left:' + (depth * 20) + 'px;margin-bottom:4px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);font-size:13px">';
+	var html = '<div class="' + cls + (expanded ? ' mindmap-node-expanded' : '') + '" data-node-status="' + escapedStatus + '" data-node-type="' + escapedType + '" style="margin-left:' + (depth * 20) + 'px">';
 	if (depth > 0) {
-		html += '<button class="mindmap-node-toggle" onclick="event.stopPropagation();toggleMindmapNode(' + jsArg(runId) + ',' + jsArg(node.id) + ',' + jsArg(node.status) + ')" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;width:100%;text-align:left;background:none;border:none;color:var(--text);cursor:pointer;padding:0;font-size:inherit">';
+		html += '<button class="mindmap-node-toggle" onclick="event.stopPropagation();toggleMindmapNode(' + jsArg(runId) + ',' + jsArg(node.id) + ',' + jsArg(node.status) + ')">';
 	} else {
-		html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
+		html += '<div>';
 	}
 	html += '<span style="font-weight:600">' + escapedTitle + '</span>';
 	html += '<span class="badge" style="font-size:10px">' + escapedType + '</span>';
@@ -1519,13 +1591,13 @@ function renderMindmapNode(node, depth, runId, attemptsMap) {
 		html += '</div>';
 	}
 	if (node.errorSummary) {
-		html += '<div class="mindmap-node-error" style="margin-top:2px;font-size:11px;color:var(--fail);word-break:break-all">' + escapeHtml(node.errorSummary) + '</div>';
+		html += '<div class="mindmap-node-error">' + escapeHtml(node.errorSummary) + '</div>';
 	}
 	if (node.summary) {
-		html += '<div style="margin-top:2px;font-size:11px;color:var(--muted)">' + escapeHtml(node.summary) + '</div>';
+		html += '<div class="mindmap-node-summary">' + escapeHtml(node.summary) + '</div>';
 	}
 	if (expanded && depth > 0) {
-		html += '<div class="mindmap-node-details" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border);font-size:12px">';
+		html += '<div class="mindmap-node-details">';
 		var meta = [];
 		if (node.generated) meta.push('generated');
 		if (node.parentTaskId) meta.push('parent: ' + escapeHtml(node.parentTaskId.slice(0, 12)) + '...');
@@ -1561,10 +1633,10 @@ function renderMindmapNode(node, depth, runId, attemptsMap) {
 		html += '</div>';
 	}
 	if (!expanded && depth > 0 && node.sourceItemId) {
-		html += '<div style="font-size:10px;color:var(--muted)">sourceItemId: ' + escapeHtml(node.sourceItemId) + '</div>';
+		html += '<div class="mindmap-compact-meta">sourceItemId: ' + escapeHtml(node.sourceItemId) + '</div>';
 	}
 	if (!expanded && node.fallback) {
-		html += '<div style="font-size:10px;color:var(--warn)">fallback</div>';
+		html += '<div class="mindmap-compact-warn">fallback</div>';
 	}
 	html += '</div>';
 	if (node.children && node.children.length) {
@@ -1577,11 +1649,11 @@ function renderMindmapNode(node, depth, runId, attemptsMap) {
 		}
 		html += '</div>';
 		if (totalChildren > MINDMAP_GROUP_LIMIT) {
-			html += '<div style="margin-left:' + ((depth + 1) * 20) + 'px;margin-bottom:4px">';
+			html += '<div style="margin-left:' + ((depth + 1) * 20) + 'px">';
 			if (groupExpanded) {
-				html += '<button class="btn btn-sm" onclick="event.stopPropagation();toggleMindmapGroup(' + jsArg(runId) + ',' + jsArg(node.id) + ')" style="font-size:11px;padding:2px 8px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;border-radius:4px">收起</button>';
+				html += '<button class="mindmap-group-toggle" onclick="event.stopPropagation();toggleMindmapGroup(' + jsArg(runId) + ',' + jsArg(node.id) + ')">收起</button>';
 			} else {
-				html += '<button class="btn btn-sm" onclick="event.stopPropagation();toggleMindmapGroup(' + jsArg(runId) + ',' + jsArg(node.id) + ')" style="font-size:11px;padding:2px 8px;border:1px solid var(--border);background:var(--surface);color:var(--accent);cursor:pointer;border-radius:4px">展开全部 ' + totalChildren + ' 个</button>';
+				html += '<button class="mindmap-group-toggle" onclick="event.stopPropagation();toggleMindmapGroup(' + jsArg(runId) + ',' + jsArg(node.id) + ')">展开全部 ' + totalChildren + ' 个</button>';
 			}
 			html += '</div>';
 		}
@@ -1591,9 +1663,9 @@ function renderMindmapNode(node, depth, runId, attemptsMap) {
 
 function renderTeamMindmap(runId, state, plan, attemptsMap) {
 	var root = buildMindmapNodes(state, plan, attemptsMap);
-	return '<div class="team-mindmap" data-run-detail-view="mindmap">' +
+	return '<div class="team-mindmap" data-run-detail-view="mindmap"><div class="mindmap-canvas">' +
 		renderMindmapNode(root, 0, runId, attemptsMap) +
-		'</div>';
+		'</div></div>';
 }
 
 
@@ -1601,9 +1673,9 @@ function renderRunDetailShell(runId, state, plan, attemptsMap) {
 	var currentView = getRunDetailView(runId);
 	var mindmapActive = currentView === 'mindmap' ? ' active' : '';
 	var detailActive = currentView === 'detail' ? ' active' : '';
-	var switchHtml = '<div class="run-detail-view-toggle" style="display:flex;gap:0;margin-bottom:12px;border:1px solid var(--border);border-radius:6px;overflow:hidden">' +
-		'<button class="run-detail-view-btn' + mindmapActive + '" data-view="mindmap" onclick="switchRunDetailView(' + jsArg(runId) + ',' + jsArg('mindmap') + ')" style="flex:1;padding:6px 12px;border:none;background:' + (currentView === 'mindmap' ? 'var(--accent)' : 'var(--surface)') + ';color:' + (currentView === 'mindmap' ? '#fff' : 'var(--text)') + ';font-size:12px;cursor:pointer">脑图</button>' +
-		'<button class="run-detail-view-btn' + detailActive + '" data-view="detail" onclick="switchRunDetailView(' + jsArg(runId) + ',' + jsArg('detail') + ')" style="flex:1;padding:6px 12px;border:none;border-left:1px solid var(--border);background:' + (currentView === 'detail' ? 'var(--accent)' : 'var(--surface)') + ';color:' + (currentView === 'detail' ? '#fff' : 'var(--text)') + ';font-size:12px;cursor:pointer">详情</button>' +
+	var switchHtml = '<div class="run-detail-view-toggle mindmap-view-toggle">' +
+		'<button class="run-detail-view-btn mindmap-view-toggle-btn' + mindmapActive + '" data-view="mindmap" onclick="switchRunDetailView(' + jsArg(runId) + ',' + jsArg('mindmap') + ')">脑图</button>' +
+		'<button class="run-detail-view-btn mindmap-view-toggle-btn' + detailActive + '" data-view="detail" onclick="switchRunDetailView(' + jsArg(runId) + ',' + jsArg('detail') + ')">详情</button>' +
 		'</div>';
 	var contentHtml = currentView === 'detail'
 		? '<div data-run-detail-view="detail">' + renderTaskDetail(state, plan, attemptsMap) + '</div>'

@@ -12,6 +12,24 @@
 
 ---
 
+## 2026-05-18 — Team Run 纵向思维导图视觉打磨
+
+- **主题**: 为 Team Run 详情添加科技感纵向思维导图视觉、响应式 CSS 和文档
+- **影响范围**: `src/ui/team-page.ts`, `docs/team-runtime.md`
+- **变更**:
+  - 添加 mindmap CSS 类：`.mindmap-view-toggle`, `.team-mindmap`, `.mindmap-canvas`, `.mindmap-root-node`, `.mindmap-task-node`, `.mindmap-children`, `.mindmap-node-error`, `.mindmap-node-details`, `.mindmap-group-toggle`
+  - 状态选择器：`[data-node-status="running"]` 带 pulse 动画，`succeeded` 绿色边框，`failed` 红色边框，`skipped`/`cancelled` 淡化
+  - 连接线：`.mindmap-children::before` 纵向主干 + `.mindmap-task-node::before` 横向分支
+  - 移动端 `@media (max-width: 720px)` 收口为纵向树卡片，隐藏连接线，禁止横向滚动
+  - 替换渲染函数中 inline styles 为 CSS classes（保留动态 `margin-left`）
+  - `renderTeamMindmap` 添加 `.mindmap-canvas` 内层包装
+  - `renderRunDetailShell` toggle 使用 `.mindmap-view-toggle-btn` CSS class（`.active` 控制高亮）
+  - 更新 `docs/team-runtime.md` Run 脑图视图段落
+- **测试**: `test/server.test.ts` 新增 `mindmap visual polish CSS classes` 断言
+- **commits**: (本轮提交)
+
+---
+
 ## 2026-05-18 — Team Runtime P26: Output Contract Validation
 
 - **主题**: 为 Team Runtime 增加确定性的输出协议校验，阻止 discovery / structured child 输出被 checker/watcher 口头通过绕过
@@ -36,6 +54,20 @@
   - `32dfe61` fix(team): inject output validation into role prompts
   - `d9209a5` feat(team): validate structured outputs for generated children
   - `5365197` test(team): lock discovery referenced file regression
+
+---
+
+## 2026-05-18 — Local Team Worker Browser Environment Fix
+
+- **主题**: 修复本地 `ugk-pi-team-worker` 缺少 browser runtime 环境导致 Team run 选择的 `chrome-01` / `chrome-02` 不生效
+- **影响范围**: `docker-compose.yml`, `test/containerization.test.ts`
+- **变更**:
+  - 为本地 `ugk-pi-team-worker` 补齐 `WEB_ACCESS_BROWSER_PROVIDER`, `WEB_ACCESS_CDP_HOST`, `WEB_ACCESS_CDP_PORT`, `UGK_DEFAULT_BROWSER_ID`, `UGK_BROWSER_INSTANCES_JSON`, `UGK_BROWSER_SCOPE_ROUTE_CACHE_PATH`, `WEB_ACCESS_BROWSER_PUBLIC_BASE_URL` 和 browser upload bridge 环境变量
+  - 为本地 `ugk-pi-team-worker` 挂载 `/app/.data/browser-upload`，与 app / sidecar 的上传桥保持一致
+  - `containerization.test.ts` 增加 team worker service block 级断言，避免只因主服务包含 browser env 就误判 compose 正确
+- **验证**:
+  - `node --test --test-concurrency=1 --import tsx test/containerization.test.ts`
+  - `npx tsc --noEmit`
 
 ---
 
