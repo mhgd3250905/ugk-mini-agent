@@ -1,4 +1,4 @@
-import type { TeamTask } from "./types.js";
+import type { TeamTask, TeamTaskOutputCheck } from "./types.js";
 
 export interface TaskExpansionContext {
 	runId: string;
@@ -62,6 +62,44 @@ function buildIdentityAcceptanceRules(item: Record<string, unknown>): string[] {
 	return rules;
 }
 
+function replaceOutputCheck(
+	outputCheck: TeamTaskOutputCheck | undefined,
+	item: Record<string, unknown>,
+	itemJson: string,
+	scopedVars: { runId: string; planId: string; parentTaskId: string; outputDir: string },
+): TeamTaskOutputCheck | undefined {
+	if (!outputCheck) return undefined;
+	const replaceString = (value: string): string => replaceTemplate(value, item, itemJson, scopedVars);
+	const replaceStringArray = (values: string[] | undefined): string[] | undefined => values?.map(replaceString);
+	switch (outputCheck.type) {
+		case "json_items":
+			return {
+				type: "json_items",
+				...(outputCheck.outputKey !== undefined ? { outputKey: replaceString(outputCheck.outputKey) } : {}),
+				...(outputCheck.allowDirectArray !== undefined ? { allowDirectArray: outputCheck.allowDirectArray } : {}),
+				...(outputCheck.requiredFields !== undefined ? { requiredFields: replaceStringArray(outputCheck.requiredFields) } : {}),
+			};
+		case "json_object":
+			return {
+				type: "json_object",
+				...(outputCheck.requiredFields !== undefined ? { requiredFields: replaceStringArray(outputCheck.requiredFields) } : {}),
+			};
+		case "html_fragment":
+			return {
+				type: "html_fragment",
+				...(outputCheck.requiredSubstrings !== undefined ? { requiredSubstrings: replaceStringArray(outputCheck.requiredSubstrings) } : {}),
+				...(outputCheck.requiredSelectors !== undefined ? { requiredSelectors: replaceStringArray(outputCheck.requiredSelectors) } : {}),
+				...(outputCheck.forbiddenTags !== undefined ? { forbiddenTags: replaceStringArray(outputCheck.forbiddenTags) } : {}),
+				...(outputCheck.requireFence !== undefined ? { requireFence: outputCheck.requireFence } : {}),
+			};
+		case "file_exists":
+			return {
+				type: "file_exists",
+				...(outputCheck.path !== undefined ? { path: replaceString(outputCheck.path) } : {}),
+			};
+	}
+}
+
 export class TemplateTaskExpansionPlanner implements TaskExpansionPlanner {
 	async expand(context: TaskExpansionContext): Promise<TaskExpansionResult> {
 		const { parentTask, items } = context;
@@ -101,6 +139,7 @@ export class TemplateTaskExpansionPlanner implements TaskExpansionPlanner {
 					Object.entries(template.input.payload).map(([k, v]) => [k, typeof v === "string" ? replaceTemplate(v, item, itemJson, scopedVars) : v]),
 				)
 				: undefined;
+			const outputCheck = replaceOutputCheck(template.outputCheck, item, itemJson, scopedVars);
 
 			return {
 				id: `${parentTask.id}__${safeId}`,
@@ -108,6 +147,7 @@ export class TemplateTaskExpansionPlanner implements TaskExpansionPlanner {
 				title,
 				input: { text: inputText, ...(payload ? { payload } : {}) },
 				acceptance: { rules: allRules },
+				...(outputCheck ? { outputCheck } : {}),
 				parentTaskId: parentTask.id,
 				sourceItemId: itemId,
 				sourceItem: { id: itemId, data: { ...item } },

@@ -591,3 +591,46 @@ test("child from item with only id gets id-based identity rule only", async () =
 	const displayRule = rules.find(r => r.includes("bare_id") && r.includes("不得替换"));
 	assert.equal(displayRule, undefined, "no display rule when display equals id");
 });
+
+// ── P26: outputCheck persistence in generated children ──
+
+test("P26: generated child copies taskTemplate.outputCheck", async () => {
+	const parentTask = makeParentTask();
+	parentTask.forEach!.taskTemplate.outputCheck = {
+		type: "html_fragment",
+		requiredSubstrings: ["vendor-card", "{{item.id}}"],
+		forbiddenTags: ["html", "head", "body"],
+	};
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_p26",
+		planId: "plan_p26",
+		parentTask,
+		items: [{ id: "vultr", name: "Vultr" }],
+	});
+	const child = result.children[0]!;
+	assert.deepEqual(child.outputCheck, {
+		type: "html_fragment",
+		requiredSubstrings: ["vendor-card", "vultr"],
+		forbiddenTags: ["html", "head", "body"],
+	});
+});
+
+test("P26: generated child copies json outputCheck with item placeholders", async () => {
+	const parentTask = makeParentTask();
+	parentTask.forEach!.taskTemplate.outputCheck = {
+		type: "json_object",
+		requiredFields: ["id", "{{item.id}}"],
+	};
+	const planner = new TemplateTaskExpansionPlanner();
+	const result = await planner.expand({
+		runId: "run_p26",
+		planId: "plan_p26",
+		parentTask,
+		items: [{ id: "vendor_id", title: "Vendor" }],
+	});
+	assert.deepEqual(result.children[0]!.outputCheck, {
+		type: "json_object",
+		requiredFields: ["id", "vendor_id"],
+	});
+});

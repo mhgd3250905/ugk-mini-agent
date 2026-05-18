@@ -877,3 +877,71 @@ test("P26: checker resultContent can provide valid machine-readable discovery ou
 		await rm(root, { recursive: true });
 	}
 });
+
+test("P26: generated child html_fragment outputCheck gates checker pass", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p26-child-output-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({
+			title: "p26", description: "d",
+			workerProfileId: "w", checkerProfileId: "c", watcherProfileId: "wa", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "P26 child html",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "render vendor cards" },
+			tasks: [
+				{ id: "scan_vendors", type: "discovery", title: "Scan", input: { text: "scan" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "vendors" } },
+				{
+					id: "render_each",
+					type: "for_each",
+					title: "Render each",
+					input: { text: "p" },
+					acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "scan_vendors.vendors",
+						mode: "sequential",
+						taskTemplate: {
+							title: "Render {{item.name}}",
+							input: { text: "Render {{item.id}}" },
+							acceptance: { rules: ["valid fragment"] },
+							outputCheck: { type: "html_fragment", requiredSubstrings: ["vendor-card", "{{item.id}}"], forbiddenTags: ["html", "body"] },
+						},
+					},
+				},
+			],
+			outputContract: { text: "out" },
+		});
+		const runner = new (class extends MockRoleRunner {
+			override async runWorker(input: WorkerInput): Promise<WorkerOutput> {
+				if (input.task.type === "discovery") return { content: JSON.stringify({ vendors: [{ id: "vultr", name: "Vultr" }] }), artifactRefs: [] };
+				return { content: "<html><body><div class=\"vendor-card\">vultr</div></body></html>", artifactRefs: [] };
+			}
+			override async runChecker(input: CheckerInput): Promise<CheckerOutput> {
+				if (input.task.type === "discovery") return { verdict: "pass", reason: "ok", resultContent: JSON.stringify({ vendors: [{ id: "vultr", name: "Vultr" }] }) };
+				return { verdict: "pass", reason: "LLM says ok", resultContent: input.outputValidation?.ok === false ? "<html><body><div class=\"vendor-card\">vultr</div></body></html>" : "ok" };
+			}
+			override async runWatcher(input: WatcherInput): Promise<WatcherOutput> {
+				return input.workUnitStatus === "failed"
+					? { decision: "confirm_failed", reason: "validation failed" }
+					: { decision: "accept_task", reason: "ok" };
+			}
+		})();
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace, roleRunner: runner,
+			dataDir: root, maxCheckerRevisions: 1, maxWatcherRevisions: 1, maxRunDurationMinutes: 60,
+		});
+
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+		const expansion = await workspace.readExpansion(state.runId, "render_each");
+
+		assert.equal(expansion?.children[0]!.task?.outputCheck?.type, "html_fragment");
+		assert.equal(final.taskStates["render_each__vultr"]?.status, "failed");
+		assert.match(final.taskStates["render_each__vultr"]?.errorSummary ?? "", /forbidden tag|output validation failed/);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
