@@ -102,12 +102,14 @@ export function getMindmapChildrenByParent(
 	const prefixFallbackIds = new Set<string>();
 
 	function addChild(parentId: string, childId: string, isPrefixFallback: boolean) {
+		if (!planIdSet.has(parentId)) return false;
 		if (!byParent[parentId]) byParent[parentId] = [];
 		if (!byParent[parentId].includes(childId)) {
 			byParent[parentId].push(childId);
 		}
 		assigned.add(childId);
 		if (isPrefixFallback) prefixFallbackIds.add(childId);
+		return true;
 	}
 
 	// Priority 1: explicit parentTaskId on generated defs

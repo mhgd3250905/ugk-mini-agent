@@ -59,6 +59,42 @@ test("child with parentTaskId attaches to correct parent", () => {
 	assert.equal(parent!.children[0].fallback, false);
 });
 
+test("child with missing parentTaskId stays visible in orphan group", () => {
+	const state = {
+		runId: "run_missing_parent",
+		status: "completed",
+		summary: { totalTasks: 2, succeededTasks: 1 },
+		taskStates: {
+			real_parent: { status: "succeeded", attemptCount: 1 },
+			lost_child: { status: "failed", attemptCount: 1, errorSummary: "parent missing\nsecond line" },
+		},
+		taskDefinitions: [
+			{
+				id: "lost_child",
+				title: "Lost child",
+				parentTaskId: "missing_parent",
+				generated: true,
+			},
+		],
+	};
+	const plan = {
+		tasks: [
+			{ id: "real_parent", title: "Real parent" },
+		],
+	};
+
+	const root = buildMindmapNodes(state, plan);
+	const missingParent = findNodeById(root, "missing_parent");
+	assert.equal(missingParent, null, "missing parent should not be rendered as a fake plan node");
+
+	const orphanGroup = findNodeById(root, "__orphan_generated__");
+	assert.ok(orphanGroup, "orphan group should exist");
+	assert.equal(orphanGroup!.children.length, 1);
+	assert.equal(orphanGroup!.children[0].id, "lost_child");
+	assert.equal(orphanGroup!.children[0].fallback, true);
+	assert.equal(orphanGroup!.children[0].errorSummary, "parent missing");
+});
+
 /** 2. Orphan without metadata: no definition, no parent, no prefix — still visible. */
 test("orphan taskState with no definition no parent no prefix is visible in orphan group", () => {
 	const state = {

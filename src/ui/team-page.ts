@@ -1287,10 +1287,12 @@ function getMindmapChildrenByParent(planTasks, generatedDefs, taskStates) {
 	var prefixFallbackIds = [];
 
 	function addChild(pid, cid, isPrefixFallback) {
+		if (!planIdSet[pid]) return false;
 		if (!byParent[pid]) byParent[pid] = [];
 		if (byParent[pid].indexOf(cid) === -1) byParent[pid].push(cid);
 		assigned[cid] = true;
 		if (isPrefixFallback) prefixFallbackIds.push(cid);
+		return true;
 	}
 
 	// Priority 1: explicit parentTaskId on generated defs
