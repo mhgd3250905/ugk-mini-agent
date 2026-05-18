@@ -329,6 +329,9 @@ run 内相对路径，指向 accepted 或 failed 结果文件。格式如 `tasks
 | POST | `/v1/team/runs/:runId/resume` | 恢复 paused run 为 queued |
 | POST | `/v1/team/runs/:runId/cancel` | 取消 run；触发 AbortSignal |
 | DELETE | `/v1/team/runs/:runId` | 删除 terminal run |
+| PATCH | `/v1/team/runs/:runId/tasks/:taskId/manual-disposition` | 设置单任务 rerun disposition |
+| PATCH | `/v1/team/runs/:runId/tasks/manual-dispositions` | 批量设置任务 rerun disposition |
+| POST | `/v1/team/runs/:runId/rerun` | 按任务标记重开 terminal run |
 
 ### final-report API
 
@@ -362,6 +365,59 @@ final report 优先由 finalizer agent 生成。若 finalizer 失败，orchestra
 - `listAttempts` 返回每个 attempt 的完整 `TeamAttemptMetadata`（`attemptId`、`status`、`phase`、`worker[]`、`checker[]`、`watcher`、`resultRef`、`errorSummary`、`finishedAt`、`updatedAt`）以及 `files[]`
 - `readAttemptFile` 只允许安全文件名（`[a-zA-Z0-9._-]`），路径不能逃逸 run 目录
 - 缺失的 run/task/file 返回 404；非法文件名返回 400
+
+## Run Rerun 与 Manual Task Control (P24)
+
+### Rerun vs Pause/Resume
+
+| | Pause/Resume | Rerun |
+|---|---|---|
+| 触发时机 | run 正在执行（running） | run 已结束（completed/failed/completed_with_failures） |
+| 状态变化 | running → paused → queued | terminal → queued |
+| 任务状态 | 保持不变 | 按 disposition 决策表重置 |
+| run ID | 不变 | 不变（不创建新 run） |
+| plan.runCount | 不变 | 不变（不递增） |
+| final report | 保留 | 清除旧的 final-report.md |
+
+### Manual Disposition
+
+每个 task 可以设置 `manualDisposition`，影响 rerun 时的行为：
+
+| Disposition | 含义 | Rerun 行为 |
+|---|---|---|
+| `default` | 无覆盖 | succeeded → 复用结果；其他状态 → 重新执行 |
+| `skip` | 跳过 | 无论之前什么状态，不执行，标记为 skipped |
+| `force_rerun` | 强制重跑 | 无论之前什么状态，重新执行 |
+
+### 决策表
+
+`shouldExecuteOnRerun(taskState)` 的完整决策：
+
+| manualDisposition | taskStatus | 结果 |
+|---|---|---|
+| default | succeeded | 复用（不执行） |
+| default | pending | 执行 |
+| default | failed | 执行 |
+| default | interrupted | 执行 |
+| default | cancelled | 执行 |
+| default | skipped | 执行 |
+| skip | *任何状态* | 不执行，标记 skipped |
+| force_rerun | *任何状态* | 执行 |
+
+### Expanded Task 行为
+
+- **for_each parent 标 skip**：所有子任务标记为 skipped，worker 不被调用
+- **decomposition parent 标 skip**：同上
+- **子任务标 skip**：仅该子任务跳过，不影响兄弟任务；parent 聚合时按 all-skipped → skipped、any-failed → failed、otherwise → succeeded 规则判断
+- **Expansion/decomposition record**：rerun 复用已有记录，不重复生成子任务
+
+### API 端点
+
+- `PATCH /v1/team/runs/:runId/tasks/:taskId/manual-disposition` — 单任务 disposition，body: `{ disposition: "skip" | "force_rerun" | "default" }`
+- `PATCH /v1/team/runs/:runId/tasks/manual-dispositions` — 批量 disposition，body: `{ updates: [{ taskId, disposition }] }`。原子操作：任一无效则全部拒绝
+- `POST /v1/team/runs/:runId/rerun` — 重开 terminal run。active/cancelled run 返回 409
+
+所有 disposition API 拒绝 active run（queued/running/paused）。
 
 ## 执行链路
 
