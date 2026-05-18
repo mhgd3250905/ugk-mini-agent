@@ -486,7 +486,7 @@ var PHASE_LABELS = {
 	worker_revising: '修改中',
 	watcher_reviewing: '复盘中', watcher_accepted: '复盘通过', watcher_revision_requested: '复盘请求重做', watcher_confirmed_failed: '复盘确认失败',
 	finalizer_running: '生成报告', writing_result: '写入结果',
-	created: '已创建', succeeded: '已通过', failed: '失败', interrupted: '已中断', cancelled: '已取消'
+	created: '已创建', succeeded: '已通过', failed: '失败', interrupted: '已中断', cancelled: '已取消', skipped: '已跳过'
 };
 
 var PHASE_COLORS = {
@@ -496,7 +496,7 @@ var PHASE_COLORS = {
 	worker_revising: 'phase-running',
 	watcher_reviewing: 'phase-running', watcher_accepted: 'phase-success', watcher_revision_requested: 'phase-warn', watcher_confirmed_failed: 'phase-fail',
 	finalizer_running: 'phase-running', writing_result: 'phase-running',
-	created: 'phase-muted', succeeded: 'phase-success', failed: 'phase-fail', interrupted: 'phase-warn', cancelled: 'phase-muted'
+	created: 'phase-muted', succeeded: 'phase-success', failed: 'phase-fail', interrupted: 'phase-warn', cancelled: 'phase-muted', skipped: 'phase-muted'
 };
 
 function phaseLabel(phase) {
@@ -533,7 +533,7 @@ function updateSummary(plans, teams, runs) {
 }
 
 function statusBadge(status) {
-	var map = { completed: 'badge-success', completed_with_failures: 'badge-warn', failed: 'badge-fail', running: 'badge-warn', queued: 'badge-muted', paused: 'badge-warn', cancelled: 'badge-muted' };
+	var map = { completed: 'badge-success', completed_with_failures: 'badge-warn', failed: 'badge-fail', running: 'badge-warn', queued: 'badge-muted', paused: 'badge-warn', cancelled: 'badge-muted', skipped: 'badge-muted' };
 	return '<span class="badge ' + (map[status] || 'badge-muted') + '">' + escapeHtml(status) + '</span>';
 }
 
@@ -768,7 +768,7 @@ async function saveTeamUnit() {
 			function runProgressSummary(run) {
 				if (!run || !run.summary) return { done: 0, total: 0, pct: 0, succeeded: 0, failed: 0, cancelled: 0 };
 				var s = run.summary;
-				var done = (s.succeededTasks || 0) + (s.failedTasks || 0) + (s.cancelledTasks || 0);
+				var done = (s.succeededTasks || 0) + (s.failedTasks || 0) + (s.cancelledTasks || 0) + (s.skippedTasks || 0);
 				var total = s.totalTasks || 0;
 				return { done: done, total: total, pct: total ? Math.round(done / total * 100) : 0, succeeded: s.succeededTasks || 0, failed: s.failedTasks || 0, cancelled: s.cancelledTasks || 0 };
 			}
@@ -1171,12 +1171,13 @@ async function loadRuns() {
 			var plan = _planCache[r.planId];
 			var planTitle = plan ? plan.title : '';
 			var total = r.summary.totalTasks;
-			var done = r.summary.succeededTasks + r.summary.failedTasks + r.summary.cancelledTasks;
+			var done = r.summary.succeededTasks + r.summary.failedTasks + r.summary.cancelledTasks + (r.summary.skippedTasks || 0);
 			var pct = total ? Math.round(done / total * 100) : 0;
 			var summaryParts = [];
 			if (r.summary.succeededTasks) summaryParts.push('成功 ' + r.summary.succeededTasks);
 			if (r.summary.failedTasks) summaryParts.push('失败 ' + r.summary.failedTasks);
 			if (r.summary.cancelledTasks) summaryParts.push('取消 ' + r.summary.cancelledTasks);
+		if (r.summary.skippedTasks) summaryParts.push('跳过 ' + r.summary.skippedTasks);
 			var summaryStr = summaryParts.length ? summaryParts.join(' / ') : '无完成';
 			var errorHtml = r.lastError ? '<p class="run-error" style="font-size:12px;color:var(--fail);margin-top:4px">错误：' + escapeHtml(r.lastError) + '</p>' : '<p class="run-error" style="display:none;font-size:12px;color:var(--fail);margin-top:4px"></p>';
 			var currentTaskTitle = '';
@@ -1332,6 +1333,20 @@ function renderTaskDetail(state, plan, attemptsMap) {
 			(msgStr ? '<div style="color:var(--muted)">' + msgStr + '</div>' : '') +
 			(detailParts.length ? '<div>' + detailParts.join(' / ') + '</div>' : '') +
 			attemptsHtml +
+			(function() {
+				var TERMINAL_RUN = { completed: 1, completed_with_failures: 1, failed: 1, cancelled: 1 };
+				if (!TERMINAL_RUN[state.status]) return '';
+				var d = ts.manualDisposition || 'default';
+				var dLabel = d === 'skip' ? '已设跳过' : d === 'force_rerun' ? '已设强制重跑' : '';
+				var dBadge = dLabel ? '<span class="badge badge-warn" style="margin-left:4px">' + dLabel + '</span>' : '';
+				var safeId = escapeHtml(state.runId);
+				var safeTaskId = escapeHtml(task.id);
+				return '<div class="task-disposition">' + dBadge +
+					'<button class="btn btn-sm" style="font-size:11px;padding:2px 6px;margin-left:4px" onclick="setTaskDisposition(' + jsArg(state.runId) + ',' + jsArg(task.id) + ',' + jsArg('skip') + ')">跳过</button>' +
+					'<button class="btn btn-sm" style="font-size:11px;padding:2px 6px;margin-left:2px" onclick="setTaskDisposition(' + jsArg(state.runId) + ',' + jsArg(task.id) + ',' + jsArg('force_rerun') + ')">强制重跑</button>' +
+					'<button class="btn btn-sm" style="font-size:11px;padding:2px 6px;margin-left:2px" onclick="setTaskDisposition(' + jsArg(state.runId) + ',' + jsArg(task.id) + ',' + jsArg('default') + ')">恢复默认</button>' +
+					'</div>';
+			})() +
 			'</td></tr>';
 	}
 
@@ -1649,6 +1664,34 @@ async function deleteRun(runId) {
 	loadRuns();
 }
 
+
+async function setTaskDisposition(runId, taskId, disposition) {
+	try {
+		await api('/runs/' + runId + '/tasks/' + taskId + '/manual-disposition', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ disposition: disposition })
+		});
+		showSuccess('已更新任务标记');
+	} catch (e) { showError(e.message); }
+	var dEl = document.getElementById('run-detail-' + runId);
+	if (dEl && dEl.style.display === 'block') { dEl.style.display = 'none'; toggleRunDetail(runId); }
+}
+
+async function rerunRunConfirm(runId) {
+	var ok = await confirmAction({
+		message: '确认按标记重跑？已成功的任务将被复用，非成功的任务将重新执行，标记为跳过的任务将被跳过。',
+		confirmText: '重跑',
+		danger: true
+	});
+	if (!ok) return;
+	try {
+		await api('/runs/' + runId + '/rerun', { method: 'POST' });
+		showSuccess('已重新排队');
+	} catch (e) { showError(e.message); }
+	loadRuns();
+}
+
 async function viewReport(runId) {
 	var body = $('report-body');
 	$('report-modal').classList.add('open');
@@ -1771,7 +1814,7 @@ function renderRunActions(r) {
 	var html = '<span class="detail-toggle" onclick="toggleRunDetail(\\'' + r.runId + '\\')">展开任务详情</span>';
 	if (r.status === 'running') html += '<button class="btn btn-primary btn-sm" onclick="pauseRunWithConfirm(\\'' + r.runId + '\\')">暂停</button><button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(\\'' + r.runId + '\\')">取消</button>';
 	if (r.status === 'paused') html += '<button class="btn btn-primary btn-sm" onclick="resumeRunWithConfirm(\\'' + r.runId + '\\')">恢复</button><button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(\\'' + r.runId + '\\')">取消</button>';
-	if (r.status === 'completed' || r.status === 'completed_with_failures' || r.status === 'failed') html += '<button class="btn btn-primary btn-sm" onclick="viewReport(\\'' + r.runId + '\\')">查看报告</button><button class="btn btn-danger btn-sm" onclick="deleteRun(\\'' + r.runId + '\\')">删除</button>';
+	if (r.status === 'completed' || r.status === 'completed_with_failures' || r.status === 'failed') html += '<button class="btn btn-primary btn-sm" onclick="viewReport(\\'' + r.runId + '\\')">查看报告</button><button class="btn btn-primary btn-sm" onclick="rerunRunConfirm(\\'' + r.runId + '\\')">按标记重跑</button><button class="btn btn-danger btn-sm" onclick="deleteRun(\\'' + r.runId + '\\')">删除</button>';
 	if (r.status === 'cancelled') html += '<button class="btn btn-danger btn-sm" onclick="deleteRun(\\'' + r.runId + '\\')">删除</button>';
 	return html;
 }
@@ -1780,12 +1823,13 @@ function updateRunCard(r) {
 	var card = document.querySelector("[data-run-id='" + r.runId + "']");
 	if (!card) return;
 	var total = r.summary.totalTasks;
-	var done = r.summary.succeededTasks + r.summary.failedTasks + r.summary.cancelledTasks;
+	var done = r.summary.succeededTasks + r.summary.failedTasks + r.summary.cancelledTasks + (r.summary.skippedTasks || 0);
 	var pct = total ? Math.round(done / total * 100) : 0;
 	var summaryParts = [];
 	if (r.summary.succeededTasks) summaryParts.push("成功 " + r.summary.succeededTasks);
 	if (r.summary.failedTasks) summaryParts.push("失败 " + r.summary.failedTasks);
 	if (r.summary.cancelledTasks) summaryParts.push("取消 " + r.summary.cancelledTasks);
+	if (r.summary.skippedTasks) summaryParts.push("跳过 " + r.summary.skippedTasks);
 	var summaryStr = summaryParts.length ? summaryParts.join(" / ") : "无完成";
 
 	card.setAttribute("data-run-status", r.status);
@@ -1838,7 +1882,6 @@ function updateRunCard(r) {
 			}
 		}
 		}
-	}
 
 	var TERMINAL = { completed: 1, completed_with_failures: 1, failed: 1, cancelled: 1 };
 	if (TERMINAL[r.status]) {
