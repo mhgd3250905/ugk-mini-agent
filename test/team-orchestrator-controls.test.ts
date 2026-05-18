@@ -884,6 +884,7 @@ test("P25: rerun skips previously failed task and clears errorSummary", async ()
 		// Verify rerun state
 		assert.equal(rerunState.taskStates.task_2!.status, "skipped", "task should be skipped after rerun");
 		assert.equal(rerunState.taskStates.task_2!.errorSummary, null, "current errorSummary should be null for skipped task");
+		assert.equal(rerunState.taskStates.task_2!.previousErrorSummary, "worker timeout", "previous error must be preserved as audit");
 		assert.equal(rerunState.summary.skippedTasks, 1, "skipped count should be 1");
 		assert.equal(rerunState.summary.failedTasks, 0, "failed count should be 0 since task was moved to skipped");
 		assert.equal(rerunState.summary.succeededTasks, 1, "succeeded count unchanged");
@@ -893,6 +894,7 @@ test("P25: rerun skips previously failed task and clears errorSummary", async ()
 		assert.equal(finalState.status, "completed");
 		assert.equal(finalState.taskStates.task_2!.status, "skipped");
 		assert.equal(finalState.taskStates.task_2!.errorSummary, null, "skipped task must not have current errorSummary");
+		assert.equal(finalState.taskStates.task_2!.previousErrorSummary, "worker timeout", "previous error must survive full run cycle");
 		assert.equal(finalState.summary.failedTasks, 0, "no tasks should be failed");
 		assert.equal(finalState.summary.skippedTasks, 1, "one task should be skipped");
 		assert.equal(workerCallCount, 0, "no worker should run for skipped task");
@@ -901,7 +903,114 @@ test("P25: rerun skips previously failed task and clears errorSummary", async ()
 	}
 });
 
-// ── P25 Task 4: fallback report parity ──
+// ── P25 review fix: old data without previousErrorSummary ──
+
+test("P25: skipped task without previousErrorSummary field loads and runs", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p25-old-data-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+		const plan = await planStore.create({
+			title: "old data compat",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{ id: "task_1", title: "t1", input: { text: "do 1" }, acceptance: { rules: ["r1"] } },
+			],
+			outputContract: { text: "output" },
+		});
+
+		const runner = new MockRoleRunner();
+		const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+
+		const state = await orchestrator.createRun(plan.planId);
+		await orchestrator.runToCompletion(state.runId);
+
+		// Simulate old persisted state: task_1 is skipped but has no previousErrorSummary field
+		const afterRun = (await workspace.getState(state.runId))!;
+		afterRun.taskStates.task_1!.status = "skipped";
+		afterRun.taskStates.task_1!.errorSummary = null;
+		// Explicitly delete to simulate old data
+		delete (afterRun.taskStates.task_1! as Record<string, unknown>).previousErrorSummary;
+		await workspace.saveState(afterRun);
+
+		// Re-run should not throw
+		const loaded = (await workspace.getState(state.runId))!;
+		assert.equal(loaded.taskStates.task_1!.status, "skipped");
+		// previousErrorSummary should be undefined (old data), not throw
+		assert.equal(loaded.taskStates.task_1!.previousErrorSummary ?? null, null, "old data without previousErrorSummary should be null-safe");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+// ── P25 review fix: finalizer receives previousErrorSummary via real rerun path ──
+
+test("P25: finalizer input receives previousErrorSummary from real rerun path", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p25-finalizer-capture-"));
+	try {
+		let capturedInput: import("../src/team/role-runner.js").FinalizerInput | null = null;
+
+		class CapturingFinalizerRunner extends MockRoleRunner {
+			override async runFinalizer(input: import("../src/team/role-runner.js").FinalizerInput): Promise<import("../src/team/role-runner.js").FinalizerOutput> {
+				capturedInput = input;
+				return super.runFinalizer(input);
+			}
+		}
+
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+		const plan = await planStore.create({
+			title: "finalizer capture test",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{ id: "task_1", title: "t1", input: { text: "do 1" }, acceptance: { rules: ["r1"] } },
+				{ id: "task_2", title: "t2", input: { text: "do 2" }, acceptance: { rules: ["r2"] } },
+			],
+			outputContract: { text: "output" },
+		});
+
+		const runner = new CapturingFinalizerRunner();
+		const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+
+		// First run: complete successfully
+		const state = await orchestrator.createRun(plan.planId);
+		await orchestrator.runToCompletion(state.runId);
+
+		// Simulate: task_2 failed with error, then mark skip
+		const afterRun = (await workspace.getState(state.runId))!;
+		afterRun.taskStates.task_2!.status = "failed";
+		afterRun.taskStates.task_2!.errorSummary = "worker timeout";
+		afterRun.summary.succeededTasks = 1;
+		afterRun.summary.failedTasks = 1;
+		await workspace.saveState(afterRun);
+
+		const preRerun = (await workspace.getState(state.runId))!;
+		preRerun.taskStates.task_2!.manualDisposition = "skip";
+		preRerun.taskStates.task_2!.manualDispositionUpdatedAt = new Date().toISOString();
+		await workspace.saveState(preRerun);
+
+		// Rerun and complete - finalizer will capture input
+		await orchestrator.rerunRun(state.runId);
+		await orchestrator.runToCompletion(state.runId);
+
+		// Verify finalizer received the correct data
+		assert.ok(capturedInput, "finalizer must have been called");
+		const task2Result = capturedInput!.taskResults.find(r => r.taskId === "task_2");
+		assert.ok(task2Result, "finalizer input must contain task_2");
+		assert.equal(task2Result!.status, "skipped", "task_2 status in finalizer input");
+		assert.equal(task2Result!.errorSummary, null, "task_2 errorSummary must be null in finalizer input");
+		assert.equal(task2Result!.previousErrorSummary, "worker timeout", "task_2 previousErrorSummary must contain the original error");
+		assert.equal(task2Result!.manualDisposition, "skip", "task_2 manualDisposition in finalizer input");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
 
 test("P25: fallback report matches summary semantics with skipped tasks", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-p25-t4-"));
@@ -960,14 +1069,131 @@ test("P25: fallback report matches summary semantics with skipped tasks", async 
 		assert.ok(report.includes("task_2"), "report must mention task_2");
 		assert.ok(report.includes("task_3"), "report must mention task_3");
 		assert.ok(report.includes("跳过"), "report must show skipped");
-		assert.ok(!report.includes("task_2").toString().includes("失败"), "task_2 must NOT show as failed");
+		const task2Lines = report.split("\n").filter(l => l.includes("task_2"));
+		assert.ok(task2Lines.length > 0, "report must contain task_2 lines");
+		assert.ok(task2Lines.some(l => l.includes("跳过")), "task_2 must show as skipped");
+		assert.ok(task2Lines.every(l => !l.includes("失败")), "task_2 must NOT show as failed");
 		assert.ok(report.includes("fallback"), "report must indicate it is a fallback");
 	} finally {
 		await rm(root, { recursive: true });
 	}
 });
 
-	test("P24: skipped decomposer parent skips ALL children regardless of prior status", async () => {
+// ── P25 review fix: fallback report includes generated/decomposed children ──
+
+test("P25: fallback report includes generated child task not in plan.tasks", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p25-fallback-gen-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+		const plan = await planStore.create({
+			title: "fallback gen child test",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{ id: "task_1", title: "parent", input: { text: "do 1" }, acceptance: { rules: ["r1"] } },
+			],
+			outputContract: { text: "output" },
+		});
+
+		class FinalizerCrashRunner extends MockRoleRunner {
+			override async runFinalizer(): Promise<import("../src/team/role-runner.js").FinalizerOutput> {
+				throw new Error("finalizer crash");
+			}
+		}
+
+		const runner = new FinalizerCrashRunner();
+		const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+
+		const state = await orchestrator.createRun(plan.planId);
+		await orchestrator.runToCompletion(state.runId);
+
+		// Inject a generated child task not in plan.tasks
+		const afterRun = (await workspace.getState(state.runId))!;
+		afterRun.taskStates["task_1__item_0"] = {
+			status: "succeeded",
+			attemptCount: 1,
+			activeAttemptId: null,
+			resultRef: "tasks/task_1__item_0/result.md",
+			errorSummary: null,
+			progress: { phase: "succeeded", message: "done", updatedAt: new Date().toISOString() },
+		};
+		afterRun.summary.totalTasks = 2;
+		afterRun.summary.succeededTasks = 2;
+		await workspace.saveState(afterRun);
+
+		// Re-run finalizer path via rerunRun (task_1 succeeded so default keeps it)
+		// Actually just force a finalizer crash by writing state and calling runToCompletion
+		// But we need the finalizer to run — easiest: manually set status to trigger it
+		const rerunState = await orchestrator.rerunRun(state.runId);
+		const finalState = await orchestrator.runToCompletion(state.runId);
+
+		const report = await readFile(join(root, "runs", state.runId, "final-report.md"), "utf8");
+		assert.ok(report.includes("task_1__item_0"), "fallback report must include generated child task");
+		assert.ok(report.includes("task_1"), "fallback report must include parent task");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("P25: fallback report includes previousErrorSummary for skipped tasks", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-p25-fallback-prev-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+		const plan = await planStore.create({
+			title: "fallback prev error test",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{ id: "task_1", title: "t1", input: { text: "do 1" }, acceptance: { rules: ["r1"] } },
+				{ id: "task_2", title: "t2", input: { text: "do 2" }, acceptance: { rules: ["r2"] } },
+			],
+			outputContract: { text: "output" },
+		});
+
+		class FinalizerCrashRunner extends MockRoleRunner {
+			override async runFinalizer(): Promise<import("../src/team/role-runner.js").FinalizerOutput> {
+				throw new Error("finalizer crash");
+			}
+		}
+
+		const runner = new FinalizerCrashRunner();
+		const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+
+		const state = await orchestrator.createRun(plan.planId);
+		await orchestrator.runToCompletion(state.runId);
+
+		// Simulate failed task_2, mark skip, rerun
+		const afterRun = (await workspace.getState(state.runId))!;
+		afterRun.taskStates.task_2!.status = "failed";
+		afterRun.taskStates.task_2!.errorSummary = "worker timeout";
+		afterRun.summary.succeededTasks = 1;
+		afterRun.summary.failedTasks = 1;
+		await workspace.saveState(afterRun);
+
+		const preRerun = (await workspace.getState(state.runId))!;
+		preRerun.taskStates.task_2!.manualDisposition = "skip";
+		preRerun.taskStates.task_2!.manualDispositionUpdatedAt = new Date().toISOString();
+		await workspace.saveState(preRerun);
+
+		await orchestrator.rerunRun(state.runId);
+		await orchestrator.runToCompletion(state.runId);
+
+		const report = await readFile(join(root, "runs", state.runId, "final-report.md"), "utf8");
+		assert.ok(report.includes("task_2"), "fallback report must include task_2");
+		assert.ok(report.includes("跳过"), "fallback report must show skipped status");
+		assert.ok(report.includes("worker timeout"), "fallback report must show previousErrorSummary for skipped task");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+		test("P24: skipped decomposer parent skips ALL children regardless of prior status", async () => {
 		const root = await mkdtemp(join(tmpdir(), "team-p24-skip-decomp-"));
 		try {
 			let workerCallCount = 0;
