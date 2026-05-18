@@ -1483,8 +1483,7 @@ function buildMindmapNodes(state, plan, attemptsMap) {
 		var ts = taskStates[task.id];
 		var childIds = childrenByParent[task.id] || [];
 		var errorLine = '';
-		if (ts && ts.errorSummary) errorLine = ts.errorSummary.split('
-')[0];
+		if (ts && ts.errorSummary) errorLine = ts.errorSummary.split(/\\r?\\n/)[0];
 		var taskNode = {
 			id: task.id,
 			title: task.title || task.id,
@@ -1505,8 +1504,7 @@ function buildMindmapNodes(state, plan, attemptsMap) {
 			var childDef = taskById[cid] || null;
 			var childTs = taskStates[cid];
 			var childErrorLine = '';
-			if (childTs && childTs.errorSummary) childErrorLine = childTs.errorSummary.split('
-')[0];
+			if (childTs && childTs.errorSummary) childErrorLine = childTs.errorSummary.split(/\\r?\\n/)[0];
 			var isPrefixFallback = prefixFallbackSet[cid] || false;
 			taskNode.children.push({
 				id: cid,
@@ -1537,8 +1535,7 @@ function buildMindmapNodes(state, plan, attemptsMap) {
 			var def = taskById[oid] || null;
 			var ts = taskStates[oid];
 			var errLine = '';
-			if (ts && ts.errorSummary) errLine = ts.errorSummary.split('
-')[0];
+			if (ts && ts.errorSummary) errLine = ts.errorSummary.split(/\\r?\\n/)[0];
 			orphanChildren.push({
 				id: oid,
 				title: def ? (def.title || oid) : oid,

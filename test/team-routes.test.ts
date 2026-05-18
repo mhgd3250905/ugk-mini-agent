@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildServer } from "../src/server.js";
@@ -318,6 +318,29 @@ test("GET /v1/team/runs/:runId preserves old run shape when no generated definit
 		const body = stateRes.json();
 		assert.equal(body.runId, runRes.json().runId);
 		assert.ok(body.taskStates.t1);
+		assert.deepEqual(body.taskDefinitions, []);
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch { /* concurrent write */ }
+	}
+});
+
+test("GET /v1/team/runs/:runId tolerates legacy plans without tasks array", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+		const planRes = await app.inject({ method: "POST", url: "/v1/team/plans", payload: planBody(unitRes.json().teamUnitId) });
+		const plan = planRes.json();
+		const runRes = await app.inject({ method: "POST", url: `/v1/team/plans/${plan.planId}/runs` });
+		const legacyPlan = { ...plan };
+		delete legacyPlan.tasks;
+		await writeFile(join(teamDir, "plans", plan.planId, "plan.json"), JSON.stringify(legacyPlan, null, 2), "utf8");
+
+		const stateRes = await app.inject({ method: "GET", url: `/v1/team/runs/${runRes.json().runId}` });
+
+		assert.equal(stateRes.statusCode, 200);
+		const body = stateRes.json();
+		assert.equal(body.runId, runRes.json().runId);
 		assert.deepEqual(body.taskDefinitions, []);
 		await app.close();
 	} finally {

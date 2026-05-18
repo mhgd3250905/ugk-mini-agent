@@ -87,7 +87,8 @@ async function buildRunDetailResponse(
 ): Promise<TeamRunDetailResponse> {
 	if (!plan) return state;
 	const definitions = new Map<string, TeamRunDetailTaskDefinition>();
-	const queue: TeamTask[] = [...plan.tasks];
+	const planTasks = Array.isArray(plan.tasks) ? plan.tasks : [];
+	const queue: TeamTask[] = [...planTasks];
 	const seen = new Set<string>();
 
 	while (queue.length) {
