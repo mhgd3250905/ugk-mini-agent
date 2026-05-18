@@ -1261,6 +1261,8 @@ async function toggleRunDetail(runId) {
 		window._latestAttemptsForRun[runId] = attemptsMap;
 		if (!window._latestRunTaskDefinitions) window._latestRunTaskDefinitions = {};
 		window._latestRunTaskDefinitions[runId] = Array.isArray(state.taskDefinitions) ? state.taskDefinitions : [];
+		if (!window._latestRunStateForRun) window._latestRunStateForRun = {};
+		window._latestRunStateForRun[runId] = state;
 		detailEl.innerHTML = renderRunDetailShell(runId, state, plan, attemptsMap);
 	} catch (e) {
 		detailEl.innerHTML = '<p style="color:var(--fail);font-size:13px">加载失败：' + escapeHtml(e.message) + '</p>';
@@ -1282,8 +1284,8 @@ function renderRunDetailShell(runId, state, plan, attemptsMap) {
 	var mindmapActive = currentView === 'mindmap' ? ' active' : '';
 	var detailActive = currentView === 'detail' ? ' active' : '';
 	var switchHtml = '<div class="run-detail-view-toggle" style="display:flex;gap:0;margin-bottom:12px;border:1px solid var(--border);border-radius:6px;overflow:hidden">' +
-		'<button class="run-detail-view-btn' + mindmapActive + '" data-view="mindmap" onclick="switchRunDetailView(\'' + escapeHtml(runId) + '\',\'mindmap\')" style="flex:1;padding:6px 12px;border:none;background:' + (currentView === 'mindmap' ? 'var(--accent)' : 'var(--surface)') + ';color:' + (currentView === 'mindmap' ? '#fff' : 'var(--text)') + ';font-size:12px;cursor:pointer">脑图</button>' +
-		'<button class="run-detail-view-btn' + detailActive + '" data-view="detail" onclick="switchRunDetailView(\'' + escapeHtml(runId) + '\',\'detail\')" style="flex:1;padding:6px 12px;border:none;border-left:1px solid var(--border);background:' + (currentView === 'detail' ? 'var(--accent)' : 'var(--surface)') + ';color:' + (currentView === 'detail' ? '#fff' : 'var(--text)') + ';font-size:12px;cursor:pointer">详情</button>' +
+		'<button class="run-detail-view-btn' + mindmapActive + '" data-view="mindmap" onclick="switchRunDetailView(' + jsArg(runId) + ',' + jsArg('mindmap') + ')" style="flex:1;padding:6px 12px;border:none;background:' + (currentView === 'mindmap' ? 'var(--accent)' : 'var(--surface)') + ';color:' + (currentView === 'mindmap' ? '#fff' : 'var(--text)') + ';font-size:12px;cursor:pointer">脑图</button>' +
+		'<button class="run-detail-view-btn' + detailActive + '" data-view="detail" onclick="switchRunDetailView(' + jsArg(runId) + ',' + jsArg('detail') + ')" style="flex:1;padding:6px 12px;border:none;border-left:1px solid var(--border);background:' + (currentView === 'detail' ? 'var(--accent)' : 'var(--surface)') + ';color:' + (currentView === 'detail' ? '#fff' : 'var(--text)') + ';font-size:12px;cursor:pointer">详情</button>' +
 		'</div>';
 	var contentHtml = currentView === 'detail'
 		? '<div data-run-detail-view="detail">' + renderTaskDetail(state, plan, attemptsMap) + '</div>'
@@ -1297,10 +1299,9 @@ window.switchRunDetailView = function(runId, view) {
 	if (!detailEl) return;
 	var plan2 = window._latestPlanForRun ? window._latestPlanForRun[runId] : null;
 	var attempts = window._latestAttemptsForRun ? window._latestAttemptsForRun[runId] : null;
-	var taskDefs = window._latestRunTaskDefinitions ? window._latestRunTaskDefinitions[runId] : [];
 	if (!plan2) return;
-	var state = { runId: runId };
-	if (Array.isArray(taskDefs)) state.taskDefinitions = taskDefs;
+	var state = window._latestRunStateForRun ? window._latestRunStateForRun[runId] : null;
+	if (!state) state = { runId: runId, taskStates: {} };
 	detailEl.innerHTML = renderRunDetailShell(runId, state, plan2, attempts);
 };
 
@@ -1926,9 +1927,13 @@ function updateRunCard(r) {
 			if (!window._latestRunTaskDefinitions) window._latestRunTaskDefinitions = {};
 			if (Array.isArray(r.taskDefinitions)) window._latestRunTaskDefinitions[r.runId] = r.taskDefinitions;
 			var detailState = r;
+			if (!window._latestRunStateForRun) window._latestRunStateForRun = {};
+			var cachedState = window._latestRunStateForRun[r.runId];
+			if (cachedState) detailState = Object.assign({}, cachedState, r);
 			if (!Array.isArray(detailState.taskDefinitions) && Array.isArray(window._latestRunTaskDefinitions[r.runId])) {
-				detailState = Object.assign({}, r, { taskDefinitions: window._latestRunTaskDefinitions[r.runId] });
+				detailState = Object.assign({}, detailState, { taskDefinitions: window._latestRunTaskDefinitions[r.runId] });
 			}
+			window._latestRunStateForRun[r.runId] = detailState;
 			var newHtml = renderRunDetailShell(r.runId, detailState, plan2, window._latestAttemptsForRun ? window._latestAttemptsForRun[r.runId] : null);
 			var hash = String(newHtml.length) + "_" + String(done) + "_" + r.status;
 			if (detailEl.getAttribute("data-detail-hash") !== hash) {

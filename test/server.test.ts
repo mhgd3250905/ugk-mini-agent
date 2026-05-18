@@ -6665,11 +6665,46 @@ test("GET /playground/team includes run detail mindmap view shell", async () => 
 	assert.match(response.body, /function renderTaskDetail/);
 
 	// toggleRunDetail and updateRunCard render through the shell, not directly
-	// Verify toggleRunDetail calls renderRunDetailShell (not bare renderTaskDetail)
 	assert.match(response.body, /detailEl\.innerHTML\s*=\s*renderRunDetailShell\(/);
-
-	// updateRunCard also routes through the shell
 	assert.match(response.body, /var newHtml\s*=\s*renderRunDetailShell\(/);
+
+	await app.close();
+});
+
+test("GET /playground/team caches run state for safe detail view switching", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/team",
+	});
+
+	assert.equal(response.statusCode, 200);
+
+	// Full run-state cache exists
+	assert.match(response.body, /window\._latestRunStateForRun/);
+
+	// toggleRunDetail stores the complete fetched state into the cache
+	assert.match(response.body, /window\._latestRunStateForRun\[runId\]\s*=\s*state/);
+
+	// switchRunDetailView reads from cache, not from a bare { runId } object
+	assert.match(response.body, /var state = window\._latestRunStateForRun\s*\?\s*window\._latestRunStateForRun\[runId\]/);
+
+	// Fallback includes taskStates so renderTaskDetail does not throw
+	assert.match(response.body, /taskStates:\s*\{\}/);
+
+	// onclick uses jsArg for runId and view names (not escapeHtml string concatenation)
+	assert.match(response.body, /jsArg\(runId\)/);
+	assert.match(response.body, /jsArg\('mindmap'\)/);
+	assert.match(response.body, /jsArg\('detail'\)/);
+
+	// updateRunCard preserves cached state by reading from _latestRunStateForRun
+	assert.match(
+		response.body,
+		/window\._latestRunStateForRun\[r\.runId\]/,
+	);
 
 	await app.close();
 });
