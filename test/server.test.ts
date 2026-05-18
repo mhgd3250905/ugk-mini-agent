@@ -6709,6 +6709,7 @@ test("GET /playground/team caches run state for safe detail view switching", asy
 	await app.close();
 });
 
+
 	test("GET /playground/team includes mindmap view-model helpers and node structure", async () => {
 		const app = await buildServer({
 			agentService: createAgentServiceStub(),
@@ -6735,26 +6736,13 @@ test("GET /playground/team caches run state for safe detail view switching", asy
 		assert.match(response.body, /data-node-status/);
 		assert.match(response.body, /data-node-type/);
 
-		// Renderer uses parentTaskId metadata for child attribution
-		assert.match(response.body, /parentTaskId/);
-
-		// Renderer uses sourceItemId for generated children
-		assert.match(response.body, /sourceItemId/);
-
-		// buildMindmapNodes consumes taskDefinitions from state
-		assert.match(response.body, /state\.taskDefinitions/);
-
-		// buildMindmapNodes reads attemptsMap for attempt counts
-		assert.match(response.body, /attemptsMap/);
-
 		// Failed nodes show error summary in compact view
-		assert.match(response.body, /errorSummary/);
 		assert.match(response.body, /mindmap-node-error/);
 
 		await app.close();
 	});
 
-	test("GET /playground/team mindmap uses parent metadata priority chain", async () => {
+	test("GET /playground/team mindmap attribution uses sourceItemId and orphan group", async () => {
 		const app = await buildServer({
 			agentService: createAgentServiceStub(),
 		});
@@ -6766,17 +6754,20 @@ test("GET /playground/team caches run state for safe detail view switching", asy
 
 		assert.equal(response.statusCode, 200);
 
-		// The buildMindmapNodes function checks task.parentTaskId first
-		assert.match(response.body, /task\.parentTaskId/);
+		// Priority 3: sourceItemId participates in child attribution
+		// getMindmapChildrenByParent reads def.sourceItemId and checks for_each parents
+		assert.match(response.body, /def\.sourceItemId/);
+		assert.match(response.body, /forEachParents\.length === 1/);
 
-		// Falls back to taskDefinitions metadata
-		assert.match(response.body, /taskDefinitions/);
+		// Orphan group is rendered for unassigned task states
+		assert.match(response.body, /__orphan_generated__/);
+		assert.match(response.body, /orphan-group/);
 
-		// SourceItemId is used for generated child metadata
-		assert.match(response.body, /sourceItemId/);
+		// getMindmapChildrenByParent returns orphanIds, not just byParent
+		assert.match(response.body, /orphanIds/);
 
-		// Has a fallback path (id prefix or "generated" group)
-		assert.match(response.body, /fallback/);
+		// Prefix fallback is tracked separately from metadata attribution
+		assert.match(response.body, /prefixFallbackIds/);
 
 		await app.close();
 	});

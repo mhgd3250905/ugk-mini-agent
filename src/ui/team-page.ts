@@ -1280,30 +1280,59 @@ function collectRunTaskDefinitions(state, plan) {
 function getMindmapChildrenByParent(planTasks, generatedDefs, taskStates) {
 	var planIdSet = {};
 	planTasks.forEach(function(t) { planIdSet[t.id] = true; });
+	var defById = {};
+	generatedDefs.forEach(function(d) { if (d && d.id) defById[d.id] = d; });
+	var assigned = {};
 	var byParent = {};
-	generatedDefs.forEach(function(t) {
-		if (!t || !t.id) return;
-		var pid = t.parentTaskId;
-		if (pid) {
-			if (!byParent[pid]) byParent[pid] = [];
-			if (byParent[pid].indexOf(t.id) === -1) byParent[pid].push(t.id);
+	var prefixFallbackIds = [];
+
+	function addChild(pid, cid, isPrefixFallback) {
+		if (!byParent[pid]) byParent[pid] = [];
+		if (byParent[pid].indexOf(cid) === -1) byParent[pid].push(cid);
+		assigned[cid] = true;
+		if (isPrefixFallback) prefixFallbackIds.push(cid);
+	}
+
+	// Priority 1: explicit parentTaskId on generated defs
+	generatedDefs.forEach(function(d) {
+		if (!d || !d.id) return;
+		if (planIdSet[d.id]) return;
+		if (d.parentTaskId) addChild(d.parentTaskId, d.id, false);
+	});
+
+	// Priority 2: taskStates with defs that have parentTaskId (missed by priority 1)
+	Object.keys(taskStates || {}).forEach(function(id) {
+		if (planIdSet[id] || assigned[id]) return;
+		var def = defById[id];
+		if (def && def.parentTaskId) addChild(def.parentTaskId, id, false);
+	});
+
+	// Priority 3: sourceItemId — attach if exactly one for_each parent exists
+	var forEachParents = planTasks.filter(function(t) { return t.type === 'for_each' || t.forEach; });
+	Object.keys(taskStates || {}).forEach(function(id) {
+		if (planIdSet[id] || assigned[id]) return;
+		var def = defById[id];
+		if (!def || !def.sourceItemId) return;
+		if (forEachParents.length === 1) addChild(forEachParents[0].id, id, false);
+	});
+
+	// Priority 4: id prefix fallback
+	Object.keys(taskStates || {}).forEach(function(id) {
+		if (planIdSet[id] || assigned[id]) return;
+		for (var i = 0; i < planTasks.length; i++) {
+			if (id.indexOf(planTasks[i].id + '__') === 0) {
+				addChild(planTasks[i].id, id, true);
+				break;
+			}
 		}
 	});
-	Object.keys(taskStates || {}).forEach(function(id) {
-		if (planIdSet[id]) return;
-		var alreadyChild = false;
-		Object.keys(byParent).forEach(function(pid) {
-			if (byParent[pid].indexOf(id) !== -1) alreadyChild = true;
-		});
-		if (alreadyChild) return;
-		planTasks.forEach(function(parent) {
-			if (id.indexOf(parent.id + '__') === 0) {
-				if (!byParent[parent.id]) byParent[parent.id] = [];
-				if (byParent[parent.id].indexOf(id) === -1) byParent[parent.id].push(id);
-			}
-		});
+
+	// Orphan ids: non-plan, unassigned
+	var orphanIds = Object.keys(taskStates || {}).filter(function(id) {
+		return !planIdSet[id] && !assigned[id];
 	});
-	return byParent;
+
+	return { byParent: byParent, orphanIds: orphanIds, prefixFallbackIds: prefixFallbackIds };
 }
 
 function describeMindmapNodeType(task, isGenerated) {
@@ -1325,7 +1354,11 @@ function buildMindmapNodes(state, plan, attemptsMap) {
 	var taskById = {};
 	planTasks.forEach(function(t) { taskById[t.id] = t; });
 	generatedDefs.forEach(function(t) { if (t && t.id) taskById[t.id] = t; });
-	var childrenByParent = getMindmapChildrenByParent(planTasks, generatedDefs, taskStates);
+	var result = getMindmapChildrenByParent(planTasks, generatedDefs, taskStates);
+	var childrenByParent = result.byParent;
+	var orphanIds = result.orphanIds;
+	var prefixFallbackSet = {};
+	result.prefixFallbackIds.forEach(function(id) { prefixFallbackSet[id] = true; });
 	var s = state.summary || {};
 	var rootNode = {
 		id: state.runId || '',
@@ -1335,9 +1368,9 @@ function buildMindmapNodes(state, plan, attemptsMap) {
 		summary: '总 ' + (s.totalTasks || 0) + ' | 成功 ' + (s.succeededTasks || 0) + ' | 失败 ' + (s.failedTasks || 0) + ' | 跳过 ' + (s.skippedTasks || 0),
 		children: []
 	};
+	var rendered = {};
 	planTasks.forEach(function(task) {
 		var ts = taskStates[task.id];
-		var attempts = attemptsMap && attemptsMap[task.id] ? attemptsMap[task.id] : [];
 		var childIds = childrenByParent[task.id] || [];
 		var errorLine = '';
 		if (ts && ts.errorSummary) errorLine = ts.errorSummary.split('
@@ -1356,13 +1389,14 @@ function buildMindmapNodes(state, plan, attemptsMap) {
 			children: []
 		};
 		childIds.forEach(function(cid) {
+			rendered[cid] = true;
 			var childDef = taskById[cid] || null;
 			var childTs = taskStates[cid];
-			var childAttempts = attemptsMap && attemptsMap[cid] ? attemptsMap[cid] : [];
 			var childErrorLine = '';
 			if (childTs && childTs.errorSummary) childErrorLine = childTs.errorSummary.split('
 ')[0];
-			var childNode = {
+			var isPrefixFallback = prefixFallbackSet[cid] || false;
+			taskNode.children.push({
 				id: cid,
 				title: childDef ? (childDef.title || cid) : cid,
 				status: childTs ? childTs.status : 'pending',
@@ -1373,15 +1407,50 @@ function buildMindmapNodes(state, plan, attemptsMap) {
 				parentTaskId: childDef ? (childDef.parentTaskId || task.id) : task.id,
 				sourceItemId: childDef ? (childDef.sourceItemId || null) : null,
 				generated: true,
-				fallback: !childDef
-			};
-			taskNode.children.push(childNode);
+				fallback: isPrefixFallback || !childDef,
+				children: []
+			});
 		});
+		rendered[task.id] = true;
 		rootNode.children.push(taskNode);
 	});
+
+	// Orphan group: unassigned generated/orphan task states
+	if (orphanIds.length) {
+		var orphanChildren = [];
+		orphanIds.forEach(function(oid) {
+			rendered[oid] = true;
+			var def = taskById[oid] || null;
+			var ts = taskStates[oid];
+			var errLine = '';
+			if (ts && ts.errorSummary) errLine = ts.errorSummary.split('
+')[0];
+			orphanChildren.push({
+				id: oid,
+				title: def ? (def.title || oid) : oid,
+				status: ts ? ts.status : 'pending',
+				nodeType: describeMindmapNodeType(def, true),
+				attemptCount: ts ? ts.attemptCount : 0,
+				errorSummary: errLine,
+				resultRef: ts ? ts.resultRef : null,
+				generated: true,
+				fallback: true,
+				children: []
+			});
+		});
+		rootNode.children.push({
+			id: '__orphan_generated__',
+			title: '未归属子任务',
+			status: 'orphan-group',
+			nodeType: 'orphan-group',
+			generated: true,
+			fallback: true,
+			children: orphanChildren
+		});
+	}
+
 	return rootNode;
 }
-
 function renderMindmapNode(node, depth) {
 	var cls = depth === 0 ? 'mindmap-root-node' : 'mindmap-task-node';
 	var escapedTitle = escapeHtml(node.title || '');
