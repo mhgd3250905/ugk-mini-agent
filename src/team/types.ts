@@ -112,6 +112,14 @@ export type TeamTaskOutputCheck =
 	| { type: "html_fragment"; requiredSubstrings?: string[]; requiredSelectors?: string[]; forbiddenTags?: string[]; requireFence?: boolean }
 	| { type: "file_exists"; path?: string };
 
+export interface TeamOutputValidationResult {
+	ok: boolean;
+	kind: "none" | "discovery" | "json_object" | "json_items" | "html_fragment" | "file_exists";
+	sourceRef: string | null;
+	checks: Array<{ name: string; ok: boolean; message?: string; path?: string }>;
+	normalizedRef?: string | null;
+}
+
 export interface TeamTaskDecomposerPolicy {
 	mode: TeamTaskDecomposerMode;
 	maxChildren?: number;

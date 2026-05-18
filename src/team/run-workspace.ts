@@ -530,6 +530,26 @@ export class RunWorkspace {
 		try { return await readFile(filePath, "utf8"); } catch { return null; }
 	}
 
+	async readAttemptRoleWorkspaceFile(runId: string, attemptId: string, role: "worker" | "checker" | "watcher", relativePath: string): Promise<{ content: string; normalizedRef: string } | null> {
+		if (/[^a-zA-Z0-9_-]/.test(runId) || runId.includes("..")) return null;
+		if (/[^a-zA-Z0-9_-]/.test(attemptId) || attemptId.includes("..")) return null;
+		const normalized = relativePath.trim().replace(/^["'`]+|["'`,.;:，。；：）)]+$/g, "").replace(/\\/g, "/");
+		if (!normalized || normalized.includes("..") || normalized.startsWith("/") || /^[a-zA-Z]:\//.test(normalized)) return null;
+		const workspaceRoot = join(this.rootDir, "runs", runId, "agent-workspaces", attemptId, role);
+		const filePath = join(workspaceRoot, ...normalized.split("/").filter(Boolean));
+		const resolved = path.resolve(filePath);
+		const root = path.resolve(workspaceRoot);
+		if (!resolved.startsWith(root + path.sep) && resolved !== root) return null;
+		try {
+			return {
+				content: await readFile(filePath, "utf8"),
+				normalizedRef: path.relative(join(this.rootDir, "runs", runId), resolved).replace(/\\/g, "/"),
+			};
+		} catch {
+			return null;
+		}
+	}
+
 	private async writeAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string, content: string): Promise<void> {
 		const dir = join(this.rootDir, "runs", runId, "tasks", taskId, "attempts", attemptId);
 		await mkdir(dir, { recursive: true });
