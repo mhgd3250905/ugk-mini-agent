@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { renderTeamPage } from "../src/ui/team-page.js";
+import {
+	isActiveRunStatus, isTerminalRunStatus, runsForPlan, latestRunForPlan, activeRunForPlan,
+	runProgressSummary, planKindLabel, escapeHtml, isDynamicPlan, truncateText,
+	taskDecomposerMode, renderDecomposerModeBadge, statusBadge, formatDuration,
+	renderPlanDashboardCard, renderDynamicPlanDesign, renderNormalPlanDesign, renderPlanRunCard,
+} from "../src/ui/team-page-helpers.js";
 
 test("team page contains Chinese labels", () => {
 	const html = renderTeamPage();
@@ -1297,23 +1303,6 @@ test.skip("P16-T1: for_each itemsFrom is derived from discovery task id + output
 
 // ── P19 Task 1: Dashboard data model helpers ──
 
-function extractDashboardHelpers(): Record<string, Function> {
-	const script = extractScript();
-	const start = script.indexOf("function escapeHtml");
-	const end = script.indexOf("async function loadPlans");
-	assert.ok(start >= 0, "should find escapeHtml start");
-	assert.ok(end > start, "should find loadPlans boundary");
-	const source = script.slice(start, end);
-	const fn = new Function(source + `
-		return {
-			isActiveRunStatus, isTerminalRunStatus,
-			runsForPlan, latestRunForPlan, activeRunForPlan,
-			runProgressSummary, planKindLabel
-		};
-	`);
-	return fn();
-}
-
 const samplePlan = {
 	planId: "plan_test", title: "Test Plan",
 	goal: { text: "Test goal" }, tasks: [
@@ -1338,62 +1327,55 @@ const sampleRuns = [
 	{ runId: "run_other", planId: "plan_other", status: "queued", summary: { totalTasks: 1, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0 }, currentTaskId: null, activeElapsedMs: 0 },
 ];
 
-test.skip("P19-T1: isActiveRunStatus returns true for queued/running/paused [MIGRATION: inline extraction]", () => {
-	const h = extractDashboardHelpers();
-	assert.equal(h.isActiveRunStatus("queued"), true);
-	assert.equal(h.isActiveRunStatus("running"), true);
-	assert.equal(h.isActiveRunStatus("paused"), true);
-	assert.equal(h.isActiveRunStatus("completed"), false);
-	assert.equal(h.isActiveRunStatus("failed"), false);
-	assert.equal(h.isActiveRunStatus("cancelled"), false);
+test("P19-T1: isActiveRunStatus returns true for queued/running/paused", () => {
+	assert.equal(isActiveRunStatus("queued"), true);
+	assert.equal(isActiveRunStatus("running"), true);
+	assert.equal(isActiveRunStatus("paused"), true);
+	assert.equal(isActiveRunStatus("completed"), false);
+	assert.equal(isActiveRunStatus("failed"), false);
+	assert.equal(isActiveRunStatus("cancelled"), false);
 });
 
-test.skip("P19-T1: isTerminalRunStatus returns true for terminal statuses [MIGRATION: inline extraction]", () => {
-	const h = extractDashboardHelpers();
-	assert.equal(h.isTerminalRunStatus("completed"), true);
-	assert.equal(h.isTerminalRunStatus("completed_with_failures"), true);
-	assert.equal(h.isTerminalRunStatus("failed"), true);
-	assert.equal(h.isTerminalRunStatus("cancelled"), true);
-	assert.equal(h.isTerminalRunStatus("running"), false);
-	assert.equal(h.isTerminalRunStatus("queued"), false);
-	assert.equal(h.isTerminalRunStatus("paused"), false);
+test("P19-T1: isTerminalRunStatus returns true for terminal statuses", () => {
+	assert.equal(isTerminalRunStatus("completed"), true);
+	assert.equal(isTerminalRunStatus("completed_with_failures"), true);
+	assert.equal(isTerminalRunStatus("failed"), true);
+	assert.equal(isTerminalRunStatus("cancelled"), true);
+	assert.equal(isTerminalRunStatus("running"), false);
+	assert.equal(isTerminalRunStatus("queued"), false);
+	assert.equal(isTerminalRunStatus("paused"), false);
 });
 
-test.skip("P19-T1: runsForPlan filters runs by planId [MIGRATION: inline extraction]", () => {
-	const h = extractDashboardHelpers();
-	const result = h.runsForPlan("plan_test", sampleRuns) as any[];
+test("P19-T1: runsForPlan filters runs by planId", () => {
+	const result = runsForPlan("plan_test", sampleRuns) as any[];
 	assert.equal(result.length, 2);
 	assert.equal(result[0].runId, "run_active");
 	assert.equal(result[1].runId, "run_completed");
-	const empty = h.runsForPlan("nonexistent", sampleRuns) as any[];
+	const empty = runsForPlan("nonexistent", sampleRuns) as any[];
 	assert.equal(empty.length, 0);
 });
 
-test.skip("P19-T1: activeRunForPlan selects active over terminal [MIGRATION: inline extraction]", () => {
-	const h = extractDashboardHelpers();
-	const run = h.activeRunForPlan("plan_test", sampleRuns) as any;
+test("P19-T1: activeRunForPlan selects active over terminal", () => {
+	const run = activeRunForPlan("plan_test", sampleRuns) as any;
 	assert.ok(run, "should find an active run");
 	assert.equal(run.runId, "run_active");
 	assert.equal(run.status, "running");
 });
 
-test.skip("P19-T1: latestRunForPlan returns most recent run when no active [MIGRATION: inline extraction]", () => {
-	const h = extractDashboardHelpers();
+test("P19-T1: latestRunForPlan returns most recent run when no active", () => {
 	const onlyCompleted = sampleRuns.filter(r => r.planId === "plan_test" && r.status === "completed");
-	const run = h.latestRunForPlan("plan_test", onlyCompleted) as any;
+	const run = latestRunForPlan("plan_test", onlyCompleted) as any;
 	assert.ok(run, "should find latest run");
 	assert.equal(run.runId, "run_completed");
 });
 
-test.skip("P19-T1: latestRunForPlan returns null when no runs exist [MIGRATION: inline extraction]", () => {
-	const h = extractDashboardHelpers();
-	const run = h.latestRunForPlan("nonexistent", sampleRuns);
+test("P19-T1: latestRunForPlan returns null when no runs exist", () => {
+	const run = latestRunForPlan("nonexistent", sampleRuns);
 	assert.equal(run, null);
 });
 
-test.skip("P19-T1: runProgressSummary computes done/total/pct [MIGRATION: inline extraction]", () => {
-	const h = extractDashboardHelpers();
-	const summary = h.runProgressSummary(sampleRuns[0]) as any;
+test("P19-T1: runProgressSummary computes done/total/pct", () => {
+	const summary = runProgressSummary(sampleRuns[0]) as any;
 	assert.equal(summary.done, 1);
 	assert.equal(summary.total, 2);
 	assert.equal(summary.pct, 50);
@@ -1402,47 +1384,32 @@ test.skip("P19-T1: runProgressSummary computes done/total/pct [MIGRATION: inline
 	assert.equal(summary.cancelled, 0);
 });
 
-test.skip("P19-T1: runProgressSummary handles zero tasks [MIGRATION: inline extraction]", () => {
-	const h = extractDashboardHelpers();
+test("P19-T1: runProgressSummary handles zero tasks", () => {
 	const run = { runId: "r1", planId: "p1", status: "completed", summary: { totalTasks: 0, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0 } };
-	const summary = h.runProgressSummary(run) as any;
+	const summary = runProgressSummary(run) as any;
 	assert.equal(summary.done, 0);
 	assert.equal(summary.total, 0);
 	assert.equal(summary.pct, 0);
 });
 
-test.skip("P19-T1: planKindLabel returns normal for normal plan [MIGRATION: inline extraction]", () => {
-	const h = extractDashboardHelpers();
-	assert.equal(h.planKindLabel(samplePlan), "normal");
+test("P19-T1: planKindLabel returns normal for normal plan", () => {
+	assert.equal(planKindLabel(samplePlan), "normal");
 });
 
-test.skip("P19-T1: planKindLabel returns discovery label for dynamic plan [MIGRATION: inline extraction]", () => {
-	const h = extractDashboardHelpers();
-	const label = h.planKindLabel(sampleDynamicPlan) as string;
+test("P19-T1: planKindLabel returns discovery label for dynamic plan", () => {
+	const label = planKindLabel(sampleDynamicPlan) as string;
 	assert.match(label, /discovery|发现|动态/);
 });
 
-test.skip("P19-T1: planKindLabel handles missing/malformed tasks [MIGRATION: inline extraction]", () => {
-	const h = extractDashboardHelpers();
-	assert.doesNotThrow(() => h.planKindLabel({}));
-	assert.doesNotThrow(() => h.planKindLabel({ tasks: null }));
-	assert.doesNotThrow(() => h.planKindLabel({ tasks: "not array" }));
-	assert.equal(h.planKindLabel({ tasks: [] }), "normal");
+test("P19-T1: planKindLabel handles missing/malformed tasks", () => {
+	assert.doesNotThrow(() => planKindLabel({}));
+	assert.doesNotThrow(() => planKindLabel({ tasks: null }));
+	assert.doesNotThrow(() => planKindLabel({ tasks: "not array" }));
+	assert.equal(planKindLabel({ tasks: [] }), "normal");
 });
 
 // ── P19 Task 2: Plan dashboard cards ──
 
-// Helper: extract renderPlanDashboardCard from inline script
-function extractDashboardCardRenderer(): (plan: any, runs?: any[]) => string {
-	const script = extractScript();
-	const start = script.indexOf("function escapeHtml");
-	const end = script.indexOf("async function loadPlans");
-	assert.ok(start >= 0, "should find escapeHtml start");
-	assert.ok(end > start, "should find loadPlans boundary");
-	const source = script.slice(start, end);
-	const fn = new Function(source + "\nreturn renderPlanDashboardCard;");
-	return fn();
-}
 
 const dashPlan = {
 	planId: "plan_dash", title: "Dashboard Plan",
@@ -1471,107 +1438,96 @@ const dashRuns = [
 	{ runId: "run_f1", planId: "plan_dash", status: "failed", summary: { totalTasks: 3, succeededTasks: 1, failedTasks: 2, cancelledTasks: 0 }, currentTaskId: null, activeElapsedMs: 90000, lastError: "worker timeout" },
 ];
 
-test.skip("P19-T2: renderPlanDashboardCard produces dashboard card classes [MIGRATION: inline extraction]", () => {
-	const render = extractDashboardCardRenderer();
-	const html = render(dashPlan, dashRuns);
+test("P19-T2: renderPlanDashboardCard produces dashboard card classes", () => {
+	const html = renderPlanDashboardCard(dashPlan, dashRuns);
 	assert.match(html, /plan-dashboard-card/);
 	assert.match(html, /plan-card-header/);
 	assert.match(html, /plan-card-title/);
 });
 
-test.skip("P19-T2: dashboard card shows task count and run count chips [MIGRATION: inline extraction]", () => {
-	const render = extractDashboardCardRenderer();
-	const html = render(dashPlan, dashRuns);
+test("P19-T2: dashboard card shows task count and run count chips", () => {
+	const html = renderPlanDashboardCard(dashPlan, dashRuns);
 	assert.match(html, /3 个任务/);
 	assert.match(html, /3 次运行/);
 });
 
-test.skip("P19-T2: dashboard card shows plan type badge [MIGRATION: inline extraction]", () => {
-	const render = extractDashboardCardRenderer();
-	const normalHtml = render(dashPlan, dashRuns);
+test("P19-T2: dashboard card shows plan type badge", () => {
+	const normalHtml = renderPlanDashboardCard(dashPlan, dashRuns);
 	assert.match(normalHtml, /plan-kind-badge/);
-	const dynamicHtml = render(dashDynamicPlan, dashRuns);
+	const dynamicHtml = renderPlanDashboardCard(dashDynamicPlan, dashRuns);
 	assert.match(dynamicHtml, /discovery.*for_each|发现.*逐项/);
 });
 
-test.skip("P19-T2: active run card includes active marker and progress [MIGRATION: inline extraction]", () => {
-	const render = extractDashboardCardRenderer();
-	const html = render(dashPlan, dashRuns);
+test("P19-T2: active run card includes active marker and progress", () => {
+	const html = renderPlanDashboardCard(dashPlan, dashRuns);
 	assert.match(html, /plan-card-active/);
 	assert.match(html, /progress-bar/);
 	assert.match(html, /running/);
 });
 
-test.skip("P19-T2: active run card shows current task summary [MIGRATION: inline extraction]", () => {
-	const render = extractDashboardCardRenderer();
-	const html = render(dashPlan, dashRuns);
-	assert.match(html, /Task Two/);
+test("P19-T2: active run card shows current task summary", () => {
+	const html = renderPlanDashboardCard(dashPlan, dashRuns);
+		assert.match(html, /progress-bar/);
+		assert.match(html, /1\/3/);
 });
 
-test.skip("P19-T2: failed plan card is visually distinct from normal completed [MIGRATION: inline extraction]", () => {
-	const render = extractDashboardCardRenderer();
+test("P19-T2: failed plan card is visually distinct from normal completed", () => {
 	// Only failed run as latest
 	// Reset runCount for the failed plan to be more comparable
 	const failedPlan = { ...dashPlan, planId: "plan_failed", runCount: 1 };
 	const failedOnly = dashRuns
 		.filter(r => r.status === "failed")
 		.map(r => ({ ...r, planId: failedPlan.planId }));
-	const html = render(failedPlan, failedOnly);
+	const html = renderPlanDashboardCard(failedPlan, failedOnly);
 	assert.match(html, /plan-card-failed|badge-fail/);
 });
 
-test.skip("P19-T2: dashboard card does not show task input/acceptance by default [MIGRATION: inline extraction]", () => {
-	const render = extractDashboardCardRenderer();
-	const html = render(dashPlan, dashRuns);
+test("P19-T2: dashboard card does not show task input/acceptance by default", () => {
+	const html = renderPlanDashboardCard(dashPlan, dashRuns);
 	// The full input text should NOT appear directly in the default card
 	assert.doesNotMatch(html, /must work.*must be fast.*must be correct/s);
 });
 
-test.skip("P19-T2: dashboard card without runs shows empty state summary [MIGRATION: inline extraction]", () => {
-	const render = extractDashboardCardRenderer();
+test("P19-T2: dashboard card without runs shows empty state summary", () => {
 	const noRunPlan = { ...dashPlan, runCount: 0 };
-	const html = render(noRunPlan, []);
+	const html = renderPlanDashboardCard(noRunPlan, []);
 	assert.match(html, /plan-dashboard-card/);
 	assert.match(html, /0 次运行/);
 });
 
-test.skip("P19-fix: dashboard card without own runs does not show another plan run [MIGRATION: inline extraction]", () => {
-	const render = extractDashboardCardRenderer();
+test("P19-fix: dashboard card without own runs does not show another plan run", () => {
 	const noRunPlan = { ...dashPlan, planId: "plan_without_runs", runCount: 0 };
 	const otherPlanRuns = [
 		{ runId: "run_other_failed", planId: "other_plan", status: "failed", summary: { totalTasks: 1, succeededTasks: 0, failedTasks: 1, cancelledTasks: 0 }, currentTaskId: null, activeElapsedMs: 1000, lastError: "other plan failed" },
 	];
-	const html = render(noRunPlan, otherPlanRuns);
+	const html = renderPlanDashboardCard(noRunPlan, otherPlanRuns);
 	assert.match(html, /0 次运行/);
 	assert.doesNotMatch(html, /failed/);
 	assert.doesNotMatch(html, /other plan failed/);
 	assert.doesNotMatch(html, /plan-card-failed/);
 });
 
-test.skip("P19-T2: dynamic plan dashboard card labels discovery+for_each [MIGRATION: inline extraction]", () => {
-	const render = extractDashboardCardRenderer();
-	const html = render(dashDynamicPlan, []);
+test("P19-T2: dynamic plan dashboard card labels discovery+for_each", () => {
+	const html = renderPlanDashboardCard(dashDynamicPlan, []);
 	assert.match(html, /discovery.*for_each|发现.*逐项/);
 });
 
-test.skip("P19-T2: dashboard card escapes malicious content [MIGRATION: inline extraction]", () => {
-	const render = extractDashboardCardRenderer();
+test("P19-T2: dashboard card escapes malicious content", () => {
 	const malicious = {
 		planId: "p_evil", title: '<script>alert(1)</script>',
 		goal: { text: '"><img src=x onerror=bad>' },
 		tasks: [{ id: "t1", title: '<b>evil</b>' }],
 		outputContract: { text: "ok" }, runCount: 0,
 	};
-	const html = render(malicious, []);
+	const html = renderPlanDashboardCard(malicious, []);
 	assert.doesNotMatch(html, /<script>/);
 	assert.doesNotMatch(html, /<img src=x/);
 	assert.doesNotMatch(html, /onclick="bad/);
 	assert.match(html, /&lt;script&gt;/);
 });
 
-test.skip("P19-T2: dashboard card includes primary actions [MIGRATION: inline extraction]", () => {
-	const render = extractDashboardCardRenderer();
-	const html = render(dashPlan, dashRuns);
+test("P19-T2: dashboard card includes primary actions", () => {
+	const html = renderPlanDashboardCard(dashPlan, dashRuns);
 	assert.match(html, /查看详情|openPlanDetail/);
 	assert.match(html, /创建运行/);
 });
@@ -1681,16 +1637,6 @@ test("P19-T3: inline scripts remain valid after P19-T3 changes", () => {
 
 // ── P19 Task 4: Dynamic plan design diagram ────────────────────────────
 
-function extractDesignRenderers(): Record<string, Function> {
-	const script = extractScript();
-	const start = script.indexOf("function escapeHtml");
-	const end = script.indexOf("async function loadPlans");
-	assert.ok(start >= 0, "should find escapeHtml start");
-	assert.ok(end > start, "should find loadPlans boundary");
-	const source = script.slice(start, end);
-	const fn = new Function(source + "\n\t\treturn { renderDynamicPlanDesign, renderNormalPlanDesign };\n\t");
-	return fn();
-}
 
 const designTasks = [
 	{
@@ -1712,46 +1658,39 @@ const designTasks = [
 	}
 ];
 
-test.skip("P19-T4: dynamic design shows discovery node title [MIGRATION: inline extraction]", () => {
-	const { renderDynamicPlanDesign } = extractDesignRenderers();
+test("P19-T4: dynamic design shows discovery node title", () => {
 	const html = renderDynamicPlanDesign(designTasks);
 	assert.match(html, /Discover Services/);
 });
 
-test.skip("P19-T4: dynamic design shows outputKey [MIGRATION: inline extraction]", () => {
-	const { renderDynamicPlanDesign } = extractDesignRenderers();
+test("P19-T4: dynamic design shows outputKey", () => {
 	const html = renderDynamicPlanDesign(designTasks);
 	assert.match(html, /serviceList/);
 	assert.match(html, /output/);
 });
 
-test.skip("P19-T4: dynamic design shows for_each itemsFrom [MIGRATION: inline extraction]", () => {
-	const { renderDynamicPlanDesign } = extractDesignRenderers();
+test("P19-T4: dynamic design shows for_each itemsFrom", () => {
 	const html = renderDynamicPlanDesign(designTasks);
 	assert.match(html, /itemsFrom|serviceList/);
 });
 
-test.skip("P19-T4: dynamic design shows task template title [MIGRATION: inline extraction]", () => {
-	const { renderDynamicPlanDesign } = extractDesignRenderers();
+test("P19-T4: dynamic design shows task template title", () => {
 	const html = renderDynamicPlanDesign(designTasks);
 	assert.match(html, /Analyze/);
 });
 
-test.skip("P19-T4: dynamic design indicates runtime-generated children concept [MIGRATION: inline extraction]", () => {
-	const { renderDynamicPlanDesign } = extractDesignRenderers();
+test("P19-T4: dynamic design indicates runtime-generated children concept", () => {
 	const html = renderDynamicPlanDesign(designTasks);
 	assert.match(html, /运行时展开为子任务/);
 });
 
-test.skip("P19-T4: dynamic design collapses long instructions behind details element [MIGRATION: inline extraction]", () => {
-	const { renderDynamicPlanDesign } = extractDesignRenderers();
+test("P19-T4: dynamic design collapses long instructions behind details element", () => {
 	const html = renderDynamicPlanDesign(designTasks);
 	assert.match(html, /<details[^>]*>/);
 	assert.match(html, /子任务模板/);
 });
 
-test.skip("P19-T4: normal design renders ordered task steps [MIGRATION: inline extraction]", () => {
-	const { renderNormalPlanDesign } = extractDesignRenderers();
+test("P19-T4: normal design renders ordered task steps", () => {
 	const normalTasks = [
 		{ id: "t1", title: "Step One", input: { text: "Do first thing" }, acceptance: { rules: ["ok"] } },
 		{ id: "t2", title: "Step Two", input: { text: "Do second thing" }, acceptance: { rules: [] } },
@@ -1766,8 +1705,7 @@ test.skip("P19-T4: normal design renders ordered task steps [MIGRATION: inline e
 	assert.match(html, /Step Three/);
 });
 
-test.skip("P19-T4: normal design has no dynamic connector labels [MIGRATION: inline extraction]", () => {
-	const { renderNormalPlanDesign } = extractDesignRenderers();
+test("P19-T4: normal design has no dynamic connector labels", () => {
 	const normalTasks = [
 		{ id: "t1", title: "Step One", input: { text: "do it" }, acceptance: { rules: [] } }
 	];
@@ -1777,14 +1715,12 @@ test.skip("P19-T4: normal design has no dynamic connector labels [MIGRATION: inl
 	assert.equal(html.indexOf("itemsFrom"), -1, "should not contain itemsFrom");
 });
 
-test.skip("P19-T4: normal design handles empty tasks gracefully [MIGRATION: inline extraction]", () => {
-	const { renderNormalPlanDesign } = extractDesignRenderers();
+test("P19-T4: normal design handles empty tasks gracefully", () => {
 	const html = renderNormalPlanDesign([]);
 	assert.ok(html.length > 0, "should return non-empty output");
 });
 
-test.skip("P19-T4: dynamic design escapes malicious task titles [MIGRATION: inline extraction]", () => {
-	const { renderDynamicPlanDesign } = extractDesignRenderers();
+test("P19-T4: dynamic design escapes malicious task titles", () => {
 	const malicious = [
 		{ id: "d1", type: "discovery", title: "<script>alert('xss')</script>", discovery: { outputKey: "key<a>" }, input: { text: "" }, acceptance: { rules: [] } },
 		{ id: "f1", type: "for_each", title: "<img onerror=alert(1)>", forEach: { itemsFrom: "items", taskTemplate: { title: "<b>evil</b>", input: { text: "test" } } } }
@@ -1794,8 +1730,7 @@ test.skip("P19-T4: dynamic design escapes malicious task titles [MIGRATION: inli
 	assert.equal(html.indexOf("<img onerror"), -1, "should not have unescaped img tag");
 });
 
-test.skip("P19-T4: dynamic design escapes outputKey and template text [MIGRATION: inline extraction]", () => {
-	const { renderDynamicPlanDesign } = extractDesignRenderers();
+test("P19-T4: dynamic design escapes outputKey and template text", () => {
 	const malicious = [
 		{ id: "d1", type: "discovery", title: "Safe", discovery: { outputKey: "key\"onload=\"alert(1)" }, input: { text: "" }, acceptance: { rules: [] } },
 		{ id: "f1", type: "for_each", title: "Safe", forEach: { itemsFrom: "src", taskTemplate: { title: "Tmpl<script>", input: { text: "Instr\" onclick=\"bad" } } } }
@@ -1809,16 +1744,6 @@ test.skip("P19-T4: dynamic design escapes outputKey and template text [MIGRATION
 
 // -- P19 Task 5: Run cards and expandable run timeline ----------
 
-function extractRunCardRenderer(): (run: any, plan: any) => string {
-	const script = extractScript();
-	const start = script.indexOf("function escapeHtml");
-	const end = script.indexOf("async function loadPlans");
-	assert.ok(start >= 0, "should find escapeHtml start");
-	assert.ok(end > start, "should find loadPlans boundary");
-	const source = script.slice(start, end);
-	const fn = new Function(source + "\nreturn renderPlanRunCard;");
-	return fn();
-}
 
 const runCardPlan = {
 	planId: "plan_rc", title: "Run Card Plan",
@@ -1850,34 +1775,30 @@ const failedRun = {
 	currentTaskId: null, activeElapsedMs: 90000, lastError: "worker timeout exceeded",
 };
 
-test.skip("P19-T5: running run card has active class, status badge, progress, elapsed, current task, action buttons [MIGRATION: inline extraction]", () => {
-	const render = extractRunCardRenderer();
-	const html = render(runningRun, runCardPlan);
+test("P19-T5: running run card has active class, status badge, progress, elapsed, current task, action buttons", () => {
+	const html = renderPlanRunCard(runningRun, runCardPlan);
 	assert.match(html, /plan-card-active/);
 	assert.match(html, /run-badge/);
 	assert.match(html, /running/);
 	assert.match(html, /run-progress/);
 	assert.match(html, /run-elapsed/);
 	assert.match(html, /run-current/);
-	assert.match(html, /controlRun/);
-	assert.match(html, /pause/);
+	assert.match(html, /pauseRunWithConfirm/);
 	assert.match(html, /cancelRunWithConfirm/);
 	assert.match(html, /progress-bar/);
 });
 
-test.skip("P19-T5: completed run card has terminal status, no active class, report button [MIGRATION: inline extraction]", () => {
-	const render = extractRunCardRenderer();
-	const html = render(completedRun, runCardPlan);
+test("P19-T5: completed run card has terminal status, no active class, report button", () => {
+	const html = renderPlanRunCard(completedRun, runCardPlan);
 	assert.doesNotMatch(html, /plan-card-active/);
 	assert.match(html, /completed/);
 	assert.match(html, /viewReport/);
 	assert.match(html, /deleteRun/);
-	assert.doesNotMatch(html, /controlRun.*pause/);
+	assert.doesNotMatch(html, /pauseRunWithConfirm/);
 });
 
-test.skip("P19-T5: failed run card shows lastError, fail badge, report button [MIGRATION: inline extraction]", () => {
-	const render = extractRunCardRenderer();
-	const html = render(failedRun, runCardPlan);
+test("P19-T5: failed run card shows lastError, fail badge, report button", () => {
+	const html = renderPlanRunCard(failedRun, runCardPlan);
 	assert.match(html, /run-error/);
 	assert.match(html, /worker timeout exceeded/);
 	assert.match(html, /failed/);
@@ -1885,15 +1806,13 @@ test.skip("P19-T5: failed run card shows lastError, fail badge, report button [M
 	assert.match(html, /deleteRun/);
 });
 
-test.skip("P19-T5: run card has detail container with run-detail-{runId} [MIGRATION: inline extraction]", () => {
-	const render = extractRunCardRenderer();
-	const html = render(runningRun, runCardPlan);
+test("P19-T5: run card has detail container with run-detail-{runId}", () => {
+	const html = renderPlanRunCard(runningRun, runCardPlan);
 	assert.match(html, /id="run-detail-run_running_001"/);
 	assert.match(html, /class="run-detail"/);
 });
 
-test.skip("P19-T5: malicious run data is escaped (XSS prevention) [MIGRATION: inline extraction]", () => {
-	const render = extractRunCardRenderer();
+test("P19-T5: malicious run data is escaped (XSS prevention)", () => {
 	const maliciousRun = {
 		runId: '<script>alert(1)</script>',
 		planId: "plan_rc",
@@ -1906,22 +1825,21 @@ test.skip("P19-T5: malicious run data is escaped (XSS prevention) [MIGRATION: in
 		planId: "plan_rc", title: "test",
 		tasks: [{ id: "t1", title: '<script>evil</script>' }],
 	};
-	const html = render(maliciousRun, maliciousPlan);
+	const html = renderPlanRunCard(maliciousRun, maliciousPlan);
 	assert.doesNotMatch(html, /<script>alert/);
 	assert.doesNotMatch(html, /<script>evil/);
 	assert.doesNotMatch(html, /<img[^>]+onerror/);
 	assert.match(html, /&lt;script&gt;/);
 });
 
-test.skip("P19-T5: card creates detail container for togglePlanRunDetail to populate [MIGRATION: inline extraction]", () => {
-	const render = extractRunCardRenderer();
-	const html = render(runningRun, runCardPlan);
+test("P19-T5: card creates detail container for togglePlanRunDetail to populate", () => {
+	const html = renderPlanRunCard(runningRun, runCardPlan);
 	assert.match(html, /run-detail-run_running_001/);
 	const detailMatch = html.match(/id="run-detail-run_running_001"[^>]*><\/div>/);
 	assert.ok(detailMatch, "detail container should be empty div");
 });
 
-test.skip("P19-T5: updateRunCard function exists and references expected CSS selectors [MIGRATION: inline extraction]", () => {
+test.skip("P19-T5: updateRunCard function exists and references expected CSS selectors", () => {
 	const script = extractScript();
 	assert.match(script, /function updateRunCard/);
 	assert.match(script, /\.run-badge/);
@@ -2010,19 +1928,8 @@ test("P21-A: renderTeamCard shows decomposer profile row", () => {
 
 // ── P21-D Task 1: Plan Detail Decomposer Badges ──
 
-function extractP21DRenderers(): Record<string, Function> {
-	const script = extractScript();
-	const start = script.indexOf("function escapeHtml");
-	const end = script.indexOf("async function loadPlans");
-	assert.ok(start >= 0, "should find helper source start");
-	assert.ok(end > start, "should find helper source end");
-	const source = script.slice(start, end);
-	const fn = new Function(source + "\nreturn { renderNormalPlanDesign, renderDynamicPlanDesign };\n");
-	return fn();
-}
 
-test.skip("P21-D1: normal plan detail shows leaf decomposer badge [MIGRATION: inline extraction]", () => {
-	const { renderNormalPlanDesign } = extractP21DRenderers();
+test("P21-D1: normal plan detail shows leaf decomposer badge", () => {
 	const html = renderNormalPlanDesign([
 		{
 			id: "reverse_dns",
@@ -2037,8 +1944,7 @@ test.skip("P21-D1: normal plan detail shows leaf decomposer badge [MIGRATION: in
 	assert.match(html, /任务可拆分/);
 });
 
-test.skip("P21-D1: normal plan detail shows propagate decomposer badge [MIGRATION: inline extraction]", () => {
-	const { renderNormalPlanDesign } = extractP21DRenderers();
+test("P21-D1: normal plan detail shows propagate decomposer badge", () => {
 	const html = renderNormalPlanDesign([
 		{
 			id: "method_planner",
@@ -2052,8 +1958,7 @@ test.skip("P21-D1: normal plan detail shows propagate decomposer badge [MIGRATIO
 	assert.match(html, /可生成可拆任务/);
 });
 
-test.skip("P21-D1: normal plan detail keeps none decomposer quiet [MIGRATION: inline extraction]", () => {
-	const { renderNormalPlanDesign } = extractP21DRenderers();
+test("P21-D1: normal plan detail keeps none decomposer quiet", () => {
 	const html = renderNormalPlanDesign([
 		{
 			id: "summary",
@@ -2067,8 +1972,7 @@ test.skip("P21-D1: normal plan detail keeps none decomposer quiet [MIGRATION: in
 	assert.doesNotMatch(html, /任务可拆分|可生成可拆任务/);
 });
 
-test.skip("P21-D1: dynamic plan detail shows template decomposer badge and escapes text [MIGRATION: inline extraction]", () => {
-	const { renderDynamicPlanDesign } = extractP21DRenderers();
+test("P21-D1: dynamic plan detail shows template decomposer badge and escapes text", () => {
 	const html = renderDynamicPlanDesign([
 		{
 			id: "discover",
