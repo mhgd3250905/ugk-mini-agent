@@ -12,6 +12,27 @@
 
 ---
 
+## 2026-05-19 — Team UI Skip 测试迁移
+
+- **主题**: 收口 `npm run test:team` 中 73 个 `[MIGRATION: inline extraction]` skip 测试，从 73 降至 13
+- **影响范围**: `src/ui/team-page.ts`, `src/ui/team-page-helpers.ts`（新增）, `test/team-page-ui.test.ts`
+- **变更**:
+  - 删除 `renderPlanCard`、`_legacyCards` 及关联死代码（renderPlanSummary、renderPlanTaskPreview 等）
+  - 新增 `src/ui/team-page-helpers.ts`：提取纯函数（escapeHtml、dashboard 数据 helpers、renderPlanDashboardCard、renderDynamicPlanDesign、renderNormalPlanDesign、renderPlanRunCard 等）
+  - 44 个 skip 测试改为从 helpers 模块直接导入测试（P19-T1/T2/T4/T5、P21-D1）
+  - 16 个 skip 测试因关联 renderPlanCard 死代码被删除（P14-T1: 9、P16-T3: 7）
+  - 更新 P13 测试引用当前 renderPlanDashboardCard/renderPlanDetailContent
+- **剩余 13 skip 原因**:
+  - P8-E (1): renderTaskDetail ~200 行 inline 函数，deep deps，需大规模重构
+  - P15-fix (4): 同 renderTaskDetail 依赖链
+  - P16-T1 (2): buildDynamicPlanPayload 直接读取 DOM，需分离纯逻辑
+  - P21-D2 (4): 同 renderTaskDetail 依赖链
+  - P21-D-fix (1): SSE 订阅模式，需浏览器上下文
+  - P19-T5 updateRunCard (1): inline CSS selector 模式匹配
+- **验证**: `npm run test:team` 707 pass / 13 skip / 0 fail, `npx tsc --noEmit` 通过
+
+---
+
 ## 2026-05-19 — Team Summary 审核修复
 
 - **主题**: 修复 Team run summary 派生逻辑的审核问题，确保所有路径保存的 summary 同步反映 taskStates

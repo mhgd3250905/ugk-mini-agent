@@ -594,7 +594,7 @@ test("P8-D: task detail renders finalizer runtime context from run state", () =>
 
 // ── MIGRATION CLASSIFICATION ────────────────────────────────────────────
 //
-// 73 [MIGRATION: inline extraction] skips, grouped by fate:
+// Originally 73 [MIGRATION: inline extraction] skips. Now 13 remain (12 + 1 inline-pattern).
 //
 // DELETE (dead code — renderPlanCard is unused, _legacyCards is computed but never read):
 //   P14-T1: renderPlanCard compact card tests (9 tests, lines ~1087-1205)
@@ -620,6 +620,10 @@ test("P8-D: task detail renders finalizer runtime context from run state", () =>
 //   - Remaining skips → must have TODO with reason
 // ────────────────────────────────────────────────────────────────────────
 
+// TODO: P8-E tests renderTaskDetail (~200-line inline function with deep
+// dependency chains: renderRuntimeContext, PHASE_LABELS, phaseLabel, etc.).
+// Not extractable without a large refactor. Covered by inline-script-level
+// escaping pattern tests and server.test.ts smoke.
 test.skip("P8-E: renderTaskDetail escapes role runtime context values [MIGRATION: inline extraction]", () => {
 	const script = extractScript();
 	const helperStart = script.indexOf("function escapeHtml");
@@ -1094,6 +1098,8 @@ test("P15: old plan without type does not crash UI", () => {
 
 // ── P15 Review Fix: generated child task rendering ──
 
+// TODO: P15-fix tests renderTaskDetail (inline ~200 lines, deep deps on runtime context,
+// phase labels, mindmap helpers). Covered by mindmap-helpers.test.ts parent-child view-model tests.
 test.skip("P15-fix: renderTaskDetail shows generated child tasks not in plan.tasks [MIGRATION: inline extraction]", () => {
 	const script = extractScript();
 	const helperStart = script.indexOf("function escapeHtml");
@@ -1214,6 +1220,8 @@ test.skip("P15-fix: old runs without generated tasks render as before [MIGRATION
 		assert.match(html, /id="plan-child-acceptance"/);
 	});
 
+// TODO: P16-T1 tests buildDynamicPlanPayload which reads DOM values directly ($() calls).
+// Extracting would require separating pure logic from DOM reading — deferred.
 test.skip("P16-T1: buildDynamicPlanPayload generates discovery + for_each tasks [MIGRATION: inline extraction]", () => {
 	const script = extractScript();
 	assert.match(script, /function buildDynamicPlanPayload\(\)/);
@@ -2019,6 +2027,8 @@ function extractP21DTaskDetailRenderer(): (state: any, plan: any, attemptsMap: a
 	return new Function(source + "\nreturn renderTaskDetail;")() as (state: any, plan: any, attemptsMap: any) => string;
 }
 
+// TODO: P21-D2 tests renderTaskDetail with decomposition metadata — same renderTaskDetail
+// extraction barrier as P15-fix. Covered by server.test.ts smoke tests.
 test.skip("P21-D2: decomposed parent renders as container with children below it [MIGRATION: inline extraction]", () => {
 	const renderTaskDetail = extractP21DTaskDetailRenderer();
 	const plan = {
@@ -2124,6 +2134,7 @@ test.skip("P21-D2: old runs without decomposition metadata still render [MIGRATI
 	assert.doesNotMatch(html, /拆分容器|动态子任务|拆分子任务/);
 });
 
+// TODO: P21-D-fix tests inline SSE subscription patterns — cannot test outside browser context.
 test.skip("P21-D-fix: SSE detail refresh preserves route-provided taskDefinitions cache [MIGRATION: inline extraction]", () => {
 	const script = extractScript();
 	assert.match(script, /_latestRunTaskDefinitions/);
