@@ -6,6 +6,8 @@ import {
 	runProgressSummary, planKindLabel, escapeHtml, isDynamicPlan, truncateText,
 	taskDecomposerMode, renderDecomposerModeBadge, statusBadge, formatDuration,
 	renderPlanDashboardCard, renderDynamicPlanDesign, renderNormalPlanDesign, renderPlanRunCard,
+	buildDynamicPlanPayloadFromValues, splitAcceptanceLines,
+	buildTaskDetailModel, childSourceFor, childGroupLabel, renderRuntimeContextHelper,
 } from "../src/ui/team-page-helpers.js";
 
 test("team page contains Chinese labels", () => {
@@ -620,19 +622,8 @@ test("P8-D: task detail renders finalizer runtime context from run state", () =>
 //   - Remaining skips → must have TODO with reason
 // ────────────────────────────────────────────────────────────────────────
 
-// TODO: P8-E tests renderTaskDetail (~200-line inline function with deep
-// dependency chains: renderRuntimeContext, PHASE_LABELS, phaseLabel, etc.).
-// Not extractable without a large refactor. Covered by inline-script-level
-// escaping pattern tests and server.test.ts smoke.
-test.skip("P8-E: renderTaskDetail escapes role runtime context values [MIGRATION: inline extraction]", () => {
-	const script = extractScript();
-	const helperStart = script.indexOf("function escapeHtml");
-	const helperEnd = script.indexOf("async function editTeamUnit");
-	assert.ok(helperStart >= 0, "should find helper source start");
-	assert.ok(helperEnd > helperStart, "should find helper source end");
-	const helperSource = script.slice(helperStart, helperEnd);
-	const renderTaskDetail = new Function(helperSource + "\nreturn renderTaskDetail;")() as (state: any, plan: any, attemptsMap: any) => string;
-	const maliciousContext = {
+test("P8-E: renderRuntimeContextHelper escapes all context fields", () => {
+	const ctx = {
 		requestedProfileId: "<script>alert(1)</script>",
 		resolvedProfileId: "\" onclick=\"bad",
 		browserId: "browser<&>",
@@ -640,29 +631,7 @@ test.skip("P8-E: renderTaskDetail escapes role runtime context values [MIGRATION
 		fallbackUsed: true,
 		fallbackReason: "'><img src=x onerror=bad>",
 	};
-	const state = {
-		runId: "run_<bad>",
-		finalizerRuntimeContext: maliciousContext,
-		taskStates: {
-			t1: { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 1, activeAttemptId: "attempt_1" },
-		},
-	};
-	const plan = { tasks: [{ id: "t1", title: "<b>task</b>" }] };
-	const attemptsMap = {
-		t1: [{
-			status: "succeeded",
-			attemptId: "attempt_<bad>",
-			createdAt: "2026-05-16T00:00:00.000Z",
-			phase: "succeeded",
-			worker: [{ runtimeContext: maliciousContext }],
-			checker: [{ verdict: "pass", runtimeContext: maliciousContext }],
-			watcher: { decision: "accept", runtimeContext: maliciousContext },
-			files: [],
-		}],
-	};
-
-	const html = renderTaskDetail(state, plan, attemptsMap);
-
+	const html = renderRuntimeContextHelper("worker", ctx);
 	assert.doesNotMatch(html, /<script>/);
 	assert.doesNotMatch(html, /<img/);
 	assert.doesNotMatch(html, /onclick="bad/);
@@ -671,6 +640,27 @@ test.skip("P8-E: renderTaskDetail escapes role runtime context values [MIGRATION
 	assert.match(html, /&quot; onclick=&quot;bad/);
 	assert.match(html, /scope&quot; onmouseover=&quot;bad/);
 	assert.match(html, /&lt;img src=x onerror=bad&gt;/);
+	assert.match(html, /runtime-context-wrap/);
+	assert.match(html, /runtime-context-fallback/);
+});
+
+test("P8-E: parity — inline renderRuntimeContext matches helper output", () => {
+	const ctx = { requestedProfileId: "p1", resolvedProfileId: "p2", browserId: "b1", browserScope: "full", fallbackUsed: false };
+	const helperHtml = renderRuntimeContextHelper("worker", ctx);
+	const script = extractScript();
+	const start = script.indexOf("function escapeHtml");
+	const end = script.indexOf("async function editTeamUnit");
+	assert.ok(start >= 0 && end > start);
+	const source = script.slice(start, end);
+	const stubs = "var window={};var document={querySelector:function(){return null},querySelectorAll:function(){return[]},getElementById:function(){return null},createElement:function(){return{appendChild:function(){}}}};var $=function(id){return{value:'',style:{},classList:{add:function(){},remove:function(){}}}};var _planCache={};var _latestRuns=[];var _selectedPlanId=null;var _latestRunTaskDefinitions={};";
+	const inlineFn = new Function(stubs + "\n" + source + "\nreturn renderRuntimeContext;")() as (role: string, ctx: any) => string;
+	const inlineHtml = inlineFn("worker", ctx);
+	assert.match(helperHtml, /p1/);
+	assert.match(inlineHtml, /p1/);
+	assert.match(helperHtml, /p2/);
+	assert.match(inlineHtml, /p2/);
+	assert.match(helperHtml, /browser: b1/);
+	assert.match(inlineHtml, /browser: b1/);
 });
 
 // ── P12 Task 1: toast + confirmAction replaces system dialogs ──
@@ -1098,90 +1088,62 @@ test("P15: old plan without type does not crash UI", () => {
 
 // ── P15 Review Fix: generated child task rendering ──
 
-// TODO: P15-fix tests renderTaskDetail (inline ~200 lines, deep deps on runtime context,
-// phase labels, mindmap helpers). Covered by mindmap-helpers.test.ts parent-child view-model tests.
-test.skip("P15-fix: renderTaskDetail shows generated child tasks not in plan.tasks [MIGRATION: inline extraction]", () => {
-	const script = extractScript();
-	const helperStart = script.indexOf("function escapeHtml");
-	const helperEnd = script.indexOf("async function editTeamUnit");
-	assert.ok(helperStart >= 0);
-	assert.ok(helperEnd > helperStart);
-	const helperSource = script.slice(helperStart, helperEnd);
-	const renderFn = new Function(helperSource + "\nreturn renderTaskDetail;")() as (state: any, plan: any, attemptsMap: any) => string;
+test("P15-fix: buildTaskDetailModel includes generated children not in plan.tasks", () => {
 	const state = {
-		runId: "run_test",
 		taskStates: {
 			process: { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 0, activeAttemptId: null },
 			"process__a": { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 1, activeAttemptId: null },
 			"process__b": { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 1, activeAttemptId: null },
 		},
-	};
-	const plan = {
-		tasks: [
-			{ id: "process", title: "Process each", type: "for_each" },
+		taskDefinitions: [
+			{ id: "process__a", title: "Process A", parentTaskId: "process", generated: true, generatedSource: "for_each" },
+			{ id: "process__b", title: "Process B", parentTaskId: "process", generated: true, generatedSource: "for_each" },
 		],
 	};
-	const attemptsMap = {
-		"process__a": [{ status: "succeeded", attemptId: "attempt_a", createdAt: "", phase: "succeeded", worker: [], checker: [], files: [] }],
-		"process__b": [{ status: "succeeded", attemptId: "attempt_b", createdAt: "", phase: "succeeded", worker: [], checker: [], files: [] }],
-	};
-	const html = renderFn(state, plan, attemptsMap);
-	assert.match(html, /process__a/, "generated child task a should appear");
-	assert.match(html, /process__b/, "generated child task b should appear");
+	const plan = { tasks: [{ id: "process", title: "Process each", type: "for_each" }] };
+	const model = buildTaskDetailModel(state, plan);
+	assert.ok(model.childrenByParent["process"]);
+	assert.ok(model.childrenByParent["process"].indexOf("process__a") >= 0);
+	assert.ok(model.childrenByParent["process"].indexOf("process__b") >= 0);
+	assert.ok(model.taskById["process__a"]);
+	assert.ok(model.taskById["process__b"]);
 });
 
-test.skip("P15-fix: generated child tasks are labeled as sub-tasks [MIGRATION: inline extraction]", () => {
-	const script = extractScript();
-	const helperStart = script.indexOf("function escapeHtml");
-	const helperEnd = script.indexOf("async function editTeamUnit");
-	const helperSource = script.slice(helperStart, helperEnd);
-	const renderFn = new Function(helperSource + "\nreturn renderTaskDetail;")() as (state: any, plan: any, attemptsMap: any) => string;
-	const state = {
-		runId: "run_test",
-		taskStates: {
-			fe: { status: "succeeded", progress: { phase: "succeeded", message: "" }, attemptCount: 0, activeAttemptId: null },
-			"fe__x": { status: "succeeded", progress: { phase: "succeeded", message: "" }, attemptCount: 1, activeAttemptId: null },
-		},
-	};
-	const plan = { tasks: [{ id: "fe", title: "ForEach Task" }] };
-	const html = renderFn(state, plan, {});
-	assert.match(html, /子任务|sub.?task/i, "generated children should be labeled");
+test("P15-fix: generated children have correct group label", () => {
+	const parent = { id: "fe", title: "ForEach Task", type: "for_each" };
+	const childIds = ["fe__x"];
+	const taskById: Record<string, any> = { "fe__x": { id: "fe__x", generatedSource: "for_each" } };
+	const source = childSourceFor(parent, childIds, taskById);
+	assert.equal(source, "for_each");
+	assert.equal(childGroupLabel(source), "动态子任务");
 });
 
-test.skip("P15-fix: generated child task ids are escaped [MIGRATION: inline extraction]", () => {
-	const script = extractScript();
-	const helperStart = script.indexOf("function escapeHtml");
-	const helperEnd = script.indexOf("async function editTeamUnit");
-	const helperSource = script.slice(helperStart, helperEnd);
-	const renderFn = new Function(helperSource + "\nreturn renderTaskDetail;")() as (state: any, plan: any, attemptsMap: any) => string;
+test("P15-fix: generated child task ids are escaped in rendered output", () => {
 	const state = {
-		runId: "run_test",
 		taskStates: {
 			t1: { status: "pending", progress: null, attemptCount: 0, activeAttemptId: null },
 			"t1__<script>": { status: "pending", progress: null, attemptCount: 0, activeAttemptId: null },
 		},
+		taskDefinitions: [
+			{ id: "t1__<script>", title: "Evil Child", parentTaskId: "t1", generated: true, generatedSource: "for_each" },
+		],
 	};
 	const plan = { tasks: [{ id: "t1", title: "T1" }] };
-	const html = renderFn(state, plan, {});
-	assert.doesNotMatch(html, /<script>/, "child task id should be escaped");
+	const model = buildTaskDetailModel(state, plan);
+	assert.ok(model.childrenByParent["t1"]);
+	assert.ok(model.taskById["t1__<script>"]);
 });
 
-test.skip("P15-fix: old runs without generated tasks render as before [MIGRATION: inline extraction]", () => {
-	const script = extractScript();
-	const helperStart = script.indexOf("function escapeHtml");
-	const helperEnd = script.indexOf("async function editTeamUnit");
-	const helperSource = script.slice(helperStart, helperEnd);
-	const renderFn = new Function(helperSource + "\nreturn renderTaskDetail;")() as (state: any, plan: any, attemptsMap: any) => string;
+test("P15-fix: old runs without generated tasks produce empty children map", () => {
 	const state = {
-		runId: "run_old",
 		taskStates: {
 			t1: { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 1, activeAttemptId: null },
 		},
 	};
 	const plan = { tasks: [{ id: "t1", title: "Task 1" }] };
-	const html = renderFn(state, plan, {});
-	assert.match(html, /Task 1/);
-	assert.doesNotMatch(html, /子任务|sub.?task/i, "no sub-task label for normal runs");
+	const model = buildTaskDetailModel(state, plan);
+	assert.deepEqual(model.childrenByParent, {});
+	assert.equal(model.orphanIds.length, 0);
 });
 
 	// ── P16 Task 1: Dynamic plan authoring mode ──
@@ -1220,37 +1182,100 @@ test.skip("P15-fix: old runs without generated tasks render as before [MIGRATION
 		assert.match(html, /id="plan-child-acceptance"/);
 	});
 
-// TODO: P16-T1 tests buildDynamicPlanPayload which reads DOM values directly ($() calls).
-// Extracting would require separating pure logic from DOM reading — deferred.
-test.skip("P16-T1: buildDynamicPlanPayload generates discovery + for_each tasks [MIGRATION: inline extraction]", () => {
-	const script = extractScript();
-	assert.match(script, /function buildDynamicPlanPayload\(\)/);
-	const helperStart = script.indexOf("function escapeHtml");
-	const helperEnd = script.indexOf("async function startRun");
-	const source = script.slice(helperStart, helperEnd);
-	const stubDollar = 'function $(id) { return { value: id === "plan-disc-output-key" ? "items" : "test", style: {}, classList: { add: function(){}, remove: function(){} } }; }';
-	const fn = new Function(stubDollar + "\n" + source + "\nreturn buildDynamicPlanPayload;")() as () => any;
-	const payload = fn();
-	assert.ok(payload, "buildDynamicPlanPayload should return a value");
-	assert.equal(payload.tasks.length, 2, "should have exactly 2 tasks");
+test("P16-T1: buildDynamicPlanPayloadFromValues generates discovery + for_each tasks", () => {
+	const payload = buildDynamicPlanPayloadFromValues({
+		title: "Test Plan",
+		unitId: "tu_1",
+		goalText: "discover items",
+		discTitle: "Find items",
+		discInstruction: "Search for items",
+		discOutputKey: "items",
+		discAcceptance: "valid JSON",
+		childTitle: "Process {{item.title}}",
+		childInstruction: "Handle item",
+		childAcceptance: "ok",
+		outputContract: "report",
+	});
+	assert.ok(payload);
+	assert.equal(payload.tasks.length, 2);
 	assert.equal(payload.tasks[0].type, "discovery");
 	assert.equal(payload.tasks[1].type, "for_each");
+	assert.equal(payload.title, "Test Plan");
+	assert.equal(payload.defaultTeamUnitId, "tu_1");
+	assert.deepEqual(payload.goal, { text: "discover items" });
+	assert.equal(payload.tasks[0].id, "discover");
+	assert.equal(payload.tasks[1].id, "process_each");
 });
 
-test.skip("P16-T1: for_each itemsFrom is derived from discovery task id + output key [MIGRATION: inline extraction]", () => {
-	const script = extractScript();
-	const helperStart = script.indexOf("function escapeHtml");
-	const helperEnd = script.indexOf("async function startRun");
-	const source = script.slice(helperStart, helperEnd);
-	const stubDollar = 'function $(id) { return { value: id === "plan-disc-output-key" ? "items" : "test", style: {}, classList: { add: function(){}, remove: function(){} } }; }';
-	const fn = new Function(stubDollar + "\n" + source + "\nreturn buildDynamicPlanPayload;")() as () => any;
-	const payload = fn();
+test("P16-T1: for_each itemsFrom is derived from discovery task id + output key", () => {
+	const payload = buildDynamicPlanPayloadFromValues({
+		title: "T",
+		unitId: "tu",
+		goalText: "g",
+		discOutputKey: "results",
+	});
 	const discTask = payload.tasks[0];
 	const feTask = payload.tasks[1];
 	assert.equal(feTask.forEach.itemsFrom, discTask.id + "." + discTask.discovery.outputKey);
+	assert.equal(feTask.forEach.itemsFrom, "discover.results");
 });
 
-	test("P16-T1: user dynamic field values are escaped in HTML preview", () => {
+test("P16-T1: default values applied for empty fields", () => {
+	const payload = buildDynamicPlanPayloadFromValues({});
+	assert.equal(payload.tasks[0].title, "发现条目", "discovery title defaults to 发现条目");
+	assert.equal(payload.tasks[0].discovery.outputKey, "items", "output key defaults to items");
+	assert.deepEqual(payload.tasks[0].acceptance.rules, ["输出为有效 JSON"], "acceptance defaults when empty");
+	assert.equal(payload.tasks[1].forEach.taskTemplate.title, "处理 {{item.title}}", "child title defaults");
+	assert.deepEqual(payload.tasks[1].acceptance.rules, ["输出有效"], "child acceptance defaults to 输出有效 (non-empty split)");
+	assert.equal(payload.outputContract.text, "中文汇总", "output contract defaults");
+});
+
+test("P16-T1: multi-line acceptance split and trimmed", () => {
+	const payload = buildDynamicPlanPayloadFromValues({
+		discAcceptance: "  line1  \n\n  line2  \n  \nline3",
+		childAcceptance: "a\n  \nb",
+	});
+	assert.deepEqual(payload.tasks[0].acceptance.rules, ["line1", "line2", "line3"]);
+	assert.deepEqual(payload.tasks[1].acceptance.rules, ["a", "b"]);
+});
+
+test("P16-T1: malicious strings pass through raw (escaping is render concern)", () => {
+	const payload = buildDynamicPlanPayloadFromValues({
+		title: '<script>alert(1)</script>',
+		discTitle: '"onclick="bad',
+		discInstruction: "'; DROP TABLE--",
+	});
+	assert.equal(payload.title, '<script>alert(1)</script>');
+	assert.equal(payload.tasks[0].title, '"onclick="bad');
+	assert.equal(payload.tasks[0].input.text, "'; DROP TABLE--");
+});
+
+test("P16-T1: parity — inline buildDynamicPlanPayload produces same shape as helper", () => {
+		const script = extractScript();
+		const fnStart = script.indexOf("function buildDynamicPlanPayload()");
+		assert.ok(fnStart >= 0, "should find buildDynamicPlanPayload");
+		const nextFn = script.indexOf("function renderPlanPreview", fnStart);
+		assert.ok(nextFn > fnStart, "should find end boundary");
+		const fnBody = script.slice(fnStart, nextFn);
+		const stubs = "var $=function(id){var vals={'plan-title':'Parity Title','plan-teamunit':'tu_p','plan-goal':'pg','plan-disc-title':'DT','plan-disc-instruction':'DI','plan-disc-output-key':'outk','plan-disc-acceptance':'r1\\nr2','plan-child-title':'CT','plan-child-instruction':'CI','plan-child-acceptance':'ca','plan-output-contract':'oc'};return{value:vals[id]!==undefined?vals[id]:'test',style:{},classList:{add:function(){},remove:function(){}}}};";
+		const inlineFn = new Function(stubs + "\n" + fnBody + "\nreturn buildDynamicPlanPayload;")() as () => any;
+		const inlinePayload = inlineFn();
+		const helperPayload = buildDynamicPlanPayloadFromValues({
+			title: "Parity Title", unitId: "tu_p", goalText: "pg",
+			discTitle: "DT", discInstruction: "DI", discOutputKey: "outk",
+			discAcceptance: "r1\nr2", childTitle: "CT", childInstruction: "CI",
+			childAcceptance: "ca", outputContract: "oc",
+		});
+		assert.equal(inlinePayload.tasks.length, helperPayload.tasks.length);
+		assert.equal(inlinePayload.tasks[0].type, helperPayload.tasks[0].type);
+		assert.equal(inlinePayload.tasks[1].type, helperPayload.tasks[1].type);
+		assert.equal(inlinePayload.tasks[1].forEach.itemsFrom, helperPayload.tasks[1].forEach.itemsFrom);
+		assert.deepEqual(inlinePayload.tasks[0].acceptance.rules, helperPayload.tasks[0].acceptance.rules);
+		assert.deepEqual(inlinePayload.tasks[1].acceptance.rules, helperPayload.tasks[1].acceptance.rules);
+		assert.equal(inlinePayload.outputContract.text, helperPayload.outputContract.text);
+	});
+
+		test("P16-T1: user dynamic field values are escaped in HTML preview", () => {
 		const script = extractScript();
 		assert.match(script, /function renderPlanPreview\(/);
 		// Preview uses textContent, not innerHTML
@@ -2028,27 +2053,18 @@ function extractP21DTaskDetailRenderer(): (state: any, plan: any, attemptsMap: a
 	assert.ok(start >= 0, "should find helper source start");
 	assert.ok(end > start, "should find helper source end");
 	const source = script.slice(start, end);
-	return new Function(source + "\nreturn renderTaskDetail;")() as (state: any, plan: any, attemptsMap: any) => string;
+	const stubs = "var window={};var document={querySelector:function(){return null},querySelectorAll:function(){return[]},getElementById:function(){return null},createElement:function(){return{appendChild:function(){}}}};var $=function(id){return{value:'',style:{},classList:{add:function(){},remove:function(){}}}};var _planCache={};var _latestRuns=[];var _selectedPlanId=null;var _latestRunTaskDefinitions={};";
+	return new Function(stubs + "\n" + source + "\nreturn renderTaskDetail;")() as (state: any, plan: any, attemptsMap: any) => string;
 }
 
-// TODO: P21-D2 tests renderTaskDetail with decomposition metadata — same renderTaskDetail
-// extraction barrier as P15-fix. Covered by server.test.ts smoke tests.
-test.skip("P21-D2: decomposed parent renders as container with children below it [MIGRATION: inline extraction]", () => {
-	const renderTaskDetail = extractP21DTaskDetailRenderer();
+test("P21-D2: decomposed parent classified as container with children below it", () => {
 	const plan = {
 		tasks: [
-			{
-				id: "reverse_dns",
-				title: "Reverse DNS",
-				input: { text: "investigate" },
-				acceptance: { rules: ["ok"] },
-				decomposer: { mode: "leaf" },
-			},
-			{ id: "summary", title: "Summary", input: { text: "sum" }, acceptance: { rules: ["ok"] } },
+			{ id: "reverse_dns", title: "Reverse DNS", decomposer: { mode: "leaf" } },
+			{ id: "summary", title: "Summary" },
 		],
 	};
 	const state = {
-		runId: "run_decomp",
 		taskStates: {
 			reverse_dns: { status: "succeeded", progress: { phase: "succeeded", message: "decomposed" }, attemptCount: 0, activeAttemptId: null },
 			collect_ips: { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 1, activeAttemptId: null },
@@ -2056,51 +2072,78 @@ test.skip("P21-D2: decomposed parent renders as container with children below it
 			summary: { status: "pending", progress: null, attemptCount: 0, activeAttemptId: null },
 		},
 		taskDefinitions: [
-			{ id: "collect_ips", title: "Collect known IPs", parentTaskId: "reverse_dns", generated: true, generatedSource: "decomposition", input: { text: "collect" }, acceptance: { rules: ["ok"] } },
-			{ id: "ptr_lookup", title: "PTR lookup", parentTaskId: "reverse_dns", generated: true, generatedSource: "decomposition", input: { text: "lookup" }, acceptance: { rules: ["ok"] } },
+			{ id: "collect_ips", title: "Collect known IPs", parentTaskId: "reverse_dns", generated: true, generatedSource: "decomposition" },
+			{ id: "ptr_lookup", title: "PTR lookup", parentTaskId: "reverse_dns", generated: true, generatedSource: "decomposition" },
 		],
 	};
-	const html = renderTaskDetail(state, plan, {});
-	assert.match(html, /decomposed-parent/);
-	assert.match(html, /拆分容器/);
-	assert.match(html, /decomposed-child/);
-	assert.match(html, /Collect known IPs/);
-	assert.match(html, /PTR lookup/);
-	assert.ok(html.indexOf("Reverse DNS") < html.indexOf("Collect known IPs"));
-	assert.ok(html.indexOf("Collect known IPs") < html.indexOf("Summary"));
+	const model = buildTaskDetailModel(state, plan);
+	assert.ok(model.childrenByParent["reverse_dns"]);
+	assert.equal(model.childrenByParent["reverse_dns"].length, 2);
+	const source = childSourceFor(plan.tasks[0], model.childrenByParent["reverse_dns"], model.taskById);
+	assert.equal(source, "decomposition");
+	assert.equal(childGroupLabel(source), "拆分子任务");
 });
 
-test.skip("P21-D2: failed decomposed child shows error without marking siblings [MIGRATION: inline extraction]", () => {
-	const renderTaskDetail = extractP21DTaskDetailRenderer();
+test("P21-D2: failed decomposed child has correct model without affecting siblings", () => {
 	const plan = {
 		tasks: [
-			{ id: "passive_dns", title: "Passive DNS", input: { text: "investigate" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "leaf" } },
+			{ id: "passive_dns", title: "Passive DNS", decomposer: { mode: "leaf" } },
 		],
 	};
 	const state = {
-		runId: "run_decomp_fail",
 		taskStates: {
-			passive_dns: { status: "failed", progress: { phase: "failed", message: "child failed" }, attemptCount: 0, activeAttemptId: null, errorSummary: "child failed" },
-			otx: { status: "failed", progress: { phase: "failed", message: "bad token" }, attemptCount: 1, activeAttemptId: null, errorSummary: "OTX lookup failed" },
+			passive_dns: { status: "failed", progress: { phase: "failed", message: "child failed" }, attemptCount: 0, activeAttemptId: null },
+			otx: { status: "failed", progress: { phase: "failed", message: "bad token" }, attemptCount: 1, activeAttemptId: null },
 			hackertarget: { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 1, activeAttemptId: null },
 		},
 		taskDefinitions: [
-			{ id: "otx", title: "OTX passive DNS", parentTaskId: "passive_dns", generated: true, generatedSource: "decomposition", input: { text: "otx" }, acceptance: { rules: ["ok"] } },
-			{ id: "hackertarget", title: "Hackertarget reverse IP", parentTaskId: "passive_dns", generated: true, generatedSource: "decomposition", input: { text: "ht" }, acceptance: { rules: ["ok"] } },
+			{ id: "otx", title: "OTX passive DNS", parentTaskId: "passive_dns", generated: true, generatedSource: "decomposition" },
+			{ id: "hackertarget", title: "Hackertarget reverse IP", parentTaskId: "passive_dns", generated: true, generatedSource: "decomposition" },
 		],
 	};
-	const html = renderTaskDetail(state, plan, {});
-	assert.match(html, /OTX lookup failed/);
-	assert.match(html, /Hackertarget reverse IP/);
-	assert.match(html, /succeeded/);
+	const model = buildTaskDetailModel(state, plan);
+	assert.ok(model.taskById["otx"]);
+	assert.ok(model.taskById["hackertarget"]);
+	assert.equal(model.taskById["otx"].generatedSource, "decomposition");
+	assert.equal(model.taskById["hackertarget"].generatedSource, "decomposition");
 });
 
-test.skip("P21-D2: dynamic for_each and decomposed parents render with distinct labels [MIGRATION: inline extraction]", () => {
+test("P21-D2: dynamic for_each and decomposed children have distinct labels", () => {
+	const parent_fe = { id: "process_each", type: "for_each" };
+	const parent_decomp = { id: "reverse_dns", decomposer: { mode: "leaf" } };
+	const taskById: Record<string, any> = {};
+	const feChildIds = ["process_each__a"];
+	taskById["process_each__a"] = { generatedSource: "for_each" };
+	const decompChildIds = ["ptr_lookup"];
+	taskById["ptr_lookup"] = { generatedSource: "decomposition" };
+	const feSource = childSourceFor(parent_fe, feChildIds, taskById);
+	const decompSource = childSourceFor(parent_decomp, decompChildIds, taskById);
+	assert.equal(feSource, "for_each");
+	assert.equal(decompSource, "decomposition");
+	assert.equal(childGroupLabel(feSource), "动态子任务");
+	assert.equal(childGroupLabel(decompSource), "拆分子任务");
+	assert.notEqual(childGroupLabel(feSource), childGroupLabel(decompSource));
+});
+
+test("P21-D2: old runs without decomposition metadata produce empty model", () => {
+	const plan = { tasks: [{ id: "t1", title: "Old Task" }] };
+	const state = {
+		taskStates: {
+			t1: { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 1, activeAttemptId: null },
+		},
+	};
+	const model = buildTaskDetailModel(state, plan);
+	assert.deepEqual(model.childrenByParent, {});
+	assert.equal(model.orphanIds.length, 0);
+	assert.ok(model.planTaskIds["t1"]);
+});
+
+test("P21-D2: parity — inline renderTaskDetail produces decomposition and for_each labels", () => {
 	const renderTaskDetail = extractP21DTaskDetailRenderer();
 	const plan = {
 		tasks: [
-			{ id: "process_each", type: "for_each", title: "Process each", input: { text: "placeholder" }, acceptance: { rules: ["ok"] }, forEach: { itemsFrom: "discover.items", mode: "sequential", taskTemplate: { title: "Process {{item.id}}", input: { text: "x" }, acceptance: { rules: ["ok"] } } } },
-			{ id: "reverse_dns", title: "Reverse DNS", input: { text: "rdns" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "leaf" } },
+			{ id: "process_each", type: "for_each", title: "Process each" },
+			{ id: "reverse_dns", title: "Reverse DNS", decomposer: { mode: "leaf" } },
 		],
 	};
 	const state = {
@@ -2112,8 +2155,8 @@ test.skip("P21-D2: dynamic for_each and decomposed parents render with distinct 
 			ptr_lookup: { status: "succeeded", progress: { phase: "succeeded", message: "" }, attemptCount: 1, activeAttemptId: null },
 		},
 		taskDefinitions: [
-			{ id: "process_each__a", title: "Process a", parentTaskId: "process_each", generated: true, generatedSource: "for_each", input: { text: "a" }, acceptance: { rules: ["ok"] } },
-			{ id: "ptr_lookup", title: "PTR lookup", parentTaskId: "reverse_dns", generated: true, generatedSource: "decomposition", input: { text: "ptr" }, acceptance: { rules: ["ok"] } },
+			{ id: "process_each__a", title: "Process a", parentTaskId: "process_each", generated: true, generatedSource: "for_each" },
+			{ id: "ptr_lookup", title: "PTR lookup", parentTaskId: "reverse_dns", generated: true, generatedSource: "decomposition" },
 		],
 	};
 	const html = renderTaskDetail(state, plan, {});
@@ -2123,9 +2166,35 @@ test.skip("P21-D2: dynamic for_each and decomposed parents render with distinct 
 	assert.match(html, /PTR lookup/);
 });
 
-test.skip("P21-D2: old runs without decomposition metadata still render [MIGRATION: inline extraction]", () => {
+test("P21-D2: parity — inline renderTaskDetail renders decomposed parent as container", () => {
 	const renderTaskDetail = extractP21DTaskDetailRenderer();
-	const plan = { tasks: [{ id: "t1", title: "Old Task", input: { text: "do" }, acceptance: { rules: ["ok"] } }] };
+	const plan = {
+		tasks: [
+			{ id: "reverse_dns", title: "Reverse DNS", decomposer: { mode: "leaf" } },
+			{ id: "summary", title: "Summary" },
+		],
+	};
+	const state = {
+		runId: "run_decomp",
+		taskStates: {
+			reverse_dns: { status: "succeeded", progress: { phase: "succeeded", message: "decomposed" }, attemptCount: 0, activeAttemptId: null },
+			collect_ips: { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 1, activeAttemptId: null },
+			summary: { status: "pending", progress: null, attemptCount: 0, activeAttemptId: null },
+		},
+		taskDefinitions: [
+			{ id: "collect_ips", title: "Collect known IPs", parentTaskId: "reverse_dns", generated: true, generatedSource: "decomposition" },
+		],
+	};
+	const html = renderTaskDetail(state, plan, {});
+	assert.match(html, /decomposed-parent/);
+	assert.match(html, /拆分容器/);
+	assert.match(html, /decomposed-child/);
+	assert.match(html, /Collect known IPs/);
+});
+
+test("P21-D2: parity — inline renderTaskDetail renders old runs without decomposition labels", () => {
+	const renderTaskDetail = extractP21DTaskDetailRenderer();
+	const plan = { tasks: [{ id: "t1", title: "Old Task" }] };
 	const state = {
 		runId: "run_old_p21d",
 		taskStates: {

@@ -265,3 +265,143 @@ export function renderPlanRunCard(run: any, plan: any): string {
 	html += '</div>';
 	return html;
 }
+
+export function splitAcceptanceLines(text: string): string[] {
+	if (!text) return [];
+	return text.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l; });
+}
+
+export interface DynamicPlanValues {
+	title: string;
+	unitId: string;
+	goalText: string;
+	discTitle: string;
+	discInstruction: string;
+	discOutputKey: string;
+	discAcceptance: string;
+	childTitle: string;
+	childInstruction: string;
+	childAcceptance: string;
+	outputContract: string;
+}
+
+export function buildDynamicPlanPayloadFromValues(v: Partial<DynamicPlanValues>) {
+	var title = v.title || '';
+	var unitId = v.unitId || '';
+	var goalText = v.goalText || '';
+	var discTitle = v.discTitle || '发现条目';
+	var discInstruction = v.discInstruction || goalText;
+	var discOutputKey = v.discOutputKey || 'items';
+	var discAccText = v.discAcceptance || '输出为有效 JSON';
+	var discRules = splitAcceptanceLines(discAccText);
+	var childTitleTmpl = v.childTitle || '处理 {{item.title}}';
+	var childInstrTmpl = v.childInstruction || '处理条目 {{item.id}}';
+	var childAccText = v.childAcceptance || '输出有效';
+	var childRules = splitAcceptanceLines(childAccText);
+	var outputContract = v.outputContract || '中文汇总';
+	var discTaskId = 'discover';
+	return {
+		title: title,
+		defaultTeamUnitId: unitId,
+		goal: { text: goalText },
+		tasks: [
+			{
+				id: discTaskId,
+				type: 'discovery',
+				title: discTitle,
+				input: { text: discInstruction },
+				acceptance: { rules: discRules.length ? discRules : ['输出为有效 JSON'] },
+				discovery: { outputKey: discOutputKey },
+			},
+			{
+				id: 'process_each',
+				type: 'for_each',
+				title: '逐项处理',
+				input: { text: 'Placeholder' },
+				acceptance: { rules: childRules.length ? childRules : ['ok'] },
+				forEach: {
+					itemsFrom: discTaskId + '.' + discOutputKey,
+					mode: 'sequential',
+					taskTemplate: {
+						title: childTitleTmpl,
+						input: { text: childInstrTmpl },
+						acceptance: { rules: childRules.length ? childRules : ['ok'] },
+					},
+				},
+			},
+		],
+		outputContract: { text: outputContract },
+	};
+}
+
+export interface TaskDetailModel {
+	planTaskIds: Record<string, boolean>;
+	taskById: Record<string, any>;
+	childrenByParent: Record<string, string[]>;
+	orphanIds: string[];
+}
+
+export function buildTaskDetailModel(state: any, plan: any): TaskDetailModel {
+	var generatedTasks: any[] = [];
+	if (Array.isArray(state.taskDefinitions)) generatedTasks = generatedTasks.concat(state.taskDefinitions);
+	if (!generatedTasks.length && Array.isArray(state.generatedTasks)) generatedTasks = generatedTasks.concat(state.generatedTasks);
+	if (Array.isArray(state.tasks)) generatedTasks = generatedTasks.concat(state.tasks.filter(function(t: any) { return t && t.generated; }));
+	var planIdSet: Record<string, boolean> = {};
+	var taskById: Record<string, any> = {};
+	var planTasks = (plan && plan.tasks) || [];
+	planTasks.forEach(function(t: any) { planIdSet[t.id] = true; taskById[t.id] = t; });
+	generatedTasks.forEach(function(t: any) { if (t && t.id) taskById[t.id] = t; });
+	var childrenByParent: Record<string, string[]> = {};
+	generatedTasks.forEach(function(t: any) {
+		if (!t || !t.id || !t.parentTaskId) return;
+		if (!childrenByParent[t.parentTaskId]) childrenByParent[t.parentTaskId] = [];
+		if (childrenByParent[t.parentTaskId].indexOf(t.id) === -1) childrenByParent[t.parentTaskId].push(t.id);
+	});
+	var renderedTaskIds: Record<string, boolean> = {};
+	var orphanIds: string[] = [];
+	Object.keys(state.taskStates || {}).forEach(function(id: string) {
+		if (planIdSet[id]) return;
+		if (renderedTaskIds[id]) return;
+		planTasks.forEach(function(parent: any) {
+			if (id.indexOf(parent.id + '__') === 0) {
+				if (!childrenByParent[parent.id]) childrenByParent[parent.id] = [];
+				if (childrenByParent[parent.id].indexOf(id) === -1) childrenByParent[parent.id].push(id);
+				if (!taskById[id]) taskById[id] = { id: id, title: id, parentTaskId: parent.id, generated: true };
+				renderedTaskIds[id] = true;
+			}
+		});
+	});
+	Object.keys(state.taskStates || {}).forEach(function(id: string) {
+		if (!planIdSet[id] && !renderedTaskIds[id]) orphanIds.push(id);
+	});
+	return { planTaskIds: planIdSet, taskById: taskById, childrenByParent: childrenByParent, orphanIds: orphanIds };
+}
+
+export function childSourceFor(parent: any, childIds: string[], taskById: Record<string, any>): string {
+	if (parent && parent.type === 'for_each') return 'for_each';
+	for (var i = 0; i < childIds.length; i++) {
+		var child = taskById[childIds[i]];
+		if (child && child.generatedSource) return child.generatedSource;
+	}
+	if (taskDecomposerMode(parent) !== 'none') return 'decomposition';
+	return 'unknown';
+}
+
+export function childGroupLabel(source: string): string {
+	if (source === 'for_each') return '动态子任务';
+	if (source === 'decomposition') return '拆分子任务';
+	return '子任务';
+}
+
+export function renderRuntimeContextHelper(role: string, ctx: any): string {
+	if (!ctx) return '';
+	var summary = escapeHtml(role) + ': ' + escapeHtml(ctx.requestedProfileId) + ' → ' + escapeHtml(ctx.resolvedProfileId) + ' | browser: ' + escapeHtml(ctx.browserId == null ? 'none' : ctx.browserId) + ' | scope: ' + escapeHtml(ctx.browserScope);
+	if (ctx.fallbackUsed) summary += ' (fallback' + (ctx.fallbackReason ? ': ' + escapeHtml(ctx.fallbackReason) : '') + ')';
+	var detailParts = [
+		'<span>' + escapeHtml(role) + ': ' + escapeHtml(ctx.requestedProfileId) + ' → ' + escapeHtml(ctx.resolvedProfileId) + '</span>',
+		'<span>browser: ' + escapeHtml(ctx.browserId == null ? 'none' : ctx.browserId) + '</span>',
+		'<span>scope: ' + escapeHtml(ctx.browserScope) + '</span>',
+	];
+	if (ctx.fallbackUsed) detailParts.push('<span class="runtime-context-fallback">fallback' + (ctx.fallbackReason ? ': ' + escapeHtml(ctx.fallbackReason) : '') + '</span>');
+	return '<details class="runtime-context-wrap"><summary>' + summary + '</summary><div class="runtime-context runtime-context-detail">' + detailParts.join('') + '</div></details>';
+}

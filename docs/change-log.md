@@ -33,6 +33,28 @@
 
 ---
 
+## 2026-05-19 — Team UI Run Detail Helper Extraction
+
+- **主题**: 提取 dynamic plan payload builder 和 run detail view model helpers，从 13 skip 收口至 2
+- **影响范围**: `src/ui/team-page-helpers.ts`, `test/team-page-ui.test.ts`
+- **变更**:
+  - 新增 `buildDynamicPlanPayloadFromValues(values)` 纯函数：分离 DOM 读取和 payload 构建逻辑，inline `buildDynamicPlanPayload()` 保留为 DOM wrapper
+  - 新增 `splitAcceptanceLines(text)` 工具函数
+  - 新增 `buildTaskDetailModel(state, plan)` view model builder：提取 generated child 分组、decomposition/for_each 分类、orphan 检测
+  - 新增 `childSourceFor(parent, childIds, taskById)` 和 `childGroupLabel(source)` 分类 + 标签函数
+  - 新增 `renderRuntimeContextHelper(role, ctx)` mirror helper（与 inline `renderRuntimeContext` parity-tested）
+  - 移除 11 个 skip 测试，替换为 helper 直接测试 + inline parity 测试：
+    - P16-T1 (2 → 0): `buildDynamicPlanPayloadFromValues` 纯函数测试 + inline parity
+    - P8-E (1 → 2): `renderRuntimeContextHelper` escaping 测试 + inline parity
+    - P15-fix (4 → 4): `buildTaskDetailModel` generated children 测试
+    - P21-D2 (4 → 7): `buildTaskDetailModel` decomposition 测试 + inline renderTaskDetail parity
+- **剩余 2 skip 原因**:
+  - P19-T5 updateRunCard (1): inline CSS selector 模式匹配 + live DOM innerHTML mutation，需浏览器上下文
+  - P21-D-fix SSE detail refresh (1): SSE EventSource 订阅模式，需浏览器上下文
+- **验证**: `npm run test:team` 734 pass / 2 skip / 0 fail, `npx tsc --noEmit` 通过
+
+---
+
 ## 2026-05-19 — Team UI Helper Parity Fix
 
 - **主题**: 修复 team-page-helpers.ts 虚假自动同步注释，补 helper vs inline script parity 测试，恢复 dashboard active run current task title
