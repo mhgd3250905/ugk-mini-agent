@@ -193,45 +193,56 @@ test("cancelRun triggers abort on active runner", async () => {
 	}
 });
 
-test.skip("external AbortSignal aborts in-flight run [MIGRATION: timing on Windows]", async () => {
-	const root = await mkdtemp(join(tmpdir(), "team-ctrl-"));
-	try {
-		let workerSignal: AbortSignal | undefined;
-		class SignalCapturingRunner extends MockRoleRunner {
-			override async runWorker(input: import("../src/team/role-runner.js").WorkerInput) {
-				workerSignal = input.signal;
-				return super.runWorker(input);
+test("external AbortSignal aborts in-flight run", async () => {
+		const root = await mkdtemp(join(tmpdir(), "team-ext-abort-"));
+		try {
+			let workerSignal: AbortSignal | undefined;
+			let workerReadyResolve: () => void;
+			const workerReady = new Promise<void>(r => { workerReadyResolve = r; });
+
+			class HangingSignalRunner extends MockRoleRunner {
+				override async runWorker(input: import("../src/team/role-runner.js").WorkerInput) {
+					workerSignal = input.signal;
+					workerReadyResolve!();
+					if (input.signal) {
+						await new Promise<never>((_, reject) => {
+							if (input.signal!.aborted) { reject(new Error("aborted")); return; }
+							input.signal!.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+						});
+					}
+					return super.runWorker(input);
+				}
 			}
+			const planStore = new PlanStore(root);
+			const unitStore = new TeamUnitStore(root);
+			const workspace = new RunWorkspace(root);
+			const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+			const plan = await planStore.create({
+				title: "external abort test",
+				defaultTeamUnitId: unit.teamUnitId,
+				goal: { text: "test" },
+				tasks: [{ id: "task_1", title: "t1", input: { text: "do 1" }, acceptance: { rules: ["r1"] } }],
+				outputContract: { text: "output" },
+			});
+			const runner = new HangingSignalRunner();
+			const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+
+			const state = await orchestrator.createRun(plan.planId);
+			const externalAbort = new AbortController();
+			const runPromise = orchestrator.runToCompletion(state.runId, { signal: externalAbort.signal });
+
+			// Wait until worker has received and registered the signal
+			await workerReady;
+			externalAbort.abort(new Error("external cancel"));
+
+			const final = await runPromise;
+			assert.equal(final.status, "failed", "run should be failed after external abort");
+			assert.ok(workerSignal, "worker should have received a signal");
+			assert.equal(workerSignal!.aborted, true, "worker signal should be aborted");
+		} finally {
+			await rm(root, { recursive: true });
 		}
-		const planStore = new PlanStore(root);
-		const unitStore = new TeamUnitStore(root);
-		const workspace = new RunWorkspace(root);
-		const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
-		const plan = await planStore.create({
-			title: "external cancel test",
-			defaultTeamUnitId: unit.teamUnitId,
-			goal: { text: "test" },
-			tasks: [{ id: "task_1", title: "t1", input: { text: "do 1" }, acceptance: { rules: ["r1"] } }],
-			outputContract: { text: "output" },
-		});
-		const runner = new SignalCapturingRunner();
-		const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
-
-		const state = await orchestrator.createRun(plan.planId);
-
-		const externalAbort = new AbortController();
-		const runPromise = orchestrator.runToCompletion(state.runId, { signal: externalAbort.signal });
-
-		await new Promise(r => setTimeout(r, 50));
-		externalAbort.abort(new Error("external cancel"));
-
-		const final = await runPromise;
-		assert.equal(final.status, "failed");
-		assert.ok(workerSignal, "worker should have received a signal");
-	} finally {
-		await rm(root, { recursive: true });
-	}
-});
+	})
 
 test("pauseRun triggers abort on active runner", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-ctrl-"));
