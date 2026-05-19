@@ -1582,29 +1582,11 @@ export class TeamOrchestrator {
 				}
 			}
 
-			this.recomputeSummary(state);
+			state.summary = computeTeamRunSummary(state.taskStates);
 			state.updatedAt = now();
 			await this.workspace.saveState(state);
 		}
 
-		private recomputeSummary(state: TeamRunState): void {
-			let succeeded = 0, failed = 0, cancelled = 0, skipped = 0;
-			for (const ts of Object.values(state.taskStates)) {
-				switch (ts.status) {
-					case "succeeded": succeeded++; break;
-					case "failed": failed++; break;
-					case "cancelled": cancelled++; break;
-					case "skipped": skipped++; break;
-				}
-			}
-			state.summary = {
-				totalTasks: state.summary.totalTasks,
-				succeededTasks: succeeded,
-				failedTasks: failed,
-				cancelledTasks: cancelled,
-				skippedTasks: skipped,
-			};
-		}
 
 		private async executeExpandedChildren(
 			state: TeamRunState,
