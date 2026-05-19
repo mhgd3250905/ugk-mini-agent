@@ -146,6 +146,29 @@ test("Plan delete unused succeeds", async () => {
 	}
 });
 
+test("Plan delete with existing runs succeeds (cee24fe)", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+		const planRes = await app.inject({ method: "POST", url: "/v1/team/plans", payload: planBody(unitRes.json().teamUnitId) });
+		const planId = planRes.json().planId;
+
+		const runRes = await app.inject({ method: "POST", url: `/v1/team/plans/${planId}/runs` });
+		const runId = runRes.json().runId;
+
+		const delRes = await app.inject({ method: "DELETE", url: `/v1/team/plans/${planId}` });
+		assert.equal(delRes.statusCode, 204);
+
+		const runDetailRes = await app.inject({ method: "GET", url: `/v1/team/runs/${runId}` });
+		assert.equal(runDetailRes.statusCode, 200);
+		assert.equal(runDetailRes.json().runId, runId);
+
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch { /* concurrent write */ }
+	}
+});
+
 test("POST /v1/team/plans/:planId/runs creates run", async () => {
 	const { app, root } = await buildTestServer();
 	try {

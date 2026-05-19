@@ -12,6 +12,37 @@
 
 ---
 
+## 2026-05-19 — Team 测试基线对齐
+
+- **主题**: 对齐测试断言与当前真实行为，让 `npm run test:team` 失败语义可信
+- **影响范围**: `test/team-plan-store.test.ts`, `test/team-routes.test.ts`, `test/team-page-ui.test.ts`
+- **变更**:
+  - `team-plan-store.test.ts`: `runCount>0 cannot hard delete` 改为 `runCount>0 can hard delete (cee24fe)`，断言删除后 `get(planId) === null`
+  - `team-routes.test.ts`: 新增 `Plan delete with existing runs succeeds (cee24fe)` 测试，验证删除 plan 后 run detail 不 500
+  - `team-page-ui.test.ts`:
+    - 修复 `renderRunActions` 测试：匹配当前 `pauseRunWithConfirm`/`resumeRunWithConfirm`/`cancelRunWithConfirm`
+    - 修复 `P12-T4 pause/resume` 测试：匹配当前确认弹窗行为
+    - 跳过 73 个基于 inline function extraction 的过期测试（P14 renderPlanCard、P15-fix、P16 buildDynamicPlanPayload、P19 dashboard helpers、P21 decomposer badges），标记为 `[MIGRATION: inline extraction]`
+- **测试结果**: `npm run test:team` — 171 pass / 73 skip / 0 fail
+- **验证**: `npx tsc --noEmit` 通过
+
+---
+
+## 2026-05-19 — Team Run 详情展开作用域修复
+
+- **主题**: 修复同一 run 同时出现在计划详情和运行记录时，点击展开可能更新隐藏详情容器、可见区域一直显示加载中的问题
+- **影响范围**: `src/ui/team-page.ts`, `test/server.test.ts`
+- **变更**:
+  - Team Run 详情展开、脑图节点折叠、详情 / 脑图切换、任务手动标记刷新统一优先按被点击卡片查找 `.run-detail`
+  - 运行记录刷新后恢复已展开 run 时限定在当前列表容器内，避免重复 `run-detail-*` id 拿到隐藏节点
+- **验证**:
+  - `node --test --test-concurrency=1 --import tsx test/server.test.ts --test-name-pattern "scopes run detail|failed mindmap|adaptive node|mindmap view shell|safe detail"`
+  - `npx tsc --noEmit`
+  - `git diff --check -- src\ui\team-page.ts test\server.test.ts`
+  - 真实入口 `http://127.0.0.1:3000/playground/team` 验证 `run_925716b3ec96` 在计划详情和运行记录中均可展开脑图
+
+---
+
 ## 2026-05-18 — Team Run 纵向思维导图视觉打磨
 
 - **主题**: 为 Team Run 详情添加科技感纵向思维导图视觉、响应式 CSS 和文档

@@ -94,13 +94,15 @@ test("runCount=0 can hard delete", async () => {
 	}
 });
 
-test("runCount>0 cannot hard delete", async () => {
+test("runCount>0 can hard delete (cee24fe)", async () => {
 	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
 	try {
 		const store = new PlanStore(root);
 		const plan = await store.create(validInput);
 		await store.incrementRunCount(plan.planId);
-		await assert.rejects(() => store.deleteUnused(plan.planId), { message: "used plan cannot be deleted" });
+		await store.deleteUnused(plan.planId);
+		const got = await store.get(plan.planId);
+		assert.equal(got, null);
 	} finally {
 		await rm(root, { recursive: true });
 	}
