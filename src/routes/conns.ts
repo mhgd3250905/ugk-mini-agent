@@ -25,7 +25,7 @@ import {
 	shouldForceDownload,
 	supportsInlinePreview,
 } from "./file-route-utils.js";
-import { sendBadRequest, sendInternalError } from "./http-errors.js";
+import { sendBadRequest, sendConflict, sendInternalError } from "./http-errors.js";
 import type { BrowserRegistry } from "../browser/browser-registry.js";
 import {
 	normalizeBrowserBindingAuditValue,
@@ -128,6 +128,7 @@ interface ConnRunStoreLike {
 	listEvents(runId: string, options?: ListConnRunEventsOptions): Promise<ConnRunEventRecord[]>;
 	listFiles(runId: string): Promise<ConnRunFileRecord[]>;
 	markRunRead(runId: string): Promise<boolean>;
+	cancelRun?(input: { runId: string; summary: string; text?: string; finishedAt?: Date }): Promise<ConnRunRecord | undefined>;
 	getUnreadCountsByConn(connIds: readonly string[]): Promise<Record<string, number>>;
 	getLatestUnreadTimesByConn?(connIds: readonly string[]): Promise<Record<string, string>>;
 	getTotalUnreadCount(connIds?: readonly string[]): Promise<number>;
@@ -419,6 +420,29 @@ export function registerConnRoutes(app: FastifyInstance, options: ConnRouteOptio
 				totalUnreadRuns: totalUnread,
 			};
 		});
+
+	app.post("/v1/conns/:connId/runs/:runId/cancel", async (request, reply): Promise<ConnRunDetailResponseBody | FastifyReply> => {
+		const { connId, runId } = request.params as { connId: string; runId: string };
+		const run = await options.connRunStore.getRun(runId);
+		if (!run || run.connId !== connId) {
+			return reply.status(404).send();
+		}
+		if (!options.connRunStore.cancelRun) {
+			return sendConflict(reply, "Conn run cancellation is not supported by this store");
+		}
+		if (run.status !== "pending" && run.status !== "running") {
+			return sendConflict(reply, `Conn run is already ${run.status}`);
+		}
+		const cancelled = await options.connRunStore.cancelRun({
+			runId,
+			summary: "Manually cancelled by operator",
+			text: "Manually cancelled by operator",
+		});
+		if (!cancelled) {
+			return sendConflict(reply, "Conn run could not be cancelled");
+		}
+		return { run: toConnRunBody(cancelled) };
+	});
 
 	app.get(
 		"/v1/conns/:connId/runs/:runId/output/*",

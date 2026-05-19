@@ -144,17 +144,20 @@ export class ConnWorker {
 		}
 
 		const heartbeatMs = resolveHeartbeatMs(this.options.heartbeatMs, this.options.leaseMs);
+		let timeoutHandle: NodeJS.Timeout | undefined;
+		let timeoutEventPromise: Promise<void> | undefined;
+		const runController = new AbortController();
 		const heartbeat = startRunHeartbeat({
 			runStore: this.options.runStore,
 			runId: run.runId,
 			workerId: this.options.workerId,
 			leaseMs: this.options.leaseMs,
 			heartbeatMs,
+			onCancelled: (cancelledRun) => {
+				runController.abort(new Error(cancelledRun.resultSummary ?? "Conn run cancelled"));
+			},
 		});
-		let timeoutHandle: NodeJS.Timeout | undefined;
-		let timeoutEventPromise: Promise<void> | undefined;
-		const timeoutController = conn.maxRunMs ? new AbortController() : undefined;
-		if (timeoutController && conn.maxRunMs) {
+		if (conn.maxRunMs) {
 			timeoutHandle = setTimeout(() => {
 				const message = `Conn run exceeded maxRunMs (${conn.maxRunMs}ms)`;
 				timeoutEventPromise = this.options.runStore
@@ -171,17 +174,22 @@ export class ConnWorker {
 					.catch((error) => {
 						console.warn("[conn-worker] run_timed_out event failed:", error);
 					});
-				timeoutController.abort(new Error(message));
+				runController.abort(new Error(message));
 			}, conn.maxRunMs);
 		}
 
 		try {
-			const result = await this.options.runner.run(conn, run, now, timeoutController?.signal);
+			const result = await this.options.runner.run(conn, run, now, runController.signal);
 			await heartbeat.stop();
 			if (timeoutHandle) {
 				clearTimeout(timeoutHandle);
 			}
 			await timeoutEventPromise;
+			const latestRun = await this.options.runStore.getRun(run.runId);
+			if (latestRun?.status === "cancelled") {
+				await this.deliverRunResult(conn, latestRun, resolveRunResultDate(latestRun, new Date()));
+				return;
+			}
 			if (isDeliverableFinalStatus(result?.status)) {
 				await this.deliverRunResult(conn, result, resolveRunResultDate(result, new Date()));
 			}
@@ -327,6 +335,7 @@ function startRunHeartbeat(input: {
 	workerId: string;
 	leaseMs?: number;
 	heartbeatMs: number;
+	onCancelled?: (run: ConnRunRecord) => void;
 }): { stop(): Promise<void> } {
 	let timer: NodeJS.Timeout | undefined;
 	let closed = false;
@@ -337,12 +346,20 @@ function startRunHeartbeat(input: {
 			return;
 		}
 		try {
-			await input.runStore.heartbeatRun({
+			const run = await input.runStore.heartbeatRun({
 				runId: input.runId,
 				workerId: input.workerId,
 				now: new Date(),
 				leaseMs: input.leaseMs,
 			});
+			if (run?.status === "cancelled") {
+				input.onCancelled?.(run);
+				closed = true;
+				if (timer) {
+					clearInterval(timer);
+					timer = undefined;
+				}
+			}
 		} catch (error) {
 			console.warn("[conn-worker] heartbeat failed:", error);
 		}

@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-19 — Conn Run 手动终止
+
+- **主题**: 给后台 conn 运行任务补正式手动终止能力，替代直接修改运行态 SQLite 的救火操作
+- **影响范围**: `src/agent/conn-run-store.ts`, `src/routes/conns.ts`, `src/workers/conn-worker.ts`, `src/ui/conn-page-js.ts`, `src/ui/conn-page-css.ts`, `test/conn-run-store.test.ts`, `test/conn-worker.test.ts`, `test/server.test.ts`
+- **变更**:
+  - 新增 `ConnRunStore.cancelRun()`：仅允许取消 `pending` / `running` run，写入 `cancelled`、`finished_at`，清理 `lease_owner` / `lease_until`
+  - 新增 `POST /v1/conns/:connId/runs/:runId/cancel`：校验 run 属于目标 conn，终止后返回最新 run
+  - conn worker 心跳发现 run 已被外部取消时，向后台 runner 传入的 `AbortSignal` 发出 abort
+  - Conn 独立工作台在 `pending` / `running` 运行记录上显示“终止”按钮，带确认弹窗和状态刷新
+- **验证**: `node --test --test-concurrency=1 --import tsx test/conn-run-store.test.ts`, `node --test --test-concurrency=1 --import tsx test/conn-worker.test.ts`, focused `test/server.test.ts`, `npx tsc --noEmit`, `git diff --check` 均通过
+
+---
+
 ## 2026-05-19 — Team UI Skip 测试迁移
 
 - **主题**: 收口 `npm run test:team` 中 73 个 `[MIGRATION: inline extraction]` skip 测试，从 73 降至 13

@@ -367,7 +367,7 @@ async function createWorker(runner: FakeRunner | FailingRunner): Promise<{
 }
 
 async function createWorkerWithOptions(
-	runner: FakeRunner | FailingRunner | { run(conn: ConnDefinition, run: ConnRunRecord, now: Date): Promise<ConnRunRecord | undefined> },
+	runner: FakeRunner | FailingRunner | { run(conn: ConnDefinition, run: ConnRunRecord, now: Date, signal?: AbortSignal): Promise<ConnRunRecord | undefined> },
 	options: {
 		maxConcurrency?: number;
 		leaseMs?: number;
@@ -850,6 +850,121 @@ test("ConnWorker refreshes lease heartbeat while a claimed run is still executin
 
 	pending.get("Heartbeat Run")?.resolve();
 	await tickPromise;
+
+	database.close();
+});
+
+test("ConnWorker aborts an in-flight runner after an external run cancellation", async () => {
+	let runStore: ConnRunStore;
+	let activeRunId = "";
+	let aborted = false;
+	const runner = {
+		run: async (_conn: ConnDefinition, run: ConnRunRecord, _now: Date, signal?: AbortSignal): Promise<ConnRunRecord | undefined> => {
+			activeRunId = run.runId;
+			await new Promise<void>((resolve, reject) => {
+				signal?.addEventListener("abort", () => {
+					aborted = true;
+					reject(signal.reason instanceof Error ? signal.reason : new Error("aborted"));
+				}, { once: true });
+				setTimeout(resolve, 1_000);
+			});
+			return undefined;
+		},
+	};
+	const created = await createWorkerWithOptions(runner, {
+		leaseMs: 60,
+		heartbeatMs: 20,
+	});
+	const { database, connStore, worker } = created;
+	runStore = created.runStore;
+	const conn = await connStore.create({
+		title: "Cancelable Run",
+		prompt: "Summarize",
+		target: {
+			type: "conversation",
+			conversationId: "manual:cancel",
+		},
+		schedule: {
+			kind: "once",
+			at: "2026-04-21T10:01:00.000Z",
+		},
+		now: new Date("2026-04-21T10:00:00.000Z"),
+	});
+
+	const tickPromise = worker.tick(new Date("2026-04-21T10:01:05.000Z"));
+	await new Promise((resolve) => setTimeout(resolve, 30));
+	assert.ok(activeRunId);
+	const cancelled = await runStore.cancelRun({
+		runId: activeRunId,
+		summary: "Manually cancelled by operator",
+		text: "Manually cancelled by operator",
+		finishedAt: new Date("2026-04-21T10:01:10.000Z"),
+	});
+	assert.equal(cancelled?.status, "cancelled");
+
+	await tickPromise;
+
+	const finalRun = await runStore.getRun(activeRunId);
+	assert.equal(aborted, true);
+	assert.equal(finalRun?.status, "cancelled");
+	assert.equal(finalRun?.resultSummary, "Manually cancelled by operator");
+
+	database.close();
+});
+
+test("ConnWorker keeps external cancellation authoritative when a runner returns after abort", async () => {
+	let runStore: ConnRunStore;
+	let activeRunId = "";
+	const runner = {
+		run: async (_conn: ConnDefinition, run: ConnRunRecord, now: Date, signal?: AbortSignal): Promise<ConnRunRecord | undefined> => {
+			activeRunId = run.runId;
+			await new Promise<void>((resolve) => {
+				signal?.addEventListener("abort", () => resolve(), { once: true });
+			});
+			return {
+				...run,
+				status: "succeeded",
+				resultSummary: "late success",
+				resultText: "late success",
+				finishedAt: now.toISOString(),
+			};
+		},
+	};
+	const created = await createWorkerWithOptions(runner, {
+		leaseMs: 60,
+		heartbeatMs: 20,
+	});
+	const { database, connStore, activityStore, worker } = created;
+	runStore = created.runStore;
+	const conn = await connStore.create({
+		title: "Cancel Wins",
+		prompt: "Summarize",
+		target: {
+			type: "task_inbox",
+		},
+		schedule: {
+			kind: "once",
+			at: "2026-04-21T10:01:00.000Z",
+		},
+		now: new Date("2026-04-21T10:00:00.000Z"),
+	});
+
+	const tickPromise = worker.tick(new Date("2026-04-21T10:01:05.000Z"));
+	await new Promise((resolve) => setTimeout(resolve, 30));
+	await runStore.cancelRun({
+		runId: activeRunId,
+		summary: "Manually cancelled by operator",
+		text: "Manually cancelled by operator",
+		finishedAt: new Date("2026-04-21T10:01:10.000Z"),
+	});
+
+	await tickPromise;
+
+	const finalRun = await runStore.getRun(activeRunId);
+	const activities = await activityStore.list();
+	assert.equal(finalRun?.status, "cancelled");
+	assert.equal(activities[0]?.title, "Cancel Wins cancelled");
+	assert.equal(activities[0]?.text, "Manually cancelled by operator");
 
 	database.close();
 });

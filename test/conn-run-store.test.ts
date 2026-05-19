@@ -467,6 +467,56 @@ test("ConnRunStore heartbeatRun refreshes updatedAt and leaseUntil for the ownin
 	database.close();
 });
 
+test("ConnRunStore cancelRun cancels active runs and clears the worker lease", async () => {
+	const { connStore, runStore, database } = await createStores();
+	const conn = await connStore.create({
+		title: "daily digest",
+		prompt: "summarize",
+		target: {
+			type: "conversation",
+			conversationId: "manual:conn",
+		},
+		schedule: {
+			kind: "interval",
+			everyMs: 60_000,
+		},
+		now: new Date("2026-04-21T10:00:00.000Z"),
+	});
+	const run = await runStore.createRun({
+		runId: "run-cancel",
+		connId: conn.connId,
+		scheduledAt: "2026-04-21T10:01:00.000Z",
+		workspacePath: "/tmp/conn/run-cancel",
+		now: new Date("2026-04-21T10:00:59.000Z"),
+	});
+	await runStore.claimNextDue({
+		workerId: "worker-a",
+		now: new Date("2026-04-21T10:01:00.000Z"),
+		leaseMs: 30_000,
+	});
+
+	const cancelled = await runStore.cancelRun({
+		runId: run.runId,
+		summary: "Manually cancelled by operator",
+		text: "Manually cancelled by operator",
+		finishedAt: new Date("2026-04-21T10:01:10.000Z"),
+	});
+
+	assert.equal(cancelled?.status, "cancelled");
+	assert.equal(cancelled?.finishedAt, "2026-04-21T10:01:10.000Z");
+	assert.equal(cancelled?.leaseOwner, undefined);
+	assert.equal(cancelled?.leaseUntil, undefined);
+	assert.equal(cancelled?.resultSummary, "Manually cancelled by operator");
+	assert.equal(cancelled?.resultText, "Manually cancelled by operator");
+	assert.equal(cancelled?.errorText, undefined);
+	const connAfterCancel = await connStore.get(conn.connId);
+	assert.equal(connAfterCancel?.lastRunId, run.runId);
+	assert.equal(connAfterCancel?.lastRunAt, "2026-04-21T10:01:10.000Z");
+	assert.equal(await runStore.cancelRun({ runId: run.runId, summary: "again" }), undefined);
+
+	database.close();
+});
+
 test("ConnRunStore rejects finishing a run when the lease owner no longer matches", async () => {
 	const { connStore, runStore, database } = await createStores();
 	const conn = await connStore.create({

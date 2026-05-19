@@ -23,6 +23,7 @@ const state = {
   editorError: "",
   actionConnId: "",
   actionKind: "",
+  cancellingRunId: "",
   markingAllRead: false,
   refreshing: false,
   loadingMoreRunId: "",
@@ -190,6 +191,16 @@ async function apiRunNow(connId) {
   });
   const data = await resp.json();
   if (!resp.ok) throw new Error(data?.error?.message || data?.message || "执行失败");
+  return data;
+}
+
+async function apiCancelRun(connId, runId) {
+  const resp = await fetch("/v1/conns/" + encodeURIComponent(connId) + "/runs/" + encodeURIComponent(runId) + "/cancel", {
+    method: "POST",
+    headers: { accept: "application/json" },
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data?.error?.message || data?.message || "终止失败");
   return data;
 }
 
@@ -703,11 +714,13 @@ function renderRunHistory(conn) {
     const time = run.startedAt ? formatTimestamp(run.startedAt) : "—";
     const summary = run.resultText ? run.resultText.substring(0, 80) : runStatusLabel;
     const duration = run.startedAt && run.finishedAt ? formatDuration(run.startedAt, run.finishedAt) : "";
+    const canCancel = isRunInFlight(run);
+    const isCancelling = state.cancellingRunId === run.runId;
 
     const item = document.createElement("div");
     var isUnread = (run.status === "succeeded" || run.status === "failed") && !run.readAt;
     item.className = "conn-run-tl-item" + (isUnread ? " is-unread" : "");
-    item.innerHTML = '<div class="conn-run-tl-dot ' + dotClass + '"></div><div class="conn-run-tl-card' + (isExpanded ? ' is-expanded' : '') + '"><div class="conn-run-tl-header"><span class="conn-run-tl-time">' + escapeHtml(time) + '</span><span class="conn-badge conn-badge--' + (run.status || 'unknown') + '">' + runStatusLabel + '</span>' + (duration ? '<span class="conn-run-tl-duration">' + escapeHtml(duration) + '</span>' : '') + '<span class="conn-run-tl-summary">' + escapeHtml(summary) + '</span></div></div>';
+    item.innerHTML = '<div class="conn-run-tl-dot ' + dotClass + '"></div><div class="conn-run-tl-card' + (isExpanded ? ' is-expanded' : '') + '"><div class="conn-run-tl-header"><span class="conn-run-tl-time">' + escapeHtml(time) + '</span><span class="conn-badge conn-badge--' + (run.status || 'unknown') + '">' + runStatusLabel + '</span>' + (duration ? '<span class="conn-run-tl-duration">' + escapeHtml(duration) + '</span>' : '') + '<span class="conn-run-tl-summary">' + escapeHtml(summary) + '</span>' + (canCancel ? '<button class="conn-run-cancel-btn" type="button" data-run-cancel="' + escapeHtml(run.runId) + '"' + (isCancelling ? ' disabled' : '') + '>' + (isCancelling ? '终止中' : '终止') + '</button>' : '') + '</div></div>';
 
     const card = item.querySelector(".conn-run-tl-card");
 
@@ -743,6 +756,14 @@ function renderRunHistory(conn) {
       state.expandedRunId = state.expandedRunId === run.runId ? null : run.runId;
       renderRunHistory(conn);
     });
+
+    const cancelBtn = card.querySelector("[data-run-cancel]");
+    if (cancelBtn) {
+      cancelBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        handleCancelRun(conn.connId, run.runId);
+      });
+    }
 
     timeline.appendChild(item);
   }
@@ -1760,6 +1781,37 @@ async function handleRunNow(connId) {
   } finally {
     state.actionConnId = "";
     state.actionKind = "";
+    renderDetail();
+    renderList();
+  }
+}
+
+async function handleCancelRun(connId, runId) {
+  if (state.cancellingRunId) return;
+  const confirmed = await openConfirmDialog({
+    title: "终止本次运行？",
+    description: "Run：" + runId + "\\n\\n终止后本次执行会标记为已取消，正在运行的后台 Agent 会收到中断信号。",
+    confirmText: "终止",
+    cancelText: "取消",
+    tone: "danger",
+  });
+  if (!confirmed) return;
+
+  state.cancellingRunId = runId;
+  renderDetail();
+  try {
+    const data = await apiCancelRun(connId, runId);
+    upsertRunForConn(connId, data.run);
+    const conn = state.conns.find(c => c.connId === connId);
+    if (conn && conn.latestRun?.runId === runId) {
+      conn.latestRun = data.run;
+    }
+    showToast("已终止运行", "success");
+    await refreshRunsForConn(connId);
+  } catch (err) {
+    showToast(err instanceof Error ? err.message : "终止失败", "error");
+  } finally {
+    state.cancellingRunId = "";
     renderDetail();
     renderList();
   }

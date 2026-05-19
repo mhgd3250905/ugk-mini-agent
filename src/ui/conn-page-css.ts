@@ -1110,6 +1110,29 @@ export function getConnPageCss(): string {
       min-width: 0;
     }
 
+    .conn-run-cancel-btn {
+      height: 28px;
+      padding: 0 12px;
+      border-radius: 8px;
+      border: 1px solid var(--danger);
+      background: transparent;
+      color: var(--danger);
+      font-family: var(--font-sans);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .conn-run-cancel-btn:not(:disabled):hover {
+      background: var(--danger-soft);
+    }
+
+    .conn-run-cancel-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
     .conn-run-tl-detail {
       padding: 0 16px 16px;
       border-top: 1px solid var(--border);

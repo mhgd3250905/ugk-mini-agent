@@ -96,6 +96,13 @@ export interface FailConnRunInput {
 	finishedAt?: Date;
 }
 
+export interface CancelConnRunInput {
+	runId: string;
+	summary: string;
+	text?: string;
+	finishedAt?: Date;
+}
+
 export interface AppendConnRunEventInput {
 	runId: string;
 	leaseOwner?: string;
@@ -410,6 +417,45 @@ export class ConnRunStore {
 			errorText: input.errorText,
 			finishedAt: input.finishedAt,
 		});
+	}
+
+	async cancelRun(input: CancelConnRunInput): Promise<ConnRunRecord | undefined> {
+		const existing = await this.getRun(input.runId);
+		if (!existing || (existing.status !== "pending" && existing.status !== "running")) {
+			return undefined;
+		}
+
+		const finishedAt = input.finishedAt ?? new Date();
+		const finishedAtIso = finishedAt.toISOString();
+
+		try {
+			this.options.database.exec("BEGIN IMMEDIATE");
+			this.options.database.run(
+				[
+					"UPDATE conn_runs SET",
+					"status = 'cancelled', finished_at = ?, lease_owner = NULL, lease_until = NULL,",
+					"result_summary = ?, result_text = ?, error_text = NULL, updated_at = ?",
+					"WHERE run_id = ? AND status IN ('pending', 'running')",
+				].join(" "),
+				finishedAtIso,
+				input.summary,
+				input.text,
+				finishedAtIso,
+				input.runId,
+			);
+			const changes = this.options.database.get<{ changes: number }>("SELECT changes() AS changes")?.changes ?? 0;
+			if (changes === 0) {
+				this.options.database.exec("COMMIT");
+				return undefined;
+			}
+			this.updateOwningConnAfterRun(existing.connId, input.runId, finishedAt);
+			this.options.database.exec("COMMIT");
+		} catch (error) {
+			this.rollbackQuietly();
+			throw error;
+		}
+
+		return await this.getRun(input.runId);
 	}
 
 	async appendEvent(input: AppendConnRunEventInput): Promise<ConnRunEventRecord | undefined> {
