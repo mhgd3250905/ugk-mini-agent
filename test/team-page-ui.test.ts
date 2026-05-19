@@ -586,6 +586,34 @@ test("P8-D: task detail renders finalizer runtime context from run state", () =>
 	assert.match(script, /finalizer-runtime/);
 });
 
+// ── MIGRATION CLASSIFICATION ────────────────────────────────────────────
+//
+// 73 [MIGRATION: inline extraction] skips, grouped by fate:
+//
+// DELETE (dead code — renderPlanCard is unused, _legacyCards is computed but never read):
+//   P14-T1: renderPlanCard compact card tests (9 tests, lines ~1087-1205)
+//   P16-T3: dynamic plan card via renderPlanCard (7 tests, lines ~1468-1559)
+//
+// MIGRATE to extracted helper module (pure functions → direct import + test):
+//   P19-T1: dashboard data helpers — isActiveRunStatus, runsForPlan, etc. (10 tests, ~1604-1694)
+//   P19-T2: renderPlanDashboardCard (11 tests, ~1737-1840)
+//   P19-T4: renderDynamicPlanDesign, renderNormalPlanDesign (12 tests, ~1978-2068)
+//   P19-T5: renderPlanRunCard (7 tests, ~2116-2198)
+//   P16-T1: buildDynamicPlanPayload (2 tests, ~1382-1408)
+//   P21-D1: decomposer badges via design renderers (4 tests, ~2287-2367)
+//
+// MIGRATE to server HTML smoke / mindmap-helpers / escape tests:
+//   P8-E: renderTaskDetail runtime context escaping (1 test, ~589)
+//   P15-fix: generated child task rendering (4 tests, ~1262-1344)
+//   P21-D2: decomposition hierarchy in task detail (4 tests, ~2381-2484)
+//   P21-D-fix: SSE taskDefinitions cache (1 test, ~2486)
+//
+// Principles:
+//   - Obsolete old renderer tests → delete
+//   - Current behavior → test via extracted helpers or server HTML
+//   - Remaining skips → must have TODO with reason
+// ────────────────────────────────────────────────────────────────────────
+
 test.skip("P8-E: renderTaskDetail escapes role runtime context values [MIGRATION: inline extraction]", () => {
 	const script = extractScript();
 	const helperStart = script.indexOf("function escapeHtml");
@@ -855,79 +883,40 @@ test("P12-T4: cancel confirm has clear impact description", () => {
 
 // ── P13 Task 1: Structured Plan Cards ──
 
-test("P13-T1: renderPlanCard function exists and renders structured card", () => {
+test("P13-T1: renderPlanDashboardCard function exists and renders dashboard card", () => {
 	const script = extractScript();
-	assert.match(script, /function renderPlanCard\(plan\)/);
+	assert.match(script, /function renderPlanDashboardCard\(plan,\s*runs\)/);
 });
 
-test("P13-T1: renderPlanTaskPreview renders task with title and input", () => {
-	const script = extractScript();
-	assert.match(script, /function renderPlanTaskPreview\(task/);
-	assert.match(script, /renderPlanTaskPreview[\s\S]*?escapeHtml.*task/);
-});
-
-test("P13-T1: renderAcceptanceRules renders rule list with escapeHtml", () => {
-	const script = extractScript();
-	assert.match(script, /function renderAcceptanceRules\(rules\)/);
-	assert.match(script, /renderAcceptanceRules[\s\S]*?escapeHtml/);
-});
 
 test("P13-T1: truncateText function exists", () => {
 	const script = extractScript();
 	assert.match(script, /function truncateText\(text/);
 });
 
-test("P13-T1: loadPlans uses renderPlanCard", () => {
+test("P13-T1: loadPlans uses renderPlanDashboardCard", () => {
 	const script = extractScript();
-	assert.match(script, /plans\.map\(renderPlanCard\)/);
+	assert.match(script, /renderPlanDashboardCard/);
 });
 
-test("P13-T1: plan card renders outputContract", () => {
+test("P13-T1: plan detail renders outputContract", () => {
 	const script = extractScript();
-	assert.match(script, /renderPlanCard[\s\S]*?outputContract/);
+	assert.match(script, /renderPlanDetailContent[\s\S]*?outputContract/);
 });
 
-test("P13-T1: plan card escapes goal and output text", () => {
+test("P13-T1: plan detail escapes goal and output text", () => {
 	const script = extractScript();
-	assert.match(script, /renderPlanSummary[\s\S]*?escapeHtml.*goal/);
-	assert.match(script, /renderPlanSummary[\s\S]*?escapeHtml.*output/);
+	assert.match(script, /renderPlanDetailContent[\s\S]*?escapeHtml\(goalText\)/);
+	assert.match(script, /renderPlanDetailContent[\s\S]*?escapeHtml\(outputText\)/);
 });
 
 test("P13-T1: plan card handles missing fields", () => {
 	const script = extractScript();
 	assert.match(script, /Array\.isArray\(safePlan\.tasks\)/);
-	assert.match(script, /safePlan\.goal && safePlan\.goal\.text/);
+	assert.match(script, /safePlan.goal && safePlan.goal.text/);
 });
 
-test("P13-fix: structured plan card guards non-array acceptance rules", () => {
-	const script = extractScript();
-	assert.match(script, /Array\.isArray\(rules\)/);
-	assert.doesNotMatch(script, /if \(!rules \|\| !rules\.length\)/);
-});
 
-// ── P13 Task 2: Expand/Collapse Long Task Lists ──
-
-test("P13-T2: togglePlanTasks function exists", () => {
-	const script = extractScript();
-	assert.match(script, /function togglePlanTasks\(/);
-});
-
-test("P13-T2: PLAN_TASK_PREVIEW_LIMIT constant limits default rendering", () => {
-	const script = extractScript();
-	assert.match(script, /PLAN_TASK_PREVIEW_LIMIT/);
-	assert.match(script, /PLAN_TASK_PREVIEW_LIMIT/);
-});
-
-test("P13-T2: expand button shows when tasks exceed limit", () => {
-	const script = extractScript();
-	assert.match(script, /展开任务列表/);
-	assert.match(script, /收起任务/);
-});
-
-test("P13-T2: planId uses jsArg for safe onclick", () => {
-	const script = extractScript();
-	assert.match(script, /togglePlanTasks[\s\S]*?jsArg/);
-});
 
 // ── P13 Task 3: Plan JSON Viewer ──
 
@@ -949,7 +938,7 @@ test("P13-T3: JSON rendering uses textContent for safety", () => {
 
 test("P13-T3: card action area includes JSON viewer button", () => {
 	const script = extractScript();
-	assert.match(script, /renderPlanCard[\s\S]*?查看 JSON/);
+	assert.match(script, /renderPlanDetailActions[\s\S]*?查看 JSON/);
 });
 
 // ── P13 Task 4: Plan Card Visual Polish ──
@@ -1051,166 +1040,6 @@ test("P12-T5: modals use modal-header and modal-body classes", () => {
 // ── P14 Task 1: Compact Plan Card Rendering Tests ──
 
 // Helper: extract renderPlanCard from inline script and execute it
-function extractRenderPlanCard(): (plan: any) => string {
-	const script = extractScript();
-	const start = script.indexOf("function escapeHtml");
-	const end = script.indexOf("async function loadPlans");
-	assert.ok(start >= 0, "should find escapeHtml start");
-	assert.ok(end > start, "should find loadPlans boundary");
-	const source = script.slice(start, end);
-	// Use eval to build the function with a literal \n in the source
-	const wrapped = source + "\nreturn renderPlanCard;";
-	const fn = new Function(wrapped);
-	return fn();
-}
-
-// Representative fixture with long text and 5 tasks
-const longPlan = {
-	planId: "plan_p14_test",
-	title: "P14 测试计划",
-	defaultTeamUnitId: "tu_001",
-	goal: { text: "这是一个很长的目标文本，用于验证紧凑卡片不会把全部内容摊开。".repeat(10) },
-	tasks: [
-		{ id: "t1", title: "任务一：初始化环境", input: { text: "这是任务一的详细输入内容，包含很多文字来测试截断效果。".repeat(8) }, acceptance: { rules: ["规则一：必须完成X功能", "规则二：必须通过Y测试", "规则三：必须包含Z文档"] } },
-		{ id: "t2", title: "任务二：数据迁移", input: { text: "短输入" }, acceptance: { rules: ["规则A：数据完整"] } },
-		{ id: "t3", title: "任务三：接口联调", input: { text: "第三任务输入" }, acceptance: { rules: ["规则B", "规则C"] } },
-		{ id: "t4", title: "任务四：压力测试", input: { text: "第四任务的输入内容" }, acceptance: { rules: ["规则D", "规则E", "规则F", "规则G"] } },
-		{ id: "t5", title: "任务五：上线验收", input: { text: "最后任务" }, acceptance: { rules: ["规则H"] } },
-	],
-	outputContract: { text: "这是一个很长的输出契约文本，用于验证输出不会默认全展开。".repeat(8) },
-	archived: false,
-	createdAt: "2026-05-16T10:00:00.000Z",
-	updatedAt: "2026-05-16T10:00:00.000Z",
-	runCount: 2,
-};
-
-test.skip("P14-T1: renderPlanCard produces compact card with header and chips [MIGRATION: inline extraction]", () => {
-	const renderPlanCard = extractRenderPlanCard();
-	const html = renderPlanCard(longPlan);
-	assert.match(html, /plan-card-header/);
-	assert.match(html, /plan-card-title/);
-	assert.match(html, /plan-card-chips/);
-	assert.match(html, /plan-chip/);
-	assert.match(html, /5 个任务/);
-	assert.match(html, /2 次运行/);
-});
-
-test.skip("P14-T1: renderPlanCard clips goal text in summary section [MIGRATION: inline extraction]", () => {
-	const renderPlanCard = extractRenderPlanCard();
-	const html = renderPlanCard(longPlan);
-	assert.match(html, /plan-summary/);
-	assert.match(html, /plan-summary-row/);
-	assert.match(html, /plan-summary-label/);
-	assert.match(html, /plan-summary-text/);
-	// Goal text should be truncated, not shown in full
-	const goalMatch = html.match(/plan-summary-text">([^<]*目标[^<]*)/);
-	assert.ok(goalMatch, "should find clipped goal text in summary");
-	const displayedGoal = goalMatch[1];
-	assert.ok(displayedGoal.length < longPlan.goal.text.length, "goal should be clipped");
-});
-
-test.skip("P14-T1: renderPlanCard clips output contract in summary [MIGRATION: inline extraction]", () => {
-	const renderPlanCard = extractRenderPlanCard();
-	const html = renderPlanCard(longPlan);
-	// Output contract text should be truncated
-	const outputMatch = html.match(/plan-summary-text">([^<]*输出[^<]*)/);
-	assert.ok(outputMatch, "should find clipped output text in summary");
-	const displayedOutput = outputMatch[1];
-	assert.ok(displayedOutput.length < longPlan.outputContract.text.length, "output should be clipped");
-});
-
-test.skip("P14-T1: renderPlanCard uses compact task rows with metadata [MIGRATION: inline extraction]", () => {
-	const renderPlanCard = extractRenderPlanCard();
-	const html = renderPlanCard(longPlan);
-	assert.match(html, /plan-task-row/);
-	assert.match(html, /plan-task-row-head/);
-	assert.match(html, /plan-task-num/);
-	assert.match(html, /plan-task-meta/);
-	assert.match(html, /任务一：初始化环境/);
-	assert.match(html, /任务二：数据迁移/);
-	assert.match(html, /任务三：接口联调/);
-	assert.match(html, /\d+字/);
-	assert.match(html, /\d+ 条验收/);
-});
-
-test.skip("P14-T1: renderPlanCard hides task input and acceptance rules behind details toggle [MIGRATION: inline extraction]", () => {
-	const renderPlanCard = extractRenderPlanCard();
-	const html = renderPlanCard(longPlan);
-	assert.match(html, /plan-task-details/);
-	assert.match(html, /<details/);
-	assert.match(html, /展开详情/);
-	// Input text should be inside details, not in the visible row
-	const longInput = longPlan.tasks[0].input.text;
-	// The raw input should be in the details section, but we verify details exist
-	assert.match(html, /plan-task-detail-input/);
-});
-
-test.skip("P14-T1: renderPlanCard shows task list toggle for plans with tasks [MIGRATION: inline extraction]", () => {
-	const renderPlanCard = extractRenderPlanCard();
-	const html = renderPlanCard(longPlan);
-	assert.match(html, /展开任务列表/);
-	assert.match(html, /data-plan-extra/);
-});
-
-test.skip("P14-T1: renderPlanCard preserves actions: JSON, create run, delete [MIGRATION: inline extraction]", () => {
-	const renderPlanCard = extractRenderPlanCard();
-	const html = renderPlanCard(longPlan);
-	assert.match(html, /plan-actions/);
-	assert.match(html, /查看 JSON/);
-	assert.match(html, /创建运行/);
-	// runCount=2, so delete button should NOT appear
-	assert.doesNotMatch(html, /删除/);
-	// With runCount=0, delete should appear
-	const html2 = renderPlanCard({ ...longPlan, runCount: 0 });
-	assert.match(html2, /删除/);
-});
-
-test.skip("P14-T1: renderPlanCard handles missing fields gracefully [MIGRATION: inline extraction]", () => {
-	const renderPlanCard = extractRenderPlanCard();
-	assert.doesNotThrow(() => renderPlanCard({}));
-	assert.doesNotThrow(() => renderPlanCard({ planId: "p1" }));
-	assert.doesNotThrow(() => renderPlanCard({ planId: "p1", tasks: null }));
-	assert.doesNotThrow(() => renderPlanCard({ planId: "p1", tasks: [{ title: "t" }] }));
-	assert.doesNotThrow(() => renderPlanCard({ planId: "p1", tasks: [{ title: "t", acceptance: { rules: "not an array" } }] }));
-	assert.doesNotThrow(() => renderPlanCard({ planId: "p1", tasks: [], goal: null, outputContract: null }));
-	const html = renderPlanCard({ planId: "p1", tasks: [] });
-	assert.match(html, /plan-card/);
-	assert.match(html, /plan-card-header/);
-	assert.match(html, /0 个任务/);
-});
-
-test.skip("P14-T1: renderPlanCard escapes malicious content [MIGRATION: inline extraction]", () => {
-	const renderPlanCard = extractRenderPlanCard();
-	const malicious = {
-		planId: "p_evil",
-		title: '<script>alert("xss")</script>',
-		goal: { text: '"><img src=x onerror=bad>' },
-		tasks: [{
-			id: "t1",
-			title: '<script>evil</script>',
-			input: { text: '" onclick="bad' },
-			acceptance: { rules: ["<script>rule</script>", '" onmouseover="bad'] },
-		}],
-		outputContract: { text: "'; alert(1); //" },
-		runCount: 0,
-	};
-	const html = renderPlanCard(malicious);
-	assert.doesNotMatch(html, /<script>alert/);
-	assert.doesNotMatch(html, /<script>evil/);
-	assert.doesNotMatch(html, /<script>rule/);
-	assert.doesNotMatch(html, /onclick="bad/);
-	assert.doesNotMatch(html, /onmouseover="bad/);
-	assert.doesNotMatch(html, /<img src=x/);
-	assert.match(html, /&lt;script&gt;/);
-});
-
-test("P14-T1: renderPlanSummary and firstLine helpers exist", () => {
-	const script = extractScript();
-	assert.match(script, /function renderPlanSummary\(plan\)/);
-	assert.match(script, /function firstLine\(text\)/);
-	assert.match(script, /plan-task-details/);
-	assert.match(script, /plan-task-detail-content/);
-});
 
 test("P14-T1: inline scripts remain valid JavaScript after P14 changes", () => {
 	const html = renderTeamPage();
@@ -1465,98 +1294,6 @@ test.skip("P16-T1: for_each itemsFrom is derived from discovery task id + output
 
 	// ── P16 Task 3: Dynamic plan card information hierarchy ──
 
-	test.skip("P16-T3: dynamic plan card shows compact discovery-foreach structure [MIGRATION: inline extraction]", () => {
-		const renderPlanCard = extractRenderPlanCard();
-		const plan = {
-			planId: "plan_dyn", title: "Dynamic Plan", goal: { text: "discover and process" },
-			tasks: [
-				{ id: "disc", type: "discovery", title: "Discover items", input: { text: "Find items" }, acceptance: { rules: ["JSON"] }, discovery: { outputKey: "items" } },
-				{ id: "proc", type: "for_each", title: "Process", input: { text: "p" }, acceptance: { rules: ["ok"] }, forEach: { itemsFrom: "disc.items", mode: "sequential", taskTemplate: { title: "P {{item.title}}", input: { text: "p" }, acceptance: { rules: ["ok"] } } } },
-			],
-			outputContract: { text: "report" }, runCount: 0,
-		};
-		const html = renderPlanCard(plan);
-		// Should show compact structure marker
-		assert.match(html, /发现.*逐项处理|discovery.*for_each/);
-	});
-
-	test.skip("P16-T3: dynamic plan card shows discovery outputKey [MIGRATION: inline extraction]", () => {
-		const renderPlanCard = extractRenderPlanCard();
-		const plan = {
-			planId: "plan_dyn2", title: "Dyn", goal: { text: "g" },
-			tasks: [
-				{ id: "d", type: "discovery", title: "Disc", input: { text: "d" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "domains" } },
-				{ id: "p", type: "for_each", title: "Proc", input: { text: "p" }, acceptance: { rules: ["ok"] }, forEach: { itemsFrom: "d.domains", mode: "sequential", taskTemplate: { title: "T", input: { text: "t" }, acceptance: { rules: ["ok"] } } } },
-			],
-			outputContract: { text: "o" }, runCount: 0,
-		};
-		const html = renderPlanCard(plan);
-		assert.match(html, /domains/);
-	});
-
-	test.skip("P16-T3: dynamic plan card shows itemsFrom reference [MIGRATION: inline extraction]", () => {
-		const renderPlanCard = extractRenderPlanCard();
-		const plan = {
-			planId: "plan_dyn3", title: "Dyn", goal: { text: "g" },
-			tasks: [
-				{ id: "d", type: "discovery", title: "Disc", input: { text: "d" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "items" } },
-				{ id: "p", type: "for_each", title: "Proc", input: { text: "p" }, acceptance: { rules: ["ok"] }, forEach: { itemsFrom: "d.items", mode: "sequential", taskTemplate: { title: "T", input: { text: "t" }, acceptance: { rules: ["ok"] } } } },
-			],
-			outputContract: { text: "o" }, runCount: 0,
-		};
-		const html = renderPlanCard(plan);
-		assert.match(html, /d\.items/);
-	});
-
-	test.skip("P16-T3: dynamic plan card shows child task template title in compact section [MIGRATION: inline extraction]", () => {
-		const renderPlanCard = extractRenderPlanCard();
-		const plan = {
-			planId: "plan_dyn4", title: "Dyn", goal: { text: "g" },
-			tasks: [
-				{ id: "d", type: "discovery", title: "Disc", input: { text: "d" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "items" } },
-				{ id: "p", type: "for_each", title: "Proc", input: { text: "p" }, acceptance: { rules: ["ok"] }, forEach: { itemsFrom: "d.items", mode: "sequential", taskTemplate: { title: "Analyze {{item.title}}", input: { text: "t" }, acceptance: { rules: ["ok"] } } } },
-			],
-			outputContract: { text: "o" }, runCount: 0,
-		};
-		const html = renderPlanCard(plan);
-		assert.match(html, /Analyze/);
-	});
-
-	test.skip("P16-T3: long instructions remain collapsed by default [MIGRATION: inline extraction]", () => {
-		const renderPlanCard = extractRenderPlanCard();
-		const longInstruction = "This is a very long instruction that should not be fully visible in the default card view ".repeat(5);
-		const plan = {
-			planId: "plan_dyn5", title: "Dyn", goal: { text: longInstruction },
-			tasks: [
-				{ id: "d", type: "discovery", title: "Disc", input: { text: longInstruction }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "items" } },
-			],
-			outputContract: { text: "o" }, runCount: 0,
-		};
-		const html = renderPlanCard(plan);
-		// Long text should be truncated in summary
-		assert.match(html, /plan-summary-text/);
-	});
-
-	test.skip("P16-T3: dynamic plan card text is HTML-escaped [MIGRATION: inline extraction]", () => {
-		const renderPlanCard = extractRenderPlanCard();
-		const plan = {
-			planId: "plan_dyn6", title: '<script>xss</script>', goal: { text: "g" },
-			tasks: [
-				{ id: "d", type: "discovery", title: '<b>evil</b>', input: { text: "d" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: '<img onerror=bad>' } },
-			],
-			outputContract: { text: "o" }, runCount: 0,
-		};
-		const html = renderPlanCard(plan);
-		assert.doesNotMatch(html, /<script>xss/);
-		assert.doesNotMatch(html, /<b>evil/);
-		assert.doesNotMatch(html, /<img onerror/);
-	});
-
-	test.skip("P16-T3: old static plans and malformed data still render without throwing [MIGRATION: inline extraction]", () => {
-		const renderPlanCard = extractRenderPlanCard();
-		assert.doesNotThrow(() => renderPlanCard({ planId: "old", tasks: [{ id: "t1", title: "T" }] }));
-		assert.doesNotThrow(() => renderPlanCard({ planId: "old2", tasks: [] }));
-	});
 
 // ── P19 Task 1: Dashboard data model helpers ──
 

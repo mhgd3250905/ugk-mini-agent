@@ -711,89 +711,12 @@ async function saveTeamUnit() {
 	} catch (e) { showError(e.message); }
 }
 
-		var PLAN_TASK_PREVIEW_LIMIT = 0;
 
 		function truncateText(text, maxLen) {
 			if (!text) return '';
 			var str = String(text);
 			if (str.length <= maxLen) return str;
 			return str.slice(0, maxLen) + '...';
-		}
-
-		function firstLine(text) {
-			if (!text) return '';
-			var str = String(text);
-			var idx = str.indexOf('\\n');
-			return idx >= 0 ? str.slice(0, idx) : str;
-		}
-
-		function renderPlanSummary(plan) {
-			var safePlan = plan || {};
-			var goalText = safePlan.goal && safePlan.goal.text ? safePlan.goal.text : '';
-			var outputText = safePlan.outputContract && safePlan.outputContract.text ? safePlan.outputContract.text : '';
-			var rows = '';
-			if (goalText) {
-				rows += '<div class="plan-summary-row"><span class="plan-summary-label">目标</span><span class="plan-summary-text">' + escapeHtml(truncateText(goalText, 120)) + '</span></div>';
-			}
-			if (outputText) {
-				rows += '<div class="plan-summary-row"><span class="plan-summary-label">输出</span><span class="plan-summary-text">' + escapeHtml(truncateText(outputText, 80)) + '</span></div>';
-			}
-			return rows ? '<div class="plan-summary">' + rows + '</div>' : '';
-		}
-
-		function renderAcceptanceRules(rules) {
-			var safeRules = Array.isArray(rules) ? rules : [];
-			if (!safeRules.length) return '';
-			return '<ul class="acceptance-list">' + safeRules.map(function(r) {
-				return '<li class="acceptance-rule">' + escapeHtml(r) + '</li>';
-			}).join('') + '</ul>';
-		}
-
-		function renderPlanTaskPreview(task, index) {
-			var safeTask = task || {};
-			var inputText = safeTask.input && safeTask.input.text ? safeTask.input.text : '';
-			var rules = safeTask.acceptance && Array.isArray(safeTask.acceptance.rules) ? safeTask.acceptance.rules : [];
-			var metaParts = [];
-			if (inputText) metaParts.push(inputText.length + '字');
-			if (rules.length) metaParts.push(rules.length + ' 条验收');
-			var metaHtml = metaParts.length ? ' <span class="plan-task-meta">' + metaParts.join(' / ') + '</span>' : '';
-			var detailsHtml = '';
-			if (inputText || rules.length) {
-				detailsHtml = '<details class="plan-task-details"><summary>展开详情</summary><div class="plan-task-detail-content">';
-				if (inputText) detailsHtml += '<p class="plan-task-detail-input">' + escapeHtml(inputText) + '</p>';
-				if (rules.length) detailsHtml += renderAcceptanceRules(rules);
-				detailsHtml += '</div></details>';
-			}
-			var typeBadge = '';
-			if (safeTask.type === 'discovery') {
-				typeBadge = ' <span class="badge badge-info" style="font-size:11px;padding:1px 6px;border-radius:3px;background:#2563eb;color:#fff">discovery</span>';
-			} else if (safeTask.type === 'for_each') {
-				var feInfo = safeTask.forEach ? (' &larr; ' + escapeHtml(safeTask.forEach.itemsFrom || '')) : '';
-				typeBadge = ' <span class="badge badge-info" style="font-size:11px;padding:1px 6px;border-radius:3px;background:#7c3aed;color:#fff">for_each' + feInfo + '</span>';
-			}
-			var detailsHtml = '';
-			if (inputText || rules.length) {
-				detailsHtml = '<details class="plan-task-details"><summary>展开详情</summary><div class="plan-task-detail-content">';
-				if (inputText) detailsHtml += '<p class="plan-task-detail-input">' + escapeHtml(inputText) + '</p>';
-				if (rules.length) detailsHtml += renderAcceptanceRules(rules);
-				if (safeTask.type === 'for_each' && safeTask.forEach && safeTask.forEach.taskTemplate) {
-					var tmpl = safeTask.forEach.taskTemplate;
-					detailsHtml += '<p class="plan-task-detail-input" style="color:#7c3aed">模板: ' + escapeHtml(tmpl.title || '') + '</p>';
-				}
-				detailsHtml += '</div></details>';
-			}
-			return '<div class="plan-task-row">' +
-				'<div class="plan-task-row-head"><span class="plan-task-num">#' + (index + 1) + '</span> ' + typeBadge + escapeHtml(safeTask.title || safeTask.id || '') + metaHtml + '</div>' +
-				detailsHtml +
-				'</div>';
-		}
-
-		function togglePlanTasks(btn, planId) {
-			var extra = document.querySelector('[data-plan-extra="' + planId + '"]');
-			if (!extra) return;
-			var expanded = extra.style.display !== 'none';
-			extra.style.display = expanded ? 'none' : 'block';
-			btn.textContent = expanded ? '展开任务列表' : '收起任务';
 		}
 
 		function viewPlanJson(planId) {
@@ -891,8 +814,8 @@ async function saveTeamUnit() {
 				return !!_mindmapExpandedGroups[runId + '::' + parentTaskId];
 			}
 
-			function rerenderMindmap(runId) {
-				var detailEl = $('run-detail-' + runId);
+			function rerenderMindmap(runId, sourceEl) {
+				var detailEl = findRunDetailElement(runId, sourceEl);
 				if (!detailEl) return;
 				var state = window._latestRunStateForRun ? window._latestRunStateForRun[runId] : null;
 				var plan = window._latestPlanForRun ? window._latestPlanForRun[runId] : null;
@@ -901,17 +824,17 @@ async function saveTeamUnit() {
 				detailEl.innerHTML = renderRunDetailShell(runId, state, plan, attempts);
 			}
 
-			window.toggleMindmapNode = function(runId, taskId, nodeStatus) {
+			window.toggleMindmapNode = function(runId, taskId, nodeStatus, sourceEl) {
 				var key = runId + '::' + taskId;
 				var currentlyExpanded = isMindmapNodeExpanded(runId, taskId, nodeStatus);
 				_mindmapExpandedNodes[key] = !currentlyExpanded;
-				rerenderMindmap(runId);
+				rerenderMindmap(runId, sourceEl);
 			};
 
-			window.toggleMindmapGroup = function(runId, parentTaskId) {
+			window.toggleMindmapGroup = function(runId, parentTaskId, sourceEl) {
 				var key = runId + '::' + parentTaskId;
 				_mindmapExpandedGroups[key] = !_mindmapExpandedGroups[key];
-				rerenderMindmap(runId);
+				rerenderMindmap(runId, sourceEl);
 			};
 
 			function isDynamicPlan(tasks) {
@@ -923,60 +846,6 @@ async function saveTeamUnit() {
 				}
 				return hasDiscovery && hasForEach;
 			}
-
-			function renderDynamicPlanStructure(tasks) {
-				var discTask = null, feTask = null;
-				for (var i = 0; i < tasks.length; i++) {
-					if (tasks[i].type === 'discovery') discTask = tasks[i];
-					if (tasks[i].type === 'for_each') feTask = tasks[i];
-				}
-				var html = '<div class="plan-summary" style="margin-bottom:8px">';
-				html += '<div class="plan-summary-row"><span class="plan-chip" style="background:rgba(37,99,235,0.15);color:#3b82f6">discovery</span> <span style="font-size:13px">' + escapeHtml(discTask ? discTask.title || '' : '') + '</span>';
-				if (discTask && discTask.discovery) {
-					html += ' <span class="plan-chip" style="font-size:10px">output: ' + escapeHtml(discTask.discovery.outputKey || '') + '</span>';
-				}
-				html += '</div>';
-				html += '<div class="plan-summary-row" style="margin-top:2px"><span style="color:var(--muted);font-size:12px">&#8595;</span></div>';
-				if (feTask) {
-					html += '<div class="plan-summary-row"><span class="plan-chip" style="background:rgba(124,58,237,0.15);color:#7c3aed">for_each</span> <span style="font-size:13px">' + escapeHtml(feTask.title || '') + '</span>';
-					if (feTask.forEach) {
-						html += ' <span class="plan-chip" style="font-size:10px">' + escapeHtml(feTask.forEach.itemsFrom || '') + '</span>';
-					}
-					html += '</div>';
-					if (feTask.forEach && feTask.forEach.taskTemplate) {
-						var tmpl = feTask.forEach.taskTemplate;
-						html += '<details class="plan-task-details" style="margin-top:4px"><summary>子任务模板</summary><div class="plan-task-detail-content">';
-						html += '<p class="plan-task-detail-input" style="color:#7c3aed">标题: ' + escapeHtml(tmpl.title || '') + '</p>';
-						if (tmpl.input && tmpl.input.text) html += '<p class="plan-task-detail-input">指令: ' + escapeHtml(tmpl.input.text) + '</p>';
-						html += '</div></details>';
-					}
-				}
-				html += '</div>';
-				return html;
-			}
-
-			function renderPlanCard(plan) {
-				var safePlan = plan || {};
-				var tasks = Array.isArray(safePlan.tasks) ? safePlan.tasks : [];
-				var allTaskHtml = tasks.map(function(t, i) { return renderPlanTaskPreview(t, i); }).join('');
-				var summaryHtml = renderPlanSummary(safePlan);
-				var dynamic = isDynamicPlan(tasks);
-				var dynamicHtml = dynamic ? renderDynamicPlanStructure(tasks) : '';
-				var chipLabel = dynamic ? '发现-逐项' : (tasks.length + ' 个任务');
-				return '<div class="card plan-card">' +
-					'<div class="plan-card-header"><span class="plan-card-title">' + escapeHtml(safePlan.title || '') + '</span><div class="plan-card-chips"><span class="plan-chip">' + chipLabel + '</span><span class="plan-chip">' + (safePlan.runCount || 0) + ' 次运行</span></div></div>' +
-					summaryHtml +
-					(dynamic ? dynamicHtml : '') +
-					(tasks.length ? '<div class="plan-task-extra" data-plan-extra="' + escapeHtml(safePlan.planId || '') + '" style="display:none">' + allTaskHtml + '</div>' +
-						'<button class="btn btn-sm detail-toggle" onclick="togglePlanTasks(this, ' + jsArg(safePlan.planId) + ')">展开任务列表</button>' : '') +
-					'<div class="plan-actions">' +
-					'<button class="btn btn-sm" onclick="viewPlanJson(' + jsArg(safePlan.planId) + ')">查看 JSON</button>' +
-					'<button class="btn btn-primary" onclick="startRun(\\x27' + safePlan.planId + '\\x27)">创建运行</button>' +
-					'<button class="btn btn-danger" onclick="deletePlan(\\x27' + safePlan.planId + '\\x27)">删除</button>' +
-					'</div></div>';
-			}
-
-			var _planCache = {};
 
 			function renderPlanDashboardCard(plan, runs) {
 				var safePlan = plan || {};
@@ -1202,7 +1071,7 @@ async function saveTeamUnit() {
 
 			function togglePlanRunDetail(el, runId) {
 				_expandedRunIds[runId] = !_expandedRunIds[runId];
-				var detailEl = $("run-detail-" + runId);
+				var detailEl = findRunDetailElement(runId, el);
 				if (!detailEl) return;
 				if (!_expandedRunIds[runId]) {
 					detailEl.style.display = "none";
@@ -1211,7 +1080,7 @@ async function saveTeamUnit() {
 				// If detail is empty, populate it for the first time
 				if (!detailEl.innerHTML || detailEl.style.display !== "block") {
 					// Delegate to existing toggleRunDetail which fetches state and populates
-					toggleRunDetail(runId);
+					toggleRunDetail(runId, el);
 				} else {
 					detailEl.style.display = "block";
 				}
@@ -1228,7 +1097,6 @@ async function loadPlans() {
 			}
 		_latestPlans = plans; updateSummary(plans, _latestTeams, _latestRuns);
 		if (!plans.length) { el.innerHTML = '<div class="empty plan-dashboard-empty">暂无计划。<span class="detail-toggle" onclick="createPlan()">新建计划</span> 开始。</div>'; return; }
-		var _legacyCards = plans.map(renderPlanCard);
 		el.innerHTML = '<div class="plan-dashboard-grid">' + plans.map(function(p) { return renderPlanDashboardCard(p, _latestRuns); }).join('') + '</div>';
 			subscribeActiveRuns(_latestRuns);
 	} catch (e) {
@@ -1324,10 +1192,16 @@ async function loadRuns() {
 		}).join('');
 		Object.keys(_expandedRunIds).forEach(function(runId) {
 			if (!_expandedRunIds[runId]) return;
-			var detailEl = $('run-detail-' + runId);
+			var detailEl = null;
+			var runCards = el.querySelectorAll('[data-run-id]');
+			for (var i = 0; i < runCards.length; i++) {
+				if (runCards[i].getAttribute('data-run-id') !== runId) continue;
+				detailEl = runCards[i].querySelector('.run-detail');
+				break;
+			}
 			if (!detailEl) return;
 			detailEl.style.display = 'none';
-			toggleRunDetail(runId);
+			toggleRunDetail(runId, detailEl);
 		});
 		subscribeActiveRuns(runs);
 	} catch (e) {
@@ -1336,8 +1210,27 @@ async function loadRuns() {
 	}
 }
 
-async function toggleRunDetail(runId) {
-	var detailEl = $('run-detail-' + runId);
+function findRunDetailElement(runId, sourceEl) {
+	if (sourceEl && sourceEl.closest) {
+		var card = sourceEl.closest('[data-run-id]');
+		if (card) {
+			var scoped = card.querySelector('.run-detail');
+			if (scoped && scoped.id === 'run-detail-' + runId) return scoped;
+		}
+	}
+	var candidates = Array.prototype.slice.call(document.querySelectorAll('.run-detail')).filter(function(el) {
+		return el.id === 'run-detail-' + runId;
+	});
+	if (!candidates.length) return null;
+	for (var i = 0; i < candidates.length; i++) {
+		var el = candidates[i];
+		if (el.style.display === 'block' || (el.offsetParent !== null && el.closest('.section.active'))) return el;
+	}
+	return candidates[0];
+}
+
+async function toggleRunDetail(runId, sourceEl) {
+	var detailEl = findRunDetailElement(runId, sourceEl);
 	if (!detailEl) return;
 	if (detailEl.style.display === 'block') {
 		detailEl.style.display = 'none';
@@ -1573,7 +1466,7 @@ function renderMindmapNode(node, depth, runId, attemptsMap) {
 	var expanded = depth === 0 ? false : isMindmapNodeExpanded(runId, node.id, node.status);
 	var html = '<div class="' + cls + (expanded ? ' mindmap-node-expanded' : '') + '" data-node-status="' + escapedStatus + '" data-node-type="' + escapedType + '" style="margin-left:' + (depth * 20) + 'px">';
 	if (depth > 0) {
-		html += '<button class="mindmap-node-toggle" onclick="event.stopPropagation();toggleMindmapNode(' + jsArg(runId) + ',' + jsArg(node.id) + ',' + jsArg(node.status) + ')">';
+		html += '<button class="mindmap-node-toggle" onclick="event.stopPropagation();toggleMindmapNode(' + jsArg(runId) + ',' + jsArg(node.id) + ',' + jsArg(node.status) + ',this)">';
 	} else {
 		html += '<div>';
 	}
@@ -1648,9 +1541,9 @@ function renderMindmapNode(node, depth, runId, attemptsMap) {
 		if (totalChildren > MINDMAP_GROUP_LIMIT) {
 			html += '<div style="margin-left:' + ((depth + 1) * 20) + 'px">';
 			if (groupExpanded) {
-				html += '<button class="mindmap-group-toggle" onclick="event.stopPropagation();toggleMindmapGroup(' + jsArg(runId) + ',' + jsArg(node.id) + ')">收起</button>';
+				html += '<button class="mindmap-group-toggle" onclick="event.stopPropagation();toggleMindmapGroup(' + jsArg(runId) + ',' + jsArg(node.id) + ',this)">收起</button>';
 			} else {
-				html += '<button class="mindmap-group-toggle" onclick="event.stopPropagation();toggleMindmapGroup(' + jsArg(runId) + ',' + jsArg(node.id) + ')">展开全部 ' + totalChildren + ' 个</button>';
+				html += '<button class="mindmap-group-toggle" onclick="event.stopPropagation();toggleMindmapGroup(' + jsArg(runId) + ',' + jsArg(node.id) + ',this)">展开全部 ' + totalChildren + ' 个</button>';
 			}
 			html += '</div>';
 		}
@@ -1671,8 +1564,8 @@ function renderRunDetailShell(runId, state, plan, attemptsMap) {
 	var mindmapActive = currentView === 'mindmap' ? ' active' : '';
 	var detailActive = currentView === 'detail' ? ' active' : '';
 	var switchHtml = '<div class="run-detail-view-toggle mindmap-view-toggle">' +
-		'<button class="run-detail-view-btn mindmap-view-toggle-btn' + mindmapActive + '" data-view="mindmap" onclick="switchRunDetailView(' + jsArg(runId) + ',' + jsArg('mindmap') + ')">脑图</button>' +
-		'<button class="run-detail-view-btn mindmap-view-toggle-btn' + detailActive + '" data-view="detail" onclick="switchRunDetailView(' + jsArg(runId) + ',' + jsArg('detail') + ')">详情</button>' +
+		'<button class="run-detail-view-btn mindmap-view-toggle-btn' + mindmapActive + '" data-view="mindmap" onclick="switchRunDetailView(' + jsArg(runId) + ',' + jsArg('mindmap') + ',this)">脑图</button>' +
+		'<button class="run-detail-view-btn mindmap-view-toggle-btn' + detailActive + '" data-view="detail" onclick="switchRunDetailView(' + jsArg(runId) + ',' + jsArg('detail') + ',this)">详情</button>' +
 		'</div>';
 	var contentHtml = currentView === 'detail'
 		? '<div data-run-detail-view="detail">' + renderTaskDetail(state, plan, attemptsMap) + '</div>'
@@ -1680,9 +1573,9 @@ function renderRunDetailShell(runId, state, plan, attemptsMap) {
 	return switchHtml + contentHtml;
 }
 
-window.switchRunDetailView = function(runId, view) {
+window.switchRunDetailView = function(runId, view, sourceEl) {
 	setRunDetailView(runId, view);
-	var detailEl = $('run-detail-' + runId);
+	var detailEl = findRunDetailElement(runId, sourceEl);
 	if (!detailEl) return;
 	var plan2 = window._latestPlanForRun ? window._latestPlanForRun[runId] : null;
 	var attempts = window._latestAttemptsForRun ? window._latestAttemptsForRun[runId] : null;
@@ -1785,9 +1678,9 @@ function renderTaskDetail(state, plan, attemptsMap) {
 				var safeId = escapeHtml(state.runId);
 				var safeTaskId = escapeHtml(task.id);
 				return '<div class="task-disposition">' + dBadge +
-					'<button class="btn btn-sm" style="font-size:11px;padding:2px 6px;margin-left:4px" onclick="setTaskDisposition(' + jsArg(state.runId) + ',' + jsArg(task.id) + ',' + jsArg('skip') + ')">跳过</button>' +
-					'<button class="btn btn-sm" style="font-size:11px;padding:2px 6px;margin-left:2px" onclick="setTaskDisposition(' + jsArg(state.runId) + ',' + jsArg(task.id) + ',' + jsArg('force_rerun') + ')">强制重跑</button>' +
-					'<button class="btn btn-sm" style="font-size:11px;padding:2px 6px;margin-left:2px" onclick="setTaskDisposition(' + jsArg(state.runId) + ',' + jsArg(task.id) + ',' + jsArg('default') + ')">恢复默认</button>' +
+					'<button class="btn btn-sm" style="font-size:11px;padding:2px 6px;margin-left:4px" onclick="setTaskDisposition(' + jsArg(state.runId) + ',' + jsArg(task.id) + ',' + jsArg('skip') + ',this)">跳过</button>' +
+					'<button class="btn btn-sm" style="font-size:11px;padding:2px 6px;margin-left:2px" onclick="setTaskDisposition(' + jsArg(state.runId) + ',' + jsArg(task.id) + ',' + jsArg('force_rerun') + ',this)">强制重跑</button>' +
+					'<button class="btn btn-sm" style="font-size:11px;padding:2px 6px;margin-left:2px" onclick="setTaskDisposition(' + jsArg(state.runId) + ',' + jsArg(task.id) + ',' + jsArg('default') + ',this)">恢复默认</button>' +
 					'</div>';
 			})() +
 			'</td></tr>';
@@ -2108,7 +2001,7 @@ async function deleteRun(runId) {
 }
 
 
-async function setTaskDisposition(runId, taskId, disposition) {
+async function setTaskDisposition(runId, taskId, disposition, sourceEl) {
 	try {
 		await api('/runs/' + runId + '/tasks/' + taskId + '/manual-disposition', {
 			method: 'PATCH',
@@ -2117,8 +2010,8 @@ async function setTaskDisposition(runId, taskId, disposition) {
 		});
 		showSuccess('已更新任务标记');
 	} catch (e) { showError(e.message); }
-	var dEl = document.getElementById('run-detail-' + runId);
-	if (dEl && dEl.style.display === 'block') { dEl.style.display = 'none'; toggleRunDetail(runId); }
+	var dEl = findRunDetailElement(runId, sourceEl);
+	if (dEl && dEl.style.display === 'block') { dEl.style.display = 'none'; toggleRunDetail(runId, dEl); }
 }
 
 async function rerunRunConfirm(runId) {
@@ -2254,7 +2147,7 @@ async function resumeRunWithConfirm(runId) {
 }
 
 function renderRunActions(r) {
-	var html = '<span class="detail-toggle" onclick="toggleRunDetail(\\'' + r.runId + '\\')">展开任务详情</span>';
+	var html = '<span class="detail-toggle" onclick="toggleRunDetail(\\'' + r.runId + '\\',this)">展开任务详情</span>';
 	if (r.status === 'running') html += '<button class="btn btn-primary btn-sm" onclick="pauseRunWithConfirm(\\'' + r.runId + '\\')">暂停</button><button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(\\'' + r.runId + '\\')">取消</button>';
 	if (r.status === 'paused') html += '<button class="btn btn-primary btn-sm" onclick="resumeRunWithConfirm(\\'' + r.runId + '\\')">恢复</button><button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(\\'' + r.runId + '\\')">取消</button>';
 	if (r.status === 'completed' || r.status === 'completed_with_failures' || r.status === 'failed') html += '<button class="btn btn-primary btn-sm" onclick="viewReport(\\'' + r.runId + '\\')">查看报告</button><button class="btn btn-primary btn-sm" onclick="rerunRunConfirm(\\'' + r.runId + '\\')">按标记重跑</button><button class="btn btn-danger btn-sm" onclick="deleteRun(\\'' + r.runId + '\\')">删除</button>';
