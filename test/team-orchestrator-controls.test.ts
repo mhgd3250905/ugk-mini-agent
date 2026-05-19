@@ -1291,3 +1291,56 @@ test("P25: fallback report includes previousErrorSummary for skipped tasks", asy
 			await rm(root, { recursive: true });
 		}
 	});
+
+	// ── Timeout summary derivation ──
+
+	test("handleTimeout derives summary from taskStates", async () => {
+		const root = await mkdtemp(join(tmpdir(), "team-timeout-summary-"));
+		try {
+			class SlowThenResolveRunner extends MockRoleRunner {
+				override async runWorker(input: import("../src/team/role-runner.js").WorkerInput) {
+					// task_1 completes after 1.2s (exceeding the 1s timeout)
+					if (input.task.id === "task_1") {
+						await new Promise(r => setTimeout(r, 1200));
+					}
+					return super.runWorker(input);
+				}
+			}
+
+			const planStore = new PlanStore(root);
+			const unitStore = new TeamUnitStore(root);
+			const workspace = new RunWorkspace(root);
+			const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+			const plan = await planStore.create({
+				title: "timeout summary test",
+				defaultTeamUnitId: unit.teamUnitId,
+				goal: { text: "test" },
+				tasks: [
+					{ id: "task_1", title: "t1", input: { text: "do 1" }, acceptance: { rules: ["r1"] } },
+					{ id: "task_2", title: "t2", input: { text: "do 2" }, acceptance: { rules: ["r2"] } },
+				],
+				outputContract: { text: "output" },
+			});
+			const runner = new SlowThenResolveRunner();
+			const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+
+			// Create run with 1-second timeout
+			const state = await orchestrator.createRun(plan.planId, { maxRunDurationMinutes: 1 / 60 });
+			const final = await orchestrator.runToCompletion(state.runId);
+
+			assert.equal(final.status, "failed", "run should be failed after timeout");
+			assert.equal(final.lastError, "run timeout");
+			assert.equal(final.taskStates.task_1?.status, "succeeded", "task_1 should succeed before timeout");
+			assert.equal(final.taskStates.task_2?.status, "failed", "task_2 should be failed by timeout");
+			assert.equal(final.taskStates.task_2?.errorSummary, "run timeout");
+
+			const taskCount = Object.keys(final.taskStates).length;
+			assert.equal(final.summary.totalTasks, taskCount, "summary.totalTasks must match taskStates count");
+			assert.equal(final.summary.succeededTasks, 1, "summary.succeededTasks: task_1");
+			assert.equal(final.summary.failedTasks, 1, "summary.failedTasks: task_2 timed out");
+			assert.equal(final.summary.cancelledTasks, 0);
+			assert.equal(final.summary.skippedTasks, 0);
+		} finally {
+			await rm(root, { recursive: true });
+		}
+	});

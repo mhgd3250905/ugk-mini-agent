@@ -1119,6 +1119,7 @@ export class TeamOrchestrator {
 		state.lease = null;
 		state.updatedAt = now();
 		await this.finishUnfinishedActiveAttempts(state, "run timeout");
+		state.summary = computeTeamRunSummary(state.taskStates);
 		await this.workspace.saveState(state);
 	}
 
