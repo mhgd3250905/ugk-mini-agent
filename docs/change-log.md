@@ -12,6 +12,20 @@
 
 ---
 
+## 2026-05-19 — Team Summary 审核修复
+
+- **主题**: 修复 Team run summary 派生逻辑的审核问题，确保所有路径保存的 summary 同步反映 taskStates
+- **影响范围**: `src/team/orchestrator.ts`, `test/team-summary.test.ts`, `test/team-orchestrator-controls.test.ts`
+- **变更**:
+  - `test/team-summary.test.ts`: 用类型安全的 `taskState()` fixture 替换 `progress: null`，消除 `npx tsc --noEmit` 错误
+  - `src/team/orchestrator.ts` `handleTimeout()`: 在 `finishUnfinishedActiveAttempts` 之后、`saveState` 之前插入 `computeTeamRunSummary(state.taskStates)`，修复 timeout 路径 stale summary
+  - `src/team/orchestrator.ts`: 删除 `private recomputeSummary()`，`skipGeneratedChildren()` 改用 `computeTeamRunSummary(state.taskStates)`，修复 generated child skip 路径沿用旧 `totalTasks` 的 bug
+  - `test/team-orchestrator-controls.test.ts`: 恢复 external AbortSignal 测试（从 `test.skip` 改为确定性 barrier），新增 timeout summary 和 generated child skip summary 回归测试
+- **测试结果**: `npm run test:team` — 671 pass / 73 skip / 0 fail
+- **验证**: `npx tsc --noEmit` 通过，`git diff --check` 通过
+
+---
+
 ## 2026-05-19 — Team 测试基线对齐
 
 - **主题**: 对齐测试断言与当前真实行为，让 `npm run test:team` 失败语义可信
