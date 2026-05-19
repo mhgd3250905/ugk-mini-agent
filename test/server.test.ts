@@ -6709,6 +6709,31 @@ test("GET /playground/team caches run state for safe detail view switching", asy
 	await app.close();
 });
 
+test("GET /playground/team scopes run detail expansion to the clicked card", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/team",
+	});
+
+	assert.equal(response.statusCode, 200);
+
+	assert.match(response.body, /function findRunDetailElement\(runId, sourceEl\)/);
+	assert.match(response.body, /sourceEl\.closest\('\[data-run-id\]'\)/);
+	assert.match(response.body, /var scoped = card\.querySelector\('\.run-detail'\)/);
+	assert.match(response.body, /async function toggleRunDetail\(runId, sourceEl\)/);
+	assert.match(response.body, /var detailEl = findRunDetailElement\(runId, sourceEl\)/);
+	assert.match(response.body, /toggleRunDetail\(runId, el\)/);
+	assert.match(response.body, /onclick="toggleRunDetail\([\s\S]*this\)">展开任务详情/);
+	assert.doesNotMatch(response.body, /var detailEl = \$\("run-detail-" \+ runId\)/);
+	assert.doesNotMatch(response.body, /var detailEl = \$\('run-detail-' \+ runId\)/);
+
+	await app.close();
+});
+
 
 	test("GET /playground/team includes mindmap view-model helpers and node structure", async () => {
 		const app = await buildServer({
@@ -6861,16 +6886,16 @@ test("GET /playground/team caches run state for safe detail view switching", asy
 			/jsArg\(node\.status\)/,
 		);
 
-		// The onclick contains toggleMindmapNode with three arguments via jsArg
+		// The onclick contains toggleMindmapNode with node status and the clicked button as scope
 		assert.match(
 			response.body,
-			/toggleMindmapNode\(' \+ jsArg\(runId\) \+ ',' \+ jsArg\(node\.id\) \+ ',' \+ jsArg\(node\.status\) \+ '\)/,
+			/toggleMindmapNode\(' \+ jsArg\(runId\) \+ ',' \+ jsArg\(node\.id\) \+ ',' \+ jsArg\(node\.status\) \+ ',this\)/,
 		);
 
-		// toggleMindmapNode must accept a nodeStatus (or equivalent) third argument
+		// toggleMindmapNode must accept nodeStatus and sourceEl arguments
 		assert.match(
 			response.body,
-			/window\.toggleMindmapNode\s*=\s*function\s*\(\s*runId\s*,\s*taskId\s*,\s*nodeStatus\s*\)/,
+			/window\.toggleMindmapNode\s*=\s*function\s*\(\s*runId\s*,\s*taskId\s*,\s*nodeStatus\s*,\s*sourceEl\s*\)/,
 		);
 
 		// toggle must compute currentlyExpanded from isMindmapNodeExpanded, not bare flip

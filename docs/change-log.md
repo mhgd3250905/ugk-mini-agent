@@ -33,6 +33,23 @@
 
 ---
 
+## 2026-05-19 — Team UI Helper Parity Fix
+
+- **主题**: 修复 team-page-helpers.ts 虚假自动同步注释，补 helper vs inline script parity 测试，恢复 dashboard active run current task title
+- **影响范围**: `src/ui/team-page-helpers.ts`, `test/team-page-ui.test.ts`, `test/server.test.ts`
+- **变更**:
+  - 修正 `team-page-helpers.ts` 顶部注释：从声称 `buildHelpersBlock() + fn.toString()` 自动同步改为诚实描述为 parity-tested mirror helper
+  - `renderPlanDashboardCard` helper 补上 active run current task title 查找逻辑（使用 `safePlan.tasks` 匹配 inline 行为）
+  - 恢复 `P19-T2: active run card shows current task summary` 测试中的 `Task Two` 断言
+  - 新增 8 个 parity 测试：提取 inline script 中对应函数，对同一输入比较关键输出 token
+  - 覆盖函数：renderPlanDashboardCard、renderDynamicPlanDesign、renderNormalPlanDesign、renderPlanRunCard
+  - 新增 `test/server.test.ts` scoped run detail expansion 测试（从 dirty hunk 中选择性 stage）
+  - 更新 mindmap toggleMindmapNode 签名测试（sourceEl 参数）
+  - P19-T5 updateRunCard skip 补 TODO 和 `[MIGRATION: inline extraction]` 标记
+- **验证**: `npm run test:team` 715 pass / 13 skip / 0 fail, `npx tsc --noEmit` 通过
+
+---
+
 ## 2026-05-19 — Team Summary 审核修复
 
 - **主题**: 修复 Team run summary 派生逻辑的审核问题，确保所有路径保存的 summary 同步反映 taskStates
