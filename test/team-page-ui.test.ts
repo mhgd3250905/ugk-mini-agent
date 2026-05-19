@@ -1109,6 +1109,29 @@ test("P15-fix: buildTaskDetailModel includes generated children not in plan.task
 	assert.ok(model.taskById["process__b"]);
 });
 
+test("P15-fix: taskDefinitions wins over legacy generated task fallback", () => {
+	const state = {
+		taskStates: {
+			process: { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 0, activeAttemptId: null },
+			"process__a": { status: "succeeded", progress: { phase: "succeeded", message: "done" }, attemptCount: 1, activeAttemptId: null },
+		},
+		taskDefinitions: [
+			{ id: "process__a", title: "Authoritative Child", parentTaskId: "process", generated: true, generatedSource: "for_each" },
+		],
+		generatedTasks: [
+			{ id: "process__a", title: "Stale Generated Child", parentTaskId: "process", generated: true, generatedSource: "decomposition" },
+		],
+		tasks: [
+			{ id: "process__a", title: "Stale State Task", parentTaskId: "process", generated: true, generatedSource: "decomposition" },
+		],
+	};
+	const plan = { tasks: [{ id: "process", title: "Process each", type: "for_each" }] };
+	const model = buildTaskDetailModel(state, plan);
+	assert.equal(model.taskById["process__a"].title, "Authoritative Child");
+	assert.equal(model.taskById["process__a"].generatedSource, "for_each");
+	assert.deepEqual(model.childrenByParent["process"], ["process__a"]);
+});
+
 test("P15-fix: generated children have correct group label", () => {
 	const parent = { id: "fe", title: "ForEach Task", type: "for_each" };
 	const childIds = ["fe__x"];
@@ -1216,17 +1239,27 @@ test("P16-T1: for_each itemsFrom is derived from discovery task id + output key"
 	});
 	const discTask = payload.tasks[0];
 	const feTask = payload.tasks[1];
+	assert.ok(discTask);
+	assert.ok(feTask);
+	assert.ok(discTask.discovery);
+	assert.ok(feTask.forEach);
 	assert.equal(feTask.forEach.itemsFrom, discTask.id + "." + discTask.discovery.outputKey);
 	assert.equal(feTask.forEach.itemsFrom, "discover.results");
 });
 
 test("P16-T1: default values applied for empty fields", () => {
 	const payload = buildDynamicPlanPayloadFromValues({});
-	assert.equal(payload.tasks[0].title, "发现条目", "discovery title defaults to 发现条目");
-	assert.equal(payload.tasks[0].discovery.outputKey, "items", "output key defaults to items");
-	assert.deepEqual(payload.tasks[0].acceptance.rules, ["输出为有效 JSON"], "acceptance defaults when empty");
-	assert.equal(payload.tasks[1].forEach.taskTemplate.title, "处理 {{item.title}}", "child title defaults");
-	assert.deepEqual(payload.tasks[1].acceptance.rules, ["输出有效"], "child acceptance defaults to 输出有效 (non-empty split)");
+	const discTask = payload.tasks[0];
+	const feTask = payload.tasks[1];
+	assert.ok(discTask);
+	assert.ok(feTask);
+	assert.ok(discTask.discovery);
+	assert.ok(feTask.forEach);
+	assert.equal(discTask.title, "发现条目", "discovery title defaults to 发现条目");
+	assert.equal(discTask.discovery.outputKey, "items", "output key defaults to items");
+	assert.deepEqual(discTask.acceptance.rules, ["输出为有效 JSON"], "acceptance defaults when empty");
+	assert.equal(feTask.forEach.taskTemplate.title, "处理 {{item.title}}", "child title defaults");
+	assert.deepEqual(feTask.acceptance.rules, ["输出有效"], "child acceptance defaults to 输出有效 (non-empty split)");
 	assert.equal(payload.outputContract.text, "中文汇总", "output contract defaults");
 });
 
@@ -1235,8 +1268,12 @@ test("P16-T1: multi-line acceptance split and trimmed", () => {
 		discAcceptance: "  line1  \n\n  line2  \n  \nline3",
 		childAcceptance: "a\n  \nb",
 	});
-	assert.deepEqual(payload.tasks[0].acceptance.rules, ["line1", "line2", "line3"]);
-	assert.deepEqual(payload.tasks[1].acceptance.rules, ["a", "b"]);
+	const discTask = payload.tasks[0];
+	const feTask = payload.tasks[1];
+	assert.ok(discTask);
+	assert.ok(feTask);
+	assert.deepEqual(discTask.acceptance.rules, ["line1", "line2", "line3"]);
+	assert.deepEqual(feTask.acceptance.rules, ["a", "b"]);
 });
 
 test("P16-T1: malicious strings pass through raw (escaping is render concern)", () => {
@@ -1246,8 +1283,10 @@ test("P16-T1: malicious strings pass through raw (escaping is render concern)", 
 		discInstruction: "'; DROP TABLE--",
 	});
 	assert.equal(payload.title, '<script>alert(1)</script>');
-	assert.equal(payload.tasks[0].title, '"onclick="bad');
-	assert.equal(payload.tasks[0].input.text, "'; DROP TABLE--");
+	const discTask = payload.tasks[0];
+	assert.ok(discTask);
+	assert.equal(discTask.title, '"onclick="bad');
+	assert.equal(discTask.input.text, "'; DROP TABLE--");
 });
 
 test("P16-T1: parity — inline buildDynamicPlanPayload produces same shape as helper", () => {
@@ -1266,6 +1305,8 @@ test("P16-T1: parity — inline buildDynamicPlanPayload produces same shape as h
 			discAcceptance: "r1\nr2", childTitle: "CT", childInstruction: "CI",
 			childAcceptance: "ca", outputContract: "oc",
 		});
+		assert.ok(helperPayload.tasks[1]);
+		assert.ok(helperPayload.tasks[1].forEach);
 		assert.equal(inlinePayload.tasks.length, helperPayload.tasks.length);
 		assert.equal(inlinePayload.tasks[0].type, helperPayload.tasks[0].type);
 		assert.equal(inlinePayload.tasks[1].type, helperPayload.tasks[1].type);

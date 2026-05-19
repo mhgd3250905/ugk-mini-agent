@@ -345,7 +345,7 @@ export function buildTaskDetailModel(state: any, plan: any): TaskDetailModel {
 	var generatedTasks: any[] = [];
 	if (Array.isArray(state.taskDefinitions)) generatedTasks = generatedTasks.concat(state.taskDefinitions);
 	if (!generatedTasks.length && Array.isArray(state.generatedTasks)) generatedTasks = generatedTasks.concat(state.generatedTasks);
-	if (Array.isArray(state.tasks)) generatedTasks = generatedTasks.concat(state.tasks.filter(function(t: any) { return t && t.generated; }));
+	if (!generatedTasks.length && Array.isArray(state.tasks)) generatedTasks = generatedTasks.concat(state.tasks.filter(function(t: any) { return t && t.generated; }));
 	var planIdSet: Record<string, boolean> = {};
 	var taskById: Record<string, any> = {};
 	var planTasks = (plan && plan.tasks) || [];
