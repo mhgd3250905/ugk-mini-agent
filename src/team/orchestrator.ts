@@ -2,6 +2,7 @@ import type { TeamRunState, TeamTask, TeamTaskState, TeamPlan, TeamDiscoveryResu
 import { PlanStore } from "./plan-store.js";
 import { TeamUnitStore } from "./team-unit-store.js";
 import { RunWorkspace } from "./run-workspace.js";
+import { computeTeamRunSummary } from "./team-summary.js";
 import type { TeamRoleRunner, ProfileAwareTeamRoleRunner } from "./role-runner.js";
 import { writeTimingSpan } from "./timing.js";
 import { progressMessages } from "./progress.js";
@@ -301,6 +302,7 @@ export class TeamOrchestrator {
 			}
 		}
 
+		state.summary = computeTeamRunSummary(state.taskStates);
 		await this.workspace.saveState(state);
 
 		// Best-effort: mark active attempt as interrupted
@@ -348,10 +350,10 @@ export class TeamOrchestrator {
 			if (ts.status === "running" || ts.status === "pending" || ts.status === "interrupted") {
 				ts.status = "cancelled";
 				ts.progress = { phase: "cancelled", message: progressMessages.cancelled, updatedAt: now() };
-				state.summary.cancelledTasks++;
-			}
+				}
 		}
 
+		state.summary = computeTeamRunSummary(state.taskStates);
 		await this.workspace.saveState(state);
 
 		// Best-effort: mark active attempts as cancelled
@@ -431,17 +433,7 @@ export class TeamOrchestrator {
 		}
 
 		// Recompute summary
-		const succeededTasks = Object.values(state.taskStates).filter(ts => ts.status === "succeeded").length;
-		const failedTasks = Object.values(state.taskStates).filter(ts => ts.status === "failed").length;
-		const cancelledTasks = Object.values(state.taskStates).filter(ts => ts.status === "cancelled").length;
-		const skippedTasks = Object.values(state.taskStates).filter(ts => ts.status === "skipped").length;
-		state.summary = {
-			totalTasks: state.summary.totalTasks,
-			succeededTasks,
-			failedTasks,
-			cancelledTasks,
-			skippedTasks,
-		};
+		state.summary = computeTeamRunSummary(state.taskStates);
 
 		// Reset run-level terminal fields
 		state.status = "queued";
@@ -505,6 +497,7 @@ export class TeamOrchestrator {
 		state.taskStates[task.id]!.status = "running";
 		state.taskStates[task.id]!.progress = { phase: "worker_running", message: "running decomposer", updatedAt: now() };
 		state.updatedAt = now();
+		state.summary = computeTeamRunSummary(state.taskStates);
 		await this.workspace.saveState(state);
 
 		const output = await runWithTimeout("decomposer", this.phaseTimeouts.workerMs, signal, async (localSignal) => {
@@ -605,8 +598,8 @@ export class TeamOrchestrator {
 		ts.status = "failed";
 		ts.errorSummary = errorSummary;
 		ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-		state.summary.failedTasks++;
 		state.updatedAt = now();
+		state.summary = computeTeamRunSummary(state.taskStates);
 		await this.workspace.saveState(state);
 	}
 
@@ -626,14 +619,15 @@ export class TeamOrchestrator {
 			updatedAt: now(),
 		};
 		state.updatedAt = now();
+		state.summary = computeTeamRunSummary(state.taskStates);
 		await this.workspace.saveState(state);
 
 		if (childTasks.length === 0) {
 			state = (await this.workspace.getState(state.runId))!;
 			state.taskStates[parentTask.id]!.status = "succeeded";
 			state.taskStates[parentTask.id]!.progress = { phase: "succeeded", message: "no child tasks returned", updatedAt: now() };
-			state.summary.succeededTasks++;
 			state.updatedAt = now();
+			state.summary = computeTeamRunSummary(state.taskStates);
 			await this.workspace.saveState(state);
 			return;
 		}
@@ -666,22 +660,20 @@ export class TeamOrchestrator {
 			ts.errorSummary = `decomposed child ${failedChild.id} failed: ${childState.errorSummary ?? "unknown error"}`;
 			ts.resultRef = childState.resultRef;
 			ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-			state.summary.failedTasks++;
 		} else {
 			const allSkipped = childTasks.every(child => state.taskStates[child.id]?.status === "skipped");
 			if (allSkipped) {
 				ts.status = "skipped";
 				ts.errorSummary = null;
 				ts.progress = { phase: "skipped", message: progressMessages.skipped, updatedAt: now() };
-				state.summary.skippedTasks = (state.summary.skippedTasks ?? 0) + 1;
-			} else {
+				} else {
 				ts.status = "succeeded";
 				ts.errorSummary = null;
 				ts.progress = { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
-				state.summary.succeededTasks++;
-			}
+				}
 		}
 		state.updatedAt = now();
+		state.summary = computeTeamRunSummary(state.taskStates);
 		await this.workspace.saveState(state);
 	}
 
@@ -691,6 +683,7 @@ export class TeamOrchestrator {
 		state.taskStates[task.id]!.status = "running";
 		state.taskStates[task.id]!.progress = { phase: "worker_running", message: progressMessages.worker_running, updatedAt: now() };
 		state.updatedAt = now();
+		state.summary = computeTeamRunSummary(state.taskStates);
 		await this.workspace.saveState(state);
 
 		let attemptCount = state.taskStates[task.id]!.attemptCount;
@@ -704,6 +697,7 @@ export class TeamOrchestrator {
 			state.taskStates[task.id]!.attemptCount = attemptCount;
 			const { attemptId, attemptRoot } = await this.workspace.createAttempt(state.runId, task.id);
 			state.taskStates[task.id]!.activeAttemptId = attemptId;
+			state.summary = computeTeamRunSummary(state.taskStates);
 			await this.workspace.saveState(state);
 
 			const workUnitResult = await this.runWorkUnit(state, task, attemptId, attemptRoot, signal);
@@ -731,9 +725,9 @@ export class TeamOrchestrator {
 							ts.status = "failed";
 							ts.errorSummary = valErr;
 							ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-							state.summary.failedTasks++;
-							taskDone = true;
+											taskDone = true;
 							state.updatedAt = now();
+							state.summary = computeTeamRunSummary(state.taskStates);
 							await this.workspace.saveState(state);
 							return;
 						}
@@ -741,13 +735,11 @@ export class TeamOrchestrator {
 					await this.workspace.finishAttempt(state.runId, task.id, attemptId, { status: "succeeded", phase: "succeeded", resultRef: ts.resultRef });
 					ts.status = "succeeded";
 					ts.progress = { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
-					state.summary.succeededTasks++;
-				} else {
+						} else {
 					await this.workspace.finishAttempt(state.runId, task.id, attemptId, { status: "failed", phase: "failed", errorSummary: "watcher accepted failed work unit" });
 					ts.status = "failed";
 					ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-					state.summary.failedTasks++;
-				}
+						}
 				taskDone = true;
 			} else if (watcherResult.decision === "confirm_failed") {
 				const attList = await this.workspace.listAttempts(state.runId, task.id);
@@ -757,8 +749,7 @@ export class TeamOrchestrator {
 				}
 				ts.status = "failed";
 				ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-				state.summary.failedTasks++;
-				taskDone = true;
+					taskDone = true;
 			} else if (watcherResult.decision === "request_revision") {
 				watcherRevisions++;
 				if (watcherRevisions > this.maxWatcherRevisions) {
@@ -770,14 +761,14 @@ export class TeamOrchestrator {
 					ts.status = "failed";
 					ts.errorSummary = "exceeded max watcher revisions";
 					ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-					state.summary.failedTasks++;
-					taskDone = true;
+							taskDone = true;
 				} else {
 					await this.workspace.finishAttempt(state.runId, task.id, attemptId, { status: "interrupted", phase: "watcher_revision_requested", errorSummary: "watcher requested revision" });
 				}
 			}
 
 			state.updatedAt = now();
+			state.summary = computeTeamRunSummary(state.taskStates);
 			await this.workspace.saveState(state);
 		}
 	}
@@ -1119,8 +1110,7 @@ export class TeamOrchestrator {
 				ts.status = "failed";
 				ts.errorSummary = "run timeout";
 				ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-				state.summary.failedTasks++;
-			}
+				}
 		}
 		state.status = "failed";
 		state.lastError = "run timeout";
@@ -1148,18 +1138,8 @@ export class TeamOrchestrator {
 				taskState.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
 			}
 		}
-		const failedTasks = Object.values(state.taskStates).filter((taskState) => taskState.status === "failed").length;
-		const succeededTasks = Object.values(state.taskStates).filter((taskState) => taskState.status === "succeeded").length;
-		const cancelledTasks = Object.values(state.taskStates).filter((taskState) => taskState.status === "cancelled").length;
-		const skippedTasks = Object.values(state.taskStates).filter((taskState) => taskState.status === "skipped").length;
-		state.summary = {
-			totalTasks: state.summary.totalTasks,
-			succeededTasks,
-			failedTasks,
-			cancelledTasks,
-			skippedTasks,
-		};
-		state.status = succeededTasks > 0 ? "completed_with_failures" : "failed";
+		state.summary = computeTeamRunSummary(state.taskStates);
+			state.status = state.summary.succeededTasks > 0 ? "completed_with_failures" : "failed";
 		state.lastError = message;
 		state.activeElapsedMs = this.accumulateElapsed(state);
 		state.finishedAt = now();
@@ -1328,9 +1308,8 @@ export class TeamOrchestrator {
 		ts.status = "failed";
 		ts.errorSummary = `failed to aggregate decomposed discovery output from child ${childTaskId}`;
 		ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-		state.summary.succeededTasks = Math.max(0, state.summary.succeededTasks - 1);
-		state.summary.failedTasks++;
 		state.updatedAt = now();
+		state.summary = computeTeamRunSummary(state.taskStates);
 		await this.workspace.saveState(state);
 	}
 
@@ -1406,6 +1385,7 @@ export class TeamOrchestrator {
 			ts.resultRef = `tasks/${parentTask.id}/attempts/${attemptId}/discovery-result.json`;
 		}
 		state.updatedAt = now();
+		state.summary = computeTeamRunSummary(state.taskStates);
 		await this.workspace.saveState(state);
 	}
 
@@ -1483,8 +1463,8 @@ export class TeamOrchestrator {
 					s.taskStates[task.id]!.status = "failed";
 					s.taskStates[task.id]!.errorSummary = `failed to resolve discovery items from '${task.forEach.itemsFrom}'`;
 					s.taskStates[task.id]!.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-					s.summary.failedTasks++;
 					s.updatedAt = now();
+					s.summary = computeTeamRunSummary(s.taskStates);
 					await this.workspace.saveState(s);
 					return;
 				}
@@ -1519,14 +1499,15 @@ export class TeamOrchestrator {
 			state.taskStates[task.id]!.status = "running";
 			state.taskStates[task.id]!.progress = { phase: "worker_running", message: `expanding ${childTasks.length} child tasks`, updatedAt: now() };
 			state.updatedAt = now();
+			state.summary = computeTeamRunSummary(state.taskStates);
 			await this.workspace.saveState(state);
 
 			if (childTasks.length === 0) {
 				state = (await this.workspace.getState(state.runId))!;
 				state.taskStates[task.id]!.status = "succeeded";
 				state.taskStates[task.id]!.progress = { phase: "succeeded", message: "no items to expand", updatedAt: now() };
-				state.summary.succeededTasks++;
-				state.updatedAt = now();
+					state.updatedAt = now();
+				state.summary = computeTeamRunSummary(state.taskStates);
 				await this.workspace.saveState(state);
 				return;
 			}
@@ -1555,22 +1536,20 @@ export class TeamOrchestrator {
 				state.taskStates[task.id]!.status = "failed";
 				state.taskStates[task.id]!.errorSummary = "one or more child tasks failed";
 				state.taskStates[task.id]!.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-				state.summary.failedTasks++;
-			} else {
+				} else {
 				const allSkipped = childTasks.every(c => state.taskStates[c.id]?.status === "skipped");
 				if (allSkipped) {
 					state.taskStates[task.id]!.status = "skipped";
 					state.taskStates[task.id]!.errorSummary = null;
 					state.taskStates[task.id]!.progress = { phase: "skipped", message: progressMessages.skipped, updatedAt: now() };
-					state.summary.skippedTasks = (state.summary.skippedTasks ?? 0) + 1;
-				} else {
+						} else {
 					state.taskStates[task.id]!.status = "succeeded";
 					state.taskStates[task.id]!.errorSummary = null;
 					state.taskStates[task.id]!.progress = { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
-					state.summary.succeededTasks++;
-				}
+						}
 			}
 			state.updatedAt = now();
+			state.summary = computeTeamRunSummary(state.taskStates);
 			await this.workspace.saveState(state);
 		}
 
@@ -1677,22 +1656,20 @@ export class TeamOrchestrator {
 				ts.status = "failed";
 				ts.errorSummary = "one or more child tasks failed";
 				ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-				state.summary.failedTasks++;
-			} else {
+				} else {
 				const allSkipped = childTasks.every(c => state.taskStates[c.id]?.status === "skipped");
 				if (allSkipped) {
 					ts.status = "skipped";
 					ts.errorSummary = null;
 					ts.progress = { phase: "skipped", message: progressMessages.skipped, updatedAt: now() };
-					state.summary.skippedTasks = (state.summary.skippedTasks ?? 0) + 1;
-				} else {
+						} else {
 					ts.status = "succeeded";
 					ts.errorSummary = null;
 					ts.progress = { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
-					state.summary.succeededTasks++;
-				}
+						}
 			}
 			state.updatedAt = now();
+			state.summary = computeTeamRunSummary(state.taskStates);
 			await this.workspace.saveState(state);
 		}
 
