@@ -1,9 +1,12 @@
 /**
- * Pure helpers shared between team-page.ts inline script and tests.
+ * Parity-tested mirror helpers for team-page.ts inline script functions.
  *
- * Dual-copy note: these functions exist both here (tested directly)
- * and in the inline <script> of renderTeamPage(). The injection via
- * buildHelpersBlock() + fn.toString() keeps them in sync automatically.
+ * These functions are tested directly AND compared against the inline
+ * <script> implementations via parity tests. They are NOT automatically
+ * injected into the page — the inline script has its own copy.
+ *
+ * Keep in sync: when the inline implementation changes, update the
+ * helper and verify parity tests still pass.
  */
 
 export const ACTIVE_RUN_STATUSES: Record<string, true> = { queued: true, running: true, paused: true };
@@ -125,9 +128,15 @@ export function renderPlanDashboardCard(plan: any, runs: any[]): string {
 	var activeSummary = '';
 	if (activeRun) {
 		var prog = runProgressSummary(activeRun);
+		var taskTitle = activeRun.currentTaskId || '';
+		if (safePlan.tasks && activeRun.currentTaskId) {
+			var task = safePlan.tasks.find(function(t: any) { return t.id === activeRun.currentTaskId; });
+			if (task) taskTitle = task.title;
+		}
 		activeSummary = '<div class="plan-card-run-summary">'
 			+ statusBadge(activeRun.status)
 			+ ' <span style="font-size:12px;color:var(--muted)">' + prog.done + '/' + prog.total + '</span>'
+			+ (taskTitle ? ' <span style="font-size:12px;color:var(--accent)">→ ' + escapeHtml(taskTitle) + '</span>' : '')
 			+ '<div class="progress-bar" style="margin-top:4px"><div class="progress-bar-fill" style="width:' + prog.pct + '%"></div></div>'
 			+ '</div>';
 	} else if (latestRun && isFailed) {
