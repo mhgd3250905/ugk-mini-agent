@@ -15,6 +15,7 @@
 | 小米 | `xiaomi-mimo-cn` | `mimo-v2.5-pro` | `cn` | `XIAOMI_MIMO_API_KEY` |
 | 小米 | `xiaomi-mimo-sgp` | `mimo-v2.5-pro` | `sgp` | `XIAOMI_MIMO_API_KEY` |
 | 小米 | `xiaomi-mimo-ams` | `mimo-v2.5-pro` | `ams` | `XIAOMI_MIMO_API_KEY` |
+| 阿里 CodePlan | `ali-codeplan` | `glm-5.1` / `kimi-k2.6` | `cn-beijing` | `ALI_CODEPLAN_API_KEY` |
 
 ## 小米集群验证记录
 
@@ -34,6 +35,7 @@
 - `model.contextWindow` 用真实上下文窗口。DeepSeek V4 Pro / Flash 当前登记为 `1000000`，小米 `mimo-v2.5-pro` 当前登记为 `1048576`。
 - 智谱 GLM 当前走 `anthropic-messages` 链路和 `https://open.bigmodel.cn/api/anthropic`，模型登记为 `glm-5.1`，使用独立 `ZHIPU_GLM_API_KEY` 并通过 `authHeader: true` 发送 `Authorization: Bearer <key>`；不要复用 Anthropic SDK 的全局 `ANTHROPIC_AUTH_TOKEN`。
 - DeepSeek 当前按正式模型 registry 走 `anthropic-messages` 链路和 `https://api.deepseek.com/anthropic`，模型登记为 `deepseek-v4-pro` / `deepseek-v4-flash`。不要在 Team 或后台任务里按厂商名硬编码 OpenAI-compatible；调用协议以 provider 的 `api` 字段为准。
+- 阿里 CodePlan 当前登记为 `ali-codeplan`，走 `anthropic-messages` 链路和 `https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic`，模型为 `glm-5.1` / `kimi-k2.6`，使用独立 `ALI_CODEPLAN_API_KEY`。本地说明文件 `阿里codeplan-api-2026-5.txt` 只允许在 `UGK_ALLOW_LOCAL_API_TXT_BOOTSTRAP=true` 时作为开发 bootstrap 辅助读取，不是正式配置源。
 - API key 的正式来源是环境变量。仓库根目录的 `zhipu-api.txt`、`deepseek-api.txt`、`小米api.txt` 这类本地文件只允许作为开发者临时说明；只有显式设置 `UGK_ALLOW_LOCAL_API_TXT_BOOTSTRAP=true` 时，`getAppConfig()` 才会把它们作为本地开发 bootstrap 辅助读取。正常 Docker / 生产运行不要打开这个开关，更不能把这些文件作为 provider/model/api 的正式数据源。
 - `ANTHROPIC_AUTH_TOKEN` 只允许作为 Anthropic SDK / Anthropic 官方源自己的认证变量，不是项目级多 provider 公共 token。智谱、DeepSeek、小米这些 Anthropic-compatible provider 都必须使用自己的 env var，避免同进程 worker 被旧全局 token 污染。
 - `GET /v1/model-config` 和后台 conn worker 的默认模型解析都读取同一个有效 settings：优先 `UGK_MODEL_SETTINGS_PATH`，缺失时回退 `.pi/settings.json`。保存默认选择时只写有效 settings 路径，不改仓库默认文件。

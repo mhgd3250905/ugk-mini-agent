@@ -209,6 +209,7 @@ test("container runtime files exist with the expected base configuration", () =>
 
 	const envExample = readFileSync(envExamplePath, "utf8");
 	assert.match(envExample, /ZHIPU_GLM_API_KEY=/);
+	assert.match(envExample, /ALI_CODEPLAN_API_KEY=/);
 	assert.match(envExample, /HOST=0\.0\.0\.0/);
 	assert.match(envExample, /PORT=3000/);
 	assert.match(envExample, /HOST_PORT=3000/);

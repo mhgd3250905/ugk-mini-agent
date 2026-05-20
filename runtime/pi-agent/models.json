@@ -133,6 +133,25 @@
           "maxTokens": 16384
         }
       ]
+    },
+    "ali-codeplan": {
+      "name": "Ali CodePlan",
+      "vendor": "aliyun",
+      "region": "cn-beijing",
+      "priority": 40,
+      "baseUrl": "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic",
+      "api": "anthropic-messages",
+      "apiKey": "ALI_CODEPLAN_API_KEY",
+      "models": [
+        {
+          "id": "glm-5.1",
+          "name": "GLM-5.1 (Ali CodePlan)"
+        },
+        {
+          "id": "kimi-k2.6",
+          "name": "Kimi K2.6 (Ali CodePlan)"
+        }
+      ]
     }
   }
 }

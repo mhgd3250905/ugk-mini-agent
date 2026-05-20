@@ -30,6 +30,19 @@ test("loads DEEPSEEK_API_KEY from deepseek-api.txt when environment variable is 
 	delete process.env.TEST_DEEPSEEK_KEY;
 });
 
+test("loads ALI_CODEPLAN_API_KEY from ali codeplan api txt akikey spelling", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "ugk-pi-config-"));
+	const apiTxtPath = join(dir, "阿里codeplan-api-2026-5.txt");
+	await writeFile(apiTxtPath, "akikey = sk-ali-codeplan-test-123\n", "utf8");
+	delete process.env.ALI_CODEPLAN_API_KEY;
+
+	const loaded = loadApiKeyFromApiTxt(dir, "ALI_CODEPLAN_API_KEY", "阿里codeplan-api-2026-5.txt");
+
+	assert.equal(loaded, "sk-ali-codeplan-test-123");
+	assert.equal(process.env.ALI_CODEPLAN_API_KEY, "sk-ali-codeplan-test-123");
+	delete process.env.ALI_CODEPLAN_API_KEY;
+});
+
 test("getAppConfig does not load local api txt files by default", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "ugk-pi-config-"));
 	await writeFile(join(dir, "deepseek-api.txt"), "api-key = sk-deepseek-test-123", "utf8");
@@ -54,7 +67,9 @@ test("getAppConfig loads local api txt files only when bootstrap is explicitly e
 	const dir = await mkdtemp(join(tmpdir(), "ugk-pi-config-"));
 	const apiTxtPath = join(dir, "小米api.txt");
 	await writeFile(apiTxtPath, "model_name:mimo-v2.5-pro\napikey:tp-xiaomi-test-123\n", "utf8");
+	await writeFile(join(dir, "阿里codeplan-api-2026-5.txt"), "akikey: sk-ali-codeplan-test-123\n", "utf8");
 	delete process.env.XIAOMI_MIMO_API_KEY;
+	delete process.env.ALI_CODEPLAN_API_KEY;
 	const previousAllow = process.env.UGK_ALLOW_LOCAL_API_TXT_BOOTSTRAP;
 	process.env.UGK_ALLOW_LOCAL_API_TXT_BOOTSTRAP = "true";
 
@@ -62,8 +77,10 @@ test("getAppConfig loads local api txt files only when bootstrap is explicitly e
 		getAppConfig(dir);
 
 		assert.equal(process.env.XIAOMI_MIMO_API_KEY, "tp-xiaomi-test-123");
+		assert.equal(process.env.ALI_CODEPLAN_API_KEY, "sk-ali-codeplan-test-123");
 	} finally {
 		delete process.env.XIAOMI_MIMO_API_KEY;
+		delete process.env.ALI_CODEPLAN_API_KEY;
 		if (previousAllow === undefined) {
 			delete process.env.UGK_ALLOW_LOCAL_API_TXT_BOOTSTRAP;
 		} else {

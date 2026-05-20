@@ -100,6 +100,19 @@ async function createProjectRoot(): Promise<string> {
 						},
 					],
 				},
+				"ali-codeplan": {
+					name: "Ali CodePlan",
+					vendor: "aliyun",
+					region: "cn-beijing",
+					priority: 40,
+					baseUrl: "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic",
+					api: "anthropic-messages",
+					apiKey: "ALI_CODEPLAN_API_KEY",
+					models: [
+						{ id: "glm-5.1", name: "GLM-5.1 (Ali CodePlan)" },
+						{ id: "kimi-k2.6", name: "Kimi K2.6 (Ali CodePlan)" },
+					],
+				},
 			},
 		}),
 		"utf8",
@@ -120,7 +133,7 @@ test("model config store lists providers and current default selection", async (
 	});
 	assert.deepEqual(
 		config.providers.map((provider) => provider.id),
-		["zhipu-glm", "deepseek", "xiaomi-mimo-cn", "xiaomi-mimo-sgp", "xiaomi-mimo-ams"],
+		["zhipu-glm", "deepseek", "xiaomi-mimo-cn", "xiaomi-mimo-sgp", "xiaomi-mimo-ams", "ali-codeplan"],
 	);
 	assert.deepEqual(config.providers.map((provider) => [provider.id, provider.name, provider.vendor, provider.region, provider.priority]), [
 		["zhipu-glm", "Zhipu GLM", "zhipu", "cn", 10],
@@ -128,6 +141,7 @@ test("model config store lists providers and current default selection", async (
 		["xiaomi-mimo-cn", "Xiaomi MiMo China", "xiaomi", "cn", 31],
 		["xiaomi-mimo-sgp", "Xiaomi MiMo Singapore", "xiaomi", "sgp", 32],
 		["xiaomi-mimo-ams", "Xiaomi MiMo Europe", "xiaomi", "ams", 33],
+		["ali-codeplan", "Ali CodePlan", "aliyun", "cn-beijing", 40],
 	]);
 	assert.deepEqual(
 		config.providers.find((provider) => provider.id === "deepseek")?.models.map((model) => model.id),
@@ -155,6 +169,11 @@ test("model config store lists providers and current default selection", async (
 		},
 	]);
 	assert.equal(config.providers.find((provider) => provider.id === "xiaomi-mimo-cn")?.auth.envVar, "XIAOMI_MIMO_API_KEY");
+	assert.deepEqual(config.providers.find((provider) => provider.id === "ali-codeplan")?.models.map((model) => model.id), [
+		"glm-5.1",
+		"kimi-k2.6",
+	]);
+	assert.equal(config.providers.find((provider) => provider.id === "ali-codeplan")?.auth.envVar, "ALI_CODEPLAN_API_KEY");
 });
 
 test("model config store ignores default selection inside line comments", async () => {

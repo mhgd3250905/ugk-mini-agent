@@ -280,6 +280,19 @@ test("project models.json exposes the checked-in Xiaomi MiMo Anthropic-compatibl
 	}
 });
 
+test("project models.json exposes the checked-in Ali CodePlan Anthropic-compatible provider", () => {
+	const registry = ModelRegistry.create(AuthStorage.create(), getProjectModelsPath(process.cwd()));
+	const glmModel = registry.find("ali-codeplan", "glm-5.1");
+	const kimiModel = registry.find("ali-codeplan", "kimi-k2.6");
+
+	assert.notEqual(glmModel, undefined);
+	assert.equal(glmModel?.provider, "ali-codeplan");
+	assert.equal(glmModel?.id, "glm-5.1");
+	assert.notEqual(kimiModel, undefined);
+	assert.equal(kimiModel?.provider, "ali-codeplan");
+	assert.equal(kimiModel?.id, "kimi-k2.6");
+});
+
 test("resolveProjectDefaultModelContext uses project defaults and reserve budget", async () => {
 	const projectRoot = await mkdtemp(join(tmpdir(), "ugk-pi-default-context-"));
 	await mkdir(join(projectRoot, ".pi"), { recursive: true });

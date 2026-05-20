@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-20 — 新增阿里 CodePlan 模型源
+
+- **主题**: 接入阿里 CodePlan Anthropic-compatible 模型源，新增 `ali-codeplan` provider 与独立 `ALI_CODEPLAN_API_KEY`
+- **影响范围**: `runtime/pi-agent/models.json`, `.env.example`, `src/config.ts`, `docs/model-providers.md`, `test/agent-session-factory.test.ts`, `test/model-config.test.ts`, `test/config.test.ts`, `test/containerization.test.ts`
+- **变更**:
+  - 新增 `ali-codeplan` provider，走 `anthropic-messages` 和 `https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic`
+  - 登记 `glm-5.1` 与 `kimi-k2.6` 两个模型，key 使用环境变量 `ALI_CODEPLAN_API_KEY`
+  - 本地 `阿里codeplan-api-2026-5.txt` 仅在 `UGK_ALLOW_LOCAL_API_TXT_BOOTSTRAP=true` 时作为开发 bootstrap 辅助读取
+  - `readApiKeyFromText(...)` 兼容 `akikey` 拼写，避免把本地说明文件误当正式配置入口
+
+---
+
 ## 2026-05-20 — 新增 http-access 轻量网络访问技能
 
 - **主题**: 新增独立系统 skill `http-access`，用于无浏览器实体的 HTTP(S) 网络访问，当前默认关闭，由 Agent Profile 技能开关选择启用

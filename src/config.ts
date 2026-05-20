@@ -59,7 +59,7 @@ export function loadApiKeyFromApiTxt(
 }
 
 function readApiKeyFromText(content: string, envVarName: string): string | undefined {
-	const match = content.match(/api-?key\s*[:=]\s*(\S+)/i);
+	const match = content.match(/(?:api-?key|apikey|akikey)\s*[:=]\s*(\S+)/i);
 	const apiKey = match?.[1]?.trim();
 	if (apiKey) {
 		return apiKey;
@@ -79,6 +79,7 @@ export function getAppConfig(projectRoot: string = process.cwd()): AppConfig {
 		loadApiKeyFromApiTxt(projectRoot);
 		loadApiKeyFromApiTxt(projectRoot, "DEEPSEEK_API_KEY", "deepseek-api.txt");
 		loadApiKeyFromApiTxt(projectRoot, "XIAOMI_MIMO_API_KEY", "小米api.txt");
+		loadApiKeyFromApiTxt(projectRoot, "ALI_CODEPLAN_API_KEY", "阿里codeplan-api-2026-5.txt");
 	}
 	const dataDir = join(projectRoot, ".data");
 	const agentDataDir = join(dataDir, "agent");
