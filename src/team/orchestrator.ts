@@ -297,22 +297,24 @@ export class TeamOrchestrator {
 		state.lease = null;
 		state.updatedAt = now();
 
-		if (state.currentTaskId) {
-			const ts = state.taskStates[state.currentTaskId];
-			if (ts) {
+		// Mark ALL running tasks as interrupted (covers parallel children)
+		const runningTaskIds: string[] = [];
+		for (const [tid, ts] of Object.entries(state.taskStates)) {
+			if (ts.status === "running") {
 				ts.status = "interrupted";
 				ts.progress = { phase: "interrupted", message: progressMessages.interrupted, updatedAt: now() };
+				runningTaskIds.push(tid);
 			}
 		}
 
 		state.summary = computeTeamRunSummary(state.taskStates);
 		await this.workspace.saveState(state);
 
-		// Best-effort: mark active attempt as interrupted
-		if (state.currentTaskId) {
-			const ts = state.taskStates[state.currentTaskId];
+		// Best-effort: mark active attempts as interrupted
+		for (const tid of runningTaskIds) {
+			const ts = state.taskStates[tid];
 			if (ts?.activeAttemptId) {
-				await this.workspace.finishAttempt(runId, state.currentTaskId, ts.activeAttemptId, { status: "interrupted", phase: "interrupted", errorSummary: "run paused" }).catch(() => {});
+				await this.workspace.finishAttempt(runId, tid, ts.activeAttemptId, { status: "interrupted", phase: "interrupted", errorSummary: "run paused" }).catch(() => {});
 			}
 		}
 
@@ -1586,6 +1588,11 @@ export class TeamOrchestrator {
 					const taskId = parallelTaskId.getStore();
 					if (taskId) {
 						await ws.patchState(s.runId, (latest) => {
+							if (latest.status !== "running") return;
+							const latestTask = latest.taskStates[taskId];
+							if (latestTask && (TERMINAL_TASK_STATUSES.has(latestTask.status) || latestTask.status === "interrupted")) {
+								return;
+							}
 							latest.taskStates[taskId] = s.taskStates[taskId]!;
 							latest.summary = computeTeamRunSummary(latest.taskStates);
 						});
@@ -1615,6 +1622,7 @@ export class TeamOrchestrator {
 								// Mark child as failed; if state write fails, error propagates
 								const msg = err instanceof Error ? err.message : String(err);
 								await ws.patchState(runId, (latest) => {
+									if (latest.status !== "running") return;
 									const childState = latest.taskStates[child.id];
 									if (childState && !TERMINAL_TASK_STATUSES.has(childState.status)) {
 										childState.status = "failed";

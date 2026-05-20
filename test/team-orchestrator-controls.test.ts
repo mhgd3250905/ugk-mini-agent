@@ -1430,3 +1430,298 @@ test("P25: fallback report includes previousErrorSummary for skipped tasks", asy
 			await rm(root, { recursive: true });
 		}
 	});
+
+// ── Step 4: parallel for_each controls ──
+
+test("pause active parallel run interrupts active children and stops admitting new ones", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ctrl-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+		const plan = await planStore.create({
+			title: "parallel pause test",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{ id: "discover", type: "discovery", title: "find items", input: { text: "find" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "items" } },
+				{
+					id: "process", type: "for_each", title: "process items", input: { text: "placeholder" },
+					acceptance: { rules: ["ok"] },
+					forEach: { itemsFrom: "discover.items", mode: "parallel", taskTemplate: { title: "item", input: { text: "process" }, acceptance: { rules: ["ok"] } } },
+				},
+				],
+			outputContract: { text: "output" },
+		});
+
+		let workerCalls = 0;
+		class HangingParallelRunner extends MockRoleRunner {
+			override async runWorker(input: import("../src/team/role-runner.js").WorkerInput): Promise<import("../src/team/role-runner.js").WorkerOutput> {
+				if (input.task.type === "discovery") {
+					return { content: JSON.stringify({ items: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }] }), artifactRefs: [] };
+				}
+				workerCalls++;
+				if (!input.signal) return super.runWorker(input);
+				return await new Promise<never>((_, reject) => {
+					input.signal!.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+				});
+			}
+			override async runChecker(input: import("../src/team/role-runner.js").CheckerInput): Promise<import("../src/team/role-runner.js").CheckerOutput> {
+				if (input.task.type === "discovery") {
+					return { verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }] }) };
+				}
+				return { verdict: "pass", reason: "ok", resultContent: "accepted" };
+			}
+		}
+
+		const runner = new HangingParallelRunner();
+		const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+
+		const state = await orchestrator.createRun(plan.planId);
+		const runPromise = orchestrator.runToCompletion(state.runId);
+
+		// Wait for some children to start
+		await new Promise<void>((resolve) => {
+			const check = () => { if (workerCalls >= 1) resolve(); else setTimeout(check, 10); };
+			check();
+		});
+
+		// Pause
+		await orchestrator.pauseRun(state.runId, "user pause");
+
+		const final = await runPromise;
+
+		assert.equal(final.status, "paused");
+		const childIds = ["process__a", "process__b", "process__c", "process__d"];
+		for (const cid of childIds) {
+			const cs = final.taskStates[cid];
+			assert.ok(cs, `child ${cid} must exist in task states`);
+			assert.notEqual(cs!.status, "running", `child ${cid} must not be running after pause`);
+		}
+		// No running tasks at all
+		for (const [tid, ts] of Object.entries(final.taskStates)) {
+			assert.notEqual(ts.status, "running", `task ${tid} must not be running after pause`);
+		}
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("cancel active parallel run marks unfinished children consistently cancelled", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ctrl-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+		const plan = await planStore.create({
+			title: "parallel cancel test",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{ id: "discover", type: "discovery", title: "find items", input: { text: "find" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "items" } },
+				{
+					id: "process", type: "for_each", title: "process items", input: { text: "placeholder" },
+					acceptance: { rules: ["ok"] },
+					forEach: { itemsFrom: "discover.items", mode: "parallel", taskTemplate: { title: "item", input: { text: "process" }, acceptance: { rules: ["ok"] } } },
+				},
+				],
+			outputContract: { text: "output" },
+		});
+
+		let workerCalls = 0;
+		class HangingParallelRunner extends MockRoleRunner {
+			override async runWorker(input: import("../src/team/role-runner.js").WorkerInput): Promise<import("../src/team/role-runner.js").WorkerOutput> {
+				if (input.task.type === "discovery") {
+					return { content: JSON.stringify({ items: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }] }), artifactRefs: [] };
+				}
+				workerCalls++;
+				if (!input.signal) return super.runWorker(input);
+				return await new Promise<never>((_, reject) => {
+					input.signal!.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+				});
+			}
+			override async runChecker(input: import("../src/team/role-runner.js").CheckerInput): Promise<import("../src/team/role-runner.js").CheckerOutput> {
+				if (input.task.type === "discovery") {
+					return { verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }] }) };
+				}
+				return { verdict: "pass", reason: "ok", resultContent: "accepted" };
+			}
+		}
+
+		const runner = new HangingParallelRunner();
+		const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+
+		const state = await orchestrator.createRun(plan.planId);
+		const runPromise = orchestrator.runToCompletion(state.runId);
+
+		// Wait for some children to start
+		await new Promise<void>((resolve) => {
+			const check = () => { if (workerCalls >= 1) resolve(); else setTimeout(check, 10); };
+			check();
+		});
+
+		// Cancel
+		await orchestrator.cancelRun(state.runId, "user cancel");
+
+		const final = await runPromise;
+
+		assert.equal(final.status, "cancelled");
+		const childIds = ["process__a", "process__b", "process__c", "process__d"];
+		for (const cid of childIds) {
+			const cs = final.taskStates[cid];
+			assert.ok(cs, `child ${cid} must exist in task states`);
+			assert.equal(cs!.status, "cancelled", `child ${cid} must be cancelled after cancel`);
+		}
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("rerun with force_rerun disposition re-executes parallel child and reuses expansion", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ctrl-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+		const plan = await planStore.create({
+			title: "parallel rerun test",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{ id: "discover", type: "discovery", title: "find items", input: { text: "find" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "items" } },
+				{
+					id: "process", type: "for_each", title: "process items", input: { text: "placeholder" },
+					acceptance: { rules: ["ok"] },
+					forEach: { itemsFrom: "discover.items", mode: "parallel", taskTemplate: { title: "item", input: { text: "process" }, acceptance: { rules: ["ok"] } } },
+				},
+				],
+			outputContract: { text: "output" },
+		});
+
+		let workerCallCount = 0;
+		class CountingParallelRunner extends MockRoleRunner {
+			override async runWorker(input: import("../src/team/role-runner.js").WorkerInput): Promise<import("../src/team/role-runner.js").WorkerOutput> {
+				if (input.task.type === "discovery") {
+					return { content: JSON.stringify({ items: [{ id: "a" }, { id: "b" }] }), artifactRefs: [] };
+				}
+				workerCallCount++;
+				return { content: `done ${input.task.id}`, artifactRefs: [] };
+			}
+			override async runChecker(input: import("../src/team/role-runner.js").CheckerInput): Promise<import("../src/team/role-runner.js").CheckerOutput> {
+				if (input.task.type === "discovery") {
+					return { verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: [{ id: "a" }, { id: "b" }] }) };
+				}
+				return { verdict: "pass", reason: "ok", resultContent: "accepted" };
+			}
+		}
+
+		const runner = new CountingParallelRunner();
+		const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+
+		// First run
+		const state = await orchestrator.createRun(plan.planId);
+		const result1 = await orchestrator.runToCompletion(state.runId);
+		assert.equal(result1.status, "completed");
+
+		// Verify expansion exists
+		const expansion1 = await workspace.readExpansion(state.runId, "process");
+		assert.ok(expansion1, "expansion should exist after first run");
+		assert.equal(expansion1.children.length, 2);
+
+		// Set one child to force_rerun
+		const preRerun = (await workspace.getState(state.runId))!;
+		preRerun.taskStates["process__a"]!.manualDisposition = "force_rerun";
+		preRerun.taskStates["process__a"]!.manualDispositionUpdatedAt = new Date().toISOString();
+		await workspace.saveState(preRerun);
+
+		// Rerun
+		workerCallCount = 0;
+		await orchestrator.rerunRun(state.runId);
+		const finalState = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(finalState.status, "completed");
+		assert.equal(finalState.taskStates["process__a"]!.status, "succeeded", "force_rerun child should execute again");
+		assert.equal(finalState.taskStates["process__b"]!.status, "succeeded", "other child should remain succeeded");
+		assert.equal(workerCallCount, 1, "only force_rerun child should be re-executed");
+
+		// Expansion should be reused
+		const expansion2 = await workspace.readExpansion(state.runId, "process");
+		assert.equal(expansion2.children.length, 2, "expansion should not be duplicated");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("rerun with skip disposition keeps parallel child skipped and reuses expansion", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ctrl-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+		const plan = await planStore.create({
+			title: "parallel skip test",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{ id: "discover", type: "discovery", title: "find items", input: { text: "find" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "items" } },
+				{
+					id: "process", type: "for_each", title: "process items", input: { text: "placeholder" },
+					acceptance: { rules: ["ok"] },
+					forEach: { itemsFrom: "discover.items", mode: "parallel", taskTemplate: { title: "item", input: { text: "process" }, acceptance: { rules: ["ok"] } } },
+				},
+				],
+			outputContract: { text: "output" },
+		});
+
+		let workerCallCount = 0;
+		class CountingParallelRunner extends MockRoleRunner {
+			override async runWorker(input: import("../src/team/role-runner.js").WorkerInput): Promise<import("../src/team/role-runner.js").WorkerOutput> {
+				if (input.task.type === "discovery") {
+					return { content: JSON.stringify({ items: [{ id: "a" }, { id: "b" }] }), artifactRefs: [] };
+				}
+				workerCallCount++;
+				return { content: `done ${input.task.id}`, artifactRefs: [] };
+			}
+			override async runChecker(input: import("../src/team/role-runner.js").CheckerInput): Promise<import("../src/team/role-runner.js").CheckerOutput> {
+				if (input.task.type === "discovery") {
+					return { verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: [{ id: "a" }, { id: "b" }] }) };
+				}
+				return { verdict: "pass", reason: "ok", resultContent: "accepted" };
+			}
+		}
+
+		const runner = new CountingParallelRunner();
+		const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+
+		// First run
+		const state = await orchestrator.createRun(plan.planId);
+		const result1 = await orchestrator.runToCompletion(state.runId);
+		assert.equal(result1.status, "completed");
+
+		// Set one child to skip
+		const preRerun = (await workspace.getState(state.runId))!;
+		preRerun.taskStates["process__a"]!.manualDisposition = "skip";
+		preRerun.taskStates["process__a"]!.manualDispositionUpdatedAt = new Date().toISOString();
+		await workspace.saveState(preRerun);
+
+		// Rerun
+		workerCallCount = 0;
+		await orchestrator.rerunRun(state.runId);
+		const finalState = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(finalState.status, "completed");
+		assert.equal(finalState.taskStates["process__a"]!.status, "skipped", "skip child should remain skipped");
+		assert.equal(finalState.taskStates["process__b"]!.status, "succeeded", "other child should remain succeeded");
+		assert.equal(workerCallCount, 0, "no worker should run for skipped child");
+
+		// Expansion should be reused
+		const expansion2 = await workspace.readExpansion(state.runId, "process");
+		assert.equal(expansion2.children.length, 2, "expansion should not be duplicated");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
