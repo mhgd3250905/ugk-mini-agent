@@ -2476,15 +2476,42 @@ test("behavioral: mindmap recursive calls pass runStatus through", () => {
 	assert.match(script, recursivePattern, "recursive call must pass runStatus");
 });
 
-test("behavioral: setTaskDisposition refreshes via toggleRunDetail re-render", () => {
+test("behavioral: setTaskDisposition refreshes in-place via refreshRunDetailInPlace", () => {
 	const script = extractScript();
-	// setTaskDisposition closes and re-opens the detail, which triggers full re-render
 	const setTaskDispositionMatch = script.match(/async function setTaskDisposition[\s\S]*?^}/m);
 	assert.ok(setTaskDispositionMatch, "should find setTaskDisposition");
-	assert.match(setTaskDispositionMatch[0], /toggleRunDetail/);
-	assert.match(setTaskDispositionMatch[0], /findRunDetailElement/);
-	// This means renderRunDetailShell (which includes both mindmap and detail table) is called again
-	// so disposition state and run-level actions are both refreshed
+	assert.match(setTaskDispositionMatch[0], /refreshRunDetailInPlace/);
+	assert.doesNotMatch(setTaskDispositionMatch[0], /dEl\.style\.display = 'none'/, "must not collapse detail before refresh");
+	assert.doesNotMatch(setTaskDispositionMatch[0], /toggleRunDetail/, "must not use toggleRunDetail (which collapses)");
+});
+
+test("behavioral: refreshRunDetailInPlace preserves scroll position", () => {
+	const script = extractScript();
+	const refreshFnMatch = script.match(/async function refreshRunDetailInPlace[\s\S]*?^}/m);
+	assert.ok(refreshFnMatch, "should find refreshRunDetailInPlace");
+	assert.match(refreshFnMatch[0], /window\.scrollX/);
+	assert.match(refreshFnMatch[0], /window\.scrollY/);
+	assert.match(refreshFnMatch[0], /window\.scrollTo/);
+	assert.match(refreshFnMatch[0], /requestAnimationFrame/);
+	assert.doesNotMatch(refreshFnMatch[0], /style\.display = 'none'/);
+});
+
+test("behavioral: refreshRunDetailInPlace uses anchor-based scroll restoration", () => {
+	const script = extractScript();
+	const refreshFnMatch = script.match(/async function refreshRunDetailInPlace[\s\S]*?^}/m);
+	assert.ok(refreshFnMatch, "should find refreshRunDetailInPlace");
+	assert.match(refreshFnMatch[0], /data-task-id/);
+	assert.match(refreshFnMatch[0], /getBoundingClientRect/);
+	assert.match(refreshFnMatch[0], /closest\('\[data-task-id\]'\)/);
+});
+
+test("behavioral: task rows and mindmap nodes carry data-task-id for scroll anchors", () => {
+	const script = extractScript();
+	const renderStateRowMatch = script.match(/function renderStateRow[\s\S]*?^[\t]}/m);
+	assert.ok(renderStateRowMatch, "should find renderStateRow");
+	assert.match(renderStateRowMatch[0], /data-task-id/);
+	assert.match(script, /mindmap-task-node/);
+	assert.match(script, /data-task-id.*jsArg\(node\.id\)/);
 });
 
 test("behavioral: renderRunActions includes rerun button for cancelled runs", () => {

@@ -1293,7 +1293,67 @@ async function toggleRunDetail(runId, sourceEl) {
 	}
 }
 
-function buildFallbackPlanFromRunState(state) {
+async function refreshRunDetailInPlace(runId, sourceEl) {
+		var detailEl = findRunDetailElement(runId, sourceEl);
+		if (!detailEl || detailEl.style.display !== 'block') return;
+		var savedScrollX = window.scrollX;
+		var savedScrollY = window.scrollY;
+		var anchorEl = sourceEl && sourceEl.closest ? sourceEl.closest('[data-task-id]') : null;
+		var anchorOffset = anchorEl ? anchorEl.getBoundingClientRect().top : null;
+		try {
+			var state = await api('/runs/' + runId);
+			if (state.planId && !_planCache[state.planId]) {
+				var latestPlan = findLatestPlanById(state.planId);
+				if (latestPlan) {
+					_planCache[state.planId] = latestPlan;
+				} else if (_latestPlans.length) {
+					_planCache[state.planId] = buildFallbackPlanFromRunState(state);
+				} else {
+					try {
+						_planCache[state.planId] = await api('/plans/' + state.planId);
+					} catch (planError) {
+						_planCache[state.planId] = buildFallbackPlanFromRunState(state);
+					}
+				}
+			}
+			var plan = _planCache[state.planId] || buildFallbackPlanFromRunState(state);
+			if (!window._latestPlanForRun) window._latestPlanForRun = {};
+			window._latestPlanForRun[runId] = plan;
+			var attemptsMap = {};
+			try {
+				var planTaskIds = plan.tasks ? plan.tasks.map(function(t) { return t.id; }) : [];
+					var generatedIds = Object.keys(state.taskStates || {}).filter(function(id) { return planTaskIds.indexOf(id) === -1; });
+					var taskIds = planTaskIds.concat(generatedIds);
+				await Promise.all(taskIds.map(async function(tid) {
+					var res = await api('/runs/' + runId + '/tasks/' + tid + '/attempts');
+					attemptsMap[tid] = res.attempts || [];
+				}));
+			} catch (e) { /* ignore */ }
+			if (!window._latestAttemptsForRun) window._latestAttemptsForRun = {};
+			window._latestAttemptsForRun[runId] = attemptsMap;
+			if (!window._latestRunTaskDefinitions) window._latestRunTaskDefinitions = {};
+			window._latestRunTaskDefinitions[runId] = Array.isArray(state.taskDefinitions) ? state.taskDefinitions : [];
+			if (!window._latestRunStateForRun) window._latestRunStateForRun = {};
+			window._latestRunStateForRun[runId] = state;
+			detailEl.innerHTML = renderRunDetailShell(runId, state, plan, attemptsMap);
+			requestAnimationFrame(function() {
+				if (anchorEl && anchorOffset != null) {
+					var anchorTaskId = anchorEl.getAttribute('data-task-id');
+					var newAnchor = detailEl.querySelector('[data-task-id="' + anchorTaskId + '"]');
+					if (newAnchor) {
+						var newOffset = newAnchor.getBoundingClientRect().top;
+						window.scrollTo(savedScrollX, savedScrollY + (newOffset - anchorOffset));
+						return;
+					}
+				}
+				window.scrollTo(savedScrollX, savedScrollY);
+			});
+		} catch (e) {
+			detailEl.innerHTML = '<p style="color:var(--fail);font-size:13px">加载失败：' + escapeHtml(e.message) + '</p>';
+		}
+	}
+
+	function buildFallbackPlanFromRunState(state) {
 	var taskDefinitions = Array.isArray(state.taskDefinitions) ? state.taskDefinitions : [];
 	var tasks = taskDefinitions.length
 		? taskDefinitions
@@ -1514,7 +1574,7 @@ function renderMindmapNode(node, depth, runId, attemptsMap, runStatus) {
 	var escapedStatus = escapeHtml(node.status || 'pending');
 	var escapedType = escapeHtml(node.nodeType || '任务');
 	var expanded = depth === 0 ? false : isMindmapNodeExpanded(runId, node.id, node.status);
-	var html = '<div class="' + cls + (expanded ? ' mindmap-node-expanded' : '') + '" data-node-status="' + escapedStatus + '" data-node-type="' + escapedType + '" style="margin-left:' + (depth * 20) + 'px">';
+	var html = '<div class="' + cls + (expanded ? ' mindmap-node-expanded' : '') + '" data-task-id="' + jsArg(node.id) + '" data-node-status="' + escapedStatus + '" data-node-type="' + escapedType + '" style="margin-left:' + (depth * 20) + 'px">';
 	if (depth > 0) {
 		html += '<button class="mindmap-node-toggle" onclick="event.stopPropagation();toggleMindmapNode(' + jsArg(runId) + ',' + jsArg(node.id) + ',' + jsArg(node.status) + ',this)">';
 	} else {
@@ -1693,7 +1753,7 @@ function renderTaskDetail(state, plan, attemptsMap) {
 		var rowClass = opts && opts.rowClass ? ' class="' + opts.rowClass + '"' : '';
 		var titlePrefix = opts && opts.titlePrefix ? opts.titlePrefix : '';
 		var escapedTaskTitle = task.title ? escapeHtml(task.title) : escapeHtml(task.id || '');
-		if (!ts) return '<tr' + rowClass + '><td>' + titlePrefix + escapedTaskTitle + '</td><td colspan="2">待执行</td></tr>';
+		if (!ts) return '<tr' + rowClass + ' data-task-id="' + jsArg(task.id) + '"><td>' + titlePrefix + escapedTaskTitle + '</td><td colspan="2">待执行</td></tr>';
 		var phaseHtml = ts.progress ? '<span class="phase-label ' + phaseColor(ts.progress.phase) + '">' + escapeHtml(phaseLabel(ts.progress.phase)) + '</span>' : '';
 		var msgStr = ts.progress ? escapeHtml(ts.progress.message) : '';
 		var detailParts = [];
@@ -1736,7 +1796,7 @@ function renderTaskDetail(state, plan, attemptsMap) {
 			}).join('');
 		}
 		renderedTaskIds[task.id] = true;
-		return '<tr' + rowClass + '>' +
+		return '<tr' + rowClass + ' data-task-id="' + jsArg(task.id) + '">' +
 			'<td>' + titlePrefix + escapedTaskTitle + '</td>' +
 			'<td>' + statusBadge(ts.status) + '<br/>' + phaseHtml + '</td>' +
 			'<td style="font-size:12px">' +
@@ -2084,8 +2144,7 @@ async function setTaskDisposition(runId, taskId, disposition, sourceEl) {
 		});
 		showSuccess('已更新任务标记');
 	} catch (e) { showError(e.message); }
-	var dEl = findRunDetailElement(runId, sourceEl);
-	if (dEl && dEl.style.display === 'block') { dEl.style.display = 'none'; toggleRunDetail(runId, dEl); }
+	await refreshRunDetailInPlace(runId, sourceEl);
 }
 
 async function rerunRunConfirm(runId) {
