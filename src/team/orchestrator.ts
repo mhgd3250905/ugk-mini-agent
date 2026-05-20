@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { TeamRunState, TeamTask, TeamTaskState, TeamPlan, TeamDiscoveryResultRecord, TaskManualDisposition, TeamOutputValidationResult } from "./types.js";
 import { PlanStore } from "./plan-store.js";
 import { TeamUnitStore } from "./team-unit-store.js";
@@ -38,6 +39,7 @@ export interface TeamOrchestratorOptions {
 }
 
 const now = () => new Date().toISOString();
+const parallelTaskId = new AsyncLocalStorage<string>();
 
 const TERMINAL_TASK_STATUSES = new Set(["succeeded", "failed", "cancelled", "skipped"]);
 
@@ -57,6 +59,7 @@ export function shouldExecuteOnRerun(taskState: TeamTaskState): boolean {
 	return taskState.status !== "succeeded";
 }
 const DEFAULT_DECOMPOSER_MAX_CHILDREN = 8;
+const PARALLEL_FOR_EACH_CONCURRENCY = 3;
 const MAX_TOTAL_TASKS_PER_RUN = 50;
 
 function isRunExternallyStopped(status: string): boolean {
@@ -1513,6 +1516,11 @@ export class TeamOrchestrator {
 				return;
 			}
 
+			if ((task.forEach.mode ?? "sequential") === "parallel") {
+				await this.executeChildrenParallel(state.runId, task, childTasks, plan, signal);
+				return;
+			}
+
 			for (const child of childTasks) {
 				state = (await this.workspace.getState(state.runId))!;
 				if (state.status !== "running" || this.shouldStop(state)) break;
@@ -1554,6 +1562,120 @@ export class TeamOrchestrator {
 			await this.workspace.saveState(state);
 		}
 
+		private async executeChildrenParallel(
+			runId: string,
+			parentTask: TeamTask,
+			childTasks: TeamTask[],
+			plan: TeamPlan,
+			signal: AbortSignal,
+		): Promise<void> {
+			let state = (await this.workspace.getState(runId))!;
+			const queue: TeamTask[] = [];
+			for (const child of childTasks) {
+				const cs = state.taskStates[child.id];
+				if (!cs || !TERMINAL_TASK_STATUSES.has(cs.status)) {
+					queue.push(child);
+				}
+			}
+
+			if (queue.length > 0) {
+				// Override saveState to use patchState for concurrent safety
+				const origSave = this.workspace.saveState.bind(this.workspace);
+				const ws = this.workspace;
+				this.workspace.saveState = async function(s: TeamRunState) {
+					const taskId = parallelTaskId.getStore();
+					if (taskId) {
+						await ws.patchState(s.runId, (latest) => {
+							latest.taskStates[taskId] = s.taskStates[taskId]!;
+							latest.summary = computeTeamRunSummary(latest.taskStates);
+						});
+					} else {
+						await origSave(s);
+					}
+				};
+
+				const active = new Set<Promise<void>>();
+				let nextIdx = 0;
+
+				const startChild = async (child: TeamTask): Promise<void> => {
+					await parallelTaskId.run(child.id, async () => {
+						try {
+							const current = await ws.getState(runId);
+							if (!current || current.status !== "running" || this.shouldStop(current) || signal.aborted) return;
+							if (this.isTimedOut(current)) {
+								await this.handleTimeout(current, plan);
+								return;
+							}
+							const cs = current.taskStates[child.id];
+							if (cs && TERMINAL_TASK_STATUSES.has(cs.status)) return;
+							await this.executeMaybeDecomposedTask(current, child, plan, signal);
+						} catch {
+							// unexpected error in child - other children continue
+						}
+					});
+				};
+
+				const launch = (child: TeamTask) => {
+					const p = startChild(child).then(() => { active.delete(p); }, () => { active.delete(p); });
+					active.add(p);
+				};
+
+				while (nextIdx < queue.length && active.size < PARALLEL_FOR_EACH_CONCURRENCY) {
+					const current = await ws.getState(runId);
+					if (!current || current.status !== "running" || this.shouldStop(current) || signal.aborted) break;
+					if (this.isTimedOut(current)) {
+						await this.handleTimeout(current, plan);
+						break;
+					}
+					launch(queue[nextIdx]!);
+					nextIdx++;
+				}
+
+				while (active.size > 0) {
+					await Promise.race(active);
+					while (nextIdx < queue.length && active.size < PARALLEL_FOR_EACH_CONCURRENCY) {
+						const current = await ws.getState(runId);
+						if (!current || current.status !== "running" || this.shouldStop(current) || signal.aborted) break;
+						if (this.isTimedOut(current)) {
+							await this.handleTimeout(current, plan);
+							break;
+						}
+						launch(queue[nextIdx]!);
+						nextIdx++;
+					}
+				}
+
+				// Restore original saveState
+				this.workspace.saveState = origSave;
+			}
+
+			// Apply parent summary using patchState
+			await this.workspace.patchState(runId, (s) => {
+				if (s.status !== "running" || this.shouldStop(s)) return;
+				const allDone = childTasks.every(c => {
+					const cs = s.taskStates[c.id];
+					return cs && TERMINAL_TASK_STATUSES.has(cs.status);
+				});
+				if (!allDone) return;
+				const anySucceeded = childTasks.some(c => s.taskStates[c.id]?.status === "succeeded");
+				const allSkipped = childTasks.every(c => s.taskStates[c.id]?.status === "skipped");
+				const ts = s.taskStates[parentTask.id]!;
+				if (anySucceeded) {
+					ts.status = "succeeded";
+					ts.errorSummary = null;
+					ts.progress = { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
+				} else if (allSkipped) {
+					ts.status = "skipped";
+					ts.errorSummary = null;
+					ts.progress = { phase: "skipped", message: progressMessages.skipped, updatedAt: now() };
+				} else {
+					ts.status = "failed";
+					ts.errorSummary = "one or more child tasks failed";
+					ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
+				}
+				s.summary = computeTeamRunSummary(s.taskStates);
+			});
+		}
 		private async skipGeneratedChildren(state: TeamRunState, task: TeamTask): Promise<void> {
 			const childTaskIds: string[] = [];
 
@@ -1618,6 +1740,10 @@ export class TeamOrchestrator {
 					generated: true,
 				};
 			});
+			if ((task.forEach?.mode ?? "sequential") === "parallel") {
+				await this.executeChildrenParallel(state.runId, task, childTasks, plan, signal);
+				return;
+			}
 			for (const child of childTasks) {
 				state = (await this.workspace.getState(state.runId))!;
 				if (state.status !== "running" || this.shouldStop(state)) break;
