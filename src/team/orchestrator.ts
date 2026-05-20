@@ -1594,45 +1594,52 @@ export class TeamOrchestrator {
 					}
 				};
 
-				const active = new Set<Promise<void>>();
-				let nextIdx = 0;
+				try {
+					const active = new Set<Promise<void>>();
+					let nextIdx = 0;
 
-				const startChild = async (child: TeamTask): Promise<void> => {
-					await parallelTaskId.run(child.id, async () => {
-						try {
-							const current = await ws.getState(runId);
-							if (!current || current.status !== "running" || this.shouldStop(current) || signal.aborted) return;
-							if (this.isTimedOut(current)) {
-								await this.handleTimeout(current, plan);
-								return;
+					const startChild = async (child: TeamTask): Promise<void> => {
+						let needsTimeout = false;
+						await parallelTaskId.run(child.id, async () => {
+							try {
+								const current = await ws.getState(runId);
+								if (!current || current.status !== "running" || this.shouldStop(current) || signal.aborted) return;
+								if (this.isTimedOut(current)) {
+									needsTimeout = true;
+									return;
+								}
+								const cs = current.taskStates[child.id];
+								if (cs && TERMINAL_TASK_STATUSES.has(cs.status)) return;
+								await this.executeMaybeDecomposedTask(current, child, plan, signal);
+							} catch (err) {
+								// Mark child as failed deterministically
+								const msg = err instanceof Error ? err.message : String(err);
+								try {
+									await ws.patchState(runId, (latest) => {
+										const childState = latest.taskStates[child.id];
+										if (childState && !TERMINAL_TASK_STATUSES.has(childState.status)) {
+											childState.status = "failed";
+											childState.errorSummary = `unexpected error: ${msg}`;
+											childState.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
+										}
+										latest.summary = computeTeamRunSummary(latest.taskStates);
+									});
+								} catch {
+									// Best-effort: if patchState also fails, child may remain non-terminal
+								}
 							}
-							const cs = current.taskStates[child.id];
-							if (cs && TERMINAL_TASK_STATUSES.has(cs.status)) return;
-							await this.executeMaybeDecomposedTask(current, child, plan, signal);
-						} catch {
-							// unexpected error in child - other children continue
+						});
+						// Handle timeout outside parallelTaskId scope so run-level writes are not narrowed
+						if (needsTimeout) {
+							await this.handleTimeout((await ws.getState(runId))!, plan);
 						}
-					});
-				};
+					};
 
-				const launch = (child: TeamTask) => {
-					const p = startChild(child).then(() => { active.delete(p); }, () => { active.delete(p); });
-					active.add(p);
-				};
+					const launch = (child: TeamTask) => {
+						const p = startChild(child).then(() => { active.delete(p); }, () => { active.delete(p); });
+						active.add(p);
+					};
 
-				while (nextIdx < queue.length && active.size < PARALLEL_FOR_EACH_CONCURRENCY) {
-					const current = await ws.getState(runId);
-					if (!current || current.status !== "running" || this.shouldStop(current) || signal.aborted) break;
-					if (this.isTimedOut(current)) {
-						await this.handleTimeout(current, plan);
-						break;
-					}
-					launch(queue[nextIdx]!);
-					nextIdx++;
-				}
-
-				while (active.size > 0) {
-					await Promise.race(active);
 					while (nextIdx < queue.length && active.size < PARALLEL_FOR_EACH_CONCURRENCY) {
 						const current = await ws.getState(runId);
 						if (!current || current.status !== "running" || this.shouldStop(current) || signal.aborted) break;
@@ -1643,10 +1650,24 @@ export class TeamOrchestrator {
 						launch(queue[nextIdx]!);
 						nextIdx++;
 					}
-				}
 
-				// Restore original saveState
-				this.workspace.saveState = origSave;
+					while (active.size > 0) {
+						await Promise.race(active);
+						while (nextIdx < queue.length && active.size < PARALLEL_FOR_EACH_CONCURRENCY) {
+							const current = await ws.getState(runId);
+							if (!current || current.status !== "running" || this.shouldStop(current) || signal.aborted) break;
+							if (this.isTimedOut(current)) {
+								await this.handleTimeout(current, plan);
+								break;
+							}
+							launch(queue[nextIdx]!);
+							nextIdx++;
+						}
+					}
+				} finally {
+					// Always restore original saveState, even if pool execution throws
+					this.workspace.saveState = origSave;
+				}
 			}
 
 			// Apply parent summary using patchState

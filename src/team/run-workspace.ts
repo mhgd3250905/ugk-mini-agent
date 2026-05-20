@@ -136,7 +136,13 @@ export class RunWorkspace {
 			const before = state.updatedAt;
 			await mutator(state);
 			if (state.updatedAt === before) {
-				state.updatedAt = now();
+				let ts = now();
+				if (ts === before) {
+					const d = new Date(before);
+					d.setMilliseconds(d.getMilliseconds() + 1);
+					ts = d.toISOString();
+				}
+				state.updatedAt = ts;
 			}
 			const filePath = join(this.rootDir, "runs", runId, "state.json");
 			const tmp = `${filePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;

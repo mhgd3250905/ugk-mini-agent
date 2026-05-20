@@ -23,6 +23,7 @@ class ParallelTestRunner extends MockRoleRunner {
 		private readonly options: {
 			workerDelayMs?: number | ((taskId: string) => number);
 			failTaskIds?: Set<string>;
+			throwTaskIds?: Set<string>;
 		} = {},
 	) {
 		super();
@@ -31,6 +32,10 @@ class ParallelTestRunner extends MockRoleRunner {
 	async runWorker(input: WorkerInput) {
 		if (input.task.type === "discovery") {
 			return { content: JSON.stringify({ items: this.discoveryItems }), artifactRefs: [] };
+		}
+
+		if (this.options.throwTaskIds?.has(input.task.id)) {
+			throw new Error(`unexpected error in ${input.task.id}`);
 		}
 
 		this.activeWorkers++;
@@ -376,6 +381,125 @@ test("parallel for_each: expansion written once, reused on rerun", async () => {
 		// Expansion file unchanged
 		const expansion2 = await workspace.readExpansion(state.runId, "process");
 		assert.equal(expansion2?.children.length, 2);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("parallel for_each: unexpected child throw becomes deterministic failure", async () => {
+	const { root, plan, orchestrator } = await setupParallelForEach(
+		[
+			{ id: "ok1", title: "OK1" },
+			{ id: "boom", title: "Boom" },
+			{ id: "ok2", title: "OK2" },
+		],
+		{ throwTaskIds: new Set(["process__boom"]) },
+	);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		// Throwing child should be failed with error summary
+		assert.equal(final.taskStates["process__boom"]?.status, "failed");
+		assert.match(final.taskStates["process__boom"]?.errorSummary ?? "", /unexpected error/);
+
+		// Other children should succeed
+		assert.equal(final.taskStates["process__ok1"]?.status, "succeeded");
+		assert.equal(final.taskStates["process__ok2"]?.status, "succeeded");
+
+		// Parent should succeed (partial success)
+		assert.equal(final.taskStates["process"]?.status, "succeeded",
+			"parent should succeed when at least one child succeeds");
+
+		// Run should be terminal (not stuck)
+		assert.ok(
+			final.status === "completed" || final.status === "completed_with_failures",
+			"run should be terminal, got " + final.status,
+		);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("parallel for_each: timeout preserves run-level terminal state", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-parallel-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const runner = new ParallelTestRunner(
+			[
+				{ id: "a", title: "A" },
+				{ id: "b", title: "B" },
+				{ id: "c", title: "C" },
+				{ id: "d", title: "D" },
+			],
+			{ workerDelayMs: 200 },
+		);
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "timeout parallel",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test timeout" },
+			tasks: [
+				{
+					id: "discover",
+					type: "discovery",
+					title: "Discover items",
+					input: { text: "Find items" },
+					acceptance: { rules: ["ok"] },
+					discovery: { outputKey: "items" },
+				},
+				{
+					id: "process",
+					type: "for_each",
+					title: "Process each",
+					input: { text: "p" },
+					acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "discover.items",
+						mode: "parallel",
+						taskTemplate: {
+							title: "Process {{item.title}}",
+							input: { text: "Process {{item.id}}" },
+							acceptance: { rules: ["ok"] },
+						},
+					},
+				},
+			],
+			outputContract: { text: "report" },
+		});
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: runner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1,
+			maxRunDurationMinutes: 60,
+		});
+
+		const state = await orchestrator.createRun(plan.planId, { maxRunDurationMinutes: 0.001 });
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		// Run should be terminal failed due to timeout
+		assert.ok(
+			final.status === "failed" || final.status === "completed_with_failures",
+			"expected terminal failure status, got " + final.status,
+		);
+		assert.ok(final.lastError?.includes("timeout"),
+			"lastError should mention timeout, got: " + final.lastError);
+
+		// No children should be left running or pending
+		for (const [taskId, ts] of Object.entries(final.taskStates)) {
+			if (taskId.startsWith("process__")) {
+				assert.ok(
+					ts.status !== "running" && ts.status !== "pending",
+					"child " + taskId + " should not be left running/pending, got " + ts.status,
+				);
+			}
+		}
 	} finally {
 		await rm(root, { recursive: true });
 	}

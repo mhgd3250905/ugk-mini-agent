@@ -1850,3 +1850,41 @@ test("resume from minimal expansion without sourceItem and without stored task s
 			await rm(root, { recursive: true });
 		}
 	});
+test("patchState: updatedAt advances even within same millisecond", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-patch-"));
+	try {
+		const workspace = new RunWorkspace(root);
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "updatedAt monotonic",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{ id: "t1", title: "Task 1", input: { text: "do 1" }, acceptance: { rules: ["r1"] } },
+			],
+			outputContract: { text: "output" },
+		});
+		const state = await workspace.createRun(plan, unit.teamUnitId);
+
+		const patched1 = await workspace.patchState(state.runId, (s) => {
+			s.taskStates["t1"]!.status = "running";
+		});
+		const patched2 = await workspace.patchState(state.runId, (s) => {
+			s.taskStates["t1"]!.status = "succeeded";
+			s.summary.succeededTasks = 1;
+		});
+
+		assert.notEqual(patched2.updatedAt, patched1.updatedAt,
+			"updatedAt must advance between two rapid patchState calls");
+		const reloaded = await workspace.getState(state.runId);
+		assert.equal(reloaded!.updatedAt, patched2.updatedAt);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
