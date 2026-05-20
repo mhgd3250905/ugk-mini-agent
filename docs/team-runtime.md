@@ -438,7 +438,7 @@ final report 优先由 finalizer agent 生成。若 finalizer 失败，orchestra
 |---|---|---|
 | `default` | 无覆盖 | succeeded → 复用结果；其他状态 → 重新执行 |
 | `skip` | 跳过 | 无论之前什么状态，不执行，标记为 skipped |
-| `force_rerun` | 强制重跑 | 无论之前什么状态，重新执行 |
+| `force_rerun` | 强制重跑 | 无论之前什么状态，重新执行；成功后自动清除标记回 `default` |
 
 ### 决策表
 
@@ -453,7 +453,16 @@ final report 优先由 finalizer agent 生成。若 finalizer 失败，orchestra
 | default | cancelled | 执行 |
 | default | skipped | 执行 |
 | skip | *任何状态* | 不执行，标记 skipped |
-| force_rerun | *任何状态* | 执行 |
+| force_rerun | *任何状态* | 执行；成功后标记自动清除回 `default` |
+
+### force_rerun 自动清除
+
+当一个 task 的 `manualDisposition === "force_rerun"` 在 rerun 中执行并最终 `status === "succeeded"`，该标记自动清除为 `"default"`。这避免用户陷入"成功修复的任务反复重跑"的循环。
+
+- 不清除的情况：task 结果为 `failed`、`cancelled`、`interrupted`、`pending`、`running` 或 `skipped`
+- `skip` 标记不自动清除
+- 适用于所有 task 类型：normal、generated `for_each` child、decomposed child、parent/container task
+- 清除时机：run 进入终端状态时（正常完成、completed_with_failures、failed、timeout），针对每个 task 的实际结果独立判断，不受整体 run 状态影响
 
 ### Expanded Task 行为
 

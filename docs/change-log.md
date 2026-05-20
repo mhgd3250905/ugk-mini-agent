@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-21 — Team Runtime: force_rerun autoclear & disposition scroll preservation
+
+- **主题**: 被强制重跑的任务在成功后自动清除标记；UI disposition 操作不再导致页面跳回顶部
+- **影响范围**: `src/team/orchestrator.ts`, `src/ui/team-page.ts`, `docs/team-runtime.md`, `docs/change-log.md`, `test/team-orchestrator-controls.test.ts`, `test/team-page-ui.test.ts`
+- **变更**:
+  - `clearSuccessfulForceRerunDispositions()`: 在 run 进入终端状态时（finalizer 完成、failRun、handleTimeout），遍历 taskStates，将 `manualDisposition === "force_rerun"` 且 `status === "succeeded"` 的任务标记清除为 `"default"`，避免下次 rerun 重复执行
+  - 不清除：failed/cancelled/interrupted/pending/running/skipped 的 forced task；`skip` 标记不自动清除
+  - 适用所有 task 类型：normal、for_each child、decomposed child、parent
+  - UI: `setTaskDisposition` 改为调用 `refreshRunDetailInPlace`（原地刷新），不再 hide+toggleRunDetail（避免 collapse+scroll jump）
+  - `refreshRunDetailInPlace` 使用 anchor-based scroll restoration：`data-task-id` 属性标注 mindmap node 和 detail table row，操作后 `requestAnimationFrame` 恢复视口位置
+
+---
+
 ## 2026-05-20 — Team Runtime P27: parallel for_each 并行执行与运行控制
 
 - **主题**: `for_each` 任务支持并行执行模式，pause/cancel/rerun 已覆盖 parallel 子任务的状态保护和恢复
