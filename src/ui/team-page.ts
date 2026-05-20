@@ -474,6 +474,7 @@ var agentCatalog = [];
 var _latestPlans = [];
 var _latestTeams = [];
 var _latestRuns = [];
+var _planCache = {};
 
 function $(id) { return document.getElementById(id); }
 
@@ -506,6 +507,13 @@ function showToast(message, type) {
 
 function showError(message) { showToast(message, 'error'); }
 function showSuccess(message) { showToast(message, 'success'); }
+
+function findLatestPlanById(planId) {
+	for (var i = 0; i < _latestPlans.length; i++) {
+		if (_latestPlans[i] && _latestPlans[i].planId === planId) return _latestPlans[i];
+	}
+	return null;
+}
 
 function confirmAction(opts) {
 	return new Promise(function(resolve) {
@@ -1057,10 +1065,7 @@ async function saveTeamUnit() {
 					html += '<button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(\\x27' + escapeHtml(run.runId) + '\\x27)">取消</button>';
 				}
 				if (isTerminal) {
-					if (run.status !== 'cancelled') {
-						html += '<button class="btn btn-primary btn-sm" onclick="viewReport(\\x27' + escapeHtml(run.runId) + '\\x27)">查看报告</button>';
-					}
-					html += '<button class="btn btn-danger btn-sm" onclick="deleteRun(\\x27' + escapeHtml(run.runId) + '\\x27)">删除</button>';
+					html += renderRunActions(run);
 				}
 				html += '</div>';
 				// Embedded detail container
@@ -1149,7 +1154,14 @@ async function loadRuns() {
 		runs.forEach(function(r) { if (r.planId && planIds.indexOf(r.planId) === -1) planIds.push(r.planId); });
 		await Promise.all(planIds.map(async function(pid) {
 			if (!_planCache[pid]) {
-				try { _planCache[pid] = await api('/plans/' + pid); } catch (e) { /* ignore */ }
+				var latestPlan = findLatestPlanById(pid);
+				if (latestPlan) {
+					_planCache[pid] = latestPlan;
+				} else if (_latestPlans.length) {
+					_planCache[pid] = buildFallbackPlan(pid, []);
+				} else {
+					try { _planCache[pid] = await api('/plans/' + pid); } catch (e) { /* ignore */ }
+				}
 			}
 		}));
 		el.innerHTML = runs.map(function(r) {
@@ -1242,10 +1254,21 @@ async function toggleRunDetail(runId, sourceEl) {
 	detailEl.style.display = 'block';
 	try {
 		var state = await api('/runs/' + runId);
-		if (!_planCache[state.planId]) {
-			_planCache[state.planId] = await api('/plans/' + state.planId);
+		if (state.planId && !_planCache[state.planId]) {
+			var latestPlan = findLatestPlanById(state.planId);
+			if (latestPlan) {
+				_planCache[state.planId] = latestPlan;
+			} else if (_latestPlans.length) {
+				_planCache[state.planId] = buildFallbackPlanFromRunState(state);
+			} else {
+				try {
+					_planCache[state.planId] = await api('/plans/' + state.planId);
+				} catch (planError) {
+					_planCache[state.planId] = buildFallbackPlanFromRunState(state);
+				}
+			}
 		}
-		var plan = _planCache[state.planId];
+		var plan = _planCache[state.planId] || buildFallbackPlanFromRunState(state);
 		if (!window._latestPlanForRun) window._latestPlanForRun = {};
 		window._latestPlanForRun[runId] = plan;
 		var attemptsMap = {};
@@ -1268,6 +1291,30 @@ async function toggleRunDetail(runId, sourceEl) {
 	} catch (e) {
 		detailEl.innerHTML = '<p style="color:var(--fail);font-size:13px">加载失败：' + escapeHtml(e.message) + '</p>';
 	}
+}
+
+function buildFallbackPlanFromRunState(state) {
+	var taskDefinitions = Array.isArray(state.taskDefinitions) ? state.taskDefinitions : [];
+	var tasks = taskDefinitions.length
+		? taskDefinitions
+		: Object.keys(state.taskStates || {}).map(function(taskId) {
+			return {
+				id: taskId,
+				title: taskId,
+				input: { text: '' },
+				acceptance: { rules: [] },
+			};
+		});
+	return buildFallbackPlan(state.planId, tasks);
+}
+
+function buildFallbackPlan(planId, tasks) {
+	return {
+		planId: planId || 'missing-plan',
+		title: planId ? '缺失计划 ' + planId : '缺失计划',
+		goal: { text: '原计划定义不可用，当前详情按 run 状态展示。' },
+		tasks: Array.isArray(tasks) ? tasks : [],
+	};
 }
 
 function collectRunTaskDefinitions(state, plan) {
@@ -1387,6 +1434,7 @@ function buildMindmapNodes(state, plan, attemptsMap) {
 			activeAttemptId: ts ? ts.activeAttemptId : null,
 			errorSummary: errorLine,
 			resultRef: ts ? ts.resultRef : null,
+			manualDisposition: ts ? ts.manualDisposition : null,
 			parentTaskId: task.parentTaskId || null,
 			sourceItemId: task.sourceItemId || null,
 			generated: false,
@@ -1409,6 +1457,7 @@ function buildMindmapNodes(state, plan, attemptsMap) {
 				activeAttemptId: childTs ? childTs.activeAttemptId : null,
 				errorSummary: childErrorLine,
 				resultRef: childTs ? childTs.resultRef : null,
+				manualDisposition: childTs ? childTs.manualDisposition : null,
 				parentTaskId: childDef ? (childDef.parentTaskId || task.id) : task.id,
 				sourceItemId: childDef ? (childDef.sourceItemId || null) : null,
 				generated: true,
@@ -1439,6 +1488,7 @@ function buildMindmapNodes(state, plan, attemptsMap) {
 				activeAttemptId: ts ? ts.activeAttemptId : null,
 				errorSummary: errLine,
 				resultRef: ts ? ts.resultRef : null,
+				manualDisposition: ts ? ts.manualDisposition : null,
 				generated: true,
 				fallback: true,
 				children: []
@@ -1457,7 +1507,7 @@ function buildMindmapNodes(state, plan, attemptsMap) {
 
 	return rootNode;
 }
-function renderMindmapNode(node, depth, runId, attemptsMap) {
+function renderMindmapNode(node, depth, runId, attemptsMap, runStatus) {
 	var MINDMAP_GROUP_LIMIT = 6;
 	var cls = depth === 0 ? 'mindmap-root-node' : 'mindmap-task-node';
 	var escapedTitle = escapeHtml(node.title || '');
@@ -1520,6 +1570,20 @@ function renderMindmapNode(node, depth, runId, attemptsMap) {
 				}
 			});
 		}
+			// Mindmap disposition controls for terminal runs
+			(function() {
+			var TERMINAL_RUN = { completed: 1, completed_with_failures: 1, failed: 1, cancelled: 1 };
+			if (!TERMINAL_RUN[runStatus]) return;
+			if (node.nodeType === 'root' || node.nodeType === 'orphan-group') return;
+			var d = node.manualDisposition || 'default';
+			var dLabel = d === 'skip' ? '已设跳过' : d === 'force_rerun' ? '已设强制重跑' : '';
+			var dBadge = dLabel ? ' <span class="badge badge-warn" style="font-size:10px;margin-left:2px">' + dLabel + '</span>' : '';
+			html += '<div class="task-disposition" style="margin-top:4px">' + dBadge +
+					'<button class="btn btn-sm" style="font-size:10px;padding:1px 5px;margin-left:4px" onclick="event.stopPropagation();setTaskDisposition(' + jsArg(runId) + ',' + jsArg(node.id) + ',' + jsArg('skip') + ',this)">跳过</button>' +
+					'<button class="btn btn-sm" style="font-size:10px;padding:1px 5px;margin-left:2px" onclick="event.stopPropagation();setTaskDisposition(' + jsArg(runId) + ',' + jsArg(node.id) + ',' + jsArg('force_rerun') + ',this)">强制重跑</button>' +
+					(d !== 'default' ? '<button class="btn btn-sm" style="font-size:10px;padding:1px 5px;margin-left:2px" onclick="event.stopPropagation();setTaskDisposition(' + jsArg(runId) + ',' + jsArg(node.id) + ',' + jsArg('default') + ',this)">恢复默认</button>' : '') +
+					'</div>';
+		})();
 		html += '</div>';
 	}
 	if (!expanded && depth > 0 && node.sourceItemId) {
@@ -1528,6 +1592,16 @@ function renderMindmapNode(node, depth, runId, attemptsMap) {
 	if (!expanded && node.fallback) {
 		html += '<div class="mindmap-compact-warn">fallback</div>';
 	}
+	// Compact disposition badge (non-expanded view, terminal run)
+	if (!expanded && depth > 0 && node.nodeType !== 'root' && node.nodeType !== 'orphan-group') {
+		(function() {
+			var TERMINAL_RUN = { completed: 1, completed_with_failures: 1, failed: 1, cancelled: 1 };
+			if (!TERMINAL_RUN[runStatus]) return;
+			var d = node.manualDisposition || 'default';
+			if (d === 'skip') html += '<span class="badge badge-warn" style="font-size:10px;margin-left:2px">已设跳过</span>';
+			if (d === 'force_rerun') html += '<span class="badge badge-warn" style="font-size:10px;margin-left:2px">已设强制重跑</span>';
+		})();
+	}
 	html += '</div>';
 	if (node.children && node.children.length) {
 		var totalChildren = node.children.length;
@@ -1535,7 +1609,7 @@ function renderMindmapNode(node, depth, runId, attemptsMap) {
 		var visibleChildren = totalChildren <= MINDMAP_GROUP_LIMIT || groupExpanded ? totalChildren : MINDMAP_GROUP_LIMIT;
 		html += '<div class="mindmap-children" style="margin-left:' + (depth * 20) + 'px">';
 		for (var i = 0; i < visibleChildren; i++) {
-			html += renderMindmapNode(node.children[i], depth + 1, runId, attemptsMap);
+			html += renderMindmapNode(node.children[i], depth + 1, runId, attemptsMap, runStatus);
 		}
 		html += '</div>';
 		if (totalChildren > MINDMAP_GROUP_LIMIT) {
@@ -1554,7 +1628,7 @@ function renderMindmapNode(node, depth, runId, attemptsMap) {
 function renderTeamMindmap(runId, state, plan, attemptsMap) {
 	var root = buildMindmapNodes(state, plan, attemptsMap);
 	return '<div class="team-mindmap" data-run-detail-view="mindmap"><div class="mindmap-canvas">' +
-		renderMindmapNode(root, 0, runId, attemptsMap) +
+		renderMindmapNode(root, 0, runId, attemptsMap, state.status) +
 		'</div></div>';
 }
 
@@ -2147,11 +2221,12 @@ async function resumeRunWithConfirm(runId) {
 }
 
 function renderRunActions(r) {
-	var html = '<span class="detail-toggle" onclick="toggleRunDetail(\\'' + r.runId + '\\',this)">展开任务详情</span>';
-	if (r.status === 'running') html += '<button class="btn btn-primary btn-sm" onclick="pauseRunWithConfirm(\\'' + r.runId + '\\')">暂停</button><button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(\\'' + r.runId + '\\')">取消</button>';
-	if (r.status === 'paused') html += '<button class="btn btn-primary btn-sm" onclick="resumeRunWithConfirm(\\'' + r.runId + '\\')">恢复</button><button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(\\'' + r.runId + '\\')">取消</button>';
-	if (r.status === 'completed' || r.status === 'completed_with_failures' || r.status === 'failed') html += '<button class="btn btn-primary btn-sm" onclick="viewReport(\\'' + r.runId + '\\')">查看报告</button><button class="btn btn-primary btn-sm" onclick="rerunRunConfirm(\\'' + r.runId + '\\')">按标记重跑</button><button class="btn btn-danger btn-sm" onclick="deleteRun(\\'' + r.runId + '\\')">删除</button>';
-	if (r.status === 'cancelled') html += '<button class="btn btn-danger btn-sm" onclick="deleteRun(\\'' + r.runId + '\\')">删除</button>';
+	var rid = jsArg(r.runId);
+	var html = '<span class="detail-toggle" onclick="toggleRunDetail(' + rid + ',this)">展开任务详情</span>';
+	if (r.status === 'running') html += '<button class="btn btn-primary btn-sm" onclick="pauseRunWithConfirm(' + rid + ')">暂停</button><button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(' + rid + ')">取消</button>';
+	if (r.status === 'paused') html += '<button class="btn btn-primary btn-sm" onclick="resumeRunWithConfirm(' + rid + ')">恢复</button><button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(' + rid + ')">取消</button>';
+	if (r.status === 'completed' || r.status === 'completed_with_failures' || r.status === 'failed') html += '<button class="btn btn-primary btn-sm" onclick="viewReport(' + rid + ')">查看报告</button><button class="btn btn-primary btn-sm" onclick="rerunRunConfirm(' + rid + ')">按标记重跑</button><button class="btn btn-danger btn-sm" onclick="deleteRun(' + rid + ')">删除</button>';
+	if (r.status === 'cancelled') html += '<button class="btn btn-primary btn-sm" onclick="rerunRunConfirm(' + rid + ')">按标记重跑</button><button class="btn btn-danger btn-sm" onclick="deleteRun(' + rid + ')">删除</button>';
 	return html;
 }
 
@@ -2274,9 +2349,9 @@ $('file-viewer').addEventListener('click', function(e) {
 	});
 
 
-	// Initial load
-loadAgents().then(function() {
-	loadPlans();
+// Initial load
+loadAgents().then(async function() {
+	await loadPlans();
 	loadTeams();
 	loadRuns();
 });

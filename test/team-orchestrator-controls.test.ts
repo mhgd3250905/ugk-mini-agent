@@ -533,12 +533,14 @@ test("rerun rejects active running run", async () => {
 	}
 });
 
-test("rerun rejects cancelled run", async () => {
+test("rerun reopens cancelled run", async () => {
 	const { root, plan, orchestrator } = await setup();
 	try {
 		const state = await orchestrator.createRun(plan.planId);
 		await orchestrator.cancelRun(state.runId, "done");
-		await assert.rejects(() => orchestrator.rerunRun(state.runId), { message: /cannot rerun run with status: cancelled/ });
+		const rerunState = await orchestrator.rerunRun(state.runId);
+		assert.equal(rerunState.status, "queued");
+		assert.equal(rerunState.taskStates.task_1?.status, "pending");
 	} finally {
 		await rm(root, { recursive: true });
 	}

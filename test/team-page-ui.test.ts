@@ -238,7 +238,7 @@ test("behavioral: updateRunCard updates actions via renderRunActions", () => {
 	assert.match(script, /actionsEl\.innerHTML\s*=\s*renderRunActions\(r\)/);
 });
 
-test("behavioral: renderRunActions shows pause/cancel for running, resume/cancel for paused, report/delete for completed", () => {
+test("behavioral: renderRunActions shows controls for active and terminal runs", () => {
 	const script = extractScript();
 	const rraMatch = script.match(/function renderRunActions\(r\)[\s\S]*?^[\t]}/m);
 	assert.ok(rraMatch, "should find renderRunActions function");
@@ -251,6 +251,7 @@ test("behavioral: renderRunActions shows pause/cancel for running, resume/cancel
 	assert.match(body, /cancelRunWithConfirm/, "running should have cancel button");
 	assert.match(body, /resumeRunWithConfirm/, "paused should have resume button");
 	assert.match(body, /viewReport/, "completed should have view report button");
+	assert.match(body, /rerunRunConfirm/, "terminal runs should have rerun button");
 	assert.match(body, /deleteRun/, "terminal should have delete button");
 });
 
@@ -260,6 +261,14 @@ test("behavioral: loadRuns uses renderRunActions via .run-actions div", () => {
 	assert.match(script, /class="run-actions"/);
 	// Verify renderRunActions is called in the template
 	assert.match(script, /renderRunActions\(r\)/);
+});
+
+test("behavioral: plan run cards reuse renderRunActions for terminal rerun buttons", () => {
+	const script = extractScript();
+	const match = script.match(/function renderPlanRunCard\(run, plan\)[\s\S]*?function togglePlanRunDetail/);
+	assert.ok(match, "should find renderPlanRunCard body");
+	assert.match(match[0], /html \+= renderRunActions\(run\)/);
+	assert.doesNotMatch(match[0], /onclick="rerunRunConfirm/);
 });
 
 // ── P4: Team UI usability improvements ──
@@ -649,7 +658,7 @@ test("P8-E: parity — inline renderRuntimeContext matches helper output", () =>
 	const helperHtml = renderRuntimeContextHelper("worker", ctx);
 	const script = extractScript();
 	const start = script.indexOf("function escapeHtml");
-	const end = script.indexOf("async function editTeamUnit");
+	const end = script.indexOf("function updateRunCard");
 	assert.ok(start >= 0 && end > start);
 	const source = script.slice(start, end);
 	const stubs = "var window={};var document={querySelector:function(){return null},querySelectorAll:function(){return[]},getElementById:function(){return null},createElement:function(){return{appendChild:function(){}}}};var $=function(id){return{value:'',style:{},classList:{add:function(){},remove:function(){}}}};var _planCache={};var _latestRuns=[];var _selectedPlanId=null;var _latestRunTaskDefinitions={};";
@@ -2090,7 +2099,7 @@ test("P21-D1: dynamic plan detail shows template decomposer badge and escapes te
 function extractP21DTaskDetailRenderer(): (state: any, plan: any, attemptsMap: any) => string {
 	const script = extractScript();
 	const start = script.indexOf("function escapeHtml");
-	const end = script.indexOf("async function editTeamUnit");
+	const end = script.indexOf("function updateRunCard");
 	assert.ok(start >= 0, "should find helper source start");
 	assert.ok(end > start, "should find helper source end");
 	const source = script.slice(start, end);
@@ -2271,7 +2280,7 @@ test.skip("P21-D-fix: SSE detail refresh preserves route-provided taskDefinition
 function extractInlineFunction(name: string): (...args: any[]) => string {
 	const script = extractScript();
 	const start = script.indexOf("function escapeHtml");
-	const end = script.indexOf("async function editTeamUnit");
+	const end = script.indexOf("function updateRunCard");
 	assert.ok(start >= 0, "should find helper source start");
 	assert.ok(end > start, "should find helper source end");
 	const source = script.slice(start, end);
@@ -2380,4 +2389,220 @@ test("parity: renderPlanRunCard — completed run has report button", () => {
 	assert.match(inlineHtml, /viewReport/);
 	assert.doesNotMatch(helperHtml, /plan-card-active/);
 	assert.doesNotMatch(inlineHtml, /plan-card-active/);
+});
+
+// ── Mindmap task disposition controls ──
+
+test("behavioral: renderMindmapNode accepts runStatus for disposition gating", () => {
+	const script = extractScript();
+	assert.match(script, /function renderMindmapNode\(node, depth, runId, attemptsMap, runStatus\)/);
+});
+
+test("behavioral: renderTeamMindmap passes state.status to renderMindmapNode", () => {
+	const script = extractScript();
+	const match = script.match(/function renderTeamMindmap\(runId, state, plan, attemptsMap\)[\s\S]*?return /);
+	assert.ok(match, "should find renderTeamMindmap");
+	assert.match(script, /renderMindmapNode\(root, 0, runId, attemptsMap, state\.status\)/);
+});
+
+test("behavioral: buildMindmapNodes carries manualDisposition into task nodes", () => {
+	const script = extractScript();
+	const buildMatch = script.match(/function buildMindmapNodes[\s\S]*?return rootNode;/);
+	assert.ok(buildMatch, "should find buildMindmapNodes");
+	// Plan task nodes get manualDisposition from taskStates
+	assert.match(buildMatch[0], /manualDisposition:\s*ts\s*\?\s*ts\.manualDisposition/);
+	// Generated child nodes also get manualDisposition
+	assert.match(buildMatch[0], /manualDisposition:\s*childTs\s*\?\s*childTs\.manualDisposition/);
+	// Orphan nodes also get manualDisposition
+	const orphanMatch = buildMatch[0].match(/orphanIds\.forEach[\s\S]*?children: \[\]/);
+	assert.ok(orphanMatch, "should find orphan node construction");
+	assert.match(orphanMatch[0], /manualDisposition/);
+});
+
+test("behavioral: mindmap disposition controls only show for terminal runs", () => {
+	const script = extractScript();
+	// The mindmap disposition block has a TERMINAL_RUN check gating the buttons
+	const mindmapDispositionBlock = script.match(/Mindmap disposition controls[\s\S]*?}\)\(\);/);
+	assert.ok(mindmapDispositionBlock, "should find mindmap disposition controls block");
+	assert.match(mindmapDispositionBlock[0], /TERMINAL_RUN/);
+	assert.match(mindmapDispositionBlock[0], /completed/);
+	assert.match(mindmapDispositionBlock[0], /cancelled/);
+	assert.match(mindmapDispositionBlock[0], /runStatus/);
+});
+
+test("behavioral: mindmap disposition buttons call setTaskDisposition with correct args", () => {
+	const script = extractScript();
+	// Source uses string concatenation with jsArg for safe escaping
+	assert.match(
+		script,
+		/event\.stopPropagation\(\);setTaskDisposition\(' \+ jsArg\(runId\) \+ ',' \+ jsArg\(node\.id\) \+ ',' \+ jsArg\('skip'\)/,
+		"skip button must call setTaskDisposition via jsArg with stopPropagation",
+	);
+	assert.match(
+		script,
+		/event\.stopPropagation\(\);setTaskDisposition\(' \+ jsArg\(runId\) \+ ',' \+ jsArg\(node\.id\) \+ ',' \+ jsArg\('force_rerun'\)/,
+		"force_rerun button must call setTaskDisposition via jsArg with stopPropagation",
+	);
+	assert.match(
+		script,
+		/event\.stopPropagation\(\);setTaskDisposition\(' \+ jsArg\(runId\) \+ ',' \+ jsArg\(node\.id\) \+ ',' \+ jsArg\('default'\)/,
+		"default button must call setTaskDisposition via jsArg with stopPropagation",
+	);
+});
+
+test("behavioral: mindmap skips disposition controls on root and orphan-group container", () => {
+	const script = extractScript();
+	// Root node (depth === 0) and orphan-group container (nodeType === 'orphan-group') should not show disposition
+	const match = script.match(/function renderMindmapNode[\s\S]*?^[\t]}/m);
+	assert.ok(match, "should find renderMindmapNode");
+	// The disposition section should check nodeType is not root or orphan-group
+	assert.match(match[0], /nodeType.*root|depth > 0/);
+});
+
+test("behavioral: mindmap disposition badge shows current state", () => {
+	const script = extractScript();
+	// Badge for skip
+	assert.match(script, /已设跳过/);
+	// Badge for force_rerun
+	assert.match(script, /已设强制重跑/);
+	// Badge uses node.manualDisposition
+	assert.match(script, /node\.manualDisposition/);
+});
+
+test("behavioral: mindmap recursive calls pass runStatus through", () => {
+	const script = extractScript();
+	// Recursive renderMindmapNode calls must pass runStatus
+	const recursivePattern = /renderMindmapNode\(node\.children\[i\],\s*depth \+ 1,\s*runId,\s*attemptsMap,\s*runStatus\)/;
+	assert.match(script, recursivePattern, "recursive call must pass runStatus");
+});
+
+test("behavioral: setTaskDisposition refreshes via toggleRunDetail re-render", () => {
+	const script = extractScript();
+	// setTaskDisposition closes and re-opens the detail, which triggers full re-render
+	const setTaskDispositionMatch = script.match(/async function setTaskDisposition[\s\S]*?^}/m);
+	assert.ok(setTaskDispositionMatch, "should find setTaskDisposition");
+	assert.match(setTaskDispositionMatch[0], /toggleRunDetail/);
+	assert.match(setTaskDispositionMatch[0], /findRunDetailElement/);
+	// This means renderRunDetailShell (which includes both mindmap and detail table) is called again
+	// so disposition state and run-level actions are both refreshed
+});
+
+test("behavioral: renderRunActions includes rerun button for cancelled runs", () => {
+	const script = extractScript();
+	const rraMatch = script.match(/function renderRunActions\(r\)[\s\S]*?^[\t]}/m);
+	assert.ok(rraMatch, "should find renderRunActions function");
+	const body = rraMatch[0];
+	assert.match(body, /cancelled/);
+	assert.match(body, /rerunRunConfirm/);
+});
+// ── Helper mirror parity ──
+
+test("helper: renderPlanRunCard cancelled run shows rerun, no view report", () => {
+	const html = renderPlanRunCard({ runId: "run_cx_001", status: "cancelled", summary: { totalTasks: 1, succeededTasks: 0, failedTasks: 0, cancelledTasks: 1, skippedTasks: 0 } }, { tasks: [] });
+	assert.match(html, /按标记重跑/, "cancelled run must show rerun in helper");
+	assert.doesNotMatch(html, /查看报告/, "cancelled run must NOT show view report in helper");
+	assert.match(html, /删除/, "cancelled run must show delete in helper");
+});
+
+test("helper: renderPlanRunCard completed run shows report, rerun, delete", () => {
+	const html = renderPlanRunCard({ runId: "run_ok_001", status: "completed", summary: { totalTasks: 1, succeededTasks: 1, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 } }, { tasks: [] });
+	assert.match(html, /查看报告/);
+	assert.match(html, /按标记重跑/);
+	assert.match(html, /删除/);
+});
+
+test("helper: renderPlanRunCard malicious runId is safely escaped in onclick", () => {
+		const html = renderPlanRunCard({ runId: "run_'\"<script>alert(1)</script>", status: "completed", summary: { totalTasks: 1, succeededTasks: 1, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 } }, { tasks: [] });
+		assert.doesNotMatch(html, /run_'"/, "raw malicious runId must not appear in helper output");
+		assert.doesNotMatch(html, /<script>/i);
+		// Outer card onclick (togglePlanRunDetail) must also use safe escaping
+		assert.doesNotMatch(html, /togglePlanRunDetail\(this, 'run_'"/, "outer onclick must not have raw malicious runId");
+		assert.match(html, /togglePlanRunDetail/, "outer onclick should still exist");
+	});
+
+// ── Run action escaping and cancelled rerun ──
+
+function extractInlineRunActions(): (r: any) => string {
+	const script = extractScript();
+	// Extract escapeHtml + jsArg (utility dependencies)
+	const utilStart = script.indexOf("function escapeHtml");
+	const utilEnd = script.indexOf("function pathSegment");
+	assert.ok(utilStart >= 0 && utilEnd > utilStart, "should find utility functions");
+	const utils = script.slice(utilStart, utilEnd);
+	// Extract renderRunActions (defined later in the script)
+	const rraStart = script.indexOf("function renderRunActions(r)");
+	assert.ok(rraStart >= 0, "should find renderRunActions");
+	const rraEnd = script.indexOf("function updateRunCard", rraStart);
+	assert.ok(rraEnd > rraStart, "should find function after renderRunActions");
+	const rraSource = script.slice(rraStart, rraEnd);
+	const stubs = "var window={};var document={querySelector:function(){return null},querySelectorAll:function(){return[]},getElementById:function(){return null}};";
+	const fn = new Function(stubs + String.fromCharCode(10) + utils + String.fromCharCode(10) + rraSource + String.fromCharCode(10) + "return renderRunActions;")() as (r: any) => string;
+	assert.equal(typeof fn, "function", "renderRunActions should be callable");
+	return fn;
+}
+
+test("run action escaping: malicious runId with quotes and angle brackets is safely escaped", () => {
+	const rra = extractInlineRunActions();
+	const malicious = "run_'\"<script>alert(1)</script>_\n";
+	const html = rra({ runId: malicious, status: "completed" });
+	// The raw malicious string must NOT appear verbatim in the output
+	assert.doesNotMatch(html, /run_'"/, "raw malicious runId must not appear in output");
+	// No raw <script> tag
+	assert.doesNotMatch(html, /<script>/i);
+	// The output should still contain the expected buttons
+	assert.match(html, /查看报告/);
+	assert.match(html, /按标记重跑/);
+	assert.match(html, /删除/);
+});
+
+test("run action escaping: cancelled run shows rerun but not view report", () => {
+	const rra = extractInlineRunActions();
+	const html = rra({ runId: "run_cancel_001", status: "cancelled" });
+	assert.match(html, /按标记重跑/, "cancelled run must show rerun button");
+	assert.match(html, /删除/, "cancelled run must show delete button");
+	assert.doesNotMatch(html, /查看报告/, "cancelled run must NOT show view report");
+	// detail-toggle should be present
+	assert.match(html, /展开任务详情/);
+});
+
+test("run action escaping: completed run shows report, rerun, delete", () => {
+	const rra = extractInlineRunActions();
+	const html = rra({ runId: "run_ok_001", status: "completed" });
+	assert.match(html, /查看报告/);
+	assert.match(html, /按标记重跑/);
+	assert.match(html, /删除/);
+	assert.match(html, /展开任务详情/);
+});
+
+test("run action escaping: failed run shows report, rerun, delete", () => {
+	const rra = extractInlineRunActions();
+	const html = rra({ runId: "run_fail_001", status: "failed" });
+	assert.match(html, /查看报告/);
+	assert.match(html, /按标记重跑/);
+	assert.match(html, /删除/);
+});
+
+test("run action escaping: completed_with_failures run shows report, rerun, delete", () => {
+	const rra = extractInlineRunActions();
+	const html = rra({ runId: "run_cwf_001", status: "completed_with_failures" });
+	assert.match(html, /查看报告/);
+	assert.match(html, /按标记重跑/);
+	assert.match(html, /删除/);
+});
+
+test("run action escaping: running run shows pause and cancel, no rerun", () => {
+	const rra = extractInlineRunActions();
+	const html = rra({ runId: "run_active_001", status: "running" });
+	assert.match(html, /暂停/);
+	assert.match(html, /取消/);
+	assert.doesNotMatch(html, /按标记重跑/);
+	assert.doesNotMatch(html, /查看报告/);
+});
+
+test("run action escaping: paused run shows resume and cancel, no rerun", () => {
+	const rra = extractInlineRunActions();
+	const html = rra({ runId: "run_paused_001", status: "paused" });
+	assert.match(html, /恢复/);
+	assert.match(html, /取消/);
+	assert.doesNotMatch(html, /按标记重跑/);
 });

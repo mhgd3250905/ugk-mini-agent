@@ -381,7 +381,7 @@ export class TeamOrchestrator {
 	async rerunRun(runId: string): Promise<TeamRunState> {
 		const state = await this.workspace.getState(runId);
 		if (!state) throw new Error(`run not found: ${runId}`);
-		const rerunnable = ["completed", "completed_with_failures", "failed"] as const;
+		const rerunnable = ["completed", "completed_with_failures", "failed", "cancelled"] as const;
 		if (!rerunnable.includes(state.status as (typeof rerunnable)[number])) {
 			throw new Error(`cannot rerun run with status: ${state.status}`);
 		}

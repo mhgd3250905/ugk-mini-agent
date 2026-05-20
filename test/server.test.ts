@@ -6783,6 +6783,12 @@ test("GET /playground/team caches run state for safe detail view switching", asy
 
 	assert.equal(response.statusCode, 200);
 
+	assert.match(response.body, /var _planCache = \{\};/);
+	assert.match(response.body, /function buildFallbackPlanFromRunState\(state\)/);
+	assert.match(response.body, /原计划定义不可用，当前详情按 run 状态展示。/);
+	assert.match(response.body, /loadAgents\(\)\.then\(async function\(\)/);
+	assert.match(response.body, /await loadPlans\(\)/);
+
 	// Full run-state cache exists
 	assert.match(response.body, /window\._latestRunStateForRun/);
 
@@ -6949,8 +6955,8 @@ test("GET /playground/team scopes run detail expansion to the clicked card", asy
 		// Group toggle uses stopPropagation to prevent run card collapse
 		assert.match(response.body, /event\.stopPropagation\(\);toggleMindmapGroup/);
 
-		// renderMindmapNode accepts runId and attemptsMap
-		assert.match(response.body, /function renderMindmapNode\(node, depth, runId, attemptsMap\)/);
+			// renderMindmapNode accepts runId, attemptsMap, and runStatus
+			assert.match(response.body, /function renderMindmapNode\(node, depth, runId, attemptsMap, runStatus\)/);
 
 		// renderTeamMindmap passes runId through
 		assert.match(response.body, /function renderTeamMindmap\(runId, state, plan, attemptsMap\)/);
@@ -7094,6 +7100,42 @@ test("GET /playground/team scopes run detail expansion to the clicked card", asy
 			response.body,
 			/mindmap-task-node[^"]*"[^>]*border:1px solid/,
 		);
+
+		await app.close();
+	});
+
+	test("GET /playground/team includes mindmap task disposition controls", async () => {
+		const app = await buildServer({
+			agentService: createAgentServiceStub(),
+		});
+
+		const response = await app.inject({
+			method: "GET",
+			url: "/playground/team",
+		});
+
+		assert.equal(response.statusCode, 200);
+
+		// renderMindmapNode accepts runStatus parameter
+		assert.match(response.body, /function renderMindmapNode\(node, depth, runId, attemptsMap, runStatus\)/);
+
+		// renderTeamMindmap passes state.status
+		assert.match(response.body, /renderMindmapNode\(root, 0, runId, attemptsMap, state\.status\)/);
+
+		// Disposition buttons in mindmap use stopPropagation + setTaskDisposition
+		assert.match(response.body, /event\.stopPropagation\(\);setTaskDisposition\(' \+ jsArg\(runId\) \+ ',' \+ jsArg\(node\.id\) \+ ',' \+ jsArg\('skip'\)/);
+		assert.match(response.body, /event\.stopPropagation\(\);setTaskDisposition\(' \+ jsArg\(runId\) \+ ',' \+ jsArg\(node\.id\) \+ ',' \+ jsArg\('force_rerun'\)/);
+		assert.match(response.body, /event\.stopPropagation\(\);setTaskDisposition\(' \+ jsArg\(runId\) \+ ',' \+ jsArg\(node\.id\) \+ ',' \+ jsArg\('default'\)/);
+
+		// Disposition badges
+		assert.match(response.body, /已设跳过/);
+		assert.match(response.body, /已设强制重跑/);
+
+		// Recursive call passes runStatus
+		assert.match(response.body, /renderMindmapNode\(node\.children\[i\],\s*depth \+ 1,\s*runId,\s*attemptsMap,\s*runStatus\)/);
+
+		// buildMindmapNodes carries manualDisposition
+		assert.match(response.body, /manualDisposition:\s*ts\s*\?\s*ts\.manualDisposition/);
 
 		await app.close();
 	});

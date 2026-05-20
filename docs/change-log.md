@@ -12,6 +12,46 @@
 
 ---
 
+## 2026-05-20 — Team Run Action 安全转义修复
+
+- **主题**: 修复 `renderRunActions(...)` 中 `r.runId` 直接拼入 `onclick` handler 的 XSS 风险；收口 helper mirror 与 inline renderer 的行为漂移
+- **影响范围**: `src/ui/team-page.ts`, `src/ui/team-page-helpers.ts`, `test/team-page-ui.test.ts`, `test/server.test.ts`
+- **变更**:
+  - `renderRunActions(...)`: `r.runId` 改用 `jsArg(r.runId)` 构建 onclick 参数，消除引号/HTML注入风险
+  - `renderPlanRunCard` helper mirror: cancelled run 补上 `按标记重跑` 按钮；onclick 参数改用 `jsArg` 安全转义；与 inline renderer 行为对齐
+  - 新增 `jsArg` helper 函数（非 export）用于安全 JS 参数构建
+  - 新增 10 个测试覆盖恶意 runId 转义、cancelled/completed/failed 各状态按钮、helper mirror 行为
+  - parity test 的假 `renderRunActions` stub 已移除，改为提取真实 inline 函数
+- **验证**: focused tests 34 pass, `npm run test:team` 756 pass / 0 fail / 2 skip, `npx tsc --noEmit` clean
+
+---
+
+## 2026-05-20 — Conn 每日执行编辑保存修复
+
+- **主题**: 修复后台任务编辑每日执行时，已选择时间仍提示“请填写每日执行时间”导致无法保存的问题
+- **影响范围**: `src/ui/conn-page-js.ts`, `test/conn-page-ui.test.ts`
+- **变更**:
+  - 每日执行保存改为从日期时间选择器值中提取 `HH:mm`，兼容 `09:30`、`2026-05-20 09:30`、`2026/05/20 09:30`
+  - 编辑已有每日执行任务时，从 `nextRunAt` 或 cron expression 回填时间输入，避免不改时间直接保存失败
+- **验证**: `node --test --import tsx test/conn-page-ui.test.ts` 通过
+
+---
+
+## 2026-05-19 — Team 脑图 Task 标记控件
+
+- **主题**: 在 Team run detail 脑图 task 节点上增加手动标记控件（跳过、强制重跑、恢复默认），复用已有 `setTaskDisposition(...)` 和 `PATCH /v1/team/runs/:runId/tasks/:taskId/manual-disposition`
+- **影响范围**: `src/ui/team-page.ts`, `test/team-page-ui.test.ts`, `test/server.test.ts`
+- **变更**:
+  - `buildMindmapNodes(...)`: plan task / generated child / orphan child 节点携带 `manualDisposition`
+  - `renderMindmapNode(...)`: 接受 `runStatus` 参数；对 terminal run 的实际 task 节点渲染 disposition 按钮和 badge
+  - `renderTeamMindmap(...)`: 传递 `state.status` 给 `renderMindmapNode`
+  - 控件仅对 terminal run（completed / completed_with_failures / failed / cancelled）显示，active run 不显示
+  - `按标记重跑` 按钮在 run-level actions 中保持可见
+  - 无后端 route 变更，无 persisted state schema 变更
+- **验证**: focused mindmap disposition tests (team-page-ui + server.test), `npm run test:team` 746 pass / 0 fail / 2 skip, `npx tsc --noEmit` 通过
+
+---
+
 ## 2026-05-19 — Conn Run 手动终止
 
 - **主题**: 给后台 conn 运行任务补正式手动终止能力，替代直接修改运行态 SQLite 的救火操作

@@ -1012,6 +1012,7 @@ function fillEditorForm(conn) {
     if (intervalStart) intervalStart.value = sched.startAt ? formatDateTimeLocal(sched.startAt) : "";
     if (intervalMins) intervalMins.value = sched.everyMs ? Math.round(sched.everyMs / 60000) : 60;
   }
+  if (sched.kind === "cron" && onceAt) onceAt.value = formatDailyScheduleEditorValue(sched, conn.nextRunAt);
 
   const tgt = conn.target || {};
   if (targetType) {
@@ -1134,9 +1135,8 @@ function readEditorPayload() {
   } else if (schedKind === "daily") {
     const timeInput = $("editor-time-of-day") || $("editor-once-at");
     const timeVal = (timeInput || {}).value || "";
-    const match = timeVal.match(/^(\\d{1,2}):(\\d{2})/);
-    if (!match) { showEditorError("请填写每日执行时间", "editor-once-at"); return null; }
-    const expr = match[2] + " " + match[1] + " * * *";
+    const expr = parseDailyTimeToCronExpression(timeVal);
+    if (!expr) { showEditorError("请填写每日执行时间", "editor-once-at"); return null; }
     payload.schedule = { kind: "cron", expression: expr };
   }
 
@@ -1678,6 +1678,37 @@ function parseDateTimeLocal(value) {
   const d = new Date(text);
   if (isNaN(d.getTime())) return "";
   return d.toISOString();
+}
+
+function parseDailyTimeToCronExpression(value) {
+  const text = String(value || "").trim();
+  const match = text.match(/(?:^|\\s)(\\d{1,2}):(\\d{2})(?:\\s|$)/);
+  if (!match) return "";
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) return "";
+  return minute + " " + hour + " * * *";
+}
+
+function parseDailyCronTime(expression) {
+  const match = String(expression || "").trim().match(/^(\\d{1,2})\\s+(\\d{1,2})\\s+\\*\\s+\\*\\s+\\*$/);
+  if (!match) return null;
+  const minute = Number(match[1]);
+  const hour = Number(match[2]);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return { hour, minute };
+}
+
+function formatDailyScheduleEditorValue(schedule, nextRunAt) {
+  if (nextRunAt) {
+    const value = formatDateTimeLocal(nextRunAt);
+    if (value) return value;
+  }
+  const time = parseDailyCronTime(schedule && schedule.expression);
+  if (!time) return "";
+  const date = new Date();
+  date.setHours(time.hour, time.minute, 0, 0);
+  return formatDateTimeLocal(date.toISOString());
 }
 
 // ── Event handlers ─────────────────────────────────────────────────────────

@@ -21,6 +21,10 @@ export function escapeHtml(value: string): string {
 		.replace(/'/g, '&#39;');
 }
 
+function jsArg(value: string): string {
+	return escapeHtml(JSON.stringify(String(value == null ? '' : value)));
+}
+
 export function isActiveRunStatus(status: string): boolean {
 	return !!ACTIVE_RUN_STATUSES[status];
 }
@@ -223,7 +227,8 @@ export function renderPlanRunCard(run: any, plan: any): string {
 	var isActive = isActiveRunStatus(run.status);
 	var isTerminal = isTerminalRunStatus(run.status);
 	var cardClass = 'card' + (isActive ? ' plan-card-active' : '');
-	var html = '<div class="' + cardClass + '" data-run-id="' + escapeHtml(run.runId) + '" data-run-status="' + escapeHtml(run.status) + '"' + (run.startedAt ? ' data-started-at="' + escapeHtml(run.startedAt) + '"' : '') + ' style="margin-bottom:8px;cursor:pointer" onclick="togglePlanRunDetail(this, \'' + escapeHtml(run.runId) + '\')">';
+	var rid = jsArg(run.runId);
+	var html = '<div class="' + cardClass + '" data-run-id="' + escapeHtml(run.runId) + '" data-run-status="' + escapeHtml(run.status) + '"' + (run.startedAt ? ' data-started-at="' + escapeHtml(run.startedAt) + '"' : '') + ' style="margin-bottom:8px;cursor:pointer" onclick="togglePlanRunDetail(this, ' + rid + ')">';
 	html += '<div style="display:flex;justify-content:space-between;align-items:center">';
 	html += '<div><span class="run-id">' + escapeHtml(run.runId.slice(0, 12)) + '...</span> <span class="run-badge">' + statusBadge(run.status) + '</span></div>';
 	html += '<span class="run-elapsed" style="font-size:12px;color:var(--muted)">' + formatDuration(run.activeElapsedMs) + '</span>';
@@ -247,18 +252,22 @@ export function renderPlanRunCard(run: any, plan: any): string {
 		: '<p class="run-error" style="display:none;font-size:12px;color:var(--fail);margin-top:4px"></p>';
 	html += '<div class="run-actions" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap" onclick="event.stopPropagation()">';
 	if (run.status === 'running') {
-		html += '<button class="btn btn-primary btn-sm" onclick="pauseRunWithConfirm(\'' + escapeHtml(run.runId) + '\')">暂停</button>';
-		html += '<button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(\'' + escapeHtml(run.runId) + '\')">取消</button>';
+		html += '<button class="btn btn-primary btn-sm" onclick="pauseRunWithConfirm(' + rid + ')">暂停</button>';
+		html += '<button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(' + rid + ')">取消</button>';
 	}
 	if (run.status === 'paused') {
-		html += '<button class="btn btn-primary btn-sm" onclick="resumeRunWithConfirm(\'' + escapeHtml(run.runId) + '\')">恢复</button>';
-		html += '<button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(\'' + escapeHtml(run.runId) + '\')">取消</button>';
+		html += '<button class="btn btn-primary btn-sm" onclick="resumeRunWithConfirm(' + rid + ')">恢复</button>';
+		html += '<button class="btn btn-danger btn-sm" onclick="cancelRunWithConfirm(' + rid + ')">取消</button>';
 	}
 	if (isTerminal) {
 		if (run.status !== 'cancelled') {
-			html += '<button class="btn btn-primary btn-sm" onclick="viewReport(\'' + escapeHtml(run.runId) + '\')">查看报告</button>';
+			html += '<button class="btn btn-primary btn-sm" onclick="viewReport(' + rid + ')">查看报告</button>';
+			html += '<button class="btn btn-primary btn-sm" onclick="rerunRunConfirm(' + rid + ')">按标记重跑</button>';
 		}
-		html += '<button class="btn btn-danger btn-sm" onclick="deleteRun(\'' + escapeHtml(run.runId) + '\')">删除</button>';
+		if (run.status === 'cancelled') {
+			html += '<button class="btn btn-primary btn-sm" onclick="rerunRunConfirm(' + rid + ')">按标记重跑</button>';
+		}
+		html += '<button class="btn btn-danger btn-sm" onclick="deleteRun(' + rid + ')">删除</button>';
 	}
 	html += '</div>';
 	html += '<div id="run-detail-' + escapeHtml(run.runId) + '" class="run-detail" onclick="event.stopPropagation()"></div>';

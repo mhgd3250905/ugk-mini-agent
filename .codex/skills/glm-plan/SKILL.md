@@ -60,6 +60,17 @@ The plan must be usable by an agent that has never seen the project. Include:
 
 Prefer 4-8 tasks. Each task should be independently committable.
 
+## Formatting And EOL Hygiene
+
+Every generated plan and sendable message must explicitly protect against format-only churn:
+
+- External agents must preserve existing line endings and file formatting. Do not convert LF to CRLF or CRLF to LF unless the task explicitly requires an EOL normalization commit.
+- External agents must not run broad formatters on unrelated files. Formatting is allowed only for files intentionally changed and only when it matches the repo's existing tooling.
+- Plans must require reviewers to inspect `git diff --stat`, `git diff --numstat`, and suspicious large diffs before accepting work.
+- If a small feature produces thousands of changed lines, the external agent must stop and investigate line ending/formatter churn before continuing.
+- Verification must include `git diff --check`; when large UI/test files are touched, also include `git ls-files --eol <touched files>` or equivalent EOL inspection if diff size looks suspicious.
+- Delivery reports must mention whether any mechanical formatting or EOL normalization occurred. If it occurred unintentionally, it must be reverted before handoff.
+
 ## External Agent Control Rules
 
 Always include these rules in the plan and sendable message:
@@ -68,6 +79,7 @@ Always include these rules in the plan and sendable message:
 - One task, one commit.
 - Write tests before implementation where behavior changes.
 - Do not broaden scope.
+- Preserve existing line endings and formatting; do not create EOL-only or formatter-only churn.
 - Stop and report if blocked or if a plan assumption is wrong.
 - Do not commit `.env`, `.data`, runtime artifacts, temp files, unknown `.pi/skills/*`, or `skills-lock.json`.
 
@@ -118,17 +130,20 @@ Require tests for:
 禁止做：
 - 不做 <explicit non-goals>
 - 不改 <forbidden files/systems>
+- 不做整文件格式化或换行符转换；保持 touched files 的既有 EOL/格式
 - 不提交 .env/.data/runtime 产物/temp 文件/未知 .pi/skills/*/skills-lock.json
 
 执行要求：
 - 每个 Task 先补测试，再写实现
 - 每个 Task 单独 commit
 - 遇到计划外问题先停下说明，不要顺手扩范围
+- 如果小改动产生超大 diff，先检查是否为 EOL/formatter churn，修正后再继续
 
 最终验证：
 - npm run test:team
 - npx tsc --noEmit
 - git diff --check
+- git diff --stat / git diff --numstat，确认没有异常大规模格式噪音
 
 完成后按计划里的交付报告模板回复。
 ```
