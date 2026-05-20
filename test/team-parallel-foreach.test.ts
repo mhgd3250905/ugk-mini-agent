@@ -504,3 +504,115 @@ test("parallel for_each: timeout preserves run-level terminal state", async () =
 		await rm(root, { recursive: true });
 	}
 });
+
+test("parallel for_each: fatal state-write failure restores saveState and fails run", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-parallel-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const runner = new ParallelTestRunner(
+			[{ id: "a", title: "A" }, { id: "b", title: "B" }],
+			{ throwTaskIds: new Set(["process__a"]) },
+		);
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const plan = await planStore.create({
+			title: "fatal state-write",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{
+					id: "discover",
+					type: "discovery",
+					title: "Discover items",
+					input: { text: "Find items" },
+					acceptance: { rules: ["ok"] },
+					discovery: { outputKey: "items" },
+				},
+				{
+					id: "process",
+					type: "for_each",
+					title: "Process each",
+					input: { text: "p" },
+					acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "discover.items",
+						mode: "parallel",
+						taskTemplate: {
+							title: "Process {{item.title}}",
+							input: { text: "Process {{item.id}}" },
+							acceptance: { rules: ["ok"] },
+						},
+					},
+				},
+			],
+			outputContract: { text: "report" },
+		});
+		const orchestrator = new TeamOrchestrator({
+			planStore, teamUnitStore: unitStore, workspace,
+			roleRunner: runner, dataDir: root,
+			maxCheckerRevisions: 3, maxWatcherRevisions: 1,
+			maxRunDurationMinutes: 60,
+		});
+
+		// Monkey-patch patchState to throw when recording the child failure
+		const origPatchState = workspace.patchState.bind(workspace);
+		let patchCallCount = 0;
+		workspace.patchState = async function(runId: string, mutator: (s: any) => void | Promise<void>) {
+			patchCallCount++;
+			// Throw only when recording unexpected child failure (the mutator sets status "failed" with "unexpected error")
+			// All other patchState calls (summary, timeout, etc.) should work normally
+			const isChildFailurePatch = await detectChildFailurePatch.call(this, runId, mutator);
+			if (isChildFailurePatch) {
+				throw new Error("simulated state-write failure");
+			}
+			return origPatchState(runId, mutator);
+		};
+
+		// Helper: run the mutator on a clone to detect if it's recording a child failure
+		async function detectChildFailurePatch(runId: string, mutator: (s: any) => void | Promise<void>) {
+			const state = await workspace.getState(runId);
+			if (!state) return false;
+			const clone = JSON.parse(JSON.stringify(state));
+			await mutator(clone);
+			// Check if the mutator set any task to failed with an "unexpected error" prefix
+			for (const ts of Object.values(clone.taskStates) as Array<{ status: string; errorSummary?: string }>) {
+				if (ts.status === "failed" && ts.errorSummary && ts.errorSummary.startsWith("unexpected error")) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		// Run should be failed (not stuck running)
+		assert.ok(
+			final.status === "failed" || final.status === "completed_with_failures",
+			"run should be terminal failed, got " + final.status,
+		);
+		assert.ok(final.lastError, "run should have lastError");
+
+		// Restore patchState and verify saveState is not narrowed
+		workspace.patchState = origPatchState;
+
+		// Prove that a normal full-state saveState write works correctly
+		// (not narrowed by the parallel override which should have been restored)
+		const freshState = await workspace.getState(state.runId);
+		assert.ok(freshState, "state should be readable");
+		freshState!.lastError = "post-failure verification write";
+		freshState!.updatedAt = new Date().toISOString();
+		await workspace.saveState(freshState!);
+
+		const reloaded = await workspace.getState(state.runId);
+		assert.equal(reloaded!.lastError, "post-failure verification write",
+			"full-state saveState must persist lastError — if still narrowed, this would be lost");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});

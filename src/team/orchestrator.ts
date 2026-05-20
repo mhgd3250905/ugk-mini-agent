@@ -1612,21 +1612,17 @@ export class TeamOrchestrator {
 								if (cs && TERMINAL_TASK_STATUSES.has(cs.status)) return;
 								await this.executeMaybeDecomposedTask(current, child, plan, signal);
 							} catch (err) {
-								// Mark child as failed deterministically
+								// Mark child as failed; if state write fails, error propagates
 								const msg = err instanceof Error ? err.message : String(err);
-								try {
-									await ws.patchState(runId, (latest) => {
-										const childState = latest.taskStates[child.id];
-										if (childState && !TERMINAL_TASK_STATUSES.has(childState.status)) {
-											childState.status = "failed";
-											childState.errorSummary = `unexpected error: ${msg}`;
-											childState.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-										}
-										latest.summary = computeTeamRunSummary(latest.taskStates);
-									});
-								} catch {
-									// Best-effort: if patchState also fails, child may remain non-terminal
-								}
+								await ws.patchState(runId, (latest) => {
+									const childState = latest.taskStates[child.id];
+									if (childState && !TERMINAL_TASK_STATUSES.has(childState.status)) {
+										childState.status = "failed";
+										childState.errorSummary = `unexpected error: ${msg}`;
+										childState.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
+									}
+									latest.summary = computeTeamRunSummary(latest.taskStates);
+								});
 							}
 						});
 						// Handle timeout outside parallelTaskId scope so run-level writes are not narrowed
@@ -1636,7 +1632,7 @@ export class TeamOrchestrator {
 					};
 
 					const launch = (child: TeamTask) => {
-						const p = startChild(child).then(() => { active.delete(p); }, () => { active.delete(p); });
+						const p = startChild(child).finally(() => { active.delete(p); });
 						active.add(p);
 					};
 
