@@ -1647,8 +1647,15 @@ export class TeamOrchestrator {
 						nextIdx++;
 					}
 
-					while (active.size > 0) {
-						await Promise.race(active);
+					let fatalError: unknown = null;
+
+					while (active.size > 0 && !fatalError) {
+						try {
+							await Promise.race(active);
+						} catch (err) {
+							fatalError = err;
+							break;
+						}
 						while (nextIdx < queue.length && active.size < PARALLEL_FOR_EACH_CONCURRENCY) {
 							const current = await ws.getState(runId);
 							if (!current || current.status !== "running" || this.shouldStop(current) || signal.aborted) break;
@@ -1659,6 +1666,16 @@ export class TeamOrchestrator {
 							launch(queue[nextIdx]!);
 							nextIdx++;
 						}
+					}
+
+					// Drain any remaining active children before restoring saveState
+					if (active.size > 0) {
+						await Promise.allSettled(Array.from(active));
+					}
+
+					// If a fatal error occurred, rethrow after drain so failRun handles it
+					if (fatalError) {
+						throw fatalError;
 					}
 				} finally {
 					// Always restore original saveState, even if pool execution throws
