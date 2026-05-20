@@ -1339,7 +1339,14 @@ async function refreshRunDetailInPlace(runId, sourceEl) {
 			requestAnimationFrame(function() {
 				if (anchorEl && anchorOffset != null) {
 					var anchorTaskId = anchorEl.getAttribute('data-task-id');
-					var newAnchor = detailEl.querySelector('[data-task-id="' + anchorTaskId + '"]');
+					var candidates = detailEl.querySelectorAll('[data-task-id]');
+					var newAnchor = null;
+					for (var ci = 0; ci < candidates.length; ci++) {
+						if (candidates[ci].getAttribute('data-task-id') === anchorTaskId) {
+							newAnchor = candidates[ci];
+							break;
+						}
+					}
 					if (newAnchor) {
 						var newOffset = newAnchor.getBoundingClientRect().top;
 						window.scrollTo(savedScrollX, savedScrollY + (newOffset - anchorOffset));
@@ -1574,7 +1581,7 @@ function renderMindmapNode(node, depth, runId, attemptsMap, runStatus) {
 	var escapedStatus = escapeHtml(node.status || 'pending');
 	var escapedType = escapeHtml(node.nodeType || '任务');
 	var expanded = depth === 0 ? false : isMindmapNodeExpanded(runId, node.id, node.status);
-	var html = '<div class="' + cls + (expanded ? ' mindmap-node-expanded' : '') + '" data-task-id="' + jsArg(node.id) + '" data-node-status="' + escapedStatus + '" data-node-type="' + escapedType + '" style="margin-left:' + (depth * 20) + 'px">';
+	var html = '<div class="' + cls + (expanded ? ' mindmap-node-expanded' : '') + '" data-task-id="' + escapeHtml(node.id) + '" data-node-status="' + escapedStatus + '" data-node-type="' + escapedType + '" style="margin-left:' + (depth * 20) + 'px">';
 	if (depth > 0) {
 		html += '<button class="mindmap-node-toggle" onclick="event.stopPropagation();toggleMindmapNode(' + jsArg(runId) + ',' + jsArg(node.id) + ',' + jsArg(node.status) + ',this)">';
 	} else {
@@ -1753,7 +1760,7 @@ function renderTaskDetail(state, plan, attemptsMap) {
 		var rowClass = opts && opts.rowClass ? ' class="' + opts.rowClass + '"' : '';
 		var titlePrefix = opts && opts.titlePrefix ? opts.titlePrefix : '';
 		var escapedTaskTitle = task.title ? escapeHtml(task.title) : escapeHtml(task.id || '');
-		if (!ts) return '<tr' + rowClass + ' data-task-id="' + jsArg(task.id) + '"><td>' + titlePrefix + escapedTaskTitle + '</td><td colspan="2">待执行</td></tr>';
+		if (!ts) return '<tr' + rowClass + ' data-task-id="' + escapeHtml(task.id) + '"><td>' + titlePrefix + escapedTaskTitle + '</td><td colspan="2">待执行</td></tr>';
 		var phaseHtml = ts.progress ? '<span class="phase-label ' + phaseColor(ts.progress.phase) + '">' + escapeHtml(phaseLabel(ts.progress.phase)) + '</span>' : '';
 		var msgStr = ts.progress ? escapeHtml(ts.progress.message) : '';
 		var detailParts = [];
@@ -1796,7 +1803,7 @@ function renderTaskDetail(state, plan, attemptsMap) {
 			}).join('');
 		}
 		renderedTaskIds[task.id] = true;
-		return '<tr' + rowClass + ' data-task-id="' + jsArg(task.id) + '">' +
+		return '<tr' + rowClass + ' data-task-id="' + escapeHtml(task.id) + '">' +
 			'<td>' + titlePrefix + escapedTaskTitle + '</td>' +
 			'<td>' + statusBadge(ts.status) + '<br/>' + phaseHtml + '</td>' +
 			'<td style="font-size:12px">' +

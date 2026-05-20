@@ -2511,7 +2511,32 @@ test("behavioral: task rows and mindmap nodes carry data-task-id for scroll anch
 	assert.ok(renderStateRowMatch, "should find renderStateRow");
 	assert.match(renderStateRowMatch[0], /data-task-id/);
 	assert.match(script, /mindmap-task-node/);
-	assert.match(script, /data-task-id.*jsArg\(node\.id\)/);
+	assert.match(script, /data-task-id.*escapeHtml\(node\.id\)/);
+	assert.match(renderStateRowMatch[0], /data-task-id.*escapeHtml\(task\.id\)/);
+});
+
+test("behavioral: data-task-id uses escapeHtml not jsArg — no JSON quotes in attribute value", () => {
+	const script = extractScript();
+	// jsArg wraps in JSON.stringify then escapeHtml, producing &quot;...&quot; in HTML attributes.
+	// escapeHtml only escapes HTML-special chars, so the attribute value is the plain id string.
+	// Verify that data-task-id generation uses escapeHtml, not jsArg.
+	// Mindmap node: data-task-id uses escapeHtml(node.id)
+	assert.match(script, /data-task-id="' \+ escapeHtml\(node\.id\) \+ '"/, "mindmap node data-task-id must use escapeHtml, not jsArg");
+	// Detail row: data-task-id uses escapeHtml(task.id)
+	assert.match(script, /data-task-id="' \+ escapeHtml\(task\.id\) \+ '"/, "detail row data-task-id must use escapeHtml, not jsArg");
+	// Confirm no data-task-id still uses jsArg
+	assert.doesNotMatch(script, /data-task-id="' \+ jsArg/, "no data-task-id attribute must use jsArg (which wraps in JSON quotes)");
+});
+
+test("behavioral: refreshRunDetailInPlace finds anchor by attribute comparison, not unsafe selector", () => {
+	const script = extractScript();
+	const refreshFnMatch = script.match(/async function refreshRunDetailInPlace[\s\S]*?^}/m);
+	assert.ok(refreshFnMatch, "should find refreshRunDetailInPlace");
+	// Must NOT use direct string concatenation to build a CSS selector with the anchor id
+	assert.doesNotMatch(refreshFnMatch[0], /querySelector\('\[data-task-id="' \+ anchorTaskId/, "must not build unsafe CSS selector by concatenating raw attribute value");
+	// Must use attribute comparison loop (getAttribute === anchorTaskId)
+	assert.match(refreshFnMatch[0], /getAttribute\('data-task-id'\) === anchorTaskId/);
+	assert.match(refreshFnMatch[0], /querySelectorAll\('\[data-task-id\]'\)/);
 });
 
 test("behavioral: renderRunActions includes rerun button for cancelled runs", () => {
