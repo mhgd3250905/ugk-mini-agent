@@ -328,11 +328,20 @@ export class TeamOrchestrator {
 		if (!state) throw new Error(`run not found: ${runId}`);
 		if (state.status !== "paused") throw new Error(`can only resume paused run, current: ${state.status}`);
 
+		// Reset interrupted tasks to pending so they can execute on resume
+		for (const ts of Object.values(state.taskStates)) {
+			if (ts.status === "interrupted") {
+				ts.status = "pending";
+				ts.progress = { phase: "pending", message: progressMessages.pending, updatedAt: now() };
+			}
+		}
+
 		this.elapsedOffset = state.activeElapsedMs;
 		state.status = "queued";
 		state.lease = null;
 		state.pauseReason = null;
 		state.updatedAt = now();
+		state.summary = computeTeamRunSummary(state.taskStates);
 		await this.workspace.saveState(state);
 		return state;
 	}
