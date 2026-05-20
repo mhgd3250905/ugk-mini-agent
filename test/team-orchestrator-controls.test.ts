@@ -1838,3 +1838,195 @@ test("parallel pause -> resume lets interrupted children reach terminal states",
 		await rm(root, { recursive: true });
 	}
 });
+
+// ── force_rerun autoclear tests ──
+
+test("force_rerun: successful rerun clears manualDisposition back to default", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-fr-autoclear-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+		const plan = await planStore.create({
+			title: "fr autoclear test",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{ id: "task_1", title: "t1", input: { text: "do 1" }, acceptance: { rules: ["r1"] } },
+				{ id: "task_2", title: "t2", input: { text: "do 2" }, acceptance: { rules: ["r2"] } },
+			],
+			outputContract: { text: "output" },
+		});
+
+		let workerCallCount = 0;
+		class CountingRunner extends MockRoleRunner {
+			override async runWorker(input: import("../src/team/role-runner.js").WorkerInput) {
+				workerCallCount++;
+				return super.runWorker(input);
+			}
+		}
+
+		const runner = new CountingRunner();
+		const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+
+		// First run: complete successfully
+		workerCallCount = 0;
+		const state = await orchestrator.createRun(plan.planId);
+		const firstRun = await orchestrator.runToCompletion(state.runId);
+		assert.equal(firstRun.status, "completed");
+		assert.equal(firstRun.taskStates.task_2?.status, "succeeded");
+
+		// Mark task_2 as force_rerun
+		const afterSet = (await workspace.getState(state.runId))!;
+		afterSet.taskStates.task_2!.manualDisposition = "force_rerun";
+		afterSet.taskStates.task_2!.manualDispositionUpdatedAt = new Date().toISOString();
+		await workspace.saveState(afterSet);
+
+		// Rerun
+		workerCallCount = 0;
+		await orchestrator.rerunRun(state.runId);
+		const finalState = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(finalState.status, "completed");
+		assert.equal(finalState.taskStates.task_2?.status, "succeeded");
+		assert.equal(finalState.taskStates.task_2?.manualDisposition, "default", "successful forced task should have disposition cleared to default");
+		assert.equal(workerCallCount, 1, "rerun should only execute task_2");
+
+		// Second rerun: task_2 should NOT be re-executed since disposition is now default and status is succeeded
+		workerCallCount = 0;
+		await orchestrator.rerunRun(state.runId);
+		const secondRerun = await orchestrator.runToCompletion(state.runId);
+		assert.equal(secondRerun.status, "completed");
+		assert.equal(secondRerun.taskStates.task_2?.status, "succeeded");
+		assert.equal(workerCallCount, 0, "second rerun should not re-execute task_2 since force_rerun was cleared");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("force_rerun: failed forced task keeps manualDisposition as force_rerun", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-fr-fail-keep-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+		const plan = await planStore.create({
+			title: "fr fail keep test",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{ id: "task_1", title: "t1", input: { text: "do 1" }, acceptance: { rules: ["r1"] } },
+				{ id: "task_2", title: "t2", input: { text: "do 2" }, acceptance: { rules: ["r2"] } },
+			],
+			outputContract: { text: "output" },
+		});
+
+		// First run with normal runner to succeed both tasks
+		const normalRunner = new MockRoleRunner();
+		const normalOrchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: normalRunner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+		const state = await normalOrchestrator.createRun(plan.planId);
+		await normalOrchestrator.runToCompletion(state.runId);
+
+		// Mark task_2 as force_rerun
+		const afterSet = (await workspace.getState(state.runId))!;
+		afterSet.taskStates.task_2!.manualDisposition = "force_rerun";
+		afterSet.taskStates.task_2!.manualDispositionUpdatedAt = new Date().toISOString();
+		await workspace.saveState(afterSet);
+
+		// Rerun with a runner that fails task_2
+		class FailOnTask2Runner extends MockRoleRunner {
+			override async runWorker(input: import("../src/team/role-runner.js").WorkerInput) {
+				if (input.task.id === "task_2") throw new Error("task_2 fails on rerun");
+				return super.runWorker(input);
+			}
+		}
+		const failRunner = new FailOnTask2Runner();
+		const failOrchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: failRunner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+		await failOrchestrator.rerunRun(state.runId);
+		const finalState = await failOrchestrator.runToCompletion(state.runId);
+
+		assert.equal(finalState.taskStates.task_2?.status, "failed");
+		assert.equal(finalState.taskStates.task_2?.manualDisposition, "force_rerun", "failed forced task must keep force_rerun marker");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("force_rerun: for_each generated child autoclears after success", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-fr-fe-child-"));
+	try {
+		let workerCallCount = 0;
+		class CountingRunner extends MockRoleRunner {
+			override async runWorker(input: import("../src/team/role-runner.js").WorkerInput): Promise<import("../src/team/role-runner.js").WorkerOutput> {
+				if (input.task.type === "discovery") {
+					return { content: JSON.stringify({ items: [{ id: "a", title: "A" }] }), artifactRefs: [] };
+				}
+				workerCallCount++;
+				return { content: "done " + input.task.id, artifactRefs: [] };
+			}
+			override async runChecker(input: import("../src/team/role-runner.js").CheckerInput): Promise<import("../src/team/role-runner.js").CheckerOutput> {
+				if (input.task.type === "discovery") {
+					return { verdict: "pass", reason: "ok", resultContent: JSON.stringify({ items: [{ id: "a", title: "A" }] }) };
+				}
+				return { verdict: "pass", reason: "ok", resultContent: "accepted" };
+			}
+		}
+
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+		const plan = await planStore.create({
+			title: "fr fe child autoclear",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{ id: "discover", type: "discovery", title: "find items", input: { text: "find" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "items" } },
+				{
+					id: "process", type: "for_each", title: "process items", input: { text: "placeholder" },
+					acceptance: { rules: ["ok"] },
+					forEach: { itemsFrom: "discover.items", mode: "sequential", taskTemplate: { title: "item", input: { text: "process" }, acceptance: { rules: ["ok"] } } },
+				},
+			],
+			outputContract: { text: "output" },
+		});
+
+		const runner = new CountingRunner();
+		const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+
+		// First run: complete
+		const state1 = await orchestrator.createRun(plan.planId);
+		const result1 = await orchestrator.runToCompletion(state1.runId);
+		assert.equal(result1.status, "completed");
+
+		// Get child task IDs
+		const expansion = await workspace.readExpansion(state1.runId, "process");
+		assert.ok(expansion, "expansion should exist");
+		const childId = expansion.children[0]!.taskId;
+
+		// Mark generated child as force_rerun
+		const preRerun = (await workspace.getState(state1.runId))!;
+		preRerun.taskStates[childId]!.manualDisposition = "force_rerun";
+		preRerun.taskStates[childId]!.manualDispositionUpdatedAt = new Date().toISOString();
+		await workspace.saveState(preRerun);
+
+		// Rerun and complete
+		workerCallCount = 0;
+		await orchestrator.rerunRun(state1.runId);
+		const finalState = await orchestrator.runToCompletion(state1.runId);
+
+		assert.equal(finalState.status, "completed");
+		assert.equal(finalState.taskStates[childId]?.status, "succeeded");
+		assert.equal(finalState.taskStates[childId]?.manualDisposition, "default", "successful forced child task should clear disposition to default");
+		assert.equal(workerCallCount, 1, "only forced child should be re-executed");
+
+		// Expansion not duplicated
+		const expansion2 = await workspace.readExpansion(state1.runId, "process");
+		assert.ok(expansion2);
+		assert.equal(expansion2!.children.length, 1, "expansion should not be duplicated");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});

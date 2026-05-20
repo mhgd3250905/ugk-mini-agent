@@ -41,6 +41,18 @@ export interface TeamOrchestratorOptions {
 const now = () => new Date().toISOString();
 const parallelTaskId = new AsyncLocalStorage<string>();
 
+function clearSuccessfulForceRerunDispositions(state: TeamRunState): boolean {
+	let changed = false;
+	for (const ts of Object.values(state.taskStates)) {
+		if (ts.manualDisposition === "force_rerun" && ts.status === "succeeded") {
+			ts.manualDisposition = "default";
+			ts.manualDispositionUpdatedAt = now();
+			changed = true;
+		}
+	}
+	return changed;
+}
+
 const TERMINAL_TASK_STATUSES = new Set(["succeeded", "failed", "cancelled", "skipped"]);
 
 interface WorkUnitRunResult {
@@ -1107,6 +1119,7 @@ export class TeamOrchestrator {
 		freshState.finishedAt = now();
 		freshState.lease = null;
 		freshState.updatedAt = now();
+		clearSuccessfulForceRerunDispositions(freshState);
 		await this.workspace.saveState(freshState);
 	}
 
@@ -1134,6 +1147,7 @@ export class TeamOrchestrator {
 		state.updatedAt = now();
 		await this.finishUnfinishedActiveAttempts(state, "run timeout");
 		state.summary = computeTeamRunSummary(state.taskStates);
+		clearSuccessfulForceRerunDispositions(state);
 		await this.workspace.saveState(state);
 	}
 
@@ -1161,6 +1175,7 @@ export class TeamOrchestrator {
 		state.lease = null;
 		state.updatedAt = now();
 		await this.finishUnfinishedActiveAttempts(state, message);
+		clearSuccessfulForceRerunDispositions(state);
 		await this.workspace.saveState(state);
 		return state;
 	}
