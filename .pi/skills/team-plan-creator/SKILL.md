@@ -155,7 +155,7 @@ A `for_each` task expands dynamically at run time: for each item discovered by a
 - Each discovered item must have a stable non-empty string `id` field.
 - Child task IDs are `{parentTaskId}__{sanitizedItemId}`.
 - Each child runs the full worker → checker → watcher lifecycle independently.
-- **parallel + decomposer rejection**: `forEach.mode = "parallel"` combined with `forEach.taskTemplate.decomposer` is rejected at Plan creation. Parallel children cannot be decomposed further.
+- **parallel + decomposer policy**: `forEach.mode = "parallel"` combined with `forEach.taskTemplate.decomposer.mode = "leaf" | "propagate"` is rejected at Plan creation. `decomposer.mode = "none"` or no decomposer field is allowed (no further decomposition happens).
 - When proposing parallel mode to the user, suggest `"parallel"` when items are independent and order doesn't matter (e.g., "analyze each domain independently"). Suggest `"sequential"` when items depend on previous results or must be processed in order.
 
 ### Example: discovery + for_each plan

@@ -19,7 +19,7 @@
 - **变更**:
   - `forEach.mode` 支持 `"parallel"`，子任务通过固定容量池（容量 3）并发执行，child 完成即补位
   - parallel 并发 state 写入使用 `patchState` + `parallelTaskId`（`AsyncLocalStorage`），避免并发覆盖
-  - `parallel + taskTemplate.decomposer` 在 Plan 创建时被拒绝
+  - `parallel + taskTemplate.decomposer.mode leaf/propagate` 在 Plan 创建/更新时被拒绝；`decomposer.mode = "none"` 或无 decomposer 允许
   - `pauseRun` 标记所有 running 任务为 `interrupted`（含 parallel 子任务）
   - `resumeRun` 将 `interrupted` 任务重置为 `pending`，确保恢复后可重新执行
   - parallel `saveState` override 增加 stale-write protection：`latest.status !== "running"` 和 task terminal/interrupted guard，防止 pause/cancel 后的迟到写入覆盖中断/取消状态
