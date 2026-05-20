@@ -129,6 +129,28 @@ export class RunWorkspace {
 		});
 	}
 
+	async patchState(runId: string, mutator: (state: TeamRunState) => void | Promise<void>): Promise<TeamRunState> {
+		return this.withStateWriteLock(runId, async () => {
+			const state = await this.getState(runId);
+			if (!state) throw new Error(`run not found: ${runId}`);
+			const before = state.updatedAt;
+			await mutator(state);
+			if (state.updatedAt === before) {
+				state.updatedAt = now();
+			}
+			const filePath = join(this.rootDir, "runs", runId, "state.json");
+			const tmp = `${filePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
+			try {
+				await writeFile(tmp, JSON.stringify(state, null, 2), "utf8");
+				await rename(tmp, filePath);
+			} finally {
+				await rm(tmp, { force: true }).catch(() => {});
+			}
+			this.events.notify(state);
+			return state;
+		});
+	}
+
 	async claimNextRunnableRun(ownerId: string, leaseTtlMs: number): Promise<TeamRunState | null> {
 		const states = await this.listStates();
 		const candidates = states.filter(state =>
