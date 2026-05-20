@@ -1155,6 +1155,23 @@ test("GET /playground returns the test UI html", async () => {
 	await app.close();
 });
 
+test("GET /playground/agents loads installable skills from main agent skills including disabled entries", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents",
+	});
+
+	assert.equal(response.statusCode, 200);
+	assert.match(response.body, /fetchJson\("\/v1\/agents\/main\/skills"\)/);
+	assert.doesNotMatch(response.body, /fetchJson\("\/v1\/debug\/skills"\)/);
+	assert.match(response.body, /主 Agent 已关闭/);
+	await app.close();
+});
+
 test("GET /playground releases panel focus before hiding conn run details", async () => {
 	const app = await buildServer({
 		agentService: createAgentServiceStub(),

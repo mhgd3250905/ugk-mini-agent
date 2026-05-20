@@ -12,6 +12,20 @@
 
 ---
 
+## 2026-05-20 — 新增 http-access 轻量网络访问技能
+
+- **主题**: 新增独立系统 skill `http-access`，用于无浏览器实体的 HTTP(S) 网络访问，当前默认关闭，由 Agent Profile 技能开关选择启用
+- **影响范围**: `.pi/skills/http-access/SKILL.md`, `.pi/skills/http-access/scripts/http_access.mjs`
+- **变更**:
+  - 新增 `http-access` 技能说明，职责限定为普通 HTTP(S) 请求、JSON API、静态 HTML、RSS/sitemap、HEAD 检查和文件下载
+  - 技能不感知也不协调 `web-access`；二者冲突由 Agent Profile / skill 开关 / 安装隔离处理
+  - 新增 `http_access.mjs` CLI，支持 `request`、`json`、`html`、`extract`、`head`、`download`
+  - 脚本仅接受 `http:` / `https:` URL，默认设置 timeout、最大响应体读取限制和 User-Agent
+  - Agent 管理页的复制安装来源改为 `GET /v1/agents/main/skills`，使 main 已安装但 disabled 的系统技能仍可作为复制安装候选
+- **验证**: `node --check .pi/skills/http-access/scripts/http_access.mjs`；临时本地 HTTP server 验证 `json/html/extract/head/download` 通过；focused `/playground/agents` 页面测试通过
+
+---
+
 ## 2026-05-20 — Team Run Action 安全转义修复
 
 - **主题**: 修复 `renderRunActions(...)` 中 `r.runId` 直接拼入 `onclick` handler 的 XSS 风险；收口 helper mirror 与 inline renderer 的行为漂移

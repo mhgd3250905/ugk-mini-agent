@@ -846,7 +846,7 @@ function getAgentsPageJs(): string {
 
 			async function apiFetchGallerySkills() {
 			try {
-				var data = await fetchJson("/v1/debug/skills");
+				var data = await fetchJson("/v1/agents/main/skills");
 				state.gallerySkills = Array.isArray(data.skills) ? data.skills : [];
 			} catch {
 				state.gallerySkills = [];
@@ -1202,7 +1202,7 @@ function getAgentsPageJs(): string {
 				if (!name) return;
 				var opt = document.createElement("option");
 				opt.value = name;
-				opt.textContent = name;
+				opt.textContent = name + (s.enabled === false ? "（主 Agent 已关闭）" : "");
 				sel.appendChild(opt);
 			});
 			sel.onchange = function() {
