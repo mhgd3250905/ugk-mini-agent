@@ -533,7 +533,7 @@ test("POST plan accepts valid dynamic plan with discovery + for_each", async () 
 	}
 });
 
-test("POST plan rejects for_each without mode sequential", async () => {
+test("POST plan rejects for_each with unknown mode", async () => {
 	const { app, root } = await buildTestServer();
 	try {
 		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
@@ -543,12 +543,69 @@ test("POST plan rejects for_each without mode sequential", async () => {
 			defaultTeamUnitId: unitId,
 			goal: { text: "test" },
 			tasks: [
-				{ id: "fe", type: "for_each", title: "FE", input: { text: "p" }, acceptance: { rules: ["ok"] }, forEach: { itemsFrom: "d.items", mode: "parallel", taskTemplate: { title: "T", input: { text: "p" }, acceptance: { rules: ["ok"] } } } },
+				{ id: "fe", type: "for_each", title: "FE", input: { text: "p" }, acceptance: { rules: ["ok"] }, forEach: { itemsFrom: "d.items", mode: "unknown", taskTemplate: { title: "T", input: { text: "p" }, acceptance: { rules: ["ok"] } } } },
 			],
 			outputContract: { text: "out" },
 		}});
 		assert.equal(res.statusCode, 400);
-		assert.match(res.json().error, /sequential/);
+		assert.match(res.json().error, /sequential.*parallel/);
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch {}
+	}
+});
+
+// ── for_each.parallel schema validation ──
+
+test("POST plan accepts parallel for_each dynamic plan", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+		const unitId = unitRes.json().teamUnitId;
+		const res = await app.inject({ method: "POST", url: "/v1/team/plans", payload: {
+			title: "Parallel plan",
+			defaultTeamUnitId: unitId,
+			goal: { text: "process in parallel" },
+			tasks: [
+				{ id: "discover", type: "discovery", title: "Discover items", input: { text: "Find items" }, acceptance: { rules: ["output has JSON"] }, discovery: { outputKey: "items" } },
+				{ id: "process", type: "for_each", title: "Process each", input: { text: "p" }, acceptance: { rules: ["ok"] }, forEach: { itemsFrom: "discover.items", mode: "parallel", taskTemplate: { title: "Process {{item.title}}", input: { text: "p" }, acceptance: { rules: ["ok"] } } } },
+			],
+			outputContract: { text: "summary" },
+		}});
+		assert.equal(res.statusCode, 201);
+		assert.equal(res.json().tasks[1].forEach.mode, "parallel");
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch {}
+	}
+});
+
+test("PATCH plan rejects parallel for_each with template decomposer when runCount=0", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+		const unitId = unitRes.json().teamUnitId;
+		const createRes = await app.inject({ method: "POST", url: "/v1/team/plans", payload: planBody(unitId) });
+		const planId = createRes.json().planId;
+		const res = await app.inject({ method: "PATCH", url: `/v1/team/plans/${planId}`, payload: {
+			tasks: [{
+				id: "process_each", type: "for_each", title: "Process each",
+				input: { text: "placeholder" },
+				acceptance: { rules: ["ok"] },
+				forEach: {
+					itemsFrom: "discover.items",
+					mode: "parallel",
+					taskTemplate: {
+						title: "Process {{item.title}}",
+						input: { text: "Process" },
+						acceptance: { rules: ["ok"] },
+						decomposer: { mode: "leaf" },
+					},
+				},
+			}],
+		}});
+		assert.equal(res.statusCode, 400);
+		assert.match(res.json().error, /parallel.*decomposer|decomposer.*parallel/);
 		await app.close();
 	} finally {
 		try { await rm(root, { recursive: true, force: true }); } catch {}

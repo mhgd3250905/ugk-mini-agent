@@ -94,12 +94,17 @@ function validateTasks(tasks: unknown[]): void {
 		}
 		if (taskType === "for_each") {
 			if (!task.forEach?.itemsFrom?.trim()) throw new Error("for_each task requires forEach.itemsFrom");
-			if (task.forEach.mode !== "sequential") throw new Error("for_each task requires forEach.mode 'sequential'");
+			const forEachMode = task.forEach.mode;
+			if (forEachMode !== "sequential" && forEachMode !== "parallel") throw new Error("for_each task requires forEach.mode 'sequential' or 'parallel'");
 			const tmpl = task.forEach.taskTemplate as { title?: string; input?: { text?: string }; acceptance?: { rules?: string[] }; decomposer?: unknown; outputCheck?: unknown } | undefined;
 			if (!tmpl?.title?.trim()) throw new Error("for_each task requires forEach.taskTemplate.title");
 			if (!tmpl?.input?.text?.trim()) throw new Error("for_each task requires forEach.taskTemplate.input.text");
 			if (!tmpl?.acceptance?.rules?.length) throw new Error("for_each task requires forEach.taskTemplate.acceptance.rules");
 			validateDecomposerPolicy(tmpl.decomposer, "forEach.taskTemplate.decomposer");
+			if (forEachMode === "parallel" && tmpl?.decomposer) {
+				const d = tmpl.decomposer as { mode?: string };
+				if (d.mode && d.mode !== "none") throw new Error("parallel for_each does not allow forEach.taskTemplate.decomposer with mode 'leaf' or 'propagate'");
+			}
 			validateOutputCheck(tmpl.outputCheck, "forEach.taskTemplate.outputCheck");
 		}
 	}

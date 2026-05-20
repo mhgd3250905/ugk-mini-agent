@@ -138,7 +138,7 @@ export interface TeamTask {
 	};
 	forEach?: {
 		itemsFrom: string;
-		mode: "sequential";
+		mode: "sequential" | "parallel";
 		taskTemplate: {
 			title: string;
 			input: { text: string; payload?: Record<string, unknown> };

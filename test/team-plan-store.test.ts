@@ -206,7 +206,7 @@ test("for_each task requires forEach.itemsFrom", async () => {
 	}
 });
 
-test("for_each task requires mode sequential", async () => {
+test("for_each task rejects unknown mode", async () => {
 	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
 	try {
 		const store = new PlanStore(root);
@@ -219,7 +219,7 @@ test("for_each task requires mode sequential", async () => {
 					acceptance: { rules: ["ok"] },
 					forEach: {
 						itemsFrom: "t0.items",
-						mode: "parallel",
+						mode: "unknown",
 						taskTemplate: {
 							title: "Process",
 							input: { text: "Process" },
@@ -228,7 +228,7 @@ test("for_each task requires mode sequential", async () => {
 					},
 				}] as any,
 			}),
-			{ message: "for_each task requires forEach.mode 'sequential'" },
+			{ message: "for_each task requires forEach.mode 'sequential' or 'parallel'" },
 		);
 	} finally {
 		await rm(root, { recursive: true });
@@ -316,6 +316,151 @@ test("valid for_each task with sequential mode is accepted", async () => {
 		});
 		assert.equal(plan.tasks[0]!.type, "for_each");
 		assert.equal(plan.tasks[0]!.forEach?.mode, "sequential");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("valid for_each task with parallel mode is accepted", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		const plan = await store.create({
+			...validInput,
+			tasks: [{
+				id: "t1", type: "for_each", title: "Process each",
+				input: { text: "placeholder" },
+				acceptance: { rules: ["ok"] },
+				forEach: {
+					itemsFrom: "t0.items",
+					mode: "parallel",
+					taskTemplate: {
+						title: "Process {{item.title}}",
+						input: { text: "Process item {{item.id}}" },
+						acceptance: { rules: ["output is valid"] },
+					},
+				},
+			}],
+		});
+		assert.equal(plan.tasks[0]!.type, "for_each");
+		assert.equal(plan.tasks[0]!.forEach?.mode, "parallel");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("parallel for_each rejects taskTemplate.decomposer mode leaf", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		await assert.rejects(
+			() => store.create({
+				...validInput,
+				tasks: [{
+					id: "t1", type: "for_each", title: "Process each",
+					input: { text: "placeholder" },
+					acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "t0.items",
+						mode: "parallel",
+						taskTemplate: {
+							title: "Process",
+							input: { text: "Process" },
+							acceptance: { rules: ["ok"] },
+							decomposer: { mode: "leaf" },
+						},
+					},
+				}],
+			}),
+			{ message: "parallel for_each does not allow forEach.taskTemplate.decomposer with mode 'leaf' or 'propagate'" },
+		);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("parallel for_each rejects taskTemplate.decomposer mode propagate", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		await assert.rejects(
+			() => store.create({
+				...validInput,
+				tasks: [{
+					id: "t1", type: "for_each", title: "Process each",
+					input: { text: "placeholder" },
+					acceptance: { rules: ["ok"] },
+					forEach: {
+						itemsFrom: "t0.items",
+						mode: "parallel",
+						taskTemplate: {
+							title: "Process",
+							input: { text: "Process" },
+							acceptance: { rules: ["ok"] },
+							decomposer: { mode: "propagate" },
+						},
+					},
+				}],
+			}),
+			{ message: "parallel for_each does not allow forEach.taskTemplate.decomposer with mode 'leaf' or 'propagate'" },
+		);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("parallel for_each accepts no decomposer", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		const plan = await store.create({
+			...validInput,
+			tasks: [{
+				id: "t1", type: "for_each", title: "Process each",
+				input: { text: "placeholder" },
+				acceptance: { rules: ["ok"] },
+				forEach: {
+					itemsFrom: "t0.items",
+					mode: "parallel",
+					taskTemplate: {
+						title: "Process {{item.title}}",
+						input: { text: "Process" },
+						acceptance: { rules: ["ok"] },
+					},
+				},
+			}],
+		});
+		assert.equal(plan.tasks[0]!.forEach?.mode, "parallel");
+		assert.equal(plan.tasks[0]!.forEach?.taskTemplate.decomposer, undefined);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("parallel for_each accepts decomposer mode none", async () => {
+	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
+	try {
+		const store = new PlanStore(root);
+		const plan = await store.create({
+			...validInput,
+			tasks: [{
+				id: "t1", type: "for_each", title: "Process each",
+				input: { text: "placeholder" },
+				acceptance: { rules: ["ok"] },
+				forEach: {
+					itemsFrom: "t0.items",
+					mode: "parallel",
+					taskTemplate: {
+						title: "Process {{item.title}}",
+						input: { text: "Process" },
+						acceptance: { rules: ["ok"] },
+						decomposer: { mode: "none" },
+					},
+				},
+			}],
+		});
+		assert.equal(plan.tasks[0]!.forEach?.mode, "parallel");
+		assert.equal(plan.tasks[0]!.forEach?.taskTemplate.decomposer?.mode, "none");
 	} finally {
 		await rm(root, { recursive: true });
 	}
