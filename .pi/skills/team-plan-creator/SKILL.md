@@ -32,7 +32,7 @@ Before touching any API, ask the user:
 2. **Deliverable** — What should the final output look like?
 3. **Existing resources** — Do you have a TeamUnit you want to reuse?
 4. **Task granularity** — Roughly how many steps do you want to break this into?
-5. **Unknown item count** — Does the work involve an unknown number of items that should first be discovered as a list and then processed one by one? If yes, propose `discovery` + `for_each` instead of asking the user to guess a static step count.
+5. **Unknown item count** — Does the work involve an unknown number of items that should first be discovered as a list and then processed one by one? If yes, propose `discovery` + `for_each` instead of asking the user to guess a static step count. Also ask whether items are independent (suggest `mode: "parallel"`) or order-dependent (suggest `mode: "sequential"`).
 
 Do not proceed to API calls until the user has answered at least the goal and deliverable questions.
 
@@ -128,7 +128,7 @@ A discovery task runs the worker→checker→watcher cycle, but its output is ex
 
 ### for_each
 
-A `for_each` task expands dynamically at run time: for each item discovered by an upstream `discovery` task, it generates a child task from a template. All children run sequentially.
+A `for_each` task expands dynamically at run time: for each item discovered by an upstream `discovery` task, it generates a child task from a template.
 
 ```json
 {
@@ -150,11 +150,13 @@ A `for_each` task expands dynamically at run time: for each item discovered by a
 ```
 
 - `forEach.itemsFrom` — dot-path referencing `{upstreamTaskId}.{outputKey}` (required).
-- `forEach.mode` — must be `"sequential"` (required; parallel not yet supported).
+- `forEach.mode` — `"sequential"` (children run one by one) or `"parallel"` (children run concurrently with fixed pool capacity 3; child completes → next child starts, not batch).
 - `forEach.taskTemplate` — template for each child task (required). Supports `{{item.id}}`, `{{item.title}}`, and `{{item}}` (full JSON) placeholders.
 - Each discovered item must have a stable non-empty string `id` field.
 - Child task IDs are `{parentTaskId}__{sanitizedItemId}`.
 - Each child runs the full worker → checker → watcher lifecycle independently.
+- **parallel + decomposer rejection**: `forEach.mode = "parallel"` combined with `forEach.taskTemplate.decomposer` is rejected at Plan creation. Parallel children cannot be decomposed further.
+- When proposing parallel mode to the user, suggest `"parallel"` when items are independent and order doesn't matter (e.g., "analyze each domain independently"). Suggest `"sequential"` when items depend on previous results or must be processed in order.
 
 ### Example: discovery + for_each plan
 

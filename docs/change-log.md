@@ -12,6 +12,22 @@
 
 ---
 
+## 2026-05-20 — Team Runtime P27: parallel for_each 并行执行与运行控制
+
+- **主题**: `for_each` 任务支持并行执行模式，pause/cancel/rerun 已覆盖 parallel 子任务的状态保护和恢复
+- **影响范围**: `src/team/orchestrator.ts`, `src/team/plan-store.ts`, `src/team/types.ts`, `src/team/task-expansion-planner.ts`, `test/team-orchestrator-controls.test.ts`, `test/team-orchestrator-dynamic-expansion.test.ts`, `test/team-parallel-foreach.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`, `.pi/skills/team-plan-creator/SKILL.md`
+- **变更**:
+  - `forEach.mode` 支持 `"parallel"`，子任务通过固定容量池（容量 3）并发执行，child 完成即补位
+  - parallel 并发 state 写入使用 `patchState` + `parallelTaskId`（`AsyncLocalStorage`），避免并发覆盖
+  - `parallel + taskTemplate.decomposer` 在 Plan 创建时被拒绝
+  - `pauseRun` 标记所有 running 任务为 `interrupted`（含 parallel 子任务）
+  - `resumeRun` 将 `interrupted` 任务重置为 `pending`，确保恢复后可重新执行
+  - parallel `saveState` override 增加 stale-write protection：`latest.status !== "running"` 和 task terminal/interrupted guard，防止 pause/cancel 后的迟到写入覆盖中断/取消状态
+  - partial success 语义：至少一个 child succeeded → parent succeeded；全部 skipped → skipped；否则 failed
+  - rerun `force_rerun` / `skip` disposition 对 parallel 子任务同样生效；expansion record 复用不重复生成
+
+---
+
 ## 2026-05-20 — 新增阿里 CodePlan 模型源
 
 - **主题**: 接入阿里 CodePlan Anthropic-compatible 模型源，新增 `ali-codeplan` provider 与独立 `ALI_CODEPLAN_API_KEY`
