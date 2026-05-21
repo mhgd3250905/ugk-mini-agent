@@ -370,36 +370,34 @@
 - 当前会话和非当前会话的提示表现不一致
 - conn 结果已经完成，但切换会话后只能靠任务消息页找到
 
-## J. Team Runtime / TeamTemplate
+## J. Team Runtime v2
 
 先看：
 
 1. [docs/team-runtime.md](/E:/AII/ugk-pi/docs/team-runtime.md)
-2. [src/team/team-template.ts](/E:/AII/ugk-pi/src/team/team-template.ts)
-3. [src/team/team-template-registry.ts](/E:/AII/ugk-pi/src/team/team-template-registry.ts)
-4. [src/team/templates/brand-domain-discovery.ts](/E:/AII/ugk-pi/src/team/templates/brand-domain-discovery.ts)
-5. [src/team/templates/competitor-domain-discovery.ts](/E:/AII/ugk-pi/src/team/templates/competitor-domain-discovery.ts)
-6. [src/team/team-orchestrator.ts](/E:/AII/ugk-pi/src/team/team-orchestrator.ts)
-7. [src/team/team-workspace.ts](/E:/AII/ugk-pi/src/team/team-workspace.ts)
-8. [src/team/team-role-task-runner.ts](/E:/AII/ugk-pi/src/team/team-role-task-runner.ts)
-9. [src/team/team-search.ts](/E:/AII/ugk-pi/src/team/team-search.ts)
-10. [src/team/json-output.ts](/E:/AII/ugk-pi/src/team/json-output.ts)
-11. [src/routes/team.ts](/E:/AII/ugk-pi/src/routes/team.ts)
-12. [src/ui/team-page.ts](/E:/AII/ugk-pi/src/ui/team-page.ts)
-13. [src/workers/team-worker.ts](/E:/AII/ugk-pi/src/workers/team-worker.ts)
-14. [test/team-template-brand-domain.test.ts](/E:/AII/ugk-pi/test/team-template-brand-domain.test.ts)
-15. [test/team-template-competitor-domain.test.ts](/E:/AII/ugk-pi/test/team-template-competitor-domain.test.ts)
-16. [test/team-orchestrator.test.ts](/E:/AII/ugk-pi/test/team-orchestrator.test.ts)
-17. [test/team-page-ui.test.ts](/E:/AII/ugk-pi/test/team-page-ui.test.ts)
+2. [src/team/types.ts](/E:/AII/ugk-pi/src/team/types.ts)
+3. [src/team/routes.ts](/E:/AII/ugk-pi/src/team/routes.ts)
+4. [src/team/plan-draft.ts](/E:/AII/ugk-pi/src/team/plan-draft.ts)
+5. [src/team/plan-validation.ts](/E:/AII/ugk-pi/src/team/plan-validation.ts)
+6. [src/team/orchestrator.ts](/E:/AII/ugk-pi/src/team/orchestrator.ts)
+7. [src/team/child-execution.ts](/E:/AII/ugk-pi/src/team/child-execution.ts)
+8. [src/team/task-attempt-runner.ts](/E:/AII/ugk-pi/src/team/task-attempt-runner.ts)
+9. [src/team/run-workspace.ts](/E:/AII/ugk-pi/src/team/run-workspace.ts)
+10. [src/team/run-presenter.ts](/E:/AII/ugk-pi/src/team/run-presenter.ts)
+11. [src/ui/team-page.ts](/E:/AII/ugk-pi/src/ui/team-page.ts)
+12. [src/ui/team-page-helpers.ts](/E:/AII/ugk-pi/src/ui/team-page-helpers.ts)
+13. [test/team-plan-draft.test.ts](/E:/AII/ugk-pi/test/team-plan-draft.test.ts)
+14. [test/team-routes.test.ts](/E:/AII/ugk-pi/test/team-routes.test.ts)
+15. [test/team-page-ui.test.ts](/E:/AII/ugk-pi/test/team-page-ui.test.ts)
 
 适用问题：
 
-- `POST /v1/team/runs` 创建品牌域名调查或竞争对手域名调查 run
-- `/playground/team` 模板选择、创建 run、查看 stream / event / artifact 的独立页面
-- 新增第三条 team 样板链路前，判断应该扩展 template 还是 runtime
-- role task 失败后 cursor 是否推进
-- template stream validator、role readiness、block policy 和 finalizer 是否生效
-- 正式 Team Runtime 与 `src/team-lab/` spike 实验代码的边界
+- Plan draft / 自然语言草案生成：`GET /v1/team/plan-templates`、`POST /v1/team/plan-drafts`
+- Plan / TeamUnit / Run API：创建 Plan、绑定 TeamUnit、queued run、pause / resume / cancel / rerun
+- `discovery` / `for_each` / `decomposer` / outputCheck 的 Plan schema 和运行时行为
+- `/playground/team` 创建普通计划、动态计划、自然语言草案，以及查看 run detail / attempts / final report
+- run detail API 的 `taskDefinitions`、动态子任务、拆分子任务和 UI 时间线展示
+- TeamTemplate / v0.1 域名调查历史只看 [docs/team-runtime.md](/E:/AII/ugk-pi/docs/team-runtime.md) 文末归档章节，不再作为当前主入口
 
 ## E2. Agent 管理独立页面
 

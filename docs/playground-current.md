@@ -7,7 +7,7 @@
 - `/playground/team` 仍是独立 Team Runtime 工作台，不嵌进主聊天 workspace。
 - Plan 创建现在有三种模式：普通计划、发现后逐项处理、自然语言草案。自然语言草案模式输入目标后调用 `POST /v1/team/plan-drafts`，只生成可检查的 Plan create payload，不落盘、不创建 Plan、不创建或启动 Run。
 - 草案预览会展示模板命中、reason、warnings 和 Plan JSON；用户确认后才把同一份 payload 提交给 `POST /v1/team/plans`。
-- 模板列表来自 `GET /v1/team/plan-templates`。当前 supported 模板是 `single_agent` 和 `parallel_research`；planned 模板会展示为不可用，不会被 draft endpoint 执行。
+- API 暴露 `GET /v1/team/plan-templates` 作为模板 registry；当前 `/playground/team` 自然语言草案 UI 直接调用 `POST /v1/team/plan-drafts`，不展示模板列表。planned 模板由 API 标记为 `planned`，draft endpoint 不执行。
 - Run 仍由 `POST /v1/team/plans/:planId/runs` 创建 queued run；run detail、events、attempt 文件和 final report 继续以 `docs/team-runtime.md` 的 Team Runtime v2 API 为准。
 - 相关源码：`src/ui/team-page.ts`、`src/ui/team-page-helpers.ts`、`src/team/plan-draft.ts`、`src/team/routes.ts`
 

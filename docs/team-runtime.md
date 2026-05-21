@@ -42,7 +42,7 @@
 - `outputContract` — 最终输出格式
 - `runCount` — 已产生的 run 数量；`runCount > 0` 后任务主体不可改
 
-#### Plan draft（P27）
+#### Plan draft
 
 Plan draft 是创建 Plan 前的只读草案层。它只根据用户自然语言目标生成一份可检查、可再提交的 `POST /v1/team/plans` payload，不持久化 Plan，不创建 Run，也不修改 `runCount`。
 
