@@ -9,6 +9,8 @@ import { TeamUnitStore } from "../src/team/team-unit-store.js";
 import { RunWorkspace } from "../src/team/run-workspace.js";
 import { MockRoleRunner } from "../src/team/role-runner.js";
 import type { ProfileAwareTeamRoleRunner, WorkerInput, CheckerInput, WatcherInput, FinalizerInput, WorkerOutput, CheckerOutput, WatcherOutput, FinalizerOutput, DecomposerInput, DecomposerOutput } from "../src/team/role-runner.js";
+import { TaskAttemptLifecycleRunner } from "../src/team/task-attempt-runner.js";
+import { computeTeamRunSummary } from "../src/team/team-summary.js";
 
 async function setup(runnerOverrides: Record<string, unknown[]> = {}) {
 	const root = await mkdtemp(join(tmpdir(), "team-lc-"));
@@ -58,6 +60,51 @@ test("lifecycle: success path writes worker/checker metadata and finishAttempt s
 		assert.equal(a.phase, "succeeded");
 		assert.ok(a.resultRef!.includes("accepted-result.md"));
 		assert.ok(a.finishedAt !== null);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("task attempt runner: runs worker checker watcher and persists accepted attempt", async () => {
+	const { root, plan, workspace } = await setup();
+	try {
+		const state = await workspace.createRun(plan, (await (new TeamUnitStore(root)).list())[0]!.teamUnitId);
+		const task = plan.tasks[0]!;
+		const running = (await workspace.getState(state.runId))!;
+		running.status = "running";
+		running.taskStates[task.id]!.status = "pending";
+		running.summary = computeTeamRunSummary(running.taskStates);
+		await workspace.saveState(running);
+
+		const runner = new TaskAttemptLifecycleRunner({
+			workspace,
+			roleRunner: new MockRoleRunner(),
+			dataDir: root,
+			maxCheckerRevisions: 3,
+			maxWatcherRevisions: 1,
+			phaseTimeouts: { workerMs: 60_000, checkerMs: 60_000, watcherMs: 60_000 },
+			shouldStop: (s) => !s || s.status !== "running",
+			standardizeDiscoveryResult: async () => true,
+		});
+
+		await runner.runTask({
+			state: running,
+			task,
+			signal: new AbortController().signal,
+			writer: workspace,
+		});
+
+		const final = (await workspace.getState(state.runId))!;
+		const taskState = final.taskStates[task.id]!;
+		assert.equal(taskState.status, "succeeded");
+		assert.ok(taskState.resultRef?.endsWith("accepted-result.md"));
+
+		const attempts = await workspace.listAttempts(state.runId, task.id);
+		assert.equal(attempts.length, 1);
+		assert.equal(attempts[0]!.status, "succeeded");
+		assert.equal(attempts[0]!.worker.length, 1);
+		assert.equal(attempts[0]!.checker.length, 1);
+		assert.equal(attempts[0]!.watcher?.decision, "accept_task");
 	} finally {
 		await rm(root, { recursive: true });
 	}

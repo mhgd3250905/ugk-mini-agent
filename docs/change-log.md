@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-21 — Team task attempt lifecycle runner 抽取
+
+- **主题**: 将单个 task 的 worker/checker/watcher attempt 生命周期从 `TeamOrchestrator` 抽到专用 runner
+- **影响范围**: `src/team/task-attempt-runner.ts`, `src/team/orchestrator.ts`, `test/team-orchestrator-lifecycle.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - 新增 `TaskAttemptLifecycleRunner`，集中处理 attempt 创建、worker/checker/watcher phase、checker retry、watcher retry、timeout、output validation、accepted/failed result 写入和 attempt metadata 记录
+  - `TeamOrchestrator` 保留 run lifecycle、task ordering、dynamic expansion、controlled decomposition 和 finalizer，普通 task 执行委托给 attempt runner
+  - 保持 worker/checker/watcher prompt schema、persisted file names、discovery standardization、pause/cancel/timeout 和 output validation 语义不变
+  - 新增模块级真实状态测试，直接验证 runner 可写入 succeeded task state、`accepted-result.md` 与 worker/checker/watcher metadata
+
+---
+
 ## 2026-05-21 — Team child execution module 抽取
 
 - **主题**: 将 `for_each` expanded child 的 sequential / parallel 执行拓扑从 `TeamOrchestrator` 抽到内部模块
