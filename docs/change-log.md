@@ -12,6 +12,29 @@
 
 ---
 
+## 2026-05-21 — Ali CodePlan DeepSeek model option
+
+- **主题**: 在阿里 CodePlan 模型源下新增 `deepseek-v4-pro` 可选模型
+- **影响范围**: `runtime/pi-agent/models.json`, `docs/model-providers.md`, `test/model-config.test.ts`, `test/agent-session-factory.test.ts`, `docs/change-log.md`
+- **变更**:
+  - `ali-codeplan` provider 继续使用 `ALI_CODEPLAN_API_KEY`、`anthropic-messages` 和现有阿里 CodePlan endpoint，只新增模型选项，不新增 provider
+  - `/v1/model-config` 暴露的阿里模型列表从 `glm-5.1` / `kimi-k2.6` 扩展为 `glm-5.1` / `kimi-k2.6` / `deepseek-v4-pro`
+  - 阿里模型上下文窗口按模型区分：`glm-5.1 = 20000`、`kimi-k2.6 = 256000`、`deepseek-v4-pro = 1000000`
+  - 增加 registry 与 model-config 测试覆盖，避免模型只写进文档但没有进入真实下拉
+
+---
+
+## 2026-05-21 — Web-access scoped browser fallback fix
+
+- **主题**: 修复带 `metaAgentScope` 但未命中 scope route 时，`web-access` 代理可能继承旧代理进程浏览器绑定的问题
+- **影响范围**: `runtime/skills-user/web-access/scripts/local-cdp-browser.mjs`, `test/local-cdp-browser.test.ts`, `docs/change-log.md`
+- **变更**:
+  - scoped 请求如果找不到 `browser-scope-routes.json` 中的匹配 route，现在固定回落到 Browser Registry 的 `default` browserId，不再读取代理进程环境里的 `UGK_DEFAULT_BROWSER_ID`
+  - 增加回归测试覆盖旧代理进程环境为 `chrome-02`、请求 scope 无 route 时仍应返回 `default` 的场景
+  - 保持已有 route 优先级不变：命中 scope route 时继续使用 route 内的 `browserId` / CDP endpoint
+
+---
+
 ## 2026-05-21 — Playground chat surface refinement
 
 - **主题**: 优化主 `/playground` 对话界面的深浅主题视觉质感与基础交互

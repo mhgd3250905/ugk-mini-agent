@@ -132,6 +132,13 @@ test("resolveBrowserIdFromMeta resolves scope routes before any request-supplied
 			"default",
 		);
 		assert.equal(
+			resolveBrowserIdFromMeta(
+				{ agentScope: "scope-without-route" },
+				{ env: { WEB_ACCESS_BROWSER_ID: "chrome-02", UGK_DEFAULT_BROWSER_ID: "chrome-02" }, routeCachePath },
+			),
+			"default",
+		);
+		assert.equal(
 			resolveBrowserIdFromMeta({ browserId: "chrome-01" }, { env: { WEB_ACCESS_BROWSER_ID: "chrome-02" } }),
 			"chrome-02",
 		);

@@ -186,7 +186,7 @@ export function resolveBrowserRouteFromMeta(meta = {}, options = {}) {
 	if (scopedRoute?.browserId) return scopedRoute;
 
 	if (String(meta?.agentScope || '').trim()) {
-    return { browserId: normalizeBrowserId(env.UGK_DEFAULT_BROWSER_ID) || DEFAULT_BROWSER_ID };
+    return { browserId: DEFAULT_BROWSER_ID };
   }
 
   return {

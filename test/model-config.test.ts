@@ -109,8 +109,9 @@ async function createProjectRoot(): Promise<string> {
 					api: "anthropic-messages",
 					apiKey: "ALI_CODEPLAN_API_KEY",
 					models: [
-						{ id: "glm-5.1", name: "GLM-5.1 (Ali CodePlan)" },
-						{ id: "kimi-k2.6", name: "Kimi K2.6 (Ali CodePlan)" },
+						{ id: "glm-5.1", name: "GLM-5.1 (Ali CodePlan)", contextWindow: 20000 },
+						{ id: "kimi-k2.6", name: "Kimi K2.6 (Ali CodePlan)", contextWindow: 256000 },
+						{ id: "deepseek-v4-pro", name: "DeepSeek V4 Pro (Ali CodePlan)", contextWindow: 1000000 },
 					],
 				},
 			},
@@ -172,6 +173,12 @@ test("model config store lists providers and current default selection", async (
 	assert.deepEqual(config.providers.find((provider) => provider.id === "ali-codeplan")?.models.map((model) => model.id), [
 		"glm-5.1",
 		"kimi-k2.6",
+		"deepseek-v4-pro",
+	]);
+	assert.deepEqual(config.providers.find((provider) => provider.id === "ali-codeplan")?.models.map((model) => model.contextWindow), [
+		20000,
+		256000,
+		1000000,
 	]);
 	assert.equal(config.providers.find((provider) => provider.id === "ali-codeplan")?.auth.envVar, "ALI_CODEPLAN_API_KEY");
 });
