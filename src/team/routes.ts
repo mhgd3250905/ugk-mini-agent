@@ -495,14 +495,12 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		const { runId } = request.params as { runId: string };
 		const state = await workspace.getState(runId);
 		if (!state) { reply.code(404).send({ error: "run not found" }); return; }
-		try {
-			const { readFile } = await import("node:fs/promises");
-			const { join } = await import("node:path");
-			const report = await readFile(join(options.teamDataDir, "runs", runId, "final-report.md"), "utf8");
-			reply.type("text/markdown; charset=utf-8").send(report);
-		} catch {
+		const report = await workspace.readFinalReport(runId);
+		if (report === null) {
 			reply.code(404).send({ error: "final report not found" });
+			return;
 		}
+		reply.type("text/markdown; charset=utf-8").send(report);
 	});
 
 		// SSE: run state snapshots

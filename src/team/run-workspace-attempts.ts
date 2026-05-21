@@ -1,0 +1,256 @@
+import path from "node:path";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { generateAttemptId } from "./ids.js";
+import type {
+	AttemptLifecyclePhase,
+	AttemptStatus,
+	TeamAttemptCheckerSummary,
+	TeamAttemptMetadata,
+	TeamAttemptWatcherSummary,
+	TeamAttemptWorkerSummary,
+	TeamDiscoveryResultRecord,
+} from "./types.js";
+
+const now = () => new Date().toISOString();
+
+export class RunAttemptStore {
+	constructor(private readonly rootDir: string) {}
+
+	async createAttempt(runId: string, taskId: string): Promise<{ attemptId: string; attemptRoot: string }> {
+		const attemptId = generateAttemptId();
+		const attemptRoot = join(this.rootDir, "runs", runId, "tasks", taskId, "attempts", attemptId);
+		await mkdir(join(attemptRoot, "work"), { recursive: true });
+		await mkdir(join(attemptRoot, "output"), { recursive: true });
+		const metadata: TeamAttemptMetadata = {
+			attemptId,
+			taskId,
+			status: "running",
+			phase: "created",
+			createdAt: now(),
+			updatedAt: now(),
+			finishedAt: null,
+			worker: [],
+			checker: [],
+			watcher: null,
+			resultRef: null,
+			errorSummary: null,
+		};
+		await writeFile(join(attemptRoot, "attempt.json"), JSON.stringify(metadata, null, 2), "utf8");
+		return { attemptId, attemptRoot };
+	}
+
+	async updateAttemptStatus(runId: string, taskId: string, attemptId: string, status: string): Promise<void> {
+		await this.mutateAttempt(runId, taskId, attemptId, (attempt) => {
+			attempt.status = status as AttemptStatus;
+			attempt.updatedAt = now();
+			return attempt;
+		});
+	}
+
+	async updateAttemptPhase(runId: string, taskId: string, attemptId: string, phase: AttemptLifecyclePhase): Promise<void> {
+		await this.mutateAttempt(runId, taskId, attemptId, (attempt) => {
+			attempt.phase = phase;
+			attempt.updatedAt = now();
+			return attempt;
+		});
+	}
+
+	async recordAttemptWorkerOutput(runId: string, taskId: string, attemptId: string, summary: TeamAttemptWorkerSummary): Promise<void> {
+		await this.mutateAttempt(runId, taskId, attemptId, (attempt) => {
+			attempt.worker.push(summary);
+			attempt.updatedAt = now();
+			return attempt;
+		});
+	}
+
+	async recordAttemptCheckerResult(runId: string, taskId: string, attemptId: string, summary: TeamAttemptCheckerSummary): Promise<void> {
+		await this.mutateAttempt(runId, taskId, attemptId, (attempt) => {
+			attempt.checker.push(summary);
+			attempt.updatedAt = now();
+			return attempt;
+		});
+	}
+
+	async recordAttemptWatcherResult(runId: string, taskId: string, attemptId: string, summary: TeamAttemptWatcherSummary): Promise<void> {
+		await this.mutateAttempt(runId, taskId, attemptId, (attempt) => {
+			attempt.watcher = summary;
+			attempt.updatedAt = now();
+			return attempt;
+		});
+	}
+
+	async finishAttempt(
+		runId: string,
+		taskId: string,
+		attemptId: string,
+		input: {
+			status: AttemptStatus;
+			phase: AttemptLifecyclePhase;
+			resultRef?: string | null;
+			errorSummary?: string | null;
+		},
+	): Promise<void> {
+		await this.mutateAttempt(runId, taskId, attemptId, (attempt) => {
+			attempt.status = input.status;
+			attempt.phase = input.phase;
+			if (input.resultRef !== undefined) attempt.resultRef = input.resultRef;
+			if (input.errorSummary !== undefined) attempt.errorSummary = input.errorSummary;
+			attempt.finishedAt = now();
+			attempt.updatedAt = now();
+			return attempt;
+		});
+	}
+
+	async writeWorkerOutput(runId: string, taskId: string, attemptId: string, index: number, content: string): Promise<string> {
+		const fileName = `worker-output-${String(index).padStart(3, "0")}.md`;
+		await this.writeAttemptFile(runId, taskId, attemptId, fileName, content);
+		return `tasks/${taskId}/attempts/${attemptId}/${fileName}`;
+	}
+
+	async writeCheckerVerdict(runId: string, taskId: string, attemptId: string, index: number, verdict: unknown): Promise<string> {
+		const fileName = `checker-verdict-${String(index).padStart(3, "0")}.json`;
+		await this.writeAttemptFile(runId, taskId, attemptId, fileName, JSON.stringify(verdict, null, 2));
+		return `tasks/${taskId}/attempts/${attemptId}/${fileName}`;
+	}
+
+	async writeCheckerOutput(runId: string, taskId: string, attemptId: string, index: number, content: string): Promise<string> {
+		const fileName = `checker-output-${String(index).padStart(3, "0")}.md`;
+		await this.writeAttemptFile(runId, taskId, attemptId, fileName, content);
+		return `tasks/${taskId}/attempts/${attemptId}/${fileName}`;
+	}
+
+	async writeAcceptedResult(runId: string, taskId: string, attemptId: string, content: string): Promise<string> {
+		await this.writeAttemptFile(runId, taskId, attemptId, "accepted-result.md", content);
+		return `tasks/${taskId}/attempts/${attemptId}/accepted-result.md`;
+	}
+
+	async writeFailedResult(runId: string, taskId: string, attemptId: string, content: string): Promise<string> {
+		await this.writeAttemptFile(runId, taskId, attemptId, "failed-result.md", content);
+		return `tasks/${taskId}/attempts/${attemptId}/failed-result.md`;
+	}
+
+	async writeWatcherReview(runId: string, taskId: string, attemptId: string, review: unknown): Promise<string> {
+		await this.writeAttemptFile(runId, taskId, attemptId, "watcher-review.json", JSON.stringify(review, null, 2));
+		return `tasks/${taskId}/attempts/${attemptId}/watcher-review.json`;
+	}
+
+	async writeDiscoveryResult(runId: string, taskId: string, attemptId: string, record: TeamDiscoveryResultRecord): Promise<string> {
+		await this.writeAttemptFile(runId, taskId, attemptId, "discovery-result.json", JSON.stringify(record, null, 2));
+		return `tasks/${taskId}/attempts/${attemptId}/discovery-result.json`;
+	}
+
+	async readDiscoveryResult(runId: string, taskId: string, attemptId: string): Promise<TeamDiscoveryResultRecord | null> {
+		const content = await this.readAttemptFile(runId, taskId, attemptId, "discovery-result.json");
+		if (!content) return null;
+		try {
+			const parsed = JSON.parse(content);
+			if (parsed && typeof parsed === "object" && parsed.schemaVersion === "team/discovery-result-1") {
+				return parsed as TeamDiscoveryResultRecord;
+			}
+			return null;
+		} catch {
+			return null;
+		}
+	}
+
+	async listAttempts(runId: string, taskId: string): Promise<Array<TeamAttemptMetadata & { files: string[] }>> {
+		const attemptsDir = join(this.rootDir, "runs", runId, "tasks", taskId, "attempts");
+		let dirs: string[];
+		try { dirs = await readdir(attemptsDir); } catch { return []; }
+		const results: Array<TeamAttemptMetadata & { files: string[] }> = [];
+		for (const d of dirs) {
+			const raw = await this.readJson<Record<string, unknown>>(join(attemptsDir, d, "attempt.json"));
+			let files: string[] = [];
+			try { files = (await readdir(join(attemptsDir, d))).filter(f => f !== "attempt.json" && f !== "work" && f !== "output"); } catch { /* empty */ }
+			results.push({ ...this.normalizeAttempt(raw ?? {}, d, taskId), files });
+		}
+		return results;
+	}
+
+	async readAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string): Promise<string | null> {
+		if (/[^a-zA-Z0-9._-]/.test(fileName) || fileName.includes("..")) return null;
+		if (/[^a-zA-Z0-9_-]/.test(attemptId) || attemptId.includes("..")) return null;
+		if (/[^a-zA-Z0-9_-]/.test(taskId) || taskId.includes("..")) return null;
+		const filePath = join(this.rootDir, "runs", runId, "tasks", taskId, "attempts", attemptId, fileName);
+		const runRoot = join(this.rootDir, "runs", runId);
+		const resolved = path.resolve(filePath);
+		const root = path.resolve(runRoot);
+		if (!resolved.startsWith(root + path.sep) && resolved !== root) return null;
+		try { return await readFile(filePath, "utf8"); } catch { return null; }
+	}
+
+	async readAttemptRoleWorkspaceFile(runId: string, attemptId: string, role: "worker" | "checker" | "watcher", relativePath: string): Promise<{ content: string; normalizedRef: string } | null> {
+		if (/[^a-zA-Z0-9_-]/.test(runId) || runId.includes("..")) return null;
+		if (/[^a-zA-Z0-9_-]/.test(attemptId) || attemptId.includes("..")) return null;
+		const normalized = relativePath.trim().replace(/^["'`]+|["'`,.;:，。；：）)]+$/g, "").replace(/\\/g, "/");
+		if (!normalized || normalized.includes("..") || normalized.startsWith("/") || /^[a-zA-Z]:\//.test(normalized)) return null;
+		const workspaceRoot = join(this.rootDir, "runs", runId, "agent-workspaces", attemptId, role);
+		const filePath = join(workspaceRoot, ...normalized.split("/").filter(Boolean));
+		const resolved = path.resolve(filePath);
+		const root = path.resolve(workspaceRoot);
+		if (!resolved.startsWith(root + path.sep) && resolved !== root) return null;
+		try {
+			return {
+				content: await readFile(filePath, "utf8"),
+				normalizedRef: path.relative(join(this.rootDir, "runs", runId), resolved).replace(/\\/g, "/"),
+			};
+		} catch {
+			return null;
+		}
+	}
+
+	private async writeAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string, content: string): Promise<void> {
+		const dir = join(this.rootDir, "runs", runId, "tasks", taskId, "attempts", attemptId);
+		await mkdir(dir, { recursive: true });
+		await writeFile(join(dir, fileName), content, "utf8");
+	}
+
+	private normalizeAttempt(raw: Record<string, unknown>, fallbackAttemptId: string, fallbackTaskId: string): TeamAttemptMetadata {
+		const validStatuses: AttemptStatus[] = ["running", "succeeded", "failed", "interrupted", "cancelled"];
+		const rawStatus = raw.status as string | undefined;
+		const status: AttemptStatus = validStatuses.includes(rawStatus as AttemptStatus) ? (rawStatus as AttemptStatus) : "running";
+		const phaseFallback: AttemptLifecyclePhase = status === "running" ? "created" : status;
+		const rawPhase = raw.phase as string | undefined;
+		const validPhases: AttemptLifecyclePhase[] = [
+			"created", "worker_running", "worker_completed", "checker_reviewing", "checker_passed",
+			"checker_revising", "checker_failed", "watcher_reviewing", "watcher_accepted",
+			"watcher_revision_requested", "watcher_confirmed_failed", "succeeded", "failed", "interrupted", "cancelled",
+		];
+		const phase: AttemptLifecyclePhase = validPhases.includes(rawPhase as AttemptLifecyclePhase) ? (rawPhase as AttemptLifecyclePhase) : phaseFallback;
+		const createdAt = (raw.createdAt as string) || "";
+		const updatedAt = (raw.updatedAt as string) || createdAt;
+		return {
+			attemptId: (raw.attemptId as string) || fallbackAttemptId,
+			taskId: (raw.taskId as string) || fallbackTaskId,
+			status,
+			phase,
+			createdAt,
+			updatedAt,
+			finishedAt: (raw.finishedAt as string | null) ?? null,
+			worker: Array.isArray(raw.worker) ? raw.worker as TeamAttemptMetadata["worker"] : [],
+			checker: Array.isArray(raw.checker) ? raw.checker as TeamAttemptMetadata["checker"] : [],
+			watcher: raw.watcher && typeof raw.watcher === "object" && !Array.isArray(raw.watcher) ? raw.watcher as TeamAttemptMetadata["watcher"] : null,
+			resultRef: (raw.resultRef as string | null) ?? null,
+			errorSummary: (raw.errorSummary as string | null) ?? null,
+		};
+	}
+
+	private async mutateAttempt(runId: string, taskId: string, attemptId: string, mutate: (attempt: TeamAttemptMetadata) => TeamAttemptMetadata): Promise<void> {
+		const attemptFile = join(this.rootDir, "runs", runId, "tasks", taskId, "attempts", attemptId, "attempt.json");
+		const raw = await this.readJson<Record<string, unknown>>(attemptFile);
+		if (!raw) return;
+		const normalized = this.normalizeAttempt(raw, attemptId, taskId);
+		const result = mutate(normalized);
+		await writeFile(attemptFile, JSON.stringify(result, null, 2), "utf8");
+	}
+
+	private async readJson<T>(filePath: string): Promise<T | null> {
+		try {
+			const data = await readFile(filePath, "utf8");
+			return JSON.parse(data) as T;
+		} catch {
+			return null;
+		}
+	}
+}

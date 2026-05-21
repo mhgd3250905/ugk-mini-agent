@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-21 — Team RunWorkspace adapters 拆分
+
+- **主题**: 将 `RunWorkspace` 内部 state、attempt、artifact、record 读写职责拆到小 store，保留 facade 兼容既有调用
+- **影响范围**: `src/team/run-workspace.ts`, `src/team/run-workspace-state.ts`, `src/team/run-workspace-attempts.ts`, `src/team/run-workspace-artifacts.ts`, `src/team/run-workspace-records.ts`, `src/team/output-validator.ts`, `src/team/routes.ts`, `test/team-run-workspace.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - 新增 `RunStateStore`、`RunAttemptStore`、`RunArtifactStore`、`RunRecordStore`，分别承接 run state/lease、attempt metadata/files、final report/run-scoped reads、expansion/decomposition 与 child state append
+  - `RunWorkspace` 保留原公开方法并委托给 adapters；`.data/team/runs` 目录布局、attempt 文件名和 persisted JSON schema 不变
+  - `output-validator` 改为依赖窄 reader 接口；final report 路由改走 workspace artifact facade，不再直接拼磁盘路径
+  - 补充 adapter 兼容性测试，验证 adapters 写出的 state/attempt/final-report/expansion/child state 仍可由 facade 读回
+
+---
+
 ## 2026-05-21 — Team plan validation module 抽取
 
 - **主题**: 将 Team Plan create/update schema policy 从 `PlanStore` 抽到专用 validation module

@@ -1,4 +1,3 @@
-import type { RunWorkspace } from "./run-workspace.js";
 import type { TeamOutputValidationResult, TeamTask, TeamTaskOutputCheck } from "./types.js";
 
 type ValidationKind = TeamOutputValidationResult["kind"];
@@ -10,11 +9,17 @@ interface ContentCandidate {
 }
 
 export interface TeamOutputValidationInput {
-	workspace: RunWorkspace;
+	workspace: TeamOutputWorkspaceReader;
 	runId: string;
 	task: TeamTask;
 	attemptId: string;
 	contents?: ContentCandidate[];
+}
+
+export interface TeamOutputWorkspaceReader {
+	readAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string): Promise<string | null>;
+	readAttemptRoleWorkspaceFile(runId: string, attemptId: string, role: "worker" | "checker" | "watcher", relativePath: string): Promise<{ content: string; normalizedRef: string } | null>;
+	readRunScopedFile(runId: string, ref: string): Promise<string | null>;
 }
 
 interface ResolvedReference {
@@ -79,7 +84,7 @@ export async function validateTeamOutput(input: TeamOutputValidationInput): Prom
 	return failResult(kind, null, compactChecks(failures.length > 0 ? failures : [{ name: "content_present", ok: false, message: "no candidate output content found" }]), null);
 }
 
-async function readDefaultAttemptCandidates(workspace: RunWorkspace, runId: string, taskId: string, attemptId: string): Promise<ContentCandidate[]> {
+async function readDefaultAttemptCandidates(workspace: TeamOutputWorkspaceReader, runId: string, taskId: string, attemptId: string): Promise<ContentCandidate[]> {
 	const candidates: ContentCandidate[] = [];
 	for (const fileName of ["accepted-result.md", "worker-output-001.md"]) {
 		const content = await workspace.readAttemptFile(runId, taskId, attemptId, fileName);
@@ -105,7 +110,7 @@ async function validateFileExists(input: TeamOutputValidationInput, check: Extra
 	return failResult(kind, refs[0] ?? null, refs.map(ref => ({ name: "referenced_file_exists", ok: false, message: `referenced file not found: ${ref}`, path: ref })), null);
 }
 
-async function resolveReference(workspace: RunWorkspace, runId: string, attemptId: string, ref: string): Promise<ResolvedReference> {
+async function resolveReference(workspace: TeamOutputWorkspaceReader, runId: string, attemptId: string, ref: string): Promise<ResolvedReference> {
 	const clean = cleanRef(ref);
 	if (!clean) return { ok: false, ref, message: "empty referenced file path" };
 	if (clean.includes("..")) return { ok: false, ref: clean, message: "referenced file outside run" };

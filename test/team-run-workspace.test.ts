@@ -4,6 +4,10 @@ import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { RunWorkspace } from "../src/team/run-workspace.js";
+import { RunArtifactStore } from "../src/team/run-workspace-artifacts.js";
+import { RunAttemptStore } from "../src/team/run-workspace-attempts.js";
+import { RunRecordStore } from "../src/team/run-workspace-records.js";
+import { RunStateStore } from "../src/team/run-workspace-state.js";
 import type { TeamPlan } from "../src/team/types.js";
 
 const plan: TeamPlan = {
@@ -38,6 +42,45 @@ test("createRun copies plan.json and initializes state", async () => {
 
 		const planData = await readFile(join(root, "runs", state.runId, "plan.json"), "utf8");
 		assert.ok(planData.includes("plan_test"));
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("RunWorkspace adapters preserve existing paths and facade compatibility", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const stateStore = new RunStateStore(root);
+		const attemptStore = new RunAttemptStore(root);
+		const artifactStore = new RunArtifactStore(root);
+		const recordStore = new RunRecordStore(root, stateStore);
+		const facade = new RunWorkspace(root);
+
+		const state = await stateStore.createRun(plan, "team_1");
+		const { attemptId } = await attemptStore.createAttempt(state.runId, "task_1");
+		const acceptedRef = await attemptStore.writeAcceptedResult(state.runId, "task_1", attemptId, "accepted via adapter");
+		assert.equal(acceptedRef, `tasks/task_1/attempts/${attemptId}/accepted-result.md`);
+		assert.equal(await facade.readAttemptFile(state.runId, "task_1", attemptId, "accepted-result.md"), "accepted via adapter");
+
+		const finalRef = await artifactStore.writeFinalReport(state.runId, "# Adapter final");
+		assert.equal(finalRef, "final-report.md");
+		assert.equal(await facade.readFinalReport(state.runId), "# Adapter final");
+
+		const expansion: import("../src/team/types.js").TaskExpansionRecord = {
+			schemaVersion: "team/task-expansion-1",
+			parentTaskId: "task_1",
+			itemsFrom: "discover.items",
+			expandedAt: "2026-05-21T00:00:00.000Z",
+			children: [{ taskId: "task_1__a", sourceItemId: "a", title: "A" }],
+		};
+		await recordStore.writeExpansion(state.runId, expansion);
+		assert.deepEqual(await facade.readExpansion(state.runId, "task_1"), expansion);
+
+		const updated = await recordStore.appendChildTaskStates(state.runId, [
+			{ id: "task_1__a", title: "A", input: { text: "a" }, acceptance: { rules: ["ok"] }, parentTaskId: "task_1", generated: true },
+		]);
+		assert.equal(updated.summary.totalTasks, 3);
+		assert.equal((await facade.getState(state.runId))?.taskStates["task_1__a"]?.status, "pending");
 	} finally {
 		await rm(root, { recursive: true });
 	}
