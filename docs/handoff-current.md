@@ -11,9 +11,9 @@
 ```text
 请接手 `E:\AII\ugk-pi`。你维护的是 ugk-pi 代码仓库，不是产品运行时 Playground agent。
 
-开始前先读 `AGENTS.md`、`docs/handoff-current.md`、`docs/team-runtime.md` 和 `docs/change-log.md`。如果继续 Team Runtime，重点看 `docs/team-runtime.md` 的文件清单，以及 `.codex/plans/2026-05-21-team-architecture-optimization-index.md`。
+开始前先读 `AGENTS.md`、`docs/handoff-current.md`、`docs/team-runtime.md`、`docs/traceability-map.md` 和 `docs/change-log.md`。如果继续 Team Runtime，重点看 `docs/team-runtime.md` 的文件清单和 `docs/traceability-map.md` 的 `J. Team Runtime v2` 场景索引。
 
-开始前执行 `git status --short --branch`、`git log -1 --oneline` 和 `git remote -v`。当前 Team architecture v1 收口点是 `c3c15c7 refactor(team): extract role prompt contract`；后续可能还有文档收尾 commit。不要提交 `.env`、`.data/`、runtime 临时产物、public 报告、截图或本地研究脚本。
+开始前执行 `git status --short --branch`、`git log -1 --oneline` 和 `git remote -v`。当前 Team natural language Plan draft 收口点是 `79db4ef docs(team): fix plan draft handoff docs`；Team architecture v1 收口点是 `c3c15c7 refactor(team): extract role prompt contract`。不要提交 `.env`、`.data/`、runtime 临时产物、public 报告、截图、本地研究脚本或未明确归档的 `.codex/plans/*`。
 
 本地开发默认用 Docker：`docker compose up -d` 或 `docker compose restart ugk-pi`。固定入口是 `http://127.0.0.1:3000/playground`，健康检查是 `http://127.0.0.1:3000/healthz`。服务器发布默认走增量更新；腾讯云拉 GitHub `origin/main`，阿里云拉 Gitee `gitee/main`。不要整目录覆盖，不要删除 shared 运行态。
 ```
@@ -21,11 +21,12 @@
 ## 当前状态
 
 - 当前分支：`main`
-- 当前功能收口点：`c3c15c7 refactor(team): extract role prompt contract`
+- 当前 Team natural language Plan draft 功能收口点：`79db4ef docs(team): fix plan draft handoff docs`
+- 当前 Team natural language Plan draft 已完成：模板 / API / `/playground/team` 自然语言草案 UI / 文档口径已收口
 - 当前 Team architecture Step 1-8 已完成并通过总验收
 - 当前工作区边界：
-  - tracked 工作区应保持干净
-  - `.codex/plans/*` 是仓库文档目录，可以提交明确的计划 / handoff 文档
+  - `79db4ef` 后只允许本轮收口同步修改 `docs/handoff-current.md`
+  - `.codex/plans/*` 是仓库文档目录，但本轮未跟踪的 Team natural language plan draft 计划文件保持不动，除非用户明确要求归档
   - `runtime/*`、`public/*` 报告、`.data/`、`.env`、截图、临时研究脚本不要提交
 - 当前远端：
   - GitHub：`origin` -> `https://github.com/mhgd3250905/ugk-claw-personal.git`
@@ -53,6 +54,52 @@
 
 `src/team/orchestrator.ts` 现在保留 run lifecycle、task ordering、dynamic expansion、controlled decomposition、finalizer 组合，不再直接承载 child topology、attempt lifecycle、plan validation、workspace storage、route presenter 或 prompt contract。
 
+## 2026-05-21 Team natural language Plan draft 收口
+
+本轮完成 Team Plan draft 的自然语言草案链路，但没有引入新 scheduler、DAG、queue、lease 或 run execution mode，也没有改 TeamOrchestrator / worker / workspace / runner。
+
+### Plan draft 功能链路 5 个提交
+
+1. `68a2410 feat(team): add deterministic plan draft templates`
+2. `30da32f feat(team): expose plan draft api`
+3. `1a3e74d feat(team): add natural language plan draft ui`
+4. `1da04cc docs(team): document natural language plan drafts`
+5. `79db4ef docs(team): fix plan draft handoff docs`
+
+### 已完成范围
+
+- `src/team/plan-draft.ts`：新增纯模板 registry 和确定性薄 heuristic router；当前 supported 模板为 `single_agent` / `parallel_research`，planned 模板为 `coding_fix` / `deep_research_with_review`。
+- `src/team/routes.ts`：新增 `GET /v1/team/plan-templates` 与 `POST /v1/team/plan-drafts`；draft endpoint 只生成可检查的 Plan create payload，不持久化 Plan、不创建 Run、不修改 `runCount`。
+- `/playground/team`：Plan modal 新增「自然语言草案」模式；用户先生成草案并预览 JSON，确认后才提交 `POST /v1/team/plans`，不会自动启动 run。
+- 文档：`docs/team-runtime.md`、`docs/playground-current.md`、`docs/traceability-map.md`、`docs/change-log.md` 已同步当前口径；TeamTemplate / v0.1 不再作为当前主入口。
+
+### 当前验证记录
+
+2026-05-21 收口同步已通过：
+
+- `npm run test:team`：839 pass / 0 fail / 2 skip
+- `npm test`：1598 pass / 0 fail / 2 skip
+- `npx tsc --noEmit`：clean
+- `git diff --check`：clean
+
+### 未跟踪项
+
+以下文件 / 目录是本轮开始前已有或运行态产物，保持未跟踪且未提交：
+
+- `.codex/plans/2026-05-21-team-natural-language-plan-drafts-plan.md`
+- `curate_news.py`
+- `curate_news_v2.py`
+- `curate_news_v3.py`
+- `public/agent-search-report.html`
+- `public/github-trending-report.html`
+- `public/medtrum-news-2026-report.html`
+- `public/medtrum-social-report.html`
+- `public/medtrum-view/`
+- `public/ruflo-research-report.html`
+- `runtime/agent-search/`
+- `runtime/medtrum-news-2026/`
+- `runtime/ruflo-research/`
+
 ### 验证记录
 
 2026-05-21 总验收已通过：
@@ -73,22 +120,25 @@ Team Runtime：
 1. `docs/team-runtime.md`
 2. `src/team/types.ts`
 3. `src/team/routes.ts`
-4. `src/team/orchestrator.ts`
-5. `src/team/child-execution.ts`
-6. `src/team/task-attempt-runner.ts`
-7. `src/team/run-workspace.ts`
-8. `src/team/run-workspace-state.ts`
-9. `src/team/run-workspace-attempts.ts`
-10. `src/team/run-workspace-artifacts.ts`
-11. `src/team/run-workspace-records.ts`
-12. `src/team/plan-store.ts`
-13. `src/team/plan-validation.ts`
-14. `src/team/agent-profile-role-runner.ts`
-15. `src/team/role-prompt-contract.ts`
-16. `src/team/task-expansion-planner.ts`
-17. `src/ui/team-page.ts`
-18. `src/ui/team-run-detail-behavior.ts`
-19. `.pi/skills/team-plan-creator/SKILL.md`
+4. `src/team/plan-draft.ts`
+5. `src/team/orchestrator.ts`
+6. `src/team/child-execution.ts`
+7. `src/team/task-attempt-runner.ts`
+8. `src/team/run-workspace.ts`
+9. `src/team/run-workspace-state.ts`
+10. `src/team/run-workspace-attempts.ts`
+11. `src/team/run-workspace-artifacts.ts`
+12. `src/team/run-workspace-records.ts`
+13. `src/team/run-presenter.ts`
+14. `src/team/plan-store.ts`
+15. `src/team/plan-validation.ts`
+16. `src/team/agent-profile-role-runner.ts`
+17. `src/team/role-prompt-contract.ts`
+18. `src/team/task-expansion-planner.ts`
+19. `src/ui/team-page.ts`
+20. `src/ui/team-page-helpers.ts`
+21. `src/ui/team-run-detail-behavior.ts`
+22. `.pi/skills/team-plan-creator/SKILL.md`
 
 本地运行 / 部署：
 
@@ -138,11 +188,10 @@ Playground / Agent / Conn：
 
 ## 推荐下一步
 
-优先回到产品能力，而不是继续重构：
+当前不要开新功能。先等用户确认是否同步远端；确认后再把 `main` 推到 GitHub `origin/main` 和 Gitee `gitee/main`。之后如果继续做产品能力，优先小步推进：
 
-1. **Team execution template / heuristic router**
-   - 显式模板：`single_agent`、`parallel_research`、`coding_fix`、`deep_research_with_review`
-   - 先做 P1 `parallel_research`，不要一上来重写完整 DAG scheduler。
+1. **远端同步**
+   - 等用户确认后再 push；不要擅自同步 `origin/main` 或 `gitee/main`。
 2. **Team plan 创建体验**
    - 让自然语言更稳定映射到 discovery / for_each sequential / for_each parallel / decomposer。
 3. **测试并发 SQLite lock 小治理**
