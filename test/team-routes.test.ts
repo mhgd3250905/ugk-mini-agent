@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildServer } from "../src/server.js";
 import type { AgentService } from "../src/agent/agent-service.js";
+import { buildRunDetailResponse } from "../src/team/run-presenter.js";
 import { RunWorkspace } from "../src/team/run-workspace.js";
 import type { TeamTask } from "../src/team/types.js";
 
@@ -60,6 +61,86 @@ const planBody = (teamUnitId: string) => ({
 	goal: { text: "测试目标" },
 	tasks: [{ id: "t1", title: "任务1", input: { text: "做任务1" }, acceptance: { rules: ["规则1"] } }],
 	outputContract: { text: "输出" },
+});
+
+test("run presenter preserves run detail response shape with generated task definitions", async () => {
+	const runState = {
+		runId: "run_presenter_1",
+		planId: "plan_presenter_1",
+		teamUnitId: "team_presenter_1",
+		status: "completed",
+		taskStates: {
+			discover: { status: "succeeded", attemptCount: 1 },
+			process_each: { status: "succeeded", attemptCount: 0 },
+			process_each__a: { status: "succeeded", attemptCount: 1 },
+			decompose_me: { status: "succeeded", attemptCount: 0 },
+			decompose_child: { status: "succeeded", attemptCount: 1 },
+		},
+		summary: { totalTasks: 5, succeededTasks: 5, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+		createdAt: "2026-05-21T00:00:00.000Z",
+		updatedAt: "2026-05-21T00:00:00.000Z",
+	} as any;
+	const processChild: TeamTask = {
+		id: "process_each__a",
+		title: "Process A",
+		input: { text: "process a" },
+		acceptance: { rules: ["ok"] },
+		parentTaskId: "process_each",
+		sourceItemId: "a",
+		generated: true,
+	};
+	const decomposedChild: TeamTask = {
+		id: "decompose_child",
+		title: "Decomposed child",
+		input: { text: "child" },
+		acceptance: { rules: ["ok"] },
+		parentTaskId: "decompose_me",
+		generated: true,
+	};
+	const plan = {
+		planId: "plan_presenter_1",
+		title: "Presenter plan",
+		defaultTeamUnitId: "team_presenter_1",
+		goal: { text: "goal" },
+		tasks: [
+			{ id: "discover", type: "discovery", title: "Discover", input: { text: "discover" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "items" } },
+			{ id: "process_each", type: "for_each", title: "Process each", input: { text: "placeholder" }, acceptance: { rules: ["ok"] }, forEach: { itemsFrom: "discover.items", mode: "sequential", taskTemplate: { title: "Process {{item.id}}", input: { text: "process" }, acceptance: { rules: ["ok"] } } } },
+			{ id: "decompose_me", title: "Decompose me", input: { text: "split" }, acceptance: { rules: ["ok"] }, decomposer: { mode: "leaf" } },
+		],
+		outputContract: { text: "output" },
+	} as any;
+	const workspace = {
+		readExpansion: async (_runId: string, taskId: string) => taskId === "process_each"
+			? {
+				schemaVersion: "team/task-expansion-1",
+				parentTaskId: "process_each",
+				itemsFrom: "discover.items",
+				expandedAt: "2026-05-21T00:00:00.000Z",
+				children: [{ taskId: processChild.id, sourceItemId: "a", title: processChild.title, task: processChild }],
+			}
+			: null,
+		readDecomposition: async (_runId: string, taskId: string) => taskId === "decompose_me"
+			? {
+				schemaVersion: "team/task-decomposition-1",
+				parentTaskId: "decompose_me",
+				mode: "leaf",
+				decision: "split",
+				reason: "split",
+				decomposedAt: "2026-05-21T00:00:00.000Z",
+				children: [{ taskId: decomposedChild.id, title: decomposedChild.title, task: decomposedChild }],
+			}
+			: null,
+	} as any;
+
+	const body = await buildRunDetailResponse(runState, plan, workspace);
+
+	assert.equal(body.runId, runState.runId);
+	assert.equal(body.status, "completed");
+	assert.equal(body.taskStates, runState.taskStates);
+	assert.deepEqual(body.taskDefinitions?.map((task: any) => ({ id: task.id, parentTaskId: task.parentTaskId, generatedSource: task.generatedSource })), [
+		{ id: "process_each__a", parentTaskId: "process_each", generatedSource: "for_each" },
+		{ id: "decompose_child", parentTaskId: "decompose_me", generatedSource: "decomposition" },
+	]);
 });
 
 test("GET /v1/team/healthz returns v2", async () => {

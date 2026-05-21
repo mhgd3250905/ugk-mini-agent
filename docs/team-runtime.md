@@ -735,6 +735,7 @@ docker compose up -d --scale ugk-pi-team-worker=2  # 多 worker 验证
 |------|------|
 | `src/team/types.ts` | TeamUnit / Plan / Run / role result 类型（含 discovery / for_each / decomposer / outputCheck 和 validation result） |
 | `src/team/routes.ts` | v2 TeamUnit / Plan / Run / SSE / Attempt HTTP API |
+| `src/team/run-presenter.ts` | Team run detail API response presenter：汇总 expansion / decomposition records 为 `taskDefinitions`，避免 route handler 直接拼响应形状 |
 | `src/team/orchestrator.ts` | run 创建、状态迁移、task ordering、dynamic expansion、controlled decomposition、finalizer，以及 task attempt runner 组合 |
 | `src/team/child-execution.ts` | expanded child task 执行模块：顺序 child 循环、parallel refill pool、fatal drain、parent status aggregation 和 scoped child state writer |
 | `src/team/task-attempt-runner.ts` | task attempt 生命周期执行模块：worker/checker/watcher phase、checker/watcher retry、output validation gate、accepted/failed result 和 attempt metadata 写入 |

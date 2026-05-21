@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-21 — Team run detail presenter 抽取
+
+- **主题**: 将 Team run detail API 的 response shaping 从 `routes.ts` 抽到 presenter，route handler 只保留请求/响应适配
+- **影响范围**: `src/team/routes.ts`, `src/team/run-presenter.ts`, `test/team-routes.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - 新增 `src/team/run-presenter.ts`，集中构造 `GET /v1/team/runs/:runId` 和 disposition/rerun 后返回体中的 additive `taskDefinitions`
+  - 保持 API shape 不变：`taskDefinitions` 继续由 expansion / decomposition records 汇总，旧 run / legacy plan 仍返回空数组
+  - 新增 presenter 级测试，用真实 run state 形状验证 for_each 与 decomposition child definitions 的输出顺序和 `generatedSource`
+  - 本轮未抽 role prompt contract；`agent-profile-role-runner.ts` 的 prompt/parser/session 边界较大，留给独立小步更稳，避免把最后清理扩大成高风险迁移
+
+---
+
 ## 2026-05-21 — Team run detail scroll behavior helper 抽取
 
 - **主题**: 将 Team run detail 的滚动快照、anchor 查找和滚动恢复逻辑抽到可单测的 UI behavior helper
