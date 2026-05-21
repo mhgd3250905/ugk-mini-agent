@@ -381,17 +381,22 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 <div id="plan-modal" class="modal-overlay">
 	<div class="modal" style="width:560px">
 		<h2>新建计划</h2>
-		<label>计划名称</label>
-		<input id="plan-title" placeholder="计划名称" />
+		<div id="plan-title-fields">
+			<label>计划名称</label>
+			<input id="plan-title" placeholder="计划名称" />
+		</div>
 		<label>默认团队</label>
 		<select id="plan-teamunit"></select>
 		<label>创建模式</label>
 		<select id="plan-mode" onchange="onPlanModeChange()">
 			<option value="normal">普通计划</option>
 			<option value="dynamic">发现后逐项处理</option>
+			<option value="natural">自然语言草案</option>
 		</select>
-		<label>目标</label>
-		<textarea id="plan-goal" placeholder="计划目标"></textarea>
+		<div id="plan-goal-fields">
+			<label>目标</label>
+			<textarea id="plan-goal" placeholder="计划目标"></textarea>
+		</div>
 
 		<div id="plan-normal-fields">
 			<label>任务标题</label>
@@ -422,8 +427,23 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 			<textarea id="plan-child-acceptance" placeholder="输出包含对 {{item.id}} 的分析结果"></textarea>
 		</div>
 
-		<label>输出契约</label>
-		<textarea id="plan-output-contract" placeholder="中文汇总"></textarea>
+		<div id="plan-natural-fields" style="display:none">
+			<label>自然语言目标</label>
+			<textarea id="plan-natural-prompt" placeholder="描述你希望 Team 完成的目标，例如：调研 2026 年 AI 编程 Agent 竞品并分别对比"></textarea>
+			<div style="margin-top:8px">
+				<button class="btn btn-primary btn-sm" type="button" onclick="generatePlanDraft()">生成草案</button>
+			</div>
+			<div id="plan-natural-draft-result" style="display:none;margin-top:10px;border:1px solid var(--border);border-radius:6px;padding:10px;background:var(--bg)">
+				<div style="font-size:12px;color:var(--muted)">模板：<span id="plan-natural-template-label"></span></div>
+				<div id="plan-natural-reason" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
+				<ul id="plan-natural-warnings" style="margin:6px 0 0 16px;font-size:12px;color:var(--warn)"></ul>
+			</div>
+		</div>
+
+		<div id="plan-output-contract-fields">
+			<label>输出契约</label>
+			<textarea id="plan-output-contract" placeholder="中文汇总"></textarea>
+		</div>
 
 		<div id="plan-preview-wrap" style="display:none">
 			<label>预览 Plan JSON</label>
@@ -483,6 +503,7 @@ var _latestPlans = [];
 var _latestTeams = [];
 var _latestRuns = [];
 var _planCache = {};
+var _latestNaturalPlanDraft = null;
 
 function $(id) { return document.getElementById(id); }
 
@@ -1953,6 +1974,7 @@ async function createPlan() {
 	$('plan-child-title').value = '处理 {{item.title}}';
 	$('plan-child-instruction').value = '';
 	$('plan-child-acceptance').value = '';
+	$('plan-natural-prompt').value = '';
 	onPlanModeChange();
 	$('plan-preview-wrap').style.display = 'none';
 	$('plan-modal').classList.add('open');
@@ -1971,10 +1993,19 @@ function onPlanModeChange() {
 	var mode = currentPlanMode();
 	var normalFields = $('plan-normal-fields');
 	var dynamicFields = $('plan-dynamic-fields');
+	var naturalFields = $('plan-natural-fields');
+	var titleFields = $('plan-title-fields');
+	var goalFields = $('plan-goal-fields');
+	var outputFields = $('plan-output-contract-fields');
 	var previewWrap = $('plan-preview-wrap');
 	if (normalFields) normalFields.style.display = mode === 'normal' ? '' : 'none';
 	if (dynamicFields) dynamicFields.style.display = mode === 'dynamic' ? '' : 'none';
+	if (naturalFields) naturalFields.style.display = mode === 'natural' ? '' : 'none';
+	if (titleFields) titleFields.style.display = mode !== 'natural' ? '' : 'none';
+	if (goalFields) goalFields.style.display = mode !== 'natural' ? '' : 'none';
+	if (outputFields) outputFields.style.display = mode !== 'natural' ? '' : 'none';
 	if (previewWrap) previewWrap.style.display = 'none';
+	resetNaturalPlanDraft();
 }
 
 function buildNormalPlanPayload() {
@@ -2044,6 +2075,63 @@ function buildDynamicPlanPayload() {
 	};
 }
 
+function buildNaturalDraftRequestPayload() {
+	return {
+		prompt: $('plan-natural-prompt').value,
+		defaultTeamUnitId: $('plan-teamunit').value,
+	};
+}
+
+function isNaturalDraftCurrent(snapshot, values) {
+	return !!snapshot && snapshot.prompt === (values.prompt || '') && snapshot.defaultTeamUnitId === (values.unitId || '');
+}
+
+function resetNaturalPlanDraft() {
+	_latestNaturalPlanDraft = null;
+	var result = $('plan-natural-draft-result');
+	if (result) result.style.display = 'none';
+	var templateLabelEl = $('plan-natural-template-label');
+	var reasonEl = $('plan-natural-reason');
+	var warningsEl = $('plan-natural-warnings');
+	if (templateLabelEl) templateLabelEl.textContent = '';
+	if (reasonEl) reasonEl.textContent = '';
+	if (warningsEl) warningsEl.innerHTML = '';
+}
+
+function renderNaturalPlanDraft(draft, prompt, unitId) {
+	_latestNaturalPlanDraft = { prompt: prompt, defaultTeamUnitId: unitId, plan: draft.plan };
+	var result = $('plan-natural-draft-result');
+	var templateLabelEl = $('plan-natural-template-label');
+	var reasonEl = $('plan-natural-reason');
+	var warningsEl = $('plan-natural-warnings');
+	if (result) result.style.display = '';
+	if (templateLabelEl) templateLabelEl.textContent = draft.templateLabel || draft.templateId || '';
+	if (reasonEl) reasonEl.textContent = draft.reason || '';
+	if (warningsEl) {
+		warningsEl.innerHTML = '';
+		var warnings = Array.isArray(draft.warnings) ? draft.warnings : [];
+		for (var i = 0; i < warnings.length; i++) {
+			var warningEl = document.createElement('li');
+			warningEl.textContent = String(warnings[i]);
+			warningsEl.appendChild(warningEl);
+		}
+	}
+	renderPlanPreview(draft.plan);
+}
+
+async function generatePlanDraft() {
+	var prompt = $('plan-natural-prompt').value.trim();
+	var unitId = $('plan-teamunit').value;
+	if (!prompt) { showError('请输入自然语言目标'); return; }
+	if (!unitId) { showError('请选择默认团队'); return; }
+	try {
+		var requestPayload = buildNaturalDraftRequestPayload();
+		var draft = await api('/plan-drafts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestPayload) });
+		renderNaturalPlanDraft(draft, prompt, unitId);
+		showSuccess('草案已生成');
+	} catch (e) { showError(e.message); }
+}
+
 function renderPlanPreview(payload) {
 	var wrap = $('plan-preview-wrap');
 	var pre = $('plan-preview-json');
@@ -2054,16 +2142,42 @@ function renderPlanPreview(payload) {
 
 function previewPlanJson() {
 	var mode = currentPlanMode();
+	if (mode === 'natural') {
+		var naturalPrompt = $('plan-natural-prompt').value.trim();
+		var naturalUnitId = $('plan-teamunit').value;
+		if (!isNaturalDraftCurrent(_latestNaturalPlanDraft, { prompt: naturalPrompt, unitId: naturalUnitId })) {
+			showError('请先生成并检查最新草案');
+			return;
+		}
+		renderPlanPreview(_latestNaturalPlanDraft.plan);
+		return;
+	}
 	var payload = mode === 'dynamic' ? buildDynamicPlanPayload() : buildNormalPlanPayload();
 	renderPlanPreview(payload);
 }
 
 async function savePlan() {
-	var title = $('plan-title').value;
-	if (!title) { showError('请输入计划名称'); return; }
 	var mode = currentPlanMode();
 	var payload;
-	if (mode === 'dynamic') {
+	if (mode === 'natural') {
+		var naturalPrompt = $('plan-natural-prompt').value.trim();
+		var naturalUnitId = $('plan-teamunit').value;
+		if (!isNaturalDraftCurrent(_latestNaturalPlanDraft, { prompt: naturalPrompt, unitId: naturalUnitId })) {
+			showError('请先生成并检查最新草案');
+			return;
+		}
+		payload = _latestNaturalPlanDraft.plan;
+		var naturalPreviewJson = JSON.stringify(payload, null, 2);
+		var naturalPreviewWrap = $('plan-preview-wrap');
+		var naturalPreviewPre = $('plan-preview-json');
+		if (!naturalPreviewWrap || !naturalPreviewPre || naturalPreviewWrap.style.display === 'none' || naturalPreviewPre.textContent !== naturalPreviewJson) {
+			renderPlanPreview(payload);
+			showError('请先检查 Plan JSON 预览，确认无误后再次点击创建');
+			return;
+		}
+	} else if (mode === 'dynamic') {
+		var title = $('plan-title').value;
+		if (!title) { showError('请输入计划名称'); return; }
 		var discInstruction = $('plan-disc-instruction').value;
 		var childInstruction = $('plan-child-instruction').value;
 		if (!discInstruction) { showError('请输入发现指令'); return; }
@@ -2078,6 +2192,8 @@ async function savePlan() {
 			return;
 		}
 	} else {
+		var title = $('plan-title').value;
+		if (!title) { showError('请输入计划名称'); return; }
 		payload = buildNormalPlanPayload();
 	}
 	try {

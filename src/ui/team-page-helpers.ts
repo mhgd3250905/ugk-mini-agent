@@ -347,6 +347,33 @@ export function buildDynamicPlanPayloadFromValues(v: Partial<DynamicPlanValues>)
 	};
 }
 
+export interface NaturalDraftValues {
+	prompt: string;
+	unitId: string;
+	preferredTemplateId?: string;
+}
+
+export interface NaturalDraftSnapshot {
+	prompt: string;
+	defaultTeamUnitId: string;
+	plan: any;
+}
+
+export function buildNaturalDraftRequestPayloadFromValues(v: Partial<NaturalDraftValues>) {
+	var payload: { prompt: string; defaultTeamUnitId: string; preferredTemplateId?: string } = {
+		prompt: v.prompt || '',
+		defaultTeamUnitId: v.unitId || '',
+	};
+	if (v.preferredTemplateId) payload.preferredTemplateId = v.preferredTemplateId;
+	return payload;
+}
+
+export function isNaturalDraftCurrent(snapshot: NaturalDraftSnapshot | null | undefined, values: Partial<NaturalDraftValues>): boolean {
+	return !!snapshot
+		&& snapshot.prompt === (values.prompt || '')
+		&& snapshot.defaultTeamUnitId === (values.unitId || '');
+}
+
 export interface TaskDetailModel {
 	planTaskIds: Record<string, boolean>;
 	taskById: Record<string, any>;

@@ -7,6 +7,7 @@ import {
 	taskDecomposerMode, renderDecomposerModeBadge, statusBadge, formatDuration,
 	renderPlanDashboardCard, renderDynamicPlanDesign, renderNormalPlanDesign, renderPlanRunCard,
 	buildDynamicPlanPayloadFromValues, splitAcceptanceLines,
+	buildNaturalDraftRequestPayloadFromValues, isNaturalDraftCurrent,
 	buildTaskDetailModel, childSourceFor, childGroupLabel, renderRuntimeContextHelper,
 } from "../src/ui/team-page-helpers.js";
 import {
@@ -1301,6 +1302,82 @@ test("P16-T1: malicious strings pass through raw (escaping is render concern)", 
 	assert.ok(discTask);
 	assert.equal(discTask.title, '"onclick="bad');
 	assert.equal(discTask.input.text, "'; DROP TABLE--");
+});
+
+// ── Team natural language Plan draft mode ──
+
+test("Team natural draft mode exposes labels, generate button, and plan-drafts API path", () => {
+	const html = renderTeamPage();
+	assert.match(html, /自然语言草案/);
+	assert.match(html, /生成草案/);
+	assert.match(html, /id="plan-natural-fields"/);
+	assert.match(html, /id="plan-natural-prompt"/);
+	assert.match(html, /\/plan-drafts/);
+});
+
+test("helper: buildNaturalDraftRequestPayloadFromValues builds draft request payload", () => {
+	const payload = buildNaturalDraftRequestPayloadFromValues({
+		prompt: "调研 AI Agent 趋势",
+		unitId: "team_1",
+		preferredTemplateId: "parallel_research",
+	});
+	assert.deepEqual(payload, {
+		prompt: "调研 AI Agent 趋势",
+		defaultTeamUnitId: "team_1",
+		preferredTemplateId: "parallel_research",
+	});
+});
+
+test("helper: natural draft freshness checks prompt and team unit", () => {
+	const snapshot = { prompt: "调研竞品", defaultTeamUnitId: "team_1", plan: { title: "draft" } };
+	assert.equal(isNaturalDraftCurrent(snapshot, { prompt: "调研竞品", unitId: "team_1" }), true);
+	assert.equal(isNaturalDraftCurrent(snapshot, { prompt: "调研竞品 updated", unitId: "team_1" }), false);
+	assert.equal(isNaturalDraftCurrent(snapshot, { prompt: "调研竞品", unitId: "team_2" }), false);
+});
+
+test("Team natural draft mode hides manual plan fields and shows natural prompt fields", () => {
+	const script = extractScript();
+	const match = script.match(/function onPlanModeChange\(\)[\s\S]*?^}/m);
+	assert.ok(match, "should find onPlanModeChange");
+	assert.match(match[0], /plan-natural-fields/);
+	assert.match(match[0], /mode === 'natural'/);
+	assert.match(match[0], /plan-normal-fields[\s\S]*mode === 'normal'/);
+	assert.match(match[0], /plan-dynamic-fields[\s\S]*mode === 'dynamic'/);
+	assert.match(match[0], /plan-title-fields[\s\S]*mode !== 'natural'/);
+	assert.match(match[0], /plan-goal-fields[\s\S]*mode !== 'natural'/);
+	assert.match(match[0], /plan-output-contract-fields[\s\S]*mode !== 'natural'/);
+});
+
+test("Team natural draft preview renders metadata and JSON through textContent", () => {
+	const script = extractScript();
+	assert.match(script, /async function generatePlanDraft\(\)/);
+	assert.match(script, /api\('\/plan-drafts'/);
+	const renderMatch = script.match(/function renderNaturalPlanDraft\(draft,\s*prompt,\s*unitId\)[\s\S]*?^}/m);
+	assert.ok(renderMatch, "should find renderNaturalPlanDraft");
+	assert.match(renderMatch[0], /templateLabelEl\.textContent/);
+	assert.match(renderMatch[0], /reasonEl\.textContent/);
+	assert.match(renderMatch[0], /warningEl\.textContent/);
+	assert.match(script, /renderPlanPreview\(draft\.plan\)/);
+	assert.doesNotMatch(renderMatch[0], /innerHTML\s*=\s*draft/);
+});
+
+test("Team natural draft save refuses missing or stale draft before posting to plans", () => {
+	const script = extractScript();
+	const saveMatch = script.match(/async function savePlan\(\)[\s\S]*?^}/m);
+	assert.ok(saveMatch, "should find savePlan");
+	assert.match(saveMatch[0], /mode === 'natural'/);
+	assert.match(saveMatch[0], /_latestNaturalPlanDraft/);
+	assert.match(saveMatch[0], /isNaturalDraftCurrent/);
+	assert.match(saveMatch[0], /请先生成并检查最新草案/);
+});
+
+test("Team natural draft mode posts to plans only with the latest generated draft payload", () => {
+	const script = extractScript();
+	const saveMatch = script.match(/async function savePlan\(\)[\s\S]*?^}/m);
+	assert.ok(saveMatch, "should find savePlan");
+	assert.match(saveMatch[0], /payload = _latestNaturalPlanDraft\.plan/);
+	assert.match(saveMatch[0], /api\('\/plans'/);
+	assert.doesNotMatch(saveMatch[0], /api\('\/plans\/' \+ planId \+ '\/runs'/);
 });
 
 test("P16-T1: parity — inline buildDynamicPlanPayload produces same shape as helper", () => {
