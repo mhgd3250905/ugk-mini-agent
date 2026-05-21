@@ -190,21 +190,20 @@ Playground / Agent / Conn：
 - 不要让 `role-prompt-contract.ts` 依赖 filesystem、session、browser、Fastify 或 server。
 - 不要把 `.pi/skills/` 当开发协作技能目录；产品运行时 skill 和 `.codex/skills/` 不是一回事。
 - 不要把手机端 Playground 当桌面端压缩版改。
+- 不要继续把 `/playground/team` 往可视化 Plan 创建器方向扩；本阶段已确认复杂 Plan 设计主要发生在 Agent 对话和 `team-plan-creator` skill，Team UI 只保留轻量创建辅助。
 - 不要动 `references/pi-mono/`，那是参考镜像，不是业务源码。
 - 不要提交 `.env`、`.data/`、runtime 临时产物、public 报告、截图、部署包或浏览器 profile。
 
 ## 推荐下一步
 
-当前不要开新功能。先等用户确认是否同步远端；确认后再把 `main` 推到 GitHub `origin/main` 和 Gitee `gitee/main`。之后如果继续做产品能力，优先小步推进：
+当前不要继续做可视化 Plan 创建体验。`/playground/team` 的定位收口为 Team Runtime 执行、审计和排错 cockpit；Plan 设计入口优先保留在 Agent 对话和 `team-plan-creator` skill。之后如果继续做产品能力，优先小步推进：
 
-1. **远端同步**
-   - 等用户确认后再 push；不要擅自同步 `origin/main` 或 `gitee/main`。
-2. **Team plan 创建体验**
-   - 让自然语言更稳定映射到 discovery / for_each sequential / for_each parallel / decomposer。
-3. **测试并发 SQLite lock 小治理**
-   - 已有 `npm run test:team` 串行规避；如果要优化，只做测试 harness 层，不碰业务逻辑。
-4. **真实运行 UX**
+1. **真实运行 UX**
    - 继续增强 run 审计、失败恢复、attempt 查看、rerun 决策可视化。
+2. **测试并发 SQLite lock 小治理**
+   - 已有 `npm run test:team` 串行规避；如果要优化，只做测试 harness 层，不碰业务逻辑。
+3. **Plan skill 质量**
+   - 让 `team-plan-creator` 产出的 Plan 更稳，但不要把同一套复杂设计能力搬进 `/playground/team` 表单。
 
 ## 发布提醒
 

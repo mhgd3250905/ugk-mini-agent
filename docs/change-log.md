@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-21 — Team Plan UI scope boundary
+
+- **主题**: 明确本阶段不再继续扩展 `/playground/team` 的可视化 Plan 创建能力
+- **影响范围**: `docs/handoff-current.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - 将 `/playground/team` 定位收口为 Team Runtime 执行、审计和排错 cockpit
+  - 明确复杂 Plan 设计优先在 Agent 对话和 `team-plan-creator` skill 中完成，UI 只保留轻量创建辅助
+  - 后续产品优先级转向真实运行 UX、失败恢复、attempt 查看、rerun 决策和测试 harness 小治理
+
+---
+
 ## 2026-05-21 — Team parallel_research Plan draft v1.1
 
 - **主题**: 增强 Team `parallel_research` 草案路由、模板文案和 `/playground/team` supported 模板显式选择

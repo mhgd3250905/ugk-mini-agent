@@ -854,6 +854,7 @@ Run 卡片中 Run ID 完整展示，点击可复制（`.team-id-label`）。Run 
 - 动态模式：填写发现任务和子任务模板，自动生成 canonical Plan JSON，预览后再提交
 - 自然语言草案模式：输入目标后调用 `POST /v1/team/plan-drafts`，页面提供 supported template 显式选择：`自动匹配`（不传 `preferredTemplateId`）、`单 Agent`、`并行研究`；planned registry 不展示为可创建项
 - 草案生成后页面展示模板命中、reason、warnings 和 Plan JSON；用户确认后才把草案 payload 提交到 `POST /v1/team/plans`，不会自动创建或启动 Run
+- 阶段边界：本阶段不再继续增强可视化 Plan 创建器。复杂 Plan 设计优先在 Agent 对话和 `team-plan-creator` skill 中敲定；`/playground/team` 主要承担 Plan 查看、Run 创建、执行审计、失败排查和 rerun 决策。
 - 删除未使用计划（需确认）
 - 「查看 JSON」弹层：使用 `textContent` 安全展示完整 Plan JSON
 
@@ -968,7 +969,7 @@ Cancel/pause always takes priority over phase timeout — if a run is already ca
 4. **默认 run timeout 100 分钟** — 可通过 `TEAM_MAX_RUN_DURATION_MINUTES` 或 per-run override 调整。
 5. **浏览器实例由既有 browser registry/env 决定** — Team 复用 chat/conn 的 browser binding 链路，不负责创建或调度 Chrome profile。多个 role 是否真正落到不同浏览器实例，取决于 AgentProfile 的 `defaultBrowserId` 与 `UGK_BROWSER_INSTANCES_JSON` 等既有配置。
 6. **Plan draft router 只是确定性浅层 heuristic** — 不调用 LLM，不做语义规划；当前只支持 `single_agent` 和 `parallel_research`。`/playground/team` 只展示 `自动匹配` / `单 Agent` / `并行研究`，planned 模板只保留在 registry 里说明未来方向，不能生成 draft。
-7. **动态计划仅支持 discovery → for_each 常见模式** — UI builder 覆盖「先发现再逐项处理」的标准场景；高级 plan 结构（如多 discovery、嵌套 for_each）仍需通过 JSON/API 直接创建。
+7. **可视化 Plan 创建不是本阶段重点** — UI builder 只保留普通计划、discovery → for_each 常见模式和快速 Plan draft 辅助。高级 Plan 结构或复杂任务设计优先通过 Agent 对话 / `team-plan-creator` skill 产出，再由 Team Runtime 执行和审计；不要继续把 `/playground/team` 扩成完整 Plan 编辑器。
 8. **for_each parallel 固定容量** — 并行模式使用固定池（容量 3），不可配置；嵌套 for_each 尚未支持。
 9. **Controlled decomposition 只支持有界顺序执行** — 运行时只允许 `propagate -> leaf | none`、`leaf -> none`；child task 必须是 normal；不支持并行 child execution、无限传播或 nested for_each。
 10. **Decomposition UI 只展示，不编辑** — `/playground/team` 只显示 decomposer badge 和 split hierarchy；不提供可视化编辑器。Run detail API 通过 `taskDefinitions` 暴露由 expansion/decomposition records 汇总出的 generated child definitions；旧 run 或缺少记录的 run 会退回为普通「子任务」分组。
