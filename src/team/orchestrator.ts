@@ -756,7 +756,7 @@ export class TeamOrchestrator {
 				ts.status = "failed";
 				ts.errorSummary = "run timeout";
 				ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-				}
+			}
 		}
 		state.status = "failed";
 		state.lastError = "run timeout";
@@ -787,7 +787,7 @@ export class TeamOrchestrator {
 			}
 		}
 		state.summary = computeTeamRunSummary(state.taskStates);
-			state.status = state.summary.succeededTasks > 0 ? "completed_with_failures" : "failed";
+		state.status = state.summary.succeededTasks > 0 ? "completed_with_failures" : "failed";
 		state.lastError = message;
 		state.activeElapsedMs = this.accumulateElapsed(state);
 		state.finishedAt = now();
