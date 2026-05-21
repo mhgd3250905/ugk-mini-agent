@@ -13,7 +13,7 @@
 
 开始前先读 `AGENTS.md`、`docs/handoff-current.md`、`docs/team-runtime.md`、`docs/traceability-map.md` 和 `docs/change-log.md`。如果继续 Team Runtime，重点看 `docs/team-runtime.md` 的文件清单和 `docs/traceability-map.md` 的 `J. Team Runtime v2` 场景索引。
 
-开始前执行 `git status --short --branch`、`git log -1 --oneline` 和 `git remote -v`。当前 Team natural language Plan draft 收口点是 `79db4ef docs(team): fix plan draft handoff docs`；Team architecture v1 收口点是 `c3c15c7 refactor(team): extract role prompt contract`。不要提交 `.env`、`.data/`、runtime 临时产物、public 报告、截图、本地研究脚本或未明确归档的 `.codex/plans/*`。
+开始前执行 `git status --short --branch`、`git log -1 --oneline` 和 `git remote -v`。当前 Team natural language Plan draft 已包含 v1.1 `parallel_research` 草案路由、模板文案和 supported 模板显式选择；具体 HEAD 以当前 `git log -1 --oneline` 为准。Team architecture v1 收口点是 `c3c15c7 refactor(team): extract role prompt contract`。不要提交 `.env`、`.data/`、runtime 临时产物、public 报告、截图、本地研究脚本或未明确归档的 `.codex/plans/*`。
 
 本地开发默认用 Docker：`docker compose up -d` 或 `docker compose restart ugk-pi`。固定入口是 `http://127.0.0.1:3000/playground`，健康检查是 `http://127.0.0.1:3000/healthz`。服务器发布默认走增量更新；腾讯云拉 GitHub `origin/main`，阿里云拉 Gitee `gitee/main`。不要整目录覆盖，不要删除 shared 运行态。
 ```
@@ -21,11 +21,10 @@
 ## 当前状态
 
 - 当前分支：`main`
-- 当前 Team natural language Plan draft 功能收口点：`79db4ef docs(team): fix plan draft handoff docs`
-- 当前 Team natural language Plan draft 已完成：模板 / API / `/playground/team` 自然语言草案 UI / 文档口径已收口
+- 当前 Team natural language Plan draft 已完成：模板 / API / `/playground/team` 自然语言草案 UI / v1.1 `parallel_research` 草案质量 / 文档口径已收口
 - 当前 Team architecture Step 1-8 已完成并通过总验收
 - 当前工作区边界：
-  - `79db4ef` 后只允许本轮收口同步修改 `docs/handoff-current.md`
+  - 后续继续 Team Plan draft 时优先读 `docs/team-runtime.md` 的 Plan draft 段落和 `/playground/team` 控制台段落，不要从旧提交号倒推现状
   - `.codex/plans/*` 是仓库文档目录，但本轮未跟踪的 Team natural language plan draft 计划文件保持不动，除非用户明确要求归档
   - `runtime/*`、`public/*` 报告、`.data/`、`.env`、截图、临时研究脚本不要提交
 - 当前远端：
@@ -73,6 +72,13 @@
 - `/playground/team`：Plan modal 新增「自然语言草案」模式；用户先生成草案并预览 JSON，确认后才提交 `POST /v1/team/plans`，不会自动启动 run。
 - 文档：`docs/team-runtime.md`、`docs/playground-current.md`、`docs/traceability-map.md`、`docs/change-log.md` 已同步当前口径；TeamTemplate / v0.1 不再作为当前主入口。
 
+### v1.1 追加收口
+
+- `parallel_research` deterministic heuristic 更偏向明确的多对象研究信号：竞品、供应商、产品、pricing、alternatives、market map 等；普通单点研究仍保持 `single_agent`。
+- `parallel_research` draft 仍只生成 discovery -> `for_each.mode="parallel"` 的 Plan create payload；draft endpoint 不持久化 Plan、不创建 Run、不改 `runCount`。
+- `/playground/team` 自然语言草案 UI 只展示 supported 选择：`自动匹配`、`单 Agent`、`并行研究`；planned 模板仍只在 registry 中说明，不展示为可创建项。
+- 本轮没有改 `TeamOrchestrator`、child execution、task attempt runner、run workspace、worker、scheduler、queue 或 lease。
+
 ### 当前验证记录
 
 2026-05-21 收口同步已通过：
@@ -87,6 +93,7 @@
 以下文件 / 目录是本轮开始前已有或运行态产物，保持未跟踪且未提交：
 
 - `.codex/plans/2026-05-21-team-natural-language-plan-drafts-plan.md`
+- `.codex/plans/2026-05-21-team-parallel-research-plan-draft-v1-1-plan.md`
 - `curate_news.py`
 - `curate_news_v2.py`
 - `curate_news_v3.py`

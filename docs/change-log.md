@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-21 — Team parallel_research Plan draft v1.1
+
+- **主题**: 增强 Team `parallel_research` 草案路由、模板文案和 `/playground/team` supported 模板显式选择
+- **影响范围**: `src/team/plan-draft.ts`, `src/team/routes.ts`, `src/ui/team-page.ts`, `src/ui/team-page-helpers.ts`, `test/team-plan-draft.test.ts`, `test/team-routes.test.ts`, `test/team-page-ui.test.ts`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - Plan draft router 仍是 deterministic heuristic，不调用 LLM；多对象研究、竞品/供应商/产品/pricing/alternatives/market map 等信号更稳定进入 `parallel_research`，普通单点研究仍走 `single_agent`
+  - `parallel_research` draft 的 discovery / child research / final output contract 文案增强，明确 3 到 8 个高价值 item、source item identity、来源线索、横向对比和风险/未知项
+  - `/playground/team` 自然语言草案模式新增 supported template 选择：`自动匹配`、`单 Agent`、`并行研究`；planned 模板仍只在 registry 中说明，不展示为可创建项
+  - `POST /v1/team/plan-drafts` 仍只返回可检查的 Plan create payload，不持久化 Plan、不创建 Run、不修改 `runCount`
+
+---
+
 ## 2026-05-21 — Team 自然语言 Plan 草案
 
 - **主题**: 新增 Team Plan draft 的确定性模板层、API 和 `/playground/team` 自然语言创建模式

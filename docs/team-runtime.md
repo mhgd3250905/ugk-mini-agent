@@ -46,10 +46,11 @@
 
 Plan draft 是创建 Plan 前的只读草案层。它只根据用户自然语言目标生成一份可检查、可再提交的 `POST /v1/team/plans` payload，不持久化 Plan，不创建 Run，也不修改 `runCount`。
 
-- `GET /v1/team/plan-templates` 返回模板 registry。当前可用模板是 `single_agent` 和 `parallel_research`；`coding_fix`、`deep_research_with_review` 只作为 planned 模板返回，不能用于 draft 生成。
+- `GET /v1/team/plan-templates` 返回模板 registry。当前可用模板是 `single_agent` 和 `parallel_research`；`coding_fix`、`deep_research_with_review` 只作为 planned 模板返回，不能用于 draft 生成，也不在 `/playground/team` 的可创建选项中展示。
 - `POST /v1/team/plan-drafts` 接收 `prompt`、`defaultTeamUnitId` 和可选 `preferredTemplateId`；路由会先校验 TeamUnit 存在且未归档，再生成 draft，并用 `validateCreatePlanInput()` 校验返回的 plan。
-- 本轮 router 是确定性薄 heuristic，不调用 LLM：带 research/list/多项调查信号时倾向 `parallel_research`，普通目标倾向 `single_agent`，代码修复信号不会误路由到 parallel research。
-- `parallel_research` draft 生成 `discover_items` discovery 任务和 `research_each` `for_each.mode="parallel"` 任务；并行 child 模板不设置 `leaf` / `propagate` decomposer，避免和 parallel for_each 校验冲突。
+- Plan draft v1.1 router 仍是确定性薄 heuristic，不调用 LLM：多对象研究、竞品/供应商/产品/pricing/alternatives/market map 等信号稳定进入 `parallel_research`；普通单点研究保持 `single_agent`；代码修复信号优先走 `single_agent`，不会被 `pricing` 里的 `ci` 之类字符串误判成 CI 修复。
+- `parallel_research` draft 生成 `discover_items` discovery 任务和 `research_each` `for_each.mode="parallel"` 任务；discovery prompt 要求输出 3 到 8 个高价值结构化 item，child prompt 锁定单个 source item 身份，final output contract 要求执行摘要、逐项发现表格、横向对比、来源线索、风险/未知项和建议。
+- 并行 child 模板不设置 `leaf` / `propagate` decomposer，避免和 parallel for_each 校验冲突。
 - 显式请求 planned/unsupported `preferredTemplateId` 会返回 400；没有 preferred template 时只会选择当前 supported 模板。
 
 #### task.decomposer（P21-B/P21-C）
@@ -851,7 +852,8 @@ Run 卡片中 Run ID 完整展示，点击可复制（`.team-id-label`）。Run 
 - 验收标准按行拆分为 `acceptance.rules`
 - 三种创建模式：**普通计划**（单任务顺序执行）、**发现后逐项处理**（discovery + for_each 动态计划）、**自然语言草案**（先生成可检查 Plan draft）
 - 动态模式：填写发现任务和子任务模板，自动生成 canonical Plan JSON，预览后再提交
-- 自然语言草案模式：输入目标后调用 `POST /v1/team/plan-drafts`，页面展示模板命中、reason、warnings 和 Plan JSON；用户确认后才把草案 payload 提交到 `POST /v1/team/plans`，不会自动创建或启动 Run
+- 自然语言草案模式：输入目标后调用 `POST /v1/team/plan-drafts`，页面提供 supported template 显式选择：`自动匹配`（不传 `preferredTemplateId`）、`单 Agent`、`并行研究`；planned registry 不展示为可创建项
+- 草案生成后页面展示模板命中、reason、warnings 和 Plan JSON；用户确认后才把草案 payload 提交到 `POST /v1/team/plans`，不会自动创建或启动 Run
 - 删除未使用计划（需确认）
 - 「查看 JSON」弹层：使用 `textContent` 安全展示完整 Plan JSON
 
@@ -965,7 +967,7 @@ Cancel/pause always takes priority over phase timeout — if a run is already ca
 3. **默认单活跃 run** — `TEAM_MAX_CONCURRENT_RUNS` 默认为 `1`，即全局只允许一个 queued/running/paused run。设置为更大的值可允许并发 active run，但单个 worker 进程仍顺序执行；多 worker 进程可通过 lease 机制分别 claim 不同的 queued run。
 4. **默认 run timeout 100 分钟** — 可通过 `TEAM_MAX_RUN_DURATION_MINUTES` 或 per-run override 调整。
 5. **浏览器实例由既有 browser registry/env 决定** — Team 复用 chat/conn 的 browser binding 链路，不负责创建或调度 Chrome profile。多个 role 是否真正落到不同浏览器实例，取决于 AgentProfile 的 `defaultBrowserId` 与 `UGK_BROWSER_INSTANCES_JSON` 等既有配置。
-6. **Plan draft router 只是确定性浅层 heuristic** — 不调用 LLM，不做语义规划；当前只支持 `single_agent` 和 `parallel_research`，planned 模板会展示但不能生成 draft。
+6. **Plan draft router 只是确定性浅层 heuristic** — 不调用 LLM，不做语义规划；当前只支持 `single_agent` 和 `parallel_research`。`/playground/team` 只展示 `自动匹配` / `单 Agent` / `并行研究`，planned 模板只保留在 registry 里说明未来方向，不能生成 draft。
 7. **动态计划仅支持 discovery → for_each 常见模式** — UI builder 覆盖「先发现再逐项处理」的标准场景；高级 plan 结构（如多 discovery、嵌套 for_each）仍需通过 JSON/API 直接创建。
 8. **for_each parallel 固定容量** — 并行模式使用固定池（容量 3），不可配置；嵌套 for_each 尚未支持。
 9. **Controlled decomposition 只支持有界顺序执行** — 运行时只允许 `propagate -> leaf | none`、`leaf -> none`；child task 必须是 normal；不支持并行 child execution、无限传播或 nested for_each。
