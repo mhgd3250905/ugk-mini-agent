@@ -267,6 +267,62 @@ test("POST /v1/team/plan-drafts returns a non-persisted parallel_research plan c
 	}
 });
 
+test("POST /v1/team/plan-drafts routes multi-object research wording to parallel_research", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+		const unitId = unitRes.json().teamUnitId;
+
+		const draftRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/plan-drafts",
+			payload: {
+				prompt: "整理 AI 搜索工具的供应商、产品、pricing 和 alternatives，做 market map",
+				defaultTeamUnitId: unitId,
+			},
+		});
+
+		assert.equal(draftRes.statusCode, 200);
+		const draft = draftRes.json();
+		assert.equal(draft.templateId, "parallel_research");
+		assert.equal(draft.plan.tasks[1].forEach.mode, "parallel");
+
+		const afterDraftList = await app.inject({ method: "GET", url: "/v1/team/plans" });
+		assert.equal(afterDraftList.json().length, 0, "draft endpoint must not persist a plan");
+
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch { /* concurrent write */ }
+	}
+});
+
+test("POST /v1/team/plan-drafts applies preferred supported template through the route", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+		const unitId = unitRes.json().teamUnitId;
+
+		const draftRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/plan-drafts",
+			payload: {
+				prompt: "调研多个 AI Agent 竞品并分别对比",
+				defaultTeamUnitId: unitId,
+				preferredTemplateId: "single_agent",
+			},
+		});
+
+		assert.equal(draftRes.statusCode, 200);
+		const draft = draftRes.json();
+		assert.equal(draft.templateId, "single_agent");
+		assert.equal(draft.plan.tasks.length, 1);
+
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch { /* concurrent write */ }
+	}
+});
+
 test("POST /v1/team/plan-drafts rejects invalid prompt, team unit, and unsupported template", async () => {
 	const { app, root } = await buildTestServer();
 	try {
@@ -304,6 +360,14 @@ test("POST /v1/team/plan-drafts rejects invalid prompt, team unit, and unsupport
 		});
 		assert.equal(unsupported.statusCode, 400);
 		assert.match(unsupported.json().error, /template is not supported: coding_fix/);
+
+		const unknownTemplate = await app.inject({
+			method: "POST",
+			url: "/v1/team/plan-drafts",
+			payload: { prompt: "调研竞品", defaultTeamUnitId: unitId, preferredTemplateId: "unknown_template" },
+		});
+		assert.equal(unknownTemplate.statusCode, 400);
+		assert.match(unknownTemplate.json().error, /unknown template: unknown_template/);
 
 		await app.inject({ method: "POST", url: `/v1/team/team-units/${unitId}/archive` });
 		const archivedTeam = await app.inject({
