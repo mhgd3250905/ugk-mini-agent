@@ -78,8 +78,6 @@ export function getPlaygroundConversationControllerScript(): string {
 
 		function scheduleConversationVirtualScroll(container) {
 			if (conversationVirtualScrollRaf) {
-				cancelAnimationFrame(conversationVirtualScrollRaf);
-				conversationVirtualScrollRaf = 0;
 				return;
 			}
 			conversationVirtualScrollRaf = window.requestAnimationFrame(() => {
@@ -110,37 +108,19 @@ export function getPlaygroundConversationControllerScript(): string {
 
 			const rowHeight = getConversationRowHeight();
 			const vw = computeVirtualWindow(
-				container.scrollTop,
+				savedScrollTop,
 				container.clientHeight,
 				rowHeight,
 				CONVERSATION_VIRTUAL_OVERSCAN,
 				catalog.length
 			);
 
-			// Ensure menu-open and active items are always visible
-			const menuOpenIndex = state.conversationMenuOpenId
-				? catalog.findIndex((item) => item.conversationId === state.conversationMenuOpenId)
-				: -1;
-			const activeIndex = state.conversationId
-				? catalog.findIndex((item) => item.conversationId === state.conversationId)
-				: -1;
-			let startIndex = vw.startIndex;
-			let endIndex = vw.endIndex;
-			if (menuOpenIndex >= 0 && (menuOpenIndex < startIndex || menuOpenIndex > endIndex)) {
-				startIndex = Math.min(startIndex, menuOpenIndex);
-				endIndex = Math.max(endIndex, menuOpenIndex);
-			}
-			if (activeIndex >= 0 && (activeIndex < startIndex || activeIndex > endIndex)) {
-				startIndex = Math.min(startIndex, activeIndex);
-				endIndex = Math.max(endIndex, activeIndex);
-			}
-
 			const topSpacer = document.createElement("div");
 			topSpacer.className = "conversation-virtual-spacer-top";
 			topSpacer.style.height = vw.topSpacer + "px";
 			container.appendChild(topSpacer);
 
-			for (let i = startIndex; i <= endIndex; i++) {
+			for (let i = vw.startIndex; i <= vw.endIndex; i++) {
 				const item = catalog[i];
 				const shell = document.createElement("div");
 				shell.className = "conversation-item-shell";
