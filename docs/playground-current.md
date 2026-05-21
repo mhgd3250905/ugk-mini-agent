@@ -1,12 +1,21 @@
 # Playground 当前状态
 
-更新时间：`2026-05-14`
+更新时间：`2026-05-21`
+
+## 2026-05-21 Team 自然语言 Plan 草案
+
+- `/playground/team` 仍是独立 Team Runtime 工作台，不嵌进主聊天 workspace。
+- Plan 创建现在有三种模式：普通计划、发现后逐项处理、自然语言草案。自然语言草案模式输入目标后调用 `POST /v1/team/plan-drafts`，只生成可检查的 Plan create payload，不落盘、不创建 Plan、不创建或启动 Run。
+- 草案预览会展示模板命中、reason、warnings 和 Plan JSON；用户确认后才把同一份 payload 提交给 `POST /v1/team/plans`。
+- 模板列表来自 `GET /v1/team/plan-templates`。当前 supported 模板是 `single_agent` 和 `parallel_research`；planned 模板会展示为不可用，不会被 draft endpoint 执行。
+- Run 仍由 `POST /v1/team/plans/:planId/runs` 创建 queued run；run detail、events、attempt 文件和 final report 继续以 `docs/team-runtime.md` 的 Team Runtime v2 API 为准。
+- 相关源码：`src/ui/team-page.ts`、`src/ui/team-page-helpers.ts`、`src/team/plan-draft.ts`、`src/team/routes.ts`
 
 ## 2026-05-14 Team Runtime 独立工作台
 
 - Playground 新增 `/playground/team` 独立页面，和 `/playground/conn`、`/playground/agents` 一样复用 standalone cockpit 视觉系统，不嵌进聊天 workspace。
 - 主 `/playground` 桌面顶部操作区和手机更多菜单都提供 `Team Runtime` 入口，打开新标签页，不影响当前聊天、conn 或 agent profile 运行态。
-- 独立页面通过 `GET /v1/team/templates` 发现模板，通过 `GET /v1/team/runs?scope=all` 刷新 run 列表，通过 `POST /v1/team/runs` 创建 run，并按 run detail / events / streams / artifacts 四层查看执行结果；页面不直接绕过 Team API 读 `.data/team`。
+- 独立页面通过 Team Runtime v2 的 Plans / TeamUnits / Runs API 管理状态；页面不直接绕过 Team API 读 `.data/team`。
 - 相关源码：`src/ui/team-page.ts`、`src/routes/playground.ts`、`src/ui/playground-page-shell.ts`、`src/ui/playground-styles.ts`
 
 ## 2026-05-13 手机首页 Agent 列表滚动

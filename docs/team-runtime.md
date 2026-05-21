@@ -1,6 +1,6 @@
 # Team Runtime v2
 
-更新时间：2026-05-18
+更新时间：2026-05-21
 
 本文档是 Team Runtime v2 的唯一权威源。v0.1 域名调查历史见文末归档章节。
 
@@ -41,6 +41,16 @@
 - `tasks[]` — 有序任务列表，每个 task 有 `id`、`title`、`input.text`、`acceptance.rules`，可选 `decomposer` / `outputCheck`
 - `outputContract` — 最终输出格式
 - `runCount` — 已产生的 run 数量；`runCount > 0` 后任务主体不可改
+
+#### Plan draft（P27）
+
+Plan draft 是创建 Plan 前的只读草案层。它只根据用户自然语言目标生成一份可检查、可再提交的 `POST /v1/team/plans` payload，不持久化 Plan，不创建 Run，也不修改 `runCount`。
+
+- `GET /v1/team/plan-templates` 返回模板 registry。当前可用模板是 `single_agent` 和 `parallel_research`；`coding_fix`、`deep_research_with_review` 只作为 planned 模板返回，不能用于 draft 生成。
+- `POST /v1/team/plan-drafts` 接收 `prompt`、`defaultTeamUnitId` 和可选 `preferredTemplateId`；路由会先校验 TeamUnit 存在且未归档，再生成 draft，并用 `validateCreatePlanInput()` 校验返回的 plan。
+- 本轮 router 是确定性薄 heuristic，不调用 LLM：带 research/list/多项调查信号时倾向 `parallel_research`，普通目标倾向 `single_agent`，代码修复信号不会误路由到 parallel research。
+- `parallel_research` draft 生成 `discover_items` discovery 任务和 `research_each` `for_each.mode="parallel"` 任务；并行 child 模板不设置 `leaf` / `propagate` decomposer，避免和 parallel for_each 校验冲突。
+- 显式请求 planned/unsupported `preferredTemplateId` 会返回 400；没有 preferred template 时只会选择当前 supported 模板。
 
 #### task.decomposer（P21-B/P21-C）
 
@@ -367,6 +377,8 @@ run 内相对路径，指向 accepted 或 failed 结果文件。格式如 `tasks
 
 | 方法 | 路径 | 语义 |
 |------|------|------|
+| GET | `/v1/team/plan-templates` | 列出 Plan draft 模板 registry（含 supported / planned 状态） |
+| POST | `/v1/team/plan-drafts` | 根据自然语言目标生成可检查的 Plan create payload；不持久化 Plan，不创建 Run |
 | GET | `/v1/team/plans` | 列出 Plans |
 | POST | `/v1/team/plans` | 创建 Plan；`defaultTeamUnitId` 必须存在且未归档 |
 | GET | `/v1/team/plans/:planId` | 查看 Plan |
@@ -734,7 +746,8 @@ docker compose up -d --scale ugk-pi-team-worker=2  # 多 worker 验证
 | 文件 | 职责 |
 |------|------|
 | `src/team/types.ts` | TeamUnit / Plan / Run / role result 类型（含 discovery / for_each / decomposer / outputCheck 和 validation result） |
-| `src/team/routes.ts` | v2 TeamUnit / Plan / Run / SSE / Attempt HTTP API |
+| `src/team/routes.ts` | v2 TeamUnit / Plan draft / Plan / Run / SSE / Attempt HTTP API |
+| `src/team/plan-draft.ts` | 确定性 Plan draft 模板 registry 和自然语言薄 heuristic router；只生成可检查的 Plan create payload |
 | `src/team/run-presenter.ts` | Team run detail API response presenter：汇总 expansion / decomposition records 为 `taskDefinitions`，避免 route handler 直接拼响应形状 |
 | `src/team/orchestrator.ts` | run 创建、状态迁移、task ordering、dynamic expansion、controlled decomposition、finalizer，以及 task attempt runner 组合 |
 | `src/team/child-execution.ts` | expanded child task 执行模块：顺序 child 循环、parallel refill pool、fatal drain、parent status aggregation 和 scoped child state writer |
@@ -760,7 +773,7 @@ docker compose up -d --scale ugk-pi-team-worker=2  # 多 worker 验证
 | `src/team/timing.ts` | timing span 写入 |
 | `src/workers/team-worker.ts` | 独立 Team worker 轮询 queued run |
 | `src/routes/agent-profiles.ts` | AgentProfile 写接口上的 Team active-run 锁 |
-| `src/ui/team-page.ts` | `/playground/team` 控制台（含 SSE 实时更新、中文 phase 标签、页面内 toast/confirm、Plan modal 表单、结构化 Plan 卡片、JSON 查看器） |
+| `src/ui/team-page.ts` | `/playground/team` 控制台（含 SSE 实时更新、中文 phase 标签、页面内 toast/confirm、Plan modal 表单、自然语言草案、结构化 Plan 卡片、JSON 查看器） |
 | `src/ui/team-run-detail-behavior.ts` | Team run detail 滚动快照 / anchor 恢复 helper；`team-page.ts` 将这段脚本注入 inline UI |
 | `.pi/skills/team-plan-creator/SKILL.md` | 只创建 TeamUnit / Plan 的运行时 skill |
 
@@ -836,8 +849,9 @@ Run 卡片中 Run ID 完整展示，点击可复制（`.team-id-label`）。Run 
 
 - 页面内 modal 表单创建计划（名称、目标、任务、验收标准、输出契约）
 - 验收标准按行拆分为 `acceptance.rules`
-- 两种创建模式：**普通计划**（单任务顺序执行）、**发现后逐项处理**（discovery + for_each 动态计划）
+- 三种创建模式：**普通计划**（单任务顺序执行）、**发现后逐项处理**（discovery + for_each 动态计划）、**自然语言草案**（先生成可检查 Plan draft）
 - 动态模式：填写发现任务和子任务模板，自动生成 canonical Plan JSON，预览后再提交
+- 自然语言草案模式：输入目标后调用 `POST /v1/team/plan-drafts`，页面展示模板命中、reason、warnings 和 Plan JSON；用户确认后才把草案 payload 提交到 `POST /v1/team/plans`，不会自动创建或启动 Run
 - 删除未使用计划（需确认）
 - 「查看 JSON」弹层：使用 `textContent` 安全展示完整 Plan JSON
 
@@ -951,11 +965,12 @@ Cancel/pause always takes priority over phase timeout — if a run is already ca
 3. **默认单活跃 run** — `TEAM_MAX_CONCURRENT_RUNS` 默认为 `1`，即全局只允许一个 queued/running/paused run。设置为更大的值可允许并发 active run，但单个 worker 进程仍顺序执行；多 worker 进程可通过 lease 机制分别 claim 不同的 queued run。
 4. **默认 run timeout 100 分钟** — 可通过 `TEAM_MAX_RUN_DURATION_MINUTES` 或 per-run override 调整。
 5. **浏览器实例由既有 browser registry/env 决定** — Team 复用 chat/conn 的 browser binding 链路，不负责创建或调度 Chrome profile。多个 role 是否真正落到不同浏览器实例，取决于 AgentProfile 的 `defaultBrowserId` 与 `UGK_BROWSER_INSTANCES_JSON` 等既有配置。
-6. **动态计划仅支持 discovery → for_each 常见模式** — UI builder 覆盖「先发现再逐项处理」的标准场景；高级 plan 结构（如多 discovery、嵌套 for_each）仍需通过 JSON/API 直接创建。
-7. **for_each parallel 固定容量** — 并行模式使用固定池（容量 3），不可配置；嵌套 for_each 尚未支持。
-8. **Controlled decomposition 只支持有界顺序执行** — 运行时只允许 `propagate -> leaf | none`、`leaf -> none`；child task 必须是 normal；不支持并行 child execution、无限传播或 nested for_each。
-9. **Decomposition UI 只展示，不编辑** — `/playground/team` 只显示 decomposer badge 和 split hierarchy；不提供可视化编辑器。Run detail API 通过 `taskDefinitions` 暴露由 expansion/decomposition records 汇总出的 generated child definitions；旧 run 或缺少记录的 run 会退回为普通「子任务」分组。
-10. **无 AgentTaskExpansionPlanner** — 动态任务扩展目前使用模板展开（`TemplateTaskExpansionPlanner`），尚无 AI 驱动的智能扩展。
+6. **Plan draft router 只是确定性浅层 heuristic** — 不调用 LLM，不做语义规划；当前只支持 `single_agent` 和 `parallel_research`，planned 模板会展示但不能生成 draft。
+7. **动态计划仅支持 discovery → for_each 常见模式** — UI builder 覆盖「先发现再逐项处理」的标准场景；高级 plan 结构（如多 discovery、嵌套 for_each）仍需通过 JSON/API 直接创建。
+8. **for_each parallel 固定容量** — 并行模式使用固定池（容量 3），不可配置；嵌套 for_each 尚未支持。
+9. **Controlled decomposition 只支持有界顺序执行** — 运行时只允许 `propagate -> leaf | none`、`leaf -> none`；child task 必须是 normal；不支持并行 child execution、无限传播或 nested for_each。
+10. **Decomposition UI 只展示，不编辑** — `/playground/team` 只显示 decomposer badge 和 split hierarchy；不提供可视化编辑器。Run detail API 通过 `taskDefinitions` 暴露由 expansion/decomposition records 汇总出的 generated child definitions；旧 run 或缺少记录的 run 会退回为普通「子任务」分组。
+11. **无 AgentTaskExpansionPlanner** — 动态任务扩展目前使用模板展开（`TemplateTaskExpansionPlanner`），尚无 AI 驱动的智能扩展。
 
 ## 后续计划
 

@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-21 — Team 自然语言 Plan 草案
+
+- **主题**: 新增 Team Plan draft 的确定性模板层、API 和 `/playground/team` 自然语言创建模式
+- **影响范围**: `src/team/plan-draft.ts`, `src/team/routes.ts`, `src/ui/team-page.ts`, `src/ui/team-page-helpers.ts`, `test/team-plan-draft.test.ts`, `test/team-routes.test.ts`, `test/team-page-ui.test.ts`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - 新增 `single_agent` / `parallel_research` supported 模板和 `coding_fix` / `deep_research_with_review` planned 模板；router 仅做确定性 shallow heuristic，不调用 LLM
+  - 新增 `GET /v1/team/plan-templates` 和 `POST /v1/team/plan-drafts`；draft endpoint 只生成可检查的 Plan create payload，不持久化 Plan、不创建 Run、不修改 `runCount`
+  - `/playground/team` Plan modal 新增「自然语言草案」模式：先生成草案并预览 JSON，用户确认后才提交 `POST /v1/team/plans`
+  - 更新 Team Runtime / Playground 文档，明确 draft 和 run execution 的边界，planned 模板当前只展示不可执行
+
+---
+
 ## 2026-05-21 — Team role prompt contract 抽取
 
 - **主题**: 将真实 Team role runner 的 prompt builder、JSONish parser 和 output normalizer 抽到纯 contract 模块
