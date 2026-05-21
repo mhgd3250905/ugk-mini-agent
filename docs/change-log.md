@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-21 — Team run detail scroll behavior helper 抽取
+
+- **主题**: 将 Team run detail 的滚动快照、anchor 查找和滚动恢复逻辑抽到可单测的 UI behavior helper
+- **影响范围**: `src/ui/team-page.ts`, `src/ui/team-run-detail-behavior.ts`, `test/team-page-ui.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - 新增 `src/ui/team-run-detail-behavior.ts`，导出 `captureRunDetailScrollSnapshot()`、`findRunDetailScrollAnchor()`、`restoreRunDetailScrollSnapshot()` 和注入 inline UI 的脚本片段
+  - `refreshRunDetailInPlace()` 保留原地刷新职责，滚动恢复改为调用 helper；`setTaskDisposition()` 仍在 `PATCH /manual-disposition` 前捕获 snapshot
+  - 新增真实行为测试，用 fake DOM/window 验证特殊 task id 通过 `data-task-id` 属性比对恢复 anchor，不拼 unsafe selector，也不 collapse run detail
+
+---
+
 ## 2026-05-21 — Team RunWorkspace adapters 拆分
 
 - **主题**: 将 `RunWorkspace` 内部 state、attempt、artifact、record 读写职责拆到小 store，保留 facade 兼容既有调用

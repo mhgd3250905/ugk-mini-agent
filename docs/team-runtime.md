@@ -759,6 +759,7 @@ docker compose up -d --scale ugk-pi-team-worker=2  # 多 worker 验证
 | `src/workers/team-worker.ts` | 独立 Team worker 轮询 queued run |
 | `src/routes/agent-profiles.ts` | AgentProfile 写接口上的 Team active-run 锁 |
 | `src/ui/team-page.ts` | `/playground/team` 控制台（含 SSE 实时更新、中文 phase 标签、页面内 toast/confirm、Plan modal 表单、结构化 Plan 卡片、JSON 查看器） |
+| `src/ui/team-run-detail-behavior.ts` | Team run detail 滚动快照 / anchor 恢复 helper；`team-page.ts` 将这段脚本注入 inline UI |
 | `.pi/skills/team-plan-creator/SKILL.md` | 只创建 TeamUnit / Plan 的运行时 skill |
 
 ### /playground/team 控制台
@@ -876,6 +877,7 @@ CRUD + 归档，每个角色绑定 AgentProfile 下拉选择。与 P19 前行为
   - 节点点击展开/收起详情（attempt、resultRef、error、file chips）
   - 失败节点默认展开
   - 超过 6 个子节点时折叠，`展开全部 N 个` / `收起`
+  - task disposition 更新前捕获当前 run detail 滚动快照和 `data-task-id` anchor，刷新后由 `src/ui/team-run-detail-behavior.ts` 按属性比对恢复位置，避免特殊 task id 拼 selector 或跳回顶部
 - **移动端**：`@media (max-width: 720px)` 收口为纵向树卡片，隐藏连接线，无横向滚动
 #### 通用特性
 

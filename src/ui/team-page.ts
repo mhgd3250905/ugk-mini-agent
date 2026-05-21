@@ -1,3 +1,5 @@
+import { TEAM_RUN_DETAIL_SCROLL_BEHAVIOR_SCRIPT } from "./team-run-detail-behavior.js";
+
 export function renderTeamPage(): string {
 	return `<!doctype html>
 <html lang="zh-CN" data-theme="dark">
@@ -1383,39 +1385,14 @@ async function refreshRunDetailInPlace(runId, sourceEl, scrollSnapshot) {
 			window._latestRunStateForRun[runId] = state;
 			detailEl.innerHTML = renderRunDetailShell(runId, state, plan, attemptsMap);
 			requestAnimationFrame(function() {
-				if (snapshot && snapshot.anchorTaskId && snapshot.anchorOffset != null) {
-					var candidates = detailEl.querySelectorAll('[data-task-id]');
-					var newAnchor = null;
-					for (var ci = 0; ci < candidates.length; ci++) {
-						if (candidates[ci].getAttribute('data-task-id') === snapshot.anchorTaskId) {
-							newAnchor = candidates[ci];
-							break;
-						}
-					}
-					if (newAnchor) {
-						var newOffset = newAnchor.getBoundingClientRect().top;
-						window.scrollTo(snapshot.scrollX, snapshot.scrollY + (newOffset - snapshot.anchorOffset));
-						return;
-					}
-				}
-				if (snapshot) window.scrollTo(snapshot.scrollX, snapshot.scrollY);
+				restoreRunDetailScrollSnapshot(detailEl, snapshot);
 			});
 		} catch (e) {
 			detailEl.innerHTML = '<p style="color:var(--fail);font-size:13px">加载失败：' + escapeHtml(e.message) + '</p>';
 		}
 	}
 
-function captureRunDetailScrollSnapshot(runId, sourceEl, detailEl) {
-	var currentDetailEl = detailEl || findRunDetailElement(runId, sourceEl);
-	if (!currentDetailEl || currentDetailEl.style.display !== 'block') return null;
-	var anchorEl = sourceEl && sourceEl.closest ? sourceEl.closest('[data-task-id]') : null;
-	return {
-		scrollX: window.scrollX,
-		scrollY: window.scrollY,
-		anchorTaskId: anchorEl ? anchorEl.getAttribute('data-task-id') : null,
-		anchorOffset: anchorEl ? anchorEl.getBoundingClientRect().top : null
-	};
-}
+${TEAM_RUN_DETAIL_SCROLL_BEHAVIOR_SCRIPT}
 
 	function buildFallbackPlanFromRunState(state) {
 	var taskDefinitions = Array.isArray(state.taskDefinitions) ? state.taskDefinitions : [];

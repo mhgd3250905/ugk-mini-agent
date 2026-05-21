@@ -9,6 +9,11 @@ import {
 	buildDynamicPlanPayloadFromValues, splitAcceptanceLines,
 	buildTaskDetailModel, childSourceFor, childGroupLabel, renderRuntimeContextHelper,
 } from "../src/ui/team-page-helpers.js";
+import {
+	TEAM_RUN_DETAIL_SCROLL_BEHAVIOR_SCRIPT,
+	captureRunDetailScrollSnapshot,
+	restoreRunDetailScrollSnapshot,
+} from "../src/ui/team-run-detail-behavior.js";
 
 test("team page contains Chinese labels", () => {
 	const html = renderTeamPage();
@@ -2499,24 +2504,77 @@ test("behavioral: setTaskDisposition captures scroll snapshot before PATCH", () 
 	assert.match(body, /refreshRunDetailInPlace\(runId,\s*sourceEl,\s*scrollSnapshot\)/);
 });
 
+test("behavioral: run detail scroll helper captures the selected task anchor", () => {
+	const previousWindow = (globalThis as any).window;
+	(globalThis as any).window = { scrollX: 7, scrollY: 321 };
+	try {
+		const anchor = {
+			getAttribute: (name: string) => name === "data-task-id" ? "task_unsafe_'\"[] .x" : null,
+			getBoundingClientRect: () => ({ top: 88 }),
+		};
+		const sourceEl = {
+			closest: (selector: string) => selector === "[data-task-id]" ? anchor : null,
+		};
+		const snapshot = captureRunDetailScrollSnapshot("run_1", sourceEl, { style: { display: "block" } });
+		assert.deepEqual(snapshot, {
+			scrollX: 7,
+			scrollY: 321,
+			anchorTaskId: "task_unsafe_'\"[] .x",
+			anchorOffset: 88,
+		});
+	} finally {
+		(globalThis as any).window = previousWindow;
+	}
+});
+
+test("behavioral: run detail scroll helper restores unsafe task ids by attribute comparison", () => {
+	const previousWindow = (globalThis as any).window;
+	const calls: Array<[number, number]> = [];
+	(globalThis as any).window = { scrollTo: (x: number, y: number) => calls.push([x, y]) };
+	const unsafeTaskId = "task_unsafe_'\"[] .x";
+	const other = {
+		getAttribute: (name: string) => name === "data-task-id" ? "task_other" : null,
+		getBoundingClientRect: () => ({ top: 10 }),
+	};
+	const selected = {
+		getAttribute: (name: string) => name === "data-task-id" ? unsafeTaskId : null,
+		getBoundingClientRect: () => ({ top: 140 }),
+	};
+	const detailEl = {
+		style: { display: "block" },
+		querySelectorAll: (selector: string) => {
+			assert.equal(selector, "[data-task-id]");
+			return [other, selected];
+		},
+	};
+	try {
+		const restoredToAnchor = restoreRunDetailScrollSnapshot(detailEl, {
+			scrollX: 12,
+			scrollY: 400,
+			anchorTaskId: unsafeTaskId,
+			anchorOffset: 100,
+		});
+		assert.equal(restoredToAnchor, true);
+		assert.deepEqual(calls, [[12, 440]]);
+		assert.equal(detailEl.style.display, "block", "restoring scroll must not collapse run detail");
+	} finally {
+		(globalThis as any).window = previousWindow;
+	}
+});
+
 test("behavioral: refreshRunDetailInPlace preserves scroll position", () => {
 	const script = extractScript();
 	const refreshFnMatch = script.match(/async function refreshRunDetailInPlace[\s\S]*?^}/m);
 	assert.ok(refreshFnMatch, "should find refreshRunDetailInPlace");
-	assert.match(refreshFnMatch[0], /window\.scrollX/);
-	assert.match(refreshFnMatch[0], /window\.scrollY/);
-	assert.match(refreshFnMatch[0], /window\.scrollTo/);
+	assert.match(refreshFnMatch[0], /restoreRunDetailScrollSnapshot\(detailEl,\s*snapshot\)/);
 	assert.match(refreshFnMatch[0], /requestAnimationFrame/);
 	assert.doesNotMatch(refreshFnMatch[0], /style\.display = 'none'/);
 });
 
 test("behavioral: refreshRunDetailInPlace uses anchor-based scroll restoration", () => {
-	const script = extractScript();
-	const refreshFnMatch = script.match(/async function refreshRunDetailInPlace[\s\S]*?^}/m);
-	assert.ok(refreshFnMatch, "should find refreshRunDetailInPlace");
-	assert.match(refreshFnMatch[0], /data-task-id/);
-	assert.match(refreshFnMatch[0], /getBoundingClientRect/);
-	assert.match(refreshFnMatch[0], /closest\('\[data-task-id\]'\)/);
+	assert.match(TEAM_RUN_DETAIL_SCROLL_BEHAVIOR_SCRIPT, /data-task-id/);
+	assert.match(TEAM_RUN_DETAIL_SCROLL_BEHAVIOR_SCRIPT, /getBoundingClientRect/);
+	assert.match(TEAM_RUN_DETAIL_SCROLL_BEHAVIOR_SCRIPT, /closest\((['"])\[data-task-id\]\1\)/);
 });
 
 test("behavioral: task rows and mindmap nodes carry data-task-id for scroll anchors", () => {
@@ -2543,14 +2601,11 @@ test("behavioral: data-task-id uses escapeHtml not jsArg — no JSON quotes in a
 });
 
 test("behavioral: refreshRunDetailInPlace finds anchor by attribute comparison, not unsafe selector", () => {
-	const script = extractScript();
-	const refreshFnMatch = script.match(/async function refreshRunDetailInPlace[\s\S]*?^}/m);
-	assert.ok(refreshFnMatch, "should find refreshRunDetailInPlace");
 	// Must NOT use direct string concatenation to build a CSS selector with the anchor id
-	assert.doesNotMatch(refreshFnMatch[0], /querySelector\('\[data-task-id="' \+ anchorTaskId/, "must not build unsafe CSS selector by concatenating raw attribute value");
+	assert.doesNotMatch(TEAM_RUN_DETAIL_SCROLL_BEHAVIOR_SCRIPT, /querySelector\('\[data-task-id="' \+ anchorTaskId/, "must not build unsafe CSS selector by concatenating raw attribute value");
 	// Must use attribute comparison loop (getAttribute === anchorTaskId)
-	assert.match(refreshFnMatch[0], /getAttribute\('data-task-id'\) === snapshot\.anchorTaskId/);
-	assert.match(refreshFnMatch[0], /querySelectorAll\('\[data-task-id\]'\)/);
+	assert.match(TEAM_RUN_DETAIL_SCROLL_BEHAVIOR_SCRIPT, /getAttribute\((['"])data-task-id\1\)\s*===\s*anchorTaskId/);
+	assert.match(TEAM_RUN_DETAIL_SCROLL_BEHAVIOR_SCRIPT, /querySelectorAll\((['"])\[data-task-id\]\1\)/);
 });
 
 test("behavioral: renderRunActions includes rerun button for cancelled runs", () => {
