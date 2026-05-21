@@ -51,24 +51,50 @@ export function getPlaygroundAssetBaseStyles(): string {
 			display: grid;
 			gap: 6px;
 		}
-	.asset-date-group-header {
+
+		.asset-date-group-header {
+			display: flex;
+			grid-column: 1 / -1;
+			align-items: center;
+			gap: 10px;
+			min-height: 30px;
+			padding: 16px 2px 6px;
+			margin-top: 6px;
+			color: rgba(238, 244, 255, 0.72);
+		}
+
+		.asset-date-group-header::after {
+			content: "";
+			height: 1px;
+			flex: 1 1 auto;
+			background: linear-gradient(90deg, rgba(141, 255, 178, 0.28), rgba(201, 210, 255, 0.12), transparent);
+		}
+
+		.asset-date-group-header strong {
+			color: rgba(247, 250, 255, 0.92);
+			font-size: 12px;
+			font-weight: 760;
+			line-height: 1;
+			letter-spacing: 0.02em;
+		}
+
+		.asset-date-group-header span {
+			color: rgba(226, 234, 255, 0.46);
+			font-family: var(--font-mono);
 			font-size: 10px;
-			letter-spacing: 0.1em;
-			text-transform: uppercase;
-			color: var(--muted);
-			padding: 10px 2px 2px;
-			margin-top: 4px;
+			line-height: 1;
 		}
 
 		.file-download,
 		.asset-pill {
 			display: grid;
 			grid-template-columns: minmax(0, 1fr) auto;
-			gap: 10px;
+			gap: 12px;
 			align-items: center;
 			border: 0;
+			border-radius: 4px;
 			background: rgba(201, 210, 255, 0.045);
-			padding: 9px 10px;
+			padding: 10px 12px;
 			font-size: 11px;
 			line-height: 1.5;
 			color: var(--muted);
@@ -82,6 +108,156 @@ export function getPlaygroundAssetBaseStyles(): string {
 			white-space: nowrap;
 			color: var(--fg);
 			font-size: 11px;
+		}
+
+		.asset-pill {
+			min-height: 66px;
+			background:
+				linear-gradient(90deg, rgba(141, 255, 178, 0.055), transparent 44%),
+				rgba(201, 210, 255, 0.045);
+		}
+
+		.asset-pill:hover {
+			background:
+				linear-gradient(90deg, rgba(141, 255, 178, 0.075), transparent 48%),
+				rgba(201, 210, 255, 0.07);
+		}
+
+		.asset-pill-main {
+			display: grid;
+			grid-template-columns: 38px minmax(0, 1fr);
+			align-items: center;
+			gap: 10px;
+			min-width: 0;
+		}
+
+		.asset-pill-type {
+			--asset-type-border: rgba(201, 210, 255, 0.12);
+			--asset-type-bg: rgba(8, 12, 20, 0.64);
+			--asset-type-main: rgba(226, 231, 255, 0.82);
+			--asset-type-sub: rgba(226, 234, 255, 0.38);
+			display: inline-grid;
+			grid-template-rows: auto auto;
+			place-items: center;
+			align-content: center;
+			justify-content: center;
+			row-gap: 2px;
+			width: 34px;
+			height: 34px;
+			border: 1px solid var(--asset-type-border);
+			border-radius: 4px;
+			background: var(--asset-type-bg);
+			color: var(--asset-type-main);
+			font-family: var(--font-mono);
+			font-size: 9px;
+			font-weight: 700;
+			line-height: 1;
+			letter-spacing: 0.04em;
+			text-transform: uppercase;
+		}
+
+		.asset-pill-type b,
+		.asset-pill-type em {
+			display: block;
+			width: 100%;
+			min-width: 0;
+			overflow: hidden;
+			text-align: center;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		.asset-pill-type b {
+			font-size: 10px;
+			font-style: normal;
+			font-weight: 800;
+			line-height: 1.04;
+		}
+
+		.asset-pill-type em {
+			color: var(--asset-type-sub);
+			font-size: 6px;
+			font-style: normal;
+			font-weight: 700;
+			letter-spacing: 0.04em;
+			line-height: 1;
+		}
+
+		.asset-pill-type--archive {
+			--asset-type-border: rgba(141, 255, 178, 0.24);
+			--asset-type-bg: rgba(141, 255, 178, 0.09);
+			--asset-type-main: rgba(220, 255, 232, 0.94);
+			--asset-type-sub: rgba(141, 255, 178, 0.62);
+		}
+
+		.asset-pill-type--code {
+			--asset-type-border: rgba(101, 209, 255, 0.28);
+			--asset-type-bg: rgba(101, 209, 255, 0.1);
+			--asset-type-main: rgba(218, 246, 255, 0.95);
+			--asset-type-sub: rgba(101, 209, 255, 0.66);
+		}
+
+		.asset-pill-type--web {
+			--asset-type-border: rgba(255, 202, 126, 0.28);
+			--asset-type-bg: rgba(255, 202, 126, 0.1);
+			--asset-type-main: rgba(255, 230, 190, 0.96);
+			--asset-type-sub: rgba(255, 202, 126, 0.7);
+		}
+
+		.asset-pill-type--data {
+			--asset-type-border: rgba(201, 210, 255, 0.28);
+			--asset-type-bg: rgba(201, 210, 255, 0.1);
+			--asset-type-main: rgba(231, 235, 255, 0.96);
+			--asset-type-sub: rgba(201, 210, 255, 0.66);
+		}
+
+		.asset-pill-type--image {
+			--asset-type-border: rgba(255, 156, 190, 0.28);
+			--asset-type-bg: rgba(255, 156, 190, 0.1);
+			--asset-type-main: rgba(255, 226, 236, 0.96);
+			--asset-type-sub: rgba(255, 156, 190, 0.68);
+		}
+
+		.asset-pill-type--document {
+			--asset-type-border: rgba(228, 238, 255, 0.2);
+			--asset-type-bg: rgba(228, 238, 255, 0.075);
+			--asset-type-main: rgba(246, 249, 255, 0.94);
+			--asset-type-sub: rgba(228, 238, 255, 0.54);
+		}
+
+		.asset-pill-type--binary {
+			--asset-type-border: rgba(132, 255, 221, 0.22);
+			--asset-type-bg: rgba(132, 255, 221, 0.075);
+			--asset-type-main: rgba(216, 255, 244, 0.92);
+			--asset-type-sub: rgba(132, 255, 221, 0.58);
+		}
+
+		.asset-pill-type--text,
+		.asset-pill-type--meta {
+			--asset-type-border: rgba(201, 210, 255, 0.16);
+			--asset-type-bg: rgba(201, 210, 255, 0.065);
+			--asset-type-main: rgba(226, 231, 255, 0.86);
+			--asset-type-sub: rgba(226, 234, 255, 0.46);
+		}
+
+		.asset-pill-copy {
+			display: grid;
+			gap: 3px;
+			min-width: 0;
+		}
+
+		.asset-pill-meta {
+			display: block;
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		.asset-pill-meta {
+			color: rgba(226, 234, 255, 0.52);
+			font-family: var(--font-mono);
+			font-size: 10px;
 		}
 
 		:root[data-theme="dark"] .file-download,
@@ -295,7 +471,8 @@ export function getPlaygroundAssetBaseStyles(): string {
 		}
 
 		.asset-modal-actions button,
-		.asset-pill button {
+		.asset-pill button,
+		.asset-pill-download-button {
 			flex: 0 0 auto;
 			white-space: nowrap;
 			padding: 6px 10px;
@@ -313,13 +490,36 @@ export function getPlaygroundAssetBaseStyles(): string {
 			gap: 6px;
 		}
 
+		.asset-pill-download-button {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			min-height: 29px;
+			border: 0;
+			border-radius: 4px;
+			background: rgba(141, 255, 178, 0.08);
+			color: rgba(209, 255, 224, 0.9);
+			font-weight: 650;
+			line-height: 1;
+			text-decoration: none;
+			transform: none !important;
+		}
+
+		.asset-pill-download-button:hover,
+		.asset-pill-download-button:focus-visible {
+			background: rgba(141, 255, 178, 0.14);
+			color: rgba(237, 255, 244, 0.98);
+		}
+
 		.asset-pill-delete-button {
 			color: rgba(255, 198, 206, 0.84);
 		}
 
 		.asset-pill.active {
 			border-color: rgba(201, 210, 255, 0.18);
-			background: rgba(255, 255, 255, 0.08);
+			background:
+				linear-gradient(90deg, rgba(141, 255, 178, 0.11), transparent 48%),
+				rgba(255, 255, 255, 0.08);
 			box-shadow: none;
 		}
 
@@ -328,7 +528,7 @@ export function getPlaygroundAssetBaseStyles(): string {
 
 export function getPlaygroundAssetModalStyles(): string {
 	return `
-		.asset-pill span {
+		.asset-pill-copy span {
 			display: block;
 		}
 
@@ -395,6 +595,14 @@ export function getPlaygroundAssetModalStyles(): string {
 			padding: 14px;
 			overflow-y: auto;
 			border-top: 1px solid var(--line);
+			scrollbar-width: none;
+			-ms-overflow-style: none;
+		}
+
+		.asset-modal-body::-webkit-scrollbar {
+			width: 0;
+			height: 0;
+			display: none;
 		}
 
 		.chat-stage > .workspace-contained :is(.asset-modal-head, .task-inbox-head) {
@@ -768,8 +976,9 @@ export function getPlaygroundAssetMobileStyles(): string {
 				gap: 8px;
 			}
 
-			.asset-pill > div {
+			.asset-pill-main {
 				display: grid;
+				grid-template-columns: 34px minmax(0, 1fr);
 				gap: 6px;
 				min-width: 0;
 			}
@@ -778,7 +987,7 @@ export function getPlaygroundAssetMobileStyles(): string {
 				font-size: 13px;
 			}
 
-			.asset-pill span {
+			.asset-pill-meta {
 				color: rgba(226, 234, 255, 0.54);
 				font-family: var(--font-mono);
 				font-size: 10px;
@@ -787,7 +996,14 @@ export function getPlaygroundAssetMobileStyles(): string {
 				white-space: normal;
 			}
 
-			.asset-pill button {
+			.asset-pill-type {
+				width: 30px;
+				height: 30px;
+				font-size: 8px;
+			}
+
+			.asset-pill button,
+			.asset-pill-download-button {
 				min-height: 38px;
 				border-radius: 4px;
 				text-transform: none;

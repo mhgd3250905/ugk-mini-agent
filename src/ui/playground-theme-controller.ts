@@ -1042,9 +1042,15 @@ export function getPlaygroundThemeStyles(): string {
 		:root[data-theme="light"] :is(.asset-empty),
 		:root[data-theme="light"] :is(.file-chip) {
 			border-color: transparent;
-			background: rgba(255, 255, 255, 0.9);
+			background: rgba(255, 255, 255, 0.92);
 			color: #24324a;
 			box-shadow: none;
+		}
+
+		:root[data-theme="light"] :is(.asset-pill) {
+			background:
+				linear-gradient(90deg, rgba(31, 95, 200, 0.035), transparent 46%),
+				rgba(255, 255, 255, 0.92);
 		}
 
 		:root[data-theme="light"] :is(.conn-manager-item) {
@@ -1130,7 +1136,9 @@ export function getPlaygroundThemeStyles(): string {
 		}
 
 		:root[data-theme="light"] :is(.asset-pill.active) {
-			background: #e8f6ef;
+			background:
+				linear-gradient(90deg, rgba(34, 168, 106, 0.11), transparent 48%),
+				#e8f6ef;
 			color: #172033;
 			box-shadow: none;
 		}
@@ -1140,26 +1148,127 @@ export function getPlaygroundThemeStyles(): string {
 			color: #172033;
 		}
 
+		:root[data-theme="light"] .asset-pill-meta {
+			color: #5b6b84;
+		}
+
+		:root[data-theme="light"] .asset-pill-type {
+			--asset-type-border: rgba(31, 95, 200, 0.12);
+			--asset-type-bg: #f4f7fb;
+			--asset-type-main: #315586;
+			--asset-type-sub: #7a879b;
+		}
+
+		:root[data-theme="light"] .asset-pill-type--archive {
+			--asset-type-border: rgba(34, 168, 106, 0.24);
+			--asset-type-bg: #edf8f0;
+			--asset-type-main: #147647;
+			--asset-type-sub: #4f9270;
+		}
+
+		:root[data-theme="light"] .asset-pill-type--code {
+			--asset-type-border: rgba(31, 95, 200, 0.24);
+			--asset-type-bg: #eef5ff;
+			--asset-type-main: #1b5fa7;
+			--asset-type-sub: #5f7ea8;
+		}
+
+		:root[data-theme="light"] .asset-pill-type--web {
+			--asset-type-border: rgba(196, 120, 32, 0.24);
+			--asset-type-bg: #fff4df;
+			--asset-type-main: #96540c;
+			--asset-type-sub: #9b7650;
+		}
+
+		:root[data-theme="light"] .asset-pill-type--data {
+			--asset-type-border: rgba(93, 73, 196, 0.22);
+			--asset-type-bg: #f3f1ff;
+			--asset-type-main: #5543a8;
+			--asset-type-sub: #7b729b;
+		}
+
+		:root[data-theme="light"] .asset-pill-type--image {
+			--asset-type-border: rgba(199, 55, 112, 0.22);
+			--asset-type-bg: #fff0f5;
+			--asset-type-main: #a62b5f;
+			--asset-type-sub: #a36c82;
+		}
+
+		:root[data-theme="light"] .asset-pill-type--document {
+			--asset-type-border: rgba(89, 101, 121, 0.18);
+			--asset-type-bg: #f6f8fb;
+			--asset-type-main: #40516d;
+			--asset-type-sub: #7a879b;
+		}
+
+		:root[data-theme="light"] .asset-pill-type--binary {
+			--asset-type-border: rgba(25, 132, 116, 0.2);
+			--asset-type-bg: #edf8f7;
+			--asset-type-main: #14746a;
+			--asset-type-sub: #5b8d86;
+		}
+
+		:root[data-theme="light"] .asset-date-group-header strong {
+			color: #172033;
+		}
+
+		:root[data-theme="light"] .asset-date-group-header span {
+			color: #6b7688;
+		}
+
+		:root[data-theme="light"] .asset-date-group-header::after {
+			background: linear-gradient(90deg, rgba(31, 95, 200, 0.18), rgba(34, 168, 106, 0.14), transparent);
+		}
+
+		:root[data-theme="light"] .asset-pill-download-button {
+			border-color: rgba(31, 95, 200, 0.12);
+			background: rgba(34, 168, 106, 0.08);
+			color: #147647;
+		}
+
+		:root[data-theme="light"] .asset-pill-download-button:hover,
+		:root[data-theme="light"] .asset-pill-download-button:focus-visible {
+			border-color: rgba(31, 95, 200, 0.24);
+			background: rgba(31, 95, 200, 0.08);
+			color: #1b3f7a;
+		}
+
 		:root[data-theme="light"] .chat-stage > .workspace-contained .asset-pill {
 			border-color: rgba(31, 95, 200, 0.08);
-			background: #ffffff;
+			background:
+				linear-gradient(90deg, rgba(31, 95, 200, 0.035), transparent 46%),
+				#ffffff;
 		}
 
 		:root[data-theme="light"] .chat-stage > .workspace-contained .asset-pill strong {
 			color: #0b1a36;
 		}
 
-		:root[data-theme="light"] .chat-stage > .workspace-contained .asset-pill span {
+		:root[data-theme="light"] .chat-stage > .workspace-contained .asset-pill-meta {
 			color: #5b6b84;
 		}
 
-		:root[data-theme="light"] .chat-stage > .workspace-contained .asset-pill button {
+		:root[data-theme="light"] .chat-stage > .workspace-contained .asset-pill-type {
+			border-color: var(--asset-type-border);
+			background: var(--asset-type-bg);
+			color: var(--asset-type-main);
+		}
+
+		:root[data-theme="light"] .chat-stage > .workspace-contained .asset-pill button,
+		:root[data-theme="light"] .chat-stage > .workspace-contained .asset-pill-download-button {
 			border-color: rgba(31, 95, 200, 0.12);
 			background: rgba(31, 95, 200, 0.04);
 			color: #3a5f9b;
 		}
 
-		:root[data-theme="light"] .chat-stage > .workspace-contained .asset-pill button:hover:not(:disabled) {
+		:root[data-theme="light"] .chat-stage > .workspace-contained .asset-pill-download-button {
+			background: rgba(34, 168, 106, 0.08);
+			color: #147647;
+		}
+
+		:root[data-theme="light"] .chat-stage > .workspace-contained .asset-pill button:hover:not(:disabled),
+		:root[data-theme="light"] .chat-stage > .workspace-contained .asset-pill-download-button:hover,
+		:root[data-theme="light"] .chat-stage > .workspace-contained .asset-pill-download-button:focus-visible {
 			border-color: rgba(31, 95, 200, 0.24);
 			background: rgba(31, 95, 200, 0.08);
 			color: #1b3f7a;
@@ -1167,7 +1276,9 @@ export function getPlaygroundThemeStyles(): string {
 
 		:root[data-theme="light"] .chat-stage > .workspace-contained .asset-pill.active {
 			border-color: rgba(34, 168, 106, 0.18);
-			background: #eaf8f0;
+			background:
+				linear-gradient(90deg, rgba(34, 168, 106, 0.12), transparent 48%),
+				#eaf8f0;
 		}
 
 

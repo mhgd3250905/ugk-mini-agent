@@ -26,6 +26,18 @@
 
 ---
 
+## 2026-05-21 — Playground asset library refinement
+
+- **主题**: 优化 `/playground` 文件库列表主次层级并增加下载入口
+- **影响范围**: `src/ui/playground-assets.ts`, `src/ui/playground-assets-controller.ts`, `src/ui/playground-theme-controller.ts`, `test/server.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - 文件库资产项改为文件类型徽标、文件名、大小和短 id 的分层结构，去掉文件内容摘要，降低列表噪音；类型徽标按 archive / code / web / data / image / document / binary 等类型着色，并修正双行文字居中
+  - 日期分组升级为跨列章节标题并显示该日期文件数，文件库内容区保留滚动但隐藏浏览器滚动条
+  - 每个带 `downloadUrl` 的资产新增显式“下载”链接，复用 `/v1/files/:assetId?download=1` 的附件交付能力
+  - 深色与浅色主题分别维护列表项、类型徽标、下载按钮和 active 状态，不把同一套半透明颜色强行混用
+
+---
+
 ## 2026-05-21 — Team Plan UI scope boundary
 
 - **主题**: 明确本阶段不再继续扩展 `/playground/team` 的可视化 Plan 创建能力

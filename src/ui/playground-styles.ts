@@ -891,6 +891,10 @@ export function getPlaygroundStyles(): string {
 			gap: 8px;
 		}
 
+		.chat-stage > .workspace-contained .asset-date-group-header {
+			grid-column: 1 / -1;
+		}
+
 		.chat-stage > .workspace-contained .asset-pill {
 			gap: 8px;
 			padding: 10px 12px;
@@ -904,7 +908,7 @@ export function getPlaygroundStyles(): string {
 			color: rgba(247, 249, 255, 0.9);
 		}
 
-		.chat-stage > .workspace-contained .asset-pill span {
+		.chat-stage > .workspace-contained .asset-pill-meta {
 			color: rgba(226, 234, 255, 0.46);
 			font-family: var(--font-mono);
 			font-size: 10px;

@@ -427,6 +427,68 @@ export function getPlaygroundAssetControllerScript(): string {
 			return normalized.includes("?") ? normalized + "&download=1" : normalized + "?download=1";
 		}
 
+		function formatAssetKind(kind) {
+			const normalized = String(kind || "metadata").trim().toLowerCase();
+			if (normalized === "text") {
+				return "TEXT";
+			}
+			if (normalized === "binary") {
+				return "BIN";
+			}
+			return "META";
+		}
+
+		function getAssetTypeTone(asset) {
+			const fileName = String(asset.fileName || "").trim().toLowerCase();
+			const mimeType = String(asset.mimeType || "").trim().toLowerCase();
+			const kind = String(asset.kind || "").trim().toLowerCase();
+			if (/\.(tar\.gz|tgz|zip|gz|rar|7z)$/i.test(fileName) || mimeType.includes("zip") || mimeType.includes("gzip") || mimeType.includes("x-tar")) {
+				return "archive";
+			}
+			if (/\.(java|js|mjs|cjs|ts|tsx|jsx|py|go|rs|c|cpp|h|hpp|cs|kt|swift|sh|ps1)$/i.test(fileName)) {
+				return "code";
+			}
+			if (/\.(html|htm|css|svg)$/i.test(fileName) || mimeType === "text/html" || mimeType === "text/css" || mimeType === "image/svg+xml") {
+				return "web";
+			}
+			if (/\.(json|jsonl|csv|tsv|xlsx|xls)$/i.test(fileName) || mimeType.includes("json") || mimeType.includes("csv") || mimeType.includes("spreadsheet")) {
+				return "data";
+			}
+			if (mimeType.startsWith("image/")) {
+				return "image";
+			}
+			if (/\.(md|markdown|txt|pdf|doc|docx)$/i.test(fileName) || mimeType.includes("markdown") || mimeType === "text/plain" || mimeType === "application/pdf") {
+				return "document";
+			}
+			if (kind === "binary") {
+				return "binary";
+			}
+			if (kind === "text") {
+				return "text";
+			}
+			return "meta";
+		}
+
+		function formatAssetMeta(asset) {
+			const parts = [
+				formatFileSize(asset.sizeBytes),
+			];
+			if (asset.assetId) {
+				parts.push(String(asset.assetId).slice(0, 12));
+			}
+			return parts.join(" / ");
+		}
+
+		function getAssetDateGroupLabel(assetDate, today, yesterday) {
+			if (assetDate === today) {
+				return "今天";
+			}
+			if (assetDate === yesterday) {
+				return "昨天";
+			}
+			return assetDate || "更早";
+		}
+
 		function renderAssetPickerList() {
 			assetModalList.innerHTML = "";
 			const selectedAssetRefs = getSelectedAssetRefsForTarget(getAssetPickerTarget());
@@ -441,6 +503,11 @@ export function getPlaygroundAssetControllerScript(): string {
 			const today = new Date().toISOString().slice(0, 10);
 			const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 			let currentDateGroup = "";
+			const dateGroupCounts = state.recentAssets.reduce((counts, asset) => {
+				const key = asset.createdAt ? asset.createdAt.slice(0, 10) : "";
+				counts.set(key, (counts.get(key) || 0) + 1);
+				return counts;
+			}, new Map());
 
 			for (const asset of state.recentAssets) {
 				const assetDate = asset.createdAt ? asset.createdAt.slice(0, 10) : "";
@@ -448,28 +515,39 @@ export function getPlaygroundAssetControllerScript(): string {
 					currentDateGroup = assetDate;
 					const header = document.createElement("div");
 					header.className = "asset-date-group-header";
-					header.textContent = assetDate === today ? "今天" : assetDate === yesterday ? "昨天" : assetDate;
+					header.innerHTML = "<strong></strong><span></span>";
+					header.querySelector("strong").textContent = getAssetDateGroupLabel(assetDate, today, yesterday);
+					header.querySelector("span").textContent = (dateGroupCounts.get(assetDate) || 0) + " 个文件";
 					assetModalList.appendChild(header);
 				}
 
 				const item = document.createElement("div");
 				item.className = "asset-pill" + (selectedAssetRefs.includes(asset.assetId) ? " active" : "");
-				item.innerHTML = "<div><strong></strong><span></span></div><div class=\\"asset-pill-actions\\"><button class=\\"asset-pill-reuse-button\\" type=\\"button\\"></button><button class=\\"asset-pill-delete-button\\" type=\\"button\\">删除</button></div>";
+				item.innerHTML = "<div class=\\"asset-pill-main\\"><span class=\\"asset-pill-type\\"><b></b><em></em></span><div class=\\"asset-pill-copy\\"><strong></strong><span class=\\"asset-pill-meta\\"></span></div></div><div class=\\"asset-pill-actions\\"><button class=\\"asset-pill-reuse-button\\" type=\\"button\\"></button><a class=\\"asset-pill-download-button\\" href=\\"\\" download>下载</a><button class=\\"asset-pill-delete-button\\" type=\\"button\\">删除</button></div>";
+				const typeBadge = item.querySelector(".asset-pill-type");
+				typeBadge.classList.add("asset-pill-type--" + getAssetTypeTone(asset));
+				typeBadge.querySelector("b").textContent = deriveFileBadge(asset.fileName, asset.mimeType || asset.kind);
+				typeBadge.querySelector("em").textContent = formatAssetKind(asset.kind);
 				item.querySelector("strong").textContent = asset.fileName;
-				item.querySelector("span").textContent =
-					(asset.kind || "metadata") +
-					" / " +
-					(asset.mimeType || "application/octet-stream") +
-					" / " +
-					formatFileSize(asset.sizeBytes) +
-					" / " +
-					asset.assetId.slice(0, 12);
+				item.querySelector(".asset-pill-meta").textContent = formatAssetMeta(asset);
 				const toggleButton = item.querySelector(".asset-pill-reuse-button");
 				toggleButton.textContent = selectedAssetRefs.includes(asset.assetId) ? "已选" : "复用";
 				toggleButton.disabled = selectedAssetRefs.includes(asset.assetId);
-				toggleButton.addEventListener("click", () => {
+				toggleButton.addEventListener("click", (event) => {
+					event.stopPropagation();
 					selectAssetForReuse(asset.assetId);
 				});
+				const downloadLink = item.querySelector(".asset-pill-download-button");
+				const downloadUrl = buildDownloadUrl(asset.downloadUrl);
+				if (downloadUrl) {
+					downloadLink.href = downloadUrl;
+					downloadLink.download = asset.fileName || "";
+					downloadLink.addEventListener("click", (event) => {
+						event.stopPropagation();
+					});
+				} else {
+					downloadLink.remove();
+				}
 				const deleteButton = item.querySelector(".asset-pill-delete-button");
 				deleteButton.disabled = state.assetDeletingAssetId === asset.assetId;
 				deleteButton.textContent = state.assetDeletingAssetId === asset.assetId ? "删除中" : "删除";

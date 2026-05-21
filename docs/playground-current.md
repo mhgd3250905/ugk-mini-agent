@@ -13,6 +13,14 @@
 - 页面背景已从散点 / 斜纹 / 漂移动画收口为静态细网格和线性边缘高光；深浅主题分别维护自己的背景网格透明度，避免“波点科技感”压过对话内容。
 - 相关源码：`src/ui/playground-styles.ts`、`src/ui/playground-theme-controller.ts`
 
+## 2026-05-21 文件库列表与下载入口优化
+
+- `/playground` 文件库列表项改为更接近文件管理器的层级：日期分组以跨列章节标题展示，并显示该日期文件数；卡片左侧文件类型徽标同时展示扩展名和 `TEXT / BIN / META` 类别，徽标按 archive / code / web / data / image / document / binary 等文件类型着色，右侧只保留文件名、大小和短 asset id，不再展示文件内容摘要。
+- 每个有 `downloadUrl` 的资产现在在文件库里直接展示“下载”入口；前端复用既有 `buildDownloadUrl()`，会把链接转换为 `/v1/files/:assetId?download=1`，让后端以附件方式交付。
+- “复用 / 下载 / 删除”保持并列操作，但下载使用独立视觉权重，删除仍维持低干扰危险色；列表项 hover / active、日期章节线和浅色主题分别管理，不把深色半透明样式硬套到浅色主题。
+- 文件库内容区保留滚动能力但隐藏浏览器滚动条，避免右侧滚动条抢占 cockpit 视觉。
+- 相关源码：`src/ui/playground-assets.ts`、`src/ui/playground-assets-controller.ts`、`src/ui/playground-theme-controller.ts`
+
 ## 2026-05-21 Team 自然语言 Plan 草案
 
 - `/playground/team` 仍是独立 Team Runtime 工作台，不嵌进主聊天 workspace。
