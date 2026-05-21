@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-21 — Team mindmap disposition scroll snapshot timing fix
+
+- **主题**: 修复脑图 task 标记按钮点击后仍可能跳回顶部的问题
+- **影响范围**: `src/ui/team-page.ts`, `test/team-page-ui.test.ts`, `docs/change-log.md`
+- **变更**:
+  - `setTaskDisposition()` 在发起 `PATCH /manual-disposition` 之前立即捕获当前 run detail 滚动快照和 `data-task-id` anchor，避免异步请求期间页面被刷新/焦点行为影响后才保存错误位置
+  - `refreshRunDetailInPlace()` 支持接收预先捕获的 scroll snapshot，并继续使用属性比对方式恢复 anchor，避免 unsafe selector 拼接
+  - 新增回归测试，明确约束 scroll snapshot 必须早于 PATCH 捕获，并传入原地刷新函数
+
+---
+
 ## 2026-05-21 — Team Plan / Run ID 完整展示与点击复制
 
 - **主题**: Team 页面 Plan ID 和 Run ID 完整展示，点击即可复制，不再截断显示

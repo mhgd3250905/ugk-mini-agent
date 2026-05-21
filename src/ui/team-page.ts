@@ -1342,13 +1342,10 @@ async function toggleRunDetail(runId, sourceEl) {
 	}
 }
 
-async function refreshRunDetailInPlace(runId, sourceEl) {
+async function refreshRunDetailInPlace(runId, sourceEl, scrollSnapshot) {
 		var detailEl = findRunDetailElement(runId, sourceEl);
 		if (!detailEl || detailEl.style.display !== 'block') return;
-		var savedScrollX = window.scrollX;
-		var savedScrollY = window.scrollY;
-		var anchorEl = sourceEl && sourceEl.closest ? sourceEl.closest('[data-task-id]') : null;
-		var anchorOffset = anchorEl ? anchorEl.getBoundingClientRect().top : null;
+		var snapshot = scrollSnapshot || captureRunDetailScrollSnapshot(runId, sourceEl, detailEl);
 		try {
 			var state = await api('/runs/' + runId);
 			if (state.planId && !_planCache[state.planId]) {
@@ -1386,28 +1383,39 @@ async function refreshRunDetailInPlace(runId, sourceEl) {
 			window._latestRunStateForRun[runId] = state;
 			detailEl.innerHTML = renderRunDetailShell(runId, state, plan, attemptsMap);
 			requestAnimationFrame(function() {
-				if (anchorEl && anchorOffset != null) {
-					var anchorTaskId = anchorEl.getAttribute('data-task-id');
+				if (snapshot && snapshot.anchorTaskId && snapshot.anchorOffset != null) {
 					var candidates = detailEl.querySelectorAll('[data-task-id]');
 					var newAnchor = null;
 					for (var ci = 0; ci < candidates.length; ci++) {
-						if (candidates[ci].getAttribute('data-task-id') === anchorTaskId) {
+						if (candidates[ci].getAttribute('data-task-id') === snapshot.anchorTaskId) {
 							newAnchor = candidates[ci];
 							break;
 						}
 					}
 					if (newAnchor) {
 						var newOffset = newAnchor.getBoundingClientRect().top;
-						window.scrollTo(savedScrollX, savedScrollY + (newOffset - anchorOffset));
+						window.scrollTo(snapshot.scrollX, snapshot.scrollY + (newOffset - snapshot.anchorOffset));
 						return;
 					}
 				}
-				window.scrollTo(savedScrollX, savedScrollY);
+				if (snapshot) window.scrollTo(snapshot.scrollX, snapshot.scrollY);
 			});
 		} catch (e) {
 			detailEl.innerHTML = '<p style="color:var(--fail);font-size:13px">加载失败：' + escapeHtml(e.message) + '</p>';
 		}
 	}
+
+function captureRunDetailScrollSnapshot(runId, sourceEl, detailEl) {
+	var currentDetailEl = detailEl || findRunDetailElement(runId, sourceEl);
+	if (!currentDetailEl || currentDetailEl.style.display !== 'block') return null;
+	var anchorEl = sourceEl && sourceEl.closest ? sourceEl.closest('[data-task-id]') : null;
+	return {
+		scrollX: window.scrollX,
+		scrollY: window.scrollY,
+		anchorTaskId: anchorEl ? anchorEl.getAttribute('data-task-id') : null,
+		anchorOffset: anchorEl ? anchorEl.getBoundingClientRect().top : null
+	};
+}
 
 	function buildFallbackPlanFromRunState(state) {
 	var taskDefinitions = Array.isArray(state.taskDefinitions) ? state.taskDefinitions : [];
@@ -2192,6 +2200,7 @@ async function deleteRun(runId) {
 
 
 async function setTaskDisposition(runId, taskId, disposition, sourceEl) {
+	var scrollSnapshot = captureRunDetailScrollSnapshot(runId, sourceEl);
 	try {
 		await api('/runs/' + runId + '/tasks/' + taskId + '/manual-disposition', {
 			method: 'PATCH',
@@ -2200,7 +2209,7 @@ async function setTaskDisposition(runId, taskId, disposition, sourceEl) {
 		});
 		showSuccess('已更新任务标记');
 	} catch (e) { showError(e.message); }
-	await refreshRunDetailInPlace(runId, sourceEl);
+	await refreshRunDetailInPlace(runId, sourceEl, scrollSnapshot);
 }
 
 async function rerunRunConfirm(runId) {

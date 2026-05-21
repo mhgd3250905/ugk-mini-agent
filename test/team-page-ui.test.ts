@@ -2485,6 +2485,20 @@ test("behavioral: setTaskDisposition refreshes in-place via refreshRunDetailInPl
 	assert.doesNotMatch(setTaskDispositionMatch[0], /toggleRunDetail/, "must not use toggleRunDetail (which collapses)");
 });
 
+test("behavioral: setTaskDisposition captures scroll snapshot before PATCH", () => {
+	const script = extractScript();
+	const setTaskDispositionMatch = script.match(/async function setTaskDisposition[\s\S]*?^}/m);
+	assert.ok(setTaskDispositionMatch, "should find setTaskDisposition");
+	const body = setTaskDispositionMatch[0];
+	const captureIndex = body.indexOf("captureRunDetailScrollSnapshot");
+	const patchIndex = body.indexOf("await api(");
+	const refreshIndex = body.indexOf("refreshRunDetailInPlace");
+	assert.ok(captureIndex >= 0, "should capture scroll snapshot");
+	assert.ok(patchIndex > captureIndex, "snapshot must be captured before PATCH can trigger async UI changes");
+	assert.ok(refreshIndex > patchIndex, "refresh should happen after PATCH");
+	assert.match(body, /refreshRunDetailInPlace\(runId,\s*sourceEl,\s*scrollSnapshot\)/);
+});
+
 test("behavioral: refreshRunDetailInPlace preserves scroll position", () => {
 	const script = extractScript();
 	const refreshFnMatch = script.match(/async function refreshRunDetailInPlace[\s\S]*?^}/m);
@@ -2535,7 +2549,7 @@ test("behavioral: refreshRunDetailInPlace finds anchor by attribute comparison, 
 	// Must NOT use direct string concatenation to build a CSS selector with the anchor id
 	assert.doesNotMatch(refreshFnMatch[0], /querySelector\('\[data-task-id="' \+ anchorTaskId/, "must not build unsafe CSS selector by concatenating raw attribute value");
 	// Must use attribute comparison loop (getAttribute === anchorTaskId)
-	assert.match(refreshFnMatch[0], /getAttribute\('data-task-id'\) === anchorTaskId/);
+	assert.match(refreshFnMatch[0], /getAttribute\('data-task-id'\) === snapshot\.anchorTaskId/);
 	assert.match(refreshFnMatch[0], /querySelectorAll\('\[data-task-id\]'\)/);
 });
 
