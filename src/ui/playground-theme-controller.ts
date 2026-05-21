@@ -14,41 +14,43 @@ export function getPlaygroundThemeStyles(): string {
 			--ok: #08784b;
 			--danger: #c52945;
 			--warn: #8a5a00;
+			--chat-assistant-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 250, 255, 0.92));
+			--chat-assistant-border: rgba(31, 95, 200, 0.12);
+			--chat-user-bg: linear-gradient(180deg, rgba(236, 253, 245, 0.96), rgba(220, 248, 232, 0.94));
+			--chat-user-border: rgba(8, 120, 75, 0.20);
+			--chat-user-fg: #153226;
+			--chat-code-bg: #eef3fb;
+			--chat-code-toolbar-bg: #e1eaf6;
+			--chat-table-bg: #f8fbff;
+			--chat-composer-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 250, 255, 0.9));
+			--chat-composer-focus-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 255, 0.96));
+			--chat-floating-bg: rgba(255, 255, 255, 0.94);
+			--chat-focus-ring: rgba(31, 95, 200, 0.30);
 			color-scheme: light;
 		}
 
 		:root[data-theme="light"],
 		:root[data-theme="light"] body {
-			background:
-				radial-gradient(circle at 18% 10%, rgba(45, 122, 255, 0.10), transparent 0 24%),
-				radial-gradient(circle at 82% 6%, rgba(67, 170, 255, 0.055), transparent 0 18%),
-				linear-gradient(180deg, #f7f9fd 0%, #eef3f9 48%, #e3eaf4 100%);
-			background-size: auto, auto, auto;
+			background: linear-gradient(180deg, #f7f9fd 0%, #eef3f9 48%, #e3eaf4 100%);
+			background-size: auto;
 			color: var(--fg);
 		}
 
 		:root[data-theme="light"] body::before {
 			background-image:
-				linear-gradient(rgba(24, 69, 119, 0.055) 1px, transparent 1px),
-				linear-gradient(90deg, rgba(24, 69, 119, 0.04) 1px, transparent 1px),
-				linear-gradient(rgba(24, 69, 119, 0.085) 1px, transparent 1px),
-				linear-gradient(90deg, rgba(24, 69, 119, 0.06) 1px, transparent 1px),
-				radial-gradient(circle at 1px 1px, rgba(41, 104, 180, 0.10) 1px, transparent 1.5px),
-				repeating-linear-gradient(
-					135deg,
-					transparent 0 104px,
-					rgba(48, 105, 180, 0.035) 104px 168px,
-					transparent 168px 300px
-				);
-			background-size: 32px 32px, 32px 32px, 128px 128px, 128px 128px, 12px 12px, auto;
-			opacity: 0.85;
+				linear-gradient(rgba(24, 69, 119, 0.026) 1px, transparent 1px),
+				linear-gradient(90deg, rgba(24, 69, 119, 0.020) 1px, transparent 1px),
+				linear-gradient(rgba(24, 69, 119, 0.045) 1px, transparent 1px),
+				linear-gradient(90deg, rgba(24, 69, 119, 0.034) 1px, transparent 1px);
+			background-size: 40px 40px, 40px 40px, 160px 160px, 160px 160px;
+			opacity: 0.58;
 		}
 
 		:root[data-theme="light"] body::after {
 			background:
-				radial-gradient(circle at 18% 12%, rgba(45, 122, 255, 0.07), transparent 0 24%),
-				radial-gradient(circle at 78% 6%, rgba(67, 170, 255, 0.04), transparent 0 18%);
-			opacity: 0.92;
+				linear-gradient(180deg, rgba(31, 95, 200, 0.045), transparent 180px),
+				linear-gradient(90deg, rgba(31, 95, 200, 0.035), transparent 22%, transparent 78%, rgba(8, 120, 75, 0.025));
+			opacity: 0.88;
 		}
 
 		.theme-toggle-button {
@@ -110,6 +112,62 @@ export function getPlaygroundThemeStyles(): string {
 			border-bottom-color: rgba(31, 95, 200, 0.1);
 		}
 
+		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-item {
+			background: transparent;
+			color: #24324a;
+		}
+
+		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-item:hover:not(:disabled),
+		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-item:focus-visible {
+			background: rgba(31, 95, 200, 0.045);
+			color: #172033;
+		}
+
+		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-item.is-active {
+			border-color: transparent;
+			background: rgba(31, 95, 200, 0.075);
+		}
+
+		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-item.is-active::before {
+			background: #1f5fc8;
+		}
+
+		:root[data-theme="light"] .desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item {
+			background: transparent;
+		}
+
+		:root[data-theme="light"] .desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item:hover:not(:disabled),
+		:root[data-theme="light"] .desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item:focus-visible {
+			background: rgba(31, 95, 200, 0.045);
+		}
+
+		:root[data-theme="light"] .desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item.is-active {
+			background: rgba(31, 95, 200, 0.075);
+		}
+
+		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-title,
+		:root[data-theme="light"] .desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-title {
+			color: rgba(23, 32, 51, 0.82);
+		}
+
+		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-preview,
+		:root[data-theme="light"] .desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-preview {
+			color: rgba(75, 86, 110, 0.54);
+		}
+
+		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-meta,
+		:root[data-theme="light"] .desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-meta span {
+			color: rgba(75, 86, 110, 0.46);
+		}
+
+		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-item.is-active .mobile-conversation-title {
+			color: #172033;
+		}
+
+		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-item.is-active .mobile-conversation-preview {
+			color: rgba(75, 86, 110, 0.7);
+		}
+
 		:root[data-theme="light"] .desktop-rail-settings-menu {
 			border-color: rgba(31, 95, 200, 0.12);
 			background:
@@ -167,19 +225,7 @@ export function getPlaygroundThemeStyles(): string {
 		}
 
 		:root[data-theme="light"] .shell:not([data-home="true"]) {
-			background-image:
-				linear-gradient(var(--ugk-grid-line) 1px, transparent 1px),
-				linear-gradient(90deg, var(--ugk-grid-line) 1px, transparent 1px),
-				linear-gradient(var(--ugk-grid-line-strong) 1px, transparent 1px),
-				linear-gradient(90deg, var(--ugk-grid-line-strong) 1px, transparent 1px),
-				radial-gradient(circle at 1px 1px, var(--ugk-grid-dot) 1px, transparent 1.5px),
-				repeating-linear-gradient(
-					135deg,
-					transparent 0 104px,
-					var(--ugk-diagonal-band) 104px 168px,
-					transparent 168px 300px
-				);
-			background-size: 32px 32px, 32px 32px, 128px 128px, 128px 128px, 12px 12px, auto;
+			background-image: none;
 		}
 
 		:root[data-theme="light"] .shell,
@@ -233,15 +279,17 @@ export function getPlaygroundThemeStyles(): string {
 		}
 
 		:root[data-theme="light"] #composer-drop-target.composer {
-			border-color: transparent;
-			background: rgba(255, 255, 255, 0.86);
+			border-color: rgba(31, 95, 200, 0.10);
+			background: var(--chat-composer-bg);
 			color: var(--fg);
 			box-shadow: none;
 		}
 
 		:root[data-theme="light"] #composer-drop-target.composer:focus-within {
-			border-color: rgba(31, 95, 200, 0.28);
-			box-shadow: inset 0 0 0 1px rgba(31, 95, 200, 0.38);
+			border-color: var(--chat-focus-ring);
+			background: var(--chat-composer-focus-bg);
+			outline-color: rgba(31, 95, 200, 0.16);
+			box-shadow: none;
 		}
 
 		:root[data-theme="light"] .file-strip {
@@ -269,11 +317,16 @@ export function getPlaygroundThemeStyles(): string {
 		:root[data-theme="light"] .archived-conversation-head,
 		:root[data-theme="light"] .archived-conversation-head strong,
 		:root[data-theme="light"] .message-role,
-		:root[data-theme="light"] .message.user .message-meta strong,
 		:root[data-theme="light"] .message.assistant .message-meta strong {
 			border-color: rgba(31, 95, 200, 0.14);
 			background: rgba(255, 255, 255, 0.72);
 			color: #4d5a70;
+		}
+
+		:root[data-theme="light"] .message.user .message-meta strong {
+			border-color: var(--chat-user-border);
+			background: rgba(232, 246, 239, 0.78);
+			color: #35644e;
 		}
 
 		:root[data-theme="light"] button,
@@ -374,27 +427,42 @@ export function getPlaygroundThemeStyles(): string {
 			color: rgba(102, 112, 133, 0.72);
 		}
 
-		:root[data-theme="light"] .message-body,
-
 		:root[data-theme="light"] .message.assistant .message-body,
 		:root[data-theme="light"] :is(.task-inbox-result-bubble) {
-			background: rgba(255, 255, 255, 0.6);
-			border: 1px solid rgba(31, 95, 200, 0.10);
+			background: var(--chat-assistant-bg);
+			border: 1px solid var(--chat-assistant-border);
 			color: #172033;
-			box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+			box-shadow: none;
 		}
 
 		:root[data-theme="light"] .message.user .message-body {
 			position: relative;
 			overflow: hidden;
-			border: 1px solid rgba(22, 163, 74, 0.15);
-			background: #95ec69;
-			color: #1a1a1a;
-			box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+			border: 1px solid var(--chat-user-border);
+			background: var(--chat-user-bg);
+			color: var(--chat-user-fg);
+			box-shadow: none;
 		}
 
 		:root[data-theme="light"] .message.user .message-content {
-			color: #1a1a1a;
+			color: var(--chat-user-fg);
+		}
+
+		:root[data-theme="light"] .message.user .message-content a {
+			color: #08784b;
+			text-decoration-color: rgba(8, 120, 75, 0.46);
+		}
+
+		:root[data-theme="light"] .message.user .message-copy-button,
+		:root[data-theme="light"] .message.user .message-image-export-button {
+			color: rgba(21, 50, 38, 0.42);
+		}
+
+		:root[data-theme="light"] .message.user .message-copy-button:hover:not(:disabled),
+		:root[data-theme="light"] .message.user .message-copy-button:focus-visible,
+		:root[data-theme="light"] .message.user .message-image-export-button:hover:not(:disabled),
+		:root[data-theme="light"] .message.user .message-image-export-button:focus-visible {
+			color: rgba(21, 50, 38, 0.78);
 		}
 
 		:root[data-theme="light"] #send-button {
@@ -475,8 +543,8 @@ export function getPlaygroundThemeStyles(): string {
 		:root[data-theme="light"] .message-content .markdown-table-scroll,
 		:root[data-theme="light"] .task-inbox-result-bubble .message-content .markdown-table-scroll,
 		:root[data-theme="light"] .conn-run-result-bubble .message-content .markdown-table-scroll {
-			border-color: #c8d6ea;
-			background: #f8fbff;
+			border-color: transparent;
+			background: var(--chat-table-bg);
 		}
 
 		:root[data-theme="light"] .message-content th,
@@ -508,7 +576,7 @@ export function getPlaygroundThemeStyles(): string {
 		:root[data-theme="light"] .conn-run-result-bubble .message-content code,
 		:root[data-theme="light"] .conn-run-result-bubble .message-content pre,
 		:root[data-theme="light"] .conn-run-result-bubble .message-content .code-block {
-			background: #eef3fb;
+			background: var(--chat-code-bg);
 			color: #152238;
 		}
 
@@ -519,14 +587,14 @@ export function getPlaygroundThemeStyles(): string {
 		:root[data-theme="light"] .task-inbox-result-bubble .message-content .code-block-language,
 		:root[data-theme="light"] .conn-run-result-bubble .message-content .code-block-toolbar,
 		:root[data-theme="light"] .conn-run-result-bubble .message-content .code-block-language {
-			background: #e1eaf6;
+			background: transparent;
 			color: #4d5a70;
 		}
 
 		:root[data-theme="light"] .copy-code-button,
 		:root[data-theme="light"] .conn-run-result-bubble .copy-code-button {
-			border-color: rgba(31, 95, 200, 0.16);
-			background: #f7faff;
+			border-color: transparent;
+			background: transparent;
 			color: #365174;
 		}
 
@@ -619,12 +687,10 @@ export function getPlaygroundThemeStyles(): string {
 		}
 
 		:root[data-theme="light"] .scroll-to-bottom-button {
-			border-color: rgba(8, 120, 75, 0.4);
-			background: rgba(255, 255, 255, 0.92);
+			border-color: rgba(8, 120, 75, 0.24);
+			background: var(--chat-floating-bg);
 			color: #08784b;
-			box-shadow:
-				0 4px 12px rgba(0, 0, 0, 0.15),
-				0 0 8px rgba(8, 120, 75, 0.1);
+			box-shadow: none;
 		}
 
 		:root[data-theme="light"] :is(.context-usage-shell),
@@ -1106,12 +1172,12 @@ export function getPlaygroundThemeStyles(): string {
 
 
 		:root[data-theme="light"] .file-chip-badge {
-			background: #e8f0ff;
+			background: transparent;
 			color: #1d4f9a;
 		}
 
 		:root[data-theme="light"] .file-chip-remove {
-			background: rgba(197, 41, 69, 0.07);
+			background: transparent;
 			color: #9d2439;
 		}
 			:root[data-theme="light"] .asset-head-count {

@@ -638,11 +638,14 @@ test("GET /playground returns the test UI html", async () => {
 	assert.doesNotMatch(response.body, /CODEBLOCK/);
 	assert.match(
 		response.body,
-		/\.message-content \.markdown-table-scroll\s*\{\s*display:\s*block;\s*width:\s*100%;\s*max-width:\s*100%;\s*overflow-x:\s*hidden;/,
+		/\.message-content \.markdown-table-scroll\s*\{\s*display:\s*block;\s*width:\s*100%;\s*max-width:\s*100%;\s*overflow-x:\s*auto;/,
 	);
 	assert.match(response.body, /\.message-content\s*\{[\s\S]*min-width:\s*0;[\s\S]*max-width:\s*100%;/);
 	assert.match(response.body, /\.message-content pre\s*\{[\s\S]*min-width:\s*0;[\s\S]*width:\s*100%;[\s\S]*max-width:\s*100%;[\s\S]*overflow-x:\s*auto;/);
 	assert.match(response.body, /\.message-content \.code-block\s*\{[\s\S]*display:\s*block;[\s\S]*min-width:\s*0;[\s\S]*width:\s*100%;[\s\S]*max-width:\s*100%;[\s\S]*overflow:\s*hidden;/);
+	assert.match(response.body, /\.message-content pre\s*\{[\s\S]*border:\s*0;/);
+	assert.match(response.body, /\.message-content \.code-block\s*\{[\s\S]*border:\s*0;/);
+	assert.match(response.body, /\.message-content \.code-block-toolbar\s*\{[\s\S]*border-bottom:\s*0;[\s\S]*background:\s*transparent;/);
 	assert.match(response.body, /\.message-content \.code-block pre\s*\{[\s\S]*width:\s*100%;[\s\S]*max-width:\s*100%;[\s\S]*overflow-x:\s*auto;/);
 	assert.match(
 		response.body,
@@ -653,11 +656,11 @@ test("GET /playground returns the test UI html", async () => {
 		/\.message-content th,[\s\S]*\.message-content td\s*\{[\s\S]*min-width:\s*60px;[\s\S]*max-width:\s*320px;[\s\S]*white-space:\s*normal;[\s\S]*overflow-wrap:\s*break-word;[\s\S]*word-break:\s*break-word;/,
 	);
 	assert.match(response.body, /wrapper\.className = "markdown-table-scroll";/);
-	assert.match(response.body, /:root\[data-theme="light"\] \.message-content \.markdown-table-scroll,[\s\S]*background:\s*#f8fbff;/);
+	assert.match(response.body, /:root\[data-theme="light"\] \.message-content \.markdown-table-scroll,[\s\S]*background:\s*var\(--chat-table-bg\);/);
 	assert.match(response.body, /:root\[data-theme="light"\] \.message-content th,[\s\S]*border-right-color:\s*#c8d6ea;[\s\S]*background:\s*#dce8f8;/);
 	assert.match(response.body, /:root\[data-theme="light"\] \.message-content td,[\s\S]*border-right-color:\s*#d7e1ee;[\s\S]*color:\s*#26344f;/);
-	assert.match(response.body, /:root\[data-theme="light"\] \.message-content \.code-block-toolbar,[\s\S]*background:\s*#e1eaf6;/);
-	assert.match(response.body, /:root\[data-theme="light"\] \.task-inbox-result-bubble \.message-content \.code-block-toolbar,[\s\S]*background:\s*#e1eaf6;/);
+	assert.match(response.body, /:root\[data-theme="light"\] \.message-content \.code-block-toolbar,[\s\S]*background:\s*transparent;/);
+	assert.match(response.body, /:root\[data-theme="light"\] \.task-inbox-result-bubble \.message-content \.code-block-toolbar,[\s\S]*background:\s*transparent;/);
 	assert.match(response.body, /:root\[data-theme="light"\] \.assistant-run-log-trigger\.ok \.assistant-run-log-hint,[\s\S]*color:\s*#08784b;/);
 	assert.match(response.body, /:root\[data-theme="light"\] \.assistant-status-shell\s*\{[\s\S]*background:\s*transparent;/);
 	assert.match(response.body, /:root\[data-theme="light"\] \.assistant-status-summary\s*\{[\s\S]*background:\s*transparent;/);
@@ -676,16 +679,16 @@ test("GET /playground returns the test UI html", async () => {
 	assert.match(response.body, /\.transcript\s*\{[\s\S]*width: 100%;/);
 	assert.match(response.body, /\.message\s*\{[\s\S]*justify-items: stretch;/);
 	assert.match(response.body, /\.message\s*\{[\s\S]*width: 100%;/);
-	assert.match(response.body, /\.message\s*\{[\s\S]*padding: 14px 0 0;/);
+	assert.match(response.body, /\.message\s*\{[\s\S]*padding: 16px 0 0;/);
 	assert.match(response.body, /\.message-meta,\s*\.message-body\s*\{[\s\S]*width: 100%;/);
 	assert.match(response.body, /\.message-body\s*\{[\s\S]*border-radius: 4px;/);
-	assert.match(response.body, /\.message-body\s*\{[\s\S]*background: rgba\(34, 38, 46, 0\.72\);/);
-	assert.match(response.body, /\.message-body\s*\{[\s\S]*border: 0;/);
+	assert.match(response.body, /\.message-body\s*\{[\s\S]*background: var\(--chat-assistant-bg\);/);
+	assert.match(response.body, /\.message-body\s*\{[\s\S]*border: 1px solid var\(--chat-assistant-border\);/);
 	assert.match(response.body, /\.message-body\s*\{[\s\S]*box-shadow: none;/);
 	assert.match(response.body, /\.message-body\s*\{[\s\S]*backdrop-filter: none;/);
-	assert.match(response.body, /\.message\.user \.message-body\s*\{[\s\S]*background:\s*#95ec69;/);
+	assert.match(response.body, /\.message\.user \.message-body\s*\{[\s\S]*background:\s*var\(--chat-user-bg\);/);
 	assert.doesNotMatch(response.body, /:root\[data-theme="light"\] \.message\.user \.message-body::after/);
-	assert.match(response.body, /:root\[data-theme="light"\] \.message\.user \.message-content\s*\{[\s\S]*color:\s*#1a1a1a;/);
+	assert.match(response.body, /:root\[data-theme="light"\] \.message\.user \.message-content\s*\{[\s\S]*color:\s*var\(--chat-user-fg\);/);
 	assert.match(response.body, /\.chat-stage\s*\{[\s\S]*position:\s*relative;/);
 	assert.match(response.body, /\.error-banner\s*\{[\s\S]*position:\s*absolute;/);
 	assert.match(response.body, /\.error-banner\s*\{[\s\S]*display:\s*none;/);
@@ -869,12 +872,12 @@ test("GET /playground returns the test UI html", async () => {
 	assert.match(response.body, /function scheduleConversationLayoutSync\(/);
 	assert.match(response.body, /function scheduleResumeConversationSync\(/);
 	assert.match(response.body, /function scheduleConversationHistoryPersist\(/);
-	assert.match(response.body, /\.message\.assistant \.message-content\s*\{[\s\S]*font-size:\s*12px;[\s\S]*line-height:\s*1\.75;/);
+	assert.match(response.body, /\.message\.assistant \.message-content\s*\{[\s\S]*font-size:\s*13px;[\s\S]*line-height:\s*1\.78;/);
 	assert.match(response.body, /\.message\.assistant \.message-content h1\s*\{[\s\S]*font-size:\s*18px;/);
 	assert.match(response.body, /\.message\.assistant \.message-content h2\s*\{[\s\S]*font-size:\s*16px;/);
 	assert.match(response.body, /\.message\.assistant \.message-content h3\s*\{[\s\S]*font-size:\s*14px;/);
 	assert.match(response.body, /\.message\.assistant \.message-content a\s*\{[\s\S]*color:\s*#8fd6ff;/);
-	assert.match(response.body, /\.message\.user \.message-content a\s*\{[\s\S]*color:\s*#064e3b;/);
+	assert.match(response.body, /\.message\.user \.message-content a\s*\{[\s\S]*color:\s*#bfffd4;/);
 	assert.match(response.body, /\.message\.user \.file-chip-label\s*\{[\s\S]*color:\s*#17320f;/);
 	assert.match(response.body, /\.message\.assistant \.message-content code\s*\{[\s\S]*color:\s*#ffe6ad;/);
 	assert.match(response.body, /\.message\.assistant \.message-content blockquote\s*\{[\s\S]*border-left-color:\s*rgba\(128, 232, 198, 0\.46\);/);
@@ -1361,7 +1364,7 @@ test("GET /playground renders immersive landing home shell", async () => {
 	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.transcript\s*\{[\s\S]*border-bottom-right-radius:\s*4px;[\s\S]*border-bottom-left-radius:\s*4px;/);
 	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.composer\s*\{[\s\S]*border: 1px solid rgba\(201, 210, 255, 0\.08\);/);
 	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.composer\s*\{[\s\S]*border-radius: 4px;/);
-	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.composer\s*\{[\s\S]*background:[\s\S]*rgba\(9, 12, 22, 0\.96\);/);
+	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.composer\s*\{[\s\S]*background:\s*var\(--chat-composer-bg\);/);
 	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.composer\s*\{[\s\S]*padding:\s*8px 10px 8px 12px;/);
 	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.composer\s*\{[\s\S]*align-self:\s*end;/);
 	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.composer\s*\{[\s\S]*height:\s*fit-content;/);
@@ -1487,6 +1490,9 @@ test("GET /playground renders immersive landing home shell", async () => {
 	assert.doesNotMatch(response.body, /pendingAssetIds\.map\(async \(assetId\) =>/);
 	assert.match(response.body, /\.file-chip\s*\{[\s\S]*display:\s*inline-grid;/);
 	assert.match(response.body, /\.file-chip\s*\{[\s\S]*grid-template-columns:\s*22px minmax\(0, 1fr\) auto;/);
+	assert.match(response.body, /\.file-chip\s*\{[\s\S]*border:\s*0;/);
+	assert.match(response.body, /\.file-chip-badge\s*\{[\s\S]*border:\s*0;/);
+	assert.match(response.body, /\.file-download,[\s\S]*\.asset-pill\s*\{[\s\S]*border:\s*0;/);
 	assert.match(response.body, /\.file-chip-label\s*\{[\s\S]*-webkit-line-clamp:\s*2;/);
 	assert.match(response.body, /\.file-chip-badge\s*\{[\s\S]*font-family:\s*var\(--font-mono\);/);
 	assert.match(response.body, /\.file-chip-remove\s*\{[\s\S]*border-radius:\s*4px;/);
@@ -2174,8 +2180,8 @@ test("GET /playground embeds conversation history restore and message copy contr
 	assert.doesNotMatch(response.body, /card\.appendChild\(messageActions\.actions\);/);
 	assert.match(response.body, /\.message-body > \.message-actions\s*\{[\s\S]*margin-top:\s*0;/);
 	assert.match(response.body, /\.message\.assistant \.message-body\s*\{[\s\S]*display:\s*grid;[\s\S]*gap:\s*0;/);
-	assert.match(response.body, /\.message\.user \.message-body\s*\{[\s\S]*background:\s*#95ec69;[\s\S]*color:\s*#1a1a1a;/);
-	assert.match(response.body, /\.message\.user \.message-body\s*\{[\s\S]*background:\s*#95ec69;[\s\S]*color:\s*#1a1a1a;/);
+	assert.match(response.body, /\.message\.user \.message-body\s*\{[\s\S]*background:\s*var\(--chat-user-bg\);[\s\S]*color:\s*var\(--chat-user-fg\);/);
+	assert.match(response.body, /:root\[data-theme="light"\]\s*\{[\s\S]*--chat-user-bg:/);
 	assert.match(response.body, /function attachMobileMessageLongPressMenu\(entry, rendered\)\s*\{/);
 	assert.match(response.body, /window\.setTimeout\(\(\) => \{[\s\S]*openMessageContextMenu\(entry, rendered\);[\s\S]*\}, 500\);/);
 	assert.match(response.body, /\.message-context-menu/);
@@ -2509,10 +2515,12 @@ test("GET /playground supports persistent dark and light themes", async () => {
 	assert.match(response.body, /--bg:\s*#e8edf6;/);
 	assert.match(response.body, /--fg:\s*#142033;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+body\s*\{/);
-	assert.match(response.body, /body::after\s*\{[\s\S]*radial-gradient\(circle at 78% 6%, rgba\(81, 255, 194, 0\.06\), transparent 0 18%\);[\s\S]*opacity:\s*0\.92;/);
+	assert.match(response.body, /body::after\s*\{[\s\S]*linear-gradient\(180deg, rgba\(201, 210, 255, 0\.035\), transparent 180px\),[\s\S]*opacity:\s*0\.86;/);
+	assert.match(response.body, /:root\[data-theme="light"\] body::before\s*\{[\s\S]*opacity:\s*0\.58;/);
+	assert.match(response.body, /:root\[data-theme="light"\] body::after\s*\{[\s\S]*linear-gradient\(180deg, rgba\(31, 95, 200, 0\.045\), transparent 180px\),[\s\S]*opacity:\s*0\.88;/);
 	assert.doesNotMatch(response.body, /rgba\(221, 229, 240, 0\.36\) 0%, transparent 12%, transparent 88%, rgba\(221, 229, 240, 0\.32\) 100%/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.shell\[data-stage-mode="landing"\] \.composer\s*\{[\s\S]*border-color:\s*transparent;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/);
-	assert.match(response.body, /:root\[data-theme="light"\]\s+#composer-drop-target\.composer\s*\{[\s\S]*border-color:\s*transparent;[\s\S]*background:\s*rgba\(255, 255, 255, 0\.86\);[\s\S]*box-shadow:\s*none;/);
+	assert.match(response.body, /:root\[data-theme="light"\]\s+#composer-drop-target\.composer\s*\{[\s\S]*border-color:\s*rgba\(31, 95, 200, 0\.10\);[\s\S]*background:\s*var\(--chat-composer-bg\);[\s\S]*box-shadow:\s*none;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.file-strip\s*\{[\s\S]*border-color:\s*transparent;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+#message\s*\{[\s\S]*background:\s*rgba\(255, 255, 255, 0\.92\);[\s\S]*color:\s*#172033;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.telemetry-card,[\s\S]*:root\[data-theme="light"\]\s+\.drop-zone-top\s*\{[\s\S]*border-color:\s*transparent;[\s\S]*background:\s*transparent;[\s\S]*color:\s*var\(--fg\);[\s\S]*box-shadow:\s*none;/);
@@ -2700,7 +2708,10 @@ test("GET /playground uses touch-first mobile panels for library, tasks, conn, a
 	assert.doesNotMatch(response.body, /background:\s*linear-gradient\(135deg, #f4f7fb 0 50%, #111722 50% 100%\) !important;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.conversation-color-swatch\.color-default\s*\{[\s\S]*background:\s*#f4f7fb !important;/);
 	assert.match(response.body, /\.conversation-color-swatch\.color-sky\s*\{[\s\S]*background:\s*#dbeafe !important;/);
-	assert.match(response.body, /\.desktop-conversation-list \.mobile-conversation-item\s*\{[\s\S]*background:\s*var\(--conversation-card-bg, rgba\(14, 19, 31, 0\.84\)\);/);
+	assert.match(response.body, /\.desktop-conversation-list \.mobile-conversation-item\s*\{[\s\S]*min-height:\s*58px;[\s\S]*background:\s*transparent;[\s\S]*opacity:\s*0\.74;/);
+	assert.match(response.body, /\.desktop-conversation-list \.mobile-conversation-meta span:last-child\s*\{[\s\S]*display:\s*none;/);
+	assert.match(response.body, /\.desktop-conversation-list \.conversation-item-menu-trigger\s*\{[\s\S]*opacity:\s*0;/);
+	assert.match(response.body, /\.desktop-conversation-list \.conversation-item-shell\[class\*="conversation-bg-"\] \.mobile-conversation-item\s*\{[\s\S]*background:\s*transparent;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\s*\{[\s\S]*min-height:\s*92px;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\s*\{[\s\S]*padding:\s*11px 46px 10px 14px;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\s*\{[\s\S]*border:\s*0;/);
@@ -2864,7 +2875,7 @@ test("GET /playground keeps the default active composer compact before mobile ov
 	});
 
 	assert.equal(response.statusCode, 200);
-	assert.match(response.body, /\.composer\s*\{[\s\S]*padding:\s*12px 0 14px;/);
+	assert.match(response.body, /\.composer\s*\{[\s\S]*padding:\s*10px 10px 10px 12px;/);
 	assert.match(response.body, /\.composer-main\s*\{[\s\S]*gap:\s*8px;/);
 	assert.match(response.body, /\.composer textarea\s*\{[\s\S]*min-height:\s*52px;/);
 	assert.match(response.body, /\.composer textarea\s*\{[\s\S]*--composer-textarea-max-lines:\s*10;/);
@@ -2942,7 +2953,7 @@ test("GET /playground highlights the composer shell instead of the textarea on f
 	});
 
 	assert.equal(response.statusCode, 200);
-	assert.match(response.body, /\.composer:focus-within\s*\{[\s\S]*outline:\s*none;[\s\S]*box-shadow:\s*inset 0 0 0 1px var\(--accent\);/);
+	assert.match(response.body, /\.composer:focus-within\s*\{[\s\S]*border-color:\s*var\(--chat-focus-ring\);[\s\S]*background:\s*var\(--chat-composer-focus-bg\);[\s\S]*box-shadow:\s*none;/);
 	const composerFieldFocusBlock = response.body.match(
 		/\.composer textarea:focus,\s*\n\s*\.composer input:focus,\s*\n\s*\.composer select:focus\s*\{([\s\S]*?)\n\s*\}/,
 	);
@@ -2968,9 +2979,12 @@ test("GET /playground uses the deeper cosmic palette instead of bright blue neon
 	assert.match(response.body, /--bg:\s*#01030a;/);
 	assert.match(response.body, /--bg-panel:\s*#060711;/);
 	assert.match(response.body, /--accent:\s*#c9d2ff;/);
-	assert.match(response.body, /radial-gradient\(circle at 18% 14%, rgba\(51, 131, 255, 0\.10\), transparent 0 20%\)/);
-	assert.match(response.body, /linear-gradient\(180deg, #020611 0%, #040812 38%, #050817 100%\)/);
+	assert.match(response.body, /linear-gradient\(180deg, #02050b 0%, #040812 46%, #060a11 100%\)/);
+	assert.match(response.body, /body::before\s*\{[\s\S]*opacity:\s*0\.56;[\s\S]*background-size:\s*40px 40px, 40px 40px, 160px 160px, 160px 160px;/);
+	assert.match(response.body, /\.shell:not\(\[data-home="true"\]\)\s*\{[\s\S]*background-image:\s*none;/);
 	assert.match(response.body, /background-size:\s*auto;/);
+	assert.doesNotMatch(response.body, /radial-gradient\(circle at 1px 1px/);
+	assert.doesNotMatch(response.body, /ugk-chat-bg-drift/);
 	assert.doesNotMatch(response.body, /backdrop-filter:\s*blur/);
 	assert.doesNotMatch(response.body, /--accent:\s*#5fd1ff;/);
 	assert.doesNotMatch(response.body, /radial-gradient\(circle at 18% 16%, rgba\(123, 178, 255, 0\.14\), transparent 0 18%\)/);
@@ -3022,9 +3036,9 @@ test("GET /playground does not force-scroll when the user is reading history", a
 	assert.match(response.body, /id="scroll-to-bottom-button"/);
 	assert.match(response.body, /\.scroll-to-bottom-button\s*\{[\s\S]*position:\s*absolute;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.scroll-to-bottom-button\s*\{[\s\S]*position:\s*fixed;[\s\S]*bottom:\s*calc\(80px \+ env\(safe-area-inset-bottom\)\);/);
-	assert.match(response.body, /\.scroll-to-bottom-button\s*\{[\s\S]*border:\s*2px solid rgba\(101, 209, 255, 0\.5\);/);
-	assert.match(response.body, /\.scroll-to-bottom-button\s*\{[\s\S]*0 0 8px rgba\(101, 209, 255, 0\.2\);/);
-	assert.match(response.body, /:root\[data-theme="light"\] \.scroll-to-bottom-button\s*\{[\s\S]*border-color:\s*rgba\(8, 120, 75, 0\.4\);/);
+	assert.match(response.body, /\.scroll-to-bottom-button\s*\{[\s\S]*border:\s*1px solid rgba\(101, 209, 255, 0\.34\);/);
+	assert.match(response.body, /\.scroll-to-bottom-button\s*\{[\s\S]*background:\s*var\(--chat-floating-bg\);[\s\S]*box-shadow:\s*none;/);
+	assert.match(response.body, /:root\[data-theme="light"\] \.scroll-to-bottom-button\s*\{[\s\S]*border-color:\s*rgba\(8, 120, 75, 0\.24\);/);
 	assert.match(response.body, /\.scroll-to-bottom-button\.visible\s*\{[\s\S]*display:\s*inline-flex;/);
 	assert.match(response.body, /const TRANSCRIPT_FOLLOW_THRESHOLD_PX = 120;/);
 	assert.match(response.body, /autoFollowTranscript: true,/);

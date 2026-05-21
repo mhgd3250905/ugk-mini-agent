@@ -12,6 +12,20 @@
 
 ---
 
+## 2026-05-21 — Playground chat surface refinement
+
+- **主题**: 优化主 `/playground` 对话界面的深浅主题视觉质感与基础交互
+- **影响范围**: `src/ui/playground-styles.ts`, `src/ui/playground-theme-controller.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - 新增聊天专用 `--chat-*` 主题变量，分别管理深色与浅色主题下的消息表面、用户气泡、代码块、表格、composer 和悬浮滚动按钮
+  - 将主聊天用户气泡从高饱和绿色改为更克制的主题化处理，浅色主题单独映射为冷白/淡绿边界
+  - 优化消息正文、代码块、表格横向滚动、composer focus 和滚动到底按钮，保持无阴影、紧凑工作型 cockpit 风格
+  - 移除主对话和首页背景里的散点、斜纹与漂移动画，改为静态细网格和线性边缘高光，让极客感来自工程化结构而不是波点装饰
+  - 收敛消息气泡内部代码块、复制工具条和附件下载项的重复边框，减少“框套框”层级噪音
+  - 将桌面左侧会话栏从卡片墙降级为低干扰聊天列表，隐藏非必要消息条数和默认菜单噪音，只突出当前会话
+
+---
+
 ## 2026-05-21 — Team Plan UI scope boundary
 
 - **主题**: 明确本阶段不再继续扩展 `/playground/team` 的可视化 Plan 创建能力

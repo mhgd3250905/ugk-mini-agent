@@ -40,6 +40,18 @@ export function getPlaygroundStyles(): string {
 			--ok: #8dffb2;
 			--danger: #ff7188;
 			--warn: #ffd166;
+			--chat-assistant-bg: linear-gradient(180deg, rgba(18, 22, 35, 0.96), rgba(10, 13, 24, 0.96));
+			--chat-assistant-border: rgba(201, 210, 255, 0.10);
+			--chat-user-bg: linear-gradient(180deg, rgba(141, 255, 178, 0.18), rgba(72, 184, 127, 0.14));
+			--chat-user-border: rgba(141, 255, 178, 0.26);
+			--chat-user-fg: #eafff1;
+			--chat-code-bg: #050815;
+			--chat-code-toolbar-bg: #0f1728;
+			--chat-table-bg: rgba(6, 9, 19, 0.72);
+			--chat-composer-bg: linear-gradient(180deg, rgba(14, 18, 31, 0.98), rgba(8, 11, 21, 0.98));
+			--chat-composer-focus-bg: linear-gradient(180deg, rgba(18, 23, 38, 0.98), rgba(10, 14, 26, 0.98));
+			--chat-floating-bg: rgba(9, 13, 22, 0.96);
+			--chat-focus-ring: rgba(201, 210, 255, 0.42);
 			--conversation-width: 640px;
 			--transcript-bottom-scroll-buffer: 96px;
 			--font-sans: "OpenAI Sans", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -66,10 +78,7 @@ export function getPlaygroundStyles(): string {
 		body {
 			margin: 0;
 			height: 100%;
-			background:
-				radial-gradient(circle at 18% 14%, rgba(51, 131, 255, 0.10), transparent 0 20%),
-				radial-gradient(circle at 78% 10%, rgba(81, 255, 194, 0.04), transparent 0 16%),
-				linear-gradient(180deg, #020611 0%, #040812 38%, #050817 100%);
+			background: linear-gradient(180deg, #02050b 0%, #040812 46%, #060a11 100%);
 			background-size: auto;
 			color: var(--fg);
 			font-family: var(--font-sans);
@@ -1370,17 +1379,15 @@ export function getPlaygroundStyles(): string {
 			justify-content: center;
 			min-height: 34px;
 			padding: 8px 12px;
-			border: 2px solid rgba(101, 209, 255, 0.5);
+			border: 1px solid rgba(101, 209, 255, 0.34);
 			border-radius: 4px;
-			background: rgba(9, 13, 22, 0.92);
+			background: var(--chat-floating-bg);
 			color: rgba(238, 244, 255, 0.92);
 			font-size: 11px;
 			line-height: 1;
 			letter-spacing: 0.08em;
 			text-transform: uppercase;
-			box-shadow:
-				0 4px 12px rgba(0, 0, 0, 0.4),
-				0 0 8px rgba(101, 209, 255, 0.2);
+			box-shadow: none;
 			backdrop-filter: none;
 		}
 
@@ -1391,12 +1398,10 @@ export function getPlaygroundStyles(): string {
 		.scroll-to-bottom-button:hover:not(:disabled),
 		.scroll-to-bottom-button:focus-visible {
 			border-color: rgba(201, 210, 255, 0.36);
-			background: rgba(14, 18, 31, 0.96);
+			background: rgba(14, 18, 31, 0.98);
 			color: #f3fbff;
 			transform: none;
-			box-shadow:
-				0 5px 14px rgba(0, 0, 0, 0.42),
-				0 0 10px rgba(101, 209, 255, 0.24);
+			box-shadow: none;
 		}
 
 		.transcript-archive,
@@ -1472,9 +1477,9 @@ export function getPlaygroundStyles(): string {
 			display: grid;
 			grid-template-columns: 1fr;
 			justify-items: stretch;
-			gap: 8px;
+			gap: 7px;
 			width: 100%;
-			padding: 14px 0 0;
+			padding: 16px 0 0;
 			border-bottom: 0;
 		}
 
@@ -1492,7 +1497,7 @@ export function getPlaygroundStyles(): string {
 			background: transparent;
 			font-size: 10px;
 			line-height: 1.6;
-			letter-spacing: 0.14em;
+			letter-spacing: 0.08em;
 			text-transform: uppercase;
 			color: rgba(238, 244, 255, 0.42);
 		}
@@ -1502,19 +1507,19 @@ export function getPlaygroundStyles(): string {
 			align-items: center;
 			justify-content: center;
 			margin-bottom: 0;
-			padding: 6px 10px;
+			padding: 4px 8px;
 			font-size: 10px;
-			border: 1px solid rgba(255, 255, 255, 0.1);
+			border: 1px solid rgba(255, 255, 255, 0.08);
 			border-radius: 4px;
-			background: rgba(255, 255, 255, 0.06);
+			background: rgba(255, 255, 255, 0.045);
 			color: var(--fg);
 		}
 
 		.message-body {
-			padding: 16px 18px;
-			border: 0;
+			padding: 17px 18px;
+			border: 1px solid var(--chat-assistant-border);
 			border-radius: 4px;
-			background: rgba(34, 38, 46, 0.72);
+			background: var(--chat-assistant-bg);
 			box-shadow: none;
 			backdrop-filter: none;
 		}
@@ -1558,7 +1563,7 @@ export function getPlaygroundStyles(): string {
 		.message-content h5,
 		.message-content h6 {
 			line-height: 1.2;
-			letter-spacing: -0.04em;
+			letter-spacing: 0;
 			text-transform: none;
 		}
 
@@ -1587,9 +1592,9 @@ export function getPlaygroundStyles(): string {
 			display: block;
 			width: 100%;
 			max-width: 100%;
-			overflow-x: hidden;
-			border: 1px solid rgba(201, 210, 255, 0.16);
-			background: rgba(6, 7, 17, 0.42);
+			overflow-x: auto;
+			border: 0;
+			background: var(--chat-table-bg);
 		}
 
 		.message-content table {
@@ -1646,8 +1651,8 @@ export function getPlaygroundStyles(): string {
 			max-width: 100%;
 			box-sizing: border-box;
 			padding: 14px;
-			border: 1px solid var(--line);
-			background: rgba(4, 8, 18, 0.95);
+			border: 0;
+			background: var(--chat-code-bg);
 			overflow-x: auto;
 		}
 
@@ -1658,10 +1663,8 @@ export function getPlaygroundStyles(): string {
 			max-width: 100%;
 			box-sizing: border-box;
 			overflow: hidden;
-			border: 1px solid var(--line);
-			background:
-				linear-gradient(90deg, rgba(201, 210, 255, 0.05), transparent 45%),
-				rgba(4, 8, 18, 0.95);
+			border: 0;
+			background: var(--chat-code-bg);
 		}
 
 		.message-content .code-block-toolbar {
@@ -1670,12 +1673,12 @@ export function getPlaygroundStyles(): string {
 			align-items: center;
 			gap: 12px;
 			padding: 8px 10px;
-			border-bottom: 1px solid var(--line);
-			background: rgba(13, 20, 37, 0.86);
+			border-bottom: 0;
+			background: transparent;
 		}
 
 		.message-content .code-block-language {
-			background: rgba(13, 20, 37, 0.86);
+			background: transparent;
 			color: var(--muted);
 			font-size: 10px;
 			letter-spacing: 0.12em;
@@ -1684,9 +1687,9 @@ export function getPlaygroundStyles(): string {
 
 		.message-content .copy-code-button {
 			padding: 5px 8px;
-			border-color: rgba(201, 210, 255, 0.22);
-			background: rgba(201, 210, 255, 0.05);
-			color: var(--accent);
+			border-color: transparent;
+			background: transparent;
+			color: rgba(238, 244, 255, 0.58);
 			font-size: 10px;
 			letter-spacing: 0.12em;
 		}
@@ -1731,15 +1734,15 @@ export function getPlaygroundStyles(): string {
 		}
 
 		.message.user .message-meta strong {
-			border-color: rgba(168, 212, 255, 0.16);
-			background: rgba(255, 255, 255, 0.08);
-			color: #dff7ff;
+			border-color: var(--chat-user-border);
+			background: rgba(141, 255, 178, 0.08);
+			color: rgba(234, 255, 241, 0.84);
 		}
 
 		.message.assistant .message-meta strong {
-			border-color: rgba(255, 255, 255, 0.16);
-			background: rgba(255, 255, 255, 0.08);
-			color: #f3fbff;
+			border-color: rgba(201, 210, 255, 0.12);
+			background: rgba(201, 210, 255, 0.055);
+			color: rgba(243, 251, 255, 0.9);
 		}
 
 		.message.user {
@@ -1756,8 +1759,9 @@ export function getPlaygroundStyles(): string {
 			width: fit-content;
 			max-width: min(100%, 75%);
 			justify-self: end;
-			background: #95ec69;
-			color: #1a1a1a;
+			border-color: var(--chat-user-border);
+			background: var(--chat-user-bg);
+			color: var(--chat-user-fg);
 		}
 
 		.message.user .message-content {
@@ -1765,21 +1769,21 @@ export function getPlaygroundStyles(): string {
 		}
 
 		.message.user .message-content a {
-			color: #064e3b;
-			text-decoration-color: rgba(6, 78, 59, 0.5);
+			color: #bfffd4;
+			text-decoration-color: rgba(191, 255, 212, 0.5);
 			font-weight: 700;
 		}
 
 		.message.user .message-copy-button,
 		.message.user .message-image-export-button {
-			color: rgba(0, 0, 0, 0.35);
+			color: rgba(234, 255, 241, 0.42);
 		}
 
 		.message.user .message-copy-button:hover:not(:disabled),
 		.message.user .message-copy-button:focus-visible,
 		.message.user .message-image-export-button:hover:not(:disabled),
 		.message.user .message-image-export-button:focus-visible {
-			color: rgba(0, 0, 0, 0.65);
+			color: rgba(234, 255, 241, 0.8);
 		}
 
 		.message.assistant {
@@ -1787,7 +1791,7 @@ export function getPlaygroundStyles(): string {
 		}
 
 		.message.assistant .message-body {
-			background: rgba(34, 38, 46, 0.72);
+			background: var(--chat-assistant-bg);
 			color: #edf5ff;
 		}
 
@@ -1801,8 +1805,8 @@ export function getPlaygroundStyles(): string {
 		}
 
 		.message.assistant .message-content {
-			font-size: 12px;
-			line-height: 1.75;
+			font-size: 13px;
+			line-height: 1.78;
 		}
 
 		.message.assistant .message-content h1 {
@@ -1846,6 +1850,10 @@ export function getPlaygroundStyles(): string {
 			background: rgba(255, 220, 168, 0.12);
 		}
 
+		.message.assistant .message-content pre code {
+			background: transparent;
+		}
+
 		.message.assistant .message-content blockquote {
 			border-left-color: rgba(128, 232, 198, 0.46);
 			background: rgba(128, 232, 198, 0.08);
@@ -1854,8 +1862,8 @@ export function getPlaygroundStyles(): string {
 
 		.message.assistant .message-content pre,
 		.message.assistant .message-content .code-block {
-			border-color: rgba(255, 220, 168, 0.16);
-			background: rgba(7, 10, 18, 0.5);
+			border-color: transparent;
+			background: var(--chat-code-bg);
 		}
 
 		.message.assistant .message-content th {
@@ -1868,9 +1876,9 @@ export function getPlaygroundStyles(): string {
 		}
 
 		.message.assistant .copy-code-button {
-			border-color: rgba(255, 255, 255, 0.12);
-			background: rgba(255, 255, 255, 0.12);
-			color: #edf5ff;
+			border-color: transparent;
+			background: transparent;
+			color: rgba(237, 245, 255, 0.62);
 		}
 
 		.process-note {
@@ -2382,10 +2390,10 @@ export function getPlaygroundStyles(): string {
 			display: grid;
 			grid-template-columns: auto minmax(0, 1fr) 168px;
 			gap: 10px;
-			padding: 12px 0 14px;
-			border: 0;
+			padding: 10px 10px 10px 12px;
+			border: 1px solid rgba(201, 210, 255, 0.10);
 			border-radius: 4px;
-			background: rgba(9, 12, 22, 0.96);
+			background: var(--chat-composer-bg);
 			outline: 1px solid transparent;
 			outline-offset: 2px;
 			box-shadow: none;
@@ -2394,14 +2402,14 @@ export function getPlaygroundStyles(): string {
 			transition:
 				background 120ms ease,
 				border-color 120ms ease,
-				box-shadow 120ms ease;
+				outline-color 120ms ease;
 		}
 
 		.composer:focus-within {
-			border-color: rgba(201, 210, 255, 0.34);
-			background: rgba(14, 18, 32, 0.98);
-			outline: none;
-			box-shadow: inset 0 0 0 1px var(--accent);
+			border-color: var(--chat-focus-ring);
+			background: var(--chat-composer-focus-bg);
+			outline-color: rgba(201, 210, 255, 0.22);
+			box-shadow: none;
 		}
 
 		.composer-main {
@@ -2415,7 +2423,7 @@ export function getPlaygroundStyles(): string {
 			gap: 12px;
 			font-size: 11px;
 			text-transform: uppercase;
-			letter-spacing: 0.12em;
+			letter-spacing: 0.08em;
 			color: var(--muted);
 		}
 
@@ -2472,7 +2480,7 @@ export function getPlaygroundStyles(): string {
 		.composer select {
 			width: 100%;
 			border: 1px solid rgba(255, 255, 255, 0.12);
-			background: rgba(255, 255, 255, 0.045);
+			background: rgba(255, 255, 255, 0.035);
 			color: var(--fg);
 			padding: 12px 14px;
 			outline: none;
@@ -2504,7 +2512,7 @@ export function getPlaygroundStyles(): string {
 		.composer select:focus {
 			outline: none;
 			border-color: rgba(255, 255, 255, 0.12);
-			background: rgba(255, 255, 255, 0.045);
+			background: rgba(255, 255, 255, 0.04);
 			box-shadow: none;
 		}
 
@@ -3389,33 +3397,16 @@ export function getPlaygroundStyles(): string {
 		body::before {
 			content: "";
 			position: fixed;
-			inset: -48px;
+			inset: 0;
 			z-index: 0;
 			pointer-events: none;
-			opacity: 0.78;
+			opacity: 0.56;
 			background-image:
-				linear-gradient(rgba(116, 176, 255, 0.09) 1px, transparent 1px),
-				linear-gradient(90deg, rgba(116, 176, 255, 0.065) 1px, transparent 1px),
-				linear-gradient(rgba(116, 176, 255, 0.12) 1px, transparent 1px),
-				linear-gradient(90deg, rgba(116, 176, 255, 0.10) 1px, transparent 1px),
-				radial-gradient(circle at 1px 1px, rgba(133, 190, 255, 0.22) 1px, transparent 1.5px),
-				repeating-linear-gradient(
-					135deg,
-					transparent 0 104px,
-					rgba(95, 145, 255, 0.025) 104px 168px,
-					transparent 168px 300px
-				),
-				radial-gradient(circle at 12% 22%, rgba(137, 205, 255, 0.32) 0 1px, transparent 1.6px),
-				radial-gradient(circle at 31% 19%, rgba(137, 205, 255, 0.12) 0 1px, transparent 1.6px),
-				radial-gradient(circle at 67% 31%, rgba(137, 205, 255, 0.32) 0 1px, transparent 1.6px),
-				radial-gradient(circle at 84% 16%, rgba(137, 205, 255, 0.12) 0 1px, transparent 1.6px),
-				radial-gradient(circle at 72% 76%, rgba(137, 205, 255, 0.32) 0 1px, transparent 1.6px),
-				radial-gradient(circle at 18% 82%, rgba(137, 205, 255, 0.12) 0 1px, transparent 1.6px));
-			background-size: 32px 32px, 32px 32px, 128px 128px, 128px 128px, 12px 12px, auto,
-				100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%;
-			transform: translate3d(0, 0, 0);
-			animation: ugk-chat-bg-drift 120s linear infinite;
-			will-change: transform;
+				linear-gradient(rgba(116, 176, 255, 0.032) 1px, transparent 1px),
+				linear-gradient(90deg, rgba(116, 176, 255, 0.025) 1px, transparent 1px),
+				linear-gradient(rgba(116, 176, 255, 0.052) 1px, transparent 1px),
+				linear-gradient(90deg, rgba(116, 176, 255, 0.038) 1px, transparent 1px);
+			background-size: 40px 40px, 40px 40px, 160px 160px, 160px 160px;
 		}
 
 		body::after {
@@ -3425,9 +3416,9 @@ export function getPlaygroundStyles(): string {
 			z-index: 0;
 			pointer-events: none;
 			background:
-				radial-gradient(circle at 18% 12%, rgba(51, 131, 255, 0.14), transparent 0 24%),
-				radial-gradient(circle at 78% 6%, rgba(81, 255, 194, 0.06), transparent 0 18%);
-			opacity: 0.92;
+				linear-gradient(180deg, rgba(201, 210, 255, 0.035), transparent 180px),
+				linear-gradient(90deg, rgba(101, 209, 255, 0.035), transparent 22%, transparent 78%, rgba(141, 255, 178, 0.025));
+			opacity: 0.86;
 		}
 
 		.shell {
@@ -3450,26 +3441,7 @@ export function getPlaygroundStyles(): string {
 		}
 
 			.shell:not([data-home="true"]) {
-				background-image:
-					linear-gradient(var(--ugk-grid-line) 1px, transparent 1px),
-					linear-gradient(90deg, var(--ugk-grid-line) 1px, transparent 1px),
-					linear-gradient(var(--ugk-grid-line-strong) 1px, transparent 1px),
-					linear-gradient(90deg, var(--ugk-grid-line-strong) 1px, transparent 1px),
-					radial-gradient(circle at 1px 1px, var(--ugk-grid-dot) 1px, transparent 1.5px),
-					repeating-linear-gradient(
-						135deg,
-						transparent 0 104px,
-						var(--ugk-diagonal-band) 104px 168px,
-						transparent 168px 300px
-					),
-					radial-gradient(circle at 12% 22%, var(--ugk-pixel) 0 1px, transparent 1.6px),
-					radial-gradient(circle at 31% 19%, var(--ugk-pixel-soft) 0 1px, transparent 1.6px),
-					radial-gradient(circle at 67% 31%, var(--ugk-pixel) 0 1px, transparent 1.6px),
-					radial-gradient(circle at 84% 16%, var(--ugk-pixel-soft) 0 1px, transparent 1.6px),
-					radial-gradient(circle at 72% 76%, var(--ugk-pixel) 0 1px, transparent 1.6px),
-					radial-gradient(circle at 18% 82%, var(--ugk-pixel-soft) 0 1px, transparent 1.6px);
-				background-size: 32px 32px, 32px 32px, 128px 128px, 128px 128px, 12px 12px, auto,
-					100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%;
+				background-image: none;
 			}
 
 		.topbar {
@@ -3665,41 +3637,33 @@ export function getPlaygroundStyles(): string {
 			width: 100%;
 		}
 
-		/* === UGK CLAW Landing Pixel Hacker Background === */
+		/* === UGK CLAW Clean Hacker Surface === */
 		:root[data-theme="dark"] {
-			--ugk-bg-base: #020611;
-			--ugk-bg-base-2: #050817;
-			--ugk-bg-glow: rgba(51, 131, 255, 0.12);
-			--ugk-bg-corner-glow: rgba(81, 255, 194, 0.045);
-			--ugk-grid-line: rgba(116, 176, 255, 0.075);
-			--ugk-grid-line-strong: rgba(116, 176, 255, 0.11);
-			--ugk-grid-dot: rgba(133, 190, 255, 0.16);
-			--ugk-pixel: rgba(137, 205, 255, 0.42);
-			--ugk-pixel-soft: rgba(137, 205, 255, 0.16);
-			--ugk-diagonal-band: rgba(95, 145, 255, 0.035);
-			--ugk-scan-glow: rgba(96, 194, 255, 0.10);
-			--ugk-bg-opacity: 1;
+			--ugk-bg-base: #02050b;
+			--ugk-bg-base-2: #060a11;
+			--ugk-bg-glow: rgba(201, 210, 255, 0.035);
+			--ugk-bg-corner-glow: rgba(141, 255, 178, 0.025);
+			--ugk-grid-line: rgba(116, 176, 255, 0.032);
+			--ugk-grid-line-strong: rgba(116, 176, 255, 0.052);
+			--ugk-scan-glow: rgba(96, 194, 255, 0.055);
+			--ugk-bg-opacity: 0.62;
 		}
 
 		:root[data-theme="light"] {
 			--ugk-bg-base: #f7f9fd;
 			--ugk-bg-base-2: #eef3f9;
-			--ugk-bg-glow: rgba(45, 122, 255, 0.10);
-			--ugk-bg-corner-glow: rgba(67, 170, 255, 0.055);
-			--ugk-grid-line: rgba(24, 69, 119, 0.055);
-			--ugk-grid-line-strong: rgba(24, 69, 119, 0.085);
-			--ugk-grid-dot: rgba(41, 104, 180, 0.13);
-			--ugk-pixel: rgba(26, 101, 210, 0.34);
-			--ugk-pixel-soft: rgba(26, 101, 210, 0.12);
-			--ugk-diagonal-band: rgba(48, 105, 180, 0.045);
-			--ugk-scan-glow: rgba(0, 91, 255, 0.07);
-			--ugk-bg-opacity: 0.9;
+			--ugk-bg-glow: rgba(31, 95, 200, 0.055);
+			--ugk-bg-corner-glow: rgba(8, 120, 75, 0.025);
+			--ugk-grid-line: rgba(24, 69, 119, 0.026);
+			--ugk-grid-line-strong: rgba(24, 69, 119, 0.046);
+			--ugk-scan-glow: rgba(0, 91, 255, 0.045);
+			--ugk-bg-opacity: 0.56;
 		}
 
 		.shell[data-home="true"] {
 			background:
-				radial-gradient(circle at 50% 26%, var(--ugk-bg-glow), transparent 38%),
-				radial-gradient(circle at 12% 18%, var(--ugk-bg-corner-glow), transparent 34%),
+				linear-gradient(180deg, var(--ugk-bg-glow), transparent 190px),
+				linear-gradient(90deg, var(--ugk-bg-corner-glow), transparent 28%, transparent 72%, var(--ugk-bg-corner-glow)),
 				linear-gradient(180deg, var(--ugk-bg-base) 0%, var(--ugk-bg-base-2) 100%);
 			isolation: isolate;
 		}
@@ -3707,7 +3671,7 @@ export function getPlaygroundStyles(): string {
 		.shell[data-home="true"]::before {
 			content: "";
 			position: fixed;
-			inset: -72px;
+			inset: 0;
 			z-index: 0;
 			pointer-events: none;
 			opacity: var(--ugk-bg-opacity);
@@ -3715,36 +3679,12 @@ export function getPlaygroundStyles(): string {
 				linear-gradient(var(--ugk-grid-line) 1px, transparent 1px),
 				linear-gradient(90deg, var(--ugk-grid-line) 1px, transparent 1px),
 				linear-gradient(var(--ugk-grid-line-strong) 1px, transparent 1px),
-				linear-gradient(90deg, var(--ugk-grid-line-strong) 1px, transparent 1px),
-				radial-gradient(circle at 1px 1px, var(--ugk-grid-dot) 1px, transparent 1.5px),
-				repeating-linear-gradient(
-					135deg,
-					transparent 0 104px,
-					var(--ugk-diagonal-band) 104px 168px,
-					transparent 168px 300px
-				),
-				radial-gradient(circle at 12% 22%, var(--ugk-pixel) 0 1px, transparent 1.6px),
-				radial-gradient(circle at 31% 19%, var(--ugk-pixel-soft) 0 1px, transparent 1.6px),
-				radial-gradient(circle at 67% 31%, var(--ugk-pixel) 0 1px, transparent 1.6px),
-				radial-gradient(circle at 84% 16%, var(--ugk-pixel-soft) 0 1px, transparent 1.6px),
-				radial-gradient(circle at 72% 76%, var(--ugk-pixel) 0 1px, transparent 1.6px),
-				radial-gradient(circle at 18% 82%, var(--ugk-pixel-soft) 0 1px, transparent 1.6px);
+				linear-gradient(90deg, var(--ugk-grid-line-strong) 1px, transparent 1px);
 			background-size:
-				32px 32px,
-				32px 32px,
-				128px 128px,
-				128px 128px,
-				12px 12px,
-				auto,
-				100% 100%,
-				100% 100%,
-				100% 100%,
-				100% 100%,
-				100% 100%,
-				100% 100%;
-			transform: translate3d(0, 0, 0);
-			animation: ugk-bg-drift 56s linear infinite;
-			will-change: transform;
+				40px 40px,
+				40px 40px,
+				160px 160px,
+				160px 160px;
 		}
 
 		.shell[data-home="true"]::after {
@@ -3763,56 +3703,14 @@ export function getPlaygroundStyles(): string {
 					var(--ugk-scan-glow) 48%,
 					transparent 100%
 				);
-			opacity: 0.75;
+			opacity: 0.42;
 			transform: translate3d(-40vw, 0, 0) skewX(-18deg);
-			animation: ugk-bg-scan 18s ease-in-out infinite;
-			will-change: transform;
 		}
 
 		.shell[data-home="true"] > * {
 			position: relative;
 			z-index: 1;
 		}
-
-		@keyframes ugk-bg-drift {
-			from { transform: translate3d(0, 0, 0); }
-			to { transform: translate3d(32px, 32px, 0); }
-		}
-
-		@keyframes ugk-bg-scan {
-			0% { transform: translate3d(-42vw, 0, 0) skewX(-18deg); opacity: 0; }
-			12% { opacity: 0.55; }
-			50% { opacity: 0.75; }
-			88% { opacity: 0.45; }
-			100% { transform: translate3d(128vw, 0, 0) skewX(-18deg); opacity: 0; }
-		}
-
-		@media (prefers-reduced-motion: reduce) {
-			.shell[data-home="true"]::before,
-			.shell[data-home="true"]::after {
-				animation: none !important;
-			}
-		}
-
-			@keyframes ugk-chat-bg-drift {
-				from { transform: translate3d(0, 0, 0); }
-				to { transform: translate3d(32px, 32px, 0); }
-			}
-
-			@keyframes ugk-chat-bg-scan {
-				0% { transform: translate3d(-42vw, 0, 0) skewX(-18deg); opacity: 0; }
-				12% { opacity: 0.3; }
-				50% { opacity: 0.5; }
-				88% { opacity: 0.25; }
-				100% { transform: translate3d(128vw, 0, 0) skewX(-18deg); opacity: 0; }
-			}
-
-			@media (prefers-reduced-motion: reduce) {
-				body::before {
-					animation: none !important;
-				}
-			}
-
 
 		.landing-agent-card {
 			display: flex;
@@ -4249,7 +4147,7 @@ export function getPlaygroundStyles(): string {
 		.desktop-conversation-list {
 			display: grid;
 			align-content: start;
-			gap: 8px;
+			gap: 2px;
 			min-height: 0;
 			padding: 10px 0 0;
 			overflow-y: auto;
@@ -4329,9 +4227,123 @@ export function getPlaygroundStyles(): string {
 		}
 
 		.desktop-conversation-list .mobile-conversation-item {
-			min-height: 82px;
+			min-height: 58px;
+			gap: 3px;
+			padding: 8px 34px 8px 12px;
 			border-color: transparent;
-			background: var(--conversation-card-bg, rgba(14, 19, 31, 0.84));
+			background: transparent;
+			opacity: 0.74;
+		}
+
+		.desktop-conversation-list .mobile-conversation-item:hover:not(:disabled),
+		.desktop-conversation-list .mobile-conversation-item:focus-visible {
+			border-color: transparent;
+			background: rgba(201, 210, 255, 0.045);
+			opacity: 0.96;
+		}
+
+		.desktop-conversation-list .mobile-conversation-item.is-active {
+			border-color: transparent;
+			background: rgba(201, 210, 255, 0.075);
+			opacity: 1;
+		}
+
+		.desktop-conversation-list .mobile-conversation-item.is-active::before {
+			content: "";
+			position: absolute;
+			left: 0;
+			top: 9px;
+			bottom: 9px;
+			width: 2px;
+			border-radius: 999px;
+			background: var(--accent);
+		}
+
+		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item {
+			background: transparent;
+		}
+
+		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item:hover:not(:disabled),
+		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item:focus-visible {
+			background: rgba(201, 210, 255, 0.045);
+		}
+
+		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item.is-active {
+			background: rgba(201, 210, 255, 0.075);
+		}
+
+		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-title {
+			color: rgba(246, 249, 255, 0.82);
+		}
+
+		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-preview {
+			color: rgba(226, 234, 255, 0.38);
+		}
+
+		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-meta span {
+			color: rgba(226, 234, 255, 0.34);
+		}
+
+		.desktop-conversation-list .conversation-item-shell.is-pinned .mobile-conversation-item::after {
+			top: 9px;
+			bottom: 9px;
+			width: 2px;
+		}
+
+		.desktop-conversation-list .mobile-conversation-title {
+			color: rgba(246, 249, 255, 0.82);
+			font-size: 12px;
+			font-weight: 620;
+			line-height: 1.25;
+		}
+
+		.desktop-conversation-list .mobile-conversation-preview {
+			-webkit-line-clamp: 1;
+			color: rgba(226, 234, 255, 0.38);
+			font-size: 10px;
+			line-height: 1.25;
+		}
+
+		.desktop-conversation-list .mobile-conversation-meta {
+			justify-content: flex-start;
+			gap: 6px;
+			color: rgba(226, 234, 255, 0.34);
+			font-size: 9px;
+			line-height: 1.25;
+		}
+
+		.desktop-conversation-list .mobile-conversation-meta span {
+			padding: 0;
+			background: transparent;
+		}
+
+		.desktop-conversation-list .mobile-conversation-meta span:last-child {
+			display: none;
+		}
+
+		.desktop-conversation-list .mobile-conversation-item.is-active .mobile-conversation-title {
+			color: rgba(248, 251, 255, 0.96);
+		}
+
+		.desktop-conversation-list .mobile-conversation-item.is-active .mobile-conversation-preview {
+			color: rgba(226, 234, 255, 0.58);
+		}
+
+		.desktop-conversation-list .mobile-conversation-item.is-active .mobile-conversation-meta {
+			color: rgba(226, 234, 255, 0.5);
+		}
+
+		.desktop-conversation-list .conversation-item-menu-trigger {
+			top: 7px;
+			right: 6px;
+			opacity: 0;
+		}
+
+		.desktop-conversation-list .conversation-item-shell:hover .conversation-item-menu-trigger,
+		.desktop-conversation-list .conversation-item-shell:focus-within .conversation-item-menu-trigger,
+		.desktop-conversation-list .mobile-conversation-item.is-active + .conversation-item-menu-trigger,
+		.desktop-conversation-list .conversation-item-menu-trigger[aria-expanded="true"] {
+			opacity: 0.72;
 		}
 
 		.shell[data-stage-mode="landing"] .stream-layout {
@@ -4400,9 +4412,7 @@ export function getPlaygroundStyles(): string {
 			padding: 8px 10px 8px 12px;
 			border: 1px solid rgba(201, 210, 255, 0.08);
 			border-radius: 4px;
-			background:
-				linear-gradient(90deg, rgba(101, 209, 255, 0.08), transparent 24%),
-				rgba(9, 12, 22, 0.96);
+			background: var(--chat-composer-bg);
 			box-shadow: none;
 			overflow: hidden;
 			backdrop-filter: none;

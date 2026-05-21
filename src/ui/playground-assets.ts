@@ -66,9 +66,9 @@ export function getPlaygroundAssetBaseStyles(): string {
 			grid-template-columns: minmax(0, 1fr) auto;
 			gap: 10px;
 			align-items: center;
-			border: 1px solid var(--line);
-			background: rgba(16, 24, 44, 0.5);
-			padding: 8px 10px;
+			border: 0;
+			background: rgba(201, 210, 255, 0.045);
+			padding: 9px 10px;
 			font-size: 11px;
 			line-height: 1.5;
 			color: var(--muted);
@@ -86,7 +86,7 @@ export function getPlaygroundAssetBaseStyles(): string {
 
 		:root[data-theme="dark"] .file-download,
 		:root[data-theme="dark"] .asset-pill {
-			border-color: rgba(201, 210, 255, 0.15);
+			border-color: transparent;
 		}
 
 		.file-list {
@@ -124,9 +124,9 @@ export function getPlaygroundAssetBaseStyles(): string {
 			min-width: min(132px, 100%);
 			max-width: min(220px, 100%);
 			padding: 6px 10px 6px 8px;
-			border: 1px solid rgba(255, 255, 255, 0.08);
+			border: 0;
 			border-radius: 4px;
-			background: rgba(255, 255, 255, 0.035);
+			background: rgba(255, 255, 255, 0.045);
 			box-shadow: none;
 		}
 
@@ -137,9 +137,9 @@ export function getPlaygroundAssetBaseStyles(): string {
 			width: 22px;
 			height: 22px;
 			flex-shrink: 0;
-			border: 1px solid rgba(255, 255, 255, 0.08);
+			border: 0;
 			border-radius: 4px;
-			background: rgba(255, 255, 255, 0.06);
+			background: transparent;
 			color: rgba(238, 244, 255, 0.72);
 			font-family: var(--font-mono);
 			font-size: 9px;
@@ -186,15 +186,15 @@ export function getPlaygroundAssetBaseStyles(): string {
 		}
 
 		.file-chip.pending {
-			background: rgba(255, 255, 255, 0.04);
-		}
-
-		.file-chip.asset {
 			background: rgba(255, 255, 255, 0.045);
 		}
 
+		.file-chip.asset {
+			background: rgba(201, 210, 255, 0.05);
+		}
+
 		.file-chip.asset .file-chip-badge {
-			background: rgba(201, 210, 255, 0.08);
+			background: transparent;
 			color: rgba(226, 231, 255, 0.82);
 		}
 
@@ -206,7 +206,7 @@ export function getPlaygroundAssetBaseStyles(): string {
 
 		.message-body.has-file-chips {
 			display: grid;
-			gap: 10px;
+			gap: 8px;
 		}
 
 		.message.user .message-file-strip {
@@ -214,13 +214,13 @@ export function getPlaygroundAssetBaseStyles(): string {
 		}
 
 		.message.user .file-chip {
-			border-color: rgba(0, 0, 0, 0.08);
-			background: rgba(0, 0, 0, 0.07);
+			border-color: transparent;
+			background: rgba(0, 0, 0, 0.06);
 		}
 
 		.message.user .file-chip-badge {
-			border-color: rgba(0, 0, 0, 0.08);
-			background: rgba(255, 255, 255, 0.26);
+			border-color: transparent;
+			background: transparent;
 			color: #17320f;
 		}
 
@@ -235,8 +235,8 @@ export function getPlaygroundAssetBaseStyles(): string {
 		}
 
 		.file-download a {
-			border: 1px solid var(--accent);
-			background: var(--accent-soft);
+			border: 0;
+			background: rgba(201, 210, 255, 0.08);
 			color: var(--accent);
 			padding: 6px 9px;
 			text-decoration: none;
