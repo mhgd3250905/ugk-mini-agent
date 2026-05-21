@@ -63,26 +63,59 @@ const TEMPLATE_REGISTRY: TeamPlanTemplateSummary[] = [
 	},
 ];
 
-const RESEARCH_SIGNALS = [
+const RESEARCH_INTENT_SIGNALS = [
 	"调研",
 	"研究",
 	"搜索",
 	"收集",
+	"整理",
+	"梳理",
+	"盘点",
+	"比较",
 	"竞品",
 	"对比",
+	"compare",
+	"research",
+	"survey",
+	"benchmark",
+];
+
+const MULTI_OBJECT_RESEARCH_SIGNALS = [
+	"竞品",
+	"对比",
+	"横向",
 	"列表",
 	"多个",
+	"多项",
 	"每个",
+	"每家",
+	"每款",
 	"分别",
 	"新闻",
 	"趋势",
 	"资料",
 	"排行",
-	"compare",
-	"research",
-	"survey",
+	"榜单",
+	"供应商",
+	"工具",
+	"产品",
+	"公司",
+	"方案",
+	"alternatives",
+	"benchmark",
+	"pricing",
 	"market",
+	"market map",
 	"competitor",
+	"vendor",
+	"vendors",
+	"tool",
+	"tools",
+	"product",
+	"products",
+	"company",
+	"companies",
+	"landscape",
 ];
 
 const CODE_REPAIR_SIGNALS = [
@@ -104,13 +137,17 @@ export function listTeamPlanTemplates(): TeamPlanTemplateSummary[] {
 export function routeTeamPlanTemplate(prompt: string): TeamPlanDraftRoute {
 	const normalizedPrompt = normalizePrompt(prompt);
 	const lowerPrompt = normalizedPrompt.toLocaleLowerCase();
-	const codeSignals = matchingSignals(lowerPrompt, CODE_REPAIR_SIGNALS);
+	const codeSignals = matchingCodeRepairSignals(lowerPrompt);
 	if (codeSignals.length) {
 		return route("single_agent", "high", `prompt contains code repair signals: ${codeSignals.join(", ")}`);
 	}
-	const researchSignals = matchingSignals(lowerPrompt, RESEARCH_SIGNALS);
+	const researchSignals = matchingSignals(lowerPrompt, RESEARCH_INTENT_SIGNALS);
+	const multiObjectSignals = matchingSignals(lowerPrompt, MULTI_OBJECT_RESEARCH_SIGNALS);
+	if (multiObjectSignals.length && (researchSignals.length || hasStrongMultiObjectSignal(multiObjectSignals))) {
+		return route("parallel_research", "high", `prompt contains multi-item research signals: ${dedupe([...researchSignals, ...multiObjectSignals]).join(", ")}`);
+	}
 	if (researchSignals.length) {
-		return route("parallel_research", "high", `prompt contains research/list/multi-item signals: ${researchSignals.join(", ")}`);
+		return route("single_agent", "medium", `prompt contains research intent without clear multi-item scope: ${researchSignals.join(", ")}`);
 	}
 	return route("single_agent", "low", "no strong supported template signal detected");
 }
@@ -185,19 +222,22 @@ function buildParallelResearchPlan(prompt: string, defaultTeamUnitId: string): T
 		input: {
 			text: [
 				"请围绕原始用户目标发现需要逐项研究的条目。",
+				"优先输出 3 到 8 个高价值 item，除非用户目标明确要求更多或更少。",
 				"",
 				`原始用户目标：${prompt}`,
 				"",
 				"输出必须是可解析的 JSON object，形状如下：",
-				'{ "items": [{ "id": "stable-non-empty-string", "title": "...", "summary": "...", "sourceHints": ["..."] }] }',
-				"每个 item 必须包含稳定、非空、字符串类型的 id；title 和 summary 应帮助下游研究者理解该条目的边界。",
+				'{ "items": [{ "id": "stable-ascii-slug", "title": "...", "summary": "...", "sourceHints": ["..."], "whyItMatters": "...", "compareDimensions": ["..."] }] }',
+				"每个 item 的 id 必须是稳定、非空、字符串类型的 ASCII slug，便于 child task ID 和审计。",
+				"title 和 summary 必须帮助下游研究者理解该条目的边界；sourceHints、whyItMatters、compareDimensions 可用于提示来源和横向比较维度。",
 			].join("\n"),
 		},
 		acceptance: {
 			rules: [
 				'输出是可解析 JSON object，且包含 "items" 数组',
-				'每个 item 都有稳定、非空、字符串类型的 "id"',
-				"每个 item 尽量包含 title、summary 和可选 sourceHints",
+				"items 默认包含 3 到 8 个高价值条目，除非用户目标明确要求不同数量",
+				'每个 item 都有稳定、非空、字符串类型的 ASCII slug "id"',
+				"每个 item 至少包含 title 和 summary，并尽量包含 sourceHints、whyItMatters、compareDimensions",
 			],
 		},
 		discovery: { outputKey: "items" },
@@ -222,11 +262,19 @@ function buildParallelResearchPlan(prompt: string, defaultTeamUnitId: string): T
 						"- title: {{item.title}}",
 						"- summary: {{item.summary}}",
 						"- sourceHints: {{item.sourceHints}}",
+						"- whyItMatters: {{item.whyItMatters}}",
+						"- compareDimensions: {{item.compareDimensions}}",
 						"",
 						`Original user goal: ${prompt}`,
 						"",
-						"Do not switch to a different item even if shared context mentions other candidates.",
-						"请输出中文研究结果，包含关键事实、差异点、来源线索、风险/未知项和建议下一步。",
+						"Do not switch to a different item even if shared context mentions other candidates. 不得切换到其他 item。",
+						"请按以下结构输出中文 Markdown：",
+						"## 结论",
+						"## 关键事实",
+						"## 来源线索",
+						"## 与目标相关的差异点",
+						"## 风险/未知项",
+						"## 下一步",
 					].join("\n"),
 				},
 				acceptance: {
@@ -245,7 +293,7 @@ function buildParallelResearchPlan(prompt: string, defaultTeamUnitId: string): T
 		goal: { text: prompt },
 		tasks: [discoveryTask, researchTask],
 		outputContract: {
-			text: "输出中文最终研究报告，包含执行摘要、逐项发现、适用时的对比表、来源说明、风险/未知项和建议下一步。",
+			text: "输出中文最终研究报告，包含执行摘要、逐项发现表格、横向对比、来源线索、风险/未知项和建议。明确区分事实、推断和仍需确认的信息。",
 		},
 	};
 }
@@ -278,6 +326,21 @@ function templateById(templateId: string): TeamPlanTemplateSummary | undefined {
 
 function matchingSignals(prompt: string, signals: string[]): string[] {
 	return signals.filter((signal) => prompt.includes(signal));
+}
+
+function matchingCodeRepairSignals(prompt: string): string[] {
+	return CODE_REPAIR_SIGNALS.filter((signal) => {
+		if (signal === "ci") return /\bci\b/.test(prompt);
+		return prompt.includes(signal);
+	});
+}
+
+function hasStrongMultiObjectSignal(signals: string[]): boolean {
+	return signals.some((signal) => !["工具", "产品", "公司", "方案", "tool", "product", "company"].includes(signal));
+}
+
+function dedupe(values: string[]): string[] {
+	return Array.from(new Set(values));
 }
 
 function titleFromPrompt(prefix: string, prompt: string): string {
