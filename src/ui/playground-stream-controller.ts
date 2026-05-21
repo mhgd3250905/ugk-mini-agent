@@ -328,6 +328,7 @@ export function getPlaygroundStreamControllerScript(): string {
 					statusPill.textContent = "完成";
 					void syncContextUsage(event.conversationId, { silent: true });
 					void restoreConversationHistoryFromServer(event.conversationId);
+					scheduleConversationCatalogRefresh();
 					break;
 				}
 				case "error":
@@ -486,11 +487,6 @@ export function getPlaygroundStreamControllerScript(): string {
 
 			if (!state.conversationId) {
 				await ensureCurrentConversation({ silent: false });
-			} else {
-				void syncConversationCatalog({
-					silent: true,
-					activateCurrent: false,
-				});
 			}
 			ensureConversationId();
 			if (!state.conversationId) {

@@ -12,6 +12,31 @@
 
 ---
 
+## 2026-05-22 — Playground conversation catalog refresh coalescing
+
+- **主题**: 消除 `/playground` 会话列表的重复 `GET /chat/conversations` 请求和 `net::ERR_ABORTED` 竞态
+- **影响范围**: `src/ui/playground-conversations-controller.ts`, `src/ui/playground-stream-controller.ts`, `test/playground-conversations-controller.test.ts`, `docs/change-log.md`
+- **变更**:
+  - 新增 `scheduleConversationCatalogRefresh()` — 500ms 窗口内多次调用合并为一次非 force 的 `syncConversationCatalog`，timer callback 内先 `conversationCatalogSyncedAt = 0` 再调 sync，保证过期 catalog 被刷新但不 abort 正在进行的请求
+  - `requestUpdateConversation()` 改为本地 `upsertConversationCatalogItem` + `scheduleConversationCatalogRefresh`，不再每次 `invalidateConversationCatalog` + `force: true` 重拉
+  - `sendMessage()` 删除 `resolveServerActiveConversation` 前的多余非 force catalog sync（它被紧接的 force sync abort，是 `ERR_ABORTED` 的直接原因）
+  - "done" 事件后调用 `scheduleConversationCatalogRefresh()`，延迟更新侧栏消息数和摘要
+  - `requestDeleteConversation()` 仍保留 `invalidateConversationCatalog` + `force: true`，因为删除当前会话后需要服务端确定新 current conversation
+  - 测试覆盖：`scheduleConversationCatalogRefresh` 行为测试（eval + fake setTimeout，断言合并、sync 调用次数、syncedAt 重置、flush 后可再调度），`requestUpdateConversation` 非 force 断言，`sendMessage` 无 premature sync 断言，done 事件 catalog refresh 断言
+
+---
+
+## 2026-05-22 — Playground conversation virtual scroll repair
+
+- **主题**: 修复 `/playground` 会话列表虚拟滚动在移动端行高不匹配和 rAF 调度测试失真的问题
+- **影响范围**: `src/ui/playground-conversations-controller.ts`, `test/playground-conversations-controller.test.ts`, `docs/change-log.md`
+- **变更**:
+  - 将移动端会话虚拟行高从 `80px` 调整为 `100px`，与真实移动样式 `92px` item 高度和 `8px` 列表间距对齐，避免移动抽屉滚动越深偏移越大
+  - 将虚拟滚动 rAF 测试从源码正则检查改为实际调用调度函数并 flush pending callback，覆盖快速连续 scroll 只合并一次且不吞 render 的行为
+  - 测试同步断言 `/playground` 样式中的移动端 item 高度与 gap，防止后续 CSS 改动再次让虚拟滚动数学漂移
+
+---
+
 ## 2026-05-21 — Ali CodePlan DeepSeek model option
 
 - **主题**: 在阿里 CodePlan 模型源下新增 `deepseek-v4-pro` 可选模型

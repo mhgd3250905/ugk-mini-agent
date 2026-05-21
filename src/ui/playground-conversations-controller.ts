@@ -60,7 +60,7 @@ export function getPlaygroundConversationControllerScript(): string {
 		}
 
 		const CONVERSATION_DESKTOP_ROW_HEIGHT = 60;
-		const CONVERSATION_MOBILE_ROW_HEIGHT = 80;
+		const CONVERSATION_MOBILE_ROW_HEIGHT = 100;
 		const CONVERSATION_VIRTUAL_OVERSCAN = 5;
 
 		function computeVirtualWindow(scrollTop, viewportHeight, itemHeight, overscan, total) {
@@ -302,6 +302,19 @@ export function getPlaygroundConversationControllerScript(): string {
 				}
 				return String(right?.updatedAt || "").localeCompare(String(left?.updatedAt || ""));
 			});
+		}
+
+		let conversationCatalogRefreshTimer = null;
+
+		function scheduleConversationCatalogRefresh() {
+			if (conversationCatalogRefreshTimer) {
+				return;
+			}
+			conversationCatalogRefreshTimer = window.setTimeout(() => {
+				conversationCatalogRefreshTimer = null;
+				state.conversationCatalogSyncedAt = 0;
+				void syncConversationCatalog({ silent: true, activateCurrent: false });
+			}, 500);
 		}
 
 		const CONVERSATION_CATALOG_FRESH_MS = 1600;
@@ -548,8 +561,7 @@ export function getPlaygroundConversationControllerScript(): string {
 					upsertConversationCatalogItem(result.conversation);
 				}
 				state.conversationMenuOpenId = "";
-				invalidateConversationCatalog();
-				void syncConversationCatalog({ silent: true, activateCurrent: false, force: true });
+				scheduleConversationCatalogRefresh();
 			} catch (error) {
 				const messageText = error instanceof Error ? error.message : "更新会话失败";
 				showError(messageText);

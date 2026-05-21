@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { getPlaygroundConversationControllerScript } from "../src/ui/playground-conversations-controller.js";
+import { getPlaygroundStreamControllerScript } from "../src/ui/playground-stream-controller.js";
 import { getPlaygroundMobileShellEventHandlersScript } from "../src/ui/playground-mobile-shell-controller.js";
+import { getPlaygroundStyles } from "../src/ui/playground-styles.js";
 
 // --- Behavior tests: extract and eval pure math from generated script ---
 
@@ -10,13 +12,6 @@ function evalComputeVirtualWindow() {
 	const fnBlock = extractFunctionBlock(script, "computeVirtualWindow");
 	assert.ok(fnBlock, "computeVirtualWindow must be extractable");
 	// Wrap in an expression so eval returns the function
-	return eval(`(${fnBlock})`);
-}
-
-function evalScheduleConversationVirtualScroll() {
-	const script = getPlaygroundConversationControllerScript();
-	const fnBlock = extractFunctionBlock(script, "scheduleConversationVirtualScroll");
-	assert.ok(fnBlock, "scheduleConversationVirtualScroll must be extractable");
 	return eval(`(${fnBlock})`);
 }
 
@@ -60,44 +55,53 @@ test("computeVirtualWindow: spacer heights match startIndex * rowHeight and (tot
 	assert.equal(vw.bottomSpacer, Math.max(0, (200 - vw.endIndex - 1) * 60), "bottomSpacer must equal remaining rows * rowHeight");
 });
 
-test("computeVirtualWindow: mobile row height (80px) produces correct spacer math", () => {
+test("computeVirtualWindow: mobile row height (100px) produces correct spacer math", () => {
 	const computeVirtualWindow = evalComputeVirtualWindow();
-	const vw = computeVirtualWindow(4000, 400, 80, 5, 100);
-	assert.equal(vw.topSpacer, vw.startIndex * 80, "mobile topSpacer must equal startIndex * 80");
-	assert.equal(vw.bottomSpacer, Math.max(0, (100 - vw.endIndex - 1) * 80), "mobile bottomSpacer must equal remaining rows * 80");
+	const vw = computeVirtualWindow(5000, 400, 100, 5, 100);
+	assert.equal(vw.topSpacer, vw.startIndex * 100, "mobile topSpacer must equal startIndex * 100");
+	assert.equal(vw.bottomSpacer, Math.max(0, (100 - vw.endIndex - 1) * 100), "mobile bottomSpacer must equal remaining rows * 100");
 });
 
 test("scheduleConversationVirtualScroll: two rapid calls must still produce at least one render", () => {
-	const scheduleFn = evalScheduleConversationVirtualScroll();
-	// Simulate the rAF environment
-	let rafCalled = 0;
-	const fakeRafIds = { current: 0 };
-	const fakeWindow = {
-		requestAnimationFrame: (cb: () => void) => {
-			rafCalled++;
-			const id = ++fakeRafIds.current;
-			// Immediately invoke to simulate rAF firing
-			cb();
-			return id;
-		},
-		cancelAnimationFrame: () => {
-			// No-op in this test; we verify behavior by counting rafCalled
-		},
-	};
-	// Call twice rapidly — both should resolve to a render
-	const container = { scrollTop: 100, clientHeight: 600, innerHTML: "" };
-	// Patch the schedule function's closure to use fakeWindow
-	// Since the function is eval'd from script, we pass the fake globals
-	// The key assertion: after two calls, at least one render happened
-	assert.ok(rafCalled >= 0, "rAF tracking initialized");
-	// More direct: verify the function logic doesn't cancel-and-return
 	const script = getPlaygroundConversationControllerScript();
 	const fnBlock = extractFunctionBlock(script, "scheduleConversationVirtualScroll");
 	assert.ok(fnBlock, "scheduleConversationVirtualScroll function block should be extractable");
-	// The fixed version should NOT have: cancel + return without scheduling
-	// Pattern that indicates the bug: cancelAnimationFrame then return
-	const bugPattern = /cancelAnimationFrame\s*\([^)]*\)\s*;\s*\n\s*conversationVirtualScrollRaf\s*=\s*0\s*;\s*\n\s*return\s*;/;
-	assert.doesNotMatch(fnBlock, bugPattern, "scheduleConversationVirtualScroll must NOT cancel RAF and return without scheduling a replacement");
+
+	let conversationVirtualScrollRaf = 0;
+	let nextRafId = 0;
+	let renderCount = 0;
+	let pendingRaf: (() => void) | null = null;
+	let canceledRafId = 0;
+	const window = {
+		requestAnimationFrame: (cb: () => void) => {
+			pendingRaf = cb;
+			nextRafId += 1;
+			return nextRafId;
+		},
+		cancelAnimationFrame: (id: number) => {
+			canceledRafId = id;
+			pendingRaf = null;
+		},
+	};
+	function renderConversationListInto() {
+		renderCount += 1;
+	}
+	const container = { scrollTop: 100, clientHeight: 600, innerHTML: "" };
+	const scheduleFn = eval(`(${fnBlock})`);
+
+	scheduleFn(container);
+	scheduleFn(container);
+
+	assert.equal(nextRafId, 1, "rapid calls should coalesce into a single pending rAF");
+	assert.equal(canceledRafId, 0, "pending rAF should not be canceled and swallowed");
+	assert.equal(renderCount, 0, "render should wait for rAF");
+	const flushRaf = pendingRaf as (() => void) | null;
+	assert.ok(flushRaf, "one rAF callback should remain pending");
+
+	flushRaf();
+
+	assert.equal(conversationVirtualScrollRaf, 0, "rAF id should clear after callback");
+	assert.equal(renderCount, 1, "the pending rAF should render once");
 });
 
 test("renderConversationListInto: uses savedScrollTop (before innerHTML clearing) for computeVirtualWindow", () => {
@@ -217,10 +221,14 @@ test("virtual list constants declare fixed row heights aligned with CSS", () => 
 	assert.match(script, /CONVERSATION_MOBILE_ROW_HEIGHT/);
 	assert.match(script, /CONVERSATION_VIRTUAL_OVERSCAN/);
 
-	// Desktop: 58px min-height + 2px gap = 60px
+	const styles = getPlaygroundStyles();
+
+	// Desktop: 58px item height + 2px gap = 60px
 	assert.match(script, /CONVERSATION_DESKTOP_ROW_HEIGHT\s*=\s*60/);
-	// Mobile: estimated ~80px (68px content + 8px gap + borders)
-	assert.match(script, /CONVERSATION_MOBILE_ROW_HEIGHT\s*=\s*80/);
+	// Mobile: 92px item height from mobile asset override + 8px gap = 100px
+	assert.match(script, /CONVERSATION_MOBILE_ROW_HEIGHT\s*=\s*100/);
+	assert.match(styles, /\.mobile-conversation-list\s*\{[\s\S]*gap:\s*8px;/);
+	assert.match(styles, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\s*\{[\s\S]*min-height:\s*92px;/);
 	// Overscan: render a few extra rows above/below the viewport
 	assert.match(script, /CONVERSATION_VIRTUAL_OVERSCAN\s*=\s*5/);
 });
@@ -247,6 +255,131 @@ test("virtual scroll uses requestAnimationFrame throttling (coalescing, not canc
 	// After fix: if a RAF is already pending, we just return (let the existing RAF handle it)
 	// We no longer cancel and swallow the update
 	assert.doesNotMatch(script, /cancelAnimationFrame/, "fixed version should NOT cancel pending RAF");
+});
+
+// --- Task 3: Catalog refresh coalescing tests ---
+
+test("scheduleConversationCatalogRefresh coalesces multiple calls into one timer", () => {
+	const script = getPlaygroundConversationControllerScript();
+	const fnBlock = extractFunctionBlock(script, "scheduleConversationCatalogRefresh");
+	assert.ok(fnBlock, "scheduleConversationCatalogRefresh must be extractable");
+
+	let nextTimerId = 0;
+	let pendingTimers: Map<number, () => void> = new Map();
+	let syncCallCount = 0;
+	let syncedAtValues: number[] = [];
+
+	const window = {
+		setTimeout: (cb: () => void, _delay: number) => {
+			nextTimerId += 1;
+			pendingTimers.set(nextTimerId, cb);
+			return nextTimerId;
+		},
+	};
+	const state = { conversationCatalogSyncedAt: 12345 };
+	function syncConversationCatalog() {
+		syncedAtValues.push(state.conversationCatalogSyncedAt);
+		syncCallCount += 1;
+	}
+	let conversationCatalogRefreshTimer: number | null = null;
+
+	const scheduleFn = eval(`(${fnBlock})`);
+
+	// First call registers a timer
+	scheduleFn();
+	assert.equal(pendingTimers.size, 1, "first call should register exactly 1 timer");
+	assert.equal(syncCallCount, 0, "sync should NOT be called before timer fires");
+
+	// Second call should coalesce — no new timer
+	scheduleFn();
+	assert.equal(pendingTimers.size, 1, "second call should not create another timer");
+	assert.equal(syncCallCount, 0, "sync should still not be called");
+
+	// Flush the pending timer
+	const timer = pendingTimers.values().next().value as (() => void);
+	assert.ok(timer, "pending timer callback should exist");
+	timer();
+
+	assert.equal(syncCallCount, 1, "flushing timer should call syncConversationCatalog exactly once");
+	assert.equal(conversationCatalogRefreshTimer, null, "timer variable should be cleared after flush");
+	assert.deepEqual(syncedAtValues, [0], "sync should see conversationCatalogSyncedAt reset to 0");
+
+	// After flush, a new call should register a fresh timer
+	scheduleFn();
+	assert.equal(pendingTimers.size, 2, "post-flush call should register a new timer");
+});
+
+test("requestUpdateConversation does not force-refresh catalog after local upsert", () => {
+	const script = getPlaygroundConversationControllerScript();
+
+	// requestUpdateConversation should NOT contain force: true in its sync call
+	const requestUpdateFnBlock = extractFunctionBlock(script, "requestUpdateConversation");
+	assert.ok(requestUpdateFnBlock, "requestUpdateConversation must be extractable");
+	assert.doesNotMatch(requestUpdateFnBlock, /force:\s*true/, "requestUpdateConversation should NOT use force: true");
+	assert.doesNotMatch(requestUpdateFnBlock, /invalidateConversationCatalog\(\)/, "requestUpdateConversation should NOT call invalidateConversationCatalog");
+	assert.match(requestUpdateFnBlock, /scheduleConversationCatalogRefresh\(\)/, "requestUpdateConversation should use scheduleConversationCatalogRefresh");
+});
+
+test("requestDeleteConversation still force-refreshes catalog (needs server-assigned current)", () => {
+	const script = getPlaygroundConversationControllerScript();
+	const fnBlock = extractFunctionBlock(script, "requestDeleteConversation");
+	assert.ok(fnBlock, "requestDeleteConversation must be extractable");
+	assert.match(fnBlock, /force:\s*true/, "requestDeleteConversation should keep force: true for server-assigned current");
+});
+
+test("scheduleConversationCatalogRefresh timer variable is declared", () => {
+	const script = getPlaygroundConversationControllerScript();
+	assert.match(script, /let conversationCatalogRefreshTimer\s*=\s*null/, "timer variable must be declared");
+});
+
+// --- Stream controller catalog refresh tests ---
+
+test("sendMessage does not fire premature syncConversationCatalog before resolveServerActiveConversation", () => {
+	const script = getPlaygroundStreamControllerScript();
+
+	// The sendMessage function should NOT have a standalone syncConversationCatalog before resolveServerActiveConversation
+	// Old pattern: "else { void syncConversationCatalog({ silent: true, activateCurrent: false }); }" before resolveServerActiveConversation
+	const sendMessageBlock = extractFunctionBlock(script, "sendMessage");
+	assert.ok(sendMessageBlock, "sendMessage must be extractable");
+
+	// Should not contain the pattern of sync before resolveServerActiveConversation
+	// Specifically: no "else { void syncConversationCatalog" pattern
+	assert.doesNotMatch(
+		sendMessageBlock,
+		/else\s*\{\s*void syncConversationCatalog\(\{/,
+		"sendMessage should NOT have an else branch with premature syncConversationCatalog",
+	);
+
+	// Must still call resolveServerActiveConversation
+	assert.match(sendMessageBlock, /resolveServerActiveConversation/, "sendMessage must still call resolveServerActiveConversation");
+});
+
+test("done event handler schedules catalog refresh to update message count/preview", () => {
+	const script = getPlaygroundStreamControllerScript();
+
+	// The done case must contain scheduleConversationCatalogRefresh
+	const doneMatch = script.match(/case\s+"done"[\s\S]{1,2000}break;/);
+	assert.ok(doneMatch, "done case block must be extractable");
+	assert.match(doneMatch[0], /scheduleConversationCatalogRefresh/, "done handler must call scheduleConversationCatalogRefresh");
+});
+
+test("upsertConversationCatalogItem updates catalog locally and re-renders", () => {
+	const script = getPlaygroundConversationControllerScript();
+	const fnBlock = extractFunctionBlock(script, "upsertConversationCatalogItem");
+	assert.ok(fnBlock, "upsertConversationCatalogItem must be extractable");
+
+	// Must call sortConversationCatalog for correct ordering
+	assert.match(fnBlock, /sortConversationCatalog\(\)/, "must sort catalog after upsert");
+	// Must call renderConversationDrawer for UI update
+	assert.match(fnBlock, /renderConversationDrawer\(\)/, "must re-render after upsert");
+});
+
+test("removeConversationCatalogItem updates catalog locally and re-renders", () => {
+	const script = getPlaygroundConversationControllerScript();
+	const fnBlock = extractFunctionBlock(script, "removeConversationCatalogItem");
+	assert.ok(fnBlock, "removeConversationCatalogItem must be extractable");
+
+	assert.match(fnBlock, /renderConversationDrawer\(\)/, "must re-render after remove");
 });
 
 function extractRenderConversationDrawerBlock(script: string): string | null {
