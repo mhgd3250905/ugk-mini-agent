@@ -84,36 +84,28 @@ const MULTI_OBJECT_RESEARCH_SIGNALS = [
 	"竞品",
 	"对比",
 	"横向",
-	"列表",
 	"多个",
 	"多项",
+	"多家",
 	"每个",
 	"每家",
 	"每款",
+	"各个",
+	"各家",
+	"各款",
 	"分别",
-	"新闻",
-	"趋势",
-	"资料",
 	"排行",
 	"榜单",
 	"供应商",
-	"工具",
-	"产品",
-	"公司",
-	"方案",
 	"alternatives",
 	"benchmark",
 	"pricing",
-	"market",
 	"market map",
 	"competitor",
 	"vendor",
 	"vendors",
-	"tool",
 	"tools",
-	"product",
 	"products",
-	"company",
 	"companies",
 	"landscape",
 ];
@@ -143,7 +135,7 @@ export function routeTeamPlanTemplate(prompt: string): TeamPlanDraftRoute {
 	}
 	const researchSignals = matchingSignals(lowerPrompt, RESEARCH_INTENT_SIGNALS);
 	const multiObjectSignals = matchingSignals(lowerPrompt, MULTI_OBJECT_RESEARCH_SIGNALS);
-	if (multiObjectSignals.length && (researchSignals.length || hasStrongMultiObjectSignal(multiObjectSignals))) {
+	if (multiObjectSignals.length) {
 		return route("parallel_research", "high", `prompt contains multi-item research signals: ${dedupe([...researchSignals, ...multiObjectSignals]).join(", ")}`);
 	}
 	if (researchSignals.length) {
@@ -333,10 +325,6 @@ function matchingCodeRepairSignals(prompt: string): string[] {
 		if (signal === "ci") return /\bci\b/.test(prompt);
 		return prompt.includes(signal);
 	});
-}
-
-function hasStrongMultiObjectSignal(signals: string[]): boolean {
-	return signals.some((signal) => !["工具", "产品", "公司", "方案", "tool", "product", "company"].includes(signal));
 }
 
 function dedupe(values: string[]): string[] {

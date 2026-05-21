@@ -55,6 +55,20 @@ test("ordinary single-target prompt stays single_agent without high confidence",
 	assert.notEqual(route.confidence, "high");
 });
 
+test("single-target research prompts stay single_agent without high confidence", () => {
+	const prompts = [
+		"研究 OpenAI 公司背景",
+		"调研某个产品的商业模式",
+		"研究一个工具的使用方式",
+	];
+
+	for (const prompt of prompts) {
+		const route = routeTeamPlanTemplate(prompt);
+		assert.equal(route.templateId, "single_agent", prompt);
+		assert.notEqual(route.confidence, "high", prompt);
+	}
+});
+
 test("preferred single_agent overrides research-looking prompt", () => {
 	const draft = buildTeamPlanDraft({
 		prompt: "调研多个 AI Agent 竞品并分别对比",
