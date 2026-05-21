@@ -2739,7 +2739,7 @@ test("GET /playground uses touch-first mobile panels for library, tasks, conn, a
 	assert.doesNotMatch(response.body, /background:\s*linear-gradient\(135deg, #f4f7fb 0 50%, #111722 50% 100%\) !important;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.conversation-color-swatch\.color-default\s*\{[\s\S]*background:\s*#f4f7fb !important;/);
 	assert.match(response.body, /\.conversation-color-swatch\.color-sky\s*\{[\s\S]*background:\s*#dbeafe !important;/);
-	assert.match(response.body, /\.desktop-conversation-list \.mobile-conversation-item\s*\{[\s\S]*min-height:\s*58px;[\s\S]*background:\s*transparent;[\s\S]*opacity:\s*0\.74;/);
+	assert.match(response.body, /\.desktop-conversation-list \.mobile-conversation-item\s*\{[\s\S]*height:\s*58px;[\s\S]*background:\s*transparent;[\s\S]*opacity:\s*0\.74;/);
 	assert.match(response.body, /\.desktop-conversation-list \.mobile-conversation-meta span:last-child\s*\{[\s\S]*display:\s*none;/);
 	assert.match(response.body, /\.desktop-conversation-list \.conversation-item-menu-trigger\s*\{[\s\S]*opacity:\s*0;/);
 	assert.match(response.body, /\.desktop-conversation-list \.conversation-item-shell\[class\*="conversation-bg-"\] \.mobile-conversation-item\s*\{[\s\S]*background:\s*transparent;/);

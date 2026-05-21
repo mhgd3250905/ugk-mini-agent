@@ -107,5 +107,11 @@ export function getPlaygroundMobileShellEventHandlersScript(): string {
 		window.matchMedia("(min-width: 641px)").addEventListener("change", () => {
 			renderConversationDrawer();
 		});
+		desktopConversationList.addEventListener("scroll", () => {
+			scheduleConversationVirtualScroll(desktopConversationList);
+		});
+		mobileConversationList.addEventListener("scroll", () => {
+			scheduleConversationVirtualScroll(mobileConversationList);
+		});
 	`;
 }

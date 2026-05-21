@@ -59,10 +59,44 @@ export function getPlaygroundConversationControllerScript(): string {
 			return window.matchMedia("(min-width: 641px)").matches;
 		}
 
+		const CONVERSATION_DESKTOP_ROW_HEIGHT = 60;
+		const CONVERSATION_MOBILE_ROW_HEIGHT = 80;
+		const CONVERSATION_VIRTUAL_OVERSCAN = 5;
+
+		function computeVirtualWindow(scrollTop, viewportHeight, itemHeight, overscan, total) {
+			if (total <= 0 || itemHeight <= 0) {
+				return { startIndex: 0, endIndex: -1, topSpacer: 0, bottomSpacer: 0 };
+			}
+			const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - overscan);
+			const endIndex = Math.min(total - 1, Math.ceil((scrollTop + viewportHeight) / itemHeight) + overscan);
+			const topSpacer = startIndex * itemHeight;
+			const bottomSpacer = Math.max(0, (total - endIndex - 1) * itemHeight);
+			return { startIndex, endIndex, topSpacer, bottomSpacer };
+		}
+
+		let conversationVirtualScrollRaf = 0;
+
+		function scheduleConversationVirtualScroll(container) {
+			if (conversationVirtualScrollRaf) {
+				cancelAnimationFrame(conversationVirtualScrollRaf);
+				conversationVirtualScrollRaf = 0;
+				return;
+			}
+			conversationVirtualScrollRaf = window.requestAnimationFrame(() => {
+				conversationVirtualScrollRaf = 0;
+				renderConversationListInto(container);
+			});
+		}
+
+		function getConversationRowHeight() {
+			return isDesktopViewport() ? CONVERSATION_DESKTOP_ROW_HEIGHT : CONVERSATION_MOBILE_ROW_HEIGHT;
+		}
+
 		function renderConversationListInto(container) {
 			if (!container) {
 				return;
 			}
+			const savedScrollTop = container.scrollTop;
 			container.innerHTML = "";
 			const catalog = Array.isArray(state.conversationCatalog) ? state.conversationCatalog : [];
 			if (catalog.length === 0) {
@@ -73,7 +107,41 @@ export function getPlaygroundConversationControllerScript(): string {
 				return;
 			}
 
-			for (const item of catalog) {
+
+			const rowHeight = getConversationRowHeight();
+			const vw = computeVirtualWindow(
+				container.scrollTop,
+				container.clientHeight,
+				rowHeight,
+				CONVERSATION_VIRTUAL_OVERSCAN,
+				catalog.length
+			);
+
+			// Ensure menu-open and active items are always visible
+			const menuOpenIndex = state.conversationMenuOpenId
+				? catalog.findIndex((item) => item.conversationId === state.conversationMenuOpenId)
+				: -1;
+			const activeIndex = state.conversationId
+				? catalog.findIndex((item) => item.conversationId === state.conversationId)
+				: -1;
+			let startIndex = vw.startIndex;
+			let endIndex = vw.endIndex;
+			if (menuOpenIndex >= 0 && (menuOpenIndex < startIndex || menuOpenIndex > endIndex)) {
+				startIndex = Math.min(startIndex, menuOpenIndex);
+				endIndex = Math.max(endIndex, menuOpenIndex);
+			}
+			if (activeIndex >= 0 && (activeIndex < startIndex || activeIndex > endIndex)) {
+				startIndex = Math.min(startIndex, activeIndex);
+				endIndex = Math.max(endIndex, activeIndex);
+			}
+
+			const topSpacer = document.createElement("div");
+			topSpacer.className = "conversation-virtual-spacer-top";
+			topSpacer.style.height = vw.topSpacer + "px";
+			container.appendChild(topSpacer);
+
+			for (let i = startIndex; i <= endIndex; i++) {
+				const item = catalog[i];
 				const shell = document.createElement("div");
 				shell.className = "conversation-item-shell";
 				if (item.pinned) {
@@ -126,6 +194,12 @@ export function getPlaygroundConversationControllerScript(): string {
 				}
 				container.appendChild(shell);
 			}
+
+			const bottomSpacer = document.createElement("div");
+			bottomSpacer.className = "conversation-virtual-spacer-bottom";
+			bottomSpacer.style.height = vw.bottomSpacer + "px";
+			container.appendChild(bottomSpacer);
+			container.scrollTop = savedScrollTop;
 		}
 
 		function createConversationMenuButton(options) {

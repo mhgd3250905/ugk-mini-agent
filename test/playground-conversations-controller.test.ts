@@ -70,10 +70,74 @@ test("matchMedia breakpoint change triggers renderConversationDrawer", () => {
 	assert.match(handlers, /renderConversationDrawer\(\)/, "should call renderConversationDrawer on breakpoint change");
 });
 
+test("computeVirtualWindow returns correct visible range for a scrolled list", () => {
+	const script = getPlaygroundConversationControllerScript();
+
+	assert.match(script, /function computeVirtualWindow\(/);
+
+	const fnBlock = extractFunctionBlock(script, "computeVirtualWindow");
+	assert.ok(fnBlock, "computeVirtualWindow function block should be extractable");
+
+	// Verify the function signature includes the expected parameters
+	assert.match(fnBlock, /scrollTop/, "should accept scrollTop");
+	assert.match(fnBlock, /viewportHeight/, "should accept viewportHeight");
+	assert.match(fnBlock, /itemHeight/, "should accept itemHeight");
+	assert.match(fnBlock, /overscan/, "should accept overscan");
+	assert.match(fnBlock, /total/, "should accept total");
+});
+
+test("virtual list constants declare fixed row heights aligned with CSS", () => {
+	const script = getPlaygroundConversationControllerScript();
+
+	assert.match(script, /CONVERSATION_DESKTOP_ROW_HEIGHT/);
+	assert.match(script, /CONVERSATION_MOBILE_ROW_HEIGHT/);
+	assert.match(script, /CONVERSATION_VIRTUAL_OVERSCAN/);
+
+	// Desktop: 58px min-height + 2px gap = 60px
+	assert.match(script, /CONVERSATION_DESKTOP_ROW_HEIGHT\s*=\s*60/);
+	// Mobile: estimated ~80px (68px content + 8px gap + borders)
+	assert.match(script, /CONVERSATION_MOBILE_ROW_HEIGHT\s*=\s*80/);
+	// Overscan: render a few extra rows above/below the viewport
+	assert.match(script, /CONVERSATION_VIRTUAL_OVERSCAN\s*=\s*5/);
+});
+
+test("renderConversationListInto uses virtual window rendering with spacers", () => {
+	const script = getPlaygroundConversationControllerScript();
+
+	// Should create top spacer element
+	assert.match(script, /conversation-virtual-spacer-top/);
+	// Should create bottom spacer element
+	assert.match(script, /conversation-virtual-spacer-bottom/);
+	// Should use computeVirtualWindow to determine visible range
+	assert.match(script, /computeVirtualWindow\(/);
+	// Should only render items within startIndex..endIndex range
+	assert.match(script, /startIndex/);
+	assert.match(script, /endIndex/);
+});
+
+test("virtual scroll uses requestAnimationFrame throttling", () => {
+	const script = getPlaygroundConversationControllerScript();
+
+	assert.match(script, /conversationVirtualScrollRaf/);
+	assert.match(script, /requestAnimationFrame/);
+	assert.match(script, /cancelAnimationFrame/);
+});
+
 function extractRenderConversationDrawerBlock(script: string): string | null {
 	const startMarker = "function renderConversationDrawer()";
 	const startIdx = script.indexOf(startMarker);
 	if (startIdx === -1) return null;
+	return extractBraceBlock(script, startIdx);
+}
+
+function extractFunctionBlock(script: string, fnName: string): string | null {
+	const startMarker = `function ${fnName}(`;
+	const startIdx = script.indexOf(startMarker);
+	if (startIdx === -1) return null;
+	return extractBraceBlock(script, startIdx);
+}
+
+function extractBraceBlock(script: string, startIdx: number): string | null {
 	let depth = 0;
 	let endIdx = startIdx;
 	for (let i = startIdx; i < script.length; i++) {

@@ -410,6 +410,7 @@ export function getPlaygroundStyles(): string {
 			display: grid;
 			gap: 5px;
 			width: 100%;
+			height: 72px;
 			padding: 11px 46px 11px 12px;
 			border: 1px solid var(--conversation-card-border, rgba(201, 210, 255, 0.1));
 			border-radius: 4px;
@@ -421,6 +422,11 @@ export function getPlaygroundStyles(): string {
 		.conversation-item-shell {
 			position: relative;
 			display: block;
+		}
+
+		.conversation-virtual-spacer-top,
+		.conversation-virtual-spacer-bottom {
+			width: 100%;
 		}
 
 		.conversation-item-shell .mobile-conversation-item {
@@ -3740,10 +3746,10 @@ export function getPlaygroundStyles(): string {
 			background: rgba(201, 210, 255, 0.07);
 		}
 
-		
 
-		
-		
+
+
+
 
 
 		:root[data-theme="light"] .landing-agent-card {
@@ -4231,7 +4237,7 @@ export function getPlaygroundStyles(): string {
 		}
 
 		.desktop-conversation-list .mobile-conversation-item {
-			min-height: 58px;
+			height: 58px;
 			gap: 3px;
 			padding: 8px 34px 8px 12px;
 			border-color: transparent;
