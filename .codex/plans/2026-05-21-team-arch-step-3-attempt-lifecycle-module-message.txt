@@ -1,0 +1,52 @@
+请接手 E:\AII\ugk-pi 的 Team architecture Step 3：抽取 task attempt lifecycle runner。
+
+当前基线：
+- 请确认 Step 2 已完成并提交：refactor(team): extract child task execution module
+- Step 2 未完成就不要开始本任务
+
+必须先读：
+- AGENTS.md
+- docs/team-runtime.md
+- .codex/plans/2026-05-21-team-architecture-optimization-index.md
+- .codex/plans/2026-05-21-team-arch-step-3-attempt-lifecycle-module.md
+- src/team/orchestrator.ts
+- src/team/agent-profile-role-runner.ts
+- src/team/output-validator.ts
+- src/team/run-workspace.ts
+- test/team-orchestrator-lifecycle.test.ts
+- test/team-orchestrator-success.test.ts
+- test/team-orchestrator-failure.test.ts
+- test/team-orchestrator-timeout.test.ts
+
+本轮只做：
+- 从 TeamOrchestrator 抽出 worker -> checker -> watcher attempt 生命周期
+- 保持 retry、output validation、attempt 文件、task 状态语义不变
+- 补真实行为测试
+
+禁止做：
+- 不改 role prompt
+- 不改 checker/watcher schema
+- 不改 output validation 语义
+- 不改 decomposition / for_each
+- 不改 persisted file names
+- 不做整文件格式化或换行符转换
+- 不提交 .env/.data/runtime/public 产物/temp 文件/未知 .pi/skills/*/skills-lock.json
+
+执行要求：
+- 先补测试，再写实现
+- 本 Step 一个 commit
+- 遇到计划外问题先停下说明
+- 如果小改动产生超大 diff，先检查 EOL/formatter churn
+
+最终验证：
+- node --test --import tsx test/team-orchestrator-lifecycle.test.ts
+- node --test --import tsx test/team-orchestrator-success.test.ts
+- node --test --import tsx test/team-orchestrator-failure.test.ts
+- node --test --import tsx test/team-orchestrator-timeout.test.ts
+- node --test --import tsx test/team-output-contract-regression.test.ts
+- npm run test:team
+- npx tsc --noEmit
+- git diff --check
+- git diff --stat / git diff --numstat
+
+完成后按计划里的交付报告模板回复。
