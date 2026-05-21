@@ -694,11 +694,11 @@ export class TeamOrchestrator {
 				ts.status = "skipped";
 				ts.errorSummary = null;
 				ts.progress = { phase: "skipped", message: progressMessages.skipped, updatedAt: now() };
-				} else {
+			} else {
 				ts.status = "succeeded";
 				ts.errorSummary = null;
 				ts.progress = { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
-				}
+			}
 		}
 		state.updatedAt = now();
 		state.summary = computeTeamRunSummary(state.taskStates);
@@ -753,7 +753,7 @@ export class TeamOrchestrator {
 							ts.status = "failed";
 							ts.errorSummary = valErr;
 							ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-											taskDone = true;
+							taskDone = true;
 							state.updatedAt = now();
 							state.summary = computeTeamRunSummary(state.taskStates);
 							await writer.saveState(state);
@@ -763,11 +763,11 @@ export class TeamOrchestrator {
 					await this.workspace.finishAttempt(state.runId, task.id, attemptId, { status: "succeeded", phase: "succeeded", resultRef: ts.resultRef });
 					ts.status = "succeeded";
 					ts.progress = { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
-						} else {
+				} else {
 					await this.workspace.finishAttempt(state.runId, task.id, attemptId, { status: "failed", phase: "failed", errorSummary: "watcher accepted failed work unit" });
 					ts.status = "failed";
 					ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-						}
+				}
 				taskDone = true;
 			} else if (watcherResult.decision === "confirm_failed") {
 				const attList = await this.workspace.listAttempts(state.runId, task.id);
@@ -777,7 +777,7 @@ export class TeamOrchestrator {
 				}
 				ts.status = "failed";
 				ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-					taskDone = true;
+				taskDone = true;
 			} else if (watcherResult.decision === "request_revision") {
 				watcherRevisions++;
 				if (watcherRevisions > this.maxWatcherRevisions) {
@@ -789,7 +789,7 @@ export class TeamOrchestrator {
 					ts.status = "failed";
 					ts.errorSummary = "exceeded max watcher revisions";
 					ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-							taskDone = true;
+					taskDone = true;
 				} else {
 					await this.workspace.finishAttempt(state.runId, task.id, attemptId, { status: "interrupted", phase: "watcher_revision_requested", errorSummary: "watcher requested revision" });
 				}
@@ -1463,154 +1463,153 @@ export class TeamOrchestrator {
 		});
 	}
 
-		private async executeForEachTask(
-			state: TeamRunState,
-			task: TeamTask,
-			plan: TeamPlan,
-			discoveryResults: Record<string, { outputKey: string; items: Array<Record<string, unknown>> }>,
-			signal: AbortSignal,
-		): Promise<void> {
-			if (!task.forEach) return;
+	private async executeForEachTask(
+		state: TeamRunState,
+		task: TeamTask,
+		plan: TeamPlan,
+		discoveryResults: Record<string, { outputKey: string; items: Array<Record<string, unknown>> }>,
+		signal: AbortSignal,
+	): Promise<void> {
+		if (!task.forEach) return;
 
-			const existing = await this.workspace.readExpansion(state.runId, task.id);
-			let childTasks: TeamTask[];
+		const existing = await this.workspace.readExpansion(state.runId, task.id);
+		let childTasks: TeamTask[];
 
-			if (existing) {
-				childTasks = hydrateExpandedChildTasks(existing.children, task.id);
-			} else {
-				const items = this.resolveDiscoveryItems(task.forEach.itemsFrom, discoveryResults);
-				if (items === null) {
-					const s = (await this.workspace.getState(state.runId))!;
-					s.taskStates[task.id]!.status = "failed";
-					s.taskStates[task.id]!.errorSummary = `failed to resolve discovery items from '${task.forEach.itemsFrom}'`;
-					s.taskStates[task.id]!.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-					s.updatedAt = now();
-					s.summary = computeTeamRunSummary(s.taskStates);
-					await this.workspace.saveState(s);
-					return;
-				}
-
-				const planner = this.taskExpansionPlanner;
-				const result = await planner.expand({
-					runId: state.runId,
-					planId: plan.planId,
-					parentTask: task,
-					items,
-				});
-				childTasks = result.children;
-
-				await this.workspace.writeExpansion(state.runId, {
-					schemaVersion: "team/task-expansion-1",
-					parentTaskId: task.id,
-					itemsFrom: task.forEach.itemsFrom,
-					expandedAt: now(),
-					children: childTasks.map(c => ({
-						taskId: c.id,
-						sourceItemId: c.sourceItemId ?? "",
-						sourceItem: c.sourceItem,
-						title: c.title,
-						task: c,
-					})),
-				});
-				await this.workspace.appendChildTaskStates(state.runId, childTasks);
-			}
-
-			state = (await this.workspace.getState(state.runId))!;
-			state.currentTaskId = task.id;
-			state.taskStates[task.id]!.status = "running";
-			state.taskStates[task.id]!.progress = { phase: "worker_running", message: `expanding ${childTasks.length} child tasks`, updatedAt: now() };
-			state.updatedAt = now();
-			state.summary = computeTeamRunSummary(state.taskStates);
-			await this.workspace.saveState(state);
-
-			if (childTasks.length === 0) {
-				state = (await this.workspace.getState(state.runId))!;
-				state.taskStates[task.id]!.status = "succeeded";
-				state.taskStates[task.id]!.progress = { phase: "succeeded", message: "no items to expand", updatedAt: now() };
-					state.updatedAt = now();
-				state.summary = computeTeamRunSummary(state.taskStates);
-				await this.workspace.saveState(state);
+		if (existing) {
+			childTasks = hydrateExpandedChildTasks(existing.children, task.id);
+		} else {
+			const items = this.resolveDiscoveryItems(task.forEach.itemsFrom, discoveryResults);
+			if (items === null) {
+				const s = (await this.workspace.getState(state.runId))!;
+				s.taskStates[task.id]!.status = "failed";
+				s.taskStates[task.id]!.errorSummary = `failed to resolve discovery items from '${task.forEach.itemsFrom}'`;
+				s.taskStates[task.id]!.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
+				s.updatedAt = now();
+				s.summary = computeTeamRunSummary(s.taskStates);
+				await this.workspace.saveState(s);
 				return;
 			}
 
-			await this.childExecutionModule().execute({
+			const planner = this.taskExpansionPlanner;
+			const result = await planner.expand({
 				runId: state.runId,
+				planId: plan.planId,
 				parentTask: task,
-				childTasks,
-				plan,
-				mode: task.forEach.mode ?? "sequential",
-				signal,
+				items,
 			});
+			childTasks = result.children;
+
+			await this.workspace.writeExpansion(state.runId, {
+				schemaVersion: "team/task-expansion-1",
+				parentTaskId: task.id,
+				itemsFrom: task.forEach.itemsFrom,
+				expandedAt: now(),
+				children: childTasks.map(c => ({
+					taskId: c.id,
+					sourceItemId: c.sourceItemId ?? "",
+					sourceItem: c.sourceItem,
+					title: c.title,
+					task: c,
+				})),
+			});
+			await this.workspace.appendChildTaskStates(state.runId, childTasks);
 		}
 
-		private async skipGeneratedChildren(state: TeamRunState, task: TeamTask): Promise<void> {
-			const childTaskIds: string[] = [];
+		state = (await this.workspace.getState(state.runId))!;
+		state.currentTaskId = task.id;
+		state.taskStates[task.id]!.status = "running";
+		state.taskStates[task.id]!.progress = { phase: "worker_running", message: `expanding ${childTasks.length} child tasks`, updatedAt: now() };
+		state.updatedAt = now();
+		state.summary = computeTeamRunSummary(state.taskStates);
+		await this.workspace.saveState(state);
 
-			const expansion = await this.workspace.readExpansion(state.runId, task.id);
-			if (expansion) {
-				for (const child of expansion.children) {
-					childTaskIds.push(child.taskId);
-				}
-			}
-
-			const decomposition = await this.workspace.readDecomposition(state.runId, task.id);
-			if (decomposition) {
-				for (const child of decomposition.children) {
-					childTaskIds.push(child.taskId);
-				}
-			}
-
-			if (childTaskIds.length === 0) return;
-
-			for (const childId of childTaskIds) {
-				const cs = state.taskStates[childId];
-				if (cs) {
-					cs.status = "skipped";
-					cs.progress = { phase: "skipped", message: progressMessages.skipped, updatedAt: now() };
-					cs.errorSummary = null;
-				}
-			}
-
-			state.summary = computeTeamRunSummary(state.taskStates);
+		if (childTasks.length === 0) {
+			state = (await this.workspace.getState(state.runId))!;
+			state.taskStates[task.id]!.status = "succeeded";
+			state.taskStates[task.id]!.progress = { phase: "succeeded", message: "no items to expand", updatedAt: now() };
 			state.updatedAt = now();
+			state.summary = computeTeamRunSummary(state.taskStates);
 			await this.workspace.saveState(state);
+			return;
 		}
 
+		await this.childExecutionModule().execute({
+			runId: state.runId,
+			parentTask: task,
+			childTasks,
+			plan,
+			mode: task.forEach.mode ?? "sequential",
+			signal,
+		});
+	}
 
-		private async executeExpandedChildren(
-			state: TeamRunState,
-			task: TeamTask,
-			plan: TeamPlan,
-			signal: AbortSignal,
-		): Promise<void> {
-			const existing = await this.workspace.readExpansion(state.runId, task.id);
-			if (!existing) return;
-			const childTasks = hydrateExpandedChildTasks(existing.children, task.id);
-			await this.childExecutionModule().execute({
-				runId: state.runId,
-				parentTask: task,
-				childTasks,
-				plan,
-				mode: task.forEach?.mode ?? "sequential",
-				signal,
-			});
+	private async skipGeneratedChildren(state: TeamRunState, task: TeamTask): Promise<void> {
+		const childTaskIds: string[] = [];
+
+		const expansion = await this.workspace.readExpansion(state.runId, task.id);
+		if (expansion) {
+			for (const child of expansion.children) {
+				childTaskIds.push(child.taskId);
+			}
 		}
 
-		private resolveDiscoveryItems(
-			itemsFrom: string,
-			discoveryResults: Record<string, { outputKey: string; items: Array<Record<string, unknown>> }>,
-		): Array<Record<string, unknown>> | null {
-			const parts = itemsFrom.split(".");
-			if (parts.length < 2) return null;
-			const taskId = parts[0]!;
-			const requestedOutputKey = parts[1]!;
-			const entry = discoveryResults[taskId];
-			if (!entry) return null;
-			if (entry.outputKey !== requestedOutputKey) return null;
-			return entry.items;
+		const decomposition = await this.workspace.readDecomposition(state.runId, task.id);
+		if (decomposition) {
+			for (const child of decomposition.children) {
+				childTaskIds.push(child.taskId);
+			}
 		}
 
-		private shouldStop(state: TeamRunState | null | undefined): boolean {
+		if (childTaskIds.length === 0) return;
+
+		for (const childId of childTaskIds) {
+			const cs = state.taskStates[childId];
+			if (cs) {
+				cs.status = "skipped";
+				cs.progress = { phase: "skipped", message: progressMessages.skipped, updatedAt: now() };
+				cs.errorSummary = null;
+			}
+		}
+
+		state.summary = computeTeamRunSummary(state.taskStates);
+		state.updatedAt = now();
+		await this.workspace.saveState(state);
+	}
+
+	private async executeExpandedChildren(
+		state: TeamRunState,
+		task: TeamTask,
+		plan: TeamPlan,
+		signal: AbortSignal,
+	): Promise<void> {
+		const existing = await this.workspace.readExpansion(state.runId, task.id);
+		if (!existing) return;
+		const childTasks = hydrateExpandedChildTasks(existing.children, task.id);
+		await this.childExecutionModule().execute({
+			runId: state.runId,
+			parentTask: task,
+			childTasks,
+			plan,
+			mode: task.forEach?.mode ?? "sequential",
+			signal,
+		});
+	}
+
+	private resolveDiscoveryItems(
+		itemsFrom: string,
+		discoveryResults: Record<string, { outputKey: string; items: Array<Record<string, unknown>> }>,
+	): Array<Record<string, unknown>> | null {
+		const parts = itemsFrom.split(".");
+		if (parts.length < 2) return null;
+		const taskId = parts[0]!;
+		const requestedOutputKey = parts[1]!;
+		const entry = discoveryResults[taskId];
+		if (!entry) return null;
+		if (entry.outputKey !== requestedOutputKey) return null;
+		return entry.items;
+	}
+
+	private shouldStop(state: TeamRunState | null | undefined): boolean {
 		if (!state) return true;
 		if (isRunExternallyStopped(state.status)) return true;
 		if (this.leaseOwnerId && state.lease?.ownerId !== this.leaseOwnerId) return true;
