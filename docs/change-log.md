@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-21 — Team plan validation module 抽取
+
+- **主题**: 将 Team Plan create/update schema policy 从 `PlanStore` 抽到专用 validation module
+- **影响范围**: `src/team/plan-validation.ts`, `src/team/plan-store.ts`, `test/team-plan-store.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - 新增 `validateCreatePlanInput()` 和 `validatePlanTasks()`，集中维护 task type、decomposer、`for_each`、outputCheck 规则
+  - `PlanStore` 保留 Plan 持久化、读取、删除、归档和 `runCount` 不变式；create/update 行为和错误语义不变
+  - 补充模块级 validation 测试，并保留原有 PlanStore/API validation 覆盖
+
+---
+
 ## 2026-05-21 — Team task attempt lifecycle runner 抽取
 
 - **主题**: 将单个 task 的 worker/checker/watcher attempt 生命周期从 `TeamOrchestrator` 抽到专用 runner

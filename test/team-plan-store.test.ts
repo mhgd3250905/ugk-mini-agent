@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { PlanStore } from "../src/team/plan-store.js";
+import { validateCreatePlanInput, validatePlanTasks } from "../src/team/plan-validation.js";
 
 const validInput = {
 	title: "Medtrum 域名调查",
@@ -12,6 +13,46 @@ const validInput = {
 	tasks: [{ id: "t1", title: "核查 medtrum.com", input: { text: "核查" }, acceptance: { rules: ["必须说明来源"] } }],
 	outputContract: { text: "中文汇总" },
 };
+
+test("plan validation module preserves create and for_each validation policy", () => {
+	assert.doesNotThrow(() => validateCreatePlanInput(validInput));
+	assert.throws(
+		() => validatePlanTasks([{
+			id: "t1",
+			type: "for_each",
+			title: "Process each",
+			input: { text: "placeholder" },
+			acceptance: { rules: ["ok"] },
+			forEach: {
+				itemsFrom: "t0.items",
+				mode: "unknown",
+				taskTemplate: {
+					title: "Process",
+					input: { text: "Process" },
+					acceptance: { rules: ["ok"] },
+				},
+			},
+		}] as any),
+		{ message: "for_each task requires forEach.mode 'sequential' or 'parallel'" },
+	);
+	assert.doesNotThrow(() => validatePlanTasks([{
+		id: "t1",
+		type: "for_each",
+		title: "Process each",
+		input: { text: "placeholder" },
+		acceptance: { rules: ["ok"] },
+		forEach: {
+			itemsFrom: "t0.items",
+			mode: "parallel",
+			taskTemplate: {
+				title: "Process",
+				input: { text: "Process" },
+				acceptance: { rules: ["ok"] },
+				decomposer: { mode: "none" },
+			},
+		},
+	}] as any));
+});
 
 test("PlanStore create validates required fields", async () => {
 	const root = await mkdtemp(join(tmpdir(), "plan-store-"));
