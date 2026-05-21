@@ -8,6 +8,12 @@ import { writeTimingSpan } from "./timing.js";
 import { progressMessages } from "./progress.js";
 import { TaskExpansionPlanner, TemplateTaskExpansionPlanner } from "./task-expansion-planner.js";
 import { validateTeamOutput } from "./output-validator.js";
+import {
+	ExpandedChildExecutionModule,
+	TERMINAL_TASK_STATUSES,
+	hydrateExpandedChildTasks,
+	type TeamStateWriter,
+} from "./child-execution.js";
 
 export interface PhaseTimeouts {
 	workerMs: number;
@@ -37,32 +43,6 @@ export interface TeamOrchestratorOptions {
 	taskExpansionPlanner?: TaskExpansionPlanner;
 }
 
-/** Explicit state-write seam for parallel child execution. */
-export interface TeamStateWriter {
-	saveState(state: TeamRunState): Promise<void>;
-}
-
-/** Scoped writer that only persists a single child task's state via patchState. */
-class ParallelChildStateWriter implements TeamStateWriter {
-	constructor(
-		private readonly workspace: RunWorkspace,
-		private readonly runId: string,
-		private readonly taskId: string,
-	) {}
-
-	async saveState(state: TeamRunState): Promise<void> {
-		await this.workspace.patchState(this.runId, (latest) => {
-			if (latest.status !== "running") return;
-			const latestTask = latest.taskStates[this.taskId];
-			if (latestTask && (TERMINAL_TASK_STATUSES.has(latestTask.status) || latestTask.status === "interrupted")) {
-				return;
-			}
-			latest.taskStates[this.taskId] = state.taskStates[this.taskId]!;
-			latest.summary = computeTeamRunSummary(latest.taskStates);
-		});
-	}
-}
-
 const now = () => new Date().toISOString();
 
 function clearSuccessfulForceRerunDispositions(state: TeamRunState): boolean {
@@ -76,8 +56,6 @@ function clearSuccessfulForceRerunDispositions(state: TeamRunState): boolean {
 	}
 	return changed;
 }
-
-const TERMINAL_TASK_STATUSES = new Set(["succeeded", "failed", "cancelled", "skipped"]);
 
 interface WorkUnitRunResult {
 	status: "passed" | "failed";
@@ -95,7 +73,6 @@ export function shouldExecuteOnRerun(taskState: TeamTaskState): boolean {
 	return taskState.status !== "succeeded";
 }
 const DEFAULT_DECOMPOSER_MAX_CHILDREN = 8;
-const PARALLEL_FOR_EACH_CONCURRENCY = 3;
 const MAX_TOTAL_TASKS_PER_RUN = 50;
 
 function isRunExternallyStopped(status: string): boolean {
@@ -1476,6 +1453,16 @@ export class TeamOrchestrator {
 		return items.every(item => typeof item.id === "string" && item.id.trim().length > 0);
 	}
 
+	private childExecutionModule(): ExpandedChildExecutionModule {
+		return new ExpandedChildExecutionModule({
+			workspace: this.workspace,
+			shouldStop: (state) => this.shouldStop(state),
+			isTimedOut: (state) => this.isTimedOut(state),
+			handleTimeout: (state, plan) => this.handleTimeout(state, plan),
+			executeChild: (state, child, plan, signal, writer) => this.executeMaybeDecomposedTask(state, child, plan, signal, writer),
+		});
+	}
+
 		private async executeForEachTask(
 			state: TeamRunState,
 			task: TeamTask,
@@ -1489,28 +1476,7 @@ export class TeamOrchestrator {
 			let childTasks: TeamTask[];
 
 			if (existing) {
-				childTasks = existing.children.map(c => {
-					if (c.task) {
-						const t = c.task;
-						return {
-							...t,
-							generated: t.generated ?? true,
-							sourceItemId: t.sourceItemId ?? c.sourceItemId,
-							sourceItem: t.sourceItem ?? c.sourceItem,
-						};
-					}
-					return {
-						id: c.taskId,
-						type: "normal" as const,
-						title: c.title,
-						input: { text: c.title },
-						acceptance: { rules: ["output is valid"] },
-						parentTaskId: task.id,
-						sourceItemId: c.sourceItemId,
-						sourceItem: c.sourceItem,
-						generated: true,
-					};
-				});
+				childTasks = hydrateExpandedChildTasks(existing.children, task.id);
 			} else {
 				const items = this.resolveDiscoveryItems(task.forEach.itemsFrom, discoveryResults);
 				if (items === null) {
@@ -1567,179 +1533,16 @@ export class TeamOrchestrator {
 				return;
 			}
 
-			if ((task.forEach.mode ?? "sequential") === "parallel") {
-				await this.executeChildrenParallel(state.runId, task, childTasks, plan, signal);
-				return;
-			}
-
-			for (const child of childTasks) {
-				state = (await this.workspace.getState(state.runId))!;
-				if (state.status !== "running" || this.shouldStop(state)) break;
-				if (TERMINAL_TASK_STATUSES.has(state.taskStates[child.id]?.status ?? "pending")) continue;
-				if (signal.aborted) break;
-				if (this.isTimedOut(state)) {
-					await this.handleTimeout(state, plan);
-					return;
-				}
-				await this.executeMaybeDecomposedTask(state, child, plan, signal, this.workspace);
-			}
-
-			state = (await this.workspace.getState(state.runId))!;
-			if (state.status !== "running" || this.shouldStop(state)) return;
-			const allDone = childTasks.every(c => {
-				const cs = state.taskStates[c.id];
-				return cs && TERMINAL_TASK_STATUSES.has(cs.status);
-			});
-			if (!allDone) return;
-			const anyFailed = childTasks.some(c => state.taskStates[c.id]?.status === "failed");
-			if (anyFailed) {
-				state.taskStates[task.id]!.status = "failed";
-				state.taskStates[task.id]!.errorSummary = "one or more child tasks failed";
-				state.taskStates[task.id]!.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-				} else {
-				const allSkipped = childTasks.every(c => state.taskStates[c.id]?.status === "skipped");
-				if (allSkipped) {
-					state.taskStates[task.id]!.status = "skipped";
-					state.taskStates[task.id]!.errorSummary = null;
-					state.taskStates[task.id]!.progress = { phase: "skipped", message: progressMessages.skipped, updatedAt: now() };
-						} else {
-					state.taskStates[task.id]!.status = "succeeded";
-					state.taskStates[task.id]!.errorSummary = null;
-					state.taskStates[task.id]!.progress = { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
-						}
-			}
-			state.updatedAt = now();
-			state.summary = computeTeamRunSummary(state.taskStates);
-			await this.workspace.saveState(state);
-		}
-
-		private async executeChildrenParallel(
-			runId: string,
-			parentTask: TeamTask,
-			childTasks: TeamTask[],
-			plan: TeamPlan,
-			signal: AbortSignal,
-		): Promise<void> {
-			let state = (await this.workspace.getState(runId))!;
-			const queue: TeamTask[] = [];
-			for (const child of childTasks) {
-				const cs = state.taskStates[child.id];
-				if (!cs || !TERMINAL_TASK_STATUSES.has(cs.status)) {
-					queue.push(child);
-				}
-			}
-
-			if (queue.length > 0) {
-				const active = new Set<Promise<void>>();
-				let nextIdx = 0;
-
-				const startChild = async (child: TeamTask): Promise<void> => {
-					let needsTimeout = false;
-					try {
-						const current = await this.workspace.getState(runId);
-						if (!current || current.status !== "running" || this.shouldStop(current) || signal.aborted) return;
-						if (this.isTimedOut(current)) {
-							needsTimeout = true;
-							return;
-						}
-						const cs = current.taskStates[child.id];
-						if (cs && TERMINAL_TASK_STATUSES.has(cs.status)) return;
-						const scopedWriter = new ParallelChildStateWriter(this.workspace, runId, child.id);
-						await this.executeMaybeDecomposedTask(current, child, plan, signal, scopedWriter);
-					} catch (err) {
-						// Mark child as failed; if state write fails, error propagates
-						const msg = err instanceof Error ? err.message : String(err);
-						await this.workspace.patchState(runId, (latest) => {
-							if (latest.status !== "running") return;
-							const childState = latest.taskStates[child.id];
-							if (childState && !TERMINAL_TASK_STATUSES.has(childState.status)) {
-								childState.status = "failed";
-								childState.errorSummary = `unexpected error: ${msg}`;
-								childState.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-							}
-							latest.summary = computeTeamRunSummary(latest.taskStates);
-						});
-					}
-					if (needsTimeout) {
-						await this.handleTimeout((await this.workspace.getState(runId))!, plan);
-					}
-				};
-
-				const launch = (child: TeamTask) => {
-					const p = startChild(child).finally(() => { active.delete(p); });
-					active.add(p);
-				};
-
-				while (nextIdx < queue.length && active.size < PARALLEL_FOR_EACH_CONCURRENCY) {
-					const current = await this.workspace.getState(runId);
-					if (!current || current.status !== "running" || this.shouldStop(current) || signal.aborted) break;
-					if (this.isTimedOut(current)) {
-						await this.handleTimeout(current, plan);
-						break;
-					}
-					launch(queue[nextIdx]!);
-					nextIdx++;
-				}
-
-				let fatalError: unknown = null;
-
-				while (active.size > 0 && !fatalError) {
-					try {
-						await Promise.race(active);
-					} catch (err) {
-						fatalError = err;
-						break;
-					}
-					while (nextIdx < queue.length && active.size < PARALLEL_FOR_EACH_CONCURRENCY) {
-						const current = await this.workspace.getState(runId);
-						if (!current || current.status !== "running" || this.shouldStop(current) || signal.aborted) break;
-						if (this.isTimedOut(current)) {
-							await this.handleTimeout(current, plan);
-							break;
-						}
-						launch(queue[nextIdx]!);
-						nextIdx++;
-					}
-				}
-
-				// Drain any remaining active children
-				if (active.size > 0) {
-					await Promise.allSettled(Array.from(active));
-				}
-
-				// If a fatal error occurred, rethrow after drain so failRun handles it
-				if (fatalError) {
-					throw fatalError;
-				}
-			}
-
-			// Apply parent summary using patchState
-			await this.workspace.patchState(runId, (s) => {
-				if (s.status !== "running" || this.shouldStop(s)) return;
-				const allDone = childTasks.every(c => {
-					const cs = s.taskStates[c.id];
-					return cs && TERMINAL_TASK_STATUSES.has(cs.status);
-				});
-				if (!allDone) return;
-				const anySucceeded = childTasks.some(c => s.taskStates[c.id]?.status === "succeeded");
-				const allSkipped = childTasks.every(c => s.taskStates[c.id]?.status === "skipped");
-				const ts = s.taskStates[parentTask.id]!;
-				if (anySucceeded) {
-					ts.status = "succeeded";
-					ts.errorSummary = null;
-					ts.progress = { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
-				} else if (allSkipped) {
-					ts.status = "skipped";
-					ts.errorSummary = null;
-					ts.progress = { phase: "skipped", message: progressMessages.skipped, updatedAt: now() };
-				} else {
-					ts.status = "failed";
-					ts.errorSummary = "one or more child tasks failed";
-					ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-				}
-				s.summary = computeTeamRunSummary(s.taskStates);
+			await this.childExecutionModule().execute({
+				runId: state.runId,
+				parentTask: task,
+				childTasks,
+				plan,
+				mode: task.forEach.mode ?? "sequential",
+				signal,
 			});
 		}
+
 		private async skipGeneratedChildren(state: TeamRunState, task: TeamTask): Promise<void> {
 			const childTaskIds: string[] = [];
 
@@ -1782,68 +1585,15 @@ export class TeamOrchestrator {
 		): Promise<void> {
 			const existing = await this.workspace.readExpansion(state.runId, task.id);
 			if (!existing) return;
-			const childTasks: TeamTask[] = existing.children.map(c => {
-				if (c.task) {
-					const t = c.task;
-					return {
-						...t,
-						generated: t.generated ?? true,
-						sourceItemId: t.sourceItemId ?? c.sourceItemId,
-						sourceItem: t.sourceItem ?? c.sourceItem,
-					};
-				}
-				return {
-					id: c.taskId,
-					type: "normal" as const,
-					title: c.title,
-					input: { text: c.title },
-					acceptance: { rules: ["output is valid"] },
-					parentTaskId: task.id,
-					sourceItemId: c.sourceItemId,
-					sourceItem: c.sourceItem,
-					generated: true,
-				};
+			const childTasks = hydrateExpandedChildTasks(existing.children, task.id);
+			await this.childExecutionModule().execute({
+				runId: state.runId,
+				parentTask: task,
+				childTasks,
+				plan,
+				mode: task.forEach?.mode ?? "sequential",
+				signal,
 			});
-			if ((task.forEach?.mode ?? "sequential") === "parallel") {
-				await this.executeChildrenParallel(state.runId, task, childTasks, plan, signal);
-				return;
-			}
-			for (const child of childTasks) {
-				state = (await this.workspace.getState(state.runId))!;
-				if (state.status !== "running" || this.shouldStop(state)) break;
-				if (TERMINAL_TASK_STATUSES.has(state.taskStates[child.id]?.status ?? "pending")) continue;
-				if (signal.aborted) break;
-				await this.executeMaybeDecomposedTask(state, child, plan, signal, this.workspace);
-			}
-			state = (await this.workspace.getState(state.runId))!;
-			if (state.status !== "running" || this.shouldStop(state)) return;
-			const allDone = childTasks.every(c => {
-				const cs = state.taskStates[c.id];
-				return cs && TERMINAL_TASK_STATUSES.has(cs.status);
-			});
-			if (!allDone) return;
-			const anyFailed = childTasks.some(c => state.taskStates[c.id]?.status === "failed");
-			const ts = state.taskStates[task.id]!;
-			if (TERMINAL_TASK_STATUSES.has(ts.status)) return;
-			if (anyFailed) {
-				ts.status = "failed";
-				ts.errorSummary = "one or more child tasks failed";
-				ts.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-				} else {
-				const allSkipped = childTasks.every(c => state.taskStates[c.id]?.status === "skipped");
-				if (allSkipped) {
-					ts.status = "skipped";
-					ts.errorSummary = null;
-					ts.progress = { phase: "skipped", message: progressMessages.skipped, updatedAt: now() };
-						} else {
-					ts.status = "succeeded";
-					ts.errorSummary = null;
-					ts.progress = { phase: "succeeded", message: progressMessages.succeeded, updatedAt: now() };
-						}
-			}
-			state.updatedAt = now();
-			state.summary = computeTeamRunSummary(state.taskStates);
-			await this.workspace.saveState(state);
 		}
 
 		private resolveDiscoveryItems(

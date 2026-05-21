@@ -8,6 +8,8 @@ import { PlanStore } from "../src/team/plan-store.js";
 import { TeamUnitStore } from "../src/team/team-unit-store.js";
 import { RunWorkspace } from "../src/team/run-workspace.js";
 import { MockRoleRunner } from "../src/team/role-runner.js";
+import { ExpandedChildExecutionModule } from "../src/team/child-execution.js";
+import { computeTeamRunSummary } from "../src/team/team-summary.js";
 
 class DiscoveryMockRunner extends MockRoleRunner {
 	private callIndex = 0;
@@ -152,6 +154,87 @@ test("discovery + for_each: expands 3 items to 3 child tasks, all succeed", asyn
 			const attempts = await workspace.listAttempts(state.runId, `process_each__${suffix}`);
 			assert.equal(attempts.length, 1);
 		}
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("child execution module: sequential children run in order and failed child fails parent", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-child-exec-"));
+	try {
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({
+			title: "t", description: "d",
+			watcherProfileId: "w", workerProfileId: "wo",
+			checkerProfileId: "c", finalizerProfileId: "f",
+		});
+		const parentTask = {
+			id: "process",
+			type: "for_each" as const,
+			title: "Process",
+			input: { text: "p" },
+			acceptance: { rules: ["ok"] },
+			forEach: {
+				itemsFrom: "discover.items",
+				mode: "sequential" as const,
+				taskTemplate: { title: "T", input: { text: "p" }, acceptance: { rules: ["ok"] } },
+			},
+		};
+		const plan = await planStore.create({
+			title: "child executor",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [parentTask],
+			outputContract: { text: "done" },
+		});
+		const state = await workspace.createRun(plan, unit.teamUnitId);
+		const childTasks = [
+			{ id: "process__a", type: "normal" as const, title: "A", input: { text: "a" }, acceptance: { rules: ["ok"] }, parentTaskId: "process", generated: true },
+			{ id: "process__b", type: "normal" as const, title: "B", input: { text: "b" }, acceptance: { rules: ["ok"] }, parentTaskId: "process", generated: true },
+			{ id: "process__c", type: "normal" as const, title: "C", input: { text: "c" }, acceptance: { rules: ["ok"] }, parentTaskId: "process", generated: true },
+		];
+		await workspace.appendChildTaskStates(state.runId, childTasks);
+		const running = (await workspace.getState(state.runId))!;
+		running.status = "running";
+		running.taskStates.process!.status = "running";
+		running.summary = computeTeamRunSummary(running.taskStates);
+		await workspace.saveState(running);
+
+		const executionOrder: string[] = [];
+		const executor = new ExpandedChildExecutionModule({
+			workspace,
+			shouldStop: (s) => !s || s.status !== "running",
+			isTimedOut: () => false,
+			handleTimeout: async () => {},
+			executeChild: async (childState, child) => {
+				executionOrder.push(child.id);
+				const latest = (await workspace.getState(childState.runId))!;
+				const ts = latest.taskStates[child.id]!;
+				ts.status = child.id === "process__b" ? "failed" : "succeeded";
+				ts.errorSummary = child.id === "process__b" ? "intentional child failure" : null;
+				ts.progress = { phase: ts.status, message: ts.status, updatedAt: new Date().toISOString() };
+				latest.summary = computeTeamRunSummary(latest.taskStates);
+				await workspace.saveState(latest);
+			},
+		});
+
+		await executor.execute({
+			runId: state.runId,
+			parentTask,
+			childTasks,
+			plan,
+			mode: "sequential",
+			signal: new AbortController().signal,
+		});
+
+		const final = (await workspace.getState(state.runId))!;
+		assert.deepEqual(executionOrder, ["process__a", "process__b", "process__c"]);
+		assert.equal(final.taskStates.process?.status, "failed");
+		assert.equal(final.taskStates.process__a?.status, "succeeded");
+		assert.equal(final.taskStates.process__b?.status, "failed");
+		assert.equal(final.taskStates.process__c?.status, "succeeded");
 	} finally {
 		await rm(root, { recursive: true });
 	}

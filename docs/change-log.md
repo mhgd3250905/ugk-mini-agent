@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-21 — Team child execution module 抽取
+
+- **主题**: 将 `for_each` expanded child 的 sequential / parallel 执行拓扑从 `TeamOrchestrator` 抽到内部模块
+- **影响范围**: `src/team/child-execution.ts`, `src/team/orchestrator.ts`, `test/team-orchestrator-dynamic-expansion.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - 新增 `ExpandedChildExecutionModule`，集中处理 sequential child loop、parallel refill pool、fatal drain、parent status aggregation 和 scoped child state writer
+  - `TeamOrchestrator` 保留 expansion 生成、run-level 生命周期和 task type 分发，不再直接维护 expanded child 执行拓扑
+  - 保持 expansion record、child task ID、`for_each.sequential` / `for_each.parallel` 父聚合、pause/cancel/rerun 行为不变
+  - 新增模块级真实状态测试，覆盖 sequential child 顺序执行与失败 child 聚合
+
+---
+
 ## 2026-05-21 — Team parallel state writer 显式化
 
 - **主题**: 将 `executeChildrenParallel` 中的 `saveState` monkey-patch 替换为显式 `TeamStateWriter` / `ParallelChildStateWriter`
