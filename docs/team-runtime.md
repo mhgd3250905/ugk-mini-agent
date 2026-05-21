@@ -764,6 +764,7 @@ docker compose up -d --scale ugk-pi-team-worker=2  # 多 worker 验证
 响应式卡片网格展示所有 Plan。每张卡片包含：
 
 - 标题 + 芯片（任务数 / 运行数）
+- Plan ID：完整展示，点击可复制（`.team-id-label`）
 - 目标摘要（截断显示）
 - 计划类型标签：`普通` 或 `动态`（含 discovery → for_each 的 Plan）
 - 活跃/最新 Run 摘要：状态 badge、当前任务、耗时
@@ -784,7 +785,7 @@ docker compose up -d --scale ugk-pi-team-worker=2  # 多 worker 验证
   - 动态计划：**设计图**，可视化展示 discovery 节点 → `outputKey` → `for_each` 模板 → 运行时扩展概念
 - **Run 列表**：仅展示该 Plan 关联的 Run（复用运行记录的卡片样式）
 
-Run 卡片可展开，点击后展示该 Run 的 **任务时间线**：
+Run 卡片中 Run ID 完整展示，点击可复制（`.team-id-label`）。Run 卡片可展开，点击后展示该 Run 的 **任务时间线**：
 
 - 有序任务节点，每个节点显示状态图标和标题
 - 动态生成的子任务在父任务下方缩进展示

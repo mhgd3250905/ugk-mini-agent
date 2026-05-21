@@ -12,6 +12,21 @@
 
 ---
 
+## 2026-05-21 — Team Plan / Run ID 完整展示与点击复制
+
+- **主题**: Team 页面 Plan ID 和 Run ID 完整展示，点击即可复制，不再截断显示
+- **影响范围**: `src/ui/team-page.ts`, `src/ui/team-page-helpers.ts`, `test/team-page-ui.test.ts`, `docs/change-log.md`, `docs/team-runtime.md`
+- **变更**:
+  - Plan dashboard card 和 plan detail 顶部显示完整 `planId`，使用 `.team-id-label` 样式，点击复制
+  - Run card 中 Run ID 从 `slice(0, 12) + '...'` 截断改为完整展示，使用 `.team-id-label` 样式，点击复制
+  - 新增 `writeTeamClipboardText()` / `copyTeamIdToClipboard()` clipboard helper，优先 `navigator.clipboard.writeText`，fallback 到临时 textarea + `execCommand("copy")`
+  - 复制成功后 label 文本变「已复制」并加 `.is-copied` 样式，约 1200ms 后恢复原 ID
+  - 点击 ID label 不触发外层卡片行为（`event.stopPropagation()` + `event.preventDefault()`）
+  - helper mirror (`team-page-helpers.ts`) 与 inline renderer 输出关键 token 保持一致
+  - 恶意 planId/runId 在可见文本和 HTML 属性中使用 `escapeHtml()` 转义，JS 参数使用 `jsArg()` 转义
+
+---
+
 ## 2026-05-21 — Team Runtime: force_rerun autoclear & disposition scroll preservation
 
 - **主题**: 被强制重跑的任务在成功后自动清除标记；UI disposition 操作不再导致页面跳回顶部
