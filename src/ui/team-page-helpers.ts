@@ -153,8 +153,12 @@ export function renderPlanDashboardCard(plan: any, runs: any[]): string {
 			+ statusBadge(latestRun.status)
 			+ '</div>';
 	}
+	var planIdLabel = safePlan.planId
+		? '<div class="team-id-row" style="margin-top:4px"><span class="team-id-label" title="点击复制 Plan ID" onclick="copyTeamIdToClipboard(event, ' + jsArg(safePlan.planId) + ', this)">' + escapeHtml(safePlan.planId) + '</span></div>'
+		: '';
 	return '<div class="' + cardClass + '" data-plan-id="' + escapeHtml(safePlan.planId || '') + '">'
 		+ '<div class="plan-card-header"><span class="plan-card-title">' + escapeHtml(safePlan.title || '') + '</span><div class="plan-card-chips">' + kindBadge + runChip + '</div></div>'
+		+ planIdLabel
 		+ (summaryRow ? '<div class="plan-summary">' + summaryRow + '</div>' : '')
 		+ activeSummary
 		+ '<div class="plan-actions">'
@@ -230,7 +234,7 @@ export function renderPlanRunCard(run: any, plan: any): string {
 	var rid = jsArg(run.runId);
 	var html = '<div class="' + cardClass + '" data-run-id="' + escapeHtml(run.runId) + '" data-run-status="' + escapeHtml(run.status) + '"' + (run.startedAt ? ' data-started-at="' + escapeHtml(run.startedAt) + '"' : '') + ' style="margin-bottom:8px;cursor:pointer" onclick="togglePlanRunDetail(this, ' + rid + ')">';
 	html += '<div style="display:flex;justify-content:space-between;align-items:center">';
-	html += '<div><span class="run-id">' + escapeHtml(run.runId.slice(0, 12)) + '...</span> <span class="run-badge">' + statusBadge(run.status) + '</span></div>';
+	html += '<div style="display:flex;align-items:center;gap:6px"><span class="team-id-label" title="点击复制 Run ID" onclick="copyTeamIdToClipboard(event, ' + jsArg(run.runId) + ', this)">' + escapeHtml(run.runId) + '</span> <span class="run-badge">' + statusBadge(run.status) + '</span></div>';
 	html += '<span class="run-elapsed" style="font-size:12px;color:var(--muted)">' + formatDuration(run.activeElapsedMs) + '</span>';
 	html += '</div>';
 	html += '<div class="run-progress" style="font-size:12px;color:var(--muted);margin-top:4px">任务进度：' + prog.done + '/' + prog.total + '</div>';

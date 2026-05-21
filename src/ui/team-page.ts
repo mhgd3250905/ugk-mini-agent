@@ -102,6 +102,12 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 .run-id { font-family: monospace; font-size: 12px; color: var(--muted); }
 .summary-item { text-align: center; font-size: 18px; font-weight: 600; }
 
+/* Team ID label — click to copy, full display */
+.team-id-row { display: flex; align-items: center; }
+.team-id-label { font-family: monospace; font-size: 11px; color: var(--muted); background: var(--bg); padding: 3px 8px; border-radius: 6px; cursor: pointer; user-select: none; overflow-wrap: anywhere; word-break: break-all; transition: color 0.15s, background 0.15s; border: 1px solid var(--border); }
+.team-id-label:hover { color: var(--accent); background: var(--border); }
+.team-id-label.is-copied { color: var(--success); background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.3); }
+
 /* Toast */
 #team-toast-root { position: fixed; bottom: 20px; right: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
 .toast { padding: 10px 16px; border-radius: 6px; font-size: 13px; max-width: 360px; pointer-events: auto; animation: toastIn 0.2s ease; }
@@ -508,6 +514,44 @@ function showToast(message, type) {
 function showError(message) { showToast(message, 'error'); }
 function showSuccess(message) { showToast(message, 'success'); }
 
+async function writeTeamClipboardText(text) {
+	var value = String(text || '');
+	if (navigator.clipboard && window.isSecureContext) {
+		await navigator.clipboard.writeText(value);
+		return;
+	}
+	var textarea = document.createElement('textarea');
+	textarea.value = value;
+	textarea.setAttribute('readonly', '');
+	textarea.style.position = 'fixed';
+	textarea.style.left = '-9999px';
+	document.body.appendChild(textarea);
+	textarea.select();
+	try {
+		if (!document.execCommand('copy')) {
+			throw new Error('copy_failed');
+		}
+	} finally {
+		textarea.remove();
+	}
+}
+
+function copyTeamIdToClipboard(event, value, labelEl) {
+	event.stopPropagation();
+	event.preventDefault();
+	writeTeamClipboardText(value).then(function() {
+		showSuccess('已复制');
+		labelEl.textContent = '已复制';
+		labelEl.classList.add('is-copied');
+		setTimeout(function() {
+			labelEl.textContent = value;
+			labelEl.classList.remove('is-copied');
+		}, 1200);
+	}).catch(function() {
+		showError('复制失败');
+	});
+}
+
 function findLatestPlanById(planId) {
 	for (var i = 0; i < _latestPlans.length; i++) {
 		if (_latestPlans[i] && _latestPlans[i].planId === planId) return _latestPlans[i];
@@ -896,8 +940,12 @@ async function saveTeamUnit() {
 						+ statusBadge(latestRun.status)
 						+ '</div>';
 				}
+				var planIdLabel = safePlan.planId
+					? '<div class="team-id-row" style="margin-top:4px"><span class="team-id-label" title="点击复制 Plan ID" onclick="copyTeamIdToClipboard(event, ' + jsArg(safePlan.planId) + ', this)">' + escapeHtml(safePlan.planId) + '</span></div>'
+					: '';
 				return '<div class="' + cardClass + '" data-plan-id="' + escapeHtml(safePlan.planId || '') + '">'
 					+ '<div class="plan-card-header"><span class="plan-card-title">' + escapeHtml(safePlan.title || '') + '</span><div class="plan-card-chips">' + kindBadge + runChip + '</div></div>'
+					+ planIdLabel
 					+ (summaryRow ? '<div class="plan-summary">' + summaryRow + '</div>' : '')
 					+ activeSummary
 					+ '<div class="plan-actions">'
@@ -932,6 +980,7 @@ async function saveTeamUnit() {
 				var dynamic = isDynamicPlan(tasks);
 				var html = '<div class="card">';
 				html += '<h2 style="font-size:18px;margin-bottom:8px">' + escapeHtml(safePlan.title || '') + '</h2>';
+				if (safePlan.planId) html += '<div class="team-id-row" style="margin-bottom:8px"><span class="team-id-label" title="点击复制 Plan ID" onclick="copyTeamIdToClipboard(event, ' + jsArg(safePlan.planId) + ', this)">' + escapeHtml(safePlan.planId) + '</span></div>';
 				html += '<div style="display:flex;gap:8px;margin-bottom:12px">';
 				html += '<span class="plan-chip plan-kind-badge">' + escapeHtml(planKindLabel(safePlan)) + '</span>';
 				html += '<span class="plan-chip">' + tasks.length + ' \u4e2a\u4efb\u52a1</span>';
@@ -1032,7 +1081,7 @@ async function saveTeamUnit() {
 				var cardClass = 'card' + (isActive ? ' plan-card-active' : '');
 				var html = '<div class="' + cardClass + '" data-run-id="' + escapeHtml(run.runId) + '" data-run-status="' + escapeHtml(run.status) + '"' + (run.startedAt ? ' data-started-at="' + escapeHtml(run.startedAt) + '"' : '') + ' style="margin-bottom:8px;cursor:pointer" onclick="togglePlanRunDetail(this, ' + jsArg(run.runId) + ')">';
 				html += '<div style="display:flex;justify-content:space-between;align-items:center">';
-				html += '<div><span class="run-id">' + escapeHtml(run.runId.slice(0, 12)) + '...</span> <span class="run-badge">' + statusBadge(run.status) + '</span></div>';
+				html += '<div style="display:flex;align-items:center;gap:6px"><span class="team-id-label" title="点击复制 Run ID" onclick="copyTeamIdToClipboard(event, ' + jsArg(run.runId) + ', this)">' + escapeHtml(run.runId) + '</span> <span class="run-badge">' + statusBadge(run.status) + '</span></div>';
 				html += '<span class="run-elapsed" style="font-size:12px;color:var(--muted)">' + formatDuration(run.activeElapsedMs) + '</span>';
 				html += '</div>';
 				html += '<div class="run-progress" style="font-size:12px;color:var(--muted);margin-top:4px">任务进度：' + prog.done + '/' + prog.total + '</div>';

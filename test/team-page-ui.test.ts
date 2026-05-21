@@ -2658,3 +2658,157 @@ test("run action escaping: paused run shows resume and cancel, no rerun", () => 
 	assert.match(html, /取消/);
 	assert.doesNotMatch(html, /按标记重跑/);
 });
+
+// ── Copyable Plan ID / Run ID tests ──
+
+test("copyable: renderPlanDashboardCard shows full planId in team-id-label", () => {
+	const html = renderPlanDashboardCard(dashPlan, dashRuns);
+	assert.match(html, /team-id-label/);
+	assert.match(html, /plan_dash/);
+	assert.match(html, /点击复制 Plan ID/);
+});
+
+test("copyable: renderPlanDashboardCard no longer truncates planId", () => {
+	const longIdPlan = { ...dashPlan, planId: "plan_very_long_id_that_should_not_be_truncated_abcdef123456" };
+	const html = renderPlanDashboardCard(longIdPlan, []);
+	assert.match(html, /plan_very_long_id_that_should_not_be_truncated_abcdef123456/);
+	assert.doesNotMatch(html, /plan_very_long_id_that_should_not_be_t\.\.\./, "planId must not be truncated");
+});
+
+test("copyable: renderPlanDashboardCard escapes malicious planId in visible text and attributes", () => {
+	const malicious = {
+		planId: '<script>alert(1)</script>', title: 'normal title',
+		goal: { text: 'ok' }, tasks: [{ id: "t1", title: "task" }],
+		outputContract: { text: "ok" }, runCount: 0,
+	};
+	const html = renderPlanDashboardCard(malicious, []);
+	assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
+	assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+	assert.doesNotMatch(html, /onclick="[^"]*<script/, "team-id-label onclick must use jsArg not raw planId");
+});
+
+test("copyable: renderPlanDashboardCard planId label click does not trigger card action", () => {
+	const html = renderPlanDashboardCard(dashPlan, dashRuns);
+	// The team-id-label must have its own onclick handler (copyTeamIdToClipboard)
+	assert.match(html, /team-id-label[^>]*onclick/);
+	assert.match(html, /copyTeamIdToClipboard/);
+	// stopPropagation is inside the JS function, not in the onclick attribute string
+	const script = extractScript();
+	assert.match(script, /copyTeamIdToClipboard[\s\S]*?event\.stopPropagation/);
+});
+
+test("copyable: renderPlanRunCard shows full runId in team-id-label", () => {
+	const html = renderPlanRunCard(runningRun, runCardPlan);
+	assert.match(html, /team-id-label/);
+	assert.match(html, /run_running_001/);
+	assert.match(html, /点击复制 Run ID/);
+});
+
+test("copyable: renderPlanRunCard no longer truncates runId with slice(0,12)", () => {
+	const longIdRun = {
+		...runningRun,
+		runId: "run_very_long_id_that_should_not_be_truncated_abcdef1234567890",
+	};
+	const html = renderPlanRunCard(longIdRun, runCardPlan);
+	assert.match(html, /run_very_long_id_that_should_not_be_truncated_abcdef1234567890/);
+	assert.doesNotMatch(html, /run_very_long_id_that\.\.\./, "runId must not be truncated");
+	// Confirm old pattern is gone
+	assert.doesNotMatch(html, /\.slice\(0,\s*12\)\s*\+\s*['"]\.\.\.['"]/, "no slice truncation pattern");
+});
+
+test("copyable: renderPlanRunCard escapes malicious runId in visible text and onclick", () => {
+	const maliciousRun = {
+		runId: '<script>alert(1)</script>', planId: "plan_rc", status: "running",
+		summary: { totalTasks: 1, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0 },
+		currentTaskId: null, activeElapsedMs: 1000, lastError: null,
+	};
+	const html = renderPlanRunCard(maliciousRun, { tasks: [] });
+	assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
+	assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+});
+
+test("copyable: renderPlanRunCard runId label click does not trigger card toggle", () => {
+	const html = renderPlanRunCard(runningRun, runCardPlan);
+	assert.match(html, /team-id-label[^>]*onclick/);
+	assert.match(html, /copyTeamIdToClipboard/);
+	// stopPropagation is inside the JS function definition, not the onclick attribute
+	const script = extractScript();
+	assert.match(script, /copyTeamIdToClipboard[\s\S]*?event\.stopPropagation/);
+});
+
+test("copyable: inline script contains clipboard helpers", () => {
+	const script = extractScript();
+	assert.match(script, /function writeTeamClipboardText/);
+	assert.match(script, /function copyTeamIdToClipboard/);
+	assert.match(script, /navigator\.clipboard\.writeText/);
+});
+
+test("copyable: clipboard helper uses showSuccess/showError for feedback", () => {
+	const script = extractScript();
+	assert.match(script, /copyTeamIdToClipboard[\s\S]*?showSuccess|showSuccess[\s\S]*?copyTeamIdToClipboard/);
+	assert.match(script, /copyTeamIdToClipboard[\s\S]*?showError|showError[\s\S]*?copyTeamIdToClipboard/);
+});
+
+test("copyable: inline script contains team-id-label CSS class definition", () => {
+	const html = renderTeamPage();
+	assert.match(html, /\.team-id-label/);
+	assert.match(html, /\.team-id-label\.is-copied/);
+	assert.match(html, /overflow-wrap:\s*anywhere/);
+	assert.match(html, /cursor:\s*pointer/);
+	assert.match(html, /user-select:\s*none/);
+});
+
+test("copyable: inline script contains copyTeamIdToClipboard with stopPropagation", () => {
+	const script = extractScript();
+	assert.match(script, /event\.stopPropagation/);
+	assert.match(script, /event\.preventDefault/);
+});
+
+test("copyable: inline scripts remain valid after copyable ID changes", () => {
+	const html = renderTeamPage();
+	const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+	assert.ok(scripts.length > 0);
+	for (const script of scripts) {
+		assert.doesNotThrow(() => new Function(script), "inline script should be valid JS after copyable ID changes");
+	}
+});
+
+// ── PARITY: inline vs helper for Plan ID / Run ID ──
+
+test("parity: inline renderPlanDashboardCard and helper both output planId in team-id-label", () => {
+	const helperHtml = renderPlanDashboardCard(dashPlan, dashRuns);
+	const script = extractScript();
+	// Extract the inline renderPlanDashboardCard
+	const startMarker = "function renderPlanDashboardCard(plan, runs)";
+	const startIdx = script.indexOf(startMarker);
+	assert.ok(startIdx >= 0, "should find inline renderPlanDashboardCard");
+	// Find end by next function declaration
+	const nextFnIdx = script.indexOf("function openPlanDetail", startIdx);
+	assert.ok(nextFnIdx > startIdx, "should find end of renderPlanDashboardCard");
+	const inlineSource = script.slice(startIdx, nextFnIdx);
+	// Both must contain team-id-label class and planId reference
+	assert.match(inlineSource, /team-id-label/);
+	assert.match(inlineSource, /点击复制 Plan ID/);
+	assert.match(inlineSource, /copyTeamIdToClipboard/);
+	assert.match(helperHtml, /team-id-label/);
+	assert.match(helperHtml, /点击复制 Plan ID/);
+});
+
+test("parity: inline renderPlanRunCard and helper both output full runId in team-id-label", () => {
+	const helperHtml = renderPlanRunCard(runningRun, runCardPlan);
+	const script = extractScript();
+	const startMarker = "function renderPlanRunCard(run, plan)";
+	const startIdx = script.indexOf(startMarker);
+	assert.ok(startIdx >= 0, "should find inline renderPlanRunCard");
+	const nextFnIdx = script.indexOf("function togglePlanRunDetail", startIdx);
+	assert.ok(nextFnIdx > startIdx);
+	const inlineSource = script.slice(startIdx, nextFnIdx);
+	// Both must contain team-id-label and full runId (not slice)
+	assert.match(inlineSource, /team-id-label/);
+	assert.match(inlineSource, /点击复制 Run ID/);
+	assert.match(inlineSource, /copyTeamIdToClipboard/);
+	assert.doesNotMatch(inlineSource, /\.slice\(0,\s*12\)/, "inline must not truncate runId");
+	assert.match(helperHtml, /team-id-label/);
+	assert.match(helperHtml, /点击复制 Run ID/);
+	assert.doesNotMatch(helperHtml, /\.slice\(0,\s*12\)/, "helper must not truncate runId");
+});
