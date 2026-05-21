@@ -356,6 +356,7 @@ export interface NaturalDraftValues {
 export interface NaturalDraftSnapshot {
 	prompt: string;
 	defaultTeamUnitId: string;
+	preferredTemplateId?: string;
 	plan: any;
 }
 
@@ -371,7 +372,8 @@ export function buildNaturalDraftRequestPayloadFromValues(v: Partial<NaturalDraf
 export function isNaturalDraftCurrent(snapshot: NaturalDraftSnapshot | null | undefined, values: Partial<NaturalDraftValues>): boolean {
 	return !!snapshot
 		&& snapshot.prompt === (values.prompt || '')
-		&& snapshot.defaultTeamUnitId === (values.unitId || '');
+		&& snapshot.defaultTeamUnitId === (values.unitId || '')
+		&& (snapshot.preferredTemplateId || '') === (values.preferredTemplateId || '');
 }
 
 export interface TaskDetailModel {

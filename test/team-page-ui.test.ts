@@ -1312,27 +1312,46 @@ test("Team natural draft mode exposes labels, generate button, and plan-drafts A
 	assert.match(html, /生成草案/);
 	assert.match(html, /id="plan-natural-fields"/);
 	assert.match(html, /id="plan-natural-prompt"/);
+	assert.match(html, /id="plan-natural-template"/);
+	assert.match(html, /自动匹配/);
+	assert.match(html, /单 Agent/);
+	assert.match(html, /并行研究/);
+	assert.doesNotMatch(html, /代码修复/);
+	assert.doesNotMatch(html, /深度研究与复核/);
+	assert.doesNotMatch(html, /coding_fix/);
+	assert.doesNotMatch(html, /deep_research_with_review/);
 	assert.match(html, /\/plan-drafts/);
 });
 
-test("helper: buildNaturalDraftRequestPayloadFromValues builds draft request payload", () => {
-	const payload = buildNaturalDraftRequestPayloadFromValues({
+test("helper: buildNaturalDraftRequestPayloadFromValues omits empty template and includes explicit template", () => {
+	const autoPayload = buildNaturalDraftRequestPayloadFromValues({
+		prompt: "调研 AI Agent 趋势",
+		unitId: "team_1",
+		preferredTemplateId: "",
+	});
+	assert.deepEqual(autoPayload, {
+		prompt: "调研 AI Agent 趋势",
+		defaultTeamUnitId: "team_1",
+	});
+	const explicitPayload = buildNaturalDraftRequestPayloadFromValues({
 		prompt: "调研 AI Agent 趋势",
 		unitId: "team_1",
 		preferredTemplateId: "parallel_research",
 	});
-	assert.deepEqual(payload, {
+	assert.deepEqual(explicitPayload, {
 		prompt: "调研 AI Agent 趋势",
 		defaultTeamUnitId: "team_1",
 		preferredTemplateId: "parallel_research",
 	});
 });
 
-test("helper: natural draft freshness checks prompt and team unit", () => {
-	const snapshot = { prompt: "调研竞品", defaultTeamUnitId: "team_1", plan: { title: "draft" } };
-	assert.equal(isNaturalDraftCurrent(snapshot, { prompt: "调研竞品", unitId: "team_1" }), true);
-	assert.equal(isNaturalDraftCurrent(snapshot, { prompt: "调研竞品 updated", unitId: "team_1" }), false);
-	assert.equal(isNaturalDraftCurrent(snapshot, { prompt: "调研竞品", unitId: "team_2" }), false);
+test("helper: natural draft freshness checks prompt, team unit, and template", () => {
+	const snapshot = { prompt: "调研竞品", defaultTeamUnitId: "team_1", preferredTemplateId: "parallel_research", plan: { title: "draft" } };
+	assert.equal(isNaturalDraftCurrent(snapshot, { prompt: "调研竞品", unitId: "team_1", preferredTemplateId: "parallel_research" }), true);
+	assert.equal(isNaturalDraftCurrent(snapshot, { prompt: "调研竞品 updated", unitId: "team_1", preferredTemplateId: "parallel_research" }), false);
+	assert.equal(isNaturalDraftCurrent(snapshot, { prompt: "调研竞品", unitId: "team_2", preferredTemplateId: "parallel_research" }), false);
+	assert.equal(isNaturalDraftCurrent(snapshot, { prompt: "调研竞品", unitId: "team_1", preferredTemplateId: "single_agent" }), false);
+	assert.equal(isNaturalDraftCurrent({ prompt: "调研竞品", defaultTeamUnitId: "team_1", plan: {} }, { prompt: "调研竞品", unitId: "team_1", preferredTemplateId: "" }), true);
 });
 
 test("Team natural draft mode hides manual plan fields and shows natural prompt fields", () => {
@@ -1352,13 +1371,32 @@ test("Team natural draft preview renders metadata and JSON through textContent",
 	const script = extractScript();
 	assert.match(script, /async function generatePlanDraft\(\)/);
 	assert.match(script, /api\('\/plan-drafts'/);
-	const renderMatch = script.match(/function renderNaturalPlanDraft\(draft,\s*prompt,\s*unitId\)[\s\S]*?^}/m);
+	const renderMatch = script.match(/function renderNaturalPlanDraft\(draft,\s*prompt,\s*unitId,\s*preferredTemplateId\)[\s\S]*?^}/m);
 	assert.ok(renderMatch, "should find renderNaturalPlanDraft");
+	assert.match(renderMatch[0], /preferredTemplateId: preferredTemplateId \|\| ''/);
 	assert.match(renderMatch[0], /templateLabelEl\.textContent/);
 	assert.match(renderMatch[0], /reasonEl\.textContent/);
 	assert.match(renderMatch[0], /warningEl\.textContent/);
 	assert.match(script, /renderPlanPreview\(draft\.plan\)/);
 	assert.doesNotMatch(renderMatch[0], /innerHTML\s*=\s*draft/);
+});
+
+test("Team natural draft inline script reads template selection for request and freshness", () => {
+	const script = extractScript();
+	const buildMatch = script.match(/function buildNaturalDraftRequestPayload\(\)[\s\S]*?^}/m);
+	assert.ok(buildMatch, "should find buildNaturalDraftRequestPayload");
+	assert.match(buildMatch[0], /plan-natural-template/);
+	assert.match(buildMatch[0], /preferredTemplateId/);
+	const generateMatch = script.match(/async function generatePlanDraft\(\)[\s\S]*?^}/m);
+	assert.ok(generateMatch, "should find generatePlanDraft");
+	assert.match(generateMatch[0], /var preferredTemplateId = \$\('plan-natural-template'\)\.value/);
+	assert.match(generateMatch[0], /renderNaturalPlanDraft\(draft,\s*prompt,\s*unitId,\s*preferredTemplateId\)/);
+	const previewMatch = script.match(/function previewPlanJson\(\)[\s\S]*?^}/m);
+	assert.ok(previewMatch, "should find previewPlanJson");
+	assert.match(previewMatch[0], /preferredTemplateId: naturalPreferredTemplateId/);
+	const saveMatch = script.match(/async function savePlan\(\)[\s\S]*?^}/m);
+	assert.ok(saveMatch, "should find savePlan");
+	assert.match(saveMatch[0], /preferredTemplateId: naturalPreferredTemplateId/);
 });
 
 test("Team natural draft save refuses missing or stale draft before posting to plans", () => {

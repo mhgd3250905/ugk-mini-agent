@@ -430,6 +430,12 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 		<div id="plan-natural-fields" style="display:none">
 			<label>自然语言目标</label>
 			<textarea id="plan-natural-prompt" placeholder="描述你希望 Team 完成的目标，例如：调研 2026 年 AI 编程 Agent 竞品并分别对比"></textarea>
+			<label>草案模板</label>
+			<select id="plan-natural-template" style="max-width:220px">
+				<option value="">自动匹配</option>
+				<option value="single_agent">单 Agent</option>
+				<option value="parallel_research">并行研究</option>
+			</select>
 			<div style="margin-top:8px">
 				<button class="btn btn-primary btn-sm" type="button" onclick="generatePlanDraft()">生成草案</button>
 			</div>
@@ -2076,14 +2082,20 @@ function buildDynamicPlanPayload() {
 }
 
 function buildNaturalDraftRequestPayload() {
-	return {
+	var preferredTemplateId = $('plan-natural-template').value;
+	var payload = {
 		prompt: $('plan-natural-prompt').value,
 		defaultTeamUnitId: $('plan-teamunit').value,
 	};
+	if (preferredTemplateId) payload.preferredTemplateId = preferredTemplateId;
+	return payload;
 }
 
 function isNaturalDraftCurrent(snapshot, values) {
-	return !!snapshot && snapshot.prompt === (values.prompt || '') && snapshot.defaultTeamUnitId === (values.unitId || '');
+	return !!snapshot
+		&& snapshot.prompt === (values.prompt || '')
+		&& snapshot.defaultTeamUnitId === (values.unitId || '')
+		&& (snapshot.preferredTemplateId || '') === (values.preferredTemplateId || '');
 }
 
 function resetNaturalPlanDraft() {
@@ -2098,8 +2110,8 @@ function resetNaturalPlanDraft() {
 	if (warningsEl) warningsEl.innerHTML = '';
 }
 
-function renderNaturalPlanDraft(draft, prompt, unitId) {
-	_latestNaturalPlanDraft = { prompt: prompt, defaultTeamUnitId: unitId, plan: draft.plan };
+function renderNaturalPlanDraft(draft, prompt, unitId, preferredTemplateId) {
+	_latestNaturalPlanDraft = { prompt: prompt, defaultTeamUnitId: unitId, preferredTemplateId: preferredTemplateId || '', plan: draft.plan };
 	var result = $('plan-natural-draft-result');
 	var templateLabelEl = $('plan-natural-template-label');
 	var reasonEl = $('plan-natural-reason');
@@ -2122,12 +2134,13 @@ function renderNaturalPlanDraft(draft, prompt, unitId) {
 async function generatePlanDraft() {
 	var prompt = $('plan-natural-prompt').value.trim();
 	var unitId = $('plan-teamunit').value;
+	var preferredTemplateId = $('plan-natural-template').value;
 	if (!prompt) { showError('请输入自然语言目标'); return; }
 	if (!unitId) { showError('请选择默认团队'); return; }
 	try {
 		var requestPayload = buildNaturalDraftRequestPayload();
 		var draft = await api('/plan-drafts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestPayload) });
-		renderNaturalPlanDraft(draft, prompt, unitId);
+		renderNaturalPlanDraft(draft, prompt, unitId, preferredTemplateId);
 		showSuccess('草案已生成');
 	} catch (e) { showError(e.message); }
 }
@@ -2145,7 +2158,8 @@ function previewPlanJson() {
 	if (mode === 'natural') {
 		var naturalPrompt = $('plan-natural-prompt').value.trim();
 		var naturalUnitId = $('plan-teamunit').value;
-		if (!isNaturalDraftCurrent(_latestNaturalPlanDraft, { prompt: naturalPrompt, unitId: naturalUnitId })) {
+		var naturalPreferredTemplateId = $('plan-natural-template').value;
+		if (!isNaturalDraftCurrent(_latestNaturalPlanDraft, { prompt: naturalPrompt, unitId: naturalUnitId, preferredTemplateId: naturalPreferredTemplateId })) {
 			showError('请先生成并检查最新草案');
 			return;
 		}
@@ -2162,7 +2176,8 @@ async function savePlan() {
 	if (mode === 'natural') {
 		var naturalPrompt = $('plan-natural-prompt').value.trim();
 		var naturalUnitId = $('plan-teamunit').value;
-		if (!isNaturalDraftCurrent(_latestNaturalPlanDraft, { prompt: naturalPrompt, unitId: naturalUnitId })) {
+		var naturalPreferredTemplateId = $('plan-natural-template').value;
+		if (!isNaturalDraftCurrent(_latestNaturalPlanDraft, { prompt: naturalPrompt, unitId: naturalUnitId, preferredTemplateId: naturalPreferredTemplateId })) {
 			showError('请先生成并检查最新草案');
 			return;
 		}
