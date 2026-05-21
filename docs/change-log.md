@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-21 — Team role prompt contract 抽取
+
+- **主题**: 将真实 Team role runner 的 prompt builder、JSONish parser 和 output normalizer 抽到纯 contract 模块
+- **影响范围**: `src/team/agent-profile-role-runner.ts`, `src/team/role-prompt-contract.ts`, `test/team-role-prompt-contract.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - 新增 `src/team/role-prompt-contract.ts`，集中维护 worker/checker/watcher/finalizer/decomposer prompt 构造、checker/watcher JSONish fallback 和 decomposer 输出归一化
+  - `AgentProfileRoleRunner` 保留 profile resolution、workspace 创建、AgentSession 调用、browser scope route/cleanup、abort handling 和 runtimeContext 附加职责
+  - 新增纯模块 characterization 测试，覆盖 source item identity、output validation evidence、checker/watcher parser fallback、decomposer fallback 和 finalizer 权威汇总 prompt
+
+---
+
 ## 2026-05-21 — Team run detail presenter 抽取
 
 - **主题**: 将 Team run detail API 的 response shaping 从 `routes.ts` 抽到 presenter，route handler 只保留请求/响应适配

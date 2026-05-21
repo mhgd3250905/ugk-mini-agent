@@ -750,7 +750,8 @@ docker compose up -d --scale ugk-pi-team-worker=2  # 多 worker 验证
 | `src/team/plan-store.ts` | Plan 持久化和 runCount 不变式 |
 | `src/team/plan-validation.ts` | Plan create/update schema policy：task type、decomposer、for_each、outputCheck 校验 |
 | `src/team/config-locks.ts` | 活跃 run 对 Plan / TeamUnit / AgentProfile 的锁计算 |
-| `src/team/agent-profile-role-runner.ts` | 真实 AgentProfile runner（含 decomposer strict JSON prompt/parser） |
+| `src/team/agent-profile-role-runner.ts` | 真实 AgentProfile runner adapter：profile/session/browser/workspace/abort/runtimeContext 接线 |
+| `src/team/role-prompt-contract.ts` | 纯 role prompt contract：worker/checker/watcher/finalizer/decomposer prompt builder、JSONish parser 和 output normalizer |
 | `src/team/role-runner.ts` | mock runner 与 runner interface（含 `runDecomposer` contract） |
 | `src/team/task-expansion-planner.ts` | 动态任务扩展：`TaskExpansionPlanner` 接口、`TemplateTaskExpansionPlanner` 模板实现 |
 | `src/team/ids.ts` | ID 生成 |
