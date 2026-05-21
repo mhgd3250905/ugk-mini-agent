@@ -46,6 +46,7 @@ export function getPlaygroundMobileShellControllerScript(): string {
 
 		function closeMobileConversationDrawer() {
 			setMobileConversationDrawerOpen(false);
+			mobileConversationList.innerHTML = "";
 		}
 	`;
 }
@@ -102,6 +103,9 @@ export function getPlaygroundMobileShellEventHandlersScript(): string {
 			if (!mobileTopbar.contains(event.target)) {
 				closeMobileOverflowMenu();
 			}
+		});
+		window.matchMedia("(min-width: 641px)").addEventListener("change", () => {
+			renderConversationDrawer();
 		});
 	`;
 }

@@ -55,42 +55,8 @@ export function getPlaygroundConversationControllerScript(): string {
 			renderConversationDrawer();
 		}
 
-		function renderConversationDrawer() {
-			mobileConversationList.innerHTML = "";
-			const catalog = Array.isArray(state.conversationCatalog) ? state.conversationCatalog : [];
-			if (catalog.length === 0) {
-				const empty = document.createElement("div");
-				empty.className = "mobile-conversation-empty";
-				empty.textContent = "还没有历史会话。点右上角新会话后，这里会出现新的产线。";
-				mobileConversationList.appendChild(empty);
-				return;
-			}
-
-			for (const item of catalog) {
-				const button = document.createElement("button");
-				button.type = "button";
-				button.className = "mobile-conversation-item";
-				button.dataset.conversationId = item.conversationId;
-				if (item.conversationId === state.conversationId) {
-					button.classList.add("is-active");
-				}
-				const hasPendingSwitch = Object.keys(state.conversationSwitchPendingById || {}).length > 0;
-				const switching = Boolean(state.conversationSwitchPendingById?.[item.conversationId]);
-				button.disabled = state.loading || hasPendingSwitch;
-				button.innerHTML =
-					'<span class="mobile-conversation-title"></span>' +
-					'<span class="mobile-conversation-preview"></span>' +
-					'<span class="mobile-conversation-meta"><span></span><span></span></span>';
-				button.querySelector(".mobile-conversation-title").textContent = item.title || "新会话";
-				button.querySelector(".mobile-conversation-preview").textContent = item.preview || "暂无摘要";
-				const metaNodes = button.querySelectorAll(".mobile-conversation-meta span");
-				metaNodes[0].textContent = item.running ? "运行中" : formatConversationTime(item.updatedAt);
-				metaNodes[1].textContent = item.messageCount + " 条";
-				button.addEventListener("click", () => {
-					void selectConversationFromDrawer(item.conversationId);
-				});
-				mobileConversationList.appendChild(button);
-			}
+		function isDesktopViewport() {
+			return window.matchMedia("(min-width: 641px)").matches;
 		}
 
 		function renderConversationListInto(container) {
@@ -244,8 +210,16 @@ export function getPlaygroundConversationControllerScript(): string {
 		}
 
 		function renderConversationDrawer() {
-			renderConversationListInto(mobileConversationList);
-			renderConversationListInto(desktopConversationList);
+			if (isDesktopViewport()) {
+				renderConversationListInto(desktopConversationList);
+				mobileConversationList.innerHTML = "";
+			} else if (state.mobileConversationDrawerOpen) {
+				renderConversationListInto(mobileConversationList);
+				desktopConversationList.innerHTML = "";
+			} else {
+				mobileConversationList.innerHTML = "";
+				desktopConversationList.innerHTML = "";
+			}
 		}
 
 		function normalizeConversationCatalogItem(item) {
