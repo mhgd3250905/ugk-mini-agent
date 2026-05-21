@@ -4,6 +4,8 @@ import { TeamUnitStore } from "./team-unit-store.js";
 import { RunWorkspace } from "./run-workspace.js";
 import { TeamOrchestrator, DEFAULT_PHASE_TIMEOUTS } from "./orchestrator.js";
 import { computeTeamConfigLocks } from "./config-locks.js";
+import { buildTeamPlanDraft, listTeamPlanTemplates } from "./plan-draft.js";
+import { validateCreatePlanInput } from "./plan-validation.js";
 import { MockRoleRunner } from "./role-runner.js";
 import type { TeamRoleRunner } from "./role-runner.js";
 import { buildRunDetailResponse } from "./run-presenter.js";
@@ -90,6 +92,26 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	app.get("/v1/team/plans", async (_request, reply) => {
 		const plans = await planStore.list();
 		reply.send(plans);
+	});
+
+	app.get("/v1/team/plan-templates", async (_request, reply) => {
+		reply.send(listTeamPlanTemplates());
+	});
+
+	app.post("/v1/team/plan-drafts", async (request, reply) => {
+		const body = request.body as Record<string, unknown>;
+		try {
+			await validateUsableTeamUnit(unitStore, body.defaultTeamUnitId as string | undefined);
+			const draft = buildTeamPlanDraft({
+				prompt: body.prompt as string,
+				defaultTeamUnitId: body.defaultTeamUnitId as string,
+				preferredTemplateId: body.preferredTemplateId as string | undefined,
+			});
+			validateCreatePlanInput(draft.plan);
+			reply.send(draft);
+		} catch (err) {
+			reply.code(400).send({ error: (err as Error).message });
+		}
 	});
 
 	app.post("/v1/team/plans", async (request, reply) => {

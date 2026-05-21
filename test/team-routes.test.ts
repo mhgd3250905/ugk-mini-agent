@@ -211,6 +211,115 @@ test("Plan CRUD via API", async () => {
 	}
 });
 
+test("GET /v1/team/plan-templates returns supported and planned templates", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const res = await app.inject({ method: "GET", url: "/v1/team/plan-templates" });
+
+		assert.equal(res.statusCode, 200);
+		const templates = res.json();
+		const byId = new Map<string, any>(templates.map((template: any) => [template.templateId, template] as [string, any]));
+		assert.equal(byId.get("single_agent")?.status, "supported");
+		assert.equal(byId.get("parallel_research")?.status, "supported");
+		assert.equal(byId.get("coding_fix")?.status, "planned");
+		assert.equal(byId.get("deep_research_with_review")?.status, "planned");
+
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch { /* concurrent write */ }
+	}
+});
+
+test("POST /v1/team/plan-drafts returns a non-persisted parallel_research plan create payload", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+		const unitId = unitRes.json().teamUnitId;
+		const beforeList = await app.inject({ method: "GET", url: "/v1/team/plans" });
+		assert.equal(beforeList.json().length, 0);
+
+		const draftRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/plan-drafts",
+			payload: {
+				prompt: "调研 AI 编程 Agent 竞品并分别对比每个产品",
+				defaultTeamUnitId: unitId,
+			},
+		});
+
+		assert.equal(draftRes.statusCode, 200);
+		const draft = draftRes.json();
+		assert.equal(draft.templateId, "parallel_research");
+		assert.equal(draft.plan.defaultTeamUnitId, unitId);
+		assert.equal(draft.plan.tasks[0].id, "discover_items");
+		assert.equal(draft.plan.tasks[1].forEach.mode, "parallel");
+
+		const afterDraftList = await app.inject({ method: "GET", url: "/v1/team/plans" });
+		assert.equal(afterDraftList.json().length, 0, "draft endpoint must not persist a plan");
+
+		const createRes = await app.inject({ method: "POST", url: "/v1/team/plans", payload: draft.plan });
+		assert.equal(createRes.statusCode, 201);
+		assert.equal(createRes.json().runCount, 0);
+
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch { /* concurrent write */ }
+	}
+});
+
+test("POST /v1/team/plan-drafts rejects invalid prompt, team unit, and unsupported template", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+		const unitId = unitRes.json().teamUnitId;
+
+		const missingPrompt = await app.inject({
+			method: "POST",
+			url: "/v1/team/plan-drafts",
+			payload: { defaultTeamUnitId: unitId },
+		});
+		assert.equal(missingPrompt.statusCode, 400);
+		assert.match(missingPrompt.json().error, /prompt is required/i);
+
+		const missingTeam = await app.inject({
+			method: "POST",
+			url: "/v1/team/plan-drafts",
+			payload: { prompt: "调研竞品" },
+		});
+		assert.equal(missingTeam.statusCode, 400);
+		assert.match(missingTeam.json().error, /defaultTeamUnitId is required/i);
+
+		const unknownTeam = await app.inject({
+			method: "POST",
+			url: "/v1/team/plan-drafts",
+			payload: { prompt: "调研竞品", defaultTeamUnitId: "team_missing" },
+		});
+		assert.equal(unknownTeam.statusCode, 400);
+		assert.match(unknownTeam.json().error, /team unit not found/i);
+
+		const unsupported = await app.inject({
+			method: "POST",
+			url: "/v1/team/plan-drafts",
+			payload: { prompt: "修复 bug", defaultTeamUnitId: unitId, preferredTemplateId: "coding_fix" },
+		});
+		assert.equal(unsupported.statusCode, 400);
+		assert.match(unsupported.json().error, /template is not supported: coding_fix/);
+
+		await app.inject({ method: "POST", url: `/v1/team/team-units/${unitId}/archive` });
+		const archivedTeam = await app.inject({
+			method: "POST",
+			url: "/v1/team/plan-drafts",
+			payload: { prompt: "调研竞品", defaultTeamUnitId: unitId },
+		});
+		assert.equal(archivedTeam.statusCode, 400);
+		assert.match(archivedTeam.json().error, /archived team unit/i);
+
+		await app.close();
+	} finally {
+		try { await rm(root, { recursive: true, force: true }); } catch { /* concurrent write */ }
+	}
+});
+
 test("Plan delete unused succeeds", async () => {
 	const { app, root } = await buildTestServer();
 	try {
