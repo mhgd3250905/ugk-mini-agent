@@ -208,7 +208,7 @@ tasks/<taskId>/attempts/<attemptId>/discovery-result.json
 
 - 固定容量池（`PARALLEL_FOR_EACH_CONCURRENCY = 3`），child 完成即补位，不是批处理模式
 - `forEach.taskTemplate.decomposer.mode` 为 `"leaf"` 或 `"propagate"` 时在 Plan 创建/更新时被拒绝——parallel child 不允许进一步拆分。`decomposer.mode = "none"` 或无 decomposer 字段时允许（不会触发拆分）
-- `parallelTaskId`（`AsyncLocalStorage`）追踪当前写入 task，并发 state 写入走 `patchState` 而非 `saveState`
+- 并发 child 使用 scoped `ParallelChildStateWriter`（实现 `TeamStateWriter` 接口），通过 `patchState` 隔离写入；sequential child 继续使用普通 `saveState`
 - parent 状态由子任务聚合：
   - 至少一个 child succeeded → parent `succeeded`（partial success）
   - 全部 child skipped → parent `skipped`
@@ -557,7 +557,7 @@ Finalizer prompt 包含来自 `TeamRunState.summary` 的权威运行汇总（tot
 - **pause**：写入 `paused` 状态 + 触发 `AbortController.abort()`，当前 phase 被中断。所有 running task（含 parallel 子任务）标记为 `interrupted`。resume 后从下一个未完成的 task 继续；`interrupted` 子任务重置为 `pending` 重新执行。
 - **cancel**：写入 `cancelled` 状态 + 触发 abort。所有未完成 task（含 parallel 子任务）标记为 `cancelled`。terminal 状态不可逆。
 - **resume**：将 `paused` run 恢复为 `queued`，等待 worker 接管。跳过已 succeeded/failed/cancelled 的 task。`interrupted` task 重置为 `pending` 重新入队。
-- **stale-write protection**：parallel 并发写入使用 `patchState`，guard 检查 `latest.status !== "running"` 和 task terminal/interrupted 状态，防止 pause/cancel 后的迟到子任务覆盖已中断/取消状态。
+- **stale-write protection**：`ParallelChildStateWriter` 内 guard 检查 `latest.status !== "running"` 和 task terminal/interrupted 状态，防止 pause/cancel 后的迟到子任务覆盖已中断/取消状态。
 
 关键安全机制：每个 phase（worker/checker/watcher/finalizer）返回后，orchestrator 重新从磁盘读取 state。如果状态已变为 cancelled 或 paused，立即停止写回，不会覆盖 terminal state。
 

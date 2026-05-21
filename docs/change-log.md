@@ -12,6 +12,16 @@
 
 ---
 
+## 2026-05-21 — Team parallel state writer 显式化
+
+- **主题**: 将 `executeChildrenParallel` 中的 `saveState` monkey-patch 替换为显式 `TeamStateWriter` / `ParallelChildStateWriter`
+- **影响范围**: `src/team/orchestrator.ts`, `test/team-parallel-foreach.test.ts`, `test/team-orchestrator-controls.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - 新增 `TeamStateWriter` 接口（`saveState(state: TeamRunState): Promise<void>`）和 `ParallelChildStateWriter` 内部类（scoped 到单个 child task，通过 `patchState` 隔离写入）
+  - 删除 `AsyncLocalStorage`（`parallelTaskId`）和 `this.workspace.saveState` 临时覆盖/恢复块
+  - `executeMaybeDecomposedTask` / `executeTask` / `runWorkUnit` / `runWatcherPhase` 接受 `writer: TeamStateWriter = this.workspace` 参数，parallel child 使用 scoped writer，sequential path 仍用默认 workspace
+  - 补回归测试：parallel child state isolation（6 并发 child，各 resultRef 独立）、cancel during parallel（no child left running）
+
 ## 2026-05-21 — Team mindmap disposition scroll snapshot timing fix
 
 - **主题**: 修复脑图 task 标记按钮点击后仍可能跳回顶部的问题

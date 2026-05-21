@@ -2030,3 +2030,80 @@ test("force_rerun: for_each generated child autoclears after success", async () 
 		await rm(root, { recursive: true });
 	}
 });
+test("cancel during parallel for_each: no child left in running state", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ctrl-par-"));
+	try {
+		let workerStarted = false;
+		let workerReadyResolve: () => void;
+		const workerReady = new Promise<void>(r => { workerReadyResolve = r; });
+
+		class HangingParallelRunner extends MockRoleRunner {
+			override async runWorker(input: import("../src/team/role-runner.js").WorkerInput) {
+				if (input.task.type === "discovery") {
+					return { content: JSON.stringify({ items: [{ id: "a", title: "A" }, { id: "b", title: "B" }, { id: "c", title: "C" }] }), artifactRefs: [] };
+				}
+				workerStarted = true;
+				workerReadyResolve!();
+				if (input.signal) {
+					await new Promise<never>((_, reject) => {
+						if (input.signal!.aborted) { reject(new Error("aborted")); return; }
+						input.signal!.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+					});
+				}
+				return super.runWorker(input);
+			}
+
+			override async runChecker(input: import("../src/team/role-runner.js").CheckerInput) {
+				if (input.task.type === "discovery") {
+					return { verdict: "pass" as const, reason: "ok", resultContent: JSON.stringify({ items: [{ id: "a", title: "A" }, { id: "b", title: "B" }, { id: "c", title: "C" }] }) };
+				}
+				return { verdict: "pass" as const, reason: "ok", resultContent: "accepted" };
+			}
+		}
+
+		const planStore = new PlanStore(root);
+		const unitStore = new TeamUnitStore(root);
+		const workspace = new RunWorkspace(root);
+		const unit = await unitStore.create({ title: "t", description: "d", watcherProfileId: "w", workerProfileId: "wo", checkerProfileId: "c", finalizerProfileId: "f" });
+		const plan = await planStore.create({
+			title: "cancel parallel test",
+			defaultTeamUnitId: unit.teamUnitId,
+			goal: { text: "test" },
+			tasks: [
+				{ id: "discover", type: "discovery", title: "Discover items", input: { text: "Find items" }, acceptance: { rules: ["ok"] }, discovery: { outputKey: "items" } },
+				{
+					id: "process", type: "for_each", title: "Process each", input: { text: "p" },
+					acceptance: { rules: ["ok"] },
+					forEach: { itemsFrom: "discover.items", mode: "parallel", taskTemplate: { title: "Process {{item.title}}", input: { text: "Process {{item.id}}" }, acceptance: { rules: ["ok"] } } },
+				},
+			],
+			outputContract: { text: "report" },
+		});
+		const runner = new HangingParallelRunner() as unknown as import("../src/team/role-runner.js").TeamRoleRunner;
+		const orchestrator = new TeamOrchestrator({ planStore, teamUnitStore: unitStore, workspace, roleRunner: runner, dataDir: root, maxCheckerRevisions: 3, maxWatcherRevisions: 1, maxRunDurationMinutes: 60 });
+
+		const state = await orchestrator.createRun(plan.planId);
+		const runPromise = orchestrator.runToCompletion(state.runId);
+
+		// Wait for at least one parallel child worker to start
+		await workerReady;
+
+		// Cancel mid-execution
+		const cancelled = await orchestrator.cancelRun(state.runId, "user cancel during parallel");
+
+		const final = await runPromise;
+		assert.equal(final.status, "cancelled", "run should be cancelled");
+
+		// No child should be left in "running" state after cancel
+		for (const [taskId, ts] of Object.entries(final.taskStates)) {
+			if (taskId.startsWith("process__")) {
+				assert.ok(
+					ts.status !== "running" && ts.status !== "pending",
+					"parallel child " + taskId + " should not be running/pending after cancel, got " + ts.status,
+				);
+			}
+		}
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});

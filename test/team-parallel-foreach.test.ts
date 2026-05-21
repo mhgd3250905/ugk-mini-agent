@@ -616,3 +616,47 @@ test("parallel for_each: fatal state-write failure restores saveState and fails 
 		await rm(root, { recursive: true });
 	}
 });
+test("parallel for_each: concurrent child state writes are isolated per-task", async () => {
+	const { root, plan, orchestrator, workspace } = await setupParallelForEach([
+		{ id: "fast", title: "Fast" },
+		{ id: "med1", title: "Med1" },
+		{ id: "med2", title: "Med2" },
+		{ id: "slow1", title: "Slow1" },
+		{ id: "slow2", title: "Slow2" },
+		{ id: "last", title: "Last" },
+	], {
+		workerDelayMs: (taskId) => {
+			if (taskId.includes("fast")) return 10;
+			if (taskId.includes("med")) return 80;
+			if (taskId.includes("slow")) return 200;
+			return 50;
+		},
+	});
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.status, "completed");
+
+		// Each child must have its own independent succeeded state
+		const childIds = ["process__fast", "process__med1", "process__med2", "process__slow1", "process__slow2", "process__last"];
+		for (const cid of childIds) {
+			const ts = final.taskStates[cid];
+			assert.equal(ts?.status, "succeeded", cid + " should be succeeded");
+			assert.ok(ts?.resultRef, cid + " should have its own resultRef");
+
+			// Each child has its own attempt with unique files
+			const attempts = await workspace.listAttempts(state.runId, cid);
+			assert.equal(attempts.length, 1, cid + " should have exactly one attempt");
+			assert.equal(attempts[0]?.status, "succeeded", cid + " attempt should be succeeded");
+		}
+
+		// Verify no cross-contamination: each child's resultRef is unique
+		const resultRefs = childIds.map(cid => final.taskStates[cid]?.resultRef);
+		const uniqueRefs = new Set(resultRefs);
+		assert.equal(uniqueRefs.size, childIds.length,
+			"each child should have a distinct resultRef — state writes must be isolated");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});

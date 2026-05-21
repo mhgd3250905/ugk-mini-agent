@@ -1,4 +1,3 @@
-import { AsyncLocalStorage } from "node:async_hooks";
 import type { TeamRunState, TeamTask, TeamTaskState, TeamPlan, TeamDiscoveryResultRecord, TaskManualDisposition, TeamOutputValidationResult } from "./types.js";
 import { PlanStore } from "./plan-store.js";
 import { TeamUnitStore } from "./team-unit-store.js";
@@ -38,8 +37,33 @@ export interface TeamOrchestratorOptions {
 	taskExpansionPlanner?: TaskExpansionPlanner;
 }
 
+/** Explicit state-write seam for parallel child execution. */
+export interface TeamStateWriter {
+	saveState(state: TeamRunState): Promise<void>;
+}
+
+/** Scoped writer that only persists a single child task's state via patchState. */
+class ParallelChildStateWriter implements TeamStateWriter {
+	constructor(
+		private readonly workspace: RunWorkspace,
+		private readonly runId: string,
+		private readonly taskId: string,
+	) {}
+
+	async saveState(state: TeamRunState): Promise<void> {
+		await this.workspace.patchState(this.runId, (latest) => {
+			if (latest.status !== "running") return;
+			const latestTask = latest.taskStates[this.taskId];
+			if (latestTask && (TERMINAL_TASK_STATUSES.has(latestTask.status) || latestTask.status === "interrupted")) {
+				return;
+			}
+			latest.taskStates[this.taskId] = state.taskStates[this.taskId]!;
+			latest.summary = computeTeamRunSummary(latest.taskStates);
+		});
+	}
+}
+
 const now = () => new Date().toISOString();
-const parallelTaskId = new AsyncLocalStorage<string>();
 
 function clearSuccessfulForceRerunDispositions(state: TeamRunState): boolean {
 	let changed = false;
@@ -267,7 +291,7 @@ export class TeamOrchestrator {
 
 				const taskType = task.type ?? "normal";
 				if (taskType === "normal" || taskType === "discovery") {
-					await this.executeMaybeDecomposedTask(state, task, plan, signal);
+					await this.executeMaybeDecomposedTask(state, task, plan, signal, this.workspace);
 					state = (await this.workspace.getState(runId))!;
 					if (taskType === "discovery" && state.taskStates[task.id]?.status === "succeeded") {
 						await this.loadDiscoveryResult(state.runId, task, discoveryResults);
@@ -495,10 +519,11 @@ export class TeamOrchestrator {
 		task: TeamTask,
 		plan: TeamPlan,
 		signal: AbortSignal,
+		writer: TeamStateWriter = this.workspace,
 	): Promise<void> {
 		const mode = task.decomposer?.mode ?? "none";
 		if (mode === "none") {
-			await this.executeTask(initialState, task, signal);
+			await this.executeTask(initialState, task, signal, writer);
 			return;
 		}
 
@@ -507,7 +532,7 @@ export class TeamOrchestrator {
 			let state = (await this.workspace.getState(initialState.runId))!;
 			if (this.shouldStop(state)) return;
 			if (existing.decision === "no_split") {
-				await this.executeTask(state, task, signal);
+				await this.executeTask(state, task, signal, writer);
 				return;
 			}
 			const childTasks = existing.children.map(child => child.task);
@@ -524,7 +549,7 @@ export class TeamOrchestrator {
 		state.taskStates[task.id]!.progress = { phase: "worker_running", message: "running decomposer", updatedAt: now() };
 		state.updatedAt = now();
 		state.summary = computeTeamRunSummary(state.taskStates);
-		await this.workspace.saveState(state);
+		await writer.saveState(state);
 
 		const output = await runWithTimeout("decomposer", this.phaseTimeouts.workerMs, signal, async (localSignal) => {
 			return this.roleRunner.runDecomposer({
@@ -550,7 +575,7 @@ export class TeamOrchestrator {
 				children: [],
 				runtimeContext: output.runtimeContext,
 			});
-			await this.executeTask(state, task, signal);
+			await this.executeTask(state, task, signal, writer);
 			return;
 		}
 
@@ -667,7 +692,7 @@ export class TeamOrchestrator {
 				await this.handleTimeout(state, plan);
 				return;
 			}
-			await this.executeMaybeDecomposedTask(state, child, plan, signal);
+			await this.executeMaybeDecomposedTask(state, child, plan, signal, this.workspace);
 		}
 
 		state = (await this.workspace.getState(initialState.runId))!;
@@ -703,14 +728,14 @@ export class TeamOrchestrator {
 		await this.workspace.saveState(state);
 	}
 
-	private async executeTask(initialState: TeamRunState, task: TeamTask, signal: AbortSignal): Promise<void> {
+	private async executeTask(initialState: TeamRunState, task: TeamTask, signal: AbortSignal, writer: TeamStateWriter = this.workspace): Promise<void> {
 		let state = initialState;
 		state.currentTaskId = task.id;
 		state.taskStates[task.id]!.status = "running";
 		state.taskStates[task.id]!.progress = { phase: "worker_running", message: progressMessages.worker_running, updatedAt: now() };
 		state.updatedAt = now();
 		state.summary = computeTeamRunSummary(state.taskStates);
-		await this.workspace.saveState(state);
+		await writer.saveState(state);
 
 		let attemptCount = state.taskStates[task.id]!.attemptCount;
 		let watcherRevisions = 0;
@@ -724,9 +749,9 @@ export class TeamOrchestrator {
 			const { attemptId, attemptRoot } = await this.workspace.createAttempt(state.runId, task.id);
 			state.taskStates[task.id]!.activeAttemptId = attemptId;
 			state.summary = computeTeamRunSummary(state.taskStates);
-			await this.workspace.saveState(state);
+			await writer.saveState(state);
 
-			const workUnitResult = await this.runWorkUnit(state, task, attemptId, attemptRoot, signal);
+			const workUnitResult = await this.runWorkUnit(state, task, attemptId, attemptRoot, signal, writer);
 
 			state = (await this.workspace.getState(state.runId))!;
 			const currentTs = state.taskStates[task.id]!;
@@ -734,7 +759,7 @@ export class TeamOrchestrator {
 			if (currentTs.status === "interrupted" || currentTs.status === "cancelled") return;
 			if (this.shouldStop(state)) return;
 
-			const watcherResult = await this.runWatcherPhase(state, task, attemptId, workUnitResult, signal);
+			const watcherResult = await this.runWatcherPhase(state, task, attemptId, workUnitResult, signal, writer);
 
 			// Re-read state after watcher returns — external cancel may have landed
 			state = (await this.workspace.getState(state.runId))!;
@@ -754,7 +779,7 @@ export class TeamOrchestrator {
 											taskDone = true;
 							state.updatedAt = now();
 							state.summary = computeTeamRunSummary(state.taskStates);
-							await this.workspace.saveState(state);
+							await writer.saveState(state);
 							return;
 						}
 					}
@@ -795,11 +820,11 @@ export class TeamOrchestrator {
 
 			state.updatedAt = now();
 			state.summary = computeTeamRunSummary(state.taskStates);
-			await this.workspace.saveState(state);
+			await writer.saveState(state);
 		}
 	}
 
-	private async runWorkUnit(state: TeamRunState, task: TeamTask, attemptId: string, attemptRoot: string, signal: AbortSignal): Promise<WorkUnitRunResult> {
+	private async runWorkUnit(state: TeamRunState, task: TeamTask, attemptId: string, attemptRoot: string, signal: AbortSignal, writer: TeamStateWriter = this.workspace): Promise<WorkUnitRunResult> {
 		const runId = state.runId;
 		let checkerRevision = 0;
 		let lastFeedback: string | undefined;
@@ -837,7 +862,7 @@ export class TeamOrchestrator {
 					await this.workspace.finishAttempt(runId, task.id, attemptId, { status: "failed", phase: "failed", resultRef: failRef, errorSummary: "worker timeout" });
 					s.taskStates[task.id]!.resultRef = failRef;
 					s.taskStates[task.id]!.errorSummary = "worker timeout";
-					await this.workspace.saveState(s);
+					await writer.saveState(s);
 					return { status: "failed", outputValidation: noOutputValidation() };
 				}
 				throw error;
@@ -875,7 +900,7 @@ export class TeamOrchestrator {
 			if (checkingState && !this.shouldStop(checkingState)) {
 				checkingState.taskStates[task.id]!.progress = { phase: "checker_reviewing", message: progressMessages.checker_reviewing, updatedAt: now() };
 				checkingState.updatedAt = now();
-				await this.workspace.saveState(checkingState);
+				await writer.saveState(checkingState);
 			}
 
 			const checkerStarted = new Date();
@@ -904,7 +929,7 @@ export class TeamOrchestrator {
 					await this.workspace.finishAttempt(runId, task.id, attemptId, { status: "failed", phase: "failed", resultRef: failRef, errorSummary: "checker timeout" });
 					s.taskStates[task.id]!.resultRef = failRef;
 					s.taskStates[task.id]!.errorSummary = "checker timeout";
-					await this.workspace.saveState(s);
+					await writer.saveState(s);
 					return { status: "failed", outputValidation: workerValidation };
 				}
 				throw error;
@@ -955,13 +980,13 @@ export class TeamOrchestrator {
 					const failRef = await this.workspace.writeFailedResult(runId, task.id, attemptId, errorSummary);
 					s.taskStates[task.id]!.resultRef = failRef;
 					s.taskStates[task.id]!.errorSummary = errorSummary;
-					await this.workspace.saveState(s);
+					await writer.saveState(s);
 					return { status: "failed", outputValidation: acceptedValidation };
 				}
 				const resultRef = await this.workspace.writeAcceptedResult(runId, task.id, attemptId, resultContent);
 				await this.workspace.updateAttemptPhase(runId, task.id, attemptId, "checker_passed");
 				s.taskStates[task.id]!.resultRef = resultRef;
-				await this.workspace.saveState(s);
+				await writer.saveState(s);
 				return { status: "passed", outputValidation: acceptedValidation };
 			}
 
@@ -973,7 +998,7 @@ export class TeamOrchestrator {
 				await this.workspace.finishAttempt(runId, task.id, attemptId, { status: "failed", phase: "failed", resultRef: failRef, errorSummary: checkerOut.reason });
 				s.taskStates[task.id]!.resultRef = failRef;
 				s.taskStates[task.id]!.errorSummary = checkerOut.reason;
-				await this.workspace.saveState(s);
+				await writer.saveState(s);
 				return { status: "failed", outputValidation: workerValidation };
 			}
 
@@ -987,13 +1012,13 @@ export class TeamOrchestrator {
 				await this.workspace.finishAttempt(runId, task.id, attemptId, { status: "failed", phase: "failed", resultRef: failRef, errorSummary: "checker revision limit exceeded" });
 				s.taskStates[task.id]!.resultRef = failRef;
 				s.taskStates[task.id]!.errorSummary = "checker revision limit exceeded";
-				await this.workspace.saveState(s);
+				await writer.saveState(s);
 				return { status: "failed", outputValidation: workerValidation };
 			}
 		}
 	}
 
-	private async runWatcherPhase(state: TeamRunState, task: TeamTask, attemptId: string, workUnitResult: WorkUnitRunResult, signal: AbortSignal) {
+	private async runWatcherPhase(state: TeamRunState, task: TeamTask, attemptId: string, workUnitResult: WorkUnitRunResult, signal: AbortSignal, writer: TeamStateWriter = this.workspace) {
 		const preAttempts = await this.workspace.listAttempts(state.runId, task.id);
 		const preAttempt = preAttempts.find(a => a.attemptId === attemptId);
 		if (preAttempt && !preAttempt.finishedAt) {
@@ -1004,7 +1029,7 @@ export class TeamOrchestrator {
 		if (current && !this.shouldStop(current)) {
 			current.taskStates[task.id]!.progress = { phase: "watcher_reviewing", message: progressMessages.watcher_reviewing, updatedAt: now() };
 			current.updatedAt = now();
-			await this.workspace.saveState(current);
+			await writer.saveState(current);
 		}
 		const ts = state.taskStates[task.id];
 
@@ -1556,7 +1581,7 @@ export class TeamOrchestrator {
 					await this.handleTimeout(state, plan);
 					return;
 				}
-				await this.executeMaybeDecomposedTask(state, child, plan, signal);
+				await this.executeMaybeDecomposedTask(state, child, plan, signal, this.workspace);
 			}
 
 			state = (await this.workspace.getState(state.runId))!;
@@ -1605,71 +1630,68 @@ export class TeamOrchestrator {
 			}
 
 			if (queue.length > 0) {
-				// Override saveState to use patchState for concurrent safety
-				const origSave = this.workspace.saveState.bind(this.workspace);
-				const ws = this.workspace;
-				this.workspace.saveState = async function(s: TeamRunState) {
-					const taskId = parallelTaskId.getStore();
-					if (taskId) {
-						await ws.patchState(s.runId, (latest) => {
+				const active = new Set<Promise<void>>();
+				let nextIdx = 0;
+
+				const startChild = async (child: TeamTask): Promise<void> => {
+					let needsTimeout = false;
+					try {
+						const current = await this.workspace.getState(runId);
+						if (!current || current.status !== "running" || this.shouldStop(current) || signal.aborted) return;
+						if (this.isTimedOut(current)) {
+							needsTimeout = true;
+							return;
+						}
+						const cs = current.taskStates[child.id];
+						if (cs && TERMINAL_TASK_STATUSES.has(cs.status)) return;
+						const scopedWriter = new ParallelChildStateWriter(this.workspace, runId, child.id);
+						await this.executeMaybeDecomposedTask(current, child, plan, signal, scopedWriter);
+					} catch (err) {
+						// Mark child as failed; if state write fails, error propagates
+						const msg = err instanceof Error ? err.message : String(err);
+						await this.workspace.patchState(runId, (latest) => {
 							if (latest.status !== "running") return;
-							const latestTask = latest.taskStates[taskId];
-							if (latestTask && (TERMINAL_TASK_STATUSES.has(latestTask.status) || latestTask.status === "interrupted")) {
-								return;
+							const childState = latest.taskStates[child.id];
+							if (childState && !TERMINAL_TASK_STATUSES.has(childState.status)) {
+								childState.status = "failed";
+								childState.errorSummary = `unexpected error: ${msg}`;
+								childState.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
 							}
-							latest.taskStates[taskId] = s.taskStates[taskId]!;
 							latest.summary = computeTeamRunSummary(latest.taskStates);
 						});
-					} else {
-						await origSave(s);
+					}
+					if (needsTimeout) {
+						await this.handleTimeout((await this.workspace.getState(runId))!, plan);
 					}
 				};
 
-				try {
-					const active = new Set<Promise<void>>();
-					let nextIdx = 0;
+				const launch = (child: TeamTask) => {
+					const p = startChild(child).finally(() => { active.delete(p); });
+					active.add(p);
+				};
 
-					const startChild = async (child: TeamTask): Promise<void> => {
-						let needsTimeout = false;
-						await parallelTaskId.run(child.id, async () => {
-							try {
-								const current = await ws.getState(runId);
-								if (!current || current.status !== "running" || this.shouldStop(current) || signal.aborted) return;
-								if (this.isTimedOut(current)) {
-									needsTimeout = true;
-									return;
-								}
-								const cs = current.taskStates[child.id];
-								if (cs && TERMINAL_TASK_STATUSES.has(cs.status)) return;
-								await this.executeMaybeDecomposedTask(current, child, plan, signal);
-							} catch (err) {
-								// Mark child as failed; if state write fails, error propagates
-								const msg = err instanceof Error ? err.message : String(err);
-								await ws.patchState(runId, (latest) => {
-									if (latest.status !== "running") return;
-									const childState = latest.taskStates[child.id];
-									if (childState && !TERMINAL_TASK_STATUSES.has(childState.status)) {
-										childState.status = "failed";
-										childState.errorSummary = `unexpected error: ${msg}`;
-										childState.progress = { phase: "failed", message: progressMessages.failed, updatedAt: now() };
-									}
-									latest.summary = computeTeamRunSummary(latest.taskStates);
-								});
-							}
-						});
-						// Handle timeout outside parallelTaskId scope so run-level writes are not narrowed
-						if (needsTimeout) {
-							await this.handleTimeout((await ws.getState(runId))!, plan);
-						}
-					};
+				while (nextIdx < queue.length && active.size < PARALLEL_FOR_EACH_CONCURRENCY) {
+					const current = await this.workspace.getState(runId);
+					if (!current || current.status !== "running" || this.shouldStop(current) || signal.aborted) break;
+					if (this.isTimedOut(current)) {
+						await this.handleTimeout(current, plan);
+						break;
+					}
+					launch(queue[nextIdx]!);
+					nextIdx++;
+				}
 
-					const launch = (child: TeamTask) => {
-						const p = startChild(child).finally(() => { active.delete(p); });
-						active.add(p);
-					};
+				let fatalError: unknown = null;
 
+				while (active.size > 0 && !fatalError) {
+					try {
+						await Promise.race(active);
+					} catch (err) {
+						fatalError = err;
+						break;
+					}
 					while (nextIdx < queue.length && active.size < PARALLEL_FOR_EACH_CONCURRENCY) {
-						const current = await ws.getState(runId);
+						const current = await this.workspace.getState(runId);
 						if (!current || current.status !== "running" || this.shouldStop(current) || signal.aborted) break;
 						if (this.isTimedOut(current)) {
 							await this.handleTimeout(current, plan);
@@ -1678,40 +1700,16 @@ export class TeamOrchestrator {
 						launch(queue[nextIdx]!);
 						nextIdx++;
 					}
+				}
 
-					let fatalError: unknown = null;
+				// Drain any remaining active children
+				if (active.size > 0) {
+					await Promise.allSettled(Array.from(active));
+				}
 
-					while (active.size > 0 && !fatalError) {
-						try {
-							await Promise.race(active);
-						} catch (err) {
-							fatalError = err;
-							break;
-						}
-						while (nextIdx < queue.length && active.size < PARALLEL_FOR_EACH_CONCURRENCY) {
-							const current = await ws.getState(runId);
-							if (!current || current.status !== "running" || this.shouldStop(current) || signal.aborted) break;
-							if (this.isTimedOut(current)) {
-								await this.handleTimeout(current, plan);
-								break;
-							}
-							launch(queue[nextIdx]!);
-							nextIdx++;
-						}
-					}
-
-					// Drain any remaining active children before restoring saveState
-					if (active.size > 0) {
-						await Promise.allSettled(Array.from(active));
-					}
-
-					// If a fatal error occurred, rethrow after drain so failRun handles it
-					if (fatalError) {
-						throw fatalError;
-					}
-				} finally {
-					// Always restore original saveState, even if pool execution throws
-					this.workspace.saveState = origSave;
+				// If a fatal error occurred, rethrow after drain so failRun handles it
+				if (fatalError) {
+					throw fatalError;
 				}
 			}
 
@@ -1815,7 +1813,7 @@ export class TeamOrchestrator {
 				if (state.status !== "running" || this.shouldStop(state)) break;
 				if (TERMINAL_TASK_STATUSES.has(state.taskStates[child.id]?.status ?? "pending")) continue;
 				if (signal.aborted) break;
-				await this.executeMaybeDecomposedTask(state, child, plan, signal);
+				await this.executeMaybeDecomposedTask(state, child, plan, signal, this.workspace);
 			}
 			state = (await this.workspace.getState(state.runId))!;
 			if (state.status !== "running" || this.shouldStop(state)) return;
