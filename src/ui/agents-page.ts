@@ -469,6 +469,10 @@ function getAgentsPageCss(): string {
 			outline: none;
 		}
 		.ag-skills-select:focus { border-color: var(--primary); }
+			.ag-skills-collapsed {
+				display: flex; align-items: center; justify-content: space-between;
+				padding: 4px 0;
+			}
 
 		/* Skill items */
 		.ag-skill-list { display: grid; gap: 8px; max-height: 320px; overflow-y: auto; padding-top: 4px; }
@@ -785,6 +789,7 @@ function getAgentsPageJs(): string {
 			archivePendingId: "",
 			removingSkillName: "",
 			refreshing: false,
+			skillsExpanded: false,
 		};
 
 		const FILTER_TABS = [
@@ -1080,24 +1085,36 @@ function getAgentsPageJs(): string {
 			// Skills card
 			html += '<div class="ag-card">';
 			html += '<div class="ag-card-title"><span class="ag-card-title-icon" style="background:rgba(139,92,246,0.12)">' + SVG_STAR + '</span>技能<span style="margin-left:auto;font-size:11px;color:var(--muted)">仅展示 scoped 技能</span></div>';
-			html += '<div class="ag-skills-toolbar">';
-			html += '<select id="ag-skill-select" class="ag-skills-select"><option value="">选择要安装的技能...</option></select>';
-			html += '<button id="ag-btn-copy-skill" class="ag-btn ag-btn--outline" type="button" disabled>复制安装</button>';
-			html += '<button id="ag-btn-refresh-skills" class="ag-btn ag-btn--outline" type="button">刷新</button>';
-			html += '</div>';
-			html += '<div id="ag-skill-list" class="ag-skill-list"></div>';
+				if (state.skillsExpanded) {
+					html += '<div class="ag-skills-toolbar">';
+					html += '<select id="ag-skill-select" class="ag-skills-select"><option value="">选择要安装的技能...</option></select>';
+					html += '<button id="ag-btn-copy-skill" class="ag-btn ag-btn--outline" type="button" disabled>复制安装</button>';
+					html += '<button id="ag-btn-refresh-skills" class="ag-btn ag-btn--outline" type="button">刷新</button>';
+					html += '</div>';
+					html += '<div id="ag-skill-list" class="ag-skill-list"></div>';
+				} else {
+					var collapsedCount = (state.skillsByAgentId[state.selectedId] || []).length;
+					html += '<div class="ag-skills-collapsed">';
+					html += '<span style="font-size:13px;color:var(--fg-secondary)">' + (collapsedCount > 0 ? collapsedCount + ' 个技能' : '点击查看技能列表') + '</span>';
+					html += '<button id="ag-btn-expand-skills" class="ag-btn ag-btn--outline" type="button">查看技能</button>';
+					html += '</div>';
+				}
 			html += '</div>';
 
 			body.innerHTML = html;
 
-			// Wire up buttons
-			var copySkillBtn = document.getElementById("ag-btn-copy-skill");
-			if (copySkillBtn) copySkillBtn.addEventListener("click", handleCopySkill);
-			var refreshSkillsBtn = document.getElementById("ag-btn-refresh-skills");
-			if (refreshSkillsBtn) refreshSkillsBtn.addEventListener("click", handleRefreshSkills);
+				if (state.skillsExpanded) {
+					var copySkillBtn = document.getElementById("ag-btn-copy-skill");
+					if (copySkillBtn) copySkillBtn.addEventListener("click", handleCopySkill);
+					var refreshSkillsBtn = document.getElementById("ag-btn-refresh-skills");
+					if (refreshSkillsBtn) refreshSkillsBtn.addEventListener("click", handleRefreshSkills);
 
-			renderSkills();
-			populateSkillSelect();
+					renderSkills();
+					populateSkillSelect();
+				} else {
+					var expandBtn = document.getElementById("ag-btn-expand-skills");
+					if (expandBtn) expandBtn.addEventListener("click", handleExpandSkills);
+				}
 		}
 
 		function buildMiniCard(label, value, iconBg, iconColor, iconSvg) {
@@ -1216,22 +1233,10 @@ function getAgentsPageJs(): string {
 		/* ── Selection ── */
 		function selectAgent(agentId) {
 			state.selectedId = agentId;
-			var cachedSkills = state.skillsByAgentId[agentId];
-			state.skillsLoading = !cachedSkills;
+			state.skillsExpanded = false;
 			renderAgentList();
 			renderDetailBody();
-			if (cachedSkills) {
-				state.skillsLoading = false;
-				renderStats();
-			} else {
-				apiFetchAgentSkills(agentId).then(function() {
-					state.skillsLoading = false;
-					renderSkills();
-					renderStats();
-					var agent = state.agents.find(function(a) { return a.agentId === agentId; });
-					if (agent) renderDetailBody();
-				});
-			}
+			renderStats();
 			// Mobile: show detail, hide sidebar
 			var detail = document.querySelector(".ag-detail");
 			var sidebar = document.querySelector(".ag-sidebar");
@@ -1317,6 +1322,23 @@ function getAgentsPageJs(): string {
 				showToast("技能已刷新", "ok");
 			} catch (e) { showToast(e.message || "刷新失败", "danger"); }
 			finally { if (btn) { btn.disabled = false; btn.textContent = "刷新"; } }
+		}
+
+
+		function handleExpandSkills() {
+			state.skillsExpanded = true;
+			var cachedSkills = state.skillsByAgentId[state.selectedId];
+			if (cachedSkills) {
+				renderDetailBody();
+			} else {
+				state.skillsLoading = true;
+				renderDetailBody();
+				apiFetchAgentSkills(state.selectedId).then(function() {
+					state.skillsLoading = false;
+					renderDetailBody();
+					renderStats();
+				});
+			}
 		}
 
 		function mobileBackToList() {

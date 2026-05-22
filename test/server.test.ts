@@ -1201,15 +1201,80 @@ test("GET /playground/agents reuses gallery skills for the initial main selectio
 
 	assert.match(galleryRegion, /fetchJson\("\/v1\/agents\/main\/skills"\)/);
 	assert.match(galleryRegion, /state\.skillsByAgentId\.main\s*=\s*state\.gallerySkills/);
-	assert.match(selectRegion, /var cachedSkills = state\.skillsByAgentId\[agentId\]/);
-	assert.match(selectRegion, /if \(cachedSkills\)/);
-	assert.match(selectRegion, /state\.skillsLoading = false;/);
-	assert.doesNotMatch(
-		selectRegion,
-		/state\.skillsLoading = true;[\s\S]*apiFetchAgentSkills\(agentId\)/,
-	);
-	await app.close();
-});
+		// selectAgent resets skillsExpanded and does not fetch skills
+		assert.match(selectRegion, /state\.skillsExpanded = false/);
+		assert.doesNotMatch(selectRegion, /apiFetchAgentSkills/);
+		assert.doesNotMatch(selectRegion, /renderSkills\(\)/);
+		await app.close();
+	});
+
+	test("GET /playground/agents defers skill row rendering until section is expanded", async () => {
+		const app = await buildServer({
+			agentService: createAgentServiceStub(),
+		});
+		const response = await app.inject({
+			method: "GET",
+			url: "/playground/agents",
+		});
+		assert.equal(response.statusCode, 200);
+		const body = response.body;
+
+		// State declares skillsExpanded flag
+		assert.match(body, /skillsExpanded:\s*false/);
+
+		// renderDetailBody gates skill list behind skillsExpanded
+		const detailStart = body.indexOf("function renderDetailBody()");
+		const detailEnd = body.indexOf("function buildMiniCard(", detailStart);
+		assert.ok(detailStart >= 0, "renderDetailBody function not found");
+		assert.ok(detailEnd > detailStart, "renderDetailBody region end not found");
+		const detailRegion = body.slice(detailStart, detailEnd);
+
+		// Collapsed branch has expand button, no skill list div
+		assert.match(detailRegion, /ag-btn-expand-skills/);
+		assert.match(detailRegion, /if \(state\.skillsExpanded\)/);
+
+		// renderSkills is called only inside the expanded branch
+		const renderSkillsCall = detailRegion.indexOf("renderSkills()");
+		const expandedBranch = detailRegion.indexOf("if (state.skillsExpanded)");
+		assert.ok(renderSkillsCall > expandedBranch, "renderSkills() must be inside the skillsExpanded branch");
+
+		// handleExpandSkills sets skillsExpanded and checks cache
+		const expandStart = body.indexOf("function handleExpandSkills()");
+		const expandEnd = body.indexOf("function mobileBackToList(", expandStart);
+		assert.ok(expandStart >= 0, "handleExpandSkills function not found");
+		assert.ok(expandEnd > expandStart, "handleExpandSkills region end not found");
+		const expandRegion = body.slice(expandStart, expandEnd);
+
+		assert.match(expandRegion, /state\.skillsExpanded = true/);
+		assert.match(expandRegion, /var cachedSkills = state\.skillsByAgentId\[state\.selectedId\]/);
+		assert.match(expandRegion, /if \(cachedSkills\)/);
+		assert.match(expandRegion, /apiFetchAgentSkills\(state\.selectedId\)/);
+
+		await app.close();
+	});
+
+	test("GET /playground/agents skill toggle still calls PATCH when expanded", async () => {
+		const app = await buildServer({
+			agentService: createAgentServiceStub(),
+		});
+		const response = await app.inject({
+			method: "GET",
+			url: "/playground/agents",
+		});
+		assert.equal(response.statusCode, 200);
+		const body = response.body;
+
+		const toggleStart = body.indexOf("async function apiToggleSkill(");
+		const toggleEnd = body.indexOf("async function apiFetchGallerySkills", toggleStart);
+		assert.ok(toggleStart >= 0, "apiToggleSkill function not found");
+		assert.ok(toggleEnd > toggleStart, "apiToggleSkill region end not found");
+		const toggleRegion = body.slice(toggleStart, toggleEnd);
+
+		assert.match(toggleRegion, /method: "PATCH"/);
+		assert.match(toggleRegion, /\/skills\//);
+
+		await app.close();
+	});
 
 test("GET /playground releases panel focus before hiding conn run details", async () => {
 	const app = await buildServer({
