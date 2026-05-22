@@ -12,6 +12,16 @@
 
 ---
 
+## 2026-05-22 — Ali CodePlan Qwen 3.7 Max model option
+
+- **主题**: 在阿里 CodePlan 模型源下新增 `qwen3.7-max` 可选模型
+- **影响范围**: `runtime/pi-agent/models.json`, `docs/model-providers.md`, `test/model-config.test.ts`, `test/agent-session-factory.test.ts`, `docs/change-log.md`
+- **变更**:
+  - `ali-codeplan` provider 继续使用 `ALI_CODEPLAN_API_KEY`、`anthropic-messages` 和现有阿里 CodePlan endpoint，只新增模型选项，不新增 provider
+  - `/v1/model-config` 暴露的阿里模型列表从 `glm-5.1` / `kimi-k2.6` / `deepseek-v4-pro` 扩展为 `glm-5.1` / `kimi-k2.6` / `deepseek-v4-pro` / `qwen3.7-max`
+  - `qwen3.7-max` 上下文窗口登记为 `1000000`
+  - 增加 registry 与 model-config 测试覆盖，避免模型只写进文档但没有进入真实下拉
+
 ## 2026-05-22 — Playground Agents initial main skills dedupe
 
 - **主题**: 复用 `/playground/agents` 首屏 main skills gallery 结果，去掉自动选中主 Agent 时的重复 skills 请求

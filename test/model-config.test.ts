@@ -112,6 +112,7 @@ async function createProjectRoot(): Promise<string> {
 						{ id: "glm-5.1", name: "GLM-5.1 (Ali CodePlan)", contextWindow: 20000 },
 						{ id: "kimi-k2.6", name: "Kimi K2.6 (Ali CodePlan)", contextWindow: 256000 },
 						{ id: "deepseek-v4-pro", name: "DeepSeek V4 Pro (Ali CodePlan)", contextWindow: 1000000 },
+						{ id: "qwen3.7-max", name: "Qwen 3.7 Max (Ali CodePlan)", contextWindow: 1000000 },
 					],
 				},
 			},
@@ -174,10 +175,12 @@ test("model config store lists providers and current default selection", async (
 		"glm-5.1",
 		"kimi-k2.6",
 		"deepseek-v4-pro",
+		"qwen3.7-max",
 	]);
 	assert.deepEqual(config.providers.find((provider) => provider.id === "ali-codeplan")?.models.map((model) => model.contextWindow), [
 		20000,
 		256000,
+		1000000,
 		1000000,
 	]);
 	assert.equal(config.providers.find((provider) => provider.id === "ali-codeplan")?.auth.envVar, "ALI_CODEPLAN_API_KEY");

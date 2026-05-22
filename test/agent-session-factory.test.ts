@@ -285,6 +285,7 @@ test("project models.json exposes the checked-in Ali CodePlan Anthropic-compatib
 	const glmModel = registry.find("ali-codeplan", "glm-5.1");
 	const kimiModel = registry.find("ali-codeplan", "kimi-k2.6");
 	const deepseekModel = registry.find("ali-codeplan", "deepseek-v4-pro");
+	const qwenModel = registry.find("ali-codeplan", "qwen3.7-max");
 
 	assert.notEqual(glmModel, undefined);
 	assert.equal(glmModel?.provider, "ali-codeplan");
@@ -298,6 +299,10 @@ test("project models.json exposes the checked-in Ali CodePlan Anthropic-compatib
 	assert.equal(deepseekModel?.provider, "ali-codeplan");
 	assert.equal(deepseekModel?.id, "deepseek-v4-pro");
 	assert.equal(deepseekModel?.contextWindow, 1000000);
+	assert.notEqual(qwenModel, undefined);
+	assert.equal(qwenModel?.provider, "ali-codeplan");
+	assert.equal(qwenModel?.id, "qwen3.7-max");
+	assert.equal(qwenModel?.contextWindow, 1000000);
 });
 
 test("resolveProjectDefaultModelContext uses project defaults and reserve budget", async () => {
