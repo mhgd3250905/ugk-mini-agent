@@ -222,6 +222,10 @@ export interface RunEventSubscription {
 	unsubscribe: () => void;
 }
 
+export interface RunEventSubscriptionOptions {
+	afterEventCursor?: number;
+}
+
 export interface AgentServiceOptions {
 	agentId?: string;
 	conversationStore: ConversationStore;
@@ -233,6 +237,7 @@ interface ActiveRunState {
 	session: AgentSessionLike;
 	interrupted: boolean;
 	events: ChatStreamEvent[];
+	eventCursor: number;
 	subscribers: Set<ChatStreamEventSink>;
 	view: ChatActiveRunBody;
 	browserId?: string;
@@ -543,7 +548,11 @@ export class AgentService {
 		return [];
 	}
 
-	subscribeRunEvents(conversationId: string, onEvent: ChatStreamEventSink): RunEventSubscription {
+	subscribeRunEvents(
+		conversationId: string,
+		onEvent: ChatStreamEventSink,
+		options?: RunEventSubscriptionOptions,
+	): RunEventSubscription {
 		const activeRun = this.activeRuns.get(conversationId);
 		if (!activeRun) {
 			return {
@@ -554,7 +563,7 @@ export class AgentService {
 		}
 
 		let replayedTerminalEvent = false;
-		for (const event of activeRun.events) {
+		for (const event of getReplayableRunEvents(activeRun, options?.afterEventCursor)) {
 			deliverChatStreamEvent(onEvent, event);
 			replayedTerminalEvent ||= isTerminalChatStreamEvent(event);
 		}
@@ -606,6 +615,7 @@ export class AgentService {
 			session,
 			interrupted: false,
 			events: [],
+			eventCursor: 0,
 			subscribers: new Set<ChatStreamEventSink>(),
 			view: createActiveRunView(conversationId, input.message, preparedAssets.uploadedAssets),
 			...(input.browserId ? { browserId: input.browserId } : {}),
@@ -724,6 +734,8 @@ export class AgentService {
 		primarySink: ChatStreamEventSink | undefined,
 		event: ChatStreamEvent,
 	): void {
+		activeRun.eventCursor += 1;
+		activeRun.view.eventCursor = activeRun.eventCursor;
 		emitBufferedRunEvent({
 			view: activeRun.view,
 			events: activeRun.events,
@@ -809,6 +821,22 @@ export class AgentService {
 			activeRun.view,
 		);
 	}
+}
+
+function getReplayableRunEvents(
+	activeRun: Pick<ActiveRunState, "events" | "eventCursor">,
+	afterEventCursor: number | undefined,
+): ChatStreamEvent[] {
+	if (typeof afterEventCursor !== "number" || !Number.isInteger(afterEventCursor) || afterEventCursor <= 0) {
+		return activeRun.events;
+	}
+	const cursor = afterEventCursor;
+	const bufferStartCursor = Math.max(0, activeRun.eventCursor - activeRun.events.length);
+	const startIndex = Math.min(
+		activeRun.events.length,
+		Math.max(0, cursor - bufferStartCursor),
+	);
+	return activeRun.events.slice(startIndex);
 }
 
 function toError(error: unknown): Error {

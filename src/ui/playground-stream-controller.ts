@@ -132,6 +132,15 @@ export function getPlaygroundStreamControllerScript(): string {
 
 			try {
 				const query = new URLSearchParams({ conversationId: nextConversationId });
+				const activeRunSnapshot = normalizeActiveRun(state.conversationState?.activeRun);
+				if (
+					activeRunSnapshot &&
+					activeRunSnapshot.runId === state.activeRunId &&
+					Number.isFinite(activeRunSnapshot.eventCursor) &&
+					activeRunSnapshot.eventCursor > 0
+				) {
+					query.set("afterEventCursor", String(Math.trunc(activeRunSnapshot.eventCursor)));
+				}
 				const response = await fetch(getAgentApiPath("/chat/events") + "?" + query.toString(), {
 					method: "GET",
 					headers: { accept: "text/event-stream" },
@@ -206,6 +215,7 @@ export function getPlaygroundStreamControllerScript(): string {
 				activeRunStatus: activeRun ? activeRun.status : "",
 				activeRunText: activeRun ? activeRun.text : "",
 				activeRunId: activeRun ? activeRun.runId : "",
+				activeRunEventCursor: activeRun ? activeRun.eventCursor : 0,
 			});
 		}
 

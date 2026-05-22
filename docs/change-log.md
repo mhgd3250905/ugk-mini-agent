@@ -12,6 +12,15 @@
 
 ---
 
+## 2026-05-23 — Playground stream resume cursor dedupe
+
+- **主题**: 修复对话进行中恢复事件流时 assistant 文字重复叠加
+- **影响范围**: `src/agent/agent-service.ts`, `src/routes/chat.ts`, `src/types/api.ts`, `src/ui/playground-active-run-normalizer.ts`, `src/ui/playground-stream-controller.ts`, `test/agent-service.test.ts`, `test/server.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - `activeRun` 快照新增 `eventCursor`，标记 `/v1/chat/state` 已覆盖到的 active run 事件位置
+  - `/v1/chat/events` 与 scoped agent events 支持 `afterEventCursor`，只 replay cursor 之后的 buffered events
+  - Playground 恢复 running state 后订阅事件流时携带 cursor，避免 state 快照正文和从头 replay 的 `text_delta` 同时追加到同一助手气泡
+
 ## 2026-05-23 — Playground Agents skill card status dedupe
 
 - **主题**: 移除 `/playground/agents` 技能卡片里的重复启用状态 badge

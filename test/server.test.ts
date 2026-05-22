@@ -51,6 +51,7 @@ function createAgentServiceStub(overrides?: {
 	subscribeRunEvents?: (
 		conversationId: string,
 		onEvent: (event: StreamEvent) => void,
+		options?: { afterEventCursor?: number },
 	) => {
 		conversationId: string;
 		running: boolean;
@@ -4009,6 +4010,8 @@ test("GET /playground restores running conversations after refresh and avoids re
 	assert.match(response.body, /function reconcileSyncedConversationState\(payload, conversationId, options\)\s*\{/);
 	assert.match(response.body, /function isTerminalRunEvent\(event\)\s*\{/);
 	assert.match(response.body, /function buildConversationStateSignature\(conversationState\)\s*\{/);
+	assert.match(response.body, /query\.set\("afterEventCursor", String\(Math\.trunc\(activeRunSnapshot\.eventCursor\)\)\)/);
+	assert.match(response.body, /activeRunEventCursor: activeRun \? activeRun\.eventCursor : 0/);
 	assert.match(response.body, /let rendered = findRenderedAssistantForActiveRun\(activeRun\);/);
 	assert.doesNotMatch(response.body, /function formatRecoveredRunMessage\(\)\s*\{/);
 	assert.doesNotMatch(response.body, /function normalizeProcessSnapshot\(rawProcess\)\s*\{/);
@@ -6839,6 +6842,42 @@ test("GET /v1/chat/status returns whether the conversation is currently running"
 		},
 	});
 	assert.deepEqual(calls, ["manual:refresh-run"]);
+	await app.close();
+});
+
+test("GET /v1/chat/events resumes after an active run event cursor", async () => {
+	const calls: Array<{ conversationId: string; afterEventCursor?: number }> = [];
+	const app = await buildServer({
+		agentService: createAgentServiceStub({
+			subscribeRunEvents: (conversationId, onEvent, options) => {
+				calls.push({ conversationId, afterEventCursor: options?.afterEventCursor });
+				onEvent({
+					type: "text_delta",
+					textDelta: "live",
+				});
+				onEvent({
+					type: "done",
+					conversationId,
+					runId: "run-events",
+					text: "live",
+				});
+				return {
+					conversationId,
+					running: true,
+					unsubscribe: () => undefined,
+				};
+			},
+		}),
+	});
+
+	const response = await app.inject({
+		method: "GET",
+		url: "/v1/chat/events?conversationId=manual:events&afterEventCursor=7",
+	});
+
+	assert.equal(response.statusCode, 200);
+	assert.match(response.body, /"textDelta":"live"/);
+	assert.deepEqual(calls, [{ conversationId: "manual:events", afterEventCursor: 7 }]);
 	await app.close();
 });
 

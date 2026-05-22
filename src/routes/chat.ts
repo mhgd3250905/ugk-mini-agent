@@ -392,7 +392,7 @@ export function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDependen
 		async (
 			request: FastifyRequest<{
 				Params: { agentId?: string };
-				Querystring: { conversationId?: string };
+				Querystring: { conversationId?: string; afterEventCursor?: string };
 			}>,
 			reply,
 		): Promise<FastifyReply | void> => {
@@ -400,9 +400,13 @@ export function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDependen
 			if (!service) {
 				return reply;
 			}
-			const { conversationId } = request.query ?? {};
+			const { conversationId, afterEventCursor } = request.query ?? {};
 			if (!isValidConversationId(conversationId)) {
 				return sendBadRequest(reply, 'Field "conversationId" must be a non-empty string');
+			}
+			const parsedAfterEventCursor = parseOptionalPositiveInteger(afterEventCursor, "afterEventCursor");
+			if (parsedAfterEventCursor.error) {
+				return sendBadRequest(reply, parsedAfterEventCursor.error);
 			}
 
 			reply.hijack();
@@ -425,12 +429,16 @@ export function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDependen
 				endSseResponse(reply.raw);
 			};
 			request.raw.on("close", closeStream);
-			subscription = service.subscribeRunEvents(conversationId, (event) => {
-				writeSseEvent(reply.raw, event);
-				if (isTerminalChatStreamEvent(event)) {
-					closeStream();
-				}
-			});
+			subscription = service.subscribeRunEvents(
+				conversationId,
+				(event) => {
+					writeSseEvent(reply.raw, event);
+					if (isTerminalChatStreamEvent(event)) {
+						closeStream();
+					}
+				},
+				{ afterEventCursor: parsedAfterEventCursor.value },
+			);
 			if (!subscription.running) {
 				closeStream();
 			}
@@ -830,13 +838,17 @@ export function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDependen
 	app.get(
 		"/v1/chat/events",
 		async (
-			request: FastifyRequest<{ Querystring: { conversationId?: string } }>,
+			request: FastifyRequest<{ Querystring: { conversationId?: string; afterEventCursor?: string } }>,
 			reply,
 		): Promise<FastifyReply | void> => {
-			const { conversationId } = request.query ?? {};
+			const { conversationId, afterEventCursor } = request.query ?? {};
 
 			if (!isValidConversationId(conversationId)) {
 				return sendBadRequest(reply, 'Field "conversationId" must be a non-empty string');
+			}
+			const parsedAfterEventCursor = parseOptionalPositiveInteger(afterEventCursor, "afterEventCursor");
+			if (parsedAfterEventCursor.error) {
+				return sendBadRequest(reply, parsedAfterEventCursor.error);
 			}
 
 			reply.hijack();
@@ -862,12 +874,16 @@ export function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDependen
 
 			request.raw.on("close", closeStream);
 
-			subscription = deps.agentService.subscribeRunEvents(conversationId, (event) => {
-				writeSseEvent(reply.raw, event);
-				if (isTerminalChatStreamEvent(event)) {
-					closeStream();
-				}
-			});
+			subscription = deps.agentService.subscribeRunEvents(
+				conversationId,
+				(event) => {
+					writeSseEvent(reply.raw, event);
+					if (isTerminalChatStreamEvent(event)) {
+						closeStream();
+					}
+				},
+				{ afterEventCursor: parsedAfterEventCursor.value },
+			);
 
 			if (!subscription.running) {
 				closeStream();

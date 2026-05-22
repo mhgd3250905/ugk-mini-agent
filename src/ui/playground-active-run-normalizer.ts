@@ -23,6 +23,9 @@ export function getPlaygroundActiveRunNormalizerScript(): string {
 					typeof rawRun.assistantMessageId === "string" && rawRun.assistantMessageId
 						? rawRun.assistantMessageId
 						: "active-run-" + createBrowserId(),
+				eventCursor: Number.isFinite(rawRun.eventCursor) && rawRun.eventCursor > 0
+					? Math.trunc(rawRun.eventCursor)
+					: 0,
 				input: {
 					message: typeof input.message === "string" ? input.message : "",
 					inputAssets: Array.isArray(input.inputAssets)

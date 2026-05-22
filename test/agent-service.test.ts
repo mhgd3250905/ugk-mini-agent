@@ -1516,6 +1516,7 @@ test("getConversationState exposes the active run snapshot for refresh observers
 	const activeRun = state.activeRun;
 	assert.equal(activeRun.status, "running");
 	assert.equal(activeRun.text, "partial answer");
+	assert.equal(activeRun.eventCursor, 4);
 	assert.deepEqual(activeRun.input, {
 		message: "current task",
 		inputAssets: [],
@@ -2341,6 +2342,51 @@ test("subscribeRunEvents replays buffered events and keeps streaming live active
 		false,
 	);
 
+	activeSession.finish();
+	await run;
+});
+
+test("subscribeRunEvents can resume after a rendered active run cursor without replaying covered text", async () => {
+	const store = await createStore();
+	const activeSession = new DeferredSession("E:/sessions/reattach-cursor.jsonl");
+	const factory = new FakeAgentSessionFactory(() => activeSession);
+	const service = new AgentService({ conversationStore: store, sessionFactory: factory });
+
+	const run = service.streamChat(
+		{
+			conversationId: "manual:reattach-cursor",
+			message: "start",
+		},
+		() => undefined,
+	);
+	await activeSession.promptStarted;
+	activeSession.emit(textDelta("already rendered"));
+
+	const state = await service.getConversationState("manual:reattach-cursor");
+	const afterEventCursor = state.activeRun?.eventCursor;
+	assert.equal(afterEventCursor, 2);
+
+	const reattachedEvents: ChatStreamEvent[] = [];
+	const subscription = service.subscribeRunEvents(
+		"manual:reattach-cursor",
+		(event) => {
+			reattachedEvents.push(event);
+		},
+		{ afterEventCursor },
+	);
+
+	assert.equal(subscription.running, true);
+	assert.deepEqual(reattachedEvents, []);
+
+	activeSession.emit(textDelta(" live only"));
+	assert.deepEqual(reattachedEvents, [
+		{
+			type: "text_delta",
+			textDelta: " live only",
+		},
+	]);
+
+	subscription.unsubscribe();
 	activeSession.finish();
 	await run;
 });

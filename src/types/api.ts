@@ -555,6 +555,7 @@ export interface ChatActiveRunBody {
 	runId: string;
 	status: "running" | "interrupted" | "done" | "error";
 	assistantMessageId: string;
+	eventCursor?: number;
 	input: ChatActiveRunInputBody;
 	text: string;
 	process: ChatProcessBody | null;

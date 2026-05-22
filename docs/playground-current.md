@@ -674,6 +674,7 @@
 - 刷新恢复运行态时，页面文案统一使用“当前任务正在运行 / 当前正在运行”，不要再写“上一轮仍在运行”。
 - 手机浏览器前后台切换、页面 `visibilitychange`、`pageshow`、`online` 后不再一律核对 catalog + 拉取完整会话 state：`pageshow` 会强制做一次当前会话 state 校准；`visibilitychange` 只在 active run 或本地 state 超过恢复阈值时回源；`online` 优先用当前 active run 提示查状态并续订 `/v1/chat/events`。
 - 如果 `/v1/chat/stream` 主连接因为前后台切换或网络短断结束，但 `GET /v1/chat/state` 仍显示后端任务运行中，页面会切到 `/v1/chat/events` 继续接收事件，不再提示“网络错误”并停止更新。
+- 切到 `/v1/chat/events` 前，前端必须带上当前 `activeRun.eventCursor` 作为 `afterEventCursor`；后端只 replay 该 cursor 之后的 buffered events，避免 `GET /v1/chat/state` 已经渲染的 `activeRun.text` 和事件流从头回放的 `text_delta` 叠加成重复文字。
 - 如果 `/v1/chat/stream` 断开时任务其实已经刚好完成或失败，前端要先信 `GET /v1/chat/state` 的收口结果；只要 canonical state 已经推进到终态，就不应继续报“流被中断 / network error”。
 - 用户点击发送或把消息追加进运行中的会话后，composer 要立即清空，明确表示消息已经发出；如果请求在真正进入后端前失败，再把草稿恢复回输入区，不能让用户白丢内容
 
@@ -738,7 +739,7 @@
 - 对 `interrupted / error` 这类 terminal snapshot，如果 session history 已经带上当前轮的用户输入，后端会把 `activeRun.input.message` 清空，避免刷新页再凭 terminal snapshot 把原始提问补画第二遍。
 - 这个“避免重复渲染”不能再只按前端文本相等拍脑袋；像连续两轮都发“继续”这种高频场景，后端必须在构造 `viewMessages` 时结合 active run 状态、assistant 覆盖位置和 canonical history 尾部的当前 turn 判断，前端不要再擅自按 DOM / localStorage 去重。
 - `activeRun.process` 是后端维护的状态快照；前端只把它映射成当前助手气泡上的状态摘要和 loading 状态，不再把过程日志写回本地历史里的 `process` 字段，也不再从本地 process snapshot 恢复运行态。
-- 恢复运行态后，playground 会继续请求 `/v1/chat/events`，重新订阅当前 active run 的 SSE 事件流；后续 `text_delta`、工具事件、`done`、`interrupted`、`error` 继续更新同一个 active assistant 气泡。
+- 恢复运行态后，playground 会继续请求 `/v1/chat/events`，重新订阅当前 active run 的 SSE 事件流；请求会携带 `/v1/chat/state` 快照里的 `activeRun.eventCursor`，服务端从该 cursor 之后继续 replay，后续 `text_delta`、工具事件、`done`、`interrupted`、`error` 继续更新同一个 active assistant 气泡。
 - 如果 `/v1/chat/events` 接上后又无 terminal event 就直接 EOF，前端不能装死停在“已恢复”假象里；必须立刻回源 `GET /v1/chat/state` 再收口一次：后端若仍在 running 就继续续订，已终态就按 canonical state 落稳结果。
 - 如果刷新时当前会话仍带着 terminal snapshot 但 `viewMessages` 里还没带出对应助手条目，前端会按 `assistantMessageId` 补建同一条助手气泡，再挂上状态壳层；别再让“有运行态、没载体消息”这种半截状态把 UI 弄成隐身人。
 - 恢复态不再把任务称为“上一轮”；页面统一渲染为“当前任务正在运行 / 当前正在运行”，因为真实 agent run 并不会因为 web 刷新变成历史任务。
