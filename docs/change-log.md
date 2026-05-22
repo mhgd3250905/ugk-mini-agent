@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-22 — Playground Conn initial run history lazy loading
+
+- **主题**: `/playground/conn` 首屏不再因自动选中第一条任务而拉取完整 run history
+- **影响范围**: `src/ui/conn-page-js.ts`, `src/ui/conn-page-css.ts`, `test/conn-page-ui.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - `handleConnSelect()` 只更新选中态和详情渲染，不再自动调用 `apiFetchRuns(connId)`
+  - 新增 `runHistoryStateByConnId` 与 `loadRunHistory()`，区分未加载、加载中、已加载空数组和加载失败状态
+  - 运行历史区域在未加载时使用 `conn.latestRun` 展示最近一次摘要，并提供显式“加载运行历史”按钮
+  - run history 请求返回时检查 `state.selectedId`，避免旧任务异步结果重画到新选中任务面板
+  - 测试覆盖 init 首屏、latestRun 摘要、懒加载入口、已加载空数组缓存和 selected-id guard
+
 ## 2026-05-22 — Playground Conn editor support catalog lazy loading
 
 - **主题**: `/playground/conn` 首屏不再提前加载 create/edit editor 才需要的 Agent、浏览器和模型配置目录

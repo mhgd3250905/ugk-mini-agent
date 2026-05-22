@@ -12,10 +12,11 @@ type ConnPageElement = {
 	innerHTML: string;
 	dataset: Record<string, string>;
 	style: Record<string, string>;
-	addEventListener: () => void;
+	addEventListener: (event?: string, handler?: () => unknown) => void;
 	appendChild: (child?: ConnPageElement) => void;
 	setAttribute: () => void;
 	querySelector: () => ConnPageElement | null;
+	querySelectorAll: () => ConnPageElement[];
 	scrollIntoView: () => void;
 	focus: () => void;
 };
@@ -34,8 +35,27 @@ function createConnPageElement(value = ""): ConnPageElement {
 		appendChild: () => undefined,
 		setAttribute: () => undefined,
 		querySelector: () => null,
+		querySelectorAll: () => [],
 		scrollIntoView: () => undefined,
 		focus: () => undefined,
+	};
+}
+
+function createRunHistoryTestElement() {
+	const element = createConnPageElement();
+	const loadButton = createConnPageElement();
+	let loadHandler: (() => unknown) | undefined;
+	loadButton.addEventListener = (_event?: string, handler?: () => unknown) => {
+		loadHandler = handler;
+	};
+	element.querySelector = () => (element.innerHTML.includes("data-load-run-history") ? loadButton : null);
+	return {
+		element,
+		clickLoad: async () => {
+			assert.ok(loadHandler, "expected lazy run-history button to be wired");
+			await loadHandler();
+			await Promise.resolve();
+		},
 	};
 }
 
@@ -96,7 +116,11 @@ function createConnPageContext(options?: {
 		navigator: {},
 		setTimeout,
 		clearTimeout,
+		applyTheme: () => undefined,
+		readStoredTheme: () => "dark",
+		toggleTheme: () => undefined,
 		escapeHtml: (value: unknown) => String(value ?? ""),
+		formatTimestamp: (value: unknown) => String(value ?? ""),
 		fetchJson:
 			options?.fetchJson ??
 			(async (url: string) => {
@@ -186,6 +210,191 @@ test("standalone conn first data load fetches only the conn list", async () => {
 	);
 
 	assert.deepEqual(calls, ["/v1/conns"]);
+});
+
+test("standalone conn init auto-selects first conn without fetching run history", async () => {
+	const { context } = createConnPageContext({
+		fetchJson: async (url: string) => {
+			(context as { calls: string[] }).calls.push(url);
+			if (url === "/v1/conns") {
+				return {
+					conns: [
+						{
+							connId: "conn-1",
+							title: "Daily report",
+							status: "active",
+							latestRun: {
+								runId: "run-latest",
+								connId: "conn-1",
+								status: "succeeded",
+								resultSummary: "Summary from latest run",
+								createdAt: "2026-05-22T01:00:00.000Z",
+								updatedAt: "2026-05-22T01:01:00.000Z",
+							},
+						},
+					],
+					unreadRunCountsByConnId: {},
+					unreadLatestRunTimesByConnId: {},
+					totalUnreadRuns: 0,
+				};
+			}
+			if (url.includes("/runs")) return { runs: [] };
+			return {};
+		},
+	});
+
+	const result = await runConnPageExpression<{ calls: string[]; selectedId: string | null }>(
+		context,
+		`
+			init();
+			await new Promise(resolve => setTimeout(resolve, 0));
+			await new Promise(resolve => setTimeout(resolve, 0));
+			return { calls, selectedId: state.selectedId };
+		`,
+	);
+
+	assert.equal(result.selectedId, "conn-1");
+	assert.deepEqual(result.calls, ["/v1/conns"]);
+});
+
+test("standalone conn first render uses latestRun summary before full history is loaded", async () => {
+	const runHistory = createRunHistoryTestElement();
+	const { context } = createConnPageContext({
+		elements: {
+			"conn-run-history-list": runHistory.element,
+		},
+	});
+
+	const html = await runConnPageExpression<string>(
+		context,
+		`
+			state.conns = [{
+				connId: "conn-1",
+				title: "Daily report",
+				status: "active",
+				latestRun: {
+					runId: "run-latest",
+					connId: "conn-1",
+					status: "succeeded",
+					resultSummary: "Summary from latest run",
+					createdAt: "2026-05-22T01:00:00.000Z",
+					updatedAt: "2026-05-22T01:01:00.000Z",
+				},
+			}];
+			state.selectedId = "conn-1";
+			renderRunHistory(state.conns[0]);
+			return $("conn-run-history-list").innerHTML;
+		`,
+	);
+
+	assert.match(html, /Summary from latest run/);
+	assert.match(html, /加载运行历史/);
+});
+
+test("standalone conn selection shows lazy run history until the explicit load action", async () => {
+	const calls: string[] = [];
+	const runHistory = createRunHistoryTestElement();
+	const { context } = createConnPageContext({
+		elements: {
+			"conn-run-history-list": runHistory.element,
+		},
+		fetchJson: async (url: string) => {
+			calls.push(url);
+			if (url.includes("/runs")) {
+				return {
+					runs: [],
+				};
+			}
+			return {};
+		},
+	});
+
+	const before = await runConnPageExpression<{ calls: string[]; html: string }>(
+		context,
+		`
+			state.conns = [{ connId: "conn-1", title: "Daily report", status: "active" }];
+			await handleConnSelect("conn-1");
+			renderRunHistory(state.conns[0]);
+			return { calls, html: $("conn-run-history-list").innerHTML };
+		`,
+	);
+
+	assert.deepEqual(before.calls, []);
+	assert.match(before.html, /加载运行历史/);
+
+	await runHistory.clickLoad();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+
+	assert.deepEqual(calls, ["/v1/conns/conn-1/runs"]);
+	assert.match(runHistory.element.innerHTML, /暂无运行历史/);
+});
+
+test("standalone conn loaded empty run history is a valid cache state", async () => {
+	const runHistory = createRunHistoryTestElement();
+	const { context } = createConnPageContext({
+		elements: {
+			"conn-run-history-list": runHistory.element,
+		},
+	});
+
+	const html = await runConnPageExpression<string>(
+		context,
+		`
+			state.conns = [{ connId: "conn-1", title: "Daily report", status: "active" }];
+			state.selectedId = "conn-1";
+			state.runsByConnId["conn-1"] = [];
+			state.runHistoryStateByConnId["conn-1"] = { status: "loaded", error: "" };
+			renderRunHistory(state.conns[0]);
+			return $("conn-run-history-list").innerHTML;
+		`,
+	);
+
+	assert.match(html, /暂无运行历史/);
+	assert.doesNotMatch(html, /加载运行历史/);
+});
+
+test("standalone conn ignores stale run history paint after selected conn changes", async () => {
+	const runHistory = createRunHistoryTestElement();
+	const { context } = createConnPageContext({
+		elements: {
+			"conn-run-history-list": runHistory.element,
+		},
+		fetchJson: async (url: string) => {
+			if (url.includes("/runs")) {
+				await new Promise((resolve) => setTimeout(resolve, 0));
+				return {
+					runs: [
+						{
+							runId: "run-stale",
+							connId: "conn-1",
+							status: "succeeded",
+							resultSummary: "Stale run should not paint",
+							createdAt: "2026-05-22T01:00:00.000Z",
+							updatedAt: "2026-05-22T01:01:00.000Z",
+						},
+					],
+				};
+			}
+			return {};
+		},
+	});
+
+	const html = await runConnPageExpression<string>(
+		context,
+		`
+			state.conns = [
+				{ connId: "conn-1", title: "Daily report", status: "active" },
+				{ connId: "conn-2", title: "Weekly report", status: "active" },
+			];
+			state.selectedId = "conn-1";
+			const pending = loadRunHistory("conn-1");
+			state.selectedId = "conn-2";
+			await pending;
+			return $("conn-run-history-list").innerHTML;
+		`,
+	);
+
+	assert.doesNotMatch(html, /Stale run should not paint/);
 });
 
 test("standalone conn editor loads support catalogs lazily and reuses the cache", async () => {

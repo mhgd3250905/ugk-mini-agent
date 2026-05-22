@@ -1009,6 +1009,82 @@ export function getConnPageCss(): string {
       margin: 0;
     }
 
+    .conn-run-lazy {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+
+    .conn-run-lazy-main {
+      min-width: 0;
+      display: grid;
+      gap: 6px;
+    }
+
+    .conn-run-lazy-eyebrow {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .conn-run-lazy-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .conn-run-lazy-time {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .conn-run-lazy-summary {
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--fg-secondary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .conn-run-lazy-error {
+      font-size: 12px;
+      color: var(--danger);
+    }
+
+    .conn-run-history-load {
+      flex-shrink: 0;
+      height: 34px;
+      padding: 0 14px;
+      border-radius: 8px;
+      border: 1px solid var(--primary);
+      background: var(--primary-soft);
+      color: var(--primary);
+      font-family: var(--font-sans);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .conn-run-history-load:hover:not(:disabled) {
+      border-color: var(--primary-hover);
+      color: var(--fg);
+    }
+
+    .conn-run-history-load:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
     /* Timeline */
     .conn-run-timeline {
       position: relative;
@@ -1829,6 +1905,20 @@ export function getConnPageCss(): string {
 
       .conn-detail-header { flex-direction: column; }
       .conn-detail-header-actions { width: 100%; }
+
+      .conn-run-lazy {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .conn-run-lazy-title {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .conn-run-history-load {
+        width: 100%;
+      }
 
       #mobile-back-btn { display: inline-flex !important; }
     }

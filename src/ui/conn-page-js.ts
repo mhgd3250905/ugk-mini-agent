@@ -15,6 +15,7 @@ const state = {
   filter: "all",
   search: "",
   runsByConnId: {},
+  runHistoryStateByConnId: {},
   expandedRunId: null,
   editorOpen: false,
   editorMode: null,
@@ -233,6 +234,21 @@ function hasActiveRunForConn(connId) {
   return isRunInFlight(conn?.latestRun);
 }
 
+function hasRunHistoryCache(connId) {
+  return Object.prototype.hasOwnProperty.call(state.runsByConnId, connId);
+}
+
+function getRunHistoryState(connId) {
+  const entry = state.runHistoryStateByConnId[connId];
+  if (entry && entry.status) return entry;
+  if (hasRunHistoryCache(connId)) return { status: "loaded", error: "" };
+  return { status: "idle", error: "" };
+}
+
+function setRunHistoryState(connId, status, error) {
+  state.runHistoryStateByConnId[connId] = { status, error: error || "" };
+}
+
 function upsertRunForConn(connId, run) {
   if (!connId || !run) return;
   const runs = state.runsByConnId[connId] || [];
@@ -241,9 +257,53 @@ function upsertRunForConn(connId, run) {
 
 async function refreshRunsForConn(connId) {
   if (!connId) return;
-  state.runsByConnId[connId] = await apiFetchRuns(connId);
-  renderDetail();
-  renderList();
+  setRunHistoryState(connId, "loading", "");
+  try {
+    state.runsByConnId[connId] = await apiFetchRuns(connId);
+    setRunHistoryState(connId, "loaded", "");
+    if (state.selectedId === connId) {
+      renderDetail();
+      renderList();
+    }
+  } catch (err) {
+    setRunHistoryState(connId, "error", err instanceof Error ? err.message : "加载运行历史失败");
+    if (state.selectedId === connId) renderDetail();
+    throw err;
+  }
+}
+
+async function loadRunHistory(connId) {
+  if (!connId) return;
+  const current = getRunHistoryState(connId);
+  if (current.status === "loading") return;
+  if (current.status === "loaded" && hasRunHistoryCache(connId)) {
+    if (state.selectedId === connId) {
+      const conn = state.conns.find(c => c.connId === connId);
+      if (conn) renderRunHistory(conn);
+    }
+    return;
+  }
+
+  setRunHistoryState(connId, "loading", "");
+  const connAtStart = state.conns.find(c => c.connId === connId);
+  if (state.selectedId === connId && connAtStart) renderRunHistory(connAtStart);
+
+  try {
+    const runs = await apiFetchRuns(connId);
+    state.runsByConnId[connId] = runs;
+    setRunHistoryState(connId, "loaded", "");
+    if (state.selectedId === connId) {
+      const conn = state.conns.find(c => c.connId === connId);
+      if (conn) renderRunHistory(conn);
+      renderList();
+    }
+  } catch (err) {
+    setRunHistoryState(connId, "error", err instanceof Error ? err.message : "加载运行历史失败");
+    if (state.selectedId === connId) {
+      const conn = state.conns.find(c => c.connId === connId);
+      if (conn) renderRunHistory(conn);
+    }
+  }
 }
 
 function scheduleRunRefresh(connId, attempt) {
@@ -695,6 +755,45 @@ function renderActions(container, conn) {
 function renderRunHistory(conn) {
   const container = $("conn-run-history-list");
   if (!container) return;
+
+  const historyState = getRunHistoryState(conn.connId);
+  if (historyState.status !== "loaded") {
+    const latestRun = conn.latestRun || null;
+    const latestStatusLabel = latestRun ? (RUN_STATUS_LABELS[latestRun.status] || latestRun.status || "未知") : "";
+    const latestTime = latestRun
+      ? formatTimestamp(latestRun.startedAt || latestRun.finishedAt || latestRun.updatedAt || latestRun.createdAt)
+      : "";
+    const latestSummary = latestRun
+      ? (latestRun.resultSummary || latestRun.resultText || latestRun.errorText || latestStatusLabel)
+      : "完整运行历史尚未加载";
+    const buttonText = historyState.status === "loading" ? "加载中" : historyState.status === "error" ? "重试加载" : "加载运行历史";
+    const disabled = historyState.status === "loading" ? " disabled" : "";
+    const stateClass = " conn-run-lazy--" + historyState.status;
+
+    let html = '<div class="conn-run-lazy' + stateClass + '">';
+    html += '<div class="conn-run-lazy-main">';
+    html += '<div class="conn-run-lazy-eyebrow">' + (latestRun ? "最近一次" : "运行历史") + '</div>';
+    if (latestRun) {
+      html += '<div class="conn-run-lazy-title">';
+      html += '<span class="conn-badge conn-badge--' + (latestRun.status || 'unknown') + '">' + escapeHtml(latestStatusLabel) + '</span>';
+      if (latestTime) html += '<span class="conn-run-lazy-time">' + escapeHtml(latestTime) + '</span>';
+      html += '</div>';
+    }
+    html += '<div class="conn-run-lazy-summary">' + escapeHtml(String(latestSummary || "").substring(0, 180)) + '</div>';
+    if (historyState.status === "error" && historyState.error) {
+      html += '<div class="conn-run-lazy-error">' + escapeHtml(historyState.error) + '</div>';
+    }
+    html += '</div>';
+    html += '<button class="conn-run-history-load" type="button" data-load-run-history="1"' + disabled + '>' + buttonText + '</button>';
+    html += '</div>';
+    container.innerHTML = html;
+
+    const loadBtn = container.querySelector("[data-load-run-history]");
+    if (loadBtn) {
+      loadBtn.addEventListener("click", () => loadRunHistory(conn.connId));
+    }
+    return;
+  }
 
   const runs = state.runsByConnId[conn.connId] || [];
   if (runs.length === 0) {
@@ -1860,15 +1959,6 @@ async function handleConnSelect(connId) {
   state.selectedId = connId;
   state.expandedRunId = null;
 
-  // Load runs if not cached
-  if (!state.runsByConnId[connId]) {
-    try {
-      state.runsByConnId[connId] = await apiFetchRuns(connId);
-    } catch {
-      state.runsByConnId[connId] = [];
-    }
-  }
-
   renderDetail();
   renderList(); // update selection highlight
 
@@ -2007,6 +2097,7 @@ async function handleDelete(connId) {
     await apiDeleteConn(connId);
     state.conns = state.conns.filter(c => c.connId !== connId);
     delete state.runsByConnId[connId];
+    delete state.runHistoryStateByConnId[connId];
     if (state.selectedId === connId) state.selectedId = null;
     showToast("已删除", "success");
     renderAll();
