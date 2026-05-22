@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-22 — Playground Agents editor support catalog lazy loading
+
+- **主题**: `/playground/agents` 首屏不再阻塞加载 create/edit editor 才需要的浏览器目录和模型配置
+- **影响范围**: `src/ui/agents-page.ts`, `test/server.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - `init()` 首屏仅保留 `GET /v1/agents`、`GET /v1/agents/status` 和既有 `GET /v1/agents/main/skills` gallery/cache 请求，不再 await `GET /v1/browsers` 或 `GET /v1/model-config`
+  - 新增 `loadSupportCatalogs()` lazy loader 与 `supportCatalogsLoaded/supportCatalogsLoading/supportCatalogsError` 状态，create/edit editor 打开时才拉取并缓存浏览器目录和模型配置
+  - editor 支撑目录加载期间禁用浏览器、模型下拉和保存按钮，并显示紧凑提示；支撑目录或模型配置不可用时 `guardEditorSupportCatalogs()` 会阻止 create/edit submit
+  - 左侧重新选择 Agent 时会退出 editor mode，避免支撑目录异步加载完成后把已离开的 create/edit 表单重新渲染回来
+  - `buildEditorModelPatch()` 在模型配置不可用时返回 `null` 并提示错误，避免构造半截 `defaultModelProvider/defaultModelId`
+  - 测试覆盖首屏请求路径、create/edit 触发 lazy loader、loading disabled 状态以及 model config unavailable submit guard
+
 ## 2026-05-22 — Playground Agents per-agent skill cache
 
 - **主题**: Agent 技能列表按 agentId 缓存，切换回已加载的 Agent 不重复请求 skills 接口

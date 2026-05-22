@@ -1202,6 +1202,7 @@ test("GET /playground/agents reuses gallery skills for the initial main selectio
 	assert.match(galleryRegion, /fetchJson\("\/v1\/agents\/main\/skills"\)/);
 	assert.match(galleryRegion, /state\.skillsByAgentId\.main\s*=\s*state\.gallerySkills/);
 		// selectAgent resets skillsExpanded and does not fetch skills
+		assert.match(selectRegion, /state\.editorMode = null/);
 		assert.match(selectRegion, /state\.skillsExpanded = false/);
 		assert.doesNotMatch(selectRegion, /apiFetchAgentSkills/);
 		assert.doesNotMatch(selectRegion, /renderSkills\(\)/);
@@ -1464,6 +1465,136 @@ test("GET /playground/agents remove and install capture agentId before await", a
 	assert.match(copyRegion, /apiFetchAgentSkills\(agentId\)/);
 	assert.match(copyRegion, /state.selectedId === agentId/);
 	assert.doesNotMatch(copyRegion, /skillsLoadedByAgentIds*=s*{}/);
+	await app.close();
+});
+
+test("GET /playground/agents defers browser and model catalogs from initial load", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents",
+	});
+	assert.equal(response.statusCode, 200);
+	const body = response.body;
+
+	const initStart = body.indexOf("async function init()");
+	const initEnd = body.indexOf("document.addEventListener(\"DOMContentLoaded\", init)", initStart);
+	assert.ok(initStart >= 0, "init function not found");
+	assert.ok(initEnd > initStart, "init region end not found");
+	const initRegion = body.slice(initStart, initEnd);
+
+	assert.match(initRegion, /apiFetchAgents\(\)/);
+	assert.match(initRegion, /apiFetchGallerySkills\(\)/);
+	assert.match(body, /fetchJson\("\/v1\/agents"\)/);
+	assert.match(body, /fetchJson\("\/v1\/agents\/status"\)/);
+	assert.match(body, /fetchJson\("\/v1\/agents\/main\/skills"\)/);
+	assert.doesNotMatch(initRegion, /fetchJson\("\/v1\/browsers"\)/);
+	assert.doesNotMatch(initRegion, /fetchJson\("\/v1\/model-config"\)/);
+	await app.close();
+});
+
+test("GET /playground/agents loads support catalogs only when create or edit editor opens", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents",
+	});
+	assert.equal(response.statusCode, 200);
+	const body = response.body;
+
+	assert.match(body, /supportCatalogsLoaded:\s*false/);
+	assert.match(body, /supportCatalogsLoading:\s*false/);
+
+	const loaderStart = body.indexOf("async function loadSupportCatalogs()");
+	const loaderEnd = body.indexOf("function loadSupportCatalogsForEditor(", loaderStart);
+	assert.ok(loaderStart >= 0, "loadSupportCatalogs function not found");
+	assert.ok(loaderEnd > loaderStart, "loadSupportCatalogs region end not found");
+	const loaderRegion = body.slice(loaderStart, loaderEnd);
+	assert.match(loaderRegion, /supportCatalogsLoaded/);
+	assert.match(loaderRegion, /supportCatalogsLoading/);
+	assert.match(loaderRegion, /fetchJson\("\/v1\/browsers"\)/);
+	assert.match(loaderRegion, /fetchJson\("\/v1\/model-config"\)/);
+
+	const createStart = body.indexOf("function openCreateEditor()");
+	const createEnd = body.indexOf("function openEditEditor()", createStart);
+	const editStart = createEnd;
+	const editEnd = body.indexOf("function closeEditor()", editStart);
+	assert.ok(createStart >= 0 && createEnd > createStart, "openCreateEditor region not found");
+	assert.ok(editStart >= 0 && editEnd > editStart, "openEditEditor region not found");
+	const createRegion = body.slice(createStart, createEnd);
+	const editRegion = body.slice(editStart, editEnd);
+	assert.match(createRegion, /loadSupportCatalogsForEditor\(null\)/);
+	assert.match(editRegion, /loadSupportCatalogsForEditor\(agent\)/);
+	await app.close();
+});
+
+test("GET /playground/agents disables editor submit while support catalogs are loading", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents",
+	});
+	assert.equal(response.statusCode, 200);
+	const body = response.body;
+
+	const renderStart = body.indexOf("function renderEditorForm(agent)");
+	const renderEnd = body.indexOf("function showEditorError(", renderStart);
+	assert.ok(renderStart >= 0, "renderEditorForm function not found");
+	assert.ok(renderEnd > renderStart, "renderEditorForm region end not found");
+	const renderRegion = body.slice(renderStart, renderEnd);
+
+	assert.match(renderRegion, /supportCatalogsReady/);
+	assert.match(renderRegion, /supportCatalogsLoading/);
+	assert.match(renderRegion, /ed-submit/);
+	assert.match(renderRegion, /supportCatalogDisabled = supportCatalogsReady \? ["']{2} : ["'] disabled["']/);
+	assert.match(renderRegion, /正在加载浏览器和模型配置/);
+	await app.close();
+});
+
+test("GET /playground/agents guards create and edit submit when model config is unavailable", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents",
+	});
+	assert.equal(response.statusCode, 200);
+	const body = response.body;
+
+	const guardStart = body.indexOf("function guardEditorSupportCatalogs()");
+	const guardEnd = body.indexOf("function bindEditorModelProviderSelect()", guardStart);
+	assert.ok(guardStart >= 0, "guardEditorSupportCatalogs function not found");
+	assert.ok(guardEnd > guardStart, "guardEditorSupportCatalogs region end not found");
+	const guardRegion = body.slice(guardStart, guardEnd);
+	assert.match(guardRegion, /!state\.supportCatalogsLoaded/);
+	assert.match(guardRegion, /!state\.modelConfig/);
+	assert.match(guardRegion, /return false/);
+
+	const modelPatchStart = body.indexOf("function buildEditorModelPatch(isEdit)");
+	const modelPatchEnd = body.indexOf("function getBrowserLabel(", modelPatchStart);
+	assert.ok(modelPatchStart >= 0, "buildEditorModelPatch function not found");
+	assert.ok(modelPatchEnd > modelPatchStart, "buildEditorModelPatch region end not found");
+	const modelPatchRegion = body.slice(modelPatchStart, modelPatchEnd);
+	assert.match(modelPatchRegion, /if \(!state\.modelConfig\)/);
+	assert.match(modelPatchRegion, /return null/);
+
+	const createStart = body.indexOf("async function handleEditorCreate()");
+	const createEnd = body.indexOf("async function handleEditorUpdate()", createStart);
+	const updateStart = createEnd;
+	const updateEnd = body.indexOf("async function handleRefresh()", updateStart);
+	assert.ok(createStart >= 0 && createEnd > createStart, "handleEditorCreate region not found");
+	assert.ok(updateStart >= 0 && updateEnd > updateStart, "handleEditorUpdate region not found");
+	const createRegion = body.slice(createStart, createEnd);
+	const updateRegion = body.slice(updateStart, updateEnd);
+	assert.match(createRegion, /guardEditorSupportCatalogs\(\)/);
+	assert.match(updateRegion, /guardEditorSupportCatalogs\(\)/);
 	await app.close();
 });
 

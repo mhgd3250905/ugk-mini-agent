@@ -786,6 +786,9 @@ function getAgentsPageJs(): string {
 			editorMode: null,
 			browserList: [],
 			modelConfig: null,
+			supportCatalogsLoaded: false,
+			supportCatalogsLoading: false,
+			supportCatalogsError: "",
 			archivePendingId: "",
 			removingSkillName: "",
 			refreshing: false,
@@ -801,6 +804,7 @@ function getAgentsPageJs(): string {
 		];
 
 		var ACTIVE_AGENT_KEY = "ugk-pi:active-agent-id";
+		var supportCatalogsPromise = null;
 
 		function readActiveAgentId() {
 			try { return localStorage.getItem(ACTIVE_AGENT_KEY) || null; } catch { return null; }
@@ -858,6 +862,35 @@ function getAgentsPageJs(): string {
 			} catch {
 				state.gallerySkills = [];
 			}
+		}
+
+		async function loadSupportCatalogs() {
+			if (state.supportCatalogsLoaded) return true;
+			if (state.supportCatalogsLoading && supportCatalogsPromise) return supportCatalogsPromise;
+			state.supportCatalogsLoading = true;
+			state.supportCatalogsError = "";
+			supportCatalogsPromise = Promise.allSettled([
+				fetchJson("/v1/browsers"),
+				fetchJson("/v1/model-config"),
+			]).then(function(results) {
+				var browserResult = results[0];
+				var modelResult = results[1];
+				var browsersOk = browserResult.status === "fulfilled";
+				var modelOk = modelResult.status === "fulfilled" && modelResult.value;
+				if (browsersOk) {
+					state.browserList = Array.isArray(browserResult.value.browsers) ? browserResult.value.browsers : [];
+				}
+				state.modelConfig = modelOk ? modelResult.value : null;
+				state.supportCatalogsLoaded = Boolean(browsersOk && modelOk);
+				if (!state.supportCatalogsLoaded) {
+					state.supportCatalogsError = "浏览器或模型配置加载失败，请重试。";
+				}
+				return state.supportCatalogsLoaded;
+			}).finally(function() {
+				state.supportCatalogsLoading = false;
+				supportCatalogsPromise = null;
+			});
+			return supportCatalogsPromise;
 		}
 
 		async function apiCopySkill(agentId, skillName) {
@@ -1241,6 +1274,7 @@ function getAgentsPageJs(): string {
 
 		/* ── Selection ── */
 		function selectAgent(agentId) {
+			state.editorMode = null;
 			state.selectedId = agentId;
 			state.skillsExpanded = false;
 			renderAgentList();
@@ -1369,13 +1403,13 @@ function getAgentsPageJs(): string {
 			state.editorMode = "create";
 			state.selectedId = null;
 			renderAgentList();
-			renderEditorForm(null);
+			loadSupportCatalogsForEditor(null);
 		}
 
 		function openEditEditor() {
 			state.editorMode = "edit";
 			var agent = state.agents.find(function(a) { return a.agentId === state.selectedId; });
-			renderEditorForm(agent);
+			loadSupportCatalogsForEditor(agent);
 		}
 
 		function closeEditor() {
@@ -1385,6 +1419,30 @@ function getAgentsPageJs(): string {
 			}
 			renderAgentList();
 			renderDetailBody();
+		}
+
+		function loadSupportCatalogsForEditor(agent) {
+			var mode = agent ? "edit" : "create";
+			var agentId = agent ? agent.agentId : null;
+			var loading = state.supportCatalogsLoaded ? null : loadSupportCatalogs();
+			renderEditorForm(agent);
+			if (!loading) return;
+			loading.then(function() {
+				if (state.editorMode !== mode) return;
+				if (mode === "edit" && state.selectedId !== agentId) return;
+				var latestAgent = mode === "edit" ? state.agents.find(function(a) { return a.agentId === agentId; }) : null;
+				renderEditorForm(latestAgent);
+			});
+		}
+
+		function guardEditorSupportCatalogs() {
+			if (state.supportCatalogsLoading || !state.supportCatalogsLoaded || !state.modelConfig) {
+				showEditorError(state.supportCatalogsLoading
+					? "浏览器和模型配置仍在加载，请稍后再保存。"
+					: (state.supportCatalogsError || "浏览器或模型配置不可用，无法保存。"));
+				return false;
+			}
+			return true;
 		}
 
 		function bindEditorModelProviderSelect() {
@@ -1407,7 +1465,10 @@ function getAgentsPageJs(): string {
 		}
 
 		function buildEditorModelPatch(isEdit) {
-			if (!state.modelConfig) return {};
+			if (!state.modelConfig) {
+				showEditorError("模型配置不可用，无法保存默认模型设置。");
+				return null;
+			}
 			var modelProvider = (document.getElementById("ed-model-provider") || {}).value || "";
 			var modelModel = (document.getElementById("ed-model-model") || {}).value || "";
 			if (!modelProvider && !modelModel) {
@@ -1454,6 +1515,12 @@ function getAgentsPageJs(): string {
 			var isEdit = !!agent;
 			var pageTitle = isEdit ? "编辑 Agent" : "新建 Agent";
 			var pageSub = isEdit ? "修改 Agent 配置" : "配置新 Agent 信息";
+			var supportCatalogsReady = state.supportCatalogsLoaded && !!state.modelConfig;
+			var supportCatalogsLoading = state.supportCatalogsLoading && !supportCatalogsReady;
+			var supportCatalogDisabled = supportCatalogsReady ? "" : " disabled";
+			var supportCatalogHint = supportCatalogsLoading
+				? '<span class="field-hint">正在加载浏览器和模型配置...</span>'
+				: (!supportCatalogsReady ? '<span class="field-hint">' + escapeHtml(state.supportCatalogsError || "浏览器或模型配置暂不可用，无法保存。") + '</span>' : "");
 
 			var browserOptions = state.browserList.map(function(b) {
 				return '<option value="' + escapeHtml(b.browserId) + '"' + (isEdit && agent.defaultBrowserId === b.browserId ? ' selected' : '') + '>' + escapeHtml(b.browserId) + '</option>';
@@ -1477,6 +1544,9 @@ function getAgentsPageJs(): string {
 						modelModelOpts += '<option value="' + escapeHtml(m.id) + '"' + (curModel === m.id ? ' selected' : '') + '>' + escapeHtml(m.name || m.id) + '</option>';
 					});
 				}
+			} else if (!isMainAgent) {
+				modelProviderOpts = '<option value="">' + (supportCatalogsLoading ? "加载中..." : "配置不可用") + '</option>';
+				modelModelOpts = '<option value="">' + (supportCatalogsLoading ? "加载中..." : "配置不可用") + '</option>';
 			}
 			var idField = isEdit ? ""
 				: '<div class="ag-editor-form-grid">'
@@ -1496,11 +1566,11 @@ function getAgentsPageJs(): string {
 				+ '<div class="ag-editor-section-body">'
 				+ idField + nameField
 				+ '<label class="ag-editor-field"><span>描述</span><textarea id="ed-desc" rows="3" placeholder="描述 Agent 的职责...">' + (isEdit ? escapeHtml(agent.description || "") : "") + '</textarea></label>'
-				+ '<label class="ag-editor-field"><span>默认浏览器</span><select id="ed-browser"><option value="">跟随系统默认</option>' + browserOptions + '</select></label>'
-				+ '<label class="ag-editor-field"' + (isMainAgent ? ' style="display:none"' : '') + '><span>默认模型提供商</span><select id="ed-model-provider">' + modelProviderOpts + '</select></label>'
-				+ '<label class="ag-editor-field"' + (isMainAgent ? ' style="display:none"' : '') + '><span>默认模型</span><select id="ed-model-model">' + modelModelOpts + '</select></label>'
+				+ '<label class="ag-editor-field"><span>默认浏览器</span><select id="ed-browser"' + supportCatalogDisabled + '><option value="">跟随系统默认</option>' + browserOptions + '</select>' + supportCatalogHint + '</label>'
+				+ '<label class="ag-editor-field"' + (isMainAgent ? ' style="display:none"' : '') + '><span>默认模型提供商</span><select id="ed-model-provider"' + supportCatalogDisabled + '>' + modelProviderOpts + '</select></label>'
+				+ '<label class="ag-editor-field"' + (isMainAgent ? ' style="display:none"' : '') + '><span>默认模型</span><select id="ed-model-model"' + supportCatalogDisabled + '>' + modelModelOpts + '</select></label>'
 				+ '</div></div>'
-				+ '<div class="ag-editor-actions"><div><button id="ed-submit" class="ag-btn ag-btn--primary" type="button">' + (isEdit ? "保存修改" : "创建 Agent") + '</button> <button id="ed-cancel" class="ag-btn ag-btn--outline" type="button">取消</button></div><div class="ag-editor-actions-right">' + (isEdit ? "agentId: " + escapeHtml(agent.agentId) : "") + '</div></div>'
+				+ '<div class="ag-editor-actions"><div><button id="ed-submit" class="ag-btn ag-btn--primary" type="button"' + supportCatalogDisabled + '>' + (isEdit ? "保存修改" : "创建 Agent") + '</button> <button id="ed-cancel" class="ag-btn ag-btn--outline" type="button">取消</button></div><div class="ag-editor-actions-right">' + (isEdit ? "agentId: " + escapeHtml(agent.agentId) : "") + '</div></div>'
 				+ '</div>';
 
 			document.getElementById("ed-submit").addEventListener("click", isEdit ? handleEditorUpdate : handleEditorCreate);
@@ -1525,6 +1595,7 @@ function getAgentsPageJs(): string {
 		}
 
 		async function handleEditorCreate() {
+			if (!guardEditorSupportCatalogs()) return;
 			var name = (document.getElementById("ed-name") || {}).value || "";
 			var id = (document.getElementById("ed-id") || {}).value || slugify(name);
 			var desc = (document.getElementById("ed-desc") || {}).value || "";
@@ -1564,6 +1635,7 @@ function getAgentsPageJs(): string {
 		}
 
 		async function handleEditorUpdate() {
+			if (!guardEditorSupportCatalogs()) return;
 			var agent = state.agents.find(function(a) { return a.agentId === state.selectedId; });
 			if (!agent) return;
 			var name = (document.getElementById("ed-name") || {}).value || "";
@@ -1657,12 +1729,6 @@ function getAgentsPageJs(): string {
 				}, 200));
 			}
 
-			var browserResult = await fetchJson("/v1/browsers");
-			state.browserList = Array.isArray(browserResult.browsers) ? browserResult.browsers : [];
-			try {
-				var mcResult = await fetchJson("/v1/model-config");
-				state.modelConfig = mcResult || null;
-			} catch(e) { state.modelConfig = null; }
 			await Promise.all([apiFetchAgents(), apiFetchGallerySkills()]);
 			renderFilterTabs();
 			renderAgentList();
