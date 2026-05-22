@@ -26,6 +26,10 @@ const state = {
   cancellingRunId: "",
   markingAllRead: false,
   refreshing: false,
+  editorSupportCatalogsLoaded: false,
+  editorSupportCatalogsLoading: false,
+  editorSupportCatalogsError: "",
+  editorSupportCatalogsPromise: null,
   loadingMoreRunId: "",
   runRefreshTimers: {},
   agentCatalog: [],
@@ -205,23 +209,17 @@ async function apiCancelRun(connId, runId) {
 }
 
 async function apiFetchAgentCatalog() {
-  try {
-    const data = await fetchJson("/v1/agents");
-    return data.agents || [];
-  } catch { return []; }
+  const data = await fetchJson("/v1/agents");
+  return data.agents || [];
 }
 
 async function apiFetchBrowserCatalog() {
-  try {
-    const data = await fetchJson("/v1/browsers");
-    return data.browsers || [];
-  } catch { return []; }
+  const data = await fetchJson("/v1/browsers");
+  return data.browsers || [];
 }
 
 async function apiFetchModelConfig() {
-  try {
-    return await fetchJson("/v1/model-config");
-  } catch { return null; }
+  return await fetchJson("/v1/model-config");
 }
 
 function isRunInFlight(run) {
@@ -466,7 +464,8 @@ function renderList() {
     newItem.innerHTML = '<div class="conn-list-item-row"><span class="conn-list-item-dot conn-list-item-dot--active"></span><span class="conn-list-item-title">新建任务</span><span class="conn-list-item-badge conn-list-item-badge--active">新建</span></div>';
     const actionsDiv = document.createElement("div");
     actionsDiv.className = "conn-list-item-editor-actions";
-    actionsDiv.innerHTML = '<button data-editor-action="submit" class="conn-list-editor-btn conn-list-editor-btn--primary" type="button"' + (state.editorSaving ? ' disabled' : '') + '>' + (state.editorSaving ? "保存中" : "保存任务") + '</button><button data-editor-action="cancel" class="conn-list-editor-btn conn-list-editor-btn--cancel" type="button"' + (state.editorSaving ? ' disabled' : '') + '>取消</button>';
+    const submitDisabled = isEditorSubmitDisabled();
+    actionsDiv.innerHTML = '<button data-editor-action="submit" class="conn-list-editor-btn conn-list-editor-btn--primary" type="button"' + (submitDisabled ? ' disabled' : '') + '>' + (state.editorSaving ? "保存中" : "保存任务") + '</button><button data-editor-action="cancel" class="conn-list-editor-btn conn-list-editor-btn--cancel" type="button"' + (state.editorSaving ? ' disabled' : '') + '>取消</button>';
     const submitBtn = actionsDiv.querySelector('[data-editor-action="submit"]');
     if (submitBtn) submitBtn.addEventListener("click", (event) => { event.stopPropagation(); submitEditor(); });
     const cancelBtn = actionsDiv.querySelector('[data-editor-action="cancel"]');
@@ -519,7 +518,8 @@ function renderList() {
       const isEdit = state.editorMode === "edit";
       const actionsDiv = document.createElement("div");
       actionsDiv.className = "conn-list-item-editor-actions";
-      actionsDiv.innerHTML = '<button data-editor-action="submit" class="conn-list-editor-btn conn-list-editor-btn--primary" type="button"' + (state.editorSaving ? ' disabled' : '') + '>' + (state.editorSaving ? "保存中" : (isEdit ? "保存修改" : "保存任务")) + '</button><button data-editor-action="cancel" class="conn-list-editor-btn conn-list-editor-btn--cancel" type="button"' + (state.editorSaving ? ' disabled' : '') + '>取消</button>';
+      const submitDisabled = isEditorSubmitDisabled();
+      actionsDiv.innerHTML = '<button data-editor-action="submit" class="conn-list-editor-btn conn-list-editor-btn--primary" type="button"' + (submitDisabled ? ' disabled' : '') + '>' + (state.editorSaving ? "保存中" : (isEdit ? "保存修改" : "保存任务")) + '</button><button data-editor-action="cancel" class="conn-list-editor-btn conn-list-editor-btn--cancel" type="button"' + (state.editorSaving ? ' disabled' : '') + '>取消</button>';
       const submitBtn = actionsDiv.querySelector('[data-editor-action="submit"]');
       if (submitBtn) submitBtn.addEventListener("click", (event) => { event.stopPropagation(); submitEditor(); });
       const cancelBtn = actionsDiv.querySelector('[data-editor-action="cancel"]');
@@ -958,6 +958,140 @@ function resolveRunHealth(run, events) {
 
 // ── Editor ─────────────────────────────────────────────────────────────────
 
+function getEditorSupportCatalogStatusText() {
+  if (state.editorSupportCatalogsLoading) return "正在加载运行配置，请稍后保存";
+  if (state.editorSupportCatalogsError) return state.editorSupportCatalogsError;
+  if (!state.editorSupportCatalogsLoaded) return "运行配置尚未加载，请稍后保存";
+  if (!state.modelConfig?.providers?.length) return "模型配置不可用，请稍后重试";
+  return "";
+}
+
+function areEditorSupportCatalogsReady() {
+  return Boolean(
+    state.editorSupportCatalogsLoaded &&
+    !state.editorSupportCatalogsLoading &&
+    !state.editorSupportCatalogsError &&
+    state.modelConfig?.providers?.length
+  );
+}
+
+function isEditorSubmitDisabled() {
+  return Boolean(state.editorSaving || !areEditorSupportCatalogsReady());
+}
+
+function syncEditorSupportControls() {
+  const disabled = isEditorSubmitDisabled();
+  for (const id of ["editor-profile-id", "editor-browser-id", "editor-model-provider", "editor-model-id"]) {
+    const el = $(id);
+    if (el) el.disabled = disabled;
+  }
+
+  for (const id of ["editor-form-submit"]) {
+    const el = $(id);
+    if (el) el.disabled = disabled;
+  }
+
+  document.querySelectorAll("[data-editor-action='submit']").forEach(btn => {
+    btn.disabled = disabled;
+  });
+
+  const statusEl = $("editor-support-status");
+  if (statusEl) {
+    const text = getEditorSupportCatalogStatusText();
+    statusEl.textContent = text;
+    statusEl.hidden = !text;
+  }
+}
+
+function renderEditorSupportCatalogOptions() {
+  renderEditorAgentOptions();
+  renderEditorBrowserOptions();
+  renderEditorModelOptions();
+}
+
+function setPendingSelectValue(el, value) {
+  if (!el) return;
+  const normalized = String(value || "");
+  if (normalized) el.dataset.pendingValue = normalized;
+  else delete el.dataset.pendingValue;
+  el.value = normalized;
+}
+
+function guardEditorSupportCatalogs() {
+  const statusText = getEditorSupportCatalogStatusText();
+  if (statusText) {
+    showEditorError(statusText);
+    return false;
+  }
+
+  const profileId = (($("editor-profile-id") || {}).value || "").trim();
+  if (profileId && !state.agentCatalog.some(agent => (agent.agentId || "main") === profileId)) {
+    showEditorError("执行 Agent 不可用，请重新选择", "editor-profile-id");
+    return false;
+  }
+
+  const browserId = (($("editor-browser-id") || {}).value || "").trim();
+  if (browserId && !state.browserCatalog.some(browser => browser.browserId === browserId)) {
+    showEditorError("浏览器不可用，请重新选择", "editor-browser-id");
+    return false;
+  }
+
+  const modelProvider = (($("editor-model-provider") || {}).value || "").trim();
+  const modelId = (($("editor-model-id") || {}).value || "").trim();
+  const provider = state.modelConfig?.providers?.find(item => item.id === modelProvider);
+  if (!provider) {
+    showEditorError("模型源不可用，请重新选择", "editor-model-provider");
+    return false;
+  }
+  if (!modelId || !provider.models?.some(model => model.id === modelId)) {
+    showEditorError("模型不可用，请重新选择", "editor-model-id");
+    return false;
+  }
+
+  return true;
+}
+
+async function loadEditorSupportCatalogs() {
+  if (state.editorSupportCatalogsLoaded) {
+    syncEditorSupportControls();
+    return;
+  }
+  if (state.editorSupportCatalogsPromise) {
+    return state.editorSupportCatalogsPromise;
+  }
+
+  state.editorSupportCatalogsLoading = true;
+  state.editorSupportCatalogsError = "";
+  syncEditorSupportControls();
+
+  state.editorSupportCatalogsPromise = Promise.all([
+    apiFetchAgentCatalog(),
+    apiFetchBrowserCatalog(),
+    apiFetchModelConfig(),
+  ]).then(([agents, browsers, modelConfig]) => {
+    if (!modelConfig?.providers?.length) {
+      throw new Error("模型配置不可用，请稍后重试");
+    }
+    state.agentCatalog = agents;
+    state.browserCatalog = browsers;
+    state.modelConfig = modelConfig;
+    state.modelProviders = modelConfig.providers || [];
+    state.editorSupportCatalogsLoaded = true;
+  }).catch(err => {
+    state.editorSupportCatalogsLoaded = false;
+    state.editorSupportCatalogsError = err instanceof Error ? err.message : "运行配置加载失败，请稍后重试";
+  }).finally(() => {
+    state.editorSupportCatalogsLoading = false;
+    state.editorSupportCatalogsPromise = null;
+    if (state.editorOpen) {
+      renderEditorSupportCatalogOptions();
+      syncEditorSupportControls();
+    }
+  });
+
+  return state.editorSupportCatalogsPromise;
+}
+
 function openEditor(mode, conn) {
   state.editorOpen = true;
   state.editorMode = mode || "create";
@@ -967,6 +1101,7 @@ function openEditor(mode, conn) {
   if (mode === "create") state.selectedId = null;
   renderList();
   renderDetail();
+  void loadEditorSupportCatalogs();
 }
 
 function closeEditor() {
@@ -1024,10 +1159,10 @@ function fillEditorForm(conn) {
     targetId.value = tgt.chatId || tgt.openId || "";
   }
 
-  if (profileId) profileId.value = conn.profileId || "main";
-  if (browserId) browserId.value = conn.browserId || "";
-  if (modelProvider) modelProvider.value = conn.modelProvider || "";
-  if (modelId) modelId.value = conn.modelId || "";
+  setPendingSelectValue(profileId, conn.profileId || "main");
+  setPendingSelectValue(browserId, conn.browserId || "");
+  setPendingSelectValue(modelProvider, conn.modelProvider || "");
+  setPendingSelectValue(modelId, conn.modelId || "");
   if (maxRunSec) maxRunSec.value = conn.maxRunMs ? Math.round(conn.maxRunMs / 1000) : "";
   if (upgradePolicy) upgradePolicy.value = conn.upgradePolicy || "latest";
   if (agentSpecId) agentSpecId.value = conn.agentSpecId || "";
@@ -1062,15 +1197,15 @@ function clearEditorForm() {
   const targetType = $("editor-target-type");
   if (targetType) targetType.value = "task_inbox";
   const profileId = $("editor-profile-id");
-  if (profileId) profileId.value = "main";
+  setPendingSelectValue(profileId, "main");
   const browserId = $("editor-browser-id");
-  if (browserId) browserId.value = "";
+  setPendingSelectValue(browserId, "");
   const upgradePolicy = $("editor-upgrade-policy");
   if (upgradePolicy) upgradePolicy.value = "latest";
   const modelProvider = $("editor-model-provider");
   const modelId = $("editor-model-id");
-  if (modelProvider && state.modelConfig?.providers?.length) modelProvider.value = state.modelConfig.providers[0].id;
-  if (modelId && state.modelConfig?.providers?.[0]?.models?.length) modelId.value = state.modelConfig.providers[0].models[0].id;
+  setPendingSelectValue(modelProvider, state.modelConfig?.providers?.[0]?.id || "");
+  setPendingSelectValue(modelId, state.modelConfig?.providers?.[0]?.models?.[0]?.id || "");
   const defaultRunAt = formatDateTimeLocal(getDefaultEditorRunDate());
   const onceAt = $("editor-once-at");
   if (onceAt) onceAt.value = defaultRunAt;
@@ -1117,6 +1252,7 @@ function readEditorPayload() {
 
   if (!title) { showEditorError("请填写标题", "editor-title-input"); return null; }
   if (!prompt) { showEditorError("请填写 Prompt", "editor-prompt"); return null; }
+  if (!guardEditorSupportCatalogs()) return null;
 
   const payload = { title, prompt };
 
@@ -1266,6 +1402,7 @@ function renderEditorForm(body, titleEl, actionsEl) {
   body.innerHTML = \`
     <div class="conn-editor-root">
       <div id="editor-error" class="conn-editor-error" role="alert" \${state.editorError ? "" : "hidden"}>\${escapeHtml(state.editorError)}</div>
+      <div id="editor-support-status" class="conn-editor-hint" role="status" \${getEditorSupportCatalogStatusText() ? "" : "hidden"}>\${escapeHtml(getEditorSupportCatalogStatusText())}</div>
 
       <!-- Header -->
       <div class="conn-editor-header">
@@ -1466,7 +1603,7 @@ function renderEditorForm(body, titleEl, actionsEl) {
       <textarea id="editor-asset-refs" hidden></textarea>
 
       <div class="conn-editor-form-actions">
-        <button id="editor-form-submit" class="conn-btn conn-btn--primary" type="button" \${state.editorSaving ? "disabled" : ""}>\${state.editorSaving ? "保存中" : (isEdit ? "保存修改" : "保存任务")}</button>
+        <button id="editor-form-submit" class="conn-btn conn-btn--primary" type="button" \${isEditorSubmitDisabled() ? "disabled" : ""}>\${state.editorSaving ? "保存中" : (isEdit ? "保存修改" : "保存任务")}</button>
         <button id="editor-form-cancel" class="conn-btn conn-btn--outline" type="button" \${state.editorSaving ? "disabled" : ""}>取消</button>
       </div>
 
@@ -1484,6 +1621,7 @@ function renderEditorForm(body, titleEl, actionsEl) {
   renderEditorAgentOptions();
   renderEditorBrowserOptions();
   renderEditorModelOptions();
+  syncEditorSupportControls();
   syncScheduleVisibility();
   syncTargetVisibility();
   initializeFlatpickr();
@@ -1516,7 +1654,7 @@ function renderEditorForm(body, titleEl, actionsEl) {
 function renderEditorAgentOptions() {
   const sel = $("editor-profile-id");
   if (!sel) return;
-  const current = sel.value || "main";
+  const current = sel.dataset.pendingValue || sel.value || "main";
   sel.innerHTML = "";
   const agents = state.agentCatalog.length > 0 ? state.agentCatalog : [{ agentId: "main", name: "主 Agent" }];
   for (const a of agents) {
@@ -1532,12 +1670,13 @@ function renderEditorAgentOptions() {
     sel.appendChild(opt);
   }
   sel.value = current;
+  delete sel.dataset.pendingValue;
 }
 
 function renderEditorBrowserOptions() {
   const sel = $("editor-browser-id");
   if (!sel) return;
-  const current = sel.value || "";
+  const current = sel.dataset.pendingValue || sel.value || "";
   sel.innerHTML = "";
   const followOpt = document.createElement("option");
   followOpt.value = "";
@@ -1557,6 +1696,7 @@ function renderEditorBrowserOptions() {
     sel.appendChild(opt);
   }
   sel.value = current;
+  delete sel.dataset.pendingValue;
 }
 
 function renderEditorModelOptions() {
@@ -2002,6 +2142,15 @@ function updateConnInState(updated) {
 
 // ── Data loading ──────────────────────────────────────────────────────────
 
+async function refreshConnList() {
+  const conns = await apiFetchConns();
+  state.conns = conns.conns || conns;
+  state.unreadCountsByConnId = conns.unreadCountsByConnId || {};
+  state.unreadLatestRunTimesByConnId = conns.unreadLatestRunTimesByConnId || {};
+  state.totalUnreadRuns = conns.totalUnreadRuns || 0;
+  renderAll();
+}
+
 async function loadData() {
   if (state.refreshing) return;
   state.refreshing = true;
@@ -2011,21 +2160,7 @@ async function loadData() {
     refreshBtn.textContent = "刷新中";
   }
   try {
-    const [conns, agents, browsers, modelConfig] = await Promise.all([
-      apiFetchConns(),
-      apiFetchAgentCatalog(),
-      apiFetchBrowserCatalog(),
-      apiFetchModelConfig(),
-    ]);
-    state.conns = conns.conns || conns;
-    state.unreadCountsByConnId = conns.unreadCountsByConnId || {};
-    state.unreadLatestRunTimesByConnId = conns.unreadLatestRunTimesByConnId || {};
-    state.totalUnreadRuns = conns.totalUnreadRuns || 0;
-    state.agentCatalog = agents;
-    state.browserCatalog = browsers;
-    state.modelConfig = modelConfig;
-    state.modelProviders = modelConfig?.providers || [];
-    renderAll();
+    await refreshConnList();
   } catch (err) {
     showToast(err instanceof Error ? err.message : "加载数据失败", "error");
   } finally {

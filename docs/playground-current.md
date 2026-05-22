@@ -2,6 +2,15 @@
 
 更新时间：`2026-05-22`
 
+## 2026-05-22 Conn 独立页 editor 支撑目录延迟加载
+
+- `/playground/conn` 首屏只加载 `GET /v1/conns` 来渲染后台任务列表、统计和详情摘要，不再为了尚未打开的 create/edit editor 提前请求 `GET /v1/agents`、`GET /v1/browsers` 或 `GET /v1/model-config`。
+- `执行 Agent`、浏览器和模型配置目录改为打开新建 / 编辑任务 editor 时通过 `loadEditorSupportCatalogs()` 按需加载；成功后缓存到页面状态，后续再次打开 create/edit editor 复用缓存，不重复请求支撑目录。
+- editor 支撑目录加载期间会禁用 Agent、浏览器、模型下拉和保存按钮；如果目录或模型配置不可用，`guardEditorSupportCatalogs()` 会阻止提交，避免写入错误的 `profileId`、`browserId`、`modelProvider` 或 `modelId`。
+- 编辑已有任务时，原 `profileId`、`browserId`、`modelProvider` 和 `modelId` 会作为 pending select value 保留到支撑目录加载完成，不能因为 `<select>` 暂时没有 options 就回落到默认 Agent、默认浏览器或默认模型。
+- 手动刷新按钮继续只刷新当前 conn 列表；不强制刷新已经缓存的 editor 支撑目录。
+- 相关源码：`src/ui/conn-page-js.ts`、`test/conn-page-ui.test.ts`
+
 ## 2026-05-22 会话列表性能优化
 
 - 会话列表从全量渲染改为虚拟滚动：`computeVirtualWindow()` 根据滚动位置计算可见行范围，只渲染视口内行 + 上下 5 行 overscan 缓冲，上下 spacer 以行高 × 行数填充真实滚动高度。桌面行高 60px（58px item + 2px gap），移动行高 100px（92px item + 8px gap），与 CSS 对齐。

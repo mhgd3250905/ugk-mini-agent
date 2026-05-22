@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-22 — Playground Conn editor support catalog lazy loading
+
+- **主题**: `/playground/conn` 首屏不再提前加载 create/edit editor 才需要的 Agent、浏览器和模型配置目录
+- **影响范围**: `src/ui/conn-page-js.ts`, `test/conn-page-ui.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - `loadData()` 拆为 conn list refresh，首屏和手动刷新只请求 `GET /v1/conns`
+  - 新增 `loadEditorSupportCatalogs()` lazy loader，打开 create/edit editor 时才请求并缓存 `GET /v1/agents`、`GET /v1/browsers` 和 `GET /v1/model-config`
+  - editor 支撑目录加载或不可用时禁用保存，并通过 `guardEditorSupportCatalogs()` 阻止提交错误的执行 Agent、浏览器或模型字段
+  - 编辑已有任务时保留原 `profileId`、`browserId`、`modelProvider` 和 `modelId` 的 pending select value，避免目录加载前的空 `<select>` 把现有绑定静默回落到默认值
+  - 测试覆盖首屏请求清单、editor lazy loader/cache 复用和 catalog 未就绪保存 guard
+
 ## 2026-05-22 — Playground Agents skill fetch failure handling
 
 - **主题**: `/playground/agents` scoped skills 拉取失败时不再被吞成成功或空列表
