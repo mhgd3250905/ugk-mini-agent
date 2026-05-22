@@ -790,6 +790,7 @@ function getAgentsPageJs(): string {
 			removingSkillName: "",
 			refreshing: false,
 			skillsExpanded: false,
+			skillsLoadedByAgentId: {},
 		};
 
 		const FILTER_TABS = [
@@ -831,6 +832,7 @@ function getAgentsPageJs(): string {
 			} catch {
 				state.skillsByAgentId[agentId] = [];
 			}
+			state.skillsLoadedByAgentId[agentId] = true;
 		}
 
 		async function apiArchiveAgent(agentId) {
@@ -858,6 +860,7 @@ function getAgentsPageJs(): string {
 				state.gallerySkills = [];
 				state.skillsByAgentId.main = state.gallerySkills;
 			}
+			state.skillsLoadedByAgentId.main = true;
 		}
 
 		async function apiCopySkill(agentId, skillName) {
@@ -1336,8 +1339,7 @@ function getAgentsPageJs(): string {
 
 		function handleExpandSkills() {
 			state.skillsExpanded = true;
-			var cachedSkills = state.skillsByAgentId[state.selectedId];
-			if (cachedSkills) {
+			if (state.skillsLoadedByAgentId[state.selectedId]) {
 				renderDetailBody();
 			} else {
 				state.skillsLoading = true;

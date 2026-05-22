@@ -1246,8 +1246,7 @@ test("GET /playground/agents reuses gallery skills for the initial main selectio
 		const expandRegion = body.slice(expandStart, expandEnd);
 
 		assert.match(expandRegion, /state\.skillsExpanded = true/);
-		assert.match(expandRegion, /var cachedSkills = state\.skillsByAgentId\[state\.selectedId\]/);
-		assert.match(expandRegion, /if \(cachedSkills\)/);
+		assert.match(expandRegion, /skillsLoadedByAgentId\[state\.selectedId\]/);
 		assert.match(expandRegion, /apiFetchAgentSkills\(state\.selectedId\)/);
 
 		await app.close();
@@ -1306,6 +1305,139 @@ test("GET /playground/agents skill count shows dash for unloaded and number for 
 	assert.match(statRegion, /getSkillCountText/);
 	assert.doesNotMatch(statRegion, /\|\|\s*\[\]/);
 
+	await app.close();
+});
+
+test("GET /playground/agents declares skillsLoadedByAgentId for per-agent cache metadata", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents",
+	});
+	assert.equal(response.statusCode, 200);
+	const body = response.body;
+
+	assert.match(body, /skillsLoadedByAgentId:\s*\{\}/);
+	await app.close();
+});
+
+test("GET /playground/agents apiFetchAgentSkills marks loaded after fetch", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents",
+	});
+	assert.equal(response.statusCode, 200);
+	const body = response.body;
+
+	const fetchStart = body.indexOf("async function apiFetchAgentSkills(");
+	const fetchEnd = body.indexOf("async function apiArchiveAgent(", fetchStart);
+	assert.ok(fetchStart >= 0, "apiFetchAgentSkills function not found");
+	assert.ok(fetchEnd > fetchStart, "apiFetchAgentSkills region end not found");
+	const fetchRegion = body.slice(fetchStart, fetchEnd);
+
+	assert.match(fetchRegion, /skillsLoadedByAgentId\[agentId\]\s*=\s*true/);
+	await app.close();
+});
+
+test("GET /playground/agents apiFetchGallerySkills marks main as loaded", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents",
+	});
+	assert.equal(response.statusCode, 200);
+	const body = response.body;
+
+	const galleryStart = body.indexOf("async function apiFetchGallerySkills()");
+	const galleryEnd = body.indexOf("async function apiCopySkill", galleryStart);
+	assert.ok(galleryStart >= 0, "apiFetchGallerySkills function not found");
+	assert.ok(galleryEnd > galleryStart, "apiFetchGallerySkills region end not found");
+	const galleryRegion = body.slice(galleryStart, galleryEnd);
+
+	assert.match(galleryRegion, /skillsLoadedByAgentId\.main\s*=\s*true/);
+	assert.match(galleryRegion, /state\.skillsByAgentId\.main\s*=\s*state\.gallerySkills/);
+	await app.close();
+});
+
+test("GET /playground/agents handleRefreshSkills force fetches selected agent", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents",
+	});
+	assert.equal(response.statusCode, 200);
+	const body = response.body;
+
+	const refreshStart = body.indexOf("async function handleRefreshSkills()");
+	const refreshEnd = body.indexOf("function handleExpandSkills(", refreshStart);
+	assert.ok(refreshStart >= 0, "handleRefreshSkills function not found");
+	assert.ok(refreshEnd > refreshStart, "handleRefreshSkills region end not found");
+	const refreshRegion = body.slice(refreshStart, refreshEnd);
+
+	assert.match(refreshRegion, /apiFetchAgentSkills\(state\.selectedId\)/);
+	await app.close();
+});
+
+test("GET /playground/agents toggle only refreshes affected agent cache", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents",
+	});
+	assert.equal(response.statusCode, 200);
+	const body = response.body;
+
+	const renderSkillsStart = body.indexOf("function renderSkills()");
+	const renderSkillsEnd = body.indexOf("function populateSkillSelect(", renderSkillsStart);
+	assert.ok(renderSkillsStart >= 0, "renderSkills function not found");
+	assert.ok(renderSkillsEnd > renderSkillsStart, "renderSkills region end not found");
+	const renderSkillsRegion = body.slice(renderSkillsStart, renderSkillsEnd);
+
+	assert.match(renderSkillsRegion, /apiFetchAgentSkills\(agent\.agentId\)/);
+	assert.doesNotMatch(renderSkillsRegion, /skillsLoadedByAgentId\s*=\s*\{\}/);
+	assert.doesNotMatch(renderSkillsRegion, /skillsByAgentId\s*=\s*\{\}/);
+	await app.close();
+});
+
+test("GET /playground/agents remove and install only refresh selected agent", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents",
+	});
+	assert.equal(response.statusCode, 200);
+	const body = response.body;
+
+	const removeStart = body.indexOf("async function handleRemoveSkill(");
+	const removeEnd = body.indexOf("async function handleCopySkill(", removeStart);
+	assert.ok(removeStart >= 0, "handleRemoveSkill function not found");
+	assert.ok(removeEnd > removeStart, "handleRemoveSkill region end not found");
+	const removeRegion = body.slice(removeStart, removeEnd);
+
+	assert.match(removeRegion, /apiFetchAgentSkills\(state\.selectedId\)/);
+	assert.doesNotMatch(removeRegion, /skillsLoadedByAgentId\s*=\s*\{\}/);
+
+	const copyStart = body.indexOf("async function handleCopySkill()");
+	const copyEnd = body.indexOf("async function handleRefreshSkills(", copyStart);
+	assert.ok(copyStart >= 0, "handleCopySkill function not found");
+	assert.ok(copyEnd > copyStart, "handleCopySkill region end not found");
+	const copyRegion = body.slice(copyStart, copyEnd);
+
+	assert.match(copyRegion, /apiFetchAgentSkills\(state\.selectedId\)/);
+	assert.doesNotMatch(copyRegion, /skillsLoadedByAgentId\s*=\s*\{\}/);
 	await app.close();
 });
 

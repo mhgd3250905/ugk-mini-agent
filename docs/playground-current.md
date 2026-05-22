@@ -12,11 +12,12 @@
 - 行点击和菜单操作改为容器级事件委托：`handleConversationListClick()` 通过 `event.target.closest()` 分派选择会话、菜单触发、菜单操作和颜色选择，消除了每行 2 个 addEventListener。菜单按钮使用 `data-action` 属性，色板使用 `data-color` 属性。容器清空使用 `replaceChildren()` 替代 `innerHTML = ""`。按钮内容使用 `createElement` 直接构建替代 innerHTML 字符串 + querySelector。
 - 相关源码：`src/ui/playground-conversations-controller.ts`、`src/ui/playground-mobile-shell-controller.ts`
 
-## 2026-05-22 Agent 管理页首屏 skills 去重与延迟渲染
+## 2026-05-22 Agent 管理页首屏 skills 去重、延迟渲染与按 Agent 缓存
 
 - `/playground/agents` 首屏仍会加载 `GET /v1/agents`、`GET /v1/agents/status` 和一次 `GET /v1/agents/main/skills`，其中 main skills 结果同时作为 installable skill gallery 和主 Agent scoped skills 缓存。
 - 首次自动选中 `main` 时复用 gallery 缓存，不再额外触发第二次 `GET /v1/agents/main/skills`。手动刷新技能仍会按当前选中 Agent 主动重拉对应 skills。
 - selected Agent 详情面板的 skills 区域默认折叠：首屏不挂载 `.ag-skill-item` 行和 switch 按钮，只显示技能数摘要和”查看技能”按钮。用户点击后展开并按需加载 skills。
+- per-agent skill cache 使用 `skillsLoadedByAgentId` 标记已加载的 Agent；展开 skills 时若已加载则直接渲染缓存，不重复请求。已加载空数组也是有效缓存。只有手动刷新或 toggle/remove/install 等 mutation 才刷新对应 Agent 的 skills。
 - 技能数统计使用 `getSkillCountText(agentId)` 区分”未加载”（显示 `—`）与”已加载空数组”（显示 `0`），折叠摘要使用 `getCollapsedSkillSummary(agentId)` 显示对应文案。
 - 切换 Agent 时 `skillsExpanded` 重置为 `false`，不会残留上一 Agent 的 skill rows。
 - installable skill 下拉继续读取 main skills gallery，包含主 Agent 已关闭的 disabled entries，并保留”主 Agent 已关闭”提示。
