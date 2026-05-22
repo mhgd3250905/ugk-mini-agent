@@ -12,6 +12,21 @@
 
 ---
 
+## 2026-05-22 — Playground non-chat panel data lazy loading
+
+- **主题**: 延迟首屏聊天入口的非聊天面板数据请求，减少首屏网络开销
+- **影响范围**: `src/ui/playground.ts`, `src/ui/playground-assets-controller.ts`, `src/ui/playground-stream-controller.ts`, `src/ui/playground-conn-activity-controller.ts`, `test/playground-assets-controller.test.ts`, `test/playground-conn-activity-controller.test.ts`, `test/server.test.ts`, `docs/change-log.md`
+- **变更**:
+  - `initializePlaygroundAssembler()` 不再在首屏调用 `loadAssets(true)`、`syncTaskInboxSummary`、`syncConnManagerUnreadSummary`，这 3 个请求从首屏延迟到面板首次打开或通知推送时加载
+  - 新增 `state.assetsLoadedOnce` / `state.connManagerLoadedOnce` lazy gate flag
+  - `openAssetLibrary()` 首次打开时才调用 `loadAssets(true)`
+  - 流式 "done" 事件中 `loadAssets(true)` 改为 `assetsLoadedOnce` 条件调用，未打开过文件库时不刷新
+  - `window.focus` / `visibilitychange` 中 `syncConnManagerUnreadSummary` 改为 `connManagerLoadedOnce` 条件调用
+  - 保留首屏必要加载：`loadAgentStatusAndRenderCards()`（首页 Agent 卡片）、`syncRuntimeSummary()`（顶部 shell 模型/浏览器信息）
+  - 保留通知推送时的 `loadTaskInbox` 和 `syncConnManagerUnreadSummary` 调用，badge 在有通知时才更新
+
+---
+
 ## 2026-05-22 — Playground conversation catalog refresh coalescing
 
 - **主题**: 消除 `/playground` 会话列表的重复 `GET /chat/conversations` 请求和 `net::ERR_ABORTED` 竞态

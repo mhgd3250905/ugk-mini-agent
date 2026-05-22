@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getConnActivityEditorScript } from "../src/ui/playground-conn-activity-controller.js";
+import { getConnActivityEditorScript, getConnActivityApiScript } from "../src/ui/playground-conn-activity-controller.js";
 
 test("conn editor asset uploads use conn-scoped asset ownership instead of current conversation", () => {
 	const script = getConnActivityEditorScript();
@@ -22,4 +22,11 @@ test("conn editor supports task-level browser selection independent of the execu
 	assert.match(script, /confirmConnExecutionBindingChangeIfNeeded/);
 	assert.match(script, /x-ugk-browser-binding-source/);
 	assert.match(script, /只影响后续 run/);
+});
+
+test("conn manager sets connManagerLoadedOnce after successful loadConnManager", () => {
+	const script = getConnActivityApiScript();
+
+	assert.match(script, /state\.connManagerLoadedOnce = true/);
+	assert.match(script, /async function loadConnManager\(options\)/);
 });

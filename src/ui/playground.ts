@@ -192,6 +192,7 @@ function getPlaygroundScript(): string {
 			conversationActionPendingById: {},
 			composerUploadingAssets: false,
 			recentAssets: [],
+			assetsLoadedOnce: false,
 			assetDeletingAssetId: "",
 			assetDetailQueue: [],
 			assetDetailInFlightById: new Map(),
@@ -218,6 +219,7 @@ function getPlaygroundScript(): string {
 			taskInboxNextBefore: "",
 			taskInboxLoadingMore: false,
 			connManagerOpen: false,
+			connManagerLoadedOnce: false,
 			connManagerUnreadCount: 0,
 			connManagerUnreadCountsByConnId: {},
 			connManagerUnreadLatestRunTimesByConnId: {},
@@ -1374,11 +1376,11 @@ function getPlaygroundScript(): string {
 				disconnectNotificationStream();
 			});
 			window.addEventListener("focus", () => {
-				void syncConnManagerUnreadSummary({ silent: true });
+					if (state.connManagerLoadedOnce) { void syncConnManagerUnreadSummary({ silent: true }); }
 			});
 			document.addEventListener("visibilitychange", () => {
 				if (!document.hidden) {
-					void syncConnManagerUnreadSummary({ silent: true });
+					if (state.connManagerLoadedOnce) { void syncConnManagerUnreadSummary({ silent: true }); }
 				}
 			});
 			${getPlaygroundAssetEventHandlersScript()}
@@ -1577,9 +1579,6 @@ function getPlaygroundScript(): string {
 			renderTaskInbox();
 			renderTaskInboxToggleState();
 			renderConnManager();
-			void loadAssets(true);
-			void syncTaskInboxSummary({ silent: true });
-			void syncConnManagerUnreadSummary({ silent: true });
 			void loadAgentStatusAndRenderCards();
 			void syncRuntimeSummary();
 

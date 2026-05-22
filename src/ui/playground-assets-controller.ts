@@ -629,6 +629,7 @@ export function getPlaygroundAssetControllerScript(): string {
 			assetModal.classList.add("open");
 			assetModal.setAttribute("aria-hidden", "false");
 			renderAssetPickerList();
+			if (!state.assetsLoadedOnce) { void loadAssets(true); }
 			openWorkspacePanel("assets", assetModal, {
 				forceOverlay: options?.target === "connEditor" || options?.mode !== "workspace",
 			});
@@ -899,6 +900,7 @@ export function getPlaygroundAssetControllerScript(): string {
 
 				const payload = await response.json();
 				state.recentAssets = Array.isArray(payload?.assets) ? payload.assets : [];
+				state.assetsLoadedOnce = true;
 				await ensureRecentAssetsForRefs([...state.selectedAssetRefs, ...state.connEditorSelectedAssetRefs], {
 					silent: true,
 				});

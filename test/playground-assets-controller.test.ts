@@ -21,3 +21,13 @@ test("asset library exposes a delete action that calls the asset delete API", ()
 	assert.match(script, /state\.selectedAssetRefs = state\.selectedAssetRefs\.filter/);
 	assert.match(script, /state\.connEditorSelectedAssetRefs = state\.connEditorSelectedAssetRefs\.filter/);
 });
+
+test("asset library defers loading until first open via assetsLoadedOnce gate", () => {
+	const script = getPlaygroundAssetControllerScript();
+
+	// loadAssets sets the flag on success
+	assert.match(script, /state\.assetsLoadedOnce = true/);
+
+	// openAssetLibrary only loads if not loaded before
+	assert.match(script, /if \(!state\.assetsLoadedOnce\) \{ void loadAssets\(true\); \}/);
+});

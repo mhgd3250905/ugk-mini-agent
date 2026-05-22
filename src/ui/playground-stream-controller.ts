@@ -320,7 +320,7 @@ export function getPlaygroundStreamControllerScript(): string {
 					}
 					mergeRecentAssets(event.inputAssets);
 					appendFileDownloads(event.files);
-					void loadAssets(true);
+					if (state.assetsLoadedOnce) { void loadAssets(true); }
 					updateStreamingProcess("ok", "任务完成", event.sessionFile || "未返回会话文件");
 					completeAssistantLoadingBubble("ok", "本轮已完成");
 					completeProcessStream();

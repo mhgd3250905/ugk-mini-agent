@@ -1164,6 +1164,7 @@ export function getConnActivityApiScript(): string {
 				state.connManagerRunsLoadingByConnId = {};
 				syncConnManagerSelectionWithItems();
 				renderConnManager();
+				state.connManagerLoadedOnce = true;
 			} catch (error) {
 				const messageText = error instanceof Error ? error.message : "无法读取后台任务列表";
 				showError(messageText);
