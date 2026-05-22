@@ -1,0 +1,43 @@
+import type { TeamPlan, RunDetail, TeamApiError } from "./team-types";
+
+export interface TeamApiProvider {
+  listPlans(): Promise<TeamPlan[]>;
+  getRunDetail(runId: string): Promise<RunDetail>;
+}
+
+function toApiError(error: unknown): TeamApiError {
+  if (error instanceof TypeError && error.message === "Failed to fetch") {
+    return { message: "无法连接服务器", status: 0 };
+  }
+  if (error instanceof Response) {
+    return { message: `请求失败 (${error.status})`, status: error.status };
+  }
+  if (error instanceof Error) {
+    return { message: error.message };
+  }
+  return { message: "未知错误" };
+}
+
+export class LiveTeamApi implements TeamApiProvider {
+  constructor(private baseUrl: string = "/v1/team") {}
+
+  async listPlans(): Promise<TeamPlan[]> {
+    try {
+      const res = await fetch(`${this.baseUrl}/plans`);
+      if (!res.ok) throw res;
+      return (await res.json()) as TeamPlan[];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async getRunDetail(runId: string): Promise<RunDetail> {
+    try {
+      const res = await fetch(`${this.baseUrl}/runs/${encodeURIComponent(runId)}`);
+      if (!res.ok) throw res;
+      return (await res.json()) as RunDetail;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+}
