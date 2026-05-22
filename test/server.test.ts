@@ -1349,6 +1349,7 @@ test("GET /playground/agents apiFetchAgentSkills marks loaded only on success", 
 		"skillsLoadedByAgentId[agentId] must be inside the try block, before catch");
 	const catchRegion = fetchRegion.slice(catchIdx);
 	assert.doesNotMatch(catchRegion, /skillsLoadedByAgentId/);
+	assert.doesNotMatch(catchRegion, /skillsByAgentId\[agentId\]/);
 	await app.close();
 });
 
@@ -1378,6 +1379,7 @@ test("GET /playground/agents apiFetchGallerySkills marks main as loaded only on 
 		"skillsLoadedByAgentId.main must be inside the try block, before catch");
 	const catchRegion = galleryRegion.slice(catchIdx);
 	assert.doesNotMatch(catchRegion, /skillsLoadedByAgentId/);
+	assert.doesNotMatch(catchRegion, /skillsByAgentId\.main/);
 	assert.match(galleryRegion, /state.skillsByAgentId.main\s*=\s*state.gallerySkills/);
 	await app.close();
 });

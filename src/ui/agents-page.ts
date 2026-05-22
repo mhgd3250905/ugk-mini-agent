@@ -830,9 +830,7 @@ function getAgentsPageJs(): string {
 				var data = await fetchJson("/v1/agents/" + agentId + "/skills");
 				state.skillsByAgentId[agentId] = Array.isArray(data.skills) ? data.skills : [];
 				state.skillsLoadedByAgentId[agentId] = true;
-			} catch {
-				state.skillsByAgentId[agentId] = [];
-			}
+			} catch {}
 		}
 
 		async function apiArchiveAgent(agentId) {
