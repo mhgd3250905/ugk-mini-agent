@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-22 — Playground Conn run history loading states
+
+- **主题**: `/playground/conn` 运行历史补齐 loading / empty / error / retry / has-more 状态
+- **影响范围**: `src/ui/conn-page-js.ts`, `src/ui/conn-page-css.ts`, `test/server.test.ts`, `test/conn-page-ui.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - run history 未加载、加载中、加载失败、已加载空数组、分页可继续和分页加载中状态都有明确 DOM 标记与紧凑可视反馈
+  - 错误态提供“重试加载”，点击前检查当前 `selectedId`，避免旧 conn 的错误按钮在用户切换任务后重拉旧历史
+  - 分页“加载更多”增加 `loading-more` 标记、禁用态与 `aria-busy`，继续保留已加载列表、展开 run 和详情滚动位置
+  - loading / error / loading-more 样式使用现有主题 token，避免深浅主题出现单主题硬编码颜色
+  - 测试覆盖 loading、empty、error、retry、has-more 状态路径、selected-id retry guard 和 CSS token 断言
+
 ## 2026-05-22 — Playground Conn targeted action rendering
 
 - **主题**: `/playground/conn` 操作路径从整页 `renderAll()` 收口为局部渲染

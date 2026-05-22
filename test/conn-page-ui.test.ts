@@ -532,6 +532,91 @@ test("standalone conn loaded empty run history is a valid cache state", async ()
 	assert.doesNotMatch(html, /加载运行历史/);
 });
 
+test("standalone conn run history renders compact loading, error retry, and empty states", async () => {
+	const runHistory = createRunHistoryTestElement();
+	const { context } = createConnPageContext({
+		elements: {
+			"conn-run-history-list": runHistory.element,
+		},
+	});
+
+	const html = await runConnPageExpression<{ loading: string; error: string; empty: string }>(
+		context,
+		`
+			state.conns = [{ connId: "conn-1", title: "Daily report", status: "active" }];
+			state.selectedId = "conn-1";
+			setRunHistoryState("conn-1", "loading", "");
+			renderRunHistory(state.conns[0]);
+			const loading = $("conn-run-history-list").innerHTML;
+			setRunHistoryState("conn-1", "error", "network down");
+			renderRunHistory(state.conns[0]);
+			const error = $("conn-run-history-list").innerHTML;
+			state.runsByConnId["conn-1"] = [];
+			setRunHistoryState("conn-1", "loaded", "");
+			renderRunHistory(state.conns[0]);
+			const empty = $("conn-run-history-list").innerHTML;
+			return { loading, error, empty };
+		`,
+	);
+
+	assert.match(html.loading, /conn-run-lazy--loading/);
+	assert.match(html.loading, /data-run-history-state="loading"/);
+	assert.match(html.loading, /aria-busy="true"/);
+	assert.match(html.loading, />加载中</);
+	assert.match(html.error, /conn-run-lazy--error/);
+	assert.match(html.error, /data-run-history-state="error"/);
+	assert.match(html.error, /role="alert"/);
+	assert.match(html.error, /data-run-history-retry="1"/);
+	assert.match(html.error, /network down/);
+	assert.match(html.empty, /conn-run-empty/);
+	assert.match(html.empty, /data-run-history-state="empty"/);
+});
+
+test("standalone conn run history retry is guarded by the current selected conn", async () => {
+	const calls: string[] = [];
+	const runHistory = createRunHistoryTestElement();
+	const { context } = createConnPageContext({
+		elements: {
+			"conn-run-history-list": runHistory.element,
+		},
+		fetchJson: async (url: string) => {
+			calls.push(url);
+			if (url.includes("/runs")) {
+				return {
+					runs: [],
+					hasMore: false,
+					limit: 10,
+				};
+			}
+			return {};
+		},
+	});
+
+	await runConnPageExpression(
+		context,
+		`
+			state.conns = [
+				{ connId: "conn-1", title: "Daily report", status: "active" },
+				{ connId: "conn-2", title: "Weekly report", status: "active" },
+			];
+			state.selectedId = "conn-1";
+			setRunHistoryState("conn-1", "error", "network down");
+			renderRunHistory(state.conns[0]);
+			state.selectedId = "conn-2";
+			return null;
+		`,
+	);
+
+	await runHistory.clickLoad();
+	await Promise.resolve();
+	assert.deepEqual(calls, []);
+
+	await runConnPageExpression(context, `state.selectedId = "conn-1"; return null;`);
+	await runHistory.clickLoad();
+	await Promise.resolve();
+	assert.deepEqual(calls, ["/v1/conns/conn-1/runs?limit=10"]);
+});
+
 test("standalone conn ignores stale run history paint after selected conn changes", async () => {
 	const runHistory = createRunHistoryTestElement();
 	const { context } = createConnPageContext({

@@ -1020,6 +1020,16 @@ export function getConnPageCss(): string {
       background: var(--surface);
     }
 
+    .conn-run-lazy--loading {
+      background: var(--primary-soft);
+      border-color: var(--primary);
+    }
+
+    .conn-run-lazy--error {
+      background: var(--danger-soft);
+      border-color: var(--danger);
+    }
+
     .conn-run-lazy-main {
       min-width: 0;
       display: grid;
@@ -1083,6 +1093,12 @@ export function getConnPageCss(): string {
     .conn-run-history-load:disabled {
       opacity: 0.55;
       cursor: not-allowed;
+    }
+
+    .conn-run-lazy--error .conn-run-history-load {
+      border-color: var(--danger);
+      background: var(--danger-soft);
+      color: var(--danger);
     }
 
     /* Timeline */
@@ -1401,6 +1417,13 @@ export function getConnPageCss(): string {
     .conn-run-history-more {
       display: flex;
       margin: 14px auto 0;
+    }
+
+    .conn-run-history-more.is-loading {
+      background: var(--primary-soft);
+      border-color: var(--primary);
+      color: var(--primary);
+      cursor: wait;
     }
 
     /* ── Editor (inline in detail panel) ── */

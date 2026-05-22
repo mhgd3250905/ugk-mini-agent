@@ -2,6 +2,15 @@
 
 更新时间：`2026-05-22`
 
+## 2026-05-22 Conn 独立页 run history 加载状态
+
+- `/playground/conn` 的运行历史现在显式区分未加载、加载中、加载失败、已加载空数组、可继续分页和分页加载中状态；这些状态都收在原 run history 区域内，不引入新的页面布局或装饰卡片。
+- 首次点击“加载运行历史”后，区域会进入紧凑 loading 状态；失败时显示错误信息和“重试加载”按钮，已加载但无记录时显示“暂无运行历史”。
+- 错误重试会检查当前 `selectedId`；如果用户已经切换到其他后台任务，旧任务面板残留按钮不会把旧 conn 的历史重新拉回来。
+- “加载更多”在分页请求进行中会进入 `loading-more` 状态，禁用当前按钮并保留已加载列表、展开 run 和详情滚动位置。
+- loading / error / loading-more 样式继续使用现有主题 token，深色和浅色主题共用同一套语义变量，不写单主题硬编码颜色。
+- 相关源码：`src/ui/conn-page-js.ts`、`src/ui/conn-page-css.ts`、`test/conn-page-ui.test.ts`、`test/server.test.ts`
+
 ## 2026-05-22 Conn 独立页操作局部渲染
 
 - `/playground/conn` 的暂停、恢复、删除、立即执行和全部已读路径不再用 `renderAll()` 反复重建统计、列表和详情；小状态变化改为更新 stats、list、selected detail actions 或 run history 对应区域。

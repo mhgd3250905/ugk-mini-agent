@@ -1879,6 +1879,18 @@ test("standalone conn page exposes a terminate action for pending or running con
 	assert.match(response, /handleCancelRun\(conn\.connId, run\.runId\)/);
 	assert.match(response, /\.conn-run-cancel-btn/);
 });
+
+test("standalone conn page exposes tokenized run history loading states", () => {
+	const response = renderConnPage();
+
+	assert.match(response, /data-run-history-state="loading"/);
+	assert.match(response, /data-run-history-state="error"/);
+	assert.match(response, /data-run-history-state="empty"/);
+	assert.match(response, /data-run-history-pagination/);
+	assert.match(response, /\.conn-run-lazy--loading\s*\{[\s\S]*background:\s*var\(--primary-soft\);/);
+	assert.match(response, /\.conn-run-lazy--error\s*\{[\s\S]*background:\s*var\(--danger-soft\);/);
+	assert.match(response, /\.conn-run-history-more\.is-loading\s*\{[\s\S]*background:\s*var\(--primary-soft\);/);
+});
 test("standalone conn page uses bundled vendor assets instead of CDN resources", () => {
 	const response = renderConnPage();
 

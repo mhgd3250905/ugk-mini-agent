@@ -916,6 +916,8 @@ function renderRunHistory(conn) {
 
   const historyState = getRunHistoryState(conn.connId);
   if (historyState.status !== "loaded") {
+    const isLoading = historyState.status === "loading";
+    const isError = historyState.status === "error";
     const latestRun = conn.latestRun || null;
     const latestStatusLabel = latestRun ? (RUN_STATUS_LABELS[latestRun.status] || latestRun.status || "未知") : "";
     const latestTime = latestRun
@@ -924,11 +926,17 @@ function renderRunHistory(conn) {
     const latestSummary = latestRun
       ? (latestRun.resultSummary || latestRun.resultText || latestRun.errorText || latestStatusLabel)
       : "完整运行历史尚未加载";
-    const buttonText = historyState.status === "loading" ? "加载中" : historyState.status === "error" ? "重试加载" : "加载运行历史";
-    const disabled = historyState.status === "loading" ? " disabled" : "";
+    const buttonText = isLoading ? "加载中" : isError ? "重试加载" : "加载运行历史";
+    const disabled = isLoading ? " disabled" : "";
+    const retryAttr = isError ? ' data-run-history-retry="1"' : "";
     const stateClass = " conn-run-lazy--" + historyState.status;
+    const stateAttrs = isLoading
+      ? ' data-run-history-state="loading" role="status" aria-busy="true"'
+      : isError
+        ? ' data-run-history-state="error" role="alert" aria-busy="false"'
+        : ' data-run-history-state="idle" role="status" aria-busy="false"';
 
-    let html = '<div class="conn-run-lazy' + stateClass + '">';
+    let html = '<div class="conn-run-lazy' + stateClass + '"' + stateAttrs + '>';
     html += '<div class="conn-run-lazy-main">';
     html += '<div class="conn-run-lazy-eyebrow">' + (latestRun ? "最近一次" : "运行历史") + '</div>';
     if (latestRun) {
@@ -942,20 +950,24 @@ function renderRunHistory(conn) {
       html += '<div class="conn-run-lazy-error">' + escapeHtml(historyState.error) + '</div>';
     }
     html += '</div>';
-    html += '<button class="conn-run-history-load" type="button" data-load-run-history="1"' + disabled + '>' + buttonText + '</button>';
+    html += '<button class="conn-run-history-load" type="button" data-load-run-history="1"' + retryAttr + disabled + '>' + buttonText + '</button>';
     html += '</div>';
     container.innerHTML = html;
 
     const loadBtn = container.querySelector("[data-load-run-history]");
     if (loadBtn) {
-      loadBtn.addEventListener("click", () => loadRunHistory(conn.connId));
+      loadBtn.addEventListener("click", () => {
+        const selectedConnId = state.selectedId;
+        if (!selectedConnId || selectedConnId !== conn.connId) return;
+        loadRunHistory(selectedConnId);
+      });
     }
     return;
   }
 
   const runs = state.runsByConnId[conn.connId] || [];
   if (runs.length === 0) {
-    container.innerHTML = '<div class="conn-run-empty"><div class="conn-run-empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div><h4>暂无运行历史</h4><p>任务执行后将在这里展示结果和日志</p></div>';
+    container.innerHTML = '<div class="conn-run-empty" data-run-history-state="empty" role="status"><div class="conn-run-empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div><h4>暂无运行历史</h4><p>任务执行后将在这里展示结果和日志</p></div>';
     return;
   }
 
@@ -1028,12 +1040,15 @@ function renderRunHistory(conn) {
 
   const page = getRunHistoryPage(conn.connId);
   if (page.hasMore) {
+    const isLoadingMore = state.loadingMoreRunsConnId === conn.connId;
     const moreBtn = document.createElement("button");
     moreBtn.type = "button";
-    moreBtn.className = "conn-run-load-more conn-run-history-more";
+    moreBtn.className = "conn-run-load-more conn-run-history-more" + (isLoadingMore ? " is-loading" : "");
     moreBtn.dataset.loadMoreRuns = "1";
-    moreBtn.textContent = state.loadingMoreRunsConnId === conn.connId ? "加载中" : "加载更多";
-    moreBtn.disabled = state.loadingMoreRunsConnId === conn.connId;
+    moreBtn.setAttribute("data-run-history-pagination", isLoadingMore ? "loading-more" : "has-more");
+    moreBtn.setAttribute("aria-busy", isLoadingMore ? "true" : "false");
+    moreBtn.textContent = isLoadingMore ? "加载中" : "加载更多";
+    moreBtn.disabled = isLoadingMore;
     moreBtn.addEventListener("click", () => loadMoreRunHistory(conn.connId));
     container.appendChild(moreBtn);
   }
