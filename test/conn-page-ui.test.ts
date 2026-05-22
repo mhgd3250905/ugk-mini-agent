@@ -473,6 +473,103 @@ test("standalone conn load more appends run history without resetting selected s
 	assert.equal(result.scrollTop, 120);
 });
 
+test("standalone conn mark all read clears loaded run history without a stale refresh call", async () => {
+	const readAllBtn = createConnPageElement("全部已读");
+	const { context } = createConnPageContext({
+		elements: {
+			"btn-read-all": readAllBtn,
+		},
+	});
+
+	const result = await runConnPageExpression<{
+		fetchCalls: string[];
+		totalUnreadRuns: number;
+		unreadCountsByConnId: Record<string, number>;
+		unreadLatestRunTimesByConnId: Record<string, string>;
+		readAts: string[];
+		latestReadAt: string;
+		toasts: Array<{ message: string; tone: string }>;
+		button: { disabled: boolean; textContent: string };
+	}>(
+		context,
+		`
+			const toasts = [];
+			const fetchCalls = [];
+			openConfirmDialog = async () => true;
+			showToast = (message, tone) => toasts.push({ message, tone });
+			renderAll = () => undefined;
+			fetch = async (url) => {
+				fetchCalls.push(String(url));
+				return {
+					ok: true,
+					json: async () => ({ markedCount: 2, totalUnreadRuns: 0 }),
+				};
+			};
+			state.conns = [{
+				connId: "conn-1",
+				title: "Daily report",
+				status: "active",
+				latestRun: {
+					runId: "run-latest",
+					connId: "conn-1",
+					status: "succeeded",
+					resultSummary: "Latest unread",
+					createdAt: "2026-05-22T01:00:00.000Z",
+					updatedAt: "2026-05-22T01:01:00.000Z",
+				},
+			}];
+			state.selectedId = "conn-1";
+			state.totalUnreadRuns = 2;
+			state.unreadCountsByConnId = { "conn-1": 2 };
+			state.unreadLatestRunTimesByConnId = { "conn-1": "2026-05-22T01:01:00.000Z" };
+			state.runsByConnId["conn-1"] = [
+				{
+					runId: "run-1",
+					connId: "conn-1",
+					status: "succeeded",
+					resultText: "First unread",
+					createdAt: "2026-05-22T01:00:00.000Z",
+					updatedAt: "2026-05-22T01:01:00.000Z",
+				},
+				{
+					runId: "run-2",
+					connId: "conn-1",
+					status: "failed",
+					errorText: "Second unread",
+					createdAt: "2026-05-22T01:02:00.000Z",
+					updatedAt: "2026-05-22T01:03:00.000Z",
+				},
+			];
+			state.runHistoryStateByConnId["conn-1"] = { status: "loaded", error: "" };
+
+			await handleMarkAllRead();
+
+			return {
+				fetchCalls,
+				totalUnreadRuns: state.totalUnreadRuns,
+				unreadCountsByConnId: state.unreadCountsByConnId,
+				unreadLatestRunTimesByConnId: state.unreadLatestRunTimesByConnId,
+				readAts: state.runsByConnId["conn-1"].map(run => run.readAt || ""),
+				latestReadAt: state.conns[0].latestRun.readAt || "",
+				toasts,
+				button: { disabled: $("btn-read-all").disabled, textContent: $("btn-read-all").textContent },
+			};
+		`,
+	);
+
+	assert.deepEqual(Array.from(result.fetchCalls), ["/v1/conns/runs/read-all"]);
+	assert.equal(result.totalUnreadRuns, 0);
+	assert.deepEqual({ ...result.unreadCountsByConnId }, {});
+	assert.deepEqual({ ...result.unreadLatestRunTimesByConnId }, {});
+	assert.ok(Array.from(result.readAts).every(Boolean));
+	assert.ok(result.latestReadAt);
+	assert.deepEqual(
+		Array.from(result.toasts).map((toast) => ({ ...toast })),
+		[{ message: "已标记 2 条为已读", tone: "success" }],
+	);
+	assert.deepEqual({ ...result.button }, { disabled: false, textContent: "全部已读" });
+});
+
 test("standalone conn editor loads support catalogs lazily and reuses the cache", async () => {
 	const { context } = createConnPageContext();
 

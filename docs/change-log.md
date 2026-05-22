@@ -12,6 +12,16 @@
 
 ---
 
+## 2026-05-22 — Playground Conn read-all cache cleanup
+
+- **主题**: 清理 `/playground/conn` “全部已读”按钮里的旧运行历史刷新调用
+- **影响范围**: `src/ui/conn-page-js.ts`, `test/conn-page-ui.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - `handleMarkAllRead()` 不再调用已经不存在的 `loadRuns()`，避免批量已读成功后又弹出 `loadRuns is not defined` 错误
+  - 批量已读成功后同步清空页面内 `unreadCountsByConnId`、`unreadLatestRunTimesByConnId`，并把已加载 run history 与 `latestRun` 的本地 `readAt` 标记为已读
+  - 保持前面性能优化口径：批量已读不会额外请求 `/v1/conns/:connId/runs`，已加载缓存直接更新，未加载历史继续保持懒加载
+  - 测试覆盖“全部已读”成功路径，确认只请求 `POST /v1/conns/runs/read-all`、没有 stale refresh call、没有错误 toast
+
 ## 2026-05-22 — Playground Conn run history pagination
 
 - **主题**: `/playground/conn` 运行历史从完整拉取改为后端游标分页

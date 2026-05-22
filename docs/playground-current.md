@@ -153,6 +153,7 @@
 - `/playground/conn` 顶部右侧“未读结果”统计的是后台 run 结果，不是任务消息页的 `agent_activity_items` 未读消息数。
 - 统计范围已经收口为当前仍存在的 conn：只计算这些 conn 下 `succeeded / failed` 且 `read_at IS NULL` 的 run；已软删除任务的历史 run 不再混入顶部总数。
 - 列表卡片上的单个 conn 未读徽章和顶部总数使用同一批 conn id 作为过滤范围；“全部已读”和展开单条 run 自动已读后的总数刷新也按这个口径返回。
+- “全部已读”成功后会同步清空页面内未读计数、未读排序时间和已加载 run history / latestRun 的本地 `readAt`，不再额外触发运行历史刷新请求。
 - 对话页顶部“后台任务”按钮上的数字徽章也使用 `/v1/conns` 的 `totalUnreadRuns`，刷新、重新聚焦页面或收到后台通知时都会同步；它不再使用任务消息 `/v1/activity/summary` 的未读数。
 - 相关源码：`src/routes/conns.ts`、`src/agent/conn-run-store.ts`、`src/ui/playground-conn-activity-controller.ts`、`src/ui/playground-task-inbox.ts`
 

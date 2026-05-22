@@ -237,6 +237,23 @@ function isRunInFlight(run) {
   return run?.status === "pending" || run?.status === "running";
 }
 
+function isUnreadResultRun(run) {
+  return (run?.status === "succeeded" || run?.status === "failed") && !run.readAt;
+}
+
+function markLoadedRunCachesRead(readAt) {
+  const nextReadAt = readAt || new Date().toISOString();
+  for (const conn of state.conns || []) {
+    if (isUnreadResultRun(conn?.latestRun)) conn.latestRun.readAt = nextReadAt;
+  }
+  for (const connId of Object.keys(state.runsByConnId || {})) {
+    const runs = state.runsByConnId[connId] || [];
+    for (const run of runs) {
+      if (isUnreadResultRun(run)) run.readAt = nextReadAt;
+    }
+  }
+}
+
 function hasActiveRunForConn(connId) {
   const runs = state.runsByConnId[connId] || [];
   if (runs.some(isRunInFlight)) return true;
@@ -898,7 +915,7 @@ function renderRunHistory(conn) {
     const isCancelling = state.cancellingRunId === run.runId;
 
     const item = document.createElement("div");
-    var isUnread = (run.status === "succeeded" || run.status === "failed") && !run.readAt;
+    var isUnread = isUnreadResultRun(run);
     item.className = "conn-run-tl-item" + (isUnread ? " is-unread" : "");
     item.innerHTML = '<div class="conn-run-tl-dot ' + dotClass + '"></div><div class="conn-run-tl-card' + (isExpanded ? ' is-expanded' : '') + '"><div class="conn-run-tl-header"><span class="conn-run-tl-time">' + escapeHtml(time) + '</span><span class="conn-badge conn-badge--' + (run.status || 'unknown') + '">' + runStatusLabel + '</span>' + (duration ? '<span class="conn-run-tl-duration">' + escapeHtml(duration) + '</span>' : '') + '<span class="conn-run-tl-summary">' + escapeHtml(summary) + '</span>' + (canCancel ? '<button class="conn-run-cancel-btn" type="button" data-run-cancel="' + escapeHtml(run.runId) + '"' + (isCancelling ? ' disabled' : '') + '>' + (isCancelling ? '终止中' : '终止') + '</button>' : '') + '</div></div>';
 
@@ -2226,12 +2243,13 @@ async function handleMarkAllRead() {
   }
   try {
     const result = await apiMarkAllRunsRead();
+    const readAt = new Date().toISOString();
     state.totalUnreadRuns = result.totalUnreadRuns;
     state.unreadCountsByConnId = {};
+    state.unreadLatestRunTimesByConnId = {};
+    markLoadedRunCachesRead(readAt);
     showToast("已标记 " + result.markedCount + " 条为已读", "success");
     renderAll();
-    // If a conn is selected, refresh its runs to show updated read state
-    if (state.selectedId) loadRuns(state.selectedId);
   } catch (err) {
     showToast(err instanceof Error ? err.message : "操作失败", "error");
   } finally {
