@@ -12,6 +12,34 @@
 
 ---
 
+## 2026-05-22 — Playground conversation row event delegation
+
+- **主题**: 将会话列表逐行 addEventListener 替换为容器级事件委托，降低大量会话时的 DOM/交互成本
+- **影响范围**: `src/ui/playground-conversations-controller.ts`, `src/ui/playground-mobile-shell-controller.ts`, `test/playground-conversations-controller.test.ts`, `docs/change-log.md`, `docs/playground-current.md`
+- **变更**:
+  - 新增 `handleConversationListClick()` 容器级委托处理器，通过 `event.target.closest()` 分派：菜单触发 → `toggleConversationMenu`、菜单操作（`data-action="rename|pin|delete"`）→ 对应请求、颜色色板（`data-color`）→ `requestUpdateConversation`、行按钮 → `selectConversationFromDrawer`
+  - 移除行循环和菜单按钮内的所有 `addEventListener`，改为 `data-action` / `data-color` 属性驱动
+  - 按钮内容从 `innerHTML` 字符串 + `querySelector` 改为 `createElement` + `appendChild` 直接构建
+  - 容器清空从 `innerHTML = ""` 改为 `replaceChildren()`
+  - `playground-mobile-shell-controller.ts` 在两个容器上绑定 `click → handleConversationListClick`
+  - 测试覆盖：5 个行为测试（eval 委托函数 + mock event target，断言 toggle/update/select 调用正确性）、`renderConversationListInto` 无 addEventListener 断言、mobile shell 接线断言
+
+---
+
+## 2026-05-22 — Playground conversation list virtualization
+
+- **主题**: 会话列表从全量渲染改为虚拟滚动，只渲染视口可见行 + 上下 overscan 缓冲
+- **影响范围**: `src/ui/playground-conversations-controller.ts`, `src/ui/playground-styles.ts`, `test/playground-conversations-controller.test.ts`, `docs/change-log.md`
+- **变更**:
+  - 新增 `computeVirtualWindow()` 纯函数：根据 `scrollTop / viewportHeight / itemHeight / overscan / total` 计算可见行范围和上下 spacer 高度
+  - 桌面行高 `60px`（58px item + 2px gap），移动行高 `100px`（92px item + 8px gap），overscan 5 行
+  - `renderConversationListInto()` 改为先清空容器，再渲染 top spacer + 可见行循环 + bottom spacer
+  - 滚动事件通过 `requestAnimationFrame` 合并调度，pending rAF 期间丢弃后续 scroll 回调
+  - 隐藏桌面/移动容器中的重复列表渲染：桌面渲染时清空移动列表，反之亦然
+  - 测试覆盖：`computeVirtualWindow` 6 项数学正确性测试（eval 纯函数 + 断言 spacer/范围）、rAF 合并调度行为测试、虚拟滚动常量与 CSS 对齐断言
+
+---
+
 ## 2026-05-22 — Playground non-chat panel data lazy loading
 
 - **主题**: 延迟首屏聊天入口的非聊天面板数据请求，减少首屏网络开销

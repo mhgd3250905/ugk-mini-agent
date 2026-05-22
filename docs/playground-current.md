@@ -1,6 +1,16 @@
 # Playground 当前状态
 
-更新时间：`2026-05-21`
+更新时间：`2026-05-22`
+
+## 2026-05-22 会话列表性能优化
+
+- 会话列表从全量渲染改为虚拟滚动：`computeVirtualWindow()` 根据滚动位置计算可见行范围，只渲染视口内行 + 上下 5 行 overscan 缓冲，上下 spacer 以行高 × 行数填充真实滚动高度。桌面行高 60px（58px item + 2px gap），移动行高 100px（92px item + 8px gap），与 CSS 对齐。
+- 滚动事件通过 `requestAnimationFrame` 合并调度，pending rAF 期间丢弃后续 scroll 回调，避免连续滚动帧反复重建 DOM。
+- 隐藏桌面/移动容器中的重复列表渲染：桌面视口渲染时清空移动列表容器，反之亦然。
+- 会话目录同步带 500ms 合并窗口：`scheduleConversationCatalogRefresh()` 在窗口内多次调用只触发一次实际同步，避免 `requestUpdateConversation` 后立即 force-refresh 产生冗余请求和 `ERR_ABORTED` 竞态。
+- 首屏不再加载非聊天面板数据：文件库、任务消息和后台任务未读统计延迟到面板首次打开或通知推送时加载。
+- 行点击和菜单操作改为容器级事件委托：`handleConversationListClick()` 通过 `event.target.closest()` 分派选择会话、菜单触发、菜单操作和颜色选择，消除了每行 2 个 addEventListener。菜单按钮使用 `data-action` 属性，色板使用 `data-color` 属性。容器清空使用 `replaceChildren()` 替代 `innerHTML = ""`。按钮内容使用 `createElement` 直接构建替代 innerHTML 字符串 + querySelector。
+- 相关源码：`src/ui/playground-conversations-controller.ts`、`src/ui/playground-mobile-shell-controller.ts`
 
 ## 2026-05-21 Chat 对话界面质感优化
 
