@@ -417,6 +417,7 @@ export function getPlaygroundStyles(): string {
 			background: var(--conversation-card-bg, rgba(255, 255, 255, 0.035));
 			box-shadow: none;
 			text-align: left;
+			align-content: center;
 		}
 
 		.conversation-item-shell {
@@ -470,10 +471,6 @@ export function getPlaygroundStyles(): string {
 
 		.conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-title {
 			color: #172033;
-		}
-
-		.conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-preview {
-			color: rgba(23, 32, 51, 0.68);
 		}
 
 		.conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-meta span {
@@ -665,20 +662,10 @@ export function getPlaygroundStyles(): string {
 			font-weight: 650;
 		}
 
-		.mobile-conversation-preview {
-			display: -webkit-box;
-			overflow: hidden;
-			color: rgba(226, 234, 255, 0.58);
-			font-size: 11px;
-			line-height: 1.35;
-			-webkit-box-orient: vertical;
-			-webkit-line-clamp: 2;
-		}
-
 		.mobile-conversation-meta {
 			display: flex;
 			align-items: center;
-			justify-content: space-between;
+			justify-content: flex-start;
 			gap: 8px;
 			color: rgba(226, 234, 255, 0.42);
 			font-size: 10px;
@@ -4286,10 +4273,6 @@ export function getPlaygroundStyles(): string {
 			color: rgba(246, 249, 255, 0.82);
 		}
 
-		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-preview {
-			color: rgba(226, 234, 255, 0.38);
-		}
-
 		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-meta span {
 			color: rgba(226, 234, 255, 0.34);
 		}
@@ -4307,13 +4290,6 @@ export function getPlaygroundStyles(): string {
 			line-height: 1.25;
 		}
 
-		.desktop-conversation-list .mobile-conversation-preview {
-			-webkit-line-clamp: 1;
-			color: rgba(226, 234, 255, 0.38);
-			font-size: 10px;
-			line-height: 1.25;
-		}
-
 		.desktop-conversation-list .mobile-conversation-meta {
 			justify-content: flex-start;
 			gap: 6px;
@@ -4327,16 +4303,8 @@ export function getPlaygroundStyles(): string {
 			background: transparent;
 		}
 
-		.desktop-conversation-list .mobile-conversation-meta span:last-child {
-			display: none;
-		}
-
 		.desktop-conversation-list .mobile-conversation-item.is-active .mobile-conversation-title {
 			color: rgba(248, 251, 255, 0.96);
-		}
-
-		.desktop-conversation-list .mobile-conversation-item.is-active .mobile-conversation-preview {
-			color: rgba(226, 234, 255, 0.58);
 		}
 
 		.desktop-conversation-list .mobile-conversation-item.is-active .mobile-conversation-meta {

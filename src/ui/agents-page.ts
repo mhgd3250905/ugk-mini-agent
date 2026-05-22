@@ -475,10 +475,18 @@ function getAgentsPageCss(): string {
 			}
 
 		/* Skill items */
-		.ag-skill-list { display: grid; gap: 8px; max-height: 320px; overflow-y: auto; padding-top: 4px; }
+		.ag-skill-list {
+			display: grid;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: 10px;
+			max-height: 360px;
+			overflow-y: auto;
+			padding-top: 4px;
+		}
 		.ag-skill-item {
 			display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
-			align-items: center; gap: 14px;
+			align-items: center; gap: 12px;
+			min-height: 82px;
 			padding: 12px 14px; border-radius: 8px;
 			border: 1px solid var(--border);
 			background: var(--surface);
@@ -491,11 +499,35 @@ function getAgentsPageCss(): string {
 			background: rgba(139, 92, 246, 0.12); color: #A78BFA;
 		}
 		.ag-skill-icon svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.6; }
-		.ag-skill-info { min-width: 0; }
-		.ag-skill-name { font-size: 13px; font-weight: 600; color: var(--fg); }
+		.ag-skill-info { display: grid; gap: 6px; min-width: 0; }
+		.ag-skill-name {
+			display: flex; align-items: center; gap: 6px; min-width: 0;
+			overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+			font-size: 13px; font-weight: 600; color: var(--fg);
+		}
 		.ag-skill-desc {
 			font-size: 11px; color: var(--muted); margin-top: 2px;
 			overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+		}
+		.ag-skill-meta {
+			display: flex; align-items: center; flex-wrap: wrap;
+			gap: 6px; min-width: 0;
+		}
+		.ag-skill-location {
+			display: inline-flex; align-items: center;
+			min-height: 20px; padding: 0 7px; border-radius: 4px;
+			font-size: 10px; font-weight: 600; line-height: 1;
+			border: 1px solid var(--border);
+			background: rgba(255, 255, 255, 0.035);
+			color: var(--muted);
+		}
+		.ag-skill-location--system { border-color: rgba(201, 210, 255, 0.18); color: rgba(201, 210, 255, 0.9); }
+		.ag-skill-location--agent { border-color: rgba(101, 209, 255, 0.2); color: rgba(101, 209, 255, 0.9); }
+		.ag-skill-path {
+			flex: 1 1 150px; min-width: 0;
+			overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+			color: var(--muted); font-size: 10px; line-height: 1.4;
+			font-family: ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
 		}
 
 		.ag-skill-item--disabled { opacity: 0.6; }
@@ -650,6 +682,7 @@ function getAgentsPageCss(): string {
 		@media (max-width: 1024px) {
 			.ag-stats { grid-template-columns: repeat(2, 1fr); }
 			.ag-main { grid-template-columns: 300px minmax(0, 1fr); }
+			.ag-skill-list { grid-template-columns: 1fr; }
 		}
 		@media (max-width: 768px) {
 			.ag-stats { grid-template-columns: repeat(2, 1fr); padding: 12px; gap: 10px; }
@@ -757,6 +790,12 @@ function getAgentsPageCss(): string {
 		[data-theme="light"] .ag-badge--custom { color: #7C3AED; background: rgba(124, 58, 237, 0.10); }
 
 		[data-theme="light"] .ag-skill-icon { background: rgba(124, 58, 237, 0.10); color: #7C3AED; }
+		[data-theme="light"] .ag-skill-location {
+			background: rgba(20, 32, 51, 0.035);
+			border-color: rgba(24, 69, 119, 0.12);
+		}
+		[data-theme="light"] .ag-skill-location--system { color: #315AA6; border-color: rgba(49, 90, 166, 0.18); }
+		[data-theme="light"] .ag-skill-location--agent { color: #0F6F8E; border-color: rgba(15, 111, 142, 0.18); }
 
 		[data-theme="light"] .ag-search-input {
 			background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238896AB' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='M21 21l-4.35-4.35'/%3E%3C/svg%3E");
@@ -1229,6 +1268,34 @@ function getAgentsPageJs(): string {
 			renderSkillsList();
 		}
 
+		function compactSkillPath(path) {
+			var normalized = String(path || "").replace(/\\\\/g, "/");
+			var markers = [".data/agents/", ".pi/skills/", "runtime/skills-user/"];
+			for (var i = 0; i < markers.length; i++) {
+				var markerIndex = normalized.indexOf(markers[i]);
+				if (markerIndex >= 0) return normalized.slice(markerIndex);
+			}
+			var parts = normalized.split("/").filter(Boolean);
+			return parts.slice(-4).join("/") || "未记录路径";
+		}
+
+		function getSkillStorageMeta(skill) {
+			var path = skill && (skill.path || skill.storageRoot) || "";
+			var normalized = String(path || "").replace(/\\\\/g, "/");
+			var kind = skill && skill.storageKind;
+			if (kind !== "agent" && kind !== "system") {
+				kind = normalized.indexOf("/user-skills/") >= 0 || normalized.indexOf("runtime/skills-user/") >= 0
+					? "agent"
+					: "system";
+			}
+			return {
+				kind: kind,
+				label: kind === "agent" ? "Agent 安装" : "系统技能",
+				pathLabel: compactSkillPath(path),
+				fullPath: path || "",
+			};
+		}
+
 		function renderSkillsList(expectedAgentId) {
 			var agentId = expectedAgentId || state.selectedId;
 			if (!agentId || state.selectedId !== agentId) return;
@@ -1255,6 +1322,7 @@ function getAgentsPageJs(): string {
 				var isEnabled = skill.enabled !== false;
 				var isRequired = Boolean(skill.required);
 				var skillName = skill.name || skill.skillName || "";
+				var storageMeta = getSkillStorageMeta(skill);
 
 				var item = document.createElement("div");
 				item.className = "ag-skill-item" + (isEnabled ? "" : " ag-skill-item--disabled");
@@ -1300,8 +1368,16 @@ function getAgentsPageJs(): string {
 					n.appendChild(badge);
 				}
 				var d = document.createElement("div");
-				d.className = "ag-skill-desc";
-				d.textContent = isEnabled ? "已启用" : "已关闭";
+				d.className = "ag-skill-meta";
+				var locationBadge = document.createElement("span");
+				locationBadge.className = "ag-skill-location ag-skill-location--" + storageMeta.kind;
+				locationBadge.textContent = storageMeta.label;
+				d.appendChild(locationBadge);
+				var pathSpan = document.createElement("span");
+				pathSpan.className = "ag-skill-path";
+				pathSpan.textContent = storageMeta.pathLabel;
+				if (storageMeta.fullPath) pathSpan.title = storageMeta.fullPath;
+				d.appendChild(pathSpan);
 				info.appendChild(n);
 				info.appendChild(d);
 				item.appendChild(info);

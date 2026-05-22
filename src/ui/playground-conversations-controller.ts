@@ -106,7 +106,7 @@ export function getPlaygroundConversationControllerScript(): string {
 		}
 
 		const CONVERSATION_DESKTOP_ROW_HEIGHT = 60;
-		const CONVERSATION_MOBILE_ROW_HEIGHT = 100;
+		const CONVERSATION_MOBILE_ROW_HEIGHT = 80;
 		const CONVERSATION_VIRTUAL_OVERSCAN = 5;
 
 		function computeVirtualWindow(scrollTop, viewportHeight, itemHeight, overscan, total) {
@@ -191,18 +191,11 @@ export function getPlaygroundConversationControllerScript(): string {
 				titleSpan.className = "mobile-conversation-title";
 				titleSpan.textContent = item.title || "\\u65b0\\u4f1a\\u8bdd";
 				button.appendChild(titleSpan);
-				var previewSpan = document.createElement("span");
-				previewSpan.className = "mobile-conversation-preview";
-				previewSpan.textContent = item.preview || "\\u6682\\u65e0\\u6458\\u8981";
-				button.appendChild(previewSpan);
 				var metaSpan = document.createElement("span");
 				metaSpan.className = "mobile-conversation-meta";
 				var metaTime = document.createElement("span");
-				metaTime.textContent = item.running ? "\\u8fd0\\u884c\\u4e2d" : item.pinned ? "已置顶" : formatConversationTime(item.updatedAt);
+				metaTime.textContent = item.running ? "\\u8fd0\\u884c\\u4e2d" : formatConversationTime(item.updatedAt);
 				metaSpan.appendChild(metaTime);
-				var metaCount = document.createElement("span");
-				metaCount.textContent = item.messageCount + " \\u6761";
-				metaSpan.appendChild(metaCount);
 				button.appendChild(metaSpan);
 				shell.appendChild(button);
 				const menuButton = document.createElement("button");

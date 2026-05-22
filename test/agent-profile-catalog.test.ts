@@ -7,6 +7,7 @@ import {
 	archiveStoredAgentProfile,
 	createStoredAgentProfile,
 	installStoredAgentProfileSkill,
+	listStoredAgentProfileSkills,
 	loadAgentProfilesSync,
 	moveAgentProfileDataDir,
 	removeStoredAgentProfileSkill,
@@ -167,6 +168,33 @@ test("installStoredAgentProfileSkill copies a main agent skill into an existing 
 	assert.equal(result.skillName, "web-access");
 	assert.equal(result.targetRoot, join(projectRoot, ".data", "agents", "research", "user-skills"));
 	assert.equal(copied, "# web-access\n");
+});
+
+test("listStoredAgentProfileSkills reports system and agent storage roots", async () => {
+	const projectRoot = await mkdtemp(join(tmpdir(), "ugk-pi-agent-profile-"));
+	await mkdir(join(projectRoot, ".pi", "skills", "web-access"), { recursive: true });
+	await writeFile(join(projectRoot, ".pi", "skills", "web-access", "SKILL.md"), "# web-access\n", "utf8");
+	const profile = await createStoredAgentProfile(projectRoot, {
+		agentId: "research",
+		name: "研究 Agent",
+		description: "用于资料研究。",
+		initialSystemSkillNames: ["web-access"],
+	});
+	await mkdir(join(projectRoot, ".data", "agents", "research", "user-skills", "browser-helper"), { recursive: true });
+	await writeFile(
+		join(projectRoot, ".data", "agents", "research", "user-skills", "browser-helper", "SKILL.md"),
+		"# browser-helper\n",
+		"utf8",
+	);
+
+	const result = listStoredAgentProfileSkills(projectRoot, "research");
+	const systemSkill = result.skills.find((skill) => skill.name === "web-access");
+	const agentSkill = result.skills.find((skill) => skill.name === "browser-helper");
+
+	assert.equal(systemSkill?.storageKind, "system");
+	assert.equal(systemSkill?.storageRoot, profile.allowedSkillPaths[0]);
+	assert.equal(agentSkill?.storageKind, "agent");
+	assert.equal(agentSkill?.storageRoot, profile.allowedSkillPaths[1]);
 });
 
 test("removeStoredAgentProfileSkill removes only mutable skills from custom agent roots", async () => {

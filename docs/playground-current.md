@@ -1,6 +1,26 @@
 # Playground 当前状态
 
-更新时间：`2026-05-22`
+更新时间：`2026-05-23`
+
+## 2026-05-23 Agents 技能卡片状态降噪
+
+- `/playground/agents` 技能卡片不再显示单独的 `已启用 / 已关闭` 状态 badge；启用状态只由左侧 `开 / 关` switch 表达，避免同一卡片重复说同一件事。
+- 技能卡片继续保留 `系统技能 / Agent 安装` 来源 badge 和压缩保存路径。
+- 相关源码：`src/ui/agents-page.ts`、`test/server.test.ts`
+
+## 2026-05-22 Agents 技能卡片密度与来源展示
+
+- `/playground/agents` 选中 Agent 后点击“查看技能”，技能列表在桌面宽度下改为两列卡片，窄屏回退单列，避免一张技能卡片横向占满整个详情区。
+- 每张技能卡片现在显示技能保存来源和压缩后的保存路径；来源由后端 `/v1/agents/:agentId/skills` 返回的 `storageKind` / `storageRoot` 判断，区分系统技能和 Agent 安装技能。
+- 技能路径显示为可扫描的项目内短路径，完整路径保留在 hover title 中；深色和浅色主题都覆盖来源 badge，避免浅色模式低对比。
+- 相关源码：`src/agent/agent-profile-catalog.ts`、`src/types/api.ts`、`src/ui/agents-page.ts`、`test/agent-profile-catalog.test.ts`、`test/server.test.ts`
+
+## 2026-05-22 Chat 左侧会话列表降噪
+
+- `/playground` Chat 左侧会话列表不再渲染第二行 `.mobile-conversation-preview` 小字摘要；每条会话只保留标题摘要和时间 / 运行中状态。
+- 会话列表不再渲染消息条数 pill，避免标题、摘要、时间、条数四种信息挤在窄列里互相抢注意力。
+- 移动会话抽屉复用同一渲染路径，行结构同步收成标题 + 时间两行；虚拟滚动移动 row pitch 从 `100px` 调整为 `80px`，继续与 CSS 行高 + gap 对齐。
+- 相关源码：`src/ui/playground-conversations-controller.ts`、`src/ui/playground-styles.ts`、`src/ui/playground-assets.ts`、`src/ui/playground-theme-controller.ts`、`test/playground-conversations-controller.test.ts`、`test/server.test.ts`
 
 ## 2026-05-22 Conn 独立页 run history 加载状态
 
@@ -51,7 +71,7 @@
 
 ## 2026-05-22 会话列表性能优化
 
-- 会话列表从全量渲染改为虚拟滚动：`computeVirtualWindow()` 根据滚动位置计算可见行范围，只渲染视口内行 + 上下 5 行 overscan 缓冲，上下 spacer 以行高 × 行数填充真实滚动高度。桌面行高 60px（58px item + 2px gap），移动行高 100px（92px item + 8px gap），与 CSS 对齐。
+- 会话列表从全量渲染改为虚拟滚动：`computeVirtualWindow()` 根据滚动位置计算可见行范围，只渲染视口内行 + 上下 5 行 overscan 缓冲，上下 spacer 以行高 × 行数填充真实滚动高度。桌面行高 60px（58px item + 2px gap），移动行高 80px（72px item + 8px gap），与 CSS 对齐。
 - 滚动事件通过 `requestAnimationFrame` 合并调度，pending rAF 期间丢弃后续 scroll 回调，避免连续滚动帧反复重建 DOM。
 - 隐藏桌面/移动容器中的重复列表渲染：桌面视口渲染时清空移动列表容器，反之亦然。
 - 会话目录同步带 500ms 合并窗口：`scheduleConversationCatalogRefresh()` 在窗口内多次调用只触发一次实际同步，避免 `requestUpdateConversation` 后立即 force-refresh 产生冗余请求和 `ERR_ABORTED` 竞态。
@@ -84,7 +104,7 @@
 - 消息区保留工作型 cockpit 约束：无投影、4px 圆角、紧凑排版，assistant 输出提升正文可读性，宽表格支持横向滚动。
 - 主消息气泡内部的代码块、复制工具条、附件下载项不再重复画多层边框；消息体保留唯一主边界，内部内容以弱底色和间距区分层级。
 - Composer 继续作为单一输入控制面；focus 状态通过边框与 outline 反馈，不使用阴影模拟层级。
-- 桌面左侧会话栏定位为低干扰 chat sidebar：会话项按轻量列表行展示，默认只突出标题、弱摘要和时间；消息条数和三点菜单默认降噪，当前会话才显著高亮。移动端会话抽屉不沿用该压低策略。
+- 桌面左侧会话栏定位为低干扰 chat sidebar：会话项按轻量列表行展示，默认只突出标题摘要和时间；消息条数、第二行 preview 和三点菜单默认降噪，当前会话才显著高亮。移动端会话抽屉复用标题 + 时间的紧凑行结构。
 - 页面背景已从散点 / 斜纹 / 漂移动画收口为静态细网格和线性边缘高光；深浅主题分别维护自己的背景网格透明度，避免“波点科技感”压过对话内容。
 - 相关源码：`src/ui/playground-styles.ts`、`src/ui/playground-theme-controller.ts`
 

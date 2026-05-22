@@ -671,15 +671,17 @@ export interface AgentProfileSkillInfo {
 	path?: string;
 	enabled: boolean;
 	required?: boolean;
+	storageKind?: "system" | "agent";
+	storageRoot?: string;
 }
 
 function isRequiredAgentSkill(skillName: string): boolean {
 	return DEFAULT_AGENT_SYSTEM_SKILLS.some((skill) => skill.name === skillName);
 }
 
-function collectInstalledSkillNames(skillPaths: string[]): Array<{ name: string; path: string }> {
-	const seen = new Map<string, string>();
-	for (const rootPath of skillPaths) {
+function collectInstalledSkillNames(skillPaths: string[]): Array<{ name: string; path: string; rootPath: string; rootIndex: number }> {
+	const seen = new Map<string, { name: string; path: string; rootPath: string; rootIndex: number }>();
+	for (const [rootIndex, rootPath] of skillPaths.entries()) {
 		let entries;
 		try {
 			entries = readdirSync(rootPath, { encoding: "utf8", withFileTypes: true });
@@ -703,11 +705,11 @@ function collectInstalledSkillNames(skillPaths: string[]): Array<{ name: string;
 				skillName = entry.name;
 			}
 			if (skillName && !seen.has(skillName)) {
-				seen.set(skillName, skillDir);
+				seen.set(skillName, { name: skillName, path: skillDir, rootPath, rootIndex });
 			}
 		}
 	}
-	return Array.from(seen.entries()).map(([name, path]) => ({ name, path }));
+	return Array.from(seen.values());
 }
 
 export function listStoredAgentProfileSkills(
@@ -728,11 +730,13 @@ export function listStoredAgentProfileSkills(
 	}
 	const disabledSet = new Set(catalog.skillSettingsByAgentId[agentId]?.disabledSkillNames ?? []);
 	const installed = collectInstalledSkillNames(profile.allowedSkillPaths);
-	const skills: AgentProfileSkillInfo[] = installed.map(({ name, path }) => ({
+	const skills: AgentProfileSkillInfo[] = installed.map(({ name, path, rootPath, rootIndex }) => ({
 		name,
 		path,
 		enabled: !disabledSet.has(name),
 		required: isRequiredAgentSkill(name),
+		storageKind: rootIndex === 0 ? "system" : "agent",
+		storageRoot: rootPath,
 	}));
 	skills.sort((a, b) => a.name.localeCompare(b.name));
 	return { agentId, skills };

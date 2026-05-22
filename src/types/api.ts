@@ -271,6 +271,8 @@ export interface AgentSkillBody {
 	path?: string;
 	enabled: boolean;
 	required?: boolean;
+	storageKind?: "system" | "agent";
+	storageRoot?: string;
 }
 
 export interface AgentSkillListResponseBody {

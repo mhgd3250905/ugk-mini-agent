@@ -1285,14 +1285,14 @@ export function getPlaygroundAssetMobileStyles(): string {
 
 			.mobile-conversation-item {
 				position: relative;
-				grid-template-rows: auto minmax(0, 1fr) auto;
-				gap: 6px;
-				min-height: 92px;
-				padding: 11px 46px 10px 14px;
+				grid-template-rows: auto auto;
+				gap: 7px;
+				min-height: 72px;
+				padding: 12px 46px 12px 14px;
 				border: 0;
 				border-radius: 8px;
 				background: var(--conversation-card-bg, #0b0e19);
-				align-content: start;
+				align-content: center;
 				line-height: normal;
 				letter-spacing: 0;
 				text-transform: none;
@@ -1351,18 +1351,6 @@ export function getPlaygroundAssetMobileStyles(): string {
 				font-size: 13px;
 				line-height: 1.35;
 				letter-spacing: 0.01em;
-			}
-
-			.mobile-conversation-preview {
-				display: -webkit-box;
-				font-size: 12px;
-				line-height: 1.45;
-				color: rgba(226, 234, 255, 0.66);
-				white-space: normal;
-				overflow-wrap: anywhere;
-				word-break: break-word;
-				-webkit-box-orient: vertical;
-				-webkit-line-clamp: 2;
 			}
 
 			.mobile-conversation-meta {

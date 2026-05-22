@@ -1257,8 +1257,33 @@ test("GET /playground/agents reuses gallery skills for the initial main selectio
 		assert.match(expandRegion, /skillsLoadedByAgentId\[agentId\]/);
 		assert.match(expandRegion, /apiFetchAgentSkills\(agentId\)/);
 
-		await app.close();
+	await app.close();
 	});
+
+test("GET /playground/agents renders expanded skills as two-column cards with storage metadata", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents",
+	});
+	assert.equal(response.statusCode, 200);
+	const body = response.body;
+
+	assert.match(body, /\.ag-skill-list\s*\{[\s\S]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/);
+	assert.match(body, /@media \(max-width: 1024px\)\s*\{[\s\S]*\.ag-skill-list\s*\{\s*grid-template-columns:\s*1fr;/);
+	assert.match(body, /function compactSkillPath\(path\)/);
+	assert.match(body, /function getSkillStorageMeta\(skill\)/);
+	assert.match(body, /storageKind/);
+	assert.match(body, /storageRoot/);
+	assert.match(body, /ag-skill-location--system/);
+	assert.match(body, /ag-skill-location--agent/);
+	assert.doesNotMatch(body, /ag-skill-state/);
+	assert.match(body, /Agent 安装/);
+	assert.match(body, /系统技能/);
+	await app.close();
+});
 
 	test("GET /playground/agents skill toggle still calls PATCH when expanded", async () => {
 		const app = await buildServer({
@@ -3378,22 +3403,21 @@ test("GET /playground uses touch-first mobile panels for library, tasks, conn, a
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.conversation-color-swatch\.color-default\s*\{[\s\S]*background:\s*#f4f7fb !important;/);
 	assert.match(response.body, /\.conversation-color-swatch\.color-sky\s*\{[\s\S]*background:\s*#dbeafe !important;/);
 	assert.match(response.body, /\.desktop-conversation-list \.mobile-conversation-item\s*\{[\s\S]*height:\s*58px;[\s\S]*background:\s*transparent;[\s\S]*opacity:\s*0\.74;/);
-	assert.match(response.body, /\.desktop-conversation-list \.mobile-conversation-meta span:last-child\s*\{[\s\S]*display:\s*none;/);
+	assert.doesNotMatch(response.body, /mobile-conversation-preview/);
+	assert.doesNotMatch(response.body, /metaCount/);
 	assert.match(response.body, /\.desktop-conversation-list \.conversation-item-menu-trigger\s*\{[\s\S]*opacity:\s*0;/);
 	assert.match(response.body, /\.desktop-conversation-list \.conversation-item-shell\[class\*="conversation-bg-"\] \.mobile-conversation-item\s*\{[\s\S]*background:\s*transparent;/);
-	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\s*\{[\s\S]*min-height:\s*92px;/);
-	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\s*\{[\s\S]*padding:\s*11px 46px 10px 14px;/);
+	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\s*\{[\s\S]*min-height:\s*72px;/);
+	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\s*\{[\s\S]*padding:\s*12px 46px 12px 14px;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\s*\{[\s\S]*border:\s*0;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\s*\{[\s\S]*border-radius:\s*8px;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\s*\{[\s\S]*background:\s*#0b0e19;/);
-	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\s*\{[\s\S]*grid-template-rows:\s*auto minmax\(0, 1fr\) auto;/);
+	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\s*\{[\s\S]*grid-template-rows:\s*auto auto;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\s*\{[\s\S]*line-height:\s*normal;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\.is-active\s*\{[\s\S]*background:\s*var\(--conversation-card-active-bg, #151a2b\);/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item:disabled\s*\{[\s\S]*opacity:\s*1;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\.is-active::before\s*\{/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-title\s*\{[\s\S]*line-height:\s*1\.35;/);
-	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-preview\s*\{[\s\S]*line-height:\s*1\.45;/);
-	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-preview\s*\{[\s\S]*-webkit-line-clamp:\s*2;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-meta\s*\{[\s\S]*line-height:\s*1\.4;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-meta span\s*\{[\s\S]*min-height:\s*20px;/);
 	assert.match(response.body, /menuButton\.textContent = "⋯";/);

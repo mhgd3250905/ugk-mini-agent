@@ -150,11 +150,6 @@ export function getPlaygroundThemeStyles(): string {
 			color: rgba(23, 32, 51, 0.82);
 		}
 
-		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-preview,
-		:root[data-theme="light"] .desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-preview {
-			color: rgba(75, 86, 110, 0.54);
-		}
-
 		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-meta,
 		:root[data-theme="light"] .desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-meta span {
 			color: rgba(75, 86, 110, 0.46);
@@ -162,10 +157,6 @@ export function getPlaygroundThemeStyles(): string {
 
 		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-item.is-active .mobile-conversation-title {
 			color: #172033;
-		}
-
-		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-item.is-active .mobile-conversation-preview {
-			color: rgba(75, 86, 110, 0.7);
 		}
 
 		:root[data-theme="light"] .desktop-rail-settings-menu {
@@ -302,8 +293,7 @@ export function getPlaygroundThemeStyles(): string {
 		:root[data-theme="light"] .status-row span,
 		:root[data-theme="light"] .message-meta,
 		:root[data-theme="light"] .assistant-status-summary,
-		:root[data-theme="light"] .mobile-conversation-meta,
-		:root[data-theme="light"] .mobile-conversation-preview {
+		:root[data-theme="light"] .mobile-conversation-meta {
 			color: rgba(75, 86, 110, 0.76);
 		}
 

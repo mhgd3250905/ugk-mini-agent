@@ -12,6 +12,35 @@
 
 ---
 
+## 2026-05-23 — Playground Agents skill card status dedupe
+
+- **主题**: 移除 `/playground/agents` 技能卡片里的重复启用状态 badge
+- **影响范围**: `src/ui/agents-page.ts`, `test/server.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - 技能卡片不再渲染 `.ag-skill-state` 和 `已启用 / 已关闭` 文案；启用状态只由左侧 `开 / 关` switch 表达
+  - 保留 `系统技能 / Agent 安装` 来源 badge 和压缩保存路径
+  - 测试增加反断言，避免重复状态 badge 回归
+
+## 2026-05-22 — Playground Agents skill card density and storage labels
+
+- **主题**: `/playground/agents` 技能列表改为双列卡片并展示保存来源
+- **影响范围**: `src/agent/agent-profile-catalog.ts`, `src/types/api.ts`, `src/ui/agents-page.ts`, `test/agent-profile-catalog.test.ts`, `test/server.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - `/v1/agents/:agentId/skills` 在保留原字段的基础上新增 `storageKind` 和 `storageRoot`，由 agent 的 allowed skill root 顺序区分系统技能与 Agent 安装技能
+  - Agents 页展开技能后，技能卡片在桌面宽度下使用两列布局，窄屏回退单列
+  - 每张技能卡片显示 `系统技能 / Agent 安装` 来源 badge 和压缩后的保存路径，完整路径保留在 hover title 中
+  - 补充深浅主题 badge 样式和对应测试断言
+
+## 2026-05-22 — Playground Chat conversation list copy density
+
+- **主题**: Chat 左侧会话列表移除第二行小字摘要和消息条数
+- **影响范围**: `src/ui/playground-conversations-controller.ts`, `src/ui/playground-styles.ts`, `src/ui/playground-assets.ts`, `src/ui/playground-theme-controller.ts`, `test/playground-conversations-controller.test.ts`, `test/server.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - 会话行渲染不再创建 `.mobile-conversation-preview`，也不再创建消息条数 pill；列表只显示标题摘要和时间 / 运行中状态
+  - 深色、浅色、桌面 rail 和移动抽屉里的 preview 专用样式同步删除，避免留下无效选择器误导后续维护
+  - 移动会话抽屉行结构收成两行，虚拟滚动移动 row pitch 从 `100px` 调整为 `80px` 并更新测试断言
+  - 文档同步记录新的 Chat 会话列表信息层级
+
 ## 2026-05-22 — Current handoff snapshot for stable playground baseline
 
 - **主题**: 更新新会话接手入口到 Playground performance 稳定基线

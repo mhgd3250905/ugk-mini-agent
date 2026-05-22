@@ -55,11 +55,11 @@ test("computeVirtualWindow: spacer heights match startIndex * rowHeight and (tot
 	assert.equal(vw.bottomSpacer, Math.max(0, (200 - vw.endIndex - 1) * 60), "bottomSpacer must equal remaining rows * rowHeight");
 });
 
-test("computeVirtualWindow: mobile row height (100px) produces correct spacer math", () => {
+test("computeVirtualWindow: mobile row height (80px) produces correct spacer math", () => {
 	const computeVirtualWindow = evalComputeVirtualWindow();
-	const vw = computeVirtualWindow(5000, 400, 100, 5, 100);
-	assert.equal(vw.topSpacer, vw.startIndex * 100, "mobile topSpacer must equal startIndex * 100");
-	assert.equal(vw.bottomSpacer, Math.max(0, (100 - vw.endIndex - 1) * 100), "mobile bottomSpacer must equal remaining rows * 100");
+	const vw = computeVirtualWindow(4000, 400, 80, 5, 100);
+	assert.equal(vw.topSpacer, vw.startIndex * 80, "mobile topSpacer must equal startIndex * 80");
+	assert.equal(vw.bottomSpacer, Math.max(0, (100 - vw.endIndex - 1) * 80), "mobile bottomSpacer must equal remaining rows * 80");
 });
 
 test("scheduleConversationVirtualScroll: two rapid calls must still produce at least one render", () => {
@@ -225,10 +225,10 @@ test("virtual list constants declare fixed row heights aligned with CSS", () => 
 
 	// Desktop: 58px item height + 2px gap = 60px
 	assert.match(script, /CONVERSATION_DESKTOP_ROW_HEIGHT\s*=\s*60/);
-	// Mobile: 92px item height from mobile asset override + 8px gap = 100px
-	assert.match(script, /CONVERSATION_MOBILE_ROW_HEIGHT\s*=\s*100/);
+	// Mobile: 72px item height from mobile asset override + 8px gap = 80px
+	assert.match(script, /CONVERSATION_MOBILE_ROW_HEIGHT\s*=\s*80/);
 	assert.match(styles, /\.mobile-conversation-list\s*\{[\s\S]*gap:\s*8px;/);
-	assert.match(styles, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\s*\{[\s\S]*min-height:\s*92px;/);
+	assert.match(styles, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\s*\{[\s\S]*min-height:\s*72px;/);
 	// Overscan: render a few extra rows above/below the viewport
 	assert.match(script, /CONVERSATION_VIRTUAL_OVERSCAN\s*=\s*5/);
 });
@@ -492,6 +492,17 @@ test("renderConversationListInto has no per-row addEventListener", () => {
 	assert.ok(fnBlock, "renderConversationListInto must be extractable");
 
 	assert.doesNotMatch(fnBlock, /addEventListener/, "renderConversationListInto must not contain any addEventListener calls — delegation handles all clicks");
+});
+
+test("renderConversationListInto keeps conversation rows to title and time only", () => {
+	const script = getPlaygroundConversationControllerScript();
+	const fnBlock = extractFunctionBlock(script, "renderConversationListInto");
+	assert.ok(fnBlock, "renderConversationListInto must be extractable");
+
+	assert.match(fnBlock, /mobile-conversation-title/, "row should still render the conversation title");
+	assert.match(fnBlock, /mobile-conversation-meta/, "row should still render the time metadata");
+	assert.doesNotMatch(fnBlock, /mobile-conversation-preview/, "row should not render the secondary preview line");
+	assert.doesNotMatch(fnBlock, /metaCount/, "row should not render a message count pill");
 });
 
 test("mobile shell event handlers wire delegation on both conversation list containers", () => {
