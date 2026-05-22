@@ -7,6 +7,7 @@ const RUN_STATUS_LABELS = { pending: "待执行", running: "执行中", succeede
 const RUN_REFRESH_DELAY_MS = 3000;
 const RUN_REFRESH_MAX_ATTEMPTS = 120;
 const RUN_HISTORY_PAGE_SIZE = 10;
+const REALTIME_REFRESH_COALESCE_MS = 500;
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -47,6 +48,10 @@ const state = {
   runDetailEventsNextBefore: {},
   runDetailFiles: {},
   sseSource: null,
+  realtimeRefreshTimer: null,
+  realtimeRefreshInFlight: false,
+  realtimeRefreshPending: false,
+  realtimeRefreshConnIds: {},
   unreadCountsByConnId: {},
   unreadLatestRunTimesByConnId: {},
   totalUnreadRuns: 0,
@@ -2377,14 +2382,84 @@ async function loadData() {
 
 // ── SSE ────────────────────────────────────────────────────────────────────
 
+function parseNotificationEvent(event) {
+  const rawData = event && typeof event.data === "string" ? event.data : "";
+  if (!rawData) return null;
+  try {
+    const parsed = JSON.parse(rawData);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function recordConnRealtimeRefresh(event) {
+  if (!event || event.source !== "conn") return false;
+  const connId = typeof event.sourceId === "string" ? event.sourceId.trim() : "";
+  if (!connId) return false;
+  state.realtimeRefreshConnIds[connId] = true;
+  return true;
+}
+
+function hasPendingConnRealtimeRefresh() {
+  return Object.keys(state.realtimeRefreshConnIds || {}).length > 0;
+}
+
+function consumeConnRealtimeRefreshSnapshot() {
+  const affectedConnIds = { ...(state.realtimeRefreshConnIds || {}) };
+  state.realtimeRefreshConnIds = {};
+  return affectedConnIds;
+}
+
+async function refreshSelectedRunHistoryAfterRealtime(affectedConnIds) {
+  const selectedId = state.selectedId;
+  if (!selectedId || !affectedConnIds[selectedId] || !hasRunHistoryCache(selectedId)) return;
+  await refreshRunsForConn(selectedId);
+}
+
+function scheduleConnRealtimeRefresh(event) {
+  if (event && !recordConnRealtimeRefresh(event)) return;
+  if (!hasPendingConnRealtimeRefresh()) return;
+  if (state.realtimeRefreshTimer) return;
+  state.realtimeRefreshTimer = setTimeout(() => {
+    state.realtimeRefreshTimer = null;
+    flushConnRealtimeRefresh();
+  }, REALTIME_REFRESH_COALESCE_MS);
+}
+
+async function flushConnRealtimeRefresh() {
+  if (state.realtimeRefreshInFlight) {
+    state.realtimeRefreshPending = true;
+    return;
+  }
+  const affectedConnIds = consumeConnRealtimeRefreshSnapshot();
+  if (Object.keys(affectedConnIds).length === 0) return;
+  state.realtimeRefreshInFlight = true;
+  try {
+    await refreshConnList();
+    await refreshSelectedRunHistoryAfterRealtime(affectedConnIds);
+  } catch (err) {
+    showToast(err instanceof Error ? err.message : "刷新后台任务失败", "error");
+  } finally {
+    state.realtimeRefreshInFlight = false;
+    if (state.realtimeRefreshPending || hasPendingConnRealtimeRefresh()) {
+      state.realtimeRefreshPending = false;
+      scheduleConnRealtimeRefresh();
+    }
+  }
+}
+
 function connectSSE() {
   if (state.sseSource) {
     try { state.sseSource.close(); } catch {}
   }
   try {
     const es = new EventSource("/v1/notifications/stream");
-    es.addEventListener("message", () => {
-      loadData();
+    es.addEventListener("message", (event) => {
+      const notification = parseNotificationEvent(event);
+      if (notification && notification.source === "conn") {
+        scheduleConnRealtimeRefresh(notification);
+      }
     });
     es.addEventListener("error", () => {
       // Auto-reconnect is handled by EventSource

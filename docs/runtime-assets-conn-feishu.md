@@ -408,6 +408,7 @@ GET /v1/local-file?path=...
 - `NotificationHub` 负责把事件扇出到 `GET /v1/notifications/stream` 的所有在线 SSE 订阅者；断线或无人在线时不会影响持久化结果。
 - 本地和生产 compose 都显式给 `ugk-pi-conn-worker` 注入 `NOTIFICATION_BROADCAST_URL=http://ugk-pi:3000/v1/internal/notifications/broadcast`，避免 worker 在容器里误把 `127.0.0.1` 打回自己。
 - 这条链路只负责“在线提醒”，不改变结果的真实落点；真实落点仍然以 conn 创建时固化的 `target` 为准，默认就是任务消息页。
+- `/playground/conn` 独立页消费这条 SSE 时会先解析 `source/sourceId/runId`；只有 `source=conn` 的事件触发页面刷新，并在 500ms 窗口内合并。默认只刷新 `GET /v1/conns`，仅当当前选中 conn 的 run history 已加载时，才额外补拉该 conn 的第一页 runs。
 - 关键入口：
   - [src/workers/conn-worker.ts](/E:/AII/ugk-pi/src/workers/conn-worker.ts)
   - [src/routes/notifications.ts](/E:/AII/ugk-pi/src/routes/notifications.ts)

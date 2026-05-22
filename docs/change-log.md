@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-22 — Playground Conn realtime refresh scope narrowing
+
+- **主题**: 收窄 `/playground/conn` 实时 notification 刷新范围并增加短窗口合并
+- **影响范围**: `src/ui/conn-page-js.ts`, `test/conn-page-ui.test.ts`, `docs/playground-current.md`, `docs/runtime-assets-conn-feishu.md`, `docs/change-log.md`
+- **变更**:
+  - SSE `message` handler 现在解析 `event.data`，仅对 `source === "conn"` 且带有效 `sourceId` 的广播调度后台任务刷新
+  - conn notification 进入 500ms 合并窗口，窗口内多条事件只触发一次实际刷新
+  - notification 默认只请求 `GET /v1/conns`，不再经过 `loadData()` 路径重拉 editor 支撑目录
+  - 当前选中 conn 的 run history 已加载时，受影响 conn 的 notification 会额外刷新该 conn 的第一页 runs；未加载 history 继续保持懒加载
+  - 测试覆盖 burst 合并、非 conn 事件忽略、notification 不触发支撑目录请求，以及已加载选中 history 的第一页刷新
+
 ## 2026-05-22 — Playground Conn read-all cache cleanup
 
 - **主题**: 清理 `/playground/conn` “全部已读”按钮里的旧运行历史刷新调用

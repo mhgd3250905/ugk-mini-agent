@@ -97,6 +97,12 @@ function createConnPageSelectElement(value = ""): ConnPageElement {
 function createConnPageContext(options?: {
 	fetchJson?: (url: string) => Promise<unknown>;
 	elements?: Record<string, ConnPageElement>;
+	EventSource?: new (url: string) => {
+		addEventListener: (event: string, handler: (event: { data?: string }) => unknown) => void;
+		close: () => void;
+	};
+	setTimeout?: (handler: () => void, timeout?: number) => unknown;
+	clearTimeout?: (id: unknown) => void;
 }) {
 	const script = getConnPageJs().replace(/\ninit\(\);\s*$/, "");
 	const elements = new Map<string, ConnPageElement>(Object.entries(options?.elements ?? {}));
@@ -117,8 +123,9 @@ function createConnPageContext(options?: {
 			execCommand: () => true,
 		},
 		navigator: {},
-		setTimeout,
-		clearTimeout,
+		EventSource: options?.EventSource,
+		setTimeout: options?.setTimeout ?? setTimeout,
+		clearTimeout: options?.clearTimeout ?? clearTimeout,
 		applyTheme: () => undefined,
 		readStoredTheme: () => "dark",
 		toggleTheme: () => undefined,
@@ -145,6 +152,60 @@ function createConnPageContext(options?: {
 	});
 	vm.runInContext(script, context);
 	return { context, elements };
+}
+
+function createFakeTimerQueue() {
+	let nextId = 1;
+	const pending = new Map<number, { handler: () => void; timeout?: number }>();
+	return {
+		setTimeout: (handler: () => void, timeout?: number) => {
+			const id = nextId++;
+			pending.set(id, { handler, timeout });
+			return id;
+		},
+		clearTimeout: (id: unknown) => {
+			if (typeof id === "number") pending.delete(id);
+		},
+		pendingTimeouts: () => Array.from(pending.values()).map((entry) => entry.timeout),
+		runNext: async () => {
+			const [id, entry] = pending.entries().next().value ?? [];
+			if (!id || !entry) return false;
+			pending.delete(id);
+			entry.handler();
+			for (let index = 0; index < 8; index += 1) {
+				await Promise.resolve();
+			}
+			return true;
+		},
+	};
+}
+
+function createMockEventSource() {
+	const listeners = new Map<string, (event: { data?: string }) => unknown>();
+	const openedUrls: string[] = [];
+	let closeCount = 0;
+	const EventSource = class {
+		constructor(url: string) {
+			openedUrls.push(url);
+		}
+		addEventListener(event: string, handler: (event: { data?: string }) => unknown) {
+			listeners.set(event, handler);
+		}
+		close() {
+			closeCount += 1;
+		}
+	};
+	return {
+		EventSource,
+		openedUrls,
+		get closeCount() {
+			return closeCount;
+		},
+		emitMessage: (payload: unknown) => {
+			const data = typeof payload === "string" ? payload : JSON.stringify(payload);
+			listeners.get("message")?.({ data });
+		},
+	};
 }
 
 async function runConnPageExpression<T>(context: vm.Context, expression: string): Promise<T> {
@@ -214,6 +275,120 @@ test("standalone conn first data load fetches only the conn list", async () => {
 	);
 
 	assert.deepEqual(calls, ["/v1/conns"]);
+});
+
+test("standalone conn coalesces conn notifications into one narrow refresh", async () => {
+	const timers = createFakeTimerQueue();
+	const sse = createMockEventSource();
+	const { context } = createConnPageContext({
+		EventSource: sse.EventSource,
+		setTimeout: timers.setTimeout,
+		clearTimeout: timers.clearTimeout,
+	});
+
+	await runConnPageExpression(context, "connectSSE(); return null;");
+	sse.emitMessage({
+		activityId: "activity-1",
+		source: "conn",
+		sourceId: "conn-1",
+		runId: "run-1",
+		kind: "conn_result",
+		title: "done",
+		createdAt: "2026-05-22T01:00:00.000Z",
+	});
+	sse.emitMessage({
+		activityId: "activity-2",
+		source: "conn",
+		sourceId: "conn-1",
+		runId: "run-2",
+		kind: "conn_result",
+		title: "done again",
+		createdAt: "2026-05-22T01:00:01.000Z",
+	});
+
+	assert.deepEqual((context as { calls: string[] }).calls, []);
+	assert.deepEqual(timers.pendingTimeouts(), [500]);
+	await timers.runNext();
+
+	assert.deepEqual((context as { calls: string[] }).calls, ["/v1/conns"]);
+});
+
+test("standalone conn ignores non-conn notifications without a full reload", async () => {
+	const timers = createFakeTimerQueue();
+	const sse = createMockEventSource();
+	const { context } = createConnPageContext({
+		EventSource: sse.EventSource,
+		setTimeout: timers.setTimeout,
+		clearTimeout: timers.clearTimeout,
+	});
+
+	await runConnPageExpression(context, "connectSSE(); return null;");
+	sse.emitMessage({
+		notificationId: "notice-1",
+		source: "chat",
+		sourceId: "conversation-1",
+		kind: "message",
+		title: "ignore me",
+		createdAt: "2026-05-22T01:00:00.000Z",
+	});
+	await timers.runNext();
+
+	assert.deepEqual((context as { calls: string[] }).calls, []);
+});
+
+test("standalone conn notification refreshes loaded selected run history first page only", async () => {
+	const timers = createFakeTimerQueue();
+	const sse = createMockEventSource();
+	const { context } = createConnPageContext({
+		EventSource: sse.EventSource,
+		setTimeout: timers.setTimeout,
+		clearTimeout: timers.clearTimeout,
+	});
+
+	const result = await runConnPageExpression<{ calls: string[]; runIds: string[] }>(
+		context,
+		`
+			renderAll = () => undefined;
+			renderDetail = () => undefined;
+			renderList = () => undefined;
+			state.conns = [{ connId: "conn-1", title: "Daily report", status: "active" }];
+			state.selectedId = "conn-1";
+			state.runsByConnId["conn-1"] = [{
+				runId: "run-old",
+				connId: "conn-1",
+				status: "running",
+				createdAt: "2026-05-22T01:00:00.000Z",
+				updatedAt: "2026-05-22T01:00:00.000Z",
+			}];
+			state.runHistoryStateByConnId["conn-1"] = { status: "loaded", error: "" };
+			connectSSE();
+		`,
+	);
+	assert.equal(result, undefined);
+
+	sse.emitMessage({
+		activityId: "activity-1",
+		source: "conn",
+		sourceId: "conn-1",
+		runId: "run-new",
+		kind: "conn_result",
+		title: "done",
+		createdAt: "2026-05-22T01:00:00.000Z",
+	});
+	await timers.runNext();
+
+	const after = await runConnPageExpression<{ calls: string[]; runIds: string[] }>(
+		context,
+		`
+			return {
+				calls,
+				runIds: state.runsByConnId["conn-1"].map(run => run.runId),
+			};
+		`,
+	);
+
+	assert.deepEqual(after.calls, ["/v1/conns", "/v1/conns/conn-1/runs?limit=10"]);
+	assert.deepEqual(Array.from(after.runIds), []);
 });
 
 test("standalone conn init auto-selects first conn without fetching run history", async () => {

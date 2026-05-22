@@ -2,6 +2,15 @@
 
 更新时间：`2026-05-22`
 
+## 2026-05-22 Conn 独立页 realtime refresh 收窄
+
+- `/playground/conn` 订阅 `GET /v1/notifications/stream` 后会解析 SSE `event.data`；只有 `source === "conn"` 且带有效 `sourceId` 的广播才触发后台任务刷新。
+- conn 广播进入 500ms 合并窗口；窗口内多条 notification 只触发一次实际刷新，避免后台 run 完成 burst 把页面打成重复请求风暴。
+- notification 路径默认只刷新 `GET /v1/conns`，不会重拉 editor 支撑目录 `GET /v1/agents`、`GET /v1/browsers` 或 `GET /v1/model-config`。
+- 如果被影响的是当前选中任务，且该任务 run history 已经加载过，notification 刷新后只补拉当前选中任务的第一页 `GET /v1/conns/:connId/runs?limit=10`；未加载的 run history 继续保持懒加载。
+- 非 conn notification 不会触发 `/playground/conn` 全量刷新；手动刷新按钮仍走显式用户刷新路径。
+- 相关源码：`src/ui/conn-page-js.ts`、`test/conn-page-ui.test.ts`
+
 ## 2026-05-22 Conn 独立页 run history 延迟加载与分页
 
 - `/playground/conn` 首屏读取 `GET /v1/conns` 后可以自动选中第一条后台任务，但不会再因为自动选中而请求 `GET /v1/conns/:connId/runs`。
