@@ -830,11 +830,9 @@ function getAgentsPageJs(): string {
 		}
 
 		async function apiFetchAgentSkills(agentId) {
-			try {
-				var data = await fetchJson("/v1/agents/" + agentId + "/skills");
-				state.skillsByAgentId[agentId] = Array.isArray(data.skills) ? data.skills : [];
-				state.skillsLoadedByAgentId[agentId] = true;
-			} catch {}
+			var data = await fetchJson("/v1/agents/" + agentId + "/skills");
+			state.skillsByAgentId[agentId] = Array.isArray(data.skills) ? data.skills : [];
+			state.skillsLoadedByAgentId[agentId] = true;
 		}
 
 		async function apiArchiveAgent(agentId) {
@@ -1236,14 +1234,18 @@ function getAgentsPageJs(): string {
 			if (!agentId || state.selectedId !== agentId) return;
 			var container = document.getElementById("ag-skill-list");
 			if (!container) return;
-			var skills = state.skillsByAgentId[agentId] || [];
+			var skills = state.skillsByAgentId[agentId];
 			var agent = state.agents.find(function(a) { return a.agentId === agentId; });
 
 			if (state.skillsLoadingAgentId === agentId) {
 				container.innerHTML = '<div class="ag-empty ag-empty-sm" style="padding:24px"><p>加载中...</p></div>';
 				return;
 			}
-			if (!skills || skills.length === 0) {
+			if (!state.skillsLoadedByAgentId[agentId] && !Array.isArray(skills)) {
+				container.innerHTML = '<div class="ag-empty ag-empty-sm"><div class="ag-empty-icon">' + SVG_STAR + '</div><h3>技能加载失败</h3><p>请重试。</p></div>';
+				return;
+			}
+			if (!Array.isArray(skills) || skills.length === 0) {
 				container.innerHTML = '<div class="ag-empty ag-empty-sm"><div class="ag-empty-icon">' + SVG_STAR + '</div><h3>暂无 scoped 技能</h3><p>通过上方下拉选择技能并复制安装</p></div>';
 				return;
 			}
@@ -1269,7 +1271,7 @@ function getAgentsPageJs(): string {
 						var touchedAgentId = agent.agentId;
 						toggle.disabled = true;
 						apiToggleSkill(touchedAgentId, skillName, !isEnabled).then(function() {
-							apiFetchAgentSkills(touchedAgentId).then(function() {
+							return apiFetchAgentSkills(touchedAgentId).then(function() {
 								if (state.selectedId === touchedAgentId) {
 									renderSkillsList(touchedAgentId);
 									renderStats();
@@ -1456,9 +1458,7 @@ function getAgentsPageJs(): string {
 			renderSkillsList(agentId);
 			try {
 				await apiFetchAgentSkills(agentId);
-				if (state.skillsLoadingAgentId === agentId) state.skillsLoadingAgentId = "";
 				if (state.selectedId === agentId) {
-					renderSkillsList(agentId);
 					renderStats();
 					var agent = state.agents.find(function(a) { return a.agentId === agentId; });
 					if (agent) renderDetailMiniStats(agent, getStatusBadge(agent));
@@ -1467,6 +1467,7 @@ function getAgentsPageJs(): string {
 			} catch (e) { showToast(e.message || "刷新失败", "danger"); }
 			finally {
 				if (state.skillsLoadingAgentId === agentId) state.skillsLoadingAgentId = "";
+				if (state.selectedId === agentId) renderSkillsList(agentId);
 				if (btn && state.selectedId === agentId) { btn.disabled = false; btn.textContent = "刷新"; }
 			}
 		}
@@ -1492,9 +1493,12 @@ function getAgentsPageJs(): string {
 				renderStats();
 				var latestAgent = state.agents.find(function(a) { return a.agentId === agentId; });
 				if (latestAgent) renderDetailMiniStats(latestAgent, getStatusBadge(latestAgent));
-			}).catch(function() {
+			}).catch(function(e) {
 				if (state.skillsLoadingAgentId === agentId) state.skillsLoadingAgentId = "";
-				if (state.selectedId === agentId) renderSkillsList(agentId);
+				if (state.selectedId === agentId) {
+					renderSkillsList(agentId);
+					showToast(e.message || "技能加载失败，请重试", "danger");
+				}
 			});
 		}
 

@@ -26,6 +26,7 @@
 - skills loading、展开、手动刷新、install/remove/toggle 只更新 skills region 和必要统计；局部刷新会保留 detail body 的滚动位置，避免技能加载时把用户滚回顶部。
 - installable skill 下拉使用 gallery signature 判断是否需要重建 options；gallery 未变化时不会重复 `populateSkillSelect()` 重建下拉。
 - 异步 skills load/mutation 在 await/then 前捕获操作开始时的 `agentId`，渲染前检查 `state.selectedId` 仍然匹配，避免旧 Agent 结果画到新面板。
+- scoped skills 拉取失败不会标记 loaded，也不会把未加载状态渲染成空列表；展开失败会显示“技能加载失败，请重试”，手动刷新失败会清掉 loading 并允许再次刷新。
 - installable skill 下拉继续读取 main skills gallery，包含主 Agent 已关闭的 disabled entries，并保留”主 Agent 已关闭”提示。
 - 相关源码：`src/ui/agents-page.ts`
 

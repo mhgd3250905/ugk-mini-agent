@@ -12,6 +12,16 @@
 
 ---
 
+## 2026-05-22 — Playground Agents skill fetch failure handling
+
+- **主题**: `/playground/agents` scoped skills 拉取失败时不再被吞成成功或空列表
+- **影响范围**: `src/ui/agents-page.ts`, `test/server.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - `apiFetchAgentSkills()` 不再空 `catch` 吞掉 `fetchJson` 失败；调用侧可以进入自己的失败分支并提示用户
+  - skills 展开失败时保留 `skillsLoadedByAgentId[agentId] = false`，skills region 显示“技能加载失败，请重试”，不再误显示“暂无 scoped 技能”
+  - 手动刷新失败后会清除 `skillsLoadingAgentId` 并重画 skills region，避免按钮恢复但列表仍卡在“加载中”
+  - toggle 后刷新 skills 的 Promise 会返回到外层链路，刷新失败会进入既有失败提示分支，不产生未捕获 rejection
+
 ## 2026-05-22 — Playground Agents stable detail section rendering
 
 - **主题**: `/playground/agents` selected Agent 详情区拆成稳定 shell 与局部子区域更新，降低 Agent 切换和 skills 操作时的整块 DOM 重建

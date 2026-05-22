@@ -1331,7 +1331,7 @@ test("GET /playground/agents declares skillsLoadedByAgentId for per-agent cache 
 	await app.close();
 });
 
-test("GET /playground/agents apiFetchAgentSkills marks loaded only on success", async () => {
+test("GET /playground/agents apiFetchAgentSkills propagates failures and marks loaded only on success", async () => {
 	const app = await buildServer({
 		agentService: createAgentServiceStub(),
 	});
@@ -1348,16 +1348,13 @@ test("GET /playground/agents apiFetchAgentSkills marks loaded only on success", 
 	assert.ok(fetchEnd > fetchStart, "apiFetchAgentSkills region end not found");
 	const fetchRegion = body.slice(fetchStart, fetchEnd);
 
-	const tryIdx = fetchRegion.indexOf("try {");
-	const catchIdx = fetchRegion.indexOf("} catch {");
+	const fetchJsonIdx = fetchRegion.indexOf("fetchJson(");
 	const loadedIdx = fetchRegion.indexOf("skillsLoadedByAgentId[agentId]");
-	assert.ok(tryIdx >= 0, "try block not found");
-	assert.ok(catchIdx > tryIdx, "catch block not found");
-	assert.ok(loadedIdx > tryIdx && loadedIdx < catchIdx,
-		"skillsLoadedByAgentId[agentId] must be inside the try block, before catch");
-	const catchRegion = fetchRegion.slice(catchIdx);
-	assert.doesNotMatch(catchRegion, /skillsLoadedByAgentId/);
-	assert.doesNotMatch(catchRegion, /skillsByAgentId\[agentId\]/);
+	assert.ok(fetchJsonIdx >= 0, "fetchJson call not found");
+	assert.ok(loadedIdx > fetchJsonIdx,
+		"skillsLoadedByAgentId[agentId] must be set after a successful fetchJson call");
+	assert.doesNotMatch(fetchRegion, /catch\s*\{\s*\}/);
+	assert.doesNotMatch(fetchRegion, /catch\s*\([^)]*\)\s*\{\s*\}/);
 	await app.close();
 });
 
@@ -1434,6 +1431,7 @@ test("GET /playground/agents toggle only refreshes affected agent cache", async 
 
 	assert.match(renderSkillsRegion, /var touchedAgentId = agent\.agentId/);
 	assert.match(renderSkillsRegion, /apiFetchAgentSkills\(touchedAgentId\)/);
+	assert.match(renderSkillsRegion, /return apiFetchAgentSkills\(touchedAgentId\)/);
 	assert.match(renderSkillsRegion, /state\.selectedId === touchedAgentId/);
 	assert.doesNotMatch(renderSkillsRegion, /skillsLoadedByAgentId\s*=\s*\{\}/);
 	assert.doesNotMatch(renderSkillsRegion, /skillsByAgentId\s*=\s*\{\}/);
@@ -1716,8 +1714,34 @@ test("GET /playground/agents updates skills loading and mutation through local r
 	assert.match(refreshRegion, /state\.selectedId === agentId/);
 	assert.match(refreshRegion, /renderSkillsList\(agentId\)/);
 	assert.match(refreshRegion, /renderDetailMiniStats\(agent,\s*getStatusBadge\(agent\)\)/);
+	assert.match(refreshRegion, /finally[\s\S]*state\.skillsLoadingAgentId === agentId[\s\S]*renderSkillsList\(agentId\)/);
 	assert.doesNotMatch(refreshRegion, /renderDetailBody\(\)/);
 
+	await app.close();
+});
+
+test("GET /playground/agents shows a retryable skills error instead of an empty list when loading fails", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents",
+	});
+	assert.equal(response.statusCode, 200);
+	const body = response.body;
+
+	const renderSkillsStart = body.indexOf("function renderSkillsList(");
+	const renderSkillsEnd = body.indexOf("function getGallerySkillSignature(", renderSkillsStart);
+	assert.ok(renderSkillsStart >= 0, "renderSkillsList function not found");
+	assert.ok(renderSkillsEnd > renderSkillsStart, "renderSkillsList region end not found");
+	const renderSkillsRegion = body.slice(renderSkillsStart, renderSkillsEnd);
+	const notLoadedIdx = renderSkillsRegion.indexOf("!state.skillsLoadedByAgentId[agentId]");
+	const emptyIdx = renderSkillsRegion.indexOf("暂无 scoped 技能");
+	assert.ok(notLoadedIdx >= 0, "not-loaded skills branch not found");
+	assert.ok(emptyIdx > notLoadedIdx, "not-loaded branch must run before the empty-list branch");
+	assert.match(renderSkillsRegion, /技能加载失败/);
+	assert.match(renderSkillsRegion, /请重试/);
 	await app.close();
 });
 
