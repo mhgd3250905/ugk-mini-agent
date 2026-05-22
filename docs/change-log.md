@@ -12,6 +12,15 @@
 
 ---
 
+## 2026-05-23 — Team plan detail preset team controls
+
+- **主题**: 在 `/playground/team` 计划详情中展示并管理预设团队
+- **影响范围**: `src/ui/team-page.ts`, `test/team-page-ui.test.ts`, `test/server.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - 计划详情页新增预设团队区域，展示当前计划绑定团队及执行、验收、复盘、汇总、任务拆分角色
+  - 详情页可直接切换计划的默认团队，复用现有 `PATCH /v1/team/plans/:planId/default-team` 接口
+  - “编辑团队”复用现有预设团队弹窗，保存后同步刷新计划详情中的团队信息
+
 ## 2026-05-23 — Playground standalone workbench same-tab navigation
 
 - **主题**: 将 Agent、后台任务、Team Runtime 独立工作台入口收口为当前标签跳转

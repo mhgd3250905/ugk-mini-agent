@@ -197,6 +197,16 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 .run-actions button { font-size: 12px; padding: 2px 8px; }
 #plan-detail .plan-detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 #plan-detail .plan-detail-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.plan-team-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
+.plan-team-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 15px; font-weight: 600; }
+.plan-team-meta { margin-top: 2px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.plan-team-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.plan-team-select { min-width: 220px; max-width: 360px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 13px; }
+.plan-team-roles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.plan-team-role { border: 1px solid var(--border); border-radius: 6px; background: var(--bg); padding: 8px 10px; min-width: 0; }
+.plan-team-role-label { display: block; color: var(--muted); font-size: 11px; margin-bottom: 2px; }
+.plan-team-role-value { display: block; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-team-empty { color: var(--muted); font-size: 13px; padding: 10px 0; }
 
 /* Mindmap view toggle */
 .mindmap-view-toggle { display: flex; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
@@ -282,6 +292,10 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 	.plan-summary-text { font-size: 12px; }
 	.plan-dashboard-grid { grid-template-columns: 1fr; }
 	#plan-detail { padding: 8px; }
+	.plan-team-head { flex-direction: column; align-items: stretch; }
+	.plan-team-controls { justify-content: flex-start; }
+	.plan-team-select { width: 100%; max-width: 100%; }
+	.plan-team-roles { grid-template-columns: 1fr; }
 	.team-mindmap { overflow-x: hidden; }
 	.mindmap-children::before, .mindmap-children > .mindmap-task-node::before { display: none; }
 	.mindmap-root-node, .mindmap-task-node { font-size: 12px; padding: 4px 8px; border-radius: 4px; }
@@ -721,6 +735,136 @@ function profileName(id) {
 	return a ? (a.name || a.agentId) : id;
 }
 
+function activeTeamUnits() {
+	return (_latestTeams || []).filter(function(t) { return t && !t.archived; });
+}
+
+function findTeamUnitById(teamUnitId) {
+	if (!teamUnitId) return null;
+	for (var i = 0; i < _latestTeams.length; i++) {
+		if (_latestTeams[i] && _latestTeams[i].teamUnitId === teamUnitId) return _latestTeams[i];
+	}
+	return null;
+}
+
+function renderTeamUnitOptions(selectedId) {
+	var active = activeTeamUnits();
+	var html = '';
+	var hasSelected = false;
+	for (var i = 0; i < active.length; i++) {
+		var t = active[i];
+		var selected = t.teamUnitId === selectedId;
+		if (selected) hasSelected = true;
+		html += '<option value="' + escapeHtml(t.teamUnitId) + '"' + (selected ? ' selected' : '') + '>' + escapeHtml(t.title || t.teamUnitId) + '</option>';
+	}
+	if (selectedId && !hasSelected) {
+		var selectedTeam = findTeamUnitById(selectedId);
+		var label = selectedTeam ? (selectedTeam.title || selectedTeam.teamUnitId) + (selectedTeam.archived ? '（已归档）' : '') : selectedId + '（不可用）';
+		html += '<option value="' + escapeHtml(selectedId) + '" selected>' + escapeHtml(label) + '</option>';
+	}
+	return html;
+}
+
+function renderPlanTeamRole(label, value) {
+	var text = value || '未配置';
+	return '<div class="plan-team-role"><span class="plan-team-role-label">' + escapeHtml(label) + '</span><span class="plan-team-role-value" title="' + escapeHtml(text) + '">' + escapeHtml(text) + '</span></div>';
+}
+
+function renderPlanTeamPanel(plan) {
+	var safePlan = plan || {};
+	var teamId = safePlan.defaultTeamUnitId || '';
+	var team = findTeamUnitById(teamId);
+	var hasChoices = activeTeamUnits().length > 0 || !!teamId;
+	var html = '<div class="card plan-team-panel" style="margin-top:12px">';
+	html += '<div class="plan-team-head"><div>';
+	html += '<div class="plan-team-title">预设团队' + (team && team.archived ? ' <span class="badge badge-muted">已归档</span>' : '') + '</div>';
+	if (team) {
+		html += '<div class="plan-team-meta">' + escapeHtml(team.description || team.teamUnitId) + '</div>';
+	} else if (teamId) {
+		html += '<div class="plan-team-meta">当前计划绑定 ' + escapeHtml(teamId) + '，团队信息暂未加载或已不可用。</div>';
+	} else {
+		html += '<div class="plan-team-meta">当前计划尚未绑定预设团队。</div>';
+	}
+	html += '</div><div class="plan-team-controls">';
+	if (hasChoices) {
+		html += '<select id="plan-detail-team-select" class="plan-team-select" onchange="changePlanDetailTeam(' + jsArg(safePlan.planId) + ', this.value)">' + renderTeamUnitOptions(teamId) + '</select>';
+	}
+	if (team) {
+		html += '<button class="btn btn-sm" style="background:var(--border);color:var(--text)" onclick="editPlanDetailTeam(' + jsArg(team.teamUnitId) + ')">编辑团队</button>';
+	} else {
+		html += '<button class="btn btn-sm btn-primary" onclick="openTeamUnitModal()">新建团队</button>';
+	}
+	html += '</div></div>';
+	if (team) {
+		html += '<div class="plan-team-roles">';
+		html += renderPlanTeamRole('执行 Agent', profileName(team.workerProfileId));
+		html += renderPlanTeamRole('验收 Agent', profileName(team.checkerProfileId));
+		html += renderPlanTeamRole('复盘 Agent', profileName(team.watcherProfileId));
+		html += renderPlanTeamRole('汇总 Agent', profileName(team.finalizerProfileId));
+		html += renderPlanTeamRole('任务拆分 Agent', profileName(team.decomposerProfileId || team.workerProfileId));
+		html += '</div>';
+	} else {
+		html += '<div class="plan-team-empty">先选择或创建一个预设团队，运行计划时才知道该由哪些 Agent 分工执行。</div>';
+	}
+	html += '</div>';
+	return html;
+}
+
+function setPlanDetailTeamBusy(busy) {
+	var select = $('plan-detail-team-select');
+	if (select) select.disabled = !!busy;
+}
+
+function renderSelectedPlanDetail() {
+	if (!_selectedPlanId || !$('plan-detail') || $('plan-detail').style.display === 'none') return;
+	var plan = findLatestPlanById(_selectedPlanId);
+	if (!plan) return;
+	var runs = runsForPlan(_selectedPlanId, _latestRuns);
+	$('plan-detail-content').innerHTML = renderPlanDetailContent(plan, runs);
+	$('plan-detail-actions').innerHTML = renderPlanDetailActions(plan);
+}
+
+async function changePlanDetailTeam(planId, teamUnitId) {
+	if (!planId || !teamUnitId) return;
+	var current = findLatestPlanById(planId);
+	if (current && current.defaultTeamUnitId === teamUnitId) return;
+	setPlanDetailTeamBusy(true);
+	try {
+		var plan = await api('/plans/' + pathSegment(planId) + '/default-team', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ defaultTeamUnitId: teamUnitId })
+		});
+		if (plan && plan.planId) {
+			var replaced = false;
+			for (var i = 0; i < _latestPlans.length; i++) {
+				if (_latestPlans[i] && _latestPlans[i].planId === plan.planId) {
+					_latestPlans[i] = plan;
+					replaced = true;
+					break;
+				}
+			}
+			if (!replaced) _latestPlans.push(plan);
+			_planCache[plan.planId] = plan;
+		} else if (current) {
+			current.defaultTeamUnitId = teamUnitId;
+		}
+		showSuccess('已切换预设团队');
+		renderSelectedPlanDetail();
+	} catch (e) {
+		showError(e.message);
+		renderSelectedPlanDetail();
+	} finally {
+		setPlanDetailTeamBusy(false);
+	}
+}
+
+function editPlanDetailTeam(teamUnitId) {
+	var team = findTeamUnitById(teamUnitId);
+	if (!team) { showError('团队未找到'); return; }
+	openTeamUnitModal(team);
+}
+
 async function api(path, opts) {
 	if (!opts) opts = {};
 	var res = await fetch(API + path, opts);
@@ -801,7 +945,8 @@ async function saveTeamUnit() {
 		}
 		closeTeamUnitModal();
 		showSuccess(editingId ? '已更新' : '已创建');
-		loadTeams();
+		await loadTeams();
+		renderSelectedPlanDetail();
 	} catch (e) { showError(e.message); }
 }
 
@@ -1001,11 +1146,14 @@ async function saveTeamUnit() {
 				var plan = _latestPlans.find(function(p) { return p.planId === planId; });
 				if (!plan) { showError('Plan \u672a\u627e\u5230'); return; }
 				_selectedPlanId = planId;
-				var runs = runsForPlan(planId, _latestRuns);
 				$('plans-list').style.display = 'none';
 				$('plan-detail').style.display = '';
-				$('plan-detail-content').innerHTML = renderPlanDetailContent(plan, runs);
-				$('plan-detail-actions').innerHTML = renderPlanDetailActions(plan);
+				renderSelectedPlanDetail();
+				if (!_latestTeams.length) {
+					loadTeams().then(function() {
+						if (_selectedPlanId === planId) renderSelectedPlanDetail();
+					}).catch(function() {});
+				}
 			}
 
 			function closePlanDetail() {
@@ -1031,6 +1179,7 @@ async function saveTeamUnit() {
 				if (goalText) html += '<div class="plan-summary-row" style="margin-bottom:8px"><span class="plan-summary-label">\u76ee\u6807</span><span style="overflow-wrap:break-word">' + escapeHtml(goalText) + '</span></div>';
 				if (outputText) html += '<div class="plan-summary-row" style="margin-bottom:8px"><span class="plan-summary-label">\u8f93\u51fa\u5951\u7ea6</span><span style="overflow-wrap:break-word">' + escapeHtml(outputText) + '</span></div>';
 				html += '</div>';
+				html += renderPlanTeamPanel(safePlan);
 				html += '<div class="card" style="margin-top:12px">';
 				html += '<h3 style="font-size:15px;margin-bottom:8px">\u4efb\u52a1\u7ed3\u6784</h3>';
 				if (dynamic) {
@@ -1206,7 +1355,7 @@ async function loadTeams() {
 		try {
 			var teams = await api('/team-units');
 			_latestTeams = teams; updateSummary(_latestPlans, teams, _latestRuns);
-			if (!teams.length) { el.innerHTML = '<div class="empty">暂无预设团队。<span class="detail-toggle" onclick="openTeamUnitModal()">新建团队</span> 开始。</div>'; return; }
+			if (!teams.length) { el.innerHTML = '<div class="empty">暂无预设团队。<span class="detail-toggle" onclick="openTeamUnitModal()">新建团队</span> 开始。</div>'; renderSelectedPlanDetail(); return; }
 			var active = teams.filter(function(t) { return !t.archived; });
 			var archived = teams.filter(function(t) { return t.archived; });
 			function renderTeamCard(t, showActions) {
@@ -1226,6 +1375,7 @@ async function loadTeams() {
 			if (archived.length) html += '<details style="margin-top:16px"><summary style="cursor:pointer;color:var(--muted);font-size:13px">已归档（' + archived.length + '）</summary>' +
 				archived.map(function(t) { return renderTeamCard(t, false); }).join('') + '</details>';
 			el.innerHTML = html;
+			renderSelectedPlanDetail();
 		} catch (e) {
 			el.innerHTML = '<div class="empty" style="color:var(--fail)">加载失败：' + escapeHtml(e.message) + ' <span class="detail-toggle" onclick="loadTeams()">重试</span></div>';
 		}

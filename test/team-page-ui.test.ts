@@ -1807,7 +1807,29 @@ test("P19-T3: plan detail shows goal and output contract", () => {
 
 test("P19-T3: plan detail run list is scoped by planId", () => {
 	const script = extractScript();
-	assert.match(script, /openPlanDetail[\s\S]*?runsForPlan\(planId/);
+	assert.match(script, /renderSelectedPlanDetail[\s\S]*?runsForPlan\(_selectedPlanId/);
+});
+
+test("P19-T3: plan detail shows preset team panel and selector", () => {
+	const script = extractScript();
+	assert.match(script, /function renderPlanTeamPanel\(plan\)/);
+	assert.match(script, /renderPlanDetailContent[\s\S]*?renderPlanTeamPanel\(safePlan\)/);
+	assert.match(script, /plan-detail-team-select/);
+	assert.match(script, /预设团队/);
+});
+
+test("P19-T3: plan detail switches preset team through default-team API", () => {
+	const script = extractScript();
+	assert.match(script, /async function changePlanDetailTeam\(planId,\s*teamUnitId\)/);
+	assert.match(script, /api\('\/plans\/' \+ pathSegment\(planId\) \+ '\/default-team'/);
+	assert.match(script, /body: JSON\.stringify\(\{ defaultTeamUnitId: teamUnitId \}\)/);
+});
+
+test("P19-T3: plan detail edits preset team with existing TeamUnit modal", () => {
+	const script = extractScript();
+	assert.match(script, /function editPlanDetailTeam\(teamUnitId\)/);
+	assert.match(script, /editPlanDetailTeam[\s\S]*?openTeamUnitModal\(team\)/);
+	assert.match(script, /saveTeamUnit[\s\S]*?await loadTeams\(\);[\s\S]*?renderSelectedPlanDetail\(\)/);
 });
 
 test("P19-T3: plan detail has back button with closePlanDetail", () => {

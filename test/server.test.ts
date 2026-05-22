@@ -7667,6 +7667,10 @@ test("GET /playground/team includes run detail mindmap view shell", async () => 
 	assert.equal(response.statusCode, 200);
 	assert.match(response.headers["content-type"] ?? "", /^text\/html/);
 	assert.match(response.body, /class="topbar-back" href="\/playground\?view=chat" title="返回对话" aria-label="返回对话"/);
+	assert.match(response.body, /function renderPlanTeamPanel\(plan\)/);
+	assert.match(response.body, /id="plan-detail-team-select"/);
+	assert.match(response.body, /\/plans\/' \+ pathSegment\(planId\) \+ '\/default-team/);
+	assert.match(response.body, /function editPlanDetailTeam\(teamUnitId\)/);
 
 	// View state for per-run mindmap/detail switch
 	assert.match(response.body, /_runDetailViewByRunId/);

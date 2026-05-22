@@ -2,6 +2,13 @@
 
 更新时间：`2026-05-23`
 
+## 2026-05-23 Team 计划详情团队预设
+
+- `/playground/team` 的计划详情页现在在任务结构和运行记录之前显示当前计划绑定的预设团队。
+- 预设团队区域展示执行、验收、复盘、汇总、任务拆分五个角色对应的 Agent；可直接切换到其他活跃团队。
+- 点击“编辑团队”会复用预设团队编辑弹窗；保存后计划详情里的团队信息会同步刷新。
+- 相关源码：`src/ui/team-page.ts`、`test/team-page-ui.test.ts`、`test/server.test.ts`
+
 ## 2026-05-23 Playground 独立工作台同标签跳转
 
 - `/playground` 顶部的当前 Agent 标签和“后台任务”入口不再调用 `window.open(..., "_blank")`，而是用当前标签跳转到 `/playground/agents` 与 `/playground/conn`。
