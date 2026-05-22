@@ -1175,6 +1175,42 @@ test("GET /playground/agents loads installable skills from main agent skills inc
 	await app.close();
 });
 
+test("GET /playground/agents reuses gallery skills for the initial main selection", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents",
+	});
+
+	assert.equal(response.statusCode, 200);
+	const body = response.body;
+	const galleryStart = body.indexOf("async function apiFetchGallerySkills()");
+	const galleryEnd = body.indexOf("async function apiCopySkill", galleryStart);
+	const selectStart = body.indexOf("function selectAgent(agentId)");
+	const selectEnd = body.indexOf("/* \u2500\u2500 Handlers", selectStart);
+	assert.ok(galleryStart >= 0, "apiFetchGallerySkills function not found");
+	assert.ok(galleryEnd > galleryStart, "apiFetchGallerySkills region not found");
+	assert.ok(selectStart >= 0, "selectAgent function not found");
+	assert.ok(selectEnd > selectStart, "selectAgent region not found");
+
+	const galleryRegion = body.slice(galleryStart, galleryEnd);
+	const selectRegion = body.slice(selectStart, selectEnd);
+
+	assert.match(galleryRegion, /fetchJson\("\/v1\/agents\/main\/skills"\)/);
+	assert.match(galleryRegion, /state\.skillsByAgentId\.main\s*=\s*state\.gallerySkills/);
+	assert.match(selectRegion, /var cachedSkills = state\.skillsByAgentId\[agentId\]/);
+	assert.match(selectRegion, /if \(cachedSkills\)/);
+	assert.match(selectRegion, /state\.skillsLoading = false;/);
+	assert.doesNotMatch(
+		selectRegion,
+		/state\.skillsLoading = true;[\s\S]*apiFetchAgentSkills\(agentId\)/,
+	);
+	await app.close();
+});
+
 test("GET /playground releases panel focus before hiding conn run details", async () => {
 	const app = await buildServer({
 		agentService: createAgentServiceStub(),

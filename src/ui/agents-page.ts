@@ -848,8 +848,10 @@ function getAgentsPageJs(): string {
 			try {
 				var data = await fetchJson("/v1/agents/main/skills");
 				state.gallerySkills = Array.isArray(data.skills) ? data.skills : [];
+				state.skillsByAgentId.main = state.gallerySkills;
 			} catch {
 				state.gallerySkills = [];
+				state.skillsByAgentId.main = state.gallerySkills;
 			}
 		}
 
@@ -1214,16 +1216,22 @@ function getAgentsPageJs(): string {
 		/* ── Selection ── */
 		function selectAgent(agentId) {
 			state.selectedId = agentId;
-			state.skillsLoading = true;
+			var cachedSkills = state.skillsByAgentId[agentId];
+			state.skillsLoading = !cachedSkills;
 			renderAgentList();
 			renderDetailBody();
-			apiFetchAgentSkills(agentId).then(function() {
+			if (cachedSkills) {
 				state.skillsLoading = false;
-				renderSkills();
 				renderStats();
-				var agent = state.agents.find(function(a) { return a.agentId === agentId; });
-				if (agent) renderDetailBody();
-			});
+			} else {
+				apiFetchAgentSkills(agentId).then(function() {
+					state.skillsLoading = false;
+					renderSkills();
+					renderStats();
+					var agent = state.agents.find(function(a) { return a.agentId === agentId; });
+					if (agent) renderDetailBody();
+				});
+			}
 			// Mobile: show detail, hide sidebar
 			var detail = document.querySelector(".ag-detail");
 			var sidebar = document.querySelector(".ag-sidebar");

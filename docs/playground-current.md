@@ -12,6 +12,13 @@
 - 行点击和菜单操作改为容器级事件委托：`handleConversationListClick()` 通过 `event.target.closest()` 分派选择会话、菜单触发、菜单操作和颜色选择，消除了每行 2 个 addEventListener。菜单按钮使用 `data-action` 属性，色板使用 `data-color` 属性。容器清空使用 `replaceChildren()` 替代 `innerHTML = ""`。按钮内容使用 `createElement` 直接构建替代 innerHTML 字符串 + querySelector。
 - 相关源码：`src/ui/playground-conversations-controller.ts`、`src/ui/playground-mobile-shell-controller.ts`
 
+## 2026-05-22 Agent 管理页首屏 skills 去重
+
+- `/playground/agents` 首屏仍会加载 `GET /v1/agents`、`GET /v1/agents/status` 和一次 `GET /v1/agents/main/skills`，其中 main skills 结果同时作为 installable skill gallery 和主 Agent scoped skills 缓存。
+- 首次自动选中 `main` 时复用 gallery 缓存，不再额外触发第二次 `GET /v1/agents/main/skills`。手动刷新技能仍会按当前选中 Agent 主动重拉对应 skills。
+- installable skill 下拉继续读取 main skills gallery，包含主 Agent 已关闭的 disabled entries，并保留“主 Agent 已关闭”提示。
+- 相关源码：`src/ui/agents-page.ts`
+
 ## 2026-05-21 Chat 对话界面质感优化
 
 - 主 `/playground` 对话界面新增聊天专用主题 token：消息表面、用户气泡、代码块、表格、composer 和悬浮滚动按钮均通过 `--chat-*` 变量管理。

@@ -12,6 +12,15 @@
 
 ---
 
+## 2026-05-22 — Playground Agents initial main skills dedupe
+
+- **主题**: 复用 `/playground/agents` 首屏 main skills gallery 结果，去掉自动选中主 Agent 时的重复 skills 请求
+- **影响范围**: `src/ui/agents-page.ts`, `test/server.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - `apiFetchGallerySkills()` 拉取 `GET /v1/agents/main/skills` 后同步写入 `state.skillsByAgentId.main`，让 installable skill gallery 和主 Agent scoped skills 共用同一份首屏结果
+  - `selectAgent()` 先检查 `skillsByAgentId[agentId]` 缓存，命中时直接渲染详情和统计，不再调用 `apiFetchAgentSkills(agentId)`
+  - 新增 `/playground/agents` 页面脚本断言，锁定 gallery 结果会写入 main 缓存，且 initial main selection 不走无条件二次 fetch
+
 ## 2026-05-22 — Playground conversation row event delegation
 
 - **主题**: 将会话列表逐行 addEventListener 替换为容器级事件委托，降低大量会话时的 DOM/交互成本
