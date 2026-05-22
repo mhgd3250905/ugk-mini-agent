@@ -176,6 +176,7 @@ This file provides the highest-level working rules for AI coding agents in this 
   - Docker Chrome sidecar 自动化走 `WEB_ACCESS_BROWSER_PUBLIC_BASE_URL`
 - 如果是要直接交付文件而不是浏览器预览，优先走 `send_file`
 - 如果页面还是旧 HTML：
+  - 先运行 `npm run docker:doctor`，确认 `127.0.0.1:3000` 没有被宿主机 `node.exe` 或其他非 Docker 进程单独监听；Windows 会优先命中更具体的 loopback 监听，导致浏览器打到影子服务而不是 Docker `ugk-pi`
   - 先重启 `ugk-pi`
   - 再确认 `http://127.0.0.1:3000/playground` 实际返回了本轮新增的 HTML / JS 标记
   - 再强刷浏览器

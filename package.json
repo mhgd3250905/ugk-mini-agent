@@ -19,6 +19,7 @@
     "docker:logs:nginx": "docker compose -f docker-compose.prod.yml logs -f nginx",
     "docker:status:prod": "docker compose -f docker-compose.prod.yml ps",
     "docker:health:prod": "node scripts/docker-health.mjs",
+    "docker:doctor": "node scripts/local-port-doctor.mjs",
     "docker:chrome:start": "node scripts/sidecar-chrome.mjs start",
     "docker:chrome:restart": "node scripts/sidecar-chrome.mjs restart",
     "docker:chrome:check": "node scripts/sidecar-chrome.mjs check",

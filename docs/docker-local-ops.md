@@ -150,15 +150,25 @@ curl http://127.0.0.1:3000/v1/debug/skills
 
 ## 端口 3000 排障
 
+先跑端口 doctor：
+
+```bash
+npm run docker:doctor
+```
+
+它会检查本机 `3000` 监听者，尤其是 Windows 上 `127.0.0.1:3000` 被宿主机 `node.exe` 单独监听、同时 Docker backend 也发布 `0.0.0.0:3000` 的情况。这个状态下浏览器访问 `http://127.0.0.1:3000` 会优先命中宿主机 Node，而不是 Docker 里的 `ugk-pi`。典型症状是容器 healthy、Docker 里 key 已经设置，但页面仍显示“密钥未配置”或旧 UI。别再先怀疑模型源，先把影子进程停掉。
+
 先看谁占端口：
 
 ```bash
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+netstat -ano | findstr ":3000"
 ```
 
 常见情况：
 
 - `ugk-pi-ugk-pi-1` 发布 `0.0.0.0:3000->3000/tcp`：本地入口应该直连 app。
+- `127.0.0.1:3000` 另有宿主机 `node.exe` 监听：它会遮住 Docker 发布的 `0.0.0.0:3000`，需要停掉宿主机 dev server，或用管理员 PowerShell `taskkill /PID <pid> /T /F`。
 - `ugk-pi-nginx-1` 发布 `0.0.0.0:3000->80/tcp`：确认它是不是当前 compose 的正式 nginx；本地大概率是 orphan。
 - `ugk-pi-ugk-pi-1` 只有 `3000/tcp` 没有宿主映射：容器创建时端口被占了，释放端口后 `--force-recreate ugk-pi`。
 
