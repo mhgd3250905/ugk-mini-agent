@@ -1851,6 +1851,21 @@ test("standalone conn page disables run-now while a run is pending or running", 
 	assert.match(response, /scheduleRunRefresh\(connId, 0\)/);
 });
 
+test("standalone conn page action handlers avoid broad renderAll refreshes", () => {
+	const response = renderConnPage();
+
+	for (const handlerName of ["handlePause", "handleResume", "handleDelete", "handleMarkAllRead"]) {
+		const match = new RegExp(`async function ${handlerName}\\([\\s\\S]*?\\n\\}`).exec(response);
+		assert.ok(match, `expected ${handlerName} to exist`);
+		assert.doesNotMatch(match[0], /renderAll\(\)/, `${handlerName} should use targeted rendering`);
+	}
+	assert.doesNotMatch(response, /loadRuns\(/);
+	assert.match(response, /function renderStats\(\)/);
+	assert.match(response, /function renderList\(\)/);
+	assert.match(response, /function renderDetail\(\)/);
+	assert.match(response, /function renderRunHistory\(/);
+});
+
 test("standalone conn page exposes a terminate action for pending or running conn runs", () => {
 	const response = renderConnPage();
 

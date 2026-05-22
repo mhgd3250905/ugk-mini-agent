@@ -648,6 +648,135 @@ test("standalone conn load more appends run history without resetting selected s
 	assert.equal(result.scrollTop, 120);
 });
 
+test("standalone conn task actions render targeted regions instead of renderAll", async () => {
+	const readAllBtn = createConnPageElement("全部已读");
+	const { context } = createConnPageContext({
+		elements: {
+			"btn-read-all": readAllBtn,
+		},
+	});
+
+	const result = await runConnPageExpression<{
+		renderAllCalls: number;
+		targetedCalls: string[];
+		statuses: string[];
+		totalUnreadRuns: number;
+		selectedId: string | null;
+	}>(context, `
+		let renderAllCalls = 0;
+		const targetedCalls = [];
+		renderAll = () => { renderAllCalls += 1; };
+		renderStats = () => targetedCalls.push("stats");
+		renderList = () => targetedCalls.push("list");
+		renderDetail = () => targetedCalls.push("detail");
+		renderActions = () => targetedCalls.push("actions");
+		renderRunHistory = () => targetedCalls.push("run-history");
+		showToast = () => undefined;
+		openConfirmDialog = async () => true;
+		apiPauseConn = async (connId) => ({ conn: { ...state.conns.find(conn => conn.connId === connId), status: "paused" } });
+		apiResumeConn = async (connId) => ({ conn: { ...state.conns.find(conn => conn.connId === connId), status: "active" } });
+		apiDeleteConn = async () => undefined;
+		apiMarkAllRunsRead = async () => ({ markedCount: 1, totalUnreadRuns: 0 });
+		state.conns = [
+			{
+				connId: "conn-1",
+				title: "Daily report",
+				status: "active",
+				latestRun: { runId: "run-1", connId: "conn-1", status: "succeeded" },
+			},
+			{
+				connId: "conn-2",
+				title: "Weekly report",
+				status: "paused",
+				latestRun: { runId: "run-2", connId: "conn-2", status: "failed" },
+			},
+			{
+				connId: "conn-3",
+				title: "Delete me",
+				status: "active",
+			},
+		];
+		state.selectedId = "conn-1";
+		state.totalUnreadRuns = 1;
+		state.unreadCountsByConnId = { "conn-1": 1 };
+		state.unreadLatestRunTimesByConnId = { "conn-1": "2026-05-22T01:00:00.000Z" };
+		state.runsByConnId["conn-1"] = [{ runId: "run-1", connId: "conn-1", status: "succeeded" }];
+		state.runHistoryStateByConnId["conn-1"] = { status: "loaded", error: "" };
+
+		await handlePause("conn-1");
+		await handleResume("conn-2");
+		await handleDelete("conn-3");
+		await handleMarkAllRead();
+
+		return {
+			renderAllCalls,
+			targetedCalls,
+			statuses: state.conns.map(conn => conn.connId + ":" + conn.status),
+			totalUnreadRuns: state.totalUnreadRuns,
+			selectedId: state.selectedId,
+		};
+	`);
+
+	assert.equal(result.renderAllCalls, 0);
+	assert.deepEqual(Array.from(result.statuses), ["conn-1:paused", "conn-2:active"]);
+	assert.equal(result.totalUnreadRuns, 0);
+	assert.equal(result.selectedId, "conn-1");
+	assert.ok(result.targetedCalls.includes("stats"));
+	assert.ok(result.targetedCalls.includes("list"));
+	assert.ok(result.targetedCalls.includes("detail"));
+	assert.ok(result.targetedCalls.includes("run-history"));
+});
+
+test("standalone conn action result does not repaint a newly selected detail panel", async () => {
+	const { context } = createConnPageContext();
+
+	const result = await runConnPageExpression<{
+		detailPaints: Array<string | null>;
+		listPaintCount: number;
+		selectedId: string | null;
+		runIds: string[];
+	}>(context, `
+		const detailPaints = [];
+		let listPaintCount = 0;
+		renderAll = () => { throw new Error("renderAll should not be used for run-now action state"); };
+		renderDetail = () => detailPaints.push(state.selectedId);
+		renderList = () => { listPaintCount += 1; };
+		showToast = () => undefined;
+		apiRunNow = async (connId) => {
+			state.selectedId = "conn-2";
+			return {
+				run: {
+					runId: "run-new",
+					connId,
+					status: "pending",
+					createdAt: "2026-05-22T01:00:00.000Z",
+					updatedAt: "2026-05-22T01:00:00.000Z",
+				},
+			};
+		};
+		scheduleRunRefresh = () => undefined;
+		state.conns = [
+			{ connId: "conn-1", title: "Daily report", status: "active" },
+			{ connId: "conn-2", title: "Weekly report", status: "active" },
+		];
+		state.selectedId = "conn-1";
+
+		await handleRunNow("conn-1");
+
+		return {
+			detailPaints,
+			listPaintCount,
+			selectedId: state.selectedId,
+			runIds: (state.runsByConnId["conn-1"] || []).map(run => run.runId),
+		};
+	`);
+
+	assert.deepEqual(Array.from(result.detailPaints), ["conn-1"]);
+	assert.ok(result.listPaintCount > 0);
+	assert.equal(result.selectedId, "conn-2");
+	assert.deepEqual(Array.from(result.runIds), ["run-new"]);
+});
+
 test("standalone conn mark all read clears loaded run history without a stale refresh call", async () => {
 	const readAllBtn = createConnPageElement("全部已读");
 	const { context } = createConnPageContext({

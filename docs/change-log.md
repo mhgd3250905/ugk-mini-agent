@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-22 — Playground Conn targeted action rendering
+
+- **主题**: `/playground/conn` 操作路径从整页 `renderAll()` 收口为局部渲染
+- **影响范围**: `src/ui/conn-page-js.ts`, `test/server.test.ts`, `test/conn-page-ui.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - 新增局部渲染 helper，分别覆盖 stats、list、selected detail actions、selected detail body 和 run history
+  - `handlePause()`、`handleResume()`、`handleDelete()`、`handleMarkAllRead()` 不再在操作前后反复调用 `renderAll()`
+  - `handleRunNow()`、run history refresh、run 展开 / 终止 / 事件加载改为局部渲染，并在异步返回时检查当前 `selectedId`
+  - “全部已读”继续不引用旧的 `loadRuns()`，已加载历史直接更新本地 `readAt`，未加载历史保持懒加载
+  - 测试覆盖 action handler 不回退到 `renderAll()`、`loadRuns()` 不再出现、局部渲染可更新可见状态，以及异步 action 不会重画新选中详情面板
+
 ## 2026-05-22 — Playground Conn realtime refresh scope narrowing
 
 - **主题**: 收窄 `/playground/conn` 实时 notification 刷新范围并增加短窗口合并

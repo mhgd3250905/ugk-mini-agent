@@ -2,6 +2,15 @@
 
 更新时间：`2026-05-22`
 
+## 2026-05-22 Conn 独立页操作局部渲染
+
+- `/playground/conn` 的暂停、恢复、删除、立即执行和全部已读路径不再用 `renderAll()` 反复重建统计、列表和详情；小状态变化改为更新 stats、list、selected detail actions 或 run history 对应区域。
+- `renderAll()` 继续保留给首屏加载和整页 fallback；操作按钮的 `处理中 / 暂停中 / 恢复中 / 删除中 / 入队中` 反馈通过局部 action 渲染更新。
+- run history 刷新、展开 run、终止 run 和加载更多事件走 run-history 局部渲染，并保持详情区滚动位置。
+- 异步 action 返回前如果用户已经切换到其他任务，旧任务结果只更新缓存 / 列表，不会重画新选中任务详情面板。
+- “全部已读”继续只请求 `POST /v1/conns/runs/read-all`，不会引用旧的 `loadRuns()`，也不会额外强制拉取运行历史。
+- 相关源码：`src/ui/conn-page-js.ts`、`test/conn-page-ui.test.ts`、`test/server.test.ts`
+
 ## 2026-05-22 Conn 独立页 realtime refresh 收窄
 
 - `/playground/conn` 订阅 `GET /v1/notifications/stream` 后会解析 SSE `event.data`；只有 `source === "conn"` 且带有效 `sourceId` 的广播才触发后台任务刷新。

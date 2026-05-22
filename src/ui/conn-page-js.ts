@@ -328,12 +328,12 @@ async function refreshRunsForConn(connId) {
     setRunHistoryPage(connId, page);
     setRunHistoryState(connId, "loaded", "");
     if (state.selectedId === connId) {
-      renderDetail();
+      renderSelectedRunHistoryWithStableScroll();
       renderList();
     }
   } catch (err) {
     setRunHistoryState(connId, "error", err instanceof Error ? err.message : "加载运行历史失败");
-    if (state.selectedId === connId) renderDetail();
+    if (state.selectedId === connId) renderSelectedRunHistoryWithStableScroll();
     throw err;
   }
 }
@@ -502,6 +502,62 @@ function renderAll() {
   renderStats();
   renderList();
   renderDetail();
+}
+
+function getConnById(connId) {
+  return state.conns.find(c => c.connId === connId) || null;
+}
+
+function restoreDetailScrollTop(scrollTop) {
+  const scroller = $("conn-detail-body");
+  if (scroller && scrollTop !== null) scroller.scrollTop = scrollTop;
+}
+
+function renderSelectedDetailWithStableScroll() {
+  const scrollTop = getRunHistoryScrollTop();
+  renderDetail();
+  restoreDetailScrollTop(scrollTop);
+}
+
+function renderSelectedRunHistoryWithStableScroll() {
+  const conn = state.selectedId ? getConnById(state.selectedId) : null;
+  if (!conn) return;
+  renderRunHistoryAtScrollTop(conn, getRunHistoryScrollTop());
+}
+
+function renderSelectedDetailActions(connId) {
+  if (state.selectedId !== connId) return;
+  const conn = getConnById(connId);
+  if (!conn) return;
+  const headerActions = $("conn-detail-header-actions");
+  if (headerActions) {
+    renderActions(headerActions, conn);
+    return;
+  }
+  renderSelectedDetailWithStableScroll();
+}
+
+function renderConnActionState(connId) {
+  renderList();
+  renderSelectedDetailActions(connId);
+}
+
+function renderConnStateChange(connId) {
+  renderStats();
+  renderList();
+  if (state.selectedId === connId) renderSelectedDetailWithStableScroll();
+}
+
+function renderConnRemoval(wasSelected) {
+  renderStats();
+  renderList();
+  if (wasSelected) renderSelectedDetailWithStableScroll();
+}
+
+function renderUnreadStateChange() {
+  renderStats();
+  renderList();
+  renderSelectedRunHistoryWithStableScroll();
 }
 
 function renderStats() {
@@ -2100,19 +2156,26 @@ async function handlePause(connId) {
   if (state.actionConnId) return;
   state.actionConnId = connId;
   state.actionKind = "pause";
-  renderAll();
+  renderConnActionState(connId);
+  let changed = false;
   try {
     const data = await apiPauseConn(connId);
     const updated = data.conn;
-    if (updated) updateConnInState(updated);
+    if (updated) {
+      updateConnInState(updated);
+      changed = true;
+    }
     showToast("已暂停", "success");
-    renderAll();
   } catch (err) {
     showToast(err instanceof Error ? err.message : "暂停失败", "error");
   } finally {
     state.actionConnId = "";
     state.actionKind = "";
-    renderAll();
+    if (changed) {
+      renderConnStateChange(connId);
+    } else {
+      renderConnActionState(connId);
+    }
   }
 }
 
@@ -2120,19 +2183,26 @@ async function handleResume(connId) {
   if (state.actionConnId) return;
   state.actionConnId = connId;
   state.actionKind = "resume";
-  renderAll();
+  renderConnActionState(connId);
+  let changed = false;
   try {
     const data = await apiResumeConn(connId);
     const updated = data.conn;
-    if (updated) updateConnInState(updated);
+    if (updated) {
+      updateConnInState(updated);
+      changed = true;
+    }
     showToast("已恢复", "success");
-    renderAll();
   } catch (err) {
     showToast(err instanceof Error ? err.message : "恢复失败", "error");
   } finally {
     state.actionConnId = "";
     state.actionKind = "";
-    renderAll();
+    if (changed) {
+      renderConnStateChange(connId);
+    } else {
+      renderConnActionState(connId);
+    }
   }
 }
 
@@ -2143,22 +2213,20 @@ async function handleRunNow(connId) {
   }
   state.actionConnId = connId;
   state.actionKind = "run";
-  renderDetail();
-  renderList();
+  renderConnActionState(connId);
   try {
     const data = await apiRunNow(connId);
     upsertRunForConn(connId, data.run);
     showToast("已触发执行，正在后台运行", "success");
-    renderDetail();
     renderList();
+    if (state.selectedId === connId) renderSelectedRunHistoryWithStableScroll();
     scheduleRunRefresh(connId, 0);
   } catch (err) {
     showToast(err instanceof Error ? err.message : "执行失败", "error");
   } finally {
     state.actionConnId = "";
     state.actionKind = "";
-    renderDetail();
-    renderList();
+    renderConnActionState(connId);
   }
 }
 
@@ -2174,7 +2242,7 @@ async function handleCancelRun(connId, runId) {
   if (!confirmed) return;
 
   state.cancellingRunId = runId;
-  renderDetail();
+  if (state.selectedId === connId) renderSelectedRunHistoryWithStableScroll();
   try {
     const data = await apiCancelRun(connId, runId);
     upsertRunForConn(connId, data.run);
@@ -2188,8 +2256,8 @@ async function handleCancelRun(connId, runId) {
     showToast(err instanceof Error ? err.message : "终止失败", "error");
   } finally {
     state.cancellingRunId = "";
-    renderDetail();
     renderList();
+    if (state.selectedId === connId) renderSelectedRunHistoryWithStableScroll();
   }
 }
 
@@ -2207,7 +2275,9 @@ async function handleDelete(connId) {
 
   state.actionConnId = connId;
   state.actionKind = "delete";
-  renderAll();
+  const wasSelected = state.selectedId === connId;
+  renderConnActionState(connId);
+  let deleted = false;
   try {
     await apiDeleteConn(connId);
     state.conns = state.conns.filter(c => c.connId !== connId);
@@ -2215,14 +2285,18 @@ async function handleDelete(connId) {
     delete state.runHistoryStateByConnId[connId];
     delete state.runHistoryPageByConnId[connId];
     if (state.selectedId === connId) state.selectedId = null;
+    deleted = true;
     showToast("已删除", "success");
-    renderAll();
   } catch (err) {
     showToast(err instanceof Error ? err.message : "删除失败", "error");
   } finally {
     state.actionConnId = "";
     state.actionKind = "";
-    renderAll();
+    if (deleted) {
+      renderConnRemoval(wasSelected);
+    } else {
+      renderConnActionState(connId);
+    }
   }
 }
 
@@ -2254,7 +2328,7 @@ async function handleMarkAllRead() {
     state.unreadLatestRunTimesByConnId = {};
     markLoadedRunCachesRead(readAt);
     showToast("已标记 " + result.markedCount + " 条为已读", "success");
-    renderAll();
+    renderUnreadStateChange();
   } catch (err) {
     showToast(err instanceof Error ? err.message : "操作失败", "error");
   } finally {
@@ -2269,12 +2343,12 @@ async function handleMarkAllRead() {
 async function handleRunToggle(connId, runId) {
   if (state.expandedRunId === runId) {
     state.expandedRunId = null;
-    renderDetail();
+    if (state.selectedId === connId) renderSelectedRunHistoryWithStableScroll();
     return;
   }
 
   state.expandedRunId = runId;
-  renderDetail();
+  if (state.selectedId === connId) renderSelectedRunHistoryWithStableScroll();
 
   // Load detail if not cached
   if (!state.runDetailEvents[runId]) {
@@ -2313,7 +2387,7 @@ async function handleLoadMoreEvents(connId, runId) {
   if (!before || state.loadingMoreRunId) return;
 
   state.loadingMoreRunId = runId;
-  renderDetail();
+  if (state.selectedId === connId) renderSelectedRunHistoryWithStableScroll();
   try {
     const payload = await apiFetchRunEvents(connId, runId, before);
     const events = payload.events || [];
@@ -2333,7 +2407,7 @@ async function handleLoadMoreEvents(connId, runId) {
     showToast(err instanceof Error ? err.message : "加载更多事件失败", "error");
   } finally {
     state.loadingMoreRunId = "";
-    renderDetail();
+    if (state.selectedId === connId) renderSelectedRunHistoryWithStableScroll();
   }
 }
 
