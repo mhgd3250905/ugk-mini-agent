@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-22 — Playground Agents stable detail section rendering
+
+- **主题**: `/playground/agents` selected Agent 详情区拆成稳定 shell 与局部子区域更新，降低 Agent 切换和 skills 操作时的整块 DOM 重建
+- **影响范围**: `src/ui/agents-page.ts`, `test/server.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - `renderDetailBody()` 改为确保 `ag-detail-header-region` / `ag-detail-stats-region` / `ag-detail-config-region` / `ag-detail-skills-region` 四个稳定 region，再分别更新 header/actions、summary、mini stats、基础配置和 skills panel
+  - detail shell 不再以 `agentId` 变化作为整块重建条件；Agent 切换会复用 shell 并刷新子区域，切换时复位滚动，skills 局部刷新时保留滚动位置
+  - `renderSkillsPanel()` 只在折叠/展开 shell 缺失时创建 skills controls；`populateSkillSelect()` 用 gallery signature 避免 gallery 未变化时重复重建 installable skill 下拉 options
+  - skills loading、展开、手动刷新、install/remove/toggle 通过 `renderSkillsList(agentId)` 和必要统计局部更新，不再调用整块 `renderDetailBody()`
+  - 所有异步 skills load/mutation 在操作开始时捕获 `agentId`，渲染前检查 `state.selectedId`，避免旧 Agent 的请求结果 stale paint 到新选择的面板
+  - 测试覆盖稳定 detail shell、installable skill select 重建条件、skills 局部 loading/mutation 更新、重复控件约束和 stale async guard
+
 ## 2026-05-22 — Playground Agents editor support catalog lazy loading
 
 - **主题**: `/playground/agents` 首屏不再阻塞加载 create/edit editor 才需要的浏览器目录和模型配置

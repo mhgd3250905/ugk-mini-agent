@@ -780,7 +780,7 @@ function getAgentsPageJs(): string {
 			searchQuery: "",
 			filterTab: "all",
 			skillsByAgentId: {},
-			skillsLoading: false,
+			skillsLoadingAgentId: "",
 			switchLoading: false,
 			gallerySkills: [],
 			editorMode: null,
@@ -1046,6 +1046,7 @@ function getAgentsPageJs(): string {
 			var agent = state.agents.find(function(a) { return a.agentId === state.selectedId; });
 			if (!agent) {
 				body.innerHTML = '<div class="ag-empty"><div class="ag-empty-icon">' + SVG_USER + '</div><h3>请选择一个 Agent</h3><p>从左侧列表选择 Agent 查看详情。</p></div>';
+				delete body.dataset.agentId;
 				if (titleEl) titleEl.textContent = "";
 				if (actionsEl) actionsEl.innerHTML = "";
 				return;
@@ -1054,33 +1055,61 @@ function getAgentsPageJs(): string {
 			var status = getStatusBadge(agent);
 			var active = isAgentActive(agent);
 
-			if (titleEl) titleEl.textContent = agent.name || agent.agentId;
+			ensureDetailShell(body, agent.agentId);
+			renderDetailHeader(agent, status, active);
+			renderDetailSummary(agent, status);
+			renderDetailMiniStats(agent, status);
+			renderDetailConfig(agent);
+			renderSkillsPanel(agent);
+		}
 
-			// Actions in header
-			if (actionsEl) {
-				var acts = "";
-				acts += '<button id="ag-btn-edit" class="ag-btn ag-btn--outline" type="button">编辑</button>';
-				if (!active) {
-					acts += '<button id="ag-btn-switch" class="ag-btn ag-btn--primary" type="button">切换到此 Agent</button>';
-				}
-				if (agent.agentId !== "main") {
-					var archiving = state.archivePendingId === agent.agentId;
-					acts += '<button id="ag-btn-archive" class="ag-btn ag-btn--danger" type="button"' + (archiving ? ' disabled' : '') + '>' + (archiving ? "归档中" : "归档") + '</button>';
-				}
-				actionsEl.innerHTML = acts;
-
-				var editBtn = document.getElementById("ag-btn-edit");
-				if (editBtn) editBtn.addEventListener("click", openEditEditor);
-				var switchBtn = document.getElementById("ag-btn-switch");
-				if (switchBtn) switchBtn.addEventListener("click", handleSwitch);
-				var archiveBtn = document.getElementById("ag-btn-archive");
-				if (archiveBtn) archiveBtn.addEventListener("click", handleArchive);
+		function ensureDetailShell(body, agentId) {
+			var hasShell = document.getElementById("ag-detail-header-region")
+				&& document.getElementById("ag-detail-stats-region")
+				&& document.getElementById("ag-detail-config-region")
+				&& document.getElementById("ag-detail-skills-region");
+			var sameAgent = body.dataset.agentId === agentId;
+			var scrollTop = body.scrollTop || 0;
+			if (!hasShell) {
+				body.innerHTML =
+					'<div id="ag-detail-header-region"></div>' +
+					'<div id="ag-detail-stats-region"></div>' +
+					'<div id="ag-detail-config-region"></div>' +
+					'<div id="ag-detail-skills-region"></div>';
 			}
+			body.dataset.agentId = agentId;
+			body.scrollTop = sameAgent ? scrollTop : 0;
+		}
 
-			// Build detail body content
+		function renderDetailHeader(agent, status, active) {
+			var titleEl = document.getElementById("ag-detail-title");
+			var actionsEl = document.getElementById("ag-detail-actions");
+			if (titleEl) titleEl.textContent = agent.name || agent.agentId;
+			if (!actionsEl) return;
+
+			var acts = "";
+			acts += '<button id="ag-btn-edit" class="ag-btn ag-btn--outline" type="button">编辑</button>';
+			if (!active) {
+				acts += '<button id="ag-btn-switch" class="ag-btn ag-btn--primary" type="button">切换到此 Agent</button>';
+			}
+			if (agent.agentId !== "main") {
+				var archiving = state.archivePendingId === agent.agentId;
+				acts += '<button id="ag-btn-archive" class="ag-btn ag-btn--danger" type="button"' + (archiving ? ' disabled' : '') + '>' + (archiving ? "归档中..." : "归档") + '</button>';
+			}
+			actionsEl.innerHTML = acts;
+
+			var editBtn = document.getElementById("ag-btn-edit");
+			if (editBtn) editBtn.onclick = openEditEditor;
+			var switchBtn = document.getElementById("ag-btn-switch");
+			if (switchBtn) switchBtn.onclick = handleSwitch;
+			var archiveBtn = document.getElementById("ag-btn-archive");
+			if (archiveBtn) archiveBtn.onclick = handleArchive;
+		}
+
+		function renderDetailSummary(agent, status) {
+			var region = document.getElementById("ag-detail-header-region");
+			if (!region) return;
 			var html = "";
-
-			// Header card
 			html += '<div class="ag-card ag-detail-header">';
 			html += '<div class="ag-detail-header-left">';
 			html += '<div class="ag-detail-task-icon">' + SVG_USER + '</div>';
@@ -1093,19 +1122,27 @@ function getAgentsPageJs(): string {
 			}
 			html += '</div></div></div>';
 			html += '</div>';
+			region.innerHTML = html;
+		}
 
-			// Status mini-cards
+		function renderDetailMiniStats(agent, status) {
+			var region = document.getElementById("ag-detail-stats-region");
+			if (!region) return;
+			var html = "";
 			html += '<div class="ag-status-cards">';
 			html += buildMiniCard("Agent ID", '<code>' + escapeHtml(agent.agentId) + '</code>', "var(--primary-soft)", "#6366F1", SVG_GRID);
 			html += buildMiniCard("状态", status.text, status.cls === "ag-badge--active" ? "var(--success-soft)" : "var(--primary-soft)", status.cls === "ag-badge--active" ? "#22C55E" : "#6366F1", SVG_ACTIVITY);
 			html += buildMiniCard("浏览器", agent.defaultBrowserId || "默认", "var(--warning-soft)", "#F59E0B", SVG_MONITOR);
-			html += buildMiniCard("技能数", getSkillCountText(state.selectedId), "rgba(139,92,246,0.12)", "#8B5CF6", SVG_STAR);
-
+			html += buildMiniCard("技能数", getSkillCountText(agent.agentId), "rgba(139,92,246,0.12)", "#8B5CF6", SVG_STAR);
 			html += '</div>';
+			region.innerHTML = html;
+		}
 
-			// Config + Rules row
+		function renderDetailConfig(agent) {
+			var region = document.getElementById("ag-detail-config-region");
+			if (!region) return;
+			var html = "";
 			html += '<div class="ag-detail-row">';
-			// Config card
 			html += '<div class="ag-card ag-detail-row-config">';
 			html += '<div class="ag-card-title"><span class="ag-card-title-icon" style="background:var(--primary-soft)">' + SVG_GRID + '</span>基础信息</div>';
 			html += '<div class="ag-config-grid">';
@@ -1115,7 +1152,6 @@ function getAgentsPageJs(): string {
 			html += buildConfigItem("默认模型", escapeHtml(agent.defaultModelProvider && agent.defaultModelId ? agent.defaultModelProvider + "/" + agent.defaultModelId : "跟随全局默认"), false);
 			html += buildConfigItem("会话接口", '<code>/v1/agents/' + escapeHtml(agent.agentId) + '/chat/*</code>', true);
 			html += '</div></div>';
-			// Rules card
 			html += '<div class="ag-card">';
 			html += '<div class="ag-card-title"><span class="ag-card-title-icon" style="background:var(--warning-soft)">' + SVG_FILE + '</span>规则文件</div>';
 			html += '<div class="ag-file-card">';
@@ -1124,39 +1160,53 @@ function getAgentsPageJs(): string {
 			html += '<a class="ag-btn ag-btn--outline" href="/playground/agents/' + encodeURIComponent(agent.agentId) + '/rules" target="_blank">打开</a>';
 			html += '</div></div>';
 			html += '</div>';
+			region.innerHTML = html;
+		}
 
-			// Skills card
-			html += '<div class="ag-card">';
-			html += '<div class="ag-card-title"><span class="ag-card-title-icon" style="background:rgba(139,92,246,0.12)">' + SVG_STAR + '</span>技能<span style="margin-left:auto;font-size:11px;color:var(--muted)">仅展示 scoped 技能</span></div>';
-				if (state.skillsExpanded) {
+		function renderSkillsPanel(agent) {
+			var region = document.getElementById("ag-detail-skills-region");
+			if (!region) return;
+			var body = document.getElementById("ag-detail-body");
+			var scrollTop = body ? body.scrollTop : 0;
+			var hasExpandedShell = !!region.querySelector("#ag-skill-list");
+			var hasCollapsedShell = !!region.querySelector("#ag-btn-expand-skills");
+			var html = "";
+			if (state.skillsExpanded) {
+				if (!hasExpandedShell) {
+					html += '<div class="ag-card">';
+					html += '<div class="ag-card-title"><span class="ag-card-title-icon" style="background:rgba(139,92,246,0.12)">' + SVG_STAR + '</span>技能<span style="margin-left:auto;font-size:11px;color:var(--muted)">仅展示 scoped 技能</span></div>';
 					html += '<div class="ag-skills-toolbar">';
 					html += '<select id="ag-skill-select" class="ag-skills-select"><option value="">选择要安装的技能...</option></select>';
 					html += '<button id="ag-btn-copy-skill" class="ag-btn ag-btn--outline" type="button" disabled>复制安装</button>';
 					html += '<button id="ag-btn-refresh-skills" class="ag-btn ag-btn--outline" type="button">刷新</button>';
 					html += '</div>';
 					html += '<div id="ag-skill-list" class="ag-skill-list"></div>';
-				} else {
-										html += '<div class="ag-skills-collapsed">';
-					html += '<span style="font-size:13px;color:var(--fg-secondary)">' + getCollapsedSkillSummary(state.selectedId) + '</span>';
+					html += '</div>';
+					region.innerHTML = html;
+				}
+				var copySkillBtn = document.getElementById("ag-btn-copy-skill");
+				if (copySkillBtn) copySkillBtn.onclick = handleCopySkill;
+				var refreshSkillsBtn = document.getElementById("ag-btn-refresh-skills");
+				if (refreshSkillsBtn) refreshSkillsBtn.onclick = handleRefreshSkills;
+				populateSkillSelect();
+				renderSkillsList(agent.agentId);
+			} else {
+				if (!hasCollapsedShell) {
+					html += '<div class="ag-card">';
+					html += '<div class="ag-card-title"><span class="ag-card-title-icon" style="background:rgba(139,92,246,0.12)">' + SVG_STAR + '</span>技能<span style="margin-left:auto;font-size:11px;color:var(--muted)">仅展示 scoped 技能</span></div>';
+					html += '<div class="ag-skills-collapsed">';
+					html += '<span id="ag-skills-collapsed-summary" style="font-size:13px;color:var(--fg-secondary)"></span>';
 					html += '<button id="ag-btn-expand-skills" class="ag-btn ag-btn--outline" type="button">查看技能</button>';
 					html += '</div>';
+					html += '</div>';
+					region.innerHTML = html;
 				}
-			html += '</div>';
-
-			body.innerHTML = html;
-
-				if (state.skillsExpanded) {
-					var copySkillBtn = document.getElementById("ag-btn-copy-skill");
-					if (copySkillBtn) copySkillBtn.addEventListener("click", handleCopySkill);
-					var refreshSkillsBtn = document.getElementById("ag-btn-refresh-skills");
-					if (refreshSkillsBtn) refreshSkillsBtn.addEventListener("click", handleRefreshSkills);
-
-					renderSkills();
-					populateSkillSelect();
-				} else {
-					var expandBtn = document.getElementById("ag-btn-expand-skills");
-					if (expandBtn) expandBtn.addEventListener("click", handleExpandSkills);
-				}
+				var summaryEl = document.getElementById("ag-skills-collapsed-summary");
+				if (summaryEl) summaryEl.textContent = getCollapsedSkillSummary(agent.agentId);
+				var expandBtn = document.getElementById("ag-btn-expand-skills");
+				if (expandBtn) expandBtn.onclick = handleExpandSkills;
+			}
+			if (body) body.scrollTop = scrollTop;
 		}
 
 		function buildMiniCard(label, value, iconBg, iconColor, iconSvg) {
@@ -1178,12 +1228,18 @@ function getAgentsPageJs(): string {
 		}
 
 		function renderSkills() {
+			renderSkillsList();
+		}
+
+		function renderSkillsList(expectedAgentId) {
+			var agentId = expectedAgentId || state.selectedId;
+			if (!agentId || state.selectedId !== agentId) return;
 			var container = document.getElementById("ag-skill-list");
 			if (!container) return;
-			var skills = state.skillsByAgentId[state.selectedId] || [];
-			var agent = state.agents.find(function(a) { return a.agentId === state.selectedId; });
+			var skills = state.skillsByAgentId[agentId] || [];
+			var agent = state.agents.find(function(a) { return a.agentId === agentId; });
 
-			if (state.skillsLoading) {
+			if (state.skillsLoadingAgentId === agentId) {
 				container.innerHTML = '<div class="ag-empty ag-empty-sm" style="padding:24px"><p>加载中...</p></div>';
 				return;
 			}
@@ -1210,11 +1266,19 @@ function getAgentsPageJs(): string {
 				toggle.disabled = isRequired;
 				toggle.addEventListener("click", function() {
 					if (agent && skillName) {
+						var touchedAgentId = agent.agentId;
 						toggle.disabled = true;
-						apiToggleSkill(agent.agentId, skillName, !isEnabled).then(function() {
-							apiFetchAgentSkills(agent.agentId).then(function() { renderSkills(); });
+						apiToggleSkill(touchedAgentId, skillName, !isEnabled).then(function() {
+							apiFetchAgentSkills(touchedAgentId).then(function() {
+								if (state.selectedId === touchedAgentId) {
+									renderSkillsList(touchedAgentId);
+									renderStats();
+									var latestAgent = state.agents.find(function(a) { return a.agentId === touchedAgentId; });
+									if (latestAgent) renderDetailMiniStats(latestAgent, getStatusBadge(latestAgent));
+								}
+							});
 						}).catch(function(err) {
-							toggle.disabled = false;
+							if (state.selectedId === touchedAgentId) toggle.disabled = false;
 							alert(err && err.message || "切换失败");
 						});
 					}
@@ -1244,7 +1308,7 @@ function getAgentsPageJs(): string {
 					var delBtn = document.createElement("button");
 					delBtn.type = "button";
 					delBtn.className = "ag-btn ag-btn--danger";
-					delBtn.textContent = state.removingSkillName === skill.skillName ? "删除中" : "删除";
+					delBtn.textContent = state.removingSkillName === skill.skillName ? "删除中..." : "删除";
 					delBtn.disabled = state.removingSkillName === skill.skillName;
 					delBtn.addEventListener("click", function() { handleRemoveSkill(skill.skillName); });
 					item.appendChild(delBtn);
@@ -1254,22 +1318,38 @@ function getAgentsPageJs(): string {
 			});
 		}
 
+		function getGallerySkillSignature() {
+			return state.gallerySkills.map(function(s) {
+				var name = s.name || s.skillName || "";
+				return name + ":" + (s.enabled === false ? "0" : "1");
+			}).join("|");
+		}
+
 		function populateSkillSelect() {
 			var sel = document.getElementById("ag-skill-select");
 			if (!sel) return;
+			var signature = getGallerySkillSignature();
+			if (sel.dataset.gallerySignature === signature) return;
+			var selectedValue = sel.value;
 			while (sel.options.length > 1) sel.remove(1);
+			var hasSelectedValue = false;
 			state.gallerySkills.forEach(function(s) {
 				var name = s.name || s.skillName || "";
 				if (!name) return;
 				var opt = document.createElement("option");
 				opt.value = name;
 				opt.textContent = name + (s.enabled === false ? "（主 Agent 已关闭）" : "");
+				if (name === selectedValue) hasSelectedValue = true;
 				sel.appendChild(opt);
 			});
+			sel.dataset.gallerySignature = signature;
+			sel.value = hasSelectedValue ? selectedValue : "";
 			sel.onchange = function() {
 				var btn = document.getElementById("ag-btn-copy-skill");
 				if (btn) btn.disabled = !sel.value;
 			};
+			var btn = document.getElementById("ag-btn-copy-skill");
+			if (btn) btn.disabled = !sel.value;
 		}
 
 		/* ── Selection ── */
@@ -1326,19 +1406,21 @@ function getAgentsPageJs(): string {
 			if (!state.selectedId || state.removingSkillName) return;
 			var agentId = state.selectedId;
 			state.removingSkillName = skillName;
-			renderSkills();
+			renderSkillsList(agentId);
 			try {
 				await apiRemoveSkill(agentId, skillName);
 				await apiFetchAgentSkills(agentId);
 				if (state.selectedId === agentId) {
-					renderSkills();
+					renderSkillsList(agentId);
 					renderStats();
+					var agent = state.agents.find(function(a) { return a.agentId === agentId; });
+					if (agent) renderDetailMiniStats(agent, getStatusBadge(agent));
 				}
 				showToast("已移除 " + skillName, "ok");
 			} catch (e) { showToast(e.message || "移除失败", "danger"); }
 			finally {
 				state.removingSkillName = "";
-				if (state.selectedId === agentId) renderSkills();
+				if (state.selectedId === agentId) renderSkillsList(agentId);
 			}
 		}
 
@@ -1353,40 +1435,67 @@ function getAgentsPageJs(): string {
 				await apiCopySkill(agentId, skillName);
 				await apiFetchAgentSkills(agentId);
 				if (state.selectedId === agentId) {
-					renderSkills();
+					renderSkillsList(agentId);
 					renderStats();
+					var agent = state.agents.find(function(a) { return a.agentId === agentId; });
+					if (agent) renderDetailMiniStats(agent, getStatusBadge(agent));
 				}
 				showToast("已安装 " + skillName, "ok");
 			} catch (e) { showToast(e.message || "安装失败", "danger"); }
-			finally { if (btn) { btn.disabled = false; btn.textContent = "复制安装"; } }
+			finally {
+				if (btn && state.selectedId === agentId) { btn.disabled = false; btn.textContent = "复制安装"; }
+			}
 		}
 
 		async function handleRefreshSkills() {
 			if (!state.selectedId) return;
+			var agentId = state.selectedId;
 			var btn = document.getElementById("ag-btn-refresh-skills");
 			if (btn) { btn.disabled = true; btn.textContent = "刷新中..."; }
+			state.skillsLoadingAgentId = agentId;
+			renderSkillsList(agentId);
 			try {
-				await apiFetchAgentSkills(state.selectedId);
-				renderSkills();
+				await apiFetchAgentSkills(agentId);
+				if (state.skillsLoadingAgentId === agentId) state.skillsLoadingAgentId = "";
+				if (state.selectedId === agentId) {
+					renderSkillsList(agentId);
+					renderStats();
+					var agent = state.agents.find(function(a) { return a.agentId === agentId; });
+					if (agent) renderDetailMiniStats(agent, getStatusBadge(agent));
+				}
 				showToast("技能已刷新", "ok");
 			} catch (e) { showToast(e.message || "刷新失败", "danger"); }
-			finally { if (btn) { btn.disabled = false; btn.textContent = "刷新"; } }
+			finally {
+				if (state.skillsLoadingAgentId === agentId) state.skillsLoadingAgentId = "";
+				if (btn && state.selectedId === agentId) { btn.disabled = false; btn.textContent = "刷新"; }
+			}
 		}
 
 
 		function handleExpandSkills() {
+			if (!state.selectedId) return;
+			var agentId = state.selectedId;
+			var agent = state.agents.find(function(a) { return a.agentId === agentId; });
+			if (!agent) return;
 			state.skillsExpanded = true;
-			if (state.skillsLoadedByAgentId[state.selectedId]) {
-				renderDetailBody();
-			} else {
-				state.skillsLoading = true;
-				renderDetailBody();
-				apiFetchAgentSkills(state.selectedId).then(function() {
-					state.skillsLoading = false;
-					renderDetailBody();
-					renderStats();
-				});
+			renderSkillsPanel(agent);
+			if (state.skillsLoadedByAgentId[agentId]) {
+				renderSkillsList(agentId);
+				return;
 			}
+			state.skillsLoadingAgentId = agentId;
+			renderSkillsList(agentId);
+			apiFetchAgentSkills(agentId).then(function() {
+				if (state.skillsLoadingAgentId === agentId) state.skillsLoadingAgentId = "";
+				if (state.selectedId !== agentId) return;
+				renderSkillsList(agentId);
+				renderStats();
+				var latestAgent = state.agents.find(function(a) { return a.agentId === agentId; });
+				if (latestAgent) renderDetailMiniStats(latestAgent, getStatusBadge(latestAgent));
+			}).catch(function() {
+				if (state.skillsLoadingAgentId === agentId) state.skillsLoadingAgentId = "";
+				if (state.selectedId === agentId) renderSkillsList(agentId);
+			});
 		}
 
 		function mobileBackToList() {

@@ -1223,21 +1223,27 @@ test("GET /playground/agents reuses gallery skills for the initial main selectio
 		// State declares skillsExpanded flag
 		assert.match(body, /skillsExpanded:\s*false/);
 
-		// renderDetailBody gates skill list behind skillsExpanded
+		// renderDetailBody delegates skill rendering instead of mounting rows directly
 		const detailStart = body.indexOf("function renderDetailBody()");
-		const detailEnd = body.indexOf("function buildMiniCard(", detailStart);
+		const detailEnd = body.indexOf("function ensureDetailShell(", detailStart);
 		assert.ok(detailStart >= 0, "renderDetailBody function not found");
 		assert.ok(detailEnd > detailStart, "renderDetailBody region end not found");
 		const detailRegion = body.slice(detailStart, detailEnd);
+		assert.match(detailRegion, /renderSkillsPanel\(agent\)/);
+		assert.doesNotMatch(detailRegion, /ag-skill-list/);
 
-		// Collapsed branch has expand button, no skill list div
-		assert.match(detailRegion, /ag-btn-expand-skills/);
-		assert.match(detailRegion, /if \(state\.skillsExpanded\)/);
+		const panelStart = body.indexOf("function renderSkillsPanel(");
+		const panelEnd = body.indexOf("function buildMiniCard(", panelStart);
+		assert.ok(panelStart >= 0, "renderSkillsPanel function not found");
+		assert.ok(panelEnd > panelStart, "renderSkillsPanel region end not found");
+		const panelRegion = body.slice(panelStart, panelEnd);
 
-		// renderSkills is called only inside the expanded branch
-		const renderSkillsCall = detailRegion.indexOf("renderSkills()");
-		const expandedBranch = detailRegion.indexOf("if (state.skillsExpanded)");
-		assert.ok(renderSkillsCall > expandedBranch, "renderSkills() must be inside the skillsExpanded branch");
+		// Collapsed branch has expand button, expanded branch has the skill list
+		assert.match(panelRegion, /ag-btn-expand-skills/);
+		assert.match(panelRegion, /if \(state\.skillsExpanded\)/);
+		const renderSkillsCall = panelRegion.indexOf("renderSkillsList(agent.agentId)");
+		const expandedBranch = panelRegion.indexOf("if (state.skillsExpanded)");
+		assert.ok(renderSkillsCall > expandedBranch, "renderSkillsList() must be inside the skillsExpanded branch");
 
 		// handleExpandSkills sets skillsExpanded and checks cache
 		const expandStart = body.indexOf("function handleExpandSkills()");
@@ -1247,8 +1253,9 @@ test("GET /playground/agents reuses gallery skills for the initial main selectio
 		const expandRegion = body.slice(expandStart, expandEnd);
 
 		assert.match(expandRegion, /state\.skillsExpanded = true/);
-		assert.match(expandRegion, /skillsLoadedByAgentId\[state\.selectedId\]/);
-		assert.match(expandRegion, /apiFetchAgentSkills\(state\.selectedId\)/);
+		assert.match(expandRegion, /var agentId = state\.selectedId/);
+		assert.match(expandRegion, /skillsLoadedByAgentId\[agentId\]/);
+		assert.match(expandRegion, /apiFetchAgentSkills\(agentId\)/);
 
 		await app.close();
 	});
@@ -1402,7 +1409,9 @@ test("GET /playground/agents handleRefreshSkills force fetches selected agent", 
 	assert.ok(refreshEnd > refreshStart, "handleRefreshSkills region end not found");
 	const refreshRegion = body.slice(refreshStart, refreshEnd);
 
-	assert.match(refreshRegion, /apiFetchAgentSkills\(state\.selectedId\)/);
+	assert.match(refreshRegion, /var agentId = state\.selectedId/);
+	assert.match(refreshRegion, /apiFetchAgentSkills\(agentId\)/);
+	assert.match(refreshRegion, /state\.selectedId === agentId/);
 	await app.close();
 });
 
@@ -1423,7 +1432,9 @@ test("GET /playground/agents toggle only refreshes affected agent cache", async 
 	assert.ok(renderSkillsEnd > renderSkillsStart, "renderSkills region end not found");
 	const renderSkillsRegion = body.slice(renderSkillsStart, renderSkillsEnd);
 
-	assert.match(renderSkillsRegion, /apiFetchAgentSkills\(agent\.agentId\)/);
+	assert.match(renderSkillsRegion, /var touchedAgentId = agent\.agentId/);
+	assert.match(renderSkillsRegion, /apiFetchAgentSkills\(touchedAgentId\)/);
+	assert.match(renderSkillsRegion, /state\.selectedId === touchedAgentId/);
 	assert.doesNotMatch(renderSkillsRegion, /skillsLoadedByAgentId\s*=\s*\{\}/);
 	assert.doesNotMatch(renderSkillsRegion, /skillsByAgentId\s*=\s*\{\}/);
 	await app.close();
@@ -1595,6 +1606,159 @@ test("GET /playground/agents guards create and edit submit when model config is 
 	const updateRegion = body.slice(updateStart, updateEnd);
 	assert.match(createRegion, /guardEditorSupportCatalogs\(\)/);
 	assert.match(updateRegion, /guardEditorSupportCatalogs\(\)/);
+	await app.close();
+});
+
+test("GET /playground/agents keeps detail body stable and updates detail regions", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents",
+	});
+	assert.equal(response.statusCode, 200);
+	const body = response.body;
+
+	const detailStart = body.indexOf("function renderDetailBody()");
+	const detailEnd = body.indexOf("function ensureDetailShell(", detailStart);
+	assert.ok(detailStart >= 0, "renderDetailBody function not found");
+	assert.ok(detailEnd > detailStart, "renderDetailBody region end not found");
+	const detailRegion = body.slice(detailStart, detailEnd);
+
+	assert.match(detailRegion, /ensureDetailShell\(body,\s*agent\.agentId\)/);
+	assert.match(detailRegion, /renderDetailHeader\(agent,\s*status,\s*active\)/);
+	assert.match(detailRegion, /renderDetailMiniStats\(agent,\s*status\)/);
+	assert.match(detailRegion, /renderDetailConfig\(agent\)/);
+	assert.match(detailRegion, /renderSkillsPanel\(agent\)/);
+	assert.doesNotMatch(detailRegion, /body\.innerHTML\s*=\s*html/);
+	assert.doesNotMatch(detailRegion, /populateSkillSelect\(\)/);
+
+	const shellStart = body.indexOf("function ensureDetailShell(");
+	const shellEnd = body.indexOf("function renderDetailHeader(", shellStart);
+	assert.ok(shellStart >= 0, "ensureDetailShell function not found");
+	assert.ok(shellEnd > shellStart, "ensureDetailShell region end not found");
+	const shellRegion = body.slice(shellStart, shellEnd);
+	assert.match(shellRegion, /ag-detail-header-region/);
+	assert.match(shellRegion, /ag-detail-stats-region/);
+	assert.match(shellRegion, /ag-detail-config-region/);
+	assert.match(shellRegion, /ag-detail-skills-region/);
+	assert.doesNotMatch(shellRegion, /body\.dataset\.agentId === agentId\s*&&/);
+	assert.match(shellRegion, /body\.scrollTop = sameAgent \? scrollTop : 0/);
+
+	await app.close();
+});
+
+test("GET /playground/agents only rebuilds installable skill select when gallery changes", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents",
+	});
+	assert.equal(response.statusCode, 200);
+	const body = response.body;
+
+	const populateStart = body.indexOf("function populateSkillSelect()");
+	const populateEnd = body.indexOf("/* \u2500\u2500 Selection", populateStart);
+	assert.ok(populateStart >= 0, "populateSkillSelect function not found");
+	assert.ok(populateEnd > populateStart, "populateSkillSelect region end not found");
+	const populateRegion = body.slice(populateStart, populateEnd);
+
+	assert.match(populateRegion, /getGallerySkillSignature\(\)/);
+	assert.match(populateRegion, /sel\.dataset\.gallerySignature === signature/);
+	assert.match(populateRegion, /return/);
+	assert.doesNotMatch(populateRegion, /gallerySignature === signature && sel\.options\.length > 1/);
+	assert.match(populateRegion, /sel\.dataset\.gallerySignature = signature/);
+
+	const skillsPanelStart = body.indexOf("function renderSkillsPanel(");
+	const skillsPanelEnd = body.indexOf("function renderSkillsList(", skillsPanelStart);
+	assert.ok(skillsPanelStart >= 0, "renderSkillsPanel function not found");
+	assert.ok(skillsPanelEnd > skillsPanelStart, "renderSkillsPanel region end not found");
+	const skillsPanelRegion = body.slice(skillsPanelStart, skillsPanelEnd);
+	assert.match(skillsPanelRegion, /populateSkillSelect\(\)/);
+	assert.doesNotMatch(skillsPanelRegion, /body\.innerHTML/);
+
+	await app.close();
+});
+
+test("GET /playground/agents updates skills loading and mutation through local regions", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents",
+	});
+	assert.equal(response.statusCode, 200);
+	const body = response.body;
+
+	const expandStart = body.indexOf("function handleExpandSkills()");
+	const expandEnd = body.indexOf("function mobileBackToList(", expandStart);
+	assert.ok(expandStart >= 0, "handleExpandSkills function not found");
+	assert.ok(expandEnd > expandStart, "handleExpandSkills region end not found");
+	const expandRegion = body.slice(expandStart, expandEnd);
+	assert.match(expandRegion, /var agentId = state\.selectedId/);
+	assert.match(expandRegion, /state\.skillsLoadingAgentId = agentId/);
+	assert.match(expandRegion, /renderSkillsPanel\(agent\)/);
+	assert.match(expandRegion, /renderSkillsList\(agentId\)/);
+	assert.match(expandRegion, /state\.selectedId !== agentId/);
+	assert.doesNotMatch(expandRegion, /renderDetailBody\(\)/);
+
+	const refreshStart = body.indexOf("async function handleRefreshSkills()");
+	const refreshEnd = body.indexOf("function handleExpandSkills(", refreshStart);
+	assert.ok(refreshStart >= 0, "handleRefreshSkills function not found");
+	assert.ok(refreshEnd > refreshStart, "handleRefreshSkills region end not found");
+	const refreshRegion = body.slice(refreshStart, refreshEnd);
+	assert.match(refreshRegion, /var agentId = state\.selectedId/);
+	assert.match(refreshRegion, /state\.skillsLoadingAgentId = agentId/);
+	assert.match(refreshRegion, /state\.selectedId === agentId/);
+	assert.match(refreshRegion, /renderSkillsList\(agentId\)/);
+	assert.match(refreshRegion, /renderDetailMiniStats\(agent,\s*getStatusBadge\(agent\)\)/);
+	assert.doesNotMatch(refreshRegion, /renderDetailBody\(\)/);
+
+	await app.close();
+});
+
+test("GET /playground/agents guards async skill results against stale selection", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents",
+	});
+	assert.equal(response.statusCode, 200);
+	const body = response.body;
+
+	const renderSkillsStart = body.indexOf("function renderSkillsList(");
+	const renderSkillsEnd = body.indexOf("function getGallerySkillSignature(", renderSkillsStart);
+	assert.ok(renderSkillsStart >= 0, "renderSkillsList function not found");
+	assert.ok(renderSkillsEnd > renderSkillsStart, "renderSkillsList region end not found");
+	const renderSkillsRegion = body.slice(renderSkillsStart, renderSkillsEnd);
+	assert.match(renderSkillsRegion, /var agentId = expectedAgentId \|\| state\.selectedId/);
+	assert.match(renderSkillsRegion, /state\.selectedId !== agentId/);
+	assert.match(renderSkillsRegion, /return/);
+
+	const removeStart = body.indexOf("async function handleRemoveSkill(");
+	const removeEnd = body.indexOf("async function handleCopySkill(", removeStart);
+	assert.ok(removeStart >= 0, "handleRemoveSkill function not found");
+	assert.ok(removeEnd > removeStart, "handleRemoveSkill region end not found");
+	const removeRegion = body.slice(removeStart, removeEnd);
+	assert.match(removeRegion, /var agentId = state\.selectedId/);
+	assert.match(removeRegion, /state\.selectedId === agentId/);
+	assert.match(removeRegion, /renderSkillsList\(agentId\)/);
+
+	const copyStart = body.indexOf("async function handleCopySkill()");
+	const copyEnd = body.indexOf("async function handleRefreshSkills(", copyStart);
+	assert.ok(copyStart >= 0, "handleCopySkill function not found");
+	assert.ok(copyEnd > copyStart, "handleCopySkill region end not found");
+	const copyRegion = body.slice(copyStart, copyEnd);
+	assert.match(copyRegion, /var agentId = state\.selectedId/);
+	assert.match(copyRegion, /state\.selectedId === agentId/);
+	assert.match(copyRegion, /renderSkillsList\(agentId\)/);
+
 	await app.close();
 });
 

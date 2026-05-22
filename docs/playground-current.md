@@ -22,6 +22,10 @@
 - per-agent skill cache 使用 `skillsLoadedByAgentId` 标记已加载的 Agent；展开 skills 时若已加载则直接渲染缓存，不重复请求。已加载空数组也是有效缓存。只有手动刷新或 toggle/remove/install 等 mutation 才刷新对应 Agent 的 skills。
 - 技能数统计使用 `getSkillCountText(agentId)` 区分”未加载”（显示 `—`）与”已加载空数组”（显示 `0`），折叠摘要使用 `getCollapsedSkillSummary(agentId)` 显示对应文案。
 - 切换 Agent 时 `skillsExpanded` 重置为 `false`，不会残留上一 Agent 的 skill rows。
+- selected Agent 详情区现在由稳定 shell 承载 `header/actions`、mini stats、基础配置/规则和 skills panel 四个子区域；Agent 切换、skills loading、刷新和 mutation 不再无条件重写整块 detail body。
+- skills loading、展开、手动刷新、install/remove/toggle 只更新 skills region 和必要统计；局部刷新会保留 detail body 的滚动位置，避免技能加载时把用户滚回顶部。
+- installable skill 下拉使用 gallery signature 判断是否需要重建 options；gallery 未变化时不会重复 `populateSkillSelect()` 重建下拉。
+- 异步 skills load/mutation 在 await/then 前捕获操作开始时的 `agentId`，渲染前检查 `state.selectedId` 仍然匹配，避免旧 Agent 结果画到新面板。
 - installable skill 下拉继续读取 main skills gallery，包含主 Agent 已关闭的 disabled entries，并保留”主 Agent 已关闭”提示。
 - 相关源码：`src/ui/agents-page.ts`
 
