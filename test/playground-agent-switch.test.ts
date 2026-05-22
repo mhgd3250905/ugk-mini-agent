@@ -78,6 +78,7 @@ test("playground renders agent management entry points and workspace", () => {
 test("playground agent button opens the standalone agents page instead of the legacy workspace", () => {
 	const script = getPlaygroundAgentManagerScript();
 
-	assert.match(script, /window\.open\("\/playground\/agents", "_blank"\)/);
+	assert.match(script, /window\.location\.assign\("\/playground\/agents"\)/);
+	assert.doesNotMatch(script, /window\.open\("\/playground\/agents", "_blank"\)/);
 	assert.doesNotMatch(script, /agentSelectorStatus\?\.addEventListener\("click", \(\) => \{\s*openAgentManager\(agentSelectorStatus, \{ mode: "workspace" \}\);/);
 });

@@ -2337,7 +2337,7 @@ export function getPlaygroundAgentManagerScript(): string {
 		}
 
 		function openStandaloneAgentsPage() {
-			window.open("/playground/agents", "_blank");
+			window.location.assign("/playground/agents");
 		}
 
 		function bindAgentManagerEvents() {

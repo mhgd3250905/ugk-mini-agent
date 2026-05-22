@@ -155,6 +155,27 @@ function getPlaygroundScript(): string {
 			return normalized;
 		}
 
+		function shouldOpenChatViewFromUrl() {
+			try {
+				const params = new URLSearchParams(window.location.search || "");
+				return params.get("view") === "chat";
+			} catch {
+				return false;
+			}
+		}
+
+		function clearChatViewUrlHint() {
+			if (!shouldOpenChatViewFromUrl() || !window.history?.replaceState) {
+				return;
+			}
+			try {
+				const url = new URL(window.location.href);
+				url.searchParams.delete("view");
+				const nextSearch = url.searchParams.toString();
+				window.history.replaceState(null, "", url.pathname + (nextSearch ? "?" + nextSearch : "") + url.hash);
+			} catch {}
+		}
+
 		const state = {
 			loading: false,
 			queueMessagePending: false,
@@ -726,6 +747,7 @@ function getPlaygroundScript(): string {
 				setTranscriptState("idle");
 				renderAgentSelector();
 				clearError();
+				clearChatViewUrlHint();
 				shell.dataset.home = "true";
 				landingScreen.setAttribute("aria-hidden", "false");
 				void loadAgentStatusAndRenderCards();
@@ -1581,6 +1603,12 @@ function getPlaygroundScript(): string {
 			renderConnManager();
 			void loadAgentStatusAndRenderCards();
 			void syncRuntimeSummary();
+			if (shouldOpenChatViewFromUrl()) {
+				shell.dataset.home = "false";
+				landingScreen.setAttribute("aria-hidden", "true");
+				renderAgentSelector();
+				void ensureCurrentConversation({ silent: true });
+			}
 
 			resetStreamingState();
 			clearError();

@@ -28,6 +28,11 @@ test("team page contains Chinese labels", () => {
 	assert.match(html, /汇总 Agent/);
 });
 
+test("team page has top-left return link to chat", () => {
+	const html = renderTeamPage();
+	assert.match(html, /class="topbar-back" href="\/playground\?view=chat" title="返回对话" aria-label="返回对话"/);
+});
+
 test("team page references /v1/team API", () => {
 	const html = renderTeamPage();
 	assert.match(html, /\/v1\/team/);

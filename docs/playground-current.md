@@ -2,6 +2,14 @@
 
 更新时间：`2026-05-23`
 
+## 2026-05-23 Playground 独立工作台同标签跳转
+
+- `/playground` 顶部的当前 Agent 标签和“后台任务”入口不再调用 `window.open(..., "_blank")`，而是用当前标签跳转到 `/playground/agents` 与 `/playground/conn`。
+- 桌面顶部与手机更多菜单里的 `Team Runtime` 入口不再带 `target="_blank"`；点击后在当前标签进入 `/playground/team`。
+- `/playground/agents`、`/playground/conn` 和 `/playground/team` 的左上角“返回对话”统一指向 `/playground?view=chat`；主 Playground 识别 `view=chat` 后直接恢复当前 Agent 的对话界面，而不是落回 Agent 选择首页。
+- Team 页面仍是独立工作台，不嵌进主聊天 workspace；用户显式点击 Agent 菜单里的“返回首页”时会清掉 `view=chat` URL hint，避免刷新后又跳回对话。
+- 相关源码：`src/ui/playground.ts`、`src/ui/agents-page.ts`、`src/ui/conn-page.ts`、`src/ui/playground-agent-manager.ts`、`src/ui/playground-conn-activity-controller.ts`、`src/ui/playground-page-shell.ts`、`src/ui/team-page.ts`、`test/server.test.ts`、`test/team-page-ui.test.ts`、`test/playground-agent-switch.test.ts`、`test/agent-model-ui.test.ts`
+
 ## 2026-05-23 Agents 技能卡片状态降噪
 
 - `/playground/agents` 技能卡片不再显示单独的 `已启用 / 已关闭` 状态 badge；启用状态只由左侧 `开 / 关` switch 表达，避免同一卡片重复说同一件事。
@@ -131,7 +139,7 @@
 ## 2026-05-14 Team Runtime 独立工作台
 
 - Playground 新增 `/playground/team` 独立页面，和 `/playground/conn`、`/playground/agents` 一样复用 standalone cockpit 视觉系统，不嵌进聊天 workspace。
-- 主 `/playground` 桌面顶部操作区和手机更多菜单都提供 `Team Runtime` 入口，打开新标签页，不影响当前聊天、conn 或 agent profile 运行态。
+- 主 `/playground` 桌面顶部操作区和手机更多菜单都提供 `Team Runtime` 入口；当前行为是在同一标签进入独立页面，并通过页面左上角返回 `/playground?view=chat` 恢复对话。
 - 独立页面通过 Team Runtime v2 的 Plans / TeamUnits / Runs API 管理状态；页面不直接绕过 Team API 读 `.data/team`。
 - 相关源码：`src/ui/team-page.ts`、`src/routes/playground.ts`、`src/ui/playground-page-shell.ts`、`src/ui/playground-styles.ts`
 
@@ -206,7 +214,7 @@
 
 ## 2026-05-11 Agent 按钮独立页面入口
 
-- 对话页顶部当前 Agent 标签按钮现在直接打开独立 `/playground/agents` 页面，行为和后台任务按钮打开 `/playground/conn` 一致。
+- 对话页顶部当前 Agent 标签按钮现在直接在当前标签进入独立 `/playground/agents` 页面，行为和后台任务按钮进入 `/playground/conn` 一致；两个页面都通过左上角返回 `/playground?view=chat` 恢复对话。
 - 点击该按钮不再展示旧的内嵌 Agent workspace 区域；旧 workspace 代码暂时只作为兼容实现保留，不再作为顶部 Agent 按钮的入口。
 - 悬浮 Agent 切换菜单仍保留：菜单项内部点击会阻止冒泡，继续用于快速切换当前 Agent。
 - 相关源码：`src/ui/playground-agent-manager.ts`、`src/ui/playground-page-shell.ts`

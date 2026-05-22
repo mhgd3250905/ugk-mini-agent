@@ -2315,7 +2315,7 @@ export function getConnActivityEventHandlersScript(): string {
 		});
 
 		openConnManagerButton.addEventListener("click", () => {
-			window.open("/playground/conn", "_blank");
+			window.location.assign("/playground/conn");
 		});
 
 		openConnEditorButton.addEventListener("click", () => {

@@ -39,6 +39,7 @@ test("standalone agents page follows the home cockpit visual system", () => {
 	const page = renderAgentsPage();
 
 	assert.match(page, /data-standalone-theme="cockpit"/);
+	assert.match(page, /class="sp-topbar-back" href="\/playground\?view=chat"/);
 	assert.match(page, /sp-cockpit-drift/);
 	assert.match(page, /body\[data-standalone-theme="cockpit"\] \.ag-stat-card/);
 });

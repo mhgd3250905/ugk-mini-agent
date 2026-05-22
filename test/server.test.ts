@@ -909,7 +909,17 @@ test("GET /playground returns the test UI html", async () => {
 	assert.match(response.body, /if \(activeMode !== "task" && state\.taskInboxOpen\)/);
 	assert.match(response.body, /openAssetLibrary\(openAssetLibraryButton, \{ mode: "workspace" \}\)/);
 	assert.match(response.body, /openTaskInbox\(openTaskInboxButton, \{ mode: "workspace" \}\)/);
-	assert.match(response.body, /window\.open\("\/playground\/conn", "_blank"\)/);
+	assert.match(response.body, /window\.location\.assign\("\/playground\/conn"\)/);
+	assert.match(response.body, /window\.location\.assign\("\/playground\/agents"\)/);
+	assert.match(response.body, /function shouldOpenChatViewFromUrl\(\)/);
+	assert.match(response.body, /params\.get\("view"\) === "chat"/);
+	assert.match(response.body, /function clearChatViewUrlHint\(\)/);
+	assert.match(response.body, /if \(shouldOpenChatViewFromUrl\(\)\) \{[\s\S]*shell\.dataset\.home = "false";[\s\S]*ensureCurrentConversation\(\{ silent: true \}\);/);
+	assert.doesNotMatch(response.body, /window\.open\("\/playground\/conn", "_blank"\)/);
+	assert.doesNotMatch(response.body, /window\.open\("\/playground\/agents", "_blank"\)/);
+	assert.match(response.body, /<a class="telemetry-card telemetry-action" href="\/playground\/team" data-tooltip-title="Team Runtime"/);
+	assert.match(response.body, /<a href="\/playground\/team" class="mobile-overflow-menu-item" role="menuitem">/);
+	assert.doesNotMatch(response.body, /href="\/playground\/team"[^>]*target="_blank"/);
 	assert.doesNotMatch(response.body, /function loadAssetLibrary\(/);
 	assert.doesNotMatch(response.body, /state\.assetItems/);
 	assert.doesNotMatch(response.body, /data-primary-view="chat"/);
@@ -1931,6 +1941,7 @@ test("standalone conn page follows the home cockpit visual system", () => {
 	const response = renderConnPage();
 
 	assert.match(response, /data-standalone-theme="cockpit"/);
+	assert.match(response, /class="sp-topbar-back" href="\/playground\?view=chat"/);
 	assert.match(response, /sp-cockpit-drift/);
 	assert.match(response, /body\[data-standalone-theme="cockpit"\] \.conn-stat-card/);
 });
@@ -7655,6 +7666,7 @@ test("GET /playground/team includes run detail mindmap view shell", async () => 
 
 	assert.equal(response.statusCode, 200);
 	assert.match(response.headers["content-type"] ?? "", /^text\/html/);
+	assert.match(response.body, /class="topbar-back" href="\/playground\?view=chat" title="返回对话" aria-label="返回对话"/);
 
 	// View state for per-run mindmap/detail switch
 	assert.match(response.body, /_runDetailViewByRunId/);

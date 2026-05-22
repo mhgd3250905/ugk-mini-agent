@@ -37,7 +37,7 @@ export function renderConnPage(): string {
 <body data-standalone-theme="cockpit">
 	<div id="app">
 			<header class="sp-topbar">
-				<a class="sp-topbar-back" href="/playground" title="返回">
+				<a class="sp-topbar-back" href="/playground?view=chat" title="返回">
 					<svg viewBox="0 0 20 20" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 4l-6 6 6 6"/></svg>
 				</a>
 				<strong class="sp-topbar-title">后台任务工作台</strong>

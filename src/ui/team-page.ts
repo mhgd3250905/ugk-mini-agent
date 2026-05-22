@@ -12,7 +12,12 @@ export function renderTeamPage(): string {
 [data-theme="light"] { --bg: #fafafa; --surface: #fff; --border: #e5e5e5; --text: #171717; --muted: #737373; --accent: #2563eb; --accent-hover: #1d4ed8; --success: #16a34a; --fail: #dc2626; --warn: #d97706; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
-.topbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--surface); gap: 16px; }
+.topbar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.topbar-title { min-width: 0; }
+.topbar-back { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 6px; color: var(--text); text-decoration: none; flex: 0 0 auto; }
+.topbar-back:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+.topbar-back svg { width: 16px; height: 16px; stroke: currentColor; }
 .topbar h1 { font-size: 16px; font-weight: 600; }
 .topbar nav { display: flex; gap: 8px; }
 .topbar button { padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--text); cursor: pointer; font-size: 13px; }
@@ -265,6 +270,7 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 @media (max-width: 720px) {
 	.modal-panel, .report-content, .file-viewer-content, .modal, .confirm-box { width: 100% !important; max-width: 100% !important; border-radius: 0 !important; max-height: 100vh !important; }
 	.topbar { flex-wrap: wrap; gap: 8px; }
+	.topbar-left { width: 100%; }
 	.team-summary { display: none !important; }
 	.run-actions { flex-wrap: wrap; }
 	table { font-size: 11px; }
@@ -289,9 +295,16 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 </head>
 <body>
 <div class="topbar">
-	<div>
-		<h1>Team 控制台</h1>
-		<p style="font-size:12px;color:var(--muted)">计划 → 多角色执行 → 报告</p>
+	<div class="topbar-left">
+		<a class="topbar-back" href="/playground?view=chat" title="返回对话" aria-label="返回对话">
+			<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+				<path d="M15 18l-6-6 6-6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+			</svg>
+		</a>
+		<div class="topbar-title">
+			<h1>Team 控制台</h1>
+			<p style="font-size:12px;color:var(--muted)">计划 → 多角色执行 → 报告</p>
+		</div>
 	</div>
 	<div class="team-summary" style="display:flex;gap:16px">
 		<div class="summary-item"><span class="summary-plans" id="summary-plans">0</span><span style="font-size:11px;color:var(--muted)"> 计划</span></div>

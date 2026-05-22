@@ -92,7 +92,7 @@ ${input.playgroundScript ?? ""}</script>`;
 						<strong>后台任务</strong>
 						<span id="conn-manager-unread-badge" class="telemetry-action-badge" hidden>0</span>
 					</button>
-					<a class="telemetry-card telemetry-action" href="/playground/team" target="_blank" rel="noreferrer" data-tooltip-title="Team Runtime" data-tooltip-desc="打开 Team Runtime 独立工作台。">
+					<a class="telemetry-card telemetry-action" href="/playground/team" data-tooltip-title="Team Runtime" data-tooltip-desc="进入 Team Runtime 独立工作台。">
 						<span>多 Agent 链路别靠脑补</span>
 						<strong>Team Runtime</strong>
 					</a>
@@ -184,7 +184,7 @@ ${input.playgroundScript ?? ""}</script>`;
 							</span>
 							<span>后台任务</span>
 						</button>
-						<a href="/playground/team" target="_blank" rel="noreferrer" class="mobile-overflow-menu-item" role="menuitem">
+						<a href="/playground/team" class="mobile-overflow-menu-item" role="menuitem">
 							<span class="mobile-overflow-menu-item-icon" aria-hidden="true">
 								<svg viewBox="0 0 24 24" fill="none">
 									<path d="M5 6h14v12H5V6Z" stroke-width="1.8" stroke-linejoin="round" />

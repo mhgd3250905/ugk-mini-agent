@@ -12,6 +12,16 @@
 
 ---
 
+## 2026-05-23 — Playground standalone workbench same-tab navigation
+
+- **主题**: 将 Agent、后台任务、Team Runtime 独立工作台入口收口为当前标签跳转
+- **影响范围**: `src/ui/playground.ts`, `src/ui/agents-page.ts`, `src/ui/conn-page.ts`, `src/ui/playground-agent-manager.ts`, `src/ui/playground-conn-activity-controller.ts`, `src/ui/playground-page-shell.ts`, `src/ui/team-page.ts`, `test/server.test.ts`, `test/team-page-ui.test.ts`, `test/playground-agent-switch.test.ts`, `test/agent-model-ui.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - Agent 标签与后台任务入口从 `window.open(..., "_blank")` 改为 `window.location.assign(...)`
+  - Team Runtime 的桌面和手机入口移除 `target="_blank"`，保持在当前标签进入 `/playground/team`
+  - Agent、Conn、Team 独立页左上角统一返回 `/playground?view=chat`，主页面识别 `view=chat` 后恢复当前 Agent 的对话界面
+  - 显式返回 Agent 首页时清理 `view=chat` URL hint，避免刷新行为被旧返回状态污染
+
 ## 2026-05-23 — Playground stream resume cursor dedupe
 
 - **主题**: 修复对话进行中恢复事件流时 assistant 文字重复叠加
