@@ -1,0 +1,165 @@
+.execution-map-container {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+.execution-map-scroll {
+  position: relative;
+  padding: 16px;
+}
+
+.execution-map-links {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  pointer-events: none;
+}
+
+.emap-link {
+  stroke: var(--line);
+}
+
+.emap-link-highlighted {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
+.execution-map-nodes {
+  position: relative;
+}
+
+.emap-node {
+  position: absolute;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: row;
+  cursor: pointer;
+  transition: border-color 0.15s;
+  overflow: hidden;
+  height: 56px;
+}
+
+.emap-node:hover {
+  border-color: var(--accent);
+}
+
+.emap-node.selected {
+  border-color: var(--accent);
+}
+
+.emap-node.chain-selected {
+  border-color: var(--secondary);
+}
+
+.emap-node-status-bar {
+  width: 4px;
+  flex-shrink: 0;
+}
+
+.status-running .emap-node-status-bar {
+  background: var(--accent);
+}
+
+.status-succeeded .emap-node-status-bar {
+  background: var(--success);
+}
+
+.status-failed .emap-node-status-bar {
+  background: var(--danger);
+}
+
+.status-paused .emap-node-status-bar {
+  background: var(--warning);
+}
+
+.status-dimmed {
+  opacity: 0.5;
+}
+
+.status-dimmed .emap-node-status-bar {
+  background: var(--secondary);
+}
+
+.status-running .emap-node-status-bar {
+  animation: pulse-bar 2s ease-in-out infinite;
+}
+
+@keyframes pulse-bar {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.emap-node-content {
+  flex: 1;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.emap-node-kind {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.kind-orphan {
+  color: var(--warning);
+}
+
+.emap-node-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.emap-node-summary {
+  font-size: 10px;
+  color: var(--secondary);
+}
+
+.emap-node-error {
+  font-size: 11px;
+  color: var(--danger);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.emap-collapsed {
+  background: var(--surface-raised);
+  cursor: default;
+}
+
+.emap-collapsed:hover {
+  border-color: var(--line);
+}
+
+@media (max-width: 720px) {
+  .execution-map-links {
+    display: none;
+  }
+
+  .emap-node {
+    position: relative;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    margin-bottom: 8px;
+  }
+
+  .execution-map-nodes {
+    display: flex;
+    flex-direction: column;
+  }
+}

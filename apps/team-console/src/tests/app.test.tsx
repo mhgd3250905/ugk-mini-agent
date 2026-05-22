@@ -20,9 +20,9 @@ describe("App", () => {
     expect(select).toHaveValue("mock");
   });
 
-  it("renders empty state when no run selected", () => {
+  it("renders first fixture run by default", () => {
     render(<App />);
-    expect(screen.getByText(/No run selected/)).toBeInTheDocument();
+    expect(screen.getByText("Research vendor A")).toBeInTheDocument();
   });
 
   it("has mock and live options", () => {
