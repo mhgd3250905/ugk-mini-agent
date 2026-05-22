@@ -14,6 +14,7 @@
 - AbortSignal 全链路传播：cancel/pause 能中断正在执行的 agent session
 - 真实 runner smoke test：`run_1c54aaa7e442`，status: completed，P0_REAL_RUNNER_OK
 - 最新验证：P26 output contract validation 已覆盖 deterministic validator、真实 orchestrator regression、`npm run test:team` 和 `npx tsc --noEmit`
+- 独立 Team Console 前端预览已建立（`apps/team-console/`），使用 Vite + React + TypeScript，支持 Mock fixture 和 Live API 两种数据源，实现纵向 Execution Map 原型。当前 `/playground/team` 仍是生产入口，Team Console 不替换任何现有页面。
 
 ## 核心概念
 

@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-23 — Team Console 独立前端预览
+
+- **主题**: 建立 `apps/team-console/` 独立 Vite + React + TypeScript 前端项目，实现 Team Runtime 纵向 Execution Map 原型
+- **影响范围**: `apps/team-console/**`（新目录）, `package.json`（新增 `team-console:*` 脚本）, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - 新建独立前端子项目 `apps/team-console/`，可独立启动、构建、测试
+  - 实现 mock fixture（覆盖顺序、动态、拆分、失败、大量子任务、未归属、跳过场景）和 Live API adapter
+  - 实现纵向 Execution Map model/layout 纯函数（不依赖 DOM），42 个测试覆盖 model/layout/UI/adapter
+  - 实现可点击节点的执行图 UI 和任务详情面板
+  - 旧 `/playground/team` 页面和后端完全不受影响
+
 ## 2026-05-23 — Qwen reasoning stream heartbeat and GLM context metadata
 
 - **主题**: 修复长 reasoning 流式响应保活，并校正阿里 CodePlan `glm-5.1` 上下文窗口
