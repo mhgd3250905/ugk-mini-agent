@@ -46,7 +46,7 @@ export function getPlaygroundMobileShellControllerScript(): string {
 
 		function closeMobileConversationDrawer() {
 			setMobileConversationDrawerOpen(false);
-			mobileConversationList.innerHTML = "";
+			mobileConversationList.replaceChildren();
 		}
 	`;
 }
@@ -113,5 +113,7 @@ export function getPlaygroundMobileShellEventHandlersScript(): string {
 		mobileConversationList.addEventListener("scroll", () => {
 			scheduleConversationVirtualScroll(mobileConversationList);
 		});
+		desktopConversationList.addEventListener("click", handleConversationListClick);
+		mobileConversationList.addEventListener("click", handleConversationListClick);
 	`;
 }

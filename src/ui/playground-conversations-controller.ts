@@ -41,6 +41,52 @@ export function getPlaygroundConversationControllerScript(): string {
 				: "";
 		}
 
+		function handleConversationListClick(event) {
+			var menuTrigger = event.target.closest(".conversation-item-menu-trigger");
+			if (menuTrigger) {
+				event.preventDefault();
+				event.stopPropagation();
+				var cid = menuTrigger.closest(".mobile-conversation-item");
+				if (cid && cid.dataset.conversationId) toggleConversationMenu(cid.dataset.conversationId);
+				return;
+			}
+			var colorSwatch = event.target.closest(".conversation-color-swatch");
+			if (colorSwatch) {
+				event.preventDefault();
+				event.stopPropagation();
+				if (colorSwatch.disabled) return;
+				var swatchShell = colorSwatch.closest(".conversation-item-shell");
+				var swatchBtn = swatchShell && swatchShell.querySelector(".mobile-conversation-item");
+				if (swatchBtn && swatchBtn.dataset.conversationId) {
+					void requestUpdateConversation(swatchBtn.dataset.conversationId, { backgroundColor: colorSwatch.dataset.color || "" });
+				}
+				return;
+			}
+			var menuItem = event.target.closest(".conversation-menu-item");
+			if (menuItem) {
+				event.preventDefault();
+				event.stopPropagation();
+				if (menuItem.disabled) return;
+				var action = menuItem.dataset.action;
+				var mShell = menuItem.closest(".conversation-item-shell");
+				var mButton = mShell && mShell.querySelector(".mobile-conversation-item");
+				var mId = mButton && mButton.dataset.conversationId;
+				if (!mId) return;
+				var mItem = state.conversationCatalog.find(function(e) { return e.conversationId === mId; });
+				if (!mItem) return;
+				var mTrigger = mShell.querySelector(".conversation-item-menu-trigger");
+				if (action === "rename") void requestRenameConversation(mItem, mTrigger);
+				else if (action === "pin") void requestUpdateConversation(mId, { pinned: !mItem.pinned });
+				else if (action === "delete") void requestDeleteConversation(mItem, mTrigger);
+				return;
+			}
+			var itemButton = event.target.closest(".mobile-conversation-item");
+			if (itemButton && !itemButton.disabled) {
+				var conversationId = itemButton.dataset.conversationId;
+				if (conversationId) void selectConversationFromDrawer(conversationId);
+			}
+		}
+
 		function closeConversationMenu() {
 			if (!state.conversationMenuOpenId) {
 				return;
@@ -95,7 +141,7 @@ export function getPlaygroundConversationControllerScript(): string {
 				return;
 			}
 			const savedScrollTop = container.scrollTop;
-			container.innerHTML = "";
+			container.replaceChildren();
 			const catalog = Array.isArray(state.conversationCatalog) ? state.conversationCatalog : [];
 			if (catalog.length === 0) {
 				const empty = document.createElement("div");
@@ -141,18 +187,23 @@ export function getPlaygroundConversationControllerScript(): string {
 				const hasPendingSwitch = Object.keys(state.conversationSwitchPendingById || {}).length > 0;
 				const switching = Boolean(state.conversationSwitchPendingById?.[item.conversationId]);
 				button.disabled = state.loading || hasPendingSwitch;
-				button.innerHTML =
-					'<span class="mobile-conversation-title"></span>' +
-					'<span class="mobile-conversation-preview"></span>' +
-					'<span class="mobile-conversation-meta"><span></span><span></span></span>';
-				button.querySelector(".mobile-conversation-title").textContent = item.title || "\\u65b0\\u4f1a\\u8bdd";
-				button.querySelector(".mobile-conversation-preview").textContent = item.preview || "\\u6682\\u65e0\\u6458\\u8981";
-				const metaNodes = button.querySelectorAll(".mobile-conversation-meta span");
-				metaNodes[0].textContent = item.running ? "\\u8fd0\\u884c\\u4e2d" : item.pinned ? "已置顶" : formatConversationTime(item.updatedAt);
-				metaNodes[1].textContent = item.messageCount + " \\u6761";
-				button.addEventListener("click", () => {
-					void selectConversationFromDrawer(item.conversationId);
-				});
+				var titleSpan = document.createElement("span");
+				titleSpan.className = "mobile-conversation-title";
+				titleSpan.textContent = item.title || "\\u65b0\\u4f1a\\u8bdd";
+				button.appendChild(titleSpan);
+				var previewSpan = document.createElement("span");
+				previewSpan.className = "mobile-conversation-preview";
+				previewSpan.textContent = item.preview || "\\u6682\\u65e0\\u6458\\u8981";
+				button.appendChild(previewSpan);
+				var metaSpan = document.createElement("span");
+				metaSpan.className = "mobile-conversation-meta";
+				var metaTime = document.createElement("span");
+				metaTime.textContent = item.running ? "\\u8fd0\\u884c\\u4e2d" : item.pinned ? "已置顶" : formatConversationTime(item.updatedAt);
+				metaSpan.appendChild(metaTime);
+				var metaCount = document.createElement("span");
+				metaCount.textContent = item.messageCount + " \\u6761";
+				metaSpan.appendChild(metaCount);
+				button.appendChild(metaSpan);
 				shell.appendChild(button);
 				const menuButton = document.createElement("button");
 				menuButton.type = "button";
@@ -161,11 +212,6 @@ export function getPlaygroundConversationControllerScript(): string {
 				menuButton.setAttribute("aria-haspopup", "menu");
 				menuButton.setAttribute("aria-expanded", state.conversationMenuOpenId === item.conversationId ? "true" : "false");
 				menuButton.setAttribute("aria-label", "打开会话菜单 " + (item.title || item.conversationId));
-				menuButton.addEventListener("click", (event) => {
-					event.preventDefault();
-					event.stopPropagation();
-					toggleConversationMenu(item.conversationId);
-				});
 				button.appendChild(menuButton);
 				if (state.conversationMenuOpenId === item.conversationId) {
 					shell.appendChild(renderConversationItemMenu(item, menuButton, {
@@ -188,17 +234,10 @@ export function getPlaygroundConversationControllerScript(): string {
 			button.className = "conversation-menu-item" + (options.danger ? " danger" : "");
 			button.setAttribute("role", "menuitem");
 			button.disabled = Boolean(options.disabled);
+			button.dataset.action = options.action || "";
 			button.innerHTML = '<span class="conversation-menu-icon"></span><span></span>';
 			button.querySelector(".conversation-menu-icon").textContent = options.icon || "";
 			button.querySelector("span:last-child").textContent = options.label;
-			button.addEventListener("click", (event) => {
-				event.preventDefault();
-				event.stopPropagation();
-				if (button.disabled) {
-					return;
-				}
-				options.onClick?.();
-			});
 			return button;
 		}
 
@@ -207,21 +246,18 @@ export function getPlaygroundConversationControllerScript(): string {
 			menu.className = "conversation-item-menu";
 			menu.setAttribute("role", "menu");
 			const pendingAction = state.conversationActionPendingById?.[item.conversationId] || "";
-			menu.addEventListener("click", (event) => {
-				event.stopPropagation();
-			});
 
 			menu.appendChild(createConversationMenuButton({
+				action: "rename",
 				icon: "✎",
 				label: pendingAction === "rename" ? "保存中" : "重命名",
 				disabled: options?.disabled || Boolean(pendingAction),
-				onClick: () => void requestRenameConversation(item, restoreFocusElement),
 			}));
 			menu.appendChild(createConversationMenuButton({
+				action: "pin",
 				icon: item.pinned ? "⌄" : "⌃",
 				label: item.pinned ? "取消置顶" : "置顶",
 				disabled: options?.disabled || Boolean(pendingAction),
-				onClick: () => void requestUpdateConversation(item.conversationId, { pinned: !item.pinned }),
 			}));
 
 			const colorGroup = document.createElement("div");
@@ -235,30 +271,23 @@ export function getPlaygroundConversationControllerScript(): string {
 				const swatch = document.createElement("button");
 				swatch.type = "button";
 				swatch.className = "conversation-color-swatch" + (colorOption.value ? " color-" + colorOption.value : " color-default");
+				swatch.dataset.color = colorOption.value || "";
 				if ((item.backgroundColor || "") === colorOption.value) {
 					swatch.classList.add("is-selected");
 				}
 				swatch.disabled = Boolean(options?.disabled || pendingAction);
 				swatch.setAttribute("aria-label", "设置背景颜色为" + colorOption.label);
-				swatch.addEventListener("click", (event) => {
-					event.preventDefault();
-					event.stopPropagation();
-					if (swatch.disabled) {
-						return;
-					}
-					void requestUpdateConversation(item.conversationId, { backgroundColor: colorOption.value });
-				});
 				colorList.appendChild(swatch);
 			}
 			colorGroup.appendChild(colorList);
 			menu.appendChild(colorGroup);
 
 			menu.appendChild(createConversationMenuButton({
+				action: "delete",
 				icon: "×",
 				label: pendingAction === "delete" ? "删除中" : "删除",
 				danger: true,
 				disabled: options?.disabled || Boolean(pendingAction),
-				onClick: () => void requestDeleteConversation(item, restoreFocusElement),
 			}));
 			return menu;
 		}
@@ -266,13 +295,13 @@ export function getPlaygroundConversationControllerScript(): string {
 		function renderConversationDrawer() {
 			if (isDesktopViewport()) {
 				renderConversationListInto(desktopConversationList);
-				mobileConversationList.innerHTML = "";
+				mobileConversationList.replaceChildren();
 			} else if (state.mobileConversationDrawerOpen) {
 				renderConversationListInto(mobileConversationList);
-				desktopConversationList.innerHTML = "";
+				desktopConversationList.replaceChildren();
 			} else {
-				mobileConversationList.innerHTML = "";
-				desktopConversationList.innerHTML = "";
+				mobileConversationList.replaceChildren();
+				desktopConversationList.replaceChildren();
 			}
 		}
 

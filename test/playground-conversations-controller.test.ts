@@ -155,14 +155,14 @@ test("mobile list is cleared when drawer is closed inside renderConversationDraw
 	const renderFnBlock = extractRenderConversationDrawerBlock(script);
 	assert.ok(renderFnBlock, "renderConversationDrawer function block should be extractable");
 
-	assert.match(renderFnBlock, /mobileConversationList\.innerHTML\s*=\s*""/, "should clear mobile list when drawer is not open");
+	assert.match(renderFnBlock, /mobileConversationList\.replaceChildren\(\)/, "should clear mobile list when drawer is not open");
 });
 
 test("renderConversationListInto renders into a single container", () => {
 	const script = getPlaygroundConversationControllerScript();
 
 	assert.match(script, /function renderConversationListInto\(container\)/);
-	assert.match(script, /container\.innerHTML\s*=\s*""/);
+	assert.match(script, /container\.replaceChildren\(\)/);
 	assert.match(script, /container\.appendChild\(shell\)/);
 });
 
@@ -330,6 +330,175 @@ test("requestDeleteConversation still force-refreshes catalog (needs server-assi
 test("scheduleConversationCatalogRefresh timer variable is declared", () => {
 	const script = getPlaygroundConversationControllerScript();
 	assert.match(script, /let conversationCatalogRefreshTimer\s*=\s*null/, "timer variable must be declared");
+});
+
+// --- Step 5: Event delegation behavioral tests ---
+
+function makeEl(props: Record<string, unknown> = {}) {
+	return {
+		closest(selector: string) {
+			const map = props.closest as Record<string, unknown> | undefined;
+			return map?.[selector] ?? null;
+		},
+		querySelector(selector: string) {
+			const map = props.querySelector as Record<string, unknown> | undefined;
+			return map?.[selector] ?? null;
+		},
+		dataset: (props.dataset ?? {}) as Record<string, string>,
+		disabled: Boolean(props.disabled),
+	};
+}
+
+test("handleConversationListClick: menu trigger toggles conversation menu", () => {
+	const script = getPlaygroundConversationControllerScript();
+	const fnBlock = extractFunctionBlock(script, "handleConversationListClick");
+	assert.ok(fnBlock, "handleConversationListClick must be extractable");
+
+	let toggledId = "";
+	function toggleConversationMenu(id: string) { toggledId = id; }
+	function requestUpdateConversation() {}
+	function requestRenameConversation() {}
+	function requestDeleteConversation() {}
+	function selectConversationFromDrawer() {}
+	const state = { conversationCatalog: [] as unknown[] };
+
+	const button = makeEl({ dataset: { conversationId: "conv-1" } });
+	const trigger = makeEl({ closest: { ".mobile-conversation-item": button } });
+	const event = {
+		target: makeEl({ closest: { ".conversation-item-menu-trigger": trigger } }),
+		preventDefault() {},
+		stopPropagation() {},
+	};
+
+	eval(`(${fnBlock})`)(event);
+	assert.equal(toggledId, "conv-1", "should call toggleConversationMenu with correct conversation ID");
+});
+
+test("handleConversationListClick: pin menu item calls requestUpdateConversation", () => {
+	const script = getPlaygroundConversationControllerScript();
+	const fnBlock = extractFunctionBlock(script, "handleConversationListClick");
+	assert.ok(fnBlock, "handleConversationListClick must be extractable");
+
+	const updateCalls: Array<{ id: string; patch: Record<string, unknown> }> = [];
+	function toggleConversationMenu() {}
+	function requestUpdateConversation(id: string, patch: Record<string, unknown>) { updateCalls.push({ id, patch }); }
+	function requestRenameConversation() {}
+	function requestDeleteConversation() {}
+	function selectConversationFromDrawer() {}
+	const catalogItem = { conversationId: "conv-2", pinned: false };
+	const state = { conversationCatalog: [catalogItem] };
+
+	const button = makeEl({ dataset: { conversationId: "conv-2" } });
+	const shell = makeEl({
+		querySelector: {
+			".mobile-conversation-item": button,
+			".conversation-item-menu-trigger": makeEl(),
+		},
+	});
+	const menuItem = makeEl({
+		dataset: { action: "pin" },
+		disabled: false,
+		closest: { ".conversation-item-shell": shell },
+	});
+	const event = {
+		target: makeEl({
+			closest: {
+				".conversation-item-menu-trigger": null,
+				".conversation-color-swatch": null,
+				".conversation-menu-item": menuItem,
+			},
+		}),
+		preventDefault() {},
+		stopPropagation() {},
+	};
+
+	eval(`(${fnBlock})`)(event);
+	assert.equal(updateCalls.length, 1, "requestUpdateConversation should have been called once");
+	assert.equal(updateCalls[0].id, "conv-2");
+	assert.deepEqual(updateCalls[0].patch, { pinned: true });
+});
+
+test("handleConversationListClick: color swatch calls requestUpdateConversation", () => {
+	const script = getPlaygroundConversationControllerScript();
+	const fnBlock = extractFunctionBlock(script, "handleConversationListClick");
+	assert.ok(fnBlock, "handleConversationListClick must be extractable");
+
+	const updateCalls: Array<{ id: string; patch: Record<string, unknown> }> = [];
+	function toggleConversationMenu() {}
+	function requestUpdateConversation(id: string, patch: Record<string, unknown>) { updateCalls.push({ id, patch }); }
+	function requestRenameConversation() {}
+	function requestDeleteConversation() {}
+	function selectConversationFromDrawer() {}
+	const state = { conversationCatalog: [] as unknown[] };
+
+	const button = makeEl({ dataset: { conversationId: "conv-3" } });
+	const shell = makeEl({ querySelector: { ".mobile-conversation-item": button } });
+	const swatch = makeEl({
+		dataset: { color: "sky" },
+		disabled: false,
+		closest: { ".conversation-item-shell": shell },
+	});
+	const event = {
+		target: makeEl({
+			closest: {
+				".conversation-item-menu-trigger": null,
+				".conversation-color-swatch": swatch,
+			},
+		}),
+		preventDefault() {},
+		stopPropagation() {},
+	};
+
+	eval(`(${fnBlock})`)(event);
+	assert.equal(updateCalls.length, 1, "requestUpdateConversation should have been called once");
+	assert.equal(updateCalls[0].id, "conv-3");
+	assert.deepEqual(updateCalls[0].patch, { backgroundColor: "sky" });
+});
+
+test("handleConversationListClick: row click calls selectConversationFromDrawer", () => {
+	const script = getPlaygroundConversationControllerScript();
+	const fnBlock = extractFunctionBlock(script, "handleConversationListClick");
+	assert.ok(fnBlock, "handleConversationListClick must be extractable");
+
+	let selectedId = "";
+	function toggleConversationMenu() {}
+	function requestUpdateConversation() {}
+	function requestRenameConversation() {}
+	function requestDeleteConversation() {}
+	function selectConversationFromDrawer(id: string) { selectedId = id; }
+	const state = { conversationCatalog: [] as unknown[] };
+
+	const button = makeEl({ dataset: { conversationId: "conv-4" }, disabled: false });
+	const event = {
+		target: makeEl({
+			closest: {
+				".conversation-item-menu-trigger": null,
+				".conversation-color-swatch": null,
+				".conversation-menu-item": null,
+				".mobile-conversation-item": button,
+			},
+		}),
+		preventDefault() {},
+		stopPropagation() {},
+	};
+
+	eval(`(${fnBlock})`)(event);
+	assert.equal(selectedId, "conv-4", "should call selectConversationFromDrawer with correct conversation ID");
+});
+
+test("renderConversationListInto has no per-row addEventListener", () => {
+	const script = getPlaygroundConversationControllerScript();
+	const fnBlock = extractFunctionBlock(script, "renderConversationListInto");
+	assert.ok(fnBlock, "renderConversationListInto must be extractable");
+
+	assert.doesNotMatch(fnBlock, /addEventListener/, "renderConversationListInto must not contain any addEventListener calls — delegation handles all clicks");
+});
+
+test("mobile shell event handlers wire delegation on both conversation list containers", () => {
+	const handlers = getPlaygroundMobileShellEventHandlersScript();
+
+	assert.match(handlers, /desktopConversationList\.addEventListener\("click",\s*handleConversationListClick\)/, "desktop list must use delegated click handler");
+	assert.match(handlers, /mobileConversationList\.addEventListener\("click",\s*handleConversationListClick\)/, "mobile list must use delegated click handler");
 });
 
 // --- Stream controller catalog refresh tests ---
