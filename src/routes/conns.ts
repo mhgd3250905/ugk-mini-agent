@@ -6,8 +6,10 @@ import { join, posix, resolve } from "node:path";
 import type {
 	ConnRunEventRecord,
 	ConnRunFileRecord,
+	ConnRunListCursor,
 	ConnRunRecord,
 	ListConnRunEventsOptions,
+	ListConnRunsOptions,
 } from "../agent/conn-run-store.js";
 import type { ConnDefinition, ConnSchedule, ConnTarget } from "../agent/conn-store.js";
 import { sanitizeBackgroundPathSegment } from "../agent/background-workspace.js";
@@ -122,7 +124,7 @@ interface ConnRunStoreLike {
 		workspacePath: string;
 	}): Promise<{ run: ConnRunRecord; reused: boolean }>;
 	getActiveRunForConn?(connId: string): Promise<ConnRunRecord | undefined>;
-	listRunsForConn(connId: string): Promise<ConnRunRecord[]>;
+	listRunsForConn(connId: string, options?: ListConnRunsOptions): Promise<ConnRunRecord[]>;
 	listLatestRunsForConns?(connIds: readonly string[]): Promise<Record<string, ConnRunRecord | undefined>>;
 	getRun(runId: string): Promise<ConnRunRecord | undefined>;
 	listEvents(runId: string, options?: ListConnRunEventsOptions): Promise<ConnRunEventRecord[]>;
@@ -137,6 +139,63 @@ interface ConnRunStoreLike {
 
 const RUN_EVENT_PAGE_SIZE = 2;
 const RUN_EVENT_MAX_PAGE_SIZE = 20;
+const RUN_LIST_PAGE_SIZE = 10;
+const RUN_LIST_MAX_PAGE_SIZE = 100;
+
+function parseRunListCursor(rawBefore: string): ConnRunListCursor | undefined {
+	const parts = rawBefore.split("|");
+	if (parts.length !== 3) {
+		return undefined;
+	}
+	const [scheduledAt, createdAt, runId] = parts.map((part) => part.trim());
+	if (!scheduledAt || !createdAt || !runId) {
+		return undefined;
+	}
+	if (!Number.isFinite(Date.parse(scheduledAt)) || !Number.isFinite(Date.parse(createdAt))) {
+		return undefined;
+	}
+	return { scheduledAt, createdAt, runId };
+}
+
+function encodeRunListCursor(run: ConnRunRecord): string {
+	return `${run.scheduledAt}|${run.createdAt}|${run.runId}`;
+}
+
+function parseRunListPageQuery(query: Record<string, unknown>): {
+	paginated: boolean;
+	value?: { limit: number; before?: ConnRunListCursor };
+	error?: string;
+} {
+	const rawLimit = query.limit;
+	const rawBefore = query.before;
+	if (rawLimit === undefined && rawBefore === undefined) {
+		return { paginated: false };
+	}
+
+	let limit = RUN_LIST_PAGE_SIZE;
+	if (rawLimit !== undefined) {
+		if (typeof rawLimit !== "string" || rawLimit.trim().length === 0) {
+			return { paginated: true, error: 'Field "limit" must be a positive integer when provided' };
+		}
+		const parsedLimit = Number(rawLimit);
+		if (!Number.isInteger(parsedLimit) || parsedLimit <= 0) {
+			return { paginated: true, error: 'Field "limit" must be a positive integer when provided' };
+		}
+		limit = Math.min(parsedLimit, RUN_LIST_MAX_PAGE_SIZE);
+	}
+
+	if (rawBefore === undefined || rawBefore === "") {
+		return { paginated: true, value: { limit } };
+	}
+	if (typeof rawBefore !== "string") {
+		return { paginated: true, error: 'Field "before" must be a stable run cursor when provided' };
+	}
+	const before = parseRunListCursor(rawBefore);
+	if (!before) {
+		return { paginated: true, error: 'Field "before" must be a stable run cursor when provided' };
+	}
+	return { paginated: true, value: { limit, before } };
+}
 
 function parseRunEventPageQuery(query: Record<string, unknown>): {
 	value?: { limit: number; beforeSeq?: number };
@@ -374,6 +433,26 @@ export function registerConnRoutes(app: FastifyInstance, options: ConnRouteOptio
 		const conn = await options.connStore.get(connId);
 		if (!conn) {
 			return reply.status(404).send();
+		}
+		const parsed = parseRunListPageQuery((request.query ?? {}) as Record<string, unknown>);
+		if (parsed.error || (parsed.paginated && !parsed.value)) {
+			return sendBadRequest(reply, parsed.error || "Invalid run list query");
+		}
+		if (parsed.paginated && parsed.value) {
+			const runListOptions: ListConnRunsOptions = { limit: parsed.value.limit + 1 };
+			if (parsed.value.before) {
+				runListOptions.before = parsed.value.before;
+			}
+			const rows = await options.connRunStore.listRunsForConn(connId, runListOptions);
+			const visibleRuns = rows.slice(0, parsed.value.limit);
+			const lastVisible = visibleRuns.at(-1);
+			const hasMore = rows.length > parsed.value.limit;
+			return {
+				runs: visibleRuns.map(toConnRunBody),
+				hasMore,
+				...(hasMore && lastVisible ? { nextBefore: encodeRunListCursor(lastVisible) } : {}),
+				limit: parsed.value.limit,
+			};
 		}
 		const runs = await options.connRunStore.listRunsForConn(connId);
 		return {

@@ -2,14 +2,16 @@
 
 更新时间：`2026-05-22`
 
-## 2026-05-22 Conn 独立页首屏 run history 延迟加载
+## 2026-05-22 Conn 独立页 run history 延迟加载与分页
 
 - `/playground/conn` 首屏读取 `GET /v1/conns` 后可以自动选中第一条后台任务，但不会再因为自动选中而请求 `GET /v1/conns/:connId/runs`。
 - 选中任务的详情区先使用 `/v1/conns` 返回的 `latestRun` 展示最近一次运行摘要；完整运行历史保持未加载状态。
-- 运行历史区域提供显式“加载运行历史”入口；只有用户点击该入口后，前端才请求当前任务的完整 run history。
+- 运行历史区域提供显式“加载运行历史”入口；用户点击后，前端请求 `GET /v1/conns/:connId/runs?limit=10` 的第一页，不再把完整历史一次性拖回浏览器。
+- `GET /v1/conns/:connId/runs` 保持无 query 参数的旧行为，仍返回完整历史；带 `limit` / `before` 时返回 `hasMore`、`nextBefore` 和 `limit` 分页元数据。`before` 游标按 `scheduledAt|createdAt|runId` 对齐后端排序，避免同时间戳 run 分页错乱。
+- 已加载第一页后，运行历史底部会显示“加载更多”；继续用 `nextBefore` 拉下一页并追加到当前列表，不重置当前选中任务、展开的 run 或详情滚动位置。
 - 前端通过 `runHistoryStateByConnId` 区分未加载、加载中、已加载和加载失败；已加载的空数组会显示“暂无运行历史”，不会退回成未加载提示。
 - run history 异步返回前如果用户已经切换选中任务，旧任务的返回结果只写入缓存，不会重画当前详情面板。
-- 相关源码：`src/ui/conn-page-js.ts`、`src/ui/conn-page-css.ts`、`test/conn-page-ui.test.ts`
+- 相关源码：`src/routes/conns.ts`、`src/agent/conn-run-store.ts`、`src/types/api.ts`、`src/ui/conn-page-js.ts`、`src/ui/conn-page-css.ts`、`test/server.test.ts`、`test/conn-run-store.test.ts`、`test/conn-page-ui.test.ts`
 
 ## 2026-05-22 Conn 独立页 editor 支撑目录延迟加载
 

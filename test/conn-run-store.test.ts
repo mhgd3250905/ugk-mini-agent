@@ -362,6 +362,74 @@ test("ConnRunStore uses run ids as stable timestamp tie-breakers for run lists a
 	database.close();
 });
 
+test("ConnRunStore paginates run lists with stable scheduled-created-runId cursors", async () => {
+	const { connStore, runStore, database } = await createStores();
+	const conn = await connStore.create({
+		title: "daily digest",
+		prompt: "summarize",
+		target: {
+			type: "conversation",
+			conversationId: "manual:conn",
+		},
+		schedule: {
+			kind: "interval",
+			everyMs: 60_000,
+		},
+		now: new Date("2026-04-21T10:00:00.000Z"),
+	});
+	for (const input of [
+		{
+			runId: "run-old",
+			scheduledAt: "2026-04-21T10:01:00.000Z",
+			now: "2026-04-21T10:00:01.000Z",
+		},
+		{
+			runId: "run-tie-b",
+			scheduledAt: "2026-04-21T10:02:00.000Z",
+			now: "2026-04-21T10:00:02.000Z",
+		},
+		{
+			runId: "run-tie-c",
+			scheduledAt: "2026-04-21T10:02:00.000Z",
+			now: "2026-04-21T10:00:02.000Z",
+		},
+		{
+			runId: "run-new",
+			scheduledAt: "2026-04-21T10:03:00.000Z",
+			now: "2026-04-21T10:00:03.000Z",
+		},
+	]) {
+		await runStore.createRun({
+			runId: input.runId,
+			connId: conn.connId,
+			scheduledAt: input.scheduledAt,
+			workspacePath: `/tmp/conn/${input.runId}`,
+			now: new Date(input.now),
+		});
+	}
+
+	const firstPage = await runStore.listRunsForConn(conn.connId, { limit: 2 });
+	const secondPage = await runStore.listRunsForConn(conn.connId, {
+		limit: 2,
+		before: {
+			scheduledAt: firstPage[1].scheduledAt,
+			createdAt: firstPage[1].createdAt,
+			runId: firstPage[1].runId,
+		},
+	});
+
+	assert.deepEqual(
+		firstPage.map((run) => run.runId),
+		["run-new", "run-tie-c"],
+	);
+	assert.deepEqual(
+		secondPage.map((run) => run.runId),
+		["run-tie-b", "run-old"],
+	);
+
+	database.close();
+});
+
 test("ConnRunStore finalizes a run even when the owning conn schedule JSON is malformed", async () => {
 	const { connStore, runStore, database } = await createStores();
 	const conn = await connStore.create({

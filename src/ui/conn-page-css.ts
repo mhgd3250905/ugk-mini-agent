@@ -1398,6 +1398,11 @@ export function getConnPageCss(): string {
 
     .conn-run-load-more:hover { color: var(--primary); border-color: var(--primary); }
 
+    .conn-run-history-more {
+      display: flex;
+      margin: 14px auto 0;
+    }
+
     /* ── Editor (inline in detail panel) ── */
 
     .conn-editor-root {

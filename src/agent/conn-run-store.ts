@@ -117,6 +117,17 @@ export interface ListConnRunEventsOptions {
 	descending?: boolean;
 }
 
+export interface ConnRunListCursor {
+	scheduledAt: string;
+	createdAt: string;
+	runId: string;
+}
+
+export interface ListConnRunsOptions {
+	before?: ConnRunListCursor;
+	limit?: number;
+}
+
 export interface RecordConnRunFileInput {
 	runId: string;
 	leaseOwner?: string;
@@ -237,10 +248,33 @@ export class ConnRunStore {
 		return row ? rowToRun(row) : undefined;
 	}
 
-	async listRunsForConn(connId: string): Promise<ConnRunRecord[]> {
+	async listRunsForConn(connId: string, options: ListConnRunsOptions = {}): Promise<ConnRunRecord[]> {
+		const conditions = ["conn_id = ?"];
+		const params: Array<string | number> = [connId];
+		if (options.before) {
+			conditions.push(
+				[
+					"(scheduled_at < ?",
+					"OR (scheduled_at = ? AND created_at < ?)",
+					"OR (scheduled_at = ? AND created_at = ? AND run_id < ?))",
+				].join(" "),
+			);
+			params.push(
+				options.before.scheduledAt,
+				options.before.scheduledAt,
+				options.before.createdAt,
+				options.before.scheduledAt,
+				options.before.createdAt,
+				options.before.runId,
+			);
+		}
+		const limitClause = options.limit && options.limit > 0 ? " LIMIT ?" : "";
+		if (limitClause) {
+			params.push(options.limit as number);
+		}
 		const rows = this.options.database.all<ConnRunRow>(
-			"SELECT * FROM conn_runs WHERE conn_id = ? ORDER BY scheduled_at DESC, created_at DESC, run_id DESC",
-			connId,
+			`SELECT * FROM conn_runs WHERE ${conditions.join(" AND ")} ORDER BY scheduled_at DESC, created_at DESC, run_id DESC${limitClause}`,
+			...params,
 		);
 		return rows.map(rowToRun);
 	}

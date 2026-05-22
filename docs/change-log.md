@@ -12,6 +12,16 @@
 
 ---
 
+## 2026-05-22 — Playground Conn run history pagination
+
+- **主题**: `/playground/conn` 运行历史从完整拉取改为后端游标分页
+- **影响范围**: `src/routes/conns.ts`, `src/agent/conn-run-store.ts`, `src/types/api.ts`, `src/ui/conn-page-js.ts`, `src/ui/conn-page-css.ts`, `test/server.test.ts`, `test/conn-run-store.test.ts`, `test/conn-page-ui.test.ts`, `docs/playground-current.md`, `docs/runtime-assets-conn-feishu.md`, `docs/change-log.md`
+- **变更**:
+  - `GET /v1/conns/:connId/runs` 在无 query 参数时保持旧的完整历史响应；带 `limit` / `before` 时按 `scheduled_at DESC, created_at DESC, run_id DESC` 返回有界页，并携带 `hasMore`、`nextBefore`、`limit`
+  - `ConnRunStore.listRunsForConn()` 支持 `limit` 和稳定三元游标，分页时不会因同时间戳 run 丢行或重复
+  - `/playground/conn` 首次加载运行历史改为请求 `limit=10`，底部“加载更多”使用 `nextBefore` 追加下一页，保留选中任务、展开 run 和详情滚动位置
+  - 测试覆盖 route 分页/非法 query、store tie-break 分页、前端有界请求与追加行为
+
 ## 2026-05-22 — Playground Conn initial run history lazy loading
 
 - **主题**: `/playground/conn` 首屏不再因自动选中第一条任务而拉取完整 run history

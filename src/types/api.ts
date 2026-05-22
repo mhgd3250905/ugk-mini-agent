@@ -179,6 +179,9 @@ export interface ConnRunDetailResponseBody {
 
 export interface ConnRunListResponseBody {
 	runs: ConnRunBody[];
+	hasMore?: boolean;
+	nextBefore?: string;
+	limit?: number;
 }
 
 export interface ConnRunFileBody {

@@ -6,6 +6,7 @@ const STATUS_LABELS = { active: "运行中", paused: "已暂停", completed: "�
 const RUN_STATUS_LABELS = { pending: "待执行", running: "执行中", succeeded: "成功", failed: "失败", cancelled: "已取消" };
 const RUN_REFRESH_DELAY_MS = 3000;
 const RUN_REFRESH_MAX_ATTEMPTS = 120;
+const RUN_HISTORY_PAGE_SIZE = 10;
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -16,6 +17,7 @@ const state = {
   search: "",
   runsByConnId: {},
   runHistoryStateByConnId: {},
+  runHistoryPageByConnId: {},
   expandedRunId: null,
   editorOpen: false,
   editorMode: null,
@@ -31,6 +33,7 @@ const state = {
   editorSupportCatalogsLoading: false,
   editorSupportCatalogsError: "",
   editorSupportCatalogsPromise: null,
+  loadingMoreRunsConnId: "",
   loadingMoreRunId: "",
   runRefreshTimers: {},
   agentCatalog: [],
@@ -99,9 +102,16 @@ async function apiFetchConns() {
   };
 }
 
-async function apiFetchRuns(connId) {
-  const data = await fetchJson("/v1/conns/" + encodeURIComponent(connId) + "/runs");
-  return data.runs || [];
+async function apiFetchRuns(connId, before) {
+  const params = new URLSearchParams({ limit: String(RUN_HISTORY_PAGE_SIZE) });
+  if (before) params.set("before", String(before));
+  const data = await fetchJson("/v1/conns/" + encodeURIComponent(connId) + "/runs?" + params.toString());
+  return {
+    runs: data.runs || [],
+    hasMore: Boolean(data.hasMore),
+    nextBefore: typeof data.nextBefore === "string" ? data.nextBefore : "",
+    limit: Number(data.limit) || RUN_HISTORY_PAGE_SIZE,
+  };
 }
 
 async function apiFetchRunDetail(connId, runId) {
@@ -249,6 +259,38 @@ function setRunHistoryState(connId, status, error) {
   state.runHistoryStateByConnId[connId] = { status, error: error || "" };
 }
 
+function getRunHistoryPage(connId) {
+  const page = state.runHistoryPageByConnId[connId] || {};
+  return {
+    hasMore: Boolean(page.hasMore),
+    nextBefore: typeof page.nextBefore === "string" ? page.nextBefore : "",
+    limit: Number(page.limit) || RUN_HISTORY_PAGE_SIZE,
+  };
+}
+
+function setRunHistoryPage(connId, page) {
+  state.runHistoryPageByConnId[connId] = {
+    hasMore: Boolean(page && page.hasMore),
+    nextBefore: page && typeof page.nextBefore === "string" ? page.nextBefore : "",
+    limit: Number(page && page.limit) || RUN_HISTORY_PAGE_SIZE,
+  };
+}
+
+function getRunHistoryScrollTop() {
+  const scroller = $("conn-detail-body");
+  return scroller && typeof scroller.scrollTop === "number" ? scroller.scrollTop : null;
+}
+
+function renderRunHistoryAtScrollTop(conn, scrollTop) {
+  const scroller = $("conn-detail-body");
+  renderRunHistory(conn);
+  if (scroller && scrollTop !== null) scroller.scrollTop = scrollTop;
+}
+
+function renderRunHistoryWithStableScroll(conn) {
+  renderRunHistoryAtScrollTop(conn, getRunHistoryScrollTop());
+}
+
 function upsertRunForConn(connId, run) {
   if (!connId || !run) return;
   const runs = state.runsByConnId[connId] || [];
@@ -259,7 +301,9 @@ async function refreshRunsForConn(connId) {
   if (!connId) return;
   setRunHistoryState(connId, "loading", "");
   try {
-    state.runsByConnId[connId] = await apiFetchRuns(connId);
+    const page = await apiFetchRuns(connId);
+    state.runsByConnId[connId] = page.runs;
+    setRunHistoryPage(connId, page);
     setRunHistoryState(connId, "loaded", "");
     if (state.selectedId === connId) {
       renderDetail();
@@ -289,8 +333,9 @@ async function loadRunHistory(connId) {
   if (state.selectedId === connId && connAtStart) renderRunHistory(connAtStart);
 
   try {
-    const runs = await apiFetchRuns(connId);
-    state.runsByConnId[connId] = runs;
+    const page = await apiFetchRuns(connId);
+    state.runsByConnId[connId] = page.runs;
+    setRunHistoryPage(connId, page);
     setRunHistoryState(connId, "loaded", "");
     if (state.selectedId === connId) {
       const conn = state.conns.find(c => c.connId === connId);
@@ -302,6 +347,41 @@ async function loadRunHistory(connId) {
     if (state.selectedId === connId) {
       const conn = state.conns.find(c => c.connId === connId);
       if (conn) renderRunHistory(conn);
+    }
+  }
+}
+
+async function loadMoreRunHistory(connId) {
+  if (!connId || state.loadingMoreRunsConnId) return;
+  const pageState = getRunHistoryPage(connId);
+  if (!pageState.hasMore || !pageState.nextBefore) return;
+
+  state.loadingMoreRunsConnId = connId;
+  const stableScrollTop = getRunHistoryScrollTop();
+  if (state.selectedId === connId) {
+    const conn = state.conns.find(c => c.connId === connId);
+    if (conn) renderRunHistoryAtScrollTop(conn, stableScrollTop);
+  }
+
+  try {
+    const page = await apiFetchRuns(connId, pageState.nextBefore);
+    const existing = state.runsByConnId[connId] || [];
+    const seenRunIds = new Set(existing.map(run => run && run.runId).filter(Boolean));
+    const nextRuns = (page.runs || []).filter(run => run && !seenRunIds.has(run.runId));
+    state.runsByConnId[connId] = [...existing, ...nextRuns];
+    setRunHistoryPage(connId, page);
+    setRunHistoryState(connId, "loaded", "");
+    if (state.selectedId === connId) {
+      const conn = state.conns.find(c => c.connId === connId);
+      if (conn) renderRunHistoryAtScrollTop(conn, stableScrollTop);
+    }
+  } catch (err) {
+    showToast(err instanceof Error ? err.message : "加载更多运行历史失败", "error");
+  } finally {
+    if (state.loadingMoreRunsConnId === connId) state.loadingMoreRunsConnId = "";
+    if (state.selectedId === connId) {
+      const conn = state.conns.find(c => c.connId === connId);
+      if (conn) renderRunHistoryAtScrollTop(conn, stableScrollTop);
     }
   }
 }
@@ -801,9 +881,10 @@ function renderRunHistory(conn) {
     return;
   }
 
-  const display = runs.slice(0, 10);
+  const display = runs;
   container.innerHTML = '<div class="conn-run-timeline"></div>';
   const timeline = container.querySelector(".conn-run-timeline");
+  if (!timeline) return;
 
   for (const run of display) {
     const isExpanded = state.expandedRunId === run.runId;
@@ -865,6 +946,18 @@ function renderRunHistory(conn) {
     }
 
     timeline.appendChild(item);
+  }
+
+  const page = getRunHistoryPage(conn.connId);
+  if (page.hasMore) {
+    const moreBtn = document.createElement("button");
+    moreBtn.type = "button";
+    moreBtn.className = "conn-run-load-more conn-run-history-more";
+    moreBtn.dataset.loadMoreRuns = "1";
+    moreBtn.textContent = state.loadingMoreRunsConnId === conn.connId ? "加载中" : "加载更多";
+    moreBtn.disabled = state.loadingMoreRunsConnId === conn.connId;
+    moreBtn.addEventListener("click", () => loadMoreRunHistory(conn.connId));
+    container.appendChild(moreBtn);
   }
 }
 
@@ -2098,6 +2191,7 @@ async function handleDelete(connId) {
     state.conns = state.conns.filter(c => c.connId !== connId);
     delete state.runsByConnId[connId];
     delete state.runHistoryStateByConnId[connId];
+    delete state.runHistoryPageByConnId[connId];
     if (state.selectedId === connId) state.selectedId = null;
     showToast("已删除", "success");
     renderAll();
