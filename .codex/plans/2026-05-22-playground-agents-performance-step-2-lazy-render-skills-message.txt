@@ -1,0 +1,71 @@
+请接手 E:\AII\ugk-pi，执行 /playground/agents 性能优化 Task 2。
+
+当前基线：
+- 分支：main
+- HEAD：9b9a36b perf(agents): reuse main skills on initial load
+- Step 1 已完成：/playground/agents 首屏只请求一次 GET /v1/agents/main/skills，并复用为 skillsByAgentId.main
+- main ahead origin/main 11，未 push
+- tracked diff 应为空
+- `.codex/plans/*` 里有未跟踪计划文件，保留不动，不要提交
+
+计划文件：
+- .codex/plans/2026-05-22-playground-agents-performance-plan.md
+
+本步目标：
+- Lazy-Render Selected Agent Skills
+- 首屏不要直接挂载全部 selected agent skill rows。
+- 本步只解决 DOM 首屏挂载过重；不要顺手做 Step 3 的 per-agent skills cache，也不要做 Step 4 的 browsers/model-config 延迟加载。
+
+真实测试背景：
+- /playground/agents 首屏 DOM 约 537 nodes。
+- main selected detail 直接渲染 47 个 skill rows、48 个 select options、71 个按钮。
+- 用户一进页面首先需要识别 agent 管理界面，不是立刻操作几十个 skill switch。
+
+必须先读：
+- AGENTS.md
+- DESIGN.md
+- docs/playground-current.md
+- src/ui/agents-page.ts
+- test/server.test.ts
+- test/playground-agent-switch.test.ts
+
+实现要求：
+- selected Agent 摘要立即可见。
+- skills 列表 body 默认折叠或延迟渲染，直到用户打开 skills section、滚入视口或点击“查看技能”。
+- 关闭时不要挂载所有 .ag-skill-item rows。
+- skills count 可来自缓存数据。
+- 打开后保留 enable/disable、delete、copy install、refresh 行为；这些操作仍使用现有 API，不改变语义。
+- installable skill 下拉是否也延迟挂载可以由你按最小改动判断，但不能破坏“复制安装”入口。若下拉仍保留，至少确保 .ag-skill-item rows 和 switch buttons 不在首屏挂载。
+- 打开 skills section 后，如果 skills 已在 state.skillsByAgentId[selectedId]，应直接渲染；如果还没有，再走现有 apiFetchAgentSkills(selectedId)。
+- 切换 Agent 时 skills section 默认保持关闭或按清晰状态重置，不能把上一 Agent 的 skill rows 残留到下一 Agent。
+- 不做页面视觉大改，只优化结构和必要状态。
+- 不要改 Agent runtime、profile 创建/归档、技能 enable/disable 语义。
+- 不要编辑 `.data/agents/profiles.json`。
+
+测试先行：
+- 先补失败测试，再实现；不要先改源码再补测试。
+- 测试首屏 selected detail 不挂载所有 `.ag-skill-item` rows。
+- 测试打开 skills section 后加载/渲染 skills。
+- 测试 toggle skill 仍调用 PATCH /v1/agents/:agentId/skills/:skillName。
+- 测试不应该只检查字符串存在；至少要锁定关键函数/状态分支，能防止首屏再次直接 renderSkills() 全量挂载。
+
+验证：
+- node --test --import tsx test/server.test.ts
+- node --test --import tsx test/playground-agent-switch.test.ts
+- npx tsc --noEmit
+- git diff --check
+- 浏览器首屏 DOM count 应明显低于原 537 nodes。
+- 浏览器真实验证：
+  - reload http://127.0.0.1:3000/playground/agents
+  - 首屏 `.ag-skill-item` 数量应为 0 或明显不是完整列表
+  - 点击“查看技能”/展开 skills 后，skill rows 正常出现
+  - 至少操作一个非破坏性的开关验证 PATCH 仍发到 `/v1/agents/:agentId/skills/:skillName`；如果担心真实数据变化，可用测试覆盖并在浏览器只验证按钮可见与事件路径
+- 打开 skills 后开关、删除、复制安装、刷新入口仍正常。
+
+提交：
+- 一个 Task 一个 commit。
+- 建议 commit message: perf(agents): lazy render selected skills
+- 不要提交 `.env`、`.data`、`runtime/*`、`public/*`、截图、browser profile、`curate_news*.py`、无关 `.codex/plans`。
+- 本 step 完成后只提交源码、测试和必要文档，例如 `src/ui/agents-page.ts`、`test/server.test.ts`、`docs/playground-current.md`、`docs/change-log.md`。
+
+交付报告请按计划文件 Delivery Report Template 回复。

@@ -1,0 +1,49 @@
+请接手 E:\AII\ugk-pi，执行 /playground/agents 性能优化 Task 4。
+
+计划文件：
+- .codex/plans/2026-05-22-playground-agents-performance-plan.md
+
+本步目标：
+- Defer Support Catalogs Until Editor Or Skill Picker Needs Them
+- 首屏不要为了还没打开的 create/edit 表单阻塞加载 browsers 和 model config。
+
+真实测试背景：
+- /playground/agents 首屏会请求：
+  - GET /v1/browsers: 13.4ms
+  - GET /v1/model-config: 11.1ms
+- 它们不算最慢，但对首屏 agent list 来说不是关键路径。
+
+必须先读：
+- AGENTS.md
+- src/ui/agents-page.ts
+- src/routes/agent-profiles.ts
+- test/server.test.ts
+- test/playground-agent-switch.test.ts
+
+实现要求：
+- 首屏保留 /v1/agents 和 /v1/agents/status。
+- /v1/browsers 和 /v1/model-config 延迟到 create/edit form 打开时加载。
+- 支持 catalog loadedOnce/cache。
+- editor 打开但 catalog 尚未完成时显示紧凑 loading，并禁用保存直到必要 options 可用。
+- browser count stat 不应阻塞首屏，可隐藏、延迟加载或展示非阻塞状态。
+- 不改变 profile 创建/编辑后端语义。
+
+测试先行：
+- 测试初始 /playground/agents 脚本不 await browsers/model-config 才渲染 agent list。
+- 测试打开 editor 触发 catalog loading。
+- 测试 model config unavailable 时 create/edit submit 被 guard。
+
+验证：
+- node --test --import tsx test/server.test.ts
+- node --test --import tsx test/playground-agent-switch.test.ts
+- npx tsc --noEmit
+- git diff --check
+- 浏览器 reload：首屏优先 /v1/agents、/v1/agents/status、必要 skills。
+- 打开 create/edit 后才请求 browsers/model-config，字段正常渲染。
+
+提交：
+- 一个 Task 一个 commit。
+- 建议 commit message: perf(agents): defer editor support catalogs
+- 不要提交无关文件。
+
+交付报告请按计划文件 Delivery Report Template 回复。

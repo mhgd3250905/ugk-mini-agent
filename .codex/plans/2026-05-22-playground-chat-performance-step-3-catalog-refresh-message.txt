@@ -1,0 +1,28 @@
+请接手 E:\AII\ugk-pi 的 Playground chat performance Step 3：Coalesce Conversation Catalog Refreshes。
+
+当前基线：
+- Step 1-2 已完成。
+- 本步骤现已完成在 f31842e。
+
+本轮只做：
+- 新增 scheduleConversationCatalogRefresh，500ms 内多次刷新合并为一次。
+- requestUpdateConversation 改成本地 upsert + 延迟合并刷新，不再每次 invalidate + force sync。
+- sendMessage 删除 resolveServerActiveConversation 前多余非 force catalog sync。
+- done 事件后 scheduleConversationCatalogRefresh，用于更新侧栏消息数/摘要。
+- requestDeleteConversation 保留 force sync。
+
+禁止做：
+- 不改 chat API。
+- 不改运行时核心。
+- 不改 Team Runtime、scheduler、worker。
+- 不提交无关脏文件，不使用 git add -A。
+
+验证：
+- node --test --import tsx test/playground-conversations-controller.test.ts
+- node --test --import tsx test/playground-conversation-sync-controller.test.ts
+- node --test --import tsx test/server.test.ts
+- npx tsc --noEmit
+- git diff --check
+
+提交建议：
+- perf(playground): coalesce conversation catalog refreshes

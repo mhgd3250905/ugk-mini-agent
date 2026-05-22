@@ -1,0 +1,25 @@
+请接手 E:\AII\ugk-pi 的 Playground chat performance Step 5：Reduce Conversation Row Render Cost。
+
+当前基线：
+- Step 1-4 完成后再执行。
+
+本轮只做：
+- 降低大量会话时的单行 DOM/style/interaction 成本。
+- 检查 conversation row 是否有不必要的嵌套、重复事件绑定、昂贵 hover/menu DOM。
+- 保持 Step 2 的虚拟滚动行为不回退。
+
+禁止做：
+- 不重新设计左侧栏。
+- 不改 chat API。
+- 不改非聊天 panel lazy loading。
+- 不提交无关脏文件，不使用 git add -A。
+
+验证：
+- node --test --import tsx test/playground-conversations-controller.test.ts
+- node --test --import tsx test/server.test.ts
+- npx tsc --noEmit
+- git diff --check
+- 浏览器检查 desktop/mobile conversation list。
+
+提交建议：
+- perf(playground): reduce conversation row render cost

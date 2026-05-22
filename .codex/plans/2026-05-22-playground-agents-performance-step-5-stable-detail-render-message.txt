@@ -1,0 +1,49 @@
+请接手 E:\AII\ugk-pi，执行 /playground/agents 性能优化 Task 5。
+
+计划文件：
+- .codex/plans/2026-05-22-playground-agents-performance-plan.md
+
+本步目标：
+- Reduce Whole-Body Rerenders On Selection
+- Agent 切换、skills loading、skills mutation 不要整块 body 反复重建。
+
+真实测试背景：
+- selectAgent() 会先 loading render，再 fetch skills，再 render skills/stats/detail。
+- 技能多、select options 多时，整块 HTML replacement 会造成卡顿和闪烁。
+
+必须先读：
+- AGENTS.md
+- src/ui/agents-page.ts
+- src/ui/agents-page.ts 中 render/select/populateSkillSelect 相关逻辑
+- test/server.test.ts
+- test/playground-agent-switch.test.ts
+
+实现要求：
+- 将 detail 拆成稳定 shell + 子区域更新：
+  - header/actions
+  - stats mini cards
+  - config/rules
+  - skills panel
+- gallery 没变时不要重建 installable skill select。
+- skills loading 状态只更新 skills region。
+- 保留 detail body 内滚动位置。
+- 不改变 Agent runtime 和技能 API 行为。
+
+测试先行：
+- 测试 populateSkillSelect 不在每次 renderDetailBody 时无条件调用，除非 gallery changed。
+- 测试 selection shell 和 skills region 可分开更新。
+- 覆盖重复切换 agent 不产生重复 controls。
+
+验证：
+- node --test --import tsx test/server.test.ts
+- node --test --import tsx test/playground-agent-switch.test.ts
+- npx tsc --noEmit
+- git diff --check
+- 浏览器反复切换 agents，无明显闪烁、无重复按钮、无 stale selected row。
+
+提交：
+- 一个 Task 一个 commit。
+- 建议 commit message: perf(agents): render agent detail in stable sections
+- 不要提交无关脏文件。
+
+交付报告请按计划文件 Delivery Report Template 回复。
