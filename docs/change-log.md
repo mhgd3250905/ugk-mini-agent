@@ -12,6 +12,15 @@
 
 ---
 
+## 2026-05-22 — Local Docker port shadow doctor
+
+- **主题**: 新增本地 `3000` 端口影子进程检测，避免宿主机 Node 截胡 Docker 入口
+- **影响范围**: `scripts/local-port-doctor.mjs`, `package.json`, `test/local-port-doctor.test.ts`, `docs/docker-local-ops.md`, `AGENTS.md`, `docs/change-log.md`
+- **变更**:
+  - 新增 `npm run docker:doctor`，检查本机 `3000` 监听者并在 `127.0.0.1:3000` 被非 Docker 进程监听时失败
+  - 覆盖 Windows 上 Docker backend 发布 `0.0.0.0:3000`、宿主机 `node.exe` 同时监听 `127.0.0.1:3000` 的影子入口场景
+  - 本地 Docker 排障文档和 agent 接手规则新增端口 doctor 口径，避免把影子服务的“密钥未配置/旧 UI”误判成模型源或容器问题
+
 ## 2026-05-22 — Ali CodePlan Qwen 3.7 Max model option
 
 - **主题**: 在阿里 CodePlan 模型源下新增 `qwen3.7-max` 可选模型
@@ -21,6 +30,18 @@
   - `/v1/model-config` 暴露的阿里模型列表从 `glm-5.1` / `kimi-k2.6` / `deepseek-v4-pro` 扩展为 `glm-5.1` / `kimi-k2.6` / `deepseek-v4-pro` / `qwen3.7-max`
   - `qwen3.7-max` 上下文窗口登记为 `1000000`
   - 增加 registry 与 model-config 测试覆盖，避免模型只写进文档但没有进入真实下拉
+
+## 2026-05-22 — Playground Agents lazy render selected skills
+
+- **主题**: selected Agent 详情面板 skills 区域默认折叠，首屏不挂载 skill rows，用户点击后按需展开加载
+- **影响范围**: `src/ui/agents-page.ts`, `test/server.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - 新增 `skillsExpanded` 状态标志，默认 `false`；切换 Agent 时重置
+  - 折叠态显示技能数摘要和"查看技能"按钮，不挂载 `.ag-skill-item` 行和 switch 按钮
+  - `handleExpandSkills()` 设置 `skillsExpanded = true`，优先使用 `skillsByAgentId` 缓存，未命中时才调 `apiFetchAgentSkills()`
+  - 新增 `getSkillCountText(agentId)` / `getCollapsedSkillSummary(agentId)` helper，区分"未加载"（`—`）与"已加载空数组"（`0`）
+  - `getStatCounts()` 和 mini card "技能数" 改用 `getSkillCountText()`，折叠摘要改用 `getCollapsedSkillSummary()`
+  - 测试覆盖：首屏无 skill rows、展开后加载渲染、toggle PATCH 仍正确、skill count 未知态显示
 
 ## 2026-05-22 — Playground Agents initial main skills dedupe
 

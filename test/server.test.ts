@@ -1276,6 +1276,39 @@ test("GET /playground/agents reuses gallery skills for the initial main selectio
 		await app.close();
 	});
 
+test("GET /playground/agents skill count shows dash for unloaded and number for loaded", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+	});
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents",
+	});
+	assert.equal(response.statusCode, 200);
+	const body = response.body;
+
+	// Helper getSkillCountText exists and distinguishes unloaded vs loaded-empty
+	const helperStart = body.indexOf("function getSkillCountText(");
+	assert.ok(helperStart >= 0, "getSkillCountText helper not found");
+	const helperEnd = body.indexOf("function getCollapsedSkillSummary(", helperStart);
+	assert.ok(helperEnd > helperStart, "getCollapsedSkillSummary not found after getSkillCountText");
+	const helperRegion = body.slice(helperStart, helperEnd);
+	assert.match(helperRegion, /Array.isArray\(skills\)/);
+	assert.match(helperRegion, /return.*String\(skills\.length\)/);
+	assert.match(helperRegion, /return.*["']—["']/);
+
+	// getStatCounts uses the helper
+	const statStart = body.indexOf("function getStatCounts()");
+	const statEnd = body.indexOf("/* ── Rendering: Stats", statStart);
+	assert.ok(statStart >= 0, "getStatCounts not found");
+	assert.ok(statEnd > statStart, "getStatCounts region end not found");
+	const statRegion = body.slice(statStart, statEnd);
+	assert.match(statRegion, /getSkillCountText/);
+	assert.doesNotMatch(statRegion, /\|\|\s*\[\]/);
+
+	await app.close();
+});
+
 test("GET /playground releases panel focus before hiding conn run details", async () => {
 	const app = await buildServer({
 		agentService: createAgentServiceStub(),

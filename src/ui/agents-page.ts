@@ -886,13 +886,23 @@ function getAgentsPageJs(): string {
 			});
 		}
 
+		function getSkillCountText(agentId) {
+			var skills = state.skillsByAgentId[agentId];
+			return Array.isArray(skills) ? String(skills.length) : "—";
+		}
+		function getCollapsedSkillSummary(agentId) {
+			var skills = state.skillsByAgentId[agentId];
+			if (!Array.isArray(skills)) return "点击查看技能列表";
+			return skills.length + " 个技能";
+		}
+
 		function getStatCounts() {
 			var total = state.agents.length;
 			var active = state.agents.filter(function(a) { return isAgentActive(a); }).length;
-			var selectedSkills = state.skillsByAgentId[state.selectedId] || [];
+			var skillsCount = getSkillCountText(state.selectedId);
 			var browsers = new Set();
 			state.agents.forEach(function(a) { if (a.defaultBrowserId) browsers.add(a.defaultBrowserId); });
-			return { total: total, active: active, skills: selectedSkills.length, browsers: browsers.size };
+			return { total: total, active: active, skills: skillsCount, browsers: browsers.size };
 		}
 
 		/* ── Rendering: Stats ── */
@@ -1056,8 +1066,8 @@ function getAgentsPageJs(): string {
 			html += buildMiniCard("Agent ID", '<code>' + escapeHtml(agent.agentId) + '</code>', "var(--primary-soft)", "#6366F1", SVG_GRID);
 			html += buildMiniCard("状态", status.text, status.cls === "ag-badge--active" ? "var(--success-soft)" : "var(--primary-soft)", status.cls === "ag-badge--active" ? "#22C55E" : "#6366F1", SVG_ACTIVITY);
 			html += buildMiniCard("浏览器", agent.defaultBrowserId || "默认", "var(--warning-soft)", "#F59E0B", SVG_MONITOR);
-			var skillCount = (state.skillsByAgentId[state.selectedId] || []).length;
-			html += buildMiniCard("技能数", String(skillCount), "rgba(139,92,246,0.12)", "#8B5CF6", SVG_STAR);
+			html += buildMiniCard("技能数", getSkillCountText(state.selectedId), "rgba(139,92,246,0.12)", "#8B5CF6", SVG_STAR);
+
 			html += '</div>';
 
 			// Config + Rules row
@@ -1093,9 +1103,8 @@ function getAgentsPageJs(): string {
 					html += '</div>';
 					html += '<div id="ag-skill-list" class="ag-skill-list"></div>';
 				} else {
-					var collapsedCount = (state.skillsByAgentId[state.selectedId] || []).length;
-					html += '<div class="ag-skills-collapsed">';
-					html += '<span style="font-size:13px;color:var(--fg-secondary)">' + (collapsedCount > 0 ? collapsedCount + ' 个技能' : '点击查看技能列表') + '</span>';
+										html += '<div class="ag-skills-collapsed">';
+					html += '<span style="font-size:13px;color:var(--fg-secondary)">' + getCollapsedSkillSummary(state.selectedId) + '</span>';
 					html += '<button id="ag-btn-expand-skills" class="ag-btn ag-btn--outline" type="button">查看技能</button>';
 					html += '</div>';
 				}
