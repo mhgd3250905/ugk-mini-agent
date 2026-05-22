@@ -12,6 +12,15 @@
 
 ---
 
+## 2026-05-22 — Current handoff snapshot for stable playground baseline
+
+- **主题**: 更新新会话接手入口到 Playground performance 稳定基线
+- **影响范围**: `docs/handoff-current.md`, `docs/change-log.md`
+- **变更**:
+  - 将过期 Team Runtime 交接快照替换为 Chat / Agents / Conn performance 收口事实
+  - 记录稳定 tag `stable/playground-performance-2026-05-22` 指向 `f0aa1fd`，并说明该 tag 已推送到 GitHub / Gitee
+  - 明确远端 Git 更新不等于生产部署，新会话开始前必须重新确认 `git status`、当前 HEAD、tag 和 remote
+
 ## 2026-05-22 — Playground Conn run history loading states
 
 - **主题**: `/playground/conn` 运行历史补齐 loading / empty / error / retry / has-more 状态
