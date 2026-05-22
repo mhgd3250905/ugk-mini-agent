@@ -829,10 +829,10 @@ function getAgentsPageJs(): string {
 			try {
 				var data = await fetchJson("/v1/agents/" + agentId + "/skills");
 				state.skillsByAgentId[agentId] = Array.isArray(data.skills) ? data.skills : [];
+				state.skillsLoadedByAgentId[agentId] = true;
 			} catch {
 				state.skillsByAgentId[agentId] = [];
 			}
-			state.skillsLoadedByAgentId[agentId] = true;
 		}
 
 		async function apiArchiveAgent(agentId) {
@@ -856,11 +856,10 @@ function getAgentsPageJs(): string {
 				var data = await fetchJson("/v1/agents/main/skills");
 				state.gallerySkills = Array.isArray(data.skills) ? data.skills : [];
 				state.skillsByAgentId.main = state.gallerySkills;
+				state.skillsLoadedByAgentId.main = true;
 			} catch {
 				state.gallerySkills = [];
-				state.skillsByAgentId.main = state.gallerySkills;
 			}
-			state.skillsLoadedByAgentId.main = true;
 		}
 
 		async function apiCopySkill(agentId, skillName) {
@@ -1293,18 +1292,21 @@ function getAgentsPageJs(): string {
 
 		async function handleRemoveSkill(skillName) {
 			if (!state.selectedId || state.removingSkillName) return;
+			var agentId = state.selectedId;
 			state.removingSkillName = skillName;
 			renderSkills();
 			try {
-				await apiRemoveSkill(state.selectedId, skillName);
-				await apiFetchAgentSkills(state.selectedId);
-				renderSkills();
-				renderStats();
+				await apiRemoveSkill(agentId, skillName);
+				await apiFetchAgentSkills(agentId);
+				if (state.selectedId === agentId) {
+					renderSkills();
+					renderStats();
+				}
 				showToast("已移除 " + skillName, "ok");
 			} catch (e) { showToast(e.message || "移除失败", "danger"); }
 			finally {
 				state.removingSkillName = "";
-				renderSkills();
+				if (state.selectedId === agentId) renderSkills();
 			}
 		}
 
@@ -1312,13 +1314,16 @@ function getAgentsPageJs(): string {
 			var sel = document.getElementById("ag-skill-select");
 			if (!sel || !sel.value || !state.selectedId) return;
 			var skillName = sel.value;
+			var agentId = state.selectedId;
 			var btn = document.getElementById("ag-btn-copy-skill");
 			if (btn) { btn.disabled = true; btn.textContent = "安装中..."; }
 			try {
-				await apiCopySkill(state.selectedId, skillName);
-				await apiFetchAgentSkills(state.selectedId);
-				renderSkills();
-				renderStats();
+				await apiCopySkill(agentId, skillName);
+				await apiFetchAgentSkills(agentId);
+				if (state.selectedId === agentId) {
+					renderSkills();
+					renderStats();
+				}
 				showToast("已安装 " + skillName, "ok");
 			} catch (e) { showToast(e.message || "安装失败", "danger"); }
 			finally { if (btn) { btn.disabled = false; btn.textContent = "复制安装"; } }

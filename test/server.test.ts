@@ -1323,7 +1323,7 @@ test("GET /playground/agents declares skillsLoadedByAgentId for per-agent cache 
 	await app.close();
 });
 
-test("GET /playground/agents apiFetchAgentSkills marks loaded after fetch", async () => {
+test("GET /playground/agents apiFetchAgentSkills marks loaded only on success", async () => {
 	const app = await buildServer({
 		agentService: createAgentServiceStub(),
 	});
@@ -1340,11 +1340,19 @@ test("GET /playground/agents apiFetchAgentSkills marks loaded after fetch", asyn
 	assert.ok(fetchEnd > fetchStart, "apiFetchAgentSkills region end not found");
 	const fetchRegion = body.slice(fetchStart, fetchEnd);
 
-	assert.match(fetchRegion, /skillsLoadedByAgentId\[agentId\]\s*=\s*true/);
+	const tryIdx = fetchRegion.indexOf("try {");
+	const catchIdx = fetchRegion.indexOf("} catch {");
+	const loadedIdx = fetchRegion.indexOf("skillsLoadedByAgentId[agentId]");
+	assert.ok(tryIdx >= 0, "try block not found");
+	assert.ok(catchIdx > tryIdx, "catch block not found");
+	assert.ok(loadedIdx > tryIdx && loadedIdx < catchIdx,
+		"skillsLoadedByAgentId[agentId] must be inside the try block, before catch");
+	const catchRegion = fetchRegion.slice(catchIdx);
+	assert.doesNotMatch(catchRegion, /skillsLoadedByAgentId/);
 	await app.close();
 });
 
-test("GET /playground/agents apiFetchGallerySkills marks main as loaded", async () => {
+test("GET /playground/agents apiFetchGallerySkills marks main as loaded only on success", async () => {
 	const app = await buildServer({
 		agentService: createAgentServiceStub(),
 	});
@@ -1361,8 +1369,16 @@ test("GET /playground/agents apiFetchGallerySkills marks main as loaded", async 
 	assert.ok(galleryEnd > galleryStart, "apiFetchGallerySkills region end not found");
 	const galleryRegion = body.slice(galleryStart, galleryEnd);
 
-	assert.match(galleryRegion, /skillsLoadedByAgentId\.main\s*=\s*true/);
-	assert.match(galleryRegion, /state\.skillsByAgentId\.main\s*=\s*state\.gallerySkills/);
+	const tryIdx = galleryRegion.indexOf("try {");
+	const catchIdx = galleryRegion.indexOf("} catch {");
+	const loadedIdx = galleryRegion.indexOf("skillsLoadedByAgentId.main");
+	assert.ok(tryIdx >= 0, "try block not found");
+	assert.ok(catchIdx > tryIdx, "catch block not found");
+	assert.ok(loadedIdx > tryIdx && loadedIdx < catchIdx,
+		"skillsLoadedByAgentId.main must be inside the try block, before catch");
+	const catchRegion = galleryRegion.slice(catchIdx);
+	assert.doesNotMatch(catchRegion, /skillsLoadedByAgentId/);
+	assert.match(galleryRegion, /state.skillsByAgentId.main\s*=\s*state.gallerySkills/);
 	await app.close();
 });
 
@@ -1410,7 +1426,7 @@ test("GET /playground/agents toggle only refreshes affected agent cache", async 
 	await app.close();
 });
 
-test("GET /playground/agents remove and install only refresh selected agent", async () => {
+test("GET /playground/agents remove and install capture agentId before await", async () => {
 	const app = await buildServer({
 		agentService: createAgentServiceStub(),
 	});
@@ -1421,23 +1437,31 @@ test("GET /playground/agents remove and install only refresh selected agent", as
 	assert.equal(response.statusCode, 200);
 	const body = response.body;
 
+	// handleRemoveSkill captures agentId locally
 	const removeStart = body.indexOf("async function handleRemoveSkill(");
 	const removeEnd = body.indexOf("async function handleCopySkill(", removeStart);
 	assert.ok(removeStart >= 0, "handleRemoveSkill function not found");
 	assert.ok(removeEnd > removeStart, "handleRemoveSkill region end not found");
 	const removeRegion = body.slice(removeStart, removeEnd);
 
-	assert.match(removeRegion, /apiFetchAgentSkills\(state\.selectedId\)/);
-	assert.doesNotMatch(removeRegion, /skillsLoadedByAgentId\s*=\s*\{\}/);
+	assert.match(removeRegion, /var agentId = state.selectedId/);
+	assert.match(removeRegion, /apiRemoveSkill\(agentId,/);
+	assert.match(removeRegion, /apiFetchAgentSkills\(agentId\)/);
+	assert.match(removeRegion, /state.selectedId === agentId/);
+	assert.doesNotMatch(removeRegion, /skillsLoadedByAgentIds*=s*{}/);
 
+	// handleCopySkill captures agentId locally
 	const copyStart = body.indexOf("async function handleCopySkill()");
 	const copyEnd = body.indexOf("async function handleRefreshSkills(", copyStart);
 	assert.ok(copyStart >= 0, "handleCopySkill function not found");
 	assert.ok(copyEnd > copyStart, "handleCopySkill region end not found");
 	const copyRegion = body.slice(copyStart, copyEnd);
 
-	assert.match(copyRegion, /apiFetchAgentSkills\(state\.selectedId\)/);
-	assert.doesNotMatch(copyRegion, /skillsLoadedByAgentId\s*=\s*\{\}/);
+	assert.match(copyRegion, /var agentId = state.selectedId/);
+	assert.match(copyRegion, /apiCopySkill\(agentId,/);
+	assert.match(copyRegion, /apiFetchAgentSkills\(agentId\)/);
+	assert.match(copyRegion, /state.selectedId === agentId/);
+	assert.doesNotMatch(copyRegion, /skillsLoadedByAgentIds*=s*{}/);
 	await app.close();
 });
 

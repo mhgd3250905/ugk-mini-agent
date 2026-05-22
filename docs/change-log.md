@@ -17,11 +17,12 @@
 - **主题**: Agent 技能列表按 agentId 缓存，切换回已加载的 Agent 不重复请求 skills 接口
 - **影响范围**: `src/ui/agents-page.ts`, `test/server.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
 - **变更**:
-  - 新增 `skillsLoadedByAgentId` 状态标记，`apiFetchAgentSkills` 和 `apiFetchGallerySkills` 加载后设为 `true`
+  - 新增 `skillsLoadedByAgentId` 状态标记，`apiFetchAgentSkills` 和 `apiFetchGallerySkills` 仅在成功拿到响应并写入 skills 后标记 `true`；fetch 失败不标记，允许用户重试
   - `handleExpandSkills` 使用 `skillsLoadedByAgentId` 判断缓存命中，命中时直接渲染不请求；已加载空数组视为有效缓存
   - toggle/remove/install 等 mutation 仅刷新当前 touched agent 的 skills，不影响其他 agent 缓存
+  - `handleRemoveSkill` / `handleCopySkill` 在 await 前捕获 `agentId = state.selectedId`，后续 API 和刷新都用局部变量；render 前检查 `state.selectedId === agentId` 防止切换后画到新面板
   - 手动"刷新"按钮始终 force refetch 当前 selected agent
-  - 测试覆盖：缓存命中跳过 fetch、空数组有效缓存、刷新 force fetch、mutation 仅刷新当前 agent、gallery 写入 main 缓存
+  - 测试覆盖：成功才标记 loaded / 失败不标记、缓存命中跳过 fetch、mutation 捕获 agentId 并守卫 render、gallery 写入 main 缓存
 
 ## 2026-05-22 — Local Docker port shadow doctor
 
