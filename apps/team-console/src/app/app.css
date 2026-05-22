@@ -1,0 +1,111 @@
+:root {
+  --bg: #01030a;
+  --surface: #060711;
+  --surface-raised: #0b0c18;
+  --line: #1a1b2b;
+  --primary: #eef4ff;
+  --secondary: #8f93ad;
+  --accent: #c9d2ff;
+  --success: #8dffb2;
+  --warning: #ffd166;
+  --danger: #ff7188;
+  --danger-container: #2f1119;
+  --on-danger-container: #ffdbe2;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --font-body: "OpenAI Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "Agave", "Cascadia Code", "Fira Code", monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--primary);
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  height: 100%;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  gap: var(--spacing-md);
+}
+
+.app-header-left {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-md);
+}
+
+.app-title {
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.25;
+  color: var(--primary);
+}
+
+.app-subtitle {
+  font-size: 11px;
+  color: var(--secondary);
+  font-weight: 400;
+}
+
+.app-header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.datasource-select {
+  background: var(--surface-raised);
+  color: var(--primary);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 11px;
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+
+.app-main {
+  flex: 1;
+  overflow: auto;
+}
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--secondary);
+  font-size: 13px;
+}
