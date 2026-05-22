@@ -1,6 +1,6 @@
 # 当前交接快照
 
-更新时间：`2026-05-22`
+更新时间：`2026-05-23`
 
 这份文档给新接手 `ugk-pi / UGK CLAW` 的 coding agent 看。它只记录当前稳定事实和接手入口；历史流水账看 `docs/change-log.md`。不要靠聊天记录拼现状，聊天上下文太肥时最容易把旧计划当新任务，挺蠢，也挺危险。
 
@@ -11,7 +11,7 @@
 ```text
 请接手 `E:\AII\ugk-pi`。你维护的是 ugk-pi 代码仓库，不是产品运行时 Playground agent。
 
-开始前先读 `AGENTS.md`、`docs/handoff-current.md`、`docs/playground-current.md`、`docs/change-log.md`、`docs/traceability-map.md` 和 `DESIGN.md`。如果任务涉及 Chat / Agents / Conn 性能优化，直接看 `.codex/plans/2026-05-22-playground-chat-performance-handoff.md`、`.codex/plans/2026-05-22-playground-agents-performance-handoff.md`、`.codex/plans/2026-05-22-playground-conn-performance-handoff.md`。
+开始前先读 `AGENTS.md`、`docs/handoff-current.md`、`docs/playground-current.md`、`docs/change-log.md`、`docs/traceability-map.md` 和 `DESIGN.md`。如果任务涉及 Chat / Agents / Conn 性能优化，直接看 `.codex/plans/2026-05-22-playground-chat-performance-handoff.md`、`.codex/plans/2026-05-22-playground-agents-performance-handoff.md`、`.codex/plans/2026-05-22-playground-conn-performance-handoff.md`。如果任务涉及 Qwen 思考流、GLM-5.1 上下文或模型源展示，先看 `docs/model-providers.md`、`docs/playground-current.md` 的 `2026-05-23` 条目和 `src/agent/agent-session-event-adapter.ts`。
 
 开始前执行 `git status --short --branch`、`git log -1 --oneline`、`git show -s --format="%h %s" stable/playground-performance-2026-05-22`、`git log --oneline stable/playground-performance-2026-05-22..HEAD` 和 `git remote -v`。当前稳定产品基线 tag 是 `stable/playground-performance-2026-05-22`，指向 `f0aa1fd docs(playground): preserve performance handoffs`，已推送到 GitHub `origin` 和 Gitee `gitee`。后续是否继续开发、规划、部署，要先按用户新任务判断，不要擅自加功能。
 
@@ -28,6 +28,26 @@
 - 本地工作区在打 tag / 推送后已清理未跟踪运行产物；新会话仍必须先执行 `git status --short --branch`
 
 注意：远端 Git 已更新不等于生产服务器已部署。服务器更新仍要按 `docs/server-ops.md` 的增量流程执行，不能把 push 当上线。
+
+## 2026-05-23 Qwen 思考流与 GLM-5.1 上下文修复
+
+当前事实：
+
+- Ali CodePlan 的 `qwen3.7-max` 会在正式 `text_delta` 之前持续输出 `thinking_delta` / `thinking_start` / `thinking_end`。
+- Chat session adapter 不再吞掉 thinking 阶段事件；它会转换为 `{ type: "heartbeat", phase: "reasoning" }`，让前端保持“正在推理”状态，但不会把 thinking 内容拼进最终回答。
+- run events 会克隆 `heartbeat`，聊天路由会把 `text_delta` 和 `heartbeat` 一起从 run log 分页噪声里过滤掉，避免长推理刷爆运行记录。
+- 前端 stream controller 收到 reasoning heartbeat 后只更新加载状态，不改 `streamingText`。
+- Ali CodePlan 的 `glm-5.1` 模型元数据已按智谱官方文档修正为 `contextWindow: 200000`、`maxTokens: 128000`；模型源事实看 `runtime/pi-agent/models.json`、`docs/model-providers.md` 和 `/v1/model-config`。
+
+关键入口：
+
+- `src/agent/agent-session-event-adapter.ts`
+- `src/agent/agent-run-events.ts`
+- `src/routes/chat.ts`
+- `src/ui/playground-stream-controller.ts`
+- `runtime/pi-agent/models.json`
+- `docs/model-providers.md`
+- `docs/playground-current.md`
 
 ## 2026-05-22 Playground 性能收口
 
@@ -103,6 +123,16 @@
 ## 最近验证记录
 
 本阶段收口后已通过：
+
+- `node --test --import tsx test/agent-session-event-adapter.test.ts test/agent-run-events.test.ts test/agent-session-factory.test.ts test/model-config.test.ts`：40/40
+- `node --test --import tsx test/server.test.ts`：162/162
+- `npx tsc --noEmit`：clean
+- `npm test`：1701 pass / 0 fail / 2 skip
+- `npm run docker:chrome:check`：通过
+- `GET http://127.0.0.1:3000/healthz`：`{"ok":true}`
+- `GET http://127.0.0.1:3000/v1/model-config`：`glm-5.1` 返回 `contextWindow: 200000` / `maxTokens: 128000`
+
+上一轮性能收口后已通过：
 
 - `node --test --import tsx test/conn-page-ui.test.ts`：20/20
 - `node --test --import tsx test/server.test.ts`：160/160

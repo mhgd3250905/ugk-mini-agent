@@ -49,11 +49,20 @@ test("cloneChatStreamEvent deep copies mutable done event fields", () => {
 	assert.notEqual(cloned.type === "done" ? cloned.inputAssets : undefined, event.inputAssets);
 });
 
+test("cloneChatStreamEvent preserves reasoning heartbeats", () => {
+	const event: ChatStreamEvent = { type: "heartbeat", phase: "reasoning" };
+	const cloned = cloneChatStreamEvent(event);
+
+	assert.deepEqual(cloned, event);
+	assert.notEqual(cloned, event);
+});
+
 test("isTerminalChatStreamEvent identifies events that close run streams", () => {
 	assert.equal(isTerminalChatStreamEvent({ type: "done", conversationId: "c", runId: "r", text: "" }), true);
 	assert.equal(isTerminalChatStreamEvent({ type: "interrupted", conversationId: "c", runId: "r" }), true);
 	assert.equal(isTerminalChatStreamEvent({ type: "error", conversationId: "c", runId: "r", message: "x" }), true);
 	assert.equal(isTerminalChatStreamEvent({ type: "text_delta", textDelta: "still running" }), false);
+	assert.equal(isTerminalChatStreamEvent({ type: "heartbeat", phase: "reasoning" }), false);
 });
 
 test("deliverChatStreamEvent is best-effort for missing and failed sinks", () => {

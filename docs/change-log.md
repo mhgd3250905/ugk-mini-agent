@@ -12,6 +12,15 @@
 
 ---
 
+## 2026-05-23 — Qwen reasoning stream heartbeat and GLM context metadata
+
+- **主题**: 修复长 reasoning 流式响应保活，并校正阿里 CodePlan `glm-5.1` 上下文窗口
+- **影响范围**: `src/agent/agent-session-event-adapter.ts`, `src/agent/agent-run-events.ts`, `src/routes/chat.ts`, `src/ui/playground-stream-controller.ts`, `src/types/api.ts`, `runtime/pi-agent/models.json`, `docs/model-providers.md`, `docs/playground-current.md`, `test/agent-session-event-adapter.test.ts`, `test/agent-run-events.test.ts`, `test/agent-session-factory.test.ts`, `test/model-config.test.ts`, `test/server.test.ts`
+- **变更**:
+  - `thinking_start` / `thinking_delta` / `thinking_end` 现在转成内部 `heartbeat` 事件，供 Playground 保活和展示“正在推理”
+  - `heartbeat` 不追加 assistant 正文、不进入最终 `done.text`，运行日志分页也会过滤它
+  - `ali-codeplan / glm-5.1` 的 `contextWindow` 从 `20000` 校正为 `200000`，并登记 `maxTokens: 128000`
+
 ## 2026-05-23 — Team plan detail preset team controls
 
 - **主题**: 在 `/playground/team` 计划详情中展示并管理预设团队

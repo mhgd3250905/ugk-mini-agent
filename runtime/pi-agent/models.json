@@ -146,7 +146,8 @@
         {
           "id": "glm-5.1",
           "name": "GLM-5.1 (Ali CodePlan)",
-          "contextWindow": 20000
+          "contextWindow": 200000,
+          "maxTokens": 128000
         },
         {
           "id": "kimi-k2.6",

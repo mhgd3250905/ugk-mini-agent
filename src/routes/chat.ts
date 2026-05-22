@@ -48,7 +48,7 @@ import type {
 const RUN_EVENT_PAGE_SIZE = 2;
 const RUN_EVENT_MAX_PAGE_SIZE = 20;
 function isChatRunLogNoiseEvent(event: ChatStreamEvent): boolean {
-	return event.type === "text_delta";
+	return event.type === "text_delta" || event.type === "heartbeat";
 }
 
 function parseChatRunEventPageQuery(query: Record<string, unknown>): {

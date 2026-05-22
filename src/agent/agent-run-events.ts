@@ -40,6 +40,11 @@ export function cloneChatStreamEvent(event: ChatStreamEvent): ChatStreamEvent {
 				type: "text_delta",
 				textDelta: event.textDelta,
 			};
+		case "heartbeat":
+			return {
+				type: "heartbeat",
+				phase: event.phase,
+			};
 		case "tool_started":
 			return {
 				type: "tool_started",

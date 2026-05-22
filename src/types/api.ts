@@ -642,6 +642,10 @@ export type ChatStreamEvent =
 			textDelta: string;
 	  }
 	| {
+			type: "heartbeat";
+			phase: "reasoning";
+	  }
+	| {
 			type: "tool_started";
 			toolCallId: string;
 			toolName: string;

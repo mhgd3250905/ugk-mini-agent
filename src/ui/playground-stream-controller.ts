@@ -320,6 +320,12 @@ export function getPlaygroundStreamControllerScript(): string {
 					scrollTranscriptToBottom();
 					break;
 				}
+				case "heartbeat":
+					if (event.phase === "reasoning") {
+						ensureStreamingAssistantMessage();
+						setAssistantLoadingState("正在推理", "system");
+					}
+					break;
 				case "done": {
 					state.receivedDoneEvent = true;
 					sessionFile.textContent = event.sessionFile || "不可用";

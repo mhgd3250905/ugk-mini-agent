@@ -46,6 +46,37 @@ test("agent session event adapter accumulates text deltas and emits rewritten st
 	]);
 });
 
+test("agent session event adapter emits reasoning heartbeats without appending thinking text", () => {
+	const { adapter, events } = collectEvents();
+
+	adapter.handle({
+		type: "message_update",
+		assistantMessageEvent: {
+			type: "thinking_start",
+		},
+	});
+	adapter.handle({
+		type: "message_update",
+		assistantMessageEvent: {
+			type: "thinking_delta",
+			delta: "private reasoning",
+		},
+	});
+	adapter.handle({
+		type: "message_update",
+		assistantMessageEvent: {
+			type: "thinking_end",
+		},
+	});
+
+	assert.equal(adapter.getRawText(), "");
+	assert.deepEqual(events, [
+		{ type: "heartbeat", phase: "reasoning" },
+		{ type: "heartbeat", phase: "reasoning" },
+		{ type: "heartbeat", phase: "reasoning" },
+	]);
+});
+
 test("agent session event adapter converts tool and queue events", () => {
 	const { adapter, events } = collectEvents();
 

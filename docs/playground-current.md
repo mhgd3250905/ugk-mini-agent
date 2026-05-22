@@ -2,6 +2,13 @@
 
 更新时间：`2026-05-23`
 
+## 2026-05-23 Qwen reasoning stream heartbeat
+
+- `ali-codeplan / qwen3.7-max` 这类 Anthropic-compatible 流式响应可能先返回较长 reasoning / thinking 阶段；后端现在把 `thinking_start`、`thinking_delta`、`thinking_end` 转成内部 `heartbeat` 事件保活，不展示 thinking 内容，也不写入最终回答文本。
+- Playground 收到 `heartbeat` 时只更新助手状态为“正在推理”，不追加 `state.streamingText`，后续 `text_delta` 和 `done` 仍按原路径完成。
+- 运行日志分页把 `heartbeat` 和 `text_delta` 一样视为噪声事件过滤，避免长推理模型把历史事件列表刷满。
+- 相关源码：`src/agent/agent-session-event-adapter.ts`、`src/agent/agent-run-events.ts`、`src/routes/chat.ts`、`src/ui/playground-stream-controller.ts`、`src/types/api.ts`
+
 ## 2026-05-23 Team 计划详情团队预设
 
 - `/playground/team` 的计划详情页现在在任务结构和运行记录之前显示当前计划绑定的预设团队。

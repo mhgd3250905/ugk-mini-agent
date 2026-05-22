@@ -90,6 +90,14 @@ function handleMessageUpdate(
 	currentText: string,
 	onEvent: ChatStreamEventSink | undefined,
 ): string {
+	if (isThinkingAssistantMessageEvent(event.assistantMessageEvent.type)) {
+		deliverChatStreamEvent(onEvent, {
+			type: "heartbeat",
+			phase: "reasoning",
+		});
+		return currentText;
+	}
+
 	if (event.assistantMessageEvent.type !== "text_delta" || typeof event.assistantMessageEvent.delta !== "string") {
 		return currentText;
 	}
@@ -100,6 +108,10 @@ function handleMessageUpdate(
 		textDelta: rewriteUserVisibleLocalArtifactLinks(delta),
 	});
 	return currentText + delta;
+}
+
+function isThinkingAssistantMessageEvent(type: string): boolean {
+	return type === "thinking_delta" || type === "thinking_start" || type === "thinking_end";
 }
 
 function toToolExecutionStartEvent(event: ToolExecutionStartEventLike): ChatStreamEvent {

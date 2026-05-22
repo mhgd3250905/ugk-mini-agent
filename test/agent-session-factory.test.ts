@@ -290,7 +290,8 @@ test("project models.json exposes the checked-in Ali CodePlan Anthropic-compatib
 	assert.notEqual(glmModel, undefined);
 	assert.equal(glmModel?.provider, "ali-codeplan");
 	assert.equal(glmModel?.id, "glm-5.1");
-	assert.equal(glmModel?.contextWindow, 20000);
+	assert.equal(glmModel?.contextWindow, 200000);
+	assert.equal(glmModel?.maxTokens, 128000);
 	assert.notEqual(kimiModel, undefined);
 	assert.equal(kimiModel?.provider, "ali-codeplan");
 	assert.equal(kimiModel?.id, "kimi-k2.6");

@@ -3716,6 +3716,7 @@ test("GET /playground shows an explicit assistant loading bubble while a run is 
 	assert.match(response.body, /scrollTranscriptToBottom\(\{ force: stream\.created === true \}\);/);
 	assert.match(response.body, /case "run_started":[\s\S]*ensureStreamingAssistantMessage\(\);[\s\S]*setAssistantLoadingState\(/);
 	assert.match(response.body, /case "text_delta":[\s\S]*setAssistantLoadingState\([^\)]*, "system"\)/);
+	assert.match(response.body, /case "heartbeat":[\s\S]*setAssistantLoadingState\("正在推理", "system"\)/);
 	assert.match(response.body, /case "done":[\s\S]*completeAssistantLoadingBubble\("ok"/);
 	assert.match(response.body, /typeof event\.text === "string" && event\.text !== state\.streamingText/);
 	assert.doesNotMatch(response.body, /event\.text && event\.text !== state\.streamingText/);
@@ -6951,6 +6952,10 @@ test("GET /v1/chat/runs/:runId/events returns buffered chat run events", async (
 					{
 						type: "text_delta",
 						textDelta: "ignored incremental body",
+					},
+					{
+						type: "heartbeat",
+						phase: "reasoning",
 					},
 					{
 						type: "tool_started",
