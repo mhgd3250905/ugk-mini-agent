@@ -112,6 +112,43 @@ describe("ExecutionMap UI", () => {
     expect(selectedNodes.length).toBeGreaterThan(0);
   });
 
+  it("selected node has status bar visible", () => {
+    const plan = makeSequentialPlan();
+    const run = makeSequentialRun();
+    const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId="task_2" onSelectTask={() => {}} />);
+    const selectedNode = container.querySelector(".emap-node.selected");
+    expect(selectedNode).toBeTruthy();
+    const bar = selectedNode!.querySelector(".emap-node-status-bar");
+    expect(bar).toBeTruthy();
+  });
+
+  it("chain-selected nodes appear for selected task path", () => {
+    const plan = makeSequentialPlan();
+    const run = makeSequentialRun();
+    const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId="task_2" onSelectTask={() => {}} />);
+    const chainNodes = container.querySelectorAll(".emap-node.chain-selected");
+    expect(chainNodes.length).toBeGreaterThan(0);
+  });
+
+  it("collapsed node renders with collapsed class", () => {
+    const plan = makeDiscoveryForEachPlan();
+    const run = makeLargeChildRun();
+    const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+    const collapsedNodes = container.querySelectorAll(".emap-collapsed");
+    expect(collapsedNodes.length).toBe(1);
+    const statusBars = collapsedNodes[0].querySelectorAll(".emap-node-status-bar");
+    expect(statusBars.length).toBe(1);
+  });
+
+  it("task node remains clickable with status classes applied", () => {
+    const plan = makeSequentialPlan();
+    const run = makeFailedRun();
+    let clickedId: string | null = null;
+    render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={(id) => { clickedId = id; }} />);
+    fireEvent.click(screen.getByText("Research vendor B"));
+    expect(clickedId).toBe("task_2");
+  });
+
   it("renders SVG links matching model output", () => {
     const plan = makeSequentialPlan();
     const run = makeSequentialRun();

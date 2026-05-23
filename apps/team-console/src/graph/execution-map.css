@@ -6,23 +6,30 @@
 
 .execution-map-scroll {
   position: relative;
-  padding: 16px;
+  padding: 24px 24px 32px;
 }
 
 .execution-map-links {
   position: absolute;
-  top: 16px;
-  left: 16px;
+  top: 24px;
+  left: 24px;
   pointer-events: none;
 }
 
 .emap-link {
   stroke: var(--line);
+  transition: stroke 0.2s;
 }
 
 .emap-link-highlighted {
   stroke: var(--accent);
   stroke-width: 2.5;
+}
+
+.emap-link-failed {
+  stroke: var(--danger);
+  stroke-dasharray: 6 3;
+  opacity: 0.6;
 }
 
 .execution-map-nodes {
@@ -32,35 +39,41 @@
 .emap-node {
   position: absolute;
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--line);
+  border-radius: 6px;
   display: flex;
   flex-direction: row;
   cursor: pointer;
-  transition: border-color 0.15s;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
   overflow: hidden;
   height: 56px;
 }
 
 .emap-node:hover {
   border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .emap-node.selected {
   border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent), 0 2px 12px rgba(201, 210, 255, 0.15);
+  background: var(--surface-raised);
 }
 
 .emap-node.chain-selected {
-  border-color: var(--secondary);
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  background: color-mix(in srgb, var(--surface-raised) 50%, var(--surface));
 }
 
 .emap-node-status-bar {
   width: 4px;
   flex-shrink: 0;
+  border-radius: 6px 0 0 6px;
 }
 
 .status-running .emap-node-status-bar {
   background: var(--accent);
+  animation: pulse-bar 2s ease-in-out infinite;
 }
 
 .status-succeeded .emap-node-status-bar {
@@ -75,21 +88,22 @@
   background: var(--warning);
 }
 
-.status-dimmed {
-  opacity: 0.5;
-}
-
 .status-dimmed .emap-node-status-bar {
   background: var(--secondary);
-}
-
-.status-running .emap-node-status-bar {
-  animation: pulse-bar 2s ease-in-out infinite;
+  opacity: 0.4;
 }
 
 @keyframes pulse-bar {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  50% { opacity: 0.4; }
+}
+
+.status-dimmed {
+  opacity: 0.45;
+}
+
+.status-dimmed:hover {
+  opacity: 0.65;
 }
 
 .emap-node-content {
@@ -136,13 +150,31 @@
   text-overflow: ellipsis;
 }
 
+.emap-root .emap-node-title {
+  font-weight: 650;
+}
+
 .emap-collapsed {
   background: var(--surface-raised);
   cursor: default;
+  border-style: dashed;
 }
 
 .emap-collapsed:hover {
   border-color: var(--line);
+  box-shadow: none;
+}
+
+.emap-collapsed .emap-node-title {
+  color: var(--secondary);
+}
+
+.emap-node[data-kind="orphan"] {
+  border-style: dotted;
+}
+
+.emap-node[data-kind="orphan"] .emap-node-title {
+  color: var(--secondary);
 }
 
 @media (max-width: 720px) {

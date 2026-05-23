@@ -153,6 +153,7 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask }: Execut
               <div
                 key={node.nodeId}
                 className={`emap-node ${statusClass(node.status)} ${isSelected ? "selected" : ""} ${chainSelected ? "chain-selected" : ""} ${collapsed ? "emap-collapsed" : ""}`}
+                data-kind={collapsed ? "collapsed" : node.kind}
                 style={{ left: pos.x, top: pos.y, width: pos.width }}
                 onClick={() => !collapsed && onSelectTask(node.taskId)}
               >
