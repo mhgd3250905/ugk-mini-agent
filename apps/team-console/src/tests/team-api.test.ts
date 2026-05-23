@@ -29,6 +29,42 @@ describe("MockTeamApi", () => {
       message: "Run not found: nonexistent",
     });
   });
+
+  it("returns attempt metadata for real snapshot 2 child task", async () => {
+    const attempts = await api.listAttempts("run_real_success_foreach_001", "explore_direction__official-search-apis");
+
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0].attemptId).toBe("attempt_68ce15110a99");
+    expect(attempts[0].worker.map((w) => w.outputRef)).toEqual([
+      "tasks/explore_direction__official-search-apis/attempts/attempt_68ce15110a99/worker-output-001.md",
+      "tasks/explore_direction__official-search-apis/attempts/attempt_68ce15110a99/worker-output-002.md",
+    ]);
+    expect(attempts[0].checker.map((c) => c.recordRef)).toEqual([
+      "tasks/explore_direction__official-search-apis/attempts/attempt_68ce15110a99/checker-verdict-001.json",
+      "tasks/explore_direction__official-search-apis/attempts/attempt_68ce15110a99/checker-verdict-002.json",
+    ]);
+    expect(attempts[0].watcher?.recordRef).toBe(
+      "tasks/explore_direction__official-search-apis/attempts/attempt_68ce15110a99/watcher-review.json",
+    );
+    expect(attempts[0].resultRef).toBe(
+      "tasks/explore_direction__official-search-apis/attempts/attempt_68ce15110a99/accepted-result.md",
+    );
+    expect(attempts[0].files).toContain("accepted-result.md");
+  });
+
+  it("reads deterministic attempt fixture content", async () => {
+    const content = await api.readAttemptFile(
+      "run_real_success_foreach_001",
+      "explore_direction__official-search-apis",
+      "attempt_68ce15110a99",
+      "checker-verdict-001.json",
+    );
+
+    expect(JSON.parse(content)).toMatchObject({
+      verdict: "revise",
+      reason: expect.stringContaining("补充"),
+    });
+  });
 });
 
 describe("LiveTeamApi", () => {
@@ -67,6 +103,26 @@ describe("LiveTeamApi", () => {
     expect(fetch).toHaveBeenCalledWith("/v1/team/runs/run%2Fa%20b");
   });
 
+  it("listAttempts URL-encodes run and task ids", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ attempts: [] }), { status: 200 }));
+
+    await api.listAttempts("run/a b", "task/c d");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/runs/run%2Fa%20b/tasks/task%2Fc%20d/attempts");
+  });
+
+  it("readAttemptFile URL-encodes run, task, attempt, and file names", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response("file body", { status: 200 }));
+
+    await api.readAttemptFile("run/a b", "task/c d", "attempt/e f", "worker output.md");
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/v1/team/runs/run%2Fa%20b/tasks/task%2Fc%20d/attempts/attempt%2Fe%20f/files/worker%20output.md",
+    );
+  });
+
   it("turns non-OK responses into readable API errors", async () => {
     const api = new LiveTeamApi("/v1/team");
     vi.mocked(fetch).mockResolvedValue(new Response("nope", { status: 503 }));
@@ -74,6 +130,26 @@ describe("LiveTeamApi", () => {
     await expect(api.listPlans()).rejects.toEqual({
       message: "请求失败 (503)",
       status: 503,
+    });
+  });
+
+  it("turns attempt file non-OK responses into readable API errors", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response("missing", { status: 404 }));
+
+    await expect(api.readAttemptFile("run_1", "task_1", "attempt_1", "missing.md")).rejects.toEqual({
+      message: "请求失败 (404)",
+      status: 404,
+    });
+  });
+
+  it("turns network errors into readable API errors", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockRejectedValue(new TypeError("Failed to fetch"));
+
+    await expect(api.listAttempts("run_1", "task_1")).rejects.toEqual({
+      message: "无法连接服务器",
+      status: 0,
     });
   });
 });

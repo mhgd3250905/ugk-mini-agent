@@ -1,9 +1,11 @@
-import type { TeamPlan, RunDetail, TeamApiError, TeamRunState } from "./team-types";
+import type { TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "./team-types";
 
 export interface TeamApiProvider {
   listPlans(): Promise<TeamPlan[]>;
   listRuns(): Promise<TeamRunState[]>;
   getRunDetail(runId: string): Promise<RunDetail>;
+  listAttempts(runId: string, taskId: string): Promise<TeamAttemptMetadata[]>;
+  readAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string): Promise<string>;
 }
 
 function toApiError(error: unknown): TeamApiError {
@@ -47,6 +49,29 @@ export class LiveTeamApi implements TeamApiProvider {
       const res = await fetch(`${this.baseUrl}/runs/${encodeURIComponent(runId)}`);
       if (!res.ok) throw res;
       return (await res.json()) as RunDetail;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async listAttempts(runId: string, taskId: string): Promise<TeamAttemptMetadata[]> {
+    try {
+      const res = await fetch(`${this.baseUrl}/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/attempts`);
+      if (!res.ok) throw res;
+      const body = (await res.json()) as { attempts?: TeamAttemptMetadata[] };
+      return Array.isArray(body.attempts) ? body.attempts : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async readAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string): Promise<string> {
+    try {
+      const res = await fetch(
+        `${this.baseUrl}/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/attempts/${encodeURIComponent(attemptId)}/files/${encodeURIComponent(fileName)}`,
+      );
+      if (!res.ok) throw res;
+      return await res.text();
     } catch (e) {
       throw toApiError(e);
     }

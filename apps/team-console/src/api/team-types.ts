@@ -17,9 +17,82 @@ export type TaskStatus =
   | "skipped";
 
 export type TaskManualDisposition = "default" | "skip" | "force_rerun";
+export type AttemptStatus = "running" | "succeeded" | "failed" | "interrupted" | "cancelled";
 
 export type TaskType = "normal" | "discovery" | "for_each";
 export type GeneratedSource = "for_each" | "decomposition";
+
+export type AttemptLifecyclePhase =
+  | "created"
+  | "worker_running"
+  | "worker_completed"
+  | "checker_reviewing"
+  | "checker_passed"
+  | "checker_revising"
+  | "checker_failed"
+  | "watcher_reviewing"
+  | "watcher_accepted"
+  | "watcher_revision_requested"
+  | "watcher_confirmed_failed"
+  | "succeeded"
+  | "failed"
+  | "interrupted"
+  | "cancelled";
+
+export type CheckerVerdict = "pass" | "revise" | "fail";
+export type WatcherDecision = "accept_task" | "confirm_failed" | "request_revision";
+export type WatcherRevisionMode = "amend" | "redo";
+
+export interface TeamRoleRuntimeContext {
+  requestedProfileId: string;
+  resolvedProfileId: string;
+  fallbackUsed: boolean;
+  fallbackReason?: "profile_not_found" | "profile_archived" | "legacy_profile";
+  browserId: string | null;
+  browserScope: string;
+}
+
+export interface TeamAttemptWorkerSummary {
+  outputRef: string | null;
+  outputIndex: number;
+  runtimeContext?: TeamRoleRuntimeContext;
+}
+
+export interface TeamAttemptCheckerSummary {
+  verdict: CheckerVerdict;
+  reason: string;
+  feedback?: string;
+  resultContentRef?: string | null;
+  revisionIndex: number;
+  recordRef: string | null;
+  feedbackRef: string | null;
+  runtimeContext?: TeamRoleRuntimeContext;
+}
+
+export interface TeamAttemptWatcherSummary {
+  decision: WatcherDecision;
+  reason: string;
+  revisionMode?: WatcherRevisionMode;
+  feedback?: string;
+  recordRef: string | null;
+  runtimeContext?: TeamRoleRuntimeContext;
+}
+
+export interface TeamAttemptMetadata {
+  attemptId: string;
+  taskId: string;
+  status: AttemptStatus;
+  phase: AttemptLifecyclePhase;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+  worker: TeamAttemptWorkerSummary[];
+  checker: TeamAttemptCheckerSummary[];
+  watcher: TeamAttemptWatcherSummary | null;
+  resultRef: string | null;
+  errorSummary: string | null;
+  files: string[];
+}
 
 export interface TeamTask {
   id: string;
@@ -83,8 +156,17 @@ export interface TeamRunState {
   };
 }
 
+export interface SourceItemData {
+  id: string;
+  name: string;
+  description: string;
+  searchKeywords: string;
+  estimatedCount: string;
+}
+
 export interface TaskDefinition extends TeamTask {
   generatedSource?: GeneratedSource;
+  sourceItem?: { id: string; data: SourceItemData };
 }
 
 export interface RunDetail extends TeamRunState {
