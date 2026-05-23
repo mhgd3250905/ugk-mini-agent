@@ -25,12 +25,16 @@ interface ExecutionMapProps {
   selectedTaskId: string | null;
   onSelectTask: (taskId: string) => void;
   attemptsByTaskId?: Record<string, TeamAttemptMetadata[]>;
+  readAttemptFile?: (runId: string, taskId: string, attemptId: string, fileName: string) => Promise<string>;
 }
 
 type RenderNode = Omit<ExecutionNode, "kind"> & { kind: NodeKind | "collapsed" };
 
 const EVIDENCE_W = 240;
 const EVIDENCE_GAP = 12;
+const PREVIEW_W = 360;
+const PREVIEW_GAP = 40;
+const PREVIEW_FALLBACK_HEIGHT = 180;
 
 type EvidenceKind = "result" | "error" | "attempt" | "progress" | "worker" | "checker" | "watcher";
 
@@ -43,6 +47,11 @@ interface EvidenceEntry {
   tagClass?: string;
   path?: string;
 }
+
+type ArtifactPreviewState =
+  | { status: "loading"; fileName: string }
+  | { status: "loaded"; fileName: string; content: string }
+  | { status: "error"; fileName: string; message: string };
 
 function evidenceHeight(kind: EvidenceKind): number {
   switch (kind) {
@@ -57,6 +66,12 @@ function evidenceHeight(kind: EvidenceKind): number {
 }
 
 type MeasuredHeights = Record<string, number>;
+
+interface AttemptFileRef {
+  taskId: string;
+  attemptId: string;
+  fileName: string;
+}
 
 function statusClass(status: TaskStatus | RunDetail["status"]): string {
   switch (status) {
@@ -85,6 +100,15 @@ export function summarizeCollapsedTaskStatus(children: Pick<ExecutionNode, "stat
 function extractFilename(path: string): string {
   const idx = path.lastIndexOf("/");
   return idx >= 0 ? path.slice(idx + 1) : path;
+}
+
+function parseAttemptFileRef(path: string | undefined): AttemptFileRef | null {
+  if (!path) return null;
+  const match = /^tasks\/([^/]+)\/attempts\/([^/]+)\/([^/]+)$/.exec(path);
+  if (!match) return null;
+  const [, taskId, attemptId, fileName] = match;
+  if (!taskId || !attemptId || !fileName) return null;
+  return { taskId, attemptId, fileName };
 }
 
 function artifactTypeLabel(filename: string): string {
@@ -117,6 +141,47 @@ function watcherDecisionLabel(decision: string): string {
   if (decision === "confirm_failed") return "确认失败";
   if (decision === "request_revision") return "要求重做";
   return decision;
+}
+
+function formatJsonPreview(content: string): string {
+  try {
+    return JSON.stringify(JSON.parse(content), null, 2);
+  } catch {
+    return content;
+  }
+}
+
+function previewKind(fileName: string): "json" | "html" | "text" {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".json")) return "json";
+  if (lower.endsWith(".html") || lower.endsWith(".htm")) return "html";
+  return "text";
+}
+
+function renderPreviewContent(state: ArtifactPreviewState) {
+  if (state.status === "loading") {
+    return <div className="emap-artifact-preview-message">正在加载预览...</div>;
+  }
+  if (state.status === "error") {
+    return <div className="emap-artifact-preview-message error">加载失败: {state.message}</div>;
+  }
+
+  const kind = previewKind(state.fileName);
+  if (kind === "json") {
+    return <pre className="emap-artifact-preview-text">{formatJsonPreview(state.content)}</pre>;
+  }
+  if (kind === "html") {
+    return (
+      <div className="emap-artifact-preview-html">
+        <iframe className="emap-artifact-iframe" title={`HTML preview: ${state.fileName}`} sandbox="" srcDoc={state.content} />
+        <details className="emap-artifact-source">
+          <summary>查看源码</summary>
+          <pre>{state.content}</pre>
+        </details>
+      </div>
+    );
+  }
+  return <pre className="emap-artifact-preview-text">{state.content}</pre>;
 }
 
 function isFinalReportTask(taskId: string, taskTitle: string, planTasks: TeamPlan["tasks"]): boolean {
@@ -215,9 +280,12 @@ export function buildArtifactBranches(
   return entries;
 }
 
-export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attemptsByTaskId = {} }: ExecutionMapProps) {
+export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attemptsByTaskId = {}, readAttemptFile }: ExecutionMapProps) {
   const evidenceContainerRef = useRef<HTMLDivElement | null>(null);
   const [measuredHeights, setMeasuredHeights] = useState<MeasuredHeights>({});
+  const [previewHeights, setPreviewHeights] = useState<MeasuredHeights>({});
+  const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
+  const [artifactPreviewState, setArtifactPreviewState] = useState<Record<string, ArtifactPreviewState>>({});
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
   const prevSelectionRef = useRef<string | null>(null);
 
@@ -225,6 +293,15 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
     prevSelectionRef.current = selectedTaskId;
     if (Object.keys(measuredHeights).length > 0) {
       setMeasuredHeights({});
+    }
+    if (Object.keys(previewHeights).length > 0) {
+      setPreviewHeights({});
+    }
+    if (selectedArtifactId) {
+      setSelectedArtifactId(null);
+    }
+    if (Object.keys(artifactPreviewState).length > 0) {
+      setArtifactPreviewState({});
     }
   }
 
@@ -296,9 +373,10 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
     if (evidence.length === 0) return 0;
     return evidence.reduce((sum, entry, i) => {
       const h = measuredHeights[entry.id] ?? evidenceHeight(entry.kind);
-      return sum + h + (i < evidence.length - 1 ? EVIDENCE_GAP : 0);
+      const previewH = selectedArtifactId === entry.id ? previewHeights[entry.id] ?? PREVIEW_FALLBACK_HEIGHT : 0;
+      return sum + Math.max(h, previewH) + (i < evidence.length - 1 ? EVIDENCE_GAP : 0);
     }, 0);
-  }, [evidence, measuredHeights]);
+  }, [evidence, measuredHeights, selectedArtifactId, previewHeights]);
 
   const layout = useMemo(() => layoutExecutionMap(model, {
     selectedTaskId: selectedTaskId ?? undefined,
@@ -323,15 +401,18 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
 
   const evidenceLayout = useMemo(() => {
     type Position = EvidenceEntry & { x: number; y: number; width: number; height: number };
-    const empty = { positions: [] as Position[], links: [] as { sourceId: string; targetId: string; path: string }[] };
+    type PreviewPosition = { entry: EvidenceEntry; x: number; y: number; width: number; height: number; state: ArtifactPreviewState };
+    const empty = { positions: [] as Position[], preview: null as PreviewPosition | null, links: [] as { sourceId: string; targetId: string; path: string; preview?: boolean }[] };
     if (evidence.length === 0) return empty;
     const taskPos = layout.nodePositions.get(selectedTaskId!);
     if (!taskPos) return empty;
     const evidenceX = taskPos.x + taskPos.width + 40;
+    const previewX = evidenceX + EVIDENCE_W + PREVIEW_GAP;
 
     let y = taskPos.y;
     const positions: Position[] = [];
-    const links: { sourceId: string; targetId: string; path: string }[] = [];
+    let preview: PreviewPosition | null = null;
+    const links: { sourceId: string; targetId: string; path: string; preview?: boolean }[] = [];
 
     for (const entry of evidence) {
       const fallback = evidenceHeight(entry.kind);
@@ -342,11 +423,24 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
         targetId: entry.id,
         path: straightPath(taskPos.x + taskPos.width, taskPos.y + taskPos.height / 2, evidenceX, y + h / 2),
       });
-      y += h + EVIDENCE_GAP;
+      let rowHeight = h;
+      const state = artifactPreviewState[entry.id];
+      if (selectedArtifactId === entry.id && state) {
+        const previewH = previewHeights[entry.id] ?? PREVIEW_FALLBACK_HEIGHT;
+        preview = { entry, x: previewX, y, width: PREVIEW_W, height: previewH, state };
+        links.push({
+          sourceId: entry.id,
+          targetId: `${entry.id}__preview`,
+          path: straightPath(evidenceX + EVIDENCE_W, y + h / 2, previewX, y + previewH / 2),
+          preview: true,
+        });
+        rowHeight = Math.max(rowHeight, previewH);
+      }
+      y += rowHeight + EVIDENCE_GAP;
     }
 
-    return { positions, links };
-  }, [evidence, layout.nodePositions, selectedTaskId, measuredHeights]);
+    return { positions, preview, links };
+  }, [evidence, layout.nodePositions, selectedTaskId, measuredHeights, selectedArtifactId, artifactPreviewState, previewHeights]);
 
   useLayoutEffect(() => {
     if (evidence.length === 0 || !evidenceContainerRef.current) return;
@@ -367,6 +461,24 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
     if (changed) setMeasuredHeights(updated);
   }, [evidence, evidenceLayout, measuredHeights]);
 
+  useLayoutEffect(() => {
+    if (!evidenceContainerRef.current) return;
+    const nodes = evidenceContainerRef.current.querySelectorAll<HTMLElement>(".emap-artifact-preview");
+    if (nodes.length === 0) return;
+
+    const updated: MeasuredHeights = {};
+    let changed = false;
+    for (const node of nodes) {
+      const id = node.dataset.previewId;
+      if (!id) continue;
+      const h = Math.round(node.getBoundingClientRect().height);
+      if (!Number.isFinite(h) || h <= 0) continue;
+      updated[id] = h;
+      if ((previewHeights[id] ?? 0) !== h) changed = true;
+    }
+    if (changed) setPreviewHeights((current) => ({ ...current, ...updated }));
+  }, [evidenceLayout.preview, previewHeights]);
+
   const toggleExpand = useCallback((parentTaskId: string) => {
     setExpandedTaskIds((prev) => {
       const next = new Set(prev);
@@ -378,6 +490,63 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
       return next;
     });
   }, []);
+
+  const handleArtifactClick = useCallback((entry: EvidenceEntry) => {
+    if (selectedArtifactId === entry.id) {
+      setSelectedArtifactId(null);
+      return;
+    }
+
+    setSelectedArtifactId(entry.id);
+
+    const parsed = parseAttemptFileRef(entry.path);
+    const fileName = parsed?.fileName ?? extractFilename(entry.path ?? entry.title);
+    const fail = (message: string) => {
+      setArtifactPreviewState((current) => ({
+        ...current,
+        [entry.id]: { status: "error", fileName, message },
+      }));
+    };
+
+    if (!parsed || !selectedTaskId || parsed.taskId !== selectedTaskId) {
+      fail("文件引用不属于当前任务");
+      return;
+    }
+    if (!readAttemptFile) {
+      fail("当前数据源不支持读取文件");
+      return;
+    }
+
+    const attempts = attemptsByTaskId[selectedTaskId] ?? [];
+    const attempt = attempts.find((a) => a.attemptId === parsed.attemptId);
+    if (!attempt || !attempt.files.includes(parsed.fileName)) {
+      fail("文件不在当前 attempt metadata 中");
+      return;
+    }
+
+    const existing = artifactPreviewState[entry.id];
+    if (existing?.status === "loaded") return;
+
+    setArtifactPreviewState((current) => ({
+      ...current,
+      [entry.id]: { status: "loading", fileName: parsed.fileName },
+    }));
+
+    readAttemptFile(run.runId, parsed.taskId, parsed.attemptId, parsed.fileName)
+      .then((content) => {
+        setArtifactPreviewState((current) => ({
+          ...current,
+          [entry.id]: { status: "loaded", fileName: parsed.fileName, content },
+        }));
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        setArtifactPreviewState((current) => ({
+          ...current,
+          [entry.id]: { status: "error", fileName: parsed.fileName, message },
+        }));
+      });
+  }, [artifactPreviewState, attemptsByTaskId, readAttemptFile, run.runId, selectedArtifactId, selectedTaskId]);
 
   const allNodes: RenderNode[] = model.mainTasks.flatMap((t) => {
     const result: RenderNode[] = [t];
@@ -424,10 +593,12 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
   const evidenceRight = evidenceLayout.positions.length > 0
     ? Math.max(...evidenceLayout.positions.map((p) => p.x + p.width))
     : 0;
-  const svgWidth = Math.max(700, evidenceRight + 28);
+  const previewRight = evidenceLayout.preview ? evidenceLayout.preview.x + evidenceLayout.preview.width : 0;
+  const svgWidth = Math.max(700, evidenceRight + 28, previewRight + 28);
   const maxY = Math.max(
     ...Array.from(layout.nodePositions.values()).map((n) => n.y + n.height),
     ...evidenceLayout.positions.map((p) => p.y + p.height),
+    evidenceLayout.preview ? evidenceLayout.preview.y + evidenceLayout.preview.height : 0,
     200,
   );
 
@@ -462,7 +633,7 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
             <path
               key={link.targetId}
               d={link.path}
-              className="emap-link emap-link-evidence"
+              className={`emap-link ${link.preview ? "emap-link-artifact-preview" : "emap-link-evidence"}`}
               fill="none"
               strokeWidth={1.5}
             />
@@ -562,7 +733,10 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
                 data-evidence-id={e.id}
                 className={`emap-evidence-node emap-artifact-node emap-evidence-${e.kind}`}
                 style={{ left: e.x, top: e.y, width: e.width, minHeight: e.height }}
-                onClick={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleArtifactClick(e);
+                }}
               >
                 <div className="emap-evidence-header">
                   <span className="emap-evidence-title">{e.title}</span>
@@ -573,7 +747,28 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
               </button>
             ));
 
-            return [taskElement, ...evidenceElements];
+            const previewElement = evidenceLayout.preview ? (
+              <div
+                key={`${evidenceLayout.preview.entry.id}__preview`}
+                data-testid="artifact-preview"
+                data-preview-id={evidenceLayout.preview.entry.id}
+                className="emap-artifact-preview"
+                style={{
+                  left: evidenceLayout.preview.x,
+                  top: evidenceLayout.preview.y,
+                  width: evidenceLayout.preview.width,
+                  minHeight: evidenceLayout.preview.height,
+                }}
+              >
+                <div className="emap-artifact-preview-header">
+                  <span>预览</span>
+                  <code>{evidenceLayout.preview.state.fileName}</code>
+                </div>
+                {renderPreviewContent(evidenceLayout.preview.state)}
+              </div>
+            ) : null;
+
+            return previewElement ? [taskElement, ...evidenceElements, previewElement] : [taskElement, ...evidenceElements];
           })}
         </div>
       </div>

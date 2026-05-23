@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { ExecutionMap } from "../graph/ExecutionMap";
 import { App } from "../app/App";
 import {
@@ -53,6 +53,39 @@ async function realSuccessOfficialAttempts(): Promise<TeamAttemptMetadata[]> {
     "run_real_success_foreach_001",
     "explore_direction__official-search-apis",
   );
+}
+
+async function renderSelectedOfficialArtifactMap(
+  readAttemptFile?: (runId: string, taskId: string, attemptId: string, fileName: string) => Promise<string>,
+) {
+  const plan = makeRealSuccessForEachPlan();
+  const run = makeRealSuccessForEachRun();
+  const childId = "explore_direction__official-search-apis";
+  const attempts = await realSuccessOfficialAttempts();
+  const result = render(
+    <ExecutionMap
+      plan={plan}
+      run={run}
+      selectedTaskId={null}
+      onSelectTask={() => {}}
+      attemptsByTaskId={{ [childId]: attempts }}
+      readAttemptFile={readAttemptFile}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: /展开 13 个子任务/ }));
+  result.rerender(
+    <ExecutionMap
+      plan={plan}
+      run={run}
+      selectedTaskId={childId}
+      onSelectTask={() => {}}
+      attemptsByTaskId={{ [childId]: attempts }}
+      readAttemptFile={readAttemptFile}
+    />,
+  );
+
+  return { ...result, run, childId, attempts };
 }
 
 describe("ExecutionMap UI", () => {
@@ -750,6 +783,162 @@ describe("Evidence auto-height", () => {
     }
 
     spy.mockRestore();
+  });
+});
+
+describe("Artifact preview nodes", () => {
+  it("clicking Worker output fetches the file and renders a second-level preview node", async () => {
+    const api = new MockTeamApi();
+    const readAttemptFile = vi.fn(api.readAttemptFile.bind(api));
+    const { container, run, childId } = await renderSelectedOfficialArtifactMap(readAttemptFile);
+
+    fireEvent.click(screen.getByText("Worker 输出 1"));
+
+    expect(readAttemptFile).toHaveBeenCalledWith(
+      run.runId,
+      childId,
+      "attempt_68ce15110a99",
+      "worker-output-001.md",
+    );
+    expect(await screen.findByTestId("artifact-preview")).toHaveTextContent("搜索引擎官方免费 API");
+    expect(container.querySelector(".emap-artifact-preview")).toBeTruthy();
+  });
+
+  it("clicking the same artifact again closes the preview node", async () => {
+    const api = new MockTeamApi();
+    await renderSelectedOfficialArtifactMap(api.readAttemptFile.bind(api));
+
+    fireEvent.click(screen.getByText("Worker 输出 1"));
+    expect(await screen.findByTestId("artifact-preview")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Worker 输出 1"));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("artifact-preview")).toBeNull();
+    });
+  });
+
+  it("clicking a different artifact switches the preview node", async () => {
+    const api = new MockTeamApi();
+    await renderSelectedOfficialArtifactMap(api.readAttemptFile.bind(api));
+
+    fireEvent.click(screen.getByText("Worker 输出 1"));
+    expect(await screen.findByTestId("artifact-preview")).toHaveTextContent("搜索引擎官方免费 API");
+
+    fireEvent.click(screen.getByText("Checker 验收 1"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("artifact-preview")).toHaveTextContent('"verdict": "revise"');
+    });
+    expect(screen.getByTestId("artifact-preview")).not.toHaveTextContent("搜索引擎官方免费 API");
+  });
+
+  it("markdown/text preview escapes script-like content as text", async () => {
+    const plan = makeSequentialPlan();
+    const run = makeSequentialRun();
+    const attempt: TeamAttemptMetadata = {
+      attemptId: "attempt_md",
+      taskId: "task_1",
+      status: "succeeded",
+      phase: "succeeded",
+      createdAt: "",
+      updatedAt: "",
+      finishedAt: "",
+      worker: [{ outputIndex: 1, outputRef: "tasks/task_1/attempts/attempt_md/worker-output-001.md" }],
+      checker: [],
+      watcher: null,
+      resultRef: null,
+      errorSummary: null,
+      files: ["worker-output-001.md"],
+    };
+    const readAttemptFile = vi.fn(async () => "<script>alert('x')</script>\nplain text");
+    const { container } = render(
+      <ExecutionMap
+        plan={plan}
+        run={run}
+        selectedTaskId="task_1"
+        onSelectTask={() => {}}
+        attemptsByTaskId={{ task_1: [attempt] }}
+        readAttemptFile={readAttemptFile}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Worker 输出 1"));
+
+    const preview = await screen.findByTestId("artifact-preview");
+    expect(preview).toHaveTextContent("<script>alert('x')</script>");
+    expect(container.querySelector(".emap-artifact-preview script")).toBeNull();
+  });
+
+  it("JSON preview pretty prints parsed content", async () => {
+    const api = new MockTeamApi();
+    await renderSelectedOfficialArtifactMap(api.readAttemptFile.bind(api));
+
+    fireEvent.click(screen.getByText("Checker 验收 1"));
+
+    expect(await screen.findByTestId("artifact-preview")).toHaveTextContent('"verdict": "revise"');
+    const previewText = screen.getByTestId("artifact-preview").querySelector(".emap-artifact-preview-text")?.textContent;
+    expect(previewText).toContain('\n  "reason":');
+  });
+
+  it("HTML preview uses a sandboxed iframe and does not inject into main DOM", async () => {
+    const plan = makeSequentialPlan();
+    const run = makeSequentialRun();
+    const attempt: TeamAttemptMetadata = {
+      attemptId: "attempt_html",
+      taskId: "task_1",
+      status: "succeeded",
+      phase: "succeeded",
+      createdAt: "",
+      updatedAt: "",
+      finishedAt: "",
+      worker: [{ outputIndex: 1, outputRef: "tasks/task_1/attempts/attempt_html/report.html" }],
+      checker: [],
+      watcher: null,
+      resultRef: null,
+      errorSummary: null,
+      files: ["report.html"],
+    };
+    const html = "<h1>Injected heading</h1><script>window.bad = true</script>";
+    const readAttemptFile = vi.fn(async () => html);
+    const { container } = render(
+      <ExecutionMap
+        plan={plan}
+        run={run}
+        selectedTaskId="task_1"
+        onSelectTask={() => {}}
+        attemptsByTaskId={{ task_1: [attempt] }}
+        readAttemptFile={readAttemptFile}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Worker 输出 1"));
+
+    await screen.findByTestId("artifact-preview");
+    const iframe = container.querySelector("iframe.emap-artifact-iframe");
+    expect(iframe).toBeTruthy();
+    expect(iframe?.getAttribute("sandbox")).toBe("");
+    expect(iframe?.getAttribute("srcdoc")).toContain("Injected heading");
+    expect(container.querySelector(".emap-artifact-preview h1")).toBeNull();
+  });
+
+  it("renders loading and fetch error as preview nodes", async () => {
+    let reject!: (error: Error) => void;
+    const pending = new Promise<string>((_resolve, rejectPromise) => {
+      reject = rejectPromise;
+    });
+    const readAttemptFile = vi.fn(() => pending);
+    await renderSelectedOfficialArtifactMap(readAttemptFile);
+
+    fireEvent.click(screen.getByText("Worker 输出 1"));
+
+    expect(screen.getByTestId("artifact-preview")).toHaveTextContent("正在加载预览");
+
+    reject(new Error("boom"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("artifact-preview")).toHaveTextContent("加载失败: boom");
+    });
   });
 });
 

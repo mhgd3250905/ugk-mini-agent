@@ -145,6 +145,14 @@ export function App() {
     };
   }, [dataSource, run, selectedTaskId, attemptsByTaskId]);
 
+  const readAttemptFile = useCallback(
+    (runId: string, taskId: string, attemptId: string, fileName: string) => {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      return api.readAttemptFile(runId, taskId, attemptId, fileName);
+    },
+    [dataSource],
+  );
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -197,6 +205,7 @@ export function App() {
                 selectedTaskId={selectedTaskId}
                 onSelectTask={selectTask}
                 attemptsByTaskId={attemptsByTaskId}
+                readAttemptFile={readAttemptFile}
               />
             </div>
           </div>
