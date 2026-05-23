@@ -30,7 +30,7 @@ type RenderNode = Omit<ExecutionNode, "kind"> & { kind: NodeKind | "collapsed" }
 
 function statusClass(status: TaskStatus | RunDetail["status"]): string {
   switch (status) {
-    case "running": case "queued": return "status-running";
+    case "running": case "queued": case "pending": return "status-running";
     case "succeeded": case "completed": return "status-succeeded";
     case "failed": return "status-failed";
     case "paused": case "interrupted": return "status-paused";

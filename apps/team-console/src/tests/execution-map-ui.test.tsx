@@ -9,6 +9,7 @@ import {
   makeFailedRun,
   makeLargeChildRun,
   makeDiscoveryForEachPlan,
+  makeSkippedRun,
 } from "../fixtures/team-fixtures";
 import type { TaskStatus } from "../api/team-types";
 
@@ -155,6 +156,39 @@ describe("ExecutionMap UI", () => {
     const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
     const paths = container.querySelectorAll(".emap-link");
     expect(paths.length).toBeGreaterThan(0);
+  });
+
+  it("applies status-failed class to failed task node", () => {
+    const plan = makeSequentialPlan();
+    const run = makeFailedRun();
+    const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+    const failedNode = screen.getByText("Research vendor B").closest(".emap-node");
+    expect(failedNode).toHaveClass("status-failed");
+  });
+
+  it("applies status-dimmed class to skipped task node", () => {
+    const plan = makeSequentialPlan();
+    const run = makeSkippedRun();
+    const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+    const skippedNode = screen.getByText("Research vendor B").closest(".emap-node");
+    expect(skippedNode).toHaveClass("status-dimmed");
+  });
+
+  it("selected failed node keeps both selected and status-failed classes", () => {
+    const plan = makeSequentialPlan();
+    const run = makeFailedRun();
+    const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId="task_2" onSelectTask={() => {}} />);
+    const selectedNode = container.querySelector(".emap-node.selected");
+    expect(selectedNode).toBeTruthy();
+    expect(selectedNode).toHaveClass("status-failed");
+  });
+
+  it("applies status-running class to pending task node", () => {
+    const plan = makeSequentialPlan();
+    const run = makeFailedRun();
+    const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+    const pendingNode = screen.getByText("Research vendor C").closest(".emap-node");
+    expect(pendingNode).toHaveClass("status-running");
   });
 });
 

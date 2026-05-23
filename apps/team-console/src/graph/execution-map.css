@@ -84,8 +84,20 @@
   background: var(--danger);
 }
 
+.status-failed {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--line));
+}
+
+.status-failed .emap-node-content {
+  background: linear-gradient(90deg, rgba(255, 113, 136, 0.06), transparent);
+}
+
 .status-paused .emap-node-status-bar {
   background: var(--warning);
+}
+
+.status-paused {
+  border-color: color-mix(in srgb, var(--warning) 30%, var(--line));
 }
 
 .status-dimmed .emap-node-status-bar {
