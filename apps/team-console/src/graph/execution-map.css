@@ -223,5 +223,7 @@
   .execution-map-nodes {
     display: flex;
     flex-direction: column;
+    width: auto !important;
+    min-height: auto !important;
   }
 }

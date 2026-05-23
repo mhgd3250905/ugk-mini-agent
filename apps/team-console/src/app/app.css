@@ -160,7 +160,9 @@ body {
 
 .workspace-map {
   flex: 1;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .workspace-detail {
