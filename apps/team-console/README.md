@@ -32,7 +32,19 @@ npm run team-console:test   # 测试
 
 ## 数据源
 
-默认使用 Mock fixture 数据。顶部可切换 Live API 模式（需后端运行）。
+默认使用 Mock fixture 数据。顶部可切换 Live API 模式。
+
+本地开发时，Live API 依赖 Vite dev server 的 `/v1/team` 代理。默认代理目标是主 `ugk-pi` 服务：
+
+```bash
+http://127.0.0.1:3000
+```
+
+所以使用 Live API preview 前，需要先确保主服务已经运行在 `http://127.0.0.1:3000`。如主服务不在默认端口，可用 `TEAM_CONSOLE_API_TARGET` 覆盖代理目标：
+
+```bash
+TEAM_CONSOLE_API_TARGET=http://127.0.0.1:3100 npm run dev
+```
 
 Live API 模式会真实请求：
 

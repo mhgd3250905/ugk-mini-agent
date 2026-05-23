@@ -12,6 +12,15 @@
 
 ---
 
+## 2026-05-23 — Team Console dev server Live API proxy
+
+- **主题**: Team Console Vite dev server 增加 `/v1/team` proxy，避免 Live API preview 打到 Vite 自己
+- **影响范围**: `apps/team-console/vite.config.ts`, `apps/team-console/README.md`, `docs/change-log.md`
+- **变更**:
+  - `apps/team-console` 本地开发服务现在把 `/v1/team/*` 转发到默认 `http://127.0.0.1:3000`
+  - 可通过 `TEAM_CONSOLE_API_TARGET` 覆盖代理目标
+  - Live API preview 在 dev 模式下不再由 Vite 返回 `index.html` 冒充 JSON 响应
+
 ## 2026-05-23 — Team Console review blockers 修复
 
 - **主题**: 接通独立 Team Console preview 的 Live API 模式，并修复 Execution Map 归属、纯函数和折叠状态问题
