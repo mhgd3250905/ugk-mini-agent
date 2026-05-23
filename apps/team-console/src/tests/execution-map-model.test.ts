@@ -35,6 +35,17 @@ function makePlanAndRun(
   return { plan, run };
 }
 
+function state(status: RunDetail["taskStates"][string]["status"] = "succeeded"): RunDetail["taskStates"][string] {
+  return {
+    status,
+    attemptCount: status === "pending" ? 0 : 1,
+    activeAttemptId: null,
+    resultRef: status === "succeeded" ? "tasks/t/attempts/a/accepted-result.md" : null,
+    errorSummary: status === "failed" ? "failed" : null,
+    progress: { phase: status, message: "", updatedAt: "" },
+  };
+}
+
 describe("buildExecutionMapModel", () => {
   it("orders main tasks by plan order", () => {
     const { plan, run } = makePlanAndRun(
@@ -119,6 +130,96 @@ describe("buildExecutionMapModel", () => {
     const model = buildExecutionMapModel(plan, run);
     expect(model.mainTasks[0].children).toHaveLength(1);
     expect(model.mainTasks[0].children[0].fallback).toBe(true);
+  });
+
+  it("uses sourceItemId fallback when exactly one for_each parent exists", () => {
+    const child: TaskDefinition = {
+      id: "generated_child_alpha",
+      title: "Generated Alpha",
+      type: "normal",
+      input: { text: "" },
+      acceptance: { rules: [] },
+      generated: true,
+      generatedSource: "for_each",
+      sourceItemId: "alpha",
+    };
+    const { plan, run } = makePlanAndRun(
+      [
+        { id: "discover", title: "Discover", type: "discovery", input: { text: "" }, acceptance: { rules: [] }, discovery: { outputKey: "items" } },
+        { id: "process_each", title: "Process", type: "for_each", input: { text: "" }, acceptance: { rules: [] }, forEach: { itemsFrom: "discover.items", mode: "sequential", taskTemplate: { title: "", input: { text: "" }, acceptance: { rules: [] } } } },
+      ],
+      {
+        discover: state(),
+        process_each: state(),
+        generated_child_alpha: state(),
+      },
+      undefined,
+      [child],
+    );
+
+    const model = buildExecutionMapModel(plan, run);
+
+    expect(model.mainTasks[1].children.map((c) => c.taskId)).toEqual(["generated_child_alpha"]);
+    expect(model.orphanGroup).toHaveLength(0);
+  });
+
+  it("keeps sourceItemId-only children orphaned when multiple for_each parents exist", () => {
+    const child: TaskDefinition = {
+      id: "generated_child_alpha",
+      title: "Generated Alpha",
+      type: "normal",
+      input: { text: "" },
+      acceptance: { rules: [] },
+      generated: true,
+      generatedSource: "for_each",
+      sourceItemId: "alpha",
+    };
+    const forEachTemplate = { title: "", input: { text: "" }, acceptance: { rules: [] } };
+    const { plan, run } = makePlanAndRun(
+      [
+        { id: "process_a", title: "Process A", type: "for_each", input: { text: "" }, acceptance: { rules: [] }, forEach: { itemsFrom: "discover.items", mode: "sequential", taskTemplate: forEachTemplate } },
+        { id: "process_b", title: "Process B", type: "for_each", input: { text: "" }, acceptance: { rules: [] }, forEach: { itemsFrom: "discover.items", mode: "sequential", taskTemplate: forEachTemplate } },
+      ],
+      {
+        process_a: state(),
+        process_b: state(),
+        generated_child_alpha: state(),
+      },
+      undefined,
+      [child],
+    );
+
+    const model = buildExecutionMapModel(plan, run);
+
+    expect(model.mainTasks.flatMap((task) => task.children)).toHaveLength(0);
+    expect(model.orphanGroup.map((node) => node.taskId)).toEqual(["generated_child_alpha"]);
+  });
+
+  it("does not mutate plan or run task definitions while applying fallbacks", () => {
+    const child: TaskDefinition = {
+      id: "task_1__derived",
+      title: "Derived",
+      type: "normal",
+      input: { text: "" },
+      acceptance: { rules: [] },
+      generated: true,
+    };
+    const { plan, run } = makePlanAndRun(
+      [{ id: "task_1", title: "T1", type: "for_each", input: { text: "" }, acceptance: { rules: [] }, forEach: { itemsFrom: "discover.items", mode: "sequential", taskTemplate: { title: "", input: { text: "" }, acceptance: { rules: [] } } } }],
+      {
+        task_1: state(),
+        "task_1__derived": state(),
+      },
+      undefined,
+      [child],
+    );
+    const originalPlan = structuredClone(plan);
+    const originalRun = structuredClone(run);
+
+    buildExecutionMapModel(plan, run);
+
+    expect(plan).toEqual(originalPlan);
+    expect(run).toEqual(originalRun);
   });
 
   it("places orphan tasks in orphan group", () => {

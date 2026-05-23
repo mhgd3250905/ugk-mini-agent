@@ -54,6 +54,13 @@ const CHILD_COLLAPSE_THRESHOLD = 6;
 
 export { CHILD_COLLAPSE_THRESHOLD };
 
+interface ChildAssignment {
+  definition: TaskDefinition;
+  parentId: string;
+  generatedSource?: GeneratedSource;
+  fallback?: boolean;
+}
+
 function taskKind(task: TeamTask, isChild: boolean, source?: GeneratedSource, fallback?: boolean): NodeKind {
   if (fallback) return "child_prefix_fallback";
   if (isChild && source === "for_each") return "child_for_each";
@@ -97,30 +104,49 @@ function toNode(
 export function buildExecutionMapModel(plan: TeamPlan, run: RunDetail): ExecutionMapModel {
   const allNodes = new Map<string, ExecutionNode>();
   const parentChainLookup = new Map<string, string[]>();
-  const taskDefMap = new Map<string, TaskDefinition>();
   const planTaskMap = new Map<string, TeamTask>();
 
   for (const t of plan.tasks) {
     planTaskMap.set(t.id, t);
   }
 
-  for (const td of run.taskDefinitions ?? []) {
-    taskDefMap.set(td.id, td);
-  }
-
   const mainTasks: ExecutionNode[] = [];
 
-  const childrenByParent = new Map<string, TaskDefinition[]>();
+  const childrenByParent = new Map<string, ChildAssignment[]>();
   const assignedChildren = new Set<string>();
-  const prefixFallbackIds = new Set<string>();
+
+  function addChild(assignment: ChildAssignment): boolean {
+    if (!planTaskMap.has(assignment.parentId)) return false;
+    const list = childrenByParent.get(assignment.parentId) ?? [];
+    list.push(assignment);
+    childrenByParent.set(assignment.parentId, list);
+    assignedChildren.add(assignment.definition.id);
+    return true;
+  }
 
   for (const td of run.taskDefinitions ?? []) {
     const pid = td.parentTaskId;
     if (pid) {
-      const list = childrenByParent.get(pid) ?? [];
-      list.push(td);
-      childrenByParent.set(pid, list);
-      assignedChildren.add(td.id);
+      addChild({
+        definition: td,
+        parentId: pid,
+        generatedSource: td.generatedSource,
+      });
+    }
+  }
+
+  const forEachParents = plan.tasks.filter((task) => task.type === "for_each" || task.forEach);
+  for (const td of run.taskDefinitions ?? []) {
+    if (assignedChildren.has(td.id)) continue;
+    if (planTaskMap.has(td.id)) continue;
+    if (!td.sourceItemId) continue;
+
+    if (forEachParents.length === 1) {
+      addChild({
+        definition: td,
+        parentId: forEachParents[0].id,
+        generatedSource: td.generatedSource ?? "for_each",
+      });
     }
   }
 
@@ -131,13 +157,12 @@ export function buildExecutionMapModel(plan: TeamPlan, run: RunDetail): Executio
     for (const planTask of plan.tasks) {
       const prefix = planTask.id + "__";
       if (td.id.startsWith(prefix)) {
-        td.parentTaskId = planTask.id;
-        td.generatedSource = td.generatedSource ?? "for_each";
-        const list = childrenByParent.get(planTask.id) ?? [];
-        list.push(td);
-        childrenByParent.set(planTask.id, list);
-        assignedChildren.add(td.id);
-        prefixFallbackIds.add(td.id);
+        addChild({
+          definition: td,
+          parentId: planTask.id,
+          generatedSource: td.generatedSource ?? "for_each",
+          fallback: true,
+        });
         break;
       }
     }
@@ -153,16 +178,14 @@ export function buildExecutionMapModel(plan: TeamPlan, run: RunDetail): Executio
     parentChainLookup.set(node.nodeId, []);
 
     const children = childrenByParent.get(planTask.id) ?? [];
-    for (const childDef of children) {
+    for (const child of children) {
+      const childDef = child.definition;
       const childState = run.taskStates[childDef.id];
       if (!childState) continue;
 
-      const fallback = prefixFallbackIds.has(childDef.id);
-      const effectiveParentId = childDef.parentTaskId ?? planTask.id;
-      childDef.parentTaskId = effectiveParentId;
-
-      const childKind = taskKind(childDef, true, childDef.generatedSource, fallback);
-      const childNode = toNode(childDef, childState.status, childState, childKind, 1, childDef.generatedSource, fallback);
+      const fallback = child.fallback === true;
+      const childKind = taskKind(childDef, true, child.generatedSource, fallback);
+      const childNode = toNode(childDef, childState.status, childState, childKind, 1, child.generatedSource, fallback);
       childNode.nodeId = childDef.id;
       childNode.fallback = fallback || undefined;
       node.children.push(childNode);
