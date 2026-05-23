@@ -942,6 +942,100 @@ describe("Artifact preview nodes", () => {
   });
 });
 
+describe("Canvas pan and zoom", () => {
+  function firePointer(
+    target: Element,
+    type: "pointerdown" | "pointermove" | "pointerup",
+    init: { pointerId: number; clientX: number; clientY: number; buttons?: number; button?: number },
+  ) {
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperties(event, {
+      pointerId: { value: init.pointerId },
+      clientX: { value: init.clientX },
+      clientY: { value: init.clientY },
+      buttons: { value: init.buttons ?? 1 },
+      button: { value: init.button ?? 0 },
+    });
+    fireEvent(target, event);
+  }
+
+  function renderCanvasMap() {
+    const plan = makeSequentialPlan();
+    const run = makeSequentialRun();
+    const result = render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+    const container = result.container.querySelector(".execution-map-container") as HTMLElement;
+    const stage = result.container.querySelector(".execution-map-scroll") as HTMLElement;
+    expect(container).toBeTruthy();
+    expect(stage).toBeTruthy();
+    return { ...result, container, stage };
+  }
+
+  it("mouse wheel changes zoom percentage and stage transform", () => {
+    const { container, stage } = renderCanvasMap();
+
+    fireEvent.wheel(container, { deltaY: -120, clientX: 120, clientY: 120 });
+
+    expect(screen.getByText("110%")).toBeInTheDocument();
+    expect(stage.style.transform).toContain("scale(1.1)");
+  });
+
+  it("zoom toolbar clamps at min and max", () => {
+    const { stage } = renderCanvasMap();
+    const zoomIn = screen.getByRole("button", { name: "放大" });
+    const zoomOut = screen.getByRole("button", { name: "缩小" });
+
+    for (let i = 0; i < 20; i += 1) fireEvent.click(zoomIn);
+    expect(screen.getByText("180%")).toBeInTheDocument();
+    expect(stage.style.transform).toContain("scale(1.8)");
+
+    for (let i = 0; i < 40; i += 1) fireEvent.click(zoomOut);
+    expect(screen.getByText("45%")).toBeInTheDocument();
+    expect(stage.style.transform).toContain("scale(0.45)");
+  });
+
+  it("reset returns pan and zoom to the default transform", () => {
+    const { container, stage } = renderCanvasMap();
+
+    fireEvent.wheel(container, { deltaY: -120, clientX: 120, clientY: 120 });
+    firePointer(container, "pointerdown", { pointerId: 1, clientX: 10, clientY: 10 });
+    firePointer(container, "pointermove", { pointerId: 1, clientX: 40, clientY: 50 });
+    expect(stage.style.transform).not.toBe("translate(0px, 0px) scale(1)");
+
+    fireEvent.click(screen.getByRole("button", { name: "重置视图" }));
+
+    expect(screen.getByText("100%")).toBeInTheDocument();
+    expect(stage.style.transform).toBe("translate(0px, 0px) scale(1)");
+  });
+
+  it("dragging empty canvas changes pan", () => {
+    const { container, stage } = renderCanvasMap();
+
+    firePointer(container, "pointerdown", { pointerId: 1, clientX: 12, clientY: 20 });
+    firePointer(container, "pointermove", { pointerId: 1, clientX: 42, clientY: 56 });
+    firePointer(container, "pointerup", { pointerId: 1, clientX: 42, clientY: 56, buttons: 0 });
+
+    expect(stage.style.transform).toContain("translate(30px, 36px)");
+  });
+
+  it("pointer down on a node does not start pan and still supports click", () => {
+    const plan = makeSequentialPlan();
+    const run = makeSequentialRun();
+    const onSelectTask = vi.fn();
+    const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={onSelectTask} />);
+    const viewport = container.querySelector(".execution-map-container") as HTMLElement;
+    const stage = container.querySelector(".execution-map-scroll") as HTMLElement;
+    const nodeButton = screen.getByRole("button", { name: /Research vendor B/ });
+
+    firePointer(nodeButton, "pointerdown", { pointerId: 1, clientX: 10, clientY: 10 });
+    firePointer(viewport, "pointermove", { pointerId: 1, clientX: 60, clientY: 60 });
+    firePointer(viewport, "pointerup", { pointerId: 1, clientX: 60, clientY: 60, buttons: 0 });
+    fireEvent.click(nodeButton);
+
+    expect(stage.style.transform).toBe("translate(0px, 0px) scale(1)");
+    expect(onSelectTask).toHaveBeenCalledWith("task_2");
+  });
+});
+
 describe("Real snapshot fixture", () => {
   it("appears in ALL_FIXTURES", () => {
     const entry = ALL_FIXTURES.find((f) => f.id === "real-snapshot");

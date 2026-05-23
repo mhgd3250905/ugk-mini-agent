@@ -1,4 +1,4 @@
-import { useMemo, useLayoutEffect, useRef, useState, useCallback } from "react";
+import { useMemo, useLayoutEffect, useRef, useState, useCallback, type PointerEvent, type WheelEvent } from "react";
 import type { RunDetail, TeamPlan, TaskStatus, TeamAttemptMetadata, TeamTaskState } from "../api/team-types";
 import type { ExecutionNode, NodeKind } from "./execution-map-model";
 import { buildExecutionMapModel, CHILD_COLLAPSE_THRESHOLD } from "./execution-map-model";
@@ -35,6 +35,9 @@ const EVIDENCE_GAP = 12;
 const PREVIEW_W = 360;
 const PREVIEW_GAP = 40;
 const PREVIEW_FALLBACK_HEIGHT = 180;
+const MIN_SCALE = 0.45;
+const MAX_SCALE = 1.8;
+const ZOOM_STEP = 1.1;
 
 type EvidenceKind = "result" | "error" | "attempt" | "progress" | "worker" | "checker" | "watcher";
 
@@ -73,6 +76,14 @@ interface AttemptFileRef {
   fileName: string;
 }
 
+interface CanvasDragOrigin {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  panX: number;
+  panY: number;
+}
+
 function statusClass(status: TaskStatus | RunDetail["status"]): string {
   switch (status) {
     case "running": case "queued": return "status-running";
@@ -109,6 +120,26 @@ function parseAttemptFileRef(path: string | undefined): AttemptFileRef | null {
   const [, taskId, attemptId, fileName] = match;
   if (!taskId || !attemptId || !fileName) return null;
   return { taskId, attemptId, fileName };
+}
+
+function clampScale(value: number): number {
+  return Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number(value.toFixed(2))));
+}
+
+function formatCanvasNumber(value: number): string {
+  return String(Number(value.toFixed(2)));
+}
+
+function canStartCanvasPan(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return true;
+  return !target.closest(".emap-node, .emap-evidence-node, .emap-artifact-preview, .execution-map-toolbar, button, select, input, textarea, a, iframe, summary, details");
+}
+
+function pointerPoint(event: PointerEvent<HTMLDivElement>): { x: number; y: number } {
+  const native = event.nativeEvent as globalThis.PointerEvent & { clientX?: number; clientY?: number };
+  const x = Number.isFinite(event.clientX) ? event.clientX : Number.isFinite(native.clientX) ? native.clientX! : 0;
+  const y = Number.isFinite(event.clientY) ? event.clientY : Number.isFinite(native.clientY) ? native.clientY! : 0;
+  return { x, y };
 }
 
 function artifactTypeLabel(filename: string): string {
@@ -282,11 +313,15 @@ export function buildArtifactBranches(
 
 export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attemptsByTaskId = {}, readAttemptFile }: ExecutionMapProps) {
   const evidenceContainerRef = useRef<HTMLDivElement | null>(null);
+  const dragOriginRef = useRef<CanvasDragOrigin | null>(null);
   const [measuredHeights, setMeasuredHeights] = useState<MeasuredHeights>({});
   const [previewHeights, setPreviewHeights] = useState<MeasuredHeights>({});
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
   const [artifactPreviewState, setArtifactPreviewState] = useState<Record<string, ArtifactPreviewState>>({});
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
+  const [scale, setScale] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
   const prevSelectionRef = useRef<string | null>(null);
 
   if (prevSelectionRef.current !== selectedTaskId) {
@@ -548,6 +583,72 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
       });
   }, [artifactPreviewState, attemptsByTaskId, readAttemptFile, run.runId, selectedArtifactId, selectedTaskId]);
 
+  const handleCanvasWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const direction = event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+    const nextScale = clampScale(scale * direction);
+    if (nextScale === scale) return;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const cursorX = event.clientX - rect.left;
+    const cursorY = event.clientY - rect.top;
+    const worldX = (cursorX - pan.x) / scale;
+    const worldY = (cursorY - pan.y) / scale;
+
+    setScale(nextScale);
+    setPan({
+      x: cursorX - worldX * nextScale,
+      y: cursorY - worldY * nextScale,
+    });
+  }, [pan.x, pan.y, scale]);
+
+  const zoomIn = useCallback(() => {
+    setScale((current) => clampScale(current * ZOOM_STEP));
+  }, []);
+
+  const zoomOut = useCallback(() => {
+    setScale((current) => clampScale(current / ZOOM_STEP));
+  }, []);
+
+  const resetView = useCallback(() => {
+    dragOriginRef.current = null;
+    setIsPanning(false);
+    setScale(1);
+    setPan({ x: 0, y: 0 });
+  }, []);
+
+  const handleCanvasPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if ((event.button ?? 0) !== 0 || !canStartCanvasPan(event.target)) return;
+    const point = pointerPoint(event);
+    dragOriginRef.current = {
+      pointerId: event.pointerId,
+      startX: point.x,
+      startY: point.y,
+      panX: pan.x,
+      panY: pan.y,
+    };
+    setIsPanning(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }, [pan.x, pan.y]);
+
+  const handleCanvasPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const origin = dragOriginRef.current;
+    if (!origin || origin.pointerId !== event.pointerId) return;
+    const point = pointerPoint(event);
+    setPan({
+      x: origin.panX + point.x - origin.startX,
+      y: origin.panY + point.y - origin.startY,
+    });
+  }, []);
+
+  const endCanvasPan = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const origin = dragOriginRef.current;
+    if (!origin || origin.pointerId !== event.pointerId) return;
+    dragOriginRef.current = null;
+    setIsPanning(false);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  }, []);
+
   const allNodes: RenderNode[] = model.mainTasks.flatMap((t) => {
     const result: RenderNode[] = [t];
     const isExpanded = expandedTaskIds.has(t.taskId);
@@ -604,10 +705,25 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
 
   const isCollapsed = (id: string) => id.endsWith("__collapsed") || id.endsWith("__collapse_control");
   const parentOfCollapsed = (id: string) => id.replace(/__collapsed$|__collapse_control$/, "");
+  const canvasTransform = `translate(${formatCanvasNumber(pan.x)}px, ${formatCanvasNumber(pan.y)}px) scale(${formatCanvasNumber(scale)})`;
+  const zoomPercent = `${Math.round(scale * 100)}%`;
 
   return (
-    <div className="execution-map-container">
-      <div className="execution-map-scroll">
+    <div
+      className={`execution-map-container ${isPanning ? "is-panning" : ""}`}
+      onWheel={handleCanvasWheel}
+      onPointerDown={handleCanvasPointerDown}
+      onPointerMove={handleCanvasPointerMove}
+      onPointerUp={endCanvasPan}
+      onPointerCancel={endCanvasPan}
+    >
+      <div className="execution-map-toolbar" aria-label="视图工具">
+        <button type="button" onClick={zoomIn}>放大</button>
+        <button type="button" onClick={zoomOut}>缩小</button>
+        <button type="button" onClick={resetView}>重置视图</button>
+        <span className="execution-map-zoom">{zoomPercent}</span>
+      </div>
+      <div className="execution-map-scroll" style={{ transform: canvasTransform }}>
         <svg
           className="execution-map-links"
           width={svgWidth}
