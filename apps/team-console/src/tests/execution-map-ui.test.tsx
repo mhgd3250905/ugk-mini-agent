@@ -398,16 +398,16 @@ describe("Evidence branch cards", () => {
     expect(container.querySelector(".emap-evidence-attempt")).toBeTruthy();
   });
 
-  it("renders child result evidence cards for for_each parent", () => {
+  it("does not render child result evidence when selecting for_each parent", () => {
     const plan = makeRealSnapshotPlan();
     const run = makeRealSnapshotRun();
     const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId="search_platform" onSelectTask={() => {}} />);
 
-    const resultCards = container.querySelectorAll(".execution-map-nodes > .emap-evidence-result");
-    expect(resultCards.length).toBe(4);
+    const resultCards = container.querySelectorAll(".emap-evidence-result");
+    expect(resultCards.length).toBe(0);
 
-    expect(screen.getAllByText("搜索 知乎").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getAllByText("搜索 微博").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("搜索 知乎").length).toBe(1);
+    expect(screen.getAllByText("搜索 微博").length).toBe(1);
   });
 
   it("renders parent error card for for_each parent with error", () => {
@@ -465,13 +465,13 @@ describe("Evidence branch cards", () => {
     }
   });
 
-  it("renders ghost evidence for child without resultRef", () => {
+  it("does not render ghost evidence cards for children without resultRef", () => {
     const plan = makeRealSnapshotPlan();
     const run = makeRealSnapshotRun();
     const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId="search_platform" onSelectTask={() => {}} />);
 
     const ghostCards = container.querySelectorAll(".emap-evidence-ghost");
-    expect(ghostCards.length).toBeGreaterThan(0);
+    expect(ghostCards.length).toBe(0);
   });
 });
 
