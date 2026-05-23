@@ -157,4 +157,67 @@ describe("layoutExecutionMap", () => {
     const orphanPos = layout.orphanNodes[0];
     expect(orphanPos.y).toBeGreaterThan(layout.mainTaskNodes[layout.mainTaskNodes.length - 1].y);
   });
+
+  it("keeps all main tasks at the same x coordinate", () => {
+    const { plan, run } = makePlanAndRun(
+      [
+        { id: "a", title: "A", input: { text: "" }, acceptance: { rules: [] } },
+        { id: "b", title: "B", input: { text: "" }, acceptance: { rules: [] } },
+        { id: "c", title: "C", input: { text: "" }, acceptance: { rules: [] } },
+      ],
+      { a: st(), b: st(), c: st() },
+    );
+    const model = buildExecutionMapModel(plan, run);
+    const layout = layoutExecutionMap(model);
+    const xs = layout.mainTaskNodes.map((n) => n.x);
+    expect(new Set(xs).size).toBe(1);
+  });
+
+  it("positions child branch nodes to the right of parent center", () => {
+    const child: TaskDefinition = {
+      id: "p__c1", title: "C1", type: "normal",
+      input: { text: "" }, acceptance: { rules: [] },
+      parentTaskId: "p", generated: true, generatedSource: "for_each",
+    };
+    const child2: TaskDefinition = {
+      id: "p__c2", title: "C2", type: "normal",
+      input: { text: "" }, acceptance: { rules: [] },
+      parentTaskId: "p", generated: true, generatedSource: "for_each",
+    };
+    const { plan, run } = makePlanAndRun(
+      [{ id: "p", title: "P", type: "for_each", input: { text: "" }, acceptance: { rules: [] } }],
+      { p: st(), "p__c1": st(), "p__c2": st() },
+      [child, child2],
+    );
+    const model = buildExecutionMapModel(plan, run);
+    const layout = layoutExecutionMap(model);
+    const parentPos = layout.nodePositions.get("p")!;
+    const childPos = layout.nodePositions.get("p__c1")!;
+    expect(childPos.x).toBeGreaterThan(parentPos.x);
+  });
+
+  it("positions collapsed node to the right of its parent", () => {
+    const children: TaskDefinition[] = [];
+    const states: Record<string, ReturnType<typeof st>> = {};
+    for (let i = 1; i <= 8; i++) {
+      const id = `p__c${i}`;
+      children.push({
+        id, title: `Child ${i}`, type: "normal",
+        input: { text: "" }, acceptance: { rules: [] },
+        parentTaskId: "p", generated: true, generatedSource: "for_each",
+      });
+      states[id] = st();
+    }
+    const { plan, run } = makePlanAndRun(
+      [{ id: "p", title: "P", type: "for_each", input: { text: "" }, acceptance: { rules: [] } }],
+      { p: st(), ...states },
+      children,
+    );
+    const model = buildExecutionMapModel(plan, run);
+    const layout = layoutExecutionMap(model);
+    const parentPos = layout.nodePositions.get("p")!;
+    const collapsedPos = layout.nodePositions.get("p__collapsed")!;
+    expect(collapsedPos.x).toBeGreaterThan(parentPos.x);
+    expect(collapsedPos.x).toBeGreaterThan(parentPos.x + parentPos.width / 2);
+  });
 });

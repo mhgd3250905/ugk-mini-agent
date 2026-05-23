@@ -26,9 +26,9 @@ export interface ExecutionMapLayout {
 
 const NODE_WIDTH = 280;
 const NODE_HEIGHT = 56;
-const SPINE_Y_GAP = 80;
+const SPINE_Y_GAP = 72;
 const BRANCH_X_OFFSET = 320;
-const BRANCH_Y_GAP = 64;
+const BRANCH_Y_GAP = 56;
 const ROOT_ID = "__root__";
 
 export { NODE_WIDTH, NODE_HEIGHT, ROOT_ID };
@@ -38,13 +38,14 @@ function nodePos(id: string, x: number, y: number, w = NODE_WIDTH, h = NODE_HEIG
 }
 
 function elbowPath(sx: number, sy: number, tx: number, ty: number): string {
-  const midY = sy + (ty - sy) * 0.5;
-  return `M${sx},${sy} C${sx},${midY} ${tx},${midY} ${tx},${ty}`;
+  const dy = ty - sy;
+  const cp = Math.abs(dy) * 0.4;
+  return `M${sx},${sy} C${sx},${sy + cp} ${tx},${ty - cp} ${tx},${ty}`;
 }
 
 function straightPath(sx: number, sy: number, tx: number, ty: number): string {
-  const midY = sy + (ty - sy) * 0.5;
-  return `M${sx},${sy} L${sx},${midY} L${tx},${midY} L${tx},${ty}`;
+  const midX = sx + (tx - sx) * 0.35;
+  return `M${sx},${sy} L${midX},${sy} L${midX},${ty} L${tx},${ty}`;
 }
 
 export function layoutExecutionMap(model: ExecutionMapModel): ExecutionMapLayout {
@@ -66,10 +67,12 @@ export function layoutExecutionMap(model: ExecutionMapModel): ExecutionMapLayout
     mainTaskNodes.push(pos);
 
     if (i === 0) {
-      links.push({ sourceId: ROOT_ID, targetId: task.taskId, path: elbowPath(0, NODE_HEIGHT, 0, currentY) });
+      const halfW = NODE_WIDTH / 2;
+      links.push({ sourceId: ROOT_ID, targetId: task.taskId, path: elbowPath(halfW, NODE_HEIGHT, halfW, currentY) });
     } else {
       const prevPos = mainTaskNodes[i - 1];
-      links.push({ sourceId: model.mainTasks[i - 1].taskId, targetId: task.taskId, path: elbowPath(0, prevPos.y + NODE_HEIGHT, 0, currentY) });
+      const halfW = NODE_WIDTH / 2;
+      links.push({ sourceId: model.mainTasks[i - 1].taskId, targetId: task.taskId, path: elbowPath(halfW, prevPos.y + NODE_HEIGHT, halfW, currentY) });
     }
 
     const children = task.children;
@@ -87,6 +90,8 @@ export function layoutExecutionMap(model: ExecutionMapModel): ExecutionMapLayout
         targetId: collapsedId,
         path: straightPath(NODE_WIDTH, currentY + NODE_HEIGHT / 2, BRANCH_X_OFFSET, childStartY + NODE_HEIGHT / 2),
       });
+
+      currentY += NODE_HEIGHT + SPINE_Y_GAP;
 
       currentY += NODE_HEIGHT + SPINE_Y_GAP;
     } else if (children.length > 0) {
