@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { TeamPlan, RunDetail, TeamApiError, TeamRunState } from "../api/team-types";
-import { ALL_FIXTURES } from "../fixtures/team-fixtures";
+import type { TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "../api/team-types";
+import { ALL_FIXTURES, MockTeamApi } from "../fixtures/team-fixtures";
 import { ExecutionMap } from "../graph/ExecutionMap";
-import { ExecutionTaskDetail } from "../graph/ExecutionTaskDetail";
+import { ROOT_ID } from "../graph/execution-map-layout";
 import "./app.css";
 
 export type DataSource = "mock" | "live";
@@ -33,8 +33,13 @@ export function App() {
   const [plan, setPlan] = useState<TeamPlan | null>(null);
   const [run, setRun] = useState<RunDetail | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [attemptsByTaskId, setAttemptsByTaskId] = useState<Record<string, TeamAttemptMetadata[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+
+  const selectTask = useCallback((taskId: string) => {
+    setSelectedTaskId((current) => current === taskId ? null : taskId);
+  }, []);
 
   const loadFixture = useCallback((fixtureId: string) => {
     const entry = ALL_FIXTURES.find((f) => f.id === fixtureId);
@@ -42,6 +47,7 @@ export function App() {
       setPlan(entry.plan);
       setRun(entry.run);
       setSelectedTaskId(null);
+      setAttemptsByTaskId({});
       setError(null);
       setLoading(false);
     }
@@ -62,6 +68,7 @@ export function App() {
     setPlan(null);
     setRun(null);
     setSelectedTaskId(null);
+    setAttemptsByTaskId({});
     setError(null);
     setLoading(true);
 
@@ -106,6 +113,37 @@ export function App() {
       cancelled = true;
     };
   }, [dataSource]);
+
+  useEffect(() => {
+    if (!run || !selectedTaskId || selectedTaskId === ROOT_ID) return;
+    if (attemptsByTaskId[selectedTaskId]) return;
+
+    let cancelled = false;
+    const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+
+    async function loadAttempts() {
+      try {
+        const attempts = await api.listAttempts(run!.runId, selectedTaskId!);
+        if (!cancelled) {
+          if (attempts.length === 0) return;
+          setAttemptsByTaskId((current) => ({
+            ...current,
+            [selectedTaskId!]: attempts,
+          }));
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(errorMessage(e));
+        }
+      }
+    }
+
+    void loadAttempts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dataSource, run, selectedTaskId, attemptsByTaskId]);
 
   return (
     <div className="app-shell">
@@ -157,19 +195,10 @@ export function App() {
                 plan={plan}
                 run={run}
                 selectedTaskId={selectedTaskId}
-                onSelectTask={setSelectedTaskId}
+                onSelectTask={selectTask}
+                attemptsByTaskId={attemptsByTaskId}
               />
             </div>
-            {selectedTaskId && (
-              <div className="workspace-detail">
-                <ExecutionTaskDetail
-                  run={run}
-                  plan={plan}
-                  selectedTaskId={selectedTaskId}
-                  onClose={() => setSelectedTaskId(null)}
-                />
-              </div>
-            )}
           </div>
         ) : (
           <div className="empty-state">

@@ -1,5 +1,5 @@
-import { useMemo, useLayoutEffect, useRef, useState } from "react";
-import type { RunDetail, TeamPlan, TaskStatus } from "../api/team-types";
+import { useMemo, useLayoutEffect, useRef, useState, useCallback } from "react";
+import type { RunDetail, TeamPlan, TaskStatus, TeamAttemptMetadata, TeamTaskState } from "../api/team-types";
 import type { ExecutionNode, NodeKind } from "./execution-map-model";
 import { buildExecutionMapModel, CHILD_COLLAPSE_THRESHOLD } from "./execution-map-model";
 import { layoutExecutionMap, ROOT_ID, NODE_WIDTH, straightPath } from "./execution-map-layout";
@@ -24,6 +24,7 @@ interface ExecutionMapProps {
   run: RunDetail;
   selectedTaskId: string | null;
   onSelectTask: (taskId: string) => void;
+  attemptsByTaskId?: Record<string, TeamAttemptMetadata[]>;
 }
 
 type RenderNode = Omit<ExecutionNode, "kind"> & { kind: NodeKind | "collapsed" };
@@ -31,7 +32,7 @@ type RenderNode = Omit<ExecutionNode, "kind"> & { kind: NodeKind | "collapsed" }
 const EVIDENCE_W = 240;
 const EVIDENCE_GAP = 12;
 
-type EvidenceKind = "result" | "error" | "attempt" | "progress";
+type EvidenceKind = "result" | "error" | "attempt" | "progress" | "worker" | "checker" | "watcher";
 
 interface EvidenceEntry {
   id: string;
@@ -45,6 +46,9 @@ interface EvidenceEntry {
 
 function evidenceHeight(kind: EvidenceKind): number {
   switch (kind) {
+    case "worker": return 56;
+    case "checker": return 72;
+    case "watcher": return 64;
     case "result": return 48;
     case "error": return 72;
     case "attempt": return 40;
@@ -89,15 +93,132 @@ function artifactTypeLabel(filename: string): string {
   return "Result";
 }
 
+function resultArtifactTitle(filename: string): string {
+  if (filename.includes("failed")) return "失败结果";
+  if (filename.includes("discovery")) return "发现结果";
+  return "最终结果";
+}
+
+function verdictLabel(verdict: string): string {
+  if (verdict === "pass") return "通过";
+  if (verdict === "revise") return "需修改";
+  if (verdict === "fail") return "失败";
+  return verdict;
+}
+
+function verdictTagClass(verdict: string): string {
+  if (verdict === "pass") return "tag-accepted";
+  if (verdict === "fail") return "tag-failed";
+  return "tag-result";
+}
+
+function watcherDecisionLabel(decision: string): string {
+  if (decision === "accept_task") return "接受";
+  if (decision === "confirm_failed") return "确认失败";
+  if (decision === "request_revision") return "要求重做";
+  return decision;
+}
+
 function isFinalReportTask(taskId: string, taskTitle: string, planTasks: TeamPlan["tasks"]): boolean {
   const lastTask = planTasks[planTasks.length - 1];
   if (!lastTask || lastTask.id !== taskId) return false;
   return /汇总|报告|report|assemble/i.test(taskTitle + taskId);
 }
 
-export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask }: ExecutionMapProps) {
+function selectDisplayAttempt(state: TeamTaskState | undefined, attempts: TeamAttemptMetadata[]): TeamAttemptMetadata | null {
+  if (attempts.length === 0) return null;
+  const active = state?.activeAttemptId
+    ? attempts.find((attempt) => attempt.attemptId === state.activeAttemptId)
+    : undefined;
+  if (active) return active;
+  return attempts.reduce((latest, attempt) => {
+    const latestTime = Date.parse(latest.updatedAt || latest.createdAt);
+    const attemptTime = Date.parse(attempt.updatedAt || attempt.createdAt);
+    if (!Number.isFinite(attemptTime)) return latest;
+    if (!Number.isFinite(latestTime)) return attempt;
+    return attemptTime >= latestTime ? attempt : latest;
+  }, attempts[0]);
+}
+
+export function buildArtifactBranches(
+  node: ExecutionNode,
+  state: TeamTaskState | undefined,
+  attempts: TeamAttemptMetadata[],
+): EvidenceEntry[] {
+  const attempt = selectDisplayAttempt(state, attempts);
+  if (!attempt) return [];
+
+  const entries: EvidenceEntry[] = [];
+
+  if (attempt.resultRef) {
+    const filename = extractFilename(attempt.resultRef);
+    entries.push({
+      id: `artifact__result__${node.taskId}__${attempt.attemptId}`,
+      kind: "result",
+      title: resultArtifactTitle(filename),
+      content: filename,
+      tag: filename,
+      tagClass: filename.includes("failed") ? "tag-failed" : filename.includes("accepted") ? "tag-accepted" : "tag-result",
+      path: attempt.resultRef,
+    });
+  }
+
+  attempt.worker.forEach((worker, index) => {
+    if (!worker.outputRef) return;
+    entries.push({
+      id: `artifact__worker__${node.taskId}__${attempt.attemptId}__${index}`,
+      kind: "worker",
+      title: `Worker 输出 ${worker.outputIndex || index + 1}`,
+      content: extractFilename(worker.outputRef),
+      tag: `输出 ${worker.outputIndex || index + 1}`,
+      tagClass: "tag-result",
+      path: worker.outputRef,
+    });
+  });
+
+  attempt.checker.forEach((checker, index) => {
+    const path = checker.recordRef ?? checker.resultContentRef ?? checker.feedbackRef ?? undefined;
+    if (!path && !checker.reason && !checker.feedback) return;
+    entries.push({
+      id: `artifact__checker__${node.taskId}__${attempt.attemptId}__${index}`,
+      kind: "checker",
+      title: `Checker 验收 ${checker.revisionIndex || index + 1}`,
+      content: checker.reason || checker.feedback || "",
+      tag: verdictLabel(checker.verdict),
+      tagClass: verdictTagClass(checker.verdict),
+      path,
+    });
+  });
+
+  if (attempt.watcher && (attempt.watcher.recordRef || attempt.watcher.reason || attempt.watcher.feedback)) {
+    entries.push({
+      id: `artifact__watcher__${node.taskId}__${attempt.attemptId}`,
+      kind: "watcher",
+      title: "Watcher 复盘",
+      content: attempt.watcher.reason || attempt.watcher.feedback || "",
+      tag: watcherDecisionLabel(attempt.watcher.decision),
+      tagClass: attempt.watcher.decision === "accept_task" ? "tag-accepted" : attempt.watcher.decision === "confirm_failed" ? "tag-failed" : "tag-result",
+      path: attempt.watcher.recordRef ?? undefined,
+    });
+  }
+
+  const errorSummary = state?.errorSummary ?? attempt.errorSummary;
+  if (errorSummary) {
+    entries.push({
+      id: `artifact__error__${node.taskId}__${attempt.attemptId}`,
+      kind: "error",
+      title: "错误摘要",
+      content: errorSummary,
+    });
+  }
+
+  return entries;
+}
+
+export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attemptsByTaskId = {} }: ExecutionMapProps) {
   const evidenceContainerRef = useRef<HTMLDivElement | null>(null);
   const [measuredHeights, setMeasuredHeights] = useState<MeasuredHeights>({});
+  const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
   const prevSelectionRef = useRef<string | null>(null);
 
   if (prevSelectionRef.current !== selectedTaskId) {
@@ -107,32 +228,20 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask }: Execut
     }
   }
 
-  const { model, layout } = useMemo(() => {
-    const m = buildExecutionMapModel(plan, run);
-    const l = layoutExecutionMap(m);
-    return { model: m, layout: l };
-  }, [plan, run, selectedTaskId]);
-
-  const selectedChain = useMemo(() => {
-    if (!selectedTaskId) return new Set<string>();
-    const incomingLink = new Map(layout.links.map((link) => [link.targetId, link.sourceId]));
-    const chain = model.parentChainLookup.get(selectedTaskId) ?? [];
-    const selectedPath = new Set([...chain, selectedTaskId]);
-    let cursor = selectedTaskId;
-    while (incomingLink.has(cursor)) {
-      const sourceId = incomingLink.get(cursor);
-      if (!sourceId || selectedPath.has(sourceId)) break;
-      selectedPath.add(sourceId);
-      cursor = sourceId;
-    }
-    return selectedPath;
-  }, [layout.links, model, selectedTaskId]);
+  const model = useMemo(() => buildExecutionMapModel(plan, run), [plan, run]);
 
   const evidence = useMemo<EvidenceEntry[]>(() => {
     if (!selectedTaskId || selectedTaskId === ROOT_ID) return [];
     const node = model.allNodes.get(selectedTaskId);
     if (!node) return [];
+    const hasVisibleChildren = node.children.length > 0 && (node.children.length <= CHILD_COLLAPSE_THRESHOLD || expandedTaskIds.has(node.taskId));
+    if (hasVisibleChildren) return [];
     const state = run.taskStates[selectedTaskId];
+    const attemptEntries = buildArtifactBranches(node, state, attemptsByTaskId[selectedTaskId] ?? []);
+    if (attemptEntries.length > 0 || (attemptsByTaskId[selectedTaskId]?.length ?? 0) > 0) {
+      return attemptEntries;
+    }
+
     const entries: EvidenceEntry[] = [];
 
     const ref = node.resultRef;
@@ -152,12 +261,11 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask }: Execut
 
     if (state) {
       if (state.errorSummary) {
-        const truncated = state.errorSummary.length > 150 ? state.errorSummary.slice(0, 150) + "…" : state.errorSummary;
         entries.push({
           id: `evidence__error__${selectedTaskId}`,
           kind: "error",
           title: "Error",
-          content: truncated,
+          content: state.errorSummary,
         });
       }
       if (state.activeAttemptId) {
@@ -182,7 +290,36 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask }: Execut
     }
 
     return entries;
-  }, [selectedTaskId, model, run.taskStates, plan.tasks]);
+  }, [selectedTaskId, model, run.taskStates, plan.tasks, expandedTaskIds, attemptsByTaskId]);
+
+  const evidenceReservedHeight = useMemo(() => {
+    if (evidence.length === 0) return 0;
+    return evidence.reduce((sum, entry, i) => {
+      const h = measuredHeights[entry.id] ?? evidenceHeight(entry.kind);
+      return sum + h + (i < evidence.length - 1 ? EVIDENCE_GAP : 0);
+    }, 0);
+  }, [evidence, measuredHeights]);
+
+  const layout = useMemo(() => layoutExecutionMap(model, {
+    selectedTaskId: selectedTaskId ?? undefined,
+    selectedReservedHeight: evidenceReservedHeight > 0 ? evidenceReservedHeight : undefined,
+    expandedTaskIds,
+  }), [model, selectedTaskId, evidenceReservedHeight, expandedTaskIds]);
+
+  const selectedChain = useMemo(() => {
+    if (!selectedTaskId) return new Set<string>();
+    const incomingLink = new Map(layout.links.map((link) => [link.targetId, link.sourceId]));
+    const chain = model.parentChainLookup.get(selectedTaskId) ?? [];
+    const selectedPath = new Set([...chain, selectedTaskId]);
+    let cursor = selectedTaskId;
+    while (incomingLink.has(cursor)) {
+      const sourceId = incomingLink.get(cursor);
+      if (!sourceId || selectedPath.has(sourceId)) break;
+      selectedPath.add(sourceId);
+      cursor = sourceId;
+    }
+    return selectedPath;
+  }, [layout, model, selectedTaskId]);
 
   const evidenceLayout = useMemo(() => {
     type Position = EvidenceEntry & { x: number; y: number; width: number; height: number };
@@ -214,7 +351,7 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask }: Execut
   useLayoutEffect(() => {
     if (evidence.length === 0 || !evidenceContainerRef.current) return;
     const container = evidenceContainerRef.current;
-    const nodes = container.querySelectorAll<HTMLDivElement>(".emap-evidence-node");
+    const nodes = container.querySelectorAll<HTMLElement>(".emap-evidence-node");
     if (nodes.length === 0) return;
 
     const updated: MeasuredHeights = {};
@@ -230,13 +367,41 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask }: Execut
     if (changed) setMeasuredHeights(updated);
   }, [evidence, evidenceLayout, measuredHeights]);
 
+  const toggleExpand = useCallback((parentTaskId: string) => {
+    setExpandedTaskIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(parentTaskId)) {
+        next.delete(parentTaskId);
+      } else {
+        next.add(parentTaskId);
+      }
+      return next;
+    });
+  }, []);
+
   const allNodes: RenderNode[] = model.mainTasks.flatMap((t) => {
     const result: RenderNode[] = [t];
-    if (t.children.length > CHILD_COLLAPSE_THRESHOLD) {
+    const isExpanded = expandedTaskIds.has(t.taskId);
+    if (t.children.length > CHILD_COLLAPSE_THRESHOLD && !isExpanded) {
       result.push({
         nodeId: `${t.taskId}__collapsed`,
         taskId: `${t.taskId}__collapsed`,
         title: `+ ${t.children.length} 个子任务`,
+        kind: "collapsed",
+        status: summarizeCollapsedTaskStatus(t.children),
+        errorFirstLine: "",
+        attemptCount: t.children.length,
+        activeAttemptId: null,
+        resultRef: null,
+        children: [],
+        depth: 1,
+      });
+    } else if (t.children.length > CHILD_COLLAPSE_THRESHOLD && isExpanded) {
+      result.push(...t.children);
+      result.push({
+        nodeId: `${t.taskId}__collapse_control`,
+        taskId: `${t.taskId}__collapse_control`,
+        title: `收起 ${t.children.length} 个子任务`,
         kind: "collapsed",
         status: summarizeCollapsedTaskStatus(t.children),
         errorFirstLine: "",
@@ -266,8 +431,8 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask }: Execut
     200,
   );
 
-  const isCollapsed = (id: string) => id.endsWith("__collapsed");
-  const parentOfCollapsed = (id: string) => id.replace("__collapsed", "");
+  const isCollapsed = (id: string) => id.endsWith("__collapsed") || id.endsWith("__collapse_control");
+  const parentOfCollapsed = (id: string) => id.replace(/__collapsed$|__collapse_control$/, "");
 
   return (
     <div className="execution-map-container">
@@ -364,14 +529,17 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask }: Execut
             const style = { left: pos.x, top: pos.y, width: pos.width, height: pos.height };
 
             const taskElement = collapsed ? (
-              <div
+              <button
+                type="button"
                 key={node.nodeId}
                 className={className}
                 data-kind="collapsed"
                 style={style}
+                onClick={() => toggleExpand(parentOfCollapsed(node.taskId))}
+                aria-label={node.taskId.endsWith("__collapse_control") ? `收起 ${node.attemptCount} 个子任务` : `展开 ${node.attemptCount} 个子任务`}
               >
                 {nodeContent}
-              </div>
+              </button>
             ) : (
               <button
                 key={node.nodeId}
@@ -388,11 +556,13 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask }: Execut
             if (!isSelected) return [taskElement];
 
             const evidenceElements = evidenceLayout.positions.map((e) => (
-              <div
+              <button
+                type="button"
                 key={e.id}
                 data-evidence-id={e.id}
-                className={`emap-evidence-node emap-evidence-${e.kind}`}
+                className={`emap-evidence-node emap-artifact-node emap-evidence-${e.kind}`}
                 style={{ left: e.x, top: e.y, width: e.width, minHeight: e.height }}
+                onClick={(event) => event.stopPropagation()}
               >
                 <div className="emap-evidence-header">
                   <span className="emap-evidence-title">{e.title}</span>
@@ -400,7 +570,7 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask }: Execut
                 </div>
                 {e.content && <span className="emap-evidence-content">{e.content}</span>}
                 {e.path && <span className="emap-evidence-path">{e.path}</span>}
-              </div>
+              </button>
             ));
 
             return [taskElement, ...evidenceElements];

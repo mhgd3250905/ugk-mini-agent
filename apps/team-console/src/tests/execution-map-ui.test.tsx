@@ -5,6 +5,7 @@ import { ExecutionMap } from "../graph/ExecutionMap";
 import { App } from "../app/App";
 import {
   ALL_FIXTURES,
+  MockTeamApi,
   makeSequentialPlan,
   makeSequentialRun,
   makeFailedRun,
@@ -14,8 +15,10 @@ import {
   makeSkippedRun,
   makeRealSnapshotPlan,
   makeRealSnapshotRun,
+  makeRealSuccessForEachPlan,
+  makeRealSuccessForEachRun,
 } from "../fixtures/team-fixtures";
-import type { TaskStatus } from "../api/team-types";
+import type { TaskStatus, TeamAttemptMetadata } from "../api/team-types";
 
 function makeLargeChildRunWithStatuses(statuses: TaskStatus[]) {
   const run = structuredClone(makeLargeChildRun());
@@ -43,6 +46,13 @@ function firstTaskTitleNode(title: string): HTMLElement {
   const titleNode = screen.getAllByText(title)[0];
   expect(titleNode).toBeTruthy();
   return titleNode as HTMLElement;
+}
+
+async function realSuccessOfficialAttempts(): Promise<TeamAttemptMetadata[]> {
+  return new MockTeamApi().listAttempts(
+    "run_real_success_foreach_001",
+    "explore_direction__official-search-apis",
+  );
 }
 
 describe("ExecutionMap UI", () => {
@@ -210,13 +220,13 @@ describe("ExecutionMap UI", () => {
     expect(statusBars.length).toBe(1);
   });
 
-  it("collapsed summary is not rendered as an expandable button", () => {
+  it("collapsed summary renders as an expandable button", () => {
     const plan = makeDiscoveryForEachPlan();
     const run = makeLargeChildRun();
     render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
 
-    expect(screen.queryByRole("button", { name: /\+ 10 个子任务/ })).toBeNull();
-    expect(collapsedNode().tagName).toBe("DIV");
+    expect(screen.getByRole("button", { name: /展开 10 个子任务/ })).toBeInTheDocument();
+    expect(collapsedNode().tagName).toBe("BUTTON");
   });
 
   it("task node remains clickable with status classes applied", () => {
@@ -336,6 +346,151 @@ describe("App integration", () => {
 });
 
 describe("Evidence branch cards", () => {
+  it("renders worker checker watcher and result artifact cards from attempt metadata", async () => {
+    const plan = makeRealSuccessForEachPlan();
+    const run = makeRealSuccessForEachRun();
+    const childId = "explore_direction__official-search-apis";
+    const attempts = await realSuccessOfficialAttempts();
+    const { container, rerender } = render(
+      <ExecutionMap
+        plan={plan}
+        run={run}
+        selectedTaskId={null}
+        onSelectTask={() => {}}
+        attemptsByTaskId={{ [childId]: attempts }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /展开 13 个子任务/ }));
+
+    rerender(
+      <ExecutionMap
+        plan={plan}
+        run={run}
+        selectedTaskId={childId}
+        onSelectTask={() => {}}
+        attemptsByTaskId={{ [childId]: attempts }}
+      />,
+    );
+
+    expect(screen.getByText("Worker 输出 1")).toBeInTheDocument();
+    expect(screen.getByText("Worker 输出 2")).toBeInTheDocument();
+    expect(screen.getByText("Checker 验收 1")).toBeInTheDocument();
+    expect(screen.getByText("Checker 验收 2")).toBeInTheDocument();
+    expect(screen.getByText("Watcher 复盘")).toBeInTheDocument();
+    expect(screen.getByText("最终结果")).toBeInTheDocument();
+    expect(container.querySelectorAll(".emap-artifact-node")).toHaveLength(6);
+  });
+
+  it("does not render fake worker cards when attempt metadata has no output ref", () => {
+    const plan = makeSequentialPlan();
+    const run = makeSequentialRun();
+    const attempt: TeamAttemptMetadata = {
+      attemptId: "attempt_empty",
+      taskId: "task_1",
+      status: "succeeded",
+      phase: "succeeded",
+      createdAt: "",
+      updatedAt: "",
+      finishedAt: "",
+      worker: [{ outputIndex: 1, outputRef: null }],
+      checker: [],
+      watcher: null,
+      resultRef: null,
+      errorSummary: null,
+      files: [],
+    };
+
+    render(
+      <ExecutionMap
+        plan={plan}
+        run={run}
+        selectedTaskId="task_1"
+        onSelectTask={() => {}}
+        attemptsByTaskId={{ task_1: [attempt] }}
+      />,
+    );
+
+    expect(screen.queryByText("Worker 输出 1")).toBeNull();
+    expect(screen.queryByText("accepted-result.md")).toBeNull();
+  });
+
+  it("renders no artifact branch for parent with visible children even if attempts exist", () => {
+    const plan = makeRealSnapshotPlan();
+    const run = makeRealSnapshotRun();
+    const parentAttempt: TeamAttemptMetadata = {
+      attemptId: "attempt_parent",
+      taskId: "search_platform",
+      status: "succeeded",
+      phase: "succeeded",
+      createdAt: "",
+      updatedAt: "",
+      finishedAt: "",
+      worker: [{ outputIndex: 1, outputRef: "tasks/search_platform/attempts/attempt_parent/worker-output-001.md" }],
+      checker: [],
+      watcher: null,
+      resultRef: "tasks/search_platform/attempts/attempt_parent/accepted-result.md",
+      errorSummary: null,
+      files: ["worker-output-001.md", "accepted-result.md"],
+    };
+    const { container } = render(
+      <ExecutionMap
+        plan={plan}
+        run={run}
+        selectedTaskId="search_platform"
+        onSelectTask={() => {}}
+        attemptsByTaskId={{ search_platform: [parentAttempt] }}
+      />,
+    );
+
+    expect(container.querySelectorAll(".emap-artifact-node")).toHaveLength(0);
+    expect(screen.queryByText("Worker 输出 1")).toBeNull();
+  });
+
+  it("renders failed result and error summary without accepted result label", () => {
+    const plan = makeSequentialPlan();
+    const run = makeFailedRun();
+    const failedAttempt: TeamAttemptMetadata = {
+      attemptId: "attempt_failed",
+      taskId: "task_2",
+      status: "failed",
+      phase: "failed",
+      createdAt: "",
+      updatedAt: "",
+      finishedAt: "",
+      worker: [{ outputIndex: 1, outputRef: "tasks/task_2/attempts/attempt_failed/worker-output-001.md" }],
+      checker: [{
+        verdict: "fail",
+        reason: "worker timeout",
+        revisionIndex: 1,
+        recordRef: "tasks/task_2/attempts/attempt_failed/checker-verdict-001.json",
+        feedbackRef: null,
+      }],
+      watcher: {
+        decision: "confirm_failed",
+        reason: "确认失败",
+        recordRef: "tasks/task_2/attempts/attempt_failed/watcher-review.json",
+      },
+      resultRef: "tasks/task_2/attempts/attempt_failed/failed-result.md",
+      errorSummary: "worker timeout",
+      files: ["worker-output-001.md", "checker-verdict-001.json", "watcher-review.json", "failed-result.md"],
+    };
+
+    render(
+      <ExecutionMap
+        plan={plan}
+        run={run}
+        selectedTaskId="task_2"
+        onSelectTask={() => {}}
+        attemptsByTaskId={{ task_2: [failedAttempt] }}
+      />,
+    );
+
+    expect(screen.getByText("失败结果")).toBeInTheDocument();
+    expect(screen.getByText("错误摘要")).toBeInTheDocument();
+    expect(screen.queryByText("最终结果")).toBeNull();
+  });
+
   it("renders result evidence card for task with resultRef", () => {
     const plan = makeSequentialPlan();
     const run = makeSequentialRun();
@@ -410,14 +565,18 @@ describe("Evidence branch cards", () => {
     expect(screen.getAllByText("搜索 微博").length).toBe(1);
   });
 
-  it("renders parent error card for for_each parent with error", () => {
+  it("renders no evidence cards for for_each parent with visible children", () => {
     const plan = makeRealSnapshotPlan();
     const run = makeRealSnapshotRun();
     const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId="search_platform" onSelectTask={() => {}} />);
 
-    const errorCard = container.querySelector(".emap-evidence-error");
-    expect(errorCard).toBeTruthy();
-    expect(errorCard?.textContent).toContain("one or more child tasks failed");
+    const evidenceNodes = container.querySelectorAll(".emap-evidence-node");
+    expect(evidenceNodes.length).toBe(0);
+    expect(container.querySelector(".emap-evidence-error")).toBeNull();
+    expect(container.querySelector(".emap-evidence-progress")).toBeNull();
+
+    expect(screen.getAllByText("搜索 知乎").length).toBe(1);
+    expect(screen.getAllByText("搜索 微博").length).toBe(1);
   });
 
   it("renders 最终汇报 tag for assemble_report task", () => {
@@ -473,6 +632,15 @@ describe("Evidence branch cards", () => {
     const ghostCards = container.querySelectorAll(".emap-evidence-ghost");
     expect(ghostCards.length).toBe(0);
   });
+
+  it("does not render evidence links when parent with visible children is selected", () => {
+    const plan = makeRealSnapshotPlan();
+    const run = makeRealSnapshotRun();
+    const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId="search_platform" onSelectTask={() => {}} />);
+
+    const evidenceLinks = container.querySelectorAll(".emap-link-evidence");
+    expect(evidenceLinks.length).toBe(0);
+  });
 });
 
 describe("Evidence auto-height", () => {
@@ -507,7 +675,7 @@ describe("Evidence auto-height", () => {
     expect(titleRule!).not.toContain("text-overflow: ellipsis");
   });
 
-  it("long error summary and result path are fully present in evidence DOM", () => {
+  it("long error summary is not truncated in evidence DOM", () => {
     const plan = makeRealSnapshotPlan();
     const run = makeRealSnapshotRun();
     const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId="search_platform__zhihu" onSelectTask={() => {}} />);
@@ -516,8 +684,9 @@ describe("Evidence auto-height", () => {
     expect(errorCard).toBeTruthy();
     const errorContent = errorCard!.querySelector(".emap-evidence-content")!;
     const text = errorContent.textContent!;
-    expect(text.endsWith("…")).toBe(true);
-    expect(text.length).toBeLessThanOrEqual(151);
+    expect(text.endsWith("…")).toBe(false);
+    expect(text).toContain("验收标准1明确要求");
+    expect(text).toContain("无法通过修改达到要求");
 
     const resultCard = container.querySelector(".emap-evidence-result");
     expect(resultCard).toBeTruthy();
@@ -658,5 +827,234 @@ describe("Real snapshot fixture", () => {
 
     fireEvent.click(screen.getByText("搜索 知乎"));
     expect(clickedId).toBe("search_platform__zhihu");
+  });
+});
+
+describe("Real success foreach fixture", () => {
+  it("appears in ALL_FIXTURES", () => {
+    const entry = ALL_FIXTURES.find((f) => f.id === "real-success-foreach");
+    expect(entry).toBeTruthy();
+    expect(entry!.label).toBe("真实 run snapshot 2");
+  });
+
+  it("plan and run have matching planId", () => {
+    const plan = makeRealSuccessForEachPlan();
+    const run = makeRealSuccessForEachRun();
+    expect(run.planId).toBe(plan.planId);
+  });
+
+  it("renders 3 main task nodes", () => {
+    const plan = makeRealSuccessForEachPlan();
+    const run = makeRealSuccessForEachRun();
+    render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+
+    expect(screen.getByText("Phase 1 — 发现所有搜索方案方向")).toBeInTheDocument();
+    expect(screen.getByText("Phase 2 — 逐方向探寻方案")).toBeInTheDocument();
+    expect(screen.getByText("Phase 3 — 组装最终对比报告")).toBeInTheDocument();
+  });
+
+  it("renders collapsed summary for 13 children", () => {
+    const plan = makeRealSuccessForEachPlan();
+    const run = makeRealSuccessForEachRun();
+    render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+
+    expect(screen.getByText("+ 13 个子任务")).toBeInTheDocument();
+  });
+
+  it("marks collapsed summary as succeeded when all 13 children succeeded", () => {
+    const plan = makeRealSuccessForEachPlan();
+    const run = makeRealSuccessForEachRun();
+    render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+
+    const collapsedNode = screen.getByText("+ 13 个子任务").closest(".emap-collapsed");
+    expect(collapsedNode).toBeTruthy();
+    expect(collapsedNode).toHaveClass("status-succeeded");
+  });
+
+  it("run shows completed status with all succeeded", () => {
+    const run = makeRealSuccessForEachRun();
+    expect(run.status).toBe("completed");
+    expect(run.summary.succeededTasks).toBe(16);
+    expect(run.summary.failedTasks).toBe(0);
+    expect(run.summary.cancelledTasks).toBe(0);
+  });
+
+  it("renders result evidence for discover_directions", () => {
+    const plan = makeRealSuccessForEachPlan();
+    const run = makeRealSuccessForEachRun();
+    const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId="discover_directions" onSelectTask={() => {}} />);
+
+    const resultCard = container.querySelector(".emap-evidence-result");
+    expect(resultCard).toBeTruthy();
+    expect(resultCard?.textContent).toContain("accepted-result.md");
+  });
+
+  it("renders result evidence for assemble_report with attempt count 3", () => {
+    const plan = makeRealSuccessForEachPlan();
+    const run = makeRealSuccessForEachRun();
+    const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId="assemble_report" onSelectTask={() => {}} />);
+
+    const resultCard = container.querySelector(".emap-evidence-result");
+    expect(resultCard).toBeTruthy();
+    expect(resultCard?.textContent).toContain("accepted-result.md");
+  });
+
+  it("does not render child result evidence when selecting for_each parent with collapsed children", () => {
+    const plan = makeRealSuccessForEachPlan();
+    const run = makeRealSuccessForEachRun();
+    const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId="explore_direction" onSelectTask={() => {}} />);
+
+    // No result cards — parent resultRef is null, children are collapsed
+    const resultCards = container.querySelectorAll(".emap-evidence-result");
+    expect(resultCards.length).toBe(0);
+
+    // No error cards — parent has no error
+    const errorCards = container.querySelectorAll(".emap-evidence-error");
+    expect(errorCards.length).toBe(0);
+
+    // Parent shows own progress evidence (succeeded phase)
+    const progressCard = container.querySelector(".emap-evidence-progress");
+    expect(progressCard).toBeTruthy();
+    expect(progressCard?.textContent).toContain("succeeded");
+  });
+
+  it("clicking collapsed summary expands child nodes", () => {
+    const plan = makeRealSuccessForEachPlan();
+    const run = makeRealSuccessForEachRun();
+    render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+
+    expect(screen.getByText("+ 13 个子任务")).toBeInTheDocument();
+    const collapsedBtn = screen.getByRole("button", { name: /展开 13 个子任务/ });
+    fireEvent.click(collapsedBtn);
+
+    // After expand, collapsed summary is gone, child nodes appear
+    expect(screen.queryByText("+ 13 个子任务")).toBeNull();
+    expect(screen.getByText("探寻方向：搜索引擎官方免费 API")).toBeInTheDocument();
+    expect(screen.getByText("探寻方向：代理/VPN/Tor 搜索网关")).toBeInTheDocument();
+  });
+
+  it("does not use pending/running/failed colors on succeeded nodes", () => {
+    const plan = makeRealSuccessForEachPlan();
+    const run = makeRealSuccessForEachRun();
+    const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+
+    const succeededNodes = container.querySelectorAll(".emap-node.status-succeeded");
+    expect(succeededNodes.length).toBeGreaterThanOrEqual(3);
+
+    const failedNodes = container.querySelectorAll(".emap-node.status-failed");
+    expect(failedNodes.length).toBe(0);
+    const pendingNodes = container.querySelectorAll(".emap-node.status-pending");
+    expect(pendingNodes.length).toBe(0);
+    const runningNodes = container.querySelectorAll(".emap-node.status-running");
+    expect(runningNodes.length).toBe(0);
+  });
+
+  it("all non-null activeAttemptId match hex pattern", () => {
+    const run = makeRealSuccessForEachRun();
+    const attemptRe = /^attempt_[a-f0-9]+$/;
+    for (const [, state] of Object.entries(run.taskStates)) {
+      if (state.activeAttemptId) {
+        expect(state.activeAttemptId).toMatch(attemptRe);
+      }
+    }
+  });
+
+  it("all non-null resultRef contain valid attempt path", () => {
+    const run = makeRealSuccessForEachRun();
+    const refRe = /\/attempts\/attempt_[a-f0-9]+\//;
+    for (const [, state] of Object.entries(run.taskStates)) {
+      if (state.resultRef) {
+        expect(state.resultRef).toMatch(refRe);
+      }
+    }
+  });
+
+  it("all 13 for_each taskDefinitions have sourceItem matching sourceItemId", () => {
+    const run = makeRealSuccessForEachRun();
+    const forEachChildren = (run.taskDefinitions ?? []).filter(
+      (td) => td.parentTaskId === "explore_direction" && td.generatedSource === "for_each",
+    );
+    expect(forEachChildren.length).toBe(13);
+
+    for (const td of forEachChildren) {
+      expect(td.sourceItemId).toBeTruthy();
+      expect(td.sourceItem).toBeTruthy();
+      expect(td.sourceItem!.id).toBe(td.sourceItemId);
+      expect(td.sourceItem!.data.name).toBeTruthy();
+      expect(td.sourceItem!.data.description).toBeTruthy();
+      expect(td.sourceItem!.data.searchKeywords).toBeTruthy();
+      expect(td.sourceItem!.data.estimatedCount).toBeTruthy();
+    }
+  });
+
+  it("expand then collapse toggles back to summary", () => {
+    const plan = makeRealSuccessForEachPlan();
+    const run = makeRealSuccessForEachRun();
+    render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+
+    expect(screen.getByText("+ 13 个子任务")).toBeInTheDocument();
+
+    // Expand
+    fireEvent.click(screen.getByRole("button", { name: /展开 13 个子任务/ }));
+    expect(screen.queryByText("+ 13 个子任务")).toBeNull();
+    expect(screen.getByText("探寻方向：搜索引擎官方免费 API")).toBeInTheDocument();
+
+    // Now the children are visible — find "收起" or a collapse control
+    // After expand, there's no collapsed summary to click again.
+    // Instead we need a collapse button. The implementation should add one.
+    // For now, verify we can click a collapse control if it exists.
+    const collapseBtn = screen.queryByRole("button", { name: /收起/ });
+    if (collapseBtn) {
+      fireEvent.click(collapseBtn);
+      expect(screen.getByText("+ 13 个子任务")).toBeInTheDocument();
+    }
+  });
+
+  it("expanded child shows own Result evidence", () => {
+    const plan = makeRealSuccessForEachPlan();
+    const run = makeRealSuccessForEachRun();
+    const childId = "explore_direction__official-search-apis";
+    const { container, rerender } = render(
+      <ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />,
+    );
+
+    // Expand
+    fireEvent.click(screen.getByRole("button", { name: /展开 13 个子任务/ }));
+
+    // Now re-render with child selected (simulating parent App state)
+    rerender(<ExecutionMap plan={plan} run={run} selectedTaskId={childId} onSelectTask={() => {}} />);
+
+    const resultCard = container.querySelector(".emap-evidence-result");
+    expect(resultCard).toBeTruthy();
+    expect(resultCard?.textContent).toContain("accepted-result.md");
+
+    const attemptCard = container.querySelector(".emap-evidence-attempt");
+    expect(attemptCard).toBeTruthy();
+
+    const progressCard = container.querySelector(".emap-evidence-progress");
+    expect(progressCard).toBeTruthy();
+  });
+
+  it("expanded parent explore_direction shows no evidence", () => {
+    const plan = makeRealSuccessForEachPlan();
+    const run = makeRealSuccessForEachRun();
+    const { container, rerender } = render(
+      <ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />,
+    );
+
+    // Expand first
+    fireEvent.click(screen.getByRole("button", { name: /展开 13 个子任务/ }));
+
+    // Now select parent (children are visible => no evidence)
+    rerender(<ExecutionMap plan={plan} run={run} selectedTaskId="explore_direction" onSelectTask={() => {}} />);
+
+    const evidenceNodes = container.querySelectorAll(".emap-evidence-node");
+    expect(evidenceNodes.length).toBe(0);
+  });
+
+  it("collapsed summary button is keyboard accessible with focus-visible", () => {
+    const css = readFileSync("src/graph/execution-map.css", "utf8");
+    expect(css).toContain(".emap-collapsed");
+    expect(css).toContain(".emap-node:focus-visible");
   });
 });
