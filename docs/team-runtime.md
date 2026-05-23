@@ -14,7 +14,9 @@
 - AbortSignal 全链路传播：cancel/pause 能中断正在执行的 agent session
 - 真实 runner smoke test：`run_1c54aaa7e442`，status: completed，P0_REAL_RUNNER_OK
 - 最新验证：P26 output contract validation 已覆盖 deterministic validator、真实 orchestrator regression、`npm run test:team` 和 `npx tsc --noEmit`
-- 独立 Team Console 前端预览已建立（`apps/team-console/`），使用 Vite + React + TypeScript，支持 Mock fixture 和 Live API 两种数据源，实现纵向 Execution Map 原型。当前 `/playground/team` 仍是生产入口，Team Console 不替换任何现有页面。
+- 独立 Team Console 前端预览已建立（`apps/team-console/`），使用 Vite + React + TypeScript，实现纵向 Execution Map 原型。当前 `/playground/team` 仍是生产入口，Team Console 不替换任何现有页面。
+- Team Console preview 的 Live API 模式已真实接线：切换后请求 `GET /v1/team/plans` 和 `GET /v1/team/runs`，按 `createdAt` 选择最新 run，再请求 `GET /v1/team/runs/:runId` 获取详情并按 `planId` 匹配 plan；当前没有 live run picker，也不调用 pause/resume/cancel、manual disposition、rerun 或 attempt 文件读取接口。
+- Team Console preview 的 Execution Map 建模按优先级挂载 generated child：显式 `parentTaskId`、仅在单一 `for_each` parent 时使用的安全 `sourceItemId` fallback、标记 `fallback: true` 的 id prefix fallback，仍无法归属的任务进入 orphan group；model builder 不修改传入的 plan/run/taskDefinitions。大量子任务折叠 summary node 会按隐藏子任务状态汇总，不再固定显示成功。
 
 ## 核心概念
 

@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-23 — Team Console review blockers 修复
+
+- **主题**: 接通独立 Team Console preview 的 Live API 模式，并修复 Execution Map 归属、纯函数和折叠状态问题
+- **影响范围**: `apps/team-console/**`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - Live API 模式现在真实请求 `GET /v1/team/plans`、`GET /v1/team/runs`、`GET /v1/team/runs/:runId`，按 `createdAt` 默认选择最新 run
+  - `buildExecutionMapModel()` 恢复安全 `sourceItemId` fallback，仅在单一 `for_each` parent 时归属；模糊归属继续进入 orphan group
+  - `buildExecutionMapModel()` 不再修改传入的 plan/run/taskDefinitions
+  - 大量子任务折叠 summary node 会根据隐藏子任务状态显示 failed/running/skipped/cancelled/succeeded，不再硬编码成功
+  - Team Console 仍是独立 preview，未替换 `/playground/team`，未改 Team Runtime 后端
+
 ## 2026-05-23 — Team Console 独立前端预览
 
 - **主题**: 建立 `apps/team-console/` 独立 Vite + React + TypeScript 前端项目，实现 Team Runtime 纵向 Execution Map 原型
