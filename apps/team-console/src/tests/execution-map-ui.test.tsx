@@ -161,7 +161,7 @@ describe("ExecutionMap UI", () => {
   it("applies status-failed class to failed task node", () => {
     const plan = makeSequentialPlan();
     const run = makeFailedRun();
-    const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+    render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
     const failedNode = screen.getByText("Research vendor B").closest(".emap-node");
     expect(failedNode).toHaveClass("status-failed");
   });
@@ -169,7 +169,7 @@ describe("ExecutionMap UI", () => {
   it("applies status-dimmed class to skipped task node", () => {
     const plan = makeSequentialPlan();
     const run = makeSkippedRun();
-    const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+    render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
     const skippedNode = screen.getByText("Research vendor B").closest(".emap-node");
     expect(skippedNode).toHaveClass("status-dimmed");
   });
@@ -186,7 +186,7 @@ describe("ExecutionMap UI", () => {
   it("applies status-running class to pending task node", () => {
     const plan = makeSequentialPlan();
     const run = makeFailedRun();
-    const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+    render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
     const pendingNode = screen.getByText("Research vendor C").closest(".emap-node");
     expect(pendingNode).toHaveClass("status-running");
   });

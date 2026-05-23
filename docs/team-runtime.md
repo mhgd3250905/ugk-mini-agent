@@ -17,6 +17,7 @@
 - 独立 Team Console 前端预览已建立（`apps/team-console/`），使用 Vite + React + TypeScript，实现纵向 Execution Map 原型。当前 `/playground/team` 仍是生产入口，Team Console 不替换任何现有页面。
 - Team Console preview 的 Live API 模式已真实接线：切换后请求 `GET /v1/team/plans` 和 `GET /v1/team/runs`，按 `createdAt` 选择最新 run，再请求 `GET /v1/team/runs/:runId` 获取详情并按 `planId` 匹配 plan；当前没有 live run picker，也不调用 pause/resume/cancel、manual disposition、rerun 或 attempt 文件读取接口。
 - Team Console preview 的 Execution Map 建模按优先级挂载 generated child：显式 `parentTaskId`、仅在单一 `for_each` parent 时使用的安全 `sourceItemId` fallback、标记 `fallback: true` 的 id prefix fallback，仍无法归属的任务进入 orphan group；model builder 不修改传入的 plan/run/taskDefinitions。大量子任务折叠 summary node 会按隐藏子任务状态汇总，不再固定显示成功。
+- Execution Map 视觉已从 list-like 测试 UI 进化为纵向流式布局：根节点顶部、主任务沿左侧 spine 向下、子任务分支右侧；节点有 4px 彩色状态条、选中发光、chain-selected 半透明路径、失败红色渐变和错误首行、折叠虚线、orphan 点线；连接线使用三次贝塞尔(spine)和 L 形直角(branch)；responsive 断口在 720px。
 
 ## 核心概念
 

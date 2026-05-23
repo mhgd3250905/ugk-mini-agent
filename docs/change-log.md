@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-23 — Team Console Execution Map 视觉重设计
+
+- **主题**: Execution Map 从 list-like 测试 UI 进化为纵向流式执行图
+- **影响范围**: `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - 节点样式重写：4px 彩色状态条（running 蓝色脉冲、succeeded 绿色、failed 红色渐变+错误首行、paused 黄色、dimmed 灰色半透明）、选中发光边框、chain-selected `color-mix` 路径混合、折叠虚线、orphan 点线、`data-kind` 属性
+  - 连接线优化：spine 使用 center-to-center 三次贝塞尔曲线、branch 使用 L 形直角折线、选中链路高亮
+  - 布局间距收紧：`SPINE_Y_GAP` 80→72、`BRANCH_Y_GAP` 64→56
+  - 新增 13 个测试（UI 9 个 + layout 4 个），总测试数从 55 增长到 68
+  - 三个独立 commit：node styling、layout polish、status readability
+  - 浏览器视觉验证通过：顺序/失败/Discovery+ForEach/Decomposition/大量子任务/跳过 共 6 个 fixture
+
 ## 2026-05-23 — Team Console dev server Live API proxy
 
 - **主题**: Team Console Vite dev server 增加 `/v1/team` proxy，避免 Live API preview 打到 Vite 自己
