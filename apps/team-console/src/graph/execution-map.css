@@ -105,6 +105,19 @@
   opacity: 0.4;
 }
 
+.status-pending .emap-node-status-bar {
+  background: var(--secondary);
+  opacity: 0.5;
+}
+
+.status-pending {
+  opacity: 0.55;
+}
+
+.status-pending:hover {
+  opacity: 0.75;
+}
+
 @keyframes pulse-bar {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
@@ -160,6 +173,11 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.emap-root .emap-node-content > span {
+  flex-shrink: 0;
+  line-height: 1.2;
 }
 
 .emap-root .emap-node-title {

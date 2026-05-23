@@ -66,9 +66,17 @@ describe("ExecutionMap UI", () => {
     expect(collapsedNode()).toHaveClass("status-failed");
   });
 
-  it("marks collapsed summary running when hidden children are still pending or running", () => {
+  it("marks collapsed summary pending when hidden children are pending but none running", () => {
     const plan = makeDiscoveryForEachPlan();
     const run = makeLargeChildRunWithStatuses(["succeeded", "pending", ...Array(8).fill("succeeded")]);
+    render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+    expect(collapsedNode()).toHaveClass("status-pending");
+    expect(collapsedNode()).not.toHaveClass("status-running");
+  });
+
+  it("marks collapsed summary running when hidden children include running", () => {
+    const plan = makeDiscoveryForEachPlan();
+    const run = makeLargeChildRunWithStatuses(["succeeded", "running", ...Array(8).fill("succeeded")]);
     render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
     expect(collapsedNode()).toHaveClass("status-running");
   });
@@ -183,12 +191,13 @@ describe("ExecutionMap UI", () => {
     expect(selectedNode).toHaveClass("status-failed");
   });
 
-  it("applies status-running class to pending task node", () => {
+  it("applies status-pending class to pending task node", () => {
     const plan = makeSequentialPlan();
     const run = makeFailedRun();
     render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
     const pendingNode = screen.getByText("Research vendor C").closest(".emap-node");
-    expect(pendingNode).toHaveClass("status-running");
+    expect(pendingNode).toHaveClass("status-pending");
+    expect(pendingNode).not.toHaveClass("status-running");
   });
 });
 

@@ -30,7 +30,8 @@ type RenderNode = Omit<ExecutionNode, "kind"> & { kind: NodeKind | "collapsed" }
 
 function statusClass(status: TaskStatus | RunDetail["status"]): string {
   switch (status) {
-    case "running": case "queued": case "pending": return "status-running";
+    case "running": case "queued": return "status-running";
+    case "pending": return "status-pending";
     case "succeeded": case "completed": return "status-succeeded";
     case "failed": return "status-failed";
     case "paused": case "interrupted": return "status-paused";
@@ -44,7 +45,8 @@ export function summarizeCollapsedTaskStatus(children: Pick<ExecutionNode, "stat
   const statuses = children.map((child) => child.status);
   if (statuses.includes("failed")) return "failed";
   if (statuses.includes("interrupted")) return "interrupted";
-  if (statuses.includes("running") || statuses.includes("pending")) return "running";
+  if (statuses.includes("running")) return "running";
+  if (statuses.includes("pending")) return "pending";
   if (statuses.includes("cancelled")) return "cancelled";
   if (statuses.includes("skipped")) return "skipped";
   return "succeeded";

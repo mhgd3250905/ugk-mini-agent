@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildExecutionMapModel } from "../graph/execution-map-model";
-import { layoutExecutionMap } from "../graph/execution-map-layout";
+import { layoutExecutionMap, NODE_HEIGHT } from "../graph/execution-map-layout";
 import type { TeamPlan, RunDetail, TaskDefinition, TaskStatus } from "../api/team-types";
 
 function makePlanAndRun(
@@ -194,6 +194,42 @@ describe("layoutExecutionMap", () => {
     const parentPos = layout.nodePositions.get("p")!;
     const childPos = layout.nodePositions.get("p__c1")!;
     expect(childPos.x).toBeGreaterThan(parentPos.x);
+  });
+
+  it("does not double-gap after collapsed branch", () => {
+    const children: TaskDefinition[] = [];
+    const states: Record<string, ReturnType<typeof st>> = {};
+    for (let i = 1; i <= 8; i++) {
+      const id = `p__c${i}`;
+      children.push({
+        id, title: `Child ${i}`, type: "normal",
+        input: { text: "" }, acceptance: { rules: [] },
+        parentTaskId: "p", generated: true, generatedSource: "for_each",
+      });
+      states[id] = st();
+    }
+    const { plan, run } = makePlanAndRun(
+      [
+        { id: "p", title: "P", type: "for_each", input: { text: "" }, acceptance: { rules: [] } },
+        { id: "q", title: "Q", input: { text: "" }, acceptance: { rules: [] } },
+        { id: "r", title: "R", input: { text: "" }, acceptance: { rules: [] } },
+      ],
+      { p: st(), q: st(), r: st(), ...states },
+      children,
+    );
+    const model = buildExecutionMapModel(plan, run);
+    const layout = layoutExecutionMap(model);
+
+    const posP = layout.nodePositions.get("p")!;
+    const posQ = layout.nodePositions.get("q")!;
+    const posR = layout.nodePositions.get("r")!;
+
+    // Q follows P (which has collapsed children) — gap should equal normal spine gap
+    const gapAfterCollapsed = posQ.y - (posP.y + NODE_HEIGHT);
+    // R follows Q (no children) — baseline gap
+    const normalGap = posR.y - (posQ.y + NODE_HEIGHT);
+
+    expect(gapAfterCollapsed).toBe(normalGap);
   });
 
   it("positions collapsed node to the right of its parent", () => {

@@ -92,8 +92,6 @@ export function layoutExecutionMap(model: ExecutionMapModel): ExecutionMapLayout
       });
 
       currentY += NODE_HEIGHT + SPINE_Y_GAP;
-
-      currentY += NODE_HEIGHT + SPINE_Y_GAP;
     } else if (children.length > 0) {
       let childY = currentY + BRANCH_Y_GAP;
       for (const child of children) {

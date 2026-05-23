@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-23 — Team Console Execution Map review blockers 修复
+
+- **主题**: 修复 Execution Map 根节点文字压扁、折叠间距、pending 视觉状态、文档事实错误
+- **影响范围**: `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `docs/change-log.md`
+- **变更**:
+  - 根节点（Run）中文状态文字不再被压扁：添加 `flex-shrink: 0` + `line-height: 1.2` 确保三行内容在 56px 内完整显示
+  - 修复折叠分支后主线 y 间距重复递增 bug（`currentY` 被多加一次 `NODE_HEIGHT + SPINE_Y_GAP`）
+  - `pending` 任务获得独立 `status-pending` 视觉（muted 灰色，无 pulse），不再冒充 `status-running`
+  - 折叠 summary 仅含 pending 子任务时显示 pending，含 running 时才显示 running
+  - 修正视觉重设计条目测试数：实际为 66（非 68）
+  - 新增 2 个测试（layout 间距对比 + collapsed running），修改 2 个测试（pending 状态断言更新），总测试数从 66 增长到 68
+
 ## 2026-05-23 — Team Console Execution Map 视觉重设计
 
 - **主题**: Execution Map 从 list-like 测试 UI 进化为纵向流式执行图
@@ -20,7 +32,7 @@
   - 节点样式重写：4px 彩色状态条（running 蓝色脉冲、succeeded 绿色、failed 红色渐变+错误首行、paused 黄色、dimmed 灰色半透明）、选中发光边框、chain-selected `color-mix` 路径混合、折叠虚线、orphan 点线、`data-kind` 属性
   - 连接线优化：spine 使用 center-to-center 三次贝塞尔曲线、branch 使用 L 形直角折线、选中链路高亮
   - 布局间距收紧：`SPINE_Y_GAP` 80→72、`BRANCH_Y_GAP` 64→56
-  - 新增 13 个测试（UI 9 个 + layout 4 个），总测试数从 55 增长到 68
+  - 新增 13 个测试（UI 9 个 + layout 4 个），总测试数从 55 增长到 66
   - 三个独立 commit：node styling、layout polish、status readability
   - 浏览器视觉验证通过：顺序/失败/Discovery+ForEach/Decomposition/大量子任务/跳过 共 6 个 fixture
 
