@@ -1,6 +1,7 @@
 import type {
   TeamPlan,
   RunDetail,
+  TeamRunState,
   TeamTask,
   TeamTaskState,
   TaskDefinition,
@@ -364,6 +365,10 @@ export const ALL_FIXTURES: FixtureEntry[] = [
 export class MockTeamApi {
   async listPlans(): Promise<TeamPlan[]> {
     return ALL_FIXTURES.map((f) => f.plan);
+  }
+
+  async listRuns(): Promise<TeamRunState[]> {
+    return ALL_FIXTURES.map((f) => f.run);
   }
 
   async getRunDetail(runId: string): Promise<RunDetail> {

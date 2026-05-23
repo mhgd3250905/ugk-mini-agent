@@ -1,8 +1,17 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App } from "../app/App";
+import { makeSequentialPlan, makeSequentialRun } from "../fixtures/team-fixtures";
 
 describe("App", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("renders the title", () => {
     render(<App />);
     expect(screen.getByText("Team Console")).toBeInTheDocument();
@@ -31,5 +40,63 @@ describe("App", () => {
     const values = options.map((o) => (o as HTMLOptionElement).value);
     expect(values).toContain("mock");
     expect(values).toContain("live");
+  });
+
+  it("fetches live plans, runs, and selected run detail when switching to Live API", async () => {
+    const plan = makeSequentialPlan();
+    const run = makeSequentialRun();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify([plan]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([run]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(run), { status: 200 }));
+
+    render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+    expect(fetch).toHaveBeenNthCalledWith(1, "/v1/team/plans");
+    expect(fetch).toHaveBeenNthCalledWith(2, "/v1/team/runs");
+    expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/runs/run_seq_001");
+  });
+
+  it("renders the selected live run after loading", async () => {
+    const plan = {
+      ...makeSequentialPlan(),
+      planId: "plan_live_001",
+      tasks: [
+        {
+          ...makeSequentialPlan().tasks[0],
+          id: "live_task_1",
+          title: "Live-only vendor task",
+        },
+      ],
+    };
+    const run = {
+      ...makeSequentialRun(),
+      runId: "run_live_001",
+      planId: "plan_live_001",
+      taskStates: {
+        live_task_1: makeSequentialRun().taskStates.task_1,
+      },
+      summary: { totalTasks: 1, succeededTasks: 1, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+    };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify([plan]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([run]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(run), { status: 200 }));
+
+    render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    expect(await screen.findByText("Live-only vendor task")).toBeInTheDocument();
+  });
+
+  it("shows an error banner when live loading fails", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response("down", { status: 500 }));
+
+    render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    expect(await screen.findByText("请求失败 (500)")).toBeInTheDocument();
   });
 });

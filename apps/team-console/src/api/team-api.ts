@@ -1,7 +1,8 @@
-import type { TeamPlan, RunDetail, TeamApiError } from "./team-types";
+import type { TeamPlan, RunDetail, TeamApiError, TeamRunState } from "./team-types";
 
 export interface TeamApiProvider {
   listPlans(): Promise<TeamPlan[]>;
+  listRuns(): Promise<TeamRunState[]>;
   getRunDetail(runId: string): Promise<RunDetail>;
 }
 
@@ -26,6 +27,16 @@ export class LiveTeamApi implements TeamApiProvider {
       const res = await fetch(`${this.baseUrl}/plans`);
       if (!res.ok) throw res;
       return (await res.json()) as TeamPlan[];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async listRuns(): Promise<TeamRunState[]> {
+    try {
+      const res = await fetch(`${this.baseUrl}/runs`);
+      if (!res.ok) throw res;
+      return (await res.json()) as TeamRunState[];
     } catch (e) {
       throw toApiError(e);
     }

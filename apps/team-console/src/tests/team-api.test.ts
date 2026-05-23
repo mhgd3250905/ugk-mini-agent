@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { MockTeamApi } from "../fixtures/team-fixtures";
 import { LiveTeamApi } from "../api/team-api";
 import {
@@ -32,14 +32,49 @@ describe("MockTeamApi", () => {
 });
 
 describe("LiveTeamApi", () => {
-  it("constructs correct plan URL", () => {
-    const api = new LiveTeamApi("http://localhost:3000/v1/team");
-    expect(api).toBeInstanceOf(LiveTeamApi);
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
   });
 
-  it("constructs correct run URL with encoding", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("listPlans calls /v1/team/plans", async () => {
     const api = new LiveTeamApi("/v1/team");
-    expect(api).toBeInstanceOf(LiveTeamApi);
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
+
+    await api.listPlans();
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/plans");
+  });
+
+  it("listRuns calls /v1/team/runs", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
+
+    await api.listRuns();
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/runs");
+  });
+
+  it("getRunDetail URL-encodes the run id", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(makeSequentialRun()), { status: 200 }));
+
+    await api.getRunDetail("run/a b");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/runs/run%2Fa%20b");
+  });
+
+  it("turns non-OK responses into readable API errors", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response("nope", { status: 503 }));
+
+    await expect(api.listPlans()).rejects.toEqual({
+      message: "请求失败 (503)",
+      status: 503,
+    });
   });
 });
 
