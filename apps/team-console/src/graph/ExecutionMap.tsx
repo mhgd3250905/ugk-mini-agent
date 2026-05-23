@@ -7,7 +7,7 @@ import { RUN_STATUS_LABELS, TASK_STATUS_LABELS } from "../shared/status";
 import "./execution-map.css";
 
 const KIND_LABELS: Record<NodeKind | "collapsed" | "orphan_group", string> = {
-  root: "Run",
+  root: "运行",
   task: "任务",
   discovery: "发现",
   for_each: "逐项处理",
@@ -143,9 +143,9 @@ function pointerPoint(event: PointerEvent<HTMLDivElement>): { x: number; y: numb
 }
 
 function artifactTypeLabel(filename: string): string {
-  if (filename.includes("accepted")) return "Accepted";
-  if (filename.includes("failed")) return "Failed";
-  return "Result";
+  if (filename.includes("accepted")) return "已接受";
+  if (filename.includes("failed")) return "失败";
+  return "结果";
 }
 
 function resultArtifactTitle(filename: string): string {
@@ -363,7 +363,7 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
       entries.push({
         id: `evidence__result__${node.taskId}`,
         kind: "result",
-        title: filename || "Result",
+        title: filename || "结果",
         content: "",
         tag: isReport ? "最终汇报" : artifactTypeLabel(filename),
         tagClass: isReport ? "tag-report" : filename.includes("accepted") ? "tag-accepted" : filename.includes("failed") ? "tag-failed" : "tag-result",
@@ -376,7 +376,7 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
         entries.push({
           id: `evidence__error__${selectedTaskId}`,
           kind: "error",
-          title: "Error",
+          title: "错误",
           content: state.errorSummary,
         });
       }
@@ -384,7 +384,7 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
         entries.push({
           id: `evidence__attempt__${selectedTaskId}`,
           kind: "attempt",
-          title: "Attempt",
+          title: "尝试",
           content: state.activeAttemptId,
         });
       }
@@ -395,7 +395,7 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
         entries.push({
           id: `evidence__progress__${selectedTaskId}`,
           kind: "progress",
-          title: "Progress",
+          title: "进度",
           content: parts.join(": "),
         });
       }
@@ -770,9 +770,9 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
                 <span className="emap-node-state-pill">{RUN_STATUS_LABELS[run.status]}</span>
               </div>
               <div className="emap-node-body">
-                <span className="emap-node-title">Execution Run</span>
+                <span className="emap-node-title">执行运行</span>
                 <span className="emap-node-summary">
-                  {model.rootNode.succeeded}/{model.rootNode.totalTasks} checkpoints
+                  {model.rootNode.succeeded}/{model.rootNode.totalTasks} 检查点
                 </span>
               </div>
             </div>
@@ -804,7 +804,7 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
                       <span className="emap-node-error">{node.errorFirstLine}</span>
                     ) : (
                       <span className="emap-node-meta">
-                        {node.resultRef ? "result linked" : node.attemptCount > 0 ? `attempt ${node.attemptCount}` : "waiting"}
+                        {node.resultRef ? "已有结果" : node.attemptCount > 0 ? `尝试 ${node.attemptCount}` : "等待中"}
                       </span>
                     )}
                   </div>

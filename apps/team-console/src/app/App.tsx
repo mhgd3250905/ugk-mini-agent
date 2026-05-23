@@ -157,8 +157,8 @@ export function App() {
     <div className="app-shell">
       <header className="app-header">
         <div className="app-header-left">
-          <h1 className="app-title">Team Console</h1>
-          <span className="app-subtitle">Execution map preview</span>
+          <h1 className="app-title">团队控制台</h1>
+          <span className="app-subtitle">执行地图预览</span>
         </div>
         <div className="app-header-right">
           <select
@@ -166,15 +166,15 @@ export function App() {
             onChange={(e) => setDataSource(e.target.value as DataSource)}
             className="datasource-select"
           >
-            <option value="mock">Mock fixture</option>
-            <option value="live">Live API</option>
+            <option value="mock">示例数据</option>
+            <option value="live">实时 API</option>
           </select>
         </div>
       </header>
 
       {dataSource === "mock" && (
         <div className="fixture-bar">
-          <span className="fixture-label">Fixture:</span>
+          <span className="fixture-label">示例：</span>
           {ALL_FIXTURES.map((f) => (
             <button
               key={f.id}
@@ -194,7 +194,7 @@ export function App() {
       <main className="app-main">
         {loading ? (
           <div className="empty-state">
-            <p>Loading live run...</p>
+            <p>正在加载实时运行...</p>
           </div>
         ) : plan && run ? (
           <div className="workspace">
@@ -211,7 +211,7 @@ export function App() {
           </div>
         ) : (
           <div className="empty-state">
-            <p>No run selected. Choose a run to view its execution map.</p>
+            <p>未选择运行。请选择一个运行查看执行地图。</p>
           </div>
         )}
       </main>

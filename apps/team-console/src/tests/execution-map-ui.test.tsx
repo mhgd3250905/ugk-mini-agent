@@ -109,7 +109,7 @@ describe("ExecutionMap UI", () => {
     expect(node.querySelector(".emap-node-body")).toBeTruthy();
     expect(within(node).getByText("任务")).toBeInTheDocument();
     expect(within(node).getByText("成功")).toBeInTheDocument();
-    expect(within(node).getByText("result linked")).toBeInTheDocument();
+    expect(within(node).getByText("已有结果")).toBeInTheDocument();
   });
 
   it("renders collapsed summary for large child groups", () => {
@@ -195,7 +195,7 @@ describe("ExecutionMap UI", () => {
     const run = makeSequentialRun();
     render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
 
-    expect(screen.getByRole("button", { name: /Execution Run/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /执行运行/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Research vendor B/ })).toBeInTheDocument();
   });
 
@@ -554,6 +554,15 @@ describe("Evidence branch cards", () => {
     expect(errorCard?.textContent).toContain("Worker timeout");
   });
 
+  it("uses Chinese labels for fallback error and progress evidence", () => {
+    const plan = makeSequentialPlan();
+    const run = makeFailedRun();
+    render(<ExecutionMap plan={plan} run={run} selectedTaskId="task_2" onSelectTask={() => {}} />);
+
+    expect(screen.getByText("错误")).toBeInTheDocument();
+    expect(screen.getByText("进度")).toBeInTheDocument();
+  });
+
   it("renders attempt evidence card for task with activeAttemptId", () => {
     const plan = makeRealSnapshotPlan();
     const run = makeRealSnapshotRun();
@@ -561,6 +570,7 @@ describe("Evidence branch cards", () => {
 
     const attemptCard = container.querySelector(".emap-evidence-attempt");
     expect(attemptCard).toBeTruthy();
+    expect(attemptCard?.textContent).toContain("尝试");
     expect(attemptCard?.textContent).toContain("attempt_d62e0d2ff9d5");
   });
 
@@ -623,14 +633,14 @@ describe("Evidence branch cards", () => {
     expect(screen.getByText("accepted-result.md")).toBeInTheDocument();
   });
 
-  it("renders Failed tag for task with failed-result.md", () => {
+  it("renders 失败 tag for task with failed-result.md", () => {
     const plan = makeRealSnapshotPlan();
     const run = makeRealSnapshotRun();
     const { container } = render(<ExecutionMap plan={plan} run={run} selectedTaskId="search_platform__zhihu" onSelectTask={() => {}} />);
 
     const resultCard = container.querySelector(".emap-evidence-result");
     expect(resultCard).toBeTruthy();
-    expect(screen.getByText("Failed")).toBeInTheDocument();
+    expect(within(resultCard as HTMLElement).getByText("失败")).toBeInTheDocument();
   });
 
   it("renders dashed SVG connectors from task to evidence cards", () => {

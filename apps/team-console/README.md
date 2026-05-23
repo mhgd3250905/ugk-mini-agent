@@ -51,6 +51,8 @@ Live API 模式会真实请求：
 - `GET /v1/team/plans`
 - `GET /v1/team/runs`
 - `GET /v1/team/runs/:runId`
+- `GET /v1/team/runs/:runId/tasks/:taskId/attempts`
+- `GET /v1/team/runs/:runId/tasks/:taskId/attempts/:attemptId/files/:fileName`
 
 当前 preview 没有 live run picker；它会按 `createdAt` 选择最新 run，再用该 run 的 `planId` 匹配 plan 后渲染执行图。请求失败会在页面顶部显示错误，不会继续展示旧 mock 数据。
 
@@ -63,10 +65,12 @@ Mock fixture 覆盖以下场景：
 - 含未归属子任务 run
 - 大量子任务 run（10 个子任务）
 - 含跳过任务 run
+- 真实 run snapshot（脱敏后的真实执行记录，用于验证长错误、API 错误、resultRef、ghost result 和最终汇报）
+- 真实 run snapshot 2（脱敏后的全成功 for_each 执行记录，13 个子任务折叠验证）
 
-## Execution Map 视觉设计
+## Execution Atlas 视觉设计
 
-纵向流式执行图，根节点在顶部，主任务沿左侧 spine 向下排列，子任务分支到右侧。
+纵向流式执行图，根节点在顶部，主任务沿左侧 spine 向下排列，子任务分支到右侧。当前目标是执行地图展示，不是编辑器、拖拽脑图或运行时控制台。
 
 ### 节点样式
 
@@ -82,13 +86,30 @@ Mock fixture 覆盖以下场景：
 - Branch（主任务→子任务）：L 形直角折线
 - 选中链路的连接线高亮为 accent 色
 
+### 任务 evidence 分支
+
+点击 root 或普通 task 节点会切换选中状态；再次点击同一节点会收起。Collapsed summary 可展开/收起。
+
+选中普通 task 后，任务节点本身保持紧凑，不再打开固定右侧栏，也不再在节点内部堆大段详情。可展示的信息会作为 `.execution-map-nodes` 的同级 evidence card 从任务节点旁边长出来：
+
+- 结果：来自当前 task 的 `resultRef`，显示 filename、已接受 / 失败 / 最终汇报标签和弱化路径
+- 错误：来自 `errorSummary` 的错误摘要卡片
+- 尝试：来自 `activeAttemptId` 的 attempt 卡片
+- 进度：来自 `progress.phase` / `progress.message` 的进度卡片
+- Worker / Checker / Watcher / 最终结果 artifact：优先来自真实 `TeamAttemptMetadata`，不会为缺失文件伪造卡片
+- for_each 父任务：有 visible children（子任务数 ≤ 阈值或已展开）时**不显示** evidence；无 visible children 时显示当前任务自身的结果 / 错误 / 进度
+
+点击 artifact card 会读取同一 run/task/attempt 下的真实 attempt 文件并展开第二级预览节点：`.md` / `.txt` 按安全文本展示，`.json` pretty print，`.html` 只放进 sandbox iframe，不注入主 DOM。
+
+桌面端 evidence / preview card 使用 absolute 定位在 selected node 右侧，并由 dashed SVG link 连接。桌面画布支持鼠标滚轮缩放、背景拖拽平移，以及“放大 / 缩小 / 重置视图”工具按钮；这些只是本地 UI 状态，不持久化。移动端 `720px` 以下 evidence / preview card 改为 normal flow，同级插入在 selected node 正下方，保持 8px gap 和无横向 overflow。
+
 ### 折叠行为
 
-超过 `CHILD_COLLAPSE_THRESHOLD`(6) 个子任务时折叠为摘要节点，摘要状态按隐藏子任务聚合计算。
+超过 `CHILD_COLLAPSE_THRESHOLD`(6) 个子任务时折叠为摘要节点，摘要状态按隐藏子任务聚合计算。点击摘要节点可展开全部子任务；展开后末尾显示"收起"按钮，再次点击收起。展开/收起时布局同步更新。
 
 ### 响应式
 
-`@media (max-width: 720px)` 时连接线隐藏，节点改为纵向堆叠。
+`@media (max-width: 720px)` 时连接线隐藏，节点改为纵向堆叠，并禁用自定义 pan/zoom 工具条。本轮没有做移动端深度设计，只做不明显横向炸版的最小烟测。
 
 ## 架构
 
@@ -103,6 +124,6 @@ Mock fixture 覆盖以下场景：
 
 - 仍是独立 preview，不替换 `/playground/team`
 - 不调用 manual disposition、rerun、pause/resume/cancel API
-- 不读取 attempt 文件内容
-- 不支持拖拽、缩放、框选或编辑 Plan
-- Execution Map 只做展示与 task 详情选择；大量子任务会折叠为 summary node，并按隐藏子任务状态汇总显示
+- 只通过现有只读 API 读取 attempt metadata 和 attempt file，不新增写操作
+- 不支持拖拽编辑、框选、节点创建、minimap、持久化视图或编辑 Plan
+- Execution Atlas 只做执行图展示、task evidence 选择、artifact 预览和桌面 pan/zoom；大量子任务会折叠为 summary node，并按隐藏子任务状态汇总显示；折叠节点可展开/收起

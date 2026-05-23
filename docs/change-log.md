@@ -12,6 +12,109 @@
 
 ---
 
+## 2026-05-23 — Team Console artifact 预览、桌面画布控制与中文化
+
+- **主题**: Execution Atlas 选中 task 后改用真实 attempt metadata / attempt file 渲染 artifact 分支与二级预览，并补桌面 pan/zoom 和可见中文标签。
+- **变更内容**:
+  - Team Console API adapter 新增只读 `listAttempts()` / `readAttemptFile()`，Live API 使用现有 `/v1/team/runs/:runId/tasks/:taskId/attempts` 与 `/files/:fileName` 端点，Mock fixture 提供 deterministic attempt metadata/content。
+  - 选中 leaf task 时从真实 worker/checker/watcher/result refs 渲染 Worker 输出、Checker 验收、Watcher 复盘和最终 / 失败 / 发现结果 artifact card；for_each parent 有 visible children 时仍不显示 evidence。
+  - 点击 artifact card 后读取同一 run/task/attempt 下的真实 attempt file 并展开第二级预览节点：文本安全转义，JSON pretty print，HTML 只用 sandbox iframe。
+  - 桌面 Execution Atlas 增加鼠标滚轮缩放、背景拖拽平移，以及“放大 / 缩小 / 重置视图”工具按钮；pan/zoom 不持久化。
+  - Team Console app header、数据源选项、fixture label、root/node/evidence 标签中文化；手机端本轮只做最小烟测口径，不做深度交互设计。
+- **影响范围**: `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/src/tests/team-api.test.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/handoff-current.md`, `docs/change-log.md`
+- **测试**: `npm --prefix apps/team-console run test` 155 passed；`npm --prefix apps/team-console run build` 通过；`git diff --check` 通过。
+- **边界**: 未改 Team Runtime 后端、`/playground/team`、`src/team/**`、`src/routes/**`、`src/ui/**`；未新增写 API，未调用 pause/resume/cancel/rerun/manual-disposition。
+
+---
+
+## 2026-05-23 — Team Console 真实 run snapshot 2、折叠展开与 evidence 规则收口
+
+- **主题**: 新增全成功 for_each 真实 fixture、实现 collapsed summary 展开/收起交互、收口 for_each 父任务 evidence 规则。
+- **变更内容**:
+  - 新增 `real-success-foreach` fixture（`plan_real_success_foreach_001` / `run_real_success_foreach_001`），16 个任务（3 主任务 + 13 for_each 子任务）全部 succeeded，含完整 `sourceItem` 结构和真实 hex attemptId。
+  - Collapsed summary 节点改为可展开 `<button>`：点击 "+ N 个子任务" 展开全部子任务，展开后末尾追加"收起"按钮再次点击收起。展开/收起时 `layoutExecutionMap()` 同步更新布局。
+  - for_each 父任务 evidence 规则：有 visible children（子任务数 ≤ `CHILD_COLLAPSE_THRESHOLD`(6) 或已展开）时不显示 evidence；无 visible children 时显示当前任务自身的 Result / Error / Progress。
+  - fixture 数据修正：attemptId 使用真实 hex 格式、resultRef 路径符合 `tasks/<taskId>/attempts/<attemptId>/accepted-result.md` 模式、子任务 `sourceItem` 包含完整 discovery item snapshot。
+- **影响范围**: `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/handoff-current.md`, `docs/change-log.md`
+- **测试**: `npm --prefix apps/team-console run test` 132 passed；`npm --prefix apps/team-console run build` 通过；`git diff --check` 通过。
+- **入口**: `http://127.0.0.1:5174/` -> "真实 run snapshot 2" -> 点击折叠节点展开子任务，点击任务查看 evidence。
+
+---
+
+## 2026-05-23 — Team Console Execution Atlas evidence 分支
+
+- **主题**: 将任务详情从固定侧栏 / 节点内文字堆叠收口为 Execution Atlas 上的 evidence 分支卡片；选中任务节点保持紧凑，Result / Error / Attempt / Progress 作为独立子节点从任务节点长出来。
+- **变更内容**:
+  - 删除固定右侧 `.workspace-detail` 任务详情栏，`ExecutionTaskDetail` 组件不再使用；选中节点不再渲染 `.emap-inline-detail`。
+  - 有 `resultRef` 的任务渲染 Result evidence card：文件名主视觉、Accepted / Failed / 最终汇报标签、弱化路径。
+  - 失败任务把 `errorSummary` 渲染为 Error evidence card；有活跃 attempt 时渲染 Attempt card；有 progress phase/message 时渲染 Progress card。
+  - for_each 父任务渲染子任务 Result evidence 组；无 `resultRef` 的 child 使用 ghost card 明确显示"无产物"，不伪造文件。
+  - evidence card 是 `.execution-map-nodes` 直接子节点，不是 selected task 的 descendant；移动端插入在 selected task 后一个 sibling，桌面端 absolute 定位到右侧并用 dashed SVG link 连接。
+  - 真实 run snapshot fixture 用来验证长错误、API 错误、resultRef、ghost result、最终汇报等真实数据形态。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/app/app.css`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/ExecutionTaskDetail.tsx`, `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/handoff-current.md`, `docs/change-log.md`
+- **测试**: `npm --prefix apps/team-console run test` 100 passed；`npm --prefix apps/team-console run build` 通过；`git diff --check` 通过。
+- **浏览器验证**: 1281px 桌面下 `搜索 知乎` evidence 位于 selected node 右侧且 4 条 evidence link 可见；375px 下 first evidence 紧跟 selected node，gap 8px，`evidenceFollowsSelected=true`，无横向 overflow。
+- **入口**: `http://127.0.0.1:5174/` -> "真实 run snapshot" -> 点击任务节点查看 evidence branches。
+
+## 2026-05-23 — Team Console 新增真实 run snapshot fixture
+
+- **主题**: 从本地 Team Runtime API 导出一份真实跑过的 run 记录，脱敏后作为 deterministic fixture，用于验证 Execution Atlas UI 对真实数据的渲染能力。
+- **数据来源**: `run_ae5d9551ed4a`（plan_3fea9e245348），status `completed_with_failures`，7 个任务含 4 个 for_each 子任务，混合成功/失败状态，含长错误摘要和 API 错误详情。
+- **脱敏规则**:
+  - planId/runId/teamUnitId 替换为 fixture 前缀（`plan_real_snap_001` / `run_real_snap_001` / `team_real_snap`）
+  - 知乎子任务错误摘要中的产品名替换为"目标产品"
+  - 微博子任务错误摘要中的 API request_id 和 chatcmpl ID 替换为 `req-sanitized` / `chatcmpl-sanitized`
+  - 移除 `finalizerRuntimeContext`、`schemaVersion`、`lease`、`activeElapsedMs` 等非 UI 字段
+  - 保留 attemptId 形态、resultRef 路径模式、错误摘要结构特征
+- **影响范围**: `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `docs/change-log.md`
+- **入口**: fixture 切换栏新增 "真实 run snapshot" 按钮
+
+## 2026-05-23 — Team Console Execution Atlas review polish
+
+- **主题**: 修复 Execution Atlas 移动端 fixture bar 原生滚动条扎眼，以及执行节点缺少键盘可访问性的问题。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/app/app.css`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `docs/change-log.md`
+- **变更**:
+  - root 与普通 task 节点改为语义 `button`，保留原点击展开 / 二次点击收起 / 切换节点语义；collapsed summary 继续不可展开且不渲染为按钮。
+  - 增加 atlas 风格 `:focus-visible` 样式，支持键盘 Tab 聚焦后用 Enter / Space 触发按钮默认行为。
+  - fixture bar 保留横向滚动能力，但隐藏原生亮白滚动条，避免移动端破坏深色地图质感。
+
+## 2026-05-23 — Team Console Execution Atlas 视觉美化
+
+- **主题**: 在不改变 Team Runtime、数据结构、API 和点击语义的前提下，把 Execution Map 从深色卡片列表升级为更有层次的执行地图视觉。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/app/app.css`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `docs/change-log.md`
+- **变更**:
+  - 节点展示拆成 header / body / meta 层次，状态 pill、错误区域、result/attempt 信息形成统一的执行检查点语言。
+  - 连接线区分 spine 与 branch，selected chain 使用更明确的路径点亮效果。
+  - inline detail 改为 compact inspection sections / chips / code blocks，保留既有测量驱动展开高度。
+  - 画布和页面 chrome 增加克制的网格、轨道和深色空间层次，移动端仍保持纵向堆叠与防横向溢出。
+
+## 2026-05-23 — Team Console 失败节点基础高度修复
+
+- **主题**: 修复失败任务节点未展开时 `kind` / `title` / `errorFirstLine` 三行被 56px 卡片压扁的问题。
+- **影响范围**: `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `docs/change-log.md`
+- **变更**:
+  - 带 `errorFirstLine` 的 task 节点使用独立基础高度并参与 layout 与 SVG link 计算，普通成功 / pending / skipped 节点继续保持紧凑高度。
+  - selected inline detail 仍优先使用实测展开高度，避免失败节点基础高度覆盖真实内容高度。
+  - 明确节点文本 `line-height` 并禁止节点内容行被 flex shrink 压扁。
+
+## 2026-05-23 — Team Console inline detail 高度测量修复
+
+- **主题**: 修复 Live API 下 `assemble_report` 节点内联详情被固定展开高度裁剪的问题。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `docs/change-log.md`
+- **变更**:
+  - 展开节点不再依赖固定 `EXPANDED_NODE_HEIGHT=236`；选中节点渲染后按真实 `scrollHeight + border delta` 测量高度，并把测量值传回 layout 重新计算节点 y 坐标和 SVG link。
+  - 新增 DOM 测量测试覆盖 `scrollHeight > clientHeight` 时节点会自适应增高，避免 inline detail 被 `overflow: hidden` 裁剪。
+
+## 2026-05-23 — Team Console Execution Map 节点内联详情
+
+- **主题**: 移除 Execution Map 固定右侧任务详情栏，改为点击任务节点后在节点卡片内部展开 compact detail
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/app/app.css`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `docs/change-log.md`
+- **变更**:
+  - `App` 不再渲染 `.workspace-detail` / `ExecutionTaskDetail` 右侧栏；点击同一任务节点会收起，点击其他任务节点会切换展开项
+  - `ExecutionMap` 在选中任务节点内部渲染 compact inline detail，根节点继续只显示 Run 摘要和选中高亮，collapsed summary 仍不可展开
+  - `layoutExecutionMap()` 支持基于 `selectedTaskId` 使用展开节点高度重新计算 y 坐标，主线、分支节点和 SVG link 会跟随节点高度更新
+  - 删除不再使用的 `ExecutionTaskDetail` 组件和旧侧栏 CSS，并补充 inline detail、toggle、layout push-down 与移动端防横向溢出的测试
+
 ## 2026-05-23 — Team Console Execution Map review blockers 修复
 
 - **主题**: 修复 Execution Map 根节点文字压扁、折叠间距、pending 视觉状态、文档事实错误

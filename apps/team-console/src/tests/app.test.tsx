@@ -14,12 +14,12 @@ describe("App", () => {
 
   it("renders the title", () => {
     render(<App />);
-    expect(screen.getByText("Team Console")).toBeInTheDocument();
+    expect(screen.getByText("团队控制台")).toBeInTheDocument();
   });
 
   it("renders the subtitle", () => {
     render(<App />);
-    expect(screen.getByText("Execution map preview")).toBeInTheDocument();
+    expect(screen.getByText("执行地图预览")).toBeInTheDocument();
   });
 
   it("renders datasource selector", () => {
@@ -38,8 +38,12 @@ describe("App", () => {
     render(<App />);
     const options = screen.getAllByRole("option");
     const values = options.map((o) => (o as HTMLOptionElement).value);
+    const labels = options.map((o) => o.textContent);
     expect(values).toContain("mock");
     expect(values).toContain("live");
+    expect(labels).toContain("示例数据");
+    expect(labels).toContain("实时 API");
+    expect(screen.getByText("示例：")).toBeInTheDocument();
   });
 
   it("fetches live plans, runs, and selected run detail when switching to Live API", async () => {
