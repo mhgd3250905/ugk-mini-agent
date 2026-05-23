@@ -611,6 +611,10 @@ export function makeRealSuccessForEachRun(): RunDetail {
 
 const realSuccessOfficialTaskId = "explore_direction__official-search-apis";
 const realSuccessOfficialAttemptId = "attempt_68ce15110a99";
+const realSuccessDiscoverTaskId = "discover_directions";
+const realSuccessDiscoverAttemptId = "attempt_c5dc0861fc00";
+const realSuccessAssembleTaskId = "assemble_report";
+const realSuccessAssembleAttemptId = "attempt_fb7a225ccd0d";
 
 function ref(taskId: string, attemptId: string, fileName: string): string {
   return `tasks/${taskId}/attempts/${attemptId}/${fileName}`;
@@ -672,11 +676,53 @@ const realSuccessOfficialAttempt: TeamAttemptMetadata = {
   ],
 };
 
+const realSuccessDiscoverAttempt: TeamAttemptMetadata = {
+  attemptId: realSuccessDiscoverAttemptId,
+  taskId: realSuccessDiscoverTaskId,
+  status: "succeeded",
+  phase: "succeeded",
+  createdAt: "2026-05-20T03:33:54.000Z",
+  updatedAt: "2026-05-20T03:43:21.000Z",
+  finishedAt: "2026-05-20T03:43:21.000Z",
+  worker: [],
+  checker: [],
+  watcher: null,
+  resultRef: ref(realSuccessDiscoverTaskId, realSuccessDiscoverAttemptId, "accepted-result.md"),
+  errorSummary: null,
+  files: ["accepted-result.md"],
+};
+
+const realSuccessAssembleAttempt: TeamAttemptMetadata = {
+  attemptId: realSuccessAssembleAttemptId,
+  taskId: realSuccessAssembleTaskId,
+  status: "succeeded",
+  phase: "succeeded",
+  createdAt: "2026-05-20T05:35:02.000Z",
+  updatedAt: "2026-05-20T05:47:12.000Z",
+  finishedAt: "2026-05-20T05:47:12.000Z",
+  worker: [],
+  checker: [],
+  watcher: null,
+  resultRef: ref(realSuccessAssembleTaskId, realSuccessAssembleAttemptId, "accepted-result.md"),
+  errorSummary: null,
+  files: ["accepted-result.md"],
+};
+
 const attemptFixtures = new Map<string, TeamAttemptMetadata[]>([
+  [`run_real_success_foreach_001/${realSuccessDiscoverTaskId}`, [realSuccessDiscoverAttempt]],
   [`run_real_success_foreach_001/${realSuccessOfficialTaskId}`, [realSuccessOfficialAttempt]],
+  [`run_real_success_foreach_001/${realSuccessAssembleTaskId}`, [realSuccessAssembleAttempt]],
 ]);
 
 const attemptFileFixtures = new Map<string, string>([
+  [
+    `run_real_success_foreach_001/${realSuccessDiscoverTaskId}/${realSuccessDiscoverAttemptId}/accepted-result.md`,
+    [
+      "# 发现所有搜索方案方向",
+      "",
+      "本轮发现 13 个可拆分探索方向，覆盖官方 API、聚合服务、自部署、Agent 工具和垂直搜索等类别。",
+    ].join("\n"),
+  ],
   [
     `run_real_success_foreach_001/${realSuccessOfficialTaskId}/${realSuccessOfficialAttemptId}/worker-output-001.md`,
     [
@@ -734,12 +780,20 @@ const attemptFileFixtures = new Map<string, string>([
       "适合 Agent 的策略是组合低额度免费层、缓存和按需降级。",
     ].join("\n"),
   ],
+  [
+    `run_real_success_foreach_001/${realSuccessAssembleTaskId}/${realSuccessAssembleAttemptId}/accepted-result.md`,
+    [
+      "# 最终对比报告",
+      "",
+      "最终报告汇总 13 个搜索方案方向，按可用性、免费额度、稳定性和 Agent 集成成本排序。",
+    ].join("\n"),
+  ],
 ]);
 
 export const ALL_FIXTURES: FixtureEntry[] = [
   { id: "sequential", label: "顺序 run", plan: makeSequentialPlan(), run: makeSequentialRun() },
-  { id: "discovery", label: "Discovery + ForEach", plan: makeDiscoveryForEachPlan(), run: makeDiscoveryForEachRun() },
-  { id: "decomposition", label: "Decomposition split", plan: makeDecompositionPlan(), run: makeDecompositionRun() },
+  { id: "discovery", label: "发现 + 逐项处理", plan: makeDiscoveryForEachPlan(), run: makeDiscoveryForEachRun() },
+  { id: "decomposition", label: "任务拆分", plan: makeDecompositionPlan(), run: makeDecompositionRun() },
   { id: "failed", label: "失败 run", plan: makeSequentialPlan(), run: makeFailedRun() },
   { id: "orphan", label: "含未归属子任务", plan: makeSequentialPlan(), run: makeOrphanRun() },
   { id: "large", label: "大量子任务 (10)", plan: makeDiscoveryForEachPlan(), run: makeLargeChildRun() },

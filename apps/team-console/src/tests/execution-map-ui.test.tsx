@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
@@ -86,6 +87,29 @@ async function renderSelectedOfficialArtifactMap(
   );
 
   return { ...result, run, childId, attempts };
+}
+
+async function renderSelectedRealSuccessTask(
+  taskId: string,
+  readAttemptFile?: (runId: string, taskId: string, attemptId: string, fileName: string) => Promise<string>,
+) {
+  const plan = makeRealSuccessForEachPlan();
+  const run = makeRealSuccessForEachRun();
+  const api = new MockTeamApi();
+  const attempts = await api.listAttempts(run.runId, taskId);
+  const fileReader = readAttemptFile ?? vi.fn(api.readAttemptFile.bind(api));
+  const result = render(
+    <ExecutionMap
+      plan={plan}
+      run={run}
+      selectedTaskId={taskId}
+      onSelectTask={() => {}}
+      attemptsByTaskId={{ [taskId]: attempts }}
+      readAttemptFile={fileReader}
+    />,
+  );
+
+  return { ...result, run, taskId, attempts, readAttemptFile: fileReader };
 }
 
 describe("ExecutionMap UI", () => {
@@ -383,6 +407,7 @@ describe("Evidence branch cards", () => {
     const plan = makeRealSuccessForEachPlan();
     const run = makeRealSuccessForEachRun();
     const childId = "explore_direction__official-search-apis";
+    const api = new MockTeamApi();
     const attempts = await realSuccessOfficialAttempts();
     const { container, rerender } = render(
       <ExecutionMap
@@ -391,6 +416,7 @@ describe("Evidence branch cards", () => {
         selectedTaskId={null}
         onSelectTask={() => {}}
         attemptsByTaskId={{ [childId]: attempts }}
+        readAttemptFile={api.readAttemptFile.bind(api)}
       />,
     );
 
@@ -403,6 +429,7 @@ describe("Evidence branch cards", () => {
         selectedTaskId={childId}
         onSelectTask={() => {}}
         attemptsByTaskId={{ [childId]: attempts }}
+        readAttemptFile={api.readAttemptFile.bind(api)}
       />,
     );
 
@@ -651,6 +678,35 @@ describe("Evidence branch cards", () => {
     expect(evidenceLinks.length).toBeGreaterThan(0);
   });
 
+  it("renders evidence connectors as shared fanout segments instead of overlapping L paths", async () => {
+    const { container } = await renderSelectedOfficialArtifactMap();
+
+    const evidenceNodes = container.querySelectorAll(".emap-evidence-node");
+    const evidenceLinks = Array.from(container.querySelectorAll<SVGPathElement>(".emap-link-evidence"));
+
+    expect(evidenceNodes.length).toBeGreaterThan(1);
+    expect(evidenceLinks.length).toBe(evidenceNodes.length + 2);
+    for (const link of evidenceLinks) {
+      expect((link.getAttribute("d")?.match(/L/g) ?? []).length).toBe(1);
+    }
+  });
+
+  it("CSS keeps evidence and preview connectors at the same accent intensity", () => {
+    const css = readFileSync("src/graph/execution-map.css", "utf8");
+
+    const evidenceRule = css.match(/\.emap-link-evidence\s*\{[^}]*\}/)?.[0];
+    const previewRule = css.match(/\.emap-link-artifact-preview\s*\{[^}]*\}/)?.[0];
+
+    expect(evidenceRule).toContain("stroke: rgba(121, 216, 208, 0.62)");
+    expect(evidenceRule).toContain("stroke-width: 2.2");
+    expect(evidenceRule).toContain("opacity: 0.9");
+    expect(evidenceRule).toContain("drop-shadow");
+    expect(previewRule).toContain("stroke: rgba(121, 216, 208, 0.62)");
+    expect(previewRule).toContain("stroke-width: 2.2");
+    expect(previewRule).toContain("opacity: 0.9");
+    expect(previewRule).toContain("drop-shadow");
+  });
+
   it("evidence nodes are siblings of task nodes, not descendants", () => {
     const plan = makeSequentialPlan();
     const run = makeSequentialRun();
@@ -770,16 +826,24 @@ describe("Evidence auto-height", () => {
     }
   });
 
-  it("measurement loop uses DOM height when getBoundingClientRect returns non-zero", () => {
+  it("measurement loop uses offsetHeight instead of scaled getBoundingClientRect height", () => {
     const plan = makeSequentialPlan();
     const run = makeSequentialRun();
-    const mockHeight = 88;
+    const layoutHeight = 88;
+    const scaledVisualHeight = 176;
 
     const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
       if (this.classList.contains("emap-evidence-node")) {
-        return { height: mockHeight, width: 240, x: 600, y: 128, top: 128, left: 600, bottom: 128 + mockHeight, right: 840 } as DOMRect;
+        return { height: scaledVisualHeight, width: 240, x: 600, y: 128, top: 128, left: 600, bottom: 128 + scaledVisualHeight, right: 840 } as DOMRect;
       }
       return { height: 56, width: 280, x: 0, y: 0, top: 0, left: 0, bottom: 56, right: 280 } as DOMRect;
+    });
+    const offsetDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+      configurable: true,
+      get() {
+        return this.classList.contains("emap-evidence-node") ? layoutHeight : 56;
+      },
     });
 
     const { container } = render(
@@ -789,14 +853,82 @@ describe("Evidence auto-height", () => {
     const evidenceNodes = container.querySelectorAll(".emap-evidence-node");
     for (const node of evidenceNodes) {
       const minHeight = Number.parseInt((node as HTMLElement).style.minHeight);
-      expect(minHeight).toBe(mockHeight);
+      expect(minHeight).toBe(layoutHeight);
     }
 
     spy.mockRestore();
+    if (offsetDescriptor) {
+      Object.defineProperty(HTMLElement.prototype, "offsetHeight", offsetDescriptor);
+    } else {
+      delete (HTMLElement.prototype as { offsetHeight?: number }).offsetHeight;
+    }
   });
 });
 
 describe("Artifact preview nodes", () => {
+  it("previews the snapshot 2 Phase 1 result from attempt metadata", async () => {
+    const { run, attempts, readAttemptFile } = await renderSelectedRealSuccessTask("discover_directions");
+
+    expect(attempts).toHaveLength(1);
+    fireEvent.click(screen.getByText("最终结果"));
+
+    expect(readAttemptFile).toHaveBeenCalledWith(
+      run.runId,
+      "discover_directions",
+      "attempt_c5dc0861fc00",
+      "accepted-result.md",
+    );
+    expect(await screen.findByTestId("artifact-preview")).toHaveTextContent("发现所有搜索方案方向");
+    expect(screen.queryByText(/文件不在当前 attempt metadata 中|文件引用不属于当前任务/)).toBeNull();
+  });
+
+  it("previews the snapshot 2 Phase 3 result from attempt metadata", async () => {
+    const { run, attempts, readAttemptFile } = await renderSelectedRealSuccessTask("assemble_report");
+
+    expect(attempts).toHaveLength(1);
+    fireEvent.click(screen.getByText("最终结果"));
+
+    expect(readAttemptFile).toHaveBeenCalledWith(
+      run.runId,
+      "assemble_report",
+      "attempt_fb7a225ccd0d",
+      "accepted-result.md",
+    );
+    expect(await screen.findByTestId("artifact-preview")).toHaveTextContent("最终对比报告");
+    expect(screen.queryByText(/文件不在当前 attempt metadata 中|文件引用不属于当前任务/)).toBeNull();
+  });
+
+  it("renders fallback Attempt Progress Error evidence as non-clickable static evidence", () => {
+    const plan = makeSequentialPlan();
+    const run = makeFailedRun();
+    run.taskStates.task_2 = {
+      ...run.taskStates.task_2,
+      activeAttemptId: "attempt_fallback",
+      progress: { phase: "failed", message: "timed out", updatedAt: "" },
+    };
+    const readAttemptFile = vi.fn(async () => "should not load");
+    const { container } = render(
+      <ExecutionMap
+        plan={plan}
+        run={run}
+        selectedTaskId="task_2"
+        onSelectTask={() => {}}
+        readAttemptFile={readAttemptFile}
+      />,
+    );
+
+    for (const selector of [".emap-evidence-attempt", ".emap-evidence-progress", ".emap-evidence-error"]) {
+      const evidenceNode = container.querySelector(selector) as HTMLElement | null;
+      expect(evidenceNode).toBeTruthy();
+      expect(evidenceNode?.tagName).toBe("DIV");
+      fireEvent.click(evidenceNode!);
+    }
+
+    expect(readAttemptFile).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("artifact-preview")).toBeNull();
+    expect(screen.queryByText(/文件不在当前 attempt metadata 中|文件引用不属于当前任务/)).toBeNull();
+  });
+
   it("clicking Worker output fetches the file and renders a second-level preview node", async () => {
     const api = new MockTeamApi();
     const readAttemptFile = vi.fn(api.readAttemptFile.bind(api));
@@ -812,6 +944,43 @@ describe("Artifact preview nodes", () => {
     );
     expect(await screen.findByTestId("artifact-preview")).toHaveTextContent("搜索引擎官方免费 API");
     expect(container.querySelector(".emap-artifact-preview")).toBeTruthy();
+  });
+
+  it("preview measurement uses offsetHeight instead of scaled getBoundingClientRect height", async () => {
+    const layoutHeight = 144;
+    const scaledVisualHeight = 288;
+    const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains("emap-artifact-preview")) {
+        return { height: scaledVisualHeight, width: 360, x: 880, y: 128, top: 128, left: 880, bottom: 128 + scaledVisualHeight, right: 1240 } as DOMRect;
+      }
+      if (this.classList.contains("emap-evidence-node")) {
+        return { height: 56, width: 240, x: 600, y: 128, top: 128, left: 600, bottom: 184, right: 840 } as DOMRect;
+      }
+      return { height: 56, width: 280, x: 0, y: 0, top: 0, left: 0, bottom: 56, right: 280 } as DOMRect;
+    });
+    const offsetDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+      configurable: true,
+      get() {
+        return this.classList.contains("emap-artifact-preview") ? layoutHeight : 56;
+      },
+    });
+    const api = new MockTeamApi();
+    await renderSelectedOfficialArtifactMap(api.readAttemptFile.bind(api));
+
+    fireEvent.click(screen.getByText("Worker 输出 1"));
+
+    const preview = await screen.findByTestId("artifact-preview");
+    await waitFor(() => {
+      expect(Number.parseInt(preview.style.minHeight)).toBe(layoutHeight);
+    });
+
+    rectSpy.mockRestore();
+    if (offsetDescriptor) {
+      Object.defineProperty(HTMLElement.prototype, "offsetHeight", offsetDescriptor);
+    } else {
+      delete (HTMLElement.prototype as { offsetHeight?: number }).offsetHeight;
+    }
   });
 
   it("clicking the same artifact again closes the preview node", async () => {
@@ -989,6 +1158,15 @@ describe("Canvas pan and zoom", () => {
     expect(stage.style.transform).toContain("scale(1.1)");
   });
 
+  it("registers wheel zoom as a non-passive native listener", () => {
+    const addSpy = vi.spyOn(HTMLElement.prototype, "addEventListener");
+
+    renderCanvasMap();
+
+    expect(addSpy).toHaveBeenCalledWith("wheel", expect.any(Function), { passive: false });
+    addSpy.mockRestore();
+  });
+
   it("zoom toolbar clamps at min and max", () => {
     const { stage } = renderCanvasMap();
     const zoomIn = screen.getByRole("button", { name: "放大" });
@@ -1043,6 +1221,62 @@ describe("Canvas pan and zoom", () => {
 
     expect(stage.style.transform).toBe("translate(0px, 0px) scale(1)");
     expect(onSelectTask).toHaveBeenCalledWith("task_2");
+  });
+
+  it("selecting an expanded child after zoom does not enter a measurement feedback loop", async () => {
+    const plan = makeRealSuccessForEachPlan();
+    const run = makeRealSuccessForEachRun();
+    const childId = "explore_direction__official-search-apis";
+    const api = new MockTeamApi();
+    const attempts = await realSuccessOfficialAttempts();
+    const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const stage = document.querySelector(".execution-map-scroll") as HTMLElement | null;
+      const scale = stage?.style.transform.includes("scale(1.1)") ? 1.1 : 1;
+      if (this.classList.contains("emap-evidence-node")) {
+        const layoutHeight = Number.parseInt(this.style.minHeight) || 56;
+        const visualHeight = layoutHeight * scale;
+        return { height: visualHeight, width: 240, x: 600, y: 128, top: 128, left: 600, bottom: 128 + visualHeight, right: 840 } as DOMRect;
+      }
+      return { height: 56, width: 280, x: 0, y: 0, top: 0, left: 0, bottom: 56, right: 280 } as DOMRect;
+    });
+    const offsetDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+      configurable: true,
+      get() {
+        return this.classList.contains("emap-evidence-node") ? 56 : 56;
+      },
+    });
+
+    function Harness() {
+      const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+      return (
+        <ExecutionMap
+          plan={plan}
+          run={run}
+          selectedTaskId={selectedTaskId}
+          onSelectTask={(taskId) => setSelectedTaskId((current) => current === taskId ? null : taskId)}
+          attemptsByTaskId={{ [childId]: attempts }}
+          readAttemptFile={api.readAttemptFile.bind(api)}
+        />
+      );
+    }
+
+    const { container } = render(<Harness />);
+    const viewport = container.querySelector(".execution-map-container") as HTMLElement;
+
+    fireEvent.click(screen.getByRole("button", { name: /展开 13 个子任务/ }));
+    fireEvent.wheel(viewport, { deltaY: -120, clientX: 120, clientY: 120 });
+    fireEvent.click(screen.getByRole("button", { name: /探寻方向：搜索引擎官方免费 API/ }));
+
+    expect(await screen.findByText("Worker 输出 1")).toBeInTheDocument();
+    expect(screen.getByText("110%")).toBeInTheDocument();
+
+    rectSpy.mockRestore();
+    if (offsetDescriptor) {
+      Object.defineProperty(HTMLElement.prototype, "offsetHeight", offsetDescriptor);
+    } else {
+      delete (HTMLElement.prototype as { offsetHeight?: number }).offsetHeight;
+    }
   });
 });
 
@@ -1292,15 +1526,10 @@ describe("Real success foreach fixture", () => {
     expect(screen.queryByText("+ 13 个子任务")).toBeNull();
     expect(screen.getByText("探寻方向：搜索引擎官方免费 API")).toBeInTheDocument();
 
-    // Now the children are visible — find "收起" or a collapse control
-    // After expand, there's no collapsed summary to click again.
-    // Instead we need a collapse button. The implementation should add one.
-    // For now, verify we can click a collapse control if it exists.
-    const collapseBtn = screen.queryByRole("button", { name: /收起/ });
-    if (collapseBtn) {
-      fireEvent.click(collapseBtn);
-      expect(screen.getByText("+ 13 个子任务")).toBeInTheDocument();
-    }
+    const collapseBtn = screen.getByRole("button", { name: /收起 13 个子任务/ });
+    fireEvent.click(collapseBtn);
+
+    expect(screen.getByText("+ 13 个子任务")).toBeInTheDocument();
   });
 
   it("expanded child shows own Result evidence", () => {

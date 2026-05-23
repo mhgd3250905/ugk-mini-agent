@@ -417,8 +417,12 @@
   color: inherit;
   font: inherit;
   text-align: left;
-  cursor: pointer;
+  cursor: default;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+}
+
+.emap-artifact-node {
+  cursor: pointer;
 }
 
 .emap-evidence-node:focus-visible {
@@ -518,13 +522,19 @@
 }
 
 .emap-link-evidence {
-  stroke: rgba(122, 131, 151, 0.3);
+  stroke: rgba(121, 216, 208, 0.62);
+  stroke-width: 2.2;
   stroke-dasharray: 3 4;
+  opacity: 0.9;
+  filter: drop-shadow(0 0 3px rgba(121, 216, 208, 0.32));
 }
 
 .emap-link-artifact-preview {
-  stroke: rgba(121, 216, 208, 0.52);
+  stroke: rgba(121, 216, 208, 0.62);
+  stroke-width: 2.2;
   stroke-dasharray: 5 5;
+  opacity: 0.9;
+  filter: drop-shadow(0 0 3px rgba(121, 216, 208, 0.32));
 }
 
 .emap-artifact-preview {

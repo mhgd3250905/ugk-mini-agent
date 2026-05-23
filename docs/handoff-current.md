@@ -1,6 +1,6 @@
 # 当前交接快照
 
-更新时间：`2026-05-23`
+更新时间：`2026-05-24`
 
 这份文档给新接手 `ugk-pi / UGK CLAW` 的 coding agent 看。它只记录当前稳定事实和接手入口；历史流水账看 `docs/change-log.md`。不要靠聊天记录拼现状，聊天上下文太肥时最容易把旧计划当新任务，挺蠢，也挺危险。
 
@@ -58,7 +58,9 @@
 - 当前 UI 已从固定侧栏 / 节点内详情堆叠收口为 Execution Atlas：点击 task 后 selected node 保持紧凑，结果 / 错误 / 尝试 / 进度以 evidence card 分支从任务节点长出。
 - Evidence / artifact / preview card 是 `.execution-map-nodes` 的直接子节点，不是 selected task 的 descendant；桌面端 absolute 定位在右侧并通过 dashed SVG link 连接，移动端作为 selected task 后一个 sibling 流式堆叠。
 - 选中 task 后，Team Console 会用现有只读 API 读取真实 `TeamAttemptMetadata`，从 worker/checker/watcher/result refs 渲染 Worker 输出、Checker 验收、Watcher 复盘和最终 / 失败 / 发现结果 artifact card；点击 artifact card 会读取真实 attempt file 并展开二级预览节点，文本转义、JSON pretty print、HTML sandbox iframe。
+- 只有通过当前 task/attempt 匹配、且文件名存在于 attempt metadata `files` 白名单里的 file-backed artifact card 会渲染为可点击 `button` 并调用 `readAttemptFile()`；Fallback Error / Attempt / Progress evidence 是静态卡片，不会伪造可预览文件。
 - 桌面 Execution Atlas 支持鼠标滚轮缩放、背景拖拽平移和中文工具按钮“放大 / 缩小 / 重置视图”。移动端本轮只做最小烟测，不做深度设计，`720px` 以下保持纵向流并隐藏自定义 pan/zoom 工具条。
+- Evidence / preview 高度测量已改为 `offsetHeight` 优先、`scrollHeight` fallback，不再把 CSS scale 后的 `getBoundingClientRect().height` 写回 layout；滚轮缩放使用原生 non-passive `wheel` listener，避免缩放后点击节点触发 React `Maximum update depth exceeded` 白屏。
 - Mock fixtures 已加入脱敏真实 run snapshot：`plan_real_snap_001` / `run_real_snap_001`，用于验证真实 completed_with_failures 数据、for_each 子任务、长错误、API 错误、resultRef、ghost result 和最终汇报。
 - Mock fixtures 已加入脱敏真实 run snapshot 2：`plan_real_success_foreach_001` / `run_real_success_foreach_001`，16 个任务（3 主任务 + 13 for_each 子任务）全部成功，用于验证折叠/展开交互和大量子任务布局。
 - 已删除旧固定右侧任务详情组件 `apps/team-console/src/graph/ExecutionTaskDetail.tsx`；不要再按右侧栏方案继续设计。
@@ -67,16 +69,16 @@
 
 最近验证：
 
-- `npm --prefix apps/team-console run test`：155 passed
+- `npm --prefix apps/team-console run test`：164 passed
 - `npm --prefix apps/team-console run build`：通过
 - `git diff --check`：通过
-- 1281px 桌面浏览器验证：`搜索 知乎` 的 4 张 evidence card 位于 selected node 右侧，4 条 evidence link 可见，无节点重叠，无横向 overflow。
-- 375px 浏览器验证：`搜索 知乎`、`按平台搜索`、`汇总报告` 的 first evidence 都紧跟 selected node，gap 8px，`evidenceFollowsSelected=true`，无横向 overflow。
+- Chrome 桌面浏览器验证：`真实 run snapshot 2` 展开 13 个子任务后，滚轮缩放到 110%，点击“搜索引擎官方免费 API”不白屏，Worker / Checker / Watcher / Result evidence 正常显示，继续点击“最终结果”可打开二级预览。
+- 控制台未捕获 `Maximum update depth exceeded`、passive wheel warning、"文件不在当前 attempt metadata 中"或"文件引用不属于当前任务"。
 
 当前提交边界：
 
-- 应提交的 tracked 改动集中在 `apps/team-console/**`、`docs/team-runtime.md`、`docs/change-log.md`、`docs/handoff-current.md`。
-- 不要提交未跟踪计划文件：`.codex/plans/2026-05-23-team-console-decoupled-ui-plan.md`、`.codex/plans/2026-05-23-team-console-ui-review-fix-plan.md`、`.codex/plans/2026-05-23-team-run-detail-visual-map-redesign-plan.md`。
+- 应提交的 tracked 改动集中在 `apps/team-console/**`、`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/change-log.md`、`docs/handoff-current.md`。
+- 不要提交未跟踪计划文件：`.codex/plans/*.md`。
 - 不要提交未跟踪截图：`screenshot-*.png`。
 
 ## 2026-05-22 Playground 性能收口

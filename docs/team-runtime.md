@@ -1,6 +1,6 @@
 # Team Runtime v2
 
-更新时间：2026-05-23
+更新时间：2026-05-24
 
 本文档是 Team Runtime v2 的唯一权威源。v0.1 域名调查历史见文末归档章节。
 
@@ -18,8 +18,8 @@
 - Team Console preview 的 Live API 模式已真实接线：切换后请求 `GET /v1/team/plans` 和 `GET /v1/team/runs`，按 `createdAt` 选择最新 run，再请求 `GET /v1/team/runs/:runId` 获取详情并按 `planId` 匹配 plan；点击 task 时会通过现有只读 attempt API 读取 `TeamAttemptMetadata` 和 attempt file。当前没有 live run picker，也不调用 pause/resume/cancel、manual disposition、rerun 或任何写接口。
 - Team Console preview 的 Execution Map 建模按优先级挂载 generated child：显式 `parentTaskId`、仅在单一 `for_each` parent 时使用的安全 `sourceItemId` fallback、标记 `fallback: true` 的 id prefix fallback，仍无法归属的任务进入 orphan group；model builder 不修改传入的 plan/run/taskDefinitions。大量子任务折叠 summary node 会按隐藏子任务状态汇总，不再固定显示成功。
 - Execution Map 视觉已收口为 Execution Atlas：根节点顶部、主任务沿左侧 spine 向下、子任务分支右侧；节点有状态色条、选中发光、chain-selected 路径、失败错误首行、折叠虚线、orphan 点线；连接线使用三次贝塞尔(spine)和 L 形直角(branch)；responsive 断口在 720px。
-- Team Console preview 当前点击任务后不再打开固定右侧详情栏，也不在节点内部堆叠大段详情；结果 / 错误 / 尝试 / 进度会作为 evidence card 分支从 selected task 旁边长出。选中 task 有真实 attempt metadata 时，Worker 输出、Checker 验收、Watcher 复盘和最终 / 失败 / 发现结果会作为 artifact card 展示；点击 artifact card 后读取同一 run/task/attempt 下的真实文件并展开第二级预览节点，文本安全转义，JSON pretty print，HTML 只进 sandbox iframe。
-- Execution Atlas 桌面画布支持鼠标滚轮缩放、背景拖拽平移和“放大 / 缩小 / 重置视图”工具按钮；pan/zoom 只是本地 UI 状态，不持久化。移动端本轮不做深度设计，`720px` 以下仍走纵向流式布局并隐藏自定义 pan/zoom 工具条，只保证不明显横向炸版。
+- Team Console preview 当前点击任务后不再打开固定右侧详情栏，也不在节点内部堆叠大段详情；结果 / 错误 / 尝试 / 进度会作为 evidence card 分支从 selected task 旁边长出。选中 task 有真实 attempt metadata 时，Worker 输出、Checker 验收、Watcher 复盘和最终 / 失败 / 发现结果会作为 artifact card 展示；只有通过当前 task/attempt 匹配且存在于 attempt metadata `files` 白名单中的 file-backed artifact card 可点击预览。Fallback Error / Attempt / Progress evidence 是静态卡片，不会伪造可预览文件。点击可预览 artifact card 后读取同一 run/task/attempt 下的真实文件并展开第二级预览节点，文本安全转义，JSON pretty print，HTML 只进 sandbox iframe。
+- Execution Atlas 桌面画布支持鼠标滚轮缩放、背景拖拽平移和“放大 / 缩小 / 重置视图”工具按钮；pan/zoom 只是本地 UI 状态，不持久化。Evidence / preview 高度测量使用 transform-independent `offsetHeight` 优先，避免缩放后把 `getBoundingClientRect().height` 写回 layout 造成测量反馈循环；滚轮缩放使用原生 non-passive `wheel` listener。移动端本轮不做深度设计，`720px` 以下仍走纵向流式布局并隐藏自定义 pan/zoom 工具条，只保证不明显横向炸版。
 - Team Console mock fixtures 已加入脱敏真实 run snapshot（`plan_real_snap_001` / `run_real_snap_001`），用于验证真实 completed_with_failures 数据、for_each 子任务、长错误、API 错误、resultRef、ghost result 和最终汇报 evidence。
 - Team Console mock fixtures 已加入脱敏真实 run snapshot 2（`plan_real_success_foreach_001` / `run_real_success_foreach_001`），16 个任务（3 主任务 + 13 for_each 子任务）全部成功，用于验证折叠/展开交互和大量子任务布局。
 - Execution Atlas collapsed summary 已支持展开/收起：超过 `CHILD_COLLAPSE_THRESHOLD`(6) 个子任务时折叠为摘要节点；点击摘要节点展开全部子任务，展开后末尾显示"收起"按钮再次点击收起。布局在展开/收起时同步更新。

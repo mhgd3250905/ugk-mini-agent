@@ -1,4 +1,4 @@
-import { useMemo, useLayoutEffect, useRef, useState, useCallback, type PointerEvent, type WheelEvent } from "react";
+import { useMemo, useLayoutEffect, useEffect, useRef, useState, useCallback, type PointerEvent } from "react";
 import type { RunDetail, TeamPlan, TaskStatus, TeamAttemptMetadata, TeamTaskState } from "../api/team-types";
 import type { ExecutionNode, NodeKind } from "./execution-map-model";
 import { buildExecutionMapModel, CHILD_COLLAPSE_THRESHOLD } from "./execution-map-model";
@@ -49,6 +49,7 @@ interface EvidenceEntry {
   tag?: string;
   tagClass?: string;
   path?: string;
+  previewFile?: AttemptFileRef;
 }
 
 type ArtifactPreviewState =
@@ -122,6 +123,13 @@ function parseAttemptFileRef(path: string | undefined): AttemptFileRef | null {
   return { taskId, attemptId, fileName };
 }
 
+function previewFileFromAttempt(attempt: TeamAttemptMetadata, path: string | undefined): AttemptFileRef | undefined {
+  const parsed = parseAttemptFileRef(path);
+  if (!parsed) return undefined;
+  if (parsed.taskId !== attempt.taskId || parsed.attemptId !== attempt.attemptId) return undefined;
+  return attempt.files.includes(parsed.fileName) ? parsed : undefined;
+}
+
 function clampScale(value: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number(value.toFixed(2))));
 }
@@ -140,6 +148,20 @@ function pointerPoint(event: PointerEvent<HTMLDivElement>): { x: number; y: numb
   const x = Number.isFinite(event.clientX) ? event.clientX : Number.isFinite(native.clientX) ? native.clientX! : 0;
   const y = Number.isFinite(event.clientY) ? event.clientY : Number.isFinite(native.clientY) ? native.clientY! : 0;
   return { x, y };
+}
+
+function measureLayoutHeight(node: HTMLElement, fallback: number): number {
+  const offsetHeight = Math.round(node.offsetHeight);
+  if (Number.isFinite(offsetHeight) && offsetHeight > 0) return offsetHeight;
+
+  const scrollHeight = Math.round(node.scrollHeight);
+  if (Number.isFinite(scrollHeight) && scrollHeight > 0) return scrollHeight;
+
+  return fallback;
+}
+
+function straightSegmentPath(sx: number, sy: number, tx: number, ty: number): string {
+  return `M${sx},${sy} L${tx},${ty}`;
 }
 
 function artifactTypeLabel(filename: string): string {
@@ -256,6 +278,7 @@ export function buildArtifactBranches(
       tag: filename,
       tagClass: filename.includes("failed") ? "tag-failed" : filename.includes("accepted") ? "tag-accepted" : "tag-result",
       path: attempt.resultRef,
+      previewFile: previewFileFromAttempt(attempt, attempt.resultRef),
     });
   }
 
@@ -269,6 +292,7 @@ export function buildArtifactBranches(
       tag: `输出 ${worker.outputIndex || index + 1}`,
       tagClass: "tag-result",
       path: worker.outputRef,
+      previewFile: previewFileFromAttempt(attempt, worker.outputRef),
     });
   });
 
@@ -283,6 +307,7 @@ export function buildArtifactBranches(
       tag: verdictLabel(checker.verdict),
       tagClass: verdictTagClass(checker.verdict),
       path,
+      previewFile: previewFileFromAttempt(attempt, path),
     });
   });
 
@@ -295,6 +320,7 @@ export function buildArtifactBranches(
       tag: watcherDecisionLabel(attempt.watcher.decision),
       tagClass: attempt.watcher.decision === "accept_task" ? "tag-accepted" : attempt.watcher.decision === "confirm_failed" ? "tag-failed" : "tag-result",
       path: attempt.watcher.recordRef ?? undefined,
+      previewFile: previewFileFromAttempt(attempt, attempt.watcher.recordRef ?? undefined),
     });
   }
 
@@ -312,6 +338,7 @@ export function buildArtifactBranches(
 }
 
 export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attemptsByTaskId = {}, readAttemptFile }: ExecutionMapProps) {
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const evidenceContainerRef = useRef<HTMLDivElement | null>(null);
   const dragOriginRef = useRef<CanvasDragOrigin | null>(null);
   const [measuredHeights, setMeasuredHeights] = useState<MeasuredHeights>({});
@@ -437,7 +464,8 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
   const evidenceLayout = useMemo(() => {
     type Position = EvidenceEntry & { x: number; y: number; width: number; height: number };
     type PreviewPosition = { entry: EvidenceEntry; x: number; y: number; width: number; height: number; state: ArtifactPreviewState };
-    const empty = { positions: [] as Position[], preview: null as PreviewPosition | null, links: [] as { sourceId: string; targetId: string; path: string; preview?: boolean }[] };
+    type EvidenceLink = { id: string; path: string; preview?: boolean };
+    const empty = { positions: [] as Position[], preview: null as PreviewPosition | null, links: [] as EvidenceLink[] };
     if (evidence.length === 0) return empty;
     const taskPos = layout.nodePositions.get(selectedTaskId!);
     if (!taskPos) return empty;
@@ -447,25 +475,19 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
     let y = taskPos.y;
     const positions: Position[] = [];
     let preview: PreviewPosition | null = null;
-    const links: { sourceId: string; targetId: string; path: string; preview?: boolean }[] = [];
+    const previewLinks: EvidenceLink[] = [];
 
     for (const entry of evidence) {
       const fallback = evidenceHeight(entry.kind);
       const h = measuredHeights[entry.id] ?? fallback;
       positions.push({ ...entry, x: evidenceX, y, width: EVIDENCE_W, height: h });
-      links.push({
-        sourceId: selectedTaskId!,
-        targetId: entry.id,
-        path: straightPath(taskPos.x + taskPos.width, taskPos.y + taskPos.height / 2, evidenceX, y + h / 2),
-      });
       let rowHeight = h;
       const state = artifactPreviewState[entry.id];
       if (selectedArtifactId === entry.id && state) {
         const previewH = previewHeights[entry.id] ?? PREVIEW_FALLBACK_HEIGHT;
         preview = { entry, x: previewX, y, width: PREVIEW_W, height: previewH, state };
-        links.push({
-          sourceId: entry.id,
-          targetId: `${entry.id}__preview`,
+        previewLinks.push({
+          id: `${entry.id}__preview`,
           path: straightPath(evidenceX + EVIDENCE_W, y + h / 2, previewX, y + previewH / 2),
           preview: true,
         });
@@ -474,6 +496,35 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
       y += rowHeight + EVIDENCE_GAP;
     }
 
+    const sourceX = taskPos.x + taskPos.width;
+    const sourceY = taskPos.y + taskPos.height / 2;
+    const trunkX = sourceX + (evidenceX - sourceX) * 0.35;
+    const targetCenters = positions.map((entry) => ({ id: entry.id, y: entry.y + entry.height / 2 }));
+    const centerYs = [sourceY, ...targetCenters.map((entry) => entry.y)];
+    const trunkTop = Math.min(...centerYs);
+    const trunkBottom = Math.max(...centerYs);
+    const evidenceLinks: EvidenceLink[] = [
+      {
+        id: `${selectedTaskId}__evidence-source`,
+        path: straightSegmentPath(sourceX, sourceY, trunkX, sourceY),
+      },
+    ];
+
+    if (Math.abs(trunkBottom - trunkTop) > 0.5) {
+      evidenceLinks.push({
+        id: `${selectedTaskId}__evidence-trunk`,
+        path: straightSegmentPath(trunkX, trunkTop, trunkX, trunkBottom),
+      });
+    }
+
+    for (const target of targetCenters) {
+      evidenceLinks.push({
+        id: `${target.id}__evidence-stub`,
+        path: straightSegmentPath(trunkX, target.y, evidenceX, target.y),
+      });
+    }
+
+    const links = [...evidenceLinks, ...previewLinks];
     return { positions, preview, links };
   }, [evidence, layout.nodePositions, selectedTaskId, measuredHeights, selectedArtifactId, artifactPreviewState, previewHeights]);
 
@@ -485,10 +536,11 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
 
     const updated: MeasuredHeights = {};
     let changed = false;
+    const fallbackHeights = new Map(evidence.map((entry) => [entry.id, evidenceHeight(entry.kind)]));
     for (const node of nodes) {
       const id = node.dataset.evidenceId;
       if (!id) continue;
-      const h = Math.round(node.getBoundingClientRect().height);
+      const h = measureLayoutHeight(node, fallbackHeights.get(id) ?? 0);
       if (!Number.isFinite(h) || h <= 0) continue;
       updated[id] = h;
       if ((measuredHeights[id] ?? 0) !== h) changed = true;
@@ -506,7 +558,7 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
     for (const node of nodes) {
       const id = node.dataset.previewId;
       if (!id) continue;
-      const h = Math.round(node.getBoundingClientRect().height);
+      const h = measureLayoutHeight(node, PREVIEW_FALLBACK_HEIGHT);
       if (!Number.isFinite(h) || h <= 0) continue;
       updated[id] = h;
       if ((previewHeights[id] ?? 0) !== h) changed = true;
@@ -527,6 +579,8 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
   }, []);
 
   const handleArtifactClick = useCallback((entry: EvidenceEntry) => {
+    if (!entry.previewFile || !readAttemptFile) return;
+
     if (selectedArtifactId === entry.id) {
       setSelectedArtifactId(null);
       return;
@@ -534,30 +588,8 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
 
     setSelectedArtifactId(entry.id);
 
-    const parsed = parseAttemptFileRef(entry.path);
-    const fileName = parsed?.fileName ?? extractFilename(entry.path ?? entry.title);
-    const fail = (message: string) => {
-      setArtifactPreviewState((current) => ({
-        ...current,
-        [entry.id]: { status: "error", fileName, message },
-      }));
-    };
-
-    if (!parsed || !selectedTaskId || parsed.taskId !== selectedTaskId) {
-      fail("文件引用不属于当前任务");
-      return;
-    }
-    if (!readAttemptFile) {
-      fail("当前数据源不支持读取文件");
-      return;
-    }
-
-    const attempts = attemptsByTaskId[selectedTaskId] ?? [];
-    const attempt = attempts.find((a) => a.attemptId === parsed.attemptId);
-    if (!attempt || !attempt.files.includes(parsed.fileName)) {
-      fail("文件不在当前 attempt metadata 中");
-      return;
-    }
+    const parsed = entry.previewFile;
+    if (!selectedTaskId || parsed.taskId !== selectedTaskId) return;
 
     const existing = artifactPreviewState[entry.id];
     if (existing?.status === "loaded") return;
@@ -581,15 +613,17 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
           [entry.id]: { status: "error", fileName: parsed.fileName, message },
         }));
       });
-  }, [artifactPreviewState, attemptsByTaskId, readAttemptFile, run.runId, selectedArtifactId, selectedTaskId]);
+  }, [artifactPreviewState, readAttemptFile, run.runId, selectedArtifactId, selectedTaskId]);
 
-  const handleCanvasWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
+  const handleCanvasWheel = useCallback((event: globalThis.WheelEvent) => {
     event.preventDefault();
     const direction = event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
     const nextScale = clampScale(scale * direction);
     if (nextScale === scale) return;
 
-    const rect = event.currentTarget.getBoundingClientRect();
+    const container = mapContainerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
     const cursorX = event.clientX - rect.left;
     const cursorY = event.clientY - rect.top;
     const worldX = (cursorX - pan.x) / scale;
@@ -601,6 +635,15 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
       y: cursorY - worldY * nextScale,
     });
   }, [pan.x, pan.y, scale]);
+
+  useEffect(() => {
+    const container = mapContainerRef.current;
+    if (!container) return;
+    container.addEventListener("wheel", handleCanvasWheel, { passive: false });
+    return () => {
+      container.removeEventListener("wheel", handleCanvasWheel);
+    };
+  }, [handleCanvasWheel]);
 
   const zoomIn = useCallback(() => {
     setScale((current) => clampScale(current * ZOOM_STEP));
@@ -710,8 +753,8 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
 
   return (
     <div
+      ref={mapContainerRef}
       className={`execution-map-container ${isPanning ? "is-panning" : ""}`}
-      onWheel={handleCanvasWheel}
       onPointerDown={handleCanvasPointerDown}
       onPointerMove={handleCanvasPointerMove}
       onPointerUp={endCanvasPan}
@@ -747,7 +790,7 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
           })}
           {evidenceLayout.links.map((link) => (
             <path
-              key={link.targetId}
+              key={link.id}
               d={link.path}
               className={`emap-link ${link.preview ? "emap-link-artifact-preview" : "emap-link-evidence"}`}
               fill="none"
@@ -842,26 +885,50 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
 
             if (!isSelected) return [taskElement];
 
-            const evidenceElements = evidenceLayout.positions.map((e) => (
-              <button
-                type="button"
-                key={e.id}
-                data-evidence-id={e.id}
-                className={`emap-evidence-node emap-artifact-node emap-evidence-${e.kind}`}
-                style={{ left: e.x, top: e.y, width: e.width, minHeight: e.height }}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  handleArtifactClick(e);
-                }}
-              >
+            const evidenceElements = evidenceLayout.positions.map((e) => {
+              const canPreview = Boolean(e.previewFile && readAttemptFile);
+              const className = `emap-evidence-node ${canPreview ? "emap-artifact-node" : "emap-evidence-static"} emap-evidence-${e.kind}`;
+              const style = { left: e.x, top: e.y, width: e.width, minHeight: e.height };
+              const content = (
+                <>
                 <div className="emap-evidence-header">
                   <span className="emap-evidence-title">{e.title}</span>
                   {e.tag && e.tagClass && <span className={`emap-evidence-tag ${e.tagClass}`}>{e.tag}</span>}
                 </div>
                 {e.content && <span className="emap-evidence-content">{e.content}</span>}
                 {e.path && <span className="emap-evidence-path">{e.path}</span>}
-              </button>
-            ));
+                </>
+              );
+
+              if (!canPreview) {
+                return (
+                  <div
+                    key={e.id}
+                    data-evidence-id={e.id}
+                    className={className}
+                    style={style}
+                  >
+                    {content}
+                  </div>
+                );
+              }
+
+              return (
+                <button
+                  type="button"
+                  key={e.id}
+                  data-evidence-id={e.id}
+                  className={className}
+                  style={style}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleArtifactClick(e);
+                  }}
+                >
+                  {content}
+                </button>
+              );
+            });
 
             const previewElement = evidenceLayout.preview ? (
               <div

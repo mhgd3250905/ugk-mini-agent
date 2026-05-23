@@ -46,6 +46,15 @@ describe("App", () => {
     expect(screen.getByText("示例：")).toBeInTheDocument();
   });
 
+  it("localizes visible fixture menu labels", () => {
+    render(<App />);
+
+    expect(screen.getByRole("button", { name: "发现 + 逐项处理" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "任务拆分" })).toBeInTheDocument();
+    expect(screen.queryByText("Discovery + ForEach")).toBeNull();
+    expect(screen.queryByText("Decomposition split")).toBeNull();
+  });
+
   it("fetches live plans, runs, and selected run detail when switching to Live API", async () => {
     const plan = makeSequentialPlan();
     const run = makeSequentialRun();

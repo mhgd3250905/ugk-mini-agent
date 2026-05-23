@@ -12,6 +12,23 @@
 
 ---
 
+## 2026-05-24 — Team Console artifact 点击边界与缩放白屏修复
+
+- **主题**: 收紧 Execution Atlas artifact 预览语义，并修复桌面缩放后点击节点触发布局测量反馈循环导致白屏的问题。
+- **变更内容**:
+  - 只有通过当前 task/attempt 匹配、且文件名存在于 attempt metadata `files` 白名单中的 file-backed artifact card 会渲染为可点击 `button` 并调用 `readAttemptFile()`。
+  - Fallback Error / Attempt / Progress evidence 改为静态信息卡，不再点出"文件不在当前 attempt metadata 中"或"文件引用不属于当前任务"这类假预览错误。
+  - 真实 snapshot 2 补齐 Phase 1 / Phase 3 result 的 mock attempt metadata/file fixture，确保 `discover_directions`、首个 for_each child 和 `assemble_report` 的真实文件预览路径都可回归。
+  - Evidence / preview 高度测量改为 `offsetHeight` 优先、`scrollHeight` fallback，不再把 CSS scale 后的 `getBoundingClientRect().height` 写回 layout；滚轮缩放改为原生 non-passive `wheel` listener，避免 passive warning 和 React `Maximum update depth exceeded` 白屏。
+  - Evidence / preview SVG 虚线统一为中等亮度 accent 样式；task -> evidence 连接改为单条共享 fan-out trunk + 横向 stub，避免多条 L 形 path 叠在同一段竖线上，把竖线叠亮得比横线更抢眼。
+  - fixture 菜单可见标签继续保持中文，collapsed 展开/收起测试改成硬断言，防止 13 子任务折叠交互悄悄退化。
+- **影响范围**: `apps/team-console/src/app/app.css`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/ExecutionTaskDetail.tsx`, `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/handoff-current.md`, `docs/change-log.md`
+- **验证**: `npm --prefix apps/team-console run test` 164 passed；`npm --prefix apps/team-console run build` 通过；`git diff --check` 通过。
+- **浏览器验证**: `http://localhost:5176/` 的 "真实 run snapshot 2" 展开 13 个子任务后，滚轮缩放到 110%，点击“搜索引擎官方免费 API”不白屏，Worker / Checker / Watcher / Result evidence 正常显示；继续点击“最终结果”可展开二级预览，控制台未捕获 `Maximum update depth exceeded`、passive wheel warning 或假预览错误。
+- **边界**: 未改 Team Runtime 后端、`/playground/team`、`src/team/**`、`src/routes/**`、`src/ui/**`；未新增写 API。
+
+---
+
 ## 2026-05-23 — Team Console artifact 预览、桌面画布控制与中文化
 
 - **主题**: Execution Atlas 选中 task 后改用真实 attempt metadata / attempt file 渲染 artifact 分支与二级预览，并补桌面 pan/zoom 和可见中文标签。
