@@ -10,6 +10,29 @@ import {
   makeLargeChildRun,
   makeDiscoveryForEachPlan,
 } from "../fixtures/team-fixtures";
+import type { TaskStatus } from "../api/team-types";
+
+function makeLargeChildRunWithStatuses(statuses: TaskStatus[]) {
+  const run = structuredClone(makeLargeChildRun());
+  const childIds = run.taskDefinitions?.map((task) => task.id) ?? [];
+  childIds.forEach((taskId, index) => {
+    const status = statuses[index] ?? statuses[statuses.length - 1] ?? "succeeded";
+    run.taskStates[taskId] = {
+      ...run.taskStates[taskId],
+      status,
+      errorSummary: status === "failed" ? "Child failed\nStack trace" : null,
+      resultRef: status === "succeeded" ? run.taskStates[taskId].resultRef : null,
+      progress: { ...run.taskStates[taskId].progress, phase: status },
+    };
+  });
+  return run;
+}
+
+function collapsedNode(): HTMLElement {
+  const node = screen.getByText("+ 10 个子任务").closest(".emap-node");
+  expect(node).toBeTruthy();
+  return node as HTMLElement;
+}
 
 describe("ExecutionMap UI", () => {
   it("renders task nodes for sequential run", () => {
@@ -26,6 +49,43 @@ describe("ExecutionMap UI", () => {
     const run = makeLargeChildRun();
     render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
     expect(screen.getByText("+ 10 个子任务")).toBeInTheDocument();
+  });
+
+  it("marks collapsed summary succeeded when all hidden children succeeded", () => {
+    const plan = makeDiscoveryForEachPlan();
+    const run = makeLargeChildRunWithStatuses(Array(10).fill("succeeded"));
+    render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+    expect(collapsedNode()).toHaveClass("status-succeeded");
+  });
+
+  it("marks collapsed summary failed when any hidden child failed", () => {
+    const plan = makeDiscoveryForEachPlan();
+    const run = makeLargeChildRunWithStatuses(["succeeded", "failed", ...Array(8).fill("succeeded")]);
+    render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+    expect(collapsedNode()).toHaveClass("status-failed");
+  });
+
+  it("marks collapsed summary running when hidden children are still pending or running", () => {
+    const plan = makeDiscoveryForEachPlan();
+    const run = makeLargeChildRunWithStatuses(["succeeded", "pending", ...Array(8).fill("succeeded")]);
+    render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+    expect(collapsedNode()).toHaveClass("status-running");
+  });
+
+  it("does not mark skipped-only collapsed summaries as succeeded", () => {
+    const plan = makeDiscoveryForEachPlan();
+    const run = makeLargeChildRunWithStatuses(Array(10).fill("skipped"));
+    render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+    expect(collapsedNode()).toHaveClass("status-dimmed");
+    expect(collapsedNode()).not.toHaveClass("status-succeeded");
+  });
+
+  it("does not mark cancelled-only collapsed summaries as succeeded", () => {
+    const plan = makeDiscoveryForEachPlan();
+    const run = makeLargeChildRunWithStatuses(Array(10).fill("cancelled"));
+    render(<ExecutionMap plan={plan} run={run} selectedTaskId={null} onSelectTask={() => {}} />);
+    expect(collapsedNode()).toHaveClass("status-dimmed");
+    expect(collapsedNode()).not.toHaveClass("status-succeeded");
   });
 
   it("shows error first line on failed nodes", () => {

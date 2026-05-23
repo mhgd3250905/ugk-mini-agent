@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { RunDetail, TeamPlan, TaskStatus } from "../api/team-types";
-import type { NodeKind } from "./execution-map-model";
+import type { ExecutionNode, NodeKind } from "./execution-map-model";
 import { buildExecutionMapModel, CHILD_COLLAPSE_THRESHOLD } from "./execution-map-model";
 import { layoutExecutionMap, ROOT_ID, NODE_WIDTH } from "./execution-map-layout";
 import { RUN_STATUS_LABELS } from "../shared/status";
@@ -26,6 +26,8 @@ interface ExecutionMapProps {
   onSelectTask: (taskId: string) => void;
 }
 
+type RenderNode = Omit<ExecutionNode, "kind"> & { kind: NodeKind | "collapsed" };
+
 function statusClass(status: TaskStatus | RunDetail["status"]): string {
   switch (status) {
     case "running": case "queued": return "status-running";
@@ -36,6 +38,16 @@ function statusClass(status: TaskStatus | RunDetail["status"]): string {
     case "completed_with_failures": return "status-paused";
     default: return "";
   }
+}
+
+export function summarizeCollapsedTaskStatus(children: Pick<ExecutionNode, "status">[]): TaskStatus {
+  const statuses = children.map((child) => child.status);
+  if (statuses.includes("failed")) return "failed";
+  if (statuses.includes("interrupted")) return "interrupted";
+  if (statuses.includes("running") || statuses.includes("pending")) return "running";
+  if (statuses.includes("cancelled")) return "cancelled";
+  if (statuses.includes("skipped")) return "skipped";
+  return "succeeded";
 }
 
 export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask }: ExecutionMapProps) {
@@ -51,15 +63,15 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask }: Execut
     return new Set([...chain, selectedTaskId]);
   }, [model, selectedTaskId]);
 
-  const allNodes = model.mainTasks.flatMap((t) => {
-    const result = [t];
+  const allNodes: RenderNode[] = model.mainTasks.flatMap((t) => {
+    const result: RenderNode[] = [t];
     if (t.children.length > CHILD_COLLAPSE_THRESHOLD) {
       result.push({
         nodeId: `${t.taskId}__collapsed`,
         taskId: `${t.taskId}__collapsed`,
         title: `+ ${t.children.length} 个子任务`,
-        kind: "collapsed" as NodeKind,
-        status: "succeeded" as TaskStatus,
+        kind: "collapsed",
+        status: summarizeCollapsedTaskStatus(t.children),
         errorFirstLine: "",
         attemptCount: t.children.length,
         activeAttemptId: null,
