@@ -35,6 +35,28 @@ test("standalone agents page confirms browser binding changes when editing agent
 	assert.match(page, /"x-ugk-browser-binding-source": "playground"/);
 });
 
+test("standalone agents page derives a usable id when the name cannot be slugged", () => {
+	const page = renderAgentsPage();
+
+	assert.match(page, /function deriveNextAgentId\(name\)/);
+	assert.match(page, /var base = normalizeAgentIdInput\(name \|\| "agent"\);/);
+	assert.match(page, /if \(!\/\^\[a-z\]\/\.test\(base\)\) base = "agent";/);
+	assert.match(page, /existing\.has\(next\) \|\| next === "main" \|\| next === "search"/);
+	assert.match(page, /idInput\.value = deriveNextAgentId\(nameInput\.value\);/);
+});
+
+test("standalone agents page normalizes manual ids before validation and create", () => {
+	const page = renderAgentsPage();
+
+	assert.match(page, /function normalizeAgentIdInput\(value\)/);
+	assert.ok(page.includes('.replace(/[\\s_./]+/g, "-")'));
+	assert.ok(page.includes('.replace(/[‐‑‒–—―－]+/g, "-")'));
+	assert.match(page, /var rawId = \(document\.getElementById\("ed-id"\) \|\| \{\}\)\.value \|\| "";/);
+	assert.match(page, /var id = normalizeAgentIdInput\(rawId \|\| deriveNextAgentId\(name\)\);/);
+	assert.match(page, /if \(idInput\) idInput\.value = id;/);
+	assert.match(page, /body: JSON\.stringify\(\{ agentId: id,/);
+});
+
 test("standalone agents page follows the home cockpit visual system", () => {
 	const page = renderAgentsPage();
 

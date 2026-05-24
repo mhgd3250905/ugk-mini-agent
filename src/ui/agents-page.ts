@@ -1586,7 +1586,38 @@ function getAgentsPageJs(): string {
 		}
 
 		/* ── Editor mode ── */
-		function slugify(s) { return (s || "").toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 40); }
+		function normalizeAgentIdInput(value) {
+			return String(value || "")
+				.trim()
+				.toLowerCase()
+				.replace(/[\\s_./]+/g, "-")
+				.replace(/[‐‑‒–—―－]+/g, "-")
+				.replace(/[^a-z0-9-]/g, "-")
+				.replace(/-+/g, "-")
+				.replace(/^-|-$/g, "")
+				.slice(0, 40)
+				.replace(/^-|-$/g, "");
+		}
+
+		function deriveNextAgentId(name) {
+			var existing = new Set(state.agents.map(function(agent) { return String(agent.agentId || ""); }));
+			var base = normalizeAgentIdInput(name || "agent");
+			if (!/^[a-z]/.test(base)) base = "agent";
+			var next = base;
+			var index = 2;
+			while (existing.has(next) || next === "main" || next === "search") {
+				next = base + "-" + index;
+				index += 1;
+			}
+			return next;
+		}
+
+		function validateAgentIdInput(id) {
+			if (!id) return "Agent ID 不能为空";
+			if (!/^[a-z]/.test(id)) return "Agent ID 必须以英文小写字母开头";
+			if (!/^[a-z][a-z0-9-]*$/.test(id)) return "Agent ID 只能包含英文小写字母、数字和半角连字符 -";
+			return "";
+		}
 
 		function openCreateEditor() {
 			state.editorMode = "create";
@@ -1740,7 +1771,7 @@ function getAgentsPageJs(): string {
 			var idField = isEdit ? ""
 				: '<div class="ag-editor-form-grid">'
 				+ '<label class="ag-editor-field"><span>名称 <span class="required">*</span></span><input id="ed-name" autocomplete="off" placeholder="例如：代码审查员" /></label>'
-				+ '<label class="ag-editor-field"><span>Agent ID <span class="required">*</span></span><input id="ed-id" autocomplete="off" placeholder="自动生成" /><span class="field-hint">小写字母、数字、连字符，创建后不可修改</span></label>'
+				+ '<label class="ag-editor-field"><span>Agent ID <span class="required">*</span></span><input id="ed-id" autocomplete="off" placeholder="自动生成" /><span class="field-hint">会自动转换为小写字母、数字和半角连字符，创建后不可修改</span></label>'
 				+ '</div>';
 			var nameField = isEdit ? '<label class="ag-editor-field"><span>名称 <span class="required">*</span></span><input id="ed-name" autocomplete="off" value="' + escapeHtml(agent.name || "") + '" /></label>' : "";
 
@@ -1771,9 +1802,10 @@ function getAgentsPageJs(): string {
 				var idInput = document.getElementById("ed-id");
 				if (nameInput && idInput) {
 					nameInput.addEventListener("input", function() {
-						if (!idInput.dataset.touched) idInput.value = slugify(nameInput.value);
+						if (!idInput.dataset.touched) idInput.value = deriveNextAgentId(nameInput.value);
 					});
 					idInput.addEventListener("input", function() { idInput.dataset.touched = "1"; });
+					idInput.addEventListener("blur", function() { idInput.value = normalizeAgentIdInput(idInput.value); });
 				}
 			}
 		}
@@ -1786,13 +1818,17 @@ function getAgentsPageJs(): string {
 		async function handleEditorCreate() {
 			if (!guardEditorSupportCatalogs()) return;
 			var name = (document.getElementById("ed-name") || {}).value || "";
-			var id = (document.getElementById("ed-id") || {}).value || slugify(name);
+			var rawId = (document.getElementById("ed-id") || {}).value || "";
+			var id = normalizeAgentIdInput(rawId || deriveNextAgentId(name));
+			var idInput = document.getElementById("ed-id");
+			if (idInput) idInput.value = id;
 			var desc = (document.getElementById("ed-desc") || {}).value || "";
 			var browser = (document.getElementById("ed-browser") || {}).value || "";
 			var modelPatch = buildEditorModelPatch(false);
 			if (modelPatch === null) return;
 			if (!name.trim()) { showEditorError("名称不能为空"); return; }
-			if (!id.trim() || !/^[a-z][a-z0-9-]*$/.test(id)) { showEditorError("Agent ID 格式不正确（小写字母开头，仅含小写字母、数字、连字符）"); return; }
+			var idError = validateAgentIdInput(id);
+			if (idError) { showEditorError(idError); return; }
 			if (["main","search"].indexOf(id) !== -1) { showEditorError("该 Agent ID 已被系统保留"); return; }
 			var confirmed = await confirmAgentBrowserChangeIfNeeded({ agentId: id, name: name, defaultBrowserId: "" }, browser);
 			if (!confirmed) return;
