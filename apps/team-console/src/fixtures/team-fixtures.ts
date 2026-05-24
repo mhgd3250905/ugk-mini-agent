@@ -889,6 +889,15 @@ let mockConversationCounter = 0;
 let mockRunCounter = 0;
 let mockMessageCounter = 0;
 
+export function resetMockTeamApiState() {
+  mockConversationsByAgent.clear();
+  mockCurrentConversationIds.clear();
+  mockPendingRuns.clear();
+  mockConversationCounter = 0;
+  mockRunCounter = 0;
+  mockMessageCounter = 0;
+}
+
 function getAgentConversations(agentId: string): Map<string, MockConversation> {
   const existing = mockConversationsByAgent.get(agentId);
   if (existing) return existing;

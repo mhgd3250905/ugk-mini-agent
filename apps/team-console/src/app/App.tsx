@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { AgentAssetSummary, AgentChatMessage, AgentContextUsage, AgentSummary, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "../api/team-types";
+import type { AgentAssetSummary, AgentChatMessage, AgentContextUsage, AgentConversationState, AgentSummary, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "../api/team-types";
 import { ALL_FIXTURES, MOCK_AGENTS, MockTeamApi } from "../fixtures/team-fixtures";
 import { ExecutionMap, type AtlasAgentNode } from "../graph/ExecutionMap";
 import { ROOT_ID } from "../graph/execution-map-layout";
@@ -10,6 +10,7 @@ import "./app.css";
 export type DataSource = "mock" | "live";
 
 const CLEAN_AGENT_WORKSPACE_ID = "agent-workspace";
+const AGENT_DRAFT_CONVERSATION_ID = "__draft__";
 
 type AgentFocusState = {
   kind: "agent";
@@ -103,6 +104,20 @@ function projectContextUsage(baseUsage: AgentContextUsage | undefined, draftToke
   };
 }
 
+function agentConversationKey(agentId: string, conversationId: string | undefined): string {
+  return `${agentId}:${conversationId || AGENT_DRAFT_CONVERSATION_ID}`;
+}
+
+function messagesFromConversationState(state: AgentConversationState): AgentChatMessage[] {
+  const messages = state.viewMessages.length > 0 ? state.viewMessages : state.messages;
+  return messages
+    .filter((message) => message.kind === "user" || message.kind === "assistant" || message.kind === "error")
+    .map((message) => ({
+      role: message.kind === "user" ? "user" : "assistant",
+      text: message.text,
+    }));
+}
+
 export function App() {
   const [dataSource, setDataSource] = useState<DataSource>("mock");
   const [selectedFixtureId, setSelectedFixtureId] = useState<string>(CLEAN_AGENT_WORKSPACE_ID);
@@ -117,7 +132,7 @@ export function App() {
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
   const [agentFocus, setAgentFocus] = useState<AgentFocusState | null>(null);
-  const [agentMessagesById, setAgentMessagesById] = useState<Record<string, AgentChatMessage[]>>({});
+  const [agentMessagesByConversationKey, setAgentMessagesByConversationKey] = useState<Record<string, AgentChatMessage[]>>({});
   const [agentConversationIds, setAgentConversationIds] = useState<Record<string, string>>({});
   const [agentMessageInput, setAgentMessageInput] = useState("");
   const [agentChatPendingAgentId, setAgentChatPendingAgentId] = useState<string | null>(null);
@@ -132,15 +147,18 @@ export function App() {
   const [conversationCreatePendingAgentId, setConversationCreatePendingAgentId] = useState<string | null>(null);
   const [interruptPendingAgentId, setInterruptPendingAgentId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const focusLoadGenerationRef = useRef(0);
+  const agentConversationIdsRef = useRef<Record<string, string>>({});
 
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
   const addedAgentIds = useMemo(() => new Set(agentNodes.map((node) => node.agentId)), [agentNodes]);
   const focusedNode = agentFocus ? agentNodes.find((node) => node.nodeId === agentFocus.nodeId) ?? null : null;
   const focusedAgent = focusedNode ? agentsById.get(focusedNode.agentId) ?? null : null;
   const isAgentFocused = Boolean(focusedNode && focusedAgent);
-  const focusedAgentMessages = focusedAgent ? agentMessagesById[focusedAgent.agentId] ?? [] : [];
   const focusedAgentAssets = focusedAgent ? agentSelectedAssetsById[focusedAgent.agentId] ?? [] : [];
   const focusedConversationId = focusedAgent ? agentConversationIds[focusedAgent.agentId] : undefined;
+  const focusedConversationKey = focusedAgent ? agentConversationKey(focusedAgent.agentId, focusedConversationId) : null;
+  const focusedAgentMessages = focusedConversationKey ? agentMessagesByConversationKey[focusedConversationKey] ?? [] : [];
   const isAgentChatPending = Boolean(focusedAgent && agentChatPendingAgentId === focusedAgent.agentId);
   const isConversationCreatePending = Boolean(focusedAgent && conversationCreatePendingAgentId === focusedAgent.agentId);
   const isInterruptPending = Boolean(focusedAgent && interruptPendingAgentId === focusedAgent.agentId);
@@ -152,6 +170,10 @@ export function App() {
   const selectTask = useCallback((taskId: string) => {
     setSelectedTaskId((current) => current === taskId ? null : taskId);
   }, []);
+
+  useEffect(() => {
+    agentConversationIdsRef.current = agentConversationIds;
+  }, [agentConversationIds]);
 
   const loadFixture = useCallback((fixtureId: string) => {
     if (fixtureId === CLEAN_AGENT_WORKSPACE_ID) {
@@ -311,6 +333,49 @@ export function App() {
 
   const createApi = useCallback(() => dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi(), [dataSource]);
 
+  const applyAgentConversationState = useCallback((agentId: string, state: AgentConversationState) => {
+    const conversationId = state.conversationId;
+    setAgentConversationIds((current) => ({ ...current, [agentId]: conversationId }));
+    setAgentMessagesByConversationKey((current) => ({
+      ...current,
+      [agentConversationKey(agentId, conversationId)]: messagesFromConversationState(state),
+    }));
+    setAgentContextUsageById((current) => ({ ...current, [agentId]: state.contextUsage }));
+    setAgentChatPendingAgentId((current) => (
+      state.running ? agentId : current === agentId ? null : current
+    ));
+  }, []);
+
+  const loadFocusedAgentConversation = useCallback(async (agentId: string, generation: number) => {
+    const api = createApi();
+    try {
+      const catalog = await api.listAgentConversations(agentId);
+      if (focusLoadGenerationRef.current !== generation) return;
+      const currentConversationId = catalog.currentConversationId || catalog.conversations.find((conversation) => conversation.running)?.conversationId || "";
+      if (!currentConversationId) {
+        if (!agentConversationIdsRef.current[agentId]) return;
+        setAgentConversationIds((current) => {
+          if (!current[agentId]) return current;
+          const next = { ...current };
+          delete next[agentId];
+          return next;
+        });
+        return;
+      }
+      setAgentConversationIds((current) => ({ ...current, [agentId]: currentConversationId }));
+      const conversationState = await api.getAgentConversationState(agentId, currentConversationId, 80);
+      if (focusLoadGenerationRef.current !== generation) return;
+      applyAgentConversationState(agentId, conversationState);
+    } catch (e) {
+      if (focusLoadGenerationRef.current !== generation) return;
+      setAgentChatError(errorMessage(e));
+      setAgentContextUsageById((current) => ({
+        ...current,
+        [agentId]: current[agentId] ?? FALLBACK_CONTEXT_USAGE,
+      }));
+    }
+  }, [applyAgentConversationState, createApi]);
+
   const addAgentNode = useCallback((agentId: string) => {
     setAgentNodes((current) => {
       if (current.some((node) => node.agentId === agentId)) return current;
@@ -363,9 +428,18 @@ export function App() {
     setAgentFocus(null);
   }, [agentFocus]);
 
+  useEffect(() => {
+    if (!focusedAgent) return;
+    const generation = focusLoadGenerationRef.current + 1;
+    focusLoadGenerationRef.current = generation;
+    void loadFocusedAgentConversation(focusedAgent.agentId, generation);
+    return () => {
+      focusLoadGenerationRef.current += 1;
+    };
+  }, [focusedAgent?.agentId, loadFocusedAgentConversation]);
+
   const syncAgentContextUsage = useCallback(async (agentId: string, conversationId: string | undefined) => {
     if (!conversationId) {
-      setAgentContextUsageById((current) => ({ ...current, [agentId]: FALLBACK_CONTEXT_USAGE }));
       return;
     }
     try {
@@ -472,18 +546,33 @@ export function App() {
     try {
       const response = await createApi().createAgentConversation(agentId);
       const conversationId = response.currentConversationId || response.conversationId;
+      const generation = focusLoadGenerationRef.current + 1;
+      focusLoadGenerationRef.current = generation;
       setAgentConversationIds((current) => ({ ...current, [agentId]: conversationId }));
-      setAgentMessagesById((current) => ({ ...current, [agentId]: [] }));
+      setAgentMessagesByConversationKey((current) => ({
+        ...current,
+        [agentConversationKey(agentId, conversationId)]: [],
+      }));
       setAgentSelectedAssetsById((current) => ({ ...current, [agentId]: [] }));
       setAgentMessageInput("");
       setFocusPanel(null);
-      await syncAgentContextUsage(agentId, conversationId);
+      try {
+        const conversationState = await createApi().getAgentConversationState(agentId, conversationId, 80);
+        if (focusLoadGenerationRef.current === generation) {
+          applyAgentConversationState(agentId, conversationState);
+        }
+      } catch (e) {
+        if (focusLoadGenerationRef.current === generation) {
+          setAgentChatError(errorMessage(e));
+          await syncAgentContextUsage(agentId, conversationId);
+        }
+      }
     } catch (e) {
       setAgentChatError(errorMessage(e));
     } finally {
       setConversationCreatePendingAgentId((current) => current === agentId ? null : current);
     }
-  }, [createApi, focusedAgent, isAgentChatPending, isConversationCreatePending, syncAgentContextUsage]);
+  }, [applyAgentConversationState, createApi, focusedAgent, isAgentChatPending, isConversationCreatePending, syncAgentContextUsage]);
 
   const interruptFocusedAgentRun = useCallback(async () => {
     if (!focusedAgent || !focusedConversationId || isInterruptPending) return;
@@ -511,12 +600,15 @@ export function App() {
     if (!outboundMessage) return;
 
     const agentId = focusedAgent.agentId;
+    const conversationId = agentConversationIds[agentId];
+    const messageKey = agentConversationKey(agentId, conversationId);
+    focusLoadGenerationRef.current += 1;
     setAgentMessageInput("");
     setAgentChatError(null);
-    setAgentMessagesById((current) => ({
+    setAgentMessagesByConversationKey((current) => ({
       ...current,
-        [agentId]: [
-          ...(current[agentId] ?? []),
+        [messageKey]: [
+          ...(current[messageKey] ?? []),
           { role: "user", text: outboundMessage },
         ],
       }));
@@ -524,7 +616,6 @@ export function App() {
 
     const api = createApi();
     try {
-      const conversationId = agentConversationIds[agentId];
       const response = conversationId
         ? assetRefs.length > 0
           ? await api.sendAgentMessage(agentId, outboundMessage, conversationId, assetRefs)
@@ -538,15 +629,20 @@ export function App() {
           [agentId]: response.conversationId!,
         }));
       }
-      setAgentMessagesById((current) => ({
-        ...current,
-        [agentId]: [
-          ...(current[agentId] ?? []),
-          { role: "assistant", text: response.text },
-        ],
-      }));
+      const nextConversationId = response.conversationId ?? conversationId;
+      const nextMessageKey = agentConversationKey(agentId, nextConversationId);
+      setAgentMessagesByConversationKey((current) => {
+        const baseMessages = current[messageKey] ?? [];
+        return {
+          ...current,
+          [nextMessageKey]: [
+            ...(nextMessageKey === messageKey ? baseMessages : baseMessages),
+            { role: "assistant", text: response.text },
+          ],
+        };
+      });
       setAgentSelectedAssetsById((current) => ({ ...current, [agentId]: [] }));
-      await syncAgentContextUsage(agentId, response.conversationId ?? agentConversationIds[agentId]);
+      await syncAgentContextUsage(agentId, nextConversationId);
     } catch (e) {
       setAgentChatError(errorMessage(e));
     } finally {
