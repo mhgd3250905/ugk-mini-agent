@@ -59,6 +59,17 @@ function mockContextUsage() {
   };
 }
 
+function mockAsset(assetId: string, fileName = `${assetId}.md`) {
+  return {
+    assetId,
+    fileName,
+    mimeType: "text/markdown",
+    sizeBytes: 1024,
+    kind: "text" as const,
+    createdAt: "2026-05-24T00:00:00.000Z",
+  };
+}
+
 describe("App", () => {
   beforeEach(() => {
     resetMockTeamApiState();
@@ -470,6 +481,123 @@ describe("App", () => {
       assetRefs: ["mock-reference-asset"],
     });
     expect(await within(focusWorkspace).findByText("请结合我引用的资产一起处理")).toBeInTheDocument();
+  });
+
+  it("uploads focus files with the scoped conversation id after the first streamed turn", async () => {
+    const uploadSpy = vi.spyOn(MockTeamApi.prototype, "uploadFilesAsAssets");
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "建立会话" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(await screen.findByText("[main] mock reply: 建立会话")).toBeInTheDocument();
+
+    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement;
+    const fileInput = focusWorkspace.querySelector('input[type="file"][multiple]') as HTMLInputElement | null;
+    const file = new File(["hello"], "after-conversation.md", { type: "text/markdown" });
+    fireEvent.change(fileInput!, { target: { files: [file] } });
+
+    await waitFor(() => expect(uploadSpy).toHaveBeenCalled());
+    expect(uploadSpy.mock.calls.at(-1)).toEqual([[file], "mock-main-1"]);
+  });
+
+  it("keeps selected asset chips when a focused stream fails before a terminal event", async () => {
+    vi.spyOn(MockTeamApi.prototype, "streamAgentMessage").mockRejectedValueOnce({ message: "network down" });
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+
+    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement;
+    fireEvent.click(within(focusWorkspace).getByRole("button", { name: "文件库" }));
+    const library = await within(focusWorkspace).findByRole("dialog", { name: "文件库" });
+    fireEvent.click(within(library).getByRole("button", { name: "复用 mock-reference.md" }));
+    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "会失败" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("network down");
+    expect(focusWorkspace.querySelector(".agent-focus-selected-assets .agent-focus-file-chip")).toHaveTextContent("mock-reference.md");
+  });
+
+  it("dedupes file library selections by asset id", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+
+    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement;
+    fireEvent.click(within(focusWorkspace).getByRole("button", { name: "文件库" }));
+    let library = await within(focusWorkspace).findByRole("dialog", { name: "文件库" });
+    fireEvent.click(within(library).getByRole("button", { name: "复用 mock-reference.md" }));
+    fireEvent.click(within(focusWorkspace).getByRole("button", { name: "文件库" }));
+    fireEvent.click(within(focusWorkspace).getByRole("button", { name: "文件库" }));
+    library = await within(focusWorkspace).findByRole("dialog", { name: "文件库" });
+
+    expect(within(library).getByRole("button", { name: "复用 mock-reference.md" })).toBeDisabled();
+    expect(focusWorkspace.querySelectorAll(".agent-focus-file-chip")).toHaveLength(1);
+  });
+
+  it("renders restored history asset refs as readable attachment metadata", async () => {
+    vi.spyOn(MockTeamApi.prototype, "listAgentConversations").mockResolvedValue({
+      currentConversationId: "conv_with_assets",
+      conversations: [{
+        conversationId: "conv_with_assets",
+        title: "History with assets",
+        preview: "请看附件",
+        messageCount: 1,
+        createdAt: "2026-05-24T00:00:00.000Z",
+        updatedAt: "2026-05-24T00:00:00.000Z",
+        running: false,
+      }],
+    });
+    vi.spyOn(MockTeamApi.prototype, "getAgentConversationState").mockResolvedValue({
+      conversationId: "conv_with_assets",
+      running: false,
+      contextUsage: mockContextUsage(),
+      messages: [],
+      viewMessages: [{
+        id: "message_with_asset",
+        kind: "user",
+        title: "User",
+        text: "请看附件",
+        createdAt: "2026-05-24T00:00:00.000Z",
+        assetRefs: [mockAsset("history-asset", "history-ref.md")],
+      }],
+      activeRun: null,
+      historyPage: { hasMore: false, limit: 80 },
+      updatedAt: "2026-05-24T00:00:00.000Z",
+    });
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+
+    expect(await screen.findByText("history-ref.md")).toBeInTheDocument();
+  });
+
+  it("prevents selecting more than 20 focused assets before upload", async () => {
+    const uploadSpy = vi.spyOn(MockTeamApi.prototype, "uploadFilesAsAssets");
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+
+    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement;
+    const fileInput = focusWorkspace.querySelector('input[type="file"][multiple]') as HTMLInputElement | null;
+    const files = Array.from({ length: 21 }, (_, index) => (
+      new File([`file-${index}`], `limit-${index}.md`, { type: "text/markdown" })
+    ));
+    fireEvent.change(fileInput!, { target: { files } });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("最多选择 20 个文件");
+    expect(uploadSpy).not.toHaveBeenCalled();
   });
 
   it("locks atlas pan and zoom while an agent is focused and restores free mode after collapse", async () => {

@@ -189,6 +189,7 @@ export interface AgentCatalogResponse {
 export interface AgentChatMessage {
   role: "user" | "assistant";
   text: string;
+  assetRefs?: AgentAssetSummary[];
 }
 
 export type AgentAssetKind = "text" | "binary" | "metadata";

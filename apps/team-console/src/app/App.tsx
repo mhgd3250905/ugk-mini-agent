@@ -11,6 +11,7 @@ export type DataSource = "mock" | "live";
 
 const CLEAN_AGENT_WORKSPACE_ID = "agent-workspace";
 const AGENT_DRAFT_CONVERSATION_ID = "__draft__";
+const MAX_FOCUSED_ASSETS = 20;
 
 type AgentFocusState = {
   kind: "agent";
@@ -115,6 +116,7 @@ function messagesFromConversationState(state: AgentConversationState): AgentChat
     .map((message) => ({
       role: message.kind === "user" ? "user" : "assistant",
       text: message.text,
+      assetRefs: message.assetRefs ?? [],
     }));
 }
 
@@ -533,16 +535,32 @@ export function App() {
 
   const selectAssetForFocusedAgent = useCallback((asset: AgentAssetSummary) => {
     if (!focusedAgent) return;
+    if (focusedAgentAssets.some((current) => current.assetId === asset.assetId)) {
+      setFocusPanel(null);
+      return;
+    }
+    if (focusedAgentAssets.length >= MAX_FOCUSED_ASSETS) {
+      setAgentChatError(`最多选择 ${MAX_FOCUSED_ASSETS} 个文件`);
+      return;
+    }
     updateFocusedAssets(focusedAgent.agentId, (assets) => (
       assets.some((current) => current.assetId === asset.assetId) ? assets : [...assets, asset]
     ));
     setFocusPanel(null);
-  }, [focusedAgent, updateFocusedAssets]);
+  }, [focusedAgent, focusedAgentAssets, updateFocusedAssets]);
 
   const handleFocusFilesSelected = useCallback(async (files: FileList | null) => {
     if (!focusedAgent) return;
     const selectedFiles = Array.from(files ?? []);
     if (selectedFiles.length === 0) return;
+    const remainingSlots = MAX_FOCUSED_ASSETS - focusedAgentAssets.length;
+    if (selectedFiles.length > remainingSlots) {
+      setAgentChatError(`最多选择 ${MAX_FOCUSED_ASSETS} 个文件`);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      return;
+    }
     setComposerUploading(true);
     setAgentChatError(null);
     try {
@@ -563,7 +581,7 @@ export function App() {
         fileInputRef.current.value = "";
       }
     }
-  }, [createApi, focusedAgent, focusedConversationId, mergeAssetLibrary, updateFocusedAssets]);
+  }, [createApi, focusedAgent, focusedAgentAssets.length, focusedConversationId, mergeAssetLibrary, updateFocusedAssets]);
 
   const startFocusedAgentConversation = useCallback(async () => {
     if (!focusedAgent || isConversationCreatePending || isAgentChatPending) return;
@@ -715,7 +733,7 @@ export function App() {
         ...current,
         [messageKey]: [
           ...(current[messageKey] ?? []),
-          { role: "user", text: outboundMessage },
+          { role: "user", text: outboundMessage, assetRefs: focusedAgentAssets },
         ],
       }));
       try {
@@ -745,7 +763,7 @@ export function App() {
       ...current,
       [messageKey]: [
         ...(current[messageKey] ?? []),
-        { role: "user", text: outboundMessage },
+        { role: "user", text: outboundMessage, assetRefs: focusedAgentAssets },
       ],
     }));
     setAgentChatPendingAgentId(agentId);
@@ -954,6 +972,16 @@ export function App() {
                 </div>
                 <div className="agent-focus-message-body">
                   <p className="agent-focus-message-content">{message.text}</p>
+                  {message.assetRefs && message.assetRefs.length > 0 && (
+                    <div className="agent-focus-message-assets" aria-label="Message attachments">
+                      {message.assetRefs.map((asset) => (
+                        <span key={asset.assetId} className="agent-focus-message-asset">
+                          <span className="agent-focus-file-badge">{asset.kind === "text" ? "TXT" : "FILE"}</span>
+                          <span className="agent-focus-file-name">{asset.fileName}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))

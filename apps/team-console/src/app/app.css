@@ -885,6 +885,27 @@ body {
   text-align: left;
 }
 
+.agent-focus-message-assets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.agent-focus-message-asset {
+  min-height: 26px;
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  max-width: min(220px, 100%);
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--secondary);
+  font-size: 11px;
+}
+
 .agent-focus-loading,
 .agent-focus-error {
   justify-self: start;
