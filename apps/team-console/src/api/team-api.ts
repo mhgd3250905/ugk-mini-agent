@@ -9,6 +9,8 @@ import type {
   AgentConversationState,
   AgentConversationResponse,
   AgentInterruptResponse,
+  AgentQueueMessageRequest,
+  AgentQueueMessageResponse,
   AgentSummary,
   AgentSwitchConversationResponse,
   TeamPlan,
@@ -33,6 +35,7 @@ export interface TeamApiProvider {
   getAgentChatStatus(agentId: string, conversationId: string): Promise<AgentChatStatus>;
   interruptAgentChat(agentId: string, conversationId: string): Promise<AgentInterruptResponse>;
   sendAgentMessage(agentId: string, message: string, conversationId?: string, assetRefs?: string[]): Promise<AgentChatResponse>;
+  queueAgentMessage(agentId: string, request: AgentQueueMessageRequest): Promise<AgentQueueMessageResponse>;
   streamAgentMessage(
     agentId: string,
     request: AgentChatStreamRequest,
@@ -240,6 +243,28 @@ export class LiveTeamApi implements TeamApiProvider {
       });
       if (!res.ok) throw res;
       return (await res.json()) as AgentChatResponse;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async queueAgentMessage(agentId: string, request: AgentQueueMessageRequest): Promise<AgentQueueMessageResponse> {
+    try {
+      const body = {
+        conversationId: request.conversationId,
+        message: request.message,
+        mode: request.mode,
+        ...(request.userId ? { userId: request.userId } : {}),
+        ...(request.browserId ? { browserId: request.browserId } : {}),
+        ...(request.assetRefs && request.assetRefs.length > 0 ? { assetRefs: request.assetRefs } : {}),
+      };
+      const res = await fetch(`/v1/agents/${encodeURIComponent(agentId)}/chat/queue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw res;
+      return (await res.json()) as AgentQueueMessageResponse;
     } catch (e) {
       throw toApiError(e);
     }

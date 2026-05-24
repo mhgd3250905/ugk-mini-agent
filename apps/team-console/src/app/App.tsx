@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { AgentAssetSummary, AgentChatMessage, AgentContextUsage, AgentConversationState, AgentSummary, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "../api/team-types";
+import type { AgentAssetSummary, AgentChatMessage, AgentChatStreamEvent, AgentContextUsage, AgentConversationState, AgentSummary, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "../api/team-types";
 import { ALL_FIXTURES, MOCK_AGENTS, MockTeamApi } from "../fixtures/team-fixtures";
 import { ExecutionMap, type AtlasAgentNode } from "../graph/ExecutionMap";
 import { ROOT_ID } from "../graph/execution-map-layout";
@@ -118,6 +118,29 @@ function messagesFromConversationState(state: AgentConversationState): AgentChat
     }));
 }
 
+function appendAssistantDelta(messages: AgentChatMessage[], textDelta: string): AgentChatMessage[] {
+  if (!textDelta) return messages;
+  const lastMessage = messages[messages.length - 1];
+  if (lastMessage?.role !== "assistant") {
+    return [...messages, { role: "assistant", text: textDelta }];
+  }
+  return [
+    ...messages.slice(0, -1),
+    { ...lastMessage, text: `${lastMessage.text}${textDelta}` },
+  ];
+}
+
+function finishAssistantMessage(messages: AgentChatMessage[], text: string): AgentChatMessage[] {
+  const lastMessage = messages[messages.length - 1];
+  if (lastMessage?.role !== "assistant") {
+    return [...messages, { role: "assistant", text }];
+  }
+  return [
+    ...messages.slice(0, -1),
+    { ...lastMessage, text },
+  ];
+}
+
 export function App() {
   const [dataSource, setDataSource] = useState<DataSource>("mock");
   const [selectedFixtureId, setSelectedFixtureId] = useState<string>(CLEAN_AGENT_WORKSPACE_ID);
@@ -137,6 +160,7 @@ export function App() {
   const [agentMessageInput, setAgentMessageInput] = useState("");
   const [agentChatPendingAgentId, setAgentChatPendingAgentId] = useState<string | null>(null);
   const [agentChatError, setAgentChatError] = useState<string | null>(null);
+  const [agentChatNotice, setAgentChatNotice] = useState<string | null>(null);
   const [agentSelectedAssetsById, setAgentSelectedAssetsById] = useState<Record<string, AgentAssetSummary[]>>({});
   const [agentContextUsageById, setAgentContextUsageById] = useState<Record<string, AgentContextUsage>>({});
   const [focusPanel, setFocusPanel] = useState<FocusPanel>(null);
@@ -404,6 +428,7 @@ export function App() {
     setAgentPickerOpen(false);
     setAgentMessageInput("");
     setAgentChatError(null);
+    setAgentChatNotice(null);
     setFocusPanel(null);
     setAgentFocus({
       kind: "agent",
@@ -419,11 +444,13 @@ export function App() {
   }, [agentFocus, canvasViewport]);
 
   const collapseAgentFocus = useCallback(() => {
+    focusLoadGenerationRef.current += 1;
     if (agentFocus) {
       setCanvasViewport(agentFocus.previousViewport);
     }
     setAgentMessageInput("");
     setAgentChatError(null);
+    setAgentChatNotice(null);
     setFocusPanel(null);
     setAgentFocus(null);
   }, [agentFocus]);
@@ -592,8 +619,80 @@ export function App() {
     }
   }, [createApi, focusedAgent, focusedConversationId, isInterruptPending, syncAgentContextUsage]);
 
+  const applyFocusedStreamEvent = useCallback((
+    agentId: string,
+    generation: number,
+    initialConversationId: string | undefined,
+    currentConversationId: string | undefined,
+    event: AgentChatStreamEvent,
+  ) => {
+    if (focusLoadGenerationRef.current !== generation) return;
+    const eventConversationId = "conversationId" in event ? event.conversationId : undefined;
+    const conversationId = eventConversationId || currentConversationId || initialConversationId;
+    const currentKey = agentConversationKey(agentId, conversationId);
+
+    if (event.type === "run_started") {
+      const initialKey = agentConversationKey(agentId, initialConversationId);
+      setAgentConversationIds((current) => ({ ...current, [agentId]: event.conversationId }));
+      setAgentMessagesByConversationKey((current) => {
+        if (initialKey === currentKey) return current;
+        const initialMessages = current[initialKey] ?? [];
+        const currentMessages = current[currentKey] ?? [];
+        const next = {
+          ...current,
+          [currentKey]: [...currentMessages, ...initialMessages],
+        };
+        delete next[initialKey];
+        return next;
+      });
+      setAgentChatPendingAgentId(agentId);
+      return;
+    }
+
+    if (event.type === "text_delta") {
+      setAgentMessagesByConversationKey((current) => ({
+        ...current,
+        [currentKey]: appendAssistantDelta(current[currentKey] ?? [], event.textDelta),
+      }));
+      return;
+    }
+
+    if (event.type === "done") {
+      setAgentConversationIds((current) => ({ ...current, [agentId]: event.conversationId }));
+      setAgentMessagesByConversationKey((current) => ({
+        ...current,
+        [currentKey]: finishAssistantMessage(current[currentKey] ?? [], event.text),
+      }));
+      setAgentSelectedAssetsById((current) => ({ ...current, [agentId]: [] }));
+      setAgentChatPendingAgentId((current) => current === agentId ? null : current);
+      void syncAgentContextUsage(agentId, event.conversationId);
+      return;
+    }
+
+    if (event.type === "interrupted") {
+      setAgentConversationIds((current) => ({ ...current, [agentId]: event.conversationId }));
+      setAgentMessagesByConversationKey((current) => ({
+        ...current,
+        [currentKey]: finishAssistantMessage(current[currentKey] ?? [], "本轮已中断"),
+      }));
+      setAgentChatPendingAgentId((current) => current === agentId ? null : current);
+      void syncAgentContextUsage(agentId, event.conversationId);
+      return;
+    }
+
+    if (event.type === "queue_updated") {
+      setAgentChatNotice("消息已加入队列");
+      return;
+    }
+
+    if (event.type === "error") {
+      setAgentChatError(event.message);
+      setAgentChatPendingAgentId((current) => current === agentId ? null : current);
+    }
+  }, [syncAgentContextUsage]);
+
   const sendFocusedAgentMessage = useCallback(async () => {
-    if (!focusedAgent || isAgentChatPending) return;
+    if (!focusedAgent) return;
     const message = agentMessageInput.trim();
     const assetRefs = focusedAgentAssets.map((asset) => asset.assetId);
     const outboundMessage = message || (assetRefs.length > 0 ? "请结合我引用的资产一起处理" : "");
@@ -602,53 +701,77 @@ export function App() {
     const agentId = focusedAgent.agentId;
     const conversationId = agentConversationIds[agentId];
     const messageKey = agentConversationKey(agentId, conversationId);
-    focusLoadGenerationRef.current += 1;
-    setAgentMessageInput("");
-    setAgentChatError(null);
-    setAgentMessagesByConversationKey((current) => ({
-      ...current,
+    const api = createApi();
+
+    if (isAgentChatPending) {
+      if (!conversationId) {
+        setAgentChatError("当前没有可排队的运行会话");
+        return;
+      }
+      setAgentMessageInput("");
+      setAgentChatError(null);
+      setAgentChatNotice(null);
+      setAgentMessagesByConversationKey((current) => ({
+        ...current,
         [messageKey]: [
           ...(current[messageKey] ?? []),
           { role: "user", text: outboundMessage },
         ],
       }));
+      try {
+        const response = await api.queueAgentMessage(agentId, {
+          conversationId,
+          message: outboundMessage,
+          mode: "steer",
+          ...(assetRefs.length > 0 ? { assetRefs } : {}),
+        });
+        if (response.queued) {
+          setAgentChatNotice("消息已加入队列");
+        } else {
+          setAgentChatError(response.reason === "not_running" ? "当前会话没有正在运行的任务" : "消息未能加入队列");
+        }
+      } catch (e) {
+        setAgentChatError(errorMessage(e));
+      }
+      return;
+    }
+
+    const generation = focusLoadGenerationRef.current + 1;
+    focusLoadGenerationRef.current = generation;
+    setAgentMessageInput("");
+    setAgentChatError(null);
+    setAgentChatNotice(null);
+    setAgentMessagesByConversationKey((current) => ({
+      ...current,
+      [messageKey]: [
+        ...(current[messageKey] ?? []),
+        { role: "user", text: outboundMessage },
+      ],
+    }));
     setAgentChatPendingAgentId(agentId);
 
-    const api = createApi();
+    let streamConversationId = conversationId;
     try {
-      const response = conversationId
-        ? assetRefs.length > 0
-          ? await api.sendAgentMessage(agentId, outboundMessage, conversationId, assetRefs)
-          : await api.sendAgentMessage(agentId, outboundMessage, conversationId)
-        : assetRefs.length > 0
-          ? await api.sendAgentMessage(agentId, outboundMessage, undefined, assetRefs)
-          : await api.sendAgentMessage(agentId, outboundMessage);
-      if (response.conversationId) {
-        setAgentConversationIds((current) => ({
-          ...current,
-          [agentId]: response.conversationId!,
-        }));
-      }
-      const nextConversationId = response.conversationId ?? conversationId;
-      const nextMessageKey = agentConversationKey(agentId, nextConversationId);
-      setAgentMessagesByConversationKey((current) => {
-        const baseMessages = current[messageKey] ?? [];
-        return {
-          ...current,
-          [nextMessageKey]: [
-            ...(nextMessageKey === messageKey ? baseMessages : baseMessages),
-            { role: "assistant", text: response.text },
-          ],
-        };
+      await api.streamAgentMessage(agentId, {
+        message: outboundMessage,
+        ...(conversationId ? { conversationId } : {}),
+        ...(assetRefs.length > 0 ? { assetRefs } : {}),
+      }, (event) => {
+        if ("conversationId" in event) {
+          streamConversationId = event.conversationId;
+        }
+        applyFocusedStreamEvent(agentId, generation, conversationId, streamConversationId, event);
       });
-      setAgentSelectedAssetsById((current) => ({ ...current, [agentId]: [] }));
-      await syncAgentContextUsage(agentId, nextConversationId);
     } catch (e) {
-      setAgentChatError(errorMessage(e));
+      if (focusLoadGenerationRef.current === generation) {
+        setAgentChatError(errorMessage(e));
+      }
     } finally {
-      setAgentChatPendingAgentId((current) => current === agentId ? null : current);
+      if (focusLoadGenerationRef.current === generation) {
+        setAgentChatPendingAgentId((current) => current === agentId ? null : current);
+      }
     }
-  }, [agentConversationIds, agentMessageInput, createApi, focusedAgent, focusedAgentAssets, isAgentChatPending, syncAgentContextUsage]);
+  }, [agentConversationIds, agentMessageInput, applyFocusedStreamEvent, createApi, focusedAgent, focusedAgentAssets, isAgentChatPending]);
 
   const agentToolbar = (
     <div className="agent-atlas-actions">
@@ -836,6 +959,7 @@ export function App() {
             ))
           )}
           {isAgentChatPending && <div className="agent-focus-loading">发送中...</div>}
+          {agentChatNotice && <div className="agent-focus-loading">{agentChatNotice}</div>}
           {agentChatError && <div className="agent-focus-error" role="alert">{agentChatError}</div>}
         </div>
         <form
@@ -901,7 +1025,7 @@ export function App() {
               </button>
               <button
                 type="submit"
-                disabled={(!agentMessageInput.trim() && focusedAgentAssets.length === 0) || isAgentChatPending || composerUploading}
+                disabled={(!agentMessageInput.trim() && focusedAgentAssets.length === 0) || composerUploading}
               >
                 发送
               </button>

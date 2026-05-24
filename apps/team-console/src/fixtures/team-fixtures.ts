@@ -10,6 +10,8 @@ import type {
   AgentConversationState,
   AgentConversationResponse,
   AgentInterruptResponse,
+  AgentQueueMessageRequest,
+  AgentQueueMessageResponse,
   AgentSummary,
   AgentSwitchConversationResponse,
   TeamPlan,
@@ -1111,6 +1113,43 @@ export class MockTeamApi {
     return {
       conversationId: conversation.conversationId,
       text,
+    };
+  }
+
+  async queueAgentMessage(agentId: string, request: AgentQueueMessageRequest): Promise<AgentQueueMessageResponse> {
+    if (!request.message.trim()) {
+      throw { message: 'Field "message" must be a non-empty string' };
+    }
+    const conversation = getMockConversation(agentId, request.conversationId);
+    if (!conversation.running || !conversation.activeRun) {
+      return {
+        conversationId: conversation.conversationId,
+        mode: request.mode,
+        queued: false,
+        reason: "not_running",
+      };
+    }
+
+    const queue = conversation.activeRun.queue ?? { steering: [], followUp: [] };
+    const nextQueue = {
+      steering: request.mode === "steer" ? [...queue.steering, request.message] : queue.steering,
+      followUp: request.mode === "followUp" ? [...queue.followUp, request.message] : queue.followUp,
+    };
+    conversation.activeRun = {
+      ...conversation.activeRun,
+      queue: nextQueue,
+      updatedAt: ts(),
+    };
+    updateMockConversation(conversation);
+    mockPendingRuns.get(conversation.conversationId)?.onEvent({
+      type: "queue_updated",
+      steering: nextQueue.steering,
+      followUp: nextQueue.followUp,
+    });
+    return {
+      conversationId: conversation.conversationId,
+      mode: request.mode,
+      queued: true,
     };
   }
 

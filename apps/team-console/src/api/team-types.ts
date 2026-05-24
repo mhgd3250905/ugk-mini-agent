@@ -216,6 +216,22 @@ export interface AgentChatStreamRequest {
   assetRefs?: string[];
 }
 
+export interface AgentQueueMessageRequest {
+  conversationId: string;
+  message: string;
+  mode: "steer" | "followUp";
+  userId?: string;
+  browserId?: string;
+  assetRefs?: string[];
+}
+
+export interface AgentQueueMessageResponse {
+  conversationId: string;
+  mode: "steer" | "followUp";
+  queued: boolean;
+  reason?: "not_running" | "browser_changed";
+}
+
 export interface AgentConversationResponse {
   conversationId: string;
   currentConversationId: string;

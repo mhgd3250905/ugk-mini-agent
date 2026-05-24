@@ -477,6 +477,34 @@ describe("LiveTeamApi", () => {
     });
   });
 
+  it("queueAgentMessage posts to the scoped queue endpoint", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      conversationId: "conv_1",
+      mode: "steer",
+      queued: true,
+    }), { status: 200 }));
+
+    const response = await api.queueAgentMessage("main", {
+      conversationId: "conv_1",
+      message: "追加一个约束",
+      mode: "steer",
+      assetRefs: ["asset_1"],
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/v1/agents/main/chat/queue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conversationId: "conv_1",
+        message: "追加一个约束",
+        mode: "steer",
+        assetRefs: ["asset_1"],
+      }),
+    });
+    expect(response.queued).toBe(true);
+  });
+
   it("streamAgentMessage posts scoped chat stream payload and parses SSE events", async () => {
     const api = new LiveTeamApi("/v1/team");
     vi.mocked(fetch).mockResolvedValue(sseResponse([
