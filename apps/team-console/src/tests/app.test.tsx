@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
 import { MockTeamApi, makeSequentialPlan, makeSequentialRun } from "../fixtures/team-fixtures";
@@ -157,6 +158,7 @@ describe("App", () => {
     const plan = makeSequentialPlan();
     const run = makeSequentialRun();
     vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([plan]), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([run]), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(run), { status: 200 }));
@@ -164,10 +166,29 @@ describe("App", () => {
     render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
-    expect(fetch).toHaveBeenNthCalledWith(1, "/v1/team/plans");
-    expect(fetch).toHaveBeenNthCalledWith(2, "/v1/team/runs");
-    expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/runs/run_seq_001");
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+    expect(fetch).toHaveBeenNthCalledWith(1, "/v1/agents");
+    expect(fetch).toHaveBeenNthCalledWith(2, "/v1/team/plans");
+    expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/runs");
+    expect(fetch).toHaveBeenNthCalledWith(4, "/v1/team/runs/run_seq_001");
+  });
+
+  it("loads live agent catalog when switching to Live API", async () => {
+    const plan = makeSequentialPlan();
+    const run = makeSequentialRun();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        agents: [{ agentId: "main", name: "主 Agent", description: "默认综合 agent" }],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([plan]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([run]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(run), { status: 200 }));
+
+    render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+    expect(fetch).toHaveBeenNthCalledWith(1, "/v1/agents");
   });
 
   it("renders the selected live run after loading", async () => {
@@ -192,6 +213,7 @@ describe("App", () => {
       summary: { totalTasks: 1, succeededTasks: 1, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
     };
     vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([plan]), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([run]), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(run), { status: 200 }));
@@ -209,5 +231,18 @@ describe("App", () => {
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
     expect(await screen.findByText("请求失败 (500)")).toBeInTheDocument();
+  });
+
+  it("vite proxy includes the scoped agent API", () => {
+    const config = readFileSync("vite.config.ts", "utf8");
+    expect(config).toContain('"/v1/agents"');
+    expect(config).toContain("teamApiTarget");
+  });
+
+  it("documents Agent Canvas mock and live behavior", () => {
+    const readme = readFileSync("README.md", "utf8");
+    expect(readme).toContain("Agent Canvas MVP");
+    expect(readme).toContain("/v1/agents");
+    expect(readme).toContain("/v1/agents/:agentId/chat");
   });
 });

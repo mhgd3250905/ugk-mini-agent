@@ -12,6 +12,10 @@ export default defineConfig({
         target: teamApiTarget,
         changeOrigin: true,
       },
+      "/v1/agents": {
+        target: teamApiTarget,
+        changeOrigin: true,
+      },
     },
   },
   resolve: {

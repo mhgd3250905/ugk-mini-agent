@@ -12,6 +12,21 @@
 
 ---
 
+## 2026-05-24 — Team Console Agent Canvas MVP
+
+- **主题**: 在独立 `apps/team-console` preview 中加入 Agent catalog、画布 Agent 卡片、Agent Focus Mode 和最小非 stream scoped chat。
+- **变更内容**:
+  - Team Console API adapter 增加 `listAgents()` 和 `sendAgentMessage()`，Live API 分别调用 `GET /v1/agents` 与 `POST /v1/agents/:agentId/chat`；Mock fixture 提供 deterministic Agent catalog 和 assistant reply。
+  - Agent Canvas 允许从 catalog 添加真实主项目 Agent profile 引用，同一画布内同一 `agentId` 只能出现一次，已加入项在选择器中禁用。
+  - 点击 Agent 卡片进入 Focus Mode：当前卡片显示在上方，下方展开 `Agent Chat Panel`；收起恢复普通画布，聚焦态不创建持久 node。
+  - 聊天面板支持本地 user/assistant 消息、loading、错误展示和空消息拦截；第一版不做 stream、文件上传、artifact preview 或 conversation catalog。
+  - Vite dev server 代理新增 `/v1/agents`，README 和 Team Runtime 文档同步记录 mock/live 行为边界。
+- **影响范围**: `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/app/app.css`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/team-api.test.ts`, `apps/team-console/vite.config.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **测试**: 本轮最终验证见交付报告；本条记录随 Agent Canvas MVP 文档提交补齐。
+- **边界**: 未改 `src/team/**`、`src/ui/team-page.ts`、`/playground/team` 或主项目 Agent/Team Runtime 后端行为；未实现 WorkUnit 节点、Plan 编排、Agent clone / instance / overlay 或画布局部技能安装。
+
+---
+
 ## 2026-05-24 — Team Console artifact 点击边界与缩放白屏修复
 
 - **主题**: 收紧 Execution Atlas artifact 预览语义，并修复桌面缩放后点击节点触发布局测量反馈循环导致白屏的问题。

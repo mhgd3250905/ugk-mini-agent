@@ -34,7 +34,7 @@ npm run team-console:test   # 测试
 
 默认使用 Mock fixture 数据。顶部可切换 Live API 模式。
 
-本地开发时，Live API 依赖 Vite dev server 的 `/v1/team` 代理。默认代理目标是主 `ugk-pi` 服务：
+本地开发时，Live API 依赖 Vite dev server 的 `/v1/team` 和 `/v1/agents` 代理。默认代理目标是主 `ugk-pi` 服务：
 
 ```bash
 http://127.0.0.1:3000
@@ -48,6 +48,8 @@ TEAM_CONSOLE_API_TARGET=http://127.0.0.1:3100 npm run dev
 
 Live API 模式会真实请求：
 
+- `GET /v1/agents`
+- `POST /v1/agents/:agentId/chat`
 - `GET /v1/team/plans`
 - `GET /v1/team/runs`
 - `GET /v1/team/runs/:runId`
@@ -55,6 +57,12 @@ Live API 模式会真实请求：
 - `GET /v1/team/runs/:runId/tasks/:taskId/attempts/:attemptId/files/:fileName`
 
 当前 preview 没有 live run picker；它会按 `createdAt` 选择最新 run，再用该 run 的 `planId` 匹配 plan 后渲染执行图。请求失败会在页面顶部显示错误，不会继续展示旧 mock 数据。
+
+## Agent Canvas MVP
+
+Team Console preview 顶部现在包含 Agent Canvas MVP。Mock 模式使用 deterministic Agent fixture，可把主 Agent、搜索 Agent 等真实主项目 Agent profile 概念加入画布；同一个 `agentId` 在同一画布内只能加入一次，已加入项会在选择器里禁用。
+
+点击 Agent 卡片会进入 Focus Mode：当前 Agent 卡片固定在上方，下方展开 `Agent Chat Panel`。收起会恢复普通画布视图；Focus Mode 只是 UI 展开态，不创建新的持久节点。聊天面板第一版使用非 stream scoped chat：Live 模式调用 `POST /v1/agents/:agentId/chat`，Mock 模式返回 deterministic assistant reply。当前不做 Agent clone、instance、profile overlay、画布局部技能安装、WorkUnit 节点或 Plan 编排。
 
 Mock fixture 覆盖以下场景：
 
@@ -127,5 +135,6 @@ Mock fixture 覆盖以下场景：
 - 仍是独立 preview，不替换 `/playground/team`
 - 不调用 manual disposition、rerun、pause/resume/cancel API
 - 只通过现有只读 API 读取 attempt metadata 和 attempt file，不新增写操作
+- Agent Canvas 只引用已有 Agent catalog，不创建或修改主项目 Agent profile
 - 不支持拖拽编辑、框选、节点创建、minimap、持久化视图或编辑 Plan
 - Execution Atlas 只做执行图展示、task evidence 选择、artifact 预览和桌面 pan/zoom；大量子任务会折叠为 summary node，并按隐藏子任务状态汇总显示；折叠节点可展开/收起

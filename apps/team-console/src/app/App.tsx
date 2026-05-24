@@ -105,8 +105,31 @@ export function App() {
       setAgents(MOCK_AGENTS);
       return;
     }
+
+    let cancelled = false;
+    const api = new LiveTeamApi();
+
     setAgents([]);
     setAgentPickerOpen(false);
+
+    async function loadLiveAgents() {
+      try {
+        const nextAgents = await api.listAgents();
+        if (!cancelled) {
+          setAgents(nextAgents);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(errorMessage(e));
+        }
+      }
+    }
+
+    void loadLiveAgents();
+
+    return () => {
+      cancelled = true;
+    };
   }, [dataSource]);
 
   useEffect(() => {
