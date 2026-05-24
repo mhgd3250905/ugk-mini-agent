@@ -303,6 +303,7 @@ export function App() {
       try {
         const nextTasks = await new LiveTeamApi().listTasks();
         applyLiveTasks(nextTasks);
+        setError(null);
       } finally {
         liveTasksRefreshInFlightRef.current = null;
         setLiveTasksRefreshing(false);
@@ -311,6 +312,11 @@ export function App() {
     liveTasksRefreshInFlightRef.current = refresh;
     return refresh;
   }, [applyLiveTasks]);
+
+  const refreshLiveTasksAfterLeavingTaskCreateBranch = useCallback((branch: AgentBranchState | null) => {
+    if (dataSource !== "live" || branch?.mode !== "task-create") return;
+    void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
+  }, [dataSource, refreshLiveTasks]);
 
   const loadFixture = useCallback((fixtureId: string) => {
     setTaskLeaderPickerOpen(false);
@@ -543,19 +549,23 @@ export function App() {
     setAgentPickerOpen(false);
     setTaskLeaderPickerOpen(false);
     setExpandedTaskBranch(null);
-    setExpandedAgentBranch((current) => (
-      current?.nodeId === node.nodeId && current.mode === "chat" ? null : { nodeId: node.nodeId, agentId: node.agentId, mode: "chat" }
-    ));
-  }, []);
+    refreshLiveTasksAfterLeavingTaskCreateBranch(expandedAgentBranch);
+    setExpandedAgentBranch(
+      expandedAgentBranch?.nodeId === node.nodeId && expandedAgentBranch.mode === "chat"
+        ? null
+        : { nodeId: node.nodeId, agentId: node.agentId, mode: "chat" },
+    );
+  }, [expandedAgentBranch, refreshLiveTasksAfterLeavingTaskCreateBranch]);
 
   const toggleTaskBranch = useCallback((node: AtlasTaskNode) => {
     setAgentPickerOpen(false);
     setTaskLeaderPickerOpen(false);
+    refreshLiveTasksAfterLeavingTaskCreateBranch(expandedAgentBranch);
     setExpandedAgentBranch(null);
     setExpandedTaskBranch((current) => (
       current?.nodeId === node.nodeId ? null : { nodeId: node.nodeId, taskId: node.taskId }
     ));
-  }, []);
+  }, [expandedAgentBranch, refreshLiveTasksAfterLeavingTaskCreateBranch]);
 
   const openTaskCreateBranch = useCallback((leaderAgentId: string) => {
     const nodeId = `agent-${leaderAgentId}`;
@@ -668,10 +678,8 @@ export function App() {
           type="button"
           className="agent-playground-branch-collapse"
           onClick={() => {
+            refreshLiveTasksAfterLeavingTaskCreateBranch(expandedAgentBranch);
             setExpandedAgentBranch(null);
-            if (dataSource === "live" && expandedAgentBranchMode === "task-create") {
-              void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
-            }
           }}
           aria-label={`收起 ${expandedAgent.name} ${expandedAgentBranchLabel}分支`}
         >
