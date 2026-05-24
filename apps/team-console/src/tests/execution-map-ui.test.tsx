@@ -262,7 +262,7 @@ describe("ExecutionMap UI", () => {
       taskId: task.taskId,
       position: { x: 280, y: 180 },
     };
-    let selected: AtlasTaskNode | null = null;
+    const selectedNodes: AtlasTaskNode[] = [];
 
     render(
       <ExecutionMap
@@ -274,13 +274,13 @@ describe("ExecutionMap UI", () => {
           ["main", { agentId: "main", name: "主 Agent", description: "默认" }],
           ["search", { agentId: "search", name: "搜索 Agent", description: "搜索" }],
         ])}
-        onSelectCanvasTask={(node) => { selected = node; }}
+        onSelectCanvasTask={(node) => { selectedNodes.push(node); }}
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /调查 Medtrum 云资产/ }));
 
-    expect(selected?.taskId).toBe("task_research_medtrum");
+    expect(selectedNodes[0]?.taskId).toBe("task_research_medtrum");
   });
 
   it("does not render inline detail inside selected task node", () => {
