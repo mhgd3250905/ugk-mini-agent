@@ -63,11 +63,14 @@ function playgroundBaseUrl(): string {
   return raw.replace(/\/+$/, "");
 }
 
-function buildAgentPlaygroundUrl(agentId: string): string {
+function buildAgentPlaygroundUrl(agentId: string, mode: AgentBranchMode = "chat"): string {
   const url = new URL("/playground", playgroundBaseUrl());
   url.searchParams.set("view", "chat");
   url.searchParams.set("agentId", agentId);
   url.searchParams.set("embed", "team-console");
+  if (mode === "task-create") {
+    url.searchParams.set("teamTaskMode", "create");
+  }
   return url.toString();
 }
 
@@ -77,6 +80,7 @@ function buildTaskLeaderPlaygroundUrl(task: TeamCanvasTask): string {
   url.searchParams.set("agentId", task.leaderAgentId);
   url.searchParams.set("embed", "team-console");
   url.searchParams.set("teamTaskId", task.taskId);
+  url.searchParams.set("teamTaskMode", "edit");
   return url.toString();
 }
 
@@ -644,7 +648,12 @@ export function App() {
         <button
           type="button"
           className="agent-playground-branch-collapse"
-          onClick={() => setExpandedAgentBranch(null)}
+          onClick={() => {
+            setExpandedAgentBranch(null);
+            if (dataSource === "live" && expandedAgentBranchMode === "task-create") {
+              void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
+            }
+          }}
           aria-label={`收起 ${expandedAgent.name} ${expandedAgentBranchLabel}分支`}
         >
           收起
@@ -658,7 +667,7 @@ export function App() {
       <iframe
         className="agent-playground-iframe"
         title={expandedAgentIframeTitle}
-        src={buildAgentPlaygroundUrl(expandedAgent.agentId)}
+        src={buildAgentPlaygroundUrl(expandedAgent.agentId, expandedAgentBranchMode)}
         referrerPolicy="no-referrer"
       />
     </section>

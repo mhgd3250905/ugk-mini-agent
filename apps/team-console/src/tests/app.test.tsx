@@ -196,6 +196,7 @@ describe("App", () => {
     expect(iframe).toHaveAttribute("title", "主 Agent 主项目对话");
     expect(iframe?.getAttribute("src")).toContain("/playground?view=chat&agentId=main");
     expect(iframe?.getAttribute("src")).toContain("embed=team-console");
+    expect(iframe?.getAttribute("src")).not.toContain("teamTaskMode=create");
   });
 
   it("clicking the expanded agent card collapses the embedded branch", async () => {
@@ -229,6 +230,7 @@ describe("App", () => {
     expect(iframe?.getAttribute("src")).toContain("/playground?view=chat&agentId=main");
     expect(iframe?.getAttribute("src")).toContain("embed=team-console");
     expect(iframe?.getAttribute("src")).toContain("teamTaskId=task_research_medtrum");
+    expect(iframe?.getAttribute("src")).toContain("teamTaskMode=edit");
   });
 
   it("collapses the Task leader branch from its header action", async () => {
@@ -627,7 +629,12 @@ describe("App", () => {
     expect(branch).toBeTruthy();
     expect(within(branch!).getByText("创建 Task")).toBeInTheDocument();
     expect(within(branch!).getByText("主 Agent")).toBeInTheDocument();
-    expect(branch!.querySelector("iframe")).toHaveAttribute("title", "主 Agent Task 创建");
+    const iframe = branch!.querySelector("iframe") as HTMLIFrameElement | null;
+    expect(iframe).toHaveAttribute("title", "主 Agent Task 创建");
+    expect(iframe?.getAttribute("src")).toContain("/playground?view=chat&agentId=main");
+    expect(iframe?.getAttribute("src")).toContain("embed=team-console");
+    expect(iframe?.getAttribute("src")).toContain("teamTaskMode=create");
+    expect(iframe?.getAttribute("src")).not.toContain("teamTaskId=");
   });
 
   it("refreshes live Task cards from the Task toolbar action", async () => {
@@ -656,6 +663,34 @@ describe("App", () => {
 
     await waitFor(() => expect(taskRequests).toBe(2));
     expect(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ })).toBeInTheDocument();
+  });
+
+  it("refreshes live Task cards after closing a Task creation branch", async () => {
+    let taskRequests = 0;
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [{ agentId: "main", name: "主 Agent", description: "默认综合 agent" }],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") {
+        taskRequests += 1;
+        return new Response(JSON.stringify({ tasks: [] }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    await waitFor(() => expect(taskRequests).toBe(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "创建 Task" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(screen.getByRole("button", { name: /收起 主 Agent 创建 Task分支/ }));
+
+    await waitFor(() => expect(taskRequests).toBe(2));
   });
 
   it("persists Live API agent cards and dragged positions across remounts", async () => {
