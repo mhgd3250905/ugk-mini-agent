@@ -1242,8 +1242,9 @@ describe("Artifact preview nodes", () => {
 
       const childLink = container.querySelector(".emap-link-task-child-branch") as SVGPathElement | null;
       expect(childLink).toBeTruthy();
-      expect(childLink!.getAttribute("d")).toContain(`M${measuredMenuRight},${connectorY}`);
-      expect(childLink!.getAttribute("d")).toContain(`L${childLeft},${connectorY}`);
+      expect(childLink!.getAttribute("d")).toContain(`M${measuredMenuRight},${connectorY} C`);
+      expect(childLink!.getAttribute("d")).toContain(`${childLeft},${connectorY}`);
+      expect(childLink!.getAttribute("d")).not.toContain(" L");
       expect(childLink!.getAttribute("d")).not.toContain(`M${menuLeft + 280},`);
     } finally {
       if (offsetWidthDescriptor) {

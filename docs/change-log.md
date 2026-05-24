@@ -12,6 +12,20 @@
 
 ---
 
+## 2026-05-25 — Team Console Atlas 交互与分支聚焦
+
+- **主题**: 收口 Team Console 画布批量操作、连接线、工具栏和对话分支聚焦体验。
+- **变更内容**:
+  - Atlas 空白画布支持 Shift 框选 Agent / Task 节点；拖动任一已选节点会整体移动选中集合，选择态只存在于当前画布 UI，不写入 localStorage。
+  - Execution Atlas 的 branch / Task 菜单 / Agent 分支连接线改为平滑三次贝塞尔曲线；Task 二级节点仍使用真实菜单尺寸做锚点。
+  - 右上工具栏把 Agent 操作、统计 pill 和 Task 操作组拆开；Task 相关按钮收纳在 `task-toolbar-group`，Agent / Task 数量以更清晰的统计标签展示。
+  - Agent 对话分支和 Task Leader 对话分支新增最大化按钮；最大化后渲染到未缩放的 canvas overlay，避免 iframe 在缩放世界内继续放大导致文字发糊，并支持还原。
+  - 增加可复用样式基类：`.emap-atlas-card`、`.emap-menu-branch`、`.emap-dialog-branch`、`.emap-panel-branch`，后续节点类型可以继续复用。
+- **影响范围**: `apps/team-console/src/graph/AtlasCanvasShell.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/app/app.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未修改 `src/team/**` 后端 API，未改 `.pi/skills/team-task-creator/**`，未新增 Plan 编辑能力、minimap、持久化视图或移动端专项布局。
+
+---
+
 ## 2026-05-25 — Team Console Canvas Task Run
 
 - **主题**: 打通 Team Console 画布 Task 的独立 WorkUnit run。

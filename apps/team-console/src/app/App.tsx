@@ -862,78 +862,88 @@ export function App() {
 
   const agentToolbar = (
     <div className="agent-atlas-actions">
-      <button
-        type="button"
-        className="agent-add-btn"
-        onClick={() => {
-          setTaskLeaderPickerOpen(false);
-          setAgentPickerOpen((open) => !open);
-        }}
-        aria-expanded={agentPickerOpen}
-      >
-        添加 Agent
-      </button>
-      <span className="agent-atlas-count">{agentNodes.length}</span>
-      <span className="agent-atlas-count task-atlas-count" aria-label="当前 Task 数量">
-        {tasks.length} 个 Task
-      </span>
-      <button
-        type="button"
-        className="agent-add-btn task-create-btn"
-        disabled={!canCreateTask}
-        onClick={() => {
-          setAgentPickerOpen(false);
-          setTaskLeaderPickerOpen((open) => !open);
-        }}
-        aria-expanded={taskLeaderPickerOpen}
-      >
-        创建 Task
-      </button>
-      <button
-        type="button"
-        className="agent-add-btn task-refresh-btn"
-        disabled={!canRefreshTasks}
-        onClick={() => {
-          void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
-        }}
-      >
-        {liveTasksRefreshing ? "刷新中..." : "刷新 Task"}
-      </button>
-      {agentPickerOpen && (
-        <div className="agent-picker" aria-label="Agent catalog">
-          {agents.map((agent) => {
-            const joined = addedAgentIds.has(agent.agentId);
-            return (
+      <div className="agent-toolbar-group agent-toolbar-agent-group">
+        <button
+          type="button"
+          className="agent-add-btn"
+          onClick={() => {
+            setTaskLeaderPickerOpen(false);
+            setAgentPickerOpen((open) => !open);
+          }}
+          aria-expanded={agentPickerOpen}
+        >
+          添加 Agent
+        </button>
+        {agentPickerOpen && (
+          <div className="agent-picker" aria-label="Agent catalog">
+            {agents.map((agent) => {
+              const joined = addedAgentIds.has(agent.agentId);
+              return (
+                <button
+                  key={agent.agentId}
+                  type="button"
+                  className="agent-picker-option"
+                  disabled={joined}
+                  onClick={() => addAgentNode(agent.agentId)}
+                >
+                  <span className="agent-picker-name">{agent.name}</span>
+                  <code>{agent.agentId}</code>
+                  {joined && <span className="agent-picker-status">已加入</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <div className="agent-atlas-stats" aria-label="画布统计">
+        <span className="agent-atlas-count" aria-label="Agent 数量">
+          <strong>{agentNodes.length}</strong>
+          <span> Agent</span>
+        </span>
+        <span className="agent-atlas-count task-atlas-count" aria-label="当前 Task 数量">
+          <strong>{tasks.length}</strong>
+          <span> 个 Task</span>
+        </span>
+      </div>
+      <div className="agent-toolbar-group task-toolbar-group" aria-label="Task 操作">
+        <button
+          type="button"
+          className="agent-add-btn task-create-btn"
+          disabled={!canCreateTask}
+          onClick={() => {
+            setAgentPickerOpen(false);
+            setTaskLeaderPickerOpen((open) => !open);
+          }}
+          aria-expanded={taskLeaderPickerOpen}
+        >
+          创建 Task
+        </button>
+        <button
+          type="button"
+          className="agent-add-btn task-refresh-btn"
+          disabled={!canRefreshTasks}
+          onClick={() => {
+            void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
+          }}
+        >
+          {liveTasksRefreshing ? "刷新中..." : "刷新 Task"}
+        </button>
+        {taskLeaderPickerOpen && (
+          <div className="agent-picker task-leader-picker" aria-label="Task leader catalog">
+            {agents.map((agent) => (
               <button
                 key={agent.agentId}
                 type="button"
                 className="agent-picker-option"
-                disabled={joined}
-                onClick={() => addAgentNode(agent.agentId)}
+                onClick={() => openTaskCreateBranch(agent.agentId)}
               >
                 <span className="agent-picker-name">{agent.name}</span>
                 <code>{agent.agentId}</code>
-                {joined && <span className="agent-picker-status">已加入</span>}
               </button>
-            );
-          })}
-        </div>
-      )}
-      {taskLeaderPickerOpen && (
-        <div className="agent-picker task-leader-picker" aria-label="Task leader catalog">
-          {agents.map((agent) => (
-            <button
-              key={agent.agentId}
-              type="button"
-              className="agent-picker-option"
-              onClick={() => openTaskCreateBranch(agent.agentId)}
-            >
-              <span className="agent-picker-name">{agent.name}</span>
-              <code>{agent.agentId}</code>
-            </button>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 
@@ -944,7 +954,7 @@ export function App() {
     : `${expandedAgent?.name ?? ""} 主项目对话`;
 
   const expandedAgentBranchPanel = expandedAgentNode && expandedAgent ? (
-    <section className="agent-playground-branch" aria-label={`${expandedAgent.name} ${expandedAgentBranchLabel}`}>
+    <section className="agent-playground-branch emap-dialog-branch" aria-label={`${expandedAgent.name} ${expandedAgentBranchLabel}`}>
       <header className="agent-playground-branch-head">
         <div className="agent-playground-branch-title">
           <span>{expandedAgentBranchLabel}</span>
@@ -989,7 +999,7 @@ export function App() {
         ? "重新运行"
         : "运行";
   const expandedTaskBranchPanel = expandedTaskNode && expandedTask ? (
-    <section className="task-leader-branch task-action-branch" aria-label={`${expandedTask.title} Task 操作`}>
+    <section className="task-leader-branch task-action-branch emap-menu-branch" aria-label={`${expandedTask.title} Task 操作`}>
       <header className="task-leader-branch-head">
         <div className="task-leader-branch-title">
           <span>Task 操作</span>
@@ -1091,7 +1101,7 @@ export function App() {
   ) : null;
   const expandedTaskChildBranchPanel = expandedTaskNode && expandedTask ? (
     expandedTaskDetailMode === "leader-chat" ? (
-      <section className="agent-playground-branch task-leader-chat-branch" aria-label={`${expandedTask.title} leader 对话`}>
+      <section className="agent-playground-branch emap-dialog-branch task-leader-chat-branch" aria-label={`${expandedTask.title} leader 对话`}>
         <header className="agent-playground-branch-head">
           <div className="agent-playground-branch-title">
             <span>Leader 对话</span>
@@ -1118,7 +1128,7 @@ export function App() {
         />
       </section>
     ) : expandedTaskDetailMode === "edit" && activeTaskEditDraft ? (
-      <section className="task-leader-branch task-edit-branch" aria-label={`${expandedTask.title} Task 编辑`}>
+      <section className="task-leader-branch emap-panel-branch task-edit-branch" aria-label={`${expandedTask.title} Task 编辑`}>
         <header className="task-leader-branch-head">
           <div className="task-leader-branch-title">
             <span>Task 编辑</span>

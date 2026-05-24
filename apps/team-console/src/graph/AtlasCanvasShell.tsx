@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent, type React
 
 export type AtlasViewport = { x: number; y: number; scale: number };
 export type AtlasInteractionMode = "free" | "locked";
+export type AtlasSelectionRect = { x: number; y: number; width: number; height: number };
 
 interface AtlasCanvasShellProps {
   children: ReactNode;
@@ -13,6 +14,7 @@ interface AtlasCanvasShellProps {
   toolbarStart?: ReactNode;
   agentFocusId?: string | null;
   interactionMode?: AtlasInteractionMode;
+  onSelectionComplete?: (rect: AtlasSelectionRect) => void;
 }
 
 interface CanvasDragOrigin {
@@ -22,6 +24,15 @@ interface CanvasDragOrigin {
   panX: number;
   panY: number;
 }
+
+interface CanvasSelectionOrigin {
+  pointerId: number;
+  startLocalX: number;
+  startLocalY: number;
+  viewport: AtlasViewport;
+}
+
+type ScreenSelectionRect = { left: number; top: number; width: number; height: number };
 
 const DEFAULT_VIEWPORT: AtlasViewport = { x: 0, y: 0, scale: 1 };
 const MIN_SCALE = 0.45;
@@ -38,7 +49,7 @@ function formatCanvasNumber(value: number): string {
 
 function canStartCanvasPan(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return true;
-  return !target.closest(".emap-node, .emap-evidence-node, .emap-artifact-preview, .execution-map-toolbar, .agent-focus-workspace, .emap-agent-branch-shell, .agent-playground-branch, button, select, input, textarea, a, iframe, summary, details");
+  return !target.closest(".emap-node, .emap-evidence-node, .emap-artifact-preview, .execution-map-toolbar, .agent-focus-workspace, .emap-agent-branch-shell, .emap-task-branch-shell, .emap-task-child-branch-shell, .agent-playground-branch, button, select, input, textarea, a, iframe, summary, details");
 }
 
 function pointerPoint(event: PointerEvent<HTMLDivElement>): { x: number; y: number } {
@@ -48,11 +59,39 @@ function pointerPoint(event: PointerEvent<HTMLDivElement>): { x: number; y: numb
   return { x, y };
 }
 
-export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewport, defaultViewport = DEFAULT_VIEWPORT, onViewportChange, toolbarStart, agentFocusId, interactionMode = "free" }: AtlasCanvasShellProps) {
+function pointerLocalPoint(container: HTMLDivElement | null, event: PointerEvent<HTMLDivElement>): { x: number; y: number } {
+  const point = pointerPoint(event);
+  const rect = container?.getBoundingClientRect();
+  if (!rect) return point;
+  return { x: point.x - rect.left, y: point.y - rect.top };
+}
+
+function normalizeScreenRect(startX: number, startY: number, endX: number, endY: number): ScreenSelectionRect {
+  return {
+    left: Math.min(startX, endX),
+    top: Math.min(startY, endY),
+    width: Math.abs(endX - startX),
+    height: Math.abs(endY - startY),
+  };
+}
+
+function toWorldSelectionRect(screenRect: ScreenSelectionRect, viewport: AtlasViewport): AtlasSelectionRect {
+  const scale = Number.isFinite(viewport.scale) && viewport.scale > 0 ? viewport.scale : 1;
+  return {
+    x: (screenRect.left - viewport.x) / scale,
+    y: (screenRect.top - viewport.y) / scale,
+    width: screenRect.width / scale,
+    height: screenRect.height / scale,
+  };
+}
+
+export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewport, defaultViewport = DEFAULT_VIEWPORT, onViewportChange, toolbarStart, agentFocusId, interactionMode = "free", onSelectionComplete }: AtlasCanvasShellProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const dragOriginRef = useRef<CanvasDragOrigin | null>(null);
+  const selectionOriginRef = useRef<CanvasSelectionOrigin | null>(null);
   const [internalViewport, setInternalViewport] = useState<AtlasViewport>(defaultViewport);
   const [isPanning, setIsPanning] = useState(false);
+  const [selectionRect, setSelectionRect] = useState<ScreenSelectionRect | null>(null);
   const currentViewport = viewport ?? internalViewport;
   const isLocked = interactionMode === "locked";
 
@@ -120,6 +159,19 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
   const handleCanvasPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (isLocked) return;
     if ((event.button ?? 0) !== 0 || !canStartCanvasPan(event.target)) return;
+    if (event.shiftKey && onSelectionComplete) {
+      const localPoint = pointerLocalPoint(mapContainerRef.current, event);
+      selectionOriginRef.current = {
+        pointerId: event.pointerId,
+        startLocalX: localPoint.x,
+        startLocalY: localPoint.y,
+        viewport: currentViewport,
+      };
+      setSelectionRect(normalizeScreenRect(localPoint.x, localPoint.y, localPoint.x, localPoint.y));
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+      return;
+    }
     const point = pointerPoint(event);
     dragOriginRef.current = {
       pointerId: event.pointerId,
@@ -130,10 +182,22 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
     };
     setIsPanning(true);
     event.currentTarget.setPointerCapture?.(event.pointerId);
-  }, [currentViewport.x, currentViewport.y, isLocked]);
+  }, [currentViewport, isLocked, onSelectionComplete]);
 
   const handleCanvasPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (isLocked) return;
+    const selectionOrigin = selectionOriginRef.current;
+    if (selectionOrigin && selectionOrigin.pointerId === event.pointerId) {
+      const localPoint = pointerLocalPoint(mapContainerRef.current, event);
+      setSelectionRect(normalizeScreenRect(
+        selectionOrigin.startLocalX,
+        selectionOrigin.startLocalY,
+        localPoint.x,
+        localPoint.y,
+      ));
+      event.preventDefault();
+      return;
+    }
     const origin = dragOriginRef.current;
     if (!origin || origin.pointerId !== event.pointerId) return;
     const point = pointerPoint(event);
@@ -145,12 +209,30 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
   }, [currentViewport, isLocked, updateViewport]);
 
   const endCanvasPan = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const selectionOrigin = selectionOriginRef.current;
+    if (selectionOrigin && selectionOrigin.pointerId === event.pointerId) {
+      const localPoint = pointerLocalPoint(mapContainerRef.current, event);
+      const screenRect = normalizeScreenRect(
+        selectionOrigin.startLocalX,
+        selectionOrigin.startLocalY,
+        localPoint.x,
+        localPoint.y,
+      );
+      selectionOriginRef.current = null;
+      setSelectionRect(null);
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+      if (screenRect.width >= 4 || screenRect.height >= 4) {
+        onSelectionComplete?.(toWorldSelectionRect(screenRect, selectionOrigin.viewport));
+      }
+      event.preventDefault();
+      return;
+    }
     const origin = dragOriginRef.current;
     if (!origin || origin.pointerId !== event.pointerId) return;
     dragOriginRef.current = null;
     setIsPanning(false);
     event.currentTarget.releasePointerCapture?.(event.pointerId);
-  }, []);
+  }, [onSelectionComplete]);
 
   const canvasTransform = `translate(${formatCanvasNumber(currentViewport.x)}px, ${formatCanvasNumber(currentViewport.y)}px) scale(${formatCanvasNumber(currentViewport.scale)})`;
   const zoomPercent = `${Math.round(currentViewport.scale * 100)}%`;
@@ -158,7 +240,7 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
   return (
     <div
       ref={mapContainerRef}
-      className={`execution-map-container ${isPanning ? "is-panning" : ""} ${isLocked ? "is-locked" : ""}`}
+      className={`execution-map-container ${isPanning ? "is-panning" : ""} ${selectionRect ? "is-selecting" : ""} ${isLocked ? "is-locked" : ""}`}
       data-agent-focus={agentFocusId ?? "none"}
       data-interaction-mode={interactionMode}
       onPointerDown={handleCanvasPointerDown}
@@ -182,6 +264,17 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
       >
         {hideWorld ? null : children}
       </div>
+      {selectionRect && (
+        <div
+          className="execution-map-selection-rect"
+          style={{
+            left: selectionRect.left,
+            top: selectionRect.top,
+            width: selectionRect.width,
+            height: selectionRect.height,
+          }}
+        />
+      )}
       {overlay}
     </div>
   );

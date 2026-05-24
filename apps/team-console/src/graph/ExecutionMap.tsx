@@ -4,7 +4,7 @@ import type { ExecutionNode, NodeKind } from "./execution-map-model";
 import { buildExecutionMapModel, CHILD_COLLAPSE_THRESHOLD } from "./execution-map-model";
 import { layoutExecutionMap, ROOT_ID, NODE_WIDTH, straightPath, type ExecutionMapLayout } from "./execution-map-layout";
 import { RUN_STATUS_LABELS, TASK_STATUS_LABELS } from "../shared/status";
-import { AtlasCanvasShell, type AtlasInteractionMode, type AtlasViewport } from "./AtlasCanvasShell";
+import { AtlasCanvasShell, type AtlasInteractionMode, type AtlasSelectionRect, type AtlasViewport } from "./AtlasCanvasShell";
 import "./execution-map.css";
 
 const KIND_LABELS: Record<NodeKind | "collapsed" | "orphan_group", string> = {
@@ -105,21 +105,19 @@ type ArtifactPreviewState =
   | { status: "loaded"; fileName: string; content: string }
   | { status: "error"; fileName: string; message: string };
 
-type AgentDragState = {
+type AtlasNodeDragEntry = {
   nodeId: string;
-  pointerId: number;
-  startClientX: number;
-  startClientY: number;
+  kind: "agent" | "task";
   startPosition: { x: number; y: number };
-  hasMoved: boolean;
 };
 
-type TaskDragState = {
-  nodeId: string;
+type AtlasNodeDragState = {
+  primaryNodeId: string;
+  primaryKind: "agent" | "task";
   pointerId: number;
   startClientX: number;
   startClientY: number;
-  startPosition: { x: number; y: number };
+  entries: AtlasNodeDragEntry[];
   hasMoved: boolean;
 };
 
@@ -261,6 +259,20 @@ function clampAgentBranchRect(rect: AgentBranchRect): AgentBranchRect {
     width: Math.max(AGENT_BRANCH_MIN_WIDTH, rect.width),
     height: Math.max(AGENT_BRANCH_MIN_HEIGHT, rect.height),
   };
+}
+
+function atlasSelectionKey(kind: "agent" | "task", nodeId: string): string {
+  return `${kind}:${nodeId}`;
+}
+
+function rectsIntersect(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+): boolean {
+  return a.x < b.x + b.width
+    && a.x + a.width > b.x
+    && a.y < b.y + b.height
+    && a.y + a.height > b.y;
 }
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -570,10 +582,11 @@ export function ExecutionMap({
   const [agentBranchRects, setAgentBranchRects] = useState<Record<string, AgentBranchRect>>({});
   const [taskChildBranchRects, setTaskChildBranchRects] = useState<Record<string, AgentBranchRect>>({});
   const [taskBranchMeasuredSize, setTaskBranchMeasuredSize] = useState<TaskBranchMeasuredSize | null>(null);
+  const [selectedAtlasNodeKeys, setSelectedAtlasNodeKeys] = useState<Set<string>>(new Set());
+  const [maximizedBranch, setMaximizedBranch] = useState<"agent" | "task-child" | null>(null);
   const prevSelectionRef = useRef<string | null>(null);
   const taskBranchShellRef = useRef<HTMLDivElement | null>(null);
-  const agentDragRef = useRef<AgentDragState | null>(null);
-  const taskDragRef = useRef<TaskDragState | null>(null);
+  const atlasNodeDragRef = useRef<AtlasNodeDragState | null>(null);
   const suppressAgentClickRef = useRef<string | null>(null);
   const suppressTaskClickRef = useRef<string | null>(null);
   const agentBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
@@ -594,6 +607,18 @@ export function ExecutionMap({
       setArtifactPreviewState({});
     }
   }
+
+  useLayoutEffect(() => {
+    const validKeys = new Set([
+      ...agentNodes.map((node) => atlasSelectionKey("agent", node.nodeId)),
+      ...taskNodes.map((node) => atlasSelectionKey("task", node.nodeId)),
+    ]);
+    setSelectedAtlasNodeKeys((current) => {
+      const next = new Set([...current].filter((key) => validKeys.has(key)));
+      const unchanged = next.size === current.size && [...next].every((key) => current.has(key));
+      return unchanged ? current : next;
+    });
+  }, [agentNodes, taskNodes]);
 
   const model = useMemo(() => plan && run ? buildExecutionMapModel(plan, run) : null, [plan, run]);
 
@@ -845,38 +870,99 @@ export function ExecutionMap({
       });
   }, [artifactPreviewState, readAttemptFile, run, selectedArtifactId, selectedTaskId]);
 
-  const handleAgentPointerDown = useCallback((node: AtlasAgentNode, event: ReactPointerEvent<HTMLButtonElement>) => {
+  const handleAtlasSelectionComplete = useCallback((rect: AtlasSelectionRect) => {
+    const next = new Set<string>();
+    for (const node of agentNodes) {
+      if (rectsIntersect(rect, {
+        x: node.position.x,
+        y: node.position.y,
+        width: NODE_WIDTH,
+        height: AGENT_NODE_HEIGHT,
+      })) {
+        next.add(atlasSelectionKey("agent", node.nodeId));
+      }
+    }
+    for (const node of taskNodes) {
+      if (rectsIntersect(rect, {
+        x: node.position.x,
+        y: node.position.y,
+        width: NODE_WIDTH,
+        height: CANVAS_TASK_NODE_HEIGHT,
+      })) {
+        next.add(atlasSelectionKey("task", node.nodeId));
+      }
+    }
+    setSelectedAtlasNodeKeys(next);
+  }, [agentNodes, taskNodes]);
+
+  const buildAtlasDragEntries = useCallback((primary: AtlasAgentNode | AtlasTaskNode, kind: "agent" | "task"): AtlasNodeDragEntry[] => {
+    const primaryKey = atlasSelectionKey(kind, primary.nodeId);
+    if (!selectedAtlasNodeKeys.has(primaryKey)) {
+      return [{ nodeId: primary.nodeId, kind, startPosition: primary.position }];
+    }
+
+    const entries: AtlasNodeDragEntry[] = [];
+    for (const node of agentNodes) {
+      if (selectedAtlasNodeKeys.has(atlasSelectionKey("agent", node.nodeId))) {
+        entries.push({ nodeId: node.nodeId, kind: "agent", startPosition: node.position });
+      }
+    }
+    for (const node of taskNodes) {
+      if (selectedAtlasNodeKeys.has(atlasSelectionKey("task", node.nodeId))) {
+        entries.push({ nodeId: node.nodeId, kind: "task", startPosition: node.position });
+      }
+    }
+    return entries.length > 0 ? entries : [{ nodeId: primary.nodeId, kind, startPosition: primary.position }];
+  }, [agentNodes, selectedAtlasNodeKeys, taskNodes]);
+
+  const beginAtlasNodeDrag = useCallback((
+    node: AtlasAgentNode | AtlasTaskNode,
+    kind: "agent" | "task",
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
     event.stopPropagation();
-    if ((event.button ?? 0) !== 0 || !canMoveAgents || !onMoveAgent) return;
-    agentDragRef.current = {
-      nodeId: node.nodeId,
+    if ((event.button ?? 0) !== 0) return;
+    if (kind === "agent" && (!canMoveAgents || !onMoveAgent)) return;
+    if (kind === "task" && (!canMoveTasks || !onMoveCanvasTask)) return;
+    atlasNodeDragRef.current = {
+      primaryNodeId: node.nodeId,
+      primaryKind: kind,
       pointerId: event.pointerId,
       startClientX: event.clientX,
       startClientY: event.clientY,
-      startPosition: node.position,
+      entries: buildAtlasDragEntries(node, kind),
       hasMoved: false,
     };
     event.currentTarget.setPointerCapture?.(event.pointerId);
-  }, [canMoveAgents, onMoveAgent]);
+  }, [buildAtlasDragEntries, canMoveAgents, canMoveTasks, onMoveAgent, onMoveCanvasTask]);
+
+  const handleAgentPointerDown = useCallback((node: AtlasAgentNode, event: ReactPointerEvent<HTMLButtonElement>) => {
+    beginAtlasNodeDrag(node, "agent", event);
+  }, [beginAtlasNodeDrag]);
 
   const handleAgentPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    const drag = agentDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId || !onMoveAgent) return;
+    const drag = atlasNodeDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
     event.stopPropagation();
     const dx = event.clientX - drag.startClientX;
     const dy = event.clientY - drag.startClientY;
     const hasMoved = drag.hasMoved || Math.hypot(dx, dy) >= AGENT_DRAG_THRESHOLD;
     if (!hasMoved) return;
 
-    const scale = viewport && Number.isFinite(viewport.scale) && viewport.scale > 0
-      ? viewport.scale
-      : 1;
-    agentDragRef.current = { ...drag, hasMoved };
-    onMoveAgent(drag.nodeId, {
-      x: drag.startPosition.x + dx / scale,
-      y: drag.startPosition.y + dy / scale,
-    });
-  }, [onMoveAgent, viewport]);
+    const scale = viewportScale(viewport);
+    atlasNodeDragRef.current = { ...drag, hasMoved };
+    for (const entry of drag.entries) {
+      const nextPosition = {
+        x: entry.startPosition.x + dx / scale,
+        y: entry.startPosition.y + dy / scale,
+      };
+      if (entry.kind === "agent") {
+        onMoveAgent?.(entry.nodeId, nextPosition);
+      } else {
+        onMoveCanvasTask?.(entry.nodeId, nextPosition);
+      }
+    }
+  }, [onMoveAgent, onMoveCanvasTask, viewport]);
 
   const suppressNextAgentClick = useCallback((nodeId: string) => {
     suppressAgentClickRef.current = nodeId;
@@ -888,20 +974,20 @@ export function ExecutionMap({
   }, []);
 
   const endAgentPointer = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    const drag = agentDragRef.current;
+    const drag = atlasNodeDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.stopPropagation();
-    agentDragRef.current = null;
+    atlasNodeDragRef.current = null;
     event.currentTarget.releasePointerCapture?.(event.pointerId);
 
     if (drag.hasMoved) {
-      suppressNextAgentClick(drag.nodeId);
+      suppressNextAgentClick(drag.primaryNodeId);
       return;
     }
 
-    const node = agentNodes.find((candidate) => candidate.nodeId === drag.nodeId);
-    if (node) {
-      suppressNextAgentClick(drag.nodeId);
+    const node = agentNodes.find((candidate) => candidate.nodeId === drag.primaryNodeId);
+    if (drag.primaryKind === "agent" && node) {
+      suppressNextAgentClick(drag.primaryNodeId);
       onSelectAgent?.(node);
     }
   }, [agentNodes, onSelectAgent, suppressNextAgentClick]);
@@ -915,35 +1001,12 @@ export function ExecutionMap({
   }, [onSelectAgent]);
 
   const handleTaskPointerDown = useCallback((node: AtlasTaskNode, event: ReactPointerEvent<HTMLButtonElement>) => {
-    event.stopPropagation();
-    if ((event.button ?? 0) !== 0 || !canMoveTasks || !onMoveCanvasTask) return;
-    taskDragRef.current = {
-      nodeId: node.nodeId,
-      pointerId: event.pointerId,
-      startClientX: event.clientX,
-      startClientY: event.clientY,
-      startPosition: node.position,
-      hasMoved: false,
-    };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  }, [canMoveTasks, onMoveCanvasTask]);
+    beginAtlasNodeDrag(node, "task", event);
+  }, [beginAtlasNodeDrag]);
 
   const handleTaskPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    const drag = taskDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId || !onMoveCanvasTask) return;
-    event.stopPropagation();
-    const dx = event.clientX - drag.startClientX;
-    const dy = event.clientY - drag.startClientY;
-    const hasMoved = drag.hasMoved || Math.hypot(dx, dy) >= AGENT_DRAG_THRESHOLD;
-    if (!hasMoved) return;
-
-    taskDragRef.current = { ...drag, hasMoved };
-    const scale = viewportScale(viewport);
-    onMoveCanvasTask(drag.nodeId, {
-      x: drag.startPosition.x + dx / scale,
-      y: drag.startPosition.y + dy / scale,
-    });
-  }, [onMoveCanvasTask, viewport]);
+    handleAgentPointerMove(event);
+  }, [handleAgentPointerMove]);
 
   const suppressNextTaskClick = useCallback((nodeId: string) => {
     suppressTaskClickRef.current = nodeId;
@@ -955,20 +1018,20 @@ export function ExecutionMap({
   }, []);
 
   const endTaskPointer = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    const drag = taskDragRef.current;
+    const drag = atlasNodeDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.stopPropagation();
-    taskDragRef.current = null;
+    atlasNodeDragRef.current = null;
     event.currentTarget.releasePointerCapture?.(event.pointerId);
 
     if (drag.hasMoved) {
-      suppressNextTaskClick(drag.nodeId);
+      suppressNextTaskClick(drag.primaryNodeId);
       return;
     }
 
-    const node = taskNodes.find((candidate) => candidate.nodeId === drag.nodeId);
-    if (node) {
-      suppressNextTaskClick(drag.nodeId);
+    const node = taskNodes.find((candidate) => candidate.nodeId === drag.primaryNodeId);
+    if (drag.primaryKind === "task" && node) {
+      suppressNextTaskClick(drag.primaryNodeId);
       onSelectCanvasTask?.(node);
     }
   }, [onSelectCanvasTask, suppressNextTaskClick, taskNodes]);
@@ -1099,6 +1162,33 @@ export function ExecutionMap({
   const taskChildBranchPath = taskBranchNode && taskChildBranchNode
     ? taskChildBranchConnectorPath(taskBranchNode, taskChildBranchNode)
     : null;
+  const maximizedBranchPanel = maximizedBranch === "agent" && agentBranchPanel
+    ? agentBranchPanel
+    : maximizedBranch === "task-child" && taskChildBranchPanel
+      ? taskChildBranchPanel
+      : null;
+  const maximizedOverlay = maximizedBranchPanel ? (
+    <div className="emap-maximized-branch-shell">
+      <button
+        type="button"
+        className="emap-branch-restore-button"
+        aria-label="还原对话分支"
+        onClick={() => setMaximizedBranch(null)}
+      >
+        还原
+      </button>
+      {maximizedBranchPanel}
+    </div>
+  ) : null;
+
+  useLayoutEffect(() => {
+    if (
+      (maximizedBranch === "agent" && !agentBranchPanel)
+      || (maximizedBranch === "task-child" && !taskChildBranchPanel)
+    ) {
+      setMaximizedBranch(null);
+    }
+  }, [agentBranchPanel, maximizedBranch, taskChildBranchPanel]);
 
   useLayoutEffect(() => {
     const nodeId = focusedTaskNode?.nodeId ?? null;
@@ -1262,6 +1352,8 @@ export function ExecutionMap({
       toolbarStart={toolbarStart}
       agentFocusId={focusedAgentNode?.agentId ?? null}
       interactionMode={interactionMode}
+      onSelectionComplete={handleAtlasSelectionComplete}
+      overlay={maximizedOverlay}
     >
         <svg
           className="execution-map-links"
@@ -1350,12 +1442,13 @@ export function ExecutionMap({
             const agent = agentsById?.get(node.agentId);
             if (!agent) return null;
             const isFocused = node.nodeId === focusedAgentNodeId;
+            const isAtlasSelected = selectedAtlasNodeKeys.has(atlasSelectionKey("agent", node.nodeId));
             const runStatus = formatAgentRunStatus(agentRunStatusById?.get(agent.agentId));
             return (
               <button
                 key={node.nodeId}
                 type="button"
-                className={`emap-node emap-agent-node ${runStatus.nodeClass} ${isFocused ? "selected" : ""}`}
+                className={`emap-node emap-atlas-card emap-agent-node ${runStatus.nodeClass} ${isFocused ? "selected" : ""} ${isAtlasSelected ? "is-atlas-selected" : ""}`}
                 data-kind="agent"
                 data-agent-id={agent.agentId}
                 data-agent-run-state={runStatus.state}
@@ -1391,13 +1484,14 @@ export function ExecutionMap({
             const worker = agentsById?.get(task.workUnit.workerAgentId);
             const checker = agentsById?.get(task.workUnit.checkerAgentId);
             const isFocused = node.nodeId === focusedTaskNodeId;
+            const isAtlasSelected = selectedAtlasNodeKeys.has(atlasSelectionKey("task", node.nodeId));
             const latestTaskRun = selectLatestCanvasTaskRun(taskRunsByTaskId[task.taskId]);
             const nodeStatusClass = latestTaskRun ? statusClass(latestTaskRun.status) : `status-${task.status}`;
             return (
               <button
                 key={node.nodeId}
                 type="button"
-                className={`emap-node emap-canvas-task-node ${nodeStatusClass} ${isFocused ? "selected" : ""}`}
+                className={`emap-node emap-atlas-card emap-canvas-task-node ${nodeStatusClass} ${isFocused ? "selected" : ""} ${isAtlasSelected ? "is-atlas-selected" : ""}`}
                 data-kind="canvas-task"
                 data-task-id={task.taskId}
                 data-task-run-status={latestTaskRun?.status ?? "none"}
@@ -1560,7 +1654,7 @@ export function ExecutionMap({
 
             return previewElement ? [taskElement, ...evidenceElements, previewElement] : [taskElement, ...evidenceElements];
           })}
-          {agentBranchNode && agentBranchPanel && (
+          {agentBranchNode && agentBranchPanel && maximizedBranch !== "agent" && (
             <div
               className="emap-agent-branch-shell"
               onPointerDownCapture={beginAgentBranchDrag}
@@ -1575,6 +1669,18 @@ export function ExecutionMap({
               }}
             >
               {agentBranchPanel}
+              <button
+                type="button"
+                className="emap-agent-branch-maximize-button"
+                aria-label="最大化对话分支"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setMaximizedBranch("agent");
+                }}
+              >
+                ⛶
+              </button>
               <button
                 type="button"
                 className="emap-agent-branch-resize-handle"
@@ -1598,7 +1704,7 @@ export function ExecutionMap({
               {taskBranchPanel}
             </div>
           )}
-          {taskChildBranchNode && taskChildBranchPanel && (
+          {taskChildBranchNode && taskChildBranchPanel && maximizedBranch !== "task-child" && (
             <div
               className="emap-task-child-branch-shell"
               onPointerDownCapture={taskChildBranchInteractive ? beginTaskChildBranchDrag : undefined}
@@ -1614,12 +1720,26 @@ export function ExecutionMap({
             >
               {taskChildBranchPanel}
               {taskChildBranchInteractive && (
-                <button
-                  type="button"
-                  className="emap-agent-branch-resize-handle"
-                  aria-label="调整对话分支大小"
-                  onPointerDown={beginTaskChildBranchResize}
-                />
+                <>
+                  <button
+                    type="button"
+                    className="emap-agent-branch-maximize-button"
+                    aria-label="最大化对话分支"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setMaximizedBranch("task-child");
+                    }}
+                  >
+                    ⛶
+                  </button>
+                  <button
+                    type="button"
+                    className="emap-agent-branch-resize-handle"
+                    aria-label="调整对话分支大小"
+                    onPointerDown={beginTaskChildBranchResize}
+                  />
+                </>
               )}
             </div>
           )}

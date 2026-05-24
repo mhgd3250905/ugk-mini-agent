@@ -51,8 +51,15 @@ function elbowPath(sx: number, sy: number, tx: number, ty: number): string {
 }
 
 export function straightPath(sx: number, sy: number, tx: number, ty: number): string {
-  const midX = sx + (tx - sx) * 0.35;
-  return `M${sx},${sy} L${midX},${sy} L${midX},${ty} L${tx},${ty}`;
+  const dx = tx - sx;
+  const dy = ty - sy;
+  const horizontalTension = Math.max(32, Math.abs(dx) * 0.42);
+  const verticalTension = Math.max(32, Math.abs(dy) * 0.42);
+  const cp1x = Math.abs(dx) >= Math.abs(dy) ? sx + Math.sign(dx || 1) * horizontalTension : sx;
+  const cp1y = Math.abs(dx) >= Math.abs(dy) ? sy : sy + Math.sign(dy || 1) * verticalTension;
+  const cp2x = Math.abs(dx) >= Math.abs(dy) ? tx - Math.sign(dx || 1) * horizontalTension : tx;
+  const cp2y = Math.abs(dx) >= Math.abs(dy) ? ty : ty - Math.sign(dy || 1) * verticalTension;
+  return `M${sx},${sy} C${cp1x},${cp1y} ${cp2x},${cp2y} ${tx},${ty}`;
 }
 
 export function layoutExecutionMap(

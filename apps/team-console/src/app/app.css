@@ -195,22 +195,64 @@ body {
   position: relative;
   display: flex;
   align-items: center;
+  gap: 8px;
+}
+
+.agent-toolbar-group {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
 }
 
+.agent-atlas-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px;
+  border: 1px solid rgba(122, 131, 151, 0.16);
+  border-radius: 999px;
+  background: rgba(2, 4, 11, 0.38);
+}
+
+.task-toolbar-group {
+  padding-left: 8px;
+  border-left: 1px solid rgba(122, 131, 151, 0.18);
+}
+
 .agent-atlas-count {
-  min-width: 22px;
-  height: 22px;
+  min-width: 56px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(121, 216, 208, 0.24);
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid rgba(121, 216, 208, 0.2);
   border-radius: 999px;
   color: var(--accent);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 9px;
+  font-weight: 750;
   background: rgba(121, 216, 208, 0.08);
+}
+
+.agent-atlas-count strong {
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.agent-atlas-count span {
+  color: var(--secondary);
+  font-size: 9px;
+  line-height: 1;
+}
+
+.task-atlas-count {
+  color: rgb(255, 214, 128);
+  border-color: rgba(255, 190, 96, 0.22);
+  background: rgba(255, 190, 96, 0.08);
 }
 
 .agent-picker-option code {
@@ -251,6 +293,11 @@ body {
   border-radius: 6px;
   background: rgba(8, 11, 19, 0.98);
   box-shadow: 0 18px 36px rgba(0, 0, 0, 0.36);
+}
+
+.task-toolbar-group .agent-picker {
+  left: auto;
+  right: 0;
 }
 
 .agent-picker-option {

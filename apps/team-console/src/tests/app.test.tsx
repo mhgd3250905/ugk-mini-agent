@@ -31,6 +31,7 @@ function firePointer(
     clientY: number;
     button?: number;
     buttons?: number;
+    shiftKey?: boolean;
   },
 ) {
   const event = new Event(type, { bubbles: true, cancelable: true });
@@ -40,6 +41,7 @@ function firePointer(
     clientY: { value: init.clientY },
     button: { value: init.button ?? 0 },
     buttons: { value: init.buttons ?? 1 },
+    shiftKey: { value: init.shiftKey ?? false },
   });
   fireEvent(target, event);
 }
@@ -186,6 +188,19 @@ describe("App", () => {
     expect(container.querySelector(".execution-map-container")).toBeTruthy();
     expect(container.querySelector(".execution-map-toolbar")).toBeTruthy();
     expect(container.querySelector(".agent-canvas-board")).toBeNull();
+  });
+
+  it("groups atlas toolbar stats and Task actions", () => {
+    const { container } = render(<App />);
+
+    const toolbar = container.querySelector(".agent-atlas-actions") as HTMLElement | null;
+    expect(toolbar).toBeTruthy();
+    expect(toolbar!.querySelector(".agent-atlas-stats")).toBeTruthy();
+    expect(toolbar!.querySelector(".task-toolbar-group")).toBeTruthy();
+    expect(within(toolbar!).getByLabelText("Agent 数量")).toHaveTextContent("0");
+    expect(within(toolbar!).getByLabelText("当前 Task 数量")).toHaveTextContent(`${mockTeamTasks.length} 个 Task`);
+    expect(within(toolbar!.querySelector(".task-toolbar-group") as HTMLElement).getByRole("button", { name: "创建 Task" })).toBeInTheDocument();
+    expect(within(toolbar!.querySelector(".task-toolbar-group") as HTMLElement).getByRole("button", { name: "刷新 Task" })).toBeInTheDocument();
   });
 
   it("renders mock Task cards in the Agent workspace", async () => {
@@ -937,6 +952,27 @@ describe("App", () => {
     expect(Number.parseFloat(branchShell!.style.height)).toBeCloseTo(initialHeight + 70, 4);
   });
 
+  it("maximizes an embedded playground branch outside the scaled canvas", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+
+    fireEvent.click(screen.getByRole("button", { name: "最大化对话分支" }));
+
+    const overlay = container.querySelector(".emap-maximized-branch-shell") as HTMLElement | null;
+    expect(overlay).toBeTruthy();
+    expect(overlay!.parentElement).toHaveClass("execution-map-container");
+    expect(container.querySelector(".execution-map-scroll .emap-agent-branch-shell")).toBeNull();
+    expect(overlay!.querySelector(".agent-playground-iframe")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "还原对话分支" }));
+
+    expect(container.querySelector(".emap-maximized-branch-shell")).toBeNull();
+    expect(container.querySelector(".execution-map-scroll .emap-agent-branch-shell")).toBeTruthy();
+  });
+
   it("drags an agent card by world coordinates without opening the embedded branch", async () => {
     const { container } = render(<App />);
 
@@ -957,6 +993,39 @@ describe("App", () => {
     expect(Number.parseFloat(agentNode.style.left)).toBeCloseTo(initialLeft + 50, 4);
     expect(Number.parseFloat(agentNode.style.top)).toBeCloseTo(initialTop + 30, 4);
     expect(atlas).toHaveAttribute("data-agent-focus", "none");
+    expect(container.querySelector(".agent-playground-branch")).toBeNull();
+  });
+
+  it("box-selects atlas nodes and drags the selected set together", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+    const atlas = getAtlas(container);
+    const atlasNodes = getAtlasNodes(container);
+    const agentNode = within(atlasNodes).getByRole("button", { name: /主 Agent/ }) as HTMLElement;
+    const taskNode = await within(atlasNodes).findByRole("button", { name: /调查 Medtrum 云资产/ }) as HTMLElement;
+    const initialAgentLeft = Number.parseFloat(agentNode.style.left);
+    const initialAgentTop = Number.parseFloat(agentNode.style.top);
+    const initialTaskLeft = Number.parseFloat(taskNode.style.left);
+    const initialTaskTop = Number.parseFloat(taskNode.style.top);
+
+    firePointer(atlas, "pointerdown", { pointerId: 31, clientX: 220, clientY: 0, shiftKey: true });
+    firePointer(atlas, "pointermove", { pointerId: 31, clientX: 720, clientY: 420, shiftKey: true });
+    firePointer(atlas, "pointerup", { pointerId: 31, clientX: 720, clientY: 420, buttons: 0, shiftKey: true });
+
+    expect(agentNode).toHaveClass("is-atlas-selected");
+    expect(taskNode).toHaveClass("is-atlas-selected");
+
+    firePointer(agentNode, "pointerdown", { pointerId: 32, clientX: 380, clientY: 40 });
+    firePointer(agentNode, "pointermove", { pointerId: 32, clientX: 440, clientY: 80 });
+    firePointer(agentNode, "pointerup", { pointerId: 32, clientX: 440, clientY: 80, buttons: 0 });
+
+    expect(Number.parseFloat(agentNode.style.left)).toBeCloseTo(initialAgentLeft + 60, 4);
+    expect(Number.parseFloat(agentNode.style.top)).toBeCloseTo(initialAgentTop + 40, 4);
+    expect(Number.parseFloat(taskNode.style.left)).toBeCloseTo(initialTaskLeft + 60, 4);
+    expect(Number.parseFloat(taskNode.style.top)).toBeCloseTo(initialTaskTop + 40, 4);
     expect(container.querySelector(".agent-playground-branch")).toBeNull();
   });
 
@@ -1778,6 +1847,10 @@ describe("App", () => {
     expect(readme).toContain("允许覆盖其他节点");
     expect(readme).toContain("拖动分支标题栏调整位置");
     expect(readme).toContain("右下角调整分支宽高");
+    expect(readme).toContain("Shift 在空白画布框选");
+    expect(readme).toContain("最大化按钮");
+    expect(readme).toContain(".emap-atlas-card");
+    expect(readme).toContain("平滑三次贝塞尔曲线");
     expect(readme).toContain("Live API 下已添加 Agent 与拖动后的画布位置会写入浏览器 `localStorage`");
     expect(readme).toContain("这只保存 Team Console 画布引用位置，不修改真实 Agent profile");
     expect(readme).toContain("Task 内部包含一个 WorkUnit");
@@ -1817,6 +1890,9 @@ describe("App", () => {
     expect(runtimeDoc).toContain("允许覆盖其他节点");
     expect(runtimeDoc).toContain("拖动分支标题栏移动分支");
     expect(runtimeDoc).toContain("右下角调整分支宽高");
+    expect(runtimeDoc).toContain("Shift 框选多个 Agent / Task 节点");
+    expect(runtimeDoc).toContain("最大化到未缩放画布 overlay");
+    expect(runtimeDoc).toContain(".emap-dialog-branch");
     expect(runtimeDoc).toContain("Live API 下已添加 Agent 与拖动后的画布位置会写入浏览器 `localStorage`");
     expect(runtimeDoc).toContain("这只保存 Team Console 画布引用位置，不修改真实 Agent profile");
     expect(runtimeDoc).toContain("Task 内部包含一个 WorkUnit");

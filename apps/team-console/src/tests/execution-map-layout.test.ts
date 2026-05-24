@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildExecutionMapModel } from "../graph/execution-map-model";
-import { layoutExecutionMap, NODE_HEIGHT } from "../graph/execution-map-layout";
+import { layoutExecutionMap, NODE_HEIGHT, straightPath } from "../graph/execution-map-layout";
 import type { TeamPlan, RunDetail, TaskDefinition, TaskStatus } from "../api/team-types";
 import { makeRealSnapshotPlan, makeRealSnapshotRun, makeRealSuccessForEachPlan, makeRealSuccessForEachRun } from "../fixtures/team-fixtures";
 
@@ -28,6 +28,14 @@ function st(status: TaskStatus = "succeeded") {
 }
 
 describe("layoutExecutionMap", () => {
+  it("draws branch connectors as smooth curves", () => {
+    const path = straightPath(280, 56, 640, 144);
+
+    expect(path).toMatch(/^M280,56 C/);
+    expect(path).toContain("640,144");
+    expect(path).not.toContain(" L");
+  });
+
   it("places root at top center", () => {
     const { plan, run } = makePlanAndRun(
       [{ id: "t1", title: "T1", input: { text: "" }, acceptance: { rules: [] } }],
