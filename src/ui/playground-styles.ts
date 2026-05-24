@@ -3918,6 +3918,17 @@ export function getPlaygroundStyles(): string {
 				transform: translateY(0);
 			}
 
+			.topbar-agent-label[data-switcher-locked="true"] {
+				cursor: default;
+			}
+
+			.topbar-agent-label[data-switcher-locked="true"] .agent-switcher-meta {
+				display: none;
+				opacity: 0;
+				pointer-events: none;
+				transform: translateY(-4px);
+			}
+
 			.agent-switcher-list {
 				display: grid;
 				gap: 4px;

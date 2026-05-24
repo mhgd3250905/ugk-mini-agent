@@ -165,6 +165,10 @@ function getPlaygroundScript(): string {
 			}
 		}
 
+		function isAgentSwitcherLocked() {
+			return isTeamConsoleEmbed();
+		}
+
 		function writeStoredAgentId(agentId, options) {
 			const normalized = normalizeStoredAgentId(agentId) || "main";
 			if (!options?.skipPersist && !isTeamConsoleEmbed()) {
@@ -501,6 +505,7 @@ function getPlaygroundScript(): string {
 		}
 
 		function renderAgentSelector() {
+			syncAgentSwitcherLockState();
 			const knownAgents = Array.isArray(state.agentCatalog) && state.agentCatalog.length > 0
 				? state.agentCatalog
 				: [
@@ -524,7 +529,28 @@ function getPlaygroundScript(): string {
 
 		let agentSwitcherCloseTimer = null;
 
+		function syncAgentSwitcherLockState() {
+			const locked = isAgentSwitcherLocked();
+			if (!agentSelectorStatus) {
+				return locked;
+			}
+			agentSelectorStatus.dataset.switcherLocked = locked ? "true" : "false";
+			if (locked) {
+				agentSelectorStatus.dataset.switcherOpen = "false";
+				agentSelectorStatus.setAttribute("aria-label", "当前 Agent 已由 Team Console 固定");
+				agentSelectorStatus.title = "Team Console 分支固定到当前 Agent";
+			} else {
+				agentSelectorStatus.setAttribute("aria-label", "打开 Agent 页面");
+				agentSelectorStatus.title = "Agent 页面";
+			}
+			return locked;
+		}
+
 		function openAgentSwitcher() {
+			if (isAgentSwitcherLocked()) {
+				closeAgentSwitcher();
+				return;
+			}
 			if (agentSwitcherCloseTimer) {
 				clearTimeout(agentSwitcherCloseTimer);
 				agentSwitcherCloseTimer = null;

@@ -37,6 +37,18 @@ test("playground keeps the stored active agent when the catalog request falls ba
 	assert.match(html, /if \(state\.agentCatalogReliable && !knownAgentIds\.has\(getCurrentAgentId\(\)\)\)/);
 });
 
+test("team console embed locks the playground agent switcher to the hinted agent", () => {
+	const html = renderPlaygroundPage();
+	const agentManagerScript = getPlaygroundAgentManagerScript();
+
+	assert.match(html, /function isAgentSwitcherLocked\(\)/);
+	assert.match(html, /return isTeamConsoleEmbed\(\)/);
+	assert.match(html, /agentSelectorStatus\.dataset\.switcherLocked = locked \? "true" : "false"/);
+	assert.match(html, /if \(isAgentSwitcherLocked\(\)\) \{\s*closeAgentSwitcher\(\);\s*return;/);
+	assert.match(html, /\.topbar-agent-label\[data-switcher-locked="true"\] \.agent-switcher-meta/);
+	assert.match(agentManagerScript, /if \(typeof isTeamConsoleEmbed === "function" && isTeamConsoleEmbed\(\)\) \{/);
+});
+
 test("playground renders agent management entry points and workspace", () => {
 	const html = renderPlaygroundPage();
 

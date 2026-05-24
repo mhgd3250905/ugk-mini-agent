@@ -2342,6 +2342,9 @@ export function getPlaygroundAgentManagerScript(): string {
 
 		function bindAgentManagerEvents() {
 			agentSelectorStatus?.addEventListener("click", () => {
+				if (typeof isTeamConsoleEmbed === "function" && isTeamConsoleEmbed()) {
+					return;
+				}
 				openStandaloneAgentsPage();
 			});
 			refreshAgentManagerButton.addEventListener("click", () => {

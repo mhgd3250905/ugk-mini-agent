@@ -1,16 +1,19 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { AgentSummary, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "../api/team-types";
-import { ALL_FIXTURES, MOCK_AGENTS, MockTeamApi } from "../fixtures/team-fixtures";
+import type { AgentRunStatus, AgentSummary, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "../api/team-types";
+import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, MockTeamApi } from "../fixtures/team-fixtures";
 import { ExecutionMap, type AtlasAgentNode } from "../graph/ExecutionMap";
 import { ROOT_ID } from "../graph/execution-map-layout";
 import type { AtlasViewport } from "../graph/AtlasCanvasShell";
 import "./app.css";
 
 export type DataSource = "mock" | "live";
+type LiveRunMode = "workspace" | "latest";
 
 const CLEAN_AGENT_WORKSPACE_ID = "agent-workspace";
 const DEFAULT_PLAYGROUND_BASE_URL = "http://127.0.0.1:3000";
+const DATA_SOURCE_STORAGE_KEY = "ugk-team-console:data-source";
+const LIVE_AGENT_LAYOUT_STORAGE_KEY = "ugk-team-console:live-agent-layout:v1";
 
 type AgentBranchState = {
   nodeId: string;
@@ -54,9 +57,65 @@ function buildAgentPlaygroundUrl(agentId: string): string {
   return url.toString();
 }
 
+function agentRunStatusRecord(statuses: AgentRunStatus[]): Record<string, AgentRunStatus> {
+  return Object.fromEntries(statuses.map((status) => [status.agentId, status]));
+}
+
+function readStoredDataSource(): DataSource {
+  try {
+    return globalThis.localStorage?.getItem(DATA_SOURCE_STORAGE_KEY) === "live" ? "live" : "mock";
+  } catch {
+    return "mock";
+  }
+}
+
+function readStoredLiveAgentNodes(): AtlasAgentNode[] {
+  try {
+    const raw = globalThis.localStorage?.getItem(LIVE_AGENT_LAYOUT_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    const rawNodes = Array.isArray((parsed as { nodes?: unknown }).nodes)
+      ? (parsed as { nodes: unknown[] }).nodes
+      : [];
+    const seen = new Set<string>();
+    const nodes: AtlasAgentNode[] = [];
+    for (const item of rawNodes) {
+      const record = item as { agentId?: unknown; x?: unknown; y?: unknown };
+      const agentId = typeof record.agentId === "string" ? record.agentId.trim() : "";
+      const x = Number(record.x);
+      const y = Number(record.y);
+      if (!agentId || seen.has(agentId) || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+      seen.add(agentId);
+      nodes.push({
+        nodeId: `agent-${agentId}`,
+        kind: "agent",
+        agentId,
+        position: { x, y },
+      });
+    }
+    return nodes;
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredLiveAgentNodes(nodes: AtlasAgentNode[]) {
+  try {
+    globalThis.localStorage?.setItem(LIVE_AGENT_LAYOUT_STORAGE_KEY, JSON.stringify({
+      version: 1,
+      nodes: nodes.map((node) => ({
+        agentId: node.agentId,
+        x: node.position.x,
+        y: node.position.y,
+      })),
+    }));
+  } catch {}
+}
+
 export function App() {
-  const [dataSource, setDataSource] = useState<DataSource>("mock");
+  const [dataSource, setDataSource] = useState<DataSource>(() => readStoredDataSource());
   const [selectedFixtureId, setSelectedFixtureId] = useState<string>(CLEAN_AGENT_WORKSPACE_ID);
+  const [liveRunMode, setLiveRunMode] = useState<LiveRunMode>("workspace");
   const [plan, setPlan] = useState<TeamPlan | null>(null);
   const [run, setRun] = useState<RunDetail | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -64,12 +123,17 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [agents, setAgents] = useState<AgentSummary[]>(MOCK_AGENTS);
+  const [agentRunStatusById, setAgentRunStatusById] = useState<Record<string, AgentRunStatus>>(
+    () => agentRunStatusRecord(MOCK_AGENT_RUN_STATUSES),
+  );
   const [agentNodes, setAgentNodes] = useState<AtlasAgentNode[]>([]);
+  const [liveAgentNodesHydrated, setLiveAgentNodesHydrated] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
   const [expandedAgentBranch, setExpandedAgentBranch] = useState<AgentBranchState | null>(null);
 
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
+  const agentRunStatusesById = useMemo(() => new Map(Object.entries(agentRunStatusById)), [agentRunStatusById]);
   const addedAgentIds = useMemo(() => new Set(agentNodes.map((node) => node.agentId)), [agentNodes]);
   const expandedAgentNode = expandedAgentBranch
     ? agentNodes.find((node) => node.nodeId === expandedAgentBranch.nodeId) ?? null
@@ -79,6 +143,27 @@ export function App() {
   const selectTask = useCallback((taskId: string) => {
     setSelectedTaskId((current) => current === taskId ? null : taskId);
   }, []);
+
+  useEffect(() => {
+    try {
+      globalThis.localStorage?.setItem(DATA_SOURCE_STORAGE_KEY, dataSource);
+    } catch {}
+  }, [dataSource]);
+
+  useEffect(() => {
+    if (dataSource !== "live") {
+      setLiveAgentNodesHydrated(false);
+      return;
+    }
+    setAgentNodes(readStoredLiveAgentNodes());
+    setExpandedAgentBranch(null);
+    setLiveAgentNodesHydrated(true);
+  }, [dataSource]);
+
+  useEffect(() => {
+    if (dataSource !== "live" || !liveAgentNodesHydrated) return;
+    writeStoredLiveAgentNodes(agentNodes);
+  }, [dataSource, liveAgentNodesHydrated, agentNodes]);
 
   const loadFixture = useCallback((fixtureId: string) => {
     setExpandedAgentBranch(null);
@@ -111,20 +196,38 @@ export function App() {
 
   useEffect(() => {
     setExpandedAgentBranch(null);
-    if (dataSource === "mock") {
-      setAgents(MOCK_AGENTS);
-      return;
+    let cancelled = false;
+    let refreshTimer: ReturnType<typeof globalThis.setInterval> | undefined;
+    const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+
+    async function loadAgentRunStatuses() {
+      try {
+        const statuses = await api.listAgentRunStatuses();
+        if (!cancelled) {
+          setAgentRunStatusById(agentRunStatusRecord(statuses));
+        }
+      } catch {
+        // Keep the last known status on transient polling failures.
+      }
     }
 
-    let cancelled = false;
-    const api = new LiveTeamApi();
+    if (dataSource === "mock") {
+      setAgents(MOCK_AGENTS);
+      setAgentRunStatusById(agentRunStatusRecord(MOCK_AGENT_RUN_STATUSES));
+      return () => {
+        cancelled = true;
+      };
+    }
 
     setAgents([]);
     setAgentPickerOpen(false);
+    setAgentRunStatusById({});
 
     async function loadLiveAgents() {
       try {
-        const nextAgents = await api.listAgents();
+        const nextAgentsPromise = api.listAgents();
+        void loadAgentRunStatuses();
+        const nextAgents = await nextAgentsPromise;
         if (!cancelled) {
           setAgents(nextAgents);
         }
@@ -136,14 +239,32 @@ export function App() {
     }
 
     void loadLiveAgents();
+    refreshTimer = globalThis.setInterval(() => {
+      void loadAgentRunStatuses();
+    }, 3000);
 
     return () => {
       cancelled = true;
+      if (refreshTimer !== undefined) {
+        globalThis.clearInterval(refreshTimer);
+      }
     };
   }, [dataSource]);
 
   useEffect(() => {
     if (dataSource !== "live") return;
+
+    setExpandedAgentBranch(null);
+    if (liveRunMode === "workspace") {
+      setPlan(null);
+      setRun(null);
+      setSelectedTaskId(null);
+      setAttemptsByTaskId({});
+      setError(null);
+      setLoading(false);
+      setCanvasViewport({ x: 0, y: 0, scale: 1 });
+      return;
+    }
 
     let cancelled = false;
     const api = new LiveTeamApi();
@@ -196,7 +317,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [dataSource]);
+  }, [dataSource, liveRunMode]);
 
   useEffect(() => {
     if (!run || !selectedTaskId || selectedTaskId === ROOT_ID) return;
@@ -338,7 +459,13 @@ export function App() {
             id="team-console-data-source"
             name="teamConsoleDataSource"
             value={dataSource}
-            onChange={(event) => setDataSource(event.target.value as DataSource)}
+            onChange={(event) => {
+              const nextSource = event.target.value as DataSource;
+              setDataSource(nextSource);
+              if (nextSource === "live") {
+                setLiveRunMode("workspace");
+              }
+            }}
             className="datasource-select"
           >
             <option value="mock">示例数据</option>
@@ -368,6 +495,24 @@ export function App() {
         </div>
       )}
 
+      {dataSource === "live" && (
+        <div className="fixture-bar live-run-bar">
+          <span className="fixture-label">运行图：</span>
+          <button
+            className={`fixture-btn ${liveRunMode === "workspace" ? "active" : ""}`}
+            onClick={() => setLiveRunMode("workspace")}
+          >
+            Agent workspace
+          </button>
+          <button
+            className={`fixture-btn ${liveRunMode === "latest" ? "active" : ""}`}
+            onClick={() => setLiveRunMode("latest")}
+          >
+            最新 Run
+          </button>
+        </div>
+      )}
+
       {error && (
         <div className="error-banner">{error}</div>
       )}
@@ -389,6 +534,7 @@ export function App() {
                 readAttemptFile={readAttemptFile}
                 agentNodes={agentNodes}
                 agentsById={agentsById}
+                agentRunStatusById={agentRunStatusesById}
                 focusedAgentNodeId={expandedAgentNode?.nodeId ?? null}
                 onSelectAgent={toggleAgentBranch}
                 onMoveAgent={moveAgentNode}

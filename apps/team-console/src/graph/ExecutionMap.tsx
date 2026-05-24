@@ -1,5 +1,5 @@
 import { useMemo, useLayoutEffect, useRef, useState, useCallback, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import type { AgentSummary, RunDetail, TeamPlan, TaskStatus, TeamAttemptMetadata, TeamTaskState } from "../api/team-types";
+import type { AgentRunStatus, AgentSummary, RunDetail, TeamPlan, TaskStatus, TeamAttemptMetadata, TeamTaskState } from "../api/team-types";
 import type { ExecutionNode, NodeKind } from "./execution-map-model";
 import { buildExecutionMapModel, CHILD_COLLAPSE_THRESHOLD } from "./execution-map-model";
 import { layoutExecutionMap, ROOT_ID, NODE_WIDTH, straightPath, type ExecutionMapLayout } from "./execution-map-layout";
@@ -29,6 +29,7 @@ interface ExecutionMapProps {
   readAttemptFile?: (runId: string, taskId: string, attemptId: string, fileName: string) => Promise<string>;
   agentNodes?: AtlasAgentNode[];
   agentsById?: Map<string, AgentSummary>;
+  agentRunStatusById?: Map<string, AgentRunStatus>;
   focusedAgentNodeId?: string | null;
   onSelectAgent?: (node: AtlasAgentNode) => void;
   onMoveAgent?: (nodeId: string, position: { x: number; y: number }) => void;
@@ -154,6 +155,42 @@ function formatAgentBinding(agent: AgentSummary): string {
     : "model default";
   const browser = agent.defaultBrowserId ? `browser ${agent.defaultBrowserId}` : "browser default";
   return `${model} · ${browser}`;
+}
+
+function formatAgentRunStatus(status: AgentRunStatus | undefined): {
+  state: "idle" | "busy" | "unknown";
+  label: string;
+  nodeClass: string;
+  pillClass: string;
+  title?: string;
+} {
+  if (status?.status === "busy") {
+    return {
+      state: "busy",
+      label: "运行中",
+      nodeClass: "status-running",
+      pillClass: "running",
+      title: status.activeConversationId
+        ? `运行中 · ${status.activeConversationId}`
+        : "运行中",
+    };
+  }
+  if (status?.status === "idle") {
+    return {
+      state: "idle",
+      label: "空闲",
+      nodeClass: "status-succeeded",
+      pillClass: "succeeded",
+      title: "空闲",
+    };
+  }
+  return {
+    state: "unknown",
+    label: "状态未知",
+    nodeClass: "status-pending",
+    pillClass: "pending",
+    title: "状态未知",
+  };
 }
 
 function canStartAgentBranchDrag(target: EventTarget | null): boolean {
@@ -438,6 +475,7 @@ export function ExecutionMap({
   readAttemptFile,
   agentNodes = [],
   agentsById,
+  agentRunStatusById,
   focusedAgentNodeId,
   onSelectAgent,
   onMoveAgent,
@@ -1016,13 +1054,16 @@ export function ExecutionMap({
             const agent = agentsById?.get(node.agentId);
             if (!agent) return null;
             const isFocused = node.nodeId === focusedAgentNodeId;
+            const runStatus = formatAgentRunStatus(agentRunStatusById?.get(agent.agentId));
             return (
               <button
                 key={node.nodeId}
                 type="button"
-                className={`emap-node emap-agent-node status-running ${isFocused ? "selected" : ""}`}
+                className={`emap-node emap-agent-node ${runStatus.nodeClass} ${isFocused ? "selected" : ""}`}
                 data-kind="agent"
                 data-agent-id={agent.agentId}
+                data-agent-run-state={runStatus.state}
+                title={runStatus.title}
                 style={{ left: node.position.x, top: node.position.y, width: NODE_WIDTH, height: AGENT_NODE_HEIGHT }}
                 onPointerDown={(event) => handleAgentPointerDown(node, event)}
                 onPointerMove={handleAgentPointerMove}
@@ -1034,7 +1075,7 @@ export function ExecutionMap({
                 <div className="emap-node-content">
                   <div className="emap-node-header">
                     <span className="emap-node-kind">Agent</span>
-                    <span className="emap-node-state-pill running">可用</span>
+                    <span className={`emap-node-state-pill ${runStatus.pillClass}`}>{runStatus.label}</span>
                   </div>
                   <div className="emap-node-body">
                     <span className="emap-node-title">{agent.name}</span>

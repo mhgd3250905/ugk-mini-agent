@@ -90,6 +90,16 @@ describe("MockTeamApi", () => {
     expect(agents.map((agent) => agent.agentId)).toEqual(expect.arrayContaining(["main", "search"]));
   });
 
+  it("returns deterministic mock agent run statuses", async () => {
+    const statuses = await api.listAgentRunStatuses();
+
+    expect(statuses.find((status) => status.agentId === "main")?.status).toBe("idle");
+    expect(statuses.find((status) => status.agentId === "search")).toMatchObject({
+      status: "busy",
+      activeConversationId: "mock-search-active",
+    });
+  });
+
   it("returns deterministic mock agent chat replies", async () => {
     const response = await (api as unknown as {
       sendAgentMessage(agentId: string, message: string): Promise<{ text: string }>;
@@ -275,6 +285,37 @@ describe("LiveTeamApi", () => {
     expect(fetch).toHaveBeenCalledWith("/v1/agents");
     expect(agents).toEqual([
       { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+    ]);
+  });
+
+  it("listAgentRunStatuses calls /v1/agents/status and returns statuses", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      agents: [
+        {
+          agentId: "main",
+          name: "主 Agent",
+          status: "busy",
+          activeConversationId: "conv_active",
+          activeSince: "2026-05-24T00:00:00.000Z",
+        },
+      ],
+    }), { status: 200 }));
+
+    const statuses = await api.listAgentRunStatuses();
+
+    expect(fetch).toHaveBeenCalledWith("/v1/agents/status", {
+      method: "GET",
+      headers: { accept: "application/json" },
+    });
+    expect(statuses).toEqual([
+      {
+        agentId: "main",
+        name: "主 Agent",
+        status: "busy",
+        activeConversationId: "conv_active",
+        activeSince: "2026-05-24T00:00:00.000Z",
+      },
     ]);
   });
 

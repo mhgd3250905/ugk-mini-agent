@@ -809,6 +809,47 @@
   touch-action: none;
 }
 
+.emap-agent-node[data-agent-run-state="idle"] {
+  border-color: rgba(116, 226, 151, 0.34);
+  background:
+    linear-gradient(180deg, rgba(116, 226, 151, 0.08), transparent 42%),
+    var(--surface-raised);
+}
+
+.emap-agent-node[data-agent-run-state="busy"] {
+  border-color: rgba(255, 104, 64, 0.68);
+  background:
+    linear-gradient(90deg, rgba(255, 104, 64, 0.12), transparent 58%),
+    linear-gradient(180deg, rgba(255, 104, 64, 0.15), transparent 42%),
+    var(--surface-raised);
+}
+
+.emap-agent-node[data-agent-run-state="busy"]:hover,
+.emap-agent-node[data-agent-run-state="busy"].selected {
+  border-color: rgba(255, 104, 64, 0.86);
+  box-shadow:
+    0 0 0 1px rgba(255, 104, 64, 0.34),
+    0 0 24px rgba(255, 104, 64, 0.16),
+    0 16px 34px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.emap-agent-node[data-agent-run-state="busy"] .emap-node-status-bar {
+  color: rgb(255, 104, 64);
+  background: rgb(255, 104, 64);
+  box-shadow: 0 0 18px rgba(255, 104, 64, 0.58);
+}
+
+.emap-agent-node[data-agent-run-state="busy"] .emap-node-state-pill.running {
+  color: rgb(255, 190, 165);
+  border-color: rgba(255, 104, 64, 0.38);
+  background: rgba(255, 104, 64, 0.14);
+}
+
+.emap-agent-node[data-agent-run-state="unknown"] {
+  border-color: rgba(122, 131, 151, 0.32);
+}
+
 .emap-agent-node:active {
   cursor: grabbing;
 }

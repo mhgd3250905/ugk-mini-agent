@@ -12,6 +12,55 @@
 
 ---
 
+## 2026-05-24 — Team Console Live Agent Atlas 布局本地持久化
+
+- **主题**: 解决 Live API 画布里添加和拖动的 Agent 卡片刷新后丢失的问题。
+- **变更内容**:
+  - Team Console 会把 Live API 模式下已添加的 Agent 节点和拖动后的世界坐标写入浏览器 `localStorage`。
+  - 刷新后会恢复上次选择的 `实时 API` 数据源，并在 Agent workspace 中恢复已添加 Agent 卡片的位置。
+  - 持久化内容只表示 Team Console 画布引用和位置，不修改真实 Agent profile、不创建 Agent clone，也不写入 `/v1/team` 后端。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: Mock fixture 仍用于示例和回归，不把示例运行图作为 Live API 布局事实；分支 iframe 与主 `/playground` 行为不变。
+
+---
+
+## 2026-05-24 — Team Console Live API 默认进入 Agent workspace
+
+- **主题**: 避免刷新或重新进入 Team Console Live API 时自动渲染历史最新 run，导致左侧固定出现旧 Plan / 执行运行节点。
+- **变更内容**:
+  - Live API 切换后默认停在干净的 `Agent workspace`，只加载 Agent catalog/status，不再自动请求并展示最新 run。
+  - 新增 live 运行图切换条，用户点击“最新 Run”后才按 `createdAt` 选择最新 run 并渲染执行图。
+  - 保留 Mock fixture 的旧运行图入口，仍可通过“顺序 run”等示例按钮验证 runtime atlas。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未改 `/v1/team` 后端接口、run 排序规则、Agent 分支 iframe 或主 `/playground` 行为。
+
+---
+
+## 2026-05-24 — Team Console Agent 分支锁定 Playground Agent 切换
+
+- **主题**: 防止 Team Console Agent 分支 iframe 内的 Playground 顶部 Agent 标签弹出切换菜单，避免分支对话目标被用户在 iframe 内切走。
+- **变更内容**:
+  - 主 `/playground` 在 `embed=team-console` 下把顶部 Agent 标签标记为 locked，只作为当前 Agent 标识展示。
+  - locked 状态下 hover / focus 不再显示 Agent switcher 弹层，点击标签也不再跳转独立 Agents 页面。
+  - 保留普通 `/playground` 的 Agent hover 切换菜单和 Agents 页面入口，不影响非嵌入使用。
+- **影响范围**: `src/ui/playground.ts`, `src/ui/playground-styles.ts`, `src/ui/playground-agent-manager.ts`, `test/playground-agent-switch.test.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 未改 Team Console iframe URL、Agent 状态接口或主 Agent profile 后端行为。
+
+---
+
+## 2026-05-24 — Team Console Agent 卡片真实运行状态
+
+- **主题**: 将 Agent 分支内部真实对话运行态同步展示到 Atlas Agent 卡片上。
+- **变更内容**:
+  - Team Console API adapter 增加 `GET /v1/agents/status`，复用主 Playground 已有 Agent 运行状态接口，不新增后端行为。
+  - Team Console 在 Live API 模式下定时刷新 Agent 状态；Agent 卡片按真实状态显示“空闲 / 运行中 / 状态未知”，运行中使用暖橘红卡片状态、pill 与脉冲状态条，避免和 Atlas 青蓝选中态混淆；空闲显示绿色静态状态。
+  - Mock fixture 增加 deterministic Agent 状态，回归测试覆盖主 Agent 空闲、搜索 Agent 运行中，以及 Live adapter 的 `/v1/agents/status` 请求。
+  - README 和 Team Runtime 文档同步记录 Agent 卡片状态来源与显示口径。
+- **影响范围**: `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/team-api.test.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未改 `src/team/**`、`src/ui/team-page.ts`、`/playground/team` 或主 `/playground` 后端行为；Agent 分支 iframe 仍由主 `/playground` 自己处理真实对话。
+
+---
+
 ## 2026-05-24 — Team Console Agent 分支浮窗拖拽缩放
 
 - **主题**: 修复点击其他 Agent 时分支仍停在主 Agent 对话的可见交互问题，并把 Agent 对话分支改成可拖拽、可缩放的上层浮窗节点。

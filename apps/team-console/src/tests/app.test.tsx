@@ -47,6 +47,7 @@ function firePointer(
 describe("App", () => {
   beforeEach(() => {
     resetMockTeamApiState();
+    window.localStorage.clear();
     vi.stubGlobal("fetch", vi.fn());
   });
 
@@ -110,6 +111,27 @@ describe("App", () => {
 
     fireEvent.click(joinedOption);
     expect(within(atlasNodes).getAllByText("main")).toHaveLength(1);
+  });
+
+  it("renders mock agent run states on atlas cards", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(screen.getByRole("button", { name: /搜索 Agent[\s\S]*search/ }));
+
+    const mainNode = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
+    const searchNode = container.querySelector('.emap-agent-node[data-agent-id="search"]') as HTMLElement | null;
+    expect(mainNode).toBeTruthy();
+    expect(searchNode).toBeTruthy();
+
+    await waitFor(() => {
+      expect(mainNode!).toHaveAttribute("data-agent-run-state", "idle");
+      expect(searchNode!).toHaveAttribute("data-agent-run-state", "busy");
+    });
+    expect(within(mainNode!).getByText("空闲")).toBeInTheDocument();
+    expect(within(searchNode!).getByText("运行中")).toBeInTheDocument();
   });
 
   it("expands an agent card into an embedded playground branch and keeps the atlas visible", async () => {
@@ -363,10 +385,31 @@ describe("App", () => {
     expect(screen.getByText("Research vendor A")).toBeInTheDocument();
   });
 
-  it("fetches live plans, runs, and selected run detail when switching to Live API", async () => {
+  it("keeps Live API on a clean agent workspace until a run is requested", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }));
+
+    render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(fetch).toHaveBeenNthCalledWith(1, "/v1/agents");
+    expect(fetch).toHaveBeenNthCalledWith(2, "/v1/agents/status", {
+      method: "GET",
+      headers: { accept: "application/json" },
+    });
+    expect(screen.getByRole("button", { name: "Agent workspace" })).toHaveClass("active");
+    expect(screen.getByRole("button", { name: "最新 Run" })).not.toHaveClass("active");
+    expect(screen.queryByText("执行运行")).toBeNull();
+    expect(screen.getByRole("button", { name: "添加 Agent" })).toBeEnabled();
+  });
+
+  it("fetches live plans, runs, and selected run detail when latest Run is requested", async () => {
     const plan = makeSequentialPlan();
     const run = makeSequentialRun();
     vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([plan]), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([run]), { status: 200 }))
@@ -374,30 +417,74 @@ describe("App", () => {
 
     render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole("button", { name: "最新 Run" }));
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(5));
     expect(fetch).toHaveBeenNthCalledWith(1, "/v1/agents");
-    expect(fetch).toHaveBeenNthCalledWith(2, "/v1/team/plans");
-    expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/runs");
-    expect(fetch).toHaveBeenNthCalledWith(4, "/v1/team/runs/run_seq_001");
+    expect(fetch).toHaveBeenNthCalledWith(2, "/v1/agents/status", {
+      method: "GET",
+      headers: { accept: "application/json" },
+    });
+    expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/plans");
+    expect(fetch).toHaveBeenNthCalledWith(4, "/v1/team/runs");
+    expect(fetch).toHaveBeenNthCalledWith(5, "/v1/team/runs/run_seq_001");
   });
 
   it("loads live agent catalog when switching to Live API", async () => {
-    const plan = makeSequentialPlan();
-    const run = makeSequentialRun();
     vi.mocked(fetch)
       .mockResolvedValueOnce(new Response(JSON.stringify({
         agents: [{ agentId: "main", name: "主 Agent", description: "默认综合 agent" }],
       }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify([plan]), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify([run]), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(run), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [{ agentId: "main", name: "主 Agent", status: "idle" }] }), { status: 200 }));
 
     render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
     expect(fetch).toHaveBeenNthCalledWith(1, "/v1/agents");
+    expect(fetch).toHaveBeenNthCalledWith(2, "/v1/agents/status", {
+      method: "GET",
+      headers: { accept: "application/json" },
+    });
+  });
+
+  it("persists Live API agent cards and dragged positions across remounts", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [{ agentId: "main", name: "主 Agent", description: "默认综合 agent" }],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") {
+        return new Response(JSON.stringify({ agents: [{ agentId: "main", name: "主 Agent", status: "idle" }] }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const first = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+    const firstAgentNode = within(getAtlasNodes(first.container)).getByRole("button", { name: /主 Agent/ }) as HTMLElement;
+    firePointer(firstAgentNode, "pointerdown", { pointerId: 31, clientX: 120, clientY: 120 });
+    firePointer(firstAgentNode, "pointermove", { pointerId: 31, clientX: 190, clientY: 155 });
+    firePointer(firstAgentNode, "pointerup", { pointerId: 31, clientX: 190, clientY: 155, buttons: 0 });
+
+    await waitFor(() => {
+      expect(window.localStorage.getItem("ugk-team-console:data-source")).toBe("live");
+      expect(window.localStorage.getItem("ugk-team-console:live-agent-layout:v1")).toContain("\"agentId\":\"main\"");
+    });
+    first.unmount();
+
+    const second = render(<App />);
+    expect(screen.getByRole("combobox")).toHaveValue("live");
+
+    const restoredAgentNode = await within(getAtlasNodes(second.container)).findByRole("button", { name: /主 Agent/ }) as HTMLElement;
+    expect(Number.parseFloat(restoredAgentNode.style.left)).toBeCloseTo(430, 4);
+    expect(Number.parseFloat(restoredAgentNode.style.top)).toBeCloseTo(35, 4);
   });
 
   it("renders the selected live run after loading", async () => {
@@ -423,12 +510,15 @@ describe("App", () => {
     };
     vi.mocked(fetch)
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([plan]), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([run]), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(run), { status: 200 }));
 
     render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole("button", { name: "最新 Run" }));
 
     expect(await screen.findByText("Live-only vendor task")).toBeInTheDocument();
   });
@@ -438,13 +528,12 @@ describe("App", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({
         agents: [{ agentId: "main", name: "主 Agent", description: "默认综合 agent" }],
       }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [{ agentId: "main", name: "主 Agent", status: "idle" }] }), { status: 200 }));
 
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
     expect(screen.queryByText("没有可显示的 live run")).toBeNull();
     expect(screen.getByRole("button", { name: "添加 Agent" })).toBeEnabled();
 
@@ -485,11 +574,25 @@ describe("App", () => {
     expect(mapCss).toMatch(/\.execution-map-container\s*{[^}]*min-width:\s*0;[^}]*max-width:\s*100%;/s);
   });
 
+  it("uses a warm accent for busy Agent cards", () => {
+    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const busyRule = mapCss.match(/\.emap-agent-node\[data-agent-run-state="busy"\]\s*{[^}]*}/)?.[0];
+    const busyBarRule = mapCss.match(/\.emap-agent-node\[data-agent-run-state="busy"\]\s+\.emap-node-status-bar\s*{[^}]*}/)?.[0];
+    const busyPillRule = mapCss.match(/\.emap-agent-node\[data-agent-run-state="busy"\]\s+\.emap-node-state-pill\.running\s*{[^}]*}/)?.[0];
+
+    expect(busyRule).toContain("rgba(255, 104, 64");
+    expect(busyRule).not.toContain("rgba(121, 216, 208");
+    expect(busyBarRule).toContain("rgb(255, 104, 64)");
+    expect(busyPillRule).toContain("rgba(255, 104, 64");
+  });
+
   it("documents Agent Atlas mock and live behavior", () => {
     const readme = readFileSync("README.md", "utf8");
     expect(readme).toContain("Agent Atlas MVP");
     expect(readme).toContain("Agent workspace");
     expect(readme).toContain("/v1/agents");
+    expect(readme).toContain("/v1/agents/status");
+    expect(readme).toContain("真实状态投到卡片状态条和状态 pill");
     expect(readme).toContain("Agent 分支卡片");
     expect(readme).toContain("/playground?view=chat&agentId=<agentId>");
     expect(readme).toContain("embed=team-console");
@@ -500,7 +603,8 @@ describe("App", () => {
     expect(readme).toContain("允许覆盖其他节点");
     expect(readme).toContain("拖动分支标题栏调整位置");
     expect(readme).toContain("右下角调整分支宽高");
-    expect(readme).toContain("拖拽只改变 Team Console 画布引用位置");
+    expect(readme).toContain("Live API 下已添加 Agent 与拖动后的画布位置会写入浏览器 `localStorage`");
+    expect(readme).toContain("这只保存 Team Console 画布引用位置，不修改真实 Agent profile");
     expect(readme).toContain("Team Console 不再维护本地 transcript + composer");
     expect(readme).not.toContain("Focus Mode 是特殊 Agent 对话界面");
     expect(readme).not.toContain("文件上传与文件库在 Live 模式接 `/v1/assets`");
@@ -508,6 +612,8 @@ describe("App", () => {
 
     const runtimeDoc = readFileSync("../../docs/team-runtime.md", "utf8");
     expect(runtimeDoc).toContain("单击 Agent 节点会展开 Agent 分支卡片");
+    expect(runtimeDoc).toContain("GET /v1/agents/status");
+    expect(runtimeDoc).toContain("卡片状态条与状态 pill 会随真实运行态显示空闲、运行中或状态未知");
     expect(runtimeDoc).toContain("/playground?view=chat&agentId=<agentId>");
     expect(runtimeDoc).toContain("embed=team-console");
     expect(runtimeDoc).toContain("Team Console 不再维护本地 transcript + composer");
@@ -516,6 +622,8 @@ describe("App", () => {
     expect(runtimeDoc).toContain("允许覆盖其他节点");
     expect(runtimeDoc).toContain("拖动分支标题栏移动分支");
     expect(runtimeDoc).toContain("右下角调整分支宽高");
+    expect(runtimeDoc).toContain("Live API 下已添加 Agent 与拖动后的画布位置会写入浏览器 `localStorage`");
+    expect(runtimeDoc).toContain("这只保存 Team Console 画布引用位置，不修改真实 Agent profile");
     expect(runtimeDoc).not.toContain("Focus Mode 特殊 Agent 对话界面");
     expect(runtimeDoc).toContain("仍不落地 WorkUnit / Plan 编排");
   });

@@ -12,6 +12,8 @@ import type {
   AgentInterruptResponse,
   AgentQueueMessageRequest,
   AgentQueueMessageResponse,
+  AgentRunStatus,
+  AgentRunStatusListResponse,
   AgentSummary,
   AgentSwitchConversationResponse,
   TeamPlan,
@@ -29,6 +31,7 @@ export interface TeamApiProvider {
   listAttempts(runId: string, taskId: string): Promise<TeamAttemptMetadata[]>;
   readAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string): Promise<string>;
   listAgents(): Promise<AgentSummary[]>;
+  listAgentRunStatuses(): Promise<AgentRunStatus[]>;
   listAgentConversations(agentId: string): Promise<AgentConversationCatalogResponse>;
   createAgentConversation(agentId: string): Promise<AgentConversationResponse>;
   switchAgentConversation(agentId: string, conversationId: string): Promise<AgentSwitchConversationResponse>;
@@ -142,6 +145,20 @@ export class LiveTeamApi implements TeamApiProvider {
       const res = await fetch("/v1/agents");
       if (!res.ok) throw res;
       const body = (await res.json()) as AgentCatalogResponse;
+      return Array.isArray(body.agents) ? body.agents : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async listAgentRunStatuses(): Promise<AgentRunStatus[]> {
+    try {
+      const res = await fetch("/v1/agents/status", {
+        method: "GET",
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) throw res;
+      const body = (await res.json()) as AgentRunStatusListResponse;
       return Array.isArray(body.agents) ? body.agents : [];
     } catch (e) {
       throw toApiError(e);

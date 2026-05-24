@@ -186,6 +186,20 @@ export interface AgentCatalogResponse {
   agents: AgentSummary[];
 }
 
+export type AgentRunState = "idle" | "busy";
+
+export interface AgentRunStatus {
+  agentId: string;
+  name: string;
+  status: AgentRunState;
+  activeConversationId?: string;
+  activeSince?: string;
+}
+
+export interface AgentRunStatusListResponse {
+  agents: AgentRunStatus[];
+}
+
 export interface AgentChatMessage {
   role: "user" | "assistant";
   text: string;

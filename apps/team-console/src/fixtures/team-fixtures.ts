@@ -13,6 +13,7 @@ import type {
   AgentInterruptResponse,
   AgentQueueMessageRequest,
   AgentQueueMessageResponse,
+  AgentRunStatus,
   AgentSummary,
   AgentSwitchConversationResponse,
   TeamPlan,
@@ -831,6 +832,26 @@ export const MOCK_AGENTS: AgentSummary[] = [
   },
 ];
 
+export const MOCK_AGENT_RUN_STATUSES: AgentRunStatus[] = [
+  {
+    agentId: "main",
+    name: "主 Agent",
+    status: "idle",
+  },
+  {
+    agentId: "search",
+    name: "搜索 Agent",
+    status: "busy",
+    activeConversationId: "mock-search-active",
+    activeSince: "2026-05-24T00:00:00.000Z",
+  },
+  {
+    agentId: "reviewer",
+    name: "Review Agent",
+    status: "idle",
+  },
+];
+
 export const ALL_FIXTURES: FixtureEntry[] = [
   { id: "sequential", label: "顺序 run", plan: makeSequentialPlan(), run: makeSequentialRun() },
   { id: "discovery", label: "发现 + 逐项处理", plan: makeDiscoveryForEachPlan(), run: makeDiscoveryForEachRun() },
@@ -1012,6 +1033,10 @@ export class MockTeamApi {
 
   async listAgents(): Promise<AgentSummary[]> {
     return MOCK_AGENTS;
+  }
+
+  async listAgentRunStatuses(): Promise<AgentRunStatus[]> {
+    return MOCK_AGENT_RUN_STATUSES;
   }
 
   async createAgentConversation(agentId: string): Promise<AgentConversationResponse> {
