@@ -31,9 +31,17 @@ describe("App", () => {
     expect(select).toHaveValue("mock");
   });
 
-  it("renders first fixture run by default", () => {
-    render(<App />);
-    expect(screen.getByText("Research vendor A")).toBeInTheDocument();
+  it("renders a clean agent atlas workspace by default", () => {
+    const { container } = render(<App />);
+
+    expect(screen.queryByText("Research vendor A")).toBeNull();
+    expect(screen.queryByText("Research vendor B")).toBeNull();
+    expect(screen.queryByText("Research vendor C")).toBeNull();
+    expect(screen.queryByText("执行运行")).toBeNull();
+    expect(screen.getByRole("button", { name: "添加 Agent" })).toBeEnabled();
+    expect(container.querySelector(".execution-map-container")).toBeTruthy();
+    expect(container.querySelector(".execution-map-toolbar")).toBeTruthy();
+    expect(container.querySelector(".agent-canvas-board")).toBeNull();
   });
 
   it("renders the add agent entry in mock mode", () => {
@@ -41,23 +49,25 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "添加 Agent" })).toBeInTheDocument();
   });
 
-  it("adds a unique mock agent card to the canvas", async () => {
-    render(<App />);
+  it("adds a unique mock agent card to the atlas node layer", async () => {
+    const { container } = render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     const mainOption = await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ });
 
     fireEvent.click(mainOption);
 
-    const canvas = screen.getByTestId("agent-canvas");
-    expect(within(canvas).getByText("主 Agent")).toBeInTheDocument();
-    expect(within(canvas).getByText("main")).toBeInTheDocument();
+    const atlasNodes = container.querySelector(".execution-map-nodes") as HTMLElement | null;
+    expect(atlasNodes).toBeTruthy();
+    expect(within(atlasNodes!).getByText("主 Agent")).toBeInTheDocument();
+    expect(within(atlasNodes!).getByText("main")).toBeInTheDocument();
+    expect(container.querySelector(".agent-canvas-board")).toBeNull();
 
     const joinedOption = screen.getByRole("button", { name: /主 Agent[\s\S]*已加入/ });
     expect(joinedOption).toBeDisabled();
 
     fireEvent.click(joinedOption);
-    expect(within(canvas).getAllByText("main")).toHaveLength(1);
+    expect(within(atlasNodes!).getAllByText("main")).toHaveLength(1);
   });
 
   it("focuses an agent card above a chat panel and restores the canvas", async () => {
