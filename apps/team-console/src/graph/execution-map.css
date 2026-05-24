@@ -844,6 +844,36 @@
   border-color: rgba(121, 216, 208, 0.72);
 }
 
+.task-run-summary {
+  display: grid;
+  gap: 4px;
+  min-width: 220px;
+  padding: 10px 12px;
+  border: 1px solid rgba(121, 216, 208, 0.22);
+  border-radius: 8px;
+  background: rgba(12, 20, 28, 0.72);
+  color: #d8e4f1;
+}
+
+.task-run-summary span {
+  font-size: 11px;
+  font-weight: 800;
+  color: rgba(216, 228, 241, 0.58);
+  text-transform: uppercase;
+}
+
+.task-run-summary strong {
+  font-size: 14px;
+  color: #eaf7ff;
+}
+
+.task-run-summary code {
+  overflow: hidden;
+  color: #e7c879;
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+
 .task-edit-form {
   flex: 1 1 auto;
   display: flex;

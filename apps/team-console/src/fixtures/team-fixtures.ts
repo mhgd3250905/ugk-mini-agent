@@ -894,6 +894,8 @@ function cloneMockTeamTask(task: TeamCanvasTask): TeamCanvasTask {
 }
 
 let mockCanvasTasks: TeamCanvasTask[] = mockTeamTasks.map(cloneMockTeamTask);
+let mockTaskRunCounter = 0;
+let mockTaskRunsByTaskId = new Map<string, TeamRunState[]>();
 
 function mockTaskWarnings(task: TeamCanvasTask): string[] {
   if (task.workUnit.workerAgentId === task.workUnit.checkerAgentId) {
@@ -968,9 +970,54 @@ export function resetMockTeamApiState() {
   mockCurrentConversationIds.clear();
   mockPendingRuns.clear();
   mockCanvasTasks = mockTeamTasks.map(cloneMockTeamTask);
+  mockTaskRunsByTaskId = new Map();
+  mockTaskRunCounter = 0;
   mockConversationCounter = 0;
   mockRunCounter = 0;
   mockMessageCounter = 0;
+}
+
+function cloneTeamRunState(run: TeamRunState): TeamRunState {
+  return {
+    ...run,
+    source: run.source ? { ...run.source } : undefined,
+    taskStates: Object.fromEntries(Object.entries(run.taskStates).map(([taskId, state]) => [
+      taskId,
+      {
+        ...state,
+        progress: { ...state.progress },
+      },
+    ])),
+    summary: { ...run.summary },
+  };
+}
+
+function createMockTaskRun(task: TeamCanvasTask): TeamRunState {
+  const timestamp = ts();
+  const runId = `mock-task-run-${++mockTaskRunCounter}`;
+  const resultRef = `tasks/${task.taskId}/attempts/mock-attempt-${mockTaskRunCounter}/accepted-result.md`;
+  return {
+    runId,
+    planId: `canvas_task_${task.taskId}`,
+    source: { type: "canvas-task", taskId: task.taskId },
+    teamUnitId: `canvas_task_unit_${task.taskId}`,
+    status: "completed",
+    createdAt: timestamp,
+    startedAt: timestamp,
+    finishedAt: timestamp,
+    currentTaskId: null,
+    taskStates: {
+      [task.taskId]: {
+        status: "succeeded",
+        attemptCount: 1,
+        activeAttemptId: `mock-attempt-${mockTaskRunCounter}`,
+        resultRef,
+        errorSummary: null,
+        progress: { phase: "succeeded", message: "已通过", updatedAt: timestamp },
+      },
+    },
+    summary: { totalTasks: 1, succeededTasks: 1, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+  };
 }
 
 function getAgentConversations(agentId: string): Map<string, MockConversation> {
@@ -1068,6 +1115,47 @@ export class MockTeamApi {
 
   async listTasks(): Promise<TeamCanvasTask[]> {
     return mockCanvasTasks.filter((task) => !task.archived).map(cloneMockTeamTask);
+  }
+
+  async listTaskRuns(taskId: string): Promise<TeamRunState[]> {
+    return (mockTaskRunsByTaskId.get(taskId) ?? []).map(cloneTeamRunState);
+  }
+
+  async createTaskRun(taskId: string): Promise<TeamRunState> {
+    const task = mockCanvasTasks.find((candidate) => candidate.taskId === taskId && !candidate.archived);
+    if (!task) throw { message: `Task not found: ${taskId}` };
+    if (task.status !== "ready") throw { message: "task must be ready before run" };
+    const run = createMockTaskRun(task);
+    const current = mockTaskRunsByTaskId.get(taskId) ?? [];
+    mockTaskRunsByTaskId.set(taskId, [run, ...current]);
+    return cloneTeamRunState(run);
+  }
+
+  async getTaskRun(runId: string): Promise<TeamRunState> {
+    for (const runs of mockTaskRunsByTaskId.values()) {
+      const run = runs.find((candidate) => candidate.runId === runId);
+      if (run) return cloneTeamRunState(run);
+    }
+    throw { message: `Task run not found: ${runId}` };
+  }
+
+  async cancelTaskRun(runId: string): Promise<TeamRunState> {
+    for (const [taskId, runs] of mockTaskRunsByTaskId.entries()) {
+      const index = runs.findIndex((candidate) => candidate.runId === runId);
+      if (index < 0) continue;
+      const run = cloneTeamRunState(runs[index]!);
+      run.status = "cancelled";
+      run.finishedAt = ts();
+      const taskState = run.source?.taskId ? run.taskStates[run.source.taskId] : undefined;
+      if (taskState) {
+        taskState.status = "cancelled";
+        taskState.progress = { phase: "cancelled", message: "已取消", updatedAt: run.finishedAt };
+      }
+      runs[index] = run;
+      mockTaskRunsByTaskId.set(taskId, runs);
+      return cloneTeamRunState(run);
+    }
+    throw { message: `Task run not found: ${runId}` };
   }
 
   async updateTask(taskId: string, patch: TeamTaskUpdateRequest): Promise<TeamTaskMutationResponse> {

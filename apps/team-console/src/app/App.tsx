@@ -5,6 +5,7 @@ import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, mockTeamTasks, Mock
 import { ExecutionMap, type AtlasAgentNode, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { ROOT_ID } from "../graph/execution-map-layout";
 import type { AtlasViewport } from "../graph/AtlasCanvasShell";
+import { RUN_STATUS_LABELS, isActiveRun } from "../shared/status";
 import "./app.css";
 
 export type DataSource = "mock" | "live";
@@ -74,6 +75,32 @@ function selectLatestRun(runs: TeamRunState[]): TeamRunState | null {
     if (!Number.isFinite(latestTime)) return run;
     return runTime >= latestTime ? run : latest;
   }, runs[0]);
+}
+
+function sortRunsByCreatedAt(runs: TeamRunState[]): TeamRunState[] {
+  return [...runs].sort((a, b) => {
+    const aTime = Date.parse(a.createdAt);
+    const bTime = Date.parse(b.createdAt);
+    if (!Number.isFinite(aTime) && !Number.isFinite(bTime)) return 0;
+    if (!Number.isFinite(aTime)) return 1;
+    if (!Number.isFinite(bTime)) return -1;
+    return bTime - aTime;
+  });
+}
+
+function mergeTaskRun(
+  current: Record<string, TeamRunState[]>,
+  taskId: string,
+  runState: TeamRunState,
+): Record<string, TeamRunState[]> {
+  const runs = current[taskId] ?? [];
+  const nextRuns = runs.some((run) => run.runId === runState.runId)
+    ? runs.map((run) => run.runId === runState.runId ? runState : run)
+    : [runState, ...runs];
+  return {
+    ...current,
+    [taskId]: sortRunsByCreatedAt(nextRuns),
+  };
 }
 
 function playgroundBaseUrl(): string {
@@ -277,6 +304,8 @@ export function App() {
   const [agentNodes, setAgentNodes] = useState<AtlasAgentNode[]>([]);
   const [liveAgentNodesHydrated, setLiveAgentNodesHydrated] = useState(false);
   const [tasks, setTasks] = useState<TeamCanvasTask[]>([]);
+  const [taskRunsByTaskId, setTaskRunsByTaskId] = useState<Record<string, TeamRunState[]>>({});
+  const [taskRunSavingByTaskId, setTaskRunSavingByTaskId] = useState<Record<string, boolean>>({});
   const [taskNodes, setTaskNodes] = useState<AtlasTaskNode[]>([]);
   const [liveTaskNodesHydrated, setLiveTaskNodesHydrated] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
@@ -304,6 +333,17 @@ export function App() {
     ? taskNodes.find((node) => node.nodeId === expandedTaskBranch.nodeId) ?? null
     : null;
   const expandedTask = expandedTaskNode ? tasksById.get(expandedTaskNode.taskId) ?? null : null;
+  const expandedTaskRuns = expandedTask ? taskRunsByTaskId[expandedTask.taskId] ?? [] : [];
+  const latestExpandedTaskRun = selectLatestRun(expandedTaskRuns);
+  const activeExpandedTaskRun = expandedTaskRuns.find((taskRun) => isActiveRun(taskRun.status)) ?? null;
+  const expandedTaskRunSaving = expandedTask ? Boolean(taskRunSavingByTaskId[expandedTask.taskId]) : false;
+
+  const activeCanvasTaskRunIds = useMemo(() => (
+    Object.values(taskRunsByTaskId)
+      .flat()
+      .filter((taskRun) => isActiveRun(taskRun.status) && taskRun.source?.taskId)
+      .map((taskRun) => ({ runId: taskRun.runId, taskId: taskRun.source!.taskId }))
+  ), [taskRunsByTaskId]);
 
   const selectTask = useCallback((taskId: string) => {
     setSelectedTaskId((current) => current === taskId ? null : taskId);
@@ -363,6 +403,17 @@ export function App() {
     setLiveTaskNodesHydrated(true);
   }, []);
 
+  const loadTaskRunsForTasks = useCallback(async (
+    api: Pick<LiveTeamApi, "listTaskRuns">,
+    nextTasks: TeamCanvasTask[],
+  ) => {
+    const entries = await Promise.all(nextTasks.map(async (task) => {
+      const runs = await api.listTaskRuns(task.taskId).catch(() => []);
+      return [task.taskId, sortRunsByCreatedAt(runs)] as const;
+    }));
+    setTaskRunsByTaskId(Object.fromEntries(entries));
+  }, []);
+
   const refreshLiveTasks = useCallback(async () => {
     if (liveTasksRefreshInFlightRef.current) {
       return liveTasksRefreshInFlightRef.current;
@@ -371,8 +422,10 @@ export function App() {
     const refresh = (async () => {
       setLiveTasksRefreshing(true);
       try {
-        const nextTasks = await new LiveTeamApi().listTasks();
+        const api = new LiveTeamApi();
+        const nextTasks = await api.listTasks();
         applyLiveTasks(nextTasks);
+        await loadTaskRunsForTasks(api, nextTasks);
         setError(null);
       } finally {
         liveTasksRefreshInFlightRef.current = null;
@@ -381,7 +434,7 @@ export function App() {
     })();
     liveTasksRefreshInFlightRef.current = refresh;
     return refresh;
-  }, [applyLiveTasks]);
+  }, [applyLiveTasks, loadTaskRunsForTasks]);
 
   const refreshLiveTasksAfterLeavingTaskCreateBranch = useCallback((branch: AgentBranchState | null) => {
     if (dataSource !== "live" || branch?.mode !== "task-create") return;
@@ -397,6 +450,8 @@ export function App() {
       setRun(null);
       setSelectedTaskId(null);
       setAttemptsByTaskId({});
+      setTaskRunsByTaskId({});
+      setTaskRunSavingByTaskId({});
       setError(null);
       setLoading(false);
       setCanvasViewport({ x: 0, y: 0, scale: 1 });
@@ -409,6 +464,8 @@ export function App() {
     setRun(entry.run);
     setSelectedTaskId(null);
     setAttemptsByTaskId({});
+    setTaskRunsByTaskId({});
+    setTaskRunSavingByTaskId({});
     setError(null);
     setLoading(false);
   }, [closeTaskBranch]);
@@ -442,6 +499,7 @@ export function App() {
       setAgentRunStatusById(agentRunStatusRecord(MOCK_AGENT_RUN_STATUSES));
       setTasks(mockTeamTasks);
       setTaskNodes(makeTaskNodes(mockTeamTasks));
+      setTaskRunsByTaskId({});
       return () => {
         cancelled = true;
       };
@@ -452,6 +510,8 @@ export function App() {
     setTaskLeaderPickerOpen(false);
     setAgentRunStatusById({});
     setTasks([]);
+    setTaskRunsByTaskId({});
+    setTaskRunSavingByTaskId({});
     setTaskNodes([]);
     setLiveTaskNodesHydrated(false);
 
@@ -466,6 +526,7 @@ export function App() {
           setAgents(nextAgents);
           setAgentRunStatusById(agentRunStatusRecord(nextStatuses));
           applyLiveTasks(nextTasks);
+          void loadTaskRunsForTasks(api, nextTasks);
         }
       } catch (e) {
         if (!cancelled) {
@@ -485,7 +546,7 @@ export function App() {
         globalThis.clearInterval(refreshTimer);
       }
     };
-  }, [applyLiveTasks, closeTaskBranch, dataSource]);
+  }, [applyLiveTasks, closeTaskBranch, dataSource, loadTaskRunsForTasks]);
 
   useEffect(() => {
     if (dataSource !== "live") return;
@@ -735,6 +796,67 @@ export function App() {
     }
   }, [closeTaskBranch, dataSource, expandedTask, refreshLiveTasks]);
 
+  const runExpandedTask = useCallback(async () => {
+    if (!expandedTask) return;
+    const taskId = expandedTask.taskId;
+    setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: true }));
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      const taskRun = await api.createTaskRun(taskId);
+      setTaskRunsByTaskId((current) => mergeTaskRun(current, taskId, taskRun));
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: false }));
+    }
+  }, [dataSource, expandedTask]);
+
+  const cancelExpandedTaskRun = useCallback(async () => {
+    if (!expandedTask || !activeExpandedTaskRun) return;
+    const taskId = expandedTask.taskId;
+    setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: true }));
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      const taskRun = await api.cancelTaskRun(activeExpandedTaskRun.runId);
+      setTaskRunsByTaskId((current) => mergeTaskRun(current, taskId, taskRun));
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: false }));
+    }
+  }, [activeExpandedTaskRun, dataSource, expandedTask]);
+
+  useEffect(() => {
+    if (activeCanvasTaskRunIds.length === 0) return;
+    let cancelled = false;
+    const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+
+    async function refreshActiveTaskRuns() {
+      for (const active of activeCanvasTaskRunIds) {
+        try {
+          const fresh = await api.getTaskRun(active.runId);
+          if (!cancelled) {
+            setTaskRunsByTaskId((current) => mergeTaskRun(current, active.taskId, fresh));
+          }
+        } catch {
+          // Keep the last visible task run state on transient polling failures.
+        }
+      }
+    }
+
+    const timer = globalThis.setInterval(() => {
+      void refreshActiveTaskRuns();
+    }, 2000);
+    void refreshActiveTaskRuns();
+
+    return () => {
+      cancelled = true;
+      globalThis.clearInterval(timer);
+    };
+  }, [activeCanvasTaskRunIds, dataSource]);
+
   const canCreateTask = dataSource === "live" && agents.length > 0;
   const canRefreshTasks = dataSource === "live" && !liveTasksRefreshing;
 
@@ -859,6 +981,13 @@ export function App() {
   const activeTaskEditDraft = expandedTask && taskEditDraft?.taskId === expandedTask.taskId
     ? taskEditDraft
     : null;
+  const expandedTaskRunButtonLabel = expandedTaskRunSaving
+    ? "启动中..."
+    : activeExpandedTaskRun
+      ? "运行中"
+      : latestExpandedTaskRun
+        ? "重新运行"
+        : "运行";
   const expandedTaskBranchPanel = expandedTaskNode && expandedTask ? (
     <section className="task-leader-branch task-action-branch" aria-label={`${expandedTask.title} Task 操作`}>
       <header className="task-leader-branch-head">
@@ -880,11 +1009,33 @@ export function App() {
         <button
           type="button"
           className="task-action-menu-button"
-          disabled
-          title="Task run 暂未接线"
+          disabled={expandedTaskRunSaving || Boolean(activeExpandedTaskRun) || expandedTask.status !== "ready"}
+          title={expandedTask.status === "ready" ? "启动这个 Task 的 WorkUnit run" : "只有 ready Task 可以运行"}
+          onClick={() => {
+            void runExpandedTask();
+          }}
         >
-          运行
+          {expandedTaskRunButtonLabel}
         </button>
+        {activeExpandedTaskRun && (
+          <button
+            type="button"
+            className="task-action-menu-button"
+            disabled={expandedTaskRunSaving}
+            onClick={() => {
+              void cancelExpandedTaskRun();
+            }}
+          >
+            停止
+          </button>
+        )}
+        {latestExpandedTaskRun && (
+          <div className="task-run-summary" aria-label={`${expandedTask.title} 最近运行`}>
+            <span>最近运行</span>
+            <strong>{RUN_STATUS_LABELS[latestExpandedTaskRun.status]}</strong>
+            <code>{latestExpandedTaskRun.runId}</code>
+          </div>
+        )}
         <button
           type="button"
           className="task-action-menu-button"
@@ -1183,6 +1334,7 @@ export function App() {
                 agentBranchPanel={expandedAgentBranchPanel}
                 taskNodes={taskNodes}
                 tasksById={tasksById}
+                taskRunsByTaskId={taskRunsByTaskId}
                 focusedTaskNodeId={expandedTaskNode?.nodeId ?? null}
                 onSelectCanvasTask={toggleTaskBranch}
                 onMoveCanvasTask={moveTaskNode}

@@ -1,6 +1,6 @@
 # Team Runtime v2
 
-更新时间：2026-05-24
+更新时间：2026-05-25
 
 本文档是 Team Runtime v2 的唯一权威源。v0.1 域名调查历史见文末归档章节。
 
@@ -16,9 +16,9 @@
 - 最新验证：P26 output contract validation 已覆盖 deterministic validator、真实 orchestrator regression、`npm run test:team` 和 `npx tsc --noEmit`
 - 独立 Team Console 前端预览已建立（`apps/team-console/`），使用 Vite + React + TypeScript，实现纵向 Execution Map 原型。当前 `/playground/team` 仍是生产入口，Team Console 不替换任何现有页面。
 - Team Console preview 的 Live API 模式已真实接线：切换后默认停在干净 `Agent workspace`，只加载 Agent catalog/status，不会在刷新或重新进入时自动渲染历史 run；用户点击“最新 Run”后才请求 `GET /v1/team/plans` 和 `GET /v1/team/runs`，按 `createdAt` 选择最新 run，再请求 `GET /v1/team/runs/:runId` 获取详情并按 `planId` 匹配 plan。点击 task 时会通过现有只读 attempt API 读取 `TeamAttemptMetadata` 和 attempt file。当前不调用 pause/resume/cancel、manual disposition、rerun 或任何写接口。
-- Team Console preview 的 Agent 能力已收口为 Agent Atlas：通过 `GET /v1/agents` 读取主项目 Agent catalog，并通过 `GET /v1/agents/status` 读取每个 Agent 的真实空闲 / 运行中状态；Agent 节点加入同一张 Execution Atlas，复用网格、节点样式、pan/zoom 和“重置视图”，卡片状态条与状态 pill 会随真实运行态显示空闲、运行中或状态未知；默认 Mock 入口是干净 `Agent workspace`，不显示旧 demo run。画布内同一 `agentId` 只能出现一次；普通画布态可拖拽 Agent 卡片，Live API 下已添加 Agent 与拖动后的画布位置会写入浏览器 `localStorage`，刷新后恢复；这只保存 Team Console 画布引用位置，不修改真实 Agent profile。Agent 或分支节点向右拖动时只改变画布内世界坐标，不允许撑开外层页面宽度或带动画布 pan。单击 Agent 节点会展开 Agent 分支卡片，而不是进入特殊 Focus 视窗；普通节点层、其他 Agent、runtime nodes、links、evidence、添加入口和缩放工具继续显示。点击同一 Agent 节点会收起该分支，点击另一个 Agent 节点会切换分支。分支卡片按上层浮窗处理，不再为了避让周围节点自动右移，允许覆盖其他节点；用户可拖动画布、拖动分支标题栏移动分支，并可从右下角调整分支宽高。分支位置使用画布世界坐标，允许拖过原点上方或左侧；拖动分支标题栏不会带动画布平移。Agent 到分支的连接线会按分支相对位置从最近边出线。分支内部是主项目 `/playground` iframe，URL 形如 `/playground?view=chat&agentId=<agentId>&embed=team-console`；Team Console 不再维护本地 transcript + composer，也不再复制 scoped chat stream/state/history/queue/interrupt/file library。主 `/playground` 读取 `agentId` URL hint 进入对应 Agent，`embed=team-console` 下会把 iframe 顶部 Agent 标签锁定为只读标识，关闭 hover 切换菜单和点击跳转，并且不会把 iframe 内 Agent 切换写入主页面共用的 active-agent localStorage，因此主 Agent 卡片打开主 Agent 对话，搜索 Agent 卡片打开搜索 Agent 对话，且互不污染；iframe 内路由跳转继续由主项目自己处理。该能力只引用现有 Agent profile，不创建 clone、instance、overlay 或画布局部技能安装，仍不落地 WorkUnit / Plan 编排；仍不接 artifact preview，不处理移动端 toolbar / 添加入口专项修复。
+- Team Console preview 的 Agent 能力已收口为 Agent Atlas：通过 `GET /v1/agents` 读取主项目 Agent catalog，并通过 `GET /v1/agents/status` 读取每个 Agent 的真实空闲 / 运行中状态；Agent 节点加入同一张 Execution Atlas，复用网格、节点样式、pan/zoom 和“重置视图”，卡片状态条与状态 pill 会随真实运行态显示空闲、运行中或状态未知；默认 Mock 入口是干净 `Agent workspace`，不显示旧 demo run。画布内同一 `agentId` 只能出现一次；普通画布态可拖拽 Agent 卡片，Live API 下已添加 Agent 与拖动后的画布位置会写入浏览器 `localStorage`，刷新后恢复；这只保存 Team Console 画布引用位置，不修改真实 Agent profile。Agent 或分支节点向右拖动时只改变画布内世界坐标，不允许撑开外层页面宽度或带动画布 pan。单击 Agent 节点会展开 Agent 分支卡片，而不是进入特殊 Focus 视窗；普通节点层、其他 Agent、runtime nodes、links、evidence、添加入口和缩放工具继续显示。点击同一 Agent 节点会收起该分支，点击另一个 Agent 节点会切换分支。分支卡片按上层浮窗处理，不再为了避让周围节点自动右移，允许覆盖其他节点；用户可拖动画布、拖动分支标题栏移动分支，并可从右下角调整分支宽高。分支位置使用画布世界坐标，允许拖过原点上方或左侧；拖动分支标题栏不会带动画布平移。Agent 到分支的连接线会按分支相对位置从最近边出线。分支内部是主项目 `/playground` iframe，URL 形如 `/playground?view=chat&agentId=<agentId>&embed=team-console`；Team Console 不再维护本地 transcript + composer，也不再复制 scoped chat stream/state/history/queue/interrupt/file library。主 `/playground` 读取 `agentId` URL hint 进入对应 Agent，`embed=team-console` 下会把 iframe 顶部 Agent 标签锁定为只读标识，关闭 hover 切换菜单和点击跳转，并且不会把 iframe 内 Agent 切换写入主页面共用的 active-agent localStorage，因此主 Agent 卡片打开主 Agent 对话，搜索 Agent 卡片打开搜索 Agent 对话，且互不污染；iframe 内路由跳转继续由主项目自己处理。该能力只引用现有 Agent profile，不创建 clone、instance、overlay 或画布局部技能安装，不把 Agent 节点本身变成 Plan 编排；仍不接 artifact preview，不处理移动端 toolbar / 添加入口专项修复。
 - Team Task 后端契约已建立：`Task` 是 Team Console 画布上的独立最小编排节点，内部包含一个 `workUnit`，不复用 `Plan tasks.length === 1`；`leaderAgentId` 负责运行前和用户澄清边界并维护 WorkUnit 草案，`workerAgentId` / `checkerAgentId` 分别代表未来真实执行和验收 Agent。主项目新增 `/v1/team/tasks` REST API 和 `.pi/skills/team-task-creator/SKILL.md`；skill 只能在 `/team-task` 显式触发后创建 / 更新 Task draft，必须先展示完整 Task JSON 并等待确认，不启动 run，不解析 iframe 聊天文本，不修改 Agent profile、模型、browser binding 或技能安装逻辑。Team Console 画布 UI 的前端消费边界见下一条。
-- Team Console preview 现在会消费 `GET /v1/team/tasks` 作为 Task catalog：Task 内部包含一个 WorkUnit，Atlas Task 卡片展示 leader Agent、worker Agent 和 checker Agent。点击 Task 后先展开紧凑操作菜单节点；“运行”仍是未接线 disabled 占位，“编辑”只允许浅改 Task 名称、leader Agent、worker Agent、checker Agent，并作为菜单右侧二级节点展开；“对话 Leader”同样作为二级节点打开 `/playground?view=chat&agentId=<leaderAgentId>&embed=team-console&teamTaskId=<taskId>&teamTaskMode=edit` iframe，并复用 Agent 分支卡片的 header、iframe 和右下角 resize handle。Task 菜单到二级节点的虚线连接使用一级菜单真实 DOM 尺寸，从菜单右边缘连到二级节点左边缘，不再依赖固定虚拟菜单矩形。“删除”二次确认仍留在一级菜单里，确认后调用 `POST /v1/team/tasks/:taskId/archive` 软归档并刷新。浅编辑保存使用 base snapshot + dirty fields：只 PATCH 用户实际改过的字段，worker/checker 变更会基于最新 Task catalog 合成完整当前 `workUnit`，同字段后台刷新冲突会阻止保存并提示重新打开编辑节点。Live API 工具栏的“创建 Task”只负责选择 leader Agent 并打开 `/playground?view=chat&agentId=<leaderAgentId>&embed=team-console&teamTaskMode=create` iframe；真正创建和复杂 WorkUnit 更新仍由 `/team-task` skill 完成。Team Console 不解析 iframe 聊天文本创建 Task，不把 Task 定义写入 localStorage，也不启动 Task run；Live API 下只持久化 Task 卡片的画布位置，手动刷新、关闭创建分支、浅编辑保存和归档成功后会重新请求 `GET /v1/team/tasks`。
+- Team Console preview 现在会消费 `GET /v1/team/tasks` 作为 Task catalog：Task 内部包含一个 WorkUnit，Atlas Task 卡片展示 leader Agent、worker Agent 和 checker Agent。点击 Task 后先展开紧凑操作菜单节点；“运行”调用独立 Canvas Task run API，后端把 run 存到 `.data/team/task-runs/runs/<runId>`，不进入 `/v1/team/runs` 的 Plan run 列表，也不把 Task 转换成持久化 Plan；第一版只执行 WorkUnit 的 worker → checker，不启动 watcher/finalizer。菜单会展示最近 Task run 状态，active run 通过 `GET /v1/team/task-runs/:runId` 轮询，停止调用 `POST /v1/team/task-runs/:runId/cancel`。“编辑”只允许浅改 Task 名称、leader Agent、worker Agent、checker Agent，并作为菜单右侧二级节点展开；“对话 Leader”同样作为二级节点打开 `/playground?view=chat&agentId=<leaderAgentId>&embed=team-console&teamTaskId=<taskId>&teamTaskMode=edit` iframe，并复用 Agent 分支卡片的 header、iframe 和右下角 resize handle。Task 菜单到二级节点的虚线连接使用一级菜单真实 DOM 尺寸，从菜单右边缘连到二级节点左边缘，不再依赖固定虚拟菜单矩形。“删除”二次确认仍留在一级菜单里，确认后调用 `POST /v1/team/tasks/:taskId/archive` 软归档并刷新。浅编辑保存使用 base snapshot + dirty fields：只 PATCH 用户实际改过的字段，worker/checker 变更会基于最新 Task catalog 合成完整当前 `workUnit`，同字段后台刷新冲突会阻止保存并提示重新打开编辑节点。Live API 工具栏的“创建 Task”只负责选择 leader Agent 并打开 `/playground?view=chat&agentId=<leaderAgentId>&embed=team-console&teamTaskMode=create` iframe；真正创建和复杂 WorkUnit 更新仍由 `/team-task` skill 完成。Team Console 不解析 iframe 聊天文本创建 Task，不把 Task 定义或 Task run 状态写入 localStorage；Live API 下只持久化 Task 卡片的画布位置，手动刷新、关闭创建分支、浅编辑保存和归档成功后会重新请求 `GET /v1/team/tasks`。
 - Team Console preview 的 Execution Map 建模按优先级挂载 generated child：显式 `parentTaskId`、仅在单一 `for_each` parent 时使用的安全 `sourceItemId` fallback、标记 `fallback: true` 的 id prefix fallback，仍无法归属的任务进入 orphan group；model builder 不修改传入的 plan/run/taskDefinitions。大量子任务折叠 summary node 会按隐藏子任务状态汇总，不再固定显示成功。
 - Execution Map 视觉已收口为 Execution Atlas：根节点顶部、主任务沿左侧 spine 向下、子任务分支右侧；节点有状态色条、选中发光、chain-selected 路径、失败错误首行、折叠虚线、orphan 点线；连接线使用三次贝塞尔(spine)和 L 形直角(branch)；responsive 断口在 720px。
 - Team Console preview 当前点击任务后不再打开固定右侧详情栏，也不在节点内部堆叠大段详情；结果 / 错误 / 尝试 / 进度会作为 evidence card 分支从 selected task 旁边长出。选中 task 有真实 attempt metadata 时，Worker 输出、Checker 验收、Watcher 复盘和最终 / 失败 / 发现结果会作为 artifact card 展示；只有通过当前 task/attempt 匹配且存在于 attempt metadata `files` 白名单中的 file-backed artifact card 可点击预览。Fallback Error / Attempt / Progress evidence 是静态卡片，不会伪造可预览文件。点击可预览 artifact card 后读取同一 run/task/attempt 下的真实文件并展开第二级预览节点，文本安全转义，JSON pretty print，HTML 只进 sandbox iframe。
@@ -65,6 +65,22 @@ Task 持久化在 `.data/team/tasks/<taskId>.json`，通过 `src/team/task-store
 - 更新走 `GET /v1/team/tasks`、`GET /v1/team/tasks/:taskId`、`PATCH /v1/team/tasks/:taskId`
 - 不启动 run，不调用 `POST /v1/team/plans/:planId/runs`，不直接写 `.data/team`，不改 Agent profile / 模型 / browser binding / 技能安装
 
+### Canvas Task Run
+
+Canvas Task Run 是 Task 的独立运行轨道，不是 Plan run 的别名。后端会为 Task run 构造一个仅用于 run snapshot 的内部执行 envelope，但不会写入 `PlanStore`，不会出现在 `GET /v1/team/runs`，也不会增加任何 Plan 的 `runCount`。持久化目录是 `.data/team/task-runs/runs/<runId>`。
+
+运行规则：
+
+- 启动入口：`POST /v1/team/tasks/:taskId/runs`
+- 只允许 `status="ready"` 且未归档的 Task 启动
+- 同一个 Task 同时只允许一个 active run（`queued | running | paused`）
+- worker 使用 `workUnit.workerAgentId`
+- checker 使用 `workUnit.checkerAgentId`
+- leader 不参与运行阶段，只负责运行前沟通和 WorkUnit 草案维护
+- 第一版不启动 watcher/finalizer，不支持 pause/resume/rerun
+- active run 可用 `POST /v1/team/task-runs/:runId/cancel` 停止
+- worker/checker attempt metadata 和输出文件仍复用 `RunWorkspace` 的 attempt 结构，只是 rootDir 指向 `task-runs`
+
 ### Team Canvas Task frontend workflow
 
 Team Console 的 Task 前端闭环只负责画布入口和刷新，不拥有 Task 定义本身：
@@ -76,7 +92,8 @@ Team Console 的 Task 前端闭环只负责画布入口和刷新，不拥有 Tas
 - 创建 / 更新仍由 iframe 内用户显式触发 `/team-task`，并由 runtime skill 调 `POST /v1/team/tasks` 或 `PATCH /v1/team/tasks/:taskId`；Team Console 不解析 iframe 聊天文本创建 Task，不替用户确认 skill 预览 JSON。
 - 用户可手动点击“刷新 Task”重新拉取 `GET /v1/team/tasks`；刷新中禁用重复点击，失败保留当前 Task 卡片并显示错误。
 - 关闭创建分支、浅编辑保存成功、归档成功后会重新请求 `GET /v1/team/tasks`，用于把后端事实刷回画布。
-- WorkUnit run 未实现。本阶段不启动 Task run，不实现 worker/checker 执行链路，也不把 Task 自动转换成 Plan run。
+- 点击“运行”会调用 `POST /v1/team/tasks/:taskId/runs` 启动独立 Canvas Task run；前端通过 `GET /v1/team/tasks/:taskId/runs` 读取历史，通过 `GET /v1/team/task-runs/:runId` 轮询 active 状态。这个 run 只属于 Canvas Task，不进入 Plan run 列表，也不会增加 Plan `runCount`。
+- 第一版 Task run 只执行 `workUnit.workerAgentId` 和 `workUnit.checkerAgentId`，不启动 watcher/finalizer，不支持 pause/resume/rerun；active run 可通过 `POST /v1/team/task-runs/:runId/cancel` 停止。
 
 ### TeamUnit
 
@@ -444,8 +461,14 @@ run 内相对路径，指向 accepted 或 failed 结果文件。格式如 `tasks
 | GET | `/v1/team/tasks/:taskId` | 查看单个 Task |
 | PATCH | `/v1/team/tasks/:taskId` | 更新未归档 Task draft 的 `title`、`leaderAgentId`、`workUnit` 或 `status`；不允许修改 locked Task 的 `workUnit` |
 | POST | `/v1/team/tasks/:taskId/archive` | 软归档 Task |
+| GET | `/v1/team/tasks/:taskId/runs` | 列出某个 Canvas Task 的独立 Task run |
+| POST | `/v1/team/tasks/:taskId/runs` | 启动某个 ready Canvas Task 的 worker → checker run |
+| GET | `/v1/team/task-runs/:runId` | 读取独立 Task run 状态 |
+| POST | `/v1/team/task-runs/:runId/cancel` | 取消 active Task run |
+| GET | `/v1/team/task-runs/:runId/tasks/:taskId/attempts` | 读取 Task run 的 attempt metadata |
+| GET | `/v1/team/task-runs/:runId/tasks/:taskId/attempts/:attemptId/files/:fileName` | 读取 Task run 的 attempt 文件 |
 
-Task API 不提供 run 创建能力。`POST /v1/team/tasks` 不会创建 Plan，也不会启动 worker/checker。
+`POST /v1/team/tasks` 仍只创建 Task draft，不会创建 Plan，也不会自动启动 worker/checker。Task run 必须显式调用 `POST /v1/team/tasks/:taskId/runs`；Task run 存在 `.data/team/task-runs`，不进入 Plan run API。
 
 ### Plan API
 
@@ -836,6 +859,7 @@ docker compose up -d --scale ugk-pi-team-worker=2  # 多 worker 验证
 | `src/team/team-unit-store.ts` | TeamUnit 存储 |
 | `src/team/task-store.ts` | Team Canvas Task 持久化：`.data/team/tasks/<taskId>.json`、旧字段兼容、归档过滤 |
 | `src/team/task-validation.ts` | Task create/update schema policy：leader / worker / checker Agent、WorkUnit 输入 / 输出契约 / 验收规则校验 |
+| `src/team/task-run-service.ts` | Canvas Task 独立 run service：ready 校验、worker → checker 执行、task-runs 工作区、cancel |
 | `src/team/plan-store.ts` | Plan 持久化和 runCount 不变式 |
 | `src/team/plan-validation.ts` | Plan create/update schema policy：task type、decomposer、for_each、outputCheck 校验 |
 | `src/team/config-locks.ts` | 活跃 run 对 Plan / TeamUnit / AgentProfile 的锁计算 |

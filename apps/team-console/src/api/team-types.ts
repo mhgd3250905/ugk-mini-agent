@@ -179,6 +179,7 @@ export interface TeamTaskState {
 export interface TeamRunState {
   runId: string;
   planId: string;
+  source?: { type: "canvas-task"; taskId: string };
   teamUnitId: string;
   status: RunStatus;
   createdAt: string;
@@ -193,6 +194,10 @@ export interface TeamRunState {
     cancelledTasks: number;
     skippedTasks: number;
   };
+}
+
+export interface TeamCanvasTaskRunListResponse {
+  runs: TeamRunState[];
 }
 
 export interface SourceItemData {

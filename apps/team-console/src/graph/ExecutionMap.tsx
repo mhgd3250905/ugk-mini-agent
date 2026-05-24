@@ -1,5 +1,5 @@
 import { useMemo, useLayoutEffect, useRef, useState, useCallback, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import type { AgentRunStatus, AgentSummary, RunDetail, TeamCanvasTask, TeamPlan, TaskStatus, TeamAttemptMetadata, TeamTaskState } from "../api/team-types";
+import type { AgentRunStatus, AgentSummary, RunDetail, TeamCanvasTask, TeamPlan, TaskStatus, TeamAttemptMetadata, TeamTaskState, TeamRunState } from "../api/team-types";
 import type { ExecutionNode, NodeKind } from "./execution-map-model";
 import { buildExecutionMapModel, CHILD_COLLAPSE_THRESHOLD } from "./execution-map-model";
 import { layoutExecutionMap, ROOT_ID, NODE_WIDTH, straightPath, type ExecutionMapLayout } from "./execution-map-layout";
@@ -37,6 +37,7 @@ interface ExecutionMapProps {
   agentBranchPanel?: ReactNode;
   taskNodes?: AtlasTaskNode[];
   tasksById?: Map<string, TeamCanvasTask>;
+  taskRunsByTaskId?: Record<string, TeamRunState[]>;
   focusedTaskNodeId?: string | null;
   onSelectCanvasTask?: (node: AtlasTaskNode) => void;
   onMoveCanvasTask?: (nodeId: string, position: { x: number; y: number }) => void;
@@ -175,6 +176,17 @@ function statusClass(status: TaskStatus | RunDetail["status"]): string {
     case "completed_with_failures": return "status-paused";
     default: return "";
   }
+}
+
+function selectLatestCanvasTaskRun(runs: TeamRunState[] | undefined): TeamRunState | null {
+  if (!runs?.length) return null;
+  return runs.reduce((latest, run) => {
+    const latestTime = Date.parse(latest.createdAt);
+    const runTime = Date.parse(run.createdAt);
+    if (!Number.isFinite(runTime)) return latest;
+    if (!Number.isFinite(latestTime)) return run;
+    return runTime >= latestTime ? run : latest;
+  }, runs[0]);
 }
 
 function createEmptyLayout(): ExecutionMapLayout {
@@ -536,6 +548,7 @@ export function ExecutionMap({
   agentBranchPanel,
   taskNodes = [],
   tasksById,
+  taskRunsByTaskId = {},
   focusedTaskNodeId,
   onSelectCanvasTask,
   onMoveCanvasTask,
@@ -1378,13 +1391,16 @@ export function ExecutionMap({
             const worker = agentsById?.get(task.workUnit.workerAgentId);
             const checker = agentsById?.get(task.workUnit.checkerAgentId);
             const isFocused = node.nodeId === focusedTaskNodeId;
+            const latestTaskRun = selectLatestCanvasTaskRun(taskRunsByTaskId[task.taskId]);
+            const nodeStatusClass = latestTaskRun ? statusClass(latestTaskRun.status) : `status-${task.status}`;
             return (
               <button
                 key={node.nodeId}
                 type="button"
-                className={`emap-node emap-canvas-task-node status-${task.status} ${isFocused ? "selected" : ""}`}
+                className={`emap-node emap-canvas-task-node ${nodeStatusClass} ${isFocused ? "selected" : ""}`}
                 data-kind="canvas-task"
                 data-task-id={task.taskId}
+                data-task-run-status={latestTaskRun?.status ?? "none"}
                 aria-label={task.title}
                 style={{ left: node.position.x, top: node.position.y, width: NODE_WIDTH, height: CANVAS_TASK_NODE_HEIGHT }}
                 onPointerDown={(event) => handleTaskPointerDown(node, event)}
@@ -1397,7 +1413,9 @@ export function ExecutionMap({
                 <div className="emap-node-content">
                   <div className="emap-node-header">
                     <span className="emap-node-kind">Task</span>
-                    <span className={`emap-node-state-pill ${task.status}`}>{task.status}</span>
+                    <span className={`emap-node-state-pill ${latestTaskRun?.status ?? task.status}`}>
+                      {latestTaskRun ? RUN_STATUS_LABELS[latestTaskRun.status] : task.status}
+                    </span>
                   </div>
                   <div className="emap-node-body">
                     <span className="emap-node-title">{task.title}</span>

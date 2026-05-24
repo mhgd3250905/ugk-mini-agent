@@ -51,6 +51,10 @@ Team Console shell 的 Live API 模式会真实请求：
 - `GET /v1/agents`
 - `GET /v1/agents/status`
 - `GET /v1/team/tasks`
+- `GET /v1/team/tasks/:taskId/runs`
+- `POST /v1/team/tasks/:taskId/runs`
+- `GET /v1/team/task-runs/:runId`
+- `POST /v1/team/task-runs/:runId/cancel`
 - `PATCH /v1/team/tasks/:taskId`
 - `POST /v1/team/tasks/:taskId/archive`
 - `GET /v1/team/plans`
@@ -61,7 +65,7 @@ Team Console shell 的 Live API 模式会真实请求：
 
 Agent 分支卡片不经 Vite proxy 打开 `/playground`，而是直接把 iframe 指向主服务的 `/playground?view=chat&agentId=<agentId>&embed=team-console`。主 `/playground` 负责读取 `agentId` URL hint、切到对应 Agent 并继续处理自己的路由、对话、文件库、后台任务等行为；`embed=team-console` 会把 iframe 顶部 Agent 标签固定为只读标识，关闭 hover 切换菜单和点击跳转，避免 iframe 内 Agent 切换污染其他分支或主页面的 active Agent 选择。
 
-Live API 模式默认进入干净的 `Agent workspace`，不会在刷新或重新进入时自动渲染历史 run。需要查看运行图时，点击顶部 live 运行图切换条里的“最新 Run”，页面会按 `createdAt` 选择最新 run，再用该 run 的 `planId` 匹配 plan 后渲染执行图。Agent workspace 工具栏支持手动点击“刷新 Task”重新请求 `GET /v1/team/tasks`；刷新中会禁用重复点击，失败只显示错误，不清空现有 Task 卡片。请求失败会在页面顶部显示错误，不会继续展示旧 mock 数据。
+Live API 模式默认进入干净的 `Agent workspace`，不会在刷新或重新进入时自动渲染历史 Plan run。需要查看 Plan 运行图时，点击顶部 live 运行图切换条里的“最新 Run”，页面会按 `createdAt` 选择最新 run，再用该 run 的 `planId` 匹配 plan 后渲染执行图。Agent workspace 工具栏支持手动点击“刷新 Task”重新请求 `GET /v1/team/tasks`；刷新中会禁用重复点击，失败只显示错误，不清空现有 Task 卡片。Task 操作菜单里的“运行”会单独调用 Canvas Task run API，不写入 Plan run 列表。请求失败会在页面顶部显示错误，不会继续展示旧 mock 数据。
 
 ## Agent Atlas MVP
 
@@ -77,13 +81,13 @@ Agent 分支卡片内部是主项目 `/playground` 的 iframe，URL 形如 `/pla
 
 Task 内部包含一个 WorkUnit。Team Console preview 现在从 `GET /v1/team/tasks` 读取 Task catalog，Mock fixture 也提供 deterministic Task / WorkUnit 数据；Task 不是单任务 Plan，也不会从 iframe 聊天文本里临时拼出来。Task 卡片会展示 `leaderAgentId`、`workerAgentId` 和 `checkerAgentId` 对应的 Agent 名称，让用户在 Atlas 里先看清谁负责澄清、谁负责执行、谁负责验收。
 
-点击 Task 卡片会先展开紧凑 Task 操作菜单节点，而不是直接进入 iframe 或撑开大面板。菜单包含“运行”“编辑”“对话 Leader”“删除”：运行目前只是 disabled 占位，不启动任何 WorkUnit run；点击“编辑”或“对话 Leader”不会替换一级菜单，而是在菜单右侧展开二级编辑节点或 leader Agent iframe 节点，连接线表现为 Task → 菜单 → 二级节点，并使用一级菜单真实 DOM 尺寸从菜单右边缘连接到二级节点左边缘；对话 Leader 复用 Agent 分支卡片的 header、iframe 和右下角 resize handle，URL 形如 `/playground?view=chat&agentId=<leaderAgentId>&embed=team-console&teamTaskId=<taskId>&teamTaskMode=edit`；删除会二次确认并调用 `POST /v1/team/tasks/:taskId/archive` 做软归档，成功后重新请求 `GET /v1/team/tasks` 并关闭分支。
+点击 Task 卡片会先展开紧凑 Task 操作菜单节点，而不是直接进入 iframe 或撑开大面板。菜单包含“运行”“编辑”“对话 Leader”“删除”：运行调用 `POST /v1/team/tasks/:taskId/runs` 启动独立 Canvas Task run，运行状态通过 `GET /v1/team/task-runs/:runId` 轮询回菜单和 Task 卡片；这个 run 存在独立 task-runs 工作区，不会进入 `/v1/team/runs` 的 Plan run 列表，也不会把 Task 偷换成 `Plan tasks.length === 1`。第一版 Task run 只执行 WorkUnit 的 worker → checker，leader 仍只负责运行前沟通和草案维护，不额外启动 watcher/finalizer；运行中菜单显示“运行中”和“停止”，停止会调用 `POST /v1/team/task-runs/:runId/cancel`。点击“编辑”或“对话 Leader”不会替换一级菜单，而是在菜单右侧展开二级编辑节点或 leader Agent iframe 节点，连接线表现为 Task → 菜单 → 二级节点，并使用一级菜单真实 DOM 尺寸从菜单右边缘连接到二级节点左边缘；对话 Leader 复用 Agent 分支卡片的 header、iframe 和右下角 resize handle，URL 形如 `/playground?view=chat&agentId=<leaderAgentId>&embed=team-console&teamTaskId=<taskId>&teamTaskMode=edit`；删除会二次确认并调用 `POST /v1/team/tasks/:taskId/archive` 做软归档，成功后重新请求 `GET /v1/team/tasks` 并关闭分支。
 
-菜单里的“编辑”是浅编辑节点，只允许修改 Task 名称、`leaderAgentId`、`workerAgentId` 和 `checkerAgentId`。编辑节点打开时会记录 base snapshot 和 dirty fields；保存时只发送用户实际改过的字段。如果只改 Task 名称或 leader Agent，前端只发送对应字段；如果改 worker/checker，前端用最新 Task catalog 里的 `workUnit` 合成完整 PATCH 并只替换对应 Agent 绑定，避免旧草稿覆盖 Leader 对话或刷新带回的新 WorkUnit 数据。若同一字段在草稿打开后已被后台刷新改变，保存会被阻止并提示重新打开编辑节点。复杂需求、input text、output contract 和 acceptance rules 仍必须通过 Leader 对话里的 `/team-task` 流程维护；Team Console 不解析 iframe 聊天文本创建或更新 Task，不把复杂 WorkUnit 字段做成可视化编辑器，不启动 Task run，也不实现 worker/checker 执行链路。
+菜单里的“编辑”是浅编辑节点，只允许修改 Task 名称、`leaderAgentId`、`workerAgentId` 和 `checkerAgentId`。编辑节点打开时会记录 base snapshot 和 dirty fields；保存时只发送用户实际改过的字段。如果只改 Task 名称或 leader Agent，前端只发送对应字段；如果改 worker/checker，前端用最新 Task catalog 里的 `workUnit` 合成完整 PATCH 并只替换对应 Agent 绑定，避免旧草稿覆盖 Leader 对话或刷新带回的新 WorkUnit 数据。若同一字段在草稿打开后已被后台刷新改变，保存会被阻止并提示重新打开编辑节点。复杂需求、input text、output contract 和 acceptance rules 仍必须通过 Leader 对话里的 `/team-task` 流程维护；Team Console 不解析 iframe 聊天文本创建或更新 Task，不把复杂 WorkUnit 字段做成可视化编辑器。
 
 Live API 工具栏的“创建 Task”会先展示当前 Agent catalog，让用户选择 leader Agent；选择后 Team Console 只打开 leader Agent iframe，不直接创建 Task。创建分支 URL 形如 `/playground?view=chat&agentId=<leaderAgentId>&embed=team-console&teamTaskMode=create`，不携带 `teamTaskId`。真正的创建由 iframe 内用户显式使用 `/team-task` skill 调用 `POST /v1/team/tasks` 完成；Team Console 不读 iframe 聊天文本、不替用户确认 JSON、不把 draft 写进本地状态。关闭创建分支后会重新请求 `GET /v1/team/tasks`，用于把 skill 创建成功后的 Task 卡片刷新回画布。
 
-Live API 模式下 Task 卡片拖动位置会写入浏览器 `localStorage` 并在刷新后恢复，但只保存 `taskId` 和画布坐标，不保存 WorkUnit 内容、`leaderAgentId`、`workerAgentId` 或 `checkerAgentId`。Task 定义始终以后端 `GET /v1/team/tasks` 返回为准；当前前端只做画布展示和 leader 分支打开。
+Live API 模式下 Task 卡片拖动位置会写入浏览器 `localStorage` 并在刷新后恢复，但只保存 `taskId` 和画布坐标，不保存 WorkUnit 内容、`leaderAgentId`、`workerAgentId`、`checkerAgentId` 或 Task run 定义。Task 定义始终以后端 `GET /v1/team/tasks` 返回为准；Task run 状态始终以后端 `GET /v1/team/tasks/:taskId/runs` / `GET /v1/team/task-runs/:runId` 返回为准。
 
 Mock fixture 覆盖以下场景：
 
@@ -154,7 +158,7 @@ Mock fixture 覆盖以下场景：
 ## 当前边界
 
 - 仍是独立 preview，不替换 `/playground/team`
-- 不调用 manual disposition、rerun、pause/resume/cancel API
+- 不调用 Plan run 的 manual disposition、rerun、pause/resume/cancel API；Canvas Task 菜单只接入独立 Task run 的 create/cancel
 - 只通过现有只读 API 读取 attempt metadata 和 attempt file，不新增写操作
 - Agent Atlas 只引用已有 Agent catalog，不创建或修改主项目 Agent profile
 - 不支持框选、节点创建、minimap、持久化视图或编辑 Plan；Agent 卡片拖拽只是本地画布引用位置调整

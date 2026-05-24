@@ -333,14 +333,14 @@ describe("App", () => {
     expect(within(branch!).getByText("Task 操作")).toBeInTheDocument();
     expect(within(branch!).getByText("调查 Medtrum 云资产")).toBeInTheDocument();
     expect(within(branch!).getByText("task_research_medtrum")).toBeInTheDocument();
-    expect(within(branch!).getByRole("button", { name: "运行" })).toBeDisabled();
+    expect(within(branch!).getByRole("button", { name: "运行" })).toBeEnabled();
     expect(within(branch!).getByRole("button", { name: "编辑" })).toBeInTheDocument();
     expect(within(branch!).getByRole("button", { name: "对话 Leader" })).toBeInTheDocument();
     expect(within(branch!).getByRole("button", { name: "删除" })).toBeInTheDocument();
     expect(branch!.querySelector("iframe")).toBeNull();
   });
 
-  it("keeps the Task run action as a disabled placeholder", async () => {
+  it("starts a mock Task run from the action menu and shows the latest run state", async () => {
     const { container } = render(<App />);
 
     const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
@@ -349,12 +349,79 @@ describe("App", () => {
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
     expect(branch).toBeTruthy();
     const runButton = within(branch!).getByRole("button", { name: "运行" });
-    expect(runButton).toBeDisabled();
+    expect(runButton).toBeEnabled();
     fireEvent.click(runButton);
 
-    expect(fetch).not.toHaveBeenCalled();
-    expect(container.querySelector(".task-action-branch")).toBeTruthy();
+    expect(await within(branch!).findByText("最近运行")).toBeInTheDocument();
+    expect(within(branch!).getByText("已完成")).toBeInTheDocument();
+    expect(within(branch!).getByRole("button", { name: "重新运行" })).toBeEnabled();
     expect(container.querySelector("iframe")).toBeNull();
+  });
+
+  it("starts a live Task run through the Task run API", async () => {
+    const liveTask = mockTeamTasks[0]!;
+    let createRunRequests = 0;
+    const taskRun = {
+      runId: "run_canvas_task_001",
+      planId: `canvas_task_${liveTask.taskId}`,
+      source: { type: "canvas-task", taskId: liveTask.taskId },
+      teamUnitId: `canvas_task_unit_${liveTask.taskId}`,
+      status: "queued",
+      createdAt: "2026-05-25T00:00:00.000Z",
+      startedAt: null,
+      finishedAt: null,
+      currentTaskId: null,
+      taskStates: {
+        [liveTask.taskId]: {
+          status: "pending",
+          attemptCount: 0,
+          activeAttemptId: null,
+          resultRef: null,
+          errorSummary: null,
+          progress: { phase: "pending", message: "等待执行", updatedAt: "2026-05-25T00:00:00.000Z" },
+        },
+      },
+      summary: { totalTasks: 1, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+    };
+
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [
+            { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+            { agentId: "search", name: "搜索 Agent", description: "搜索" },
+          ],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks" && method === "GET") {
+        return new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 });
+      }
+      if (url === "/v1/team/tasks/task_research_medtrum/runs" && method === "GET") {
+        return new Response(JSON.stringify({ runs: createRunRequests > 0 ? [taskRun] : [] }), { status: 200 });
+      }
+      if (url === "/v1/team/tasks/task_research_medtrum/runs" && method === "POST") {
+        createRunRequests += 1;
+        return new Response(JSON.stringify(taskRun), { status: 201 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+    fireEvent.click(screen.getByRole("button", { name: "运行" }));
+
+    await waitFor(() => expect(createRunRequests).toBe(1));
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    expect(within(branch!).getByText("最近运行")).toBeInTheDocument();
+    expect(within(branch!).getByText("排队中")).toBeInTheDocument();
+    expect(within(branch!).getByRole("button", { name: "运行中" })).toBeDisabled();
   });
 
   it("collapses the Task action branch when the same Task is clicked again", async () => {
@@ -1725,6 +1792,9 @@ describe("App", () => {
     expect(readme).toContain("手动点击“刷新 Task”");
     expect(readme).toContain("关闭创建分支后会重新请求 `GET /v1/team/tasks`");
     expect(readme).toContain("点击 Task 卡片会先展开紧凑 Task 操作菜单节点");
+    expect(readme).toContain("POST /v1/team/tasks/:taskId/runs");
+    expect(readme).toContain("不会进入 `/v1/team/runs` 的 Plan run 列表");
+    expect(readme).toContain("第一版 Task run 只执行 WorkUnit 的 worker → checker");
     expect(readme).toContain("Task → 菜单 → 二级节点");
     expect(readme).toContain("“编辑”是浅编辑节点");
     expect(readme).toContain("base snapshot 和 dirty fields");
@@ -1756,11 +1826,13 @@ describe("App", () => {
     expect(runtimeDoc).toContain("teamTaskMode=create");
     expect(runtimeDoc).toContain("teamTaskMode=edit");
     expect(runtimeDoc).toContain("点击已有 Task 先打开紧凑操作菜单节点");
+    expect(runtimeDoc).toContain("POST /v1/team/tasks/:taskId/runs");
+    expect(runtimeDoc).toContain(".data/team/task-runs/runs/<runId>");
+    expect(runtimeDoc).toContain("第一版 Task run 只执行 `workUnit.workerAgentId` 和 `workUnit.checkerAgentId`");
     expect(runtimeDoc).toContain("base snapshot + dirty fields");
     expect(runtimeDoc).toContain("input text、output contract、acceptance rules");
     expect(runtimeDoc).toContain("关闭创建分支、浅编辑保存成功、归档成功后会重新请求 `GET /v1/team/tasks`");
-    expect(runtimeDoc).toContain("WorkUnit run 未实现");
     expect(runtimeDoc).not.toContain("Focus Mode 特殊 Agent 对话界面");
-    expect(runtimeDoc).toContain("仍不落地 WorkUnit / Plan 编排");
+    expect(runtimeDoc).not.toContain("WorkUnit run 未实现");
   });
 });

@@ -18,6 +18,7 @@ import type {
   AgentSwitchConversationResponse,
   TeamCanvasTask,
   TeamCanvasTaskListResponse,
+  TeamCanvasTaskRunListResponse,
   TeamTaskMutationResponse,
   TeamTaskUpdateRequest,
   TeamPlan,
@@ -32,6 +33,10 @@ export interface TeamApiProvider {
   listPlans(): Promise<TeamPlan[]>;
   listRuns(): Promise<TeamRunState[]>;
   listTasks(): Promise<TeamCanvasTask[]>;
+  listTaskRuns(taskId: string): Promise<TeamRunState[]>;
+  createTaskRun(taskId: string): Promise<TeamRunState>;
+  getTaskRun(runId: string): Promise<TeamRunState>;
+  cancelTaskRun(runId: string): Promise<TeamRunState>;
   updateTask(taskId: string, patch: TeamTaskUpdateRequest): Promise<TeamTaskMutationResponse>;
   archiveTask(taskId: string): Promise<TeamTaskMutationResponse>;
   getRunDetail(runId: string): Promise<RunDetail>;
@@ -121,6 +126,58 @@ export class LiveTeamApi implements TeamApiProvider {
       const body = (await res.json()) as TeamCanvasTaskListResponse | TeamCanvasTask[];
       if (Array.isArray(body)) return body;
       return Array.isArray(body.tasks) ? body.tasks : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async listTaskRuns(taskId: string): Promise<TeamRunState[]> {
+    try {
+      const res = await fetch(`${this.baseUrl}/tasks/${encodeURIComponent(taskId)}/runs`);
+      if (!res.ok) throw res;
+      const body = (await res.json()) as TeamCanvasTaskRunListResponse | TeamRunState[];
+      if (Array.isArray(body)) return body;
+      return Array.isArray(body.runs) ? body.runs : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async createTaskRun(taskId: string): Promise<TeamRunState> {
+    try {
+      const res = await fetch(`${this.baseUrl}/tasks/${encodeURIComponent(taskId)}/runs`, {
+        method: "POST",
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      return (await res.json()) as TeamRunState;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async getTaskRun(runId: string): Promise<TeamRunState> {
+    try {
+      const res = await fetch(`${this.baseUrl}/task-runs/${encodeURIComponent(runId)}`);
+      if (!res.ok) throw res;
+      return (await res.json()) as TeamRunState;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async cancelTaskRun(runId: string): Promise<TeamRunState> {
+    try {
+      const res = await fetch(`${this.baseUrl}/task-runs/${encodeURIComponent(runId)}/cancel`, {
+        method: "POST",
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      return (await res.json()) as TeamRunState;
     } catch (e) {
       throw toApiError(e);
     }

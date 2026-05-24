@@ -143,6 +143,21 @@ describe("MockTeamApi", () => {
     expect(mockTeamTasks[0]?.archived).toBe(false);
   });
 
+  it("creates, lists, reads, and cancels mock Canvas Task runs", async () => {
+    const task = mockTeamTasks[0]!;
+
+    const run = await api.createTaskRun(task.taskId);
+
+    expect(run.source).toEqual({ type: "canvas-task", taskId: task.taskId });
+    expect(run.status).toBe("completed");
+    await expect(api.listTaskRuns(task.taskId)).resolves.toEqual([run]);
+    await expect(api.getTaskRun(run.runId)).resolves.toEqual(run);
+
+    const cancelled = await api.cancelTaskRun(run.runId);
+    expect(cancelled.status).toBe("cancelled");
+    expect(cancelled.taskStates[task.taskId]?.status).toBe("cancelled");
+  });
+
   it("returns deterministic mock agent chat replies", async () => {
     const response = await (api as unknown as {
       sendAgentMessage(agentId: string, message: string): Promise<{ text: string }>;
@@ -343,6 +358,62 @@ describe("LiveTeamApi", () => {
       headers: { accept: "application/json" },
     });
     expect(response.task.archived).toBe(true);
+  });
+
+  it("lists live Canvas Task runs for a Task", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      runs: [{
+        runId: "run_canvas_1",
+        planId: "canvas_task_task_1",
+        source: { type: "canvas-task", taskId: "task_1" },
+        teamUnitId: "canvas_task_unit_task_1",
+        status: "completed",
+        createdAt: "2026-05-25T00:00:00.000Z",
+        startedAt: "2026-05-25T00:00:00.000Z",
+        finishedAt: "2026-05-25T00:00:01.000Z",
+        currentTaskId: null,
+        taskStates: {},
+        summary: { totalTasks: 1, succeededTasks: 1, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+      }],
+    }), { status: 200 }));
+
+    const runs = await api.listTaskRuns("task/a b");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/tasks/task%2Fa%20b/runs");
+    expect(runs[0]?.runId).toBe("run_canvas_1");
+  });
+
+  it("creates, reads, and cancels live Canvas Task runs", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const run = {
+      runId: "run_canvas_1",
+      planId: "canvas_task_task_1",
+      source: { type: "canvas-task", taskId: "task_1" },
+      teamUnitId: "canvas_task_unit_task_1",
+      status: "queued",
+      createdAt: "2026-05-25T00:00:00.000Z",
+      startedAt: null,
+      finishedAt: null,
+      currentTaskId: null,
+      taskStates: {},
+      summary: { totalTasks: 1, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+    };
+    vi.mocked(fetch).mockImplementation(async () => new Response(JSON.stringify(run), { status: 201 }));
+
+    await api.createTaskRun("task/a b");
+    await api.getTaskRun("run/a b");
+    await api.cancelTaskRun("run/a b");
+
+    expect(fetch).toHaveBeenNthCalledWith(1, "/v1/team/tasks/task%2Fa%20b/runs", {
+      method: "POST",
+      headers: { accept: "application/json" },
+    });
+    expect(fetch).toHaveBeenNthCalledWith(2, "/v1/team/task-runs/run%2Fa%20b");
+    expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/task-runs/run%2Fa%20b/cancel", {
+      method: "POST",
+      headers: { accept: "application/json" },
+    });
   });
 
   it("getRunDetail URL-encodes the run id", async () => {

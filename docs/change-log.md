@@ -12,6 +12,20 @@
 
 ---
 
+## 2026-05-25 — Team Console Canvas Task Run
+
+- **主题**: 打通 Team Console 画布 Task 的独立 WorkUnit run。
+- **变更内容**:
+  - 新增 Canvas Task run 后端 service 和 API：`POST /v1/team/tasks/:taskId/runs`、`GET /v1/team/tasks/:taskId/runs`、`GET /v1/team/task-runs/:runId`、`POST /v1/team/task-runs/:runId/cancel` 以及只读 attempt/file API。
+  - Task run 存在 `.data/team/task-runs/runs/<runId>`，不写入 `PlanStore`，不出现在 `/v1/team/runs`，也不增加 Plan `runCount`；内部只使用 synthetic run snapshot 承载执行状态。
+  - 第一版 Task run 只执行 `workUnit.workerAgentId` → `workUnit.checkerAgentId`，不启动 watcher/finalizer；leader 仍只负责运行前沟通和 WorkUnit 草案维护。
+  - Team Console Task 操作菜单的“运行”从 disabled 占位改为真实启动；菜单展示最近 Task run 状态，active run 通过 `GET /v1/team/task-runs/:runId` 轮询，并提供“停止”取消入口。
+  - Task 卡片会读取最新 Task run 状态更新状态 pill，但 localStorage 仍只保存 `taskId` 和画布坐标，不保存 Task 定义或 Task run 状态。
+- **影响范围**: `src/team/types.ts`, `src/team/task-run-service.ts`, `src/team/routes.ts`, `test/team-task-run-routes.test.ts`, `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未实现 Task pause/resume/rerun，未接 watcher/finalizer，未解析 iframe 聊天文本，未修改 `.pi/skills/team-task-creator/**`，未改变 Plan run / TeamUnit / Agent profile 契约。
+
+---
+
 ## 2026-05-25 — Team Console Task 二级节点连线与 Leader 分支复用
 - **主题**: 修复 Task 操作菜单到二级节点的连线悬空，并让 Task Leader 对话二级节点复用成熟的 Agent 分支交互。
 - **变更内容**:
