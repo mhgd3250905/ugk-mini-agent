@@ -16,9 +16,12 @@ const DATA_SOURCE_STORAGE_KEY = "ugk-team-console:data-source";
 const LIVE_AGENT_LAYOUT_STORAGE_KEY = "ugk-team-console:live-agent-layout:v1";
 const LIVE_TASK_LAYOUT_STORAGE_KEY = "ugk-team-console:live-task-layout:v1";
 
+type AgentBranchMode = "chat" | "task-create";
+
 type AgentBranchState = {
   nodeId: string;
   agentId: string;
+  mode: AgentBranchMode;
 };
 
 type TaskBranchState = {
@@ -192,6 +195,15 @@ function makeTaskNodes(tasks: TeamCanvasTask[], storedPositions = new Map<string
   return tasks.map((task, index) => makeTaskNode(task, index, storedPositions.get(task.taskId)));
 }
 
+function makeAgentNode(agentId: string, index: number): AtlasAgentNode {
+  return {
+    nodeId: `agent-${agentId}`,
+    kind: "agent",
+    agentId,
+    position: { x: 360 + index * 320, y: 0 },
+  };
+}
+
 export function App() {
   const [dataSource, setDataSource] = useState<DataSource>(() => readStoredDataSource());
   const [selectedFixtureId, setSelectedFixtureId] = useState<string>(CLEAN_AGENT_WORKSPACE_ID);
@@ -212,6 +224,7 @@ export function App() {
   const [taskNodes, setTaskNodes] = useState<AtlasTaskNode[]>([]);
   const [liveTaskNodesHydrated, setLiveTaskNodesHydrated] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
+  const [taskLeaderPickerOpen, setTaskLeaderPickerOpen] = useState(false);
   const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
   const [expandedAgentBranch, setExpandedAgentBranch] = useState<AgentBranchState | null>(null);
   const [expandedTaskBranch, setExpandedTaskBranch] = useState<TaskBranchState | null>(null);
@@ -246,6 +259,7 @@ export function App() {
       return;
     }
     setAgentNodes(readStoredLiveAgentNodes());
+    setTaskLeaderPickerOpen(false);
     setExpandedAgentBranch(null);
     setExpandedTaskBranch(null);
     setLiveAgentNodesHydrated(true);
@@ -279,6 +293,7 @@ export function App() {
   }, [applyLiveTasks]);
 
   const loadFixture = useCallback((fixtureId: string) => {
+    setTaskLeaderPickerOpen(false);
     setExpandedAgentBranch(null);
     setExpandedTaskBranch(null);
     if (fixtureId === CLEAN_AGENT_WORKSPACE_ID) {
@@ -338,6 +353,7 @@ export function App() {
 
     setAgents([]);
     setAgentPickerOpen(false);
+    setTaskLeaderPickerOpen(false);
     setAgentRunStatusById({});
     setTasks([]);
     setTaskNodes([]);
@@ -485,18 +501,10 @@ export function App() {
   const addAgentNode = useCallback((agentId: string) => {
     setAgentNodes((current) => {
       if (current.some((node) => node.agentId === agentId)) return current;
-      const index = current.length;
-      return [
-        ...current,
-        {
-          nodeId: `agent-${agentId}`,
-          kind: "agent",
-          agentId,
-          position: { x: 360 + index * 320, y: 0 },
-        },
-      ];
+      return [...current, makeAgentNode(agentId, current.length)];
     });
     setAgentPickerOpen(false);
+    setTaskLeaderPickerOpen(false);
   }, []);
 
   const moveAgentNode = useCallback((nodeId: string, position: { x: number; y: number }) => {
@@ -513,31 +521,74 @@ export function App() {
 
   const toggleAgentBranch = useCallback((node: AtlasAgentNode) => {
     setAgentPickerOpen(false);
+    setTaskLeaderPickerOpen(false);
     setExpandedTaskBranch(null);
     setExpandedAgentBranch((current) => (
-      current?.nodeId === node.nodeId ? null : { nodeId: node.nodeId, agentId: node.agentId }
+      current?.nodeId === node.nodeId && current.mode === "chat" ? null : { nodeId: node.nodeId, agentId: node.agentId, mode: "chat" }
     ));
   }, []);
 
   const toggleTaskBranch = useCallback((node: AtlasTaskNode) => {
     setAgentPickerOpen(false);
+    setTaskLeaderPickerOpen(false);
     setExpandedAgentBranch(null);
     setExpandedTaskBranch((current) => (
       current?.nodeId === node.nodeId ? null : { nodeId: node.nodeId, taskId: node.taskId }
     ));
   }, []);
 
+  const openTaskCreateBranch = useCallback((leaderAgentId: string) => {
+    const nodeId = `agent-${leaderAgentId}`;
+    setAgentNodes((current) => (
+      current.some((node) => node.agentId === leaderAgentId)
+        ? current
+        : [...current, makeAgentNode(leaderAgentId, current.length)]
+    ));
+    setAgentPickerOpen(false);
+    setTaskLeaderPickerOpen(false);
+    setExpandedTaskBranch(null);
+    setExpandedAgentBranch({ nodeId, agentId: leaderAgentId, mode: "task-create" });
+  }, []);
+
+  const canCreateTask = dataSource === "live" && agents.length > 0;
+  const canRefreshTasks = dataSource === "live";
+
   const agentToolbar = (
     <div className="agent-atlas-actions">
       <button
         type="button"
         className="agent-add-btn"
-        onClick={() => setAgentPickerOpen((open) => !open)}
+        onClick={() => {
+          setTaskLeaderPickerOpen(false);
+          setAgentPickerOpen((open) => !open);
+        }}
         aria-expanded={agentPickerOpen}
       >
         添加 Agent
       </button>
       <span className="agent-atlas-count">{agentNodes.length}</span>
+      <button
+        type="button"
+        className="agent-add-btn task-create-btn"
+        disabled={!canCreateTask}
+        onClick={() => {
+          setAgentPickerOpen(false);
+          setTaskLeaderPickerOpen((open) => !open);
+        }}
+        aria-expanded={taskLeaderPickerOpen}
+      >
+        创建 Task
+      </button>
+      <button
+        type="button"
+        className="agent-add-btn task-refresh-btn"
+        disabled={!canRefreshTasks}
+        onClick={() => {
+          void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
+        }}
+      >
+        刷新 Task
+      </button>
       {agentPickerOpen && (
         <div className="agent-picker" aria-label="Agent catalog">
           {agents.map((agent) => {
@@ -558,14 +609,35 @@ export function App() {
           })}
         </div>
       )}
+      {taskLeaderPickerOpen && (
+        <div className="agent-picker task-leader-picker" aria-label="Task leader catalog">
+          {agents.map((agent) => (
+            <button
+              key={agent.agentId}
+              type="button"
+              className="agent-picker-option"
+              onClick={() => openTaskCreateBranch(agent.agentId)}
+            >
+              <span className="agent-picker-name">{agent.name}</span>
+              <code>{agent.agentId}</code>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 
+  const expandedAgentBranchMode = expandedAgentBranch?.mode ?? "chat";
+  const expandedAgentBranchLabel = expandedAgentBranchMode === "task-create" ? "创建 Task" : "主项目对话";
+  const expandedAgentIframeTitle = expandedAgentBranchMode === "task-create"
+    ? `${expandedAgent?.name ?? ""} Task 创建`
+    : `${expandedAgent?.name ?? ""} 主项目对话`;
+
   const expandedAgentBranchPanel = expandedAgentNode && expandedAgent ? (
-    <section className="agent-playground-branch" aria-label={`${expandedAgent.name} 主项目对话`}>
+    <section className="agent-playground-branch" aria-label={`${expandedAgent.name} ${expandedAgentBranchLabel}`}>
       <header className="agent-playground-branch-head">
         <div className="agent-playground-branch-title">
-          <span>主项目对话</span>
+          <span>{expandedAgentBranchLabel}</span>
           <strong>{expandedAgent.name}</strong>
           <code>{expandedAgent.agentId}</code>
         </div>
@@ -573,14 +645,19 @@ export function App() {
           type="button"
           className="agent-playground-branch-collapse"
           onClick={() => setExpandedAgentBranch(null)}
-          aria-label={`收起 ${expandedAgent.name} 对话分支`}
+          aria-label={`收起 ${expandedAgent.name} ${expandedAgentBranchLabel}分支`}
         >
           收起
         </button>
       </header>
+      {expandedAgentBranchMode === "task-create" && (
+        <div className="task-leader-branch-hint">
+          在对话中使用 <code>/team-task</code> 创建 Task。Team Console 只负责打开 leader 对话。
+        </div>
+      )}
       <iframe
         className="agent-playground-iframe"
-        title={`${expandedAgent.name} 主项目对话`}
+        title={expandedAgentIframeTitle}
         src={buildAgentPlaygroundUrl(expandedAgent.agentId)}
         referrerPolicy="no-referrer"
       />
