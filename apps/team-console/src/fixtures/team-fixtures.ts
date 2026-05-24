@@ -1,10 +1,17 @@
 import type {
   AgentAssetSummary,
+  AgentChatActiveRun,
+  AgentChatHistoryMessage,
   AgentChatResponse,
+  AgentChatStreamEvent,
+  AgentChatStreamRequest,
   AgentChatStatus,
+  AgentConversationCatalogResponse,
+  AgentConversationState,
   AgentConversationResponse,
   AgentInterruptResponse,
   AgentSummary,
+  AgentSwitchConversationResponse,
   TeamPlan,
   RunDetail,
   TeamRunState,
@@ -857,6 +864,103 @@ const MOCK_ASSETS: AgentAssetSummary[] = [
   },
 ];
 
+type MockConversation = {
+  conversationId: string;
+  agentId: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: AgentChatHistoryMessage[];
+  activeRun: AgentChatActiveRun | null;
+  running: boolean;
+};
+
+type MockPendingRun = {
+  conversationId: string;
+  runId: string;
+  onEvent: (event: AgentChatStreamEvent) => void;
+  resolve: () => void;
+};
+
+const mockConversationsByAgent = new Map<string, Map<string, MockConversation>>();
+const mockCurrentConversationIds = new Map<string, string>();
+const mockPendingRuns = new Map<string, MockPendingRun>();
+let mockConversationCounter = 0;
+let mockRunCounter = 0;
+let mockMessageCounter = 0;
+
+function getAgentConversations(agentId: string): Map<string, MockConversation> {
+  const existing = mockConversationsByAgent.get(agentId);
+  if (existing) return existing;
+  const next = new Map<string, MockConversation>();
+  mockConversationsByAgent.set(agentId, next);
+  return next;
+}
+
+function resolveMockAssets(assetRefs?: string[]): AgentAssetSummary[] {
+  return (assetRefs ?? []).map((assetId) => (
+    MOCK_ASSETS.find((asset) => asset.assetId === assetId) ?? {
+      assetId,
+      fileName: assetId,
+      mimeType: "application/octet-stream",
+      sizeBytes: 0,
+      kind: "metadata",
+    }
+  ));
+}
+
+function createMockConversation(agentId: string): MockConversation {
+  mockConversationCounter += 1;
+  const createdAt = ts();
+  const conversationId = `mock-${agentId}-${mockConversationCounter}`;
+  const conversation: MockConversation = {
+    conversationId,
+    agentId,
+    title: "Mock conversation",
+    createdAt,
+    updatedAt: createdAt,
+    messages: [],
+    activeRun: null,
+    running: false,
+  };
+  getAgentConversations(agentId).set(conversationId, conversation);
+  mockCurrentConversationIds.set(agentId, conversationId);
+  return conversation;
+}
+
+function getMockConversation(agentId: string, conversationId?: string): MockConversation {
+  const conversations = getAgentConversations(agentId);
+  const currentConversationId = conversationId || mockCurrentConversationIds.get(agentId);
+  if (currentConversationId && conversations.has(currentConversationId)) {
+    const conversation = conversations.get(currentConversationId)!;
+    mockCurrentConversationIds.set(agentId, conversation.conversationId);
+    return conversation;
+  }
+  return createMockConversation(agentId);
+}
+
+function mockHistoryMessage(
+  kind: AgentChatHistoryMessage["kind"],
+  text: string,
+  extra?: Partial<AgentChatHistoryMessage>,
+): AgentChatHistoryMessage {
+  return {
+    id: `mock-message-${++mockMessageCounter}`,
+    kind,
+    title: kind === "user" ? "User" : "Agent",
+    text,
+    createdAt: ts(),
+    ...extra,
+  };
+}
+
+function updateMockConversation(conversation: MockConversation) {
+  conversation.updatedAt = ts();
+  if (conversation.messages.length > 0) {
+    conversation.title = conversation.messages[0].text.slice(0, 32) || conversation.title;
+  }
+}
+
 export class MockTeamApi {
   async listPlans(): Promise<TeamPlan[]> {
     return ALL_FIXTURES.map((f) => f.plan);
@@ -887,37 +991,200 @@ export class MockTeamApi {
   }
 
   async createAgentConversation(agentId: string): Promise<AgentConversationResponse> {
-    const conversationId = `mock-${agentId}-new`;
+    const conversation = createMockConversation(agentId);
     return {
-      conversationId,
-      currentConversationId: conversationId,
+      conversationId: conversation.conversationId,
+      currentConversationId: conversation.conversationId,
       created: true,
     };
   }
 
-  async getAgentChatStatus(agentId: string, conversationId: string): Promise<AgentChatStatus> {
+  async listAgentConversations(agentId: string): Promise<AgentConversationCatalogResponse> {
+    const conversations = [...getAgentConversations(agentId).values()];
     return {
-      conversationId: conversationId || `mock-${agentId}`,
-      running: false,
+      currentConversationId: mockCurrentConversationIds.get(agentId) ?? "",
+      conversations: conversations
+        .slice()
+        .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+        .map((conversation) => ({
+          conversationId: conversation.conversationId,
+          title: conversation.title,
+          preview: conversation.messages.at(-1)?.text ?? "",
+          messageCount: conversation.messages.length,
+          createdAt: conversation.createdAt,
+          updatedAt: conversation.updatedAt,
+          running: conversation.running,
+        })),
+    };
+  }
+
+  async switchAgentConversation(agentId: string, conversationId: string): Promise<AgentSwitchConversationResponse> {
+    const conversation = getAgentConversations(agentId).get(conversationId);
+    if (!conversation) {
+      return {
+        conversationId,
+        currentConversationId: mockCurrentConversationIds.get(agentId) ?? "",
+        switched: false,
+        reason: "not_found",
+      };
+    }
+    mockCurrentConversationIds.set(agentId, conversationId);
+    return {
+      conversationId,
+      currentConversationId: conversationId,
+      switched: true,
+    };
+  }
+
+  async getAgentConversationState(agentId: string, conversationId: string, viewLimit = 80): Promise<AgentConversationState> {
+    const conversation = getMockConversation(agentId, conversationId);
+    const safeLimit = Number.isFinite(viewLimit) && viewLimit > 0 ? Math.trunc(viewLimit) : 80;
+    const viewMessages = conversation.messages.slice(-safeLimit);
+    return {
+      conversationId: conversation.conversationId,
+      running: conversation.running,
+      contextUsage: MOCK_CONTEXT_USAGE,
+      messages: conversation.messages,
+      viewMessages,
+      activeRun: conversation.activeRun,
+      historyPage: {
+        hasMore: conversation.messages.length > viewMessages.length,
+        limit: safeLimit,
+      },
+      updatedAt: conversation.updatedAt,
+    };
+  }
+
+  async getAgentChatStatus(agentId: string, conversationId: string): Promise<AgentChatStatus> {
+    const conversation = getMockConversation(agentId, conversationId);
+    return {
+      conversationId: conversation.conversationId,
+      running: conversation.running,
       contextUsage: MOCK_CONTEXT_USAGE,
     };
   }
 
   async interruptAgentChat(agentId: string, conversationId: string): Promise<AgentInterruptResponse> {
+    const conversation = getMockConversation(agentId, conversationId);
+    const pending = mockPendingRuns.get(conversation.conversationId);
+    if (pending) {
+      conversation.running = false;
+      conversation.activeRun = {
+        ...conversation.activeRun!,
+        status: "interrupted",
+        loading: false,
+        updatedAt: ts(),
+      };
+      updateMockConversation(conversation);
+      pending.onEvent({
+        type: "interrupted",
+        conversationId: conversation.conversationId,
+        runId: pending.runId,
+      });
+      mockPendingRuns.delete(conversation.conversationId);
+      pending.resolve();
+    }
     return {
-      conversationId: conversationId || `mock-${agentId}`,
+      conversationId: conversation.conversationId,
       interrupted: true,
     };
   }
 
-  async sendAgentMessage(agentId: string, message: string, _conversationId?: string, _assetRefs?: string[]): Promise<AgentChatResponse> {
+  async sendAgentMessage(agentId: string, message: string, conversationId?: string, assetRefs?: string[]): Promise<AgentChatResponse> {
     if (!message.trim()) {
       throw { message: 'Field "message" must be a non-empty string' };
     }
+    const conversation = getMockConversation(agentId, conversationId);
+    conversation.messages.push(mockHistoryMessage("user", message, { assetRefs: resolveMockAssets(assetRefs) }));
+    const text = `[${agentId}] mock reply: ${message}`;
+    conversation.messages.push(mockHistoryMessage("assistant", text));
+    updateMockConversation(conversation);
     return {
-      conversationId: `mock-${agentId}`,
-      text: `[${agentId}] mock reply: ${message}`,
+      conversationId: conversation.conversationId,
+      text,
     };
+  }
+
+  async streamAgentMessage(
+    agentId: string,
+    request: AgentChatStreamRequest,
+    onEvent: (event: AgentChatStreamEvent) => void,
+  ): Promise<void> {
+    if (!request.message.trim()) {
+      throw { message: 'Field "message" must be a non-empty string' };
+    }
+    const conversation = getMockConversation(agentId, request.conversationId);
+    const runId = `mock-run-${++mockRunCounter}`;
+    const assistantMessageId = `mock-assistant-${runId}`;
+    const inputAssets = resolveMockAssets(request.assetRefs);
+    conversation.running = true;
+    conversation.messages.push(mockHistoryMessage("user", request.message, { assetRefs: inputAssets }));
+    conversation.activeRun = {
+      runId,
+      status: "running",
+      assistantMessageId,
+      input: {
+        message: request.message,
+        inputAssets,
+      },
+      text: "",
+      process: null,
+      queue: null,
+      loading: true,
+      startedAt: ts(),
+      updatedAt: ts(),
+    };
+    updateMockConversation(conversation);
+    onEvent({ type: "run_started", conversationId: conversation.conversationId, runId });
+
+    if (request.message === "mock-hold") {
+      await new Promise<void>((resolve) => {
+        mockPendingRuns.set(conversation.conversationId, {
+          conversationId: conversation.conversationId,
+          runId,
+          onEvent,
+          resolve,
+        });
+      });
+      return;
+    }
+
+    if (request.message === "mock-error") {
+      conversation.running = false;
+      conversation.activeRun = {
+        ...conversation.activeRun,
+        status: "error",
+        loading: false,
+        updatedAt: ts(),
+      };
+      updateMockConversation(conversation);
+      onEvent({
+        type: "error",
+        conversationId: conversation.conversationId,
+        runId,
+        message: "mock stream error",
+      });
+      throw { message: "mock stream error" };
+    }
+
+    const text = `[${agentId}] mock reply: ${request.message}`;
+    conversation.activeRun = {
+      ...conversation.activeRun,
+      text,
+      updatedAt: ts(),
+    };
+    onEvent({ type: "text_delta", textDelta: text });
+    conversation.running = false;
+    conversation.activeRun = null;
+    conversation.messages.push(mockHistoryMessage("assistant", text, { id: assistantMessageId, runId }));
+    updateMockConversation(conversation);
+    onEvent({
+      type: "done",
+      conversationId: conversation.conversationId,
+      runId,
+      text,
+      inputAssets,
+    });
   }
 
   async listAssets(): Promise<AgentAssetSummary[]> {

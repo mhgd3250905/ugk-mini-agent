@@ -98,6 +98,80 @@ describe("MockTeamApi", () => {
     expect(response.text).toContain("search");
     expect(response.text).toContain("查一下 agent canvas");
   });
+
+  it("streams deterministic mock chat events and stores conversation state", async () => {
+    const events: unknown[] = [];
+
+    await api.streamAgentMessage("main", {
+      message: "请总结 mock 状态",
+      assetRefs: ["mock-reference-asset"],
+    }, (event) => events.push(event));
+
+    expect(events.map((event) => (event as { type: string }).type)).toEqual([
+      "run_started",
+      "text_delta",
+      "done",
+    ]);
+    const done = events.at(-1) as { type: "done"; conversationId: string; text: string };
+    const state = await api.getAgentConversationState("main", done.conversationId, 20);
+    expect(state.viewMessages.map((message) => message.text)).toEqual([
+      "请总结 mock 状态",
+      "[main] mock reply: 请总结 mock 状态",
+    ]);
+    expect(state.viewMessages[0].assetRefs?.map((asset) => asset.assetId)).toEqual(["mock-reference-asset"]);
+    expect(state.running).toBe(false);
+  });
+
+  it("uses the same non-empty asset-only message in mock stream history", async () => {
+    const events: unknown[] = [];
+
+    await api.streamAgentMessage("search", {
+      message: "请结合我引用的资产一起处理",
+      assetRefs: ["mock-reference-asset"],
+    }, (event) => events.push(event));
+
+    const done = events.at(-1) as { type: "done"; conversationId: string };
+    const state = await api.getAgentConversationState("search", done.conversationId, 20);
+    const assetOnlyMessage = state.viewMessages.find((message) => message.text === "请结合我引用的资产一起处理");
+    expect(assetOnlyMessage).toBeTruthy();
+    expect(assetOnlyMessage?.assetRefs?.[0].fileName).toBe("mock-reference.md");
+  });
+
+  it("keeps the mock user message when the stream returns an error", async () => {
+    const events: unknown[] = [];
+
+    await expect(api.streamAgentMessage("main", {
+      message: "mock-error",
+    }, (event) => events.push(event))).rejects.toEqual({ message: "mock stream error" });
+
+    expect(events.map((event) => (event as { type: string }).type)).toEqual(["run_started", "error"]);
+    const errorEvent = events.at(-1) as { type: "error"; conversationId: string };
+    const state = await api.getAgentConversationState("main", errorEvent.conversationId, 20);
+    expect(state.viewMessages.map((message) => message.text)).toContain("mock-error");
+    expect(state.activeRun?.status).toBe("error");
+    expect(state.running).toBe(false);
+  });
+
+  it("returns interrupted state for mock interrupt while running", async () => {
+    const events: unknown[] = [];
+    const streamPromise = api.streamAgentMessage("reviewer", {
+      message: "mock-hold",
+    }, (event) => events.push(event));
+
+    await vi.waitFor(() => {
+      expect(events.map((event) => (event as { type: string }).type)).toContain("run_started");
+    });
+    const started = events[0] as { type: "run_started"; conversationId: string };
+    const interrupted = await api.interruptAgentChat("reviewer", started.conversationId);
+
+    await streamPromise;
+
+    expect(interrupted).toEqual({ conversationId: started.conversationId, interrupted: true });
+    expect(events.map((event) => (event as { type: string }).type)).toEqual(["run_started", "interrupted"]);
+    const state = await api.getAgentConversationState("reviewer", started.conversationId, 20);
+    expect(state.activeRun?.status).toBe("interrupted");
+    expect(state.running).toBe(false);
+  });
 });
 
 describe("LiveTeamApi", () => {
