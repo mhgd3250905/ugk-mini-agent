@@ -584,6 +584,11 @@
   z-index: 11;
 }
 
+.emap-task-child-branch-shell {
+  position: absolute;
+  z-index: 12;
+}
+
 .agent-playground-branch {
   display: flex;
   width: 100%;
@@ -685,6 +690,14 @@
   border-radius: 8px;
 }
 
+.task-action-branch {
+  width: max-content;
+  min-width: 220px;
+  max-width: 280px;
+  height: auto;
+  min-height: 0;
+}
+
 .task-leader-branch-head {
   display: flex;
   align-items: center;
@@ -697,10 +710,20 @@
   user-select: none;
 }
 
+.task-action-branch .task-leader-branch-head {
+  gap: 8px;
+  min-height: 36px;
+  padding: 7px 8px;
+}
+
 .task-leader-branch-title {
   display: grid;
   min-width: 0;
   gap: 2px;
+}
+
+.task-action-branch .task-leader-branch-title {
+  max-width: 158px;
 }
 
 .task-leader-branch-title span {
@@ -721,6 +744,11 @@
   white-space: nowrap;
 }
 
+.task-action-branch .task-leader-branch-title strong {
+  max-width: 158px;
+  font-size: 12px;
+}
+
 .task-leader-branch-title code {
   color: rgb(255, 214, 128);
   font-family: var(--font-mono);
@@ -737,6 +765,11 @@
   border: 1px solid rgba(255, 190, 96, 0.28);
   border-radius: 6px;
   cursor: pointer;
+}
+
+.task-action-branch .task-leader-branch-collapse {
+  height: 24px;
+  padding: 0 8px;
 }
 
 .task-leader-branch-collapse:hover {
@@ -759,19 +792,23 @@
 }
 
 .task-action-menu {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   display: grid;
   align-content: start;
-  gap: 10px;
-  padding: 14px;
+  width: max-content;
+  min-width: 100%;
+  gap: 6px;
+  padding: 8px;
   background:
     linear-gradient(180deg, rgba(255, 190, 96, 0.08), transparent 42%),
     rgba(7, 12, 22, 0.98);
 }
 
 .task-action-menu-button {
-  min-height: 38px;
-  padding: 0 12px;
+  width: 100%;
+  min-width: max-content;
+  min-height: 30px;
+  padding: 0 10px;
   color: var(--primary);
   background: rgba(255, 190, 96, 0.08);
   border: 1px solid rgba(255, 190, 96, 0.24);
@@ -780,6 +817,7 @@
   font-size: 12px;
   font-weight: 700;
   text-align: left;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -881,6 +919,7 @@
 
 .task-delete-confirm {
   display: grid;
+  max-width: 260px;
   gap: 10px;
   padding: 10px;
   color: var(--secondary);
@@ -1266,13 +1305,23 @@
   }
 
   .emap-agent-branch-shell,
-  .emap-task-branch-shell {
+  .emap-task-child-branch-shell {
     position: relative;
     left: auto !important;
     top: auto !important;
     width: 100% !important;
     max-width: 100%;
     height: min(72vh, 620px) !important;
+    margin-bottom: 8px;
+  }
+
+  .emap-task-branch-shell {
+    position: relative;
+    left: auto !important;
+    top: auto !important;
+    width: max-content !important;
+    max-width: 100%;
+    height: auto !important;
     margin-bottom: 8px;
   }
 

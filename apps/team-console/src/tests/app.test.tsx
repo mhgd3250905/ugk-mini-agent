@@ -128,6 +128,15 @@ function mockLiveTaskEditorApi(options?: {
   });
   return {
     patchBodies,
+    replaceCurrentTask(nextTask: typeof currentTask) {
+      currentTask = cloneTaskFixture(nextTask);
+    },
+    mutateCurrentTask(mutator: (task: typeof currentTask) => typeof currentTask) {
+      currentTask = cloneTaskFixture(mutator(currentTask));
+    },
+    get currentTask() {
+      return currentTask;
+    },
     get taskRequests() {
       return taskRequests;
     },
@@ -314,7 +323,13 @@ describe("App", () => {
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    const branchShell = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
     expect(branch).toBeTruthy();
+    expect(branchShell).toBeTruthy();
+    expect(branchShell!.style.width).toBe("max-content");
+    expect(branchShell!.style.height).toBe("auto");
+    expect(branchShell!.style.width).not.toBe("820px");
+    expect(branchShell!.style.height).not.toBe("620px");
     expect(within(branch!).getByText("Task 操作")).toBeInTheDocument();
     expect(within(branch!).getByText("调查 Medtrum 云资产")).toBeInTheDocument();
     expect(within(branch!).getByText("task_research_medtrum")).toBeInTheDocument();
@@ -420,8 +435,11 @@ describe("App", () => {
     fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
     fireEvent.click(screen.getByRole("button", { name: "对话 Leader" }));
 
+    expect(container.querySelector(".task-action-branch")).toBeTruthy();
     const branch = container.querySelector(".task-leader-chat-branch") as HTMLElement | null;
     expect(branch).toBeTruthy();
+    expect(container.querySelector(".emap-task-child-branch-shell")).toBeTruthy();
+    expect(container.querySelector(".emap-link-task-child-branch")).toBeTruthy();
     expect(within(branch!).getByText("Leader 对话")).toBeInTheDocument();
     expect(within(branch!).getByText("调查 Medtrum 云资产")).toBeInTheDocument();
 
@@ -443,7 +461,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /收起 调查 Medtrum 云资产 leader 对话/ }));
 
     expect(container.querySelector(".task-leader-chat-branch")).toBeNull();
-    expect(container.querySelector(".task-action-branch")).toBeNull();
+    expect(container.querySelector(".task-action-branch")).toBeTruthy();
   });
 
   it("opens a shallow Task edit form with title and Agent selections only", async () => {
@@ -452,8 +470,11 @@ describe("App", () => {
     fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
 
+    expect(container.querySelector(".task-action-branch")).toBeTruthy();
     const branch = container.querySelector(".task-edit-branch") as HTMLElement | null;
     expect(branch).toBeTruthy();
+    expect(container.querySelector(".emap-task-child-branch-shell")).toBeTruthy();
+    expect(container.querySelector(".emap-link-task-child-branch")).toBeTruthy();
     expect(within(branch!).getByLabelText("Task 名称")).toHaveValue("调查 Medtrum 云资产");
     expect(within(branch!).getByLabelText("Leader Agent")).toHaveValue("main");
     expect(within(branch!).getByLabelText("Worker Agent")).toHaveValue("search");
@@ -512,6 +533,86 @@ describe("App", () => {
         checkerAgentId: "search",
       },
     });
+  });
+
+  it("does not send stale unchanged agent fields after a live Task refresh", async () => {
+    const api = mockLiveTaskEditorApi();
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+
+    api.mutateCurrentTask((task) => ({
+      ...task,
+      updatedAt: "2026-05-25T01:00:00.000Z",
+      workUnit: {
+        ...task.workUnit,
+        workerAgentId: "reviewer",
+        checkerAgentId: "search",
+      },
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
+    await waitFor(() => expect(api.taskRequests).toBe(2));
+
+    fireEvent.change(screen.getByLabelText("Task 名称"), { target: { value: "只改标题的本地草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(api.patchBodies).toHaveLength(1));
+    expect(api.patchBodies[0]).toEqual({ title: "只改标题的本地草稿" });
+  });
+
+  it("builds worker and checker edits from the latest refreshed workUnit", async () => {
+    const api = mockLiveTaskEditorApi();
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+
+    api.mutateCurrentTask((task) => ({
+      ...task,
+      updatedAt: "2026-05-25T01:10:00.000Z",
+      workUnit: {
+        ...task.workUnit,
+        input: { text: "Leader 对话刷新后的最新输入" },
+        acceptance: { rules: [...task.workUnit.acceptance.rules, "刷新后的验收规则"] },
+      },
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
+    await waitFor(() => expect(api.taskRequests).toBe(2));
+
+    fireEvent.change(screen.getByLabelText("Worker Agent"), { target: { value: "reviewer" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(api.patchBodies).toHaveLength(1));
+    expect(api.patchBodies[0]).toEqual({
+      workUnit: {
+        ...api.currentTask.workUnit,
+        workerAgentId: "reviewer",
+      },
+    });
+  });
+
+  it("blocks saving a dirty field when the same Task field changed after the draft opened", async () => {
+    const api = mockLiveTaskEditorApi();
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    fireEvent.change(screen.getByLabelText("Task 名称"), { target: { value: "旧草稿标题" } });
+
+    api.mutateCurrentTask((task) => ({
+      ...task,
+      title: "Leader 已经更新的标题",
+      workUnit: { ...task.workUnit, title: "Leader 已经更新的标题" },
+      updatedAt: "2026-05-25T01:20:00.000Z",
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
+    await waitFor(() => expect(api.taskRequests).toBe(2));
+
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    expect(await within(container.querySelector(".task-edit-branch")!).findByText(/Task 已经在后台更新/)).toBeInTheDocument();
+    expect(api.patchBodies).toHaveLength(0);
   });
 
   it("refreshes live Tasks after a successful shallow edit", async () => {
@@ -1586,8 +1687,11 @@ describe("App", () => {
     expect(readme).toContain("`/team-task` skill 调用 `POST /v1/team/tasks`");
     expect(readme).toContain("手动点击“刷新 Task”");
     expect(readme).toContain("关闭创建分支后会重新请求 `GET /v1/team/tasks`");
-    expect(readme).toContain("点击 Task 卡片会先展开 Task 操作菜单");
+    expect(readme).toContain("点击 Task 卡片会先展开紧凑 Task 操作菜单节点");
+    expect(readme).toContain("Task → 菜单 → 二级节点");
     expect(readme).toContain("“编辑”是浅编辑节点");
+    expect(readme).toContain("base snapshot 和 dirty fields");
+    expect(readme).toContain("同一字段在草稿打开后已被后台刷新改变");
     expect(readme).toContain("POST /v1/team/tasks/:taskId/archive");
     expect(readme).toContain("Team Console 不再维护本地 transcript + composer");
     expect(readme).not.toContain("Focus Mode 是特殊 Agent 对话界面");
@@ -1614,7 +1718,8 @@ describe("App", () => {
     expect(runtimeDoc).toContain("Team Canvas Task frontend workflow");
     expect(runtimeDoc).toContain("teamTaskMode=create");
     expect(runtimeDoc).toContain("teamTaskMode=edit");
-    expect(runtimeDoc).toContain("点击已有 Task 先打开操作菜单");
+    expect(runtimeDoc).toContain("点击已有 Task 先打开紧凑操作菜单节点");
+    expect(runtimeDoc).toContain("base snapshot + dirty fields");
     expect(runtimeDoc).toContain("input text、output contract、acceptance rules");
     expect(runtimeDoc).toContain("关闭创建分支、浅编辑保存成功、归档成功后会重新请求 `GET /v1/team/tasks`");
     expect(runtimeDoc).toContain("WorkUnit run 未实现");

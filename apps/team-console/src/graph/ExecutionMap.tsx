@@ -42,6 +42,7 @@ interface ExecutionMapProps {
   onMoveCanvasTask?: (nodeId: string, position: { x: number; y: number }) => void;
   canMoveTasks?: boolean;
   taskBranchPanel?: ReactNode;
+  taskChildBranchPanel?: ReactNode;
   viewport?: AtlasViewport;
   onViewportChange?: (viewport: AtlasViewport) => void;
   toolbarStart?: ReactNode;
@@ -77,9 +78,13 @@ const AGENT_BRANCH_MIN_WIDTH = 520;
 const AGENT_BRANCH_MIN_HEIGHT = 360;
 const AGENT_BRANCH_GAP = 48;
 const AGENT_DRAG_THRESHOLD = 4;
-const TASK_BRANCH_WIDTH = 820;
-const TASK_BRANCH_HEIGHT = 620;
+const TASK_MENU_BRANCH_WIDTH = 280;
+const TASK_MENU_BRANCH_MIN_WIDTH = 220;
+const TASK_MENU_BRANCH_HEIGHT = 190;
+const TASK_CHILD_BRANCH_WIDTH = 820;
+const TASK_CHILD_BRANCH_HEIGHT = 620;
 const TASK_BRANCH_GAP = 48;
+const TASK_CHILD_BRANCH_GAP = 32;
 type EvidenceKind = "result" | "error" | "attempt" | "progress" | "worker" | "checker" | "watcher";
 
 interface EvidenceEntry {
@@ -279,6 +284,13 @@ function taskBranchConnectorPath(taskNode: AtlasTaskNode, branchRect: AgentBranc
   const sourceY = taskNode.position.y + CANVAS_TASK_NODE_HEIGHT / 2;
   const targetY = clampNumber(sourceY, branchRect.y, branchRect.y + branchRect.height);
   return straightPath(sourceX, sourceY, branchRect.x, targetY);
+}
+
+function taskChildBranchConnectorPath(menuRect: AgentBranchRect, childRect: AgentBranchRect): string {
+  const sourceX = menuRect.x + menuRect.width;
+  const sourceY = menuRect.y + menuRect.height / 2;
+  const targetY = clampNumber(sourceY, childRect.y, childRect.y + childRect.height);
+  return straightPath(sourceX, sourceY, childRect.x, targetY);
 }
 
 export function summarizeCollapsedTaskStatus(children: Pick<ExecutionNode, "status">[]): TaskStatus {
@@ -522,6 +534,7 @@ export function ExecutionMap({
   onMoveCanvasTask,
   canMoveTasks = true,
   taskBranchPanel,
+  taskChildBranchPanel,
   viewport,
   onViewportChange,
   toolbarStart,
@@ -1015,12 +1028,23 @@ export function ExecutionMap({
     ? {
       x: focusedTaskNode.position.x + NODE_WIDTH + TASK_BRANCH_GAP,
       y: Math.max(0, focusedTaskNode.position.y - 16),
-      width: TASK_BRANCH_WIDTH,
-      height: TASK_BRANCH_HEIGHT,
+      width: TASK_MENU_BRANCH_WIDTH,
+      height: TASK_MENU_BRANCH_HEIGHT,
+    }
+    : null;
+  const taskChildBranchNode = taskBranchNode && taskChildBranchPanel
+    ? {
+      x: taskBranchNode.x + taskBranchNode.width + TASK_CHILD_BRANCH_GAP,
+      y: taskBranchNode.y,
+      width: TASK_CHILD_BRANCH_WIDTH,
+      height: TASK_CHILD_BRANCH_HEIGHT,
     }
     : null;
   const agentBranchRight = agentBranchNode ? agentBranchNode.x + agentBranchNode.width : 0;
-  const taskBranchRight = taskBranchNode ? taskBranchNode.x + taskBranchNode.width : 0;
+  const taskBranchRight = Math.max(
+    taskBranchNode ? taskBranchNode.x + taskBranchNode.width : 0,
+    taskChildBranchNode ? taskChildBranchNode.x + taskChildBranchNode.width : 0,
+  );
   const svgWidth = Math.max(700, evidenceRight + 28, previewRight + 28, agentRight + 28, taskRight + 28, agentBranchRight + 28, taskBranchRight + 28);
   const maxY = Math.max(
     ...Array.from(layout.nodePositions.values()).map((n) => n.y + n.height),
@@ -1030,6 +1054,7 @@ export function ExecutionMap({
     ...taskNodes.map((node) => node.position.y + CANVAS_TASK_NODE_HEIGHT),
     agentBranchNode ? agentBranchNode.y + agentBranchNode.height : 0,
     taskBranchNode ? taskBranchNode.y + taskBranchNode.height : 0,
+    taskChildBranchNode ? taskChildBranchNode.y + taskChildBranchNode.height : 0,
     200,
   );
   const agentBranchPath = focusedAgentNode && agentBranchNode
@@ -1037,6 +1062,9 @@ export function ExecutionMap({
     : null;
   const taskBranchPath = focusedTaskNode && taskBranchNode
     ? taskBranchConnectorPath(focusedTaskNode, taskBranchNode)
+    : null;
+  const taskChildBranchPath = taskBranchNode && taskChildBranchNode
+    ? taskChildBranchConnectorPath(taskBranchNode, taskChildBranchNode)
     : null;
 
   const beginAgentBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1159,6 +1187,15 @@ export function ExecutionMap({
               key="task-leader-branch"
               d={taskBranchPath}
               className="emap-link emap-link-task-branch"
+              fill="none"
+              strokeWidth={2}
+            />
+          )}
+          {taskChildBranchPath && (
+            <path
+              key="task-child-branch"
+              d={taskChildBranchPath}
+              className="emap-link emap-link-task-branch emap-link-task-child-branch"
               fill="none"
               strokeWidth={2}
             />
@@ -1427,11 +1464,25 @@ export function ExecutionMap({
               style={{
                 left: taskBranchNode.x,
                 top: taskBranchNode.y,
-                width: taskBranchNode.width,
-                height: taskBranchNode.height,
+                width: "max-content",
+                minWidth: TASK_MENU_BRANCH_MIN_WIDTH,
+                height: "auto",
               }}
             >
               {taskBranchPanel}
+            </div>
+          )}
+          {taskChildBranchNode && taskChildBranchPanel && (
+            <div
+              className="emap-task-child-branch-shell"
+              style={{
+                left: taskChildBranchNode.x,
+                top: taskChildBranchNode.y,
+                width: taskChildBranchNode.width,
+                height: taskChildBranchNode.height,
+              }}
+            >
+              {taskChildBranchPanel}
             </div>
           )}
         </div>

@@ -24,12 +24,22 @@ type AgentBranchState = {
   mode: AgentBranchMode;
 };
 
-type TaskBranchMode = "menu" | "leader-chat" | "edit";
+type TaskBranchDetailMode = "leader-chat" | "edit";
 
 type TaskBranchState = {
   nodeId: string;
   taskId: string;
-  mode: TaskBranchMode;
+  detailMode: TaskBranchDetailMode | null;
+};
+
+type TaskEditDirtyField = "title" | "leaderAgentId" | "workerAgentId" | "checkerAgentId";
+
+type TaskEditBaseSnapshot = {
+  title: string;
+  leaderAgentId: string;
+  workerAgentId: string;
+  checkerAgentId: string;
+  updatedAt: string;
 };
 
 type TaskEditDraft = {
@@ -38,6 +48,8 @@ type TaskEditDraft = {
   leaderAgentId: string;
   workerAgentId: string;
   checkerAgentId: string;
+  base: TaskEditBaseSnapshot;
+  dirtyFields: Partial<Record<TaskEditDirtyField, true>>;
 };
 
 type StoredTaskPosition = {
@@ -211,13 +223,32 @@ function makeTaskNodes(tasks: TeamCanvasTask[], storedPositions = new Map<string
 }
 
 function makeTaskEditDraft(task: TeamCanvasTask): TaskEditDraft {
-  return {
-    taskId: task.taskId,
+  const base = {
     title: task.title,
     leaderAgentId: task.leaderAgentId,
     workerAgentId: task.workUnit.workerAgentId,
     checkerAgentId: task.workUnit.checkerAgentId,
+    updatedAt: task.updatedAt,
   };
+  return {
+    taskId: task.taskId,
+    title: base.title,
+    leaderAgentId: base.leaderAgentId,
+    workerAgentId: base.workerAgentId,
+    checkerAgentId: base.checkerAgentId,
+    base,
+    dirtyFields: {},
+  };
+}
+
+function hasDirtyTaskEditConflict(task: TeamCanvasTask, draft: TaskEditDraft): boolean {
+  const dirty = draft.dirtyFields;
+  return Boolean(
+    (dirty.title && task.title !== draft.base.title && draft.title.trim() !== task.title) ||
+    (dirty.leaderAgentId && task.leaderAgentId !== draft.base.leaderAgentId && draft.leaderAgentId !== task.leaderAgentId) ||
+    (dirty.workerAgentId && task.workUnit.workerAgentId !== draft.base.workerAgentId && draft.workerAgentId !== task.workUnit.workerAgentId) ||
+    (dirty.checkerAgentId && task.workUnit.checkerAgentId !== draft.base.checkerAgentId && draft.checkerAgentId !== task.workUnit.checkerAgentId)
+  );
 }
 
 function makeAgentNode(agentId: string, index: number): AtlasAgentNode {
@@ -603,7 +634,7 @@ export function App() {
     setExpandedAgentBranch(null);
     clearTaskPanelState();
     setExpandedTaskBranch((current) => (
-      current?.nodeId === node.nodeId ? null : { nodeId: node.nodeId, taskId: node.taskId, mode: "menu" }
+      current?.nodeId === node.nodeId ? null : { nodeId: node.nodeId, taskId: node.taskId, detailMode: null }
     ));
   }, [clearTaskPanelState, expandedAgentBranch, refreshLiveTasksAfterLeavingTaskCreateBranch]);
 
@@ -624,28 +655,34 @@ export function App() {
     setTaskEditDraft(makeTaskEditDraft(task));
     setTaskEditWarning(null);
     setTaskArchiveConfirming(false);
-    setExpandedTaskBranch((current) => current ? { ...current, mode: "edit" } : current);
+    setExpandedTaskBranch((current) => current ? { ...current, detailMode: "edit" } : current);
   }, []);
 
   const saveTaskEdit = useCallback(async () => {
     if (!expandedTask || !taskEditDraft || taskEditDraft.taskId !== expandedTask.taskId) return;
 
     const patch: TeamTaskUpdateRequest = {};
+    const dirty = taskEditDraft.dirtyFields;
     const title = taskEditDraft.title.trim();
-    if (title !== expandedTask.title) {
+
+    if (hasDirtyTaskEditConflict(expandedTask, taskEditDraft)) {
+      setTaskEditWarning("Task 已经在后台更新，请重新打开编辑节点后再保存。");
+      return;
+    }
+
+    if (dirty.title && title !== expandedTask.title) {
       patch.title = title;
     }
-    if (taskEditDraft.leaderAgentId !== expandedTask.leaderAgentId) {
+    if (dirty.leaderAgentId && taskEditDraft.leaderAgentId !== expandedTask.leaderAgentId) {
       patch.leaderAgentId = taskEditDraft.leaderAgentId;
     }
-    if (
-      taskEditDraft.workerAgentId !== expandedTask.workUnit.workerAgentId ||
-      taskEditDraft.checkerAgentId !== expandedTask.workUnit.checkerAgentId
-    ) {
+    const workerChanged = Boolean(dirty.workerAgentId) && taskEditDraft.workerAgentId !== expandedTask.workUnit.workerAgentId;
+    const checkerChanged = Boolean(dirty.checkerAgentId) && taskEditDraft.checkerAgentId !== expandedTask.workUnit.checkerAgentId;
+    if (workerChanged || checkerChanged) {
       patch.workUnit = {
         ...expandedTask.workUnit,
-        workerAgentId: taskEditDraft.workerAgentId,
-        checkerAgentId: taskEditDraft.checkerAgentId,
+        ...(workerChanged ? { workerAgentId: taskEditDraft.workerAgentId } : {}),
+        ...(checkerChanged ? { checkerAgentId: taskEditDraft.checkerAgentId } : {}),
       };
     }
     if (Object.keys(patch).length === 0) {
@@ -818,140 +855,11 @@ export function App() {
     </section>
   ) : null;
 
-  const expandedTaskBranchMode = expandedTaskBranch?.mode ?? "menu";
+  const expandedTaskDetailMode = expandedTaskBranch?.detailMode ?? null;
   const activeTaskEditDraft = expandedTask && taskEditDraft?.taskId === expandedTask.taskId
     ? taskEditDraft
     : null;
   const expandedTaskBranchPanel = expandedTaskNode && expandedTask ? (
-    expandedTaskBranchMode === "leader-chat" ? (
-      <section className="task-leader-branch task-leader-chat-branch" aria-label={`${expandedTask.title} leader 对话`}>
-        <header className="task-leader-branch-head">
-          <div className="task-leader-branch-title">
-            <span>Leader 对话</span>
-            <strong>{expandedTask.title}</strong>
-            <code>{expandedTask.taskId}</code>
-          </div>
-          <button
-            type="button"
-            className="task-leader-branch-collapse"
-            onClick={() => setExpandedTaskBranch(null)}
-            aria-label={`收起 ${expandedTask.title} leader 对话`}
-          >
-            收起
-          </button>
-        </header>
-        <div className="task-leader-branch-hint">
-          在对话中使用 <code>/team-task</code> 创建或更新这个 Task。Task 数据必须通过后端 API 写入。
-        </div>
-        <iframe
-          className="task-leader-iframe"
-          title={`${expandedTask.title} leader 对话`}
-          src={buildTaskLeaderPlaygroundUrl(expandedTask)}
-          referrerPolicy="no-referrer"
-        />
-      </section>
-    ) : expandedTaskBranchMode === "edit" && activeTaskEditDraft ? (
-      <section className="task-leader-branch task-edit-branch" aria-label={`${expandedTask.title} Task 编辑`}>
-        <header className="task-leader-branch-head">
-          <div className="task-leader-branch-title">
-            <span>Task 编辑</span>
-            <strong>{expandedTask.title}</strong>
-            <code>{expandedTask.taskId}</code>
-          </div>
-          <button
-            type="button"
-            className="task-leader-branch-collapse"
-            onClick={closeTaskBranch}
-            aria-label={`收起 ${expandedTask.title} Task 编辑`}
-          >
-            收起
-          </button>
-        </header>
-        <form
-          className="task-edit-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void saveTaskEdit();
-          }}
-        >
-          <div className="task-edit-note">
-            复杂需求和验收规则继续通过 Leader 对话里的 <code>/team-task</code> 更新；这里仅做 Task 名称和执行 Agent 的浅编辑。
-          </div>
-          {taskEditWarning && <div className="task-edit-warning" role="status">{taskEditWarning}</div>}
-          <div className="task-edit-grid">
-            <label className="task-edit-field">
-              <span>Task 名称</span>
-              <input
-                value={activeTaskEditDraft.title}
-                onChange={(event) => setTaskEditDraft((current) => (
-                  current ? { ...current, title: event.target.value } : current
-                ))}
-              />
-            </label>
-            <label className="task-edit-field">
-              <span>Leader Agent</span>
-              <select
-                value={activeTaskEditDraft.leaderAgentId}
-                onChange={(event) => setTaskEditDraft((current) => (
-                  current ? { ...current, leaderAgentId: event.target.value } : current
-                ))}
-              >
-                {agents.map((agent) => (
-                  <option key={agent.agentId} value={agent.agentId}>
-                    {agent.name} ({agent.agentId})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="task-edit-field">
-              <span>Worker Agent</span>
-              <select
-                value={activeTaskEditDraft.workerAgentId}
-                onChange={(event) => setTaskEditDraft((current) => (
-                  current ? { ...current, workerAgentId: event.target.value } : current
-                ))}
-              >
-                {agents.map((agent) => (
-                  <option key={agent.agentId} value={agent.agentId}>
-                    {agent.name} ({agent.agentId})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="task-edit-field">
-              <span>Checker Agent</span>
-              <select
-                value={activeTaskEditDraft.checkerAgentId}
-                onChange={(event) => setTaskEditDraft((current) => (
-                  current ? { ...current, checkerAgentId: event.target.value } : current
-                ))}
-              >
-                {agents.map((agent) => (
-                  <option key={agent.agentId} value={agent.agentId}>
-                    {agent.name} ({agent.agentId})
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="task-edit-actions">
-            <button
-              type="button"
-              className="task-action-menu-button"
-              onClick={() => {
-                setTaskEditWarning(null);
-                setExpandedTaskBranch((current) => current ? { ...current, mode: "menu" } : current);
-              }}
-            >
-              返回菜单
-            </button>
-            <button type="submit" className="task-action-menu-button primary" disabled={taskEditSaving}>
-              {taskEditSaving ? "保存中..." : "保存"}
-            </button>
-          </div>
-        </form>
-      </section>
-    ) : (
     <section className="task-leader-branch task-action-branch" aria-label={`${expandedTask.title} Task 操作`}>
       <header className="task-leader-branch-head">
         <div className="task-leader-branch-title">
@@ -989,7 +897,7 @@ export function App() {
           className="task-action-menu-button"
           onClick={() => {
             setTaskArchiveConfirming(false);
-            setExpandedTaskBranch((current) => current ? { ...current, mode: "leader-chat" } : current);
+            setExpandedTaskBranch((current) => current ? { ...current, detailMode: "leader-chat" } : current);
           }}
         >
           对话 Leader
@@ -1029,7 +937,153 @@ export function App() {
         )}
       </div>
     </section>
-    )
+  ) : null;
+  const expandedTaskChildBranchPanel = expandedTaskNode && expandedTask ? (
+    expandedTaskDetailMode === "leader-chat" ? (
+      <section className="task-leader-branch task-leader-chat-branch" aria-label={`${expandedTask.title} leader 对话`}>
+        <header className="task-leader-branch-head">
+          <div className="task-leader-branch-title">
+            <span>Leader 对话</span>
+            <strong>{expandedTask.title}</strong>
+            <code>{expandedTask.taskId}</code>
+          </div>
+          <button
+            type="button"
+            className="task-leader-branch-collapse"
+            onClick={() => setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current)}
+            aria-label={`收起 ${expandedTask.title} leader 对话`}
+          >
+            收起
+          </button>
+        </header>
+        <div className="task-leader-branch-hint">
+          在对话中使用 <code>/team-task</code> 创建或更新这个 Task。Task 数据必须通过后端 API 写入。
+        </div>
+        <iframe
+          className="task-leader-iframe"
+          title={`${expandedTask.title} leader 对话`}
+          src={buildTaskLeaderPlaygroundUrl(expandedTask)}
+          referrerPolicy="no-referrer"
+        />
+      </section>
+    ) : expandedTaskDetailMode === "edit" && activeTaskEditDraft ? (
+      <section className="task-leader-branch task-edit-branch" aria-label={`${expandedTask.title} Task 编辑`}>
+        <header className="task-leader-branch-head">
+          <div className="task-leader-branch-title">
+            <span>Task 编辑</span>
+            <strong>{expandedTask.title}</strong>
+            <code>{expandedTask.taskId}</code>
+          </div>
+          <button
+            type="button"
+            className="task-leader-branch-collapse"
+            onClick={() => setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current)}
+            aria-label={`收起 ${expandedTask.title} Task 编辑`}
+          >
+            收起
+          </button>
+        </header>
+        <form
+          className="task-edit-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void saveTaskEdit();
+          }}
+        >
+          <div className="task-edit-note">
+            复杂需求和验收规则继续通过 Leader 对话里的 <code>/team-task</code> 更新；这里仅做 Task 名称和执行 Agent 的浅编辑。
+          </div>
+          {taskEditWarning && <div className="task-edit-warning" role="status">{taskEditWarning}</div>}
+          <div className="task-edit-grid">
+            <label className="task-edit-field">
+              <span>Task 名称</span>
+              <input
+                value={activeTaskEditDraft.title}
+                onChange={(event) => setTaskEditDraft((current) => (
+                  current ? {
+                    ...current,
+                    title: event.target.value,
+                    dirtyFields: { ...current.dirtyFields, title: true },
+                  } : current
+                ))}
+              />
+            </label>
+            <label className="task-edit-field">
+              <span>Leader Agent</span>
+              <select
+                value={activeTaskEditDraft.leaderAgentId}
+                onChange={(event) => setTaskEditDraft((current) => (
+                  current ? {
+                    ...current,
+                    leaderAgentId: event.target.value,
+                    dirtyFields: { ...current.dirtyFields, leaderAgentId: true },
+                  } : current
+                ))}
+              >
+                {agents.map((agent) => (
+                  <option key={agent.agentId} value={agent.agentId}>
+                    {agent.name} ({agent.agentId})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="task-edit-field">
+              <span>Worker Agent</span>
+              <select
+                value={activeTaskEditDraft.workerAgentId}
+                onChange={(event) => setTaskEditDraft((current) => (
+                  current ? {
+                    ...current,
+                    workerAgentId: event.target.value,
+                    dirtyFields: { ...current.dirtyFields, workerAgentId: true },
+                  } : current
+                ))}
+              >
+                {agents.map((agent) => (
+                  <option key={agent.agentId} value={agent.agentId}>
+                    {agent.name} ({agent.agentId})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="task-edit-field">
+              <span>Checker Agent</span>
+              <select
+                value={activeTaskEditDraft.checkerAgentId}
+                onChange={(event) => setTaskEditDraft((current) => (
+                  current ? {
+                    ...current,
+                    checkerAgentId: event.target.value,
+                    dirtyFields: { ...current.dirtyFields, checkerAgentId: true },
+                  } : current
+                ))}
+              >
+                {agents.map((agent) => (
+                  <option key={agent.agentId} value={agent.agentId}>
+                    {agent.name} ({agent.agentId})
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="task-edit-actions">
+            <button
+              type="button"
+              className="task-action-menu-button"
+              onClick={() => {
+                setTaskEditWarning(null);
+                setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current);
+              }}
+            >
+              返回菜单
+            </button>
+            <button type="submit" className="task-action-menu-button primary" disabled={taskEditSaving}>
+              {taskEditSaving ? "保存中..." : "保存"}
+            </button>
+          </div>
+        </form>
+      </section>
+    ) : null
   ) : null;
 
   return (
@@ -1133,6 +1187,7 @@ export function App() {
                 onSelectCanvasTask={toggleTaskBranch}
                 onMoveCanvasTask={moveTaskNode}
                 taskBranchPanel={expandedTaskBranchPanel}
+                taskChildBranchPanel={expandedTaskChildBranchPanel}
                 viewport={canvasViewport}
                 onViewportChange={setCanvasViewport}
                 toolbarStart={agentToolbar}

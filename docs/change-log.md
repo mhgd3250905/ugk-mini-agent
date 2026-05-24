@@ -12,6 +12,20 @@
 
 ---
 
+## 2026-05-25 — Team Console Task 菜单二级节点与草稿保护
+
+- **主题**: 修复 Task 操作菜单过大、编辑 / Leader 入口替换一级菜单，以及浅编辑 stale draft 覆盖风险。
+- **变更内容**:
+  - Task 操作菜单改为紧凑一级节点，宽高由菜单内容驱动，不再沿用大 iframe 面板尺寸。
+  - 点击“编辑”或“对话 Leader”会在菜单右侧展开二级节点，一级 Task 操作菜单保留，连线表达 Task → 菜单 → 二级节点。
+  - 浅编辑草稿增加 base snapshot 与 dirty fields；PATCH 只发送用户实际改过的字段。
+  - worker/checker 变更仍发送完整当前 `workUnit`，但基于最新 Task catalog 合成，避免旧副本覆盖刷新或 Leader 对话更新后的复杂 WorkUnit 字段。
+  - 如果草稿打开后同一字段已被后台刷新改变，保存会被阻止并提示重新打开编辑节点。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未修改 `src/team/**`，未修改 `.pi/skills/team-task-creator/**`，未实现 WorkUnit run，未解析 iframe 聊天文本，localStorage 仍只保存 Task 布局元数据。
+
+---
+
 ## 2026-05-25 — Team Console Task 操作菜单与浅编辑
 
 - **主题**: 将 Team Console Task 卡片点击行为改为操作菜单，并补齐浅编辑、Leader 对话入口和 archive 软归档。
