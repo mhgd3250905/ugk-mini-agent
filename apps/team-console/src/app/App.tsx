@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { AgentAssetSummary, AgentChatMessage, AgentChatStreamEvent, AgentContextUsage, AgentConversationState, AgentSummary, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "../api/team-types";
+import type { AgentAssetSummary, AgentChatActiveRun, AgentChatMessage, AgentChatStreamEvent, AgentContextUsage, AgentConversationState, AgentSummary, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "../api/team-types";
 import { ALL_FIXTURES, MOCK_AGENTS, MockTeamApi } from "../fixtures/team-fixtures";
 import { ExecutionMap, type AtlasAgentNode } from "../graph/ExecutionMap";
 import { ROOT_ID } from "../graph/execution-map-layout";
@@ -111,13 +111,34 @@ function agentConversationKey(agentId: string, conversationId: string | undefine
 
 function messagesFromConversationState(state: AgentConversationState): AgentChatMessage[] {
   const messages = state.viewMessages.length > 0 ? state.viewMessages : state.messages;
-  return messages
+  const renderedMessages: AgentChatMessage[] = messages
     .filter((message) => message.kind === "user" || message.kind === "assistant" || message.kind === "error")
     .map((message) => ({
       role: message.kind === "user" ? "user" : "assistant",
       text: message.text,
       assetRefs: message.assetRefs ?? [],
     }));
+  const activeRun = state.activeRun;
+  if (!activeRun) {
+    return renderedMessages;
+  }
+
+  const activeMessages = [...renderedMessages];
+  const activeInput = activeRun.input?.message?.trim() ?? "";
+  if (activeInput && !activeMessages.some((message) => message.role === "user" && message.text === activeInput)) {
+    activeMessages.push({
+      role: "user",
+      text: activeInput,
+      assetRefs: activeRun.input?.inputAssets ?? [],
+    });
+  }
+  const activeText = activeRun.text?.trim() ?? "";
+  if (activeText && !activeMessages.some((message) => message.role === "assistant" && message.text === activeText)) {
+    activeMessages.push({ role: "assistant", text: activeRun.text });
+  } else if (activeRun.status === "interrupted" && !activeMessages.some((message) => message.text === "本轮已中断")) {
+    activeMessages.push({ role: "assistant", text: "本轮已中断" });
+  }
+  return activeMessages;
 }
 
 function appendAssistantDelta(messages: AgentChatMessage[], textDelta: string): AgentChatMessage[] {
@@ -143,6 +164,10 @@ function finishAssistantMessage(messages: AgentChatMessage[], text: string): Age
   ];
 }
 
+function isTerminalAgentChatStreamEvent(event: AgentChatStreamEvent): boolean {
+  return event.type === "done" || event.type === "error" || event.type === "interrupted";
+}
+
 export function App() {
   const [dataSource, setDataSource] = useState<DataSource>("mock");
   const [selectedFixtureId, setSelectedFixtureId] = useState<string>(CLEAN_AGENT_WORKSPACE_ID);
@@ -158,6 +183,7 @@ export function App() {
   const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
   const [agentFocus, setAgentFocus] = useState<AgentFocusState | null>(null);
   const [agentMessagesByConversationKey, setAgentMessagesByConversationKey] = useState<Record<string, AgentChatMessage[]>>({});
+  const [agentRecoveryRunsByConversationKey, setAgentRecoveryRunsByConversationKey] = useState<Record<string, AgentChatActiveRun>>({});
   const [agentConversationIds, setAgentConversationIds] = useState<Record<string, string>>({});
   const [agentMessageInput, setAgentMessageInput] = useState("");
   const [agentChatPendingAgentId, setAgentChatPendingAgentId] = useState<string | null>(null);
@@ -185,6 +211,7 @@ export function App() {
   const focusedConversationId = focusedAgent ? agentConversationIds[focusedAgent.agentId] : undefined;
   const focusedConversationKey = focusedAgent ? agentConversationKey(focusedAgent.agentId, focusedConversationId) : null;
   const focusedAgentMessages = focusedConversationKey ? agentMessagesByConversationKey[focusedConversationKey] ?? [] : [];
+  const focusedRecoveryRun = focusedConversationKey ? agentRecoveryRunsByConversationKey[focusedConversationKey] : undefined;
   const isAgentChatPending = Boolean(focusedAgent && agentChatPendingAgentId === focusedAgent.agentId);
   const isConversationCreatePending = Boolean(focusedAgent && conversationCreatePendingAgentId === focusedAgent.agentId);
   const isInterruptPending = Boolean(focusedAgent && interruptPendingAgentId === focusedAgent.agentId);
@@ -231,6 +258,7 @@ export function App() {
 
   useEffect(() => {
     setAgentConversationIds({});
+    setAgentRecoveryRunsByConversationKey({});
     if (dataSource === "mock") {
       setAgents(MOCK_AGENTS);
       return;
@@ -359,18 +387,54 @@ export function App() {
 
   const createApi = useCallback(() => dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi(), [dataSource]);
 
-  const applyAgentConversationState = useCallback((agentId: string, state: AgentConversationState) => {
+  const applyAgentConversationState = useCallback((
+    agentId: string,
+    state: AgentConversationState,
+    options?: { preserveLocalMessagesOnEmpty?: boolean },
+  ) => {
     const conversationId = state.conversationId;
+    const conversationKey = agentConversationKey(agentId, conversationId);
+    const nextMessages = messagesFromConversationState(state);
     setAgentConversationIds((current) => ({ ...current, [agentId]: conversationId }));
-    setAgentMessagesByConversationKey((current) => ({
-      ...current,
-      [agentConversationKey(agentId, conversationId)]: messagesFromConversationState(state),
-    }));
+    setAgentMessagesByConversationKey((current) => {
+      if (options?.preserveLocalMessagesOnEmpty && nextMessages.length === 0) {
+        return current;
+      }
+      return {
+        ...current,
+        [conversationKey]: nextMessages,
+      };
+    });
+    setAgentRecoveryRunsByConversationKey((current) => {
+      const next = { ...current };
+      if (state.running && state.activeRun?.loading) {
+        next[conversationKey] = state.activeRun;
+      } else {
+        delete next[conversationKey];
+      }
+      return next;
+    });
     setAgentContextUsageById((current) => ({ ...current, [agentId]: state.contextUsage }));
     setAgentChatPendingAgentId((current) => (
       state.running ? agentId : current === agentId ? null : current
     ));
   }, []);
+
+  const refreshAgentConversationState = useCallback(async (agentId: string, conversationId: string, generation: number) => {
+    try {
+      const conversationState = await createApi().getAgentConversationState(agentId, conversationId, 80);
+      if (focusLoadGenerationRef.current !== generation) return;
+      if (conversationState.conversationId !== conversationId) return;
+      applyAgentConversationState(agentId, conversationState, { preserveLocalMessagesOnEmpty: true });
+    } catch (e) {
+      if (focusLoadGenerationRef.current !== generation) return;
+      setAgentChatError(errorMessage(e));
+      setAgentContextUsageById((current) => ({
+        ...current,
+        [agentId]: current[agentId] ?? FALLBACK_CONTEXT_USAGE,
+      }));
+    }
+  }, [applyAgentConversationState, createApi]);
 
   const loadFocusedAgentConversation = useCallback(async (agentId: string, generation: number) => {
     const api = createApi();
@@ -682,8 +746,13 @@ export function App() {
         [currentKey]: finishAssistantMessage(current[currentKey] ?? [], event.text),
       }));
       setAgentSelectedAssetsById((current) => ({ ...current, [agentId]: [] }));
+      setAgentRecoveryRunsByConversationKey((current) => {
+        const next = { ...current };
+        delete next[currentKey];
+        return next;
+      });
       setAgentChatPendingAgentId((current) => current === agentId ? null : current);
-      void syncAgentContextUsage(agentId, event.conversationId);
+      void refreshAgentConversationState(agentId, event.conversationId, generation);
       return;
     }
 
@@ -693,8 +762,13 @@ export function App() {
         ...current,
         [currentKey]: finishAssistantMessage(current[currentKey] ?? [], "本轮已中断"),
       }));
+      setAgentRecoveryRunsByConversationKey((current) => {
+        const next = { ...current };
+        delete next[currentKey];
+        return next;
+      });
       setAgentChatPendingAgentId((current) => current === agentId ? null : current);
-      void syncAgentContextUsage(agentId, event.conversationId);
+      void refreshAgentConversationState(agentId, event.conversationId, generation);
       return;
     }
 
@@ -705,9 +779,59 @@ export function App() {
 
     if (event.type === "error") {
       setAgentChatError(event.message);
+      setAgentRecoveryRunsByConversationKey((current) => {
+        const next = { ...current };
+        delete next[currentKey];
+        return next;
+      });
       setAgentChatPendingAgentId((current) => current === agentId ? null : current);
+      void refreshAgentConversationState(agentId, event.conversationId, generation);
     }
-  }, [syncAgentContextUsage]);
+  }, [refreshAgentConversationState]);
+
+  useEffect(() => {
+    if (!focusedAgent || !focusedConversationId || !focusedRecoveryRun?.loading) return;
+    const agentId = focusedAgent.agentId;
+    const conversationId = focusedConversationId;
+    const generation = focusLoadGenerationRef.current;
+    const controller = new AbortController();
+    const api = createApi();
+    let streamConversationId = conversationId;
+    let terminalEventReceived = false;
+
+    void api.streamAgentConversationEvents(agentId, {
+      conversationId,
+      ...(Number.isFinite(focusedRecoveryRun.eventCursor) && focusedRecoveryRun.eventCursor! > 0
+        ? { afterEventCursor: Math.trunc(focusedRecoveryRun.eventCursor!) }
+        : {}),
+      signal: controller.signal,
+    }, (event) => {
+      if ("conversationId" in event) {
+        streamConversationId = event.conversationId;
+      }
+      terminalEventReceived ||= isTerminalAgentChatStreamEvent(event);
+      applyFocusedStreamEvent(agentId, generation, conversationId, streamConversationId, event);
+    }).catch((e) => {
+      if (controller.signal.aborted || focusLoadGenerationRef.current !== generation) return;
+      setAgentChatError(errorMessage(e));
+    }).finally(() => {
+      if (controller.signal.aborted || focusLoadGenerationRef.current !== generation || terminalEventReceived) return;
+      void refreshAgentConversationState(agentId, conversationId, generation);
+    });
+
+    return () => {
+      controller.abort();
+    };
+  }, [
+    applyFocusedStreamEvent,
+    createApi,
+    focusedAgent,
+    focusedConversationId,
+    focusedRecoveryRun?.eventCursor,
+    focusedRecoveryRun?.loading,
+    focusedRecoveryRun?.runId,
+    refreshAgentConversationState,
+  ]);
 
   const sendFocusedAgentMessage = useCallback(async () => {
     if (!focusedAgent) return;

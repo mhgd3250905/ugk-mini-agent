@@ -7,6 +7,7 @@ import type {
   AgentChatStreamRequest,
   AgentChatStatus,
   AgentConversationCatalogResponse,
+  AgentConversationEventsRequest,
   AgentConversationState,
   AgentConversationResponse,
   AgentInterruptResponse,
@@ -880,7 +881,7 @@ type MockConversation = {
 type MockPendingRun = {
   conversationId: string;
   runId: string;
-  onEvent: (event: AgentChatStreamEvent) => void;
+  listeners: Set<(event: AgentChatStreamEvent) => void>;
   resolve: () => void;
 };
 
@@ -970,6 +971,18 @@ function updateMockConversation(conversation: MockConversation) {
   if (conversation.messages.length > 0) {
     conversation.title = conversation.messages[0].text.slice(0, 32) || conversation.title;
   }
+}
+
+function emitMockPendingRunEvent(conversationId: string, event: AgentChatStreamEvent) {
+  const pending = mockPendingRuns.get(conversationId);
+  if (!pending) return;
+  for (const listener of pending.listeners) {
+    listener(event);
+  }
+}
+
+function isTerminalMockEvent(event: AgentChatStreamEvent): boolean {
+  return event.type === "done" || event.type === "error" || event.type === "interrupted";
 }
 
 export class MockTeamApi {
@@ -1087,7 +1100,7 @@ export class MockTeamApi {
         updatedAt: ts(),
       };
       updateMockConversation(conversation);
-      pending.onEvent({
+      emitMockPendingRunEvent(conversation.conversationId, {
         type: "interrupted",
         conversationId: conversation.conversationId,
         runId: pending.runId,
@@ -1141,7 +1154,7 @@ export class MockTeamApi {
       updatedAt: ts(),
     };
     updateMockConversation(conversation);
-    mockPendingRuns.get(conversation.conversationId)?.onEvent({
+    emitMockPendingRunEvent(conversation.conversationId, {
       type: "queue_updated",
       steering: nextQueue.steering,
       followUp: nextQueue.followUp,
@@ -1190,7 +1203,7 @@ export class MockTeamApi {
         mockPendingRuns.set(conversation.conversationId, {
           conversationId: conversation.conversationId,
           runId,
-          onEvent,
+          listeners: new Set([onEvent]),
           resolve,
         });
       });
@@ -1232,6 +1245,36 @@ export class MockTeamApi {
       runId,
       text,
       inputAssets,
+    });
+  }
+
+  async streamAgentConversationEvents(
+    agentId: string,
+    request: AgentConversationEventsRequest,
+    onEvent: (event: AgentChatStreamEvent) => void,
+  ): Promise<void> {
+    void agentId;
+    void request.afterEventCursor;
+    const pending = mockPendingRuns.get(request.conversationId);
+    if (!pending) return;
+    await new Promise<void>((resolve) => {
+      const listener = (event: AgentChatStreamEvent) => {
+        onEvent(event);
+        if (isTerminalMockEvent(event)) {
+          pending.listeners.delete(listener);
+          resolve();
+        }
+      };
+      const onAbort = () => {
+        pending.listeners.delete(listener);
+        resolve();
+      };
+      pending.listeners.add(listener);
+      if (request.signal?.aborted) {
+        onAbort();
+        return;
+      }
+      request.signal?.addEventListener("abort", onAbort, { once: true });
     });
   }
 

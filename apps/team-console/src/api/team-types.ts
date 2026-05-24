@@ -217,6 +217,12 @@ export interface AgentChatStreamRequest {
   assetRefs?: string[];
 }
 
+export interface AgentConversationEventsRequest {
+  conversationId: string;
+  afterEventCursor?: number;
+  signal?: AbortSignal;
+}
+
 export interface AgentQueueMessageRequest {
   conversationId: string;
   message: string;

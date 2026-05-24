@@ -430,6 +430,38 @@ describe("LiveTeamApi", () => {
     expect(response.conversationId).toBe("conv_1");
   });
 
+  it("streamAgentConversationEvents subscribes to scoped run events after the active cursor", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(sseResponse([
+      'data: {"type":"text_delta","textDelta":"继续"}',
+      "",
+      'data: {"type":"done","conversationId":"conv_1","runId":"run_1","text":"继续完成"}',
+      "",
+      "",
+    ].join("\n")));
+    const events: unknown[] = [];
+
+    await (api as unknown as {
+      streamAgentConversationEvents(
+        agentId: string,
+        request: { conversationId: string; afterEventCursor?: number },
+        onEvent: (event: unknown) => void,
+      ): Promise<void>;
+    }).streamAgentConversationEvents("search/agent", {
+      conversationId: "conv_1",
+      afterEventCursor: 7,
+    }, (event) => events.push(event));
+
+    expect(fetch).toHaveBeenCalledWith("/v1/agents/search%2Fagent/chat/events?conversationId=conv_1&afterEventCursor=7", {
+      method: "GET",
+      headers: { accept: "text/event-stream" },
+    });
+    expect(events).toEqual([
+      { type: "text_delta", textDelta: "继续" },
+      { type: "done", conversationId: "conv_1", runId: "run_1", text: "继续完成" },
+    ]);
+  });
+
   it("getAgentChatStatus reads scoped run status", async () => {
     const api = new LiveTeamApi("/v1/team");
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({

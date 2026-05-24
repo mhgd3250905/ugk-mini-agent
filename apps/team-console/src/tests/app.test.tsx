@@ -275,6 +275,239 @@ describe("App", () => {
     expect(stateSpy).toHaveBeenCalledWith("main", "conv_main_current", 80);
   });
 
+  it("renders active run input and text when restoring a running focused conversation", async () => {
+    vi.spyOn(MockTeamApi.prototype, "listAgentConversations").mockResolvedValue({
+      currentConversationId: "conv_running",
+      conversations: [{
+        conversationId: "conv_running",
+        title: "Running",
+        preview: "partial recovered answer",
+        messageCount: 1,
+        createdAt: "2026-05-24T00:00:00.000Z",
+        updatedAt: "2026-05-24T00:01:00.000Z",
+        running: true,
+      }],
+    });
+    vi.spyOn(MockTeamApi.prototype, "getAgentConversationState").mockResolvedValue({
+      conversationId: "conv_running",
+      running: true,
+      contextUsage: mockContextUsage(),
+      messages: [],
+      viewMessages: [],
+      activeRun: {
+        runId: "run_recover",
+        status: "running",
+        assistantMessageId: "assistant_recover",
+        eventCursor: 12,
+        input: {
+          message: "恢复这个任务",
+          inputAssets: [mockAsset("asset_recover", "recover.md")],
+        },
+        text: "partial recovered answer",
+        process: null,
+        queue: null,
+        loading: true,
+        startedAt: "2026-05-24T00:00:00.000Z",
+        updatedAt: "2026-05-24T00:01:00.000Z",
+      },
+      historyPage: { hasMore: false, limit: 80 },
+      updatedAt: "2026-05-24T00:01:00.000Z",
+    });
+    const eventSpy = vi.fn(async () => {});
+    const mockProto = MockTeamApi.prototype as unknown as {
+      streamAgentConversationEvents?: typeof eventSpy;
+    };
+    const originalEventStream = mockProto.streamAgentConversationEvents;
+    mockProto.streamAgentConversationEvents = eventSpy;
+    const { container } = render(<App />);
+
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+      fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+
+      expect(await screen.findByText("恢复这个任务")).toBeInTheDocument();
+      expect(screen.getByText("partial recovered answer")).toBeInTheDocument();
+      expect(screen.getByText("recover.md")).toBeInTheDocument();
+      expect(screen.getByText("发送中...")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "打断" })).toBeEnabled();
+      await waitFor(() => expect(eventSpy).toHaveBeenCalledWith(
+        "main",
+        { conversationId: "conv_running", afterEventCursor: 12, signal: expect.any(AbortSignal) },
+        expect.any(Function),
+      ));
+    } finally {
+      if (originalEventStream) {
+        mockProto.streamAgentConversationEvents = originalEventStream;
+      } else {
+        delete mockProto.streamAgentConversationEvents;
+      }
+    }
+  });
+
+  it("continues a recovered active run stream through terminal done and refreshes state", async () => {
+    vi.spyOn(MockTeamApi.prototype, "listAgentConversations").mockResolvedValue({
+      currentConversationId: "conv_running",
+      conversations: [{
+        conversationId: "conv_running",
+        title: "Running",
+        preview: "partial",
+        messageCount: 1,
+        createdAt: "2026-05-24T00:00:00.000Z",
+        updatedAt: "2026-05-24T00:01:00.000Z",
+        running: true,
+      }],
+    });
+    const stateSpy = vi.spyOn(MockTeamApi.prototype, "getAgentConversationState")
+      .mockResolvedValueOnce({
+        conversationId: "conv_running",
+        running: true,
+        contextUsage: mockContextUsage(),
+        messages: [],
+        viewMessages: [],
+        activeRun: {
+          runId: "run_recover",
+          status: "running",
+          assistantMessageId: "assistant_recover",
+          eventCursor: 3,
+          input: { message: "继续恢复", inputAssets: [] },
+          text: "partial",
+          process: null,
+          queue: null,
+          loading: true,
+          startedAt: "2026-05-24T00:00:00.000Z",
+          updatedAt: "2026-05-24T00:01:00.000Z",
+        },
+        historyPage: { hasMore: false, limit: 80 },
+        updatedAt: "2026-05-24T00:01:00.000Z",
+      })
+      .mockResolvedValueOnce({
+        conversationId: "conv_running",
+        running: false,
+        contextUsage: { ...mockContextUsage(), currentTokens: 42 },
+        messages: [],
+        viewMessages: [{
+          id: "assistant_done",
+          kind: "assistant",
+          title: "Agent",
+          text: "partial done",
+          createdAt: "2026-05-24T00:02:00.000Z",
+          runId: "run_recover",
+        }],
+        activeRun: null,
+        historyPage: { hasMore: false, limit: 80 },
+        updatedAt: "2026-05-24T00:02:00.000Z",
+      });
+    const eventSpy = vi.fn(async (_agentId, _request, onEvent: (event: unknown) => void) => {
+      onEvent({ type: "text_delta", textDelta: " done" });
+      onEvent({ type: "done", conversationId: "conv_running", runId: "run_recover", text: "partial done" });
+    });
+    const mockProto = MockTeamApi.prototype as unknown as {
+      streamAgentConversationEvents?: typeof eventSpy;
+    };
+    const originalEventStream = mockProto.streamAgentConversationEvents;
+    mockProto.streamAgentConversationEvents = eventSpy;
+    const { container } = render(<App />);
+
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+      fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+
+      expect(await screen.findByText("partial done")).toBeInTheDocument();
+      await waitFor(() => expect(stateSpy).toHaveBeenCalledTimes(2));
+      expect(screen.queryByText("发送中...")).toBeNull();
+      expect(screen.getByRole("button", { name: "打断" })).toBeDisabled();
+    } finally {
+      if (originalEventStream) {
+        mockProto.streamAgentConversationEvents = originalEventStream;
+      } else {
+        delete mockProto.streamAgentConversationEvents;
+      }
+    }
+  });
+
+  it("clears pending state and refreshes scoped state after a recovered active run error", async () => {
+    vi.spyOn(MockTeamApi.prototype, "listAgentConversations").mockResolvedValue({
+      currentConversationId: "conv_error_recover",
+      conversations: [{
+        conversationId: "conv_error_recover",
+        title: "Running",
+        preview: "partial",
+        messageCount: 1,
+        createdAt: "2026-05-24T00:00:00.000Z",
+        updatedAt: "2026-05-24T00:01:00.000Z",
+        running: true,
+      }],
+    });
+    const stateSpy = vi.spyOn(MockTeamApi.prototype, "getAgentConversationState")
+      .mockResolvedValueOnce({
+        conversationId: "conv_error_recover",
+        running: true,
+        contextUsage: mockContextUsage(),
+        messages: [],
+        viewMessages: [],
+        activeRun: {
+          runId: "run_error_recover",
+          status: "running",
+          assistantMessageId: "assistant_error_recover",
+          eventCursor: 4,
+          input: { message: "恢复会失败", inputAssets: [] },
+          text: "partial",
+          process: null,
+          queue: null,
+          loading: true,
+          startedAt: "2026-05-24T00:00:00.000Z",
+          updatedAt: "2026-05-24T00:01:00.000Z",
+        },
+        historyPage: { hasMore: false, limit: 80 },
+        updatedAt: "2026-05-24T00:01:00.000Z",
+      })
+      .mockResolvedValueOnce({
+        conversationId: "conv_error_recover",
+        running: false,
+        contextUsage: mockContextUsage(),
+        messages: [],
+        viewMessages: [{
+          id: "error_message",
+          kind: "error",
+          title: "Error",
+          text: "recovered boom",
+          createdAt: "2026-05-24T00:02:00.000Z",
+          runId: "run_error_recover",
+        }],
+        activeRun: null,
+        historyPage: { hasMore: false, limit: 80 },
+        updatedAt: "2026-05-24T00:02:00.000Z",
+      });
+    const eventSpy = vi.fn(async (_agentId, _request, onEvent: (event: unknown) => void) => {
+      onEvent({ type: "error", conversationId: "conv_error_recover", runId: "run_error_recover", message: "recovered boom" });
+    });
+    const mockProto = MockTeamApi.prototype as unknown as {
+      streamAgentConversationEvents?: typeof eventSpy;
+    };
+    const originalEventStream = mockProto.streamAgentConversationEvents;
+    mockProto.streamAgentConversationEvents = eventSpy;
+    const { container } = render(<App />);
+
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+      fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("recovered boom");
+      await waitFor(() => expect(stateSpy).toHaveBeenCalledTimes(2));
+      expect(screen.queryByText("发送中...")).toBeNull();
+      expect(screen.getByRole("button", { name: "打断" })).toBeDisabled();
+    } finally {
+      if (originalEventStream) {
+        mockProto.streamAgentConversationEvents = originalEventStream;
+      } else {
+        delete mockProto.streamAgentConversationEvents;
+      }
+    }
+  });
+
   it("keeps focused conversations isolated between agents", async () => {
     vi.spyOn(MockTeamApi.prototype, "listAgentConversations").mockImplementation(async (agentId: string) => ({
       currentConversationId: `conv_${agentId}`,
@@ -899,6 +1132,89 @@ describe("App", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByText("stale main text")).toBeNull();
     expect(screen.getByText("搜索 Agent / search")).toBeInTheDocument();
+  });
+
+  it("ignores stale recovered run events after collapsing focus", async () => {
+    let emitRecoveredDelta!: () => void;
+    vi.spyOn(MockTeamApi.prototype, "listAgentConversations").mockImplementation(async (agentId: string) => ({
+      currentConversationId: `conv_${agentId}`,
+      conversations: [{
+        conversationId: `conv_${agentId}`,
+        title: agentId,
+        preview: "",
+        messageCount: 0,
+        createdAt: "2026-05-24T00:00:00.000Z",
+        updatedAt: "2026-05-24T00:01:00.000Z",
+        running: agentId === "main",
+      }],
+    }));
+    vi.spyOn(MockTeamApi.prototype, "getAgentConversationState").mockImplementation(async (agentId: string, conversationId: string) => ({
+      conversationId,
+      running: agentId === "main",
+      contextUsage: mockContextUsage(),
+      messages: [],
+      viewMessages: agentId === "search" ? [{
+        id: "search_history",
+        kind: "assistant",
+        title: "Agent",
+        text: "search ready",
+        createdAt: "2026-05-24T00:00:00.000Z",
+      }] : [],
+      activeRun: agentId === "main" ? {
+        runId: "run_stale_recover",
+        status: "running",
+        assistantMessageId: "assistant_stale_recover",
+        eventCursor: 9,
+        input: { message: "main recovering", inputAssets: [] },
+        text: "main partial",
+        process: null,
+        queue: null,
+        loading: true,
+        startedAt: "2026-05-24T00:00:00.000Z",
+        updatedAt: "2026-05-24T00:01:00.000Z",
+      } : null,
+      historyPage: { hasMore: false, limit: 80 },
+      updatedAt: "2026-05-24T00:01:00.000Z",
+    }));
+    const eventSpy = vi.fn(async (_agentId, _request, onEvent: (event: unknown) => void) => {
+      await new Promise<void>((resolve) => {
+        emitRecoveredDelta = () => {
+          onEvent({ type: "text_delta", textDelta: " stale recovered text" });
+          resolve();
+        };
+      });
+    });
+    const mockProto = MockTeamApi.prototype as unknown as {
+      streamAgentConversationEvents?: typeof eventSpy;
+    };
+    const originalEventStream = mockProto.streamAgentConversationEvents;
+    mockProto.streamAgentConversationEvents = eventSpy;
+    const { container } = render(<App />);
+
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+      fireEvent.click(screen.getByRole("button", { name: /搜索 Agent[\s\S]*search/ }));
+      fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+      expect(await screen.findByText("main partial")).toBeInTheDocument();
+      await waitFor(() => expect(eventSpy).toHaveBeenCalled());
+
+      fireEvent.click(screen.getByRole("button", { name: "收起" }));
+      fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /搜索 Agent/ }));
+      expect(await screen.findByText("search ready")).toBeInTheDocument();
+      emitRecoveredDelta();
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(screen.queryByText(/stale recovered text/)).toBeNull();
+      expect(screen.getByText("搜索 Agent / search")).toBeInTheDocument();
+    } finally {
+      if (originalEventStream) {
+        mockProto.streamAgentConversationEvents = originalEventStream;
+      } else {
+        delete mockProto.streamAgentConversationEvents;
+      }
+    }
   });
 
   it("does not submit empty agent messages", async () => {

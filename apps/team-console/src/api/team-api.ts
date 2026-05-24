@@ -6,6 +6,7 @@ import type {
   AgentChatStreamRequest,
   AgentChatStatus,
   AgentConversationCatalogResponse,
+  AgentConversationEventsRequest,
   AgentConversationState,
   AgentConversationResponse,
   AgentInterruptResponse,
@@ -39,6 +40,11 @@ export interface TeamApiProvider {
   streamAgentMessage(
     agentId: string,
     request: AgentChatStreamRequest,
+    onEvent: (event: AgentChatStreamEvent) => void,
+  ): Promise<void>;
+  streamAgentConversationEvents(
+    agentId: string,
+    request: AgentConversationEventsRequest,
     onEvent: (event: AgentChatStreamEvent) => void,
   ): Promise<void>;
   listAssets(limit?: number): Promise<AgentAssetSummary[]>;
@@ -303,6 +309,38 @@ export class LiveTeamApi implements TeamApiProvider {
         throw { message: terminalError };
       }
     } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async streamAgentConversationEvents(
+    agentId: string,
+    request: AgentConversationEventsRequest,
+    onEvent: (event: AgentChatStreamEvent) => void,
+  ): Promise<void> {
+    try {
+      const params = new URLSearchParams({
+        conversationId: request.conversationId,
+      });
+      if (Number.isFinite(request.afterEventCursor) && request.afterEventCursor! > 0) {
+        params.set("afterEventCursor", String(Math.trunc(request.afterEventCursor!)));
+      }
+      const init: RequestInit = {
+        method: "GET",
+        headers: { accept: "text/event-stream" },
+      };
+      if (request.signal) {
+        init.signal = request.signal;
+      }
+      const res = await fetch(`/v1/agents/${encodeURIComponent(agentId)}/chat/events?${params.toString()}`, init);
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      await readAgentChatSse(res, onEvent);
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") {
+        return;
+      }
       throw toApiError(e);
     }
   }

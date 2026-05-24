@@ -12,6 +12,20 @@
 
 ---
 
+## 2026-05-24 — Team Console Agent Focus active run 恢复
+
+- **主题**: 修复 Agent Focus 打开已有 running scoped conversation 时只显示 pending、不会恢复 active run 流的问题。
+- **变更内容**:
+  - Focus 读取 scoped state 时把 `activeRun.input`、`activeRun.text` 和输入资产合并进 transcript，并保持打断按钮可用。
+  - Team Console API adapter 新增 scoped `GET /v1/agents/:agentId/chat/events?conversationId=...&afterEventCursor=...` SSE 订阅，按 active run cursor 续接恢复流。
+  - terminal `done` / `error` / `interrupted` 事件统一清理 pending/recovery 状态，并刷新 scoped state/context。
+  - 收起 Focus、切换 Agent 或切换 conversation 后继续使用 generation 防护，旧恢复流事件不会污染当前 transcript。
+- **影响范围**: `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/team-api.test.ts`, `docs/change-log.md`
+- **测试**: 本轮最终验证见交付报告。
+- **边界**: 未改 `src/team/**`、`src/ui/team-page.ts`、`/playground/team` 或主项目 `/playground` 源码；未实现 WorkUnit / Plan 编排、后台任务按钮、移动端专项、artifact preview、Agent clone / overlay。
+
+---
+
 ## 2026-05-24 — Team Console Agent Focus 真实流式对话接线
 
 - **主题**: 将 Agent Focus Mode 接到真实 scoped Agent chat streaming / state / assets 链路，Mock 与 Live 共享同一 UI 状态机。
