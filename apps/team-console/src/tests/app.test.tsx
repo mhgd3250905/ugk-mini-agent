@@ -782,7 +782,7 @@ describe("App", () => {
 
   it("reuses a focused agent conversation id across chat turns", async () => {
     const streamSpy = vi.spyOn(MockTeamApi.prototype, "streamAgentMessage")
-      .mockImplementationOnce(async (_agentId, request, onEvent) => {
+      .mockImplementationOnce(async (_agentId, _request, onEvent) => {
         onEvent({ type: "run_started", conversationId: "conv_main_1", runId: "run_1" });
         onEvent({ type: "done", conversationId: "conv_main_1", runId: "run_1", text: "第一轮回复" });
       })
@@ -1047,6 +1047,7 @@ describe("App", () => {
 
   it("vite proxy includes the scoped agent API", () => {
     const config = readFileSync("vite.config.ts", "utf8");
+    expect(config).toContain('"/v1/team"');
     expect(config).toContain('"/v1/agents"');
     expect(config).toContain('"/v1/assets"');
     expect(config).not.toContain('"/v1/conns"');
@@ -1061,6 +1062,9 @@ describe("App", () => {
     expect(readme).toContain("Agent workspace");
     expect(readme).toContain("/v1/agents");
     expect(readme).toContain("/v1/agents/:agentId/chat");
+    expect(readme).toContain("/v1/agents/:agentId/chat/stream");
+    expect(readme).toContain("/v1/agents/:agentId/chat/state");
+    expect(readme).toContain("/v1/agents/:agentId/chat/history");
     expect(readme).toContain("conversationId");
     expect(readme).toContain("拖拽只改变 Team Console 画布引用位置");
     expect(readme).toContain("Focus Mode 是特殊 Agent 对话界面");
@@ -1068,5 +1072,13 @@ describe("App", () => {
     expect(readme).toContain("Focus 顶部保留新会话、文件库和上下文使用量入口");
     expect(readme).toContain("暂不显示后台任务和 Team Runtime 入口");
     expect(readme).toContain("文件上传与文件库在 Live 模式接 `/v1/assets`");
+    expect(readme).not.toContain("当前聊天仍是非 stream scoped chat");
+
+    const runtimeDoc = readFileSync("../../docs/team-runtime.md", "utf8");
+    expect(runtimeDoc).toContain("Live scoped chat 通过 `/v1/agents/:agentId/chat/stream`");
+    expect(runtimeDoc).toContain("通过 `/v1/agents/:agentId/chat/state` 恢复当前会话状态");
+    expect(runtimeDoc).toContain("文件库和上传走 `/v1/assets`");
+    expect(runtimeDoc).toContain("仍不恢复后台任务或 Team Runtime 入口");
+    expect(runtimeDoc).toContain("仍不落地 WorkUnit / Plan 编排");
   });
 });

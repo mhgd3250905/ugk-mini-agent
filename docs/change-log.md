@@ -12,19 +12,19 @@
 
 ---
 
-## 2026-05-24 — Team Console Agent Focus 对话工作台入口补齐
+## 2026-05-24 — Team Console Agent Focus 真实流式对话接线
 
-- **主题**: 将 Agent Focus Mode 从画布小聊天面板补齐为固定 Agent 的主对话替代入口。
+- **主题**: 将 Agent Focus Mode 接到真实 scoped Agent chat streaming / state / assets 链路，Mock 与 Live 共享同一 UI 状态机。
 - **变更内容**:
-  - Focus Mode 下隐藏普通 Execution Atlas world layer、其他 Agent、runtime nodes、links、evidence、添加 Agent 入口和缩放工具，只渲染当前选中 Agent 卡片与下方大对话工作区。
-  - 修复 Focus 中点击其他 Agent 会切换的问题；Focus 只能通过“收起”退出，退出后恢复进入前的 viewport 和普通画布。
-  - Focus 顶部保留新会话、文件库和上下文使用量入口，隐藏 Agent switcher / Agent 切换按钮；后台任务和 Team Runtime 入口暂不显示，避免在 Agent 对话场景里扩散额外工作台功能。
-  - Focus composer 移除可见 `Shift+Enter 换行` 提示，补齐左侧文件选择、已选文件展示 / 移除、上传中状态、发送和运行中打断入口。
-  - 文件-only 发送会补默认请求文案，避免向真实 scoped chat 接口发送空 `message`。
-  - Live API 增加 scoped conversation、status、interrupt、`assetRefs` 和 `/v1/assets` 文件库 / 上传接线；Vite proxy 只保留当前 Agent 对话必需入口。
-- **影响范围**: `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/app/app.css`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/team-api.test.ts`, `apps/team-console/vite.config.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+  - Team Console API adapter 增加 scoped conversation catalog/current/state、stream、queue、status、interrupt 和 asset upload/list 入口；stream SSE 解析复用 `run_started`、`text_delta`、`done`、`error`、`interrupted` 与 `queue_updated` 事件。
+  - Focus 进入时读取 `/v1/agents/:agentId/chat/conversations` 与 `/v1/agents/:agentId/chat/state`，按 `agentId + conversationId` 隔离 transcript，避免 collapse/refocus 或切换 Agent 时串线。
+  - 发送改走 `/v1/agents/:agentId/chat/stream`；运行中再次发送走 `/v1/agents/:agentId/chat/queue`；打断走 `/v1/agents/:agentId/chat/interrupt`。
+  - 文件库和上传继续走 `/v1/assets`，上传在已有 scoped conversation 后携带 `conversationId`；history / optimistic user message 会展示 `assetRefs` 附件元数据；文件-only 发送保留默认请求文案，且 UI 在超过 20 个已选资产前拦截。
+  - MockTeamApi 增加 deterministic conversation store、stream lifecycle、queue 和 interrupt 行为，让 Mock 覆盖 Live 的同一路状态迁移。
+  - README、Team Runtime 文档和 Vite proxy 口径同步为 `/v1/team`、`/v1/agents`、`/v1/assets` 三类必要入口。
+- **影响范围**: `apps/team-console/src/api/agent-chat-sse.ts`, `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/app/app.css`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/team-api.test.ts`, `apps/team-console/vite.config.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
 - **测试**: 本轮最终验证见交付报告。
-- **边界**: 未改 `src/team/**`、`src/ui/team-page.ts`、`/playground/team`、主项目 `/playground` 源码或 Agent 后端行为；未实现 WorkUnit / Plan 编排、Agent clone / instance / overlay / 画布局部技能安装、移动端专项、stream/event stream 或 artifact preview。打断按钮在没有 scoped `conversationId` 前保持禁用。
+- **边界**: 未改 `src/team/**`、`src/ui/team-page.ts`、`/playground/team` 或主项目 `/playground` 源码；未恢复后台任务或 Team Runtime 按钮；未实现 WorkUnit / Plan 编排、Agent clone / instance / overlay / 画布局部技能安装、移动端专项或 artifact preview。
 
 ---
 
