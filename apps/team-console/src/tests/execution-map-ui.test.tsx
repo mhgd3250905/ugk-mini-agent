@@ -2,11 +2,12 @@ import { useState } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
-import { ExecutionMap } from "../graph/ExecutionMap";
+import { ExecutionMap, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { App } from "../app/App";
 import {
   ALL_FIXTURES,
   MockTeamApi,
+  mockTeamTasks,
   makeSequentialPlan,
   makeSequentialRun,
   makeFailedRun,
@@ -221,6 +222,65 @@ describe("ExecutionMap UI", () => {
 
     expect(screen.getByRole("button", { name: /执行运行/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Research vendor B/ })).toBeInTheDocument();
+  });
+
+  it("renders canvas Task cards with leader worker and checker agents", () => {
+    const task = mockTeamTasks[0]!;
+    const taskNode: AtlasTaskNode = {
+      nodeId: `task-node-${task.taskId}`,
+      kind: "canvas-task",
+      taskId: task.taskId,
+      position: { x: 280, y: 180 },
+    };
+
+    render(
+      <ExecutionMap
+        selectedTaskId={null}
+        onSelectTask={() => {}}
+        taskNodes={[taskNode]}
+        tasksById={new Map([[task.taskId, task]])}
+        agentsById={new Map([
+          ["main", { agentId: "main", name: "主 Agent", description: "默认" }],
+          ["search", { agentId: "search", name: "搜索 Agent", description: "搜索" }],
+        ])}
+      />,
+    );
+
+    const node = screen.getByRole("button", { name: /调查 Medtrum 云资产/ });
+    expect(node).toBeInTheDocument();
+    expect(within(node).getByText("Task")).toBeInTheDocument();
+    expect(within(node).getByText("leader: 主 Agent")).toBeInTheDocument();
+    expect(within(node).getByText("worker: 搜索 Agent")).toBeInTheDocument();
+    expect(within(node).getByText("checker: 主 Agent")).toBeInTheDocument();
+  });
+
+  it("calls onSelectCanvasTask when clicking a canvas Task card", () => {
+    const task = mockTeamTasks[0]!;
+    const taskNode: AtlasTaskNode = {
+      nodeId: `task-node-${task.taskId}`,
+      kind: "canvas-task",
+      taskId: task.taskId,
+      position: { x: 280, y: 180 },
+    };
+    let selected: AtlasTaskNode | null = null;
+
+    render(
+      <ExecutionMap
+        selectedTaskId={null}
+        onSelectTask={() => {}}
+        taskNodes={[taskNode]}
+        tasksById={new Map([[task.taskId, task]])}
+        agentsById={new Map([
+          ["main", { agentId: "main", name: "主 Agent", description: "默认" }],
+          ["search", { agentId: "search", name: "搜索 Agent", description: "搜索" }],
+        ])}
+        onSelectCanvasTask={(node) => { selected = node; }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /调查 Medtrum 云资产/ }));
+
+    expect(selected?.taskId).toBe("task_research_medtrum");
   });
 
   it("does not render inline detail inside selected task node", () => {

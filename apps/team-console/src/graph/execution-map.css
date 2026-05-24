@@ -800,6 +800,53 @@
   color: var(--secondary);
 }
 
+.emap-canvas-task-node {
+  border-color: rgba(255, 205, 120, 0.36);
+  background:
+    linear-gradient(180deg, rgba(255, 190, 96, 0.11), transparent 42%),
+    var(--surface-raised);
+  cursor: grab;
+  touch-action: none;
+}
+
+.emap-canvas-task-node:active {
+  cursor: grabbing;
+}
+
+.emap-canvas-task-node .emap-node-status-bar {
+  background: rgb(255, 190, 96);
+}
+
+.emap-canvas-task-node .emap-node-content {
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 9px 10px;
+}
+
+.emap-canvas-task-node .emap-node-body {
+  gap: 4px;
+}
+
+.emap-canvas-task-node.status-ready .emap-node-state-pill {
+  color: rgb(96, 255, 190);
+  border-color: rgba(96, 255, 190, 0.24);
+  background: rgba(96, 255, 190, 0.08);
+}
+
+.emap-canvas-task-node.status-drafting .emap-node-state-pill {
+  color: rgb(255, 214, 128);
+  border-color: rgba(255, 214, 128, 0.28);
+  background: rgba(255, 214, 128, 0.09);
+}
+
+.emap-canvas-task-node.status-locked {
+  opacity: 0.92;
+}
+
+.emap-canvas-task-node.status-archived {
+  opacity: 0.62;
+}
+
 .emap-agent-node {
   border-color: rgba(121, 216, 208, 0.42);
   background:
