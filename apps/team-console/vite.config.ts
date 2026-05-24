@@ -16,6 +16,10 @@ export default defineConfig({
         target: teamApiTarget,
         changeOrigin: true,
       },
+      "/v1/assets": {
+        target: teamApiTarget,
+        changeOrigin: true,
+      },
     },
   },
   resolve: {

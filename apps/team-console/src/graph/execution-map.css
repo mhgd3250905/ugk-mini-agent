@@ -42,6 +42,11 @@
   will-change: transform;
 }
 
+.execution-map-scroll.is-hidden {
+  pointer-events: none;
+  visibility: hidden;
+}
+
 .execution-map-toolbar {
   position: absolute;
   top: 12px;
@@ -716,11 +721,6 @@
   white-space: nowrap;
 }
 
-.agent-atlas-chat-panel {
-  position: absolute;
-  z-index: 3;
-}
-
 @media (max-width: 720px) {
   .execution-map-container,
   .execution-map-scroll {
@@ -801,12 +801,4 @@
     margin-bottom: 8px;
   }
 
-  .agent-atlas-chat-panel {
-    position: relative;
-    left: auto !important;
-    top: auto !important;
-    width: 100% !important;
-    min-height: auto !important;
-    margin-bottom: 8px;
-  }
 }

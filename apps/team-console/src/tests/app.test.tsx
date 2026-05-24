@@ -111,8 +111,12 @@ describe("App", () => {
     expect(within(atlasNodes).getAllByText("main")).toHaveLength(1);
   });
 
-  it("focuses an agent card above a chat panel and restores the canvas", async () => {
+  it("renders an isolated focused agent workspace and restores the canvas", async () => {
     const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "顺序 run" }));
+    expect(screen.getByText("执行运行")).toBeInTheDocument();
+    expect(screen.getByText("Research vendor A")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
@@ -130,23 +134,157 @@ describe("App", () => {
     expect(atlas).toHaveAttribute("data-agent-focus", "main");
     expect(stage.style.transform).not.toBe(initialTransform);
     expect(stage.style.transform).toContain("scale(1.08)");
-    expect(screen.getByText("Agent Chat Panel")).toBeInTheDocument();
-    expect(screen.getByText("主 Agent / main")).toBeInTheDocument();
-    expect(within(atlas).getByText("搜索 Agent")).toBeInTheDocument();
-    expect(atlas.querySelectorAll(".agent-chat-panel")).toHaveLength(1);
+    expect(stage).toHaveAttribute("aria-hidden", "true");
 
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /搜索 Agent/ }));
+    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement | null;
+    expect(focusWorkspace).toBeTruthy();
+    expect(focusWorkspace?.querySelector(".agent-focus-chat-stage")).toBeTruthy();
+    expect(focusWorkspace?.querySelector(".agent-focus-command-deck")).toBeTruthy();
+    expect(focusWorkspace?.querySelector(".agent-focus-composer")).toBeTruthy();
+    expect(within(focusWorkspace!).getByText("主 Agent")).toBeInTheDocument();
+    expect(within(focusWorkspace!).getByText("主 Agent / main")).toBeInTheDocument();
+    expect(within(focusWorkspace!).getByText("UGK CLAW")).toBeInTheDocument();
+    expect(focusWorkspace?.querySelector(".agent-switcher")).toBeNull();
 
-    expect(atlas).toHaveAttribute("data-agent-focus", "search");
-    expect(screen.getByText("搜索 Agent / search")).toBeInTheDocument();
-    expect(atlas.querySelectorAll(".agent-chat-panel")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /搜索 Agent/ })).toBeNull();
+    expect(screen.queryByText("搜索 Agent / search")).toBeNull();
+    expect(screen.queryByText("执行运行")).toBeNull();
+    expect(screen.queryByText("Research vendor A")).toBeNull();
+
+    fireEvent.click(focusWorkspace!);
+    expect(atlas).toHaveAttribute("data-agent-focus", "main");
+    expect(screen.queryByText("搜索 Agent / search")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "收起" }));
 
     expect(atlas).toHaveAttribute("data-agent-focus", "none");
     expect(stage.style.transform).toBe(initialTransform);
-    expect(screen.queryByText("Agent Chat Panel")).toBeNull();
+    expect(stage).not.toHaveAttribute("aria-hidden", "true");
+    expect(screen.queryByText("主 Agent / main")).toBeNull();
     expect(atlas.querySelectorAll(".emap-agent-node")).toHaveLength(2);
+    expect(screen.getByText("执行运行")).toBeInTheDocument();
+    expect(screen.getByText("Research vendor A")).toBeInTheDocument();
+  });
+
+  it("renders focus topbar entries without the agent switcher or composer shortcut hint", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+
+    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement | null;
+    expect(focusWorkspace).toBeTruthy();
+    const focusTopbar = within(focusWorkspace!).getByLabelText("Agent Focus topbar");
+
+    expect(within(focusTopbar).getByRole("button", { name: "新会话" })).toBeInTheDocument();
+    expect(within(focusTopbar).getByRole("button", { name: "文件库" })).toBeInTheDocument();
+    expect(within(focusTopbar).queryByRole("button", { name: "后台任务" })).toBeNull();
+    expect(within(focusTopbar).queryByRole("link", { name: "Team Runtime" })).toBeNull();
+    expect(within(focusTopbar).getByRole("button", { name: /上下文使用/ })).toBeInTheDocument();
+    expect(within(focusTopbar).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "0");
+    expect(focusWorkspace!.querySelector(".agent-switcher")).toBeNull();
+    expect(within(focusWorkspace!).queryByRole("button", { name: /添加 Agent|打开 Agent 页面/ })).toBeNull();
+    expect(within(focusWorkspace!).queryByText("Shift+Enter 换行")).toBeNull();
+  });
+
+  it("supports focus composer file selection, selected file removal, and file library reuse", async () => {
+    const uploadSpy = vi.spyOn(
+      MockTeamApi.prototype as unknown as {
+        uploadFilesAsAssets(files: File[], conversationId?: string): Promise<Array<{
+          assetId: string;
+          fileName: string;
+          mimeType: string;
+          sizeBytes: number;
+          kind: "text" | "binary" | "metadata";
+        }>>;
+      },
+      "uploadFilesAsAssets",
+    ).mockImplementation(async (files: File[]) => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const file = files[0];
+      return [{
+        assetId: "mock-upload-brief",
+        fileName: file.name,
+        mimeType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        kind: "text",
+      }];
+    });
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+
+    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement;
+    const fileButton = within(focusWorkspace).getByRole("button", { name: "选择文件" });
+    const fileInput = focusWorkspace.querySelector('input[type="file"][multiple]') as HTMLInputElement | null;
+    expect(fileButton).toBeInTheDocument();
+    expect(fileInput).toBeTruthy();
+
+    const file = new File(["hello"], "brief.md", { type: "text/markdown" });
+    fireEvent.change(fileInput!, { target: { files: [file] } });
+    expect(within(focusWorkspace).getByText("上传中")).toBeInTheDocument();
+    expect(await within(focusWorkspace).findByText("brief.md")).toBeInTheDocument();
+    expect(uploadSpy).toHaveBeenCalledWith([file], undefined);
+
+    fireEvent.click(within(focusWorkspace).getByRole("button", { name: "移除 brief.md" }));
+    expect(within(focusWorkspace).queryByText("brief.md")).toBeNull();
+
+    fireEvent.click(within(focusWorkspace).getByRole("button", { name: "文件库" }));
+    const library = await within(focusWorkspace).findByRole("dialog", { name: "文件库" });
+    expect(within(library).getByText("mock-reference.md")).toBeInTheDocument();
+
+    fireEvent.click(within(library).getByRole("button", { name: "复用 mock-reference.md" }));
+    expect(within(focusWorkspace).getByText("mock-reference.md")).toBeInTheDocument();
+  });
+
+  it("sends selected focus composer asset refs with the fixed agent chat request", async () => {
+    const sendSpy = vi.spyOn(MockTeamApi.prototype, "sendAgentMessage");
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+
+    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement;
+    fireEvent.click(within(focusWorkspace).getByRole("button", { name: "文件库" }));
+    const library = await within(focusWorkspace).findByRole("dialog", { name: "文件库" });
+    fireEvent.click(within(library).getByRole("button", { name: "复用 mock-reference.md" }));
+
+    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "请结合附件总结" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => expect(sendSpy).toHaveBeenCalledWith(
+      "main",
+      "请结合附件总结",
+      undefined,
+      ["mock-reference-asset"],
+    ));
+  });
+
+  it("uses a non-empty default message when sending only selected focus assets", async () => {
+    const sendSpy = vi.spyOn(MockTeamApi.prototype, "sendAgentMessage");
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+
+    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement;
+    fireEvent.click(within(focusWorkspace).getByRole("button", { name: "文件库" }));
+    const library = await within(focusWorkspace).findByRole("dialog", { name: "文件库" });
+    fireEvent.click(within(library).getByRole("button", { name: "复用 mock-reference.md" }));
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => expect(sendSpy).toHaveBeenCalledWith(
+      "main",
+      "请结合我引用的资产一起处理",
+      undefined,
+      ["mock-reference-asset"],
+    ));
+    expect(await within(focusWorkspace).findByText("请结合我引用的资产一起处理")).toBeInTheDocument();
   });
 
   it("locks atlas pan and zoom while an agent is focused and restores free mode after collapse", async () => {
@@ -162,15 +300,15 @@ describe("App", () => {
 
     const focusedTransform = stage.style.transform;
     expect(atlas).toHaveAttribute("data-interaction-mode", "locked");
-    expect(screen.getByRole("button", { name: "放大" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "缩小" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "重置视图" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "添加 Agent" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "放大" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "缩小" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "重置视图" })).toBeNull();
 
     fireEvent.wheel(atlas, { deltaY: -120, clientX: 120, clientY: 120 });
     firePointer(atlas, "pointerdown", { pointerId: 1, clientX: 10, clientY: 10 });
     firePointer(atlas, "pointermove", { pointerId: 1, clientX: 70, clientY: 88 });
     firePointer(atlas, "pointerup", { pointerId: 1, clientX: 70, clientY: 88, buttons: 0 });
-    fireEvent.click(screen.getByRole("button", { name: "放大" }));
 
     expect(stage.style.transform).toBe(focusedTransform);
 
@@ -211,7 +349,7 @@ describe("App", () => {
     expect(Number.parseFloat(agentNode.style.left)).toBeCloseTo(initialLeft + 50, 4);
     expect(Number.parseFloat(agentNode.style.top)).toBeCloseTo(initialTop + 30, 4);
     expect(atlas).toHaveAttribute("data-agent-focus", "none");
-    expect(screen.queryByText("Agent Chat Panel")).toBeNull();
+    expect(container.querySelector(".agent-focus-workspace")).toBeNull();
   });
 
   it("allows a later click to focus an agent after a drag gesture", async () => {
@@ -230,10 +368,11 @@ describe("App", () => {
     fireEvent.click(agentNode);
 
     expect(getAtlas(container)).toHaveAttribute("data-agent-focus", "main");
-    expect(screen.getByText("Agent Chat Panel")).toBeInTheDocument();
+    expect(container.querySelector(".agent-focus-workspace")).toBeTruthy();
+    expect(screen.getByText("主 Agent / main")).toBeInTheDocument();
   });
 
-  it("does not move agent cards while focus mode is locked", async () => {
+  it("does not expose movable agent cards while focus mode is locked", async () => {
     const { container } = render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
@@ -242,16 +381,9 @@ describe("App", () => {
     const agentNode = within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }) as HTMLElement;
     fireEvent.click(agentNode);
 
-    const focusedLeft = agentNode.style.left;
-    const focusedTop = agentNode.style.top;
     expect(getAtlas(container)).toHaveAttribute("data-interaction-mode", "locked");
-
-    firePointer(agentNode, "pointerdown", { pointerId: 8, clientX: 100, clientY: 100 });
-    firePointer(agentNode, "pointermove", { pointerId: 8, clientX: 180, clientY: 144 });
-    firePointer(agentNode, "pointerup", { pointerId: 8, clientX: 180, clientY: 144, buttons: 0 });
-
-    expect(agentNode.style.left).toBe(focusedLeft);
-    expect(agentNode.style.top).toBe(focusedTop);
+    expect(within(getAtlas(container)).queryByRole("button", { name: /主 Agent/ })).toBeNull();
+    expect(screen.getByText("主 Agent / main")).toBeInTheDocument();
   });
 
   it("sends a message from the focused agent panel", async () => {
@@ -268,6 +400,27 @@ describe("App", () => {
     expect(screen.getByText("请总结画布状态")).toBeInTheDocument();
     await waitFor(() => expect(sendSpy).toHaveBeenCalledWith("main", "请总结画布状态"));
     expect(await screen.findByText("[main] mock reply: 请总结画布状态")).toBeInTheDocument();
+  });
+
+  it("starts a new scoped conversation from the focus topbar", async () => {
+    const createSpy = vi.spyOn(
+      MockTeamApi.prototype as unknown as {
+        createAgentConversation(agentId: string): Promise<{ conversationId: string; currentConversationId: string; created: boolean }>;
+      },
+      "createAgentConversation",
+    ).mockResolvedValue({ conversationId: "mock-main-new", currentConversationId: "mock-main-new", created: true });
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+
+    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "新会话" }));
+
+    await waitFor(() => expect(createSpy).toHaveBeenCalledWith("main"));
+    expect(screen.getByLabelText("Agent message")).toHaveValue("");
+    expect(screen.getByText("当前 Agent 会话尚未开始。")).toBeInTheDocument();
   });
 
   it("reuses a focused agent conversation id across chat turns", async () => {
@@ -455,6 +608,10 @@ describe("App", () => {
   it("vite proxy includes the scoped agent API", () => {
     const config = readFileSync("vite.config.ts", "utf8");
     expect(config).toContain('"/v1/agents"');
+    expect(config).toContain('"/v1/assets"');
+    expect(config).not.toContain('"/v1/conns"');
+    expect(config).not.toContain('"/v1/activity"');
+    expect(config).not.toContain('"/playground"');
     expect(config).toContain("teamApiTarget");
   });
 
@@ -466,6 +623,10 @@ describe("App", () => {
     expect(readme).toContain("/v1/agents/:agentId/chat");
     expect(readme).toContain("conversationId");
     expect(readme).toContain("拖拽只改变 Team Console 画布引用位置");
-    expect(readme).toContain("Focus Mode 是固定锁定视窗");
+    expect(readme).toContain("Focus Mode 是特殊 Agent 对话界面");
+    expect(readme).toContain("transcript + composer");
+    expect(readme).toContain("Focus 顶部保留新会话、文件库和上下文使用量入口");
+    expect(readme).toContain("暂不显示后台任务和 Team Runtime 入口");
+    expect(readme).toContain("文件上传与文件库在 Live 模式接 `/v1/assets`");
   });
 });

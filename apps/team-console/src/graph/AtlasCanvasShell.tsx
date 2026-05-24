@@ -5,6 +5,8 @@ export type AtlasInteractionMode = "free" | "locked";
 
 interface AtlasCanvasShellProps {
   children: ReactNode;
+  overlay?: ReactNode;
+  hideWorld?: boolean;
   viewport?: AtlasViewport;
   defaultViewport?: AtlasViewport;
   onViewportChange?: (viewport: AtlasViewport) => void;
@@ -36,7 +38,7 @@ function formatCanvasNumber(value: number): string {
 
 function canStartCanvasPan(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return true;
-  return !target.closest(".emap-node, .emap-evidence-node, .emap-artifact-preview, .execution-map-toolbar, .agent-chat-panel, button, select, input, textarea, a, iframe, summary, details");
+  return !target.closest(".emap-node, .emap-evidence-node, .emap-artifact-preview, .execution-map-toolbar, .agent-focus-workspace, button, select, input, textarea, a, iframe, summary, details");
 }
 
 function pointerPoint(event: PointerEvent<HTMLDivElement>): { x: number; y: number } {
@@ -46,7 +48,7 @@ function pointerPoint(event: PointerEvent<HTMLDivElement>): { x: number; y: numb
   return { x, y };
 }
 
-export function AtlasCanvasShell({ children, viewport, defaultViewport = DEFAULT_VIEWPORT, onViewportChange, toolbarStart, agentFocusId, interactionMode = "free" }: AtlasCanvasShellProps) {
+export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewport, defaultViewport = DEFAULT_VIEWPORT, onViewportChange, toolbarStart, agentFocusId, interactionMode = "free" }: AtlasCanvasShellProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const dragOriginRef = useRef<CanvasDragOrigin | null>(null);
   const [internalViewport, setInternalViewport] = useState<AtlasViewport>(defaultViewport);
@@ -164,16 +166,23 @@ export function AtlasCanvasShell({ children, viewport, defaultViewport = DEFAULT
       onPointerUp={endCanvasPan}
       onPointerCancel={endCanvasPan}
     >
-      <div className="execution-map-toolbar" aria-label="视图工具">
-        {toolbarStart}
-        <button type="button" onClick={zoomIn} disabled={isLocked}>放大</button>
-        <button type="button" onClick={zoomOut} disabled={isLocked}>缩小</button>
-        <button type="button" onClick={resetView} disabled={isLocked}>重置视图</button>
-        <span className="execution-map-zoom">{zoomPercent}</span>
+      {!isLocked && (
+        <div className="execution-map-toolbar" aria-label="视图工具">
+          {toolbarStart}
+          <button type="button" onClick={zoomIn}>放大</button>
+          <button type="button" onClick={zoomOut}>缩小</button>
+          <button type="button" onClick={resetView}>重置视图</button>
+          <span className="execution-map-zoom">{zoomPercent}</span>
+        </div>
+      )}
+      <div
+        className={`execution-map-scroll ${hideWorld ? "is-hidden" : ""}`}
+        style={{ transform: canvasTransform }}
+        aria-hidden={hideWorld ? "true" : undefined}
+      >
+        {hideWorld ? null : children}
       </div>
-      <div className="execution-map-scroll" style={{ transform: canvasTransform }}>
-        {children}
-      </div>
+      {overlay}
     </div>
   );
 }

@@ -1,5 +1,9 @@
 import type {
+  AgentAssetSummary,
   AgentChatResponse,
+  AgentChatStatus,
+  AgentConversationResponse,
+  AgentInterruptResponse,
   AgentSummary,
   TeamPlan,
   RunDetail,
@@ -829,6 +833,30 @@ export const ALL_FIXTURES: FixtureEntry[] = [
   { id: "real-success-foreach", label: "真实 run snapshot 2", plan: makeRealSuccessForEachPlan(), run: makeRealSuccessForEachRun() },
 ];
 
+const MOCK_CONTEXT_USAGE: AgentChatStatus["contextUsage"] = {
+  provider: "zhipu-glm",
+  model: "glm-5.1",
+  currentTokens: 0,
+  contextWindow: 128000,
+  reserveTokens: 16384,
+  maxResponseTokens: 16384,
+  availableTokens: 111616,
+  percent: 0,
+  status: "safe",
+  mode: "estimate",
+};
+
+const MOCK_ASSETS: AgentAssetSummary[] = [
+  {
+    assetId: "mock-reference-asset",
+    fileName: "mock-reference.md",
+    mimeType: "text/markdown",
+    sizeBytes: 1024,
+    kind: "text",
+    createdAt: "2026-05-24T00:00:00.000Z",
+  },
+];
+
 export class MockTeamApi {
   async listPlans(): Promise<TeamPlan[]> {
     return ALL_FIXTURES.map((f) => f.plan);
@@ -858,10 +886,53 @@ export class MockTeamApi {
     return MOCK_AGENTS;
   }
 
-  async sendAgentMessage(agentId: string, message: string, _conversationId?: string): Promise<AgentChatResponse> {
+  async createAgentConversation(agentId: string): Promise<AgentConversationResponse> {
+    const conversationId = `mock-${agentId}-new`;
+    return {
+      conversationId,
+      currentConversationId: conversationId,
+      created: true,
+    };
+  }
+
+  async getAgentChatStatus(agentId: string, conversationId: string): Promise<AgentChatStatus> {
+    return {
+      conversationId: conversationId || `mock-${agentId}`,
+      running: false,
+      contextUsage: MOCK_CONTEXT_USAGE,
+    };
+  }
+
+  async interruptAgentChat(agentId: string, conversationId: string): Promise<AgentInterruptResponse> {
+    return {
+      conversationId: conversationId || `mock-${agentId}`,
+      interrupted: true,
+    };
+  }
+
+  async sendAgentMessage(agentId: string, message: string, _conversationId?: string, _assetRefs?: string[]): Promise<AgentChatResponse> {
+    if (!message.trim()) {
+      throw { message: 'Field "message" must be a non-empty string' };
+    }
     return {
       conversationId: `mock-${agentId}`,
       text: `[${agentId}] mock reply: ${message}`,
     };
   }
+
+  async listAssets(): Promise<AgentAssetSummary[]> {
+    return MOCK_ASSETS;
+  }
+
+  async uploadFilesAsAssets(files: File[]): Promise<AgentAssetSummary[]> {
+    return files.map((file, index) => ({
+      assetId: `mock-upload-${index}-${file.name}`,
+      fileName: file.name,
+      mimeType: file.type || "application/octet-stream",
+      sizeBytes: file.size,
+      kind: file.type.startsWith("text/") ? "text" : "binary",
+      createdAt: "2026-05-24T00:00:00.000Z",
+    }));
+  }
+
 }

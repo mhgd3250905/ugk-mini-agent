@@ -225,6 +225,120 @@ describe("LiveTeamApi", () => {
       body: JSON.stringify({ message: "继续刚才的问题", conversationId: "conv_1" }),
     });
   });
+
+  it("sendAgentMessage sends selected asset refs when present", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      conversationId: "conv_1",
+      text: "收到附件",
+    }), { status: 200 }));
+
+    await (api as unknown as {
+      sendAgentMessage(agentId: string, message: string, conversationId?: string, assetRefs?: string[]): Promise<{ conversationId?: string; text: string }>;
+    }).sendAgentMessage("main", "看附件", undefined, ["asset_1"]);
+
+    expect(fetch).toHaveBeenCalledWith("/v1/agents/main/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "看附件", assetRefs: ["asset_1"] }),
+    });
+  });
+
+  it("createAgentConversation posts to the scoped conversation endpoint", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      conversationId: "conv_new",
+      currentConversationId: "conv_new",
+      created: true,
+    }), { status: 200 }));
+
+    const response = await (api as unknown as {
+      createAgentConversation(agentId: string): Promise<{ conversationId: string; currentConversationId: string; created: boolean }>;
+    }).createAgentConversation("main");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/agents/main/chat/conversations", {
+      method: "POST",
+      headers: { accept: "application/json" },
+    });
+    expect(response.conversationId).toBe("conv_new");
+  });
+
+  it("getAgentChatStatus reads scoped run status", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      conversationId: "conv_1",
+      running: false,
+      contextUsage: {
+        provider: "zhipu-glm",
+        model: "glm-5.1",
+        currentTokens: 2048,
+        contextWindow: 128000,
+        reserveTokens: 16384,
+        maxResponseTokens: 16384,
+        availableTokens: 109568,
+        percent: 2,
+        status: "safe",
+        mode: "usage",
+      },
+    }), { status: 200 }));
+
+    await (api as unknown as {
+      getAgentChatStatus(agentId: string, conversationId: string): Promise<{ running: boolean }>;
+    }).getAgentChatStatus("main", "conv_1");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/agents/main/chat/status?conversationId=conv_1", {
+      method: "GET",
+      headers: { accept: "application/json" },
+    });
+  });
+
+  it("interruptAgentChat posts to the scoped interrupt endpoint", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      conversationId: "conv_1",
+      interrupted: true,
+    }), { status: 200 }));
+
+    await (api as unknown as {
+      interruptAgentChat(agentId: string, conversationId: string): Promise<{ interrupted: boolean }>;
+    }).interruptAgentChat("main", "conv_1");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/agents/main/chat/interrupt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversationId: "conv_1" }),
+    });
+  });
+
+  it("listAssets reads the reusable file library", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ assets: [] }), { status: 200 }));
+
+    await (api as unknown as { listAssets(limit?: number): Promise<unknown[]> }).listAssets(40);
+
+    expect(fetch).toHaveBeenCalledWith("/v1/assets?limit=40", {
+      method: "GET",
+      headers: { accept: "application/json" },
+    });
+  });
+
+  it("uploadFilesAsAssets posts multipart files to /v1/assets/upload", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ assets: [] }), { status: 200 }));
+    const file = new File(["hello"], "brief.md", { type: "text/markdown" });
+
+    await (api as unknown as { uploadFilesAsAssets(files: File[], conversationId?: string): Promise<unknown[]> }).uploadFilesAsAssets([file], "conv_1");
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe("/v1/assets/upload");
+    expect(init).toMatchObject({
+      method: "POST",
+      headers: { accept: "application/json" },
+    });
+    expect(init?.body).toBeInstanceOf(FormData);
+  });
+
 });
 
 describe("Fixtures coverage", () => {

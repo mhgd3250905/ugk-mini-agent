@@ -12,6 +12,22 @@
 
 ---
 
+## 2026-05-24 — Team Console Agent Focus 对话工作台入口补齐
+
+- **主题**: 将 Agent Focus Mode 从画布小聊天面板补齐为固定 Agent 的主对话替代入口。
+- **变更内容**:
+  - Focus Mode 下隐藏普通 Execution Atlas world layer、其他 Agent、runtime nodes、links、evidence、添加 Agent 入口和缩放工具，只渲染当前选中 Agent 卡片与下方大对话工作区。
+  - 修复 Focus 中点击其他 Agent 会切换的问题；Focus 只能通过“收起”退出，退出后恢复进入前的 viewport 和普通画布。
+  - Focus 顶部保留新会话、文件库和上下文使用量入口，隐藏 Agent switcher / Agent 切换按钮；后台任务和 Team Runtime 入口暂不显示，避免在 Agent 对话场景里扩散额外工作台功能。
+  - Focus composer 移除可见 `Shift+Enter 换行` 提示，补齐左侧文件选择、已选文件展示 / 移除、上传中状态、发送和运行中打断入口。
+  - 文件-only 发送会补默认请求文案，避免向真实 scoped chat 接口发送空 `message`。
+  - Live API 增加 scoped conversation、status、interrupt、`assetRefs` 和 `/v1/assets` 文件库 / 上传接线；Vite proxy 只保留当前 Agent 对话必需入口。
+- **影响范围**: `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/app/app.css`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/team-api.test.ts`, `apps/team-console/vite.config.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **测试**: 本轮最终验证见交付报告。
+- **边界**: 未改 `src/team/**`、`src/ui/team-page.ts`、`/playground/team`、主项目 `/playground` 源码或 Agent 后端行为；未实现 WorkUnit / Plan 编排、Agent clone / instance / overlay / 画布局部技能安装、移动端专项、stream/event stream 或 artifact preview。打断按钮在没有 scoped `conversationId` 前保持禁用。
+
+---
+
 ## 2026-05-24 — Team Console Agent 拖拽与 Focus 锁定
 
 - **主题**: 收口 Agent Atlas 普通态拖拽和 Focus Mode 固定锁定视窗。

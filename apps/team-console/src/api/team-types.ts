@@ -191,9 +191,53 @@ export interface AgentChatMessage {
   text: string;
 }
 
+export type AgentAssetKind = "text" | "binary" | "metadata";
+
+export interface AgentAssetSummary {
+  assetId: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  kind: AgentAssetKind;
+  createdAt?: string;
+  downloadUrl?: string;
+}
+
 export interface AgentChatResponse {
   conversationId?: string;
   text: string;
+}
+
+export interface AgentConversationResponse {
+  conversationId: string;
+  currentConversationId: string;
+  created: boolean;
+  reason?: "running";
+}
+
+export interface AgentContextUsage {
+  provider: string;
+  model: string;
+  currentTokens: number;
+  contextWindow: number;
+  reserveTokens: number;
+  maxResponseTokens: number;
+  availableTokens: number;
+  percent: number;
+  status: "safe" | "caution" | "warning" | "danger";
+  mode: "usage" | "estimate";
+}
+
+export interface AgentChatStatus {
+  conversationId: string;
+  running: boolean;
+  contextUsage: AgentContextUsage;
+}
+
+export interface AgentInterruptResponse {
+  conversationId: string;
+  interrupted: boolean;
+  reason?: "not_running" | "abort_not_supported";
 }
 
 export interface TeamApiError {

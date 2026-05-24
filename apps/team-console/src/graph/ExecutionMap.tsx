@@ -33,7 +33,7 @@ interface ExecutionMapProps {
   onSelectAgent?: (node: AtlasAgentNode) => void;
   onMoveAgent?: (nodeId: string, position: { x: number; y: number }) => void;
   canMoveAgents?: boolean;
-  agentFocusPanel?: ReactNode;
+  agentFocusWorkspace?: ReactNode;
   viewport?: AtlasViewport;
   onViewportChange?: (viewport: AtlasViewport) => void;
   toolbarStart?: ReactNode;
@@ -55,9 +55,6 @@ const PREVIEW_W = 360;
 const PREVIEW_GAP = 40;
 const PREVIEW_FALLBACK_HEIGHT = 180;
 const AGENT_NODE_HEIGHT = 112;
-const AGENT_FOCUS_PANEL_WIDTH = 520;
-const AGENT_FOCUS_PANEL_HEIGHT = 300;
-const AGENT_FOCUS_PANEL_GAP = 18;
 const AGENT_DRAG_THRESHOLD = 4;
 type EvidenceKind = "result" | "error" | "attempt" | "progress" | "worker" | "checker" | "watcher";
 
@@ -370,7 +367,7 @@ export function ExecutionMap({
   onSelectAgent,
   onMoveAgent,
   canMoveAgents = true,
-  agentFocusPanel,
+  agentFocusWorkspace,
   viewport,
   onViewportChange,
   toolbarStart,
@@ -775,22 +772,13 @@ export function ExecutionMap({
   const focusedAgentNode = focusedAgentNodeId
     ? agentNodes.find((node) => node.nodeId === focusedAgentNodeId) ?? null
     : null;
-  const focusPanelPosition = focusedAgentNode && agentFocusPanel
-    ? {
-        x: focusedAgentNode.position.x,
-        y: focusedAgentNode.position.y + AGENT_NODE_HEIGHT + AGENT_FOCUS_PANEL_GAP,
-        width: AGENT_FOCUS_PANEL_WIDTH,
-        minHeight: AGENT_FOCUS_PANEL_HEIGHT,
-      }
-    : null;
-  const focusPanelRight = focusPanelPosition ? focusPanelPosition.x + focusPanelPosition.width : 0;
-  const svgWidth = Math.max(700, evidenceRight + 28, previewRight + 28, agentRight + 28, focusPanelRight + 28);
+  const isAgentFocusActive = Boolean(focusedAgentNode && agentFocusWorkspace);
+  const svgWidth = Math.max(700, evidenceRight + 28, previewRight + 28, agentRight + 28);
   const maxY = Math.max(
     ...Array.from(layout.nodePositions.values()).map((n) => n.y + n.height),
     ...evidenceLayout.positions.map((p) => p.y + p.height),
     evidenceLayout.preview ? evidenceLayout.preview.y + evidenceLayout.preview.height : 0,
     ...agentNodes.map((node) => node.position.y + AGENT_NODE_HEIGHT),
-    focusPanelPosition ? focusPanelPosition.y + focusPanelPosition.minHeight : 0,
     200,
   );
 
@@ -803,6 +791,8 @@ export function ExecutionMap({
       toolbarStart={toolbarStart}
       agentFocusId={focusedAgentNode?.agentId ?? null}
       interactionMode={interactionMode}
+      hideWorld={isAgentFocusActive}
+      overlay={isAgentFocusActive ? agentFocusWorkspace : null}
     >
         <svg
           className="execution-map-links"
@@ -894,20 +884,6 @@ export function ExecutionMap({
               </button>
             );
           })}
-
-          {focusPanelPosition && (
-            <div
-              className="agent-atlas-chat-panel"
-              style={{
-                left: focusPanelPosition.x,
-                top: focusPanelPosition.y,
-                width: focusPanelPosition.width,
-                minHeight: focusPanelPosition.minHeight,
-              }}
-            >
-              {agentFocusPanel}
-            </div>
-          )}
 
           {allNodes.flatMap((node) => {
             const pos = layout.nodePositions.get(node.nodeId);

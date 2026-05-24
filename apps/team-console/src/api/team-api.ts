@@ -1,6 +1,10 @@
 import type {
   AgentCatalogResponse,
+  AgentAssetSummary,
   AgentChatResponse,
+  AgentChatStatus,
+  AgentConversationResponse,
+  AgentInterruptResponse,
   AgentSummary,
   TeamPlan,
   RunDetail,
@@ -16,7 +20,12 @@ export interface TeamApiProvider {
   listAttempts(runId: string, taskId: string): Promise<TeamAttemptMetadata[]>;
   readAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string): Promise<string>;
   listAgents(): Promise<AgentSummary[]>;
-  sendAgentMessage(agentId: string, message: string, conversationId?: string): Promise<AgentChatResponse>;
+  createAgentConversation(agentId: string): Promise<AgentConversationResponse>;
+  getAgentChatStatus(agentId: string, conversationId: string): Promise<AgentChatStatus>;
+  interruptAgentChat(agentId: string, conversationId: string): Promise<AgentInterruptResponse>;
+  sendAgentMessage(agentId: string, message: string, conversationId?: string, assetRefs?: string[]): Promise<AgentChatResponse>;
+  listAssets(limit?: number): Promise<AgentAssetSummary[]>;
+  uploadFilesAsAssets(files: File[], conversationId?: string): Promise<AgentAssetSummary[]>;
 }
 
 function toApiError(error: unknown): TeamApiError {
@@ -99,9 +108,56 @@ export class LiveTeamApi implements TeamApiProvider {
     }
   }
 
-  async sendAgentMessage(agentId: string, message: string, conversationId?: string): Promise<AgentChatResponse> {
+  async createAgentConversation(agentId: string): Promise<AgentConversationResponse> {
     try {
-      const body = conversationId ? { message, conversationId } : { message };
+      const res = await fetch(`/v1/agents/${encodeURIComponent(agentId)}/chat/conversations`, {
+        method: "POST",
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) throw res;
+      return (await res.json()) as AgentConversationResponse;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async getAgentChatStatus(agentId: string, conversationId: string): Promise<AgentChatStatus> {
+    try {
+      const res = await fetch(
+        `/v1/agents/${encodeURIComponent(agentId)}/chat/status?conversationId=${encodeURIComponent(conversationId)}`,
+        {
+          method: "GET",
+          headers: { accept: "application/json" },
+        },
+      );
+      if (!res.ok) throw res;
+      return (await res.json()) as AgentChatStatus;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async interruptAgentChat(agentId: string, conversationId: string): Promise<AgentInterruptResponse> {
+    try {
+      const res = await fetch(`/v1/agents/${encodeURIComponent(agentId)}/chat/interrupt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId }),
+      });
+      if (!res.ok) throw res;
+      return (await res.json()) as AgentInterruptResponse;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async sendAgentMessage(agentId: string, message: string, conversationId?: string, assetRefs?: string[]): Promise<AgentChatResponse> {
+    try {
+      const body = {
+        message,
+        ...(conversationId ? { conversationId } : {}),
+        ...(assetRefs && assetRefs.length > 0 ? { assetRefs } : {}),
+      };
       const res = await fetch(`/v1/agents/${encodeURIComponent(agentId)}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -113,4 +169,42 @@ export class LiveTeamApi implements TeamApiProvider {
       throw toApiError(e);
     }
   }
+
+  async listAssets(limit = 40): Promise<AgentAssetSummary[]> {
+    try {
+      const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.round(limit) : 40;
+      const res = await fetch(`/v1/assets?limit=${encodeURIComponent(String(safeLimit))}`, {
+        method: "GET",
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) throw res;
+      const body = (await res.json()) as { assets?: AgentAssetSummary[] };
+      return Array.isArray(body.assets) ? body.assets : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async uploadFilesAsAssets(files: File[], conversationId?: string): Promise<AgentAssetSummary[]> {
+    try {
+      const formData = new FormData();
+      if (conversationId) {
+        formData.append("conversationId", conversationId);
+      }
+      for (const file of files) {
+        formData.append("files", file, file.name);
+      }
+      const res = await fetch("/v1/assets/upload", {
+        method: "POST",
+        headers: { accept: "application/json" },
+        body: formData,
+      });
+      if (!res.ok) throw res;
+      const body = (await res.json()) as { assets?: AgentAssetSummary[] };
+      return Array.isArray(body.assets) ? body.assets : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
 }
