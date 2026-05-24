@@ -1165,6 +1165,12 @@ describe("App", () => {
     expect(readme).toContain("/v1/team/tasks");
     expect(readme).toContain("/team-task");
     expect(readme).toContain("teamTaskId=<taskId>");
+    expect(readme).toContain("创建 Task");
+    expect(readme).toContain("Team Console 只打开 leader Agent iframe，不直接创建 Task");
+    expect(readme).toContain("teamTaskMode=create");
+    expect(readme).toContain("`/team-task` skill 调用 `POST /v1/team/tasks`");
+    expect(readme).toContain("手动点击“刷新 Task”");
+    expect(readme).toContain("关闭创建分支后会重新请求 `GET /v1/team/tasks`");
     expect(readme).toContain("Team Console 不再维护本地 transcript + composer");
     expect(readme).not.toContain("Focus Mode 是特殊 Agent 对话界面");
     expect(readme).not.toContain("文件上传与文件库在 Live 模式接 `/v1/assets`");
@@ -1187,6 +1193,11 @@ describe("App", () => {
     expect(runtimeDoc).toContain("Task 内部包含一个 WorkUnit");
     expect(runtimeDoc).toContain("leader Agent");
     expect(runtimeDoc).toContain("Team Console 不解析 iframe 聊天文本创建 Task");
+    expect(runtimeDoc).toContain("Team Canvas Task frontend workflow");
+    expect(runtimeDoc).toContain("teamTaskMode=create");
+    expect(runtimeDoc).toContain("teamTaskMode=edit");
+    expect(runtimeDoc).toContain("关闭创建分支后会重新请求 `GET /v1/team/tasks`");
+    expect(runtimeDoc).toContain("WorkUnit run 未实现");
     expect(runtimeDoc).not.toContain("Focus Mode 特殊 Agent 对话界面");
     expect(runtimeDoc).toContain("仍不落地 WorkUnit / Plan 编排");
   });

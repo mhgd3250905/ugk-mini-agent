@@ -59,7 +59,7 @@ Team Console shell 的 Live API 模式会真实请求：
 
 Agent 分支卡片不经 Vite proxy 打开 `/playground`，而是直接把 iframe 指向主服务的 `/playground?view=chat&agentId=<agentId>&embed=team-console`。主 `/playground` 负责读取 `agentId` URL hint、切到对应 Agent 并继续处理自己的路由、对话、文件库、后台任务等行为；`embed=team-console` 会把 iframe 顶部 Agent 标签固定为只读标识，关闭 hover 切换菜单和点击跳转，避免 iframe 内 Agent 切换污染其他分支或主页面的 active Agent 选择。
 
-Live API 模式默认进入干净的 `Agent workspace`，不会在刷新或重新进入时自动渲染历史 run。需要查看运行图时，点击顶部 live 运行图切换条里的“最新 Run”，页面会按 `createdAt` 选择最新 run，再用该 run 的 `planId` 匹配 plan 后渲染执行图。请求失败会在页面顶部显示错误，不会继续展示旧 mock 数据。
+Live API 模式默认进入干净的 `Agent workspace`，不会在刷新或重新进入时自动渲染历史 run。需要查看运行图时，点击顶部 live 运行图切换条里的“最新 Run”，页面会按 `createdAt` 选择最新 run，再用该 run 的 `planId` 匹配 plan 后渲染执行图。Agent workspace 工具栏支持手动点击“刷新 Task”重新请求 `GET /v1/team/tasks`；刷新中会禁用重复点击，失败只显示错误，不清空现有 Task 卡片。请求失败会在页面顶部显示错误，不会继续展示旧 mock 数据。
 
 ## Agent Atlas MVP
 
@@ -75,7 +75,9 @@ Agent 分支卡片内部是主项目 `/playground` 的 iframe，URL 形如 `/pla
 
 Task 内部包含一个 WorkUnit。Team Console preview 现在从 `GET /v1/team/tasks` 读取 Task catalog，Mock fixture 也提供 deterministic Task / WorkUnit 数据；Task 不是单任务 Plan，也不会从 iframe 聊天文本里临时拼出来。Task 卡片会展示 `leaderAgentId`、`workerAgentId` 和 `checkerAgentId` 对应的 Agent 名称，让用户在 Atlas 里先看清谁负责澄清、谁负责执行、谁负责验收。
 
-点击 Task 卡片会展开 leader Agent 的主 `/playground` iframe 分支，URL 形如 `/playground?view=chat&agentId=<leaderAgentId>&embed=team-console&teamTaskId=<taskId>`。`teamTaskId=<taskId>` 只是给主 `/playground` 和未来 `/team-task` 流程的上下文 hint；Team Console 不解析 iframe 聊天文本创建或更新 Task，不启动 Task run，也不实现 worker/checker 执行链路。
+点击 Task 卡片会展开 leader Agent 的主 `/playground` iframe 分支，URL 形如 `/playground?view=chat&agentId=<leaderAgentId>&embed=team-console&teamTaskId=<taskId>&teamTaskMode=edit`。`teamTaskId=<taskId>` 只是给主 `/playground` 和 `/team-task` 流程的上下文 hint；Team Console 不解析 iframe 聊天文本创建或更新 Task，不启动 Task run，也不实现 worker/checker 执行链路。
+
+Live API 工具栏的“创建 Task”会先展示当前 Agent catalog，让用户选择 leader Agent；选择后 Team Console 只打开 leader Agent iframe，不直接创建 Task。创建分支 URL 形如 `/playground?view=chat&agentId=<leaderAgentId>&embed=team-console&teamTaskMode=create`，不携带 `teamTaskId`。真正的创建由 iframe 内用户显式使用 `/team-task` skill 调用 `POST /v1/team/tasks` 完成；Team Console 不读 iframe 聊天文本、不替用户确认 JSON、不把 draft 写进本地状态。关闭创建分支后会重新请求 `GET /v1/team/tasks`，用于把 skill 创建成功后的 Task 卡片刷新回画布。
 
 Live API 模式下 Task 卡片拖动位置会写入浏览器 `localStorage` 并在刷新后恢复，但只保存 `taskId` 和画布坐标，不保存 WorkUnit 内容、`leaderAgentId`、`workerAgentId` 或 `checkerAgentId`。Task 定义始终以后端 `GET /v1/team/tasks` 返回为准；当前前端只做画布展示和 leader 分支打开。
 

@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-24 — Team Console Task 创建入口与刷新闭环
+
+- **主题**: 在独立 Team Console preview 中补齐 Task 创建入口、leader Agent iframe 打开方式和 `GET /v1/team/tasks` 刷新闭环。
+- **变更内容**:
+  - Live API Agent workspace 工具栏新增“创建 Task”和“刷新 Task”；创建入口只选择 leader Agent 并打开主 `/playground` iframe，不直接创建 Task。
+  - 已有 Task 分支 URL 携带 `teamTaskMode=edit` 和 `teamTaskId=<taskId>`；创建分支 URL 携带 `teamTaskMode=create`，不携带 `teamTaskId`。
+  - 手动刷新和关闭创建分支后都会重新请求 `GET /v1/team/tasks`；刷新中禁用重复点击，刷新失败保留当前 Task 卡片并显示错误。
+  - Live API 下 Task 卡片位置继续只保存 `taskId` 和画布坐标，不保存 WorkUnit 内容或 Agent 绑定。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未改主项目后端 `src/team/**`，未改 `.pi/skills/team-task-creator/**`，未实现 WorkUnit run、worker/checker 执行链路或 iframe 聊天文本解析。
+
+---
+
 ## 2026-05-24 — Team Console Task / WorkUnit 画布准备
 
 - **主题**: 在独立 Team Console preview 中接入 Task / WorkUnit 前端展示，把 Task 画布节点和 leader Agent 分支先跑通。
