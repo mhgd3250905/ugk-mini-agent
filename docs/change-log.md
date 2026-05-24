@@ -12,6 +12,20 @@
 
 ---
 
+## 2026-05-24 — Team Console Agent Atlas 返工
+
+- **主题**: 将上一轮独立 Agent Canvas 收口回现有 Execution Atlas，修复无 live run 时 Agent 不可用和 scoped Agent chat 每句新建会话的问题。
+- **变更内容**:
+  - 默认 Mock 入口改为干净 `Agent workspace`，旧 demo run / `Research vendor A/B/C` 仅在切换到对应 fixture 后显示。
+  - 抽出可复用 Atlas shell，让 Agent 节点和执行节点共享同一网格、节点层、pan/zoom 与“重置视图”工具，不再渲染独立上方 Agent Canvas panel。
+  - Agent 节点进入 Focus Mode 时在同一 Atlas viewport 内展开 chat panel；切换焦点后收起会恢复进入 Focus Mode 前的 viewport。
+  - Live 模式无 team run 时仍保留 Agent workspace；Live scoped Agent chat 会复用返回的 `conversationId`，避免多轮对话每句创建新会话。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/app/app.css`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/graph/AtlasCanvasShell.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/src/tests/team-api.test.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **测试**: 本轮最终验证见交付报告。
+- **边界**: 未改 `src/team/**`、`src/ui/team-page.ts`、`/playground/team` 或主项目 Agent 后端行为；未实现 WorkUnit、Plan 编排、Agent clone / instance / overlay / 画布局部技能安装，也未做 stream、events、files 或 artifacts。
+
+---
+
 ## 2026-05-24 — Team Console Agent Canvas MVP
 
 - **主题**: 在独立 `apps/team-console` preview 中加入 Agent catalog、画布 Agent 卡片、Agent Focus Mode 和最小非 stream scoped chat。

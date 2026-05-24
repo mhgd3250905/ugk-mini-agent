@@ -328,10 +328,12 @@ describe("App", () => {
     expect(config).toContain("teamApiTarget");
   });
 
-  it("documents Agent Canvas mock and live behavior", () => {
+  it("documents Agent Atlas mock and live behavior", () => {
     const readme = readFileSync("README.md", "utf8");
-    expect(readme).toContain("Agent Canvas MVP");
+    expect(readme).toContain("Agent Atlas MVP");
+    expect(readme).toContain("Agent workspace");
     expect(readme).toContain("/v1/agents");
     expect(readme).toContain("/v1/agents/:agentId/chat");
+    expect(readme).toContain("conversationId");
   });
 });
