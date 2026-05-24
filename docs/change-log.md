@@ -12,6 +12,16 @@
 
 ---
 
+## 2026-05-24 — Team Console Agent 分支锁定 Playground Agent 切换
+
+- **主题**: 防止 Team Console Agent 分支 iframe 内的 Playground 顶部 Agent 标签弹出切换菜单，避免分支对话目标被用户在 iframe 内切走
+- **影响范围**: `src/ui/playground.ts`, `src/ui/playground-styles.ts`, `src/ui/playground-agent-manager.ts`, `test/playground-agent-switch.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **变更**:
+  - 主 `/playground` 在 `embed=team-console` 下把顶部 Agent 标签标记为 locked，只作为当前 Agent 标识展示
+  - locked 状态下 hover / focus 不再显示 Agent switcher 弹层，点击标签也不再跳转独立 Agents 页面
+  - 保留普通 `/playground` 的 Agent hover 切换菜单和 Agents 页面入口，不影响非嵌入使用
+- **边界**: 未改 Team Console iframe URL、Agent 状态接口或主 Agent profile 后端行为
+
 ## 2026-05-24 — 独立 Agents 页面 Agent ID 输入归一化
 
 - **主题**: 修复独立 Agents 页面新建 Agent 时，中文名称生成空 ID、手动输入空格 / 大写 / 下划线 / Unicode 横线后被前端误拦的问题
