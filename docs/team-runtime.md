@@ -1,6 +1,6 @@
 # Team Runtime v2
 
-更新时间：2026-05-21
+更新时间：2026-05-25
 
 本文档是 Team Runtime v2 的唯一权威源。v0.1 域名调查历史见文末归档章节。
 
@@ -15,6 +15,7 @@
 - 真实 runner smoke test：`run_1c54aaa7e442`，status: completed，P0_REAL_RUNNER_OK
 - 最新验证：P26 output contract validation 已覆盖 deterministic validator、真实 orchestrator regression、`npm run test:team` 和 `npx tsc --noEmit`
 - Team Task 后端契约已建立：`Task` 是 Team Console 画布上的独立最小编排节点，内部包含一个 `workUnit`，不复用 `Plan tasks.length === 1`；`leaderAgentId` 负责运行前和用户澄清边界并维护 WorkUnit 草案，`workerAgentId` / `checkerAgentId` 分别代表未来真实执行和验收 Agent。主项目新增 `/v1/team/tasks` REST API 和 `.pi/skills/team-task-creator/SKILL.md`；skill 只能在 `/team-task` 显式触发后创建 / 更新 Task draft，必须先展示完整 Task JSON 并等待确认，不启动 run，不解析 iframe 聊天文本，不修改 Agent profile、模型、browser binding 或技能安装逻辑。
+- Canvas Task run 后端契约已建立：`POST /v1/team/tasks/:taskId/runs` 会为 ready Task 启动独立 worker → checker run，存储在 `.data/team/task-runs`，不写入 PlanStore，不出现在 `/v1/team/runs`，也不修改 Task 定义。
 
 ## 核心概念
 
@@ -52,6 +53,22 @@ Task 持久化在 `.data/team/tasks/<taskId>.json`，通过 `src/team/task-store
 - 创建走 `POST /v1/team/tasks`
 - 更新走 `GET /v1/team/tasks`、`GET /v1/team/tasks/:taskId`、`PATCH /v1/team/tasks/:taskId`
 - 不启动 run，不调用 `POST /v1/team/plans/:planId/runs`，不直接写 `.data/team`，不改 Agent profile / 模型 / browser binding / 技能安装
+
+### Canvas Task Run
+
+Canvas Task Run 是 Task 的独立运行轨道，不是 Plan run 的别名。后端会为 Task run 构造一个只用于运行快照的内部 envelope，但不会写入 `PlanStore`，不会出现在 `GET /v1/team/runs`，也不会增加任何 Plan 的 `runCount`。持久化目录是 `.data/team/task-runs/runs/<runId>`。
+
+运行规则：
+
+- 启动入口：`POST /v1/team/tasks/:taskId/runs`
+- 只允许 `status="ready"` 且未归档的 Task 启动
+- 同一个 Task 同时只允许一个 active run（`queued | running | paused`）
+- worker 使用 `workUnit.workerAgentId`
+- checker 使用 `workUnit.checkerAgentId`
+- leader 不参与执行阶段，只负责运行前沟通和 WorkUnit 草案维护
+- 第一版不启动 watcher/finalizer，不支持 pause/resume/rerun
+- active run 可用 `POST /v1/team/task-runs/:runId/cancel` 停止
+- worker/checker attempt metadata 和输出文件复用 `RunWorkspace` 的 attempt 结构，只是 rootDir 指向 `task-runs`
 
 ### TeamUnit
 
@@ -419,8 +436,14 @@ run 内相对路径，指向 accepted 或 failed 结果文件。格式如 `tasks
 | GET | `/v1/team/tasks/:taskId` | 查看单个 Task |
 | PATCH | `/v1/team/tasks/:taskId` | 更新未归档 Task draft 的 `title`、`leaderAgentId`、`workUnit` 或 `status`；不允许修改 locked Task 的 `workUnit` |
 | POST | `/v1/team/tasks/:taskId/archive` | 软归档 Task |
+| GET | `/v1/team/tasks/:taskId/runs` | 列出某个 Canvas Task 的独立 Task run |
+| POST | `/v1/team/tasks/:taskId/runs` | 启动某个 ready Canvas Task 的 worker → checker run |
+| GET | `/v1/team/task-runs/:runId` | 读取独立 Task run 状态 |
+| POST | `/v1/team/task-runs/:runId/cancel` | 取消 active Task run |
+| GET | `/v1/team/task-runs/:runId/tasks/:taskId/attempts` | 读取 Task run 的 attempt metadata |
+| GET | `/v1/team/task-runs/:runId/tasks/:taskId/attempts/:attemptId/files/:fileName` | 读取 Task run 的 attempt 文件 |
 
-Task API 不提供 run 创建能力。`POST /v1/team/tasks` 不会创建 Plan，也不会启动 worker/checker。
+`POST /v1/team/tasks` 仍只创建 Task draft，不会创建 Plan，也不会自动启动 worker/checker。Task run 必须显式调用 `POST /v1/team/tasks/:taskId/runs`；Task run 存在 `.data/team/task-runs`，不进入 Plan run API。
 
 ### Plan API
 
@@ -811,6 +834,7 @@ docker compose up -d --scale ugk-pi-team-worker=2  # 多 worker 验证
 | `src/team/team-unit-store.ts` | TeamUnit 存储 |
 | `src/team/task-store.ts` | Team Canvas Task 持久化：`.data/team/tasks/<taskId>.json`、旧字段兼容、归档过滤 |
 | `src/team/task-validation.ts` | Task create/update schema policy：leader / worker / checker Agent、WorkUnit 输入 / 输出契约 / 验收规则校验 |
+| `src/team/task-run-service.ts` | Canvas Task 独立 run service：ready 校验、worker → checker 执行、task-runs 工作区、cancel |
 | `src/team/plan-store.ts` | Plan 持久化和 runCount 不变式 |
 | `src/team/plan-validation.ts` | Plan create/update schema policy：task type、decomposer、for_each、outputCheck 校验 |
 | `src/team/config-locks.ts` | 活跃 run 对 Plan / TeamUnit / AgentProfile 的锁计算 |

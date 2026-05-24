@@ -1,9 +1,11 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { join } from "node:path";
 import { PlanStore } from "./plan-store.js";
 import { TaskStore } from "./task-store.js";
 import { TeamUnitStore } from "./team-unit-store.js";
 import { RunWorkspace } from "./run-workspace.js";
 import { TeamOrchestrator, DEFAULT_PHASE_TIMEOUTS } from "./orchestrator.js";
+import { CanvasTaskRunService } from "./task-run-service.js";
 import { computeTeamConfigLocks } from "./config-locks.js";
 import { buildTeamPlanDraft, listTeamPlanTemplates } from "./plan-draft.js";
 import { validateCreatePlanInput } from "./plan-validation.js";
@@ -71,6 +73,17 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 	const unitStore = new TeamUnitStore(options.teamDataDir);
 	const workspace = new RunWorkspace(options.teamDataDir);
+	const taskRunDataDir = join(options.teamDataDir, "task-runs");
+	const taskRunWorkspace = new RunWorkspace(taskRunDataDir);
+	const taskRunService = new CanvasTaskRunService({
+		taskStore,
+		workspace: taskRunWorkspace,
+		createRoleRunner: () => createRoleRunner({ ...options, teamDataDir: taskRunDataDir }),
+		dataDir: taskRunDataDir,
+		maxCheckerRevisions: 3,
+		maxConcurrentRuns: options.maxConcurrentRuns,
+		maxRunDurationMinutes: options.maxRunDurationMinutes,
+	});
 
 	function makeOrchestrator(): TeamOrchestrator {
 		const roleRunner = createRoleRunner(options);
@@ -153,6 +166,84 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		} catch (err) {
 			const msg = (err as Error).message;
 			reply.code(msg.includes("not found") ? 404 : 400).send({ error: msg });
+		}
+	});
+
+	app.get("/v1/team/tasks/:taskId/runs", async (request, reply) => {
+		const { taskId } = request.params as { taskId: string };
+		const task = await taskStore.get(taskId);
+		if (!task) { reply.code(404).send({ error: "task not found" }); return; }
+		const runs = await taskRunService.listRuns(taskId);
+		reply.send({ runs });
+	});
+
+	app.post("/v1/team/tasks/:taskId/runs", async (request, reply) => {
+		const { taskId } = request.params as { taskId: string };
+		const body = request.body as Record<string, unknown> | undefined;
+		try {
+			let maxRunDurationMinutes: number | undefined;
+			if (body?.maxRunDurationMinutes != null) {
+				const num = Number(body.maxRunDurationMinutes);
+				if (!Number.isFinite(num) || num <= 0 || num > 1440) {
+					reply.code(400).send({ error: "maxRunDurationMinutes must be a positive number up to 1440" });
+					return;
+				}
+				maxRunDurationMinutes = num;
+			}
+			const state = await taskRunService.createRun(taskId, { maxRunDurationMinutes });
+			reply.code(201).send(state);
+		} catch (err) {
+			const msg = (err as Error).message;
+			if (msg.includes("task not found")) { reply.code(404).send({ error: "task not found" }); return; }
+			reply.code(msg.includes("ready") || msg.includes("archived") || msg.includes("active") ? 409 : 400).send({ error: msg });
+		}
+	});
+
+	app.get("/v1/team/task-runs/:runId", async (request, reply) => {
+		const { runId } = request.params as { runId: string };
+		const state = await taskRunService.getRun(runId);
+		if (!state) { reply.code(404).send({ error: "task run not found" }); return; }
+		reply.send(state);
+	});
+
+	app.post("/v1/team/task-runs/:runId/cancel", async (request, reply) => {
+		const { runId } = request.params as { runId: string };
+		try {
+			const state = await taskRunService.cancelRun(runId, "user cancel");
+			reply.send(state);
+		} catch (err) {
+			const msg = (err as Error).message;
+			reply.code(msg.includes("not found") ? 404 : msg.includes("terminal") ? 409 : 400).send({ error: msg });
+		}
+	});
+
+	app.get("/v1/team/task-runs/:runId/tasks/:taskId/attempts", async (request, reply) => {
+		const { runId, taskId } = request.params as { runId: string; taskId: string };
+		const state = await taskRunService.getRun(runId);
+		if (!state) { reply.code(404).send({ error: "task run not found" }); return; }
+		if (!state.taskStates[taskId]) { reply.code(404).send({ error: "task not found" }); return; }
+		try {
+			const attempts = await taskRunWorkspace.listAttempts(runId, taskId);
+			reply.send({ attempts });
+		} catch {
+			reply.send({ attempts: [] });
+		}
+	});
+
+	app.get("/v1/team/task-runs/:runId/tasks/:taskId/attempts/:attemptId/files/:fileName", async (request, reply) => {
+		const { runId, taskId, attemptId, fileName } = request.params as { runId: string; taskId: string; attemptId: string; fileName: string };
+		const state = await taskRunService.getRun(runId);
+		if (!state) { reply.code(404).send({ error: "task run not found" }); return; }
+		if (!state.taskStates[taskId]) { reply.code(404).send({ error: "task not found" }); return; }
+		if (/[^a-zA-Z0-9._-]/.test(fileName) || fileName.includes("..")) {
+			reply.code(400).send({ error: "invalid file name" }); return;
+		}
+		try {
+			const content = await taskRunWorkspace.readAttemptFile(runId, taskId, attemptId, fileName);
+			if (content === null) { reply.code(404).send({ error: "file not found" }); return; }
+			reply.type("text/plain; charset=utf-8").send(content);
+		} catch {
+			reply.code(404).send({ error: "file not found" });
 		}
 	});
 

@@ -212,6 +212,7 @@ export interface TeamRunState {
 	schemaVersion: "team/state-1";
 	runId: string;
 	planId: string;
+	source?: { type: "canvas-task"; taskId: string };
 	teamUnitId: string;
 	status: RunStatus;
 	createdAt: string;

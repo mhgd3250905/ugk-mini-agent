@@ -12,6 +12,16 @@
 
 ---
 
+## 2026-05-25 — Team Canvas Task run 后端契约
+
+- **主题**: 新增独立 Canvas Task run API，让 Team Console 可以直接运行 Task 内部 WorkUnit。
+- **变更内容**:
+  - 新增 `CanvasTaskRunService`，将 Task run 存储在 `.data/team/task-runs`，不写入 PlanStore，不出现在 `/v1/team/runs`。
+  - 新增 `POST /v1/team/tasks/:taskId/runs`、`GET /v1/team/tasks/:taskId/runs`、`GET /v1/team/task-runs/:runId`、`POST /v1/team/task-runs/:runId/cancel` 和 attempt 文件读取 API。
+  - Task run 只允许 ready 且未归档 Task 启动；同一 Task 同时只允许一个 active run；运行阶段使用 `workUnit.workerAgentId` 和 `workUnit.checkerAgentId`，`leaderAgentId` 不参与执行。
+- **影响范围**: `src/team/task-run-service.ts`, `src/team/routes.ts`, `src/team/types.ts`, `test/team-task-run-routes.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未改 Team Console 前端，未把 Task 转成持久化 Plan，未新增 watcher/finalizer 执行链路，未修改 Task 定义、Agent profile、模型、browser binding 或 skill 安装逻辑。
+
 ## 2026-05-24 — Team Task 后端契约与 runtime skill
 
 - **主题**: 新增独立 Team Canvas Task 资源和 `/team-task` runtime skill，避免把 Task 偷换成单任务 Plan。
