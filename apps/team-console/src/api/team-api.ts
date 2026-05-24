@@ -18,6 +18,8 @@ import type {
   AgentSwitchConversationResponse,
   TeamCanvasTask,
   TeamCanvasTaskListResponse,
+  TeamTaskMutationResponse,
+  TeamTaskUpdateRequest,
   TeamPlan,
   RunDetail,
   TeamApiError,
@@ -30,6 +32,8 @@ export interface TeamApiProvider {
   listPlans(): Promise<TeamPlan[]>;
   listRuns(): Promise<TeamRunState[]>;
   listTasks(): Promise<TeamCanvasTask[]>;
+  updateTask(taskId: string, patch: TeamTaskUpdateRequest): Promise<TeamTaskMutationResponse>;
+  archiveTask(taskId: string): Promise<TeamTaskMutationResponse>;
   getRunDetail(runId: string): Promise<RunDetail>;
   listAttempts(runId: string, taskId: string): Promise<TeamAttemptMetadata[]>;
   readAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string): Promise<string>;
@@ -78,11 +82,11 @@ function toApiError(error: unknown): TeamApiError {
 
 async function responseToApiError(response: Response, fallbackMessage: string): Promise<TeamApiError> {
   const payload = await response.json().catch(() => null) as {
-    error?: { message?: string };
+    error?: { message?: string } | string;
     message?: string;
   } | null;
   return {
-    message: payload?.error?.message || payload?.message || fallbackMessage,
+    message: (typeof payload?.error === "string" ? payload.error : payload?.error?.message) || payload?.message || fallbackMessage,
     status: response.status,
   };
 }
@@ -117,6 +121,37 @@ export class LiveTeamApi implements TeamApiProvider {
       const body = (await res.json()) as TeamCanvasTaskListResponse | TeamCanvasTask[];
       if (Array.isArray(body)) return body;
       return Array.isArray(body.tasks) ? body.tasks : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async updateTask(taskId: string, patch: TeamTaskUpdateRequest): Promise<TeamTaskMutationResponse> {
+    try {
+      const res = await fetch(`${this.baseUrl}/tasks/${encodeURIComponent(taskId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      return (await res.json()) as TeamTaskMutationResponse;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async archiveTask(taskId: string): Promise<TeamTaskMutationResponse> {
+    try {
+      const res = await fetch(`${this.baseUrl}/tasks/${encodeURIComponent(taskId)}/archive`, {
+        method: "POST",
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      return (await res.json()) as TeamTaskMutationResponse;
     } catch (e) {
       throw toApiError(e);
     }

@@ -17,6 +17,8 @@ import type {
   AgentSummary,
   AgentSwitchConversationResponse,
   TeamCanvasTask,
+  TeamTaskMutationResponse,
+  TeamTaskUpdateRequest,
   TeamPlan,
   RunDetail,
   TeamRunState,
@@ -891,6 +893,15 @@ function cloneMockTeamTask(task: TeamCanvasTask): TeamCanvasTask {
   };
 }
 
+let mockCanvasTasks: TeamCanvasTask[] = mockTeamTasks.map(cloneMockTeamTask);
+
+function mockTaskWarnings(task: TeamCanvasTask): string[] {
+  if (task.workUnit.workerAgentId === task.workUnit.checkerAgentId) {
+    return ["workerAgentId and checkerAgentId are the same; self-checking weakens independent acceptance."];
+  }
+  return [];
+}
+
 export const ALL_FIXTURES: FixtureEntry[] = [
   { id: "sequential", label: "顺序 run", plan: makeSequentialPlan(), run: makeSequentialRun() },
   { id: "discovery", label: "发现 + 逐项处理", plan: makeDiscoveryForEachPlan(), run: makeDiscoveryForEachRun() },
@@ -956,6 +967,7 @@ export function resetMockTeamApiState() {
   mockConversationsByAgent.clear();
   mockCurrentConversationIds.clear();
   mockPendingRuns.clear();
+  mockCanvasTasks = mockTeamTasks.map(cloneMockTeamTask);
   mockConversationCounter = 0;
   mockRunCounter = 0;
   mockMessageCounter = 0;
@@ -1055,7 +1067,42 @@ export class MockTeamApi {
   }
 
   async listTasks(): Promise<TeamCanvasTask[]> {
-    return mockTeamTasks.map(cloneMockTeamTask);
+    return mockCanvasTasks.filter((task) => !task.archived).map(cloneMockTeamTask);
+  }
+
+  async updateTask(taskId: string, patch: TeamTaskUpdateRequest): Promise<TeamTaskMutationResponse> {
+    const index = mockCanvasTasks.findIndex((task) => task.taskId === taskId);
+    if (index < 0) throw { message: `Task not found: ${taskId}` };
+    const current = mockCanvasTasks[index]!;
+    const next: TeamCanvasTask = {
+      ...current,
+      ...patch,
+      workUnit: patch.workUnit
+        ? cloneMockTeamTask({ ...current, workUnit: patch.workUnit }).workUnit
+        : cloneMockTeamTask(current).workUnit,
+      updatedAt: ts(),
+    };
+    mockCanvasTasks[index] = cloneMockTeamTask(next);
+    return {
+      task: cloneMockTeamTask(next),
+      warnings: mockTaskWarnings(next),
+    };
+  }
+
+  async archiveTask(taskId: string): Promise<TeamTaskMutationResponse> {
+    const index = mockCanvasTasks.findIndex((task) => task.taskId === taskId);
+    if (index < 0) throw { message: `Task not found: ${taskId}` };
+    const next: TeamCanvasTask = {
+      ...mockCanvasTasks[index]!,
+      status: "archived",
+      archived: true,
+      updatedAt: ts(),
+    };
+    mockCanvasTasks[index] = cloneMockTeamTask(next);
+    return {
+      task: cloneMockTeamTask(next),
+      warnings: mockTaskWarnings(next),
+    };
   }
 
   async getRunDetail(runId: string): Promise<RunDetail> {

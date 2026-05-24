@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { MockTeamApi } from "../fixtures/team-fixtures";
+import { MockTeamApi, resetMockTeamApiState, mockTeamTasks } from "../fixtures/team-fixtures";
 import { LiveTeamApi } from "../api/team-api";
 import {
   ALL_FIXTURES,
@@ -26,6 +26,10 @@ function sseResponse(body: string, status = 200): Response {
 
 describe("MockTeamApi", () => {
   const api = new MockTeamApi();
+
+  beforeEach(() => {
+    resetMockTeamApiState();
+  });
 
   it("returns plans list", async () => {
     const plans = await api.listPlans();
@@ -109,6 +113,34 @@ describe("MockTeamApi", () => {
     expect(tasks[0]?.workUnit.workerAgentId).toBeTruthy();
     expect(tasks[0]?.workUnit.checkerAgentId).toBeTruthy();
     expect(tasks[0]?.workUnit.acceptance.rules.length).toBeGreaterThan(0);
+  });
+
+  it("updates mock Team Tasks and preserves warnings", async () => {
+    const task = mockTeamTasks[0]!;
+
+    const response = await api.updateTask(task.taskId, {
+      title: "更新后的 Task",
+      workUnit: {
+        ...task.workUnit,
+        checkerAgentId: task.workUnit.workerAgentId,
+      },
+    });
+
+    expect(response.task.title).toBe("更新后的 Task");
+    expect(response.task.workUnit.checkerAgentId).toBe(task.workUnit.workerAgentId);
+    expect(response.warnings?.[0]).toContain("self-checking weakens independent acceptance");
+    await expect(api.listTasks()).resolves.toEqual([response.task]);
+  });
+
+  it("archives mock Team Tasks without deleting the fixture definition", async () => {
+    const task = mockTeamTasks[0]!;
+
+    const response = await api.archiveTask(task.taskId);
+
+    expect(response.task.archived).toBe(true);
+    expect(response.task.status).toBe("archived");
+    await expect(api.listTasks()).resolves.toEqual([]);
+    expect(mockTeamTasks[0]?.archived).toBe(false);
   });
 
   it("returns deterministic mock agent chat replies", async () => {
@@ -275,6 +307,42 @@ describe("LiveTeamApi", () => {
 
     expect(tasks[0]?.taskId).toBe("task_array_shape");
     expect(tasks[0]?.status).toBe("drafting");
+  });
+
+  it("patches live Team Tasks and preserves response warnings", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const task = { ...mockTeamTasks[0]!, title: "更新后的 Task" };
+    const patch = { title: "更新后的 Task" };
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      task,
+      warnings: ["workerAgentId and checkerAgentId are the same; self-checking weakens independent acceptance."],
+    }), { status: 200 }));
+
+    const response = await api.updateTask("task/a b", patch);
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/tasks/task%2Fa%20b", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    expect(response.task.title).toBe("更新后的 Task");
+    expect(response.warnings).toEqual([
+      "workerAgentId and checkerAgentId are the same; self-checking weakens independent acceptance.",
+    ]);
+  });
+
+  it("archives live Team Tasks through the soft archive endpoint", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const task = { ...mockTeamTasks[0]!, archived: true, status: "archived" };
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ task }), { status: 200 }));
+
+    const response = await api.archiveTask("task/a b");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/tasks/task%2Fa%20b/archive", {
+      method: "POST",
+      headers: { accept: "application/json" },
+    });
+    expect(response.task.archived).toBe(true);
   });
 
   it("getRunDetail URL-encodes the run id", async () => {

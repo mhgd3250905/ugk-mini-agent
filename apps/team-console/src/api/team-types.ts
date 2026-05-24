@@ -154,6 +154,18 @@ export interface TeamCanvasTaskListResponse {
   tasks: TeamCanvasTask[];
 }
 
+export interface TeamTaskMutationResponse {
+  task: TeamCanvasTask;
+  warnings?: string[];
+}
+
+export interface TeamTaskUpdateRequest {
+  title?: string;
+  leaderAgentId?: string;
+  workUnit?: TeamWorkUnitDefinition;
+  status?: TeamCanvasTaskStatus;
+}
+
 export interface TeamTaskState {
   status: TaskStatus;
   manualDisposition?: TaskManualDisposition;
