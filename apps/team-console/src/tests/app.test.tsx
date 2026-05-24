@@ -331,6 +331,38 @@ describe("App", () => {
     expect(branch!.querySelector("iframe")).toBeNull();
   });
 
+  it("opens the Task leader chat iframe from the action menu", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(screen.getByRole("button", { name: "对话 Leader" }));
+
+    const branch = container.querySelector(".task-leader-chat-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    expect(within(branch!).getByText("Leader 对话")).toBeInTheDocument();
+    expect(within(branch!).getByText("调查 Medtrum 云资产")).toBeInTheDocument();
+
+    const iframe = branch!.querySelector("iframe") as HTMLIFrameElement | null;
+    expect(iframe).toHaveAttribute("title", "调查 Medtrum 云资产 leader 对话");
+    expect(iframe?.getAttribute("src")).toContain("/playground?view=chat&agentId=main");
+    expect(iframe?.getAttribute("src")).toContain("embed=team-console");
+    expect(iframe?.getAttribute("src")).toContain("teamTaskId=task_research_medtrum");
+    expect(iframe?.getAttribute("src")).toContain("teamTaskMode=edit");
+  });
+
+  it("closes the Task leader chat branch from its header action", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(screen.getByRole("button", { name: "对话 Leader" }));
+    expect(container.querySelector(".task-leader-chat-branch iframe")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /收起 调查 Medtrum 云资产 leader 对话/ }));
+
+    expect(container.querySelector(".task-leader-chat-branch")).toBeNull();
+    expect(container.querySelector(".task-action-branch")).toBeNull();
+  });
+
   it("switches the embedded playground branch to the clicked agent id", async () => {
     const { container } = render(<App />);
 

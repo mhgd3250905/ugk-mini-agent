@@ -24,7 +24,7 @@ type AgentBranchState = {
   mode: AgentBranchMode;
 };
 
-type TaskBranchMode = "menu";
+type TaskBranchMode = "menu" | "leader-chat";
 
 type TaskBranchState = {
   nodeId: string;
@@ -703,7 +703,36 @@ export function App() {
     </section>
   ) : null;
 
+  const expandedTaskBranchMode = expandedTaskBranch?.mode ?? "menu";
   const expandedTaskBranchPanel = expandedTaskNode && expandedTask ? (
+    expandedTaskBranchMode === "leader-chat" ? (
+      <section className="task-leader-branch task-leader-chat-branch" aria-label={`${expandedTask.title} leader 对话`}>
+        <header className="task-leader-branch-head">
+          <div className="task-leader-branch-title">
+            <span>Leader 对话</span>
+            <strong>{expandedTask.title}</strong>
+            <code>{expandedTask.taskId}</code>
+          </div>
+          <button
+            type="button"
+            className="task-leader-branch-collapse"
+            onClick={() => setExpandedTaskBranch(null)}
+            aria-label={`收起 ${expandedTask.title} leader 对话`}
+          >
+            收起
+          </button>
+        </header>
+        <div className="task-leader-branch-hint">
+          在对话中使用 <code>/team-task</code> 创建或更新这个 Task。Task 数据必须通过后端 API 写入。
+        </div>
+        <iframe
+          className="task-leader-iframe"
+          title={`${expandedTask.title} leader 对话`}
+          src={buildTaskLeaderPlaygroundUrl(expandedTask)}
+          referrerPolicy="no-referrer"
+        />
+      </section>
+    ) : (
     <section className="task-leader-branch task-action-branch" aria-label={`${expandedTask.title} Task 操作`}>
       <header className="task-leader-branch-head">
         <div className="task-leader-branch-title">
@@ -732,7 +761,11 @@ export function App() {
         <button type="button" className="task-action-menu-button">
           编辑
         </button>
-        <button type="button" className="task-action-menu-button">
+        <button
+          type="button"
+          className="task-action-menu-button"
+          onClick={() => setExpandedTaskBranch((current) => current ? { ...current, mode: "leader-chat" } : current)}
+        >
           对话 Leader
         </button>
         <button type="button" className="task-action-menu-button danger">
@@ -740,6 +773,7 @@ export function App() {
         </button>
       </div>
     </section>
+    )
   ) : null;
 
   return (
