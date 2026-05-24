@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { AgentRunStatus, AgentSummary, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "../api/team-types";
+import type { AgentRunStatus, AgentSummary, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest } from "../api/team-types";
 import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, mockTeamTasks, MockTeamApi } from "../fixtures/team-fixtures";
 import { ExecutionMap, type AtlasAgentNode, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { ROOT_ID } from "../graph/execution-map-layout";
@@ -24,12 +24,20 @@ type AgentBranchState = {
   mode: AgentBranchMode;
 };
 
-type TaskBranchMode = "menu" | "leader-chat";
+type TaskBranchMode = "menu" | "leader-chat" | "edit";
 
 type TaskBranchState = {
   nodeId: string;
   taskId: string;
   mode: TaskBranchMode;
+};
+
+type TaskEditDraft = {
+  taskId: string;
+  title: string;
+  leaderAgentId: string;
+  workerAgentId: string;
+  checkerAgentId: string;
 };
 
 type StoredTaskPosition = {
@@ -202,6 +210,16 @@ function makeTaskNodes(tasks: TeamCanvasTask[], storedPositions = new Map<string
   return tasks.map((task, index) => makeTaskNode(task, index, storedPositions.get(task.taskId)));
 }
 
+function makeTaskEditDraft(task: TeamCanvasTask): TaskEditDraft {
+  return {
+    taskId: task.taskId,
+    title: task.title,
+    leaderAgentId: task.leaderAgentId,
+    workerAgentId: task.workUnit.workerAgentId,
+    checkerAgentId: task.workUnit.checkerAgentId,
+  };
+}
+
 function makeAgentNode(agentId: string, index: number): AtlasAgentNode {
   return {
     nodeId: `agent-${agentId}`,
@@ -237,6 +255,9 @@ export function App() {
   const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
   const [expandedAgentBranch, setExpandedAgentBranch] = useState<AgentBranchState | null>(null);
   const [expandedTaskBranch, setExpandedTaskBranch] = useState<TaskBranchState | null>(null);
+  const [taskEditDraft, setTaskEditDraft] = useState<TaskEditDraft | null>(null);
+  const [taskEditSaving, setTaskEditSaving] = useState(false);
+  const [taskEditWarning, setTaskEditWarning] = useState<string | null>(null);
 
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
   const tasksById = useMemo(() => new Map(tasks.map((task) => [task.taskId, task])), [tasks]);
@@ -255,6 +276,17 @@ export function App() {
     setSelectedTaskId((current) => current === taskId ? null : taskId);
   }, []);
 
+  const clearTaskEditState = useCallback(() => {
+    setTaskEditDraft(null);
+    setTaskEditWarning(null);
+    setTaskEditSaving(false);
+  }, []);
+
+  const closeTaskBranch = useCallback(() => {
+    setExpandedTaskBranch(null);
+    clearTaskEditState();
+  }, [clearTaskEditState]);
+
   useEffect(() => {
     try {
       globalThis.localStorage?.setItem(DATA_SOURCE_STORAGE_KEY, dataSource);
@@ -270,9 +302,9 @@ export function App() {
     setAgentNodes(readStoredLiveAgentNodes());
     setTaskLeaderPickerOpen(false);
     setExpandedAgentBranch(null);
-    setExpandedTaskBranch(null);
+    closeTaskBranch();
     setLiveAgentNodesHydrated(true);
-  }, [dataSource]);
+  }, [closeTaskBranch, dataSource]);
 
   useEffect(() => {
     if (dataSource !== "live" || !liveAgentNodesHydrated) return;
@@ -286,9 +318,9 @@ export function App() {
 
   useEffect(() => {
     if (expandedTaskBranch && !tasksById.has(expandedTaskBranch.taskId)) {
-      setExpandedTaskBranch(null);
+      closeTaskBranch();
     }
-  }, [expandedTaskBranch, tasksById]);
+  }, [closeTaskBranch, expandedTaskBranch, tasksById]);
 
   const applyLiveTasks = useCallback((nextTasks: TeamCanvasTask[]) => {
     setTasks(nextTasks);
@@ -324,7 +356,7 @@ export function App() {
   const loadFixture = useCallback((fixtureId: string) => {
     setTaskLeaderPickerOpen(false);
     setExpandedAgentBranch(null);
-    setExpandedTaskBranch(null);
+    closeTaskBranch();
     if (fixtureId === CLEAN_AGENT_WORKSPACE_ID) {
       setPlan(null);
       setRun(null);
@@ -344,7 +376,7 @@ export function App() {
     setAttemptsByTaskId({});
     setError(null);
     setLoading(false);
-  }, []);
+  }, [closeTaskBranch]);
 
   useEffect(() => {
     if (dataSource === "mock") {
@@ -354,7 +386,7 @@ export function App() {
 
   useEffect(() => {
     setExpandedAgentBranch(null);
-    setExpandedTaskBranch(null);
+    closeTaskBranch();
     let cancelled = false;
     let refreshTimer: ReturnType<typeof globalThis.setInterval> | undefined;
     const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
@@ -418,13 +450,13 @@ export function App() {
         globalThis.clearInterval(refreshTimer);
       }
     };
-  }, [applyLiveTasks, dataSource]);
+  }, [applyLiveTasks, closeTaskBranch, dataSource]);
 
   useEffect(() => {
     if (dataSource !== "live") return;
 
     setExpandedAgentBranch(null);
-    setExpandedTaskBranch(null);
+    closeTaskBranch();
     if (liveRunMode === "workspace") {
       setPlan(null);
       setRun(null);
@@ -487,7 +519,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [dataSource, liveRunMode]);
+  }, [closeTaskBranch, dataSource, liveRunMode]);
 
   useEffect(() => {
     if (!run || !selectedTaskId || selectedTaskId === ROOT_ID) return;
@@ -551,24 +583,25 @@ export function App() {
   const toggleAgentBranch = useCallback((node: AtlasAgentNode) => {
     setAgentPickerOpen(false);
     setTaskLeaderPickerOpen(false);
-    setExpandedTaskBranch(null);
+    closeTaskBranch();
     refreshLiveTasksAfterLeavingTaskCreateBranch(expandedAgentBranch);
     setExpandedAgentBranch(
       expandedAgentBranch?.nodeId === node.nodeId && expandedAgentBranch.mode === "chat"
         ? null
         : { nodeId: node.nodeId, agentId: node.agentId, mode: "chat" },
     );
-  }, [expandedAgentBranch, refreshLiveTasksAfterLeavingTaskCreateBranch]);
+  }, [closeTaskBranch, expandedAgentBranch, refreshLiveTasksAfterLeavingTaskCreateBranch]);
 
   const toggleTaskBranch = useCallback((node: AtlasTaskNode) => {
     setAgentPickerOpen(false);
     setTaskLeaderPickerOpen(false);
     refreshLiveTasksAfterLeavingTaskCreateBranch(expandedAgentBranch);
     setExpandedAgentBranch(null);
+    clearTaskEditState();
     setExpandedTaskBranch((current) => (
       current?.nodeId === node.nodeId ? null : { nodeId: node.nodeId, taskId: node.taskId, mode: "menu" }
     ));
-  }, [expandedAgentBranch, refreshLiveTasksAfterLeavingTaskCreateBranch]);
+  }, [clearTaskEditState, expandedAgentBranch, refreshLiveTasksAfterLeavingTaskCreateBranch]);
 
   const openTaskCreateBranch = useCallback((leaderAgentId: string) => {
     const nodeId = `agent-${leaderAgentId}`;
@@ -579,9 +612,63 @@ export function App() {
     ));
     setAgentPickerOpen(false);
     setTaskLeaderPickerOpen(false);
-    setExpandedTaskBranch(null);
+    closeTaskBranch();
     setExpandedAgentBranch({ nodeId, agentId: leaderAgentId, mode: "task-create" });
+  }, [closeTaskBranch]);
+
+  const openTaskEditBranch = useCallback((task: TeamCanvasTask) => {
+    setTaskEditDraft(makeTaskEditDraft(task));
+    setTaskEditWarning(null);
+    setExpandedTaskBranch((current) => current ? { ...current, mode: "edit" } : current);
   }, []);
+
+  const saveTaskEdit = useCallback(async () => {
+    if (!expandedTask || !taskEditDraft || taskEditDraft.taskId !== expandedTask.taskId) return;
+
+    const patch: TeamTaskUpdateRequest = {};
+    const title = taskEditDraft.title.trim();
+    if (title !== expandedTask.title) {
+      patch.title = title;
+    }
+    if (taskEditDraft.leaderAgentId !== expandedTask.leaderAgentId) {
+      patch.leaderAgentId = taskEditDraft.leaderAgentId;
+    }
+    if (
+      taskEditDraft.workerAgentId !== expandedTask.workUnit.workerAgentId ||
+      taskEditDraft.checkerAgentId !== expandedTask.workUnit.checkerAgentId
+    ) {
+      patch.workUnit = {
+        ...expandedTask.workUnit,
+        workerAgentId: taskEditDraft.workerAgentId,
+        checkerAgentId: taskEditDraft.checkerAgentId,
+      };
+    }
+    if (Object.keys(patch).length === 0) {
+      setTaskEditWarning(null);
+      return;
+    }
+
+    setTaskEditSaving(true);
+    setTaskEditWarning(null);
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      const response = await api.updateTask(expandedTask.taskId, patch);
+      if (dataSource === "live") {
+        await refreshLiveTasks();
+      } else {
+        const nextTasks = await api.listTasks();
+        setTasks(nextTasks);
+        setTaskNodes((current) => makeTaskNodes(nextTasks, liveTaskRefreshPositions(current)));
+      }
+      setTaskEditDraft(makeTaskEditDraft(response.task));
+      setTaskEditWarning(response.warnings?.join(" ") ?? null);
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setTaskEditSaving(false);
+    }
+  }, [dataSource, expandedTask, refreshLiveTasks, taskEditDraft]);
 
   const canCreateTask = dataSource === "live" && agents.length > 0;
   const canRefreshTasks = dataSource === "live" && !liveTasksRefreshing;
@@ -704,6 +791,9 @@ export function App() {
   ) : null;
 
   const expandedTaskBranchMode = expandedTaskBranch?.mode ?? "menu";
+  const activeTaskEditDraft = expandedTask && taskEditDraft?.taskId === expandedTask.taskId
+    ? taskEditDraft
+    : null;
   const expandedTaskBranchPanel = expandedTaskNode && expandedTask ? (
     expandedTaskBranchMode === "leader-chat" ? (
       <section className="task-leader-branch task-leader-chat-branch" aria-label={`${expandedTask.title} leader 对话`}>
@@ -732,6 +822,107 @@ export function App() {
           referrerPolicy="no-referrer"
         />
       </section>
+    ) : expandedTaskBranchMode === "edit" && activeTaskEditDraft ? (
+      <section className="task-leader-branch task-edit-branch" aria-label={`${expandedTask.title} Task 编辑`}>
+        <header className="task-leader-branch-head">
+          <div className="task-leader-branch-title">
+            <span>Task 编辑</span>
+            <strong>{expandedTask.title}</strong>
+            <code>{expandedTask.taskId}</code>
+          </div>
+          <button
+            type="button"
+            className="task-leader-branch-collapse"
+            onClick={closeTaskBranch}
+            aria-label={`收起 ${expandedTask.title} Task 编辑`}
+          >
+            收起
+          </button>
+        </header>
+        <form
+          className="task-edit-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void saveTaskEdit();
+          }}
+        >
+          <div className="task-edit-note">
+            复杂需求和验收规则继续通过 Leader 对话里的 <code>/team-task</code> 更新；这里仅做 Task 名称和执行 Agent 的浅编辑。
+          </div>
+          {taskEditWarning && <div className="task-edit-warning" role="status">{taskEditWarning}</div>}
+          <div className="task-edit-grid">
+            <label className="task-edit-field">
+              <span>Task 名称</span>
+              <input
+                value={activeTaskEditDraft.title}
+                onChange={(event) => setTaskEditDraft((current) => (
+                  current ? { ...current, title: event.target.value } : current
+                ))}
+              />
+            </label>
+            <label className="task-edit-field">
+              <span>Leader Agent</span>
+              <select
+                value={activeTaskEditDraft.leaderAgentId}
+                onChange={(event) => setTaskEditDraft((current) => (
+                  current ? { ...current, leaderAgentId: event.target.value } : current
+                ))}
+              >
+                {agents.map((agent) => (
+                  <option key={agent.agentId} value={agent.agentId}>
+                    {agent.name} ({agent.agentId})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="task-edit-field">
+              <span>Worker Agent</span>
+              <select
+                value={activeTaskEditDraft.workerAgentId}
+                onChange={(event) => setTaskEditDraft((current) => (
+                  current ? { ...current, workerAgentId: event.target.value } : current
+                ))}
+              >
+                {agents.map((agent) => (
+                  <option key={agent.agentId} value={agent.agentId}>
+                    {agent.name} ({agent.agentId})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="task-edit-field">
+              <span>Checker Agent</span>
+              <select
+                value={activeTaskEditDraft.checkerAgentId}
+                onChange={(event) => setTaskEditDraft((current) => (
+                  current ? { ...current, checkerAgentId: event.target.value } : current
+                ))}
+              >
+                {agents.map((agent) => (
+                  <option key={agent.agentId} value={agent.agentId}>
+                    {agent.name} ({agent.agentId})
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="task-edit-actions">
+            <button
+              type="button"
+              className="task-action-menu-button"
+              onClick={() => {
+                setTaskEditWarning(null);
+                setExpandedTaskBranch((current) => current ? { ...current, mode: "menu" } : current);
+              }}
+            >
+              返回菜单
+            </button>
+            <button type="submit" className="task-action-menu-button primary" disabled={taskEditSaving}>
+              {taskEditSaving ? "保存中..." : "保存"}
+            </button>
+          </div>
+        </form>
+      </section>
     ) : (
     <section className="task-leader-branch task-action-branch" aria-label={`${expandedTask.title} Task 操作`}>
       <header className="task-leader-branch-head">
@@ -743,7 +934,7 @@ export function App() {
         <button
           type="button"
           className="task-leader-branch-collapse"
-          onClick={() => setExpandedTaskBranch(null)}
+          onClick={closeTaskBranch}
           aria-label={`收起 ${expandedTask.title} Task 操作`}
         >
           收起
@@ -758,7 +949,11 @@ export function App() {
         >
           运行
         </button>
-        <button type="button" className="task-action-menu-button">
+        <button
+          type="button"
+          className="task-action-menu-button"
+          onClick={() => openTaskEditBranch(expandedTask)}
+        >
           编辑
         </button>
         <button

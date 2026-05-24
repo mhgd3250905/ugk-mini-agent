@@ -54,6 +54,72 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+function cloneTaskFixture(task = mockTeamTasks[0]!) {
+  return {
+    ...task,
+    workUnit: {
+      ...task.workUnit,
+      input: { ...task.workUnit.input },
+      outputContract: { ...task.workUnit.outputContract },
+      acceptance: { rules: [...task.workUnit.acceptance.rules] },
+    },
+  };
+}
+
+function mockLiveTaskEditorApi(options?: {
+  patchStatus?: number;
+  patchError?: string;
+  warnings?: string[];
+}) {
+  let currentTask = cloneTaskFixture();
+  let taskRequests = 0;
+  const patchBodies: unknown[] = [];
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    if (url === "/v1/agents") {
+      return new Response(JSON.stringify({
+        agents: [
+          { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+          { agentId: "search", name: "搜索 Agent", description: "搜索" },
+          { agentId: "reviewer", name: "Review Agent", description: "复核" },
+        ],
+      }), { status: 200 });
+    }
+    if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+    if (url === "/v1/team/tasks" && method === "GET") {
+      taskRequests += 1;
+      return new Response(JSON.stringify({ tasks: [currentTask] }), { status: 200 });
+    }
+    if (url === "/v1/team/tasks/task_research_medtrum" && method === "PATCH") {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        title?: string;
+        leaderAgentId?: string;
+        workUnit?: typeof currentTask.workUnit;
+      };
+      patchBodies.push(body);
+      if (options?.patchStatus && options.patchStatus >= 400) {
+        return new Response(JSON.stringify({ error: options.patchError ?? "update failed" }), { status: options.patchStatus });
+      }
+      currentTask = {
+        ...currentTask,
+        ...(body.title !== undefined ? { title: body.title } : {}),
+        ...(body.leaderAgentId !== undefined ? { leaderAgentId: body.leaderAgentId } : {}),
+        ...(body.workUnit !== undefined ? { workUnit: body.workUnit } : {}),
+        updatedAt: "2026-05-25T00:00:00.000Z",
+      };
+      return new Response(JSON.stringify({ task: currentTask, warnings: options?.warnings }), { status: 200 });
+    }
+    return new Response(JSON.stringify([]), { status: 200 });
+  });
+  return {
+    patchBodies,
+    get taskRequests() {
+      return taskRequests;
+    },
+  };
+}
+
 describe("App", () => {
   beforeEach(() => {
     resetMockTeamApiState();
@@ -361,6 +427,122 @@ describe("App", () => {
 
     expect(container.querySelector(".task-leader-chat-branch")).toBeNull();
     expect(container.querySelector(".task-action-branch")).toBeNull();
+  });
+
+  it("opens a shallow Task edit form with title and Agent selections only", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+
+    const branch = container.querySelector(".task-edit-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    expect(within(branch!).getByLabelText("Task 名称")).toHaveValue("调查 Medtrum 云资产");
+    expect(within(branch!).getByLabelText("Leader Agent")).toHaveValue("main");
+    expect(within(branch!).getByLabelText("Worker Agent")).toHaveValue("search");
+    expect(within(branch!).getByLabelText("Checker Agent")).toHaveValue("main");
+    expect(within(branch!).queryByLabelText(/input/i)).toBeNull();
+    expect(within(branch!).queryByLabelText(/output/i)).toBeNull();
+    expect(within(branch!).queryByLabelText(/acceptance/i)).toBeNull();
+    expect(within(branch!).getByText(/复杂需求和验收规则继续通过/)).toBeInTheDocument();
+  });
+
+  it("saves a title-only Task edit without sending workUnit", async () => {
+    const api = mockLiveTaskEditorApi();
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+
+    fireEvent.change(screen.getByLabelText("Task 名称"), { target: { value: "更新后的 Task" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(api.patchBodies).toHaveLength(1));
+    expect(api.patchBodies[0]).toEqual({ title: "更新后的 Task" });
+  });
+
+  it("saves a leader-only Task edit without sending workUnit", async () => {
+    const api = mockLiveTaskEditorApi();
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+
+    fireEvent.change(screen.getByLabelText("Leader Agent"), { target: { value: "reviewer" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(api.patchBodies).toHaveLength(1));
+    expect(api.patchBodies[0]).toEqual({ leaderAgentId: "reviewer" });
+  });
+
+  it("saves worker and checker changes with the full existing workUnit", async () => {
+    const api = mockLiveTaskEditorApi();
+    const original = cloneTaskFixture();
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+
+    fireEvent.change(screen.getByLabelText("Worker Agent"), { target: { value: "reviewer" } });
+    fireEvent.change(screen.getByLabelText("Checker Agent"), { target: { value: "search" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(api.patchBodies).toHaveLength(1));
+    expect(api.patchBodies[0]).toEqual({
+      workUnit: {
+        ...original.workUnit,
+        workerAgentId: "reviewer",
+        checkerAgentId: "search",
+      },
+    });
+  });
+
+  it("refreshes live Tasks after a successful shallow edit", async () => {
+    const api = mockLiveTaskEditorApi();
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+
+    fireEvent.change(screen.getByLabelText("Task 名称"), { target: { value: "刷新后的 Task" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(api.taskRequests).toBe(2));
+    await waitFor(() => {
+      expect(container.querySelector('[data-task-id="task_research_medtrum"]')).toHaveTextContent("刷新后的 Task");
+    });
+    await waitFor(() => expect(screen.queryByText("请求失败 (500)")).toBeNull());
+  });
+
+  it("keeps the edit panel open and input intact when shallow save fails", async () => {
+    mockLiveTaskEditorApi({ patchStatus: 500, patchError: "update failed" });
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+
+    fireEvent.change(screen.getByLabelText("Task 名称"), { target: { value: "失败时保留的输入" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    expect(await screen.findByText("update failed")).toBeInTheDocument();
+    expect(container.querySelector(".task-edit-branch")).toBeTruthy();
+    expect(screen.getByLabelText("Task 名称")).toHaveValue("失败时保留的输入");
+  });
+
+  it("shows Task mutation warnings as non-blocking edit notes", async () => {
+    mockLiveTaskEditorApi({
+      warnings: ["workerAgentId and checkerAgentId are the same; self-checking weakens independent acceptance."],
+    });
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+
+    fireEvent.change(screen.getByLabelText("Worker Agent"), { target: { value: "main" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    expect(await within(container.querySelector(".task-edit-branch")!).findByText(/self-checking weakens independent acceptance/)).toBeInTheDocument();
+    expect(screen.queryByText("请求失败 (500)")).toBeNull();
   });
 
   it("switches the embedded playground branch to the clicked agent id", async () => {

@@ -799,6 +799,86 @@
   background: rgba(255, 113, 136, 0.08);
 }
 
+.task-action-menu-button.primary {
+  color: #041015;
+  background: var(--accent);
+  border-color: rgba(121, 216, 208, 0.72);
+}
+
+.task-edit-form {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 190, 96, 0.08), transparent 42%),
+    rgba(7, 12, 22, 0.98);
+  overflow: auto;
+}
+
+.task-edit-note,
+.task-edit-warning {
+  padding: 10px;
+  color: var(--secondary);
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(122, 131, 151, 0.18);
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.task-edit-note code {
+  color: rgb(255, 214, 128);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.task-edit-warning {
+  color: rgb(255, 214, 128);
+  border-color: rgba(255, 190, 96, 0.28);
+  background: rgba(255, 190, 96, 0.08);
+}
+
+.task-edit-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.task-edit-field {
+  display: grid;
+  gap: 5px;
+  color: var(--secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.task-edit-field input,
+.task-edit-field select {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  color: var(--primary);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(122, 131, 151, 0.22);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.task-edit-field input:focus,
+.task-edit-field select:focus {
+  outline: 2px solid rgba(121, 216, 208, 0.42);
+  outline-offset: 1px;
+}
+
+.task-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: auto;
+}
+
 .task-leader-iframe {
   flex: 1 1 auto;
   width: 100%;
