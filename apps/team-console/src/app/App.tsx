@@ -15,6 +15,15 @@ type AgentNode = {
   position: { x: number; y: number };
 };
 
+type CanvasViewport = { x: number; y: number; scale: number };
+
+type AgentFocusState = {
+  kind: "agent";
+  agentId: string;
+  nodeId: string;
+  previousViewport: CanvasViewport;
+};
+
 function errorMessage(error: unknown): string {
   if (error && typeof error === "object" && "message" in error) {
     return String((error as TeamApiError).message);
@@ -54,9 +63,14 @@ export function App() {
   const [agents, setAgents] = useState<AgentSummary[]>(MOCK_AGENTS);
   const [agentNodes, setAgentNodes] = useState<AgentNode[]>([]);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
+  const [canvasViewport, setCanvasViewport] = useState<CanvasViewport>({ x: 0, y: 0, scale: 1 });
+  const [agentFocus, setAgentFocus] = useState<AgentFocusState | null>(null);
 
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
   const addedAgentIds = useMemo(() => new Set(agentNodes.map((node) => node.agentId)), [agentNodes]);
+  const focusedNode = agentFocus ? agentNodes.find((node) => node.nodeId === agentFocus.nodeId) ?? null : null;
+  const focusedAgent = focusedNode ? agentsById.get(focusedNode.agentId) ?? null : null;
+  const isAgentFocused = Boolean(focusedNode && focusedAgent);
 
   const selectTask = useCallback((taskId: string) => {
     setSelectedTaskId((current) => current === taskId ? null : taskId);
@@ -199,6 +213,28 @@ export function App() {
     });
   }, []);
 
+  const focusAgentNode = useCallback((node: AgentNode) => {
+    setAgentPickerOpen(false);
+    setAgentFocus({
+      kind: "agent",
+      agentId: node.agentId,
+      nodeId: node.nodeId,
+      previousViewport: canvasViewport,
+    });
+    setCanvasViewport({
+      x: 24 - node.position.x,
+      y: 18 - node.position.y,
+      scale: 1.08,
+    });
+  }, [canvasViewport]);
+
+  const collapseAgentFocus = useCallback(() => {
+    if (agentFocus) {
+      setCanvasViewport(agentFocus.previousViewport);
+    }
+    setAgentFocus(null);
+  }, [agentFocus]);
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -282,25 +318,59 @@ export function App() {
                   </div>
                 )}
 
-                <div className="agent-canvas-board" data-testid="agent-canvas">
-                  {agentNodes.map((node) => {
-                    const agent = agentsById.get(node.agentId);
-                    if (!agent) return null;
-                    return (
+                <div
+                  className="agent-canvas-board"
+                  data-testid="agent-canvas"
+                  data-state={isAgentFocused ? "focus" : "normal"}
+                  data-viewport={`${canvasViewport.x},${canvasViewport.y},${canvasViewport.scale}`}
+                >
+                  {isAgentFocused && focusedNode && focusedAgent ? (
+                    <div className="agent-focus-stage">
                       <button
-                        key={node.nodeId}
                         type="button"
-                        className="agent-card"
-                        style={{ left: node.position.x, top: node.position.y }}
+                        className="agent-card agent-focus-card"
+                        aria-current="true"
                       >
                         <span className="agent-card-kicker">Agent</span>
-                        <span className="agent-card-name">{agent.name}</span>
-                        <code>{agent.agentId}</code>
-                        <span className="agent-card-description">{agent.description}</span>
-                        <span className="agent-card-binding">{formatAgentBinding(agent)}</span>
+                        <span className="agent-card-name">{focusedAgent.name}</span>
+                        <code>{focusedAgent.agentId}</code>
+                        <span className="agent-card-description">{focusedAgent.description}</span>
+                        <span className="agent-card-binding">{formatAgentBinding(focusedAgent)}</span>
                       </button>
-                    );
-                  })}
+                      <section className="agent-chat-panel" aria-label={`Agent Chat Panel ${focusedAgent.name}`}>
+                        <div className="agent-chat-panel-header">
+                          <div>
+                            <span className="agent-chat-panel-kicker">Agent Chat Panel</span>
+                            <h2>{focusedAgent.name} / {focusedAgent.agentId}</h2>
+                          </div>
+                          <button type="button" className="agent-collapse-btn" onClick={collapseAgentFocus}>
+                            收起
+                          </button>
+                        </div>
+                        <div className="agent-chat-empty">暂无消息</div>
+                      </section>
+                    </div>
+                  ) : (
+                    agentNodes.map((node) => {
+                      const agent = agentsById.get(node.agentId);
+                      if (!agent) return null;
+                      return (
+                        <button
+                          key={node.nodeId}
+                          type="button"
+                          className="agent-card"
+                          style={{ left: node.position.x, top: node.position.y }}
+                          onClick={() => focusAgentNode(node)}
+                        >
+                          <span className="agent-card-kicker">Agent</span>
+                          <span className="agent-card-name">{agent.name}</span>
+                          <code>{agent.agentId}</code>
+                          <span className="agent-card-description">{agent.description}</span>
+                          <span className="agent-card-binding">{formatAgentBinding(agent)}</span>
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
               </section>
               <ExecutionMap

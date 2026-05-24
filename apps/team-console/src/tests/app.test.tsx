@@ -58,6 +58,33 @@ describe("App", () => {
     expect(within(canvas).getAllByText("main")).toHaveLength(1);
   });
 
+  it("focuses an agent card above a chat panel and restores the canvas", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(screen.getByRole("button", { name: /搜索 Agent[\s\S]*search/ }));
+
+    const canvas = screen.getByTestId("agent-canvas");
+    expect(canvas).toHaveAttribute("data-state", "normal");
+    expect(canvas.querySelectorAll(".agent-card")).toHaveLength(2);
+
+    fireEvent.click(within(canvas).getByRole("button", { name: /主 Agent/ }));
+
+    expect(canvas).toHaveAttribute("data-state", "focus");
+    expect(screen.getByText("Agent Chat Panel")).toBeInTheDocument();
+    expect(screen.getByText("主 Agent / main")).toBeInTheDocument();
+    expect(within(canvas).queryByText("搜索 Agent")).toBeNull();
+    expect(canvas.querySelectorAll(".agent-card")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "收起" }));
+
+    expect(canvas).toHaveAttribute("data-state", "normal");
+    expect(screen.queryByText("Agent Chat Panel")).toBeNull();
+    expect(within(canvas).getByText("搜索 Agent")).toBeInTheDocument();
+    expect(canvas.querySelectorAll(".agent-card")).toHaveLength(2);
+  });
+
   it("has mock and live options", () => {
     render(<App />);
     const options = screen.getAllByRole("option");
