@@ -1,12 +1,19 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "../api/team-types";
-import { ALL_FIXTURES, MockTeamApi } from "../fixtures/team-fixtures";
+import type { AgentSummary, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "../api/team-types";
+import { ALL_FIXTURES, MOCK_AGENTS, MockTeamApi } from "../fixtures/team-fixtures";
 import { ExecutionMap } from "../graph/ExecutionMap";
 import { ROOT_ID } from "../graph/execution-map-layout";
 import "./app.css";
 
 export type DataSource = "mock" | "live";
+
+type AgentNode = {
+  nodeId: string;
+  kind: "agent";
+  agentId: string;
+  position: { x: number; y: number };
+};
 
 function errorMessage(error: unknown): string {
   if (error && typeof error === "object" && "message" in error) {
@@ -27,6 +34,14 @@ function selectLatestRun(runs: TeamRunState[]): TeamRunState | null {
   }, runs[0]);
 }
 
+function formatAgentBinding(agent: AgentSummary): string {
+  const model = agent.defaultModelProvider && agent.defaultModelId
+    ? `${agent.defaultModelProvider}/${agent.defaultModelId}`
+    : "model default";
+  const browser = agent.defaultBrowserId ? `browser ${agent.defaultBrowserId}` : "browser default";
+  return `${model} · ${browser}`;
+}
+
 export function App() {
   const [dataSource, setDataSource] = useState<DataSource>("mock");
   const [selectedFixtureId, setSelectedFixtureId] = useState<string>(ALL_FIXTURES[0].id);
@@ -36,6 +51,12 @@ export function App() {
   const [attemptsByTaskId, setAttemptsByTaskId] = useState<Record<string, TeamAttemptMetadata[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [agents, setAgents] = useState<AgentSummary[]>(MOCK_AGENTS);
+  const [agentNodes, setAgentNodes] = useState<AgentNode[]>([]);
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
+
+  const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
+  const addedAgentIds = useMemo(() => new Set(agentNodes.map((node) => node.agentId)), [agentNodes]);
 
   const selectTask = useCallback((taskId: string) => {
     setSelectedTaskId((current) => current === taskId ? null : taskId);
@@ -58,6 +79,15 @@ export function App() {
       loadFixture(selectedFixtureId);
     }
   }, [dataSource, selectedFixtureId, loadFixture]);
+
+  useEffect(() => {
+    if (dataSource === "mock") {
+      setAgents(MOCK_AGENTS);
+      return;
+    }
+    setAgents([]);
+    setAgentPickerOpen(false);
+  }, [dataSource]);
 
   useEffect(() => {
     if (dataSource !== "live") return;
@@ -153,6 +183,22 @@ export function App() {
     [dataSource],
   );
 
+  const addAgentNode = useCallback((agentId: string) => {
+    setAgentNodes((current) => {
+      if (current.some((node) => node.agentId === agentId)) return current;
+      const index = current.length;
+      return [
+        ...current,
+        {
+          nodeId: `agent-${agentId}`,
+          kind: "agent",
+          agentId,
+          position: { x: 24 + index * 260, y: 28 },
+        },
+      ];
+    });
+  }, []);
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -199,6 +245,64 @@ export function App() {
         ) : plan && run ? (
           <div className="workspace">
             <div className="workspace-map">
+              <section className="agent-canvas-panel" aria-label="Agent Canvas">
+                <div className="agent-canvas-toolbar">
+                  <div className="agent-canvas-title">
+                    <span>Agent Canvas</span>
+                    <code>{agentNodes.length}</code>
+                  </div>
+                  <button
+                    type="button"
+                    className="agent-add-btn"
+                    onClick={() => setAgentPickerOpen((open) => !open)}
+                    aria-expanded={agentPickerOpen}
+                  >
+                    添加 Agent
+                  </button>
+                </div>
+
+                {agentPickerOpen && (
+                  <div className="agent-picker" aria-label="Agent catalog">
+                    {agents.map((agent) => {
+                      const joined = addedAgentIds.has(agent.agentId);
+                      return (
+                        <button
+                          key={agent.agentId}
+                          type="button"
+                          className="agent-picker-option"
+                          disabled={joined}
+                          onClick={() => addAgentNode(agent.agentId)}
+                        >
+                          <span className="agent-picker-name">{agent.name}</span>
+                          <code>{agent.agentId}</code>
+                          {joined && <span className="agent-picker-status">已加入</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="agent-canvas-board" data-testid="agent-canvas">
+                  {agentNodes.map((node) => {
+                    const agent = agentsById.get(node.agentId);
+                    if (!agent) return null;
+                    return (
+                      <button
+                        key={node.nodeId}
+                        type="button"
+                        className="agent-card"
+                        style={{ left: node.position.x, top: node.position.y }}
+                      >
+                        <span className="agent-card-kicker">Agent</span>
+                        <span className="agent-card-name">{agent.name}</span>
+                        <code>{agent.agentId}</code>
+                        <span className="agent-card-description">{agent.description}</span>
+                        <span className="agent-card-binding">{formatAgentBinding(agent)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
               <ExecutionMap
                 plan={plan}
                 run={run}
