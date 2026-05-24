@@ -649,6 +649,103 @@ describe("App", () => {
     expect(Number.parseFloat(restoredTaskNode.style.top)).toBeCloseTo(255, 4);
   });
 
+  it("refreshes live Task cards when returning to Agent workspace", async () => {
+    const firstTask = mockTeamTasks[0]!;
+    const secondTask = {
+      ...firstTask,
+      taskId: "task_refresh_created",
+      title: "刷新后出现的新 Task",
+      workUnit: {
+        ...firstTask.workUnit,
+        title: "刷新后出现的新 Task",
+      },
+    };
+    const plan = makeSequentialPlan();
+    const run = makeSequentialRun();
+    let taskRequests = 0;
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [
+            { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+            { agentId: "search", name: "搜索 Agent", description: "搜索" },
+          ],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") {
+        return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      }
+      if (url === "/v1/team/tasks") {
+        taskRequests += 1;
+        return new Response(JSON.stringify({
+          tasks: taskRequests === 1 ? [firstTask] : [firstTask, secondTask],
+        }), { status: 200 });
+      }
+      if (url === "/v1/team/plans") return new Response(JSON.stringify([plan]), { status: 200 });
+      if (url === "/v1/team/runs") return new Response(JSON.stringify([run]), { status: 200 });
+      if (url === "/v1/team/runs/run_seq_001") return new Response(JSON.stringify(run), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    expect(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "最新 Run" }));
+    expect(await screen.findByText("Research vendor A")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Agent workspace" }));
+
+    await waitFor(() => expect(taskRequests).toBe(2));
+    expect(await within(getAtlasNodes(container)).findByRole("button", { name: /刷新后出现的新 Task/ })).toBeInTheDocument();
+  });
+
+  it("keeps dragged live Task positions after a live Task refresh", async () => {
+    const liveTask = mockTeamTasks[0]!;
+    const plan = makeSequentialPlan();
+    const run = makeSequentialRun();
+    let taskRequests = 0;
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [
+            { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+            { agentId: "search", name: "搜索 Agent", description: "搜索" },
+          ],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") {
+        return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      }
+      if (url === "/v1/team/tasks") {
+        taskRequests += 1;
+        return new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 });
+      }
+      if (url === "/v1/team/plans") return new Response(JSON.stringify([plan]), { status: 200 });
+      if (url === "/v1/team/runs") return new Response(JSON.stringify([run]), { status: 200 });
+      if (url === "/v1/team/runs/run_seq_001") return new Response(JSON.stringify(run), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }) as HTMLElement;
+    firePointer(taskNode, "pointerdown", { pointerId: 42, clientX: 120, clientY: 120 });
+    firePointer(taskNode, "pointermove", { pointerId: 42, clientX: 190, clientY: 155 });
+    firePointer(taskNode, "pointerup", { pointerId: 42, clientX: 190, clientY: 155, buttons: 0 });
+
+    fireEvent.click(screen.getByRole("button", { name: "最新 Run" }));
+    expect(await screen.findByText("Research vendor A")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Agent workspace" }));
+
+    await waitFor(() => expect(taskRequests).toBe(2));
+    const refreshedTaskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }) as HTMLElement;
+    expect(Number.parseFloat(refreshedTaskNode.style.left)).toBeCloseTo(350, 4);
+    expect(Number.parseFloat(refreshedTaskNode.style.top)).toBeCloseTo(255, 4);
+  });
+
   it("renders the selected live run after loading", async () => {
     const plan = {
       ...makeSequentialPlan(),

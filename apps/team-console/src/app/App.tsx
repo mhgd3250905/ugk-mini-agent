@@ -164,6 +164,14 @@ function writeStoredLiveTaskNodes(nodes: AtlasTaskNode[]) {
   } catch {}
 }
 
+function liveTaskRefreshPositions(currentNodes: AtlasTaskNode[]): Map<string, { x: number; y: number }> {
+  const positions = readStoredLiveTaskPositions();
+  for (const node of currentNodes) {
+    positions.set(node.taskId, { x: node.position.x, y: node.position.y });
+  }
+  return positions;
+}
+
 function makeTaskNode(
   task: TeamCanvasTask,
   index: number,
@@ -259,6 +267,17 @@ export function App() {
     }
   }, [expandedTaskBranch, tasksById]);
 
+  const applyLiveTasks = useCallback((nextTasks: TeamCanvasTask[]) => {
+    setTasks(nextTasks);
+    setTaskNodes((current) => makeTaskNodes(nextTasks, liveTaskRefreshPositions(current)));
+    setLiveTaskNodesHydrated(true);
+  }, []);
+
+  const refreshLiveTasks = useCallback(async () => {
+    const nextTasks = await new LiveTeamApi().listTasks();
+    applyLiveTasks(nextTasks);
+  }, [applyLiveTasks]);
+
   const loadFixture = useCallback((fixtureId: string) => {
     setExpandedAgentBranch(null);
     setExpandedTaskBranch(null);
@@ -334,9 +353,7 @@ export function App() {
         if (!cancelled) {
           setAgents(nextAgents);
           setAgentRunStatusById(agentRunStatusRecord(nextStatuses));
-          setTasks(nextTasks);
-          setTaskNodes(makeTaskNodes(nextTasks, readStoredLiveTaskPositions()));
-          setLiveTaskNodesHydrated(true);
+          applyLiveTasks(nextTasks);
         }
       } catch (e) {
         if (!cancelled) {
@@ -356,7 +373,7 @@ export function App() {
         globalThis.clearInterval(refreshTimer);
       }
     };
-  }, [dataSource]);
+  }, [applyLiveTasks, dataSource]);
 
   useEffect(() => {
     if (dataSource !== "live") return;
@@ -652,7 +669,10 @@ export function App() {
           <span className="fixture-label">运行图：</span>
           <button
             className={`fixture-btn ${liveRunMode === "workspace" ? "active" : ""}`}
-            onClick={() => setLiveRunMode("workspace")}
+            onClick={() => {
+              setLiveRunMode("workspace");
+              void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
+            }}
           >
             Agent workspace
           </button>
