@@ -69,10 +69,14 @@ function cloneTaskFixture(task = mockTeamTasks[0]!) {
 function mockLiveTaskEditorApi(options?: {
   patchStatus?: number;
   patchError?: string;
+  archiveStatus?: number;
+  archiveError?: string;
   warnings?: string[];
 }) {
   let currentTask = cloneTaskFixture();
+  let taskArchived = false;
   let taskRequests = 0;
+  let archiveRequests = 0;
   const patchBodies: unknown[] = [];
   vi.mocked(fetch).mockImplementation(async (input, init) => {
     const url = String(input);
@@ -89,7 +93,7 @@ function mockLiveTaskEditorApi(options?: {
     if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
     if (url === "/v1/team/tasks" && method === "GET") {
       taskRequests += 1;
-      return new Response(JSON.stringify({ tasks: [currentTask] }), { status: 200 });
+      return new Response(JSON.stringify({ tasks: taskArchived ? [] : [currentTask] }), { status: 200 });
     }
     if (url === "/v1/team/tasks/task_research_medtrum" && method === "PATCH") {
       const body = JSON.parse(String(init?.body ?? "{}")) as {
@@ -110,12 +114,25 @@ function mockLiveTaskEditorApi(options?: {
       };
       return new Response(JSON.stringify({ task: currentTask, warnings: options?.warnings }), { status: 200 });
     }
+    if (url === "/v1/team/tasks/task_research_medtrum/archive" && method === "POST") {
+      archiveRequests += 1;
+      if (options?.archiveStatus && options.archiveStatus >= 400) {
+        return new Response(JSON.stringify({ error: options.archiveError ?? "archive failed" }), { status: options.archiveStatus });
+      }
+      taskArchived = true;
+      return new Response(JSON.stringify({
+        task: { ...currentTask, archived: true, status: "archived" },
+      }), { status: 200 });
+    }
     return new Response(JSON.stringify([]), { status: 200 });
   });
   return {
     patchBodies,
     get taskRequests() {
       return taskRequests;
+    },
+    get archiveRequests() {
+      return archiveRequests;
     },
   };
 }
@@ -543,6 +560,65 @@ describe("App", () => {
 
     expect(await within(container.querySelector(".task-edit-branch")!).findByText(/self-checking weakens independent acceptance/)).toBeInTheDocument();
     expect(screen.queryByText("请求失败 (500)")).toBeNull();
+  });
+
+  it("opens a soft archive confirmation from the Task delete action", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+
+    const confirm = container.querySelector(".task-delete-confirm") as HTMLElement | null;
+    expect(confirm).toBeTruthy();
+    expect(within(confirm!).getByText(/archive 软归档/)).toBeInTheDocument();
+    expect(within(confirm!).getByRole("button", { name: "取消" })).toBeInTheDocument();
+    expect(within(confirm!).getByRole("button", { name: "确认删除" })).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("cancels Task delete confirmation without archiving", async () => {
+    const api = mockLiveTaskEditorApi();
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    expect(api.archiveRequests).toBe(0);
+    expect(container.querySelector(".task-delete-confirm")).toBeNull();
+    expect(container.querySelector(".task-action-branch")).toBeTruthy();
+  });
+
+  it("archives a live Task from the delete confirmation and refreshes the atlas", async () => {
+    const api = mockLiveTaskEditorApi();
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+
+    await waitFor(() => expect(api.archiveRequests).toBe(1));
+    await waitFor(() => expect(api.taskRequests).toBe(2));
+    await waitFor(() => {
+      expect(container.querySelector('[data-task-id="task_research_medtrum"]')).toBeNull();
+    });
+    expect(container.querySelector(".task-action-branch")).toBeNull();
+  });
+
+  it("keeps the Task delete confirmation open when archive fails", async () => {
+    mockLiveTaskEditorApi({ archiveStatus: 500, archiveError: "archive failed" });
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+
+    expect(await screen.findByText("archive failed")).toBeInTheDocument();
+    expect(container.querySelector(".task-delete-confirm")).toBeTruthy();
+    expect(container.querySelector('[data-task-id="task_research_medtrum"]')).toBeTruthy();
   });
 
   it("switches the embedded playground branch to the clicked agent id", async () => {

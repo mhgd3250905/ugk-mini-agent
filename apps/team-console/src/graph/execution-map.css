@@ -879,6 +879,28 @@
   margin-top: auto;
 }
 
+.task-delete-confirm {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  color: var(--secondary);
+  background: rgba(255, 113, 136, 0.08);
+  border: 1px solid rgba(255, 113, 136, 0.24);
+  border-radius: 6px;
+}
+
+.task-delete-confirm p {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.task-delete-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .task-leader-iframe {
   flex: 1 1 auto;
   width: 100%;

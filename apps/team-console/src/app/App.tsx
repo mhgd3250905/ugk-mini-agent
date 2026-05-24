@@ -258,6 +258,8 @@ export function App() {
   const [taskEditDraft, setTaskEditDraft] = useState<TaskEditDraft | null>(null);
   const [taskEditSaving, setTaskEditSaving] = useState(false);
   const [taskEditWarning, setTaskEditWarning] = useState<string | null>(null);
+  const [taskArchiveConfirming, setTaskArchiveConfirming] = useState(false);
+  const [taskArchiveSaving, setTaskArchiveSaving] = useState(false);
 
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
   const tasksById = useMemo(() => new Map(tasks.map((task) => [task.taskId, task])), [tasks]);
@@ -276,16 +278,18 @@ export function App() {
     setSelectedTaskId((current) => current === taskId ? null : taskId);
   }, []);
 
-  const clearTaskEditState = useCallback(() => {
+  const clearTaskPanelState = useCallback(() => {
     setTaskEditDraft(null);
     setTaskEditWarning(null);
     setTaskEditSaving(false);
+    setTaskArchiveConfirming(false);
+    setTaskArchiveSaving(false);
   }, []);
 
   const closeTaskBranch = useCallback(() => {
     setExpandedTaskBranch(null);
-    clearTaskEditState();
-  }, [clearTaskEditState]);
+    clearTaskPanelState();
+  }, [clearTaskPanelState]);
 
   useEffect(() => {
     try {
@@ -597,11 +601,11 @@ export function App() {
     setTaskLeaderPickerOpen(false);
     refreshLiveTasksAfterLeavingTaskCreateBranch(expandedAgentBranch);
     setExpandedAgentBranch(null);
-    clearTaskEditState();
+    clearTaskPanelState();
     setExpandedTaskBranch((current) => (
       current?.nodeId === node.nodeId ? null : { nodeId: node.nodeId, taskId: node.taskId, mode: "menu" }
     ));
-  }, [clearTaskEditState, expandedAgentBranch, refreshLiveTasksAfterLeavingTaskCreateBranch]);
+  }, [clearTaskPanelState, expandedAgentBranch, refreshLiveTasksAfterLeavingTaskCreateBranch]);
 
   const openTaskCreateBranch = useCallback((leaderAgentId: string) => {
     const nodeId = `agent-${leaderAgentId}`;
@@ -619,6 +623,7 @@ export function App() {
   const openTaskEditBranch = useCallback((task: TeamCanvasTask) => {
     setTaskEditDraft(makeTaskEditDraft(task));
     setTaskEditWarning(null);
+    setTaskArchiveConfirming(false);
     setExpandedTaskBranch((current) => current ? { ...current, mode: "edit" } : current);
   }, []);
 
@@ -669,6 +674,29 @@ export function App() {
       setTaskEditSaving(false);
     }
   }, [dataSource, expandedTask, refreshLiveTasks, taskEditDraft]);
+
+  const archiveExpandedTask = useCallback(async () => {
+    if (!expandedTask) return;
+
+    setTaskArchiveSaving(true);
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      await api.archiveTask(expandedTask.taskId);
+      if (dataSource === "live") {
+        await refreshLiveTasks();
+      } else {
+        const nextTasks = await api.listTasks();
+        setTasks(nextTasks);
+        setTaskNodes((current) => makeTaskNodes(nextTasks, liveTaskRefreshPositions(current)));
+      }
+      closeTaskBranch();
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setTaskArchiveSaving(false);
+    }
+  }, [closeTaskBranch, dataSource, expandedTask, refreshLiveTasks]);
 
   const canCreateTask = dataSource === "live" && agents.length > 0;
   const canRefreshTasks = dataSource === "live" && !liveTasksRefreshing;
@@ -959,13 +987,46 @@ export function App() {
         <button
           type="button"
           className="task-action-menu-button"
-          onClick={() => setExpandedTaskBranch((current) => current ? { ...current, mode: "leader-chat" } : current)}
+          onClick={() => {
+            setTaskArchiveConfirming(false);
+            setExpandedTaskBranch((current) => current ? { ...current, mode: "leader-chat" } : current);
+          }}
         >
           对话 Leader
         </button>
-        <button type="button" className="task-action-menu-button danger">
-          删除
-        </button>
+        {taskArchiveConfirming ? (
+          <div className="task-delete-confirm" role="group" aria-label={`${expandedTask.title} 删除确认`}>
+            <p>删除会调用 archive 软归档，不会启动 Task run，也不会把 Task 定义写入 localStorage。</p>
+            <div className="task-delete-actions">
+              <button
+                type="button"
+                className="task-action-menu-button"
+                disabled={taskArchiveSaving}
+                onClick={() => setTaskArchiveConfirming(false)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="task-action-menu-button danger"
+                disabled={taskArchiveSaving}
+                onClick={() => {
+                  void archiveExpandedTask();
+                }}
+              >
+                {taskArchiveSaving ? "删除中..." : "确认删除"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="task-action-menu-button danger"
+            onClick={() => setTaskArchiveConfirming(true)}
+          >
+            删除
+          </button>
+        )}
       </div>
     </section>
     )
