@@ -14,8 +14,44 @@
 - AbortSignal 全链路传播：cancel/pause 能中断正在执行的 agent session
 - 真实 runner smoke test：`run_1c54aaa7e442`，status: completed，P0_REAL_RUNNER_OK
 - 最新验证：P26 output contract validation 已覆盖 deterministic validator、真实 orchestrator regression、`npm run test:team` 和 `npx tsc --noEmit`
+- Team Task 后端契约已建立：`Task` 是 Team Console 画布上的独立最小编排节点，内部包含一个 `workUnit`，不复用 `Plan tasks.length === 1`；`leaderAgentId` 负责运行前和用户澄清边界并维护 WorkUnit 草案，`workerAgentId` / `checkerAgentId` 分别代表未来真实执行和验收 Agent。主项目新增 `/v1/team/tasks` REST API 和 `.pi/skills/team-task-creator/SKILL.md`；skill 只能在 `/team-task` 显式触发后创建 / 更新 Task draft，必须先展示完整 Task JSON 并等待确认，不启动 run，不解析 iframe 聊天文本，不修改 Agent profile、模型、browser binding 或技能安装逻辑。
 
 ## 核心概念
+
+### Task
+
+Task 是 Team Console 画布上的最小编排节点，独立于 Plan 存在。不要把它实现成 `Plan tasks.length === 1`，这不是语义洁癖，是避免以后画布节点、运行快照和多任务 Plan 全部互相污染。
+
+关键字段：
+
+- `taskId` — 唯一标识，当前由 `src/team/ids.ts` 生成 `task_...`
+- `title` — 画布 Task 标题
+- `leaderAgentId` — 必填，运行前负责和用户沟通、澄清边界并维护 WorkUnit 草案的 Agent
+- `workUnit` — Task 内部的单个 WorkUnit 定义
+- `status` — `drafting | ready | locked | archived`；本轮创建 / 更新只开放 `drafting | ready`，`locked` 预留给未来 run snapshot
+- `archived` — 软归档标记；默认列表不返回归档 Task
+
+`workUnit` 关键字段：
+
+- `title`
+- `input.text`
+- `outputContract.text`
+- `acceptance.rules[]`
+- `workerAgentId`
+- `checkerAgentId`
+
+`leaderAgentId`、`workerAgentId`、`checkerAgentId` 都必须指向当前未归档 Agent profile。`workerAgentId === checkerAgentId` 第一版允许，但 API 会返回 warning，skill 预览也必须提醒“同 Agent 自检会削弱验收独立性”。
+
+Task 持久化在 `.data/team/tasks/<taskId>.json`，通过 `src/team/task-store.ts` 读写；旧记录缺 `status` 时按 `drafting`，缺 `archived` 时按 `false`。
+
+`team-task-creator` runtime skill 只创建 / 更新 Task draft：
+
+- 显式关键词：`/team-task`
+- 先读 `GET /v1/agents`
+- 先展示完整 Task JSON 预览并等用户确认
+- 创建走 `POST /v1/team/tasks`
+- 更新走 `GET /v1/team/tasks`、`GET /v1/team/tasks/:taskId`、`PATCH /v1/team/tasks/:taskId`
+- 不启动 run，不调用 `POST /v1/team/plans/:planId/runs`，不直接写 `.data/team`，不改 Agent profile / 模型 / browser binding / 技能安装
 
 ### TeamUnit
 
@@ -373,6 +409,18 @@ run 内相对路径，指向 accepted 或 failed 结果文件。格式如 `tasks
 | PATCH | `/v1/team/team-units/:teamUnitId` | 修改未归档、未被活跃 run 锁住的 TeamUnit |
 | POST | `/v1/team/team-units/:teamUnitId/archive` | 归档未被活跃 run 锁住的 TeamUnit |
 | DELETE | `/v1/team/team-units/:teamUnitId` | 删除未被活跃 run 锁住的 TeamUnit |
+
+### Task API
+
+| 方法 | 路径 | 语义 |
+|------|------|------|
+| GET | `/v1/team/tasks` | 列出未归档 Task；`?includeArchived=1` 可包含归档记录 |
+| POST | `/v1/team/tasks` | 创建 Task draft；必须包含 `leaderAgentId` 和完整 `workUnit` |
+| GET | `/v1/team/tasks/:taskId` | 查看单个 Task |
+| PATCH | `/v1/team/tasks/:taskId` | 更新未归档 Task draft 的 `title`、`leaderAgentId`、`workUnit` 或 `status`；不允许修改 locked Task 的 `workUnit` |
+| POST | `/v1/team/tasks/:taskId/archive` | 软归档 Task |
+
+Task API 不提供 run 创建能力。`POST /v1/team/tasks` 不会创建 Plan，也不会启动 worker/checker。
 
 ### Plan API
 
@@ -761,6 +809,8 @@ docker compose up -d --scale ugk-pi-team-worker=2  # 多 worker 验证
 | `src/team/output-validator.ts` | P26 deterministic output contract validator：JSON items/object、HTML fragment、file exists、run-scoped file reference safety |
 | `src/team/run-state-events.ts` | 进程内 run state 变更通知（subscribe/notify） |
 | `src/team/team-unit-store.ts` | TeamUnit 存储 |
+| `src/team/task-store.ts` | Team Canvas Task 持久化：`.data/team/tasks/<taskId>.json`、旧字段兼容、归档过滤 |
+| `src/team/task-validation.ts` | Task create/update schema policy：leader / worker / checker Agent、WorkUnit 输入 / 输出契约 / 验收规则校验 |
 | `src/team/plan-store.ts` | Plan 持久化和 runCount 不变式 |
 | `src/team/plan-validation.ts` | Plan create/update schema policy：task type、decomposer、for_each、outputCheck 校验 |
 | `src/team/config-locks.ts` | 活跃 run 对 Plan / TeamUnit / AgentProfile 的锁计算 |
@@ -777,6 +827,7 @@ docker compose up -d --scale ugk-pi-team-worker=2  # 多 worker 验证
 | `src/ui/team-page.ts` | `/playground/team` 控制台（含 SSE 实时更新、中文 phase 标签、页面内 toast/confirm、Plan modal 表单、自然语言草案、结构化 Plan 卡片、JSON 查看器） |
 | `src/ui/team-run-detail-behavior.ts` | Team run detail 滚动快照 / anchor 恢复 helper；`team-page.ts` 将这段脚本注入 inline UI |
 | `.pi/skills/team-plan-creator/SKILL.md` | 只创建 TeamUnit / Plan 的运行时 skill |
+| `.pi/skills/team-task-creator/SKILL.md` | 只创建 / 更新 Team Canvas Task draft 的运行时 skill |
 
 ### /playground/team 控制台
 
