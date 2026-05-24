@@ -758,6 +758,47 @@
   font-size: 10px;
 }
 
+.task-action-menu {
+  flex: 1 1 auto;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 190, 96, 0.08), transparent 42%),
+    rgba(7, 12, 22, 0.98);
+}
+
+.task-action-menu-button {
+  min-height: 38px;
+  padding: 0 12px;
+  color: var(--primary);
+  background: rgba(255, 190, 96, 0.08);
+  border: 1px solid rgba(255, 190, 96, 0.24);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-action-menu-button:hover {
+  border-color: rgba(255, 190, 96, 0.62);
+  background: rgba(255, 190, 96, 0.13);
+}
+
+.task-action-menu-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.task-action-menu-button.danger {
+  color: var(--danger);
+  border-color: rgba(255, 113, 136, 0.26);
+  background: rgba(255, 113, 136, 0.08);
+}
+
 .task-leader-iframe {
   flex: 1 1 auto;
   width: 100%;

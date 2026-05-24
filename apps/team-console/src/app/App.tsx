@@ -24,9 +24,12 @@ type AgentBranchState = {
   mode: AgentBranchMode;
 };
 
+type TaskBranchMode = "menu";
+
 type TaskBranchState = {
   nodeId: string;
   taskId: string;
+  mode: TaskBranchMode;
 };
 
 type StoredTaskPosition = {
@@ -563,7 +566,7 @@ export function App() {
     refreshLiveTasksAfterLeavingTaskCreateBranch(expandedAgentBranch);
     setExpandedAgentBranch(null);
     setExpandedTaskBranch((current) => (
-      current?.nodeId === node.nodeId ? null : { nodeId: node.nodeId, taskId: node.taskId }
+      current?.nodeId === node.nodeId ? null : { nodeId: node.nodeId, taskId: node.taskId, mode: "menu" }
     ));
   }, [expandedAgentBranch, refreshLiveTasksAfterLeavingTaskCreateBranch]);
 
@@ -701,10 +704,10 @@ export function App() {
   ) : null;
 
   const expandedTaskBranchPanel = expandedTaskNode && expandedTask ? (
-    <section className="task-leader-branch" aria-label={`${expandedTask.title} leader 对话`}>
+    <section className="task-leader-branch task-action-branch" aria-label={`${expandedTask.title} Task 操作`}>
       <header className="task-leader-branch-head">
         <div className="task-leader-branch-title">
-          <span>leader</span>
+          <span>Task 操作</span>
           <strong>{expandedTask.title}</strong>
           <code>{expandedTask.taskId}</code>
         </div>
@@ -712,20 +715,30 @@ export function App() {
           type="button"
           className="task-leader-branch-collapse"
           onClick={() => setExpandedTaskBranch(null)}
-          aria-label={`收起 ${expandedTask.title} leader 对话`}
+          aria-label={`收起 ${expandedTask.title} Task 操作`}
         >
           收起
         </button>
       </header>
-      <div className="task-leader-branch-hint">
-        在对话中使用 <code>/team-task</code> 创建或更新这个 Task。Task 数据必须通过后端 API 写入。
+      <div className="task-action-menu" aria-label={`${expandedTask.title} 操作菜单`}>
+        <button
+          type="button"
+          className="task-action-menu-button"
+          disabled
+          title="Task run 暂未接线"
+        >
+          运行
+        </button>
+        <button type="button" className="task-action-menu-button">
+          编辑
+        </button>
+        <button type="button" className="task-action-menu-button">
+          对话 Leader
+        </button>
+        <button type="button" className="task-action-menu-button danger">
+          删除
+        </button>
       </div>
-      <iframe
-        className="task-leader-iframe"
-        title={`${expandedTask.title} leader 对话`}
-        src={buildTaskLeaderPlaygroundUrl(expandedTask)}
-        referrerPolicy="no-referrer"
-      />
     </section>
   ) : null;
 

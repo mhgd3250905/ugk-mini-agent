@@ -224,51 +224,68 @@ describe("App", () => {
     expect(container.querySelector(".agent-playground-branch")).toBeNull();
   });
 
-  it("opens a Task card into its leader Agent playground branch", async () => {
+  it("opens a Task card into an action menu branch", async () => {
     const { container } = render(<App />);
 
     const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
     fireEvent.click(taskNode);
 
-    const branch = container.querySelector(".task-leader-branch") as HTMLElement | null;
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
     expect(branch).toBeTruthy();
-    expect(within(branch!).getByText("leader")).toBeInTheDocument();
+    expect(within(branch!).getByText("Task 操作")).toBeInTheDocument();
     expect(within(branch!).getByText("调查 Medtrum 云资产")).toBeInTheDocument();
     expect(within(branch!).getByText("task_research_medtrum")).toBeInTheDocument();
-
-    const iframe = branch!.querySelector("iframe") as HTMLIFrameElement | null;
-    expect(iframe?.getAttribute("src")).toContain("/playground?view=chat&agentId=main");
-    expect(iframe?.getAttribute("src")).toContain("embed=team-console");
-    expect(iframe?.getAttribute("src")).toContain("teamTaskId=task_research_medtrum");
-    expect(iframe?.getAttribute("src")).toContain("teamTaskMode=edit");
+    expect(within(branch!).getByRole("button", { name: "运行" })).toBeDisabled();
+    expect(within(branch!).getByRole("button", { name: "编辑" })).toBeInTheDocument();
+    expect(within(branch!).getByRole("button", { name: "对话 Leader" })).toBeInTheDocument();
+    expect(within(branch!).getByRole("button", { name: "删除" })).toBeInTheDocument();
+    expect(branch!.querySelector("iframe")).toBeNull();
   });
 
-  it("collapses the Task leader branch from its header action", async () => {
+  it("keeps the Task run action as a disabled placeholder", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    const runButton = within(branch!).getByRole("button", { name: "运行" });
+    expect(runButton).toBeDisabled();
+    fireEvent.click(runButton);
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(container.querySelector(".task-action-branch")).toBeTruthy();
+    expect(container.querySelector("iframe")).toBeNull();
+  });
+
+  it("collapses the Task action branch when the same Task is clicked again", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+    expect(container.querySelector(".task-action-branch")).toBeTruthy();
+
+    fireEvent.click(taskNode);
+
+    expect(container.querySelector(".task-action-branch")).toBeNull();
+  });
+
+  it("clears a Task action branch when an Agent branch opens", async () => {
     const { container } = render(<App />);
 
     fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
-    expect(container.querySelector(".task-leader-branch")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: /收起 调查 Medtrum 云资产 leader 对话/ }));
-
-    expect(container.querySelector(".task-leader-branch")).toBeNull();
-  });
-
-  it("clears a Task leader branch when an Agent branch opens", async () => {
-    const { container } = render(<App />);
-
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
-    expect(container.querySelector(".task-leader-branch")).toBeTruthy();
+    expect(container.querySelector(".task-action-branch")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
     fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
 
-    expect(container.querySelector(".task-leader-branch")).toBeNull();
+    expect(container.querySelector(".task-action-branch")).toBeNull();
     expect(container.querySelector(".agent-playground-branch")).toBeTruthy();
   });
 
-  it("switches the Task leader branch when another Task is clicked", async () => {
+  it("switches the Task action branch when another Task is clicked", async () => {
     const firstTask = mockTeamTasks[0]!;
     const secondTask = {
       ...firstTask,
@@ -303,15 +320,15 @@ describe("App", () => {
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
     fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
-    expect(container.querySelector(".task-leader-branch iframe")?.getAttribute("src")).toContain("teamTaskId=task_research_medtrum");
+    expect(within(container.querySelector(".task-action-branch")!).getByText("task_research_medtrum")).toBeInTheDocument();
 
     fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /复核 Medtrum 证据/ }));
 
-    const branch = container.querySelector(".task-leader-branch") as HTMLElement | null;
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
     expect(branch).toBeTruthy();
     expect(within(branch!).getByText("复核 Medtrum 证据")).toBeInTheDocument();
-    expect(branch!.querySelector("iframe")?.getAttribute("src")).toContain("/playground?view=chat&agentId=search");
-    expect(branch!.querySelector("iframe")?.getAttribute("src")).toContain("teamTaskId=task_review_medtrum");
+    expect(within(branch!).getByText("task_review_medtrum")).toBeInTheDocument();
+    expect(branch!.querySelector("iframe")).toBeNull();
   });
 
   it("switches the embedded playground branch to the clicked agent id", async () => {
@@ -895,7 +912,7 @@ describe("App", () => {
     fireEvent.click(taskNode);
 
     await waitFor(() => expect(taskRequests).toBe(2));
-    expect(screen.getByLabelText("调查 Medtrum 云资产 leader 对话")).toBeInTheDocument();
+    expect(screen.getByLabelText("调查 Medtrum 云资产 Task 操作")).toBeInTheDocument();
   });
 
   it("persists Live API agent cards and dragged positions across remounts", async () => {
