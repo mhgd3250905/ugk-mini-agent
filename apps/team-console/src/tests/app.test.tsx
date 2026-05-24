@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
-import { makeSequentialPlan, makeSequentialRun } from "../fixtures/team-fixtures";
+import { MockTeamApi, makeSequentialPlan, makeSequentialRun } from "../fixtures/team-fixtures";
 
 describe("App", () => {
   beforeEach(() => {
@@ -9,6 +9,7 @@ describe("App", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -83,6 +84,52 @@ describe("App", () => {
     expect(screen.queryByText("Agent Chat Panel")).toBeNull();
     expect(within(canvas).getByText("搜索 Agent")).toBeInTheDocument();
     expect(canvas.querySelectorAll(".agent-card")).toHaveLength(2);
+  });
+
+  it("sends a message from the focused agent panel", async () => {
+    const sendSpy = vi.spyOn(MockTeamApi.prototype, "sendAgentMessage");
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(screen.getByTestId("agent-canvas")).getByRole("button", { name: /主 Agent/ }));
+
+    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "请总结画布状态" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(screen.getByText("请总结画布状态")).toBeInTheDocument();
+    await waitFor(() => expect(sendSpy).toHaveBeenCalledWith("main", "请总结画布状态"));
+    expect(await screen.findByText("[main] mock reply: 请总结画布状态")).toBeInTheDocument();
+  });
+
+  it("shows chat errors without removing the sent user message", async () => {
+    vi.spyOn(MockTeamApi.prototype, "sendAgentMessage").mockRejectedValueOnce({ message: "agent offline" });
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(screen.getByTestId("agent-canvas")).getByRole("button", { name: /主 Agent/ }));
+
+    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "这条会失败" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(screen.getByText("这条会失败")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("agent offline");
+    expect(screen.getByText("这条会失败")).toBeInTheDocument();
+  });
+
+  it("does not submit empty agent messages", async () => {
+    const sendSpy = vi.spyOn(MockTeamApi.prototype, "sendAgentMessage");
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(screen.getByTestId("agent-canvas")).getByRole("button", { name: /主 Agent/ }));
+
+    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(sendSpy).not.toHaveBeenCalled();
   });
 
   it("has mock and live options", () => {

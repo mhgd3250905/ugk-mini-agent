@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { AgentSummary, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "../api/team-types";
+import type { AgentChatMessage, AgentSummary, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "../api/team-types";
 import { ALL_FIXTURES, MOCK_AGENTS, MockTeamApi } from "../fixtures/team-fixtures";
 import { ExecutionMap } from "../graph/ExecutionMap";
 import { ROOT_ID } from "../graph/execution-map-layout";
@@ -65,12 +65,18 @@ export function App() {
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [canvasViewport, setCanvasViewport] = useState<CanvasViewport>({ x: 0, y: 0, scale: 1 });
   const [agentFocus, setAgentFocus] = useState<AgentFocusState | null>(null);
+  const [agentMessagesById, setAgentMessagesById] = useState<Record<string, AgentChatMessage[]>>({});
+  const [agentMessageInput, setAgentMessageInput] = useState("");
+  const [agentChatPendingAgentId, setAgentChatPendingAgentId] = useState<string | null>(null);
+  const [agentChatError, setAgentChatError] = useState<string | null>(null);
 
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
   const addedAgentIds = useMemo(() => new Set(agentNodes.map((node) => node.agentId)), [agentNodes]);
   const focusedNode = agentFocus ? agentNodes.find((node) => node.nodeId === agentFocus.nodeId) ?? null : null;
   const focusedAgent = focusedNode ? agentsById.get(focusedNode.agentId) ?? null : null;
   const isAgentFocused = Boolean(focusedNode && focusedAgent);
+  const focusedAgentMessages = focusedAgent ? agentMessagesById[focusedAgent.agentId] ?? [] : [];
+  const isAgentChatPending = Boolean(focusedAgent && agentChatPendingAgentId === focusedAgent.agentId);
 
   const selectTask = useCallback((taskId: string) => {
     setSelectedTaskId((current) => current === taskId ? null : taskId);
@@ -215,6 +221,8 @@ export function App() {
 
   const focusAgentNode = useCallback((node: AgentNode) => {
     setAgentPickerOpen(false);
+    setAgentMessageInput("");
+    setAgentChatError(null);
     setAgentFocus({
       kind: "agent",
       agentId: node.agentId,
@@ -232,8 +240,44 @@ export function App() {
     if (agentFocus) {
       setCanvasViewport(agentFocus.previousViewport);
     }
+    setAgentMessageInput("");
+    setAgentChatError(null);
     setAgentFocus(null);
   }, [agentFocus]);
+
+  const sendFocusedAgentMessage = useCallback(async () => {
+    if (!focusedAgent || isAgentChatPending) return;
+    const message = agentMessageInput.trim();
+    if (!message) return;
+
+    const agentId = focusedAgent.agentId;
+    setAgentMessageInput("");
+    setAgentChatError(null);
+    setAgentMessagesById((current) => ({
+      ...current,
+      [agentId]: [
+        ...(current[agentId] ?? []),
+        { role: "user", text: message },
+      ],
+    }));
+    setAgentChatPendingAgentId(agentId);
+
+    const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+    try {
+      const response = await api.sendAgentMessage(agentId, message);
+      setAgentMessagesById((current) => ({
+        ...current,
+        [agentId]: [
+          ...(current[agentId] ?? []),
+          { role: "assistant", text: response.text },
+        ],
+      }));
+    } catch (e) {
+      setAgentChatError(errorMessage(e));
+    } finally {
+      setAgentChatPendingAgentId((current) => current === agentId ? null : current);
+    }
+  }, [agentMessageInput, dataSource, focusedAgent, isAgentChatPending]);
 
   return (
     <div className="app-shell">
@@ -347,7 +391,45 @@ export function App() {
                             收起
                           </button>
                         </div>
-                        <div className="agent-chat-empty">暂无消息</div>
+                        <div className="agent-chat-messages" aria-label="Agent messages">
+                          {focusedAgentMessages.length === 0 ? (
+                            <div className="agent-chat-empty">暂无消息</div>
+                          ) : (
+                            focusedAgentMessages.map((message, index) => (
+                              <div
+                                key={`${message.role}-${index}`}
+                                className={`agent-chat-message ${message.role}`}
+                              >
+                                <span className="agent-chat-role">{message.role === "user" ? "User" : "Agent"}</span>
+                                <p>{message.text}</p>
+                              </div>
+                            ))
+                          )}
+                          {isAgentChatPending && <div className="agent-chat-loading">发送中...</div>}
+                          {agentChatError && <div className="agent-chat-error" role="alert">{agentChatError}</div>}
+                        </div>
+                        <form
+                          className="agent-chat-composer"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void sendFocusedAgentMessage();
+                          }}
+                        >
+                          <label className="sr-only" htmlFor="agent-chat-input">Agent message</label>
+                          <textarea
+                            id="agent-chat-input"
+                            value={agentMessageInput}
+                            onChange={(event) => setAgentMessageInput(event.target.value)}
+                            aria-label="Agent message"
+                            rows={2}
+                          />
+                          <button
+                            type="submit"
+                            disabled={!agentMessageInput.trim() || isAgentChatPending}
+                          >
+                            发送
+                          </button>
+                        </form>
                       </section>
                     </div>
                   ) : (
