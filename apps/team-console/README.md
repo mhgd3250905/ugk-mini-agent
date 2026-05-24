@@ -62,9 +62,9 @@ Live API 模式会真实请求：
 
 Team Console preview 现在把 Agent 节点放进同一张 Execution Atlas 画布，不再额外打开独立 Agent Canvas。默认 Mock 入口是干净的 `Agent workspace`，不显示旧 demo run；需要验证运行图时再切换到“顺序 run”等 fixture。
 
-Mock 模式使用 deterministic Agent fixture，可把主 Agent、搜索 Agent 等真实主项目 Agent profile 概念加入 Atlas；同一个 `agentId` 在同一画布内只能加入一次，已加入项会在选择器里禁用。Agent 节点复用 Execution Atlas 的网格、节点样式、pan/zoom 和“重置视图”工具。
+Mock 模式使用 deterministic Agent fixture，可把主 Agent、搜索 Agent 等真实主项目 Agent profile 概念加入 Atlas；同一个 `agentId` 在同一画布内只能加入一次，已加入项会在选择器里禁用。Agent 节点复用 Execution Atlas 的网格、节点样式、pan/zoom 和“重置视图”工具。普通画布态可拖拽 Agent 卡片；拖拽只改变 Team Console 画布引用位置，不修改真实 Agent profile，也暂不持久化。
 
-点击 Agent 节点会在同一 Atlas viewport 内进入 Focus Mode，并在节点下方展开 `Agent Chat Panel`。收起会恢复进入 Focus Mode 前的 viewport；Focus Mode 只是 UI 展开态，不创建新的持久节点。聊天面板第一版使用非 stream scoped chat：Live 模式调用 `POST /v1/agents/:agentId/chat`，并复用返回的 `conversationId` 继续同一 scoped Agent 会话；Mock 模式返回 deterministic assistant reply。当前不做 Agent clone、instance、profile overlay、画布局部技能安装、WorkUnit 节点或 Plan 编排。
+单击 Agent 节点会在同一 Atlas viewport 内进入 Focus Mode，并在节点下方展开 `Agent Chat Panel`。Focus Mode 是固定锁定视窗：禁用 wheel zoom、背景 pan、工具条缩放 / 重置和 Agent 节点拖拽；收起会恢复进入 Focus Mode 前的 viewport。Focus Mode 只是 UI 展开态，不创建新的持久节点。聊天面板第一版使用非 stream scoped chat：Live 模式调用 `POST /v1/agents/:agentId/chat`，并复用返回的 `conversationId` 继续同一 scoped Agent 会话；Mock 模式返回 deterministic assistant reply。当前不做 Agent clone、instance、profile overlay、画布局部技能安装、WorkUnit 节点或 Plan 编排。
 
 Mock fixture 覆盖以下场景：
 
@@ -121,7 +121,7 @@ Mock fixture 覆盖以下场景：
 
 ### 响应式
 
-`@media (max-width: 720px)` 时连接线隐藏，节点改为纵向堆叠，并禁用自定义 pan/zoom 工具条。本轮没有做移动端深度设计，只做不明显横向炸版的最小烟测。
+`@media (max-width: 720px)` 时连接线隐藏，节点改为纵向堆叠，并禁用自定义 pan/zoom 工具条。本轮没有做移动端 toolbar / 添加入口专项修复，也没有做移动端深度设计，只做不明显横向炸版的最小烟测。
 
 ## 架构
 
@@ -138,5 +138,5 @@ Mock fixture 覆盖以下场景：
 - 不调用 manual disposition、rerun、pause/resume/cancel API
 - 只通过现有只读 API 读取 attempt metadata 和 attempt file，不新增写操作
 - Agent Atlas 只引用已有 Agent catalog，不创建或修改主项目 Agent profile
-- 不支持拖拽编辑、框选、节点创建、minimap、持久化视图或编辑 Plan
+- 不支持框选、节点创建、minimap、持久化视图或编辑 Plan；Agent 卡片拖拽只是本地画布引用位置调整
 - Execution Atlas 只做执行图展示、task evidence 选择、artifact 预览和桌面 pan/zoom；大量子任务会折叠为 summary node，并按隐藏子任务状态汇总显示；折叠节点可展开/收起

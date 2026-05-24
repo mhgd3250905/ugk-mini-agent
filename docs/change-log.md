@@ -12,6 +12,20 @@
 
 ---
 
+## 2026-05-24 — Team Console Agent 拖拽与 Focus 锁定
+
+- **主题**: 收口 Agent Atlas 普通态拖拽和 Focus Mode 固定锁定视窗。
+- **变更内容**:
+  - Agent Focus Mode 增加 `locked/free` 交互模式；Focus 中禁用 wheel zoom、背景 pan、工具条缩放 / 重置和 Agent 节点拖拽，收起后恢复进入 Focus 前的 viewport 与普通交互。
+  - 普通画布态支持拖拽 Agent 卡片；拖拽按当前 `viewport.scale` 折算 world delta，只改变 Team Console 本地画布引用位置，不修改真实 Agent profile，也暂不持久化。
+  - 区分 Agent click 与 drag：单击才进入 Focus，拖拽结束后的 click 不会误触发 Focus。
+  - README 和 Team Runtime 文档同步记录移动端本轮不处理、Agent 位置不持久化、Focus 锁定边界。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/AtlasCanvasShell.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **测试**: 本轮最终验证见交付报告。
+- **边界**: 未改 `src/team/**`、`src/ui/team-page.ts`、`/playground/team` 或主项目 Agent 后端行为；未实现 WorkUnit / Plan 编排、Agent clone / instance / overlay / 画布局部技能安装；未处理移动端专项修复。
+
+---
+
 ## 2026-05-24 — Team Console Agent Atlas 返工
 
 - **主题**: 将上一轮独立 Agent Canvas 收口回现有 Execution Atlas，修复无 live run 时 Agent 不可用和 scoped Agent chat 每句新建会话的问题。

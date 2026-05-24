@@ -465,5 +465,7 @@ describe("App", () => {
     expect(readme).toContain("/v1/agents");
     expect(readme).toContain("/v1/agents/:agentId/chat");
     expect(readme).toContain("conversationId");
+    expect(readme).toContain("拖拽只改变 Team Console 画布引用位置");
+    expect(readme).toContain("Focus Mode 是固定锁定视窗");
   });
 });
