@@ -44,6 +44,16 @@ function firePointer(
   fireEvent(target, event);
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("App", () => {
   beforeEach(() => {
     resetMockTeamApiState();
@@ -658,11 +668,98 @@ describe("App", () => {
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
     await waitFor(() => expect(taskRequests).toBe(1));
+    expect(screen.getByLabelText("当前 Task 数量")).toHaveTextContent("0 个 Task");
 
     fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
 
     await waitFor(() => expect(taskRequests).toBe(2));
     expect(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("当前 Task 数量")).toHaveTextContent("1 个 Task");
+  });
+
+  it("keeps existing live Task cards and shows an error when Task refresh fails", async () => {
+    const liveTask = mockTeamTasks[0]!;
+    let taskRequests = 0;
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [{ agentId: "main", name: "主 Agent", description: "默认综合 agent" }],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") {
+        taskRequests += 1;
+        if (taskRequests === 1) {
+          return new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 });
+        }
+        return new Response("down", { status: 500 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    expect(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
+
+    expect(await screen.findByText("请求失败 (500)")).toBeInTheDocument();
+    expect(within(getAtlasNodes(container)).getByRole("button", { name: /调查 Medtrum 云资产/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("当前 Task 数量")).toHaveTextContent("1 个 Task");
+  });
+
+  it("deduplicates concurrent live Task refresh clicks", async () => {
+    const firstTask = mockTeamTasks[0]!;
+    const secondTask = {
+      ...firstTask,
+      taskId: "task_refresh_deduped",
+      title: "刷新防重后的 Task",
+      workUnit: {
+        ...firstTask.workUnit,
+        title: "刷新防重后的 Task",
+      },
+    };
+    const refreshResponse = deferred<Response>();
+    let taskRequests = 0;
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [{ agentId: "main", name: "主 Agent", description: "默认综合 agent" }],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") {
+        taskRequests += 1;
+        if (taskRequests === 1) {
+          return new Response(JSON.stringify({ tasks: [firstTask] }), { status: 200 });
+        }
+        if (taskRequests === 2) {
+          return refreshResponse.promise;
+        }
+        return new Response(JSON.stringify({ tasks: [] }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    expect(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
+    const refreshingButton = await screen.findByRole("button", { name: "刷新中..." });
+    expect(refreshingButton).toBeDisabled();
+    fireEvent.click(refreshingButton);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(taskRequests).toBe(2);
+
+    refreshResponse.resolve(new Response(JSON.stringify({ tasks: [firstTask, secondTask] }), { status: 200 }));
+
+    expect(await within(getAtlasNodes(container)).findByRole("button", { name: /刷新防重后的 Task/ })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新 Task" })).toBeEnabled());
+    expect(screen.getByLabelText("当前 Task 数量")).toHaveTextContent("2 个 Task");
   });
 
   it("refreshes live Task cards after closing a Task creation branch", async () => {
@@ -780,6 +877,70 @@ describe("App", () => {
     const restoredTaskNode = await within(getAtlasNodes(second.container)).findByRole("button", { name: /调查 Medtrum 云资产/ }) as HTMLElement;
     expect(Number.parseFloat(restoredTaskNode.style.left)).toBeCloseTo(350, 4);
     expect(Number.parseFloat(restoredTaskNode.style.top)).toBeCloseTo(255, 4);
+  });
+
+  it("keeps live Task refresh storage limited to layout metadata", async () => {
+    const firstTask = mockTeamTasks[0]!;
+    const secondTask = {
+      ...firstTask,
+      taskId: "task_refresh_storage",
+      title: "刷新后只存布局的 Task",
+      leaderAgentId: "search",
+      workUnit: {
+        ...firstTask.workUnit,
+        title: "刷新后只存布局的 Task",
+      },
+    };
+    let taskRequests = 0;
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [
+            { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+            { agentId: "search", name: "搜索 Agent", description: "搜索" },
+          ],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") {
+        return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      }
+      if (url === "/v1/team/tasks") {
+        taskRequests += 1;
+        return new Response(JSON.stringify({
+          tasks: taskRequests === 1 ? [firstTask] : [firstTask, secondTask],
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const firstTaskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }) as HTMLElement;
+    const firstTaskX = Number.parseFloat(firstTaskNode.style.left);
+    const firstTaskY = Number.parseFloat(firstTaskNode.style.top);
+
+    fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
+
+    const secondTaskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /刷新后只存布局的 Task/ }) as HTMLElement;
+    const refreshedFirstTaskNode = within(getAtlasNodes(container)).getByRole("button", { name: /调查 Medtrum 云资产/ }) as HTMLElement;
+    expect(Number.parseFloat(refreshedFirstTaskNode.style.left)).toBeCloseTo(firstTaskX, 4);
+    expect(Number.parseFloat(refreshedFirstTaskNode.style.top)).toBeCloseTo(firstTaskY, 4);
+    expect(Number.parseFloat(secondTaskNode.style.top)).toBeGreaterThanOrEqual(220);
+
+    await waitFor(() => {
+      const stored = JSON.parse(window.localStorage.getItem("ugk-team-console:live-task-layout:v1") ?? "{}") as {
+        tasks?: Array<Record<string, unknown>>;
+      };
+      expect(stored.tasks?.every((task) => (
+        "taskId" in task
+        && "position" in task
+        && !("title" in task)
+        && !("leaderAgentId" in task)
+        && !("workUnit" in task)
+      ))).toBe(true);
+    });
   });
 
   it("refreshes live Task cards when returning to Agent workspace", async () => {

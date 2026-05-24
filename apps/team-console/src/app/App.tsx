@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { LiveTeamApi } from "../api/team-api";
 import type { AgentRunStatus, AgentSummary, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "../api/team-types";
 import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, mockTeamTasks, MockTeamApi } from "../fixtures/team-fixtures";
@@ -229,6 +229,8 @@ export function App() {
   const [liveTaskNodesHydrated, setLiveTaskNodesHydrated] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [taskLeaderPickerOpen, setTaskLeaderPickerOpen] = useState(false);
+  const [liveTasksRefreshing, setLiveTasksRefreshing] = useState(false);
+  const liveTasksRefreshInFlightRef = useRef<Promise<void> | null>(null);
   const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
   const [expandedAgentBranch, setExpandedAgentBranch] = useState<AgentBranchState | null>(null);
   const [expandedTaskBranch, setExpandedTaskBranch] = useState<TaskBranchState | null>(null);
@@ -292,8 +294,22 @@ export function App() {
   }, []);
 
   const refreshLiveTasks = useCallback(async () => {
-    const nextTasks = await new LiveTeamApi().listTasks();
-    applyLiveTasks(nextTasks);
+    if (liveTasksRefreshInFlightRef.current) {
+      return liveTasksRefreshInFlightRef.current;
+    }
+
+    const refresh = (async () => {
+      setLiveTasksRefreshing(true);
+      try {
+        const nextTasks = await new LiveTeamApi().listTasks();
+        applyLiveTasks(nextTasks);
+      } finally {
+        liveTasksRefreshInFlightRef.current = null;
+        setLiveTasksRefreshing(false);
+      }
+    })();
+    liveTasksRefreshInFlightRef.current = refresh;
+    return refresh;
   }, [applyLiveTasks]);
 
   const loadFixture = useCallback((fixtureId: string) => {
@@ -555,7 +571,7 @@ export function App() {
   }, []);
 
   const canCreateTask = dataSource === "live" && agents.length > 0;
-  const canRefreshTasks = dataSource === "live";
+  const canRefreshTasks = dataSource === "live" && !liveTasksRefreshing;
 
   const agentToolbar = (
     <div className="agent-atlas-actions">
@@ -571,6 +587,9 @@ export function App() {
         添加 Agent
       </button>
       <span className="agent-atlas-count">{agentNodes.length}</span>
+      <span className="agent-atlas-count task-atlas-count" aria-label="当前 Task 数量">
+        {tasks.length} 个 Task
+      </span>
       <button
         type="button"
         className="agent-add-btn task-create-btn"
@@ -591,7 +610,7 @@ export function App() {
           void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
         }}
       >
-        刷新 Task
+        {liveTasksRefreshing ? "刷新中..." : "刷新 Task"}
       </button>
       {agentPickerOpen && (
         <div className="agent-picker" aria-label="Agent catalog">
