@@ -51,6 +51,8 @@ Team Console shell 的 Live API 模式会真实请求：
 - `GET /v1/agents`
 - `GET /v1/agents/status`
 - `GET /v1/team/tasks`
+- `PATCH /v1/team/tasks/:taskId`
+- `POST /v1/team/tasks/:taskId/archive`
 - `GET /v1/team/plans`
 - `GET /v1/team/runs`
 - `GET /v1/team/runs/:runId`
@@ -75,7 +77,9 @@ Agent 分支卡片内部是主项目 `/playground` 的 iframe，URL 形如 `/pla
 
 Task 内部包含一个 WorkUnit。Team Console preview 现在从 `GET /v1/team/tasks` 读取 Task catalog，Mock fixture 也提供 deterministic Task / WorkUnit 数据；Task 不是单任务 Plan，也不会从 iframe 聊天文本里临时拼出来。Task 卡片会展示 `leaderAgentId`、`workerAgentId` 和 `checkerAgentId` 对应的 Agent 名称，让用户在 Atlas 里先看清谁负责澄清、谁负责执行、谁负责验收。
 
-点击 Task 卡片会展开 leader Agent 的主 `/playground` iframe 分支，URL 形如 `/playground?view=chat&agentId=<leaderAgentId>&embed=team-console&teamTaskId=<taskId>&teamTaskMode=edit`。`teamTaskId=<taskId>` 只是给主 `/playground` 和 `/team-task` 流程的上下文 hint；Team Console 不解析 iframe 聊天文本创建或更新 Task，不启动 Task run，也不实现 worker/checker 执行链路。
+点击 Task 卡片会先展开 Task 操作菜单，而不是直接进入 iframe。菜单包含“运行”“编辑”“对话 Leader”“删除”：运行目前只是 disabled 占位，不启动任何 WorkUnit run；对话 Leader 会打开 leader Agent 的主 `/playground` iframe 分支，URL 形如 `/playground?view=chat&agentId=<leaderAgentId>&embed=team-console&teamTaskId=<taskId>&teamTaskMode=edit`；删除会二次确认并调用 `POST /v1/team/tasks/:taskId/archive` 做软归档，成功后重新请求 `GET /v1/team/tasks` 并关闭分支。
+
+菜单里的“编辑”是浅编辑节点，只允许修改 Task 名称、`leaderAgentId`、`workerAgentId` 和 `checkerAgentId`。如果只改 Task 名称或 leader Agent，前端只发送对应字段；如果改 worker/checker，前端带上既有 `workUnit` 并只替换其中的 Agent 绑定。复杂需求、input text、output contract 和 acceptance rules 仍必须通过 Leader 对话里的 `/team-task` 流程维护；Team Console 不解析 iframe 聊天文本创建或更新 Task，不把复杂 WorkUnit 字段做成可视化编辑器，不启动 Task run，也不实现 worker/checker 执行链路。
 
 Live API 工具栏的“创建 Task”会先展示当前 Agent catalog，让用户选择 leader Agent；选择后 Team Console 只打开 leader Agent iframe，不直接创建 Task。创建分支 URL 形如 `/playground?view=chat&agentId=<leaderAgentId>&embed=team-console&teamTaskMode=create`，不携带 `teamTaskId`。真正的创建由 iframe 内用户显式使用 `/team-task` skill 调用 `POST /v1/team/tasks` 完成；Team Console 不读 iframe 聊天文本、不替用户确认 JSON、不把 draft 写进本地状态。关闭创建分支后会重新请求 `GET /v1/team/tasks`，用于把 skill 创建成功后的 Task 卡片刷新回画布。
 

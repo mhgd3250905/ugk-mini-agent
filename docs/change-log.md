@@ -12,6 +12,20 @@
 
 ---
 
+## 2026-05-25 — Team Console Task 操作菜单与浅编辑
+
+- **主题**: 将 Team Console Task 卡片点击行为改为操作菜单，并补齐浅编辑、Leader 对话入口和 archive 软归档。
+- **变更内容**:
+  - 点击 Task 卡片先展开操作菜单节点；菜单包含“运行”“编辑”“对话 Leader”“删除”，其中运行仍是未接线 disabled 占位，不启动 WorkUnit run。
+  - “对话 Leader”继续打开既有 `/playground?view=chat&agentId=<leaderAgentId>&embed=team-console&teamTaskId=<taskId>&teamTaskMode=edit` iframe。
+  - “编辑”只允许修改 Task 名称、leader Agent、worker Agent、checker Agent；复杂需求、input text、output contract 和 acceptance rules 继续通过 Leader 对话里的 `/team-task` 流程维护。
+  - “删除”二次确认后调用 `POST /v1/team/tasks/:taskId/archive` 做软归档，成功后重新请求 `GET /v1/team/tasks` 并关闭分支。
+  - Live API 下 localStorage 仍只保存 Task 卡片布局元数据，不保存 Task 定义、WorkUnit 内容或 Agent 绑定。
+- **影响范围**: `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/team-api.test.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未修改 `src/team/**` 后端契约，未修改 `.pi/skills/team-task-creator/**`，未实现 WorkUnit run、worker/checker 执行链路、iframe 聊天文本解析或复杂 WorkUnit 可视化编辑器。
+
+---
+
 ## 2026-05-24 — Team Console Task 创建入口与刷新闭环
 
 - **主题**: 在独立 Team Console preview 中补齐 Task 创建入口、leader Agent iframe 打开方式和 `GET /v1/team/tasks` 刷新闭环。

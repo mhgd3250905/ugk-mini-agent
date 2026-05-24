@@ -1586,6 +1586,9 @@ describe("App", () => {
     expect(readme).toContain("`/team-task` skill 调用 `POST /v1/team/tasks`");
     expect(readme).toContain("手动点击“刷新 Task”");
     expect(readme).toContain("关闭创建分支后会重新请求 `GET /v1/team/tasks`");
+    expect(readme).toContain("点击 Task 卡片会先展开 Task 操作菜单");
+    expect(readme).toContain("“编辑”是浅编辑节点");
+    expect(readme).toContain("POST /v1/team/tasks/:taskId/archive");
     expect(readme).toContain("Team Console 不再维护本地 transcript + composer");
     expect(readme).not.toContain("Focus Mode 是特殊 Agent 对话界面");
     expect(readme).not.toContain("文件上传与文件库在 Live 模式接 `/v1/assets`");
@@ -1611,7 +1614,9 @@ describe("App", () => {
     expect(runtimeDoc).toContain("Team Canvas Task frontend workflow");
     expect(runtimeDoc).toContain("teamTaskMode=create");
     expect(runtimeDoc).toContain("teamTaskMode=edit");
-    expect(runtimeDoc).toContain("关闭创建分支后会重新请求 `GET /v1/team/tasks`");
+    expect(runtimeDoc).toContain("点击已有 Task 先打开操作菜单");
+    expect(runtimeDoc).toContain("input text、output contract、acceptance rules");
+    expect(runtimeDoc).toContain("关闭创建分支、浅编辑保存成功、归档成功后会重新请求 `GET /v1/team/tasks`");
     expect(runtimeDoc).toContain("WorkUnit run 未实现");
     expect(runtimeDoc).not.toContain("Focus Mode 特殊 Agent 对话界面");
     expect(runtimeDoc).toContain("仍不落地 WorkUnit / Plan 编排");
