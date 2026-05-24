@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { ExecutionMap, type AtlasTaskNode } from "../graph/ExecutionMap";
+import { NODE_WIDTH } from "../graph/execution-map-layout";
 import { App } from "../app/App";
 import {
   ALL_FIXTURES,
@@ -1180,6 +1181,82 @@ describe("Artifact preview nodes", () => {
     await waitFor(() => {
       expect(screen.getByTestId("artifact-preview")).toHaveTextContent("加载失败: boom");
     });
+  });
+
+  it("positions and links Task child branch from the measured menu shell edge", async () => {
+    const offsetWidthDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+    const offsetHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+    try {
+      Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+        configurable: true,
+        get() {
+          if (this.classList.contains("emap-task-branch-shell")) return 360;
+          if (this.classList.contains("emap-task-child-branch-shell")) return 820;
+          return 0;
+        },
+      });
+      Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+        configurable: true,
+        get() {
+          if (this.classList.contains("emap-task-branch-shell")) return 144;
+          if (this.classList.contains("emap-task-child-branch-shell")) return 620;
+          return 0;
+        },
+      });
+
+      const task = mockTeamTasks[0]!;
+      const taskNode: AtlasTaskNode = {
+        nodeId: `task-node-${task.taskId}`,
+        kind: "canvas-task",
+        taskId: task.taskId,
+        position: { x: 280, y: 220 },
+      };
+
+      const { container } = render(
+        <ExecutionMap
+          selectedTaskId={null}
+          onSelectTask={() => {}}
+          taskNodes={[taskNode]}
+          tasksById={new Map([[task.taskId, task]])}
+          focusedTaskNodeId={taskNode.nodeId}
+          taskBranchPanel={<section className="task-action-branch">操作菜单</section>}
+          taskChildBranchPanel={<section className="task-edit-branch">编辑节点</section>}
+        />,
+      );
+
+      const menuShell = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
+      const childShell = container.querySelector(".emap-task-child-branch-shell") as HTMLElement | null;
+      expect(menuShell).toBeTruthy();
+      expect(childShell).toBeTruthy();
+
+      const menuLeft = taskNode.position.x + NODE_WIDTH + 48;
+      const menuTop = taskNode.position.y - 16;
+      const measuredMenuRight = menuLeft + 360;
+      const childLeft = measuredMenuRight + 32;
+      const connectorY = menuTop + 144 / 2;
+
+      await waitFor(() => {
+        expect(Number.parseFloat(childShell!.style.left)).toBe(childLeft);
+        expect(Number.parseFloat(childShell!.style.top)).toBe(menuTop);
+      });
+
+      const childLink = container.querySelector(".emap-link-task-child-branch") as SVGPathElement | null;
+      expect(childLink).toBeTruthy();
+      expect(childLink!.getAttribute("d")).toContain(`M${measuredMenuRight},${connectorY}`);
+      expect(childLink!.getAttribute("d")).toContain(`L${childLeft},${connectorY}`);
+      expect(childLink!.getAttribute("d")).not.toContain(`M${menuLeft + 280},`);
+    } finally {
+      if (offsetWidthDescriptor) {
+        Object.defineProperty(HTMLElement.prototype, "offsetWidth", offsetWidthDescriptor);
+      } else {
+        delete (HTMLElement.prototype as { offsetWidth?: number }).offsetWidth;
+      }
+      if (offsetHeightDescriptor) {
+        Object.defineProperty(HTMLElement.prototype, "offsetHeight", offsetHeightDescriptor);
+      } else {
+        delete (HTMLElement.prototype as { offsetHeight?: number }).offsetHeight;
+      }
+    }
   });
 });
 

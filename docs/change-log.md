@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-25 — Team Console Task 二级节点连线与 Leader 分支复用
+- **主题**: 修复 Task 操作菜单到二级节点的连线悬空，并让 Task Leader 对话二级节点复用成熟的 Agent 分支交互。
+- **变更内容**:
+  - `ExecutionMap` 测量 `.emap-task-branch-shell` 的真实 DOM 宽高，用测量后的菜单右边缘计算二级节点位置和 Task → 菜单 → 二级节点虚线锚点，不再用固定 `280x190` 虚拟菜单矩形。
+  - Task Leader 对话二级节点改用 `agent-playground-branch`、`agent-playground-branch-head` 和 `agent-playground-iframe`，并在右下角提供与 Agent 分支一致的 resize handle。
+  - Leader 对话二级节点支持沿用 Agent 分支的标题栏拖拽和右下角缩放体验；Task 编辑二级节点保持固定编辑面板。
+  - 回归测试覆盖真实菜单尺寸参与 child branch/connector 计算、Leader 二级节点 Agent branch class、iframe class、resize handle，以及拖拽/缩放行为。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未修改 `src/team/**`，未修改 `.pi/skills/team-task-creator/**`，未改 Task API，未实现 WorkUnit run，未把 Task 定义写入 localStorage，未解析 iframe 聊天文本。
+---
+
 ## 2026-05-25 — Team Console Task 菜单二级节点与草稿保护
 
 - **主题**: 修复 Task 操作菜单过大、编辑 / Leader 入口替换一级菜单，以及浅编辑 stale draft 覆盖风险。

@@ -43,6 +43,7 @@ interface ExecutionMapProps {
   canMoveTasks?: boolean;
   taskBranchPanel?: ReactNode;
   taskChildBranchPanel?: ReactNode;
+  taskChildBranchInteractive?: boolean;
   viewport?: AtlasViewport;
   onViewportChange?: (viewport: AtlasViewport) => void;
   toolbarStart?: ReactNode;
@@ -135,6 +136,12 @@ type AgentBranchInteractionState = {
   startClientX: number;
   startClientY: number;
   startRect: AgentBranchRect;
+};
+
+type TaskBranchMeasuredSize = {
+  nodeId: string;
+  width: number;
+  height: number;
 };
 
 function evidenceHeight(kind: EvidenceKind): number {
@@ -535,6 +542,7 @@ export function ExecutionMap({
   canMoveTasks = true,
   taskBranchPanel,
   taskChildBranchPanel,
+  taskChildBranchInteractive = false,
   viewport,
   onViewportChange,
   toolbarStart,
@@ -547,12 +555,16 @@ export function ExecutionMap({
   const [artifactPreviewState, setArtifactPreviewState] = useState<Record<string, ArtifactPreviewState>>({});
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
   const [agentBranchRects, setAgentBranchRects] = useState<Record<string, AgentBranchRect>>({});
+  const [taskChildBranchRects, setTaskChildBranchRects] = useState<Record<string, AgentBranchRect>>({});
+  const [taskBranchMeasuredSize, setTaskBranchMeasuredSize] = useState<TaskBranchMeasuredSize | null>(null);
   const prevSelectionRef = useRef<string | null>(null);
+  const taskBranchShellRef = useRef<HTMLDivElement | null>(null);
   const agentDragRef = useRef<AgentDragState | null>(null);
   const taskDragRef = useRef<TaskDragState | null>(null);
   const suppressAgentClickRef = useRef<string | null>(null);
   const suppressTaskClickRef = useRef<string | null>(null);
   const agentBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
+  const taskChildBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
 
   if (prevSelectionRef.current !== selectedTaskId) {
     prevSelectionRef.current = selectedTaskId;
@@ -1024,21 +1036,29 @@ export function ExecutionMap({
   const focusedTaskNode = focusedTaskNodeId
     ? taskNodes.find((node) => node.nodeId === focusedTaskNodeId) ?? null
     : null;
+  const measuredTaskBranchSize = taskBranchMeasuredSize?.nodeId === focusedTaskNode?.nodeId
+    ? taskBranchMeasuredSize
+    : null;
   const taskBranchNode = focusedTaskNode && taskBranchPanel
     ? {
       x: focusedTaskNode.position.x + NODE_WIDTH + TASK_BRANCH_GAP,
       y: Math.max(0, focusedTaskNode.position.y - 16),
-      width: TASK_MENU_BRANCH_WIDTH,
-      height: TASK_MENU_BRANCH_HEIGHT,
+      width: measuredTaskBranchSize?.width ?? TASK_MENU_BRANCH_WIDTH,
+      height: measuredTaskBranchSize?.height ?? TASK_MENU_BRANCH_HEIGHT,
     }
     : null;
-  const taskChildBranchNode = taskBranchNode && taskChildBranchPanel
+  const taskChildBranchDefaultNode = taskBranchNode
     ? {
       x: taskBranchNode.x + taskBranchNode.width + TASK_CHILD_BRANCH_GAP,
       y: taskBranchNode.y,
       width: TASK_CHILD_BRANCH_WIDTH,
       height: TASK_CHILD_BRANCH_HEIGHT,
     }
+    : null;
+  const taskChildBranchNode = taskBranchNode && taskChildBranchPanel
+    ? taskChildBranchInteractive && focusedTaskNode
+      ? taskChildBranchRects[focusedTaskNode.nodeId] ?? taskChildBranchDefaultNode
+      : taskChildBranchDefaultNode
     : null;
   const agentBranchRight = agentBranchNode ? agentBranchNode.x + agentBranchNode.width : 0;
   const taskBranchRight = Math.max(
@@ -1066,6 +1086,27 @@ export function ExecutionMap({
   const taskChildBranchPath = taskBranchNode && taskChildBranchNode
     ? taskChildBranchConnectorPath(taskBranchNode, taskChildBranchNode)
     : null;
+
+  useLayoutEffect(() => {
+    const nodeId = focusedTaskNode?.nodeId ?? null;
+    if (!nodeId || !taskBranchPanel) {
+      setTaskBranchMeasuredSize((current) => current ? null : current);
+      return;
+    }
+
+    const element = taskBranchShellRef.current;
+    if (!element) return;
+
+    const width = element.offsetWidth || TASK_MENU_BRANCH_WIDTH;
+    const height = element.offsetHeight || TASK_MENU_BRANCH_HEIGHT;
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+
+    setTaskBranchMeasuredSize((current) => (
+      current?.nodeId === nodeId && current.width === width && current.height === height
+        ? current
+        : { nodeId, width, height }
+    ));
+  });
 
   const beginAgentBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (!focusedAgentNode || !agentBranchNode || !canStartAgentBranchDrag(event.target)) return;
@@ -1130,6 +1171,72 @@ export function ExecutionMap({
     event.preventDefault();
     event.stopPropagation();
     agentBranchInteractionRef.current = null;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  }, []);
+
+  const beginTaskChildBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!taskChildBranchInteractive || !focusedTaskNode || !taskChildBranchNode || !canStartAgentBranchDrag(event.target)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    taskChildBranchInteractionRef.current = {
+      kind: "drag",
+      nodeId: focusedTaskNode.nodeId,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startRect: taskChildBranchNode,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }, [focusedTaskNode, taskChildBranchInteractive, taskChildBranchNode]);
+
+  const beginTaskChildBranchResize = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!taskChildBranchInteractive || !focusedTaskNode || !taskChildBranchNode) return;
+    event.preventDefault();
+    event.stopPropagation();
+    taskChildBranchInteractionRef.current = {
+      kind: "resize",
+      nodeId: focusedTaskNode.nodeId,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startRect: taskChildBranchNode,
+    };
+    event.currentTarget.parentElement?.setPointerCapture?.(event.pointerId);
+  }, [focusedTaskNode, taskChildBranchInteractive, taskChildBranchNode]);
+
+  const moveTaskChildBranch = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const interaction = taskChildBranchInteractionRef.current;
+    if (!interaction || interaction.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const scale = viewportScale(viewport);
+    const dx = (event.clientX - interaction.startClientX) / scale;
+    const dy = (event.clientY - interaction.startClientY) / scale;
+    const nextRect = interaction.kind === "drag"
+      ? clampAgentBranchRect({
+        ...interaction.startRect,
+        x: interaction.startRect.x + dx,
+        y: interaction.startRect.y + dy,
+      })
+      : clampAgentBranchRect({
+        ...interaction.startRect,
+        width: interaction.startRect.width + dx,
+        height: interaction.startRect.height + dy,
+      });
+
+    setTaskChildBranchRects((current) => ({
+      ...current,
+      [interaction.nodeId]: nextRect,
+    }));
+  }, [viewport]);
+
+  const endTaskChildBranchInteraction = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const interaction = taskChildBranchInteractionRef.current;
+    if (!interaction || interaction.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    taskChildBranchInteractionRef.current = null;
     event.currentTarget.releasePointerCapture?.(event.pointerId);
   }, []);
 
@@ -1460,6 +1567,7 @@ export function ExecutionMap({
           )}
           {taskBranchNode && taskBranchPanel && (
             <div
+              ref={taskBranchShellRef}
               className="emap-task-branch-shell"
               style={{
                 left: taskBranchNode.x,
@@ -1475,6 +1583,10 @@ export function ExecutionMap({
           {taskChildBranchNode && taskChildBranchPanel && (
             <div
               className="emap-task-child-branch-shell"
+              onPointerDownCapture={taskChildBranchInteractive ? beginTaskChildBranchDrag : undefined}
+              onPointerMove={taskChildBranchInteractive ? moveTaskChildBranch : undefined}
+              onPointerUp={taskChildBranchInteractive ? endTaskChildBranchInteraction : undefined}
+              onPointerCancel={taskChildBranchInteractive ? endTaskChildBranchInteraction : undefined}
               style={{
                 left: taskChildBranchNode.x,
                 top: taskChildBranchNode.y,
@@ -1483,6 +1595,14 @@ export function ExecutionMap({
               }}
             >
               {taskChildBranchPanel}
+              {taskChildBranchInteractive && (
+                <button
+                  type="button"
+                  className="emap-agent-branch-resize-handle"
+                  aria-label="调整对话分支大小"
+                  onPointerDown={beginTaskChildBranchResize}
+                />
+              )}
             </div>
           )}
         </div>

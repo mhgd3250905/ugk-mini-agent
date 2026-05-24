@@ -940,16 +940,16 @@ export function App() {
   ) : null;
   const expandedTaskChildBranchPanel = expandedTaskNode && expandedTask ? (
     expandedTaskDetailMode === "leader-chat" ? (
-      <section className="task-leader-branch task-leader-chat-branch" aria-label={`${expandedTask.title} leader 对话`}>
-        <header className="task-leader-branch-head">
-          <div className="task-leader-branch-title">
+      <section className="agent-playground-branch task-leader-chat-branch" aria-label={`${expandedTask.title} leader 对话`}>
+        <header className="agent-playground-branch-head">
+          <div className="agent-playground-branch-title">
             <span>Leader 对话</span>
             <strong>{expandedTask.title}</strong>
             <code>{expandedTask.taskId}</code>
           </div>
           <button
             type="button"
-            className="task-leader-branch-collapse"
+            className="agent-playground-branch-collapse"
             onClick={() => setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current)}
             aria-label={`收起 ${expandedTask.title} leader 对话`}
           >
@@ -960,7 +960,7 @@ export function App() {
           在对话中使用 <code>/team-task</code> 创建或更新这个 Task。Task 数据必须通过后端 API 写入。
         </div>
         <iframe
-          className="task-leader-iframe"
+          className="agent-playground-iframe"
           title={`${expandedTask.title} leader 对话`}
           src={buildTaskLeaderPlaygroundUrl(expandedTask)}
           referrerPolicy="no-referrer"
@@ -1188,6 +1188,7 @@ export function App() {
                 onMoveCanvasTask={moveTaskNode}
                 taskBranchPanel={expandedTaskBranchPanel}
                 taskChildBranchPanel={expandedTaskChildBranchPanel}
+                taskChildBranchInteractive={expandedTaskDetailMode === "leader-chat"}
                 viewport={canvasViewport}
                 onViewportChange={setCanvasViewport}
                 toolbarStart={agentToolbar}

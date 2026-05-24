@@ -440,10 +440,15 @@ describe("App", () => {
     expect(branch).toBeTruthy();
     expect(container.querySelector(".emap-task-child-branch-shell")).toBeTruthy();
     expect(container.querySelector(".emap-link-task-child-branch")).toBeTruthy();
+    expect(branch).toHaveClass("agent-playground-branch");
+    expect(branch!.querySelector(".agent-playground-branch-head")).toBeTruthy();
+    expect(branch!.querySelector(".agent-playground-branch-collapse")).toBeTruthy();
+    expect(container.querySelector(".emap-task-child-branch-shell .emap-agent-branch-resize-handle")).toBeTruthy();
     expect(within(branch!).getByText("Leader 对话")).toBeInTheDocument();
     expect(within(branch!).getByText("调查 Medtrum 云资产")).toBeInTheDocument();
 
     const iframe = branch!.querySelector("iframe") as HTMLIFrameElement | null;
+    expect(iframe).toHaveClass("agent-playground-iframe");
     expect(iframe).toHaveAttribute("title", "调查 Medtrum 云资产 leader 对话");
     expect(iframe?.getAttribute("src")).toContain("/playground?view=chat&agentId=main");
     expect(iframe?.getAttribute("src")).toContain("embed=team-console");
@@ -462,6 +467,38 @@ describe("App", () => {
 
     expect(container.querySelector(".task-leader-chat-branch")).toBeNull();
     expect(container.querySelector(".task-action-branch")).toBeTruthy();
+  });
+
+  it("drags and resizes the Task leader chat child branch like an Agent branch", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(screen.getByRole("button", { name: "对话 Leader" }));
+
+    const branchShell = container.querySelector(".emap-task-child-branch-shell") as HTMLElement | null;
+    const titleBar = container.querySelector(".task-leader-chat-branch .agent-playground-branch-head") as HTMLElement | null;
+    const resizeHandle = container.querySelector(".emap-task-child-branch-shell .emap-agent-branch-resize-handle") as HTMLElement | null;
+    expect(branchShell).toBeTruthy();
+    expect(titleBar).toBeTruthy();
+    expect(resizeHandle).toBeTruthy();
+    const initialLeft = Number.parseFloat(branchShell!.style.left);
+    const initialTop = Number.parseFloat(branchShell!.style.top);
+    const initialWidth = Number.parseFloat(branchShell!.style.width);
+    const initialHeight = Number.parseFloat(branchShell!.style.height);
+
+    firePointer(titleBar!, "pointerdown", { pointerId: 51, clientX: 600, clientY: 220 });
+    firePointer(titleBar!, "pointermove", { pointerId: 51, clientX: 650, clientY: 255 });
+    firePointer(titleBar!, "pointerup", { pointerId: 51, clientX: 650, clientY: 255, buttons: 0 });
+
+    expect(Number.parseFloat(branchShell!.style.left)).toBeCloseTo(initialLeft + 50, 4);
+    expect(Number.parseFloat(branchShell!.style.top)).toBeCloseTo(initialTop + 35, 4);
+
+    firePointer(resizeHandle!, "pointerdown", { pointerId: 52, clientX: 1000, clientY: 700 });
+    firePointer(resizeHandle!, "pointermove", { pointerId: 52, clientX: 1080, clientY: 760 });
+    firePointer(resizeHandle!, "pointerup", { pointerId: 52, clientX: 1080, clientY: 760, buttons: 0 });
+
+    expect(Number.parseFloat(branchShell!.style.width)).toBeCloseTo(initialWidth + 80, 4);
+    expect(Number.parseFloat(branchShell!.style.height)).toBeCloseTo(initialHeight + 60, 4);
   });
 
   it("opens a shallow Task edit form with title and Agent selections only", async () => {

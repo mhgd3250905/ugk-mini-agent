@@ -587,6 +587,7 @@
 .emap-task-child-branch-shell {
   position: absolute;
   z-index: 12;
+  touch-action: none;
 }
 
 .agent-playground-branch {
