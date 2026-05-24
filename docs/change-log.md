@@ -12,6 +12,16 @@
 
 ---
 
+## 2026-05-24 — 独立 Agents 页面 Agent ID 输入归一化
+
+- **主题**: 修复独立 Agents 页面新建 Agent 时，中文名称生成空 ID、手动输入空格 / 大写 / 下划线 / Unicode 横线后被前端误拦的问题
+- **影响范围**: `src/ui/agents-page.ts`, `test/agent-model-ui.test.ts`
+- **变更**:
+  - 新建 Agent 时对手动填写的 Agent ID 先 `trim`、转小写，并将空格、下划线、点号、斜杠和常见 Unicode 横线统一为半角连字符
+  - 中文名称或其他无法 slug 出英文 ID 的名称会回退到 `agent`，并避开已有 ID、`main`、`search`
+  - Agent ID 错误提示拆成空值、首字符、字符集三类；后端 `agentId` 严格规则不放宽
+  - 新增独立 Agents 页面回归测试，覆盖中文名称兜底和手动 ID 归一化
+
 ## 2026-05-23 — Qwen reasoning stream heartbeat and GLM context metadata
 
 - **主题**: 修复长 reasoning 流式响应保活，并校正阿里 CodePlan `glm-5.1` 上下文窗口
