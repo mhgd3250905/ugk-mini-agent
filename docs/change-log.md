@@ -25,6 +25,19 @@
 
 ---
 
+## 2026-05-24 — Team Task 后端契约与 runtime skill
+
+- **主题**: 新增独立 Team Canvas Task 资源和 `/team-task` runtime skill，避免把 Task 偷换成单任务 Plan。
+- **变更内容**:
+  - 新增 `TeamCanvasTask` / `TeamWorkUnitDefinition` 类型、`TaskStore` 和 Task 校验，持久化到 `.data/team/tasks/<taskId>.json`，并兼容旧记录缺省 `status` / `archived` 字段。
+  - 新增 `/v1/team/tasks` REST API：列表、创建、读取、更新和软归档；`leaderAgentId`、`workerAgentId`、`checkerAgentId` 均校验真实未归档 Agent profile。
+  - 新增 `.pi/skills/team-task-creator/SKILL.md`，仅在 `/team-task` 显式触发后创建 / 更新 Task draft，要求先展示完整 Task JSON 并等待用户确认。
+  - 同 Agent 同时担任 worker/checker 第一版允许，但 API warning 与 skill 预览均提示“同 Agent 自检会削弱验收独立性”。
+- **影响范围**: `src/team/types.ts`, `src/team/ids.ts`, `src/team/task-store.ts`, `src/team/task-validation.ts`, `src/team/routes.ts`, `.pi/skills/team-task-creator/SKILL.md`, `test/team-task-store.test.ts`, `test/team-task-routes.test.ts`, `test/team-task-creator-skill.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未新增 Task run API，未启动 worker/checker 执行链路，未改 Team Console 画布 UI，未解析 iframe 聊天文本创建 Task，未修改 Agent profile、模型、browser binding 或技能安装逻辑。
+
+---
+
 ## 2026-05-24 — Team Console Live Agent Atlas 布局本地持久化
 
 - **主题**: 解决 Live API 画布里添加和拖动的 Agent 卡片刷新后丢失的问题。
