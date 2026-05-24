@@ -21,6 +21,7 @@
 - `/playground` 顶部的当前 Agent 标签和“后台任务”入口不再调用 `window.open(..., "_blank")`，而是用当前标签跳转到 `/playground/agents` 与 `/playground/conn`。
 - 桌面顶部与手机更多菜单里的 `Team Runtime` 入口不再带 `target="_blank"`；点击后在当前标签进入 `/playground/team`。
 - `/playground/agents`、`/playground/conn` 和 `/playground/team` 的左上角“返回对话”统一指向 `/playground?view=chat`；主 Playground 识别 `view=chat` 后直接恢复当前 Agent 的对话界面，而不是落回 Agent 选择首页。
+- `/playground?view=chat&agentId=<agentId>` 会把 `agentId` URL hint 作为初始 active Agent；普通页面会同步写入 `ugk-pi:active-agent-id`，Team Console iframe 使用 `embed=team-console` 时只在当前页面内生效，不写入共享 localStorage，避免不同 Agent 分支互相污染。
 - Team 页面仍是独立工作台，不嵌进主聊天 workspace；用户显式点击 Agent 菜单里的“返回首页”时会清掉 `view=chat` URL hint，避免刷新后又跳回对话。
 - 相关源码：`src/ui/playground.ts`、`src/ui/agents-page.ts`、`src/ui/conn-page.ts`、`src/ui/playground-agent-manager.ts`、`src/ui/playground-conn-activity-controller.ts`、`src/ui/playground-page-shell.ts`、`src/ui/team-page.ts`、`test/server.test.ts`、`test/team-page-ui.test.ts`、`test/playground-agent-switch.test.ts`、`test/agent-model-ui.test.ts`
 

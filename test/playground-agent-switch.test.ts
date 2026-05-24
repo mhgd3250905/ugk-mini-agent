@@ -15,8 +15,17 @@ test("playground renders an agent selector for switching operation windows", () 
 	assert.match(html, /class="topbar-agent-label"/);
 	assert.match(html, /aria-label="打开 Agent 页面"/);
 	assert.match(html, /const AGENT_SELECTION_STORAGE_KEY = "ugk-pi:active-agent-id"/);
-	assert.match(html, /agentId:\s*readStoredAgentId\(\)/);
+	assert.match(html, /function readUrlAgentIdHint\(\)/);
+	assert.match(html, /params\.get\("agentId"\)/);
+	assert.match(html, /function isTeamConsoleEmbed\(\)/);
+	assert.match(html, /params\.get\("embed"\) === "team-console"/);
+	assert.match(html, /function readInitialAgentId\(\)/);
+	assert.match(html, /const hinted = readUrlAgentIdHint\(\)/);
+	assert.match(html, /return isTeamConsoleEmbed\(\) \? hinted : writeStoredAgentId\(hinted\)/);
+	assert.match(html, /agentId:\s*readInitialAgentId\(\)/);
+	assert.match(html, /if \(!options\?\.skipPersist && !isTeamConsoleEmbed\(\)\)/);
 	assert.match(html, /localStorage\.setItem\(AGENT_SELECTION_STORAGE_KEY, normalized\)/);
+	assert.match(html, /state\.agentId = writeStoredAgentId\(nextAgentId, \{ skipPersist: isTeamConsoleEmbed\(\) \}\)/);
 });
 
 test("playground keeps the stored active agent when the catalog request falls back", () => {

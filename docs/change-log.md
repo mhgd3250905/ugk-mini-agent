@@ -12,6 +12,37 @@
 
 ---
 
+## 2026-05-24 — Team Console Agent 分支浮窗拖拽缩放
+
+- **主题**: 修复点击其他 Agent 时分支仍停在主 Agent 对话的可见交互问题，并把 Agent 对话分支改成可拖拽、可缩放的上层浮窗节点。
+- **变更内容**:
+  - Agent 分支不再按所有 Agent 节点右侧自动避让布局，而是从当前 Agent 右侧展开，允许覆盖周围节点。
+  - 分支标题栏支持拖动，右下角 resize handle 支持调整宽高；拖拽和 resize 都按当前 Atlas zoom 折算世界坐标。
+  - 分支标题栏拖动不会带动画布 pan；Agent 到分支的连接线按相对位置选择最近边，分支拖到 Agent 下方时从底部 / 顶部连接，不再固定右侧硬连。
+  - Atlas 外层容器补齐 `min-width: 0` / `max-width: 100%` / overflow 约束，Agent 或分支向右拖动时不会把整页宽度撑开成“画布跟着移动”。
+  - 分支位置不再被原点上方 / 左侧边界钳制；拖动只限制最小宽高，不限制世界坐标位置。
+  - Team Console iframe 增加 `embed=team-console`；主 `/playground` 在嵌入模式下不再把 URL agent hint 或 iframe 内 Agent 切换写入全局 active-agent localStorage，避免不同 Agent 分支被最后一次手动切换污染。
+  - 回归测试覆盖真实 pointer 点击另一个 Agent 切换 iframe、分支允许覆盖相邻 Agent、标题栏拖动不带动画布、拖过原点上方、下方分支连线锚点、右下角缩放、右拖不撑开外层页面，以及嵌入模式不污染主页面 active agent。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/app/app.css`, `apps/team-console/src/graph/AtlasCanvasShell.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `src/ui/playground.ts`, `test/playground-agent-switch.test.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **测试**: `npm --prefix apps/team-console run test`, `npm --prefix apps/team-console run build`, `node --test --import tsx test/playground-agent-switch.test.ts`, `git diff --check`。
+- **边界**: 未改 `src/team/**`、`src/ui/team-page.ts`、`/playground/team` 或主 `/playground` 布局；未恢复 Team Runtime 按钮，未实现 WorkUnit / Plan 编排、Agent clone / instance / overlay / 画布局部技能安装、移动端专项或 artifact preview。
+
+---
+
+## 2026-05-24 — Team Console Agent 分支 iframe
+
+- **主题**: 将 Agent 卡片点击效果从特殊 Focus 视窗改为同一 Atlas 画布内的主 `/playground` iframe 分支卡片。
+- **变更内容**:
+  - 点击 Agent 节点会在节点右侧展开 Agent 分支卡片，普通 Execution Atlas 节点层、其他 Agent、runtime nodes、links、evidence 和工具条继续显示；再次点击同一 Agent 会收起，点击其他 Agent 会切换分支。
+  - 分支 iframe 指向主服务 `/playground?view=chat&agentId=<agentId>`，Team Console 不再复制本地 transcript/composer、scoped stream/state/history、queue/interrupt 或文件库逻辑。
+  - 主 `/playground` 增加 `agentId` URL hint 读取，并把 hint 写入 active agent storage，确保主 Agent 卡片打开主 Agent 对话、搜索 Agent 卡片打开搜索 Agent 对话。
+  - Vite dev server 将 `TEAM_CONSOLE_API_TARGET` 暴露给 Team Console 前端，用于非默认主服务端口的 iframe base URL。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/AtlasCanvasShell.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/vite.config.ts`, `apps/team-console/src/tests/app.test.tsx`, `test/playground-agent-switch.test.ts`, `src/ui/playground.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **测试**: `npm --prefix apps/team-console run test`, `npm --prefix apps/team-console run build`, `node --test --import tsx test/playground-agent-switch.test.ts`, `git diff --check`。
+- **边界**: 未改 `src/team/**`、`src/ui/team-page.ts` 或 `/playground/team`；主 `/playground` 仅增加 `agentId` URL hint，未改布局和运行时行为；未恢复 Team Runtime 按钮，未实现 WorkUnit / Plan 编排、Agent clone / instance / overlay / 画布局部技能安装、移动端专项或 artifact preview。
+
+---
+
 ## 2026-05-24 — Team Console Agent Focus 主流断线恢复
 
 - **主题**: 修复 Agent Focus 新发送 scoped stream 在未收到 terminal event 就结束时会误清 pending 的问题。

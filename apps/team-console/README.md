@@ -34,37 +34,28 @@ npm run team-console:test   # 测试
 
 默认使用 Mock fixture 数据。顶部可切换 Live API 模式。
 
-本地开发时，Live API 依赖 Vite dev server 的 `/v1/team`、`/v1/agents` 和 `/v1/assets` 代理。默认代理目标是主 `ugk-pi` 服务：
+本地开发时，Live API 依赖 Vite dev server 的 `/v1/team` 和 `/v1/agents` 代理。`/v1/assets` proxy 仍保留给 API adapter regression，但当前 Agent 分支卡片本身不再直接调用 asset API。默认代理目标是主 `ugk-pi` 服务：
 
 ```bash
 http://127.0.0.1:3000
 ```
 
-所以使用 Live API preview 前，需要先确保主服务已经运行在 `http://127.0.0.1:3000`。如主服务不在默认端口，可用 `TEAM_CONSOLE_API_TARGET` 覆盖代理目标：
+所以使用 Live API preview 或 Agent 分支 iframe 前，需要先确保主服务已经运行在 `http://127.0.0.1:3000`。如主服务不在默认端口，可用 `TEAM_CONSOLE_API_TARGET` 覆盖代理目标；Vite 会把同一个目标暴露给前端 iframe URL：
 
 ```bash
 TEAM_CONSOLE_API_TARGET=http://127.0.0.1:3100 npm run dev
 ```
 
-Live API 模式会真实请求：
+Team Console shell 的 Live API 模式会真实请求：
 
 - `GET /v1/agents`
-- `POST /v1/agents/:agentId/chat/conversations`
-- `GET /v1/agents/:agentId/chat/conversations`
-- `POST /v1/agents/:agentId/chat/current`
-- `GET /v1/agents/:agentId/chat/state`
-- `GET /v1/agents/:agentId/chat/history`
-- `GET /v1/agents/:agentId/chat/status`
-- `POST /v1/agents/:agentId/chat/stream`
-- `POST /v1/agents/:agentId/chat/queue`
-- `POST /v1/agents/:agentId/chat/interrupt`
-- `GET /v1/assets`
-- `POST /v1/assets/upload`
 - `GET /v1/team/plans`
 - `GET /v1/team/runs`
 - `GET /v1/team/runs/:runId`
 - `GET /v1/team/runs/:runId/tasks/:taskId/attempts`
 - `GET /v1/team/runs/:runId/tasks/:taskId/attempts/:attemptId/files/:fileName`
+
+Agent 分支卡片不经 Vite proxy 打开 `/playground`，而是直接把 iframe 指向主服务的 `/playground?view=chat&agentId=<agentId>&embed=team-console`。主 `/playground` 负责读取 `agentId` URL hint、切到对应 Agent 并继续处理自己的路由、对话、文件库、后台任务等行为；`embed=team-console` 会避免 iframe 内 Agent 切换污染其他分支或主页面的 active Agent 选择。
 
 当前 preview 没有 live run picker；它会按 `createdAt` 选择最新 run，再用该 run 的 `planId` 匹配 plan 后渲染执行图。请求失败会在页面顶部显示错误，不会继续展示旧 mock 数据。
 
@@ -72,11 +63,11 @@ Live API 模式会真实请求：
 
 Team Console preview 现在把 Agent 节点放进同一张 Execution Atlas 画布，不再额外打开独立 Agent Canvas。默认 Mock 入口是干净的 `Agent workspace`，不显示旧 demo run；需要验证运行图时再切换到“顺序 run”等 fixture。
 
-Mock 模式使用 deterministic Agent fixture，可把主 Agent、搜索 Agent 等真实主项目 Agent profile 概念加入 Atlas；同一个 `agentId` 在同一画布内只能加入一次，已加入项会在选择器里禁用。Agent 节点复用 Execution Atlas 的网格、节点样式、pan/zoom 和“重置视图”工具。普通画布态可拖拽 Agent 卡片；拖拽只改变 Team Console 画布引用位置，不修改真实 Agent profile，也暂不持久化。
+Mock 模式使用 deterministic Agent fixture，可把主 Agent、搜索 Agent 等真实主项目 Agent profile 概念加入 Atlas；同一个 `agentId` 在同一画布内只能加入一次，已加入项会在选择器里禁用。Agent 节点复用 Execution Atlas 的网格、节点样式、pan/zoom 和“重置视图”工具。普通画布态可拖拽 Agent 卡片；拖拽只改变 Team Console 画布引用位置，不修改真实 Agent profile，也暂不持久化。Agent 或分支节点向右拖动时只改变画布内世界坐标，不允许撑开外层页面宽度或带动画布 pan。
 
-单击 Agent 节点会进入 Focus Mode。Focus Mode 是特殊 Agent 对话界面，不再继续显示普通 Execution Atlas 节点层：其他 Agent、runtime nodes、links、evidence 和添加 / 缩放工具都会隐藏，只保留当前锁定 Agent 卡片和下方大对话工作区。Focus 只能通过“收起”退出，退出后恢复进入 Focus 前的 viewport 和普通画布节点层。
+单击 Agent 节点会展开一个 Agent 分支卡片，而不是进入特殊 Focus 视窗。普通 Execution Atlas 节点层、其他 Agent、runtime nodes、links、evidence 和添加 / 缩放工具都会继续显示；点击同一 Agent 节点会收起该分支，点击另一个 Agent 节点会把分支切换到对应 `agentId`。分支卡片按上层浮窗处理，不再为了避让周围节点自动右移；允许覆盖其他节点，用户可拖动画布或拖动分支标题栏调整位置，并可从右下角调整分支宽高。分支位置使用画布世界坐标，允许拖过原点上方或左侧；拖动分支标题栏不会带动画布平移。Agent 到分支的连接线会按分支相对位置从最近边出线，避免分支拖到下方后仍从右侧硬连。
 
-Focus 对话区对齐主 `/playground` 当前 Agent 对话首页的视觉语言：Focus 顶部保留新会话、文件库和上下文使用量入口，但不显示 Agent switcher 或 Agent 切换按钮，因为当前 Agent 已由画布卡片决定；暂不显示后台任务和 Team Runtime 入口，避免在 Agent 对话场景里扩散额外工作台功能。下半区使用 transcript + composer 结构，消息按 user 右侧输入回声 / assistant 左侧 raised surface 分层，底部 composer 是一个控制面，并且不显示 `Shift+Enter 换行` 这类轻量 chat panel 提示。Live 模式复用 scoped Agent chat：进入 Focus 会读取 conversation catalog，通过 `GET /v1/agents/:agentId/chat/state` 恢复当前 `conversationId` 的可渲染 history；后续历史分页边界沿用 `GET /v1/agents/:agentId/chat/history`。发送使用 `POST /v1/agents/:agentId/chat/stream`，处理 `run_started`、`text_delta`、`done`、`error`、`interrupted` 与 `queue_updated`，运行中再次发送会走 `POST /v1/agents/:agentId/chat/queue`，打断走 `POST /v1/agents/:agentId/chat/interrupt`。文件上传与文件库在 Live 模式接 `/v1/assets`，上传会携带已有 `conversationId`；只选择文件不输入文本时会补默认请求文案，避免向真实 chat 接口发送空 `message`。Mock 模式走同一 UI 状态机和 deterministic stream fixture。当前不做 Agent clone、instance、profile overlay、画布局部技能安装、WorkUnit 节点或 Plan 编排，也不恢复后台任务 / Team Runtime 按钮、移动端专项或 artifact preview。
+Agent 分支卡片内部是主项目 `/playground` 的 iframe，URL 形如 `/playground?view=chat&agentId=main&embed=team-console`。Team Console 不再维护本地 transcript + composer、不再复制 scoped chat stream/state/history/queue/interrupt/file library；这些真实行为全部交还给主 `/playground`。主 `/playground` 读取 `agentId` URL hint 后进入对应 Agent，因此主 Agent 卡片打开主 Agent 对话，搜索 Agent 卡片打开搜索 Agent 对话；`embed=team-console` 会让 iframe 内的 Agent 选择不写入主页面共用的 active-agent localStorage，避免一个分支或主页面的手动切换污染其他 Agent 分支。iframe 内的主项目路由跳转继续由主项目自己处理。当前仍不做 Agent clone、instance、profile overlay、画布局部技能安装、WorkUnit 节点或 Plan 编排，也不恢复 Team Runtime 按钮、移动端专项或 artifact preview。
 
 Mock fixture 覆盖以下场景：
 

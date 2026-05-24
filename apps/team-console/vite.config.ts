@@ -6,6 +6,9 @@ const teamApiTarget = process.env.TEAM_CONSOLE_API_TARGET ?? "http://127.0.0.1:3
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    "import.meta.env.VITE_TEAM_CONSOLE_API_TARGET": JSON.stringify(teamApiTarget),
+  },
   server: {
     proxy: {
       "/v1/team": {

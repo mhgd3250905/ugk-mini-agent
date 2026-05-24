@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
-import { MockTeamApi, makeSequentialPlan, makeSequentialRun, resetMockTeamApiState } from "../fixtures/team-fixtures";
+import { makeSequentialPlan, makeSequentialRun, resetMockTeamApiState } from "../fixtures/team-fixtures";
 
 function getAtlas(container: HTMLElement): HTMLElement {
   const atlas = container.querySelector(".execution-map-container") as HTMLElement | null;
@@ -42,32 +42,6 @@ function firePointer(
     buttons: { value: init.buttons ?? 1 },
   });
   fireEvent(target, event);
-}
-
-function mockContextUsage() {
-  return {
-    provider: "zhipu-glm",
-    model: "glm-5.1",
-    currentTokens: 0,
-    contextWindow: 128000,
-    reserveTokens: 16384,
-    maxResponseTokens: 16384,
-    availableTokens: 111616,
-    percent: 0,
-    status: "safe" as const,
-    mode: "estimate" as const,
-  };
-}
-
-function mockAsset(assetId: string, fileName = `${assetId}.md`) {
-  return {
-    assetId,
-    fileName,
-    mimeType: "text/markdown",
-    sizeBytes: 1024,
-    kind: "text" as const,
-    createdAt: "2026-05-24T00:00:00.000Z",
-  };
 }
 
 describe("App", () => {
@@ -138,7 +112,7 @@ describe("App", () => {
     expect(within(atlasNodes).getAllByText("main")).toHaveLength(1);
   });
 
-  it("renders an isolated focused agent workspace and restores the canvas", async () => {
+  it("expands an agent card into an embedded playground branch and keeps the atlas visible", async () => {
     const { container } = render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "顺序 run" }));
@@ -159,384 +133,54 @@ describe("App", () => {
     fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
 
     expect(atlas).toHaveAttribute("data-agent-focus", "main");
-    expect(stage.style.transform).not.toBe(initialTransform);
-    expect(stage.style.transform).toContain("scale(1.08)");
-    expect(stage).toHaveAttribute("aria-hidden", "true");
-
-    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement | null;
-    expect(focusWorkspace).toBeTruthy();
-    expect(focusWorkspace?.querySelector(".agent-focus-chat-stage")).toBeTruthy();
-    expect(focusWorkspace?.querySelector(".agent-focus-command-deck")).toBeTruthy();
-    expect(focusWorkspace?.querySelector(".agent-focus-composer")).toBeTruthy();
-    expect(within(focusWorkspace!).getByText("主 Agent")).toBeInTheDocument();
-    expect(within(focusWorkspace!).getByText("主 Agent / main")).toBeInTheDocument();
-    expect(within(focusWorkspace!).getByText("UGK CLAW")).toBeInTheDocument();
-    expect(focusWorkspace?.querySelector(".agent-switcher")).toBeNull();
-
-    expect(screen.queryByRole("button", { name: /搜索 Agent/ })).toBeNull();
-    expect(screen.queryByText("搜索 Agent / search")).toBeNull();
-    expect(screen.queryByText("执行运行")).toBeNull();
-    expect(screen.queryByText("Research vendor A")).toBeNull();
-
-    fireEvent.click(focusWorkspace!);
-    expect(atlas).toHaveAttribute("data-agent-focus", "main");
-    expect(screen.queryByText("搜索 Agent / search")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "收起" }));
-
-    expect(atlas).toHaveAttribute("data-agent-focus", "none");
+    expect(atlas).toHaveAttribute("data-interaction-mode", "free");
     expect(stage.style.transform).toBe(initialTransform);
     expect(stage).not.toHaveAttribute("aria-hidden", "true");
-    expect(screen.queryByText("主 Agent / main")).toBeNull();
-    expect(atlas.querySelectorAll(".emap-agent-node")).toHaveLength(2);
+    expect(container.querySelector(".agent-focus-workspace")).toBeNull();
     expect(screen.getByText("执行运行")).toBeInTheDocument();
     expect(screen.getByText("Research vendor A")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /搜索 Agent/ })).toBeInTheDocument();
+    const mainNode = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
+    const searchNode = container.querySelector('.emap-agent-node[data-agent-id="search"]') as HTMLElement | null;
+    const branchShell = container.querySelector(".emap-agent-branch-shell") as HTMLElement | null;
+    expect(mainNode).toBeTruthy();
+    expect(searchNode).toBeTruthy();
+    expect(branchShell).toBeTruthy();
+    expect(Number.parseFloat(branchShell!.style.left)).toBeCloseTo(
+      Number.parseFloat(mainNode!.style.left) + Number.parseFloat(mainNode!.style.width) + 48,
+      4,
+    );
+    expect(Number.parseFloat(branchShell!.style.left)).toBeLessThan(
+      Number.parseFloat(searchNode!.style.left) + Number.parseFloat(searchNode!.style.width),
+    );
+
+    const branch = container.querySelector(".agent-playground-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    expect(within(branch!).getByText("主 Agent")).toBeInTheDocument();
+    expect(within(branch!).getByText("main")).toBeInTheDocument();
+    const iframe = branch!.querySelector("iframe") as HTMLIFrameElement | null;
+    expect(iframe).toBeTruthy();
+    expect(iframe).toHaveAttribute("title", "主 Agent 主项目对话");
+    expect(iframe?.getAttribute("src")).toContain("/playground?view=chat&agentId=main");
+    expect(iframe?.getAttribute("src")).toContain("embed=team-console");
   });
 
-  it("renders focus topbar entries without the agent switcher or composer shortcut hint", async () => {
+  it("clicking the expanded agent card collapses the embedded branch", async () => {
     const { container } = render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+    const agentNode = within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ });
 
-    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement | null;
-    expect(focusWorkspace).toBeTruthy();
-    const focusTopbar = within(focusWorkspace!).getByLabelText("Agent Focus topbar");
+    fireEvent.click(agentNode);
+    expect(container.querySelector(".agent-playground-branch")).toBeTruthy();
+    fireEvent.click(agentNode);
 
-    expect(within(focusTopbar).getByRole("button", { name: "新会话" })).toBeInTheDocument();
-    expect(within(focusTopbar).getByRole("button", { name: "文件库" })).toBeInTheDocument();
-    expect(within(focusTopbar).queryByRole("button", { name: "后台任务" })).toBeNull();
-    expect(within(focusTopbar).queryByRole("link", { name: "Team Runtime" })).toBeNull();
-    expect(within(focusTopbar).getByRole("button", { name: /上下文使用/ })).toBeInTheDocument();
-    expect(within(focusTopbar).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "0");
-    expect(focusWorkspace!.querySelector(".agent-switcher")).toBeNull();
-    expect(within(focusWorkspace!).queryByRole("button", { name: /添加 Agent|打开 Agent 页面/ })).toBeNull();
-    expect(within(focusWorkspace!).queryByText("Shift+Enter 换行")).toBeNull();
+    expect(getAtlas(container)).toHaveAttribute("data-agent-focus", "none");
+    expect(container.querySelector(".agent-playground-branch")).toBeNull();
   });
 
-  it("loads the scoped conversation catalog when entering agent focus", async () => {
-    const catalogSpy = vi.spyOn(MockTeamApi.prototype, "listAgentConversations");
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-
-    await waitFor(() => expect(catalogSpy).toHaveBeenCalledWith("main"));
-  });
-
-  it("restores focused agent server conversation state", async () => {
-    vi.spyOn(MockTeamApi.prototype, "listAgentConversations").mockResolvedValue({
-      currentConversationId: "conv_main_current",
-      conversations: [{
-        conversationId: "conv_main_current",
-        title: "Current",
-        preview: "server assistant",
-        messageCount: 2,
-        createdAt: "2026-05-24T00:00:00.000Z",
-        updatedAt: "2026-05-24T00:01:00.000Z",
-        running: false,
-      }],
-    });
-    const stateSpy = vi.spyOn(MockTeamApi.prototype, "getAgentConversationState").mockResolvedValue({
-      conversationId: "conv_main_current",
-      running: false,
-      contextUsage: mockContextUsage(),
-      messages: [],
-      viewMessages: [
-        {
-          id: "m1",
-          kind: "user",
-          title: "User",
-          text: "server user",
-          createdAt: "2026-05-24T00:00:00.000Z",
-        },
-        {
-          id: "m2",
-          kind: "assistant",
-          title: "Agent",
-          text: "server assistant",
-          createdAt: "2026-05-24T00:01:00.000Z",
-        },
-      ],
-      activeRun: null,
-      historyPage: { hasMore: false, limit: 80 },
-      updatedAt: "2026-05-24T00:01:00.000Z",
-    });
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-
-    expect(await screen.findByText("server assistant")).toBeInTheDocument();
-    expect(screen.getByText("server user")).toBeInTheDocument();
-    expect(stateSpy).toHaveBeenCalledWith("main", "conv_main_current", 80);
-  });
-
-  it("renders active run input and text when restoring a running focused conversation", async () => {
-    vi.spyOn(MockTeamApi.prototype, "listAgentConversations").mockResolvedValue({
-      currentConversationId: "conv_running",
-      conversations: [{
-        conversationId: "conv_running",
-        title: "Running",
-        preview: "partial recovered answer",
-        messageCount: 1,
-        createdAt: "2026-05-24T00:00:00.000Z",
-        updatedAt: "2026-05-24T00:01:00.000Z",
-        running: true,
-      }],
-    });
-    vi.spyOn(MockTeamApi.prototype, "getAgentConversationState").mockResolvedValue({
-      conversationId: "conv_running",
-      running: true,
-      contextUsage: mockContextUsage(),
-      messages: [],
-      viewMessages: [],
-      activeRun: {
-        runId: "run_recover",
-        status: "running",
-        assistantMessageId: "assistant_recover",
-        eventCursor: 12,
-        input: {
-          message: "恢复这个任务",
-          inputAssets: [mockAsset("asset_recover", "recover.md")],
-        },
-        text: "partial recovered answer",
-        process: null,
-        queue: null,
-        loading: true,
-        startedAt: "2026-05-24T00:00:00.000Z",
-        updatedAt: "2026-05-24T00:01:00.000Z",
-      },
-      historyPage: { hasMore: false, limit: 80 },
-      updatedAt: "2026-05-24T00:01:00.000Z",
-    });
-    const eventSpy = vi.fn(async () => {});
-    const mockProto = MockTeamApi.prototype as unknown as {
-      streamAgentConversationEvents?: typeof eventSpy;
-    };
-    const originalEventStream = mockProto.streamAgentConversationEvents;
-    mockProto.streamAgentConversationEvents = eventSpy;
-    const { container } = render(<App />);
-
-    try {
-      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-      fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-
-      expect(await screen.findByText("恢复这个任务")).toBeInTheDocument();
-      expect(screen.getByText("partial recovered answer")).toBeInTheDocument();
-      expect(screen.getByText("recover.md")).toBeInTheDocument();
-      expect(screen.getByText("发送中...")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "打断" })).toBeEnabled();
-      await waitFor(() => expect(eventSpy).toHaveBeenCalledWith(
-        "main",
-        { conversationId: "conv_running", afterEventCursor: 12, signal: expect.any(AbortSignal) },
-        expect.any(Function),
-      ));
-    } finally {
-      if (originalEventStream) {
-        mockProto.streamAgentConversationEvents = originalEventStream;
-      } else {
-        delete mockProto.streamAgentConversationEvents;
-      }
-    }
-  });
-
-  it("continues a recovered active run stream through terminal done and refreshes state", async () => {
-    vi.spyOn(MockTeamApi.prototype, "listAgentConversations").mockResolvedValue({
-      currentConversationId: "conv_running",
-      conversations: [{
-        conversationId: "conv_running",
-        title: "Running",
-        preview: "partial",
-        messageCount: 1,
-        createdAt: "2026-05-24T00:00:00.000Z",
-        updatedAt: "2026-05-24T00:01:00.000Z",
-        running: true,
-      }],
-    });
-    const stateSpy = vi.spyOn(MockTeamApi.prototype, "getAgentConversationState")
-      .mockResolvedValueOnce({
-        conversationId: "conv_running",
-        running: true,
-        contextUsage: mockContextUsage(),
-        messages: [],
-        viewMessages: [],
-        activeRun: {
-          runId: "run_recover",
-          status: "running",
-          assistantMessageId: "assistant_recover",
-          eventCursor: 3,
-          input: { message: "继续恢复", inputAssets: [] },
-          text: "partial",
-          process: null,
-          queue: null,
-          loading: true,
-          startedAt: "2026-05-24T00:00:00.000Z",
-          updatedAt: "2026-05-24T00:01:00.000Z",
-        },
-        historyPage: { hasMore: false, limit: 80 },
-        updatedAt: "2026-05-24T00:01:00.000Z",
-      })
-      .mockResolvedValueOnce({
-        conversationId: "conv_running",
-        running: false,
-        contextUsage: { ...mockContextUsage(), currentTokens: 42 },
-        messages: [],
-        viewMessages: [{
-          id: "assistant_done",
-          kind: "assistant",
-          title: "Agent",
-          text: "partial done",
-          createdAt: "2026-05-24T00:02:00.000Z",
-          runId: "run_recover",
-        }],
-        activeRun: null,
-        historyPage: { hasMore: false, limit: 80 },
-        updatedAt: "2026-05-24T00:02:00.000Z",
-      });
-    const eventSpy = vi.fn(async (_agentId, _request, onEvent: (event: unknown) => void) => {
-      onEvent({ type: "text_delta", textDelta: " done" });
-      onEvent({ type: "done", conversationId: "conv_running", runId: "run_recover", text: "partial done" });
-    });
-    const mockProto = MockTeamApi.prototype as unknown as {
-      streamAgentConversationEvents?: typeof eventSpy;
-    };
-    const originalEventStream = mockProto.streamAgentConversationEvents;
-    mockProto.streamAgentConversationEvents = eventSpy;
-    const { container } = render(<App />);
-
-    try {
-      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-      fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-
-      expect(await screen.findByText("partial done")).toBeInTheDocument();
-      await waitFor(() => expect(stateSpy).toHaveBeenCalledTimes(2));
-      expect(screen.queryByText("发送中...")).toBeNull();
-      expect(screen.getByRole("button", { name: "打断" })).toBeDisabled();
-    } finally {
-      if (originalEventStream) {
-        mockProto.streamAgentConversationEvents = originalEventStream;
-      } else {
-        delete mockProto.streamAgentConversationEvents;
-      }
-    }
-  });
-
-  it("clears pending state and refreshes scoped state after a recovered active run error", async () => {
-    vi.spyOn(MockTeamApi.prototype, "listAgentConversations").mockResolvedValue({
-      currentConversationId: "conv_error_recover",
-      conversations: [{
-        conversationId: "conv_error_recover",
-        title: "Running",
-        preview: "partial",
-        messageCount: 1,
-        createdAt: "2026-05-24T00:00:00.000Z",
-        updatedAt: "2026-05-24T00:01:00.000Z",
-        running: true,
-      }],
-    });
-    const stateSpy = vi.spyOn(MockTeamApi.prototype, "getAgentConversationState")
-      .mockResolvedValueOnce({
-        conversationId: "conv_error_recover",
-        running: true,
-        contextUsage: mockContextUsage(),
-        messages: [],
-        viewMessages: [],
-        activeRun: {
-          runId: "run_error_recover",
-          status: "running",
-          assistantMessageId: "assistant_error_recover",
-          eventCursor: 4,
-          input: { message: "恢复会失败", inputAssets: [] },
-          text: "partial",
-          process: null,
-          queue: null,
-          loading: true,
-          startedAt: "2026-05-24T00:00:00.000Z",
-          updatedAt: "2026-05-24T00:01:00.000Z",
-        },
-        historyPage: { hasMore: false, limit: 80 },
-        updatedAt: "2026-05-24T00:01:00.000Z",
-      })
-      .mockResolvedValueOnce({
-        conversationId: "conv_error_recover",
-        running: false,
-        contextUsage: mockContextUsage(),
-        messages: [],
-        viewMessages: [{
-          id: "error_message",
-          kind: "error",
-          title: "Error",
-          text: "recovered boom",
-          createdAt: "2026-05-24T00:02:00.000Z",
-          runId: "run_error_recover",
-        }],
-        activeRun: null,
-        historyPage: { hasMore: false, limit: 80 },
-        updatedAt: "2026-05-24T00:02:00.000Z",
-      });
-    const eventSpy = vi.fn(async (_agentId, _request, onEvent: (event: unknown) => void) => {
-      onEvent({ type: "error", conversationId: "conv_error_recover", runId: "run_error_recover", message: "recovered boom" });
-    });
-    const mockProto = MockTeamApi.prototype as unknown as {
-      streamAgentConversationEvents?: typeof eventSpy;
-    };
-    const originalEventStream = mockProto.streamAgentConversationEvents;
-    mockProto.streamAgentConversationEvents = eventSpy;
-    const { container } = render(<App />);
-
-    try {
-      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-      fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-
-      expect(await screen.findByRole("alert")).toHaveTextContent("recovered boom");
-      await waitFor(() => expect(stateSpy).toHaveBeenCalledTimes(2));
-      expect(screen.queryByText("发送中...")).toBeNull();
-      expect(screen.getByRole("button", { name: "打断" })).toBeDisabled();
-    } finally {
-      if (originalEventStream) {
-        mockProto.streamAgentConversationEvents = originalEventStream;
-      } else {
-        delete mockProto.streamAgentConversationEvents;
-      }
-    }
-  });
-
-  it("keeps focused conversations isolated between agents", async () => {
-    vi.spyOn(MockTeamApi.prototype, "listAgentConversations").mockImplementation(async (agentId: string) => ({
-      currentConversationId: `conv_${agentId}`,
-      conversations: [{
-        conversationId: `conv_${agentId}`,
-        title: agentId,
-        preview: agentId,
-        messageCount: 1,
-        createdAt: "2026-05-24T00:00:00.000Z",
-        updatedAt: "2026-05-24T00:01:00.000Z",
-        running: false,
-      }],
-    }));
-    vi.spyOn(MockTeamApi.prototype, "getAgentConversationState").mockImplementation(async (agentId: string, conversationId: string) => ({
-      conversationId,
-      running: false,
-      contextUsage: mockContextUsage(),
-      messages: [],
-      viewMessages: [{
-        id: `message_${agentId}`,
-        kind: "assistant",
-        title: "Agent",
-        text: `${agentId} server history`,
-        createdAt: "2026-05-24T00:00:00.000Z",
-      }],
-      activeRun: null,
-      historyPage: { hasMore: false, limit: 80 },
-      updatedAt: "2026-05-24T00:00:00.000Z",
-    }));
+  it("switches the embedded playground branch to the clicked agent id", async () => {
     const { container } = render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
@@ -545,337 +189,109 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /搜索 Agent[\s\S]*search/ }));
 
     fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-    expect(await screen.findByText("main server history")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "收起" }));
+    expect(container.querySelector("iframe")?.getAttribute("src")).toContain("agentId=main");
 
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /搜索 Agent/ }));
-    expect(await screen.findByText("search server history")).toBeInTheDocument();
-    expect(screen.queryByText("main server history")).toBeNull();
+    const searchNode = within(getAtlasNodes(container)).getByRole("button", { name: /搜索 Agent/ });
+    firePointer(searchNode, "pointerdown", { pointerId: 12, clientX: 220, clientY: 80 });
+    firePointer(searchNode, "pointerup", { pointerId: 12, clientX: 220, clientY: 80, buttons: 0 });
+    fireEvent.click(searchNode);
+
+    const branch = container.querySelector(".agent-playground-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    expect(within(branch!).getByText("搜索 Agent")).toBeInTheDocument();
+    expect(branch!.querySelector("iframe")?.getAttribute("src")).toContain("/playground?view=chat&agentId=search");
+    expect(branch!.querySelector("iframe")?.getAttribute("src")).toContain("embed=team-console");
   });
 
-  it("starts a new scoped conversation and refreshes empty state", async () => {
-    vi.spyOn(MockTeamApi.prototype, "listAgentConversations").mockResolvedValue({
-      currentConversationId: "",
-      conversations: [],
-    });
-    vi.spyOn(MockTeamApi.prototype, "getAgentConversationState").mockResolvedValue({
-      conversationId: "mock-main-new",
-      running: false,
-      contextUsage: mockContextUsage(),
-      messages: [],
-      viewMessages: [],
-      activeRun: null,
-      historyPage: { hasMore: false, limit: 80 },
-      updatedAt: "2026-05-24T00:00:00.000Z",
-    });
-    const createSpy = vi.spyOn(MockTeamApi.prototype, "createAgentConversation")
-      .mockResolvedValue({ conversationId: "mock-main-new", currentConversationId: "mock-main-new", created: true });
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement;
-    fireEvent.click(within(focusWorkspace).getByRole("button", { name: "文件库" }));
-    const library = await within(focusWorkspace).findByRole("dialog", { name: "文件库" });
-    fireEvent.click(within(library).getByRole("button", { name: "复用 mock-reference.md" }));
-    expect(within(focusWorkspace).getByText("mock-reference.md")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "新会话" }));
-
-    await waitFor(() => expect(createSpy).toHaveBeenCalledWith("main"));
-    await waitFor(() => expect(MockTeamApi.prototype.getAgentConversationState).toHaveBeenCalledWith("main", "mock-main-new", 80));
-    expect(within(focusWorkspace).queryByText("mock-reference.md")).toBeNull();
-    expect(screen.getByText("当前 Agent 会话尚未开始。")).toBeInTheDocument();
-  });
-
-  it("shows state restore errors without disabling the focus workspace", async () => {
-    vi.spyOn(MockTeamApi.prototype, "listAgentConversations").mockResolvedValue({
-      currentConversationId: "conv_broken",
-      conversations: [{
-        conversationId: "conv_broken",
-        title: "Broken",
-        preview: "",
-        messageCount: 0,
-        createdAt: "2026-05-24T00:00:00.000Z",
-        updatedAt: "2026-05-24T00:00:00.000Z",
-        running: false,
-      }],
-    });
-    vi.spyOn(MockTeamApi.prototype, "getAgentConversationState").mockRejectedValue({ message: "state down" });
+  it("drags the embedded playground branch by its title bar", async () => {
     const { container } = render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
     fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
 
-    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement;
-    expect(await within(focusWorkspace).findByRole("alert")).toHaveTextContent("state down");
-    expect(within(focusWorkspace).getByLabelText("Agent message")).toBeEnabled();
-    expect(within(focusWorkspace).getByRole("button", { name: "发送" })).toBeDisabled();
+    const branchShell = container.querySelector(".emap-agent-branch-shell") as HTMLElement | null;
+    const titleBar = container.querySelector(".agent-playground-branch-head") as HTMLElement | null;
+    const atlasStage = container.querySelector(".execution-map-scroll") as HTMLElement | null;
+    expect(branchShell).toBeTruthy();
+    expect(titleBar).toBeTruthy();
+    expect(atlasStage).toBeTruthy();
+    const initialLeft = Number.parseFloat(branchShell!.style.left);
+    const initialTop = Number.parseFloat(branchShell!.style.top);
+    const initialStageTransform = atlasStage!.style.transform;
+
+    firePointer(titleBar!, "pointerdown", { pointerId: 21, clientX: 300, clientY: 120 });
+    firePointer(titleBar!, "pointermove", { pointerId: 21, clientX: 380, clientY: 155 });
+    firePointer(titleBar!, "pointerup", { pointerId: 21, clientX: 380, clientY: 155, buttons: 0 });
+
+    expect(Number.parseFloat(branchShell!.style.left)).toBeCloseTo(initialLeft + 80, 4);
+    expect(Number.parseFloat(branchShell!.style.top)).toBeCloseTo(initialTop + 35, 4);
+    expect(atlasStage!.style.transform).toBe(initialStageTransform);
   });
 
-  it("supports focus composer file selection, selected file removal, and file library reuse", async () => {
-    const uploadSpy = vi.spyOn(
-      MockTeamApi.prototype as unknown as {
-        uploadFilesAsAssets(files: File[], conversationId?: string): Promise<Array<{
-          assetId: string;
-          fileName: string;
-          mimeType: string;
-          sizeBytes: number;
-          kind: "text" | "binary" | "metadata";
-        }>>;
-      },
-      "uploadFilesAsAssets",
-    ).mockImplementation(async (files: File[]) => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      const file = files[0];
-      return [{
-        assetId: "mock-upload-brief",
-        fileName: file.name,
-        mimeType: file.type || "application/octet-stream",
-        sizeBytes: file.size,
-        kind: "text",
-      }];
-    });
+  it("allows dragging the embedded playground branch above the atlas origin", async () => {
     const { container } = render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
     fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
 
-    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement;
-    const fileButton = within(focusWorkspace).getByRole("button", { name: "选择文件" });
-    const fileInput = focusWorkspace.querySelector('input[type="file"][multiple]') as HTMLInputElement | null;
-    expect(fileButton).toBeInTheDocument();
-    expect(fileInput).toBeTruthy();
+    const branchShell = container.querySelector(".emap-agent-branch-shell") as HTMLElement | null;
+    const titleBar = container.querySelector(".agent-playground-branch-head") as HTMLElement | null;
+    expect(branchShell).toBeTruthy();
+    expect(titleBar).toBeTruthy();
+    const initialTop = Number.parseFloat(branchShell!.style.top);
 
-    const file = new File(["hello"], "brief.md", { type: "text/markdown" });
-    fireEvent.change(fileInput!, { target: { files: [file] } });
-    expect(within(focusWorkspace).getByText("上传中")).toBeInTheDocument();
-    expect(await within(focusWorkspace).findByText("brief.md")).toBeInTheDocument();
-    expect(uploadSpy).toHaveBeenCalledWith([file], undefined);
+    firePointer(titleBar!, "pointerdown", { pointerId: 25, clientX: 300, clientY: 120 });
+    firePointer(titleBar!, "pointermove", { pointerId: 25, clientX: 300, clientY: -80 });
+    firePointer(titleBar!, "pointerup", { pointerId: 25, clientX: 300, clientY: -80, buttons: 0 });
 
-    fireEvent.click(within(focusWorkspace).getByRole("button", { name: "移除 brief.md" }));
-    expect(within(focusWorkspace).queryByText("brief.md")).toBeNull();
-
-    fireEvent.click(within(focusWorkspace).getByRole("button", { name: "文件库" }));
-    const library = await within(focusWorkspace).findByRole("dialog", { name: "文件库" });
-    expect(within(library).getByText("mock-reference.md")).toBeInTheDocument();
-
-    fireEvent.click(within(library).getByRole("button", { name: "复用 mock-reference.md" }));
-    expect(within(focusWorkspace).getByText("mock-reference.md")).toBeInTheDocument();
+    expect(Number.parseFloat(branchShell!.style.top)).toBeCloseTo(initialTop - 200, 4);
   });
 
-  it("sends selected focus composer asset refs with the fixed agent chat request", async () => {
-    const streamSpy = vi.spyOn(MockTeamApi.prototype, "streamAgentMessage");
+  it("anchors the embedded playground branch link to the nearest sides after dragging below the agent", async () => {
     const { container } = render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
     fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
 
-    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement;
-    fireEvent.click(within(focusWorkspace).getByRole("button", { name: "文件库" }));
-    const library = await within(focusWorkspace).findByRole("dialog", { name: "文件库" });
-    fireEvent.click(within(library).getByRole("button", { name: "复用 mock-reference.md" }));
+    const titleBar = container.querySelector(".agent-playground-branch-head") as HTMLElement | null;
+    expect(titleBar).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "请结合附件总结" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    firePointer(titleBar!, "pointerdown", { pointerId: 24, clientX: 500, clientY: 120 });
+    firePointer(titleBar!, "pointermove", { pointerId: 24, clientX: 172, clientY: 420 });
+    firePointer(titleBar!, "pointerup", { pointerId: 24, clientX: 172, clientY: 420, buttons: 0 });
 
-    await waitFor(() => expect(streamSpy).toHaveBeenCalled());
-    const call = streamSpy.mock.calls[0];
-    expect(call[0]).toBe("main");
-    expect(call[1]).toMatchObject({
-      message: "请结合附件总结",
-      assetRefs: ["mock-reference-asset"],
-    });
+    const branchLink = container.querySelector(".emap-link-agent-branch") as SVGPathElement | null;
+    expect(branchLink).toBeTruthy();
+    expect(branchLink!.getAttribute("d")).toContain("M500,112");
+    expect(branchLink!.getAttribute("d")).not.toContain("M640,56");
   });
 
-  it("uses a non-empty default message when sending only selected focus assets", async () => {
-    const streamSpy = vi.spyOn(MockTeamApi.prototype, "streamAgentMessage");
+  it("resizes the embedded playground branch from the bottom-right handle", async () => {
     const { container } = render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
     fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
 
-    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement;
-    fireEvent.click(within(focusWorkspace).getByRole("button", { name: "文件库" }));
-    const library = await within(focusWorkspace).findByRole("dialog", { name: "文件库" });
-    fireEvent.click(within(library).getByRole("button", { name: "复用 mock-reference.md" }));
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    const branchShell = container.querySelector(".emap-agent-branch-shell") as HTMLElement | null;
+    const resizeHandle = container.querySelector(".emap-agent-branch-resize-handle") as HTMLElement | null;
+    expect(branchShell).toBeTruthy();
+    expect(resizeHandle).toBeTruthy();
+    const initialWidth = Number.parseFloat(branchShell!.style.width);
+    const initialHeight = Number.parseFloat(branchShell!.style.height);
 
-    await waitFor(() => expect(streamSpy).toHaveBeenCalled());
-    const call = streamSpy.mock.calls[0];
-    expect(call[0]).toBe("main");
-    expect(call[1]).toMatchObject({
-      message: "请结合我引用的资产一起处理",
-      assetRefs: ["mock-reference-asset"],
-    });
-    expect(await within(focusWorkspace).findByText("请结合我引用的资产一起处理")).toBeInTheDocument();
+    firePointer(resizeHandle!, "pointerdown", { pointerId: 22, clientX: 900, clientY: 620 });
+    firePointer(resizeHandle!, "pointermove", { pointerId: 22, clientX: 1020, clientY: 690 });
+    firePointer(resizeHandle!, "pointerup", { pointerId: 22, clientX: 1020, clientY: 690, buttons: 0 });
+
+    expect(Number.parseFloat(branchShell!.style.width)).toBeCloseTo(initialWidth + 120, 4);
+    expect(Number.parseFloat(branchShell!.style.height)).toBeCloseTo(initialHeight + 70, 4);
   });
 
-  it("uploads focus files with the scoped conversation id after the first streamed turn", async () => {
-    const uploadSpy = vi.spyOn(MockTeamApi.prototype, "uploadFilesAsAssets");
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "建立会话" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
-
-    expect(await screen.findByText("[main] mock reply: 建立会话")).toBeInTheDocument();
-
-    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement;
-    const fileInput = focusWorkspace.querySelector('input[type="file"][multiple]') as HTMLInputElement | null;
-    const file = new File(["hello"], "after-conversation.md", { type: "text/markdown" });
-    fireEvent.change(fileInput!, { target: { files: [file] } });
-
-    await waitFor(() => expect(uploadSpy).toHaveBeenCalled());
-    expect(uploadSpy.mock.calls.at(-1)).toEqual([[file], "mock-main-1"]);
-  });
-
-  it("keeps selected asset chips when a focused stream fails before a terminal event", async () => {
-    vi.spyOn(MockTeamApi.prototype, "streamAgentMessage").mockRejectedValueOnce({ message: "network down" });
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-
-    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement;
-    fireEvent.click(within(focusWorkspace).getByRole("button", { name: "文件库" }));
-    const library = await within(focusWorkspace).findByRole("dialog", { name: "文件库" });
-    fireEvent.click(within(library).getByRole("button", { name: "复用 mock-reference.md" }));
-    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "会失败" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("network down");
-    expect(focusWorkspace.querySelector(".agent-focus-selected-assets .agent-focus-file-chip")).toHaveTextContent("mock-reference.md");
-  });
-
-  it("dedupes file library selections by asset id", async () => {
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-
-    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement;
-    fireEvent.click(within(focusWorkspace).getByRole("button", { name: "文件库" }));
-    let library = await within(focusWorkspace).findByRole("dialog", { name: "文件库" });
-    fireEvent.click(within(library).getByRole("button", { name: "复用 mock-reference.md" }));
-    fireEvent.click(within(focusWorkspace).getByRole("button", { name: "文件库" }));
-    fireEvent.click(within(focusWorkspace).getByRole("button", { name: "文件库" }));
-    library = await within(focusWorkspace).findByRole("dialog", { name: "文件库" });
-
-    expect(within(library).getByRole("button", { name: "复用 mock-reference.md" })).toBeDisabled();
-    expect(focusWorkspace.querySelectorAll(".agent-focus-file-chip")).toHaveLength(1);
-  });
-
-  it("renders restored history asset refs as readable attachment metadata", async () => {
-    vi.spyOn(MockTeamApi.prototype, "listAgentConversations").mockResolvedValue({
-      currentConversationId: "conv_with_assets",
-      conversations: [{
-        conversationId: "conv_with_assets",
-        title: "History with assets",
-        preview: "请看附件",
-        messageCount: 1,
-        createdAt: "2026-05-24T00:00:00.000Z",
-        updatedAt: "2026-05-24T00:00:00.000Z",
-        running: false,
-      }],
-    });
-    vi.spyOn(MockTeamApi.prototype, "getAgentConversationState").mockResolvedValue({
-      conversationId: "conv_with_assets",
-      running: false,
-      contextUsage: mockContextUsage(),
-      messages: [],
-      viewMessages: [{
-        id: "message_with_asset",
-        kind: "user",
-        title: "User",
-        text: "请看附件",
-        createdAt: "2026-05-24T00:00:00.000Z",
-        assetRefs: [mockAsset("history-asset", "history-ref.md")],
-      }],
-      activeRun: null,
-      historyPage: { hasMore: false, limit: 80 },
-      updatedAt: "2026-05-24T00:00:00.000Z",
-    });
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-
-    expect(await screen.findByText("history-ref.md")).toBeInTheDocument();
-  });
-
-  it("prevents selecting more than 20 focused assets before upload", async () => {
-    const uploadSpy = vi.spyOn(MockTeamApi.prototype, "uploadFilesAsAssets");
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-
-    const focusWorkspace = container.querySelector(".agent-focus-workspace") as HTMLElement;
-    const fileInput = focusWorkspace.querySelector('input[type="file"][multiple]') as HTMLInputElement | null;
-    const files = Array.from({ length: 21 }, (_, index) => (
-      new File([`file-${index}`], `limit-${index}.md`, { type: "text/markdown" })
-    ));
-    fireEvent.change(fileInput!, { target: { files } });
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("最多选择 20 个文件");
-    expect(uploadSpy).not.toHaveBeenCalled();
-  });
-
-  it("locks atlas pan and zoom while an agent is focused and restores free mode after collapse", async () => {
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-
-    const atlas = getAtlas(container);
-    const stage = getAtlasStage(container);
-    const agentNode = within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ });
-    fireEvent.click(agentNode);
-
-    const focusedTransform = stage.style.transform;
-    expect(atlas).toHaveAttribute("data-interaction-mode", "locked");
-    expect(screen.queryByRole("button", { name: "添加 Agent" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "放大" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "缩小" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "重置视图" })).toBeNull();
-
-    fireEvent.wheel(atlas, { deltaY: -120, clientX: 120, clientY: 120 });
-    firePointer(atlas, "pointerdown", { pointerId: 1, clientX: 10, clientY: 10 });
-    firePointer(atlas, "pointermove", { pointerId: 1, clientX: 70, clientY: 88 });
-    firePointer(atlas, "pointerup", { pointerId: 1, clientX: 70, clientY: 88, buttons: 0 });
-
-    expect(stage.style.transform).toBe(focusedTransform);
-
-    fireEvent.click(screen.getByRole("button", { name: "收起" }));
-
-    expect(atlas).toHaveAttribute("data-interaction-mode", "free");
-    expect(screen.getByRole("button", { name: "放大" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "缩小" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "重置视图" })).toBeEnabled();
-
-    firePointer(atlas, "pointerdown", { pointerId: 2, clientX: 10, clientY: 10 });
-    firePointer(atlas, "pointermove", { pointerId: 2, clientX: 34, clientY: 46 });
-    firePointer(atlas, "pointerup", { pointerId: 2, clientX: 34, clientY: 46, buttons: 0 });
-    expect(stage.style.transform).toContain("translate(24px, 36px)");
-
-    fireEvent.click(screen.getByRole("button", { name: "重置视图" }));
-    fireEvent.click(screen.getByRole("button", { name: "放大" }));
-    expect(stage.style.transform).toContain("scale(1.1)");
-  });
-
-  it("drags an agent card by world coordinates without opening focus", async () => {
+  it("drags an agent card by world coordinates without opening the embedded branch", async () => {
     const { container } = render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
@@ -895,10 +311,10 @@ describe("App", () => {
     expect(Number.parseFloat(agentNode.style.left)).toBeCloseTo(initialLeft + 50, 4);
     expect(Number.parseFloat(agentNode.style.top)).toBeCloseTo(initialTop + 30, 4);
     expect(atlas).toHaveAttribute("data-agent-focus", "none");
-    expect(container.querySelector(".agent-focus-workspace")).toBeNull();
+    expect(container.querySelector(".agent-playground-branch")).toBeNull();
   });
 
-  it("allows a later click to focus an agent after a drag gesture", async () => {
+  it("allows a later click to expand an agent branch after a drag gesture", async () => {
     const { container } = render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
@@ -914,386 +330,9 @@ describe("App", () => {
     fireEvent.click(agentNode);
 
     expect(getAtlas(container)).toHaveAttribute("data-agent-focus", "main");
-    expect(container.querySelector(".agent-focus-workspace")).toBeTruthy();
-    expect(screen.getByText("主 Agent / main")).toBeInTheDocument();
+    expect(container.querySelector(".agent-playground-branch")).toBeTruthy();
+    expect(within(container.querySelector(".agent-playground-branch") as HTMLElement).getByText("主 Agent")).toBeInTheDocument();
   });
-
-  it("does not expose movable agent cards while focus mode is locked", async () => {
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-
-    const agentNode = within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }) as HTMLElement;
-    fireEvent.click(agentNode);
-
-    expect(getAtlas(container)).toHaveAttribute("data-interaction-mode", "locked");
-    expect(within(getAtlas(container)).queryByRole("button", { name: /主 Agent/ })).toBeNull();
-    expect(screen.getByText("主 Agent / main")).toBeInTheDocument();
-  });
-
-  it("sends a message from the focused agent panel", async () => {
-    const streamSpy = vi.spyOn(MockTeamApi.prototype, "streamAgentMessage");
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-
-    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "请总结画布状态" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
-
-    expect(screen.getByText("请总结画布状态")).toBeInTheDocument();
-    await waitFor(() => expect(streamSpy).toHaveBeenCalled());
-    expect(streamSpy.mock.calls[0][0]).toBe("main");
-    expect(streamSpy.mock.calls[0][1]).toMatchObject({ message: "请总结画布状态" });
-    expect(await screen.findByText("[main] mock reply: 请总结画布状态")).toBeInTheDocument();
-  });
-
-  it("keeps the stop button enabled while a focused agent stream is running", async () => {
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-
-    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "mock-hold" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
-
-    expect(await screen.findByText("发送中...")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "打断" })).toBeEnabled();
-  });
-
-  it("renders text_delta before the focused stream finishes", async () => {
-    let finishStream!: () => void;
-    vi.spyOn(MockTeamApi.prototype, "streamAgentMessage").mockImplementation(async (_agentId, request, onEvent) => {
-      const conversationId = request.conversationId || "conv_delta";
-      onEvent({ type: "run_started", conversationId, runId: "run_delta" });
-      onEvent({ type: "text_delta", textDelta: "partial answer" });
-      await new Promise<void>((resolve) => {
-        finishStream = () => {
-          onEvent({ type: "done", conversationId, runId: "run_delta", text: "partial answer done" });
-          resolve();
-        };
-      });
-    });
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "stream slowly" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
-
-    expect(await screen.findByText("partial answer")).toBeInTheDocument();
-    await act(async () => {
-      finishStream();
-    });
-    expect(await screen.findByText("partial answer done")).toBeInTheDocument();
-  });
-
-  it("recovers a focused stream when the primary stream closes before a terminal event", async () => {
-    vi.spyOn(MockTeamApi.prototype, "streamAgentMessage").mockImplementationOnce(async (_agentId, _request, onEvent) => {
-      onEvent({ type: "run_started", conversationId: "conv_dropped", runId: "run_dropped" });
-      onEvent({ type: "text_delta", textDelta: "partial before drop" });
-    });
-    const stateSpy = vi.spyOn(MockTeamApi.prototype, "getAgentConversationState").mockResolvedValue({
-      conversationId: "conv_dropped",
-      running: true,
-      contextUsage: mockContextUsage(),
-      messages: [],
-      viewMessages: [],
-      activeRun: {
-        runId: "run_dropped",
-        status: "running",
-        assistantMessageId: "assistant_dropped",
-        eventCursor: 4,
-        input: { message: "stream drops", inputAssets: [] },
-        text: "partial before drop",
-        process: null,
-        queue: null,
-        loading: true,
-        startedAt: "2026-05-24T00:00:00.000Z",
-        updatedAt: "2026-05-24T00:00:01.000Z",
-      },
-      historyPage: { hasMore: false, limit: 80 },
-      updatedAt: "2026-05-24T00:00:01.000Z",
-    });
-    const eventsSpy = vi.spyOn(MockTeamApi.prototype, "streamAgentConversationEvents")
-      .mockImplementation(async (_agentId, request) => {
-        await new Promise<void>((resolve) => {
-          if (request.signal?.aborted) {
-            resolve();
-            return;
-          }
-          request.signal?.addEventListener("abort", () => resolve(), { once: true });
-        });
-      });
-    const { container, unmount } = render(<App />);
-
-    try {
-      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-      fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-      fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "stream drops" } });
-      fireEvent.click(screen.getByRole("button", { name: "发送" }));
-
-      expect(await screen.findByText("partial before drop")).toBeInTheDocument();
-      await waitFor(() => expect(stateSpy).toHaveBeenCalledWith("main", "conv_dropped", 80));
-      await waitFor(() => expect(eventsSpy).toHaveBeenCalledWith(
-        "main",
-        expect.objectContaining({
-          conversationId: "conv_dropped",
-          afterEventCursor: 4,
-          signal: expect.any(AbortSignal),
-        }),
-        expect.any(Function),
-      ));
-      expect(screen.getByRole("button", { name: "打断" })).toBeEnabled();
-    } finally {
-      unmount();
-    }
-  });
-
-  it("starts a new scoped conversation from the focus topbar", async () => {
-    const createSpy = vi.spyOn(
-      MockTeamApi.prototype as unknown as {
-        createAgentConversation(agentId: string): Promise<{ conversationId: string; currentConversationId: string; created: boolean }>;
-      },
-      "createAgentConversation",
-    ).mockResolvedValue({ conversationId: "mock-main-new", currentConversationId: "mock-main-new", created: true });
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-
-    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "草稿" } });
-    fireEvent.click(screen.getByRole("button", { name: "新会话" }));
-
-    await waitFor(() => expect(createSpy).toHaveBeenCalledWith("main"));
-    expect(screen.getByLabelText("Agent message")).toHaveValue("");
-    expect(screen.getByText("当前 Agent 会话尚未开始。")).toBeInTheDocument();
-  });
-
-  it("reuses a focused agent conversation id across chat turns", async () => {
-    const streamSpy = vi.spyOn(MockTeamApi.prototype, "streamAgentMessage")
-      .mockImplementationOnce(async (_agentId, _request, onEvent) => {
-        onEvent({ type: "run_started", conversationId: "conv_main_1", runId: "run_1" });
-        onEvent({ type: "done", conversationId: "conv_main_1", runId: "run_1", text: "第一轮回复" });
-      })
-      .mockImplementationOnce(async (_agentId, request, onEvent) => {
-        onEvent({ type: "run_started", conversationId: request.conversationId || "conv_main_1", runId: "run_2" });
-        onEvent({ type: "done", conversationId: request.conversationId || "conv_main_1", runId: "run_2", text: "第二轮回复" });
-      });
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-
-    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "第一轮" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
-    expect(await screen.findByText("第一轮回复")).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "第二轮" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
-
-    await waitFor(() => expect(streamSpy).toHaveBeenCalledTimes(2));
-    expect(streamSpy.mock.calls[0][0]).toBe("main");
-    expect(streamSpy.mock.calls[0][1]).toMatchObject({ message: "第一轮" });
-    expect(streamSpy.mock.calls[1][1]).toMatchObject({ message: "第二轮", conversationId: "conv_main_1" });
-  });
-
-  it("shows chat errors without removing the sent user message", async () => {
-    vi.spyOn(MockTeamApi.prototype, "streamAgentMessage").mockImplementationOnce(async (_agentId, request, onEvent) => {
-      const conversationId = request.conversationId || "conv_error";
-      onEvent({ type: "run_started", conversationId, runId: "run_error" });
-      onEvent({ type: "error", conversationId, runId: "run_error", message: "agent offline" });
-      throw { message: "agent offline" };
-    });
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-
-    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "这条会失败" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
-
-    expect(screen.getByText("这条会失败")).toBeInTheDocument();
-    expect(await screen.findByRole("alert")).toHaveTextContent("agent offline");
-    expect(screen.getByText("这条会失败")).toBeInTheDocument();
-  });
-
-  it("interrupts a running focused agent stream", async () => {
-    const interruptSpy = vi.spyOn(MockTeamApi.prototype, "interruptAgentChat");
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "mock-hold" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
-
-    const stopButton = await screen.findByRole("button", { name: "打断" });
-    expect(stopButton).toBeEnabled();
-    fireEvent.click(stopButton);
-
-    await waitFor(() => expect(interruptSpy).toHaveBeenCalled());
-    expect(await screen.findByText("本轮已中断")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "打断" })).toBeDisabled();
-  });
-
-  it("queues a focused agent message while a stream is running", async () => {
-    const queueSpy = vi.spyOn(MockTeamApi.prototype, "queueAgentMessage");
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "mock-hold" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
-
-    expect(await screen.findByText("发送中...")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "排队消息" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
-
-    await waitFor(() => expect(queueSpy).toHaveBeenCalled());
-    expect(queueSpy.mock.calls[0][0]).toBe("main");
-    expect(queueSpy.mock.calls[0][1]).toMatchObject({ message: "排队消息", mode: "steer" });
-    expect(await screen.findByText("消息已加入队列")).toBeInTheDocument();
-  });
-
-  it("ignores stale stream events after focusing another agent", async () => {
-    let emitMainDelta!: () => void;
-    vi.spyOn(MockTeamApi.prototype, "streamAgentMessage").mockImplementation(async (_agentId, request, onEvent) => {
-      const conversationId = request.conversationId || "conv_stale";
-      onEvent({ type: "run_started", conversationId, runId: "run_stale" });
-      await new Promise<void>((resolve) => {
-        emitMainDelta = () => {
-          onEvent({ type: "text_delta", textDelta: "stale main text" });
-          resolve();
-        };
-      });
-    });
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(screen.getByRole("button", { name: /搜索 Agent[\s\S]*search/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "start stale stream" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
-    expect(await screen.findByText("发送中...")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "收起" }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /搜索 Agent/ }));
-    emitMainDelta();
-
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(screen.queryByText("stale main text")).toBeNull();
-    expect(screen.getByText("搜索 Agent / search")).toBeInTheDocument();
-  });
-
-  it("ignores stale recovered run events after collapsing focus", async () => {
-    let emitRecoveredDelta!: () => void;
-    vi.spyOn(MockTeamApi.prototype, "listAgentConversations").mockImplementation(async (agentId: string) => ({
-      currentConversationId: `conv_${agentId}`,
-      conversations: [{
-        conversationId: `conv_${agentId}`,
-        title: agentId,
-        preview: "",
-        messageCount: 0,
-        createdAt: "2026-05-24T00:00:00.000Z",
-        updatedAt: "2026-05-24T00:01:00.000Z",
-        running: agentId === "main",
-      }],
-    }));
-    vi.spyOn(MockTeamApi.prototype, "getAgentConversationState").mockImplementation(async (agentId: string, conversationId: string) => ({
-      conversationId,
-      running: agentId === "main",
-      contextUsage: mockContextUsage(),
-      messages: [],
-      viewMessages: agentId === "search" ? [{
-        id: "search_history",
-        kind: "assistant",
-        title: "Agent",
-        text: "search ready",
-        createdAt: "2026-05-24T00:00:00.000Z",
-      }] : [],
-      activeRun: agentId === "main" ? {
-        runId: "run_stale_recover",
-        status: "running",
-        assistantMessageId: "assistant_stale_recover",
-        eventCursor: 9,
-        input: { message: "main recovering", inputAssets: [] },
-        text: "main partial",
-        process: null,
-        queue: null,
-        loading: true,
-        startedAt: "2026-05-24T00:00:00.000Z",
-        updatedAt: "2026-05-24T00:01:00.000Z",
-      } : null,
-      historyPage: { hasMore: false, limit: 80 },
-      updatedAt: "2026-05-24T00:01:00.000Z",
-    }));
-    const eventSpy = vi.fn(async (_agentId, _request, onEvent: (event: unknown) => void) => {
-      await new Promise<void>((resolve) => {
-        emitRecoveredDelta = () => {
-          onEvent({ type: "text_delta", textDelta: " stale recovered text" });
-          resolve();
-        };
-      });
-    });
-    const mockProto = MockTeamApi.prototype as unknown as {
-      streamAgentConversationEvents?: typeof eventSpy;
-    };
-    const originalEventStream = mockProto.streamAgentConversationEvents;
-    mockProto.streamAgentConversationEvents = eventSpy;
-    const { container } = render(<App />);
-
-    try {
-      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-      fireEvent.click(screen.getByRole("button", { name: /搜索 Agent[\s\S]*search/ }));
-      fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-      expect(await screen.findByText("main partial")).toBeInTheDocument();
-      await waitFor(() => expect(eventSpy).toHaveBeenCalled());
-
-      fireEvent.click(screen.getByRole("button", { name: "收起" }));
-      fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /搜索 Agent/ }));
-      expect(await screen.findByText("search ready")).toBeInTheDocument();
-      emitRecoveredDelta();
-
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(screen.queryByText(/stale recovered text/)).toBeNull();
-      expect(screen.getByText("搜索 Agent / search")).toBeInTheDocument();
-    } finally {
-      if (originalEventStream) {
-        mockProto.streamAgentConversationEvents = originalEventStream;
-      } else {
-        delete mockProto.streamAgentConversationEvents;
-      }
-    }
-  });
-
-  it("does not submit empty agent messages", async () => {
-    const sendSpy = vi.spyOn(MockTeamApi.prototype, "sendAgentMessage");
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-
-    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "   " } });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
-
-    expect(sendSpy).not.toHaveBeenCalled();
-  });
-
   it("has mock and live options", () => {
     render(<App />);
     const options = screen.getAllByRole("option");
@@ -1424,15 +463,26 @@ describe("App", () => {
     expect(await screen.findByText("请求失败 (500)")).toBeInTheDocument();
   });
 
-  it("vite proxy includes the scoped agent API", () => {
+  it("vite proxy includes the Team Console API surface", () => {
     const config = readFileSync("vite.config.ts", "utf8");
     expect(config).toContain('"/v1/team"');
     expect(config).toContain('"/v1/agents"');
     expect(config).toContain('"/v1/assets"');
+    expect(config).toContain("VITE_TEAM_CONSOLE_API_TARGET");
     expect(config).not.toContain('"/v1/conns"');
     expect(config).not.toContain('"/v1/activity"');
     expect(config).not.toContain('"/playground"');
     expect(config).toContain("teamApiTarget");
+  });
+
+  it("keeps atlas content from stretching the app width during node drag", () => {
+    const appCss = readFileSync("src/app/app.css", "utf8");
+    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+
+    expect(appCss).toMatch(/\.app-main\s*{[^}]*min-width:\s*0;[^}]*overflow:\s*hidden;/s);
+    expect(appCss).toMatch(/\.workspace\s*{[^}]*min-width:\s*0;/s);
+    expect(appCss).toMatch(/\.workspace-map\s*{[^}]*min-width:\s*0;/s);
+    expect(mapCss).toMatch(/\.execution-map-container\s*{[^}]*min-width:\s*0;[^}]*max-width:\s*100%;/s);
   });
 
   it("documents Agent Atlas mock and live behavior", () => {
@@ -1440,24 +490,33 @@ describe("App", () => {
     expect(readme).toContain("Agent Atlas MVP");
     expect(readme).toContain("Agent workspace");
     expect(readme).toContain("/v1/agents");
-    expect(readme).toContain("/v1/agents/:agentId/chat");
-    expect(readme).toContain("/v1/agents/:agentId/chat/stream");
-    expect(readme).toContain("/v1/agents/:agentId/chat/state");
-    expect(readme).toContain("/v1/agents/:agentId/chat/history");
-    expect(readme).toContain("conversationId");
+    expect(readme).toContain("Agent 分支卡片");
+    expect(readme).toContain("/playground?view=chat&agentId=<agentId>");
+    expect(readme).toContain("embed=team-console");
+    expect(readme).toContain("主 `/playground` 负责读取 `agentId` URL hint");
+    expect(readme).toContain("不写入主页面共用的 active-agent localStorage");
+    expect(readme).toContain("主 Agent 卡片打开主 Agent 对话");
+    expect(readme).toContain("搜索 Agent 卡片打开搜索 Agent 对话");
+    expect(readme).toContain("允许覆盖其他节点");
+    expect(readme).toContain("拖动分支标题栏调整位置");
+    expect(readme).toContain("右下角调整分支宽高");
     expect(readme).toContain("拖拽只改变 Team Console 画布引用位置");
-    expect(readme).toContain("Focus Mode 是特殊 Agent 对话界面");
-    expect(readme).toContain("transcript + composer");
-    expect(readme).toContain("Focus 顶部保留新会话、文件库和上下文使用量入口");
-    expect(readme).toContain("暂不显示后台任务和 Team Runtime 入口");
-    expect(readme).toContain("文件上传与文件库在 Live 模式接 `/v1/assets`");
+    expect(readme).toContain("Team Console 不再维护本地 transcript + composer");
+    expect(readme).not.toContain("Focus Mode 是特殊 Agent 对话界面");
+    expect(readme).not.toContain("文件上传与文件库在 Live 模式接 `/v1/assets`");
     expect(readme).not.toContain("当前聊天仍是非 stream scoped chat");
 
     const runtimeDoc = readFileSync("../../docs/team-runtime.md", "utf8");
-    expect(runtimeDoc).toContain("Live scoped chat 通过 `/v1/agents/:agentId/chat/stream`");
-    expect(runtimeDoc).toContain("通过 `/v1/agents/:agentId/chat/state` 恢复当前会话状态");
-    expect(runtimeDoc).toContain("文件库和上传走 `/v1/assets`");
-    expect(runtimeDoc).toContain("仍不恢复后台任务或 Team Runtime 入口");
+    expect(runtimeDoc).toContain("单击 Agent 节点会展开 Agent 分支卡片");
+    expect(runtimeDoc).toContain("/playground?view=chat&agentId=<agentId>");
+    expect(runtimeDoc).toContain("embed=team-console");
+    expect(runtimeDoc).toContain("Team Console 不再维护本地 transcript + composer");
+    expect(runtimeDoc).toContain("主 `/playground` 读取 `agentId` URL hint");
+    expect(runtimeDoc).toContain("active-agent localStorage");
+    expect(runtimeDoc).toContain("允许覆盖其他节点");
+    expect(runtimeDoc).toContain("拖动分支标题栏移动分支");
+    expect(runtimeDoc).toContain("右下角调整分支宽高");
+    expect(runtimeDoc).not.toContain("Focus Mode 特殊 Agent 对话界面");
     expect(runtimeDoc).toContain("仍不落地 WorkUnit / Plan 编排");
   });
 });

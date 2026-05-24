@@ -147,12 +147,38 @@ function getPlaygroundScript(): string {
 			}
 		}
 
-		function writeStoredAgentId(agentId) {
-			const normalized = normalizeStoredAgentId(agentId) || "main";
+		function readUrlAgentIdHint() {
 			try {
-				localStorage.setItem(AGENT_SELECTION_STORAGE_KEY, normalized);
-			} catch {}
+				const params = new URLSearchParams(window.location.search || "");
+				return normalizeStoredAgentId(params.get("agentId"));
+			} catch {
+				return "";
+			}
+		}
+
+		function isTeamConsoleEmbed() {
+			try {
+				const params = new URLSearchParams(window.location.search || "");
+				return params.get("embed") === "team-console";
+			} catch {
+				return false;
+			}
+		}
+
+		function writeStoredAgentId(agentId, options) {
+			const normalized = normalizeStoredAgentId(agentId) || "main";
+			if (!options?.skipPersist && !isTeamConsoleEmbed()) {
+				try {
+					localStorage.setItem(AGENT_SELECTION_STORAGE_KEY, normalized);
+				} catch {}
+			}
 			return normalized;
+		}
+
+		function readInitialAgentId() {
+			const hinted = readUrlAgentIdHint();
+			if (!hinted) return readStoredAgentId();
+			return isTeamConsoleEmbed() ? hinted : writeStoredAgentId(hinted);
 		}
 
 		function shouldOpenChatViewFromUrl() {
@@ -182,7 +208,7 @@ function getPlaygroundScript(): string {
 			interruptPending: false,
 			theme: "dark",
 			workspaceMode: "chat",
-			agentId: readStoredAgentId(),
+			agentId: readInitialAgentId(),
 			agentCatalog: [],
 			agentCatalogReliable: true,
 			agentRunStatusByAgentId: {},
@@ -600,7 +626,7 @@ function getPlaygroundScript(): string {
 			}
 			const knownAgentIds = new Set(state.agentCatalog.map((agent) => String(agent?.agentId || "").trim()).filter(Boolean));
 			if (state.agentCatalogReliable && !knownAgentIds.has(getCurrentAgentId())) {
-				state.agentId = writeStoredAgentId("main");
+				state.agentId = writeStoredAgentId("main", { skipPersist: isTeamConsoleEmbed() });
 			}
 			renderAgentSelector();
 			renderRuntimeSummary();
@@ -764,7 +790,7 @@ function getPlaygroundScript(): string {
 			state.activeStreamOwner = null;
 			stopActiveRunEventStream();
 			abortConversationStateSync();
-			state.agentId = writeStoredAgentId(nextAgentId);
+			state.agentId = writeStoredAgentId(nextAgentId, { skipPersist: isTeamConsoleEmbed() });
 			state.conversationId = "";
 			state.conversationCatalog = [];
 			state.conversationCatalogSyncedAt = 0;

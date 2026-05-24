@@ -33,7 +33,7 @@ interface ExecutionMapProps {
   onSelectAgent?: (node: AtlasAgentNode) => void;
   onMoveAgent?: (nodeId: string, position: { x: number; y: number }) => void;
   canMoveAgents?: boolean;
-  agentFocusWorkspace?: ReactNode;
+  agentBranchPanel?: ReactNode;
   viewport?: AtlasViewport;
   onViewportChange?: (viewport: AtlasViewport) => void;
   toolbarStart?: ReactNode;
@@ -55,6 +55,11 @@ const PREVIEW_W = 360;
 const PREVIEW_GAP = 40;
 const PREVIEW_FALLBACK_HEIGHT = 180;
 const AGENT_NODE_HEIGHT = 112;
+const AGENT_BRANCH_WIDTH = 960;
+const AGENT_BRANCH_HEIGHT = 680;
+const AGENT_BRANCH_MIN_WIDTH = 520;
+const AGENT_BRANCH_MIN_HEIGHT = 360;
+const AGENT_BRANCH_GAP = 48;
 const AGENT_DRAG_THRESHOLD = 4;
 type EvidenceKind = "result" | "error" | "attempt" | "progress" | "worker" | "checker" | "watcher";
 
@@ -81,6 +86,22 @@ type AgentDragState = {
   startClientY: number;
   startPosition: { x: number; y: number };
   hasMoved: boolean;
+};
+
+type AgentBranchRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type AgentBranchInteractionState = {
+  kind: "drag" | "resize";
+  nodeId: string;
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  startRect: AgentBranchRect;
 };
 
 function evidenceHeight(kind: EvidenceKind): number {
@@ -133,6 +154,60 @@ function formatAgentBinding(agent: AgentSummary): string {
     : "model default";
   const browser = agent.defaultBrowserId ? `browser ${agent.defaultBrowserId}` : "browser default";
   return `${model} · ${browser}`;
+}
+
+function canStartAgentBranchDrag(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  if (!target.closest(".agent-playground-branch-head")) return false;
+  return !target.closest("button, input, textarea, select, a, iframe, summary, details");
+}
+
+function viewportScale(viewport: AtlasViewport | undefined): number {
+  return viewport && Number.isFinite(viewport.scale) && viewport.scale > 0 ? viewport.scale : 1;
+}
+
+function clampAgentBranchRect(rect: AgentBranchRect): AgentBranchRect {
+  return {
+    x: rect.x,
+    y: rect.y,
+    width: Math.max(AGENT_BRANCH_MIN_WIDTH, rect.width),
+    height: Math.max(AGENT_BRANCH_MIN_HEIGHT, rect.height),
+  };
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function agentBranchConnectorPath(agentNode: AtlasAgentNode, branchRect: AgentBranchRect): string {
+  const agentRect = {
+    x: agentNode.position.x,
+    y: agentNode.position.y,
+    width: NODE_WIDTH,
+    height: AGENT_NODE_HEIGHT,
+  };
+  const agentCenter = {
+    x: agentRect.x + agentRect.width / 2,
+    y: agentRect.y + agentRect.height / 2,
+  };
+  const branchCenter = {
+    x: branchRect.x + branchRect.width / 2,
+    y: branchRect.y + branchRect.height / 2,
+  };
+  const dx = branchCenter.x - agentCenter.x;
+  const dy = branchCenter.y - agentCenter.y;
+
+  if (Math.abs(dy) > Math.abs(dx)) {
+    const sourceY = dy >= 0 ? agentRect.y + agentRect.height : agentRect.y;
+    const targetY = dy >= 0 ? branchRect.y : branchRect.y + branchRect.height;
+    const targetX = clampNumber(agentCenter.x, branchRect.x, branchRect.x + branchRect.width);
+    return straightPath(agentCenter.x, sourceY, targetX, targetY);
+  }
+
+  const sourceX = dx >= 0 ? agentRect.x + agentRect.width : agentRect.x;
+  const targetX = dx >= 0 ? branchRect.x : branchRect.x + branchRect.width;
+  const targetY = clampNumber(agentCenter.y, branchRect.y, branchRect.y + branchRect.height);
+  return straightPath(sourceX, agentCenter.y, targetX, targetY);
 }
 
 export function summarizeCollapsedTaskStatus(children: Pick<ExecutionNode, "status">[]): TaskStatus {
@@ -367,7 +442,7 @@ export function ExecutionMap({
   onSelectAgent,
   onMoveAgent,
   canMoveAgents = true,
-  agentFocusWorkspace,
+  agentBranchPanel,
   viewport,
   onViewportChange,
   toolbarStart,
@@ -379,9 +454,11 @@ export function ExecutionMap({
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
   const [artifactPreviewState, setArtifactPreviewState] = useState<Record<string, ArtifactPreviewState>>({});
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
+  const [agentBranchRects, setAgentBranchRects] = useState<Record<string, AgentBranchRect>>({});
   const prevSelectionRef = useRef<string | null>(null);
   const agentDragRef = useRef<AgentDragState | null>(null);
   const suppressAgentClickRef = useRef<string | null>(null);
+  const agentBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
 
   if (prevSelectionRef.current !== selectedTaskId) {
     prevSelectionRef.current = selectedTaskId;
@@ -772,15 +849,93 @@ export function ExecutionMap({
   const focusedAgentNode = focusedAgentNodeId
     ? agentNodes.find((node) => node.nodeId === focusedAgentNodeId) ?? null
     : null;
-  const isAgentFocusActive = Boolean(focusedAgentNode && agentFocusWorkspace);
-  const svgWidth = Math.max(700, evidenceRight + 28, previewRight + 28, agentRight + 28);
+  const agentBranchNode = focusedAgentNode && agentBranchPanel
+    ? agentBranchRects[focusedAgentNode.nodeId] ?? {
+      x: focusedAgentNode.position.x + NODE_WIDTH + AGENT_BRANCH_GAP,
+      y: Math.max(0, focusedAgentNode.position.y - 16),
+      width: AGENT_BRANCH_WIDTH,
+      height: AGENT_BRANCH_HEIGHT,
+    }
+    : null;
+  const agentBranchRight = agentBranchNode ? agentBranchNode.x + agentBranchNode.width : 0;
+  const svgWidth = Math.max(700, evidenceRight + 28, previewRight + 28, agentRight + 28, agentBranchRight + 28);
   const maxY = Math.max(
     ...Array.from(layout.nodePositions.values()).map((n) => n.y + n.height),
     ...evidenceLayout.positions.map((p) => p.y + p.height),
     evidenceLayout.preview ? evidenceLayout.preview.y + evidenceLayout.preview.height : 0,
     ...agentNodes.map((node) => node.position.y + AGENT_NODE_HEIGHT),
+    agentBranchNode ? agentBranchNode.y + agentBranchNode.height : 0,
     200,
   );
+  const agentBranchPath = focusedAgentNode && agentBranchNode
+    ? agentBranchConnectorPath(focusedAgentNode, agentBranchNode)
+    : null;
+
+  const beginAgentBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!focusedAgentNode || !agentBranchNode || !canStartAgentBranchDrag(event.target)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    agentBranchInteractionRef.current = {
+      kind: "drag",
+      nodeId: focusedAgentNode.nodeId,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startRect: agentBranchNode,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }, [agentBranchNode, focusedAgentNode]);
+
+  const beginAgentBranchResize = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!focusedAgentNode || !agentBranchNode) return;
+    event.preventDefault();
+    event.stopPropagation();
+    agentBranchInteractionRef.current = {
+      kind: "resize",
+      nodeId: focusedAgentNode.nodeId,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startRect: agentBranchNode,
+    };
+    event.currentTarget.parentElement?.setPointerCapture?.(event.pointerId);
+  }, [agentBranchNode, focusedAgentNode]);
+
+  const moveAgentBranch = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const interaction = agentBranchInteractionRef.current;
+    if (!interaction || interaction.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const scale = viewportScale(viewport);
+    const dx = (event.clientX - interaction.startClientX) / scale;
+    const dy = (event.clientY - interaction.startClientY) / scale;
+    const nextRect = interaction.kind === "drag"
+      ? clampAgentBranchRect({
+        ...interaction.startRect,
+        x: interaction.startRect.x + dx,
+        y: interaction.startRect.y + dy,
+      })
+      : clampAgentBranchRect({
+        ...interaction.startRect,
+        width: interaction.startRect.width + dx,
+        height: interaction.startRect.height + dy,
+      });
+
+    setAgentBranchRects((current) => ({
+      ...current,
+      [interaction.nodeId]: nextRect,
+    }));
+  }, [viewport]);
+
+  const endAgentBranchInteraction = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const interaction = agentBranchInteractionRef.current;
+    if (!interaction || interaction.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    agentBranchInteractionRef.current = null;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  }, []);
 
   const isCollapsed = (id: string) => id.endsWith("__collapsed") || id.endsWith("__collapse_control");
   const parentOfCollapsed = (id: string) => id.replace(/__collapsed$|__collapse_control$/, "");
@@ -791,8 +946,6 @@ export function ExecutionMap({
       toolbarStart={toolbarStart}
       agentFocusId={focusedAgentNode?.agentId ?? null}
       interactionMode={interactionMode}
-      hideWorld={isAgentFocusActive}
-      overlay={isAgentFocusActive ? agentFocusWorkspace : null}
     >
         <svg
           className="execution-map-links"
@@ -824,6 +977,15 @@ export function ExecutionMap({
               strokeWidth={1.5}
             />
           ))}
+          {agentBranchPath && (
+            <path
+              key="agent-playground-branch"
+              d={agentBranchPath}
+              className="emap-link emap-link-agent-branch"
+              fill="none"
+              strokeWidth={2}
+            />
+          )}
         </svg>
 
         <div className="execution-map-nodes" ref={evidenceContainerRef} style={{ width: svgWidth, minHeight: maxY + 40 }}>
@@ -1017,6 +1179,29 @@ export function ExecutionMap({
 
             return previewElement ? [taskElement, ...evidenceElements, previewElement] : [taskElement, ...evidenceElements];
           })}
+          {agentBranchNode && agentBranchPanel && (
+            <div
+              className="emap-agent-branch-shell"
+              onPointerDownCapture={beginAgentBranchDrag}
+              onPointerMove={moveAgentBranch}
+              onPointerUp={endAgentBranchInteraction}
+              onPointerCancel={endAgentBranchInteraction}
+              style={{
+                left: agentBranchNode.x,
+                top: agentBranchNode.y,
+                width: agentBranchNode.width,
+                height: agentBranchNode.height,
+              }}
+            >
+              {agentBranchPanel}
+              <button
+                type="button"
+                className="emap-agent-branch-resize-handle"
+                aria-label="调整对话分支大小"
+                onPointerDown={beginAgentBranchResize}
+              />
+            </div>
+          )}
         </div>
     </AtlasCanvasShell>
   );
