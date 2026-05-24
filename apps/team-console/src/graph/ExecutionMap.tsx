@@ -77,6 +77,9 @@ const AGENT_BRANCH_MIN_WIDTH = 520;
 const AGENT_BRANCH_MIN_HEIGHT = 360;
 const AGENT_BRANCH_GAP = 48;
 const AGENT_DRAG_THRESHOLD = 4;
+const TASK_BRANCH_WIDTH = 820;
+const TASK_BRANCH_HEIGHT = 620;
+const TASK_BRANCH_GAP = 48;
 type EvidenceKind = "result" | "error" | "attempt" | "progress" | "worker" | "checker" | "watcher";
 
 interface EvidenceEntry {
@@ -269,6 +272,13 @@ function agentBranchConnectorPath(agentNode: AtlasAgentNode, branchRect: AgentBr
   const targetX = dx >= 0 ? branchRect.x : branchRect.x + branchRect.width;
   const targetY = clampNumber(agentCenter.y, branchRect.y, branchRect.y + branchRect.height);
   return straightPath(sourceX, agentCenter.y, targetX, targetY);
+}
+
+function taskBranchConnectorPath(taskNode: AtlasTaskNode, branchRect: AgentBranchRect): string {
+  const sourceX = taskNode.position.x + NODE_WIDTH;
+  const sourceY = taskNode.position.y + CANVAS_TASK_NODE_HEIGHT / 2;
+  const targetY = clampNumber(sourceY, branchRect.y, branchRect.y + branchRect.height);
+  return straightPath(sourceX, sourceY, branchRect.x, targetY);
 }
 
 export function summarizeCollapsedTaskStatus(children: Pick<ExecutionNode, "status">[]): TaskStatus {
@@ -511,6 +521,7 @@ export function ExecutionMap({
   onSelectCanvasTask,
   onMoveCanvasTask,
   canMoveTasks = true,
+  taskBranchPanel,
   viewport,
   onViewportChange,
   toolbarStart,
@@ -997,8 +1008,20 @@ export function ExecutionMap({
       height: AGENT_BRANCH_HEIGHT,
     }
     : null;
+  const focusedTaskNode = focusedTaskNodeId
+    ? taskNodes.find((node) => node.nodeId === focusedTaskNodeId) ?? null
+    : null;
+  const taskBranchNode = focusedTaskNode && taskBranchPanel
+    ? {
+      x: focusedTaskNode.position.x + NODE_WIDTH + TASK_BRANCH_GAP,
+      y: Math.max(0, focusedTaskNode.position.y - 16),
+      width: TASK_BRANCH_WIDTH,
+      height: TASK_BRANCH_HEIGHT,
+    }
+    : null;
   const agentBranchRight = agentBranchNode ? agentBranchNode.x + agentBranchNode.width : 0;
-  const svgWidth = Math.max(700, evidenceRight + 28, previewRight + 28, agentRight + 28, taskRight + 28, agentBranchRight + 28);
+  const taskBranchRight = taskBranchNode ? taskBranchNode.x + taskBranchNode.width : 0;
+  const svgWidth = Math.max(700, evidenceRight + 28, previewRight + 28, agentRight + 28, taskRight + 28, agentBranchRight + 28, taskBranchRight + 28);
   const maxY = Math.max(
     ...Array.from(layout.nodePositions.values()).map((n) => n.y + n.height),
     ...evidenceLayout.positions.map((p) => p.y + p.height),
@@ -1006,10 +1029,14 @@ export function ExecutionMap({
     ...agentNodes.map((node) => node.position.y + AGENT_NODE_HEIGHT),
     ...taskNodes.map((node) => node.position.y + CANVAS_TASK_NODE_HEIGHT),
     agentBranchNode ? agentBranchNode.y + agentBranchNode.height : 0,
+    taskBranchNode ? taskBranchNode.y + taskBranchNode.height : 0,
     200,
   );
   const agentBranchPath = focusedAgentNode && agentBranchNode
     ? agentBranchConnectorPath(focusedAgentNode, agentBranchNode)
+    : null;
+  const taskBranchPath = focusedTaskNode && taskBranchNode
+    ? taskBranchConnectorPath(focusedTaskNode, taskBranchNode)
     : null;
 
   const beginAgentBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1123,6 +1150,15 @@ export function ExecutionMap({
               key="agent-playground-branch"
               d={agentBranchPath}
               className="emap-link emap-link-agent-branch"
+              fill="none"
+              strokeWidth={2}
+            />
+          )}
+          {taskBranchPath && (
+            <path
+              key="task-leader-branch"
+              d={taskBranchPath}
+              className="emap-link emap-link-task-branch"
               fill="none"
               strokeWidth={2}
             />
@@ -1383,6 +1419,19 @@ export function ExecutionMap({
                 aria-label="调整对话分支大小"
                 onPointerDown={beginAgentBranchResize}
               />
+            </div>
+          )}
+          {taskBranchNode && taskBranchPanel && (
+            <div
+              className="emap-task-branch-shell"
+              style={{
+                left: taskBranchNode.x,
+                top: taskBranchNode.y,
+                width: taskBranchNode.width,
+                height: taskBranchNode.height,
+              }}
+            >
+              {taskBranchPanel}
             </div>
           )}
         </div>

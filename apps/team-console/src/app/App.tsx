@@ -21,6 +21,11 @@ type AgentBranchState = {
   agentId: string;
 };
 
+type TaskBranchState = {
+  nodeId: string;
+  taskId: string;
+};
+
 type StoredTaskPosition = {
   taskId: string;
   position: { x: number; y: number };
@@ -60,6 +65,15 @@ function buildAgentPlaygroundUrl(agentId: string): string {
   url.searchParams.set("view", "chat");
   url.searchParams.set("agentId", agentId);
   url.searchParams.set("embed", "team-console");
+  return url.toString();
+}
+
+function buildTaskLeaderPlaygroundUrl(task: TeamCanvasTask): string {
+  const url = new URL("/playground", playgroundBaseUrl());
+  url.searchParams.set("view", "chat");
+  url.searchParams.set("agentId", task.leaderAgentId);
+  url.searchParams.set("embed", "team-console");
+  url.searchParams.set("teamTaskId", task.taskId);
   return url.toString();
 }
 
@@ -192,6 +206,7 @@ export function App() {
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
   const [expandedAgentBranch, setExpandedAgentBranch] = useState<AgentBranchState | null>(null);
+  const [expandedTaskBranch, setExpandedTaskBranch] = useState<TaskBranchState | null>(null);
 
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
   const tasksById = useMemo(() => new Map(tasks.map((task) => [task.taskId, task])), [tasks]);
@@ -201,6 +216,10 @@ export function App() {
     ? agentNodes.find((node) => node.nodeId === expandedAgentBranch.nodeId) ?? null
     : null;
   const expandedAgent = expandedAgentNode ? agentsById.get(expandedAgentNode.agentId) ?? null : null;
+  const expandedTaskNode = expandedTaskBranch
+    ? taskNodes.find((node) => node.nodeId === expandedTaskBranch.nodeId) ?? null
+    : null;
+  const expandedTask = expandedTaskNode ? tasksById.get(expandedTaskNode.taskId) ?? null : null;
 
   const selectTask = useCallback((taskId: string) => {
     setSelectedTaskId((current) => current === taskId ? null : taskId);
@@ -220,6 +239,7 @@ export function App() {
     }
     setAgentNodes(readStoredLiveAgentNodes());
     setExpandedAgentBranch(null);
+    setExpandedTaskBranch(null);
     setLiveAgentNodesHydrated(true);
   }, [dataSource]);
 
@@ -233,8 +253,15 @@ export function App() {
     writeStoredLiveTaskNodes(taskNodes);
   }, [dataSource, liveTaskNodesHydrated, taskNodes]);
 
+  useEffect(() => {
+    if (expandedTaskBranch && !tasksById.has(expandedTaskBranch.taskId)) {
+      setExpandedTaskBranch(null);
+    }
+  }, [expandedTaskBranch, tasksById]);
+
   const loadFixture = useCallback((fixtureId: string) => {
     setExpandedAgentBranch(null);
+    setExpandedTaskBranch(null);
     if (fixtureId === CLEAN_AGENT_WORKSPACE_ID) {
       setPlan(null);
       setRun(null);
@@ -264,6 +291,7 @@ export function App() {
 
   useEffect(() => {
     setExpandedAgentBranch(null);
+    setExpandedTaskBranch(null);
     let cancelled = false;
     let refreshTimer: ReturnType<typeof globalThis.setInterval> | undefined;
     const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
@@ -334,6 +362,7 @@ export function App() {
     if (dataSource !== "live") return;
 
     setExpandedAgentBranch(null);
+    setExpandedTaskBranch(null);
     if (liveRunMode === "workspace") {
       setPlan(null);
       setRun(null);
@@ -467,8 +496,17 @@ export function App() {
 
   const toggleAgentBranch = useCallback((node: AtlasAgentNode) => {
     setAgentPickerOpen(false);
+    setExpandedTaskBranch(null);
     setExpandedAgentBranch((current) => (
       current?.nodeId === node.nodeId ? null : { nodeId: node.nodeId, agentId: node.agentId }
+    ));
+  }, []);
+
+  const toggleTaskBranch = useCallback((node: AtlasTaskNode) => {
+    setAgentPickerOpen(false);
+    setExpandedAgentBranch(null);
+    setExpandedTaskBranch((current) => (
+      current?.nodeId === node.nodeId ? null : { nodeId: node.nodeId, taskId: node.taskId }
     ));
   }, []);
 
@@ -527,6 +565,35 @@ export function App() {
         className="agent-playground-iframe"
         title={`${expandedAgent.name} 主项目对话`}
         src={buildAgentPlaygroundUrl(expandedAgent.agentId)}
+        referrerPolicy="no-referrer"
+      />
+    </section>
+  ) : null;
+
+  const expandedTaskBranchPanel = expandedTaskNode && expandedTask ? (
+    <section className="task-leader-branch" aria-label={`${expandedTask.title} leader 对话`}>
+      <header className="task-leader-branch-head">
+        <div className="task-leader-branch-title">
+          <span>leader</span>
+          <strong>{expandedTask.title}</strong>
+          <code>{expandedTask.taskId}</code>
+        </div>
+        <button
+          type="button"
+          className="task-leader-branch-collapse"
+          onClick={() => setExpandedTaskBranch(null)}
+          aria-label={`收起 ${expandedTask.title} leader 对话`}
+        >
+          收起
+        </button>
+      </header>
+      <div className="task-leader-branch-hint">
+        在对话中使用 <code>/team-task</code> 创建或更新这个 Task。Task 数据必须通过后端 API 写入。
+      </div>
+      <iframe
+        className="task-leader-iframe"
+        title={`${expandedTask.title} leader 对话`}
+        src={buildTaskLeaderPlaygroundUrl(expandedTask)}
         referrerPolicy="no-referrer"
       />
     </section>
@@ -626,7 +693,10 @@ export function App() {
                 agentBranchPanel={expandedAgentBranchPanel}
                 taskNodes={taskNodes}
                 tasksById={tasksById}
+                focusedTaskNodeId={expandedTaskNode?.nodeId ?? null}
+                onSelectCanvasTask={toggleTaskBranch}
                 onMoveCanvasTask={moveTaskNode}
+                taskBranchPanel={expandedTaskBranchPanel}
                 viewport={canvasViewport}
                 onViewportChange={setCanvasViewport}
                 toolbarStart={agentToolbar}

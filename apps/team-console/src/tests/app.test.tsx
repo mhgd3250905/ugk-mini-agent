@@ -213,6 +213,95 @@ describe("App", () => {
     expect(container.querySelector(".agent-playground-branch")).toBeNull();
   });
 
+  it("opens a Task card into its leader Agent playground branch", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-leader-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    expect(within(branch!).getByText("leader")).toBeInTheDocument();
+    expect(within(branch!).getByText("调查 Medtrum 云资产")).toBeInTheDocument();
+    expect(within(branch!).getByText("task_research_medtrum")).toBeInTheDocument();
+
+    const iframe = branch!.querySelector("iframe") as HTMLIFrameElement | null;
+    expect(iframe?.getAttribute("src")).toContain("/playground?view=chat&agentId=main");
+    expect(iframe?.getAttribute("src")).toContain("embed=team-console");
+    expect(iframe?.getAttribute("src")).toContain("teamTaskId=task_research_medtrum");
+  });
+
+  it("collapses the Task leader branch from its header action", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    expect(container.querySelector(".task-leader-branch")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /收起 调查 Medtrum 云资产 leader 对话/ }));
+
+    expect(container.querySelector(".task-leader-branch")).toBeNull();
+  });
+
+  it("clears a Task leader branch when an Agent branch opens", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    expect(container.querySelector(".task-leader-branch")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+
+    expect(container.querySelector(".task-leader-branch")).toBeNull();
+    expect(container.querySelector(".agent-playground-branch")).toBeTruthy();
+  });
+
+  it("switches the Task leader branch when another Task is clicked", async () => {
+    const firstTask = mockTeamTasks[0]!;
+    const secondTask = {
+      ...firstTask,
+      taskId: "task_review_medtrum",
+      title: "复核 Medtrum 证据",
+      leaderAgentId: "search",
+      workUnit: {
+        ...firstTask.workUnit,
+        title: "复核 Medtrum 证据",
+      },
+    };
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [
+            { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+            { agentId: "search", name: "搜索 Agent", description: "搜索" },
+          ],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") {
+        return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      }
+      if (url === "/v1/team/tasks") {
+        return new Response(JSON.stringify({ tasks: [firstTask, secondTask] }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    expect(container.querySelector(".task-leader-branch iframe")?.getAttribute("src")).toContain("teamTaskId=task_research_medtrum");
+
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /复核 Medtrum 证据/ }));
+
+    const branch = container.querySelector(".task-leader-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    expect(within(branch!).getByText("复核 Medtrum 证据")).toBeInTheDocument();
+    expect(branch!.querySelector("iframe")?.getAttribute("src")).toContain("/playground?view=chat&agentId=search");
+    expect(branch!.querySelector("iframe")?.getAttribute("src")).toContain("teamTaskId=task_review_medtrum");
+  });
+
   it("switches the embedded playground branch to the clicked agent id", async () => {
     const { container } = render(<App />);
 
