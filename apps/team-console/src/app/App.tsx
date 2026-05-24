@@ -240,6 +240,7 @@ export function App() {
   }, []);
 
   const focusAgentNode = useCallback((node: AtlasAgentNode) => {
+    const previousViewport = agentFocus?.previousViewport ?? canvasViewport;
     setAgentPickerOpen(false);
     setAgentMessageInput("");
     setAgentChatError(null);
@@ -247,14 +248,14 @@ export function App() {
       kind: "agent",
       agentId: node.agentId,
       nodeId: node.nodeId,
-      previousViewport: canvasViewport,
+      previousViewport,
     });
     setCanvasViewport({
       x: 24 - node.position.x,
       y: 18 - node.position.y,
       scale: 1.08,
     });
-  }, [canvasViewport]);
+  }, [agentFocus, canvasViewport]);
 
   const collapseAgentFocus = useCallback(() => {
     if (agentFocus) {

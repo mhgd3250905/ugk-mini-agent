@@ -16,6 +16,12 @@ function getAtlasNodes(container: HTMLElement): HTMLElement {
   return atlasNodes!;
 }
 
+function getAtlasStage(container: HTMLElement): HTMLElement {
+  const stage = container.querySelector(".execution-map-scroll") as HTMLElement | null;
+  expect(stage).toBeTruthy();
+  return stage!;
+}
+
 describe("App", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
@@ -89,20 +95,31 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /搜索 Agent[\s\S]*search/ }));
 
     const atlas = getAtlas(container);
+    const stage = getAtlasStage(container);
+    const initialTransform = stage.style.transform;
     expect(atlas).toHaveAttribute("data-agent-focus", "none");
     expect(atlas.querySelectorAll(".emap-agent-node")).toHaveLength(2);
 
     fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
 
     expect(atlas).toHaveAttribute("data-agent-focus", "main");
+    expect(stage.style.transform).not.toBe(initialTransform);
+    expect(stage.style.transform).toContain("scale(1.08)");
     expect(screen.getByText("Agent Chat Panel")).toBeInTheDocument();
     expect(screen.getByText("主 Agent / main")).toBeInTheDocument();
     expect(within(atlas).getByText("搜索 Agent")).toBeInTheDocument();
     expect(atlas.querySelectorAll(".agent-chat-panel")).toHaveLength(1);
 
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /搜索 Agent/ }));
+
+    expect(atlas).toHaveAttribute("data-agent-focus", "search");
+    expect(screen.getByText("搜索 Agent / search")).toBeInTheDocument();
+    expect(atlas.querySelectorAll(".agent-chat-panel")).toHaveLength(1);
+
     fireEvent.click(screen.getByRole("button", { name: "收起" }));
 
     expect(atlas).toHaveAttribute("data-agent-focus", "none");
+    expect(stage.style.transform).toBe(initialTransform);
     expect(screen.queryByText("Agent Chat Panel")).toBeNull();
     expect(atlas.querySelectorAll(".emap-agent-node")).toHaveLength(2);
   });
