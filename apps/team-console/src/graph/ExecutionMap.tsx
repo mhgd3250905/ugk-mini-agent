@@ -4,7 +4,7 @@ import type { ExecutionNode, NodeKind } from "./execution-map-model";
 import { buildExecutionMapModel, CHILD_COLLAPSE_THRESHOLD } from "./execution-map-model";
 import { layoutExecutionMap, ROOT_ID, NODE_WIDTH, straightPath, type ExecutionMapLayout } from "./execution-map-layout";
 import { RUN_STATUS_LABELS, TASK_STATUS_LABELS } from "../shared/status";
-import { AtlasCanvasShell, type AtlasViewport } from "./AtlasCanvasShell";
+import { AtlasCanvasShell, type AtlasInteractionMode, type AtlasViewport } from "./AtlasCanvasShell";
 import "./execution-map.css";
 
 const KIND_LABELS: Record<NodeKind | "collapsed" | "orphan_group", string> = {
@@ -35,6 +35,7 @@ interface ExecutionMapProps {
   viewport?: AtlasViewport;
   onViewportChange?: (viewport: AtlasViewport) => void;
   toolbarStart?: ReactNode;
+  interactionMode?: AtlasInteractionMode;
 }
 
 type RenderNode = Omit<ExecutionNode, "kind"> & { kind: NodeKind | "collapsed" };
@@ -359,6 +360,7 @@ export function ExecutionMap({
   viewport,
   onViewportChange,
   toolbarStart,
+  interactionMode = "free",
 }: ExecutionMapProps) {
   const evidenceContainerRef = useRef<HTMLDivElement | null>(null);
   const [measuredHeights, setMeasuredHeights] = useState<MeasuredHeights>({});
@@ -715,6 +717,7 @@ export function ExecutionMap({
       onViewportChange={onViewportChange}
       toolbarStart={toolbarStart}
       agentFocusId={focusedAgentNode?.agentId ?? null}
+      interactionMode={interactionMode}
     >
         <svg
           className="execution-map-links"

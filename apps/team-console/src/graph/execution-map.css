@@ -18,6 +18,10 @@
   cursor: grabbing;
 }
 
+.execution-map-container.is-locked {
+  cursor: default;
+}
+
 .execution-map-container::before {
   content: "";
   position: absolute;
@@ -71,6 +75,16 @@
 .execution-map-toolbar button:hover {
   border-color: rgba(121, 216, 208, 0.55);
   color: var(--accent);
+}
+
+.execution-map-toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.execution-map-toolbar button:disabled:hover {
+  border-color: rgba(122, 131, 151, 0.22);
+  color: var(--primary);
 }
 
 .execution-map-zoom {

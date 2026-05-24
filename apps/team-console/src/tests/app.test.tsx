@@ -22,6 +22,28 @@ function getAtlasStage(container: HTMLElement): HTMLElement {
   return stage!;
 }
 
+function firePointer(
+  target: Element,
+  type: string,
+  init: {
+    pointerId: number;
+    clientX: number;
+    clientY: number;
+    button?: number;
+    buttons?: number;
+  },
+) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperties(event, {
+    pointerId: { value: init.pointerId },
+    clientX: { value: init.clientX },
+    clientY: { value: init.clientY },
+    button: { value: init.button ?? 0 },
+    buttons: { value: init.buttons ?? 1 },
+  });
+  fireEvent(target, event);
+}
+
 describe("App", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
@@ -122,6 +144,48 @@ describe("App", () => {
     expect(stage.style.transform).toBe(initialTransform);
     expect(screen.queryByText("Agent Chat Panel")).toBeNull();
     expect(atlas.querySelectorAll(".emap-agent-node")).toHaveLength(2);
+  });
+
+  it("locks atlas pan and zoom while an agent is focused and restores free mode after collapse", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+    const atlas = getAtlas(container);
+    const stage = getAtlasStage(container);
+    const agentNode = within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ });
+    fireEvent.click(agentNode);
+
+    const focusedTransform = stage.style.transform;
+    expect(atlas).toHaveAttribute("data-interaction-mode", "locked");
+    expect(screen.getByRole("button", { name: "放大" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "缩小" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "重置视图" })).toBeDisabled();
+
+    fireEvent.wheel(atlas, { deltaY: -120, clientX: 120, clientY: 120 });
+    firePointer(atlas, "pointerdown", { pointerId: 1, clientX: 10, clientY: 10 });
+    firePointer(atlas, "pointermove", { pointerId: 1, clientX: 70, clientY: 88 });
+    firePointer(atlas, "pointerup", { pointerId: 1, clientX: 70, clientY: 88, buttons: 0 });
+    fireEvent.click(screen.getByRole("button", { name: "放大" }));
+
+    expect(stage.style.transform).toBe(focusedTransform);
+
+    fireEvent.click(screen.getByRole("button", { name: "收起" }));
+
+    expect(atlas).toHaveAttribute("data-interaction-mode", "free");
+    expect(screen.getByRole("button", { name: "放大" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "缩小" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "重置视图" })).toBeEnabled();
+
+    firePointer(atlas, "pointerdown", { pointerId: 2, clientX: 10, clientY: 10 });
+    firePointer(atlas, "pointermove", { pointerId: 2, clientX: 34, clientY: 46 });
+    firePointer(atlas, "pointerup", { pointerId: 2, clientX: 34, clientY: 46, buttons: 0 });
+    expect(stage.style.transform).toContain("translate(24px, 36px)");
+
+    fireEvent.click(screen.getByRole("button", { name: "重置视图" }));
+    fireEvent.click(screen.getByRole("button", { name: "放大" }));
+    expect(stage.style.transform).toContain("scale(1.1)");
   });
 
   it("sends a message from the focused agent panel", async () => {

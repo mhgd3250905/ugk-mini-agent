@@ -465,6 +465,7 @@ export function App() {
                 viewport={canvasViewport}
                 onViewportChange={setCanvasViewport}
                 toolbarStart={agentToolbar}
+                interactionMode={agentFocus ? "locked" : "free"}
               />
             </div>
           </div>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 
 export type AtlasViewport = { x: number; y: number; scale: number };
+export type AtlasInteractionMode = "free" | "locked";
 
 interface AtlasCanvasShellProps {
   children: ReactNode;
@@ -9,6 +10,7 @@ interface AtlasCanvasShellProps {
   onViewportChange?: (viewport: AtlasViewport) => void;
   toolbarStart?: ReactNode;
   agentFocusId?: string | null;
+  interactionMode?: AtlasInteractionMode;
 }
 
 interface CanvasDragOrigin {
@@ -44,12 +46,13 @@ function pointerPoint(event: PointerEvent<HTMLDivElement>): { x: number; y: numb
   return { x, y };
 }
 
-export function AtlasCanvasShell({ children, viewport, defaultViewport = DEFAULT_VIEWPORT, onViewportChange, toolbarStart, agentFocusId }: AtlasCanvasShellProps) {
+export function AtlasCanvasShell({ children, viewport, defaultViewport = DEFAULT_VIEWPORT, onViewportChange, toolbarStart, agentFocusId, interactionMode = "free" }: AtlasCanvasShellProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const dragOriginRef = useRef<CanvasDragOrigin | null>(null);
   const [internalViewport, setInternalViewport] = useState<AtlasViewport>(defaultViewport);
   const [isPanning, setIsPanning] = useState(false);
   const currentViewport = viewport ?? internalViewport;
+  const isLocked = interactionMode === "locked";
 
   const updateViewport = useCallback((nextViewport: AtlasViewport) => {
     if (!viewport) {
@@ -59,6 +62,7 @@ export function AtlasCanvasShell({ children, viewport, defaultViewport = DEFAULT
   }, [onViewportChange, viewport]);
 
   const handleCanvasWheel = useCallback((event: globalThis.WheelEvent) => {
+    if (isLocked) return;
     event.preventDefault();
     const direction = event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
     const nextScale = clampScale(currentViewport.scale * direction);
@@ -77,7 +81,7 @@ export function AtlasCanvasShell({ children, viewport, defaultViewport = DEFAULT
       y: cursorY - worldY * nextScale,
       scale: nextScale,
     });
-  }, [currentViewport, updateViewport]);
+  }, [currentViewport, isLocked, updateViewport]);
 
   useEffect(() => {
     const container = mapContainerRef.current;
@@ -89,26 +93,30 @@ export function AtlasCanvasShell({ children, viewport, defaultViewport = DEFAULT
   }, [handleCanvasWheel]);
 
   const zoomIn = useCallback(() => {
+    if (isLocked) return;
     updateViewport({
       ...currentViewport,
       scale: clampScale(currentViewport.scale * ZOOM_STEP),
     });
-  }, [currentViewport, updateViewport]);
+  }, [currentViewport, isLocked, updateViewport]);
 
   const zoomOut = useCallback(() => {
+    if (isLocked) return;
     updateViewport({
       ...currentViewport,
       scale: clampScale(currentViewport.scale / ZOOM_STEP),
     });
-  }, [currentViewport, updateViewport]);
+  }, [currentViewport, isLocked, updateViewport]);
 
   const resetView = useCallback(() => {
+    if (isLocked) return;
     dragOriginRef.current = null;
     setIsPanning(false);
     updateViewport(DEFAULT_VIEWPORT);
-  }, [updateViewport]);
+  }, [isLocked, updateViewport]);
 
   const handleCanvasPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (isLocked) return;
     if ((event.button ?? 0) !== 0 || !canStartCanvasPan(event.target)) return;
     const point = pointerPoint(event);
     dragOriginRef.current = {
@@ -120,9 +128,10 @@ export function AtlasCanvasShell({ children, viewport, defaultViewport = DEFAULT
     };
     setIsPanning(true);
     event.currentTarget.setPointerCapture?.(event.pointerId);
-  }, [currentViewport.x, currentViewport.y]);
+  }, [currentViewport.x, currentViewport.y, isLocked]);
 
   const handleCanvasPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (isLocked) return;
     const origin = dragOriginRef.current;
     if (!origin || origin.pointerId !== event.pointerId) return;
     const point = pointerPoint(event);
@@ -131,7 +140,7 @@ export function AtlasCanvasShell({ children, viewport, defaultViewport = DEFAULT
       x: origin.panX + point.x - origin.startX,
       y: origin.panY + point.y - origin.startY,
     });
-  }, [currentViewport, updateViewport]);
+  }, [currentViewport, isLocked, updateViewport]);
 
   const endCanvasPan = useCallback((event: PointerEvent<HTMLDivElement>) => {
     const origin = dragOriginRef.current;
@@ -147,8 +156,9 @@ export function AtlasCanvasShell({ children, viewport, defaultViewport = DEFAULT
   return (
     <div
       ref={mapContainerRef}
-      className={`execution-map-container ${isPanning ? "is-panning" : ""}`}
+      className={`execution-map-container ${isPanning ? "is-panning" : ""} ${isLocked ? "is-locked" : ""}`}
       data-agent-focus={agentFocusId ?? "none"}
+      data-interaction-mode={interactionMode}
       onPointerDown={handleCanvasPointerDown}
       onPointerMove={handleCanvasPointerMove}
       onPointerUp={endCanvasPan}
@@ -156,9 +166,9 @@ export function AtlasCanvasShell({ children, viewport, defaultViewport = DEFAULT
     >
       <div className="execution-map-toolbar" aria-label="视图工具">
         {toolbarStart}
-        <button type="button" onClick={zoomIn}>放大</button>
-        <button type="button" onClick={zoomOut}>缩小</button>
-        <button type="button" onClick={resetView}>重置视图</button>
+        <button type="button" onClick={zoomIn} disabled={isLocked}>放大</button>
+        <button type="button" onClick={zoomOut} disabled={isLocked}>缩小</button>
+        <button type="button" onClick={resetView} disabled={isLocked}>重置视图</button>
         <span className="execution-map-zoom">{zoomPercent}</span>
       </div>
       <div className="execution-map-scroll" style={{ transform: canvasTransform }}>
