@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-24 — Team Console Task / WorkUnit 画布准备
+
+- **主题**: 在独立 Team Console preview 中接入 Task / WorkUnit 前端展示，把 Task 画布节点和 leader Agent 分支先跑通。
+- **变更内容**:
+  - Team Console 增加 Task / WorkUnit 类型、Mock fixture 和 `GET /v1/team/tasks` adapter。
+  - Execution Atlas 增加 Task 卡片，展示 leader / worker / checker Agent，并与 runtime task 节点保持独立。
+  - 点击 Task 卡片会展开 leader Agent 的主 `/playground` iframe，URL 携带 `teamTaskId=<taskId>` 作为上下文 hint。
+  - Live API 下 Task 卡片位置写入浏览器 `localStorage` 并刷新恢复，但不保存 WorkUnit 内容或 Agent 绑定。
+- **影响范围**: `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/team-api.test.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 本次前端提交未实现后端 `/v1/team/tasks`、未实现 `/team-task` runtime skill、未启动 Task run、未实现 worker/checker 执行链路，也不解析 iframe 聊天文本创建 Task。
+
+---
+
 ## 2026-05-24 — Team Console Live Agent Atlas 布局本地持久化
 
 - **主题**: 解决 Live API 画布里添加和拖动的 Agent 卡片刷新后丢失的问题。

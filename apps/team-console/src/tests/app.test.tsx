@@ -769,6 +769,11 @@ describe("App", () => {
     expect(readme).toContain("右下角调整分支宽高");
     expect(readme).toContain("Live API 下已添加 Agent 与拖动后的画布位置会写入浏览器 `localStorage`");
     expect(readme).toContain("这只保存 Team Console 画布引用位置，不修改真实 Agent profile");
+    expect(readme).toContain("Task 内部包含一个 WorkUnit");
+    expect(readme).toContain("leaderAgentId");
+    expect(readme).toContain("/v1/team/tasks");
+    expect(readme).toContain("/team-task");
+    expect(readme).toContain("teamTaskId=<taskId>");
     expect(readme).toContain("Team Console 不再维护本地 transcript + composer");
     expect(readme).not.toContain("Focus Mode 是特殊 Agent 对话界面");
     expect(readme).not.toContain("文件上传与文件库在 Live 模式接 `/v1/assets`");
@@ -788,6 +793,9 @@ describe("App", () => {
     expect(runtimeDoc).toContain("右下角调整分支宽高");
     expect(runtimeDoc).toContain("Live API 下已添加 Agent 与拖动后的画布位置会写入浏览器 `localStorage`");
     expect(runtimeDoc).toContain("这只保存 Team Console 画布引用位置，不修改真实 Agent profile");
+    expect(runtimeDoc).toContain("Task 内部包含一个 WorkUnit");
+    expect(runtimeDoc).toContain("leader Agent");
+    expect(runtimeDoc).toContain("Team Console 不解析 iframe 聊天文本创建 Task");
     expect(runtimeDoc).not.toContain("Focus Mode 特殊 Agent 对话界面");
     expect(runtimeDoc).toContain("仍不落地 WorkUnit / Plan 编排");
   });
