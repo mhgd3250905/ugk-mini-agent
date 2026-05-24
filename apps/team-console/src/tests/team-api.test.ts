@@ -207,6 +207,24 @@ describe("LiveTeamApi", () => {
     });
     expect(response).toEqual({ conversationId: "conv_1", text: "收到" });
   });
+
+  it("sendAgentMessage reuses an existing scoped conversation id", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      conversationId: "conv_1",
+      text: "继续",
+    }), { status: 200 }));
+
+    await (api as unknown as {
+      sendAgentMessage(agentId: string, message: string, conversationId?: string): Promise<{ conversationId?: string; text: string }>;
+    }).sendAgentMessage("main", "继续刚才的问题", "conv_1");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/agents/main/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "继续刚才的问题", conversationId: "conv_1" }),
+    });
+  });
 });
 
 describe("Fixtures coverage", () => {

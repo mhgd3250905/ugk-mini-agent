@@ -52,6 +52,7 @@ export function App() {
   const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
   const [agentFocus, setAgentFocus] = useState<AgentFocusState | null>(null);
   const [agentMessagesById, setAgentMessagesById] = useState<Record<string, AgentChatMessage[]>>({});
+  const [agentConversationIds, setAgentConversationIds] = useState<Record<string, string>>({});
   const [agentMessageInput, setAgentMessageInput] = useState("");
   const [agentChatPendingAgentId, setAgentChatPendingAgentId] = useState<string | null>(null);
   const [agentChatError, setAgentChatError] = useState<string | null>(null);
@@ -97,6 +98,7 @@ export function App() {
   }, [dataSource, selectedFixtureId, loadFixture]);
 
   useEffect(() => {
+    setAgentConversationIds({});
     if (dataSource === "mock") {
       setAgents(MOCK_AGENTS);
       return;
@@ -285,7 +287,16 @@ export function App() {
 
     const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
     try {
-      const response = await api.sendAgentMessage(agentId, message);
+      const conversationId = agentConversationIds[agentId];
+      const response = conversationId
+        ? await api.sendAgentMessage(agentId, message, conversationId)
+        : await api.sendAgentMessage(agentId, message);
+      if (response.conversationId) {
+        setAgentConversationIds((current) => ({
+          ...current,
+          [agentId]: response.conversationId!,
+        }));
+      }
       setAgentMessagesById((current) => ({
         ...current,
         [agentId]: [
@@ -298,7 +309,7 @@ export function App() {
     } finally {
       setAgentChatPendingAgentId((current) => current === agentId ? null : current);
     }
-  }, [agentMessageInput, dataSource, focusedAgent, isAgentChatPending]);
+  }, [agentConversationIds, agentMessageInput, dataSource, focusedAgent, isAgentChatPending]);
 
   const agentToolbar = (
     <div className="agent-atlas-actions">

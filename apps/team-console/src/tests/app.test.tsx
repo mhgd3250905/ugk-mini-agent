@@ -140,6 +140,28 @@ describe("App", () => {
     expect(await screen.findByText("[main] mock reply: 请总结画布状态")).toBeInTheDocument();
   });
 
+  it("reuses a focused agent conversation id across chat turns", async () => {
+    const sendSpy = vi.spyOn(MockTeamApi.prototype, "sendAgentMessage")
+      .mockResolvedValueOnce({ conversationId: "conv_main_1", text: "第一轮回复" })
+      .mockResolvedValueOnce({ conversationId: "conv_main_1", text: "第二轮回复" });
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+
+    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "第一轮" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    expect(await screen.findByText("第一轮回复")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "第二轮" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => expect(sendSpy).toHaveBeenCalledTimes(2));
+    expect(sendSpy).toHaveBeenNthCalledWith(1, "main", "第一轮");
+    expect(sendSpy).toHaveBeenNthCalledWith(2, "main", "第二轮", "conv_main_1");
+  });
+
   it("shows chat errors without removing the sent user message", async () => {
     vi.spyOn(MockTeamApi.prototype, "sendAgentMessage").mockRejectedValueOnce({ message: "agent offline" });
     const { container } = render(<App />);

@@ -858,7 +858,7 @@ export class MockTeamApi {
     return MOCK_AGENTS;
   }
 
-  async sendAgentMessage(agentId: string, message: string): Promise<AgentChatResponse> {
+  async sendAgentMessage(agentId: string, message: string, _conversationId?: string): Promise<AgentChatResponse> {
     return {
       conversationId: `mock-${agentId}`,
       text: `[${agentId}] mock reply: ${message}`,

@@ -16,7 +16,7 @@ export interface TeamApiProvider {
   listAttempts(runId: string, taskId: string): Promise<TeamAttemptMetadata[]>;
   readAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string): Promise<string>;
   listAgents(): Promise<AgentSummary[]>;
-  sendAgentMessage(agentId: string, message: string): Promise<AgentChatResponse>;
+  sendAgentMessage(agentId: string, message: string, conversationId?: string): Promise<AgentChatResponse>;
 }
 
 function toApiError(error: unknown): TeamApiError {
@@ -99,12 +99,13 @@ export class LiveTeamApi implements TeamApiProvider {
     }
   }
 
-  async sendAgentMessage(agentId: string, message: string): Promise<AgentChatResponse> {
+  async sendAgentMessage(agentId: string, message: string, conversationId?: string): Promise<AgentChatResponse> {
     try {
+      const body = conversationId ? { message, conversationId } : { message };
       const res = await fetch(`/v1/agents/${encodeURIComponent(agentId)}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw res;
       return (await res.json()) as AgentChatResponse;
