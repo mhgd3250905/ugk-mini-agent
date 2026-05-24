@@ -65,6 +65,24 @@ describe("MockTeamApi", () => {
       reason: expect.stringContaining("补充"),
     });
   });
+
+  it("returns mock agents for canvas selection", async () => {
+    const agents = await (api as unknown as {
+      listAgents(): Promise<Array<{ agentId: string; name: string; description: string }>>;
+    }).listAgents();
+
+    expect(agents.length).toBeGreaterThanOrEqual(3);
+    expect(agents.map((agent) => agent.agentId)).toEqual(expect.arrayContaining(["main", "search"]));
+  });
+
+  it("returns deterministic mock agent chat replies", async () => {
+    const response = await (api as unknown as {
+      sendAgentMessage(agentId: string, message: string): Promise<{ text: string }>;
+    }).sendAgentMessage("search", "查一下 agent canvas");
+
+    expect(response.text).toContain("search");
+    expect(response.text).toContain("查一下 agent canvas");
+  });
 });
 
 describe("LiveTeamApi", () => {
@@ -151,6 +169,43 @@ describe("LiveTeamApi", () => {
       message: "无法连接服务器",
       status: 0,
     });
+  });
+
+  it("listAgents calls /v1/agents and returns agents", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      agents: [
+        { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+      ],
+    }), { status: 200 }));
+
+    const agents = await (api as unknown as {
+      listAgents(): Promise<Array<{ agentId: string; name: string; description: string }>>;
+    }).listAgents();
+
+    expect(fetch).toHaveBeenCalledWith("/v1/agents");
+    expect(agents).toEqual([
+      { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+    ]);
+  });
+
+  it("sendAgentMessage posts to scoped agent chat endpoint", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      conversationId: "conv_1",
+      text: "收到",
+    }), { status: 200 }));
+
+    const response = await (api as unknown as {
+      sendAgentMessage(agentId: string, message: string): Promise<{ conversationId?: string; text: string }>;
+    }).sendAgentMessage("search/agent", "帮我查一下");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/agents/search%2Fagent/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "帮我查一下" }),
+    });
+    expect(response).toEqual({ conversationId: "conv_1", text: "收到" });
   });
 });
 

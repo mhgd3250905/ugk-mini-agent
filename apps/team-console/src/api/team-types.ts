@@ -173,6 +173,29 @@ export interface RunDetail extends TeamRunState {
   taskDefinitions?: TaskDefinition[];
 }
 
+export interface AgentSummary {
+  agentId: string;
+  name: string;
+  description: string;
+  defaultBrowserId?: string;
+  defaultModelProvider?: string;
+  defaultModelId?: string;
+}
+
+export interface AgentCatalogResponse {
+  agents: AgentSummary[];
+}
+
+export interface AgentChatMessage {
+  role: "user" | "assistant";
+  text: string;
+}
+
+export interface AgentChatResponse {
+  conversationId?: string;
+  text: string;
+}
+
 export interface TeamApiError {
   message: string;
   status?: number;

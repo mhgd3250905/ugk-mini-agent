@@ -1,4 +1,6 @@
 import type {
+  AgentChatResponse,
+  AgentSummary,
   TeamPlan,
   RunDetail,
   TeamRunState,
@@ -790,6 +792,31 @@ const attemptFileFixtures = new Map<string, string>([
   ],
 ]);
 
+export const MOCK_AGENTS: AgentSummary[] = [
+  {
+    agentId: "main",
+    name: "主 Agent",
+    description: "默认综合 agent，保持现有会话、技能和运行方式。",
+    defaultModelProvider: "glm",
+    defaultModelId: "glm-4.5",
+  },
+  {
+    agentId: "search",
+    name: "搜索 Agent",
+    description: "用于搜索、查证和资料整理的独立 agent。",
+    defaultBrowserId: "default",
+    defaultModelProvider: "deepseek",
+    defaultModelId: "deepseek-chat",
+  },
+  {
+    agentId: "reviewer",
+    name: "Review Agent",
+    description: "用于验收输出、指出风险并给出修订建议的 agent。",
+    defaultModelProvider: "glm",
+    defaultModelId: "glm-4.5",
+  },
+];
+
 export const ALL_FIXTURES: FixtureEntry[] = [
   { id: "sequential", label: "顺序 run", plan: makeSequentialPlan(), run: makeSequentialRun() },
   { id: "discovery", label: "发现 + 逐项处理", plan: makeDiscoveryForEachPlan(), run: makeDiscoveryForEachRun() },
@@ -825,5 +852,16 @@ export class MockTeamApi {
     const content = attemptFileFixtures.get(`${runId}/${taskId}/${attemptId}/${fileName}`);
     if (content == null) throw { message: `Attempt file not found: ${fileName}` };
     return content;
+  }
+
+  async listAgents(): Promise<AgentSummary[]> {
+    return MOCK_AGENTS;
+  }
+
+  async sendAgentMessage(agentId: string, message: string): Promise<AgentChatResponse> {
+    return {
+      conversationId: `mock-${agentId}`,
+      text: `[${agentId}] mock reply: ${message}`,
+    };
   }
 }

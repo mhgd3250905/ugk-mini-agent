@@ -1,4 +1,13 @@
-import type { TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "./team-types";
+import type {
+  AgentCatalogResponse,
+  AgentChatResponse,
+  AgentSummary,
+  TeamPlan,
+  RunDetail,
+  TeamApiError,
+  TeamRunState,
+  TeamAttemptMetadata,
+} from "./team-types";
 
 export interface TeamApiProvider {
   listPlans(): Promise<TeamPlan[]>;
@@ -6,6 +15,8 @@ export interface TeamApiProvider {
   getRunDetail(runId: string): Promise<RunDetail>;
   listAttempts(runId: string, taskId: string): Promise<TeamAttemptMetadata[]>;
   readAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string): Promise<string>;
+  listAgents(): Promise<AgentSummary[]>;
+  sendAgentMessage(agentId: string, message: string): Promise<AgentChatResponse>;
 }
 
 function toApiError(error: unknown): TeamApiError {
@@ -72,6 +83,31 @@ export class LiveTeamApi implements TeamApiProvider {
       );
       if (!res.ok) throw res;
       return await res.text();
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async listAgents(): Promise<AgentSummary[]> {
+    try {
+      const res = await fetch("/v1/agents");
+      if (!res.ok) throw res;
+      const body = (await res.json()) as AgentCatalogResponse;
+      return Array.isArray(body.agents) ? body.agents : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async sendAgentMessage(agentId: string, message: string): Promise<AgentChatResponse> {
+    try {
+      const res = await fetch(`/v1/agents/${encodeURIComponent(agentId)}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+      if (!res.ok) throw res;
+      return (await res.json()) as AgentChatResponse;
     } catch (e) {
       throw toApiError(e);
     }
