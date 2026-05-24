@@ -9,6 +9,21 @@ import {
   makeLargeChildRun,
 } from "../fixtures/team-fixtures";
 
+function sseResponse(body: string, status = 200): Response {
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(body));
+        controller.close();
+      },
+    }),
+    {
+      status,
+      headers: { "content-type": "text/event-stream" },
+    },
+  );
+}
+
 describe("MockTeamApi", () => {
   const api = new MockTeamApi();
 
@@ -263,6 +278,84 @@ describe("LiveTeamApi", () => {
     expect(response.conversationId).toBe("conv_new");
   });
 
+  it("listAgentConversations calls the scoped conversation catalog endpoint", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      currentConversationId: "conv_current",
+      conversations: [
+        {
+          conversationId: "conv_current",
+          title: "当前会话",
+          preview: "hello",
+          messageCount: 2,
+          createdAt: "2026-05-24T00:00:00.000Z",
+          updatedAt: "2026-05-24T00:01:00.000Z",
+          running: false,
+        },
+      ],
+    }), { status: 200 }));
+
+    const response = await api.listAgentConversations("main/agent");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/agents/main%2Fagent/chat/conversations", {
+      method: "GET",
+      headers: { accept: "application/json" },
+    });
+    expect(response.currentConversationId).toBe("conv_current");
+    expect(response.conversations).toHaveLength(1);
+  });
+
+  it("switchAgentConversation posts the scoped current conversation id", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      conversationId: "conv_2",
+      currentConversationId: "conv_2",
+      switched: true,
+    }), { status: 200 }));
+
+    const response = await api.switchAgentConversation("main", "conv_2");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/agents/main/chat/current", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversationId: "conv_2" }),
+    });
+    expect(response.switched).toBe(true);
+  });
+
+  it("getAgentConversationState reads scoped state with a view limit", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      conversationId: "conv_1",
+      running: false,
+      contextUsage: {
+        provider: "zhipu-glm",
+        model: "glm-5.1",
+        currentTokens: 8,
+        contextWindow: 128000,
+        reserveTokens: 16384,
+        maxResponseTokens: 16384,
+        availableTokens: 111608,
+        percent: 1,
+        status: "safe",
+        mode: "usage",
+      },
+      messages: [],
+      viewMessages: [],
+      activeRun: null,
+      historyPage: { hasMore: false, limit: 80 },
+      updatedAt: "2026-05-24T00:00:00.000Z",
+    }), { status: 200 }));
+
+    const response = await api.getAgentConversationState("main", "conv_1", 80);
+
+    expect(fetch).toHaveBeenCalledWith("/v1/agents/main/chat/state?conversationId=conv_1&viewLimit=80", {
+      method: "GET",
+      headers: { accept: "application/json" },
+    });
+    expect(response.conversationId).toBe("conv_1");
+  });
+
   it("getAgentChatStatus reads scoped run status", async () => {
     const api = new LiveTeamApi("/v1/team");
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
@@ -308,6 +401,83 @@ describe("LiveTeamApi", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ conversationId: "conv_1" }),
     });
+  });
+
+  it("streamAgentMessage posts scoped chat stream payload and parses SSE events", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(sseResponse([
+      'data: {"type":"run_started","conversationId":"conv_1","runId":"run_1"}',
+      "",
+      'data: {"type":"text_delta","textDelta":"你"}',
+      "",
+      'data: {"type":"done","conversationId":"conv_1","runId":"run_1","text":"你好"}',
+      "",
+      "",
+    ].join("\n")));
+    const events: unknown[] = [];
+
+    await api.streamAgentMessage("search/agent", {
+      conversationId: "conv_1",
+      message: "查一下",
+      assetRefs: ["asset_1"],
+    }, (event) => events.push(event));
+
+    expect(fetch).toHaveBeenCalledWith("/v1/agents/search%2Fagent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: expect.any(String),
+    });
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    expect(JSON.parse(String(init?.body))).toEqual({
+      conversationId: "conv_1",
+      message: "查一下",
+      assetRefs: ["asset_1"],
+    });
+    expect(events).toEqual([
+      { type: "run_started", conversationId: "conv_1", runId: "run_1" },
+      { type: "text_delta", textDelta: "你" },
+      { type: "done", conversationId: "conv_1", runId: "run_1", text: "你好" },
+    ]);
+  });
+
+  it("streamAgentMessage throws a useful API error for non-OK streaming responses", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      error: { message: "agent busy" },
+    }), { status: 409 }));
+
+    await expect(api.streamAgentMessage("main", {
+      conversationId: "conv_1",
+      message: "hello",
+    }, () => {})).rejects.toEqual({
+      message: "agent busy",
+      status: 409,
+    });
+  });
+
+  it("streamAgentMessage ignores malformed SSE chunks but surfaces terminal error events", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(sseResponse([
+      "data: not json",
+      "",
+      'data: {"type":"text_delta","textDelta":"partial"}',
+      "",
+      'data: {"type":"error","conversationId":"conv_1","runId":"run_1","message":"boom"}',
+      "",
+      "",
+    ].join("\n")));
+    const events: unknown[] = [];
+
+    await expect(api.streamAgentMessage("main", {
+      conversationId: "conv_1",
+      message: "hello",
+    }, (event) => events.push(event))).rejects.toEqual({
+      message: "boom",
+    });
+    expect(events).toEqual([
+      { type: "text_delta", textDelta: "partial" },
+      { type: "error", conversationId: "conv_1", runId: "run_1", message: "boom" },
+    ]);
   });
 
   it("listAssets reads the reusable file library", async () => {

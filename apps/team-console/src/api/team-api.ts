@@ -2,16 +2,22 @@ import type {
   AgentCatalogResponse,
   AgentAssetSummary,
   AgentChatResponse,
+  AgentChatStreamEvent,
+  AgentChatStreamRequest,
   AgentChatStatus,
+  AgentConversationCatalogResponse,
+  AgentConversationState,
   AgentConversationResponse,
   AgentInterruptResponse,
   AgentSummary,
+  AgentSwitchConversationResponse,
   TeamPlan,
   RunDetail,
   TeamApiError,
   TeamRunState,
   TeamAttemptMetadata,
 } from "./team-types";
+import { readAgentChatSse } from "./agent-chat-sse";
 
 export interface TeamApiProvider {
   listPlans(): Promise<TeamPlan[]>;
@@ -20,10 +26,18 @@ export interface TeamApiProvider {
   listAttempts(runId: string, taskId: string): Promise<TeamAttemptMetadata[]>;
   readAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string): Promise<string>;
   listAgents(): Promise<AgentSummary[]>;
+  listAgentConversations(agentId: string): Promise<AgentConversationCatalogResponse>;
   createAgentConversation(agentId: string): Promise<AgentConversationResponse>;
+  switchAgentConversation(agentId: string, conversationId: string): Promise<AgentSwitchConversationResponse>;
+  getAgentConversationState(agentId: string, conversationId: string, viewLimit?: number): Promise<AgentConversationState>;
   getAgentChatStatus(agentId: string, conversationId: string): Promise<AgentChatStatus>;
   interruptAgentChat(agentId: string, conversationId: string): Promise<AgentInterruptResponse>;
   sendAgentMessage(agentId: string, message: string, conversationId?: string, assetRefs?: string[]): Promise<AgentChatResponse>;
+  streamAgentMessage(
+    agentId: string,
+    request: AgentChatStreamRequest,
+    onEvent: (event: AgentChatStreamEvent) => void,
+  ): Promise<void>;
   listAssets(limit?: number): Promise<AgentAssetSummary[]>;
   uploadFilesAsAssets(files: File[], conversationId?: string): Promise<AgentAssetSummary[]>;
 }
@@ -35,10 +49,27 @@ function toApiError(error: unknown): TeamApiError {
   if (error instanceof Response) {
     return { message: `请求失败 (${error.status})`, status: error.status };
   }
+  if (error && typeof error === "object" && "message" in error) {
+    return {
+      message: String((error as TeamApiError).message),
+      ...(typeof (error as TeamApiError).status === "number" ? { status: (error as TeamApiError).status } : {}),
+    };
+  }
   if (error instanceof Error) {
     return { message: error.message };
   }
   return { message: "未知错误" };
+}
+
+async function responseToApiError(response: Response, fallbackMessage: string): Promise<TeamApiError> {
+  const payload = await response.json().catch(() => null) as {
+    error?: { message?: string };
+    message?: string;
+  } | null;
+  return {
+    message: payload?.error?.message || payload?.message || fallbackMessage,
+    status: response.status,
+  };
 }
 
 export class LiveTeamApi implements TeamApiProvider {
@@ -121,6 +152,50 @@ export class LiveTeamApi implements TeamApiProvider {
     }
   }
 
+  async listAgentConversations(agentId: string): Promise<AgentConversationCatalogResponse> {
+    try {
+      const res = await fetch(`/v1/agents/${encodeURIComponent(agentId)}/chat/conversations`, {
+        method: "GET",
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) throw res;
+      return (await res.json()) as AgentConversationCatalogResponse;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async switchAgentConversation(agentId: string, conversationId: string): Promise<AgentSwitchConversationResponse> {
+    try {
+      const res = await fetch(`/v1/agents/${encodeURIComponent(agentId)}/chat/current`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId }),
+      });
+      if (!res.ok) throw res;
+      return (await res.json()) as AgentSwitchConversationResponse;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async getAgentConversationState(agentId: string, conversationId: string, viewLimit = 80): Promise<AgentConversationState> {
+    try {
+      const params = new URLSearchParams({
+        conversationId,
+        viewLimit: String(viewLimit),
+      });
+      const res = await fetch(`/v1/agents/${encodeURIComponent(agentId)}/chat/state?${params.toString()}`, {
+        method: "GET",
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) throw res;
+      return (await res.json()) as AgentConversationState;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
   async getAgentChatStatus(agentId: string, conversationId: string): Promise<AgentChatStatus> {
     try {
       const res = await fetch(
@@ -165,6 +240,43 @@ export class LiveTeamApi implements TeamApiProvider {
       });
       if (!res.ok) throw res;
       return (await res.json()) as AgentChatResponse;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async streamAgentMessage(
+    agentId: string,
+    request: AgentChatStreamRequest,
+    onEvent: (event: AgentChatStreamEvent) => void,
+  ): Promise<void> {
+    try {
+      const body = {
+        message: request.message,
+        ...(request.conversationId ? { conversationId: request.conversationId } : {}),
+        ...(request.userId ? { userId: request.userId } : {}),
+        ...(request.browserId ? { browserId: request.browserId } : {}),
+        ...(request.assetRefs && request.assetRefs.length > 0 ? { assetRefs: request.assetRefs } : {}),
+      };
+      const res = await fetch(`/v1/agents/${encodeURIComponent(agentId)}/chat/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+
+      let terminalError: string | null = null;
+      await readAgentChatSse(res, (event) => {
+        onEvent(event);
+        if (event.type === "error") {
+          terminalError = event.message;
+        }
+      });
+      if (terminalError) {
+        throw { message: terminalError };
+      }
     } catch (e) {
       throw toApiError(e);
     }

@@ -208,11 +208,43 @@ export interface AgentChatResponse {
   text: string;
 }
 
+export interface AgentChatStreamRequest {
+  conversationId?: string;
+  message: string;
+  userId?: string;
+  browserId?: string;
+  assetRefs?: string[];
+}
+
 export interface AgentConversationResponse {
   conversationId: string;
   currentConversationId: string;
   created: boolean;
   reason?: "running";
+}
+
+export interface AgentConversationCatalogItem {
+  conversationId: string;
+  title: string;
+  preview: string;
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+  running: boolean;
+  pinned?: boolean;
+  backgroundColor?: string;
+}
+
+export interface AgentConversationCatalogResponse {
+  currentConversationId: string;
+  conversations: AgentConversationCatalogItem[];
+}
+
+export interface AgentSwitchConversationResponse {
+  conversationId: string;
+  currentConversationId: string;
+  switched: boolean;
+  reason?: "running" | "not_found";
 }
 
 export interface AgentContextUsage {
@@ -233,6 +265,148 @@ export interface AgentChatStatus {
   running: boolean;
   contextUsage: AgentContextUsage;
 }
+
+export interface AgentChatHistoryFile {
+  fileName: string;
+  downloadUrl: string;
+  mimeType?: string;
+  sizeBytes?: number;
+}
+
+export interface AgentChatHistoryMessage {
+  id: string;
+  kind: "user" | "assistant" | "system" | "error" | "notification";
+  title: string;
+  text: string;
+  createdAt: string;
+  source?: string;
+  sourceId?: string;
+  runId?: string;
+  assetRefs?: AgentAssetSummary[];
+  files?: AgentChatHistoryFile[];
+}
+
+export interface AgentChatProcessEntry {
+  id: string;
+  kind: "system" | "tool" | "ok" | "error";
+  title: string;
+  detail: string;
+  createdAt: string;
+  toolCallId?: string;
+  toolName?: string;
+  isError?: boolean;
+}
+
+export interface AgentChatProcess {
+  title: string;
+  narration: string[];
+  currentAction?: string;
+  kind?: "system" | "tool" | "ok" | "error";
+  isComplete: boolean;
+  entries: AgentChatProcessEntry[];
+}
+
+export interface AgentChatActiveRun {
+  runId: string;
+  status: "running" | "interrupted" | "done" | "error";
+  assistantMessageId: string;
+  eventCursor?: number;
+  input: {
+    message: string;
+    inputAssets: AgentAssetSummary[];
+  };
+  text: string;
+  process: AgentChatProcess | null;
+  queue: {
+    steering: string[];
+    followUp: string[];
+  } | null;
+  loading: boolean;
+  startedAt: string;
+  updatedAt: string;
+}
+
+export interface AgentConversationState {
+  conversationId: string;
+  running: boolean;
+  contextUsage: AgentContextUsage;
+  messages: AgentChatHistoryMessage[];
+  viewMessages: AgentChatHistoryMessage[];
+  activeRun: AgentChatActiveRun | null;
+  historyPage: {
+    hasMore: boolean;
+    nextBefore?: string;
+    limit: number;
+  };
+  updatedAt: string;
+}
+
+export type AgentChatStreamEvent =
+  | {
+      type: "run_started";
+      conversationId: string;
+      runId: string;
+    }
+  | {
+      type: "text_delta";
+      textDelta: string;
+    }
+  | {
+      type: "heartbeat";
+      phase: "reasoning";
+    }
+  | {
+      type: "tool_started";
+      toolCallId: string;
+      toolName: string;
+      args: string;
+    }
+  | {
+      type: "tool_updated";
+      toolCallId: string;
+      toolName: string;
+      partialResult: string;
+    }
+  | {
+      type: "tool_finished";
+      toolCallId: string;
+      toolName: string;
+      isError: boolean;
+      result: string;
+    }
+  | {
+      type: "queue_updated";
+      steering: readonly string[];
+      followUp: readonly string[];
+    }
+  | {
+      type: "interrupted";
+      conversationId: string;
+      runId: string;
+    }
+  | {
+      type: "done";
+      conversationId: string;
+      runId: string;
+      text: string;
+      sessionFile?: string;
+      inputAssets?: AgentAssetSummary[];
+      files?: Array<{
+        id: string;
+        assetId: string;
+        reference: string;
+        fileName: string;
+        mimeType: string;
+        sizeBytes: number;
+        downloadUrl: string;
+      }>;
+    }
+  | {
+      type: "error";
+      conversationId: string;
+      runId: string;
+      message: string;
+    };
 
 export interface AgentInterruptResponse {
   conversationId: string;
