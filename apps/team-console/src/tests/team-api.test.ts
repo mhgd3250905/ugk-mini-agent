@@ -100,6 +100,17 @@ describe("MockTeamApi", () => {
     });
   });
 
+  it("returns deterministic mock Team Tasks", async () => {
+    const tasks = await api.listTasks();
+
+    expect(tasks.length).toBeGreaterThan(0);
+    expect(tasks[0]?.taskId).toBe("task_research_medtrum");
+    expect(tasks[0]?.leaderAgentId).toBeTruthy();
+    expect(tasks[0]?.workUnit.workerAgentId).toBeTruthy();
+    expect(tasks[0]?.workUnit.checkerAgentId).toBeTruthy();
+    expect(tasks[0]?.workUnit.acceptance.rules.length).toBeGreaterThan(0);
+  });
+
   it("returns deterministic mock agent chat replies", async () => {
     const response = await (api as unknown as {
       sendAgentMessage(agentId: string, message: string): Promise<{ text: string }>;
@@ -209,6 +220,61 @@ describe("LiveTeamApi", () => {
     await api.listRuns();
 
     expect(fetch).toHaveBeenCalledWith("/v1/team/runs");
+  });
+
+  it("fetches live Team Task catalog", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      tasks: [{
+        taskId: "task_medtrum",
+        title: "调查 Medtrum 云资产",
+        leaderAgentId: "main",
+        status: "ready",
+        createdAt: "2026-05-24T00:00:00.000Z",
+        updatedAt: "2026-05-24T00:00:00.000Z",
+        archived: false,
+        workUnit: {
+          title: "调查 Medtrum 云资产",
+          input: { text: "调查 Medtrum 相关公开云资产。" },
+          outputContract: { text: "输出中文 Markdown 报告。" },
+          acceptance: { rules: ["每条结论必须有来源"] },
+          workerAgentId: "search",
+          checkerAgentId: "main",
+        },
+      }],
+    }), { status: 200 }));
+
+    const tasks = await api.listTasks();
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/tasks");
+    expect(tasks[0]?.taskId).toBe("task_medtrum");
+    expect(tasks[0]?.workUnit.workerAgentId).toBe("search");
+  });
+
+  it("accepts bare array live Team Task catalog responses", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify([{
+      taskId: "task_array_shape",
+      title: "数组响应 Task",
+      leaderAgentId: "main",
+      status: "drafting",
+      createdAt: "2026-05-24T00:00:00.000Z",
+      updatedAt: "2026-05-24T00:00:00.000Z",
+      archived: false,
+      workUnit: {
+        title: "数组响应 Task",
+        input: { text: "验证早期后端数组响应。" },
+        outputContract: { text: "输出验证结果。" },
+        acceptance: { rules: ["必须保留 worker/checker"] },
+        workerAgentId: "search",
+        checkerAgentId: "main",
+      },
+    }]), { status: 200 }));
+
+    const tasks = await api.listTasks();
+
+    expect(tasks[0]?.taskId).toBe("task_array_shape");
+    expect(tasks[0]?.status).toBe("drafting");
   });
 
   it("getRunDetail URL-encodes the run id", async () => {

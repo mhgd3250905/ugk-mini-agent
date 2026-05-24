@@ -16,6 +16,7 @@ import type {
   AgentRunStatus,
   AgentSummary,
   AgentSwitchConversationResponse,
+  TeamCanvasTask,
   TeamPlan,
   RunDetail,
   TeamRunState,
@@ -852,6 +853,44 @@ export const MOCK_AGENT_RUN_STATUSES: AgentRunStatus[] = [
   },
 ];
 
+export const mockTeamTasks: TeamCanvasTask[] = [
+  {
+    taskId: "task_research_medtrum",
+    title: "调查 Medtrum 云资产",
+    leaderAgentId: "main",
+    status: "ready",
+    createdAt: "2026-05-24T00:00:00.000Z",
+    updatedAt: "2026-05-24T00:00:00.000Z",
+    archived: false,
+    workUnit: {
+      title: "调查 Medtrum 云资产",
+      input: { text: "调查 Medtrum 相关公开云资产，区分官方、第三方和可疑线索。" },
+      outputContract: { text: "输出中文 Markdown 报告，包含发现列表、证据来源、归类判断、风险说明和不确定项。" },
+      acceptance: {
+        rules: [
+          "每条发现必须包含来源或搜索线索",
+          "必须区分官方、第三方、可疑和证据不足",
+          "不确定项不能编造成结论",
+        ],
+      },
+      workerAgentId: "search",
+      checkerAgentId: "main",
+    },
+  },
+];
+
+function cloneMockTeamTask(task: TeamCanvasTask): TeamCanvasTask {
+  return {
+    ...task,
+    workUnit: {
+      ...task.workUnit,
+      input: { ...task.workUnit.input },
+      outputContract: { ...task.workUnit.outputContract },
+      acceptance: { rules: [...task.workUnit.acceptance.rules] },
+    },
+  };
+}
+
 export const ALL_FIXTURES: FixtureEntry[] = [
   { id: "sequential", label: "顺序 run", plan: makeSequentialPlan(), run: makeSequentialRun() },
   { id: "discovery", label: "发现 + 逐项处理", plan: makeDiscoveryForEachPlan(), run: makeDiscoveryForEachRun() },
@@ -1013,6 +1052,10 @@ export class MockTeamApi {
 
   async listRuns(): Promise<TeamRunState[]> {
     return ALL_FIXTURES.map((f) => f.run);
+  }
+
+  async listTasks(): Promise<TeamCanvasTask[]> {
+    return mockTeamTasks.map(cloneMockTeamTask);
   }
 
   async getRunDetail(runId: string): Promise<RunDetail> {

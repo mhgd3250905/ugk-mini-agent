@@ -127,6 +127,33 @@ export interface TeamPlan {
   runCount: number;
 }
 
+export type TeamCanvasTaskStatus = "drafting" | "ready" | "locked" | "archived";
+
+export interface TeamWorkUnitDefinition {
+  title: string;
+  input: { text: string };
+  outputContract: { text: string };
+  acceptance: { rules: string[] };
+  workerAgentId: string;
+  checkerAgentId: string;
+}
+
+export interface TeamCanvasTask {
+  taskId: string;
+  title: string;
+  leaderAgentId: string;
+  workUnit: TeamWorkUnitDefinition;
+  status: TeamCanvasTaskStatus;
+  createdAt: string;
+  updatedAt: string;
+  createdByAgentId?: string;
+  archived: boolean;
+}
+
+export interface TeamCanvasTaskListResponse {
+  tasks: TeamCanvasTask[];
+}
+
 export interface TeamTaskState {
   status: TaskStatus;
   manualDisposition?: TaskManualDisposition;

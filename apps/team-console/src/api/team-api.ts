@@ -16,6 +16,8 @@ import type {
   AgentRunStatusListResponse,
   AgentSummary,
   AgentSwitchConversationResponse,
+  TeamCanvasTask,
+  TeamCanvasTaskListResponse,
   TeamPlan,
   RunDetail,
   TeamApiError,
@@ -27,6 +29,7 @@ import { readAgentChatSse } from "./agent-chat-sse";
 export interface TeamApiProvider {
   listPlans(): Promise<TeamPlan[]>;
   listRuns(): Promise<TeamRunState[]>;
+  listTasks(): Promise<TeamCanvasTask[]>;
   getRunDetail(runId: string): Promise<RunDetail>;
   listAttempts(runId: string, taskId: string): Promise<TeamAttemptMetadata[]>;
   readAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string): Promise<string>;
@@ -102,6 +105,18 @@ export class LiveTeamApi implements TeamApiProvider {
       const res = await fetch(`${this.baseUrl}/runs`);
       if (!res.ok) throw res;
       return (await res.json()) as TeamRunState[];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async listTasks(): Promise<TeamCanvasTask[]> {
+    try {
+      const res = await fetch(`${this.baseUrl}/tasks`);
+      if (!res.ok) throw res;
+      const body = (await res.json()) as TeamCanvasTaskListResponse | TeamCanvasTask[];
+      if (Array.isArray(body)) return body;
+      return Array.isArray(body.tasks) ? body.tasks : [];
     } catch (e) {
       throw toApiError(e);
     }
