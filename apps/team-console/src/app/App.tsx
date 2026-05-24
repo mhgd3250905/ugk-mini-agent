@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { AgentRunStatus, AgentSummary, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "../api/team-types";
-import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, MockTeamApi } from "../fixtures/team-fixtures";
-import { ExecutionMap, type AtlasAgentNode } from "../graph/ExecutionMap";
+import type { AgentRunStatus, AgentSummary, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "../api/team-types";
+import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, mockTeamTasks, MockTeamApi } from "../fixtures/team-fixtures";
+import { ExecutionMap, type AtlasAgentNode, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { ROOT_ID } from "../graph/execution-map-layout";
 import type { AtlasViewport } from "../graph/AtlasCanvasShell";
 import "./app.css";
@@ -14,10 +14,16 @@ const CLEAN_AGENT_WORKSPACE_ID = "agent-workspace";
 const DEFAULT_PLAYGROUND_BASE_URL = "http://127.0.0.1:3000";
 const DATA_SOURCE_STORAGE_KEY = "ugk-team-console:data-source";
 const LIVE_AGENT_LAYOUT_STORAGE_KEY = "ugk-team-console:live-agent-layout:v1";
+const LIVE_TASK_LAYOUT_STORAGE_KEY = "ugk-team-console:live-task-layout:v1";
 
 type AgentBranchState = {
   nodeId: string;
   agentId: string;
+};
+
+type StoredTaskPosition = {
+  taskId: string;
+  position: { x: number; y: number };
 };
 
 function errorMessage(error: unknown): string {
@@ -112,6 +118,58 @@ function writeStoredLiveAgentNodes(nodes: AtlasAgentNode[]) {
   } catch {}
 }
 
+function readStoredLiveTaskPositions(): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>();
+  try {
+    const raw = globalThis.localStorage?.getItem(LIVE_TASK_LAYOUT_STORAGE_KEY);
+    if (!raw) return positions;
+    const parsed = JSON.parse(raw) as { schemaVersion?: unknown; tasks?: unknown };
+    if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.tasks)) return positions;
+    for (const item of parsed.tasks) {
+      const record = item as { taskId?: unknown; position?: { x?: unknown; y?: unknown } };
+      const taskId = typeof record.taskId === "string" ? record.taskId.trim() : "";
+      const x = Number(record.position?.x);
+      const y = Number(record.position?.y);
+      if (!taskId || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+      positions.set(taskId, { x, y });
+    }
+  } catch {}
+  return positions;
+}
+
+function writeStoredLiveTaskNodes(nodes: AtlasTaskNode[]) {
+  try {
+    const tasks: StoredTaskPosition[] = nodes.map((node) => ({
+      taskId: node.taskId,
+      position: { x: node.position.x, y: node.position.y },
+    }));
+    globalThis.localStorage?.setItem(LIVE_TASK_LAYOUT_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1,
+      tasks,
+    }));
+  } catch {}
+}
+
+function makeTaskNode(
+  task: TeamCanvasTask,
+  index: number,
+  storedPosition?: { x: number; y: number },
+): AtlasTaskNode {
+  return {
+    nodeId: `task-node-${task.taskId}`,
+    kind: "canvas-task",
+    taskId: task.taskId,
+    position: storedPosition ?? {
+      x: 280 + (index % 3) * 320,
+      y: 220 + Math.floor(index / 3) * 180,
+    },
+  };
+}
+
+function makeTaskNodes(tasks: TeamCanvasTask[], storedPositions = new Map<string, { x: number; y: number }>()): AtlasTaskNode[] {
+  return tasks.map((task, index) => makeTaskNode(task, index, storedPositions.get(task.taskId)));
+}
+
 export function App() {
   const [dataSource, setDataSource] = useState<DataSource>(() => readStoredDataSource());
   const [selectedFixtureId, setSelectedFixtureId] = useState<string>(CLEAN_AGENT_WORKSPACE_ID);
@@ -128,11 +186,15 @@ export function App() {
   );
   const [agentNodes, setAgentNodes] = useState<AtlasAgentNode[]>([]);
   const [liveAgentNodesHydrated, setLiveAgentNodesHydrated] = useState(false);
+  const [tasks, setTasks] = useState<TeamCanvasTask[]>([]);
+  const [taskNodes, setTaskNodes] = useState<AtlasTaskNode[]>([]);
+  const [liveTaskNodesHydrated, setLiveTaskNodesHydrated] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
   const [expandedAgentBranch, setExpandedAgentBranch] = useState<AgentBranchState | null>(null);
 
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
+  const tasksById = useMemo(() => new Map(tasks.map((task) => [task.taskId, task])), [tasks]);
   const agentRunStatusesById = useMemo(() => new Map(Object.entries(agentRunStatusById)), [agentRunStatusById]);
   const addedAgentIds = useMemo(() => new Set(agentNodes.map((node) => node.agentId)), [agentNodes]);
   const expandedAgentNode = expandedAgentBranch
@@ -153,6 +215,7 @@ export function App() {
   useEffect(() => {
     if (dataSource !== "live") {
       setLiveAgentNodesHydrated(false);
+      setLiveTaskNodesHydrated(false);
       return;
     }
     setAgentNodes(readStoredLiveAgentNodes());
@@ -164,6 +227,11 @@ export function App() {
     if (dataSource !== "live" || !liveAgentNodesHydrated) return;
     writeStoredLiveAgentNodes(agentNodes);
   }, [dataSource, liveAgentNodesHydrated, agentNodes]);
+
+  useEffect(() => {
+    if (dataSource !== "live" || !liveTaskNodesHydrated) return;
+    writeStoredLiveTaskNodes(taskNodes);
+  }, [dataSource, liveTaskNodesHydrated, taskNodes]);
 
   const loadFixture = useCallback((fixtureId: string) => {
     setExpandedAgentBranch(null);
@@ -214,6 +282,8 @@ export function App() {
     if (dataSource === "mock") {
       setAgents(MOCK_AGENTS);
       setAgentRunStatusById(agentRunStatusRecord(MOCK_AGENT_RUN_STATUSES));
+      setTasks(mockTeamTasks);
+      setTaskNodes(makeTaskNodes(mockTeamTasks));
       return () => {
         cancelled = true;
       };
@@ -222,14 +292,23 @@ export function App() {
     setAgents([]);
     setAgentPickerOpen(false);
     setAgentRunStatusById({});
+    setTasks([]);
+    setTaskNodes([]);
+    setLiveTaskNodesHydrated(false);
 
-    async function loadLiveAgents() {
+    async function loadLiveWorkspace() {
       try {
-        const nextAgentsPromise = api.listAgents();
-        void loadAgentRunStatuses();
-        const nextAgents = await nextAgentsPromise;
+        const [nextAgents, nextStatuses, nextTasks] = await Promise.all([
+          api.listAgents(),
+          api.listAgentRunStatuses(),
+          api.listTasks(),
+        ]);
         if (!cancelled) {
           setAgents(nextAgents);
+          setAgentRunStatusById(agentRunStatusRecord(nextStatuses));
+          setTasks(nextTasks);
+          setTaskNodes(makeTaskNodes(nextTasks, readStoredLiveTaskPositions()));
+          setLiveTaskNodesHydrated(true);
         }
       } catch (e) {
         if (!cancelled) {
@@ -238,7 +317,7 @@ export function App() {
       }
     }
 
-    void loadLiveAgents();
+    void loadLiveWorkspace();
     refreshTimer = globalThis.setInterval(() => {
       void loadAgentRunStatuses();
     }, 3000);
@@ -376,6 +455,12 @@ export function App() {
 
   const moveAgentNode = useCallback((nodeId: string, position: { x: number; y: number }) => {
     setAgentNodes((current) => current.map((node) => (
+      node.nodeId === nodeId ? { ...node, position } : node
+    )));
+  }, []);
+
+  const moveTaskNode = useCallback((nodeId: string, position: { x: number; y: number }) => {
+    setTaskNodes((current) => current.map((node) => (
       node.nodeId === nodeId ? { ...node, position } : node
     )));
   }, []);
@@ -539,6 +624,9 @@ export function App() {
                 onSelectAgent={toggleAgentBranch}
                 onMoveAgent={moveAgentNode}
                 agentBranchPanel={expandedAgentBranchPanel}
+                taskNodes={taskNodes}
+                tasksById={tasksById}
+                onMoveCanvasTask={moveTaskNode}
                 viewport={canvasViewport}
                 onViewportChange={setCanvasViewport}
                 toolbarStart={agentToolbar}
