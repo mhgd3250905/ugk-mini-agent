@@ -373,6 +373,7 @@ describe("App integration", () => {
 
   it("renders evidence nodes when selecting a task", () => {
     const { container } = render(<App />);
+    fireEvent.click(screen.getByText("顺序 run"));
     fireEvent.click(firstTaskTitleNode("Research vendor A"));
 
     const evidenceNodes = container.querySelectorAll(".execution-map-nodes > .emap-evidence-node");
@@ -384,6 +385,7 @@ describe("App integration", () => {
   it("clicking the selected task again hides evidence nodes", () => {
     const { container } = render(<App />);
 
+    fireEvent.click(screen.getByText("顺序 run"));
     fireEvent.click(firstTaskTitleNode("Research vendor A"));
     const afterSelect = container.querySelectorAll(".execution-map-nodes > .emap-evidence-node");
     expect(afterSelect.length).toBeGreaterThan(0);

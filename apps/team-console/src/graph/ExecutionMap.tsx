@@ -1,10 +1,10 @@
-import { useMemo, useLayoutEffect, useRef, useState, useCallback } from "react";
-import type { RunDetail, TeamPlan, TaskStatus, TeamAttemptMetadata, TeamTaskState } from "../api/team-types";
+import { useMemo, useLayoutEffect, useRef, useState, useCallback, type ReactNode } from "react";
+import type { AgentSummary, RunDetail, TeamPlan, TaskStatus, TeamAttemptMetadata, TeamTaskState } from "../api/team-types";
 import type { ExecutionNode, NodeKind } from "./execution-map-model";
 import { buildExecutionMapModel, CHILD_COLLAPSE_THRESHOLD } from "./execution-map-model";
-import { layoutExecutionMap, ROOT_ID, NODE_WIDTH, straightPath } from "./execution-map-layout";
+import { layoutExecutionMap, ROOT_ID, NODE_WIDTH, straightPath, type ExecutionMapLayout } from "./execution-map-layout";
 import { RUN_STATUS_LABELS, TASK_STATUS_LABELS } from "../shared/status";
-import { AtlasCanvasShell } from "./AtlasCanvasShell";
+import { AtlasCanvasShell, type AtlasViewport } from "./AtlasCanvasShell";
 import "./execution-map.css";
 
 const KIND_LABELS: Record<NodeKind | "collapsed" | "orphan_group", string> = {
@@ -21,21 +21,40 @@ const KIND_LABELS: Record<NodeKind | "collapsed" | "orphan_group", string> = {
 };
 
 interface ExecutionMapProps {
-  plan: TeamPlan;
-  run: RunDetail;
+  plan?: TeamPlan | null;
+  run?: RunDetail | null;
   selectedTaskId: string | null;
   onSelectTask: (taskId: string) => void;
   attemptsByTaskId?: Record<string, TeamAttemptMetadata[]>;
   readAttemptFile?: (runId: string, taskId: string, attemptId: string, fileName: string) => Promise<string>;
+  agentNodes?: AtlasAgentNode[];
+  agentsById?: Map<string, AgentSummary>;
+  focusedAgentNodeId?: string | null;
+  onSelectAgent?: (node: AtlasAgentNode) => void;
+  agentFocusPanel?: ReactNode;
+  viewport?: AtlasViewport;
+  onViewportChange?: (viewport: AtlasViewport) => void;
+  toolbarStart?: ReactNode;
 }
 
 type RenderNode = Omit<ExecutionNode, "kind"> & { kind: NodeKind | "collapsed" };
+
+export type AtlasAgentNode = {
+  nodeId: string;
+  kind: "agent";
+  agentId: string;
+  position: { x: number; y: number };
+};
 
 const EVIDENCE_W = 240;
 const EVIDENCE_GAP = 12;
 const PREVIEW_W = 360;
 const PREVIEW_GAP = 40;
 const PREVIEW_FALLBACK_HEIGHT = 180;
+const AGENT_NODE_HEIGHT = 112;
+const AGENT_FOCUS_PANEL_WIDTH = 520;
+const AGENT_FOCUS_PANEL_HEIGHT = 300;
+const AGENT_FOCUS_PANEL_GAP = 18;
 type EvidenceKind = "result" | "error" | "attempt" | "progress" | "worker" | "checker" | "watcher";
 
 interface EvidenceEntry {
@@ -85,6 +104,25 @@ function statusClass(status: TaskStatus | RunDetail["status"]): string {
     case "completed_with_failures": return "status-paused";
     default: return "";
   }
+}
+
+function createEmptyLayout(): ExecutionMapLayout {
+  return {
+    rootNode: { nodeId: ROOT_ID, x: 0, y: 0, width: NODE_WIDTH, height: 56 },
+    mainTaskNodes: [],
+    orphanNodes: [],
+    collapsedNodes: [],
+    nodePositions: new Map(),
+    links: [],
+  };
+}
+
+function formatAgentBinding(agent: AgentSummary): string {
+  const model = agent.defaultModelProvider && agent.defaultModelId
+    ? `${agent.defaultModelProvider}/${agent.defaultModelId}`
+    : "model default";
+  const browser = agent.defaultBrowserId ? `browser ${agent.defaultBrowserId}` : "browser default";
+  return `${model} · ${browser}`;
 }
 
 export function summarizeCollapsedTaskStatus(children: Pick<ExecutionNode, "status">[]): TaskStatus {
@@ -306,7 +344,22 @@ export function buildArtifactBranches(
   return entries;
 }
 
-export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attemptsByTaskId = {}, readAttemptFile }: ExecutionMapProps) {
+export function ExecutionMap({
+  plan,
+  run,
+  selectedTaskId,
+  onSelectTask,
+  attemptsByTaskId = {},
+  readAttemptFile,
+  agentNodes = [],
+  agentsById,
+  focusedAgentNodeId,
+  onSelectAgent,
+  agentFocusPanel,
+  viewport,
+  onViewportChange,
+  toolbarStart,
+}: ExecutionMapProps) {
   const evidenceContainerRef = useRef<HTMLDivElement | null>(null);
   const [measuredHeights, setMeasuredHeights] = useState<MeasuredHeights>({});
   const [previewHeights, setPreviewHeights] = useState<MeasuredHeights>({});
@@ -331,9 +384,10 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
     }
   }
 
-  const model = useMemo(() => buildExecutionMapModel(plan, run), [plan, run]);
+  const model = useMemo(() => plan && run ? buildExecutionMapModel(plan, run) : null, [plan, run]);
 
   const evidence = useMemo<EvidenceEntry[]>(() => {
+    if (!model || !plan || !run) return [];
     if (!selectedTaskId || selectedTaskId === ROOT_ID) return [];
     const node = model.allNodes.get(selectedTaskId);
     if (!node) return [];
@@ -393,7 +447,7 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
     }
 
     return entries;
-  }, [selectedTaskId, model, run.taskStates, plan.tasks, expandedTaskIds, attemptsByTaskId]);
+  }, [selectedTaskId, model, run, plan, expandedTaskIds, attemptsByTaskId]);
 
   const evidenceReservedHeight = useMemo(() => {
     if (evidence.length === 0) return 0;
@@ -404,13 +458,14 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
     }, 0);
   }, [evidence, measuredHeights, selectedArtifactId, previewHeights]);
 
-  const layout = useMemo(() => layoutExecutionMap(model, {
+  const layout = useMemo(() => model ? layoutExecutionMap(model, {
     selectedTaskId: selectedTaskId ?? undefined,
     selectedReservedHeight: evidenceReservedHeight > 0 ? evidenceReservedHeight : undefined,
     expandedTaskIds,
-  }), [model, selectedTaskId, evidenceReservedHeight, expandedTaskIds]);
+  }) : createEmptyLayout(), [model, selectedTaskId, evidenceReservedHeight, expandedTaskIds]);
 
   const selectedChain = useMemo(() => {
+    if (!model) return new Set<string>();
     if (!selectedTaskId) return new Set<string>();
     const incomingLink = new Map(layout.links.map((link) => [link.targetId, link.sourceId]));
     const chain = model.parentChainLookup.get(selectedTaskId) ?? [];
@@ -553,7 +608,7 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
     setSelectedArtifactId(entry.id);
 
     const parsed = entry.previewFile;
-    if (!selectedTaskId || parsed.taskId !== selectedTaskId) return;
+    if (!selectedTaskId || !run || parsed.taskId !== selectedTaskId) return;
 
     const existing = artifactPreviewState[entry.id];
     if (existing?.status === "loaded") return;
@@ -577,9 +632,9 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
           [entry.id]: { status: "error", fileName: parsed.fileName, message },
         }));
       });
-  }, [artifactPreviewState, readAttemptFile, run.runId, selectedArtifactId, selectedTaskId]);
+  }, [artifactPreviewState, readAttemptFile, run, selectedArtifactId, selectedTaskId]);
 
-  const allNodes: RenderNode[] = model.mainTasks.flatMap((t) => {
+  const allNodes: RenderNode[] = model ? model.mainTasks.flatMap((t) => {
     const result: RenderNode[] = [t];
     const isExpanded = expandedTaskIds.has(t.taskId);
     if (t.children.length > CHILD_COLLAPSE_THRESHOLD && !isExpanded) {
@@ -615,28 +670,52 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
       result.push(...t.children);
     }
     return result;
-  });
+  }) : [];
 
-  for (const o of model.orphanGroup) {
-    allNodes.push(o);
+  if (model) {
+    for (const o of model.orphanGroup) {
+      allNodes.push(o);
+    }
   }
 
   const evidenceRight = evidenceLayout.positions.length > 0
     ? Math.max(...evidenceLayout.positions.map((p) => p.x + p.width))
     : 0;
   const previewRight = evidenceLayout.preview ? evidenceLayout.preview.x + evidenceLayout.preview.width : 0;
-  const svgWidth = Math.max(700, evidenceRight + 28, previewRight + 28);
+  const agentRight = agentNodes.length > 0
+    ? Math.max(...agentNodes.map((node) => node.position.x + NODE_WIDTH))
+    : 0;
+  const focusedAgentNode = focusedAgentNodeId
+    ? agentNodes.find((node) => node.nodeId === focusedAgentNodeId) ?? null
+    : null;
+  const focusPanelPosition = focusedAgentNode && agentFocusPanel
+    ? {
+        x: focusedAgentNode.position.x,
+        y: focusedAgentNode.position.y + AGENT_NODE_HEIGHT + AGENT_FOCUS_PANEL_GAP,
+        width: AGENT_FOCUS_PANEL_WIDTH,
+        minHeight: AGENT_FOCUS_PANEL_HEIGHT,
+      }
+    : null;
+  const focusPanelRight = focusPanelPosition ? focusPanelPosition.x + focusPanelPosition.width : 0;
+  const svgWidth = Math.max(700, evidenceRight + 28, previewRight + 28, agentRight + 28, focusPanelRight + 28);
   const maxY = Math.max(
     ...Array.from(layout.nodePositions.values()).map((n) => n.y + n.height),
     ...evidenceLayout.positions.map((p) => p.y + p.height),
     evidenceLayout.preview ? evidenceLayout.preview.y + evidenceLayout.preview.height : 0,
+    ...agentNodes.map((node) => node.position.y + AGENT_NODE_HEIGHT),
+    focusPanelPosition ? focusPanelPosition.y + focusPanelPosition.minHeight : 0,
     200,
   );
 
   const isCollapsed = (id: string) => id.endsWith("__collapsed") || id.endsWith("__collapse_control");
   const parentOfCollapsed = (id: string) => id.replace(/__collapsed$|__collapse_control$/, "");
   return (
-    <AtlasCanvasShell>
+    <AtlasCanvasShell
+      viewport={viewport}
+      onViewportChange={onViewportChange}
+      toolbarStart={toolbarStart}
+      agentFocusId={focusedAgentNode?.agentId ?? null}
+    >
         <svg
           className="execution-map-links"
           width={svgWidth}
@@ -670,26 +749,73 @@ export function ExecutionMap({ plan, run, selectedTaskId, onSelectTask, attempts
         </svg>
 
         <div className="execution-map-nodes" ref={evidenceContainerRef} style={{ width: svgWidth, minHeight: maxY + 40 }}>
-          <button
-            type="button"
-            className={`emap-node emap-root ${statusClass(run.status)} ${selectedTaskId === ROOT_ID ? "selected" : ""}`}
-            style={{ left: layout.rootNode.x, top: layout.rootNode.y, width: NODE_WIDTH, height: layout.rootNode.height }}
-            onClick={() => onSelectTask(ROOT_ID)}
-          >
-            <div className="emap-node-status-bar" />
-            <div className="emap-node-content">
-              <div className="emap-node-header">
-                <span className="emap-node-kind">{KIND_LABELS.root}</span>
-                <span className="emap-node-state-pill">{RUN_STATUS_LABELS[run.status]}</span>
+          {model && run && (
+            <button
+              type="button"
+              className={`emap-node emap-root ${statusClass(run.status)} ${selectedTaskId === ROOT_ID ? "selected" : ""}`}
+              style={{ left: layout.rootNode.x, top: layout.rootNode.y, width: NODE_WIDTH, height: layout.rootNode.height }}
+              onClick={() => onSelectTask(ROOT_ID)}
+            >
+              <div className="emap-node-status-bar" />
+              <div className="emap-node-content">
+                <div className="emap-node-header">
+                  <span className="emap-node-kind">{KIND_LABELS.root}</span>
+                  <span className="emap-node-state-pill">{RUN_STATUS_LABELS[run.status]}</span>
+                </div>
+                <div className="emap-node-body">
+                  <span className="emap-node-title">执行运行</span>
+                  <span className="emap-node-summary">
+                    {model.rootNode.succeeded}/{model.rootNode.totalTasks} 检查点
+                  </span>
+                </div>
               </div>
-              <div className="emap-node-body">
-                <span className="emap-node-title">执行运行</span>
-                <span className="emap-node-summary">
-                  {model.rootNode.succeeded}/{model.rootNode.totalTasks} 检查点
-                </span>
-              </div>
+            </button>
+          )}
+
+          {agentNodes.map((node) => {
+            const agent = agentsById?.get(node.agentId);
+            if (!agent) return null;
+            const isFocused = node.nodeId === focusedAgentNodeId;
+            return (
+              <button
+                key={node.nodeId}
+                type="button"
+                className={`emap-node emap-agent-node status-running ${isFocused ? "selected" : ""}`}
+                data-kind="agent"
+                data-agent-id={agent.agentId}
+                style={{ left: node.position.x, top: node.position.y, width: NODE_WIDTH, height: AGENT_NODE_HEIGHT }}
+                onClick={() => onSelectAgent?.(node)}
+              >
+                <div className="emap-node-status-bar" />
+                <div className="emap-node-content">
+                  <div className="emap-node-header">
+                    <span className="emap-node-kind">Agent</span>
+                    <span className="emap-node-state-pill running">可用</span>
+                  </div>
+                  <div className="emap-node-body">
+                    <span className="emap-node-title">{agent.name}</span>
+                    <span className="emap-node-meta">{agent.agentId}</span>
+                    <span className="emap-agent-description">{agent.description}</span>
+                    <span className="emap-agent-binding">{formatAgentBinding(agent)}</span>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+
+          {focusPanelPosition && (
+            <div
+              className="agent-atlas-chat-panel"
+              style={{
+                left: focusPanelPosition.x,
+                top: focusPanelPosition.y,
+                width: focusPanelPosition.width,
+                minHeight: focusPanelPosition.minHeight,
+              }}
+            >
+              {agentFocusPanel}
             </div>
-          </button>
+          )}
 
           {allNodes.flatMap((node) => {
             const pos = layout.nodePositions.get(node.nodeId);

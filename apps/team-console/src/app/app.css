@@ -186,36 +186,29 @@ body {
   min-height: 0;
 }
 
-.agent-canvas-panel {
+.agent-atlas-actions {
   position: relative;
-  flex: 0 0 auto;
-  padding: 12px 18px 14px;
-  background:
-    linear-gradient(180deg, rgba(121, 216, 208, 0.07), transparent),
-    rgba(5, 8, 19, 0.94);
-  border-bottom: 1px solid rgba(122, 131, 151, 0.2);
-}
-
-.agent-canvas-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-md);
-  margin-bottom: 10px;
+  gap: 6px;
 }
 
-.agent-canvas-title {
-  display: flex;
+.agent-atlas-count {
+  min-width: 22px;
+  height: 22px;
+  display: inline-flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 750;
+  justify-content: center;
+  border: 1px solid rgba(121, 216, 208, 0.24);
+  border-radius: 999px;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(121, 216, 208, 0.08);
 }
 
-.agent-canvas-title code,
-.agent-picker-option code,
-.agent-card code {
+.agent-picker-option code {
   color: var(--accent);
   font-family: var(--font-mono);
   font-size: 10px;
@@ -241,10 +234,18 @@ body {
 }
 
 .agent-picker {
-  display: flex;
-  flex-wrap: wrap;
+  position: absolute;
+  top: 34px;
+  left: 0;
+  z-index: 8;
+  width: 280px;
+  display: grid;
   gap: var(--spacing-sm);
-  margin-bottom: 10px;
+  padding: 8px;
+  border: 1px solid rgba(122, 131, 151, 0.22);
+  border-radius: 6px;
+  background: rgba(8, 11, 19, 0.98);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.36);
 }
 
 .agent-picker-option {
@@ -289,115 +290,8 @@ body {
   font-size: 10px;
 }
 
-.agent-canvas-board {
-  position: relative;
-  min-height: 160px;
-  overflow: auto;
-  border: 1px solid rgba(122, 131, 151, 0.18);
-  border-radius: 7px;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    rgba(2, 4, 11, 0.76);
-  background-size: 28px 28px;
-}
-
-.agent-card {
-  appearance: none;
-  position: absolute;
-  width: 230px;
-  min-height: 112px;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  border: 1px solid rgba(121, 216, 208, 0.36);
-  border-radius: 7px;
-  background:
-    linear-gradient(180deg, rgba(121, 216, 208, 0.12), transparent 42%),
-    var(--surface-raised);
-  color: var(--primary);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.26);
-}
-
-.agent-card:hover {
-  border-color: rgba(121, 216, 208, 0.78);
-}
-
-.agent-card-kicker {
-  color: var(--secondary);
-  font-size: 9px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.agent-card-name {
-  min-width: 0;
-  color: var(--primary);
-  font-size: 13px;
-  font-weight: 800;
-  line-height: 1.25;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.agent-card-description {
-  color: var(--secondary);
-  font-size: 10px;
-  line-height: 1.35;
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.agent-card-binding {
-  margin-top: auto;
-  color: var(--secondary);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.agent-canvas-board[data-state="focus"] {
-  min-height: 430px;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 0, rgba(121, 216, 208, 0.14), transparent 40%),
-    rgba(2, 4, 11, 0.82);
-}
-
-.agent-focus-stage {
-  min-height: 430px;
-  padding: 20px;
-  display: grid;
-  grid-template-rows: auto minmax(260px, 1fr);
-  justify-items: center;
-  gap: 14px;
-}
-
-.agent-focus-card {
-  position: relative;
-  left: auto !important;
-  top: auto !important;
-  width: min(320px, 100%);
-  cursor: default;
-  transform: none;
-}
-
-.agent-focus-card:hover {
-  border-color: rgba(121, 216, 208, 0.46);
-}
-
 .agent-chat-panel {
-  width: min(820px, 100%);
+  width: 100%;
   min-height: 260px;
   display: flex;
   flex-direction: column;
@@ -585,30 +479,9 @@ body {
     flex-direction: column;
   }
 
-  .agent-canvas-panel {
-    padding: 10px 12px 12px;
-  }
-
-  .agent-canvas-toolbar {
-    align-items: flex-start;
-  }
-
   .agent-picker-option {
     max-width: none;
     width: 100%;
-  }
-
-  .agent-canvas-board {
-    min-height: 180px;
-  }
-
-  .agent-canvas-board[data-state="focus"],
-  .agent-focus-stage {
-    min-height: 390px;
-  }
-
-  .agent-focus-stage {
-    padding: 12px;
   }
 
   .agent-chat-panel-header {

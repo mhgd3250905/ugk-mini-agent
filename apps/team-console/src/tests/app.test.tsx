@@ -4,6 +4,18 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { App } from "../app/App";
 import { MockTeamApi, makeSequentialPlan, makeSequentialRun } from "../fixtures/team-fixtures";
 
+function getAtlas(container: HTMLElement): HTMLElement {
+  const atlas = container.querySelector(".execution-map-container") as HTMLElement | null;
+  expect(atlas).toBeTruthy();
+  return atlas!;
+}
+
+function getAtlasNodes(container: HTMLElement): HTMLElement {
+  const atlasNodes = container.querySelector(".execution-map-nodes") as HTMLElement | null;
+  expect(atlasNodes).toBeTruthy();
+  return atlasNodes!;
+}
+
 describe("App", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
@@ -57,53 +69,51 @@ describe("App", () => {
 
     fireEvent.click(mainOption);
 
-    const atlasNodes = container.querySelector(".execution-map-nodes") as HTMLElement | null;
-    expect(atlasNodes).toBeTruthy();
-    expect(within(atlasNodes!).getByText("主 Agent")).toBeInTheDocument();
-    expect(within(atlasNodes!).getByText("main")).toBeInTheDocument();
+    const atlasNodes = getAtlasNodes(container);
+    expect(within(atlasNodes).getByText("主 Agent")).toBeInTheDocument();
+    expect(within(atlasNodes).getByText("main")).toBeInTheDocument();
     expect(container.querySelector(".agent-canvas-board")).toBeNull();
 
     const joinedOption = screen.getByRole("button", { name: /主 Agent[\s\S]*已加入/ });
     expect(joinedOption).toBeDisabled();
 
     fireEvent.click(joinedOption);
-    expect(within(atlasNodes!).getAllByText("main")).toHaveLength(1);
+    expect(within(atlasNodes).getAllByText("main")).toHaveLength(1);
   });
 
   it("focuses an agent card above a chat panel and restores the canvas", async () => {
-    render(<App />);
+    const { container } = render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
     fireEvent.click(screen.getByRole("button", { name: /搜索 Agent[\s\S]*search/ }));
 
-    const canvas = screen.getByTestId("agent-canvas");
-    expect(canvas).toHaveAttribute("data-state", "normal");
-    expect(canvas.querySelectorAll(".agent-card")).toHaveLength(2);
+    const atlas = getAtlas(container);
+    expect(atlas).toHaveAttribute("data-agent-focus", "none");
+    expect(atlas.querySelectorAll(".emap-agent-node")).toHaveLength(2);
 
-    fireEvent.click(within(canvas).getByRole("button", { name: /主 Agent/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
 
-    expect(canvas).toHaveAttribute("data-state", "focus");
+    expect(atlas).toHaveAttribute("data-agent-focus", "main");
     expect(screen.getByText("Agent Chat Panel")).toBeInTheDocument();
     expect(screen.getByText("主 Agent / main")).toBeInTheDocument();
-    expect(within(canvas).queryByText("搜索 Agent")).toBeNull();
-    expect(canvas.querySelectorAll(".agent-card")).toHaveLength(1);
+    expect(within(atlas).getByText("搜索 Agent")).toBeInTheDocument();
+    expect(atlas.querySelectorAll(".agent-chat-panel")).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: "收起" }));
 
-    expect(canvas).toHaveAttribute("data-state", "normal");
+    expect(atlas).toHaveAttribute("data-agent-focus", "none");
     expect(screen.queryByText("Agent Chat Panel")).toBeNull();
-    expect(within(canvas).getByText("搜索 Agent")).toBeInTheDocument();
-    expect(canvas.querySelectorAll(".agent-card")).toHaveLength(2);
+    expect(atlas.querySelectorAll(".emap-agent-node")).toHaveLength(2);
   });
 
   it("sends a message from the focused agent panel", async () => {
     const sendSpy = vi.spyOn(MockTeamApi.prototype, "sendAgentMessage");
-    render(<App />);
+    const { container } = render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(screen.getByTestId("agent-canvas")).getByRole("button", { name: /主 Agent/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
 
     fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "请总结画布状态" } });
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
@@ -115,11 +125,11 @@ describe("App", () => {
 
   it("shows chat errors without removing the sent user message", async () => {
     vi.spyOn(MockTeamApi.prototype, "sendAgentMessage").mockRejectedValueOnce({ message: "agent offline" });
-    render(<App />);
+    const { container } = render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(screen.getByTestId("agent-canvas")).getByRole("button", { name: /主 Agent/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
 
     fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "这条会失败" } });
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
@@ -131,11 +141,11 @@ describe("App", () => {
 
   it("does not submit empty agent messages", async () => {
     const sendSpy = vi.spyOn(MockTeamApi.prototype, "sendAgentMessage");
-    render(<App />);
+    const { container } = render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(screen.getByTestId("agent-canvas")).getByRole("button", { name: /主 Agent/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
 
     fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "   " } });
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
@@ -162,6 +172,15 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "任务拆分" })).toBeInTheDocument();
     expect(screen.queryByText("Discovery + ForEach")).toBeNull();
     expect(screen.queryByText("Decomposition split")).toBeNull();
+  });
+
+  it("switches back to the old demo fixture for runtime atlas regression", () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "顺序 run" }));
+
+    expect(screen.getByText("执行运行")).toBeInTheDocument();
+    expect(screen.getByText("Research vendor A")).toBeInTheDocument();
   });
 
   it("fetches live plans, runs, and selected run detail when switching to Live API", async () => {
@@ -232,6 +251,27 @@ describe("App", () => {
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
     expect(await screen.findByText("Live-only vendor task")).toBeInTheDocument();
+  });
+
+  it("keeps live agent workspace usable when no live team run exists", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        agents: [{ agentId: "main", name: "主 Agent", description: "默认综合 agent" }],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+    expect(screen.queryByText("没有可显示的 live run")).toBeNull();
+    expect(screen.getByRole("button", { name: "添加 Agent" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+    expect(within(getAtlasNodes(container)).getByText("主 Agent")).toBeInTheDocument();
   });
 
   it("shows an error banner when live loading fails", async () => {

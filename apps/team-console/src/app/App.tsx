@@ -2,26 +2,20 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { LiveTeamApi } from "../api/team-api";
 import type { AgentChatMessage, AgentSummary, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata } from "../api/team-types";
 import { ALL_FIXTURES, MOCK_AGENTS, MockTeamApi } from "../fixtures/team-fixtures";
-import { ExecutionMap } from "../graph/ExecutionMap";
+import { ExecutionMap, type AtlasAgentNode } from "../graph/ExecutionMap";
 import { ROOT_ID } from "../graph/execution-map-layout";
+import type { AtlasViewport } from "../graph/AtlasCanvasShell";
 import "./app.css";
 
 export type DataSource = "mock" | "live";
 
-type AgentNode = {
-  nodeId: string;
-  kind: "agent";
-  agentId: string;
-  position: { x: number; y: number };
-};
-
-type CanvasViewport = { x: number; y: number; scale: number };
+const CLEAN_AGENT_WORKSPACE_ID = "agent-workspace";
 
 type AgentFocusState = {
   kind: "agent";
   agentId: string;
   nodeId: string;
-  previousViewport: CanvasViewport;
+  previousViewport: AtlasViewport;
 };
 
 function errorMessage(error: unknown): string {
@@ -43,17 +37,9 @@ function selectLatestRun(runs: TeamRunState[]): TeamRunState | null {
   }, runs[0]);
 }
 
-function formatAgentBinding(agent: AgentSummary): string {
-  const model = agent.defaultModelProvider && agent.defaultModelId
-    ? `${agent.defaultModelProvider}/${agent.defaultModelId}`
-    : "model default";
-  const browser = agent.defaultBrowserId ? `browser ${agent.defaultBrowserId}` : "browser default";
-  return `${model} · ${browser}`;
-}
-
 export function App() {
   const [dataSource, setDataSource] = useState<DataSource>("mock");
-  const [selectedFixtureId, setSelectedFixtureId] = useState<string>(ALL_FIXTURES[0].id);
+  const [selectedFixtureId, setSelectedFixtureId] = useState<string>(CLEAN_AGENT_WORKSPACE_ID);
   const [plan, setPlan] = useState<TeamPlan | null>(null);
   const [run, setRun] = useState<RunDetail | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -61,9 +47,9 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [agents, setAgents] = useState<AgentSummary[]>(MOCK_AGENTS);
-  const [agentNodes, setAgentNodes] = useState<AgentNode[]>([]);
+  const [agentNodes, setAgentNodes] = useState<AtlasAgentNode[]>([]);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
-  const [canvasViewport, setCanvasViewport] = useState<CanvasViewport>({ x: 0, y: 0, scale: 1 });
+  const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
   const [agentFocus, setAgentFocus] = useState<AgentFocusState | null>(null);
   const [agentMessagesById, setAgentMessagesById] = useState<Record<string, AgentChatMessage[]>>({});
   const [agentMessageInput, setAgentMessageInput] = useState("");
@@ -83,6 +69,16 @@ export function App() {
   }, []);
 
   const loadFixture = useCallback((fixtureId: string) => {
+    if (fixtureId === CLEAN_AGENT_WORKSPACE_ID) {
+      setPlan(null);
+      setRun(null);
+      setSelectedTaskId(null);
+      setAttemptsByTaskId({});
+      setError(null);
+      setLoading(false);
+      setCanvasViewport({ x: 0, y: 0, scale: 1 });
+      return;
+    }
     const entry = ALL_FIXTURES.find((f) => f.id === fixtureId);
     if (entry) {
       setPlan(entry.plan);
@@ -154,7 +150,8 @@ export function App() {
         const selectedRun = selectLatestRun(runs);
         if (!selectedRun) {
           if (!cancelled) {
-            setError("没有可显示的 live run");
+            setPlan(null);
+            setRun(null);
           }
           return;
         }
@@ -236,13 +233,13 @@ export function App() {
           nodeId: `agent-${agentId}`,
           kind: "agent",
           agentId,
-          position: { x: 24 + index * 260, y: 28 },
+          position: { x: 360 + index * 320, y: 0 },
         },
       ];
     });
   }, []);
 
-  const focusAgentNode = useCallback((node: AgentNode) => {
+  const focusAgentNode = useCallback((node: AtlasAgentNode) => {
     setAgentPickerOpen(false);
     setAgentMessageInput("");
     setAgentChatError(null);
@@ -302,6 +299,93 @@ export function App() {
     }
   }, [agentMessageInput, dataSource, focusedAgent, isAgentChatPending]);
 
+  const agentToolbar = (
+    <div className="agent-atlas-actions">
+      <button
+        type="button"
+        className="agent-add-btn"
+        onClick={() => setAgentPickerOpen((open) => !open)}
+        aria-expanded={agentPickerOpen}
+      >
+        添加 Agent
+      </button>
+      <span className="agent-atlas-count">{agentNodes.length}</span>
+      {agentPickerOpen && (
+        <div className="agent-picker" aria-label="Agent catalog">
+          {agents.map((agent) => {
+            const joined = addedAgentIds.has(agent.agentId);
+            return (
+              <button
+                key={agent.agentId}
+                type="button"
+                className="agent-picker-option"
+                disabled={joined}
+                onClick={() => addAgentNode(agent.agentId)}
+              >
+                <span className="agent-picker-name">{agent.name}</span>
+                <code>{agent.agentId}</code>
+                {joined && <span className="agent-picker-status">已加入</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
+  const focusedAgentChatPanel = isAgentFocused && focusedNode && focusedAgent ? (
+    <section className="agent-chat-panel" aria-label={`Agent Chat Panel ${focusedAgent.name}`}>
+      <div className="agent-chat-panel-header">
+        <div>
+          <span className="agent-chat-panel-kicker">Agent Chat Panel</span>
+          <h2>{focusedAgent.name} / {focusedAgent.agentId}</h2>
+        </div>
+        <button type="button" className="agent-collapse-btn" onClick={collapseAgentFocus}>
+          收起
+        </button>
+      </div>
+      <div className="agent-chat-messages" aria-label="Agent messages">
+        {focusedAgentMessages.length === 0 ? (
+          <div className="agent-chat-empty">暂无消息</div>
+        ) : (
+          focusedAgentMessages.map((message, index) => (
+            <div
+              key={`${message.role}-${index}`}
+              className={`agent-chat-message ${message.role}`}
+            >
+              <span className="agent-chat-role">{message.role === "user" ? "User" : "Agent"}</span>
+              <p>{message.text}</p>
+            </div>
+          ))
+        )}
+        {isAgentChatPending && <div className="agent-chat-loading">发送中...</div>}
+        {agentChatError && <div className="agent-chat-error" role="alert">{agentChatError}</div>}
+      </div>
+      <form
+        className="agent-chat-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void sendFocusedAgentMessage();
+        }}
+      >
+        <label className="sr-only" htmlFor="agent-chat-input">Agent message</label>
+        <textarea
+          id="agent-chat-input"
+          value={agentMessageInput}
+          onChange={(event) => setAgentMessageInput(event.target.value)}
+          aria-label="Agent message"
+          rows={2}
+        />
+        <button
+          type="submit"
+          disabled={!agentMessageInput.trim() || isAgentChatPending}
+        >
+          发送
+        </button>
+      </form>
+    </section>
+  ) : null;
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -324,6 +408,12 @@ export function App() {
       {dataSource === "mock" && (
         <div className="fixture-bar">
           <span className="fixture-label">示例：</span>
+          <button
+            className={`fixture-btn ${selectedFixtureId === CLEAN_AGENT_WORKSPACE_ID ? "active" : ""}`}
+            onClick={() => setSelectedFixtureId(CLEAN_AGENT_WORKSPACE_ID)}
+          >
+            Agent workspace
+          </button>
           {ALL_FIXTURES.map((f) => (
             <button
               key={f.id}
@@ -345,139 +435,9 @@ export function App() {
           <div className="empty-state">
             <p>正在加载实时运行...</p>
           </div>
-        ) : plan && run ? (
+        ) : (
           <div className="workspace">
             <div className="workspace-map">
-              <section className="agent-canvas-panel" aria-label="Agent Canvas">
-                <div className="agent-canvas-toolbar">
-                  <div className="agent-canvas-title">
-                    <span>Agent Canvas</span>
-                    <code>{agentNodes.length}</code>
-                  </div>
-                  <button
-                    type="button"
-                    className="agent-add-btn"
-                    onClick={() => setAgentPickerOpen((open) => !open)}
-                    aria-expanded={agentPickerOpen}
-                  >
-                    添加 Agent
-                  </button>
-                </div>
-
-                {agentPickerOpen && (
-                  <div className="agent-picker" aria-label="Agent catalog">
-                    {agents.map((agent) => {
-                      const joined = addedAgentIds.has(agent.agentId);
-                      return (
-                        <button
-                          key={agent.agentId}
-                          type="button"
-                          className="agent-picker-option"
-                          disabled={joined}
-                          onClick={() => addAgentNode(agent.agentId)}
-                        >
-                          <span className="agent-picker-name">{agent.name}</span>
-                          <code>{agent.agentId}</code>
-                          {joined && <span className="agent-picker-status">已加入</span>}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-
-                <div
-                  className="agent-canvas-board"
-                  data-testid="agent-canvas"
-                  data-state={isAgentFocused ? "focus" : "normal"}
-                  data-viewport={`${canvasViewport.x},${canvasViewport.y},${canvasViewport.scale}`}
-                >
-                  {isAgentFocused && focusedNode && focusedAgent ? (
-                    <div className="agent-focus-stage">
-                      <button
-                        type="button"
-                        className="agent-card agent-focus-card"
-                        aria-current="true"
-                      >
-                        <span className="agent-card-kicker">Agent</span>
-                        <span className="agent-card-name">{focusedAgent.name}</span>
-                        <code>{focusedAgent.agentId}</code>
-                        <span className="agent-card-description">{focusedAgent.description}</span>
-                        <span className="agent-card-binding">{formatAgentBinding(focusedAgent)}</span>
-                      </button>
-                      <section className="agent-chat-panel" aria-label={`Agent Chat Panel ${focusedAgent.name}`}>
-                        <div className="agent-chat-panel-header">
-                          <div>
-                            <span className="agent-chat-panel-kicker">Agent Chat Panel</span>
-                            <h2>{focusedAgent.name} / {focusedAgent.agentId}</h2>
-                          </div>
-                          <button type="button" className="agent-collapse-btn" onClick={collapseAgentFocus}>
-                            收起
-                          </button>
-                        </div>
-                        <div className="agent-chat-messages" aria-label="Agent messages">
-                          {focusedAgentMessages.length === 0 ? (
-                            <div className="agent-chat-empty">暂无消息</div>
-                          ) : (
-                            focusedAgentMessages.map((message, index) => (
-                              <div
-                                key={`${message.role}-${index}`}
-                                className={`agent-chat-message ${message.role}`}
-                              >
-                                <span className="agent-chat-role">{message.role === "user" ? "User" : "Agent"}</span>
-                                <p>{message.text}</p>
-                              </div>
-                            ))
-                          )}
-                          {isAgentChatPending && <div className="agent-chat-loading">发送中...</div>}
-                          {agentChatError && <div className="agent-chat-error" role="alert">{agentChatError}</div>}
-                        </div>
-                        <form
-                          className="agent-chat-composer"
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            void sendFocusedAgentMessage();
-                          }}
-                        >
-                          <label className="sr-only" htmlFor="agent-chat-input">Agent message</label>
-                          <textarea
-                            id="agent-chat-input"
-                            value={agentMessageInput}
-                            onChange={(event) => setAgentMessageInput(event.target.value)}
-                            aria-label="Agent message"
-                            rows={2}
-                          />
-                          <button
-                            type="submit"
-                            disabled={!agentMessageInput.trim() || isAgentChatPending}
-                          >
-                            发送
-                          </button>
-                        </form>
-                      </section>
-                    </div>
-                  ) : (
-                    agentNodes.map((node) => {
-                      const agent = agentsById.get(node.agentId);
-                      if (!agent) return null;
-                      return (
-                        <button
-                          key={node.nodeId}
-                          type="button"
-                          className="agent-card"
-                          style={{ left: node.position.x, top: node.position.y }}
-                          onClick={() => focusAgentNode(node)}
-                        >
-                          <span className="agent-card-kicker">Agent</span>
-                          <span className="agent-card-name">{agent.name}</span>
-                          <code>{agent.agentId}</code>
-                          <span className="agent-card-description">{agent.description}</span>
-                          <span className="agent-card-binding">{formatAgentBinding(agent)}</span>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              </section>
               <ExecutionMap
                 plan={plan}
                 run={run}
@@ -485,12 +445,16 @@ export function App() {
                 onSelectTask={selectTask}
                 attemptsByTaskId={attemptsByTaskId}
                 readAttemptFile={readAttemptFile}
+                agentNodes={agentNodes}
+                agentsById={agentsById}
+                focusedAgentNodeId={focusedNode?.nodeId ?? null}
+                onSelectAgent={focusAgentNode}
+                agentFocusPanel={focusedAgentChatPanel}
+                viewport={canvasViewport}
+                onViewportChange={setCanvasViewport}
+                toolbarStart={agentToolbar}
               />
             </div>
-          </div>
-        ) : (
-          <div className="empty-state">
-            <p>未选择运行。请选择一个运行查看执行地图。</p>
           </div>
         )}
       </main>

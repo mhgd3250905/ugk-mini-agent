@@ -7,6 +7,8 @@ interface AtlasCanvasShellProps {
   viewport?: AtlasViewport;
   defaultViewport?: AtlasViewport;
   onViewportChange?: (viewport: AtlasViewport) => void;
+  toolbarStart?: ReactNode;
+  agentFocusId?: string | null;
 }
 
 interface CanvasDragOrigin {
@@ -42,7 +44,7 @@ function pointerPoint(event: PointerEvent<HTMLDivElement>): { x: number; y: numb
   return { x, y };
 }
 
-export function AtlasCanvasShell({ children, viewport, defaultViewport = DEFAULT_VIEWPORT, onViewportChange }: AtlasCanvasShellProps) {
+export function AtlasCanvasShell({ children, viewport, defaultViewport = DEFAULT_VIEWPORT, onViewportChange, toolbarStart, agentFocusId }: AtlasCanvasShellProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const dragOriginRef = useRef<CanvasDragOrigin | null>(null);
   const [internalViewport, setInternalViewport] = useState<AtlasViewport>(defaultViewport);
@@ -146,12 +148,14 @@ export function AtlasCanvasShell({ children, viewport, defaultViewport = DEFAULT
     <div
       ref={mapContainerRef}
       className={`execution-map-container ${isPanning ? "is-panning" : ""}`}
+      data-agent-focus={agentFocusId ?? "none"}
       onPointerDown={handleCanvasPointerDown}
       onPointerMove={handleCanvasPointerMove}
       onPointerUp={endCanvasPan}
       onPointerCancel={endCanvasPan}
     >
       <div className="execution-map-toolbar" aria-label="视图工具">
+        {toolbarStart}
         <button type="button" onClick={zoomIn}>放大</button>
         <button type="button" onClick={zoomOut}>缩小</button>
         <button type="button" onClick={resetView}>重置视图</button>
