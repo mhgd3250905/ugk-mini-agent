@@ -992,6 +992,69 @@ describe("App", () => {
     expect(await screen.findByText("partial answer done")).toBeInTheDocument();
   });
 
+  it("recovers a focused stream when the primary stream closes before a terminal event", async () => {
+    vi.spyOn(MockTeamApi.prototype, "streamAgentMessage").mockImplementationOnce(async (_agentId, _request, onEvent) => {
+      onEvent({ type: "run_started", conversationId: "conv_dropped", runId: "run_dropped" });
+      onEvent({ type: "text_delta", textDelta: "partial before drop" });
+    });
+    const stateSpy = vi.spyOn(MockTeamApi.prototype, "getAgentConversationState").mockResolvedValue({
+      conversationId: "conv_dropped",
+      running: true,
+      contextUsage: mockContextUsage(),
+      messages: [],
+      viewMessages: [],
+      activeRun: {
+        runId: "run_dropped",
+        status: "running",
+        assistantMessageId: "assistant_dropped",
+        eventCursor: 4,
+        input: { message: "stream drops", inputAssets: [] },
+        text: "partial before drop",
+        process: null,
+        queue: null,
+        loading: true,
+        startedAt: "2026-05-24T00:00:00.000Z",
+        updatedAt: "2026-05-24T00:00:01.000Z",
+      },
+      historyPage: { hasMore: false, limit: 80 },
+      updatedAt: "2026-05-24T00:00:01.000Z",
+    });
+    const eventsSpy = vi.spyOn(MockTeamApi.prototype, "streamAgentConversationEvents")
+      .mockImplementation(async (_agentId, request) => {
+        await new Promise<void>((resolve) => {
+          if (request.signal?.aborted) {
+            resolve();
+            return;
+          }
+          request.signal?.addEventListener("abort", () => resolve(), { once: true });
+        });
+      });
+    const { container, unmount } = render(<App />);
+
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+      fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+      fireEvent.change(screen.getByLabelText("Agent message"), { target: { value: "stream drops" } });
+      fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+      expect(await screen.findByText("partial before drop")).toBeInTheDocument();
+      await waitFor(() => expect(stateSpy).toHaveBeenCalledWith("main", "conv_dropped", 80));
+      await waitFor(() => expect(eventsSpy).toHaveBeenCalledWith(
+        "main",
+        expect.objectContaining({
+          conversationId: "conv_dropped",
+          afterEventCursor: 4,
+          signal: expect.any(AbortSignal),
+        }),
+        expect.any(Function),
+      ));
+      expect(screen.getByRole("button", { name: "打断" })).toBeEnabled();
+    } finally {
+      unmount();
+    }
+  });
+
   it("starts a new scoped conversation from the focus topbar", async () => {
     const createSpy = vi.spyOn(
       MockTeamApi.prototype as unknown as {

@@ -893,6 +893,7 @@ export function App() {
     setAgentChatPendingAgentId(agentId);
 
     let streamConversationId = conversationId;
+    let terminalEventReceived = false;
     try {
       await api.streamAgentMessage(agentId, {
         message: outboundMessage,
@@ -902,6 +903,7 @@ export function App() {
         if ("conversationId" in event) {
           streamConversationId = event.conversationId;
         }
+        terminalEventReceived ||= isTerminalAgentChatStreamEvent(event);
         applyFocusedStreamEvent(agentId, generation, conversationId, streamConversationId, event);
       });
     } catch (e) {
@@ -910,10 +912,23 @@ export function App() {
       }
     } finally {
       if (focusLoadGenerationRef.current === generation) {
+        if (!terminalEventReceived && streamConversationId) {
+          void refreshAgentConversationState(agentId, streamConversationId, generation);
+          return;
+        }
         setAgentChatPendingAgentId((current) => current === agentId ? null : current);
       }
     }
-  }, [agentConversationIds, agentMessageInput, applyFocusedStreamEvent, createApi, focusedAgent, focusedAgentAssets, isAgentChatPending]);
+  }, [
+    agentConversationIds,
+    agentMessageInput,
+    applyFocusedStreamEvent,
+    createApi,
+    focusedAgent,
+    focusedAgentAssets,
+    isAgentChatPending,
+    refreshAgentConversationState,
+  ]);
 
   const agentToolbar = (
     <div className="agent-atlas-actions">

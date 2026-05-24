@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-24 — Team Console Agent Focus 主流断线恢复
+
+- **主题**: 修复 Agent Focus 新发送 scoped stream 在未收到 terminal event 就结束时会误清 pending 的问题。
+- **变更内容**:
+  - 主发送流记录 `done` / `error` / `interrupted` terminal event；若 stream 正常返回但没有 terminal，就刷新 scoped conversation state，并交给已有 `/chat/events` recovery 订阅继续接管。
+  - 增加回归测试覆盖 `run_started` + `text_delta` 后主 stream 断开、随后按 `activeRun.eventCursor` 订阅 scoped events 且保持打断按钮可用的路径。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/tests/app.test.tsx`, `docs/change-log.md`
+- **测试**: 本轮最终验证见交付报告。
+
+---
+
 ## 2026-05-24 — Team Console Agent Focus active run 恢复
 
 - **主题**: 修复 Agent Focus 打开已有 running scoped conversation 时只显示 pending、不会恢复 active run 流的问题。
