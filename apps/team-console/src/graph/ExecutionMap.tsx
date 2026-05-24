@@ -1,4 +1,4 @@
-import { useMemo, useLayoutEffect, useRef, useState, useCallback, type ReactNode } from "react";
+import { useMemo, useLayoutEffect, useRef, useState, useCallback, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { AgentSummary, RunDetail, TeamPlan, TaskStatus, TeamAttemptMetadata, TeamTaskState } from "../api/team-types";
 import type { ExecutionNode, NodeKind } from "./execution-map-model";
 import { buildExecutionMapModel, CHILD_COLLAPSE_THRESHOLD } from "./execution-map-model";
@@ -31,6 +31,8 @@ interface ExecutionMapProps {
   agentsById?: Map<string, AgentSummary>;
   focusedAgentNodeId?: string | null;
   onSelectAgent?: (node: AtlasAgentNode) => void;
+  onMoveAgent?: (nodeId: string, position: { x: number; y: number }) => void;
+  canMoveAgents?: boolean;
   agentFocusPanel?: ReactNode;
   viewport?: AtlasViewport;
   onViewportChange?: (viewport: AtlasViewport) => void;
@@ -56,6 +58,7 @@ const AGENT_NODE_HEIGHT = 112;
 const AGENT_FOCUS_PANEL_WIDTH = 520;
 const AGENT_FOCUS_PANEL_HEIGHT = 300;
 const AGENT_FOCUS_PANEL_GAP = 18;
+const AGENT_DRAG_THRESHOLD = 4;
 type EvidenceKind = "result" | "error" | "attempt" | "progress" | "worker" | "checker" | "watcher";
 
 interface EvidenceEntry {
@@ -73,6 +76,15 @@ type ArtifactPreviewState =
   | { status: "loading"; fileName: string }
   | { status: "loaded"; fileName: string; content: string }
   | { status: "error"; fileName: string; message: string };
+
+type AgentDragState = {
+  nodeId: string;
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  startPosition: { x: number; y: number };
+  hasMoved: boolean;
+};
 
 function evidenceHeight(kind: EvidenceKind): number {
   switch (kind) {
@@ -356,6 +368,8 @@ export function ExecutionMap({
   agentsById,
   focusedAgentNodeId,
   onSelectAgent,
+  onMoveAgent,
+  canMoveAgents = true,
   agentFocusPanel,
   viewport,
   onViewportChange,
@@ -369,6 +383,8 @@ export function ExecutionMap({
   const [artifactPreviewState, setArtifactPreviewState] = useState<Record<string, ArtifactPreviewState>>({});
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
   const prevSelectionRef = useRef<string | null>(null);
+  const agentDragRef = useRef<AgentDragState | null>(null);
+  const suppressAgentClickRef = useRef<string | null>(null);
 
   if (prevSelectionRef.current !== selectedTaskId) {
     prevSelectionRef.current = selectedTaskId;
@@ -636,6 +652,75 @@ export function ExecutionMap({
       });
   }, [artifactPreviewState, readAttemptFile, run, selectedArtifactId, selectedTaskId]);
 
+  const handleAgentPointerDown = useCallback((node: AtlasAgentNode, event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if ((event.button ?? 0) !== 0 || !canMoveAgents || !onMoveAgent) return;
+    agentDragRef.current = {
+      nodeId: node.nodeId,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startPosition: node.position,
+      hasMoved: false,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }, [canMoveAgents, onMoveAgent]);
+
+  const handleAgentPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = agentDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !onMoveAgent) return;
+    event.stopPropagation();
+    const dx = event.clientX - drag.startClientX;
+    const dy = event.clientY - drag.startClientY;
+    const hasMoved = drag.hasMoved || Math.hypot(dx, dy) >= AGENT_DRAG_THRESHOLD;
+    if (!hasMoved) return;
+
+    const scale = viewport && Number.isFinite(viewport.scale) && viewport.scale > 0
+      ? viewport.scale
+      : 1;
+    agentDragRef.current = { ...drag, hasMoved };
+    onMoveAgent(drag.nodeId, {
+      x: drag.startPosition.x + dx / scale,
+      y: drag.startPosition.y + dy / scale,
+    });
+  }, [onMoveAgent, viewport]);
+
+  const suppressNextAgentClick = useCallback((nodeId: string) => {
+    suppressAgentClickRef.current = nodeId;
+    globalThis.setTimeout(() => {
+      if (suppressAgentClickRef.current === nodeId) {
+        suppressAgentClickRef.current = null;
+      }
+    }, 0);
+  }, []);
+
+  const endAgentPointer = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = agentDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.stopPropagation();
+    agentDragRef.current = null;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+
+    if (drag.hasMoved) {
+      suppressNextAgentClick(drag.nodeId);
+      return;
+    }
+
+    const node = agentNodes.find((candidate) => candidate.nodeId === drag.nodeId);
+    if (node) {
+      suppressNextAgentClick(drag.nodeId);
+      onSelectAgent?.(node);
+    }
+  }, [agentNodes, onSelectAgent, suppressNextAgentClick]);
+
+  const handleAgentClick = useCallback((node: AtlasAgentNode) => {
+    if (suppressAgentClickRef.current === node.nodeId) {
+      suppressAgentClickRef.current = null;
+      return;
+    }
+    onSelectAgent?.(node);
+  }, [onSelectAgent]);
+
   const allNodes: RenderNode[] = model ? model.mainTasks.flatMap((t) => {
     const result: RenderNode[] = [t];
     const isExpanded = expandedTaskIds.has(t.taskId);
@@ -787,7 +872,11 @@ export function ExecutionMap({
                 data-kind="agent"
                 data-agent-id={agent.agentId}
                 style={{ left: node.position.x, top: node.position.y, width: NODE_WIDTH, height: AGENT_NODE_HEIGHT }}
-                onClick={() => onSelectAgent?.(node)}
+                onPointerDown={(event) => handleAgentPointerDown(node, event)}
+                onPointerMove={handleAgentPointerMove}
+                onPointerUp={endAgentPointer}
+                onPointerCancel={endAgentPointer}
+                onClick={() => handleAgentClick(node)}
               >
                 <div className="emap-node-status-bar" />
                 <div className="emap-node-content">

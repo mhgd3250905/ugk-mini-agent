@@ -101,7 +101,9 @@ describe("App", () => {
     expect(within(atlasNodes).getByText("主 Agent")).toBeInTheDocument();
     expect(within(atlasNodes).getByText("main")).toBeInTheDocument();
     expect(container.querySelector(".agent-canvas-board")).toBeNull();
+    expect(screen.queryByRole("button", { name: /主 Agent[\s\S]*已加入/ })).toBeNull();
 
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     const joinedOption = screen.getByRole("button", { name: /主 Agent[\s\S]*已加入/ });
     expect(joinedOption).toBeDisabled();
 
@@ -114,6 +116,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(screen.getByRole("button", { name: /搜索 Agent[\s\S]*search/ }));
 
     const atlas = getAtlas(container);
@@ -186,6 +189,69 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "重置视图" }));
     fireEvent.click(screen.getByRole("button", { name: "放大" }));
     expect(stage.style.transform).toContain("scale(1.1)");
+  });
+
+  it("drags an agent card by world coordinates without opening focus", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(screen.getByRole("button", { name: "放大" }));
+
+    const atlas = getAtlas(container);
+    const agentNode = within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }) as HTMLElement;
+    const initialLeft = Number.parseFloat(agentNode.style.left);
+    const initialTop = Number.parseFloat(agentNode.style.top);
+
+    firePointer(agentNode, "pointerdown", { pointerId: 7, clientX: 100, clientY: 100 });
+    firePointer(agentNode, "pointermove", { pointerId: 7, clientX: 155, clientY: 133 });
+    firePointer(agentNode, "pointerup", { pointerId: 7, clientX: 155, clientY: 133, buttons: 0 });
+    fireEvent.click(agentNode);
+
+    expect(Number.parseFloat(agentNode.style.left)).toBeCloseTo(initialLeft + 50, 4);
+    expect(Number.parseFloat(agentNode.style.top)).toBeCloseTo(initialTop + 30, 4);
+    expect(atlas).toHaveAttribute("data-agent-focus", "none");
+    expect(screen.queryByText("Agent Chat Panel")).toBeNull();
+  });
+
+  it("allows a later click to focus an agent after a drag gesture", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+    const agentNode = within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }) as HTMLElement;
+
+    firePointer(agentNode, "pointerdown", { pointerId: 9, clientX: 100, clientY: 100 });
+    firePointer(agentNode, "pointermove", { pointerId: 9, clientX: 150, clientY: 130 });
+    firePointer(agentNode, "pointerup", { pointerId: 9, clientX: 150, clientY: 130, buttons: 0 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    fireEvent.click(agentNode);
+
+    expect(getAtlas(container)).toHaveAttribute("data-agent-focus", "main");
+    expect(screen.getByText("Agent Chat Panel")).toBeInTheDocument();
+  });
+
+  it("does not move agent cards while focus mode is locked", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+    const agentNode = within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }) as HTMLElement;
+    fireEvent.click(agentNode);
+
+    const focusedLeft = agentNode.style.left;
+    const focusedTop = agentNode.style.top;
+    expect(getAtlas(container)).toHaveAttribute("data-interaction-mode", "locked");
+
+    firePointer(agentNode, "pointerdown", { pointerId: 8, clientX: 100, clientY: 100 });
+    firePointer(agentNode, "pointermove", { pointerId: 8, clientX: 180, clientY: 144 });
+    firePointer(agentNode, "pointerup", { pointerId: 8, clientX: 180, clientY: 144, buttons: 0 });
+
+    expect(agentNode.style.left).toBe(focusedLeft);
+    expect(agentNode.style.top).toBe(focusedTop);
   });
 
   it("sends a message from the focused agent panel", async () => {

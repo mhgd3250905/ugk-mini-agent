@@ -675,6 +675,12 @@
   background:
     linear-gradient(180deg, rgba(121, 216, 208, 0.11), transparent 40%),
     var(--surface-raised);
+  cursor: grab;
+  touch-action: none;
+}
+
+.emap-agent-node:active {
+  cursor: grabbing;
 }
 
 .emap-agent-node .emap-node-content {

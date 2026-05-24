@@ -239,6 +239,13 @@ export function App() {
         },
       ];
     });
+    setAgentPickerOpen(false);
+  }, []);
+
+  const moveAgentNode = useCallback((nodeId: string, position: { x: number; y: number }) => {
+    setAgentNodes((current) => current.map((node) => (
+      node.nodeId === nodeId ? { ...node, position } : node
+    )));
   }, []);
 
   const focusAgentNode = useCallback((node: AtlasAgentNode) => {
@@ -461,6 +468,8 @@ export function App() {
                 agentsById={agentsById}
                 focusedAgentNodeId={focusedNode?.nodeId ?? null}
                 onSelectAgent={focusAgentNode}
+                onMoveAgent={moveAgentNode}
+                canMoveAgents={!agentFocus}
                 agentFocusPanel={focusedAgentChatPanel}
                 viewport={canvasViewport}
                 onViewportChange={setCanvasViewport}
