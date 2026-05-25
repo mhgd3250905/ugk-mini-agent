@@ -7,6 +7,7 @@ import type {
 	AttemptStatus,
 	TeamAttemptCheckerSummary,
 	TeamAttemptMetadata,
+	TeamAttemptRoleProcess,
 	TeamAttemptWatcherSummary,
 	TeamAttemptWorkerSummary,
 	TeamDiscoveryResultRecord,
@@ -75,6 +76,17 @@ export class RunAttemptStore {
 	async recordAttemptWatcherResult(runId: string, taskId: string, attemptId: string, summary: TeamAttemptWatcherSummary): Promise<void> {
 		await this.mutateAttempt(runId, taskId, attemptId, (attempt) => {
 			attempt.watcher = summary;
+			attempt.updatedAt = now();
+			return attempt;
+		});
+	}
+
+	async recordAttemptRoleProcess(runId: string, taskId: string, attemptId: string, process: TeamAttemptRoleProcess): Promise<void> {
+		await this.mutateAttempt(runId, taskId, attemptId, (attempt) => {
+			attempt.roleProcesses = {
+				...(attempt.roleProcesses ?? {}),
+				[process.role]: process,
+			};
 			attempt.updatedAt = now();
 			return attempt;
 		});
@@ -220,6 +232,7 @@ export class RunAttemptStore {
 		const phase: AttemptLifecyclePhase = validPhases.includes(rawPhase as AttemptLifecyclePhase) ? (rawPhase as AttemptLifecyclePhase) : phaseFallback;
 		const createdAt = (raw.createdAt as string) || "";
 		const updatedAt = (raw.updatedAt as string) || createdAt;
+		const roleProcesses = this.normalizeRoleProcesses(raw.roleProcesses);
 		return {
 			attemptId: (raw.attemptId as string) || fallbackAttemptId,
 			taskId: (raw.taskId as string) || fallbackTaskId,
@@ -233,6 +246,39 @@ export class RunAttemptStore {
 			watcher: raw.watcher && typeof raw.watcher === "object" && !Array.isArray(raw.watcher) ? raw.watcher as TeamAttemptMetadata["watcher"] : null,
 			resultRef: (raw.resultRef as string | null) ?? null,
 			errorSummary: (raw.errorSummary as string | null) ?? null,
+			...(roleProcesses ? { roleProcesses } : {}),
+		};
+	}
+
+	private normalizeRoleProcesses(raw: unknown): TeamAttemptMetadata["roleProcesses"] | undefined {
+		if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+		const processes = raw as Record<string, unknown>;
+		const worker = this.normalizeRoleProcess("worker", processes.worker);
+		const checker = this.normalizeRoleProcess("checker", processes.checker);
+		if (!worker && !checker) return undefined;
+		return {
+			...(worker ? { worker } : {}),
+			...(checker ? { checker } : {}),
+		};
+	}
+
+	private normalizeRoleProcess(role: "worker" | "checker", raw: unknown): TeamAttemptRoleProcess | undefined {
+		if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+		const value = raw as Record<string, unknown>;
+		const status = value.status;
+		if (status !== "waiting" && status !== "running" && status !== "succeeded" && status !== "failed" && status !== "cancelled") {
+			return undefined;
+		}
+		return {
+			role,
+			profileId: typeof value.profileId === "string" ? value.profileId : "",
+			status,
+			startedAt: typeof value.startedAt === "string" ? value.startedAt : null,
+			updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : null,
+			finishedAt: typeof value.finishedAt === "string" ? value.finishedAt : null,
+			process: value.process && typeof value.process === "object" && !Array.isArray(value.process)
+				? value.process as TeamAttemptRoleProcess["process"]
+				: null,
 		};
 	}
 

@@ -255,6 +255,61 @@ test("listAttempts reads old format attempt.json with defaults", async () => {
 		assert.equal(a.watcher, null);
 		assert.equal(a.resultRef, null);
 		assert.equal(a.errorSummary, null);
+		assert.equal("roleProcesses" in a, false);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("recordAttemptRoleProcess persists worker/checker process snapshots", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ws-"));
+	try {
+		const ws = new RunWorkspace(root);
+		const state = await ws.createRun(plan, "team_1");
+		const { attemptId } = await ws.createAttempt(state.runId, "task_1");
+
+		await ws.recordAttemptRoleProcess(state.runId, "task_1", attemptId, {
+			role: "worker",
+			profileId: "search",
+			status: "running",
+			startedAt: "2026-05-25T00:00:00.000Z",
+			updatedAt: "2026-05-25T00:00:00.100Z",
+			finishedAt: null,
+			process: {
+				title: "Worker process",
+				narration: ["工具开始 · x-search"],
+				currentAction: "工具开始 · x-search",
+				kind: "tool",
+				isComplete: false,
+				entries: [{
+					id: "process-1",
+					kind: "tool",
+					title: "工具开始",
+					detail: "{\"q\":\"github trending\"}",
+					createdAt: "2026-05-25T00:00:00.050Z",
+					toolCallId: "tool_1",
+					toolName: "x-search",
+				}],
+			},
+		});
+		await ws.recordAttemptRoleProcess(state.runId, "task_1", attemptId, {
+			role: "checker",
+			profileId: "main",
+			status: "waiting",
+			startedAt: null,
+			updatedAt: "2026-05-25T00:00:00.100Z",
+			finishedAt: null,
+			process: null,
+		});
+
+		const attempts = await ws.listAttempts(state.runId, "task_1");
+		const roleProcesses = attempts[0]!.roleProcesses;
+		assert.equal(roleProcesses?.worker?.profileId, "search");
+		assert.equal(roleProcesses?.worker?.status, "running");
+		assert.equal(roleProcesses?.worker?.process?.entries[0]?.toolName, "x-search");
+		assert.equal(roleProcesses?.checker?.profileId, "main");
+		assert.equal(roleProcesses?.checker?.status, "waiting");
+		assert.equal(roleProcesses?.checker?.process, null);
 	} finally {
 		await rm(root, { recursive: true });
 	}

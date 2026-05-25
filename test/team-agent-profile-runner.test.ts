@@ -130,6 +130,54 @@ test("AgentProfileRoleRunner runWorker returns content", async () => {
 	}
 });
 
+test("AgentProfileRoleRunner forwards raw worker session events", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ap-runner-"));
+	try {
+		const forwarded: unknown[] = [];
+		let unsubscribed = false;
+		const sessionFactory = {
+			createSession: async () => {
+				let listener: ((event: unknown) => void) | undefined;
+				return {
+					prompt: async () => {
+						listener?.({ type: "tool_execution_start", toolCallId: "tool_1", toolName: "x-search", args: { q: "test" } });
+					},
+					subscribe: (next: (event: unknown) => void) => {
+						listener = next;
+						return () => { unsubscribed = true; };
+					},
+					messages: [{ role: "assistant", content: [{ type: "text", text: "任务执行完毕" }], stopReason: "end_turn" }],
+				};
+			},
+		};
+		const runner: TeamRoleRunner = new AgentProfileRoleRunner({
+			projectRoot: root,
+			teamDataDir: root,
+			watcherProfileId: "w",
+			workerProfileId: "wo",
+			checkerProfileId: "c",
+			finalizerProfileId: "f",
+			profileResolver: fakeProfileResolver as never,
+			sessionFactory: sessionFactory as unknown as BackgroundAgentSessionFactory,
+		});
+
+		await runner.runWorker({
+			runId: "run_test_events",
+			task: { id: "task_1", title: "测试任务", input: { text: "完成某事" }, acceptance: { rules: ["完成"] } },
+			attemptId: "att_1",
+			workDir: join(root, "work"),
+			outputDir: join(root, "output"),
+			acceptanceRules: ["完成"],
+			onSessionEvent: (event: unknown) => forwarded.push(event),
+		});
+
+		assert.equal((forwarded[0] as { type?: string }).type, "tool_execution_start");
+		assert.equal(unsubscribed, true);
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
 test("AgentProfileRoleRunner runChecker parses pass JSON", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-ap-runner-"));
 	try {
