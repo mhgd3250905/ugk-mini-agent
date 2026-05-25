@@ -6,6 +6,7 @@ import { progressMessages } from "./progress.js";
 import { runWithTimeout } from "./task-attempt-runner.js";
 import { validateTeamOutput } from "./output-validator.js";
 import { writeTimingSpan } from "./timing.js";
+import { TeamRoleProcessRecorder } from "./task-run-process-recorder.js";
 import type { ProfileAwareTeamRoleRunner, TeamRoleRunner, WorkerOutput, CheckerOutput } from "./role-runner.js";
 import type { TeamCanvasTask, TeamOutputValidationResult, TeamPlan, TeamRunState, TeamTask } from "./types.js";
 
@@ -72,6 +73,7 @@ function isAbortLike(error: unknown): boolean {
 
 export class CanvasTaskRunService {
 	private readonly activeControllers = new Map<string, AbortController>();
+	private readonly activeRoleRecorders = new Map<string, Set<TeamRoleProcessRecorder>>();
 	private readonly maxCheckerRevisions: number;
 	private readonly phaseTimeouts: { workerMs: number; checkerMs: number };
 
@@ -127,6 +129,7 @@ export class CanvasTaskRunService {
 		state.lastError = reason;
 		state.activeElapsedMs = this.accumulateElapsed(state);
 		state.lease = null;
+		await this.cancelActiveRoleProcesses(runId, reason);
 		for (const [taskId, taskState] of Object.entries(state.taskStates)) {
 			if (taskState.status === "pending" || taskState.status === "running" || taskState.status === "interrupted") {
 				taskState.status = "cancelled";
@@ -193,7 +196,7 @@ export class CanvasTaskRunService {
 				latest.summary = computeTeamRunSummary(latest.taskStates);
 			});
 
-			await this.runWorkerCheckerLoop(state, task, attemptId, attemptRoot, roleRunner, signal);
+			await this.runWorkerCheckerLoop(state, task, attemptId, attemptRoot, roleRunner, signal, canvasTask);
 		} catch (error) {
 			const current = await this.getRun(runId);
 			if (current && current.status === "cancelled") return;
@@ -225,11 +228,12 @@ export class CanvasTaskRunService {
 		attemptRoot: string,
 		roleRunner: TeamRoleRunner,
 		signal: AbortSignal,
+		canvasTask: TeamCanvasTask,
 	): Promise<void> {
 		let feedback: string | undefined;
 		for (let revisionIndex = 1; revisionIndex <= this.maxCheckerRevisions; revisionIndex++) {
 			this.throwIfAborted(signal);
-			const workerOut = await this.runWorker(state.runId, task, attemptId, attemptRoot, revisionIndex, feedback, roleRunner, signal);
+			const workerOut = await this.runWorker(state.runId, task, attemptId, attemptRoot, revisionIndex, feedback, roleRunner, signal, canvasTask.workUnit.workerAgentId);
 			this.throwIfAborted(signal);
 			const workerRef = await this.options.workspace.writeWorkerOutput(state.runId, task.id, attemptId, revisionIndex, workerOut.content);
 			await this.options.workspace.recordAttemptWorkerOutput(state.runId, task.id, attemptId, {
@@ -248,7 +252,7 @@ export class CanvasTaskRunService {
 			});
 
 			await this.markTaskProgress(state.runId, task.id, "checker_reviewing", progressMessages.checker_reviewing);
-			const checkerOut = await this.runChecker(state.runId, task, attemptId, workerRef, workerValidation, roleRunner, signal);
+			const checkerOut = await this.runChecker(state.runId, task, attemptId, workerRef, workerValidation, roleRunner, signal, canvasTask.workUnit.checkerAgentId);
 			this.throwIfAborted(signal);
 			await this.recordCheckerResult(state.runId, task.id, attemptId, revisionIndex, checkerOut);
 
@@ -300,11 +304,14 @@ export class CanvasTaskRunService {
 		feedback: string | undefined,
 		roleRunner: TeamRoleRunner,
 		signal: AbortSignal,
+		profileId: string,
 	): Promise<WorkerOutput> {
 		await this.options.workspace.updateAttemptPhase(runId, task.id, attemptId, "worker_running");
 		const started = new Date();
+		const recorder = this.createRoleProcessRecorder(runId, task.id, attemptId, "worker", profileId);
 		try {
-			return await runWithTimeout("worker", this.phaseTimeouts.workerMs, signal, async (localSignal) => roleRunner.runWorker({
+			await recorder.start();
+			const output = await runWithTimeout("worker", this.phaseTimeouts.workerMs, signal, async (localSignal) => roleRunner.runWorker({
 				runId,
 				task,
 				attemptId,
@@ -313,8 +320,20 @@ export class CanvasTaskRunService {
 				acceptanceRules: task.acceptance.rules,
 				feedback,
 				signal: localSignal,
+				onSessionEvent: (event) => recorder.handleRawEvent(event),
 			}));
+			await recorder.succeed();
+			return output;
+		} catch (error) {
+			if (isAbortLike(error)) {
+				await recorder.cancel("run cancelled");
+			} else {
+				await recorder.fail(error instanceof Error ? error.message : String(error));
+			}
+			throw error;
 		} finally {
+			await recorder.flush().catch(() => {});
+			this.releaseRoleProcessRecorder(runId, recorder);
 			const finished = new Date();
 			await writeTimingSpan(this.options.dataDir, {
 				runId,
@@ -336,11 +355,14 @@ export class CanvasTaskRunService {
 		outputValidation: TeamOutputValidationResult,
 		roleRunner: TeamRoleRunner,
 		signal: AbortSignal,
+		profileId: string,
 	): Promise<CheckerOutput> {
 		await this.options.workspace.updateAttemptPhase(runId, task.id, attemptId, "checker_reviewing");
 		const started = new Date();
+		const recorder = this.createRoleProcessRecorder(runId, task.id, attemptId, "checker", profileId);
 		try {
-			return await runWithTimeout("checker", this.phaseTimeouts.checkerMs, signal, async (localSignal) => roleRunner.runChecker({
+			await recorder.start();
+			const output = await runWithTimeout("checker", this.phaseTimeouts.checkerMs, signal, async (localSignal) => roleRunner.runChecker({
 				runId,
 				task,
 				attemptId,
@@ -348,8 +370,20 @@ export class CanvasTaskRunService {
 				acceptanceRules: task.acceptance.rules,
 				outputValidation,
 				signal: localSignal,
+				onSessionEvent: (event) => recorder.handleRawEvent(event),
 			}));
+			await recorder.succeed();
+			return output;
+		} catch (error) {
+			if (isAbortLike(error)) {
+				await recorder.cancel("run cancelled");
+			} else {
+				await recorder.fail(error instanceof Error ? error.message : String(error));
+			}
+			throw error;
 		} finally {
+			await recorder.flush().catch(() => {});
+			this.releaseRoleProcessRecorder(runId, recorder);
 			const finished = new Date();
 			await writeTimingSpan(this.options.dataDir, {
 				runId,
@@ -437,6 +471,7 @@ export class CanvasTaskRunService {
 
 	private async failRun(runId: string, message: string): Promise<void> {
 		const timestamp = now();
+		await this.failActiveRoleProcesses(runId, message);
 		await this.options.workspace.patchState(runId, async (state) => {
 			for (const [taskId, taskState] of Object.entries(state.taskStates)) {
 				if (taskState.status === "pending" || taskState.status === "running" || taskState.status === "interrupted") {
@@ -471,5 +506,45 @@ export class CanvasTaskRunService {
 	private throwIfAborted(signal: AbortSignal): void {
 		if (!signal.aborted) return;
 		throw signal.reason instanceof Error ? signal.reason : new Error("run cancelled");
+	}
+
+	private createRoleProcessRecorder(
+		runId: string,
+		taskId: string,
+		attemptId: string,
+		role: "worker" | "checker",
+		profileId: string,
+	): TeamRoleProcessRecorder {
+		const recorder = new TeamRoleProcessRecorder({
+			workspace: this.options.workspace,
+			runId,
+			taskId,
+			attemptId,
+			role,
+			profileId,
+		});
+		const recorders = this.activeRoleRecorders.get(runId) ?? new Set<TeamRoleProcessRecorder>();
+		recorders.add(recorder);
+		this.activeRoleRecorders.set(runId, recorders);
+		return recorder;
+	}
+
+	private releaseRoleProcessRecorder(runId: string, recorder: TeamRoleProcessRecorder): void {
+		const recorders = this.activeRoleRecorders.get(runId);
+		if (!recorders) return;
+		recorders.delete(recorder);
+		if (recorders.size === 0) {
+			this.activeRoleRecorders.delete(runId);
+		}
+	}
+
+	private async cancelActiveRoleProcesses(runId: string, reason: string): Promise<void> {
+		const recorders = [...(this.activeRoleRecorders.get(runId) ?? [])];
+		await Promise.all(recorders.map((recorder) => recorder.cancel(reason).catch(() => {})));
+	}
+
+	private async failActiveRoleProcesses(runId: string, message: string): Promise<void> {
+		const recorders = [...(this.activeRoleRecorders.get(runId) ?? [])];
+		await Promise.all(recorders.map((recorder) => recorder.fail(message).catch(() => {})));
 	}
 }

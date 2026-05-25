@@ -1,4 +1,5 @@
 import type { TeamTask, TeamPlan, TeamRoleRuntimeContext, TeamOutputValidationResult } from "./types.js";
+import type { RawAgentSessionEventLike } from "../agent/agent-session-factory.js";
 
 export interface WorkerInput {
 	runId: string;
@@ -9,6 +10,7 @@ export interface WorkerInput {
 	acceptanceRules: string[];
 	feedback?: string;
 	signal?: AbortSignal;
+	onSessionEvent?: (event: RawAgentSessionEventLike) => void;
 }
 
 export interface WorkerOutput {
@@ -25,6 +27,7 @@ export interface CheckerInput {
 	acceptanceRules: string[];
 	outputValidation?: TeamOutputValidationResult;
 	signal?: AbortSignal;
+	onSessionEvent?: (event: RawAgentSessionEventLike) => void;
 }
 
 export interface CheckerOutput {

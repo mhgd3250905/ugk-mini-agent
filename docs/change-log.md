@@ -12,6 +12,16 @@
 
 ---
 
+## 2026-05-25 — Team Canvas Task run 过程观测
+
+- **主题**: 让 Canvas Task run 的 worker/checker Agent 执行过程通过现有 attempts API 暴露给 Team Console。
+- **变更内容**:
+  - `AgentProfileRoleRunner` 转发底层 `AgentSessionLike.subscribe()` raw session events；Canvas Task run 复用主 chat 的 session event adapter 和 active run process 投影生成 `ChatProcessBody`。
+  - 扩展 attempt metadata，新增可选 `roleProcesses.worker` / `roleProcesses.checker`，通过 `GET /v1/team/task-runs/:runId/tasks/:taskId/attempts` 返回。
+  - role process 写盘按 role start、tool start/end、完成/失败/取消立即 flush，高频 update/text/heartbeat 按 300-500ms 节流合并，并截断超长 entry detail。
+- **影响范围**: `src/team/task-run-process-recorder.ts`, `src/team/task-run-service.ts`, `src/team/run-workspace-attempts.ts`, `src/team/run-workspace.ts`, `src/team/agent-profile-role-runner.ts`, `src/team/role-runner.ts`, `src/team/types.ts`, `test/team-task-run-process.test.ts`, `test/team-task-run-routes.test.ts`, `test/team-run-workspace.test.ts`, `test/team-agent-profile-runner.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未新增 SSE，未新造 Team 专属 tool log schema，未改 `.pi/skills/**`，未改 Plan run 行为，旧 attempt metadata 无 `roleProcesses` 时继续兼容。
+
 ## 2026-05-25 — Team Canvas Task run 后端契约
 
 - **主题**: 新增独立 Canvas Task run API，让 Team Console 可以直接运行 Task 内部 WorkUnit。

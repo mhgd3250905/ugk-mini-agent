@@ -1,3 +1,5 @@
+import type { ChatProcessBody } from "../types/api.js";
+
 export type RunStatus = "queued" | "running" | "paused" | "completed" | "completed_with_failures" | "failed" | "cancelled";
 export type TaskStatus = "pending" | "running" | "interrupted" | "succeeded" | "failed" | "cancelled" | "skipped";
 export type TaskManualDisposition = "default" | "skip" | "force_rerun";
@@ -55,6 +57,18 @@ export interface TeamRoleRuntimeContext {
 	browserScope: string;
 }
 
+export type TeamAttemptRoleProcessStatus = "waiting" | "running" | "succeeded" | "failed" | "cancelled";
+
+export interface TeamAttemptRoleProcess {
+	role: "worker" | "checker";
+	profileId: string;
+	status: TeamAttemptRoleProcessStatus;
+	startedAt: string | null;
+	updatedAt: string | null;
+	finishedAt: string | null;
+	process: ChatProcessBody | null;
+}
+
 export interface TeamAttemptMetadata {
 	attemptId: string;
 	taskId: string;
@@ -68,6 +82,10 @@ export interface TeamAttemptMetadata {
 	watcher: TeamAttemptWatcherSummary | null;
 	resultRef: string | null;
 	errorSummary: string | null;
+	roleProcesses?: {
+		worker?: TeamAttemptRoleProcess;
+		checker?: TeamAttemptRoleProcess;
+	};
 }
 export type CheckerVerdict = "pass" | "revise" | "fail";
 export type WatcherDecision = "accept_task" | "confirm_failed" | "request_revision";

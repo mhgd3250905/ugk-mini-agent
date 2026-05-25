@@ -16,6 +16,7 @@
 - 最新验证：P26 output contract validation 已覆盖 deterministic validator、真实 orchestrator regression、`npm run test:team` 和 `npx tsc --noEmit`
 - Team Task 后端契约已建立：`Task` 是 Team Console 画布上的独立最小编排节点，内部包含一个 `workUnit`，不复用 `Plan tasks.length === 1`；`leaderAgentId` 负责运行前和用户澄清边界并维护 WorkUnit 草案，`workerAgentId` / `checkerAgentId` 分别代表未来真实执行和验收 Agent。主项目新增 `/v1/team/tasks` REST API 和 `.pi/skills/team-task-creator/SKILL.md`；skill 只能在 `/team-task` 显式触发后创建 / 更新 Task draft，必须先展示完整 Task JSON 并等待确认，不启动 run，不解析 iframe 聊天文本，不修改 Agent profile、模型、browser binding 或技能安装逻辑。
 - Canvas Task run 后端契约已建立：`POST /v1/team/tasks/:taskId/runs` 会为 ready Task 启动独立 worker → checker run，存储在 `.data/team/task-runs`，不写入 PlanStore，不出现在 `/v1/team/runs`，也不修改 Task 定义。
+- Canvas Task run 过程观测已接入：worker/checker 的 Agent session raw events 复用主 chat 的 `createAgentSessionEventAdapter()` 和 `applyChatStreamEventToActiveRunView()` 投影为 `ChatProcessBody`，写入 attempt metadata 的 `roleProcesses.worker` / `roleProcesses.checker`，前端通过现有 attempts API 轮询读取。
 
 ## 核心概念
 
@@ -69,6 +70,11 @@ Canvas Task Run 是 Task 的独立运行轨道，不是 Plan run 的别名。后
 - 第一版不启动 watcher/finalizer，不支持 pause/resume/rerun
 - active run 可用 `POST /v1/team/task-runs/:runId/cancel` 停止
 - worker/checker attempt metadata 和输出文件复用 `RunWorkspace` 的 attempt 结构，只是 rootDir 指向 `task-runs`
+- worker/checker 过程观测不新造 Team 专属 tool log schema：`AgentSessionLike.subscribe()` 原始事件先经 `createAgentSessionEventAdapter()` 转成 `ChatStreamEvent`，再经 `applyChatStreamEventToActiveRunView()` 得到和主聊天一致的 `ChatProcessBody`
+- attempt metadata 可包含 `roleProcesses.worker` / `roleProcesses.checker`，每个 role process 记录 `role`、`profileId`、`status`、`startedAt`、`updatedAt`、`finishedAt` 和 `process`
+- role process 写盘策略：role start、`tool_started`、`tool_finished`、completion/failure/cancel 立即 flush；`tool_updated`、`text_delta`、heartbeat 等高频事件按 300-500ms 节流合并；completion/failure/cancel 前必须 flush 最新状态
+- 单条 process entry 的 `detail` 持久化前截断到约 8,000 字符并追加 `...[truncated]`，长输出继续以 attempt 文件为准
+- 旧 attempt metadata 没有 `roleProcesses` 时继续按旧结构返回，不需要迁移
 
 ### TeamUnit
 
@@ -440,7 +446,7 @@ run 内相对路径，指向 accepted 或 failed 结果文件。格式如 `tasks
 | POST | `/v1/team/tasks/:taskId/runs` | 启动某个 ready Canvas Task 的 worker → checker run |
 | GET | `/v1/team/task-runs/:runId` | 读取独立 Task run 状态 |
 | POST | `/v1/team/task-runs/:runId/cancel` | 取消 active Task run |
-| GET | `/v1/team/task-runs/:runId/tasks/:taskId/attempts` | 读取 Task run 的 attempt metadata |
+| GET | `/v1/team/task-runs/:runId/tasks/:taskId/attempts` | 读取 Task run 的 attempt metadata，包含可选 `roleProcesses.worker` / `roleProcesses.checker` |
 | GET | `/v1/team/task-runs/:runId/tasks/:taskId/attempts/:attemptId/files/:fileName` | 读取 Task run 的 attempt 文件 |
 
 `POST /v1/team/tasks` 仍只创建 Task draft，不会创建 Plan，也不会自动启动 worker/checker。Task run 必须显式调用 `POST /v1/team/tasks/:taskId/runs`；Task run 存在 `.data/team/task-runs`，不进入 Plan run API。
@@ -835,6 +841,7 @@ docker compose up -d --scale ugk-pi-team-worker=2  # 多 worker 验证
 | `src/team/task-store.ts` | Team Canvas Task 持久化：`.data/team/tasks/<taskId>.json`、旧字段兼容、归档过滤 |
 | `src/team/task-validation.ts` | Task create/update schema policy：leader / worker / checker Agent、WorkUnit 输入 / 输出契约 / 验收规则校验 |
 | `src/team/task-run-service.ts` | Canvas Task 独立 run service：ready 校验、worker → checker 执行、task-runs 工作区、cancel |
+| `src/team/task-run-process-recorder.ts` | Canvas Task role process recorder：复用主 chat process 投影、节流写入 attempt `roleProcesses`、取消 / 失败 / 完成 flush |
 | `src/team/plan-store.ts` | Plan 持久化和 runCount 不变式 |
 | `src/team/plan-validation.ts` | Plan create/update schema policy：task type、decomposer、for_each、outputCheck 校验 |
 | `src/team/config-locks.ts` | 活跃 run 对 Plan / TeamUnit / AgentProfile 的锁计算 |

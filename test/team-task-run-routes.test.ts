@@ -92,6 +92,12 @@ test("POST /v1/team/tasks/:taskId/runs executes a Canvas Task without creating a
 		assert.equal(attempts[0].worker.length, 1);
 		assert.equal(attempts[0].checker.length, 1);
 		assert.equal(attempts[0].watcher, null);
+		assert.equal(attempts[0].roleProcesses.worker.status, "succeeded");
+		assert.equal(attempts[0].roleProcesses.worker.profileId, "search");
+		assert.equal(attempts[0].roleProcesses.worker.process.isComplete, true);
+		assert.equal(attempts[0].roleProcesses.checker.status, "succeeded");
+		assert.equal(attempts[0].roleProcesses.checker.profileId, "main");
+		assert.equal(attempts[0].roleProcesses.checker.process.isComplete, true);
 
 		const taskRunsRes = await app.inject({ method: "GET", url: `/v1/team/tasks/${task.taskId}/runs` });
 		assert.equal(taskRunsRes.statusCode, 200);
