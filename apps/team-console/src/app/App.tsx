@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { AgentRunStatus, AgentSummary, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus } from "../api/team-types";
+import type { AgentRunStatus, AgentSummary, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, AgentChatProcessEntry } from "../api/team-types";
 import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, mockTeamTasks, MockTeamApi } from "../fixtures/team-fixtures";
 import { ExecutionMap, type AtlasAgentNode, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { ROOT_ID } from "../graph/execution-map-layout";
@@ -92,6 +92,17 @@ type TaskRunObserverState = {
   lastUpdatedAt: string | null;
 };
 
+type ProcessToolGroupStatus = "running" | "finished" | "failed" | "event";
+
+type ProcessToolGroup = {
+  id: string;
+  toolName: string;
+  entries: AgentChatProcessEntry[];
+  status: ProcessToolGroupStatus;
+  isEvent: boolean;
+  latestCreatedAt: string;
+};
+
 function errorMessage(error: unknown): string {
   if (error && typeof error === "object" && "message" in error) {
     return String((error as TeamApiError).message);
@@ -143,6 +154,87 @@ function getLatestNarration(process: TeamAttemptRoleProcess["process"] | undefin
   return latest ?? "暂无过程条目";
 }
 
+function compareEntryTime(a: string, b: string): number {
+  const aTime = Date.parse(a);
+  const bTime = Date.parse(b);
+  if (!Number.isFinite(aTime) && !Number.isFinite(bTime)) return 0;
+  if (!Number.isFinite(aTime)) return -1;
+  if (!Number.isFinite(bTime)) return 1;
+  return aTime - bTime;
+}
+
+function resolveToolGroupStatus(entries: AgentChatProcessEntry[], isEvent: boolean): ProcessToolGroupStatus {
+  if (isEvent) return "event";
+  if (entries.some((entry) => entry.isError || entry.kind === "error")) return "failed";
+  if (entries.some((entry) => entry.kind === "ok")) return "finished";
+  return "running";
+}
+
+function buildToolGroups(entries: AgentChatProcessEntry[]): ProcessToolGroup[] {
+  const groups: ProcessToolGroup[] = [];
+  const groupsById = new Map<string, ProcessToolGroup>();
+  for (const entry of entries) {
+    const isEvent = !entry.toolCallId;
+    const id = entry.toolCallId ?? `event:${entry.id}`;
+    let group = groupsById.get(id);
+    if (!group) {
+      group = {
+        id,
+        toolName: isEvent ? "普通事件" : entry.toolName || "tool",
+        entries: [],
+        status: "running",
+        isEvent,
+        latestCreatedAt: entry.createdAt,
+      };
+      groupsById.set(id, group);
+      groups.push(group);
+    }
+    group.entries.push(entry);
+    if (compareEntryTime(entry.createdAt, group.latestCreatedAt) >= 0) {
+      group.latestCreatedAt = entry.createdAt;
+      if (!group.isEvent && entry.toolName) group.toolName = entry.toolName;
+    }
+    group.status = resolveToolGroupStatus(group.entries, group.isEvent);
+  }
+  return groups;
+}
+
+function formatToolGroupStatus(status: ProcessToolGroupStatus): string {
+  switch (status) {
+    case "running": return "执行中";
+    case "finished": return "完成";
+    case "failed": return "失败";
+    case "event": return "事件";
+  }
+}
+
+function isTerminalRoleProcess(status: TeamAttemptRoleProcessStatus | undefined): boolean {
+  return status === "succeeded" || status === "failed" || status === "cancelled";
+}
+
+function isToolGroupDefaultExpanded(
+  group: ProcessToolGroup,
+  roleProcess: TeamAttemptRoleProcess | undefined,
+  groups: ProcessToolGroup[],
+): boolean {
+  if (group.isEvent) return true;
+  if (roleProcess?.status === "running" && group.status === "running") return true;
+  if (!isTerminalRoleProcess(roleProcess?.status)) return false;
+  if (group.status !== "finished" && group.status !== "failed") return false;
+  const terminalToolGroups = groups.filter((candidate) => (
+    !candidate.isEvent && (candidate.status === "finished" || candidate.status === "failed")
+  ));
+  const latest = terminalToolGroups.reduce<ProcessToolGroup | null>((current, candidate) => {
+    if (!current) return candidate;
+    return compareEntryTime(candidate.latestCreatedAt, current.latestCreatedAt) >= 0 ? candidate : current;
+  }, null);
+  return latest?.id === group.id;
+}
+
+function processToolGroupStateKey(runId: string, role: TeamAttemptRoleProcessRole, groupId: string): string {
+  return `${runId}:${role}:${groupId}`;
+}
+
 function selectLatestAttempt(attempts: TeamAttemptMetadata[]): TeamAttemptMetadata | null {
   if (attempts.length === 0) return null;
   return attempts.reduce((latest, attempt) => {
@@ -157,12 +249,15 @@ function selectLatestAttempt(attempts: TeamAttemptMetadata[]): TeamAttemptMetada
 function renderRoleProcessNode(
   role: TeamAttemptRoleProcessRole,
   roleProcess: TeamAttemptRoleProcess | undefined,
+  runId: string,
+  expandedToolGroups: Record<string, boolean>,
+  onToggleToolGroup: (key: string, expanded: boolean) => void,
 ): ReactNode {
   const process = roleProcess?.process ?? null;
   const currentAction = process?.currentAction?.trim() || "等待过程数据";
   const latestNarration = getLatestNarration(process ?? undefined);
   const status = roleProcess?.status ?? "waiting";
-  const entries = process?.entries ?? [];
+  const groups = buildToolGroups(process?.entries ?? []);
   return (
     <section
       className={`emap-observer-node emap-observer-process-node ${role}`}
@@ -180,7 +275,42 @@ function renderRoleProcessNode(
         </div>
         <p className="emap-observer-process-narration">{latestNarration}</p>
       </div>
-      {entries.length === 0 && (
+      {groups.length > 0 ? (
+        <div className="emap-process-tool-groups">
+          {groups.map((group) => {
+            const stateKey = processToolGroupStateKey(runId, role, group.id);
+            const expanded = expandedToolGroups[stateKey] ?? isToolGroupDefaultExpanded(group, roleProcess, groups);
+            return (
+              <section
+                key={group.id}
+                className={`emap-process-tool-group ${group.status} ${expanded ? "expanded" : "collapsed"}`}
+                data-tool-group-id={group.id}
+              >
+                <button
+                  type="button"
+                  className="emap-process-tool-group-header"
+                  aria-expanded={expanded}
+                  onClick={() => onToggleToolGroup(stateKey, expanded)}
+                >
+                  <span className="emap-process-tool-name">{group.toolName}</span>
+                  <span className={`emap-process-tool-status ${group.status}`}>{formatToolGroupStatus(group.status)}</span>
+                  <span className="emap-process-tool-count">{group.entries.length}</span>
+                </button>
+                {expanded && (
+                  <div className="emap-process-tool-entry-list">
+                    {group.entries.map((entry) => (
+                      <article key={entry.id} className={`emap-process-tool-entry ${entry.kind}`}>
+                        <div className="emap-process-tool-entry-title">{entry.title}</div>
+                        {entry.detail && <pre className="emap-process-tool-entry-detail">{entry.detail}</pre>}
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      ) : (
         <div className="emap-observer-process-empty">暂无过程条目</div>
       )}
     </section>
@@ -516,6 +646,7 @@ export function App() {
   const [taskRunsByTaskId, setTaskRunsByTaskId] = useState<Record<string, TeamRunState[]>>({});
   const [taskRunSavingByTaskId, setTaskRunSavingByTaskId] = useState<Record<string, boolean>>({});
   const [taskRunObserverByRunId, setTaskRunObserverByRunId] = useState<Record<string, TaskRunObserverState>>({});
+  const [expandedProcessToolGroups, setExpandedProcessToolGroups] = useState<Record<string, boolean>>({});
   const [taskNodes, setTaskNodes] = useState<AtlasTaskNode[]>([]);
   const [liveTaskNodesHydrated, setLiveTaskNodesHydrated] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
@@ -1057,6 +1188,13 @@ export function App() {
       setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: false }));
     }
   }, [activeExpandedTaskRun, dataSource, expandedTask]);
+
+  const toggleProcessToolGroup = useCallback((key: string, expanded: boolean) => {
+    setExpandedProcessToolGroups((current) => ({
+      ...current,
+      [key]: !expanded,
+    }));
+  }, []);
 
   useEffect(() => {
     if (activeCanvasTaskRunIds.length === 0) return;
@@ -1640,7 +1778,13 @@ export function App() {
         width: 300,
         autoHeight: true,
         sourceId: undefined,
-        panel: renderRoleProcessNode(role, latestObservedAttempt?.roleProcesses?.[role]),
+        panel: renderRoleProcessNode(
+          role,
+          latestObservedAttempt?.roleProcesses?.[role],
+          observedTaskRun.runId,
+          expandedProcessToolGroups,
+          toggleProcessToolGroup,
+        ),
       });
     }
     for (const descriptor of observerFileDescriptors) {
@@ -1724,6 +1868,7 @@ export function App() {
     expandedTaskDetailMode, observedTaskRun, expandedTask, observerFileDescriptors,
     selectedObserverFileKey, selectedObserverFileDescriptor, selectedObserverFileState,
     observedTaskRunState, observedTaskRunAttempts, latestObservedAttempt, toggleObserverFile, agentsById,
+    expandedProcessToolGroups, toggleProcessToolGroup,
   ]);
 
   return (
