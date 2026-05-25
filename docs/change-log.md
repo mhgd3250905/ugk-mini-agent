@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-25 — Team Console Run observer 文件详情定位修复
+
+- **主题**: 修复文件节点已经被拖动后，再点击展开文件详情时，详情孙节点仍按旧基础坐标定位导致与文件节点水平重叠的问题。
+- **变更内容**:
+  - `taskChildBranchPanelsLayout` 计算孙节点默认位置时改用父文件节点的 final rect（包含 position override），确保新展开的详情节点出现在父文件节点右侧。
+  - 新增回归测试覆盖“先拖动文件节点，再点击展开详情”的场景，避免只覆盖“先展开再拖动”的半截语义。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/tests/app.test.tsx`
+- **边界**: 不改后端 API，不改 SSE，不改 Markdown 渲染和文件内容读取逻辑。
+
+---
+
 ## 2026-05-25 — Team Console Task 操作树拖动语义
 
 - **主题**: 把 Task 操作树升级为真正的树形拖动，支持父节点拖动带动整棵已展开子树。

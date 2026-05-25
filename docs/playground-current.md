@@ -7,7 +7,7 @@
 - Observer 所有子节点（Run 状态、文件节点）和孙节点（文件详情）均可自由拖动：pointerdown 只记录起点，pointermove 超过 4px 阈值后才进入拖动状态并移动面板；未超阈值时 click 正常传递，点击文件节点能正常展开详情；拖动结束后下一次 click 会被抑制，防止误触展开。Task 操作树使用层级拖动语义：拖动 Task 根节点会以相同 dx/dy 移动菜单及所有已展开子节点；拖动菜单节点同样带走所有已展开子节点；拖动文件节点连带其已展开的文件详情子节点；拖动文件详情叶子节点只移动自身。编辑节点的拖动把手在标题栏，表单控件不参与拖动。所有拖动系统使用延迟 pointer capture：pointerdown 时不调用 setPointerCapture，只有 pointermove 距离超过 4px 阈值后才捕获 pointer，避免微小手抖阻止正常点击和文本选择。
 - 文件详情内容使用 `marked` 安全 Markdown 渲染（`apps/team-console/src/shared/markdown.ts`），配置与主项目 `src/ui/playground-markdown.ts` 一致：GFM tables、HTML 转义、只允许 http/https 链接、`target="_blank" rel="noreferrer noopener"`。
 - 文件详情节点内容区移除固定 max-height 限制，resize 后内容 flex-fill。
-- 子节点 connector 使用父节点的 final（拖动后的）rect 作为 source，不会残留拖动前旧坐标。
+- 子节点 connector 和新展开的文件详情节点都使用父节点的 final（拖动后的）rect 作为 source / anchor；文件节点已经被拖动后再展开详情，详情仍会落在文件节点右侧，不会残留旧坐标或水平重叠。
 - 仍不接 SSE；前端轮询现有 Task run state、attempt metadata 和 attempt file API。
 
 ## 2026-05-25 Team Console Task run observer 多节点渲染

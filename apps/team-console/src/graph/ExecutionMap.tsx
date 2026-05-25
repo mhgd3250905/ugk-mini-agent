@@ -63,6 +63,8 @@ interface ExecutionMapProps {
   interactionMode?: AtlasInteractionMode;
 }
 
+type TaskChildBranchPanelDescriptor = NonNullable<ExecutionMapProps["taskChildBranchPanels"]>[number];
+
 type RenderNode = Omit<ExecutionNode, "kind"> & { kind: NodeKind | "collapsed" };
 
 export type AtlasAgentNode = {
@@ -1180,16 +1182,21 @@ export function ExecutionMap({
     if (!taskBranchNode || !taskChildBranchPanels?.length) return [];
     const panelGap = 8;
     const activePanelIds = new Set(taskChildBranchPanels.map((p) => p.id));
-    type Entry = { rect: AgentBranchRect; sourceId: string | null; parentKey: string };
+    type Entry = {
+      panel: TaskChildBranchPanelDescriptor;
+      rect: AgentBranchRect;
+      sourceRect: AgentBranchRect;
+      parentKey: string;
+    };
     const entries: Entry[] = [];
+    const finalRectByPanelId = new Map<string, AgentBranchRect>();
     const bottomByParent = new Map<string, number>();
     for (const p of taskChildBranchPanels) {
       let parentKey: string;
       let sourceRect: AgentBranchRect;
       if (p.sourceId) {
-        const sourceEntry = entries.find((e) => e.sourceId === p.sourceId);
         parentKey = p.sourceId;
-        sourceRect = sourceEntry?.rect ?? taskBranchNode;
+        sourceRect = finalRectByPanelId.get(p.sourceId) ?? taskBranchNode;
       } else {
         parentKey = "__menu__";
         sourceRect = taskBranchNode;
@@ -1204,24 +1211,18 @@ export function ExecutionMap({
       const x = sourceRect.x + sourceRect.width + TASK_CHILD_BRANCH_GAP;
       const prevBottom = bottomByParent.get(parentKey) ?? sourceRect.y;
       const y = prevBottom === sourceRect.y ? sourceRect.y : prevBottom + panelGap;
-      const rect: AgentBranchRect = { x, y, width: w, height: h };
-      entries.push({ rect, sourceId: p.id, parentKey });
+      const baseRect: AgentBranchRect = { x, y, width: w, height: h };
+      const posOverride = activePanelIds.has(p.id) ? panelPositionOverrides[p.id] : undefined;
+      const rect = posOverride ? { ...baseRect, x: posOverride.x, y: posOverride.y } : baseRect;
+      entries.push({ panel: p, rect, sourceRect, parentKey });
+      finalRectByPanelId.set(p.id, rect);
       bottomByParent.set(parentKey, y + h);
     }
-    const finalRects = taskChildBranchPanels.map((p, i) => {
-      const baseRect = entries[i]!.rect;
-      const posOverride = activePanelIds.has(p.id) ? panelPositionOverrides[p.id] : undefined;
-      return posOverride ? { ...baseRect, x: posOverride.x, y: posOverride.y } : baseRect;
-    });
-    return taskChildBranchPanels.map((p, i) => {
-      const parentIdx = entries[i]!.parentKey === "__menu__"
-        ? -1
-        : taskChildBranchPanels.findIndex((pp) => pp.id === entries[i]!.parentKey);
-      const parentFinalRect = parentIdx >= 0 ? finalRects[parentIdx] : taskBranchNode;
+    return entries.map((entry) => {
       return {
-        ...p,
-        rect: finalRects[i]!,
-        sourceRect: parentFinalRect,
+        ...entry.panel,
+        rect: entry.rect,
+        sourceRect: entry.parentKey === "__menu__" ? taskBranchNode : entry.sourceRect,
       };
     });
   }, [taskBranchNode, taskChildBranchPanels, panelSizeOverrides, panelMeasuredHeights, panelPositionOverrides]);

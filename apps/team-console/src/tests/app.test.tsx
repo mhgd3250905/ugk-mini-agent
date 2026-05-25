@@ -2700,6 +2700,40 @@ describe("App", () => {
     expect(Number.parseFloat(detailShell!.style.top)).toBeCloseTo(detailTopBefore + dy, 4);
   });
 
+  it("opens newly expanded file detail to the right of a dragged file node", async () => {
+    const { container } = render(<App />);
+    await setupObserverOpen(container);
+
+    const workerFileNode = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+
+    const workerShell = workerFileNode.closest(".emap-task-child-branch-shell") as HTMLElement | null;
+    expect(workerShell).toBeTruthy();
+
+    firePointer(workerFileNode, "pointerdown", { pointerId: 99, clientX: 500, clientY: 300 });
+    firePointer(workerFileNode, "pointermove", { pointerId: 99, clientX: 660, clientY: 330 });
+    firePointer(workerFileNode, "pointerup", { pointerId: 99, clientX: 660, clientY: 330, buttons: 0 });
+
+    // The first click after a drag is intentionally suppressed.
+    fireEvent.click(workerFileNode);
+    fireEvent.click(workerFileNode);
+
+    const detailShell = await waitFor(() => {
+      const detail = container.querySelector(".emap-observer-file-detail-node")?.closest(".emap-task-child-branch-shell") as HTMLElement | null;
+      expect(detail).toBeTruthy();
+      return detail!;
+    });
+
+    const workerLeft = Number.parseFloat(workerShell!.style.left);
+    const workerWidth = Number.parseFloat(workerShell!.style.width);
+    const detailLeft = Number.parseFloat(detailShell.style.left);
+
+    expect(detailLeft).toBeGreaterThanOrEqual(workerLeft + workerWidth);
+  });
+
   it("moves only detail leaf without moving parent file node", async () => {
     const { container } = render(<App />);
     await setupObserverOpen(container);
