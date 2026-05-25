@@ -6,6 +6,7 @@ import { ExecutionMap, type AtlasAgentNode, type AtlasTaskNode } from "../graph/
 import { ROOT_ID } from "../graph/execution-map-layout";
 import type { AtlasViewport } from "../graph/AtlasCanvasShell";
 import { RUN_STATUS_LABELS, isActiveRun } from "../shared/status";
+import { renderTeamMarkdown } from "../shared/markdown";
 import "./app.css";
 
 export type DataSource = "mock" | "live";
@@ -146,62 +147,14 @@ function renderJsonContent(content: string): ReactNode {
 }
 
 function renderMarkdownContent(content: string): ReactNode {
-  const lines = content.split("\n");
-  const blocks: React.ReactNode[] = [];
-  let currentBlock: string[] = [];
-  let inCodeBlock = false;
-  let codeBlockIndex = 0;
-
-  function flushBlock() {
-    if (currentBlock.length === 0) return;
-    const text = currentBlock.join("\n").trim();
-    if (!text) { currentBlock = []; return; }
-
-    const headingMatch = /^(#{1,6})\s+(.+)$/.exec(text);
-    if (headingMatch) {
-      const level = headingMatch[1]!.length;
-      blocks.push(<div key={`h-${blocks.length}`} className={`task-run-md-heading task-run-md-h${level}`}>{headingMatch[2]}</div>);
-      currentBlock = [];
-      return;
-    }
-
-    blocks.push(<p key={`p-${blocks.length}`} className="task-run-md-paragraph">{text}</p>);
-    currentBlock = [];
-  }
-
-  for (const line of lines) {
-    if (line.startsWith("```")) {
-      if (inCodeBlock) {
-        blocks.push(<pre key={`code-${codeBlockIndex++}`} className="task-run-md-code">{currentBlock.join("\n")}</pre>);
-        currentBlock = [];
-        inCodeBlock = false;
-      } else {
-        flushBlock();
-        inCodeBlock = true;
-      }
-      continue;
-    }
-    if (inCodeBlock) {
-      currentBlock.push(line);
-      continue;
-    }
-    if (line.trim() === "") {
-      flushBlock();
-      continue;
-    }
-    if (/^[-*]\s+/.test(line)) {
-      flushBlock();
-      blocks.push(<div key={`li-${blocks.length}`} className="task-run-md-list-item">{line.replace(/^[-*]\s+/, "")}</div>);
-      continue;
-    }
-    currentBlock.push(line);
-  }
-  if (inCodeBlock) {
-    blocks.push(<pre key={`code-${codeBlockIndex++}`} className="task-run-md-code">{currentBlock.join("\n")}</pre>);
-  } else {
-    flushBlock();
-  }
-  return <div className="task-run-md-body">{blocks}</div>;
+  const html = renderTeamMarkdown(content);
+  return (
+    <div
+      className="team-md-content"
+      data-file-format="markdown"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
 }
 
 function renderFileDetailContent(fileName: string, content: string): ReactNode {
