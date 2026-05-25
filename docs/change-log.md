@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-25 — Team Console Task run process nodes 前端实现
+
+- **主题**: 给 Team Console Canvas Task run observer 增加 worker / checker 过程观测节点，前端先按后端 additive contract 完成类型、Mock fixture、容错渲染和 UI。
+- **变更内容**:
+  - 新增 `attempt.roleProcesses.worker` / `attempt.roleProcesses.checker` 前端类型消费；Mock Task run fixture 补齐 worker / checker narration、current action 和 tool entries。
+  - Run observer 新增 `Worker 过程` / `Checker 过程` 独立 canvas branch node，顶部展示角色状态、current action 和最新 narration，下半部按 `toolCallId` 分组展示 tool entries 并支持折叠 / 展开。
+  - Live API 缺少 `roleProcesses` 时显示等待过程数据，role process 为 `null` 或条目为空时显示暂无过程条目，不影响 Run 状态、文件节点和文件详情。
+  - 过程节点复用现有 Task 操作树拖动语义；Task 根节点和菜单节点拖动会带走已展开过程节点，单独拖过程节点只移动自身。
+- **影响范围**: `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改 `.pi/skills/**`，不做 SSE，不新增 endpoint，不新造 Team 专属 tool log schema，不改主 `/playground`。
+
+---
+
 ## 2026-05-25 — Team Console Run observer 文件详情定位修复
 
 - **主题**: 修复文件节点已经被拖动后，再点击展开文件详情时，详情孙节点仍按旧基础坐标定位导致与文件节点水平重叠的问题。

@@ -2,6 +2,14 @@
 
 更新时间：`2026-05-25`
 
+## 2026-05-25 Team Console Task run process nodes
+
+- Team Console Run observer 现在把 `Worker 过程` / `Checker 过程` 渲染为独立 `.emap-task-child-branch-shell` branch node，与 Run 状态、文件节点、文件详情同级。
+- 前端消费 `attempt.roleProcesses.worker` / `attempt.roleProcesses.checker`；缺少 `roleProcesses` 或 role process 为 `null` 时显示等待过程数据 / 暂无过程条目，不报错。
+- 过程节点顶部显示角色状态、current action、最新 narration；下半部按 `toolCallId` 分组展示 tool entries，可折叠 / 展开，运行中 active tool 和 terminal 最新 finished / error tool 默认展开。
+- 过程节点参与现有 Task 操作树拖动语义；仍不接 SSE，不新增 endpoint，不改主 `/playground`。
+- 相关源码：`apps/team-console/src/api/team-types.ts`、`apps/team-console/src/fixtures/team-fixtures.ts`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app.test.tsx`
+
 ## 2026-05-25 Team Console Task run observer 拖拽与安全 Markdown
 
 - Observer 所有子节点（Run 状态、文件节点）和孙节点（文件详情）均可自由拖动：pointerdown 只记录起点，pointermove 超过 4px 阈值后才进入拖动状态并移动面板；未超阈值时 click 正常传递，点击文件节点能正常展开详情；拖动结束后下一次 click 会被抑制，防止误触展开。Task 操作树使用层级拖动语义：拖动 Task 根节点会以相同 dx/dy 移动菜单及所有已展开子节点；拖动菜单节点同样带走所有已展开子节点；拖动文件节点连带其已展开的文件详情子节点；拖动文件详情叶子节点只移动自身。编辑节点的拖动把手在标题栏，表单控件不参与拖动。所有拖动系统使用延迟 pointer capture：pointerdown 时不调用 setPointerCapture，只有 pointermove 距离超过 4px 阈值后才捕获 pointer，避免微小手抖阻止正常点击和文本选择。

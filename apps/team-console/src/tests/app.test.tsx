@@ -2475,6 +2475,12 @@ describe("App", () => {
     expect(readme).toContain("POST /v1/team/tasks/:taskId/runs");
     expect(readme).toContain("GET /v1/team/task-runs/:runId/tasks/:taskId/attempts");
     expect(readme).toContain("Run observer");
+    expect(readme).toContain("roleProcesses");
+    expect(readme).toContain("Worker 过程");
+    expect(readme).toContain("Checker 过程");
+    expect(readme).toContain("toolCallId");
+    expect(readme).toContain("缺少 `roleProcesses`");
+    expect(readme).toContain("不接 SSE");
     expect(readme).toContain("只展示 Agent 名字（从 agentsById 解析）、文件名和路径");
     expect(readme).toContain("不会进入 `/v1/team/runs` 的 Plan run 列表");
     expect(readme).toContain("第一版 Task run 只执行 WorkUnit 的 worker → checker");
@@ -2517,12 +2523,34 @@ describe("App", () => {
     expect(runtimeDoc).toContain("第一版 Task run 只执行 `workUnit.workerAgentId` 和 `workUnit.checkerAgentId`");
     expect(runtimeDoc).toContain("Run 观察节点");
     expect(runtimeDoc).toContain("attempt metadata 和 attempt files");
+    expect(runtimeDoc).toContain("roleProcesses.worker");
+    expect(runtimeDoc).toContain("roleProcesses.checker");
+    expect(runtimeDoc).toContain("Worker 过程");
+    expect(runtimeDoc).toContain("Checker 过程");
+    expect(runtimeDoc).toContain("toolCallId");
+    expect(runtimeDoc).toContain("additive frontend contract");
     expect(runtimeDoc).toContain("SSE 观察流仍是后续后端能力");
     expect(runtimeDoc).toContain("base snapshot + dirty fields");
     expect(runtimeDoc).toContain("input text、output contract、acceptance rules");
     expect(runtimeDoc).toContain("关闭创建分支、浅编辑保存成功、归档成功后会重新请求 `GET /v1/team/tasks`");
     expect(runtimeDoc).not.toContain("Focus Mode 特殊 Agent 对话界面");
     expect(runtimeDoc).not.toContain("WorkUnit run 未实现");
+
+    const playgroundCurrent = readFileSync("../../docs/playground-current.md", "utf8");
+    expect(playgroundCurrent).toContain("2026-05-25 Team Console Task run process nodes");
+    expect(playgroundCurrent).toContain("Worker 过程");
+    expect(playgroundCurrent).toContain("Checker 过程");
+    expect(playgroundCurrent).toContain("roleProcesses");
+    expect(playgroundCurrent).toContain("toolCallId");
+    expect(playgroundCurrent).toContain("不接 SSE");
+
+    const changeLog = readFileSync("../../docs/change-log.md", "utf8");
+    expect(changeLog).toContain("2026-05-25 — Team Console Task run process nodes 前端实现");
+    expect(changeLog).toContain("roleProcesses.worker");
+    expect(changeLog).toContain("roleProcesses.checker");
+    expect(changeLog).toContain("Worker 过程");
+    expect(changeLog).toContain("Checker 过程");
+    expect(changeLog).toContain("不改 `src/team/**`");
   });
 
   it("drags observer status panel and updates connector", async () => {
