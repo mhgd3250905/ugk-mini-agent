@@ -138,8 +138,15 @@ function renderJsonContent(content: string): ReactNode {
   let pretty: string;
   try {
     pretty = JSON.stringify(JSON.parse(content), null, 2);
-  } catch {
-    pretty = content;
+  } catch (parseError) {
+    return (
+      <div className="emap-observer-file-detail-body">
+        <div className="emap-observer-parse-error" role="status">
+          JSON 解析失败: {parseError instanceof Error ? parseError.message : String(parseError)}
+        </div>
+        <pre className="task-run-detail-pre" data-file-format="json">{content}</pre>
+      </div>
+    );
   }
   return <pre className="task-run-detail-pre" data-file-format="json">{pretty}</pre>;
 }
@@ -164,11 +171,7 @@ function renderMarkdownContent(content: string): ReactNode {
       return;
     }
 
-    const escaped = text
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-    blocks.push(<p key={`p-${blocks.length}`} className="task-run-md-paragraph" dangerouslySetInnerHTML={{ __html: escaped }} />);
+    blocks.push(<p key={`p-${blocks.length}`} className="task-run-md-paragraph">{text}</p>);
     currentBlock = [];
   }
 
@@ -1435,95 +1438,7 @@ export function App() {
     } : current);
   }, []);
   const expandedTaskChildBranchPanel = expandedTaskNode && expandedTask ? (
-    expandedTaskDetailMode === "run-observer" && observedTaskRun ? (
-      <section className="task-leader-branch emap-panel-branch task-run-observer-branch" aria-label={`${expandedTask.title} Run 观察`}>
-        <header className="task-leader-branch-head">
-          <div className="task-leader-branch-title">
-            <span>Run 观察</span>
-            <strong>{expandedTask.title}</strong>
-            <code>{observedTaskRun.runId}</code>
-          </div>
-          <button
-            type="button"
-            className="task-leader-branch-collapse"
-            onClick={() => setExpandedTaskBranch((current) => current ? { ...current, detailMode: null, observedRunId: undefined, selectedFileKey: null } : current)}
-            aria-label={`收起 ${expandedTask.title} Run 观察`}
-          >
-            收起
-          </button>
-        </header>
-        <div className="task-run-observer-body">
-          {observedTaskRunState?.error && (
-            <div className="task-run-observer-error" role="status">{observedTaskRunState.error}</div>
-          )}
-          <div className="task-run-observer-node-layout">
-            <div className="task-run-observer-nodes-column">
-              <div className="task-run-status-node">
-                <header>
-                  <span className="task-run-node-label">Run 状态</span>
-                  <strong className="task-run-status-value">{RUN_STATUS_LABELS[observedTaskRun.status]}</strong>
-                </header>
-                <div className="task-run-status-metrics">
-                  <div><span>阶段</span><strong>{observedTaskRun.taskStates[expandedTask.taskId]?.progress.phase || observedTaskRun.status}</strong></div>
-                  <div><span>耗时</span><strong>{elapsedText(observedTaskRun.startedAt ?? observedTaskRun.createdAt, observedTaskRun.finishedAt).replace(/^耗时\s*/, "")}</strong></div>
-                  <div><span>Attempts</span><strong>{observedTaskRunAttempts.length}</strong></div>
-                </div>
-                <p className="task-run-status-message">{observedTaskRun.taskStates[expandedTask.taskId]?.progress.message || "暂无阶段消息"}</p>
-                {observedTaskRunState?.loading && (
-                  <div className="task-run-observer-loading" role="status">正在刷新...</div>
-                )}
-              </div>
-              {observerFileDescriptors.map((descriptor) => {
-                const runtime = runtimeContextText(descriptor.runtimeContext);
-                const isSelected = selectedObserverFileKey === descriptor.key;
-                const fileState = observedTaskRunState?.files[descriptor.key];
-                return (
-                  <button
-                    key={descriptor.key}
-                    type="button"
-                    className={`task-run-file-node ${descriptor.kind} ${isSelected ? "selected" : ""}`}
-                    data-file-kind={descriptor.kind}
-                    onClick={() => toggleObserverFile(descriptor.key)}
-                  >
-                    <header>
-                      <span>{descriptor.title}</span>
-                      <code>{descriptor.fileName}</code>
-                    </header>
-                    <span className="task-run-file-path">{descriptor.path}</span>
-                    {descriptor.summary && <span className="task-run-file-summary">{descriptor.summary}</span>}
-                    {runtime && <span className="task-run-runtime-context">{runtime}</span>}
-                    {fileState?.error && <span className="task-run-file-error">{fileState.error}</span>}
-                  </button>
-                );
-              })}
-              {observerFileDescriptors.length === 0 && !observedTaskRunState?.loading && (
-                <div className="task-run-observer-empty">暂无 attempt 文件。运行刚启动时这里会随轮询补齐。</div>
-              )}
-            </div>
-            {selectedObserverFileDescriptor && (
-              <div className="task-run-observer-detail-column">
-                <div className="task-run-file-detail-node">
-                  <header>
-                    <span className="task-run-node-label">{selectedObserverFileDescriptor.title}</span>
-                    <code>{selectedObserverFileDescriptor.fileName}</code>
-                  </header>
-                  {selectedObserverFileState?.error ? (
-                    <div className="task-run-file-error">{selectedObserverFileState.error}</div>
-                  ) : selectedObserverFileState?.content ? (
-                    renderFileDetailContent(selectedObserverFileDescriptor.fileName, selectedObserverFileState.content)
-                  ) : (
-                    <div className="task-run-file-loading">正在读取文件...</div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-          {observedTaskRunState?.lastUpdatedAt && (
-            <div className="task-run-observer-updated">最后刷新 {new Date(observedTaskRunState.lastUpdatedAt).toLocaleTimeString()}</div>
-          )}
-        </div>
-      </section>
-    ) : expandedTaskDetailMode === "leader-chat" ? (
+    expandedTaskDetailMode === "leader-chat" ? (
       <section className="agent-playground-branch emap-dialog-branch task-leader-chat-branch" aria-label={`${expandedTask.title} leader 对话`}>
         <header className="agent-playground-branch-head">
           <div className="agent-playground-branch-title">
@@ -1670,6 +1585,120 @@ export function App() {
     ) : null
   ) : null;
 
+  const taskChildBranchPanels = useMemo(() => {
+    if (expandedTaskDetailMode !== "run-observer" || !observedTaskRun || !expandedTask) return [];
+    const panels: Array<{ id: string; panel: ReactNode; width?: number; height?: number; sourceId?: string }> = [];
+    panels.push({
+      id: "run-status",
+      width: 300,
+      height: 220,
+      sourceId: undefined,
+      panel: (
+        <section className="emap-observer-node emap-observer-status-node" aria-label="Run 状态">
+          <header className="emap-observer-node-head">
+            <span className="emap-observer-node-label">Run 状态</span>
+            <button
+              type="button"
+              className="emap-observer-node-close"
+              onClick={() => setExpandedTaskBranch((current) => current ? { ...current, detailMode: null, observedRunId: undefined, selectedFileKey: null } : current)}
+              aria-label="收起 Run 观察"
+            >
+              收起
+            </button>
+          </header>
+          <div className="emap-observer-status-body">
+            <strong className="emap-observer-status-value">{RUN_STATUS_LABELS[observedTaskRun.status]}</strong>
+            <div className="emap-observer-metrics">
+              <div><span>阶段</span><strong>{observedTaskRun.taskStates[expandedTask.taskId]?.progress.phase || observedTaskRun.status}</strong></div>
+              <div><span>耗时</span><strong>{elapsedText(observedTaskRun.startedAt ?? observedTaskRun.createdAt, observedTaskRun.finishedAt).replace(/^耗时\s*/, "")}</strong></div>
+              <div><span>Attempts</span><strong>{observedTaskRunAttempts.length}</strong></div>
+            </div>
+            <p className="emap-observer-status-message">{observedTaskRun.taskStates[expandedTask.taskId]?.progress.message || "暂无阶段消息"}</p>
+            {observedTaskRunState?.error && <div className="emap-observer-error" role="status">{observedTaskRunState.error}</div>}
+            {observedTaskRunState?.loading && <div className="emap-observer-loading" role="status">正在刷新...</div>}
+            {observedTaskRunState?.lastUpdatedAt && <div className="emap-observer-updated">最后刷新 {new Date(observedTaskRunState.lastUpdatedAt).toLocaleTimeString()}</div>}
+          </div>
+        </section>
+      ),
+    });
+    for (const descriptor of observerFileDescriptors) {
+      const runtime = runtimeContextText(descriptor.runtimeContext);
+      const isSelected = selectedObserverFileKey === descriptor.key;
+      panels.push({
+        id: `file-${descriptor.key}`,
+        width: 300,
+        height: 140,
+        sourceId: undefined,
+        panel: (
+          <button
+            type="button"
+            className={`emap-observer-node emap-observer-file-node ${descriptor.kind} ${isSelected ? "selected" : ""}`}
+            data-file-kind={descriptor.kind}
+            onClick={() => toggleObserverFile(descriptor.key)}
+          >
+            <header className="emap-observer-node-head">
+              <span className="emap-observer-node-label">{descriptor.title}</span>
+            </header>
+            <div className="emap-observer-file-body">
+              <code className="emap-observer-file-name">{descriptor.fileName}</code>
+              <span className="emap-observer-file-path">{descriptor.path}</span>
+              {descriptor.summary && <span className="emap-observer-file-summary">{descriptor.summary}</span>}
+              {runtime && <span className="emap-observer-file-runtime">{runtime}</span>}
+              {observedTaskRunState?.files[descriptor.key]?.error && <span className="emap-observer-file-error">{observedTaskRunState.files[descriptor.key]!.error}</span>}
+            </div>
+          </button>
+        ),
+      });
+      if (isSelected && selectedObserverFileDescriptor) {
+        panels.push({
+          id: `file-detail-${descriptor.key}`,
+          width: 420,
+          height: 360,
+          sourceId: `file-${descriptor.key}`,
+          panel: (
+            <section className="emap-observer-node emap-observer-file-detail-node" aria-label={selectedObserverFileDescriptor.title}>
+              <header className="emap-observer-node-head">
+                <span className="emap-observer-node-label">{selectedObserverFileDescriptor.title}</span>
+                <code className="emap-observer-file-name">{selectedObserverFileDescriptor.fileName}</code>
+                <button
+                  type="button"
+                  className="emap-observer-node-close"
+                  onClick={() => toggleObserverFile(descriptor.key)}
+                  aria-label="收起文件详情"
+                >
+                  收起
+                </button>
+              </header>
+              <div className="emap-observer-file-detail-body">
+                {selectedObserverFileState?.error ? (
+                  <div className="emap-observer-file-error">{selectedObserverFileState.error}</div>
+                ) : selectedObserverFileState?.content ? (
+                  renderFileDetailContent(selectedObserverFileDescriptor.fileName, selectedObserverFileState.content)
+                ) : (
+                  <div className="emap-observer-file-loading">正在读取文件...</div>
+                )}
+              </div>
+            </section>
+          ),
+        });
+      }
+    }
+    if (observerFileDescriptors.length === 0 && !observedTaskRunState?.loading) {
+      panels.push({
+        id: "empty-hint",
+        width: 300,
+        height: 60,
+        sourceId: undefined,
+        panel: <div className="emap-observer-node emap-observer-empty">暂无 attempt 文件。运行刚启动时这里会随轮询补齐。</div>,
+      });
+    }
+    return panels;
+  }, [
+    expandedTaskDetailMode, observedTaskRun, expandedTask, observerFileDescriptors,
+    selectedObserverFileKey, selectedObserverFileDescriptor, selectedObserverFileState,
+    observedTaskRunState, observedTaskRunAttempts, toggleObserverFile,
+  ]);
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -1774,6 +1803,7 @@ export function App() {
                 taskBranchPanel={expandedTaskBranchPanel}
                 taskChildBranchPanel={expandedTaskChildBranchPanel}
                 taskChildBranchInteractive={expandedTaskDetailMode === "leader-chat"}
+                taskChildBranchPanels={taskChildBranchPanels}
                 viewport={canvasViewport}
                 onViewportChange={setCanvasViewport}
                 toolbarStart={agentToolbar}

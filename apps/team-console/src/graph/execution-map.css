@@ -932,57 +932,28 @@
   font-weight: 800;
 }
 
-.task-run-observer-branch {
-  border-color: rgba(121, 216, 208, 0.34);
-  width: max-content;
-  min-width: 320px;
-  max-width: 960px;
-}
-
-.task-run-observer-body {
-  flex: 1 1 auto;
-  display: flex;
-  min-height: 0;
-  flex-direction: column;
-  gap: 10px;
-  padding: 10px;
-  background:
-    linear-gradient(180deg, rgba(121, 216, 208, 0.06), transparent 38%),
-    rgba(6, 11, 18, 0.98);
-  overflow: auto;
-}
-
-.task-run-observer-error {
-  padding: 8px 10px;
-  color: var(--danger);
-  border: 1px solid rgba(255, 113, 136, 0.28);
-  border-radius: 6px;
-  background: rgba(255, 113, 136, 0.08);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.task-run-observer-node-layout {
-  display: flex;
-  gap: 10px;
-  min-height: 0;
-}
-
-.task-run-observer-nodes-column {
+.emap-observer-node {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  min-width: 200px;
-  max-width: 280px;
+  padding: 10px;
+  border: 1px solid rgba(122, 131, 151, 0.2);
+  border-radius: 6px;
+  background: rgba(6, 11, 18, 0.98);
+  width: 100%;
+  height: 100%;
+  overflow: auto;
 }
 
-.task-run-observer-detail-column {
-  flex: 1 1 auto;
+.emap-observer-node-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
   min-width: 0;
-  max-width: 520px;
 }
 
-.task-run-node-label {
+.emap-observer-node-label {
   color: var(--secondary);
   font-size: 9px;
   font-weight: 800;
@@ -990,46 +961,60 @@
   text-transform: uppercase;
 }
 
-.task-run-status-node {
-  padding: 8px;
+.emap-observer-node-close {
+  appearance: none;
+  padding: 2px 8px;
   border: 1px solid rgba(122, 131, 151, 0.2);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.035);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--secondary);
+  font-size: 10px;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
-.task-run-status-node header {
+.emap-observer-node-close:hover {
+  border-color: rgba(121, 216, 208, 0.48);
+  color: var(--primary);
+}
+
+.emap-observer-status-node {
+  background:
+    linear-gradient(180deg, rgba(121, 216, 208, 0.06), transparent 38%),
+    rgba(6, 11, 18, 0.98);
+}
+
+.emap-observer-status-body {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 4px;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.task-run-status-value {
+.emap-observer-status-value {
   color: var(--primary);
   font-size: 13px;
 }
 
-.task-run-status-metrics {
+.emap-observer-metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
 }
 
-.task-run-status-metrics div {
+.emap-observer-metrics div {
   display: grid;
   gap: 1px;
   min-width: 0;
 }
 
-.task-run-status-metrics span {
+.emap-observer-metrics span {
   color: var(--secondary);
   font-size: 9px;
   font-weight: 800;
   text-transform: uppercase;
 }
 
-.task-run-status-metrics strong {
+.emap-observer-metrics strong {
   min-width: 0;
   color: var(--primary);
   font-size: 11px;
@@ -1038,19 +1023,34 @@
   white-space: nowrap;
 }
 
-.task-run-status-message {
-  margin: 4px 0 0;
+.emap-observer-status-message {
+  margin: 0;
   color: var(--secondary);
   font-size: 10px;
   line-height: 1.35;
 }
 
-.task-run-observer-loading {
+.emap-observer-error {
+  padding: 6px 8px;
+  color: var(--danger);
+  border: 1px solid rgba(255, 113, 136, 0.28);
+  border-radius: 6px;
+  background: rgba(255, 113, 136, 0.08);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.emap-observer-loading {
   color: var(--accent);
   font-size: 10px;
 }
 
-.task-run-file-node {
+.emap-observer-updated {
+  color: rgba(216, 228, 241, 0.48);
+  font-size: 10px;
+}
+
+.emap-observer-file-node {
   appearance: none;
   display: flex;
   flex-direction: column;
@@ -1066,53 +1066,45 @@
   transition: border-color 0.15s, background 0.15s;
 }
 
-.task-run-file-node:hover {
+.emap-observer-file-node:hover {
   border-color: rgba(121, 216, 208, 0.48);
   background: rgba(121, 216, 208, 0.06);
 }
 
-.task-run-file-node.selected {
+.emap-observer-file-node.selected {
   border-color: rgba(121, 216, 208, 0.72);
   background: rgba(121, 216, 208, 0.1);
 }
 
-.task-run-file-node.worker {
+.emap-observer-file-node.worker {
   border-left: 3px solid rgba(121, 216, 208, 0.48);
 }
 
-.task-run-file-node.checker {
+.emap-observer-file-node.checker {
   border-left: 3px solid rgba(255, 190, 96, 0.48);
 }
 
-.task-run-file-node.result {
+.emap-observer-file-node.result {
   border-left: 3px solid rgba(103, 232, 149, 0.48);
 }
 
-.task-run-file-node header {
+.emap-observer-file-body {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 6px;
-  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.task-run-file-node header span {
-  color: var(--primary);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.task-run-file-node header code {
+.emap-observer-file-name {
   min-width: 0;
   color: #e7c879;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.task-run-file-path {
+.emap-observer-file-path {
   color: var(--secondary);
   font-size: 9px;
   font-family: var(--font-mono);
@@ -1122,56 +1114,59 @@
   white-space: nowrap;
 }
 
-.task-run-file-summary {
+.emap-observer-file-summary {
   color: var(--secondary);
   font-size: 10px;
   line-height: 1.3;
 }
 
-.task-run-runtime-context {
+.emap-observer-file-runtime {
   color: var(--secondary);
   font-size: 9px;
   opacity: 0.7;
 }
 
-.task-run-file-error {
+.emap-observer-file-error {
   color: var(--danger);
   font-size: 10px;
 }
 
-.task-run-file-detail-node {
-  padding: 8px;
-  border: 1px solid rgba(121, 216, 208, 0.28);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.03);
+.emap-observer-file-detail-node {
+  background:
+    linear-gradient(180deg, rgba(121, 216, 208, 0.06), transparent 38%),
+    rgba(6, 11, 18, 0.98);
+  border-color: rgba(121, 216, 208, 0.28);
+}
+
+.emap-observer-file-detail-body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 480px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
 }
 
-.task-run-file-detail-node header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-}
-
-.task-run-file-detail-node header code {
-  min-width: 0;
-  color: #e7c879;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.task-run-file-loading {
+.emap-observer-file-loading {
   color: var(--secondary);
   font-size: 11px;
+}
+
+.emap-observer-parse-error {
+  padding: 6px 8px;
+  color: var(--danger);
+  border: 1px solid rgba(255, 113, 136, 0.28);
+  border-radius: 6px;
+  background: rgba(255, 113, 136, 0.08);
+  font-size: 11px;
+  line-height: 1.45;
+  margin-bottom: 6px;
+}
+
+.emap-observer-empty {
+  color: var(--secondary);
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .task-run-detail-pre {

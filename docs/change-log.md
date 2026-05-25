@@ -12,17 +12,19 @@
 
 ---
 
-## 2026-05-25 — Team Console Task run 观察节点
+## 2026-05-25 — Team Console Task run observer 多节点渲染
 
-- **主题**: 给 Team Console 画布 Task run 增加右侧观察节点，先用轮询稳定展示执行证据。
+- **主题**: 把 Team Console Task run observer 从单一大容器改为多个独立 canvas branch node。
 - **变更内容**:
-  - Task 操作菜单里的”最近运行”或 active run 的”运行中”摘要改为可点击入口，点击后展开右侧 Run 观察节点。
-  - 观察节点现在展开为多个独立节点：Run 状态节点展示运行阶段、耗时、attempt 数和进度消息；文件节点按 worker 输出、checker verdict、accepted result 分别展示文件名、路径和角色 runtime context / verdict 摘要。
-  - 点击任一文件节点会在右侧展开第二级文件详情节点，根据文件扩展名使用安全渲染：JSON pretty print、Markdown 基础渲染（heading / paragraph / list / code block，不执行 HTML）、其他文本原样展示。不使用 `dangerouslySetInnerHTML` 渲染用户可控内容。
-  - Team Console API adapter 新增 Task run attempt/file 只读方法，走 `/v1/team/task-runs/:runId/tasks/:taskId/attempts` 路径，不误用 Plan run attempt 路径。
-  - Mock fixture 为 Canvas Task run 生成 deterministic worker/checker/result 文件，覆盖观察节点回归测试，包括 HTML 转义安全验证。
-- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/team-api.test.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
-- **边界**: 未新增后端 SSE，未修改 `src/team/**` 运行 API，未改 `.pi/skills/team-task-creator/**`，未把 Task run 状态写入 localStorage。
+  - ExecutionMap 新增 `taskChildBranchPanels` 数组 prop，支持多个独立 `.emap-task-child-branch-shell` 渲染，每个 panel 有自己的 SVG connector path。保留旧 `taskChildBranchPanel` / `taskChildBranchInteractive` 向后兼容。
+  - Run observer 每个元素（Run 状态节点、文件节点、文件详情节点）现在是独立的 branch node，不再是一个大 section 内的双列布局。
+  - 移除 Markdown 渲染中的 `dangerouslySetInnerHTML`，改用纯 React 文本节点。
+  - JSON 解析失败时显示 parse error 消息。
+  - 文件详情节点新增显式收起按钮。
+  - CSS 移除旧的大容器双列布局样式，替换为 `.emap-observer-*` 独立节点样式。
+  - 测试断言多个 `.emap-task-child-branch-shell` 存在及结构关系。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改后端 API shape，不改 `.pi/skills/**`。Run observer 节点不需要 drag/resize/maximize；leader-chat 现有的 drag/resize/maximize 不能坏。
 
 ---
 

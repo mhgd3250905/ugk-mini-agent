@@ -386,43 +386,64 @@ describe("App", () => {
     const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
     fireEvent.click(runSummary);
 
-    const observer = await waitFor(() => {
-      const node = container.querySelector(".task-run-observer-branch") as HTMLElement | null;
+    await waitFor(() => {
+      const statusNode = container.querySelector(".emap-observer-status-node");
+      expect(statusNode).toBeTruthy();
+    });
+
+    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
+    const statusShell = allShells().find((shell) => shell.querySelector(".emap-observer-status-node")) as HTMLElement | undefined;
+    expect(statusShell).toBeTruthy();
+    expect(within(statusShell!).getByText("已完成")).toBeInTheDocument();
+
+    const workerFileNode = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
       expect(node).toBeTruthy();
       return node!;
     });
-    expect(within(observer).getByText("Run 观察")).toBeInTheDocument();
-
-    const statusNode = observer.querySelector(".task-run-status-node") as HTMLElement | null;
-    expect(statusNode).toBeTruthy();
-    expect(within(statusNode!).getByText("已完成")).toBeInTheDocument();
-
-    const fileNodes = observer.querySelectorAll(".task-run-file-node");
-    expect(fileNodes.length).toBeGreaterThanOrEqual(3);
-
-    const workerFileNode = observer.querySelector('.task-run-file-node[data-file-kind="worker"]') as HTMLElement | null;
-    const checkerFileNode = observer.querySelector('.task-run-file-node[data-file-kind="checker"]') as HTMLElement | null;
-    const resultFileNode = observer.querySelector('.task-run-file-node[data-file-kind="result"]') as HTMLElement | null;
-    expect(workerFileNode).toBeTruthy();
+    const checkerFileNode = container.querySelector('.emap-observer-file-node[data-file-kind="checker"]') as HTMLElement | null;
+    const resultFileNode = container.querySelector('.emap-observer-file-node[data-file-kind="result"]') as HTMLElement | null;
     expect(checkerFileNode).toBeTruthy();
     expect(resultFileNode).toBeTruthy();
-    expect(within(workerFileNode!).getByText("worker-output-001.md")).toBeInTheDocument();
+    expect(within(workerFileNode).getByText("worker-output-001.md")).toBeInTheDocument();
     expect(within(checkerFileNode!).getByText("checker-verdict-001.json")).toBeInTheDocument();
     expect(within(resultFileNode!).getByText("accepted-result.md")).toBeInTheDocument();
 
-    expect(observer.querySelector(".task-run-file-detail-node")).toBeNull();
+    const fileShells = allShells().filter((shell) => shell.querySelector(".emap-observer-file-node")) as HTMLElement[];
+    expect(fileShells.length).toBeGreaterThanOrEqual(3);
+
+    // All top-level panels (run-status + file nodes) must stack vertically — same x, different y
+    const topLevelShells: HTMLElement[] = [statusShell!, ...fileShells];
+    const xs = topLevelShells.map((s) => Number.parseFloat(s.style.left));
+    const ys = topLevelShells.map((s) => Number.parseFloat(s.style.top));
+    const uniqueXs = new Set(xs);
+    expect(uniqueXs.size).toBe(1);
+    const uniqueYs = new Set(ys);
+    expect(uniqueYs.size).toBe(topLevelShells.length);
+
+    expect(container.querySelector(".emap-observer-file-detail-node")).toBeNull();
 
     fireEvent.click(checkerFileNode!);
     const detailNode = await waitFor(() => {
-      const detail = observer.querySelector(".task-run-file-detail-node") as HTMLElement | null;
+      const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
       expect(detail).toBeTruthy();
       return detail!;
     });
     expect(within(detailNode).getByText(/"verdict": "pass"/)).toBeInTheDocument();
 
+    const detailCloseButton = detailNode.querySelector(".emap-observer-node-close") as HTMLElement | null;
+    expect(detailCloseButton).toBeTruthy();
+
+    // File detail x must be greater than its source file node x
+    const checkerShell = allShells().find((s) => s.querySelector('.emap-observer-file-node[data-file-kind="checker"]')) as HTMLElement | undefined;
+    const detailShell = allShells().find((s) => s.querySelector(".emap-observer-file-detail-node")) as HTMLElement | undefined;
+    expect(checkerShell).toBeTruthy();
+    expect(detailShell).toBeTruthy();
+    expect(Number.parseFloat(detailShell!.style.left)).toBeGreaterThan(Number.parseFloat(checkerShell!.style.left));
+
     fireEvent.click(resultFileNode!);
     const updatedDetail = await waitFor(() => {
-      const detail = observer.querySelector(".task-run-file-detail-node") as HTMLElement | null;
+      const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
       expect(detail).toBeTruthy();
       return detail!;
     });
@@ -443,18 +464,19 @@ describe("App", () => {
     const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
     fireEvent.click(runSummary);
 
-    const observer = await waitFor(() => {
-      const node = container.querySelector(".task-run-observer-branch") as HTMLElement | null;
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+    });
+
+    const workerFileNode = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
       expect(node).toBeTruthy();
       return node!;
     });
-
-    const workerFileNode = observer.querySelector('.task-run-file-node[data-file-kind="worker"]') as HTMLElement | null;
-    expect(workerFileNode).toBeTruthy();
-    fireEvent.click(workerFileNode!);
+    fireEvent.click(workerFileNode);
 
     const detailNode = await waitFor(() => {
-      const detail = observer.querySelector(".task-run-file-detail-node") as HTMLElement | null;
+      const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
       expect(detail).toBeTruthy();
       return detail!;
     });
@@ -1958,7 +1980,7 @@ describe("App", () => {
     expect(readme).toContain("点击 Task 卡片会先展开紧凑 Task 操作菜单节点");
     expect(readme).toContain("POST /v1/team/tasks/:taskId/runs");
     expect(readme).toContain("GET /v1/team/task-runs/:runId/tasks/:taskId/attempts");
-    expect(readme).toContain("Run 观察节点");
+    expect(readme).toContain("Run observer");
     expect(readme).toContain("worker 输出、checker verdict、accepted result");
     expect(readme).toContain("不会进入 `/v1/team/runs` 的 Plan run 列表");
     expect(readme).toContain("第一版 Task run 只执行 WorkUnit 的 worker → checker");

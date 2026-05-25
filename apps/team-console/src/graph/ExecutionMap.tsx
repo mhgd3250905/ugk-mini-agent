@@ -45,6 +45,14 @@ interface ExecutionMapProps {
   taskBranchPanel?: ReactNode;
   taskChildBranchPanel?: ReactNode;
   taskChildBranchInteractive?: boolean;
+  taskChildBranchPanels?: Array<{
+    id: string;
+    panel: ReactNode;
+    width?: number;
+    height?: number;
+    sourceId?: string;
+    interactive?: boolean;
+  }>;
   viewport?: AtlasViewport;
   onViewportChange?: (viewport: AtlasViewport) => void;
   toolbarStart?: ReactNode;
@@ -568,6 +576,7 @@ export function ExecutionMap({
   taskBranchPanel,
   taskChildBranchPanel,
   taskChildBranchInteractive = false,
+  taskChildBranchPanels,
   viewport,
   onViewportChange,
   toolbarStart,
@@ -1136,10 +1145,45 @@ export function ExecutionMap({
       ? taskChildBranchRects[focusedTaskNode.nodeId] ?? taskChildBranchDefaultNode
       : taskChildBranchDefaultNode
     : null;
+  const taskChildBranchPanelsLayout = useMemo(() => {
+    if (!taskBranchNode || !taskChildBranchPanels?.length) return [];
+    const panelGap = 8;
+    type Entry = { rect: AgentBranchRect; sourceId: string | null; parentKey: string };
+    const entries: Entry[] = [];
+    const bottomByParent = new Map<string, number>();
+    for (const p of taskChildBranchPanels) {
+      let parentKey: string;
+      let sourceRect: AgentBranchRect;
+      if (p.sourceId) {
+        const sourceEntry = entries.find((e) => e.sourceId === p.sourceId);
+        parentKey = p.sourceId;
+        sourceRect = sourceEntry?.rect ?? taskBranchNode;
+      } else {
+        parentKey = "__menu__";
+        sourceRect = taskBranchNode;
+      }
+      const w = p.width ?? TASK_CHILD_BRANCH_WIDTH;
+      const h = p.height ?? TASK_CHILD_BRANCH_HEIGHT;
+      const x = sourceRect.x + sourceRect.width + TASK_CHILD_BRANCH_GAP;
+      const prevBottom = bottomByParent.get(parentKey) ?? sourceRect.y;
+      const y = prevBottom === sourceRect.y ? sourceRect.y : prevBottom + panelGap;
+      const rect: AgentBranchRect = { x, y, width: w, height: h };
+      entries.push({ rect, sourceId: p.id, parentKey });
+      bottomByParent.set(parentKey, y + h);
+    }
+    return taskChildBranchPanels.map((p, i) => ({
+      ...p,
+      rect: entries[i]!.rect,
+      sourceRect: entries[i]!.parentKey === "__menu__"
+        ? taskBranchNode
+        : entries.find((e) => e.sourceId === entries[i]!.parentKey)!.rect,
+    }));
+  }, [taskBranchNode, taskChildBranchPanels]);
   const agentBranchRight = agentBranchNode ? agentBranchNode.x + agentBranchNode.width : 0;
   const taskBranchRight = Math.max(
     taskBranchNode ? taskBranchNode.x + taskBranchNode.width : 0,
     taskChildBranchNode ? taskChildBranchNode.x + taskChildBranchNode.width : 0,
+    ...taskChildBranchPanelsLayout.map((p) => p.rect.x + p.rect.width),
   );
   const svgWidth = Math.max(700, evidenceRight + 28, previewRight + 28, agentRight + 28, taskRight + 28, agentBranchRight + 28, taskBranchRight + 28);
   const maxY = Math.max(
@@ -1151,6 +1195,7 @@ export function ExecutionMap({
     agentBranchNode ? agentBranchNode.y + agentBranchNode.height : 0,
     taskBranchNode ? taskBranchNode.y + taskBranchNode.height : 0,
     taskChildBranchNode ? taskChildBranchNode.y + taskChildBranchNode.height : 0,
+    ...taskChildBranchPanelsLayout.map((p) => p.rect.y + p.rect.height),
     200,
   );
   const agentBranchPath = focusedAgentNode && agentBranchNode
@@ -1412,6 +1457,15 @@ export function ExecutionMap({
               strokeWidth={2}
             />
           )}
+          {taskChildBranchPanelsLayout.map((p) => (
+            <path
+              key={`task-child-panel-${p.id}`}
+              d={taskChildBranchConnectorPath(p.sourceRect, p.rect)}
+              className="emap-link emap-link-task-branch emap-link-task-child-branch"
+              fill="none"
+              strokeWidth={2}
+            />
+          ))}
         </svg>
 
         <div className="execution-map-nodes" ref={evidenceContainerRef} style={{ width: svgWidth, minHeight: maxY + 40 }}>
@@ -1743,6 +1797,20 @@ export function ExecutionMap({
               )}
             </div>
           )}
+          {taskChildBranchPanelsLayout.map((p) => (
+            <div
+              key={`task-child-panel-${p.id}`}
+              className="emap-task-child-branch-shell"
+              style={{
+                left: p.rect.x,
+                top: p.rect.y,
+                width: p.rect.width,
+                height: p.rect.height,
+              }}
+            >
+              {p.panel}
+            </div>
+          ))}
         </div>
     </AtlasCanvasShell>
   );
