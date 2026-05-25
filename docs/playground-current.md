@@ -6,10 +6,10 @@
 
 - Team Console Run observer 现在把 `Worker 过程` / `Checker 过程` 渲染为独立 `.emap-task-child-branch-shell` branch node，与 Run 状态、文件节点、文件详情同级。
 - 前端消费 `attempt.roleProcesses.worker` / `attempt.roleProcesses.checker`；缺少 `roleProcesses` 或 role process 为 `null` 时显示等待过程数据 / 暂无过程条目，不报错。
-- 过程节点顶部显示角色状态、current action、最新 narration；下半部按 `toolCallId` 分组展示 tool entries，可折叠 / 展开，运行中 active tool 和 terminal 最新 finished / error tool 默认展开。
-- 过程节点有 UI budget：每个节点最多渲染若干 tool/event group，优先保留活跃过程；每个 group 只渲染最近若干 entries，显示隐藏计数，并通过内部滚动限制高度，避免长任务过程撑爆画布。
-- 完整过程数据仍来自后端 attempt metadata；Team Console 前端只做渲染限流，不丢弃完整过程数据。
-- 过程节点参与现有 Task 操作树拖动语义；仍不接 SSE，不新增 endpoint，不改主 `/playground`。
+- 过程节点顶部按优先级展示：(1) `assistantText.content`（Agent 自述 / 推理文本，保留换行、按中文标点自然断句、每行独立渲染为 `<p>`，最多 5 行超出显示”已隐藏 X 行”，单行超过 200 字符会截断并显示”已截断 X 长行”，`max-height: 172px` 内部滚动），(2) current action + 最新 narration（assistantText 缺失时的 fallback），(3) tool groups 作为可折叠证据区。
+- 下半部按 `toolCallId` 分组展示 tool entries，但每个过程节点只渲染 1 个最相关 group：优先 active / running tool，其次最新 finished / error tool；其余 group 显示”仅显示最近 1 组，已隐藏 X 组 / X 条”。tool group 仍可折叠 / 展开。
+- 完整过程数据仍来自后端 attempt metadata；Team Console 前端只做 DOM 渲染限流，不丢弃完整过程数据，展开的 tool detail 仍保留 entry 内容。
+- 过程节点参与现有 Task 操作树拖动语义；运行中的 observer 不渲染空文件占位节点，不显示 `正在刷新...` / `最后刷新` 这类随轮询变化的刷新元信息，active run 轮询的瞬时连接失败不插入红色错误节点，避免”暂无 attempt 文件””无法连接服务器”和刷新时间在运行中随轮询闪烁；拖动 Task 根节点、菜单节点、Run observer 子节点或 resize 文件详情时，会暂停 Task branch / child panel 自动高度测量，避免运行中轮询刷新强制 layout 导致卡顿和闪烁；仍不接 SSE，不新增 endpoint，不改主 `/playground`。
 - 相关源码：`apps/team-console/src/api/team-types.ts`、`apps/team-console/src/fixtures/team-fixtures.ts`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app.test.tsx`
 
 ## 2026-05-25 Team Console Task run observer 拖拽与安全 Markdown

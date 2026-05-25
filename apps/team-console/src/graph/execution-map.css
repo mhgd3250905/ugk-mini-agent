@@ -611,6 +611,8 @@
 .emap-task-branch-shell {
   position: absolute;
   z-index: 11;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 .emap-task-child-branch-shell {
@@ -618,6 +620,9 @@
   z-index: 12;
   touch-action: none;
   contain: layout paint style;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: left, top;
 }
 
 .emap-dialog-branch,
@@ -1108,6 +1113,39 @@
   color: var(--secondary);
   font-size: 10px;
   line-height: 1.4;
+}
+
+.emap-observer-process-assistant-text {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  max-height: 172px;
+  overflow-y: auto;
+}
+
+.emap-observer-process-assistant-label {
+  color: rgba(121, 216, 208, 0.7);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.emap-observer-process-assistant-text p {
+  margin: 0;
+  color: var(--primary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.emap-observer-process-assistant-spacer {
+  height: 6px;
+}
+
+.emap-observer-process-assistant-truncated {
+  color: rgba(216, 228, 241, 0.48);
+  font-size: 10px;
 }
 
 .emap-observer-process-empty {

@@ -1259,6 +1259,104 @@ describe("Artifact preview nodes", () => {
       }
     }
   });
+
+  it("pauses Task child panel auto-height measurement while a panel is dragged", async () => {
+    const offsetWidthDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+    const offsetHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+    let panelHeightReads = 0;
+    const firePanelPointer = (
+      target: Element,
+      type: "pointerdown" | "pointermove" | "pointerup",
+      init: { pointerId: number; clientX: number; clientY: number; buttons?: number; button?: number },
+    ) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, {
+        pointerId: { value: init.pointerId },
+        clientX: { value: init.clientX },
+        clientY: { value: init.clientY },
+        buttons: { value: init.buttons ?? 1 },
+        button: { value: init.button ?? 0 },
+      });
+      fireEvent(target, event);
+    };
+
+    try {
+      Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+        configurable: true,
+        get() {
+          if (this.classList.contains("emap-task-branch-shell")) return 280;
+          if (this.classList.contains("emap-task-child-branch-shell")) return 300;
+          return 0;
+        },
+      });
+      Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+        configurable: true,
+        get() {
+          if (this.classList.contains("emap-task-branch-shell")) return 144;
+          if (this.getAttribute("data-panel-id") === "process-worker") {
+            panelHeightReads += 1;
+            return this.textContent?.includes("expanded process update") ? 420 : 180;
+          }
+          return 0;
+        },
+      });
+
+      const task = mockTeamTasks[0]!;
+      const taskNode: AtlasTaskNode = {
+        nodeId: `task-node-${task.taskId}`,
+        kind: "canvas-task",
+        taskId: task.taskId,
+        position: { x: 280, y: 220 },
+      };
+      const renderMap = (content: string) => (
+        <ExecutionMap
+          selectedTaskId={null}
+          onSelectTask={() => {}}
+          taskNodes={[taskNode]}
+          tasksById={new Map([[task.taskId, task]])}
+          focusedTaskNodeId={taskNode.nodeId}
+          taskBranchPanel={<section className="task-action-branch">操作菜单</section>}
+          taskChildBranchPanels={[
+            {
+              id: "process-worker",
+              width: 300,
+              autoHeight: true,
+              panel: <section className="emap-observer-node">{content}</section>,
+            },
+          ]}
+        />
+      );
+
+      const { container, rerender } = render(renderMap("initial process update"));
+      const panelShell = container.querySelector('[data-panel-id="process-worker"]') as HTMLElement | null;
+      expect(panelShell).toBeTruthy();
+
+      await waitFor(() => {
+        expect(panelHeightReads).toBeGreaterThan(0);
+      });
+
+      firePanelPointer(panelShell!, "pointerdown", { pointerId: 64, clientX: 640, clientY: 300 });
+      firePanelPointer(panelShell!, "pointermove", { pointerId: 64, clientX: 700, clientY: 340 });
+      panelHeightReads = 0;
+
+      rerender(renderMap("expanded process update"));
+
+      expect(panelHeightReads).toBe(0);
+
+      firePanelPointer(panelShell!, "pointerup", { pointerId: 64, clientX: 700, clientY: 340, buttons: 0 });
+    } finally {
+      if (offsetWidthDescriptor) {
+        Object.defineProperty(HTMLElement.prototype, "offsetWidth", offsetWidthDescriptor);
+      } else {
+        delete (HTMLElement.prototype as { offsetWidth?: number }).offsetWidth;
+      }
+      if (offsetHeightDescriptor) {
+        Object.defineProperty(HTMLElement.prototype, "offsetHeight", offsetHeightDescriptor);
+      } else {
+        delete (HTMLElement.prototype as { offsetHeight?: number }).offsetHeight;
+      }
+    }
+  });
 });
 
 describe("Canvas pan and zoom", () => {

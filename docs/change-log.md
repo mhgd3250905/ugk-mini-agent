@@ -12,6 +12,58 @@
 
 ---
 
+## 2026-05-25 — Team Console 过程节点 UI 优化
+
+- **主题**: 优化 Worker / Checker 过程节点上半区 assistantText 多行展示和下半区 tool groups 精简。
+- **变更内容**:
+  - `formatAssistantText()` 替代 `truncateProcessSummaryText()` 处理 assistantText：保留换行、统一 CRLF/LF、中文标点自然断句、每行独立 `<p>` 渲染，最多 5 行超限显示"已隐藏 X 行"，单行超过 200 字符会截断并显示"已截断 X 长行"。
+  - assistant text 容器 `max-height` 从 108px 提升到 172px，`overflow-y: auto` 内部滚动。
+  - 下半区 tool groups 从最多 8 组精简为 1 组：优先 active / running，其次最新 finished / error；显示"仅显示最近 1 组，已隐藏 X 组 / X 条"。
+  - 新增 5 个测试：多行保留、中文断句、超限截断提示、无标点 8000 字符长行截断、tool group 只渲染 1 组优先 active。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改 `.pi/skills/**`，不新增 endpoint / SSE / schema。
+
+---
+
+## 2026-05-25 — Team Console assistantText 消费
+
+- **主题**: Team Console 前端消费后端 `roleProcesses.*.assistantText` 字段，按优先级展示 Agent 自述 / 推理文本。
+- **变更内容**:
+  - `TeamAttemptRoleProcess` 类型新增可选 `assistantText?: { content: string; updatedAt: string }`。
+  - 过程节点 `renderRoleProcessNode()` 顶部按优先级展示：(1) `assistantText.content` 截断到 280 字符 + CSS `max-height: 108px` 溢出隐藏，(2) `assistantText` 缺失时回退到 current action + narration，(3) tool groups 作为可折叠证据区不变。
+  - 长文本安全：`truncateProcessSummaryText()` 字符截断 + CSS `max-height` 双重保护。
+  - Mock fixture 已同步添加 `assistantText` 数据。
+  - 新增 5 个测试：assistantText 优先展示、缺失 fallback、长文本截断、tool groups 可折叠、拖动不回归。
+- **影响范围**: `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改 `.pi/skills/**`，不新增 endpoint / SSE / schema。
+
+---
+
+## 2026-05-25 — Team Console Task run observer 拖动性能收口
+
+- **主题**: 修复 Task run 运行中拖动 Run observer 子节点时卡顿、闪烁、不跟手的问题。
+- **变更内容**:
+  - ExecutionMap 在 Task 根节点、菜单节点、Run observer 子节点拖动或文件详情 resize 期间，暂停 Task branch / child panel 的自动高度测量，避免运行中轮询刷新时反复读取 `offsetHeight` 强制浏览器同步 layout。
+  - Task branch / child branch shell 增加轻量合成层提示，减少拖动时的重绘压力。
+  - 运行中的 observer 不再渲染空文件占位节点，也不显示 `正在刷新...` / `最后刷新` 这类随轮询变化的刷新元信息；active run 轮询的瞬时连接失败不再插入红色错误节点，避免“暂无 attempt 文件”“无法连接服务器”和刷新时间随轮询闪烁；终态 run 读取失败仍会显示错误。
+  - 新增回归测试锁定拖动期间 process panel 内容刷新不会触发 auto-height measurement。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改 `.pi/skills/**`，不新增 endpoint / SSE / schema。
+
+---
+
+## 2026-05-25 — Team Console Task run process 摘要截断
+
+- **主题**: 收紧 Team Console `Worker 过程` / `Checker 过程` 节点顶部摘要，避免长 skill 或 tool 输出把脑图节点撑成全文日志面板。
+- **变更内容**:
+  - `currentAction` 和最新 `narration` 在节点顶部展示前会压缩空白并按字符预算截断。
+  - 展开的 tool group detail 仍保留完整 entry 内容；本轮只限制摘要层，不丢 attempt metadata 里的过程数据。
+  - 新增回归测试锁定长摘要不显示尾部 sentinel，同时确保 tool detail 仍可见。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改 `.pi/skills/**`，不新增 endpoint / SSE / schema。
+
+---
+
 ## 2026-05-25 — Team Canvas Task run 取消过程写盘竞态修复
 
 - **主题**: 修复 Canvas Task run 取消时 role process late session event 可能覆盖 attempt 终态字段的竞态。

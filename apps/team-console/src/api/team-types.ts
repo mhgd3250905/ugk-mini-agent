@@ -89,6 +89,7 @@ export interface TeamAttemptRoleProcess {
   updatedAt: string | null;
   finishedAt: string | null;
   process: AgentChatProcess | null;
+  assistantText?: { content: string; updatedAt: string } | null;
 }
 
 export type TeamAttemptRoleProcesses = Partial<Record<TeamAttemptRoleProcessRole, TeamAttemptRoleProcess>>;

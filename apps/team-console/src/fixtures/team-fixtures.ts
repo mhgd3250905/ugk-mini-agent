@@ -1049,6 +1049,10 @@ function createMockTaskRun(task: TeamCanvasTask): TeamRunState {
         startedAt: timestamp,
         updatedAt: timestamp,
         finishedAt: timestamp,
+        assistantText: {
+          content: "已完成云资产搜索，收集到官网和云平台线索。\n正在整理调查结果，准备生成输出文件。",
+          updatedAt: timestamp,
+        },
         process: {
           title: "Worker 过程",
           narration: ["Worker 已读取 WorkUnit 输入", "Worker 已生成资产调查草稿"],
@@ -1091,6 +1095,10 @@ function createMockTaskRun(task: TeamCanvasTask): TeamRunState {
         startedAt: timestamp,
         updatedAt: timestamp,
         finishedAt: timestamp,
+        assistantText: {
+          content: "已审阅 Worker 提交的资产调查结果。\n验收规则全部通过，输出契约完整。",
+          updatedAt: timestamp,
+        },
         process: {
           title: "Checker 过程",
           narration: ["Checker 已读取 worker 输出", "Checker 已确认输出满足验收规则"],

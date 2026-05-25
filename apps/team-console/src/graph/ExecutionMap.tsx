@@ -622,6 +622,17 @@ export function ExecutionMap({
   const taskBranchDragSuppressClickRef = useRef(false);
   const translateTaskSubtreeRef = useRef<(scope: "root" | "menu" | { panelId: string }, dx: number, dy: number) => void>(() => {});
 
+  const hasActiveTaskLayoutInteraction = () => {
+    const atlasDrag = atlasNodeDragRef.current;
+    return Boolean(
+      taskBranchDragRef.current
+      || taskChildBranchInteractionRef.current
+      || panelDragRef.current
+      || panelResizeRef.current
+      || atlasDrag?.entries.some((entry) => entry.kind === "task"),
+    );
+  };
+
   if (prevSelectionRef.current !== selectedTaskId) {
     prevSelectionRef.current = selectedTaskId;
     if (Object.keys(measuredHeights).length > 0) {
@@ -1283,6 +1294,8 @@ export function ExecutionMap({
   }, [agentBranchPanel, maximizedBranch, taskChildBranchPanel]);
 
   useLayoutEffect(() => {
+    if (hasActiveTaskLayoutInteraction()) return;
+
     const nodeId = focusedTaskNode?.nodeId ?? null;
     if (!nodeId || !taskBranchPanel) {
       setTaskBranchMeasuredSize((current) => current ? null : current);
@@ -1304,6 +1317,8 @@ export function ExecutionMap({
   });
 
   useLayoutEffect(() => {
+    if (hasActiveTaskLayoutInteraction()) return;
+
     if (!taskChildBranchPanels?.length) {
       if (Object.keys(panelMeasuredHeights).length > 0) setPanelMeasuredHeights({});
       return;

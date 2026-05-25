@@ -533,13 +533,13 @@ describe("App", () => {
 
     expect(within(workerProcessNode).getByText("Worker 过程")).toBeInTheDocument();
     expect(within(workerProcessNode).getByText("成功")).toBeInTheDocument();
-    expect(within(workerProcessNode).getByText("整理云资产证据")).toBeInTheDocument();
-    expect(within(workerProcessNode).getByText("Worker 已生成资产调查草稿")).toBeInTheDocument();
+    expect(workerProcessNode.querySelector(".emap-observer-process-assistant-text")).toHaveTextContent("已完成云资产搜索");
+    expect(within(workerProcessNode).queryByText("整理云资产证据")).toBeNull();
 
     expect(within(checkerProcessNode!).getByText("Checker 过程")).toBeInTheDocument();
     expect(within(checkerProcessNode!).getByText("成功")).toBeInTheDocument();
-    expect(within(checkerProcessNode!).getByText("复核输出契约")).toBeInTheDocument();
-    expect(within(checkerProcessNode!).getByText("Checker 已确认输出满足验收规则")).toBeInTheDocument();
+    expect(checkerProcessNode!.querySelector(".emap-observer-process-assistant-text")).toHaveTextContent("已审阅 Worker 提交的资产调查结果");
+    expect(within(checkerProcessNode!).queryByText("复核输出契约")).toBeNull();
   });
 
   it("keeps the Task run observer usable when legacy attempts have no roleProcesses", async () => {
@@ -596,6 +596,128 @@ describe("App", () => {
     expect(checkerProcessNode).toHaveTextContent("暂无过程条目");
   });
 
+  it("does not flash empty file or transient server error nodes during an active Task run observer poll", async () => {
+    const task = cloneTaskFixture();
+    const taskRun = makeLiveTaskRunFixture(task, "active-task-run-1");
+    const activeRun: TeamRunState = {
+      ...taskRun,
+      status: "running",
+      finishedAt: null,
+      currentTaskId: task.taskId,
+      taskStates: {
+        [task.taskId]: {
+          ...taskRun.taskStates[task.taskId]!,
+          status: "running",
+          progress: {
+            phase: "worker_running",
+            message: "正在执行",
+            updatedAt: "2026-05-25T00:00:03.000Z",
+          },
+        },
+      },
+    };
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [
+            { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+            { agentId: "search", name: "搜索 Agent", description: "搜索" },
+          ],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [task] }), { status: 200 });
+      if (url === `/v1/team/tasks/${task.taskId}/runs`) {
+        return new Response(JSON.stringify({ runs: [activeRun] }), { status: 200 });
+      }
+      if (url === `/v1/team/task-runs/${activeRun.runId}`) {
+        throw new TypeError("Failed to fetch");
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    const runSummary = await within(branch!).findByRole("button", { name: /运行中[\s\S]*执行中/ });
+    fireEvent.click(runSummary);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+    });
+    expect(screen.queryByText("无法连接服务器")).toBeNull();
+    expect(screen.queryByText("暂无 attempt 文件。运行刚启动时这里会随轮询补齐。")).toBeNull();
+    expect(container.querySelector(".emap-observer-empty")).toBeNull();
+  });
+
+  it("does not render volatile refresh metadata in an active Task run observer", async () => {
+    const task = cloneTaskFixture();
+    const taskRun = makeLiveTaskRunFixture(task, "active-task-run-2");
+    const activeRun: TeamRunState = {
+      ...taskRun,
+      status: "running",
+      finishedAt: null,
+      currentTaskId: task.taskId,
+      taskStates: {
+        [task.taskId]: {
+          ...taskRun.taskStates[task.taskId]!,
+          status: "running",
+          progress: {
+            phase: "worker_running",
+            message: "正在执行",
+            updatedAt: "2026-05-25T00:00:03.000Z",
+          },
+        },
+      },
+    };
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [
+            { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+            { agentId: "search", name: "搜索 Agent", description: "搜索" },
+          ],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [task] }), { status: 200 });
+      if (url === `/v1/team/tasks/${task.taskId}/runs`) {
+        return new Response(JSON.stringify({ runs: [activeRun] }), { status: 200 });
+      }
+      if (url === `/v1/team/task-runs/${activeRun.runId}`) {
+        return new Response(JSON.stringify(activeRun), { status: 200 });
+      }
+      if (url === `/v1/team/task-runs/${activeRun.runId}/tasks/${task.taskId}/attempts`) {
+        return new Response(JSON.stringify({ attempts: [] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    const runSummary = await within(branch!).findByRole("button", { name: /运行中[\s\S]*执行中/ });
+    fireEvent.click(runSummary);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+    });
+    expect(screen.queryByText("正在刷新...")).toBeNull();
+    expect(screen.queryByText(/最后刷新/)).toBeNull();
+  });
+
   it("groups process tool entries by toolCallId and toggles terminal groups", async () => {
     const { container } = render(<App />);
 
@@ -623,10 +745,9 @@ describe("App", () => {
     expect(within(searchGroup!).getByText("找到官网、云平台和公开登录入口线索")).toBeInTheDocument();
 
     const eventGroup = workerProcessNode.querySelector('.emap-process-tool-group[data-tool-group-id="event:worker-note-output"]') as HTMLElement | null;
-    expect(eventGroup).toBeTruthy();
-    expect(eventGroup).toHaveTextContent("普通事件");
-    expect(eventGroup).toHaveTextContent("已把证据整理为 worker 输出文件");
-    expect(searchGroup).not.toHaveTextContent("已把证据整理为 worker 输出文件");
+    expect(eventGroup).toBeNull();
+    expect(workerProcessNode.querySelectorAll(".emap-process-tool-group")).toHaveLength(1);
+    expect(workerProcessNode.querySelector(".emap-process-budget-note")).toHaveTextContent("仅显示最近 1 组");
 
     fireEvent.click(searchHeader);
     expect(searchGroup).toHaveTextContent("完成");
@@ -726,18 +847,108 @@ describe("App", () => {
     });
     expect(workerProcessNode).toHaveTextContent("压缩长任务过程视图");
     expect(workerProcessNode).toHaveTextContent("Worker 已汇总大量过程数据");
-    expect(workerProcessNode).toHaveTextContent("最多显示 8 组，优先保留活跃过程");
-    expect(workerProcessNode).toHaveTextContent("已隐藏 5 组 / 19 条");
-    expect(workerProcessNode).toHaveTextContent("已隐藏 14 条，仅显示最近 6 条");
+    expect(workerProcessNode).toHaveTextContent("仅显示最近 1 组");
+    expect(workerProcessNode).toHaveTextContent("已隐藏 12 组");
 
     const groupsContainer = workerProcessNode.querySelector(".emap-process-tool-groups") as HTMLElement | null;
     expect(groupsContainer).toHaveClass("is-scrollable");
-    expect(workerProcessNode.querySelectorAll(".emap-process-tool-group")).toHaveLength(8);
+    expect(workerProcessNode.querySelectorAll(".emap-process-tool-group")).toHaveLength(1);
     expect(workerProcessNode).not.toHaveTextContent("bulk tool 01 finished");
-    expect(workerProcessNode).toHaveTextContent("bulk-tool-12");
+    expect(workerProcessNode).toHaveTextContent("bulk-deep-tool");
     expect(workerProcessNode).not.toHaveTextContent("deep detail 01");
     expect(workerProcessNode).toHaveTextContent("deep detail 20");
     expect(workerProcessNode.querySelectorAll(".emap-process-tool-entry").length).toBeLessThan(33);
+  });
+
+  it("truncates process node summary text without dropping expanded tool detail", async () => {
+    const task = cloneTaskFixture();
+    const taskRun = makeLiveTaskRunFixture(task);
+    const longCurrentAction = [
+      "工具结束 · read",
+      "A".repeat(220),
+      "CURRENT_ACTION_SENTINEL_AFTER_LIMIT",
+    ].join(" ");
+    const longNarration = [
+      "工具结束 · read",
+      "B".repeat(360),
+      "NARRATION_SENTINEL_AFTER_LIMIT",
+    ].join(" ");
+    const attempt: TeamAttemptMetadata = {
+      ...makeLegacyAttemptFixture(task),
+      roleProcesses: {
+        worker: {
+          role: "worker",
+          profileId: task.workUnit.workerAgentId,
+          status: "succeeded",
+          startedAt: "2026-05-25T00:00:00.000Z",
+          updatedAt: "2026-05-25T00:00:05.000Z",
+          finishedAt: "2026-05-25T00:00:05.000Z",
+          process: {
+            title: "Worker 过程",
+            narration: [longNarration],
+            currentAction: longCurrentAction,
+            kind: "ok",
+            isComplete: true,
+            entries: [{
+              id: "tool-detail-full",
+              kind: "ok",
+              title: "read finished",
+              detail: `完整 tool detail 保留 FULL_TOOL_DETAIL_SENTINEL ${"C".repeat(260)}`,
+              createdAt: "2026-05-25T00:00:04.000Z",
+              toolCallId: "tool-detail-full",
+              toolName: "read",
+            }],
+          },
+        },
+      },
+    };
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [
+            { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+            { agentId: "search", name: "搜索 Agent", description: "搜索" },
+          ],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [task] }), { status: 200 });
+      if (url === `/v1/team/tasks/${task.taskId}/runs`) {
+        return new Response(JSON.stringify({ runs: [taskRun] }), { status: 200 });
+      }
+      if (url === `/v1/team/task-runs/${taskRun.runId}`) {
+        return new Response(JSON.stringify(taskRun), { status: 200 });
+      }
+      if (url === `/v1/team/task-runs/${taskRun.runId}/tasks/${task.taskId}/attempts`) {
+        return new Response(JSON.stringify({ attempts: [attempt] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    const workerProcessNode = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-process-node[data-process-role="worker"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    const summary = workerProcessNode.querySelector(".emap-observer-process-top") as HTMLElement | null;
+    expect(summary).toBeTruthy();
+    expect(summary).toHaveTextContent("工具结束 · read");
+    expect(summary).toHaveTextContent("...");
+    expect(summary).not.toHaveTextContent("CURRENT_ACTION_SENTINEL_AFTER_LIMIT");
+    expect(summary).not.toHaveTextContent("NARRATION_SENTINEL_AFTER_LIMIT");
+    expect(workerProcessNode).toHaveTextContent("FULL_TOOL_DETAIL_SENTINEL");
   });
 
   it("expands the active process tool by default while a role is running", async () => {
@@ -2584,10 +2795,9 @@ describe("App", () => {
     expect(readme).toContain("Checker 过程");
     expect(readme).toContain("toolCallId");
     expect(readme).toContain("缺少 `roleProcesses`");
-    expect(readme).toContain("UI budget");
-    expect(readme).toContain("最多显示");
-    expect(readme).toContain("优先保留活跃过程");
-    expect(readme).toContain("隐藏计数");
+    expect(readme).toContain("DOM 渲染限流");
+    expect(readme).toContain("formatAssistantText");
+    expect(readme).toContain("仅显示最近 1 组");
     expect(readme).toContain("不接 SSE");
     expect(readme).toContain("只展示 Agent 名字（从 agentsById 解析）、文件名和路径");
     expect(readme).toContain("不会进入 `/v1/team/runs` 的 Plan run 列表");
@@ -2637,7 +2847,7 @@ describe("App", () => {
     expect(runtimeDoc).toContain("Checker 过程");
     expect(runtimeDoc).toContain("toolCallId");
     expect(runtimeDoc).toContain("additive frontend contract");
-    expect(runtimeDoc).toContain("UI budget");
+    expect(runtimeDoc).toContain("formatAssistantText");
     expect(runtimeDoc).toContain("不丢弃完整过程数据");
     expect(runtimeDoc).toContain("SSE 观察流仍是后续后端能力");
     expect(runtimeDoc).toContain("base snapshot + dirty fields");
@@ -2652,8 +2862,8 @@ describe("App", () => {
     expect(playgroundCurrent).toContain("Checker 过程");
     expect(playgroundCurrent).toContain("roleProcesses");
     expect(playgroundCurrent).toContain("toolCallId");
-    expect(playgroundCurrent).toContain("UI budget");
-    expect(playgroundCurrent).toContain("隐藏计数");
+    expect(playgroundCurrent).toContain("中文标点自然断句");
+    expect(playgroundCurrent).toContain("仅显示最近 1 组");
     expect(playgroundCurrent).toContain("不接 SSE");
 
     const changeLog = readFileSync("../../docs/change-log.md", "utf8");
@@ -3460,5 +3670,349 @@ describe("App", () => {
     expect(maximizeButton).toBeTruthy();
     fireEvent.click(maximizeButton!);
     expect(container.querySelector(".emap-maximized-branch-shell")).toBeTruthy();
+  });
+
+  describe("assistantText priority in process nodes", () => {
+    function makeLiveRunWithAssistantText(
+      task: TeamCanvasTask,
+      assistantText: { content: string; updatedAt: string } | null,
+      currentAction = "执行搜索",
+    ): { taskRun: TeamRunState; attempt: TeamAttemptMetadata } {
+      const taskRun = makeLiveTaskRunFixture(task);
+      const attempt: TeamAttemptMetadata = {
+        ...makeLegacyAttemptFixture(task),
+        roleProcesses: {
+          worker: {
+            role: "worker",
+            profileId: task.workUnit.workerAgentId,
+            status: "running",
+            startedAt: "2026-05-25T00:00:01.000Z",
+            updatedAt: "2026-05-25T00:00:05.000Z",
+            finishedAt: null,
+            assistantText,
+            process: {
+              title: "Worker 过程",
+              narration: ["Worker 正在搜索"],
+              currentAction,
+              kind: "tool",
+              isComplete: false,
+              entries: [{
+                id: "entry-search",
+                kind: "tool",
+                title: "x-search-latest started",
+                detail: "正在搜索",
+                createdAt: "2026-05-25T00:00:04.000Z",
+                toolCallId: "tool-search",
+                toolName: "x-search-latest",
+              }],
+            },
+          },
+        },
+      };
+      return { taskRun, attempt };
+    }
+
+    function setupLiveApi(task: TeamCanvasTask, taskRun: TeamRunState, attempt: TeamAttemptMetadata) {
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [
+              { agentId: "main", name: "主 Agent", description: "默认" },
+              { agentId: "search", name: "搜索", description: "搜索" },
+            ],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [task] }), { status: 200 });
+        if (url === `/v1/team/tasks/${task.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [taskRun] }), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${taskRun.runId}`) {
+          return new Response(JSON.stringify(taskRun), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${taskRun.runId}/tasks/${task.taskId}/attempts`) {
+          return new Response(JSON.stringify({ attempts: [attempt] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+    }
+
+    async function openRunObserver(container: HTMLElement) {
+      const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+      fireEvent.click(taskNode);
+      const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+      expect(branch).toBeTruthy();
+      const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+      fireEvent.click(runSummary);
+      return waitFor(() => {
+        const node = container.querySelector('.emap-observer-process-node[data-process-role="worker"]') as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+    }
+
+    it("shows assistantText.content as primary display when present", async () => {
+      const task = cloneTaskFixture();
+      const { taskRun, attempt } = makeLiveRunWithAssistantText(
+        task,
+        { content: "正在分析代码库结构，准备生成实现方案。", updatedAt: "2026-05-25T00:00:05.000Z" },
+      );
+      setupLiveApi(task, taskRun, attempt);
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const workerNode = await openRunObserver(container);
+      const assistantBlock = workerNode.querySelector(".emap-observer-process-assistant-text") as HTMLElement | null;
+      expect(assistantBlock).toBeTruthy();
+      expect(assistantBlock).toHaveTextContent("正在分析代码库结构");
+      expect(assistantBlock).toHaveTextContent("Agent");
+      expect(workerNode.querySelector(".emap-observer-process-line")).toBeNull();
+    });
+
+    it("falls back to currentAction/narration when assistantText is absent", async () => {
+      const task = cloneTaskFixture();
+      const { taskRun, attempt } = makeLiveRunWithAssistantText(task, null);
+      setupLiveApi(task, taskRun, attempt);
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const workerNode = await openRunObserver(container);
+      expect(workerNode.querySelector(".emap-observer-process-assistant-text")).toBeNull();
+      const lineEl = workerNode.querySelector(".emap-observer-process-line") as HTMLElement | null;
+      expect(lineEl).toBeTruthy();
+      expect(lineEl).toHaveTextContent("执行搜索");
+    });
+
+    it("truncates long assistantText without blowing up the node", async () => {
+      const longText = Array.from({ length: 20 }, (_, i) => `第 ${i + 1} 行内容填充文本。`).join("\n");
+      const task = cloneTaskFixture();
+      const { taskRun, attempt } = makeLiveRunWithAssistantText(
+        task,
+        { content: longText, updatedAt: "2026-05-25T00:00:05.000Z" },
+      );
+      setupLiveApi(task, taskRun, attempt);
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const workerNode = await openRunObserver(container);
+      const assistantBlock = workerNode.querySelector(".emap-observer-process-assistant-text") as HTMLElement | null;
+      expect(assistantBlock).toBeTruthy();
+      const paragraphs = assistantBlock!.querySelectorAll("p");
+      expect(paragraphs.length).toBeLessThanOrEqual(5);
+      const truncated = assistantBlock!.querySelector(".emap-observer-process-assistant-truncated") as HTMLElement | null;
+      expect(truncated).toBeTruthy();
+      expect(truncated).toHaveTextContent("已隐藏");
+      const style = getComputedStyle(assistantBlock!);
+      expect(style.maxHeight).not.toBe("none");
+    });
+
+    it("keeps tool groups collapsible alongside assistantText", async () => {
+      const task = cloneTaskFixture();
+      const { taskRun, attempt } = makeLiveRunWithAssistantText(
+        task,
+        { content: "正在执行工具调用。", updatedAt: "2026-05-25T00:00:05.000Z" },
+      );
+      setupLiveApi(task, taskRun, attempt);
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const workerNode = await openRunObserver(container);
+      expect(workerNode.querySelector(".emap-observer-process-assistant-text")).toBeTruthy();
+      const toolGroup = workerNode.querySelector(".emap-process-tool-group") as HTMLElement | null;
+      expect(toolGroup).toBeTruthy();
+      const groupHeader = toolGroup!.querySelector(".emap-process-tool-group-header") as HTMLElement | null;
+      expect(groupHeader).toBeTruthy();
+      expect(toolGroup).toHaveClass("expanded");
+      fireEvent.click(groupHeader!);
+      expect(toolGroup).toHaveClass("collapsed");
+      fireEvent.click(groupHeader!);
+      expect(toolGroup).toHaveClass("expanded");
+    });
+
+    it("does not regress drag semantics with assistantText present", async () => {
+      const task = cloneTaskFixture();
+      const { taskRun, attempt } = makeLiveRunWithAssistantText(
+        task,
+        { content: "Agent 正在工作。", updatedAt: "2026-05-25T00:00:05.000Z" },
+      );
+      setupLiveApi(task, taskRun, attempt);
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const workerNode = await openRunObserver(container);
+      const workerShell = workerNode.closest(".emap-task-child-branch-shell") as HTMLElement | null;
+      expect(workerShell).toBeTruthy();
+      const header = workerShell!.querySelector(".emap-observer-process-head") as HTMLElement | null;
+      expect(header).toBeTruthy();
+
+      const leftBefore = Number.parseFloat(workerShell!.style.left);
+      const topBefore = Number.parseFloat(workerShell!.style.top);
+      firePointer(header!, "pointerdown", { pointerId: 201, clientX: 300, clientY: 200 });
+      firePointer(header!, "pointermove", { pointerId: 201, clientX: 360, clientY: 260 });
+      firePointer(header!, "pointerup", { pointerId: 201, clientX: 360, clientY: 260, buttons: 0 });
+      expect(Number.parseFloat(workerShell!.style.left)).toBeCloseTo(leftBefore + 60, 4);
+      expect(Number.parseFloat(workerShell!.style.top)).toBeCloseTo(topBefore + 60, 4);
+    });
+
+    it("renders multi-line assistantText as separate paragraphs", async () => {
+      const task = cloneTaskFixture();
+      const { taskRun, attempt } = makeLiveRunWithAssistantText(
+        task,
+        { content: "第一行内容。\n第二行内容。\n第三行内容。", updatedAt: "2026-05-25T00:00:05.000Z" },
+      );
+      setupLiveApi(task, taskRun, attempt);
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const workerNode = await openRunObserver(container);
+      const assistantBlock = workerNode.querySelector(".emap-observer-process-assistant-text") as HTMLElement | null;
+      expect(assistantBlock).toBeTruthy();
+      const paragraphs = assistantBlock!.querySelectorAll("p");
+      expect(paragraphs.length).toBe(3);
+      expect(paragraphs[0]!.textContent).toBe("第一行内容。");
+      expect(paragraphs[1]!.textContent).toBe("第二行内容。");
+      expect(paragraphs[2]!.textContent).toBe("第三行内容。");
+      expect(assistantBlock!.querySelector(".emap-observer-process-assistant-truncated")).toBeNull();
+    });
+
+    it("splits lineless Chinese assistantText by sentence punctuation", async () => {
+      const task = cloneTaskFixture();
+      const { taskRun, attempt } = makeLiveRunWithAssistantText(
+        task,
+        { content: "已完成搜索，找到多个线索。正在整理结果；准备生成报告。", updatedAt: "2026-05-25T00:00:05.000Z" },
+      );
+      setupLiveApi(task, taskRun, attempt);
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const workerNode = await openRunObserver(container);
+      const assistantBlock = workerNode.querySelector(".emap-observer-process-assistant-text") as HTMLElement | null;
+      expect(assistantBlock).toBeTruthy();
+      const paragraphs = assistantBlock!.querySelectorAll("p");
+      expect(paragraphs.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("shows truncated hint when assistantText exceeds line budget", async () => {
+      const lines = Array.from({ length: 10 }, (_, i) => `行 ${i + 1} 内容`).join("\n");
+      const task = cloneTaskFixture();
+      const { taskRun, attempt } = makeLiveRunWithAssistantText(
+        task,
+        { content: lines, updatedAt: "2026-05-25T00:00:05.000Z" },
+      );
+      setupLiveApi(task, taskRun, attempt);
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const workerNode = await openRunObserver(container);
+      const assistantBlock = workerNode.querySelector(".emap-observer-process-assistant-text") as HTMLElement | null;
+      const paragraphs = assistantBlock!.querySelectorAll("p");
+      expect(paragraphs.length).toBeLessThanOrEqual(5);
+      const hint = assistantBlock!.querySelector(".emap-observer-process-assistant-truncated");
+      expect(hint).toBeTruthy();
+      expect(hint).toHaveTextContent("已隐藏");
+    });
+
+    it("renders only 1 tool group preferring active over finished", async () => {
+      const task = cloneTaskFixture();
+      const taskRun: TeamRunState = {
+        ...makeLiveTaskRunFixture(task),
+        status: "running",
+        finishedAt: null,
+        currentTaskId: task.taskId,
+        taskStates: {
+          [task.taskId]: {
+            status: "running",
+            attemptCount: 1,
+            activeAttemptId: "at-1",
+            resultRef: null,
+            errorSummary: null,
+            progress: { phase: "worker_running", message: "Worker", updatedAt: "2026-05-25T00:00:05.000Z" },
+          },
+        },
+        summary: { totalTasks: 1, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+      };
+      const attempt: TeamAttemptMetadata = {
+        ...makeLegacyAttemptFixture(task),
+        status: "running",
+        phase: "worker_running",
+        finishedAt: null,
+        roleProcesses: {
+          worker: {
+            role: "worker",
+            profileId: task.workUnit.workerAgentId,
+            status: "running",
+            startedAt: "2026-05-25T00:00:01.000Z",
+            updatedAt: "2026-05-25T00:00:05.000Z",
+            finishedAt: null,
+            process: {
+              title: "Worker 过程",
+              narration: ["正在执行"],
+              currentAction: "执行中",
+              kind: "tool",
+              isComplete: false,
+              entries: [
+                { id: "e1", kind: "tool", title: "read started", detail: "d1", createdAt: "2026-05-25T00:00:02.000Z", toolCallId: "tool-read", toolName: "read" },
+                { id: "e2", kind: "ok", title: "read finished", detail: "d2", createdAt: "2026-05-25T00:00:03.000Z", toolCallId: "tool-read", toolName: "read" },
+                { id: "e3", kind: "tool", title: "search started", detail: "d3", createdAt: "2026-05-25T00:00:04.000Z", toolCallId: "tool-search", toolName: "x-search" },
+              ],
+            },
+          },
+        },
+      };
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [{ agentId: "main", name: "主 Agent", description: "默认" }, { agentId: "search", name: "搜索", description: "搜索" }] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [task] }), { status: 200 });
+        if (url === `/v1/team/tasks/${task.taskId}/runs`) return new Response(JSON.stringify({ runs: [taskRun] }), { status: 200 });
+        if (url === `/v1/team/task-runs/${taskRun.runId}`) return new Response(JSON.stringify(taskRun), { status: 200 });
+        if (url === `/v1/team/task-runs/${taskRun.runId}/tasks/${task.taskId}/attempts`) return new Response(JSON.stringify({ attempts: [attempt] }), { status: 200 });
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+      fireEvent.click(taskNode);
+      const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+      expect(branch).toBeTruthy();
+      const runSummary = await within(branch!).findByRole("button", { name: /运行中[\s\S]*执行中/ });
+      fireEvent.click(runSummary);
+
+      const workerNode = await waitFor(() => {
+        const node = container.querySelector('.emap-observer-process-node[data-process-role="worker"]') as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      const groups = workerNode.querySelectorAll(".emap-process-tool-group");
+      expect(groups.length).toBe(1);
+      expect(groups[0]!).toHaveAttribute("data-tool-group-id", "tool-search");
+      expect(workerNode.querySelector(".emap-process-budget-note")).toHaveTextContent("仅显示最近 1 组");
+    });
+
+    it("truncates long punctuationless text and shows truncated hint", async () => {
+      const longText = "A".repeat(8000);
+      const task = cloneTaskFixture();
+      const { taskRun, attempt } = makeLiveRunWithAssistantText(
+        task,
+        { content: longText, updatedAt: "2026-05-25T00:00:05.000Z" },
+      );
+      setupLiveApi(task, taskRun, attempt);
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const workerNode = await openRunObserver(container);
+      const assistantBlock = workerNode.querySelector(".emap-observer-process-assistant-text") as HTMLElement | null;
+      expect(assistantBlock).toBeTruthy();
+      const paragraph = assistantBlock!.querySelector("p") as HTMLElement | null;
+      expect(paragraph).toBeTruthy();
+      expect(paragraph!.textContent!.length).toBeLessThanOrEqual(203);
+      expect(paragraph!.textContent!.endsWith("...")).toBe(true);
+      const hint = assistantBlock!.querySelector(".emap-observer-process-assistant-truncated");
+      expect(hint).toBeTruthy();
+      expect(hint).toHaveTextContent("已截断");
+    });
   });
 });

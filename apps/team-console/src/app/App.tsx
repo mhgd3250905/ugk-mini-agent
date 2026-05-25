@@ -22,8 +22,12 @@ const TASK_RUN_PROCESS_LABELS: Record<TeamAttemptRoleProcessRole, string> = {
   worker: "Worker 过程",
   checker: "Checker 过程",
 };
-const PROCESS_MAX_GROUPS = 8;
 const PROCESS_MAX_ENTRIES_PER_GROUP = 6;
+const PROCESS_CURRENT_ACTION_MAX_CHARS = 96;
+const PROCESS_NARRATION_MAX_CHARS = 220;
+const PROCESS_ASSISTANT_TEXT_MAX_LINES = 5;
+const PROCESS_ASSISTANT_TEXT_MAX_LINE_CHARS = 200;
+const PROCESS_VISIBLE_TOOL_GROUPS = 1;
 
 type AgentBranchMode = "chat" | "task-create";
 
@@ -169,6 +173,46 @@ function getLatestNarration(process: TeamAttemptRoleProcess["process"] | undefin
   return latest ?? "暂无过程条目";
 }
 
+function truncateProcessSummaryText(value: string | null | undefined, maxChars: number): string {
+  const normalized = (value ?? "").replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxChars) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxChars - 3)).trimEnd()}...`;
+}
+
+const SENTENCE_BREAK_RE = /(?<=[。？！；\n])/;
+
+function formatAssistantText(raw: string): { lines: string[]; hiddenLineCount: number; truncatedLineCount: number } {
+  const normalized = raw.replace(/\r\n?/g, "\n").trim();
+  if (!normalized) return { lines: [], hiddenLineCount: 0, truncatedLineCount: 0 };
+  const hasRealBreak = normalized.includes("\n");
+  const paragraphs = hasRealBreak
+    ? normalized.split(/\n/)
+    : normalized.length > 20
+      ? normalized.split(SENTENCE_BREAK_RE).filter((s) => s.trim().length > 0)
+      : [normalized];
+  const maxChars = PROCESS_ASSISTANT_TEXT_MAX_LINE_CHARS;
+  const lines: string[] = [];
+  let truncatedLineCount = 0;
+  for (const para of paragraphs) {
+    const trimmed = para.trim();
+    if (trimmed.length === 0) {
+      if (lines.length > 0 && lines[lines.length - 1] !== "") lines.push("");
+      continue;
+    }
+    if (trimmed.length > maxChars) {
+      lines.push(`${trimmed.slice(0, Math.max(0, maxChars - 3)).trimEnd()}...`);
+      truncatedLineCount++;
+    } else {
+      lines.push(trimmed);
+    }
+  }
+  while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  const maxLines = PROCESS_ASSISTANT_TEXT_MAX_LINES;
+  if (lines.length <= maxLines) return { lines, hiddenLineCount: 0, truncatedLineCount };
+  const visible = lines.slice(0, maxLines);
+  return { lines: visible, hiddenLineCount: lines.length - maxLines, truncatedLineCount };
+}
+
 function compareEntryTime(a: string, b: string): number {
   const aTime = Date.parse(a);
   const bTime = Date.parse(b);
@@ -252,9 +296,10 @@ function applyProcessToolBudget(
   groups: ProcessToolGroup[],
   roleProcess: TeamAttemptRoleProcess | undefined,
 ): ProcessToolGroupBudget {
+  const maxGroups = PROCESS_VISIBLE_TOOL_GROUPS;
   const selectedIds = new Set<string>();
   const addGroup = (group: ProcessToolGroup | null) => {
-    if (group && selectedIds.size < PROCESS_MAX_GROUPS) selectedIds.add(group.id);
+    if (group && selectedIds.size < maxGroups) selectedIds.add(group.id);
   };
 
   if (roleProcess?.status === "running") {
@@ -267,7 +312,7 @@ function applyProcessToolBudget(
   }
 
   for (const group of [...groups].sort(recentToolGroupsFirst)) {
-    if (selectedIds.size >= PROCESS_MAX_GROUPS) break;
+    if (selectedIds.size >= maxGroups) break;
     selectedIds.add(group.id);
   }
 
@@ -350,11 +395,14 @@ function renderRoleProcessNode(
   onToggleToolGroup: (key: string, expanded: boolean) => void,
 ): ReactNode {
   const process = roleProcess?.process ?? null;
-  const currentAction = process?.currentAction?.trim() || "等待过程数据";
-  const latestNarration = getLatestNarration(process ?? undefined);
   const status = roleProcess?.status ?? "waiting";
   const budget = applyProcessToolBudget(buildToolGroups(process?.entries ?? []), roleProcess);
   const groups = budget.groups;
+  const assistantFormatted = roleProcess?.assistantText?.content
+    ? formatAssistantText(roleProcess.assistantText.content)
+    : null;
+  const currentAction = truncateProcessSummaryText(process?.currentAction, PROCESS_CURRENT_ACTION_MAX_CHARS) || "等待过程数据";
+  const latestNarration = truncateProcessSummaryText(getLatestNarration(process ?? undefined), PROCESS_NARRATION_MAX_CHARS);
   return (
     <section
       className={`emap-observer-node emap-observer-process-node ${role}`}
@@ -366,17 +414,38 @@ function renderRoleProcessNode(
         <span className={`emap-observer-process-status ${status}`}>{formatRoleProcessStatus(status)}</span>
       </header>
       <div className="emap-observer-process-top">
-        <div className="emap-observer-process-line">
-          <span>Current action</span>
-          <strong>{currentAction}</strong>
-        </div>
-        <p className="emap-observer-process-narration">{latestNarration}</p>
+        {assistantFormatted && assistantFormatted.lines.length > 0 ? (
+          <div className="emap-observer-process-assistant-text">
+            <span className="emap-observer-process-assistant-label">Agent</span>
+            {assistantFormatted.lines.map((line, i) => (
+              line === ""
+                ? <div key={i} className="emap-observer-process-assistant-spacer" />
+                : <p key={i}>{line}</p>
+            ))}
+            {(assistantFormatted.hiddenLineCount > 0 || assistantFormatted.truncatedLineCount > 0) && (
+              <span className="emap-observer-process-assistant-truncated">
+                {[
+                  assistantFormatted.hiddenLineCount > 0 ? `已隐藏 ${assistantFormatted.hiddenLineCount} 行` : null,
+                  assistantFormatted.truncatedLineCount > 0 ? `已截断 ${assistantFormatted.truncatedLineCount} 长行` : null,
+                ].filter(Boolean).join(" / ")}
+              </span>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="emap-observer-process-line">
+              <span>Current action</span>
+              <strong>{currentAction}</strong>
+            </div>
+            <p className="emap-observer-process-narration">{latestNarration}</p>
+          </>
+        )}
       </div>
       {groups.length > 0 ? (
         <>
           {(budget.hiddenGroupCount > 0 || budget.hiddenEntryCount > 0) && (
             <div className="emap-process-budget-note">
-              最多显示 {PROCESS_MAX_GROUPS} 组，优先保留活跃过程；已隐藏 {budget.hiddenGroupCount} 组 / {budget.hiddenEntryCount} 条
+              仅显示最近 {PROCESS_VISIBLE_TOOL_GROUPS} 组；已隐藏 {budget.hiddenGroupCount} 组 / {budget.hiddenEntryCount} 条
             </div>
           )}
           <div className="emap-process-tool-groups is-scrollable">
@@ -1404,13 +1473,14 @@ export function App() {
         }));
       } catch (e) {
         if (cancelled) return;
+        const isActiveObserverPoll = !observedTaskRun || isActiveRun(observedTaskRun.status);
         setTaskRunObserverByRunId((current) => ({
           ...current,
           [runId]: {
             loading: false,
             attempts: current[runId]?.attempts ?? [],
             files: current[runId]?.files ?? {},
-            error: errorMessage(e),
+            error: isActiveObserverPoll ? null : errorMessage(e),
             lastUpdatedAt: current[runId]?.lastUpdatedAt ?? null,
           },
         }));
@@ -1847,6 +1917,7 @@ export function App() {
 
   const taskChildBranchPanels = useMemo(() => {
     if (expandedTaskDetailMode !== "run-observer" || !observedTaskRun || !expandedTask) return [];
+    const observedTaskRunIsActive = isActiveRun(observedTaskRun.status);
     const panels: Array<{ id: string; panel: ReactNode; width?: number; height?: number; sourceId?: string; autoHeight?: boolean; resizable?: boolean; minWidth?: number; minHeight?: number }> = [];
     panels.push({
       id: "run-status",
@@ -1874,9 +1945,9 @@ export function App() {
               <div><span>Attempts</span><strong>{observedTaskRunAttempts.length}</strong></div>
             </div>
             <p className="emap-observer-status-message">{observedTaskRun.taskStates[expandedTask.taskId]?.progress.message || "暂无阶段消息"}</p>
-            {observedTaskRunState?.error && <div className="emap-observer-error" role="status">{observedTaskRunState.error}</div>}
-            {observedTaskRunState?.loading && <div className="emap-observer-loading" role="status">正在刷新...</div>}
-            {observedTaskRunState?.lastUpdatedAt && <div className="emap-observer-updated">最后刷新 {new Date(observedTaskRunState.lastUpdatedAt).toLocaleTimeString()}</div>}
+            {!observedTaskRunIsActive && observedTaskRunState?.error && <div className="emap-observer-error" role="status">{observedTaskRunState.error}</div>}
+            {!observedTaskRunIsActive && observedTaskRunState?.loading && <div className="emap-observer-loading" role="status">正在刷新...</div>}
+            {!observedTaskRunIsActive && observedTaskRunState?.lastUpdatedAt && <div className="emap-observer-updated">最后刷新 {new Date(observedTaskRunState.lastUpdatedAt).toLocaleTimeString()}</div>}
           </div>
         </section>
       ),
@@ -1963,7 +2034,7 @@ export function App() {
         });
       }
     }
-    if (observerFileDescriptors.length === 0 && !observedTaskRunState?.loading) {
+    if (observerFileDescriptors.length === 0 && !observedTaskRunState?.loading && !observedTaskRunIsActive) {
       panels.push({
         id: "empty-hint",
         width: 300,
