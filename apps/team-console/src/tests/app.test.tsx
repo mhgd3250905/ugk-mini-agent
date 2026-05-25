@@ -2711,10 +2711,9 @@ describe("App", () => {
     });
     fireEvent.click(workerFileNode);
 
-    const detailNode = await waitFor(() => {
+    await waitFor(() => {
       const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
       expect(detail).toBeTruthy();
-      return detail!;
     });
 
     const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));

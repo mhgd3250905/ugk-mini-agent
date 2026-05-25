@@ -149,6 +149,8 @@ type AgentBranchInteractionState = {
   startClientX: number;
   startClientY: number;
   startRect: AgentBranchRect;
+  hasMoved?: boolean;
+  capturedTarget?: HTMLDivElement | null;
 };
 
 type TaskBranchMeasuredSize = {
@@ -258,7 +260,7 @@ function formatAgentRunStatus(status: AgentRunStatus | undefined): {
 
 function canStartAgentBranchDrag(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
-  if (!target.closest(".agent-playground-branch-head")) return false;
+  if (!target.closest(".agent-playground-branch-head") && !target.closest(".task-leader-branch-head")) return false;
   return !target.closest("button, input, textarea, select, a, iframe, summary, details");
 }
 
@@ -610,8 +612,9 @@ export function ExecutionMap({
   const suppressTaskClickRef = useRef<string | null>(null);
   const agentBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
   const taskChildBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
+  const taskChildDragSuppressClickRef = useRef(false);
   const panelResizeRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startWidth: number; startHeight: number; minWidth: number; minHeight: number } | null>(null);
-  const panelDragRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startRect: AgentBranchRect; hasMoved: boolean; capturedTarget: HTMLDivElement | null } | null>(null);
+  const panelDragRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startRect: AgentBranchRect; hasMoved: boolean; capturedTarget: HTMLDivElement | null; lastDx: number; lastDy: number } | null>(null);
   const panelDragSuppressClickRef = useRef(false);
   const taskBranchDragRef = useRef<{ pointerId: number; startClientX: number; startClientY: number; startRect: AgentBranchRect; hasMoved: boolean; capturedTarget: HTMLDivElement | null; lastDx: number; lastDy: number } | null>(null);
   const taskBranchDragSuppressClickRef = useRef(false);
@@ -975,7 +978,6 @@ export function ExecutionMap({
     if (!hasMoved) return;
 
     const scale = viewportScale(viewport);
-    const prevHasMoved = drag.hasMoved;
     atlasNodeDragRef.current = { ...drag, hasMoved };
     for (const entry of drag.entries) {
       const nextPosition = {
@@ -1541,8 +1543,6 @@ export function ExecutionMap({
 
   const beginTaskChildBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (!taskChildBranchInteractive || !focusedTaskNode || !taskChildBranchNode || !canStartAgentBranchDrag(event.target)) return;
-    event.preventDefault();
-    event.stopPropagation();
     taskChildBranchInteractionRef.current = {
       kind: "drag",
       nodeId: focusedTaskNode.nodeId,
@@ -1550,8 +1550,9 @@ export function ExecutionMap({
       startClientX: event.clientX,
       startClientY: event.clientY,
       startRect: taskChildBranchNode,
+      hasMoved: false,
+      capturedTarget: null,
     };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
   }, [focusedTaskNode, taskChildBranchInteractive, taskChildBranchNode]);
 
   const beginTaskChildBranchResize = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -1572,12 +1573,23 @@ export function ExecutionMap({
   const moveTaskChildBranch = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const interaction = taskChildBranchInteractionRef.current;
     if (!interaction || interaction.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    event.stopPropagation();
 
     const scale = viewportScale(viewport);
     const dx = (event.clientX - interaction.startClientX) / scale;
     const dy = (event.clientY - interaction.startClientY) / scale;
+
+    if (interaction.kind === "drag") {
+      if (!interaction.hasMoved && Math.abs(dx) < AGENT_DRAG_THRESHOLD && Math.abs(dy) < AGENT_DRAG_THRESHOLD) return;
+      if (!interaction.hasMoved) {
+        interaction.hasMoved = true;
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+        interaction.capturedTarget = event.currentTarget;
+      }
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
     const nextRect = interaction.kind === "drag"
       ? clampAgentBranchRect({
         ...interaction.startRect,
@@ -1599,10 +1611,20 @@ export function ExecutionMap({
   const endTaskChildBranchInteraction = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const interaction = taskChildBranchInteractionRef.current;
     if (!interaction || interaction.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    event.stopPropagation();
+    if (interaction.kind === "drag" && interaction.hasMoved) {
+      event.preventDefault();
+      event.stopPropagation();
+      taskChildDragSuppressClickRef.current = true;
+    } else if (interaction.kind === "resize") {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    if (interaction.capturedTarget) {
+      interaction.capturedTarget.releasePointerCapture?.(event.pointerId);
+    } else if (interaction.kind === "resize") {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    }
     taskChildBranchInteractionRef.current = null;
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
   }, []);
 
   const beginPanelResize = useCallback((panelId: string, minWidth: number, minHeight: number, event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -1667,6 +1689,8 @@ export function ExecutionMap({
       startRect: { ...layoutEntry.rect },
       hasMoved: false,
       capturedTarget: null,
+      lastDx: 0,
+      lastDy: 0,
     };
   }, [canStartPanelDrag, taskChildBranchPanelsLayout]);
 
@@ -1692,6 +1716,13 @@ export function ExecutionMap({
         y: drag.startRect.y + dy,
       },
     }));
+    const incDx = dx - drag.lastDx;
+    const incDy = dy - drag.lastDy;
+    drag.lastDx = dx;
+    drag.lastDy = dy;
+    if (incDx !== 0 || incDy !== 0) {
+      translateTaskSubtreeRef.current({ panelId: drag.panelId }, incDx, incDy);
+    }
   }, [viewport]);
 
   const endPanelDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
@@ -2095,6 +2126,14 @@ export function ExecutionMap({
               onPointerMove={taskChildBranchInteractive ? moveTaskChildBranch : undefined}
               onPointerUp={taskChildBranchInteractive ? endTaskChildBranchInteraction : undefined}
               onPointerCancel={taskChildBranchInteractive ? endTaskChildBranchInteraction : undefined}
+              onClickCapture={(e) => {
+                if (taskChildDragSuppressClickRef.current) {
+                  taskChildDragSuppressClickRef.current = false;
+                  if (!(e.target instanceof Element && e.target.closest("button, input, textarea, select, a, iframe, summary, details"))) {
+                    e.stopPropagation();
+                  }
+                }
+              }}
               style={{
                 left: taskChildBranchNode.x,
                 top: taskChildBranchNode.y,

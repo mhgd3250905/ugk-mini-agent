@@ -1754,7 +1754,7 @@ export function App() {
                 onMoveCanvasTask={moveTaskNode}
                 taskBranchPanel={expandedTaskBranchPanel}
                 taskChildBranchPanel={expandedTaskChildBranchPanel}
-                taskChildBranchInteractive={expandedTaskDetailMode === "leader-chat"}
+                taskChildBranchInteractive={expandedTaskDetailMode === "leader-chat" || expandedTaskDetailMode === "edit"}
                 taskChildBranchPanels={taskChildBranchPanels}
                 viewport={canvasViewport}
                 onViewportChange={setCanvasViewport}
