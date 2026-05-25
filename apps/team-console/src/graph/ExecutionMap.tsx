@@ -131,6 +131,8 @@ type AtlasNodeDragState = {
   startClientY: number;
   entries: AtlasNodeDragEntry[];
   hasMoved: boolean;
+  lastTreeDx?: number;
+  lastTreeDy?: number;
 };
 
 type AgentBranchRect = {
@@ -613,6 +615,7 @@ export function ExecutionMap({
   const panelDragSuppressClickRef = useRef(false);
   const taskBranchDragRef = useRef<{ pointerId: number; startClientX: number; startClientY: number; startRect: AgentBranchRect; hasMoved: boolean; capturedTarget: HTMLDivElement | null; lastDx: number; lastDy: number } | null>(null);
   const taskBranchDragSuppressClickRef = useRef(false);
+  const translateTaskSubtreeRef = useRef<(scope: "root" | "menu" | { panelId: string }, dx: number, dy: number) => void>(() => {});
 
   if (prevSelectionRef.current !== selectedTaskId) {
     prevSelectionRef.current = selectedTaskId;
@@ -972,6 +975,7 @@ export function ExecutionMap({
     if (!hasMoved) return;
 
     const scale = viewportScale(viewport);
+    const prevHasMoved = drag.hasMoved;
     atlasNodeDragRef.current = { ...drag, hasMoved };
     for (const entry of drag.entries) {
       const nextPosition = {
@@ -983,8 +987,16 @@ export function ExecutionMap({
       } else {
         onMoveCanvasTask?.(entry.nodeId, nextPosition);
       }
+      if (entry.kind === "task" && entry.nodeId === focusedTaskNodeId && taskBranchPanel) {
+        const treeDx = dx / scale - (drag.lastTreeDx ?? 0);
+        const treeDy = dy / scale - (drag.lastTreeDy ?? 0);
+        if (treeDx !== 0 || treeDy !== 0) {
+          translateTaskSubtreeRef.current("root", treeDx, treeDy);
+        }
+        atlasNodeDragRef.current = { ...atlasNodeDragRef.current!, lastTreeDx: dx / scale, lastTreeDy: dy / scale };
+      }
     }
-  }, [onMoveAgent, onMoveCanvasTask, viewport]);
+  }, [focusedTaskNodeId, onMoveAgent, onMoveCanvasTask, taskBranchPanel, viewport]);
 
   const suppressNextAgentClick = useCallback((nodeId: string) => {
     suppressAgentClickRef.current = nodeId;
@@ -1397,6 +1409,8 @@ export function ExecutionMap({
       }));
     }
   }, [focusedTaskNode, taskBranchNode, taskChildBranchNode, taskChildBranchPanelsLayout]);
+
+  translateTaskSubtreeRef.current = translateTaskSubtree;
 
   const canStartTaskBranchDrag = useCallback((target: EventTarget | null): boolean => {
     if (!(target instanceof Element)) return false;
