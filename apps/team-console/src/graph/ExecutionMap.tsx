@@ -608,7 +608,7 @@ export function ExecutionMap({
   const agentBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
   const taskChildBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
   const panelResizeRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startWidth: number; startHeight: number; minWidth: number; minHeight: number } | null>(null);
-  const panelDragRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startRect: AgentBranchRect; hasMoved: boolean } | null>(null);
+  const panelDragRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startRect: AgentBranchRect; hasMoved: boolean; capturedTarget: HTMLDivElement | null } | null>(null);
   const panelDragSuppressClickRef = useRef(false);
 
   if (prevSelectionRef.current !== selectedTaskId) {
@@ -1526,8 +1526,8 @@ export function ExecutionMap({
       startClientY: event.clientY,
       startRect: { ...layoutEntry.rect },
       hasMoved: false,
+      capturedTarget: null,
     };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
   }, [canStartPanelDrag, taskChildBranchPanelsLayout]);
 
   const movePanelDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1539,7 +1539,12 @@ export function ExecutionMap({
     if (!drag.hasMoved && Math.abs(dx) < AGENT_DRAG_THRESHOLD && Math.abs(dy) < AGENT_DRAG_THRESHOLD) return;
     event.preventDefault();
     event.stopPropagation();
-    if (!drag.hasMoved) drag.hasMoved = true;
+    if (!drag.hasMoved) {
+      drag.hasMoved = true;
+      const target = event.currentTarget;
+      target.setPointerCapture?.(event.pointerId);
+      drag.capturedTarget = target;
+    }
     setPanelPositionOverrides((current) => ({
       ...current,
       [drag.panelId]: {
@@ -1557,8 +1562,10 @@ export function ExecutionMap({
       event.stopPropagation();
       panelDragSuppressClickRef.current = true;
     }
+    if (drag.capturedTarget) {
+      drag.capturedTarget.releasePointerCapture?.(event.pointerId);
+    }
     panelDragRef.current = null;
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
   }, []);
 
   const isCollapsed = (id: string) => id.endsWith("__collapsed") || id.endsWith("__collapse_control");
