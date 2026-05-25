@@ -2879,6 +2879,111 @@ describe("App", () => {
     expect(Number.parseFloat(statusShell!.style.top)).toBeCloseTo(statusTopBefore + dy, 4);
   });
 
+  it("moves process panels when dragging Task root", async () => {
+    const { container } = render(<App />);
+    await setupObserverOpen(container);
+
+    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
+    const workerShell = allShells().find((s) => s.querySelector('.emap-observer-process-node[data-process-role="worker"]')) as HTMLElement | undefined;
+    const checkerShell = allShells().find((s) => s.querySelector('.emap-observer-process-node[data-process-role="checker"]')) as HTMLElement | undefined;
+    expect(workerShell).toBeTruthy();
+    expect(checkerShell).toBeTruthy();
+
+    const workerLeftBefore = Number.parseFloat(workerShell!.style.left);
+    const workerTopBefore = Number.parseFloat(workerShell!.style.top);
+    const checkerLeftBefore = Number.parseFloat(checkerShell!.style.left);
+    const checkerTopBefore = Number.parseFloat(checkerShell!.style.top);
+
+    const taskNode = container.querySelector(".emap-canvas-task-node") as HTMLElement | null;
+    expect(taskNode).toBeTruthy();
+    firePointer(taskNode!, "pointerdown", { pointerId: 101, clientX: 200, clientY: 200 });
+    firePointer(taskNode!, "pointermove", { pointerId: 101, clientX: 250, clientY: 235 });
+    firePointer(taskNode!, "pointerup", { pointerId: 101, clientX: 250, clientY: 235, buttons: 0 });
+
+    expect(Number.parseFloat(workerShell!.style.left)).toBeCloseTo(workerLeftBefore + 50, 4);
+    expect(Number.parseFloat(workerShell!.style.top)).toBeCloseTo(workerTopBefore + 35, 4);
+    expect(Number.parseFloat(checkerShell!.style.left)).toBeCloseTo(checkerLeftBefore + 50, 4);
+    expect(Number.parseFloat(checkerShell!.style.top)).toBeCloseTo(checkerTopBefore + 35, 4);
+  });
+
+  it("moves process panels when dragging menu shell header", async () => {
+    const { container } = render(<App />);
+    await setupObserverOpen(container);
+
+    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
+    const workerShell = allShells().find((s) => s.querySelector('.emap-observer-process-node[data-process-role="worker"]')) as HTMLElement | undefined;
+    expect(workerShell).toBeTruthy();
+    const workerLeftBefore = Number.parseFloat(workerShell!.style.left);
+    const workerTopBefore = Number.parseFloat(workerShell!.style.top);
+
+    const menuHeader = container.querySelector(".emap-task-branch-shell .task-leader-branch-head") as HTMLElement | null;
+    expect(menuHeader).toBeTruthy();
+    firePointer(menuHeader!, "pointerdown", { pointerId: 102, clientX: 400, clientY: 200 });
+    firePointer(menuHeader!, "pointermove", { pointerId: 102, clientX: 455, clientY: 245 });
+    firePointer(menuHeader!, "pointerup", { pointerId: 102, clientX: 455, clientY: 245, buttons: 0 });
+
+    expect(Number.parseFloat(workerShell!.style.left)).toBeCloseTo(workerLeftBefore + 55, 4);
+    expect(Number.parseFloat(workerShell!.style.top)).toBeCloseTo(workerTopBefore + 45, 4);
+  });
+
+  it("drags a Worker process node without moving sibling observer panels", async () => {
+    const { container } = render(<App />);
+    await setupObserverOpen(container);
+
+    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
+    const workerShell = allShells().find((s) => s.querySelector('.emap-observer-process-node[data-process-role="worker"]')) as HTMLElement | undefined;
+    const checkerShell = allShells().find((s) => s.querySelector('.emap-observer-process-node[data-process-role="checker"]')) as HTMLElement | undefined;
+    const statusShell = allShells().find((s) => s.querySelector(".emap-observer-status-node")) as HTMLElement | undefined;
+    const workerFileShell = allShells().find((s) => s.querySelector('.emap-observer-file-node[data-file-kind="worker"]')) as HTMLElement | undefined;
+    expect(workerShell).toBeTruthy();
+    expect(checkerShell).toBeTruthy();
+    expect(statusShell).toBeTruthy();
+    expect(workerFileShell).toBeTruthy();
+
+    const workerLeftBefore = Number.parseFloat(workerShell!.style.left);
+    const workerTopBefore = Number.parseFloat(workerShell!.style.top);
+    const checkerLeftBefore = Number.parseFloat(checkerShell!.style.left);
+    const checkerTopBefore = Number.parseFloat(checkerShell!.style.top);
+    const statusLeftBefore = Number.parseFloat(statusShell!.style.left);
+    const statusTopBefore = Number.parseFloat(statusShell!.style.top);
+    const fileLeftBefore = Number.parseFloat(workerFileShell!.style.left);
+    const fileTopBefore = Number.parseFloat(workerFileShell!.style.top);
+
+    firePointer(workerShell!, "pointerdown", { pointerId: 103, clientX: 940, clientY: 350 });
+    firePointer(workerShell!, "pointermove", { pointerId: 103, clientX: 1010, clientY: 390 });
+    firePointer(workerShell!, "pointerup", { pointerId: 103, clientX: 1010, clientY: 390, buttons: 0 });
+
+    expect(Number.parseFloat(workerShell!.style.left)).toBeCloseTo(workerLeftBefore + 70, 4);
+    expect(Number.parseFloat(workerShell!.style.top)).toBeCloseTo(workerTopBefore + 40, 4);
+    expect(Number.parseFloat(checkerShell!.style.left)).toBeCloseTo(checkerLeftBefore, 4);
+    expect(Number.parseFloat(checkerShell!.style.top)).toBeCloseTo(checkerTopBefore, 4);
+    expect(Number.parseFloat(statusShell!.style.left)).toBeCloseTo(statusLeftBefore, 4);
+    expect(Number.parseFloat(statusShell!.style.top)).toBeCloseTo(statusTopBefore, 4);
+    expect(Number.parseFloat(workerFileShell!.style.left)).toBeCloseTo(fileLeftBefore, 4);
+    expect(Number.parseFloat(workerFileShell!.style.top)).toBeCloseTo(fileTopBefore, 4);
+  });
+
+  it("does not toggle a process tool group from the suppressed click after dragging the process panel", async () => {
+    const { container } = render(<App />);
+    await setupObserverOpen(container);
+
+    const workerProcessNode = container.querySelector('.emap-observer-process-node[data-process-role="worker"]') as HTMLElement | null;
+    expect(workerProcessNode).toBeTruthy();
+    const searchGroup = workerProcessNode!.querySelector('.emap-process-tool-group[data-tool-group-id="tool-worker-search"]') as HTMLElement | null;
+    expect(searchGroup).toBeTruthy();
+    expect(searchGroup).toHaveTextContent("找到官网、云平台和公开登录入口线索");
+
+    const workerShell = workerProcessNode!.closest(".emap-task-child-branch-shell") as HTMLElement | null;
+    expect(workerShell).toBeTruthy();
+    firePointer(workerShell!, "pointerdown", { pointerId: 104, clientX: 940, clientY: 350 });
+    firePointer(workerShell!, "pointermove", { pointerId: 104, clientX: 995, clientY: 390 });
+    firePointer(workerShell!, "pointerup", { pointerId: 104, clientX: 995, clientY: 390, buttons: 0 });
+
+    const searchHeader = within(searchGroup!).getByRole("button", { name: /x-search-latest/ });
+    fireEvent.click(searchHeader);
+    expect(searchGroup).toHaveTextContent("找到官网、云平台和公开登录入口线索");
+  });
+
   it("keeps menu action buttons clickable via pointer sequence after menu drag is implemented", async () => {
     const { container } = render(<App />);
 
