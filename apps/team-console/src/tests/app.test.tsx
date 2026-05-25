@@ -486,6 +486,107 @@ describe("App", () => {
     expect(detailNode.querySelector("details")).toBeNull();
   });
 
+  it("uses auto-height for run status panel and compact file index nodes", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
+
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+    });
+
+    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
+
+    // Status panel shell should not have the old fixed 220px height
+    const statusShell = allShells().find((s) => s.querySelector(".emap-observer-status-node")) as HTMLElement | undefined;
+    expect(statusShell).toBeTruthy();
+    expect(statusShell!.style.height).not.toBe("220px");
+
+    // File nodes should NOT show checker reason / verdict summary text
+    const checkerFileNode = container.querySelector('.emap-observer-file-node[data-file-kind="checker"]') as HTMLElement | null;
+    expect(checkerFileNode).toBeTruthy();
+    expect(checkerFileNode!.textContent).not.toContain("Mock checker accepted the worker output.");
+    expect(checkerFileNode!.querySelector(".emap-observer-file-summary")).toBeNull();
+    expect(checkerFileNode!.querySelector(".emap-observer-file-runtime")).toBeNull();
+
+    // File nodes should show agent name resolved from agentsById
+    const workerFileNode = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+    expect(workerFileNode).toBeTruthy();
+    expect(workerFileNode!.textContent).toContain("搜索 Agent");
+
+    const checkerResolvedAgent = checkerFileNode!.textContent ?? "";
+    expect(checkerResolvedAgent).toContain("主 Agent");
+
+    // Result file shows agent role fallback
+    const resultFileNode = container.querySelector('.emap-observer-file-node[data-file-kind="result"]') as HTMLElement | null;
+    expect(resultFileNode).toBeTruthy();
+    expect(resultFileNode!.textContent).toContain("accepted-result.md");
+
+    // File nodes should still show file name and path
+    expect(within(workerFileNode!).getByText("worker-output-001.md")).toBeInTheDocument();
+    expect(workerFileNode!.querySelector(".emap-observer-file-path")).toBeTruthy();
+  });
+
+  it("renders file detail with resize handle for observer file nodes", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
+
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+    });
+
+    const checkerFileNode = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-node[data-file-kind="checker"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    fireEvent.click(checkerFileNode);
+
+    const detailNode = await waitFor(() => {
+      const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
+      expect(detail).toBeTruthy();
+      return detail!;
+    });
+
+    // JSON detail still shows pretty-printed content
+    expect(within(detailNode).getByText(/"verdict": "pass"/)).toBeInTheDocument();
+
+    // File detail shell must have a resize handle
+    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
+    const detailShell = allShells().find((s) => s.querySelector(".emap-observer-file-detail-node")) as HTMLElement | undefined;
+    expect(detailShell).toBeTruthy();
+    const resizeHandle = detailShell!.querySelector(".emap-panel-resize-handle") as HTMLElement | null;
+    expect(resizeHandle).toBeTruthy();
+
+    // Drag resize handle to increase size
+    const initialWidth = Number.parseFloat(detailShell!.style.width);
+    const initialHeight = Number.parseFloat(detailShell!.style.height);
+
+    firePointer(resizeHandle!, "pointerdown", { pointerId: 61, clientX: 800, clientY: 500 });
+    firePointer(resizeHandle!, "pointermove", { pointerId: 61, clientX: 900, clientY: 560 });
+    firePointer(resizeHandle!, "pointerup", { pointerId: 61, clientX: 900, clientY: 560, buttons: 0 });
+
+    expect(Number.parseFloat(detailShell!.style.width)).toBeCloseTo(initialWidth + 100, 4);
+    expect(Number.parseFloat(detailShell!.style.height)).toBeCloseTo(initialHeight + 60, 4);
+  });
+
   it("starts a live Task run through the Task run API", async () => {
     const liveTask = mockTeamTasks[0]!;
     let createRunRequests = 0;
