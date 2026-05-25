@@ -124,6 +124,41 @@ class CancellableWorkerRoleRunner extends ProcessEventRoleRunner {
 	}
 }
 
+class LateEventAfterCancelRoleRunner extends ProcessEventRoleRunner {
+	private lateEventSentResolve!: () => void;
+	readonly lateEventSent = new Promise<void>((resolve) => {
+		this.lateEventSentResolve = resolve;
+	});
+
+	async runWorker(input: ProcessAwareWorkerInput): Promise<WorkerOutput> {
+		input.onSessionEvent?.({
+			type: "tool_execution_start",
+			toolCallId: "worker_tool_cancel",
+			toolName: "long-task",
+			args: { action: "wait" },
+		});
+		await new Promise<never>((_resolve, reject) => {
+			if (input.signal?.aborted) {
+				reject(new Error("aborted"));
+				return;
+			}
+			input.signal?.addEventListener("abort", () => {
+				setTimeout(() => {
+					input.onSessionEvent?.({
+						type: "tool_execution_start",
+						toolCallId: "late_after_cancel",
+						toolName: "late-tool",
+						args: { shouldNotOverwriteTerminalProcess: true },
+					});
+					this.lateEventSentResolve();
+				}, 10);
+				reject(new Error("aborted"));
+			}, { once: true });
+		});
+		throw new Error("unreachable");
+	}
+}
+
 async function waitForWorkerProcess(workspace: RunWorkspace, runId: string, taskId: string) {
 	for (let i = 0; i < 40; i++) {
 		const attempts = await workspace.listAttempts(runId, taskId);
@@ -167,6 +202,46 @@ test("CanvasTaskRunService records worker and checker process snapshots on attem
 		assert.equal(roleProcesses?.checker?.status, "succeeded");
 		assert.equal(roleProcesses?.checker?.process?.isComplete, true);
 		assert.equal(roleProcesses?.checker?.process?.entries.some(entry => entry.toolCallId === "checker_tool_1"), true);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("CanvasTaskRunService keeps cancelled attempt terminal fields when late role events arrive", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-process-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const task = await taskStore.create(validTaskInput);
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const runner = new LateEventAfterCancelRoleRunner();
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => runner,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const created = await service.createRun(task.taskId);
+		const runningWorker = await waitForWorkerProcess(workspace, created.runId, task.taskId);
+		assert.equal(runningWorker.status, "running");
+
+		const cancelled = await service.cancelRun(created.runId);
+		assert.equal(cancelled.status, "cancelled");
+		await runner.lateEventSent;
+		await new Promise(resolve => setTimeout(resolve, 25));
+
+		const attempts = await workspace.listAttempts(created.runId, task.taskId);
+		const attempt = attempts[0]!;
+		assert.equal(attempt.status, "cancelled");
+		assert.equal(attempt.phase, "cancelled");
+		assert.ok(attempt.finishedAt);
+		assert.equal(attempt.errorSummary, "run cancelled");
+		const worker = attempt.roleProcesses?.worker;
+		assert.equal(worker?.status, "cancelled");
+		assert.ok(worker?.finishedAt);
+		assert.equal(worker?.process?.isComplete, true);
+		assert.equal(worker?.process?.currentAction, "任务已打断");
+		assert.equal(worker?.process?.entries.some(entry => entry.toolCallId === "late_after_cancel"), false);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

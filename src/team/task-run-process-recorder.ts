@@ -39,6 +39,10 @@ function roleProcessTitle(role: "worker" | "checker"): string {
 	return role === "worker" ? "Worker process" : "Checker process";
 }
 
+function isTerminalRoleProcessStatus(status: TeamAttemptRoleProcessStatus): boolean {
+	return status === "succeeded" || status === "failed" || status === "cancelled";
+}
+
 function completionEvent(input: {
 	status: TeamAttemptRoleProcessStatus;
 	conversationId: string;
@@ -72,6 +76,7 @@ export class TeamRoleProcessRecorder {
 	private flushTimer: ReturnType<typeof setTimeout> | null = null;
 	private lastFlushAt = 0;
 	private pendingWrite: Promise<void> = Promise.resolve();
+	private finishPromise: Promise<void> | null = null;
 
 	constructor(private readonly options: TeamRoleProcessRecorderOptions) {
 		this.throttleMs = options.throttleMs ?? DEFAULT_THROTTLE_MS;
@@ -92,6 +97,7 @@ export class TeamRoleProcessRecorder {
 	}
 
 	handleRawEvent(event: RawAgentSessionEventLike): void {
+		if (isTerminalRoleProcessStatus(this.status)) return;
 		this.adapter.handle(event);
 	}
 
@@ -108,10 +114,19 @@ export class TeamRoleProcessRecorder {
 	}
 
 	async flush(): Promise<void> {
+		if (isTerminalRoleProcessStatus(this.status)) {
+			if (this.flushTimer) {
+				clearTimeout(this.flushTimer);
+				this.flushTimer = null;
+			}
+			await (this.finishPromise ?? this.pendingWrite);
+			return;
+		}
 		await this.flushNow();
 	}
 
 	private handleChatStreamEvent(event: ChatStreamEvent): void {
+		if (isTerminalRoleProcessStatus(this.status)) return;
 		applyChatStreamEventToActiveRunView(this.activeRunView, event);
 		if (this.activeRunView.process) {
 			this.activeRunView.process.title = roleProcessTitle(this.options.role);
@@ -125,9 +140,19 @@ export class TeamRoleProcessRecorder {
 	}
 
 	private async finish(status: TeamAttemptRoleProcessStatus, input: { message?: string; text?: string } = {}): Promise<void> {
-		if (this.status === "succeeded" || this.status === "failed" || this.status === "cancelled") {
+		if (this.finishPromise) {
+			await this.finishPromise;
 			return;
 		}
+		if (isTerminalRoleProcessStatus(this.status)) {
+			await this.pendingWrite;
+			return;
+		}
+		this.finishPromise = this.finishOnce(status, input);
+		await this.finishPromise;
+	}
+
+	private async finishOnce(status: TeamAttemptRoleProcessStatus, input: { message?: string; text?: string } = {}): Promise<void> {
 		const timestamp = new Date().toISOString();
 		this.status = status;
 		this.updatedAt = timestamp;

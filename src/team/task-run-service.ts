@@ -74,6 +74,7 @@ function isAbortLike(error: unknown): boolean {
 export class CanvasTaskRunService {
 	private readonly activeControllers = new Map<string, AbortController>();
 	private readonly activeRoleRecorders = new Map<string, Set<TeamRoleProcessRecorder>>();
+	private readonly cancellingRunIds = new Set<string>();
 	private readonly maxCheckerRevisions: number;
 	private readonly phaseTimeouts: { workerMs: number; checkerMs: number };
 
@@ -122,33 +123,39 @@ export class CanvasTaskRunService {
 		if (!state) throw new Error(`run not found: ${runId}`);
 		if (TERMINAL_RUN_STATUSES.has(state.status)) throw new Error(`cannot cancel terminal run: ${state.status}`);
 
-		const timestamp = now();
-		state.status = "cancelled";
-		state.finishedAt = timestamp;
-		state.lastError = reason;
-		state.activeElapsedMs = this.accumulateElapsed(state);
-		state.lease = null;
-		await this.cancelActiveRoleProcesses(runId, reason);
-		for (const [taskId, taskState] of Object.entries(state.taskStates)) {
-			if (taskState.status === "pending" || taskState.status === "running" || taskState.status === "interrupted") {
-				taskState.status = "cancelled";
-				taskState.progress = { phase: "cancelled", message: progressMessages.cancelled, updatedAt: timestamp };
-			}
-			if (taskState.activeAttemptId) {
-				await this.options.workspace.finishAttempt(runId, taskId, taskState.activeAttemptId, {
-					status: "cancelled",
-					phase: "cancelled",
-					errorSummary: "run cancelled",
-				}).catch(() => {});
-			}
-		}
-		state.summary = computeTeamRunSummary(state.taskStates);
-		state.updatedAt = timestamp;
-		await this.options.workspace.saveState(state);
-
+		this.cancellingRunIds.add(runId);
 		this.activeControllers.get(runId)?.abort(new Error(reason));
 		this.activeControllers.delete(runId);
-		return state;
+
+		try {
+			const timestamp = now();
+			state.status = "cancelled";
+			state.finishedAt = timestamp;
+			state.lastError = reason;
+			state.activeElapsedMs = this.accumulateElapsed(state);
+			state.lease = null;
+			await this.cancelActiveRoleProcesses(runId, reason);
+			for (const [taskId, taskState] of Object.entries(state.taskStates)) {
+				if (taskState.status === "pending" || taskState.status === "running" || taskState.status === "interrupted") {
+					taskState.status = "cancelled";
+					taskState.progress = { phase: "cancelled", message: progressMessages.cancelled, updatedAt: timestamp };
+				}
+				if (taskState.activeAttemptId) {
+					await this.options.workspace.finishAttempt(runId, taskId, taskState.activeAttemptId, {
+						status: "cancelled",
+						phase: "cancelled",
+						errorSummary: "run cancelled",
+					}).catch(() => {});
+				}
+			}
+			state.summary = computeTeamRunSummary(state.taskStates);
+			state.updatedAt = timestamp;
+			await this.options.workspace.saveState(state);
+
+			return state;
+		} finally {
+			this.cancellingRunIds.delete(runId);
+		}
 	}
 
 	private startBackgroundRun(runId: string): void {
@@ -198,7 +205,7 @@ export class CanvasTaskRunService {
 			await this.runWorkerCheckerLoop(state, task, attemptId, attemptRoot, roleRunner, signal, canvasTask);
 		} catch (error) {
 			const current = await this.getRun(runId);
-			if (current && current.status === "cancelled") return;
+			if (this.cancellingRunIds.has(runId) || (current && current.status === "cancelled")) return;
 			await this.failRun(runId, isAbortLike(error) ? "run cancelled" : error instanceof Error ? error.message : String(error));
 		}
 	}

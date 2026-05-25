@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-25 — Team Canvas Task run 取消过程写盘竞态修复
+
+- **主题**: 修复 Canvas Task run 取消时 role process late session event 可能覆盖 attempt 终态字段的竞态。
+- **变更内容**:
+  - `CanvasTaskRunService.cancelRun()` 在收口 role process 和 attempt 前优先 abort active controller，并用取消中的 run 标记避免后台执行流程把主动取消误写成失败。
+  - `TeamRoleProcessRecorder` 进入 `succeeded` / `failed` / `cancelled` 后忽略后续 raw/session event，terminal flush 幂等复用同一次写盘，不再在 `finally` 里追加一次可能覆盖 `finishAttempt(cancelled)` 的 read-modify-write。
+  - 新增回归测试模拟 cancel 后仍收到 late `onSessionEvent`，锁定 attempt `status` / `phase` / `finishedAt` / `errorSummary` 和 `roleProcesses.worker` 的 cancelled/isComplete 终态。
+- **影响范围**: `src/team/task-run-service.ts`, `src/team/task-run-process-recorder.ts`, `test/team-task-run-process.test.ts`, `docs/change-log.md`
+- **边界**: 不改 `apps/team-console/**`，不改 `.pi/skills/**`，不新增 endpoint / SSE / schema。
+
+---
+
 ## 2026-05-25 — Team Canvas Task run 过程观测
 
 - **主题**: 让 Canvas Task run 的 worker/checker Agent 执行过程通过现有 attempts API 暴露给 Team Console。
