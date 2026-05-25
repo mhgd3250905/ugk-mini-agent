@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-26 — Team Console 自动发现下游 Task run
+
+- **主题**: 修复 typed chain 上游 run 完成后，下游自动启动但 UI 必须手动刷新才看得到的问题。
+- **变更内容**:
+  - Live API 前端在轮询到已知 active Canvas Task run 进入终态后，会自动触发一次 Task refresh，重新读取 Task catalog、connections 和所有 Task run 列表。
+  - 新增回归测试，模拟上游 run 终态后后端自动创建下游 run，确认用户切到下游 Task 时无需刷新即可看到下游 run 状态。
+  - 更新 Team Console README 和 Team Runtime 文档，记录该刷新发现链路仍基于现有 polling，不引入 SSE。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 不改后端 typed chain 触发逻辑，不新增 Team 专属日志 schema，不接 SSE，不改变 Task definition 的持久化边界。
+
+---
+
 ## 2026-05-26 — Team Task Creator typed ports 护栏
 
 - **主题**: 更新运行时 `team-task-creator` skill，让自然语言创建 / 更新 Team Console Task 时也必须产出 typed IN/OUT ports。

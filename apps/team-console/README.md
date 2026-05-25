@@ -69,7 +69,7 @@ Team Console shell 的 Live API 模式会真实请求：
 
 Agent 分支卡片不经 Vite proxy 打开 `/playground`，而是直接把 iframe 指向主服务的 `/playground?view=chat&agentId=<agentId>&embed=team-console`。主 `/playground` 负责读取 `agentId` URL hint、切到对应 Agent 并继续处理自己的路由、对话、文件库、后台任务等行为；`embed=team-console` 会把 iframe 顶部 Agent 标签固定为只读标识，关闭 hover 切换菜单和点击跳转，避免 iframe 内 Agent 切换污染其他分支或主页面的 active Agent 选择。
 
-Live API 模式默认进入干净的 `Agent workspace`，不会在刷新或重新进入时自动渲染历史 Plan run。需要查看 Plan 运行图时，点击顶部 live 运行图切换条里的“最新 Run”，页面会按 `createdAt` 选择最新 run，再用该 run 的 `planId` 匹配 plan 后渲染执行图。Agent workspace 工具栏支持手动点击“刷新 Task”重新请求 `GET /v1/team/tasks`；刷新中会禁用重复点击，失败只显示错误，不清空现有 Task 卡片。Task 操作菜单里的“运行”会单独调用 Canvas Task run API，不写入 Plan run 列表。请求失败会在页面顶部显示错误，不会继续展示旧 mock 数据。
+Live API 模式默认进入干净的 `Agent workspace`，不会在刷新或重新进入时自动渲染历史 Plan run。需要查看 Plan 运行图时，点击顶部 live 运行图切换条里的“最新 Run”，页面会按 `createdAt` 选择最新 run，再用该 run 的 `planId` 匹配 plan 后渲染执行图。Agent workspace 工具栏支持手动点击“刷新 Task”重新请求 `GET /v1/team/tasks`；刷新中会禁用重复点击，失败只显示错误，不清空现有 Task 卡片。当前端轮询到已知 active Canvas Task run 进入终态时，也会自动执行一次 live Task refresh，重新读取 `GET /v1/team/tasks`、`GET /v1/team/task-connections` 和每个 Task 的 `GET /v1/team/tasks/:taskId/runs`，用于发现 typed chain 自动触发的下游 Task run；用户从上游 Task 切到下游 Task 时不需要手动刷新。Task 操作菜单里的“运行”会单独调用 Canvas Task run API，不写入 Plan run 列表。请求失败会在页面顶部显示错误，不会继续展示旧 mock 数据。
 
 为了兼容尚未部署 Typed Task Chain V1 后端的主服务，`GET /v1/team/task-connections` 返回 404 时前端会当作空连接列表处理，不阻断 Agent / Task catalog 和“创建 Task”入口；但创建连接、画真实连接线和上游完成后自动触发下游 run 仍需要后端提供 `/v1/team/task-connections` 写接口和 typed artifact 触发逻辑。
 

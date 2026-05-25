@@ -1222,6 +1222,11 @@ export function App() {
           const fresh = await api.getTaskRun(active.runId);
           if (!cancelled) {
             setTaskRunsByTaskId((current) => mergeTaskRun(current, active.taskId, fresh));
+            if (dataSource === "live" && !isActiveRun(fresh.status)) {
+              void refreshLiveTasks().catch((e) => {
+                if (!cancelled) setError(errorMessage(e));
+              });
+            }
           }
         } catch {
           // Keep the last visible task run state on transient polling failures.
@@ -1238,7 +1243,7 @@ export function App() {
       cancelled = true;
       globalThis.clearInterval(timer);
     };
-  }, [activeCanvasTaskRunIds, dataSource]);
+  }, [activeCanvasTaskRunIds, dataSource, refreshLiveTasks]);
 
   useEffect(() => {
     const taskId = expandedTask?.taskId;

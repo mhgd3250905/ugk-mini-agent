@@ -370,6 +370,132 @@ describe("App", () => {
     });
   });
 
+  it("discovers an auto-started downstream Task run after the upstream run finishes", async () => {
+    const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+    const connection: TeamTaskConnection = {
+      schemaVersion: "team/task-connection-1",
+      connectionId: "conn_auto_md",
+      fromTaskId: collectTask.taskId,
+      fromOutputPortId: "draft_md",
+      toTaskId: htmlTask.taskId,
+      toInputPortId: "source_md",
+      type: "md",
+      createdAt: "2026-05-25T00:00:00.000Z",
+      updatedAt: "2026-05-25T00:00:00.000Z",
+    };
+    const upstreamRunning: TeamRunState = {
+      ...makeLiveTaskRunFixture(collectTask, "run_upstream_auto"),
+      status: "running",
+      finishedAt: null,
+      taskStates: {
+        [collectTask.taskId]: {
+          status: "running",
+          attemptCount: 1,
+          activeAttemptId: "attempt_upstream_auto",
+          resultRef: null,
+          errorSummary: null,
+          progress: { phase: "worker_running", message: "running", updatedAt: "2026-05-25T00:00:02.000Z" },
+        },
+      },
+      summary: { totalTasks: 1, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+    };
+    const upstreamCompleted: TeamRunState = {
+      ...makeLiveTaskRunFixture(collectTask, "run_upstream_auto"),
+      status: "completed",
+      finishedAt: "2026-05-25T00:00:10.000Z",
+    };
+    const downstreamRunning: TeamRunState = {
+      ...makeLiveTaskRunFixture(htmlTask, "run_downstream_auto"),
+      source: {
+        type: "canvas-task",
+        taskId: htmlTask.taskId,
+        triggeredBy: {
+          type: "task-connection",
+          connectionId: connection.connectionId,
+          fromTaskId: collectTask.taskId,
+          fromRunId: upstreamCompleted.runId,
+          fromAttemptId: "attempt_upstream_auto",
+        },
+        boundInputs: [{
+          connectionId: connection.connectionId,
+          inputPortId: "source_md",
+          artifact: {
+            schemaVersion: "team/task-artifact-1",
+            artifactId: "artifact_downstream_auto_md",
+            type: "md",
+            sourceTaskId: collectTask.taskId,
+            sourceRunId: upstreamCompleted.runId,
+            sourceAttemptId: "attempt_upstream_auto",
+            sourceOutputPortId: "draft_md",
+            fileRef: "accepted-result.md",
+            preview: "accepted markdown",
+            content: "# Accepted markdown",
+            createdAt: "2026-05-25T00:00:10.000Z",
+          },
+        }],
+      },
+      status: "running",
+      createdAt: "2026-05-25T00:00:10.250Z",
+      startedAt: "2026-05-25T00:00:10.300Z",
+      finishedAt: null,
+      taskStates: {
+        [htmlTask.taskId]: {
+          status: "running",
+          attemptCount: 1,
+          activeAttemptId: "attempt_downstream_auto",
+          resultRef: null,
+          errorSummary: null,
+          progress: { phase: "worker_running", message: "downstream running", updatedAt: "2026-05-25T00:00:11.000Z" },
+        },
+      },
+      summary: { totalTasks: 1, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+    };
+    let taskRequests = 0;
+    let upstreamTerminalObserved = false;
+
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") {
+        taskRequests += 1;
+        return new Response(JSON.stringify({ tasks: [collectTask, htmlTask] }), { status: 200 });
+      }
+      if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [connection] }), { status: 200 });
+      if (url === `/v1/team/tasks/${collectTask.taskId}/runs`) {
+        return new Response(JSON.stringify({ runs: [upstreamTerminalObserved ? upstreamCompleted : upstreamRunning] }), { status: 200 });
+      }
+      if (url === `/v1/team/tasks/${htmlTask.taskId}/runs`) {
+        return new Response(JSON.stringify({ runs: upstreamTerminalObserved ? [downstreamRunning] : [] }), { status: 200 });
+      }
+      if (url === `/v1/team/task-runs/${upstreamRunning.runId}`) {
+        upstreamTerminalObserved = true;
+        return new Response(JSON.stringify(upstreamCompleted), { status: 200 });
+      }
+      if (url === `/v1/team/task-runs/${downstreamRunning.runId}`) {
+        return new Response(JSON.stringify(downstreamRunning), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const atlasNodes = getAtlasNodes(container);
+    await waitFor(() => expect(atlasNodes.querySelector('[data-task-id="task_collect_md"]')).toBeTruthy());
+    await waitFor(() => expect(taskRequests).toBeGreaterThanOrEqual(2));
+
+    fireEvent.click(atlasNodes.querySelector('[data-task-id="task_html_build"]') as HTMLElement);
+
+    const branch = await waitFor(() => {
+      const panel = container.querySelector(".task-action-branch") as HTMLElement | null;
+      expect(panel).toBeTruthy();
+      expect(within(panel!).getByText("run_downstream_auto")).toBeInTheDocument();
+      return panel!;
+    });
+    expect(within(branch).getByText("downstream running")).toBeInTheDocument();
+  });
+
   it("blocks mismatched Task port connections before calling the API", async () => {
     const { collectTask, ttsTask } = makeTypedTaskChainFixtures();
     const postBodies: unknown[] = [];
@@ -2942,6 +3068,8 @@ describe("App", () => {
     expect(readme).toContain("teamTaskMode=create");
     expect(readme).toContain("`/team-task` skill 调用 `POST /v1/team/tasks`");
     expect(readme).toContain("手动点击“刷新 Task”");
+    expect(readme).toContain("active Canvas Task run 进入终态");
+    expect(readme).toContain("typed chain 自动触发的下游 Task run");
     expect(readme).toContain("关闭创建分支后会重新请求 `GET /v1/team/tasks`");
     expect(readme).toContain("点击 Task 卡片会先展开紧凑 Task 操作菜单节点");
     expect(readme).toContain("POST /v1/team/tasks/:taskId/runs");
@@ -3011,6 +3139,8 @@ describe("App", () => {
     expect(runtimeDoc).toContain("base snapshot + dirty fields");
     expect(runtimeDoc).toContain("input text、output contract、acceptance rules");
     expect(runtimeDoc).toContain("关闭创建分支、浅编辑保存成功、归档成功后会重新请求 `GET /v1/team/tasks`");
+    expect(runtimeDoc).toContain("active Canvas Task run 通过 `GET /v1/team/task-runs/:runId` 轮询进入终态");
+    expect(runtimeDoc).toContain("所有 Task run 列表");
     expect(runtimeDoc).not.toContain("Focus Mode 特殊 Agent 对话界面");
     expect(runtimeDoc).not.toContain("WorkUnit run 未实现");
 
@@ -3026,6 +3156,8 @@ describe("App", () => {
 
     const changeLog = readFileSync("../../docs/change-log.md", "utf8");
     expect(changeLog).toContain("2026-05-25 — Team Console Task run process nodes UI budget");
+    expect(changeLog).toContain("2026-05-26 — Team Console 自动发现下游 Task run");
+    expect(changeLog).toContain("不接 SSE");
     expect(changeLog).toContain("2026-05-25 — Team Console Task run process nodes 前端实现");
     expect(changeLog).toContain("roleProcesses.worker");
     expect(changeLog).toContain("roleProcesses.checker");
