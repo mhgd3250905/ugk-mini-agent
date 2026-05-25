@@ -1187,7 +1187,6 @@
   line-height: 1.4;
   overflow: auto;
   white-space: pre-wrap;
-  max-height: 360px;
 }
 
 .task-run-md-body {
@@ -1235,7 +1234,6 @@
   line-height: 1.4;
   overflow: auto;
   white-space: pre-wrap;
-  max-height: 240px;
 }
 
 .task-run-observer-empty {
@@ -1248,6 +1246,125 @@
   color: rgba(216, 228, 241, 0.48);
   font-size: 10px;
   text-align: right;
+}
+
+.team-md-content {
+  color: #dce8f5;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.team-md-content h1,
+.team-md-content h2,
+.team-md-content h3,
+.team-md-content h4,
+.team-md-content h5,
+.team-md-content h6 {
+  color: var(--primary);
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 8px 0 4px;
+}
+
+.team-md-content h1 { font-size: 16px; }
+.team-md-content h2 { font-size: 14px; }
+.team-md-content h3 { font-size: 13px; }
+.team-md-content h4 { font-size: 12px; }
+.team-md-content h5,
+.team-md-content h6 { font-size: 11px; color: var(--secondary); }
+
+.team-md-content p {
+  margin: 4px 0;
+}
+
+.team-md-content code {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.team-md-content pre {
+  margin: 6px 0;
+  padding: 8px;
+  background: rgba(2, 6, 12, 0.82);
+  border: 1px solid rgba(122, 131, 151, 0.18);
+  border-radius: 5px;
+  overflow: auto;
+}
+
+.team-md-content pre code {
+  background: none;
+  padding: 0;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.team-md-content ul,
+.team-md-content ol {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.team-md-content li {
+  margin: 2px 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.team-md-content blockquote {
+  margin: 6px 0;
+  padding: 6px 10px;
+  border-left: 3px solid rgba(121, 216, 208, 0.42);
+  background: rgba(121, 216, 208, 0.04);
+  color: var(--secondary);
+}
+
+.team-md-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 6px 0;
+  font-size: 10px;
+}
+
+.team-md-content th,
+.team-md-content td {
+  padding: 4px 8px;
+  border: 1px solid rgba(122, 131, 151, 0.2);
+  text-align: left;
+}
+
+.team-md-content th {
+  background: rgba(255, 255, 255, 0.04);
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.team-md-content a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.team-md-content a:hover {
+  text-decoration: underline;
+}
+
+.team-md-content strong {
+  color: var(--primary);
+}
+
+.team-md-content em {
+  color: var(--secondary);
+}
+
+.team-md-content hr {
+  border: none;
+  border-top: 1px solid rgba(122, 131, 151, 0.2);
+  margin: 8px 0;
 }
 
 .task-edit-form {
