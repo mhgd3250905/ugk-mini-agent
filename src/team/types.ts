@@ -66,6 +66,10 @@ export interface TeamAttemptRoleProcess {
 	startedAt: string | null;
 	updatedAt: string | null;
 	finishedAt: string | null;
+	assistantText?: {
+		content: string;
+		updatedAt: string;
+	};
 	process: ChatProcessBody | null;
 }
 

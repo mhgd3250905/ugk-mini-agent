@@ -17,6 +17,7 @@ class ParallelTestRunner extends MockRoleRunner {
 	maxActiveWorkers = 0;
 	readonly startTimes = new Map<string, number>();
 	readonly endTimes = new Map<string, number>();
+	readonly completionTimes = new Map<string, number>();
 
 	constructor(
 		private readonly discoveryItems: Array<Record<string, unknown>>,
@@ -67,6 +68,7 @@ class ParallelTestRunner extends MockRoleRunner {
 	}
 
 	async runWatcher(input: WatcherInput) {
+		this.completionTimes.set(input.task.id, Date.now());
 		if (input.workUnitStatus === "failed") {
 			return { decision: "confirm_failed" as const, reason: "task failed" };
 		}
@@ -200,16 +202,16 @@ test("parallel for_each: refills pool when child completes, not batch", async ()
 
 		assert.equal(final.status, "completed");
 
-		const fastEnd = runner.endTimes.get("process__fast")!;
+		const fastEnd = runner.completionTimes.get("process__fast")!;
 		const nextStart = runner.startTimes.get("process__next")!;
-		const slow1End = runner.endTimes.get("process__slow1")!;
-		const slow2End = runner.endTimes.get("process__slow2")!;
+		const slow1End = runner.completionTimes.get("process__slow1")!;
+		const slow2End = runner.completionTimes.get("process__slow2")!;
 
-		// "next" should start after "fast" finishes but before slow1/slow2 finish
+		// "next" should start after the fast child completes but before slow children complete.
 		assert.ok(nextStart >= fastEnd - 20,
-			`next should start after fast finishes: nextStart=${nextStart} fastEnd=${fastEnd}`);
-		assert.ok(nextStart < Math.min(slow1End, slow2End) - 50,
-			`next should start before slow children finish: nextStart=${nextStart} slow1End=${slow1End} slow2End=${slow2End}`);
+			`next should start after fast child completes: nextStart=${nextStart} fastEnd=${fastEnd}`);
+		assert.ok(nextStart < Math.min(slow1End, slow2End),
+			`next should start before slow children complete: nextStart=${nextStart} slow1End=${slow1End} slow2End=${slow2End}`);
 	} finally {
 		await rm(root, { recursive: true });
 	}

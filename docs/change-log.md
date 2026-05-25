@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-25 — Team Canvas Task run Agent 自述文本
+
+- **主题**: 在 Canvas Task run 的 `roleProcesses.worker` / `roleProcesses.checker` 中暴露 Agent 自述文本，供 Team Console Run observer 展示类似主 chat 的过程叙事。
+- **变更内容**:
+  - `TeamRoleProcessRecorder` 在复用主 chat session event adapter 和 active run process 投影的同时，将 `message_update/text_delta` 累积出的 active run text 写入可选 `assistantText.content`。
+  - `assistantText` 跟随现有 attempts API 返回，不新增 endpoint / SSE / Team 专属日志 schema；高频文本增量继续走既有 300-500ms 节流，role terminal 前强制 flush。
+  - role process 进入 `succeeded` / `failed` / `cancelled` 后忽略迟到 raw session event，避免终态和最终自述文本被覆盖；旧 attempt 缺少 `assistantText` 时继续兼容。
+  - 验证中顺手将两个 Team 异步时序断言收口为等待真实 worker signal / child completion，避免 `npm run test:team` 被固定毫秒猜测拖成随机失败。
+- **影响范围**: `src/team/task-run-process-recorder.ts`, `src/team/run-workspace-attempts.ts`, `src/team/types.ts`, `test/team-task-run-process.test.ts`, `test/team-run-workspace.test.ts`, `test/team-orchestrator-controls.test.ts`, `test/team-parallel-foreach.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未改 Team Console 前端，未改 `.pi/skills/**`，未新增 endpoint / SSE，未改 Plan run 行为。
+
 ## 2026-05-25 — Team Canvas Task run 过程观测
 
 - **主题**: 让 Canvas Task run 的 worker/checker Agent 执行过程通过现有 attempts API 暴露给 Team Console。

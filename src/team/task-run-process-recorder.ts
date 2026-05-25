@@ -92,11 +92,12 @@ export class TeamRoleProcessRecorder {
 	}
 
 	handleRawEvent(event: RawAgentSessionEventLike): void {
+		if (this.isTerminal()) return;
 		this.adapter.handle(event);
 	}
 
 	async succeed(): Promise<void> {
-		await this.finish("succeeded", { text: this.adapter.getRawText() });
+		await this.finish("succeeded", { text: this.activeRunView.text || this.adapter.getRawText() });
 	}
 
 	async fail(message: string): Promise<void> {
@@ -125,7 +126,7 @@ export class TeamRoleProcessRecorder {
 	}
 
 	private async finish(status: TeamAttemptRoleProcessStatus, input: { message?: string; text?: string } = {}): Promise<void> {
-		if (this.status === "succeeded" || this.status === "failed" || this.status === "cancelled") {
+		if (this.isTerminal()) {
 			return;
 		}
 		const timestamp = new Date().toISOString();
@@ -144,6 +145,10 @@ export class TeamRoleProcessRecorder {
 			this.activeRunView.process.isComplete = true;
 		}
 		await this.flushNow();
+	}
+
+	private isTerminal(): boolean {
+		return this.status === "succeeded" || this.status === "failed" || this.status === "cancelled";
 	}
 
 	private scheduleFlush(): void {
@@ -177,6 +182,8 @@ export class TeamRoleProcessRecorder {
 	}
 
 	private snapshot(): TeamAttemptRoleProcess {
+		const assistantContent = truncateProcessText(this.activeRunView.text);
+		const assistantUpdatedAt = this.updatedAt ?? this.startedAt ?? new Date().toISOString();
 		return {
 			role: this.options.role,
 			profileId: this.options.profileId,
@@ -184,6 +191,7 @@ export class TeamRoleProcessRecorder {
 			startedAt: this.startedAt,
 			updatedAt: this.updatedAt,
 			finishedAt: this.finishedAt,
+			...(assistantContent ? { assistantText: { content: assistantContent, updatedAt: assistantUpdatedAt } } : {}),
 			process: cloneProcessForPersistence(this.activeRunView.process),
 		};
 	}

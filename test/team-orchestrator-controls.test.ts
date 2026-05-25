@@ -154,9 +154,12 @@ test("cancelRun triggers abort on active runner", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-ctrl-"));
 	try {
 		let abortRequested = false;
+		let workerReadyResolve: () => void;
+		const workerReady = new Promise<void>(resolve => { workerReadyResolve = resolve; });
 		class HangingRunner extends MockRoleRunner {
 			override async runWorker(input: import("../src/team/role-runner.js").WorkerInput) {
 				if (!input.signal) return super.runWorker(input);
+				workerReadyResolve!();
 				return await new Promise<never>((_, reject) => {
 					input.signal!.addEventListener("abort", () => {
 						abortRequested = true;
@@ -182,7 +185,7 @@ test("cancelRun triggers abort on active runner", async () => {
 		const state = await orchestrator.createRun(plan.planId);
 		const runPromise = orchestrator.runToCompletion(state.runId);
 
-		await new Promise(r => setTimeout(r, 50));
+		await workerReady;
 		await orchestrator.cancelRun(state.runId, "user cancel");
 
 		const final = await runPromise;
@@ -248,9 +251,12 @@ test("pauseRun triggers abort on active runner", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-ctrl-"));
 	try {
 		let abortRequested = false;
+		let workerReadyResolve: () => void;
+		const workerReady = new Promise<void>(resolve => { workerReadyResolve = resolve; });
 		class HangingRunner extends MockRoleRunner {
 			override async runWorker(input: import("../src/team/role-runner.js").WorkerInput) {
 				if (!input.signal) return super.runWorker(input);
+				workerReadyResolve!();
 				return await new Promise<never>((_, reject) => {
 					input.signal!.addEventListener("abort", () => {
 						abortRequested = true;
@@ -276,7 +282,7 @@ test("pauseRun triggers abort on active runner", async () => {
 		const state = await orchestrator.createRun(plan.planId);
 		const runPromise = orchestrator.runToCompletion(state.runId);
 
-		await new Promise(r => setTimeout(r, 50));
+		await workerReady;
 		await orchestrator.pauseRun(state.runId, "user pause");
 
 		const final = await runPromise;
