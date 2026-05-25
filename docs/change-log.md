@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-25 — Team Console Task 雏形交接备份
+
+- **主题**: 将 Team Console Task / WorkUnit redesign 当前雏形写入交接快照，方便后续 coding agent 从正确 worktree 接手。
+- **变更内容**:
+  - `docs/handoff-current.md` 的 Team Console 入口从旧 `team-console-ui` worktree 更新为 `team-console-workunit-redesign`。
+  - 记录当前前端备份提交、已完成能力、验证结果、未跟踪文件边界和后端 `65e4de8` 集成注意事项。
+  - 明确下一步先做真实 Task run 验收，再安全处理后端 assistantText 提交集成。
+- **影响范围**: `docs/handoff-current.md`, `docs/change-log.md`
+- **边界**: 不提交 `.codex/plans/*`、`.codex/skills/new-chat/`、`.env`、`.data` 或 runtime 产物。
+
+---
+
 ## 2026-05-25 — Team Console 过程节点 UI 优化
 
 - **主题**: 优化 Worker / Checker 过程节点上半区 assistantText 多行展示和下半区 tool groups 精简。

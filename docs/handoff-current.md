@@ -1,6 +1,6 @@
 # 当前交接快照
 
-更新时间：`2026-05-24`
+更新时间：`2026-05-25`
 
 这份文档给新接手 `ugk-pi / UGK CLAW` 的 coding agent 看。它只记录当前稳定事实和接手入口；历史流水账看 `docs/change-log.md`。不要靠聊天记录拼现状，聊天上下文太肥时最容易把旧计划当新任务，挺蠢，也挺危险。
 
@@ -11,7 +11,7 @@
 ```text
 请接手 `E:\AII\ugk-pi`。你维护的是 ugk-pi 代码仓库，不是产品运行时 Playground agent。
 
-开始前先读 `AGENTS.md`、`docs/handoff-current.md`、`docs/playground-current.md`、`docs/change-log.md`、`docs/traceability-map.md` 和 `DESIGN.md`。如果任务涉及 Chat / Agents / Conn 性能优化，直接看 `.codex/plans/2026-05-22-playground-chat-performance-handoff.md`、`.codex/plans/2026-05-22-playground-agents-performance-handoff.md`、`.codex/plans/2026-05-22-playground-conn-performance-handoff.md`。如果任务涉及 Qwen 思考流、GLM-5.1 上下文或模型源展示，先看 `docs/model-providers.md`、`docs/playground-current.md` 的 `2026-05-23` 条目和 `src/agent/agent-session-event-adapter.ts`。如果任务涉及 Team Console 独立前端分支，先切到 `E:\AII\ugk-pi\.worktrees\team-console-ui`，读 `apps/team-console/README.md` 和 `docs/team-runtime.md`，不要改 `/playground/team`、`src/team/**`、`src/routes/**`、`src/ui/**` 或 Live API 行为。
+开始前先读 `AGENTS.md`、`docs/handoff-current.md`、`docs/playground-current.md`、`docs/change-log.md`、`docs/traceability-map.md` 和 `DESIGN.md`。如果任务涉及 Chat / Agents / Conn 性能优化，直接看 `.codex/plans/2026-05-22-playground-chat-performance-handoff.md`、`.codex/plans/2026-05-22-playground-agents-performance-handoff.md`、`.codex/plans/2026-05-22-playground-conn-performance-handoff.md`。如果任务涉及 Qwen 思考流、GLM-5.1 上下文或模型源展示，先看 `docs/model-providers.md`、`docs/playground-current.md` 的 `2026-05-23` 条目和 `src/agent/agent-session-event-adapter.ts`。如果任务涉及 Team Console Task / WorkUnit redesign，先切到 `E:\AII\ugk-pi\.worktrees\team-console-workunit-redesign`，读 `apps/team-console/README.md`、`docs/team-runtime.md`、`docs/playground-current.md` 和 `docs/change-log.md`；这是独立 Team Console React/Vite worktree，不是产品运行时 Playground agent，也不是 `.pi/skills` runtime skill。不要提交 `.codex/plans/*`、`.codex/skills/new-chat/`、`.env`、`.data`、runtime 产物、temp 文件或未知 `.pi/skills/*/skills-lock.json`。
 
 开始前执行 `git status --short --branch`、`git log -1 --oneline`、`git show -s --format="%h %s" stable/playground-performance-2026-05-22`、`git log --oneline stable/playground-performance-2026-05-22..HEAD` 和 `git remote -v`。当前稳定产品基线 tag 是 `stable/playground-performance-2026-05-22`，指向 `f0aa1fd docs(playground): preserve performance handoffs`，已推送到 GitHub `origin` 和 Gitee `gitee`。后续是否继续开发、规划、部署，要先按用户新任务判断，不要擅自加功能。
 
@@ -28,6 +28,45 @@
 - 本地工作区在打 tag / 推送后已清理未跟踪运行产物；新会话仍必须先执行 `git status --short --branch`
 
 注意：远端 Git 已更新不等于生产服务器已部署。服务器更新仍要按 `docs/server-ops.md` 的增量流程执行，不能把 push 当上线。
+
+## 2026-05-25 Team Console Task / WorkUnit 雏形备份
+
+当前 Team Console Task 功能雏形已经在独立 worktree 收口：
+
+- Worktree：`E:\AII\ugk-pi\.worktrees\team-console-workunit-redesign`
+- 分支：`codex/team-console-workunit-redesign`
+- 当前前端备份提交：`a77e5aa feat(team-console): refine task run process nodes`
+- 该 worktree 当前没有 tracked diff；仍有未跟踪 `.codex/plans/*` 和 `.codex/skills/new-chat/`，按边界不要提交。
+
+当前已完成：
+
+- Team Console 已支持 Task 创建入口、浅编辑、软删除、Leader 对话 iframe、Task run 启动 / 停止和 Run observer。
+- Task run observer 已节点化：Run 状态、Worker 过程、Checker 过程、文件节点、文件详情都是独立 canvas branch node。
+- Worker / Checker 过程节点消费 `attempt.roleProcesses.worker/checker`；有 `assistantText.content` 时优先显示 Agent 自述 / 推理文本，保留换行、中文断句、最多 5 行、单行 200 字符截断；下半区只渲染 1 个最相关 tool group，完整 attempt metadata 不丢。
+- 文件节点紧凑展示 Agent 名、文件名和路径；点击文件节点展开右侧详情节点，支持 JSON pretty print、安全 Markdown 渲染和文本 fallback。
+- Task 操作树支持层级拖动：拖 Task 根节点带动菜单和已展开子树；拖菜单带动子节点；拖文件节点带动其文件详情；拖文件详情叶子节点只移动自身。
+- 运行中 observer 已收掉高频视觉噪音：不显示空文件占位、`正在刷新...`、`最后刷新`，active poll 瞬时失败不插红色错误节点；拖动 / resize 期间暂停 Task branch / child panel auto-height measurement，降低轮询刷新导致的卡顿和闪烁。
+
+验证记录：
+
+- `npm --prefix apps/team-console run test`：325 passed
+- `npm --prefix apps/team-console run build`：通过
+- `npx tsc --noEmit`：通过
+- `git diff --check`：通过
+- touched files EOL：`i/lf w/lf`
+- 浏览器冒烟：`http://127.0.0.1:5174/` mock Task run 中 Worker / Checker 自述分行显示，下半区只显示最近 1 个 group，console 无 error / warn
+
+集成注意：
+
+- Docker 主服务 / 主 checkout 已有后端提交 `65e4de8 feat(team): expose task role assistant text`，会通过 attempts API 暴露 `roleProcesses.*.assistantText`。
+- 当前 Team Console worktree 的 HEAD 仍未包含 `65e4de8`；Live API 若连接未包含该后端提交的服务，会 fallback 到 current action / narration，不报错但不会显示新自述字段。
+- 最终集成前需要安全并入 `65e4de8` 或确认部署环境后端已包含该提交；不要在当前有未提交文档改动时盲目 merge / rebase / reset。
+
+推荐下一步：
+
+1. 让用户做一次真实 Task run 验收，重点看运行中 Worker / Checker 过程节点是否可读、拖动是否仍跟手。
+2. 集成前审 `git log --oneline HEAD..65e4de8` 和 `git show --stat 65e4de8`，确认后端分叉文件后再合。
+3. SSE 观察流仍是后续后端能力；当前 Run observer 仍是轮询版，不要在前端硬造假实时流。
 
 ## 2026-05-23 Qwen 思考流与 GLM-5.1 上下文修复
 
