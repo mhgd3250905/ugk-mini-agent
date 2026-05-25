@@ -52,6 +52,10 @@ interface ExecutionMapProps {
     height?: number;
     sourceId?: string;
     interactive?: boolean;
+    autoHeight?: boolean;
+    resizable?: boolean;
+    minWidth?: number;
+    minHeight?: number;
   }>;
   viewport?: AtlasViewport;
   onViewportChange?: (viewport: AtlasViewport) => void;
@@ -593,6 +597,8 @@ export function ExecutionMap({
   const [taskBranchMeasuredSize, setTaskBranchMeasuredSize] = useState<TaskBranchMeasuredSize | null>(null);
   const [selectedAtlasNodeKeys, setSelectedAtlasNodeKeys] = useState<Set<string>>(new Set());
   const [maximizedBranch, setMaximizedBranch] = useState<"agent" | "task-child" | null>(null);
+  const [panelSizeOverrides, setPanelSizeOverrides] = useState<Record<string, { width: number; height: number }>>({});
+  const [panelMeasuredHeights, setPanelMeasuredHeights] = useState<Record<string, number>>({});
   const prevSelectionRef = useRef<string | null>(null);
   const taskBranchShellRef = useRef<HTMLDivElement | null>(null);
   const atlasNodeDragRef = useRef<AtlasNodeDragState | null>(null);
@@ -600,6 +606,7 @@ export function ExecutionMap({
   const suppressTaskClickRef = useRef<string | null>(null);
   const agentBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
   const taskChildBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
+  const panelResizeRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startWidth: number; startHeight: number; minWidth: number; minHeight: number } | null>(null);
 
   if (prevSelectionRef.current !== selectedTaskId) {
     prevSelectionRef.current = selectedTaskId;
@@ -1148,6 +1155,7 @@ export function ExecutionMap({
   const taskChildBranchPanelsLayout = useMemo(() => {
     if (!taskBranchNode || !taskChildBranchPanels?.length) return [];
     const panelGap = 8;
+    const activePanelIds = new Set(taskChildBranchPanels.map((p) => p.id));
     type Entry = { rect: AgentBranchRect; sourceId: string | null; parentKey: string };
     const entries: Entry[] = [];
     const bottomByParent = new Map<string, number>();
@@ -1162,8 +1170,13 @@ export function ExecutionMap({
         parentKey = "__menu__";
         sourceRect = taskBranchNode;
       }
-      const w = p.width ?? TASK_CHILD_BRANCH_WIDTH;
-      const h = p.height ?? TASK_CHILD_BRANCH_HEIGHT;
+      const sizeOverride = activePanelIds.has(p.id) ? panelSizeOverrides[p.id] : undefined;
+      const baseW = p.width ?? TASK_CHILD_BRANCH_WIDTH;
+      const baseH = p.autoHeight
+        ? (panelMeasuredHeights[p.id] ?? (p.height ?? 120))
+        : (p.height ?? TASK_CHILD_BRANCH_HEIGHT);
+      const w = sizeOverride?.width ?? baseW;
+      const h = sizeOverride?.height ?? baseH;
       const x = sourceRect.x + sourceRect.width + TASK_CHILD_BRANCH_GAP;
       const prevBottom = bottomByParent.get(parentKey) ?? sourceRect.y;
       const y = prevBottom === sourceRect.y ? sourceRect.y : prevBottom + panelGap;
@@ -1171,14 +1184,17 @@ export function ExecutionMap({
       entries.push({ rect, sourceId: p.id, parentKey });
       bottomByParent.set(parentKey, y + h);
     }
-    return taskChildBranchPanels.map((p, i) => ({
-      ...p,
-      rect: entries[i]!.rect,
-      sourceRect: entries[i]!.parentKey === "__menu__"
-        ? taskBranchNode
-        : entries.find((e) => e.sourceId === entries[i]!.parentKey)!.rect,
-    }));
-  }, [taskBranchNode, taskChildBranchPanels]);
+    return taskChildBranchPanels.map((p, i) => {
+      const parentEntry = entries[i]!.parentKey === "__menu__"
+        ? null
+        : entries.find((e) => e.sourceId === entries[i]!.parentKey);
+      return {
+        ...p,
+        rect: entries[i]!.rect,
+        sourceRect: parentEntry?.rect ?? taskBranchNode,
+      };
+    });
+  }, [taskBranchNode, taskChildBranchPanels, panelSizeOverrides, panelMeasuredHeights]);
   const agentBranchRight = agentBranchNode ? agentBranchNode.x + agentBranchNode.width : 0;
   const taskBranchRight = Math.max(
     taskBranchNode ? taskBranchNode.x + taskBranchNode.width : 0,
@@ -1255,6 +1271,47 @@ export function ExecutionMap({
         : { nodeId, width, height }
     ));
   });
+
+  useLayoutEffect(() => {
+    if (!taskChildBranchPanels?.length) {
+      if (Object.keys(panelMeasuredHeights).length > 0) setPanelMeasuredHeights({});
+      return;
+    }
+    const autoPanels = taskChildBranchPanels.filter((p) => p.autoHeight);
+    if (autoPanels.length === 0) return;
+    const nodes = evidenceContainerRef.current?.querySelectorAll<HTMLElement>("[data-panel-id]");
+    if (!nodes?.length) return;
+    const updated: Record<string, number> = {};
+    let changed = false;
+    for (const node of nodes) {
+      const id = node.dataset.panelId;
+      if (!id) continue;
+      const panel = autoPanels.find((p) => p.id === id);
+      if (!panel) continue;
+      const h = measureLayoutHeight(node, panel.height ?? 120);
+      if (!Number.isFinite(h) || h <= 0) continue;
+      updated[id] = h;
+      if ((panelMeasuredHeights[id] ?? 0) !== h) changed = true;
+    }
+    if (changed) setPanelMeasuredHeights((current) => ({ ...current, ...updated }));
+  });
+
+  useLayoutEffect(() => {
+    if (!taskChildBranchPanels?.length && Object.keys(panelSizeOverrides).length > 0) {
+      setPanelSizeOverrides({});
+      return;
+    }
+    if (!taskChildBranchPanels?.length) return;
+    const activeIds = new Set(taskChildBranchPanels.map((p) => p.id));
+    const stale = Object.keys(panelSizeOverrides).filter((id) => !activeIds.has(id));
+    if (stale.length > 0) {
+      setPanelSizeOverrides((current) => {
+        const next = { ...current };
+        for (const id of stale) delete next[id];
+        return next;
+      });
+    }
+  }, [taskChildBranchPanels, panelSizeOverrides]);
 
   const beginAgentBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (!focusedAgentNode || !agentBranchNode || !canStartAgentBranchDrag(event.target)) return;
@@ -1385,6 +1442,51 @@ export function ExecutionMap({
     event.preventDefault();
     event.stopPropagation();
     taskChildBranchInteractionRef.current = null;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  }, []);
+
+  const beginPanelResize = useCallback((panelId: string, minWidth: number, minHeight: number, event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const layoutEntry = taskChildBranchPanelsLayout.find((p) => p.id === panelId);
+    const currentRect = layoutEntry?.rect;
+    if (!currentRect) return;
+    panelResizeRef.current = {
+      panelId,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startWidth: currentRect.width,
+      startHeight: currentRect.height,
+      minWidth: Math.max(360, minWidth),
+      minHeight: Math.max(240, minHeight),
+    };
+    event.currentTarget.parentElement?.setPointerCapture?.(event.pointerId);
+  }, [taskChildBranchPanelsLayout]);
+
+  const movePanelResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = panelResizeRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const scale = viewportScale(viewport);
+    const dx = (event.clientX - drag.startClientX) / scale;
+    const dy = (event.clientY - drag.startClientY) / scale;
+    setPanelSizeOverrides((current) => ({
+      ...current,
+      [drag.panelId]: {
+        width: Math.max(drag.minWidth, drag.startWidth + dx),
+        height: Math.max(drag.minHeight, drag.startHeight + dy),
+      },
+    }));
+  }, [viewport]);
+
+  const endPanelResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = panelResizeRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    panelResizeRef.current = null;
     event.currentTarget.releasePointerCapture?.(event.pointerId);
   }, []);
 
@@ -1800,15 +1902,27 @@ export function ExecutionMap({
           {taskChildBranchPanelsLayout.map((p) => (
             <div
               key={`task-child-panel-${p.id}`}
-              className="emap-task-child-branch-shell"
+              data-panel-id={p.id}
+              className={`emap-task-child-branch-shell${p.resizable ? " emap-panel-resizable" : ""}`}
+              onPointerMove={p.resizable ? movePanelResize : undefined}
+              onPointerUp={p.resizable ? endPanelResize : undefined}
+              onPointerCancel={p.resizable ? endPanelResize : undefined}
               style={{
                 left: p.rect.x,
                 top: p.rect.y,
                 width: p.rect.width,
-                height: p.rect.height,
+                ...(p.autoHeight ? {} : { height: p.rect.height }),
               }}
             >
               {p.panel}
+              {p.resizable && (
+                <button
+                  type="button"
+                  className="emap-panel-resize-handle"
+                  aria-label="调整面板大小"
+                  onPointerDown={(event) => beginPanelResize(p.id, p.minWidth ?? 360, p.minHeight ?? 240, event)}
+                />
+              )}
             </div>
           ))}
         </div>

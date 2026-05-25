@@ -120,12 +120,6 @@ function elapsedText(startedAt: string | null | undefined, finishedAt: string | 
   return `耗时 ${formatDurationMs(safeEnd - start)}`;
 }
 
-function runtimeContextText(context: TeamRoleRuntimeContext | undefined): string | null {
-  if (!context) return null;
-  const browser = context.browserId ?? "默认浏览器";
-  const fallback = context.fallbackUsed ? ` · fallback: ${context.fallbackReason ?? "unknown"}` : "";
-  return `${context.resolvedProfileId} · ${browser} · ${context.browserScope}${fallback}`;
-}
 
 function fileFormatFromName(fileName: string): "json" | "markdown" | "text" {
   const lower = fileName.toLowerCase();
@@ -1587,11 +1581,11 @@ export function App() {
 
   const taskChildBranchPanels = useMemo(() => {
     if (expandedTaskDetailMode !== "run-observer" || !observedTaskRun || !expandedTask) return [];
-    const panels: Array<{ id: string; panel: ReactNode; width?: number; height?: number; sourceId?: string }> = [];
+    const panels: Array<{ id: string; panel: ReactNode; width?: number; height?: number; sourceId?: string; autoHeight?: boolean; resizable?: boolean; minWidth?: number; minHeight?: number }> = [];
     panels.push({
       id: "run-status",
       width: 300,
-      height: 220,
+      autoHeight: true,
       sourceId: undefined,
       panel: (
         <section className="emap-observer-node emap-observer-status-node" aria-label="Run 状态">
@@ -1622,29 +1616,31 @@ export function App() {
       ),
     });
     for (const descriptor of observerFileDescriptors) {
-      const runtime = runtimeContextText(descriptor.runtimeContext);
       const isSelected = selectedObserverFileKey === descriptor.key;
+      const agentName = descriptor.runtimeContext
+        ? (agentsById.get(descriptor.runtimeContext.resolvedProfileId)?.name ?? descriptor.runtimeContext.resolvedProfileId)
+        : descriptor.kind === "result"
+          ? (descriptor.fileName.includes("accepted") ? "已接受结果" : "结果")
+          : descriptor.kind;
       panels.push({
         id: `file-${descriptor.key}`,
         width: 300,
-        height: 140,
+        height: 80,
         sourceId: undefined,
         panel: (
           <button
             type="button"
-            className={`emap-observer-node emap-observer-file-node ${descriptor.kind} ${isSelected ? "selected" : ""}`}
+            className={`emap-observer-node emap-observer-file-node emap-observer-file-compact ${descriptor.kind} ${isSelected ? "selected" : ""}`}
             data-file-kind={descriptor.kind}
             onClick={() => toggleObserverFile(descriptor.key)}
           >
             <header className="emap-observer-node-head">
+              <span className="emap-observer-file-agent">{agentName}</span>
               <span className="emap-observer-node-label">{descriptor.title}</span>
             </header>
             <div className="emap-observer-file-body">
               <code className="emap-observer-file-name">{descriptor.fileName}</code>
               <span className="emap-observer-file-path">{descriptor.path}</span>
-              {descriptor.summary && <span className="emap-observer-file-summary">{descriptor.summary}</span>}
-              {runtime && <span className="emap-observer-file-runtime">{runtime}</span>}
-              {observedTaskRunState?.files[descriptor.key]?.error && <span className="emap-observer-file-error">{observedTaskRunState.files[descriptor.key]!.error}</span>}
             </div>
           </button>
         ),
@@ -1652,9 +1648,12 @@ export function App() {
       if (isSelected && selectedObserverFileDescriptor) {
         panels.push({
           id: `file-detail-${descriptor.key}`,
-          width: 420,
-          height: 360,
+          width: 460,
+          height: 420,
           sourceId: `file-${descriptor.key}`,
+          resizable: true,
+          minWidth: 360,
+          minHeight: 280,
           panel: (
             <section className="emap-observer-node emap-observer-file-detail-node" aria-label={selectedObserverFileDescriptor.title}>
               <header className="emap-observer-node-head">
@@ -1696,7 +1695,7 @@ export function App() {
   }, [
     expandedTaskDetailMode, observedTaskRun, expandedTask, observerFileDescriptors,
     selectedObserverFileKey, selectedObserverFileDescriptor, selectedObserverFileState,
-    observedTaskRunState, observedTaskRunAttempts, toggleObserverFile,
+    observedTaskRunState, observedTaskRunAttempts, toggleObserverFile, agentsById,
   ]);
 
   return (
