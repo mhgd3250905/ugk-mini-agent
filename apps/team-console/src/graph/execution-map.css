@@ -1031,6 +1031,8 @@
 }
 
 .emap-observer-process-node {
+  max-height: 440px;
+  overflow: hidden;
   background:
     linear-gradient(180deg, rgba(121, 216, 208, 0.05), transparent 42%),
     rgba(6, 11, 18, 0.98);
@@ -1118,9 +1120,30 @@
   line-height: 1.35;
 }
 
+.emap-process-budget-note,
+.emap-process-entry-budget-note {
+  padding: 5px 7px;
+  border: 1px solid rgba(121, 216, 208, 0.14);
+  border-radius: 5px;
+  color: rgba(216, 228, 241, 0.58);
+  background: rgba(121, 216, 208, 0.045);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
 .emap-process-tool-groups {
   display: grid;
   gap: 5px;
+  min-height: 0;
+}
+
+.emap-process-tool-groups.is-scrollable {
+  max-height: 318px;
+  overflow-y: auto;
+  padding-right: 2px;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
 .emap-process-tool-group {

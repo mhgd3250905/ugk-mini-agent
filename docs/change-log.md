@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-25 — Team Console Task run process nodes UI budget
+
+- **主题**: 给 Team Console Canvas Task run observer 的 `Worker 过程` / `Checker 过程` 节点补渲染预算，避免长任务过程数据无限渲染、无限增高拖垮画布。
+- **变更内容**:
+  - 每个过程节点最多渲染若干 tool/event group，优先保留活跃过程；每个 group 只渲染最近若干 entries；隐藏的 group / entry 会显示隐藏计数。
+  - 过程节点保留 current action、最新 narration、默认展开语义和用户手动折叠状态；完整过程数据仍来自 `roleProcesses.worker` / `roleProcesses.checker` attempt metadata，前端只做 DOM 渲染限流。
+  - 给过程节点和 tool group 容器增加最大高度与内部滚动，避免撑爆 `.emap-task-child-branch-shell`；文件详情节点无固定 max-height 的既有口径不变。
+  - 新增大量 process entries 回归测试，锁定“旧 entries 不渲染、最新 entries 保留、隐藏计数可见、滚动 class 存在”的行为。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改 `test/team-*.test.ts`，不改 `.pi/skills/**`，不做 SSE，不新增 endpoint，不新造 Team 专属 process schema，不改主 `/playground`。
+
+---
+
 ## 2026-05-25 — Team Console Task run process nodes 前端实现
 
 - **主题**: 给 Team Console Canvas Task run observer 增加 worker / checker 过程观测节点，前端先按后端 additive contract 完成类型、Mock fixture、容错渲染和 UI。

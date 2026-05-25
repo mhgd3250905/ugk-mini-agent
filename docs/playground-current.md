@@ -7,6 +7,8 @@
 - Team Console Run observer 现在把 `Worker 过程` / `Checker 过程` 渲染为独立 `.emap-task-child-branch-shell` branch node，与 Run 状态、文件节点、文件详情同级。
 - 前端消费 `attempt.roleProcesses.worker` / `attempt.roleProcesses.checker`；缺少 `roleProcesses` 或 role process 为 `null` 时显示等待过程数据 / 暂无过程条目，不报错。
 - 过程节点顶部显示角色状态、current action、最新 narration；下半部按 `toolCallId` 分组展示 tool entries，可折叠 / 展开，运行中 active tool 和 terminal 最新 finished / error tool 默认展开。
+- 过程节点有 UI budget：每个节点最多渲染若干 tool/event group，优先保留活跃过程；每个 group 只渲染最近若干 entries，显示隐藏计数，并通过内部滚动限制高度，避免长任务过程撑爆画布。
+- 完整过程数据仍来自后端 attempt metadata；Team Console 前端只做渲染限流，不丢弃完整过程数据。
 - 过程节点参与现有 Task 操作树拖动语义；仍不接 SSE，不新增 endpoint，不改主 `/playground`。
 - 相关源码：`apps/team-console/src/api/team-types.ts`、`apps/team-console/src/fixtures/team-fixtures.ts`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app.test.tsx`
 

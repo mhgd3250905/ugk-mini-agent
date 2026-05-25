@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
 import { makeSequentialPlan, makeSequentialRun, mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
-import type { TeamAttemptMetadata, TeamCanvasTask, TeamRunState } from "../api/team-types";
+import type { AgentChatProcessEntry, TeamAttemptMetadata, TeamCanvasTask, TeamRunState } from "../api/team-types";
 
 function getAtlas(container: HTMLElement): HTMLElement {
   const atlas = container.querySelector(".execution-map-container") as HTMLElement | null;
@@ -634,6 +634,110 @@ describe("App", () => {
 
     fireEvent.click(searchHeader);
     expect(within(searchGroup!).getByText("找到官网、云平台和公开登录入口线索")).toBeInTheDocument();
+  });
+
+  it("caps process node rendering for large role process histories", async () => {
+    const task = cloneTaskFixture();
+    const taskRun = makeLiveTaskRunFixture(task);
+    const oldToolEntries: AgentChatProcessEntry[] = Array.from({ length: 12 }, (_, index) => {
+      const number = String(index + 1).padStart(2, "0");
+      return {
+        id: `bulk-tool-${number}`,
+        kind: "ok",
+        title: `bulk tool ${number} finished`,
+        detail: `bulk group ${number} detail`,
+        createdAt: `2026-05-25T00:00:${number}.000Z`,
+        toolCallId: `tool-bulk-${number}`,
+        toolName: `bulk-tool-${number}`,
+      };
+    });
+    const deepToolEntries: AgentChatProcessEntry[] = Array.from({ length: 20 }, (_, index) => {
+      const number = String(index + 1).padStart(2, "0");
+      return {
+        id: `deep-entry-${number}`,
+        kind: index === 19 ? "ok" : "tool",
+        title: `deep entry ${number}`,
+        detail: `deep detail ${number}`,
+        createdAt: `2026-05-25T00:01:${number}.000Z`,
+        toolCallId: "tool-bulk-deep",
+        toolName: "bulk-deep-tool",
+      };
+    });
+    const attempt: TeamAttemptMetadata = {
+      ...makeLegacyAttemptFixture(task),
+      roleProcesses: {
+        worker: {
+          role: "worker",
+          profileId: task.workUnit.workerAgentId,
+          status: "succeeded",
+          startedAt: "2026-05-25T00:00:00.000Z",
+          updatedAt: "2026-05-25T00:02:00.000Z",
+          finishedAt: "2026-05-25T00:02:00.000Z",
+          process: {
+            title: "Worker 过程",
+            narration: ["Worker 开始长任务", "Worker 已汇总大量过程数据"],
+            currentAction: "压缩长任务过程视图",
+            kind: "ok",
+            isComplete: true,
+            entries: [...oldToolEntries, ...deepToolEntries],
+          },
+        },
+      },
+    };
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [
+            { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+            { agentId: "search", name: "搜索 Agent", description: "搜索" },
+          ],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [task] }), { status: 200 });
+      if (url === `/v1/team/tasks/${task.taskId}/runs`) {
+        return new Response(JSON.stringify({ runs: [taskRun] }), { status: 200 });
+      }
+      if (url === `/v1/team/task-runs/${taskRun.runId}`) {
+        return new Response(JSON.stringify(taskRun), { status: 200 });
+      }
+      if (url === `/v1/team/task-runs/${taskRun.runId}/tasks/${task.taskId}/attempts`) {
+        return new Response(JSON.stringify({ attempts: [attempt] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    const workerProcessNode = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-process-node[data-process-role="worker"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    expect(workerProcessNode).toHaveTextContent("压缩长任务过程视图");
+    expect(workerProcessNode).toHaveTextContent("Worker 已汇总大量过程数据");
+    expect(workerProcessNode).toHaveTextContent("最多显示 8 组，优先保留活跃过程");
+    expect(workerProcessNode).toHaveTextContent("已隐藏 5 组 / 19 条");
+    expect(workerProcessNode).toHaveTextContent("已隐藏 14 条，仅显示最近 6 条");
+
+    const groupsContainer = workerProcessNode.querySelector(".emap-process-tool-groups") as HTMLElement | null;
+    expect(groupsContainer).toHaveClass("is-scrollable");
+    expect(workerProcessNode.querySelectorAll(".emap-process-tool-group")).toHaveLength(8);
+    expect(workerProcessNode).not.toHaveTextContent("bulk tool 01 finished");
+    expect(workerProcessNode).toHaveTextContent("bulk-tool-12");
+    expect(workerProcessNode).not.toHaveTextContent("deep detail 01");
+    expect(workerProcessNode).toHaveTextContent("deep detail 20");
+    expect(workerProcessNode.querySelectorAll(".emap-process-tool-entry").length).toBeLessThan(33);
   });
 
   it("expands the active process tool by default while a role is running", async () => {
@@ -2480,6 +2584,10 @@ describe("App", () => {
     expect(readme).toContain("Checker 过程");
     expect(readme).toContain("toolCallId");
     expect(readme).toContain("缺少 `roleProcesses`");
+    expect(readme).toContain("UI budget");
+    expect(readme).toContain("最多显示");
+    expect(readme).toContain("优先保留活跃过程");
+    expect(readme).toContain("隐藏计数");
     expect(readme).toContain("不接 SSE");
     expect(readme).toContain("只展示 Agent 名字（从 agentsById 解析）、文件名和路径");
     expect(readme).toContain("不会进入 `/v1/team/runs` 的 Plan run 列表");
@@ -2529,6 +2637,8 @@ describe("App", () => {
     expect(runtimeDoc).toContain("Checker 过程");
     expect(runtimeDoc).toContain("toolCallId");
     expect(runtimeDoc).toContain("additive frontend contract");
+    expect(runtimeDoc).toContain("UI budget");
+    expect(runtimeDoc).toContain("不丢弃完整过程数据");
     expect(runtimeDoc).toContain("SSE 观察流仍是后续后端能力");
     expect(runtimeDoc).toContain("base snapshot + dirty fields");
     expect(runtimeDoc).toContain("input text、output contract、acceptance rules");
@@ -2542,12 +2652,17 @@ describe("App", () => {
     expect(playgroundCurrent).toContain("Checker 过程");
     expect(playgroundCurrent).toContain("roleProcesses");
     expect(playgroundCurrent).toContain("toolCallId");
+    expect(playgroundCurrent).toContain("UI budget");
+    expect(playgroundCurrent).toContain("隐藏计数");
     expect(playgroundCurrent).toContain("不接 SSE");
 
     const changeLog = readFileSync("../../docs/change-log.md", "utf8");
+    expect(changeLog).toContain("2026-05-25 — Team Console Task run process nodes UI budget");
     expect(changeLog).toContain("2026-05-25 — Team Console Task run process nodes 前端实现");
     expect(changeLog).toContain("roleProcesses.worker");
     expect(changeLog).toContain("roleProcesses.checker");
+    expect(changeLog).toContain("每个过程节点最多渲染若干 tool/event group");
+    expect(changeLog).toContain("优先保留活跃过程");
     expect(changeLog).toContain("Worker 过程");
     expect(changeLog).toContain("Checker 过程");
     expect(changeLog).toContain("不改 `src/team/**`");

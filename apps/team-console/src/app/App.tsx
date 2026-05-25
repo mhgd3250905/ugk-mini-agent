@@ -22,6 +22,8 @@ const TASK_RUN_PROCESS_LABELS: Record<TeamAttemptRoleProcessRole, string> = {
   worker: "Worker 过程",
   checker: "Checker 过程",
 };
+const PROCESS_MAX_GROUPS = 8;
+const PROCESS_MAX_ENTRIES_PER_GROUP = 6;
 
 type AgentBranchMode = "chat" | "task-create";
 
@@ -101,6 +103,19 @@ type ProcessToolGroup = {
   status: ProcessToolGroupStatus;
   isEvent: boolean;
   latestCreatedAt: string;
+  order: number;
+};
+
+type ProcessToolGroupView = ProcessToolGroup & {
+  entries: AgentChatProcessEntry[];
+  totalEntryCount: number;
+  hiddenEntryCount: number;
+};
+
+type ProcessToolGroupBudget = {
+  groups: ProcessToolGroupView[];
+  hiddenGroupCount: number;
+  hiddenEntryCount: number;
 };
 
 function errorMessage(error: unknown): string {
@@ -185,6 +200,7 @@ function buildToolGroups(entries: AgentChatProcessEntry[]): ProcessToolGroup[] {
         status: "running",
         isEvent,
         latestCreatedAt: entry.createdAt,
+        order: groups.length,
       };
       groupsById.set(id, group);
       groups.push(group);
@@ -197,6 +213,86 @@ function buildToolGroups(entries: AgentChatProcessEntry[]): ProcessToolGroup[] {
     group.status = resolveToolGroupStatus(group.entries, group.isEvent);
   }
   return groups;
+}
+
+function latestToolGroup(
+  groups: ProcessToolGroup[],
+  predicate: (group: ProcessToolGroup) => boolean,
+): ProcessToolGroup | null {
+  return groups.reduce<ProcessToolGroup | null>((latest, group) => {
+    if (!predicate(group)) return latest;
+    if (!latest) return group;
+    const timeComparison = compareEntryTime(group.latestCreatedAt, latest.latestCreatedAt);
+    if (timeComparison > 0) return group;
+    if (timeComparison === 0 && group.order > latest.order) return group;
+    return latest;
+  }, null);
+}
+
+function recentToolGroupsFirst(a: ProcessToolGroup, b: ProcessToolGroup): number {
+  const timeComparison = compareEntryTime(b.latestCreatedAt, a.latestCreatedAt);
+  if (timeComparison !== 0) return timeComparison;
+  return b.order - a.order;
+}
+
+function recentEntries(entries: AgentChatProcessEntry[]): AgentChatProcessEntry[] {
+  if (entries.length <= PROCESS_MAX_ENTRIES_PER_GROUP) return entries;
+  return entries
+    .map((entry, order) => ({ entry, order }))
+    .sort((a, b) => {
+      const timeComparison = compareEntryTime(a.entry.createdAt, b.entry.createdAt);
+      if (timeComparison !== 0) return timeComparison;
+      return a.order - b.order;
+    })
+    .slice(-PROCESS_MAX_ENTRIES_PER_GROUP)
+    .map((item) => item.entry);
+}
+
+function applyProcessToolBudget(
+  groups: ProcessToolGroup[],
+  roleProcess: TeamAttemptRoleProcess | undefined,
+): ProcessToolGroupBudget {
+  const selectedIds = new Set<string>();
+  const addGroup = (group: ProcessToolGroup | null) => {
+    if (group && selectedIds.size < PROCESS_MAX_GROUPS) selectedIds.add(group.id);
+  };
+
+  if (roleProcess?.status === "running") {
+    addGroup(latestToolGroup(groups, (group) => !group.isEvent && group.status === "running"));
+  }
+  if (isTerminalRoleProcess(roleProcess?.status)) {
+    addGroup(latestToolGroup(groups, (group) => (
+      !group.isEvent && (group.status === "finished" || group.status === "failed")
+    )));
+  }
+
+  for (const group of [...groups].sort(recentToolGroupsFirst)) {
+    if (selectedIds.size >= PROCESS_MAX_GROUPS) break;
+    selectedIds.add(group.id);
+  }
+
+  const visibleGroups = groups
+    .filter((group) => selectedIds.has(group.id))
+    .map<ProcessToolGroupView>((group) => {
+      const entries = recentEntries(group.entries);
+      return {
+        ...group,
+        entries,
+        totalEntryCount: group.entries.length,
+        hiddenEntryCount: group.entries.length - entries.length,
+      };
+    });
+  const hiddenGroupEntryCount = groups
+    .filter((group) => !selectedIds.has(group.id))
+    .reduce((total, group) => total + group.entries.length, 0);
+  const visibleHiddenEntryCount = visibleGroups
+    .reduce((total, group) => total + group.hiddenEntryCount, 0);
+
+  return {
+    groups: visibleGroups,
+    hiddenGroupCount: groups.length - visibleGroups.length,
+    hiddenEntryCount: hiddenGroupEntryCount + visibleHiddenEntryCount,
+  };
 }
 
 function formatToolGroupStatus(status: ProcessToolGroupStatus): string {
@@ -257,7 +353,8 @@ function renderRoleProcessNode(
   const currentAction = process?.currentAction?.trim() || "等待过程数据";
   const latestNarration = getLatestNarration(process ?? undefined);
   const status = roleProcess?.status ?? "waiting";
-  const groups = buildToolGroups(process?.entries ?? []);
+  const budget = applyProcessToolBudget(buildToolGroups(process?.entries ?? []), roleProcess);
+  const groups = budget.groups;
   return (
     <section
       className={`emap-observer-node emap-observer-process-node ${role}`}
@@ -276,40 +373,52 @@ function renderRoleProcessNode(
         <p className="emap-observer-process-narration">{latestNarration}</p>
       </div>
       {groups.length > 0 ? (
-        <div className="emap-process-tool-groups">
-          {groups.map((group) => {
-            const stateKey = processToolGroupStateKey(runId, role, group.id);
-            const expanded = expandedToolGroups[stateKey] ?? isToolGroupDefaultExpanded(group, roleProcess, groups);
-            return (
-              <section
-                key={group.id}
-                className={`emap-process-tool-group ${group.status} ${expanded ? "expanded" : "collapsed"}`}
-                data-tool-group-id={group.id}
-              >
-                <button
-                  type="button"
-                  className="emap-process-tool-group-header"
-                  aria-expanded={expanded}
-                  onClick={() => onToggleToolGroup(stateKey, expanded)}
+        <>
+          {(budget.hiddenGroupCount > 0 || budget.hiddenEntryCount > 0) && (
+            <div className="emap-process-budget-note">
+              最多显示 {PROCESS_MAX_GROUPS} 组，优先保留活跃过程；已隐藏 {budget.hiddenGroupCount} 组 / {budget.hiddenEntryCount} 条
+            </div>
+          )}
+          <div className="emap-process-tool-groups is-scrollable">
+            {groups.map((group) => {
+              const stateKey = processToolGroupStateKey(runId, role, group.id);
+              const expanded = expandedToolGroups[stateKey] ?? isToolGroupDefaultExpanded(group, roleProcess, groups);
+              return (
+                <section
+                  key={group.id}
+                  className={`emap-process-tool-group ${group.status} ${expanded ? "expanded" : "collapsed"}`}
+                  data-tool-group-id={group.id}
                 >
-                  <span className="emap-process-tool-name">{group.toolName}</span>
-                  <span className={`emap-process-tool-status ${group.status}`}>{formatToolGroupStatus(group.status)}</span>
-                  <span className="emap-process-tool-count">{group.entries.length}</span>
-                </button>
-                {expanded && (
-                  <div className="emap-process-tool-entry-list">
-                    {group.entries.map((entry) => (
-                      <article key={entry.id} className={`emap-process-tool-entry ${entry.kind}`}>
-                        <div className="emap-process-tool-entry-title">{entry.title}</div>
-                        {entry.detail && <pre className="emap-process-tool-entry-detail">{entry.detail}</pre>}
-                      </article>
-                    ))}
-                  </div>
-                )}
-              </section>
-            );
-          })}
-        </div>
+                  <button
+                    type="button"
+                    className="emap-process-tool-group-header"
+                    aria-expanded={expanded}
+                    onClick={() => onToggleToolGroup(stateKey, expanded)}
+                  >
+                    <span className="emap-process-tool-name">{group.toolName}</span>
+                    <span className={`emap-process-tool-status ${group.status}`}>{formatToolGroupStatus(group.status)}</span>
+                    <span className="emap-process-tool-count">{group.totalEntryCount}</span>
+                  </button>
+                  {expanded && (
+                    <div className="emap-process-tool-entry-list">
+                      {group.hiddenEntryCount > 0 && (
+                        <div className="emap-process-entry-budget-note">
+                          已隐藏 {group.hiddenEntryCount} 条，仅显示最近 {PROCESS_MAX_ENTRIES_PER_GROUP} 条
+                        </div>
+                      )}
+                      {group.entries.map((entry) => (
+                        <article key={entry.id} className={`emap-process-tool-entry ${entry.kind}`}>
+                          <div className="emap-process-tool-entry-title">{entry.title}</div>
+                          {entry.detail && <pre className="emap-process-tool-entry-detail">{entry.detail}</pre>}
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
+          </div>
+        </>
       ) : (
         <div className="emap-observer-process-empty">暂无过程条目</div>
       )}
