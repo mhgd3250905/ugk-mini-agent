@@ -12,6 +12,23 @@
 
 ---
 
+## 2026-05-25 — Team Console Task 操作树拖动语义
+
+- **主题**: 把 Task 操作树升级为真正的树形拖动，支持父节点拖动带动整棵已展开子树。
+- **变更内容**:
+  - Task 根节点拖动时，已展开的菜单、编辑节点、Leader 对话节点、Run observer 面板及其子节点全部按同一 dx/dy 同步平移；已手动拖过的子节点保持当前相对位置。
+  - Task 操作菜单节点可从 header 区域拖动，拖动时带动画已展开子树；菜单按钮、收起按钮等交互元素不启动拖动。
+  - 编辑节点可从 header 区域拖动，表单控件不启动拖动。
+  - Observer 文件节点拖动时带上已展开的文件详情子节点；详情节点可单独拖动（只动自己）。
+  - 所有拖动系统统一使用 deferred pointer capture（pointerdown 不立即 capture），超过 4px 阈值才进入拖动状态，避免吞掉点击。
+  - SVG connector 全部基于 final rect（含 position override）计算，不再从旧位置发出。
+  - 新增 `taskBranchPositionOverrides` 状态管理菜单位置覆盖；`translateTaskSubtree` helper 统一处理子树平移。
+  - 新增 8 个测试覆盖树形拖动语义：Task root subtree drag、menu subtree drag、menu click 保留、edit node 独立拖动、file node subtree drag、detail leaf 独立拖动、leader chat 可用性回归。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改后端 API shape，不改 SSE，不改主 `/playground`。
+
+---
+
 ## 2026-05-25 — Team Console Run observer 拖拽、安全 Markdown 和 connector 修复
 
 - **主题**: 修复 Run observer 面板拖拽/点击冲突，添加安全 Markdown 渲染，修复子节点 connector 使用旧坐标。
