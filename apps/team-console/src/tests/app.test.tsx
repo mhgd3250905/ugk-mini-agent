@@ -2131,4 +2131,245 @@ describe("App", () => {
     expect(runtimeDoc).not.toContain("Focus Mode 特殊 Agent 对话界面");
     expect(runtimeDoc).not.toContain("WorkUnit run 未实现");
   });
+
+  it("drags observer status panel and updates connector", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
+
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+    });
+
+    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
+    const statusShell = allShells().find((s) => s.querySelector(".emap-observer-status-node")) as HTMLElement | undefined;
+    expect(statusShell).toBeTruthy();
+
+    const initialLeft = Number.parseFloat(statusShell!.style.left);
+    const initialTop = Number.parseFloat(statusShell!.style.top);
+
+    firePointer(statusShell!, "pointerdown", { pointerId: 71, clientX: 600, clientY: 300 });
+    firePointer(statusShell!, "pointermove", { pointerId: 71, clientX: 660, clientY: 340 });
+    firePointer(statusShell!, "pointerup", { pointerId: 71, clientX: 660, clientY: 340, buttons: 0 });
+
+    expect(Number.parseFloat(statusShell!.style.left)).toBeCloseTo(initialLeft + 60, 4);
+    expect(Number.parseFloat(statusShell!.style.top)).toBeCloseTo(initialTop + 40, 4);
+
+    const connectorPaths = container.querySelectorAll(".emap-link-task-child-branch");
+    expect(connectorPaths.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("drags file node without triggering detail expand when drag exceeds threshold", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
+
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+    });
+
+    const workerFileNode = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+
+    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
+    const workerShell = allShells().find((s) => s.querySelector('.emap-observer-file-node[data-file-kind="worker"]')) as HTMLElement | undefined;
+    expect(workerShell).toBeTruthy();
+    const initialLeft = Number.parseFloat(workerShell!.style.left);
+
+    firePointer(workerFileNode, "pointerdown", { pointerId: 72, clientX: 500, clientY: 300 });
+    firePointer(workerFileNode, "pointermove", { pointerId: 72, clientX: 560, clientY: 340 });
+    firePointer(workerFileNode, "pointerup", { pointerId: 72, clientX: 560, clientY: 340, buttons: 0 });
+
+    expect(Number.parseFloat(workerShell!.style.left)).toBeCloseTo(initialLeft + 60, 4);
+    expect(container.querySelector(".emap-observer-file-detail-node")).toBeNull();
+  });
+
+  it("drags file detail node and resizes it independently", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
+
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+    });
+
+    const workerFileNode = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    fireEvent.click(workerFileNode);
+
+    await waitFor(() => {
+      const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
+      expect(detail).toBeTruthy();
+    });
+
+    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
+    const detailShell = allShells().find((s) => s.querySelector(".emap-observer-file-detail-node")) as HTMLElement | undefined;
+    expect(detailShell).toBeTruthy();
+
+    const initialLeft = Number.parseFloat(detailShell!.style.left);
+    const initialTop = Number.parseFloat(detailShell!.style.top);
+
+    firePointer(detailShell!, "pointerdown", { pointerId: 73, clientX: 700, clientY: 350 });
+    firePointer(detailShell!, "pointermove", { pointerId: 73, clientX: 750, clientY: 380 });
+    firePointer(detailShell!, "pointerup", { pointerId: 73, clientX: 750, clientY: 380, buttons: 0 });
+
+    expect(Number.parseFloat(detailShell!.style.left)).toBeCloseTo(initialLeft + 50, 4);
+    expect(Number.parseFloat(detailShell!.style.top)).toBeCloseTo(initialTop + 30, 4);
+
+    const resizeHandle = detailShell!.querySelector(".emap-panel-resize-handle") as HTMLElement | null;
+    expect(resizeHandle).toBeTruthy();
+    const preResizeWidth = Number.parseFloat(detailShell!.style.width);
+
+    firePointer(resizeHandle!, "pointerdown", { pointerId: 74, clientX: 800, clientY: 500 });
+    firePointer(resizeHandle!, "pointermove", { pointerId: 74, clientX: 880, clientY: 560 });
+    firePointer(resizeHandle!, "pointerup", { pointerId: 74, clientX: 880, clientY: 560, buttons: 0 });
+
+    expect(Number.parseFloat(detailShell!.style.width)).toBeCloseTo(preResizeWidth + 80, 4);
+  });
+
+  it("renders Markdown file detail with safe marked-based output", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
+
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+    });
+
+    const resultFileNode = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-node[data-file-kind="result"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    fireEvent.click(resultFileNode);
+
+    const detailNode = await waitFor(() => {
+      const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
+      expect(detail).toBeTruthy();
+      return detail!;
+    });
+
+    // accepted-result.md contains "# Mock accepted result" which should be rendered as <h1> or <h2> via marked
+    expect(detailNode.innerHTML).toContain("<h");
+    expect(detailNode.innerHTML).toContain("Mock accepted result");
+    // Must not contain the old hand-written parser class names
+    expect(detailNode.querySelector(".task-run-md-body")).toBeNull();
+    expect(detailNode.querySelector(".task-run-md-heading")).toBeNull();
+  });
+
+  it("renders Markdown table in file detail content", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
+
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+    });
+
+    const workerFileNode = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    fireEvent.click(workerFileNode);
+
+    const detailNode = await waitFor(() => {
+      const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
+      expect(detail).toBeTruthy();
+      return detail!;
+    });
+
+    // Worker output contains "# Worker output" which marked renders as <h1>
+    expect(detailNode.innerHTML).toContain("<h");
+    expect(detailNode.innerHTML).toContain("Worker output");
+    // Raw HTML like <script> and <details> must be escaped
+    expect(detailNode.innerHTML).toContain("&lt;script&gt;");
+    expect(detailNode.innerHTML).toContain("&lt;details&gt;");
+    expect(detailNode.querySelector("script")).toBeNull();
+    expect(detailNode.querySelector("details")).toBeNull();
+  });
+
+  it("removes fixed max-height on detail content areas", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
+
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+    });
+
+    const checkerFileNode = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-node[data-file-kind="checker"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    fireEvent.click(checkerFileNode);
+
+    const detailNode = await waitFor(() => {
+      const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
+      expect(detail).toBeTruthy();
+      return detail!;
+    });
+
+    const pre = detailNode.querySelector("pre");
+    if (pre) {
+      const computedStyle = window.getComputedStyle(pre);
+      expect(computedStyle.maxHeight).not.toBe("360px");
+      expect(computedStyle.maxHeight).not.toBe("240px");
+    }
+  });
 });
