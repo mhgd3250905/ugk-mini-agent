@@ -19,6 +19,10 @@ import type {
   TeamCanvasTask,
   TeamCanvasTaskListResponse,
   TeamCanvasTaskRunListResponse,
+  TeamTaskConnection,
+  TeamTaskConnectionCreateRequest,
+  TeamTaskConnectionListResponse,
+  TeamTaskConnectionMutationResponse,
   TeamTaskMutationResponse,
   TeamTaskUpdateRequest,
   TeamPlan,
@@ -33,6 +37,8 @@ export interface TeamApiProvider {
   listPlans(): Promise<TeamPlan[]>;
   listRuns(): Promise<TeamRunState[]>;
   listTasks(): Promise<TeamCanvasTask[]>;
+  listTaskConnections(): Promise<TeamTaskConnection[]>;
+  createTaskConnection(input: TeamTaskConnectionCreateRequest): Promise<TeamTaskConnection>;
   listTaskRuns(taskId: string): Promise<TeamRunState[]>;
   createTaskRun(taskId: string): Promise<TeamRunState>;
   getTaskRun(runId: string): Promise<TeamRunState>;
@@ -128,6 +134,36 @@ export class LiveTeamApi implements TeamApiProvider {
       const body = (await res.json()) as TeamCanvasTaskListResponse | TeamCanvasTask[];
       if (Array.isArray(body)) return body;
       return Array.isArray(body.tasks) ? body.tasks : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async listTaskConnections(): Promise<TeamTaskConnection[]> {
+    try {
+      const res = await fetch(`${this.baseUrl}/task-connections`);
+      if (res.status === 404) return [];
+      if (!res.ok) throw res;
+      const body = (await res.json()) as TeamTaskConnectionListResponse | TeamTaskConnection[];
+      if (Array.isArray(body)) return body;
+      return Array.isArray(body.connections) ? body.connections : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async createTaskConnection(input: TeamTaskConnectionCreateRequest): Promise<TeamTaskConnection> {
+    try {
+      const res = await fetch(`${this.baseUrl}/task-connections`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      const body = (await res.json()) as TeamTaskConnectionMutationResponse;
+      return body.connection;
     } catch (e) {
       throw toApiError(e);
     }

@@ -17,6 +17,8 @@ import type {
   AgentSummary,
   AgentSwitchConversationResponse,
   TeamCanvasTask,
+  TeamTaskConnection,
+  TeamTaskConnectionCreateRequest,
   TeamTaskMutationResponse,
   TeamTaskUpdateRequest,
   TeamPlan,
@@ -867,6 +869,7 @@ export const mockTeamTasks: TeamCanvasTask[] = [
     workUnit: {
       title: "调查 Medtrum 云资产",
       input: { text: "调查 Medtrum 相关公开云资产，区分官方、第三方和可疑线索。" },
+      outputPorts: [{ id: "report_md", label: "Markdown 报告", type: "md" }],
       outputContract: { text: "输出中文 Markdown 报告，包含发现列表、证据来源、归类判断、风险说明和不确定项。" },
       acceptance: {
         rules: [
@@ -887,6 +890,8 @@ function cloneMockTeamTask(task: TeamCanvasTask): TeamCanvasTask {
     workUnit: {
       ...task.workUnit,
       input: { ...task.workUnit.input },
+      inputPorts: task.workUnit.inputPorts ? task.workUnit.inputPorts.map((port) => ({ ...port })) : undefined,
+      outputPorts: task.workUnit.outputPorts ? task.workUnit.outputPorts.map((port) => ({ ...port })) : undefined,
       outputContract: { ...task.workUnit.outputContract },
       acceptance: { rules: [...task.workUnit.acceptance.rules] },
     },
@@ -895,9 +900,11 @@ function cloneMockTeamTask(task: TeamCanvasTask): TeamCanvasTask {
 
 let mockCanvasTasks: TeamCanvasTask[] = mockTeamTasks.map(cloneMockTeamTask);
 let mockTaskRunCounter = 0;
+let mockTaskConnectionCounter = 0;
 let mockTaskRunsByTaskId = new Map<string, TeamRunState[]>();
 let mockTaskRunAttempts = new Map<string, TeamAttemptMetadata[]>();
 let mockTaskRunFiles = new Map<string, string>();
+let mockTaskConnections: TeamTaskConnection[] = [];
 
 function mockTaskWarnings(task: TeamCanvasTask): string[] {
   if (task.workUnit.workerAgentId === task.workUnit.checkerAgentId) {
@@ -975,7 +982,9 @@ export function resetMockTeamApiState() {
   mockTaskRunsByTaskId = new Map();
   mockTaskRunAttempts = new Map();
   mockTaskRunFiles = new Map();
+  mockTaskConnections = [];
   mockTaskRunCounter = 0;
+  mockTaskConnectionCounter = 0;
   mockConversationCounter = 0;
   mockRunCounter = 0;
   mockMessageCounter = 0;
@@ -1264,6 +1273,34 @@ export class MockTeamApi {
 
   async listTasks(): Promise<TeamCanvasTask[]> {
     return mockCanvasTasks.filter((task) => !task.archived).map(cloneMockTeamTask);
+  }
+
+  async listTaskConnections(): Promise<TeamTaskConnection[]> {
+    return mockTaskConnections.map((connection) => ({ ...connection }));
+  }
+
+  async createTaskConnection(input: TeamTaskConnectionCreateRequest): Promise<TeamTaskConnection> {
+    const fromTask = mockCanvasTasks.find((task) => task.taskId === input.fromTaskId && !task.archived);
+    const toTask = mockCanvasTasks.find((task) => task.taskId === input.toTaskId && !task.archived);
+    if (!fromTask || !toTask) throw { message: "task not found" };
+    const fromPort = fromTask.workUnit.outputPorts?.find((port) => port.id === input.fromOutputPortId);
+    const toPort = toTask.workUnit.inputPorts?.find((port) => port.id === input.toInputPortId);
+    if (!fromPort || !toPort) throw { message: "port not found" };
+    if (fromPort.type !== toPort.type) throw { message: `port type mismatch: ${fromPort.type} -> ${toPort.type}` };
+    const timestamp = ts();
+    const connection: TeamTaskConnection = {
+      schemaVersion: "team/task-connection-1",
+      connectionId: `mock_conn_${++mockTaskConnectionCounter}`,
+      fromTaskId: input.fromTaskId,
+      fromOutputPortId: input.fromOutputPortId,
+      toTaskId: input.toTaskId,
+      toInputPortId: input.toInputPortId,
+      type: fromPort.type,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    mockTaskConnections = [...mockTaskConnections, connection];
+    return { ...connection };
   }
 
   async listTaskRuns(taskId: string): Promise<TeamRunState[]> {

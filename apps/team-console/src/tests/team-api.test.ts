@@ -324,6 +324,54 @@ describe("LiveTeamApi", () => {
     expect(tasks[0]?.status).toBe("drafting");
   });
 
+  it("lists and creates live typed Task connections", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const connection = {
+      schemaVersion: "team/task-connection-1",
+      connectionId: "conn_1",
+      fromTaskId: "task_a",
+      fromOutputPortId: "draft_md",
+      toTaskId: "task_b",
+      toInputPortId: "source_md",
+      type: "md",
+      createdAt: "2026-05-25T00:00:00.000Z",
+      updatedAt: "2026-05-25T00:00:00.000Z",
+    } as const;
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [connection] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ connection }), { status: 201 }));
+
+    const connections = await api.listTaskConnections();
+    const created = await api.createTaskConnection({
+      fromTaskId: "task_a",
+      fromOutputPortId: "draft_md",
+      toTaskId: "task_b",
+      toInputPortId: "source_md",
+    });
+
+    expect(fetch).toHaveBeenNthCalledWith(1, "/v1/team/task-connections");
+    expect(fetch).toHaveBeenNthCalledWith(2, "/v1/team/task-connections", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fromTaskId: "task_a",
+        fromOutputPortId: "draft_md",
+        toTaskId: "task_b",
+        toInputPortId: "source_md",
+      }),
+    });
+    expect(connections).toEqual([connection]);
+    expect(created).toEqual(connection);
+  });
+
+  it("treats missing live Task connection endpoint as an empty connection list", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response("not found", { status: 404 }));
+
+    await expect(api.listTaskConnections()).resolves.toEqual([]);
+    expect(fetch).toHaveBeenCalledWith("/v1/team/task-connections");
+  });
+
   it("patches live Team Tasks and preserves response warnings", async () => {
     const api = new LiveTeamApi("/v1/team");
     const task = { ...mockTeamTasks[0]!, title: "更新后的 Task" };

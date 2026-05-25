@@ -7,13 +7,17 @@ import { runWithTimeout } from "./task-attempt-runner.js";
 import { validateTeamOutput } from "./output-validator.js";
 import { writeTimingSpan } from "./timing.js";
 import { TeamRoleProcessRecorder } from "./task-run-process-recorder.js";
+import { generateTaskArtifactId } from "./ids.js";
+import { findInputPort, findOutputPort } from "./task-port-contract.js";
+import type { TaskConnectionStore } from "./task-connection-store.js";
 import type { ProfileAwareTeamRoleRunner, TeamRoleRunner, WorkerOutput, CheckerOutput } from "./role-runner.js";
-import type { TeamCanvasTask, TeamOutputValidationResult, TeamPlan, TeamRunState, TeamTask } from "./types.js";
+import type { TeamCanvasTask, TeamOutputValidationResult, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskTypedArtifact } from "./types.js";
 
 export interface CanvasTaskRunServiceOptions {
 	taskStore: TaskStore;
 	workspace: RunWorkspace;
 	createRoleRunner: () => TeamRoleRunner;
+	connectionStore?: TaskConnectionStore;
 	dataDir: string;
 	maxCheckerRevisions?: number;
 	phaseTimeouts?: {
@@ -33,18 +37,33 @@ const DEFAULT_TASK_RUN_TIMEOUTS = {
 	checkerMs: 300_000,
 };
 
-function canvasTaskToTeamTask(task: TeamCanvasTask): TeamTask {
+const ARTIFACT_CONTENT_LIMIT = 30_000;
+const ARTIFACT_PREVIEW_LIMIT = 1_200;
+
+type TaskRunSource = NonNullable<TeamRunState["source"]>;
+
+export interface CanvasTaskRunOptions {
+	maxRunDurationMinutes?: number;
+	boundInputs?: TeamTaskBoundInput[];
+	triggeredBy?: TaskRunSource["triggeredBy"];
+}
+
+function canvasTaskToTeamTask(task: TeamCanvasTask, boundInputs: TeamTaskBoundInput[] = []): TeamTask {
+	const boundInputText = formatBoundInputsForPrompt(boundInputs);
 	return {
 		id: task.taskId,
 		type: "normal",
 		title: task.workUnit.title || task.title,
-		input: { text: task.workUnit.input.text },
+		input: {
+			text: boundInputText ? `${task.workUnit.input.text}\n\n${boundInputText}` : task.workUnit.input.text,
+			...(boundInputs.length > 0 ? { payload: { boundInputs } } : {}),
+		},
 		acceptance: { rules: task.workUnit.acceptance.rules },
 	};
 }
 
-function canvasTaskToPlan(task: TeamCanvasTask): TeamPlan {
-	const teamTask = canvasTaskToTeamTask(task);
+function canvasTaskToPlan(task: TeamCanvasTask, boundInputs: TeamTaskBoundInput[] = []): TeamPlan {
+	const teamTask = canvasTaskToTeamTask(task, boundInputs);
 	const timestamp = now();
 	return {
 		schemaVersion: "team/plan-1",
@@ -59,6 +78,24 @@ function canvasTaskToPlan(task: TeamCanvasTask): TeamPlan {
 		updatedAt: timestamp,
 		runCount: 0,
 	};
+}
+
+function formatBoundInputsForPrompt(boundInputs: TeamTaskBoundInput[]): string {
+	if (boundInputs.length === 0) return "";
+	const blocks = boundInputs.map((input, index) => {
+		const artifact = input.artifact;
+		const content = artifact.content ?? artifact.preview;
+		return [
+			`### 输入 ${index + 1}: ${artifact.type}`,
+			`- inputPortId: ${input.inputPortId}`,
+			`- sourceTaskId: ${artifact.sourceTaskId}`,
+			`- sourceRunId: ${artifact.sourceRunId}`,
+			`- fileRef: ${artifact.fileRef}`,
+			"",
+			content,
+		].join("\n");
+	});
+	return `## 已绑定上游 typed artifact 输入\n${blocks.join("\n\n")}`;
 }
 
 function summarizeOutputValidationFailure(result: TeamOutputValidationResult): string {
@@ -83,7 +120,7 @@ export class CanvasTaskRunService {
 		this.phaseTimeouts = options.phaseTimeouts ?? DEFAULT_TASK_RUN_TIMEOUTS;
 	}
 
-	async createRun(taskId: string, runOptions: { maxRunDurationMinutes?: number } = {}): Promise<TeamRunState> {
+	async createRun(taskId: string, runOptions: CanvasTaskRunOptions = {}): Promise<TeamRunState> {
 		const task = await this.options.taskStore.get(taskId);
 		if (!task) throw new Error(`task not found: ${taskId}`);
 		if (task.archived || task.status === "archived") throw new Error("archived task cannot be run");
@@ -92,7 +129,8 @@ export class CanvasTaskRunService {
 		const activeRun = (await this.listRuns(taskId)).find(run => ACTIVE_RUN_STATUSES.has(run.status));
 		if (activeRun) throw new Error(`active task run already exists: ${activeRun.runId}`);
 
-		const plan = canvasTaskToPlan(task);
+		const boundInputs = runOptions.boundInputs ?? [];
+		const plan = canvasTaskToPlan(task, boundInputs);
 		const createOptions = runOptions.maxRunDurationMinutes != null
 			? { maxRunDurationMinutes: runOptions.maxRunDurationMinutes }
 			: this.options.maxRunDurationMinutes != null
@@ -101,7 +139,12 @@ export class CanvasTaskRunService {
 		const state = this.options.maxConcurrentRuns
 			? await this.options.workspace.createRunWithAdmission(plan, plan.defaultTeamUnitId, this.options.maxConcurrentRuns, createOptions)
 			: await this.options.workspace.createRun(plan, plan.defaultTeamUnitId, createOptions);
-		state.source = { type: "canvas-task", taskId: task.taskId };
+		state.source = {
+			type: "canvas-task",
+			taskId: task.taskId,
+			...(runOptions.triggeredBy ? { triggeredBy: runOptions.triggeredBy } : {}),
+			...(boundInputs.length > 0 ? { boundInputs } : {}),
+		};
 		await this.options.workspace.saveState(state);
 
 		this.startBackgroundRun(state.runId);
@@ -179,7 +222,7 @@ export class CanvasTaskRunService {
 			return;
 		}
 
-		const task = canvasTaskToTeamTask(canvasTask);
+		const task = canvasTaskToTeamTask(canvasTask, initialState.source?.boundInputs ?? []);
 		const roleRunner = this.options.createRoleRunner();
 		if ("setProfileIds" in roleRunner && typeof (roleRunner as ProfileAwareTeamRoleRunner).setProfileIds === "function") {
 			(roleRunner as ProfileAwareTeamRoleRunner).setProfileIds({
@@ -450,6 +493,77 @@ export class CanvasTaskRunService {
 			state.summary = computeTeamRunSummary(state.taskStates);
 			state.updatedAt = timestamp;
 		});
+		await this.triggerDownstreamRuns(runId, taskId, attemptId, resultRef);
+	}
+
+	private async triggerDownstreamRuns(runId: string, taskId: string, attemptId: string, resultRef: string): Promise<void> {
+		const connectionStore = this.options.connectionStore;
+		if (!connectionStore) return;
+		const connections = await connectionStore.listFromTask(taskId);
+		if (connections.length === 0) return;
+		const sourceTask = await this.options.taskStore.get(taskId);
+		if (!sourceTask) return;
+		const content = await this.options.workspace.readRunScopedFile(runId, resultRef) ?? "";
+		for (const connection of connections) {
+			try {
+				const outputPort = findOutputPort(sourceTask.workUnit, connection.fromOutputPortId);
+				if (!outputPort || outputPort.type !== connection.type) continue;
+				const targetTask = await this.options.taskStore.get(connection.toTaskId);
+				if (!targetTask || targetTask.archived) continue;
+				const inputPort = findInputPort(targetTask.workUnit, connection.toInputPortId);
+				if (!inputPort || inputPort.type !== connection.type) continue;
+				const artifact = this.buildTypedArtifact({
+					type: connection.type,
+					sourceTaskId: taskId,
+					sourceRunId: runId,
+					sourceAttemptId: attemptId,
+					sourceOutputPortId: connection.fromOutputPortId,
+					fileRef: resultRef,
+					content,
+				});
+				await this.createRun(connection.toTaskId, {
+					boundInputs: [{
+						connectionId: connection.connectionId,
+						inputPortId: connection.toInputPortId,
+						artifact,
+					}],
+					triggeredBy: {
+						type: "task-connection",
+						connectionId: connection.connectionId,
+						fromTaskId: taskId,
+						fromRunId: runId,
+						fromAttemptId: attemptId,
+					},
+				});
+			} catch {
+				// Downstream delivery must not turn an already accepted upstream result into a failed run.
+			}
+		}
+	}
+
+	private buildTypedArtifact(input: {
+		type: string;
+		sourceTaskId: string;
+		sourceRunId: string;
+		sourceAttemptId: string;
+		sourceOutputPortId: string;
+		fileRef: string;
+		content: string;
+	}): TeamTaskTypedArtifact {
+		const content = input.content.slice(0, ARTIFACT_CONTENT_LIMIT);
+		return {
+			schemaVersion: "team/task-artifact-1",
+			artifactId: generateTaskArtifactId(),
+			type: input.type,
+			sourceTaskId: input.sourceTaskId,
+			sourceRunId: input.sourceRunId,
+			sourceAttemptId: input.sourceAttemptId,
+			sourceOutputPortId: input.sourceOutputPortId,
+			fileRef: input.fileRef,
+			preview: content.slice(0, ARTIFACT_PREVIEW_LIMIT),
+			...(content ? { content } : {}),
+			createdAt: now(),
+		};
 	}
 
 	private async finishTaskFailed(runId: string, taskId: string, attemptId: string, errorSummary: string, resultRef?: string): Promise<void> {

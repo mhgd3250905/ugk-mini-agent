@@ -1,4 +1,5 @@
 import type { TeamCanvasTask, TeamCanvasTaskStatus, TeamWorkUnitDefinition } from "./types.js";
+import { validateTaskPorts } from "./task-port-contract.js";
 
 const CREATE_STATUSES = new Set<TeamCanvasTaskStatus>(["drafting", "ready"]);
 const PATCH_STATUSES = new Set<TeamCanvasTaskStatus>(["drafting", "ready"]);
@@ -52,6 +53,7 @@ function validateWorkUnit(workUnit: TeamWorkUnitDefinition | undefined, context:
 	if (workUnit.acceptance.rules.some(rule => typeof rule !== "string" || !rule.trim())) {
 		throw new Error("workUnit.acceptance.rules must contain only non-empty rules");
 	}
+	validateTaskPorts(workUnit);
 	return workUnit;
 }
 

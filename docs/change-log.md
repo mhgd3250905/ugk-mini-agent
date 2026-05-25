@@ -12,6 +12,46 @@
 
 ---
 
+## 2026-05-26 — Team Console Run 状态合并到 Task 菜单
+
+- **主题**: 按真实 Task run 验收反馈，把单独的 `Run 状态` canvas 子节点收回到 Task 操作菜单里的运行摘要区域。
+- **变更内容**:
+  - `.task-run-summary` 现在展示运行状态、阶段、耗时、attempt 数、进度消息和 run id，并在 observer 展开时显示“收起输出”。
+  - Run observer 不再渲染独立 `.emap-observer-status-node`；canvas 子节点只保留 Worker / Checker 过程节点、文件节点和文件详情节点。
+  - 更新拖拽回归测试：Task 根节点和菜单节点仍会带动已展开 observer 子树，单独拖动过程节点或文件节点不会误动兄弟节点。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/handoff-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改后端 API、attempt metadata、SSE 或 `.pi/skills/**`。
+
+---
+
+## 2026-05-25 — Team Console 过程节点隐藏方法调用明细
+
+- **主题**: 按用户验收反馈收敛 Worker / Checker 过程节点，只保留上方文字摘要过程，移除下半区 tool / method 调用明细。
+- **变更内容**:
+  - `renderRoleProcessNode()` 不再构建或渲染 tool group、method call entry、隐藏计数和折叠按钮；过程节点不再渲染下半部 tool / method 调用明细，只展示 `assistantText.content` 或 current action + 最新 narration。
+  - 移除过程节点 method-call 区域的展开状态和 CSS 样式，避免运行中节点被工具调用 JSON 撑高、遮挡画布和拖动操作。
+  - 完整过程数据仍保留在后端 `attempt.roleProcesses.worker/checker` metadata 中；本轮只隐藏 Team Console DOM 明细，不改后端 recorder、attempt API、SSE 或 schema。
+  - 更新回归测试：锁定 tool group 不进入 DOM、长过程历史不渲染方法调用、assistantText 场景也不显示工具明细，拖动语义不回归。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/handoff-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改 `.pi/skills/**`，不新增 endpoint / SSE / schema，不影响主程序 Docker 后端集成任务。
+
+---
+
+## 2026-05-25 — Team Console Typed Task Chain V1
+
+- **主题**: 为 Team Console Task / WorkUnit 建立 typed port 积木契约，并跑通上游 artifact 自动触发下游 Task run 的 V1 链路。
+- **变更内容**:
+  - WorkUnit 支持 `inputPorts` / `outputPorts`，port 使用稳定 `id` 和类型字符串 `type`；Task create/update 会校验 port 结构。
+  - 新增 Task connection store 和 API：`GET /v1/team/task-connections`、`POST /v1/team/task-connections`、`DELETE /v1/team/task-connections/:connectionId`；后端校验类型匹配、重复连接、自连接、归档 Task 和 DAG cycle。
+  - Canvas Task run 通过 checker 后会把 accepted result 封装为 typed artifact，并作为 `boundInputs` 自动启动下游 Task run；下游 `TeamRunState.source` 记录 `triggeredBy` 和输入 artifact。
+  - Team Console Task 卡片显示 typed input/output ports，前端只允许连接同类型 port，连接成功后在 Execution Atlas 上渲染 Task connection path。
+  - Live API 兼容旧后端：`GET /v1/team/task-connections` 返回 404 时当作空连接列表，不阻断 Agent / Task catalog 和“创建 Task”入口；实际创建连接和自动触发仍要求后端包含 Typed Task Chain V1。
+  - 测试覆盖 `md -> md` 可连、`md -> html` 直连被拒、duplicate/cycle 被拒、上游成功后下游自动启动、旧 Task 无 ports 仍可运行，以及前端 API / UI 连接交互。
+- **影响范围**: `src/team/types.ts`, `src/team/task-port-contract.ts`, `src/team/task-connection-store.ts`, `src/team/task-validation.ts`, `src/team/task-run-service.ts`, `src/team/routes.ts`, `apps/team-console/src/api/*`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/*`, `test/team-task-*.test.ts`, `apps/team-console/src/tests/*`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/handoff-current.md`
+- **边界**: 不做任意复杂自由画布编排、条件分支、循环、真实 TTS 或 SSE；`.codex/plans/*` 仍是本地计划边界，不提交。
+
+---
+
 ## 2026-05-25 — Team Console Task 雏形交接备份
 
 - **主题**: 将 Team Console Task / WorkUnit redesign 当前雏形写入交接快照，方便后续 coding agent 从正确 worktree 接手。

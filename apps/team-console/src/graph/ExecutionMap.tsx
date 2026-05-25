@@ -1,5 +1,5 @@
 import { useMemo, useLayoutEffect, useRef, useState, useCallback, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import type { AgentRunStatus, AgentSummary, RunDetail, TeamCanvasTask, TeamPlan, TaskStatus, TeamAttemptMetadata, TeamTaskState, TeamRunState } from "../api/team-types";
+import type { AgentRunStatus, AgentSummary, RunDetail, TeamCanvasTask, TeamPlan, TaskStatus, TeamAttemptMetadata, TeamTaskState, TeamRunState, TeamTaskConnection, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
 import type { ExecutionNode, NodeKind } from "./execution-map-model";
 import { buildExecutionMapModel, CHILD_COLLAPSE_THRESHOLD } from "./execution-map-model";
 import { layoutExecutionMap, ROOT_ID, NODE_WIDTH, straightPath, type ExecutionMapLayout } from "./execution-map-layout";
@@ -37,10 +37,14 @@ interface ExecutionMapProps {
   agentBranchPanel?: ReactNode;
   taskNodes?: AtlasTaskNode[];
   tasksById?: Map<string, TeamCanvasTask>;
+  taskConnections?: TeamTaskConnection[];
+  taskConnectionDraft?: { fromTaskId: string; fromOutputPortId: string; type: string } | null;
   taskRunsByTaskId?: Record<string, TeamRunState[]>;
   focusedTaskNodeId?: string | null;
   onSelectCanvasTask?: (node: AtlasTaskNode) => void;
   onMoveCanvasTask?: (nodeId: string, position: { x: number; y: number }) => void;
+  onTaskOutputPortSelect?: (taskId: string, port: TeamTaskOutputPort) => void;
+  onTaskInputPortSelect?: (taskId: string, port: TeamTaskInputPort) => void;
   canMoveTasks?: boolean;
   taskBranchPanel?: ReactNode;
   taskChildBranchPanel?: ReactNode;
@@ -87,7 +91,7 @@ const PREVIEW_W = 360;
 const PREVIEW_GAP = 40;
 const PREVIEW_FALLBACK_HEIGHT = 180;
 const AGENT_NODE_HEIGHT = 112;
-const CANVAS_TASK_NODE_HEIGHT = 136;
+const CANVAS_TASK_NODE_HEIGHT = 168;
 const AGENT_BRANCH_WIDTH = 960;
 const AGENT_BRANCH_HEIGHT = 680;
 const AGENT_BRANCH_MIN_WIDTH = 520;
@@ -342,6 +346,29 @@ function taskChildBranchConnectorPath(menuRect: AgentBranchRect, childRect: Agen
   return straightPath(sourceX, sourceY, childRect.x, targetY);
 }
 
+function taskPortLabel(port: TeamTaskInputPort | TeamTaskOutputPort): string {
+  return port.label?.trim() || port.id;
+}
+
+function taskConnectionPath(
+  connection: TeamTaskConnection,
+  taskNodeByTaskId: Map<string, AtlasTaskNode>,
+  tasksById: Map<string, TeamCanvasTask> | undefined,
+): string | null {
+  const sourceNode = taskNodeByTaskId.get(connection.fromTaskId);
+  const targetNode = taskNodeByTaskId.get(connection.toTaskId);
+  const sourceTask = tasksById?.get(connection.fromTaskId);
+  const targetTask = tasksById?.get(connection.toTaskId);
+  if (!sourceNode || !targetNode || !sourceTask || !targetTask) return null;
+  const outputPorts = sourceTask.workUnit.outputPorts ?? [];
+  const inputPorts = targetTask.workUnit.inputPorts ?? [];
+  const sourceIndex = Math.max(0, outputPorts.findIndex((port) => port.id === connection.fromOutputPortId));
+  const targetIndex = Math.max(0, inputPorts.findIndex((port) => port.id === connection.toInputPortId));
+  const sourceY = sourceNode.position.y + CANVAS_TASK_NODE_HEIGHT - 42 + sourceIndex * 14;
+  const targetY = targetNode.position.y + CANVAS_TASK_NODE_HEIGHT - 64 + targetIndex * 14;
+  return straightPath(sourceNode.position.x + NODE_WIDTH, sourceY, targetNode.position.x, targetY);
+}
+
 export function summarizeCollapsedTaskStatus(children: Pick<ExecutionNode, "status">[]): TaskStatus {
   const statuses = children.map((child) => child.status);
   if (statuses.includes("failed")) return "failed";
@@ -578,10 +605,14 @@ export function ExecutionMap({
   agentBranchPanel,
   taskNodes = [],
   tasksById,
+  taskConnections = [],
+  taskConnectionDraft = null,
   taskRunsByTaskId = {},
   focusedTaskNodeId,
   onSelectCanvasTask,
   onMoveCanvasTask,
+  onTaskOutputPortSelect,
+  onTaskInputPortSelect,
   canMoveTasks = true,
   taskBranchPanel,
   taskChildBranchPanel,
@@ -740,6 +771,13 @@ export function ExecutionMap({
     selectedReservedHeight: evidenceReservedHeight > 0 ? evidenceReservedHeight : undefined,
     expandedTaskIds,
   }) : createEmptyLayout(), [model, selectedTaskId, evidenceReservedHeight, expandedTaskIds]);
+
+  const taskNodeByTaskId = useMemo(() => new Map(taskNodes.map((node) => [node.taskId, node])), [taskNodes]);
+  const taskConnectionLinks = useMemo(() => (
+    taskConnections
+      .map((connection) => ({ connection, path: taskConnectionPath(connection, taskNodeByTaskId, tasksById) }))
+      .filter((entry): entry is { connection: TeamTaskConnection; path: string } => Boolean(entry.path))
+  ), [taskConnections, taskNodeByTaskId, tasksById]);
 
   const selectedChain = useMemo(() => {
     if (!model) return new Set<string>();
@@ -959,7 +997,7 @@ export function ExecutionMap({
   const beginAtlasNodeDrag = useCallback((
     node: AtlasAgentNode | AtlasTaskNode,
     kind: "agent" | "task",
-    event: ReactPointerEvent<HTMLButtonElement>,
+    event: ReactPointerEvent<HTMLElement>,
   ) => {
     event.stopPropagation();
     if ((event.button ?? 0) !== 0) return;
@@ -977,11 +1015,11 @@ export function ExecutionMap({
     event.currentTarget.setPointerCapture?.(event.pointerId);
   }, [buildAtlasDragEntries, canMoveAgents, canMoveTasks, onMoveAgent, onMoveCanvasTask]);
 
-  const handleAgentPointerDown = useCallback((node: AtlasAgentNode, event: ReactPointerEvent<HTMLButtonElement>) => {
+  const handleAgentPointerDown = useCallback((node: AtlasAgentNode, event: ReactPointerEvent<HTMLElement>) => {
     beginAtlasNodeDrag(node, "agent", event);
   }, [beginAtlasNodeDrag]);
 
-  const handleAgentPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+  const handleAgentPointerMove = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const drag = atlasNodeDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.stopPropagation();
@@ -1022,7 +1060,7 @@ export function ExecutionMap({
     }, 0);
   }, []);
 
-  const endAgentPointer = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+  const endAgentPointer = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const drag = atlasNodeDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.stopPropagation();
@@ -1049,11 +1087,11 @@ export function ExecutionMap({
     onSelectAgent?.(node);
   }, [onSelectAgent]);
 
-  const handleTaskPointerDown = useCallback((node: AtlasTaskNode, event: ReactPointerEvent<HTMLButtonElement>) => {
+  const handleTaskPointerDown = useCallback((node: AtlasTaskNode, event: ReactPointerEvent<HTMLElement>) => {
     beginAtlasNodeDrag(node, "task", event);
   }, [beginAtlasNodeDrag]);
 
-  const handleTaskPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+  const handleTaskPointerMove = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     handleAgentPointerMove(event);
   }, [handleAgentPointerMove]);
 
@@ -1066,7 +1104,7 @@ export function ExecutionMap({
     }, 0);
   }, []);
 
-  const endTaskPointer = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+  const endTaskPointer = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const drag = atlasNodeDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.stopPropagation();
@@ -1797,6 +1835,17 @@ export function ExecutionMap({
               strokeWidth={1.5}
             />
           ))}
+          {taskConnectionLinks.map(({ connection, path }) => (
+            <path
+              key={connection.connectionId}
+              d={path}
+              className="emap-link emap-link-task-connection"
+              data-task-connection-id={connection.connectionId}
+              data-port-type={connection.type}
+              fill="none"
+              strokeWidth={2}
+            />
+          ))}
           {agentBranchPath && (
             <path
               key="agent-playground-branch"
@@ -1908,10 +1957,14 @@ export function ExecutionMap({
             const isAtlasSelected = selectedAtlasNodeKeys.has(atlasSelectionKey("task", node.nodeId));
             const latestTaskRun = selectLatestCanvasTaskRun(taskRunsByTaskId[task.taskId]);
             const nodeStatusClass = latestTaskRun ? statusClass(latestTaskRun.status) : `status-${task.status}`;
+            const inputPorts = task.workUnit.inputPorts ?? [];
+            const outputPorts = task.workUnit.outputPorts ?? [];
+            const hasPorts = inputPorts.length > 0 || outputPorts.length > 0;
             return (
-              <button
+              <div
                 key={node.nodeId}
-                type="button"
+                role="button"
+                tabIndex={0}
                 className={`emap-node emap-atlas-card emap-canvas-task-node ${nodeStatusClass} ${isFocused ? "selected" : ""} ${isAtlasSelected ? "is-atlas-selected" : ""}`}
                 data-kind="canvas-task"
                 data-task-id={task.taskId}
@@ -1923,6 +1976,11 @@ export function ExecutionMap({
                 onPointerUp={endTaskPointer}
                 onPointerCancel={endTaskPointer}
                 onClick={() => handleTaskClick(node)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  handleTaskClick(node);
+                }}
               >
                 <div className="emap-node-status-bar" />
                 <div className="emap-node-content">
@@ -1938,8 +1996,64 @@ export function ExecutionMap({
                     <span className="emap-node-meta">worker: {worker?.name ?? task.workUnit.workerAgentId}</span>
                     <span className="emap-node-meta">checker: {checker?.name ?? task.workUnit.checkerAgentId}</span>
                   </div>
+                  {hasPorts && (
+                    <div className="emap-task-ports" aria-label={`${task.title} ports`}>
+                      {inputPorts.length > 0 && (
+                        <div className="emap-task-port-row emap-task-port-row-input">
+                          <span className="emap-task-port-direction">in</span>
+                          {inputPorts.map((port) => {
+                            const compatible = taskConnectionDraft?.type === port.type;
+                            return (
+                              <button
+                                key={port.id}
+                                type="button"
+                                className={`emap-task-port-chip emap-task-port-input ${compatible ? "is-compatible" : ""}`}
+                                data-port-id={port.id}
+                                data-port-type={port.type}
+                                aria-label={`输入 ${taskPortLabel(port)} ${port.type}`}
+                                onPointerDown={(event) => event.stopPropagation()}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onTaskInputPortSelect?.(task.taskId, port);
+                                }}
+                              >
+                                <span>{taskPortLabel(port)}</span>
+                                <strong>{port.type}</strong>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {outputPorts.length > 0 && (
+                        <div className="emap-task-port-row emap-task-port-row-output">
+                          <span className="emap-task-port-direction">out</span>
+                          {outputPorts.map((port) => {
+                            const selected = taskConnectionDraft?.fromTaskId === task.taskId && taskConnectionDraft.fromOutputPortId === port.id;
+                            return (
+                              <button
+                                key={port.id}
+                                type="button"
+                                className={`emap-task-port-chip emap-task-port-output ${selected ? "is-selected" : ""}`}
+                                data-port-id={port.id}
+                                data-port-type={port.type}
+                                aria-label={`输出 ${taskPortLabel(port)} ${port.type}`}
+                                onPointerDown={(event) => event.stopPropagation()}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onTaskOutputPortSelect?.(task.taskId, port);
+                                }}
+                              >
+                                <span>{taskPortLabel(port)}</span>
+                                <strong>{port.type}</strong>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              </button>
+              </div>
             );
           })}
 

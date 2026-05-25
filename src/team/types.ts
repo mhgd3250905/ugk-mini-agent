@@ -190,10 +190,54 @@ export type TeamCanvasTaskStatus = "drafting" | "ready" | "locked" | "archived";
 export interface TeamWorkUnitDefinition {
 	title: string;
 	input: { text: string };
+	inputPorts?: TeamTaskInputPort[];
+	outputPorts?: TeamTaskOutputPort[];
 	outputContract: { text: string };
 	acceptance: { rules: string[] };
 	workerAgentId: string;
 	checkerAgentId: string;
+}
+
+export interface TeamTaskPortBase {
+	id: string;
+	label?: string;
+	type: string;
+}
+
+export interface TeamTaskInputPort extends TeamTaskPortBase {}
+
+export interface TeamTaskOutputPort extends TeamTaskPortBase {}
+
+export interface TeamTaskConnection {
+	schemaVersion: "team/task-connection-1";
+	connectionId: string;
+	fromTaskId: string;
+	fromOutputPortId: string;
+	toTaskId: string;
+	toInputPortId: string;
+	type: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface TeamTaskTypedArtifact {
+	schemaVersion: "team/task-artifact-1";
+	artifactId: string;
+	type: string;
+	sourceTaskId: string;
+	sourceRunId: string;
+	sourceAttemptId: string;
+	sourceOutputPortId: string;
+	fileRef: string;
+	preview: string;
+	content?: string;
+	createdAt: string;
+}
+
+export interface TeamTaskBoundInput {
+	connectionId: string;
+	inputPortId: string;
+	artifact: TeamTaskTypedArtifact;
 }
 
 export interface TeamCanvasTask {
@@ -230,7 +274,18 @@ export interface TeamRunState {
 	schemaVersion: "team/state-1";
 	runId: string;
 	planId: string;
-	source?: { type: "canvas-task"; taskId: string };
+	source?: {
+		type: "canvas-task";
+		taskId: string;
+		triggeredBy?: {
+			type: "task-connection";
+			connectionId: string;
+			fromTaskId: string;
+			fromRunId: string;
+			fromAttemptId: string;
+		};
+		boundInputs?: TeamTaskBoundInput[];
+	};
 	teamUnitId: string;
 	status: RunStatus;
 	createdAt: string;

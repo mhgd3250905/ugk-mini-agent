@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
-import { makeSequentialPlan, makeSequentialRun, mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
-import type { AgentChatProcessEntry, TeamAttemptMetadata, TeamCanvasTask, TeamRunState } from "../api/team-types";
+import { makeSequentialPlan, makeSequentialRun, MOCK_AGENTS, mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
+import type { AgentChatProcessEntry, TeamAttemptMetadata, TeamCanvasTask, TeamRunState, TeamTaskConnection } from "../api/team-types";
 
 function getAtlas(container: HTMLElement): HTMLElement {
   const atlas = container.querySelector(".execution-map-container") as HTMLElement | null;
@@ -63,6 +63,8 @@ function cloneTaskFixture(task = mockTeamTasks[0]!) {
     workUnit: {
       ...task.workUnit,
       input: { ...task.workUnit.input },
+      inputPorts: task.workUnit.inputPorts ? task.workUnit.inputPorts.map((port) => ({ ...port })) : undefined,
+      outputPorts: task.workUnit.outputPorts ? task.workUnit.outputPorts.map((port) => ({ ...port })) : undefined,
       outputContract: { ...task.workUnit.outputContract },
       acceptance: { rules: [...task.workUnit.acceptance.rules] },
     },
@@ -196,6 +198,42 @@ function mockLiveTaskEditorApi(options?: {
   };
 }
 
+function makeTypedTaskChainFixtures() {
+  const collectTask: TeamCanvasTask = {
+    ...cloneTaskFixture(),
+    taskId: "task_collect_md",
+    title: "搜集内容 Task",
+    workUnit: {
+      ...cloneTaskFixture().workUnit,
+      title: "搜集内容 Task",
+      outputPorts: [{ id: "draft_md", label: "Markdown 文稿", type: "md" }],
+    },
+  };
+  const htmlTask: TeamCanvasTask = {
+    ...cloneTaskFixture(),
+    taskId: "task_html_build",
+    title: "HTML 制作 Task",
+    workUnit: {
+      ...cloneTaskFixture().workUnit,
+      title: "HTML 制作 Task",
+      inputPorts: [{ id: "source_md", label: "Markdown 文稿", type: "md" }],
+      outputPorts: [{ id: "page_html", label: "HTML 页面", type: "html" }],
+    },
+  };
+  const ttsTask: TeamCanvasTask = {
+    ...cloneTaskFixture(),
+    taskId: "task_tts_fixture",
+    title: "TTS Fixture Task",
+    workUnit: {
+      ...cloneTaskFixture().workUnit,
+      title: "TTS Fixture Task",
+      inputPorts: [{ id: "source_html", label: "HTML 文稿", type: "html" }],
+      outputPorts: [{ id: "voice_audio", label: "音频", type: "audio" }],
+    },
+  };
+  return { collectTask, htmlTask, ttsTask };
+}
+
 describe("App", () => {
   beforeEach(() => {
     resetMockTeamApiState();
@@ -260,6 +298,104 @@ describe("App", () => {
     expect(within(taskNode).getByText("leader: 主 Agent")).toBeInTheDocument();
     expect(within(taskNode).getByText("worker: 搜索 Agent")).toBeInTheDocument();
     expect(within(taskNode).getByText("checker: 主 Agent")).toBeInTheDocument();
+  });
+
+  it("renders typed input and output ports on live Task cards", async () => {
+    const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [collectTask, htmlTask] }), { status: 200 });
+      if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const atlasNodes = getAtlasNodes(container);
+    const collectNode = await within(atlasNodes).findByRole("button", { name: /搜集内容 Task/ });
+    const htmlNode = await within(atlasNodes).findByRole("button", { name: /HTML 制作 Task/ });
+    expect(within(collectNode).getByRole("button", { name: "输出 Markdown 文稿 md" })).toBeInTheDocument();
+    expect(within(htmlNode).getByRole("button", { name: "输入 Markdown 文稿 md" })).toBeInTheDocument();
+    expect(within(htmlNode).getByRole("button", { name: "输出 HTML 页面 html" })).toBeInTheDocument();
+  });
+
+  it("creates same-type Task port connections and draws the connection line", async () => {
+    const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+    const createdConnection: TeamTaskConnection = {
+      schemaVersion: "team/task-connection-1",
+      connectionId: "conn_live_md",
+      fromTaskId: collectTask.taskId,
+      fromOutputPortId: "draft_md",
+      toTaskId: htmlTask.taskId,
+      toInputPortId: "source_md",
+      type: "md",
+      createdAt: "2026-05-25T00:00:00.000Z",
+      updatedAt: "2026-05-25T00:00:00.000Z",
+    };
+    const postBodies: unknown[] = [];
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [collectTask, htmlTask] }), { status: 200 });
+      if (url === "/v1/team/task-connections" && method === "GET") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === "/v1/team/task-connections" && method === "POST") {
+        postBodies.push(JSON.parse(String(init?.body ?? "{}")));
+        return new Response(JSON.stringify({ connection: createdConnection }), { status: 201 });
+      }
+      if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const outputPort = await screen.findByRole("button", { name: "输出 Markdown 文稿 md" });
+    fireEvent.click(outputPort);
+    fireEvent.click(screen.getByRole("button", { name: "输入 Markdown 文稿 md" }));
+
+    await waitFor(() => {
+      expect(postBodies).toEqual([{
+        fromTaskId: collectTask.taskId,
+        fromOutputPortId: "draft_md",
+        toTaskId: htmlTask.taskId,
+        toInputPortId: "source_md",
+      }]);
+      expect(container.querySelector('[data-task-connection-id="conn_live_md"]')).toBeTruthy();
+    });
+  });
+
+  it("blocks mismatched Task port connections before calling the API", async () => {
+    const { collectTask, ttsTask } = makeTypedTaskChainFixtures();
+    const postBodies: unknown[] = [];
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [collectTask, ttsTask] }), { status: 200 });
+      if (url === "/v1/team/task-connections" && method === "GET") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === "/v1/team/task-connections" && method === "POST") {
+        postBodies.push(JSON.parse(String(init?.body ?? "{}")));
+        return new Response(JSON.stringify({ error: "should not post" }), { status: 500 });
+      }
+      if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    fireEvent.click(await screen.findByRole("button", { name: "输出 Markdown 文稿 md" }));
+    fireEvent.click(screen.getByRole("button", { name: "输入 HTML 文稿 html" }));
+
+    expect(await screen.findByText("端口类型不匹配: md -> html")).toBeInTheDocument();
+    expect(postBodies).toEqual([]);
   });
 
   it("renders the add agent entry in mock mode", () => {
@@ -421,7 +557,7 @@ describe("App", () => {
     expect(container.querySelector("iframe")).toBeNull();
   });
 
-  it("opens node-based Task run observer with status, file nodes, and file detail", async () => {
+  it("opens node-based Task run observer with run status in the Task menu, file nodes, and file detail", async () => {
     const { container } = render(<App />);
 
     const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
@@ -434,15 +570,22 @@ describe("App", () => {
     const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
     fireEvent.click(runSummary);
 
+    expect(runSummary).toHaveTextContent("已完成");
+    expect(runSummary).toHaveTextContent("阶段");
+    expect(runSummary).toHaveTextContent("succeeded");
+    expect(runSummary).toHaveTextContent(/耗时(?:0ms|4秒)/);
+    expect(runSummary).toHaveTextContent("Attempts");
+    expect(runSummary).toHaveTextContent("1");
+    expect(runSummary).toHaveTextContent("已通过");
+    expect(runSummary).toHaveTextContent("收起输出");
+    expect(container.querySelector(".emap-observer-status-node")).toBeNull();
+
     await waitFor(() => {
-      const statusNode = container.querySelector(".emap-observer-status-node");
-      expect(statusNode).toBeTruthy();
+      const workerProcessNode = container.querySelector('.emap-observer-process-node[data-process-role="worker"]');
+      expect(workerProcessNode).toBeTruthy();
     });
 
     const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
-    const statusShell = allShells().find((shell) => shell.querySelector(".emap-observer-status-node")) as HTMLElement | undefined;
-    expect(statusShell).toBeTruthy();
-    expect(within(statusShell!).getByText("已完成")).toBeInTheDocument();
 
     const workerFileNode = await waitFor(() => {
       const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
@@ -460,8 +603,9 @@ describe("App", () => {
     const fileShells = allShells().filter((shell) => shell.querySelector(".emap-observer-file-node")) as HTMLElement[];
     expect(fileShells.length).toBeGreaterThanOrEqual(3);
 
-    // All top-level panels (run-status + file nodes) must stack vertically — same x, different y
-    const topLevelShells: HTMLElement[] = [statusShell!, ...fileShells];
+    // All top-level observer panels must stack vertically: same x, different y.
+    const topLevelShells = allShells().filter((shell) => !shell.querySelector(".emap-observer-file-detail-node")) as HTMLElement[];
+    expect(topLevelShells.some((shell) => shell.querySelector(".emap-observer-status-node"))).toBe(false);
     const xs = topLevelShells.map((s) => Number.parseFloat(s.style.left));
     const ys = topLevelShells.map((s) => Number.parseFloat(s.style.top));
     const uniqueXs = new Set(xs);
@@ -582,7 +726,7 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+      expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
     const workerProcessNode = container.querySelector('.emap-observer-process-node[data-process-role="worker"]') as HTMLElement | null;
     const checkerProcessNode = container.querySelector('.emap-observer-process-node[data-process-role="checker"]') as HTMLElement | null;
@@ -649,7 +793,7 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+      expect(container.querySelector(".task-run-summary")).toHaveTextContent("正在执行");
     });
     expect(screen.queryByText("无法连接服务器")).toBeNull();
     expect(screen.queryByText("暂无 attempt 文件。运行刚启动时这里会随轮询补齐。")).toBeNull();
@@ -712,13 +856,13 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+      expect(container.querySelector(".task-run-summary")).toHaveTextContent("正在执行");
     });
     expect(screen.queryByText("正在刷新...")).toBeNull();
     expect(screen.queryByText(/最后刷新/)).toBeNull();
   });
 
-  it("groups process tool entries by toolCallId and toggles terminal groups", async () => {
+  it("hides process tool entries and keeps only the role summary visible", async () => {
     const { container } = render(<App />);
 
     const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
@@ -736,28 +880,15 @@ describe("App", () => {
       expect(node).toBeTruthy();
       return node!;
     });
-    const searchGroup = workerProcessNode.querySelector('.emap-process-tool-group[data-tool-group-id="tool-worker-search"]') as HTMLElement | null;
-    expect(searchGroup).toBeTruthy();
-
-    const searchHeader = within(searchGroup!).getByRole("button", { name: /x-search-latest/ });
-    expect(searchHeader).toHaveTextContent("完成");
-    expect(searchHeader).toHaveTextContent("2");
-    expect(within(searchGroup!).getByText("找到官网、云平台和公开登录入口线索")).toBeInTheDocument();
-
-    const eventGroup = workerProcessNode.querySelector('.emap-process-tool-group[data-tool-group-id="event:worker-note-output"]') as HTMLElement | null;
-    expect(eventGroup).toBeNull();
-    expect(workerProcessNode.querySelectorAll(".emap-process-tool-group")).toHaveLength(1);
-    expect(workerProcessNode.querySelector(".emap-process-budget-note")).toHaveTextContent("仅显示最近 1 组");
-
-    fireEvent.click(searchHeader);
-    expect(searchGroup).toHaveTextContent("完成");
-    expect(searchGroup).not.toHaveTextContent("找到官网、云平台和公开登录入口线索");
-
-    fireEvent.click(searchHeader);
-    expect(within(searchGroup!).getByText("找到官网、云平台和公开登录入口线索")).toBeInTheDocument();
+    expect(workerProcessNode.querySelector(".emap-observer-process-top")).toBeTruthy();
+    expect(workerProcessNode.querySelector(".emap-process-tool-groups")).toBeNull();
+    expect(workerProcessNode.querySelector(".emap-process-budget-note")).toBeNull();
+    expect(workerProcessNode.querySelectorAll(".emap-process-tool-group")).toHaveLength(0);
+    expect(workerProcessNode).not.toHaveTextContent("x-search-latest");
+    expect(workerProcessNode).not.toHaveTextContent("找到官网、云平台和公开登录入口线索");
   });
 
-  it("caps process node rendering for large role process histories", async () => {
+  it("keeps large role process histories out of the DOM while retaining the summary", async () => {
     const task = cloneTaskFixture();
     const taskRun = makeLiveTaskRunFixture(task);
     const oldToolEntries: AgentChatProcessEntry[] = Array.from({ length: 12 }, (_, index) => {
@@ -847,20 +978,17 @@ describe("App", () => {
     });
     expect(workerProcessNode).toHaveTextContent("压缩长任务过程视图");
     expect(workerProcessNode).toHaveTextContent("Worker 已汇总大量过程数据");
-    expect(workerProcessNode).toHaveTextContent("仅显示最近 1 组");
-    expect(workerProcessNode).toHaveTextContent("已隐藏 12 组");
-
-    const groupsContainer = workerProcessNode.querySelector(".emap-process-tool-groups") as HTMLElement | null;
-    expect(groupsContainer).toHaveClass("is-scrollable");
-    expect(workerProcessNode.querySelectorAll(".emap-process-tool-group")).toHaveLength(1);
+    expect(workerProcessNode.querySelector(".emap-process-tool-groups")).toBeNull();
+    expect(workerProcessNode.querySelector(".emap-process-budget-note")).toBeNull();
+    expect(workerProcessNode.querySelectorAll(".emap-process-tool-group")).toHaveLength(0);
     expect(workerProcessNode).not.toHaveTextContent("bulk tool 01 finished");
-    expect(workerProcessNode).toHaveTextContent("bulk-deep-tool");
+    expect(workerProcessNode).not.toHaveTextContent("bulk-deep-tool");
     expect(workerProcessNode).not.toHaveTextContent("deep detail 01");
-    expect(workerProcessNode).toHaveTextContent("deep detail 20");
-    expect(workerProcessNode.querySelectorAll(".emap-process-tool-entry").length).toBeLessThan(33);
+    expect(workerProcessNode).not.toHaveTextContent("deep detail 20");
+    expect(workerProcessNode.querySelectorAll(".emap-process-tool-entry")).toHaveLength(0);
   });
 
-  it("truncates process node summary text without dropping expanded tool detail", async () => {
+  it("truncates process node summary text and hides tool detail", async () => {
     const task = cloneTaskFixture();
     const taskRun = makeLiveTaskRunFixture(task);
     const longCurrentAction = [
@@ -948,10 +1076,11 @@ describe("App", () => {
     expect(summary).toHaveTextContent("...");
     expect(summary).not.toHaveTextContent("CURRENT_ACTION_SENTINEL_AFTER_LIMIT");
     expect(summary).not.toHaveTextContent("NARRATION_SENTINEL_AFTER_LIMIT");
-    expect(workerProcessNode).toHaveTextContent("FULL_TOOL_DETAIL_SENTINEL");
+    expect(workerProcessNode.querySelector(".emap-process-tool-groups")).toBeNull();
+    expect(workerProcessNode).not.toHaveTextContent("FULL_TOOL_DETAIL_SENTINEL");
   });
 
-  it("expands the active process tool by default while a role is running", async () => {
+  it("hides active process tool details while a role is running", async () => {
     const task = cloneTaskFixture();
     const taskRun: TeamRunState = {
       ...makeLiveTaskRunFixture(task),
@@ -1041,14 +1170,16 @@ describe("App", () => {
     const runSummary = await within(branch!).findByRole("button", { name: /运行中[\s\S]*执行中/ });
     fireEvent.click(runSummary);
 
-    const activeGroup = await waitFor(() => {
-      const group = container.querySelector('.emap-process-tool-group[data-tool-group-id="tool-active-web"]') as HTMLElement | null;
-      expect(group).toBeTruthy();
-      return group!;
+    const workerProcessNode = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-process-node[data-process-role="worker"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
     });
-    const header = within(activeGroup).getByRole("button", { name: /x-search-latest/ });
-    expect(header).toHaveTextContent("执行中");
-    expect(activeGroup).toHaveTextContent("正在搜索 Medtrum 云资产");
+    expect(workerProcessNode).toHaveTextContent("执行中");
+    expect(workerProcessNode.querySelector(".emap-process-tool-groups")).toBeNull();
+    expect(workerProcessNode.querySelectorAll(".emap-process-tool-group")).toHaveLength(0);
+    expect(workerProcessNode).not.toHaveTextContent("x-search-latest");
+    expect(workerProcessNode).not.toHaveTextContent("正在搜索 Medtrum 云资产");
   });
 
   it("renders legacy Live API attempt files while roleProcesses is missing", async () => {
@@ -1134,7 +1265,7 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+      expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
     const workerProcessNode = container.querySelector('.emap-observer-process-node[data-process-role="worker"]') as HTMLElement | null;
     const checkerProcessNode = container.querySelector('.emap-observer-process-node[data-process-role="checker"]') as HTMLElement | null;
@@ -1173,7 +1304,7 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+      expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
     const workerFileNode = await waitFor(() => {
@@ -1194,7 +1325,7 @@ describe("App", () => {
     expect(detailNode.querySelector("details")).toBeNull();
   });
 
-  it("uses auto-height for run status panel and compact file index nodes", async () => {
+  it("shows run status in the menu summary and keeps compact file index nodes", async () => {
     const { container } = render(<App />);
 
     const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
@@ -1208,15 +1339,15 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+      expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
-    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
-
-    // Status panel shell should not have the old fixed 220px height
-    const statusShell = allShells().find((s) => s.querySelector(".emap-observer-status-node")) as HTMLElement | undefined;
-    expect(statusShell).toBeTruthy();
-    expect(statusShell!.style.height).not.toBe("220px");
+    expect(runSummary).toHaveTextContent("阶段");
+    expect(runSummary).toHaveTextContent("succeeded");
+    expect(runSummary).toHaveTextContent(/耗时(?:0ms|4秒)/);
+    expect(runSummary).toHaveTextContent("Attempts");
+    expect(runSummary).toHaveTextContent("已通过");
+    expect(container.querySelector(".emap-observer-status-node")).toBeNull();
 
     // File nodes should NOT show checker reason / verdict summary text
     const checkerFileNode = container.querySelector('.emap-observer-file-node[data-file-kind="checker"]') as HTMLElement | null;
@@ -1257,7 +1388,7 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+      expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
     const checkerFileNode = await waitFor(() => {
@@ -2005,18 +2136,20 @@ describe("App", () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }));
 
     render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
     expect(fetch).toHaveBeenNthCalledWith(1, "/v1/agents");
     expect(fetch).toHaveBeenNthCalledWith(2, "/v1/agents/status", {
       method: "GET",
       headers: { accept: "application/json" },
     });
     expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/tasks");
+    expect(fetch).toHaveBeenNthCalledWith(4, "/v1/team/task-connections");
     expect(screen.getByRole("button", { name: "Agent workspace" })).toHaveClass("active");
     expect(screen.getByRole("button", { name: "最新 Run" })).not.toHaveClass("active");
     expect(screen.queryByText("执行运行")).toBeNull();
@@ -2027,6 +2160,24 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "添加 Agent" })).toBeEnabled();
   });
 
+  it("keeps Live API usable when the typed connection endpoint is not deployed yet", async () => {
+    const liveTask = mockTeamTasks[0]!;
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response("not found", { status: 404 }))
+      .mockResolvedValue(new Response(JSON.stringify({ runs: [] }), { status: 200 }));
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/v1/team/task-connections"));
+    expect(screen.queryByText("请求失败 (404)")).toBeNull();
+    expect(await screen.findByText(liveTask.title)).toBeInTheDocument();
+    expect(container.querySelector(".task-create-btn")).toBeEnabled();
+  });
+
   it("fetches live plans, runs, and selected run detail when latest Run is requested", async () => {
     const plan = makeSequentialPlan();
     const run = makeSequentialRun();
@@ -2034,25 +2185,27 @@ describe("App", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([plan]), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([run]), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(run), { status: 200 }));
 
     render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
     fireEvent.click(screen.getByRole("button", { name: "最新 Run" }));
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(6));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(7));
     expect(fetch).toHaveBeenNthCalledWith(1, "/v1/agents");
     expect(fetch).toHaveBeenNthCalledWith(2, "/v1/agents/status", {
       method: "GET",
       headers: { accept: "application/json" },
     });
     expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/tasks");
-    expect(fetch).toHaveBeenNthCalledWith(4, "/v1/team/plans");
-    expect(fetch).toHaveBeenNthCalledWith(5, "/v1/team/runs");
-    expect(fetch).toHaveBeenNthCalledWith(6, "/v1/team/runs/run_seq_001");
+    expect(fetch).toHaveBeenNthCalledWith(4, "/v1/team/task-connections");
+    expect(fetch).toHaveBeenNthCalledWith(5, "/v1/team/plans");
+    expect(fetch).toHaveBeenNthCalledWith(6, "/v1/team/runs");
+    expect(fetch).toHaveBeenNthCalledWith(7, "/v1/team/runs/run_seq_001");
   });
 
   it("loads live agent catalog when switching to Live API", async () => {
@@ -2061,18 +2214,20 @@ describe("App", () => {
         agents: [{ agentId: "main", name: "主 Agent", description: "默认综合 agent" }],
       }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [{ agentId: "main", name: "主 Agent", status: "idle" }] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [] }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }));
 
     render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
     expect(fetch).toHaveBeenNthCalledWith(1, "/v1/agents");
     expect(fetch).toHaveBeenNthCalledWith(2, "/v1/agents/status", {
       method: "GET",
       headers: { accept: "application/json" },
     });
     expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/tasks");
+    expect(fetch).toHaveBeenNthCalledWith(4, "/v1/team/task-connections");
   });
 
   it("keeps Task creation disabled in mock mode", () => {
@@ -2676,13 +2831,14 @@ describe("App", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([plan]), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([run]), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(run), { status: 200 }));
 
     render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
     fireEvent.click(screen.getByRole("button", { name: "最新 Run" }));
 
     expect(await screen.findByText("Live-only vendor task")).toBeInTheDocument();
@@ -2694,12 +2850,13 @@ describe("App", () => {
         agents: [{ agentId: "main", name: "主 Agent", description: "默认综合 agent" }],
       }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [{ agentId: "main", name: "主 Agent", status: "idle" }] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [] }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }));
 
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
     expect(screen.queryByText("没有可显示的 live run")).toBeNull();
     expect(screen.getByRole("button", { name: "添加 Agent" })).toBeEnabled();
 
@@ -2793,11 +2950,11 @@ describe("App", () => {
     expect(readme).toContain("roleProcesses");
     expect(readme).toContain("Worker 过程");
     expect(readme).toContain("Checker 过程");
-    expect(readme).toContain("toolCallId");
+    expect(readme).toContain("不再渲染下半部 tool / method 调用明细");
     expect(readme).toContain("缺少 `roleProcesses`");
-    expect(readme).toContain("DOM 渲染限流");
+    expect(readme).toContain("只隐藏 DOM 明细");
     expect(readme).toContain("formatAssistantText");
-    expect(readme).toContain("仅显示最近 1 组");
+    expect(readme).toContain("不显示 tool group 折叠区或隐藏计数");
     expect(readme).toContain("不接 SSE");
     expect(readme).toContain("只展示 Agent 名字（从 agentsById 解析）、文件名和路径");
     expect(readme).toContain("不会进入 `/v1/team/runs` 的 Plan run 列表");
@@ -2839,16 +2996,17 @@ describe("App", () => {
     expect(runtimeDoc).toContain("POST /v1/team/tasks/:taskId/runs");
     expect(runtimeDoc).toContain(".data/team/task-runs/runs/<runId>");
     expect(runtimeDoc).toContain("第一版 Task run 只执行 `workUnit.workerAgentId` 和 `workUnit.checkerAgentId`");
-    expect(runtimeDoc).toContain("Run 观察节点");
+    expect(runtimeDoc).toContain("Run observer 不再单独渲染 Run 状态 canvas 子节点");
+    expect(runtimeDoc).toContain("摘要区域直接展示运行状态、阶段、耗时、attempt 数、进度消息和 run id");
     expect(runtimeDoc).toContain("attempt metadata 和 attempt files");
     expect(runtimeDoc).toContain("roleProcesses.worker");
     expect(runtimeDoc).toContain("roleProcesses.checker");
     expect(runtimeDoc).toContain("Worker 过程");
     expect(runtimeDoc).toContain("Checker 过程");
-    expect(runtimeDoc).toContain("toolCallId");
+    expect(runtimeDoc).toContain("不再渲染下半部 tool / method 调用明细");
     expect(runtimeDoc).toContain("additive frontend contract");
     expect(runtimeDoc).toContain("formatAssistantText");
-    expect(runtimeDoc).toContain("不丢弃完整过程数据");
+    expect(runtimeDoc).toContain("前端不丢弃后端数据，只隐藏 DOM 明细");
     expect(runtimeDoc).toContain("SSE 观察流仍是后续后端能力");
     expect(runtimeDoc).toContain("base snapshot + dirty fields");
     expect(runtimeDoc).toContain("input text、output contract、acceptance rules");
@@ -2861,9 +3019,9 @@ describe("App", () => {
     expect(playgroundCurrent).toContain("Worker 过程");
     expect(playgroundCurrent).toContain("Checker 过程");
     expect(playgroundCurrent).toContain("roleProcesses");
-    expect(playgroundCurrent).toContain("toolCallId");
+    expect(playgroundCurrent).toContain("不再渲染下半部 tool / method 调用明细");
     expect(playgroundCurrent).toContain("中文标点自然断句");
-    expect(playgroundCurrent).toContain("仅显示最近 1 组");
+    expect(playgroundCurrent).toContain("完整过程数据仍保留在后端 attempt metadata 中");
     expect(playgroundCurrent).toContain("不接 SSE");
 
     const changeLog = readFileSync("../../docs/change-log.md", "utf8");
@@ -2871,14 +3029,14 @@ describe("App", () => {
     expect(changeLog).toContain("2026-05-25 — Team Console Task run process nodes 前端实现");
     expect(changeLog).toContain("roleProcesses.worker");
     expect(changeLog).toContain("roleProcesses.checker");
-    expect(changeLog).toContain("每个过程节点最多渲染若干 tool/event group");
-    expect(changeLog).toContain("优先保留活跃过程");
+    expect(changeLog).toContain("Team Console 过程节点隐藏方法调用明细");
+    expect(changeLog).toContain("过程节点不再渲染下半部 tool / method 调用明细");
     expect(changeLog).toContain("Worker 过程");
     expect(changeLog).toContain("Checker 过程");
     expect(changeLog).toContain("不改 `src/team/**`");
   });
 
-  it("drags observer status panel and updates connector", async () => {
+  it("drags an observer process panel and updates connector", async () => {
     const { container } = render(<App />);
 
     const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
@@ -2892,22 +3050,23 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+      expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
-    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
-    const statusShell = allShells().find((s) => s.querySelector(".emap-observer-status-node")) as HTMLElement | undefined;
-    expect(statusShell).toBeTruthy();
+    const processShell = container
+      .querySelector('.emap-observer-process-node[data-process-role="worker"]')
+      ?.closest(".emap-task-child-branch-shell") as HTMLElement | null;
+    expect(processShell).toBeTruthy();
 
-    const initialLeft = Number.parseFloat(statusShell!.style.left);
-    const initialTop = Number.parseFloat(statusShell!.style.top);
+    const initialLeft = Number.parseFloat(processShell!.style.left);
+    const initialTop = Number.parseFloat(processShell!.style.top);
 
-    firePointer(statusShell!, "pointerdown", { pointerId: 71, clientX: 600, clientY: 300 });
-    firePointer(statusShell!, "pointermove", { pointerId: 71, clientX: 660, clientY: 340 });
-    firePointer(statusShell!, "pointerup", { pointerId: 71, clientX: 660, clientY: 340, buttons: 0 });
+    firePointer(processShell!, "pointerdown", { pointerId: 71, clientX: 600, clientY: 300 });
+    firePointer(processShell!, "pointermove", { pointerId: 71, clientX: 660, clientY: 340 });
+    firePointer(processShell!, "pointerup", { pointerId: 71, clientX: 660, clientY: 340, buttons: 0 });
 
-    expect(Number.parseFloat(statusShell!.style.left)).toBeCloseTo(initialLeft + 60, 4);
-    expect(Number.parseFloat(statusShell!.style.top)).toBeCloseTo(initialTop + 40, 4);
+    expect(Number.parseFloat(processShell!.style.left)).toBeCloseTo(initialLeft + 60, 4);
+    expect(Number.parseFloat(processShell!.style.top)).toBeCloseTo(initialTop + 40, 4);
 
     const connectorPaths = container.querySelectorAll(".emap-link-task-child-branch");
     expect(connectorPaths.length).toBeGreaterThanOrEqual(1);
@@ -2927,7 +3086,7 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+      expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
     const workerFileNode = await waitFor(() => {
@@ -2963,7 +3122,7 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+      expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
     const workerFileNode = await waitFor(() => {
@@ -3017,7 +3176,7 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+      expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
     const resultFileNode = await waitFor(() => {
@@ -3055,7 +3214,7 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+      expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
     const workerFileNode = await waitFor(() => {
@@ -3095,7 +3254,7 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+      expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
     const workerFileNode = await waitFor(() => {
@@ -3128,7 +3287,7 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+      expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
     const workerFileNode = await waitFor(() => {
@@ -3162,7 +3321,7 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+      expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
     const workerFileNode = await waitFor(() => {
@@ -3226,7 +3385,7 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+      expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
     const checkerFileNode = await waitFor(() => {
@@ -3264,7 +3423,7 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+      expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
     return { branch: branch! };
@@ -3275,20 +3434,20 @@ describe("App", () => {
     await setupObserverOpen(container);
 
     const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
-    const statusShell = allShells().find((s) => s.querySelector(".emap-observer-status-node")) as HTMLElement | undefined;
-    expect(statusShell).toBeTruthy();
+    const observerShell = allShells().find((s) => s.querySelector('.emap-observer-process-node[data-process-role="worker"]')) as HTMLElement | undefined;
+    expect(observerShell).toBeTruthy();
 
-    // Manually drag status panel to create a position override
-    firePointer(statusShell!, "pointerdown", { pointerId: 90, clientX: 600, clientY: 300 });
-    firePointer(statusShell!, "pointermove", { pointerId: 90, clientX: 660, clientY: 340 });
-    firePointer(statusShell!, "pointerup", { pointerId: 90, clientX: 660, clientY: 340, buttons: 0 });
+    // Manually drag an observer panel to create a position override.
+    firePointer(observerShell!, "pointerdown", { pointerId: 90, clientX: 600, clientY: 300 });
+    firePointer(observerShell!, "pointermove", { pointerId: 90, clientX: 660, clientY: 340 });
+    firePointer(observerShell!, "pointerup", { pointerId: 90, clientX: 660, clientY: 340, buttons: 0 });
 
     const menuShell = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
     expect(menuShell).toBeTruthy();
     const menuLeftBefore = Number.parseFloat(menuShell!.style.left);
     const menuTopBefore = Number.parseFloat(menuShell!.style.top);
-    const statusLeftBefore = Number.parseFloat(statusShell!.style.left);
-    const statusTopBefore = Number.parseFloat(statusShell!.style.top);
+    const observerLeftBefore = Number.parseFloat(observerShell!.style.left);
+    const observerTopBefore = Number.parseFloat(observerShell!.style.top);
 
     // Drag Task root node
     const taskNode = container.querySelector(".emap-canvas-task-node") as HTMLElement | null;
@@ -3303,9 +3462,9 @@ describe("App", () => {
     expect(Number.parseFloat(menuShell!.style.left)).toBeCloseTo(menuLeftBefore + dx, 4);
     expect(Number.parseFloat(menuShell!.style.top)).toBeCloseTo(menuTopBefore + dy, 4);
 
-    // Status panel with override also follows
-    expect(Number.parseFloat(statusShell!.style.left)).toBeCloseTo(statusLeftBefore + dx, 4);
-    expect(Number.parseFloat(statusShell!.style.top)).toBeCloseTo(statusTopBefore + dy, 4);
+    // Observer panel with override also follows.
+    expect(Number.parseFloat(observerShell!.style.left)).toBeCloseTo(observerLeftBefore + dx, 4);
+    expect(Number.parseFloat(observerShell!.style.top)).toBeCloseTo(observerTopBefore + dy, 4);
   });
 
   it("moves observer panels when dragging menu shell header", async () => {
@@ -3316,13 +3475,13 @@ describe("App", () => {
     expect(menuShell).toBeTruthy();
 
     const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
-    const statusShell = allShells().find((s) => s.querySelector(".emap-observer-status-node")) as HTMLElement | undefined;
-    expect(statusShell).toBeTruthy();
+    const observerShell = allShells().find((s) => s.querySelector('.emap-observer-process-node[data-process-role="worker"]')) as HTMLElement | undefined;
+    expect(observerShell).toBeTruthy();
 
     const menuLeftBefore = Number.parseFloat(menuShell!.style.left);
     const menuTopBefore = Number.parseFloat(menuShell!.style.top);
-    const statusLeftBefore = Number.parseFloat(statusShell!.style.left);
-    const statusTopBefore = Number.parseFloat(statusShell!.style.top);
+    const observerLeftBefore = Number.parseFloat(observerShell!.style.left);
+    const observerTopBefore = Number.parseFloat(observerShell!.style.top);
 
     // Drag from the menu header area (not a button)
     const menuHeader = menuShell!.querySelector(".task-leader-branch-head") as HTMLElement | null;
@@ -3336,8 +3495,8 @@ describe("App", () => {
 
     expect(Number.parseFloat(menuShell!.style.left)).toBeCloseTo(menuLeftBefore + dx, 4);
     expect(Number.parseFloat(menuShell!.style.top)).toBeCloseTo(menuTopBefore + dy, 4);
-    expect(Number.parseFloat(statusShell!.style.left)).toBeCloseTo(statusLeftBefore + dx, 4);
-    expect(Number.parseFloat(statusShell!.style.top)).toBeCloseTo(statusTopBefore + dy, 4);
+    expect(Number.parseFloat(observerShell!.style.left)).toBeCloseTo(observerLeftBefore + dx, 4);
+    expect(Number.parseFloat(observerShell!.style.top)).toBeCloseTo(observerTopBefore + dy, 4);
   });
 
   it("moves process panels when dragging Task root", async () => {
@@ -3394,19 +3553,15 @@ describe("App", () => {
     const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
     const workerShell = allShells().find((s) => s.querySelector('.emap-observer-process-node[data-process-role="worker"]')) as HTMLElement | undefined;
     const checkerShell = allShells().find((s) => s.querySelector('.emap-observer-process-node[data-process-role="checker"]')) as HTMLElement | undefined;
-    const statusShell = allShells().find((s) => s.querySelector(".emap-observer-status-node")) as HTMLElement | undefined;
     const workerFileShell = allShells().find((s) => s.querySelector('.emap-observer-file-node[data-file-kind="worker"]')) as HTMLElement | undefined;
     expect(workerShell).toBeTruthy();
     expect(checkerShell).toBeTruthy();
-    expect(statusShell).toBeTruthy();
     expect(workerFileShell).toBeTruthy();
 
     const workerLeftBefore = Number.parseFloat(workerShell!.style.left);
     const workerTopBefore = Number.parseFloat(workerShell!.style.top);
     const checkerLeftBefore = Number.parseFloat(checkerShell!.style.left);
     const checkerTopBefore = Number.parseFloat(checkerShell!.style.top);
-    const statusLeftBefore = Number.parseFloat(statusShell!.style.left);
-    const statusTopBefore = Number.parseFloat(statusShell!.style.top);
     const fileLeftBefore = Number.parseFloat(workerFileShell!.style.left);
     const fileTopBefore = Number.parseFloat(workerFileShell!.style.top);
 
@@ -3418,31 +3573,30 @@ describe("App", () => {
     expect(Number.parseFloat(workerShell!.style.top)).toBeCloseTo(workerTopBefore + 40, 4);
     expect(Number.parseFloat(checkerShell!.style.left)).toBeCloseTo(checkerLeftBefore, 4);
     expect(Number.parseFloat(checkerShell!.style.top)).toBeCloseTo(checkerTopBefore, 4);
-    expect(Number.parseFloat(statusShell!.style.left)).toBeCloseTo(statusLeftBefore, 4);
-    expect(Number.parseFloat(statusShell!.style.top)).toBeCloseTo(statusTopBefore, 4);
     expect(Number.parseFloat(workerFileShell!.style.left)).toBeCloseTo(fileLeftBefore, 4);
     expect(Number.parseFloat(workerFileShell!.style.top)).toBeCloseTo(fileTopBefore, 4);
   });
 
-  it("does not toggle a process tool group from the suppressed click after dragging the process panel", async () => {
+  it("keeps the process panel draggable after method-call groups are hidden", async () => {
     const { container } = render(<App />);
     await setupObserverOpen(container);
 
     const workerProcessNode = container.querySelector('.emap-observer-process-node[data-process-role="worker"]') as HTMLElement | null;
     expect(workerProcessNode).toBeTruthy();
-    const searchGroup = workerProcessNode!.querySelector('.emap-process-tool-group[data-tool-group-id="tool-worker-search"]') as HTMLElement | null;
-    expect(searchGroup).toBeTruthy();
-    expect(searchGroup).toHaveTextContent("找到官网、云平台和公开登录入口线索");
+    expect(workerProcessNode!.querySelector(".emap-process-tool-groups")).toBeNull();
+    expect(workerProcessNode!.querySelectorAll(".emap-process-tool-group")).toHaveLength(0);
 
     const workerShell = workerProcessNode!.closest(".emap-task-child-branch-shell") as HTMLElement | null;
     expect(workerShell).toBeTruthy();
+    const leftBefore = Number.parseFloat(workerShell!.style.left);
+    const topBefore = Number.parseFloat(workerShell!.style.top);
     firePointer(workerShell!, "pointerdown", { pointerId: 104, clientX: 940, clientY: 350 });
     firePointer(workerShell!, "pointermove", { pointerId: 104, clientX: 995, clientY: 390 });
     firePointer(workerShell!, "pointerup", { pointerId: 104, clientX: 995, clientY: 390, buttons: 0 });
 
-    const searchHeader = within(searchGroup!).getByRole("button", { name: /x-search-latest/ });
-    fireEvent.click(searchHeader);
-    expect(searchGroup).toHaveTextContent("找到官网、云平台和公开登录入口线索");
+    expect(Number.parseFloat(workerShell!.style.left)).toBeCloseTo(leftBefore + 55, 4);
+    expect(Number.parseFloat(workerShell!.style.top)).toBeCloseTo(topBefore + 40, 4);
+    expect(workerProcessNode!.querySelectorAll(".emap-process-tool-group")).toHaveLength(0);
   });
 
   it("keeps menu action buttons clickable via pointer sequence after menu drag is implemented", async () => {
@@ -3807,7 +3961,7 @@ describe("App", () => {
       expect(style.maxHeight).not.toBe("none");
     });
 
-    it("keeps tool groups collapsible alongside assistantText", async () => {
+    it("hides tool groups alongside assistantText", async () => {
       const task = cloneTaskFixture();
       const { taskRun, attempt } = makeLiveRunWithAssistantText(
         task,
@@ -3819,15 +3973,10 @@ describe("App", () => {
 
       const workerNode = await openRunObserver(container);
       expect(workerNode.querySelector(".emap-observer-process-assistant-text")).toBeTruthy();
-      const toolGroup = workerNode.querySelector(".emap-process-tool-group") as HTMLElement | null;
-      expect(toolGroup).toBeTruthy();
-      const groupHeader = toolGroup!.querySelector(".emap-process-tool-group-header") as HTMLElement | null;
-      expect(groupHeader).toBeTruthy();
-      expect(toolGroup).toHaveClass("expanded");
-      fireEvent.click(groupHeader!);
-      expect(toolGroup).toHaveClass("collapsed");
-      fireEvent.click(groupHeader!);
-      expect(toolGroup).toHaveClass("expanded");
+      expect(workerNode.querySelector(".emap-process-tool-groups")).toBeNull();
+      expect(workerNode.querySelectorAll(".emap-process-tool-group")).toHaveLength(0);
+      expect(workerNode).not.toHaveTextContent("x-search-latest");
+      expect(workerNode).not.toHaveTextContent("正在搜索");
     });
 
     it("does not regress drag semantics with assistantText present", async () => {
@@ -3913,7 +4062,7 @@ describe("App", () => {
       expect(hint).toHaveTextContent("已隐藏");
     });
 
-    it("renders only 1 tool group preferring active over finished", async () => {
+    it("does not render tool groups even when an active tool exists", async () => {
       const task = cloneTaskFixture();
       const taskRun: TeamRunState = {
         ...makeLiveTaskRunFixture(task),
@@ -3986,10 +4135,11 @@ describe("App", () => {
         expect(node).toBeTruthy();
         return node!;
       });
-      const groups = workerNode.querySelectorAll(".emap-process-tool-group");
-      expect(groups.length).toBe(1);
-      expect(groups[0]!).toHaveAttribute("data-tool-group-id", "tool-search");
-      expect(workerNode.querySelector(".emap-process-budget-note")).toHaveTextContent("仅显示最近 1 组");
+      expect(workerNode.querySelector(".emap-process-tool-groups")).toBeNull();
+      expect(workerNode.querySelector(".emap-process-budget-note")).toBeNull();
+      expect(workerNode.querySelectorAll(".emap-process-tool-group")).toHaveLength(0);
+      expect(workerNode).not.toHaveTextContent("x-search");
+      expect(workerNode).not.toHaveTextContent("d3");
     });
 
     it("truncates long punctuationless text and shows truncated hint", async () => {

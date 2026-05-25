@@ -10,6 +10,7 @@ import { computeTeamConfigLocks } from "./config-locks.js";
 import { buildTeamPlanDraft, listTeamPlanTemplates } from "./plan-draft.js";
 import { validateCreatePlanInput } from "./plan-validation.js";
 import { buildTaskWarnings, type UpdateTeamCanvasTaskInput } from "./task-validation.js";
+import { TaskConnectionStore } from "./task-connection-store.js";
 import { MockRoleRunner } from "./role-runner.js";
 import type { TeamRoleRunner } from "./role-runner.js";
 import { buildRunDetailResponse } from "./run-presenter.js";
@@ -72,6 +73,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		getAgentIds: () => loadAgentProfilesSync(options.projectRoot).map((profile) => profile.agentId),
 	});
 	const unitStore = new TeamUnitStore(options.teamDataDir);
+	const taskConnectionStore = new TaskConnectionStore(options.teamDataDir, taskStore);
 	const workspace = new RunWorkspace(options.teamDataDir);
 	const taskRunDataDir = join(options.teamDataDir, "task-runs");
 	const taskRunWorkspace = new RunWorkspace(taskRunDataDir);
@@ -79,6 +81,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		taskStore,
 		workspace: taskRunWorkspace,
 		createRoleRunner: () => createRoleRunner({ ...options, teamDataDir: taskRunDataDir }),
+		connectionStore: taskConnectionStore,
 		dataDir: taskRunDataDir,
 		maxCheckerRevisions: 3,
 		maxConcurrentRuns: options.maxConcurrentRuns,
@@ -167,6 +170,45 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			const msg = (err as Error).message;
 			reply.code(msg.includes("not found") ? 404 : 400).send({ error: msg });
 		}
+	});
+
+	app.get("/v1/team/task-connections", async (_request, reply) => {
+		const connections = await taskConnectionStore.list();
+		reply.send({ connections });
+	});
+
+	app.post("/v1/team/task-connections", async (request, reply) => {
+		const body = request.body as Record<string, unknown>;
+		try {
+			const connection = await taskConnectionStore.create({
+				fromTaskId: body.fromTaskId as string,
+				fromOutputPortId: body.fromOutputPortId as string,
+				toTaskId: body.toTaskId as string,
+				toInputPortId: body.toInputPortId as string,
+			});
+			reply.code(201).send({ connection });
+		} catch (err) {
+			const msg = (err as Error).message;
+			if (msg.includes("task not found") || msg.includes("port not found")) {
+				reply.code(404).send({ error: msg });
+				return;
+			}
+			if (msg.includes("already exists") || msg.includes("cycle") || msg.includes("archived")) {
+				reply.code(409).send({ error: msg });
+				return;
+			}
+			reply.code(400).send({ error: msg });
+		}
+	});
+
+	app.delete("/v1/team/task-connections/:connectionId", async (request, reply) => {
+		const { connectionId } = request.params as { connectionId: string };
+		const deleted = await taskConnectionStore.delete(connectionId);
+		if (!deleted) {
+			reply.code(404).send({ error: "task connection not found" });
+			return;
+		}
+		reply.code(204).send();
 	});
 
 	app.get("/v1/team/tasks/:taskId/runs", async (request, reply) => {

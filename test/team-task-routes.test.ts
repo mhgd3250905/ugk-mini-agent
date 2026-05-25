@@ -30,6 +30,8 @@ async function buildTestServer() {
 	const teamDir = join(root, "team");
 	process.env.TEAM_RUNTIME_ENABLED = "true";
 	process.env.TEAM_DATA_DIR = teamDir;
+	process.env.UGK_AGENT_DATA_DIR = join(root, "agent");
+	process.env.CONN_DATABASE_PATH = join(root, "conn", "conn.sqlite");
 	const app = await buildServer({ agentService: createAgentServiceStub() });
 	return { app, root };
 }
@@ -47,6 +49,22 @@ const taskPayload = {
 		checkerAgentId: "main",
 	},
 };
+
+function withPorts(
+	payload: typeof taskPayload,
+	ports: {
+		inputPorts?: Array<{ id: string; label: string; type: string }>;
+		outputPorts?: Array<{ id: string; label: string; type: string }>;
+	},
+) {
+	return {
+		...payload,
+		workUnit: {
+			...payload.workUnit,
+			...ports,
+		},
+	};
+}
 
 test("POST /v1/team/tasks creates an independent Task resource", async () => {
 	const { app, root } = await buildTestServer();
@@ -67,6 +85,145 @@ test("POST /v1/team/tasks creates an independent Task resource", async () => {
 
 		await app.close();
 	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("Task connection API only accepts matching typed ports", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const collectRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts(taskPayload, {
+				outputPorts: [{ id: "draft_md", label: "Markdown 文稿", type: "md" }],
+			}),
+		});
+		const htmlRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts({ ...taskPayload, title: "HTML 制作 Task" }, {
+				inputPorts: [{ id: "source_md", label: "Markdown 文稿", type: "md" }],
+				outputPorts: [{ id: "page_html", label: "HTML 页面", type: "html" }],
+			}),
+		});
+		const audioRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts({ ...taskPayload, title: "TTS Task" }, {
+				inputPorts: [{ id: "script_html", label: "HTML 输入", type: "html" }],
+				outputPorts: [{ id: "voice_audio", label: "音频", type: "audio" }],
+			}),
+		});
+		assert.equal(collectRes.statusCode, 201);
+		assert.equal(htmlRes.statusCode, 201);
+		assert.equal(audioRes.statusCode, 201);
+		const collect = collectRes.json().task;
+		const html = htmlRes.json().task;
+		const audio = audioRes.json().task;
+
+		const emptyList = await app.inject({ method: "GET", url: "/v1/team/task-connections" });
+		assert.equal(emptyList.statusCode, 200);
+		assert.deepEqual(emptyList.json().connections, []);
+
+		const ok = await app.inject({
+			method: "POST",
+			url: "/v1/team/task-connections",
+			payload: {
+				fromTaskId: collect.taskId,
+				fromOutputPortId: "draft_md",
+				toTaskId: html.taskId,
+				toInputPortId: "source_md",
+			},
+		});
+		assert.equal(ok.statusCode, 201);
+		assert.equal(ok.json().connection.type, "md");
+		assert.equal(ok.json().connection.fromTaskId, collect.taskId);
+		assert.equal(ok.json().connection.toTaskId, html.taskId);
+
+		const mismatch = await app.inject({
+			method: "POST",
+			url: "/v1/team/task-connections",
+			payload: {
+				fromTaskId: collect.taskId,
+				fromOutputPortId: "draft_md",
+				toTaskId: audio.taskId,
+				toInputPortId: "script_html",
+			},
+		});
+		assert.equal(mismatch.statusCode, 400);
+		assert.match(mismatch.json().error, /port type mismatch: md -> html/);
+
+		const list = await app.inject({ method: "GET", url: "/v1/team/task-connections" });
+		assert.equal(list.statusCode, 200);
+		assert.deepEqual(list.json().connections.map((connection: any) => connection.connectionId), [ok.json().connection.connectionId]);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("Task connection API rejects duplicate edges and cycles", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const firstRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts(taskPayload, {
+				inputPorts: [{ id: "source_md", label: "Markdown 输入", type: "md" }],
+				outputPorts: [{ id: "draft_md", label: "Markdown 输出", type: "md" }],
+			}),
+		});
+		const secondRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts({ ...taskPayload, title: "第二个 Task" }, {
+				inputPorts: [{ id: "source_md", label: "Markdown 输入", type: "md" }],
+				outputPorts: [{ id: "draft_md", label: "Markdown 输出", type: "md" }],
+			}),
+		});
+		const first = firstRes.json().task;
+		const second = secondRes.json().task;
+
+		const createEdge = await app.inject({
+			method: "POST",
+			url: "/v1/team/task-connections",
+			payload: {
+				fromTaskId: first.taskId,
+				fromOutputPortId: "draft_md",
+				toTaskId: second.taskId,
+				toInputPortId: "source_md",
+			},
+		});
+		assert.equal(createEdge.statusCode, 201);
+
+		const duplicate = await app.inject({
+			method: "POST",
+			url: "/v1/team/task-connections",
+			payload: {
+				fromTaskId: first.taskId,
+				fromOutputPortId: "draft_md",
+				toTaskId: second.taskId,
+				toInputPortId: "source_md",
+			},
+		});
+		assert.equal(duplicate.statusCode, 409);
+		assert.match(duplicate.json().error, /task connection already exists/);
+
+		const cycle = await app.inject({
+			method: "POST",
+			url: "/v1/team/task-connections",
+			payload: {
+				fromTaskId: second.taskId,
+				fromOutputPortId: "draft_md",
+				toTaskId: first.taskId,
+				toInputPortId: "source_md",
+			},
+		});
+		assert.equal(cycle.statusCode, 409);
+		assert.match(cycle.json().error, /task connection would create a cycle/);
+	} finally {
+		await app.close();
 		await rm(root, { recursive: true, force: true });
 	}
 });

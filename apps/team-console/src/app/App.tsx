@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { AgentRunStatus, AgentSummary, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, AgentChatProcessEntry } from "../api/team-types";
+import type { AgentRunStatus, AgentSummary, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskConnection, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
 import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, mockTeamTasks, MockTeamApi } from "../fixtures/team-fixtures";
 import { ExecutionMap, type AtlasAgentNode, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { ROOT_ID } from "../graph/execution-map-layout";
@@ -22,12 +22,10 @@ const TASK_RUN_PROCESS_LABELS: Record<TeamAttemptRoleProcessRole, string> = {
   worker: "Worker 过程",
   checker: "Checker 过程",
 };
-const PROCESS_MAX_ENTRIES_PER_GROUP = 6;
 const PROCESS_CURRENT_ACTION_MAX_CHARS = 96;
 const PROCESS_NARRATION_MAX_CHARS = 220;
 const PROCESS_ASSISTANT_TEXT_MAX_LINES = 5;
 const PROCESS_ASSISTANT_TEXT_MAX_LINE_CHARS = 200;
-const PROCESS_VISIBLE_TOOL_GROUPS = 1;
 
 type AgentBranchMode = "chat" | "task-create";
 
@@ -67,6 +65,12 @@ type TaskEditDraft = {
   dirtyFields: Partial<Record<TaskEditDirtyField, true>>;
 };
 
+type TaskConnectionDraft = {
+  fromTaskId: string;
+  fromOutputPortId: string;
+  type: string;
+};
+
 type StoredTaskPosition = {
   taskId: string;
   position: { x: number; y: number };
@@ -96,30 +100,6 @@ type TaskRunObserverState = {
   files: Record<string, TaskRunObserverFileState>;
   error: string | null;
   lastUpdatedAt: string | null;
-};
-
-type ProcessToolGroupStatus = "running" | "finished" | "failed" | "event";
-
-type ProcessToolGroup = {
-  id: string;
-  toolName: string;
-  entries: AgentChatProcessEntry[];
-  status: ProcessToolGroupStatus;
-  isEvent: boolean;
-  latestCreatedAt: string;
-  order: number;
-};
-
-type ProcessToolGroupView = ProcessToolGroup & {
-  entries: AgentChatProcessEntry[];
-  totalEntryCount: number;
-  hiddenEntryCount: number;
-};
-
-type ProcessToolGroupBudget = {
-  groups: ProcessToolGroupView[];
-  hiddenGroupCount: number;
-  hiddenEntryCount: number;
 };
 
 function errorMessage(error: unknown): string {
@@ -154,6 +134,22 @@ function elapsedText(startedAt: string | null | undefined, finishedAt: string | 
   const end = finishedAt ? Date.parse(finishedAt) : Date.now();
   const safeEnd = Number.isFinite(end) ? end : Date.now();
   return `耗时 ${formatDurationMs(safeEnd - start)}`;
+}
+
+function taskRunPhase(run: TeamRunState, taskId: string): string {
+  return run.taskStates[taskId]?.progress.phase || run.status;
+}
+
+function taskRunMessage(run: TeamRunState, taskId: string): string {
+  return run.taskStates[taskId]?.progress.message || "暂无阶段消息";
+}
+
+function taskRunAttempts(run: TeamRunState, taskId: string): number {
+  return run.taskStates[taskId]?.attemptCount ?? 0;
+}
+
+function taskRunElapsed(run: TeamRunState): string {
+  return elapsedText(run.startedAt ?? run.createdAt, run.finishedAt).replace(/^耗时\s*/, "");
 }
 
 function formatRoleProcessStatus(status?: TeamAttemptRoleProcessStatus): string {
@@ -213,169 +209,6 @@ function formatAssistantText(raw: string): { lines: string[]; hiddenLineCount: n
   return { lines: visible, hiddenLineCount: lines.length - maxLines, truncatedLineCount };
 }
 
-function compareEntryTime(a: string, b: string): number {
-  const aTime = Date.parse(a);
-  const bTime = Date.parse(b);
-  if (!Number.isFinite(aTime) && !Number.isFinite(bTime)) return 0;
-  if (!Number.isFinite(aTime)) return -1;
-  if (!Number.isFinite(bTime)) return 1;
-  return aTime - bTime;
-}
-
-function resolveToolGroupStatus(entries: AgentChatProcessEntry[], isEvent: boolean): ProcessToolGroupStatus {
-  if (isEvent) return "event";
-  if (entries.some((entry) => entry.isError || entry.kind === "error")) return "failed";
-  if (entries.some((entry) => entry.kind === "ok")) return "finished";
-  return "running";
-}
-
-function buildToolGroups(entries: AgentChatProcessEntry[]): ProcessToolGroup[] {
-  const groups: ProcessToolGroup[] = [];
-  const groupsById = new Map<string, ProcessToolGroup>();
-  for (const entry of entries) {
-    const isEvent = !entry.toolCallId;
-    const id = entry.toolCallId ?? `event:${entry.id}`;
-    let group = groupsById.get(id);
-    if (!group) {
-      group = {
-        id,
-        toolName: isEvent ? "普通事件" : entry.toolName || "tool",
-        entries: [],
-        status: "running",
-        isEvent,
-        latestCreatedAt: entry.createdAt,
-        order: groups.length,
-      };
-      groupsById.set(id, group);
-      groups.push(group);
-    }
-    group.entries.push(entry);
-    if (compareEntryTime(entry.createdAt, group.latestCreatedAt) >= 0) {
-      group.latestCreatedAt = entry.createdAt;
-      if (!group.isEvent && entry.toolName) group.toolName = entry.toolName;
-    }
-    group.status = resolveToolGroupStatus(group.entries, group.isEvent);
-  }
-  return groups;
-}
-
-function latestToolGroup(
-  groups: ProcessToolGroup[],
-  predicate: (group: ProcessToolGroup) => boolean,
-): ProcessToolGroup | null {
-  return groups.reduce<ProcessToolGroup | null>((latest, group) => {
-    if (!predicate(group)) return latest;
-    if (!latest) return group;
-    const timeComparison = compareEntryTime(group.latestCreatedAt, latest.latestCreatedAt);
-    if (timeComparison > 0) return group;
-    if (timeComparison === 0 && group.order > latest.order) return group;
-    return latest;
-  }, null);
-}
-
-function recentToolGroupsFirst(a: ProcessToolGroup, b: ProcessToolGroup): number {
-  const timeComparison = compareEntryTime(b.latestCreatedAt, a.latestCreatedAt);
-  if (timeComparison !== 0) return timeComparison;
-  return b.order - a.order;
-}
-
-function recentEntries(entries: AgentChatProcessEntry[]): AgentChatProcessEntry[] {
-  if (entries.length <= PROCESS_MAX_ENTRIES_PER_GROUP) return entries;
-  return entries
-    .map((entry, order) => ({ entry, order }))
-    .sort((a, b) => {
-      const timeComparison = compareEntryTime(a.entry.createdAt, b.entry.createdAt);
-      if (timeComparison !== 0) return timeComparison;
-      return a.order - b.order;
-    })
-    .slice(-PROCESS_MAX_ENTRIES_PER_GROUP)
-    .map((item) => item.entry);
-}
-
-function applyProcessToolBudget(
-  groups: ProcessToolGroup[],
-  roleProcess: TeamAttemptRoleProcess | undefined,
-): ProcessToolGroupBudget {
-  const maxGroups = PROCESS_VISIBLE_TOOL_GROUPS;
-  const selectedIds = new Set<string>();
-  const addGroup = (group: ProcessToolGroup | null) => {
-    if (group && selectedIds.size < maxGroups) selectedIds.add(group.id);
-  };
-
-  if (roleProcess?.status === "running") {
-    addGroup(latestToolGroup(groups, (group) => !group.isEvent && group.status === "running"));
-  }
-  if (isTerminalRoleProcess(roleProcess?.status)) {
-    addGroup(latestToolGroup(groups, (group) => (
-      !group.isEvent && (group.status === "finished" || group.status === "failed")
-    )));
-  }
-
-  for (const group of [...groups].sort(recentToolGroupsFirst)) {
-    if (selectedIds.size >= maxGroups) break;
-    selectedIds.add(group.id);
-  }
-
-  const visibleGroups = groups
-    .filter((group) => selectedIds.has(group.id))
-    .map<ProcessToolGroupView>((group) => {
-      const entries = recentEntries(group.entries);
-      return {
-        ...group,
-        entries,
-        totalEntryCount: group.entries.length,
-        hiddenEntryCount: group.entries.length - entries.length,
-      };
-    });
-  const hiddenGroupEntryCount = groups
-    .filter((group) => !selectedIds.has(group.id))
-    .reduce((total, group) => total + group.entries.length, 0);
-  const visibleHiddenEntryCount = visibleGroups
-    .reduce((total, group) => total + group.hiddenEntryCount, 0);
-
-  return {
-    groups: visibleGroups,
-    hiddenGroupCount: groups.length - visibleGroups.length,
-    hiddenEntryCount: hiddenGroupEntryCount + visibleHiddenEntryCount,
-  };
-}
-
-function formatToolGroupStatus(status: ProcessToolGroupStatus): string {
-  switch (status) {
-    case "running": return "执行中";
-    case "finished": return "完成";
-    case "failed": return "失败";
-    case "event": return "事件";
-  }
-}
-
-function isTerminalRoleProcess(status: TeamAttemptRoleProcessStatus | undefined): boolean {
-  return status === "succeeded" || status === "failed" || status === "cancelled";
-}
-
-function isToolGroupDefaultExpanded(
-  group: ProcessToolGroup,
-  roleProcess: TeamAttemptRoleProcess | undefined,
-  groups: ProcessToolGroup[],
-): boolean {
-  if (group.isEvent) return true;
-  if (roleProcess?.status === "running" && group.status === "running") return true;
-  if (!isTerminalRoleProcess(roleProcess?.status)) return false;
-  if (group.status !== "finished" && group.status !== "failed") return false;
-  const terminalToolGroups = groups.filter((candidate) => (
-    !candidate.isEvent && (candidate.status === "finished" || candidate.status === "failed")
-  ));
-  const latest = terminalToolGroups.reduce<ProcessToolGroup | null>((current, candidate) => {
-    if (!current) return candidate;
-    return compareEntryTime(candidate.latestCreatedAt, current.latestCreatedAt) >= 0 ? candidate : current;
-  }, null);
-  return latest?.id === group.id;
-}
-
-function processToolGroupStateKey(runId: string, role: TeamAttemptRoleProcessRole, groupId: string): string {
-  return `${runId}:${role}:${groupId}`;
-}
-
 function selectLatestAttempt(attempts: TeamAttemptMetadata[]): TeamAttemptMetadata | null {
   if (attempts.length === 0) return null;
   return attempts.reduce((latest, attempt) => {
@@ -390,14 +223,9 @@ function selectLatestAttempt(attempts: TeamAttemptMetadata[]): TeamAttemptMetada
 function renderRoleProcessNode(
   role: TeamAttemptRoleProcessRole,
   roleProcess: TeamAttemptRoleProcess | undefined,
-  runId: string,
-  expandedToolGroups: Record<string, boolean>,
-  onToggleToolGroup: (key: string, expanded: boolean) => void,
 ): ReactNode {
   const process = roleProcess?.process ?? null;
   const status = roleProcess?.status ?? "waiting";
-  const budget = applyProcessToolBudget(buildToolGroups(process?.entries ?? []), roleProcess);
-  const groups = budget.groups;
   const assistantFormatted = roleProcess?.assistantText?.content
     ? formatAssistantText(roleProcess.assistantText.content)
     : null;
@@ -441,56 +269,6 @@ function renderRoleProcessNode(
           </>
         )}
       </div>
-      {groups.length > 0 ? (
-        <>
-          {(budget.hiddenGroupCount > 0 || budget.hiddenEntryCount > 0) && (
-            <div className="emap-process-budget-note">
-              仅显示最近 {PROCESS_VISIBLE_TOOL_GROUPS} 组；已隐藏 {budget.hiddenGroupCount} 组 / {budget.hiddenEntryCount} 条
-            </div>
-          )}
-          <div className="emap-process-tool-groups is-scrollable">
-            {groups.map((group) => {
-              const stateKey = processToolGroupStateKey(runId, role, group.id);
-              const expanded = expandedToolGroups[stateKey] ?? isToolGroupDefaultExpanded(group, roleProcess, groups);
-              return (
-                <section
-                  key={group.id}
-                  className={`emap-process-tool-group ${group.status} ${expanded ? "expanded" : "collapsed"}`}
-                  data-tool-group-id={group.id}
-                >
-                  <button
-                    type="button"
-                    className="emap-process-tool-group-header"
-                    aria-expanded={expanded}
-                    onClick={() => onToggleToolGroup(stateKey, expanded)}
-                  >
-                    <span className="emap-process-tool-name">{group.toolName}</span>
-                    <span className={`emap-process-tool-status ${group.status}`}>{formatToolGroupStatus(group.status)}</span>
-                    <span className="emap-process-tool-count">{group.totalEntryCount}</span>
-                  </button>
-                  {expanded && (
-                    <div className="emap-process-tool-entry-list">
-                      {group.hiddenEntryCount > 0 && (
-                        <div className="emap-process-entry-budget-note">
-                          已隐藏 {group.hiddenEntryCount} 条，仅显示最近 {PROCESS_MAX_ENTRIES_PER_GROUP} 条
-                        </div>
-                      )}
-                      {group.entries.map((entry) => (
-                        <article key={entry.id} className={`emap-process-tool-entry ${entry.kind}`}>
-                          <div className="emap-process-tool-entry-title">{entry.title}</div>
-                          {entry.detail && <pre className="emap-process-tool-entry-detail">{entry.detail}</pre>}
-                        </article>
-                      ))}
-                    </div>
-                  )}
-                </section>
-              );
-            })}
-          </div>
-        </>
-      ) : (
-        <div className="emap-observer-process-empty">暂无过程条目</div>
-      )}
     </section>
   );
 }
@@ -821,10 +599,11 @@ export function App() {
   const [agentNodes, setAgentNodes] = useState<AtlasAgentNode[]>([]);
   const [liveAgentNodesHydrated, setLiveAgentNodesHydrated] = useState(false);
   const [tasks, setTasks] = useState<TeamCanvasTask[]>([]);
+  const [taskConnections, setTaskConnections] = useState<TeamTaskConnection[]>([]);
+  const [taskConnectionDraft, setTaskConnectionDraft] = useState<TaskConnectionDraft | null>(null);
   const [taskRunsByTaskId, setTaskRunsByTaskId] = useState<Record<string, TeamRunState[]>>({});
   const [taskRunSavingByTaskId, setTaskRunSavingByTaskId] = useState<Record<string, boolean>>({});
   const [taskRunObserverByRunId, setTaskRunObserverByRunId] = useState<Record<string, TaskRunObserverState>>({});
-  const [expandedProcessToolGroups, setExpandedProcessToolGroups] = useState<Record<string, boolean>>({});
   const [taskNodes, setTaskNodes] = useState<AtlasTaskNode[]>([]);
   const [liveTaskNodesHydrated, setLiveTaskNodesHydrated] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
@@ -948,8 +727,13 @@ export function App() {
       setLiveTasksRefreshing(true);
       try {
         const api = new LiveTeamApi();
-        const nextTasks = await api.listTasks();
+        const [nextTasks, nextConnections] = await Promise.all([
+          api.listTasks(),
+          api.listTaskConnections(),
+        ]);
         applyLiveTasks(nextTasks);
+        setTaskConnections(nextConnections);
+        setTaskConnectionDraft(null);
         await loadTaskRunsForTasks(api, nextTasks);
         setError(null);
       } finally {
@@ -975,6 +759,8 @@ export function App() {
       setRun(null);
       setSelectedTaskId(null);
       setAttemptsByTaskId({});
+      setTaskConnections([]);
+      setTaskConnectionDraft(null);
       setTaskRunsByTaskId({});
       setTaskRunSavingByTaskId({});
       setTaskRunObserverByRunId({});
@@ -990,6 +776,8 @@ export function App() {
     setRun(entry.run);
     setSelectedTaskId(null);
     setAttemptsByTaskId({});
+    setTaskConnections([]);
+    setTaskConnectionDraft(null);
     setTaskRunsByTaskId({});
     setTaskRunSavingByTaskId({});
     setTaskRunObserverByRunId({});
@@ -1026,6 +814,8 @@ export function App() {
       setAgentRunStatusById(agentRunStatusRecord(MOCK_AGENT_RUN_STATUSES));
       setTasks(mockTeamTasks);
       setTaskNodes(makeTaskNodes(mockTeamTasks));
+      setTaskConnections([]);
+      setTaskConnectionDraft(null);
       setTaskRunsByTaskId({});
       setTaskRunObserverByRunId({});
       return () => {
@@ -1038,6 +828,8 @@ export function App() {
     setTaskLeaderPickerOpen(false);
     setAgentRunStatusById({});
     setTasks([]);
+    setTaskConnections([]);
+    setTaskConnectionDraft(null);
     setTaskRunsByTaskId({});
     setTaskRunSavingByTaskId({});
     setTaskRunObserverByRunId({});
@@ -1046,15 +838,17 @@ export function App() {
 
     async function loadLiveWorkspace() {
       try {
-        const [nextAgents, nextStatuses, nextTasks] = await Promise.all([
+        const [nextAgents, nextStatuses, nextTasks, nextConnections] = await Promise.all([
           api.listAgents(),
           api.listAgentRunStatuses(),
           api.listTasks(),
+          api.listTaskConnections(),
         ]);
         if (!cancelled) {
           setAgents(nextAgents);
           setAgentRunStatusById(agentRunStatusRecord(nextStatuses));
           applyLiveTasks(nextTasks);
+          setTaskConnections(nextConnections);
           void loadTaskRunsForTasks(api, nextTasks);
         }
       } catch (e) {
@@ -1258,6 +1052,15 @@ export function App() {
     } : current);
   }, [clearTaskPanelState]);
 
+  const closeTaskRunObserverBranch = useCallback(() => {
+    setExpandedTaskBranch((current) => current ? {
+      ...current,
+      detailMode: null,
+      observedRunId: undefined,
+      selectedFileKey: null,
+    } : current);
+  }, []);
+
   const saveTaskEdit = useCallback(async () => {
     if (!expandedTask || !taskEditDraft || taskEditDraft.taskId !== expandedTask.taskId) return;
 
@@ -1351,6 +1154,47 @@ export function App() {
     }
   }, [dataSource, expandedTask]);
 
+  const beginTaskPortConnection = useCallback((taskId: string, port: TeamTaskOutputPort) => {
+    setTaskConnectionDraft({
+      fromTaskId: taskId,
+      fromOutputPortId: port.id,
+      type: port.type,
+    });
+    setError(null);
+  }, []);
+
+  const completeTaskPortConnection = useCallback(async (taskId: string, port: TeamTaskInputPort) => {
+    if (!taskConnectionDraft) {
+      setError("请先选择一个输出端口");
+      return;
+    }
+    if (taskConnectionDraft.fromTaskId === taskId) {
+      setError("不能把 Task 输出连接回自己");
+      return;
+    }
+    if (taskConnectionDraft.type !== port.type) {
+      setError(`端口类型不匹配: ${taskConnectionDraft.type} -> ${port.type}`);
+      return;
+    }
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      const connection = await api.createTaskConnection({
+        fromTaskId: taskConnectionDraft.fromTaskId,
+        fromOutputPortId: taskConnectionDraft.fromOutputPortId,
+        toTaskId: taskId,
+        toInputPortId: port.id,
+      });
+      setTaskConnections((current) => [
+        ...current.filter((candidate) => candidate.connectionId !== connection.connectionId),
+        connection,
+      ]);
+      setTaskConnectionDraft(null);
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }, [dataSource, taskConnectionDraft]);
+
   const cancelExpandedTaskRun = useCallback(async () => {
     if (!expandedTask || !activeExpandedTaskRun) return;
     const taskId = expandedTask.taskId;
@@ -1366,13 +1210,6 @@ export function App() {
       setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: false }));
     }
   }, [activeExpandedTaskRun, dataSource, expandedTask]);
-
-  const toggleProcessToolGroup = useCallback((key: string, expanded: boolean) => {
-    setExpandedProcessToolGroups((current) => ({
-      ...current,
-      [key]: !expanded,
-    }));
-  }, []);
 
   useEffect(() => {
     if (activeCanvasTaskRunIds.length === 0) return;
@@ -1649,6 +1486,11 @@ export function App() {
   const latestExpandedTaskRunSummaryLabel = latestExpandedTaskRun && isActiveRun(latestExpandedTaskRun.status)
     ? "运行中"
     : "最近运行";
+  const latestExpandedTaskRunIsObserved = Boolean(
+    latestExpandedTaskRun
+      && expandedTaskDetailMode === "run-observer"
+      && expandedTaskBranch?.observedRunId === latestExpandedTaskRun.runId,
+  );
   const expandedTaskBranchPanel = expandedTaskNode && expandedTask ? (
     <section className="task-leader-branch task-action-branch emap-menu-branch" aria-label={`${expandedTask.title} Task 操作`}>
       <header className="task-leader-branch-head">
@@ -1694,13 +1536,25 @@ export function App() {
           <button
             type="button"
             className="task-run-summary"
-            aria-label={`${expandedTask.title} ${latestExpandedTaskRunSummaryLabel} ${RUN_STATUS_LABELS[latestExpandedTaskRun.status]}`}
-            onClick={() => openTaskRunObserverBranch(latestExpandedTaskRun.runId)}
+            aria-label={`${expandedTask.title} ${latestExpandedTaskRunSummaryLabel} ${RUN_STATUS_LABELS[latestExpandedTaskRun.status]} 阶段 ${taskRunPhase(latestExpandedTaskRun, expandedTask.taskId)}`}
+            onClick={() => (
+              latestExpandedTaskRunIsObserved
+                ? closeTaskRunObserverBranch()
+                : openTaskRunObserverBranch(latestExpandedTaskRun.runId)
+            )}
           >
-            <span>{latestExpandedTaskRunSummaryLabel}</span>
-            <strong>{RUN_STATUS_LABELS[latestExpandedTaskRun.status]}</strong>
+            <span className="task-run-summary-kicker">{latestExpandedTaskRunSummaryLabel}</span>
+            <span className="task-run-summary-head">
+              <strong>{RUN_STATUS_LABELS[latestExpandedTaskRun.status]}</strong>
+              <em>{latestExpandedTaskRunIsObserved ? "收起输出" : "查看输出"}</em>
+            </span>
+            <span className="task-run-summary-metrics">
+              <span><b>阶段</b><strong>{taskRunPhase(latestExpandedTaskRun, expandedTask.taskId)}</strong></span>
+              <span><b>耗时</b><strong>{taskRunElapsed(latestExpandedTaskRun)}</strong></span>
+              <span><b>Attempts</b><strong>{taskRunAttempts(latestExpandedTaskRun, expandedTask.taskId)}</strong></span>
+            </span>
+            <span className="task-run-summary-message">{taskRunMessage(latestExpandedTaskRun, expandedTask.taskId)}</span>
             <code>{latestExpandedTaskRun.runId}</code>
-            <em>查看输出</em>
           </button>
         )}
         <button
@@ -1919,39 +1773,6 @@ export function App() {
     if (expandedTaskDetailMode !== "run-observer" || !observedTaskRun || !expandedTask) return [];
     const observedTaskRunIsActive = isActiveRun(observedTaskRun.status);
     const panels: Array<{ id: string; panel: ReactNode; width?: number; height?: number; sourceId?: string; autoHeight?: boolean; resizable?: boolean; minWidth?: number; minHeight?: number }> = [];
-    panels.push({
-      id: "run-status",
-      width: 300,
-      autoHeight: true,
-      sourceId: undefined,
-      panel: (
-        <section className="emap-observer-node emap-observer-status-node" aria-label="Run 状态">
-          <header className="emap-observer-node-head">
-            <span className="emap-observer-node-label">Run 状态</span>
-            <button
-              type="button"
-              className="emap-observer-node-close"
-              onClick={() => setExpandedTaskBranch((current) => current ? { ...current, detailMode: null, observedRunId: undefined, selectedFileKey: null } : current)}
-              aria-label="收起 Run 观察"
-            >
-              收起
-            </button>
-          </header>
-          <div className="emap-observer-status-body">
-            <strong className="emap-observer-status-value">{RUN_STATUS_LABELS[observedTaskRun.status]}</strong>
-            <div className="emap-observer-metrics">
-              <div><span>阶段</span><strong>{observedTaskRun.taskStates[expandedTask.taskId]?.progress.phase || observedTaskRun.status}</strong></div>
-              <div><span>耗时</span><strong>{elapsedText(observedTaskRun.startedAt ?? observedTaskRun.createdAt, observedTaskRun.finishedAt).replace(/^耗时\s*/, "")}</strong></div>
-              <div><span>Attempts</span><strong>{observedTaskRunAttempts.length}</strong></div>
-            </div>
-            <p className="emap-observer-status-message">{observedTaskRun.taskStates[expandedTask.taskId]?.progress.message || "暂无阶段消息"}</p>
-            {!observedTaskRunIsActive && observedTaskRunState?.error && <div className="emap-observer-error" role="status">{observedTaskRunState.error}</div>}
-            {!observedTaskRunIsActive && observedTaskRunState?.loading && <div className="emap-observer-loading" role="status">正在刷新...</div>}
-            {!observedTaskRunIsActive && observedTaskRunState?.lastUpdatedAt && <div className="emap-observer-updated">最后刷新 {new Date(observedTaskRunState.lastUpdatedAt).toLocaleTimeString()}</div>}
-          </div>
-        </section>
-      ),
-    });
     for (const role of TASK_RUN_PROCESS_ROLES) {
       panels.push({
         id: `process-${role}`,
@@ -1961,9 +1782,6 @@ export function App() {
         panel: renderRoleProcessNode(
           role,
           latestObservedAttempt?.roleProcesses?.[role],
-          observedTaskRun.runId,
-          expandedProcessToolGroups,
-          toggleProcessToolGroup,
         ),
       });
     }
@@ -2048,7 +1866,6 @@ export function App() {
     expandedTaskDetailMode, observedTaskRun, expandedTask, observerFileDescriptors,
     selectedObserverFileKey, selectedObserverFileDescriptor, selectedObserverFileState,
     observedTaskRunState, observedTaskRunAttempts, latestObservedAttempt, toggleObserverFile, agentsById,
-    expandedProcessToolGroups, toggleProcessToolGroup,
   ]);
 
   return (
@@ -2148,10 +1965,14 @@ export function App() {
                 agentBranchPanel={expandedAgentBranchPanel}
                 taskNodes={taskNodes}
                 tasksById={tasksById}
+                taskConnections={taskConnections}
+                taskConnectionDraft={taskConnectionDraft}
                 taskRunsByTaskId={taskRunsByTaskId}
                 focusedTaskNodeId={expandedTaskNode?.nodeId ?? null}
                 onSelectCanvasTask={toggleTaskBranch}
                 onMoveCanvasTask={moveTaskNode}
+                onTaskOutputPortSelect={beginTaskPortConnection}
+                onTaskInputPortSelect={completeTaskPortConnection}
                 taskBranchPanel={expandedTaskBranchPanel}
                 taskChildBranchPanel={expandedTaskChildBranchPanel}
                 taskChildBranchInteractive={expandedTaskDetailMode === "leader-chat" || expandedTaskDetailMode === "edit"}

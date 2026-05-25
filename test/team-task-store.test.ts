@@ -47,6 +47,69 @@ test("TaskStore creates a valid independent canvas task with one WorkUnit", asyn
 	}
 });
 
+test("TaskStore preserves typed input and output ports on a WorkUnit", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-store-"));
+	try {
+		const store = createStore(root);
+		const task = await store.create({
+			...validTaskInput,
+			workUnit: {
+				...validTaskInput.workUnit,
+				inputPorts: [{ id: "source_md", label: "Markdown 文稿", type: "md" }],
+				outputPorts: [
+					{ id: "page_html", label: "HTML 页面", type: "html" },
+					{ id: "voice_audio", label: "TTS 音频", type: "audio" },
+				],
+			},
+		});
+
+		assert.deepEqual(task.workUnit.inputPorts, [{ id: "source_md", label: "Markdown 文稿", type: "md" }]);
+		assert.deepEqual(task.workUnit.outputPorts, [
+			{ id: "page_html", label: "HTML 页面", type: "html" },
+			{ id: "voice_audio", label: "TTS 音频", type: "audio" },
+		]);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("TaskStore rejects invalid or duplicate WorkUnit ports", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-store-"));
+	try {
+		const store = createStore(root);
+
+		await assert.rejects(
+			() => store.create({
+				...validTaskInput,
+				workUnit: { ...validTaskInput.workUnit, outputPorts: [{ id: "bad id", label: "Bad", type: "md" }] },
+			}),
+			{ message: "workUnit.outputPorts[0].id must be a stable identifier" },
+		);
+		await assert.rejects(
+			() => store.create({
+				...validTaskInput,
+				workUnit: { ...validTaskInput.workUnit, inputPorts: [{ id: "source", label: "Source", type: "" }] },
+			}),
+			{ message: "workUnit.inputPorts[0].type is required" },
+		);
+		await assert.rejects(
+			() => store.create({
+				...validTaskInput,
+				workUnit: {
+					...validTaskInput.workUnit,
+					outputPorts: [
+						{ id: "result", label: "Result", type: "md" },
+						{ id: "result", label: "Duplicate", type: "html" },
+					],
+				},
+			}),
+			{ message: "workUnit.outputPorts contains duplicate port id: result" },
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("TaskStore rejects missing or unknown leader, worker, and checker agents", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-task-store-"));
 	try {

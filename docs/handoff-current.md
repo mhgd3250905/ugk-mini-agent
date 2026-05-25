@@ -1,6 +1,6 @@
 # 当前交接快照
 
-更新时间：`2026-05-25`
+更新时间：`2026-05-26`
 
 这份文档给新接手 `ugk-pi / UGK CLAW` 的 coding agent 看。它只记录当前稳定事实和接手入口；历史流水账看 `docs/change-log.md`。不要靠聊天记录拼现状，聊天上下文太肥时最容易把旧计划当新任务，挺蠢，也挺危险。
 
@@ -29,32 +29,58 @@
 
 注意：远端 Git 已更新不等于生产服务器已部署。服务器更新仍要按 `docs/server-ops.md` 的增量流程执行，不能把 push 当上线。
 
-## 2026-05-25 Team Console Task / WorkUnit 雏形备份
+## 2026-05-26 Team Console Task / WorkUnit 提交快照
 
 当前 Team Console Task 功能雏形已经在独立 worktree 收口：
 
 - Worktree：`E:\AII\ugk-pi\.worktrees\team-console-workunit-redesign`
 - 分支：`codex/team-console-workunit-redesign`
-- 当前前端备份提交：`a77e5aa feat(team-console): refine task run process nodes`
-- 该 worktree 当前没有 tracked diff；仍有未跟踪 `.codex/plans/*` 和 `.codex/skills/new-chat/`，按边界不要提交。
+- 本轮提交主题：`feat(team-console): add typed task chain v1`
+- 上一个已提交快照：`8bc474a docs(team-console): snapshot task prototype handoff`
+- 上一个功能提交：`a77e5aa feat(team-console): refine task run process nodes`
+- 本轮提交包含 Typed Task Chain V1 源码 / 测试 / 文档，以及 Run observer UI 收口；提交后 tracked 工作区应保持干净。`.codex/plans/*` 和 `.codex/skills/new-chat/` 仍是本地协作文件，按边界不要提交。
 
 当前已完成：
 
 - Team Console 已支持 Task 创建入口、浅编辑、软删除、Leader 对话 iframe、Task run 启动 / 停止和 Run observer。
-- Task run observer 已节点化：Run 状态、Worker 过程、Checker 过程、文件节点、文件详情都是独立 canvas branch node。
-- Worker / Checker 过程节点消费 `attempt.roleProcesses.worker/checker`；有 `assistantText.content` 时优先显示 Agent 自述 / 推理文本，保留换行、中文断句、最多 5 行、单行 200 字符截断；下半区只渲染 1 个最相关 tool group，完整 attempt metadata 不丢。
+- Task run observer 已节点化：Run 状态合并进 Task 操作菜单里的运行摘要区域；Worker 过程、Checker 过程、文件节点、文件详情仍是独立 canvas branch node。
+- Worker / Checker 过程节点消费 `attempt.roleProcesses.worker/checker`；有 `assistantText.content` 时优先显示 Agent 自述 / 推理文本，保留换行、中文断句、最多 5 行、单行 200 字符截断；不再渲染下半区 tool / method 调用明细，完整 attempt metadata 仍由后端保留。
 - 文件节点紧凑展示 Agent 名、文件名和路径；点击文件节点展开右侧详情节点，支持 JSON pretty print、安全 Markdown 渲染和文本 fallback。
-- Task 操作树支持层级拖动：拖 Task 根节点带动菜单和已展开子树；拖菜单带动子节点；拖文件节点带动其文件详情；拖文件详情叶子节点只移动自身。
+- Task 操作树支持层级拖动：拖 Task 根节点带动菜单和已展开子树；拖菜单带动 observer 子节点；拖过程节点只移动自身；拖文件节点带动其文件详情；拖文件详情叶子节点只移动自身。
 - 运行中 observer 已收掉高频视觉噪音：不显示空文件占位、`正在刷新...`、`最后刷新`，active poll 瞬时失败不插红色错误节点；拖动 / resize 期间暂停 Task branch / child panel auto-height measurement，降低轮询刷新导致的卡顿和闪烁。
+- Typed Task Chain V1 已建立最小积木契约：WorkUnit 可声明 `inputPorts` / `outputPorts`，连接数据为 `fromTaskId/fromOutputPortId -> toTaskId/toInputPortId`，后端校验 `output.type === input.type`、非重复、非自连接、非环。
+- Team Console Task 卡片会展示 typed ports；点击 output port 后只能连到同类型 input port，连接成功后画布渲染 Task connection path。
+- 上游 Canvas Task run 成功并通过 checker 后，后端会把 `accepted-result.md` 封装成 typed artifact，并作为 `boundInputs` 自动启动下游 Task run；下游 run 的 `source.triggeredBy` 记录来源 connection / upstream run。
+- Live API 兼容仍指向旧 Docker 主服务的开发现场：`GET /v1/team/task-connections` 404 时前端当作空连接列表，避免 Agent / Task catalog 和“创建 Task”入口被打挂；但真正连线和自动下游触发仍需要当前 worktree 后端或已集成该 endpoint 的服务。
+- V1 边界保持克制：不做任意复杂自由画布编排、条件分支、循环、真实 TTS 或 SSE；第一条真实验收链路是“搜集内容 Task 输出 `md` -> HTML 制作 Task 输入 `md`、输出 `html`”。
 
 验证记录：
+
+上一个已提交快照验证：
 
 - `npm --prefix apps/team-console run test`：325 passed
 - `npm --prefix apps/team-console run build`：通过
 - `npx tsc --noEmit`：通过
 - `git diff --check`：通过
 - touched files EOL：`i/lf w/lf`
-- 浏览器冒烟：`http://127.0.0.1:5174/` mock Task run 中 Worker / Checker 自述分行显示，下半区只显示最近 1 个 group，console 无 error / warn
+- 浏览器冒烟：`http://127.0.0.1:5174/` mock Task run 中 Worker / Checker 自述分行显示，过程节点不再显示下半区 tool / method 调用明细，console 无 error / warn
+
+本轮 Typed Task Chain V1 验证：
+
+- `node --test --import tsx test/team-task-store.test.ts test/team-task-routes.test.ts test/team-task-run-routes.test.ts`：20 passed
+- `npm --prefix apps/team-console run test`：329 passed
+- `npm --prefix apps/team-console run build`：通过
+- `npx tsc --noEmit`：通过
+- `git diff --check`：通过
+- 浏览器冒烟：`http://127.0.0.1:5174/` mock 模式可见 Task typed port chip（`输出 Markdown 报告 md`）；当前 mock fixture 只有一个 output port Task，不生成 connection path；console 无应用错误 / warn，仅 `favicon.ico` 404。
+
+本轮 Run 状态合并到 Task 菜单验证：
+
+- `npm --prefix apps/team-console run test`：331 passed
+- `npm --prefix apps/team-console run build`：通过
+- `npx tsc --noEmit`：通过
+- `git diff --check`：通过
+- 浏览器冒烟：`http://127.0.0.1:5174/` Live API 当前 Task run 中，`.task-run-summary` 展示运行状态、阶段、耗时、Attempts、进度消息和 run id；`.emap-observer-status-node` 为 0；Worker / Checker 过程节点仍存在；拖动 Worker 过程节点后位置更新；console 无 error / warn。
 
 集成注意：
 
