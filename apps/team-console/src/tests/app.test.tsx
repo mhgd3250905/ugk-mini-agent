@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
 import { makeSequentialPlan, makeSequentialRun, mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
+import type { TeamAttemptMetadata, TeamCanvasTask, TeamRunState } from "../api/team-types";
 
 function getAtlas(container: HTMLElement): HTMLElement {
   const atlas = container.querySelector(".execution-map-container") as HTMLElement | null;
@@ -65,6 +66,53 @@ function cloneTaskFixture(task = mockTeamTasks[0]!) {
       outputContract: { ...task.workUnit.outputContract },
       acceptance: { rules: [...task.workUnit.acceptance.rules] },
     },
+  };
+}
+
+function makeLiveTaskRunFixture(task: TeamCanvasTask, runId = "live-task-run-1"): TeamRunState {
+  return {
+    runId,
+    planId: `canvas_task_${task.taskId}`,
+    source: { type: "canvas-task", taskId: task.taskId },
+    teamUnitId: `canvas_task_unit_${task.taskId}`,
+    status: "completed",
+    createdAt: "2026-05-25T00:00:00.000Z",
+    startedAt: "2026-05-25T00:00:01.000Z",
+    finishedAt: "2026-05-25T00:00:05.000Z",
+    currentTaskId: null,
+    taskStates: {
+      [task.taskId]: {
+        status: "succeeded",
+        attemptCount: 1,
+        activeAttemptId: "legacy-attempt-1",
+        resultRef: null,
+        errorSummary: null,
+        progress: {
+          phase: "succeeded",
+          message: "已通过",
+          updatedAt: "2026-05-25T00:00:05.000Z",
+        },
+      },
+    },
+    summary: { totalTasks: 1, succeededTasks: 1, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+  };
+}
+
+function makeLegacyAttemptFixture(task: TeamCanvasTask): TeamAttemptMetadata {
+  return {
+    attemptId: "legacy-attempt-1",
+    taskId: task.taskId,
+    status: "succeeded",
+    phase: "succeeded",
+    createdAt: "2026-05-25T00:00:01.000Z",
+    updatedAt: "2026-05-25T00:00:05.000Z",
+    finishedAt: "2026-05-25T00:00:05.000Z",
+    worker: [],
+    checker: [],
+    watcher: null,
+    resultRef: null,
+    errorSummary: null,
+    files: [],
   };
 }
 
@@ -449,6 +497,103 @@ describe("App", () => {
     });
     expect(within(updatedDetail).getByText("Mock accepted result")).toBeInTheDocument();
     expect(updatedDetail.querySelector('pre[data-file-format="json"]')).toBeNull();
+  });
+
+  it("renders independent Worker and Checker process nodes in the Task run observer", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
+
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    const workerProcessNode = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-process-node[data-process-role="worker"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    const checkerProcessNode = container.querySelector('.emap-observer-process-node[data-process-role="checker"]') as HTMLElement | null;
+    expect(checkerProcessNode).toBeTruthy();
+
+    const workerProcessShell = workerProcessNode.closest(".emap-task-child-branch-shell") as HTMLElement | null;
+    const checkerProcessShell = checkerProcessNode!.closest(".emap-task-child-branch-shell") as HTMLElement | null;
+    expect(workerProcessShell).toBeTruthy();
+    expect(checkerProcessShell).toBeTruthy();
+    expect(workerProcessShell).not.toBe(checkerProcessShell);
+
+    expect(workerProcessNode).not.toHaveClass("emap-observer-file-node");
+    expect(checkerProcessNode).not.toHaveClass("emap-observer-file-node");
+    expect(workerProcessNode.closest(".emap-observer-file-node")).toBeNull();
+    expect(checkerProcessNode!.closest(".emap-observer-file-node")).toBeNull();
+
+    expect(within(workerProcessNode).getByText("Worker 过程")).toBeInTheDocument();
+    expect(within(workerProcessNode).getByText("成功")).toBeInTheDocument();
+    expect(within(workerProcessNode).getByText("整理云资产证据")).toBeInTheDocument();
+    expect(within(workerProcessNode).getByText("Worker 已生成资产调查草稿")).toBeInTheDocument();
+
+    expect(within(checkerProcessNode!).getByText("Checker 过程")).toBeInTheDocument();
+    expect(within(checkerProcessNode!).getByText("成功")).toBeInTheDocument();
+    expect(within(checkerProcessNode!).getByText("复核输出契约")).toBeInTheDocument();
+    expect(within(checkerProcessNode!).getByText("Checker 已确认输出满足验收规则")).toBeInTheDocument();
+  });
+
+  it("keeps the Task run observer usable when legacy attempts have no roleProcesses", async () => {
+    const task = cloneTaskFixture();
+    const taskRun = makeLiveTaskRunFixture(task);
+    const legacyAttempt = makeLegacyAttemptFixture(task);
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [
+            { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+            { agentId: "search", name: "搜索 Agent", description: "搜索" },
+          ],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [task] }), { status: 200 });
+      if (url === `/v1/team/tasks/${task.taskId}/runs`) {
+        return new Response(JSON.stringify({ runs: [taskRun] }), { status: 200 });
+      }
+      if (url === `/v1/team/task-runs/${taskRun.runId}`) {
+        return new Response(JSON.stringify(taskRun), { status: 200 });
+      }
+      if (url === `/v1/team/task-runs/${taskRun.runId}/tasks/${task.taskId}/attempts`) {
+        return new Response(JSON.stringify({ attempts: [legacyAttempt] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+    });
+    const workerProcessNode = container.querySelector('.emap-observer-process-node[data-process-role="worker"]') as HTMLElement | null;
+    const checkerProcessNode = container.querySelector('.emap-observer-process-node[data-process-role="checker"]') as HTMLElement | null;
+    expect(workerProcessNode).toBeTruthy();
+    expect(checkerProcessNode).toBeTruthy();
+    expect(within(workerProcessNode!).getByText("Worker 过程")).toBeInTheDocument();
+    expect(within(checkerProcessNode!).getByText("Checker 过程")).toBeInTheDocument();
+    expect(workerProcessNode).toHaveTextContent("等待过程数据");
+    expect(checkerProcessNode).toHaveTextContent("等待过程数据");
+    expect(workerProcessNode).toHaveTextContent("暂无过程条目");
+    expect(checkerProcessNode).toHaveTextContent("暂无过程条目");
   });
 
   it("renders HTML-like content as text in file detail, not as injected HTML", async () => {

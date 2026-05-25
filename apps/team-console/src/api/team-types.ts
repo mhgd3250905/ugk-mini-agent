@@ -78,6 +78,21 @@ export interface TeamAttemptWatcherSummary {
   runtimeContext?: TeamRoleRuntimeContext;
 }
 
+export type TeamAttemptRoleProcessRole = "worker" | "checker";
+export type TeamAttemptRoleProcessStatus = "waiting" | "running" | "succeeded" | "failed" | "cancelled";
+
+export interface TeamAttemptRoleProcess {
+  role: TeamAttemptRoleProcessRole;
+  profileId: string;
+  status: TeamAttemptRoleProcessStatus;
+  startedAt: string | null;
+  updatedAt: string | null;
+  finishedAt: string | null;
+  process: AgentChatProcess | null;
+}
+
+export type TeamAttemptRoleProcesses = Partial<Record<TeamAttemptRoleProcessRole, TeamAttemptRoleProcess>>;
+
 export interface TeamAttemptMetadata {
   attemptId: string;
   taskId: string;
@@ -92,6 +107,7 @@ export interface TeamAttemptMetadata {
   resultRef: string | null;
   errorSummary: string | null;
   files: string[];
+  roleProcesses?: TeamAttemptRoleProcesses;
 }
 
 export interface TeamTask {

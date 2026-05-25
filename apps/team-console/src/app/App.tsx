@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { AgentRunStatus, AgentSummary, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest, TeamRoleRuntimeContext } from "../api/team-types";
+import type { AgentRunStatus, AgentSummary, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus } from "../api/team-types";
 import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, mockTeamTasks, MockTeamApi } from "../fixtures/team-fixtures";
 import { ExecutionMap, type AtlasAgentNode, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { ROOT_ID } from "../graph/execution-map-layout";
@@ -17,6 +17,11 @@ const DEFAULT_PLAYGROUND_BASE_URL = "http://127.0.0.1:3000";
 const DATA_SOURCE_STORAGE_KEY = "ugk-team-console:data-source";
 const LIVE_AGENT_LAYOUT_STORAGE_KEY = "ugk-team-console:live-agent-layout:v1";
 const LIVE_TASK_LAYOUT_STORAGE_KEY = "ugk-team-console:live-task-layout:v1";
+const TASK_RUN_PROCESS_ROLES: TeamAttemptRoleProcessRole[] = ["worker", "checker"];
+const TASK_RUN_PROCESS_LABELS: Record<TeamAttemptRoleProcessRole, string> = {
+  worker: "Worker 过程",
+  checker: "Checker 过程",
+};
 
 type AgentBranchMode = "chat" | "task-create";
 
@@ -121,6 +126,66 @@ function elapsedText(startedAt: string | null | undefined, finishedAt: string | 
   return `耗时 ${formatDurationMs(safeEnd - start)}`;
 }
 
+function formatRoleProcessStatus(status?: TeamAttemptRoleProcessStatus): string {
+  switch (status) {
+    case "running": return "执行中";
+    case "succeeded": return "成功";
+    case "failed": return "失败";
+    case "cancelled": return "已取消";
+    case "waiting":
+    default: return "等待";
+  }
+}
+
+function getLatestNarration(process: TeamAttemptRoleProcess["process"] | undefined): string {
+  const narration = process?.narration ?? [];
+  const latest = [...narration].reverse().find((item) => item.trim().length > 0);
+  return latest ?? "暂无过程条目";
+}
+
+function selectLatestAttempt(attempts: TeamAttemptMetadata[]): TeamAttemptMetadata | null {
+  if (attempts.length === 0) return null;
+  return attempts.reduce((latest, attempt) => {
+    const latestTime = Date.parse(latest.updatedAt || latest.createdAt);
+    const attemptTime = Date.parse(attempt.updatedAt || attempt.createdAt);
+    if (!Number.isFinite(attemptTime)) return latest;
+    if (!Number.isFinite(latestTime)) return attempt;
+    return attemptTime >= latestTime ? attempt : latest;
+  }, attempts[0]);
+}
+
+function renderRoleProcessNode(
+  role: TeamAttemptRoleProcessRole,
+  roleProcess: TeamAttemptRoleProcess | undefined,
+): ReactNode {
+  const process = roleProcess?.process ?? null;
+  const currentAction = process?.currentAction?.trim() || "等待过程数据";
+  const latestNarration = getLatestNarration(process ?? undefined);
+  const status = roleProcess?.status ?? "waiting";
+  const entries = process?.entries ?? [];
+  return (
+    <section
+      className={`emap-observer-node emap-observer-process-node ${role}`}
+      data-process-role={role}
+      aria-label={TASK_RUN_PROCESS_LABELS[role]}
+    >
+      <header className="emap-observer-node-head emap-observer-process-head">
+        <span className="emap-observer-node-label">{TASK_RUN_PROCESS_LABELS[role]}</span>
+        <span className={`emap-observer-process-status ${status}`}>{formatRoleProcessStatus(status)}</span>
+      </header>
+      <div className="emap-observer-process-top">
+        <div className="emap-observer-process-line">
+          <span>Current action</span>
+          <strong>{currentAction}</strong>
+        </div>
+        <p className="emap-observer-process-narration">{latestNarration}</p>
+      </div>
+      {entries.length === 0 && (
+        <div className="emap-observer-process-empty">暂无过程条目</div>
+      )}
+    </section>
+  );
+}
 
 function fileFormatFromName(fileName: string): "json" | "markdown" | "text" {
   const lower = fileName.toLowerCase();
@@ -1375,6 +1440,7 @@ export function App() {
     </section>
   ) : null;
   const observerFileDescriptors = observedTaskRunAttempts.length > 0 ? buildTaskRunFileDescriptors(observedTaskRunAttempts) : [];
+  const latestObservedAttempt = selectLatestAttempt(observedTaskRunAttempts);
   const selectedObserverFileKey = expandedTaskBranch?.selectedFileKey ?? null;
   const selectedObserverFileDescriptor = selectedObserverFileKey ? observerFileDescriptors.find((d) => d.key === selectedObserverFileKey) ?? null : null;
   const selectedObserverFileState = selectedObserverFileKey ? observedTaskRunState?.files[selectedObserverFileKey] : undefined;
@@ -1568,6 +1634,15 @@ export function App() {
         </section>
       ),
     });
+    for (const role of TASK_RUN_PROCESS_ROLES) {
+      panels.push({
+        id: `process-${role}`,
+        width: 300,
+        autoHeight: true,
+        sourceId: undefined,
+        panel: renderRoleProcessNode(role, latestObservedAttempt?.roleProcesses?.[role]),
+      });
+    }
     for (const descriptor of observerFileDescriptors) {
       const isSelected = selectedObserverFileKey === descriptor.key;
       const agentName = descriptor.runtimeContext
@@ -1648,7 +1723,7 @@ export function App() {
   }, [
     expandedTaskDetailMode, observedTaskRun, expandedTask, observerFileDescriptors,
     selectedObserverFileKey, selectedObserverFileDescriptor, selectedObserverFileState,
-    observedTaskRunState, observedTaskRunAttempts, toggleObserverFile, agentsById,
+    observedTaskRunState, observedTaskRunAttempts, latestObservedAttempt, toggleObserverFile, agentsById,
   ]);
 
   return (
