@@ -9,12 +9,23 @@ async function readSkill(): Promise<string> {
 	return readFile(SKILL_PATH, "utf8");
 }
 
-test("team-task-creator skill requires explicit /team-task activation keyword", async () => {
+test("team-task-creator skill activates for explicit natural-language Task creation intent", async () => {
 	const skill = await readSkill();
 	assert.match(skill, /\/team-task/);
-	assert.match(skill, /MUST activate[\s\S]*\/team-task/);
-	assert.match(skill, /MUST NOT activate automatically/);
+	assert.match(skill, /MUST activate[\s\S]*(create|创建|update|更新)[\s\S]*(Team Console Task|Task|WorkUnit)/i);
+	assert.match(skill, /natural-language|自然语言/i);
+	assert.match(skill, /MUST NOT activate[\s\S]*(run|运行|progress|状态|观察|debug|调试)/i);
 	assert.match(skill, /可以用 `\/team-task/);
+});
+
+test("team-task-creator skill requires typed Task ports in every preview", async () => {
+	const skill = await readSkill();
+	assert.match(skill, /inputPorts/);
+	assert.match(skill, /outputPorts/);
+	assert.match(skill, /typed ports|类型化端口|IN\/OUT/i);
+	assert.match(skill, /empty array|\[\]|空数组/i);
+	assert.match(skill, /md|markdown/i);
+	assert.match(skill, /html/i);
 });
 
 test("team-task-creator skill requires checking Agent catalog before choosing roles", async () => {
@@ -32,6 +43,7 @@ test("team-task-creator skill previews full Task JSON and waits for user confirm
 	assert.match(skill, /preview|预览/i);
 	assert.match(skill, /confirm|确认/i);
 	assert.match(skill, /before calling|before.*API|先.*确认/i);
+	assert.match(skill, /inputPorts[\s\S]*outputPorts|outputPorts[\s\S]*inputPorts/);
 });
 
 test("team-task-creator skill documents Task create and update APIs", async () => {

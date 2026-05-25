@@ -1,6 +1,6 @@
 ---
 name: team-task-creator
-description: Use when and only when the user message contains the explicit keyword "/team-task". This skill guides the Agent through creating or updating Team Console Task drafts via the /v1/team/tasks REST API. If the user merely mentions "task", "任务卡片", WorkUnit, or Team Console without "/team-task", do not activate automatically; tell them they can use `/team-task ...` to start the guarded Task creation flow.
+description: Use when the user message contains "/team-task" or clearly asks to create, update, design, or complete a Team Console Task / WorkUnit / 任务卡片 through natural-language conversation. This skill guides the Agent through guarded Task draft creation via /v1/team/tasks, including typed IN/OUT ports for task-chain connections. Do not use for running Tasks, observing progress, debugging runs, or generic discussion that does not request Task creation or update.
 ---
 
 # Team Task Creator
@@ -9,22 +9,58 @@ Use this skill to create or update Team Console Task draft resources through the
 
 ## Activation Contract
 
-This skill has a strict activation keyword:
+This skill has two activation paths:
 
 - **MUST activate** when the user message contains `/team-task`.
-- **MUST NOT activate automatically** when the user only mentions `task`, `Task`, `任务`, `任务卡片`, `WorkUnit`, `Team Console`, or "我想做个任务".
-- If the user expresses an intent to create a Task without `/team-task`, reply briefly: "可以用 `/team-task ...` 启动 Task 创建流程。" Do not create or update anything yet.
-- Treat `/team-task` as an intent boundary. Once active, stay in Task-draft mode and do not start a run.
+- **MUST activate** when the user clearly asks to create or update a `Team Console Task`, `Task`, `WorkUnit`, `任务卡片`, or `工作单元`, even if they describe it in natural-language conversation instead of using `/team-task`.
+- **MUST NOT activate** for requests to run a Task, observe progress, check status, debug a run, inspect performance, connect existing ports, or discuss Task concepts without creating or updating a Task draft.
+- If the intent is ambiguous, ask one short clarification. You can say: "可以用 `/team-task ...` 启动 Task 创建流程。"
+- Once active, stay in Task-draft mode and do not start a run.
 
 ## Product Model
 
 - `Agent` is the smallest execution-capability unit.
 - `Task` is the smallest Team Console canvas orchestration node.
 - `Task.workUnit` is the single runnable contract inside that Task.
+- `Task.workUnit.inputPorts` and `Task.workUnit.outputPorts` are the typed IN/OUT standard used by task-chain connections.
 - `leaderAgentId` is required. It represents the current/spec-leading Agent that talks with the user before execution, clarifies boundaries, and maintains the WorkUnit draft.
 - `workerAgentId` is required. It is the Agent that will execute the WorkUnit in a future run.
 - `checkerAgentId` is required. It is the Agent that will accept or reject the WorkUnit result in a future run.
 - A Task is not `Plan tasks.length === 1`, not a single-task Plan, and not a TeamUnit.
+
+## Typed Port Contract
+
+Every Task draft preview and API payload must include both arrays:
+
+- `workUnit.inputPorts`: typed artifacts this Task can receive from upstream Tasks. Use an empty array `[]` for source Tasks that do not consume an upstream artifact.
+- `workUnit.outputPorts`: typed artifacts this Task can produce for downstream Tasks. Use an empty array `[]` only when the Task truly has no reusable downstream output.
+
+Do not confuse natural-language fields with ports:
+
+- `workUnit.input.text` tells the worker what to do.
+- `workUnit.outputContract.text` tells the checker what final result to expect.
+- `inputPorts` / `outputPorts` define machine-readable connection points for the canvas.
+
+Port shape:
+
+```json
+{ "id": "source_md", "label": "Markdown 文稿", "type": "md" }
+```
+
+Port rules:
+
+- `id` must be stable ASCII, start with a letter, and use only letters, digits, `_`, or `-`.
+- `type` must be lowercase and stable, such as `md`, `html`, `json`, `text`, `csv`, `pdf`, `image`, or `audio`.
+- `label` should be short user-facing text, usually Chinese.
+- If the user's natural language implies a file or artifact format, infer the matching typed port before previewing JSON.
+- If the format or direction is unclear, ask before previewing. Do not silently omit ports.
+
+Common natural-language mappings:
+
+- "选择中文古诗并输出 Markdown 文件" -> `inputPorts: []`, `outputPorts: [{ "id": "poem_md", "label": "中文古诗 Markdown", "type": "md" }]`
+- "翻译中文 Markdown 文件为英文" -> `inputPorts: [{ "id": "source_md", "label": "中文 Markdown", "type": "md" }]`, `outputPorts: [{ "id": "translated_md", "label": "英文 Markdown", "type": "md" }]`
+- "把 Markdown 做成 HTML 页面" -> `inputPorts: [{ "id": "source_md", "label": "Markdown 文稿", "type": "md" }]`, `outputPorts: [{ "id": "page_html", "label": "HTML 页面", "type": "html" }]`
+- "整理数据并输出 JSON" -> `inputPorts` based on the source, `outputPorts: [{ "id": "result_json", "label": "结构化 JSON", "type": "json" }]`
 
 ## Workflow
 
@@ -36,7 +72,9 @@ Clarify:
 
 - Task title
 - WorkUnit input
+- Typed input ports (`workUnit.inputPorts`)
 - WorkUnit output contract
+- Typed output ports (`workUnit.outputPorts`)
 - Acceptance rules
 - Preferred worker Agent
 - Preferred checker Agent
@@ -69,31 +107,37 @@ Creation preview shape:
 
 ```json
 {
-  "title": "调查 Medtrum 相关云服务器资产",
+  "title": "把中文 Markdown 翻译为英文 Markdown",
   "leaderAgentId": "main",
   "status": "ready",
   "workUnit": {
-    "title": "调查 Medtrum 相关云服务器资产",
+    "title": "把中文 Markdown 翻译为英文 Markdown",
     "input": {
-      "text": "围绕 Medtrum 相关公开云服务器资产进行搜索和证据整理，区分官方、第三方和可疑线索。"
+      "text": "接收一份中文 Markdown 文稿，保留标题层级、列表、引用和表格结构，翻译为自然准确的英文。"
     },
+    "inputPorts": [
+      { "id": "source_md", "label": "中文 Markdown", "type": "md" }
+    ],
+    "outputPorts": [
+      { "id": "translated_md", "label": "英文 Markdown", "type": "md" }
+    ],
     "outputContract": {
-      "text": "输出中文 Markdown 报告，包含发现列表、证据来源、归类判断、风险说明和不确定项。"
+      "text": "输出英文 Markdown 文件，保持原文结构和 Markdown 语法，不额外改写事实。"
     },
     "acceptance": {
       "rules": [
-        "每条发现必须包含来源或搜索线索",
-        "必须区分官方、第三方、可疑和证据不足",
-        "不确定项不能编造成结论"
+        "输出必须是 Markdown 格式",
+        "必须保留原始标题层级、列表、引用和表格结构",
+        "不得新增原文没有的事实或结论"
       ]
     },
-    "workerAgentId": "search",
+    "workerAgentId": "main",
     "checkerAgentId": "main"
   }
 }
 ```
 
-Do not summarize the JSON as prose instead of showing it. The user must see the exact payload shape.
+For a source Task with no upstream input, still include `inputPorts: []`. Do not summarize the JSON as prose instead of showing it. The user must see the exact payload shape, including typed ports.
 
 ### Step 4: Create Task After Confirmation
 
@@ -122,8 +166,9 @@ GET /v1/team/tasks/:taskId
 ```
 
 3. Show the full patch preview and the resulting intended Task shape.
-4. Wait for explicit user confirmation.
-5. Call:
+4. Preserve existing `inputPorts` and `outputPorts` unless the user explicitly changes the Task's IN/OUT standard. Warn when a port id or type change can break existing task-chain connections.
+5. Wait for explicit user confirmation.
+6. Call:
 
 ```
 PATCH /v1/team/tasks/:taskId
@@ -137,6 +182,8 @@ Do not patch archived Tasks. Do not try to edit a locked Task's `workUnit`.
 - `leaderAgentId` must be a real active Agent from `GET /v1/agents`.
 - `workUnit.title` must be specific and non-empty.
 - `workUnit.input.text` must describe the actual work clearly.
+- `workUnit.inputPorts` must be present in every preview and payload; use `[]` when the Task has no typed upstream input.
+- `workUnit.outputPorts` must be present in every preview and payload; use `[]` only when the Task truly has no reusable typed output.
 - `workUnit.outputContract.text` must describe the expected output format and required content.
 - `workUnit.acceptance.rules` must contain at least one concrete, checkable rule.
 - `workUnit.workerAgentId` must be a real active Agent from `GET /v1/agents`.

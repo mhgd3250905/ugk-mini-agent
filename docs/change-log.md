@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-26 — Team Task Creator typed ports 护栏
+
+- **主题**: 更新运行时 `team-task-creator` skill，让自然语言创建 / 更新 Team Console Task 时也必须产出 typed IN/OUT ports。
+- **变更内容**:
+  - `.pi/skills/team-task-creator/SKILL.md` 不再只依赖 `/team-task` 关键字；明确自然语言创建或更新 Task / WorkUnit 的意图也进入 guarded Task draft flow。
+  - Task JSON 预览和 API payload 必须包含 `workUnit.inputPorts` 与 `workUnit.outputPorts`，无上游输入时使用 `[]`，避免新建 Task 只有自然语言 `input/outputContract` 却无法接入 task-chain。
+  - 增加常见自然语言到端口的映射示例，例如 Markdown -> HTML、中文 Markdown -> 英文 Markdown、数据 -> JSON。
+  - `test/team-task-creator-skill.test.ts` 锁定自然语言触发边界和 typed ports 预览要求。
+- **影响范围**: `.pi/skills/team-task-creator/SKILL.md`, `test/team-task-creator-skill.test.ts`, `docs/change-log.md`
+- **边界**: 不改 Team 后端 API，不强制旧 Task 补 ports，不启动或重跑任何 Task。
+
+---
+
 ## 2026-05-26 — Team Console Run 状态合并到 Task 菜单
 
 - **主题**: 按真实 Task run 验收反馈，把单独的 `Run 状态` canvas 子节点收回到 Task 操作菜单里的运行摘要区域。
