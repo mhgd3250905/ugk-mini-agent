@@ -609,6 +609,7 @@ export function ExecutionMap({
   const taskChildBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
   const panelResizeRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startWidth: number; startHeight: number; minWidth: number; minHeight: number } | null>(null);
   const panelDragRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startRect: AgentBranchRect; hasMoved: boolean } | null>(null);
+  const panelDragSuppressClickRef = useRef(false);
 
   if (prevSelectionRef.current !== selectedTaskId) {
     prevSelectionRef.current = selectedTaskId;
@@ -1186,17 +1187,20 @@ export function ExecutionMap({
       entries.push({ rect, sourceId: p.id, parentKey });
       bottomByParent.set(parentKey, y + h);
     }
-    return taskChildBranchPanels.map((p, i) => {
-      const parentEntry = entries[i]!.parentKey === "__menu__"
-        ? null
-        : entries.find((e) => e.sourceId === entries[i]!.parentKey);
+    const finalRects = taskChildBranchPanels.map((p, i) => {
       const baseRect = entries[i]!.rect;
       const posOverride = activePanelIds.has(p.id) ? panelPositionOverrides[p.id] : undefined;
-      const finalRect = posOverride ? { ...baseRect, x: posOverride.x, y: posOverride.y } : baseRect;
+      return posOverride ? { ...baseRect, x: posOverride.x, y: posOverride.y } : baseRect;
+    });
+    return taskChildBranchPanels.map((p, i) => {
+      const parentIdx = entries[i]!.parentKey === "__menu__"
+        ? -1
+        : taskChildBranchPanels.findIndex((pp) => pp.id === entries[i]!.parentKey);
+      const parentFinalRect = parentIdx >= 0 ? finalRects[parentIdx] : taskBranchNode;
       return {
         ...p,
-        rect: finalRect,
-        sourceRect: parentEntry?.rect ?? taskBranchNode,
+        rect: finalRects[i]!,
+        sourceRect: parentFinalRect,
       };
     });
   }, [taskBranchNode, taskChildBranchPanels, panelSizeOverrides, panelMeasuredHeights, panelPositionOverrides]);
@@ -1515,7 +1519,6 @@ export function ExecutionMap({
     if (!canStartPanelDrag(event.target)) return;
     const layoutEntry = taskChildBranchPanelsLayout.find((p) => p.id === panelId);
     if (!layoutEntry) return;
-    event.preventDefault();
     panelDragRef.current = {
       panelId,
       pointerId: event.pointerId,
@@ -1530,12 +1533,12 @@ export function ExecutionMap({
   const movePanelDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = panelDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    event.stopPropagation();
     const scale = viewportScale(viewport);
     const dx = (event.clientX - drag.startClientX) / scale;
     const dy = (event.clientY - drag.startClientY) / scale;
     if (!drag.hasMoved && Math.abs(dx) < AGENT_DRAG_THRESHOLD && Math.abs(dy) < AGENT_DRAG_THRESHOLD) return;
+    event.preventDefault();
+    event.stopPropagation();
     if (!drag.hasMoved) drag.hasMoved = true;
     setPanelPositionOverrides((current) => ({
       ...current,
@@ -1549,8 +1552,11 @@ export function ExecutionMap({
   const endPanelDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = panelDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    event.stopPropagation();
+    if (drag.hasMoved) {
+      event.preventDefault();
+      event.stopPropagation();
+      panelDragSuppressClickRef.current = true;
+    }
     panelDragRef.current = null;
     event.currentTarget.releasePointerCapture?.(event.pointerId);
   }, []);
@@ -1973,6 +1979,12 @@ export function ExecutionMap({
               onPointerMove={(e) => { movePanelDrag(e); if (p.resizable) movePanelResize(e); }}
               onPointerUp={(e) => { endPanelDrag(e); if (p.resizable) endPanelResize(e); }}
               onPointerCancel={(e) => { endPanelDrag(e); if (p.resizable) endPanelResize(e); }}
+              onClickCapture={(e) => {
+                if (panelDragSuppressClickRef.current) {
+                  panelDragSuppressClickRef.current = false;
+                  e.stopPropagation();
+                }
+              }}
               style={{
                 left: p.rect.x,
                 top: p.rect.y,

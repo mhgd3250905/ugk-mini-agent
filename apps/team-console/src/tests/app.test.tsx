@@ -2335,6 +2335,137 @@ describe("App", () => {
     expect(detailNode.querySelector("details")).toBeNull();
   });
 
+  it("expands file detail on normal pointerdown+up without drag movement", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
+
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+    });
+
+    const workerFileNode = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+
+    // pointerdown + pointerup at same position (no move) should NOT suppress click
+    firePointer(workerFileNode, "pointerdown", { pointerId: 80, clientX: 500, clientY: 300 });
+    firePointer(workerFileNode, "pointerup", { pointerId: 80, clientX: 500, clientY: 300, buttons: 0 });
+    fireEvent.click(workerFileNode);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-file-detail-node")).toBeTruthy();
+    });
+  });
+
+  it("suppresses file detail click after drag exceeds threshold", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
+
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+    });
+
+    const workerFileNode = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+
+    // pointerdown + pointermove exceeding threshold + pointerup + click
+    firePointer(workerFileNode, "pointerdown", { pointerId: 81, clientX: 500, clientY: 300 });
+    firePointer(workerFileNode, "pointermove", { pointerId: 81, clientX: 560, clientY: 340 });
+    firePointer(workerFileNode, "pointerup", { pointerId: 81, clientX: 560, clientY: 340, buttons: 0 });
+    // The drag suppress mechanism should swallow this click
+    fireEvent.click(workerFileNode);
+
+    // Detail must NOT appear because click was suppressed after drag
+    expect(container.querySelector(".emap-observer-file-detail-node")).toBeNull();
+  });
+
+  it("detail connector follows file node after drag", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
+
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+    });
+
+    const workerFileNode = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    // Open detail first
+    fireEvent.click(workerFileNode);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-file-detail-node")).toBeTruthy();
+    });
+
+    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
+    const workerShell = allShells().find((s) => s.querySelector('.emap-observer-file-node[data-file-kind="worker"]')) as HTMLElement | undefined;
+    expect(workerShell).toBeTruthy();
+
+    // Drag the file node to a new position
+    const initialLeft = Number.parseFloat(workerShell!.style.left);
+    firePointer(workerFileNode, "pointerdown", { pointerId: 82, clientX: 500, clientY: 300 });
+    firePointer(workerFileNode, "pointermove", { pointerId: 82, clientX: 580, clientY: 360 });
+    firePointer(workerFileNode, "pointerup", { pointerId: 82, clientX: 580, clientY: 360, buttons: 0 });
+
+    const newLeft = Number.parseFloat(workerShell!.style.left);
+    expect(newLeft).toBeCloseTo(initialLeft + 80, 4);
+
+    // Find the detail panel connector and verify its source matches the file node's new position
+    const detailShell = allShells().find((s) => s.querySelector(".emap-observer-file-detail-node")) as HTMLElement | undefined;
+    expect(detailShell).toBeTruthy();
+
+    // After drag, the detail connector's source x should reflect the file node's new position
+    const allConnectors = container.querySelectorAll<SVGPathElement>(".emap-link-task-child-branch");
+    expect(allConnectors.length).toBeGreaterThanOrEqual(2);
+    // The detail panel's connector source x should be file node's new right edge (newLeft + width)
+    const workerWidth = Number.parseFloat(workerShell!.style.width);
+    const expectedSourceX = newLeft + workerWidth;
+    // Check that at least one connector path starts near the expected source x
+    let foundMatchingConnector = false;
+    allConnectors.forEach((path) => {
+      const d = path.getAttribute("d") ?? "";
+      const match = d.match(/^M\s*([\d.]+)/);
+      if (match && Math.abs(Number.parseFloat(match[1]!) - expectedSourceX) < 2) {
+        foundMatchingConnector = true;
+      }
+    });
+    expect(foundMatchingConnector).toBe(true);
+  });
+
   it("removes fixed max-height on detail content areas", async () => {
     const { container } = render(<App />);
 
