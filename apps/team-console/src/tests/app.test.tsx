@@ -736,6 +736,114 @@ describe("App", () => {
     expect(activeGroup).toHaveTextContent("正在搜索 Medtrum 云资产");
   });
 
+  it("renders legacy Live API attempt files while roleProcesses is missing", async () => {
+    const task = cloneTaskFixture();
+    const taskRun = makeLiveTaskRunFixture(task);
+    const attemptId = "legacy-attempt-1";
+    const workerOutputRef = `tasks/${task.taskId}/attempts/${attemptId}/worker-output-legacy.md`;
+    const checkerVerdictRef = `tasks/${task.taskId}/attempts/${attemptId}/checker-verdict-legacy.json`;
+    const resultRef = `tasks/${task.taskId}/attempts/${attemptId}/accepted-result-legacy.md`;
+    const legacyAttempt: TeamAttemptMetadata = {
+      ...makeLegacyAttemptFixture(task),
+      worker: [{
+        outputIndex: 1,
+        outputRef: workerOutputRef,
+        runtimeContext: {
+          requestedProfileId: task.workUnit.workerAgentId,
+          resolvedProfileId: task.workUnit.workerAgentId,
+          fallbackUsed: false,
+          browserId: null,
+          browserScope: `team-task:${task.taskId}:worker`,
+        },
+      }],
+      checker: [{
+        verdict: "pass",
+        reason: "legacy checker accepted",
+        revisionIndex: 1,
+        resultContentRef: null,
+        recordRef: checkerVerdictRef,
+        feedbackRef: null,
+        runtimeContext: {
+          requestedProfileId: task.workUnit.checkerAgentId,
+          resolvedProfileId: task.workUnit.checkerAgentId,
+          fallbackUsed: false,
+          browserId: null,
+          browserScope: `team-task:${task.taskId}:checker`,
+        },
+      }],
+      resultRef,
+      files: ["worker-output-legacy.md", "checker-verdict-legacy.json", "accepted-result-legacy.md"],
+    };
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [
+            { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+            { agentId: "search", name: "搜索 Agent", description: "搜索" },
+          ],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [task] }), { status: 200 });
+      if (url === `/v1/team/tasks/${task.taskId}/runs`) {
+        return new Response(JSON.stringify({ runs: [taskRun] }), { status: 200 });
+      }
+      if (url === `/v1/team/task-runs/${taskRun.runId}`) {
+        return new Response(JSON.stringify(taskRun), { status: 200 });
+      }
+      if (url === `/v1/team/task-runs/${taskRun.runId}/tasks/${task.taskId}/attempts`) {
+        return new Response(JSON.stringify({ attempts: [legacyAttempt] }), { status: 200 });
+      }
+      if (url.endsWith("/files/worker-output-legacy.md")) {
+        return new Response("# Legacy worker output\n\nLive API old attempt file.", { status: 200 });
+      }
+      if (url.endsWith("/files/checker-verdict-legacy.json")) {
+        return new Response(JSON.stringify({ verdict: "pass", reason: "legacy checker accepted" }), { status: 200 });
+      }
+      if (url.endsWith("/files/accepted-result-legacy.md")) {
+        return new Response("# Legacy accepted result", { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+    });
+    const workerProcessNode = container.querySelector('.emap-observer-process-node[data-process-role="worker"]') as HTMLElement | null;
+    const checkerProcessNode = container.querySelector('.emap-observer-process-node[data-process-role="checker"]') as HTMLElement | null;
+    expect(workerProcessNode).toHaveTextContent("等待过程数据");
+    expect(checkerProcessNode).toHaveTextContent("等待过程数据");
+
+    const workerFileNode = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    expect(within(workerFileNode).getByText("worker-output-legacy.md")).toBeInTheDocument();
+    expect(container.querySelector('.emap-observer-file-node[data-file-kind="checker"]')).toHaveTextContent("checker-verdict-legacy.json");
+    expect(container.querySelector('.emap-observer-file-node[data-file-kind="result"]')).toHaveTextContent("accepted-result-legacy.md");
+
+    fireEvent.click(workerFileNode);
+    const detailNode = await waitFor(() => {
+      const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
+      expect(detail).toBeTruthy();
+      return detail!;
+    });
+    expect(detailNode).toHaveTextContent("Legacy worker output");
+  });
+
   it("renders HTML-like content as text in file detail, not as injected HTML", async () => {
     const { container } = render(<App />);
 
