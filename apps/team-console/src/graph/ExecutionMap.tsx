@@ -599,6 +599,7 @@ export function ExecutionMap({
   const [maximizedBranch, setMaximizedBranch] = useState<"agent" | "task-child" | null>(null);
   const [panelSizeOverrides, setPanelSizeOverrides] = useState<Record<string, { width: number; height: number }>>({});
   const [panelPositionOverrides, setPanelPositionOverrides] = useState<Record<string, { x: number; y: number }>>({});
+  const [taskBranchPositionOverrides, setTaskBranchPositionOverrides] = useState<Record<string, { x: number; y: number }>>({});
   const [panelMeasuredHeights, setPanelMeasuredHeights] = useState<Record<string, number>>({});
   const prevSelectionRef = useRef<string | null>(null);
   const taskBranchShellRef = useRef<HTMLDivElement | null>(null);
@@ -1135,12 +1136,16 @@ export function ExecutionMap({
     ? taskBranchMeasuredSize
     : null;
   const taskBranchNode = focusedTaskNode && taskBranchPanel
-    ? {
-      x: focusedTaskNode.position.x + NODE_WIDTH + TASK_BRANCH_GAP,
-      y: Math.max(0, focusedTaskNode.position.y - 16),
-      width: measuredTaskBranchSize?.width ?? TASK_MENU_BRANCH_WIDTH,
-      height: measuredTaskBranchSize?.height ?? TASK_MENU_BRANCH_HEIGHT,
-    }
+    ? (() => {
+      const base = {
+        x: focusedTaskNode.position.x + NODE_WIDTH + TASK_BRANCH_GAP,
+        y: Math.max(0, focusedTaskNode.position.y - 16),
+        width: measuredTaskBranchSize?.width ?? TASK_MENU_BRANCH_WIDTH,
+        height: measuredTaskBranchSize?.height ?? TASK_MENU_BRANCH_HEIGHT,
+      };
+      const posOverride = taskBranchPositionOverrides[focusedTaskNode.nodeId];
+      return posOverride ? { ...base, x: posOverride.x, y: posOverride.y } : base;
+    })()
     : null;
   const taskChildBranchDefaultNode = taskBranchNode
     ? {
@@ -1332,6 +1337,64 @@ export function ExecutionMap({
       });
     }
   }, [taskChildBranchPanels, panelSizeOverrides, panelPositionOverrides]);
+
+  useLayoutEffect(() => {
+    if (!taskBranchPanel && Object.keys(taskBranchPositionOverrides).length > 0) {
+      setTaskBranchPositionOverrides({});
+    }
+  }, [taskBranchPanel, taskBranchPositionOverrides]);
+
+  const translateTaskSubtree = useCallback((
+    scope: "root" | "menu" | { panelId: string },
+    dx: number,
+    dy: number,
+  ) => {
+    const focusedId = focusedTaskNode?.nodeId;
+    if (!focusedId) return;
+
+    let panelIds: string[];
+    if (scope === "root" || scope === "menu") {
+      panelIds = taskChildBranchPanelsLayout.map((p) => p.id);
+    } else {
+      panelIds = [];
+      const collectDescendants = (parentId: string) => {
+        for (const p of taskChildBranchPanelsLayout) {
+          if (p.sourceId === parentId) {
+            panelIds.push(p.id);
+            collectDescendants(p.id);
+          }
+        }
+      };
+      collectDescendants(scope.panelId);
+    }
+
+    if (panelIds.length > 0) {
+      setPanelPositionOverrides((prev) => {
+        const next = { ...prev };
+        for (const panelId of panelIds) {
+          const layout = taskChildBranchPanelsLayout.find((p) => p.id === panelId);
+          if (layout) {
+            next[panelId] = { x: layout.rect.x + dx, y: layout.rect.y + dy };
+          }
+        }
+        return next;
+      });
+    }
+
+    if ((scope === "root" || scope === "menu") && taskChildBranchNode) {
+      setTaskChildBranchRects((prev) => {
+        const current = prev[focusedId] ?? taskChildBranchNode;
+        return { ...prev, [focusedId]: { ...current, x: current.x + dx, y: current.y + dy } };
+      });
+    }
+
+    if (scope === "root" && taskBranchNode) {
+      setTaskBranchPositionOverrides((prev) => ({
+        ...prev,
+        [focusedId]: { x: taskBranchNode.x + dx, y: taskBranchNode.y + dy },
+      }));
+    }
+  }, [focusedTaskNode, taskBranchNode, taskChildBranchNode, taskChildBranchPanelsLayout]);
 
   const beginAgentBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (!focusedAgentNode || !agentBranchNode || !canStartAgentBranchDrag(event.target)) return;
