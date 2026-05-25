@@ -37,6 +37,8 @@ export interface TeamApiProvider {
   createTaskRun(taskId: string): Promise<TeamRunState>;
   getTaskRun(runId: string): Promise<TeamRunState>;
   cancelTaskRun(runId: string): Promise<TeamRunState>;
+  listTaskRunAttempts(runId: string, taskId: string): Promise<TeamAttemptMetadata[]>;
+  readTaskRunAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string): Promise<string>;
   updateTask(taskId: string, patch: TeamTaskUpdateRequest): Promise<TeamTaskMutationResponse>;
   archiveTask(taskId: string): Promise<TeamTaskMutationResponse>;
   getRunDetail(runId: string): Promise<RunDetail>;
@@ -178,6 +180,29 @@ export class LiveTeamApi implements TeamApiProvider {
         throw await responseToApiError(res, `请求失败 (${res.status})`);
       }
       return (await res.json()) as TeamRunState;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async listTaskRunAttempts(runId: string, taskId: string): Promise<TeamAttemptMetadata[]> {
+    try {
+      const res = await fetch(`${this.baseUrl}/task-runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/attempts`);
+      if (!res.ok) throw res;
+      const body = (await res.json()) as { attempts?: TeamAttemptMetadata[] };
+      return Array.isArray(body.attempts) ? body.attempts : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async readTaskRunAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string): Promise<string> {
+    try {
+      const res = await fetch(
+        `${this.baseUrl}/task-runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/attempts/${encodeURIComponent(attemptId)}/files/${encodeURIComponent(fileName)}`,
+      );
+      if (!res.ok) throw res;
+      return await res.text();
     } catch (e) {
       throw toApiError(e);
     }

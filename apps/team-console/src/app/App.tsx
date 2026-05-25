@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { AgentRunStatus, AgentSummary, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest } from "../api/team-types";
+import type { AgentRunStatus, AgentSummary, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest, TeamRoleRuntimeContext } from "../api/team-types";
 import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, mockTeamTasks, MockTeamApi } from "../fixtures/team-fixtures";
 import { ExecutionMap, type AtlasAgentNode, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { ROOT_ID } from "../graph/execution-map-layout";
@@ -25,12 +25,14 @@ type AgentBranchState = {
   mode: AgentBranchMode;
 };
 
-type TaskBranchDetailMode = "leader-chat" | "edit";
+type TaskBranchDetailMode = "leader-chat" | "edit" | "run-observer";
 
 type TaskBranchState = {
   nodeId: string;
   taskId: string;
   detailMode: TaskBranchDetailMode | null;
+  observedRunId?: string;
+  selectedFileKey?: string | null;
 };
 
 type TaskEditDirtyField = "title" | "leaderAgentId" | "workerAgentId" | "checkerAgentId";
@@ -58,12 +60,204 @@ type StoredTaskPosition = {
   position: { x: number; y: number };
 };
 
+type TaskRunObserverFileKind = "worker" | "checker" | "result";
+
+type TaskRunObserverFileDescriptor = {
+  key: string;
+  attemptId: string;
+  kind: TaskRunObserverFileKind;
+  title: string;
+  fileName: string;
+  path: string;
+  runtimeContext?: TeamRoleRuntimeContext;
+  summary?: string;
+};
+
+type TaskRunObserverFileState = {
+  content?: string;
+  error?: string;
+};
+
+type TaskRunObserverState = {
+  loading: boolean;
+  attempts: TeamAttemptMetadata[];
+  files: Record<string, TaskRunObserverFileState>;
+  error: string | null;
+  lastUpdatedAt: string | null;
+};
+
 function errorMessage(error: unknown): string {
   if (error && typeof error === "object" && "message" in error) {
     return String((error as TeamApiError).message);
   }
   if (error instanceof Error) return error.message;
   return "未知错误";
+}
+
+function fileNameFromRef(ref: string | null | undefined): string | null {
+  if (!ref) return null;
+  return ref.split("/").filter(Boolean).at(-1) ?? null;
+}
+
+function formatDurationMs(durationMs: number): string {
+  if (!Number.isFinite(durationMs) || durationMs < 0) return "未知";
+  if (durationMs < 1000) return `${Math.round(durationMs)}ms`;
+  const totalSeconds = Math.round(durationMs / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}秒`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) return seconds > 0 ? `${minutes}分${seconds}秒` : `${minutes}分`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes > 0 ? `${hours}时${remainingMinutes}分` : `${hours}时`;
+}
+
+function elapsedText(startedAt: string | null | undefined, finishedAt: string | null | undefined): string {
+  const start = Date.parse(startedAt ?? "");
+  if (!Number.isFinite(start)) return "耗时 未知";
+  const end = finishedAt ? Date.parse(finishedAt) : Date.now();
+  const safeEnd = Number.isFinite(end) ? end : Date.now();
+  return `耗时 ${formatDurationMs(safeEnd - start)}`;
+}
+
+function runtimeContextText(context: TeamRoleRuntimeContext | undefined): string | null {
+  if (!context) return null;
+  const browser = context.browserId ?? "默认浏览器";
+  const fallback = context.fallbackUsed ? ` · fallback: ${context.fallbackReason ?? "unknown"}` : "";
+  return `${context.resolvedProfileId} · ${browser} · ${context.browserScope}${fallback}`;
+}
+
+function fileFormatFromName(fileName: string): "json" | "markdown" | "text" {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".json")) return "json";
+  if (lower.endsWith(".md") || lower.endsWith(".markdown")) return "markdown";
+  return "text";
+}
+
+function renderJsonContent(content: string): ReactNode {
+  let pretty: string;
+  try {
+    pretty = JSON.stringify(JSON.parse(content), null, 2);
+  } catch {
+    pretty = content;
+  }
+  return <pre className="task-run-detail-pre" data-file-format="json">{pretty}</pre>;
+}
+
+function renderMarkdownContent(content: string): ReactNode {
+  const lines = content.split("\n");
+  const blocks: React.ReactNode[] = [];
+  let currentBlock: string[] = [];
+  let inCodeBlock = false;
+  let codeBlockIndex = 0;
+
+  function flushBlock() {
+    if (currentBlock.length === 0) return;
+    const text = currentBlock.join("\n").trim();
+    if (!text) { currentBlock = []; return; }
+
+    const headingMatch = /^(#{1,6})\s+(.+)$/.exec(text);
+    if (headingMatch) {
+      const level = headingMatch[1]!.length;
+      blocks.push(<div key={`h-${blocks.length}`} className={`task-run-md-heading task-run-md-h${level}`}>{headingMatch[2]}</div>);
+      currentBlock = [];
+      return;
+    }
+
+    const escaped = text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    blocks.push(<p key={`p-${blocks.length}`} className="task-run-md-paragraph" dangerouslySetInnerHTML={{ __html: escaped }} />);
+    currentBlock = [];
+  }
+
+  for (const line of lines) {
+    if (line.startsWith("```")) {
+      if (inCodeBlock) {
+        blocks.push(<pre key={`code-${codeBlockIndex++}`} className="task-run-md-code">{currentBlock.join("\n")}</pre>);
+        currentBlock = [];
+        inCodeBlock = false;
+      } else {
+        flushBlock();
+        inCodeBlock = true;
+      }
+      continue;
+    }
+    if (inCodeBlock) {
+      currentBlock.push(line);
+      continue;
+    }
+    if (line.trim() === "") {
+      flushBlock();
+      continue;
+    }
+    if (/^[-*]\s+/.test(line)) {
+      flushBlock();
+      blocks.push(<div key={`li-${blocks.length}`} className="task-run-md-list-item">{line.replace(/^[-*]\s+/, "")}</div>);
+      continue;
+    }
+    currentBlock.push(line);
+  }
+  if (inCodeBlock) {
+    blocks.push(<pre key={`code-${codeBlockIndex++}`} className="task-run-md-code">{currentBlock.join("\n")}</pre>);
+  } else {
+    flushBlock();
+  }
+  return <div className="task-run-md-body">{blocks}</div>;
+}
+
+function renderFileDetailContent(fileName: string, content: string): ReactNode {
+  const format = fileFormatFromName(fileName);
+  if (format === "json") return renderJsonContent(content);
+  if (format === "markdown") return renderMarkdownContent(content);
+  return <pre className="task-run-detail-pre" data-file-format="text">{content}</pre>;
+}
+
+function buildTaskRunFileDescriptors(attempts: TeamAttemptMetadata[]): TaskRunObserverFileDescriptor[] {
+  const descriptors: TaskRunObserverFileDescriptor[] = [];
+  for (const attempt of attempts) {
+    const listedFiles = new Set(attempt.files);
+    for (const worker of attempt.worker) {
+      const fileName = fileNameFromRef(worker.outputRef);
+      if (!fileName || !worker.outputRef || !listedFiles.has(fileName)) continue;
+      descriptors.push({
+        key: `${attempt.attemptId}:worker:${fileName}`,
+        attemptId: attempt.attemptId,
+        kind: "worker",
+        title: `Worker 输出 #${worker.outputIndex}`,
+        fileName,
+        path: worker.outputRef,
+        runtimeContext: worker.runtimeContext,
+      });
+    }
+    for (const checker of attempt.checker) {
+      const fileName = fileNameFromRef(checker.recordRef);
+      if (!fileName || !checker.recordRef || !listedFiles.has(fileName)) continue;
+      descriptors.push({
+        key: `${attempt.attemptId}:checker:${fileName}`,
+        attemptId: attempt.attemptId,
+        kind: "checker",
+        title: `Checker verdict #${checker.revisionIndex}`,
+        fileName,
+        path: checker.recordRef,
+        runtimeContext: checker.runtimeContext,
+        summary: `${checker.verdict}: ${checker.reason}`,
+      });
+    }
+    const resultFileName = fileNameFromRef(attempt.resultRef);
+    if (resultFileName && attempt.resultRef && listedFiles.has(resultFileName)) {
+      descriptors.push({
+        key: `${attempt.attemptId}:result:${resultFileName}`,
+        attemptId: attempt.attemptId,
+        kind: "result",
+        title: resultFileName.includes("accepted") ? "Accepted result" : "Result",
+        fileName: resultFileName,
+        path: attempt.resultRef,
+      });
+    }
+  }
+  return descriptors;
 }
 
 function selectLatestRun(runs: TeamRunState[]): TeamRunState | null {
@@ -306,6 +500,7 @@ export function App() {
   const [tasks, setTasks] = useState<TeamCanvasTask[]>([]);
   const [taskRunsByTaskId, setTaskRunsByTaskId] = useState<Record<string, TeamRunState[]>>({});
   const [taskRunSavingByTaskId, setTaskRunSavingByTaskId] = useState<Record<string, boolean>>({});
+  const [taskRunObserverByRunId, setTaskRunObserverByRunId] = useState<Record<string, TaskRunObserverState>>({});
   const [taskNodes, setTaskNodes] = useState<AtlasTaskNode[]>([]);
   const [liveTaskNodesHydrated, setLiveTaskNodesHydrated] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
@@ -337,6 +532,12 @@ export function App() {
   const latestExpandedTaskRun = selectLatestRun(expandedTaskRuns);
   const activeExpandedTaskRun = expandedTaskRuns.find((taskRun) => isActiveRun(taskRun.status)) ?? null;
   const expandedTaskRunSaving = expandedTask ? Boolean(taskRunSavingByTaskId[expandedTask.taskId]) : false;
+  const observedTaskRunId = expandedTaskBranch?.detailMode === "run-observer" ? expandedTaskBranch.observedRunId ?? null : null;
+  const observedTaskRun = observedTaskRunId
+    ? expandedTaskRuns.find((taskRun) => taskRun.runId === observedTaskRunId) ?? null
+    : null;
+  const observedTaskRunState = observedTaskRunId ? taskRunObserverByRunId[observedTaskRunId] ?? null : null;
+  const observedTaskRunAttempts = observedTaskRunState?.attempts ?? [];
 
   const activeCanvasTaskRunIds = useMemo(() => (
     Object.values(taskRunsByTaskId)
@@ -452,6 +653,7 @@ export function App() {
       setAttemptsByTaskId({});
       setTaskRunsByTaskId({});
       setTaskRunSavingByTaskId({});
+      setTaskRunObserverByRunId({});
       setError(null);
       setLoading(false);
       setCanvasViewport({ x: 0, y: 0, scale: 1 });
@@ -466,6 +668,7 @@ export function App() {
     setAttemptsByTaskId({});
     setTaskRunsByTaskId({});
     setTaskRunSavingByTaskId({});
+    setTaskRunObserverByRunId({});
     setError(null);
     setLoading(false);
   }, [closeTaskBranch]);
@@ -500,6 +703,7 @@ export function App() {
       setTasks(mockTeamTasks);
       setTaskNodes(makeTaskNodes(mockTeamTasks));
       setTaskRunsByTaskId({});
+      setTaskRunObserverByRunId({});
       return () => {
         cancelled = true;
       };
@@ -512,6 +716,7 @@ export function App() {
     setTasks([]);
     setTaskRunsByTaskId({});
     setTaskRunSavingByTaskId({});
+    setTaskRunObserverByRunId({});
     setTaskNodes([]);
     setLiveTaskNodesHydrated(false);
 
@@ -719,6 +924,16 @@ export function App() {
     setExpandedTaskBranch((current) => current ? { ...current, detailMode: "edit" } : current);
   }, []);
 
+  const openTaskRunObserverBranch = useCallback((runId: string) => {
+    clearTaskPanelState();
+    setExpandedTaskBranch((current) => current ? {
+      ...current,
+      detailMode: "run-observer",
+      observedRunId: runId,
+      selectedFileKey: null,
+    } : current);
+  }, [clearTaskPanelState]);
+
   const saveTaskEdit = useCallback(async () => {
     if (!expandedTask || !taskEditDraft || taskEditDraft.taskId !== expandedTask.taskId) return;
 
@@ -856,6 +1071,107 @@ export function App() {
       globalThis.clearInterval(timer);
     };
   }, [activeCanvasTaskRunIds, dataSource]);
+
+  useEffect(() => {
+    const taskId = expandedTask?.taskId;
+    if (!taskId || !observedTaskRunId || expandedTaskBranch?.detailMode !== "run-observer") return;
+
+    let cancelled = false;
+    const runId = observedTaskRunId;
+    const observedTaskId = taskId;
+    const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+
+    async function refreshTaskRunObserver() {
+      setTaskRunObserverByRunId((current) => ({
+        ...current,
+        [runId]: {
+          loading: true,
+          attempts: current[runId]?.attempts ?? [],
+          files: current[runId]?.files ?? {},
+          error: null,
+          lastUpdatedAt: current[runId]?.lastUpdatedAt ?? null,
+        },
+      }));
+
+      try {
+        const [freshRun, attempts] = await Promise.all([
+          api.getTaskRun(runId),
+          api.listTaskRunAttempts(runId, observedTaskId),
+        ]);
+        if (cancelled) return;
+
+        setTaskRunsByTaskId((current) => mergeTaskRun(current, observedTaskId, freshRun));
+        setTaskRunObserverByRunId((current) => ({
+          ...current,
+          [runId]: {
+            loading: false,
+            attempts,
+            files: current[runId]?.files ?? {},
+            error: null,
+            lastUpdatedAt: new Date().toISOString(),
+          },
+        }));
+
+        const descriptors = buildTaskRunFileDescriptors(attempts);
+        const fileEntries = await Promise.all(descriptors.map(async (descriptor) => {
+          try {
+            const content = await api.readTaskRunAttemptFile(
+              runId,
+              observedTaskId,
+              descriptor.attemptId,
+              descriptor.fileName,
+            );
+            return [descriptor.key, { content }] as const;
+          } catch (e) {
+            return [descriptor.key, { error: errorMessage(e) }] as const;
+          }
+        }));
+        if (cancelled || fileEntries.length === 0) return;
+        setTaskRunObserverByRunId((current) => ({
+          ...current,
+          [runId]: {
+            loading: false,
+            attempts: current[runId]?.attempts ?? attempts,
+            files: {
+              ...(current[runId]?.files ?? {}),
+              ...Object.fromEntries(fileEntries),
+            },
+            error: null,
+            lastUpdatedAt: current[runId]?.lastUpdatedAt ?? new Date().toISOString(),
+          },
+        }));
+      } catch (e) {
+        if (cancelled) return;
+        setTaskRunObserverByRunId((current) => ({
+          ...current,
+          [runId]: {
+            loading: false,
+            attempts: current[runId]?.attempts ?? [],
+            files: current[runId]?.files ?? {},
+            error: errorMessage(e),
+            lastUpdatedAt: current[runId]?.lastUpdatedAt ?? null,
+          },
+        }));
+      }
+    }
+
+    const shouldPoll = !observedTaskRun || isActiveRun(observedTaskRun.status);
+    void refreshTaskRunObserver();
+    if (!shouldPoll) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const timer = globalThis.setInterval(() => {
+      void refreshTaskRunObserver();
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      globalThis.clearInterval(timer);
+    };
+  }, [dataSource, expandedTask?.taskId, expandedTaskBranch?.detailMode, observedTaskRun?.status, observedTaskRunId]);
 
   const canCreateTask = dataSource === "live" && agents.length > 0;
   const canRefreshTasks = dataSource === "live" && !liveTasksRefreshing;
@@ -998,6 +1314,9 @@ export function App() {
       : latestExpandedTaskRun
         ? "重新运行"
         : "运行";
+  const latestExpandedTaskRunSummaryLabel = latestExpandedTaskRun && isActiveRun(latestExpandedTaskRun.status)
+    ? "运行中"
+    : "最近运行";
   const expandedTaskBranchPanel = expandedTaskNode && expandedTask ? (
     <section className="task-leader-branch task-action-branch emap-menu-branch" aria-label={`${expandedTask.title} Task 操作`}>
       <header className="task-leader-branch-head">
@@ -1040,11 +1359,17 @@ export function App() {
           </button>
         )}
         {latestExpandedTaskRun && (
-          <div className="task-run-summary" aria-label={`${expandedTask.title} 最近运行`}>
-            <span>最近运行</span>
+          <button
+            type="button"
+            className="task-run-summary"
+            aria-label={`${expandedTask.title} ${latestExpandedTaskRunSummaryLabel} ${RUN_STATUS_LABELS[latestExpandedTaskRun.status]}`}
+            onClick={() => openTaskRunObserverBranch(latestExpandedTaskRun.runId)}
+          >
+            <span>{latestExpandedTaskRunSummaryLabel}</span>
             <strong>{RUN_STATUS_LABELS[latestExpandedTaskRun.status]}</strong>
             <code>{latestExpandedTaskRun.runId}</code>
-          </div>
+            <em>查看输出</em>
+          </button>
         )}
         <button
           type="button"
@@ -1099,8 +1424,106 @@ export function App() {
       </div>
     </section>
   ) : null;
+  const observerFileDescriptors = observedTaskRunAttempts.length > 0 ? buildTaskRunFileDescriptors(observedTaskRunAttempts) : [];
+  const selectedObserverFileKey = expandedTaskBranch?.selectedFileKey ?? null;
+  const selectedObserverFileDescriptor = selectedObserverFileKey ? observerFileDescriptors.find((d) => d.key === selectedObserverFileKey) ?? null : null;
+  const selectedObserverFileState = selectedObserverFileKey ? observedTaskRunState?.files[selectedObserverFileKey] : undefined;
+  const toggleObserverFile = useCallback((key: string) => {
+    setExpandedTaskBranch((current) => current ? {
+      ...current,
+      selectedFileKey: current.selectedFileKey === key ? null : key,
+    } : current);
+  }, []);
   const expandedTaskChildBranchPanel = expandedTaskNode && expandedTask ? (
-    expandedTaskDetailMode === "leader-chat" ? (
+    expandedTaskDetailMode === "run-observer" && observedTaskRun ? (
+      <section className="task-leader-branch emap-panel-branch task-run-observer-branch" aria-label={`${expandedTask.title} Run 观察`}>
+        <header className="task-leader-branch-head">
+          <div className="task-leader-branch-title">
+            <span>Run 观察</span>
+            <strong>{expandedTask.title}</strong>
+            <code>{observedTaskRun.runId}</code>
+          </div>
+          <button
+            type="button"
+            className="task-leader-branch-collapse"
+            onClick={() => setExpandedTaskBranch((current) => current ? { ...current, detailMode: null, observedRunId: undefined, selectedFileKey: null } : current)}
+            aria-label={`收起 ${expandedTask.title} Run 观察`}
+          >
+            收起
+          </button>
+        </header>
+        <div className="task-run-observer-body">
+          {observedTaskRunState?.error && (
+            <div className="task-run-observer-error" role="status">{observedTaskRunState.error}</div>
+          )}
+          <div className="task-run-observer-node-layout">
+            <div className="task-run-observer-nodes-column">
+              <div className="task-run-status-node">
+                <header>
+                  <span className="task-run-node-label">Run 状态</span>
+                  <strong className="task-run-status-value">{RUN_STATUS_LABELS[observedTaskRun.status]}</strong>
+                </header>
+                <div className="task-run-status-metrics">
+                  <div><span>阶段</span><strong>{observedTaskRun.taskStates[expandedTask.taskId]?.progress.phase || observedTaskRun.status}</strong></div>
+                  <div><span>耗时</span><strong>{elapsedText(observedTaskRun.startedAt ?? observedTaskRun.createdAt, observedTaskRun.finishedAt).replace(/^耗时\s*/, "")}</strong></div>
+                  <div><span>Attempts</span><strong>{observedTaskRunAttempts.length}</strong></div>
+                </div>
+                <p className="task-run-status-message">{observedTaskRun.taskStates[expandedTask.taskId]?.progress.message || "暂无阶段消息"}</p>
+                {observedTaskRunState?.loading && (
+                  <div className="task-run-observer-loading" role="status">正在刷新...</div>
+                )}
+              </div>
+              {observerFileDescriptors.map((descriptor) => {
+                const runtime = runtimeContextText(descriptor.runtimeContext);
+                const isSelected = selectedObserverFileKey === descriptor.key;
+                const fileState = observedTaskRunState?.files[descriptor.key];
+                return (
+                  <button
+                    key={descriptor.key}
+                    type="button"
+                    className={`task-run-file-node ${descriptor.kind} ${isSelected ? "selected" : ""}`}
+                    data-file-kind={descriptor.kind}
+                    onClick={() => toggleObserverFile(descriptor.key)}
+                  >
+                    <header>
+                      <span>{descriptor.title}</span>
+                      <code>{descriptor.fileName}</code>
+                    </header>
+                    <span className="task-run-file-path">{descriptor.path}</span>
+                    {descriptor.summary && <span className="task-run-file-summary">{descriptor.summary}</span>}
+                    {runtime && <span className="task-run-runtime-context">{runtime}</span>}
+                    {fileState?.error && <span className="task-run-file-error">{fileState.error}</span>}
+                  </button>
+                );
+              })}
+              {observerFileDescriptors.length === 0 && !observedTaskRunState?.loading && (
+                <div className="task-run-observer-empty">暂无 attempt 文件。运行刚启动时这里会随轮询补齐。</div>
+              )}
+            </div>
+            {selectedObserverFileDescriptor && (
+              <div className="task-run-observer-detail-column">
+                <div className="task-run-file-detail-node">
+                  <header>
+                    <span className="task-run-node-label">{selectedObserverFileDescriptor.title}</span>
+                    <code>{selectedObserverFileDescriptor.fileName}</code>
+                  </header>
+                  {selectedObserverFileState?.error ? (
+                    <div className="task-run-file-error">{selectedObserverFileState.error}</div>
+                  ) : selectedObserverFileState?.content ? (
+                    renderFileDetailContent(selectedObserverFileDescriptor.fileName, selectedObserverFileState.content)
+                  ) : (
+                    <div className="task-run-file-loading">正在读取文件...</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          {observedTaskRunState?.lastUpdatedAt && (
+            <div className="task-run-observer-updated">最后刷新 {new Date(observedTaskRunState.lastUpdatedAt).toLocaleTimeString()}</div>
+          )}
+        </div>
+      </section>
+    ) : expandedTaskDetailMode === "leader-chat" ? (
       <section className="agent-playground-branch emap-dialog-branch task-leader-chat-branch" aria-label={`${expandedTask.title} leader 对话`}>
         <header className="agent-playground-branch-head">
           <div className="agent-playground-branch-title">

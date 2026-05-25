@@ -373,6 +373,97 @@ describe("App", () => {
     expect(container.querySelector("iframe")).toBeNull();
   });
 
+  it("opens node-based Task run observer with status, file nodes, and file detail", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
+
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    const observer = await waitFor(() => {
+      const node = container.querySelector(".task-run-observer-branch") as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    expect(within(observer).getByText("Run 观察")).toBeInTheDocument();
+
+    const statusNode = observer.querySelector(".task-run-status-node") as HTMLElement | null;
+    expect(statusNode).toBeTruthy();
+    expect(within(statusNode!).getByText("已完成")).toBeInTheDocument();
+
+    const fileNodes = observer.querySelectorAll(".task-run-file-node");
+    expect(fileNodes.length).toBeGreaterThanOrEqual(3);
+
+    const workerFileNode = observer.querySelector('.task-run-file-node[data-file-kind="worker"]') as HTMLElement | null;
+    const checkerFileNode = observer.querySelector('.task-run-file-node[data-file-kind="checker"]') as HTMLElement | null;
+    const resultFileNode = observer.querySelector('.task-run-file-node[data-file-kind="result"]') as HTMLElement | null;
+    expect(workerFileNode).toBeTruthy();
+    expect(checkerFileNode).toBeTruthy();
+    expect(resultFileNode).toBeTruthy();
+    expect(within(workerFileNode!).getByText("worker-output-001.md")).toBeInTheDocument();
+    expect(within(checkerFileNode!).getByText("checker-verdict-001.json")).toBeInTheDocument();
+    expect(within(resultFileNode!).getByText("accepted-result.md")).toBeInTheDocument();
+
+    expect(observer.querySelector(".task-run-file-detail-node")).toBeNull();
+
+    fireEvent.click(checkerFileNode!);
+    const detailNode = await waitFor(() => {
+      const detail = observer.querySelector(".task-run-file-detail-node") as HTMLElement | null;
+      expect(detail).toBeTruthy();
+      return detail!;
+    });
+    expect(within(detailNode).getByText(/"verdict": "pass"/)).toBeInTheDocument();
+
+    fireEvent.click(resultFileNode!);
+    const updatedDetail = await waitFor(() => {
+      const detail = observer.querySelector(".task-run-file-detail-node") as HTMLElement | null;
+      expect(detail).toBeTruthy();
+      return detail!;
+    });
+    expect(within(updatedDetail).getByText("Mock accepted result")).toBeInTheDocument();
+    expect(updatedDetail.querySelector('pre[data-file-format="json"]')).toBeNull();
+  });
+
+  it("renders HTML-like content as text in file detail, not as injected HTML", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
+
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    const observer = await waitFor(() => {
+      const node = container.querySelector(".task-run-observer-branch") as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+
+    const workerFileNode = observer.querySelector('.task-run-file-node[data-file-kind="worker"]') as HTMLElement | null;
+    expect(workerFileNode).toBeTruthy();
+    fireEvent.click(workerFileNode!);
+
+    const detailNode = await waitFor(() => {
+      const detail = observer.querySelector(".task-run-file-detail-node") as HTMLElement | null;
+      expect(detail).toBeTruthy();
+      return detail!;
+    });
+
+    expect(detailNode).toHaveTextContent("<script>alert(1)</script>");
+    expect(detailNode.querySelector("script")).toBeNull();
+    expect(detailNode.querySelector("details")).toBeNull();
+  });
+
   it("starts a live Task run through the Task run API", async () => {
     const liveTask = mockTeamTasks[0]!;
     let createRunRequests = 0;
@@ -434,7 +525,7 @@ describe("App", () => {
     await waitFor(() => expect(createRunRequests).toBe(1));
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
     expect(branch).toBeTruthy();
-    expect(within(branch!).getByText("最近运行")).toBeInTheDocument();
+    expect(within(branch!).getByRole("button", { name: /运行中[\s\S]*排队中/ })).toBeInTheDocument();
     expect(within(branch!).getByText("排队中")).toBeInTheDocument();
     expect(within(branch!).getByRole("button", { name: "运行中" })).toBeDisabled();
   });
@@ -1866,6 +1957,9 @@ describe("App", () => {
     expect(readme).toContain("关闭创建分支后会重新请求 `GET /v1/team/tasks`");
     expect(readme).toContain("点击 Task 卡片会先展开紧凑 Task 操作菜单节点");
     expect(readme).toContain("POST /v1/team/tasks/:taskId/runs");
+    expect(readme).toContain("GET /v1/team/task-runs/:runId/tasks/:taskId/attempts");
+    expect(readme).toContain("Run 观察节点");
+    expect(readme).toContain("worker 输出、checker verdict、accepted result");
     expect(readme).toContain("不会进入 `/v1/team/runs` 的 Plan run 列表");
     expect(readme).toContain("第一版 Task run 只执行 WorkUnit 的 worker → checker");
     expect(readme).toContain("Task → 菜单 → 二级节点");
@@ -1905,6 +1999,9 @@ describe("App", () => {
     expect(runtimeDoc).toContain("POST /v1/team/tasks/:taskId/runs");
     expect(runtimeDoc).toContain(".data/team/task-runs/runs/<runId>");
     expect(runtimeDoc).toContain("第一版 Task run 只执行 `workUnit.workerAgentId` 和 `workUnit.checkerAgentId`");
+    expect(runtimeDoc).toContain("Run 观察节点");
+    expect(runtimeDoc).toContain("attempt metadata 和 attempt files");
+    expect(runtimeDoc).toContain("SSE 观察流仍是后续后端能力");
     expect(runtimeDoc).toContain("base snapshot + dirty fields");
     expect(runtimeDoc).toContain("input text、output contract、acceptance rules");
     expect(runtimeDoc).toContain("关闭创建分支、浅编辑保存成功、归档成功后会重新请求 `GET /v1/team/tasks`");

@@ -2,6 +2,15 @@
 
 更新时间：`2026-05-23`
 
+## 2026-05-25 Team Console Task run 观察节点
+
+- 独立 Team Console preview 的 Task 操作菜单中，”最近运行”或 active run 的”运行中”摘要现在是可点击入口，会在菜单右侧展开 Run 观察节点。
+- 观察节点现在展开为多个独立节点：Run 状态节点展示运行阶段、耗时、attempt 数和进度消息；文件节点按 worker 输出、checker verdict、accepted result 分别展示文件名、路径和角色 runtime context / verdict 摘要。
+- 点击文件节点会在右侧展开第二级文件详情节点，根据文件扩展名使用安全渲染：JSON pretty print、Markdown 基础渲染（heading / paragraph / list / code block，不执行 HTML）、其他文本原样 `<pre>` 展示。
+- 仍不接 SSE；前端轮询现有 Task run state、attempt metadata 和 attempt file API。
+- 这仍属于 `apps/team-console/` 独立 preview 行为，不替换 `/playground/team`，也不解析嵌入 iframe 的聊天文本。
+- 相关源码：`apps/team-console/src/app/App.tsx`、`apps/team-console/src/api/team-api.ts`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/fixtures/team-fixtures.ts`
+
 ## 2026-05-23 Qwen reasoning stream heartbeat
 
 - `ali-codeplan / qwen3.7-max` 这类 Anthropic-compatible 流式响应可能先返回较长 reasoning / thinking 阶段；后端现在把 `thinking_start`、`thinking_delta`、`thinking_end` 转成内部 `heartbeat` 事件保活，不展示 thinking 内容，也不写入最终回答文本。

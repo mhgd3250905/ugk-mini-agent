@@ -896,6 +896,8 @@ function cloneMockTeamTask(task: TeamCanvasTask): TeamCanvasTask {
 let mockCanvasTasks: TeamCanvasTask[] = mockTeamTasks.map(cloneMockTeamTask);
 let mockTaskRunCounter = 0;
 let mockTaskRunsByTaskId = new Map<string, TeamRunState[]>();
+let mockTaskRunAttempts = new Map<string, TeamAttemptMetadata[]>();
+let mockTaskRunFiles = new Map<string, string>();
 
 function mockTaskWarnings(task: TeamCanvasTask): string[] {
   if (task.workUnit.workerAgentId === task.workUnit.checkerAgentId) {
@@ -971,6 +973,8 @@ export function resetMockTeamApiState() {
   mockPendingRuns.clear();
   mockCanvasTasks = mockTeamTasks.map(cloneMockTeamTask);
   mockTaskRunsByTaskId = new Map();
+  mockTaskRunAttempts = new Map();
+  mockTaskRunFiles = new Map();
   mockTaskRunCounter = 0;
   mockConversationCounter = 0;
   mockRunCounter = 0;
@@ -995,7 +999,65 @@ function cloneTeamRunState(run: TeamRunState): TeamRunState {
 function createMockTaskRun(task: TeamCanvasTask): TeamRunState {
   const timestamp = ts();
   const runId = `mock-task-run-${++mockTaskRunCounter}`;
-  const resultRef = `tasks/${task.taskId}/attempts/mock-attempt-${mockTaskRunCounter}/accepted-result.md`;
+  const attemptId = `mock-attempt-${mockTaskRunCounter}`;
+  const workerOutputRef = ref(task.taskId, attemptId, "worker-output-001.md");
+  const checkerVerdictRef = ref(task.taskId, attemptId, "checker-verdict-001.json");
+  const resultRef = ref(task.taskId, attemptId, "accepted-result.md");
+  const attempt: TeamAttemptMetadata = {
+    attemptId,
+    taskId: task.taskId,
+    status: "succeeded",
+    phase: "succeeded",
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    finishedAt: timestamp,
+    worker: [{
+      outputIndex: 1,
+      outputRef: workerOutputRef,
+      runtimeContext: {
+        requestedProfileId: task.workUnit.workerAgentId,
+        resolvedProfileId: task.workUnit.workerAgentId,
+        fallbackUsed: false,
+        browserId: null,
+        browserScope: `team-task:${task.taskId}:worker`,
+      },
+    }],
+    checker: [{
+      verdict: "pass",
+      reason: "Mock checker accepted the worker output.",
+      resultContentRef: null,
+      revisionIndex: 1,
+      recordRef: checkerVerdictRef,
+      feedbackRef: null,
+      runtimeContext: {
+        requestedProfileId: task.workUnit.checkerAgentId,
+        resolvedProfileId: task.workUnit.checkerAgentId,
+        fallbackUsed: false,
+        browserId: null,
+        browserScope: `team-task:${task.taskId}:checker`,
+      },
+    }],
+    watcher: null,
+    resultRef,
+    errorSummary: null,
+    files: ["worker-output-001.md", "checker-verdict-001.json", "accepted-result.md"],
+  };
+  mockTaskRunAttempts.set(`${runId}/${task.taskId}`, [attempt]);
+  mockTaskRunFiles.set(
+    `${runId}/${task.taskId}/${attemptId}/worker-output-001.md`,
+    `# Worker output\n\nMock worker output for ${task.title}.\n\n<details>raw tag</details><script>alert(1)</script>`,
+  );
+  mockTaskRunFiles.set(
+    `${runId}/${task.taskId}/${attemptId}/checker-verdict-001.json`,
+    JSON.stringify({
+      verdict: "pass",
+      reason: "Mock checker accepted the worker output.",
+    }, null, 2),
+  );
+  mockTaskRunFiles.set(
+    `${runId}/${task.taskId}/${attemptId}/accepted-result.md`,
+    `# Mock accepted result\n\n${task.title} mock run accepted.`,
+  );
   return {
     runId,
     planId: `canvas_task_${task.taskId}`,
@@ -1010,7 +1072,7 @@ function createMockTaskRun(task: TeamCanvasTask): TeamRunState {
       [task.taskId]: {
         status: "succeeded",
         attemptCount: 1,
-        activeAttemptId: `mock-attempt-${mockTaskRunCounter}`,
+        activeAttemptId: attemptId,
         resultRef,
         errorSummary: null,
         progress: { phase: "succeeded", message: "已通过", updatedAt: timestamp },
@@ -1156,6 +1218,16 @@ export class MockTeamApi {
       return cloneTeamRunState(run);
     }
     throw { message: `Task run not found: ${runId}` };
+  }
+
+  async listTaskRunAttempts(runId: string, taskId: string): Promise<TeamAttemptMetadata[]> {
+    return mockTaskRunAttempts.get(`${runId}/${taskId}`) ?? [];
+  }
+
+  async readTaskRunAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string): Promise<string> {
+    const content = mockTaskRunFiles.get(`${runId}/${taskId}/${attemptId}/${fileName}`);
+    if (content == null) throw { message: `Task run attempt file not found: ${fileName}` };
+    return content;
   }
 
   async updateTask(taskId: string, patch: TeamTaskUpdateRequest): Promise<TeamTaskMutationResponse> {

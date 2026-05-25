@@ -416,6 +416,40 @@ describe("LiveTeamApi", () => {
     });
   });
 
+  it("reads live Canvas Task run attempts and files from task-run endpoints", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        attempts: [{
+          attemptId: "attempt/a b",
+          taskId: "task/c d",
+          status: "succeeded",
+          phase: "succeeded",
+          createdAt: "2026-05-25T00:00:00.000Z",
+          updatedAt: "2026-05-25T00:00:02.000Z",
+          finishedAt: "2026-05-25T00:00:02.000Z",
+          worker: [],
+          checker: [],
+          watcher: null,
+          resultRef: "tasks/task/c d/attempts/attempt/a b/accepted-result.md",
+          errorSummary: null,
+          files: ["accepted-result.md"],
+        }],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response("accepted result", { status: 200 }));
+
+    const attempts = await api.listTaskRunAttempts("run/a b", "task/c d");
+    const content = await api.readTaskRunAttemptFile("run/a b", "task/c d", "attempt/a b", "accepted-result.md");
+
+    expect(fetch).toHaveBeenNthCalledWith(1, "/v1/team/task-runs/run%2Fa%20b/tasks/task%2Fc%20d/attempts");
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      "/v1/team/task-runs/run%2Fa%20b/tasks/task%2Fc%20d/attempts/attempt%2Fa%20b/files/accepted-result.md",
+    );
+    expect(attempts[0]?.attemptId).toBe("attempt/a b");
+    expect(content).toBe("accepted result");
+  });
+
   it("getRunDetail URL-encodes the run id", async () => {
     const api = new LiveTeamApi("/v1/team");
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(makeSequentialRun()), { status: 200 }));
