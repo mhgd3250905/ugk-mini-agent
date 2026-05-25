@@ -379,6 +379,7 @@
 ## 2026-05-05 Agent 切换悬浮菜单
 
 - topbar 右侧 agent label 按钮新增悬浮弹出菜单（`.agent-switcher-meta`），鼠标悬浮时展示可切换的 agent 列表。
+- `/playground?view=chat&agentId=<agentId>` 会把 `agentId` URL hint 作为初始 active Agent；普通页面会同步写入 `ugk-pi:active-agent-id`，Team Console iframe 使用 `embed=team-console` 时只在当前页面内生效，不写入共享 `localStorage`。在 `embed=team-console` 下，topbar 右侧 agent label 只作为当前 Agent 标识，不打开 hover 切换菜单，也不会点击跳转独立 Agents 页。
 - 弹出菜单沿用 `context-usage-meta` 的定位/显隐模式：`position: absolute` + `opacity: 0` + `pointer-events: none`，hover/focus-visible 时 `opacity: 1` + `pointer-events: auto`。
 - 每个 agent 项显示名称、agentId 和当前激活标识（"当前"徽标），已激活项 disabled 不可点击，其他项点击直接切换 agent。
 - agent label 文字包装在 `.agent-switcher-label` span 中，避免 `textContent` 赋值清除弹出子元素。
