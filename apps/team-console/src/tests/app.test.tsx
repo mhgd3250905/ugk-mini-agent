@@ -2503,4 +2503,286 @@ describe("App", () => {
       expect(computedStyle.maxHeight).not.toBe("240px");
     }
   });
+
+  // --- Task operation tree drag ---
+
+  async function setupObserverOpen(container: HTMLElement) {
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
+
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-status-node")).toBeTruthy();
+    });
+
+    return { branch: branch! };
+  }
+
+  it("moves observer panels with existing overrides when dragging Task root", async () => {
+    const { container } = render(<App />);
+    await setupObserverOpen(container);
+
+    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
+    const statusShell = allShells().find((s) => s.querySelector(".emap-observer-status-node")) as HTMLElement | undefined;
+    expect(statusShell).toBeTruthy();
+
+    // Manually drag status panel to create a position override
+    firePointer(statusShell!, "pointerdown", { pointerId: 90, clientX: 600, clientY: 300 });
+    firePointer(statusShell!, "pointermove", { pointerId: 90, clientX: 660, clientY: 340 });
+    firePointer(statusShell!, "pointerup", { pointerId: 90, clientX: 660, clientY: 340, buttons: 0 });
+
+    const menuShell = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
+    expect(menuShell).toBeTruthy();
+    const menuLeftBefore = Number.parseFloat(menuShell!.style.left);
+    const menuTopBefore = Number.parseFloat(menuShell!.style.top);
+    const statusLeftBefore = Number.parseFloat(statusShell!.style.left);
+    const statusTopBefore = Number.parseFloat(statusShell!.style.top);
+
+    // Drag Task root node
+    const taskNode = container.querySelector(".emap-canvas-task-node") as HTMLElement | null;
+    expect(taskNode).toBeTruthy();
+    const dx = 60;
+    const dy = 40;
+    firePointer(taskNode!, "pointerdown", { pointerId: 91, clientX: 200, clientY: 200 });
+    firePointer(taskNode!, "pointermove", { pointerId: 91, clientX: 200 + dx, clientY: 200 + dy });
+    firePointer(taskNode!, "pointerup", { pointerId: 91, clientX: 200 + dx, clientY: 200 + dy, buttons: 0 });
+
+    // Menu follows task root (derived from task position)
+    expect(Number.parseFloat(menuShell!.style.left)).toBeCloseTo(menuLeftBefore + dx, 4);
+    expect(Number.parseFloat(menuShell!.style.top)).toBeCloseTo(menuTopBefore + dy, 4);
+
+    // Status panel with override also follows
+    expect(Number.parseFloat(statusShell!.style.left)).toBeCloseTo(statusLeftBefore + dx, 4);
+    expect(Number.parseFloat(statusShell!.style.top)).toBeCloseTo(statusTopBefore + dy, 4);
+  });
+
+  it("moves observer panels when dragging menu shell header", async () => {
+    const { container } = render(<App />);
+    await setupObserverOpen(container);
+
+    const menuShell = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
+    expect(menuShell).toBeTruthy();
+
+    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
+    const statusShell = allShells().find((s) => s.querySelector(".emap-observer-status-node")) as HTMLElement | undefined;
+    expect(statusShell).toBeTruthy();
+
+    const menuLeftBefore = Number.parseFloat(menuShell!.style.left);
+    const menuTopBefore = Number.parseFloat(menuShell!.style.top);
+    const statusLeftBefore = Number.parseFloat(statusShell!.style.left);
+    const statusTopBefore = Number.parseFloat(statusShell!.style.top);
+
+    // Drag from the menu shell (header area, not a button)
+    firePointer(menuShell!, "pointerdown", { pointerId: 92, clientX: 400, clientY: 200 });
+    firePointer(menuShell!, "pointermove", { pointerId: 92, clientX: 470, clientY: 250 });
+    firePointer(menuShell!, "pointerup", { pointerId: 92, clientX: 470, clientY: 250, buttons: 0 });
+
+    const dx = 70;
+    const dy = 50;
+
+    expect(Number.parseFloat(menuShell!.style.left)).toBeCloseTo(menuLeftBefore + dx, 4);
+    expect(Number.parseFloat(menuShell!.style.top)).toBeCloseTo(menuTopBefore + dy, 4);
+    expect(Number.parseFloat(statusShell!.style.left)).toBeCloseTo(statusLeftBefore + dx, 4);
+    expect(Number.parseFloat(statusShell!.style.top)).toBeCloseTo(statusTopBefore + dy, 4);
+  });
+
+  it("keeps menu action buttons clickable via pointer sequence after menu drag is implemented", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+
+    // Use pointerdown + pointerup + click sequence (no drag movement) on "运行" button
+    const runButton = within(branch!).getByRole("button", { name: "运行" });
+    firePointer(runButton, "pointerdown", { pointerId: 93, clientX: 300, clientY: 200 });
+    firePointer(runButton, "pointerup", { pointerId: 93, clientX: 300, clientY: 200, buttons: 0 });
+    fireEvent.click(runButton);
+
+    expect(await within(branch!).findByText("最近运行")).toBeInTheDocument();
+    expect(within(branch!).getByText("已完成")).toBeInTheDocument();
+  });
+
+  it("drags edit node independently without moving menu", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "编辑" }));
+
+    await waitFor(() => {
+      expect(container.querySelector(".task-edit-branch")).toBeTruthy();
+    });
+
+    const menuShell = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
+    expect(menuShell).toBeTruthy();
+    const editShell = container.querySelector(".emap-task-child-branch-shell") as HTMLElement | null;
+    expect(editShell).toBeTruthy();
+
+    const menuLeftBefore = Number.parseFloat(menuShell!.style.left);
+    const menuTopBefore = Number.parseFloat(menuShell!.style.top);
+    const editLeftBefore = Number.parseFloat(editShell!.style.left);
+    const editTopBefore = Number.parseFloat(editShell!.style.top);
+
+    // Drag from the edit branch header (not form controls)
+    const editHeader = editShell!.querySelector(".task-leader-branch-head") as HTMLElement | null;
+    expect(editHeader).toBeTruthy();
+    firePointer(editHeader!, "pointerdown", { pointerId: 94, clientX: 500, clientY: 300 });
+    firePointer(editHeader!, "pointermove", { pointerId: 94, clientX: 560, clientY: 350 });
+    firePointer(editHeader!, "pointerup", { pointerId: 94, clientX: 560, clientY: 350, buttons: 0 });
+
+    const dx = 60;
+    const dy = 50;
+
+    // Edit node moved
+    expect(Number.parseFloat(editShell!.style.left)).toBeCloseTo(editLeftBefore + dx, 4);
+    expect(Number.parseFloat(editShell!.style.top)).toBeCloseTo(editTopBefore + dy, 4);
+
+    // Menu did not move
+    expect(Number.parseFloat(menuShell!.style.left)).toBeCloseTo(menuLeftBefore, 4);
+    expect(Number.parseFloat(menuShell!.style.top)).toBeCloseTo(menuTopBefore, 4);
+  });
+
+  it("moves file detail descendant when dragging file node", async () => {
+    const { container } = render(<App />);
+    await setupObserverOpen(container);
+
+    const workerFileNode = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    // Expand detail
+    fireEvent.click(workerFileNode);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-file-detail-node")).toBeTruthy();
+    });
+
+    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
+    const workerShell = allShells().find((s) => s.querySelector('.emap-observer-file-node[data-file-kind="worker"]')) as HTMLElement | undefined;
+    expect(workerShell).toBeTruthy();
+    const detailShell = allShells().find((s) => s.querySelector(".emap-observer-file-detail-node")) as HTMLElement | undefined;
+    expect(detailShell).toBeTruthy();
+
+    const workerLeftBefore = Number.parseFloat(workerShell!.style.left);
+    const workerTopBefore = Number.parseFloat(workerShell!.style.top);
+    const detailLeftBefore = Number.parseFloat(detailShell!.style.left);
+    const detailTopBefore = Number.parseFloat(detailShell!.style.top);
+
+    // Drag worker file node
+    firePointer(workerFileNode, "pointerdown", { pointerId: 95, clientX: 500, clientY: 300 });
+    firePointer(workerFileNode, "pointermove", { pointerId: 95, clientX: 570, clientY: 350 });
+    firePointer(workerFileNode, "pointerup", { pointerId: 95, clientX: 570, clientY: 350, buttons: 0 });
+
+    const dx = 70;
+    const dy = 50;
+
+    // Worker shell moved
+    expect(Number.parseFloat(workerShell!.style.left)).toBeCloseTo(workerLeftBefore + dx, 4);
+    expect(Number.parseFloat(workerShell!.style.top)).toBeCloseTo(workerTopBefore + dy, 4);
+
+    // Detail shell also moved by same delta
+    expect(Number.parseFloat(detailShell!.style.left)).toBeCloseTo(detailLeftBefore + dx, 4);
+    expect(Number.parseFloat(detailShell!.style.top)).toBeCloseTo(detailTopBefore + dy, 4);
+  });
+
+  it("moves only detail leaf without moving parent file node", async () => {
+    const { container } = render(<App />);
+    await setupObserverOpen(container);
+
+    const workerFileNode = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    fireEvent.click(workerFileNode);
+
+    const detailNode = await waitFor(() => {
+      const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
+      expect(detail).toBeTruthy();
+      return detail!;
+    });
+
+    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
+    const workerShell = allShells().find((s) => s.querySelector('.emap-observer-file-node[data-file-kind="worker"]')) as HTMLElement | undefined;
+    expect(workerShell).toBeTruthy();
+    const detailShell = allShells().find((s) => s.querySelector(".emap-observer-file-detail-node")) as HTMLElement | undefined;
+    expect(detailShell).toBeTruthy();
+
+    const workerLeftBefore = Number.parseFloat(workerShell!.style.left);
+    const workerTopBefore = Number.parseFloat(workerShell!.style.top);
+    const detailLeftBefore = Number.parseFloat(detailShell!.style.left);
+    const detailTopBefore = Number.parseFloat(detailShell!.style.top);
+
+    // Drag detail panel only
+    firePointer(detailShell!, "pointerdown", { pointerId: 96, clientX: 800, clientY: 400 });
+    firePointer(detailShell!, "pointermove", { pointerId: 96, clientX: 860, clientY: 450 });
+    firePointer(detailShell!, "pointerup", { pointerId: 96, clientX: 860, clientY: 450, buttons: 0 });
+
+    // Detail moved
+    expect(Number.parseFloat(detailShell!.style.left)).toBeCloseTo(detailLeftBefore + 60, 4);
+    expect(Number.parseFloat(detailShell!.style.top)).toBeCloseTo(detailTopBefore + 50, 4);
+
+    // Worker file node did not move
+    expect(Number.parseFloat(workerShell!.style.left)).toBeCloseTo(workerLeftBefore, 4);
+    expect(Number.parseFloat(workerShell!.style.top)).toBeCloseTo(workerTopBefore, 4);
+  });
+
+  it("keeps leader chat usable: drag header, resize, maximize", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "对话 Leader" }));
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-task-child-branch-shell iframe")).toBeTruthy();
+    });
+
+    const shell = container.querySelector(".emap-task-child-branch-shell") as HTMLElement | null;
+    expect(shell).toBeTruthy();
+    const header = shell!.querySelector(".agent-playground-branch-head") as HTMLElement | null;
+    expect(header).toBeTruthy();
+
+    // Drag header
+    const leftBefore = Number.parseFloat(shell!.style.left);
+    const topBefore = Number.parseFloat(shell!.style.top);
+    firePointer(header!, "pointerdown", { pointerId: 97, clientX: 400, clientY: 200 });
+    firePointer(header!, "pointermove", { pointerId: 97, clientX: 450, clientY: 260 });
+    firePointer(header!, "pointerup", { pointerId: 97, clientX: 450, clientY: 260, buttons: 0 });
+    expect(Number.parseFloat(shell!.style.left)).toBeCloseTo(leftBefore + 50, 4);
+    expect(Number.parseFloat(shell!.style.top)).toBeCloseTo(topBefore + 60, 4);
+
+    // Resize
+    const resizeHandle = shell!.querySelector(".emap-agent-branch-resize-handle") as HTMLElement | null;
+    expect(resizeHandle).toBeTruthy();
+    const widthBefore = Number.parseFloat(shell!.style.width);
+    const heightBefore = Number.parseFloat(shell!.style.height);
+    firePointer(resizeHandle!, "pointerdown", { pointerId: 98, clientX: 800, clientY: 600 });
+    firePointer(resizeHandle!, "pointermove", { pointerId: 98, clientX: 900, clientY: 700 });
+    firePointer(resizeHandle!, "pointerup", { pointerId: 98, clientX: 900, clientY: 700, buttons: 0 });
+    expect(Number.parseFloat(shell!.style.width)).toBeCloseTo(widthBefore + 100, 4);
+    expect(Number.parseFloat(shell!.style.height)).toBeCloseTo(heightBefore + 100, 4);
+
+    // Maximize
+    const maximizeButton = shell!.querySelector(".emap-agent-branch-maximize-button") as HTMLElement | null;
+    expect(maximizeButton).toBeTruthy();
+    fireEvent.click(maximizeButton!);
+    expect(container.querySelector(".emap-maximized-branch-shell")).toBeTruthy();
+  });
 });
