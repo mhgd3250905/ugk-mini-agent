@@ -611,6 +611,8 @@ export function ExecutionMap({
   const panelResizeRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startWidth: number; startHeight: number; minWidth: number; minHeight: number } | null>(null);
   const panelDragRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startRect: AgentBranchRect; hasMoved: boolean; capturedTarget: HTMLDivElement | null } | null>(null);
   const panelDragSuppressClickRef = useRef(false);
+  const taskBranchDragRef = useRef<{ pointerId: number; startClientX: number; startClientY: number; startRect: AgentBranchRect; hasMoved: boolean; capturedTarget: HTMLDivElement | null; lastDx: number; lastDy: number } | null>(null);
+  const taskBranchDragSuppressClickRef = useRef(false);
 
   if (prevSelectionRef.current !== selectedTaskId) {
     prevSelectionRef.current = selectedTaskId;
@@ -1396,6 +1398,67 @@ export function ExecutionMap({
     }
   }, [focusedTaskNode, taskBranchNode, taskChildBranchNode, taskChildBranchPanelsLayout]);
 
+  const canStartTaskBranchDrag = useCallback((target: EventTarget | null): boolean => {
+    if (!(target instanceof Element)) return false;
+    if (!target.closest(".task-leader-branch-head")) return false;
+    return !target.closest("button, input, textarea, select, a, iframe, summary, details, .task-action-menu-button, .task-leader-branch-collapse");
+  }, []);
+
+  const beginTaskBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!canStartTaskBranchDrag(event.target) || !taskBranchNode || !focusedTaskNode) return;
+    taskBranchDragRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startRect: { ...taskBranchNode },
+      hasMoved: false,
+      capturedTarget: null,
+      lastDx: 0,
+      lastDy: 0,
+    };
+  }, [canStartTaskBranchDrag, taskBranchNode, focusedTaskNode]);
+
+  const moveTaskBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = taskBranchDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const scale = viewportScale(viewport);
+    const dx = (event.clientX - drag.startClientX) / scale;
+    const dy = (event.clientY - drag.startClientY) / scale;
+    if (!drag.hasMoved && Math.abs(dx) < AGENT_DRAG_THRESHOLD && Math.abs(dy) < AGENT_DRAG_THRESHOLD) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!drag.hasMoved) {
+      drag.hasMoved = true;
+      const target = event.currentTarget;
+      target.setPointerCapture?.(event.pointerId);
+      drag.capturedTarget = target;
+    }
+    setTaskBranchPositionOverrides((prev) => {
+      const focusedId = focusedTaskNode?.nodeId;
+      if (!focusedId) return prev;
+      return { ...prev, [focusedId]: { x: drag.startRect.x + dx, y: drag.startRect.y + dy } };
+    });
+    const incDx = dx - drag.lastDx;
+    const incDy = dy - drag.lastDy;
+    drag.lastDx = dx;
+    drag.lastDy = dy;
+    translateTaskSubtree("menu", incDx, incDy);
+  }, [viewport, focusedTaskNode, translateTaskSubtree]);
+
+  const endTaskBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = taskBranchDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (drag.hasMoved) {
+      event.preventDefault();
+      event.stopPropagation();
+      taskBranchDragSuppressClickRef.current = true;
+    }
+    if (drag.capturedTarget) {
+      drag.capturedTarget.releasePointerCapture?.(event.pointerId);
+    }
+    taskBranchDragRef.current = null;
+  }, []);
+
   const beginAgentBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (!focusedAgentNode || !agentBranchNode || !canStartAgentBranchDrag(event.target)) return;
     event.preventDefault();
@@ -1990,6 +2053,16 @@ export function ExecutionMap({
             <div
               ref={taskBranchShellRef}
               className="emap-task-branch-shell"
+              onPointerDownCapture={beginTaskBranchDrag}
+              onPointerMove={moveTaskBranchDrag}
+              onPointerUp={endTaskBranchDrag}
+              onPointerCancel={endTaskBranchDrag}
+              onClickCapture={(e) => {
+                if (taskBranchDragSuppressClickRef.current) {
+                  taskBranchDragSuppressClickRef.current = false;
+                  e.stopPropagation();
+                }
+              }}
               style={{
                 left: taskBranchNode.x,
                 top: taskBranchNode.y,

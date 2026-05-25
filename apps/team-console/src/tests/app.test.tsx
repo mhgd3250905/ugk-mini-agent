@@ -2578,10 +2578,12 @@ describe("App", () => {
     const statusLeftBefore = Number.parseFloat(statusShell!.style.left);
     const statusTopBefore = Number.parseFloat(statusShell!.style.top);
 
-    // Drag from the menu shell (header area, not a button)
-    firePointer(menuShell!, "pointerdown", { pointerId: 92, clientX: 400, clientY: 200 });
-    firePointer(menuShell!, "pointermove", { pointerId: 92, clientX: 470, clientY: 250 });
-    firePointer(menuShell!, "pointerup", { pointerId: 92, clientX: 470, clientY: 250, buttons: 0 });
+    // Drag from the menu header area (not a button)
+    const menuHeader = menuShell!.querySelector(".task-leader-branch-head") as HTMLElement | null;
+    expect(menuHeader).toBeTruthy();
+    firePointer(menuHeader!, "pointerdown", { pointerId: 92, clientX: 400, clientY: 200 });
+    firePointer(menuHeader!, "pointermove", { pointerId: 92, clientX: 470, clientY: 250 });
+    firePointer(menuHeader!, "pointerup", { pointerId: 92, clientX: 470, clientY: 250, buttons: 0 });
 
     const dx = 70;
     const dy = 50;
