@@ -93,7 +93,7 @@ Team Console 的 Task 前端闭环只负责画布入口和刷新，不拥有 Tas
 - 用户可手动点击“刷新 Task”重新拉取 `GET /v1/team/tasks`；刷新中禁用重复点击，失败保留当前 Task 卡片并显示错误。
 - 关闭创建分支、浅编辑保存成功、归档成功后会重新请求 `GET /v1/team/tasks`，用于把后端事实刷回画布。
 - 点击“运行”会调用 `POST /v1/team/tasks/:taskId/runs` 启动独立 Canvas Task run；前端通过 `GET /v1/team/tasks/:taskId/runs` 读取历史，通过 `GET /v1/team/task-runs/:runId` 轮询 active 状态。这个 run 只属于 Canvas Task，不进入 Plan run 列表，也不会增加 Plan `runCount`。
-- 点击 Task 菜单里的”最近运行”或”运行中”摘要会展开 Run observer；每个 observer 元素（Run 状态、文件节点、文件详情）是独立的 `.emap-task-child-branch-shell` canvas branch node，各自拥有从 source 节点到自身的 SVG connector path。Run 状态节点展示运行阶段、耗时、attempt 数和进度消息，文件节点按 worker 输出、checker verdict、accepted result 分别展示文件名、路径和角色 runtime context / verdict 摘要；点击文件节点会在右侧展开第二级文件详情节点（也是独立 branch shell，带显式收起按钮），根据文件扩展名使用安全渲染（JSON pretty print、Markdown 纯文本 React 节点渲染、文本原样展示），不执行 HTML，不使用 `dangerouslySetInnerHTML`；JSON 解析失败时会显示 parse error 消息。Run observer 节点不支持 drag/resize/maximize；leader-chat 现有的 drag/resize/maximize 不受影响。SSE 观察流仍是后续后端能力，不在第一版里硬做。
+- 点击 Task 菜单里的”最近运行”或”运行中”摘要会展开 Run observer；每个 observer 元素（Run 状态、文件节点、文件详情）是独立的 `.emap-task-child-branch-shell` canvas branch node，各自拥有从 source 节点到自身的 SVG connector path。Run 状态节点展示运行阶段、耗时、attempt 数和进度消息，高度按内容自适应；文件节点是紧凑索引卡片，只展示 Agent 名字（从 agentsById 解析）、文件名和路径，不展示 checker reason / verdict 摘要或 runtime context 长文本；点击文件节点会在右侧展开第二级文件详情节点（也是独立 branch shell，带显式收起按钮），根据文件扩展名使用安全渲染（JSON pretty print、Markdown 纯文本 React 节点渲染、文本原样展示），不执行 HTML，不使用 `dangerouslySetInnerHTML`；JSON 解析失败时会显示 parse error 消息。文件详情节点支持右下角拖动调整宽高，最小尺寸 360×280，拖动后连接线和布局同步更新。SSE 观察流仍是后续后端能力，不在第一版里硬做。
 - 第一版 Task run 只执行 `workUnit.workerAgentId` 和 `workUnit.checkerAgentId`，不启动 watcher/finalizer，不支持 pause/resume/rerun；active run 可通过 `POST /v1/team/task-runs/:runId/cancel` 停止。
 
 ### TeamUnit

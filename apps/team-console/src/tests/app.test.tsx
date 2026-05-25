@@ -2082,7 +2082,7 @@ describe("App", () => {
     expect(readme).toContain("POST /v1/team/tasks/:taskId/runs");
     expect(readme).toContain("GET /v1/team/task-runs/:runId/tasks/:taskId/attempts");
     expect(readme).toContain("Run observer");
-    expect(readme).toContain("worker 输出、checker verdict、accepted result");
+    expect(readme).toContain("只展示 Agent 名字（从 agentsById 解析）、文件名和路径");
     expect(readme).toContain("不会进入 `/v1/team/runs` 的 Plan run 列表");
     expect(readme).toContain("第一版 Task run 只执行 WorkUnit 的 worker → checker");
     expect(readme).toContain("Task → 菜单 → 二级节点");

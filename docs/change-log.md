@@ -12,6 +12,22 @@
 
 ---
 
+## 2026-05-25 — Team Console Run observer 紧凑节点和可调整详情面板
+
+- **主题**: 优化 Team Console Run observer 的节点视觉密度和交互能力。
+- **变更内容**:
+  - Run 状态节点改为内容自适应高度（`autoHeight`），不再使用固定 220px。
+  - 文件节点压缩为紧凑索引卡片，只展示 Agent 名字（从 agentsById 解析）、文件名和路径；移除 checker reason / verdict 摘要和 runtime context 长文本。
+  - 文件详情节点支持右下角拖动调整宽高（`resizable`），最小尺寸 360×280，拖动后连接线和布局同步更新。
+  - ExecutionMap `taskChildBranchPanels` prop 扩展支持 `autoHeight`、`resizable`、`minWidth`、`minHeight` 字段。
+  - 修复 `taskChildBranchPanelsLayout` 中 `sourceId` 的非空断言风险。
+  - 新增 `.emap-panel-resize-handle` CSS 和 `.emap-observer-file-compact` / `.emap-observer-file-agent` 样式。
+  - 新增 2 个测试覆盖 auto-height、紧凑文件节点和 resize 交互。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改后端 API shape，不改 `.pi/skills/**`，不改主 `/playground`。
+
+---
+
 ## 2026-05-25 — Team Console Task run observer 多节点渲染
 
 - **主题**: 把 Team Console Task run observer 从单一大容器改为多个独立 canvas branch node。
