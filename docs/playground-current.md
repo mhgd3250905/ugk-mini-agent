@@ -2,16 +2,22 @@
 
 更新时间：`2026-05-25`
 
+## 2026-05-25 Team Console Task run observer 拖拽与安全 Markdown
+
+- Observer 所有子节点（Run 状态、文件节点）和孙节点（文件详情）均可自由拖动：pointerdown 只记录起点，pointermove 超过 4px 阈值后才进入拖动状态并移动面板；未超阈值时 click 正常传递，点击文件节点能正常展开详情；拖动结束后下一次 click 会被抑制，防止误触展开。
+- 文件详情内容使用 `marked` 安全 Markdown 渲染（`apps/team-console/src/shared/markdown.ts`），配置与主项目 `src/ui/playground-markdown.ts` 一致：GFM tables、HTML 转义、只允许 http/https 链接、`target="_blank" rel="noreferrer noopener"`。
+- 文件详情节点内容区移除固定 max-height 限制，resize 后内容 flex-fill。
+- 子节点 connector 使用父节点的 final（拖动后的）rect 作为 source，不会残留拖动前旧坐标。
+- 仍不接 SSE；前端轮询现有 Task run state、attempt metadata 和 attempt file API。
+
 ## 2026-05-25 Team Console Task run observer 多节点渲染
 
 - 独立 Team Console preview 的 Task 操作菜单中，"最近运行"或 active run 的"运行中"摘要现在是可点击入口，会展开 Run observer。
 - Observer 的每个元素（Run 状态、文件节点、文件详情）是独立的 `.emap-task-child-branch-shell` canvas branch node，由 ExecutionMap 渲染，各自拥有从 source 节点到自身的 SVG connector path。
 - Run 状态节点展示运行阶段、耗时、attempt 数和进度消息，高度按内容自适应（不再使用固定 220px）；文件节点是紧凑索引卡片，只展示 Agent 名字（从 agentsById 解析）、文件名和路径，不展示 runtime context 长文本或 verdict 摘要。
-- 点击文件节点会在右侧展开第二级文件详情节点（也是独立 branch shell，带显式收起按钮），根据文件扩展名使用安全渲染：JSON pretty print（解析失败显示 parse error）、Markdown 纯文本 React 节点渲染（不使用 `dangerouslySetInnerHTML`）、其他文本原样 `<pre>` 展示。文件详情节点支持右下角拖动调整宽高，最小尺寸 360×280，拖动后连接线和布局同步更新。
-- Run observer 的 Run 状态节点和文件索引节点不支持 drag/resize；文件详情节点支持右下角 resize。leader-chat 现有的 drag/resize/maximize 不受影响。
-- 仍不接 SSE；前端轮询现有 Task run state、attempt metadata 和 attempt file API。
+- 点击文件节点会在右侧展开第二级文件详情节点（也是独立 branch shell，带显式收起按钮），根据文件扩展名使用安全渲染：JSON pretty print（解析失败显示 parse error）、Markdown 使用 `marked` 安全渲染（`renderTeamMarkdown()`）、其他文本原样 `<pre>` 展示。文件详情节点支持右下角拖动调整宽高，最小尺寸 360×280。
 - 这仍属于 `apps/team-console/` 独立 preview 行为，不替换 `/playground/team`，也不解析嵌入 iframe 的聊天文本。
-- 相关源码：`apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/api/team-api.ts`、`apps/team-console/src/fixtures/team-fixtures.ts`
+- 相关源码：`apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/shared/markdown.ts`、`apps/team-console/src/api/team-api.ts`、`apps/team-console/src/fixtures/team-fixtures.ts`
 
 ## 2026-05-23 Qwen reasoning stream heartbeat
 

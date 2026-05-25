@@ -12,6 +12,23 @@
 
 ---
 
+## 2026-05-25 — Team Console Run observer 拖拽、安全 Markdown 和 connector 修复
+
+- **主题**: 修复 Run observer 面板拖拽/点击冲突，添加安全 Markdown 渲染，修复子节点 connector 使用旧坐标。
+- **变更内容**:
+  - Observer 子节点（Run 状态、文件节点）和孙节点（文件详情）全部可自由拖动；拖拽超过 4px 阈值才进入拖动状态，未超阈值时 pointerup 和 click 正常传递，点击文件节点正常展开详情。
+  - 拖动后 click 会被 `panelDragSuppressClickRef` 抑制，避免误触展开。
+  - `taskChildBranchPanelsLayout` 改为先计算所有 panel finalRect（含 position override），再用父节点的 finalRect 作为子节点 connector 的 sourceRect，修复文件节点拖动后详情连线不跟随的问题。
+  - 文件详情内容区移除 `max-height: 360px` / `max-height: 240px` 固定限制，resize 后内容 flex-fill。
+  - 文件详情 Markdown 渲染从手写正则替换为 `marked` 安全渲染（`src/shared/markdown.ts`），配置与 `src/ui/playground-markdown.ts` 一致：GFM tables、HTML 转义、只允许 http/https 链接、`target="_blank" rel="noreferrer noopener"`。
+  - 新增 `.team-md-content` CSS 样式覆盖 Markdown 渲染输出的 headings、code、tables、blockquotes、lists 等。
+  - Run observer 当前使用轮询读取 run state，不接 SSE。
+  - 新增 17 个测试：14 个 Markdown 安全渲染测试 + 3 个 click-vs-drag + connector 跟随测试。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/shared/markdown.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/markdown.test.ts`, `apps/team-console/package.json`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改后端 API shape，不改 `.pi/skills/**`，不改主 `/playground`。Run observer 轮询不改 SSE。
+
+---
+
 ## 2026-05-25 — Team Console Run observer 紧凑节点和可调整详情面板
 
 - **主题**: 优化 Team Console Run observer 的节点视觉密度和交互能力。
