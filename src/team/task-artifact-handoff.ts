@@ -34,14 +34,21 @@ export function formatBoundInputsForPrompt(boundInputs: TeamTaskBoundInput[]): s
 	const blocks = boundInputs.map((input, index) => {
 		const artifact = input.artifact;
 		const content = artifact.content ?? artifact.preview;
+		const delimiterId = artifact.artifactId;
 		return [
 			`### 输入 ${index + 1}: ${artifact.type}`,
+			`- connectionId: ${input.connectionId}`,
 			`- inputPortId: ${input.inputPortId}`,
+			`- artifactId: ${artifact.artifactId}`,
 			`- sourceTaskId: ${artifact.sourceTaskId}`,
 			`- sourceRunId: ${artifact.sourceRunId}`,
+			`- sourceAttemptId: ${artifact.sourceAttemptId}`,
+			`- sourceOutputPortId: ${artifact.sourceOutputPortId}`,
 			`- fileRef: ${artifact.fileRef}`,
 			"",
+			`BEGIN_TYPED_ARTIFACT_CONTENT ${delimiterId}`,
 			content,
+			`END_TYPED_ARTIFACT_CONTENT ${delimiterId}`,
 		].join("\n");
 	});
 	return `## 已绑定上游 typed artifact 输入\n${blocks.join("\n\n")}`;

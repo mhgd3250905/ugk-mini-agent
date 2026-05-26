@@ -81,15 +81,48 @@ test("formatBoundInputsForPrompt returns empty string for no inputs", () => {
 	assert.equal(formatBoundInputsForPrompt([]), "");
 });
 
-test("formatBoundInputsForPrompt formats one bound input with current metadata", () => {
+test("formatBoundInputsForPrompt formats one bound input with full trace metadata", () => {
 	const input = makeBoundInput();
 	const result = formatBoundInputsForPrompt([input]);
 	assert.match(result, /输入 1: md/);
+	assert.match(result, /connectionId: conn_1/);
 	assert.match(result, /inputPortId: source_md/);
+	assert.match(result, /artifactId: artifact_/);
 	assert.match(result, /sourceTaskId: task_src/);
 	assert.match(result, /sourceRunId: run_src/);
+	assert.match(result, /sourceAttemptId: attempt_src/);
+	assert.match(result, /sourceOutputPortId: draft_md/);
 	assert.match(result, /fileRef: result\/accepted\.md/);
+	assert.match(result, /BEGIN_TYPED_ARTIFACT_CONTENT artifact_/);
+	assert.match(result, /END_TYPED_ARTIFACT_CONTENT artifact_/);
 	assert.match(result, /accepted result/);
+});
+
+test("formatBoundInputsForPrompt wraps markdown-like content in stable delimiters", () => {
+	const markdownContent = [
+		"### Nested Heading",
+		"- list item 1",
+		"- list item 2",
+		"",
+		"```typescript",
+		"const x = 1;",
+		"```",
+	].join("\n");
+	const input = makeBoundInput({
+		artifact: makeArtifact({ content: markdownContent }),
+	});
+	const result = formatBoundInputsForPrompt([input]);
+	assert.match(result, /### Nested Heading/);
+	assert.match(result, /```typescript/);
+	assert.match(result, /const x = 1;/);
+	const beginIdx = result.indexOf("BEGIN_TYPED_ARTIFACT_CONTENT");
+	const endIdx = result.indexOf("END_TYPED_ARTIFACT_CONTENT");
+	assert.ok(beginIdx > 0, "BEGIN marker should exist");
+	assert.ok(endIdx > beginIdx, "END marker should appear after BEGIN");
+	const beginCount = (result.match(/BEGIN_TYPED_ARTIFACT_CONTENT/g) ?? []).length;
+	const endCount = (result.match(/END_TYPED_ARTIFACT_CONTENT/g) ?? []).length;
+	assert.equal(beginCount, 1, "exactly one BEGIN marker for one input");
+	assert.equal(endCount, 1, "exactly one END marker for one input");
 });
 
 test("formatBoundInputsForPrompt uses content before preview", () => {
