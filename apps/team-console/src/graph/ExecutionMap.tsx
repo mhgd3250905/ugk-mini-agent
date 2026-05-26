@@ -339,17 +339,18 @@ function connectorAnchors(sourceRect: AgentBranchRect, targetRect: AgentBranchRe
   };
 }
 
-function renderConnectorAnchors(
+function renderConnectorSourceSocket(
   key: string,
-  anchors: ReturnType<typeof connectorAnchors>,
+  source: { x: number; y: number },
   className = "",
 ): ReactNode {
+  const r = 6;
   return (
-    <g key={key} className={`emap-connector-anchors ${className}`} aria-hidden="true">
-      <circle className="emap-connector-anchor-ring source" cx={anchors.source.x} cy={anchors.source.y} r={5.5} />
-      <circle className="emap-connector-anchor-dot source" cx={anchors.source.x} cy={anchors.source.y} r={2.2} />
-      <circle className="emap-connector-anchor-ring target" cx={anchors.target.x} cy={anchors.target.y} r={5.5} />
-      <circle className="emap-connector-anchor-dot target" cx={anchors.target.x} cy={anchors.target.y} r={2.2} />
+    <g key={key} className={`emap-connector-sockets ${className}`} aria-hidden="true">
+      <path
+        className="emap-connector-source-socket"
+        d={`M${source.x},${source.y - r} A${r},${r} 0 0 1 ${source.x},${source.y + r}`}
+      />
     </g>
   );
 }
@@ -366,11 +367,11 @@ function taskPortLabel(port: TeamTaskInputPort | TeamTaskOutputPort): string {
   return port.label?.trim() || port.id;
 }
 
-function taskConnectionPath(
+function taskConnectionPoints(
   connection: TeamTaskConnection,
   taskNodeByTaskId: Map<string, AtlasTaskNode>,
   tasksById: Map<string, TeamCanvasTask> | undefined,
-): string | null {
+): { source: { x: number; y: number }; target: { x: number; y: number } } | null {
   const sourceNode = taskNodeByTaskId.get(connection.fromTaskId);
   const targetNode = taskNodeByTaskId.get(connection.toTaskId);
   const sourceTask = tasksById?.get(connection.fromTaskId);
@@ -382,7 +383,10 @@ function taskConnectionPath(
   const targetIndex = Math.max(0, inputPorts.findIndex((port) => port.id === connection.toInputPortId));
   const sourceY = sourceNode.position.y + CANVAS_TASK_NODE_HEIGHT - 42 + sourceIndex * 14;
   const targetY = targetNode.position.y + CANVAS_TASK_NODE_HEIGHT - 64 + targetIndex * 14;
-  return straightPath(sourceNode.position.x + NODE_WIDTH, sourceY, targetNode.position.x, targetY);
+  return {
+    source: { x: sourceNode.position.x + NODE_WIDTH, y: sourceY },
+    target: { x: targetNode.position.x, y: targetY },
+  };
 }
 
 export function summarizeCollapsedTaskStatus(children: Pick<ExecutionNode, "status">[]): TaskStatus {
@@ -791,8 +795,11 @@ export function ExecutionMap({
   const taskNodeByTaskId = useMemo(() => new Map(taskNodes.map((node) => [node.taskId, node])), [taskNodes]);
   const taskConnectionLinks = useMemo(() => (
     taskConnections
-      .map((connection) => ({ connection, path: taskConnectionPath(connection, taskNodeByTaskId, tasksById) }))
-      .filter((entry): entry is { connection: TeamTaskConnection; path: string } => Boolean(entry.path))
+      .map((connection) => {
+        const points = taskConnectionPoints(connection, taskNodeByTaskId, tasksById);
+        return points ? { connection, path: straightPath(points.source.x, points.source.y, points.target.x, points.target.y), source: points.source } : null;
+      })
+      .filter((entry): entry is { connection: TeamTaskConnection; path: string; source: { x: number; y: number } } => Boolean(entry))
   ), [taskConnections, taskNodeByTaskId, tasksById]);
 
   const selectedChain = useMemo(() => {
@@ -814,7 +821,7 @@ export function ExecutionMap({
   const evidenceLayout = useMemo(() => {
     type Position = EvidenceEntry & { x: number; y: number; width: number; height: number };
     type PreviewPosition = { entry: EvidenceEntry; x: number; y: number; width: number; height: number; state: ArtifactPreviewState };
-    type EvidenceLink = { id: string; path: string; preview?: boolean };
+    type EvidenceLink = { id: string; path: string; preview?: boolean; source?: { x: number; y: number }; socketClassName?: string };
     const empty = { positions: [] as Position[], preview: null as PreviewPosition | null, links: [] as EvidenceLink[] };
     if (evidence.length === 0) return empty;
     const taskPos = layout.nodePositions.get(selectedTaskId!);
@@ -840,6 +847,8 @@ export function ExecutionMap({
           id: `${entry.id}__preview`,
           path: straightPath(evidenceX + EVIDENCE_W, y + h / 2, previewX, y + previewH / 2),
           preview: true,
+          source: { x: evidenceX + EVIDENCE_W, y: y + h / 2 },
+          socketClassName: "emap-connector-socket-evidence",
         });
         rowHeight = Math.max(rowHeight, previewH);
       }
@@ -857,6 +866,8 @@ export function ExecutionMap({
       {
         id: `${selectedTaskId}__evidence-source`,
         path: straightSegmentPath(sourceX, sourceY, trunkX, sourceY),
+        source: { x: sourceX, y: sourceY },
+        socketClassName: "emap-connector-socket-evidence",
       },
     ];
 
@@ -1312,6 +1323,14 @@ export function ExecutionMap({
   );
   const agentBranchPath = focusedAgentNode && agentBranchNode
     ? agentBranchConnectorPath(focusedAgentNode, agentBranchNode)
+    : null;
+  const agentBranchAnchors = focusedAgentNode && agentBranchNode
+    ? connectorAnchors({
+      x: focusedAgentNode.position.x,
+      y: focusedAgentNode.position.y,
+      width: NODE_WIDTH,
+      height: AGENT_NODE_HEIGHT,
+    }, agentBranchNode)
     : null;
   const taskBranchPath = focusedTaskNode && taskBranchNode
     ? taskBranchConnectorPath(focusedTaskNode, taskBranchNode)
@@ -1838,7 +1857,10 @@ export function ExecutionMap({
             const sourcePos = layout.nodePositions.get(link.sourceId);
             const targetPos = layout.nodePositions.get(link.targetId);
             const linkType = sourcePos && targetPos && sourcePos.x === targetPos.x ? "emap-link-main" : "emap-link-branch";
-            return (
+            const sourceSocket = sourcePos && targetPos && sourcePos.x !== targetPos.x
+              ? rightMiddleAnchor(sourcePos)
+              : null;
+            const path = (
               <path
                 key={`${link.sourceId}-${link.targetId}`}
                 d={link.path}
@@ -1847,26 +1869,56 @@ export function ExecutionMap({
                 strokeWidth={2}
               />
             );
+            if (!sourceSocket) return path;
+            return (
+              <g key={`${link.sourceId}-${link.targetId}`}>
+                {path}
+                {renderConnectorSourceSocket(
+                  `${link.sourceId}-${link.targetId}-source-socket`,
+                  sourceSocket,
+                  "emap-connector-socket-task-branch",
+                )}
+              </g>
+            );
           })}
-          {evidenceLayout.links.map((link) => (
-            <path
-              key={link.id}
-              d={link.path}
-              className={`emap-link ${link.preview ? "emap-link-artifact-preview" : "emap-link-evidence"}`}
-              fill="none"
-              strokeWidth={1.5}
-            />
-          ))}
-          {taskConnectionLinks.map(({ connection, path }) => (
-            <path
-              key={connection.connectionId}
-              d={path}
-              className="emap-link emap-link-task-connection"
-              data-task-connection-id={connection.connectionId}
-              data-port-type={connection.type}
-              fill="none"
-              strokeWidth={2}
-            />
+          {evidenceLayout.links.map((link) => {
+            const path = (
+              <path
+                key={link.id}
+                d={link.path}
+                className={`emap-link ${link.preview ? "emap-link-artifact-preview" : "emap-link-evidence"}`}
+                fill="none"
+                strokeWidth={1.5}
+              />
+            );
+            if (!link.source) return path;
+            return (
+              <g key={link.id}>
+                {path}
+                {renderConnectorSourceSocket(
+                  `${link.id}-source-socket`,
+                  link.source,
+                  link.socketClassName ?? "emap-connector-socket-evidence",
+                )}
+              </g>
+            );
+          })}
+          {taskConnectionLinks.map(({ connection, path, source }) => (
+            <g key={connection.connectionId}>
+              <path
+                d={path}
+                className="emap-link emap-link-task-connection"
+                data-task-connection-id={connection.connectionId}
+                data-port-type={connection.type}
+                fill="none"
+                strokeWidth={2}
+              />
+              {renderConnectorSourceSocket(
+                `${connection.connectionId}-source-socket`,
+                source,
+                "emap-connector-socket-task-connection",
+              )}
+            </g>
           ))}
           {agentBranchPath && (
             <path
@@ -1877,6 +1929,7 @@ export function ExecutionMap({
               strokeWidth={2}
             />
           )}
+          {agentBranchAnchors && renderConnectorSourceSocket("agent-playground-branch-source-socket", agentBranchAnchors.source, "emap-connector-socket-agent-branch")}
           {taskBranchPath && (
             <path
               key="task-leader-branch"
@@ -1886,7 +1939,7 @@ export function ExecutionMap({
               strokeWidth={2}
             />
           )}
-          {taskBranchAnchors && renderConnectorAnchors("task-leader-branch-anchors", taskBranchAnchors, "emap-connector-anchors-task-branch")}
+          {taskBranchAnchors && renderConnectorSourceSocket("task-leader-branch-source-socket", taskBranchAnchors.source, "emap-connector-socket-task-branch")}
           {taskChildBranchPath && (
             <path
               key="task-child-branch"
@@ -1896,7 +1949,7 @@ export function ExecutionMap({
               strokeWidth={2}
             />
           )}
-          {taskChildBranchAnchors && renderConnectorAnchors("task-child-branch-anchors", taskChildBranchAnchors, "emap-connector-anchors-task-child-branch")}
+          {taskChildBranchAnchors && renderConnectorSourceSocket("task-child-branch-source-socket", taskChildBranchAnchors.source, "emap-connector-socket-task-child-branch")}
           {taskChildBranchPanelsLayout.map((p) => (
             <g key={`task-child-panel-${p.id}`}>
               <path
@@ -1905,10 +1958,10 @@ export function ExecutionMap({
                 fill="none"
                 strokeWidth={2}
               />
-              {renderConnectorAnchors(
-                `task-child-panel-${p.id}-anchors`,
-                connectorAnchors(p.sourceRect, p.rect),
-                "emap-connector-anchors-task-child-branch",
+              {renderConnectorSourceSocket(
+                `task-child-panel-${p.id}-source-socket`,
+                rightMiddleAnchor(p.sourceRect),
+                "emap-connector-socket-task-child-branch",
               )}
             </g>
           ))}

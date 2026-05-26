@@ -18,7 +18,7 @@
 - 文件条目以紧凑行（`.emap-observer-file-row`）展示在合并面板内部，而不是单独的 canvas 节点。
 - 点击文件行会在右侧展开第二级文件详情面板。
 - Task 菜单只保留操作按钮和紧凑运行摘要。
-- 连接线使用 fixed right-middle 到 left-middle 锚点；反向角度时使用单条连续 cubic，通过两端水平控制柄表达右出左入，不再拆成多段 hook，避免近距离斜向连接出现切角；卡片接触点显示圆环 + 中心点标记，让接线处更明确。
+- 连接线使用 fixed right-middle 到 left-middle 锚点；反向角度时使用单条连续 cubic，通过两端水平控制柄表达右出左入，不再拆成多段 hook，避免近距离斜向连接出现切角；source 出线端显示吸附在卡片右边缘的半圆 socket，target 入线端不再显示圆环或圆点。
 - 拖动语义保持层级化：拖 Task 根节点或菜单节点仍会带动已展开 observer 面板和文件详情面板，单独拖 observer 面板只移动自身，拖文件详情叶子节点只移动自身。
 
 ## 2026-05-25 Team Console Task run process nodes
@@ -35,7 +35,7 @@
 - 合并 observer 面板和文件详情面板均可自由拖动：pointerdown 只记录起点，pointermove 超过 4px 阈值后才进入拖动状态并移动面板；未超阈值时 click 正常传递，点击文件行能正常展开详情；拖动结束后下一次 click 会被抑制，防止误触展开。Task 操作树使用层级拖动语义：拖动 Task 根节点会以相同 dx/dy 移动菜单及已展开的 observer 面板和文件详情面板；拖动菜单节点同样带走 observer 和文件详情；拖动 observer 面板只移动自身；拖动文件详情叶子节点只移动自身。编辑节点的拖动把手在标题栏，表单控件不参与拖动。所有拖动系统使用延迟 pointer capture：pointerdown 时不调用 setPointerCapture，只有 pointermove 距离超过 4px 阈值后才捕获 pointer，避免微小手抖阻止正常点击和文本选择。
 - 文件详情内容使用 `marked` 安全 Markdown 渲染（`apps/team-console/src/shared/markdown.ts`），配置与主项目 `src/ui/playground-markdown.ts` 一致：GFM tables、HTML 转义、只允许 http/https 链接、`target="_blank" rel="noreferrer noopener"`。
 - 文件详情节点内容区移除固定 max-height 限制，resize 后内容 flex-fill。
-- 子节点 connector 和新展开的文件详情节点都使用父节点的 final（拖动后的）rect 作为 source / anchor；连接线使用 fixed right-middle 到 left-middle 锚点，反向角度时只在两端短距离探出并快速转向，中段保持小弧度；source / target 接触点渲染圆环 + 圆点锚点。
+- 子节点 connector 和新展开的文件详情节点都使用父节点的 final（拖动后的）rect 作为 source / anchor；连接线使用 fixed right-middle 到 left-middle 锚点，反向角度时只在两端短距离探出并快速转向，中段保持小弧度；所有前后节点连接只在 source 出线端渲染半圆 socket。
 - 仍不接 SSE；前端轮询现有 Task run state、attempt metadata 和 attempt file API。
 
 ## 2026-05-25 Team Console Task run observer 多节点渲染

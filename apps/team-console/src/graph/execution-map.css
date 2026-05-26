@@ -608,26 +608,28 @@
   opacity: 0.95;
 }
 
-.emap-connector-anchors {
+.emap-connector-sockets {
   pointer-events: none;
 }
 
-.emap-connector-anchor-ring {
+.emap-connector-source-socket {
   fill: rgba(7, 12, 22, 0.94);
   stroke: rgba(255, 190, 96, 0.86);
   stroke-width: 1.6;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
 }
 
-.emap-connector-anchor-dot {
-  fill: rgba(255, 214, 128, 0.96);
+.emap-connector-socket-task-connection .emap-connector-source-socket {
+  stroke: rgba(103, 210, 168, 0.9);
 }
 
-.emap-connector-anchor-ring.target {
+.emap-connector-socket-agent-branch .emap-connector-source-socket {
   stroke: rgba(121, 216, 208, 0.88);
 }
 
-.emap-connector-anchor-dot.target {
-  fill: rgba(121, 216, 208, 0.96);
+.emap-connector-socket-evidence .emap-connector-source-socket {
+  stroke: rgba(121, 216, 208, 0.84);
 }
 
 .emap-agent-branch-shell {

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
-import { makeSequentialPlan, makeSequentialRun, MOCK_AGENTS, mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
+import { makeDiscoveryForEachPlan, makeDiscoveryForEachRun, makeSequentialPlan, makeSequentialRun, MOCK_AGENTS, mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
 import type { AgentChatProcessEntry, TeamAttemptMetadata, TeamCanvasTask, TeamRunState, TeamTaskConnection } from "../api/team-types";
 
 function getAtlas(container: HTMLElement): HTMLElement {
@@ -368,6 +368,16 @@ describe("App", () => {
       }]);
       expect(container.querySelector('[data-task-connection-id="conn_live_md"]')).toBeTruthy();
     });
+
+    const connectionPath = container.querySelector('[data-task-connection-id="conn_live_md"]') as SVGPathElement | null;
+    const sourceSocket = connectionPath?.parentElement?.querySelector(".emap-connector-socket-task-connection .emap-connector-source-socket") as SVGPathElement | null;
+    const connectionD = connectionPath?.getAttribute("d") ?? "";
+    const moveMatch = connectionD.match(/^M([\d.]+),([\d.]+)/);
+    expect(sourceSocket).toBeTruthy();
+    expect(moveMatch).toBeTruthy();
+    const sourceX = Number.parseFloat(moveMatch![1]!);
+    const sourceY = Number.parseFloat(moveMatch![2]!);
+    expect(sourceSocket!.getAttribute("d")).toBe(`M${sourceX},${sourceY - 6} A6,6 0 0 1 ${sourceX},${sourceY + 6}`);
   });
 
   it("discovers an auto-started downstream Task run after the upstream run finishes", async () => {
@@ -2967,6 +2977,37 @@ describe("App", () => {
     expect(await screen.findByText("Live-only vendor task")).toBeInTheDocument();
   });
 
+  it("renders source sockets on atlas parent-child branch links", async () => {
+    const plan = makeDiscoveryForEachPlan();
+    const run = makeDiscoveryForEachRun();
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [] }), { status: 200 });
+      if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === "/v1/team/plans") return new Response(JSON.stringify([plan]), { status: 200 });
+      if (url === "/v1/team/runs") return new Response(JSON.stringify([run]), { status: 200 });
+      if (url === `/v1/team/runs/${run.runId}`) return new Response(JSON.stringify(run), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    fireEvent.click(await screen.findByRole("button", { name: "最新 Run" }));
+
+    expect(await screen.findByText("Process Alpha")).toBeInTheDocument();
+    const branchPath = container.querySelector(".emap-link-branch") as SVGPathElement | null;
+    const sourceSocket = branchPath?.parentElement?.querySelector(".emap-connector-socket-task-branch .emap-connector-source-socket") as SVGPathElement | null;
+    const branchD = branchPath?.getAttribute("d") ?? "";
+    const moveMatch = branchD.match(/^M([\d.]+),([\d.]+)/);
+    expect(sourceSocket).toBeTruthy();
+    expect(moveMatch).toBeTruthy();
+    const sourceX = Number.parseFloat(moveMatch![1]!);
+    const sourceY = Number.parseFloat(moveMatch![2]!);
+    expect(sourceSocket!.getAttribute("d")).toBe(`M${sourceX},${sourceY - 6} A6,6 0 0 1 ${sourceX},${sourceY + 6}`);
+  });
+
   it("keeps live agent workspace usable when no live team run exists", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(new Response(JSON.stringify({
@@ -3028,10 +3069,11 @@ describe("App", () => {
     const scrollbarRule = mapCss.match(/\.emap-run-observer-panel\s+\.emap-observer-process-top::-webkit-scrollbar\s*{[^}]*}/)?.[0] ?? "";
     const thumbRule = mapCss.match(/\.emap-run-observer-panel\s+\.emap-observer-process-top::-webkit-scrollbar-thumb\s*{[^}]*}/)?.[0] ?? "";
     const checkerThumbRule = mapCss.match(/\.emap-run-observer-stage\.checker\s+\.emap-observer-process-top::-webkit-scrollbar-thumb\s*{[^}]*}/)?.[0] ?? "";
-    const connectorAnchorRule = mapCss.match(/\.emap-connector-anchors\s*{[^}]*}/)?.[0] ?? "";
-    const anchorRingRule = mapCss.match(/\.emap-connector-anchor-ring\s*{[^}]*}/)?.[0] ?? "";
-    const anchorDotRule = mapCss.match(/\.emap-connector-anchor-dot\s*{[^}]*}/)?.[0] ?? "";
-    const targetRingRule = mapCss.match(/\.emap-connector-anchor-ring\.target\s*{[^}]*}/)?.[0] ?? "";
+    const connectorSocketRule = mapCss.match(/\.emap-connector-sockets\s*{[^}]*}/)?.[0] ?? "";
+    const sourceSocketRule = mapCss.match(/\.emap-connector-source-socket\s*{[^}]*}/)?.[0] ?? "";
+    const taskConnectionSocketRule = mapCss.match(/\.emap-connector-socket-task-connection\s+\.emap-connector-source-socket\s*{[^}]*}/)?.[0] ?? "";
+    const agentSocketRule = mapCss.match(/\.emap-connector-socket-agent-branch\s+\.emap-connector-source-socket\s*{[^}]*}/)?.[0] ?? "";
+    const evidenceSocketRule = mapCss.match(/\.emap-connector-socket-evidence\s+\.emap-connector-source-socket\s*{[^}]*}/)?.[0] ?? "";
 
     expect(panelRule).toContain("overflow: visible");
     expect(panelRule).not.toContain("overflow: auto");
@@ -3043,11 +3085,16 @@ describe("App", () => {
     expect(scrollbarRule).not.toContain("display: none");
     expect(thumbRule).toContain("rgba(121, 216, 208");
     expect(checkerThumbRule).toContain("rgba(255, 206, 118");
-    expect(connectorAnchorRule).toContain("pointer-events: none");
-    expect(anchorRingRule).toContain("stroke-width: 1.6");
-    expect(anchorRingRule).toContain("rgba(255, 190, 96");
-    expect(anchorDotRule).toContain("rgba(255, 214, 128");
-    expect(targetRingRule).toContain("rgba(121, 216, 208");
+    expect(connectorSocketRule).toContain("pointer-events: none");
+    expect(sourceSocketRule).toContain("stroke-width: 1.6");
+    expect(sourceSocketRule).toContain("stroke-linecap: round");
+    expect(sourceSocketRule).toContain("vector-effect: non-scaling-stroke");
+    expect(sourceSocketRule).toContain("rgba(255, 190, 96");
+    expect(taskConnectionSocketRule).toContain("rgba(103, 210, 168");
+    expect(agentSocketRule).toContain("rgba(121, 216, 208");
+    expect(evidenceSocketRule).toContain("rgba(121, 216, 208");
+    expect(mapCss).not.toContain(".emap-connector-anchor-ring");
+    expect(mapCss).not.toContain(".emap-connector-anchor-dot");
   });
 
   it("uses a warm accent for busy Agent cards", () => {
@@ -3734,7 +3781,7 @@ describe("App", () => {
     expect(Number.parseFloat(detailShell!.style.top)).toBeCloseTo(detailTopBefore + dy, 4);
   });
 
-  it("uses right-middle to left-middle connector anchors for task child panels", async () => {
+  it("uses right-middle to left-middle source sockets for task child panels", async () => {
     const { container } = render(<App />);
     await setupMergedObserverOpen(container);
 
@@ -3760,21 +3807,13 @@ describe("App", () => {
 
     const pathStartX = Number.parseFloat(moveMatch![1]!);
     const pathStartY = Number.parseFloat(moveMatch![2]!);
-    const markerGroup = firstPath.parentElement?.querySelector(".emap-connector-anchors-task-child-branch") as SVGGElement | null;
+    const markerGroup = firstPath.parentElement?.querySelector(".emap-connector-socket-task-child-branch") as SVGGElement | null;
+    const sourceSocket = markerGroup?.querySelector(".emap-connector-source-socket") as SVGPathElement | null;
     expect(markerGroup).toBeTruthy();
-    expect(markerGroup!.querySelectorAll(".emap-connector-anchor-ring")).toHaveLength(2);
-    expect(markerGroup!.querySelectorAll(".emap-connector-anchor-dot")).toHaveLength(2);
-
-    const sourceRing = markerGroup!.querySelector(".emap-connector-anchor-ring.source") as SVGCircleElement | null;
-    const sourceDot = markerGroup!.querySelector(".emap-connector-anchor-dot.source") as SVGCircleElement | null;
-    expect(sourceRing).toBeTruthy();
-    expect(sourceDot).toBeTruthy();
-    expect(Number.parseFloat(sourceRing!.getAttribute("cx") ?? "NaN")).toBeCloseTo(pathStartX, 4);
-    expect(Number.parseFloat(sourceRing!.getAttribute("cy") ?? "NaN")).toBeCloseTo(pathStartY, 4);
-    expect(Number.parseFloat(sourceDot!.getAttribute("cx") ?? "NaN")).toBeCloseTo(pathStartX, 4);
-    expect(Number.parseFloat(sourceDot!.getAttribute("cy") ?? "NaN")).toBeCloseTo(pathStartY, 4);
-    expect(sourceRing!.getAttribute("r")).toBe("5.5");
-    expect(sourceDot!.getAttribute("r")).toBe("2.2");
+    expect(sourceSocket).toBeTruthy();
+    expect(sourceSocket!.getAttribute("d")).toBe(`M${pathStartX},${pathStartY - 6} A6,6 0 0 1 ${pathStartX},${pathStartY + 6}`);
+    expect(markerGroup!.querySelector(".emap-connector-anchor-ring")).toBeNull();
+    expect(markerGroup!.querySelector(".emap-connector-anchor-dot")).toBeNull();
 
     // Source x must be to the right of the menu left and to the left of the observer
     expect(pathStartX).toBeGreaterThan(menuLeft);
@@ -3787,16 +3826,6 @@ describe("App", () => {
     expect(lastCoordMatch).toBeTruthy();
     const pathEndX = Number.parseFloat(lastCoordMatch![1]!);
     const pathEndY = Number.parseFloat(lastCoordMatch![2]!);
-    const targetRing = markerGroup!.querySelector(".emap-connector-anchor-ring.target") as SVGCircleElement | null;
-    const targetDot = markerGroup!.querySelector(".emap-connector-anchor-dot.target") as SVGCircleElement | null;
-    expect(targetRing).toBeTruthy();
-    expect(targetDot).toBeTruthy();
-    expect(Number.parseFloat(targetRing!.getAttribute("cx") ?? "NaN")).toBeCloseTo(pathEndX, 4);
-    expect(Number.parseFloat(targetRing!.getAttribute("cy") ?? "NaN")).toBeCloseTo(pathEndY, 4);
-    expect(Number.parseFloat(targetDot!.getAttribute("cx") ?? "NaN")).toBeCloseTo(pathEndX, 4);
-    expect(Number.parseFloat(targetDot!.getAttribute("cy") ?? "NaN")).toBeCloseTo(pathEndY, 4);
-    expect(targetRing!.getAttribute("r")).toBe("5.5");
-    expect(targetDot!.getAttribute("r")).toBe("2.2");
 
     // Target should be at observer left edge
     expect(pathEndX).toBeCloseTo(observerLeft, 0);
