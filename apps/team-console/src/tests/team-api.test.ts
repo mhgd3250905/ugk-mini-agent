@@ -498,6 +498,45 @@ describe("LiveTeamApi", () => {
     expect(content).toBe("accepted result");
   });
 
+  it("preserves downstream delivery outcomes from live Canvas Task attempts", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({
+      attempts: [{
+        attemptId: "attempt_dd_1",
+        taskId: "task_dd",
+        status: "succeeded",
+        phase: "succeeded",
+        createdAt: "2026-05-26T00:00:00.000Z",
+        updatedAt: "2026-05-26T00:00:02.000Z",
+        finishedAt: "2026-05-26T00:00:02.000Z",
+        worker: [],
+        checker: [],
+        watcher: null,
+        resultRef: "tasks/task_dd/attempts/attempt_dd_1/accepted-result.md",
+        errorSummary: null,
+        files: ["accepted-result.md"],
+        downstreamDelivery: [{
+          connectionId: "conn_dd_1",
+          toTaskId: "task_dd_downstream",
+          toInputPortId: "source_md",
+          status: "failed",
+          error: "downstream task not found",
+          createdAt: "2026-05-26T00:00:03.000Z",
+        }],
+      }],
+    }), { status: 200 }));
+
+    const attempts = await api.listTaskRunAttempts("run_dd", "task_dd");
+
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]?.downstreamDelivery).toBeDefined();
+    expect(attempts[0]!.downstreamDelivery!).toHaveLength(1);
+    expect(attempts[0]!.downstreamDelivery![0]!.status).toBe("failed");
+    expect(attempts[0]!.downstreamDelivery![0]!.error).toBe("downstream task not found");
+    expect(attempts[0]!.downstreamDelivery![0]!.connectionId).toBe("conn_dd_1");
+    expect(attempts[0]!.downstreamDelivery![0]!.toTaskId).toBe("task_dd_downstream");
+  });
+
   it("getRunDetail URL-encodes the run id", async () => {
     const api = new LiveTeamApi("/v1/team");
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(makeSequentialRun()), { status: 200 }));

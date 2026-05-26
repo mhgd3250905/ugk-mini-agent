@@ -94,6 +94,19 @@ export interface TeamAttemptRoleProcess {
 
 export type TeamAttemptRoleProcesses = Partial<Record<TeamAttemptRoleProcessRole, TeamAttemptRoleProcess>>;
 
+export type TeamTaskDeliveryOutcomeStatus = "delivered" | "skipped" | "failed";
+
+export interface TeamTaskDeliveryOutcome {
+  connectionId: string;
+  toTaskId: string;
+  toInputPortId: string;
+  status: TeamTaskDeliveryOutcomeStatus;
+  staleReason?: TaskConnectionStaleReason;
+  downstreamRunId?: string;
+  error?: string;
+  createdAt: string;
+}
+
 export interface TeamAttemptMetadata {
   attemptId: string;
   taskId: string;
@@ -109,6 +122,7 @@ export interface TeamAttemptMetadata {
   errorSummary: string | null;
   files: string[];
   roleProcesses?: TeamAttemptRoleProcesses;
+  downstreamDelivery?: TeamTaskDeliveryOutcome[];
 }
 
 export interface TeamTask {
@@ -167,6 +181,16 @@ export interface TeamTaskInputPort extends TeamTaskPortBase {}
 
 export interface TeamTaskOutputPort extends TeamTaskPortBase {}
 
+export type TaskConnectionStaleReason =
+  | "source_task_missing"
+  | "source_task_archived"
+  | "target_task_missing"
+  | "target_task_archived"
+  | "source_output_port_missing"
+  | "target_input_port_missing"
+  | "source_output_port_type_mismatch"
+  | "target_input_port_type_mismatch";
+
 export interface TeamTaskConnection {
   schemaVersion: "team/task-connection-1";
   connectionId: string;
@@ -176,7 +200,7 @@ export interface TeamTaskConnection {
   toInputPortId: string;
   type: string;
   status?: "active" | "stale";
-  staleReason?: string;
+  staleReason?: TaskConnectionStaleReason;
   createdAt: string;
   updatedAt: string;
 }
