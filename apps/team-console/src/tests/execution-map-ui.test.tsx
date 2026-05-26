@@ -1242,12 +1242,12 @@ describe("Artifact preview nodes", () => {
 
       const childLink = container.querySelector(".emap-link-task-child-branch") as SVGPathElement | null;
       expect(childLink).toBeTruthy();
-      const childMidY = menuTop + 620 / 2;
+      const childTopY = menuTop;
       const pathD = childLink!.getAttribute("d") ?? "";
       // Path starts from menu right-middle
       expect(pathD).toContain(`M${measuredMenuRight},${connectorY}`);
-      // Path ends at child left-middle
-      expect(pathD).toContain(`${childLeft},${childMidY}`);
+      // Path ends at child top-left
+      expect(pathD).toContain(`${childLeft},${childTopY}`);
       // Path should not start from the menu's left edge
       expect(pathD).not.toContain(`M${menuLeft + 280},`);
     } finally {

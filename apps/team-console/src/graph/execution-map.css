@@ -763,9 +763,8 @@
 }
 
 .task-action-branch {
-  width: max-content;
-  min-width: 220px;
-  max-width: 280px;
+  width: 320px;
+  max-width: min(360px, calc(100vw - 24px));
   height: auto;
   min-height: 0;
 }
@@ -803,7 +802,7 @@
 }
 
 .task-action-branch .task-leader-branch-title {
-  max-width: 158px;
+  max-width: none;
 }
 
 .task-leader-branch-title span {
@@ -825,8 +824,10 @@
 }
 
 .task-action-branch .task-leader-branch-title strong {
-  max-width: 158px;
   font-size: 12px;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .task-leader-branch-title code {
@@ -875,8 +876,8 @@
   flex: 0 0 auto;
   display: grid;
   align-content: start;
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
+  min-width: 0;
   gap: 6px;
   padding: 8px;
   background:
@@ -926,7 +927,8 @@
 .task-run-summary {
   display: grid;
   gap: 7px;
-  min-width: 236px;
+  width: 100%;
+  min-width: 0;
   padding: 10px 12px 11px;
   text-align: left;
   border: 1px solid rgba(121, 216, 208, 0.22);
@@ -999,9 +1001,8 @@
   min-width: 0;
   color: #eaf7ff;
   font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .task-run-summary-message {
@@ -1009,17 +1010,15 @@
   color: rgba(216, 228, 241, 0.68);
   font-size: 10px;
   line-height: 1.35;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .task-run-summary code {
-  overflow: hidden;
   color: #e7c879;
   font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .emap-observer-node {
@@ -1559,6 +1558,35 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  padding-right: 8px;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(121, 216, 208, 0.68) rgba(7, 12, 22, 0.68);
+  scrollbar-width: thin;
+}
+
+.emap-observer-file-detail-body::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.emap-observer-file-detail-body::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(7, 12, 22, 0.68);
+  box-shadow: inset 0 0 0 1px rgba(122, 131, 151, 0.14);
+}
+
+.emap-observer-file-detail-body::-webkit-scrollbar-thumb {
+  border: 2px solid rgba(7, 12, 22, 0.68);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(121, 216, 208, 0.86), rgba(55, 132, 148, 0.9));
+}
+
+.emap-observer-file-detail-body::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(150, 244, 236, 0.96), rgba(72, 159, 176, 0.96));
+}
+
+.emap-observer-file-detail-body::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .emap-observer-file-loading {

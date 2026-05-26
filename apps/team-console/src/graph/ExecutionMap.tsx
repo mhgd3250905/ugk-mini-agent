@@ -47,6 +47,11 @@ interface ExecutionMapProps {
   onTaskInputPortSelect?: (taskId: string, port: TeamTaskInputPort) => void;
   canMoveTasks?: boolean;
   taskBranchPanel?: ReactNode;
+  taskBranchPanels?: Array<{
+    id: string;
+    nodeId: string;
+    panel: ReactNode;
+  }>;
   taskChildBranchPanel?: ReactNode;
   taskChildBranchInteractive?: boolean;
   taskChildBranchPanels?: Array<{
@@ -304,14 +309,14 @@ function agentBranchConnectorPath(agentNode: AtlasAgentNode, branchRect: AgentBr
     width: NODE_WIDTH,
     height: AGENT_NODE_HEIGHT,
   };
-  return rightMiddleToLeftMiddlePath(agentRect, branchRect);
+  return rightMiddleToLeftTopPath(agentRect, branchRect);
 }
 
-function rightMiddleToLeftMiddlePath(sourceRect: AgentBranchRect, targetRect: AgentBranchRect): string {
+function rightMiddleToLeftTopPath(sourceRect: AgentBranchRect, targetRect: AgentBranchRect): string {
   const sx = sourceRect.x + sourceRect.width;
   const sy = sourceRect.y + sourceRect.height / 2;
   const tx = targetRect.x;
-  const ty = targetRect.y + targetRect.height / 2;
+  const ty = targetRect.y;
   return straightPath(sx, sy, tx, ty);
 }
 
@@ -328,14 +333,14 @@ function rightMiddleAnchor(rect: AgentBranchRect): { x: number; y: number } {
   return { x: rect.x + rect.width, y: rect.y + rect.height / 2 };
 }
 
-function leftMiddleAnchor(rect: AgentBranchRect): { x: number; y: number } {
-  return { x: rect.x, y: rect.y + rect.height / 2 };
+function leftTopAnchor(rect: AgentBranchRect): { x: number; y: number } {
+  return { x: rect.x, y: rect.y };
 }
 
 function connectorAnchors(sourceRect: AgentBranchRect, targetRect: AgentBranchRect) {
   return {
     source: rightMiddleAnchor(sourceRect),
-    target: leftMiddleAnchor(targetRect),
+    target: leftTopAnchor(targetRect),
   };
 }
 
@@ -356,11 +361,11 @@ function renderConnectorSourceSocket(
 }
 
 function taskBranchConnectorPath(taskNode: AtlasTaskNode, branchRect: AgentBranchRect): string {
-  return rightMiddleToLeftMiddlePath(taskNodeRect(taskNode), branchRect);
+  return rightMiddleToLeftTopPath(taskNodeRect(taskNode), branchRect);
 }
 
 function taskChildBranchConnectorPath(menuRect: AgentBranchRect, childRect: AgentBranchRect): string {
-  return rightMiddleToLeftMiddlePath(menuRect, childRect);
+  return rightMiddleToLeftTopPath(menuRect, childRect);
 }
 
 function taskPortLabel(port: TeamTaskInputPort | TeamTaskOutputPort): string {
@@ -383,14 +388,7 @@ function taskConnectionPoints(
   const targetPort = inputPorts.find((port) => port.id === connection.toInputPortId);
   if (!sourcePort || sourcePort.type !== connection.type) return null;
   if (!targetPort || targetPort.type !== connection.type) return null;
-  const sourceIndex = outputPorts.indexOf(sourcePort);
-  const targetIndex = inputPorts.indexOf(targetPort);
-  const sourceY = sourceNode.position.y + CANVAS_TASK_NODE_HEIGHT - 42 + sourceIndex * 14;
-  const targetY = targetNode.position.y + CANVAS_TASK_NODE_HEIGHT - 64 + targetIndex * 14;
-  return {
-    source: { x: sourceNode.position.x + NODE_WIDTH, y: sourceY },
-    target: { x: targetNode.position.x, y: targetY },
-  };
+  return connectorAnchors(taskNodeRect(sourceNode), taskNodeRect(targetNode));
 }
 
 export function summarizeCollapsedTaskStatus(children: Pick<ExecutionNode, "status">[]): TaskStatus {
@@ -639,6 +637,7 @@ export function ExecutionMap({
   onTaskInputPortSelect,
   canMoveTasks = true,
   taskBranchPanel,
+  taskBranchPanels,
   taskChildBranchPanel,
   taskChildBranchInteractive = false,
   taskChildBranchPanels,
@@ -1231,21 +1230,34 @@ export function ExecutionMap({
   const focusedTaskNode = focusedTaskNodeId
     ? taskNodes.find((node) => node.nodeId === focusedTaskNodeId) ?? null
     : null;
-  const measuredTaskBranchSize = taskBranchMeasuredSize?.nodeId === focusedTaskNode?.nodeId
-    ? taskBranchMeasuredSize
-    : null;
-  const taskBranchNode = focusedTaskNode && taskBranchPanel
-    ? (() => {
-      const base = {
-        x: focusedTaskNode.position.x + NODE_WIDTH + TASK_BRANCH_GAP,
-        y: Math.max(0, focusedTaskNode.position.y - 16),
-        width: measuredTaskBranchSize?.width ?? TASK_MENU_BRANCH_WIDTH,
-        height: measuredTaskBranchSize?.height ?? TASK_MENU_BRANCH_HEIGHT,
-      };
-      const posOverride = taskBranchPositionOverrides[focusedTaskNode.nodeId];
-      return posOverride ? { ...base, x: posOverride.x, y: posOverride.y } : base;
-    })()
-    : null;
+  const taskBranchEntries = (taskBranchPanels?.length
+    ? taskBranchPanels
+    : focusedTaskNode && taskBranchPanel
+      ? [{ id: "task-branch", nodeId: focusedTaskNode.nodeId, panel: taskBranchPanel }]
+      : []
+  ).map((entry) => {
+    const node = taskNodes.find((candidate) => candidate.nodeId === entry.nodeId);
+    if (!node) return null;
+    const measuredSize = taskBranchMeasuredSize?.nodeId === node.nodeId ? taskBranchMeasuredSize : null;
+    const base = {
+      x: node.position.x + NODE_WIDTH + TASK_BRANCH_GAP,
+      y: Math.max(0, node.position.y - 16),
+      width: measuredSize?.width ?? TASK_MENU_BRANCH_WIDTH,
+      height: measuredSize?.height ?? TASK_MENU_BRANCH_HEIGHT,
+    };
+    const posOverride = taskBranchPositionOverrides[node.nodeId];
+    return {
+      ...entry,
+      node,
+      rect: posOverride ? { ...base, x: posOverride.x, y: posOverride.y } : base,
+    };
+  }).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+  const primaryTaskBranchEntry = (
+    taskBranchEntries.find((entry) => entry.node.nodeId === focusedTaskNodeId)
+    ?? taskBranchEntries[0]
+    ?? null
+  );
+  const taskBranchNode = primaryTaskBranchEntry?.rect ?? null;
   const taskChildBranchDefaultNode = taskBranchNode
     ? {
       x: taskBranchNode.x + taskBranchNode.width + TASK_CHILD_BRANCH_GAP,
@@ -1263,6 +1275,7 @@ export function ExecutionMap({
     if (!taskBranchNode || !taskChildBranchPanels?.length) return [];
     const panelGap = 8;
     const activePanelIds = new Set(taskChildBranchPanels.map((p) => p.id));
+    const taskBranchRectById = new Map(taskBranchEntries.map((entry) => [entry.id, entry.rect]));
     type Entry = {
       panel: TaskChildBranchPanelDescriptor;
       rect: AgentBranchRect;
@@ -1277,7 +1290,7 @@ export function ExecutionMap({
       let sourceRect: AgentBranchRect;
       if (p.sourceId) {
         parentKey = p.sourceId;
-        sourceRect = finalRectByPanelId.get(p.sourceId) ?? taskBranchNode;
+        sourceRect = finalRectByPanelId.get(p.sourceId) ?? taskBranchRectById.get(p.sourceId) ?? taskBranchNode;
       } else {
         parentKey = "__menu__";
         sourceRect = taskBranchNode;
@@ -1306,10 +1319,10 @@ export function ExecutionMap({
         sourceRect: entry.parentKey === "__menu__" ? taskBranchNode : entry.sourceRect,
       };
     });
-  }, [taskBranchNode, taskChildBranchPanels, panelSizeOverrides, panelMeasuredHeights, panelPositionOverrides]);
+  }, [taskBranchNode, taskBranchEntries, taskChildBranchPanels, panelSizeOverrides, panelMeasuredHeights, panelPositionOverrides]);
   const agentBranchRight = agentBranchNode ? agentBranchNode.x + agentBranchNode.width : 0;
   const taskBranchRight = Math.max(
-    taskBranchNode ? taskBranchNode.x + taskBranchNode.width : 0,
+    ...taskBranchEntries.map((entry) => entry.rect.x + entry.rect.width),
     taskChildBranchNode ? taskChildBranchNode.x + taskChildBranchNode.width : 0,
     ...taskChildBranchPanelsLayout.map((p) => p.rect.x + p.rect.width),
   );
@@ -1321,7 +1334,7 @@ export function ExecutionMap({
     ...agentNodes.map((node) => node.position.y + AGENT_NODE_HEIGHT),
     ...taskNodes.map((node) => node.position.y + CANVAS_TASK_NODE_HEIGHT),
     agentBranchNode ? agentBranchNode.y + agentBranchNode.height : 0,
-    taskBranchNode ? taskBranchNode.y + taskBranchNode.height : 0,
+    ...taskBranchEntries.map((entry) => entry.rect.y + entry.rect.height),
     taskChildBranchNode ? taskChildBranchNode.y + taskChildBranchNode.height : 0,
     ...taskChildBranchPanelsLayout.map((p) => p.rect.y + p.rect.height),
     200,
@@ -1337,12 +1350,11 @@ export function ExecutionMap({
       height: AGENT_NODE_HEIGHT,
     }, agentBranchNode)
     : null;
-  const taskBranchPath = focusedTaskNode && taskBranchNode
-    ? taskBranchConnectorPath(focusedTaskNode, taskBranchNode)
-    : null;
-  const taskBranchAnchors = focusedTaskNode && taskBranchNode
-    ? connectorAnchors(taskNodeRect(focusedTaskNode), taskBranchNode)
-    : null;
+  const taskBranchConnectors = taskBranchEntries.map((entry) => ({
+    id: entry.id,
+    path: taskBranchConnectorPath(entry.node, entry.rect),
+    anchors: connectorAnchors(taskNodeRect(entry.node), entry.rect),
+  }));
   const taskChildBranchPath = taskBranchNode && taskChildBranchNode
     ? taskChildBranchConnectorPath(taskBranchNode, taskChildBranchNode)
     : null;
@@ -1935,16 +1947,21 @@ export function ExecutionMap({
             />
           )}
           {agentBranchAnchors && renderConnectorSourceSocket("agent-playground-branch-source-socket", agentBranchAnchors.source, "emap-connector-socket-agent-branch")}
-          {taskBranchPath && (
-            <path
-              key="task-leader-branch"
-              d={taskBranchPath}
-              className="emap-link emap-link-task-branch"
-              fill="none"
-              strokeWidth={2}
-            />
-          )}
-          {taskBranchAnchors && renderConnectorSourceSocket("task-leader-branch-source-socket", taskBranchAnchors.source, "emap-connector-socket-task-branch")}
+          {taskBranchConnectors.map((connector) => (
+            <g key={`task-leader-branch-${connector.id}`}>
+              <path
+                d={connector.path}
+                className="emap-link emap-link-task-branch"
+                fill="none"
+                strokeWidth={2}
+              />
+              {renderConnectorSourceSocket(
+                `task-leader-branch-source-socket-${connector.id}`,
+                connector.anchors.source,
+                "emap-connector-socket-task-branch",
+              )}
+            </g>
+          ))}
           {taskChildBranchPath && (
             <path
               key="task-child-branch"
@@ -2312,31 +2329,35 @@ export function ExecutionMap({
               />
             </div>
           )}
-          {taskBranchNode && taskBranchPanel && (
-            <div
-              ref={taskBranchShellRef}
-              className="emap-task-branch-shell"
-              onPointerDownCapture={beginTaskBranchDrag}
-              onPointerMove={moveTaskBranchDrag}
-              onPointerUp={endTaskBranchDrag}
-              onPointerCancel={endTaskBranchDrag}
-              onClickCapture={(e) => {
-                if (taskBranchDragSuppressClickRef.current) {
-                  taskBranchDragSuppressClickRef.current = false;
-                  e.stopPropagation();
-                }
-              }}
-              style={{
-                left: taskBranchNode.x,
-                top: taskBranchNode.y,
-                width: "max-content",
-                minWidth: TASK_MENU_BRANCH_MIN_WIDTH,
-                height: "auto",
-              }}
-            >
-              {taskBranchPanel}
-            </div>
-          )}
+          {taskBranchEntries.map((entry) => {
+            const isPrimary = entry.id === primaryTaskBranchEntry?.id;
+            return (
+              <div
+                key={`task-branch-${entry.id}`}
+                ref={isPrimary ? taskBranchShellRef : undefined}
+                className="emap-task-branch-shell"
+                onPointerDownCapture={isPrimary ? beginTaskBranchDrag : undefined}
+                onPointerMove={isPrimary ? moveTaskBranchDrag : undefined}
+                onPointerUp={isPrimary ? endTaskBranchDrag : undefined}
+                onPointerCancel={isPrimary ? endTaskBranchDrag : undefined}
+                onClickCapture={(e) => {
+                  if (isPrimary && taskBranchDragSuppressClickRef.current) {
+                    taskBranchDragSuppressClickRef.current = false;
+                    e.stopPropagation();
+                  }
+                }}
+                style={{
+                  left: entry.rect.x,
+                  top: entry.rect.y,
+                  width: "max-content",
+                  minWidth: TASK_MENU_BRANCH_MIN_WIDTH,
+                  height: "auto",
+                }}
+              >
+                {entry.panel}
+              </div>
+            );
+          })}
           {taskChildBranchNode && taskChildBranchPanel && maximizedBranch !== "task-child" && (
             <div
               className="emap-task-child-branch-shell"

@@ -41,7 +41,7 @@ type TaskBranchState = {
   taskId: string;
   detailMode: TaskBranchDetailMode | null;
   observedRunId?: string;
-  selectedFileKey?: string | null;
+  selectedFileKeys?: string[];
 };
 
 type TaskEditDirtyField = "title" | "leaderAgentId" | "workerAgentId" | "checkerAgentId";
@@ -428,6 +428,10 @@ function buildTaskLeaderPlaygroundUrl(task: TeamCanvasTask): string {
   return url.toString();
 }
 
+function taskMenuPanelId(nodeId: string): string {
+  return `task-menu-${nodeId}`;
+}
+
 function agentRunStatusRecord(statuses: AgentRunStatus[]): Record<string, AgentRunStatus> {
   return Object.fromEntries(statuses.map((status) => [status.agentId, status]));
 }
@@ -609,9 +613,11 @@ export function App() {
   const [taskLeaderPickerOpen, setTaskLeaderPickerOpen] = useState(false);
   const [liveTasksRefreshing, setLiveTasksRefreshing] = useState(false);
   const liveTasksRefreshInFlightRef = useRef<Promise<void> | null>(null);
+  const liveTaskDiscoveryRefreshTimersRef = useRef<ReturnType<typeof globalThis.setTimeout>[]>([]);
+  const liveTaskDiscoveryRefreshRunIdsRef = useRef<Set<string>>(new Set());
   const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
   const [expandedAgentBranch, setExpandedAgentBranch] = useState<AgentBranchState | null>(null);
-  const [expandedTaskBranch, setExpandedTaskBranch] = useState<TaskBranchState | null>(null);
+  const [expandedTaskBranches, setExpandedTaskBranches] = useState<TaskBranchState[]>([]);
   const [taskEditDraft, setTaskEditDraft] = useState<TaskEditDraft | null>(null);
   const [taskEditSaving, setTaskEditSaving] = useState(false);
   const [taskEditWarning, setTaskEditWarning] = useState<string | null>(null);
@@ -622,6 +628,22 @@ export function App() {
   const tasksById = useMemo(() => new Map(tasks.map((task) => [task.taskId, task])), [tasks]);
   const agentRunStatusesById = useMemo(() => new Map(Object.entries(agentRunStatusById)), [agentRunStatusById]);
   const addedAgentIds = useMemo(() => new Set(agentNodes.map((node) => node.agentId)), [agentNodes]);
+  const expandedTaskBranch = expandedTaskBranches[expandedTaskBranches.length - 1] ?? null;
+  const setExpandedTaskBranch = useCallback((
+    updater: TaskBranchState | null | ((current: TaskBranchState | null) => TaskBranchState | null),
+  ) => {
+    setExpandedTaskBranches((current) => {
+      const active = current[current.length - 1] ?? null;
+      const next = typeof updater === "function" ? updater(active) : updater;
+      if (!next) {
+        return active ? current.filter((branch) => branch.nodeId !== active.nodeId) : current;
+      }
+      return [
+        ...current.filter((branch) => branch.nodeId !== next.nodeId),
+        next,
+      ];
+    });
+  }, []);
   const expandedAgentNode = expandedAgentBranch
     ? agentNodes.find((node) => node.nodeId === expandedAgentBranch.nodeId) ?? null
     : null;
@@ -638,8 +660,6 @@ export function App() {
   const observedTaskRun = observedTaskRunId
     ? expandedTaskRuns.find((taskRun) => taskRun.runId === observedTaskRunId) ?? null
     : null;
-  const observedTaskRunState = observedTaskRunId ? taskRunObserverByRunId[observedTaskRunId] ?? null : null;
-  const observedTaskRunAttempts = observedTaskRunState?.attempts ?? [];
 
   const activeCanvasTaskRunIds = useMemo(() => (
     Object.values(taskRunsByTaskId)
@@ -660,8 +680,10 @@ export function App() {
     setTaskArchiveSaving(false);
   }, []);
 
-  const closeTaskBranch = useCallback(() => {
-    setExpandedTaskBranch(null);
+  const closeTaskBranch = useCallback((nodeId?: string) => {
+    setExpandedTaskBranches((current) => (
+      nodeId ? current.filter((branch) => branch.nodeId !== nodeId) : []
+    ));
     clearTaskPanelState();
   }, [clearTaskPanelState]);
 
@@ -695,10 +717,8 @@ export function App() {
   }, [dataSource, liveTaskNodesHydrated, taskNodes]);
 
   useEffect(() => {
-    if (expandedTaskBranch && !tasksById.has(expandedTaskBranch.taskId)) {
-      closeTaskBranch();
-    }
-  }, [closeTaskBranch, expandedTaskBranch, tasksById]);
+    setExpandedTaskBranches((current) => current.filter((branch) => tasksById.has(branch.taskId)));
+  }, [tasksById]);
 
   const applyLiveTasks = useCallback((nextTasks: TeamCanvasTask[]) => {
     setTasks(nextTasks);
@@ -743,6 +763,33 @@ export function App() {
     liveTasksRefreshInFlightRef.current = refresh;
     return refresh;
   }, [applyLiveTasks, loadTaskRunsForTasks]);
+
+  const scheduleLiveTaskDiscoveryRefresh = useCallback(() => {
+    if (dataSource !== "live") return;
+    for (const delayMs of [350, 1200]) {
+      const timer = globalThis.setTimeout(() => {
+        liveTaskDiscoveryRefreshTimersRef.current = liveTaskDiscoveryRefreshTimersRef.current.filter((item) => item !== timer);
+        void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
+      }, delayMs);
+      liveTaskDiscoveryRefreshTimersRef.current.push(timer);
+    }
+  }, [dataSource, refreshLiveTasks]);
+
+  useEffect(() => () => {
+    for (const timer of liveTaskDiscoveryRefreshTimersRef.current) {
+      globalThis.clearTimeout(timer);
+    }
+    liveTaskDiscoveryRefreshTimersRef.current = [];
+  }, []);
+
+  useEffect(() => {
+    if (dataSource === "live") return;
+    for (const timer of liveTaskDiscoveryRefreshTimersRef.current) {
+      globalThis.clearTimeout(timer);
+    }
+    liveTaskDiscoveryRefreshTimersRef.current = [];
+    liveTaskDiscoveryRefreshRunIdsRef.current.clear();
+  }, [dataSource]);
 
   const refreshLiveTasksAfterLeavingTaskCreateBranch = useCallback((branch: AgentBranchState | null) => {
     if (dataSource !== "live" || branch?.mode !== "task-create") return;
@@ -1001,25 +1048,22 @@ export function App() {
   const toggleAgentBranch = useCallback((node: AtlasAgentNode) => {
     setAgentPickerOpen(false);
     setTaskLeaderPickerOpen(false);
-    closeTaskBranch();
     refreshLiveTasksAfterLeavingTaskCreateBranch(expandedAgentBranch);
     setExpandedAgentBranch(
       expandedAgentBranch?.nodeId === node.nodeId && expandedAgentBranch.mode === "chat"
         ? null
         : { nodeId: node.nodeId, agentId: node.agentId, mode: "chat" },
     );
-  }, [closeTaskBranch, expandedAgentBranch, refreshLiveTasksAfterLeavingTaskCreateBranch]);
+  }, [expandedAgentBranch, refreshLiveTasksAfterLeavingTaskCreateBranch]);
 
   const toggleTaskBranch = useCallback((node: AtlasTaskNode) => {
     setAgentPickerOpen(false);
     setTaskLeaderPickerOpen(false);
-    refreshLiveTasksAfterLeavingTaskCreateBranch(expandedAgentBranch);
-    setExpandedAgentBranch(null);
     clearTaskPanelState();
     setExpandedTaskBranch((current) => (
       current?.nodeId === node.nodeId ? null : { nodeId: node.nodeId, taskId: node.taskId, detailMode: null }
     ));
-  }, [clearTaskPanelState, expandedAgentBranch, refreshLiveTasksAfterLeavingTaskCreateBranch]);
+  }, [clearTaskPanelState]);
 
   const openTaskCreateBranch = useCallback((leaderAgentId: string) => {
     const nodeId = `agent-${leaderAgentId}`;
@@ -1030,9 +1074,8 @@ export function App() {
     ));
     setAgentPickerOpen(false);
     setTaskLeaderPickerOpen(false);
-    closeTaskBranch();
     setExpandedAgentBranch({ nodeId, agentId: leaderAgentId, mode: "task-create" });
-  }, [closeTaskBranch]);
+  }, []);
 
   const openTaskEditBranch = useCallback((task: TeamCanvasTask) => {
     setTaskEditDraft(makeTaskEditDraft(task));
@@ -1047,7 +1090,7 @@ export function App() {
       ...current,
       detailMode: "run-observer",
       observedRunId: runId,
-      selectedFileKey: null,
+      selectedFileKeys: [],
     } : current);
   }, [clearTaskPanelState]);
 
@@ -1056,7 +1099,7 @@ export function App() {
       ...current,
       detailMode: null,
       observedRunId: undefined,
-      selectedFileKey: null,
+      selectedFileKeys: [],
     } : current);
   }, []);
 
@@ -1114,13 +1157,11 @@ export function App() {
     }
   }, [dataSource, expandedTask, refreshLiveTasks, taskEditDraft]);
 
-  const archiveExpandedTask = useCallback(async () => {
-    if (!expandedTask) return;
-
+  const archiveTask = useCallback(async (task: TeamCanvasTask, nodeId?: string) => {
     setTaskArchiveSaving(true);
     try {
       const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-      await api.archiveTask(expandedTask.taskId);
+      await api.archiveTask(task.taskId);
       if (dataSource === "live") {
         await refreshLiveTasks();
       } else {
@@ -1128,18 +1169,22 @@ export function App() {
         setTasks(nextTasks);
         setTaskNodes((current) => makeTaskNodes(nextTasks, liveTaskRefreshPositions(current)));
       }
-      closeTaskBranch();
+      closeTaskBranch(nodeId);
       setError(null);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
       setTaskArchiveSaving(false);
     }
-  }, [closeTaskBranch, dataSource, expandedTask, refreshLiveTasks]);
+  }, [closeTaskBranch, dataSource, refreshLiveTasks]);
 
-  const runExpandedTask = useCallback(async () => {
+  const archiveExpandedTask = useCallback(async () => {
     if (!expandedTask) return;
-    const taskId = expandedTask.taskId;
+    await archiveTask(expandedTask, expandedTaskBranch?.nodeId);
+  }, [archiveTask, expandedTask, expandedTaskBranch?.nodeId]);
+
+  const runTask = useCallback(async (task: TeamCanvasTask) => {
+    const taskId = task.taskId;
     setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: true }));
     try {
       const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
@@ -1151,7 +1196,12 @@ export function App() {
     } finally {
       setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: false }));
     }
-  }, [dataSource, expandedTask]);
+  }, [dataSource]);
+
+  const runExpandedTask = useCallback(async () => {
+    if (!expandedTask) return;
+    await runTask(expandedTask);
+  }, [expandedTask, runTask]);
 
   const beginTaskPortConnection = useCallback((taskId: string, port: TeamTaskOutputPort) => {
     setTaskConnectionDraft({
@@ -1194,21 +1244,25 @@ export function App() {
     }
   }, [dataSource, taskConnectionDraft]);
 
-  const cancelExpandedTaskRun = useCallback(async () => {
-    if (!expandedTask || !activeExpandedTaskRun) return;
-    const taskId = expandedTask.taskId;
+  const cancelTaskRun = useCallback(async (task: TeamCanvasTask, taskRun: TeamRunState) => {
+    const taskId = task.taskId;
     setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: true }));
     try {
       const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-      const taskRun = await api.cancelTaskRun(activeExpandedTaskRun.runId);
-      setTaskRunsByTaskId((current) => mergeTaskRun(current, taskId, taskRun));
+      const cancelledRun = await api.cancelTaskRun(taskRun.runId);
+      setTaskRunsByTaskId((current) => mergeTaskRun(current, taskId, cancelledRun));
       setError(null);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
       setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: false }));
     }
-  }, [activeExpandedTaskRun, dataSource, expandedTask]);
+  }, [dataSource]);
+
+  const cancelExpandedTaskRun = useCallback(async () => {
+    if (!expandedTask || !activeExpandedTaskRun) return;
+    await cancelTaskRun(expandedTask, activeExpandedTaskRun);
+  }, [activeExpandedTaskRun, cancelTaskRun, expandedTask]);
 
   useEffect(() => {
     if (activeCanvasTaskRunIds.length === 0) return;
@@ -1221,10 +1275,12 @@ export function App() {
           const fresh = await api.getTaskRun(active.runId);
           if (!cancelled) {
             setTaskRunsByTaskId((current) => mergeTaskRun(current, active.taskId, fresh));
-            if (dataSource === "live" && !isActiveRun(fresh.status)) {
+            if (dataSource === "live" && !isActiveRun(fresh.status) && !liveTaskDiscoveryRefreshRunIdsRef.current.has(fresh.runId)) {
+              liveTaskDiscoveryRefreshRunIdsRef.current.add(fresh.runId);
               void refreshLiveTasks().catch((e) => {
                 if (!cancelled) setError(errorMessage(e));
               });
+              scheduleLiveTaskDiscoveryRefresh();
             }
           }
         } catch {
@@ -1242,7 +1298,7 @@ export function App() {
       cancelled = true;
       globalThis.clearInterval(timer);
     };
-  }, [activeCanvasTaskRunIds, dataSource, refreshLiveTasks]);
+  }, [activeCanvasTaskRunIds, dataSource, refreshLiveTasks, scheduleLiveTaskDiscoveryRefresh]);
 
   useEffect(() => {
     const taskId = expandedTask?.taskId;
@@ -1476,6 +1532,171 @@ export function App() {
     </section>
   ) : null;
 
+  const taskBranchPanelItems = expandedTaskBranches.flatMap((branch) => {
+    const node = taskNodes.find((candidate) => candidate.nodeId === branch.nodeId) ?? null;
+    const task = node ? tasksById.get(node.taskId) ?? null : null;
+    if (!node || !task) return [];
+    const runs = taskRunsByTaskId[task.taskId] ?? [];
+    const latestRun = selectLatestRun(runs);
+    const activeRun = runs.find((taskRun) => isActiveRun(taskRun.status)) ?? null;
+    const runSaving = Boolean(taskRunSavingByTaskId[task.taskId]);
+    const detailMode = branch.detailMode ?? null;
+    const runButtonLabel = runSaving ? "\u542f\u52a8\u4e2d..." : activeRun ? "\u8fd0\u884c\u4e2d" : latestRun ? "\u91cd\u65b0\u8fd0\u884c" : "\u8fd0\u884c";
+    const runSummaryLabel = latestRun && isActiveRun(latestRun.status) ? "\u8fd0\u884c\u4e2d" : "\u6700\u8fd1\u8fd0\u884c";
+    const latestRunIsObserved = Boolean(
+      latestRun
+        && detailMode === "run-observer"
+        && branch.observedRunId === latestRun.runId,
+    );
+    return [{
+      id: taskMenuPanelId(branch.nodeId),
+      nodeId: branch.nodeId,
+      panel: (
+        <section className="task-leader-branch task-action-branch emap-menu-branch" aria-label={`${task.title} Task \u64cd\u4f5c`}>
+          <header className="task-leader-branch-head">
+            <div className="task-leader-branch-title">
+              <span>{"Task \u64cd\u4f5c"}</span>
+              <strong>{task.title}</strong>
+              <code>{task.taskId}</code>
+            </div>
+            <button
+              type="button"
+              className="task-leader-branch-collapse"
+              onClick={() => closeTaskBranch(branch.nodeId)}
+              aria-label={`\u6536\u8d77 ${task.title} Task \u64cd\u4f5c`}
+            >
+              {"\u6536\u8d77"}
+            </button>
+          </header>
+          <div className="task-action-menu" aria-label={`${task.title} \u64cd\u4f5c\u83dc\u5355`}>
+            <button
+              type="button"
+              className="task-action-menu-button"
+              disabled={runSaving || Boolean(activeRun) || task.status !== "ready"}
+              title={task.status === "ready" ? "\u542f\u52a8\u8fd9\u4e2a Task \u7684 WorkUnit run" : "\u53ea\u6709 ready Task \u53ef\u4ee5\u8fd0\u884c"}
+              onClick={() => {
+                void runTask(task);
+              }}
+            >
+              {runButtonLabel}
+            </button>
+            {activeRun && (
+              <button
+                type="button"
+                className="task-action-menu-button"
+                disabled={runSaving}
+                onClick={() => {
+                  void cancelTaskRun(task, activeRun);
+                }}
+              >
+                {"\u505c\u6b62"}
+              </button>
+            )}
+            {latestRun && (
+              <button
+                type="button"
+                className="task-run-summary"
+                aria-label={`${task.title} ${runSummaryLabel} ${RUN_STATUS_LABELS[latestRun.status]} phase ${taskRunPhase(latestRun, task.taskId)}`}
+                onClick={() => (
+                  latestRunIsObserved
+                    ? setExpandedTaskBranches((current) => current.map((item) => (
+                      item.nodeId === branch.nodeId
+                        ? { ...item, detailMode: null, observedRunId: undefined, selectedFileKeys: [] }
+                        : item
+                    )))
+                    : setExpandedTaskBranches((current) => [
+                      ...current.filter((item) => item.nodeId !== branch.nodeId),
+                      { ...branch, detailMode: "run-observer", observedRunId: latestRun.runId, selectedFileKeys: [] },
+                    ])
+                )}
+              >
+                <span className="task-run-summary-kicker">{runSummaryLabel}</span>
+                <span className="task-run-summary-head">
+                  <strong>{RUN_STATUS_LABELS[latestRun.status]}</strong>
+                  <em>{latestRunIsObserved ? "\u6536\u8d77\u8f93\u51fa" : "\u67e5\u770b\u8f93\u51fa"}</em>
+                </span>
+                <span className="task-run-summary-metrics">
+                  <span><b>{"\u9636\u6bb5"}</b><strong>{taskRunPhase(latestRun, task.taskId)}</strong></span>
+                  <span><b>{"\u8017\u65f6"}</b><strong>{taskRunElapsed(latestRun)}</strong></span>
+                  <span><b>Attempts</b><strong>{taskRunAttempts(latestRun, task.taskId)}</strong></span>
+                </span>
+                <span className="task-run-summary-message">{taskRunMessage(latestRun, task.taskId)}</span>
+                <code>{latestRun.runId}</code>
+              </button>
+            )}
+            <button
+              type="button"
+              className="task-action-menu-button"
+              onClick={() => {
+                setTaskEditDraft(makeTaskEditDraft(task));
+                setTaskEditWarning(null);
+                setTaskArchiveConfirming(false);
+                setExpandedTaskBranches((current) => [
+                  ...current.filter((item) => item.nodeId !== branch.nodeId),
+                  { ...branch, detailMode: "edit" },
+                ]);
+              }}
+            >
+              {"\u7f16\u8f91"}
+            </button>
+            <button
+              type="button"
+              className="task-action-menu-button"
+              onClick={() => {
+                setTaskArchiveConfirming(false);
+                setExpandedTaskBranches((current) => [
+                  ...current.filter((item) => item.nodeId !== branch.nodeId),
+                  { ...branch, detailMode: "leader-chat" },
+                ]);
+              }}
+            >
+              {"\u5bf9\u8bdd Leader"}
+            </button>
+            {taskArchiveConfirming && expandedTaskBranch?.nodeId === branch.nodeId ? (
+              <div className="task-delete-confirm" role="group" aria-label={`${task.title} \u5220\u9664\u786e\u8ba4`}>
+                <p>{"\u5220\u9664\u4f1a\u8c03\u7528 archive \u8f6f\u5f52\u6863\uff0c\u4e0d\u4f1a\u542f\u52a8 Task run\uff0c\u4e5f\u4e0d\u4f1a\u628a Task \u5b9a\u4e49\u5199\u5165 localStorage\u3002"}</p>
+                <div className="task-delete-actions">
+                  <button
+                    type="button"
+                    className="task-action-menu-button"
+                    disabled={taskArchiveSaving}
+                    onClick={() => setTaskArchiveConfirming(false)}
+                  >
+                    {"\u53d6\u6d88"}
+                  </button>
+                  <button
+                    type="button"
+                    className="task-action-menu-button danger"
+                    disabled={taskArchiveSaving}
+                    onClick={() => {
+                      void archiveTask(task, branch.nodeId);
+                    }}
+                  >
+                    {taskArchiveSaving ? "\u5220\u9664\u4e2d..." : "\u786e\u8ba4\u5220\u9664"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="task-action-menu-button danger"
+                disabled={taskArchiveSaving}
+                onClick={() => {
+                  setTaskArchiveConfirming(true);
+                  setExpandedTaskBranches((current) => [
+                    ...current.filter((item) => item.nodeId !== branch.nodeId),
+                    branch,
+                  ]);
+                }}
+              >
+                {"\u5220\u9664"}
+              </button>
+            )}
+          </div>
+        </section>
+      ),
+    }];
+  });
   const expandedTaskDetailMode = expandedTaskBranch?.detailMode ?? null;
   const activeTaskEditDraft = expandedTask && taskEditDraft?.taskId === expandedTask.taskId
     ? taskEditDraft
@@ -1506,7 +1727,7 @@ export function App() {
         <button
           type="button"
           className="task-leader-branch-collapse"
-          onClick={closeTaskBranch}
+          onClick={() => closeTaskBranch()}
           aria-label={`收起 ${expandedTask.title} Task 操作`}
         >
           收起
@@ -1614,17 +1835,6 @@ export function App() {
       </div>
     </section>
   ) : null;
-  const observerFileDescriptors = observedTaskRunAttempts.length > 0 ? buildTaskRunFileDescriptors(observedTaskRunAttempts) : [];
-  const latestObservedAttempt = selectLatestAttempt(observedTaskRunAttempts);
-  const selectedObserverFileKey = expandedTaskBranch?.selectedFileKey ?? null;
-  const selectedObserverFileDescriptor = selectedObserverFileKey ? observerFileDescriptors.find((d) => d.key === selectedObserverFileKey) ?? null : null;
-  const selectedObserverFileState = selectedObserverFileKey ? observedTaskRunState?.files[selectedObserverFileKey] : undefined;
-  const toggleObserverFile = useCallback((key: string) => {
-    setExpandedTaskBranch((current) => current ? {
-      ...current,
-      selectedFileKey: current.selectedFileKey === key ? null : key,
-    } : current);
-  }, []);
   const expandedTaskChildBranchPanel = expandedTaskNode && expandedTask ? (
     expandedTaskDetailMode === "leader-chat" ? (
       <section className="agent-playground-branch emap-dialog-branch task-leader-chat-branch" aria-label={`${expandedTask.title} leader 对话`}>
@@ -1774,125 +1984,168 @@ export function App() {
   ) : null;
 
   const taskChildBranchPanels = useMemo(() => {
-    if (expandedTaskDetailMode !== "run-observer" || !observedTaskRun || !expandedTask) return [];
-    const observedTaskRunIsActive = isActiveRun(observedTaskRun.status);
-    const panels: Array<{ id: string; panel: ReactNode; width?: number; height?: number; sourceId?: string; autoHeight?: boolean; resizable?: boolean; minWidth?: number; minHeight?: number }> = [];
+    const panels: Array<{
+      id: string;
+      panel: ReactNode;
+      width?: number;
+      height?: number;
+      sourceId?: string;
+      autoHeight?: boolean;
+      resizable?: boolean;
+      minWidth?: number;
+      minHeight?: number;
+    }> = [];
 
-    const workerFiles = observerFileDescriptors.filter((d) => d.kind === "worker");
-    const checkerFiles = observerFileDescriptors.filter((d) => d.kind === "checker");
-    const resultFiles = observerFileDescriptors.filter((d) => d.kind === "result");
-    const hasFiles = observerFileDescriptors.length > 0;
+    const runObserverBranches = expandedTaskBranches.filter((branch) => (
+      branch.detailMode === "run-observer" && branch.observedRunId
+    ));
 
-    function renderFileRow(descriptor: TaskRunObserverFileDescriptor) {
-      const isSelected = selectedObserverFileKey === descriptor.key;
-      const agentName = descriptor.runtimeContext
-        ? (agentsById.get(descriptor.runtimeContext.resolvedProfileId)?.name ?? descriptor.runtimeContext.resolvedProfileId)
-        : descriptor.kind === "result"
-          ? (descriptor.fileName.includes("accepted") ? "已接受结果" : "结果")
-          : descriptor.kind;
-      return (
-        <button
-          type="button"
-          key={descriptor.key}
-          className={`emap-observer-file-row ${descriptor.kind} ${isSelected ? "selected" : ""}`}
-          data-file-kind={descriptor.kind}
-          onClick={() => toggleObserverFile(descriptor.key)}
-        >
-          <span className="emap-observer-file-row-agent">{agentName}</span>
-          <code className="emap-observer-file-row-name">{descriptor.fileName}</code>
-          <span className="emap-observer-file-row-path">{descriptor.path}</span>
-        </button>
-      );
-    }
+    for (const branch of expandedTaskBranches) {
+      if (branch.detailMode !== "run-observer" || !branch.observedRunId) continue;
+      const node = taskNodes.find((candidate) => candidate.nodeId === branch.nodeId) ?? null;
+      const task = node ? tasksById.get(node.taskId) ?? null : null;
+      if (!node || !task) continue;
+      const observedTaskRun = (taskRunsByTaskId[task.taskId] ?? []).find((taskRun) => taskRun.runId === branch.observedRunId) ?? null;
+      if (!observedTaskRun) continue;
 
-    function renderFileSection(label: string, descriptors: TaskRunObserverFileDescriptor[]) {
-      if (descriptors.length === 0) return null;
-      return (
-        <div className="emap-run-observer-file-section">
-          <span className="emap-run-observer-file-kicker">{label}</span>
-          <div className="emap-run-observer-file-list">
-            {descriptors.map(renderFileRow)}
-          </div>
-        </div>
-      );
-    }
+      const observerState = taskRunObserverByRunId[observedTaskRun.runId] ?? null;
+      const attempts = observerState?.attempts ?? [];
+      const fileDescriptors = attempts.length > 0 ? buildTaskRunFileDescriptors(attempts) : [];
+      const latestAttempt = selectLatestAttempt(attempts);
+      const selectedFileKeys = branch.selectedFileKeys ?? [];
+      const selectedFileKeySet = new Set(selectedFileKeys);
+      const selectedFileDescriptors = selectedFileKeys
+        .map((key) => fileDescriptors.find((descriptor) => descriptor.key === key) ?? null)
+        .filter((descriptor): descriptor is TaskRunObserverFileDescriptor => Boolean(descriptor));
+      const observedTaskRunIsActive = isActiveRun(observedTaskRun.status);
+      const runObserverPanelId = runObserverBranches.length === 1 ? "run-observer" : `run-observer-${branch.nodeId}`;
 
-    panels.push({
-      id: "run-observer",
-      width: 420,
-      autoHeight: true,
-      sourceId: undefined,
-      panel: (
-        <div className={`emap-run-observer-panel ${observedTaskRunIsActive ? "active" : "terminal"}`}>
-          <header className="emap-run-observer-head">
-            <span>运行观察</span>
-            <strong>{RUN_STATUS_LABELS[observedTaskRun.status]}</strong>
-          </header>
-          <div className="emap-run-observer-stage worker" data-observer-section="worker-process">
-            {renderRoleProcessNode("worker", latestObservedAttempt?.roleProcesses?.worker)}
-          </div>
-          <div className="emap-run-observer-stage-files worker" data-observer-section="worker-files">
-            {renderFileSection("Worker 输出", workerFiles)}
-          </div>
-          <div className="emap-run-observer-stage checker" data-observer-section="checker-process">
-            {renderRoleProcessNode("checker", latestObservedAttempt?.roleProcesses?.checker)}
-          </div>
-          <div className="emap-run-observer-stage-files checker" data-observer-section="checker-files">
-            {renderFileSection("Checker 输出", checkerFiles)}
-          </div>
-          <div className="emap-run-observer-stage-files result" data-observer-section="result-files">
-            {renderFileSection("验收结果", resultFiles)}
-          </div>
-          {!hasFiles && !observedTaskRunState?.loading && !observedTaskRunIsActive && (
-            <div className="emap-observer-empty">暂无 attempt 文件。运行刚启动时这里会随轮询补齐。</div>
-          )}
-        </div>
-      ),
-    });
+      const toggleFile = (key: string) => {
+        setExpandedTaskBranches((current) => current.map((item) => {
+          if (item.nodeId !== branch.nodeId) return item;
+          const currentKeys = item.selectedFileKeys ?? [];
+          return {
+            ...item,
+            selectedFileKeys: currentKeys.includes(key)
+              ? currentKeys.filter((fileKey) => fileKey !== key)
+              : [...currentKeys, key],
+          };
+        }));
+      };
 
-    if (selectedObserverFileDescriptor) {
-      panels.push({
-        id: `file-detail-${selectedObserverFileDescriptor.key}`,
-        width: 460,
-        height: 420,
-        sourceId: "run-observer",
-        resizable: true,
-        minWidth: 360,
-        minHeight: 280,
-        panel: (
-          <section className="emap-observer-node emap-observer-file-detail-node" aria-label={selectedObserverFileDescriptor.title}>
-            <header className="emap-observer-node-head">
-              <span className="emap-observer-node-label">{selectedObserverFileDescriptor.title}</span>
-              <code className="emap-observer-file-name">{selectedObserverFileDescriptor.fileName}</code>
-              <button
-                type="button"
-                className="emap-observer-node-close"
-                onClick={() => toggleObserverFile(selectedObserverFileDescriptor.key)}
-                aria-label="收起文件详情"
-              >
-                收起
-              </button>
-            </header>
-            <div className="emap-observer-file-detail-body">
-              {selectedObserverFileState?.error ? (
-                <div className="emap-observer-file-error">{selectedObserverFileState.error}</div>
-              ) : selectedObserverFileState?.content ? (
-                renderFileDetailContent(selectedObserverFileDescriptor.fileName, selectedObserverFileState.content)
-              ) : (
-                <div className="emap-observer-file-loading">正在读取文件...</div>
-              )}
+      const renderFileRow = (descriptor: TaskRunObserverFileDescriptor) => {
+        const isSelected = selectedFileKeySet.has(descriptor.key);
+        const agentName = descriptor.runtimeContext
+          ? (agentsById.get(descriptor.runtimeContext.resolvedProfileId)?.name ?? descriptor.runtimeContext.resolvedProfileId)
+          : descriptor.kind === "result"
+            ? (descriptor.fileName.includes("accepted") ? "Accepted result" : "Result")
+            : descriptor.kind;
+        return (
+          <button
+            type="button"
+            key={descriptor.key}
+            className={`emap-observer-file-row ${descriptor.kind} ${isSelected ? "selected" : ""}`}
+            data-file-kind={descriptor.kind}
+            onClick={() => toggleFile(descriptor.key)}
+          >
+            <span className="emap-observer-file-row-agent">{agentName}</span>
+            <code className="emap-observer-file-row-name">{descriptor.fileName}</code>
+            <span className="emap-observer-file-row-path">{descriptor.path}</span>
+          </button>
+        );
+      };
+
+      const renderFileSection = (label: string, descriptors: TaskRunObserverFileDescriptor[]) => {
+        if (descriptors.length === 0) return null;
+        return (
+          <div className="emap-run-observer-file-section">
+            <span className="emap-run-observer-file-kicker">{label}</span>
+            <div className="emap-run-observer-file-list">
+              {descriptors.map(renderFileRow)}
             </div>
-          </section>
+          </div>
+        );
+      };
+
+      const workerFiles = fileDescriptors.filter((d) => d.kind === "worker");
+      const checkerFiles = fileDescriptors.filter((d) => d.kind === "checker");
+      const resultFiles = fileDescriptors.filter((d) => d.kind === "result");
+      const hasFiles = fileDescriptors.length > 0;
+
+      panels.push({
+        id: runObserverPanelId,
+        width: 420,
+        autoHeight: true,
+        sourceId: taskMenuPanelId(branch.nodeId),
+        panel: (
+          <div className={`emap-run-observer-panel ${observedTaskRunIsActive ? "active" : "terminal"}`}>
+            <header className="emap-run-observer-head">
+              <span>{"\u8fd0\u884c\u89c2\u5bdf"}</span>
+              <strong>{RUN_STATUS_LABELS[observedTaskRun.status]}</strong>
+            </header>
+            <div className="emap-run-observer-stage worker" data-observer-section="worker-process">
+              {renderRoleProcessNode("worker", latestAttempt?.roleProcesses?.worker)}
+            </div>
+            <div className="emap-run-observer-stage-files worker" data-observer-section="worker-files">
+              {renderFileSection("Worker \u8f93\u51fa", workerFiles)}
+            </div>
+            <div className="emap-run-observer-stage checker" data-observer-section="checker-process">
+              {renderRoleProcessNode("checker", latestAttempt?.roleProcesses?.checker)}
+            </div>
+            <div className="emap-run-observer-stage-files checker" data-observer-section="checker-files">
+              {renderFileSection("Checker \u8f93\u51fa", checkerFiles)}
+            </div>
+            <div className="emap-run-observer-stage-files result" data-observer-section="result-files">
+              {renderFileSection("\u9a8c\u6536\u7ed3\u679c", resultFiles)}
+            </div>
+            {!hasFiles && !observerState?.loading && !observedTaskRunIsActive && (
+              <div className="emap-observer-empty">{"\u6682\u65e0 attempt \u6587\u4ef6\u3002\u8fd0\u884c\u521a\u542f\u52a8\u65f6\u8fd9\u91cc\u4f1a\u968f\u8f6e\u8be2\u8865\u9f50\u3002"}</div>
+            )}
+          </div>
         ),
       });
+
+      for (const descriptor of selectedFileDescriptors) {
+        const fileState = observerState?.files[descriptor.key];
+        panels.push({
+          id: `file-detail-${branch.nodeId}-${descriptor.key}`.replace(/[^A-Za-z0-9_-]/g, "-"),
+          width: 460,
+          height: 420,
+          sourceId: runObserverPanelId,
+          resizable: true,
+          minWidth: 360,
+          minHeight: 280,
+          panel: (
+            <section className="emap-observer-node emap-observer-file-detail-node" aria-label={descriptor.title}>
+              <header className="emap-observer-node-head">
+                <span className="emap-observer-node-label">{descriptor.title}</span>
+                <code className="emap-observer-file-name">{descriptor.fileName}</code>
+                <button
+                  type="button"
+                  className="emap-observer-node-close"
+                  onClick={() => toggleFile(descriptor.key)}
+                  aria-label="\u6536\u8d77\u6587\u4ef6\u8be6\u60c5"
+                >
+                  {"\u6536\u8d77"}
+                </button>
+              </header>
+              <div className="emap-observer-file-detail-body">
+                {fileState?.error ? (
+                  <div className="emap-observer-file-error">{fileState.error}</div>
+                ) : fileState?.content ? (
+                  renderFileDetailContent(descriptor.fileName, fileState.content)
+                ) : (
+                  <div className="emap-observer-file-loading">{"\u6b63\u5728\u8bfb\u53d6\u6587\u4ef6..."}</div>
+                )}
+              </div>
+            </section>
+          ),
+        });
+      }
     }
 
     return panels;
-  }, [
-    expandedTaskDetailMode, observedTaskRun, expandedTask, observerFileDescriptors,
-    selectedObserverFileKey, selectedObserverFileDescriptor, selectedObserverFileState,
-    observedTaskRunState, observedTaskRunAttempts, latestObservedAttempt, toggleObserverFile, agentsById,
-  ]);
+  }, [agentsById, expandedTaskBranches, taskNodes, taskRunObserverByRunId, taskRunsByTaskId, tasksById]);
 
   return (
     <div className="app-shell">
@@ -2000,6 +2253,7 @@ export function App() {
                 onTaskOutputPortSelect={beginTaskPortConnection}
                 onTaskInputPortSelect={completeTaskPortConnection}
                 taskBranchPanel={expandedTaskBranchPanel}
+                taskBranchPanels={taskBranchPanelItems}
                 taskChildBranchPanel={expandedTaskChildBranchPanel}
                 taskChildBranchInteractive={expandedTaskDetailMode === "leader-chat" || expandedTaskDetailMode === "edit"}
                 taskChildBranchPanels={taskChildBranchPanels}

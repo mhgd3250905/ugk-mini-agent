@@ -110,7 +110,7 @@ export function layoutExecutionMap(
       links.push({
         sourceId: task.taskId,
         targetId: collapsedId,
-        path: straightPath(pos.x + pos.width, pos.y + pos.height / 2, BRANCH_X_OFFSET, collapsedPos.y + collapsedPos.height / 2),
+        path: straightPath(pos.x + pos.width, pos.y + pos.height / 2, BRANCH_X_OFFSET, collapsedPos.y),
       });
 
       const effH = (options?.selectedTaskId === task.taskId && options?.selectedReservedHeight)
@@ -126,7 +126,7 @@ export function layoutExecutionMap(
         links.push({
           sourceId: task.taskId,
           targetId: child.taskId,
-          path: straightPath(pos.x + pos.width, pos.y + pos.height / 2, BRANCH_X_OFFSET, childPos.y + childPos.height / 2),
+          path: straightPath(pos.x + pos.width, pos.y + pos.height / 2, BRANCH_X_OFFSET, childPos.y),
         });
 
         childY += childPos.height + BRANCH_Y_GAP * 0.5;

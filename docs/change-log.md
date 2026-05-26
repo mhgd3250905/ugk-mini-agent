@@ -12,6 +12,60 @@
 
 ---
 
+## 2026-05-26 — Team Console run observer expansion and left-top target anchors
+
+- **主题**: 收口 Task run observer 的子节点展开交互和连接线入线规范。
+- **变更内容**:
+  - Run observer 文件详情节点从单选改为多选，点击另一个详情不再自动收起已展开详情；再次点击同一行才关闭对应详情。
+  - Task 操作分支从单选改为多开：点开另一个 Task 不再收起已展开 Task，再点同一个 Task 才关闭对应分支。
+  - Agent 对话分支和 Task 操作 / run observer 分支不再互斥；点开 Agent 后仍可继续点开 Task 的运行子节点。
+  - 多开的文件详情按 observer 右侧纵向堆叠，保持“右侧展开，多个向下排”的节点规则。
+  - Task connection、Task 操作分支、Task 子分支和 layout 子节点连接统一从源卡片右中点出线、目标节点左上角入线。
+  - `emap-observer-file-detail-body` 使用和 Worker / Checker 过程面板一致的自定义滚动条样式。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/execution-map-ui.test.tsx`
+- **验证**: 前端 focused tests 覆盖多详情展开、左上角入线和滚动条 CSS；完整前端测试 / build / `tsc --noEmit` / `git diff --check` 作为最终门禁。
+- **边界**: 不改 Docker 后端、不改 Team runtime API、不改 typed chain / delivery outcome 数据结构。
+
+---
+
+## 2026-05-26 — Team Console typed Task connection midpoint anchors
+
+- **主题**: 统一 typed Task connection 的出入线锚点，绿色连接线不再按 output/input port 行偏移，而是和黄色 Task 子树连接一样从卡片右中点出线、左中点入线。
+- **变更内容**:
+  - `ExecutionMap.taskConnectionPoints()` 保留 port 存在 / 类型匹配校验，但几何锚点改为复用 `connectorAnchors(taskNodeRect(...))`。
+  - 扩展 Task port connection 渲染测试，断言 SVG path 的起点等于源 Task 卡片右中点，终点等于目标 Task 卡片左中点，source socket 仍吸附在出线点。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/tests/app.test.tsx`
+- **验证**: `npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "creates same-type Task port connections and draws the connection line"` 先红后绿；浏览器 DOM 验证 `http://127.0.0.1:5174/` 中两条 `.emap-link-task-connection` 均为卡片中线出入。
+- **边界**: 不改 Docker 后端、不改 Team runtime API、不改 typed chain / delivery outcome 数据结构，不改 port chip 展示。
+
+---
+
+## 2026-05-26 — Team Console downstream run auto-discovery race fix
+
+- **主题**: 修复上游 Task run 已完成并触发下游 run 后，前端不点“刷新 Task”或刷新页面就看不到下游执行中的竞态。
+- **变更内容**:
+  - live Task run 轮询发现上游 run 进入终态后，除立即刷新 Task / connection / task-runs 外，再安排短 follow-up refresh，兜住后端先写 upstream completed、随后写 downstream run 的时间窗口。
+  - 每个 terminal run 只安排一次 downstream discovery refresh burst，避免重复定时器；切回示例数据时清理尚未执行的 live refresh timer。
+  - 扩展现有 auto-start downstream UI 测试，模拟第一次终态刷新仍拿不到下游 run、第二次刷新才可见的真实竞态。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/tests/app.test.tsx`
+- **验证**: `npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "discovers an auto-started downstream Task run after the upstream run finishes"` 先红后绿。
+- **边界**: 不改 Docker 后端、不改 Team runtime API、不引入 SSE，不改 typed chain / delivery outcome 数据结构。
+
+---
+
+## 2026-05-26 — Team Console Task run action panel readability
+
+- **主题**: 修复 Task 操作卡片在运行期间把 Task 标题、阶段、消息和 runId 截断的问题。
+- **变更内容**:
+  - `task-action-branch` 改为稳定宽度，Task 标题允许换行，不再在操作面板里用 ellipsis 截掉。
+  - `task-run-summary` 宽度跟随操作面板，阶段、消息和 runId 允许换行 / 断词，运行时诊断信息不再被隐藏。
+  - 新增前端 CSS 合约测试，防止运行摘要再次退回 `text-overflow: ellipsis`。
+- **影响范围**: `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`
+- **验证**: `npm --prefix apps/team-console run test -- src/tests/app.test.tsx` (132 passed), `npm --prefix apps/team-console run test` (347 passed), `npm --prefix apps/team-console run build`, browser DOM computed-style check, `git diff --check`
+- **边界**: 不改 Docker 后端、不改 Team runtime API、不改 typed chain / delivery outcome 数据结构。
+
+---
+
 ## 2026-05-26 — Typed artifact prompt contract hardening
 
 - **主题**: 把 typed artifact handoff 的下游 prompt 从裸塞 Markdown 内容收口成显式完整 metadata + BEGIN/END 内容块。

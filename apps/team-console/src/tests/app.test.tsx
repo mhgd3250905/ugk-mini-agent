@@ -372,11 +372,21 @@ describe("App", () => {
     const connectionPath = container.querySelector('[data-task-connection-id="conn_live_md"]') as SVGPathElement | null;
     const sourceSocket = connectionPath?.parentElement?.querySelector(".emap-connector-socket-task-connection .emap-connector-source-socket") as SVGPathElement | null;
     const connectionD = connectionPath?.getAttribute("d") ?? "";
-    const moveMatch = connectionD.match(/^M([\d.]+),([\d.]+)/);
+    const moveMatch = connectionD.match(/^M([\d.]+),([\d.]+)\s+C[\d.]+,[\d.]+\s+[\d.]+,[\d.]+\s+([\d.]+),([\d.]+)/);
     expect(sourceSocket).toBeTruthy();
     expect(moveMatch).toBeTruthy();
     const sourceX = Number.parseFloat(moveMatch![1]!);
     const sourceY = Number.parseFloat(moveMatch![2]!);
+    const targetX = Number.parseFloat(moveMatch![3]!);
+    const targetY = Number.parseFloat(moveMatch![4]!);
+    const collectNode = container.querySelector(`[data-task-id="${collectTask.taskId}"]`) as HTMLElement | null;
+    const htmlNode = container.querySelector(`[data-task-id="${htmlTask.taskId}"]`) as HTMLElement | null;
+    expect(collectNode).toBeTruthy();
+    expect(htmlNode).toBeTruthy();
+    expect(sourceX).toBe(Number.parseFloat(collectNode!.style.left) + Number.parseFloat(collectNode!.style.width));
+    expect(sourceY).toBe(Number.parseFloat(collectNode!.style.top) + Number.parseFloat(collectNode!.style.height) / 2);
+    expect(targetX).toBe(Number.parseFloat(htmlNode!.style.left));
+    expect(targetY).toBe(Number.parseFloat(htmlNode!.style.top));
     expect(sourceSocket!.getAttribute("d")).toBe(`M${sourceX},${sourceY - 6} A6,6 0 0 1 ${sourceX},${sourceY + 6}`);
   });
 
@@ -462,6 +472,7 @@ describe("App", () => {
     };
     let taskRequests = 0;
     let upstreamTerminalObserved = false;
+    let downstreamRunRequestsAfterTerminal = 0;
 
     vi.mocked(fetch).mockImplementation(async (input) => {
       const url = String(input);
@@ -476,7 +487,11 @@ describe("App", () => {
         return new Response(JSON.stringify({ runs: [upstreamTerminalObserved ? upstreamCompleted : upstreamRunning] }), { status: 200 });
       }
       if (url === `/v1/team/tasks/${htmlTask.taskId}/runs`) {
-        return new Response(JSON.stringify({ runs: upstreamTerminalObserved ? [downstreamRunning] : [] }), { status: 200 });
+        if (!upstreamTerminalObserved) {
+          return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        }
+        downstreamRunRequestsAfterTerminal += 1;
+        return new Response(JSON.stringify({ runs: downstreamRunRequestsAfterTerminal >= 2 ? [downstreamRunning] : [] }), { status: 200 });
       }
       if (url === `/v1/team/task-runs/${upstreamRunning.runId}`) {
         upstreamTerminalObserved = true;
@@ -504,6 +519,7 @@ describe("App", () => {
       return panel!;
     });
     expect(within(branch).getByText("downstream running")).toBeInTheDocument();
+    expect(downstreamRunRequestsAfterTerminal).toBeGreaterThanOrEqual(2);
   });
 
   it("blocks mismatched Task port connections before calling the API", async () => {
@@ -758,19 +774,21 @@ describe("App", () => {
     const detailCloseButton = detailNode.querySelector(".emap-observer-node-close") as HTMLElement | null;
     expect(detailCloseButton).toBeTruthy();
 
-    // File detail x must be greater than observer panel x (source is "run-observer")
+    // File detail opens to the observer's right side.
     const detailShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="file-detail-"]') as HTMLElement | undefined;
     expect(detailShell).toBeTruthy();
     expect(Number.parseFloat(detailShell!.style.left)).toBeGreaterThan(Number.parseFloat(observerShell!.style.left));
 
     fireEvent.click(resultFileRow!);
-    const updatedDetail = await waitFor(() => {
-      const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
-      expect(detail).toBeTruthy();
-      return detail!;
+    const details = await waitFor(() => {
+      const nodes = Array.from(container.querySelectorAll(".emap-observer-file-detail-node")) as HTMLElement[];
+      expect(nodes).toHaveLength(2);
+      return nodes;
     });
-    expect(within(updatedDetail).getByText("Mock accepted result")).toBeInTheDocument();
-    expect(updatedDetail.querySelector('pre[data-file-format="json"]')).toBeNull();
+    expect(details.some((detail) => detail.textContent?.includes('"verdict": "pass"'))).toBe(true);
+    const resultDetail = details.find((detail) => detail.textContent?.includes("Mock accepted result"));
+    expect(resultDetail).toBeTruthy();
+    expect(resultDetail!.querySelector('pre[data-file-format="json"]')).toBeNull();
   });
 
   it("renders Worker and Checker process nodes inside the merged run observer panel", async () => {
@@ -1637,7 +1655,7 @@ describe("App", () => {
     expect(container.querySelector(".task-action-branch")).toBeNull();
   });
 
-  it("clears a Task action branch when an Agent branch opens", async () => {
+  it("keeps a Task action branch open when an Agent branch opens", async () => {
     const { container } = render(<App />);
 
     fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
@@ -1647,11 +1665,33 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
     fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
 
-    expect(container.querySelector(".task-action-branch")).toBeNull();
+    expect(container.querySelector(".task-action-branch")).toBeTruthy();
     expect(container.querySelector(".agent-playground-branch")).toBeTruthy();
   });
 
-  it("switches the Task action branch when another Task is clicked", async () => {
+  it("keeps an Agent chat branch open when a Task run observer opens", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+    expect(container.querySelector(".agent-playground-branch")).toBeTruthy();
+
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
+
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    await waitFor(() => {
+      expect(container.querySelector(".agent-playground-branch")).toBeTruthy();
+      expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]')).toBeTruthy();
+    });
+  });
+
+  it("keeps multiple Task action branches open when another Task is clicked", async () => {
     const firstTask = mockTeamTasks[0]!;
     const secondTask = {
       ...firstTask,
@@ -1688,13 +1728,24 @@ describe("App", () => {
     fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
     expect(within(container.querySelector(".task-action-branch")!).getByText("task_research_medtrum")).toBeInTheDocument();
 
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /复核 Medtrum 证据/ }));
+    fireEvent.click(getAtlasNodes(container).querySelector('[data-task-id="task_review_medtrum"]') as HTMLElement);
 
-    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
-    expect(branch).toBeTruthy();
-    expect(within(branch!).getByText("复核 Medtrum 证据")).toBeInTheDocument();
-    expect(within(branch!).getByText("task_review_medtrum")).toBeInTheDocument();
-    expect(branch!.querySelector("iframe")).toBeNull();
+    const branches = Array.from(container.querySelectorAll(".task-action-branch")) as HTMLElement[];
+    expect(branches).toHaveLength(2);
+    expect(branches.some((branch) => branch.textContent?.includes("调查 Medtrum 云资产"))).toBe(true);
+    expect(branches.some((branch) => branch.textContent?.includes("task_research_medtrum"))).toBe(true);
+    expect(branches.some((branch) => branch.textContent?.includes("复核 Medtrum 证据"))).toBe(true);
+    expect(branches.some((branch) => branch.textContent?.includes("task_review_medtrum"))).toBe(true);
+    for (const branch of branches) {
+      expect(branch.querySelector("iframe")).toBeNull();
+    }
+
+    fireEvent.click(getAtlasNodes(container).querySelector('[data-task-id="task_review_medtrum"]') as HTMLElement);
+
+    const remainingBranches = Array.from(container.querySelectorAll(".task-action-branch")) as HTMLElement[];
+    expect(remainingBranches).toHaveLength(1);
+    expect(remainingBranches[0]).toHaveTextContent("调查 Medtrum 云资产");
+    expect(remainingBranches[0]).not.toHaveTextContent("复核 Medtrum 证据");
   });
 
   it("opens the Task leader chat iframe from the action menu", async () => {
@@ -2658,7 +2709,7 @@ describe("App", () => {
     expect(screen.getByLabelText("主 Agent 主项目对话")).toBeInTheDocument();
   });
 
-  it("refreshes live Task cards after leaving a Task creation branch for an existing Task branch", async () => {
+  it("keeps live Task creation branch when opening an existing Task branch", async () => {
     const liveTask = mockTeamTasks[0]!;
     let taskRequests = 0;
     vi.mocked(fetch).mockImplementation(async (input) => {
@@ -2685,7 +2736,9 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
     fireEvent.click(taskNode);
 
-    await waitFor(() => expect(taskRequests).toBe(2));
+    await waitFor(() => expect(container.querySelector(".task-action-branch")).toBeTruthy());
+    expect(container.querySelector(".agent-playground-branch")).toBeTruthy();
+    expect(taskRequests).toBe(1);
     expect(screen.getByLabelText("调查 Medtrum 云资产 Task 操作")).toBeInTheDocument();
   });
 
@@ -3074,6 +3127,9 @@ describe("App", () => {
     const taskConnectionSocketRule = mapCss.match(/\.emap-connector-socket-task-connection\s+\.emap-connector-source-socket\s*{[^}]*}/)?.[0] ?? "";
     const agentSocketRule = mapCss.match(/\.emap-connector-socket-agent-branch\s+\.emap-connector-source-socket\s*{[^}]*}/)?.[0] ?? "";
     const evidenceSocketRule = mapCss.match(/\.emap-connector-socket-evidence\s+\.emap-connector-source-socket\s*{[^}]*}/)?.[0] ?? "";
+    const detailBodyRule = mapCss.match(/\.emap-observer-file-detail-body\s*{[^}]*}/)?.[0] ?? "";
+    const detailScrollbarRule = mapCss.match(/\.emap-observer-file-detail-body::-webkit-scrollbar\s*{[^}]*}/)?.[0] ?? "";
+    const detailThumbRule = mapCss.match(/\.emap-observer-file-detail-body::-webkit-scrollbar-thumb\s*{[^}]*}/)?.[0] ?? "";
 
     expect(panelRule).toContain("overflow: visible");
     expect(panelRule).not.toContain("overflow: auto");
@@ -3085,6 +3141,10 @@ describe("App", () => {
     expect(scrollbarRule).not.toContain("display: none");
     expect(thumbRule).toContain("rgba(121, 216, 208");
     expect(checkerThumbRule).toContain("rgba(255, 206, 118");
+    expect(detailBodyRule).toContain("scrollbar-width: thin");
+    expect(detailBodyRule).toContain("scrollbar-color");
+    expect(detailScrollbarRule).toContain("width: 8px");
+    expect(detailThumbRule).toContain("rgba(121, 216, 208");
     expect(connectorSocketRule).toContain("pointer-events: none");
     expect(sourceSocketRule).toContain("stroke-width: 1.6");
     expect(sourceSocketRule).toContain("stroke-linecap: round");
@@ -3095,6 +3155,30 @@ describe("App", () => {
     expect(evidenceSocketRule).toContain("rgba(121, 216, 208");
     expect(mapCss).not.toContain(".emap-connector-anchor-ring");
     expect(mapCss).not.toContain(".emap-connector-anchor-dot");
+  });
+
+  it("keeps Task action run summaries readable instead of clipping runtime text", () => {
+    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const taskActionRule = mapCss.match(/\.task-action-branch\s*{[^}]*}/)?.[0] ?? "";
+    const taskTitleRule = mapCss.match(/\.task-action-branch\s+\.task-leader-branch-title\s+strong\s*{[^}]*}/)?.[0] ?? "";
+    const taskMenuRule = mapCss.match(/\.task-action-menu\s*{[^}]*}/)?.[0] ?? "";
+    const summaryRule = mapCss.match(/\.task-run-summary\s*{[^}]*}/)?.[0] ?? "";
+    const metricsRule = mapCss.match(/\.task-run-summary-metrics\s+strong\s*{[^}]*}/)?.[0] ?? "";
+    const messageRule = mapCss.match(/\.task-run-summary-message\s*{[^}]*}/)?.[0] ?? "";
+    const runIdRule = mapCss.match(/\.task-run-summary\s+code\s*{[^}]*}/)?.[0] ?? "";
+
+    expect(taskActionRule).toContain("width: 320px");
+    expect(taskActionRule).not.toContain("max-width: 280px");
+    expect(taskTitleRule).toContain("white-space: normal");
+    expect(taskTitleRule).not.toContain("text-overflow: ellipsis");
+    expect(taskMenuRule).toContain("width: 100%");
+    expect(summaryRule).toContain("width: 100%");
+    expect(metricsRule).toContain("overflow-wrap: anywhere");
+    expect(metricsRule).not.toContain("text-overflow: ellipsis");
+    expect(messageRule).toContain("white-space: normal");
+    expect(messageRule).not.toContain("text-overflow: ellipsis");
+    expect(runIdRule).toContain("overflow-wrap: anywhere");
+    expect(runIdRule).not.toContain("text-overflow: ellipsis");
   });
 
   it("uses a warm accent for busy Agent cards", () => {
@@ -3738,6 +3822,51 @@ describe("App", () => {
     });
   });
 
+  it("keeps multiple observer file detail panels open until each one is explicitly closed", async () => {
+    const { container } = render(<App />);
+    await setupMergedObserverOpen(container);
+
+    const workerFileRow = await waitFor(() => {
+      const row = container.querySelector('.emap-observer-file-row[data-file-kind="worker"]') as HTMLElement | null;
+      expect(row).toBeTruthy();
+      return row!;
+    });
+    const resultFileRow = await waitFor(() => {
+      const row = container.querySelector('.emap-observer-file-row[data-file-kind="result"]') as HTMLElement | null;
+      expect(row).toBeTruthy();
+      return row!;
+    });
+
+    fireEvent.click(workerFileRow);
+    fireEvent.click(resultFileRow);
+
+    const detailNodes = await waitFor(() => {
+      const nodes = Array.from(container.querySelectorAll(".emap-observer-file-detail-node")) as HTMLElement[];
+      expect(nodes).toHaveLength(2);
+      return nodes;
+    });
+    expect(detailNodes.some((detail) => detail.textContent?.includes("Worker output"))).toBe(true);
+    expect(detailNodes.some((detail) => detail.textContent?.includes("Mock accepted result"))).toBe(true);
+    expect(workerFileRow).toHaveClass("selected");
+    expect(resultFileRow).toHaveClass("selected");
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    const detailShells = Array.from(container.querySelectorAll('.emap-task-child-branch-shell[data-panel-id^="file-detail-"]')) as HTMLElement[];
+    expect(observerShell).toBeTruthy();
+    expect(detailShells).toHaveLength(2);
+    expect(Number.parseFloat(detailShells[0]!.style.left)).toBeGreaterThan(Number.parseFloat(observerShell!.style.left));
+    expect(Number.parseFloat(detailShells[1]!.style.left)).toBe(Number.parseFloat(detailShells[0]!.style.left));
+    expect(Number.parseFloat(detailShells[1]!.style.top)).toBeGreaterThan(Number.parseFloat(detailShells[0]!.style.top));
+
+    fireEvent.click(workerFileRow);
+    await waitFor(() => {
+      const nodes = Array.from(container.querySelectorAll(".emap-observer-file-detail-node")) as HTMLElement[];
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]).toHaveTextContent("Mock accepted result");
+    });
+    expect(workerFileRow).not.toHaveClass("selected");
+    expect(resultFileRow).toHaveClass("selected");
+  });
+
   it("keeps file detail attached when merged observer panel moves", async () => {
     const { container } = render(<App />);
     await setupMergedObserverOpen(container);
@@ -3821,7 +3950,7 @@ describe("App", () => {
     // Source y should be near the menu's vertical center
     expect(pathStartY).toBeGreaterThan(menuTop - 20);
 
-    // Check that path ends at observer left-middle
+    // Check that path ends at observer top-left
     const lastCoordMatch = d.match(/([\d.]+),([\d.]+)\s*$/);
     expect(lastCoordMatch).toBeTruthy();
     const pathEndX = Number.parseFloat(lastCoordMatch![1]!);
@@ -3829,8 +3958,7 @@ describe("App", () => {
 
     // Target should be at observer left edge
     expect(pathEndX).toBeCloseTo(observerLeft, 0);
-    // Target y should be near observer top (within reasonable range, autoHeight panels don't expose height)
-    expect(pathEndY).toBeGreaterThan(observerTop - 20);
+    expect(pathEndY).toBeCloseTo(observerTop, 0);
 
     // Default layout: normal right-side child must NOT use reverse detour (no L command)
     expect(d).not.toContain(" L");
@@ -4175,7 +4303,7 @@ describe("App", () => {
     expect(Number.parseFloat(detailShell!.style.top)).toBeCloseTo(detailTopBefore + dy, 4);
   });
 
-  it("opens file detail to the right of dragged merged observer panel", async () => {
+  it("opens file detail to the right of a dragged merged observer panel", async () => {
     const { container } = render(<App />);
     await setupObserverOpen(container);
 
