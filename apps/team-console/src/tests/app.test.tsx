@@ -5550,4 +5550,221 @@ describe("App", () => {
     expect(connectionPath).toBeTruthy();
     expect(connectionPath!.getAttribute("d")).toBeTruthy();
   });
+
+  describe("task run concurrency scope", () => {
+    const taskA: TeamCanvasTask = {
+      ...cloneTaskFixture(),
+      taskId: "task_concurrency_a",
+      title: "并行 Task A",
+    };
+    const taskB: TeamCanvasTask = {
+      ...cloneTaskFixture(),
+      taskId: "task_concurrency_b",
+      title: "并行 Task B",
+    };
+
+    function makeActiveRun(task: TeamCanvasTask, runId: string): TeamRunState {
+      return {
+        runId,
+        planId: `canvas_task_${task.taskId}`,
+        source: { type: "canvas-task", taskId: task.taskId },
+        teamUnitId: `canvas_task_unit_${task.taskId}`,
+        status: "running",
+        createdAt: "2026-05-27T00:00:00.000Z",
+        startedAt: "2026-05-27T00:00:01.000Z",
+        finishedAt: null,
+        currentTaskId: task.taskId,
+        taskStates: {
+          [task.taskId]: {
+            status: "running",
+            attemptCount: 1,
+            activeAttemptId: `attempt_${task.taskId}_1`,
+            resultRef: null,
+            errorSummary: null,
+            progress: { phase: "running", message: "执行中", updatedAt: "2026-05-27T00:00:02.000Z" },
+          },
+        },
+        summary: { totalTasks: 1, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+      };
+    }
+
+    it("allows Task B to start a run while Task A has an active run", async () => {
+      const runA = makeActiveRun(taskA, "run_concurrency_a_1");
+      let createRunRequestsByTask: Record<string, number> = {};
+
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [
+              { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+              { agentId: "search", name: "搜索 Agent", description: "搜索" },
+            ],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks" && method === "GET") {
+          return new Response(JSON.stringify({ tasks: [taskA, taskB] }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${taskA.taskId}/runs` && method === "GET") {
+          return new Response(JSON.stringify({ runs: [runA] }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${taskB.taskId}/runs` && method === "GET") {
+          return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${taskA.taskId}/runs` && method === "POST") {
+          createRunRequestsByTask[taskA.taskId] = (createRunRequestsByTask[taskA.taskId] ?? 0) + 1;
+          return new Response(JSON.stringify(runA), { status: 201 });
+        }
+        if (url === `/v1/team/tasks/${taskB.taskId}/runs` && method === "POST") {
+          createRunRequestsByTask[taskB.taskId] = (createRunRequestsByTask[taskB.taskId] ?? 0) + 1;
+          const runB = {
+            ...runA,
+            runId: "run_concurrency_b_1",
+            source: { type: "canvas-task", taskId: taskB.taskId },
+          };
+          return new Response(JSON.stringify(runB), { status: 201 });
+        }
+        if (url.startsWith("/v1/team/task-runs/")) {
+          if (url.includes(runA.runId)) return new Response(JSON.stringify(runA), { status: 200 });
+          return new Response(JSON.stringify({}), { status: 200 });
+        }
+        return new Response(JSON.stringify([]), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      // Open Task A menu — run button should be disabled with "运行中" text
+      const taskANode = await within(getAtlasNodes(container)).findByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      const branchA = container.querySelector(".task-action-branch") as HTMLElement | null;
+      expect(branchA).toBeTruthy();
+      const runButtonA = branchA!.querySelector(".task-action-menu-button") as HTMLButtonElement | null;
+      expect(runButtonA).toBeTruthy();
+      expect(runButtonA!.textContent).toContain("运行中");
+      expect(runButtonA!.disabled).toBe(true);
+      expect(branchA!.querySelector('.task-action-menu-button:not([disabled])')).toBeTruthy();
+
+      // Open Task B menu — run button should be enabled, NOT disabled by Task A's active run
+      const taskBNode = within(getAtlasNodes(container)).getByRole("button", { name: taskB.title });
+      fireEvent.click(taskBNode);
+
+      // There are now two task-action-branch elements; find the one for Task B
+      const allBranches = container.querySelectorAll(".task-action-branch");
+      const branchB = Array.from(allBranches).find((el) => el.textContent?.includes(taskB.taskId)) as HTMLElement | null;
+      expect(branchB).toBeTruthy();
+      const runButtonB = branchB!.querySelector(".task-action-menu-button") as HTMLButtonElement | null;
+      expect(runButtonB).toBeTruthy();
+      expect(runButtonB!.textContent).toContain("运行");
+      expect(runButtonB!.disabled).toBe(false);
+
+      // Click Task B's run button — should call POST for Task B
+      fireEvent.click(runButtonB!);
+      await waitFor(() => expect(createRunRequestsByTask[taskB.taskId]).toBe(1));
+
+      // Task A should NOT have a create-run request
+      expect(createRunRequestsByTask[taskA.taskId] ?? 0).toBe(0);
+    });
+
+    it("disables the run button for a Task that already has an active run", async () => {
+      const runA = makeActiveRun(taskA, "run_concurrency_a_dup");
+
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [
+              { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+              { agentId: "search", name: "搜索 Agent", description: "搜索" },
+            ],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks" && method === "GET") {
+          return new Response(JSON.stringify({ tasks: [taskA] }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${taskA.taskId}/runs` && method === "GET") {
+          return new Response(JSON.stringify({ runs: [runA] }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${taskA.taskId}/runs` && method === "POST") {
+          return new Response(JSON.stringify(runA), { status: 201 });
+        }
+        if (url.startsWith("/v1/team/task-runs/") && url.includes(runA.runId)) {
+          return new Response(JSON.stringify(runA), { status: 200 });
+        }
+        return new Response(JSON.stringify([]), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const taskANode = await within(getAtlasNodes(container)).findByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+
+      const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+      expect(branch).toBeTruthy();
+
+      // Run button (first .task-action-menu-button) shows "运行中" and is disabled
+      const runButton = branch!.querySelector(".task-action-menu-button") as HTMLButtonElement | null;
+      expect(runButton).toBeTruthy();
+      expect(runButton!.textContent).toContain("运行中");
+      expect(runButton!.disabled).toBe(true);
+
+      // Stop button is present for the active run and enabled
+      const stopButtons = branch!.querySelectorAll('.task-action-menu-button:not([disabled])');
+      const stopButton = Array.from(stopButtons).find((btn) => btn.textContent === "停止");
+      expect(stopButton).toBeTruthy();
+    });
+
+    it("polls both active runs independently by runId", async () => {
+      const runA = makeActiveRun(taskA, "run_poll_a");
+      const runB = makeActiveRun(taskB, "run_poll_b");
+      const polledRunIds: string[] = [];
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [
+              { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+              { agentId: "search", name: "搜索 Agent", description: "搜索" },
+            ],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") {
+          return new Response(JSON.stringify({ tasks: [taskA, taskB] }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${taskA.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [runA] }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${taskB.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [runB] }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/")) {
+          const runId = url.replace("/v1/team/task-runs/", "").split("/")[0]!;
+          polledRunIds.push(runId);
+          if (runId === runA.runId) return new Response(JSON.stringify(runA), { status: 200 });
+          if (runId === runB.runId) return new Response(JSON.stringify(runB), { status: 200 });
+          return new Response(JSON.stringify({}), { status: 200 });
+        }
+        return new Response(JSON.stringify([]), { status: 200 });
+      });
+
+      render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      // Wait for initial data load
+      await screen.findByText("并行 Task A");
+
+      // Wait for at least one polling cycle to hit both run IDs
+      await waitFor(() => {
+        expect(polledRunIds).toContain(runA.runId);
+        expect(polledRunIds).toContain(runB.runId);
+      }, { timeout: 5000 });
+    });
+  });
 });
