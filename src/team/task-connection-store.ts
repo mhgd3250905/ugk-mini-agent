@@ -174,21 +174,26 @@ export class TaskConnectionStore {
 	private async withMutationLock<T>(fn: () => Promise<T>): Promise<T> {
 		await mkdir(this.rootDir, { recursive: true });
 		const lockDir = join(this.rootDir, ".task-connections.lock");
+		let acquired = false;
 		for (let attempt = 0; attempt < 100; attempt++) {
 			try {
 				await mkdir(lockDir);
-				try {
-					return await fn();
-				} finally {
-					await rm(lockDir, { recursive: true, force: true });
-				}
+				acquired = true;
+				break;
 			} catch (error) {
 				const code = (error as NodeJS.ErrnoException).code;
 				if (code !== "EEXIST" && code !== "EPERM") throw error;
 				await new Promise(resolve => setTimeout(resolve, 10));
 			}
 		}
-		throw new Error("task connection store lock busy");
+		if (!acquired) {
+			throw new Error("task connection store lock busy");
+		}
+		try {
+			return await fn();
+		} finally {
+			await rm(lockDir, { recursive: true, force: true });
+		}
 	}
 
 	private async writeAll(connections: TeamTaskConnection[]): Promise<void> {

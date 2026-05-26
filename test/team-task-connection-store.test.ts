@@ -250,3 +250,43 @@ test("lock busy rejects mutation after retry timeout", async () => {
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+test("fn() error inside lock propagates instead of being misread as lock busy", async () => {
+	const root = await makeRoot();
+	try {
+		const taskStore = makeTaskStore(root);
+		const store = new TaskConnectionStore(root, taskStore);
+
+		// Write corrupt JSON so readAll() throws inside the critical section.
+		await writeFile(join(root, "task-connections.json"), "{bad json", "utf8");
+
+		const source = await createTaskWithPorts(taskStore, "source", {
+			outputPorts: [{ id: "draft_md", label: "Draft", type: "md" }],
+		});
+		const target = await createTaskWithPorts(taskStore, "target", {
+			inputPorts: [{ id: "source_md", label: "Source", type: "md" }],
+		});
+
+		await assert.rejects(
+			() => store.create({
+				fromTaskId: source.taskId,
+				fromOutputPortId: "draft_md",
+				toTaskId: target.taskId,
+				toInputPortId: "source_md",
+			}),
+			(err: Error) => /task connection store/i.test(err.message) && !/lock busy/i.test(err.message),
+		);
+
+		// Lock must still be released: a subsequent valid call should not see "lock busy".
+		await writeFile(join(root, "task-connections.json"), "[]", "utf8");
+		const connection = await store.create({
+			fromTaskId: source.taskId,
+			fromOutputPortId: "draft_md",
+			toTaskId: target.taskId,
+			toInputPortId: "source_md",
+		});
+		assert.ok(connection.connectionId.startsWith("conn_"), "lock should have been released after fn() error");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
