@@ -35,7 +35,7 @@
 
 - Worktree：`E:\AII\ugk-pi\.worktrees\team-console-workunit-redesign`
 - 分支：`codex/team-console-workunit-redesign`
-- 最新提交：`test(team): remove fixed sleeps from task run route tests`（真实 hash 以 `git log -1 --oneline` 为准）
+- 最新提交：以 `git log -1 --oneline` 为准；当前分支已完成 Team Console Task / WorkUnit redesign 收口和最终测试稳定化。
 - `.codex/plans/*` 和 `.codex/skills/new-chat/` 仍是本地协作文件，按边界不要提交。
 
 已完成的强化工作（按提交倒序）：
