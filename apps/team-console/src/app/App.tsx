@@ -449,6 +449,46 @@ function buildAgentPlaygroundUrl(agentId: string, mode: AgentBranchMode = "chat"
   return url.toString();
 }
 
+function formatTaskLeaderContext(task: TeamCanvasTask): string {
+  const wu = task.workUnit;
+  const formatPorts = (ports: TeamTaskInputPort[] | TeamTaskOutputPort[] | undefined) => {
+    if (!ports || ports.length === 0) return "- none";
+    return ports.map((p) => `- ${p.id} [${p.type}] ${p.label ?? ""}`).join("\n");
+  };
+  const rulesText = wu.acceptance.rules.length > 0
+    ? wu.acceptance.rules.map((r, i) => `${i + 1}. ${r}`).join("\n")
+    : "- none";
+  return [
+    "Team Console 当前 Task 上下文",
+    "",
+    "请先理解这个 Task，不要运行 Task。我要修改它的定义/规则时，请基于 taskId 使用 /team-task 更新，并在写入前展示完整变更让我确认。",
+    "",
+    `taskId: ${task.taskId}`,
+    `title: ${task.title}`,
+    `status: ${task.status}`,
+    `leaderAgentId: ${task.leaderAgentId}`,
+    `workerAgentId: ${wu.workerAgentId}`,
+    `checkerAgentId: ${wu.checkerAgentId}`,
+    `teamTaskMode: edit`,
+    `teamTaskId: ${task.taskId}`,
+    "",
+    "workUnit.input.text:",
+    wu.input.text || "(empty)",
+    "",
+    "workUnit.inputPorts:",
+    formatPorts(wu.inputPorts),
+    "",
+    "workUnit.outputPorts:",
+    formatPorts(wu.outputPorts),
+    "",
+    "workUnit.outputContract.text:",
+    wu.outputContract.text || "(empty)",
+    "",
+    "workUnit.acceptance.rules:",
+    rulesText,
+  ].join("\n");
+}
+
 function buildTaskLeaderPlaygroundUrl(task: TeamCanvasTask): string {
   const url = new URL("/playground", playgroundBaseUrl());
   url.searchParams.set("view", "chat");
@@ -847,6 +887,7 @@ export function App() {
   const [taskArchiveSaving, setTaskArchiveSaving] = useState(false);
   const [rootArchiveConfirm, setRootArchiveConfirm] = useState<RootArchiveConfirm | null>(null);
   const [rootArchiveSaving, setRootArchiveSaving] = useState(false);
+  const [taskLeaderContextCopyState, setTaskLeaderContextCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
   const tasksById = useMemo(() => new Map(tasks.map((task) => [task.taskId, task])), [tasks]);
@@ -1645,6 +1686,15 @@ export function App() {
     }
   }, [rootArchiveSaving]);
 
+  const copyTaskLeaderContext = useCallback(async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setTaskLeaderContextCopyState("copied");
+    } catch {
+      setTaskLeaderContextCopyState("failed");
+    }
+  }, []);
+
   const runTask = useCallback(async (task: TeamCanvasTask) => {
     const taskId = task.taskId;
     setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: true }));
@@ -2238,6 +2288,7 @@ export function App() {
                   ...current.filter((item) => item.nodeId !== branch.nodeId),
                   { ...branch, detailMode: "leader-chat" },
                 ]);
+                setTaskLeaderContextCopyState("idle");
               }}
             >
               {"\u5bf9\u8bdd Leader"}
@@ -2384,6 +2435,7 @@ export function App() {
           className="task-action-menu-button"
           onClick={() => {
             setTaskArchiveConfirming(false);
+            setTaskLeaderContextCopyState("idle");
             setExpandedTaskBranch((current) => current ? { ...current, detailMode: "leader-chat" } : current);
           }}
         >
@@ -2445,6 +2497,24 @@ export function App() {
         </header>
         <div className="task-leader-branch-hint">
           在对话中使用 <code>/team-task</code> 创建或更新这个 Task。Task 数据必须通过后端 API 写入。
+        </div>
+        <div className="task-leader-context-copy">
+          <div className="task-leader-context-copy-head">
+            <span>当前 Task 上下文</span>
+            <button
+              type="button"
+              className="task-action-menu-button"
+              onClick={() => { void copyTaskLeaderContext(formatTaskLeaderContext(expandedTask)); }}
+            >
+              复制 Task 上下文
+            </button>
+          </div>
+          <pre className="task-leader-context-copy-text">{formatTaskLeaderContext(expandedTask)}</pre>
+          {taskLeaderContextCopyState !== "idle" && (
+            <div className="task-leader-context-copy-status" role="status">
+              {taskLeaderContextCopyState === "copied" ? "已复制" : "复制失败，请手动选中上下文复制"}
+            </div>
+          )}
         </div>
         <iframe
           className="agent-playground-iframe"

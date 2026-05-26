@@ -1045,6 +1045,59 @@
   font-size: 10px;
 }
 
+.task-leader-context-copy {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(255, 190, 96, 0.14);
+  background: rgba(255, 190, 96, 0.03);
+}
+
+.task-leader-context-copy-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.task-leader-context-copy-head > span {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--secondary);
+}
+
+.task-leader-context-copy-head > button {
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 2px 8px;
+}
+
+.task-leader-context-copy-text {
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--secondary);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.task-leader-context-copy-status {
+  font-size: 10px;
+  color: var(--secondary);
+  opacity: 0.8;
+}
+
 .task-action-menu {
   flex: 0 0 auto;
   display: grid;

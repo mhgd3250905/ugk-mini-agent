@@ -2065,6 +2065,84 @@ describe("App", () => {
     expect(iframe?.getAttribute("src")).toContain("teamTaskMode=edit");
   });
 
+  it("shows current Task context in the Leader chat branch", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
+    fireEvent.click(screen.getByRole("button", { name: "对话 Leader" }));
+
+    const branch = container.querySelector(".task-leader-chat-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    const contextBlock = branch!.querySelector(".task-leader-context-copy") as HTMLElement | null;
+    expect(contextBlock).toBeTruthy();
+    expect(contextBlock!.textContent).toContain("当前 Task 上下文");
+    expect(contextBlock!.textContent).toContain("taskId: task_research_medtrum");
+    expect(contextBlock!.textContent).toContain("title: 调查 Medtrum 云资产");
+    expect(contextBlock!.textContent).toContain("leaderAgentId: main");
+    expect(contextBlock!.textContent).toContain("workerAgentId: search");
+    expect(contextBlock!.textContent).toContain("checkerAgentId: main");
+    expect(contextBlock!.textContent).toContain("workUnit.input.text");
+    expect(contextBlock!.textContent).toContain("workUnit.outputContract.text");
+    expect(contextBlock!.textContent).toContain("每条发现必须包含来源或搜索线索");
+    expect(contextBlock!.textContent).toContain("teamTaskMode: edit");
+  });
+
+  it("copies current Task context from the Leader chat branch", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      writable: true,
+      configurable: true,
+    });
+
+    const { container } = render(<App />);
+
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
+    fireEvent.click(screen.getByRole("button", { name: "对话 Leader" }));
+
+    const copyButton = screen.getByRole("button", { name: /复制 Task 上下文/ });
+    fireEvent.click(copyButton);
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledTimes(1);
+    });
+    const copiedText = writeText.mock.calls[0][0] as string;
+    expect(copiedText).toContain("taskId: task_research_medtrum");
+    expect(copiedText).toContain("/team-task");
+    expect(copiedText).toContain("workUnit.acceptance.rules");
+
+    await waitFor(() => {
+      expect(screen.getByRole("status").textContent).toContain("已复制");
+    });
+  });
+
+  it("keeps context visible when clipboard copy fails", async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error("not allowed"));
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      writable: true,
+      configurable: true,
+    });
+
+    const { container } = render(<App />);
+
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
+    fireEvent.click(screen.getByRole("button", { name: "对话 Leader" }));
+
+    const copyButton = screen.getByRole("button", { name: /复制 Task 上下文/ });
+    fireEvent.click(copyButton);
+
+    await waitFor(() => {
+      expect(screen.getByRole("status").textContent).toContain("复制失败");
+    });
+
+    // Context text remains visible
+    const branch = container.querySelector(".task-leader-chat-branch") as HTMLElement | null;
+    expect(branch!.querySelector(".task-leader-context-copy-text")!.textContent).toContain("taskId: task_research_medtrum");
+    // Iframe remains present
+    expect(branch!.querySelector("iframe")).toBeTruthy();
+  });
+
   it("closes the Task leader chat branch from its header action", async () => {
     const { container } = render(<App />);
 

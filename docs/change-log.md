@@ -12,6 +12,20 @@
 
 ---
 
+## 2026-05-27 — Team Console Leader chat task context copy
+
+- **主题**: Leader 对话分支打开时显示当前 Task 上下文，并支持一键复制到剪贴板。
+- **变更内容**:
+  - Leader 对话分支（"对话 Leader"）打开时，面板顶部显示“当前 Task 上下文”只读区域，列出 taskId、title、status、agents、input text、input/output ports、output contract、acceptance rules、teamTaskMode 和 teamTaskId。
+  - “复制 Task 上下文”按钮将上述上下文复制为格式化纯文本到剪贴板，方便用户粘贴到 Leader 对话中。
+  - 剪贴板写入失败时可见文本仍可直接手动选择复制，不会阻断用户操作。
+  - Team Console 仍不解析 iframe 聊天文本，仍不自动更新 Task 定义。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **验证**: `npm --prefix apps/team-console run test` (366 passed)、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check` 已通过。浏览器自动验证因 Chrome profile 占用未执行；Leader context 可见、复制成功和复制失败路径由前端测试覆盖。
+- **边界**: 不改 Team runtime 后端，不改主 `/playground` UI，不改 `.pi/skills` runtime skill。
+
+---
+
 ## 2026-05-27 — Team Console root node archive controls
 
 - **主题**: 给 Execution Atlas 的 Agent / Task / Source 根卡片增加清理入口，Source 和 Task 走归档，Agent 只本地移出画布。
