@@ -2368,6 +2368,209 @@ describe("App", () => {
     expect(container.querySelector('[data-task-id="task_research_medtrum"]')).toBeTruthy();
   });
 
+  it("archives Source root nodes", async () => {
+    const task: TeamCanvasTask = {
+      ...cloneTaskFixture(),
+      taskId: "task_source_archive_target",
+      title: "接收 Source Task",
+      workUnit: {
+        ...cloneTaskFixture().workUnit,
+        title: "接收 Source Task",
+        inputPorts: [{ id: "source_text", label: "文本输入", type: "string" }],
+        outputPorts: [],
+      },
+    };
+    const sourceNode: TeamCanvasSourceNode = {
+      schemaVersion: "team/source-node-1",
+      sourceNodeId: "source_archive_test_1",
+      title: "待归档文本",
+      nodeType: "text",
+      outputPort: { id: "value", label: "文本", type: "string" },
+      content: { text: "即将归档" },
+      createdAt: "2026-05-27T00:00:00.000Z",
+      updatedAt: "2026-05-27T00:00:00.000Z",
+    };
+    const sourceConnection: TeamCanvasSourceConnection = {
+      schemaVersion: "team/source-connection-1",
+      connectionId: "source_conn_archive_test_1",
+      fromSourceNodeId: sourceNode.sourceNodeId,
+      fromOutputPortId: "value",
+      toTaskId: task.taskId,
+      toInputPortId: "source_text",
+      type: "string",
+      createdAt: "2026-05-27T00:00:00.000Z",
+      updatedAt: "2026-05-27T00:00:00.000Z",
+    };
+    let sourceArchived = false;
+    let sourceArchiveRequests = 0;
+    let sourceListRequests = 0;
+    let sourceConnectionListRequests = 0;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [task] }), { status: 200 });
+      if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === "/v1/team/source-nodes" && method === "GET") {
+        sourceListRequests += 1;
+        return new Response(JSON.stringify({
+          sourceNodes: sourceArchived ? [] : [sourceNode],
+        }), { status: 200 });
+      }
+      if (url === `/v1/team/source-nodes/${sourceNode.sourceNodeId}/archive` && method === "POST") {
+        sourceArchiveRequests += 1;
+        sourceArchived = true;
+        return new Response(JSON.stringify({ sourceNode: { ...sourceNode, archived: true } }), { status: 200 });
+      }
+      if (url === "/v1/team/source-connections" && method === "GET") {
+        sourceConnectionListRequests += 1;
+        return new Response(JSON.stringify({
+          connections: sourceArchived ? [] : [sourceConnection],
+        }), { status: 200 });
+      }
+      if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const atlasNodes = getAtlasNodes(container);
+    const sourceCard = await within(atlasNodes).findByRole("group", { name: "待归档文本" });
+    expect(sourceCard).toBeInTheDocument();
+    expect(container.querySelector(`[data-source-connection-id="${sourceConnection.connectionId}"]`)).toBeTruthy();
+
+    const archiveButton = within(sourceCard).getByRole("button", { name: `归档 Source ${sourceNode.title}` });
+    fireEvent.click(archiveButton);
+
+    expect(sourceArchiveRequests).toBe(0);
+    const confirmButton = await screen.findByRole("button", { name: "确认归档" });
+    expect(confirmButton).toBeInTheDocument();
+
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => expect(sourceArchiveRequests).toBe(1));
+    await waitFor(() => expect(sourceListRequests).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(sourceConnectionListRequests).toBeGreaterThanOrEqual(2));
+    await waitFor(() => {
+      expect(container.querySelector(`[data-source-node-id="${sourceNode.sourceNodeId}"]`)).toBeNull();
+    });
+    expect(container.querySelector(`[data-source-connection-id="${sourceConnection.connectionId}"]`)).toBeNull();
+  });
+
+  it("archives Task root nodes", async () => {
+    const api = mockLiveTaskEditorApi();
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const atlasNodes = getAtlasNodes(container);
+    const taskCard = await within(atlasNodes).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    expect(taskCard).toBeInTheDocument();
+
+    const archiveButton = within(taskCard).getByRole("button", { name: "归档 Task 调查 Medtrum 云资产" });
+    fireEvent.click(archiveButton);
+
+    expect(api.archiveRequests).toBe(0);
+    const confirmButton = await screen.findByRole("button", { name: "确认归档" });
+    expect(confirmButton).toBeInTheDocument();
+
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => expect(api.archiveRequests).toBe(1));
+    await waitFor(() => {
+      expect(container.querySelector('[data-task-id="task_research_medtrum"]')).toBeNull();
+    });
+  });
+
+  it("removes Agent root nodes from the local canvas", async () => {
+    let agentArchiveCalled = false;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: mockTeamTasks }), { status: 200 });
+      if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === "/v1/team/source-nodes" && method === "GET") return new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 });
+      if (url === "/v1/team/source-connections" && method === "GET") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+      if (url.includes("/v1/agents/") && url.endsWith("/archive") && method === "POST") {
+        agentArchiveCalled = true;
+        return new Response(JSON.stringify({}), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+    const atlasNodes = getAtlasNodes(container);
+    const agentCard = within(atlasNodes).getByRole("button", { name: /主 Agent/ });
+    expect(agentCard).toBeInTheDocument();
+
+    const removeButton = within(agentCard).getByRole("button", { name: "移出画布 Agent 主 Agent" });
+    fireEvent.click(removeButton);
+
+    const confirmButton = await screen.findByRole("button", { name: "确认移出画布" });
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => {
+      expect(container.querySelector('.emap-agent-node[data-agent-id="main"]')).toBeNull();
+    });
+    expect(agentArchiveCalled).toBe(false);
+
+    const hub = container.querySelector(".emap-node-hub") as HTMLElement | null;
+    if (hub) {
+      expect(within(hub).queryByRole("button", { name: /复原 Agent 主 Agent/ })).toBeNull();
+    }
+  });
+
+  it("keeps Source root nodes when archive fails", async () => {
+    const sourceNode: TeamCanvasSourceNode = {
+      schemaVersion: "team/source-node-1",
+      sourceNodeId: "source_archive_fail_1",
+      title: "归档失败文本",
+      nodeType: "text",
+      outputPort: { id: "value", label: "文本", type: "string" },
+      content: { text: "不会消失" },
+      createdAt: "2026-05-27T00:00:00.000Z",
+      updatedAt: "2026-05-27T00:00:00.000Z",
+    };
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [] }), { status: 200 });
+      if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === "/v1/team/source-nodes" && method === "GET") return new Response(JSON.stringify({ sourceNodes: [sourceNode] }), { status: 200 });
+      if (url === `/v1/team/source-nodes/${sourceNode.sourceNodeId}/archive` && method === "POST") {
+        return new Response(JSON.stringify({ error: "source archive failed" }), { status: 500 });
+      }
+      if (url === "/v1/team/source-connections" && method === "GET") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const atlasNodes = getAtlasNodes(container);
+    const sourceCard = await within(atlasNodes).findByRole("group", { name: "归档失败文本" });
+    const archiveButton = within(sourceCard).getByRole("button", { name: "归档 Source 归档失败文本" });
+    fireEvent.click(archiveButton);
+
+    const confirmButton = await screen.findByRole("button", { name: "确认归档" });
+    fireEvent.click(confirmButton);
+
+    expect(await screen.findByText("source archive failed")).toBeInTheDocument();
+    expect(container.querySelector(`[data-source-node-id="${sourceNode.sourceNodeId}"]`)).toBeTruthy();
+  });
+
   it("switches the embedded playground branch to the clicked agent id", async () => {
     const { container } = render(<App />);
 
