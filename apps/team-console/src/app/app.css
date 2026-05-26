@@ -255,6 +255,17 @@ body {
   background: rgba(255, 190, 96, 0.08);
 }
 
+.source-atlas-count {
+  color: rgb(150, 244, 236);
+  border-color: rgba(121, 216, 208, 0.24);
+  background: rgba(121, 216, 208, 0.08);
+}
+
+.source-toolbar-group {
+  padding-left: 8px;
+  border-left: 1px solid rgba(122, 131, 151, 0.18);
+}
+
 .agent-picker-option code {
   color: var(--accent);
   font-family: var(--font-mono);

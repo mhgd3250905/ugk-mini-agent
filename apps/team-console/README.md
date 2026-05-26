@@ -51,6 +51,13 @@ Team Console shell 的 Live API 模式会真实请求：
 - `GET /v1/agents`
 - `GET /v1/agents/status`
 - `GET /v1/team/tasks`
+- `GET /v1/team/source-nodes`
+- `POST /v1/team/source-nodes`
+- `PATCH /v1/team/source-nodes/:sourceNodeId`
+- `POST /v1/team/source-nodes/:sourceNodeId/archive`
+- `GET /v1/team/source-connections`
+- `POST /v1/team/source-connections`
+- `DELETE /v1/team/source-connections/:connectionId`
 - `GET /v1/team/task-connections`
 - `POST /v1/team/task-connections`
 - `GET /v1/team/tasks/:taskId/runs`
@@ -71,15 +78,15 @@ Agent 分支卡片不经 Vite proxy 打开 `/playground`，而是直接把 ifram
 
 Live API 模式默认进入干净的 `Agent workspace`，不会在刷新或重新进入时自动渲染历史 Plan run。需要查看 Plan 运行图时，点击顶部 live 运行图切换条里的“最新 Run”，页面会按 `createdAt` 选择最新 run，再用该 run 的 `planId` 匹配 plan 后渲染执行图。Agent workspace 工具栏支持手动点击“刷新 Task”重新请求 `GET /v1/team/tasks`；刷新中会禁用重复点击，失败只显示错误，不清空现有 Task 卡片。当前端轮询到已知 active Canvas Task run 进入终态时，也会自动执行一次 live Task refresh，重新读取 `GET /v1/team/tasks`、`GET /v1/team/task-connections` 和每个 Task 的 `GET /v1/team/tasks/:taskId/runs`，用于发现 typed chain 自动触发的下游 Task run；用户从上游 Task 切到下游 Task 时不需要手动刷新。Task 操作菜单里的“运行”会单独调用 Canvas Task run API，不写入 Plan run 列表。请求失败会在页面顶部显示错误，不会继续展示旧 mock 数据。
 
-为了兼容尚未部署 Typed Task Chain V1 后端的主服务，`GET /v1/team/task-connections` 返回 404 时前端会当作空连接列表处理，不阻断 Agent / Task catalog 和“创建 Task”入口；但创建连接、画真实连接线和上游完成后自动触发下游 run 仍需要后端提供 `/v1/team/task-connections` 写接口和 typed artifact 触发逻辑。
+为了兼容尚未部署 Typed Task Chain V1 后端的主服务，`GET /v1/team/task-connections` 返回 404 时前端会当作空连接列表处理，不阻断 Agent / Task catalog 和“创建 Task”入口；但创建连接、画真实连接线和上游完成后自动触发下游 run 仍需要后端提供 `/v1/team/task-connections` 写接口和 typed artifact 触发逻辑。source node / source connection 后端能力也已独立接入 Live API adapter；前端最小封装只负责请求真实 source catalog 和连接写接口，不把 source node 存进 Task 定义或本地画布状态。
 
 ## Agent Atlas MVP
 
 Team Console preview 现在把 Agent 节点放进同一张 Execution Atlas 画布，不再额外打开独立 Agent Canvas。默认 Mock 入口是干净的 `Agent workspace`，不显示旧 demo run；需要验证运行图时再切换到“顺序 run”等 fixture。
 
-Mock 模式使用 deterministic Agent fixture，可把主 Agent、搜索 Agent 等真实主项目 Agent profile 概念加入 Atlas；同一个 `agentId` 在同一画布内只能加入一次，已加入项会在选择器里禁用。Agent 节点复用 Execution Atlas 的网格、节点样式、pan/zoom 和“重置视图”工具，并把 `GET /v1/agents/status` 的真实状态投到卡片状态条和状态 pill 上：空闲为绿色静态条，运行中为暖橘红脉冲条，状态读取失败时显示“状态未知”。普通画布态可拖拽 Agent / Task 卡片；按住 Shift 在空白画布框选可选中多个 Agent / Task 节点，再拖动任一已选节点会整体移动选中集合。Live API 下已添加 Agent 与拖动后的画布位置会写入浏览器 `localStorage`，刷新后恢复；刷新还会恢复当前画布 viewport、已展开的 Agent / Task 分支以及根节点 Hub 收纳状态，这些只保存 Team Console 画布 UI 引用，不修改真实 Agent profile 或 Task 定义。Agent 或分支节点向右拖动时只改变画布内世界坐标，不允许撑开外层页面宽度或带动画布 pan。
+Mock 模式使用 deterministic Agent fixture，可把主 Agent、搜索 Agent 等真实主项目 Agent profile 概念加入 Atlas；同一个 `agentId` 在同一画布内只能加入一次，已加入项会在选择器里禁用。Agent 节点复用 Execution Atlas 的网格、节点样式、pan/zoom 和“重置视图”工具，并把 `GET /v1/agents/status` 的真实状态投到卡片状态条和状态 pill 上：空闲为绿色静态条，运行中为暖橘红脉冲条，状态读取失败时显示“状态未知”。普通画布态可拖拽 Agent / Task / Source 卡片；按住 Shift 在空白画布框选可选中多个 Agent / Task / Source 节点，再拖动任一已选节点会整体移动选中集合。Live API 下已添加 Agent、Task 和 Source 的拖动位置会写入浏览器 `localStorage`，刷新后恢复；刷新还会恢复当前画布 viewport、已展开的 Agent / Task 分支以及根节点 Hub 收纳状态，这些只保存 Team Console 画布 UI 引用，不修改真实 Agent profile、Task 定义或 Source 内容。Agent 或分支节点向右拖动时只改变画布内世界坐标，不允许撑开外层页面宽度或带动画布 pan。
 
-单击 Agent 节点会展开一个 Agent 分支卡片，而不是进入特殊 Focus 视窗。普通 Execution Atlas 节点层、其他 Agent、runtime nodes、links、evidence 和添加 / 缩放工具都会继续显示；点击同一 Agent 节点会收起该分支，点击另一个 Agent 节点会把分支切换到对应 `agentId`。分支卡片按上层浮窗处理，不再为了避让周围节点自动右移；允许覆盖其他节点，用户可拖动画布或拖动分支标题栏调整位置，并可从右下角调整分支宽高。对话分支提供最大化按钮，最大化后会渲染到未缩放的画布 overlay，避免在缩放世界里继续放大 iframe 造成文字发糊；还原后回到原画布节点。分支位置使用画布世界坐标，允许拖过原点上方或左侧；拖动分支标题栏不会带动画布平移。Agent 到分支的连接线统一使用节点右侧中点到目标左侧中点的短 hook 曲线，端点附近快速转出，中段保持低弯曲。
+单击 Agent 节点会展开一个 Agent 分支卡片，而不是进入特殊 Focus 视窗。普通 Execution Atlas 节点层、其他 Agent、runtime nodes、links、evidence 和添加 / 缩放工具都会继续显示；点击同一 Agent 节点会收起该分支，点击另一个 Agent 节点会把分支切换到对应 `agentId`。分支卡片按上层浮窗处理，不再为了避让周围节点自动右移；允许覆盖其他节点，用户可拖动画布或拖动分支标题栏调整位置，并可从右下角调整分支宽高。对话分支提供最大化按钮，标题栏双击也可最大化 / 还原；最大化后会渲染到未缩放的画布 overlay，避免在缩放世界里继续放大 iframe 造成文字发糊；还原后回到原画布节点。分支位置使用画布世界坐标，允许拖过原点上方或左侧；拖动分支标题栏不会带动画布平移。Agent 到分支的连接线统一使用节点右侧中点到目标左侧中点的短 hook 曲线，端点附近快速转出，中段保持低弯曲。
 
 Agent 分支卡片内部是主项目 `/playground` 的 iframe，URL 形如 `/playground?view=chat&agentId=main&embed=team-console`。Team Console 不再维护本地 transcript + composer、不再复制 scoped chat stream/state/history/queue/interrupt/file library；这些真实行为全部交还给主 `/playground`。主 `/playground` 读取 `agentId` URL hint 后进入对应 Agent，因此主 Agent 卡片打开主 Agent 对话，搜索 Agent 卡片打开搜索 Agent 对话；`embed=team-console` 会锁定 iframe 顶部 Agent 标签，关闭 hover 切换菜单和点击跳转，同时不写入主页面共用的 active-agent localStorage，避免一个分支或主页面的手动切换污染其他 Agent 分支。iframe 内的主项目路由跳转继续由主项目自己处理。当前仍不做 Agent clone、instance、profile overlay、画布局部技能安装、WorkUnit 节点或 Plan 编排，也不恢复 Team Runtime 按钮、移动端专项或 artifact preview。
 
@@ -88,6 +95,7 @@ Agent 分支卡片内部是主项目 `/playground` 的 iframe，URL 形如 `/pla
 Task 内部包含一个 WorkUnit。Team Console preview 现在从 `GET /v1/team/tasks` 读取 Task catalog，Mock fixture 也提供 deterministic Task / WorkUnit 数据；Task 不是单任务 Plan，也不会从 iframe 聊天文本里临时拼出来。Task 卡片会展示 `leaderAgentId`、`workerAgentId` 和 `checkerAgentId` 对应的 Agent 名称，让用户在 Atlas 里先看清谁负责澄清、谁负责执行、谁负责验收。
 
 Task / WorkUnit 的 typed chain V1 已把 Task 卡片变成可连接的积木单元：Task 可声明 `inputPorts` 和 `outputPorts`，每个 port 必须有 `type`，例如 `md`、`html`、`json`、`audio`。前端只允许从上游 output port 连到下游 input port，且 `output.type === input.type`；类型不匹配时会在 UI 直接拦截，后端创建 `fromTaskId/fromOutputPortId -> toTaskId/toInputPortId` connection 时仍会做权威校验，并拒绝重复连接、自连接和会形成环的连接。连接成功后 Execution Atlas 会渲染 Task 间连接线。上游 Task run 成功并通过 checker 后，后端会用 accepted result 生成 typed artifact（包含 type、来源 Task、来源 run、文件引用、文本预览和内容片段），并把它作为 bound input 自动启动下游 Task run；下游 Agent 不需要靠猜测文件路径接活。V1 只做 typed port 连接和自动下游触发，不做任意复杂自由画布编排、条件分支、循环或真实 TTS，但 connection 数据按 DAG 形态保存，后续可以自然扩展为多节点链路和一个输出接多个下游。
+Canvas source node 是另一条更窄的输入链路：工具栏“文本输出”会创建可编辑 text source，输出类型为 `string`；“文件输出”会打开文件选择器并按扩展名推断 `md` / `json` / `html` / `string` / `file`。source node 只提供 `value` output，可作为独立根节点拖动、框选和收纳到左侧 Hub；source connection 只允许连到类型相同的 Task input port。直接点击 Task “运行”时，后端会把 active source connection 注入该 run 的 `source.boundInputs[]`、payload 和 prompt。source node 不伪装成 Task artifact，不携带 `sourceTaskId` / `sourceRunId` / `sourceAttemptId`，也不会因为创建、更新或连接 source node 自动启动 Task；它只是 direct Canvas Task run 的显式输入。
 
 点击 Task 卡片会先展开紧凑 Task 操作菜单节点，而不是直接进入 iframe 或撑开大面板。菜单只保留操作按钮（”运行””编辑””对话 Leader””删除”）和紧凑运行摘要：运行调用 `POST /v1/team/tasks/:taskId/runs` 启动独立 Canvas Task run，运行状态通过 `GET /v1/team/task-runs/:runId` 轮询回菜单和 Task 卡片；这个 run 存在独立 task-runs 工作区，不会进入 `/v1/team/runs` 的 Plan run 列表，也不会把 Task 偷换成 `Plan tasks.length === 1`。第一版 Task run 只执行 WorkUnit 的 worker → checker，leader 仍只负责运行前沟通和草案维护，不额外启动 watcher/finalizer；运行中菜单显示”运行中”和”停止”，停止会调用 `POST /v1/team/task-runs/:runId/cancel`。点击菜单里的”最近运行”或”运行中”摘要会展开或收起 Run observer。Run observer 使用单个合并 `run-observer` 面板，而不是多个独立 canvas 子节点。合并面板内部固定顺序为：Worker 过程 → worker 输出文件 → Checker 过程 → checker 输出文件 → result 文件；视觉上按阶段流展示，Worker / Checker 过程段固定高度并在段内滚动，使用符合主题的细滚动块（worker 偏青色，checker 偏金色），整个 observer 外层不显示滚动条并按实际内容高度自适应测量。过程区不再像独立小卡片堆叠，只有实际存在文件时才渲染对应文件 tray，运行刚开始时空的第 2 / 4 / 5 段不显示“暂无文件”占位。文件条目以紧凑行（`.emap-observer-file-row`）展示在合并面板内部，而不是单独的 canvas 节点；文件行只展示 Agent 名字（从 agentsById 解析）、文件名和路径。点击文件行会在右侧展开第二级文件详情面板，根据文件扩展名使用安全渲染（JSON pretty print、Markdown 使用 `marked` 安全渲染、文本原样展示），不执行原始 HTML，不注入 script；Markdown 渲染通过 `src/shared/markdown.ts` 的 `renderTeamMarkdown()`，配置与主项目 `src/ui/playground-markdown.ts` 一致（GFM tables、HTML 转义、只允许 http/https 链接、`target="_blank" rel="noreferrer noopener"`）；JSON 解析失败时会显示 parse error 消息。
 
@@ -95,13 +103,13 @@ Task / WorkUnit 的 typed chain V1 已把 Task 卡片变成可连接的积木单
 
 合并 observer 面板支持拖动：拖动 Task 根节点会以相同 dx/dy 移动菜单及已展开的 observer 面板和文件详情面板；拖动菜单节点同样会带走 observer 和文件详情；拖动 observer 面板只移动自身；拖动文件详情叶子节点只移动自身。编辑节点的拖动把手在标题栏，表单控件区域不参与拖动。所有拖动系统使用延迟 pointer capture：pointerdown 时不调用 setPointerCapture，只有 pointermove 距离超过 4px 阈值后才捕获 pointer，避免微小手抖阻止正常的点击和文本选择。节点间连接线使用单条连续 cubic：source 固定右侧中点 / 右侧出线，target 固定左侧中点 / 左侧入线；反向角度只通过两端水平控制柄表达出入线，不再拆成多段 hook，避免近距离斜向连接出现切角。连接线只在 source 出线端显示吸附在卡片右边缘的半圆 socket，target 入线端不再显示圆环或圆点，减少视觉噪音。文件详情节点支持右下角拖动调整宽高，最小尺寸 360×280；详情内容区无固定 max-height 限制，resize 后内容 flex-fill。拖动后子节点的 SVG connector 会使用父节点的新位置作为 source，不会残留旧坐标。Live API 后端缺少 `roleProcesses` 时会显示等待过程数据，role process 为 `null` 或条目为空时显示暂无过程条目，不报错。运行中的 observer 不渲染空文件占位节点，不显示 `正在刷新...` / `最后刷新` 这类随轮询变化的刷新元信息，active run 轮询的瞬时连接失败也不插入红色错误节点，以保留现有画面稳定性；终态 run 的读取失败仍显示错误。拖动 Task 根节点、菜单节点或 resize 文件详情时，会暂停 Task branch / child panel 的自动高度测量，避免运行中轮询刷新强制 layout 导致节点拖动卡顿或闪烁。Run observer 当前使用 `GET /v1/team/task-runs/:runId` 轮询读取 run state，不接 SSE，也不新增 endpoint。
 
-整体布局遵循 Task → 菜单 → 二级节点（编辑/leader chat/run observer/文件详情）的层级关系。点击”编辑”或”对话 Leader”不会替换一级菜单，而是在菜单右侧展开二级编辑节点或 leader Agent iframe 节点，连接线使用 fixed right-middle 到 left-middle 锚点；对话 Leader 复用 Agent 分支卡片的 header、iframe、右下角 resize handle 和最大化按钮，URL 形如 `/playground?view=chat&agentId=<leaderAgentId>&embed=team-console&teamTaskId=<taskId>&teamTaskMode=edit`；删除会二次确认并调用 `POST /v1/team/tasks/:taskId/archive` 做软归档，成功后重新请求 `GET /v1/team/tasks` 并关闭分支。Agent / Task 根卡片可通过右下角收纳按钮缩入画布左侧 Hub；收纳时根卡片、对应分支和连接线不占用画布空间，点击 Hub 条目会把根节点复原，并恢复收纳前保留的展开状态。
+整体布局遵循 Task → 菜单 → 二级节点（编辑/leader chat/run observer/文件详情）的层级关系。点击”编辑”或”对话 Leader”不会替换一级菜单，而是在菜单右侧展开二级编辑节点或 leader Agent iframe 节点，连接线使用 fixed right-middle 到 left-middle 锚点；对话 Leader 复用 Agent 分支卡片的 header、iframe、右下角 resize handle、最大化按钮和标题栏双击最大化 / 还原，URL 形如 `/playground?view=chat&agentId=<leaderAgentId>&embed=team-console&teamTaskId=<taskId>&teamTaskMode=edit`；observer 文件详情面板也支持标题栏双击最大化 / 还原，左键按住标题栏拖动仍保持原行为。删除会二次确认并调用 `POST /v1/team/tasks/:taskId/archive` 做软归档，成功后重新请求 `GET /v1/team/tasks` 并关闭分支。Agent / Task / Source 根卡片可通过右下角收纳按钮缩入画布左侧 Hub；收纳时根卡片、对应分支和连接线不占用画布空间，点击 Hub 条目会把根节点复原，并恢复收纳前保留的展开状态。
 
 菜单里的“编辑”是浅编辑节点，只允许修改 Task 名称、`leaderAgentId`、`workerAgentId` 和 `checkerAgentId`。编辑节点打开时会记录 base snapshot 和 dirty fields；保存时只发送用户实际改过的字段。如果只改 Task 名称或 leader Agent，前端只发送对应字段；如果改 worker/checker，前端用最新 Task catalog 里的 `workUnit` 合成完整 PATCH 并只替换对应 Agent 绑定，避免旧草稿覆盖 Leader 对话或刷新带回的新 WorkUnit 数据。若同一字段在草稿打开后已被后台刷新改变，保存会被阻止并提示重新打开编辑节点。复杂需求、input text、output contract 和 acceptance rules 仍必须通过 Leader 对话里的 `/team-task` 流程维护；Team Console 不解析 iframe 聊天文本创建或更新 Task，不把复杂 WorkUnit 字段做成可视化编辑器。
 
 Live API 工具栏的“创建 Task”会先展示当前 Agent catalog，让用户选择 leader Agent；选择后 Team Console 只打开 leader Agent iframe，不直接创建 Task。创建分支 URL 形如 `/playground?view=chat&agentId=<leaderAgentId>&embed=team-console&teamTaskMode=create`，不携带 `teamTaskId`。真正的创建由 iframe 内用户显式使用 `/team-task` skill 调用 `POST /v1/team/tasks` 完成；Team Console 不读 iframe 聊天文本、不替用户确认 JSON、不把 draft 写进本地状态。关闭创建分支后会重新请求 `GET /v1/team/tasks`，用于把 skill 创建成功后的 Task 卡片刷新回画布。
 
-Live API 模式下 Task 卡片拖动位置会写入浏览器 `localStorage` 并在刷新后恢复，但只保存 `taskId` 和画布坐标，不保存 WorkUnit 内容、`leaderAgentId`、`workerAgentId`、`checkerAgentId` 或 Task run 定义。Team Console 另用 `canvas-ui-state` 保存 viewport、展开分支和 Hub 收纳 id；恢复时会按当前 Agent / Task catalog 清理过期 id。Task 定义始终以后端 `GET /v1/team/tasks` 返回为准；Task run 状态始终以后端 `GET /v1/team/tasks/:taskId/runs` / `GET /v1/team/task-runs/:runId` 返回为准。
+Live API 模式下 Task / Source 卡片拖动位置会写入浏览器 `localStorage` 并在刷新后恢复，但只保存 id 和画布坐标，不保存 WorkUnit 内容、`leaderAgentId`、`workerAgentId`、`checkerAgentId`、Source 内容或 Task run 定义。Team Console 另用 `canvas-ui-state` 保存 viewport、展开分支和 Hub 收纳 id；恢复时会按当前 Agent / Task / Source catalog 清理过期 id。Task 定义始终以后端 `GET /v1/team/tasks` 返回为准；Source 定义始终以后端 `GET /v1/team/source-nodes` 返回为准；Task run 状态始终以后端 `GET /v1/team/tasks/:taskId/runs` / `GET /v1/team/task-runs/:runId` 返回为准。
 
 Mock fixture 覆盖以下场景：
 

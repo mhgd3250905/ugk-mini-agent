@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
 import { makeDiscoveryForEachPlan, makeDiscoveryForEachRun, makeSequentialPlan, makeSequentialRun, MOCK_AGENTS, mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
-import type { AgentChatProcessEntry, TeamAttemptMetadata, TeamCanvasTask, TeamRunState, TeamTaskConnection } from "../api/team-types";
+import type { AgentChatProcessEntry, TeamAttemptMetadata, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasTask, TeamRunState, TeamTaskConnection } from "../api/team-types";
 
 function getAtlas(container: HTMLElement): HTMLElement {
   const atlas = container.querySelector(".execution-map-container") as HTMLElement | null;
@@ -388,6 +388,139 @@ describe("App", () => {
     expect(targetX).toBe(Number.parseFloat(htmlNode!.style.left));
     expect(targetY).toBe(Number.parseFloat(htmlNode!.style.top));
     expect(sourceSocket!.getAttribute("d")).toBe(`M${sourceX},${sourceY - 6} A6,6 0 0 1 ${sourceX},${sourceY + 6}`);
+  });
+
+  it("creates editable text source nodes and connects them to same-type Task inputs", async () => {
+    const task = {
+      ...cloneTaskFixture(),
+      taskId: "task_accept_string_source",
+      title: "接收文本 Task",
+      workUnit: {
+        ...cloneTaskFixture().workUnit,
+        title: "接收文本 Task",
+        inputPorts: [{ id: "source_text", label: "文本输入", type: "string" }],
+        outputPorts: [],
+      },
+    };
+    const sourceNode: TeamCanvasSourceNode = {
+      schemaVersion: "team/source-node-1",
+      sourceNodeId: "source_text_1",
+      title: "文本输出",
+      nodeType: "text",
+      outputPort: { id: "value", label: "文本", type: "string" },
+      content: { text: "初始文本" },
+      createdAt: "2026-05-26T00:00:00.000Z",
+      updatedAt: "2026-05-26T00:00:00.000Z",
+    };
+    const sourceConnection: TeamCanvasSourceConnection = {
+      schemaVersion: "team/source-connection-1",
+      connectionId: "source_conn_text_1",
+      fromSourceNodeId: sourceNode.sourceNodeId,
+      fromOutputPortId: "value",
+      toTaskId: task.taskId,
+      toInputPortId: "source_text",
+      type: "string",
+      createdAt: "2026-05-26T00:00:00.000Z",
+      updatedAt: "2026-05-26T00:00:00.000Z",
+    };
+    const createSourceBodies: unknown[] = [];
+    const createConnectionBodies: unknown[] = [];
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [task] }), { status: 200 });
+      if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === "/v1/team/source-nodes" && method === "GET") return new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 });
+      if (url === "/v1/team/source-nodes" && method === "POST") {
+        createSourceBodies.push(JSON.parse(String(init?.body ?? "{}")));
+        return new Response(JSON.stringify({ sourceNode }), { status: 201 });
+      }
+      if (url === "/v1/team/source-connections" && method === "GET") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === "/v1/team/source-connections" && method === "POST") {
+        createConnectionBodies.push(JSON.parse(String(init?.body ?? "{}")));
+        return new Response(JSON.stringify({ connection: sourceConnection }), { status: 201 });
+      }
+      if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    fireEvent.click(await screen.findByRole("button", { name: "文本输出" }));
+
+    const sourceCard = await within(getAtlasNodes(container)).findByRole("group", { name: "文本输出" });
+    expect(within(sourceCard).getByLabelText("文本输出内容")).toHaveValue("初始文本");
+    expect(createSourceBodies).toEqual([{
+      title: "文本输出",
+      nodeType: "text",
+      outputPort: { id: "value", label: "文本", type: "string" },
+      content: { text: "" },
+    }]);
+
+    fireEvent.click(within(sourceCard).getByRole("button", { name: "输出 文本 string" }));
+    fireEvent.click(await screen.findByRole("button", { name: "输入 文本输入 string" }));
+
+    await waitFor(() => {
+      expect(createConnectionBodies).toEqual([{
+        fromSourceNodeId: sourceNode.sourceNodeId,
+        fromOutputPortId: "value",
+        toTaskId: task.taskId,
+        toInputPortId: "source_text",
+      }]);
+      expect(container.querySelector('[data-source-connection-id="source_conn_text_1"]')).toBeTruthy();
+    });
+  });
+
+  it("creates file source nodes and infers md output type from selected files", async () => {
+    const sourceNode: TeamCanvasSourceNode = {
+      schemaVersion: "team/source-node-1",
+      sourceNodeId: "source_file_md_1",
+      title: "brief.md",
+      nodeType: "file",
+      outputPort: { id: "value", label: "文件", type: "md" },
+      content: { fileName: "brief.md", mimeType: "text/markdown", size: 7 },
+      createdAt: "2026-05-26T00:00:00.000Z",
+      updatedAt: "2026-05-26T00:00:00.000Z",
+    };
+    const createSourceBodies: unknown[] = [];
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [] }), { status: 200 });
+      if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === "/v1/team/source-nodes" && method === "GET") return new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 });
+      if (url === "/v1/team/source-nodes" && method === "POST") {
+        createSourceBodies.push(JSON.parse(String(init?.body ?? "{}")));
+        return new Response(JSON.stringify({ sourceNode }), { status: 201 });
+      }
+      if (url === "/v1/team/source-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const input = await screen.findByLabelText("选择输出文件");
+    fireEvent.change(input, {
+      target: {
+        files: [new File(["# Brief"], "brief.md", { type: "text/markdown" })],
+      },
+    });
+
+    const sourceCard = await within(getAtlasNodes(container)).findByRole("group", { name: "brief.md" });
+    expect(within(sourceCard).getAllByText("brief.md").length).toBeGreaterThan(0);
+    expect(within(sourceCard).getByRole("button", { name: "输出 文件 md" })).toBeInTheDocument();
+    expect(createSourceBodies).toEqual([{
+      title: "brief.md",
+      nodeType: "file",
+      outputPort: { id: "value", label: "文件", type: "md" },
+      content: { fileName: "brief.md", mimeType: "text/markdown", size: 7 },
+    }]);
   });
 
   it("discovers an auto-started downstream Task run after the upstream run finishes", async () => {
@@ -934,9 +1067,12 @@ describe("App", () => {
     const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
     fireEvent.click(taskNode);
 
-    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
-    expect(branch).toBeTruthy();
-    const runSummary = await within(branch!).findByRole("button", { name: /运行中[\s\S]*执行中/ });
+    const branch = await waitFor(() => {
+      const node = container.querySelector(".task-action-branch") as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    const runSummary = await within(branch).findByRole("button", { name: /运行中[\s\S]*执行中/ });
     fireEvent.click(runSummary);
 
     await waitFor(() => {
@@ -2364,6 +2500,29 @@ describe("App", () => {
     expect(container.querySelector(".execution-map-scroll .emap-agent-branch-shell")).toBeTruthy();
   });
 
+  it("double-clicks a playground branch header to maximize and restore it", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+
+    const header = container.querySelector(".execution-map-scroll .agent-playground-branch-head") as HTMLElement | null;
+    expect(header).toBeTruthy();
+    fireEvent.doubleClick(header!);
+
+    const overlay = container.querySelector(".emap-maximized-branch-shell") as HTMLElement | null;
+    expect(overlay).toBeTruthy();
+    expect(container.querySelector(".execution-map-scroll .emap-agent-branch-shell")).toBeNull();
+
+    const overlayHeader = overlay!.querySelector(".agent-playground-branch-head") as HTMLElement | null;
+    expect(overlayHeader).toBeTruthy();
+    fireEvent.doubleClick(overlayHeader!);
+
+    expect(container.querySelector(".emap-maximized-branch-shell")).toBeNull();
+    expect(container.querySelector(".execution-map-scroll .emap-agent-branch-shell")).toBeTruthy();
+  });
+
   it("drags an agent card by world coordinates without opening the embedded branch", async () => {
     const { container } = render(<App />);
 
@@ -2475,12 +2634,14 @@ describe("App", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }));
 
     render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(6));
     expect(fetch).toHaveBeenNthCalledWith(1, "/v1/agents");
     expect(fetch).toHaveBeenNthCalledWith(2, "/v1/agents/status", {
       method: "GET",
@@ -2488,6 +2649,8 @@ describe("App", () => {
     });
     expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/tasks");
     expect(fetch).toHaveBeenNthCalledWith(4, "/v1/team/task-connections");
+    expect(fetch).toHaveBeenNthCalledWith(5, "/v1/team/source-nodes");
+    expect(fetch).toHaveBeenNthCalledWith(6, "/v1/team/source-connections");
     expect(screen.getByRole("button", { name: "Agent workspace" })).toHaveClass("active");
     expect(screen.getByRole("button", { name: "最新 Run" })).not.toHaveClass("active");
     expect(screen.queryByText("执行运行")).toBeNull();
@@ -2505,6 +2668,8 @@ describe("App", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 }))
       .mockResolvedValueOnce(new Response("not found", { status: 404 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
       .mockResolvedValue(new Response(JSON.stringify({ runs: [] }), { status: 200 }));
 
     const { container } = render(<App />);
@@ -2524,16 +2689,18 @@ describe("App", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([plan]), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([run]), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(run), { status: 200 }));
 
     render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(6));
     fireEvent.click(screen.getByRole("button", { name: "最新 Run" }));
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(7));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(9));
     expect(fetch).toHaveBeenNthCalledWith(1, "/v1/agents");
     expect(fetch).toHaveBeenNthCalledWith(2, "/v1/agents/status", {
       method: "GET",
@@ -2541,9 +2708,11 @@ describe("App", () => {
     });
     expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/tasks");
     expect(fetch).toHaveBeenNthCalledWith(4, "/v1/team/task-connections");
-    expect(fetch).toHaveBeenNthCalledWith(5, "/v1/team/plans");
-    expect(fetch).toHaveBeenNthCalledWith(6, "/v1/team/runs");
-    expect(fetch).toHaveBeenNthCalledWith(7, "/v1/team/runs/run_seq_001");
+    expect(fetch).toHaveBeenNthCalledWith(5, "/v1/team/source-nodes");
+    expect(fetch).toHaveBeenNthCalledWith(6, "/v1/team/source-connections");
+    expect(fetch).toHaveBeenNthCalledWith(7, "/v1/team/plans");
+    expect(fetch).toHaveBeenNthCalledWith(8, "/v1/team/runs");
+    expect(fetch).toHaveBeenNthCalledWith(9, "/v1/team/runs/run_seq_001");
   });
 
   it("loads live agent catalog when switching to Live API", async () => {
@@ -2553,12 +2722,14 @@ describe("App", () => {
       }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [{ agentId: "main", name: "主 Agent", status: "idle" }] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }));
 
     render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(6));
     expect(fetch).toHaveBeenNthCalledWith(1, "/v1/agents");
     expect(fetch).toHaveBeenNthCalledWith(2, "/v1/agents/status", {
       method: "GET",
@@ -2566,6 +2737,8 @@ describe("App", () => {
     });
     expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/tasks");
     expect(fetch).toHaveBeenNthCalledWith(4, "/v1/team/task-connections");
+    expect(fetch).toHaveBeenNthCalledWith(5, "/v1/team/source-nodes");
+    expect(fetch).toHaveBeenNthCalledWith(6, "/v1/team/source-connections");
   });
 
   it("keeps Task creation disabled in mock mode", () => {
@@ -3172,13 +3345,15 @@ describe("App", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([plan]), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([run]), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(run), { status: 200 }));
 
     render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(6));
     fireEvent.click(screen.getByRole("button", { name: "最新 Run" }));
 
     expect(await screen.findByText("Live-only vendor task")).toBeInTheDocument();
@@ -3222,12 +3397,14 @@ describe("App", () => {
       }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [{ agentId: "main", name: "主 Agent", status: "idle" }] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }));
 
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(6));
     expect(screen.queryByText("没有可显示的 live run")).toBeNull();
     expect(screen.getByRole("button", { name: "添加 Agent" })).toBeEnabled();
 
@@ -3368,11 +3545,12 @@ describe("App", () => {
     expect(readme).toContain("最大化按钮");
     expect(readme).toContain(".emap-atlas-card");
     expect(readme).toContain("平滑三次贝塞尔曲线");
-    expect(readme).toContain("Live API 下已添加 Agent 与拖动后的画布位置会写入浏览器 `localStorage`");
+    expect(readme).toContain("Live API 下已添加 Agent、Task 和 Source 的拖动位置会写入浏览器 `localStorage`");
     expect(readme).toContain("刷新还会恢复当前画布 viewport");
     expect(readme).toContain("根节点 Hub 收纳状态");
     expect(readme).toContain("只保存 Team Console 画布 UI 引用");
-    expect(readme).toContain("不修改真实 Agent profile 或 Task 定义");
+    expect(readme).toContain("不修改真实 Agent profile、Task 定义或 Source 内容");
+    expect(readme).toContain("标题栏双击也可最大化 / 还原");
     expect(readme).toContain("Task 内部包含一个 WorkUnit");
     expect(readme).toContain("leaderAgentId");
     expect(readme).toContain("/v1/team/tasks");
@@ -3405,6 +3583,10 @@ describe("App", () => {
     expect(readme).toContain("Task → 菜单 → 二级节点");
     expect(readme).toContain("左侧 Hub");
     expect(readme).toContain("点击 Hub 条目会把根节点复原");
+    expect(readme).toContain("Agent / Task / Source 根卡片");
+    expect(readme).toContain("“文本输出”会创建可编辑 text source");
+    expect(readme).toContain("“文件输出”会打开文件选择器");
+    expect(readme).toContain("source connection 只允许连到类型相同的 Task input port");
     expect(readme).toContain("“编辑”是浅编辑节点");
     expect(readme).toContain("base snapshot 和 dirty fields");
     expect(readme).toContain("同一字段在草稿打开后已被后台刷新改变");
@@ -3981,6 +4163,40 @@ describe("App", () => {
     await waitFor(() => {
       expect(container.querySelector(".emap-observer-file-detail-node")).toBeNull();
     });
+  });
+
+  it("double-clicks an observer file detail header to maximize and restore it", async () => {
+    const { container } = render(<App />);
+    await setupMergedObserverOpen(container);
+
+    const workerFileRow = await waitFor(() => {
+      const row = container.querySelector('.emap-observer-file-row[data-file-kind="worker"]') as HTMLElement | null;
+      expect(row).toBeTruthy();
+      return row!;
+    });
+    fireEvent.click(workerFileRow);
+
+    const detailShell = await waitFor(() => {
+      const shell = container.querySelector('.execution-map-scroll .emap-task-child-branch-shell[data-panel-id^="file-detail-"]') as HTMLElement | null;
+      expect(shell).toBeTruthy();
+      return shell!;
+    });
+    const detailHeader = detailShell.querySelector(".emap-observer-node-head") as HTMLElement | null;
+    expect(detailHeader).toBeTruthy();
+
+    fireEvent.doubleClick(detailHeader!);
+
+    const overlay = container.querySelector(".emap-maximized-branch-shell") as HTMLElement | null;
+    expect(overlay).toBeTruthy();
+    expect(overlay!.querySelector(".emap-observer-file-detail-node")).toBeTruthy();
+    expect(container.querySelector(".execution-map-scroll .emap-observer-file-detail-node")).toBeNull();
+
+    const overlayHeader = overlay!.querySelector(".emap-observer-node-head") as HTMLElement | null;
+    expect(overlayHeader).toBeTruthy();
+    fireEvent.doubleClick(overlayHeader!);
+
+    expect(container.querySelector(".emap-maximized-branch-shell")).toBeNull();
+    expect(container.querySelector(".execution-map-scroll .emap-observer-file-detail-node")).toBeTruthy();
   });
 
   it("keeps multiple observer file detail panels open until each one is explicitly closed", async () => {

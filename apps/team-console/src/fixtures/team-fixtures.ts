@@ -16,6 +16,11 @@ import type {
   AgentRunStatus,
   AgentSummary,
   AgentSwitchConversationResponse,
+  TeamCanvasSourceConnection,
+  TeamCanvasSourceConnectionCreateRequest,
+  TeamCanvasSourceNode,
+  TeamCanvasSourceNodeCreateRequest,
+  TeamCanvasSourceNodeUpdateRequest,
   TeamCanvasTask,
   TeamTaskConnection,
   TeamTaskConnectionCreateRequest,
@@ -905,6 +910,17 @@ let mockTaskRunsByTaskId = new Map<string, TeamRunState[]>();
 let mockTaskRunAttempts = new Map<string, TeamAttemptMetadata[]>();
 let mockTaskRunFiles = new Map<string, string>();
 let mockTaskConnections: TeamTaskConnection[] = [];
+let mockSourceNodes: TeamCanvasSourceNode[] = [];
+let mockSourceConnections: TeamCanvasSourceConnection[] = [];
+let mockSourceNodeCounter = 0;
+let mockSourceConnectionCounter = 0;
+
+function cloneMockSourceNode(node: TeamCanvasSourceNode): TeamCanvasSourceNode {
+  return {
+    ...node,
+    ...(node.content ? { content: { ...node.content } } : {}),
+  };
+}
 
 function mockTaskWarnings(task: TeamCanvasTask): string[] {
   if (task.workUnit.workerAgentId === task.workUnit.checkerAgentId) {
@@ -983,8 +999,12 @@ export function resetMockTeamApiState() {
   mockTaskRunAttempts = new Map();
   mockTaskRunFiles = new Map();
   mockTaskConnections = [];
+  mockSourceNodes = [];
+  mockSourceConnections = [];
   mockTaskRunCounter = 0;
   mockTaskConnectionCounter = 0;
+  mockSourceNodeCounter = 0;
+  mockSourceConnectionCounter = 0;
   mockConversationCounter = 0;
   mockRunCounter = 0;
   mockMessageCounter = 0;
@@ -1301,6 +1321,92 @@ export class MockTeamApi {
     };
     mockTaskConnections = [...mockTaskConnections, connection];
     return { ...connection };
+  }
+
+  async listSourceNodes(): Promise<TeamCanvasSourceNode[]> {
+    return mockSourceNodes.filter((node) => !node.archived).map(cloneMockSourceNode);
+  }
+
+  async createSourceNode(input: TeamCanvasSourceNodeCreateRequest): Promise<TeamCanvasSourceNode> {
+    const timestamp = ts();
+    const nodeType = input.nodeType;
+    const outputPort = {
+      id: "value" as const,
+      label: input.outputPort?.label ?? (nodeType === "file" ? "文件" : "文本"),
+      type: input.outputPort?.type ?? (nodeType === "file" ? "file" : "string"),
+    };
+    const sourceNode: TeamCanvasSourceNode = {
+      schemaVersion: "team/source-node-1",
+      sourceNodeId: `mock_source_${++mockSourceNodeCounter}`,
+      title: input.title,
+      nodeType,
+      outputPort,
+      ...(input.content ? { content: { ...input.content } } : {}),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    mockSourceNodes = [...mockSourceNodes, sourceNode];
+    return cloneMockSourceNode(sourceNode);
+  }
+
+  async updateSourceNode(sourceNodeId: string, patch: TeamCanvasSourceNodeUpdateRequest): Promise<TeamCanvasSourceNode> {
+    const sourceNode = mockSourceNodes.find((candidate) => candidate.sourceNodeId === sourceNodeId && !candidate.archived);
+    if (!sourceNode) throw { message: "source node not found" };
+    const next: TeamCanvasSourceNode = {
+      ...sourceNode,
+      ...(patch.title !== undefined ? { title: patch.title } : {}),
+      ...(patch.nodeType !== undefined ? { nodeType: patch.nodeType } : {}),
+      ...(patch.outputPort !== undefined ? {
+        outputPort: {
+          id: "value",
+          label: patch.outputPort.label ?? sourceNode.outputPort.label,
+          type: patch.outputPort.type ?? sourceNode.outputPort.type,
+        },
+      } : {}),
+      ...(patch.content !== undefined ? { content: { ...patch.content } } : {}),
+      updatedAt: ts(),
+    };
+    mockSourceNodes = mockSourceNodes.map((candidate) => candidate.sourceNodeId === sourceNodeId ? next : candidate);
+    return cloneMockSourceNode(next);
+  }
+
+  async archiveSourceNode(sourceNodeId: string): Promise<TeamCanvasSourceNode> {
+    const sourceNode = mockSourceNodes.find((candidate) => candidate.sourceNodeId === sourceNodeId && !candidate.archived);
+    if (!sourceNode) throw { message: "source node not found" };
+    const next: TeamCanvasSourceNode = { ...sourceNode, archived: true, updatedAt: ts() };
+    mockSourceNodes = mockSourceNodes.map((candidate) => candidate.sourceNodeId === sourceNodeId ? next : candidate);
+    return cloneMockSourceNode(next);
+  }
+
+  async listSourceConnections(): Promise<TeamCanvasSourceConnection[]> {
+    return mockSourceConnections.map((connection) => ({ ...connection }));
+  }
+
+  async createSourceConnection(input: TeamCanvasSourceConnectionCreateRequest): Promise<TeamCanvasSourceConnection> {
+    const sourceNode = mockSourceNodes.find((candidate) => candidate.sourceNodeId === input.fromSourceNodeId && !candidate.archived);
+    const task = mockCanvasTasks.find((candidate) => candidate.taskId === input.toTaskId && !candidate.archived);
+    if (!sourceNode || !task) throw { message: "source or task not found" };
+    const toPort = task.workUnit.inputPorts?.find((port) => port.id === input.toInputPortId);
+    if (sourceNode.outputPort.id !== input.fromOutputPortId || !toPort) throw { message: "port not found" };
+    if (sourceNode.outputPort.type !== toPort.type) throw { message: `port type mismatch: ${sourceNode.outputPort.type} -> ${toPort.type}` };
+    const timestamp = ts();
+    const connection: TeamCanvasSourceConnection = {
+      schemaVersion: "team/source-connection-1",
+      connectionId: `mock_source_conn_${++mockSourceConnectionCounter}`,
+      fromSourceNodeId: input.fromSourceNodeId,
+      fromOutputPortId: input.fromOutputPortId,
+      toTaskId: input.toTaskId,
+      toInputPortId: input.toInputPortId,
+      type: sourceNode.outputPort.type,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    mockSourceConnections = [...mockSourceConnections, connection];
+    return { ...connection };
+  }
+
+  async deleteSourceConnection(connectionId: string): Promise<void> {
+    mockSourceConnections = mockSourceConnections.filter((connection) => connection.connectionId !== connectionId);
   }
 
   async listTaskRuns(taskId: string): Promise<TeamRunState[]> {

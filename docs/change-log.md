@@ -12,6 +12,37 @@
 
 ---
 
+## 2026-05-26 — Team Console source output nodes and topbar fullscreen
+
+- **主题**: 接入 Canvas source 输出节点 UI，并给对话 / 文件详情节点增加标题栏双击最大化与还原。
+- **变更内容**:
+  - Live API 工具栏新增“文本输出”和“文件输出”：文本 source 创建可编辑 `string` 输出节点，文件 source 根据扩展名推断 `md` / `json` / `html` / `string` / `file` 输出类型。
+  - Source 节点作为独立根节点渲染在 Execution Atlas，可拖动、可收纳到左侧 Hub；本地只保存 source 节点位置和 Hub 收纳 id，不保存 source 内容或 Task 定义。
+  - Source output 可连到同类型 Task input，前端先做类型拦截，Live API 下调用 `/v1/team/source-connections` 写真实连接并渲染 source connection 线。
+  - Agent 对话分支、Task Leader 对话分支和 observer 文件详情面板支持标题栏双击最大化 / 双击还原，保留原有标题栏拖动和右下角 resize 行为。
+  - Live API 初始加载同步读取 source nodes / source connections，相关测试 mock 和请求顺序已按真实 3000 后端契约更新。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/app/app.css`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`
+- **验证**: `npm --prefix apps/team-console run test`、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check` 已通过；浏览器真实 5174 页面验证见本轮最终记录。
+- **边界**: 不改主 `/playground` UI，不改 `.pi/skills` runtime skill，不引入临时后端，不把 source node 存进 Task 定义或浏览器本地内容缓存。
+
+---
+
+## 2026-05-26 — Team Console canvas source input backend contract
+
+- **主题**: 给 Team Console 输出源节点建立后端 source node / source connection / direct Task run 输入绑定契约。
+- **变更内容**:
+  - 新增 source node 持久化 store：`.data/team/source-nodes.json`，支持 `text` / `file` source、固定 `value` output port、`md` / `json` / `html` / `string` / `file` 类型推断和软归档。
+  - 新增 source connection 持久化 store：`.data/team/source-connections.json`，创建时校验 source node、Task input port 和类型一致性，list 时派生 `active` / `stale` 状态，写操作使用文件级 mutation lock。
+  - `POST /v1/team/tasks/:taskId/runs` 在 direct Canvas Task run 时注入 active source bound inputs 到 `TeamRunState.source.boundInputs[]`、worker/checker payload 和 prompt；stale source connection 被跳过。
+  - `TeamCanvasSourceArtifact` 使用 `source: "canvas-source"` bound input，保留 source node metadata，但不伪造 `sourceTaskId`、`sourceRunId` 或 `sourceAttemptId`。
+  - Team-to-Team typed artifact 自动下游链路保持原样，仍只消费 `task-connections.json` 和 accepted-result typed artifact；source node / source connection 不会自动触发 Task run。
+  - Team Console API client 增加 source node / source connection 类型和最小请求封装，不把 source node 写入 Task 定义或 localStorage。
+- **影响范围**: `src/team/types.ts`, `src/team/ids.ts`, `src/team/source-node-store.ts`, `src/team/source-connection-store.ts`, `src/team/task-artifact-handoff.ts`, `src/team/task-run-service.ts`, `src/team/routes.ts`, `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `test/team-source-node-store.test.ts`, `test/team-source-connection-store.test.ts`, `test/team-task-artifact-handoff.test.ts`, `test/team-task-run-process.test.ts`, `test/team-task-run-routes.test.ts`, `apps/team-console/src/tests/team-api.test.ts`, `docs/team-runtime.md`, `apps/team-console/README.md`
+- **验证**: 后端 focused tests 和前端 API adapter focused test 已按 TDD 红绿完成；完整后端 / 前端 / Docker API 门禁见本轮最终验证。
+- **边界**: 不改主 `/playground` UI，不改 `.pi/skills` runtime skill，不把 source node 当 Task artifact，不做条件分支、循环或自由工作流引擎。
+
+---
+
 ## 2026-05-26 — Team Console canvas UI persistence and root Hub
 
 - **主题**: 刷新 Team Console 后恢复画布展开状态，并给 Agent / Task 根节点增加左侧 Hub 收纳能力。

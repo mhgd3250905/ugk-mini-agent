@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { AgentRunStatus, AgentSummary, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskConnection, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
+import type { AgentRunStatus, AgentSummary, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskConnection, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
 import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, mockTeamTasks, MockTeamApi } from "../fixtures/team-fixtures";
-import { ExecutionMap, type AtlasAgentNode, type AtlasTaskNode } from "../graph/ExecutionMap";
+import { ExecutionMap, type AtlasAgentNode, type AtlasSourceNode, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { ROOT_ID } from "../graph/execution-map-layout";
 import type { AtlasViewport } from "../graph/AtlasCanvasShell";
 import { RUN_STATUS_LABELS, isActiveRun } from "../shared/status";
@@ -17,6 +17,7 @@ const DEFAULT_PLAYGROUND_BASE_URL = "http://127.0.0.1:3000";
 const DATA_SOURCE_STORAGE_KEY = "ugk-team-console:data-source";
 const LIVE_AGENT_LAYOUT_STORAGE_KEY = "ugk-team-console:live-agent-layout:v1";
 const LIVE_TASK_LAYOUT_STORAGE_KEY = "ugk-team-console:live-task-layout:v1";
+const LIVE_SOURCE_LAYOUT_STORAGE_KEY = "ugk-team-console:live-source-layout:v1";
 const CANVAS_UI_STATE_STORAGE_KEY = "ugk-team-console:canvas-ui-state:v1";
 const TASK_RUN_PROCESS_LABELS: Record<TeamAttemptRoleProcessRole, string> = {
   worker: "Worker 过程",
@@ -55,6 +56,7 @@ type StoredCanvasUiState = {
   expandedTaskBranches?: TaskBranchState[];
   minimizedAgentNodeIds?: string[];
   minimizedTaskNodeIds?: string[];
+  minimizedSourceNodeIds?: string[];
 };
 
 type TaskEditDirtyField = "title" | "leaderAgentId" | "workerAgentId" | "checkerAgentId";
@@ -83,8 +85,19 @@ type TaskConnectionDraft = {
   type: string;
 };
 
+type SourceConnectionDraft = {
+  fromSourceNodeId: string;
+  fromOutputPortId: string;
+  type: string;
+};
+
 type StoredTaskPosition = {
   taskId: string;
+  position: { x: number; y: number };
+};
+
+type StoredSourcePosition = {
+  sourceNodeId: string;
   position: { x: number; y: number };
 };
 
@@ -548,6 +561,7 @@ function readStoredCanvasUiState(): StoredCanvasUiState | null {
       expandedTaskBranches: readStoredTaskBranches(parsed.expandedTaskBranches),
       minimizedAgentNodeIds: readStringArray(parsed.minimizedAgentNodeIds),
       minimizedTaskNodeIds: readStringArray(parsed.minimizedTaskNodeIds),
+      minimizedSourceNodeIds: readStringArray(parsed.minimizedSourceNodeIds),
     };
   } catch {
     return null;
@@ -651,6 +665,46 @@ function liveTaskRefreshPositions(currentNodes: AtlasTaskNode[]): Map<string, { 
   return positions;
 }
 
+function readStoredLiveSourcePositions(): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>();
+  try {
+    const raw = globalThis.localStorage?.getItem(LIVE_SOURCE_LAYOUT_STORAGE_KEY);
+    if (!raw) return positions;
+    const parsed = JSON.parse(raw) as { schemaVersion?: unknown; sources?: unknown };
+    if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.sources)) return positions;
+    for (const item of parsed.sources) {
+      const record = item as { sourceNodeId?: unknown; position?: { x?: unknown; y?: unknown } };
+      const sourceNodeId = typeof record.sourceNodeId === "string" ? record.sourceNodeId.trim() : "";
+      const x = Number(record.position?.x);
+      const y = Number(record.position?.y);
+      if (!sourceNodeId || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+      positions.set(sourceNodeId, { x, y });
+    }
+  } catch {}
+  return positions;
+}
+
+function writeStoredLiveSourceNodes(nodes: AtlasSourceNode[]) {
+  try {
+    const sources: StoredSourcePosition[] = nodes.map((node) => ({
+      sourceNodeId: node.sourceNodeId,
+      position: { x: node.position.x, y: node.position.y },
+    }));
+    globalThis.localStorage?.setItem(LIVE_SOURCE_LAYOUT_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1,
+      sources,
+    }));
+  } catch {}
+}
+
+function liveSourceRefreshPositions(currentNodes: AtlasSourceNode[]): Map<string, { x: number; y: number }> {
+  const positions = readStoredLiveSourcePositions();
+  for (const node of currentNodes) {
+    positions.set(node.sourceNodeId, { x: node.position.x, y: node.position.y });
+  }
+  return positions;
+}
+
 function makeTaskNode(
   task: TeamCanvasTask,
   index: number,
@@ -669,6 +723,35 @@ function makeTaskNode(
 
 function makeTaskNodes(tasks: TeamCanvasTask[], storedPositions = new Map<string, { x: number; y: number }>()): AtlasTaskNode[] {
   return tasks.map((task, index) => makeTaskNode(task, index, storedPositions.get(task.taskId)));
+}
+
+function makeSourceNode(
+  sourceNode: TeamCanvasSourceNode,
+  index: number,
+  storedPosition?: { x: number; y: number },
+): AtlasSourceNode {
+  return {
+    nodeId: `source-node-${sourceNode.sourceNodeId}`,
+    kind: "canvas-source",
+    sourceNodeId: sourceNode.sourceNodeId,
+    position: storedPosition ?? {
+      x: 280 + (index % 3) * 320,
+      y: 34 + Math.floor(index / 3) * 180,
+    },
+  };
+}
+
+function makeSourceNodes(sources: TeamCanvasSourceNode[], storedPositions = new Map<string, { x: number; y: number }>()): AtlasSourceNode[] {
+  return sources.map((source, index) => makeSourceNode(source, index, storedPositions.get(source.sourceNodeId)));
+}
+
+function inferSourceFileType(file: File): TeamCanvasSourcePortType {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".md") || name.endsWith(".markdown")) return "md";
+  if (name.endsWith(".json")) return "json";
+  if (name.endsWith(".html") || name.endsWith(".htm")) return "html";
+  if (name.endsWith(".txt") || file.type.startsWith("text/")) return "string";
+  return "file";
 }
 
 function makeTaskEditDraft(task: TeamCanvasTask): TaskEditDraft {
@@ -728,22 +811,29 @@ export function App() {
   const [tasks, setTasks] = useState<TeamCanvasTask[]>([]);
   const [taskConnections, setTaskConnections] = useState<TeamTaskConnection[]>([]);
   const [taskConnectionDraft, setTaskConnectionDraft] = useState<TaskConnectionDraft | null>(null);
+  const [sourceNodes, setSourceNodes] = useState<TeamCanvasSourceNode[]>([]);
+  const [sourceConnections, setSourceConnections] = useState<TeamCanvasSourceConnection[]>([]);
+  const [sourceConnectionDraft, setSourceConnectionDraft] = useState<SourceConnectionDraft | null>(null);
   const [taskRunsByTaskId, setTaskRunsByTaskId] = useState<Record<string, TeamRunState[]>>({});
   const [taskRunSavingByTaskId, setTaskRunSavingByTaskId] = useState<Record<string, boolean>>({});
   const [taskRunObserverByRunId, setTaskRunObserverByRunId] = useState<Record<string, TaskRunObserverState>>({});
   const [taskNodes, setTaskNodes] = useState<AtlasTaskNode[]>([]);
   const [liveTaskNodesHydrated, setLiveTaskNodesHydrated] = useState(false);
+  const [sourceAtlasNodes, setSourceAtlasNodes] = useState<AtlasSourceNode[]>([]);
+  const [liveSourceNodesHydrated, setLiveSourceNodesHydrated] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [taskLeaderPickerOpen, setTaskLeaderPickerOpen] = useState(false);
   const [liveTasksRefreshing, setLiveTasksRefreshing] = useState(false);
   const liveTasksRefreshInFlightRef = useRef<Promise<void> | null>(null);
   const liveTaskDiscoveryRefreshTimersRef = useRef<ReturnType<typeof globalThis.setTimeout>[]>([]);
   const liveTaskDiscoveryRefreshRunIdsRef = useRef<Set<string>>(new Set());
+  const sourceFileInputRef = useRef<HTMLInputElement | null>(null);
   const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
   const [expandedAgentBranch, setExpandedAgentBranch] = useState<AgentBranchState | null>(null);
   const [expandedTaskBranches, setExpandedTaskBranches] = useState<TaskBranchState[]>([]);
   const [minimizedAgentNodeIds, setMinimizedAgentNodeIds] = useState<string[]>([]);
   const [minimizedTaskNodeIds, setMinimizedTaskNodeIds] = useState<string[]>([]);
+  const [minimizedSourceNodeIds, setMinimizedSourceNodeIds] = useState<string[]>([]);
   const [canvasUiStateHydrated, setCanvasUiStateHydrated] = useState(false);
   const [taskEditDraft, setTaskEditDraft] = useState<TaskEditDraft | null>(null);
   const [taskEditSaving, setTaskEditSaving] = useState(false);
@@ -753,6 +843,7 @@ export function App() {
 
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
   const tasksById = useMemo(() => new Map(tasks.map((task) => [task.taskId, task])), [tasks]);
+  const sourceNodesById = useMemo(() => new Map(sourceNodes.map((node) => [node.sourceNodeId, node])), [sourceNodes]);
   const agentRunStatusesById = useMemo(() => new Map(Object.entries(agentRunStatusById)), [agentRunStatusById]);
   const addedAgentIds = useMemo(() => new Set(agentNodes.map((node) => node.agentId)), [agentNodes]);
   const expandedTaskBranch = expandedTaskBranches[expandedTaskBranches.length - 1] ?? null;
@@ -837,7 +928,7 @@ export function App() {
   useEffect(() => {
     if (canvasUiStateHydrated) return;
     const ready = dataSource === "live"
-      ? liveAgentNodesHydrated && liveTaskNodesHydrated
+      ? liveAgentNodesHydrated && liveTaskNodesHydrated && liveSourceNodesHydrated
       : taskNodes.length > 0;
     if (!ready) return;
 
@@ -852,6 +943,7 @@ export function App() {
     const agentIds = new Set(validAgentNodes.map((node) => node.agentId));
     const taskNodeIds = new Set(taskNodes.map((node) => node.nodeId));
     const taskIds = new Set(taskNodes.map((node) => node.taskId));
+    const sourceNodeIds = new Set(sourceAtlasNodes.map((node) => node.nodeId));
     const nextAgentBranch = stored.expandedAgentBranch
       && agentNodeIds.has(stored.expandedAgentBranch.nodeId)
       && agentIds.has(stored.expandedAgentBranch.agentId)
@@ -868,6 +960,7 @@ export function App() {
     setExpandedTaskBranches(nextTaskBranches);
     setMinimizedAgentNodeIds((stored.minimizedAgentNodeIds ?? []).filter((nodeId) => agentNodeIds.has(nodeId)));
     setMinimizedTaskNodeIds((stored.minimizedTaskNodeIds ?? []).filter((nodeId) => taskNodeIds.has(nodeId)));
+    setMinimizedSourceNodeIds((stored.minimizedSourceNodeIds ?? []).filter((nodeId) => sourceNodeIds.has(nodeId)));
     setCanvasUiStateHydrated(true);
   }, [
     agentNodes,
@@ -876,8 +969,10 @@ export function App() {
     dataSource,
     liveAgentNodesHydrated,
     liveRunMode,
+    liveSourceNodesHydrated,
     liveTaskNodesHydrated,
     selectedFixtureId,
+    sourceAtlasNodes,
     taskNodes,
   ]);
 
@@ -892,6 +987,7 @@ export function App() {
       expandedTaskBranches,
       minimizedAgentNodeIds,
       minimizedTaskNodeIds,
+      minimizedSourceNodeIds,
     });
   }, [
     canvasUiStateHydrated,
@@ -901,6 +997,7 @@ export function App() {
     expandedTaskBranches,
     liveRunMode,
     minimizedAgentNodeIds,
+    minimizedSourceNodeIds,
     minimizedTaskNodeIds,
     selectedFixtureId,
   ]);
@@ -915,6 +1012,7 @@ export function App() {
     if (dataSource !== "live") {
       setLiveAgentNodesHydrated(false);
       setLiveTaskNodesHydrated(false);
+      setLiveSourceNodesHydrated(false);
       return;
     }
     setAgentNodes(readStoredLiveAgentNodes());
@@ -935,13 +1033,31 @@ export function App() {
   }, [dataSource, liveTaskNodesHydrated, taskNodes]);
 
   useEffect(() => {
+    if (dataSource !== "live" || !liveSourceNodesHydrated) return;
+    writeStoredLiveSourceNodes(sourceAtlasNodes);
+  }, [dataSource, liveSourceNodesHydrated, sourceAtlasNodes]);
+
+  useEffect(() => {
     setExpandedTaskBranches((current) => current.filter((branch) => tasksById.has(branch.taskId)));
   }, [tasksById]);
+
+  useEffect(() => {
+    setSourceConnections((current) => (
+      current.filter((connection) => sourceNodesById.has(connection.fromSourceNodeId) && tasksById.has(connection.toTaskId))
+    ));
+  }, [sourceNodesById, tasksById]);
 
   const applyLiveTasks = useCallback((nextTasks: TeamCanvasTask[]) => {
     setTasks(nextTasks);
     setTaskNodes((current) => makeTaskNodes(nextTasks, liveTaskRefreshPositions(current)));
     setLiveTaskNodesHydrated(true);
+  }, []);
+
+  const applyLiveSources = useCallback((nextSources: TeamCanvasSourceNode[]) => {
+    const activeSources = nextSources.filter((sourceNode) => !sourceNode.archived);
+    setSourceNodes(activeSources);
+    setSourceAtlasNodes((current) => makeSourceNodes(activeSources, liveSourceRefreshPositions(current)));
+    setLiveSourceNodesHydrated(true);
   }, []);
 
   const loadTaskRunsForTasks = useCallback(async (
@@ -964,13 +1080,18 @@ export function App() {
       setLiveTasksRefreshing(true);
       try {
         const api = new LiveTeamApi();
-        const [nextTasks, nextConnections] = await Promise.all([
+        const [nextTasks, nextConnections, nextSourceNodes, nextSourceConnections] = await Promise.all([
           api.listTasks(),
           api.listTaskConnections(),
+          api.listSourceNodes(),
+          api.listSourceConnections(),
         ]);
         applyLiveTasks(nextTasks);
         setTaskConnections(nextConnections);
+        applyLiveSources(nextSourceNodes);
+        setSourceConnections(nextSourceConnections);
         setTaskConnectionDraft(null);
+        setSourceConnectionDraft(null);
         await loadTaskRunsForTasks(api, nextTasks);
         setError(null);
       } finally {
@@ -980,7 +1101,7 @@ export function App() {
     })();
     liveTasksRefreshInFlightRef.current = refresh;
     return refresh;
-  }, [applyLiveTasks, loadTaskRunsForTasks]);
+  }, [applyLiveSources, applyLiveTasks, loadTaskRunsForTasks]);
 
   const scheduleLiveTaskDiscoveryRefresh = useCallback(() => {
     if (dataSource !== "live") return;
@@ -1025,6 +1146,10 @@ export function App() {
       setAttemptsByTaskId({});
       setTaskConnections([]);
       setTaskConnectionDraft(null);
+      setSourceNodes([]);
+      setSourceConnections([]);
+      setSourceConnectionDraft(null);
+      setSourceAtlasNodes([]);
       setTaskRunsByTaskId({});
       setTaskRunSavingByTaskId({});
       setTaskRunObserverByRunId({});
@@ -1042,6 +1167,10 @@ export function App() {
     setAttemptsByTaskId({});
     setTaskConnections([]);
     setTaskConnectionDraft(null);
+    setSourceNodes([]);
+    setSourceConnections([]);
+    setSourceConnectionDraft(null);
+    setSourceAtlasNodes([]);
     setTaskRunsByTaskId({});
     setTaskRunSavingByTaskId({});
     setTaskRunObserverByRunId({});
@@ -1080,6 +1209,10 @@ export function App() {
       setTaskNodes(makeTaskNodes(mockTeamTasks));
       setTaskConnections([]);
       setTaskConnectionDraft(null);
+      setSourceNodes([]);
+      setSourceConnections([]);
+      setSourceConnectionDraft(null);
+      setSourceAtlasNodes([]);
       setTaskRunsByTaskId({});
       setTaskRunObserverByRunId({});
       return () => {
@@ -1094,25 +1227,34 @@ export function App() {
     setTasks([]);
     setTaskConnections([]);
     setTaskConnectionDraft(null);
+    setSourceNodes([]);
+    setSourceConnections([]);
+    setSourceConnectionDraft(null);
     setTaskRunsByTaskId({});
     setTaskRunSavingByTaskId({});
     setTaskRunObserverByRunId({});
     setTaskNodes([]);
     setLiveTaskNodesHydrated(false);
+    setSourceAtlasNodes([]);
+    setLiveSourceNodesHydrated(false);
 
     async function loadLiveWorkspace() {
       try {
-        const [nextAgents, nextStatuses, nextTasks, nextConnections] = await Promise.all([
+        const [nextAgents, nextStatuses, nextTasks, nextConnections, nextSourceNodes, nextSourceConnections] = await Promise.all([
           api.listAgents(),
           api.listAgentRunStatuses(),
           api.listTasks(),
           api.listTaskConnections(),
+          api.listSourceNodes(),
+          api.listSourceConnections(),
         ]);
         if (!cancelled) {
           setAgents(nextAgents);
           setAgentRunStatusById(agentRunStatusRecord(nextStatuses));
           applyLiveTasks(nextTasks);
           setTaskConnections(nextConnections);
+          applyLiveSources(nextSourceNodes);
+          setSourceConnections(nextSourceConnections);
           void loadTaskRunsForTasks(api, nextTasks);
         }
       } catch (e) {
@@ -1133,7 +1275,7 @@ export function App() {
         globalThis.clearInterval(refreshTimer);
       }
     };
-  }, [applyLiveTasks, closeTaskBranch, dataSource, loadTaskRunsForTasks]);
+  }, [applyLiveSources, applyLiveTasks, closeTaskBranch, dataSource, loadTaskRunsForTasks]);
 
   useEffect(() => {
     if (dataSource !== "live") return;
@@ -1263,6 +1405,12 @@ export function App() {
     )));
   }, []);
 
+  const moveSourceNode = useCallback((nodeId: string, position: { x: number; y: number }) => {
+    setSourceAtlasNodes((current) => current.map((node) => (
+      node.nodeId === nodeId ? { ...node, position } : node
+    )));
+  }, []);
+
   const minimizeAgentNode = useCallback((node: AtlasAgentNode) => {
     setMinimizedAgentNodeIds((current) => (
       current.includes(node.nodeId) ? current : [...current, node.nodeId]
@@ -1281,6 +1429,16 @@ export function App() {
 
   const restoreTaskNode = useCallback((node: AtlasTaskNode) => {
     setMinimizedTaskNodeIds((current) => current.filter((nodeId) => nodeId !== node.nodeId));
+  }, []);
+
+  const minimizeSourceNode = useCallback((node: AtlasSourceNode) => {
+    setMinimizedSourceNodeIds((current) => (
+      current.includes(node.nodeId) ? current : [...current, node.nodeId]
+    ));
+  }, []);
+
+  const restoreSourceNode = useCallback((node: AtlasSourceNode) => {
+    setMinimizedSourceNodeIds((current) => current.filter((nodeId) => nodeId !== node.nodeId));
   }, []);
 
   const toggleAgentBranch = useCallback((node: AtlasAgentNode) => {
@@ -1447,40 +1605,133 @@ export function App() {
       fromOutputPortId: port.id,
       type: port.type,
     });
+    setSourceConnectionDraft(null);
+    setError(null);
+  }, []);
+
+  const beginSourcePortConnection = useCallback((sourceNodeId: string, sourcePort: TeamCanvasSourceNode["outputPort"]) => {
+    setSourceConnectionDraft({
+      fromSourceNodeId: sourceNodeId,
+      fromOutputPortId: sourcePort.id,
+      type: sourcePort.type,
+    });
+    setTaskConnectionDraft(null);
     setError(null);
   }, []);
 
   const completeTaskPortConnection = useCallback(async (taskId: string, port: TeamTaskInputPort) => {
-    if (!taskConnectionDraft) {
+    if (!taskConnectionDraft && !sourceConnectionDraft) {
       setError("请先选择一个输出端口");
       return;
     }
-    if (taskConnectionDraft.fromTaskId === taskId) {
+    if (taskConnectionDraft?.fromTaskId === taskId) {
       setError("不能把 Task 输出连接回自己");
       return;
     }
-    if (taskConnectionDraft.type !== port.type) {
-      setError(`端口类型不匹配: ${taskConnectionDraft.type} -> ${port.type}`);
+    const draftType = taskConnectionDraft?.type ?? sourceConnectionDraft!.type;
+    if (draftType !== port.type) {
+      setError(`端口类型不匹配: ${draftType} -> ${port.type}`);
       return;
     }
     try {
       const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-      const connection = await api.createTaskConnection({
-        fromTaskId: taskConnectionDraft.fromTaskId,
-        fromOutputPortId: taskConnectionDraft.fromOutputPortId,
-        toTaskId: taskId,
-        toInputPortId: port.id,
-      });
-      setTaskConnections((current) => [
-        ...current.filter((candidate) => candidate.connectionId !== connection.connectionId),
-        connection,
-      ]);
+      if (taskConnectionDraft) {
+        const connection = await api.createTaskConnection({
+          fromTaskId: taskConnectionDraft.fromTaskId,
+          fromOutputPortId: taskConnectionDraft.fromOutputPortId,
+          toTaskId: taskId,
+          toInputPortId: port.id,
+        });
+        setTaskConnections((current) => [
+          ...current.filter((candidate) => candidate.connectionId !== connection.connectionId),
+          connection,
+        ]);
+      } else if (sourceConnectionDraft && api instanceof LiveTeamApi) {
+        const connection = await api.createSourceConnection({
+          fromSourceNodeId: sourceConnectionDraft.fromSourceNodeId,
+          fromOutputPortId: sourceConnectionDraft.fromOutputPortId,
+          toTaskId: taskId,
+          toInputPortId: port.id,
+        });
+        setSourceConnections((current) => [
+          ...current.filter((candidate) => candidate.connectionId !== connection.connectionId),
+          connection,
+        ]);
+      }
       setTaskConnectionDraft(null);
+      setSourceConnectionDraft(null);
       setError(null);
     } catch (e) {
       setError(errorMessage(e));
     }
-  }, [dataSource, taskConnectionDraft]);
+  }, [dataSource, sourceConnectionDraft, taskConnectionDraft]);
+
+  const createTextSourceNode = useCallback(async () => {
+    if (dataSource !== "live") return;
+    try {
+      const api = new LiveTeamApi();
+      const sourceNode = await api.createSourceNode({
+        title: "文本输出",
+        nodeType: "text",
+        outputPort: { id: "value", label: "文本", type: "string" },
+        content: { text: "" },
+      });
+      setSourceNodes((current) => {
+        const next = [...current.filter((candidate) => candidate.sourceNodeId !== sourceNode.sourceNodeId), sourceNode];
+        setSourceAtlasNodes((nodes) => makeSourceNodes(next, liveSourceRefreshPositions(nodes)));
+        return next;
+      });
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }, [dataSource]);
+
+  const createFileSourceNode = useCallback(async (file: File) => {
+    if (dataSource !== "live") return;
+    const type = inferSourceFileType(file);
+    try {
+      const api = new LiveTeamApi();
+      const sourceNode = await api.createSourceNode({
+        title: file.name,
+        nodeType: "file",
+        outputPort: { id: "value", label: "文件", type },
+        content: {
+          fileName: file.name,
+          mimeType: file.type || undefined,
+          size: file.size,
+        },
+      });
+      setSourceNodes((current) => {
+        const next = [...current.filter((candidate) => candidate.sourceNodeId !== sourceNode.sourceNodeId), sourceNode];
+        setSourceAtlasNodes((nodes) => makeSourceNodes(next, liveSourceRefreshPositions(nodes)));
+        return next;
+      });
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }, [dataSource]);
+
+  const updateTextSourceNode = useCallback(async (sourceNodeId: string, text: string) => {
+    const currentNode = sourceNodesById.get(sourceNodeId);
+    if (!currentNode || currentNode.nodeType !== "text" || currentNode.content?.text === text) return;
+    try {
+      const api = new LiveTeamApi();
+      const sourceNode = await api.updateSourceNode(sourceNodeId, {
+        content: {
+          ...currentNode.content,
+          text,
+        },
+      });
+      setSourceNodes((current) => current.map((candidate) => (
+        candidate.sourceNodeId === sourceNode.sourceNodeId ? sourceNode : candidate
+      )));
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }, [sourceNodesById]);
 
   const cancelTaskRun = useCallback(async (task: TeamCanvasTask, taskRun: TeamRunState) => {
     const taskId = task.taskId;
@@ -1687,6 +1938,10 @@ export function App() {
           <strong>{tasks.length}</strong>
           <span> 个 Task</span>
         </span>
+        <span className="agent-atlas-count source-atlas-count" aria-label="输出节点数量">
+          <strong>{sourceNodes.length}</strong>
+          <span> Source</span>
+        </span>
       </div>
       <div className="agent-toolbar-group task-toolbar-group" aria-label="Task 操作">
         <button
@@ -1726,6 +1981,37 @@ export function App() {
             ))}
           </div>
         )}
+      </div>
+      <div className="agent-toolbar-group source-toolbar-group" aria-label="输出节点">
+        <button
+          type="button"
+          className="agent-add-btn source-create-btn"
+          disabled={dataSource !== "live"}
+          onClick={() => void createTextSourceNode()}
+        >
+          文本输出
+        </button>
+        <button
+          type="button"
+          className="agent-add-btn source-create-btn"
+          disabled={dataSource !== "live"}
+          onClick={() => sourceFileInputRef.current?.click()}
+        >
+          文件输出
+        </button>
+        <input
+          ref={sourceFileInputRef}
+          type="file"
+          className="sr-only"
+          aria-label="选择输出文件"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) {
+              void createFileSourceNode(file);
+            }
+            event.currentTarget.value = "";
+          }}
+        />
       </div>
     </div>
   );
@@ -2487,6 +2773,10 @@ export function App() {
                 tasksById={tasksById}
                 taskConnections={taskConnections}
                 taskConnectionDraft={taskConnectionDraft}
+                sourceNodes={sourceAtlasNodes}
+                sourceNodesById={sourceNodesById}
+                sourceConnections={sourceConnections}
+                sourceConnectionDraft={sourceConnectionDraft}
                 taskRunsByTaskId={taskRunsByTaskId}
                 focusedTaskNodeId={expandedTaskNode?.nodeId ?? null}
                 onSelectCanvasTask={toggleTaskBranch}
@@ -2494,6 +2784,12 @@ export function App() {
                 minimizedTaskNodeIds={minimizedTaskNodeIds}
                 onMinimizeCanvasTask={minimizeTaskNode}
                 onRestoreCanvasTask={restoreTaskNode}
+                onMoveSourceNode={moveSourceNode}
+                minimizedSourceNodeIds={minimizedSourceNodeIds}
+                onMinimizeSourceNode={minimizeSourceNode}
+                onRestoreSourceNode={restoreSourceNode}
+                onSourceOutputPortSelect={beginSourcePortConnection}
+                onSourceTextChange={updateTextSourceNode}
                 onTaskOutputPortSelect={beginTaskPortConnection}
                 onTaskInputPortSelect={completeTaskPortConnection}
                 taskBranchPanel={expandedTaskBranchPanel}
