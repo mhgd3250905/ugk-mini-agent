@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-27 — Team Console Task run 并发边界回归测试与文档
+
+- **主题**: 锁定 Team Console Task run 并发规则：不同 Task 可同时运行，同一 Task 同时只允许一个 active run。
+- **变更内容**:
+  - 新增 3 个前端回归测试：不同 Task 可并行运行（Task B 不被 Task A 的 active run 阻塞）；同一 Task 有 active run 时"运行"按钮禁用并显示"运行中"；多个 active run 按 `runId` 独立轮询。
+  - 现有 App.tsx 代码已正确按 `taskId` 收口 run state，不需要实现修改。
+  - 同步更新 README.md、team-runtime.md 说明并发边界。
+- **影响范围**: `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **验证**: `npm --prefix apps/team-console run test` (369 passed)、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check` 已通过。
+- **边界**: 不改 `src/team/**` 后端 runtime，不改主 `/playground` UI，不改 `.pi/skills` runtime skill，不引入全局 run queue 或 semaphore。
+
+---
+
 ## 2026-05-27 — Team Console Leader chat task context copy
 
 - **主题**: Leader 对话分支打开时显示当前 Task 上下文，并支持一键复制到剪贴板。

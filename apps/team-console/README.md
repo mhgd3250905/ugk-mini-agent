@@ -191,3 +191,4 @@ Mock fixture 覆盖以下场景：
 - Agent Atlas 只引用已有 Agent catalog，不创建或修改主项目 Agent profile
 - 不支持节点创建、minimap、持久化视图或编辑 Plan；Agent / Task 卡片拖拽只是本地画布引用位置调整，Shift 框选只影响当前画布选择态
 - Execution Atlas 只做执行图展示、task evidence 选择、artifact 预览和桌面 pan/zoom；大量子任务会折叠为 summary node，并按隐藏子任务状态汇总显示；折叠节点可展开/收起
+- Task run 并发边界：不同 Task 可以同时运行，每个 Task 内部同时只允许一个 active run。Task A 运行中不会禁用 Task B 的"运行"按钮；同一 Task 的"运行"按钮在有 active run 时显示"运行中"并禁用，直到该 run 进入终态。Run observer 和轮询按 `taskId + runId` 独立工作。用户需自行注意跨 Task 资源冲突。
