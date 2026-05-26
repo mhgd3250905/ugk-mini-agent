@@ -193,21 +193,34 @@ test("successful typed Task output creates an artifact and auto-starts connected
 		const upstreamTaskState = upstreamFinished.taskStates[collect.taskId]!;
 		assert.equal(upstreamTaskState.status, "succeeded");
 		assert.ok(upstreamTaskState.resultRef);
+		assert.ok(upstreamFinished.startedAt, "upstream run must have startedAt");
+		assert.ok(upstreamFinished.finishedAt, "upstream run must have finishedAt");
+		assert.ok(upstreamFinished.activeElapsedMs >= 0, "upstream run must have activeElapsedMs >= 0");
 
 		const downstreamRuns = await waitForTaskRunCount(app, html.taskId, 1);
 		const downstream = await waitForTerminalRun(app, downstreamRuns[0]!.runId);
 		assert.equal(downstream.status, "completed");
+		assert.ok(downstream.startedAt, "downstream run must have startedAt");
+		assert.ok(downstream.finishedAt, "downstream run must have finishedAt");
+		assert.ok(downstream.activeElapsedMs >= 0, "downstream run must have activeElapsedMs >= 0");
 		assert.equal(downstream.source?.taskId, html.taskId);
 		assert.equal(downstream.source?.triggeredBy?.connectionId, connection.connectionId);
 		assert.equal(downstream.source?.triggeredBy?.fromTaskId, collect.taskId);
 		assert.equal(downstream.source?.triggeredBy?.fromRunId, upstreamRun.runId);
+		assert.equal(downstream.source?.boundInputs?.[0]?.connectionId, connection.connectionId);
 		assert.equal(downstream.source?.boundInputs?.[0]?.inputPortId, "source_md");
 		assert.equal(downstream.source?.boundInputs?.[0]?.artifact.type, "md");
 		assert.equal(downstream.source?.boundInputs?.[0]?.artifact.sourceTaskId, collect.taskId);
 		assert.equal(downstream.source?.boundInputs?.[0]?.artifact.sourceRunId, upstreamRun.runId);
+		assert.ok(downstream.source?.boundInputs?.[0]?.artifact.sourceAttemptId, "bound artifact must have sourceAttemptId");
+		assert.equal(downstream.source?.boundInputs?.[0]?.artifact.sourceOutputPortId, "draft_md");
 		assert.equal(downstream.source?.boundInputs?.[0]?.artifact.fileRef, upstreamTaskState.resultRef);
 		assert.match(downstream.source?.boundInputs?.[0]?.artifact.preview ?? "", /accepted result/);
 		assert.match(downstream.source?.boundInputs?.[0]?.artifact.content ?? "", /accepted result/);
+
+		const chainedPlanRunsRes = await app.inject({ method: "GET", url: "/v1/team/runs" });
+		assert.equal(chainedPlanRunsRes.statusCode, 200);
+		assert.deepEqual(chainedPlanRunsRes.json(), []);
 	} finally {
 		await app.close();
 		await rm(root, { recursive: true, force: true });

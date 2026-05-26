@@ -57,6 +57,17 @@
 
 验证记录：
 
+本轮 Real Typed Chain Acceptance 验证：
+
+- `node --test --import tsx test/team-task-store.test.ts test/team-task-chain-contract.test.ts test/team-task-connection-store.test.ts test/team-task-routes.test.ts test/team-task-run-routes.test.ts test/team-run-workspace.test.ts test/team-task-run-process.test.ts test/team-task-artifact-handoff.test.ts`：116 passed
+- `npm --prefix apps/team-console run test`：345 passed
+- `npm --prefix apps/team-console run build`：通过
+- `npx tsc --noEmit`：通过
+- `git diff --check`：通过
+- touched files EOL：`i/lf w/lf`
+- 验收矩阵已全部闭合：TaskA accepted result (`resultRef`) → typed artifact (`sourceAttemptId`/`sourceOutputPortId`) → TaskB auto-start → 下游发现 (`GET /v1/team/tasks/:taskId/runs`) → downstreamDelivery outcome (`delivered`) → timing fields (`startedAt`/`finishedAt`/`activeElapsedMs`) → Plan run 隔离 (`GET /v1/team/runs` 空)
+- 计划规范差异：`triggeredBy` 类型不含 `fromOutputPortId`，output port 通过 `connectionId` 追溯，不影响功能正确性
+
 上一个已提交快照验证：
 
 - `npm --prefix apps/team-console run test`：325 passed
