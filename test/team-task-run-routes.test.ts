@@ -289,7 +289,7 @@ test("POST /v1/team/tasks/:taskId/runs rejects non-ready or archived tasks", asy
 	}
 });
 
-test("source task archived mid-run does not trigger downstream run", async () => {
+test("archived task rejects new run creation and does not trigger downstream", async () => {
 	const { app, root } = await buildTestServer();
 	try {
 		const collectRes = await app.inject({

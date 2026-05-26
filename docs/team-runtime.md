@@ -86,6 +86,17 @@ Typed Task Chain V1 把 Task 设计成可组合的最小积木，但刻意不把
 - API：`GET /v1/team/task-connections`、`POST /v1/team/task-connections`、`DELETE /v1/team/task-connections/:connectionId`
 - 数据结构：`{ connectionId, fromTaskId, fromOutputPortId, toTaskId, toInputPortId, createdAt }`
 - 后端创建 connection 时必须校验 Task 存在、未归档、port 存在、类型相等、非自连接、非重复连接，并拒绝会形成环的连接。
+- `GET /v1/team/task-connections` 返回每条连接附带运行时派生的 `status: "active" | "stale"` 和可选 `staleReason`；这些字段不写入 `task-connections.json`，只在 API 请求时从当前 Task/port 状态推导。stale 连接不触发下游 run，前端不渲染 stale 连接线。
+- stale 判定规则（任一命中即标记 stale）：
+  - `source_task_missing` — source Task 不存在
+  - `source_task_archived` — source Task 已归档
+  - `target_task_missing` — target Task 不存在
+  - `target_task_archived` — target Task 已归档
+  - `source_output_port_missing` — source output port 在当前 WorkUnit 中找不到
+  - `target_input_port_missing` — target input port 在当前 WorkUnit 中找不到
+  - `source_output_port_type_mismatch` — source output port type 与 connection type 不一致
+  - `target_input_port_type_mismatch` — target input port type 与 connection type 不一致
+- 上游 run 完成后触发 downstream 时，如果 source Task 在 run 期间被归档，downstream 不会被触发；上游 accepted run 不受下游 stale 影响。
 - 当前 UI 只做一条线的最小交互，但 connection store 按 DAG 设计：未来可以自然扩展成一个输出连接多个下游、多节点链路和更完整的图编辑器。
 
 产物传递契约：

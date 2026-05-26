@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-26 — Team Console stale task connection lifecycle
+
+- **主题**: Task connection stale 状态显式化——运行时派生 `status: "active" | "stale"` 和 `staleReason`，不写入持久化 JSON；stale connection 不触发下游 run、不渲染连接线。
+- **变更内容**:
+  - `TaskConnectionStore.listResolved()` 从当前 Task/port 状态推导每条连接的 active/stale 状态，7 种 stale reason 覆盖 source/target task missing/archived、port missing、type mismatch。
+  - `GET /v1/team/task-connections` 返回 `ResolvedTaskConnection[]`（含 `status` + `staleReason`），不修改 `task-connections.json`。
+  - `CanvasTaskRunService.triggerDownstreamRuns()` 增加 source task archived 短路检查；run 运行期间 archive source task 会阻断下游触发，上游 accepted run 不受影响。
+  - 前端 `TeamTaskConnection` 类型增加 `status?` / `staleReason?`；`ExecutionMap.tsx` 对 stale/无效端口连接返回 null，stale 连接不渲染。
+- **影响范围**: `src/team/types.ts`, `src/team/task-connection-store.ts`, `src/team/routes.ts`, `src/team/task-run-service.ts`, `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/graph/ExecutionMap.tsx`, `test/team-task-routes.test.ts`, `test/team-task-run-routes.test.ts`, `test/team-task-run-process.test.ts`, `apps/team-console/src/tests/team-api.test.ts`, `apps/team-console/src/tests/app.test.tsx`
+- **边界**: 不自动删除 connection，不改 stale policy，不做 UI 美化，不碰 Task 2 persistence lock，不提交 `.codex/plans/*` 或 `.codex/skills/new-chat/`。
+
+---
+
 ## 2026-05-26 — Team Console 后端 assistantText ancestry 收口
 
 - **主题**: 将主后端 `65e4de8 feat(team): expose task role assistant text` 的后端语义并入 Team Console WorkUnit redesign 分支，同时保留当前 typed task chain。

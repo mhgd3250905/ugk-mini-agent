@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { TaskStore } from "../src/team/task-store.js";
+import { TaskConnectionStore } from "../src/team/task-connection-store.js";
 import { RunWorkspace } from "../src/team/run-workspace.js";
 import { CanvasTaskRunService } from "../src/team/task-run-service.js";
 import type {
@@ -297,6 +298,93 @@ test("CanvasTaskRunService flushes cancelled worker process when task run is can
 		assert.equal(worker?.process?.currentAction, "任务已打断");
 		assert.equal(worker?.assistantText?.content, "取消前文本。");
 		assert.ok(worker?.assistantText?.updatedAt);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("archived source task mid-run blocks downstream triggering", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-mid-archive-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const sourceTask = await taskStore.create({
+			...validTaskInput,
+			workUnit: {
+				...validTaskInput.workUnit,
+				outputPorts: [{ id: "draft_md", label: "Markdown", type: "md" }],
+			},
+		});
+		const targetTask = await taskStore.create({
+			title: "HTML 制作",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "HTML 制作",
+				input: { text: "制作 HTML 页面。" },
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+				outputContract: { text: "输出 HTML 页面。" },
+				acceptance: { rules: ["必须包含 HTML"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+
+		await mkdir(join(root, "team"), { recursive: true });
+		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
+		await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "draft_md",
+			toTaskId: targetTask.taskId,
+			toInputPortId: "source_md",
+		});
+
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+
+		let workerStartedResolve!: () => void;
+		const workerStarted = new Promise<void>((resolve) => { workerStartedResolve = resolve; });
+		let workerProceedResolve!: () => void;
+		const workerProceed = new Promise<void>((resolve) => { workerProceedResolve = resolve; });
+
+		class GatedWorkerRunner implements TeamRoleRunner {
+			async runWorker(_input: WorkerInput): Promise<WorkerOutput> {
+				workerStartedResolve();
+				await workerProceed;
+				return { content: "worker result", artifactRefs: [] };
+			}
+			async runChecker(_input: CheckerInput): Promise<CheckerOutput> {
+				return { verdict: "pass", reason: "ok", resultContent: "accepted result" };
+			}
+			async runWatcher(_input: WatcherInput): Promise<WatcherOutput> {
+				return { decision: "accept_task", reason: "ok" };
+			}
+			async runFinalizer(_input: FinalizerInput): Promise<FinalizerOutput> {
+				return { finalReport: "ok" };
+			}
+			async runDecomposer(_input: DecomposerInput): Promise<DecomposerOutput> {
+				return { decision: "no_split", reason: "ok", children: [] };
+			}
+		}
+
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new GatedWorkerRunner(),
+			connectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const created = await service.createRun(sourceTask.taskId);
+
+		await workerStarted;
+		await taskStore.archive(sourceTask.taskId);
+		workerProceedResolve();
+
+		const finished = await waitForTerminalRun(service, created.runId);
+		assert.equal(finished.status, "completed");
+		assert.equal(finished.taskStates[sourceTask.taskId]?.status, "succeeded");
+
+		const downstreamRuns = await service.listRuns(targetTask.taskId);
+		assert.deepEqual(downstreamRuns, []);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
