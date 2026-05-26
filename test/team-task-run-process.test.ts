@@ -51,6 +51,16 @@ async function waitForTerminalRun(service: CanvasTaskRunService, runId: string):
 	throw new Error(`task run did not reach terminal state: ${runId}`);
 }
 
+async function waitForAttemptDelivery(workspace: RunWorkspace, runId: string, taskId: string, expectedLength = 1): Promise<import("../src/team/types.js").TeamTaskDeliveryOutcome[]> {
+	for (let i = 0; i < 80; i++) {
+		const attempts = await workspace.listAttempts(runId, taskId);
+		const delivery = (attempts[0] as { downstreamDelivery?: import("../src/team/types.js").TeamTaskDeliveryOutcome[] } | undefined)?.downstreamDelivery;
+		if (delivery && delivery.length >= expectedLength) return delivery;
+		await new Promise(resolve => setTimeout(resolve, 25));
+	}
+	throw new Error(`attempt delivery outcomes did not reach length ${expectedLength} for run ${runId} task ${taskId}`);
+}
+
 class ProcessEventRoleRunner implements TeamRoleRunner {
 	async runWorker(input: ProcessAwareWorkerInput): Promise<WorkerOutput> {
 		input.onSessionEvent?.({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "用户正在询问 GitHub 热榜。" } });
@@ -386,14 +396,12 @@ test("archived source task mid-run blocks downstream triggering", async () => {
 		const downstreamRuns = await service.listRuns(targetTask.taskId);
 		assert.deepEqual(downstreamRuns, []);
 
-		// Verify skipped outcome was recorded for the archived source task
-		const attempts = await workspace.listAttempts(created.runId, sourceTask.taskId);
-		const delivery = attempts[0]?.downstreamDelivery;
-		assert.ok(delivery, "downstreamDelivery must be present for archived source");
-		assert.equal(delivery!.length, 1);
-		assert.equal(delivery![0]!.status, "skipped");
-		assert.equal(delivery![0]!.staleReason, "source_task_archived");
-		assert.equal(delivery![0]!.downstreamRunId, undefined);
+		// Verify skipped outcome was recorded for the archived source task (poll since delivery writes after terminal state)
+		const delivery = await waitForAttemptDelivery(workspace, created.runId, sourceTask.taskId);
+		assert.equal(delivery.length, 1);
+		assert.equal(delivery[0]!.status, "skipped");
+		assert.equal(delivery[0]!.staleReason, "source_task_archived");
+		assert.equal(delivery[0]!.downstreamRunId, undefined);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -484,17 +492,15 @@ test("failed downstream delivery records error without failing upstream", async 
 		assert.equal(finished.status, "completed", "upstream must remain completed despite delivery failure");
 		assert.equal(finished.taskStates[sourceTask.taskId]?.status, "succeeded");
 
-		// Verify failed outcome was recorded
-		const attempts = await workspace.listAttempts(created.runId, sourceTask.taskId);
-		const delivery = attempts[0]?.downstreamDelivery;
-		assert.ok(delivery, "downstreamDelivery must be present for failed delivery");
-		assert.equal(delivery!.length, 1);
-		assert.equal(delivery![0]!.status, "failed");
-		assert.equal(delivery![0]!.connectionId, connection.connectionId);
-		assert.equal(delivery![0]!.toTaskId, targetTask.taskId);
-		assert.equal(delivery![0]!.downstreamRunId, undefined);
-		assert.ok(delivery![0]!.error, "error must be recorded");
-		assert.match(delivery![0]!.error!, /active task run already exists/);
+		// Verify failed outcome was recorded (poll since delivery writes after terminal state)
+		const delivery = await waitForAttemptDelivery(workspace, created.runId, sourceTask.taskId);
+		assert.equal(delivery.length, 1);
+		assert.equal(delivery[0]!.status, "failed");
+		assert.equal(delivery[0]!.connectionId, connection.connectionId);
+		assert.equal(delivery[0]!.toTaskId, targetTask.taskId);
+		assert.equal(delivery[0]!.downstreamRunId, undefined);
+		assert.ok(delivery[0]!.error, "error must be recorded");
+		assert.match(delivery[0]!.error!, /active task run already exists/);
 
 		// Let the gated worker proceed so cleanup can succeed
 		gatedWorkerProceed();
@@ -557,6 +563,14 @@ test("downstream connection listing failure does not fail accepted upstream run"
 		const finished = await waitForTerminalRun(service, created.runId);
 		assert.equal(finished.status, "completed", `upstream must remain completed despite connection listing failure, got "${finished.status}"`);
 		assert.equal(finished.taskStates[sourceTask.taskId]?.status, "succeeded");
+
+		// Settle then re-read to confirm no late reversal of the accepted run
+		await new Promise(resolve => setTimeout(resolve, 200));
+		const settled = await service.getRun(created.runId);
+		assert.ok(settled);
+		assert.equal(settled!.status, "completed", `upstream must still be completed after settle, got "${settled!.status}"`);
+		assert.notEqual(settled!.lastError, "task connection store contains invalid JSON", "lastError must not reflect the listing failure");
+		assert.ok(!settled!.lastError || settled!.lastError !== "task connection store contains invalid JSON");
 	} finally {
 		await new Promise(resolve => setTimeout(resolve, 100));
 		await rm(root, { recursive: true, force: true });
@@ -616,6 +630,12 @@ test("delivery outcome persistence failure does not fail accepted upstream run",
 		const finished = await waitForTerminalRun(service, created.runId);
 		assert.equal(finished.status, "completed", `upstream must remain completed despite delivery persistence failure, got "${finished.status}"`);
 		assert.equal(finished.taskStates[sourceTask.taskId]?.status, "succeeded");
+
+		// Settle then re-read to confirm no late reversal of the accepted run
+		await new Promise(resolve => setTimeout(resolve, 200));
+		const settled = await service.getRun(created.runId);
+		assert.ok(settled);
+		assert.equal(settled!.status, "completed", `upstream must still be completed after settle, got "${settled!.status}"`);
 	} finally {
 		await new Promise(resolve => setTimeout(resolve, 100));
 		await rm(root, { recursive: true, force: true });

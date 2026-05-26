@@ -89,6 +89,18 @@ async function waitForTaskRunCount(app: Awaited<ReturnType<typeof buildServer>>,
 	throw new Error(`task ${taskId} did not reach run count ${minCount}`);
 }
 
+async function waitForAttemptDelivery(app: Awaited<ReturnType<typeof buildServer>>, runId: string, taskId: string, expectedLength = 1): Promise<TeamTaskDeliveryOutcome[]> {
+	for (let i = 0; i < 80; i++) {
+		const res = await app.inject({ method: "GET", url: `/v1/team/task-runs/${runId}/tasks/${taskId}/attempts` });
+		assert.equal(res.statusCode, 200);
+		const attempts = res.json().attempts as Array<{ downstreamDelivery?: TeamTaskDeliveryOutcome[] }>;
+		const delivery = attempts[0]?.downstreamDelivery;
+		if (delivery && delivery.length >= expectedLength) return delivery;
+		await new Promise(resolve => setTimeout(resolve, 25));
+	}
+	throw new Error(`attempt delivery outcomes did not reach length ${expectedLength} for run ${runId} task ${taskId}`);
+}
+
 test("POST /v1/team/tasks/:taskId/runs executes a Canvas Task without creating a Plan run", async () => {
 	const { app, root } = await buildTestServer();
 	try {
@@ -255,7 +267,8 @@ test("typed Task trigger skips stale downstream input ports", async () => {
 		const upstreamFinished = await waitForTerminalRun(app, upstreamRun.runId);
 		assert.equal(upstreamFinished.status, "completed");
 
-		await new Promise(resolve => setTimeout(resolve, 100));
+		// Wait until delivery loop completes (records skipped outcome for stale connection)
+		await waitForAttemptDelivery(app, upstreamRun.runId, collect.taskId);
 		const downstreamRunsRes = await app.inject({ method: "GET", url: `/v1/team/tasks/${html.taskId}/runs` });
 		assert.equal(downstreamRunsRes.statusCode, 200);
 		assert.deepEqual(downstreamRunsRes.json().runs, []);
@@ -443,13 +456,9 @@ test("typed Task chain records delivered downstream outcome in upstream attempt 
 		const downstreamRuns = await waitForTaskRunCount(app, html.taskId, 1);
 		await waitForTerminalRun(app, downstreamRuns[0]!.runId);
 
-		const attemptsRes = await app.inject({ method: "GET", url: `/v1/team/task-runs/${upstreamRun.runId}/tasks/${collect.taskId}/attempts` });
-		assert.equal(attemptsRes.statusCode, 200);
-		const attempts = attemptsRes.json().attempts;
-		const delivery = (attempts[0] as { downstreamDelivery?: TeamTaskDeliveryOutcome[] }).downstreamDelivery;
-		assert.ok(delivery, "downstreamDelivery must be present");
-		assert.equal(delivery!.length, 1);
-		const outcome = delivery![0]!;
+		const delivery = await waitForAttemptDelivery(app, upstreamRun.runId, collect.taskId);
+		assert.equal(delivery.length, 1);
+		const outcome = delivery[0]!;
 		assert.equal(outcome.status, "delivered");
 		assert.equal(outcome.connectionId, connection.connectionId);
 		assert.equal(outcome.toTaskId, html.taskId);
@@ -515,15 +524,9 @@ test("stale downstream connection records skipped outcome with staleReason", asy
 		const upstreamFinished = await waitForTerminalRun(app, upstreamRun.runId);
 		assert.equal(upstreamFinished.status, "completed");
 
-		await new Promise(resolve => setTimeout(resolve, 100));
-
-		const attemptsRes = await app.inject({ method: "GET", url: `/v1/team/task-runs/${upstreamRun.runId}/tasks/${collect.taskId}/attempts` });
-		assert.equal(attemptsRes.statusCode, 200);
-		const attempts = attemptsRes.json().attempts;
-		const delivery = (attempts[0] as { downstreamDelivery?: TeamTaskDeliveryOutcome[] }).downstreamDelivery;
-		assert.ok(delivery, "downstreamDelivery must be present for stale connection");
-		assert.equal(delivery!.length, 1);
-		const outcome = delivery![0]!;
+		const delivery = await waitForAttemptDelivery(app, upstreamRun.runId, collect.taskId);
+		assert.equal(delivery.length, 1);
+		const outcome = delivery[0]!;
 		assert.equal(outcome.status, "skipped");
 		assert.equal(outcome.staleReason, "target_input_port_type_mismatch");
 		assert.equal(outcome.downstreamRunId, undefined);
