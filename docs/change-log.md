@@ -12,6 +12,34 @@
 
 ---
 
+## 2026-05-26 — Team Console Run observer 聚合面板视觉优化
+
+- **主题**: 优化合并后的 Task run observer 视觉，让它像一个完整运行观察面板，而不是几个小节点拼在一起。
+- **变更内容**:
+  - `run-observer` 内部改为阶段流视觉：顶部显示运行观察状态，worker / checker 过程区去掉独立小卡片式重边框，文件区作为阶段下方的 attachment tray。
+  - Worker / Checker 过程段固定高度并在段内滚动，滚动条改为符合主题的细滚动块（worker 偏青色，checker 偏金色），避免隐藏滚动条后用户只能靠滚轮和画布缩放抢事件；observer 外层不再显示滚动条，继续按实际内容高度自适应测量并绘制连接线。
+  - 只有实际存在文件时才渲染对应文件 tray；运行刚开始时空的 worker 文件、checker 文件和 result 文件区域不再显示“暂无文件”小字占位。
+  - 补充测试锁定 active run 初期不渲染 `.emap-observer-file-empty`，并确认外层自适应、过程段固定高度和主题化滚动块 CSS 约束。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`
+- **边界**: 不改后端 API，不接 SSE，不改 `.pi/skills/**`，不改变 attempt metadata schema。
+
+---
+
+## 2026-05-26 — Team Console Run observer 合并节点与连线收口
+
+- **主题**: 将 Task run observer 从多个独立 canvas 子节点合并为一个大的运行结果面板，同时修复连线锚点问题。
+- **变更内容**:
+  - 运行结果子节点（Worker 过程、Checker 过程、文件节点）合并为单一 `run-observer` 面板，内部固定顺序：worker 过程 → worker 输出文件 → checker 过程 → checker 输出文件 → 结果文件。
+  - 文件条目改为紧凑行（`.emap-observer-file-row`），点击后仍展开二级文件详情节点。
+  - Task 菜单只保留操作入口和紧凑 run summary，不再承载运行结果明细。
+  - 连线锚点固定为父节点右侧中点到子节点左侧中点；反向角度通过平滑 S 曲线处理，仍从父节点右侧出线并绕回子节点左侧（`rightMiddleToLeftMiddlePath`）；卡片接触点新增圆环 + 中心点标记，source 偏金色、target 偏青色。
+  - 新增 6 个测试覆盖合并面板结构、section 顺序、文件详情交互、拖动语义、连线锚点和绕路。
+  - 更新 18 个旧测试适配新结构。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`
+- **边界**: 不改后端 API，不接 SSE，不改 `.pi/skills/**`，不改 `src/team/**`，不改 attempt metadata schema。
+
+---
+
 ## 2026-05-26 — Team Console 自动发现下游 Task run
 
 - **主题**: 修复 typed chain 上游 run 完成后，下游自动启动但 UI 必须手动刷新才看得到的问题。

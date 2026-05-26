@@ -17,7 +17,6 @@ const DEFAULT_PLAYGROUND_BASE_URL = "http://127.0.0.1:3000";
 const DATA_SOURCE_STORAGE_KEY = "ugk-team-console:data-source";
 const LIVE_AGENT_LAYOUT_STORAGE_KEY = "ugk-team-console:live-agent-layout:v1";
 const LIVE_TASK_LAYOUT_STORAGE_KEY = "ugk-team-console:live-task-layout:v1";
-const TASK_RUN_PROCESS_ROLES: TeamAttemptRoleProcessRole[] = ["worker", "checker"];
 const TASK_RUN_PROCESS_LABELS: Record<TeamAttemptRoleProcessRole, string> = {
   worker: "Worker 过程",
   checker: "Checker 过程",
@@ -1778,94 +1777,116 @@ export function App() {
     if (expandedTaskDetailMode !== "run-observer" || !observedTaskRun || !expandedTask) return [];
     const observedTaskRunIsActive = isActiveRun(observedTaskRun.status);
     const panels: Array<{ id: string; panel: ReactNode; width?: number; height?: number; sourceId?: string; autoHeight?: boolean; resizable?: boolean; minWidth?: number; minHeight?: number }> = [];
-    for (const role of TASK_RUN_PROCESS_ROLES) {
-      panels.push({
-        id: `process-${role}`,
-        width: 300,
-        autoHeight: true,
-        sourceId: undefined,
-        panel: renderRoleProcessNode(
-          role,
-          latestObservedAttempt?.roleProcesses?.[role],
-        ),
-      });
-    }
-    for (const descriptor of observerFileDescriptors) {
+
+    const workerFiles = observerFileDescriptors.filter((d) => d.kind === "worker");
+    const checkerFiles = observerFileDescriptors.filter((d) => d.kind === "checker");
+    const resultFiles = observerFileDescriptors.filter((d) => d.kind === "result");
+    const hasFiles = observerFileDescriptors.length > 0;
+
+    function renderFileRow(descriptor: TaskRunObserverFileDescriptor) {
       const isSelected = selectedObserverFileKey === descriptor.key;
       const agentName = descriptor.runtimeContext
         ? (agentsById.get(descriptor.runtimeContext.resolvedProfileId)?.name ?? descriptor.runtimeContext.resolvedProfileId)
         : descriptor.kind === "result"
           ? (descriptor.fileName.includes("accepted") ? "已接受结果" : "结果")
           : descriptor.kind;
+      return (
+        <button
+          type="button"
+          key={descriptor.key}
+          className={`emap-observer-file-row ${descriptor.kind} ${isSelected ? "selected" : ""}`}
+          data-file-kind={descriptor.kind}
+          onClick={() => toggleObserverFile(descriptor.key)}
+        >
+          <span className="emap-observer-file-row-agent">{agentName}</span>
+          <code className="emap-observer-file-row-name">{descriptor.fileName}</code>
+          <span className="emap-observer-file-row-path">{descriptor.path}</span>
+        </button>
+      );
+    }
+
+    function renderFileSection(label: string, descriptors: TaskRunObserverFileDescriptor[]) {
+      if (descriptors.length === 0) return null;
+      return (
+        <div className="emap-run-observer-file-section">
+          <span className="emap-run-observer-file-kicker">{label}</span>
+          <div className="emap-run-observer-file-list">
+            {descriptors.map(renderFileRow)}
+          </div>
+        </div>
+      );
+    }
+
+    panels.push({
+      id: "run-observer",
+      width: 420,
+      autoHeight: true,
+      sourceId: undefined,
+      panel: (
+        <div className={`emap-run-observer-panel ${observedTaskRunIsActive ? "active" : "terminal"}`}>
+          <header className="emap-run-observer-head">
+            <span>运行观察</span>
+            <strong>{RUN_STATUS_LABELS[observedTaskRun.status]}</strong>
+          </header>
+          <div className="emap-run-observer-stage worker" data-observer-section="worker-process">
+            {renderRoleProcessNode("worker", latestObservedAttempt?.roleProcesses?.worker)}
+          </div>
+          <div className="emap-run-observer-stage-files worker" data-observer-section="worker-files">
+            {renderFileSection("Worker 输出", workerFiles)}
+          </div>
+          <div className="emap-run-observer-stage checker" data-observer-section="checker-process">
+            {renderRoleProcessNode("checker", latestObservedAttempt?.roleProcesses?.checker)}
+          </div>
+          <div className="emap-run-observer-stage-files checker" data-observer-section="checker-files">
+            {renderFileSection("Checker 输出", checkerFiles)}
+          </div>
+          <div className="emap-run-observer-stage-files result" data-observer-section="result-files">
+            {renderFileSection("验收结果", resultFiles)}
+          </div>
+          {!hasFiles && !observedTaskRunState?.loading && !observedTaskRunIsActive && (
+            <div className="emap-observer-empty">暂无 attempt 文件。运行刚启动时这里会随轮询补齐。</div>
+          )}
+        </div>
+      ),
+    });
+
+    if (selectedObserverFileDescriptor) {
       panels.push({
-        id: `file-${descriptor.key}`,
-        width: 300,
-        height: 80,
-        sourceId: undefined,
+        id: `file-detail-${selectedObserverFileDescriptor.key}`,
+        width: 460,
+        height: 420,
+        sourceId: "run-observer",
+        resizable: true,
+        minWidth: 360,
+        minHeight: 280,
         panel: (
-          <button
-            type="button"
-            className={`emap-observer-node emap-observer-file-node emap-observer-file-compact ${descriptor.kind} ${isSelected ? "selected" : ""}`}
-            data-file-kind={descriptor.kind}
-            onClick={() => toggleObserverFile(descriptor.key)}
-          >
+          <section className="emap-observer-node emap-observer-file-detail-node" aria-label={selectedObserverFileDescriptor.title}>
             <header className="emap-observer-node-head">
-              <span className="emap-observer-file-agent">{agentName}</span>
-              <span className="emap-observer-node-label">{descriptor.title}</span>
+              <span className="emap-observer-node-label">{selectedObserverFileDescriptor.title}</span>
+              <code className="emap-observer-file-name">{selectedObserverFileDescriptor.fileName}</code>
+              <button
+                type="button"
+                className="emap-observer-node-close"
+                onClick={() => toggleObserverFile(selectedObserverFileDescriptor.key)}
+                aria-label="收起文件详情"
+              >
+                收起
+              </button>
             </header>
-            <div className="emap-observer-file-body">
-              <code className="emap-observer-file-name">{descriptor.fileName}</code>
-              <span className="emap-observer-file-path">{descriptor.path}</span>
+            <div className="emap-observer-file-detail-body">
+              {selectedObserverFileState?.error ? (
+                <div className="emap-observer-file-error">{selectedObserverFileState.error}</div>
+              ) : selectedObserverFileState?.content ? (
+                renderFileDetailContent(selectedObserverFileDescriptor.fileName, selectedObserverFileState.content)
+              ) : (
+                <div className="emap-observer-file-loading">正在读取文件...</div>
+              )}
             </div>
-          </button>
+          </section>
         ),
       });
-      if (isSelected && selectedObserverFileDescriptor) {
-        panels.push({
-          id: `file-detail-${descriptor.key}`,
-          width: 460,
-          height: 420,
-          sourceId: `file-${descriptor.key}`,
-          resizable: true,
-          minWidth: 360,
-          minHeight: 280,
-          panel: (
-            <section className="emap-observer-node emap-observer-file-detail-node" aria-label={selectedObserverFileDescriptor.title}>
-              <header className="emap-observer-node-head">
-                <span className="emap-observer-node-label">{selectedObserverFileDescriptor.title}</span>
-                <code className="emap-observer-file-name">{selectedObserverFileDescriptor.fileName}</code>
-                <button
-                  type="button"
-                  className="emap-observer-node-close"
-                  onClick={() => toggleObserverFile(descriptor.key)}
-                  aria-label="收起文件详情"
-                >
-                  收起
-                </button>
-              </header>
-              <div className="emap-observer-file-detail-body">
-                {selectedObserverFileState?.error ? (
-                  <div className="emap-observer-file-error">{selectedObserverFileState.error}</div>
-                ) : selectedObserverFileState?.content ? (
-                  renderFileDetailContent(selectedObserverFileDescriptor.fileName, selectedObserverFileState.content)
-                ) : (
-                  <div className="emap-observer-file-loading">正在读取文件...</div>
-                )}
-              </div>
-            </section>
-          ),
-        });
-      }
     }
-    if (observerFileDescriptors.length === 0 && !observedTaskRunState?.loading && !observedTaskRunIsActive) {
-      panels.push({
-        id: "empty-hint",
-        width: 300,
-        height: 60,
-        sourceId: undefined,
-        panel: <div className="emap-observer-node emap-observer-empty">暂无 attempt 文件。运行刚启动时这里会随轮询补齐。</div>,
-      });
-    }
+
     return panels;
   }, [
     expandedTaskDetailMode, observedTaskRun, expandedTask, observerFileDescriptors,

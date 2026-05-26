@@ -608,6 +608,28 @@
   opacity: 0.95;
 }
 
+.emap-connector-anchors {
+  pointer-events: none;
+}
+
+.emap-connector-anchor-ring {
+  fill: rgba(7, 12, 22, 0.94);
+  stroke: rgba(255, 190, 96, 0.86);
+  stroke-width: 1.6;
+}
+
+.emap-connector-anchor-dot {
+  fill: rgba(255, 214, 128, 0.96);
+}
+
+.emap-connector-anchor-ring.target {
+  stroke: rgba(121, 216, 208, 0.88);
+}
+
+.emap-connector-anchor-dot.target {
+  fill: rgba(121, 216, 208, 0.96);
+}
+
 .emap-agent-branch-shell {
   position: absolute;
   z-index: 12;
@@ -1261,6 +1283,263 @@
 .emap-observer-file-error {
   color: var(--danger);
   font-size: 10px;
+}
+
+.emap-run-observer-panel {
+  display: grid;
+  gap: 0;
+  width: 100%;
+  overflow: visible;
+  padding: 0;
+  border: 1px solid rgba(121, 216, 208, 0.18);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(121, 216, 208, 0.08), transparent 26%),
+    linear-gradient(90deg, rgba(121, 216, 208, 0.08), transparent 48%),
+    rgba(6, 11, 18, 0.98);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.emap-run-observer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(121, 216, 208, 0.14);
+  background: rgba(7, 12, 22, 0.64);
+}
+
+.emap-run-observer-head span {
+  color: rgba(216, 228, 241, 0.58);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.emap-run-observer-head strong {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.emap-run-observer-stage {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  height: 204px;
+  min-height: 204px;
+  padding: 12px 12px 10px 28px;
+}
+
+.emap-run-observer-stage + .emap-run-observer-stage,
+.emap-run-observer-stage-files:not(:empty) + .emap-run-observer-stage {
+  border-top: 1px solid rgba(122, 131, 151, 0.12);
+}
+
+.emap-run-observer-stage::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 18px;
+  bottom: -8px;
+  width: 1px;
+  background: rgba(122, 131, 151, 0.18);
+}
+
+.emap-run-observer-stage:last-of-type::before {
+  bottom: 18px;
+}
+
+.emap-run-observer-stage::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 18px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(121, 216, 208, 0.72);
+  box-shadow: 0 0 0 4px rgba(121, 216, 208, 0.08);
+}
+
+.emap-run-observer-stage.checker::after {
+  background: rgba(255, 190, 96, 0.76);
+  box-shadow: 0 0 0 4px rgba(255, 190, 96, 0.08);
+}
+
+.emap-run-observer-stage-files {
+  display: grid;
+  padding: 0 12px 10px 28px;
+}
+
+.emap-run-observer-stage-files:empty {
+  display: none;
+}
+
+.emap-run-observer-file-section {
+  display: grid;
+  gap: 6px;
+  padding: 0 0 0 0;
+}
+
+.emap-run-observer-file-kicker {
+  color: rgba(216, 228, 241, 0.42);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.emap-run-observer-panel .emap-observer-process-node {
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+.emap-run-observer-panel .emap-observer-process-node.worker,
+.emap-run-observer-panel .emap-observer-process-node.checker {
+  border-left: 0;
+}
+
+.emap-run-observer-panel .emap-observer-process-assistant-text {
+  max-height: none;
+  padding-right: 2px;
+  overflow: visible;
+}
+
+.emap-run-observer-panel .emap-observer-process-top {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 8px;
+  scrollbar-color: rgba(121, 216, 208, 0.68) rgba(7, 12, 22, 0.68);
+  scrollbar-width: thin;
+}
+
+.emap-run-observer-stage.checker .emap-observer-process-top {
+  scrollbar-color: rgba(255, 190, 96, 0.72) rgba(7, 12, 22, 0.68);
+}
+
+.emap-run-observer-panel .emap-observer-process-top::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.emap-run-observer-panel .emap-observer-process-top::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(7, 12, 22, 0.68);
+  box-shadow: inset 0 0 0 1px rgba(122, 131, 151, 0.14);
+}
+
+.emap-run-observer-panel .emap-observer-process-top::-webkit-scrollbar-thumb {
+  border: 2px solid rgba(7, 12, 22, 0.68);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(121, 216, 208, 0.86), rgba(55, 132, 148, 0.9));
+}
+
+.emap-run-observer-stage.checker .emap-observer-process-top::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(255, 206, 118, 0.9), rgba(173, 117, 48, 0.92));
+}
+
+.emap-run-observer-panel .emap-observer-process-top::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(150, 244, 236, 0.96), rgba(72, 159, 176, 0.96));
+}
+
+.emap-run-observer-stage.checker .emap-observer-process-top::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(255, 224, 145, 0.98), rgba(198, 139, 61, 0.98));
+}
+
+.emap-run-observer-panel .emap-observer-process-top::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.emap-run-observer-file-list {
+  display: grid;
+  gap: 5px;
+}
+
+.emap-observer-file-row {
+  appearance: none;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  padding: 7px 9px;
+  border: 1px solid rgba(122, 131, 151, 0.13);
+  border-radius: 6px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035), transparent 64%),
+    rgba(255, 255, 255, 0.018);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.emap-observer-file-row:hover {
+  border-color: rgba(121, 216, 208, 0.48);
+  background: rgba(121, 216, 208, 0.06);
+}
+
+.emap-observer-file-row.selected {
+  border-color: rgba(121, 216, 208, 0.72);
+  background: rgba(121, 216, 208, 0.1);
+}
+
+.emap-observer-file-row.worker {
+  border-left: 3px solid rgba(121, 216, 208, 0.48);
+}
+
+.emap-observer-file-row.checker {
+  border-left: 3px solid rgba(255, 190, 96, 0.48);
+}
+
+.emap-observer-file-row.result {
+  border-left: 3px solid rgba(103, 232, 149, 0.48);
+}
+
+.emap-observer-file-row-agent {
+  grid-column: 1 / -1;
+  color: var(--secondary);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emap-observer-file-row-name {
+  color: #e7c879;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.emap-observer-file-row-path {
+  color: var(--secondary);
+  font-size: 9px;
+  font-family: var(--font-mono);
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.emap-observer-file-empty {
+  color: rgba(216, 228, 241, 0.32);
+  font-size: 10px;
+  padding: 4px 0;
 }
 
 .emap-observer-file-detail-node {

@@ -332,18 +332,72 @@ function agentBranchConnectorPath(agentNode: AtlasAgentNode, branchRect: AgentBr
   return straightPath(sourceX, agentCenter.y, targetX, targetY);
 }
 
+function rightMiddleToLeftMiddlePath(sourceRect: AgentBranchRect, targetRect: AgentBranchRect): string {
+  const sx = sourceRect.x + sourceRect.width;
+  const sy = sourceRect.y + sourceRect.height / 2;
+  const tx = targetRect.x;
+  const ty = targetRect.y + targetRect.height / 2;
+  if (tx - sx >= 24) {
+    const handle = Math.min(48, (tx - sx) * 0.42);
+    return `M${sx},${sy} C${sx + handle},${sy} ${tx - handle},${ty} ${tx},${ty}`;
+  }
+  const verticalGap = Math.abs(ty - sy);
+  const exitX = Math.max(sx + 56, targetRect.x + targetRect.width + 48);
+  const entryX = tx - Math.min(120, Math.max(48, Math.abs(sx - tx) * 0.28 + verticalGap * 0.12));
+  const midX = (exitX + entryX) / 2;
+  const midY = sy + (ty - sy) * 0.5;
+  return [
+    `M${sx},${sy}`,
+    `C${exitX},${sy} ${exitX},${midY} ${midX},${midY}`,
+    `C${entryX},${midY} ${entryX},${ty} ${tx},${ty}`,
+  ].join(" ");
+}
+
+function taskNodeRect(taskNode: AtlasTaskNode): AgentBranchRect {
+  return {
+    x: taskNode.position.x,
+    y: taskNode.position.y,
+    width: NODE_WIDTH,
+    height: CANVAS_TASK_NODE_HEIGHT,
+  };
+}
+
+function rightMiddleAnchor(rect: AgentBranchRect): { x: number; y: number } {
+  return { x: rect.x + rect.width, y: rect.y + rect.height / 2 };
+}
+
+function leftMiddleAnchor(rect: AgentBranchRect): { x: number; y: number } {
+  return { x: rect.x, y: rect.y + rect.height / 2 };
+}
+
+function connectorAnchors(sourceRect: AgentBranchRect, targetRect: AgentBranchRect) {
+  return {
+    source: rightMiddleAnchor(sourceRect),
+    target: leftMiddleAnchor(targetRect),
+  };
+}
+
+function renderConnectorAnchors(
+  key: string,
+  anchors: ReturnType<typeof connectorAnchors>,
+  className = "",
+): ReactNode {
+  return (
+    <g key={key} className={`emap-connector-anchors ${className}`} aria-hidden="true">
+      <circle className="emap-connector-anchor-ring source" cx={anchors.source.x} cy={anchors.source.y} r={5.5} />
+      <circle className="emap-connector-anchor-dot source" cx={anchors.source.x} cy={anchors.source.y} r={2.2} />
+      <circle className="emap-connector-anchor-ring target" cx={anchors.target.x} cy={anchors.target.y} r={5.5} />
+      <circle className="emap-connector-anchor-dot target" cx={anchors.target.x} cy={anchors.target.y} r={2.2} />
+    </g>
+  );
+}
+
 function taskBranchConnectorPath(taskNode: AtlasTaskNode, branchRect: AgentBranchRect): string {
-  const sourceX = taskNode.position.x + NODE_WIDTH;
-  const sourceY = taskNode.position.y + CANVAS_TASK_NODE_HEIGHT / 2;
-  const targetY = clampNumber(sourceY, branchRect.y, branchRect.y + branchRect.height);
-  return straightPath(sourceX, sourceY, branchRect.x, targetY);
+  return rightMiddleToLeftMiddlePath(taskNodeRect(taskNode), branchRect);
 }
 
 function taskChildBranchConnectorPath(menuRect: AgentBranchRect, childRect: AgentBranchRect): string {
-  const sourceX = menuRect.x + menuRect.width;
-  const sourceY = menuRect.y + menuRect.height / 2;
-  const targetY = clampNumber(sourceY, childRect.y, childRect.y + childRect.height);
-  return straightPath(sourceX, sourceY, childRect.x, targetY);
+  return rightMiddleToLeftMiddlePath(menuRect, childRect);
 }
 
 function taskPortLabel(port: TeamTaskInputPort | TeamTaskOutputPort): string {
@@ -1300,8 +1354,14 @@ export function ExecutionMap({
   const taskBranchPath = focusedTaskNode && taskBranchNode
     ? taskBranchConnectorPath(focusedTaskNode, taskBranchNode)
     : null;
+  const taskBranchAnchors = focusedTaskNode && taskBranchNode
+    ? connectorAnchors(taskNodeRect(focusedTaskNode), taskBranchNode)
+    : null;
   const taskChildBranchPath = taskBranchNode && taskChildBranchNode
     ? taskChildBranchConnectorPath(taskBranchNode, taskChildBranchNode)
+    : null;
+  const taskChildBranchAnchors = taskBranchNode && taskChildBranchNode
+    ? connectorAnchors(taskBranchNode, taskChildBranchNode)
     : null;
   const maximizedBranchPanel = maximizedBranch === "agent" && agentBranchPanel
     ? agentBranchPanel
@@ -1864,6 +1924,7 @@ export function ExecutionMap({
               strokeWidth={2}
             />
           )}
+          {taskBranchAnchors && renderConnectorAnchors("task-leader-branch-anchors", taskBranchAnchors, "emap-connector-anchors-task-branch")}
           {taskChildBranchPath && (
             <path
               key="task-child-branch"
@@ -1873,14 +1934,21 @@ export function ExecutionMap({
               strokeWidth={2}
             />
           )}
+          {taskChildBranchAnchors && renderConnectorAnchors("task-child-branch-anchors", taskChildBranchAnchors, "emap-connector-anchors-task-child-branch")}
           {taskChildBranchPanelsLayout.map((p) => (
-            <path
-              key={`task-child-panel-${p.id}`}
-              d={taskChildBranchConnectorPath(p.sourceRect, p.rect)}
-              className="emap-link emap-link-task-branch emap-link-task-child-branch"
-              fill="none"
-              strokeWidth={2}
-            />
+            <g key={`task-child-panel-${p.id}`}>
+              <path
+                d={taskChildBranchConnectorPath(p.sourceRect, p.rect)}
+                className="emap-link emap-link-task-branch emap-link-task-child-branch"
+                fill="none"
+                strokeWidth={2}
+              />
+              {renderConnectorAnchors(
+                `task-child-panel-${p.id}-anchors`,
+                connectorAnchors(p.sourceRect, p.rect),
+                "emap-connector-anchors-task-child-branch",
+              )}
+            </g>
           ))}
         </svg>
 

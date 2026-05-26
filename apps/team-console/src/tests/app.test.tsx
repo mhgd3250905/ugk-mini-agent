@@ -711,37 +711,33 @@ describe("App", () => {
       expect(workerProcessNode).toBeTruthy();
     });
 
-    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
-
-    const workerFileNode = await waitFor(() => {
-      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+    const workerFileRow = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-row[data-file-kind="worker"]') as HTMLElement | null;
       expect(node).toBeTruthy();
       return node!;
     });
-    const checkerFileNode = container.querySelector('.emap-observer-file-node[data-file-kind="checker"]') as HTMLElement | null;
-    const resultFileNode = container.querySelector('.emap-observer-file-node[data-file-kind="result"]') as HTMLElement | null;
-    expect(checkerFileNode).toBeTruthy();
-    expect(resultFileNode).toBeTruthy();
-    expect(within(workerFileNode).getByText("worker-output-001.md")).toBeInTheDocument();
-    expect(within(checkerFileNode!).getByText("checker-verdict-001.json")).toBeInTheDocument();
-    expect(within(resultFileNode!).getByText("accepted-result.md")).toBeInTheDocument();
+    const checkerFileRow = container.querySelector('.emap-observer-file-row[data-file-kind="checker"]') as HTMLElement | null;
+    const resultFileRow = container.querySelector('.emap-observer-file-row[data-file-kind="result"]') as HTMLElement | null;
+    expect(checkerFileRow).toBeTruthy();
+    expect(resultFileRow).toBeTruthy();
+    expect(within(workerFileRow).getByText("worker-output-001.md")).toBeInTheDocument();
+    expect(within(checkerFileRow!).getByText("checker-verdict-001.json")).toBeInTheDocument();
+    expect(within(resultFileRow!).getByText("accepted-result.md")).toBeInTheDocument();
 
-    const fileShells = allShells().filter((shell) => shell.querySelector(".emap-observer-file-node")) as HTMLElement[];
-    expect(fileShells.length).toBeGreaterThanOrEqual(3);
+    // All file rows live inside the merged observer panel (not independent shells)
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    expect(observerShell).toBeTruthy();
+    const fileRows = observerShell!.querySelectorAll('.emap-observer-file-row');
+    expect(fileRows.length).toBeGreaterThanOrEqual(3);
 
-    // All top-level observer panels must stack vertically: same x, different y.
-    const topLevelShells = allShells().filter((shell) => !shell.querySelector(".emap-observer-file-detail-node")) as HTMLElement[];
-    expect(topLevelShells.some((shell) => shell.querySelector(".emap-observer-status-node"))).toBe(false);
-    const xs = topLevelShells.map((s) => Number.parseFloat(s.style.left));
-    const ys = topLevelShells.map((s) => Number.parseFloat(s.style.top));
-    const uniqueXs = new Set(xs);
-    expect(uniqueXs.size).toBe(1);
-    const uniqueYs = new Set(ys);
-    expect(uniqueYs.size).toBe(topLevelShells.length);
+    // No independent file-node or process shells exist
+    expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id^="file-"]')).toBeNull();
+    expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id="process-worker"]')).toBeNull();
+    expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id="process-checker"]')).toBeNull();
 
     expect(container.querySelector(".emap-observer-file-detail-node")).toBeNull();
 
-    fireEvent.click(checkerFileNode!);
+    fireEvent.click(checkerFileRow!);
     const detailNode = await waitFor(() => {
       const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
       expect(detail).toBeTruthy();
@@ -752,14 +748,12 @@ describe("App", () => {
     const detailCloseButton = detailNode.querySelector(".emap-observer-node-close") as HTMLElement | null;
     expect(detailCloseButton).toBeTruthy();
 
-    // File detail x must be greater than its source file node x
-    const checkerShell = allShells().find((s) => s.querySelector('.emap-observer-file-node[data-file-kind="checker"]')) as HTMLElement | undefined;
-    const detailShell = allShells().find((s) => s.querySelector(".emap-observer-file-detail-node")) as HTMLElement | undefined;
-    expect(checkerShell).toBeTruthy();
+    // File detail x must be greater than observer panel x (source is "run-observer")
+    const detailShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="file-detail-"]') as HTMLElement | undefined;
     expect(detailShell).toBeTruthy();
-    expect(Number.parseFloat(detailShell!.style.left)).toBeGreaterThan(Number.parseFloat(checkerShell!.style.left));
+    expect(Number.parseFloat(detailShell!.style.left)).toBeGreaterThan(Number.parseFloat(observerShell!.style.left));
 
-    fireEvent.click(resultFileNode!);
+    fireEvent.click(resultFileRow!);
     const updatedDetail = await waitFor(() => {
       const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
       expect(detail).toBeTruthy();
@@ -769,7 +763,7 @@ describe("App", () => {
     expect(updatedDetail.querySelector('pre[data-file-format="json"]')).toBeNull();
   });
 
-  it("renders independent Worker and Checker process nodes in the Task run observer", async () => {
+  it("renders Worker and Checker process nodes inside the merged run observer panel", async () => {
     const { container } = render(<App />);
 
     const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
@@ -790,16 +784,15 @@ describe("App", () => {
     const checkerProcessNode = container.querySelector('.emap-observer-process-node[data-process-role="checker"]') as HTMLElement | null;
     expect(checkerProcessNode).toBeTruthy();
 
-    const workerProcessShell = workerProcessNode.closest(".emap-task-child-branch-shell") as HTMLElement | null;
-    const checkerProcessShell = checkerProcessNode!.closest(".emap-task-child-branch-shell") as HTMLElement | null;
-    expect(workerProcessShell).toBeTruthy();
-    expect(checkerProcessShell).toBeTruthy();
-    expect(workerProcessShell).not.toBe(checkerProcessShell);
+    // Both process nodes live inside the merged observer panel
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    expect(observerShell).toBeTruthy();
+    expect(observerShell!.contains(workerProcessNode)).toBe(true);
+    expect(observerShell!.contains(checkerProcessNode!)).toBe(true);
 
-    expect(workerProcessNode).not.toHaveClass("emap-observer-file-node");
-    expect(checkerProcessNode).not.toHaveClass("emap-observer-file-node");
-    expect(workerProcessNode.closest(".emap-observer-file-node")).toBeNull();
-    expect(checkerProcessNode!.closest(".emap-observer-file-node")).toBeNull();
+    // No independent process shells exist
+    expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id="process-worker"]')).toBeNull();
+    expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id="process-checker"]')).toBeNull();
 
     expect(within(workerProcessNode).getByText("Worker 过程")).toBeInTheDocument();
     expect(within(workerProcessNode).getByText("成功")).toBeInTheDocument();
@@ -924,6 +917,10 @@ describe("App", () => {
     expect(screen.queryByText("无法连接服务器")).toBeNull();
     expect(screen.queryByText("暂无 attempt 文件。运行刚启动时这里会随轮询补齐。")).toBeNull();
     expect(container.querySelector(".emap-observer-empty")).toBeNull();
+    expect(container.querySelector(".emap-observer-file-empty")).toBeNull();
+    expect(container.querySelector('[data-observer-section="worker-files"]')).toBeEmptyDOMElement();
+    expect(container.querySelector('[data-observer-section="checker-files"]')).toBeEmptyDOMElement();
+    expect(container.querySelector('[data-observer-section="result-files"]')).toBeEmptyDOMElement();
   });
 
   it("does not render volatile refresh metadata in an active Task run observer", async () => {
@@ -1398,16 +1395,16 @@ describe("App", () => {
     expect(workerProcessNode).toHaveTextContent("等待过程数据");
     expect(checkerProcessNode).toHaveTextContent("等待过程数据");
 
-    const workerFileNode = await waitFor(() => {
-      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+    const workerFileRow = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-row[data-file-kind="worker"]') as HTMLElement | null;
       expect(node).toBeTruthy();
       return node!;
     });
-    expect(within(workerFileNode).getByText("worker-output-legacy.md")).toBeInTheDocument();
-    expect(container.querySelector('.emap-observer-file-node[data-file-kind="checker"]')).toHaveTextContent("checker-verdict-legacy.json");
-    expect(container.querySelector('.emap-observer-file-node[data-file-kind="result"]')).toHaveTextContent("accepted-result-legacy.md");
+    expect(within(workerFileRow).getByText("worker-output-legacy.md")).toBeInTheDocument();
+    expect(container.querySelector('.emap-observer-file-row[data-file-kind="checker"]')).toHaveTextContent("checker-verdict-legacy.json");
+    expect(container.querySelector('.emap-observer-file-row[data-file-kind="result"]')).toHaveTextContent("accepted-result-legacy.md");
 
-    fireEvent.click(workerFileNode);
+    fireEvent.click(workerFileRow);
     const detailNode = await waitFor(() => {
       const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
       expect(detail).toBeTruthy();
@@ -1433,12 +1430,12 @@ describe("App", () => {
       expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
-    const workerFileNode = await waitFor(() => {
-      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+    const workerFileRow = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-row[data-file-kind="worker"]') as HTMLElement | null;
       expect(node).toBeTruthy();
       return node!;
     });
-    fireEvent.click(workerFileNode);
+    fireEvent.click(workerFileRow);
 
     const detailNode = await waitFor(() => {
       const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
@@ -1475,32 +1472,32 @@ describe("App", () => {
     expect(runSummary).toHaveTextContent("已通过");
     expect(container.querySelector(".emap-observer-status-node")).toBeNull();
 
-    // File nodes should NOT show checker reason / verdict summary text
-    const checkerFileNode = container.querySelector('.emap-observer-file-node[data-file-kind="checker"]') as HTMLElement | null;
-    expect(checkerFileNode).toBeTruthy();
-    expect(checkerFileNode!.textContent).not.toContain("Mock checker accepted the worker output.");
-    expect(checkerFileNode!.querySelector(".emap-observer-file-summary")).toBeNull();
-    expect(checkerFileNode!.querySelector(".emap-observer-file-runtime")).toBeNull();
+    // File rows should NOT show checker reason / verdict summary text
+    const checkerFileRow = container.querySelector('.emap-observer-file-row[data-file-kind="checker"]') as HTMLElement | null;
+    expect(checkerFileRow).toBeTruthy();
+    expect(checkerFileRow!.textContent).not.toContain("Mock checker accepted the worker output.");
+    expect(checkerFileRow!.querySelector(".emap-observer-file-summary")).toBeNull();
+    expect(checkerFileRow!.querySelector(".emap-observer-file-runtime")).toBeNull();
 
-    // File nodes should show agent name resolved from agentsById
-    const workerFileNode = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
-    expect(workerFileNode).toBeTruthy();
-    expect(workerFileNode!.textContent).toContain("搜索 Agent");
+    // File rows should show agent name resolved from agentsById
+    const workerFileRow = container.querySelector('.emap-observer-file-row[data-file-kind="worker"]') as HTMLElement | null;
+    expect(workerFileRow).toBeTruthy();
+    expect(workerFileRow!.textContent).toContain("搜索 Agent");
 
-    const checkerResolvedAgent = checkerFileNode!.textContent ?? "";
+    const checkerResolvedAgent = checkerFileRow!.textContent ?? "";
     expect(checkerResolvedAgent).toContain("主 Agent");
 
     // Result file shows agent role fallback
-    const resultFileNode = container.querySelector('.emap-observer-file-node[data-file-kind="result"]') as HTMLElement | null;
-    expect(resultFileNode).toBeTruthy();
-    expect(resultFileNode!.textContent).toContain("accepted-result.md");
+    const resultFileRow = container.querySelector('.emap-observer-file-row[data-file-kind="result"]') as HTMLElement | null;
+    expect(resultFileRow).toBeTruthy();
+    expect(resultFileRow!.textContent).toContain("accepted-result.md");
 
-    // File nodes should still show file name and path
-    expect(within(workerFileNode!).getByText("worker-output-001.md")).toBeInTheDocument();
-    expect(workerFileNode!.querySelector(".emap-observer-file-path")).toBeTruthy();
+    // File rows should still show file name and path
+    expect(within(workerFileRow!).getByText("worker-output-001.md")).toBeInTheDocument();
+    expect(workerFileRow!.querySelector(".emap-observer-file-row-path")).toBeTruthy();
   });
 
-  it("renders file detail with resize handle for observer file nodes", async () => {
+  it("renders file detail with resize handle for observer file rows", async () => {
     const { container } = render(<App />);
 
     const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
@@ -1517,12 +1514,12 @@ describe("App", () => {
       expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
-    const checkerFileNode = await waitFor(() => {
-      const node = container.querySelector('.emap-observer-file-node[data-file-kind="checker"]') as HTMLElement | null;
+    const checkerFileRow = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-row[data-file-kind="checker"]') as HTMLElement | null;
       expect(node).toBeTruthy();
       return node!;
     });
-    fireEvent.click(checkerFileNode);
+    fireEvent.click(checkerFileRow);
 
     const detailNode = await waitFor(() => {
       const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
@@ -3023,6 +3020,36 @@ describe("App", () => {
     expect(mapCss).toMatch(/\.execution-map-container\s*{[^}]*min-width:\s*0;[^}]*max-width:\s*100%;/s);
   });
 
+  it("keeps the merged run observer outer panel auto-height while process sections use themed internal scrollbars", () => {
+    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const panelRule = mapCss.match(/\.emap-run-observer-panel\s*{[^}]*}/)?.[0] ?? "";
+    const stageRule = mapCss.match(/\.emap-run-observer-stage\s*{[^}]*}/)?.[0] ?? "";
+    const processTopRule = mapCss.match(/\.emap-run-observer-panel\s+\.emap-observer-process-top\s*{[^}]*}/)?.[0] ?? "";
+    const scrollbarRule = mapCss.match(/\.emap-run-observer-panel\s+\.emap-observer-process-top::-webkit-scrollbar\s*{[^}]*}/)?.[0] ?? "";
+    const thumbRule = mapCss.match(/\.emap-run-observer-panel\s+\.emap-observer-process-top::-webkit-scrollbar-thumb\s*{[^}]*}/)?.[0] ?? "";
+    const checkerThumbRule = mapCss.match(/\.emap-run-observer-stage\.checker\s+\.emap-observer-process-top::-webkit-scrollbar-thumb\s*{[^}]*}/)?.[0] ?? "";
+    const connectorAnchorRule = mapCss.match(/\.emap-connector-anchors\s*{[^}]*}/)?.[0] ?? "";
+    const anchorRingRule = mapCss.match(/\.emap-connector-anchor-ring\s*{[^}]*}/)?.[0] ?? "";
+    const anchorDotRule = mapCss.match(/\.emap-connector-anchor-dot\s*{[^}]*}/)?.[0] ?? "";
+    const targetRingRule = mapCss.match(/\.emap-connector-anchor-ring\.target\s*{[^}]*}/)?.[0] ?? "";
+
+    expect(panelRule).toContain("overflow: visible");
+    expect(panelRule).not.toContain("overflow: auto");
+    expect(stageRule).toContain("height: 204px");
+    expect(processTopRule).toContain("overflow-y: auto");
+    expect(processTopRule).toContain("scrollbar-width: thin");
+    expect(processTopRule).toContain("scrollbar-color");
+    expect(scrollbarRule).toContain("width: 8px");
+    expect(scrollbarRule).not.toContain("display: none");
+    expect(thumbRule).toContain("rgba(121, 216, 208");
+    expect(checkerThumbRule).toContain("rgba(255, 206, 118");
+    expect(connectorAnchorRule).toContain("pointer-events: none");
+    expect(anchorRingRule).toContain("stroke-width: 1.6");
+    expect(anchorRingRule).toContain("rgba(255, 190, 96");
+    expect(anchorDotRule).toContain("rgba(255, 214, 128");
+    expect(targetRingRule).toContain("rgba(121, 216, 208");
+  });
+
   it("uses a warm accent for busy Agent cards", () => {
     const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
     const busyRule = mapCss.match(/\.emap-agent-node\[data-agent-run-state="busy"\]\s*{[^}]*}/)?.[0];
@@ -3204,7 +3231,7 @@ describe("App", () => {
     expect(connectorPaths.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("drags file node without triggering detail expand when drag exceeds threshold", async () => {
+  it("drags merged observer panel without accidentally toggling file detail", async () => {
     const { container } = render(<App />);
 
     const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
@@ -3221,22 +3248,17 @@ describe("App", () => {
       expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
-    const workerFileNode = await waitFor(() => {
-      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
-      expect(node).toBeTruthy();
-      return node!;
-    });
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    expect(observerShell).toBeTruthy();
+    const initialLeft = Number.parseFloat(observerShell!.style.left);
 
-    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
-    const workerShell = allShells().find((s) => s.querySelector('.emap-observer-file-node[data-file-kind="worker"]')) as HTMLElement | undefined;
-    expect(workerShell).toBeTruthy();
-    const initialLeft = Number.parseFloat(workerShell!.style.left);
+    // Drag the merged observer panel
+    firePointer(observerShell!, "pointerdown", { pointerId: 72, clientX: 500, clientY: 300 });
+    firePointer(observerShell!, "pointermove", { pointerId: 72, clientX: 560, clientY: 340 });
+    firePointer(observerShell!, "pointerup", { pointerId: 72, clientX: 560, clientY: 340, buttons: 0 });
 
-    firePointer(workerFileNode, "pointerdown", { pointerId: 72, clientX: 500, clientY: 300 });
-    firePointer(workerFileNode, "pointermove", { pointerId: 72, clientX: 560, clientY: 340 });
-    firePointer(workerFileNode, "pointerup", { pointerId: 72, clientX: 560, clientY: 340, buttons: 0 });
-
-    expect(Number.parseFloat(workerShell!.style.left)).toBeCloseTo(initialLeft + 60, 4);
+    expect(Number.parseFloat(observerShell!.style.left)).toBeCloseTo(initialLeft + 60, 4);
+    // No file detail should have opened from the drag
     expect(container.querySelector(".emap-observer-file-detail-node")).toBeNull();
   });
 
@@ -3257,20 +3279,19 @@ describe("App", () => {
       expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
-    const workerFileNode = await waitFor(() => {
-      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+    const workerFileRow = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-row[data-file-kind="worker"]') as HTMLElement | null;
       expect(node).toBeTruthy();
       return node!;
     });
-    fireEvent.click(workerFileNode);
+    fireEvent.click(workerFileRow);
 
     await waitFor(() => {
       const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
       expect(detail).toBeTruthy();
     });
 
-    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
-    const detailShell = allShells().find((s) => s.querySelector(".emap-observer-file-detail-node")) as HTMLElement | undefined;
+    const detailShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="file-detail-"]') as HTMLElement | null;
     expect(detailShell).toBeTruthy();
 
     const initialLeft = Number.parseFloat(detailShell!.style.left);
@@ -3311,12 +3332,12 @@ describe("App", () => {
       expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
-    const resultFileNode = await waitFor(() => {
-      const node = container.querySelector('.emap-observer-file-node[data-file-kind="result"]') as HTMLElement | null;
+    const resultFileRow = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-row[data-file-kind="result"]') as HTMLElement | null;
       expect(node).toBeTruthy();
       return node!;
     });
-    fireEvent.click(resultFileNode);
+    fireEvent.click(resultFileRow);
 
     const detailNode = await waitFor(() => {
       const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
@@ -3349,12 +3370,12 @@ describe("App", () => {
       expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
-    const workerFileNode = await waitFor(() => {
-      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+    const workerFileRow = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-row[data-file-kind="worker"]') as HTMLElement | null;
       expect(node).toBeTruthy();
       return node!;
     });
-    fireEvent.click(workerFileNode);
+    fireEvent.click(workerFileRow);
 
     const detailNode = await waitFor(() => {
       const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
@@ -3389,16 +3410,16 @@ describe("App", () => {
       expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
-    const workerFileNode = await waitFor(() => {
-      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+    const workerFileRow = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-row[data-file-kind="worker"]') as HTMLElement | null;
       expect(node).toBeTruthy();
       return node!;
     });
 
     // pointerdown + pointerup at same position (no move) should NOT suppress click
-    firePointer(workerFileNode, "pointerdown", { pointerId: 80, clientX: 500, clientY: 300 });
-    firePointer(workerFileNode, "pointerup", { pointerId: 80, clientX: 500, clientY: 300, buttons: 0 });
-    fireEvent.click(workerFileNode);
+    firePointer(workerFileRow, "pointerdown", { pointerId: 80, clientX: 500, clientY: 300 });
+    firePointer(workerFileRow, "pointerup", { pointerId: 80, clientX: 500, clientY: 300, buttons: 0 });
+    fireEvent.click(workerFileRow);
 
     await waitFor(() => {
       expect(container.querySelector(".emap-observer-file-detail-node")).toBeTruthy();
@@ -3422,24 +3443,24 @@ describe("App", () => {
       expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
-    const workerFileNode = await waitFor(() => {
-      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+    const workerFileRow = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-row[data-file-kind="worker"]') as HTMLElement | null;
       expect(node).toBeTruthy();
       return node!;
     });
 
     // pointerdown + pointermove exceeding threshold + pointerup + click
-    firePointer(workerFileNode, "pointerdown", { pointerId: 81, clientX: 500, clientY: 300 });
-    firePointer(workerFileNode, "pointermove", { pointerId: 81, clientX: 560, clientY: 340 });
-    firePointer(workerFileNode, "pointerup", { pointerId: 81, clientX: 560, clientY: 340, buttons: 0 });
+    firePointer(workerFileRow, "pointerdown", { pointerId: 81, clientX: 500, clientY: 300 });
+    firePointer(workerFileRow, "pointermove", { pointerId: 81, clientX: 560, clientY: 340 });
+    firePointer(workerFileRow, "pointerup", { pointerId: 81, clientX: 560, clientY: 340, buttons: 0 });
     // The drag suppress mechanism should swallow this click
-    fireEvent.click(workerFileNode);
+    fireEvent.click(workerFileRow);
 
     // Detail must NOT appear because click was suppressed after drag
     expect(container.querySelector(".emap-observer-file-detail-node")).toBeNull();
   });
 
-  it("detail connector follows file node after drag", async () => {
+  it("detail connector follows merged observer panel after drag", async () => {
     const { container } = render(<App />);
 
     const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
@@ -3456,41 +3477,40 @@ describe("App", () => {
       expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
-    const workerFileNode = await waitFor(() => {
-      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+    const workerFileRow = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-row[data-file-kind="worker"]') as HTMLElement | null;
       expect(node).toBeTruthy();
       return node!;
     });
     // Open detail first
-    fireEvent.click(workerFileNode);
+    fireEvent.click(workerFileRow);
 
     await waitFor(() => {
       expect(container.querySelector(".emap-observer-file-detail-node")).toBeTruthy();
     });
 
-    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
-    const workerShell = allShells().find((s) => s.querySelector('.emap-observer-file-node[data-file-kind="worker"]')) as HTMLElement | undefined;
-    expect(workerShell).toBeTruthy();
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    expect(observerShell).toBeTruthy();
 
-    // Drag the file node to a new position
-    const initialLeft = Number.parseFloat(workerShell!.style.left);
-    firePointer(workerFileNode, "pointerdown", { pointerId: 82, clientX: 500, clientY: 300 });
-    firePointer(workerFileNode, "pointermove", { pointerId: 82, clientX: 580, clientY: 360 });
-    firePointer(workerFileNode, "pointerup", { pointerId: 82, clientX: 580, clientY: 360, buttons: 0 });
+    // Drag the merged observer panel to a new position
+    const initialLeft = Number.parseFloat(observerShell!.style.left);
+    firePointer(observerShell!, "pointerdown", { pointerId: 82, clientX: 500, clientY: 300 });
+    firePointer(observerShell!, "pointermove", { pointerId: 82, clientX: 580, clientY: 360 });
+    firePointer(observerShell!, "pointerup", { pointerId: 82, clientX: 580, clientY: 360, buttons: 0 });
 
-    const newLeft = Number.parseFloat(workerShell!.style.left);
+    const newLeft = Number.parseFloat(observerShell!.style.left);
     expect(newLeft).toBeCloseTo(initialLeft + 80, 4);
 
-    // Find the detail panel connector and verify its source matches the file node's new position
-    const detailShell = allShells().find((s) => s.querySelector(".emap-observer-file-detail-node")) as HTMLElement | undefined;
+    // Find the detail panel connector and verify its source matches the observer panel's new position
+    const detailShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="file-detail-"]') as HTMLElement | null;
     expect(detailShell).toBeTruthy();
 
-    // After drag, the detail connector's source x should reflect the file node's new position
+    // After drag, the detail connector's source x should reflect the observer panel's new position
     const allConnectors = container.querySelectorAll<SVGPathElement>(".emap-link-task-child-branch");
     expect(allConnectors.length).toBeGreaterThanOrEqual(2);
-    // The detail panel's connector source x should be file node's new right edge (newLeft + width)
-    const workerWidth = Number.parseFloat(workerShell!.style.width);
-    const expectedSourceX = newLeft + workerWidth;
+    // The detail panel's connector source x should be observer's new right edge (newLeft + width)
+    const observerWidth = Number.parseFloat(observerShell!.style.width);
+    const expectedSourceX = newLeft + observerWidth;
     // Check that at least one connector path starts near the expected source x
     let foundMatchingConnector = false;
     allConnectors.forEach((path) => {
@@ -3520,12 +3540,12 @@ describe("App", () => {
       expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
-    const checkerFileNode = await waitFor(() => {
-      const node = container.querySelector('.emap-observer-file-node[data-file-kind="checker"]') as HTMLElement | null;
+    const checkerFileRow = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-row[data-file-kind="checker"]') as HTMLElement | null;
       expect(node).toBeTruthy();
       return node!;
     });
-    fireEvent.click(checkerFileNode);
+    fireEvent.click(checkerFileRow);
 
     const detailNode = await waitFor(() => {
       const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
@@ -3539,6 +3559,305 @@ describe("App", () => {
       expect(computedStyle.maxHeight).not.toBe("360px");
       expect(computedStyle.maxHeight).not.toBe("240px");
     }
+  });
+
+  // --- Merged run observer panel ---
+
+  async function setupMergedObserverOpen(container: HTMLElement) {
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
+
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    await waitFor(() => {
+      const observerPanel = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]');
+      expect(observerPanel).toBeTruthy();
+    });
+
+    return { branch: branch! };
+  }
+
+  it("renders Task run observer as one merged result panel", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
+
+    const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+    fireEvent.click(runSummary);
+
+    // There must be exactly one merged run-observer shell
+    await waitFor(() => {
+      const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]');
+      expect(observerShell).toBeTruthy();
+    });
+
+    // No independent process shells
+    expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id="process-worker"]')).toBeNull();
+    expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id="process-checker"]')).toBeNull();
+
+    // No independent file shells (unless file detail is open)
+    const fileShells = Array.from(container.querySelectorAll('.emap-task-child-branch-shell[data-panel-id^="file-"]'))
+      .filter((s) => !s.querySelector(".emap-observer-file-detail-node"));
+    expect(fileShells).toHaveLength(0);
+
+    // Menu must NOT contain process or file rows
+    expect(branch!.querySelector(".emap-observer-process-node")).toBeNull();
+    expect(branch!.querySelector(".emap-observer-file-row")).toBeNull();
+  });
+
+  it("orders merged observer sections from worker to checker to result", async () => {
+    const { container } = render(<App />);
+    await setupMergedObserverOpen(container);
+
+    const observerPanel = container.querySelector('.emap-run-observer-panel') as HTMLElement | null;
+    expect(observerPanel).toBeTruthy();
+    expect(observerPanel!.querySelector(".emap-run-observer-head")).toHaveTextContent("运行观察");
+
+    const sections = Array.from(observerPanel!.querySelectorAll("[data-observer-section]"));
+    const sectionIds = sections.map((s) => s.getAttribute("data-observer-section"));
+
+    expect(sectionIds).toEqual([
+      "worker-process",
+      "worker-files",
+      "checker-process",
+      "checker-files",
+      "result-files",
+    ]);
+
+    // Worker process should contain worker process node
+    const workerProcessSection = sections.find((s) => s.getAttribute("data-observer-section") === "worker-process");
+    expect(workerProcessSection).toBeTruthy();
+    expect(workerProcessSection!.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
+
+    // Checker process should contain checker process node
+    const checkerProcessSection = sections.find((s) => s.getAttribute("data-observer-section") === "checker-process");
+    expect(checkerProcessSection).toBeTruthy();
+    expect(checkerProcessSection!.querySelector('.emap-observer-process-node[data-process-role="checker"]')).toBeTruthy();
+
+    // Worker files section should contain worker file rows
+    const workerFilesSection = sections.find((s) => s.getAttribute("data-observer-section") === "worker-files");
+    expect(workerFilesSection).toBeTruthy();
+    expect(workerFilesSection!.querySelector('.emap-observer-file-row[data-file-kind="worker"]')).toBeTruthy();
+
+    // Checker files section should contain checker file rows
+    const checkerFilesSection = sections.find((s) => s.getAttribute("data-observer-section") === "checker-files");
+    expect(checkerFilesSection).toBeTruthy();
+    expect(checkerFilesSection!.querySelector('.emap-observer-file-row[data-file-kind="checker"]')).toBeTruthy();
+
+    // Result files section should contain result file rows
+    const resultFilesSection = sections.find((s) => s.getAttribute("data-observer-section") === "result-files");
+    expect(resultFilesSection).toBeTruthy();
+    expect(resultFilesSection!.querySelector('.emap-observer-file-row[data-file-kind="result"]')).toBeTruthy();
+  });
+
+  it("opens file detail from merged observer file rows", async () => {
+    const { container } = render(<App />);
+    await setupMergedObserverOpen(container);
+
+    // Click a worker file row inside the merged observer
+    const workerFileRow = await waitFor(() => {
+      const row = container.querySelector('.emap-observer-file-row[data-file-kind="worker"]') as HTMLElement | null;
+      expect(row).toBeTruthy();
+      return row!;
+    });
+
+    expect(container.querySelector(".emap-observer-file-detail-node")).toBeNull();
+    fireEvent.click(workerFileRow);
+
+    const detailNode = await waitFor(() => {
+      const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
+      expect(detail).toBeTruthy();
+      return detail!;
+    });
+
+    // Detail shell must exist with a file-detail panel id
+    const detailShell = detailNode.closest('.emap-task-child-branch-shell[data-panel-id^="file-detail-"]') as HTMLElement | null;
+    expect(detailShell).toBeTruthy();
+
+    // Clicking the same row again closes detail
+    fireEvent.click(workerFileRow);
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-file-detail-node")).toBeNull();
+    });
+  });
+
+  it("keeps file detail attached when merged observer panel moves", async () => {
+    const { container } = render(<App />);
+    await setupMergedObserverOpen(container);
+
+    // Open file detail
+    const workerFileRow = await waitFor(() => {
+      const row = container.querySelector('.emap-observer-file-row[data-file-kind="worker"]') as HTMLElement | null;
+      expect(row).toBeTruthy();
+      return row!;
+    });
+    fireEvent.click(workerFileRow);
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-file-detail-node")).toBeTruthy();
+    });
+
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    expect(observerShell).toBeTruthy();
+    const detailShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="file-detail-"]') as HTMLElement | null;
+    expect(detailShell).toBeTruthy();
+
+    const observerLeftBefore = Number.parseFloat(observerShell!.style.left);
+    const observerTopBefore = Number.parseFloat(observerShell!.style.top);
+    const detailLeftBefore = Number.parseFloat(detailShell!.style.left);
+    const detailTopBefore = Number.parseFloat(detailShell!.style.top);
+
+    // Drag merged observer panel
+    firePointer(observerShell!, "pointerdown", { pointerId: 80, clientX: 600, clientY: 300 });
+    firePointer(observerShell!, "pointermove", { pointerId: 80, clientX: 670, clientY: 360 });
+    firePointer(observerShell!, "pointerup", { pointerId: 80, clientX: 670, clientY: 360, buttons: 0 });
+
+    const dx = 70;
+    const dy = 60;
+
+    // Observer moved
+    expect(Number.parseFloat(observerShell!.style.left)).toBeCloseTo(observerLeftBefore + dx, 4);
+    expect(Number.parseFloat(observerShell!.style.top)).toBeCloseTo(observerTopBefore + dy, 4);
+
+    // Detail also moved by same delta
+    expect(Number.parseFloat(detailShell!.style.left)).toBeCloseTo(detailLeftBefore + dx, 4);
+    expect(Number.parseFloat(detailShell!.style.top)).toBeCloseTo(detailTopBefore + dy, 4);
+  });
+
+  it("uses right-middle to left-middle connector anchors for task child panels", async () => {
+    const { container } = render(<App />);
+    await setupMergedObserverOpen(container);
+
+    const connectorPaths = container.querySelectorAll<SVGPathElement>(".emap-link-task-child-branch");
+    expect(connectorPaths.length).toBeGreaterThanOrEqual(1);
+
+    const menuShell = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    expect(menuShell).toBeTruthy();
+    expect(observerShell).toBeTruthy();
+
+    // Menu width is "max-content" in inline style but falls back to 280 in the layout logic
+    const menuLeft = Number.parseFloat(menuShell!.style.left);
+    const menuTop = Number.parseFloat(menuShell!.style.top);
+    const observerLeft = Number.parseFloat(observerShell!.style.left);
+    const observerTop = Number.parseFloat(observerShell!.style.top);
+
+    // Parse first connector path's starting M command
+    const firstPath = connectorPaths[0]!;
+    const d = firstPath.getAttribute("d") ?? "";
+    const moveMatch = d.match(/^M([\d.]+),([\d.]+)/);
+    expect(moveMatch).toBeTruthy();
+
+    const pathStartX = Number.parseFloat(moveMatch![1]!);
+    const pathStartY = Number.parseFloat(moveMatch![2]!);
+    const markerGroup = firstPath.parentElement?.querySelector(".emap-connector-anchors-task-child-branch") as SVGGElement | null;
+    expect(markerGroup).toBeTruthy();
+    expect(markerGroup!.querySelectorAll(".emap-connector-anchor-ring")).toHaveLength(2);
+    expect(markerGroup!.querySelectorAll(".emap-connector-anchor-dot")).toHaveLength(2);
+
+    const sourceRing = markerGroup!.querySelector(".emap-connector-anchor-ring.source") as SVGCircleElement | null;
+    const sourceDot = markerGroup!.querySelector(".emap-connector-anchor-dot.source") as SVGCircleElement | null;
+    expect(sourceRing).toBeTruthy();
+    expect(sourceDot).toBeTruthy();
+    expect(Number.parseFloat(sourceRing!.getAttribute("cx") ?? "NaN")).toBeCloseTo(pathStartX, 4);
+    expect(Number.parseFloat(sourceRing!.getAttribute("cy") ?? "NaN")).toBeCloseTo(pathStartY, 4);
+    expect(Number.parseFloat(sourceDot!.getAttribute("cx") ?? "NaN")).toBeCloseTo(pathStartX, 4);
+    expect(Number.parseFloat(sourceDot!.getAttribute("cy") ?? "NaN")).toBeCloseTo(pathStartY, 4);
+    expect(sourceRing!.getAttribute("r")).toBe("5.5");
+    expect(sourceDot!.getAttribute("r")).toBe("2.2");
+
+    // Source x must be to the right of the menu left and to the left of the observer
+    expect(pathStartX).toBeGreaterThan(menuLeft);
+    expect(pathStartX).toBeLessThan(observerLeft);
+    // Source y should be near the menu's vertical center
+    expect(pathStartY).toBeGreaterThan(menuTop - 20);
+
+    // Check that path ends at observer left-middle
+    const lastCoordMatch = d.match(/([\d.]+),([\d.]+)\s*$/);
+    expect(lastCoordMatch).toBeTruthy();
+    const pathEndX = Number.parseFloat(lastCoordMatch![1]!);
+    const pathEndY = Number.parseFloat(lastCoordMatch![2]!);
+    const targetRing = markerGroup!.querySelector(".emap-connector-anchor-ring.target") as SVGCircleElement | null;
+    const targetDot = markerGroup!.querySelector(".emap-connector-anchor-dot.target") as SVGCircleElement | null;
+    expect(targetRing).toBeTruthy();
+    expect(targetDot).toBeTruthy();
+    expect(Number.parseFloat(targetRing!.getAttribute("cx") ?? "NaN")).toBeCloseTo(pathEndX, 4);
+    expect(Number.parseFloat(targetRing!.getAttribute("cy") ?? "NaN")).toBeCloseTo(pathEndY, 4);
+    expect(Number.parseFloat(targetDot!.getAttribute("cx") ?? "NaN")).toBeCloseTo(pathEndX, 4);
+    expect(Number.parseFloat(targetDot!.getAttribute("cy") ?? "NaN")).toBeCloseTo(pathEndY, 4);
+    expect(targetRing!.getAttribute("r")).toBe("5.5");
+    expect(targetDot!.getAttribute("r")).toBe("2.2");
+
+    // Target should be at observer left edge
+    expect(pathEndX).toBeCloseTo(observerLeft, 0);
+    // Target y should be near observer top (within reasonable range, autoHeight panels don't expose height)
+    expect(pathEndY).toBeGreaterThan(observerTop - 20);
+
+    // Default layout: normal right-side child must NOT use reverse detour (no L command)
+    expect(d).not.toContain(" L");
+    // Path max x must not overshoot past the observer left edge by more than 8px
+    const allCoords = Array.from(d.matchAll(/([\d.]+),([\d.]+)/g));
+    const allXs = allCoords.map((m) => Number.parseFloat(m[1]!));
+    const maxX = Math.max(...allXs);
+    expect(maxX).toBeLessThanOrEqual(observerLeft + 8);
+  });
+
+  it("routes reverse task child connector as a smooth right-exit S curve", async () => {
+    const { container } = render(<App />);
+    await setupMergedObserverOpen(container);
+
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    expect(observerShell).toBeTruthy();
+
+    // Drag observer far to the left to create a reverse angle
+    const initialLeft = Number.parseFloat(observerShell!.style.left);
+    const menuShell = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
+    const menuLeft = Number.parseFloat(menuShell!.style.left);
+
+    // Move observer to the left of the menu to create reverse angle
+    const dx = -initialLeft + menuLeft - 50;
+    firePointer(observerShell!, "pointerdown", { pointerId: 81, clientX: 600, clientY: 300 });
+    firePointer(observerShell!, "pointermove", { pointerId: 81, clientX: 600 + dx, clientY: 350 });
+    firePointer(observerShell!, "pointerup", { pointerId: 81, clientX: 600 + dx, clientY: 350, buttons: 0 });
+
+    // Get connector path after drag
+    const connectorPaths = container.querySelectorAll<SVGPathElement>(".emap-link-task-child-branch");
+    expect(connectorPaths.length).toBeGreaterThanOrEqual(1);
+
+    const firstPath = connectorPaths[0]!;
+    const d = firstPath.getAttribute("d") ?? "";
+
+    // Parse all x coordinates from the path
+    const allCoords = Array.from(d.matchAll(/([\d.]+),([\d.]+)/g));
+    const allXs = allCoords.map((m) => Number.parseFloat(m[1]!));
+
+    const maxX = Math.max(...allXs);
+    const minX = Math.min(...allXs);
+    const moveMatch = d.match(/^M([\d.]+),([\d.]+)/);
+    expect(moveMatch).toBeTruthy();
+    const sourceRightX = Number.parseFloat(moveMatch![1]!);
+
+    // Reverse layout still exits from the parent right side before curving back.
+    expect(maxX).toBeGreaterThan(sourceRightX + 40);
+    // It then approaches the child from the left side, matching right-middle -> left-middle semantics.
+    expect(minX).toBeLessThan(sourceRightX);
+
+    // Reverse detour must stay a smooth curve, not an angular line segment.
+    expect(d).not.toContain(" L");
+    expect((d.match(/\sC/g) ?? []).length).toBe(2);
+
+    // The path should NOT be a simple straight line (should have > 2 coordinate pairs)
+    expect(allCoords.length).toBeGreaterThan(4);
   });
 
   // --- Task operation tree drag ---
@@ -3555,7 +3874,8 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
+      const observerPanel = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]');
+      expect(observerPanel).toBeTruthy();
     });
 
     return { branch: branch! };
@@ -3565,8 +3885,7 @@ describe("App", () => {
     const { container } = render(<App />);
     await setupObserverOpen(container);
 
-    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
-    const observerShell = allShells().find((s) => s.querySelector('.emap-observer-process-node[data-process-role="worker"]')) as HTMLElement | undefined;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
     expect(observerShell).toBeTruthy();
 
     // Manually drag an observer panel to create a position override.
@@ -3606,8 +3925,7 @@ describe("App", () => {
     const menuShell = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
     expect(menuShell).toBeTruthy();
 
-    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
-    const observerShell = allShells().find((s) => s.querySelector('.emap-observer-process-node[data-process-role="worker"]')) as HTMLElement | undefined;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
     expect(observerShell).toBeTruthy();
 
     const menuLeftBefore = Number.parseFloat(menuShell!.style.left);
@@ -3631,20 +3949,15 @@ describe("App", () => {
     expect(Number.parseFloat(observerShell!.style.top)).toBeCloseTo(observerTopBefore + dy, 4);
   });
 
-  it("moves process panels when dragging Task root", async () => {
+  it("moves merged observer panel when dragging Task root", async () => {
     const { container } = render(<App />);
     await setupObserverOpen(container);
 
-    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
-    const workerShell = allShells().find((s) => s.querySelector('.emap-observer-process-node[data-process-role="worker"]')) as HTMLElement | undefined;
-    const checkerShell = allShells().find((s) => s.querySelector('.emap-observer-process-node[data-process-role="checker"]')) as HTMLElement | undefined;
-    expect(workerShell).toBeTruthy();
-    expect(checkerShell).toBeTruthy();
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    expect(observerShell).toBeTruthy();
 
-    const workerLeftBefore = Number.parseFloat(workerShell!.style.left);
-    const workerTopBefore = Number.parseFloat(workerShell!.style.top);
-    const checkerLeftBefore = Number.parseFloat(checkerShell!.style.left);
-    const checkerTopBefore = Number.parseFloat(checkerShell!.style.top);
+    const observerLeftBefore = Number.parseFloat(observerShell!.style.left);
+    const observerTopBefore = Number.parseFloat(observerShell!.style.top);
 
     const taskNode = container.querySelector(".emap-canvas-task-node") as HTMLElement | null;
     expect(taskNode).toBeTruthy();
@@ -3652,21 +3965,18 @@ describe("App", () => {
     firePointer(taskNode!, "pointermove", { pointerId: 101, clientX: 250, clientY: 235 });
     firePointer(taskNode!, "pointerup", { pointerId: 101, clientX: 250, clientY: 235, buttons: 0 });
 
-    expect(Number.parseFloat(workerShell!.style.left)).toBeCloseTo(workerLeftBefore + 50, 4);
-    expect(Number.parseFloat(workerShell!.style.top)).toBeCloseTo(workerTopBefore + 35, 4);
-    expect(Number.parseFloat(checkerShell!.style.left)).toBeCloseTo(checkerLeftBefore + 50, 4);
-    expect(Number.parseFloat(checkerShell!.style.top)).toBeCloseTo(checkerTopBefore + 35, 4);
+    expect(Number.parseFloat(observerShell!.style.left)).toBeCloseTo(observerLeftBefore + 50, 4);
+    expect(Number.parseFloat(observerShell!.style.top)).toBeCloseTo(observerTopBefore + 35, 4);
   });
 
-  it("moves process panels when dragging menu shell header", async () => {
+  it("moves merged observer panel when dragging menu shell header", async () => {
     const { container } = render(<App />);
     await setupObserverOpen(container);
 
-    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
-    const workerShell = allShells().find((s) => s.querySelector('.emap-observer-process-node[data-process-role="worker"]')) as HTMLElement | undefined;
-    expect(workerShell).toBeTruthy();
-    const workerLeftBefore = Number.parseFloat(workerShell!.style.left);
-    const workerTopBefore = Number.parseFloat(workerShell!.style.top);
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    expect(observerShell).toBeTruthy();
+    const observerLeftBefore = Number.parseFloat(observerShell!.style.left);
+    const observerTopBefore = Number.parseFloat(observerShell!.style.top);
 
     const menuHeader = container.querySelector(".emap-task-branch-shell .task-leader-branch-head") as HTMLElement | null;
     expect(menuHeader).toBeTruthy();
@@ -3674,42 +3984,37 @@ describe("App", () => {
     firePointer(menuHeader!, "pointermove", { pointerId: 102, clientX: 455, clientY: 245 });
     firePointer(menuHeader!, "pointerup", { pointerId: 102, clientX: 455, clientY: 245, buttons: 0 });
 
-    expect(Number.parseFloat(workerShell!.style.left)).toBeCloseTo(workerLeftBefore + 55, 4);
-    expect(Number.parseFloat(workerShell!.style.top)).toBeCloseTo(workerTopBefore + 45, 4);
+    expect(Number.parseFloat(observerShell!.style.left)).toBeCloseTo(observerLeftBefore + 55, 4);
+    expect(Number.parseFloat(observerShell!.style.top)).toBeCloseTo(observerTopBefore + 45, 4);
   });
 
-  it("drags a Worker process node without moving sibling observer panels", async () => {
+  it("drags merged observer panel as a single unit", async () => {
     const { container } = render(<App />);
     await setupObserverOpen(container);
 
-    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
-    const workerShell = allShells().find((s) => s.querySelector('.emap-observer-process-node[data-process-role="worker"]')) as HTMLElement | undefined;
-    const checkerShell = allShells().find((s) => s.querySelector('.emap-observer-process-node[data-process-role="checker"]')) as HTMLElement | undefined;
-    const workerFileShell = allShells().find((s) => s.querySelector('.emap-observer-file-node[data-file-kind="worker"]')) as HTMLElement | undefined;
-    expect(workerShell).toBeTruthy();
-    expect(checkerShell).toBeTruthy();
-    expect(workerFileShell).toBeTruthy();
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    const menuShell = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
+    expect(observerShell).toBeTruthy();
+    expect(menuShell).toBeTruthy();
 
-    const workerLeftBefore = Number.parseFloat(workerShell!.style.left);
-    const workerTopBefore = Number.parseFloat(workerShell!.style.top);
-    const checkerLeftBefore = Number.parseFloat(checkerShell!.style.left);
-    const checkerTopBefore = Number.parseFloat(checkerShell!.style.top);
-    const fileLeftBefore = Number.parseFloat(workerFileShell!.style.left);
-    const fileTopBefore = Number.parseFloat(workerFileShell!.style.top);
+    const observerLeftBefore = Number.parseFloat(observerShell!.style.left);
+    const observerTopBefore = Number.parseFloat(observerShell!.style.top);
+    const menuLeftBefore = Number.parseFloat(menuShell!.style.left);
+    const menuTopBefore = Number.parseFloat(menuShell!.style.top);
 
-    firePointer(workerShell!, "pointerdown", { pointerId: 103, clientX: 940, clientY: 350 });
-    firePointer(workerShell!, "pointermove", { pointerId: 103, clientX: 1010, clientY: 390 });
-    firePointer(workerShell!, "pointerup", { pointerId: 103, clientX: 1010, clientY: 390, buttons: 0 });
+    firePointer(observerShell!, "pointerdown", { pointerId: 103, clientX: 600, clientY: 300 });
+    firePointer(observerShell!, "pointermove", { pointerId: 103, clientX: 670, clientY: 340 });
+    firePointer(observerShell!, "pointerup", { pointerId: 103, clientX: 670, clientY: 340, buttons: 0 });
 
-    expect(Number.parseFloat(workerShell!.style.left)).toBeCloseTo(workerLeftBefore + 70, 4);
-    expect(Number.parseFloat(workerShell!.style.top)).toBeCloseTo(workerTopBefore + 40, 4);
-    expect(Number.parseFloat(checkerShell!.style.left)).toBeCloseTo(checkerLeftBefore, 4);
-    expect(Number.parseFloat(checkerShell!.style.top)).toBeCloseTo(checkerTopBefore, 4);
-    expect(Number.parseFloat(workerFileShell!.style.left)).toBeCloseTo(fileLeftBefore, 4);
-    expect(Number.parseFloat(workerFileShell!.style.top)).toBeCloseTo(fileTopBefore, 4);
+    // Observer moved
+    expect(Number.parseFloat(observerShell!.style.left)).toBeCloseTo(observerLeftBefore + 70, 4);
+    expect(Number.parseFloat(observerShell!.style.top)).toBeCloseTo(observerTopBefore + 40, 4);
+    // Menu did not move
+    expect(Number.parseFloat(menuShell!.style.left)).toBeCloseTo(menuLeftBefore, 4);
+    expect(Number.parseFloat(menuShell!.style.top)).toBeCloseTo(menuTopBefore, 4);
   });
 
-  it("keeps the process panel draggable after method-call groups are hidden", async () => {
+  it("keeps the merged observer panel draggable after method-call groups are hidden", async () => {
     const { container } = render(<App />);
     await setupObserverOpen(container);
 
@@ -3718,16 +4023,16 @@ describe("App", () => {
     expect(workerProcessNode!.querySelector(".emap-process-tool-groups")).toBeNull();
     expect(workerProcessNode!.querySelectorAll(".emap-process-tool-group")).toHaveLength(0);
 
-    const workerShell = workerProcessNode!.closest(".emap-task-child-branch-shell") as HTMLElement | null;
-    expect(workerShell).toBeTruthy();
-    const leftBefore = Number.parseFloat(workerShell!.style.left);
-    const topBefore = Number.parseFloat(workerShell!.style.top);
-    firePointer(workerShell!, "pointerdown", { pointerId: 104, clientX: 940, clientY: 350 });
-    firePointer(workerShell!, "pointermove", { pointerId: 104, clientX: 995, clientY: 390 });
-    firePointer(workerShell!, "pointerup", { pointerId: 104, clientX: 995, clientY: 390, buttons: 0 });
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    expect(observerShell).toBeTruthy();
+    const leftBefore = Number.parseFloat(observerShell!.style.left);
+    const topBefore = Number.parseFloat(observerShell!.style.top);
+    firePointer(observerShell!, "pointerdown", { pointerId: 104, clientX: 600, clientY: 300 });
+    firePointer(observerShell!, "pointermove", { pointerId: 104, clientX: 655, clientY: 340 });
+    firePointer(observerShell!, "pointerup", { pointerId: 104, clientX: 655, clientY: 340, buttons: 0 });
 
-    expect(Number.parseFloat(workerShell!.style.left)).toBeCloseTo(leftBefore + 55, 4);
-    expect(Number.parseFloat(workerShell!.style.top)).toBeCloseTo(topBefore + 40, 4);
+    expect(Number.parseFloat(observerShell!.style.left)).toBeCloseTo(leftBefore + 55, 4);
+    expect(Number.parseFloat(observerShell!.style.top)).toBeCloseTo(topBefore + 40, 4);
     expect(workerProcessNode!.querySelectorAll(".emap-process-tool-group")).toHaveLength(0);
   });
 
@@ -3793,70 +4098,70 @@ describe("App", () => {
     expect(Number.parseFloat(menuShell!.style.top)).toBeCloseTo(menuTopBefore, 4);
   });
 
-  it("moves file detail descendant when dragging file node", async () => {
+  it("moves file detail when dragging merged observer panel", async () => {
     const { container } = render(<App />);
     await setupObserverOpen(container);
 
-    const workerFileNode = await waitFor(() => {
-      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+    const workerFileRow = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-row[data-file-kind="worker"]') as HTMLElement | null;
       expect(node).toBeTruthy();
       return node!;
     });
     // Expand detail
-    fireEvent.click(workerFileNode);
+    fireEvent.click(workerFileRow);
 
     await waitFor(() => {
       expect(container.querySelector(".emap-observer-file-detail-node")).toBeTruthy();
     });
 
-    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
-    const workerShell = allShells().find((s) => s.querySelector('.emap-observer-file-node[data-file-kind="worker"]')) as HTMLElement | undefined;
-    expect(workerShell).toBeTruthy();
-    const detailShell = allShells().find((s) => s.querySelector(".emap-observer-file-detail-node")) as HTMLElement | undefined;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    expect(observerShell).toBeTruthy();
+    const detailShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="file-detail-"]') as HTMLElement | null;
     expect(detailShell).toBeTruthy();
 
-    const workerLeftBefore = Number.parseFloat(workerShell!.style.left);
-    const workerTopBefore = Number.parseFloat(workerShell!.style.top);
+    const observerLeftBefore = Number.parseFloat(observerShell!.style.left);
+    const observerTopBefore = Number.parseFloat(observerShell!.style.top);
     const detailLeftBefore = Number.parseFloat(detailShell!.style.left);
     const detailTopBefore = Number.parseFloat(detailShell!.style.top);
 
-    // Drag worker file node
-    firePointer(workerFileNode, "pointerdown", { pointerId: 95, clientX: 500, clientY: 300 });
-    firePointer(workerFileNode, "pointermove", { pointerId: 95, clientX: 570, clientY: 350 });
-    firePointer(workerFileNode, "pointerup", { pointerId: 95, clientX: 570, clientY: 350, buttons: 0 });
+    // Drag merged observer panel
+    firePointer(observerShell!, "pointerdown", { pointerId: 95, clientX: 500, clientY: 300 });
+    firePointer(observerShell!, "pointermove", { pointerId: 95, clientX: 570, clientY: 350 });
+    firePointer(observerShell!, "pointerup", { pointerId: 95, clientX: 570, clientY: 350, buttons: 0 });
 
     const dx = 70;
     const dy = 50;
 
-    // Worker shell moved
-    expect(Number.parseFloat(workerShell!.style.left)).toBeCloseTo(workerLeftBefore + dx, 4);
-    expect(Number.parseFloat(workerShell!.style.top)).toBeCloseTo(workerTopBefore + dy, 4);
+    // Observer shell moved
+    expect(Number.parseFloat(observerShell!.style.left)).toBeCloseTo(observerLeftBefore + dx, 4);
+    expect(Number.parseFloat(observerShell!.style.top)).toBeCloseTo(observerTopBefore + dy, 4);
 
     // Detail shell also moved by same delta
     expect(Number.parseFloat(detailShell!.style.left)).toBeCloseTo(detailLeftBefore + dx, 4);
     expect(Number.parseFloat(detailShell!.style.top)).toBeCloseTo(detailTopBefore + dy, 4);
   });
 
-  it("opens newly expanded file detail to the right of a dragged file node", async () => {
+  it("opens file detail to the right of dragged merged observer panel", async () => {
     const { container } = render(<App />);
     await setupObserverOpen(container);
 
-    const workerFileNode = await waitFor(() => {
-      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
-      expect(node).toBeTruthy();
-      return node!;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    expect(observerShell).toBeTruthy();
+
+    // Drag observer panel to a new position
+    firePointer(observerShell!, "pointerdown", { pointerId: 99, clientX: 500, clientY: 300 });
+    firePointer(observerShell!, "pointermove", { pointerId: 99, clientX: 660, clientY: 330 });
+    firePointer(observerShell!, "pointerup", { pointerId: 99, clientX: 660, clientY: 330, buttons: 0 });
+
+    // Now click a file row to open detail
+    const workerFileRow = await waitFor(() => {
+      const row = container.querySelector('.emap-observer-file-row[data-file-kind="worker"]') as HTMLElement | null;
+      expect(row).toBeTruthy();
+      return row!;
     });
-
-    const workerShell = workerFileNode.closest(".emap-task-child-branch-shell") as HTMLElement | null;
-    expect(workerShell).toBeTruthy();
-
-    firePointer(workerFileNode, "pointerdown", { pointerId: 99, clientX: 500, clientY: 300 });
-    firePointer(workerFileNode, "pointermove", { pointerId: 99, clientX: 660, clientY: 330 });
-    firePointer(workerFileNode, "pointerup", { pointerId: 99, clientX: 660, clientY: 330, buttons: 0 });
-
-    // The first click after a drag is intentionally suppressed.
-    fireEvent.click(workerFileNode);
-    fireEvent.click(workerFileNode);
+    // The first click after a drag may be suppressed; click twice to ensure it opens
+    fireEvent.click(workerFileRow);
+    fireEvent.click(workerFileRow);
 
     const detailShell = await waitFor(() => {
       const detail = container.querySelector(".emap-observer-file-detail-node")?.closest(".emap-task-child-branch-shell") as HTMLElement | null;
@@ -3864,37 +4169,36 @@ describe("App", () => {
       return detail!;
     });
 
-    const workerLeft = Number.parseFloat(workerShell!.style.left);
-    const workerWidth = Number.parseFloat(workerShell!.style.width);
+    const observerLeft = Number.parseFloat(observerShell!.style.left);
+    const observerWidth = Number.parseFloat(observerShell!.style.width);
     const detailLeft = Number.parseFloat(detailShell.style.left);
 
-    expect(detailLeft).toBeGreaterThanOrEqual(workerLeft + workerWidth);
+    expect(detailLeft).toBeGreaterThanOrEqual(observerLeft + observerWidth);
   });
 
-  it("moves only detail leaf without moving parent file node", async () => {
+  it("moves only file detail without moving merged observer panel", async () => {
     const { container } = render(<App />);
     await setupObserverOpen(container);
 
-    const workerFileNode = await waitFor(() => {
-      const node = container.querySelector('.emap-observer-file-node[data-file-kind="worker"]') as HTMLElement | null;
+    const workerFileRow = await waitFor(() => {
+      const node = container.querySelector('.emap-observer-file-row[data-file-kind="worker"]') as HTMLElement | null;
       expect(node).toBeTruthy();
       return node!;
     });
-    fireEvent.click(workerFileNode);
+    fireEvent.click(workerFileRow);
 
     await waitFor(() => {
       const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
       expect(detail).toBeTruthy();
     });
 
-    const allShells = () => Array.from(container.querySelectorAll(".emap-task-child-branch-shell"));
-    const workerShell = allShells().find((s) => s.querySelector('.emap-observer-file-node[data-file-kind="worker"]')) as HTMLElement | undefined;
-    expect(workerShell).toBeTruthy();
-    const detailShell = allShells().find((s) => s.querySelector(".emap-observer-file-detail-node")) as HTMLElement | undefined;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    expect(observerShell).toBeTruthy();
+    const detailShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="file-detail-"]') as HTMLElement | null;
     expect(detailShell).toBeTruthy();
 
-    const workerLeftBefore = Number.parseFloat(workerShell!.style.left);
-    const workerTopBefore = Number.parseFloat(workerShell!.style.top);
+    const observerLeftBefore = Number.parseFloat(observerShell!.style.left);
+    const observerTopBefore = Number.parseFloat(observerShell!.style.top);
     const detailLeftBefore = Number.parseFloat(detailShell!.style.left);
     const detailTopBefore = Number.parseFloat(detailShell!.style.top);
 
@@ -3907,9 +4211,9 @@ describe("App", () => {
     expect(Number.parseFloat(detailShell!.style.left)).toBeCloseTo(detailLeftBefore + 60, 4);
     expect(Number.parseFloat(detailShell!.style.top)).toBeCloseTo(detailTopBefore + 50, 4);
 
-    // Worker file node did not move
-    expect(Number.parseFloat(workerShell!.style.left)).toBeCloseTo(workerLeftBefore, 4);
-    expect(Number.parseFloat(workerShell!.style.top)).toBeCloseTo(workerTopBefore, 4);
+    // Observer panel did not move
+    expect(Number.parseFloat(observerShell!.style.left)).toBeCloseTo(observerLeftBefore, 4);
+    expect(Number.parseFloat(observerShell!.style.top)).toBeCloseTo(observerTopBefore, 4);
   });
 
   it("keeps leader chat usable: drag header, resize, maximize", async () => {
