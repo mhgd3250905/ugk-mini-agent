@@ -354,7 +354,6 @@ test("archived task rejects new run creation and does not trigger downstream", a
 		const runRes = await app.inject({ method: "POST", url: `/v1/team/tasks/${collect.taskId}/runs` });
 		assert.equal(runRes.statusCode, 409);
 
-		await new Promise(resolve => setTimeout(resolve, 100));
 		const downstreamRunsRes = await app.inject({ method: "GET", url: `/v1/team/tasks/${html.taskId}/runs` });
 		assert.equal(downstreamRunsRes.statusCode, 200);
 		assert.deepEqual(downstreamRunsRes.json().runs, []);
@@ -415,7 +414,7 @@ test("stale downstream connection does not make upstream accepted run fail", asy
 		assert.equal(upstreamFinished.status, "completed");
 		assert.equal(upstreamFinished.taskStates[collect.taskId]?.status, "succeeded");
 
-		await new Promise(resolve => setTimeout(resolve, 100));
+		await waitForAttemptDelivery(app, upstreamRun.runId, collect.taskId);
 		const downstreamRunsRes = await app.inject({ method: "GET", url: `/v1/team/tasks/${html.taskId}/runs` });
 		assert.equal(downstreamRunsRes.statusCode, 200);
 		assert.deepEqual(downstreamRunsRes.json().runs, []);
