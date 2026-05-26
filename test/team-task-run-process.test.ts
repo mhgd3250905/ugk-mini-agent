@@ -690,7 +690,7 @@ test("downstream worker receives bound input prompt and payload from upstream ty
 
 		await mkdir(join(root, "team"), { recursive: true });
 		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
-		await connectionStore.create({
+		const connection = await connectionStore.create({
 			fromTaskId: sourceTask.taskId,
 			fromOutputPortId: "draft_md",
 			toTaskId: targetTask.taskId,
@@ -744,10 +744,16 @@ test("downstream worker receives bound input prompt and payload from upstream ty
 		const inputText = capturedWorkerInput!.task.input.text;
 		assert.match(inputText, /制作 HTML 页面。/);
 		assert.match(inputText, /typed artifact/);
+		assert.match(inputText, new RegExp("connectionId: " + connection.connectionId));
 		assert.match(inputText, /inputPortId: source_md/);
+		assert.match(inputText, /artifactId: artifact_/);
 		assert.match(inputText, new RegExp("sourceTaskId: " + sourceTask.taskId));
 		assert.match(inputText, new RegExp("sourceRunId: " + upstreamRun.runId));
+		assert.match(inputText, /sourceAttemptId: attempt_/);
+		assert.match(inputText, /sourceOutputPortId: draft_md/);
 		assert.match(inputText, /fileRef:/);
+		assert.match(inputText, /BEGIN_TYPED_ARTIFACT_CONTENT/);
+		assert.match(inputText, /END_TYPED_ARTIFACT_CONTENT/);
 		assert.match(inputText, /accepted result/);
 
 		const payload = capturedWorkerInput!.task.input.payload as { boundInputs?: Array<{ inputPortId: string }> } | undefined;
