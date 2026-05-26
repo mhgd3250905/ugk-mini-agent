@@ -35,19 +35,20 @@
 
 - Worktree：`E:\AII\ugk-pi\.worktrees\team-console-workunit-redesign`
 - 分支：`codex/team-console-workunit-redesign`
-- 本轮提交主题：`feat(team-console): add typed task chain v1`
-- 上一个已提交快照：`8bc474a docs(team-console): snapshot task prototype handoff`
-- 上一个功能提交：`a77e5aa feat(team-console): refine task run process nodes`
-- 本轮提交包含 Typed Task Chain V1 源码 / 测试 / 文档，以及 Run observer UI 收口；提交后 tracked 工作区应保持干净。`.codex/plans/*` 和 `.codex/skills/new-chat/` 仍是本地协作文件，按边界不要提交。
+- 最新提交：`98c3148 fix(team-console): unify connector source sockets`
+- 近期 UI 收口提交：`6e96e9b fix(team-console): smooth node connector curves`、`3b9a0a4 fix(team-console): refine node connector curves`、`2c83f3a feat(team-console): polish run observer connectors`
+- Typed Task Chain V1 提交：`a8a9584 feat(team-console): add typed task chain v1`
+- 本轮提交包含 Typed Task Chain V1 源码 / 测试 / 文档，以及 Run observer 聚合面板、连接曲线和 source socket 视觉收口；提交后 tracked 工作区应保持干净。`.codex/plans/*` 和 `.codex/skills/new-chat/` 仍是本地协作文件，按边界不要提交。
 
 当前已完成：
 
 - Team Console 已支持 Task 创建入口、浅编辑、软删除、Leader 对话 iframe、Task run 启动 / 停止和 Run observer。
-- Task run observer 已节点化：Run 状态合并进 Task 操作菜单里的运行摘要区域；Worker 过程、Checker 过程、文件节点、文件详情仍是独立 canvas branch node。
+- Task run observer 已聚合为单个 `run-observer` 大面板：内部顺序为 worker 过程、worker 输出文件、checker 过程、checker 输出文件、result 文件；点击文件行仍展开右侧文件详情节点。
 - Worker / Checker 过程节点消费 `attempt.roleProcesses.worker/checker`；有 `assistantText.content` 时优先显示 Agent 自述 / 推理文本，保留换行、中文断句、最多 5 行、单行 200 字符截断；不再渲染下半区 tool / method 调用明细，完整 attempt metadata 仍由后端保留。
 - 文件节点紧凑展示 Agent 名、文件名和路径；点击文件节点展开右侧详情节点，支持 JSON pretty print、安全 Markdown 渲染和文本 fallback。
 - Task 操作树支持层级拖动：拖 Task 根节点带动菜单和已展开子树；拖菜单带动 observer 子节点；拖过程节点只移动自身；拖文件节点带动其文件详情；拖文件详情叶子节点只移动自身。
 - 运行中 observer 已收掉高频视觉噪音：不显示空文件占位、`正在刷新...`、`最后刷新`，active poll 瞬时失败不插红色错误节点；拖动 / resize 期间暂停 Task branch / child panel auto-height measurement，降低轮询刷新导致的卡顿和闪烁。
+- 连接线已统一为 right-middle -> left-middle 的单条连续 cubic；出线端统一显示吸附在卡片右边缘的半圆 source socket，target 端不再显示圆环或圆点。Task connection 使用绿色 socket，Agent 分支偏青色，Task 分支和二级面板偏金色。
 - Typed Task Chain V1 已建立最小积木契约：WorkUnit 可声明 `inputPorts` / `outputPorts`，连接数据为 `fromTaskId/fromOutputPortId -> toTaskId/toInputPortId`，后端校验 `output.type === input.type`、非重复、非自连接、非环。
 - Team Console Task 卡片会展示 typed ports；点击 output port 后只能连到同类型 input port，连接成功后画布渲染 Task connection path。
 - 上游 Canvas Task run 成功并通过 checker 后，后端会把 `accepted-result.md` 封装成 typed artifact，并作为 `boundInputs` 自动启动下游 Task run；下游 run 的 `source.triggeredBy` 记录来源 connection / upstream run。
@@ -82,6 +83,14 @@
 - `git diff --check`：通过
 - 浏览器冒烟：`http://127.0.0.1:5174/` Live API 当前 Task run 中，`.task-run-summary` 展示运行状态、阶段、耗时、Attempts、进度消息和 run id；`.emap-observer-status-node` 为 0；Worker / Checker 过程节点仍存在；拖动 Worker 过程节点后位置更新；console 无 error / warn。
 
+本轮 Run observer 聚合、连接曲线和 source socket 收口验证：
+
+- `npm --prefix apps/team-console run test`：341 passed
+- `npm --prefix apps/team-console run build`：通过
+- `git diff --check`：通过
+- touched files EOL：`i/lf w/lf`
+- 浏览器 DOM 验证：`http://127.0.0.1:5174/` title 为 `Team Console`；旧 `.emap-connector-anchor-ring` / `.emap-connector-anchor-dot` 数量为 0；Typed Task connection 和 Task 菜单连接均渲染 `.emap-connector-source-socket`；Task connection socket 路径形如 `M560,520 A6,6 0 0 1 560,532`，Task 菜单 socket 路径形如 `M560,298 A6,6 0 0 1 560,310`。
+
 集成注意：
 
 - Docker 主服务 / 主 checkout 已有后端提交 `65e4de8 feat(team): expose task role assistant text`，会通过 attempts API 暴露 `roleProcesses.*.assistantText`。
@@ -90,7 +99,7 @@
 
 推荐下一步：
 
-1. 让用户做一次真实 Task run 验收，重点看运行中 Worker / Checker 过程节点是否可读、拖动是否仍跟手。
+1. 继续真实 Task run / typed chain 验收时，重点看 `TaskA 输出 md -> TaskB 输入 md` 的端到端耗时和下游 run 发现链路；UI 连接线和 observer 聚合视觉本轮先收口，不要继续无边界打磨。
 2. 集成前审 `git log --oneline HEAD..65e4de8` 和 `git show --stat 65e4de8`，确认后端分叉文件后再合。
 3. SSE 观察流仍是后续后端能力；当前 Run observer 仍是轮询版，不要在前端硬造假实时流。
 

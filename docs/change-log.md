@@ -20,7 +20,7 @@
   - target 入线端不再渲染圆环或圆点，避免线尾和卡片边缘叠出小噪点。
   - typed Task connection 使用绿色 socket，Agent 分支偏青色，Task 分支偏金色；连接线仍保持 right-middle -> left-middle 的单条连续 cubic 机制。
   - 测试覆盖 CSS token、Task connection 出线 socket 和 Task child panel source socket，防止旧的圆环 / 圆点锚点回流。
-- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/handoff-current.md`, `docs/change-log.md`
 - **边界**: 不改后端 API，不接 SSE，不改 Task run / typed chain 数据结构，不改 `.pi/skills/**`。
 
 ---
