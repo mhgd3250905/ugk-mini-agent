@@ -173,8 +173,12 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.get("/v1/team/task-connections", async (_request, reply) => {
-		const connections = await taskConnectionStore.listResolved();
-		reply.send({ connections });
+		try {
+			const connections = await taskConnectionStore.listResolved();
+			reply.send({ connections });
+		} catch (err) {
+			reply.code(500).send({ error: (err as Error).message });
+		}
 	});
 
 	app.post("/v1/team/task-connections", async (request, reply) => {
@@ -189,6 +193,10 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			reply.code(201).send({ connection });
 		} catch (err) {
 			const msg = (err as Error).message;
+			if (msg.includes("task connection store") || msg.includes("lock busy")) {
+				reply.code(msg.includes("lock busy") ? 409 : 500).send({ error: msg });
+				return;
+			}
 			if (msg.includes("task not found") || msg.includes("port not found")) {
 				reply.code(404).send({ error: msg });
 				return;
@@ -203,12 +211,18 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 
 	app.delete("/v1/team/task-connections/:connectionId", async (request, reply) => {
 		const { connectionId } = request.params as { connectionId: string };
-		const deleted = await taskConnectionStore.delete(connectionId);
-		if (!deleted) {
-			reply.code(404).send({ error: "task connection not found" });
-			return;
+		try {
+			const deleted = await taskConnectionStore.delete(connectionId);
+			if (!deleted) {
+				reply.code(404).send({ error: "task connection not found" });
+				return;
+			}
+			reply.code(204).send();
+		} catch (err) {
+			const msg = (err as Error).message;
+			if (msg.includes("lock busy")) { reply.code(409).send({ error: msg }); return; }
+			reply.code(500).send({ error: msg });
 		}
-		reply.code(204).send();
 	});
 
 	app.get("/v1/team/tasks/:taskId/runs", async (request, reply) => {

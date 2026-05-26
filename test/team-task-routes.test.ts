@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildServer } from "../src/server.js";
@@ -698,6 +698,19 @@ test("GET /v1/team/task-connections returns stale when target task is archived",
 		assert.equal(connections.length, 1);
 		assert.equal(connections[0].status, "stale");
 		assert.equal(connections[0].staleReason, "target_task_archived");
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/task-connections returns 500 for corrupt connection store", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		await mkdir(join(root, "team"), { recursive: true });
+		await writeFile(join(root, "team", "task-connections.json"), "{bad json", "utf8");
+		const res = await app.inject({ method: "GET", url: "/v1/team/task-connections" });
+		assert.equal(res.statusCode, 500);
 	} finally {
 		await app.close();
 		await rm(root, { recursive: true, force: true });

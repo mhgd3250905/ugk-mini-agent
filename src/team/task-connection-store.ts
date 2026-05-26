@@ -71,41 +71,45 @@ export class TaskConnectionStore {
 			throw new Error(`port type mismatch: ${fromPort.type} -> ${toPort.type}`);
 		}
 
-		const connections = await this.readAll();
-		if (connections.some(connection =>
-			connection.fromTaskId === fromTaskId &&
-			connection.fromOutputPortId === fromOutputPortId &&
-			connection.toTaskId === toTaskId &&
-			connection.toInputPortId === toInputPortId
-		)) {
-			throw new Error("task connection already exists");
-		}
-		if (this.wouldCreateCycle(connections, fromTaskId, toTaskId)) {
-			throw new Error("task connection would create a cycle");
-		}
+		return this.withMutationLock(async () => {
+			const connections = await this.readAll();
+			if (connections.some(connection =>
+				connection.fromTaskId === fromTaskId &&
+				connection.fromOutputPortId === fromOutputPortId &&
+				connection.toTaskId === toTaskId &&
+				connection.toInputPortId === toInputPortId
+			)) {
+				throw new Error("task connection already exists");
+			}
+			if (this.wouldCreateCycle(connections, fromTaskId, toTaskId)) {
+				throw new Error("task connection would create a cycle");
+			}
 
-		const timestamp = now();
-		const connection: TeamTaskConnection = {
-			schemaVersion: "team/task-connection-1",
-			connectionId: generateTaskConnectionId(),
-			fromTaskId,
-			fromOutputPortId,
-			toTaskId,
-			toInputPortId,
-			type: fromPort.type,
-			createdAt: timestamp,
-			updatedAt: timestamp,
-		};
-		await this.writeAll([...connections, connection]);
-		return connection;
+			const timestamp = now();
+			const connection: TeamTaskConnection = {
+				schemaVersion: "team/task-connection-1",
+				connectionId: generateTaskConnectionId(),
+				fromTaskId,
+				fromOutputPortId,
+				toTaskId,
+				toInputPortId,
+				type: fromPort.type,
+				createdAt: timestamp,
+				updatedAt: timestamp,
+			};
+			await this.writeAll([...connections, connection]);
+			return connection;
+		});
 	}
 
 	async delete(connectionId: string): Promise<boolean> {
-		const connections = await this.readAll();
-		const next = connections.filter(connection => connection.connectionId !== connectionId);
-		if (next.length === connections.length) return false;
-		await this.writeAll(next);
-		return true;
+		return this.withMutationLock(async () => {
+			const connections = await this.readAll();
+			const next = connections.filter(connection => connection.connectionId !== connectionId);
+			if (next.length === connections.length) return false;
+			await this.writeAll(next);
+			return true;
+		});
 	}
 
 	private async resolveStaleReason(connection: TeamTaskConnection): Promise<TaskConnectionStaleReason | null> {
@@ -146,16 +150,45 @@ export class TaskConnectionStore {
 	}
 
 	private async readAll(): Promise<TeamTaskConnection[]> {
+		let content: string;
 		try {
-			const content = await readFile(this.filePath, "utf8");
-			const parsed = JSON.parse(content);
-			if (!Array.isArray(parsed)) return [];
-			return parsed
-				.filter(connection => connection?.schemaVersion === "team/task-connection-1")
-				.map(connection => connection as TeamTaskConnection);
-		} catch {
-			return [];
+			content = await readFile(this.filePath, "utf8");
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+			throw new Error(`task connection store read failed: ${(error as Error).message}`);
 		}
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(content);
+		} catch {
+			throw new Error("task connection store contains invalid JSON");
+		}
+		if (!Array.isArray(parsed)) {
+			throw new Error("task connection store does not contain an array");
+		}
+		return parsed
+			.filter((connection: unknown) => (connection as Record<string, unknown>)?.schemaVersion === "team/task-connection-1")
+			.map(connection => connection as TeamTaskConnection);
+	}
+
+	private async withMutationLock<T>(fn: () => Promise<T>): Promise<T> {
+		await mkdir(this.rootDir, { recursive: true });
+		const lockDir = join(this.rootDir, ".task-connections.lock");
+		for (let attempt = 0; attempt < 100; attempt++) {
+			try {
+				await mkdir(lockDir);
+				try {
+					return await fn();
+				} finally {
+					await rm(lockDir, { recursive: true, force: true });
+				}
+			} catch (error) {
+				const code = (error as NodeJS.ErrnoException).code;
+				if (code !== "EEXIST" && code !== "EPERM") throw error;
+				await new Promise(resolve => setTimeout(resolve, 10));
+			}
+		}
+		throw new Error("task connection store lock busy");
 	}
 
 	private async writeAll(connections: TeamTaskConnection[]): Promise<void> {

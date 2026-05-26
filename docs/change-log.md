@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-26 — Task connection store persistence hardening
+
+- **主题**: `TaskConnectionStore` 的 `create()` / `delete()` 增加文件级 mutation lock，corrupt / 非数组 JSON 不再静默返回空列表，而是抛出错误并在 API 层返回 500。
+- **变更内容**:
+  - `TaskConnectionStore` 增加 `withMutationLock()`（mkdir-based，100 次重试 × 10ms ≈ 1s 超时），包裹 `create()` 和 `delete()` 的 read-modify-write 区间，防止并发丢失连接。
+  - `readAll()` 区分 `ENOENT`（返回空列表）和 corrupt/unreadable（抛 `task connection store ...` 错误）。
+  - `GET /v1/team/task-connections` 遇到 corrupt store 返回 500。
+  - `POST /v1/team/task-connections` 和 `DELETE` 增加 `lock busy` → 409 和 store 错误 → 500 映射；现有 404/409/400 业务语义不变。
+- **影响范围**: `src/team/task-connection-store.ts`, `src/team/routes.ts`, `test/team-task-connection-store.test.ts`, `test/team-task-routes.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 不改前端，不改 Task 1 stale policy，不改 task-run-service，不碰 Playground / Agent profile / Conn / Feishu / Docker / 部署，不引入数据库或外部锁库。
+
+---
+
 ## 2026-05-26 — Team Console stale task connection lifecycle
 
 - **主题**: Task connection stale 状态显式化——运行时派生 `status: "active" | "stale"` 和 `staleReason`，不写入持久化 JSON；stale connection 不触发下游 run、不渲染连接线。

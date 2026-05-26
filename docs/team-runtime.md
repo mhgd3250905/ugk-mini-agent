@@ -86,6 +86,8 @@ Typed Task Chain V1 把 Task 设计成可组合的最小积木，但刻意不把
 - API：`GET /v1/team/task-connections`、`POST /v1/team/task-connections`、`DELETE /v1/team/task-connections/:connectionId`
 - 数据结构：`{ connectionId, fromTaskId, fromOutputPortId, toTaskId, toInputPortId, createdAt }`
 - 后端创建 connection 时必须校验 Task 存在、未归档、port 存在、类型相等、非自连接、非重复连接，并拒绝会形成环的连接。
+- `create()` 和 `delete()` 使用 mkdir-based mutation lock 保护 read-modify-write 区间，防止并发丢失连接。`list()` / `listResolved()` 不加锁——原子 rename 保证读者看到完整文件。
+- `task-connections.json` 缺失仍返回空列表；但 invalid JSON、non-array JSON 或不可读文件会抛出错误，API 层返回 500，不再静默返回空列表。
 - `GET /v1/team/task-connections` 返回每条连接附带运行时派生的 `status: "active" | "stale"` 和可选 `staleReason`；这些字段不写入 `task-connections.json`，只在 API 请求时从当前 Task/port 状态推导。stale 连接不触发下游 run，前端不渲染 stale 连接线。
 - stale 判定规则（任一命中即标记 stale）：
   - `source_task_missing` — source Task 不存在
