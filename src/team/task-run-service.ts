@@ -7,11 +7,11 @@ import { runWithTimeout } from "./task-attempt-runner.js";
 import { validateTeamOutput } from "./output-validator.js";
 import { writeTimingSpan } from "./timing.js";
 import { TeamRoleProcessRecorder } from "./task-run-process-recorder.js";
-import { generateTaskArtifactId } from "./ids.js";
 import { resolveConnectionStaleReason } from "./task-chain-contract.js";
+import { buildTeamTaskTypedArtifact, formatBoundInputsForPrompt } from "./task-artifact-handoff.js";
 import type { TaskConnectionStore } from "./task-connection-store.js";
 import type { ProfileAwareTeamRoleRunner, TeamRoleRunner, WorkerOutput, CheckerOutput } from "./role-runner.js";
-import type { TeamCanvasTask, TeamOutputValidationResult, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskDeliveryOutcome, TeamTaskTypedArtifact } from "./types.js";
+import type { TeamCanvasTask, TeamOutputValidationResult, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskDeliveryOutcome } from "./types.js";
 
 export interface CanvasTaskRunServiceOptions {
 	taskStore: TaskStore;
@@ -37,8 +37,6 @@ const DEFAULT_TASK_RUN_TIMEOUTS = {
 	checkerMs: 300_000,
 };
 
-const ARTIFACT_CONTENT_LIMIT = 30_000;
-const ARTIFACT_PREVIEW_LIMIT = 1_200;
 const DELIVERY_ERROR_LIMIT = 500;
 
 type TaskRunSource = NonNullable<TeamRunState["source"]>;
@@ -79,24 +77,6 @@ function canvasTaskToPlan(task: TeamCanvasTask, boundInputs: TeamTaskBoundInput[
 		updatedAt: timestamp,
 		runCount: 0,
 	};
-}
-
-function formatBoundInputsForPrompt(boundInputs: TeamTaskBoundInput[]): string {
-	if (boundInputs.length === 0) return "";
-	const blocks = boundInputs.map((input, index) => {
-		const artifact = input.artifact;
-		const content = artifact.content ?? artifact.preview;
-		return [
-			`### 输入 ${index + 1}: ${artifact.type}`,
-			`- inputPortId: ${input.inputPortId}`,
-			`- sourceTaskId: ${artifact.sourceTaskId}`,
-			`- sourceRunId: ${artifact.sourceRunId}`,
-			`- fileRef: ${artifact.fileRef}`,
-			"",
-			content,
-		].join("\n");
-	});
-	return `## 已绑定上游 typed artifact 输入\n${blocks.join("\n\n")}`;
 }
 
 function summarizeOutputValidationFailure(result: TeamOutputValidationResult): string {
@@ -552,7 +532,7 @@ export class CanvasTaskRunService {
 					});
 					continue;
 				}
-				const artifact = this.buildTypedArtifact({
+				const artifact = buildTeamTaskTypedArtifact({
 					type: connection.type,
 					sourceTaskId: taskId,
 					sourceRunId: runId,
@@ -600,31 +580,6 @@ export class CanvasTaskRunService {
 		} catch {
 			// Diagnostic persistence must not fail the accepted upstream run.
 		}
-	}
-
-	private buildTypedArtifact(input: {
-		type: string;
-		sourceTaskId: string;
-		sourceRunId: string;
-		sourceAttemptId: string;
-		sourceOutputPortId: string;
-		fileRef: string;
-		content: string;
-	}): TeamTaskTypedArtifact {
-		const content = input.content.slice(0, ARTIFACT_CONTENT_LIMIT);
-		return {
-			schemaVersion: "team/task-artifact-1",
-			artifactId: generateTaskArtifactId(),
-			type: input.type,
-			sourceTaskId: input.sourceTaskId,
-			sourceRunId: input.sourceRunId,
-			sourceAttemptId: input.sourceAttemptId,
-			sourceOutputPortId: input.sourceOutputPortId,
-			fileRef: input.fileRef,
-			preview: content.slice(0, ARTIFACT_PREVIEW_LIMIT),
-			...(content ? { content } : {}),
-			createdAt: now(),
-		};
 	}
 
 	private async finishTaskFailed(runId: string, taskId: string, attemptId: string, errorSummary: string, resultRef?: string): Promise<void> {

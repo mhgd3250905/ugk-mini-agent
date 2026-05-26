@@ -652,3 +652,101 @@ test("delivery outcome persistence failure does not fail accepted upstream run",
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+test("downstream worker receives bound input prompt and payload from upstream typed artifact", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-handoff-int-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const sourceTask = await taskStore.create({
+			...validTaskInput,
+			workUnit: {
+				...validTaskInput.workUnit,
+				outputPorts: [{ id: "draft_md", label: "Markdown", type: "md" }],
+			},
+		});
+		const targetTask = await taskStore.create({
+			title: "HTML 制作",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "HTML 制作",
+				input: { text: "制作 HTML 页面。" },
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+				outputContract: { text: "输出 HTML 页面。" },
+				acceptance: { rules: ["必须包含 HTML"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+
+		await mkdir(join(root, "team"), { recursive: true });
+		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
+		await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "draft_md",
+			toTaskId: targetTask.taskId,
+			toInputPortId: "source_md",
+		});
+
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+
+		let capturedWorkerInput: WorkerInput | undefined;
+
+		class CaptureWorkerInputRunner implements TeamRoleRunner {
+			async runWorker(input: WorkerInput): Promise<WorkerOutput> {
+				capturedWorkerInput = input;
+				return { content: "downstream worker result", artifactRefs: [] };
+			}
+			async runChecker(_input: CheckerInput): Promise<CheckerOutput> {
+				return { verdict: "pass", reason: "ok", resultContent: "accepted result" };
+			}
+			async runWatcher(_input: WatcherInput): Promise<WatcherOutput> {
+				return { decision: "accept_task", reason: "ok" };
+			}
+			async runFinalizer(_input: FinalizerInput): Promise<FinalizerOutput> {
+				return { finalReport: "ok" };
+			}
+			async runDecomposer(_input: DecomposerInput): Promise<DecomposerOutput> {
+				return { decision: "no_split", reason: "ok", children: [] };
+			}
+		}
+
+		let runnerCallCount = 0;
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => {
+				runnerCallCount++;
+				return new CaptureWorkerInputRunner();
+			},
+			connectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const upstreamRun = await service.createRun(sourceTask.taskId);
+		const upstreamFinished = await waitForTerminalRun(service, upstreamRun.runId);
+		assert.equal(upstreamFinished.status, "completed");
+
+		const downstreamRuns = await service.listRuns(targetTask.taskId);
+		assert.equal(downstreamRuns.length, 1);
+		const downstreamFinished = await waitForTerminalRun(service, downstreamRuns[0]!.runId);
+		assert.equal(downstreamFinished.status, "completed");
+
+		assert.ok(capturedWorkerInput, "downstream worker input should have been captured");
+		const inputText = capturedWorkerInput!.task.input.text;
+		assert.match(inputText, /制作 HTML 页面。/);
+		assert.match(inputText, /typed artifact/);
+		assert.match(inputText, /inputPortId: source_md/);
+		assert.match(inputText, new RegExp("sourceTaskId: " + sourceTask.taskId));
+		assert.match(inputText, new RegExp("sourceRunId: " + upstreamRun.runId));
+		assert.match(inputText, /fileRef:/);
+		assert.match(inputText, /accepted result/);
+
+		const payload = capturedWorkerInput!.task.input.payload as { boundInputs?: Array<{ inputPortId: string }> } | undefined;
+		assert.ok(payload?.boundInputs, "payload should contain boundInputs");
+		assert.equal(payload!.boundInputs!.length, 1);
+		assert.equal(payload!.boundInputs![0]!.inputPortId, "source_md");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
