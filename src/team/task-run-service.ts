@@ -501,7 +501,11 @@ export class CanvasTaskRunService {
 			state.summary = computeTeamRunSummary(state.taskStates);
 			state.updatedAt = timestamp;
 		});
-		await this.triggerDownstreamRuns(runId, taskId, attemptId, resultRef);
+		try {
+			await this.triggerDownstreamRuns(runId, taskId, attemptId, resultRef);
+		} catch {
+			// Downstream delivery setup/diagnostics must not fail an accepted upstream run.
+		}
 	}
 
 	private async triggerDownstreamRuns(runId: string, taskId: string, attemptId: string, resultRef: string): Promise<void> {

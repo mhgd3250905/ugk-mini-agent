@@ -503,3 +503,121 @@ test("failed downstream delivery records error without failing upstream", async 
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+test("downstream connection listing failure does not fail accepted upstream run", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-listing-fail-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const sourceTask = await taskStore.create({
+			...validTaskInput,
+			workUnit: {
+				...validTaskInput.workUnit,
+				outputPorts: [{ id: "draft_md", label: "Markdown", type: "md" }],
+			},
+		});
+		const targetTask = await taskStore.create({
+			title: "HTML 制作",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "HTML 制作",
+				input: { text: "制作 HTML 页面。" },
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+				outputContract: { text: "输出 HTML 页面。" },
+				acceptance: { rules: ["必须包含 HTML"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+
+		await mkdir(join(root, "team"), { recursive: true });
+		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
+		await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "draft_md",
+			toTaskId: targetTask.taskId,
+			toInputPortId: "source_md",
+		});
+
+		// Monkey-patch listFromTask to simulate corrupt JSON / store failure
+		connectionStore.listFromTask = async () => {
+			throw new Error("task connection store contains invalid JSON");
+		};
+
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new ProcessEventRoleRunner(),
+			connectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const created = await service.createRun(sourceTask.taskId);
+		const finished = await waitForTerminalRun(service, created.runId);
+		assert.equal(finished.status, "completed", `upstream must remain completed despite connection listing failure, got "${finished.status}"`);
+		assert.equal(finished.taskStates[sourceTask.taskId]?.status, "succeeded");
+	} finally {
+		await new Promise(resolve => setTimeout(resolve, 100));
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("delivery outcome persistence failure does not fail accepted upstream run", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-persist-fail-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const sourceTask = await taskStore.create({
+			...validTaskInput,
+			workUnit: {
+				...validTaskInput.workUnit,
+				outputPorts: [{ id: "draft_md", label: "Markdown", type: "md" }],
+			},
+		});
+		const targetTask = await taskStore.create({
+			title: "HTML 制作",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "HTML 制作",
+				input: { text: "制作 HTML 页面。" },
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+				outputContract: { text: "输出 HTML 页面。" },
+				acceptance: { rules: ["必须包含 HTML"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+
+		await mkdir(join(root, "team"), { recursive: true });
+		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
+		await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "draft_md",
+			toTaskId: targetTask.taskId,
+			toInputPortId: "source_md",
+		});
+
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		// Monkey-patch recordAttemptDeliveryOutcomes to simulate persistence failure
+		workspace.recordAttemptDeliveryOutcomes = async () => {
+			throw new Error("disk full: delivery outcome write failed");
+		};
+
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new ProcessEventRoleRunner(),
+			connectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const created = await service.createRun(sourceTask.taskId);
+		const finished = await waitForTerminalRun(service, created.runId);
+		assert.equal(finished.status, "completed", `upstream must remain completed despite delivery persistence failure, got "${finished.status}"`);
+		assert.equal(finished.taskStates[sourceTask.taskId]?.status, "succeeded");
+	} finally {
+		await new Promise(resolve => setTimeout(resolve, 100));
+		await rm(root, { recursive: true, force: true });
+	}
+});
