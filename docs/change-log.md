@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-26 — Team Console 节点连线曲线统一收口
+
+- **主题**: 按用户反馈把节点间连接线从“大 S 绕圈”改成双端短 hook、中心低弯曲的统一曲线机制。
+- **变更内容**:
+  - `straightPath()` 现在生成 right-middle -> left-middle 语义的三段 cubic：source 右侧短 hook 出线，中段低弯曲过渡，target 左侧短 hook 入线。
+  - 反向角度不再使用两段大 S 曲线；两端都会先探出约 42-64px 并快速转向，避免只有出发点有 hook、结束点像直接贴上卡片。
+  - Agent 分支、Task 操作分支、Task 子面板、Typed Task connection 和 Execution Map 分支连接共用同一曲线机制。
+  - 回归测试覆盖反向 compact hook 范围、Agent 分支拖到下方后仍使用右到左锚点，以及 run observer 反向连接不再出现两段 S loop。
+- **影响范围**: `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改后端 API，不接 SSE，不改 `.pi/skills/**`，不改 Task run / typed chain 数据结构。
+
+---
+
 ## 2026-05-26 — Team Console Run observer 聚合面板视觉优化
 
 - **主题**: 优化合并后的 Task run observer 视觉，让它像一个完整运行观察面板，而不是几个小节点拼在一起。
@@ -32,7 +45,7 @@
   - 运行结果子节点（Worker 过程、Checker 过程、文件节点）合并为单一 `run-observer` 面板，内部固定顺序：worker 过程 → worker 输出文件 → checker 过程 → checker 输出文件 → 结果文件。
   - 文件条目改为紧凑行（`.emap-observer-file-row`），点击后仍展开二级文件详情节点。
   - Task 菜单只保留操作入口和紧凑 run summary，不再承载运行结果明细。
-  - 连线锚点固定为父节点右侧中点到子节点左侧中点；反向角度通过平滑 S 曲线处理，仍从父节点右侧出线并绕回子节点左侧（`rightMiddleToLeftMiddlePath`）；卡片接触点新增圆环 + 中心点标记，source 偏金色、target 偏青色。
+  - 连线锚点固定为父节点右侧中点到子节点左侧中点；卡片接触点新增圆环 + 中心点标记，source 偏金色、target 偏青色。反向曲线已在后续“节点连线曲线统一收口”里改为短 hook 机制。
   - 新增 6 个测试覆盖合并面板结构、section 顺序、文件详情交互、拖动语义、连线锚点和绕路。
   - 更新 18 个旧测试适配新结构。
 - **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`

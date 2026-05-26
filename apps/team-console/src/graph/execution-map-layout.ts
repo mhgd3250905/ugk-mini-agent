@@ -50,16 +50,37 @@ function elbowPath(sx: number, sy: number, tx: number, ty: number): string {
   return `M${sx},${sy} C${sx},${sy + cp} ${tx},${ty - cp} ${tx},${ty}`;
 }
 
-export function straightPath(sx: number, sy: number, tx: number, ty: number): string {
+function connectorHookLength(sx: number, sy: number, tx: number, ty: number): number {
   const dx = tx - sx;
   const dy = ty - sy;
-  const horizontalTension = Math.max(32, Math.abs(dx) * 0.42);
-  const verticalTension = Math.max(32, Math.abs(dy) * 0.42);
-  const cp1x = Math.abs(dx) >= Math.abs(dy) ? sx + Math.sign(dx || 1) * horizontalTension : sx;
-  const cp1y = Math.abs(dx) >= Math.abs(dy) ? sy : sy + Math.sign(dy || 1) * verticalTension;
-  const cp2x = Math.abs(dx) >= Math.abs(dy) ? tx - Math.sign(dx || 1) * horizontalTension : tx;
-  const cp2y = Math.abs(dx) >= Math.abs(dy) ? ty : ty - Math.sign(dy || 1) * verticalTension;
-  return `M${sx},${sy} C${cp1x},${cp1y} ${cp2x},${cp2y} ${tx},${ty}`;
+  const distance = Math.hypot(dx, dy);
+  if (dx >= 0) {
+    return Math.max(26, Math.min(64, dx * 0.5 + Math.abs(dy) * 0.12));
+  }
+  return Math.max(42, Math.min(64, distance * 0.14));
+}
+
+export function straightPath(sx: number, sy: number, tx: number, ty: number): string {
+  const hook = connectorHookLength(sx, sy, tx, ty);
+  const dy = ty - sy;
+  const directionY = Math.sign(dy || 1);
+  const turnY = Math.min(56, Math.abs(dy) * 0.2);
+  const sourceHook = { x: sx + hook, y: sy + directionY * turnY };
+  const targetHook = { x: tx - hook, y: ty - directionY * turnY };
+  const middleCp1 = {
+    x: sourceHook.x + (targetHook.x - sourceHook.x) * 0.34,
+    y: sourceHook.y + (targetHook.y - sourceHook.y) * 0.34,
+  };
+  const middleCp2 = {
+    x: sourceHook.x + (targetHook.x - sourceHook.x) * 0.66,
+    y: sourceHook.y + (targetHook.y - sourceHook.y) * 0.66,
+  };
+  return [
+    `M${sx},${sy}`,
+    `C${sx + hook * 0.72},${sy} ${sourceHook.x},${sy + directionY * turnY * 0.42} ${sourceHook.x},${sourceHook.y}`,
+    `C${middleCp1.x},${middleCp1.y} ${middleCp2.x},${middleCp2.y} ${targetHook.x},${targetHook.y}`,
+    `C${targetHook.x},${ty - directionY * turnY * 0.42} ${tx - hook * 0.72},${ty} ${tx},${ty}`,
+  ].join(" ");
 }
 
 export function layoutExecutionMap(

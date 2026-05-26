@@ -2086,7 +2086,7 @@ describe("App", () => {
     expect(Number.parseFloat(branchShell!.style.top)).toBeCloseTo(initialTop - 200, 4);
   });
 
-  it("anchors the embedded playground branch link to the nearest sides after dragging below the agent", async () => {
+  it("keeps the embedded playground branch link on shared right-to-left node anchors after dragging below the agent", async () => {
     const { container } = render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
@@ -2102,8 +2102,8 @@ describe("App", () => {
 
     const branchLink = container.querySelector(".emap-link-agent-branch") as SVGPathElement | null;
     expect(branchLink).toBeTruthy();
-    expect(branchLink!.getAttribute("d")).toContain("M500,112");
-    expect(branchLink!.getAttribute("d")).not.toContain("M640,56");
+    expect(branchLink!.getAttribute("d")).toContain("M640,56");
+    expect(branchLink!.getAttribute("d")).not.toContain("M500,112");
   });
 
   it("resizes the embedded playground branch from the bottom-right handle", async () => {
@@ -3812,7 +3812,7 @@ describe("App", () => {
     expect(maxX).toBeLessThanOrEqual(observerLeft + 8);
   });
 
-  it("routes reverse task child connector as a smooth right-exit S curve", async () => {
+  it("routes reverse task child connector as a compact endpoint-hook curve", async () => {
     const { container } = render(<App />);
     await setupMergedObserverOpen(container);
 
@@ -3846,18 +3846,23 @@ describe("App", () => {
     const moveMatch = d.match(/^M([\d.]+),([\d.]+)/);
     expect(moveMatch).toBeTruthy();
     const sourceRightX = Number.parseFloat(moveMatch![1]!);
+    const endMatch = d.match(/([\d.]+),([\d.]+)\s*$/);
+    expect(endMatch).toBeTruthy();
+    const targetLeftX = Number.parseFloat(endMatch![1]!);
 
-    // Reverse layout still exits from the parent right side before curving back.
-    expect(maxX).toBeGreaterThan(sourceRightX + 40);
-    // It then approaches the child from the left side, matching right-middle -> left-middle semantics.
-    expect(minX).toBeLessThan(sourceRightX);
+    // Reverse layout exits from the parent right side, but only as a short endpoint hook.
+    expect(maxX).toBeGreaterThan(sourceRightX);
+    expect(maxX).toBeLessThanOrEqual(sourceRightX + 68);
+    // It approaches the child from the left side without drawing a wide loop around the canvas.
+    expect(minX).toBeLessThan(targetLeftX);
+    expect(minX).toBeGreaterThanOrEqual(targetLeftX - 68);
 
-    // Reverse detour must stay a smooth curve, not an angular line segment.
+    // Reverse detour uses source hook, low-curve middle, and target hook, not angular segments or a big S loop.
     expect(d).not.toContain(" L");
-    expect((d.match(/\sC/g) ?? []).length).toBe(2);
+    expect((d.match(/\sC/g) ?? []).length).toBe(3);
 
-    // The path should NOT be a simple straight line (should have > 2 coordinate pairs)
-    expect(allCoords.length).toBeGreaterThan(4);
+    // A compact endpoint-hook connector has three cubics: start hook, middle curve, target hook.
+    expect(allCoords).toHaveLength(10);
   });
 
   // --- Task operation tree drag ---

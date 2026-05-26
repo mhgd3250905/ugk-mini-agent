@@ -297,10 +297,6 @@ function rectsIntersect(
     && a.y + a.height > b.y;
 }
 
-function clampNumber(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
 function agentBranchConnectorPath(agentNode: AtlasAgentNode, branchRect: AgentBranchRect): string {
   const agentRect = {
     x: agentNode.position.x,
@@ -308,28 +304,7 @@ function agentBranchConnectorPath(agentNode: AtlasAgentNode, branchRect: AgentBr
     width: NODE_WIDTH,
     height: AGENT_NODE_HEIGHT,
   };
-  const agentCenter = {
-    x: agentRect.x + agentRect.width / 2,
-    y: agentRect.y + agentRect.height / 2,
-  };
-  const branchCenter = {
-    x: branchRect.x + branchRect.width / 2,
-    y: branchRect.y + branchRect.height / 2,
-  };
-  const dx = branchCenter.x - agentCenter.x;
-  const dy = branchCenter.y - agentCenter.y;
-
-  if (Math.abs(dy) > Math.abs(dx)) {
-    const sourceY = dy >= 0 ? agentRect.y + agentRect.height : agentRect.y;
-    const targetY = dy >= 0 ? branchRect.y : branchRect.y + branchRect.height;
-    const targetX = clampNumber(agentCenter.x, branchRect.x, branchRect.x + branchRect.width);
-    return straightPath(agentCenter.x, sourceY, targetX, targetY);
-  }
-
-  const sourceX = dx >= 0 ? agentRect.x + agentRect.width : agentRect.x;
-  const targetX = dx >= 0 ? branchRect.x : branchRect.x + branchRect.width;
-  const targetY = clampNumber(agentCenter.y, branchRect.y, branchRect.y + branchRect.height);
-  return straightPath(sourceX, agentCenter.y, targetX, targetY);
+  return rightMiddleToLeftMiddlePath(agentRect, branchRect);
 }
 
 function rightMiddleToLeftMiddlePath(sourceRect: AgentBranchRect, targetRect: AgentBranchRect): string {
@@ -337,20 +312,7 @@ function rightMiddleToLeftMiddlePath(sourceRect: AgentBranchRect, targetRect: Ag
   const sy = sourceRect.y + sourceRect.height / 2;
   const tx = targetRect.x;
   const ty = targetRect.y + targetRect.height / 2;
-  if (tx - sx >= 24) {
-    const handle = Math.min(48, (tx - sx) * 0.42);
-    return `M${sx},${sy} C${sx + handle},${sy} ${tx - handle},${ty} ${tx},${ty}`;
-  }
-  const verticalGap = Math.abs(ty - sy);
-  const exitX = Math.max(sx + 56, targetRect.x + targetRect.width + 48);
-  const entryX = tx - Math.min(120, Math.max(48, Math.abs(sx - tx) * 0.28 + verticalGap * 0.12));
-  const midX = (exitX + entryX) / 2;
-  const midY = sy + (ty - sy) * 0.5;
-  return [
-    `M${sx},${sy}`,
-    `C${exitX},${sy} ${exitX},${midY} ${midX},${midY}`,
-    `C${entryX},${midY} ${entryX},${ty} ${tx},${ty}`,
-  ].join(" ");
+  return straightPath(sx, sy, tx, ty);
 }
 
 function taskNodeRect(taskNode: AtlasTaskNode): AgentBranchRect {
