@@ -278,6 +278,33 @@ export interface TeamCanvasSourceNode {
 	archived?: boolean;
 }
 
+export interface TeamCanvasSourceConnection {
+	schemaVersion: "team/source-connection-1";
+	connectionId: string;
+	fromSourceNodeId: string;
+	fromOutputPortId: string;
+	toTaskId: string;
+	toInputPortId: string;
+	type: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export type SourceConnectionStaleReason =
+	| "source_node_missing"
+	| "source_node_archived"
+	| "target_task_missing"
+	| "target_task_archived"
+	| "source_output_port_missing"
+	| "target_input_port_missing"
+	| "source_output_port_type_mismatch"
+	| "target_input_port_type_mismatch";
+
+export interface ResolvedSourceConnection extends TeamCanvasSourceConnection {
+	status: "active" | "stale";
+	staleReason?: SourceConnectionStaleReason;
+}
+
 export interface TeamTaskTypedArtifact {
 	schemaVersion: "team/task-artifact-1";
 	artifactId: string;
