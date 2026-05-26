@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { TaskStore } from "../src/team/task-store.js";
 import { TaskConnectionStore } from "../src/team/task-connection-store.js";
+import { SourceConnectionStore } from "../src/team/source-connection-store.js";
+import { SourceNodeStore } from "../src/team/source-node-store.js";
 import { RunWorkspace } from "../src/team/run-workspace.js";
 import { CanvasTaskRunService } from "../src/team/task-run-service.js";
 import type {
@@ -767,6 +769,173 @@ test("downstream worker receives bound input prompt and payload from upstream ty
 		assert.ok(payload?.boundInputs, "payload should contain boundInputs");
 		assert.equal(payload!.boundInputs!.length, 1);
 		assert.equal(payload!.boundInputs![0]!.inputPortId, "source_md");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("direct Canvas Task run injects connected source node input into worker prompt and payload", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-source-input-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const task = await taskStore.create({
+			...validTaskInput,
+			workUnit: {
+				...validTaskInput.workUnit,
+				inputPorts: [{ id: "source_text", label: "Source text", type: "string" }],
+			},
+		});
+		const sourceNodeStore = new SourceNodeStore(join(root, "team"));
+		const source = await sourceNodeStore.create({
+			title: "需求说明",
+			nodeType: "text",
+			content: { text: "请优先使用这段画布文本。" },
+		});
+		const sourceConnectionStore = new SourceConnectionStore(join(root, "team"), sourceNodeStore, taskStore);
+		const connection = await sourceConnectionStore.create({
+			fromSourceNodeId: source.sourceNodeId,
+			fromOutputPortId: "value",
+			toTaskId: task.taskId,
+			toInputPortId: "source_text",
+		});
+
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		let capturedWorkerInput: WorkerInput | undefined;
+		class CaptureSourceWorkerInputRunner extends ProcessEventRoleRunner {
+			async runWorker(input: WorkerInput): Promise<WorkerOutput> {
+				capturedWorkerInput = input;
+				return { content: "worker result", artifactRefs: [] };
+			}
+		}
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new CaptureSourceWorkerInputRunner(),
+			sourceNodeStore,
+			sourceConnectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const created = await service.createRun(task.taskId, { includeSourceBindings: true });
+		const boundInput = created.source?.boundInputs?.[0];
+		assert.equal(boundInput?.source, "canvas-source");
+		assert.equal(boundInput?.connectionId, connection.connectionId);
+		assert.equal(boundInput?.inputPortId, "source_text");
+		assert.equal(boundInput?.artifact.type, "string");
+		assert.equal(boundInput?.artifact.sourceNodeId, source.sourceNodeId);
+		assert.equal(boundInput?.artifact.sourceOutputPortId, "value");
+		assert.equal(boundInput?.artifact.content, "请优先使用这段画布文本。");
+
+		const finished = await waitForTerminalRun(service, created.runId);
+		assert.equal(finished.status, "completed");
+		assert.ok(capturedWorkerInput, "worker input should have been captured");
+		assert.match(capturedWorkerInput!.task.input.text, /画布 source node 输入/);
+		assert.match(capturedWorkerInput!.task.input.text, new RegExp("sourceNodeId: " + source.sourceNodeId));
+		assert.match(capturedWorkerInput!.task.input.text, /请优先使用这段画布文本。/);
+		assert.doesNotMatch(capturedWorkerInput!.task.input.text, /sourceTaskId/);
+		const payload = capturedWorkerInput!.task.input.payload as { boundInputs?: Array<{ source?: string; artifact: { sourceNodeId?: string } }> } | undefined;
+		assert.equal(payload?.boundInputs?.[0]?.source, "canvas-source");
+		assert.equal(payload?.boundInputs?.[0]?.artifact.sourceNodeId, source.sourceNodeId);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("direct Canvas Task run skips stale source node connection without invalid binding", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-source-stale-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const task = await taskStore.create({
+			...validTaskInput,
+			workUnit: {
+				...validTaskInput.workUnit,
+				inputPorts: [{ id: "source_text", label: "Source text", type: "string" }],
+			},
+		});
+		const sourceNodeStore = new SourceNodeStore(join(root, "team"));
+		const source = await sourceNodeStore.create({
+			title: "需求说明",
+			nodeType: "text",
+			content: { text: "stale input" },
+		});
+		const sourceConnectionStore = new SourceConnectionStore(join(root, "team"), sourceNodeStore, taskStore);
+		await sourceConnectionStore.create({
+			fromSourceNodeId: source.sourceNodeId,
+			fromOutputPortId: "value",
+			toTaskId: task.taskId,
+			toInputPortId: "source_text",
+		});
+		await taskStore.update(task.taskId, {
+			workUnit: {
+				...task.workUnit,
+				inputPorts: [{ id: "source_text", label: "HTML source", type: "html" }],
+			},
+		});
+
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		let capturedWorkerInput: WorkerInput | undefined;
+		class CaptureNoSourceWorkerInputRunner extends ProcessEventRoleRunner {
+			async runWorker(input: WorkerInput): Promise<WorkerOutput> {
+				capturedWorkerInput = input;
+				return { content: "worker result", artifactRefs: [] };
+			}
+		}
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new CaptureNoSourceWorkerInputRunner(),
+			sourceNodeStore,
+			sourceConnectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const created = await service.createRun(task.taskId, { includeSourceBindings: true });
+		assert.equal(created.source?.boundInputs, undefined);
+		const finished = await waitForTerminalRun(service, created.runId);
+		assert.equal(finished.status, "completed");
+		assert.ok(capturedWorkerInput);
+		assert.equal(capturedWorkerInput!.task.input.payload, undefined);
+		assert.doesNotMatch(capturedWorkerInput!.task.input.text, /stale input/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("source node connections do not auto-trigger task runs by themselves", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-source-no-autostart-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const task = await taskStore.create({
+			...validTaskInput,
+			workUnit: {
+				...validTaskInput.workUnit,
+				inputPorts: [{ id: "source_text", label: "Source text", type: "string" }],
+			},
+		});
+		const sourceNodeStore = new SourceNodeStore(join(root, "team"));
+		const source = await sourceNodeStore.create({
+			title: "需求说明",
+			nodeType: "text",
+			content: { text: "x" },
+		});
+		const sourceConnectionStore = new SourceConnectionStore(join(root, "team"), sourceNodeStore, taskStore);
+		await sourceConnectionStore.create({
+			fromSourceNodeId: source.sourceNodeId,
+			fromOutputPortId: "value",
+			toTaskId: task.taskId,
+			toInputPortId: "source_text",
+		});
+
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace: new RunWorkspace(join(root, "task-runs")),
+			createRoleRunner: () => new ProcessEventRoleRunner(),
+			sourceNodeStore,
+			sourceConnectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+		await new Promise(resolve => setTimeout(resolve, 50));
+		assert.deepEqual(await service.listRuns(task.taskId), []);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

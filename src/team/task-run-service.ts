@@ -8,8 +8,10 @@ import { validateTeamOutput } from "./output-validator.js";
 import { writeTimingSpan } from "./timing.js";
 import { TeamRoleProcessRecorder } from "./task-run-process-recorder.js";
 import { resolveConnectionStaleReason } from "./task-chain-contract.js";
-import { buildTeamTaskTypedArtifact, formatBoundInputsForPrompt } from "./task-artifact-handoff.js";
+import { buildTeamCanvasSourceArtifact, buildTeamTaskTypedArtifact, formatBoundInputsForPrompt } from "./task-artifact-handoff.js";
 import type { TaskConnectionStore } from "./task-connection-store.js";
+import { resolveSourceConnectionStaleReason, type SourceConnectionStore } from "./source-connection-store.js";
+import type { SourceNodeStore } from "./source-node-store.js";
 import type { ProfileAwareTeamRoleRunner, TeamRoleRunner, WorkerOutput, CheckerOutput } from "./role-runner.js";
 import type { TeamCanvasTask, TeamOutputValidationResult, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskDeliveryOutcome } from "./types.js";
 
@@ -18,6 +20,8 @@ export interface CanvasTaskRunServiceOptions {
 	workspace: RunWorkspace;
 	createRoleRunner: () => TeamRoleRunner;
 	connectionStore?: TaskConnectionStore;
+	sourceNodeStore?: SourceNodeStore;
+	sourceConnectionStore?: SourceConnectionStore;
 	dataDir: string;
 	maxCheckerRevisions?: number;
 	phaseTimeouts?: {
@@ -45,6 +49,7 @@ export interface CanvasTaskRunOptions {
 	maxRunDurationMinutes?: number;
 	boundInputs?: TeamTaskBoundInput[];
 	triggeredBy?: TaskRunSource["triggeredBy"];
+	includeSourceBindings?: boolean;
 }
 
 function canvasTaskToTeamTask(task: TeamCanvasTask, boundInputs: TeamTaskBoundInput[] = []): TeamTask {
@@ -117,7 +122,10 @@ export class CanvasTaskRunService {
 		const activeRun = (await this.listRuns(taskId)).find(run => ACTIVE_RUN_STATUSES.has(run.status));
 		if (activeRun) throw new Error(`active task run already exists: ${activeRun.runId}`);
 
-		const boundInputs = runOptions.boundInputs ?? [];
+		const boundInputs = [
+			...(runOptions.boundInputs ?? []),
+			...(runOptions.includeSourceBindings ? await this.buildSourceBoundInputs(task) : []),
+		];
 		const plan = canvasTaskToPlan(task, boundInputs);
 		const createOptions = runOptions.maxRunDurationMinutes != null
 			? { maxRunDurationMinutes: runOptions.maxRunDurationMinutes }
@@ -147,6 +155,37 @@ export class CanvasTaskRunService {
 	async getRun(runId: string): Promise<TeamRunState | null> {
 		const state = await this.options.workspace.getState(runId);
 		return state?.source?.type === "canvas-task" ? state : null;
+	}
+
+	private async buildSourceBoundInputs(task: TeamCanvasTask): Promise<TeamTaskBoundInput[]> {
+		const sourceNodeStore = this.options.sourceNodeStore;
+		const sourceConnectionStore = this.options.sourceConnectionStore;
+		if (!sourceNodeStore || !sourceConnectionStore) return [];
+		const connections = await sourceConnectionStore.listToTask(task.taskId);
+		const boundInputs: TeamTaskBoundInput[] = [];
+		for (const connection of connections) {
+			const sourceNode = await sourceNodeStore.get(connection.fromSourceNodeId);
+			const staleReason = resolveSourceConnectionStaleReason(sourceNode, task, connection);
+			if (staleReason) continue;
+			const artifact = buildTeamCanvasSourceArtifact({
+				type: connection.type,
+				sourceNodeId: sourceNode!.sourceNodeId,
+				sourceOutputPortId: connection.fromOutputPortId,
+				title: sourceNode!.title,
+				content: sourceNode!.content?.text,
+				fileName: sourceNode!.content?.fileName,
+				mimeType: sourceNode!.content?.mimeType,
+				size: sourceNode!.content?.size,
+				storageRef: sourceNode!.content?.storageRef,
+			});
+			boundInputs.push({
+				source: "canvas-source",
+				connectionId: connection.connectionId,
+				inputPortId: connection.toInputPortId,
+				artifact,
+			});
+		}
+		return boundInputs;
 	}
 
 	async cancelRun(runId: string, reason = "user cancel"): Promise<TeamRunState> {

@@ -11,6 +11,8 @@ import { buildTeamPlanDraft, listTeamPlanTemplates } from "./plan-draft.js";
 import { validateCreatePlanInput } from "./plan-validation.js";
 import { buildTaskWarnings, type UpdateTeamCanvasTaskInput } from "./task-validation.js";
 import { TaskConnectionStore } from "./task-connection-store.js";
+import { SourceConnectionStore } from "./source-connection-store.js";
+import { SourceNodeStore, type UpdateSourceNodeInput } from "./source-node-store.js";
 import { MockRoleRunner } from "./role-runner.js";
 import type { TeamRoleRunner } from "./role-runner.js";
 import { buildRunDetailResponse } from "./run-presenter.js";
@@ -73,7 +75,9 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		getAgentIds: () => loadAgentProfilesSync(options.projectRoot).map((profile) => profile.agentId),
 	});
 	const unitStore = new TeamUnitStore(options.teamDataDir);
+	const sourceNodeStore = new SourceNodeStore(options.teamDataDir);
 	const taskConnectionStore = new TaskConnectionStore(options.teamDataDir, taskStore);
+	const sourceConnectionStore = new SourceConnectionStore(options.teamDataDir, sourceNodeStore, taskStore);
 	const workspace = new RunWorkspace(options.teamDataDir);
 	const taskRunDataDir = join(options.teamDataDir, "task-runs");
 	const taskRunWorkspace = new RunWorkspace(taskRunDataDir);
@@ -82,6 +86,8 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		workspace: taskRunWorkspace,
 		createRoleRunner: () => createRoleRunner({ ...options, teamDataDir: taskRunDataDir }),
 		connectionStore: taskConnectionStore,
+		sourceNodeStore,
+		sourceConnectionStore,
 		dataDir: taskRunDataDir,
 		maxCheckerRevisions: 3,
 		maxConcurrentRuns: options.maxConcurrentRuns,
@@ -172,6 +178,112 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		}
 	});
 
+	app.get("/v1/team/source-nodes", async (request, reply) => {
+		const query = request.query as { includeArchived?: string };
+		try {
+			const sourceNodes = await sourceNodeStore.list({ includeArchived: query.includeArchived === "1" || query.includeArchived === "true" });
+			reply.send({ sourceNodes });
+		} catch (err) {
+			reply.code(500).send({ error: (err as Error).message });
+		}
+	});
+
+	app.post("/v1/team/source-nodes", async (request, reply) => {
+		const body = request.body as Record<string, unknown>;
+		try {
+			const sourceNode = await sourceNodeStore.create({
+				title: body.title as string,
+				nodeType: body.nodeType as any,
+				outputPort: body.outputPort as any,
+				content: body.content as any,
+			});
+			reply.code(201).send({ sourceNode });
+		} catch (err) {
+			reply.code(400).send({ error: (err as Error).message });
+		}
+	});
+
+	app.patch("/v1/team/source-nodes/:sourceNodeId", async (request, reply) => {
+		const { sourceNodeId } = request.params as { sourceNodeId: string };
+		const body = request.body as Record<string, unknown>;
+		const patch: UpdateSourceNodeInput = {};
+		if (Object.hasOwn(body, "title")) patch.title = body.title as string;
+		if (Object.hasOwn(body, "nodeType")) patch.nodeType = body.nodeType as any;
+		if (Object.hasOwn(body, "outputPort")) patch.outputPort = body.outputPort as any;
+		if (Object.hasOwn(body, "content")) patch.content = body.content as any;
+		try {
+			const sourceNode = await sourceNodeStore.update(sourceNodeId, patch);
+			reply.send({ sourceNode });
+		} catch (err) {
+			const msg = (err as Error).message;
+			reply.code(msg.includes("not found") ? 404 : 400).send({ error: msg });
+		}
+	});
+
+	app.post("/v1/team/source-nodes/:sourceNodeId/archive", async (request, reply) => {
+		const { sourceNodeId } = request.params as { sourceNodeId: string };
+		try {
+			const sourceNode = await sourceNodeStore.archive(sourceNodeId);
+			reply.send({ sourceNode });
+		} catch (err) {
+			const msg = (err as Error).message;
+			reply.code(msg.includes("not found") ? 404 : 400).send({ error: msg });
+		}
+	});
+
+	app.get("/v1/team/source-connections", async (_request, reply) => {
+		try {
+			const connections = await sourceConnectionStore.listResolved();
+			reply.send({ connections });
+		} catch (err) {
+			reply.code(500).send({ error: (err as Error).message });
+		}
+	});
+
+	app.post("/v1/team/source-connections", async (request, reply) => {
+		const body = request.body as Record<string, unknown>;
+		try {
+			const connection = await sourceConnectionStore.create({
+				fromSourceNodeId: body.fromSourceNodeId as string,
+				fromOutputPortId: body.fromOutputPortId as string,
+				toTaskId: body.toTaskId as string,
+				toInputPortId: body.toInputPortId as string,
+			});
+			reply.code(201).send({ connection });
+		} catch (err) {
+			const msg = (err as Error).message;
+			if (msg.includes("source connection store") || msg.includes("lock busy")) {
+				reply.code(msg.includes("lock busy") ? 409 : 500).send({ error: msg });
+				return;
+			}
+			if (msg.includes("not found") || msg.includes("port not found")) {
+				reply.code(404).send({ error: msg });
+				return;
+			}
+			if (msg.includes("already exists") || msg.includes("archived")) {
+				reply.code(409).send({ error: msg });
+				return;
+			}
+			reply.code(400).send({ error: msg });
+		}
+	});
+
+	app.delete("/v1/team/source-connections/:connectionId", async (request, reply) => {
+		const { connectionId } = request.params as { connectionId: string };
+		try {
+			const deleted = await sourceConnectionStore.delete(connectionId);
+			if (!deleted) {
+				reply.code(404).send({ error: "source connection not found" });
+				return;
+			}
+			reply.code(204).send();
+		} catch (err) {
+			const msg = (err as Error).message;
+			if (msg.includes("lock busy")) { reply.code(409).send({ error: msg }); return; }
+			reply.code(500).send({ error: msg });
+		}
+	});
+
 	app.get("/v1/team/task-connections", async (_request, reply) => {
 		try {
 			const connections = await taskConnectionStore.listResolved();
@@ -246,7 +358,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 				}
 				maxRunDurationMinutes = num;
 			}
-			const state = await taskRunService.createRun(taskId, { maxRunDurationMinutes });
+			const state = await taskRunService.createRun(taskId, { maxRunDurationMinutes, includeSourceBindings: true });
 			reply.code(201).send(state);
 		} catch (err) {
 			const msg = (err as Error).message;

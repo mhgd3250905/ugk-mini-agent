@@ -19,6 +19,17 @@ export interface CreateSourceNodeInput {
 	content?: TeamCanvasSourceNode["content"];
 }
 
+export interface UpdateSourceNodeInput {
+	title?: string;
+	nodeType?: TeamCanvasSourceNodeType;
+	outputPort?: {
+		id?: string;
+		label?: string;
+		type?: string;
+	};
+	content?: TeamCanvasSourceNode["content"];
+}
+
 const SOURCE_NODE_ID_PATTERN = /^source_[A-Za-z0-9_-]{1,80}$/;
 const SOURCE_PORT_TYPES = new Set<TeamCanvasSourcePortType>(["string", "md", "json", "html", "file"]);
 
@@ -76,6 +87,38 @@ export class SourceNodeStore {
 		}
 		await this.writeAll([...nodes, node]);
 		return node;
+	}
+
+	async update(sourceNodeId: string, patch: UpdateSourceNodeInput): Promise<TeamCanvasSourceNode> {
+		const nodes = await this.readAll();
+		const index = nodes.findIndex(node => node.sourceNodeId === sourceNodeId);
+		if (index < 0) throw new Error(`source node not found: ${sourceNodeId}`);
+		const existing = nodes[index]!;
+		const hasTitle = Object.hasOwn(patch, "title");
+		const hasNodeType = Object.hasOwn(patch, "nodeType");
+		const hasContent = Object.hasOwn(patch, "content");
+		const hasOutputPort = Object.hasOwn(patch, "outputPort");
+		const nodeType = hasNodeType ? validateNodeType(patch.nodeType) : existing.nodeType;
+		const content = hasContent ? normalizeContent(patch.content, nodeType) : existing.content;
+		const outputPort = hasOutputPort
+			? normalizeOutputPort({ ...patch, content } as CreateSourceNodeInput, nodeType)
+			: hasNodeType || hasContent
+				? {
+					...existing.outputPort,
+					type: nodeType === "text" ? "string" : inferSourceNodeOutputType(content?.fileName),
+				}
+				: existing.outputPort;
+		const updated: TeamCanvasSourceNode = {
+			...existing,
+			...(hasTitle ? { title: validateTitle(patch.title) } : {}),
+			nodeType,
+			outputPort,
+			...(content ? { content } : {}),
+			updatedAt: now(),
+		};
+		nodes[index] = updated;
+		await this.writeAll(nodes);
+		return updated;
 	}
 
 	async archive(sourceNodeId: string): Promise<TeamCanvasSourceNode> {

@@ -552,3 +552,126 @@ test("stale downstream connection records skipped outcome with staleReason", asy
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+test("source node and source connection APIs inject bound inputs into direct Task run", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const taskRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts(taskPayload, {
+				inputPorts: [{ id: "source_text", label: "Source text", type: "string" }],
+			}),
+		});
+		assert.equal(taskRes.statusCode, 201);
+		const task = taskRes.json().task;
+
+		const sourceRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/source-nodes",
+			payload: {
+				title: "需求说明",
+				nodeType: "text",
+				content: { text: "API 注入的 source 文本。" },
+			},
+		});
+		assert.equal(sourceRes.statusCode, 201);
+		const sourceNode = sourceRes.json().sourceNode;
+		assert.equal(sourceNode.outputPort.type, "string");
+
+		const patchRes = await app.inject({
+			method: "PATCH",
+			url: `/v1/team/source-nodes/${sourceNode.sourceNodeId}`,
+			payload: {
+				content: { text: "PATCH 后的 source 文本。" },
+			},
+		});
+		assert.equal(patchRes.statusCode, 200);
+
+		const connectionRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/source-connections",
+			payload: {
+				fromSourceNodeId: sourceNode.sourceNodeId,
+				fromOutputPortId: "value",
+				toTaskId: task.taskId,
+				toInputPortId: "source_text",
+			},
+		});
+		assert.equal(connectionRes.statusCode, 201);
+		const sourceConnection = connectionRes.json().connection;
+
+		const listNodesRes = await app.inject({ method: "GET", url: "/v1/team/source-nodes" });
+		assert.equal(listNodesRes.statusCode, 200);
+		assert.equal(listNodesRes.json().sourceNodes.length, 1);
+
+		const listConnectionsRes = await app.inject({ method: "GET", url: "/v1/team/source-connections" });
+		assert.equal(listConnectionsRes.statusCode, 200);
+		assert.equal(listConnectionsRes.json().connections[0].status, "active");
+
+		const runRes = await app.inject({ method: "POST", url: `/v1/team/tasks/${task.taskId}/runs` });
+		assert.equal(runRes.statusCode, 201);
+		const created = runRes.json() as TeamRunState;
+		assert.equal(created.source?.boundInputs?.[0]?.source, "canvas-source");
+		assert.equal(created.source?.boundInputs?.[0]?.connectionId, sourceConnection.connectionId);
+		assert.equal(created.source?.boundInputs?.[0]?.inputPortId, "source_text");
+		assert.equal(created.source?.boundInputs?.[0]?.artifact.sourceNodeId, sourceNode.sourceNodeId);
+		assert.equal(created.source?.boundInputs?.[0]?.artifact.content, "PATCH 后的 source 文本。");
+
+		const finished = await waitForTerminalRun(app, created.runId);
+		assert.equal(finished.status, "completed");
+		assert.equal(finished.source?.boundInputs?.[0]?.artifact.content, "PATCH 后的 source 文本。");
+
+		const archiveRes = await app.inject({ method: "POST", url: `/v1/team/source-nodes/${sourceNode.sourceNodeId}/archive` });
+		assert.equal(archiveRes.statusCode, 200);
+		const activeNodesAfterArchive = await app.inject({ method: "GET", url: "/v1/team/source-nodes" });
+		assert.equal(activeNodesAfterArchive.statusCode, 200);
+		assert.equal(activeNodesAfterArchive.json().sourceNodes.length, 0);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("source connection API rejects source-to-task type mismatch", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const taskRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts(taskPayload, {
+				inputPorts: [{ id: "source_html", label: "HTML source", type: "html" }],
+			}),
+		});
+		assert.equal(taskRes.statusCode, 201);
+		const task = taskRes.json().task;
+		const sourceRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/source-nodes",
+			payload: {
+				title: "Markdown 文件",
+				nodeType: "file",
+				content: { fileName: "brief.md", text: "# Brief" },
+			},
+		});
+		assert.equal(sourceRes.statusCode, 201);
+		const sourceNode = sourceRes.json().sourceNode;
+
+		const connectionRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/source-connections",
+			payload: {
+				fromSourceNodeId: sourceNode.sourceNodeId,
+				fromOutputPortId: "value",
+				toTaskId: task.taskId,
+				toInputPortId: "source_html",
+			},
+		});
+
+		assert.equal(connectionRes.statusCode, 400);
+		assert.match(connectionRes.json().error, /port type mismatch: md -> html/);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
