@@ -59,8 +59,8 @@
 最终验证记录：
 
 - route test（`test/team-task-run-routes.test.ts`）：8 passed
-- backend full gate（8 个 team test 文件）：116 passed
-- frontend test（`apps/team-console`）：345 passed
+- backend full gate（8 个 team test 文件）：117 passed
+- frontend test（`apps/team-console`）：346 passed
 - frontend build（`apps/team-console`）：通过
 - `npx tsc --noEmit`：通过
 - `git diff --check`：通过

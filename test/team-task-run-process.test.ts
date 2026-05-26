@@ -736,6 +736,10 @@ test("downstream worker receives bound input prompt and payload from upstream ty
 		const upstreamFinished = await waitForTerminalRun(service, upstreamRun.runId);
 		assert.equal(upstreamFinished.status, "completed");
 
+		const upstreamAttempts = await workspace.listAttempts(upstreamRun.runId, sourceTask.taskId);
+		assert.equal(upstreamAttempts.length, 1);
+		const upstreamAttemptId = upstreamAttempts[0]!.attemptId;
+
 		const downstreamRuns = await waitForTaskRuns(service, targetTask.taskId, 1);
 		const downstreamFinished = await waitForTerminalRun(service, downstreamRuns[0]!.runId);
 		assert.equal(downstreamFinished.status, "completed");
@@ -746,14 +750,17 @@ test("downstream worker receives bound input prompt and payload from upstream ty
 		assert.match(inputText, /typed artifact/);
 		assert.match(inputText, new RegExp("connectionId: " + connection.connectionId));
 		assert.match(inputText, /inputPortId: source_md/);
-		assert.match(inputText, /artifactId: artifact_/);
+
+		const boundInputPayload = capturedWorkerInput!.task.input.payload as { boundInputs?: Array<{ artifact: { artifactId: string } }> } | undefined;
+		const artifactId = boundInputPayload!.boundInputs![0]!.artifact.artifactId;
+		assert.match(inputText, new RegExp("artifactId: " + artifactId));
 		assert.match(inputText, new RegExp("sourceTaskId: " + sourceTask.taskId));
 		assert.match(inputText, new RegExp("sourceRunId: " + upstreamRun.runId));
-		assert.match(inputText, /sourceAttemptId: attempt_/);
+		assert.match(inputText, new RegExp("sourceAttemptId: " + upstreamAttemptId));
 		assert.match(inputText, /sourceOutputPortId: draft_md/);
 		assert.match(inputText, /fileRef:/);
-		assert.match(inputText, /BEGIN_TYPED_ARTIFACT_CONTENT/);
-		assert.match(inputText, /END_TYPED_ARTIFACT_CONTENT/);
+		assert.match(inputText, new RegExp("BEGIN_TYPED_ARTIFACT_CONTENT " + artifactId));
+		assert.match(inputText, new RegExp("END_TYPED_ARTIFACT_CONTENT " + artifactId));
 		assert.match(inputText, /accepted result/);
 
 		const payload = capturedWorkerInput!.task.input.payload as { boundInputs?: Array<{ inputPortId: string }> } | undefined;

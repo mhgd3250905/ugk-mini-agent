@@ -20,7 +20,7 @@
   - Artifact 内容被 `BEGIN_TYPED_ARTIFACT_CONTENT <artifactId>` 和 `END_TYPED_ARTIFACT_CONTENT <artifactId>` 包裹，不使用 Markdown code fence。
   - Payload 结构 `boundInputs` 和截断限制（content 30,000 / preview 1,200）不变。
 - **影响范围**: `src/team/task-artifact-handoff.ts`, `test/team-task-artifact-handoff.test.ts`, `test/team-task-run-process.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
-- **验证**: `node --test --import tsx test/team-task-artifact-handoff.test.ts test/team-task-run-process.test.ts` (19 passed), backend full gate (116 passed), `npx tsc --noEmit`, `git diff --check`
+- **验证**: `node --test --import tsx test/team-task-artifact-handoff.test.ts test/team-task-run-process.test.ts` (19 passed), backend full gate (117 passed), `npx tsc --noEmit`, `git diff --check`
 - **边界**: 不改 `src/team/task-run-service.ts`、`run-workspace-attempts.ts`、类型结构、delivery runtime、connection store、前端 UI。
 
 ---
