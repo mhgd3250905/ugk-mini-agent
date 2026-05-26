@@ -1748,6 +1748,160 @@ describe("App", () => {
     expect(remainingBranches[0]).not.toHaveTextContent("复核 Medtrum 证据");
   });
 
+  it("keeps every open Task action branch draggable after another Task is focused", async () => {
+    const firstTask = mockTeamTasks[0]!;
+    const secondTask = {
+      ...firstTask,
+      taskId: "task_review_medtrum",
+      title: "复核 Medtrum 证据",
+      leaderAgentId: "search",
+      workUnit: {
+        ...firstTask.workUnit,
+        title: "复核 Medtrum 证据",
+      },
+    };
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [
+            { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+            { agentId: "search", name: "搜索 Agent", description: "搜索" },
+          ],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") {
+        return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      }
+      if (url === "/v1/team/tasks") {
+        return new Response(JSON.stringify({ tasks: [firstTask, secondTask] }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(getAtlasNodes(container).querySelector('[data-task-id="task_review_medtrum"]') as HTMLElement);
+
+    const menuShells = Array.from(container.querySelectorAll(".emap-task-branch-shell")) as HTMLElement[];
+    expect(menuShells).toHaveLength(2);
+    const firstMenuShell = menuShells.find((shell) => shell.textContent?.includes("调查 Medtrum 云资产"));
+    const secondMenuShell = menuShells.find((shell) => shell.textContent?.includes("复核 Medtrum 证据"));
+    expect(firstMenuShell).toBeTruthy();
+    expect(secondMenuShell).toBeTruthy();
+
+    const firstLeftBefore = Number.parseFloat(firstMenuShell!.style.left);
+    const firstTopBefore = Number.parseFloat(firstMenuShell!.style.top);
+    const firstHeader = firstMenuShell!.querySelector(".task-leader-branch-head") as HTMLElement | null;
+    expect(firstHeader).toBeTruthy();
+    firePointer(firstHeader!, "pointerdown", { pointerId: 301, clientX: 420, clientY: 220 });
+    firePointer(firstHeader!, "pointermove", { pointerId: 301, clientX: 485, clientY: 255 });
+    firePointer(firstHeader!, "pointerup", { pointerId: 301, clientX: 485, clientY: 255, buttons: 0 });
+
+    expect(Number.parseFloat(firstMenuShell!.style.left)).toBeCloseTo(firstLeftBefore + 65, 4);
+    expect(Number.parseFloat(firstMenuShell!.style.top)).toBeCloseTo(firstTopBefore + 35, 4);
+
+    const secondLeftBefore = Number.parseFloat(secondMenuShell!.style.left);
+    const secondTopBefore = Number.parseFloat(secondMenuShell!.style.top);
+    const secondHeader = secondMenuShell!.querySelector(".task-leader-branch-head") as HTMLElement | null;
+    expect(secondHeader).toBeTruthy();
+    firePointer(secondHeader!, "pointerdown", { pointerId: 302, clientX: 520, clientY: 250 });
+    firePointer(secondHeader!, "pointermove", { pointerId: 302, clientX: 580, clientY: 295 });
+    firePointer(secondHeader!, "pointerup", { pointerId: 302, clientX: 580, clientY: 295, buttons: 0 });
+
+    expect(Number.parseFloat(secondMenuShell!.style.left)).toBeCloseTo(secondLeftBefore + 60, 4);
+    expect(Number.parseFloat(secondMenuShell!.style.top)).toBeCloseTo(secondTopBefore + 45, 4);
+  });
+
+  it("restores open live canvas branches and viewport after a browser reload", async () => {
+    const liveTask = mockTeamTasks[0]!;
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [
+            { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+            { agentId: "search", name: "搜索 Agent", description: "搜索" },
+          ],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") {
+        return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      }
+      if (url === "/v1/team/tasks") {
+        return new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 });
+      }
+      if (url === "/v1/team/task-connections") {
+        return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      }
+      if (url === `/v1/team/tasks/${liveTask.taskId}/runs`) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const first = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    fireEvent.click(await screen.findByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(getAtlasNodes(first.container)).getByRole("button", { name: /主 Agent/ }));
+    fireEvent.click(await within(getAtlasNodes(first.container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(screen.getByRole("button", { name: "放大" }));
+
+    expect(first.container.querySelector(".agent-playground-branch")).toBeTruthy();
+    expect(first.container.querySelector(".task-action-branch")).toBeTruthy();
+    const transformBefore = getAtlasStage(first.container).style.transform;
+    first.unmount();
+
+    const second = render(<App />);
+
+    await waitFor(() => {
+      expect(second.container.querySelector(".agent-playground-branch")).toBeTruthy();
+      expect(second.container.querySelector(".task-action-branch")).toBeTruthy();
+      expect(getAtlasStage(second.container).style.transform).toBe(transformBefore);
+    });
+  });
+
+  it("minimizes root Agent and Task nodes into the left hub and restores them", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+
+    const agentNode = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
+    const taskNode = container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]') as HTMLElement | null;
+    expect(agentNode).toBeTruthy();
+    expect(taskNode).toBeTruthy();
+    expect(container.querySelector(".agent-playground-branch")).toBeTruthy();
+    expect(container.querySelector(".task-action-branch")).toBeTruthy();
+
+    fireEvent.click(within(agentNode!).getByRole("button", { name: "收纳 Agent" }));
+    fireEvent.click(within(taskNode!).getByRole("button", { name: "收纳 Task" }));
+
+    expect(container.querySelector('.emap-agent-node[data-agent-id="main"]')).toBeNull();
+    expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeNull();
+    expect(container.querySelector(".agent-playground-branch")).toBeNull();
+    expect(container.querySelector(".task-action-branch")).toBeNull();
+
+    const hub = container.querySelector(".emap-node-hub") as HTMLElement | null;
+    expect(hub).toBeTruthy();
+    expect(within(hub!).getByRole("button", { name: /复原 Agent 主 Agent/ })).toBeInTheDocument();
+    expect(within(hub!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ })).toBeInTheDocument();
+
+    fireEvent.click(within(hub!).getByRole("button", { name: /复原 Agent 主 Agent/ }));
+    fireEvent.click(within(hub!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ }));
+
+    expect(container.querySelector('.emap-agent-node[data-agent-id="main"]')).toBeTruthy();
+    expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeTruthy();
+    expect(container.querySelector(".agent-playground-branch")).toBeTruthy();
+    expect(container.querySelector(".task-action-branch")).toBeTruthy();
+  });
+
   it("opens the Task leader chat iframe from the action menu", async () => {
     const { container } = render(<App />);
 
@@ -3215,7 +3369,10 @@ describe("App", () => {
     expect(readme).toContain(".emap-atlas-card");
     expect(readme).toContain("平滑三次贝塞尔曲线");
     expect(readme).toContain("Live API 下已添加 Agent 与拖动后的画布位置会写入浏览器 `localStorage`");
-    expect(readme).toContain("这只保存 Team Console 画布引用位置，不修改真实 Agent profile");
+    expect(readme).toContain("刷新还会恢复当前画布 viewport");
+    expect(readme).toContain("根节点 Hub 收纳状态");
+    expect(readme).toContain("只保存 Team Console 画布 UI 引用");
+    expect(readme).toContain("不修改真实 Agent profile 或 Task 定义");
     expect(readme).toContain("Task 内部包含一个 WorkUnit");
     expect(readme).toContain("leaderAgentId");
     expect(readme).toContain("/v1/team/tasks");
@@ -3246,6 +3403,8 @@ describe("App", () => {
     expect(readme).toContain("不会进入 `/v1/team/runs` 的 Plan run 列表");
     expect(readme).toContain("第一版 Task run 只执行 WorkUnit 的 worker → checker");
     expect(readme).toContain("Task → 菜单 → 二级节点");
+    expect(readme).toContain("左侧 Hub");
+    expect(readme).toContain("点击 Hub 条目会把根节点复原");
     expect(readme).toContain("“编辑”是浅编辑节点");
     expect(readme).toContain("base snapshot 和 dirty fields");
     expect(readme).toContain("同一字段在草稿打开后已被后台刷新改变");
@@ -3271,7 +3430,9 @@ describe("App", () => {
     expect(runtimeDoc).toContain("最大化到未缩放画布 overlay");
     expect(runtimeDoc).toContain(".emap-dialog-branch");
     expect(runtimeDoc).toContain("Live API 下已添加 Agent 与拖动后的画布位置会写入浏览器 `localStorage`");
-    expect(runtimeDoc).toContain("这只保存 Team Console 画布引用位置，不修改真实 Agent profile");
+    expect(runtimeDoc).toContain("当前画布 viewport、已展开 Agent / Task 分支和根节点 Hub 收纳状态");
+    expect(runtimeDoc).toContain("不修改真实 Agent profile 或 Task 定义");
+    expect(runtimeDoc).toContain("pan/zoom viewport 会随 Team Console canvas UI state 持久化");
     expect(runtimeDoc).toContain("Task 内部包含一个 WorkUnit");
     expect(runtimeDoc).toContain("leader Agent");
     expect(runtimeDoc).toContain("Team Console 不解析 iframe 聊天文本创建 Task");

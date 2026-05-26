@@ -17,6 +17,7 @@ const DEFAULT_PLAYGROUND_BASE_URL = "http://127.0.0.1:3000";
 const DATA_SOURCE_STORAGE_KEY = "ugk-team-console:data-source";
 const LIVE_AGENT_LAYOUT_STORAGE_KEY = "ugk-team-console:live-agent-layout:v1";
 const LIVE_TASK_LAYOUT_STORAGE_KEY = "ugk-team-console:live-task-layout:v1";
+const CANVAS_UI_STATE_STORAGE_KEY = "ugk-team-console:canvas-ui-state:v1";
 const TASK_RUN_PROCESS_LABELS: Record<TeamAttemptRoleProcessRole, string> = {
   worker: "Worker 过程",
   checker: "Checker 过程",
@@ -42,6 +43,18 @@ type TaskBranchState = {
   detailMode: TaskBranchDetailMode | null;
   observedRunId?: string;
   selectedFileKeys?: string[];
+};
+
+type StoredCanvasUiState = {
+  schemaVersion: 1;
+  dataSource: DataSource;
+  selectedFixtureId?: string;
+  liveRunMode?: LiveRunMode;
+  viewport?: AtlasViewport;
+  expandedAgentBranch?: AgentBranchState | null;
+  expandedTaskBranches?: TaskBranchState[];
+  minimizedAgentNodeIds?: string[];
+  minimizedTaskNodeIds?: string[];
 };
 
 type TaskEditDirtyField = "title" | "leaderAgentId" | "workerAgentId" | "checkerAgentId";
@@ -444,6 +457,117 @@ function readStoredDataSource(): DataSource {
   }
 }
 
+function readRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
+}
+
+function readStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of value) {
+    const text = typeof item === "string" ? item.trim() : "";
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    result.push(text);
+  }
+  return result;
+}
+
+function readStoredViewport(value: unknown): AtlasViewport | undefined {
+  const record = readRecord(value);
+  if (!record) return undefined;
+  const x = Number(record.x);
+  const y = Number(record.y);
+  const scale = Number(record.scale);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(scale) || scale <= 0) {
+    return undefined;
+  }
+  return { x, y, scale };
+}
+
+function readStoredAgentBranch(value: unknown): AgentBranchState | null {
+  const record = readRecord(value);
+  if (!record) return null;
+  const nodeId = typeof record.nodeId === "string" ? record.nodeId.trim() : "";
+  const agentId = typeof record.agentId === "string" ? record.agentId.trim() : "";
+  const mode = record.mode === "task-create" ? "task-create" : record.mode === "chat" ? "chat" : null;
+  if (!nodeId || !agentId || !mode) return null;
+  return { nodeId, agentId, mode };
+}
+
+function readStoredTaskBranches(value: unknown): TaskBranchState[] {
+  if (!Array.isArray(value)) return [];
+  const result: TaskBranchState[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const record = readRecord(item);
+    if (!record) continue;
+    const nodeId = typeof record.nodeId === "string" ? record.nodeId.trim() : "";
+    const taskId = typeof record.taskId === "string" ? record.taskId.trim() : "";
+    if (!nodeId || !taskId || seen.has(nodeId)) continue;
+    seen.add(nodeId);
+    const rawDetailMode = record.detailMode;
+    const detailMode: TaskBranchDetailMode | null =
+      rawDetailMode === "leader-chat" || rawDetailMode === "edit" || rawDetailMode === "run-observer"
+        ? rawDetailMode
+        : null;
+    const observedRunId = typeof record.observedRunId === "string" && record.observedRunId.trim()
+      ? record.observedRunId.trim()
+      : undefined;
+    const selectedFileKeys = readStringArray(record.selectedFileKeys);
+    result.push({
+      nodeId,
+      taskId,
+      detailMode,
+      ...(observedRunId ? { observedRunId } : {}),
+      ...(selectedFileKeys.length > 0 ? { selectedFileKeys } : {}),
+    });
+  }
+  return result;
+}
+
+function readStoredCanvasUiState(): StoredCanvasUiState | null {
+  try {
+    const raw = globalThis.localStorage?.getItem(CANVAS_UI_STATE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = readRecord(JSON.parse(raw));
+    if (!parsed || parsed.schemaVersion !== 1) return null;
+    const dataSource = parsed.dataSource === "live" ? "live" : parsed.dataSource === "mock" ? "mock" : null;
+    if (!dataSource) return null;
+    const selectedFixtureId = typeof parsed.selectedFixtureId === "string" ? parsed.selectedFixtureId : undefined;
+    const liveRunMode = parsed.liveRunMode === "latest" ? "latest" : parsed.liveRunMode === "workspace" ? "workspace" : undefined;
+    const viewport = readStoredViewport(parsed.viewport);
+    return {
+      schemaVersion: 1,
+      dataSource,
+      ...(selectedFixtureId ? { selectedFixtureId } : {}),
+      ...(liveRunMode ? { liveRunMode } : {}),
+      ...(viewport ? { viewport } : {}),
+      expandedAgentBranch: readStoredAgentBranch(parsed.expandedAgentBranch),
+      expandedTaskBranches: readStoredTaskBranches(parsed.expandedTaskBranches),
+      minimizedAgentNodeIds: readStringArray(parsed.minimizedAgentNodeIds),
+      minimizedTaskNodeIds: readStringArray(parsed.minimizedTaskNodeIds),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredCanvasUiState(state: StoredCanvasUiState) {
+  try {
+    globalThis.localStorage?.setItem(CANVAS_UI_STATE_STORAGE_KEY, JSON.stringify(state));
+  } catch {}
+}
+
+function canvasUiContextMatches(state: StoredCanvasUiState, dataSource: DataSource, selectedFixtureId: string, liveRunMode: LiveRunMode): boolean {
+  if (state.dataSource !== dataSource) return false;
+  if (dataSource === "mock") {
+    return (state.selectedFixtureId ?? CLEAN_AGENT_WORKSPACE_ID) === selectedFixtureId;
+  }
+  return (state.liveRunMode ?? "workspace") === liveRunMode;
+}
+
 function readStoredLiveAgentNodes(): AtlasAgentNode[] {
   try {
     const raw = globalThis.localStorage?.getItem(LIVE_AGENT_LAYOUT_STORAGE_KEY);
@@ -618,6 +742,9 @@ export function App() {
   const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
   const [expandedAgentBranch, setExpandedAgentBranch] = useState<AgentBranchState | null>(null);
   const [expandedTaskBranches, setExpandedTaskBranches] = useState<TaskBranchState[]>([]);
+  const [minimizedAgentNodeIds, setMinimizedAgentNodeIds] = useState<string[]>([]);
+  const [minimizedTaskNodeIds, setMinimizedTaskNodeIds] = useState<string[]>([]);
+  const [canvasUiStateHydrated, setCanvasUiStateHydrated] = useState(false);
   const [taskEditDraft, setTaskEditDraft] = useState<TaskEditDraft | null>(null);
   const [taskEditSaving, setTaskEditSaving] = useState(false);
   const [taskEditWarning, setTaskEditWarning] = useState<string | null>(null);
@@ -686,6 +813,97 @@ export function App() {
     ));
     clearTaskPanelState();
   }, [clearTaskPanelState]);
+
+  useEffect(() => {
+    setCanvasUiStateHydrated(false);
+  }, [dataSource, selectedFixtureId, liveRunMode]);
+
+  useEffect(() => {
+    setMinimizedAgentNodeIds((current) => {
+      const nodeIds = new Set(agentNodes.filter((node) => agentsById.has(node.agentId)).map((node) => node.nodeId));
+      const next = current.filter((nodeId) => nodeIds.has(nodeId));
+      return next.length === current.length ? current : next;
+    });
+  }, [agentNodes, agentsById]);
+
+  useEffect(() => {
+    setMinimizedTaskNodeIds((current) => {
+      const nodeIds = new Set(taskNodes.map((node) => node.nodeId));
+      const next = current.filter((nodeId) => nodeIds.has(nodeId));
+      return next.length === current.length ? current : next;
+    });
+  }, [taskNodes]);
+
+  useEffect(() => {
+    if (canvasUiStateHydrated) return;
+    const ready = dataSource === "live"
+      ? liveAgentNodesHydrated && liveTaskNodesHydrated
+      : taskNodes.length > 0;
+    if (!ready) return;
+
+    const stored = readStoredCanvasUiState();
+    if (!stored || !canvasUiContextMatches(stored, dataSource, selectedFixtureId, liveRunMode)) {
+      setCanvasUiStateHydrated(true);
+      return;
+    }
+
+    const validAgentNodes = agentNodes.filter((node) => agentsById.has(node.agentId));
+    const agentNodeIds = new Set(validAgentNodes.map((node) => node.nodeId));
+    const agentIds = new Set(validAgentNodes.map((node) => node.agentId));
+    const taskNodeIds = new Set(taskNodes.map((node) => node.nodeId));
+    const taskIds = new Set(taskNodes.map((node) => node.taskId));
+    const nextAgentBranch = stored.expandedAgentBranch
+      && agentNodeIds.has(stored.expandedAgentBranch.nodeId)
+      && agentIds.has(stored.expandedAgentBranch.agentId)
+      ? stored.expandedAgentBranch
+      : null;
+    const nextTaskBranches = (stored.expandedTaskBranches ?? []).filter((branch) => (
+      taskNodeIds.has(branch.nodeId) && taskIds.has(branch.taskId)
+    ));
+
+    if (stored.viewport) {
+      setCanvasViewport(stored.viewport);
+    }
+    setExpandedAgentBranch(nextAgentBranch);
+    setExpandedTaskBranches(nextTaskBranches);
+    setMinimizedAgentNodeIds((stored.minimizedAgentNodeIds ?? []).filter((nodeId) => agentNodeIds.has(nodeId)));
+    setMinimizedTaskNodeIds((stored.minimizedTaskNodeIds ?? []).filter((nodeId) => taskNodeIds.has(nodeId)));
+    setCanvasUiStateHydrated(true);
+  }, [
+    agentNodes,
+    agentsById,
+    canvasUiStateHydrated,
+    dataSource,
+    liveAgentNodesHydrated,
+    liveRunMode,
+    liveTaskNodesHydrated,
+    selectedFixtureId,
+    taskNodes,
+  ]);
+
+  useEffect(() => {
+    if (!canvasUiStateHydrated) return;
+    writeStoredCanvasUiState({
+      schemaVersion: 1,
+      dataSource,
+      ...(dataSource === "mock" ? { selectedFixtureId } : { liveRunMode }),
+      viewport: canvasViewport,
+      expandedAgentBranch,
+      expandedTaskBranches,
+      minimizedAgentNodeIds,
+      minimizedTaskNodeIds,
+    });
+  }, [
+    canvasUiStateHydrated,
+    canvasViewport,
+    dataSource,
+    expandedAgentBranch,
+    expandedTaskBranches,
+    liveRunMode,
+    minimizedAgentNodeIds,
+    minimizedTaskNodeIds,
+    selectedFixtureId,
+  ]);
 
   useEffect(() => {
     try {
@@ -1043,6 +1261,26 @@ export function App() {
     setTaskNodes((current) => current.map((node) => (
       node.nodeId === nodeId ? { ...node, position } : node
     )));
+  }, []);
+
+  const minimizeAgentNode = useCallback((node: AtlasAgentNode) => {
+    setMinimizedAgentNodeIds((current) => (
+      current.includes(node.nodeId) ? current : [...current, node.nodeId]
+    ));
+  }, []);
+
+  const restoreAgentNode = useCallback((node: AtlasAgentNode) => {
+    setMinimizedAgentNodeIds((current) => current.filter((nodeId) => nodeId !== node.nodeId));
+  }, []);
+
+  const minimizeTaskNode = useCallback((node: AtlasTaskNode) => {
+    setMinimizedTaskNodeIds((current) => (
+      current.includes(node.nodeId) ? current : [...current, node.nodeId]
+    ));
+  }, []);
+
+  const restoreTaskNode = useCallback((node: AtlasTaskNode) => {
+    setMinimizedTaskNodeIds((current) => current.filter((nodeId) => nodeId !== node.nodeId));
   }, []);
 
   const toggleAgentBranch = useCallback((node: AtlasAgentNode) => {
@@ -2241,6 +2479,9 @@ export function App() {
                 focusedAgentNodeId={expandedAgentNode?.nodeId ?? null}
                 onSelectAgent={toggleAgentBranch}
                 onMoveAgent={moveAgentNode}
+                minimizedAgentNodeIds={minimizedAgentNodeIds}
+                onMinimizeAgent={minimizeAgentNode}
+                onRestoreAgent={restoreAgentNode}
                 agentBranchPanel={expandedAgentBranchPanel}
                 taskNodes={taskNodes}
                 tasksById={tasksById}
@@ -2250,6 +2491,9 @@ export function App() {
                 focusedTaskNodeId={expandedTaskNode?.nodeId ?? null}
                 onSelectCanvasTask={toggleTaskBranch}
                 onMoveCanvasTask={moveTaskNode}
+                minimizedTaskNodeIds={minimizedTaskNodeIds}
+                onMinimizeCanvasTask={minimizeTaskNode}
+                onRestoreCanvasTask={restoreTaskNode}
                 onTaskOutputPortSelect={beginTaskPortConnection}
                 onTaskInputPortSelect={completeTaskPortConnection}
                 taskBranchPanel={expandedTaskBranchPanel}

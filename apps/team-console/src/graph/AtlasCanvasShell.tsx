@@ -49,7 +49,7 @@ function formatCanvasNumber(value: number): string {
 
 function canStartCanvasPan(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return true;
-  return !target.closest(".emap-node, .emap-evidence-node, .emap-artifact-preview, .execution-map-toolbar, .agent-focus-workspace, .emap-agent-branch-shell, .emap-task-branch-shell, .emap-task-child-branch-shell, .agent-playground-branch, button, select, input, textarea, a, iframe, summary, details");
+  return !target.closest(".emap-node, .emap-evidence-node, .emap-artifact-preview, .execution-map-toolbar, .emap-node-hub, .agent-focus-workspace, .emap-agent-branch-shell, .emap-task-branch-shell, .emap-task-child-branch-shell, .agent-playground-branch, button, select, input, textarea, a, iframe, summary, details");
 }
 
 function pointerPoint(event: PointerEvent<HTMLDivElement>): { x: number; y: number } {

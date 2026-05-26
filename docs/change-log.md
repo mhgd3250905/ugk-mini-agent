@@ -12,6 +12,34 @@
 
 ---
 
+## 2026-05-26 — Team Console canvas UI persistence and root Hub
+
+- **主题**: 刷新 Team Console 后恢复画布展开状态，并给 Agent / Task 根节点增加左侧 Hub 收纳能力。
+- **变更内容**:
+  - 新增 `ugk-team-console:canvas-ui-state:v1` 浏览器 UI 状态，只保存 viewport、展开分支和 Hub 收纳 id，不保存 Task 定义、WorkUnit 内容或 run 数据。
+  - 页面恢复时按当前 Agent / Task catalog 过滤过期 `nodeId` / `taskId`，避免后端删除或归档后恢复出脏节点。
+  - Agent / Task 根卡片右下角增加收纳按钮；收纳后根节点、对应分支和连接线不渲染，左侧 Hub 点击条目可复原并保留原展开状态。
+  - 新增回归测试覆盖 live 页面刷新后恢复 Agent/Task 展开分支与 zoom，以及根节点收纳/复原流程。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/AtlasCanvasShell.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`
+- **验证**: 新增 focused tests 先红后绿；完整前端测试 / build / `tsc --noEmit` / `git diff --check` 和浏览器 DOM 验证作为最终门禁。
+- **边界**: 不改 Team runtime 后端、不改主 `/playground`，不改变 Task 定义、Task run 或 Agent profile 数据结构。
+
+---
+
+## 2026-05-26 — Team Console multi-open Task menu drag scope fix
+
+- **主题**: 修复多开 Task 操作分支后，只有最后点击的 Task 菜单可拖动的问题。
+- **变更内容**:
+  - 每个 `.emap-task-branch-shell` 都独立绑定拖拽事件，不再只给 `primaryTaskBranchEntry` 绑定 pointer handler。
+  - Task 菜单拖拽状态记录对应 `nodeId`，位置 override 写回当前被拖动的菜单，而不是最后聚焦的 Task。
+  - 菜单拖拽时只移动同一 Task 菜单下的 run observer / 文件详情 descendants，避免多开分支之间互相抢拖拽作用域。
+  - 新增回归测试覆盖“先展开 Task A，再展开 Task B，A/B 两个菜单都可独立拖动”。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/tests/app.test.tsx`
+- **验证**: `npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "keeps every open Task action branch draggable after another Task is focused"` 先红后绿；完整前端测试 / build / `tsc --noEmit` / `git diff --check` 和浏览器 DOM 验证作为最终门禁。
+- **边界**: 不改 Docker 后端、不改 Team runtime API、不改主 `/playground`，不改变 Task 多开 / 删除确认语义。
+
+---
+
 ## 2026-05-26 — Team Console run observer expansion and left-top target anchors
 
 - **主题**: 收口 Task run observer 的子节点展开交互和连接线入线规范。

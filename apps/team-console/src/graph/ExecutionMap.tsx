@@ -33,6 +33,9 @@ interface ExecutionMapProps {
   focusedAgentNodeId?: string | null;
   onSelectAgent?: (node: AtlasAgentNode) => void;
   onMoveAgent?: (nodeId: string, position: { x: number; y: number }) => void;
+  minimizedAgentNodeIds?: string[];
+  onMinimizeAgent?: (node: AtlasAgentNode) => void;
+  onRestoreAgent?: (node: AtlasAgentNode) => void;
   canMoveAgents?: boolean;
   agentBranchPanel?: ReactNode;
   taskNodes?: AtlasTaskNode[];
@@ -43,6 +46,9 @@ interface ExecutionMapProps {
   focusedTaskNodeId?: string | null;
   onSelectCanvasTask?: (node: AtlasTaskNode) => void;
   onMoveCanvasTask?: (nodeId: string, position: { x: number; y: number }) => void;
+  minimizedTaskNodeIds?: string[];
+  onMinimizeCanvasTask?: (node: AtlasTaskNode) => void;
+  onRestoreCanvasTask?: (node: AtlasTaskNode) => void;
   onTaskOutputPortSelect?: (taskId: string, port: TeamTaskOutputPort) => void;
   onTaskInputPortSelect?: (taskId: string, port: TeamTaskInputPort) => void;
   canMoveTasks?: boolean;
@@ -169,6 +175,8 @@ type TaskBranchMeasuredSize = {
   width: number;
   height: number;
 };
+
+type TaskSubtreeScope = "root" | "menu" | { panelId: string };
 
 function evidenceHeight(kind: EvidenceKind): number {
   switch (kind) {
@@ -366,6 +374,10 @@ function taskBranchConnectorPath(taskNode: AtlasTaskNode, branchRect: AgentBranc
 
 function taskChildBranchConnectorPath(menuRect: AgentBranchRect, childRect: AgentBranchRect): string {
   return rightMiddleToLeftTopPath(menuRect, childRect);
+}
+
+function taskMenuPanelId(nodeId: string): string {
+  return `task-menu-${nodeId}`;
 }
 
 function taskPortLabel(port: TeamTaskInputPort | TeamTaskOutputPort): string {
@@ -623,6 +635,9 @@ export function ExecutionMap({
   focusedAgentNodeId,
   onSelectAgent,
   onMoveAgent,
+  minimizedAgentNodeIds = [],
+  onMinimizeAgent,
+  onRestoreAgent,
   canMoveAgents = true,
   agentBranchPanel,
   taskNodes = [],
@@ -633,6 +648,9 @@ export function ExecutionMap({
   focusedTaskNodeId,
   onSelectCanvasTask,
   onMoveCanvasTask,
+  minimizedTaskNodeIds = [],
+  onMinimizeCanvasTask,
+  onRestoreCanvasTask,
   onTaskOutputPortSelect,
   onTaskInputPortSelect,
   canMoveTasks = true,
@@ -672,9 +690,27 @@ export function ExecutionMap({
   const panelResizeRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startWidth: number; startHeight: number; minWidth: number; minHeight: number } | null>(null);
   const panelDragRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startRect: AgentBranchRect; hasMoved: boolean; capturedTarget: HTMLDivElement | null; lastDx: number; lastDy: number } | null>(null);
   const panelDragSuppressClickRef = useRef(false);
-  const taskBranchDragRef = useRef<{ pointerId: number; startClientX: number; startClientY: number; startRect: AgentBranchRect; hasMoved: boolean; capturedTarget: HTMLDivElement | null; lastDx: number; lastDy: number } | null>(null);
+  const taskBranchDragRef = useRef<{ nodeId: string; pointerId: number; startClientX: number; startClientY: number; startRect: AgentBranchRect; hasMoved: boolean; capturedTarget: HTMLDivElement | null; lastDx: number; lastDy: number } | null>(null);
   const taskBranchDragSuppressClickRef = useRef(false);
-  const translateTaskSubtreeRef = useRef<(scope: "root" | "menu" | { panelId: string }, dx: number, dy: number) => void>(() => {});
+  const translateTaskSubtreeRef = useRef<(scope: TaskSubtreeScope, dx: number, dy: number, nodeId?: string) => void>(() => {});
+  const minimizedAgentNodeIdSet = useMemo(() => new Set(minimizedAgentNodeIds), [minimizedAgentNodeIds]);
+  const minimizedTaskNodeIdSet = useMemo(() => new Set(minimizedTaskNodeIds), [minimizedTaskNodeIds]);
+  const visibleAgentNodes = useMemo(
+    () => agentNodes.filter((node) => !minimizedAgentNodeIdSet.has(node.nodeId)),
+    [agentNodes, minimizedAgentNodeIdSet],
+  );
+  const visibleTaskNodes = useMemo(
+    () => taskNodes.filter((node) => !minimizedTaskNodeIdSet.has(node.nodeId)),
+    [minimizedTaskNodeIdSet, taskNodes],
+  );
+  const hubAgentNodes = useMemo(
+    () => agentNodes.filter((node) => minimizedAgentNodeIdSet.has(node.nodeId)),
+    [agentNodes, minimizedAgentNodeIdSet],
+  );
+  const hubTaskNodes = useMemo(
+    () => taskNodes.filter((node) => minimizedTaskNodeIdSet.has(node.nodeId)),
+    [minimizedTaskNodeIdSet, taskNodes],
+  );
 
   const hasActiveTaskLayoutInteraction = () => {
     const atlasDrag = atlasNodeDragRef.current;
@@ -705,15 +741,15 @@ export function ExecutionMap({
 
   useLayoutEffect(() => {
     const validKeys = new Set([
-      ...agentNodes.map((node) => atlasSelectionKey("agent", node.nodeId)),
-      ...taskNodes.map((node) => atlasSelectionKey("task", node.nodeId)),
+      ...visibleAgentNodes.map((node) => atlasSelectionKey("agent", node.nodeId)),
+      ...visibleTaskNodes.map((node) => atlasSelectionKey("task", node.nodeId)),
     ]);
     setSelectedAtlasNodeKeys((current) => {
       const next = new Set([...current].filter((key) => validKeys.has(key)));
       const unchanged = next.size === current.size && [...next].every((key) => current.has(key));
       return unchanged ? current : next;
     });
-  }, [agentNodes, taskNodes]);
+  }, [visibleAgentNodes, visibleTaskNodes]);
 
   const model = useMemo(() => plan && run ? buildExecutionMapModel(plan, run) : null, [plan, run]);
 
@@ -795,7 +831,7 @@ export function ExecutionMap({
     expandedTaskIds,
   }) : createEmptyLayout(), [model, selectedTaskId, evidenceReservedHeight, expandedTaskIds]);
 
-  const taskNodeByTaskId = useMemo(() => new Map(taskNodes.map((node) => [node.taskId, node])), [taskNodes]);
+  const taskNodeByTaskId = useMemo(() => new Map(visibleTaskNodes.map((node) => [node.taskId, node])), [visibleTaskNodes]);
   const taskConnectionLinks = useMemo(() => (
     taskConnections
       .filter((connection) => connection.status !== "stale")
@@ -982,7 +1018,7 @@ export function ExecutionMap({
 
   const handleAtlasSelectionComplete = useCallback((rect: AtlasSelectionRect) => {
     const next = new Set<string>();
-    for (const node of agentNodes) {
+    for (const node of visibleAgentNodes) {
       if (rectsIntersect(rect, {
         x: node.position.x,
         y: node.position.y,
@@ -992,7 +1028,7 @@ export function ExecutionMap({
         next.add(atlasSelectionKey("agent", node.nodeId));
       }
     }
-    for (const node of taskNodes) {
+    for (const node of visibleTaskNodes) {
       if (rectsIntersect(rect, {
         x: node.position.x,
         y: node.position.y,
@@ -1003,7 +1039,7 @@ export function ExecutionMap({
       }
     }
     setSelectedAtlasNodeKeys(next);
-  }, [agentNodes, taskNodes]);
+  }, [visibleAgentNodes, visibleTaskNodes]);
 
   const buildAtlasDragEntries = useCallback((primary: AtlasAgentNode | AtlasTaskNode, kind: "agent" | "task"): AtlasNodeDragEntry[] => {
     const primaryKey = atlasSelectionKey(kind, primary.nodeId);
@@ -1012,18 +1048,18 @@ export function ExecutionMap({
     }
 
     const entries: AtlasNodeDragEntry[] = [];
-    for (const node of agentNodes) {
+    for (const node of visibleAgentNodes) {
       if (selectedAtlasNodeKeys.has(atlasSelectionKey("agent", node.nodeId))) {
         entries.push({ nodeId: node.nodeId, kind: "agent", startPosition: node.position });
       }
     }
-    for (const node of taskNodes) {
+    for (const node of visibleTaskNodes) {
       if (selectedAtlasNodeKeys.has(atlasSelectionKey("task", node.nodeId))) {
         entries.push({ nodeId: node.nodeId, kind: "task", startPosition: node.position });
       }
     }
     return entries.length > 0 ? entries : [{ nodeId: primary.nodeId, kind, startPosition: primary.position }];
-  }, [agentNodes, selectedAtlasNodeKeys, taskNodes]);
+  }, [selectedAtlasNodeKeys, visibleAgentNodes, visibleTaskNodes]);
 
   const beginAtlasNodeDrag = useCallback((
     node: AtlasAgentNode | AtlasTaskNode,
@@ -1071,16 +1107,16 @@ export function ExecutionMap({
       } else {
         onMoveCanvasTask?.(entry.nodeId, nextPosition);
       }
-      if (entry.kind === "task" && entry.nodeId === focusedTaskNodeId && taskBranchPanel) {
+      if (entry.kind === "task" && taskBranchPanel) {
         const treeDx = dx / scale - (drag.lastTreeDx ?? 0);
         const treeDy = dy / scale - (drag.lastTreeDy ?? 0);
         if (treeDx !== 0 || treeDy !== 0) {
-          translateTaskSubtreeRef.current("root", treeDx, treeDy);
+          translateTaskSubtreeRef.current("root", treeDx, treeDy, entry.nodeId);
         }
         atlasNodeDragRef.current = { ...atlasNodeDragRef.current!, lastTreeDx: dx / scale, lastTreeDy: dy / scale };
       }
     }
-  }, [focusedTaskNodeId, onMoveAgent, onMoveCanvasTask, taskBranchPanel, viewport]);
+  }, [onMoveAgent, onMoveCanvasTask, taskBranchPanel, viewport]);
 
   const suppressNextAgentClick = useCallback((nodeId: string) => {
     suppressAgentClickRef.current = nodeId;
@@ -1103,12 +1139,12 @@ export function ExecutionMap({
       return;
     }
 
-    const node = agentNodes.find((candidate) => candidate.nodeId === drag.primaryNodeId);
+    const node = visibleAgentNodes.find((candidate) => candidate.nodeId === drag.primaryNodeId);
     if (drag.primaryKind === "agent" && node) {
       suppressNextAgentClick(drag.primaryNodeId);
       onSelectAgent?.(node);
     }
-  }, [agentNodes, onSelectAgent, suppressNextAgentClick]);
+  }, [onSelectAgent, suppressNextAgentClick, visibleAgentNodes]);
 
   const handleAgentClick = useCallback((node: AtlasAgentNode) => {
     if (suppressAgentClickRef.current === node.nodeId) {
@@ -1147,12 +1183,12 @@ export function ExecutionMap({
       return;
     }
 
-    const node = taskNodes.find((candidate) => candidate.nodeId === drag.primaryNodeId);
+    const node = visibleTaskNodes.find((candidate) => candidate.nodeId === drag.primaryNodeId);
     if (drag.primaryKind === "task" && node) {
       suppressNextTaskClick(drag.primaryNodeId);
       onSelectCanvasTask?.(node);
     }
-  }, [onSelectCanvasTask, suppressNextTaskClick, taskNodes]);
+  }, [onSelectCanvasTask, suppressNextTaskClick, visibleTaskNodes]);
 
   const handleTaskClick = useCallback((node: AtlasTaskNode) => {
     if (suppressTaskClickRef.current === node.nodeId) {
@@ -1210,14 +1246,14 @@ export function ExecutionMap({
     ? Math.max(...evidenceLayout.positions.map((p) => p.x + p.width))
     : 0;
   const previewRight = evidenceLayout.preview ? evidenceLayout.preview.x + evidenceLayout.preview.width : 0;
-  const agentRight = agentNodes.length > 0
-    ? Math.max(...agentNodes.map((node) => node.position.x + NODE_WIDTH))
+  const agentRight = visibleAgentNodes.length > 0
+    ? Math.max(...visibleAgentNodes.map((node) => node.position.x + NODE_WIDTH))
     : 0;
-  const taskRight = taskNodes.length > 0
-    ? Math.max(...taskNodes.map((node) => node.position.x + NODE_WIDTH))
+  const taskRight = visibleTaskNodes.length > 0
+    ? Math.max(...visibleTaskNodes.map((node) => node.position.x + NODE_WIDTH))
     : 0;
   const focusedAgentNode = focusedAgentNodeId
-    ? agentNodes.find((node) => node.nodeId === focusedAgentNodeId) ?? null
+    ? visibleAgentNodes.find((node) => node.nodeId === focusedAgentNodeId) ?? null
     : null;
   const agentBranchNode = focusedAgentNode && agentBranchPanel
     ? agentBranchRects[focusedAgentNode.nodeId] ?? {
@@ -1228,7 +1264,7 @@ export function ExecutionMap({
     }
     : null;
   const focusedTaskNode = focusedTaskNodeId
-    ? taskNodes.find((node) => node.nodeId === focusedTaskNodeId) ?? null
+    ? visibleTaskNodes.find((node) => node.nodeId === focusedTaskNodeId) ?? null
     : null;
   const taskBranchEntries = (taskBranchPanels?.length
     ? taskBranchPanels
@@ -1236,7 +1272,7 @@ export function ExecutionMap({
       ? [{ id: "task-branch", nodeId: focusedTaskNode.nodeId, panel: taskBranchPanel }]
       : []
   ).map((entry) => {
-    const node = taskNodes.find((candidate) => candidate.nodeId === entry.nodeId);
+    const node = visibleTaskNodes.find((candidate) => candidate.nodeId === entry.nodeId);
     if (!node) return null;
     const measuredSize = taskBranchMeasuredSize?.nodeId === node.nodeId ? taskBranchMeasuredSize : null;
     const base = {
@@ -1331,8 +1367,8 @@ export function ExecutionMap({
     ...Array.from(layout.nodePositions.values()).map((n) => n.y + n.height),
     ...evidenceLayout.positions.map((p) => p.y + p.height),
     evidenceLayout.preview ? evidenceLayout.preview.y + evidenceLayout.preview.height : 0,
-    ...agentNodes.map((node) => node.position.y + AGENT_NODE_HEIGHT),
-    ...taskNodes.map((node) => node.position.y + CANVAS_TASK_NODE_HEIGHT),
+    ...visibleAgentNodes.map((node) => node.position.y + AGENT_NODE_HEIGHT),
+    ...visibleTaskNodes.map((node) => node.position.y + CANVAS_TASK_NODE_HEIGHT),
     agentBranchNode ? agentBranchNode.y + agentBranchNode.height : 0,
     ...taskBranchEntries.map((entry) => entry.rect.y + entry.rect.height),
     taskChildBranchNode ? taskChildBranchNode.y + taskChildBranchNode.height : 0,
@@ -1378,6 +1414,64 @@ export function ExecutionMap({
       </button>
       {maximizedBranchPanel}
     </div>
+  ) : null;
+  const nodeHub = hubAgentNodes.length > 0 || hubTaskNodes.length > 0 ? (
+    <aside className="emap-node-hub" aria-label="Root node hub">
+      <div className="emap-node-hub-head">
+        <span>Hub</span>
+        <strong>{hubAgentNodes.length + hubTaskNodes.length}</strong>
+      </div>
+      <div className="emap-node-hub-list">
+        {hubAgentNodes.map((node) => {
+          const agent = agentsById?.get(node.agentId);
+          const label = agent?.name ?? node.agentId;
+          return (
+            <button
+              key={`hub-${node.nodeId}`}
+              type="button"
+              className="emap-node-hub-item"
+              aria-label={`复原 Agent ${label}`}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                onRestoreAgent?.(node);
+              }}
+            >
+              <span className="emap-node-hub-kind">Agent</span>
+              <span className="emap-node-hub-title">{label}</span>
+              <span className="emap-node-hub-meta">{node.agentId}</span>
+            </button>
+          );
+        })}
+        {hubTaskNodes.map((node) => {
+          const task = tasksById?.get(node.taskId);
+          const label = task?.title ?? node.taskId;
+          return (
+            <button
+              key={`hub-${node.nodeId}`}
+              type="button"
+              className="emap-node-hub-item"
+              aria-label={`复原 Task ${label}`}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                onRestoreCanvasTask?.(node);
+              }}
+            >
+              <span className="emap-node-hub-kind">Task</span>
+              <span className="emap-node-hub-title">{label}</span>
+              <span className="emap-node-hub-meta">{node.taskId}</span>
+            </button>
+          );
+        })}
+      </div>
+    </aside>
+  ) : null;
+  const overlay = nodeHub || maximizedOverlay ? (
+    <>
+      {nodeHub}
+      {maximizedOverlay}
+    </>
   ) : null;
 
   useLayoutEffect(() => {
@@ -1473,16 +1567,31 @@ export function ExecutionMap({
   }, [taskBranchPanel, taskBranchPositionOverrides]);
 
   const translateTaskSubtree = useCallback((
-    scope: "root" | "menu" | { panelId: string },
+    scope: TaskSubtreeScope,
     dx: number,
     dy: number,
+    nodeId?: string,
   ) => {
-    const focusedId = focusedTaskNode?.nodeId;
-    if (!focusedId) return;
+    const targetNodeId = nodeId ?? focusedTaskNode?.nodeId;
+    if (!targetNodeId) return;
+
+    const targetTaskBranchNode = (
+      taskBranchEntries.find((entry) => entry.node.nodeId === targetNodeId)?.rect
+      ?? (targetNodeId === focusedTaskNode?.nodeId ? taskBranchNode : null)
+    );
 
     let panelIds: string[];
     if (scope === "root" || scope === "menu") {
-      panelIds = taskChildBranchPanelsLayout.map((p) => p.id);
+      panelIds = [];
+      const collectDescendants = (parentId: string) => {
+        for (const p of taskChildBranchPanelsLayout) {
+          if (p.sourceId === parentId) {
+            panelIds.push(p.id);
+            collectDescendants(p.id);
+          }
+        }
+      };
+      collectDescendants(taskMenuPanelId(targetNodeId));
     } else {
       panelIds = [];
       const collectDescendants = (parentId: string) => {
@@ -1509,20 +1618,20 @@ export function ExecutionMap({
       });
     }
 
-    if ((scope === "root" || scope === "menu") && taskChildBranchNode) {
+    if ((scope === "root" || scope === "menu") && taskChildBranchNode && targetNodeId === focusedTaskNode?.nodeId) {
       setTaskChildBranchRects((prev) => {
-        const current = prev[focusedId] ?? taskChildBranchNode;
-        return { ...prev, [focusedId]: { ...current, x: current.x + dx, y: current.y + dy } };
+        const current = prev[targetNodeId] ?? taskChildBranchNode;
+        return { ...prev, [targetNodeId]: { ...current, x: current.x + dx, y: current.y + dy } };
       });
     }
 
-    if (scope === "root" && taskBranchNode) {
+    if (scope === "root" && targetTaskBranchNode) {
       setTaskBranchPositionOverrides((prev) => ({
         ...prev,
-        [focusedId]: { x: taskBranchNode.x + dx, y: taskBranchNode.y + dy },
+        [targetNodeId]: { x: targetTaskBranchNode.x + dx, y: targetTaskBranchNode.y + dy },
       }));
     }
-  }, [focusedTaskNode, taskBranchNode, taskChildBranchNode, taskChildBranchPanelsLayout]);
+  }, [focusedTaskNode, taskBranchEntries, taskBranchNode, taskChildBranchNode, taskChildBranchPanelsLayout]);
 
   translateTaskSubtreeRef.current = translateTaskSubtree;
 
@@ -1532,19 +1641,20 @@ export function ExecutionMap({
     return !target.closest("button, input, textarea, select, a, iframe, summary, details, .task-action-menu-button, .task-leader-branch-collapse");
   }, []);
 
-  const beginTaskBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!canStartTaskBranchDrag(event.target) || !taskBranchNode || !focusedTaskNode) return;
+  const beginTaskBranchDrag = useCallback((entry: (typeof taskBranchEntries)[number], event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!canStartTaskBranchDrag(event.target)) return;
     taskBranchDragRef.current = {
+      nodeId: entry.node.nodeId,
       pointerId: event.pointerId,
       startClientX: event.clientX,
       startClientY: event.clientY,
-      startRect: { ...taskBranchNode },
+      startRect: { ...entry.rect },
       hasMoved: false,
       capturedTarget: null,
       lastDx: 0,
       lastDy: 0,
     };
-  }, [canStartTaskBranchDrag, taskBranchNode, focusedTaskNode]);
+  }, [canStartTaskBranchDrag]);
 
   const moveTaskBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = taskBranchDragRef.current;
@@ -1562,16 +1672,14 @@ export function ExecutionMap({
       drag.capturedTarget = target;
     }
     setTaskBranchPositionOverrides((prev) => {
-      const focusedId = focusedTaskNode?.nodeId;
-      if (!focusedId) return prev;
-      return { ...prev, [focusedId]: { x: drag.startRect.x + dx, y: drag.startRect.y + dy } };
+      return { ...prev, [drag.nodeId]: { x: drag.startRect.x + dx, y: drag.startRect.y + dy } };
     });
     const incDx = dx - drag.lastDx;
     const incDy = dy - drag.lastDy;
     drag.lastDx = dx;
     drag.lastDy = dy;
-    translateTaskSubtree("menu", incDx, incDy);
-  }, [viewport, focusedTaskNode, translateTaskSubtree]);
+    translateTaskSubtree("menu", incDx, incDy, drag.nodeId);
+  }, [viewport, translateTaskSubtree]);
 
   const endTaskBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = taskBranchDragRef.current;
@@ -1861,7 +1969,7 @@ export function ExecutionMap({
       agentFocusId={focusedAgentNode?.agentId ?? null}
       interactionMode={interactionMode}
       onSelectionComplete={handleAtlasSelectionComplete}
-      overlay={maximizedOverlay}
+      overlay={overlay}
     >
         <svg
           className="execution-map-links"
@@ -2013,20 +2121,22 @@ export function ExecutionMap({
             </button>
           )}
 
-          {agentNodes.map((node) => {
+          {visibleAgentNodes.map((node) => {
             const agent = agentsById?.get(node.agentId);
             if (!agent) return null;
             const isFocused = node.nodeId === focusedAgentNodeId;
             const isAtlasSelected = selectedAtlasNodeKeys.has(atlasSelectionKey("agent", node.nodeId));
             const runStatus = formatAgentRunStatus(agentRunStatusById?.get(agent.agentId));
             return (
-              <button
+              <div
                 key={node.nodeId}
-                type="button"
+                role="button"
+                tabIndex={0}
                 className={`emap-node emap-atlas-card emap-agent-node ${runStatus.nodeClass} ${isFocused ? "selected" : ""} ${isAtlasSelected ? "is-atlas-selected" : ""}`}
                 data-kind="agent"
                 data-agent-id={agent.agentId}
                 data-agent-run-state={runStatus.state}
+                aria-label={agent.name}
                 title={runStatus.title}
                 style={{ left: node.position.x, top: node.position.y, width: NODE_WIDTH, height: AGENT_NODE_HEIGHT }}
                 onPointerDown={(event) => handleAgentPointerDown(node, event)}
@@ -2034,6 +2144,11 @@ export function ExecutionMap({
                 onPointerUp={endAgentPointer}
                 onPointerCancel={endAgentPointer}
                 onClick={() => handleAgentClick(node)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  handleAgentClick(node);
+                }}
               >
                 <div className="emap-node-status-bar" />
                 <div className="emap-node-content">
@@ -2048,11 +2163,26 @@ export function ExecutionMap({
                     <span className="emap-agent-binding">{formatAgentBinding(agent)}</span>
                   </div>
                 </div>
-              </button>
+                {onMinimizeAgent && (
+                  <button
+                    type="button"
+                    className="emap-node-minimize-button"
+                    aria-label="收纳 Agent"
+                    title={`收纳 ${agent.name}`}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onMinimizeAgent(node);
+                    }}
+                  >
+                    收
+                  </button>
+                )}
+              </div>
             );
           })}
 
-          {taskNodes.map((node) => {
+          {visibleTaskNodes.map((node) => {
             const task = tasksById?.get(node.taskId);
             if (!task) return null;
             const leader = agentsById?.get(task.leaderAgentId);
@@ -2158,6 +2288,21 @@ export function ExecutionMap({
                     </div>
                   )}
                 </div>
+                {onMinimizeCanvasTask && (
+                  <button
+                    type="button"
+                    className="emap-node-minimize-button"
+                    aria-label="收纳 Task"
+                    title={`收纳 ${task.title}`}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onMinimizeCanvasTask(node);
+                    }}
+                  >
+                    收
+                  </button>
+                )}
               </div>
             );
           })}
@@ -2336,12 +2481,12 @@ export function ExecutionMap({
                 key={`task-branch-${entry.id}`}
                 ref={isPrimary ? taskBranchShellRef : undefined}
                 className="emap-task-branch-shell"
-                onPointerDownCapture={isPrimary ? beginTaskBranchDrag : undefined}
-                onPointerMove={isPrimary ? moveTaskBranchDrag : undefined}
-                onPointerUp={isPrimary ? endTaskBranchDrag : undefined}
-                onPointerCancel={isPrimary ? endTaskBranchDrag : undefined}
+                onPointerDownCapture={(event) => beginTaskBranchDrag(entry, event)}
+                onPointerMove={moveTaskBranchDrag}
+                onPointerUp={endTaskBranchDrag}
+                onPointerCancel={endTaskBranchDrag}
                 onClickCapture={(e) => {
-                  if (isPrimary && taskBranchDragSuppressClickRef.current) {
+                  if (taskBranchDragSuppressClickRef.current) {
                     taskBranchDragSuppressClickRef.current = false;
                     e.stopPropagation();
                   }
