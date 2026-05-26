@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-26 — Downstream delivery outcome diagnostics
+
+- **主题**: typed Task chain 的下游交付结果可观测——upstream attempt 成功后，系统会为每个 outgoing connection 记录 `delivered` / `skipped` / `failed` 结果到 `TeamAttemptMetadata.downstreamDelivery`。
+- **变更内容**:
+  - `TeamAttemptMetadata` 新增可选字段 `downstreamDelivery?: TeamTaskDeliveryOutcome[]`，每条 outcome 包含 `connectionId`、`toTaskId`、`toInputPortId`、`status`、可选 `staleReason` / `downstreamRunId` / `error` 和 `createdAt`。
+  - `CanvasTaskRunService.triggerDownstreamRuns()` 收集每个 connection 的 outcome 并 best-effort 持久化；stale source/target 记录 `skipped`，source task 中途归档/缺失也记录 `skipped`（不再静默返回），delivery 失败记录裁剪后的 `error`，成功交付记录 `downstreamRunId`。
+  - 诊断写入失败不反杀已完成的 upstream run。
+  - 现有 `GET /v1/team/task-runs/:runId/tasks/:taskId/attempts` 自然暴露该字段，不新增 endpoint。
+- **影响范围**: `src/team/types.ts`, `src/team/run-workspace-attempts.ts`, `src/team/run-workspace.ts`, `src/team/task-run-service.ts`, `test/team-run-workspace.test.ts`, `test/team-task-run-routes.test.ts`, `test/team-task-run-process.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 不改前端 UI，不新增 SSE 或 REST endpoint，不引入 Team 日志系统，不改 `TeamTaskConnection` 持久化结构，不改 `TaskConnectionStaleReason` 值和优先级，不碰 Playground / Agent profile / Conn / Feishu / `.pi skills`。
+
+---
+
 ## 2026-05-26 — Task connection store persistence hardening
 
 - **主题**: `TaskConnectionStore` 的 `create()` / `delete()` 增加文件级 mutation lock，corrupt / 非数组 JSON 不再静默返回空列表，而是抛出错误并在 API 层返回 500。

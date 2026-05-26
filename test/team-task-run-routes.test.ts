@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildServer } from "../src/server.js";
 import type { AgentService } from "../src/agent/agent-service.js";
-import type { TeamRunState } from "../src/team/types.js";
+import type { TeamRunState, TeamTaskDeliveryOutcome } from "../src/team/types.js";
 
 function createAgentServiceStub() {
 	return {
@@ -392,6 +392,145 @@ test("stale downstream connection does not make upstream accepted run fail", asy
 		await new Promise(resolve => setTimeout(resolve, 100));
 		const downstreamRunsRes = await app.inject({ method: "GET", url: `/v1/team/tasks/${html.taskId}/runs` });
 		assert.equal(downstreamRunsRes.statusCode, 200);
+		assert.deepEqual(downstreamRunsRes.json().runs, []);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("typed Task chain records delivered downstream outcome in upstream attempt metadata", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const collectRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts(taskPayload, {
+				outputPorts: [{ id: "draft_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		const htmlRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts({ ...taskPayload, title: "HTML Task" }, {
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		assert.equal(collectRes.statusCode, 201);
+		assert.equal(htmlRes.statusCode, 201);
+		const collect = collectRes.json().task;
+		const html = htmlRes.json().task;
+
+		const connectionRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/task-connections",
+			payload: {
+				fromTaskId: collect.taskId,
+				fromOutputPortId: "draft_md",
+				toTaskId: html.taskId,
+				toInputPortId: "source_md",
+			},
+		});
+		assert.equal(connectionRes.statusCode, 201);
+		const connection = connectionRes.json().connection;
+
+		const runRes = await app.inject({ method: "POST", url: `/v1/team/tasks/${collect.taskId}/runs` });
+		assert.equal(runRes.statusCode, 201);
+		const upstreamRun = runRes.json() as TeamRunState;
+		const upstreamFinished = await waitForTerminalRun(app, upstreamRun.runId);
+		assert.equal(upstreamFinished.status, "completed");
+
+		const downstreamRuns = await waitForTaskRunCount(app, html.taskId, 1);
+		await waitForTerminalRun(app, downstreamRuns[0]!.runId);
+
+		const attemptsRes = await app.inject({ method: "GET", url: `/v1/team/task-runs/${upstreamRun.runId}/tasks/${collect.taskId}/attempts` });
+		assert.equal(attemptsRes.statusCode, 200);
+		const attempts = attemptsRes.json().attempts;
+		const delivery = (attempts[0] as { downstreamDelivery?: TeamTaskDeliveryOutcome[] }).downstreamDelivery;
+		assert.ok(delivery, "downstreamDelivery must be present");
+		assert.equal(delivery!.length, 1);
+		const outcome = delivery![0]!;
+		assert.equal(outcome.status, "delivered");
+		assert.equal(outcome.connectionId, connection.connectionId);
+		assert.equal(outcome.toTaskId, html.taskId);
+		assert.equal(outcome.toInputPortId, "source_md");
+		assert.equal(outcome.downstreamRunId, downstreamRuns[0]!.runId);
+		assert.equal(outcome.staleReason, undefined);
+		assert.equal(outcome.error, undefined);
+		assert.ok(outcome.createdAt);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("stale downstream connection records skipped outcome with staleReason", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const collectRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts(taskPayload, {
+				outputPorts: [{ id: "draft_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		const htmlRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts({ ...taskPayload, title: "HTML Task" }, {
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		assert.equal(collectRes.statusCode, 201);
+		assert.equal(htmlRes.statusCode, 201);
+		const collect = collectRes.json().task;
+		const html = htmlRes.json().task;
+
+		await app.inject({
+			method: "POST",
+			url: "/v1/team/task-connections",
+			payload: {
+				fromTaskId: collect.taskId,
+				fromOutputPortId: "draft_md",
+				toTaskId: html.taskId,
+				toInputPortId: "source_md",
+			},
+		});
+
+		// Change target port type to make connection stale
+		await app.inject({
+			method: "PATCH",
+			url: `/v1/team/tasks/${html.taskId}`,
+			payload: {
+				workUnit: {
+					...html.workUnit,
+					inputPorts: [{ id: "source_md", label: "HTML input", type: "html" }],
+				},
+			},
+		});
+
+		const runRes = await app.inject({ method: "POST", url: `/v1/team/tasks/${collect.taskId}/runs` });
+		assert.equal(runRes.statusCode, 201);
+		const upstreamRun = runRes.json() as TeamRunState;
+		const upstreamFinished = await waitForTerminalRun(app, upstreamRun.runId);
+		assert.equal(upstreamFinished.status, "completed");
+
+		await new Promise(resolve => setTimeout(resolve, 100));
+
+		const attemptsRes = await app.inject({ method: "GET", url: `/v1/team/task-runs/${upstreamRun.runId}/tasks/${collect.taskId}/attempts` });
+		assert.equal(attemptsRes.statusCode, 200);
+		const attempts = attemptsRes.json().attempts;
+		const delivery = (attempts[0] as { downstreamDelivery?: TeamTaskDeliveryOutcome[] }).downstreamDelivery;
+		assert.ok(delivery, "downstreamDelivery must be present for stale connection");
+		assert.equal(delivery!.length, 1);
+		const outcome = delivery![0]!;
+		assert.equal(outcome.status, "skipped");
+		assert.equal(outcome.staleReason, "target_input_port_type_mismatch");
+		assert.equal(outcome.downstreamRunId, undefined);
+		assert.equal(outcome.error, undefined);
+
+		// No downstream run was created
+		const downstreamRunsRes = await app.inject({ method: "GET", url: `/v1/team/tasks/${html.taskId}/runs` });
 		assert.deepEqual(downstreamRunsRes.json().runs, []);
 	} finally {
 		await app.close();

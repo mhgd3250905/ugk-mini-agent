@@ -11,7 +11,7 @@ import { generateTaskArtifactId } from "./ids.js";
 import { resolveConnectionStaleReason } from "./task-chain-contract.js";
 import type { TaskConnectionStore } from "./task-connection-store.js";
 import type { ProfileAwareTeamRoleRunner, TeamRoleRunner, WorkerOutput, CheckerOutput } from "./role-runner.js";
-import type { TeamCanvasTask, TeamOutputValidationResult, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskTypedArtifact } from "./types.js";
+import type { TeamCanvasTask, TeamOutputValidationResult, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskDeliveryOutcome, TeamTaskTypedArtifact } from "./types.js";
 
 export interface CanvasTaskRunServiceOptions {
 	taskStore: TaskStore;
@@ -39,6 +39,7 @@ const DEFAULT_TASK_RUN_TIMEOUTS = {
 
 const ARTIFACT_CONTENT_LIMIT = 30_000;
 const ARTIFACT_PREVIEW_LIMIT = 1_200;
+const DELIVERY_ERROR_LIMIT = 500;
 
 type TaskRunSource = NonNullable<TeamRunState["source"]>;
 
@@ -106,6 +107,13 @@ function summarizeOutputValidationFailure(result: TeamOutputValidationResult): s
 
 function isAbortLike(error: unknown): boolean {
 	return error instanceof Error && /abort|cancel/i.test(error.message);
+}
+
+function sanitizeDeliveryError(error: unknown): string {
+	const raw = error instanceof Error ? error.message : String(error);
+	const trimmed = raw.trim();
+	if (!trimmed) return "unknown downstream delivery error";
+	return trimmed.slice(0, DELIVERY_ERROR_LIMIT);
 }
 
 export class CanvasTaskRunService {
@@ -501,13 +509,45 @@ export class CanvasTaskRunService {
 		if (!connectionStore) return;
 		const connections = await connectionStore.listFromTask(taskId);
 		if (connections.length === 0) return;
+
+		const outcomes: TeamTaskDeliveryOutcome[] = [];
 		const sourceTask = await this.options.taskStore.get(taskId);
-		if (!sourceTask || sourceTask.archived) return;
+		if (!sourceTask || sourceTask.archived) {
+			for (const connection of connections) {
+				const staleReason = resolveConnectionStaleReason(sourceTask, null, connection);
+				outcomes.push({
+					connectionId: connection.connectionId,
+					toTaskId: connection.toTaskId,
+					toInputPortId: connection.toInputPortId,
+					status: "skipped",
+					staleReason: staleReason ?? (sourceTask?.archived ? "source_task_archived" : "source_task_missing"),
+					createdAt: now(),
+				});
+			}
+			try {
+				await this.options.workspace.recordAttemptDeliveryOutcomes(runId, taskId, attemptId, outcomes);
+			} catch {
+				// Diagnostic persistence must not fail the accepted upstream run.
+			}
+			return;
+		}
+
 		const content = await this.options.workspace.readRunScopedFile(runId, resultRef) ?? "";
 		for (const connection of connections) {
 			try {
 				const targetTask = await this.options.taskStore.get(connection.toTaskId);
-				if (resolveConnectionStaleReason(sourceTask, targetTask, connection)) continue;
+				const staleReason = resolveConnectionStaleReason(sourceTask, targetTask, connection);
+				if (staleReason) {
+					outcomes.push({
+						connectionId: connection.connectionId,
+						toTaskId: connection.toTaskId,
+						toInputPortId: connection.toInputPortId,
+						status: "skipped",
+						staleReason,
+						createdAt: now(),
+					});
+					continue;
+				}
 				const artifact = this.buildTypedArtifact({
 					type: connection.type,
 					sourceTaskId: taskId,
@@ -517,7 +557,7 @@ export class CanvasTaskRunService {
 					fileRef: resultRef,
 					content,
 				});
-				await this.createRun(connection.toTaskId, {
+				const downstreamRun = await this.createRun(connection.toTaskId, {
 					boundInputs: [{
 						connectionId: connection.connectionId,
 						inputPortId: connection.toInputPortId,
@@ -531,9 +571,30 @@ export class CanvasTaskRunService {
 						fromAttemptId: attemptId,
 					},
 				});
-			} catch {
-				// Downstream delivery must not turn an already accepted upstream result into a failed run.
+				outcomes.push({
+					connectionId: connection.connectionId,
+					toTaskId: connection.toTaskId,
+					toInputPortId: connection.toInputPortId,
+					status: "delivered",
+					downstreamRunId: downstreamRun.runId,
+					createdAt: now(),
+				});
+			} catch (error) {
+				outcomes.push({
+					connectionId: connection.connectionId,
+					toTaskId: connection.toTaskId,
+					toInputPortId: connection.toInputPortId,
+					status: "failed",
+					error: sanitizeDeliveryError(error),
+					createdAt: now(),
+				});
 			}
+		}
+
+		try {
+			await this.options.workspace.recordAttemptDeliveryOutcomes(runId, taskId, attemptId, outcomes);
+		} catch {
+			// Diagnostic persistence must not fail the accepted upstream run.
 		}
 	}
 

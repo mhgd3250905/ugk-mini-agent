@@ -109,6 +109,14 @@ Typed Task Chain V1 把 Task 设计成可组合的最小积木，但刻意不把
 - `boundInputs[]` 会进入下游 WorkUnit 的 prompt 和 payload，Agent 看到的是明确绑定的 typed artifact 输入，不需要自己猜上游文件在哪。
 - 下游启动失败不会回滚已经验收通过的上游 run；失败只影响连接触发链路本身。
 
+下游交付诊断：
+
+- 上游 attempt 成功后，系统会为每个存在的 outgoing connection 记录一条 `TeamTaskDeliveryOutcome`，写入 `TeamAttemptMetadata.downstreamDelivery`。
+- 三种状态：`delivered`（成功启动下游 run，附带 `downstreamRunId`）、`skipped`（连接 stale 或 source task 中途归档/缺失，附带 `staleReason`）、`failed`（启动下游 run 失败，附带裁剪后的短 `error`）。
+- 没有 outgoing connection 时不记录任何 outcome。
+- 诊断写入是 best-effort：写入失败不会回滚已完成的 upstream run。
+- 可通过现有 `GET /v1/team/task-runs/:runId/tasks/:taskId/attempts` 读取，不需要新 endpoint。
+
 边界：
 
 - V1 不做任意复杂自由画布编排、条件分支、循环、真实 TTS 或 SSE 观察流。

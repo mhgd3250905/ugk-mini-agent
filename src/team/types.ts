@@ -73,6 +73,19 @@ export interface TeamAttemptRoleProcess {
 	process: ChatProcessBody | null;
 }
 
+export type TeamTaskDeliveryOutcomeStatus = "delivered" | "skipped" | "failed";
+
+export interface TeamTaskDeliveryOutcome {
+	connectionId: string;
+	toTaskId: string;
+	toInputPortId: string;
+	status: TeamTaskDeliveryOutcomeStatus;
+	staleReason?: TaskConnectionStaleReason;
+	downstreamRunId?: string;
+	error?: string;
+	createdAt: string;
+}
+
 export interface TeamAttemptMetadata {
 	attemptId: string;
 	taskId: string;
@@ -90,6 +103,7 @@ export interface TeamAttemptMetadata {
 		worker?: TeamAttemptRoleProcess;
 		checker?: TeamAttemptRoleProcess;
 	};
+	downstreamDelivery?: TeamTaskDeliveryOutcome[];
 }
 export type CheckerVerdict = "pass" | "revise" | "fail";
 export type WatcherDecision = "accept_task" | "confirm_failed" | "request_revision";

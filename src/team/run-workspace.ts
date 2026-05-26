@@ -12,6 +12,7 @@ import type {
 	TeamPlan,
 	TeamRunState,
 	TeamTask,
+	TeamTaskDeliveryOutcome,
 } from "./types.js";
 import { RunArtifactStore } from "./run-workspace-artifacts.js";
 import { RunAttemptStore } from "./run-workspace-attempts.js";
@@ -112,6 +113,10 @@ export class RunWorkspace {
 
 	async recordAttemptRoleProcess(runId: string, taskId: string, attemptId: string, process: TeamAttemptRoleProcess): Promise<void> {
 		await this.attempts.recordAttemptRoleProcess(runId, taskId, attemptId, process);
+	}
+
+	async recordAttemptDeliveryOutcomes(runId: string, taskId: string, attemptId: string, outcomes: TeamTaskDeliveryOutcome[]): Promise<void> {
+		await this.attempts.recordAttemptDeliveryOutcomes(runId, taskId, attemptId, outcomes);
 	}
 
 	async finishAttempt(

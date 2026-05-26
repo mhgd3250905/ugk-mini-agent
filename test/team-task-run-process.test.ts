@@ -385,6 +385,120 @@ test("archived source task mid-run blocks downstream triggering", async () => {
 
 		const downstreamRuns = await service.listRuns(targetTask.taskId);
 		assert.deepEqual(downstreamRuns, []);
+
+		// Verify skipped outcome was recorded for the archived source task
+		const attempts = await workspace.listAttempts(created.runId, sourceTask.taskId);
+		const delivery = attempts[0]?.downstreamDelivery;
+		assert.ok(delivery, "downstreamDelivery must be present for archived source");
+		assert.equal(delivery!.length, 1);
+		assert.equal(delivery![0]!.status, "skipped");
+		assert.equal(delivery![0]!.staleReason, "source_task_archived");
+		assert.equal(delivery![0]!.downstreamRunId, undefined);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("failed downstream delivery records error without failing upstream", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-delivery-fail-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const sourceTask = await taskStore.create({
+			...validTaskInput,
+			workUnit: {
+				...validTaskInput.workUnit,
+				outputPorts: [{ id: "draft_md", label: "Markdown", type: "md" }],
+			},
+		});
+		const targetTask = await taskStore.create({
+			title: "HTML 制作",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "HTML 制作",
+				input: { text: "制作 HTML 页面。" },
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+				outputContract: { text: "输出 HTML 页面。" },
+				acceptance: { rules: ["必须包含 HTML"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+
+		await mkdir(join(root, "team"), { recursive: true });
+		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
+		const connection = await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "draft_md",
+			toTaskId: targetTask.taskId,
+			toInputPortId: "source_md",
+		});
+
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+
+		let gatedWorkerStarted!: () => void;
+		const gatedWorkerStartedPromise = new Promise<void>((resolve) => { gatedWorkerStarted = resolve; });
+		let gatedWorkerProceed!: () => void;
+		const gatedWorkerProceedPromise = new Promise<void>((resolve) => { gatedWorkerProceed = resolve; });
+
+		class GatedDownstreamRunner implements TeamRoleRunner {
+			async runWorker(_input: WorkerInput): Promise<WorkerOutput> {
+				gatedWorkerStarted();
+				await gatedWorkerProceedPromise;
+				return { content: "gated worker", artifactRefs: [] };
+			}
+			async runChecker(_input: CheckerInput): Promise<CheckerOutput> {
+				return { verdict: "pass", reason: "ok", resultContent: "accepted" };
+			}
+			async runWatcher(_input: WatcherInput): Promise<WatcherOutput> {
+				return { decision: "accept_task", reason: "ok" };
+			}
+			async runFinalizer(_input: FinalizerInput): Promise<FinalizerOutput> {
+				return { finalReport: "ok" };
+			}
+			async runDecomposer(_input: DecomposerInput): Promise<DecomposerOutput> {
+				return { decision: "no_split", reason: "ok", children: [] };
+			}
+		}
+
+		// First call is for the pre-created downstream run (gated), second call is for the source run (fast pass-through)
+		let runnerCallCount = 0;
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => {
+				runnerCallCount++;
+				return runnerCallCount === 1 ? new GatedDownstreamRunner() : new ProcessEventRoleRunner();
+			},
+			connectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		// Pre-create an active downstream run that stays active (gated worker)
+		const preCreatedRun = await service.createRun(targetTask.taskId);
+		await gatedWorkerStartedPromise;
+
+		// Now run the source task - downstream delivery should fail because active run exists
+		const created = await service.createRun(sourceTask.taskId);
+		const finished = await waitForTerminalRun(service, created.runId);
+		assert.equal(finished.status, "completed", "upstream must remain completed despite delivery failure");
+		assert.equal(finished.taskStates[sourceTask.taskId]?.status, "succeeded");
+
+		// Verify failed outcome was recorded
+		const attempts = await workspace.listAttempts(created.runId, sourceTask.taskId);
+		const delivery = attempts[0]?.downstreamDelivery;
+		assert.ok(delivery, "downstreamDelivery must be present for failed delivery");
+		assert.equal(delivery!.length, 1);
+		assert.equal(delivery![0]!.status, "failed");
+		assert.equal(delivery![0]!.connectionId, connection.connectionId);
+		assert.equal(delivery![0]!.toTaskId, targetTask.taskId);
+		assert.equal(delivery![0]!.downstreamRunId, undefined);
+		assert.ok(delivery![0]!.error, "error must be recorded");
+		assert.match(delivery![0]!.error!, /active task run already exists/);
+
+		// Let the gated worker proceed so cleanup can succeed
+		gatedWorkerProceed();
+		await waitForTerminalRun(service, preCreatedRun.runId);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

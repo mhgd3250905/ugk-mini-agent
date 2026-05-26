@@ -11,6 +11,7 @@ import type {
 	TeamAttemptWatcherSummary,
 	TeamAttemptWorkerSummary,
 	TeamDiscoveryResultRecord,
+	TeamTaskDeliveryOutcome,
 } from "./types.js";
 
 const now = () => new Date().toISOString();
@@ -87,6 +88,15 @@ export class RunAttemptStore {
 				...(attempt.roleProcesses ?? {}),
 				[process.role]: process,
 			};
+			attempt.updatedAt = now();
+			return attempt;
+		});
+	}
+
+	async recordAttemptDeliveryOutcomes(runId: string, taskId: string, attemptId: string, outcomes: TeamTaskDeliveryOutcome[]): Promise<void> {
+		if (outcomes.length === 0) return;
+		await this.mutateAttempt(runId, taskId, attemptId, (attempt) => {
+			attempt.downstreamDelivery = outcomes;
 			attempt.updatedAt = now();
 			return attempt;
 		});
@@ -233,6 +243,7 @@ export class RunAttemptStore {
 		const createdAt = (raw.createdAt as string) || "";
 		const updatedAt = (raw.updatedAt as string) || createdAt;
 		const roleProcesses = this.normalizeRoleProcesses(raw.roleProcesses);
+		const downstreamDelivery = this.normalizeDeliveryOutcomes(raw.downstreamDelivery);
 		return {
 			attemptId: (raw.attemptId as string) || fallbackAttemptId,
 			taskId: (raw.taskId as string) || fallbackTaskId,
@@ -247,6 +258,7 @@ export class RunAttemptStore {
 			resultRef: (raw.resultRef as string | null) ?? null,
 			errorSummary: (raw.errorSummary as string | null) ?? null,
 			...(roleProcesses ? { roleProcesses } : {}),
+			...(downstreamDelivery ? { downstreamDelivery } : {}),
 		};
 	}
 
@@ -282,6 +294,35 @@ export class RunAttemptStore {
 				? value.process as TeamAttemptRoleProcess["process"]
 				: null,
 		};
+	}
+
+	private normalizeDeliveryOutcomes(raw: unknown): TeamTaskDeliveryOutcome[] | undefined {
+		if (!Array.isArray(raw) || raw.length === 0) return undefined;
+		const validStatuses = new Set(["delivered", "skipped", "failed"]);
+		const outcomes: TeamTaskDeliveryOutcome[] = [];
+		for (const item of raw) {
+			if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+			const value = item as Record<string, unknown>;
+			const status = value.status;
+			if (typeof status !== "string" || !validStatuses.has(status)) continue;
+			const connectionId = value.connectionId;
+			const toTaskId = value.toTaskId;
+			const toInputPortId = value.toInputPortId;
+			const createdAt = value.createdAt;
+			if (typeof connectionId !== "string" || typeof toTaskId !== "string" || typeof toInputPortId !== "string" || typeof createdAt !== "string") continue;
+			const outcome: TeamTaskDeliveryOutcome = {
+				connectionId,
+				toTaskId,
+				toInputPortId,
+				status: status as TeamTaskDeliveryOutcome["status"],
+				createdAt,
+			};
+			if (typeof value.staleReason === "string") outcome.staleReason = value.staleReason as TeamTaskDeliveryOutcome["staleReason"];
+			if (typeof value.downstreamRunId === "string") outcome.downstreamRunId = value.downstreamRunId;
+			if (typeof value.error === "string") outcome.error = value.error;
+			outcomes.push(outcome);
+		}
+		return outcomes.length > 0 ? outcomes : undefined;
 	}
 
 	private normalizeAssistantText(raw: unknown): TeamAttemptRoleProcess["assistantText"] | undefined {
