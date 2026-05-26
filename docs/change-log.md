@@ -12,6 +12,20 @@
 
 ---
 
+## 2026-05-27 — Team Console root node archive controls
+
+- **主题**: 给 Execution Atlas 的 Agent / Task / Source 根卡片增加清理入口，Source 和 Task 走归档，Agent 只本地移出画布。
+- **变更内容**:
+  - Source 根卡片和 Task 根卡片各新增"归档"按钮，点击后弹出二次确认（"确认归档"），确认后分别调用已有 `POST /v1/team/source-nodes/:sourceNodeId/archive` 和 `POST /v1/team/tasks/:taskId/archive`；归档成功后根卡片、Hub 条目、相关连接线、展开分支和本地 UI 状态同步清理，刷新页面后不会恢复已归档的 Task / Source。
+  - Agent 根卡片新增"移除"按钮，确认后只从 Team Console 画布移除本地引用（canvas 节点、Hub 条目、展开分支和 localStorage 位置），不调用任何 Agent profile archive API，真实 Agent profile 不受影响。
+  - 归档失败时节点保留并在顶部 error banner 显示错误信息，不清空其他状态。
+  - 既有测试里根卡 aria-label regex 匹配统一改为 exact string，避免与新增归档按钮的 aria-label 歧义。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`
+- **验证**: `npm --prefix apps/team-console run test`、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check` 已通过；浏览器 5174 页面验证见本轮最终记录。
+- **边界**: 不改 `src/team/**` 后端 runtime，不改主 `/playground` UI，不改 `.pi/skills` runtime skill，不把 Agent 根节点删除做成真实 Agent profile archive。
+
+---
+
 ## 2026-05-26 — Team Console source output nodes and topbar fullscreen
 
 - **主题**: 接入 Canvas source 输出节点 UI，并给对话 / 文件详情节点增加标题栏双击最大化与还原。
