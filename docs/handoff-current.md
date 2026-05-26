@@ -43,7 +43,7 @@
 - 路由测试固定 sleep 移除：`archived task rejects` 测试 409 后直接查询 downstream（无 run 产生无需等待）；`stale downstream` 测试用 `waitForAttemptDelivery()` 等待真实 delivery loop 完成后再断言。
 - Real Typed Chain Acceptance：验收矩阵全部闭合 — TaskA accepted result → typed artifact（`sourceAttemptId`/`sourceOutputPortId`）→ TaskB auto-start → 下游发现 → downstreamDelivery outcome（`delivered`）→ timing fields → Plan run 隔离。
 - Typed Artifact Handoff 模块：隔离 artifact handoff 逻辑和测试，稳定断言避免 background delivery cleanup race。
-- Downstream Delivery Outcomes：记录 `delivered`/`skipped`/`error` 三种下游投递结果，stale connection 记录 `staleReason`。
+- Downstream Delivery Outcomes：记录 `delivered`/`skipped`/`failed` 三种下游投递结果，stale connection 记录 `staleReason`。
 - Typed Chain Rule 模块：集中 typed task chain 校验规则。
 - Connection Persistence Hardening：收紧 task connection 变更锁。
 - Stale Connection Lifecycle：完整覆盖 stale port type mismatch / archived task 拒绝 / stale 下游不影响上游成功。
