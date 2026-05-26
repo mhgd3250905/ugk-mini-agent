@@ -29,99 +29,48 @@
 
 注意：远端 Git 已更新不等于生产服务器已部署。服务器更新仍要按 `docs/server-ops.md` 的增量流程执行，不能把 push 当上线。
 
-## 2026-05-26 Team Console Task / WorkUnit 提交快照
+## 2026-05-26 Team Console Task / WorkUnit 提交快照（最终稳定版）
 
-当前 Team Console Task 功能雏形已经在独立 worktree 收口：
+当前 Team Console Task 功能已在独立 worktree 完成收口和最终测试稳定化：
 
 - Worktree：`E:\AII\ugk-pi\.worktrees\team-console-workunit-redesign`
 - 分支：`codex/team-console-workunit-redesign`
-- 最新提交：`merge(team): align backend assistant text baseline`（真实 hash 以 `git log -1 --oneline` 为准）
-- 近期 UI 收口提交：`98c3148 fix(team-console): unify connector source sockets`、`6e96e9b fix(team-console): smooth node connector curves`、`3b9a0a4 fix(team-console): refine node connector curves`、`2c83f3a feat(team-console): polish run observer connectors`
-- Typed Task Chain V1 提交：`a8a9584 feat(team-console): add typed task chain v1`
-- 本轮提交包含 Typed Task Chain V1 源码 / 测试 / 文档、Run observer 聚合面板、连接曲线和 source socket 视觉收口，以及 `65e4de8` 后端 `assistantText` 语义的安全 ancestry 收口；提交后 tracked 工作区应保持干净。`.codex/plans/*` 和 `.codex/skills/new-chat/` 仍是本地协作文件，按边界不要提交。
+- 最新提交：`test(team): remove fixed sleeps from task run route tests`（真实 hash 以 `git log -1 --oneline` 为准）
+- `.codex/plans/*` 和 `.codex/skills/new-chat/` 仍是本地协作文件，按边界不要提交。
 
-当前已完成：
+已完成的强化工作（按提交倒序）：
+
+- 路由测试固定 sleep 移除：`archived task rejects` 测试 409 后直接查询 downstream（无 run 产生无需等待）；`stale downstream` 测试用 `waitForAttemptDelivery()` 等待真实 delivery loop 完成后再断言。
+- Real Typed Chain Acceptance：验收矩阵全部闭合 — TaskA accepted result → typed artifact（`sourceAttemptId`/`sourceOutputPortId`）→ TaskB auto-start → 下游发现 → downstreamDelivery outcome（`delivered`）→ timing fields → Plan run 隔离。
+- Typed Artifact Handoff 模块：隔离 artifact handoff 逻辑和测试，稳定断言避免 background delivery cleanup race。
+- Downstream Delivery Outcomes：记录 `delivered`/`skipped`/`error` 三种下游投递结果，stale connection 记录 `staleReason`。
+- Typed Chain Rule 模块：集中 typed task chain 校验规则。
+- Connection Persistence Hardening：收紧 task connection 变更锁。
+- Stale Connection Lifecycle：完整覆盖 stale port type mismatch / archived task 拒绝 / stale 下游不影响上游成功。
+
+功能能力（与上一版一致，无新增功能）：
 
 - Team Console 已支持 Task 创建入口、浅编辑、软删除、Leader 对话 iframe、Task run 启动 / 停止和 Run observer。
-- Task run observer 已聚合为单个 `run-observer` 大面板：内部顺序为 worker 过程、worker 输出文件、checker 过程、checker 输出文件、result 文件；点击文件行仍展开右侧文件详情节点。
-- Worker / Checker 过程节点消费 `attempt.roleProcesses.worker/checker`；有 `assistantText.content` 时优先显示 Agent 自述 / 推理文本，保留换行、中文断句、最多 5 行、单行 200 字符截断；不再渲染下半区 tool / method 调用明细，完整 attempt metadata 仍由后端保留。
-- 文件节点紧凑展示 Agent 名、文件名和路径；点击文件节点展开右侧详情节点，支持 JSON pretty print、安全 Markdown 渲染和文本 fallback。
-- Task 操作树支持层级拖动：拖 Task 根节点带动菜单和已展开子树；拖菜单带动 observer 子节点；拖过程节点只移动自身；拖文件节点带动其文件详情；拖文件详情叶子节点只移动自身。
-- 运行中 observer 已收掉高频视觉噪音：不显示空文件占位、`正在刷新...`、`最后刷新`，active poll 瞬时失败不插红色错误节点；拖动 / resize 期间暂停 Task branch / child panel auto-height measurement，降低轮询刷新导致的卡顿和闪烁。
-- 连接线已统一为 right-middle -> left-middle 的单条连续 cubic；出线端统一显示吸附在卡片右边缘的半圆 source socket，target 端不再显示圆环或圆点。Task connection 使用绿色 socket，Agent 分支偏青色，Task 分支和二级面板偏金色。
-- Typed Task Chain V1 已建立最小积木契约：WorkUnit 可声明 `inputPorts` / `outputPorts`，连接数据为 `fromTaskId/fromOutputPortId -> toTaskId/toInputPortId`，后端校验 `output.type === input.type`、非重复、非自连接、非环。
-- Team Console Task 卡片会展示 typed ports；点击 output port 后只能连到同类型 input port，连接成功后画布渲染 Task connection path。
-- 上游 Canvas Task run 成功并通过 checker 后，后端会把 `accepted-result.md` 封装成 typed artifact，并作为 `boundInputs` 自动启动下游 Task run；下游 run 的 `source.triggeredBy` 记录来源 connection / upstream run。
-- Live API 兼容仍指向旧 Docker 主服务的开发现场：`GET /v1/team/task-connections` 404 时前端当作空连接列表，避免 Agent / Task catalog 和“创建 Task”入口被打挂；但真正连线和自动下游触发仍需要当前 worktree 后端或已集成该 endpoint 的服务。
-- V1 边界保持克制：不做任意复杂自由画布编排、条件分支、循环、真实 TTS 或 SSE；第一条真实验收链路是“搜集内容 Task 输出 `md` -> HTML 制作 Task 输入 `md`、输出 `html`”。
+- Typed Task Chain V1：WorkUnit 声明 `inputPorts` / `outputPorts`，连接校验 `output.type === input.type`、非重复、非自连接、非环；上游 run 成功后自动触发下游。
+- Task run observer 聚合面板、层级拖动、连接曲线和 source socket 视觉收口。
+- V1 边界保持克制：不做任意复杂画布编排、条件分支、循环、SSE。
 
-验证记录：
+最终验证记录：
 
-本轮 Real Typed Chain Acceptance 验证：
-
-- `node --test --import tsx test/team-task-store.test.ts test/team-task-chain-contract.test.ts test/team-task-connection-store.test.ts test/team-task-routes.test.ts test/team-task-run-routes.test.ts test/team-run-workspace.test.ts test/team-task-run-process.test.ts test/team-task-artifact-handoff.test.ts`：116 passed
-- `npm --prefix apps/team-console run test`：345 passed
-- `npm --prefix apps/team-console run build`：通过
+- route test（`test/team-task-run-routes.test.ts`）：8 passed
+- backend full gate（8 个 team test 文件）：116 passed
+- frontend test（`apps/team-console`）：345 passed
+- frontend build（`apps/team-console`）：通过
 - `npx tsc --noEmit`：通过
 - `git diff --check`：通过
 - touched files EOL：`i/lf w/lf`
-- 验收矩阵已全部闭合：TaskA accepted result (`resultRef`) → typed artifact (`sourceAttemptId`/`sourceOutputPortId`) → TaskB auto-start → 下游发现 (`GET /v1/team/tasks/:taskId/runs`) → downstreamDelivery outcome (`delivered`) → timing fields (`startedAt`/`finishedAt`/`activeElapsedMs`) → Plan run 隔离 (`GET /v1/team/runs` 空)
 - 计划规范差异：`triggeredBy` 类型不含 `fromOutputPortId`，output port 通过 `connectionId` 追溯，不影响功能正确性
-
-上一个已提交快照验证：
-
-- `npm --prefix apps/team-console run test`：325 passed
-- `npm --prefix apps/team-console run build`：通过
-- `npx tsc --noEmit`：通过
-- `git diff --check`：通过
-- touched files EOL：`i/lf w/lf`
-- 浏览器冒烟：`http://127.0.0.1:5174/` mock Task run 中 Worker / Checker 自述分行显示，过程节点不再显示下半区 tool / method 调用明细，console 无 error / warn
-
-本轮 Typed Task Chain V1 验证：
-
-- `node --test --import tsx test/team-task-store.test.ts test/team-task-routes.test.ts test/team-task-run-routes.test.ts`：20 passed
-- `npm --prefix apps/team-console run test`：329 passed
-- `npm --prefix apps/team-console run build`：通过
-- `npx tsc --noEmit`：通过
-- `git diff --check`：通过
-- 浏览器冒烟：`http://127.0.0.1:5174/` mock 模式可见 Task typed port chip（`输出 Markdown 报告 md`）；当前 mock fixture 只有一个 output port Task，不生成 connection path；console 无应用错误 / warn，仅 `favicon.ico` 404。
-
-本轮 Run 状态合并到 Task 菜单验证：
-
-- `npm --prefix apps/team-console run test`：331 passed
-- `npm --prefix apps/team-console run build`：通过
-- `npx tsc --noEmit`：通过
-- `git diff --check`：通过
-- 浏览器冒烟：`http://127.0.0.1:5174/` Live API 当前 Task run 中，`.task-run-summary` 展示运行状态、阶段、耗时、Attempts、进度消息和 run id；`.emap-observer-status-node` 为 0；Worker / Checker 过程节点仍存在；拖动 Worker 过程节点后位置更新；console 无 error / warn。
-
-本轮 Run observer 聚合、连接曲线和 source socket 收口验证：
-
-- `npm --prefix apps/team-console run test`：341 passed
-- `npm --prefix apps/team-console run build`：通过
-- `git diff --check`：通过
-- touched files EOL：`i/lf w/lf`
-- 浏览器 DOM 验证：`http://127.0.0.1:5174/` title 为 `Team Console`；旧 `.emap-connector-anchor-ring` / `.emap-connector-anchor-dot` 数量为 0；Typed Task connection 和 Task 菜单连接均渲染 `.emap-connector-source-socket`；Task connection socket 路径形如 `M560,520 A6,6 0 0 1 560,532`，Task 菜单 socket 路径形如 `M560,298 A6,6 0 0 1 560,310`。
-
-本轮后端 `assistantText` ancestry 收口验证：
-
-- `node --test --import tsx test/team-task-store.test.ts test/team-task-routes.test.ts test/team-task-run-routes.test.ts test/team-run-workspace.test.ts test/team-task-run-process.test.ts`：62 passed
-- `npm --prefix apps/team-console run test`：341 passed
-- `npm --prefix apps/team-console run build`：通过
-- `npx tsc --noEmit`：通过
-- `git diff --check`：通过
-- `git log --oneline HEAD..65e4de8`：空，`65e4de8` ancestry 已纳入当前分支
-
-集成注意：
-
-- Team Console worktree 已通过当前 merge commit 纳入 `65e4de8 feat(team): expose task role assistant text` 的 ancestry，并手工保留当前 typed task chain、`TaskConnectionStore`、typed port contract、typed artifact 下游触发和 Team Console 前端。
-- 本次不是盲目 merge/rebase/reset：冲突文件以当前分支为基线，只补入当前分支缺少的后端 `roleProcesses.*.assistantText` 写盘 / normalize / 测试语义。
-- Docker 主服务 / 主 checkout 可能已有同一后端语义；后续如继续整理其他后端 ancestry，仍要逐提交审差异，不要把旧后端树硬压回 typed chain 分支。
 
 推荐下一步：
 
-1. 继续真实 Task run / typed chain 验收时，重点看 `TaskA 输出 md -> TaskB 输入 md` 的端到端耗时和下游 run 发现链路；UI 连接线和 observer 聚合视觉本轮先收口，不要继续无边界打磨。
-2. 若后续继续集成后端提交，先做逐提交 `git show` / patch-id 审计，确认不会回退 `TaskConnectionStore`、typed port contract、accepted artifact 自动下游触发和相关测试。
-3. SSE 观察流仍是后续后端能力；当前 Run observer 仍是轮询版，不要在前端硬造假实时流。
+1. 此分支已完成最终测试稳定化。下一个 agent 应聚焦最终 review / 集成 / PR 或用户指定的后续任务，不要继续无边界 UI 打磨或功能扩展。
+2. 若后续集成后端提交，先做逐提交 `git show` / patch-id 审计，确认不会回退 `TaskConnectionStore`、typed port contract、accepted artifact 自动下游触发和相关测试。
+3. SSE 观察流仍是后续后端能力；当前 Run observer 仍是轮询版本，不要在前端硬造假实时流。
 
 ## 2026-05-23 Qwen 思考流与 GLM-5.1 上下文修复
 
