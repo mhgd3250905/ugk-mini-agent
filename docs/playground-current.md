@@ -18,7 +18,7 @@
 - 文件条目以紧凑行（`.emap-observer-file-row`）展示在合并面板内部，而不是单独的 canvas 节点。
 - 点击文件行会在右侧展开第二级文件详情面板。
 - Task 菜单只保留操作按钮和紧凑运行摘要。
-- 连接线使用 fixed right-middle 到 left-middle 锚点；反向角度时使用三段短 hook cubic，从父节点右侧快速转出，从子节点左侧探出后再进入，中段保持低弯曲，不再画大绕圈；卡片接触点显示圆环 + 中心点标记，让接线处更明确。
+- 连接线使用 fixed right-middle 到 left-middle 锚点；反向角度时使用单条连续 cubic，通过两端水平控制柄表达右出左入，不再拆成多段 hook，避免近距离斜向连接出现切角；卡片接触点显示圆环 + 中心点标记，让接线处更明确。
 - 拖动语义保持层级化：拖 Task 根节点或菜单节点仍会带动已展开 observer 面板和文件详情面板，单独拖 observer 面板只移动自身，拖文件详情叶子节点只移动自身。
 
 ## 2026-05-25 Team Console Task run process nodes

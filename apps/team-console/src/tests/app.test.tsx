@@ -3857,12 +3857,12 @@ describe("App", () => {
     expect(minX).toBeLessThan(targetLeftX);
     expect(minX).toBeGreaterThanOrEqual(targetLeftX - 68);
 
-    // Reverse detour uses source hook, low-curve middle, and target hook, not angular segments or a big S loop.
+    // Reverse detour stays as one continuous cubic, not angular segments or a multi-part loop.
     expect(d).not.toContain(" L");
-    expect((d.match(/\sC/g) ?? []).length).toBe(3);
+    expect((d.match(/\sC/g) ?? []).length).toBe(1);
 
-    // A compact endpoint-hook connector has three cubics: start hook, middle curve, target hook.
-    expect(allCoords).toHaveLength(10);
+    // A compact endpoint-hook connector is one cubic: start, two handles, target.
+    expect(allCoords).toHaveLength(4);
   });
 
   // --- Task operation tree drag ---

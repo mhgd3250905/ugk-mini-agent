@@ -62,25 +62,7 @@ function connectorHookLength(sx: number, sy: number, tx: number, ty: number): nu
 
 export function straightPath(sx: number, sy: number, tx: number, ty: number): string {
   const hook = connectorHookLength(sx, sy, tx, ty);
-  const dy = ty - sy;
-  const directionY = Math.sign(dy || 1);
-  const turnY = Math.min(56, Math.abs(dy) * 0.2);
-  const sourceHook = { x: sx + hook, y: sy + directionY * turnY };
-  const targetHook = { x: tx - hook, y: ty - directionY * turnY };
-  const middleCp1 = {
-    x: sourceHook.x + (targetHook.x - sourceHook.x) * 0.34,
-    y: sourceHook.y + (targetHook.y - sourceHook.y) * 0.34,
-  };
-  const middleCp2 = {
-    x: sourceHook.x + (targetHook.x - sourceHook.x) * 0.66,
-    y: sourceHook.y + (targetHook.y - sourceHook.y) * 0.66,
-  };
-  return [
-    `M${sx},${sy}`,
-    `C${sx + hook * 0.72},${sy} ${sourceHook.x},${sy + directionY * turnY * 0.42} ${sourceHook.x},${sourceHook.y}`,
-    `C${middleCp1.x},${middleCp1.y} ${middleCp2.x},${middleCp2.y} ${targetHook.x},${targetHook.y}`,
-    `C${targetHook.x},${ty - directionY * turnY * 0.42} ${tx - hook * 0.72},${ty} ${tx},${ty}`,
-  ].join(" ");
+  return `M${sx},${sy} C${sx + hook},${sy} ${tx - hook},${ty} ${tx},${ty}`;
 }
 
 export function layoutExecutionMap(

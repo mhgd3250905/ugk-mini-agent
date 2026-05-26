@@ -14,10 +14,10 @@
 
 ## 2026-05-26 — Team Console 节点连线曲线统一收口
 
-- **主题**: 按用户反馈把节点间连接线从“大 S 绕圈”改成双端短 hook、中心低弯曲的统一曲线机制。
+- **主题**: 按用户反馈把节点间连接线从“大 S 绕圈 / 多段切角”改成单条连续 cubic 的统一曲线机制。
 - **变更内容**:
-  - `straightPath()` 现在生成 right-middle -> left-middle 语义的三段 cubic：source 右侧短 hook 出线，中段低弯曲过渡，target 左侧短 hook 入线。
-  - 反向角度不再使用两段大 S 曲线；两端都会先探出约 42-64px 并快速转向，避免只有出发点有 hook、结束点像直接贴上卡片。
+  - `straightPath()` 现在生成 right-middle -> left-middle 语义的单条连续 cubic：source 右侧水平出线，target 左侧水平入线。
+  - 反向角度不再使用多段 hook 曲线；只通过两端控制柄表达出入线，避免两个 Task 近距离斜向连接时出现生硬切角。
   - Agent 分支、Task 操作分支、Task 子面板、Typed Task connection 和 Execution Map 分支连接共用同一曲线机制。
   - 回归测试覆盖反向 compact hook 范围、Agent 分支拖到下方后仍使用右到左锚点，以及 run observer 反向连接不再出现两段 S loop。
 - **影响范围**: `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`

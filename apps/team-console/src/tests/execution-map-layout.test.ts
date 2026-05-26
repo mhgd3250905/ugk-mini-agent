@@ -44,19 +44,19 @@ describe("layoutExecutionMap", () => {
     }));
     const allXs = coords.map((coord) => coord.x);
 
-    expect((path.match(/\sC/g) ?? []).length).toBe(3);
+    expect((path.match(/\sC/g) ?? []).length).toBe(1);
     expect(path).not.toContain(" L");
     expect(Math.max(...allXs)).toBeLessThanOrEqual(926);
     expect(Math.min(...allXs)).toBeGreaterThanOrEqual(464);
-    expect(coords).toHaveLength(10);
+    expect(coords).toHaveLength(4);
     expect(coords[0]).toEqual({ x: 862, y: 393 });
-    expect(coords[9]).toEqual({ x: 528, y: 596.5 });
+    expect(coords[3]).toEqual({ x: 528, y: 596.5 });
     expect(coords[1]!.x - coords[0]!.x).toBeGreaterThan(34);
     expect(coords[1]!.x - coords[0]!.x).toBeLessThanOrEqual(64);
-    expect(coords[9]!.x - coords[8]!.x).toBeGreaterThan(34);
-    expect(coords[9]!.x - coords[8]!.x).toBeLessThanOrEqual(64);
-    expect(coords[3]!.y).toBeGreaterThan(coords[0]!.y);
-    expect(coords[6]!.y).toBeLessThan(coords[9]!.y);
+    expect(coords[3]!.x - coords[2]!.x).toBeGreaterThan(34);
+    expect(coords[3]!.x - coords[2]!.x).toBeLessThanOrEqual(64);
+    expect(coords[1]!.y).toBe(coords[0]!.y);
+    expect(coords[2]!.y).toBe(coords[3]!.y);
   });
 
   it("places root at top center", () => {
