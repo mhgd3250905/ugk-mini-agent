@@ -611,10 +611,18 @@ test("delivery outcome persistence failure does not fail accepted upstream run",
 			toTaskId: targetTask.taskId,
 			toInputPortId: "source_md",
 		});
+		await taskStore.update(targetTask.taskId, {
+			workUnit: {
+				...targetTask.workUnit,
+				inputPorts: [{ id: "source_md", label: "HTML input", type: "html" }],
+			},
+		});
 
 		const workspace = new RunWorkspace(join(root, "task-runs"));
+		let recordAttemptDeliveryOutcomesCalled = false;
 		// Monkey-patch recordAttemptDeliveryOutcomes to simulate persistence failure
 		workspace.recordAttemptDeliveryOutcomes = async () => {
+			recordAttemptDeliveryOutcomesCalled = true;
 			throw new Error("disk full: delivery outcome write failed");
 		};
 
@@ -636,6 +644,9 @@ test("delivery outcome persistence failure does not fail accepted upstream run",
 		const settled = await service.getRun(created.runId);
 		assert.ok(settled);
 		assert.equal(settled!.status, "completed", `upstream must still be completed after settle, got "${settled!.status}"`);
+		assert.equal(recordAttemptDeliveryOutcomesCalled, true);
+		const downstreamRuns = await service.listRuns(targetTask.taskId);
+		assert.deepEqual(downstreamRuns, []);
 	} finally {
 		await new Promise(resolve => setTimeout(resolve, 100));
 		await rm(root, { recursive: true, force: true });
