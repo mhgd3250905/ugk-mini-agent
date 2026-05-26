@@ -51,6 +51,15 @@ async function waitForTerminalRun(service: CanvasTaskRunService, runId: string):
 	throw new Error(`task run did not reach terminal state: ${runId}`);
 }
 
+async function waitForTaskRuns(service: CanvasTaskRunService, taskId: string, expectedLength = 1): Promise<TeamRunState[]> {
+	for (let i = 0; i < 40; i++) {
+		const runs = await service.listRuns(taskId);
+		if (runs.length >= expectedLength) return runs;
+		await new Promise(resolve => setTimeout(resolve, 25));
+	}
+	throw new Error("task did not reach expected run count");
+}
+
 async function waitForAttemptDelivery(workspace: RunWorkspace, runId: string, taskId: string, expectedLength = 1): Promise<import("../src/team/types.js").TeamTaskDeliveryOutcome[]> {
 	for (let i = 0; i < 80; i++) {
 		const attempts = await workspace.listAttempts(runId, taskId);
@@ -727,8 +736,7 @@ test("downstream worker receives bound input prompt and payload from upstream ty
 		const upstreamFinished = await waitForTerminalRun(service, upstreamRun.runId);
 		assert.equal(upstreamFinished.status, "completed");
 
-		const downstreamRuns = await service.listRuns(targetTask.taskId);
-		assert.equal(downstreamRuns.length, 1);
+		const downstreamRuns = await waitForTaskRuns(service, targetTask.taskId, 1);
 		const downstreamFinished = await waitForTerminalRun(service, downstreamRuns[0]!.runId);
 		assert.equal(downstreamFinished.status, "completed");
 

@@ -94,19 +94,26 @@ test("formatBoundInputsForPrompt formats one bound input with current metadata",
 
 test("formatBoundInputsForPrompt uses content before preview", () => {
 	const input = makeBoundInput({
-		artifact: makeArtifact({ content: "full content text" }),
+		artifact: {
+			...makeArtifact({ content: "full content text" }),
+			preview: "preview only text",
+		},
 	});
 	const result = formatBoundInputsForPrompt([input]);
 	assert.match(result, /full content text/);
+	assert.doesNotMatch(result, /preview only text/);
 });
 
 test("formatBoundInputsForPrompt falls back to preview when content is absent", () => {
+	const artifact = makeArtifact({ content: "" });
 	const input = makeBoundInput({
-		artifact: makeArtifact({ content: "" }),
+		artifact: {
+			...artifact,
+			preview: "preview fallback text",
+		},
 	});
 	const result = formatBoundInputsForPrompt([input]);
-	assert.match(result, /已绑定上游 typed artifact 输入/);
-	assert.ok(result.length > 0);
+	assert.match(result, /preview fallback text/);
 });
 
 test("formatBoundInputsForPrompt keeps multiple inputs ordered", () => {
