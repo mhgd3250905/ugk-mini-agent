@@ -275,6 +275,10 @@ test("recordAttemptRoleProcess persists worker/checker process snapshots", async
 			startedAt: "2026-05-25T00:00:00.000Z",
 			updatedAt: "2026-05-25T00:00:00.100Z",
 			finishedAt: null,
+			assistantText: {
+				content: "我先搜索 GitHub 热榜。",
+				updatedAt: "2026-05-25T00:00:00.090Z",
+			},
 			process: {
 				title: "Worker process",
 				narration: ["工具开始 · x-search"],
@@ -306,6 +310,7 @@ test("recordAttemptRoleProcess persists worker/checker process snapshots", async
 		const roleProcesses = attempts[0]!.roleProcesses;
 		assert.equal(roleProcesses?.worker?.profileId, "search");
 		assert.equal(roleProcesses?.worker?.status, "running");
+		assert.equal(roleProcesses?.worker?.assistantText?.content, "我先搜索 GitHub 热榜。");
 		assert.equal(roleProcesses?.worker?.process?.entries[0]?.toolName, "x-search");
 		assert.equal(roleProcesses?.checker?.profileId, "main");
 		assert.equal(roleProcesses?.checker?.status, "waiting");

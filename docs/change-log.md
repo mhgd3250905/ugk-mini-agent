@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-26 — Team Console 后端 assistantText ancestry 收口
+
+- **主题**: 将主后端 `65e4de8 feat(team): expose task role assistant text` 的后端语义并入 Team Console WorkUnit redesign 分支，同时保留当前 typed task chain。
+- **变更内容**:
+  - `TeamAttemptRoleProcess` 增加可选 `assistantText`，用于保存 worker/checker Agent 的自述 / 推理文本。
+  - `TeamRoleProcessRecorder` 在 process snapshot 写盘时持久化 assistant text，并在 role 终态后忽略迟到 session event，避免取消后的文本覆盖已完成状态。
+  - 回归测试覆盖 worker/checker assistant text 写盘、RunWorkspace round-trip，以及 cancel 后迟到文本不污染 terminal role process。
+  - Git ancestry 通过非 fast-forward merge 纳入 `65e4de8`，但冲突解决保留当前 `TaskConnectionStore`、typed port contract、typed artifact 下游触发和 Team Console 前端文件。
+- **影响范围**: `src/team/types.ts`, `src/team/run-workspace-attempts.ts`, `src/team/task-run-process-recorder.ts`, `test/team-run-workspace.test.ts`, `test/team-task-run-process.test.ts`, `docs/change-log.md`
+- **边界**: 不 merge/rebase/reset 到旧后端树，不删除 typed chain，不改 SSE，不改 Team Console UI，不提交 `.codex/plans/*` 或 `.codex/skills/new-chat/`。
+
+---
+
 ## 2026-05-26 — Team Console 连接出线 socket 统一
 
 - **主题**: 按用户反馈把节点接线标记从圆环 / 圆点改成吸附在卡片右边缘的 source 半圆 socket。

@@ -102,7 +102,7 @@ export class TeamRoleProcessRecorder {
 	}
 
 	async succeed(): Promise<void> {
-		await this.finish("succeeded", { text: this.adapter.getRawText() });
+		await this.finish("succeeded", { text: this.activeRunView.text || this.adapter.getRawText() });
 	}
 
 	async fail(message: string): Promise<void> {
@@ -202,6 +202,8 @@ export class TeamRoleProcessRecorder {
 	}
 
 	private snapshot(): TeamAttemptRoleProcess {
+		const assistantContent = truncateProcessText(this.activeRunView.text || this.adapter.getRawText());
+		const assistantUpdatedAt = this.updatedAt ?? this.startedAt ?? new Date().toISOString();
 		return {
 			role: this.options.role,
 			profileId: this.options.profileId,
@@ -209,6 +211,7 @@ export class TeamRoleProcessRecorder {
 			startedAt: this.startedAt,
 			updatedAt: this.updatedAt,
 			finishedAt: this.finishedAt,
+			...(assistantContent ? { assistantText: { content: assistantContent, updatedAt: assistantUpdatedAt } } : {}),
 			process: cloneProcessForPersistence(this.activeRunView.process),
 		};
 	}

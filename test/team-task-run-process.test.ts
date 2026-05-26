@@ -52,6 +52,8 @@ async function waitForTerminalRun(service: CanvasTaskRunService, runId: string):
 
 class ProcessEventRoleRunner implements TeamRoleRunner {
 	async runWorker(input: ProcessAwareWorkerInput): Promise<WorkerOutput> {
+		input.onSessionEvent?.({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "用户正在询问 GitHub 热榜。" } });
+		input.onSessionEvent?.({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "我先搜索并整理仓库。" } });
 		input.onSessionEvent?.({
 			type: "tool_execution_start",
 			toolCallId: "worker_tool_1",
@@ -76,6 +78,7 @@ class ProcessEventRoleRunner implements TeamRoleRunner {
 	}
 
 	async runChecker(input: ProcessAwareCheckerInput): Promise<CheckerOutput> {
+		input.onSessionEvent?.({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "我在核对条目数量。" } });
 		input.onSessionEvent?.({
 			type: "tool_execution_start",
 			toolCallId: "checker_tool_1",
@@ -89,6 +92,7 @@ class ProcessEventRoleRunner implements TeamRoleRunner {
 			result: "checked",
 			isError: false,
 		});
+		input.onSessionEvent?.({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "验收通过。" } });
 		return { verdict: "pass", reason: "ok", resultContent: "accepted result" };
 	}
 
@@ -107,6 +111,7 @@ class ProcessEventRoleRunner implements TeamRoleRunner {
 
 class CancellableWorkerRoleRunner extends ProcessEventRoleRunner {
 	async runWorker(input: ProcessAwareWorkerInput): Promise<WorkerOutput> {
+		input.onSessionEvent?.({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "取消前文本。" } });
 		input.onSessionEvent?.({
 			type: "tool_execution_start",
 			toolCallId: "worker_tool_cancel",
@@ -125,12 +130,15 @@ class CancellableWorkerRoleRunner extends ProcessEventRoleRunner {
 }
 
 class LateEventAfterCancelRoleRunner extends ProcessEventRoleRunner {
+	private workerSessionEvent: ((event: RawAgentSessionEventLike) => void) | undefined;
 	private lateEventSentResolve!: () => void;
 	readonly lateEventSent = new Promise<void>((resolve) => {
 		this.lateEventSentResolve = resolve;
 	});
 
 	async runWorker(input: ProcessAwareWorkerInput): Promise<WorkerOutput> {
+		this.workerSessionEvent = input.onSessionEvent;
+		input.onSessionEvent?.({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "取消前文本。" } });
 		input.onSessionEvent?.({
 			type: "tool_execution_start",
 			toolCallId: "worker_tool_cancel",
@@ -144,7 +152,11 @@ class LateEventAfterCancelRoleRunner extends ProcessEventRoleRunner {
 			}
 			input.signal?.addEventListener("abort", () => {
 				setTimeout(() => {
-					input.onSessionEvent?.({
+					this.workerSessionEvent?.({
+						type: "message_update",
+						assistantMessageEvent: { type: "text_delta", delta: "取消后的迟到文本不应出现。" },
+					});
+					this.workerSessionEvent?.({
 						type: "tool_execution_start",
 						toolCallId: "late_after_cancel",
 						toolName: "late-tool",
@@ -192,6 +204,9 @@ test("CanvasTaskRunService records worker and checker process snapshots on attem
 		assert.equal(roleProcesses?.worker?.profileId, "search");
 		assert.equal(roleProcesses?.worker?.status, "succeeded");
 		assert.equal(roleProcesses?.worker?.process?.isComplete, true);
+		assert.match(roleProcesses?.worker?.assistantText?.content ?? "", /用户正在询问 GitHub 热榜。/);
+		assert.match(roleProcesses?.worker?.assistantText?.content ?? "", /我先搜索并整理仓库。worker done/);
+		assert.ok(roleProcesses?.worker?.assistantText?.updatedAt);
 		assert.equal(roleProcesses?.worker?.process?.entries.some(entry => entry.toolCallId === "worker_tool_1"), true);
 		const updateEntry = roleProcesses?.worker?.process?.entries.find(entry => entry.title === "工具更新");
 		assert.ok(updateEntry);
@@ -201,6 +216,8 @@ test("CanvasTaskRunService records worker and checker process snapshots on attem
 		assert.equal(roleProcesses?.checker?.profileId, "main");
 		assert.equal(roleProcesses?.checker?.status, "succeeded");
 		assert.equal(roleProcesses?.checker?.process?.isComplete, true);
+		assert.match(roleProcesses?.checker?.assistantText?.content ?? "", /我在核对条目数量。验收通过。/);
+		assert.ok(roleProcesses?.checker?.assistantText?.updatedAt);
 		assert.equal(roleProcesses?.checker?.process?.entries.some(entry => entry.toolCallId === "checker_tool_1"), true);
 	} finally {
 		await rm(root, { recursive: true, force: true });
@@ -227,6 +244,11 @@ test("CanvasTaskRunService keeps cancelled attempt terminal fields when late rol
 
 		const cancelled = await service.cancelRun(created.runId);
 		assert.equal(cancelled.status, "cancelled");
+		const attemptsBeforeLateEvent = await workspace.listAttempts(created.runId, task.taskId);
+		const workerBeforeLateEvent = attemptsBeforeLateEvent[0]!.roleProcesses?.worker;
+		assert.equal(workerBeforeLateEvent?.assistantText?.content, "取消前文本。");
+		assert.ok(workerBeforeLateEvent?.assistantText?.updatedAt);
+		const assistantTextBeforeLateEvent = workerBeforeLateEvent?.assistantText?.content;
 		await runner.lateEventSent;
 		await new Promise(resolve => setTimeout(resolve, 25));
 
@@ -241,6 +263,8 @@ test("CanvasTaskRunService keeps cancelled attempt terminal fields when late rol
 		assert.ok(worker?.finishedAt);
 		assert.equal(worker?.process?.isComplete, true);
 		assert.equal(worker?.process?.currentAction, "任务已打断");
+		assert.equal(worker?.assistantText?.content, assistantTextBeforeLateEvent);
+		assert.doesNotMatch(worker?.assistantText?.content ?? "", /迟到文本/);
 		assert.equal(worker?.process?.entries.some(entry => entry.toolCallId === "late_after_cancel"), false);
 	} finally {
 		await rm(root, { recursive: true, force: true });
@@ -271,6 +295,8 @@ test("CanvasTaskRunService flushes cancelled worker process when task run is can
 		assert.equal(worker?.status, "cancelled");
 		assert.equal(worker?.process?.isComplete, true);
 		assert.equal(worker?.process?.currentAction, "任务已打断");
+		assert.equal(worker?.assistantText?.content, "取消前文本。");
+		assert.ok(worker?.assistantText?.updatedAt);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

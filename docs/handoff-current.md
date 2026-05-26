@@ -35,10 +35,10 @@
 
 - Worktree：`E:\AII\ugk-pi\.worktrees\team-console-workunit-redesign`
 - 分支：`codex/team-console-workunit-redesign`
-- 最新提交：`98c3148 fix(team-console): unify connector source sockets`
-- 近期 UI 收口提交：`6e96e9b fix(team-console): smooth node connector curves`、`3b9a0a4 fix(team-console): refine node connector curves`、`2c83f3a feat(team-console): polish run observer connectors`
+- 最新提交：`merge(team): align backend assistant text baseline`（真实 hash 以 `git log -1 --oneline` 为准）
+- 近期 UI 收口提交：`98c3148 fix(team-console): unify connector source sockets`、`6e96e9b fix(team-console): smooth node connector curves`、`3b9a0a4 fix(team-console): refine node connector curves`、`2c83f3a feat(team-console): polish run observer connectors`
 - Typed Task Chain V1 提交：`a8a9584 feat(team-console): add typed task chain v1`
-- 本轮提交包含 Typed Task Chain V1 源码 / 测试 / 文档，以及 Run observer 聚合面板、连接曲线和 source socket 视觉收口；提交后 tracked 工作区应保持干净。`.codex/plans/*` 和 `.codex/skills/new-chat/` 仍是本地协作文件，按边界不要提交。
+- 本轮提交包含 Typed Task Chain V1 源码 / 测试 / 文档、Run observer 聚合面板、连接曲线和 source socket 视觉收口，以及 `65e4de8` 后端 `assistantText` 语义的安全 ancestry 收口；提交后 tracked 工作区应保持干净。`.codex/plans/*` 和 `.codex/skills/new-chat/` 仍是本地协作文件，按边界不要提交。
 
 当前已完成：
 
@@ -91,16 +91,25 @@
 - touched files EOL：`i/lf w/lf`
 - 浏览器 DOM 验证：`http://127.0.0.1:5174/` title 为 `Team Console`；旧 `.emap-connector-anchor-ring` / `.emap-connector-anchor-dot` 数量为 0；Typed Task connection 和 Task 菜单连接均渲染 `.emap-connector-source-socket`；Task connection socket 路径形如 `M560,520 A6,6 0 0 1 560,532`，Task 菜单 socket 路径形如 `M560,298 A6,6 0 0 1 560,310`。
 
+本轮后端 `assistantText` ancestry 收口验证：
+
+- `node --test --import tsx test/team-task-store.test.ts test/team-task-routes.test.ts test/team-task-run-routes.test.ts test/team-run-workspace.test.ts test/team-task-run-process.test.ts`：62 passed
+- `npm --prefix apps/team-console run test`：341 passed
+- `npm --prefix apps/team-console run build`：通过
+- `npx tsc --noEmit`：通过
+- `git diff --check`：通过
+- `git log --oneline HEAD..65e4de8`：空，`65e4de8` ancestry 已纳入当前分支
+
 集成注意：
 
-- Docker 主服务 / 主 checkout 已有后端提交 `65e4de8 feat(team): expose task role assistant text`，会通过 attempts API 暴露 `roleProcesses.*.assistantText`。
-- 当前 Team Console worktree 的 HEAD 仍未包含 `65e4de8`；Live API 若连接未包含该后端提交的服务，会 fallback 到 current action / narration，不报错但不会显示新自述字段。
-- 最终集成前需要安全并入 `65e4de8` 或确认部署环境后端已包含该提交；不要在当前有未提交文档改动时盲目 merge / rebase / reset。
+- Team Console worktree 已通过当前 merge commit 纳入 `65e4de8 feat(team): expose task role assistant text` 的 ancestry，并手工保留当前 typed task chain、`TaskConnectionStore`、typed port contract、typed artifact 下游触发和 Team Console 前端。
+- 本次不是盲目 merge/rebase/reset：冲突文件以当前分支为基线，只补入当前分支缺少的后端 `roleProcesses.*.assistantText` 写盘 / normalize / 测试语义。
+- Docker 主服务 / 主 checkout 可能已有同一后端语义；后续如继续整理其他后端 ancestry，仍要逐提交审差异，不要把旧后端树硬压回 typed chain 分支。
 
 推荐下一步：
 
 1. 继续真实 Task run / typed chain 验收时，重点看 `TaskA 输出 md -> TaskB 输入 md` 的端到端耗时和下游 run 发现链路；UI 连接线和 observer 聚合视觉本轮先收口，不要继续无边界打磨。
-2. 集成前审 `git log --oneline HEAD..65e4de8` 和 `git show --stat 65e4de8`，确认后端分叉文件后再合。
+2. 若后续继续集成后端提交，先做逐提交 `git show` / patch-id 审计，确认不会回退 `TaskConnectionStore`、typed port contract、accepted artifact 自动下游触发和相关测试。
 3. SSE 观察流仍是后续后端能力；当前 Run observer 仍是轮询版，不要在前端硬造假实时流。
 
 ## 2026-05-23 Qwen 思考流与 GLM-5.1 上下文修复

@@ -269,6 +269,7 @@ export class RunAttemptStore {
 		if (status !== "waiting" && status !== "running" && status !== "succeeded" && status !== "failed" && status !== "cancelled") {
 			return undefined;
 		}
+		const assistantText = this.normalizeAssistantText(value.assistantText);
 		return {
 			role,
 			profileId: typeof value.profileId === "string" ? value.profileId : "",
@@ -276,9 +277,20 @@ export class RunAttemptStore {
 			startedAt: typeof value.startedAt === "string" ? value.startedAt : null,
 			updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : null,
 			finishedAt: typeof value.finishedAt === "string" ? value.finishedAt : null,
+			...(assistantText ? { assistantText } : {}),
 			process: value.process && typeof value.process === "object" && !Array.isArray(value.process)
 				? value.process as TeamAttemptRoleProcess["process"]
 				: null,
+		};
+	}
+
+	private normalizeAssistantText(raw: unknown): TeamAttemptRoleProcess["assistantText"] | undefined {
+		if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+		const value = raw as Record<string, unknown>;
+		if (typeof value.content !== "string" || typeof value.updatedAt !== "string") return undefined;
+		return {
+			content: value.content,
+			updatedAt: value.updatedAt,
 		};
 	}
 
