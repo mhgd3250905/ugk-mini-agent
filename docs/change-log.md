@@ -16,7 +16,7 @@
 
 - **主题**: Task connection stale 状态显式化——运行时派生 `status: "active" | "stale"` 和 `staleReason`，不写入持久化 JSON；stale connection 不触发下游 run、不渲染连接线。
 - **变更内容**:
-  - `TaskConnectionStore.listResolved()` 从当前 Task/port 状态推导每条连接的 active/stale 状态，7 种 stale reason 覆盖 source/target task missing/archived、port missing、type mismatch。
+  - `TaskConnectionStore.listResolved()` 从当前 Task/port 状态推导每条连接的 active/stale 状态，8 种 stale reason 覆盖 source/target task missing/archived、source/target port missing、source/target port type mismatch。
   - `GET /v1/team/task-connections` 返回 `ResolvedTaskConnection[]`（含 `status` + `staleReason`），不修改 `task-connections.json`。
   - `CanvasTaskRunService.triggerDownstreamRuns()` 增加 source task archived 短路检查；run 运行期间 archive source task 会阻断下游触发，上游 accepted run 不受影响。
   - 前端 `TeamTaskConnection` 类型增加 `status?` / `staleReason?`；`ExecutionMap.tsx` 对 stale/无效端口连接返回 null，stale 连接不渲染。
