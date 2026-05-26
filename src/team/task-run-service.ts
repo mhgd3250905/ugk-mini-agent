@@ -8,7 +8,7 @@ import { validateTeamOutput } from "./output-validator.js";
 import { writeTimingSpan } from "./timing.js";
 import { TeamRoleProcessRecorder } from "./task-run-process-recorder.js";
 import { generateTaskArtifactId } from "./ids.js";
-import { findInputPort, findOutputPort } from "./task-port-contract.js";
+import { resolveConnectionStaleReason } from "./task-chain-contract.js";
 import type { TaskConnectionStore } from "./task-connection-store.js";
 import type { ProfileAwareTeamRoleRunner, TeamRoleRunner, WorkerOutput, CheckerOutput } from "./role-runner.js";
 import type { TeamCanvasTask, TeamOutputValidationResult, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskTypedArtifact } from "./types.js";
@@ -506,12 +506,8 @@ export class CanvasTaskRunService {
 		const content = await this.options.workspace.readRunScopedFile(runId, resultRef) ?? "";
 		for (const connection of connections) {
 			try {
-				const outputPort = findOutputPort(sourceTask.workUnit, connection.fromOutputPortId);
-				if (!outputPort || outputPort.type !== connection.type) continue;
 				const targetTask = await this.options.taskStore.get(connection.toTaskId);
-				if (!targetTask || targetTask.archived) continue;
-				const inputPort = findInputPort(targetTask.workUnit, connection.toInputPortId);
-				if (!inputPort || inputPort.type !== connection.type) continue;
+				if (resolveConnectionStaleReason(sourceTask, targetTask, connection)) continue;
 				const artifact = this.buildTypedArtifact({
 					type: connection.type,
 					sourceTaskId: taskId,
