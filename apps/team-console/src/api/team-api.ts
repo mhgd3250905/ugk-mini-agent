@@ -19,6 +19,15 @@ import type {
   TeamCanvasTask,
   TeamCanvasTaskListResponse,
   TeamCanvasTaskRunListResponse,
+  TeamCanvasSourceConnection,
+  TeamCanvasSourceConnectionCreateRequest,
+  TeamCanvasSourceConnectionListResponse,
+  TeamCanvasSourceConnectionMutationResponse,
+  TeamCanvasSourceNode,
+  TeamCanvasSourceNodeCreateRequest,
+  TeamCanvasSourceNodeListResponse,
+  TeamCanvasSourceNodeMutationResponse,
+  TeamCanvasSourceNodeUpdateRequest,
   TeamTaskConnection,
   TeamTaskConnectionCreateRequest,
   TeamTaskConnectionListResponse,
@@ -39,6 +48,13 @@ export interface TeamApiProvider {
   listTasks(): Promise<TeamCanvasTask[]>;
   listTaskConnections(): Promise<TeamTaskConnection[]>;
   createTaskConnection(input: TeamTaskConnectionCreateRequest): Promise<TeamTaskConnection>;
+  listSourceNodes(): Promise<TeamCanvasSourceNode[]>;
+  createSourceNode(input: TeamCanvasSourceNodeCreateRequest): Promise<TeamCanvasSourceNode>;
+  updateSourceNode(sourceNodeId: string, patch: TeamCanvasSourceNodeUpdateRequest): Promise<TeamCanvasSourceNode>;
+  archiveSourceNode(sourceNodeId: string): Promise<TeamCanvasSourceNode>;
+  listSourceConnections(): Promise<TeamCanvasSourceConnection[]>;
+  createSourceConnection(input: TeamCanvasSourceConnectionCreateRequest): Promise<TeamCanvasSourceConnection>;
+  deleteSourceConnection(connectionId: string): Promise<void>;
   listTaskRuns(taskId: string): Promise<TeamRunState[]>;
   createTaskRun(taskId: string): Promise<TeamRunState>;
   getTaskRun(runId: string): Promise<TeamRunState>;
@@ -164,6 +180,110 @@ export class LiveTeamApi implements TeamApiProvider {
       }
       const body = (await res.json()) as TeamTaskConnectionMutationResponse;
       return body.connection;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async listSourceNodes(): Promise<TeamCanvasSourceNode[]> {
+    try {
+      const res = await fetch(`${this.baseUrl}/source-nodes`);
+      if (!res.ok) throw res;
+      const body = (await res.json()) as TeamCanvasSourceNodeListResponse | TeamCanvasSourceNode[];
+      if (Array.isArray(body)) return body;
+      return Array.isArray(body.sourceNodes) ? body.sourceNodes : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async createSourceNode(input: TeamCanvasSourceNodeCreateRequest): Promise<TeamCanvasSourceNode> {
+    try {
+      const res = await fetch(`${this.baseUrl}/source-nodes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      const body = (await res.json()) as TeamCanvasSourceNodeMutationResponse;
+      return body.sourceNode;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async updateSourceNode(sourceNodeId: string, patch: TeamCanvasSourceNodeUpdateRequest): Promise<TeamCanvasSourceNode> {
+    try {
+      const res = await fetch(`${this.baseUrl}/source-nodes/${encodeURIComponent(sourceNodeId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      const body = (await res.json()) as TeamCanvasSourceNodeMutationResponse;
+      return body.sourceNode;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async archiveSourceNode(sourceNodeId: string): Promise<TeamCanvasSourceNode> {
+    try {
+      const res = await fetch(`${this.baseUrl}/source-nodes/${encodeURIComponent(sourceNodeId)}/archive`, {
+        method: "POST",
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      const body = (await res.json()) as TeamCanvasSourceNodeMutationResponse;
+      return body.sourceNode;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async listSourceConnections(): Promise<TeamCanvasSourceConnection[]> {
+    try {
+      const res = await fetch(`${this.baseUrl}/source-connections`);
+      if (!res.ok) throw res;
+      const body = (await res.json()) as TeamCanvasSourceConnectionListResponse | TeamCanvasSourceConnection[];
+      if (Array.isArray(body)) return body;
+      return Array.isArray(body.connections) ? body.connections : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async createSourceConnection(input: TeamCanvasSourceConnectionCreateRequest): Promise<TeamCanvasSourceConnection> {
+    try {
+      const res = await fetch(`${this.baseUrl}/source-connections`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      const body = (await res.json()) as TeamCanvasSourceConnectionMutationResponse;
+      return body.connection;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async deleteSourceConnection(connectionId: string): Promise<void> {
+    try {
+      const res = await fetch(`${this.baseUrl}/source-connections/${encodeURIComponent(connectionId)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
     } catch (e) {
       throw toApiError(e);
     }

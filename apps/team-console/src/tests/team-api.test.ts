@@ -1034,6 +1034,106 @@ describe("LiveTeamApi", () => {
     expect(connections[0]?.staleReason).toBe("target_task_archived");
   });
 
+  it("lists, creates, updates, and archives live source nodes", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const sourceNode = {
+      schemaVersion: "team/source-node-1",
+      sourceNodeId: "source_1",
+      title: "需求说明",
+      nodeType: "text",
+      outputPort: { id: "value", type: "string" },
+      content: { text: "source text" },
+      archived: false,
+      createdAt: "2026-05-26T00:00:00.000Z",
+      updatedAt: "2026-05-26T00:00:00.000Z",
+    } as const;
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNodes: [sourceNode] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNode }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNode: { ...sourceNode, title: "更新后" } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNode: { ...sourceNode, archived: true } }), { status: 200 }));
+
+    const listed = await api.listSourceNodes();
+    const created = await api.createSourceNode({
+      title: "需求说明",
+      nodeType: "text",
+      content: { text: "source text" },
+    });
+    const updated = await api.updateSourceNode("source/1", { title: "更新后" });
+    const archived = await api.archiveSourceNode("source/1");
+
+    expect(fetch).toHaveBeenNthCalledWith(1, "/v1/team/source-nodes");
+    expect(fetch).toHaveBeenNthCalledWith(2, "/v1/team/source-nodes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "需求说明",
+        nodeType: "text",
+        content: { text: "source text" },
+      }),
+    });
+    expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/source-nodes/source%2F1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "更新后" }),
+    });
+    expect(fetch).toHaveBeenNthCalledWith(4, "/v1/team/source-nodes/source%2F1/archive", {
+      method: "POST",
+      headers: { accept: "application/json" },
+    });
+    expect(listed).toEqual([sourceNode]);
+    expect(created).toEqual(sourceNode);
+    expect(updated.title).toBe("更新后");
+    expect(archived.archived).toBe(true);
+  });
+
+  it("lists, creates, and deletes live source connections without task-connection endpoint", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const sourceConnection = {
+      schemaVersion: "team/source-connection-1",
+      connectionId: "source_conn_1",
+      fromSourceNodeId: "source_1",
+      fromOutputPortId: "value",
+      toTaskId: "task_1",
+      toInputPortId: "source_text",
+      type: "string",
+      status: "active",
+      createdAt: "2026-05-26T00:00:00.000Z",
+      updatedAt: "2026-05-26T00:00:00.000Z",
+    } as const;
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [sourceConnection] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ connection: sourceConnection }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    const listed = await api.listSourceConnections();
+    const created = await api.createSourceConnection({
+      fromSourceNodeId: "source_1",
+      fromOutputPortId: "value",
+      toTaskId: "task_1",
+      toInputPortId: "source_text",
+    });
+    await api.deleteSourceConnection("source/conn 1");
+
+    expect(fetch).toHaveBeenNthCalledWith(1, "/v1/team/source-connections");
+    expect(fetch).toHaveBeenNthCalledWith(2, "/v1/team/source-connections", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fromSourceNodeId: "source_1",
+        fromOutputPortId: "value",
+        toTaskId: "task_1",
+        toInputPortId: "source_text",
+      }),
+    });
+    expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/source-connections/source%2Fconn%201", {
+      method: "DELETE",
+    });
+    expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).not.toContain("/v1/team/task-connections");
+    expect(listed).toEqual([sourceConnection]);
+    expect(created).toEqual(sourceConnection);
+  });
+
 });
 
 describe("Fixtures coverage", () => {

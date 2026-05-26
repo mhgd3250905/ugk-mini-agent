@@ -220,6 +220,98 @@ export interface TeamTaskConnectionCreateRequest {
   toInputPortId: string;
 }
 
+export type TeamCanvasSourceNodeType = "text" | "file";
+export type TeamCanvasSourcePortType = "string" | "md" | "json" | "html" | "file";
+
+export interface TeamCanvasSourceNode {
+  schemaVersion: "team/source-node-1";
+  sourceNodeId: string;
+  title: string;
+  nodeType: TeamCanvasSourceNodeType;
+  outputPort: {
+    id: "value";
+    label?: string;
+    type: string;
+  };
+  content?: {
+    text?: string;
+    fileName?: string;
+    mimeType?: string;
+    size?: number;
+    storageRef?: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+  archived?: boolean;
+}
+
+export interface TeamCanvasSourceNodeListResponse {
+  sourceNodes: TeamCanvasSourceNode[];
+}
+
+export interface TeamCanvasSourceNodeMutationResponse {
+  sourceNode: TeamCanvasSourceNode;
+}
+
+export interface TeamCanvasSourceNodeCreateRequest {
+  title: string;
+  nodeType: TeamCanvasSourceNodeType;
+  outputPort?: {
+    id?: string;
+    label?: string;
+    type?: string;
+  };
+  content?: TeamCanvasSourceNode["content"];
+}
+
+export interface TeamCanvasSourceNodeUpdateRequest {
+  title?: string;
+  nodeType?: TeamCanvasSourceNodeType;
+  outputPort?: {
+    id?: string;
+    label?: string;
+    type?: string;
+  };
+  content?: TeamCanvasSourceNode["content"];
+}
+
+export interface TeamCanvasSourceConnection {
+  schemaVersion: "team/source-connection-1";
+  connectionId: string;
+  fromSourceNodeId: string;
+  fromOutputPortId: string;
+  toTaskId: string;
+  toInputPortId: string;
+  type: string;
+  status?: "active" | "stale";
+  staleReason?:
+    | "source_node_missing"
+    | "source_node_archived"
+    | "target_task_missing"
+    | "target_task_archived"
+    | "source_output_port_missing"
+    | "target_input_port_missing"
+    | "source_output_port_type_mismatch"
+    | "target_input_port_type_mismatch";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TeamCanvasSourceConnectionListResponse {
+  connections: TeamCanvasSourceConnection[];
+}
+
+export interface TeamCanvasSourceConnectionMutationResponse {
+  connection: TeamCanvasSourceConnection;
+}
+
+export interface TeamCanvasSourceConnectionCreateRequest {
+  fromSourceNodeId: string;
+  fromOutputPortId: string;
+  toTaskId: string;
+  toInputPortId: string;
+}
+
 export interface TeamTaskTypedArtifact {
   schemaVersion: "team/task-artifact-1";
   artifactId: string;
@@ -234,11 +326,37 @@ export interface TeamTaskTypedArtifact {
   createdAt: string;
 }
 
-export interface TeamTaskBoundInput {
+export interface TeamCanvasSourceArtifact {
+  schemaVersion: "team/source-artifact-1";
+  artifactId: string;
+  type: string;
+  sourceNodeId: string;
+  sourceOutputPortId: string;
+  title?: string;
+  fileName?: string;
+  mimeType?: string;
+  size?: number;
+  storageRef?: string;
+  preview: string;
+  content?: string;
+  createdAt: string;
+}
+
+export interface TeamTaskArtifactBoundInput {
+  source?: "task-artifact";
   connectionId: string;
   inputPortId: string;
   artifact: TeamTaskTypedArtifact;
 }
+
+export interface TeamCanvasSourceBoundInput {
+  source: "canvas-source";
+  connectionId: string;
+  inputPortId: string;
+  artifact: TeamCanvasSourceArtifact;
+}
+
+export type TeamTaskBoundInput = TeamTaskArtifactBoundInput | TeamCanvasSourceBoundInput;
 
 export interface TeamCanvasTask {
   taskId: string;
