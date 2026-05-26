@@ -47,6 +47,7 @@
 - Typed Chain Rule 模块：集中 typed task chain 校验规则。
 - Connection Persistence Hardening：收紧 task connection 变更锁。
 - Stale Connection Lifecycle：完整覆盖 stale port type mismatch / archived task 拒绝 / stale 下游不影响上游成功。
+- Typed Artifact Prompt Contract Hardening：`formatBoundInputsForPrompt()` 输出完整追溯 metadata + `BEGIN_TYPED_ARTIFACT_CONTENT` / `END_TYPED_ARTIFACT_CONTENT` 内容块。
 
 功能能力（与上一版一致，无新增功能）：
 

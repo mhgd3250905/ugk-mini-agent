@@ -107,6 +107,9 @@ Typed Task Chain V1 把 Task 设计成可组合的最小积木，但刻意不把
 - artifact 至少包含 `artifactId`、`type`、`sourceTaskId`、`sourceRunId`、`sourceAttemptId`、`fileRef`、`preview` 和 `content`。
 - 下游自动 run 的 `TeamRunState.source` 会写入 `triggeredBy: { type: "task-connection", connectionId, fromTaskId, fromRunId, fromAttemptId }` 和 `boundInputs[]`。
 - `boundInputs[]` 会进入下游 WorkUnit 的 prompt 和 payload，Agent 看到的是明确绑定的 typed artifact 输入，不需要自己猜上游文件在哪。
+- Prompt 中的每个 bound input 包含完整追溯 metadata：`connectionId`、`inputPortId`、`artifactId`、`sourceTaskId`、`sourceRunId`、`sourceAttemptId`、`sourceOutputPortId`、`fileRef`。
+- Artifact 内容被 `BEGIN_TYPED_ARTIFACT_CONTENT <artifactId>` 和 `END_TYPED_ARTIFACT_CONTENT <artifactId>` 包裹，不使用 Markdown code fence，因为 artifact 自身可能包含 triple backtick。
+- Prompt 格式是纯格式层契约；payload 仍携带结构化 `boundInputs` 对象，截断限制不变：content 30,000 字符，preview 1,200 字符。
 - 下游启动失败不会回滚已经验收通过的上游 run；失败只影响连接触发链路本身。
 
 下游交付诊断：

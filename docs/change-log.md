@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-26 — Typed artifact prompt contract hardening
+
+- **主题**: 把 typed artifact handoff 的下游 prompt 从裸塞 Markdown 内容收口成显式完整 metadata + BEGIN/END 内容块。
+- **变更内容**:
+  - `formatBoundInputsForPrompt()` 输出完整追溯 metadata：`connectionId`、`inputPortId`、`artifactId`、`sourceTaskId`、`sourceRunId`、`sourceAttemptId`、`sourceOutputPortId`、`fileRef`。
+  - Artifact 内容被 `BEGIN_TYPED_ARTIFACT_CONTENT <artifactId>` 和 `END_TYPED_ARTIFACT_CONTENT <artifactId>` 包裹，不使用 Markdown code fence。
+  - Payload 结构 `boundInputs` 和截断限制（content 30,000 / preview 1,200）不变。
+- **影响范围**: `src/team/task-artifact-handoff.ts`, `test/team-task-artifact-handoff.test.ts`, `test/team-task-run-process.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **验证**: `node --test --import tsx test/team-task-artifact-handoff.test.ts test/team-task-run-process.test.ts` (19 passed), backend full gate (116 passed), `npx tsc --noEmit`, `git diff --check`
+- **边界**: 不改 `src/team/task-run-service.ts`、`run-workspace-attempts.ts`、类型结构、delivery runtime、connection store、前端 UI。
+
+---
+
 ## 2026-05-26 — Downstream delivery outcome diagnostics
 
 - **主题**: typed Task chain 的下游交付结果可观测——upstream attempt 成功后，系统会为每个 outgoing connection 记录 `delivered` / `skipped` / `failed` 结果到 `TeamAttemptMetadata.downstreamDelivery`。
