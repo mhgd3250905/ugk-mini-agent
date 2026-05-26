@@ -173,7 +173,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.get("/v1/team/task-connections", async (_request, reply) => {
-		const connections = await taskConnectionStore.list();
+		const connections = await taskConnectionStore.listResolved();
 		reply.send({ connections });
 	});
 

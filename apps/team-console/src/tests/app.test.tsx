@@ -4635,4 +4635,110 @@ describe("App", () => {
       expect(hint).toHaveTextContent("已截断");
     });
   });
+
+  // ── Stale connection rendering ──
+
+  it("does not render stale Task connections as active SVG connection paths", async () => {
+    const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+    const staleConnection: TeamTaskConnection = {
+      schemaVersion: "team/task-connection-1",
+      connectionId: "conn_stale_test",
+      fromTaskId: collectTask.taskId,
+      fromOutputPortId: "draft_md",
+      toTaskId: htmlTask.taskId,
+      toInputPortId: "source_md",
+      type: "md",
+      status: "stale",
+      staleReason: "target_task_archived",
+      createdAt: "2026-05-26T00:00:00.000Z",
+      updatedAt: "2026-05-26T00:00:00.000Z",
+    };
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [collectTask, htmlTask] }), { status: 200 });
+      if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [staleConnection] }), { status: 200 });
+      if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-task-id="task_collect_md"]')).toBeTruthy();
+    });
+
+    expect(container.querySelector('[data-task-connection-id="conn_stale_test"]')).toBeNull();
+  });
+
+  it("does not render Task connection when port id is missing from task", async () => {
+    const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+    const connectionWithMissingPort: TeamTaskConnection = {
+      schemaVersion: "team/task-connection-1",
+      connectionId: "conn_missing_port",
+      fromTaskId: collectTask.taskId,
+      fromOutputPortId: "nonexistent_port",
+      toTaskId: htmlTask.taskId,
+      toInputPortId: "source_md",
+      type: "md",
+      createdAt: "2026-05-26T00:00:00.000Z",
+      updatedAt: "2026-05-26T00:00:00.000Z",
+    };
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [collectTask, htmlTask] }), { status: 200 });
+      if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [connectionWithMissingPort] }), { status: 200 });
+      if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-task-id="task_collect_md"]')).toBeTruthy();
+    });
+
+    expect(container.querySelector('[data-task-connection-id="conn_missing_port"]')).toBeNull();
+  });
+
+  it("renders active Task connection normally", async () => {
+    const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+    const activeConnection: TeamTaskConnection = {
+      schemaVersion: "team/task-connection-1",
+      connectionId: "conn_active_test",
+      fromTaskId: collectTask.taskId,
+      fromOutputPortId: "draft_md",
+      toTaskId: htmlTask.taskId,
+      toInputPortId: "source_md",
+      type: "md",
+      status: "active",
+      createdAt: "2026-05-26T00:00:00.000Z",
+      updatedAt: "2026-05-26T00:00:00.000Z",
+    };
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [collectTask, htmlTask] }), { status: 200 });
+      if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [activeConnection] }), { status: 200 });
+      if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-task-connection-id="conn_active_test"]')).toBeTruthy();
+    });
+
+    const connectionPath = container.querySelector('[data-task-connection-id="conn_active_test"]') as SVGPathElement | null;
+    expect(connectionPath).toBeTruthy();
+    expect(connectionPath!.getAttribute("d")).toBeTruthy();
+  });
 });

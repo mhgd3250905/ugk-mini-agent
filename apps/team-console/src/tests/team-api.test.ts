@@ -971,6 +971,30 @@ describe("LiveTeamApi", () => {
     expect(init?.body).toBeInstanceOf(FormData);
   });
 
+  it("accepts connection responses with status and staleReason", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const staleConnection = {
+      schemaVersion: "team/task-connection-1",
+      connectionId: "conn_stale_1",
+      fromTaskId: "task_a",
+      fromOutputPortId: "draft_md",
+      toTaskId: "task_b",
+      toInputPortId: "source_md",
+      type: "md",
+      status: "stale",
+      staleReason: "target_task_archived",
+      createdAt: "2026-05-26T00:00:00.000Z",
+      updatedAt: "2026-05-26T00:00:00.000Z",
+    } as const;
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ connections: [staleConnection] }), { status: 200 }));
+
+    const connections = await api.listTaskConnections();
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/task-connections");
+    expect(connections[0]?.status).toBe("stale");
+    expect(connections[0]?.staleReason).toBe("target_task_archived");
+  });
+
 });
 
 describe("Fixtures coverage", () => {

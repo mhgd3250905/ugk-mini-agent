@@ -224,6 +224,21 @@ export interface TeamTaskConnection {
 	updatedAt: string;
 }
 
+export type TaskConnectionStaleReason =
+	| "source_task_missing"
+	| "source_task_archived"
+	| "target_task_missing"
+	| "target_task_archived"
+	| "source_output_port_missing"
+	| "target_input_port_missing"
+	| "source_output_port_type_mismatch"
+	| "target_input_port_type_mismatch";
+
+export interface ResolvedTaskConnection extends TeamTaskConnection {
+	status: "active" | "stale";
+	staleReason?: TaskConnectionStaleReason;
+}
+
 export interface TeamTaskTypedArtifact {
 	schemaVersion: "team/task-artifact-1";
 	artifactId: string;

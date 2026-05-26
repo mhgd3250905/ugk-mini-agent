@@ -379,8 +379,12 @@ function taskConnectionPoints(
   if (!sourceNode || !targetNode || !sourceTask || !targetTask) return null;
   const outputPorts = sourceTask.workUnit.outputPorts ?? [];
   const inputPorts = targetTask.workUnit.inputPorts ?? [];
-  const sourceIndex = Math.max(0, outputPorts.findIndex((port) => port.id === connection.fromOutputPortId));
-  const targetIndex = Math.max(0, inputPorts.findIndex((port) => port.id === connection.toInputPortId));
+  const sourcePort = outputPorts.find((port) => port.id === connection.fromOutputPortId);
+  const targetPort = inputPorts.find((port) => port.id === connection.toInputPortId);
+  if (!sourcePort || sourcePort.type !== connection.type) return null;
+  if (!targetPort || targetPort.type !== connection.type) return null;
+  const sourceIndex = outputPorts.indexOf(sourcePort);
+  const targetIndex = inputPorts.indexOf(targetPort);
   const sourceY = sourceNode.position.y + CANVAS_TASK_NODE_HEIGHT - 42 + sourceIndex * 14;
   const targetY = targetNode.position.y + CANVAS_TASK_NODE_HEIGHT - 64 + targetIndex * 14;
   return {
@@ -795,6 +799,7 @@ export function ExecutionMap({
   const taskNodeByTaskId = useMemo(() => new Map(taskNodes.map((node) => [node.taskId, node])), [taskNodes]);
   const taskConnectionLinks = useMemo(() => (
     taskConnections
+      .filter((connection) => connection.status !== "stale")
       .map((connection) => {
         const points = taskConnectionPoints(connection, taskNodeByTaskId, tasksById);
         return points ? { connection, path: straightPath(points.source.x, points.source.y, points.target.x, points.target.y), source: points.source } : null;

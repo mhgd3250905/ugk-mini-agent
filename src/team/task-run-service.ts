@@ -502,7 +502,7 @@ export class CanvasTaskRunService {
 		const connections = await connectionStore.listFromTask(taskId);
 		if (connections.length === 0) return;
 		const sourceTask = await this.options.taskStore.get(taskId);
-		if (!sourceTask) return;
+		if (!sourceTask || sourceTask.archived) return;
 		const content = await this.options.workspace.readRunScopedFile(runId, resultRef) ?? "";
 		for (const connection of connections) {
 			try {

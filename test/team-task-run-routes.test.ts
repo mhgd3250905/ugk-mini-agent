@@ -288,3 +288,113 @@ test("POST /v1/team/tasks/:taskId/runs rejects non-ready or archived tasks", asy
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+test("source task archived mid-run does not trigger downstream run", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const collectRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts(taskPayload, {
+				outputPorts: [{ id: "draft_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		const htmlRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts({ ...taskPayload, title: "HTML Task" }, {
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+				outputPorts: [{ id: "page_html", label: "HTML", type: "html" }],
+			}),
+		});
+		assert.equal(collectRes.statusCode, 201);
+		assert.equal(htmlRes.statusCode, 201);
+		const collect = collectRes.json().task;
+		const html = htmlRes.json().task;
+
+		await app.inject({
+			method: "POST",
+			url: "/v1/team/task-connections",
+			payload: {
+				fromTaskId: collect.taskId,
+				fromOutputPortId: "draft_md",
+				toTaskId: html.taskId,
+				toInputPortId: "source_md",
+			},
+		});
+
+		await app.inject({ method: "POST", url: `/v1/team/tasks/${collect.taskId}/archive` });
+
+		const runRes = await app.inject({ method: "POST", url: `/v1/team/tasks/${collect.taskId}/runs` });
+		assert.equal(runRes.statusCode, 409);
+
+		await new Promise(resolve => setTimeout(resolve, 100));
+		const downstreamRunsRes = await app.inject({ method: "GET", url: `/v1/team/tasks/${html.taskId}/runs` });
+		assert.equal(downstreamRunsRes.statusCode, 200);
+		assert.deepEqual(downstreamRunsRes.json().runs, []);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("stale downstream connection does not make upstream accepted run fail", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const collectRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts(taskPayload, {
+				outputPorts: [{ id: "draft_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		const htmlRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts({ ...taskPayload, title: "HTML Task" }, {
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		assert.equal(collectRes.statusCode, 201);
+		assert.equal(htmlRes.statusCode, 201);
+		const collect = collectRes.json().task;
+		const html = htmlRes.json().task;
+
+		await app.inject({
+			method: "POST",
+			url: "/v1/team/task-connections",
+			payload: {
+				fromTaskId: collect.taskId,
+				fromOutputPortId: "draft_md",
+				toTaskId: html.taskId,
+				toInputPortId: "source_md",
+			},
+		});
+
+		await app.inject({
+			method: "PATCH",
+			url: `/v1/team/tasks/${html.taskId}`,
+			payload: {
+				workUnit: {
+					...html.workUnit,
+					inputPorts: [{ id: "source_md", label: "Changed", type: "html" }],
+				},
+			},
+		});
+
+		const runRes = await app.inject({ method: "POST", url: `/v1/team/tasks/${collect.taskId}/runs` });
+		assert.equal(runRes.statusCode, 201);
+		const upstreamRun = runRes.json() as TeamRunState;
+		const upstreamFinished = await waitForTerminalRun(app, upstreamRun.runId);
+		assert.equal(upstreamFinished.status, "completed");
+		assert.equal(upstreamFinished.taskStates[collect.taskId]?.status, "succeeded");
+
+		await new Promise(resolve => setTimeout(resolve, 100));
+		const downstreamRunsRes = await app.inject({ method: "GET", url: `/v1/team/tasks/${html.taskId}/runs` });
+		assert.equal(downstreamRunsRes.statusCode, 200);
+		assert.deepEqual(downstreamRunsRes.json().runs, []);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});

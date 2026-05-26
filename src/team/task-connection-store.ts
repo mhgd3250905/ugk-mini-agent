@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { generateTaskConnectionId } from "./ids.js";
 import { findInputPort, findOutputPort } from "./task-port-contract.js";
 import type { TaskStore } from "./task-store.js";
-import type { TeamTaskConnection } from "./types.js";
+import type { ResolvedTaskConnection, TaskConnectionStaleReason, TeamTaskConnection } from "./types.js";
 
 export interface CreateTaskConnectionInput {
 	fromTaskId: string;
@@ -31,6 +31,20 @@ export class TaskConnectionStore {
 
 	async listFromTask(taskId: string): Promise<TeamTaskConnection[]> {
 		return (await this.list()).filter(connection => connection.fromTaskId === taskId);
+	}
+
+	async listResolved(): Promise<ResolvedTaskConnection[]> {
+		const connections = await this.list();
+		const resolved: ResolvedTaskConnection[] = [];
+		for (const connection of connections) {
+			const staleReason = await this.resolveStaleReason(connection);
+			resolved.push({
+				...connection,
+				status: staleReason ? "stale" : "active",
+				...(staleReason ? { staleReason } : {}),
+			});
+		}
+		return resolved;
 	}
 
 	async create(input: CreateTaskConnectionInput): Promise<TeamTaskConnection> {
@@ -92,6 +106,22 @@ export class TaskConnectionStore {
 		if (next.length === connections.length) return false;
 		await this.writeAll(next);
 		return true;
+	}
+
+	private async resolveStaleReason(connection: TeamTaskConnection): Promise<TaskConnectionStaleReason | null> {
+		const sourceTask = await this.taskStore.get(connection.fromTaskId);
+		if (!sourceTask) return "source_task_missing";
+		if (sourceTask.archived) return "source_task_archived";
+		const targetTask = await this.taskStore.get(connection.toTaskId);
+		if (!targetTask) return "target_task_missing";
+		if (targetTask.archived) return "target_task_archived";
+		const outputPort = findOutputPort(sourceTask.workUnit, connection.fromOutputPortId);
+		if (!outputPort) return "source_output_port_missing";
+		if (outputPort.type !== connection.type) return "source_output_port_type_mismatch";
+		const inputPort = findInputPort(targetTask.workUnit, connection.toInputPortId);
+		if (!inputPort) return "target_input_port_missing";
+		if (inputPort.type !== connection.type) return "target_input_port_type_mismatch";
+		return null;
 	}
 
 	private wouldCreateCycle(connections: TeamTaskConnection[], fromTaskId: string, toTaskId: string): boolean {

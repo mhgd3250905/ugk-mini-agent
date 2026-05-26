@@ -175,6 +175,8 @@ export interface TeamTaskConnection {
   toTaskId: string;
   toInputPortId: string;
   type: string;
+  status?: "active" | "stale";
+  staleReason?: string;
   createdAt: string;
   updatedAt: string;
 }

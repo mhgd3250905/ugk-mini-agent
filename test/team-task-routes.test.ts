@@ -342,3 +342,255 @@ test("Task API warns when worker and checker are the same Agent", async () => {
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+// ── Stale connection lifecycle ──
+
+test("GET /v1/team/task-connections returns status active for valid md -> md connection", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const collectRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts(taskPayload, {
+				outputPorts: [{ id: "draft_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		const htmlRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts({ ...taskPayload, title: "HTML Task" }, {
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		assert.equal(collectRes.statusCode, 201);
+		assert.equal(htmlRes.statusCode, 201);
+		const collect = collectRes.json().task;
+		const html = htmlRes.json().task;
+
+		await app.inject({
+			method: "POST",
+			url: "/v1/team/task-connections",
+			payload: {
+				fromTaskId: collect.taskId,
+				fromOutputPortId: "draft_md",
+				toTaskId: html.taskId,
+				toInputPortId: "source_md",
+			},
+		});
+
+		const listRes = await app.inject({ method: "GET", url: "/v1/team/task-connections" });
+		assert.equal(listRes.statusCode, 200);
+		const connections = listRes.json().connections;
+		assert.equal(connections.length, 1);
+		assert.equal(connections[0].status, "active");
+		assert.equal(connections[0].staleReason, undefined);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/task-connections returns stale when target input port id is removed", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const collectRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts(taskPayload, {
+				outputPorts: [{ id: "draft_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		const htmlRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts({ ...taskPayload, title: "HTML Task" }, {
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		assert.equal(collectRes.statusCode, 201);
+		assert.equal(htmlRes.statusCode, 201);
+		const collect = collectRes.json().task;
+		const html = htmlRes.json().task;
+
+		await app.inject({
+			method: "POST",
+			url: "/v1/team/task-connections",
+			payload: {
+				fromTaskId: collect.taskId,
+				fromOutputPortId: "draft_md",
+				toTaskId: html.taskId,
+				toInputPortId: "source_md",
+			},
+		});
+
+		await app.inject({
+			method: "PATCH",
+			url: `/v1/team/tasks/${html.taskId}`,
+			payload: {
+				workUnit: {
+					...html.workUnit,
+					inputPorts: [{ id: "renamed_port", label: "Renamed", type: "md" }],
+				},
+			},
+		});
+
+		const listRes = await app.inject({ method: "GET", url: "/v1/team/task-connections" });
+		assert.equal(listRes.statusCode, 200);
+		const connections = listRes.json().connections;
+		assert.equal(connections.length, 1);
+		assert.equal(connections[0].status, "stale");
+		assert.equal(connections[0].staleReason, "target_input_port_missing");
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/task-connections returns stale when target input port type changes", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const collectRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts(taskPayload, {
+				outputPorts: [{ id: "draft_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		const htmlRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts({ ...taskPayload, title: "HTML Task" }, {
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		assert.equal(collectRes.statusCode, 201);
+		assert.equal(htmlRes.statusCode, 201);
+		const collect = collectRes.json().task;
+		const html = htmlRes.json().task;
+
+		await app.inject({
+			method: "POST",
+			url: "/v1/team/task-connections",
+			payload: {
+				fromTaskId: collect.taskId,
+				fromOutputPortId: "draft_md",
+				toTaskId: html.taskId,
+				toInputPortId: "source_md",
+			},
+		});
+
+		await app.inject({
+			method: "PATCH",
+			url: `/v1/team/tasks/${html.taskId}`,
+			payload: {
+				workUnit: {
+					...html.workUnit,
+					inputPorts: [{ id: "source_md", label: "HTML", type: "html" }],
+				},
+			},
+		});
+
+		const listRes = await app.inject({ method: "GET", url: "/v1/team/task-connections" });
+		assert.equal(listRes.statusCode, 200);
+		const connections = listRes.json().connections;
+		assert.equal(connections.length, 1);
+		assert.equal(connections[0].status, "stale");
+		assert.equal(connections[0].staleReason, "target_input_port_type_mismatch");
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/task-connections returns stale when source task is archived", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const collectRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts(taskPayload, {
+				outputPorts: [{ id: "draft_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		const htmlRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts({ ...taskPayload, title: "HTML Task" }, {
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		assert.equal(collectRes.statusCode, 201);
+		assert.equal(htmlRes.statusCode, 201);
+		const collect = collectRes.json().task;
+
+		await app.inject({
+			method: "POST",
+			url: "/v1/team/task-connections",
+			payload: {
+				fromTaskId: collect.taskId,
+				fromOutputPortId: "draft_md",
+				toTaskId: htmlRes.json().task.taskId,
+				toInputPortId: "source_md",
+			},
+		});
+
+		await app.inject({ method: "POST", url: `/v1/team/tasks/${collect.taskId}/archive` });
+
+		const listRes = await app.inject({ method: "GET", url: "/v1/team/task-connections" });
+		assert.equal(listRes.statusCode, 200);
+		const connections = listRes.json().connections;
+		assert.equal(connections.length, 1);
+		assert.equal(connections[0].status, "stale");
+		assert.equal(connections[0].staleReason, "source_task_archived");
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/task-connections returns stale when target task is archived", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const collectRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts(taskPayload, {
+				outputPorts: [{ id: "draft_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		const htmlRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts({ ...taskPayload, title: "HTML Task" }, {
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		assert.equal(collectRes.statusCode, 201);
+		assert.equal(htmlRes.statusCode, 201);
+		const collect = collectRes.json().task;
+		const html = htmlRes.json().task;
+
+		await app.inject({
+			method: "POST",
+			url: "/v1/team/task-connections",
+			payload: {
+				fromTaskId: collect.taskId,
+				fromOutputPortId: "draft_md",
+				toTaskId: html.taskId,
+				toInputPortId: "source_md",
+			},
+		});
+
+		await app.inject({ method: "POST", url: `/v1/team/tasks/${html.taskId}/archive` });
+
+		const listRes = await app.inject({ method: "GET", url: "/v1/team/task-connections" });
+		assert.equal(listRes.statusCode, 200);
+		const connections = listRes.json().connections;
+		assert.equal(connections.length, 1);
+		assert.equal(connections[0].status, "stale");
+		assert.equal(connections[0].staleReason, "target_task_archived");
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
