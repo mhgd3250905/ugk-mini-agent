@@ -293,7 +293,7 @@ describe("App", () => {
     const { container } = render(<App />);
 
     const atlasNodes = getAtlasNodes(container);
-    const taskNode = await within(atlasNodes).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" });
     expect(taskNode).toBeInTheDocument();
     expect(within(taskNode).getByText("leader: 主 Agent")).toBeInTheDocument();
     expect(within(taskNode).getByText("worker: 搜索 Agent")).toBeInTheDocument();
@@ -316,8 +316,8 @@ describe("App", () => {
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
     const atlasNodes = getAtlasNodes(container);
-    const collectNode = await within(atlasNodes).findByRole("button", { name: /搜集内容 Task/ });
-    const htmlNode = await within(atlasNodes).findByRole("button", { name: /HTML 制作 Task/ });
+    const collectNode = await within(atlasNodes).findByRole("button", { name: "搜集内容 Task" });
+    const htmlNode = await within(atlasNodes).findByRole("button", { name: "HTML 制作 Task" });
     expect(within(collectNode).getByRole("button", { name: "输出 Markdown 文稿 md" })).toBeInTheDocument();
     expect(within(htmlNode).getByRole("button", { name: "输入 Markdown 文稿 md" })).toBeInTheDocument();
     expect(within(htmlNode).getByRole("button", { name: "输出 HTML 页面 html" })).toBeInTheDocument();
@@ -749,7 +749,7 @@ describe("App", () => {
     expect(atlas).toHaveAttribute("data-agent-focus", "none");
     expect(atlas.querySelectorAll(".emap-agent-node")).toHaveLength(2);
 
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" }));
 
     expect(atlas).toHaveAttribute("data-agent-focus", "main");
     expect(atlas).toHaveAttribute("data-interaction-mode", "free");
@@ -758,7 +758,7 @@ describe("App", () => {
     expect(container.querySelector(".agent-focus-workspace")).toBeNull();
     expect(screen.getByText("执行运行")).toBeInTheDocument();
     expect(screen.getByText("Research vendor A")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /搜索 Agent/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "搜索 Agent" })).toBeInTheDocument();
     const mainNode = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
     const searchNode = container.querySelector('.emap-agent-node[data-agent-id="search"]') as HTMLElement | null;
     const branchShell = container.querySelector(".emap-agent-branch-shell") as HTMLElement | null;
@@ -790,7 +790,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    const agentNode = within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ });
+    const agentNode = within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" });
 
     fireEvent.click(agentNode);
     expect(container.querySelector(".agent-playground-branch")).toBeTruthy();
@@ -803,7 +803,7 @@ describe("App", () => {
   it("opens a Task card into an action menu branch", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -827,7 +827,7 @@ describe("App", () => {
   it("starts a mock Task run from the action menu and shows the latest run state", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -845,7 +845,7 @@ describe("App", () => {
   it("opens node-based Task run observer with run status in the Task menu, file nodes, and file detail", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -927,7 +927,7 @@ describe("App", () => {
   it("renders Worker and Checker process nodes inside the merged run observer panel", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -997,7 +997,7 @@ describe("App", () => {
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -1064,7 +1064,7 @@ describe("App", () => {
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = await waitFor(() => {
@@ -1134,7 +1134,7 @@ describe("App", () => {
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -1152,7 +1152,7 @@ describe("App", () => {
   it("hides process tool entries and keeps only the role summary visible", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -1250,7 +1250,7 @@ describe("App", () => {
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -1344,7 +1344,7 @@ describe("App", () => {
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -1449,7 +1449,7 @@ describe("App", () => {
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -1543,7 +1543,7 @@ describe("App", () => {
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -1580,7 +1580,7 @@ describe("App", () => {
   it("renders HTML-like content as text in file detail, not as injected HTML", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -1615,7 +1615,7 @@ describe("App", () => {
   it("shows run status in the menu summary and keeps compact file index nodes", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -1664,7 +1664,7 @@ describe("App", () => {
   it("renders file detail with resize handle for observer file rows", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -1767,7 +1767,7 @@ describe("App", () => {
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
     fireEvent.click(screen.getByRole("button", { name: "运行" }));
 
@@ -1782,7 +1782,7 @@ describe("App", () => {
   it("collapses the Task action branch when the same Task is clicked again", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
     expect(container.querySelector(".task-action-branch")).toBeTruthy();
 
@@ -1794,12 +1794,12 @@ describe("App", () => {
   it("keeps a Task action branch open when an Agent branch opens", async () => {
     const { container } = render(<App />);
 
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     expect(container.querySelector(".task-action-branch")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" }));
 
     expect(container.querySelector(".task-action-branch")).toBeTruthy();
     expect(container.querySelector(".agent-playground-branch")).toBeTruthy();
@@ -1810,10 +1810,10 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" }));
     expect(container.querySelector(".agent-playground-branch")).toBeTruthy();
 
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
     expect(branch).toBeTruthy();
     fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
@@ -1861,7 +1861,7 @@ describe("App", () => {
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     expect(within(container.querySelector(".task-action-branch")!).getByText("task_research_medtrum")).toBeInTheDocument();
 
     fireEvent.click(getAtlasNodes(container).querySelector('[data-task-id="task_review_medtrum"]') as HTMLElement);
@@ -1918,7 +1918,7 @@ describe("App", () => {
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(getAtlasNodes(container).querySelector('[data-task-id="task_review_medtrum"]') as HTMLElement);
 
     const menuShells = Array.from(container.querySelectorAll(".emap-task-branch-shell")) as HTMLElement[];
@@ -1983,8 +1983,8 @@ describe("App", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(first.container)).getByRole("button", { name: /主 Agent/ }));
-    fireEvent.click(await within(getAtlasNodes(first.container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(within(getAtlasNodes(first.container)).getByRole("button", { name: "主 Agent" }));
+    fireEvent.click(await within(getAtlasNodes(first.container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "放大" }));
 
     expect(first.container.querySelector(".agent-playground-branch")).toBeTruthy();
@@ -2006,8 +2006,8 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
 
     const agentNode = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
     const taskNode = container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]') as HTMLElement | null;
@@ -2041,7 +2041,7 @@ describe("App", () => {
   it("opens the Task leader chat iframe from the action menu", async () => {
     const { container } = render(<App />);
 
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "对话 Leader" }));
 
     expect(container.querySelector(".task-action-branch")).toBeTruthy();
@@ -2068,7 +2068,7 @@ describe("App", () => {
   it("closes the Task leader chat branch from its header action", async () => {
     const { container } = render(<App />);
 
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "对话 Leader" }));
     expect(container.querySelector(".task-leader-chat-branch iframe")).toBeTruthy();
 
@@ -2081,7 +2081,7 @@ describe("App", () => {
   it("drags and resizes the Task leader chat child branch like an Agent branch", async () => {
     const { container } = render(<App />);
 
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "对话 Leader" }));
 
     const branchShell = container.querySelector(".emap-task-child-branch-shell") as HTMLElement | null;
@@ -2113,7 +2113,7 @@ describe("App", () => {
   it("opens a shallow Task edit form with title and Agent selections only", async () => {
     const { container } = render(<App />);
 
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
 
     expect(container.querySelector(".task-action-branch")).toBeTruthy();
@@ -2135,7 +2135,7 @@ describe("App", () => {
     const api = mockLiveTaskEditorApi();
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
 
     fireEvent.change(screen.getByLabelText("Task 名称"), { target: { value: "更新后的 Task" } });
@@ -2149,7 +2149,7 @@ describe("App", () => {
     const api = mockLiveTaskEditorApi();
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
 
     fireEvent.change(screen.getByLabelText("Leader Agent"), { target: { value: "reviewer" } });
@@ -2164,7 +2164,7 @@ describe("App", () => {
     const original = cloneTaskFixture();
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
 
     fireEvent.change(screen.getByLabelText("Worker Agent"), { target: { value: "reviewer" } });
@@ -2185,7 +2185,7 @@ describe("App", () => {
     const api = mockLiveTaskEditorApi();
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
 
     api.mutateCurrentTask((task) => ({
@@ -2211,7 +2211,7 @@ describe("App", () => {
     const api = mockLiveTaskEditorApi();
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
 
     api.mutateCurrentTask((task) => ({
@@ -2242,7 +2242,7 @@ describe("App", () => {
     const api = mockLiveTaskEditorApi();
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
     fireEvent.change(screen.getByLabelText("Task 名称"), { target: { value: "旧草稿标题" } });
 
@@ -2265,7 +2265,7 @@ describe("App", () => {
     const api = mockLiveTaskEditorApi();
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
 
     fireEvent.change(screen.getByLabelText("Task 名称"), { target: { value: "刷新后的 Task" } });
@@ -2282,7 +2282,7 @@ describe("App", () => {
     mockLiveTaskEditorApi({ patchStatus: 500, patchError: "update failed" });
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
 
     fireEvent.change(screen.getByLabelText("Task 名称"), { target: { value: "失败时保留的输入" } });
@@ -2299,7 +2299,7 @@ describe("App", () => {
     });
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
 
     fireEvent.change(screen.getByLabelText("Worker Agent"), { target: { value: "main" } });
@@ -2312,7 +2312,7 @@ describe("App", () => {
   it("opens a soft archive confirmation from the Task delete action", async () => {
     const { container } = render(<App />);
 
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
 
     const confirm = container.querySelector(".task-delete-confirm") as HTMLElement | null;
@@ -2327,7 +2327,7 @@ describe("App", () => {
     const api = mockLiveTaskEditorApi();
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
 
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
@@ -2341,7 +2341,7 @@ describe("App", () => {
     const api = mockLiveTaskEditorApi();
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
 
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
@@ -2358,7 +2358,7 @@ describe("App", () => {
     mockLiveTaskEditorApi({ archiveStatus: 500, archiveError: "archive failed" });
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
 
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
@@ -2465,7 +2465,7 @@ describe("App", () => {
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
     const atlasNodes = getAtlasNodes(container);
-    const taskCard = await within(atlasNodes).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskCard = await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" });
     expect(taskCard).toBeInTheDocument();
 
     const archiveButton = within(taskCard).getByRole("button", { name: "归档 Task 调查 Medtrum 云资产" });
@@ -2509,7 +2509,7 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
 
     const atlasNodes = getAtlasNodes(container);
-    const agentCard = within(atlasNodes).getByRole("button", { name: /主 Agent/ });
+    const agentCard = within(atlasNodes).getByRole("button", { name: "主 Agent" });
     expect(agentCard).toBeInTheDocument();
 
     const removeButton = within(agentCard).getByRole("button", { name: "移出画布 Agent 主 Agent" });
@@ -2579,10 +2579,10 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(screen.getByRole("button", { name: /搜索 Agent[\s\S]*search/ }));
 
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" }));
     expect(container.querySelector("iframe")?.getAttribute("src")).toContain("agentId=main");
 
-    const searchNode = within(getAtlasNodes(container)).getByRole("button", { name: /搜索 Agent/ });
+    const searchNode = within(getAtlasNodes(container)).getByRole("button", { name: "搜索 Agent" });
     firePointer(searchNode, "pointerdown", { pointerId: 12, clientX: 220, clientY: 80 });
     firePointer(searchNode, "pointerup", { pointerId: 12, clientX: 220, clientY: 80, buttons: 0 });
     fireEvent.click(searchNode);
@@ -2599,7 +2599,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" }));
 
     const branchShell = container.querySelector(".emap-agent-branch-shell") as HTMLElement | null;
     const titleBar = container.querySelector(".agent-playground-branch-head") as HTMLElement | null;
@@ -2625,7 +2625,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" }));
 
     const branchShell = container.querySelector(".emap-agent-branch-shell") as HTMLElement | null;
     const titleBar = container.querySelector(".agent-playground-branch-head") as HTMLElement | null;
@@ -2645,7 +2645,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" }));
 
     const titleBar = container.querySelector(".agent-playground-branch-head") as HTMLElement | null;
     expect(titleBar).toBeTruthy();
@@ -2665,7 +2665,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" }));
 
     const branchShell = container.querySelector(".emap-agent-branch-shell") as HTMLElement | null;
     const resizeHandle = container.querySelector(".emap-agent-branch-resize-handle") as HTMLElement | null;
@@ -2687,7 +2687,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" }));
 
     fireEvent.click(screen.getByRole("button", { name: "最大化对话分支" }));
 
@@ -2708,7 +2708,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" }));
 
     const header = container.querySelector(".execution-map-scroll .agent-playground-branch-head") as HTMLElement | null;
     expect(header).toBeTruthy();
@@ -2734,7 +2734,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "放大" }));
 
     const atlas = getAtlas(container);
-    const agentNode = within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }) as HTMLElement;
+    const agentNode = within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" }) as HTMLElement;
     const initialLeft = Number.parseFloat(agentNode.style.left);
     const initialTop = Number.parseFloat(agentNode.style.top);
 
@@ -2757,8 +2757,8 @@ describe("App", () => {
 
     const atlas = getAtlas(container);
     const atlasNodes = getAtlasNodes(container);
-    const agentNode = within(atlasNodes).getByRole("button", { name: /主 Agent/ }) as HTMLElement;
-    const taskNode = await within(atlasNodes).findByRole("button", { name: /调查 Medtrum 云资产/ }) as HTMLElement;
+    const agentNode = within(atlasNodes).getByRole("button", { name: "主 Agent" }) as HTMLElement;
+    const taskNode = await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" }) as HTMLElement;
     const initialAgentLeft = Number.parseFloat(agentNode.style.left);
     const initialAgentTop = Number.parseFloat(agentNode.style.top);
     const initialTaskLeft = Number.parseFloat(taskNode.style.left);
@@ -2788,7 +2788,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
 
-    const agentNode = within(getAtlasNodes(container)).getByRole("button", { name: /主 Agent/ }) as HTMLElement;
+    const agentNode = within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" }) as HTMLElement;
 
     firePointer(agentNode, "pointerdown", { pointerId: 9, clientX: 100, clientY: 100 });
     firePointer(agentNode, "pointermove", { pointerId: 9, clientX: 150, clientY: 130 });
@@ -3045,7 +3045,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
 
     await waitFor(() => expect(taskRequests).toBe(2));
-    expect(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ })).toBeInTheDocument();
+    expect(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" })).toBeInTheDocument();
     expect(screen.getByLabelText("当前 Task 数量")).toHaveTextContent("1 个 Task");
   });
 
@@ -3072,12 +3072,12 @@ describe("App", () => {
 
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    expect(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ })).toBeInTheDocument();
+    expect(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
 
     expect(await screen.findByText("请求失败 (500)")).toBeInTheDocument();
-    expect(within(getAtlasNodes(container)).getByRole("button", { name: /调查 Medtrum 云资产/ })).toBeInTheDocument();
+    expect(within(getAtlasNodes(container)).getByRole("button", { name: "调查 Medtrum 云资产" })).toBeInTheDocument();
     expect(screen.getByLabelText("当前 Task 数量")).toHaveTextContent("1 个 Task");
   });
 
@@ -3116,14 +3116,14 @@ describe("App", () => {
 
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    expect(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ })).toBeInTheDocument();
+    expect(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
     expect(await screen.findByText("请求失败 (500)")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
 
-    expect(await within(getAtlasNodes(container)).findByRole("button", { name: /错误恢复后的 Task/ })).toBeInTheDocument();
+    expect(await within(getAtlasNodes(container)).findByRole("button", { name: "错误恢复后的 Task" })).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText("请求失败 (500)")).toBeNull());
   });
 
@@ -3163,7 +3163,7 @@ describe("App", () => {
 
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    expect(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ })).toBeInTheDocument();
+    expect(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
     const refreshingButton = await screen.findByRole("button", { name: "刷新中..." });
@@ -3175,7 +3175,7 @@ describe("App", () => {
 
     refreshResponse.resolve(new Response(JSON.stringify({ tasks: [firstTask, secondTask] }), { status: 200 }));
 
-    expect(await within(getAtlasNodes(container)).findByRole("button", { name: /刷新防重后的 Task/ })).toBeInTheDocument();
+    expect(await within(getAtlasNodes(container)).findByRole("button", { name: "刷新防重后的 Task" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "刷新 Task" })).toBeEnabled());
     expect(screen.getByLabelText("当前 Task 数量")).toHaveTextContent("2 个 Task");
   });
@@ -3259,7 +3259,7 @@ describe("App", () => {
 
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     expect(taskRequests).toBe(1);
 
     fireEvent.click(screen.getByRole("button", { name: "创建 Task" }));
@@ -3291,7 +3291,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
 
-    const firstAgentNode = within(getAtlasNodes(first.container)).getByRole("button", { name: /主 Agent/ }) as HTMLElement;
+    const firstAgentNode = within(getAtlasNodes(first.container)).getByRole("button", { name: "主 Agent" }) as HTMLElement;
     firePointer(firstAgentNode, "pointerdown", { pointerId: 31, clientX: 120, clientY: 120 });
     firePointer(firstAgentNode, "pointermove", { pointerId: 31, clientX: 190, clientY: 155 });
     firePointer(firstAgentNode, "pointerup", { pointerId: 31, clientX: 190, clientY: 155, buttons: 0 });
@@ -3305,7 +3305,7 @@ describe("App", () => {
     const second = render(<App />);
     expect(screen.getByRole("combobox")).toHaveValue("live");
 
-    const restoredAgentNode = await within(getAtlasNodes(second.container)).findByRole("button", { name: /主 Agent/ }) as HTMLElement;
+    const restoredAgentNode = await within(getAtlasNodes(second.container)).findByRole("button", { name: "主 Agent" }) as HTMLElement;
     expect(Number.parseFloat(restoredAgentNode.style.left)).toBeCloseTo(430, 4);
     expect(Number.parseFloat(restoredAgentNode.style.top)).toBeCloseTo(35, 4);
   });
@@ -3334,7 +3334,7 @@ describe("App", () => {
     const first = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    const firstTaskNode = await within(getAtlasNodes(first.container)).findByRole("button", { name: /调查 Medtrum 云资产/ }) as HTMLElement;
+    const firstTaskNode = await within(getAtlasNodes(first.container)).findByRole("button", { name: "调查 Medtrum 云资产" }) as HTMLElement;
     firePointer(firstTaskNode, "pointerdown", { pointerId: 41, clientX: 120, clientY: 120 });
     firePointer(firstTaskNode, "pointermove", { pointerId: 41, clientX: 190, clientY: 155 });
     firePointer(firstTaskNode, "pointerup", { pointerId: 41, clientX: 190, clientY: 155, buttons: 0 });
@@ -3356,7 +3356,7 @@ describe("App", () => {
 
     const second = render(<App />);
     expect(screen.getByRole("combobox")).toHaveValue("live");
-    const restoredTaskNode = await within(getAtlasNodes(second.container)).findByRole("button", { name: /调查 Medtrum 云资产/ }) as HTMLElement;
+    const restoredTaskNode = await within(getAtlasNodes(second.container)).findByRole("button", { name: "调查 Medtrum 云资产" }) as HTMLElement;
     expect(Number.parseFloat(restoredTaskNode.style.left)).toBeCloseTo(350, 4);
     expect(Number.parseFloat(restoredTaskNode.style.top)).toBeCloseTo(255, 4);
   });
@@ -3399,14 +3399,14 @@ describe("App", () => {
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    const firstTaskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }) as HTMLElement;
+    const firstTaskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }) as HTMLElement;
     const firstTaskX = Number.parseFloat(firstTaskNode.style.left);
     const firstTaskY = Number.parseFloat(firstTaskNode.style.top);
 
     fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
 
-    const secondTaskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /刷新后只存布局的 Task/ }) as HTMLElement;
-    const refreshedFirstTaskNode = within(getAtlasNodes(container)).getByRole("button", { name: /调查 Medtrum 云资产/ }) as HTMLElement;
+    const secondTaskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "刷新后只存布局的 Task" }) as HTMLElement;
+    const refreshedFirstTaskNode = within(getAtlasNodes(container)).getByRole("button", { name: "调查 Medtrum 云资产" }) as HTMLElement;
     expect(Number.parseFloat(refreshedFirstTaskNode.style.left)).toBeCloseTo(firstTaskX, 4);
     expect(Number.parseFloat(refreshedFirstTaskNode.style.top)).toBeCloseTo(firstTaskY, 4);
     expect(Number.parseFloat(secondTaskNode.style.top)).toBeGreaterThanOrEqual(220);
@@ -3466,14 +3466,14 @@ describe("App", () => {
 
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    expect(await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ })).toBeInTheDocument();
+    expect(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "最新 Run" }));
     expect(await screen.findByText("Research vendor A")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Agent workspace" }));
 
     await waitFor(() => expect(taskRequests).toBe(2));
-    expect(await within(getAtlasNodes(container)).findByRole("button", { name: /刷新后出现的新 Task/ })).toBeInTheDocument();
+    expect(await within(getAtlasNodes(container)).findByRole("button", { name: "刷新后出现的新 Task" })).toBeInTheDocument();
   });
 
   it("keeps dragged live Task positions after a live Task refresh", async () => {
@@ -3507,7 +3507,7 @@ describe("App", () => {
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }) as HTMLElement;
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }) as HTMLElement;
     firePointer(taskNode, "pointerdown", { pointerId: 42, clientX: 120, clientY: 120 });
     firePointer(taskNode, "pointermove", { pointerId: 42, clientX: 190, clientY: 155 });
     firePointer(taskNode, "pointerup", { pointerId: 42, clientX: 190, clientY: 155, buttons: 0 });
@@ -3517,7 +3517,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Agent workspace" }));
 
     await waitFor(() => expect(taskRequests).toBe(2));
-    const refreshedTaskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ }) as HTMLElement;
+    const refreshedTaskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }) as HTMLElement;
     expect(Number.parseFloat(refreshedTaskNode.style.left)).toBeCloseTo(350, 4);
     expect(Number.parseFloat(refreshedTaskNode.style.top)).toBeCloseTo(255, 4);
   });
@@ -3875,7 +3875,7 @@ describe("App", () => {
   it("drags an observer process panel and updates connector", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -3911,7 +3911,7 @@ describe("App", () => {
   it("drags merged observer panel without accidentally toggling file detail", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -3942,7 +3942,7 @@ describe("App", () => {
   it("drags file detail node and resizes it independently", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -3995,7 +3995,7 @@ describe("App", () => {
   it("renders Markdown file detail with safe marked-based output", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -4033,7 +4033,7 @@ describe("App", () => {
   it("renders Markdown table in file detail content", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -4073,7 +4073,7 @@ describe("App", () => {
   it("expands file detail on normal pointerdown+up without drag movement", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -4106,7 +4106,7 @@ describe("App", () => {
   it("suppresses file detail click after drag exceeds threshold", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -4140,7 +4140,7 @@ describe("App", () => {
   it("detail connector follows merged observer panel after drag", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -4203,7 +4203,7 @@ describe("App", () => {
   it("removes fixed max-height on detail content areas", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -4241,7 +4241,7 @@ describe("App", () => {
   // --- Merged run observer panel ---
 
   async function setupMergedObserverOpen(container: HTMLElement) {
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -4262,7 +4262,7 @@ describe("App", () => {
   it("renders Task run observer as one merged result panel", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -4605,7 +4605,7 @@ describe("App", () => {
   // --- Task operation tree drag ---
 
   async function setupObserverOpen(container: HTMLElement) {
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -4781,7 +4781,7 @@ describe("App", () => {
   it("keeps menu action buttons clickable via pointer sequence after menu drag is implemented", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -4800,7 +4800,7 @@ describe("App", () => {
   it("drags edit node independently without moving menu", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -4961,7 +4961,7 @@ describe("App", () => {
   it("keeps leader chat usable: drag header, resize, maximize", async () => {
     const { container } = render(<App />);
 
-    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
     const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
@@ -5071,7 +5071,7 @@ describe("App", () => {
     }
 
     async function openRunObserver(container: HTMLElement) {
-      const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+      const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
       fireEvent.click(taskNode);
       const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
       expect(branch).toBeTruthy();
@@ -5301,7 +5301,7 @@ describe("App", () => {
       const { container } = render(<App />);
       fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-      const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: /调查 Medtrum 云资产/ });
+      const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
       fireEvent.click(taskNode);
       const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
       expect(branch).toBeTruthy();

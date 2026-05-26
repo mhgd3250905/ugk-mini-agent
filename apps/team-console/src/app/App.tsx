@@ -127,6 +127,11 @@ type TaskRunObserverState = {
   lastUpdatedAt: string | null;
 };
 
+type RootArchiveConfirm =
+  | { kind: "source"; sourceNodeId: string; nodeId: string; title: string }
+  | { kind: "task"; task: TeamCanvasTask; nodeId: string }
+  | { kind: "agent"; nodeId: string; agentId: string; name: string };
+
 function errorMessage(error: unknown): string {
   if (error && typeof error === "object" && "message" in error) {
     return String((error as TeamApiError).message);
@@ -840,6 +845,8 @@ export function App() {
   const [taskEditWarning, setTaskEditWarning] = useState<string | null>(null);
   const [taskArchiveConfirming, setTaskArchiveConfirming] = useState(false);
   const [taskArchiveSaving, setTaskArchiveSaving] = useState(false);
+  const [rootArchiveConfirm, setRootArchiveConfirm] = useState<RootArchiveConfirm | null>(null);
+  const [rootArchiveSaving, setRootArchiveSaving] = useState(false);
 
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
   const tasksById = useMemo(() => new Map(tasks.map((task) => [task.taskId, task])), [tasks]);
@@ -1578,6 +1585,62 @@ export function App() {
     if (!expandedTask) return;
     await archiveTask(expandedTask, expandedTaskBranch?.nodeId);
   }, [archiveTask, expandedTask, expandedTaskBranch?.nodeId]);
+
+  const requestArchiveSourceNode = useCallback((sourceNodeId: string, nodeId: string, title: string) => {
+    setRootArchiveConfirm({ kind: "source", sourceNodeId, nodeId, title });
+  }, []);
+
+  const requestArchiveCanvasTask = useCallback((task: TeamCanvasTask, nodeId: string) => {
+    setRootArchiveConfirm({ kind: "task", task, nodeId });
+  }, []);
+
+  const requestRemoveAgentNode = useCallback((nodeId: string, agentId: string, name: string) => {
+    setRootArchiveConfirm({ kind: "agent", nodeId, agentId, name });
+  }, []);
+
+  const confirmRootArchive = useCallback(async () => {
+    if (!rootArchiveConfirm || rootArchiveSaving) return;
+    setRootArchiveSaving(true);
+    const pending = rootArchiveConfirm;
+    try {
+      if (pending.kind === "source") {
+        const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+        await api.archiveSourceNode(pending.sourceNodeId);
+        if (dataSource === "live") {
+          await refreshLiveTasks();
+        } else {
+          const [nextSources, nextConnections] = await Promise.all([
+            api.listSourceNodes(),
+            api.listSourceConnections(),
+          ]);
+          setSourceNodes(nextSources);
+          setSourceAtlasNodes((current) => current.filter((node) =>
+            nextSources.some((source) => source.sourceNodeId === node.sourceNodeId),
+          ));
+          setSourceConnections(nextConnections);
+        }
+        setMinimizedSourceNodeIds((current) => current.filter((id) => id !== pending.nodeId));
+      } else if (pending.kind === "task") {
+        await archiveTask(pending.task, pending.nodeId);
+      } else {
+        setAgentNodes((current) => current.filter((node) => node.nodeId !== pending.nodeId));
+        setMinimizedAgentNodeIds((current) => current.filter((id) => id !== pending.nodeId));
+        setExpandedAgentBranch((current) => current?.nodeId === pending.nodeId ? null : current);
+      }
+      setRootArchiveConfirm(null);
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setRootArchiveSaving(false);
+    }
+  }, [archiveTask, dataSource, refreshLiveTasks, rootArchiveConfirm, rootArchiveSaving]);
+
+  const cancelRootArchive = useCallback(() => {
+    if (!rootArchiveSaving) {
+      setRootArchiveConfirm(null);
+    }
+  }, [rootArchiveSaving]);
 
   const runTask = useCallback(async (task: TeamCanvasTask) => {
     const taskId = task.taskId;
@@ -2744,6 +2807,39 @@ export function App() {
         <div className="error-banner">{error}</div>
       )}
 
+      {rootArchiveConfirm && (
+        <div className="root-archive-confirm" role="status">
+          <span>
+            {rootArchiveConfirm.kind === "source" && `确认归档 Source "${rootArchiveConfirm.title}"？归档后无法恢复。`}
+            {rootArchiveConfirm.kind === "task" && `确认归档 Task "${rootArchiveConfirm.task.title}"？归档后无法恢复。`}
+            {rootArchiveConfirm.kind === "agent" && `确认将 Agent "${rootArchiveConfirm.name}" 移出画布？不会删除真实 Agent。`}
+          </span>
+          <div className="root-archive-confirm-actions">
+            <button
+              type="button"
+              className="root-archive-cancel"
+              onClick={cancelRootArchive}
+              disabled={rootArchiveSaving}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="root-archive-confirm-button"
+              onClick={confirmRootArchive}
+              disabled={rootArchiveSaving}
+              aria-label={rootArchiveConfirm.kind === "agent" ? "确认移出画布" : "确认归档"}
+            >
+              {rootArchiveSaving
+                ? "处理中..."
+                : rootArchiveConfirm.kind === "agent"
+                  ? "确认移出画布"
+                  : "确认归档"}
+            </button>
+          </div>
+        </div>
+      )}
+
       <main className="app-main">
         {loading ? (
           <div className="empty-state">
@@ -2768,6 +2864,7 @@ export function App() {
                 minimizedAgentNodeIds={minimizedAgentNodeIds}
                 onMinimizeAgent={minimizeAgentNode}
                 onRestoreAgent={restoreAgentNode}
+                onRemoveAgent={(node, agent) => requestRemoveAgentNode(node.nodeId, agent.agentId, agent.name)}
                 agentBranchPanel={expandedAgentBranchPanel}
                 taskNodes={taskNodes}
                 tasksById={tasksById}
@@ -2784,10 +2881,12 @@ export function App() {
                 minimizedTaskNodeIds={minimizedTaskNodeIds}
                 onMinimizeCanvasTask={minimizeTaskNode}
                 onRestoreCanvasTask={restoreTaskNode}
+                onArchiveCanvasTask={(node, task) => requestArchiveCanvasTask(task, node.nodeId)}
                 onMoveSourceNode={moveSourceNode}
                 minimizedSourceNodeIds={minimizedSourceNodeIds}
                 onMinimizeSourceNode={minimizeSourceNode}
                 onRestoreSourceNode={restoreSourceNode}
+                onArchiveSourceNode={(node, sourceNode) => requestArchiveSourceNode(sourceNode.sourceNodeId, node.nodeId, sourceNode.title)}
                 onSourceOutputPortSelect={beginSourcePortConnection}
                 onSourceTextChange={updateTextSourceNode}
                 onTaskOutputPortSelect={beginTaskPortConnection}

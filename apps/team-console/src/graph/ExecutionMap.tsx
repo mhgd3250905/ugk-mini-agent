@@ -36,6 +36,7 @@ interface ExecutionMapProps {
   minimizedAgentNodeIds?: string[];
   onMinimizeAgent?: (node: AtlasAgentNode) => void;
   onRestoreAgent?: (node: AtlasAgentNode) => void;
+  onRemoveAgent?: (node: AtlasAgentNode, agent: AgentSummary) => void;
   canMoveAgents?: boolean;
   agentBranchPanel?: ReactNode;
   taskNodes?: AtlasTaskNode[];
@@ -53,12 +54,14 @@ interface ExecutionMapProps {
   minimizedTaskNodeIds?: string[];
   onMinimizeCanvasTask?: (node: AtlasTaskNode) => void;
   onRestoreCanvasTask?: (node: AtlasTaskNode) => void;
+  onArchiveCanvasTask?: (node: AtlasTaskNode, task: TeamCanvasTask) => void;
   onTaskOutputPortSelect?: (taskId: string, port: TeamTaskOutputPort) => void;
   onTaskInputPortSelect?: (taskId: string, port: TeamTaskInputPort) => void;
   onMoveSourceNode?: (nodeId: string, position: { x: number; y: number }) => void;
   minimizedSourceNodeIds?: string[];
   onMinimizeSourceNode?: (node: AtlasSourceNode) => void;
   onRestoreSourceNode?: (node: AtlasSourceNode) => void;
+  onArchiveSourceNode?: (node: AtlasSourceNode, sourceNode: TeamCanvasSourceNode) => void;
   onSourceOutputPortSelect?: (sourceNodeId: string, port: TeamCanvasSourceNode["outputPort"]) => void;
   onSourceTextChange?: (sourceNodeId: string, text: string) => void;
   canMoveTasks?: boolean;
@@ -706,6 +709,7 @@ export function ExecutionMap({
   minimizedAgentNodeIds = [],
   onMinimizeAgent,
   onRestoreAgent,
+  onRemoveAgent,
   canMoveAgents = true,
   agentBranchPanel,
   taskNodes = [],
@@ -723,12 +727,14 @@ export function ExecutionMap({
   minimizedTaskNodeIds = [],
   onMinimizeCanvasTask,
   onRestoreCanvasTask,
+  onArchiveCanvasTask,
   onTaskOutputPortSelect,
   onTaskInputPortSelect,
   onMoveSourceNode,
   minimizedSourceNodeIds = [],
   onMinimizeSourceNode,
   onRestoreSourceNode,
+  onArchiveSourceNode,
   onSourceOutputPortSelect,
   onSourceTextChange,
   canMoveTasks = true,
@@ -2352,6 +2358,21 @@ export function ExecutionMap({
                     收
                   </button>
                 )}
+                {onRemoveAgent && (
+                  <button
+                    type="button"
+                    className="emap-node-action-button emap-node-archive-button"
+                    aria-label={`移出画布 Agent ${agent.name}`}
+                    title={`移出画布 ${agent.name}`}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onRemoveAgent(node, agent);
+                    }}
+                  >
+                    移除
+                  </button>
+                )}
               </div>
             );
           })}
@@ -2442,6 +2463,21 @@ export function ExecutionMap({
                     }}
                   >
                     收
+                  </button>
+                )}
+                {onArchiveSourceNode && (
+                  <button
+                    type="button"
+                    className="emap-node-action-button emap-node-archive-button"
+                    aria-label={`归档 Source ${sourceNode.title}`}
+                    title={`归档 ${sourceNode.title}`}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onArchiveSourceNode(node, sourceNode);
+                    }}
+                  >
+                    归档
                   </button>
                 )}
               </div>
@@ -2567,6 +2603,21 @@ export function ExecutionMap({
                     }}
                   >
                     收
+                  </button>
+                )}
+                {onArchiveCanvasTask && (
+                  <button
+                    type="button"
+                    className="emap-node-action-button emap-node-archive-button"
+                    aria-label={`归档 Task ${task.title}`}
+                    title={`归档 ${task.title}`}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onArchiveCanvasTask(node, task);
+                    }}
+                  >
+                    归档
                   </button>
                 )}
               </div>
