@@ -1560,7 +1560,7 @@ export function App() {
     }
   }, [dataSource, expandedTask, refreshLiveTasks, taskEditDraft]);
 
-  const archiveTask = useCallback(async (task: TeamCanvasTask, nodeId?: string) => {
+  const archiveTask = useCallback(async (task: TeamCanvasTask, nodeId?: string): Promise<boolean> => {
     setTaskArchiveSaving(true);
     try {
       const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
@@ -1574,8 +1574,10 @@ export function App() {
       }
       closeTaskBranch(nodeId);
       setError(null);
+      return true;
     } catch (e) {
       setError(errorMessage(e));
+      return false;
     } finally {
       setTaskArchiveSaving(false);
     }
@@ -1621,7 +1623,8 @@ export function App() {
         }
         setMinimizedSourceNodeIds((current) => current.filter((id) => id !== pending.nodeId));
       } else if (pending.kind === "task") {
-        await archiveTask(pending.task, pending.nodeId);
+        const ok = await archiveTask(pending.task, pending.nodeId);
+        if (!ok) return;
       } else {
         setAgentNodes((current) => current.filter((node) => node.nodeId !== pending.nodeId));
         setMinimizedAgentNodeIds((current) => current.filter((id) => id !== pending.nodeId));

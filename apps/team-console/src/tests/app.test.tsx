@@ -2483,6 +2483,29 @@ describe("App", () => {
     });
   });
 
+  it("keeps Task root nodes when root archive fails", async () => {
+    const api = mockLiveTaskEditorApi({ archiveStatus: 500, archiveError: "root task archive failed" });
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const atlasNodes = getAtlasNodes(container);
+    const taskCard = await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" });
+    expect(taskCard).toBeInTheDocument();
+
+    const archiveButton = within(taskCard).getByRole("button", { name: "归档 Task 调查 Medtrum 云资产" });
+    fireEvent.click(archiveButton);
+
+    const confirmButton = await screen.findByRole("button", { name: "确认归档" });
+    expect(confirmButton).toBeInTheDocument();
+
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => expect(api.archiveRequests).toBe(1));
+    expect(await screen.findByText("root task archive failed")).toBeInTheDocument();
+    expect(container.querySelector('[data-task-id="task_research_medtrum"]')).toBeTruthy();
+    expect(screen.getByRole("button", { name: "确认归档" })).toBeInTheDocument();
+  });
+
   it("removes Agent root nodes from the local canvas", async () => {
     let agentArchiveCalled = false;
     vi.mocked(fetch).mockImplementation(async (input, init) => {
