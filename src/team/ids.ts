@@ -11,4 +11,5 @@ export const generateTimingSpanId = (): string => `timing_${compact()}`;
 export const generateTaskConnectionId = (): string => `conn_${compact()}`;
 export const generateSourceNodeId = (): string => `source_${compact()}`;
 export const generateSourceConnectionId = (): string => `source_conn_${compact()}`;
+export const generateSourceArtifactId = (): string => `source_artifact_${compact()}`;
 export const generateTaskArtifactId = (): string => `artifact_${compact()}`;

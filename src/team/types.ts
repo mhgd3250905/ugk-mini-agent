@@ -319,11 +319,37 @@ export interface TeamTaskTypedArtifact {
 	createdAt: string;
 }
 
-export interface TeamTaskBoundInput {
+export interface TeamCanvasSourceArtifact {
+	schemaVersion: "team/source-artifact-1";
+	artifactId: string;
+	type: string;
+	sourceNodeId: string;
+	sourceOutputPortId: string;
+	title?: string;
+	fileName?: string;
+	mimeType?: string;
+	size?: number;
+	storageRef?: string;
+	preview: string;
+	content?: string;
+	createdAt: string;
+}
+
+export interface TeamTaskArtifactBoundInput {
+	source?: "task-artifact";
 	connectionId: string;
 	inputPortId: string;
 	artifact: TeamTaskTypedArtifact;
 }
+
+export interface TeamCanvasSourceBoundInput {
+	source: "canvas-source";
+	connectionId: string;
+	inputPortId: string;
+	artifact: TeamCanvasSourceArtifact;
+}
+
+export type TeamTaskBoundInput = TeamTaskArtifactBoundInput | TeamCanvasSourceBoundInput;
 
 export interface TeamCanvasTask {
 	taskId: string;

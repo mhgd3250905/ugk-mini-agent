@@ -3,10 +3,11 @@ import assert from "node:assert/strict";
 import {
 	TEAM_TASK_ARTIFACT_CONTENT_LIMIT,
 	TEAM_TASK_ARTIFACT_PREVIEW_LIMIT,
+	buildTeamCanvasSourceArtifact,
 	buildTeamTaskTypedArtifact,
 	formatBoundInputsForPrompt,
 } from "../src/team/task-artifact-handoff.js";
-import type { TeamTaskBoundInput } from "../src/team/types.js";
+import type { TeamCanvasSourceBoundInput, TeamTaskArtifactBoundInput, TeamTaskBoundInput } from "../src/team/types.js";
 
 function makeArtifact(overrides: Partial<NonNullable<Parameters<typeof buildTeamTaskTypedArtifact>[0]>> = {}) {
 	return buildTeamTaskTypedArtifact({
@@ -21,11 +22,27 @@ function makeArtifact(overrides: Partial<NonNullable<Parameters<typeof buildTeam
 	});
 }
 
-function makeBoundInput(overrides: Partial<TeamTaskBoundInput> = {}): TeamTaskBoundInput {
+function makeBoundInput(overrides: Partial<TeamTaskArtifactBoundInput> = {}): TeamTaskArtifactBoundInput {
 	return {
 		connectionId: "conn_1",
 		inputPortId: "source_md",
 		artifact: makeArtifact(),
+		...overrides,
+	};
+}
+
+function makeSourceBoundInput(overrides: Partial<TeamCanvasSourceBoundInput> = {}): TeamCanvasSourceBoundInput {
+	return {
+		source: "canvas-source",
+		connectionId: "source_conn_1",
+		inputPortId: "source_text",
+		artifact: buildTeamCanvasSourceArtifact({
+			type: "string",
+			sourceNodeId: "source_node_1",
+			sourceOutputPortId: "value",
+			title: "需求说明",
+			content: "这是一段画布来源文本。",
+		}),
 		...overrides,
 	};
 }
@@ -98,6 +115,44 @@ test("formatBoundInputsForPrompt formats one bound input with full trace metadat
 	assert.match(result, /accepted result/);
 });
 
+test("formatBoundInputsForPrompt keeps legacy task artifact prompt output unchanged", () => {
+	const artifact = {
+		schemaVersion: "team/task-artifact-1" as const,
+		artifactId: "artifact_fixed",
+		type: "md",
+		sourceTaskId: "task_src",
+		sourceRunId: "run_src",
+		sourceAttemptId: "attempt_src",
+		sourceOutputPortId: "draft_md",
+		fileRef: "result/accepted.md",
+		preview: "accepted result",
+		content: "accepted result",
+		createdAt: "2026-05-26T00:00:00.000Z",
+	};
+	const legacyInput: TeamTaskBoundInput = {
+		connectionId: "conn_1",
+		inputPortId: "source_md",
+		artifact,
+	};
+
+	assert.equal(formatBoundInputsForPrompt([legacyInput]), [
+		"## 已绑定上游 typed artifact 输入",
+		"### 输入 1: md",
+		"- connectionId: conn_1",
+		"- inputPortId: source_md",
+		"- artifactId: artifact_fixed",
+		"- sourceTaskId: task_src",
+		"- sourceRunId: run_src",
+		"- sourceAttemptId: attempt_src",
+		"- sourceOutputPortId: draft_md",
+		"- fileRef: result/accepted.md",
+		"",
+		"BEGIN_TYPED_ARTIFACT_CONTENT artifact_fixed",
+		"accepted result",
+		"END_TYPED_ARTIFACT_CONTENT artifact_fixed",
+	].join("\n"));
+});
+
 test("formatBoundInputsForPrompt wraps markdown-like content in stable delimiters", () => {
 	const markdownContent = [
 		"### Nested Heading",
@@ -166,4 +221,53 @@ test("formatBoundInputsForPrompt keeps multiple inputs ordered", () => {
 	assert.ok(alphaIdx < betaIdx, "first input content should appear before second");
 	assert.match(result, /输入 1/);
 	assert.match(result, /输入 2/);
+});
+
+test("formatBoundInputsForPrompt formats source text artifact without fake task metadata", () => {
+	const input = makeSourceBoundInput();
+	const result = formatBoundInputsForPrompt([input]);
+
+	assert.match(result, /画布 source node 输入/);
+	assert.match(result, /输入 1: string/);
+	assert.match(result, /connectionId: source_conn_1/);
+	assert.match(result, /inputPortId: source_text/);
+	assert.match(result, /sourceNodeId: source_node_1/);
+	assert.match(result, /sourceOutputPortId: value/);
+	assert.match(result, /type: string/);
+	assert.match(result, /title: 需求说明/);
+	assert.match(result, /BEGIN_CANVAS_SOURCE_CONTENT source_artifact_/);
+	assert.match(result, /这是一段画布来源文本。/);
+	assert.match(result, /END_CANVAS_SOURCE_CONTENT source_artifact_/);
+	assert.doesNotMatch(result, /sourceTaskId/);
+	assert.doesNotMatch(result, /sourceRunId/);
+	assert.doesNotMatch(result, /sourceAttemptId/);
+});
+
+test("formatBoundInputsForPrompt formats source file artifact metadata and deterministic content limit", () => {
+	const longContent = "x".repeat(TEAM_TASK_ARTIFACT_CONTENT_LIMIT + 10);
+	const input = makeSourceBoundInput({
+		inputPortId: "source_md",
+		artifact: buildTeamCanvasSourceArtifact({
+			type: "md",
+			sourceNodeId: "source_file_1",
+			sourceOutputPortId: "value",
+			title: "Markdown 文件",
+			content: longContent,
+			fileName: "brief.md",
+			mimeType: "text/markdown",
+			size: 512,
+			storageRef: "asset://brief.md",
+		}),
+	});
+
+	assert.equal(input.artifact.content?.length, TEAM_TASK_ARTIFACT_CONTENT_LIMIT);
+	assert.equal(input.artifact.preview.length, TEAM_TASK_ARTIFACT_PREVIEW_LIMIT);
+	const result = formatBoundInputsForPrompt([input]);
+	assert.match(result, /sourceNodeId: source_file_1/);
+	assert.match(result, /fileName: brief\.md/);
+	assert.match(result, /mimeType: text\/markdown/);
+	assert.match(result, /size: 512/);
+	assert.match(result, /storageRef: asset:\/\/brief\.md/);
+	assert.match(result, new RegExp(`x{${TEAM_TASK_ARTIFACT_CONTENT_LIMIT}}`));
+	assert.doesNotMatch(result, new RegExp(`x{${TEAM_TASK_ARTIFACT_CONTENT_LIMIT + 1}}`));
 });
