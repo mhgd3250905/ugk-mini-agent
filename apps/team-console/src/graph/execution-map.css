@@ -274,6 +274,37 @@
   filter: drop-shadow(0 0 4px rgba(121, 216, 208, 0.3));
 }
 
+.emap-link-task-dependency {
+  stroke: rgb(230, 170, 60);
+  stroke-width: 2;
+  opacity: 0.75;
+  stroke-dasharray: 6 3;
+  filter: drop-shadow(0 0 3px rgba(230, 170, 60, 0.25));
+}
+
+.emap-task-dep-handle {
+  position: absolute;
+  bottom: 2px;
+  right: 36px;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid rgba(230, 170, 60, 0.5);
+  background: rgba(230, 170, 60, 0.12);
+  color: rgb(180, 130, 40);
+  cursor: pointer;
+  z-index: 2;
+  line-height: 1.2;
+}
+.emap-task-dep-handle:hover {
+  background: rgba(230, 170, 60, 0.28);
+}
+.emap-task-dep-handle.is-selected {
+  background: rgba(230, 170, 60, 0.38);
+  border-color: rgb(230, 170, 60);
+  color: rgb(200, 150, 30);
+}
+
 .execution-map-nodes {
   position: relative;
   z-index: 1;

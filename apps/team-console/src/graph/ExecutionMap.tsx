@@ -1,5 +1,5 @@
 import { useMemo, useLayoutEffect, useRef, useState, useCallback, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import type { AgentRunStatus, AgentSummary, RunDetail, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasTask, TeamPlan, TaskStatus, TeamAttemptMetadata, TeamTaskState, TeamRunState, TeamTaskConnection, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
+import type { AgentRunStatus, AgentSummary, RunDetail, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasTask, TeamPlan, TaskStatus, TeamAttemptMetadata, TeamTaskState, TeamRunState, TeamTaskConnection, TeamTaskDependency, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
 import type { ExecutionNode, NodeKind } from "./execution-map-model";
 import { buildExecutionMapModel, CHILD_COLLAPSE_THRESHOLD } from "./execution-map-model";
 import { layoutExecutionMap, ROOT_ID, NODE_WIDTH, straightPath, type ExecutionMapLayout } from "./execution-map-layout";
@@ -43,6 +43,10 @@ interface ExecutionMapProps {
   tasksById?: Map<string, TeamCanvasTask>;
   taskConnections?: TeamTaskConnection[];
   taskConnectionDraft?: { fromTaskId: string; fromOutputPortId: string; type: string } | null;
+  taskDependencies?: TeamTaskDependency[];
+  taskDependencyDraft?: { fromTaskId: string } | null;
+  onTaskDependencySourceSelect?: (taskId: string) => void;
+  onTaskDependencyTargetSelect?: (taskId: string) => void;
   sourceNodes?: AtlasSourceNode[];
   sourceNodesById?: Map<string, TeamCanvasSourceNode>;
   sourceConnections?: TeamCanvasSourceConnection[];
@@ -713,6 +717,10 @@ export function ExecutionMap({
   tasksById,
   taskConnections = [],
   taskConnectionDraft = null,
+  taskDependencies = [],
+  taskDependencyDraft = null,
+  onTaskDependencySourceSelect,
+  onTaskDependencyTargetSelect,
   sourceNodes = [],
   sourceNodesById,
   sourceConnections = [],
@@ -943,6 +951,21 @@ export function ExecutionMap({
       })
       .filter((entry): entry is { connection: TeamCanvasSourceConnection; path: string; source: { x: number; y: number } } => Boolean(entry))
   ), [sourceConnections, sourceNodeBySourceId, sourceNodesById, taskNodeByTaskId, tasksById]);
+
+  const taskDependencyLinks = useMemo(() => (
+    taskDependencies
+      .filter((dep) => dep.status !== "stale")
+      .map((dep) => {
+        const sourceNode = taskNodeByTaskId.get(dep.fromTaskId);
+        const targetNode = taskNodeByTaskId.get(dep.toTaskId);
+        if (!sourceNode || !targetNode) return null;
+        const sourceRect = { x: sourceNode.position.x, y: sourceNode.position.y, width: NODE_WIDTH, height: CANVAS_TASK_NODE_HEIGHT };
+        const targetRect = { x: targetNode.position.x, y: targetNode.position.y, width: NODE_WIDTH, height: CANVAS_TASK_NODE_HEIGHT };
+        const points = connectorAnchors(sourceRect, targetRect);
+        return { dep, path: straightPath(points.source.x, points.source.y, points.target.x, points.target.y) };
+      })
+      .filter((entry): entry is { dep: TeamTaskDependency; path: string } => Boolean(entry))
+  ), [taskDependencies, taskNodeByTaskId]);
 
   const selectedChain = useMemo(() => {
     if (!model) return new Set<string>();
@@ -2175,6 +2198,17 @@ export function ExecutionMap({
               )}
             </g>
           ))}
+          {taskDependencyLinks.map(({ dep, path }) => (
+            <path
+              key={dep.dependencyId}
+              d={path}
+              className="emap-link emap-link-task-dependency"
+              data-task-dependency-id={dep.dependencyId}
+              fill="none"
+              strokeWidth={2}
+              strokeDasharray="6 3"
+            />
+          ))}
           {sourceConnectionLinks.map(({ connection, path, source }) => (
             <g key={connection.connectionId}>
               <path
@@ -2557,6 +2591,26 @@ export function ExecutionMap({
                     </div>
                   )}
                 </div>
+                {onTaskDependencySourceSelect && (
+                  <button
+                    type="button"
+                    className={`emap-task-dep-handle ${taskDependencyDraft?.fromTaskId === task.taskId ? "is-selected" : ""}`}
+                    aria-label={`依赖源 ${task.title}`}
+                    title={`设为依赖源: ${task.title}`}
+                    data-dep-handle="source"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (taskDependencyDraft && taskDependencyDraft.fromTaskId !== task.taskId) {
+                        onTaskDependencyTargetSelect?.(task.taskId);
+                      } else {
+                        onTaskDependencySourceSelect(task.taskId);
+                      }
+                    }}
+                  >
+                    dep
+                  </button>
+                )}
                 {onMinimizeCanvasTask && (
                   <button
                     type="button"

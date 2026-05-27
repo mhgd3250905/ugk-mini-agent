@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
 import { makeDiscoveryForEachPlan, makeDiscoveryForEachRun, makeSequentialPlan, makeSequentialRun, MOCK_AGENTS, mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
-import type { AgentChatProcessEntry, TeamAttemptMetadata, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasTask, TeamRunState, TeamTaskConnection } from "../api/team-types";
+import type { AgentChatProcessEntry, TeamAttemptMetadata, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasTask, TeamRunState, TeamTaskConnection, TeamTaskDependency } from "../api/team-types";
 
 function getAtlas(container: HTMLElement): HTMLElement {
   const atlas = container.querySelector(".execution-map-container") as HTMLElement | null;
@@ -3058,13 +3058,14 @@ describe("App", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ dependencies: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }));
 
     render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(6));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(7));
     expect(fetch).toHaveBeenNthCalledWith(1, "/v1/agents");
     expect(fetch).toHaveBeenNthCalledWith(2, "/v1/agents/status", {
       method: "GET",
@@ -3072,8 +3073,9 @@ describe("App", () => {
     });
     expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/tasks");
     expect(fetch).toHaveBeenNthCalledWith(4, "/v1/team/task-connections");
-    expect(fetch).toHaveBeenNthCalledWith(5, "/v1/team/source-nodes");
-    expect(fetch).toHaveBeenNthCalledWith(6, "/v1/team/source-connections");
+    expect(fetch).toHaveBeenNthCalledWith(5, "/v1/team/task-dependencies");
+    expect(fetch).toHaveBeenNthCalledWith(6, "/v1/team/source-nodes");
+    expect(fetch).toHaveBeenNthCalledWith(7, "/v1/team/source-connections");
     expect(screen.getByRole("button", { name: "Agent workspace" })).toHaveClass("active");
     expect(screen.getByRole("button", { name: "最新 Run" })).not.toHaveClass("active");
     expect(screen.queryByText("执行运行")).toBeNull();
@@ -3112,6 +3114,7 @@ describe("App", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ dependencies: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([plan]), { status: 200 }))
@@ -3120,10 +3123,10 @@ describe("App", () => {
 
     render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(6));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(7));
     fireEvent.click(screen.getByRole("button", { name: "最新 Run" }));
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(9));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(10));
     expect(fetch).toHaveBeenNthCalledWith(1, "/v1/agents");
     expect(fetch).toHaveBeenNthCalledWith(2, "/v1/agents/status", {
       method: "GET",
@@ -3131,11 +3134,12 @@ describe("App", () => {
     });
     expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/tasks");
     expect(fetch).toHaveBeenNthCalledWith(4, "/v1/team/task-connections");
-    expect(fetch).toHaveBeenNthCalledWith(5, "/v1/team/source-nodes");
-    expect(fetch).toHaveBeenNthCalledWith(6, "/v1/team/source-connections");
-    expect(fetch).toHaveBeenNthCalledWith(7, "/v1/team/plans");
-    expect(fetch).toHaveBeenNthCalledWith(8, "/v1/team/runs");
-    expect(fetch).toHaveBeenNthCalledWith(9, "/v1/team/runs/run_seq_001");
+    expect(fetch).toHaveBeenNthCalledWith(5, "/v1/team/task-dependencies");
+    expect(fetch).toHaveBeenNthCalledWith(6, "/v1/team/source-nodes");
+    expect(fetch).toHaveBeenNthCalledWith(7, "/v1/team/source-connections");
+    expect(fetch).toHaveBeenNthCalledWith(8, "/v1/team/plans");
+    expect(fetch).toHaveBeenNthCalledWith(9, "/v1/team/runs");
+    expect(fetch).toHaveBeenNthCalledWith(10, "/v1/team/runs/run_seq_001");
   });
 
   it("loads live agent catalog when switching to Live API", async () => {
@@ -3146,13 +3150,14 @@ describe("App", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [{ agentId: "main", name: "主 Agent", status: "idle" }] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ dependencies: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }));
 
     render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(6));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(7));
     expect(fetch).toHaveBeenNthCalledWith(1, "/v1/agents");
     expect(fetch).toHaveBeenNthCalledWith(2, "/v1/agents/status", {
       method: "GET",
@@ -3160,8 +3165,9 @@ describe("App", () => {
     });
     expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/tasks");
     expect(fetch).toHaveBeenNthCalledWith(4, "/v1/team/task-connections");
-    expect(fetch).toHaveBeenNthCalledWith(5, "/v1/team/source-nodes");
-    expect(fetch).toHaveBeenNthCalledWith(6, "/v1/team/source-connections");
+    expect(fetch).toHaveBeenNthCalledWith(5, "/v1/team/task-dependencies");
+    expect(fetch).toHaveBeenNthCalledWith(6, "/v1/team/source-nodes");
+    expect(fetch).toHaveBeenNthCalledWith(7, "/v1/team/source-connections");
   });
 
   it("keeps Task creation disabled in mock mode", () => {
@@ -3768,6 +3774,7 @@ describe("App", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ dependencies: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([plan]), { status: 200 }))
@@ -3776,7 +3783,7 @@ describe("App", () => {
 
     render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(6));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(7));
     fireEvent.click(screen.getByRole("button", { name: "最新 Run" }));
 
     expect(await screen.findByText("Live-only vendor task")).toBeInTheDocument();
@@ -3821,13 +3828,14 @@ describe("App", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [{ agentId: "main", name: "主 Agent", status: "idle" }] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ dependencies: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }));
 
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(6));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(7));
     expect(screen.queryByText("没有可显示的 live run")).toBeNull();
     expect(screen.getByRole("button", { name: "添加 Agent" })).toBeEnabled();
 
@@ -7493,6 +7501,201 @@ describe("App", () => {
         if (origOffsetWidth) Object.defineProperty(HTMLElement.prototype, "offsetWidth", origOffsetWidth);
         if (origOffsetHeight) Object.defineProperty(HTMLElement.prototype, "offsetHeight", origOffsetHeight);
       }
+    });
+  });
+
+  describe("task control dependency UI", () => {
+    const depTaskA: TeamCanvasTask = {
+      taskId: "dep_alpha",
+      title: "Dep Alpha",
+      leaderAgentId: "main",
+      status: "ready",
+      createdAt: "2026-05-27T00:00:00.000Z",
+      updatedAt: "2026-05-27T00:00:00.000Z",
+      archived: false,
+      workUnit: {
+        title: "Dep Alpha",
+        input: { text: "Alpha input" },
+        outputPorts: [],
+        outputContract: { text: "Alpha output" },
+        acceptance: { rules: [] },
+        workerAgentId: "main",
+        checkerAgentId: "main",
+      },
+    };
+    const depTaskB: TeamCanvasTask = {
+      taskId: "dep_beta",
+      title: "Dep Beta",
+      leaderAgentId: "main",
+      status: "ready",
+      createdAt: "2026-05-27T00:00:00.000Z",
+      updatedAt: "2026-05-27T00:00:00.000Z",
+      archived: false,
+      workUnit: {
+        title: "Dep Beta",
+        input: { text: "Beta input" },
+        outputPorts: [],
+        outputContract: { text: "Beta output" },
+        acceptance: { rules: [] },
+        workerAgentId: "main",
+        checkerAgentId: "main",
+      },
+    };
+
+    function setupDepApi(options?: {
+      dependencies?: TeamTaskDependency[];
+      onCreate?: (dep: TeamTaskDependency) => void;
+    }) {
+      const deps = [...(options?.dependencies ?? [])];
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [{ agentId: "main", name: "主 Agent", description: "默认" }],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks" && method === "GET") {
+          return new Response(JSON.stringify({ tasks: [depTaskA, depTaskB] }), { status: 200 });
+        }
+        if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+        if (url === "/v1/team/task-dependencies" && method === "GET") {
+          return new Response(JSON.stringify({ dependencies: deps }), { status: 200 });
+        }
+        if (url === "/v1/team/task-dependencies" && method === "POST") {
+          const body = JSON.parse(String(init?.body ?? "{}")) as { fromTaskId: string; toTaskId: string };
+          const dep: TeamTaskDependency = {
+            schemaVersion: "team/task-dependency-1",
+            dependencyId: `dep_${Date.now()}`,
+            fromTaskId: body.fromTaskId,
+            toTaskId: body.toTaskId,
+            trigger: "on_success",
+            createdAt: "2026-05-27T01:00:00.000Z",
+            updatedAt: "2026-05-27T01:00:00.000Z",
+          };
+          deps.push(dep);
+          options?.onCreate?.(dep);
+          return new Response(JSON.stringify({ dependency: dep }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-dependencies/") && method === "DELETE") {
+          const depId = url.split("/").pop()!;
+          const idx = deps.findIndex((d) => d.dependencyId === depId);
+          if (idx >= 0) deps.splice(idx, 1);
+          return new Response(null, { status: 204 });
+        }
+        if (url === "/v1/team/source-nodes") return new Response(JSON.stringify([]), { status: 200 });
+        if (url === "/v1/team/source-connections") return new Response(JSON.stringify([]), { status: 200 });
+        if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        return new Response(JSON.stringify([]), { status: 200 });
+      });
+    }
+
+    it("renders dependency handles on Task cards", async () => {
+      setupDepApi();
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      await screen.findByText(depTaskA.title);
+      const handles = container.querySelectorAll(".emap-task-dep-handle");
+      expect(handles.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("creates a dependency via source then target click", async () => {
+      let created = false;
+      setupDepApi({
+        onCreate: () => { created = true; },
+      });
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      await screen.findByText(depTaskA.title);
+      const handles = container.querySelectorAll(".emap-task-dep-handle");
+      // Click source handle on Alpha
+      const alphaHandle = Array.from(handles).find(
+        (h) => h.closest("[data-task-id]")?.getAttribute("data-task-id") === depTaskA.taskId,
+      );
+      expect(alphaHandle).toBeTruthy();
+      fireEvent.click(alphaHandle!);
+
+      // Click target handle on Beta
+      const betaHandle = Array.from(handles).find(
+        (h) => h.closest("[data-task-id]")?.getAttribute("data-task-id") === depTaskB.taskId,
+      );
+      expect(betaHandle).toBeTruthy();
+      fireEvent.click(betaHandle!);
+
+      await waitFor(() => expect(created).toBe(true));
+    });
+
+    it("renders dependency line with data-task-dependency-id", async () => {
+      setupDepApi({
+        dependencies: [{
+          schemaVersion: "team/task-dependency-1",
+          dependencyId: "dep_test_1",
+          fromTaskId: depTaskA.taskId,
+          toTaskId: depTaskB.taskId,
+          trigger: "on_success",
+          createdAt: "2026-05-27T00:00:00.000Z",
+          updatedAt: "2026-05-27T00:00:00.000Z",
+        }],
+      });
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      await screen.findByText(depTaskA.title);
+      const depLine = container.querySelector('[data-task-dependency-id="dep_test_1"]');
+      expect(depLine).toBeTruthy();
+      expect(depLine?.classList.contains("emap-link-task-dependency")).toBe(true);
+    });
+
+    it("rejects self-dependency via source-then-same-source click", async () => {
+      let postCalled = false;
+      setupDepApi({
+        onCreate: () => { postCalled = true; },
+      });
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      await screen.findByText(depTaskA.title);
+      const handles = container.querySelectorAll(".emap-task-dep-handle");
+      const alphaHandle = Array.from(handles).find(
+        (h) => h.closest("[data-task-id]")?.getAttribute("data-task-id") === depTaskA.taskId,
+      );
+      expect(alphaHandle).toBeTruthy();
+      fireEvent.click(alphaHandle!);
+
+      // Click Alpha's handle again — draft source is Alpha, so fromTaskId === toTaskId
+      // The component should reject this (completeTaskDependency checks fromTaskId !== toTaskId)
+      const alphaHandleAgain = Array.from(container.querySelectorAll(".emap-task-dep-handle")).find(
+        (h) => h.closest("[data-task-id]")?.getAttribute("data-task-id") === depTaskA.taskId,
+      );
+      fireEvent.click(alphaHandleAgain!);
+
+      // Should NOT have created a dependency
+      expect(postCalled).toBe(false);
+    });
+
+    it("does not render stale dependency lines", async () => {
+      setupDepApi({
+        dependencies: [{
+          schemaVersion: "team/task-dependency-1",
+          dependencyId: "dep_stale_1",
+          fromTaskId: depTaskA.taskId,
+          toTaskId: depTaskB.taskId,
+          trigger: "on_success",
+          status: "stale",
+          staleReason: "target_task_archived",
+          createdAt: "2026-05-27T00:00:00.000Z",
+          updatedAt: "2026-05-27T00:00:00.000Z",
+        }],
+      });
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      await screen.findByText(depTaskA.title);
+      const depLine = container.querySelector('[data-task-dependency-id="dep_stale_1"]');
+      expect(depLine).toBeNull();
     });
   });
 

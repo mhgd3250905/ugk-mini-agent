@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { AgentRunStatus, AgentSummary, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskConnection, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
+import type { AgentRunStatus, AgentSummary, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskConnection, TeamTaskDependency, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
 import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, mockTeamTasks, MockTeamApi } from "../fixtures/team-fixtures";
 import { ExecutionMap, type AtlasAgentNode, type AtlasSourceNode, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { ROOT_ID } from "../graph/execution-map-layout";
@@ -859,6 +859,8 @@ export function App() {
   const [tasks, setTasks] = useState<TeamCanvasTask[]>([]);
   const [taskConnections, setTaskConnections] = useState<TeamTaskConnection[]>([]);
   const [taskConnectionDraft, setTaskConnectionDraft] = useState<TaskConnectionDraft | null>(null);
+  const [taskDependencies, setTaskDependencies] = useState<TeamTaskDependency[]>([]);
+  const [taskDependencyDraft, setTaskDependencyDraft] = useState<{ fromTaskId: string } | null>(null);
   const [sourceNodes, setSourceNodes] = useState<TeamCanvasSourceNode[]>([]);
   const [sourceConnections, setSourceConnections] = useState<TeamCanvasSourceConnection[]>([]);
   const [sourceConnectionDraft, setSourceConnectionDraft] = useState<SourceConnectionDraft | null>(null);
@@ -1156,17 +1158,20 @@ export function App() {
       setLiveTasksRefreshing(true);
       try {
         const api = new LiveTeamApi();
-        const [nextTasks, nextConnections, nextSourceNodes, nextSourceConnections] = await Promise.all([
+        const [nextTasks, nextConnections, nextDeps, nextSourceNodes, nextSourceConnections] = await Promise.all([
           api.listTasks(),
           api.listTaskConnections(),
+          api.listTaskDependencies(),
           api.listSourceNodes(),
           api.listSourceConnections(),
         ]);
         applyLiveTasks(nextTasks);
         setTaskConnections(nextConnections);
+        setTaskDependencies(nextDeps);
         applyLiveSources(nextSourceNodes);
         setSourceConnections(nextSourceConnections);
         setTaskConnectionDraft(null);
+        setTaskDependencyDraft(null);
         setSourceConnectionDraft(null);
         await loadTaskRunsForTasks(api, nextTasks);
         setError(null);
@@ -1316,11 +1321,12 @@ export function App() {
 
     async function loadLiveWorkspace() {
       try {
-        const [nextAgents, nextStatuses, nextTasks, nextConnections, nextSourceNodes, nextSourceConnections] = await Promise.all([
+        const [nextAgents, nextStatuses, nextTasks, nextConnections, nextDeps, nextSourceNodes, nextSourceConnections] = await Promise.all([
           api.listAgents(),
           api.listAgentRunStatuses(),
           api.listTasks(),
           api.listTaskConnections(),
+          api.listTaskDependencies(),
           api.listSourceNodes(),
           api.listSourceConnections(),
         ]);
@@ -1329,6 +1335,7 @@ export function App() {
           setAgentRunStatusById(agentRunStatusRecord(nextStatuses));
           applyLiveTasks(nextTasks);
           setTaskConnections(nextConnections);
+          setTaskDependencies(nextDeps);
           applyLiveSources(nextSourceNodes);
           setSourceConnections(nextSourceConnections);
           void loadTaskRunsForTasks(api, nextTasks);
@@ -1901,6 +1908,40 @@ export function App() {
       setError(errorMessage(e));
     }
   }, [dataSource, sourceConnectionDraft, taskConnectionDraft]);
+
+  const beginTaskDependency = useCallback((taskId: string) => {
+    if (taskDependencyDraft?.fromTaskId === taskId) {
+      setTaskDependencyDraft(null);
+    } else {
+      setTaskDependencyDraft({ fromTaskId: taskId });
+      setTaskConnectionDraft(null);
+      setSourceConnectionDraft(null);
+    }
+  }, [taskDependencyDraft]);
+
+  const completeTaskDependency = useCallback(async (toTaskId: string) => {
+    if (dataSource !== "live" || !taskDependencyDraft) return;
+    if (taskDependencyDraft.fromTaskId === toTaskId) {
+      setTaskDependencyDraft(null);
+      return;
+    }
+    try {
+      const api = new LiveTeamApi();
+      const dep = await api.createTaskDependency({
+        fromTaskId: taskDependencyDraft.fromTaskId,
+        toTaskId,
+      });
+      setTaskDependencies((current) => {
+        if (current.some((d) => d.dependencyId === dep.dependencyId)) return current;
+        return [...current, dep];
+      });
+    } catch (error) {
+      const message = error && typeof error === "object" && "message" in error ? String(error.message) : "创建依赖失败";
+      setError(message);
+    } finally {
+      setTaskDependencyDraft(null);
+    }
+  }, [dataSource, taskDependencyDraft]);
 
   const createTextSourceNode = useCallback(async () => {
     if (dataSource !== "live") return;
@@ -3197,6 +3238,10 @@ export function App() {
                 tasksById={tasksById}
                 taskConnections={taskConnections}
                 taskConnectionDraft={taskConnectionDraft}
+                taskDependencies={taskDependencies}
+                taskDependencyDraft={taskDependencyDraft}
+                onTaskDependencySourceSelect={beginTaskDependency}
+                onTaskDependencyTargetSelect={completeTaskDependency}
                 sourceNodes={sourceAtlasNodes}
                 sourceNodesById={sourceNodesById}
                 sourceConnections={sourceConnections}
