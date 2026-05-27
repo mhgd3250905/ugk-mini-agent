@@ -1284,7 +1284,6 @@ test("control dependency triggers downstream Task when both Tasks have no ports"
 		}
 		assert.equal(finishedB.source?.boundInputs, undefined);
 	} finally {
-		await new Promise(r => setTimeout(r, 200));
 		await rm(root, { recursive: true, force: true }).catch(() => {});
 	}
 });
@@ -1307,11 +1306,14 @@ test("control dependency downstream run has no boundInputs", async () => {
 		const taskB = await taskStore.create({ ...validTaskInput, title: "下游" });
 		await dependencyStore.create({ fromTaskId: taskA.taskId, toTaskId: taskB.taskId });
 
-		await service.createRun(taskA.taskId);
-		const runsB = await waitForTaskRuns(service, taskB.taskId);
-		assert.equal(runsB[0]!.source?.boundInputs, undefined);
+			const runA = await service.createRun(taskA.taskId);
+			await waitForTerminalRun(service, runA.runId);
+
+			const runsB = await waitForTaskRuns(service, taskB.taskId);
+			const finishedB = await waitForTerminalRun(service, runsB[0]!.runId);
+			assert.equal(finishedB.status, "completed");
+			assert.equal(finishedB.source?.boundInputs, undefined);
 	} finally {
-		await new Promise(r => setTimeout(r, 200));
 		await rm(root, { recursive: true, force: true }).catch(() => {});
 	}
 });
@@ -1348,7 +1350,6 @@ test("upstream failed run does not trigger dependency downstream", async () => {
 		const runsB = await service.listRuns(taskB.taskId);
 		assert.equal(runsB.length, 0, "downstream should not be triggered when upstream fails");
 	} finally {
-		await new Promise(r => setTimeout(r, 200));
 		await rm(root, { recursive: true, force: true }).catch(() => {});
 	}
 });
@@ -1385,7 +1386,6 @@ test("stale dependency records skipped outcome without failing upstream", async 
 		assert.equal(depOutcome.status, "skipped");
 		assert.equal(depOutcome.staleReason, "target_task_archived");
 	} finally {
-		await new Promise(r => setTimeout(r, 200));
 		await rm(root, { recursive: true, force: true }).catch(() => {});
 	}
 });
@@ -1410,16 +1410,19 @@ test("dependency fan-out triggers multiple independent downstream Tasks", async 
 		await dependencyStore.create({ fromTaskId: taskA.taskId, toTaskId: taskB.taskId });
 		await dependencyStore.create({ fromTaskId: taskA.taskId, toTaskId: taskC.taskId });
 
-		await service.createRun(taskA.taskId);
+			const runA = await service.createRun(taskA.taskId);
+			await waitForTerminalRun(service, runA.runId);
 
-		const runsB = await waitForTaskRuns(service, taskB.taskId);
-		const runsC = await waitForTaskRuns(service, taskC.taskId);
-		assert.equal(runsB.length, 1);
-		assert.equal(runsC.length, 1);
-		assert.equal(runsB[0]!.source?.triggeredBy?.type, "task-dependency");
-		assert.equal(runsC[0]!.source?.triggeredBy?.type, "task-dependency");
-	} finally {
-		await new Promise(r => setTimeout(r, 200));
+			const runsB = await waitForTaskRuns(service, taskB.taskId);
+			const runsC = await waitForTaskRuns(service, taskC.taskId);
+			const finishedB = await waitForTerminalRun(service, runsB[0]!.runId);
+			const finishedC = await waitForTerminalRun(service, runsC[0]!.runId);
+			assert.equal(finishedB.status, "completed");
+			assert.equal(finishedC.status, "completed");
+			assert.equal(finishedB.source?.triggeredBy?.type, "task-dependency");
+			assert.equal(finishedC.source?.triggeredBy?.type, "task-dependency");
+		} finally {
+			await rm(root, { recursive: true, force: true }).catch(() => {});
 		await rm(root, { recursive: true, force: true }).catch(() => {});
 	}
 });
