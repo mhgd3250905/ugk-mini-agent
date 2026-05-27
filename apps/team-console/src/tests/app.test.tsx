@@ -6601,6 +6601,512 @@ describe("App", () => {
       expect((observerBAfter! as HTMLElement).style.left).toBe(observerBLeft);
       expect((observerBAfter! as HTMLElement).style.top).toBe(observerBTop);
     });
+
+    it("clicking Edit twice toggles the Task edit panel closed", async () => {
+      setupLiveMultiTaskApi();
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+      await waitFor(() => expect(window.localStorage.getItem("ugk-team-console:canvas-ui-state:v1")).toContain('"dataSource":"live"'));
+
+      const taskANode = await within(getAtlasNodes(container)).findByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      await waitFor(() => expect(container.querySelector(".task-action-branch")).toBeTruthy());
+
+      const branchA = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskA.taskId),
+      )!;
+      const editButton = Array.from(branchA.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("编辑"),
+      )!;
+
+      // First click opens edit
+      fireEvent.click(editButton);
+      await waitFor(() => expect(container.querySelector(".task-edit-branch")).toBeTruthy());
+
+      // Second click closes edit (toggle)
+      const editButtonAgain = Array.from(branchA.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("编辑"),
+      )!;
+      fireEvent.click(editButtonAgain);
+      await waitFor(() => expect(container.querySelector(".task-edit-branch")).toBeNull());
+
+      // Menu should still be present
+      expect(container.querySelector(".task-action-branch")).toBeTruthy();
+
+      // Third click opens edit again
+      const editButton3 = Array.from(branchA.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("编辑"),
+      )!;
+      fireEvent.click(editButton3);
+      await waitFor(() => expect(container.querySelector(".task-edit-branch")).toBeTruthy());
+    });
+
+    it("clicking Leader twice toggles the leader chat panel closed", async () => {
+      setupLiveMultiTaskApi();
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+      await waitFor(() => expect(window.localStorage.getItem("ugk-team-console:canvas-ui-state:v1")).toContain('"dataSource":"live"'));
+
+      const taskANode = await within(getAtlasNodes(container)).findByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      await waitFor(() => expect(container.querySelector(".task-action-branch")).toBeTruthy());
+
+      const branchA = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskA.taskId),
+      )!;
+      const leaderButton = Array.from(branchA.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("对话 Leader"),
+      )!;
+
+      // First click opens leader chat
+      fireEvent.click(leaderButton);
+      await waitFor(() => expect(container.querySelector(".task-leader-chat-branch")).toBeTruthy());
+
+      // Second click closes leader chat (toggle)
+      const leaderButtonAgain = Array.from(branchA.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("对话 Leader"),
+      )!;
+      fireEvent.click(leaderButtonAgain);
+      await waitFor(() => expect(container.querySelector(".task-leader-chat-branch")).toBeNull());
+
+      // Menu should still be present
+      expect(container.querySelector(".task-action-branch")).toBeTruthy();
+
+      // Third click opens again
+      const leaderButton3 = Array.from(branchA.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("对话 Leader"),
+      )!;
+      fireEvent.click(leaderButton3);
+      await waitFor(() => expect(container.querySelector(".task-leader-chat-branch")).toBeTruthy());
+    });
+
+    it("toggling one Task detail does not close another Task detail", async () => {
+      setupLiveMultiTaskApi();
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+      await waitFor(() => expect(window.localStorage.getItem("ugk-team-console:canvas-ui-state:v1")).toContain('"dataSource":"live"'));
+
+      // Open Task A edit
+      const taskANode = await within(getAtlasNodes(container)).findByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      await waitFor(() => expect(container.querySelector(".task-action-branch")).toBeTruthy());
+      const branchA = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskA.taskId),
+      )!;
+      const editButtonA = Array.from(branchA.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("编辑"),
+      )!;
+      fireEvent.click(editButtonA);
+      await waitFor(() => expect(container.querySelectorAll(".task-edit-branch").length).toBeGreaterThanOrEqual(1));
+
+      // Open Task B leader chat
+      const taskBNode = within(getAtlasNodes(container)).getByRole("button", { name: taskB.title });
+      fireEvent.click(taskBNode);
+      await waitFor(() => {
+        expect(container.querySelectorAll(".task-action-branch").length).toBeGreaterThanOrEqual(2);
+      });
+      const branchB = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskB.taskId),
+      )!;
+      const leaderButtonB = Array.from(branchB.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("对话 Leader"),
+      )!;
+      fireEvent.click(leaderButtonB);
+      await waitFor(() => expect(container.querySelector(".task-leader-chat-branch")).toBeTruthy());
+
+      // Toggle Task A edit closed
+      const editButtonA2 = Array.from(branchA.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("编辑"),
+      )!;
+      fireEvent.click(editButtonA2);
+      await waitFor(() => expect(container.querySelector(".task-edit-branch")).toBeNull());
+
+      // Task B leader chat should still exist
+      expect(container.querySelector(".task-leader-chat-branch")).toBeTruthy();
+      // Both menus still exist
+      expect(container.querySelectorAll(".task-action-branch").length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("clicking run summary toggle opens and closes observer without closing menu", async () => {
+      const run: TeamRunState = {
+        runId: "mrun_toggle_1",
+        planId: "canvas_task_mtask_alpha",
+        source: { type: "canvas-task", taskId: taskA.taskId },
+        teamUnitId: "canvas_task_unit_mtask_alpha",
+        status: "completed",
+        createdAt: "2026-05-27T00:00:00.000Z",
+        startedAt: "2026-05-27T00:00:01.000Z",
+        finishedAt: "2026-05-27T00:00:05.000Z",
+        currentTaskId: null,
+        taskStates: {
+          [taskA.taskId]: {
+            status: "succeeded",
+            attemptCount: 1,
+            activeAttemptId: "matt_toggle_1",
+            resultRef: null,
+            errorSummary: null,
+            progress: { phase: "succeeded", message: "完成", updatedAt: "2026-05-27T00:00:05.000Z" },
+          },
+        },
+        summary: { totalTasks: 1, succeededTasks: 1, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+      };
+
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [
+              { agentId: "main", name: "主 Agent", description: "默认" },
+              { agentId: "search", name: "搜索 Agent", description: "搜索" },
+            ],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks" && method === "GET") {
+          return new Response(JSON.stringify({ tasks: allTasks }), { status: 200 });
+        }
+        if (url === "/v1/team/task-connections") return new Response(JSON.stringify([]), { status: 200 });
+        if (url === "/v1/team/source-nodes") return new Response(JSON.stringify([]), { status: 200 });
+        if (url === "/v1/team/source-connections") return new Response(JSON.stringify([]), { status: 200 });
+        if (url === `/v1/team/tasks/${taskA.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [run] }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/") && url.includes("/tasks/") && url.includes("/attempts")) {
+          return new Response(JSON.stringify({ attempts: [] }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/")) {
+          if (url.includes(run.runId)) return new Response(JSON.stringify(run), { status: 200 });
+          return new Response(JSON.stringify({}), { status: 200 });
+        }
+        return new Response(JSON.stringify([]), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+      await waitFor(() => expect(window.localStorage.getItem("ugk-team-console:canvas-ui-state:v1")).toContain('"dataSource":"live"'));
+
+      await waitFor(() => {
+        expect(within(getAtlasNodes(container)).getByRole("button", { name: taskA.title })).toHaveAttribute("data-task-run-status", "completed");
+      });
+      const taskANode = within(getAtlasNodes(container)).getByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      await waitFor(() => expect(container.querySelector(".task-action-branch")).toBeTruthy());
+
+      const branch = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskA.taskId),
+      )!;
+      const runSummary = await within(branch as HTMLElement).findByRole("button", { name: /最近运行/ });
+
+      // First click opens observer
+      fireEvent.click(runSummary);
+      await waitFor(() => expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]')).toBeTruthy());
+
+      // Second click closes observer (toggle)
+      const runSummaryAgain = within(branch as HTMLElement).getByRole("button", { name: /最近运行/ });
+      fireEvent.click(runSummaryAgain);
+      await waitFor(() => expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]')).toBeNull());
+
+      // Menu should still exist
+      expect(container.querySelector(".task-action-branch")).toBeTruthy();
+    });
+
+    it("edit toggle preserves unsaved draft on reopen", async () => {
+      setupLiveMultiTaskApi();
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+      await waitFor(() => expect(window.localStorage.getItem("ugk-team-console:canvas-ui-state:v1")).toContain('"dataSource":"live"'));
+
+      const taskANode = await within(getAtlasNodes(container)).findByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      await waitFor(() => expect(container.querySelector(".task-action-branch")).toBeTruthy());
+
+      const branchA = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskA.taskId),
+      )!;
+      const editButton = Array.from(branchA.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("编辑"),
+      )!;
+
+      // Open edit, change title
+      fireEvent.click(editButton);
+      await waitFor(() => expect(container.querySelector(".task-edit-branch")).toBeTruthy());
+      const titleInput = container.querySelector('.task-edit-form input') as HTMLInputElement;
+      expect(titleInput).toBeTruthy();
+      fireEvent.change(titleInput, { target: { value: "Modified Alpha" } });
+
+      // Toggle closed
+      const editButton2 = Array.from(branchA.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("编辑"),
+      )!;
+      fireEvent.click(editButton2);
+      await waitFor(() => expect(container.querySelector(".task-edit-branch")).toBeNull());
+
+      // Toggle open again - draft should still contain modified title
+      const editButton3 = Array.from(branchA.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("编辑"),
+      )!;
+      fireEvent.click(editButton3);
+      await waitFor(() => expect(container.querySelector(".task-edit-branch")).toBeTruthy());
+      const titleInputAfter = container.querySelector('.task-edit-form input') as HTMLInputElement;
+      expect(titleInputAfter.value).toBe("Modified Alpha");
+    });
+
+    it("Task menu preserves drag position after collapse/reopen", async () => {
+      setupLiveMultiTaskApi();
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+      await waitFor(() => expect(window.localStorage.getItem("ugk-team-console:canvas-ui-state:v1")).toContain('"dataSource":"live"'));
+
+      const taskANode = await within(getAtlasNodes(container)).findByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      await waitFor(() => expect(container.querySelector(".emap-task-branch-shell")).toBeTruthy());
+
+      const menuShell = container.querySelector(".emap-task-branch-shell") as HTMLElement;
+      expect(menuShell).toBeTruthy();
+
+      // Drag menu header to create a position override
+      const menuHeader = menuShell.querySelector(".task-leader-branch-head") as HTMLElement;
+      expect(menuHeader).toBeTruthy();
+      firePointer(menuHeader, "pointerdown", { pointerId: 101, clientX: 400, clientY: 200 });
+      firePointer(menuHeader, "pointermove", { pointerId: 101, clientX: 470, clientY: 260 });
+      firePointer(menuHeader, "pointerup", { pointerId: 101, clientX: 470, clientY: 260, buttons: 0 });
+
+      const draggedLeft = Number.parseFloat(menuShell.style.left);
+      const draggedTop = Number.parseFloat(menuShell.style.top);
+      expect(draggedLeft).not.toBeNaN();
+      expect(draggedTop).not.toBeNaN();
+
+      // Collapse menu by clicking Task root again
+      const taskANodeAgain = within(getAtlasNodes(container)).getByRole("button", { name: taskA.title });
+      fireEvent.click(taskANodeAgain);
+      await waitFor(() => expect(container.querySelector(".emap-task-branch-shell")).toBeNull());
+
+      // Reopen menu
+      const taskANodeReopen = within(getAtlasNodes(container)).getByRole("button", { name: taskA.title });
+      fireEvent.click(taskANodeReopen);
+      await waitFor(() => expect(container.querySelector(".emap-task-branch-shell")).toBeTruthy());
+
+      const reopenedShell = container.querySelector(".emap-task-branch-shell") as HTMLElement;
+      expect(Number.parseFloat(reopenedShell.style.left)).toBeCloseTo(draggedLeft, 1);
+      expect(Number.parseFloat(reopenedShell.style.top)).toBeCloseTo(draggedTop, 1);
+    });
+
+    it("Edit panel preserves drag position after toggle close/reopen", async () => {
+      setupLiveMultiTaskApi();
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+      await waitFor(() => expect(window.localStorage.getItem("ugk-team-console:canvas-ui-state:v1")).toContain('"dataSource":"live"'));
+
+      const taskANode = await within(getAtlasNodes(container)).findByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      await waitFor(() => expect(container.querySelector(".task-action-branch")).toBeTruthy());
+
+      const branch = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskA.taskId),
+      )!;
+      const editButton = Array.from(branch.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("编辑"),
+      )!;
+      fireEvent.click(editButton);
+      await waitFor(() => expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id^="task-edit-"]')).toBeTruthy());
+
+      const editShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="task-edit-"]') as HTMLElement;
+      expect(editShell).toBeTruthy();
+
+      // Drag edit panel header
+      const editHeader = editShell.querySelector(".task-leader-branch-head") as HTMLElement;
+      expect(editHeader).toBeTruthy();
+      firePointer(editHeader, "pointerdown", { pointerId: 102, clientX: 500, clientY: 250 });
+      firePointer(editHeader, "pointermove", { pointerId: 102, clientX: 560, clientY: 310 });
+      firePointer(editHeader, "pointerup", { pointerId: 102, clientX: 560, clientY: 310, buttons: 0 });
+
+      const draggedLeft = Number.parseFloat(editShell.style.left);
+      const draggedTop = Number.parseFloat(editShell.style.top);
+      expect(draggedLeft).not.toBeNaN();
+
+      // Toggle edit closed via menu button
+      const editToggle = Array.from(branch.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("编辑"),
+      )!;
+      fireEvent.click(editToggle);
+      await waitFor(() => expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id^="task-edit-"]')).toBeNull());
+
+      // Toggle edit open again
+      const editToggle2 = Array.from(branch.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("编辑"),
+      )!;
+      fireEvent.click(editToggle2);
+      await waitFor(() => expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id^="task-edit-"]')).toBeTruthy());
+
+      const reopenedShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="task-edit-"]') as HTMLElement;
+      expect(Number.parseFloat(reopenedShell.style.left)).toBeCloseTo(draggedLeft, 1);
+      expect(Number.parseFloat(reopenedShell.style.top)).toBeCloseTo(draggedTop, 1);
+    });
+
+    it("Leader chat panel preserves drag position and size after toggle close/reopen", async () => {
+      setupLiveMultiTaskApi();
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+      await waitFor(() => expect(window.localStorage.getItem("ugk-team-console:canvas-ui-state:v1")).toContain('"dataSource":"live"'));
+
+      const taskANode = await within(getAtlasNodes(container)).findByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      await waitFor(() => expect(container.querySelector(".task-action-branch")).toBeTruthy());
+
+      const branch = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskA.taskId),
+      )!;
+      const leaderButton = Array.from(branch.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("对话 Leader"),
+      )!;
+      fireEvent.click(leaderButton);
+      await waitFor(() => expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id^="task-leader-chat-"]')).toBeTruthy());
+
+      const leaderShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="task-leader-chat-"]') as HTMLElement;
+      expect(leaderShell).toBeTruthy();
+
+      // Drag leader panel header
+      const leaderHeader = leaderShell.querySelector(".agent-playground-branch-head") as HTMLElement;
+      expect(leaderHeader).toBeTruthy();
+      firePointer(leaderHeader, "pointerdown", { pointerId: 103, clientX: 600, clientY: 300 });
+      firePointer(leaderHeader, "pointermove", { pointerId: 103, clientX: 680, clientY: 380 });
+      firePointer(leaderHeader, "pointerup", { pointerId: 103, clientX: 680, clientY: 380, buttons: 0 });
+
+      const draggedLeft = Number.parseFloat(leaderShell.style.left);
+      const draggedTop = Number.parseFloat(leaderShell.style.top);
+      expect(draggedLeft).not.toBeNaN();
+
+      // Resize leader panel via resize handle
+      const resizeHandle = leaderShell.querySelector(".agent-playground-branch-resize") as HTMLElement;
+      if (resizeHandle) {
+        firePointer(resizeHandle, "pointerdown", { pointerId: 104, clientX: 900, clientY: 600 });
+        firePointer(resizeHandle, "pointermove", { pointerId: 104, clientX: 940, clientY: 660 });
+        firePointer(resizeHandle, "pointerup", { pointerId: 104, clientX: 940, clientY: 660, buttons: 0 });
+        const resizedWidth = Number.parseFloat(leaderShell.style.width);
+        expect(resizedWidth).not.toBeNaN();
+      }
+
+      // Toggle leader chat closed via menu button
+      const leaderToggle = Array.from(branch.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("对话 Leader"),
+      )!;
+      fireEvent.click(leaderToggle);
+      await waitFor(() => expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id^="task-leader-chat-"]')).toBeNull());
+
+      // Toggle open again
+      const leaderToggle2 = Array.from(branch.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("对话 Leader"),
+      )!;
+      fireEvent.click(leaderToggle2);
+      await waitFor(() => expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id^="task-leader-chat-"]')).toBeTruthy());
+
+      const reopenedShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="task-leader-chat-"]') as HTMLElement;
+      expect(Number.parseFloat(reopenedShell.style.left)).toBeCloseTo(draggedLeft, 1);
+      expect(Number.parseFloat(reopenedShell.style.top)).toBeCloseTo(draggedTop, 1);
+    });
+
+    it("Run observer preserves drag position after toggle close/reopen", async () => {
+      const run: TeamRunState = {
+        runId: "mrun_pos_1",
+        planId: "canvas_task_mtask_alpha",
+        source: { type: "canvas-task", taskId: taskA.taskId },
+        teamUnitId: "canvas_task_unit_mtask_alpha",
+        status: "completed",
+        createdAt: "2026-05-27T00:00:00.000Z",
+        startedAt: "2026-05-27T00:00:01.000Z",
+        finishedAt: "2026-05-27T00:00:05.000Z",
+        currentTaskId: null,
+        taskStates: {
+          [taskA.taskId]: {
+            status: "succeeded",
+            attemptCount: 1,
+            activeAttemptId: "matt_pos_1",
+            resultRef: null,
+            errorSummary: null,
+            progress: { phase: "succeeded", message: "完成", updatedAt: "2026-05-27T00:00:05.000Z" },
+          },
+        },
+        summary: { totalTasks: 1, succeededTasks: 1, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+      };
+
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [
+              { agentId: "main", name: "主 Agent", description: "默认" },
+              { agentId: "search", name: "搜索 Agent", description: "搜索" },
+            ],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks" && method === "GET") {
+          return new Response(JSON.stringify({ tasks: allTasks }), { status: 200 });
+        }
+        if (url === "/v1/team/task-connections") return new Response(JSON.stringify([]), { status: 200 });
+        if (url === "/v1/team/source-nodes") return new Response(JSON.stringify([]), { status: 200 });
+        if (url === "/v1/team/source-connections") return new Response(JSON.stringify([]), { status: 200 });
+        if (url === `/v1/team/tasks/${taskA.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [run] }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/") && url.includes("/tasks/") && url.includes("/attempts")) {
+          return new Response(JSON.stringify({ attempts: [] }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/")) {
+          if (url.includes(run.runId)) return new Response(JSON.stringify(run), { status: 200 });
+          return new Response(JSON.stringify({}), { status: 200 });
+        }
+        return new Response(JSON.stringify([]), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+      await waitFor(() => expect(window.localStorage.getItem("ugk-team-console:canvas-ui-state:v1")).toContain('"dataSource":"live"'));
+
+      await waitFor(() => {
+        expect(within(getAtlasNodes(container)).getByRole("button", { name: taskA.title })).toHaveAttribute("data-task-run-status", "completed");
+      });
+      const taskANode = within(getAtlasNodes(container)).getByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      await waitFor(() => expect(container.querySelector(".task-action-branch")).toBeTruthy());
+
+      const branch = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskA.taskId),
+      )!;
+      const runSummary = await within(branch as HTMLElement).findByRole("button", { name: /最近运行/ });
+      fireEvent.click(runSummary);
+
+      const observerShell = await waitFor(() => {
+        const shell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]');
+        expect(shell).toBeTruthy();
+        return shell! as HTMLElement;
+      });
+
+      // Drag observer panel
+      firePointer(observerShell, "pointerdown", { pointerId: 105, clientX: 600, clientY: 300 });
+      firePointer(observerShell, "pointermove", { pointerId: 105, clientX: 680, clientY: 370 });
+      firePointer(observerShell, "pointerup", { pointerId: 105, clientX: 680, clientY: 370, buttons: 0 });
+
+      const draggedLeft = Number.parseFloat(observerShell.style.left);
+      const draggedTop = Number.parseFloat(observerShell.style.top);
+      expect(draggedLeft).not.toBeNaN();
+
+      // Toggle observer closed via run summary
+      const runSummaryAgain = within(branch as HTMLElement).getByRole("button", { name: /最近运行/ });
+      fireEvent.click(runSummaryAgain);
+      await waitFor(() => expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]')).toBeNull());
+
+      // Toggle open again
+      const runSummaryReopen = await within(branch as HTMLElement).findByRole("button", { name: /最近运行/ });
+      fireEvent.click(runSummaryReopen);
+      await waitFor(() => expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]')).toBeTruthy());
+
+      const reopenedShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement;
+      expect(Number.parseFloat(reopenedShell.style.left)).toBeCloseTo(draggedLeft, 1);
+      expect(Number.parseFloat(reopenedShell.style.top)).toBeCloseTo(draggedTop, 1);
+    });
   });
 
 });
