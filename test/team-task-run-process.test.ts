@@ -203,6 +203,78 @@ async function waitForWorkerProcess(workspace: RunWorkspace, runId: string, task
 	throw new Error("worker process did not appear");
 }
 
+test("Canvas Task run admission allows different active Tasks but rejects the same active Task", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-admission-"));
+	let releaseGatedWorker: (() => void) | undefined;
+	let service: CanvasTaskRunService | undefined;
+	let taskARun: TeamRunState | undefined;
+	let taskBRun: TeamRunState | undefined;
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const taskA = await taskStore.create(validTaskInput);
+		const taskB = await taskStore.create({ ...validTaskInput, title: "制作 HTML 页面" });
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+
+		let gatedWorkerStarted!: () => void;
+		const gatedWorkerStartedPromise = new Promise<void>((resolve) => { gatedWorkerStarted = resolve; });
+		let gatedWorkerProceed!: () => void;
+		const gatedWorkerProceedPromise = new Promise<void>((resolve) => {
+			gatedWorkerProceed = resolve;
+			releaseGatedWorker = resolve;
+		});
+
+		class GatedFirstTaskRunner extends ProcessEventRoleRunner {
+			async runWorker(input: ProcessAwareWorkerInput): Promise<WorkerOutput> {
+				gatedWorkerStarted();
+				await gatedWorkerProceedPromise;
+				return super.runWorker(input);
+			}
+		}
+
+		let runnerCallCount = 0;
+		const runService = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => {
+				runnerCallCount++;
+				return runnerCallCount === 1 ? new GatedFirstTaskRunner() : new ProcessEventRoleRunner();
+			},
+			dataDir: join(root, "task-runs"),
+			maxConcurrentRuns: 1,
+		});
+		service = runService;
+
+		taskARun = await runService.createRun(taskA.taskId);
+		await gatedWorkerStartedPromise;
+		const activeA = await runService.getRun(taskARun.runId);
+		assert.equal(activeA?.status, "running");
+
+		await assert.rejects(
+			() => runService.createRun(taskA.taskId),
+			/active task run already exists/,
+		);
+
+		taskBRun = await runService.createRun(taskB.taskId);
+		assert.equal(taskBRun.source?.taskId, taskB.taskId);
+
+		releaseGatedWorker?.();
+		releaseGatedWorker = undefined;
+		const [finishedA, finishedB] = await Promise.all([
+			waitForTerminalRun(runService, taskARun.runId),
+			waitForTerminalRun(runService, taskBRun.runId),
+		]);
+		assert.equal(finishedA.status, "completed");
+		assert.equal(finishedB.status, "completed");
+		assert.equal(finishedA.source?.taskId, taskA.taskId);
+		assert.equal(finishedB.source?.taskId, taskB.taskId);
+	} finally {
+		releaseGatedWorker?.();
+		if (service && taskARun) await waitForTerminalRun(service, taskARun.runId).catch(() => {});
+		if (service && taskBRun) await waitForTerminalRun(service, taskBRun.runId).catch(() => {});
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("CanvasTaskRunService records worker and checker process snapshots on attempts", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-task-run-process-"));
 	try {

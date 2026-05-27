@@ -28,6 +28,7 @@ export interface CanvasTaskRunServiceOptions {
 		workerMs: number;
 		checkerMs: number;
 	};
+	/** Canvas Task runs intentionally ignore Plan-level global run admission. */
 	maxConcurrentRuns?: number;
 	maxRunDurationMinutes?: number;
 }
@@ -132,9 +133,7 @@ export class CanvasTaskRunService {
 			: this.options.maxRunDurationMinutes != null
 				? { maxRunDurationMinutes: this.options.maxRunDurationMinutes }
 				: undefined;
-		const state = this.options.maxConcurrentRuns
-			? await this.options.workspace.createRunWithAdmission(plan, plan.defaultTeamUnitId, this.options.maxConcurrentRuns, createOptions)
-			: await this.options.workspace.createRun(plan, plan.defaultTeamUnitId, createOptions);
+		const state = await this.options.workspace.createRun(plan, plan.defaultTeamUnitId, createOptions);
 		state.source = {
 			type: "canvas-task",
 			taskId: task.taskId,

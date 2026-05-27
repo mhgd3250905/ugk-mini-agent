@@ -90,7 +90,6 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		sourceConnectionStore,
 		dataDir: taskRunDataDir,
 		maxCheckerRevisions: 3,
-		maxConcurrentRuns: options.maxConcurrentRuns,
 		maxRunDurationMinutes: options.maxRunDurationMinutes,
 	});
 
