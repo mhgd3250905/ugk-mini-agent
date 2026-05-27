@@ -1421,7 +1421,7 @@ test("dependency fan-out triggers multiple independent downstream Tasks", async 
 		assert.equal(finishedC.status, "completed");
 		assert.equal(finishedB.source?.triggeredBy?.type, "task-dependency");
 		assert.equal(finishedC.source?.triggeredBy?.type, "task-dependency");
-		} finally {
+	} finally {
 		await rm(root, { recursive: true, force: true }).catch(() => {});
 	}
 });
