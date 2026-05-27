@@ -5670,6 +5670,7 @@ describe("App", () => {
 
     it("disables the run button for a Task that already has an active run", async () => {
       const runA = makeActiveRun(taskA, "run_concurrency_a_dup");
+      let pollRequests = 0;
 
       vi.mocked(fetch).mockImplementation(async (input, init) => {
         const url = String(input);
@@ -5693,6 +5694,7 @@ describe("App", () => {
           return new Response(JSON.stringify(runA), { status: 201 });
         }
         if (url.startsWith("/v1/team/task-runs/") && url.includes(runA.runId)) {
+          pollRequests += 1;
           return new Response(JSON.stringify(runA), { status: 200 });
         }
         return new Response(JSON.stringify([]), { status: 200 });
@@ -5717,6 +5719,9 @@ describe("App", () => {
       const stopButtons = branch!.querySelectorAll('.task-action-menu-button:not([disabled])');
       const stopButton = Array.from(stopButtons).find((btn) => btn.textContent === "停止");
       expect(stopButton).toBeTruthy();
+
+      // Wait for active run polling to complete so React settles before test teardown
+      await waitFor(() => expect(pollRequests).toBeGreaterThan(0));
     });
 
     it("polls both active runs independently by runId", async () => {
