@@ -12,6 +12,22 @@
 
 ---
 
+## 2026-05-27 — Team Console 多 Task 二级子面板冲突修复
+
+- **主题**: 修复 Team Console 画布中多个 Task 同时展开菜单后，二级子节点状态互相冲突和位置回弹的问题。
+- **变更内容**:
+  - 多个 Task 的"编辑"二级节点可同时展开，编辑草稿（`taskEditDraftByTaskId`）、保存中状态（`taskEditSavingByTaskId`）和冲突警告（`taskEditWarningByTaskId`）按 `taskId` 隔离，互不覆盖。
+  - 多个 Task 的"对话 Leader"二级节点可同时展开，每个 Leader iframe、复制状态和手动复制兜底上下文按 `taskId` 独立渲染，关闭一个不影响其他。
+  - Run observer panel id 稳定命名为 `run-observer-${branch.nodeId}`，不再根据打开数量切换 id，确保 `panelPositionOverrides` / `panelMeasuredHeights` / `panelSizeOverrides` 在打开新 observer 时不会丢失。
+  - 所有 `expandedTaskBranches` 更新操作使用 `map` 保持数组原始顺序，不再因为 `filter + push` 重排导致布局变化。
+  - Edit 和 Leader chat 面板从单分支 `expandedTaskChildBranchPanel` 迁移到多面板 `taskChildBranchPanels` 管线，每个 Task 的二级 panel 独立渲染。
+  - 通用 `taskChildBranchPanels` 支持可选可见最大化按钮，Leader chat 保留原有显式最大化入口；拖动抑制点击逻辑只吞掉内容区误点击，不吞掉最大化、收起、保存等面板控制按钮。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **验证**: `npm --prefix apps/team-console run test`（379 passed）、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check` 已通过；新增多 Task 子面板隔离测试（多编辑节点同时展开、多 Leader chat 同时展开、复制 fallback 按 Task 隔离、关闭一个不影响其他、observer 位置保持、关闭一个 observer 不影响其他位置）。
+- **边界**: 不改主 `/playground` 产品 UI，不改 Team runtime 后端 API，不改 `.pi/skills` runtime skill。
+
+---
+
 ## 2026-05-27 — Team Console Leader 复制按钮与归档弹窗修复
 
 - **主题**: 修复 Team Console 三个前端体验问题：Leader 上下文预览占空间过大、远程 HTTP 复制失败、根卡归档确认条样式丑陋。

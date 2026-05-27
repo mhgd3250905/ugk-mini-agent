@@ -83,6 +83,7 @@ interface ExecutionMapProps {
     interactive?: boolean;
     autoHeight?: boolean;
     resizable?: boolean;
+    maximizable?: boolean;
     minWidth?: number;
     minHeight?: number;
   }>;
@@ -2894,7 +2895,13 @@ export function ExecutionMap({
               onClickCapture={(e) => {
                 if (panelDragSuppressClickRef.current) {
                   panelDragSuppressClickRef.current = false;
-                  e.stopPropagation();
+                  const target = e.target instanceof Element ? e.target : null;
+                  const allowPanelControlClick = target?.closest(
+                    ".emap-agent-branch-maximize-button, .emap-panel-resize-handle, .emap-observer-node-close, .task-leader-branch-collapse, .agent-playground-branch-collapse, .task-action-menu-button, input, textarea, select, a, iframe, summary, details",
+                  );
+                  if (!allowPanelControlClick) {
+                    e.stopPropagation();
+                  }
                 }
               }}
               style={{
@@ -2905,6 +2912,20 @@ export function ExecutionMap({
               }}
             >
               {p.panel}
+              {p.maximizable && (
+                <button
+                  type="button"
+                  className="emap-agent-branch-maximize-button"
+                  aria-label="最大化对话分支"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setMaximizedBranch({ kind: "task-panel", panelId: p.id });
+                  }}
+                >
+                  ⛶
+                </button>
+              )}
               {p.resizable && (
                 <button
                   type="button"

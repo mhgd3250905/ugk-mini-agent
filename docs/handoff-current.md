@@ -34,8 +34,8 @@
 Team Console Task / WorkUnit redesign 已通过 PR #1 合入 `main`：
 
 - 主目录：`E:\AII\ugk-pi`
-- 当前主线提交：`ed3414b feat(team-console): integrate Task WorkUnit redesign`
-- `main` 与 `origin/main`：`0 / 0`
+- Team Console redesign 合入基线提交：`ed3414b feat(team-console): integrate Task WorkUnit redesign`
+- 本地 `main` 在合入基线后已有 Team Console 后续修复提交；是否推送由用户另行确认。接手时以 `git status --short --branch` 和 `git log -5 --oneline` 为准，不要沿用旧的 `0 / 0` 对齐事实。
 - 后续 Team Console 开发默认从主目录 `main` 继续，不再切回旧 feature worktree。
 - Docker 后端 `3000` 应使用主目录挂载到容器 `/app`；Team Console Vite `5174` 应从 `E:\AII\ugk-pi\apps\team-console` 启动并代理到 `http://127.0.0.1:3000`。Team Console iframe 默认使用同源 `/playground?...`，Vite 再代理到后端；只有显式设置 `VITE_TEAM_CONSOLE_PLAYGROUND_BASE_URL` 时才用独立公网后端 origin。
 - 用户本地产物 `E:\AII\ugk-pi\ugk-skills-hub\` 必须保留，不要移动或删除；它已加入本机 `.git/info/exclude`，不属于提交边界。
@@ -54,9 +54,17 @@ Team Console Task / WorkUnit redesign 已通过 PR #1 合入 `main`：
 
 - 根因：Team Console 曾把 Vite 服务端代理目标 `TEAM_CONSOLE_API_TARGET=http://127.0.0.1:3000` 注入前端并作为 Agent / Leader iframe base URL；远程浏览器通过 `http://139.196.23.72:5174/` 打开时会误连用户自己机器的 `127.0.0.1:3000`。
 - 已改：`apps/team-console/src/app/App.tsx` 默认生成相对 `/playground?...` iframe URL；`apps/team-console/vite.config.ts` 代理 `/v1`、`/playground`、`/assets`、`/runtime`、`/vendor` 和 playground logo 静态资源；`TEAM_CONSOLE_API_TARGET` 不再暴露到 `import.meta.env`。
-- 当前 `5174` 已重启，监听 PID：`159668`；`3100` 无监听。
+- 当前 `5174` 已重启为 Vite dev server，监听 PID：`171792`；日志在 `%TEMP%\ugk-pi-team-console-vite-5174.out.log` 和 `%TEMP%\ugk-pi-team-console-vite-5174.err.log`；`3100` 无监听。注意 `5174` 不是 Docker 后端，父进程退出或终端会话结束后可能停止，需要按 `apps/team-console/README.md` 重新启动。
 - 远程验证：`http://139.196.23.72:5174/playground?view=chat&agentId=main&embed=team-console` 返回主 `/playground` HTML（`<title>UGK Claw</title>`）；`http://139.196.23.72:5174/src/app/App.tsx` 中不再包含 `VITE_TEAM_CONSOLE_API_TARGET` 或 `http://127.0.0.1:3000`；`http://139.196.23.72:5174/v1/model-config` 正常返回。
 - 已跑验证：`npm --prefix apps/team-console run test`（370 passed）、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check`。
+
+本轮 Team Console 多 Task 二级子面板修复现场：
+
+- 已改：多个 Task 的“编辑”“对话 Leader”和 Run observer 二级面板按 Task 独立并存；编辑草稿 / 保存状态 / 冲突警告 / Leader 复制状态按 `taskId` 隔离；Run observer panel id 稳定为 `run-observer-${branch.nodeId}`，打开新 observer 不再让旧 observer 位置回弹。
+- 已改：Leader chat 迁移到多面板管线后保留显式最大化按钮；通用 panel 点击抑制只拦截内容区误点击，不吞掉最大化、收起、保存等控制按钮。
+- 文档入口：`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/change-log.md`。
+- 已跑验证：`npm --prefix apps/team-console run test`（379 passed）、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check`。
+- 浏览器复验：Codex in-app Browser 对 `http://localhost:5174/` 的 reload 被当前工具 URL 策略拦截，未绕路换浏览器；用户已在远程页面审核通过。
 
 ## 2026-05-27 Team Console Task / WorkUnit 历史 worktree 快照
 

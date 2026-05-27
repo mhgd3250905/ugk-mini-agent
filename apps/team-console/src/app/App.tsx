@@ -78,6 +78,11 @@ type TaskEditDraft = {
   dirtyFields: Partial<Record<TaskEditDirtyField, true>>;
 };
 
+type TaskLeaderCopyEntry = {
+  state: "copied" | "failed";
+  manualCopyText?: string;
+};
+
 type TaskConnectionDraft = {
   fromTaskId: string;
   fromOutputPortId: string;
@@ -878,16 +883,15 @@ export function App() {
   const [minimizedTaskNodeIds, setMinimizedTaskNodeIds] = useState<string[]>([]);
   const [minimizedSourceNodeIds, setMinimizedSourceNodeIds] = useState<string[]>([]);
   const [canvasUiStateHydrated, setCanvasUiStateHydrated] = useState(false);
-  const [taskEditDraft, setTaskEditDraft] = useState<TaskEditDraft | null>(null);
-  const [taskEditSaving, setTaskEditSaving] = useState(false);
-  const [taskEditWarning, setTaskEditWarning] = useState<string | null>(null);
+  const [taskEditDraftByTaskId, setTaskEditDraftByTaskId] = useState<Record<string, TaskEditDraft>>({});
+  const [taskEditSavingByTaskIdInner, setTaskEditSavingByTaskIdInner] = useState<Record<string, boolean>>({});
+  const [taskEditWarningByTaskId, setTaskEditWarningByTaskId] = useState<Record<string, string | null>>({});
   const [taskArchiveConfirming, setTaskArchiveConfirming] = useState(false);
   const [taskArchiveSaving, setTaskArchiveSaving] = useState(false);
   const [rootArchiveConfirm, setRootArchiveConfirm] = useState<RootArchiveConfirm | null>(null);
   const [rootArchiveSaving, setRootArchiveSaving] = useState(false);
-  const [taskLeaderContextCopyState, setTaskLeaderContextCopyState] = useState<"idle" | "copied" | "failed">("idle");
-  const [taskLeaderManualCopyText, setTaskLeaderManualCopyText] = useState<string | null>(null);
-  const taskLeaderManualCopyRef = useRef<HTMLTextAreaElement | null>(null);
+  const [taskLeaderCopyByTaskId, setTaskLeaderCopyByTaskId] = useState<Partial<Record<string, TaskLeaderCopyEntry>>>({});
+  const taskLeaderManualCopyRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
 
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
   const tasksById = useMemo(() => new Map(tasks.map((task) => [task.taskId, task])), [tasks]);
@@ -904,10 +908,11 @@ export function App() {
       if (!next) {
         return active ? current.filter((branch) => branch.nodeId !== active.nodeId) : current;
       }
-      return [
-        ...current.filter((branch) => branch.nodeId !== next.nodeId),
-        next,
-      ];
+      const exists = current.some((branch) => branch.nodeId === next.nodeId);
+      if (exists) {
+        return current.map((branch) => branch.nodeId === next.nodeId ? next : branch);
+      }
+      return [...current, next];
     });
   }, []);
   const expandedAgentNode = expandedAgentBranch
@@ -938,19 +943,42 @@ export function App() {
     setSelectedTaskId((current) => current === taskId ? null : taskId);
   }, []);
 
-  const clearTaskPanelState = useCallback(() => {
-    setTaskEditDraft(null);
-    setTaskEditWarning(null);
-    setTaskEditSaving(false);
+  const clearTaskPanelState = useCallback((taskId?: string) => {
+    if (taskId) {
+      setTaskEditDraftByTaskId((current) => {
+        const next = { ...current };
+        delete next[taskId];
+        return next;
+      });
+      setTaskEditWarningByTaskId((current) => {
+        const next = { ...current };
+        delete next[taskId];
+        return next;
+      });
+      setTaskEditSavingByTaskIdInner((current) => {
+        const next = { ...current };
+        delete next[taskId];
+        return next;
+      });
+    } else {
+      setTaskEditDraftByTaskId({});
+      setTaskEditWarningByTaskId({});
+      setTaskEditSavingByTaskIdInner({});
+    }
     setTaskArchiveConfirming(false);
     setTaskArchiveSaving(false);
   }, []);
 
   const closeTaskBranch = useCallback((nodeId?: string) => {
-    setExpandedTaskBranches((current) => (
-      nodeId ? current.filter((branch) => branch.nodeId !== nodeId) : []
-    ));
-    clearTaskPanelState();
+    setExpandedTaskBranches((current) => {
+      if (nodeId) {
+        const closing = current.find((branch) => branch.nodeId === nodeId);
+        if (closing) clearTaskPanelState(closing.taskId);
+        return current.filter((branch) => branch.nodeId !== nodeId);
+      }
+      clearTaskPanelState();
+      return [];
+    });
   }, [clearTaskPanelState]);
 
   useEffect(() => {
@@ -1503,11 +1531,14 @@ export function App() {
   const toggleTaskBranch = useCallback((node: AtlasTaskNode) => {
     setAgentPickerOpen(false);
     setTaskLeaderPickerOpen(false);
-    clearTaskPanelState();
-    setExpandedTaskBranch((current) => (
-      current?.nodeId === node.nodeId ? null : { nodeId: node.nodeId, taskId: node.taskId, detailMode: null }
-    ));
-  }, [clearTaskPanelState]);
+    setExpandedTaskBranches((current) => {
+      const existing = current.find((branch) => branch.nodeId === node.nodeId);
+      if (existing) {
+        return current.filter((branch) => branch.nodeId !== node.nodeId);
+      }
+      return [...current, { nodeId: node.nodeId, taskId: node.taskId, detailMode: null as TaskBranchDetailMode | null }];
+    });
+  }, []);
 
   const openTaskCreateBranch = useCallback((leaderAgentId: string) => {
     const nodeId = `agent-${leaderAgentId}`;
@@ -1522,8 +1553,15 @@ export function App() {
   }, []);
 
   const openTaskEditBranch = useCallback((task: TeamCanvasTask) => {
-    setTaskEditDraft(makeTaskEditDraft(task));
-    setTaskEditWarning(null);
+    setTaskEditDraftByTaskId((current) => ({
+      ...current,
+      [task.taskId]: makeTaskEditDraft(task),
+    }));
+    setTaskEditWarningByTaskId((current) => {
+      const next = { ...current };
+      delete next[task.taskId];
+      return next;
+    });
     setTaskArchiveConfirming(false);
     setExpandedTaskBranch((current) => current ? { ...current, detailMode: "edit" } : current);
   }, []);
@@ -1547,43 +1585,56 @@ export function App() {
     } : current);
   }, []);
 
-  const saveTaskEdit = useCallback(async () => {
-    if (!expandedTask || !taskEditDraft || taskEditDraft.taskId !== expandedTask.taskId) return;
+  const saveTaskEdit = useCallback(async (taskId: string) => {
+    const task = tasksById.get(taskId);
+    const draft = taskEditDraftByTaskId[taskId];
+    if (!task || !draft || draft.taskId !== taskId) return;
 
     const patch: TeamTaskUpdateRequest = {};
-    const dirty = taskEditDraft.dirtyFields;
-    const title = taskEditDraft.title.trim();
+    const dirty = draft.dirtyFields;
+    const title = draft.title.trim();
 
-    if (hasDirtyTaskEditConflict(expandedTask, taskEditDraft)) {
-      setTaskEditWarning("Task 已经在后台更新，请重新打开编辑节点后再保存。");
+    if (hasDirtyTaskEditConflict(task, draft)) {
+      setTaskEditWarningByTaskId((current) => ({
+        ...current,
+        [taskId]: "Task 已经在后台更新，请重新打开编辑节点后再保存。",
+      }));
       return;
     }
 
-    if (dirty.title && title !== expandedTask.title) {
+    if (dirty.title && title !== task.title) {
       patch.title = title;
     }
-    if (dirty.leaderAgentId && taskEditDraft.leaderAgentId !== expandedTask.leaderAgentId) {
-      patch.leaderAgentId = taskEditDraft.leaderAgentId;
+    if (dirty.leaderAgentId && draft.leaderAgentId !== task.leaderAgentId) {
+      patch.leaderAgentId = draft.leaderAgentId;
     }
-    const workerChanged = Boolean(dirty.workerAgentId) && taskEditDraft.workerAgentId !== expandedTask.workUnit.workerAgentId;
-    const checkerChanged = Boolean(dirty.checkerAgentId) && taskEditDraft.checkerAgentId !== expandedTask.workUnit.checkerAgentId;
+    const workerChanged = Boolean(dirty.workerAgentId) && draft.workerAgentId !== task.workUnit.workerAgentId;
+    const checkerChanged = Boolean(dirty.checkerAgentId) && draft.checkerAgentId !== task.workUnit.checkerAgentId;
     if (workerChanged || checkerChanged) {
       patch.workUnit = {
-        ...expandedTask.workUnit,
-        ...(workerChanged ? { workerAgentId: taskEditDraft.workerAgentId } : {}),
-        ...(checkerChanged ? { checkerAgentId: taskEditDraft.checkerAgentId } : {}),
+        ...task.workUnit,
+        ...(workerChanged ? { workerAgentId: draft.workerAgentId } : {}),
+        ...(checkerChanged ? { checkerAgentId: draft.checkerAgentId } : {}),
       };
     }
     if (Object.keys(patch).length === 0) {
-      setTaskEditWarning(null);
+      setTaskEditWarningByTaskId((current) => {
+        const next = { ...current };
+        delete next[taskId];
+        return next;
+      });
       return;
     }
 
-    setTaskEditSaving(true);
-    setTaskEditWarning(null);
+    setTaskEditSavingByTaskIdInner((current) => ({ ...current, [taskId]: true }));
+    setTaskEditWarningByTaskId((current) => {
+      const next = { ...current };
+      delete next[taskId];
+      return next;
+    });
     try {
       const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-      const response = await api.updateTask(expandedTask.taskId, patch);
+      const response = await api.updateTask(taskId, patch);
       if (dataSource === "live") {
         await refreshLiveTasks();
       } else {
@@ -1591,15 +1642,21 @@ export function App() {
         setTasks(nextTasks);
         setTaskNodes((current) => makeTaskNodes(nextTasks, liveTaskRefreshPositions(current)));
       }
-      setTaskEditDraft(makeTaskEditDraft(response.task));
-      setTaskEditWarning(response.warnings?.join(" ") ?? null);
+      setTaskEditDraftByTaskId((current) => ({
+        ...current,
+        [taskId]: makeTaskEditDraft(response.task),
+      }));
+      setTaskEditWarningByTaskId((current) => ({
+        ...current,
+        [taskId]: response.warnings?.join(" ") ?? null,
+      }));
       setError(null);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
-      setTaskEditSaving(false);
+      setTaskEditSavingByTaskIdInner((current) => ({ ...current, [taskId]: false }));
     }
-  }, [dataSource, expandedTask, refreshLiveTasks, taskEditDraft]);
+  }, [dataSource, refreshLiveTasks, taskEditDraftByTaskId, tasksById]);
 
   const archiveTask = useCallback(async (task: TeamCanvasTask, nodeId?: string): Promise<boolean> => {
     setTaskArchiveSaving(true);
@@ -1699,21 +1756,31 @@ export function App() {
   }, [rootArchiveConfirm, rootArchiveSaving]);
 
   useEffect(() => {
-    if (taskLeaderContextCopyState !== "failed" || !taskLeaderManualCopyText) return;
-    taskLeaderManualCopyRef.current?.focus();
-    taskLeaderManualCopyRef.current?.select();
-  }, [taskLeaderContextCopyState, taskLeaderManualCopyText]);
+    for (const [taskId, entry] of Object.entries(taskLeaderCopyByTaskId)) {
+      if (!entry) continue;
+      if (entry.state !== "failed" || !entry.manualCopyText) continue;
+      const textarea = taskLeaderManualCopyRefs.current[taskId];
+      textarea?.focus();
+      textarea?.select();
+      break;
+    }
+  }, [taskLeaderCopyByTaskId]);
 
-  const copyTaskLeaderContext = useCallback(async (text: string) => {
-    setTaskLeaderContextCopyState("idle");
-    setTaskLeaderManualCopyText(null);
+  const copyTaskLeaderContext = useCallback(async (taskId: string, text: string) => {
+    setTaskLeaderCopyByTaskId((current) => {
+      const next = { ...current };
+      delete next[taskId];
+      return next;
+    });
     try {
       const clipboard = globalThis.navigator?.clipboard;
       if (clipboard?.writeText) {
         try {
           await clipboard.writeText(text);
-          setTaskLeaderContextCopyState("copied");
-          setTaskLeaderManualCopyText(null);
+          setTaskLeaderCopyByTaskId((current) => ({
+            ...current,
+            [taskId]: { state: "copied" },
+          }));
           return;
         } catch { /* fall through to textarea fallback */ }
       }
@@ -1729,15 +1796,19 @@ export function App() {
       try {
         const execCopy = document.execCommand?.bind(document);
         if (!execCopy?.("copy")) throw new Error("execCommand copy returned false");
-        setTaskLeaderContextCopyState("copied");
-        setTaskLeaderManualCopyText(null);
+        setTaskLeaderCopyByTaskId((current) => ({
+          ...current,
+          [taskId]: { state: "copied" },
+        }));
       } finally {
         ta.remove();
         prev?.focus();
       }
     } catch {
-      setTaskLeaderContextCopyState("failed");
-      setTaskLeaderManualCopyText(text);
+      setTaskLeaderCopyByTaskId((current) => ({
+        ...current,
+        [taskId]: { state: "failed", manualCopyText: text },
+      }));
     }
   }, []);
 
@@ -2290,10 +2361,13 @@ export function App() {
                         ? { ...item, detailMode: null, observedRunId: undefined, selectedFileKeys: [] }
                         : item
                     )))
-                    : setExpandedTaskBranches((current) => [
-                      ...current.filter((item) => item.nodeId !== branch.nodeId),
-                      { ...branch, detailMode: "run-observer", observedRunId: latestRun.runId, selectedFileKeys: [] },
-                    ])
+                    : setExpandedTaskBranches((current) =>
+                      current.map((item) =>
+                        item.nodeId === branch.nodeId
+                          ? { ...item, detailMode: "run-observer", observedRunId: latestRun.runId, selectedFileKeys: [] }
+                          : item
+                      )
+                    )
                 )}
               >
                 <span className="task-run-summary-kicker">{runSummaryLabel}</span>
@@ -2314,13 +2388,23 @@ export function App() {
               type="button"
               className="task-action-menu-button"
               onClick={() => {
-                setTaskEditDraft(makeTaskEditDraft(task));
-                setTaskEditWarning(null);
+                setTaskEditDraftByTaskId((current) => ({
+                  ...current,
+                  [task.taskId]: makeTaskEditDraft(task),
+                }));
+                setTaskEditWarningByTaskId((current) => {
+                  const next = { ...current };
+                  delete next[task.taskId];
+                  return next;
+                });
                 setTaskArchiveConfirming(false);
-                setExpandedTaskBranches((current) => [
-                  ...current.filter((item) => item.nodeId !== branch.nodeId),
-                  { ...branch, detailMode: "edit" },
-                ]);
+                setExpandedTaskBranches((current) =>
+                  current.map((item) =>
+                    item.nodeId === branch.nodeId
+                      ? { ...item, detailMode: "edit" }
+                      : item
+                  )
+                );
               }}
             >
               {"\u7f16\u8f91"}
@@ -2330,12 +2414,18 @@ export function App() {
               className="task-action-menu-button"
               onClick={() => {
                 setTaskArchiveConfirming(false);
-                setExpandedTaskBranches((current) => [
-                  ...current.filter((item) => item.nodeId !== branch.nodeId),
-                  { ...branch, detailMode: "leader-chat" },
-                ]);
-                setTaskLeaderContextCopyState("idle");
-                setTaskLeaderManualCopyText(null);
+                setExpandedTaskBranches((current) =>
+                  current.map((item) =>
+                    item.nodeId === branch.nodeId
+                      ? { ...item, detailMode: "leader-chat" }
+                      : item
+                  )
+                );
+                setTaskLeaderCopyByTaskId((current) => {
+                  const next = { ...current };
+                  delete next[task.taskId];
+                  return next;
+                });
               }}
             >
               {"\u5bf9\u8bdd Leader"}
@@ -2371,10 +2461,6 @@ export function App() {
                 disabled={taskArchiveSaving}
                 onClick={() => {
                   setTaskArchiveConfirming(true);
-                  setExpandedTaskBranches((current) => [
-                    ...current.filter((item) => item.nodeId !== branch.nodeId),
-                    branch,
-                  ]);
                 }}
               >
                 {"\u5220\u9664"}
@@ -2386,9 +2472,6 @@ export function App() {
     }];
   });
   const expandedTaskDetailMode = expandedTaskBranch?.detailMode ?? null;
-  const activeTaskEditDraft = expandedTask && taskEditDraft?.taskId === expandedTask.taskId
-    ? taskEditDraft
-    : null;
   const expandedTaskRunButtonLabel = expandedTaskRunSaving
     ? "启动中..."
     : activeExpandedTaskRun
@@ -2482,8 +2565,11 @@ export function App() {
           className="task-action-menu-button"
           onClick={() => {
             setTaskArchiveConfirming(false);
-            setTaskLeaderContextCopyState("idle");
-            setTaskLeaderManualCopyText(null);
+            setTaskLeaderCopyByTaskId((current) => {
+              const next = { ...current };
+              delete next[expandedTask.taskId];
+              return next;
+            });
             setExpandedTaskBranch((current) => current ? { ...current, detailMode: "leader-chat" } : current);
           }}
         >
@@ -2525,180 +2611,7 @@ export function App() {
       </div>
     </section>
   ) : null;
-  const expandedTaskChildBranchPanel = expandedTaskNode && expandedTask ? (
-    expandedTaskDetailMode === "leader-chat" ? (
-      <section className="agent-playground-branch emap-dialog-branch task-leader-chat-branch" aria-label={`${expandedTask.title} leader 对话`}>
-        <header className="agent-playground-branch-head">
-          <div className="agent-playground-branch-title">
-            <span>Leader 对话</span>
-            <strong>{expandedTask.title}</strong>
-            <code>{expandedTask.taskId}</code>
-          </div>
-          <div className="agent-playground-branch-actions">
-            <button
-              type="button"
-              className="task-action-menu-button"
-              onClick={() => { void copyTaskLeaderContext(formatTaskLeaderContext(expandedTask)); }}
-              aria-label="复制 Task 上下文"
-            >
-              复制 Task 上下文
-            </button>
-            {taskLeaderContextCopyState !== "idle" && (
-              <span role="status" className="task-leader-copy-status">
-                {taskLeaderContextCopyState === "copied" ? "已复制" : "复制失败"}
-              </span>
-            )}
-            <button
-              type="button"
-              className="agent-playground-branch-collapse"
-              onClick={() => setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current)}
-              aria-label={`收起 ${expandedTask.title} leader 对话`}
-            >
-              收起
-            </button>
-          </div>
-        </header>
-        <div className="task-leader-branch-hint">
-          在对话中使用 <code>/team-task</code> 创建或更新这个 Task。Task 数据必须通过后端 API 写入。
-        </div>
-        {taskLeaderContextCopyState === "failed" && taskLeaderManualCopyText && (
-          <div className="task-leader-copy-fallback" role="group" aria-label="Task 上下文手动复制">
-            <p>自动复制失败。下面文本已选中，按 Ctrl+C 后再粘贴到 Leader 对话。</p>
-            <textarea
-              ref={taskLeaderManualCopyRef}
-              aria-label="手动复制 Task 上下文"
-              readOnly
-              value={taskLeaderManualCopyText}
-              onFocus={(event) => event.currentTarget.select()}
-            />
-          </div>
-        )}
-        <iframe
-          className="agent-playground-iframe"
-          title={`${expandedTask.title} leader 对话`}
-          src={buildTaskLeaderPlaygroundUrl(expandedTask)}
-          referrerPolicy="no-referrer"
-        />
-      </section>
-    ) : expandedTaskDetailMode === "edit" && activeTaskEditDraft ? (
-      <section className="task-leader-branch emap-panel-branch task-edit-branch" aria-label={`${expandedTask.title} Task 编辑`}>
-        <header className="task-leader-branch-head">
-          <div className="task-leader-branch-title">
-            <span>Task 编辑</span>
-            <strong>{expandedTask.title}</strong>
-            <code>{expandedTask.taskId}</code>
-          </div>
-          <button
-            type="button"
-            className="task-leader-branch-collapse"
-            onClick={() => setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current)}
-            aria-label={`收起 ${expandedTask.title} Task 编辑`}
-          >
-            收起
-          </button>
-        </header>
-        <form
-          className="task-edit-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void saveTaskEdit();
-          }}
-        >
-          <div className="task-edit-note">
-            复杂需求和验收规则继续通过 Leader 对话里的 <code>/team-task</code> 更新；这里仅做 Task 名称和执行 Agent 的浅编辑。
-          </div>
-          {taskEditWarning && <div className="task-edit-warning" role="status">{taskEditWarning}</div>}
-          <div className="task-edit-grid">
-            <label className="task-edit-field">
-              <span>Task 名称</span>
-              <input
-                value={activeTaskEditDraft.title}
-                onChange={(event) => setTaskEditDraft((current) => (
-                  current ? {
-                    ...current,
-                    title: event.target.value,
-                    dirtyFields: { ...current.dirtyFields, title: true },
-                  } : current
-                ))}
-              />
-            </label>
-            <label className="task-edit-field">
-              <span>Leader Agent</span>
-              <select
-                value={activeTaskEditDraft.leaderAgentId}
-                onChange={(event) => setTaskEditDraft((current) => (
-                  current ? {
-                    ...current,
-                    leaderAgentId: event.target.value,
-                    dirtyFields: { ...current.dirtyFields, leaderAgentId: true },
-                  } : current
-                ))}
-              >
-                {agents.map((agent) => (
-                  <option key={agent.agentId} value={agent.agentId}>
-                    {agent.name} ({agent.agentId})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="task-edit-field">
-              <span>Worker Agent</span>
-              <select
-                value={activeTaskEditDraft.workerAgentId}
-                onChange={(event) => setTaskEditDraft((current) => (
-                  current ? {
-                    ...current,
-                    workerAgentId: event.target.value,
-                    dirtyFields: { ...current.dirtyFields, workerAgentId: true },
-                  } : current
-                ))}
-              >
-                {agents.map((agent) => (
-                  <option key={agent.agentId} value={agent.agentId}>
-                    {agent.name} ({agent.agentId})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="task-edit-field">
-              <span>Checker Agent</span>
-              <select
-                value={activeTaskEditDraft.checkerAgentId}
-                onChange={(event) => setTaskEditDraft((current) => (
-                  current ? {
-                    ...current,
-                    checkerAgentId: event.target.value,
-                    dirtyFields: { ...current.dirtyFields, checkerAgentId: true },
-                  } : current
-                ))}
-              >
-                {agents.map((agent) => (
-                  <option key={agent.agentId} value={agent.agentId}>
-                    {agent.name} ({agent.agentId})
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="task-edit-actions">
-            <button
-              type="button"
-              className="task-action-menu-button"
-              onClick={() => {
-                setTaskEditWarning(null);
-                setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current);
-              }}
-            >
-              返回菜单
-            </button>
-            <button type="submit" className="task-action-menu-button primary" disabled={taskEditSaving}>
-              {taskEditSaving ? "保存中..." : "保存"}
-            </button>
-          </div>
-        </form>
-      </section>
-    ) : null
-  ) : null;
+  const expandedTaskChildBranchPanel = null;
 
   const taskChildBranchPanels = useMemo(() => {
     const panels: Array<{
@@ -2709,13 +2622,258 @@ export function App() {
       sourceId?: string;
       autoHeight?: boolean;
       resizable?: boolean;
+      maximizable?: boolean;
+      interactive?: boolean;
       minWidth?: number;
       minHeight?: number;
     }> = [];
 
-    const runObserverBranches = expandedTaskBranches.filter((branch) => (
-      branch.detailMode === "run-observer" && branch.observedRunId
-    ));
+    for (const branch of expandedTaskBranches) {
+      const node = taskNodes.find((candidate) => candidate.nodeId === branch.nodeId) ?? null;
+      const task = node ? tasksById.get(node.taskId) ?? null : null;
+      if (!node || !task) continue;
+      const menuPanelId = taskMenuPanelId(branch.nodeId);
+
+      if (branch.detailMode === "edit") {
+        const draft = taskEditDraftByTaskId[task.taskId];
+        const warning = taskEditWarningByTaskId[task.taskId] ?? null;
+        const saving = Boolean(taskEditSavingByTaskIdInner[task.taskId]);
+        if (draft) {
+          panels.push({
+            id: `task-edit-${branch.nodeId}`,
+            width: 520,
+            height: 480,
+            sourceId: menuPanelId,
+            resizable: true,
+            interactive: true,
+            panel: (
+              <section className="task-leader-branch emap-panel-branch task-edit-branch" aria-label={`${task.title} Task 编辑`}>
+                <header className="task-leader-branch-head">
+                  <div className="task-leader-branch-title">
+                    <span>Task 编辑</span>
+                    <strong>{task.title}</strong>
+                    <code>{task.taskId}</code>
+                  </div>
+                  <button
+                    type="button"
+                    className="task-leader-branch-collapse"
+                    onClick={() => setExpandedTaskBranches((current) =>
+                      current.map((item) =>
+                        item.nodeId === branch.nodeId ? { ...item, detailMode: null } : item
+                      )
+                    )}
+                    aria-label={`收起 ${task.title} Task 编辑`}
+                  >
+                    收起
+                  </button>
+                </header>
+                <form
+                  className="task-edit-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void saveTaskEdit(task.taskId);
+                  }}
+                >
+                  <div className="task-edit-note">
+                    复杂需求和验收规则继续通过 Leader 对话里的 <code>/team-task</code> 更新；这里仅做 Task 名称和执行 Agent 的浅编辑。
+                  </div>
+                  {warning && <div className="task-edit-warning" role="status">{warning}</div>}
+                  <div className="task-edit-grid">
+                    <label className="task-edit-field">
+                      <span>Task 名称</span>
+                      <input
+                        value={draft.title}
+                        onChange={(event) => setTaskEditDraftByTaskId((current) => {
+                          const existing = current[task.taskId];
+                          return existing ? {
+                            ...current,
+                            [task.taskId]: {
+                              ...existing,
+                              title: event.target.value,
+                              dirtyFields: { ...existing.dirtyFields, title: true },
+                            },
+                          } : current;
+                        })}
+                      />
+                    </label>
+                    <label className="task-edit-field">
+                      <span>Leader Agent</span>
+                      <select
+                        value={draft.leaderAgentId}
+                        onChange={(event) => setTaskEditDraftByTaskId((current) => {
+                          const existing = current[task.taskId];
+                          return existing ? {
+                            ...current,
+                            [task.taskId]: {
+                              ...existing,
+                              leaderAgentId: event.target.value,
+                              dirtyFields: { ...existing.dirtyFields, leaderAgentId: true },
+                            },
+                          } : current;
+                        })}
+                      >
+                        {agents.map((agent) => (
+                          <option key={agent.agentId} value={agent.agentId}>
+                            {agent.name} ({agent.agentId})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="task-edit-field">
+                      <span>Worker Agent</span>
+                      <select
+                        value={draft.workerAgentId}
+                        onChange={(event) => setTaskEditDraftByTaskId((current) => {
+                          const existing = current[task.taskId];
+                          return existing ? {
+                            ...current,
+                            [task.taskId]: {
+                              ...existing,
+                              workerAgentId: event.target.value,
+                              dirtyFields: { ...existing.dirtyFields, workerAgentId: true },
+                            },
+                          } : current;
+                        })}
+                      >
+                        {agents.map((agent) => (
+                          <option key={agent.agentId} value={agent.agentId}>
+                            {agent.name} ({agent.agentId})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="task-edit-field">
+                      <span>Checker Agent</span>
+                      <select
+                        value={draft.checkerAgentId}
+                        onChange={(event) => setTaskEditDraftByTaskId((current) => {
+                          const existing = current[task.taskId];
+                          return existing ? {
+                            ...current,
+                            [task.taskId]: {
+                              ...existing,
+                              checkerAgentId: event.target.value,
+                              dirtyFields: { ...existing.dirtyFields, checkerAgentId: true },
+                            },
+                          } : current;
+                        })}
+                      >
+                        {agents.map((agent) => (
+                          <option key={agent.agentId} value={agent.agentId}>
+                            {agent.name} ({agent.agentId})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="task-edit-actions">
+                    <button
+                      type="button"
+                      className="task-action-menu-button"
+                      onClick={() => {
+                        setTaskEditWarningByTaskId((current) => {
+                          const next = { ...current };
+                          delete next[task.taskId];
+                          return next;
+                        });
+                        setExpandedTaskBranches((current) =>
+                          current.map((item) =>
+                            item.nodeId === branch.nodeId ? { ...item, detailMode: null } : item
+                          )
+                        );
+                      }}
+                    >
+                      返回菜单
+                    </button>
+                    <button type="submit" className="task-action-menu-button primary" disabled={saving}>
+                      {saving ? "保存中..." : "保存"}
+                    </button>
+                  </div>
+                </form>
+              </section>
+            ),
+          });
+        }
+        continue;
+      }
+
+      if (branch.detailMode === "leader-chat") {
+        const copyEntry = taskLeaderCopyByTaskId[task.taskId] ?? null;
+        const copyState: "idle" | TaskLeaderCopyEntry["state"] = copyEntry?.state ?? "idle";
+        const manualCopyText = copyEntry?.manualCopyText ?? null;
+        panels.push({
+          id: `task-leader-chat-${branch.nodeId}`,
+          width: 820,
+          height: 620,
+          sourceId: menuPanelId,
+          resizable: true,
+          maximizable: true,
+          interactive: true,
+          panel: (
+            <section className="agent-playground-branch emap-dialog-branch task-leader-chat-branch" aria-label={`${task.title} leader 对话`}>
+              <header className="agent-playground-branch-head">
+                <div className="agent-playground-branch-title">
+                  <span>Leader 对话</span>
+                  <strong>{task.title}</strong>
+                  <code>{task.taskId}</code>
+                </div>
+                <div className="agent-playground-branch-actions">
+                  <button
+                    type="button"
+                    className="task-action-menu-button"
+                    onClick={() => { void copyTaskLeaderContext(task.taskId, formatTaskLeaderContext(task)); }}
+                    aria-label="复制 Task 上下文"
+                  >
+                    复制 Task 上下文
+                  </button>
+                  {copyState !== "idle" && (
+                    <span role="status" className="task-leader-copy-status">
+                      {copyState === "copied" ? "已复制" : "复制失败"}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="agent-playground-branch-collapse"
+                    onClick={() => setExpandedTaskBranches((current) =>
+                      current.map((item) =>
+                        item.nodeId === branch.nodeId ? { ...item, detailMode: null } : item
+                      )
+                    )}
+                    aria-label={`收起 ${task.title} leader 对话`}
+                  >
+                    收起
+                  </button>
+                </div>
+              </header>
+              <div className="task-leader-branch-hint">
+                在对话中使用 <code>/team-task</code> 创建或更新这个 Task。Task 数据必须通过后端 API 写入。
+              </div>
+              {copyState === "failed" && manualCopyText && (
+                <div className="task-leader-copy-fallback" role="group" aria-label="Task 上下文手动复制">
+                  <p>自动复制失败。下面文本已选中，按 Ctrl+C 后再粘贴到 Leader 对话。</p>
+                  <textarea
+                    ref={(node) => {
+                      taskLeaderManualCopyRefs.current[task.taskId] = node;
+                    }}
+                    aria-label="手动复制 Task 上下文"
+                    readOnly
+                    value={manualCopyText}
+                    onFocus={(event) => event.currentTarget.select()}
+                  />
+                </div>
+              )}
+              <iframe
+                className="agent-playground-iframe"
+                title={`${task.title} leader 对话`}
+                src={buildTaskLeaderPlaygroundUrl(task)}
+                referrerPolicy="no-referrer"
+              />
+            </section>
+          ),
+        });
+        continue;
+      }
+    }
 
     for (const branch of expandedTaskBranches) {
       if (branch.detailMode !== "run-observer" || !branch.observedRunId) continue;
@@ -2735,7 +2893,7 @@ export function App() {
         .map((key) => fileDescriptors.find((descriptor) => descriptor.key === key) ?? null)
         .filter((descriptor): descriptor is TaskRunObserverFileDescriptor => Boolean(descriptor));
       const observedTaskRunIsActive = isActiveRun(observedTaskRun.status);
-      const runObserverPanelId = runObserverBranches.length === 1 ? "run-observer" : `run-observer-${branch.nodeId}`;
+      const runObserverPanelId = `run-observer-${branch.nodeId}`;
 
       const toggleFile = (key: string) => {
         setExpandedTaskBranches((current) => current.map((item) => {
@@ -2862,7 +3020,7 @@ export function App() {
     }
 
     return panels;
-  }, [agentsById, expandedTaskBranches, taskNodes, taskRunObserverByRunId, taskRunsByTaskId, tasksById]);
+  }, [agents, agentsById, copyTaskLeaderContext, expandedTaskBranches, saveTaskEdit, taskEditDraftByTaskId, taskEditSavingByTaskIdInner, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunsByTaskId, tasksById]);
 
   return (
     <div className="app-shell">
@@ -3031,7 +3189,7 @@ export function App() {
                 taskBranchPanel={expandedTaskBranchPanel}
                 taskBranchPanels={taskBranchPanelItems}
                 taskChildBranchPanel={expandedTaskChildBranchPanel}
-                taskChildBranchInteractive={expandedTaskDetailMode === "leader-chat" || expandedTaskDetailMode === "edit"}
+                taskChildBranchInteractive={false}
                 taskChildBranchPanels={taskChildBranchPanels}
                 viewport={canvasViewport}
                 onViewportChange={setCanvasViewport}

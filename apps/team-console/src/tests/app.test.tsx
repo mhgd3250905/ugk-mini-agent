@@ -885,7 +885,7 @@ describe("App", () => {
     expect(within(resultFileRow!).getByText("accepted-result.md")).toBeInTheDocument();
 
     // All file rows live inside the merged observer panel (not independent shells)
-    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement | null;
     expect(observerShell).toBeTruthy();
     const fileRows = observerShell!.querySelectorAll('.emap-observer-file-row');
     expect(fileRows.length).toBeGreaterThanOrEqual(3);
@@ -947,7 +947,7 @@ describe("App", () => {
     expect(checkerProcessNode).toBeTruthy();
 
     // Both process nodes live inside the merged observer panel
-    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement | null;
     expect(observerShell).toBeTruthy();
     expect(observerShell!.contains(workerProcessNode)).toBe(true);
     expect(observerShell!.contains(checkerProcessNode!)).toBe(true);
@@ -1824,7 +1824,7 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(container.querySelector(".agent-playground-branch")).toBeTruthy();
-      expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]')).toBeTruthy();
+      expect(container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]')).toBeTruthy();
     });
   });
 
@@ -1922,8 +1922,11 @@ describe("App", () => {
     fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(getAtlasNodes(container).querySelector('[data-task-id="task_review_medtrum"]') as HTMLElement);
 
-    const menuShells = Array.from(container.querySelectorAll(".emap-task-branch-shell")) as HTMLElement[];
-    expect(menuShells).toHaveLength(2);
+    const menuShells = await waitFor(() => {
+      const shells = Array.from(container.querySelectorAll(".emap-task-branch-shell")) as HTMLElement[];
+      expect(shells).toHaveLength(2);
+      return shells;
+    });
     const firstMenuShell = menuShells.find((shell) => shell.textContent?.includes("调查 Medtrum 云资产"));
     const secondMenuShell = menuShells.find((shell) => shell.textContent?.includes("复核 Medtrum 证据"));
     expect(firstMenuShell).toBeTruthy();
@@ -2053,7 +2056,7 @@ describe("App", () => {
     expect(branch).toHaveClass("agent-playground-branch");
     expect(branch!.querySelector(".agent-playground-branch-head")).toBeTruthy();
     expect(branch!.querySelector(".agent-playground-branch-collapse")).toBeTruthy();
-    expect(container.querySelector(".emap-task-child-branch-shell .emap-agent-branch-resize-handle")).toBeTruthy();
+    expect(container.querySelector(".emap-task-child-branch-shell .emap-panel-resize-handle")).toBeTruthy();
     expect(within(branch!).getByText("Leader 对话")).toBeInTheDocument();
     expect(within(branch!).getByText("调查 Medtrum 云资产")).toBeInTheDocument();
 
@@ -2267,7 +2270,7 @@ describe("App", () => {
 
     const branchShell = container.querySelector(".emap-task-child-branch-shell") as HTMLElement | null;
     const titleBar = container.querySelector(".task-leader-chat-branch .agent-playground-branch-head") as HTMLElement | null;
-    const resizeHandle = container.querySelector(".emap-task-child-branch-shell .emap-agent-branch-resize-handle") as HTMLElement | null;
+    const resizeHandle = container.querySelector(".emap-task-child-branch-shell .emap-panel-resize-handle") as HTMLElement | null;
     expect(branchShell).toBeTruthy();
     expect(titleBar).toBeTruthy();
     expect(resizeHandle).toBeTruthy();
@@ -4147,7 +4150,7 @@ describe("App", () => {
       expect(container.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
     });
 
-    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement | null;
     expect(observerShell).toBeTruthy();
     const initialLeft = Number.parseFloat(observerShell!.style.left);
 
@@ -4388,7 +4391,7 @@ describe("App", () => {
       expect(container.querySelector(".emap-observer-file-detail-node")).toBeTruthy();
     });
 
-    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement | null;
     expect(observerShell).toBeTruthy();
 
     // Drag the merged observer panel to a new position
@@ -4474,7 +4477,7 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      const observerPanel = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]');
+      const observerPanel = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]');
       expect(observerPanel).toBeTruthy();
     });
 
@@ -4496,7 +4499,7 @@ describe("App", () => {
 
     // There must be exactly one merged run-observer shell
     await waitFor(() => {
-      const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]');
+      const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]');
       expect(observerShell).toBeTruthy();
     });
 
@@ -4651,7 +4654,7 @@ describe("App", () => {
     expect(detailNodes.some((detail) => detail.textContent?.includes("Mock accepted result"))).toBe(true);
     expect(workerFileRow).toHaveClass("selected");
     expect(resultFileRow).toHaveClass("selected");
-    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement | null;
     const detailShells = Array.from(container.querySelectorAll('.emap-task-child-branch-shell[data-panel-id^="file-detail-"]')) as HTMLElement[];
     expect(observerShell).toBeTruthy();
     expect(detailShells).toHaveLength(2);
@@ -4685,7 +4688,7 @@ describe("App", () => {
       expect(container.querySelector(".emap-observer-file-detail-node")).toBeTruthy();
     });
 
-    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement | null;
     expect(observerShell).toBeTruthy();
     const detailShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="file-detail-"]') as HTMLElement | null;
     expect(detailShell).toBeTruthy();
@@ -4720,7 +4723,7 @@ describe("App", () => {
     expect(connectorPaths.length).toBeGreaterThanOrEqual(1);
 
     const menuShell = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
-    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement | null;
     expect(menuShell).toBeTruthy();
     expect(observerShell).toBeTruthy();
 
@@ -4775,7 +4778,7 @@ describe("App", () => {
     const { container } = render(<App />);
     await setupMergedObserverOpen(container);
 
-    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement | null;
     expect(observerShell).toBeTruthy();
 
     // Drag observer far to the left to create a reverse angle
@@ -4838,7 +4841,7 @@ describe("App", () => {
     fireEvent.click(runSummary);
 
     await waitFor(() => {
-      const observerPanel = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]');
+      const observerPanel = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]');
       expect(observerPanel).toBeTruthy();
     });
 
@@ -4849,7 +4852,7 @@ describe("App", () => {
     const { container } = render(<App />);
     await setupObserverOpen(container);
 
-    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement | null;
     expect(observerShell).toBeTruthy();
 
     // Manually drag an observer panel to create a position override.
@@ -4889,7 +4892,7 @@ describe("App", () => {
     const menuShell = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
     expect(menuShell).toBeTruthy();
 
-    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement | null;
     expect(observerShell).toBeTruthy();
 
     const menuLeftBefore = Number.parseFloat(menuShell!.style.left);
@@ -4917,7 +4920,7 @@ describe("App", () => {
     const { container } = render(<App />);
     await setupObserverOpen(container);
 
-    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement | null;
     expect(observerShell).toBeTruthy();
 
     const observerLeftBefore = Number.parseFloat(observerShell!.style.left);
@@ -4937,7 +4940,7 @@ describe("App", () => {
     const { container } = render(<App />);
     await setupObserverOpen(container);
 
-    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement | null;
     expect(observerShell).toBeTruthy();
     const observerLeftBefore = Number.parseFloat(observerShell!.style.left);
     const observerTopBefore = Number.parseFloat(observerShell!.style.top);
@@ -4956,7 +4959,7 @@ describe("App", () => {
     const { container } = render(<App />);
     await setupObserverOpen(container);
 
-    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement | null;
     const menuShell = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
     expect(observerShell).toBeTruthy();
     expect(menuShell).toBeTruthy();
@@ -4987,7 +4990,7 @@ describe("App", () => {
     expect(workerProcessNode!.querySelector(".emap-process-tool-groups")).toBeNull();
     expect(workerProcessNode!.querySelectorAll(".emap-process-tool-group")).toHaveLength(0);
 
-    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement | null;
     expect(observerShell).toBeTruthy();
     const leftBefore = Number.parseFloat(observerShell!.style.left);
     const topBefore = Number.parseFloat(observerShell!.style.top);
@@ -5078,7 +5081,7 @@ describe("App", () => {
       expect(container.querySelector(".emap-observer-file-detail-node")).toBeTruthy();
     });
 
-    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement | null;
     expect(observerShell).toBeTruthy();
     const detailShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="file-detail-"]') as HTMLElement | null;
     expect(detailShell).toBeTruthy();
@@ -5109,7 +5112,7 @@ describe("App", () => {
     const { container } = render(<App />);
     await setupObserverOpen(container);
 
-    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement | null;
     expect(observerShell).toBeTruthy();
 
     // Drag observer panel to a new position
@@ -5156,7 +5159,7 @@ describe("App", () => {
       expect(detail).toBeTruthy();
     });
 
-    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id="run-observer"]') as HTMLElement | null;
+    const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement | null;
     expect(observerShell).toBeTruthy();
     const detailShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="file-detail-"]') as HTMLElement | null;
     expect(detailShell).toBeTruthy();
@@ -5209,7 +5212,7 @@ describe("App", () => {
     expect(Number.parseFloat(shell!.style.top)).toBeCloseTo(topBefore + 60, 4);
 
     // Resize
-    const resizeHandle = shell!.querySelector(".emap-agent-branch-resize-handle") as HTMLElement | null;
+    const resizeHandle = shell!.querySelector(".emap-panel-resize-handle") as HTMLElement | null;
     expect(resizeHandle).toBeTruthy();
     const widthBefore = Number.parseFloat(shell!.style.width);
     const heightBefore = Number.parseFloat(shell!.style.height);
@@ -5219,7 +5222,7 @@ describe("App", () => {
     expect(Number.parseFloat(shell!.style.width)).toBeCloseTo(widthBefore + 100, 4);
     expect(Number.parseFloat(shell!.style.height)).toBeCloseTo(heightBefore + 100, 4);
 
-    // Maximize
+    // Maximize with the visible branch control.
     const maximizeButton = shell!.querySelector(".emap-agent-branch-maximize-button") as HTMLElement | null;
     expect(maximizeButton).toBeTruthy();
     fireEvent.click(maximizeButton!);
@@ -5760,8 +5763,11 @@ describe("App", () => {
       // Open Task A menu — run button should be disabled with "运行中" text
       const taskANode = await within(getAtlasNodes(container)).findByRole("button", { name: taskA.title });
       fireEvent.click(taskANode);
-      const branchA = container.querySelector(".task-action-branch") as HTMLElement | null;
-      expect(branchA).toBeTruthy();
+      const branchA = await waitFor(() => {
+        const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+        expect(branch).toBeTruthy();
+        return branch!;
+      });
       const runButtonA = branchA!.querySelector(".task-action-menu-button") as HTMLButtonElement | null;
       expect(runButtonA).toBeTruthy();
       expect(runButtonA!.textContent).toContain("运行中");
@@ -5773,9 +5779,12 @@ describe("App", () => {
       fireEvent.click(taskBNode);
 
       // There are now two task-action-branch elements; find the one for Task B
-      const allBranches = container.querySelectorAll(".task-action-branch");
-      const branchB = Array.from(allBranches).find((el) => el.textContent?.includes(taskB.taskId)) as HTMLElement | null;
-      expect(branchB).toBeTruthy();
+      const branchB = await waitFor(() => {
+        const allBranches = container.querySelectorAll(".task-action-branch");
+        const branch = Array.from(allBranches).find((el) => el.textContent?.includes(taskB.taskId)) as HTMLElement | null;
+        expect(branch).toBeTruthy();
+        return branch!;
+      });
       const runButtonB = branchB!.querySelector(".task-action-menu-button") as HTMLButtonElement | null;
       expect(runButtonB).toBeTruthy();
       expect(runButtonB!.textContent).toContain("运行");
@@ -5990,6 +5999,608 @@ describe("App", () => {
     // Both connection paths should be rendered in DOM
     expect(container.querySelector('[data-task-connection-id="conn_fanout_b"]')).toBeTruthy();
     expect(container.querySelector('[data-task-connection-id="conn_fanout_c"]')).toBeTruthy();
+  });
+
+  describe("multiple Task child panel isolation", () => {
+    const taskA: TeamCanvasTask = {
+      taskId: "mtask_alpha",
+      title: "Alpha Task",
+      leaderAgentId: "main",
+      status: "ready",
+      createdAt: "2026-05-27T00:00:00.000Z",
+      updatedAt: "2026-05-27T00:00:00.000Z",
+      archived: false,
+      workUnit: {
+        title: "Alpha Task",
+        input: { text: "Alpha input" },
+        outputPorts: [],
+        outputContract: { text: "Alpha output" },
+        acceptance: { rules: [] },
+        workerAgentId: "main",
+        checkerAgentId: "main",
+      },
+    };
+    const taskB: TeamCanvasTask = {
+      taskId: "mtask_beta",
+      title: "Beta Task",
+      leaderAgentId: "main",
+      status: "ready",
+      createdAt: "2026-05-27T00:00:00.000Z",
+      updatedAt: "2026-05-27T00:00:00.000Z",
+      archived: false,
+      workUnit: {
+        title: "Beta Task",
+        input: { text: "Beta input" },
+        outputPorts: [],
+        outputContract: { text: "Beta output" },
+        acceptance: { rules: [] },
+        workerAgentId: "search",
+        checkerAgentId: "main",
+      },
+    };
+    const taskC: TeamCanvasTask = {
+      taskId: "mtask_gamma",
+      title: "Gamma Task",
+      leaderAgentId: "main",
+      status: "ready",
+      createdAt: "2026-05-27T00:00:00.000Z",
+      updatedAt: "2026-05-27T00:00:00.000Z",
+      archived: false,
+      workUnit: {
+        title: "Gamma Task",
+        input: { text: "Gamma input" },
+        outputPorts: [],
+        outputContract: { text: "Gamma output" },
+        acceptance: { rules: [] },
+        workerAgentId: "main",
+        checkerAgentId: "search",
+      },
+    };
+    const allTasks = [taskA, taskB, taskC];
+
+    function setupLiveMultiTaskApi() {
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [
+              { agentId: "main", name: "主 Agent", description: "默认" },
+              { agentId: "search", name: "搜索 Agent", description: "搜索" },
+            ],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks" && method === "GET") {
+          return new Response(JSON.stringify({ tasks: allTasks }), { status: 200 });
+        }
+        if (url === "/v1/team/task-connections") return new Response(JSON.stringify([]), { status: 200 });
+        if (url === "/v1/team/source-nodes") return new Response(JSON.stringify([]), { status: 200 });
+        if (url === "/v1/team/source-connections") return new Response(JSON.stringify([]), { status: 200 });
+        if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        // PATCH for task edits
+        for (const task of allTasks) {
+          if (url === `/v1/team/tasks/${task.taskId}` && method === "PATCH") {
+            const body = JSON.parse(String(init?.body ?? "{}"));
+            const updated = { ...task, ...body, updatedAt: "2026-05-27T01:00:00.000Z" };
+            return new Response(JSON.stringify({ task: updated }), { status: 200 });
+          }
+        }
+        return new Response(JSON.stringify([]), { status: 200 });
+      });
+    }
+
+    it("multiple Task edit panels can be open simultaneously", async () => {
+      setupLiveMultiTaskApi();
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      // Open Task A menu
+      const taskANode = await within(getAtlasNodes(container)).findByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      await waitFor(() => expect(container.querySelector(".task-action-branch")).toBeTruthy());
+
+      // Click edit for Task A
+      const branchA = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskA.taskId),
+      )!;
+      const editButtonA = Array.from(branchA.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("编辑"),
+      )!;
+      fireEvent.click(editButtonA);
+      await waitFor(() => expect(container.querySelectorAll(".task-edit-branch").length).toBeGreaterThanOrEqual(1));
+
+      // Open Task B menu
+      const taskBNode = within(getAtlasNodes(container)).getByRole("button", { name: taskB.title });
+      fireEvent.click(taskBNode);
+      await waitFor(() => {
+        const branches = container.querySelectorAll(".task-action-branch");
+        expect(branches.length).toBeGreaterThanOrEqual(2);
+      });
+
+      // Click edit for Task B
+      const branchB = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskB.taskId),
+      )!;
+      const editButtonB = Array.from(branchB.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("编辑"),
+      )!;
+      fireEvent.click(editButtonB);
+
+      // Both edit panels should exist
+      await waitFor(() => {
+        const editPanels = container.querySelectorAll(".task-edit-branch");
+        expect(editPanels.length).toBe(2);
+      });
+
+      // Each edit panel should contain its own task title/id
+      const editPanels = container.querySelectorAll(".task-edit-branch");
+      const panelTexts = Array.from(editPanels).map((el) => el.textContent);
+      const hasAlpha = panelTexts.some((t) => t?.includes(taskA.title));
+      const hasBeta = panelTexts.some((t) => t?.includes(taskB.title));
+      expect(hasAlpha).toBe(true);
+      expect(hasBeta).toBe(true);
+    });
+
+    it("multiple Task leader chat panels can be open simultaneously", async () => {
+      setupLiveMultiTaskApi();
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      // Open Task A menu
+      const taskANode = await within(getAtlasNodes(container)).findByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      await waitFor(() => expect(container.querySelector(".task-action-branch")).toBeTruthy());
+
+      // Click "对话 Leader" for Task A
+      const branchA = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskA.taskId),
+      )!;
+      const leaderButtonA = Array.from(branchA.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("对话 Leader"),
+      )!;
+      fireEvent.click(leaderButtonA);
+      await waitFor(() => expect(container.querySelectorAll(".task-leader-chat-branch").length).toBeGreaterThanOrEqual(1));
+
+      // Open Task B menu
+      const taskBNode = within(getAtlasNodes(container)).getByRole("button", { name: taskB.title });
+      fireEvent.click(taskBNode);
+      await waitFor(() => {
+        const branches = container.querySelectorAll(".task-action-branch");
+        expect(branches.length).toBeGreaterThanOrEqual(2);
+      });
+
+      // Click "对话 Leader" for Task B
+      const branchB = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskB.taskId),
+      )!;
+      const leaderButtonB = Array.from(branchB.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("对话 Leader"),
+      )!;
+      fireEvent.click(leaderButtonB);
+
+      // Both leader chat panels should exist
+      await waitFor(() => {
+        const chatPanels = container.querySelectorAll(".task-leader-chat-branch");
+        expect(chatPanels.length).toBe(2);
+      });
+
+      // Each should have an iframe with the correct teamTaskId
+      const chatPanels = container.querySelectorAll(".task-leader-chat-branch iframe");
+      expect(chatPanels.length).toBe(2);
+      const srcs = Array.from(chatPanels).map((iframe) => iframe.getAttribute("src") ?? "");
+      expect(srcs.some((src) => src.includes(`teamTaskId=${taskA.taskId}`))).toBe(true);
+      expect(srcs.some((src) => src.includes(`teamTaskId=${taskB.taskId}`))).toBe(true);
+    });
+
+    it("keeps manual copy fallback scoped to the clicked Leader chat panel", async () => {
+      setupLiveMultiTaskApi();
+      Object.defineProperty(navigator, "clipboard", {
+        value: undefined,
+        writable: true,
+        configurable: true,
+      });
+      Object.defineProperty(document, "execCommand", {
+        value: vi.fn().mockReturnValue(false),
+        writable: true,
+        configurable: true,
+      });
+
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const taskANode = await within(getAtlasNodes(container)).findByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      await waitFor(() => expect(container.querySelector(".task-action-branch")).toBeTruthy());
+      const branchA = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskA.taskId),
+      )!;
+      fireEvent.click(Array.from(branchA.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("对话 Leader"),
+      )!);
+
+      const taskBNode = within(getAtlasNodes(container)).getByRole("button", { name: taskB.title });
+      fireEvent.click(taskBNode);
+      await waitFor(() => {
+        expect(container.querySelectorAll(".task-action-branch").length).toBeGreaterThanOrEqual(2);
+      });
+      const branchB = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskB.taskId),
+      )!;
+      fireEvent.click(Array.from(branchB.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("对话 Leader"),
+      )!);
+
+      await waitFor(() => {
+        expect(container.querySelectorAll(".task-leader-chat-branch").length).toBe(2);
+      });
+
+      const chatA = Array.from(container.querySelectorAll(".task-leader-chat-branch")).find(
+        (el) => el.textContent?.includes(taskA.title),
+      ) as HTMLElement | undefined;
+      const chatB = Array.from(container.querySelectorAll(".task-leader-chat-branch")).find(
+        (el) => el.textContent?.includes(taskB.title),
+      ) as HTMLElement | undefined;
+      expect(chatA).toBeTruthy();
+      expect(chatB).toBeTruthy();
+
+      fireEvent.click(within(chatA!).getByRole("button", { name: /复制 Task 上下文/ }));
+
+      await waitFor(() => {
+        const manualCopy = within(chatA!).getByLabelText("手动复制 Task 上下文") as HTMLTextAreaElement;
+        expect(manualCopy.value).toContain(`taskId: ${taskA.taskId}`);
+        expect(manualCopy.value).not.toContain(`taskId: ${taskB.taskId}`);
+      });
+      expect(within(chatB!).queryByLabelText("手动复制 Task 上下文")).toBeNull();
+    });
+
+    it("closing one leader chat does not close the other", async () => {
+      setupLiveMultiTaskApi();
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      // Open both leader chats
+      const taskANode = await within(getAtlasNodes(container)).findByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      await waitFor(() => expect(container.querySelector(".task-action-branch")).toBeTruthy());
+      const branchA = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskA.taskId),
+      )!;
+      const leaderButtonA = Array.from(branchA.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("对话 Leader"),
+      )!;
+      fireEvent.click(leaderButtonA);
+
+      const taskBNode = within(getAtlasNodes(container)).getByRole("button", { name: taskB.title });
+      fireEvent.click(taskBNode);
+      await waitFor(() => {
+        const branches = container.querySelectorAll(".task-action-branch");
+        expect(branches.length).toBeGreaterThanOrEqual(2);
+      });
+      const branchB = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskB.taskId),
+      )!;
+      const leaderButtonB = Array.from(branchB.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("对话 Leader"),
+      )!;
+      fireEvent.click(leaderButtonB);
+
+      await waitFor(() => {
+        expect(container.querySelectorAll(".task-leader-chat-branch").length).toBe(2);
+      });
+
+      // Close Task A's leader chat (find its collapse button)
+      const allChats = container.querySelectorAll(".task-leader-chat-branch");
+      const chatA = Array.from(allChats).find((el) => el.textContent?.includes(taskA.title));
+      expect(chatA).toBeTruthy();
+      const collapseA = chatA!.querySelector(".agent-playground-branch-collapse") as HTMLElement | null;
+      expect(collapseA).toBeTruthy();
+      fireEvent.click(collapseA!);
+
+      // Task A's chat is gone, but Task B's remains
+      await waitFor(() => {
+        const remaining = container.querySelectorAll(".task-leader-chat-branch");
+        expect(remaining.length).toBe(1);
+        expect(remaining[0]!.textContent).toContain(taskB.title);
+      });
+
+      // Task B's menu should still be present
+      const remainingBranches = container.querySelectorAll(".task-action-branch");
+      const branchBStill = Array.from(remainingBranches).find((el) => el.textContent?.includes(taskB.taskId));
+      expect(branchBStill).toBeTruthy();
+    });
+
+    it("multiple run observer panels preserve positions when opening new ones", async () => {
+      const runA: TeamRunState = {
+        runId: "mrun_alpha_1",
+        planId: "canvas_task_mtask_alpha",
+        source: { type: "canvas-task", taskId: taskA.taskId },
+        teamUnitId: "canvas_task_unit_mtask_alpha",
+        status: "completed",
+        createdAt: "2026-05-27T00:00:00.000Z",
+        startedAt: "2026-05-27T00:00:01.000Z",
+        finishedAt: "2026-05-27T00:00:05.000Z",
+        currentTaskId: null,
+        taskStates: {
+          [taskA.taskId]: {
+            status: "succeeded",
+            attemptCount: 1,
+            activeAttemptId: "matt_alpha_1",
+            resultRef: null,
+            errorSummary: null,
+            progress: { phase: "succeeded", message: "完成", updatedAt: "2026-05-27T00:00:05.000Z" },
+          },
+        },
+        summary: { totalTasks: 1, succeededTasks: 1, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+      };
+      const runB: TeamRunState = {
+        runId: "mrun_beta_1",
+        planId: "canvas_task_mtask_beta",
+        source: { type: "canvas-task", taskId: taskB.taskId },
+        teamUnitId: "canvas_task_unit_mtask_beta",
+        status: "completed",
+        createdAt: "2026-05-27T00:00:00.000Z",
+        startedAt: "2026-05-27T00:00:01.000Z",
+        finishedAt: "2026-05-27T00:00:05.000Z",
+        currentTaskId: null,
+        taskStates: {
+          [taskB.taskId]: {
+            status: "succeeded",
+            attemptCount: 1,
+            activeAttemptId: "matt_beta_1",
+            resultRef: null,
+            errorSummary: null,
+            progress: { phase: "succeeded", message: "完成", updatedAt: "2026-05-27T00:00:05.000Z" },
+          },
+        },
+        summary: { totalTasks: 1, succeededTasks: 1, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+      };
+
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [
+              { agentId: "main", name: "主 Agent", description: "默认" },
+              { agentId: "search", name: "搜索 Agent", description: "搜索" },
+            ],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks" && method === "GET") {
+          return new Response(JSON.stringify({ tasks: allTasks }), { status: 200 });
+        }
+        if (url === "/v1/team/task-connections") return new Response(JSON.stringify([]), { status: 200 });
+        if (url === "/v1/team/source-nodes") return new Response(JSON.stringify([]), { status: 200 });
+        if (url === "/v1/team/source-connections") return new Response(JSON.stringify([]), { status: 200 });
+        if (url === `/v1/team/tasks/${taskA.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [runA] }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${taskB.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [runB] }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${taskC.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/") && url.includes("/tasks/") && url.includes("/attempts")) {
+          return new Response(JSON.stringify({ attempts: [] }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/")) {
+          if (url.includes(runA.runId)) return new Response(JSON.stringify(runA), { status: 200 });
+          if (url.includes(runB.runId)) return new Response(JSON.stringify(runB), { status: 200 });
+          return new Response(JSON.stringify({}), { status: 200 });
+        }
+        return new Response(JSON.stringify([]), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+      await waitFor(() => expect(window.localStorage.getItem("ugk-team-console:canvas-ui-state:v1")).toContain('"dataSource":"live"'));
+
+      // Open Task A menu and click its run summary to open observer
+      await waitFor(() => {
+        expect(within(getAtlasNodes(container)).getByRole("button", { name: taskA.title })).toHaveAttribute("data-task-run-status", "completed");
+      });
+      const taskANode = within(getAtlasNodes(container)).getByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      await waitFor(() => expect(container.querySelector(".task-action-branch")).toBeTruthy());
+      const branchA = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskA.taskId),
+      )!;
+      const runSummaryA = await within(branchA as HTMLElement).findByRole("button", { name: /最近运行/ });
+      fireEvent.click(runSummaryA);
+
+      // Wait for observer A to appear
+      const observerA = await waitFor(() => {
+        const shell = container.querySelector(`.emap-task-child-branch-shell[data-panel-id^="run-observer"]`);
+        expect(shell).toBeTruthy();
+        return shell!;
+      });
+      const observerALeft = (observerA as HTMLElement).style.left;
+      const observerATop = (observerA as HTMLElement).style.top;
+
+      // Open Task B menu and click its run summary
+      await waitFor(() => {
+        expect(within(getAtlasNodes(container)).getByRole("button", { name: taskB.title })).toHaveAttribute("data-task-run-status", "completed");
+      });
+      const taskBNode = within(getAtlasNodes(container)).getByRole("button", { name: taskB.title });
+      fireEvent.click(taskBNode);
+      await waitFor(() => {
+        const branches = container.querySelectorAll(".task-action-branch");
+        expect(branches.length).toBeGreaterThanOrEqual(2);
+      });
+      const branchB = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskB.taskId),
+      )!;
+      const runSummaryB = await within(branchB as HTMLElement).findByRole("button", { name: /最近运行/ });
+      fireEvent.click(runSummaryB);
+
+      // Both observers should be visible
+      await waitFor(() => {
+        const observers = container.querySelectorAll('.emap-task-child-branch-shell[data-panel-id^="run-observer"]');
+        expect(observers.length).toBe(2);
+      });
+
+      // Observer A's position should NOT have changed after opening observer B
+      container.querySelector(`.emap-task-child-branch-shell[data-panel-id^="run-observer-${taskANode.getAttribute("data-node-id") ?? ""}"]`)
+        ?? container.querySelectorAll('.emap-task-child-branch-shell[data-panel-id^="run-observer"]')[0];
+      // Find observer A by checking which panel is still at the original position
+      const allObservers = container.querySelectorAll('.emap-task-child-branch-shell[data-panel-id^="run-observer"]');
+      const observerAPanel = Array.from(allObservers).find((el) =>
+        (el as HTMLElement).style.left === observerALeft && (el as HTMLElement).style.top === observerATop,
+      );
+      expect(observerAPanel).toBeTruthy();
+    });
+
+    it("closing one observer does not affect the other's position", async () => {
+      const runA: TeamRunState = {
+        runId: "mrun_alpha_2",
+        planId: "canvas_task_mtask_alpha",
+        source: { type: "canvas-task", taskId: taskA.taskId },
+        teamUnitId: "canvas_task_unit_mtask_alpha",
+        status: "completed",
+        createdAt: "2026-05-27T00:00:00.000Z",
+        startedAt: "2026-05-27T00:00:01.000Z",
+        finishedAt: "2026-05-27T00:00:05.000Z",
+        currentTaskId: null,
+        taskStates: {
+          [taskA.taskId]: {
+            status: "succeeded",
+            attemptCount: 1,
+            activeAttemptId: "matt_alpha_2",
+            resultRef: null,
+            errorSummary: null,
+            progress: { phase: "succeeded", message: "完成", updatedAt: "2026-05-27T00:00:05.000Z" },
+          },
+        },
+        summary: { totalTasks: 1, succeededTasks: 1, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+      };
+      const runB: TeamRunState = {
+        runId: "mrun_beta_2",
+        planId: "canvas_task_mtask_beta",
+        source: { type: "canvas-task", taskId: taskB.taskId },
+        teamUnitId: "canvas_task_unit_mtask_beta",
+        status: "completed",
+        createdAt: "2026-05-27T00:00:00.000Z",
+        startedAt: "2026-05-27T00:00:01.000Z",
+        finishedAt: "2026-05-27T00:00:05.000Z",
+        currentTaskId: null,
+        taskStates: {
+          [taskB.taskId]: {
+            status: "succeeded",
+            attemptCount: 1,
+            activeAttemptId: "matt_beta_2",
+            resultRef: null,
+            errorSummary: null,
+            progress: { phase: "succeeded", message: "完成", updatedAt: "2026-05-27T00:00:05.000Z" },
+          },
+        },
+        summary: { totalTasks: 1, succeededTasks: 1, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+      };
+
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [
+              { agentId: "main", name: "主 Agent", description: "默认" },
+              { agentId: "search", name: "搜索 Agent", description: "搜索" },
+            ],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks" && method === "GET") {
+          return new Response(JSON.stringify({ tasks: allTasks }), { status: 200 });
+        }
+        if (url === "/v1/team/task-connections") return new Response(JSON.stringify([]), { status: 200 });
+        if (url === "/v1/team/source-nodes") return new Response(JSON.stringify([]), { status: 200 });
+        if (url === "/v1/team/source-connections") return new Response(JSON.stringify([]), { status: 200 });
+        if (url === `/v1/team/tasks/${taskA.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [runA] }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${taskB.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [runB] }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${taskC.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/") && url.includes("/tasks/") && url.includes("/attempts")) {
+          return new Response(JSON.stringify({ attempts: [] }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/")) {
+          if (url.includes(runA.runId)) return new Response(JSON.stringify(runA), { status: 200 });
+          if (url.includes(runB.runId)) return new Response(JSON.stringify(runB), { status: 200 });
+          return new Response(JSON.stringify({}), { status: 200 });
+        }
+        return new Response(JSON.stringify([]), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+      await waitFor(() => expect(window.localStorage.getItem("ugk-team-console:canvas-ui-state:v1")).toContain('"dataSource":"live"'));
+
+      // Open both observers
+      await waitFor(() => {
+        expect(within(getAtlasNodes(container)).getByRole("button", { name: taskA.title })).toHaveAttribute("data-task-run-status", "completed");
+      });
+      const taskANode = within(getAtlasNodes(container)).getByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      await waitFor(() => expect(container.querySelector(".task-action-branch")).toBeTruthy());
+      const branchA = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskA.taskId),
+      )!;
+      const runSummaryA = await within(branchA as HTMLElement).findByRole("button", { name: /最近运行/ });
+      fireEvent.click(runSummaryA);
+
+      await waitFor(() => {
+        expect(container.querySelectorAll('.emap-task-child-branch-shell[data-panel-id^="run-observer"]').length).toBeGreaterThanOrEqual(1);
+      });
+
+      await waitFor(() => {
+        expect(within(getAtlasNodes(container)).getByRole("button", { name: taskB.title })).toHaveAttribute("data-task-run-status", "completed");
+      });
+      const taskBNode = within(getAtlasNodes(container)).getByRole("button", { name: taskB.title });
+      fireEvent.click(taskBNode);
+      await waitFor(() => {
+        const branches = container.querySelectorAll(".task-action-branch");
+        expect(branches.length).toBeGreaterThanOrEqual(2);
+      });
+      const branchB = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskB.taskId),
+      )!;
+      const runSummaryB = await within(branchB as HTMLElement).findByRole("button", { name: /最近运行/ });
+      fireEvent.click(runSummaryB);
+
+      await waitFor(() => {
+        expect(container.querySelectorAll('.emap-task-child-branch-shell[data-panel-id^="run-observer"]').length).toBe(2);
+      });
+
+      // Record observer B's position
+      const observers = container.querySelectorAll('.emap-task-child-branch-shell[data-panel-id^="run-observer"]');
+      const observerB = Array.from(observers).find((el) =>
+        el.textContent?.includes(taskB.title),
+      ) ?? observers[1];
+      expect(observerB).toBeTruthy();
+      const observerBLeft = (observerB! as HTMLElement).style.left;
+      const observerBTop = (observerB! as HTMLElement).style.top;
+
+      // Close observer A by clicking its run summary again (toggle)
+      const runSummaryAAgain = within(branchA as HTMLElement).getByRole("button", { name: /最近运行/ });
+      fireEvent.click(runSummaryAAgain);
+
+      await waitFor(() => {
+        const remaining = container.querySelectorAll('.emap-task-child-branch-shell[data-panel-id^="run-observer"]');
+        expect(remaining.length).toBe(1);
+      });
+
+      // Observer B's position should be unchanged
+      const observerBAfter = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]');
+      expect(observerBAfter).toBeTruthy();
+      expect((observerBAfter! as HTMLElement).style.left).toBe(observerBLeft);
+      expect((observerBAfter! as HTMLElement).style.top).toBe(observerBTop);
+    });
   });
 
 });
