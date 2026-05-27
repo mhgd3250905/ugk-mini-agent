@@ -1306,13 +1306,13 @@ test("control dependency downstream run has no boundInputs", async () => {
 		const taskB = await taskStore.create({ ...validTaskInput, title: "下游" });
 		await dependencyStore.create({ fromTaskId: taskA.taskId, toTaskId: taskB.taskId });
 
-			const runA = await service.createRun(taskA.taskId);
-			await waitForTerminalRun(service, runA.runId);
+		const runA = await service.createRun(taskA.taskId);
+		await waitForTerminalRun(service, runA.runId);
 
-			const runsB = await waitForTaskRuns(service, taskB.taskId);
-			const finishedB = await waitForTerminalRun(service, runsB[0]!.runId);
-			assert.equal(finishedB.status, "completed");
-			assert.equal(finishedB.source?.boundInputs, undefined);
+		const runsB = await waitForTaskRuns(service, taskB.taskId);
+		const finishedB = await waitForTerminalRun(service, runsB[0]!.runId);
+		assert.equal(finishedB.status, "completed");
+		assert.equal(finishedB.source?.boundInputs, undefined);
 	} finally {
 		await rm(root, { recursive: true, force: true }).catch(() => {});
 	}
@@ -1410,19 +1410,18 @@ test("dependency fan-out triggers multiple independent downstream Tasks", async 
 		await dependencyStore.create({ fromTaskId: taskA.taskId, toTaskId: taskB.taskId });
 		await dependencyStore.create({ fromTaskId: taskA.taskId, toTaskId: taskC.taskId });
 
-			const runA = await service.createRun(taskA.taskId);
-			await waitForTerminalRun(service, runA.runId);
+		const runA = await service.createRun(taskA.taskId);
+		await waitForTerminalRun(service, runA.runId);
 
-			const runsB = await waitForTaskRuns(service, taskB.taskId);
-			const runsC = await waitForTaskRuns(service, taskC.taskId);
-			const finishedB = await waitForTerminalRun(service, runsB[0]!.runId);
-			const finishedC = await waitForTerminalRun(service, runsC[0]!.runId);
-			assert.equal(finishedB.status, "completed");
-			assert.equal(finishedC.status, "completed");
-			assert.equal(finishedB.source?.triggeredBy?.type, "task-dependency");
-			assert.equal(finishedC.source?.triggeredBy?.type, "task-dependency");
+		const runsB = await waitForTaskRuns(service, taskB.taskId);
+		const runsC = await waitForTaskRuns(service, taskC.taskId);
+		const finishedB = await waitForTerminalRun(service, runsB[0]!.runId);
+		const finishedC = await waitForTerminalRun(service, runsC[0]!.runId);
+		assert.equal(finishedB.status, "completed");
+		assert.equal(finishedC.status, "completed");
+		assert.equal(finishedB.source?.triggeredBy?.type, "task-dependency");
+		assert.equal(finishedC.source?.triggeredBy?.type, "task-dependency");
 		} finally {
-			await rm(root, { recursive: true, force: true }).catch(() => {});
 		await rm(root, { recursive: true, force: true }).catch(() => {});
 	}
 });
