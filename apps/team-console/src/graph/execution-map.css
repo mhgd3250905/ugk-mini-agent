@@ -119,80 +119,64 @@
   text-align: right;
 }
 
-.emap-node-hub {
+.emap-root-dock {
   position: absolute;
-  left: 12px;
-  top: 64px;
-  bottom: 12px;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
   z-index: 5;
-  width: 188px;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px;
+  align-items: stretch;
+  gap: 4px;
+  padding: 6px 10px;
   border: 1px solid rgba(122, 131, 151, 0.22);
-  border-radius: 7px;
-  background: rgba(9, 15, 26, 0.9);
-  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(10px);
+  border-radius: 10px;
+  background: rgba(9, 15, 26, 0.92);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(14px);
   pointer-events: auto;
+  max-width: 80vw;
+  overflow-x: auto;
 }
 
-.emap-node-hub-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--secondary);
-  font-size: 10px;
-  font-weight: 750;
-  text-transform: uppercase;
-}
-
-.emap-node-hub-head strong {
-  min-width: 20px;
-  height: 18px;
-  display: grid;
-  place-items: center;
-  border-radius: 4px;
-  background: rgba(121, 216, 208, 0.12);
-  color: var(--accent);
-  font-family: var(--font-mono);
-  font-size: 10px;
-}
-
-.emap-node-hub-list {
-  min-height: 0;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.emap-node-hub-item {
+.emap-root-dock-item {
   appearance: none;
-  width: 100%;
-  min-height: 54px;
-  padding: 7px 8px;
+  flex-shrink: 0;
+  min-width: 90px;
+  max-width: 140px;
+  min-height: 48px;
+  padding: 5px 8px;
   border: 1px solid rgba(122, 131, 151, 0.2);
-  border-radius: 5px;
+  border-radius: 7px;
   background: rgba(255, 255, 255, 0.045);
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
 }
 
-.emap-node-hub-item:hover,
-.emap-node-hub-item:focus-visible {
+.emap-root-dock-item:hover,
+.emap-root-dock-item:focus-visible {
   border-color: rgba(121, 216, 208, 0.62);
   background: rgba(121, 216, 208, 0.08);
+  transform: translateY(-3px);
   outline: none;
 }
 
-.emap-node-hub-kind,
-.emap-node-hub-title,
-.emap-node-hub-meta {
+.emap-root-dock.is-drop-active {
+  border-color: rgba(121, 216, 208, 0.7);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32), 0 0 0 2px rgba(121, 216, 208, 0.25);
+}
+
+.emap-root-dock.is-drop-hover {
+  border-color: rgba(121, 216, 208, 0.9);
+  background: rgba(121, 216, 208, 0.06);
+}
+
+.emap-root-dock-kind,
+.emap-root-dock-title,
+.emap-root-dock-meta {
   display: block;
   min-width: 0;
   overflow: hidden;
@@ -200,25 +184,69 @@
   white-space: nowrap;
 }
 
-.emap-node-hub-kind {
+.emap-root-dock-kind {
   color: var(--secondary);
   font-size: 9px;
   font-weight: 750;
   text-transform: uppercase;
 }
 
-.emap-node-hub-title {
+.emap-root-dock-title {
   margin-top: 2px;
   color: var(--primary);
   font-size: 11px;
   font-weight: 700;
 }
 
-.emap-node-hub-meta {
+.emap-root-dock-meta {
   margin-top: 1px;
   color: var(--secondary);
   font-family: var(--font-mono);
   font-size: 9px;
+}
+
+.emap-root-dock-flight {
+  position: fixed;
+  z-index: 100;
+  pointer-events: none;
+  padding: 5px 8px;
+  border: 1px solid rgba(121, 216, 208, 0.5);
+  border-radius: 7px;
+  background: rgba(9, 15, 26, 0.95);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  transition: transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1), opacity 0.22s ease-out;
+}
+
+.emap-root-trash {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 6;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(122, 131, 151, 0.22);
+  border-radius: 10px;
+  background: rgba(9, 15, 26, 0.9);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(14px);
+  color: var(--secondary);
+  font-size: 20px;
+  opacity: 0.45;
+  pointer-events: none;
+  transition: opacity 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.emap-root-trash.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.emap-root-trash.is-hover {
+  border-color: rgba(220, 80, 80, 0.7);
+  background: rgba(220, 80, 80, 0.12);
+  color: #e06060;
 }
 
 .execution-map-links {

@@ -1579,76 +1579,70 @@ export function ExecutionMap({
     </div>
   ) : null;
   const nodeHub = hubAgentNodes.length > 0 || hubTaskNodes.length > 0 || hubSourceNodes.length > 0 ? (
-    <aside className="emap-node-hub" aria-label="Root node hub">
-      <div className="emap-node-hub-head">
-        <span>Hub</span>
-        <strong>{hubAgentNodes.length + hubTaskNodes.length + hubSourceNodes.length}</strong>
-      </div>
-      <div className="emap-node-hub-list">
-        {hubAgentNodes.map((node) => {
-          const agent = agentsById?.get(node.agentId);
-          const label = agent?.name ?? node.agentId;
-          return (
-            <button
-              key={`hub-${node.nodeId}`}
-              type="button"
-              className="emap-node-hub-item"
-              aria-label={`复原 Agent ${label}`}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                onRestoreAgent?.(node);
-              }}
-            >
-              <span className="emap-node-hub-kind">Agent</span>
-              <span className="emap-node-hub-title">{label}</span>
-              <span className="emap-node-hub-meta">{node.agentId}</span>
-            </button>
-          );
-        })}
-        {hubTaskNodes.map((node) => {
-          const task = tasksById?.get(node.taskId);
-          const label = task?.title ?? node.taskId;
-          return (
-            <button
-              key={`hub-${node.nodeId}`}
-              type="button"
-              className="emap-node-hub-item"
-              aria-label={`复原 Task ${label}`}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                onRestoreCanvasTask?.(node);
-              }}
-            >
-              <span className="emap-node-hub-kind">Task</span>
-              <span className="emap-node-hub-title">{label}</span>
-              <span className="emap-node-hub-meta">{node.taskId}</span>
-            </button>
-          );
-        })}
-        {hubSourceNodes.map((node) => {
-          const sourceNode = sourceNodesById?.get(node.sourceNodeId);
-          const label = sourceNode?.title ?? node.sourceNodeId;
-          return (
-            <button
-              key={`hub-${node.nodeId}`}
-              type="button"
-              className="emap-node-hub-item"
-              aria-label={`复原 Source ${label}`}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                onRestoreSourceNode?.(node);
-              }}
-            >
-              <span className="emap-node-hub-kind">Source</span>
-              <span className="emap-node-hub-title">{label}</span>
-              <span className="emap-node-hub-meta">{sourceNode?.outputPort.type ?? node.sourceNodeId}</span>
-            </button>
-          );
-        })}
-      </div>
+    <aside className="emap-root-dock" aria-label="Root node dock">
+      {hubAgentNodes.map((node) => {
+        const agent = agentsById?.get(node.agentId);
+        const label = agent?.name ?? node.agentId;
+        return (
+          <button
+            key={`dock-${node.nodeId}`}
+            type="button"
+            className="emap-root-dock-item"
+            aria-label={`复原 Agent ${label}`}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRestoreAgent?.(node);
+            }}
+          >
+            <span className="emap-root-dock-kind">Agent</span>
+            <span className="emap-root-dock-title">{label}</span>
+            <span className="emap-root-dock-meta">{node.agentId}</span>
+          </button>
+        );
+      })}
+      {hubTaskNodes.map((node) => {
+        const task = tasksById?.get(node.taskId);
+        const label = task?.title ?? node.taskId;
+        return (
+          <button
+            key={`dock-${node.nodeId}`}
+            type="button"
+            className="emap-root-dock-item"
+            aria-label={`复原 Task ${label}`}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRestoreCanvasTask?.(node);
+            }}
+          >
+            <span className="emap-root-dock-kind">Task</span>
+            <span className="emap-root-dock-title">{label}</span>
+            <span className="emap-root-dock-meta">{node.taskId}</span>
+          </button>
+        );
+      })}
+      {hubSourceNodes.map((node) => {
+        const sourceNode = sourceNodesById?.get(node.sourceNodeId);
+        const label = sourceNode?.title ?? node.sourceNodeId;
+        return (
+          <button
+            key={`dock-${node.nodeId}`}
+            type="button"
+            className="emap-root-dock-item"
+            aria-label={`复原 Source ${label}`}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRestoreSourceNode?.(node);
+            }}
+          >
+            <span className="emap-root-dock-kind">Source</span>
+            <span className="emap-root-dock-title">{label}</span>
+            <span className="emap-root-dock-meta">{sourceNode?.outputPort.type ?? node.sourceNodeId}</span>
+          </button>
+        );
+      })}
     </aside>
   ) : null;
   const overlay = nodeHub || maximizedOverlay ? (
