@@ -1,6 +1,6 @@
 # 当前交接快照
 
-更新时间：`2026-05-23`
+更新时间：`2026-05-27`
 
 这份文档给新接手 `ugk-pi / UGK CLAW` 的 coding agent 看。它只记录当前稳定事实和接手入口；历史流水账看 `docs/change-log.md`。不要靠聊天记录拼现状，聊天上下文太肥时最容易把旧计划当新任务，挺蠢，也挺危险。
 
@@ -11,7 +11,7 @@
 ```text
 请接手 `E:\AII\ugk-pi`。你维护的是 ugk-pi 代码仓库，不是产品运行时 Playground agent。
 
-开始前先读 `AGENTS.md`、`docs/handoff-current.md`、`docs/playground-current.md`、`docs/change-log.md`、`docs/traceability-map.md` 和 `DESIGN.md`。如果任务涉及 Chat / Agents / Conn 性能优化，直接看 `.codex/plans/2026-05-22-playground-chat-performance-handoff.md`、`.codex/plans/2026-05-22-playground-agents-performance-handoff.md`、`.codex/plans/2026-05-22-playground-conn-performance-handoff.md`。如果任务涉及 Qwen 思考流、GLM-5.1 上下文或模型源展示，先看 `docs/model-providers.md`、`docs/playground-current.md` 的 `2026-05-23` 条目和 `src/agent/agent-session-event-adapter.ts`。
+开始前先读 `AGENTS.md`、`docs/handoff-current.md`、`docs/playground-current.md`、`docs/change-log.md`、`docs/traceability-map.md` 和 `DESIGN.md`。如果任务涉及 Chat / Agents / Conn 性能优化，直接看 `.codex/plans/2026-05-22-playground-chat-performance-handoff.md`、`.codex/plans/2026-05-22-playground-agents-performance-handoff.md`、`.codex/plans/2026-05-22-playground-conn-performance-handoff.md`。如果任务涉及 Qwen 思考流、GLM-5.1 上下文或模型源展示，先看 `docs/model-providers.md`、`docs/playground-current.md` 的 `2026-05-23` 条目和 `src/agent/agent-session-event-adapter.ts`。如果任务涉及 Team Console Task / WorkUnit redesign，先切到 `E:\AII\ugk-pi\.worktrees\team-console-workunit-redesign`，读 `apps/team-console/README.md`、`docs/team-runtime.md`、`docs/playground-current.md` 和 `docs/change-log.md`；这是独立 Team Console React/Vite worktree，不是产品运行时 Playground agent，也不是 `.pi/skills` runtime skill。不要提交 `.codex/plans/*`、`.codex/skills/new-chat/`、`.env`、`.data`、runtime 产物、temp 文件或未知 `.pi/skills/*/skills-lock.json`。
 
 开始前执行 `git status --short --branch`、`git log -1 --oneline`、`git show -s --format="%h %s" stable/playground-performance-2026-05-22`、`git log --oneline stable/playground-performance-2026-05-22..HEAD` 和 `git remote -v`。当前稳定产品基线 tag 是 `stable/playground-performance-2026-05-22`，指向 `f0aa1fd docs(playground): preserve performance handoffs`，已推送到 GitHub `origin` 和 Gitee `gitee`。后续是否继续开发、规划、部署，要先按用户新任务判断，不要擅自加功能。
 
@@ -28,6 +28,98 @@
 - 本地工作区在打 tag / 推送后已清理未跟踪运行产物；新会话仍必须先执行 `git status --short --branch`
 
 注意：远端 Git 已更新不等于生产服务器已部署。服务器更新仍要按 `docs/server-ops.md` 的增量流程执行，不能把 push 当上线。
+
+## 2026-05-27 Team Console Task / WorkUnit worktree 快照
+
+当前 Team Console Task / WorkUnit redesign 继续在独立 worktree 开发：
+
+- Worktree：`E:\AII\ugk-pi\.worktrees\team-console-workunit-redesign`
+- 分支：`codex/team-console-workunit-redesign`
+- 最新提交：`da702a2 test(team): narrow task artifact bound input assertion`
+- 当前 tracked feature diff 已收口；如果 `git status --short` 仍显示 tracked dirty，先确认是否为新的用户改动或未提交交接记录。
+- 当前 untracked 仍有 `.codex/plans/*`、`.codex/skills/new-chat/`、`tmp-team-console-right-stack.png`；这些是本地协作 / 旧现场，除非用户明确要求，不要提交或删除。
+
+已完成并提交：
+
+- `1ecf7c6`：Team Console Live API 工具栏接入“文本输出 / 文件输出” Source 节点；文本 source 输出 `string`，文件 source 按扩展名推断 `md` / `json` / `html` / `string` / `file`。
+- Source 节点作为独立根节点渲染在 Execution Atlas，可拖动、框选、收纳到左侧 Hub，并可连接到同类型 Task input port；本地只保存 source 节点坐标和 Hub 收纳 id，不保存 source 内容。
+- Agent 对话分支、Task Leader 对话分支和 observer 文件详情面板支持标题栏双击最大化 / 还原，保留原标题栏拖动和右下角 resize。
+- `ef0b718` / `1e50232` / `b40bf2f` / `db4a29d`：补齐 Agent / Task / Source 根卡清理入口；Task 和 Source 走软归档，Agent 只移出 Team Console 画布；归档失败保留节点和错误 banner；README 引号字符修复已单独收口。
+- `540239e`：修复 Task 根节点归档失败时误清空确认状态的问题；`archiveTask()` 返回 boolean，失败时确认按钮仍保留。
+- `5758218`：Leader 对话分支显示“当前 Task 上下文”只读文本和复制按钮，方便复制到 Leader 会话里修改 Task 规则；Team Console 仍不解析 iframe 聊天文本。
+- `d0e35dd` / `0668d14` / `1fb9f25`：锁定 Task run 并发边界：不同 Task 可并行；同一 Task 同时只允许一个 active run；active run 轮询按 `taskId + runId` 独立收口，最后一个提交消除了并发测试的 React act warning。
+- `88e757c` / `dfded62` / `a3aaab8` / `2d1a217`：锁定 typed Task output fan-out：同一个 output port 可连接到多个不同下游 Task 的同类型 input port；上游 accepted result 会独立分发给每个下游；单个下游失败不阻塞其他下游或回滚上游；文档明确不做 merge / wait-all / 条件分支 / 同 target 多 input bundling。
+- `da702a2`：后端路由测试把 downstream bound input 收窄为 Task artifact，明确防止 Task-to-Task typed chain 被 canvas source artifact 混淆。
+- 文档已同步：`docs/change-log.md`、`docs/team-runtime.md`、`apps/team-console/README.md`。
+
+验证记录：
+
+- `npm --prefix apps/team-console run test`：370 passed
+- `npm --prefix apps/team-console run build`：通过
+- `npx tsc --noEmit`：通过
+- `git diff --check` / `git diff --cached --check`：通过
+- `node --test --import tsx test\team-task-routes.test.ts`：17 passed
+- `node --test --import tsx test\team-task-run-process.test.ts`：13 passed
+- `node --test --import tsx test\team-task-run-routes.test.ts`：10 passed
+- 浏览器真实 `http://127.0.0.1:5174/` 代理 Docker main `http://127.0.0.1:3000` 验证过 Source 创建、文件 md 推断、Source→Task 连接、Hub 收纳恢复、Agent 分支双击最大化 / 还原、文件详情双击最大化 / 还原；验证期间创建的临时 source / connection 已清理。
+- Root archive、Leader context copy、Task run concurrency 和 fan-out 最近几轮浏览器自动验证受 Chrome profile / dev server 可用性影响未全部重跑；对应路径已有前端 / 后端回归测试覆盖。
+
+已撤销的需求：
+
+- 用户撤回“`string` input port 作为关键词参数槽”的特化设计。
+- 后续不要实现：`string` 必填、缺少 `string` source 时阻止运行、同一 `string` input 自动替换旧 source、`team-task-creator` 自动生成 `query:string`。
+- 保留通用能力即可：text source 输出 `string`，如果 Task 自身有同类型 input，可按普通 typed source 连接；`string` 不再有关键词 / 参数槽特殊语义。
+
+推荐下一步：
+
+1. 新会话先确认用户的新目标，不要继续推进已撤销的 `string` 参数特化计划。
+2. 若继续做前端 UI，保持在 `apps/team-console/**`、`docs/team-runtime.md`、`apps/team-console/README.md`、`docs/change-log.md` 范围内；不改主 `/playground`，不改 `.pi/skills` runtime skill。
+3. 只有用户明确要求后端 typed Task chain 行为变更时才动 `src/team/**`；普通 UI / 测试 / 文档需求不要顺手改 runtime。
+4. 如果后续讨论“多个 upstream 合并到同一个 input”或“同一个 target Task 多 input 同时绑定”，先做需求设计，不要把它和已完成的 fan-out 混成一个功能。
+
+## 2026-05-26 Team Console Task / WorkUnit 提交快照（最终稳定版）
+
+当前 Team Console Task 功能已在独立 worktree 完成收口和最终测试稳定化：
+
+- Worktree：`E:\AII\ugk-pi\.worktrees\team-console-workunit-redesign`
+- 分支：`codex/team-console-workunit-redesign`
+- 最新提交：以 `git log -1 --oneline` 为准；当前分支已完成 Team Console Task / WorkUnit redesign 收口和最终测试稳定化。
+- `.codex/plans/*` 和 `.codex/skills/new-chat/` 仍是本地协作文件，按边界不要提交。
+
+已完成的强化工作（按提交倒序）：
+
+- 路由测试固定 sleep 移除：`archived task rejects` 测试 409 后直接查询 downstream（无 run 产生无需等待）；`stale downstream` 测试用 `waitForAttemptDelivery()` 等待真实 delivery loop 完成后再断言。
+- Real Typed Chain Acceptance：验收矩阵全部闭合 — TaskA accepted result → typed artifact（`sourceAttemptId`/`sourceOutputPortId`）→ TaskB auto-start → 下游发现 → downstreamDelivery outcome（`delivered`）→ timing fields → Plan run 隔离。
+- Typed Artifact Handoff 模块：隔离 artifact handoff 逻辑和测试，稳定断言避免 background delivery cleanup race。
+- Downstream Delivery Outcomes：记录 `delivered`/`skipped`/`failed` 三种下游投递结果，stale connection 记录 `staleReason`。
+- Typed Chain Rule 模块：集中 typed task chain 校验规则。
+- Connection Persistence Hardening：收紧 task connection 变更锁。
+- Stale Connection Lifecycle：完整覆盖 stale port type mismatch / archived task 拒绝 / stale 下游不影响上游成功。
+- Typed Artifact Prompt Contract Hardening：`formatBoundInputsForPrompt()` 输出完整追溯 metadata + `BEGIN_TYPED_ARTIFACT_CONTENT` / `END_TYPED_ARTIFACT_CONTENT` 内容块。
+
+功能能力（与上一版一致，无新增功能）：
+
+- Team Console 已支持 Task 创建入口、浅编辑、软删除、Leader 对话 iframe、Task run 启动 / 停止和 Run observer。
+- Typed Task Chain V1：WorkUnit 声明 `inputPorts` / `outputPorts`，连接校验 `output.type === input.type`、非重复、非自连接、非环；上游 run 成功后自动触发下游。
+- Task run observer 聚合面板、层级拖动、连接曲线和 source socket 视觉收口。
+- V1 边界保持克制：不做任意复杂画布编排、条件分支、循环、SSE。
+
+最终验证记录：
+
+- route test（`test/team-task-run-routes.test.ts`）：8 passed
+- backend full gate（8 个 team test 文件）：117 passed
+- frontend test（`apps/team-console`）：346 passed
+- frontend build（`apps/team-console`）：通过
+- `npx tsc --noEmit`：通过
+- `git diff --check`：通过
+- touched files EOL：`i/lf w/lf`
+- 计划规范差异：`triggeredBy` 类型不含 `fromOutputPortId`，output port 通过 `connectionId` 追溯，不影响功能正确性
+
+推荐下一步：
+
+1. 此分支已完成最终测试稳定化。下一个 agent 应聚焦最终 review / 集成 / PR 或用户指定的后续任务，不要继续无边界 UI 打磨或功能扩展。
+2. 若后续集成后端提交，先做逐提交 `git show` / patch-id 审计，确认不会回退 `TaskConnectionStore`、typed port contract、accepted artifact 自动下游触发和相关测试。
+3. SSE 观察流仍是后续后端能力；当前 Run observer 仍是轮询版本，不要在前端硬造假实时流。
 
 ## 2026-05-23 Qwen 思考流与 GLM-5.1 上下文修复
 
@@ -48,6 +140,38 @@
 - `runtime/pi-agent/models.json`
 - `docs/model-providers.md`
 - `docs/playground-current.md`
+
+## 2026-05-23 Team Console 独立前端分支快照
+
+当前事实：
+
+- Team Console 分支在 `E:\AII\ugk-pi\.worktrees\team-console-ui`，分支名 `codex/team-console-ui`，这是独立 React + Vite + TypeScript preview，不替换 `/playground/team`。
+- 禁区仍然有效：不要改 `src/team/**`、`src/routes/**`、`src/ui/**`，不要改 Team Runtime 后端或 Live API 行为。
+- 当前 UI 已从固定侧栏 / 节点内详情堆叠收口为 Execution Atlas：点击 task 后 selected node 保持紧凑，结果 / 错误 / 尝试 / 进度以 evidence card 分支从任务节点长出。
+- Evidence / artifact / preview card 是 `.execution-map-nodes` 的直接子节点，不是 selected task 的 descendant；桌面端 absolute 定位在右侧并通过 dashed SVG link 连接，移动端作为 selected task 后一个 sibling 流式堆叠。
+- 选中 task 后，Team Console 会用现有只读 API 读取真实 `TeamAttemptMetadata`，从 worker/checker/watcher/result refs 渲染 Worker 输出、Checker 验收、Watcher 复盘和最终 / 失败 / 发现结果 artifact card；点击 artifact card 会读取真实 attempt file 并展开二级预览节点，文本转义、JSON pretty print、HTML sandbox iframe。
+- 只有通过当前 task/attempt 匹配、且文件名存在于 attempt metadata `files` 白名单里的 file-backed artifact card 会渲染为可点击 `button` 并调用 `readAttemptFile()`；Fallback Error / Attempt / Progress evidence 是静态卡片，不会伪造可预览文件。
+- 桌面 Execution Atlas 支持鼠标滚轮缩放、背景拖拽平移和中文工具按钮“放大 / 缩小 / 重置视图”。移动端本轮只做最小烟测，不做深度设计，`720px` 以下保持纵向流并隐藏自定义 pan/zoom 工具条。
+- Evidence / preview 高度测量已改为 `offsetHeight` 优先、`scrollHeight` fallback，不再把 CSS scale 后的 `getBoundingClientRect().height` 写回 layout；滚轮缩放使用原生 non-passive `wheel` listener，避免缩放后点击节点触发 React `Maximum update depth exceeded` 白屏。
+- Mock fixtures 已加入脱敏真实 run snapshot：`plan_real_snap_001` / `run_real_snap_001`，用于验证真实 completed_with_failures 数据、for_each 子任务、长错误、API 错误、resultRef、ghost result 和最终汇报。
+- Mock fixtures 已加入脱敏真实 run snapshot 2：`plan_real_success_foreach_001` / `run_real_success_foreach_001`，16 个任务（3 主任务 + 13 for_each 子任务）全部成功，用于验证折叠/展开交互和大量子任务布局。
+- 已删除旧固定右侧任务详情组件 `apps/team-console/src/graph/ExecutionTaskDetail.tsx`；不要再按右侧栏方案继续设计。
+- Collapsed summary 节点已支持展开/收起：点击 "+ N 个子任务" 展开全部子任务，展开后末尾显示"收起"按钮，再次点击收起。展开/收起时布局同步更新。
+- for_each 父任务 evidence 规则：有 visible children（子任务数 ≤ `CHILD_COLLAPSE_THRESHOLD`(6) 或已展开）时不显示 evidence；无 visible children 时显示当前任务自身的结果 / 错误 / 进度。
+
+最近验证：
+
+- `npm --prefix apps/team-console run test`：164 passed
+- `npm --prefix apps/team-console run build`：通过
+- `git diff --check`：通过
+- Chrome 桌面浏览器验证：`真实 run snapshot 2` 展开 13 个子任务后，滚轮缩放到 110%，点击“搜索引擎官方免费 API”不白屏，Worker / Checker / Watcher / Result evidence 正常显示，继续点击“最终结果”可打开二级预览。
+- 控制台未捕获 `Maximum update depth exceeded`、passive wheel warning、"文件不在当前 attempt metadata 中"或"文件引用不属于当前任务"。
+
+当前提交边界：
+
+- 应提交的 tracked 改动集中在 `apps/team-console/**`、`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/change-log.md`、`docs/handoff-current.md`。
+- 不要提交未跟踪计划文件：`.codex/plans/*.md`。
+- 不要提交未跟踪截图：`screenshot-*.png`。
 
 ## 2026-05-22 Playground 性能收口
 

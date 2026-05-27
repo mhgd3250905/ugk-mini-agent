@@ -1,0 +1,2982 @@
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
+import { LiveTeamApi } from "../api/team-api";
+import type { AgentRunStatus, AgentSummary, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskConnection, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
+import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, mockTeamTasks, MockTeamApi } from "../fixtures/team-fixtures";
+import { ExecutionMap, type AtlasAgentNode, type AtlasSourceNode, type AtlasTaskNode } from "../graph/ExecutionMap";
+import { ROOT_ID } from "../graph/execution-map-layout";
+import type { AtlasViewport } from "../graph/AtlasCanvasShell";
+import { RUN_STATUS_LABELS, isActiveRun } from "../shared/status";
+import { renderTeamMarkdown } from "../shared/markdown";
+import "./app.css";
+
+export type DataSource = "mock" | "live";
+type LiveRunMode = "workspace" | "latest";
+
+const CLEAN_AGENT_WORKSPACE_ID = "agent-workspace";
+const DEFAULT_PLAYGROUND_BASE_URL = "http://127.0.0.1:3000";
+const DATA_SOURCE_STORAGE_KEY = "ugk-team-console:data-source";
+const LIVE_AGENT_LAYOUT_STORAGE_KEY = "ugk-team-console:live-agent-layout:v1";
+const LIVE_TASK_LAYOUT_STORAGE_KEY = "ugk-team-console:live-task-layout:v1";
+const LIVE_SOURCE_LAYOUT_STORAGE_KEY = "ugk-team-console:live-source-layout:v1";
+const CANVAS_UI_STATE_STORAGE_KEY = "ugk-team-console:canvas-ui-state:v1";
+const TASK_RUN_PROCESS_LABELS: Record<TeamAttemptRoleProcessRole, string> = {
+  worker: "Worker 过程",
+  checker: "Checker 过程",
+};
+const PROCESS_CURRENT_ACTION_MAX_CHARS = 96;
+const PROCESS_NARRATION_MAX_CHARS = 220;
+const PROCESS_ASSISTANT_TEXT_MAX_LINES = 5;
+const PROCESS_ASSISTANT_TEXT_MAX_LINE_CHARS = 200;
+
+type AgentBranchMode = "chat" | "task-create";
+
+type AgentBranchState = {
+  nodeId: string;
+  agentId: string;
+  mode: AgentBranchMode;
+};
+
+type TaskBranchDetailMode = "leader-chat" | "edit" | "run-observer";
+
+type TaskBranchState = {
+  nodeId: string;
+  taskId: string;
+  detailMode: TaskBranchDetailMode | null;
+  observedRunId?: string;
+  selectedFileKeys?: string[];
+};
+
+type StoredCanvasUiState = {
+  schemaVersion: 1;
+  dataSource: DataSource;
+  selectedFixtureId?: string;
+  liveRunMode?: LiveRunMode;
+  viewport?: AtlasViewport;
+  expandedAgentBranch?: AgentBranchState | null;
+  expandedTaskBranches?: TaskBranchState[];
+  minimizedAgentNodeIds?: string[];
+  minimizedTaskNodeIds?: string[];
+  minimizedSourceNodeIds?: string[];
+};
+
+type TaskEditDirtyField = "title" | "leaderAgentId" | "workerAgentId" | "checkerAgentId";
+
+type TaskEditBaseSnapshot = {
+  title: string;
+  leaderAgentId: string;
+  workerAgentId: string;
+  checkerAgentId: string;
+  updatedAt: string;
+};
+
+type TaskEditDraft = {
+  taskId: string;
+  title: string;
+  leaderAgentId: string;
+  workerAgentId: string;
+  checkerAgentId: string;
+  base: TaskEditBaseSnapshot;
+  dirtyFields: Partial<Record<TaskEditDirtyField, true>>;
+};
+
+type TaskConnectionDraft = {
+  fromTaskId: string;
+  fromOutputPortId: string;
+  type: string;
+};
+
+type SourceConnectionDraft = {
+  fromSourceNodeId: string;
+  fromOutputPortId: string;
+  type: string;
+};
+
+type StoredTaskPosition = {
+  taskId: string;
+  position: { x: number; y: number };
+};
+
+type StoredSourcePosition = {
+  sourceNodeId: string;
+  position: { x: number; y: number };
+};
+
+type TaskRunObserverFileKind = "worker" | "checker" | "result";
+
+type TaskRunObserverFileDescriptor = {
+  key: string;
+  attemptId: string;
+  kind: TaskRunObserverFileKind;
+  title: string;
+  fileName: string;
+  path: string;
+  runtimeContext?: TeamRoleRuntimeContext;
+  summary?: string;
+};
+
+type TaskRunObserverFileState = {
+  content?: string;
+  error?: string;
+};
+
+type TaskRunObserverState = {
+  loading: boolean;
+  attempts: TeamAttemptMetadata[];
+  files: Record<string, TaskRunObserverFileState>;
+  error: string | null;
+  lastUpdatedAt: string | null;
+};
+
+type RootArchiveConfirm =
+  | { kind: "source"; sourceNodeId: string; nodeId: string; title: string }
+  | { kind: "task"; task: TeamCanvasTask; nodeId: string }
+  | { kind: "agent"; nodeId: string; agentId: string; name: string };
+
+function errorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as TeamApiError).message);
+  }
+  if (error instanceof Error) return error.message;
+  return "未知错误";
+}
+
+function fileNameFromRef(ref: string | null | undefined): string | null {
+  if (!ref) return null;
+  return ref.split("/").filter(Boolean).at(-1) ?? null;
+}
+
+function formatDurationMs(durationMs: number): string {
+  if (!Number.isFinite(durationMs) || durationMs < 0) return "未知";
+  if (durationMs < 1000) return `${Math.round(durationMs)}ms`;
+  const totalSeconds = Math.round(durationMs / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}秒`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) return seconds > 0 ? `${minutes}分${seconds}秒` : `${minutes}分`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes > 0 ? `${hours}时${remainingMinutes}分` : `${hours}时`;
+}
+
+function elapsedText(startedAt: string | null | undefined, finishedAt: string | null | undefined): string {
+  const start = Date.parse(startedAt ?? "");
+  if (!Number.isFinite(start)) return "耗时 未知";
+  const end = finishedAt ? Date.parse(finishedAt) : Date.now();
+  const safeEnd = Number.isFinite(end) ? end : Date.now();
+  return `耗时 ${formatDurationMs(safeEnd - start)}`;
+}
+
+function taskRunPhase(run: TeamRunState, taskId: string): string {
+  return run.taskStates[taskId]?.progress.phase || run.status;
+}
+
+function taskRunMessage(run: TeamRunState, taskId: string): string {
+  return run.taskStates[taskId]?.progress.message || "暂无阶段消息";
+}
+
+function taskRunAttempts(run: TeamRunState, taskId: string): number {
+  return run.taskStates[taskId]?.attemptCount ?? 0;
+}
+
+function taskRunElapsed(run: TeamRunState): string {
+  return elapsedText(run.startedAt ?? run.createdAt, run.finishedAt).replace(/^耗时\s*/, "");
+}
+
+function formatRoleProcessStatus(status?: TeamAttemptRoleProcessStatus): string {
+  switch (status) {
+    case "running": return "执行中";
+    case "succeeded": return "成功";
+    case "failed": return "失败";
+    case "cancelled": return "已取消";
+    case "waiting":
+    default: return "等待";
+  }
+}
+
+function getLatestNarration(process: TeamAttemptRoleProcess["process"] | undefined): string {
+  const narration = process?.narration ?? [];
+  const latest = [...narration].reverse().find((item) => item.trim().length > 0);
+  return latest ?? "暂无过程条目";
+}
+
+function truncateProcessSummaryText(value: string | null | undefined, maxChars: number): string {
+  const normalized = (value ?? "").replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxChars) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxChars - 3)).trimEnd()}...`;
+}
+
+const SENTENCE_BREAK_RE = /(?<=[。？！；\n])/;
+
+function formatAssistantText(raw: string): { lines: string[]; hiddenLineCount: number; truncatedLineCount: number } {
+  const normalized = raw.replace(/\r\n?/g, "\n").trim();
+  if (!normalized) return { lines: [], hiddenLineCount: 0, truncatedLineCount: 0 };
+  const hasRealBreak = normalized.includes("\n");
+  const paragraphs = hasRealBreak
+    ? normalized.split(/\n/)
+    : normalized.length > 20
+      ? normalized.split(SENTENCE_BREAK_RE).filter((s) => s.trim().length > 0)
+      : [normalized];
+  const maxChars = PROCESS_ASSISTANT_TEXT_MAX_LINE_CHARS;
+  const lines: string[] = [];
+  let truncatedLineCount = 0;
+  for (const para of paragraphs) {
+    const trimmed = para.trim();
+    if (trimmed.length === 0) {
+      if (lines.length > 0 && lines[lines.length - 1] !== "") lines.push("");
+      continue;
+    }
+    if (trimmed.length > maxChars) {
+      lines.push(`${trimmed.slice(0, Math.max(0, maxChars - 3)).trimEnd()}...`);
+      truncatedLineCount++;
+    } else {
+      lines.push(trimmed);
+    }
+  }
+  while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  const maxLines = PROCESS_ASSISTANT_TEXT_MAX_LINES;
+  if (lines.length <= maxLines) return { lines, hiddenLineCount: 0, truncatedLineCount };
+  const visible = lines.slice(0, maxLines);
+  return { lines: visible, hiddenLineCount: lines.length - maxLines, truncatedLineCount };
+}
+
+function selectLatestAttempt(attempts: TeamAttemptMetadata[]): TeamAttemptMetadata | null {
+  if (attempts.length === 0) return null;
+  return attempts.reduce((latest, attempt) => {
+    const latestTime = Date.parse(latest.updatedAt || latest.createdAt);
+    const attemptTime = Date.parse(attempt.updatedAt || attempt.createdAt);
+    if (!Number.isFinite(attemptTime)) return latest;
+    if (!Number.isFinite(latestTime)) return attempt;
+    return attemptTime >= latestTime ? attempt : latest;
+  }, attempts[0]);
+}
+
+function renderRoleProcessNode(
+  role: TeamAttemptRoleProcessRole,
+  roleProcess: TeamAttemptRoleProcess | undefined,
+): ReactNode {
+  const process = roleProcess?.process ?? null;
+  const status = roleProcess?.status ?? "waiting";
+  const assistantFormatted = roleProcess?.assistantText?.content
+    ? formatAssistantText(roleProcess.assistantText.content)
+    : null;
+  const currentAction = truncateProcessSummaryText(process?.currentAction, PROCESS_CURRENT_ACTION_MAX_CHARS) || "等待过程数据";
+  const latestNarration = truncateProcessSummaryText(getLatestNarration(process ?? undefined), PROCESS_NARRATION_MAX_CHARS);
+  return (
+    <section
+      className={`emap-observer-node emap-observer-process-node ${role}`}
+      data-process-role={role}
+      aria-label={TASK_RUN_PROCESS_LABELS[role]}
+    >
+      <header className="emap-observer-node-head emap-observer-process-head">
+        <span className="emap-observer-node-label">{TASK_RUN_PROCESS_LABELS[role]}</span>
+        <span className={`emap-observer-process-status ${status}`}>{formatRoleProcessStatus(status)}</span>
+      </header>
+      <div className="emap-observer-process-top">
+        {assistantFormatted && assistantFormatted.lines.length > 0 ? (
+          <div className="emap-observer-process-assistant-text">
+            <span className="emap-observer-process-assistant-label">Agent</span>
+            {assistantFormatted.lines.map((line, i) => (
+              line === ""
+                ? <div key={i} className="emap-observer-process-assistant-spacer" />
+                : <p key={i}>{line}</p>
+            ))}
+            {(assistantFormatted.hiddenLineCount > 0 || assistantFormatted.truncatedLineCount > 0) && (
+              <span className="emap-observer-process-assistant-truncated">
+                {[
+                  assistantFormatted.hiddenLineCount > 0 ? `已隐藏 ${assistantFormatted.hiddenLineCount} 行` : null,
+                  assistantFormatted.truncatedLineCount > 0 ? `已截断 ${assistantFormatted.truncatedLineCount} 长行` : null,
+                ].filter(Boolean).join(" / ")}
+              </span>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="emap-observer-process-line">
+              <span>Current action</span>
+              <strong>{currentAction}</strong>
+            </div>
+            <p className="emap-observer-process-narration">{latestNarration}</p>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function fileFormatFromName(fileName: string): "json" | "markdown" | "text" {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".json")) return "json";
+  if (lower.endsWith(".md") || lower.endsWith(".markdown")) return "markdown";
+  return "text";
+}
+
+function renderJsonContent(content: string): ReactNode {
+  let pretty: string;
+  try {
+    pretty = JSON.stringify(JSON.parse(content), null, 2);
+  } catch (parseError) {
+    return (
+      <div className="emap-observer-file-detail-body">
+        <div className="emap-observer-parse-error" role="status">
+          JSON 解析失败: {parseError instanceof Error ? parseError.message : String(parseError)}
+        </div>
+        <pre className="task-run-detail-pre" data-file-format="json">{content}</pre>
+      </div>
+    );
+  }
+  return <pre className="task-run-detail-pre" data-file-format="json">{pretty}</pre>;
+}
+
+function renderMarkdownContent(content: string): ReactNode {
+  const html = renderTeamMarkdown(content);
+  return (
+    <div
+      className="team-md-content"
+      data-file-format="markdown"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
+
+function renderFileDetailContent(fileName: string, content: string): ReactNode {
+  const format = fileFormatFromName(fileName);
+  if (format === "json") return renderJsonContent(content);
+  if (format === "markdown") return renderMarkdownContent(content);
+  return <pre className="task-run-detail-pre" data-file-format="text">{content}</pre>;
+}
+
+function buildTaskRunFileDescriptors(attempts: TeamAttemptMetadata[]): TaskRunObserverFileDescriptor[] {
+  const descriptors: TaskRunObserverFileDescriptor[] = [];
+  for (const attempt of attempts) {
+    const listedFiles = new Set(attempt.files);
+    for (const worker of attempt.worker) {
+      const fileName = fileNameFromRef(worker.outputRef);
+      if (!fileName || !worker.outputRef || !listedFiles.has(fileName)) continue;
+      descriptors.push({
+        key: `${attempt.attemptId}:worker:${fileName}`,
+        attemptId: attempt.attemptId,
+        kind: "worker",
+        title: `Worker 输出 #${worker.outputIndex}`,
+        fileName,
+        path: worker.outputRef,
+        runtimeContext: worker.runtimeContext,
+      });
+    }
+    for (const checker of attempt.checker) {
+      const fileName = fileNameFromRef(checker.recordRef);
+      if (!fileName || !checker.recordRef || !listedFiles.has(fileName)) continue;
+      descriptors.push({
+        key: `${attempt.attemptId}:checker:${fileName}`,
+        attemptId: attempt.attemptId,
+        kind: "checker",
+        title: `Checker verdict #${checker.revisionIndex}`,
+        fileName,
+        path: checker.recordRef,
+        runtimeContext: checker.runtimeContext,
+        summary: `${checker.verdict}: ${checker.reason}`,
+      });
+    }
+    const resultFileName = fileNameFromRef(attempt.resultRef);
+    if (resultFileName && attempt.resultRef && listedFiles.has(resultFileName)) {
+      descriptors.push({
+        key: `${attempt.attemptId}:result:${resultFileName}`,
+        attemptId: attempt.attemptId,
+        kind: "result",
+        title: resultFileName.includes("accepted") ? "Accepted result" : "Result",
+        fileName: resultFileName,
+        path: attempt.resultRef,
+      });
+    }
+  }
+  return descriptors;
+}
+
+function selectLatestRun(runs: TeamRunState[]): TeamRunState | null {
+  if (!runs.length) return null;
+  return runs.reduce((latest, run) => {
+    const latestTime = Date.parse(latest.createdAt);
+    const runTime = Date.parse(run.createdAt);
+    if (!Number.isFinite(runTime)) return latest;
+    if (!Number.isFinite(latestTime)) return run;
+    return runTime >= latestTime ? run : latest;
+  }, runs[0]);
+}
+
+function sortRunsByCreatedAt(runs: TeamRunState[]): TeamRunState[] {
+  return [...runs].sort((a, b) => {
+    const aTime = Date.parse(a.createdAt);
+    const bTime = Date.parse(b.createdAt);
+    if (!Number.isFinite(aTime) && !Number.isFinite(bTime)) return 0;
+    if (!Number.isFinite(aTime)) return 1;
+    if (!Number.isFinite(bTime)) return -1;
+    return bTime - aTime;
+  });
+}
+
+function mergeTaskRun(
+  current: Record<string, TeamRunState[]>,
+  taskId: string,
+  runState: TeamRunState,
+): Record<string, TeamRunState[]> {
+  const runs = current[taskId] ?? [];
+  const nextRuns = runs.some((run) => run.runId === runState.runId)
+    ? runs.map((run) => run.runId === runState.runId ? runState : run)
+    : [runState, ...runs];
+  return {
+    ...current,
+    [taskId]: sortRunsByCreatedAt(nextRuns),
+  };
+}
+
+function playgroundBaseUrl(): string {
+  const configured =
+    import.meta.env.VITE_TEAM_CONSOLE_PLAYGROUND_BASE_URL ||
+    import.meta.env.VITE_TEAM_CONSOLE_API_TARGET;
+  const raw = typeof configured === "string" && configured.trim()
+    ? configured.trim()
+    : DEFAULT_PLAYGROUND_BASE_URL;
+  return raw.replace(/\/+$/, "");
+}
+
+function buildAgentPlaygroundUrl(agentId: string, mode: AgentBranchMode = "chat"): string {
+  const url = new URL("/playground", playgroundBaseUrl());
+  url.searchParams.set("view", "chat");
+  url.searchParams.set("agentId", agentId);
+  url.searchParams.set("embed", "team-console");
+  if (mode === "task-create") {
+    url.searchParams.set("teamTaskMode", "create");
+  }
+  return url.toString();
+}
+
+function formatTaskLeaderContext(task: TeamCanvasTask): string {
+  const wu = task.workUnit;
+  const formatPorts = (ports: TeamTaskInputPort[] | TeamTaskOutputPort[] | undefined) => {
+    if (!ports || ports.length === 0) return "- none";
+    return ports.map((p) => `- ${p.id} [${p.type}] ${p.label ?? ""}`).join("\n");
+  };
+  const rulesText = wu.acceptance.rules.length > 0
+    ? wu.acceptance.rules.map((r, i) => `${i + 1}. ${r}`).join("\n")
+    : "- none";
+  return [
+    "Team Console 当前 Task 上下文",
+    "",
+    "请先理解这个 Task，不要运行 Task。我要修改它的定义/规则时，请基于 taskId 使用 /team-task 更新，并在写入前展示完整变更让我确认。",
+    "",
+    `taskId: ${task.taskId}`,
+    `title: ${task.title}`,
+    `status: ${task.status}`,
+    `leaderAgentId: ${task.leaderAgentId}`,
+    `workerAgentId: ${wu.workerAgentId}`,
+    `checkerAgentId: ${wu.checkerAgentId}`,
+    `teamTaskMode: edit`,
+    `teamTaskId: ${task.taskId}`,
+    "",
+    "workUnit.input.text:",
+    wu.input.text || "(empty)",
+    "",
+    "workUnit.inputPorts:",
+    formatPorts(wu.inputPorts),
+    "",
+    "workUnit.outputPorts:",
+    formatPorts(wu.outputPorts),
+    "",
+    "workUnit.outputContract.text:",
+    wu.outputContract.text || "(empty)",
+    "",
+    "workUnit.acceptance.rules:",
+    rulesText,
+  ].join("\n");
+}
+
+function buildTaskLeaderPlaygroundUrl(task: TeamCanvasTask): string {
+  const url = new URL("/playground", playgroundBaseUrl());
+  url.searchParams.set("view", "chat");
+  url.searchParams.set("agentId", task.leaderAgentId);
+  url.searchParams.set("embed", "team-console");
+  url.searchParams.set("teamTaskId", task.taskId);
+  url.searchParams.set("teamTaskMode", "edit");
+  return url.toString();
+}
+
+function taskMenuPanelId(nodeId: string): string {
+  return `task-menu-${nodeId}`;
+}
+
+function agentRunStatusRecord(statuses: AgentRunStatus[]): Record<string, AgentRunStatus> {
+  return Object.fromEntries(statuses.map((status) => [status.agentId, status]));
+}
+
+function readStoredDataSource(): DataSource {
+  try {
+    return globalThis.localStorage?.getItem(DATA_SOURCE_STORAGE_KEY) === "live" ? "live" : "mock";
+  } catch {
+    return "mock";
+  }
+}
+
+function readRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
+}
+
+function readStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of value) {
+    const text = typeof item === "string" ? item.trim() : "";
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    result.push(text);
+  }
+  return result;
+}
+
+function readStoredViewport(value: unknown): AtlasViewport | undefined {
+  const record = readRecord(value);
+  if (!record) return undefined;
+  const x = Number(record.x);
+  const y = Number(record.y);
+  const scale = Number(record.scale);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(scale) || scale <= 0) {
+    return undefined;
+  }
+  return { x, y, scale };
+}
+
+function readStoredAgentBranch(value: unknown): AgentBranchState | null {
+  const record = readRecord(value);
+  if (!record) return null;
+  const nodeId = typeof record.nodeId === "string" ? record.nodeId.trim() : "";
+  const agentId = typeof record.agentId === "string" ? record.agentId.trim() : "";
+  const mode = record.mode === "task-create" ? "task-create" : record.mode === "chat" ? "chat" : null;
+  if (!nodeId || !agentId || !mode) return null;
+  return { nodeId, agentId, mode };
+}
+
+function readStoredTaskBranches(value: unknown): TaskBranchState[] {
+  if (!Array.isArray(value)) return [];
+  const result: TaskBranchState[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const record = readRecord(item);
+    if (!record) continue;
+    const nodeId = typeof record.nodeId === "string" ? record.nodeId.trim() : "";
+    const taskId = typeof record.taskId === "string" ? record.taskId.trim() : "";
+    if (!nodeId || !taskId || seen.has(nodeId)) continue;
+    seen.add(nodeId);
+    const rawDetailMode = record.detailMode;
+    const detailMode: TaskBranchDetailMode | null =
+      rawDetailMode === "leader-chat" || rawDetailMode === "edit" || rawDetailMode === "run-observer"
+        ? rawDetailMode
+        : null;
+    const observedRunId = typeof record.observedRunId === "string" && record.observedRunId.trim()
+      ? record.observedRunId.trim()
+      : undefined;
+    const selectedFileKeys = readStringArray(record.selectedFileKeys);
+    result.push({
+      nodeId,
+      taskId,
+      detailMode,
+      ...(observedRunId ? { observedRunId } : {}),
+      ...(selectedFileKeys.length > 0 ? { selectedFileKeys } : {}),
+    });
+  }
+  return result;
+}
+
+function readStoredCanvasUiState(): StoredCanvasUiState | null {
+  try {
+    const raw = globalThis.localStorage?.getItem(CANVAS_UI_STATE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = readRecord(JSON.parse(raw));
+    if (!parsed || parsed.schemaVersion !== 1) return null;
+    const dataSource = parsed.dataSource === "live" ? "live" : parsed.dataSource === "mock" ? "mock" : null;
+    if (!dataSource) return null;
+    const selectedFixtureId = typeof parsed.selectedFixtureId === "string" ? parsed.selectedFixtureId : undefined;
+    const liveRunMode = parsed.liveRunMode === "latest" ? "latest" : parsed.liveRunMode === "workspace" ? "workspace" : undefined;
+    const viewport = readStoredViewport(parsed.viewport);
+    return {
+      schemaVersion: 1,
+      dataSource,
+      ...(selectedFixtureId ? { selectedFixtureId } : {}),
+      ...(liveRunMode ? { liveRunMode } : {}),
+      ...(viewport ? { viewport } : {}),
+      expandedAgentBranch: readStoredAgentBranch(parsed.expandedAgentBranch),
+      expandedTaskBranches: readStoredTaskBranches(parsed.expandedTaskBranches),
+      minimizedAgentNodeIds: readStringArray(parsed.minimizedAgentNodeIds),
+      minimizedTaskNodeIds: readStringArray(parsed.minimizedTaskNodeIds),
+      minimizedSourceNodeIds: readStringArray(parsed.minimizedSourceNodeIds),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredCanvasUiState(state: StoredCanvasUiState) {
+  try {
+    globalThis.localStorage?.setItem(CANVAS_UI_STATE_STORAGE_KEY, JSON.stringify(state));
+  } catch {}
+}
+
+function canvasUiContextMatches(state: StoredCanvasUiState, dataSource: DataSource, selectedFixtureId: string, liveRunMode: LiveRunMode): boolean {
+  if (state.dataSource !== dataSource) return false;
+  if (dataSource === "mock") {
+    return (state.selectedFixtureId ?? CLEAN_AGENT_WORKSPACE_ID) === selectedFixtureId;
+  }
+  return (state.liveRunMode ?? "workspace") === liveRunMode;
+}
+
+function readStoredLiveAgentNodes(): AtlasAgentNode[] {
+  try {
+    const raw = globalThis.localStorage?.getItem(LIVE_AGENT_LAYOUT_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    const rawNodes = Array.isArray((parsed as { nodes?: unknown }).nodes)
+      ? (parsed as { nodes: unknown[] }).nodes
+      : [];
+    const seen = new Set<string>();
+    const nodes: AtlasAgentNode[] = [];
+    for (const item of rawNodes) {
+      const record = item as { agentId?: unknown; x?: unknown; y?: unknown };
+      const agentId = typeof record.agentId === "string" ? record.agentId.trim() : "";
+      const x = Number(record.x);
+      const y = Number(record.y);
+      if (!agentId || seen.has(agentId) || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+      seen.add(agentId);
+      nodes.push({
+        nodeId: `agent-${agentId}`,
+        kind: "agent",
+        agentId,
+        position: { x, y },
+      });
+    }
+    return nodes;
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredLiveAgentNodes(nodes: AtlasAgentNode[]) {
+  try {
+    globalThis.localStorage?.setItem(LIVE_AGENT_LAYOUT_STORAGE_KEY, JSON.stringify({
+      version: 1,
+      nodes: nodes.map((node) => ({
+        agentId: node.agentId,
+        x: node.position.x,
+        y: node.position.y,
+      })),
+    }));
+  } catch {}
+}
+
+function readStoredLiveTaskPositions(): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>();
+  try {
+    const raw = globalThis.localStorage?.getItem(LIVE_TASK_LAYOUT_STORAGE_KEY);
+    if (!raw) return positions;
+    const parsed = JSON.parse(raw) as { schemaVersion?: unknown; tasks?: unknown };
+    if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.tasks)) return positions;
+    for (const item of parsed.tasks) {
+      const record = item as { taskId?: unknown; position?: { x?: unknown; y?: unknown } };
+      const taskId = typeof record.taskId === "string" ? record.taskId.trim() : "";
+      const x = Number(record.position?.x);
+      const y = Number(record.position?.y);
+      if (!taskId || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+      positions.set(taskId, { x, y });
+    }
+  } catch {}
+  return positions;
+}
+
+function writeStoredLiveTaskNodes(nodes: AtlasTaskNode[]) {
+  try {
+    const tasks: StoredTaskPosition[] = nodes.map((node) => ({
+      taskId: node.taskId,
+      position: { x: node.position.x, y: node.position.y },
+    }));
+    globalThis.localStorage?.setItem(LIVE_TASK_LAYOUT_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1,
+      tasks,
+    }));
+  } catch {}
+}
+
+function liveTaskRefreshPositions(currentNodes: AtlasTaskNode[]): Map<string, { x: number; y: number }> {
+  const positions = readStoredLiveTaskPositions();
+  for (const node of currentNodes) {
+    positions.set(node.taskId, { x: node.position.x, y: node.position.y });
+  }
+  return positions;
+}
+
+function readStoredLiveSourcePositions(): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>();
+  try {
+    const raw = globalThis.localStorage?.getItem(LIVE_SOURCE_LAYOUT_STORAGE_KEY);
+    if (!raw) return positions;
+    const parsed = JSON.parse(raw) as { schemaVersion?: unknown; sources?: unknown };
+    if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.sources)) return positions;
+    for (const item of parsed.sources) {
+      const record = item as { sourceNodeId?: unknown; position?: { x?: unknown; y?: unknown } };
+      const sourceNodeId = typeof record.sourceNodeId === "string" ? record.sourceNodeId.trim() : "";
+      const x = Number(record.position?.x);
+      const y = Number(record.position?.y);
+      if (!sourceNodeId || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+      positions.set(sourceNodeId, { x, y });
+    }
+  } catch {}
+  return positions;
+}
+
+function writeStoredLiveSourceNodes(nodes: AtlasSourceNode[]) {
+  try {
+    const sources: StoredSourcePosition[] = nodes.map((node) => ({
+      sourceNodeId: node.sourceNodeId,
+      position: { x: node.position.x, y: node.position.y },
+    }));
+    globalThis.localStorage?.setItem(LIVE_SOURCE_LAYOUT_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1,
+      sources,
+    }));
+  } catch {}
+}
+
+function liveSourceRefreshPositions(currentNodes: AtlasSourceNode[]): Map<string, { x: number; y: number }> {
+  const positions = readStoredLiveSourcePositions();
+  for (const node of currentNodes) {
+    positions.set(node.sourceNodeId, { x: node.position.x, y: node.position.y });
+  }
+  return positions;
+}
+
+function makeTaskNode(
+  task: TeamCanvasTask,
+  index: number,
+  storedPosition?: { x: number; y: number },
+): AtlasTaskNode {
+  return {
+    nodeId: `task-node-${task.taskId}`,
+    kind: "canvas-task",
+    taskId: task.taskId,
+    position: storedPosition ?? {
+      x: 280 + (index % 3) * 320,
+      y: 220 + Math.floor(index / 3) * 180,
+    },
+  };
+}
+
+function makeTaskNodes(tasks: TeamCanvasTask[], storedPositions = new Map<string, { x: number; y: number }>()): AtlasTaskNode[] {
+  return tasks.map((task, index) => makeTaskNode(task, index, storedPositions.get(task.taskId)));
+}
+
+function makeSourceNode(
+  sourceNode: TeamCanvasSourceNode,
+  index: number,
+  storedPosition?: { x: number; y: number },
+): AtlasSourceNode {
+  return {
+    nodeId: `source-node-${sourceNode.sourceNodeId}`,
+    kind: "canvas-source",
+    sourceNodeId: sourceNode.sourceNodeId,
+    position: storedPosition ?? {
+      x: 280 + (index % 3) * 320,
+      y: 34 + Math.floor(index / 3) * 180,
+    },
+  };
+}
+
+function makeSourceNodes(sources: TeamCanvasSourceNode[], storedPositions = new Map<string, { x: number; y: number }>()): AtlasSourceNode[] {
+  return sources.map((source, index) => makeSourceNode(source, index, storedPositions.get(source.sourceNodeId)));
+}
+
+function inferSourceFileType(file: File): TeamCanvasSourcePortType {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".md") || name.endsWith(".markdown")) return "md";
+  if (name.endsWith(".json")) return "json";
+  if (name.endsWith(".html") || name.endsWith(".htm")) return "html";
+  if (name.endsWith(".txt") || file.type.startsWith("text/")) return "string";
+  return "file";
+}
+
+function makeTaskEditDraft(task: TeamCanvasTask): TaskEditDraft {
+  const base = {
+    title: task.title,
+    leaderAgentId: task.leaderAgentId,
+    workerAgentId: task.workUnit.workerAgentId,
+    checkerAgentId: task.workUnit.checkerAgentId,
+    updatedAt: task.updatedAt,
+  };
+  return {
+    taskId: task.taskId,
+    title: base.title,
+    leaderAgentId: base.leaderAgentId,
+    workerAgentId: base.workerAgentId,
+    checkerAgentId: base.checkerAgentId,
+    base,
+    dirtyFields: {},
+  };
+}
+
+function hasDirtyTaskEditConflict(task: TeamCanvasTask, draft: TaskEditDraft): boolean {
+  const dirty = draft.dirtyFields;
+  return Boolean(
+    (dirty.title && task.title !== draft.base.title && draft.title.trim() !== task.title) ||
+    (dirty.leaderAgentId && task.leaderAgentId !== draft.base.leaderAgentId && draft.leaderAgentId !== task.leaderAgentId) ||
+    (dirty.workerAgentId && task.workUnit.workerAgentId !== draft.base.workerAgentId && draft.workerAgentId !== task.workUnit.workerAgentId) ||
+    (dirty.checkerAgentId && task.workUnit.checkerAgentId !== draft.base.checkerAgentId && draft.checkerAgentId !== task.workUnit.checkerAgentId)
+  );
+}
+
+function makeAgentNode(agentId: string, index: number): AtlasAgentNode {
+  return {
+    nodeId: `agent-${agentId}`,
+    kind: "agent",
+    agentId,
+    position: { x: 360 + index * 320, y: 0 },
+  };
+}
+
+export function App() {
+  const [dataSource, setDataSource] = useState<DataSource>(() => readStoredDataSource());
+  const [selectedFixtureId, setSelectedFixtureId] = useState<string>(CLEAN_AGENT_WORKSPACE_ID);
+  const [liveRunMode, setLiveRunMode] = useState<LiveRunMode>("workspace");
+  const [plan, setPlan] = useState<TeamPlan | null>(null);
+  const [run, setRun] = useState<RunDetail | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [attemptsByTaskId, setAttemptsByTaskId] = useState<Record<string, TeamAttemptMetadata[]>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [agents, setAgents] = useState<AgentSummary[]>(MOCK_AGENTS);
+  const [agentRunStatusById, setAgentRunStatusById] = useState<Record<string, AgentRunStatus>>(
+    () => agentRunStatusRecord(MOCK_AGENT_RUN_STATUSES),
+  );
+  const [agentNodes, setAgentNodes] = useState<AtlasAgentNode[]>([]);
+  const [liveAgentNodesHydrated, setLiveAgentNodesHydrated] = useState(false);
+  const [tasks, setTasks] = useState<TeamCanvasTask[]>([]);
+  const [taskConnections, setTaskConnections] = useState<TeamTaskConnection[]>([]);
+  const [taskConnectionDraft, setTaskConnectionDraft] = useState<TaskConnectionDraft | null>(null);
+  const [sourceNodes, setSourceNodes] = useState<TeamCanvasSourceNode[]>([]);
+  const [sourceConnections, setSourceConnections] = useState<TeamCanvasSourceConnection[]>([]);
+  const [sourceConnectionDraft, setSourceConnectionDraft] = useState<SourceConnectionDraft | null>(null);
+  const [taskRunsByTaskId, setTaskRunsByTaskId] = useState<Record<string, TeamRunState[]>>({});
+  const [taskRunSavingByTaskId, setTaskRunSavingByTaskId] = useState<Record<string, boolean>>({});
+  const [taskRunObserverByRunId, setTaskRunObserverByRunId] = useState<Record<string, TaskRunObserverState>>({});
+  const [taskNodes, setTaskNodes] = useState<AtlasTaskNode[]>([]);
+  const [liveTaskNodesHydrated, setLiveTaskNodesHydrated] = useState(false);
+  const [sourceAtlasNodes, setSourceAtlasNodes] = useState<AtlasSourceNode[]>([]);
+  const [liveSourceNodesHydrated, setLiveSourceNodesHydrated] = useState(false);
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
+  const [taskLeaderPickerOpen, setTaskLeaderPickerOpen] = useState(false);
+  const [liveTasksRefreshing, setLiveTasksRefreshing] = useState(false);
+  const liveTasksRefreshInFlightRef = useRef<Promise<void> | null>(null);
+  const liveTaskDiscoveryRefreshTimersRef = useRef<ReturnType<typeof globalThis.setTimeout>[]>([]);
+  const liveTaskDiscoveryRefreshRunIdsRef = useRef<Set<string>>(new Set());
+  const sourceFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
+  const [expandedAgentBranch, setExpandedAgentBranch] = useState<AgentBranchState | null>(null);
+  const [expandedTaskBranches, setExpandedTaskBranches] = useState<TaskBranchState[]>([]);
+  const [minimizedAgentNodeIds, setMinimizedAgentNodeIds] = useState<string[]>([]);
+  const [minimizedTaskNodeIds, setMinimizedTaskNodeIds] = useState<string[]>([]);
+  const [minimizedSourceNodeIds, setMinimizedSourceNodeIds] = useState<string[]>([]);
+  const [canvasUiStateHydrated, setCanvasUiStateHydrated] = useState(false);
+  const [taskEditDraft, setTaskEditDraft] = useState<TaskEditDraft | null>(null);
+  const [taskEditSaving, setTaskEditSaving] = useState(false);
+  const [taskEditWarning, setTaskEditWarning] = useState<string | null>(null);
+  const [taskArchiveConfirming, setTaskArchiveConfirming] = useState(false);
+  const [taskArchiveSaving, setTaskArchiveSaving] = useState(false);
+  const [rootArchiveConfirm, setRootArchiveConfirm] = useState<RootArchiveConfirm | null>(null);
+  const [rootArchiveSaving, setRootArchiveSaving] = useState(false);
+  const [taskLeaderContextCopyState, setTaskLeaderContextCopyState] = useState<"idle" | "copied" | "failed">("idle");
+
+  const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
+  const tasksById = useMemo(() => new Map(tasks.map((task) => [task.taskId, task])), [tasks]);
+  const sourceNodesById = useMemo(() => new Map(sourceNodes.map((node) => [node.sourceNodeId, node])), [sourceNodes]);
+  const agentRunStatusesById = useMemo(() => new Map(Object.entries(agentRunStatusById)), [agentRunStatusById]);
+  const addedAgentIds = useMemo(() => new Set(agentNodes.map((node) => node.agentId)), [agentNodes]);
+  const expandedTaskBranch = expandedTaskBranches[expandedTaskBranches.length - 1] ?? null;
+  const setExpandedTaskBranch = useCallback((
+    updater: TaskBranchState | null | ((current: TaskBranchState | null) => TaskBranchState | null),
+  ) => {
+    setExpandedTaskBranches((current) => {
+      const active = current[current.length - 1] ?? null;
+      const next = typeof updater === "function" ? updater(active) : updater;
+      if (!next) {
+        return active ? current.filter((branch) => branch.nodeId !== active.nodeId) : current;
+      }
+      return [
+        ...current.filter((branch) => branch.nodeId !== next.nodeId),
+        next,
+      ];
+    });
+  }, []);
+  const expandedAgentNode = expandedAgentBranch
+    ? agentNodes.find((node) => node.nodeId === expandedAgentBranch.nodeId) ?? null
+    : null;
+  const expandedAgent = expandedAgentNode ? agentsById.get(expandedAgentNode.agentId) ?? null : null;
+  const expandedTaskNode = expandedTaskBranch
+    ? taskNodes.find((node) => node.nodeId === expandedTaskBranch.nodeId) ?? null
+    : null;
+  const expandedTask = expandedTaskNode ? tasksById.get(expandedTaskNode.taskId) ?? null : null;
+  const expandedTaskRuns = expandedTask ? taskRunsByTaskId[expandedTask.taskId] ?? [] : [];
+  const latestExpandedTaskRun = selectLatestRun(expandedTaskRuns);
+  const activeExpandedTaskRun = expandedTaskRuns.find((taskRun) => isActiveRun(taskRun.status)) ?? null;
+  const expandedTaskRunSaving = expandedTask ? Boolean(taskRunSavingByTaskId[expandedTask.taskId]) : false;
+  const observedTaskRunId = expandedTaskBranch?.detailMode === "run-observer" ? expandedTaskBranch.observedRunId ?? null : null;
+  const observedTaskRun = observedTaskRunId
+    ? expandedTaskRuns.find((taskRun) => taskRun.runId === observedTaskRunId) ?? null
+    : null;
+
+  const activeCanvasTaskRunIds = useMemo(() => (
+    Object.values(taskRunsByTaskId)
+      .flat()
+      .filter((taskRun) => isActiveRun(taskRun.status) && taskRun.source?.taskId)
+      .map((taskRun) => ({ runId: taskRun.runId, taskId: taskRun.source!.taskId }))
+  ), [taskRunsByTaskId]);
+
+  const selectTask = useCallback((taskId: string) => {
+    setSelectedTaskId((current) => current === taskId ? null : taskId);
+  }, []);
+
+  const clearTaskPanelState = useCallback(() => {
+    setTaskEditDraft(null);
+    setTaskEditWarning(null);
+    setTaskEditSaving(false);
+    setTaskArchiveConfirming(false);
+    setTaskArchiveSaving(false);
+  }, []);
+
+  const closeTaskBranch = useCallback((nodeId?: string) => {
+    setExpandedTaskBranches((current) => (
+      nodeId ? current.filter((branch) => branch.nodeId !== nodeId) : []
+    ));
+    clearTaskPanelState();
+  }, [clearTaskPanelState]);
+
+  useEffect(() => {
+    setCanvasUiStateHydrated(false);
+  }, [dataSource, selectedFixtureId, liveRunMode]);
+
+  useEffect(() => {
+    setMinimizedAgentNodeIds((current) => {
+      const nodeIds = new Set(agentNodes.filter((node) => agentsById.has(node.agentId)).map((node) => node.nodeId));
+      const next = current.filter((nodeId) => nodeIds.has(nodeId));
+      return next.length === current.length ? current : next;
+    });
+  }, [agentNodes, agentsById]);
+
+  useEffect(() => {
+    setMinimizedTaskNodeIds((current) => {
+      const nodeIds = new Set(taskNodes.map((node) => node.nodeId));
+      const next = current.filter((nodeId) => nodeIds.has(nodeId));
+      return next.length === current.length ? current : next;
+    });
+  }, [taskNodes]);
+
+  useEffect(() => {
+    if (canvasUiStateHydrated) return;
+    const ready = dataSource === "live"
+      ? liveAgentNodesHydrated && liveTaskNodesHydrated && liveSourceNodesHydrated
+      : taskNodes.length > 0;
+    if (!ready) return;
+
+    const stored = readStoredCanvasUiState();
+    if (!stored || !canvasUiContextMatches(stored, dataSource, selectedFixtureId, liveRunMode)) {
+      setCanvasUiStateHydrated(true);
+      return;
+    }
+
+    const validAgentNodes = agentNodes.filter((node) => agentsById.has(node.agentId));
+    const agentNodeIds = new Set(validAgentNodes.map((node) => node.nodeId));
+    const agentIds = new Set(validAgentNodes.map((node) => node.agentId));
+    const taskNodeIds = new Set(taskNodes.map((node) => node.nodeId));
+    const taskIds = new Set(taskNodes.map((node) => node.taskId));
+    const sourceNodeIds = new Set(sourceAtlasNodes.map((node) => node.nodeId));
+    const nextAgentBranch = stored.expandedAgentBranch
+      && agentNodeIds.has(stored.expandedAgentBranch.nodeId)
+      && agentIds.has(stored.expandedAgentBranch.agentId)
+      ? stored.expandedAgentBranch
+      : null;
+    const nextTaskBranches = (stored.expandedTaskBranches ?? []).filter((branch) => (
+      taskNodeIds.has(branch.nodeId) && taskIds.has(branch.taskId)
+    ));
+
+    if (stored.viewport) {
+      setCanvasViewport(stored.viewport);
+    }
+    setExpandedAgentBranch(nextAgentBranch);
+    setExpandedTaskBranches(nextTaskBranches);
+    setMinimizedAgentNodeIds((stored.minimizedAgentNodeIds ?? []).filter((nodeId) => agentNodeIds.has(nodeId)));
+    setMinimizedTaskNodeIds((stored.minimizedTaskNodeIds ?? []).filter((nodeId) => taskNodeIds.has(nodeId)));
+    setMinimizedSourceNodeIds((stored.minimizedSourceNodeIds ?? []).filter((nodeId) => sourceNodeIds.has(nodeId)));
+    setCanvasUiStateHydrated(true);
+  }, [
+    agentNodes,
+    agentsById,
+    canvasUiStateHydrated,
+    dataSource,
+    liveAgentNodesHydrated,
+    liveRunMode,
+    liveSourceNodesHydrated,
+    liveTaskNodesHydrated,
+    selectedFixtureId,
+    sourceAtlasNodes,
+    taskNodes,
+  ]);
+
+  useEffect(() => {
+    if (!canvasUiStateHydrated) return;
+    writeStoredCanvasUiState({
+      schemaVersion: 1,
+      dataSource,
+      ...(dataSource === "mock" ? { selectedFixtureId } : { liveRunMode }),
+      viewport: canvasViewport,
+      expandedAgentBranch,
+      expandedTaskBranches,
+      minimizedAgentNodeIds,
+      minimizedTaskNodeIds,
+      minimizedSourceNodeIds,
+    });
+  }, [
+    canvasUiStateHydrated,
+    canvasViewport,
+    dataSource,
+    expandedAgentBranch,
+    expandedTaskBranches,
+    liveRunMode,
+    minimizedAgentNodeIds,
+    minimizedSourceNodeIds,
+    minimizedTaskNodeIds,
+    selectedFixtureId,
+  ]);
+
+  useEffect(() => {
+    try {
+      globalThis.localStorage?.setItem(DATA_SOURCE_STORAGE_KEY, dataSource);
+    } catch {}
+  }, [dataSource]);
+
+  useEffect(() => {
+    if (dataSource !== "live") {
+      setLiveAgentNodesHydrated(false);
+      setLiveTaskNodesHydrated(false);
+      setLiveSourceNodesHydrated(false);
+      return;
+    }
+    setAgentNodes(readStoredLiveAgentNodes());
+    setTaskLeaderPickerOpen(false);
+    setExpandedAgentBranch(null);
+    closeTaskBranch();
+    setLiveAgentNodesHydrated(true);
+  }, [closeTaskBranch, dataSource]);
+
+  useEffect(() => {
+    if (dataSource !== "live" || !liveAgentNodesHydrated) return;
+    writeStoredLiveAgentNodes(agentNodes);
+  }, [dataSource, liveAgentNodesHydrated, agentNodes]);
+
+  useEffect(() => {
+    if (dataSource !== "live" || !liveTaskNodesHydrated) return;
+    writeStoredLiveTaskNodes(taskNodes);
+  }, [dataSource, liveTaskNodesHydrated, taskNodes]);
+
+  useEffect(() => {
+    if (dataSource !== "live" || !liveSourceNodesHydrated) return;
+    writeStoredLiveSourceNodes(sourceAtlasNodes);
+  }, [dataSource, liveSourceNodesHydrated, sourceAtlasNodes]);
+
+  useEffect(() => {
+    setExpandedTaskBranches((current) => current.filter((branch) => tasksById.has(branch.taskId)));
+  }, [tasksById]);
+
+  useEffect(() => {
+    setSourceConnections((current) => (
+      current.filter((connection) => sourceNodesById.has(connection.fromSourceNodeId) && tasksById.has(connection.toTaskId))
+    ));
+  }, [sourceNodesById, tasksById]);
+
+  const applyLiveTasks = useCallback((nextTasks: TeamCanvasTask[]) => {
+    setTasks(nextTasks);
+    setTaskNodes((current) => makeTaskNodes(nextTasks, liveTaskRefreshPositions(current)));
+    setLiveTaskNodesHydrated(true);
+  }, []);
+
+  const applyLiveSources = useCallback((nextSources: TeamCanvasSourceNode[]) => {
+    const activeSources = nextSources.filter((sourceNode) => !sourceNode.archived);
+    setSourceNodes(activeSources);
+    setSourceAtlasNodes((current) => makeSourceNodes(activeSources, liveSourceRefreshPositions(current)));
+    setLiveSourceNodesHydrated(true);
+  }, []);
+
+  const loadTaskRunsForTasks = useCallback(async (
+    api: Pick<LiveTeamApi, "listTaskRuns">,
+    nextTasks: TeamCanvasTask[],
+  ) => {
+    const entries = await Promise.all(nextTasks.map(async (task) => {
+      const runs = await api.listTaskRuns(task.taskId).catch(() => []);
+      return [task.taskId, sortRunsByCreatedAt(runs)] as const;
+    }));
+    setTaskRunsByTaskId(Object.fromEntries(entries));
+  }, []);
+
+  const refreshLiveTasks = useCallback(async () => {
+    if (liveTasksRefreshInFlightRef.current) {
+      return liveTasksRefreshInFlightRef.current;
+    }
+
+    const refresh = (async () => {
+      setLiveTasksRefreshing(true);
+      try {
+        const api = new LiveTeamApi();
+        const [nextTasks, nextConnections, nextSourceNodes, nextSourceConnections] = await Promise.all([
+          api.listTasks(),
+          api.listTaskConnections(),
+          api.listSourceNodes(),
+          api.listSourceConnections(),
+        ]);
+        applyLiveTasks(nextTasks);
+        setTaskConnections(nextConnections);
+        applyLiveSources(nextSourceNodes);
+        setSourceConnections(nextSourceConnections);
+        setTaskConnectionDraft(null);
+        setSourceConnectionDraft(null);
+        await loadTaskRunsForTasks(api, nextTasks);
+        setError(null);
+      } finally {
+        liveTasksRefreshInFlightRef.current = null;
+        setLiveTasksRefreshing(false);
+      }
+    })();
+    liveTasksRefreshInFlightRef.current = refresh;
+    return refresh;
+  }, [applyLiveSources, applyLiveTasks, loadTaskRunsForTasks]);
+
+  const scheduleLiveTaskDiscoveryRefresh = useCallback(() => {
+    if (dataSource !== "live") return;
+    for (const delayMs of [350, 1200]) {
+      const timer = globalThis.setTimeout(() => {
+        liveTaskDiscoveryRefreshTimersRef.current = liveTaskDiscoveryRefreshTimersRef.current.filter((item) => item !== timer);
+        void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
+      }, delayMs);
+      liveTaskDiscoveryRefreshTimersRef.current.push(timer);
+    }
+  }, [dataSource, refreshLiveTasks]);
+
+  useEffect(() => () => {
+    for (const timer of liveTaskDiscoveryRefreshTimersRef.current) {
+      globalThis.clearTimeout(timer);
+    }
+    liveTaskDiscoveryRefreshTimersRef.current = [];
+  }, []);
+
+  useEffect(() => {
+    if (dataSource === "live") return;
+    for (const timer of liveTaskDiscoveryRefreshTimersRef.current) {
+      globalThis.clearTimeout(timer);
+    }
+    liveTaskDiscoveryRefreshTimersRef.current = [];
+    liveTaskDiscoveryRefreshRunIdsRef.current.clear();
+  }, [dataSource]);
+
+  const refreshLiveTasksAfterLeavingTaskCreateBranch = useCallback((branch: AgentBranchState | null) => {
+    if (dataSource !== "live" || branch?.mode !== "task-create") return;
+    void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
+  }, [dataSource, refreshLiveTasks]);
+
+  const loadFixture = useCallback((fixtureId: string) => {
+    setTaskLeaderPickerOpen(false);
+    setExpandedAgentBranch(null);
+    closeTaskBranch();
+    if (fixtureId === CLEAN_AGENT_WORKSPACE_ID) {
+      setPlan(null);
+      setRun(null);
+      setSelectedTaskId(null);
+      setAttemptsByTaskId({});
+      setTaskConnections([]);
+      setTaskConnectionDraft(null);
+      setSourceNodes([]);
+      setSourceConnections([]);
+      setSourceConnectionDraft(null);
+      setSourceAtlasNodes([]);
+      setTaskRunsByTaskId({});
+      setTaskRunSavingByTaskId({});
+      setTaskRunObserverByRunId({});
+      setError(null);
+      setLoading(false);
+      setCanvasViewport({ x: 0, y: 0, scale: 1 });
+      return;
+    }
+
+    const entry = ALL_FIXTURES.find((fixture) => fixture.id === fixtureId);
+    if (!entry) return;
+    setPlan(entry.plan);
+    setRun(entry.run);
+    setSelectedTaskId(null);
+    setAttemptsByTaskId({});
+    setTaskConnections([]);
+    setTaskConnectionDraft(null);
+    setSourceNodes([]);
+    setSourceConnections([]);
+    setSourceConnectionDraft(null);
+    setSourceAtlasNodes([]);
+    setTaskRunsByTaskId({});
+    setTaskRunSavingByTaskId({});
+    setTaskRunObserverByRunId({});
+    setError(null);
+    setLoading(false);
+  }, [closeTaskBranch]);
+
+  useEffect(() => {
+    if (dataSource === "mock") {
+      loadFixture(selectedFixtureId);
+    }
+  }, [dataSource, selectedFixtureId, loadFixture]);
+
+  useEffect(() => {
+    setExpandedAgentBranch(null);
+    closeTaskBranch();
+    let cancelled = false;
+    let refreshTimer: ReturnType<typeof globalThis.setInterval> | undefined;
+    const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+
+    async function loadAgentRunStatuses() {
+      try {
+        const statuses = await api.listAgentRunStatuses();
+        if (!cancelled) {
+          setAgentRunStatusById(agentRunStatusRecord(statuses));
+        }
+      } catch {
+        // Keep the last known status on transient polling failures.
+      }
+    }
+
+    if (dataSource === "mock") {
+      setAgents(MOCK_AGENTS);
+      setAgentRunStatusById(agentRunStatusRecord(MOCK_AGENT_RUN_STATUSES));
+      setTasks(mockTeamTasks);
+      setTaskNodes(makeTaskNodes(mockTeamTasks));
+      setTaskConnections([]);
+      setTaskConnectionDraft(null);
+      setSourceNodes([]);
+      setSourceConnections([]);
+      setSourceConnectionDraft(null);
+      setSourceAtlasNodes([]);
+      setTaskRunsByTaskId({});
+      setTaskRunObserverByRunId({});
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setAgents([]);
+    setAgentPickerOpen(false);
+    setTaskLeaderPickerOpen(false);
+    setAgentRunStatusById({});
+    setTasks([]);
+    setTaskConnections([]);
+    setTaskConnectionDraft(null);
+    setSourceNodes([]);
+    setSourceConnections([]);
+    setSourceConnectionDraft(null);
+    setTaskRunsByTaskId({});
+    setTaskRunSavingByTaskId({});
+    setTaskRunObserverByRunId({});
+    setTaskNodes([]);
+    setLiveTaskNodesHydrated(false);
+    setSourceAtlasNodes([]);
+    setLiveSourceNodesHydrated(false);
+
+    async function loadLiveWorkspace() {
+      try {
+        const [nextAgents, nextStatuses, nextTasks, nextConnections, nextSourceNodes, nextSourceConnections] = await Promise.all([
+          api.listAgents(),
+          api.listAgentRunStatuses(),
+          api.listTasks(),
+          api.listTaskConnections(),
+          api.listSourceNodes(),
+          api.listSourceConnections(),
+        ]);
+        if (!cancelled) {
+          setAgents(nextAgents);
+          setAgentRunStatusById(agentRunStatusRecord(nextStatuses));
+          applyLiveTasks(nextTasks);
+          setTaskConnections(nextConnections);
+          applyLiveSources(nextSourceNodes);
+          setSourceConnections(nextSourceConnections);
+          void loadTaskRunsForTasks(api, nextTasks);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(errorMessage(e));
+        }
+      }
+    }
+
+    void loadLiveWorkspace();
+    refreshTimer = globalThis.setInterval(() => {
+      void loadAgentRunStatuses();
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      if (refreshTimer !== undefined) {
+        globalThis.clearInterval(refreshTimer);
+      }
+    };
+  }, [applyLiveSources, applyLiveTasks, closeTaskBranch, dataSource, loadTaskRunsForTasks]);
+
+  useEffect(() => {
+    if (dataSource !== "live") return;
+
+    setExpandedAgentBranch(null);
+    closeTaskBranch();
+    if (liveRunMode === "workspace") {
+      setPlan(null);
+      setRun(null);
+      setSelectedTaskId(null);
+      setAttemptsByTaskId({});
+      setError(null);
+      setLoading(false);
+      setCanvasViewport({ x: 0, y: 0, scale: 1 });
+      return;
+    }
+
+    let cancelled = false;
+    const api = new LiveTeamApi();
+
+    setPlan(null);
+    setRun(null);
+    setSelectedTaskId(null);
+    setAttemptsByTaskId({});
+    setError(null);
+    setLoading(true);
+
+    async function loadLiveData() {
+      try {
+        const [plans, runs] = await Promise.all([
+          api.listPlans(),
+          api.listRuns(),
+        ]);
+        const selectedRun = selectLatestRun(runs);
+        if (!selectedRun) {
+          if (!cancelled) {
+            setPlan(null);
+            setRun(null);
+          }
+          return;
+        }
+
+        const runDetail = await api.getRunDetail(selectedRun.runId);
+        const runPlan = plans.find((candidate) => candidate.planId === runDetail.planId);
+        if (!runPlan) {
+          throw { message: `Plan not found for run: ${runDetail.runId}` };
+        }
+
+        if (!cancelled) {
+          setPlan(runPlan);
+          setRun(runDetail);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(errorMessage(e));
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadLiveData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [closeTaskBranch, dataSource, liveRunMode]);
+
+  useEffect(() => {
+    if (!run || !selectedTaskId || selectedTaskId === ROOT_ID) return;
+    if (attemptsByTaskId[selectedTaskId]) return;
+
+    let cancelled = false;
+    const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+
+    async function loadAttempts() {
+      try {
+        const attempts = await api.listAttempts(run!.runId, selectedTaskId!);
+        if (!cancelled && attempts.length > 0) {
+          setAttemptsByTaskId((current) => ({
+            ...current,
+            [selectedTaskId!]: attempts,
+          }));
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(errorMessage(e));
+        }
+      }
+    }
+
+    void loadAttempts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dataSource, run, selectedTaskId, attemptsByTaskId]);
+
+  const readAttemptFile = useCallback(
+    (runId: string, taskId: string, attemptId: string, fileName: string) => {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      return api.readAttemptFile(runId, taskId, attemptId, fileName);
+    },
+    [dataSource],
+  );
+
+  const addAgentNode = useCallback((agentId: string) => {
+    setAgentNodes((current) => {
+      if (current.some((node) => node.agentId === agentId)) return current;
+      return [...current, makeAgentNode(agentId, current.length)];
+    });
+    setAgentPickerOpen(false);
+    setTaskLeaderPickerOpen(false);
+  }, []);
+
+  const moveAgentNode = useCallback((nodeId: string, position: { x: number; y: number }) => {
+    setAgentNodes((current) => current.map((node) => (
+      node.nodeId === nodeId ? { ...node, position } : node
+    )));
+  }, []);
+
+  const moveTaskNode = useCallback((nodeId: string, position: { x: number; y: number }) => {
+    setTaskNodes((current) => current.map((node) => (
+      node.nodeId === nodeId ? { ...node, position } : node
+    )));
+  }, []);
+
+  const moveSourceNode = useCallback((nodeId: string, position: { x: number; y: number }) => {
+    setSourceAtlasNodes((current) => current.map((node) => (
+      node.nodeId === nodeId ? { ...node, position } : node
+    )));
+  }, []);
+
+  const minimizeAgentNode = useCallback((node: AtlasAgentNode) => {
+    setMinimizedAgentNodeIds((current) => (
+      current.includes(node.nodeId) ? current : [...current, node.nodeId]
+    ));
+  }, []);
+
+  const restoreAgentNode = useCallback((node: AtlasAgentNode) => {
+    setMinimizedAgentNodeIds((current) => current.filter((nodeId) => nodeId !== node.nodeId));
+  }, []);
+
+  const minimizeTaskNode = useCallback((node: AtlasTaskNode) => {
+    setMinimizedTaskNodeIds((current) => (
+      current.includes(node.nodeId) ? current : [...current, node.nodeId]
+    ));
+  }, []);
+
+  const restoreTaskNode = useCallback((node: AtlasTaskNode) => {
+    setMinimizedTaskNodeIds((current) => current.filter((nodeId) => nodeId !== node.nodeId));
+  }, []);
+
+  const minimizeSourceNode = useCallback((node: AtlasSourceNode) => {
+    setMinimizedSourceNodeIds((current) => (
+      current.includes(node.nodeId) ? current : [...current, node.nodeId]
+    ));
+  }, []);
+
+  const restoreSourceNode = useCallback((node: AtlasSourceNode) => {
+    setMinimizedSourceNodeIds((current) => current.filter((nodeId) => nodeId !== node.nodeId));
+  }, []);
+
+  const toggleAgentBranch = useCallback((node: AtlasAgentNode) => {
+    setAgentPickerOpen(false);
+    setTaskLeaderPickerOpen(false);
+    refreshLiveTasksAfterLeavingTaskCreateBranch(expandedAgentBranch);
+    setExpandedAgentBranch(
+      expandedAgentBranch?.nodeId === node.nodeId && expandedAgentBranch.mode === "chat"
+        ? null
+        : { nodeId: node.nodeId, agentId: node.agentId, mode: "chat" },
+    );
+  }, [expandedAgentBranch, refreshLiveTasksAfterLeavingTaskCreateBranch]);
+
+  const toggleTaskBranch = useCallback((node: AtlasTaskNode) => {
+    setAgentPickerOpen(false);
+    setTaskLeaderPickerOpen(false);
+    clearTaskPanelState();
+    setExpandedTaskBranch((current) => (
+      current?.nodeId === node.nodeId ? null : { nodeId: node.nodeId, taskId: node.taskId, detailMode: null }
+    ));
+  }, [clearTaskPanelState]);
+
+  const openTaskCreateBranch = useCallback((leaderAgentId: string) => {
+    const nodeId = `agent-${leaderAgentId}`;
+    setAgentNodes((current) => (
+      current.some((node) => node.agentId === leaderAgentId)
+        ? current
+        : [...current, makeAgentNode(leaderAgentId, current.length)]
+    ));
+    setAgentPickerOpen(false);
+    setTaskLeaderPickerOpen(false);
+    setExpandedAgentBranch({ nodeId, agentId: leaderAgentId, mode: "task-create" });
+  }, []);
+
+  const openTaskEditBranch = useCallback((task: TeamCanvasTask) => {
+    setTaskEditDraft(makeTaskEditDraft(task));
+    setTaskEditWarning(null);
+    setTaskArchiveConfirming(false);
+    setExpandedTaskBranch((current) => current ? { ...current, detailMode: "edit" } : current);
+  }, []);
+
+  const openTaskRunObserverBranch = useCallback((runId: string) => {
+    clearTaskPanelState();
+    setExpandedTaskBranch((current) => current ? {
+      ...current,
+      detailMode: "run-observer",
+      observedRunId: runId,
+      selectedFileKeys: [],
+    } : current);
+  }, [clearTaskPanelState]);
+
+  const closeTaskRunObserverBranch = useCallback(() => {
+    setExpandedTaskBranch((current) => current ? {
+      ...current,
+      detailMode: null,
+      observedRunId: undefined,
+      selectedFileKeys: [],
+    } : current);
+  }, []);
+
+  const saveTaskEdit = useCallback(async () => {
+    if (!expandedTask || !taskEditDraft || taskEditDraft.taskId !== expandedTask.taskId) return;
+
+    const patch: TeamTaskUpdateRequest = {};
+    const dirty = taskEditDraft.dirtyFields;
+    const title = taskEditDraft.title.trim();
+
+    if (hasDirtyTaskEditConflict(expandedTask, taskEditDraft)) {
+      setTaskEditWarning("Task 已经在后台更新，请重新打开编辑节点后再保存。");
+      return;
+    }
+
+    if (dirty.title && title !== expandedTask.title) {
+      patch.title = title;
+    }
+    if (dirty.leaderAgentId && taskEditDraft.leaderAgentId !== expandedTask.leaderAgentId) {
+      patch.leaderAgentId = taskEditDraft.leaderAgentId;
+    }
+    const workerChanged = Boolean(dirty.workerAgentId) && taskEditDraft.workerAgentId !== expandedTask.workUnit.workerAgentId;
+    const checkerChanged = Boolean(dirty.checkerAgentId) && taskEditDraft.checkerAgentId !== expandedTask.workUnit.checkerAgentId;
+    if (workerChanged || checkerChanged) {
+      patch.workUnit = {
+        ...expandedTask.workUnit,
+        ...(workerChanged ? { workerAgentId: taskEditDraft.workerAgentId } : {}),
+        ...(checkerChanged ? { checkerAgentId: taskEditDraft.checkerAgentId } : {}),
+      };
+    }
+    if (Object.keys(patch).length === 0) {
+      setTaskEditWarning(null);
+      return;
+    }
+
+    setTaskEditSaving(true);
+    setTaskEditWarning(null);
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      const response = await api.updateTask(expandedTask.taskId, patch);
+      if (dataSource === "live") {
+        await refreshLiveTasks();
+      } else {
+        const nextTasks = await api.listTasks();
+        setTasks(nextTasks);
+        setTaskNodes((current) => makeTaskNodes(nextTasks, liveTaskRefreshPositions(current)));
+      }
+      setTaskEditDraft(makeTaskEditDraft(response.task));
+      setTaskEditWarning(response.warnings?.join(" ") ?? null);
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setTaskEditSaving(false);
+    }
+  }, [dataSource, expandedTask, refreshLiveTasks, taskEditDraft]);
+
+  const archiveTask = useCallback(async (task: TeamCanvasTask, nodeId?: string): Promise<boolean> => {
+    setTaskArchiveSaving(true);
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      await api.archiveTask(task.taskId);
+      if (dataSource === "live") {
+        await refreshLiveTasks();
+      } else {
+        const nextTasks = await api.listTasks();
+        setTasks(nextTasks);
+        setTaskNodes((current) => makeTaskNodes(nextTasks, liveTaskRefreshPositions(current)));
+      }
+      closeTaskBranch(nodeId);
+      setError(null);
+      return true;
+    } catch (e) {
+      setError(errorMessage(e));
+      return false;
+    } finally {
+      setTaskArchiveSaving(false);
+    }
+  }, [closeTaskBranch, dataSource, refreshLiveTasks]);
+
+  const archiveExpandedTask = useCallback(async () => {
+    if (!expandedTask) return;
+    await archiveTask(expandedTask, expandedTaskBranch?.nodeId);
+  }, [archiveTask, expandedTask, expandedTaskBranch?.nodeId]);
+
+  const requestArchiveSourceNode = useCallback((sourceNodeId: string, nodeId: string, title: string) => {
+    setRootArchiveConfirm({ kind: "source", sourceNodeId, nodeId, title });
+  }, []);
+
+  const requestArchiveCanvasTask = useCallback((task: TeamCanvasTask, nodeId: string) => {
+    setRootArchiveConfirm({ kind: "task", task, nodeId });
+  }, []);
+
+  const requestRemoveAgentNode = useCallback((nodeId: string, agentId: string, name: string) => {
+    setRootArchiveConfirm({ kind: "agent", nodeId, agentId, name });
+  }, []);
+
+  const confirmRootArchive = useCallback(async () => {
+    if (!rootArchiveConfirm || rootArchiveSaving) return;
+    setRootArchiveSaving(true);
+    const pending = rootArchiveConfirm;
+    try {
+      if (pending.kind === "source") {
+        const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+        await api.archiveSourceNode(pending.sourceNodeId);
+        if (dataSource === "live") {
+          await refreshLiveTasks();
+        } else {
+          const [nextSources, nextConnections] = await Promise.all([
+            api.listSourceNodes(),
+            api.listSourceConnections(),
+          ]);
+          setSourceNodes(nextSources);
+          setSourceAtlasNodes((current) => current.filter((node) =>
+            nextSources.some((source) => source.sourceNodeId === node.sourceNodeId),
+          ));
+          setSourceConnections(nextConnections);
+        }
+        setMinimizedSourceNodeIds((current) => current.filter((id) => id !== pending.nodeId));
+      } else if (pending.kind === "task") {
+        const ok = await archiveTask(pending.task, pending.nodeId);
+        if (!ok) return;
+      } else {
+        setAgentNodes((current) => current.filter((node) => node.nodeId !== pending.nodeId));
+        setMinimizedAgentNodeIds((current) => current.filter((id) => id !== pending.nodeId));
+        setExpandedAgentBranch((current) => current?.nodeId === pending.nodeId ? null : current);
+      }
+      setRootArchiveConfirm(null);
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setRootArchiveSaving(false);
+    }
+  }, [archiveTask, dataSource, refreshLiveTasks, rootArchiveConfirm, rootArchiveSaving]);
+
+  const cancelRootArchive = useCallback(() => {
+    if (!rootArchiveSaving) {
+      setRootArchiveConfirm(null);
+    }
+  }, [rootArchiveSaving]);
+
+  const copyTaskLeaderContext = useCallback(async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setTaskLeaderContextCopyState("copied");
+    } catch {
+      setTaskLeaderContextCopyState("failed");
+    }
+  }, []);
+
+  const runTask = useCallback(async (task: TeamCanvasTask) => {
+    const taskId = task.taskId;
+    setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: true }));
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      const taskRun = await api.createTaskRun(taskId);
+      setTaskRunsByTaskId((current) => mergeTaskRun(current, taskId, taskRun));
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: false }));
+    }
+  }, [dataSource]);
+
+  const runExpandedTask = useCallback(async () => {
+    if (!expandedTask) return;
+    await runTask(expandedTask);
+  }, [expandedTask, runTask]);
+
+  const beginTaskPortConnection = useCallback((taskId: string, port: TeamTaskOutputPort) => {
+    setTaskConnectionDraft({
+      fromTaskId: taskId,
+      fromOutputPortId: port.id,
+      type: port.type,
+    });
+    setSourceConnectionDraft(null);
+    setError(null);
+  }, []);
+
+  const beginSourcePortConnection = useCallback((sourceNodeId: string, sourcePort: TeamCanvasSourceNode["outputPort"]) => {
+    setSourceConnectionDraft({
+      fromSourceNodeId: sourceNodeId,
+      fromOutputPortId: sourcePort.id,
+      type: sourcePort.type,
+    });
+    setTaskConnectionDraft(null);
+    setError(null);
+  }, []);
+
+  const completeTaskPortConnection = useCallback(async (taskId: string, port: TeamTaskInputPort) => {
+    if (!taskConnectionDraft && !sourceConnectionDraft) {
+      setError("请先选择一个输出端口");
+      return;
+    }
+    if (taskConnectionDraft?.fromTaskId === taskId) {
+      setError("不能把 Task 输出连接回自己");
+      return;
+    }
+    const draftType = taskConnectionDraft?.type ?? sourceConnectionDraft!.type;
+    if (draftType !== port.type) {
+      setError(`端口类型不匹配: ${draftType} -> ${port.type}`);
+      return;
+    }
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      if (taskConnectionDraft) {
+        const connection = await api.createTaskConnection({
+          fromTaskId: taskConnectionDraft.fromTaskId,
+          fromOutputPortId: taskConnectionDraft.fromOutputPortId,
+          toTaskId: taskId,
+          toInputPortId: port.id,
+        });
+        setTaskConnections((current) => [
+          ...current.filter((candidate) => candidate.connectionId !== connection.connectionId),
+          connection,
+        ]);
+      } else if (sourceConnectionDraft && api instanceof LiveTeamApi) {
+        const connection = await api.createSourceConnection({
+          fromSourceNodeId: sourceConnectionDraft.fromSourceNodeId,
+          fromOutputPortId: sourceConnectionDraft.fromOutputPortId,
+          toTaskId: taskId,
+          toInputPortId: port.id,
+        });
+        setSourceConnections((current) => [
+          ...current.filter((candidate) => candidate.connectionId !== connection.connectionId),
+          connection,
+        ]);
+      }
+      setTaskConnectionDraft(null);
+      setSourceConnectionDraft(null);
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }, [dataSource, sourceConnectionDraft, taskConnectionDraft]);
+
+  const createTextSourceNode = useCallback(async () => {
+    if (dataSource !== "live") return;
+    try {
+      const api = new LiveTeamApi();
+      const sourceNode = await api.createSourceNode({
+        title: "文本输出",
+        nodeType: "text",
+        outputPort: { id: "value", label: "文本", type: "string" },
+        content: { text: "" },
+      });
+      setSourceNodes((current) => {
+        const next = [...current.filter((candidate) => candidate.sourceNodeId !== sourceNode.sourceNodeId), sourceNode];
+        setSourceAtlasNodes((nodes) => makeSourceNodes(next, liveSourceRefreshPositions(nodes)));
+        return next;
+      });
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }, [dataSource]);
+
+  const createFileSourceNode = useCallback(async (file: File) => {
+    if (dataSource !== "live") return;
+    const type = inferSourceFileType(file);
+    try {
+      const api = new LiveTeamApi();
+      const sourceNode = await api.createSourceNode({
+        title: file.name,
+        nodeType: "file",
+        outputPort: { id: "value", label: "文件", type },
+        content: {
+          fileName: file.name,
+          mimeType: file.type || undefined,
+          size: file.size,
+        },
+      });
+      setSourceNodes((current) => {
+        const next = [...current.filter((candidate) => candidate.sourceNodeId !== sourceNode.sourceNodeId), sourceNode];
+        setSourceAtlasNodes((nodes) => makeSourceNodes(next, liveSourceRefreshPositions(nodes)));
+        return next;
+      });
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }, [dataSource]);
+
+  const updateTextSourceNode = useCallback(async (sourceNodeId: string, text: string) => {
+    const currentNode = sourceNodesById.get(sourceNodeId);
+    if (!currentNode || currentNode.nodeType !== "text" || currentNode.content?.text === text) return;
+    try {
+      const api = new LiveTeamApi();
+      const sourceNode = await api.updateSourceNode(sourceNodeId, {
+        content: {
+          ...currentNode.content,
+          text,
+        },
+      });
+      setSourceNodes((current) => current.map((candidate) => (
+        candidate.sourceNodeId === sourceNode.sourceNodeId ? sourceNode : candidate
+      )));
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }, [sourceNodesById]);
+
+  const cancelTaskRun = useCallback(async (task: TeamCanvasTask, taskRun: TeamRunState) => {
+    const taskId = task.taskId;
+    setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: true }));
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      const cancelledRun = await api.cancelTaskRun(taskRun.runId);
+      setTaskRunsByTaskId((current) => mergeTaskRun(current, taskId, cancelledRun));
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: false }));
+    }
+  }, [dataSource]);
+
+  const cancelExpandedTaskRun = useCallback(async () => {
+    if (!expandedTask || !activeExpandedTaskRun) return;
+    await cancelTaskRun(expandedTask, activeExpandedTaskRun);
+  }, [activeExpandedTaskRun, cancelTaskRun, expandedTask]);
+
+  useEffect(() => {
+    if (activeCanvasTaskRunIds.length === 0) return;
+    let cancelled = false;
+    const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+
+    async function refreshActiveTaskRuns() {
+      for (const active of activeCanvasTaskRunIds) {
+        try {
+          const fresh = await api.getTaskRun(active.runId);
+          if (!cancelled) {
+            setTaskRunsByTaskId((current) => mergeTaskRun(current, active.taskId, fresh));
+            if (dataSource === "live" && !isActiveRun(fresh.status) && !liveTaskDiscoveryRefreshRunIdsRef.current.has(fresh.runId)) {
+              liveTaskDiscoveryRefreshRunIdsRef.current.add(fresh.runId);
+              void refreshLiveTasks().catch((e) => {
+                if (!cancelled) setError(errorMessage(e));
+              });
+              scheduleLiveTaskDiscoveryRefresh();
+            }
+          }
+        } catch {
+          // Keep the last visible task run state on transient polling failures.
+        }
+      }
+    }
+
+    const timer = globalThis.setInterval(() => {
+      void refreshActiveTaskRuns();
+    }, 2000);
+    void refreshActiveTaskRuns();
+
+    return () => {
+      cancelled = true;
+      globalThis.clearInterval(timer);
+    };
+  }, [activeCanvasTaskRunIds, dataSource, refreshLiveTasks, scheduleLiveTaskDiscoveryRefresh]);
+
+  useEffect(() => {
+    const taskId = expandedTask?.taskId;
+    if (!taskId || !observedTaskRunId || expandedTaskBranch?.detailMode !== "run-observer") return;
+
+    let cancelled = false;
+    const runId = observedTaskRunId;
+    const observedTaskId = taskId;
+    const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+
+    async function refreshTaskRunObserver() {
+      setTaskRunObserverByRunId((current) => ({
+        ...current,
+        [runId]: {
+          loading: true,
+          attempts: current[runId]?.attempts ?? [],
+          files: current[runId]?.files ?? {},
+          error: null,
+          lastUpdatedAt: current[runId]?.lastUpdatedAt ?? null,
+        },
+      }));
+
+      try {
+        const [freshRun, attempts] = await Promise.all([
+          api.getTaskRun(runId),
+          api.listTaskRunAttempts(runId, observedTaskId),
+        ]);
+        if (cancelled) return;
+
+        setTaskRunsByTaskId((current) => mergeTaskRun(current, observedTaskId, freshRun));
+        setTaskRunObserverByRunId((current) => ({
+          ...current,
+          [runId]: {
+            loading: false,
+            attempts,
+            files: current[runId]?.files ?? {},
+            error: null,
+            lastUpdatedAt: new Date().toISOString(),
+          },
+        }));
+
+        const descriptors = buildTaskRunFileDescriptors(attempts);
+        const fileEntries = await Promise.all(descriptors.map(async (descriptor) => {
+          try {
+            const content = await api.readTaskRunAttemptFile(
+              runId,
+              observedTaskId,
+              descriptor.attemptId,
+              descriptor.fileName,
+            );
+            return [descriptor.key, { content }] as const;
+          } catch (e) {
+            return [descriptor.key, { error: errorMessage(e) }] as const;
+          }
+        }));
+        if (cancelled || fileEntries.length === 0) return;
+        setTaskRunObserverByRunId((current) => ({
+          ...current,
+          [runId]: {
+            loading: false,
+            attempts: current[runId]?.attempts ?? attempts,
+            files: {
+              ...(current[runId]?.files ?? {}),
+              ...Object.fromEntries(fileEntries),
+            },
+            error: null,
+            lastUpdatedAt: current[runId]?.lastUpdatedAt ?? new Date().toISOString(),
+          },
+        }));
+      } catch (e) {
+        if (cancelled) return;
+        const isActiveObserverPoll = !observedTaskRun || isActiveRun(observedTaskRun.status);
+        setTaskRunObserverByRunId((current) => ({
+          ...current,
+          [runId]: {
+            loading: false,
+            attempts: current[runId]?.attempts ?? [],
+            files: current[runId]?.files ?? {},
+            error: isActiveObserverPoll ? null : errorMessage(e),
+            lastUpdatedAt: current[runId]?.lastUpdatedAt ?? null,
+          },
+        }));
+      }
+    }
+
+    const shouldPoll = !observedTaskRun || isActiveRun(observedTaskRun.status);
+    void refreshTaskRunObserver();
+    if (!shouldPoll) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const timer = globalThis.setInterval(() => {
+      void refreshTaskRunObserver();
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      globalThis.clearInterval(timer);
+    };
+  }, [dataSource, expandedTask?.taskId, expandedTaskBranch?.detailMode, observedTaskRun?.status, observedTaskRunId]);
+
+  const canCreateTask = dataSource === "live" && agents.length > 0;
+  const canRefreshTasks = dataSource === "live" && !liveTasksRefreshing;
+
+  const agentToolbar = (
+    <div className="agent-atlas-actions">
+      <div className="agent-toolbar-group agent-toolbar-agent-group">
+        <button
+          type="button"
+          className="agent-add-btn"
+          onClick={() => {
+            setTaskLeaderPickerOpen(false);
+            setAgentPickerOpen((open) => !open);
+          }}
+          aria-expanded={agentPickerOpen}
+        >
+          添加 Agent
+        </button>
+        {agentPickerOpen && (
+          <div className="agent-picker" aria-label="Agent catalog">
+            {agents.map((agent) => {
+              const joined = addedAgentIds.has(agent.agentId);
+              return (
+                <button
+                  key={agent.agentId}
+                  type="button"
+                  className="agent-picker-option"
+                  disabled={joined}
+                  onClick={() => addAgentNode(agent.agentId)}
+                >
+                  <span className="agent-picker-name">{agent.name}</span>
+                  <code>{agent.agentId}</code>
+                  {joined && <span className="agent-picker-status">已加入</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <div className="agent-atlas-stats" aria-label="画布统计">
+        <span className="agent-atlas-count" aria-label="Agent 数量">
+          <strong>{agentNodes.length}</strong>
+          <span> Agent</span>
+        </span>
+        <span className="agent-atlas-count task-atlas-count" aria-label="当前 Task 数量">
+          <strong>{tasks.length}</strong>
+          <span> 个 Task</span>
+        </span>
+        <span className="agent-atlas-count source-atlas-count" aria-label="输出节点数量">
+          <strong>{sourceNodes.length}</strong>
+          <span> Source</span>
+        </span>
+      </div>
+      <div className="agent-toolbar-group task-toolbar-group" aria-label="Task 操作">
+        <button
+          type="button"
+          className="agent-add-btn task-create-btn"
+          disabled={!canCreateTask}
+          onClick={() => {
+            setAgentPickerOpen(false);
+            setTaskLeaderPickerOpen((open) => !open);
+          }}
+          aria-expanded={taskLeaderPickerOpen}
+        >
+          创建 Task
+        </button>
+        <button
+          type="button"
+          className="agent-add-btn task-refresh-btn"
+          disabled={!canRefreshTasks}
+          onClick={() => {
+            void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
+          }}
+        >
+          {liveTasksRefreshing ? "刷新中..." : "刷新 Task"}
+        </button>
+        {taskLeaderPickerOpen && (
+          <div className="agent-picker task-leader-picker" aria-label="Task leader catalog">
+            {agents.map((agent) => (
+              <button
+                key={agent.agentId}
+                type="button"
+                className="agent-picker-option"
+                onClick={() => openTaskCreateBranch(agent.agentId)}
+              >
+                <span className="agent-picker-name">{agent.name}</span>
+                <code>{agent.agentId}</code>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="agent-toolbar-group source-toolbar-group" aria-label="输出节点">
+        <button
+          type="button"
+          className="agent-add-btn source-create-btn"
+          disabled={dataSource !== "live"}
+          onClick={() => void createTextSourceNode()}
+        >
+          文本输出
+        </button>
+        <button
+          type="button"
+          className="agent-add-btn source-create-btn"
+          disabled={dataSource !== "live"}
+          onClick={() => sourceFileInputRef.current?.click()}
+        >
+          文件输出
+        </button>
+        <input
+          ref={sourceFileInputRef}
+          type="file"
+          className="sr-only"
+          aria-label="选择输出文件"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) {
+              void createFileSourceNode(file);
+            }
+            event.currentTarget.value = "";
+          }}
+        />
+      </div>
+    </div>
+  );
+
+  const expandedAgentBranchMode = expandedAgentBranch?.mode ?? "chat";
+  const expandedAgentBranchLabel = expandedAgentBranchMode === "task-create" ? "创建 Task" : "主项目对话";
+  const expandedAgentIframeTitle = expandedAgentBranchMode === "task-create"
+    ? `${expandedAgent?.name ?? ""} Task 创建`
+    : `${expandedAgent?.name ?? ""} 主项目对话`;
+
+  const expandedAgentBranchPanel = expandedAgentNode && expandedAgent ? (
+    <section className="agent-playground-branch emap-dialog-branch" aria-label={`${expandedAgent.name} ${expandedAgentBranchLabel}`}>
+      <header className="agent-playground-branch-head">
+        <div className="agent-playground-branch-title">
+          <span>{expandedAgentBranchLabel}</span>
+          <strong>{expandedAgent.name}</strong>
+          <code>{expandedAgent.agentId}</code>
+        </div>
+        <button
+          type="button"
+          className="agent-playground-branch-collapse"
+          onClick={() => {
+            refreshLiveTasksAfterLeavingTaskCreateBranch(expandedAgentBranch);
+            setExpandedAgentBranch(null);
+          }}
+          aria-label={`收起 ${expandedAgent.name} ${expandedAgentBranchLabel}分支`}
+        >
+          收起
+        </button>
+      </header>
+      {expandedAgentBranchMode === "task-create" && (
+        <div className="task-leader-branch-hint">
+          在对话中使用 <code>/team-task</code> 创建 Task。Team Console 只负责打开 leader 对话。
+        </div>
+      )}
+      <iframe
+        className="agent-playground-iframe"
+        title={expandedAgentIframeTitle}
+        src={buildAgentPlaygroundUrl(expandedAgent.agentId, expandedAgentBranchMode)}
+        referrerPolicy="no-referrer"
+      />
+    </section>
+  ) : null;
+
+  const taskBranchPanelItems = expandedTaskBranches.flatMap((branch) => {
+    const node = taskNodes.find((candidate) => candidate.nodeId === branch.nodeId) ?? null;
+    const task = node ? tasksById.get(node.taskId) ?? null : null;
+    if (!node || !task) return [];
+    const runs = taskRunsByTaskId[task.taskId] ?? [];
+    const latestRun = selectLatestRun(runs);
+    const activeRun = runs.find((taskRun) => isActiveRun(taskRun.status)) ?? null;
+    const runSaving = Boolean(taskRunSavingByTaskId[task.taskId]);
+    const detailMode = branch.detailMode ?? null;
+    const runButtonLabel = runSaving ? "\u542f\u52a8\u4e2d..." : activeRun ? "\u8fd0\u884c\u4e2d" : latestRun ? "\u91cd\u65b0\u8fd0\u884c" : "\u8fd0\u884c";
+    const runSummaryLabel = latestRun && isActiveRun(latestRun.status) ? "\u8fd0\u884c\u4e2d" : "\u6700\u8fd1\u8fd0\u884c";
+    const latestRunIsObserved = Boolean(
+      latestRun
+        && detailMode === "run-observer"
+        && branch.observedRunId === latestRun.runId,
+    );
+    return [{
+      id: taskMenuPanelId(branch.nodeId),
+      nodeId: branch.nodeId,
+      panel: (
+        <section className="task-leader-branch task-action-branch emap-menu-branch" aria-label={`${task.title} Task \u64cd\u4f5c`}>
+          <header className="task-leader-branch-head">
+            <div className="task-leader-branch-title">
+              <span>{"Task \u64cd\u4f5c"}</span>
+              <strong>{task.title}</strong>
+              <code>{task.taskId}</code>
+            </div>
+            <button
+              type="button"
+              className="task-leader-branch-collapse"
+              onClick={() => closeTaskBranch(branch.nodeId)}
+              aria-label={`\u6536\u8d77 ${task.title} Task \u64cd\u4f5c`}
+            >
+              {"\u6536\u8d77"}
+            </button>
+          </header>
+          <div className="task-action-menu" aria-label={`${task.title} \u64cd\u4f5c\u83dc\u5355`}>
+            <button
+              type="button"
+              className="task-action-menu-button"
+              disabled={runSaving || Boolean(activeRun) || task.status !== "ready"}
+              title={task.status === "ready" ? "\u542f\u52a8\u8fd9\u4e2a Task \u7684 WorkUnit run" : "\u53ea\u6709 ready Task \u53ef\u4ee5\u8fd0\u884c"}
+              onClick={() => {
+                void runTask(task);
+              }}
+            >
+              {runButtonLabel}
+            </button>
+            {activeRun && (
+              <button
+                type="button"
+                className="task-action-menu-button"
+                disabled={runSaving}
+                onClick={() => {
+                  void cancelTaskRun(task, activeRun);
+                }}
+              >
+                {"\u505c\u6b62"}
+              </button>
+            )}
+            {latestRun && (
+              <button
+                type="button"
+                className="task-run-summary"
+                aria-label={`${task.title} ${runSummaryLabel} ${RUN_STATUS_LABELS[latestRun.status]} phase ${taskRunPhase(latestRun, task.taskId)}`}
+                onClick={() => (
+                  latestRunIsObserved
+                    ? setExpandedTaskBranches((current) => current.map((item) => (
+                      item.nodeId === branch.nodeId
+                        ? { ...item, detailMode: null, observedRunId: undefined, selectedFileKeys: [] }
+                        : item
+                    )))
+                    : setExpandedTaskBranches((current) => [
+                      ...current.filter((item) => item.nodeId !== branch.nodeId),
+                      { ...branch, detailMode: "run-observer", observedRunId: latestRun.runId, selectedFileKeys: [] },
+                    ])
+                )}
+              >
+                <span className="task-run-summary-kicker">{runSummaryLabel}</span>
+                <span className="task-run-summary-head">
+                  <strong>{RUN_STATUS_LABELS[latestRun.status]}</strong>
+                  <em>{latestRunIsObserved ? "\u6536\u8d77\u8f93\u51fa" : "\u67e5\u770b\u8f93\u51fa"}</em>
+                </span>
+                <span className="task-run-summary-metrics">
+                  <span><b>{"\u9636\u6bb5"}</b><strong>{taskRunPhase(latestRun, task.taskId)}</strong></span>
+                  <span><b>{"\u8017\u65f6"}</b><strong>{taskRunElapsed(latestRun)}</strong></span>
+                  <span><b>Attempts</b><strong>{taskRunAttempts(latestRun, task.taskId)}</strong></span>
+                </span>
+                <span className="task-run-summary-message">{taskRunMessage(latestRun, task.taskId)}</span>
+                <code>{latestRun.runId}</code>
+              </button>
+            )}
+            <button
+              type="button"
+              className="task-action-menu-button"
+              onClick={() => {
+                setTaskEditDraft(makeTaskEditDraft(task));
+                setTaskEditWarning(null);
+                setTaskArchiveConfirming(false);
+                setExpandedTaskBranches((current) => [
+                  ...current.filter((item) => item.nodeId !== branch.nodeId),
+                  { ...branch, detailMode: "edit" },
+                ]);
+              }}
+            >
+              {"\u7f16\u8f91"}
+            </button>
+            <button
+              type="button"
+              className="task-action-menu-button"
+              onClick={() => {
+                setTaskArchiveConfirming(false);
+                setExpandedTaskBranches((current) => [
+                  ...current.filter((item) => item.nodeId !== branch.nodeId),
+                  { ...branch, detailMode: "leader-chat" },
+                ]);
+                setTaskLeaderContextCopyState("idle");
+              }}
+            >
+              {"\u5bf9\u8bdd Leader"}
+            </button>
+            {taskArchiveConfirming && expandedTaskBranch?.nodeId === branch.nodeId ? (
+              <div className="task-delete-confirm" role="group" aria-label={`${task.title} \u5220\u9664\u786e\u8ba4`}>
+                <p>{"\u5220\u9664\u4f1a\u8c03\u7528 archive \u8f6f\u5f52\u6863\uff0c\u4e0d\u4f1a\u542f\u52a8 Task run\uff0c\u4e5f\u4e0d\u4f1a\u628a Task \u5b9a\u4e49\u5199\u5165 localStorage\u3002"}</p>
+                <div className="task-delete-actions">
+                  <button
+                    type="button"
+                    className="task-action-menu-button"
+                    disabled={taskArchiveSaving}
+                    onClick={() => setTaskArchiveConfirming(false)}
+                  >
+                    {"\u53d6\u6d88"}
+                  </button>
+                  <button
+                    type="button"
+                    className="task-action-menu-button danger"
+                    disabled={taskArchiveSaving}
+                    onClick={() => {
+                      void archiveTask(task, branch.nodeId);
+                    }}
+                  >
+                    {taskArchiveSaving ? "\u5220\u9664\u4e2d..." : "\u786e\u8ba4\u5220\u9664"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="task-action-menu-button danger"
+                disabled={taskArchiveSaving}
+                onClick={() => {
+                  setTaskArchiveConfirming(true);
+                  setExpandedTaskBranches((current) => [
+                    ...current.filter((item) => item.nodeId !== branch.nodeId),
+                    branch,
+                  ]);
+                }}
+              >
+                {"\u5220\u9664"}
+              </button>
+            )}
+          </div>
+        </section>
+      ),
+    }];
+  });
+  const expandedTaskDetailMode = expandedTaskBranch?.detailMode ?? null;
+  const activeTaskEditDraft = expandedTask && taskEditDraft?.taskId === expandedTask.taskId
+    ? taskEditDraft
+    : null;
+  const expandedTaskRunButtonLabel = expandedTaskRunSaving
+    ? "启动中..."
+    : activeExpandedTaskRun
+      ? "运行中"
+      : latestExpandedTaskRun
+        ? "重新运行"
+        : "运行";
+  const latestExpandedTaskRunSummaryLabel = latestExpandedTaskRun && isActiveRun(latestExpandedTaskRun.status)
+    ? "运行中"
+    : "最近运行";
+  const latestExpandedTaskRunIsObserved = Boolean(
+    latestExpandedTaskRun
+      && expandedTaskDetailMode === "run-observer"
+      && expandedTaskBranch?.observedRunId === latestExpandedTaskRun.runId,
+  );
+  const expandedTaskBranchPanel = expandedTaskNode && expandedTask ? (
+    <section className="task-leader-branch task-action-branch emap-menu-branch" aria-label={`${expandedTask.title} Task 操作`}>
+      <header className="task-leader-branch-head">
+        <div className="task-leader-branch-title">
+          <span>Task 操作</span>
+          <strong>{expandedTask.title}</strong>
+          <code>{expandedTask.taskId}</code>
+        </div>
+        <button
+          type="button"
+          className="task-leader-branch-collapse"
+          onClick={() => closeTaskBranch()}
+          aria-label={`收起 ${expandedTask.title} Task 操作`}
+        >
+          收起
+        </button>
+      </header>
+      <div className="task-action-menu" aria-label={`${expandedTask.title} 操作菜单`}>
+        <button
+          type="button"
+          className="task-action-menu-button"
+          disabled={expandedTaskRunSaving || Boolean(activeExpandedTaskRun) || expandedTask.status !== "ready"}
+          title={expandedTask.status === "ready" ? "启动这个 Task 的 WorkUnit run" : "只有 ready Task 可以运行"}
+          onClick={() => {
+            void runExpandedTask();
+          }}
+        >
+          {expandedTaskRunButtonLabel}
+        </button>
+        {activeExpandedTaskRun && (
+          <button
+            type="button"
+            className="task-action-menu-button"
+            disabled={expandedTaskRunSaving}
+            onClick={() => {
+              void cancelExpandedTaskRun();
+            }}
+          >
+            停止
+          </button>
+        )}
+        {latestExpandedTaskRun && (
+          <button
+            type="button"
+            className="task-run-summary"
+            aria-label={`${expandedTask.title} ${latestExpandedTaskRunSummaryLabel} ${RUN_STATUS_LABELS[latestExpandedTaskRun.status]} 阶段 ${taskRunPhase(latestExpandedTaskRun, expandedTask.taskId)}`}
+            onClick={() => (
+              latestExpandedTaskRunIsObserved
+                ? closeTaskRunObserverBranch()
+                : openTaskRunObserverBranch(latestExpandedTaskRun.runId)
+            )}
+          >
+            <span className="task-run-summary-kicker">{latestExpandedTaskRunSummaryLabel}</span>
+            <span className="task-run-summary-head">
+              <strong>{RUN_STATUS_LABELS[latestExpandedTaskRun.status]}</strong>
+              <em>{latestExpandedTaskRunIsObserved ? "收起输出" : "查看输出"}</em>
+            </span>
+            <span className="task-run-summary-metrics">
+              <span><b>阶段</b><strong>{taskRunPhase(latestExpandedTaskRun, expandedTask.taskId)}</strong></span>
+              <span><b>耗时</b><strong>{taskRunElapsed(latestExpandedTaskRun)}</strong></span>
+              <span><b>Attempts</b><strong>{taskRunAttempts(latestExpandedTaskRun, expandedTask.taskId)}</strong></span>
+            </span>
+            <span className="task-run-summary-message">{taskRunMessage(latestExpandedTaskRun, expandedTask.taskId)}</span>
+            <code>{latestExpandedTaskRun.runId}</code>
+          </button>
+        )}
+        <button
+          type="button"
+          className="task-action-menu-button"
+          onClick={() => openTaskEditBranch(expandedTask)}
+        >
+          编辑
+        </button>
+        <button
+          type="button"
+          className="task-action-menu-button"
+          onClick={() => {
+            setTaskArchiveConfirming(false);
+            setTaskLeaderContextCopyState("idle");
+            setExpandedTaskBranch((current) => current ? { ...current, detailMode: "leader-chat" } : current);
+          }}
+        >
+          对话 Leader
+        </button>
+        {taskArchiveConfirming ? (
+          <div className="task-delete-confirm" role="group" aria-label={`${expandedTask.title} 删除确认`}>
+            <p>删除会调用 archive 软归档，不会启动 Task run，也不会把 Task 定义写入 localStorage。</p>
+            <div className="task-delete-actions">
+              <button
+                type="button"
+                className="task-action-menu-button"
+                disabled={taskArchiveSaving}
+                onClick={() => setTaskArchiveConfirming(false)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="task-action-menu-button danger"
+                disabled={taskArchiveSaving}
+                onClick={() => {
+                  void archiveExpandedTask();
+                }}
+              >
+                {taskArchiveSaving ? "删除中..." : "确认删除"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="task-action-menu-button danger"
+            onClick={() => setTaskArchiveConfirming(true)}
+          >
+            删除
+          </button>
+        )}
+      </div>
+    </section>
+  ) : null;
+  const expandedTaskChildBranchPanel = expandedTaskNode && expandedTask ? (
+    expandedTaskDetailMode === "leader-chat" ? (
+      <section className="agent-playground-branch emap-dialog-branch task-leader-chat-branch" aria-label={`${expandedTask.title} leader 对话`}>
+        <header className="agent-playground-branch-head">
+          <div className="agent-playground-branch-title">
+            <span>Leader 对话</span>
+            <strong>{expandedTask.title}</strong>
+            <code>{expandedTask.taskId}</code>
+          </div>
+          <button
+            type="button"
+            className="agent-playground-branch-collapse"
+            onClick={() => setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current)}
+            aria-label={`收起 ${expandedTask.title} leader 对话`}
+          >
+            收起
+          </button>
+        </header>
+        <div className="task-leader-branch-hint">
+          在对话中使用 <code>/team-task</code> 创建或更新这个 Task。Task 数据必须通过后端 API 写入。
+        </div>
+        <div className="task-leader-context-copy">
+          <div className="task-leader-context-copy-head">
+            <span>当前 Task 上下文</span>
+            <button
+              type="button"
+              className="task-action-menu-button"
+              onClick={() => { void copyTaskLeaderContext(formatTaskLeaderContext(expandedTask)); }}
+            >
+              复制 Task 上下文
+            </button>
+          </div>
+          <pre className="task-leader-context-copy-text">{formatTaskLeaderContext(expandedTask)}</pre>
+          {taskLeaderContextCopyState !== "idle" && (
+            <div className="task-leader-context-copy-status" role="status">
+              {taskLeaderContextCopyState === "copied" ? "已复制" : "复制失败，请手动选中上下文复制"}
+            </div>
+          )}
+        </div>
+        <iframe
+          className="agent-playground-iframe"
+          title={`${expandedTask.title} leader 对话`}
+          src={buildTaskLeaderPlaygroundUrl(expandedTask)}
+          referrerPolicy="no-referrer"
+        />
+      </section>
+    ) : expandedTaskDetailMode === "edit" && activeTaskEditDraft ? (
+      <section className="task-leader-branch emap-panel-branch task-edit-branch" aria-label={`${expandedTask.title} Task 编辑`}>
+        <header className="task-leader-branch-head">
+          <div className="task-leader-branch-title">
+            <span>Task 编辑</span>
+            <strong>{expandedTask.title}</strong>
+            <code>{expandedTask.taskId}</code>
+          </div>
+          <button
+            type="button"
+            className="task-leader-branch-collapse"
+            onClick={() => setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current)}
+            aria-label={`收起 ${expandedTask.title} Task 编辑`}
+          >
+            收起
+          </button>
+        </header>
+        <form
+          className="task-edit-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void saveTaskEdit();
+          }}
+        >
+          <div className="task-edit-note">
+            复杂需求和验收规则继续通过 Leader 对话里的 <code>/team-task</code> 更新；这里仅做 Task 名称和执行 Agent 的浅编辑。
+          </div>
+          {taskEditWarning && <div className="task-edit-warning" role="status">{taskEditWarning}</div>}
+          <div className="task-edit-grid">
+            <label className="task-edit-field">
+              <span>Task 名称</span>
+              <input
+                value={activeTaskEditDraft.title}
+                onChange={(event) => setTaskEditDraft((current) => (
+                  current ? {
+                    ...current,
+                    title: event.target.value,
+                    dirtyFields: { ...current.dirtyFields, title: true },
+                  } : current
+                ))}
+              />
+            </label>
+            <label className="task-edit-field">
+              <span>Leader Agent</span>
+              <select
+                value={activeTaskEditDraft.leaderAgentId}
+                onChange={(event) => setTaskEditDraft((current) => (
+                  current ? {
+                    ...current,
+                    leaderAgentId: event.target.value,
+                    dirtyFields: { ...current.dirtyFields, leaderAgentId: true },
+                  } : current
+                ))}
+              >
+                {agents.map((agent) => (
+                  <option key={agent.agentId} value={agent.agentId}>
+                    {agent.name} ({agent.agentId})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="task-edit-field">
+              <span>Worker Agent</span>
+              <select
+                value={activeTaskEditDraft.workerAgentId}
+                onChange={(event) => setTaskEditDraft((current) => (
+                  current ? {
+                    ...current,
+                    workerAgentId: event.target.value,
+                    dirtyFields: { ...current.dirtyFields, workerAgentId: true },
+                  } : current
+                ))}
+              >
+                {agents.map((agent) => (
+                  <option key={agent.agentId} value={agent.agentId}>
+                    {agent.name} ({agent.agentId})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="task-edit-field">
+              <span>Checker Agent</span>
+              <select
+                value={activeTaskEditDraft.checkerAgentId}
+                onChange={(event) => setTaskEditDraft((current) => (
+                  current ? {
+                    ...current,
+                    checkerAgentId: event.target.value,
+                    dirtyFields: { ...current.dirtyFields, checkerAgentId: true },
+                  } : current
+                ))}
+              >
+                {agents.map((agent) => (
+                  <option key={agent.agentId} value={agent.agentId}>
+                    {agent.name} ({agent.agentId})
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="task-edit-actions">
+            <button
+              type="button"
+              className="task-action-menu-button"
+              onClick={() => {
+                setTaskEditWarning(null);
+                setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current);
+              }}
+            >
+              返回菜单
+            </button>
+            <button type="submit" className="task-action-menu-button primary" disabled={taskEditSaving}>
+              {taskEditSaving ? "保存中..." : "保存"}
+            </button>
+          </div>
+        </form>
+      </section>
+    ) : null
+  ) : null;
+
+  const taskChildBranchPanels = useMemo(() => {
+    const panels: Array<{
+      id: string;
+      panel: ReactNode;
+      width?: number;
+      height?: number;
+      sourceId?: string;
+      autoHeight?: boolean;
+      resizable?: boolean;
+      minWidth?: number;
+      minHeight?: number;
+    }> = [];
+
+    const runObserverBranches = expandedTaskBranches.filter((branch) => (
+      branch.detailMode === "run-observer" && branch.observedRunId
+    ));
+
+    for (const branch of expandedTaskBranches) {
+      if (branch.detailMode !== "run-observer" || !branch.observedRunId) continue;
+      const node = taskNodes.find((candidate) => candidate.nodeId === branch.nodeId) ?? null;
+      const task = node ? tasksById.get(node.taskId) ?? null : null;
+      if (!node || !task) continue;
+      const observedTaskRun = (taskRunsByTaskId[task.taskId] ?? []).find((taskRun) => taskRun.runId === branch.observedRunId) ?? null;
+      if (!observedTaskRun) continue;
+
+      const observerState = taskRunObserverByRunId[observedTaskRun.runId] ?? null;
+      const attempts = observerState?.attempts ?? [];
+      const fileDescriptors = attempts.length > 0 ? buildTaskRunFileDescriptors(attempts) : [];
+      const latestAttempt = selectLatestAttempt(attempts);
+      const selectedFileKeys = branch.selectedFileKeys ?? [];
+      const selectedFileKeySet = new Set(selectedFileKeys);
+      const selectedFileDescriptors = selectedFileKeys
+        .map((key) => fileDescriptors.find((descriptor) => descriptor.key === key) ?? null)
+        .filter((descriptor): descriptor is TaskRunObserverFileDescriptor => Boolean(descriptor));
+      const observedTaskRunIsActive = isActiveRun(observedTaskRun.status);
+      const runObserverPanelId = runObserverBranches.length === 1 ? "run-observer" : `run-observer-${branch.nodeId}`;
+
+      const toggleFile = (key: string) => {
+        setExpandedTaskBranches((current) => current.map((item) => {
+          if (item.nodeId !== branch.nodeId) return item;
+          const currentKeys = item.selectedFileKeys ?? [];
+          return {
+            ...item,
+            selectedFileKeys: currentKeys.includes(key)
+              ? currentKeys.filter((fileKey) => fileKey !== key)
+              : [...currentKeys, key],
+          };
+        }));
+      };
+
+      const renderFileRow = (descriptor: TaskRunObserverFileDescriptor) => {
+        const isSelected = selectedFileKeySet.has(descriptor.key);
+        const agentName = descriptor.runtimeContext
+          ? (agentsById.get(descriptor.runtimeContext.resolvedProfileId)?.name ?? descriptor.runtimeContext.resolvedProfileId)
+          : descriptor.kind === "result"
+            ? (descriptor.fileName.includes("accepted") ? "Accepted result" : "Result")
+            : descriptor.kind;
+        return (
+          <button
+            type="button"
+            key={descriptor.key}
+            className={`emap-observer-file-row ${descriptor.kind} ${isSelected ? "selected" : ""}`}
+            data-file-kind={descriptor.kind}
+            onClick={() => toggleFile(descriptor.key)}
+          >
+            <span className="emap-observer-file-row-agent">{agentName}</span>
+            <code className="emap-observer-file-row-name">{descriptor.fileName}</code>
+            <span className="emap-observer-file-row-path">{descriptor.path}</span>
+          </button>
+        );
+      };
+
+      const renderFileSection = (label: string, descriptors: TaskRunObserverFileDescriptor[]) => {
+        if (descriptors.length === 0) return null;
+        return (
+          <div className="emap-run-observer-file-section">
+            <span className="emap-run-observer-file-kicker">{label}</span>
+            <div className="emap-run-observer-file-list">
+              {descriptors.map(renderFileRow)}
+            </div>
+          </div>
+        );
+      };
+
+      const workerFiles = fileDescriptors.filter((d) => d.kind === "worker");
+      const checkerFiles = fileDescriptors.filter((d) => d.kind === "checker");
+      const resultFiles = fileDescriptors.filter((d) => d.kind === "result");
+      const hasFiles = fileDescriptors.length > 0;
+
+      panels.push({
+        id: runObserverPanelId,
+        width: 420,
+        autoHeight: true,
+        sourceId: taskMenuPanelId(branch.nodeId),
+        panel: (
+          <div className={`emap-run-observer-panel ${observedTaskRunIsActive ? "active" : "terminal"}`}>
+            <header className="emap-run-observer-head">
+              <span>{"\u8fd0\u884c\u89c2\u5bdf"}</span>
+              <strong>{RUN_STATUS_LABELS[observedTaskRun.status]}</strong>
+            </header>
+            <div className="emap-run-observer-stage worker" data-observer-section="worker-process">
+              {renderRoleProcessNode("worker", latestAttempt?.roleProcesses?.worker)}
+            </div>
+            <div className="emap-run-observer-stage-files worker" data-observer-section="worker-files">
+              {renderFileSection("Worker \u8f93\u51fa", workerFiles)}
+            </div>
+            <div className="emap-run-observer-stage checker" data-observer-section="checker-process">
+              {renderRoleProcessNode("checker", latestAttempt?.roleProcesses?.checker)}
+            </div>
+            <div className="emap-run-observer-stage-files checker" data-observer-section="checker-files">
+              {renderFileSection("Checker \u8f93\u51fa", checkerFiles)}
+            </div>
+            <div className="emap-run-observer-stage-files result" data-observer-section="result-files">
+              {renderFileSection("\u9a8c\u6536\u7ed3\u679c", resultFiles)}
+            </div>
+            {!hasFiles && !observerState?.loading && !observedTaskRunIsActive && (
+              <div className="emap-observer-empty">{"\u6682\u65e0 attempt \u6587\u4ef6\u3002\u8fd0\u884c\u521a\u542f\u52a8\u65f6\u8fd9\u91cc\u4f1a\u968f\u8f6e\u8be2\u8865\u9f50\u3002"}</div>
+            )}
+          </div>
+        ),
+      });
+
+      for (const descriptor of selectedFileDescriptors) {
+        const fileState = observerState?.files[descriptor.key];
+        panels.push({
+          id: `file-detail-${branch.nodeId}-${descriptor.key}`.replace(/[^A-Za-z0-9_-]/g, "-"),
+          width: 460,
+          height: 420,
+          sourceId: runObserverPanelId,
+          resizable: true,
+          minWidth: 360,
+          minHeight: 280,
+          panel: (
+            <section className="emap-observer-node emap-observer-file-detail-node" aria-label={descriptor.title}>
+              <header className="emap-observer-node-head">
+                <span className="emap-observer-node-label">{descriptor.title}</span>
+                <code className="emap-observer-file-name">{descriptor.fileName}</code>
+                <button
+                  type="button"
+                  className="emap-observer-node-close"
+                  onClick={() => toggleFile(descriptor.key)}
+                  aria-label="\u6536\u8d77\u6587\u4ef6\u8be6\u60c5"
+                >
+                  {"\u6536\u8d77"}
+                </button>
+              </header>
+              <div className="emap-observer-file-detail-body">
+                {fileState?.error ? (
+                  <div className="emap-observer-file-error">{fileState.error}</div>
+                ) : fileState?.content ? (
+                  renderFileDetailContent(descriptor.fileName, fileState.content)
+                ) : (
+                  <div className="emap-observer-file-loading">{"\u6b63\u5728\u8bfb\u53d6\u6587\u4ef6..."}</div>
+                )}
+              </div>
+            </section>
+          ),
+        });
+      }
+    }
+
+    return panels;
+  }, [agentsById, expandedTaskBranches, taskNodes, taskRunObserverByRunId, taskRunsByTaskId, tasksById]);
+
+  return (
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="app-header-left">
+          <h1 className="app-title">团队控制台</h1>
+          <span className="app-subtitle">执行地图预览</span>
+        </div>
+        <div className="app-header-right">
+          <select
+            id="team-console-data-source"
+            name="teamConsoleDataSource"
+            value={dataSource}
+            onChange={(event) => {
+              const nextSource = event.target.value as DataSource;
+              setDataSource(nextSource);
+              if (nextSource === "live") {
+                setLiveRunMode("workspace");
+              }
+            }}
+            className="datasource-select"
+          >
+            <option value="mock">示例数据</option>
+            <option value="live">实时 API</option>
+          </select>
+        </div>
+      </header>
+
+      {dataSource === "mock" && (
+        <div className="fixture-bar">
+          <span className="fixture-label">示例：</span>
+          <button
+            className={`fixture-btn ${selectedFixtureId === CLEAN_AGENT_WORKSPACE_ID ? "active" : ""}`}
+            onClick={() => setSelectedFixtureId(CLEAN_AGENT_WORKSPACE_ID)}
+          >
+            Agent workspace
+          </button>
+          {ALL_FIXTURES.map((fixture) => (
+            <button
+              key={fixture.id}
+              className={`fixture-btn ${selectedFixtureId === fixture.id ? "active" : ""}`}
+              onClick={() => setSelectedFixtureId(fixture.id)}
+            >
+              {fixture.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {dataSource === "live" && (
+        <div className="fixture-bar live-run-bar">
+          <span className="fixture-label">运行图：</span>
+          <button
+            className={`fixture-btn ${liveRunMode === "workspace" ? "active" : ""}`}
+            onClick={() => {
+              setLiveRunMode("workspace");
+              void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
+            }}
+          >
+            Agent workspace
+          </button>
+          <button
+            className={`fixture-btn ${liveRunMode === "latest" ? "active" : ""}`}
+            onClick={() => setLiveRunMode("latest")}
+          >
+            最新 Run
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <div className="error-banner">{error}</div>
+      )}
+
+      {rootArchiveConfirm && (
+        <div className="root-archive-confirm" role="status">
+          <span>
+            {rootArchiveConfirm.kind === "source" && `确认归档 Source "${rootArchiveConfirm.title}"？归档后无法恢复。`}
+            {rootArchiveConfirm.kind === "task" && `确认归档 Task "${rootArchiveConfirm.task.title}"？归档后无法恢复。`}
+            {rootArchiveConfirm.kind === "agent" && `确认将 Agent "${rootArchiveConfirm.name}" 移出画布？不会删除真实 Agent。`}
+          </span>
+          <div className="root-archive-confirm-actions">
+            <button
+              type="button"
+              className="root-archive-cancel"
+              onClick={cancelRootArchive}
+              disabled={rootArchiveSaving}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="root-archive-confirm-button"
+              onClick={confirmRootArchive}
+              disabled={rootArchiveSaving}
+              aria-label={rootArchiveConfirm.kind === "agent" ? "确认移出画布" : "确认归档"}
+            >
+              {rootArchiveSaving
+                ? "处理中..."
+                : rootArchiveConfirm.kind === "agent"
+                  ? "确认移出画布"
+                  : "确认归档"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <main className="app-main">
+        {loading ? (
+          <div className="empty-state">
+            <p>正在加载实时运行...</p>
+          </div>
+        ) : (
+          <div className="workspace">
+            <div className="workspace-map">
+              <ExecutionMap
+                plan={plan}
+                run={run}
+                selectedTaskId={selectedTaskId}
+                onSelectTask={selectTask}
+                attemptsByTaskId={attemptsByTaskId}
+                readAttemptFile={readAttemptFile}
+                agentNodes={agentNodes}
+                agentsById={agentsById}
+                agentRunStatusById={agentRunStatusesById}
+                focusedAgentNodeId={expandedAgentNode?.nodeId ?? null}
+                onSelectAgent={toggleAgentBranch}
+                onMoveAgent={moveAgentNode}
+                minimizedAgentNodeIds={minimizedAgentNodeIds}
+                onMinimizeAgent={minimizeAgentNode}
+                onRestoreAgent={restoreAgentNode}
+                onRemoveAgent={(node, agent) => requestRemoveAgentNode(node.nodeId, agent.agentId, agent.name)}
+                agentBranchPanel={expandedAgentBranchPanel}
+                taskNodes={taskNodes}
+                tasksById={tasksById}
+                taskConnections={taskConnections}
+                taskConnectionDraft={taskConnectionDraft}
+                sourceNodes={sourceAtlasNodes}
+                sourceNodesById={sourceNodesById}
+                sourceConnections={sourceConnections}
+                sourceConnectionDraft={sourceConnectionDraft}
+                taskRunsByTaskId={taskRunsByTaskId}
+                focusedTaskNodeId={expandedTaskNode?.nodeId ?? null}
+                onSelectCanvasTask={toggleTaskBranch}
+                onMoveCanvasTask={moveTaskNode}
+                minimizedTaskNodeIds={minimizedTaskNodeIds}
+                onMinimizeCanvasTask={minimizeTaskNode}
+                onRestoreCanvasTask={restoreTaskNode}
+                onArchiveCanvasTask={(node, task) => requestArchiveCanvasTask(task, node.nodeId)}
+                onMoveSourceNode={moveSourceNode}
+                minimizedSourceNodeIds={minimizedSourceNodeIds}
+                onMinimizeSourceNode={minimizeSourceNode}
+                onRestoreSourceNode={restoreSourceNode}
+                onArchiveSourceNode={(node, sourceNode) => requestArchiveSourceNode(sourceNode.sourceNodeId, node.nodeId, sourceNode.title)}
+                onSourceOutputPortSelect={beginSourcePortConnection}
+                onSourceTextChange={updateTextSourceNode}
+                onTaskOutputPortSelect={beginTaskPortConnection}
+                onTaskInputPortSelect={completeTaskPortConnection}
+                taskBranchPanel={expandedTaskBranchPanel}
+                taskBranchPanels={taskBranchPanelItems}
+                taskChildBranchPanel={expandedTaskChildBranchPanel}
+                taskChildBranchInteractive={expandedTaskDetailMode === "leader-chat" || expandedTaskDetailMode === "edit"}
+                taskChildBranchPanels={taskChildBranchPanels}
+                viewport={canvasViewport}
+                onViewportChange={setCanvasViewport}
+                toolbarStart={agentToolbar}
+              />
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}

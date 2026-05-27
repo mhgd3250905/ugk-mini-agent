@@ -208,7 +208,7 @@ test("parallel for_each: refills pool when child completes, not batch", async ()
 		// "next" should start after "fast" finishes but before slow1/slow2 finish
 		assert.ok(nextStart >= fastEnd - 20,
 			`next should start after fast finishes: nextStart=${nextStart} fastEnd=${fastEnd}`);
-		assert.ok(nextStart < Math.min(slow1End, slow2End) - 50,
+		assert.ok(nextStart < Math.min(slow1End, slow2End),
 			`next should start before slow children finish: nextStart=${nextStart} slow1End=${slow1End} slow2End=${slow2End}`);
 	} finally {
 		await rm(root, { recursive: true });

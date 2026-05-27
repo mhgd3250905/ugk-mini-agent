@@ -1,6 +1,51 @@
 # Playground 当前状态
 
-更新时间：`2026-05-23`
+更新时间：`2026-05-26`
+
+## 2026-05-25 Team Console Typed Task Chain V1
+
+- 独立 Team Console preview 现在把 Task 卡片渲染为 typed port 积木：`inputPorts` / `outputPorts` 会显示在卡片底部，port chip 标出 label 和 type。
+- 用户从 output port 发起连接，只能连到同类型 input port；前端会拦截 `md -> html` 这种错误直连，后端 `POST /v1/team/task-connections` 仍是权威校验，负责拒绝类型不匹配、重复连接、自连接和 DAG cycle。
+- Live API 初始化和刷新现在会请求 `GET /v1/team/task-connections`，连接成功后 Execution Atlas 画出 Task 间 connection path；连接数据结构是 `fromTaskId/fromOutputPortId -> toTaskId/toInputPortId`。
+- 上游 Canvas Task run 成功并通过 checker 后，后端会把 `accepted-result.md` 封装成 typed artifact（type、source task/run/attempt、fileRef、preview、content），并作为 `boundInputs` 自动启动下游 Task run；下游 Agent 收到明确绑定输入，不需要猜上游文件路径。
+- V1 只做 typed port 连接和自动下游触发，不做自由画布复杂编排、条件分支、循环、真实 TTS 或 SSE。第一条真实验收链路按“搜集内容 Task 输出 `md` -> HTML 制作 Task 输入 `md`、输出 `html`”验证。
+- 相关源码：`src/team/task-port-contract.ts`、`src/team/task-connection-store.ts`、`src/team/task-run-service.ts`、`src/team/routes.ts`、`apps/team-console/src/api/team-api.ts`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`
+
+## 2026-05-26 Team Console Merged Run Observer Panel
+
+- Task Run observer 使用单个合并 `run-observer` 面板，替代之前多个独立 canvas 子节点（Worker 过程、Checker 过程、文件节点、文件详情）。
+- 合并面板内部固定顺序为：worker 过程 → worker 输出文件 → checker 过程 → checker 输出文件 → result 文件。
+- 文件条目以紧凑行（`.emap-observer-file-row`）展示在合并面板内部，而不是单独的 canvas 节点。
+- 点击文件行会在右侧展开第二级文件详情面板。
+- Task 菜单只保留操作按钮和紧凑运行摘要。
+- 连接线使用 fixed right-middle 到 left-middle 锚点；反向角度时使用单条连续 cubic，通过两端水平控制柄表达右出左入，不再拆成多段 hook，避免近距离斜向连接出现切角；source 出线端显示吸附在卡片右边缘的半圆 socket，target 入线端不再显示圆环或圆点。
+- 拖动语义保持层级化：拖 Task 根节点或菜单节点仍会带动已展开 observer 面板和文件详情面板，单独拖 observer 面板只移动自身，拖文件详情叶子节点只移动自身。
+
+## 2026-05-25 Team Console Task run process nodes
+
+- 过程数据已合并进单个 `run-observer` 面板（见 2026-05-26 变更日志）。过程部分消费 `attempt.roleProcesses.worker` / `attempt.roleProcesses.checker`；缺少 `roleProcesses` 或 role process 为 `null` 时显示等待过程数据 / 暂无过程条目，不报错。
+- 过程部分按优先级展示：(1) `assistantText.content`（Agent 自述 / 推理文本，保留换行、按中文标点自然断句、每行独立渲染为 `<p>`，最多 5 行超出显示”已隐藏 X 行”，单行超过 200 字符会截断并显示”已截断 X 长行”，`max-height: 172px` 内部滚动），(2) current action + 最新 narration（assistantText 缺失时的 fallback）。
+- 过程部分不再渲染下半部 tool / method 调用明细，不显示 tool group 折叠区或隐藏计数；完整过程数据仍保留在后端 attempt metadata 中。
+- 完整过程数据仍来自后端 attempt metadata；Team Console 前端只做 DOM 渲染限流，不丢弃完整过程数据。
+- 运行中的 observer 不渲染空文件占位节点，不显示 `正在刷新...` / `最后刷新` 这类随轮询变化的刷新元信息，active run 轮询的瞬时连接失败不插入红色错误节点，避免”暂无 attempt 文件””无法连接服务器”和刷新时间在运行中随轮询闪烁；拖动 Task 根节点、菜单节点或 resize 文件详情时，会暂停 Task branch / child panel 自动高度测量，避免运行中轮询刷新强制 layout 导致卡顿和闪烁；仍不接 SSE，不新增 endpoint，不改主 `/playground`。
+- 相关源码：`apps/team-console/src/api/team-types.ts`、`apps/team-console/src/fixtures/team-fixtures.ts`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app.test.tsx`
+
+## 2026-05-25 Team Console Task run observer 拖拽与安全 Markdown
+
+- 合并 observer 面板和文件详情面板均可自由拖动：pointerdown 只记录起点，pointermove 超过 4px 阈值后才进入拖动状态并移动面板；未超阈值时 click 正常传递，点击文件行能正常展开详情；拖动结束后下一次 click 会被抑制，防止误触展开。Task 操作树使用层级拖动语义：拖动 Task 根节点会以相同 dx/dy 移动菜单及已展开的 observer 面板和文件详情面板；拖动菜单节点同样带走 observer 和文件详情；拖动 observer 面板只移动自身；拖动文件详情叶子节点只移动自身。编辑节点的拖动把手在标题栏，表单控件不参与拖动。所有拖动系统使用延迟 pointer capture：pointerdown 时不调用 setPointerCapture，只有 pointermove 距离超过 4px 阈值后才捕获 pointer，避免微小手抖阻止正常点击和文本选择。
+- 文件详情内容使用 `marked` 安全 Markdown 渲染（`apps/team-console/src/shared/markdown.ts`），配置与主项目 `src/ui/playground-markdown.ts` 一致：GFM tables、HTML 转义、只允许 http/https 链接、`target="_blank" rel="noreferrer noopener"`。
+- 文件详情节点内容区移除固定 max-height 限制，resize 后内容 flex-fill。
+- 子节点 connector 和新展开的文件详情节点都使用父节点的 final（拖动后的）rect 作为 source / anchor；连接线使用 fixed right-middle 到 left-middle 锚点，反向角度时只在两端短距离探出并快速转向，中段保持小弧度；所有前后节点连接只在 source 出线端渲染半圆 socket。
+- 仍不接 SSE；前端轮询现有 Task run state、attempt metadata 和 attempt file API。
+
+## 2026-05-25 Team Console Task run observer 多节点渲染
+
+- 独立 Team Console preview 的 Task 操作菜单中，"最近运行"或 active run 的"运行中"摘要现在是可点击入口，会展开 Run observer。
+- Run observer 使用单个合并 `run-observer` 面板（见 2026-05-26 变更日志），内部固定顺序：worker 过程 → worker 输出文件 → checker 过程 → checker 输出文件 → result 文件；视觉上按阶段流展示，不再像几个小节点堆在同一壳里。Worker / Checker 过程段固定高度并在段内滚动，使用符合主题的细滚动块（worker 偏青色，checker 偏金色）；observer 外层不显示滚动条，节点高度按固定过程段和实际文件 tray 自适应测量。
+- 文件条目以紧凑行（`.emap-observer-file-row`）展示在合并面板内部，只展示 Agent 名字（从 agentsById 解析）、文件名和路径，不展示 runtime context 长文本或 verdict 摘要；只有实际存在文件时才显示对应文件 tray，运行刚开始时空文件区不显示“暂无文件”占位。
+- 点击文件行会在右侧展开第二级文件详情面板，根据文件扩展名使用安全渲染：JSON pretty print（解析失败显示 parse error）、Markdown 使用 `marked` 安全渲染（`renderTeamMarkdown()`）、其他文本原样 `<pre>` 展示。文件详情面板支持右下角拖动调整宽高，最小尺寸 360×280。
+- 这仍属于 `apps/team-console/` 独立 preview 行为，不替换 `/playground/team`，也不解析嵌入 iframe 的聊天文本。
+- 相关源码：`apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/shared/markdown.ts`、`apps/team-console/src/api/team-api.ts`、`apps/team-console/src/fixtures/team-fixtures.ts`
 
 ## 2026-05-23 Qwen reasoning stream heartbeat
 
@@ -21,6 +66,7 @@
 - `/playground` 顶部的当前 Agent 标签和“后台任务”入口不再调用 `window.open(..., "_blank")`，而是用当前标签跳转到 `/playground/agents` 与 `/playground/conn`。
 - 桌面顶部与手机更多菜单里的 `Team Runtime` 入口不再带 `target="_blank"`；点击后在当前标签进入 `/playground/team`。
 - `/playground/agents`、`/playground/conn` 和 `/playground/team` 的左上角“返回对话”统一指向 `/playground?view=chat`；主 Playground 识别 `view=chat` 后直接恢复当前 Agent 的对话界面，而不是落回 Agent 选择首页。
+- `/playground?view=chat&agentId=<agentId>` 会把 `agentId` URL hint 作为初始 active Agent；普通页面会同步写入 `ugk-pi:active-agent-id`，Team Console iframe 使用 `embed=team-console` 时只在当前页面内生效，不写入共享 localStorage，避免不同 Agent 分支互相污染。`embed=team-console` 下顶部 Agent 标签是固定标识，不打开 hover 切换菜单，也不会点击跳转独立 Agents 页。
 - Team 页面仍是独立工作台，不嵌进主聊天 workspace；用户显式点击 Agent 菜单里的“返回首页”时会清掉 `view=chat` URL hint，避免刷新后又跳回对话。
 - 相关源码：`src/ui/playground.ts`、`src/ui/agents-page.ts`、`src/ui/conn-page.ts`、`src/ui/playground-agent-manager.ts`、`src/ui/playground-conn-activity-controller.ts`、`src/ui/playground-page-shell.ts`、`src/ui/team-page.ts`、`test/server.test.ts`、`test/team-page-ui.test.ts`、`test/playground-agent-switch.test.ts`、`test/agent-model-ui.test.ts`
 

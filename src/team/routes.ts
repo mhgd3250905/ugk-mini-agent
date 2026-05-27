@@ -1,11 +1,18 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { join } from "node:path";
 import { PlanStore } from "./plan-store.js";
+import { TaskStore } from "./task-store.js";
 import { TeamUnitStore } from "./team-unit-store.js";
 import { RunWorkspace } from "./run-workspace.js";
 import { TeamOrchestrator, DEFAULT_PHASE_TIMEOUTS } from "./orchestrator.js";
+import { CanvasTaskRunService } from "./task-run-service.js";
 import { computeTeamConfigLocks } from "./config-locks.js";
 import { buildTeamPlanDraft, listTeamPlanTemplates } from "./plan-draft.js";
 import { validateCreatePlanInput } from "./plan-validation.js";
+import { buildTaskWarnings, type UpdateTeamCanvasTaskInput } from "./task-validation.js";
+import { TaskConnectionStore } from "./task-connection-store.js";
+import { SourceConnectionStore } from "./source-connection-store.js";
+import { SourceNodeStore, type UpdateSourceNodeInput } from "./source-node-store.js";
 import { MockRoleRunner } from "./role-runner.js";
 import type { TeamRoleRunner } from "./role-runner.js";
 import { buildRunDetailResponse } from "./run-presenter.js";
@@ -64,8 +71,27 @@ async function validateUsableTeamUnit(unitStore: TeamUnitStore, teamUnitId: stri
 
 export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptions): void {
 	const planStore = new PlanStore(options.teamDataDir);
+	const taskStore = new TaskStore(options.teamDataDir, {
+		getAgentIds: () => loadAgentProfilesSync(options.projectRoot).map((profile) => profile.agentId),
+	});
 	const unitStore = new TeamUnitStore(options.teamDataDir);
+	const sourceNodeStore = new SourceNodeStore(options.teamDataDir);
+	const taskConnectionStore = new TaskConnectionStore(options.teamDataDir, taskStore);
+	const sourceConnectionStore = new SourceConnectionStore(options.teamDataDir, sourceNodeStore, taskStore);
 	const workspace = new RunWorkspace(options.teamDataDir);
+	const taskRunDataDir = join(options.teamDataDir, "task-runs");
+	const taskRunWorkspace = new RunWorkspace(taskRunDataDir);
+	const taskRunService = new CanvasTaskRunService({
+		taskStore,
+		workspace: taskRunWorkspace,
+		createRoleRunner: () => createRoleRunner({ ...options, teamDataDir: taskRunDataDir }),
+		connectionStore: taskConnectionStore,
+		sourceNodeStore,
+		sourceConnectionStore,
+		dataDir: taskRunDataDir,
+		maxCheckerRevisions: 3,
+		maxRunDurationMinutes: options.maxRunDurationMinutes,
+	});
 
 	function makeOrchestrator(): TeamOrchestrator {
 		const roleRunner = createRoleRunner(options);
@@ -85,6 +111,307 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	// healthz
 	app.get("/v1/team/healthz", async (_request, reply) => {
 		reply.send({ status: "ok", version: "v2" });
+	});
+
+	// ── Canvas Tasks ──
+
+	const sendTask = (reply: FastifyReply, task: Awaited<ReturnType<typeof taskStore.create>>) => {
+		reply.send({ task, warnings: buildTaskWarnings(task) });
+	};
+
+	app.get("/v1/team/tasks", async (request, reply) => {
+		const query = request.query as { includeArchived?: string };
+		const tasks = await taskStore.list({ includeArchived: query.includeArchived === "1" || query.includeArchived === "true" });
+		reply.send({ tasks });
+	});
+
+	app.post("/v1/team/tasks", async (request, reply) => {
+		const body = request.body as Record<string, unknown>;
+		try {
+			const task = await taskStore.create({
+				title: body.title as string,
+				leaderAgentId: body.leaderAgentId as string,
+				status: body.status as any,
+				workUnit: body.workUnit as any,
+				createdByAgentId: body.createdByAgentId as string | undefined,
+			});
+			reply.code(201);
+			sendTask(reply, task);
+		} catch (err) {
+			reply.code(400).send({ error: (err as Error).message });
+		}
+	});
+
+	app.get("/v1/team/tasks/:taskId", async (request, reply) => {
+		const { taskId } = request.params as { taskId: string };
+		const task = await taskStore.get(taskId);
+		if (!task) { reply.code(404).send({ error: "task not found" }); return; }
+		sendTask(reply, task);
+	});
+
+	app.patch("/v1/team/tasks/:taskId", async (request, reply) => {
+		const { taskId } = request.params as { taskId: string };
+		const body = request.body as Record<string, unknown>;
+		const patch: UpdateTeamCanvasTaskInput = {};
+		if (Object.hasOwn(body, "title")) patch.title = body.title as string;
+		if (Object.hasOwn(body, "leaderAgentId")) patch.leaderAgentId = body.leaderAgentId as string;
+		if (Object.hasOwn(body, "workUnit")) patch.workUnit = body.workUnit as any;
+		if (Object.hasOwn(body, "status")) patch.status = body.status as any;
+		try {
+			const task = await taskStore.update(taskId, patch);
+			sendTask(reply, task);
+		} catch (err) {
+			const msg = (err as Error).message;
+			reply.code(msg.includes("not found") ? 404 : msg.includes("locked") ? 409 : 400).send({ error: msg });
+		}
+	});
+
+	app.post("/v1/team/tasks/:taskId/archive", async (request, reply) => {
+		const { taskId } = request.params as { taskId: string };
+		try {
+			const task = await taskStore.archive(taskId);
+			sendTask(reply, task);
+		} catch (err) {
+			const msg = (err as Error).message;
+			reply.code(msg.includes("not found") ? 404 : 400).send({ error: msg });
+		}
+	});
+
+	app.get("/v1/team/source-nodes", async (request, reply) => {
+		const query = request.query as { includeArchived?: string };
+		try {
+			const sourceNodes = await sourceNodeStore.list({ includeArchived: query.includeArchived === "1" || query.includeArchived === "true" });
+			reply.send({ sourceNodes });
+		} catch (err) {
+			reply.code(500).send({ error: (err as Error).message });
+		}
+	});
+
+	app.post("/v1/team/source-nodes", async (request, reply) => {
+		const body = request.body as Record<string, unknown>;
+		try {
+			const sourceNode = await sourceNodeStore.create({
+				title: body.title as string,
+				nodeType: body.nodeType as any,
+				outputPort: body.outputPort as any,
+				content: body.content as any,
+			});
+			reply.code(201).send({ sourceNode });
+		} catch (err) {
+			reply.code(400).send({ error: (err as Error).message });
+		}
+	});
+
+	app.patch("/v1/team/source-nodes/:sourceNodeId", async (request, reply) => {
+		const { sourceNodeId } = request.params as { sourceNodeId: string };
+		const body = request.body as Record<string, unknown>;
+		const patch: UpdateSourceNodeInput = {};
+		if (Object.hasOwn(body, "title")) patch.title = body.title as string;
+		if (Object.hasOwn(body, "nodeType")) patch.nodeType = body.nodeType as any;
+		if (Object.hasOwn(body, "outputPort")) patch.outputPort = body.outputPort as any;
+		if (Object.hasOwn(body, "content")) patch.content = body.content as any;
+		try {
+			const sourceNode = await sourceNodeStore.update(sourceNodeId, patch);
+			reply.send({ sourceNode });
+		} catch (err) {
+			const msg = (err as Error).message;
+			reply.code(msg.includes("not found") ? 404 : 400).send({ error: msg });
+		}
+	});
+
+	app.post("/v1/team/source-nodes/:sourceNodeId/archive", async (request, reply) => {
+		const { sourceNodeId } = request.params as { sourceNodeId: string };
+		try {
+			const sourceNode = await sourceNodeStore.archive(sourceNodeId);
+			reply.send({ sourceNode });
+		} catch (err) {
+			const msg = (err as Error).message;
+			reply.code(msg.includes("not found") ? 404 : 400).send({ error: msg });
+		}
+	});
+
+	app.get("/v1/team/source-connections", async (_request, reply) => {
+		try {
+			const connections = await sourceConnectionStore.listResolved();
+			reply.send({ connections });
+		} catch (err) {
+			reply.code(500).send({ error: (err as Error).message });
+		}
+	});
+
+	app.post("/v1/team/source-connections", async (request, reply) => {
+		const body = request.body as Record<string, unknown>;
+		try {
+			const connection = await sourceConnectionStore.create({
+				fromSourceNodeId: body.fromSourceNodeId as string,
+				fromOutputPortId: body.fromOutputPortId as string,
+				toTaskId: body.toTaskId as string,
+				toInputPortId: body.toInputPortId as string,
+			});
+			reply.code(201).send({ connection });
+		} catch (err) {
+			const msg = (err as Error).message;
+			if (msg.includes("source connection store") || msg.includes("lock busy")) {
+				reply.code(msg.includes("lock busy") ? 409 : 500).send({ error: msg });
+				return;
+			}
+			if (msg.includes("not found") || msg.includes("port not found")) {
+				reply.code(404).send({ error: msg });
+				return;
+			}
+			if (msg.includes("already exists") || msg.includes("archived")) {
+				reply.code(409).send({ error: msg });
+				return;
+			}
+			reply.code(400).send({ error: msg });
+		}
+	});
+
+	app.delete("/v1/team/source-connections/:connectionId", async (request, reply) => {
+		const { connectionId } = request.params as { connectionId: string };
+		try {
+			const deleted = await sourceConnectionStore.delete(connectionId);
+			if (!deleted) {
+				reply.code(404).send({ error: "source connection not found" });
+				return;
+			}
+			reply.code(204).send();
+		} catch (err) {
+			const msg = (err as Error).message;
+			if (msg.includes("lock busy")) { reply.code(409).send({ error: msg }); return; }
+			reply.code(500).send({ error: msg });
+		}
+	});
+
+	app.get("/v1/team/task-connections", async (_request, reply) => {
+		try {
+			const connections = await taskConnectionStore.listResolved();
+			reply.send({ connections });
+		} catch (err) {
+			reply.code(500).send({ error: (err as Error).message });
+		}
+	});
+
+	app.post("/v1/team/task-connections", async (request, reply) => {
+		const body = request.body as Record<string, unknown>;
+		try {
+			const connection = await taskConnectionStore.create({
+				fromTaskId: body.fromTaskId as string,
+				fromOutputPortId: body.fromOutputPortId as string,
+				toTaskId: body.toTaskId as string,
+				toInputPortId: body.toInputPortId as string,
+			});
+			reply.code(201).send({ connection });
+		} catch (err) {
+			const msg = (err as Error).message;
+			if (msg.includes("task connection store") || msg.includes("lock busy")) {
+				reply.code(msg.includes("lock busy") ? 409 : 500).send({ error: msg });
+				return;
+			}
+			if (msg.includes("task not found") || msg.includes("port not found")) {
+				reply.code(404).send({ error: msg });
+				return;
+			}
+			if (msg.includes("already exists") || msg.includes("cycle") || msg.includes("archived")) {
+				reply.code(409).send({ error: msg });
+				return;
+			}
+			reply.code(400).send({ error: msg });
+		}
+	});
+
+	app.delete("/v1/team/task-connections/:connectionId", async (request, reply) => {
+		const { connectionId } = request.params as { connectionId: string };
+		try {
+			const deleted = await taskConnectionStore.delete(connectionId);
+			if (!deleted) {
+				reply.code(404).send({ error: "task connection not found" });
+				return;
+			}
+			reply.code(204).send();
+		} catch (err) {
+			const msg = (err as Error).message;
+			if (msg.includes("lock busy")) { reply.code(409).send({ error: msg }); return; }
+			reply.code(500).send({ error: msg });
+		}
+	});
+
+	app.get("/v1/team/tasks/:taskId/runs", async (request, reply) => {
+		const { taskId } = request.params as { taskId: string };
+		const task = await taskStore.get(taskId);
+		if (!task) { reply.code(404).send({ error: "task not found" }); return; }
+		const runs = await taskRunService.listRuns(taskId);
+		reply.send({ runs });
+	});
+
+	app.post("/v1/team/tasks/:taskId/runs", async (request, reply) => {
+		const { taskId } = request.params as { taskId: string };
+		const body = request.body as Record<string, unknown> | undefined;
+		try {
+			let maxRunDurationMinutes: number | undefined;
+			if (body?.maxRunDurationMinutes != null) {
+				const num = Number(body.maxRunDurationMinutes);
+				if (!Number.isFinite(num) || num <= 0 || num > 1440) {
+					reply.code(400).send({ error: "maxRunDurationMinutes must be a positive number up to 1440" });
+					return;
+				}
+				maxRunDurationMinutes = num;
+			}
+			const state = await taskRunService.createRun(taskId, { maxRunDurationMinutes, includeSourceBindings: true });
+			reply.code(201).send(state);
+		} catch (err) {
+			const msg = (err as Error).message;
+			if (msg.includes("task not found")) { reply.code(404).send({ error: "task not found" }); return; }
+			reply.code(msg.includes("ready") || msg.includes("archived") || msg.includes("active") ? 409 : 400).send({ error: msg });
+		}
+	});
+
+	app.get("/v1/team/task-runs/:runId", async (request, reply) => {
+		const { runId } = request.params as { runId: string };
+		const state = await taskRunService.getRun(runId);
+		if (!state) { reply.code(404).send({ error: "task run not found" }); return; }
+		reply.send(state);
+	});
+
+	app.post("/v1/team/task-runs/:runId/cancel", async (request, reply) => {
+		const { runId } = request.params as { runId: string };
+		try {
+			const state = await taskRunService.cancelRun(runId, "user cancel");
+			reply.send(state);
+		} catch (err) {
+			const msg = (err as Error).message;
+			reply.code(msg.includes("not found") ? 404 : msg.includes("terminal") ? 409 : 400).send({ error: msg });
+		}
+	});
+
+	app.get("/v1/team/task-runs/:runId/tasks/:taskId/attempts", async (request, reply) => {
+		const { runId, taskId } = request.params as { runId: string; taskId: string };
+		const state = await taskRunService.getRun(runId);
+		if (!state) { reply.code(404).send({ error: "task run not found" }); return; }
+		if (!state.taskStates[taskId]) { reply.code(404).send({ error: "task not found" }); return; }
+		try {
+			const attempts = await taskRunWorkspace.listAttempts(runId, taskId);
+			reply.send({ attempts });
+		} catch {
+			reply.send({ attempts: [] });
+		}
+	});
+
+	app.get("/v1/team/task-runs/:runId/tasks/:taskId/attempts/:attemptId/files/:fileName", async (request, reply) => {
+		const { runId, taskId, attemptId, fileName } = request.params as { runId: string; taskId: string; attemptId: string; fileName: string };
+		const state = await taskRunService.getRun(runId);
+		if (!state) { reply.code(404).send({ error: "task run not found" }); return; }
+		if (!state.taskStates[taskId]) { reply.code(404).send({ error: "task not found" }); return; }
+		if (/[^a-zA-Z0-9._-]/.test(fileName) || fileName.includes("..")) {
+			reply.code(400).send({ error: "invalid file name" }); return;
+		}
+		try {
+			const content = await taskRunWorkspace.readAttemptFile(runId, taskId, attemptId, fileName);
+			if (content === null) { reply.code(404).send({ error: "file not found" }); return; }
+			reply.type("text/plain; charset=utf-8").send(content);
+		} catch {
+			reply.code(404).send({ error: "file not found" });
+		}
 	});
 
 	// ── Plans ──

@@ -1,3 +1,5 @@
+import type { ChatProcessBody } from "../types/api.js";
+
 export type RunStatus = "queued" | "running" | "paused" | "completed" | "completed_with_failures" | "failed" | "cancelled";
 export type TaskStatus = "pending" | "running" | "interrupted" | "succeeded" | "failed" | "cancelled" | "skipped";
 export type TaskManualDisposition = "default" | "skip" | "force_rerun";
@@ -55,6 +57,35 @@ export interface TeamRoleRuntimeContext {
 	browserScope: string;
 }
 
+export type TeamAttemptRoleProcessStatus = "waiting" | "running" | "succeeded" | "failed" | "cancelled";
+
+export interface TeamAttemptRoleProcess {
+	role: "worker" | "checker";
+	profileId: string;
+	status: TeamAttemptRoleProcessStatus;
+	startedAt: string | null;
+	updatedAt: string | null;
+	finishedAt: string | null;
+	assistantText?: {
+		content: string;
+		updatedAt: string;
+	};
+	process: ChatProcessBody | null;
+}
+
+export type TeamTaskDeliveryOutcomeStatus = "delivered" | "skipped" | "failed";
+
+export interface TeamTaskDeliveryOutcome {
+	connectionId: string;
+	toTaskId: string;
+	toInputPortId: string;
+	status: TeamTaskDeliveryOutcomeStatus;
+	staleReason?: TaskConnectionStaleReason;
+	downstreamRunId?: string;
+	error?: string;
+	createdAt: string;
+}
+
 export interface TeamAttemptMetadata {
 	attemptId: string;
 	taskId: string;
@@ -68,6 +99,11 @@ export interface TeamAttemptMetadata {
 	watcher: TeamAttemptWatcherSummary | null;
 	resultRef: string | null;
 	errorSummary: string | null;
+	roleProcesses?: {
+		worker?: TeamAttemptRoleProcess;
+		checker?: TeamAttemptRoleProcess;
+	};
+	downstreamDelivery?: TeamTaskDeliveryOutcome[];
 }
 export type CheckerVerdict = "pass" | "revise" | "fail";
 export type WatcherDecision = "accept_task" | "confirm_failed" | "request_revision";
@@ -167,6 +203,166 @@ export interface TeamPlan {
 	runCount: number;
 }
 
+export type TeamCanvasTaskStatus = "drafting" | "ready" | "locked" | "archived";
+
+export interface TeamWorkUnitDefinition {
+	title: string;
+	input: { text: string };
+	inputPorts?: TeamTaskInputPort[];
+	outputPorts?: TeamTaskOutputPort[];
+	outputContract: { text: string };
+	acceptance: { rules: string[] };
+	workerAgentId: string;
+	checkerAgentId: string;
+}
+
+export interface TeamTaskPortBase {
+	id: string;
+	label?: string;
+	type: string;
+}
+
+export interface TeamTaskInputPort extends TeamTaskPortBase {}
+
+export interface TeamTaskOutputPort extends TeamTaskPortBase {}
+
+export interface TeamTaskConnection {
+	schemaVersion: "team/task-connection-1";
+	connectionId: string;
+	fromTaskId: string;
+	fromOutputPortId: string;
+	toTaskId: string;
+	toInputPortId: string;
+	type: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export type TaskConnectionStaleReason =
+	| "source_task_missing"
+	| "source_task_archived"
+	| "target_task_missing"
+	| "target_task_archived"
+	| "source_output_port_missing"
+	| "target_input_port_missing"
+	| "source_output_port_type_mismatch"
+	| "target_input_port_type_mismatch";
+
+export interface ResolvedTaskConnection extends TeamTaskConnection {
+	status: "active" | "stale";
+	staleReason?: TaskConnectionStaleReason;
+}
+
+export type TeamCanvasSourceNodeType = "text" | "file";
+export type TeamCanvasSourcePortType = "string" | "md" | "json" | "html" | "file";
+
+export interface TeamCanvasSourceNode {
+	schemaVersion: "team/source-node-1";
+	sourceNodeId: string;
+	title: string;
+	nodeType: TeamCanvasSourceNodeType;
+	outputPort: {
+		id: "value";
+		label?: string;
+		type: string;
+	};
+	content?: {
+		text?: string;
+		fileName?: string;
+		mimeType?: string;
+		size?: number;
+		storageRef?: string;
+	};
+	createdAt: string;
+	updatedAt: string;
+	archived?: boolean;
+}
+
+export interface TeamCanvasSourceConnection {
+	schemaVersion: "team/source-connection-1";
+	connectionId: string;
+	fromSourceNodeId: string;
+	fromOutputPortId: string;
+	toTaskId: string;
+	toInputPortId: string;
+	type: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export type SourceConnectionStaleReason =
+	| "source_node_missing"
+	| "source_node_archived"
+	| "target_task_missing"
+	| "target_task_archived"
+	| "source_output_port_missing"
+	| "target_input_port_missing"
+	| "source_output_port_type_mismatch"
+	| "target_input_port_type_mismatch";
+
+export interface ResolvedSourceConnection extends TeamCanvasSourceConnection {
+	status: "active" | "stale";
+	staleReason?: SourceConnectionStaleReason;
+}
+
+export interface TeamTaskTypedArtifact {
+	schemaVersion: "team/task-artifact-1";
+	artifactId: string;
+	type: string;
+	sourceTaskId: string;
+	sourceRunId: string;
+	sourceAttemptId: string;
+	sourceOutputPortId: string;
+	fileRef: string;
+	preview: string;
+	content?: string;
+	createdAt: string;
+}
+
+export interface TeamCanvasSourceArtifact {
+	schemaVersion: "team/source-artifact-1";
+	artifactId: string;
+	type: string;
+	sourceNodeId: string;
+	sourceOutputPortId: string;
+	title?: string;
+	fileName?: string;
+	mimeType?: string;
+	size?: number;
+	storageRef?: string;
+	preview: string;
+	content?: string;
+	createdAt: string;
+}
+
+export interface TeamTaskArtifactBoundInput {
+	source?: "task-artifact";
+	connectionId: string;
+	inputPortId: string;
+	artifact: TeamTaskTypedArtifact;
+}
+
+export interface TeamCanvasSourceBoundInput {
+	source: "canvas-source";
+	connectionId: string;
+	inputPortId: string;
+	artifact: TeamCanvasSourceArtifact;
+}
+
+export type TeamTaskBoundInput = TeamTaskArtifactBoundInput | TeamCanvasSourceBoundInput;
+
+export interface TeamCanvasTask {
+	taskId: string;
+	title: string;
+	leaderAgentId: string;
+	workUnit: TeamWorkUnitDefinition;
+	status: TeamCanvasTaskStatus;
+	createdAt: string;
+	updatedAt: string;
+	createdByAgentId?: string;
+	archived: boolean;
+}
+
 export interface TeamProgress {
 	phase: ProgressPhase;
 	message: string;
@@ -189,6 +385,18 @@ export interface TeamRunState {
 	schemaVersion: "team/state-1";
 	runId: string;
 	planId: string;
+	source?: {
+		type: "canvas-task";
+		taskId: string;
+		triggeredBy?: {
+			type: "task-connection";
+			connectionId: string;
+			fromTaskId: string;
+			fromRunId: string;
+			fromAttemptId: string;
+		};
+		boundInputs?: TeamTaskBoundInput[];
+	};
 	teamUnitId: string;
 	status: RunStatus;
 	createdAt: string;

@@ -12,6 +12,7 @@ import { stringifyVisibleAssistantContent } from "../agent/background-agent-runn
 import { createBrowserCleanupScope, runWithScopedAgentEnvironment } from "../agent/agent-run-scope.js";
 import { runWithBackgroundWorkspaceContext } from "../agent/background-workspace-context.js";
 import type { AgentSessionLike } from "../agent/agent-session-factory.js";
+import type { RawAgentSessionEventLike } from "../agent/agent-session-factory.js";
 
 export interface AgentProfileRoleRunnerOptions {
 	projectRoot: string;
@@ -109,7 +110,7 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 		const workspace = await this.createRoleWorkspace(input.runId, input.attemptId, "worker");
 		const prompt = buildWorkerPrompt(input.task, input.acceptanceRules, input.feedback);
 
-		const sessionResult = await this.runSession(snapshot, this.options.workerProfileId, input.runId, workspace, prompt, input.signal, { role: "worker", roleKey: input.attemptId });
+		const sessionResult = await this.runSession(snapshot, this.options.workerProfileId, input.runId, workspace, prompt, input.signal, { role: "worker", roleKey: input.attemptId }, input.onSessionEvent);
 
 		return { content: sessionResult.content, artifactRefs: [], runtimeContext: sessionResult.runtimeContext };
 	}
@@ -120,7 +121,7 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 		const workerOutput = await readRefContent(this.options.teamDataDir, input.runId, input.workerOutputRef);
 		const prompt = buildCheckerPrompt(input.task, input.acceptanceRules, workerOutput, input.outputValidation);
 
-		const sessionResult = await this.runSession(snapshot, this.options.checkerProfileId, input.runId, workspace, prompt, input.signal, { role: "checker", roleKey: input.attemptId });
+		const sessionResult = await this.runSession(snapshot, this.options.checkerProfileId, input.runId, workspace, prompt, input.signal, { role: "checker", roleKey: input.attemptId }, input.onSessionEvent);
 		const content = sessionResult.content;
 
 		return { ...parseCheckerRoleOutput(content), runtimeContext: sessionResult.runtimeContext };
@@ -192,6 +193,7 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 		prompt: string,
 		signal: AbortSignal | undefined,
 		roleContext: { role: string; roleKey: string },
+		onSessionEvent?: (event: RawAgentSessionEventLike) => void,
 	): Promise<{ content: string; runtimeContext: TeamRoleRuntimeContext }> {
 		const browserId = snapshot.defaultBrowserId ?? this.options.defaultBrowserId;
 		const browserScope = buildTeamBrowserScope({
@@ -213,6 +215,7 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 		const closeBrowserTargetsForScope = this.options.closeBrowserTargetsForScope;
 
 		let session: AgentSessionLike | undefined;
+		let unsubscribe: (() => void) | undefined;
 
 		try {
 			await setBrowserScopeRoute?.(browserCleanupScope, browserId);
@@ -235,6 +238,7 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 				browserId,
 				browserScope: browserCleanupScope,
 			});
+			unsubscribe = onSessionEvent ? session.subscribe(onSessionEvent) : undefined;
 
 			const wsEnv: Record<string, string | undefined> = {
 				OUTPUT_DIR: workspace.outputDir,
@@ -247,6 +251,7 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 				await runWithBackgroundWorkspaceContext(wsEnv, () => promptWithAbort(session!, prompt, signal));
 			});
 		} finally {
+			unsubscribe?.();
 			try {
 				await closeBrowserTargetsForScope?.(browserCleanupScope, browserId ? { browserId } : undefined).catch(() => {});
 			} finally {

@@ -154,10 +154,18 @@ test("cancelRun triggers abort on active runner", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-ctrl-"));
 	try {
 		let abortRequested = false;
+		let workerReadyResolve: () => void;
+		const workerReady = new Promise<void>(resolve => { workerReadyResolve = resolve; });
 		class HangingRunner extends MockRoleRunner {
 			override async runWorker(input: import("../src/team/role-runner.js").WorkerInput) {
+				workerReadyResolve!();
 				if (!input.signal) return super.runWorker(input);
 				return await new Promise<never>((_, reject) => {
+					if (input.signal!.aborted) {
+						abortRequested = true;
+						reject(new Error("aborted"));
+						return;
+					}
 					input.signal!.addEventListener("abort", () => {
 						abortRequested = true;
 						reject(new Error("aborted"));
@@ -182,7 +190,7 @@ test("cancelRun triggers abort on active runner", async () => {
 		const state = await orchestrator.createRun(plan.planId);
 		const runPromise = orchestrator.runToCompletion(state.runId);
 
-		await new Promise(r => setTimeout(r, 50));
+		await workerReady;
 		await orchestrator.cancelRun(state.runId, "user cancel");
 
 		const final = await runPromise;
@@ -248,10 +256,18 @@ test("pauseRun triggers abort on active runner", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-ctrl-"));
 	try {
 		let abortRequested = false;
+		let workerReadyResolve: () => void;
+		const workerReady = new Promise<void>(resolve => { workerReadyResolve = resolve; });
 		class HangingRunner extends MockRoleRunner {
 			override async runWorker(input: import("../src/team/role-runner.js").WorkerInput) {
+				workerReadyResolve!();
 				if (!input.signal) return super.runWorker(input);
 				return await new Promise<never>((_, reject) => {
+					if (input.signal!.aborted) {
+						abortRequested = true;
+						reject(new Error("aborted"));
+						return;
+					}
 					input.signal!.addEventListener("abort", () => {
 						abortRequested = true;
 						reject(new Error("aborted"));
@@ -276,7 +292,7 @@ test("pauseRun triggers abort on active runner", async () => {
 		const state = await orchestrator.createRun(plan.planId);
 		const runPromise = orchestrator.runToCompletion(state.runId);
 
-		await new Promise(r => setTimeout(r, 50));
+		await workerReady;
 		await orchestrator.pauseRun(state.runId, "user pause");
 
 		const final = await runPromise;

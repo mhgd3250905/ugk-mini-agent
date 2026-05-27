@@ -12,15 +12,1009 @@
 
 ---
 
+## 2026-05-27 — Team Console Canvas Task run admission 后端修复
+
+- **主题**: 修复 Canvas Task run 误用 Plan run 全局 admission，确保不同 Task 可并行运行，同一 Task 仍只允许一个 active run。
+- **根因**: `CanvasTaskRunService` 已有同一 Task active guard，但在 `maxConcurrentRuns` 存在时继续调用 `workspace.createRunWithAdmission(...)`；`TEAM_MAX_CONCURRENT_RUNS` 默认 `1` 导致 Task A active 时 Task B 被错误拒绝为 `active run limit reached`。
+- **变更内容**:
+  - `test/team-task-run-process.test.ts` 新增回归测试，先锁定 `maxConcurrentRuns: 1` 下 Task A active 时 Task B 必须可启动，并同时断言 Task A 再次启动仍被 `active task run already exists` 拒绝。
+  - `src/team/task-run-service.ts` 中 Canvas Task run 创建改为只使用 `workspace.createRun(...)`，保留同一 Task active guard，不再走 Plan-level `createRunWithAdmission(...)`。
+  - `src/team/routes.ts` 不再把 `options.maxConcurrentRuns` 传给 `CanvasTaskRunService`；`TeamOrchestrator` / Plan run 仍继续使用 `TEAM_MAX_CONCURRENT_RUNS`。
+  - `docs/team-runtime.md`、`apps/team-console/README.md` 明确 Canvas Task run 不受 `TEAM_MAX_CONCURRENT_RUNS` 约束，该变量只管 Plan / TeamOrchestrator run admission。
+- **影响范围**: `src/team/task-run-service.ts`, `src/team/routes.ts`, `test/team-task-run-process.test.ts`, `docs/team-runtime.md`, `apps/team-console/README.md`, `docs/change-log.md`
+- **验证**: 新增测试已先红后绿；`node --test --import tsx test\team-task-run-process.test.ts` (14 passed)、`node --test --import tsx test\team-task-run-routes.test.ts` (10 passed)、`node --test --import tsx test\team-orchestrator-success.test.ts` (8 passed)、`node --test --import tsx test\team-routes.test.ts --test-name-pattern "maxConcurrentRuns"` (55 passed)、`npm --prefix apps/team-console run test` (370 passed)、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check` 已通过。
+- **边界**: 不放开同一 Task 多 active run，不调大 `TEAM_MAX_CONCURRENT_RUNS` 规避问题，不改主 `/playground` UI，不改 `.pi/skills` runtime skill，不引入临时后端环境。
+
+---
+
+## 2026-05-27 — Team Console Task output fan-out 测试与文档
+
+- **主题**: 锁定 Team Console Typed Task Chain 的 fan-out 能力：一个 Task output port 可以连接到多个不同下游 Task 的同类型 input port。
+- **变更内容**:
+  - 后端 API 测试：`test/team-task-routes.test.ts` 新增 fan-out 连接创建测试，确认同一 output port 到两个不同 target Task 的 POST 请求均返回 201。
+  - 后端 delivery 测试：`test/team-task-run-process.test.ts` 新增 happy path（上游完成 → 两个下游独立接收 artifact 并完成）和 failure isolation path（B 有 active run 导致 delivery 失败，C 仍成功，上游保持 completed）。
+  - 前端 canvas 测试：`apps/team-console/src/tests/app.test.tsx` 新增 fan-out 回归测试，确认同一 output port 可连续连接两个不同 target Task input port，DOM 渲染两条 task connection path。
+  - 现有 `src/team/task-connection-store.ts`、`src/team/task-run-service.ts`、`apps/team-console/src/app/App.tsx` 行为已正确支持 fan-out，不需要实现修改。
+  - 文档更新：`docs/team-runtime.md` 从"一对一"改为明确支持 fan-out，`apps/team-console/README.md` 同步。
+- **影响范围**: `test/team-task-routes.test.ts`, `test/team-task-run-process.test.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **验证**: `node --test --import tsx test/team-task-routes.test.ts` (17 passed)、`node --test --import tsx test/team-task-run-process.test.ts` (13 passed)、`npm --prefix apps/team-console run test` (370 passed)、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check` 已通过。
+- **边界**: 不做 merge / wait-all / reducer / 条件分支 / 循环 / 工作流引擎；不做同一 target Task 多 input bundling；不改 `src/team/**` 后端 runtime；不改主 `/playground` UI。
+
+---
+
+## 2026-05-27 — Team Console Task run 并发边界回归测试与文档
+
+- **主题**: 锁定 Team Console Task run 并发规则：不同 Task 可同时运行，同一 Task 同时只允许一个 active run。
+- **变更内容**:
+  - 新增 3 个前端回归测试：不同 Task 可并行运行（Task B 不被 Task A 的 active run 阻塞）；同一 Task 有 active run 时"运行"按钮禁用并显示"运行中"；多个 active run 按 `runId` 独立轮询。
+  - 现有 App.tsx 代码已正确按 `taskId` 收口 run state，不需要实现修改。
+  - 同步更新 README.md、team-runtime.md 说明并发边界。
+- **影响范围**: `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **验证**: `npm --prefix apps/team-console run test` (369 passed)、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check` 已通过。
+- **边界**: 不改 `src/team/**` 后端 runtime，不改主 `/playground` UI，不改 `.pi/skills` runtime skill，不引入全局 run queue 或 semaphore。
+
+---
+
+## 2026-05-27 — Team Console Leader chat task context copy
+
+- **主题**: Leader 对话分支打开时显示当前 Task 上下文，并支持一键复制到剪贴板。
+- **变更内容**:
+  - Leader 对话分支（"对话 Leader"）打开时，面板顶部显示“当前 Task 上下文”只读区域，列出 taskId、title、status、agents、input text、input/output ports、output contract、acceptance rules、teamTaskMode 和 teamTaskId。
+  - “复制 Task 上下文”按钮将上述上下文复制为格式化纯文本到剪贴板，方便用户粘贴到 Leader 对话中。
+  - 剪贴板写入失败时可见文本仍可直接手动选择复制，不会阻断用户操作。
+  - Team Console 仍不解析 iframe 聊天文本，仍不自动更新 Task 定义。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **验证**: `npm --prefix apps/team-console run test` (366 passed)、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check` 已通过。浏览器自动验证因 Chrome profile 占用未执行；Leader context 可见、复制成功和复制失败路径由前端测试覆盖。
+- **边界**: 不改 Team runtime 后端，不改主 `/playground` UI，不改 `.pi/skills` runtime skill。
+
+---
+
+## 2026-05-27 — Team Console root node archive controls
+
+- **主题**: 给 Execution Atlas 的 Agent / Task / Source 根卡片增加清理入口，Source 和 Task 走归档，Agent 只本地移出画布。
+- **变更内容**:
+  - Source 根卡片和 Task 根卡片各新增"归档"按钮，点击后弹出二次确认（"确认归档"），确认后分别调用已有 `POST /v1/team/source-nodes/:sourceNodeId/archive` 和 `POST /v1/team/tasks/:taskId/archive`；归档成功后根卡片、Hub 条目、相关连接线、展开分支和本地 UI 状态同步清理，刷新页面后不会恢复已归档的 Task / Source。
+  - Agent 根卡片新增"移除"按钮，确认后只从 Team Console 画布移除本地引用（canvas 节点、Hub 条目、展开分支和 localStorage 位置），不调用任何 Agent profile archive API，真实 Agent profile 不受影响。
+  - 归档失败时节点保留并在顶部 error banner 显示错误信息，不清空其他状态。
+  - 既有测试里根卡 aria-label regex 匹配统一改为 exact string，避免与新增归档按钮的 aria-label 歧义。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`
+- **验证**: `npm --prefix apps/team-console run test`、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check` 已通过；浏览器 5174 页面验证见本轮最终记录。
+- **边界**: 不改 `src/team/**` 后端 runtime，不改主 `/playground` UI，不改 `.pi/skills` runtime skill，不把 Agent 根节点删除做成真实 Agent profile archive。
+
+---
+
+## 2026-05-26 — Team Console source output nodes and topbar fullscreen
+
+- **主题**: 接入 Canvas source 输出节点 UI，并给对话 / 文件详情节点增加标题栏双击最大化与还原。
+- **变更内容**:
+  - Live API 工具栏新增“文本输出”和“文件输出”：文本 source 创建可编辑 `string` 输出节点，文件 source 根据扩展名推断 `md` / `json` / `html` / `string` / `file` 输出类型。
+  - Source 节点作为独立根节点渲染在 Execution Atlas，可拖动、可收纳到左侧 Hub；本地只保存 source 节点位置和 Hub 收纳 id，不保存 source 内容或 Task 定义。
+  - Source output 可连到同类型 Task input，前端先做类型拦截，Live API 下调用 `/v1/team/source-connections` 写真实连接并渲染 source connection 线。
+  - Agent 对话分支、Task Leader 对话分支和 observer 文件详情面板支持标题栏双击最大化 / 双击还原，保留原有标题栏拖动和右下角 resize 行为。
+  - Live API 初始加载同步读取 source nodes / source connections，相关测试 mock 和请求顺序已按真实 3000 后端契约更新。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/app/app.css`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`
+- **验证**: `npm --prefix apps/team-console run test`、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check` 已通过；浏览器真实 5174 页面验证见本轮最终记录。
+- **边界**: 不改主 `/playground` UI，不改 `.pi/skills` runtime skill，不引入临时后端，不把 source node 存进 Task 定义或浏览器本地内容缓存。
+
+---
+
+## 2026-05-26 — Team Console canvas source input backend contract
+
+- **主题**: 给 Team Console 输出源节点建立后端 source node / source connection / direct Task run 输入绑定契约。
+- **变更内容**:
+  - 新增 source node 持久化 store：`.data/team/source-nodes.json`，支持 `text` / `file` source、固定 `value` output port、`md` / `json` / `html` / `string` / `file` 类型推断和软归档。
+  - 新增 source connection 持久化 store：`.data/team/source-connections.json`，创建时校验 source node、Task input port 和类型一致性，list 时派生 `active` / `stale` 状态，写操作使用文件级 mutation lock。
+  - `POST /v1/team/tasks/:taskId/runs` 在 direct Canvas Task run 时注入 active source bound inputs 到 `TeamRunState.source.boundInputs[]`、worker/checker payload 和 prompt；stale source connection 被跳过。
+  - `TeamCanvasSourceArtifact` 使用 `source: "canvas-source"` bound input，保留 source node metadata，但不伪造 `sourceTaskId`、`sourceRunId` 或 `sourceAttemptId`。
+  - Team-to-Team typed artifact 自动下游链路保持原样，仍只消费 `task-connections.json` 和 accepted-result typed artifact；source node / source connection 不会自动触发 Task run。
+  - Team Console API client 增加 source node / source connection 类型和最小请求封装，不把 source node 写入 Task 定义或 localStorage。
+- **影响范围**: `src/team/types.ts`, `src/team/ids.ts`, `src/team/source-node-store.ts`, `src/team/source-connection-store.ts`, `src/team/task-artifact-handoff.ts`, `src/team/task-run-service.ts`, `src/team/routes.ts`, `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `test/team-source-node-store.test.ts`, `test/team-source-connection-store.test.ts`, `test/team-task-artifact-handoff.test.ts`, `test/team-task-run-process.test.ts`, `test/team-task-run-routes.test.ts`, `apps/team-console/src/tests/team-api.test.ts`, `docs/team-runtime.md`, `apps/team-console/README.md`
+- **验证**: 后端 focused tests 和前端 API adapter focused test 已按 TDD 红绿完成；完整后端 / 前端 / Docker API 门禁见本轮最终验证。
+- **边界**: 不改主 `/playground` UI，不改 `.pi/skills` runtime skill，不把 source node 当 Task artifact，不做条件分支、循环或自由工作流引擎。
+
+---
+
+## 2026-05-26 — Team Console canvas UI persistence and root Hub
+
+- **主题**: 刷新 Team Console 后恢复画布展开状态，并给 Agent / Task 根节点增加左侧 Hub 收纳能力。
+- **变更内容**:
+  - 新增 `ugk-team-console:canvas-ui-state:v1` 浏览器 UI 状态，只保存 viewport、展开分支和 Hub 收纳 id，不保存 Task 定义、WorkUnit 内容或 run 数据。
+  - 页面恢复时按当前 Agent / Task catalog 过滤过期 `nodeId` / `taskId`，避免后端删除或归档后恢复出脏节点。
+  - Agent / Task 根卡片右下角增加收纳按钮；收纳后根节点、对应分支和连接线不渲染，左侧 Hub 点击条目可复原并保留原展开状态。
+  - 新增回归测试覆盖 live 页面刷新后恢复 Agent/Task 展开分支与 zoom，以及根节点收纳/复原流程。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/AtlasCanvasShell.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`
+- **验证**: 新增 focused tests 先红后绿；完整前端测试 / build / `tsc --noEmit` / `git diff --check` 和浏览器 DOM 验证作为最终门禁。
+- **边界**: 不改 Team runtime 后端、不改主 `/playground`，不改变 Task 定义、Task run 或 Agent profile 数据结构。
+
+---
+
+## 2026-05-26 — Team Console multi-open Task menu drag scope fix
+
+- **主题**: 修复多开 Task 操作分支后，只有最后点击的 Task 菜单可拖动的问题。
+- **变更内容**:
+  - 每个 `.emap-task-branch-shell` 都独立绑定拖拽事件，不再只给 `primaryTaskBranchEntry` 绑定 pointer handler。
+  - Task 菜单拖拽状态记录对应 `nodeId`，位置 override 写回当前被拖动的菜单，而不是最后聚焦的 Task。
+  - 菜单拖拽时只移动同一 Task 菜单下的 run observer / 文件详情 descendants，避免多开分支之间互相抢拖拽作用域。
+  - 新增回归测试覆盖“先展开 Task A，再展开 Task B，A/B 两个菜单都可独立拖动”。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/tests/app.test.tsx`
+- **验证**: `npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "keeps every open Task action branch draggable after another Task is focused"` 先红后绿；完整前端测试 / build / `tsc --noEmit` / `git diff --check` 和浏览器 DOM 验证作为最终门禁。
+- **边界**: 不改 Docker 后端、不改 Team runtime API、不改主 `/playground`，不改变 Task 多开 / 删除确认语义。
+
+---
+
+## 2026-05-26 — Team Console run observer expansion and left-top target anchors
+
+- **主题**: 收口 Task run observer 的子节点展开交互和连接线入线规范。
+- **变更内容**:
+  - Run observer 文件详情节点从单选改为多选，点击另一个详情不再自动收起已展开详情；再次点击同一行才关闭对应详情。
+  - Task 操作分支从单选改为多开：点开另一个 Task 不再收起已展开 Task，再点同一个 Task 才关闭对应分支。
+  - Agent 对话分支和 Task 操作 / run observer 分支不再互斥；点开 Agent 后仍可继续点开 Task 的运行子节点。
+  - 多开的文件详情按 observer 右侧纵向堆叠，保持“右侧展开，多个向下排”的节点规则。
+  - Task connection、Task 操作分支、Task 子分支和 layout 子节点连接统一从源卡片右中点出线、目标节点左上角入线。
+  - `emap-observer-file-detail-body` 使用和 Worker / Checker 过程面板一致的自定义滚动条样式。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/execution-map-ui.test.tsx`
+- **验证**: 前端 focused tests 覆盖多详情展开、左上角入线和滚动条 CSS；完整前端测试 / build / `tsc --noEmit` / `git diff --check` 作为最终门禁。
+- **边界**: 不改 Docker 后端、不改 Team runtime API、不改 typed chain / delivery outcome 数据结构。
+
+---
+
+## 2026-05-26 — Team Console typed Task connection midpoint anchors
+
+- **主题**: 统一 typed Task connection 的出入线锚点，绿色连接线不再按 output/input port 行偏移，而是和黄色 Task 子树连接一样从卡片右中点出线、左中点入线。
+- **变更内容**:
+  - `ExecutionMap.taskConnectionPoints()` 保留 port 存在 / 类型匹配校验，但几何锚点改为复用 `connectorAnchors(taskNodeRect(...))`。
+  - 扩展 Task port connection 渲染测试，断言 SVG path 的起点等于源 Task 卡片右中点，终点等于目标 Task 卡片左中点，source socket 仍吸附在出线点。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/tests/app.test.tsx`
+- **验证**: `npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "creates same-type Task port connections and draws the connection line"` 先红后绿；浏览器 DOM 验证 `http://127.0.0.1:5174/` 中两条 `.emap-link-task-connection` 均为卡片中线出入。
+- **边界**: 不改 Docker 后端、不改 Team runtime API、不改 typed chain / delivery outcome 数据结构，不改 port chip 展示。
+
+---
+
+## 2026-05-26 — Team Console downstream run auto-discovery race fix
+
+- **主题**: 修复上游 Task run 已完成并触发下游 run 后，前端不点“刷新 Task”或刷新页面就看不到下游执行中的竞态。
+- **变更内容**:
+  - live Task run 轮询发现上游 run 进入终态后，除立即刷新 Task / connection / task-runs 外，再安排短 follow-up refresh，兜住后端先写 upstream completed、随后写 downstream run 的时间窗口。
+  - 每个 terminal run 只安排一次 downstream discovery refresh burst，避免重复定时器；切回示例数据时清理尚未执行的 live refresh timer。
+  - 扩展现有 auto-start downstream UI 测试，模拟第一次终态刷新仍拿不到下游 run、第二次刷新才可见的真实竞态。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/tests/app.test.tsx`
+- **验证**: `npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "discovers an auto-started downstream Task run after the upstream run finishes"` 先红后绿。
+- **边界**: 不改 Docker 后端、不改 Team runtime API、不引入 SSE，不改 typed chain / delivery outcome 数据结构。
+
+---
+
+## 2026-05-26 — Team Console Task run action panel readability
+
+- **主题**: 修复 Task 操作卡片在运行期间把 Task 标题、阶段、消息和 runId 截断的问题。
+- **变更内容**:
+  - `task-action-branch` 改为稳定宽度，Task 标题允许换行，不再在操作面板里用 ellipsis 截掉。
+  - `task-run-summary` 宽度跟随操作面板，阶段、消息和 runId 允许换行 / 断词，运行时诊断信息不再被隐藏。
+  - 新增前端 CSS 合约测试，防止运行摘要再次退回 `text-overflow: ellipsis`。
+- **影响范围**: `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`
+- **验证**: `npm --prefix apps/team-console run test -- src/tests/app.test.tsx` (132 passed), `npm --prefix apps/team-console run test` (347 passed), `npm --prefix apps/team-console run build`, browser DOM computed-style check, `git diff --check`
+- **边界**: 不改 Docker 后端、不改 Team runtime API、不改 typed chain / delivery outcome 数据结构。
+
+---
+
+## 2026-05-26 — Typed artifact prompt contract hardening
+
+- **主题**: 把 typed artifact handoff 的下游 prompt 从裸塞 Markdown 内容收口成显式完整 metadata + BEGIN/END 内容块。
+- **变更内容**:
+  - `formatBoundInputsForPrompt()` 输出完整追溯 metadata：`connectionId`、`inputPortId`、`artifactId`、`sourceTaskId`、`sourceRunId`、`sourceAttemptId`、`sourceOutputPortId`、`fileRef`。
+  - Artifact 内容被 `BEGIN_TYPED_ARTIFACT_CONTENT <artifactId>` 和 `END_TYPED_ARTIFACT_CONTENT <artifactId>` 包裹，不使用 Markdown code fence。
+  - Payload 结构 `boundInputs` 和截断限制（content 30,000 / preview 1,200）不变。
+- **影响范围**: `src/team/task-artifact-handoff.ts`, `test/team-task-artifact-handoff.test.ts`, `test/team-task-run-process.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **验证**: `node --test --import tsx test/team-task-artifact-handoff.test.ts test/team-task-run-process.test.ts` (19 passed), backend full gate (117 passed), `npx tsc --noEmit`, `git diff --check`
+- **边界**: 不改 `src/team/task-run-service.ts`、`run-workspace-attempts.ts`、类型结构、delivery runtime、connection store、前端 UI。
+
+---
+
+## 2026-05-26 — Downstream delivery outcome diagnostics
+
+- **主题**: typed Task chain 的下游交付结果可观测——upstream attempt 成功后，系统会为每个 outgoing connection 记录 `delivered` / `skipped` / `failed` 结果到 `TeamAttemptMetadata.downstreamDelivery`。
+- **变更内容**:
+  - `TeamAttemptMetadata` 新增可选字段 `downstreamDelivery?: TeamTaskDeliveryOutcome[]`，每条 outcome 包含 `connectionId`、`toTaskId`、`toInputPortId`、`status`、可选 `staleReason` / `downstreamRunId` / `error` 和 `createdAt`。
+  - `CanvasTaskRunService.triggerDownstreamRuns()` 收集每个 connection 的 outcome 并 best-effort 持久化；stale source/target 记录 `skipped`，source task 中途归档/缺失也记录 `skipped`（不再静默返回），delivery 失败记录裁剪后的 `error`，成功交付记录 `downstreamRunId`。
+  - 诊断写入失败不反杀已完成的 upstream run。
+  - 现有 `GET /v1/team/task-runs/:runId/tasks/:taskId/attempts` 自然暴露该字段，不新增 endpoint。
+- **影响范围**: `src/team/types.ts`, `src/team/run-workspace-attempts.ts`, `src/team/run-workspace.ts`, `src/team/task-run-service.ts`, `test/team-run-workspace.test.ts`, `test/team-task-run-routes.test.ts`, `test/team-task-run-process.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 不改前端 UI，不新增 SSE 或 REST endpoint，不引入 Team 日志系统，不改 `TeamTaskConnection` 持久化结构，不改 `TaskConnectionStaleReason` 值和优先级，不碰 Playground / Agent profile / Conn / Feishu / `.pi skills`。
+
+---
+
+## 2026-05-26 — Task connection store persistence hardening
+
+- **主题**: `TaskConnectionStore` 的 `create()` / `delete()` 增加文件级 mutation lock，corrupt / 非数组 JSON 不再静默返回空列表，而是抛出错误并在 API 层返回 500。
+- **变更内容**:
+  - `TaskConnectionStore` 增加 `withMutationLock()`（mkdir-based，100 次重试 × 10ms ≈ 1s 超时），包裹 `create()` 和 `delete()` 的 read-modify-write 区间，防止并发丢失连接。
+  - `readAll()` 区分 `ENOENT`（返回空列表）和 corrupt/unreadable（抛 `task connection store ...` 错误）。
+  - `GET /v1/team/task-connections` 遇到 corrupt store 返回 500。
+  - `POST /v1/team/task-connections` 和 `DELETE` 增加 `lock busy` → 409 和 store 错误 → 500 映射；现有 404/409/400 业务语义不变。
+- **影响范围**: `src/team/task-connection-store.ts`, `src/team/routes.ts`, `test/team-task-connection-store.test.ts`, `test/team-task-routes.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 不改前端，不改 Task 1 stale policy，不改 task-run-service，不碰 Playground / Agent profile / Conn / Feishu / Docker / 部署，不引入数据库或外部锁库。
+
+---
+
+## 2026-05-26 — Team Console stale task connection lifecycle
+
+- **主题**: Task connection stale 状态显式化——运行时派生 `status: "active" | "stale"` 和 `staleReason`，不写入持久化 JSON；stale connection 不触发下游 run、不渲染连接线。
+- **变更内容**:
+  - `TaskConnectionStore.listResolved()` 从当前 Task/port 状态推导每条连接的 active/stale 状态，8 种 stale reason 覆盖 source/target task missing/archived、source/target port missing、source/target port type mismatch。
+  - `GET /v1/team/task-connections` 返回 `ResolvedTaskConnection[]`（含 `status` + `staleReason`），不修改 `task-connections.json`。
+  - `CanvasTaskRunService.triggerDownstreamRuns()` 增加 source task archived 短路检查；run 运行期间 archive source task 会阻断下游触发，上游 accepted run 不受影响。
+  - 前端 `TeamTaskConnection` 类型增加 `status?` / `staleReason?`；`ExecutionMap.tsx` 对 stale/无效端口连接返回 null，stale 连接不渲染。
+- **影响范围**: `src/team/types.ts`, `src/team/task-connection-store.ts`, `src/team/routes.ts`, `src/team/task-run-service.ts`, `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/graph/ExecutionMap.tsx`, `test/team-task-routes.test.ts`, `test/team-task-run-routes.test.ts`, `test/team-task-run-process.test.ts`, `apps/team-console/src/tests/team-api.test.ts`, `apps/team-console/src/tests/app.test.tsx`
+- **边界**: 不自动删除 connection，不改 stale policy，不做 UI 美化，不碰 Task 2 persistence lock，不提交 `.codex/plans/*` 或 `.codex/skills/new-chat/`。
+
+---
+
+## 2026-05-26 — Team Console 后端 assistantText ancestry 收口
+
+- **主题**: 将主后端 `65e4de8 feat(team): expose task role assistant text` 的后端语义并入 Team Console WorkUnit redesign 分支，同时保留当前 typed task chain。
+- **变更内容**:
+  - `TeamAttemptRoleProcess` 增加可选 `assistantText`，用于保存 worker/checker Agent 的自述 / 推理文本。
+  - `TeamRoleProcessRecorder` 在 process snapshot 写盘时持久化 assistant text，并在 role 终态后忽略迟到 session event，避免取消后的文本覆盖已完成状态。
+  - 回归测试覆盖 worker/checker assistant text 写盘、RunWorkspace round-trip，以及 cancel 后迟到文本不污染 terminal role process。
+  - Git ancestry 通过非 fast-forward merge 纳入 `65e4de8`，但冲突解决保留当前 `TaskConnectionStore`、typed port contract、typed artifact 下游触发和 Team Console 前端文件。
+- **影响范围**: `src/team/types.ts`, `src/team/run-workspace-attempts.ts`, `src/team/task-run-process-recorder.ts`, `test/team-run-workspace.test.ts`, `test/team-task-run-process.test.ts`, `docs/change-log.md`
+- **边界**: 不 merge/rebase/reset 到旧后端树，不删除 typed chain，不改 SSE，不改 Team Console UI，不提交 `.codex/plans/*` 或 `.codex/skills/new-chat/`。
+
+---
+
+## 2026-05-26 — Team Console 连接出线 socket 统一
+
+- **主题**: 按用户反馈把节点接线标记从圆环 / 圆点改成吸附在卡片右边缘的 source 半圆 socket。
+- **变更内容**:
+  - Task 父子分支、菜单到二级面板、Agent 分支和 Typed Task connection 的出线端统一渲染 `.emap-connector-source-socket`。
+  - target 入线端不再渲染圆环或圆点，避免线尾和卡片边缘叠出小噪点。
+  - typed Task connection 使用绿色 socket，Agent 分支偏青色，Task 分支偏金色；连接线仍保持 right-middle -> left-middle 的单条连续 cubic 机制。
+  - 测试覆盖 CSS token、Task connection 出线 socket 和 Task child panel source socket，防止旧的圆环 / 圆点锚点回流。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/handoff-current.md`, `docs/change-log.md`
+- **边界**: 不改后端 API，不接 SSE，不改 Task run / typed chain 数据结构，不改 `.pi/skills/**`。
+
+---
+
+## 2026-05-26 — Team Console 节点连线曲线统一收口
+
+- **主题**: 按用户反馈把节点间连接线从“大 S 绕圈 / 多段切角”改成单条连续 cubic 的统一曲线机制。
+- **变更内容**:
+  - `straightPath()` 现在生成 right-middle -> left-middle 语义的单条连续 cubic：source 右侧水平出线，target 左侧水平入线。
+  - 反向角度不再使用多段 hook 曲线；只通过两端控制柄表达出入线，避免两个 Task 近距离斜向连接时出现生硬切角。
+  - Agent 分支、Task 操作分支、Task 子面板、Typed Task connection 和 Execution Map 分支连接共用同一曲线机制。
+  - 回归测试覆盖反向 compact hook 范围、Agent 分支拖到下方后仍使用右到左锚点，以及 run observer 反向连接不再出现两段 S loop。
+- **影响范围**: `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改后端 API，不接 SSE，不改 `.pi/skills/**`，不改 Task run / typed chain 数据结构。
+
+---
+
+## 2026-05-26 — Team Console Run observer 聚合面板视觉优化
+
+- **主题**: 优化合并后的 Task run observer 视觉，让它像一个完整运行观察面板，而不是几个小节点拼在一起。
+- **变更内容**:
+  - `run-observer` 内部改为阶段流视觉：顶部显示运行观察状态，worker / checker 过程区去掉独立小卡片式重边框，文件区作为阶段下方的 attachment tray。
+  - Worker / Checker 过程段固定高度并在段内滚动，滚动条改为符合主题的细滚动块（worker 偏青色，checker 偏金色），避免隐藏滚动条后用户只能靠滚轮和画布缩放抢事件；observer 外层不再显示滚动条，继续按实际内容高度自适应测量并绘制连接线。
+  - 只有实际存在文件时才渲染对应文件 tray；运行刚开始时空的 worker 文件、checker 文件和 result 文件区域不再显示“暂无文件”小字占位。
+  - 补充测试锁定 active run 初期不渲染 `.emap-observer-file-empty`，并确认外层自适应、过程段固定高度和主题化滚动块 CSS 约束。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`
+- **边界**: 不改后端 API，不接 SSE，不改 `.pi/skills/**`，不改变 attempt metadata schema。
+
+---
+
+## 2026-05-26 — Team Console Run observer 合并节点与连线收口
+
+- **主题**: 将 Task run observer 从多个独立 canvas 子节点合并为一个大的运行结果面板，同时修复连线锚点问题。
+- **变更内容**:
+  - 运行结果子节点（Worker 过程、Checker 过程、文件节点）合并为单一 `run-observer` 面板，内部固定顺序：worker 过程 → worker 输出文件 → checker 过程 → checker 输出文件 → 结果文件。
+  - 文件条目改为紧凑行（`.emap-observer-file-row`），点击后仍展开二级文件详情节点。
+  - Task 菜单只保留操作入口和紧凑 run summary，不再承载运行结果明细。
+  - 连线锚点固定为父节点右侧中点到子节点左侧中点；卡片接触点新增圆环 + 中心点标记，source 偏金色、target 偏青色。反向曲线已在后续“节点连线曲线统一收口”里改为短 hook 机制。
+  - 新增 6 个测试覆盖合并面板结构、section 顺序、文件详情交互、拖动语义、连线锚点和绕路。
+  - 更新 18 个旧测试适配新结构。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`
+- **边界**: 不改后端 API，不接 SSE，不改 `.pi/skills/**`，不改 `src/team/**`，不改 attempt metadata schema。
+
+---
+
+## 2026-05-26 — Team Console 自动发现下游 Task run
+
+- **主题**: 修复 typed chain 上游 run 完成后，下游自动启动但 UI 必须手动刷新才看得到的问题。
+- **变更内容**:
+  - Live API 前端在轮询到已知 active Canvas Task run 进入终态后，会自动触发一次 Task refresh，重新读取 Task catalog、connections 和所有 Task run 列表。
+  - 新增回归测试，模拟上游 run 终态后后端自动创建下游 run，确认用户切到下游 Task 时无需刷新即可看到下游 run 状态。
+  - 更新 Team Console README 和 Team Runtime 文档，记录该刷新发现链路仍基于现有 polling，不引入 SSE。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 不改后端 typed chain 触发逻辑，不新增 Team 专属日志 schema，不接 SSE，不改变 Task definition 的持久化边界。
+
+---
+
+## 2026-05-26 — Team Task Creator typed ports 护栏
+
+- **主题**: 更新运行时 `team-task-creator` skill，让自然语言创建 / 更新 Team Console Task 时也必须产出 typed IN/OUT ports。
+- **变更内容**:
+  - `.pi/skills/team-task-creator/SKILL.md` 不再只依赖 `/team-task` 关键字；明确自然语言创建或更新 Task / WorkUnit 的意图也进入 guarded Task draft flow。
+  - Task JSON 预览和 API payload 必须包含 `workUnit.inputPorts` 与 `workUnit.outputPorts`，无上游输入时使用 `[]`，避免新建 Task 只有自然语言 `input/outputContract` 却无法接入 task-chain。
+  - 增加常见自然语言到端口的映射示例，例如 Markdown -> HTML、中文 Markdown -> 英文 Markdown、数据 -> JSON。
+  - `test/team-task-creator-skill.test.ts` 锁定自然语言触发边界和 typed ports 预览要求。
+- **影响范围**: `.pi/skills/team-task-creator/SKILL.md`, `test/team-task-creator-skill.test.ts`, `docs/change-log.md`
+- **边界**: 不改 Team 后端 API，不强制旧 Task 补 ports，不启动或重跑任何 Task。
+
+---
+
+## 2026-05-26 — Team Console Run 状态合并到 Task 菜单
+
+- **主题**: 按真实 Task run 验收反馈，把单独的 `Run 状态` canvas 子节点收回到 Task 操作菜单里的运行摘要区域。
+- **变更内容**:
+  - `.task-run-summary` 现在展示运行状态、阶段、耗时、attempt 数、进度消息和 run id，并在 observer 展开时显示“收起输出”。
+  - Run observer 不再渲染独立 `.emap-observer-status-node`；canvas 子节点只保留 Worker / Checker 过程节点、文件节点和文件详情节点。
+  - 更新拖拽回归测试：Task 根节点和菜单节点仍会带动已展开 observer 子树，单独拖动过程节点或文件节点不会误动兄弟节点。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/handoff-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改后端 API、attempt metadata、SSE 或 `.pi/skills/**`。
+
+---
+
+## 2026-05-25 — Team Console 过程节点隐藏方法调用明细
+
+- **主题**: 按用户验收反馈收敛 Worker / Checker 过程节点，只保留上方文字摘要过程，移除下半区 tool / method 调用明细。
+- **变更内容**:
+  - `renderRoleProcessNode()` 不再构建或渲染 tool group、method call entry、隐藏计数和折叠按钮；过程节点不再渲染下半部 tool / method 调用明细，只展示 `assistantText.content` 或 current action + 最新 narration。
+  - 移除过程节点 method-call 区域的展开状态和 CSS 样式，避免运行中节点被工具调用 JSON 撑高、遮挡画布和拖动操作。
+  - 完整过程数据仍保留在后端 `attempt.roleProcesses.worker/checker` metadata 中；本轮只隐藏 Team Console DOM 明细，不改后端 recorder、attempt API、SSE 或 schema。
+  - 更新回归测试：锁定 tool group 不进入 DOM、长过程历史不渲染方法调用、assistantText 场景也不显示工具明细，拖动语义不回归。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/handoff-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改 `.pi/skills/**`，不新增 endpoint / SSE / schema，不影响主程序 Docker 后端集成任务。
+
+---
+
+## 2026-05-25 — Team Console Typed Task Chain V1
+
+- **主题**: 为 Team Console Task / WorkUnit 建立 typed port 积木契约，并跑通上游 artifact 自动触发下游 Task run 的 V1 链路。
+- **变更内容**:
+  - WorkUnit 支持 `inputPorts` / `outputPorts`，port 使用稳定 `id` 和类型字符串 `type`；Task create/update 会校验 port 结构。
+  - 新增 Task connection store 和 API：`GET /v1/team/task-connections`、`POST /v1/team/task-connections`、`DELETE /v1/team/task-connections/:connectionId`；后端校验类型匹配、重复连接、自连接、归档 Task 和 DAG cycle。
+  - Canvas Task run 通过 checker 后会把 accepted result 封装为 typed artifact，并作为 `boundInputs` 自动启动下游 Task run；下游 `TeamRunState.source` 记录 `triggeredBy` 和输入 artifact。
+  - Team Console Task 卡片显示 typed input/output ports，前端只允许连接同类型 port，连接成功后在 Execution Atlas 上渲染 Task connection path。
+  - Live API 兼容旧后端：`GET /v1/team/task-connections` 返回 404 时当作空连接列表，不阻断 Agent / Task catalog 和“创建 Task”入口；实际创建连接和自动触发仍要求后端包含 Typed Task Chain V1。
+  - 测试覆盖 `md -> md` 可连、`md -> html` 直连被拒、duplicate/cycle 被拒、上游成功后下游自动启动、旧 Task 无 ports 仍可运行，以及前端 API / UI 连接交互。
+- **影响范围**: `src/team/types.ts`, `src/team/task-port-contract.ts`, `src/team/task-connection-store.ts`, `src/team/task-validation.ts`, `src/team/task-run-service.ts`, `src/team/routes.ts`, `apps/team-console/src/api/*`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/*`, `test/team-task-*.test.ts`, `apps/team-console/src/tests/*`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/handoff-current.md`
+- **边界**: 不做任意复杂自由画布编排、条件分支、循环、真实 TTS 或 SSE；`.codex/plans/*` 仍是本地计划边界，不提交。
+
+---
+
+## 2026-05-25 — Team Console Task 雏形交接备份
+
+- **主题**: 将 Team Console Task / WorkUnit redesign 当前雏形写入交接快照，方便后续 coding agent 从正确 worktree 接手。
+- **变更内容**:
+  - `docs/handoff-current.md` 的 Team Console 入口从旧 `team-console-ui` worktree 更新为 `team-console-workunit-redesign`。
+  - 记录当前前端备份提交、已完成能力、验证结果、未跟踪文件边界和后端 `65e4de8` 集成注意事项。
+  - 明确下一步先做真实 Task run 验收，再安全处理后端 assistantText 提交集成。
+- **影响范围**: `docs/handoff-current.md`, `docs/change-log.md`
+- **边界**: 不提交 `.codex/plans/*`、`.codex/skills/new-chat/`、`.env`、`.data` 或 runtime 产物。
+
+---
+
+## 2026-05-25 — Team Console 过程节点 UI 优化
+
+- **主题**: 优化 Worker / Checker 过程节点上半区 assistantText 多行展示和下半区 tool groups 精简。
+- **变更内容**:
+  - `formatAssistantText()` 替代 `truncateProcessSummaryText()` 处理 assistantText：保留换行、统一 CRLF/LF、中文标点自然断句、每行独立 `<p>` 渲染，最多 5 行超限显示"已隐藏 X 行"，单行超过 200 字符会截断并显示"已截断 X 长行"。
+  - assistant text 容器 `max-height` 从 108px 提升到 172px，`overflow-y: auto` 内部滚动。
+  - 下半区 tool groups 从最多 8 组精简为 1 组：优先 active / running，其次最新 finished / error；显示"仅显示最近 1 组，已隐藏 X 组 / X 条"。
+  - 新增 5 个测试：多行保留、中文断句、超限截断提示、无标点 8000 字符长行截断、tool group 只渲染 1 组优先 active。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改 `.pi/skills/**`，不新增 endpoint / SSE / schema。
+
+---
+
+## 2026-05-25 — Team Console assistantText 消费
+
+- **主题**: Team Console 前端消费后端 `roleProcesses.*.assistantText` 字段，按优先级展示 Agent 自述 / 推理文本。
+- **变更内容**:
+  - `TeamAttemptRoleProcess` 类型新增可选 `assistantText?: { content: string; updatedAt: string }`。
+  - 过程节点 `renderRoleProcessNode()` 顶部按优先级展示：(1) `assistantText.content` 截断到 280 字符 + CSS `max-height: 108px` 溢出隐藏，(2) `assistantText` 缺失时回退到 current action + narration，(3) tool groups 作为可折叠证据区不变。
+  - 长文本安全：`truncateProcessSummaryText()` 字符截断 + CSS `max-height` 双重保护。
+  - Mock fixture 已同步添加 `assistantText` 数据。
+  - 新增 5 个测试：assistantText 优先展示、缺失 fallback、长文本截断、tool groups 可折叠、拖动不回归。
+- **影响范围**: `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改 `.pi/skills/**`，不新增 endpoint / SSE / schema。
+
+---
+
+## 2026-05-25 — Team Console Task run observer 拖动性能收口
+
+- **主题**: 修复 Task run 运行中拖动 Run observer 子节点时卡顿、闪烁、不跟手的问题。
+- **变更内容**:
+  - ExecutionMap 在 Task 根节点、菜单节点、Run observer 子节点拖动或文件详情 resize 期间，暂停 Task branch / child panel 的自动高度测量，避免运行中轮询刷新时反复读取 `offsetHeight` 强制浏览器同步 layout。
+  - Task branch / child branch shell 增加轻量合成层提示，减少拖动时的重绘压力。
+  - 运行中的 observer 不再渲染空文件占位节点，也不显示 `正在刷新...` / `最后刷新` 这类随轮询变化的刷新元信息；active run 轮询的瞬时连接失败不再插入红色错误节点，避免“暂无 attempt 文件”“无法连接服务器”和刷新时间随轮询闪烁；终态 run 读取失败仍会显示错误。
+  - 新增回归测试锁定拖动期间 process panel 内容刷新不会触发 auto-height measurement。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改 `.pi/skills/**`，不新增 endpoint / SSE / schema。
+
+---
+
+## 2026-05-25 — Team Console Task run process 摘要截断
+
+- **主题**: 收紧 Team Console `Worker 过程` / `Checker 过程` 节点顶部摘要，避免长 skill 或 tool 输出把脑图节点撑成全文日志面板。
+- **变更内容**:
+  - `currentAction` 和最新 `narration` 在节点顶部展示前会压缩空白并按字符预算截断。
+  - 展开的 tool group detail 仍保留完整 entry 内容；本轮只限制摘要层，不丢 attempt metadata 里的过程数据。
+  - 新增回归测试锁定长摘要不显示尾部 sentinel，同时确保 tool detail 仍可见。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改 `.pi/skills/**`，不新增 endpoint / SSE / schema。
+
+---
+
+## 2026-05-25 — Team Canvas Task run 取消过程写盘竞态修复
+
+- **主题**: 修复 Canvas Task run 取消时 role process late session event 可能覆盖 attempt 终态字段的竞态。
+- **变更内容**:
+  - `CanvasTaskRunService.cancelRun()` 在收口 role process 和 attempt 前优先 abort active controller，并用取消中的 run 标记避免后台执行流程把主动取消误写成失败。
+  - `TeamRoleProcessRecorder` 进入 `succeeded` / `failed` / `cancelled` 后忽略后续 raw/session event，terminal flush 幂等复用同一次写盘，不再在 `finally` 里追加一次可能覆盖 `finishAttempt(cancelled)` 的 read-modify-write。
+  - 新增回归测试模拟 cancel 后仍收到 late `onSessionEvent`，锁定 attempt `status` / `phase` / `finishedAt` / `errorSummary` 和 `roleProcesses.worker` 的 cancelled/isComplete 终态。
+- **影响范围**: `src/team/task-run-service.ts`, `src/team/task-run-process-recorder.ts`, `test/team-task-run-process.test.ts`, `docs/change-log.md`
+- **边界**: 不改 `apps/team-console/**`，不改 `.pi/skills/**`，不新增 endpoint / SSE / schema。
+
+---
+
+## 2026-05-25 — Team Canvas Task run 过程观测
+
+- **主题**: 让 Canvas Task run 的 worker/checker Agent 执行过程通过现有 attempts API 暴露给 Team Console。
+- **变更内容**:
+  - `AgentProfileRoleRunner` 转发底层 `AgentSessionLike.subscribe()` raw session events；Canvas Task run 复用主 chat 的 session event adapter 和 active run process 投影生成 `ChatProcessBody`。
+  - 扩展 attempt metadata，新增可选 `roleProcesses.worker` / `roleProcesses.checker`，通过 `GET /v1/team/task-runs/:runId/tasks/:taskId/attempts` 返回。
+  - role process 写盘按 role start、tool start/end、完成/失败/取消立即 flush，高频 update/text/heartbeat 按 300-500ms 节流合并，并截断超长 entry detail。
+- **影响范围**: `src/team/task-run-process-recorder.ts`, `src/team/task-run-service.ts`, `src/team/run-workspace-attempts.ts`, `src/team/run-workspace.ts`, `src/team/agent-profile-role-runner.ts`, `src/team/role-runner.ts`, `src/team/types.ts`, `test/team-task-run-process.test.ts`, `test/team-task-run-routes.test.ts`, `test/team-run-workspace.test.ts`, `test/team-agent-profile-runner.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未新增 SSE，未新造 Team 专属 tool log schema，未改 `.pi/skills/**`，未改 Plan run 行为，旧 attempt metadata 无 `roleProcesses` 时继续兼容。
+
+---
+
+## 2026-05-25 — Team Console Task run process nodes UI budget
+
+- **主题**: 给 Team Console Canvas Task run observer 的 `Worker 过程` / `Checker 过程` 节点补渲染预算，避免长任务过程数据无限渲染、无限增高拖垮画布。
+- **变更内容**:
+  - 每个过程节点最多渲染若干 tool/event group，优先保留活跃过程；每个 group 只渲染最近若干 entries；隐藏的 group / entry 会显示隐藏计数。
+  - 过程节点保留 current action、最新 narration、默认展开语义和用户手动折叠状态；完整过程数据仍来自 `roleProcesses.worker` / `roleProcesses.checker` attempt metadata，前端只做 DOM 渲染限流。
+  - 给过程节点和 tool group 容器增加最大高度与内部滚动，避免撑爆 `.emap-task-child-branch-shell`；文件详情节点无固定 max-height 的既有口径不变。
+  - 新增大量 process entries 回归测试，锁定“旧 entries 不渲染、最新 entries 保留、隐藏计数可见、滚动 class 存在”的行为。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改 `test/team-*.test.ts`，不改 `.pi/skills/**`，不做 SSE，不新增 endpoint，不新造 Team 专属 process schema，不改主 `/playground`。
+
+---
+
+## 2026-05-25 — Team Console Task run process nodes 前端实现
+
+- **主题**: 给 Team Console Canvas Task run observer 增加 worker / checker 过程观测节点，前端先按后端 additive contract 完成类型、Mock fixture、容错渲染和 UI。
+- **变更内容**:
+  - 新增 `attempt.roleProcesses.worker` / `attempt.roleProcesses.checker` 前端类型消费；Mock Task run fixture 补齐 worker / checker narration、current action 和 tool entries。
+  - Run observer 新增 `Worker 过程` / `Checker 过程` 独立 canvas branch node，顶部展示角色状态、current action 和最新 narration，下半部按 `toolCallId` 分组展示 tool entries 并支持折叠 / 展开。
+  - Live API 缺少 `roleProcesses` 时显示等待过程数据，role process 为 `null` 或条目为空时显示暂无过程条目，不影响 Run 状态、文件节点和文件详情。
+  - 过程节点复用现有 Task 操作树拖动语义；Task 根节点和菜单节点拖动会带走已展开过程节点，单独拖过程节点只移动自身。
+- **影响范围**: `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改 `.pi/skills/**`，不做 SSE，不新增 endpoint，不新造 Team 专属 tool log schema，不改主 `/playground`。
+
+---
+
+## 2026-05-25 — Team Console Run observer 文件详情定位修复
+
+- **主题**: 修复文件节点已经被拖动后，再点击展开文件详情时，详情孙节点仍按旧基础坐标定位导致与文件节点水平重叠的问题。
+- **变更内容**:
+  - `taskChildBranchPanelsLayout` 计算孙节点默认位置时改用父文件节点的 final rect（包含 position override），确保新展开的详情节点出现在父文件节点右侧。
+  - 新增回归测试覆盖“先拖动文件节点，再点击展开详情”的场景，避免只覆盖“先展开再拖动”的半截语义。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/tests/app.test.tsx`
+- **边界**: 不改后端 API，不改 SSE，不改 Markdown 渲染和文件内容读取逻辑。
+
+---
+
+## 2026-05-25 — Team Console Task 操作树拖动语义
+
+- **主题**: 把 Task 操作树升级为真正的树形拖动，支持父节点拖动带动整棵已展开子树。
+- **变更内容**:
+  - Task 根节点拖动时，已展开的菜单、编辑节点、Leader 对话节点、Run observer 面板及其子节点全部按同一 dx/dy 同步平移；已手动拖过的子节点保持当前相对位置。
+  - Task 操作菜单节点可从 header 区域拖动，拖动时带动画已展开子树；菜单按钮、收起按钮等交互元素不启动拖动。
+  - 编辑节点可从 header 区域拖动，表单控件不启动拖动。
+  - Observer 文件节点拖动时带上已展开的文件详情子节点；详情节点可单独拖动（只动自己）。
+  - 所有拖动系统统一使用 deferred pointer capture（pointerdown 不立即 capture），超过 4px 阈值才进入拖动状态，避免吞掉点击。
+  - SVG connector 全部基于 final rect（含 position override）计算，不再从旧位置发出。
+  - 新增 `taskBranchPositionOverrides` 状态管理菜单位置覆盖；`translateTaskSubtree` helper 统一处理子树平移。
+  - 新增 8 个测试覆盖树形拖动语义：Task root subtree drag、menu subtree drag、menu click 保留、edit node 独立拖动、file node subtree drag、detail leaf 独立拖动、leader chat 可用性回归。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改后端 API shape，不改 SSE，不改主 `/playground`。
+
+---
+
+## 2026-05-25 — Team Console Run observer 拖拽、安全 Markdown 和 connector 修复
+
+- **主题**: 修复 Run observer 面板拖拽/点击冲突，添加安全 Markdown 渲染，修复子节点 connector 使用旧坐标。
+- **变更内容**:
+  - Observer 子节点（Run 状态、文件节点）和孙节点（文件详情）全部可自由拖动；拖拽超过 4px 阈值才进入拖动状态，未超阈值时 pointerup 和 click 正常传递，点击文件节点正常展开详情。
+  - 拖动后 click 会被 `panelDragSuppressClickRef` 抑制，避免误触展开。
+  - `taskChildBranchPanelsLayout` 改为先计算所有 panel finalRect（含 position override），再用父节点的 finalRect 作为子节点 connector 的 sourceRect，修复文件节点拖动后详情连线不跟随的问题。
+  - 文件详情内容区移除 `max-height: 360px` / `max-height: 240px` 固定限制，resize 后内容 flex-fill。
+  - 文件详情 Markdown 渲染从手写正则替换为 `marked` 安全渲染（`src/shared/markdown.ts`），配置与 `src/ui/playground-markdown.ts` 一致：GFM tables、HTML 转义、只允许 http/https 链接、`target="_blank" rel="noreferrer noopener"`。
+  - 新增 `.team-md-content` CSS 样式覆盖 Markdown 渲染输出的 headings、code、tables、blockquotes、lists 等。
+  - Run observer 当前使用轮询读取 run state，不接 SSE。
+  - 新增 17 个测试：14 个 Markdown 安全渲染测试 + 3 个 click-vs-drag + connector 跟随测试。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/shared/markdown.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/markdown.test.ts`, `apps/team-console/package.json`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改后端 API shape，不改 `.pi/skills/**`，不改主 `/playground`。Run observer 轮询不改 SSE。
+
+---
+
+## 2026-05-25 — Team Console Run observer 紧凑节点和可调整详情面板
+
+- **主题**: 优化 Team Console Run observer 的节点视觉密度和交互能力。
+- **变更内容**:
+  - Run 状态节点改为内容自适应高度（`autoHeight`），不再使用固定 220px。
+  - 文件节点压缩为紧凑索引卡片，只展示 Agent 名字（从 agentsById 解析）、文件名和路径；移除 checker reason / verdict 摘要和 runtime context 长文本。
+  - 文件详情节点支持右下角拖动调整宽高（`resizable`），最小尺寸 360×280，拖动后连接线和布局同步更新。
+  - ExecutionMap `taskChildBranchPanels` prop 扩展支持 `autoHeight`、`resizable`、`minWidth`、`minHeight` 字段。
+  - 修复 `taskChildBranchPanelsLayout` 中 `sourceId` 的非空断言风险。
+  - 新增 `.emap-panel-resize-handle` CSS 和 `.emap-observer-file-compact` / `.emap-observer-file-agent` 样式。
+  - 新增 2 个测试覆盖 auto-height、紧凑文件节点和 resize 交互。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改后端 API shape，不改 `.pi/skills/**`，不改主 `/playground`。
+
+---
+
+## 2026-05-25 — Team Console Task run observer 多节点渲染
+
+- **主题**: 把 Team Console Task run observer 从单一大容器改为多个独立 canvas branch node。
+- **变更内容**:
+  - ExecutionMap 新增 `taskChildBranchPanels` 数组 prop，支持多个独立 `.emap-task-child-branch-shell` 渲染，每个 panel 有自己的 SVG connector path。保留旧 `taskChildBranchPanel` / `taskChildBranchInteractive` 向后兼容。
+  - Run observer 每个元素（Run 状态节点、文件节点、文件详情节点）现在是独立的 branch node，不再是一个大 section 内的双列布局。
+  - 移除 Markdown 渲染中的 `dangerouslySetInnerHTML`，改用纯 React 文本节点。
+  - JSON 解析失败时显示 parse error 消息。
+  - 文件详情节点新增显式收起按钮。
+  - CSS 移除旧的大容器双列布局样式，替换为 `.emap-observer-*` 独立节点样式。
+  - 测试断言多个 `.emap-task-child-branch-shell` 存在及结构关系。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 不改 `src/team/**`，不改后端 API shape，不改 `.pi/skills/**`。Run observer 节点不需要 drag/resize/maximize；leader-chat 现有的 drag/resize/maximize 不能坏。
+
+---
+
+## 2026-05-25 — Team Console Atlas 交互与分支聚焦
+
+- **主题**: 收口 Team Console 画布批量操作、连接线、工具栏和对话分支聚焦体验。
+- **变更内容**:
+  - Atlas 空白画布支持 Shift 框选 Agent / Task 节点；拖动任一已选节点会整体移动选中集合，选择态只存在于当前画布 UI，不写入 localStorage。
+  - Execution Atlas 的 branch / Task 菜单 / Agent 分支连接线改为平滑三次贝塞尔曲线；Task 二级节点仍使用真实菜单尺寸做锚点。
+  - 右上工具栏把 Agent 操作、统计 pill 和 Task 操作组拆开；Task 相关按钮收纳在 `task-toolbar-group`，Agent / Task 数量以更清晰的统计标签展示。
+  - Agent 对话分支和 Task Leader 对话分支新增最大化按钮；最大化后渲染到未缩放的 canvas overlay，避免 iframe 在缩放世界内继续放大导致文字发糊，并支持还原。
+  - 增加可复用样式基类：`.emap-atlas-card`、`.emap-menu-branch`、`.emap-dialog-branch`、`.emap-panel-branch`，后续节点类型可以继续复用。
+- **影响范围**: `apps/team-console/src/graph/AtlasCanvasShell.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/app/app.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未修改 `src/team/**` 后端 API，未改 `.pi/skills/team-task-creator/**`，未新增 Plan 编辑能力、minimap、持久化视图或移动端专项布局。
+
+---
+
+## 2026-05-25 — Team Console Canvas Task Run
+
+- **主题**: 打通 Team Console 画布 Task 的独立 WorkUnit run。
+- **变更内容**:
+  - 新增 Canvas Task run 后端 service 和 API：`POST /v1/team/tasks/:taskId/runs`、`GET /v1/team/tasks/:taskId/runs`、`GET /v1/team/task-runs/:runId`、`POST /v1/team/task-runs/:runId/cancel` 以及只读 attempt/file API。
+  - Task run 存在 `.data/team/task-runs/runs/<runId>`，不写入 `PlanStore`，不出现在 `/v1/team/runs`，也不增加 Plan `runCount`；内部只使用 synthetic run snapshot 承载执行状态。
+  - 第一版 Task run 只执行 `workUnit.workerAgentId` → `workUnit.checkerAgentId`，不启动 watcher/finalizer；leader 仍只负责运行前沟通和 WorkUnit 草案维护。
+  - Team Console Task 操作菜单的“运行”从 disabled 占位改为真实启动；菜单展示最近 Task run 状态，active run 通过 `GET /v1/team/task-runs/:runId` 轮询，并提供“停止”取消入口。
+  - Task 卡片会读取最新 Task run 状态更新状态 pill，但 localStorage 仍只保存 `taskId` 和画布坐标，不保存 Task 定义或 Task run 状态。
+- **影响范围**: `src/team/types.ts`, `src/team/task-run-service.ts`, `src/team/routes.ts`, `test/team-task-run-routes.test.ts`, `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未实现 Task pause/resume/rerun，未接 watcher/finalizer，未解析 iframe 聊天文本，未修改 `.pi/skills/team-task-creator/**`，未改变 Plan run / TeamUnit / Agent profile 契约。
+
+---
+
+## 2026-05-25 — Team Console Task 二级节点连线与 Leader 分支复用
+- **主题**: 修复 Task 操作菜单到二级节点的连线悬空，并让 Task Leader 对话二级节点复用成熟的 Agent 分支交互。
+- **变更内容**:
+  - `ExecutionMap` 测量 `.emap-task-branch-shell` 的真实 DOM 宽高，用测量后的菜单右边缘计算二级节点位置和 Task → 菜单 → 二级节点虚线锚点，不再用固定 `280x190` 虚拟菜单矩形。
+  - Task Leader 对话二级节点改用 `agent-playground-branch`、`agent-playground-branch-head` 和 `agent-playground-iframe`，并在右下角提供与 Agent 分支一致的 resize handle。
+  - Leader 对话二级节点支持沿用 Agent 分支的标题栏拖拽和右下角缩放体验；Task 编辑二级节点保持固定编辑面板。
+  - 回归测试覆盖真实菜单尺寸参与 child branch/connector 计算、Leader 二级节点 Agent branch class、iframe class、resize handle，以及拖拽/缩放行为。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未修改 `src/team/**`，未修改 `.pi/skills/team-task-creator/**`，未改 Task API，未实现 WorkUnit run，未把 Task 定义写入 localStorage，未解析 iframe 聊天文本。
+---
+
+## 2026-05-25 — Team Console Task 菜单二级节点与草稿保护
+
+- **主题**: 修复 Task 操作菜单过大、编辑 / Leader 入口替换一级菜单，以及浅编辑 stale draft 覆盖风险。
+- **变更内容**:
+  - Task 操作菜单改为紧凑一级节点，宽高由菜单内容驱动，不再沿用大 iframe 面板尺寸。
+  - 点击“编辑”或“对话 Leader”会在菜单右侧展开二级节点，一级 Task 操作菜单保留，连线表达 Task → 菜单 → 二级节点。
+  - 浅编辑草稿增加 base snapshot 与 dirty fields；PATCH 只发送用户实际改过的字段。
+  - worker/checker 变更仍发送完整当前 `workUnit`，但基于最新 Task catalog 合成，避免旧副本覆盖刷新或 Leader 对话更新后的复杂 WorkUnit 字段。
+  - 如果草稿打开后同一字段已被后台刷新改变，保存会被阻止并提示重新打开编辑节点。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未修改 `src/team/**`，未修改 `.pi/skills/team-task-creator/**`，未实现 WorkUnit run，未解析 iframe 聊天文本，localStorage 仍只保存 Task 布局元数据。
+
+---
+
+## 2026-05-25 — Team Console Task 操作菜单与浅编辑
+
+- **主题**: 将 Team Console Task 卡片点击行为改为操作菜单，并补齐浅编辑、Leader 对话入口和 archive 软归档。
+- **变更内容**:
+  - 点击 Task 卡片先展开操作菜单节点；菜单包含“运行”“编辑”“对话 Leader”“删除”，其中运行仍是未接线 disabled 占位，不启动 WorkUnit run。
+  - “对话 Leader”继续打开既有 `/playground?view=chat&agentId=<leaderAgentId>&embed=team-console&teamTaskId=<taskId>&teamTaskMode=edit` iframe。
+  - “编辑”只允许修改 Task 名称、leader Agent、worker Agent、checker Agent；复杂需求、input text、output contract 和 acceptance rules 继续通过 Leader 对话里的 `/team-task` 流程维护。
+  - “删除”二次确认后调用 `POST /v1/team/tasks/:taskId/archive` 做软归档，成功后重新请求 `GET /v1/team/tasks` 并关闭分支。
+  - Live API 下 localStorage 仍只保存 Task 卡片布局元数据，不保存 Task 定义、WorkUnit 内容或 Agent 绑定。
+- **影响范围**: `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/team-api.test.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未修改 `src/team/**` 后端契约，未修改 `.pi/skills/team-task-creator/**`，未实现 WorkUnit run、worker/checker 执行链路、iframe 聊天文本解析或复杂 WorkUnit 可视化编辑器。
+
+---
+
+## 2026-05-24 — Team Console Task 创建入口与刷新闭环
+
+- **主题**: 在独立 Team Console preview 中补齐 Task 创建入口、leader Agent iframe 打开方式和 `GET /v1/team/tasks` 刷新闭环。
+- **变更内容**:
+  - Live API Agent workspace 工具栏新增“创建 Task”和“刷新 Task”；创建入口只选择 leader Agent 并打开主 `/playground` iframe，不直接创建 Task。
+  - 已有 Task 分支 URL 携带 `teamTaskMode=edit` 和 `teamTaskId=<taskId>`；创建分支 URL 携带 `teamTaskMode=create`，不携带 `teamTaskId`。
+  - 手动刷新和关闭创建分支后都会重新请求 `GET /v1/team/tasks`；刷新中禁用重复点击，刷新失败保留当前 Task 卡片并显示错误。
+  - Live API 下 Task 卡片位置继续只保存 `taskId` 和画布坐标，不保存 WorkUnit 内容或 Agent 绑定。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未改主项目后端 `src/team/**`，未改 `.pi/skills/team-task-creator/**`，未实现 WorkUnit run、worker/checker 执行链路或 iframe 聊天文本解析。
+
+---
+
+## 2026-05-24 — Team Console Task / WorkUnit 画布准备
+
+- **主题**: 在独立 Team Console preview 中接入 Task / WorkUnit 前端展示，把 Task 画布节点和 leader Agent 分支先跑通。
+- **变更内容**:
+  - Team Console 增加 Task / WorkUnit 类型、Mock fixture 和 `GET /v1/team/tasks` adapter。
+  - Execution Atlas 增加 Task 卡片，展示 leader / worker / checker Agent，并与 runtime task 节点保持独立。
+  - 点击 Task 卡片会展开 leader Agent 的主 `/playground` iframe，URL 携带 `teamTaskId=<taskId>` 作为上下文 hint。
+  - Live API 下 Task 卡片位置写入浏览器 `localStorage` 并刷新恢复，但不保存 WorkUnit 内容或 Agent 绑定。
+- **影响范围**: `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/team-api.test.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 本次前端提交未实现后端 `/v1/team/tasks`、未实现 `/team-task` runtime skill、未启动 Task run、未实现 worker/checker 执行链路，也不解析 iframe 聊天文本创建 Task。
+
+---
+
+## 2026-05-24 — Team Task 后端契约与 runtime skill
+
+- **主题**: 新增独立 Team Canvas Task 资源和 `/team-task` runtime skill，避免把 Task 偷换成单任务 Plan。
+- **变更内容**:
+  - 新增 `TeamCanvasTask` / `TeamWorkUnitDefinition` 类型、`TaskStore` 和 Task 校验，持久化到 `.data/team/tasks/<taskId>.json`，并兼容旧记录缺省 `status` / `archived` 字段。
+  - 新增 `/v1/team/tasks` REST API：列表、创建、读取、更新和软归档；`leaderAgentId`、`workerAgentId`、`checkerAgentId` 均校验真实未归档 Agent profile。
+  - 新增 `.pi/skills/team-task-creator/SKILL.md`，仅在 `/team-task` 显式触发后创建 / 更新 Task draft，要求先展示完整 Task JSON 并等待用户确认。
+  - 同 Agent 同时担任 worker/checker 第一版允许，但 API warning 与 skill 预览均提示“同 Agent 自检会削弱验收独立性”。
+- **影响范围**: `src/team/types.ts`, `src/team/ids.ts`, `src/team/task-store.ts`, `src/team/task-validation.ts`, `src/team/routes.ts`, `.pi/skills/team-task-creator/SKILL.md`, `test/team-task-store.test.ts`, `test/team-task-routes.test.ts`, `test/team-task-creator-skill.test.ts`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未新增 Task run API，未启动 worker/checker 执行链路，未改 Team Console 画布 UI，未解析 iframe 聊天文本创建 Task，未修改 Agent profile、模型、browser binding 或技能安装逻辑。
+
+---
+
+## 2026-05-24 — Team Console Live Agent Atlas 布局本地持久化
+
+- **主题**: 解决 Live API 画布里添加和拖动的 Agent 卡片刷新后丢失的问题。
+- **变更内容**:
+  - Team Console 会把 Live API 模式下已添加的 Agent 节点和拖动后的世界坐标写入浏览器 `localStorage`。
+  - 刷新后会恢复上次选择的 `实时 API` 数据源，并在 Agent workspace 中恢复已添加 Agent 卡片的位置。
+  - 持久化内容只表示 Team Console 画布引用和位置，不修改真实 Agent profile、不创建 Agent clone，也不写入 `/v1/team` 后端。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: Mock fixture 仍用于示例和回归，不把示例运行图作为 Live API 布局事实；分支 iframe 与主 `/playground` 行为不变。
+
+---
+
+## 2026-05-24 — Team Console Live API 默认进入 Agent workspace
+
+- **主题**: 避免刷新或重新进入 Team Console Live API 时自动渲染历史最新 run，导致左侧固定出现旧 Plan / 执行运行节点。
+- **变更内容**:
+  - Live API 切换后默认停在干净的 `Agent workspace`，只加载 Agent catalog/status，不再自动请求并展示最新 run。
+  - 新增 live 运行图切换条，用户点击“最新 Run”后才按 `createdAt` 选择最新 run 并渲染执行图。
+  - 保留 Mock fixture 的旧运行图入口，仍可通过“顺序 run”等示例按钮验证 runtime atlas。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未改 `/v1/team` 后端接口、run 排序规则、Agent 分支 iframe 或主 `/playground` 行为。
+
+---
+
 ## 2026-05-24 — Team Console Agent 分支锁定 Playground Agent 切换
 
-- **主题**: 防止 Team Console Agent 分支 iframe 内的 Playground 顶部 Agent 标签弹出切换菜单，避免分支对话目标被用户在 iframe 内切走
-- **影响范围**: `src/ui/playground.ts`, `src/ui/playground-styles.ts`, `src/ui/playground-agent-manager.ts`, `test/playground-agent-switch.test.ts`, `docs/playground-current.md`, `docs/change-log.md`
+- **主题**: 防止 Team Console Agent 分支 iframe 内的 Playground 顶部 Agent 标签弹出切换菜单，避免分支对话目标被用户在 iframe 内切走。
+- **变更内容**:
+  - 主 `/playground` 在 `embed=team-console` 下把顶部 Agent 标签标记为 locked，只作为当前 Agent 标识展示。
+  - locked 状态下 hover / focus 不再显示 Agent switcher 弹层，点击标签也不再跳转独立 Agents 页面。
+  - 保留普通 `/playground` 的 Agent hover 切换菜单和 Agents 页面入口，不影响非嵌入使用。
+- **影响范围**: `src/ui/playground.ts`, `src/ui/playground-styles.ts`, `src/ui/playground-agent-manager.ts`, `test/playground-agent-switch.test.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **边界**: 未改 Team Console iframe URL、Agent 状态接口或主 Agent profile 后端行为。
+
+---
+
+## 2026-05-24 — Team Console Agent 卡片真实运行状态
+
+- **主题**: 将 Agent 分支内部真实对话运行态同步展示到 Atlas Agent 卡片上。
+- **变更内容**:
+  - Team Console API adapter 增加 `GET /v1/agents/status`，复用主 Playground 已有 Agent 运行状态接口，不新增后端行为。
+  - Team Console 在 Live API 模式下定时刷新 Agent 状态；Agent 卡片按真实状态显示“空闲 / 运行中 / 状态未知”，运行中使用暖橘红卡片状态、pill 与脉冲状态条，避免和 Atlas 青蓝选中态混淆；空闲显示绿色静态状态。
+  - Mock fixture 增加 deterministic Agent 状态，回归测试覆盖主 Agent 空闲、搜索 Agent 运行中，以及 Live adapter 的 `/v1/agents/status` 请求。
+  - README 和 Team Runtime 文档同步记录 Agent 卡片状态来源与显示口径。
+- **影响范围**: `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/team-api.test.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **边界**: 未改 `src/team/**`、`src/ui/team-page.ts`、`/playground/team` 或主 `/playground` 后端行为；Agent 分支 iframe 仍由主 `/playground` 自己处理真实对话。
+
+---
+
+## 2026-05-24 — Team Console Agent 分支浮窗拖拽缩放
+
+- **主题**: 修复点击其他 Agent 时分支仍停在主 Agent 对话的可见交互问题，并把 Agent 对话分支改成可拖拽、可缩放的上层浮窗节点。
+- **变更内容**:
+  - Agent 分支不再按所有 Agent 节点右侧自动避让布局，而是从当前 Agent 右侧展开，允许覆盖周围节点。
+  - 分支标题栏支持拖动，右下角 resize handle 支持调整宽高；拖拽和 resize 都按当前 Atlas zoom 折算世界坐标。
+  - 分支标题栏拖动不会带动画布 pan；Agent 到分支的连接线按相对位置选择最近边，分支拖到 Agent 下方时从底部 / 顶部连接，不再固定右侧硬连。
+  - Atlas 外层容器补齐 `min-width: 0` / `max-width: 100%` / overflow 约束，Agent 或分支向右拖动时不会把整页宽度撑开成“画布跟着移动”。
+  - 分支位置不再被原点上方 / 左侧边界钳制；拖动只限制最小宽高，不限制世界坐标位置。
+  - Team Console iframe 增加 `embed=team-console`；主 `/playground` 在嵌入模式下不再把 URL agent hint 或 iframe 内 Agent 切换写入全局 active-agent localStorage，避免不同 Agent 分支被最后一次手动切换污染。
+  - 回归测试覆盖真实 pointer 点击另一个 Agent 切换 iframe、分支允许覆盖相邻 Agent、标题栏拖动不带动画布、拖过原点上方、下方分支连线锚点、右下角缩放、右拖不撑开外层页面，以及嵌入模式不污染主页面 active agent。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/app/app.css`, `apps/team-console/src/graph/AtlasCanvasShell.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `src/ui/playground.ts`, `test/playground-agent-switch.test.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/playground-current.md`, `docs/change-log.md`
+- **测试**: `npm --prefix apps/team-console run test`, `npm --prefix apps/team-console run build`, `node --test --import tsx test/playground-agent-switch.test.ts`, `git diff --check`。
+- **边界**: 未改 `src/team/**`、`src/ui/team-page.ts`、`/playground/team` 或主 `/playground` 布局；未恢复 Team Runtime 按钮，未实现 WorkUnit / Plan 编排、Agent clone / instance / overlay / 画布局部技能安装、移动端专项或 artifact preview。
+
+---
+
+## 2026-05-24 — Team Console Agent 分支 iframe
+
+- **主题**: 将 Agent 卡片点击效果从特殊 Focus 视窗改为同一 Atlas 画布内的主 `/playground` iframe 分支卡片。
+- **变更内容**:
+  - 点击 Agent 节点会在节点右侧展开 Agent 分支卡片，普通 Execution Atlas 节点层、其他 Agent、runtime nodes、links、evidence 和工具条继续显示；再次点击同一 Agent 会收起，点击其他 Agent 会切换分支。
+  - 分支 iframe 指向主服务 `/playground?view=chat&agentId=<agentId>`，Team Console 不再复制本地 transcript/composer、scoped stream/state/history、queue/interrupt 或文件库逻辑。
+  - 主 `/playground` 增加 `agentId` URL hint 读取，并把 hint 写入 active agent storage，确保主 Agent 卡片打开主 Agent 对话、搜索 Agent 卡片打开搜索 Agent 对话。
+  - Vite dev server 将 `TEAM_CONSOLE_API_TARGET` 暴露给 Team Console 前端，用于非默认主服务端口的 iframe base URL。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/AtlasCanvasShell.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/vite.config.ts`, `apps/team-console/src/tests/app.test.tsx`, `test/playground-agent-switch.test.ts`, `src/ui/playground.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **测试**: `npm --prefix apps/team-console run test`, `npm --prefix apps/team-console run build`, `node --test --import tsx test/playground-agent-switch.test.ts`, `git diff --check`。
+- **边界**: 未改 `src/team/**`、`src/ui/team-page.ts` 或 `/playground/team`；主 `/playground` 仅增加 `agentId` URL hint，未改布局和运行时行为；未恢复 Team Runtime 按钮，未实现 WorkUnit / Plan 编排、Agent clone / instance / overlay / 画布局部技能安装、移动端专项或 artifact preview。
+
+---
+
+## 2026-05-24 — Team Console Agent Focus 主流断线恢复
+
+- **主题**: 修复 Agent Focus 新发送 scoped stream 在未收到 terminal event 就结束时会误清 pending 的问题。
+- **变更内容**:
+  - 主发送流记录 `done` / `error` / `interrupted` terminal event；若 stream 正常返回但没有 terminal，就刷新 scoped conversation state，并交给已有 `/chat/events` recovery 订阅继续接管。
+  - 增加回归测试覆盖 `run_started` + `text_delta` 后主 stream 断开、随后按 `activeRun.eventCursor` 订阅 scoped events 且保持打断按钮可用的路径。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/tests/app.test.tsx`, `docs/change-log.md`
+- **测试**: 本轮最终验证见交付报告。
+
+---
+
+## 2026-05-24 — Team Console Agent Focus active run 恢复
+
+- **主题**: 修复 Agent Focus 打开已有 running scoped conversation 时只显示 pending、不会恢复 active run 流的问题。
+- **变更内容**:
+  - Focus 读取 scoped state 时把 `activeRun.input`、`activeRun.text` 和输入资产合并进 transcript，并保持打断按钮可用。
+  - Team Console API adapter 新增 scoped `GET /v1/agents/:agentId/chat/events?conversationId=...&afterEventCursor=...` SSE 订阅，按 active run cursor 续接恢复流。
+  - terminal `done` / `error` / `interrupted` 事件统一清理 pending/recovery 状态，并刷新 scoped state/context。
+  - 收起 Focus、切换 Agent 或切换 conversation 后继续使用 generation 防护，旧恢复流事件不会污染当前 transcript。
+- **影响范围**: `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/team-api.test.ts`, `docs/change-log.md`
+- **测试**: 本轮最终验证见交付报告。
+- **边界**: 未改 `src/team/**`、`src/ui/team-page.ts`、`/playground/team` 或主项目 `/playground` 源码；未实现 WorkUnit / Plan 编排、后台任务按钮、移动端专项、artifact preview、Agent clone / overlay。
+
+---
+
+## 2026-05-24 — Team Console Agent Focus 真实流式对话接线
+
+- **主题**: 将 Agent Focus Mode 接到真实 scoped Agent chat streaming / state / assets 链路，Mock 与 Live 共享同一 UI 状态机。
+- **变更内容**:
+  - Team Console API adapter 增加 scoped conversation catalog/current/state、stream、queue、status、interrupt 和 asset upload/list 入口；stream SSE 解析复用 `run_started`、`text_delta`、`done`、`error`、`interrupted` 与 `queue_updated` 事件。
+  - Focus 进入时读取 `/v1/agents/:agentId/chat/conversations` 与 `/v1/agents/:agentId/chat/state`，按 `agentId + conversationId` 隔离 transcript，避免 collapse/refocus 或切换 Agent 时串线。
+  - 发送改走 `/v1/agents/:agentId/chat/stream`；运行中再次发送走 `/v1/agents/:agentId/chat/queue`；打断走 `/v1/agents/:agentId/chat/interrupt`。
+  - 文件库和上传继续走 `/v1/assets`，上传在已有 scoped conversation 后携带 `conversationId`；history / optimistic user message 会展示 `assetRefs` 附件元数据；文件-only 发送保留默认请求文案，且 UI 在超过 20 个已选资产前拦截。
+  - MockTeamApi 增加 deterministic conversation store、stream lifecycle、queue 和 interrupt 行为，让 Mock 覆盖 Live 的同一路状态迁移。
+  - README、Team Runtime 文档和 Vite proxy 口径同步为 `/v1/team`、`/v1/agents`、`/v1/assets` 三类必要入口。
+- **影响范围**: `apps/team-console/src/api/agent-chat-sse.ts`, `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/app/app.css`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/team-api.test.ts`, `apps/team-console/vite.config.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **测试**: 本轮最终验证见交付报告。
+- **边界**: 未改 `src/team/**`、`src/ui/team-page.ts`、`/playground/team` 或主项目 `/playground` 源码；未恢复后台任务或 Team Runtime 按钮；未实现 WorkUnit / Plan 编排、Agent clone / instance / overlay / 画布局部技能安装、移动端专项或 artifact preview。
+
+---
+
+## 2026-05-24 — Team Console Agent 拖拽与 Focus 锁定
+
+- **主题**: 收口 Agent Atlas 普通态拖拽和 Focus Mode 固定锁定视窗。
+- **变更内容**:
+  - Agent Focus Mode 增加 `locked/free` 交互模式；Focus 中禁用 wheel zoom、背景 pan、工具条缩放 / 重置和 Agent 节点拖拽，收起后恢复进入 Focus 前的 viewport 与普通交互。
+  - 普通画布态支持拖拽 Agent 卡片；拖拽按当前 `viewport.scale` 折算 world delta，只改变 Team Console 本地画布引用位置，不修改真实 Agent profile，也暂不持久化。
+  - 区分 Agent click 与 drag：单击才进入 Focus，拖拽结束后的 click 不会误触发 Focus。
+  - README 和 Team Runtime 文档同步记录移动端本轮不处理、Agent 位置不持久化、Focus 锁定边界。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/graph/AtlasCanvasShell.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **测试**: 本轮最终验证见交付报告。
+- **边界**: 未改 `src/team/**`、`src/ui/team-page.ts`、`/playground/team` 或主项目 Agent 后端行为；未实现 WorkUnit / Plan 编排、Agent clone / instance / overlay / 画布局部技能安装；未处理移动端专项修复。
+
+---
+
+## 2026-05-24 — Team Console Agent Atlas 返工
+
+- **主题**: 将上一轮独立 Agent Canvas 收口回现有 Execution Atlas，修复无 live run 时 Agent 不可用和 scoped Agent chat 每句新建会话的问题。
+- **变更内容**:
+  - 默认 Mock 入口改为干净 `Agent workspace`，旧 demo run / `Research vendor A/B/C` 仅在切换到对应 fixture 后显示。
+  - 抽出可复用 Atlas shell，让 Agent 节点和执行节点共享同一网格、节点层、pan/zoom 与“重置视图”工具，不再渲染独立上方 Agent Canvas panel。
+  - Agent 节点进入 Focus Mode 时在同一 Atlas viewport 内展开 chat panel；切换焦点后收起会恢复进入 Focus Mode 前的 viewport。
+  - Live 模式无 team run 时仍保留 Agent workspace；Live scoped Agent chat 会复用返回的 `conversationId`，避免多轮对话每句创建新会话。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/app/app.css`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/graph/AtlasCanvasShell.tsx`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/src/tests/team-api.test.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **测试**: 本轮最终验证见交付报告。
+- **边界**: 未改 `src/team/**`、`src/ui/team-page.ts`、`/playground/team` 或主项目 Agent 后端行为；未实现 WorkUnit、Plan 编排、Agent clone / instance / overlay / 画布局部技能安装，也未做 stream、events、files 或 artifacts。
+
+---
+
+## 2026-05-24 — Team Console Agent Canvas MVP
+
+- **主题**: 在独立 `apps/team-console` preview 中加入 Agent catalog、画布 Agent 卡片、Agent Focus Mode 和最小非 stream scoped chat。
+- **变更内容**:
+  - Team Console API adapter 增加 `listAgents()` 和 `sendAgentMessage()`，Live API 分别调用 `GET /v1/agents` 与 `POST /v1/agents/:agentId/chat`；Mock fixture 提供 deterministic Agent catalog 和 assistant reply。
+  - Agent Canvas 允许从 catalog 添加真实主项目 Agent profile 引用，同一画布内同一 `agentId` 只能出现一次，已加入项在选择器中禁用。
+  - 点击 Agent 卡片进入 Focus Mode：当前卡片显示在上方，下方展开 `Agent Chat Panel`；收起恢复普通画布，聚焦态不创建持久 node。
+  - 聊天面板支持本地 user/assistant 消息、loading、错误展示和空消息拦截；第一版不做 stream、文件上传、artifact preview 或 conversation catalog。
+  - Vite dev server 代理新增 `/v1/agents`，README 和 Team Runtime 文档同步记录 mock/live 行为边界。
+- **影响范围**: `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/app/app.css`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/team-api.test.ts`, `apps/team-console/vite.config.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **测试**: 本轮最终验证见交付报告；本条记录随 Agent Canvas MVP 文档提交补齐。
+- **边界**: 未改 `src/team/**`、`src/ui/team-page.ts`、`/playground/team` 或主项目 Agent/Team Runtime 后端行为；未实现 WorkUnit 节点、Plan 编排、Agent clone / instance / overlay 或画布局部技能安装。
+
+---
+
+## 2026-05-24 — Team Console artifact 点击边界与缩放白屏修复
+
+- **主题**: 收紧 Execution Atlas artifact 预览语义，并修复桌面缩放后点击节点触发布局测量反馈循环导致白屏的问题。
+- **变更内容**:
+  - 只有通过当前 task/attempt 匹配、且文件名存在于 attempt metadata `files` 白名单中的 file-backed artifact card 会渲染为可点击 `button` 并调用 `readAttemptFile()`。
+  - Fallback Error / Attempt / Progress evidence 改为静态信息卡，不再点出"文件不在当前 attempt metadata 中"或"文件引用不属于当前任务"这类假预览错误。
+  - 真实 snapshot 2 补齐 Phase 1 / Phase 3 result 的 mock attempt metadata/file fixture，确保 `discover_directions`、首个 for_each child 和 `assemble_report` 的真实文件预览路径都可回归。
+  - Evidence / preview 高度测量改为 `offsetHeight` 优先、`scrollHeight` fallback，不再把 CSS scale 后的 `getBoundingClientRect().height` 写回 layout；滚轮缩放改为原生 non-passive `wheel` listener，避免 passive warning 和 React `Maximum update depth exceeded` 白屏。
+  - Evidence / preview SVG 虚线统一为中等亮度 accent 样式；task -> evidence 连接改为单条共享 fan-out trunk + 横向 stub，避免多条 L 形 path 叠在同一段竖线上，把竖线叠亮得比横线更抢眼。
+  - fixture 菜单可见标签继续保持中文，collapsed 展开/收起测试改成硬断言，防止 13 子任务折叠交互悄悄退化。
+- **影响范围**: `apps/team-console/src/app/app.css`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/ExecutionTaskDetail.tsx`, `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/handoff-current.md`, `docs/change-log.md`
+- **验证**: `npm --prefix apps/team-console run test` 164 passed；`npm --prefix apps/team-console run build` 通过；`git diff --check` 通过。
+- **浏览器验证**: `http://localhost:5176/` 的 "真实 run snapshot 2" 展开 13 个子任务后，滚轮缩放到 110%，点击“搜索引擎官方免费 API”不白屏，Worker / Checker / Watcher / Result evidence 正常显示；继续点击“最终结果”可展开二级预览，控制台未捕获 `Maximum update depth exceeded`、passive wheel warning 或假预览错误。
+- **边界**: 未改 Team Runtime 后端、`/playground/team`、`src/team/**`、`src/routes/**`、`src/ui/**`；未新增写 API。
+
+---
+
+## 2026-05-23 — Team Console artifact 预览、桌面画布控制与中文化
+
+- **主题**: Execution Atlas 选中 task 后改用真实 attempt metadata / attempt file 渲染 artifact 分支与二级预览，并补桌面 pan/zoom 和可见中文标签。
+- **变更内容**:
+  - Team Console API adapter 新增只读 `listAttempts()` / `readAttemptFile()`，Live API 使用现有 `/v1/team/runs/:runId/tasks/:taskId/attempts` 与 `/files/:fileName` 端点，Mock fixture 提供 deterministic attempt metadata/content。
+  - 选中 leaf task 时从真实 worker/checker/watcher/result refs 渲染 Worker 输出、Checker 验收、Watcher 复盘和最终 / 失败 / 发现结果 artifact card；for_each parent 有 visible children 时仍不显示 evidence。
+  - 点击 artifact card 后读取同一 run/task/attempt 下的真实 attempt file 并展开第二级预览节点：文本安全转义，JSON pretty print，HTML 只用 sandbox iframe。
+  - 桌面 Execution Atlas 增加鼠标滚轮缩放、背景拖拽平移，以及“放大 / 缩小 / 重置视图”工具按钮；pan/zoom 不持久化。
+  - Team Console app header、数据源选项、fixture label、root/node/evidence 标签中文化；手机端本轮只做最小烟测口径，不做深度交互设计。
+- **影响范围**: `apps/team-console/src/api/team-types.ts`, `apps/team-console/src/api/team-api.ts`, `apps/team-console/src/app/App.tsx`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/src/tests/team-api.test.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/handoff-current.md`, `docs/change-log.md`
+- **测试**: `npm --prefix apps/team-console run test` 155 passed；`npm --prefix apps/team-console run build` 通过；`git diff --check` 通过。
+- **边界**: 未改 Team Runtime 后端、`/playground/team`、`src/team/**`、`src/routes/**`、`src/ui/**`；未新增写 API，未调用 pause/resume/cancel/rerun/manual-disposition。
+
+---
+
+## 2026-05-23 — Team Console 真实 run snapshot 2、折叠展开与 evidence 规则收口
+
+- **主题**: 新增全成功 for_each 真实 fixture、实现 collapsed summary 展开/收起交互、收口 for_each 父任务 evidence 规则。
+- **变更内容**:
+  - 新增 `real-success-foreach` fixture（`plan_real_success_foreach_001` / `run_real_success_foreach_001`），16 个任务（3 主任务 + 13 for_each 子任务）全部 succeeded，含完整 `sourceItem` 结构和真实 hex attemptId。
+  - Collapsed summary 节点改为可展开 `<button>`：点击 "+ N 个子任务" 展开全部子任务，展开后末尾追加"收起"按钮再次点击收起。展开/收起时 `layoutExecutionMap()` 同步更新布局。
+  - for_each 父任务 evidence 规则：有 visible children（子任务数 ≤ `CHILD_COLLAPSE_THRESHOLD`(6) 或已展开）时不显示 evidence；无 visible children 时显示当前任务自身的 Result / Error / Progress。
+  - fixture 数据修正：attemptId 使用真实 hex 格式、resultRef 路径符合 `tasks/<taskId>/attempts/<attemptId>/accepted-result.md` 模式、子任务 `sourceItem` 包含完整 discovery item snapshot。
+- **影响范围**: `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/handoff-current.md`, `docs/change-log.md`
+- **测试**: `npm --prefix apps/team-console run test` 132 passed；`npm --prefix apps/team-console run build` 通过；`git diff --check` 通过。
+- **入口**: `http://127.0.0.1:5174/` -> "真实 run snapshot 2" -> 点击折叠节点展开子任务，点击任务查看 evidence。
+
+---
+
+## 2026-05-23 — Team Console Execution Atlas evidence 分支
+
+- **主题**: 将任务详情从固定侧栏 / 节点内文字堆叠收口为 Execution Atlas 上的 evidence 分支卡片；选中任务节点保持紧凑，Result / Error / Attempt / Progress 作为独立子节点从任务节点长出来。
+- **变更内容**:
+  - 删除固定右侧 `.workspace-detail` 任务详情栏，`ExecutionTaskDetail` 组件不再使用；选中节点不再渲染 `.emap-inline-detail`。
+  - 有 `resultRef` 的任务渲染 Result evidence card：文件名主视觉、Accepted / Failed / 最终汇报标签、弱化路径。
+  - 失败任务把 `errorSummary` 渲染为 Error evidence card；有活跃 attempt 时渲染 Attempt card；有 progress phase/message 时渲染 Progress card。
+  - for_each 父任务渲染子任务 Result evidence 组；无 `resultRef` 的 child 使用 ghost card 明确显示"无产物"，不伪造文件。
+  - evidence card 是 `.execution-map-nodes` 直接子节点，不是 selected task 的 descendant；移动端插入在 selected task 后一个 sibling，桌面端 absolute 定位到右侧并用 dashed SVG link 连接。
+  - 真实 run snapshot fixture 用来验证长错误、API 错误、resultRef、ghost result、最终汇报等真实数据形态。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/app/app.css`, `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/ExecutionTaskDetail.tsx`, `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/handoff-current.md`, `docs/change-log.md`
+- **测试**: `npm --prefix apps/team-console run test` 100 passed；`npm --prefix apps/team-console run build` 通过；`git diff --check` 通过。
+- **浏览器验证**: 1281px 桌面下 `搜索 知乎` evidence 位于 selected node 右侧且 4 条 evidence link 可见；375px 下 first evidence 紧跟 selected node，gap 8px，`evidenceFollowsSelected=true`，无横向 overflow。
+- **入口**: `http://127.0.0.1:5174/` -> "真实 run snapshot" -> 点击任务节点查看 evidence branches。
+
+## 2026-05-23 — Team Console 新增真实 run snapshot fixture
+
+- **主题**: 从本地 Team Runtime API 导出一份真实跑过的 run 记录，脱敏后作为 deterministic fixture，用于验证 Execution Atlas UI 对真实数据的渲染能力。
+- **数据来源**: `run_ae5d9551ed4a`（plan_3fea9e245348），status `completed_with_failures`，7 个任务含 4 个 for_each 子任务，混合成功/失败状态，含长错误摘要和 API 错误详情。
+- **脱敏规则**:
+  - planId/runId/teamUnitId 替换为 fixture 前缀（`plan_real_snap_001` / `run_real_snap_001` / `team_real_snap`）
+  - 知乎子任务错误摘要中的产品名替换为"目标产品"
+  - 微博子任务错误摘要中的 API request_id 和 chatcmpl ID 替换为 `req-sanitized` / `chatcmpl-sanitized`
+  - 移除 `finalizerRuntimeContext`、`schemaVersion`、`lease`、`activeElapsedMs` 等非 UI 字段
+  - 保留 attemptId 形态、resultRef 路径模式、错误摘要结构特征
+- **影响范围**: `apps/team-console/src/fixtures/team-fixtures.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `docs/change-log.md`
+- **入口**: fixture 切换栏新增 "真实 run snapshot" 按钮
+
+## 2026-05-23 — Team Console Execution Atlas review polish
+
+- **主题**: 修复 Execution Atlas 移动端 fixture bar 原生滚动条扎眼，以及执行节点缺少键盘可访问性的问题。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/app/app.css`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `docs/change-log.md`
 - **变更**:
-  - 主 `/playground` 在 `embed=team-console` 下把顶部 Agent 标签标记为 locked，只作为当前 Agent 标识展示
-  - locked 状态下 hover / focus 不再显示 Agent switcher 弹层，点击标签也不再跳转独立 Agents 页面
-  - 保留普通 `/playground` 的 Agent hover 切换菜单和 Agents 页面入口，不影响非嵌入使用
-- **边界**: 未改 Team Console iframe URL、Agent 状态接口或主 Agent profile 后端行为
+  - root 与普通 task 节点改为语义 `button`，保留原点击展开 / 二次点击收起 / 切换节点语义；collapsed summary 继续不可展开且不渲染为按钮。
+  - 增加 atlas 风格 `:focus-visible` 样式，支持键盘 Tab 聚焦后用 Enter / Space 触发按钮默认行为。
+  - fixture bar 保留横向滚动能力，但隐藏原生亮白滚动条，避免移动端破坏深色地图质感。
+
+## 2026-05-23 — Team Console Execution Atlas 视觉美化
+
+- **主题**: 在不改变 Team Runtime、数据结构、API 和点击语义的前提下，把 Execution Map 从深色卡片列表升级为更有层次的执行地图视觉。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/app/app.css`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `docs/change-log.md`
+- **变更**:
+  - 节点展示拆成 header / body / meta 层次，状态 pill、错误区域、result/attempt 信息形成统一的执行检查点语言。
+  - 连接线区分 spine 与 branch，selected chain 使用更明确的路径点亮效果。
+  - inline detail 改为 compact inspection sections / chips / code blocks，保留既有测量驱动展开高度。
+  - 画布和页面 chrome 增加克制的网格、轨道和深色空间层次，移动端仍保持纵向堆叠与防横向溢出。
+
+## 2026-05-23 — Team Console 失败节点基础高度修复
+
+- **主题**: 修复失败任务节点未展开时 `kind` / `title` / `errorFirstLine` 三行被 56px 卡片压扁的问题。
+- **影响范围**: `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `docs/change-log.md`
+- **变更**:
+  - 带 `errorFirstLine` 的 task 节点使用独立基础高度并参与 layout 与 SVG link 计算，普通成功 / pending / skipped 节点继续保持紧凑高度。
+  - selected inline detail 仍优先使用实测展开高度，避免失败节点基础高度覆盖真实内容高度。
+  - 明确节点文本 `line-height` 并禁止节点内容行被 flex shrink 压扁。
+
+## 2026-05-23 — Team Console inline detail 高度测量修复
+
+- **主题**: 修复 Live API 下 `assemble_report` 节点内联详情被固定展开高度裁剪的问题。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `docs/change-log.md`
+- **变更**:
+  - 展开节点不再依赖固定 `EXPANDED_NODE_HEIGHT=236`；选中节点渲染后按真实 `scrollHeight + border delta` 测量高度，并把测量值传回 layout 重新计算节点 y 坐标和 SVG link。
+  - 新增 DOM 测量测试覆盖 `scrollHeight > clientHeight` 时节点会自适应增高，避免 inline detail 被 `overflow: hidden` 裁剪。
+
+## 2026-05-23 — Team Console Execution Map 节点内联详情
+
+- **主题**: 移除 Execution Map 固定右侧任务详情栏，改为点击任务节点后在节点卡片内部展开 compact detail
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/app/app.css`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `docs/change-log.md`
+- **变更**:
+  - `App` 不再渲染 `.workspace-detail` / `ExecutionTaskDetail` 右侧栏；点击同一任务节点会收起，点击其他任务节点会切换展开项
+  - `ExecutionMap` 在选中任务节点内部渲染 compact inline detail，根节点继续只显示 Run 摘要和选中高亮，collapsed summary 仍不可展开
+  - `layoutExecutionMap()` 支持基于 `selectedTaskId` 使用展开节点高度重新计算 y 坐标，主线、分支节点和 SVG link 会跟随节点高度更新
+  - 删除不再使用的 `ExecutionTaskDetail` 组件和旧侧栏 CSS，并补充 inline detail、toggle、layout push-down 与移动端防横向溢出的测试
+
+## 2026-05-23 — Team Console Execution Map review blockers 修复
+
+- **主题**: 修复 Execution Map 根节点文字压扁、折叠间距、pending 视觉状态、文档事实错误
+- **影响范围**: `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `docs/change-log.md`
+- **变更**:
+  - 根节点（Run）中文状态文字不再被压扁：添加 `flex-shrink: 0` + `line-height: 1.2` 确保三行内容在 56px 内完整显示
+  - 修复折叠分支后主线 y 间距重复递增 bug（`currentY` 被多加一次 `NODE_HEIGHT + SPINE_Y_GAP`）
+  - `pending` 任务获得独立 `status-pending` 视觉（muted 灰色，无 pulse），不再冒充 `status-running`
+  - 折叠 summary 仅含 pending 子任务时显示 pending，含 running 时才显示 running
+  - 修正视觉重设计条目测试数：实际为 66（非 68）
+  - 新增 2 个测试（layout 间距对比 + collapsed running），修改 2 个测试（pending 状态断言更新），总测试数从 66 增长到 68
+
+## 2026-05-23 — Team Console Execution Map 视觉重设计
+
+- **主题**: Execution Map 从 list-like 测试 UI 进化为纵向流式执行图
+- **影响范围**: `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/graph/ExecutionMap.tsx`, `apps/team-console/src/graph/execution-map-layout.ts`, `apps/team-console/src/tests/execution-map-ui.test.tsx`, `apps/team-console/src/tests/execution-map-layout.test.ts`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - 节点样式重写：4px 彩色状态条（running 蓝色脉冲、succeeded 绿色、failed 红色渐变+错误首行、paused 黄色、dimmed 灰色半透明）、选中发光边框、chain-selected `color-mix` 路径混合、折叠虚线、orphan 点线、`data-kind` 属性
+  - 连接线优化：spine 使用 center-to-center 三次贝塞尔曲线、branch 使用 L 形直角折线、选中链路高亮
+  - 布局间距收紧：`SPINE_Y_GAP` 80→72、`BRANCH_Y_GAP` 64→56
+  - 新增 13 个测试（UI 9 个 + layout 4 个），总测试数从 55 增长到 66
+  - 三个独立 commit：node styling、layout polish、status readability
+  - 浏览器视觉验证通过：顺序/失败/Discovery+ForEach/Decomposition/大量子任务/跳过 共 6 个 fixture
+
+## 2026-05-23 — Team Console dev server Live API proxy
+
+- **主题**: Team Console Vite dev server 增加 `/v1/team` proxy，避免 Live API preview 打到 Vite 自己
+- **影响范围**: `apps/team-console/vite.config.ts`, `apps/team-console/README.md`, `docs/change-log.md`
+- **变更**:
+  - `apps/team-console` 本地开发服务现在把 `/v1/team/*` 转发到默认 `http://127.0.0.1:3000`
+  - 可通过 `TEAM_CONSOLE_API_TARGET` 覆盖代理目标
+  - Live API preview 在 dev 模式下不再由 Vite 返回 `index.html` 冒充 JSON 响应
+
+## 2026-05-23 — Team Console review blockers 修复
+
+- **主题**: 接通独立 Team Console preview 的 Live API 模式，并修复 Execution Map 归属、纯函数和折叠状态问题
+- **影响范围**: `apps/team-console/**`, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - Live API 模式现在真实请求 `GET /v1/team/plans`、`GET /v1/team/runs`、`GET /v1/team/runs/:runId`，按 `createdAt` 默认选择最新 run
+  - `buildExecutionMapModel()` 恢复安全 `sourceItemId` fallback，仅在单一 `for_each` parent 时归属；模糊归属继续进入 orphan group
+  - `buildExecutionMapModel()` 不再修改传入的 plan/run/taskDefinitions
+  - 大量子任务折叠 summary node 会根据隐藏子任务状态显示 failed/running/skipped/cancelled/succeeded，不再硬编码成功
+  - Team Console 仍是独立 preview，未替换 `/playground/team`，未改 Team Runtime 后端
+
+## 2026-05-23 — Team Console 独立前端预览
+
+- **主题**: 建立 `apps/team-console/` 独立 Vite + React + TypeScript 前端项目，实现 Team Runtime 纵向 Execution Map 原型
+- **影响范围**: `apps/team-console/**`（新目录）, `package.json`（新增 `team-console:*` 脚本）, `docs/team-runtime.md`, `docs/change-log.md`
+- **变更**:
+  - 新建独立前端子项目 `apps/team-console/`，可独立启动、构建、测试
+  - 实现 mock fixture（覆盖顺序、动态、拆分、失败、大量子任务、未归属、跳过场景）和 Live API adapter
+  - 实现纵向 Execution Map model/layout 纯函数（不依赖 DOM），42 个测试覆盖 model/layout/UI/adapter
+  - 实现可点击节点的执行图 UI 和任务详情面板
+  - 旧 `/playground/team` 页面和后端完全不受影响
 
 ## 2026-05-24 — 独立 Agents 页面 Agent ID 输入归一化
 

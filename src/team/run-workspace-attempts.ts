@@ -7,9 +7,11 @@ import type {
 	AttemptStatus,
 	TeamAttemptCheckerSummary,
 	TeamAttemptMetadata,
+	TeamAttemptRoleProcess,
 	TeamAttemptWatcherSummary,
 	TeamAttemptWorkerSummary,
 	TeamDiscoveryResultRecord,
+	TeamTaskDeliveryOutcome,
 } from "./types.js";
 
 const now = () => new Date().toISOString();
@@ -75,6 +77,26 @@ export class RunAttemptStore {
 	async recordAttemptWatcherResult(runId: string, taskId: string, attemptId: string, summary: TeamAttemptWatcherSummary): Promise<void> {
 		await this.mutateAttempt(runId, taskId, attemptId, (attempt) => {
 			attempt.watcher = summary;
+			attempt.updatedAt = now();
+			return attempt;
+		});
+	}
+
+	async recordAttemptRoleProcess(runId: string, taskId: string, attemptId: string, process: TeamAttemptRoleProcess): Promise<void> {
+		await this.mutateAttempt(runId, taskId, attemptId, (attempt) => {
+			attempt.roleProcesses = {
+				...(attempt.roleProcesses ?? {}),
+				[process.role]: process,
+			};
+			attempt.updatedAt = now();
+			return attempt;
+		});
+	}
+
+	async recordAttemptDeliveryOutcomes(runId: string, taskId: string, attemptId: string, outcomes: TeamTaskDeliveryOutcome[]): Promise<void> {
+		if (outcomes.length === 0) return;
+		await this.mutateAttempt(runId, taskId, attemptId, (attempt) => {
+			attempt.downstreamDelivery = outcomes;
 			attempt.updatedAt = now();
 			return attempt;
 		});
@@ -220,6 +242,8 @@ export class RunAttemptStore {
 		const phase: AttemptLifecyclePhase = validPhases.includes(rawPhase as AttemptLifecyclePhase) ? (rawPhase as AttemptLifecyclePhase) : phaseFallback;
 		const createdAt = (raw.createdAt as string) || "";
 		const updatedAt = (raw.updatedAt as string) || createdAt;
+		const roleProcesses = this.normalizeRoleProcesses(raw.roleProcesses);
+		const downstreamDelivery = this.normalizeDeliveryOutcomes(raw.downstreamDelivery);
 		return {
 			attemptId: (raw.attemptId as string) || fallbackAttemptId,
 			taskId: (raw.taskId as string) || fallbackTaskId,
@@ -233,6 +257,81 @@ export class RunAttemptStore {
 			watcher: raw.watcher && typeof raw.watcher === "object" && !Array.isArray(raw.watcher) ? raw.watcher as TeamAttemptMetadata["watcher"] : null,
 			resultRef: (raw.resultRef as string | null) ?? null,
 			errorSummary: (raw.errorSummary as string | null) ?? null,
+			...(roleProcesses ? { roleProcesses } : {}),
+			...(downstreamDelivery ? { downstreamDelivery } : {}),
+		};
+	}
+
+	private normalizeRoleProcesses(raw: unknown): TeamAttemptMetadata["roleProcesses"] | undefined {
+		if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+		const processes = raw as Record<string, unknown>;
+		const worker = this.normalizeRoleProcess("worker", processes.worker);
+		const checker = this.normalizeRoleProcess("checker", processes.checker);
+		if (!worker && !checker) return undefined;
+		return {
+			...(worker ? { worker } : {}),
+			...(checker ? { checker } : {}),
+		};
+	}
+
+	private normalizeRoleProcess(role: "worker" | "checker", raw: unknown): TeamAttemptRoleProcess | undefined {
+		if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+		const value = raw as Record<string, unknown>;
+		const status = value.status;
+		if (status !== "waiting" && status !== "running" && status !== "succeeded" && status !== "failed" && status !== "cancelled") {
+			return undefined;
+		}
+		const assistantText = this.normalizeAssistantText(value.assistantText);
+		return {
+			role,
+			profileId: typeof value.profileId === "string" ? value.profileId : "",
+			status,
+			startedAt: typeof value.startedAt === "string" ? value.startedAt : null,
+			updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : null,
+			finishedAt: typeof value.finishedAt === "string" ? value.finishedAt : null,
+			...(assistantText ? { assistantText } : {}),
+			process: value.process && typeof value.process === "object" && !Array.isArray(value.process)
+				? value.process as TeamAttemptRoleProcess["process"]
+				: null,
+		};
+	}
+
+	private normalizeDeliveryOutcomes(raw: unknown): TeamTaskDeliveryOutcome[] | undefined {
+		if (!Array.isArray(raw) || raw.length === 0) return undefined;
+		const validStatuses = new Set(["delivered", "skipped", "failed"]);
+		const outcomes: TeamTaskDeliveryOutcome[] = [];
+		for (const item of raw) {
+			if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+			const value = item as Record<string, unknown>;
+			const status = value.status;
+			if (typeof status !== "string" || !validStatuses.has(status)) continue;
+			const connectionId = value.connectionId;
+			const toTaskId = value.toTaskId;
+			const toInputPortId = value.toInputPortId;
+			const createdAt = value.createdAt;
+			if (typeof connectionId !== "string" || typeof toTaskId !== "string" || typeof toInputPortId !== "string" || typeof createdAt !== "string") continue;
+			const outcome: TeamTaskDeliveryOutcome = {
+				connectionId,
+				toTaskId,
+				toInputPortId,
+				status: status as TeamTaskDeliveryOutcome["status"],
+				createdAt,
+			};
+			if (typeof value.staleReason === "string") outcome.staleReason = value.staleReason as TeamTaskDeliveryOutcome["staleReason"];
+			if (typeof value.downstreamRunId === "string") outcome.downstreamRunId = value.downstreamRunId;
+			if (typeof value.error === "string") outcome.error = value.error;
+			outcomes.push(outcome);
+		}
+		return outcomes.length > 0 ? outcomes : undefined;
+	}
+
+	private normalizeAssistantText(raw: unknown): TeamAttemptRoleProcess["assistantText"] | undefined {
+		if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+		const value = raw as Record<string, unknown>;
+		if (typeof value.content !== "string" || typeof value.updatedAt !== "string") return undefined;
+		return {
+			content: value.content,
+			updatedAt: value.updatedAt,
 		};
 	}
 
