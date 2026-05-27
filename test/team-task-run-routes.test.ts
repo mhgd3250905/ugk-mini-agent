@@ -207,16 +207,21 @@ test("successful typed Task output creates an artifact and auto-starts connected
 		assert.equal(downstream.source?.triggeredBy?.connectionId, connection.connectionId);
 		assert.equal(downstream.source?.triggeredBy?.fromTaskId, collect.taskId);
 		assert.equal(downstream.source?.triggeredBy?.fromRunId, upstreamRun.runId);
-		assert.equal(downstream.source?.boundInputs?.[0]?.connectionId, connection.connectionId);
-		assert.equal(downstream.source?.boundInputs?.[0]?.inputPortId, "source_md");
-		assert.equal(downstream.source?.boundInputs?.[0]?.artifact.type, "md");
-		assert.equal(downstream.source?.boundInputs?.[0]?.artifact.sourceTaskId, collect.taskId);
-		assert.equal(downstream.source?.boundInputs?.[0]?.artifact.sourceRunId, upstreamRun.runId);
-		assert.ok(downstream.source?.boundInputs?.[0]?.artifact.sourceAttemptId, "bound artifact must have sourceAttemptId");
-		assert.equal(downstream.source?.boundInputs?.[0]?.artifact.sourceOutputPortId, "draft_md");
-		assert.equal(downstream.source?.boundInputs?.[0]?.artifact.fileRef, upstreamTaskState.resultRef);
-		assert.match(downstream.source?.boundInputs?.[0]?.artifact.preview ?? "", /accepted result/);
-		assert.match(downstream.source?.boundInputs?.[0]?.artifact.content ?? "", /accepted result/);
+		const boundInput = downstream.source?.boundInputs?.[0];
+		assert.ok(boundInput, "downstream run must have one bound input");
+		if (boundInput.source === "canvas-source") {
+			assert.fail("downstream task connection must bind a task artifact, not a canvas source");
+		}
+		assert.equal(boundInput.connectionId, connection.connectionId);
+		assert.equal(boundInput.inputPortId, "source_md");
+		assert.equal(boundInput.artifact.type, "md");
+		assert.equal(boundInput.artifact.sourceTaskId, collect.taskId);
+		assert.equal(boundInput.artifact.sourceRunId, upstreamRun.runId);
+		assert.ok(boundInput.artifact.sourceAttemptId, "bound artifact must have sourceAttemptId");
+		assert.equal(boundInput.artifact.sourceOutputPortId, "draft_md");
+		assert.equal(boundInput.artifact.fileRef, upstreamTaskState.resultRef);
+		assert.match(boundInput.artifact.preview ?? "", /accepted result/);
+		assert.match(boundInput.artifact.content ?? "", /accepted result/);
 
 		const chainedPlanRunsRes = await app.inject({ method: "GET", url: "/v1/team/runs" });
 		assert.equal(chainedPlanRunsRes.statusCode, 200);
