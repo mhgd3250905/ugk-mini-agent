@@ -134,7 +134,8 @@ type TaskRunObserverState = {
 type RootArchiveConfirm =
   | { kind: "source"; sourceNodeId: string; nodeId: string; title: string }
   | { kind: "task"; task: TeamCanvasTask; nodeId: string }
-  | { kind: "agent"; nodeId: string; agentId: string; name: string };
+  | { kind: "agent"; nodeId: string; agentId: string; name: string }
+  | { kind: "batch"; items: Array<RootArchiveConfirm> };
 
 function errorMessage(error: unknown): string {
   if (error && typeof error === "object" && "message" in error) {
@@ -1719,30 +1720,33 @@ export function App() {
     setRootArchiveSaving(true);
     const pending = rootArchiveConfirm;
     try {
-      if (pending.kind === "source") {
-        const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-        await api.archiveSourceNode(pending.sourceNodeId);
-        if (dataSource === "live") {
-          await refreshLiveTasks();
-        } else {
-          const [nextSources, nextConnections] = await Promise.all([
-            api.listSourceNodes(),
-            api.listSourceConnections(),
-          ]);
-          setSourceNodes(nextSources);
-          setSourceAtlasNodes((current) => current.filter((node) =>
-            nextSources.some((source) => source.sourceNodeId === node.sourceNodeId),
-          ));
-          setSourceConnections(nextConnections);
+      const items = pending.kind === "batch" ? pending.items : [pending];
+      for (const item of items) {
+        if (item.kind === "source") {
+          const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+          await api.archiveSourceNode(item.sourceNodeId);
+          if (dataSource === "live") {
+            await refreshLiveTasks();
+          } else {
+            const [nextSources, nextConnections] = await Promise.all([
+              api.listSourceNodes(),
+              api.listSourceConnections(),
+            ]);
+            setSourceNodes(nextSources);
+            setSourceAtlasNodes((current) => current.filter((node) =>
+              nextSources.some((source) => source.sourceNodeId === node.sourceNodeId),
+            ));
+            setSourceConnections(nextConnections);
+          }
+          setMinimizedSourceNodeIds((current) => current.filter((id) => id !== item.nodeId));
+        } else if (item.kind === "task") {
+          const ok = await archiveTask(item.task, item.nodeId);
+          if (!ok) return;
+        } else if (item.kind === "agent") {
+          setAgentNodes((current) => current.filter((node) => node.nodeId !== item.nodeId));
+          setMinimizedAgentNodeIds((current) => current.filter((id) => id !== item.nodeId));
+          setExpandedAgentBranch((current) => current?.nodeId === item.nodeId ? null : current);
         }
-        setMinimizedSourceNodeIds((current) => current.filter((id) => id !== pending.nodeId));
-      } else if (pending.kind === "task") {
-        const ok = await archiveTask(pending.task, pending.nodeId);
-        if (!ok) return;
-      } else {
-        setAgentNodes((current) => current.filter((node) => node.nodeId !== pending.nodeId));
-        setMinimizedAgentNodeIds((current) => current.filter((id) => id !== pending.nodeId));
-        setExpandedAgentBranch((current) => current?.nodeId === pending.nodeId ? null : current);
       }
       setRootArchiveConfirm(null);
       setError(null);
@@ -3178,14 +3182,16 @@ export function App() {
         <div className="root-archive-modal-overlay">
           <div className="root-archive-modal" role="dialog" aria-modal="true" aria-labelledby="root-archive-modal-title">
             <h3 className="root-archive-modal-title" id="root-archive-modal-title">
-              {rootArchiveConfirm.kind === "source" && "归档 Source"}
-              {rootArchiveConfirm.kind === "task" && "归档 Task"}
-              {rootArchiveConfirm.kind === "agent" && "移出 Agent"}
+              {rootArchiveConfirm.kind === "batch" ? "批量移除/归档" : rootArchiveConfirm.kind === "source" ? "归档 Source" : rootArchiveConfirm.kind === "task" ? "归档 Task" : "移出 Agent"}
             </h3>
             <p className="root-archive-modal-body">
-              {rootArchiveConfirm.kind === "source" && `确认归档 Source "${rootArchiveConfirm.title}"？归档后无法恢复。`}
-              {rootArchiveConfirm.kind === "task" && `确认归档 Task "${rootArchiveConfirm.task.title}"？归档后无法恢复。`}
-              {rootArchiveConfirm.kind === "agent" && `确认将 Agent "${rootArchiveConfirm.name}" 移出画布？不会删除真实 Agent。`}
+              {rootArchiveConfirm.kind === "batch"
+                ? `确认移除/归档 ${rootArchiveConfirm.items.length} 个节点？Agent 只从画布移出，Task/Source 将软归档。`
+                : rootArchiveConfirm.kind === "source"
+                  ? `确认归档 Source "${rootArchiveConfirm.title}"？归档后无法恢复。`
+                  : rootArchiveConfirm.kind === "task"
+                    ? `确认归档 Task "${rootArchiveConfirm.task.title}"？归档后无法恢复。`
+                    : `确认将 Agent "${rootArchiveConfirm.name}" 移出画布？不会删除真实 Agent。`}
             </p>
             <div className="root-archive-modal-actions">
               <button
@@ -3277,6 +3283,28 @@ export function App() {
                 viewport={canvasViewport}
                 onViewportChange={setCanvasViewport}
                 toolbarStart={agentToolbar}
+                onRootTrashDrop={(entries) => {
+                  const items: Array<RootArchiveConfirm> = [];
+                  for (const entry of entries) {
+                    if (entry.kind === "agent") {
+                      const agent = agentsById?.get(entry.nodeId);
+                      if (agent) items.push({ kind: "agent", nodeId: entry.nodeId, agentId: agent.agentId, name: agent.name });
+                    } else if (entry.kind === "task") {
+                      const taskNode = taskNodes.find((n) => n.nodeId === entry.nodeId);
+                      const task = taskNode ? tasksById?.get(taskNode.taskId) : undefined;
+                      if (task) items.push({ kind: "task", task, nodeId: entry.nodeId });
+                    } else {
+                      const srcNode = sourceAtlasNodes.find((n) => n.nodeId === entry.nodeId);
+                      const source = srcNode ? sourceNodesById?.get(srcNode.sourceNodeId) : undefined;
+                      if (source) items.push({ kind: "source", sourceNodeId: source.sourceNodeId, nodeId: entry.nodeId, title: source.title });
+                    }
+                  }
+                  if (items.length === 1) {
+                    setRootArchiveConfirm(items[0]!);
+                  } else if (items.length > 1) {
+                    setRootArchiveConfirm({ kind: "batch", items });
+                  }
+                }}
               />
             </div>
           </div>

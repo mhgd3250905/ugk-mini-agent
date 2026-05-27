@@ -95,6 +95,7 @@ interface ExecutionMapProps {
   onViewportChange?: (viewport: AtlasViewport) => void;
   toolbarStart?: ReactNode;
   interactionMode?: AtlasInteractionMode;
+  onRootTrashDrop?: (entries: AtlasNodeDragEntry[]) => void;
 }
 
 type TaskChildBranchPanelDescriptor = NonNullable<ExecutionMapProps["taskChildBranchPanels"]>[number];
@@ -753,6 +754,7 @@ export function ExecutionMap({
   onViewportChange,
   toolbarStart,
   interactionMode = "free",
+  onRootTrashDrop,
 }: ExecutionMapProps) {
   const evidenceContainerRef = useRef<HTMLDivElement | null>(null);
   const [measuredHeights, setMeasuredHeights] = useState<MeasuredHeights>({});
@@ -765,6 +767,7 @@ export function ExecutionMap({
   const [taskBranchMeasuredSizes, setTaskBranchMeasuredSizes] = useState<TaskBranchMeasuredSizeMap>({});
   const [selectedAtlasNodeKeys, setSelectedAtlasNodeKeys] = useState<Set<string>>(new Set());
   const [rootDropTarget, setRootDropTarget] = useState<"dock" | "trash" | null>(null);
+  const [isAtlasDragging, setIsAtlasDragging] = useState(false);
   const [flightAnimation, setFlightAnimation] = useState<{
     fromX: number; fromY: number; fromW: number; fromH: number;
     toX: number; toY: number; toW: number; toH: number;
@@ -779,6 +782,7 @@ export function ExecutionMap({
   const taskBranchShellRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const atlasNodeDragRef = useRef<AtlasNodeDragState | null>(null);
   const dockRef = useRef<HTMLElement | null>(null);
+  const trashRef = useRef<HTMLElement | null>(null);
   const suppressAgentClickRef = useRef<string | null>(null);
   const suppressTaskClickRef = useRef<string | null>(null);
   const agentBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
@@ -1227,6 +1231,7 @@ export function ExecutionMap({
       entries: buildAtlasDragEntries(node, kind),
       hasMoved: false,
     };
+    setIsAtlasDragging(true);
     event.currentTarget.setPointerCapture?.(event.pointerId);
   }, [buildAtlasDragEntries, canMoveAgents, canMoveSourceNodes, canMoveTasks, onMoveAgent, onMoveCanvasTask, onMoveSourceNode]);
 
@@ -1247,7 +1252,21 @@ export function ExecutionMap({
       const dockRect = dockRef.current.getBoundingClientRect();
       const overDock = event.clientX >= dockRect.left && event.clientX <= dockRect.right
         && event.clientY >= dockRect.top && event.clientY <= dockRect.bottom;
-      setRootDropTarget((prev) => overDock && prev !== "trash" ? "dock" : prev === "dock" && !overDock ? null : prev);
+      if (overDock) {
+        setRootDropTarget("dock");
+      } else if (rootDropTarget === "dock") {
+        setRootDropTarget(null);
+      }
+    }
+    if (trashRef.current) {
+      const trashRect = trashRef.current.getBoundingClientRect();
+      const overTrash = event.clientX >= trashRect.left && event.clientX <= trashRect.right
+        && event.clientY >= trashRect.top && event.clientY <= trashRect.bottom;
+      if (overTrash) {
+        setRootDropTarget("trash");
+      } else if (rootDropTarget === "trash") {
+        setRootDropTarget(null);
+      }
     }
 
     const scale = viewportScale(viewport);
@@ -1327,12 +1346,20 @@ export function ExecutionMap({
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.stopPropagation();
     atlasNodeDragRef.current = null;
+    setIsAtlasDragging(false);
     event.currentTarget.releasePointerCapture?.(event.pointerId);
     setRootDropTarget(null);
 
     if (drag.hasMoved) {
       suppressNextAgentClick(drag.primaryNodeId);
       if (checkDockDrop(drag, event)) return;
+      if (trashRef.current) {
+        const trashRect = trashRef.current.getBoundingClientRect();
+        if (event.clientX >= trashRect.left && event.clientX <= trashRect.right && event.clientY >= trashRect.top && event.clientY <= trashRect.bottom) {
+          onRootTrashDrop?.(drag.entries);
+          return;
+        }
+      }
       return;
     }
 
@@ -1373,12 +1400,20 @@ export function ExecutionMap({
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.stopPropagation();
     atlasNodeDragRef.current = null;
+    setIsAtlasDragging(false);
     event.currentTarget.releasePointerCapture?.(event.pointerId);
     setRootDropTarget(null);
 
     if (drag.hasMoved) {
       suppressNextTaskClick(drag.primaryNodeId);
       if (checkDockDrop(drag, event)) return;
+      if (trashRef.current) {
+        const trashRect = trashRef.current.getBoundingClientRect();
+        if (event.clientX >= trashRect.left && event.clientX <= trashRect.right && event.clientY >= trashRect.top && event.clientY <= trashRect.bottom) {
+          onRootTrashDrop?.(drag.entries);
+          return;
+        }
+      }
       return;
     }
 
@@ -1716,9 +1751,20 @@ export function ExecutionMap({
     />
   ) : null;
 
-  const overlay = nodeHub || maximizedOverlay || flightOverlay ? (
+  const trashEl = isAtlasDragging ? (
+    <div
+      ref={trashRef}
+      className={`emap-root-trash${rootDropTarget === "trash" ? " is-visible is-hover" : " is-visible"}`}
+      aria-label="移除根节点"
+    >
+      🗑
+    </div>
+  ) : null;
+
+  const overlay = nodeHub || maximizedOverlay || flightOverlay || trashEl ? (
     <>
       {nodeHub}
+      {trashEl}
       {flightOverlay}
       {maximizedOverlay}
     </>
