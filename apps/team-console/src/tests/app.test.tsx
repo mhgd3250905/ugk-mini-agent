@@ -2005,7 +2005,7 @@ describe("App", () => {
     });
   });
 
-  it("minimizes root Agent and Task nodes into the left hub and restores them", async () => {
+  it("minimizes root Agent and Task nodes into the bottom dock and restores them", async () => {
     const { container } = render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
@@ -2028,13 +2028,13 @@ describe("App", () => {
     expect(container.querySelector(".agent-playground-branch")).toBeNull();
     expect(container.querySelector(".task-action-branch")).toBeNull();
 
-    const hub = container.querySelector(".emap-node-hub") as HTMLElement | null;
-    expect(hub).toBeTruthy();
-    expect(within(hub!).getByRole("button", { name: /复原 Agent 主 Agent/ })).toBeInTheDocument();
-    expect(within(hub!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ })).toBeInTheDocument();
+    const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
+    expect(dock).toBeTruthy();
+    expect(within(dock!).getByRole("button", { name: /复原 Agent 主 Agent/ })).toBeInTheDocument();
+    expect(within(dock!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ })).toBeInTheDocument();
 
-    fireEvent.click(within(hub!).getByRole("button", { name: /复原 Agent 主 Agent/ }));
-    fireEvent.click(within(hub!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ }));
+    fireEvent.click(within(dock!).getByRole("button", { name: /复原 Agent 主 Agent/ }));
+    fireEvent.click(within(dock!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ }));
 
     expect(container.querySelector('.emap-agent-node[data-agent-id="main"]')).toBeTruthy();
     expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeTruthy();
@@ -2741,9 +2741,9 @@ describe("App", () => {
     });
     expect(agentArchiveCalled).toBe(false);
 
-    const hub = container.querySelector(".emap-node-hub") as HTMLElement | null;
-    if (hub) {
-      expect(within(hub).queryByRole("button", { name: /复原 Agent 主 Agent/ })).toBeNull();
+    const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
+    if (dock) {
+      expect(within(dock).queryByRole("button", { name: /复原 Agent 主 Agent/ })).toBeNull();
     }
   });
 
@@ -7752,6 +7752,108 @@ describe("App", () => {
         mockTeamTasks.pop();
         resetMockTeamApiState();
       }
+    });
+  });
+
+  describe("root category segmented filter", () => {
+    it("defaults to ALL showing Agent, Task, and Source nodes", async () => {
+      const { container } = render(<App />);
+      const atlasNodes = getAtlasNodes(container);
+      await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" });
+      expect(atlasNodes.querySelector(".emap-canvas-task-node")).toBeTruthy();
+    });
+
+    it("hides Task and Source when switching to Agent filter", async () => {
+      const { container } = render(<App />);
+      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+      const atlasNodes = getAtlasNodes(container);
+      await within(atlasNodes).findByRole("button", { name: "主 Agent" });
+      expect(atlasNodes.querySelector(".emap-canvas-task-node")).toBeTruthy();
+
+      const agentFilter = screen.getByRole("button", { name: /^Agent$/ });
+      fireEvent.click(agentFilter);
+
+      expect(atlasNodes.querySelector(".emap-canvas-task-node")).toBeNull();
+      expect(atlasNodes.querySelector(".emap-agent-node")).toBeTruthy();
+    });
+
+    it("shows Task and Source but hides Agent when switching to Task filter", async () => {
+      const { container } = render(<App />);
+      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+      const atlasNodes = getAtlasNodes(container);
+      await within(atlasNodes).findByRole("button", { name: "主 Agent" });
+
+      const taskFilter = screen.getByRole("button", { name: /^Task$/ });
+      fireEvent.click(taskFilter);
+
+      expect(atlasNodes.querySelector(".emap-agent-node")).toBeNull();
+      expect(atlasNodes.querySelector(".emap-canvas-task-node")).toBeTruthy();
+    });
+
+    it("restores all nodes when switching back to ALL", async () => {
+      const { container } = render(<App />);
+      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+      const atlasNodes = getAtlasNodes(container);
+      await within(atlasNodes).findByRole("button", { name: "主 Agent" });
+
+      fireEvent.click(screen.getByRole("button", { name: /^Agent$/ }));
+      expect(atlasNodes.querySelector(".emap-canvas-task-node")).toBeNull();
+
+      fireEvent.click(screen.getByRole("button", { name: /^ALL$/ }));
+      expect(atlasNodes.querySelector(".emap-agent-node")).toBeTruthy();
+      expect(atlasNodes.querySelector(".emap-canvas-task-node")).toBeTruthy();
+    });
+  });
+
+  describe("long-press lasso selection", () => {
+    const SELECTION_LONG_PRESS_MS = 200;
+
+    it("selects Agent and Task after left-button long-press", async () => {
+      const { container } = render(<App />);
+      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+      const atlas = getAtlas(container);
+      const atlasNodes = getAtlasNodes(container);
+      const agentNode = within(atlasNodes).getByRole("button", { name: "主 Agent" }) as HTMLElement;
+      const taskNode = await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" }) as HTMLElement;
+
+      vi.useFakeTimers();
+      firePointer(atlas, "pointerdown", { pointerId: 41, clientX: 220, clientY: 0 });
+      vi.advanceTimersByTime(SELECTION_LONG_PRESS_MS + 1);
+      firePointer(atlas, "pointermove", { pointerId: 41, clientX: 720, clientY: 420 });
+      firePointer(atlas, "pointerup", { pointerId: 41, clientX: 720, clientY: 420, buttons: 0 });
+      vi.useRealTimers();
+
+      expect(agentNode).toHaveClass("is-atlas-selected");
+      expect(taskNode).toHaveClass("is-atlas-selected");
+    });
+
+    it("pans instead of selecting on quick drag before long-press delay", async () => {
+      const { container } = render(<App />);
+      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+      const atlas = getAtlas(container);
+      const atlasNodes = getAtlasNodes(container);
+      const agentNode = within(atlasNodes).getByRole("button", { name: "主 Agent" }) as HTMLElement;
+      const taskNode = await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" }) as HTMLElement;
+
+      vi.useFakeTimers();
+      firePointer(atlas, "pointerdown", { pointerId: 42, clientX: 300, clientY: 200 });
+      vi.advanceTimersByTime(50);
+      firePointer(atlas, "pointermove", { pointerId: 42, clientX: 400, clientY: 300 });
+      firePointer(atlas, "pointerup", { pointerId: 42, clientX: 400, clientY: 300, buttons: 0 });
+      vi.useRealTimers();
+
+      expect(agentNode).not.toHaveClass("is-atlas-selected");
+      expect(taskNode).not.toHaveClass("is-atlas-selected");
     });
   });
 
