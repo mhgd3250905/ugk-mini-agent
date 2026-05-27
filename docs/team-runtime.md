@@ -34,6 +34,7 @@
 - Team Console mock fixtures 已加入脱敏真实 run snapshot 2（`plan_real_success_foreach_001` / `run_real_success_foreach_001`），16 个任务（3 主任务 + 13 for_each 子任务）全部成功，用于验证折叠/展开交互和大量子任务布局。
 - Execution Atlas collapsed summary 已支持展开/收起：超过 `CHILD_COLLAPSE_THRESHOLD`(6) 个子任务时折叠为摘要节点；点击摘要节点展开全部子任务，展开后末尾显示"收起"按钮再次点击收起。布局在展开/收起时同步更新。
 - Execution Atlas evidence 规则：for_each 父任务有 visible children（子任务数 ≤ 阈值或已展开）时不显示 evidence；无 visible children 时显示当前任务自身的结果 / 错误 / 进度。
+- Team Console 多 Task 聚焦布局稳定：切换聚焦 Task 不会导致其他 Task 的二级面板重定位或连接线锚错父菜单。每个活跃 Task 菜单维护独立的 shell 尺寸测量（`taskBranchMeasuredSizes` / `taskBranchShellRefs` map 替代旧单例），child panel connector 只锚定自己的 parent menu，`sourceId` 无法解析时不再回退到主 `taskBranchNode`。
 
 ## 核心概念
 

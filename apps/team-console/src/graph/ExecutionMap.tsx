@@ -199,12 +199,6 @@ type AgentBranchInteractionState = {
   capturedTarget?: HTMLDivElement | null;
 };
 
-type TaskBranchMeasuredSize = {
-  nodeId: string;
-  width: number;
-  height: number;
-};
-
 type TaskBranchMeasuredSizeMap = Record<string, { width: number; height: number }>;
 
 type TaskSubtreeScope = "root" | "menu" | { panelId: string };
@@ -2770,7 +2764,6 @@ export function ExecutionMap({
             </div>
           )}
           {taskBranchEntries.map((entry) => {
-            const isPrimary = entry.id === primaryTaskBranchEntry?.id;
             return (
               <div
                 key={`task-branch-${entry.id}`}

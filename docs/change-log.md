@@ -41,6 +41,17 @@
 
 ---
 
+## 2026-05-27 — Team Console Task 分支聚焦布局修复
+
+- **主题**: 修复 Team Console 画布中多个 Task 菜单同时展开时，切换聚焦 Task 会导致其他 Task 的二级面板重定位和连接线锚错父菜单的问题。
+- **变更内容**:
+  - 单例 `taskBranchMeasuredSize` / `taskBranchShellRef` 替换为 map（`taskBranchMeasuredSizes` / `taskBranchShellRefs`），每个活跃 Task 菜单独立维护 shell 尺寸测量，聚焦切换不再覆盖其他 Task 的测量值。
+  - `taskChildBranchPanelsLayout` 不再在 child panel 的 `sourceId` 无法解析时回退到主 `taskBranchNode`，避免连接线错误锚到其他 Task 的菜单节点。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`（分支测量和 child panel layout）、`apps/team-console/src/tests/app.test.tsx`（聚焦布局测试）。
+- **对应入口**: Team Console 画布多 Task 菜单同时展开场景。
+
+---
+
 ## 2026-05-27 — Team Console Leader 复制按钮与归档弹窗修复
 
 - **主题**: 修复 Team Console 三个前端体验问题：Leader 上下文预览占空间过大、远程 HTTP 复制失败、根卡归档确认条样式丑陋。
