@@ -32,6 +32,10 @@ import type {
   TeamTaskConnectionCreateRequest,
   TeamTaskConnectionListResponse,
   TeamTaskConnectionMutationResponse,
+  TeamTaskDependency,
+  TeamTaskDependencyCreateRequest,
+  TeamTaskDependencyListResponse,
+  TeamTaskDependencyMutationResponse,
   TeamTaskMutationResponse,
   TeamTaskUpdateRequest,
   TeamPlan,
@@ -48,6 +52,9 @@ export interface TeamApiProvider {
   listTasks(): Promise<TeamCanvasTask[]>;
   listTaskConnections(): Promise<TeamTaskConnection[]>;
   createTaskConnection(input: TeamTaskConnectionCreateRequest): Promise<TeamTaskConnection>;
+  listTaskDependencies(): Promise<TeamTaskDependency[]>;
+  createTaskDependency(input: TeamTaskDependencyCreateRequest): Promise<TeamTaskDependency>;
+  deleteTaskDependency(dependencyId: string): Promise<void>;
   listSourceNodes(): Promise<TeamCanvasSourceNode[]>;
   createSourceNode(input: TeamCanvasSourceNodeCreateRequest): Promise<TeamCanvasSourceNode>;
   updateSourceNode(sourceNodeId: string, patch: TeamCanvasSourceNodeUpdateRequest): Promise<TeamCanvasSourceNode>;
@@ -180,6 +187,49 @@ export class LiveTeamApi implements TeamApiProvider {
       }
       const body = (await res.json()) as TeamTaskConnectionMutationResponse;
       return body.connection;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async listTaskDependencies(): Promise<TeamTaskDependency[]> {
+    try {
+      const res = await fetch(`${this.baseUrl}/task-dependencies`);
+      if (res.status === 404) return [];
+      if (!res.ok) throw res;
+      const body = (await res.json()) as TeamTaskDependencyListResponse | TeamTaskDependency[];
+      if (Array.isArray(body)) return body;
+      return Array.isArray(body.dependencies) ? body.dependencies : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async createTaskDependency(input: TeamTaskDependencyCreateRequest): Promise<TeamTaskDependency> {
+    try {
+      const res = await fetch(`${this.baseUrl}/task-dependencies`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      const body = (await res.json()) as TeamTaskDependencyMutationResponse;
+      return body.dependency;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async deleteTaskDependency(dependencyId: string): Promise<void> {
+    try {
+      const res = await fetch(`${this.baseUrl}/task-dependencies/${encodeURIComponent(dependencyId)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
     } catch (e) {
       throw toApiError(e);
     }

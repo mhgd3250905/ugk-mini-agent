@@ -96,7 +96,8 @@ export type TeamAttemptRoleProcesses = Partial<Record<TeamAttemptRoleProcessRole
 
 export type TeamTaskDeliveryOutcomeStatus = "delivered" | "skipped" | "failed";
 
-export interface TeamTaskDeliveryOutcome {
+export interface TeamTaskTypedConnectionDeliveryOutcome {
+  edgeKind?: "typed-connection";
   connectionId: string;
   toTaskId: string;
   toInputPortId: string;
@@ -106,6 +107,27 @@ export interface TeamTaskDeliveryOutcome {
   error?: string;
   createdAt: string;
 }
+
+export type TaskDependencyStaleReason =
+  | "source_task_missing"
+  | "source_task_archived"
+  | "target_task_missing"
+  | "target_task_archived";
+
+export interface TeamTaskControlDependencyDeliveryOutcome {
+  edgeKind: "control-dependency";
+  dependencyId: string;
+  toTaskId: string;
+  status: TeamTaskDeliveryOutcomeStatus;
+  staleReason?: TaskDependencyStaleReason;
+  downstreamRunId?: string;
+  error?: string;
+  createdAt: string;
+}
+
+export type TeamTaskDeliveryOutcome =
+  | TeamTaskTypedConnectionDeliveryOutcome
+  | TeamTaskControlDependencyDeliveryOutcome;
 
 export interface TeamAttemptMetadata {
   attemptId: string;
@@ -218,6 +240,31 @@ export interface TeamTaskConnectionCreateRequest {
   fromOutputPortId: string;
   toTaskId: string;
   toInputPortId: string;
+}
+
+export interface TeamTaskDependency {
+  schemaVersion: "team/task-dependency-1";
+  dependencyId: string;
+  fromTaskId: string;
+  toTaskId: string;
+  trigger: "on_success";
+  status?: "active" | "stale";
+  staleReason?: TaskDependencyStaleReason;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TeamTaskDependencyListResponse {
+  dependencies: TeamTaskDependency[];
+}
+
+export interface TeamTaskDependencyMutationResponse {
+  dependency: TeamTaskDependency;
+}
+
+export interface TeamTaskDependencyCreateRequest {
+  fromTaskId: string;
+  toTaskId: string;
 }
 
 export type TeamCanvasSourceNodeType = "text" | "file";
@@ -402,13 +449,21 @@ export interface TeamRunState {
   source?: {
     type: "canvas-task";
     taskId: string;
-    triggeredBy?: {
-      type: "task-connection";
-      connectionId: string;
-      fromTaskId: string;
-      fromRunId: string;
-      fromAttemptId: string;
-    };
+    triggeredBy?:
+      | {
+          type: "task-connection";
+          connectionId: string;
+          fromTaskId: string;
+          fromRunId: string;
+          fromAttemptId: string;
+        }
+      | {
+          type: "task-dependency";
+          dependencyId: string;
+          fromTaskId: string;
+          fromRunId: string;
+          fromAttemptId: string;
+        };
     boundInputs?: TeamTaskBoundInput[];
   };
   teamUnitId: string;

@@ -24,6 +24,8 @@ import type {
   TeamCanvasTask,
   TeamTaskConnection,
   TeamTaskConnectionCreateRequest,
+  TeamTaskDependency,
+  TeamTaskDependencyCreateRequest,
   TeamTaskMutationResponse,
   TeamTaskUpdateRequest,
   TeamPlan,
@@ -910,6 +912,8 @@ let mockTaskRunsByTaskId = new Map<string, TeamRunState[]>();
 let mockTaskRunAttempts = new Map<string, TeamAttemptMetadata[]>();
 let mockTaskRunFiles = new Map<string, string>();
 let mockTaskConnections: TeamTaskConnection[] = [];
+let mockTaskDependencies: TeamTaskDependency[] = [];
+let mockTaskDependencyCounter = 0;
 let mockSourceNodes: TeamCanvasSourceNode[] = [];
 let mockSourceConnections: TeamCanvasSourceConnection[] = [];
 let mockSourceNodeCounter = 0;
@@ -999,6 +1003,8 @@ export function resetMockTeamApiState() {
   mockTaskRunAttempts = new Map();
   mockTaskRunFiles = new Map();
   mockTaskConnections = [];
+  mockTaskDependencies = [];
+  mockTaskDependencyCounter = 0;
   mockSourceNodes = [];
   mockSourceConnections = [];
   mockTaskRunCounter = 0;
@@ -1321,6 +1327,35 @@ export class MockTeamApi {
     };
     mockTaskConnections = [...mockTaskConnections, connection];
     return { ...connection };
+  }
+
+  async listTaskDependencies(): Promise<TeamTaskDependency[]> {
+    return mockTaskDependencies.map((dep) => ({ ...dep }));
+  }
+
+  async createTaskDependency(input: TeamTaskDependencyCreateRequest): Promise<TeamTaskDependency> {
+    if (input.fromTaskId === input.toTaskId) throw { message: "task dependency cannot target the same task" };
+    if (mockTaskDependencies.some((d) => d.fromTaskId === input.fromTaskId && d.toTaskId === input.toTaskId)) {
+      throw { message: "task dependency already exists" };
+    }
+    const timestamp = ts();
+    const dependency: TeamTaskDependency = {
+      schemaVersion: "team/task-dependency-1",
+      dependencyId: `mock_dep_${++mockTaskDependencyCounter}`,
+      fromTaskId: input.fromTaskId,
+      toTaskId: input.toTaskId,
+      trigger: "on_success",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    mockTaskDependencies = [...mockTaskDependencies, dependency];
+    return { ...dependency };
+  }
+
+  async deleteTaskDependency(dependencyId: string): Promise<void> {
+    const next = mockTaskDependencies.filter((d) => d.dependencyId !== dependencyId);
+    if (next.length === mockTaskDependencies.length) throw { message: "dependency not found" };
+    mockTaskDependencies = next;
   }
 
   async listSourceNodes(): Promise<TeamCanvasSourceNode[]> {

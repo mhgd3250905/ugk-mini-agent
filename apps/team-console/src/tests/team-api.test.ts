@@ -240,6 +240,41 @@ describe("MockTeamApi", () => {
     expect(state.activeRun?.status).toBe("interrupted");
     expect(state.running).toBe(false);
   });
+
+  it("creates, lists, and deletes mock Task dependencies", async () => {
+    const dep = await api.createTaskDependency({
+      fromTaskId: "task_a",
+      toTaskId: "task_b",
+    });
+
+    expect(dep.dependencyId).toMatch(/^mock_dep_/);
+    expect(dep.trigger).toBe("on_success");
+
+    const all = await api.listTaskDependencies();
+    expect(all).toHaveLength(1);
+    expect(all[0]!.fromTaskId).toBe("task_a");
+
+    await api.deleteTaskDependency(dep.dependencyId);
+    await expect(api.listTaskDependencies()).resolves.toEqual([]);
+  });
+
+  it("rejects mock self dependency", async () => {
+    await expect(api.createTaskDependency({
+      fromTaskId: "task_a",
+      toTaskId: "task_a",
+    })).rejects.toEqual({ message: "task dependency cannot target the same task" });
+  });
+
+  it("rejects duplicate mock dependency", async () => {
+    await api.createTaskDependency({
+      fromTaskId: "task_a",
+      toTaskId: "task_b",
+    });
+    await expect(api.createTaskDependency({
+      fromTaskId: "task_a",
+      toTaskId: "task_b",
+    })).rejects.toEqual({ message: "task dependency already exists" });
+  });
 });
 
 describe("LiveTeamApi", () => {
@@ -533,7 +568,7 @@ describe("LiveTeamApi", () => {
     expect(attempts[0]!.downstreamDelivery!).toHaveLength(1);
     expect(attempts[0]!.downstreamDelivery![0]!.status).toBe("failed");
     expect(attempts[0]!.downstreamDelivery![0]!.error).toBe("downstream task not found");
-    expect(attempts[0]!.downstreamDelivery![0]!.connectionId).toBe("conn_dd_1");
+    expect((attempts[0]!.downstreamDelivery![0] as { connectionId: string }).connectionId).toBe("conn_dd_1");
     expect(attempts[0]!.downstreamDelivery![0]!.toTaskId).toBe("task_dd_downstream");
   });
 
@@ -1132,6 +1167,89 @@ describe("LiveTeamApi", () => {
     expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).not.toContain("/v1/team/task-connections");
     expect(listed).toEqual([sourceConnection]);
     expect(created).toEqual(sourceConnection);
+  });
+
+  it("lists live Task dependencies from the task-dependencies endpoint", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const dependency = {
+      schemaVersion: "team/task-dependency-1",
+      dependencyId: "dep_1",
+      fromTaskId: "task_a",
+      toTaskId: "task_b",
+      trigger: "on_success",
+      status: "active",
+      createdAt: "2026-05-27T00:00:00.000Z",
+      updatedAt: "2026-05-27T00:00:00.000Z",
+    } as const;
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ dependencies: [dependency] }), { status: 200 }));
+
+    const dependencies = await api.listTaskDependencies();
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/task-dependencies");
+    expect(dependencies).toEqual([dependency]);
+  });
+
+  it("treats missing Task dependencies endpoint as an empty list", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response("not found", { status: 404 }));
+
+    await expect(api.listTaskDependencies()).resolves.toEqual([]);
+  });
+
+  it("creates live Task dependencies by posting fromTaskId and toTaskId", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const dependency = {
+      schemaVersion: "team/task-dependency-1",
+      dependencyId: "dep_new",
+      fromTaskId: "task_a",
+      toTaskId: "task_b",
+      trigger: "on_success",
+      createdAt: "2026-05-27T00:00:00.000Z",
+      updatedAt: "2026-05-27T00:00:00.000Z",
+    };
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ dependency }), { status: 201 }));
+
+    const created = await api.createTaskDependency({ fromTaskId: "task_a", toTaskId: "task_b" });
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/task-dependencies", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fromTaskId: "task_a", toTaskId: "task_b" }),
+    });
+    expect(created.dependencyId).toBe("dep_new");
+    expect(created.trigger).toBe("on_success");
+  });
+
+  it("deletes live Task dependencies by dependency id", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }));
+
+    await api.deleteTaskDependency("dep/a b");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/task-dependencies/dep%2Fa%20b", {
+      method: "DELETE",
+    });
+  });
+
+  it("preserves stale Task dependency status and staleReason in list response", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const staleDep = {
+      schemaVersion: "team/task-dependency-1",
+      dependencyId: "dep_stale",
+      fromTaskId: "task_archived",
+      toTaskId: "task_b",
+      trigger: "on_success",
+      status: "stale",
+      staleReason: "source_task_archived",
+      createdAt: "2026-05-27T00:00:00.000Z",
+      updatedAt: "2026-05-27T00:00:00.000Z",
+    } as const;
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ dependencies: [staleDep] }), { status: 200 }));
+
+    const dependencies = await api.listTaskDependencies();
+
+    expect(dependencies[0]?.status).toBe("stale");
+    expect(dependencies[0]?.staleReason).toBe("source_task_archived");
   });
 
 });
