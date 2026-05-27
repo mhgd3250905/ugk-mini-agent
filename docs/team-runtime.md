@@ -142,7 +142,39 @@ Source node 输入契约：
 - V1 不做任意复杂自由画布编排、条件分支、循环、真实 TTS 或 SSE 观察流。
 - Source node 只作为直接 Canvas Task run 的输入绑定，不是工作流触发器，不提供条件、循环、广播、多源聚合或自由执行引擎。
 - TTS 只作为类型系统 fixture：未来 `md -> audio` 的 Task 可以复用同一套 port / artifact / connection 规则。
-- 第一条真实验收链路固定为“搜集内容 Task 输出 `md` -> HTML 制作 Task 输入 `md`、输出 `html`”。
+- 第一条真实验收链路固定为”搜集内容 Task 输出 `md` -> HTML 制作 Task 输入 `md`、输出 `html`”。
+
+### Task Control Dependencies
+
+Control dependency 是 typed connection 之外的第二类 Task DAG 边。它只表达”Task A 成功完成后自动启动 Task B”，不传数据、不要求端口、不生成 artifact、不写 `boundInputs`。
+
+与 typed connection 的区别：
+
+| | Typed Connection | Control Dependency |
+|---|---|---|
+| 数据传递 | 有（typed artifact → boundInputs） | 无 |
+| 端口要求 | 需要 output/input port 且类型匹配 | 不需要 ports |
+| 产物类型 | accepted result → typed artifact | 不生成 artifact |
+| 下游输入 | `boundInputs` 写入 prompt 和 payload | 不写 `boundInputs` |
+| 线条样式 | 实线 + source socket | 虚线 amber（`.emap-link-task-dependency`） |
+
+后端契约：
+
+- 持久化文件：`.data/team/task-dependencies.json`
+- API：`GET /v1/team/task-dependencies`、`POST /v1/team/task-dependencies`、`DELETE /v1/team/task-dependencies/:dependencyId`
+- 数据结构：`{ dependencyId, fromTaskId, toTaskId, trigger: “on_success”, createdAt, updatedAt }`
+- 后端创建 dependency 时校验 Task 存在、未归档、非自连接、非重复、不与现有 typed connections + control dependencies 合并后形成环。
+- `GET` 返回运行时派生的 `status: “active” | “stale”` 和可选 `staleReason`（`source_task_missing` / `source_task_archived` / `target_task_missing` / `target_task_archived`）。
+- Cycle 防护覆盖混合图（typed connections + control dependencies 共同参与环检测）。
+
+下游触发：
+
+- 上游 Canvas Task run 成功并通过 checker 后，系统检查所有从该 Task 出发的 active control dependency，为每个下游 Task 创建独立的 Canvas Task run。
+- 下游 run 的 `state.source.triggeredBy` 记录 `{ type: “task-dependency”, dependencyId, fromTaskId, fromRunId, fromAttemptId }`。
+- 下游 run 不写 `state.source.boundInputs`（除非该 Task 同时有 active typed connection 的 source binding）。
+- 上游失败或取消不触发 dependency 下游。
+- Stale dependency 记录 `skipped` delivery outcome，不阻塞上游 accepted run。
+- Delivery outcome 类型为 `TeamTaskControlDependencyDeliveryOutcome`（`edgeKind: “control-dependency”`），与 typed connection 的 `TeamTaskTypedConnectionDeliveryOutcome`（默认 `edgeKind: “typed-connection”`）构成 union。
 
 ### Canvas Task Run
 

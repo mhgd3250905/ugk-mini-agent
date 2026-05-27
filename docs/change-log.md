@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-28 — Team Console Task control dependency 交付修复
+
+- **主题**: 修复 Codex review 对 Task control dependency 实现提出的交付问题：EOL whitespace 假 diff、mock 模式 dependency handle 点击无效、文档缺失。
+- **变更内容**:
+  - 恢复 `src/team/run-workspace-attempts.ts` 的 LF 行尾，消除提交区间的 375 行 whitespace churn。
+  - 修复 mock 模式下 dependency handle 可点击但无响应：`completeTaskDependency()` 现在根据 `dataSource` 选择 `MockTeamApi` 或 `LiveTeamApi`，不再只支持 live 模式。
+  - `loadFixture()` 和 mock 数据初始化路径补充 `setTaskDependencies([])` / `setTaskDependencyDraft(null)` 重置。
+  - 补齐 `apps/team-console/README.md`（typed connection vs control dependency 区别、API 列表、mock 模式说明）。
+  - 补齐 `docs/team-runtime.md`（control dependency 后端契约、API、持久化、下游触发、stale 规则、delivery outcome）。
+- **影响范围**: `src/team/run-workspace-attempts.ts`（EOL only）、`apps/team-console/src/app/App.tsx`（mock fix）、`apps/team-console/src/tests/app.test.tsx`（回归测试）、`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/change-log.md`。
+- **对应入口**: Team Console 画布 Task dependency handle。
+
 ## 2026-05-27 — Team Console Task 面板 toggle 与位置记忆修复
 
 - **主题**: 修复 Team Console 画布里 Task 操作树的两个基础交互问题：二级入口缺少 toggle、面板收起再展开后丢失手动位置和尺寸。
