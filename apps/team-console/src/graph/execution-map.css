@@ -910,6 +910,50 @@
   border-color: rgba(121, 216, 208, 0.62);
 }
 
+.agent-playground-branch-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-leader-copy-status {
+  color: var(--secondary);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.task-leader-copy-fallback {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 6px;
+  padding: 7px 10px 9px;
+  border-bottom: 1px solid rgba(255, 190, 96, 0.18);
+  background: rgba(255, 113, 136, 0.06);
+}
+
+.task-leader-copy-fallback p {
+  margin: 0;
+  color: var(--secondary);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+.task-leader-copy-fallback textarea {
+  width: 100%;
+  min-height: 72px;
+  max-height: 112px;
+  resize: vertical;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 190, 96, 0.24);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
 .agent-playground-iframe {
   flex: 1 1 auto;
   width: 100%;
@@ -1043,59 +1087,6 @@
   color: rgb(255, 214, 128);
   font-family: var(--font-mono);
   font-size: 10px;
-}
-
-.task-leader-context-copy {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px 10px;
-  border-bottom: 1px solid rgba(255, 190, 96, 0.14);
-  background: rgba(255, 190, 96, 0.03);
-}
-
-.task-leader-context-copy-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.task-leader-context-copy-head > span {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--secondary);
-}
-
-.task-leader-context-copy-head > button {
-  flex-shrink: 0;
-  font-size: 10px;
-  padding: 2px 8px;
-}
-
-.task-leader-context-copy-text {
-  flex: 1 1 0;
-  min-height: 0;
-  max-height: 160px;
-  overflow-y: auto;
-  margin: 0;
-  padding: 6px 8px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.22);
-  color: var(--secondary);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  line-height: 1.4;
-  white-space: pre-wrap;
-  word-break: break-word;
-  user-select: text;
-}
-
-.task-leader-context-copy-status {
-  font-size: 10px;
-  color: var(--secondary);
-  opacity: 0.8;
 }
 
 .task-action-menu {

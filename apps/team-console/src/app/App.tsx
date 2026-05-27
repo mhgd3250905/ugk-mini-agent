@@ -886,6 +886,8 @@ export function App() {
   const [rootArchiveConfirm, setRootArchiveConfirm] = useState<RootArchiveConfirm | null>(null);
   const [rootArchiveSaving, setRootArchiveSaving] = useState(false);
   const [taskLeaderContextCopyState, setTaskLeaderContextCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [taskLeaderManualCopyText, setTaskLeaderManualCopyText] = useState<string | null>(null);
+  const taskLeaderManualCopyRef = useRef<HTMLTextAreaElement | null>(null);
 
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
   const tasksById = useMemo(() => new Map(tasks.map((task) => [task.taskId, task])), [tasks]);
@@ -1684,12 +1686,58 @@ export function App() {
     }
   }, [rootArchiveSaving]);
 
+  useEffect(() => {
+    if (!rootArchiveConfirm || rootArchiveSaving) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setRootArchiveConfirm(null);
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [rootArchiveConfirm, rootArchiveSaving]);
+
+  useEffect(() => {
+    if (taskLeaderContextCopyState !== "failed" || !taskLeaderManualCopyText) return;
+    taskLeaderManualCopyRef.current?.focus();
+    taskLeaderManualCopyRef.current?.select();
+  }, [taskLeaderContextCopyState, taskLeaderManualCopyText]);
+
   const copyTaskLeaderContext = useCallback(async (text: string) => {
+    setTaskLeaderContextCopyState("idle");
+    setTaskLeaderManualCopyText(null);
     try {
-      await navigator.clipboard.writeText(text);
-      setTaskLeaderContextCopyState("copied");
+      const clipboard = globalThis.navigator?.clipboard;
+      if (clipboard?.writeText) {
+        try {
+          await clipboard.writeText(text);
+          setTaskLeaderContextCopyState("copied");
+          setTaskLeaderManualCopyText(null);
+          return;
+        } catch { /* fall through to textarea fallback */ }
+      }
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("data-copy-fallback", "");
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      const prev = document.activeElement as HTMLElement | null;
+      ta.focus();
+      ta.select();
+      try {
+        const execCopy = document.execCommand?.bind(document);
+        if (!execCopy?.("copy")) throw new Error("execCommand copy returned false");
+        setTaskLeaderContextCopyState("copied");
+        setTaskLeaderManualCopyText(null);
+      } finally {
+        ta.remove();
+        prev?.focus();
+      }
     } catch {
       setTaskLeaderContextCopyState("failed");
+      setTaskLeaderManualCopyText(text);
     }
   }, []);
 
@@ -2287,6 +2335,7 @@ export function App() {
                   { ...branch, detailMode: "leader-chat" },
                 ]);
                 setTaskLeaderContextCopyState("idle");
+                setTaskLeaderManualCopyText(null);
               }}
             >
               {"\u5bf9\u8bdd Leader"}
@@ -2434,6 +2483,7 @@ export function App() {
           onClick={() => {
             setTaskArchiveConfirming(false);
             setTaskLeaderContextCopyState("idle");
+            setTaskLeaderManualCopyText(null);
             setExpandedTaskBranch((current) => current ? { ...current, detailMode: "leader-chat" } : current);
           }}
         >
@@ -2484,36 +2534,45 @@ export function App() {
             <strong>{expandedTask.title}</strong>
             <code>{expandedTask.taskId}</code>
           </div>
-          <button
-            type="button"
-            className="agent-playground-branch-collapse"
-            onClick={() => setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current)}
-            aria-label={`收起 ${expandedTask.title} leader 对话`}
-          >
-            收起
-          </button>
-        </header>
-        <div className="task-leader-branch-hint">
-          在对话中使用 <code>/team-task</code> 创建或更新这个 Task。Task 数据必须通过后端 API 写入。
-        </div>
-        <div className="task-leader-context-copy">
-          <div className="task-leader-context-copy-head">
-            <span>当前 Task 上下文</span>
+          <div className="agent-playground-branch-actions">
             <button
               type="button"
               className="task-action-menu-button"
               onClick={() => { void copyTaskLeaderContext(formatTaskLeaderContext(expandedTask)); }}
+              aria-label="复制 Task 上下文"
             >
               复制 Task 上下文
             </button>
+            {taskLeaderContextCopyState !== "idle" && (
+              <span role="status" className="task-leader-copy-status">
+                {taskLeaderContextCopyState === "copied" ? "已复制" : "复制失败"}
+              </span>
+            )}
+            <button
+              type="button"
+              className="agent-playground-branch-collapse"
+              onClick={() => setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current)}
+              aria-label={`收起 ${expandedTask.title} leader 对话`}
+            >
+              收起
+            </button>
           </div>
-          <pre className="task-leader-context-copy-text">{formatTaskLeaderContext(expandedTask)}</pre>
-          {taskLeaderContextCopyState !== "idle" && (
-            <div className="task-leader-context-copy-status" role="status">
-              {taskLeaderContextCopyState === "copied" ? "已复制" : "复制失败，请手动选中上下文复制"}
-            </div>
-          )}
+        </header>
+        <div className="task-leader-branch-hint">
+          在对话中使用 <code>/team-task</code> 创建或更新这个 Task。Task 数据必须通过后端 API 写入。
         </div>
+        {taskLeaderContextCopyState === "failed" && taskLeaderManualCopyText && (
+          <div className="task-leader-copy-fallback" role="group" aria-label="Task 上下文手动复制">
+            <p>自动复制失败。下面文本已选中，按 Ctrl+C 后再粘贴到 Leader 对话。</p>
+            <textarea
+              ref={taskLeaderManualCopyRef}
+              aria-label="手动复制 Task 上下文"
+              readOnly
+              value={taskLeaderManualCopyText}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          </div>
+        )}
         <iframe
           className="agent-playground-iframe"
           title={`${expandedTask.title} leader 对话`}
@@ -2879,34 +2938,41 @@ export function App() {
       )}
 
       {rootArchiveConfirm && (
-        <div className="root-archive-confirm" role="status">
-          <span>
-            {rootArchiveConfirm.kind === "source" && `确认归档 Source "${rootArchiveConfirm.title}"？归档后无法恢复。`}
-            {rootArchiveConfirm.kind === "task" && `确认归档 Task "${rootArchiveConfirm.task.title}"？归档后无法恢复。`}
-            {rootArchiveConfirm.kind === "agent" && `确认将 Agent "${rootArchiveConfirm.name}" 移出画布？不会删除真实 Agent。`}
-          </span>
-          <div className="root-archive-confirm-actions">
-            <button
-              type="button"
-              className="root-archive-cancel"
-              onClick={cancelRootArchive}
-              disabled={rootArchiveSaving}
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              className="root-archive-confirm-button"
-              onClick={confirmRootArchive}
-              disabled={rootArchiveSaving}
-              aria-label={rootArchiveConfirm.kind === "agent" ? "确认移出画布" : "确认归档"}
-            >
-              {rootArchiveSaving
-                ? "处理中..."
-                : rootArchiveConfirm.kind === "agent"
-                  ? "确认移出画布"
-                  : "确认归档"}
-            </button>
+        <div className="root-archive-modal-overlay">
+          <div className="root-archive-modal" role="dialog" aria-modal="true" aria-labelledby="root-archive-modal-title">
+            <h3 className="root-archive-modal-title" id="root-archive-modal-title">
+              {rootArchiveConfirm.kind === "source" && "归档 Source"}
+              {rootArchiveConfirm.kind === "task" && "归档 Task"}
+              {rootArchiveConfirm.kind === "agent" && "移出 Agent"}
+            </h3>
+            <p className="root-archive-modal-body">
+              {rootArchiveConfirm.kind === "source" && `确认归档 Source "${rootArchiveConfirm.title}"？归档后无法恢复。`}
+              {rootArchiveConfirm.kind === "task" && `确认归档 Task "${rootArchiveConfirm.task.title}"？归档后无法恢复。`}
+              {rootArchiveConfirm.kind === "agent" && `确认将 Agent "${rootArchiveConfirm.name}" 移出画布？不会删除真实 Agent。`}
+            </p>
+            <div className="root-archive-modal-actions">
+              <button
+                type="button"
+                className="root-archive-modal-cancel"
+                onClick={cancelRootArchive}
+                disabled={rootArchiveSaving}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="root-archive-modal-confirm"
+                onClick={confirmRootArchive}
+                disabled={rootArchiveSaving}
+                aria-label={rootArchiveConfirm.kind === "agent" ? "确认移出画布" : "确认归档"}
+              >
+                {rootArchiveSaving
+                  ? "处理中..."
+                  : rootArchiveConfirm.kind === "agent"
+                    ? "确认移出画布"
+                    : "确认归档"}
+              </button>
+            </div>
           </div>
         </div>
       )}

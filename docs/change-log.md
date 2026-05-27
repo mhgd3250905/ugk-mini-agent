@@ -12,6 +12,20 @@
 
 ---
 
+## 2026-05-27 — Team Console Leader 复制按钮与归档弹窗修复
+
+- **主题**: 修复 Team Console 三个前端体验问题：Leader 上下文预览占空间过大、远程 HTTP 复制失败、根卡归档确认条样式丑陋。
+- **变更内容**:
+  - Leader 对话分支移除 `.task-leader-context-copy` 大块上下文预览和 `<pre>` 文本，"复制 Task 上下文"按钮移入 header 右侧 `.agent-playground-branch-actions` 组，和"收起"按钮同行。
+  - 复制功能增加 fallback：`navigator.clipboard.writeText` 失败或不支持时，自动使用隐藏 `<textarea>` + `document.execCommand("copy")`，覆盖远程 HTTP 非安全上下文场景。
+  - 如果 Clipboard API 和 `execCommand("copy")` 都不可用，Leader 分支会临时展开一个小型只读文本框并自动选中上下文，用户可按 Ctrl+C 手动复制，避免按钮只显示失败而拿不到文本。
+  - 根卡归档 / 移出确认从顶部裸 `.root-archive-confirm` 条替换为自定义 modal（`role="dialog"`、`aria-modal="true"`、深色 panel、danger 按钮样式）；支持 Escape 键关闭（保存中不关闭）。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/src/app/app.css`, `apps/team-console/src/graph/execution-map.css`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **验证**: `npm --prefix apps/team-console run test`（373 passed）、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check` 已通过；新增 clipboard fallback 测试（happy path / clipboard reject → fallback / clipboard unavailable → fallback / both fail）和 modal dialog 断言（`role="dialog"`、`aria-modal`、cancel / confirm / failure）。
+- **边界**: 不改主 `/playground` 产品 UI，不改 Team runtime 后端 API，不改 `.pi/skills` runtime skill。
+
+---
+
 ## 2026-05-27 — Team Console 远程 iframe 与 Vite proxy 修复
 
 - **主题**: 修复远程通过 `5174` 访问 Team Console 时，Agent / Leader iframe 默认打到 `127.0.0.1:3000` 的问题。

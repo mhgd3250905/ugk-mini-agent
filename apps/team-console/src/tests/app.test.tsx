@@ -2066,7 +2066,7 @@ describe("App", () => {
     expect(iframe?.getAttribute("src")).toContain("teamTaskMode=edit");
   });
 
-  it("shows current Task context in the Leader chat branch", async () => {
+  it("no longer renders large context preview in the Leader chat branch", async () => {
     const { container } = render(<App />);
 
     fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
@@ -2074,21 +2074,28 @@ describe("App", () => {
 
     const branch = container.querySelector(".task-leader-chat-branch") as HTMLElement | null;
     expect(branch).toBeTruthy();
-    const contextBlock = branch!.querySelector(".task-leader-context-copy") as HTMLElement | null;
-    expect(contextBlock).toBeTruthy();
-    expect(contextBlock!.textContent).toContain("当前 Task 上下文");
-    expect(contextBlock!.textContent).toContain("taskId: task_research_medtrum");
-    expect(contextBlock!.textContent).toContain("title: 调查 Medtrum 云资产");
-    expect(contextBlock!.textContent).toContain("leaderAgentId: main");
-    expect(contextBlock!.textContent).toContain("workerAgentId: search");
-    expect(contextBlock!.textContent).toContain("checkerAgentId: main");
-    expect(contextBlock!.textContent).toContain("workUnit.input.text");
-    expect(contextBlock!.textContent).toContain("workUnit.outputContract.text");
-    expect(contextBlock!.textContent).toContain("每条发现必须包含来源或搜索线索");
-    expect(contextBlock!.textContent).toContain("teamTaskMode: edit");
+
+    // No large context preview block or <pre> element
+    expect(branch!.querySelector(".task-leader-context-copy")).toBeNull();
+    expect(branch!.querySelector(".task-leader-context-copy-text")).toBeNull();
+    expect(branch!.querySelector("pre")).toBeNull();
+
+    // Compact copy button is inside the header
+    const header = branch!.querySelector(".agent-playground-branch-head") as HTMLElement | null;
+    expect(header).toBeTruthy();
+    expect(within(header!).getByRole("button", { name: /复制 Task 上下文/ })).toBeInTheDocument();
+
+    // iframe still present with correct src params
+    const iframe = branch!.querySelector("iframe") as HTMLIFrameElement | null;
+    expect(iframe).toBeTruthy();
+    expect(iframe?.getAttribute("src")).toContain("/playground?view=chat");
+    expect(iframe?.getAttribute("src")).toContain("agentId=main");
+    expect(iframe?.getAttribute("src")).toContain("embed=team-console");
+    expect(iframe?.getAttribute("src")).toContain("teamTaskId=task_research_medtrum");
+    expect(iframe?.getAttribute("src")).toContain("teamTaskMode=edit");
   });
 
-  it("copies current Task context from the Leader chat branch", async () => {
+  it("copies current Task context from the Leader chat branch header", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       value: { writeText },
@@ -2101,7 +2108,9 @@ describe("App", () => {
     fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "对话 Leader" }));
 
-    const copyButton = screen.getByRole("button", { name: /复制 Task 上下文/ });
+    const branch = container.querySelector(".task-leader-chat-branch") as HTMLElement | null;
+    const header = branch!.querySelector(".agent-playground-branch-head") as HTMLElement | null;
+    const copyButton = within(header!).getByRole("button", { name: /复制 Task 上下文/ });
     fireEvent.click(copyButton);
 
     await waitFor(() => {
@@ -2117,7 +2126,7 @@ describe("App", () => {
     });
   });
 
-  it("keeps context visible when clipboard copy fails", async () => {
+  it("keeps branch functional when clipboard copy fails", async () => {
     const writeText = vi.fn().mockRejectedValue(new Error("not allowed"));
     Object.defineProperty(navigator, "clipboard", {
       value: { writeText },
@@ -2130,18 +2139,111 @@ describe("App", () => {
     fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
     fireEvent.click(screen.getByRole("button", { name: "对话 Leader" }));
 
-    const copyButton = screen.getByRole("button", { name: /复制 Task 上下文/ });
+    const branch = container.querySelector(".task-leader-chat-branch") as HTMLElement | null;
+    const header = branch!.querySelector(".agent-playground-branch-head") as HTMLElement | null;
+    const copyButton = within(header!).getByRole("button", { name: /复制 Task 上下文/ });
     fireEvent.click(copyButton);
 
     await waitFor(() => {
       expect(screen.getByRole("status").textContent).toContain("复制失败");
     });
 
-    // Context text remains visible
-    const branch = container.querySelector(".task-leader-chat-branch") as HTMLElement | null;
-    expect(branch!.querySelector(".task-leader-context-copy-text")!.textContent).toContain("taskId: task_research_medtrum");
     // Iframe remains present
     expect(branch!.querySelector("iframe")).toBeTruthy();
+  });
+
+  it("falls back to execCommand when clipboard API rejects", async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error("not allowed"));
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      writable: true,
+      configurable: true,
+    });
+    const execCopy = vi.fn().mockReturnValue(true);
+    Object.defineProperty(document, "execCommand", {
+      value: execCopy,
+      writable: true,
+      configurable: true,
+    });
+
+    const { container } = render(<App />);
+
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
+    fireEvent.click(screen.getByRole("button", { name: "对话 Leader" }));
+
+    const branch = container.querySelector(".task-leader-chat-branch") as HTMLElement | null;
+    const header = branch!.querySelector(".agent-playground-branch-head") as HTMLElement | null;
+    fireEvent.click(within(header!).getByRole("button", { name: /复制 Task 上下文/ }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("status").textContent).toContain("已复制");
+    });
+
+    // Temp textarea was cleaned up
+    expect(document.querySelector("textarea[data-copy-fallback]")).toBeNull();
+  });
+
+  it("falls back to execCommand when clipboard API is unavailable", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
+    const execCopy = vi.fn().mockReturnValue(true);
+    Object.defineProperty(document, "execCommand", {
+      value: execCopy,
+      writable: true,
+      configurable: true,
+    });
+
+    const { container } = render(<App />);
+
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
+    fireEvent.click(screen.getByRole("button", { name: "对话 Leader" }));
+
+    const branch = container.querySelector(".task-leader-chat-branch") as HTMLElement | null;
+    const header = branch!.querySelector(".agent-playground-branch-head") as HTMLElement | null;
+    fireEvent.click(within(header!).getByRole("button", { name: /复制 Task 上下文/ }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("status").textContent).toContain("已复制");
+    });
+
+    expect(document.querySelector("textarea[data-copy-fallback]")).toBeNull();
+  });
+
+  it("shows a selectable manual copy fallback when both clipboard API and execCommand fail", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
+    const execCopy = vi.fn().mockReturnValue(false);
+    Object.defineProperty(document, "execCommand", {
+      value: execCopy,
+      writable: true,
+      configurable: true,
+    });
+
+    const { container } = render(<App />);
+
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
+    fireEvent.click(screen.getByRole("button", { name: "对话 Leader" }));
+
+    const branch = container.querySelector(".task-leader-chat-branch") as HTMLElement | null;
+    const header = branch!.querySelector(".agent-playground-branch-head") as HTMLElement | null;
+    fireEvent.click(within(header!).getByRole("button", { name: /复制 Task 上下文/ }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("status").textContent).toContain("复制失败");
+    });
+
+    // Iframe and branch remain present
+    expect(branch!.querySelector("iframe")).toBeTruthy();
+    expect(document.querySelector("textarea[data-copy-fallback]")).toBeNull();
+    const manualCopy = screen.getByLabelText("手动复制 Task 上下文") as HTMLTextAreaElement;
+    expect(manualCopy.value).toContain("taskId: task_research_medtrum");
+    expect(manualCopy.value).toContain("/team-task");
   });
 
   it("closes the Task leader chat branch from its header action", async () => {
@@ -2524,7 +2626,9 @@ describe("App", () => {
     fireEvent.click(archiveButton);
 
     expect(sourceArchiveRequests).toBe(0);
-    const confirmButton = await screen.findByRole("button", { name: "确认归档" });
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    const confirmButton = within(dialog).getByRole("button", { name: "确认归档" });
     expect(confirmButton).toBeInTheDocument();
 
     fireEvent.click(confirmButton);
@@ -2551,8 +2655,12 @@ describe("App", () => {
     fireEvent.click(archiveButton);
 
     expect(api.archiveRequests).toBe(0);
-    const confirmButton = await screen.findByRole("button", { name: "确认归档" });
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(within(dialog).getByText(/调查 Medtrum 云资产/)).toBeInTheDocument();
+    const confirmButton = within(dialog).getByRole("button", { name: "确认归档" });
     expect(confirmButton).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "取消" })).toBeInTheDocument();
 
     fireEvent.click(confirmButton);
 
@@ -2574,7 +2682,9 @@ describe("App", () => {
     const archiveButton = within(taskCard).getByRole("button", { name: "归档 Task 调查 Medtrum 云资产" });
     fireEvent.click(archiveButton);
 
-    const confirmButton = await screen.findByRole("button", { name: "确认归档" });
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    const confirmButton = within(dialog).getByRole("button", { name: "确认归档" });
     expect(confirmButton).toBeInTheDocument();
 
     fireEvent.click(confirmButton);
@@ -2582,6 +2692,7 @@ describe("App", () => {
     await waitFor(() => expect(api.archiveRequests).toBe(1));
     expect(await screen.findByText("root task archive failed")).toBeInTheDocument();
     expect(container.querySelector('[data-task-id="task_research_medtrum"]')).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "确认归档" })).toBeInTheDocument();
   });
 
@@ -2617,7 +2728,9 @@ describe("App", () => {
     const removeButton = within(agentCard).getByRole("button", { name: "移出画布 Agent 主 Agent" });
     fireEvent.click(removeButton);
 
-    const confirmButton = await screen.findByRole("button", { name: "确认移出画布" });
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    const confirmButton = within(dialog).getByRole("button", { name: "确认移出画布" });
     fireEvent.click(confirmButton);
 
     await waitFor(() => {
@@ -2666,7 +2779,9 @@ describe("App", () => {
     const archiveButton = within(sourceCard).getByRole("button", { name: "归档 Source 归档失败文本" });
     fireEvent.click(archiveButton);
 
-    const confirmButton = await screen.findByRole("button", { name: "确认归档" });
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    const confirmButton = within(dialog).getByRole("button", { name: "确认归档" });
     fireEvent.click(confirmButton);
 
     expect(await screen.findByText("source archive failed")).toBeInTheDocument();
