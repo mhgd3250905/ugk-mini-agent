@@ -129,6 +129,7 @@
   align-items: stretch;
   gap: 4px;
   padding: 6px 10px;
+  min-height: 28px;
   border: 1px solid rgba(122, 131, 151, 0.22);
   border-radius: 10px;
   background: rgba(9, 15, 26, 0.92);
@@ -137,6 +138,12 @@
   pointer-events: auto;
   max-width: 80vw;
   overflow-x: auto;
+  transition: opacity 0.15s;
+}
+
+.emap-root-dock:empty {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .emap-root-dock-item {

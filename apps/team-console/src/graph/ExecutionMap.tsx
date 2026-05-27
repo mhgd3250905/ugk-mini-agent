@@ -764,6 +764,12 @@ export function ExecutionMap({
   const [taskChildBranchRects, setTaskChildBranchRects] = useState<Record<string, AgentBranchRect>>({});
   const [taskBranchMeasuredSizes, setTaskBranchMeasuredSizes] = useState<TaskBranchMeasuredSizeMap>({});
   const [selectedAtlasNodeKeys, setSelectedAtlasNodeKeys] = useState<Set<string>>(new Set());
+  const [rootDropTarget, setRootDropTarget] = useState<"dock" | "trash" | null>(null);
+  const [flightAnimation, setFlightAnimation] = useState<{
+    fromX: number; fromY: number; fromW: number; fromH: number;
+    toX: number; toY: number; toW: number; toH: number;
+    kind: "minimize" | "restore"; label: string;
+  } | null>(null);
   const [maximizedBranch, setMaximizedBranch] = useState<MaximizedPanelState>(null);
   const [panelSizeOverrides, setPanelSizeOverrides] = useState<Record<string, { width: number; height: number }>>({});
   const [panelPositionOverrides, setPanelPositionOverrides] = useState<Record<string, { x: number; y: number }>>({});
@@ -772,6 +778,7 @@ export function ExecutionMap({
   const prevSelectionRef = useRef<string | null>(null);
   const taskBranchShellRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const atlasNodeDragRef = useRef<AtlasNodeDragState | null>(null);
+  const dockRef = useRef<HTMLElement | null>(null);
   const suppressAgentClickRef = useRef<string | null>(null);
   const suppressTaskClickRef = useRef<string | null>(null);
   const agentBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
@@ -1236,6 +1243,13 @@ export function ExecutionMap({
     const hasMoved = drag.hasMoved || Math.hypot(dx, dy) >= AGENT_DRAG_THRESHOLD;
     if (!hasMoved) return;
 
+    if (dockRef.current) {
+      const dockRect = dockRef.current.getBoundingClientRect();
+      const overDock = event.clientX >= dockRect.left && event.clientX <= dockRect.right
+        && event.clientY >= dockRect.top && event.clientY <= dockRect.bottom;
+      setRootDropTarget((prev) => overDock && prev !== "trash" ? "dock" : prev === "dock" && !overDock ? null : prev);
+    }
+
     const scale = viewportScale(viewport);
     atlasNodeDragRef.current = { ...drag, hasMoved };
     for (const entry of drag.entries) {
@@ -1270,15 +1284,55 @@ export function ExecutionMap({
     }, 0);
   }, []);
 
+  const checkDockDrop = useCallback((drag: AtlasNodeDragState, event: ReactPointerEvent<HTMLElement>): boolean => {
+    if (!dockRef.current || !drag.hasMoved) return false;
+    const dockRect = dockRef.current.getBoundingClientRect();
+    const inDock = event.clientX >= dockRect.left && event.clientX <= dockRect.right
+      && event.clientY >= dockRect.top && event.clientY <= dockRect.bottom;
+    if (!inDock) return false;
+
+    for (const entry of drag.entries) {
+      if (entry.kind === "agent") {
+        onMinimizeAgent?.(visibleAgentNodes.find((n) => n.nodeId === entry.nodeId) ?? { nodeId: entry.nodeId, kind: "agent", agentId: entry.nodeId, position: entry.startPosition });
+      } else if (entry.kind === "task") {
+        onMinimizeCanvasTask?.(visibleTaskNodes.find((n) => n.nodeId === entry.nodeId) ?? { nodeId: entry.nodeId, kind: "canvas-task", taskId: entry.nodeId, position: entry.startPosition });
+      } else {
+        onMinimizeSourceNode?.(visibleSourceNodes.find((n) => n.nodeId === entry.nodeId) ?? { nodeId: entry.nodeId, kind: "canvas-source", sourceNodeId: entry.nodeId, position: entry.startPosition });
+      }
+    }
+    setSelectedAtlasNodeKeys((prev) => {
+      const next = new Set(prev);
+      for (const entry of drag.entries) {
+        next.delete(atlasSelectionKey(entry.kind, entry.nodeId));
+      }
+      return next;
+    });
+
+    const primaryEl = (event.currentTarget as HTMLElement).closest?.(`[data-node-id="${drag.primaryNodeId}"]`) as HTMLElement | null;
+    if (primaryEl) {
+      const fromRect = primaryEl.getBoundingClientRect();
+      setFlightAnimation({
+        fromX: fromRect.left, fromY: fromRect.top, fromW: fromRect.width, fromH: fromRect.height,
+        toX: dockRect.left + dockRect.width / 2 - 45, toY: dockRect.top + 4, toW: 90, toH: 48,
+        kind: "minimize", label: "",
+      });
+      globalThis.setTimeout(() => setFlightAnimation(null), 260);
+    }
+
+    return true;
+  }, [onMinimizeAgent, onMinimizeCanvasTask, onMinimizeSourceNode, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes]);
+
   const endAgentPointer = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const drag = atlasNodeDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.stopPropagation();
     atlasNodeDragRef.current = null;
     event.currentTarget.releasePointerCapture?.(event.pointerId);
+    setRootDropTarget(null);
 
     if (drag.hasMoved) {
       suppressNextAgentClick(drag.primaryNodeId);
+      if (checkDockDrop(drag, event)) return;
       return;
     }
 
@@ -1287,7 +1341,7 @@ export function ExecutionMap({
       suppressNextAgentClick(drag.primaryNodeId);
       onSelectAgent?.(node);
     }
-  }, [onSelectAgent, suppressNextAgentClick, visibleAgentNodes]);
+  }, [checkDockDrop, onSelectAgent, suppressNextAgentClick, visibleAgentNodes]);
 
   const handleAgentClick = useCallback((node: AtlasAgentNode) => {
     if (suppressAgentClickRef.current === node.nodeId) {
@@ -1320,9 +1374,11 @@ export function ExecutionMap({
     event.stopPropagation();
     atlasNodeDragRef.current = null;
     event.currentTarget.releasePointerCapture?.(event.pointerId);
+    setRootDropTarget(null);
 
     if (drag.hasMoved) {
       suppressNextTaskClick(drag.primaryNodeId);
+      if (checkDockDrop(drag, event)) return;
       return;
     }
 
@@ -1331,7 +1387,7 @@ export function ExecutionMap({
       suppressNextTaskClick(drag.primaryNodeId);
       onSelectCanvasTask?.(node);
     }
-  }, [onSelectCanvasTask, suppressNextTaskClick, visibleTaskNodes]);
+  }, [checkDockDrop, onSelectCanvasTask, suppressNextTaskClick, visibleTaskNodes]);
 
   const handleTaskClick = useCallback((node: AtlasTaskNode) => {
     if (suppressTaskClickRef.current === node.nodeId) {
@@ -1578,8 +1634,9 @@ export function ExecutionMap({
       {maximizedBranchPanel}
     </div>
   ) : null;
-  const nodeHub = hubAgentNodes.length > 0 || hubTaskNodes.length > 0 || hubSourceNodes.length > 0 ? (
-    <aside className="emap-root-dock" aria-label="Root node dock">
+  const dockActiveClass = rootDropTarget === "dock" ? " is-drop-active" : "";
+  const nodeHub = (
+    <aside ref={dockRef} className={`emap-root-dock${dockActiveClass}`} aria-label="Root node dock">
       {hubAgentNodes.map((node) => {
         const agent = agentsById?.get(node.agentId);
         const label = agent?.name ?? node.agentId;
@@ -1644,13 +1701,28 @@ export function ExecutionMap({
         );
       })}
     </aside>
+  );
+  const flightOverlay = flightAnimation ? (
+    <div
+      className="emap-root-dock-flight"
+      style={{
+        left: `${flightAnimation.fromX}px`,
+        top: `${flightAnimation.fromY}px`,
+        width: `${flightAnimation.fromW}px`,
+        height: `${flightAnimation.fromH}px`,
+        transform: `translate3d(${flightAnimation.toX - flightAnimation.fromX}px, ${flightAnimation.toY - flightAnimation.fromY}px, 0) scale(${Math.max(flightAnimation.toW / flightAnimation.fromW, 0.3)}, ${Math.max(flightAnimation.toH / flightAnimation.fromH, 0.3)})`,
+        opacity: 0.4,
+      }}
+    />
   ) : null;
-  const overlay = nodeHub || maximizedOverlay ? (
+
+  const overlay = nodeHub || maximizedOverlay || flightOverlay ? (
     <>
       {nodeHub}
+      {flightOverlay}
       {maximizedOverlay}
     </>
-  ) : null;
+  ) : nodeHub;
 
   useLayoutEffect(() => {
     if (
