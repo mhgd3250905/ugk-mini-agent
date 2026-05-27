@@ -44,7 +44,7 @@ Team Console Task / WorkUnit redesign 已通过 PR #1 合入 `main`：
 最近主线验证：
 
 - `npm run test:team`：966 pass / 2 skip / 0 fail
-- `npm --prefix apps/team-console run test`：370 passed
+- `npm --prefix apps/team-console run test`：390 passed
 - `npm --prefix apps/team-console run build`：通过
 - `npx tsc --noEmit`：通过
 - `git diff --check`：通过
@@ -71,6 +71,14 @@ Team Console Task / WorkUnit redesign 已通过 PR #1 合入 `main`：
 - 已改：Task 操作菜单"编辑""对话 Leader""最近运行"统一具备 toggle 行为（再次点击收起，第三次点击重新展开），toggle 只影响被点击的 Task branch。
 - 已改：打开编辑节点时只在没有现存 draft 时初始化，toggle 收起再展开不丢草稿。
 - 已改：Task 操作菜单、编辑节点、Leader 对话节点、Run observer 面板被用户手动拖动后，收起再展开保留位置；可 resize panel 保留尺寸。根因是 ExecutionMap cleanup effect 过度清理 inactive panel 的 position/size override，已移除。
+- 文档入口：`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/change-log.md`。
+
+本轮 Team Console Task 分支聚焦布局修复现场：
+
+- 已改：`ExecutionMap.tsx` 将 Task 菜单实测尺寸从单例 `taskBranchMeasuredSize` / `taskBranchShellRef` 改为 `taskBranchMeasuredSizes` / `taskBranchShellRefs` map，每个 active Task 菜单独立测量；点击另一个 Task 不再让已展开 observer / edit / leader 二级面板按默认菜单尺寸重排。
+- 已改：`taskChildBranchPanelsLayout` 在显式 `sourceId` 找不到时不再 fallback 到当前 primary `taskBranchNode`，避免连接线错锚到另一个 Task 菜单。
+- 已验证：新增 2 个回归测试覆盖“Task A observer 已展开，再点击 Task B 后 Task A observer 不跳位、connector 仍锚到 Task A 菜单右侧中点”。`npm --prefix apps/team-console run test`（390 passed）、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check` 均通过；Codex in-app Browser 和用户实际操作均审核通过。
+- 最新本地提交：`a0c06b4 docs(team-console): document task branch focus layout fix`；当前 `main` 本地领先 `origin/main` 11 个提交，是否 push 由用户另行确认。
 - 文档入口：`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/change-log.md`。
 
 ## 2026-05-27 Team Console Task / WorkUnit 历史 worktree 快照
