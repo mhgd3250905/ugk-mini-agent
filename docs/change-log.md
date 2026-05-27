@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-27 — Team Console Task 面板 toggle 与位置记忆修复
+
+- **主题**: 修复 Team Console 画布里 Task 操作树的两个基础交互问题：二级入口缺少 toggle、面板收起再展开后丢失手动位置和尺寸。
+- **变更内容**:
+  - Task 操作菜单中"编辑"和"对话 Leader"按钮统一具备 toggle 行为：再次点击同一入口会收起当前二级节点，第三次点击重新展开。已有的"最近运行"toggle 语义不变。
+  - Toggle 只作用于被点击的 Task branch，不影响其他 Task 已展开的菜单或二级 panel。
+  - 打开编辑节点时只在没有现存 draft 时初始化 draft，避免 toggle 收起/展开丢失未保存的编辑草稿。
+  - Task 操作菜单、编辑节点、Leader 对话节点、Run observer 面板在用户手动拖动后，收起再展开时保留上次的画布世界坐标位置。
+  - 可 resize 的编辑节点、Leader 对话节点在用户调整尺寸后，收起再展开时保留上次的尺寸。
+  - 前端行为修复，不涉及 Team runtime 后端协议变更。
+- **影响范围**: `apps/team-console/src/app/App.tsx`（toggle helper）、`apps/team-console/src/graph/ExecutionMap.tsx`（override cleanup 移除）、`apps/team-console/src/tests/app.test.tsx`（行为测试）。
+- **对应入口**: Team Console 画布 Task 操作菜单。
+
 ## 2026-05-27 — Team Console 多 Task 二级子面板冲突修复
 
 - **主题**: 修复 Team Console 画布中多个 Task 同时展开菜单后，二级子节点状态互相冲突和位置回弹的问题。

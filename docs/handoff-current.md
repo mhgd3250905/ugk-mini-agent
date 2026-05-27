@@ -66,6 +66,13 @@ Team Console Task / WorkUnit redesign 已通过 PR #1 合入 `main`：
 - 已跑验证：`npm --prefix apps/team-console run test`（379 passed）、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check`。
 - 浏览器复验：Codex in-app Browser 对 `http://localhost:5174/` 的 reload 被当前工具 URL 策略拦截，未绕路换浏览器；用户已在远程页面审核通过。
 
+本轮 Team Console Task 面板 toggle 与位置记忆修复现场：
+
+- 已改：Task 操作菜单"编辑""对话 Leader""最近运行"统一具备 toggle 行为（再次点击收起，第三次点击重新展开），toggle 只影响被点击的 Task branch。
+- 已改：打开编辑节点时只在没有现存 draft 时初始化，toggle 收起再展开不丢草稿。
+- 已改：Task 操作菜单、编辑节点、Leader 对话节点、Run observer 面板被用户手动拖动后，收起再展开保留位置；可 resize panel 保留尺寸。根因是 ExecutionMap cleanup effect 过度清理 inactive panel 的 position/size override，已移除。
+- 文档入口：`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/change-log.md`。
+
 ## 2026-05-27 Team Console Task / WorkUnit 历史 worktree 快照
 
 Team Console Task / WorkUnit redesign 的独立 worktree 已告一段落，仅作为历史现场保留：
