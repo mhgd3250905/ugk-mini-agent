@@ -75,7 +75,8 @@ export interface TeamAttemptRoleProcess {
 
 export type TeamTaskDeliveryOutcomeStatus = "delivered" | "skipped" | "failed";
 
-export interface TeamTaskDeliveryOutcome {
+export interface TeamTaskTypedConnectionDeliveryOutcome {
+	edgeKind?: "typed-connection";
 	connectionId: string;
 	toTaskId: string;
 	toInputPortId: string;
@@ -85,6 +86,19 @@ export interface TeamTaskDeliveryOutcome {
 	error?: string;
 	createdAt: string;
 }
+
+export interface TeamTaskControlDependencyDeliveryOutcome {
+	edgeKind: "control-dependency";
+	dependencyId: string;
+	toTaskId: string;
+	status: TeamTaskDeliveryOutcomeStatus;
+	staleReason?: TaskDependencyStaleReason;
+	downstreamRunId?: string;
+	error?: string;
+	createdAt: string;
+}
+
+export type TeamTaskDeliveryOutcome = TeamTaskTypedConnectionDeliveryOutcome | TeamTaskControlDependencyDeliveryOutcome;
 
 export interface TeamAttemptMetadata {
 	attemptId: string;
@@ -409,13 +423,9 @@ export interface TeamRunState {
 	source?: {
 		type: "canvas-task";
 		taskId: string;
-		triggeredBy?: {
-			type: "task-connection";
-			connectionId: string;
-			fromTaskId: string;
-			fromRunId: string;
-			fromAttemptId: string;
-		};
+		triggeredBy?:
+			| { type: "task-connection"; connectionId: string; fromTaskId: string; fromRunId: string; fromAttemptId: string }
+			| { type: "task-dependency"; dependencyId: string; fromTaskId: string; fromRunId: string; fromAttemptId: string };
 		boundInputs?: TeamTaskBoundInput[];
 	};
 	teamUnitId: string;

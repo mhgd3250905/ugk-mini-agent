@@ -296,6 +296,7 @@ export class RunAttemptStore {
 		};
 	}
 
+
 	private normalizeDeliveryOutcomes(raw: unknown): TeamTaskDeliveryOutcome[] | undefined {
 		if (!Array.isArray(raw) || raw.length === 0) return undefined;
 		const validStatuses = new Set(["delivered", "skipped", "failed"]);
@@ -305,19 +306,38 @@ export class RunAttemptStore {
 			const value = item as Record<string, unknown>;
 			const status = value.status;
 			if (typeof status !== "string" || !validStatuses.has(status)) continue;
+			const edgeKind = value.edgeKind;
+			if (edgeKind === "control-dependency") {
+				const dependencyId = value.dependencyId;
+				const toTaskId = value.toTaskId;
+				const createdAt = value.createdAt;
+				if (typeof dependencyId !== "string" || typeof toTaskId !== "string" || typeof createdAt !== "string") continue;
+				const outcome: import("./types.js").TeamTaskControlDependencyDeliveryOutcome = {
+					edgeKind: "control-dependency",
+					dependencyId,
+					toTaskId,
+					status: status as import("./types.js").TeamTaskDeliveryOutcomeStatus,
+					createdAt,
+				};
+				if (typeof value.staleReason === "string") outcome.staleReason = value.staleReason as import("./types.js").TaskDependencyStaleReason;
+				if (typeof value.downstreamRunId === "string") outcome.downstreamRunId = value.downstreamRunId;
+				if (typeof value.error === "string") outcome.error = value.error;
+				outcomes.push(outcome);
+				continue;
+			}
 			const connectionId = value.connectionId;
 			const toTaskId = value.toTaskId;
 			const toInputPortId = value.toInputPortId;
 			const createdAt = value.createdAt;
 			if (typeof connectionId !== "string" || typeof toTaskId !== "string" || typeof toInputPortId !== "string" || typeof createdAt !== "string") continue;
-			const outcome: TeamTaskDeliveryOutcome = {
+			const outcome: import("./types.js").TeamTaskTypedConnectionDeliveryOutcome = {
 				connectionId,
 				toTaskId,
 				toInputPortId,
-				status: status as TeamTaskDeliveryOutcome["status"],
+				status: status as import("./types.js").TeamTaskDeliveryOutcomeStatus,
 				createdAt,
 			};
-			if (typeof value.staleReason === "string") outcome.staleReason = value.staleReason as TeamTaskDeliveryOutcome["staleReason"];
+			if (typeof value.staleReason === "string") outcome.staleReason = value.staleReason as import("./types.js").TaskConnectionStaleReason;
 			if (typeof value.downstreamRunId === "string") outcome.downstreamRunId = value.downstreamRunId;
 			if (typeof value.error === "string") outcome.error = value.error;
 			outcomes.push(outcome);

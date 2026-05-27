@@ -999,14 +999,14 @@ test("recordAttemptDeliveryOutcomes persists downstream delivery outcomes", asyn
 		const delivery = attempts[0]!.downstreamDelivery;
 		assert.ok(delivery, "downstreamDelivery must be present");
 		assert.equal(delivery!.length, 2);
-		assert.equal(delivery![0]!.connectionId, "conn_1");
+		assert.equal((delivery![0] as import("../src/team/types.js").TeamTaskTypedConnectionDeliveryOutcome).connectionId, "conn_1");
 		assert.equal(delivery![0]!.toTaskId, "task_2");
-		assert.equal(delivery![0]!.toInputPortId, "source_md");
+		assert.equal((delivery![0] as import("../src/team/types.js").TeamTaskTypedConnectionDeliveryOutcome).toInputPortId, "source_md");
 		assert.equal(delivery![0]!.status, "delivered");
 		assert.equal(delivery![0]!.downstreamRunId, "run_downstream_1");
 		assert.equal(delivery![0]!.staleReason, undefined);
 		assert.equal(delivery![0]!.error, undefined);
-		assert.equal(delivery![1]!.connectionId, "conn_2");
+		assert.equal((delivery![1] as import("../src/team/types.js").TeamTaskTypedConnectionDeliveryOutcome).connectionId, "conn_2");
 		assert.equal(delivery![1]!.status, "skipped");
 		assert.equal(delivery![1]!.staleReason, "target_input_port_type_mismatch");
 		assert.equal(delivery![1]!.downstreamRunId, undefined);

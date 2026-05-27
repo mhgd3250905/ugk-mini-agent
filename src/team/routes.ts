@@ -11,6 +11,7 @@ import { buildTeamPlanDraft, listTeamPlanTemplates } from "./plan-draft.js";
 import { validateCreatePlanInput } from "./plan-validation.js";
 import { buildTaskWarnings, type UpdateTeamCanvasTaskInput } from "./task-validation.js";
 import { TaskConnectionStore } from "./task-connection-store.js";
+import { TaskDependencyStore } from "./task-dependency-store.js";
 import { SourceConnectionStore } from "./source-connection-store.js";
 import { SourceNodeStore, type UpdateSourceNodeInput } from "./source-node-store.js";
 import { MockRoleRunner } from "./role-runner.js";
@@ -77,6 +78,9 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	const unitStore = new TeamUnitStore(options.teamDataDir);
 	const sourceNodeStore = new SourceNodeStore(options.teamDataDir);
 	const taskConnectionStore = new TaskConnectionStore(options.teamDataDir, taskStore);
+	const taskDependencyStore = new TaskDependencyStore(options.teamDataDir, taskStore);
+	taskConnectionStore.setExistingDependencies(() => taskDependencyStore.list());
+	taskDependencyStore.setExistingConnections(() => taskConnectionStore.list());
 	const sourceConnectionStore = new SourceConnectionStore(options.teamDataDir, sourceNodeStore, taskStore);
 	const workspace = new RunWorkspace(options.teamDataDir);
 	const taskRunDataDir = join(options.teamDataDir, "task-runs");
@@ -86,6 +90,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		workspace: taskRunWorkspace,
 		createRoleRunner: () => createRoleRunner({ ...options, teamDataDir: taskRunDataDir }),
 		connectionStore: taskConnectionStore,
+		dependencyStore: taskDependencyStore,
 		sourceNodeStore,
 		sourceConnectionStore,
 		dataDir: taskRunDataDir,
@@ -336,6 +341,59 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		}
 	});
 
+
+		// -- Task Control Dependencies --
+
+		app.get("/v1/team/task-dependencies", async (_request, reply) => {
+			try {
+				const dependencies = await taskDependencyStore.listResolved();
+				reply.send({ dependencies });
+			} catch (err) {
+				reply.code(500).send({ error: (err as Error).message });
+			}
+		});
+
+		app.post("/v1/team/task-dependencies", async (request, reply) => {
+			const body = request.body as Record<string, unknown>;
+			try {
+				const dependency = await taskDependencyStore.create({
+					fromTaskId: body.fromTaskId as string,
+					toTaskId: body.toTaskId as string,
+				});
+				reply.code(201).send({ dependency });
+			} catch (err) {
+				const msg = (err as Error).message;
+				if (msg.includes("task dependency store") || msg.includes("lock busy")) {
+					reply.code(msg.includes("lock busy") ? 409 : 500).send({ error: msg });
+					return;
+				}
+				if (msg.includes("task not found")) {
+					reply.code(404).send({ error: msg });
+					return;
+				}
+				if (msg.includes("already exists") || msg.includes("cycle") || msg.includes("archived") || msg.includes("same task")) {
+					reply.code(409).send({ error: msg });
+					return;
+				}
+				reply.code(400).send({ error: msg });
+			}
+		});
+
+		app.delete("/v1/team/task-dependencies/:dependencyId", async (request, reply) => {
+			const { dependencyId } = request.params as { dependencyId: string };
+			try {
+				const deleted = await taskDependencyStore.delete(dependencyId);
+				if (!deleted) {
+					reply.code(404).send({ error: "task dependency not found" });
+					return;
+				}
+				reply.code(204).send();
+			} catch (err) {
+				const msg = (err as Error).message;
+				if (msg.includes("lock busy")) { reply.code(409).send({ error: msg }); return; }
+				reply.code(500).send({ error: msg });
+			}
+		});
 	app.get("/v1/team/tasks/:taskId/runs", async (request, reply) => {
 		const { taskId } = request.params as { taskId: string };
 		const task = await taskStore.get(taskId);

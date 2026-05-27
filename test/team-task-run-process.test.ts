@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { TaskStore } from "../src/team/task-store.js";
 import { TaskConnectionStore } from "../src/team/task-connection-store.js";
+import { TaskDependencyStore } from "../src/team/task-dependency-store.js";
 import { SourceConnectionStore } from "../src/team/source-connection-store.js";
 import { SourceNodeStore } from "../src/team/source-node-store.js";
 import { RunWorkspace } from "../src/team/run-workspace.js";
@@ -579,7 +580,7 @@ test("failed downstream delivery records error without failing upstream", async 
 		const delivery = await waitForAttemptDelivery(workspace, created.runId, sourceTask.taskId);
 		assert.equal(delivery.length, 1);
 		assert.equal(delivery[0]!.status, "failed");
-		assert.equal(delivery[0]!.connectionId, connection.connectionId);
+		assert.equal((delivery[0] as import("../src/team/types.js").TeamTaskTypedConnectionDeliveryOutcome).connectionId, connection.connectionId);
 		assert.equal(delivery[0]!.toTaskId, targetTask.taskId);
 		assert.equal(delivery[0]!.downstreamRunId, undefined);
 		assert.ok(delivery[0]!.error, "error must be recorded");
@@ -1106,7 +1107,7 @@ test("task output fan-out delivers same artifact to two downstream Tasks indepen
 
 		const delivery = await waitForAttemptDelivery(workspace, upstreamRun.runId, sourceTask.taskId, 2);
 		assert.equal(delivery.length, 2);
-		const deliveryByConn = Object.fromEntries(delivery.map(d => [d.connectionId, d]));
+		const deliveryByConn = Object.fromEntries(delivery.map((d): [string, typeof d] => [(d as import('../src/team/types.js').TeamTaskTypedConnectionDeliveryOutcome).connectionId, d]));
 		assert.equal(deliveryByConn[connB.connectionId]?.status, "delivered");
 		assert.equal(deliveryByConn[connC.connectionId]?.status, "delivered");
 	} finally {
@@ -1228,7 +1229,7 @@ test("task output fan-out isolates downstream failure: B blocked by active run, 
 		// Delivery outcomes: B failed, C delivered
 		const delivery = await waitForAttemptDelivery(workspace, upstreamRun.runId, sourceTask.taskId, 2);
 		assert.equal(delivery.length, 2);
-		const deliveryByConn = Object.fromEntries(delivery.map(d => [d.connectionId, d]));
+		const deliveryByConn = Object.fromEntries(delivery.map((d): [string, typeof d] => [(d as import('../src/team/types.js').TeamTaskTypedConnectionDeliveryOutcome).connectionId, d]));
 		assert.equal(deliveryByConn[connB.connectionId]?.status, "failed");
 		assert.match(deliveryByConn[connB.connectionId]?.error ?? "", /active task run already exists/);
 		assert.equal(deliveryByConn[connC.connectionId]?.status, "delivered");
@@ -1238,5 +1239,187 @@ test("task output fan-out isolates downstream failure: B blocked by active run, 
 		await waitForTerminalRun(service, preCreatedBRun.runId);
 	} finally {
 		await rm(root, { recursive: true, force: true });
+	}
+});
+
+// ── Control dependency downstream trigger ──
+
+test("control dependency triggers downstream Task when both Tasks have no ports", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dep-trigger-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const connectionStore = new TaskConnectionStore(root, taskStore);
+		const dependencyStore = new TaskDependencyStore(root, taskStore);
+		connectionStore.setExistingDependencies(() => dependencyStore.list());
+		dependencyStore.setExistingConnections(() => connectionStore.list());
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new ProcessEventRoleRunner(),
+			connectionStore,
+			dependencyStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const taskA = await taskStore.create(validTaskInput);
+		const taskB = await taskStore.create({ ...validTaskInput, title: "下游任务" });
+		await dependencyStore.create({ fromTaskId: taskA.taskId, toTaskId: taskB.taskId });
+
+		const runA = await service.createRun(taskA.taskId);
+		const finishedA = await waitForTerminalRun(service, runA.runId);
+		assert.equal(finishedA.status, "completed");
+
+		const runsB = await waitForTaskRuns(service, taskB.taskId);
+		assert.equal(runsB.length, 1);
+		const finishedB = await waitForTerminalRun(service, runsB[0]!.runId);
+		assert.equal(finishedB.status, "completed");
+
+		assert.ok(finishedB.source?.triggeredBy);
+		const triggeredBy = finishedB.source!.triggeredBy!;
+		assert.equal(triggeredBy.type, "task-dependency");
+		if (triggeredBy.type === "task-dependency") {
+			assert.equal(triggeredBy.fromTaskId, taskA.taskId);
+			assert.equal(triggeredBy.fromRunId, runA.runId);
+		}
+		assert.equal(finishedB.source?.boundInputs, undefined);
+	} finally {
+		await new Promise(r => setTimeout(r, 200));
+		await rm(root, { recursive: true, force: true }).catch(() => {});
+	}
+});
+
+test("control dependency downstream run has no boundInputs", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dep-nobound-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const dependencyStore = new TaskDependencyStore(root, taskStore);
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new ProcessEventRoleRunner(),
+			dependencyStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const taskA = await taskStore.create(validTaskInput);
+		const taskB = await taskStore.create({ ...validTaskInput, title: "下游" });
+		await dependencyStore.create({ fromTaskId: taskA.taskId, toTaskId: taskB.taskId });
+
+		await service.createRun(taskA.taskId);
+		const runsB = await waitForTaskRuns(service, taskB.taskId);
+		assert.equal(runsB[0]!.source?.boundInputs, undefined);
+	} finally {
+		await new Promise(r => setTimeout(r, 200));
+		await rm(root, { recursive: true, force: true }).catch(() => {});
+	}
+});
+
+test("upstream failed run does not trigger dependency downstream", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dep-nofail-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const dependencyStore = new TaskDependencyStore(root, taskStore);
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const failRunner: TeamRoleRunner = {
+			async runWorker() { return { content: "fail output", artifactRefs: [], runtimeContext: undefined }; },
+			async runChecker() { return { verdict: "fail", reason: "not good enough", runtimeContext: undefined }; },
+			async runWatcher() { return { decision: "accept_task" as const, reason: "", runtimeContext: undefined }; },
+			async runFinalizer() { return { finalReport: "done", runtimeContext: undefined }; },
+			async runDecomposer() { return { decision: "no_split" as const, reason: "", subtasks: [], runtimeContext: undefined }; },
+		};
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => failRunner,
+			dependencyStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const taskA = await taskStore.create(validTaskInput);
+		const taskB = await taskStore.create({ ...validTaskInput, title: "下游" });
+		await dependencyStore.create({ fromTaskId: taskA.taskId, toTaskId: taskB.taskId });
+
+		const runA = await service.createRun(taskA.taskId);
+		const finishedA = await waitForTerminalRun(service, runA.runId);
+		assert.equal(finishedA.status, "completed_with_failures");
+
+		const runsB = await service.listRuns(taskB.taskId);
+		assert.equal(runsB.length, 0, "downstream should not be triggered when upstream fails");
+	} finally {
+		await new Promise(r => setTimeout(r, 200));
+		await rm(root, { recursive: true, force: true }).catch(() => {});
+	}
+});
+
+test("stale dependency records skipped outcome without failing upstream", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dep-stale-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const dependencyStore = new TaskDependencyStore(root, taskStore);
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new ProcessEventRoleRunner(),
+			dependencyStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const taskA = await taskStore.create(validTaskInput);
+		const taskB = await taskStore.create({ ...validTaskInput, title: "下游" });
+		await dependencyStore.create({ fromTaskId: taskA.taskId, toTaskId: taskB.taskId });
+
+		// Archive target between dep creation and run completion
+		await taskStore.archive(taskB.taskId);
+
+		const runA = await service.createRun(taskA.taskId);
+		const finishedA = await waitForTerminalRun(service, runA.runId);
+		assert.equal(finishedA.status, "completed", "upstream should succeed even if dependency target is stale");
+
+		const delivery = await waitForAttemptDelivery(workspace, runA.runId, taskA.taskId);
+		assert.equal(delivery.length, 1);
+		const depOutcome = delivery[0] as import("../src/team/types.js").TeamTaskControlDependencyDeliveryOutcome;
+		assert.equal(depOutcome.edgeKind, "control-dependency");
+		assert.equal(depOutcome.status, "skipped");
+		assert.equal(depOutcome.staleReason, "target_task_archived");
+	} finally {
+		await new Promise(r => setTimeout(r, 200));
+		await rm(root, { recursive: true, force: true }).catch(() => {});
+	}
+});
+
+test("dependency fan-out triggers multiple independent downstream Tasks", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dep-fanout-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const dependencyStore = new TaskDependencyStore(root, taskStore);
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new ProcessEventRoleRunner(),
+			dependencyStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const taskA = await taskStore.create(validTaskInput);
+		const taskB = await taskStore.create({ ...validTaskInput, title: "B" });
+		const taskC = await taskStore.create({ ...validTaskInput, title: "C" });
+		await dependencyStore.create({ fromTaskId: taskA.taskId, toTaskId: taskB.taskId });
+		await dependencyStore.create({ fromTaskId: taskA.taskId, toTaskId: taskC.taskId });
+
+		await service.createRun(taskA.taskId);
+
+		const runsB = await waitForTaskRuns(service, taskB.taskId);
+		const runsC = await waitForTaskRuns(service, taskC.taskId);
+		assert.equal(runsB.length, 1);
+		assert.equal(runsC.length, 1);
+		assert.equal(runsB[0]!.source?.triggeredBy?.type, "task-dependency");
+		assert.equal(runsC[0]!.source?.triggeredBy?.type, "task-dependency");
+	} finally {
+		await new Promise(r => setTimeout(r, 200));
+		await rm(root, { recursive: true, force: true }).catch(() => {});
 	}
 });

@@ -204,7 +204,7 @@ test("successful typed Task output creates an artifact and auto-starts connected
 		assert.ok(downstream.finishedAt, "downstream run must have finishedAt");
 		assert.ok(downstream.activeElapsedMs >= 0, "downstream run must have activeElapsedMs >= 0");
 		assert.equal(downstream.source?.taskId, html.taskId);
-		assert.equal(downstream.source?.triggeredBy?.connectionId, connection.connectionId);
+		assert.equal((downstream.source?.triggeredBy as { type: string; connectionId: string })?.connectionId, connection.connectionId);
 		assert.equal(downstream.source?.triggeredBy?.fromTaskId, collect.taskId);
 		assert.equal(downstream.source?.triggeredBy?.fromRunId, upstreamRun.runId);
 		const boundInput = downstream.source?.boundInputs?.[0];
@@ -477,9 +477,9 @@ test("typed Task chain records delivered downstream outcome in upstream attempt 
 		assert.equal(delivery.length, 1);
 		const outcome = delivery[0]!;
 		assert.equal(outcome.status, "delivered");
-		assert.equal(outcome.connectionId, connection.connectionId);
+		assert.equal((outcome as import("../src/team/types.js").TeamTaskTypedConnectionDeliveryOutcome).connectionId, connection.connectionId);
 		assert.equal(outcome.toTaskId, html.taskId);
-		assert.equal(outcome.toInputPortId, "source_md");
+		assert.equal((outcome as import("../src/team/types.js").TeamTaskTypedConnectionDeliveryOutcome).toInputPortId, "source_md");
 		assert.equal(outcome.downstreamRunId, downstreamRuns[0]!.runId);
 		assert.equal(outcome.staleReason, undefined);
 		assert.equal(outcome.error, undefined);

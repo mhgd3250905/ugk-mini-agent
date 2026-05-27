@@ -7,19 +7,21 @@ import { runWithTimeout } from "./task-attempt-runner.js";
 import { validateTeamOutput } from "./output-validator.js";
 import { writeTimingSpan } from "./timing.js";
 import { TeamRoleProcessRecorder } from "./task-run-process-recorder.js";
-import { resolveConnectionStaleReason } from "./task-chain-contract.js";
+import { resolveConnectionStaleReason, resolveDependencyStaleReason } from "./task-chain-contract.js";
 import { buildTeamCanvasSourceArtifact, buildTeamTaskTypedArtifact, formatBoundInputsForPrompt } from "./task-artifact-handoff.js";
 import type { TaskConnectionStore } from "./task-connection-store.js";
+import type { TaskDependencyStore } from "./task-dependency-store.js";
 import { resolveSourceConnectionStaleReason, type SourceConnectionStore } from "./source-connection-store.js";
 import type { SourceNodeStore } from "./source-node-store.js";
 import type { ProfileAwareTeamRoleRunner, TeamRoleRunner, WorkerOutput, CheckerOutput } from "./role-runner.js";
-import type { TeamCanvasTask, TeamOutputValidationResult, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskDeliveryOutcome } from "./types.js";
+import type { TeamCanvasTask, TeamOutputValidationResult, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskDeliveryOutcome, TeamTaskControlDependencyDeliveryOutcome } from "./types.js";
 
 export interface CanvasTaskRunServiceOptions {
 	taskStore: TaskStore;
 	workspace: RunWorkspace;
 	createRoleRunner: () => TeamRoleRunner;
 	connectionStore?: TaskConnectionStore;
+	dependencyStore?: TaskDependencyStore;
 	sourceNodeStore?: SourceNodeStore;
 	sourceConnectionStore?: SourceConnectionStore;
 	dataDir: string;
@@ -526,11 +528,15 @@ export class CanvasTaskRunService {
 		}
 	}
 
+
 	private async triggerDownstreamRuns(runId: string, taskId: string, attemptId: string, resultRef: string): Promise<void> {
 		const connectionStore = this.options.connectionStore;
-		if (!connectionStore) return;
-		const connections = await connectionStore.listFromTask(taskId);
-		if (connections.length === 0) return;
+		const dependencyStore = this.options.dependencyStore;
+		if (!connectionStore && !dependencyStore) return;
+
+		const connections = connectionStore ? await connectionStore.listFromTask(taskId) : [];
+		const dependencies = dependencyStore ? await dependencyStore.listFromTask(taskId) : [];
+		if (connections.length === 0 && dependencies.length === 0) return;
 
 		const outcomes: TeamTaskDeliveryOutcome[] = [];
 		const sourceTask = await this.options.taskStore.get(taskId);
@@ -541,6 +547,17 @@ export class CanvasTaskRunService {
 					connectionId: connection.connectionId,
 					toTaskId: connection.toTaskId,
 					toInputPortId: connection.toInputPortId,
+					status: "skipped",
+					staleReason: staleReason ?? (sourceTask?.archived ? "source_task_archived" : "source_task_missing"),
+					createdAt: now(),
+				});
+			}
+			for (const dep of dependencies) {
+				const staleReason = resolveDependencyStaleReason(sourceTask, null);
+				outcomes.push({
+					edgeKind: "control-dependency",
+					dependencyId: dep.dependencyId,
+					toTaskId: dep.toTaskId,
 					status: "skipped",
 					staleReason: staleReason ?? (sourceTask?.archived ? "source_task_archived" : "source_task_missing"),
 					createdAt: now(),
@@ -606,6 +623,50 @@ export class CanvasTaskRunService {
 					connectionId: connection.connectionId,
 					toTaskId: connection.toTaskId,
 					toInputPortId: connection.toInputPortId,
+					status: "failed",
+					error: sanitizeDeliveryError(error),
+					createdAt: now(),
+				});
+			}
+		}
+
+		for (const dep of dependencies) {
+			try {
+				const targetTask = await this.options.taskStore.get(dep.toTaskId);
+				const staleReason = resolveDependencyStaleReason(sourceTask, targetTask);
+				if (staleReason) {
+					outcomes.push({
+						edgeKind: "control-dependency",
+						dependencyId: dep.dependencyId,
+						toTaskId: dep.toTaskId,
+						status: "skipped",
+						staleReason,
+						createdAt: now(),
+					});
+					continue;
+				}
+				const downstreamRun = await this.createRun(dep.toTaskId, {
+					triggeredBy: {
+						type: "task-dependency",
+						dependencyId: dep.dependencyId,
+						fromTaskId: taskId,
+						fromRunId: runId,
+						fromAttemptId: attemptId,
+					},
+				});
+				outcomes.push({
+					edgeKind: "control-dependency",
+					dependencyId: dep.dependencyId,
+					toTaskId: dep.toTaskId,
+					status: "delivered",
+					downstreamRunId: downstreamRun.runId,
+					createdAt: now(),
+				});
+			} catch (error) {
+				outcomes.push({
+					edgeKind: "control-dependency",
+					dependencyId: dep.dependencyId,
+					toTaskId: dep.toTaskId,
 					status: "failed",
 					error: sanitizeDeliveryError(error),
 					createdAt: now(),
