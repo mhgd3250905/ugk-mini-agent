@@ -5772,4 +5772,103 @@ describe("App", () => {
       }, { timeout: 5000 });
     });
   });
+
+  it("allows same output port to connect to two different target Tasks (fan-out)", async () => {
+    const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+    const targetC: TeamCanvasTask = {
+      ...cloneTaskFixture(),
+      taskId: "task_target_c",
+      title: "Target C Task",
+      workUnit: {
+        ...cloneTaskFixture().workUnit,
+        title: "Target C Task",
+        inputPorts: [{ id: "source_md", label: "Markdown 文稿", type: "md" }],
+      },
+    };
+    const connB: TeamTaskConnection = {
+      schemaVersion: "team/task-connection-1",
+      connectionId: "conn_fanout_b",
+      fromTaskId: collectTask.taskId,
+      fromOutputPortId: "draft_md",
+      toTaskId: htmlTask.taskId,
+      toInputPortId: "source_md",
+      type: "md",
+      createdAt: "2026-05-27T00:00:00.000Z",
+      updatedAt: "2026-05-27T00:00:00.000Z",
+    };
+    const connC: TeamTaskConnection = {
+      schemaVersion: "team/task-connection-1",
+      connectionId: "conn_fanout_c",
+      fromTaskId: collectTask.taskId,
+      fromOutputPortId: "draft_md",
+      toTaskId: targetC.taskId,
+      toInputPortId: "source_md",
+      type: "md",
+      createdAt: "2026-05-27T00:00:01.000Z",
+      updatedAt: "2026-05-27T00:00:01.000Z",
+    };
+    const postBodies: unknown[] = [];
+    let createIndex = 0;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [collectTask, htmlTask, targetC] }), { status: 200 });
+      if (url === "/v1/team/task-connections" && method === "GET") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === "/v1/team/task-connections" && method === "POST") {
+        createIndex++;
+        postBodies.push(JSON.parse(String(init?.body ?? "{}")));
+        const conn = createIndex === 1 ? connB : connC;
+        return new Response(JSON.stringify({ connection: conn }), { status: 201 });
+      }
+      if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    // First connection: source -> target B
+    const outputPort = await screen.findByRole("button", { name: "输出 Markdown 文稿 md" });
+    fireEvent.click(outputPort);
+    const inputB = screen.getAllByRole("button", { name: "输入 Markdown 文稿 md" })[0]!;
+    fireEvent.click(inputB);
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-task-connection-id="conn_fanout_b"]')).toBeTruthy();
+    });
+
+    // Second connection: same output -> target C
+    const outputPortAgain = screen.getByRole("button", { name: "输出 Markdown 文稿 md" });
+    fireEvent.click(outputPortAgain);
+    const inputC = screen.getAllByRole("button", { name: "输入 Markdown 文稿 md" })[1]!;
+    fireEvent.click(inputC);
+
+    await waitFor(() => {
+      expect(postBodies.length).toBe(2);
+      expect(postBodies[0]).toEqual({
+        fromTaskId: collectTask.taskId,
+        fromOutputPortId: "draft_md",
+        toTaskId: htmlTask.taskId,
+        toInputPortId: "source_md",
+      });
+      expect(postBodies[1]).toEqual({
+        fromTaskId: collectTask.taskId,
+        fromOutputPortId: "draft_md",
+        toTaskId: targetC.taskId,
+        toInputPortId: "source_md",
+      });
+      // Both POST bodies share the same fromTaskId/fromOutputPortId
+      expect((postBodies[0] as any).fromTaskId).toBe((postBodies[1] as any).fromTaskId);
+      expect((postBodies[0] as any).fromOutputPortId).toBe((postBodies[1] as any).fromOutputPortId);
+      // But toTaskId differs
+      expect((postBodies[0] as any).toTaskId).not.toBe((postBodies[1] as any).toTaskId);
+    });
+
+    // Both connection paths should be rendered in DOM
+    expect(container.querySelector('[data-task-connection-id="conn_fanout_b"]')).toBeTruthy();
+    expect(container.querySelector('[data-task-connection-id="conn_fanout_c"]')).toBeTruthy();
+  });
+
 });
