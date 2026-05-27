@@ -12,6 +12,21 @@
 
 ---
 
+## 2026-05-27 — Team Console Canvas Task run admission 后端修复
+
+- **主题**: 修复 Canvas Task run 误用 Plan run 全局 admission，确保不同 Task 可并行运行，同一 Task 仍只允许一个 active run。
+- **根因**: `CanvasTaskRunService` 已有同一 Task active guard，但在 `maxConcurrentRuns` 存在时继续调用 `workspace.createRunWithAdmission(...)`；`TEAM_MAX_CONCURRENT_RUNS` 默认 `1` 导致 Task A active 时 Task B 被错误拒绝为 `active run limit reached`。
+- **变更内容**:
+  - `test/team-task-run-process.test.ts` 新增回归测试，先锁定 `maxConcurrentRuns: 1` 下 Task A active 时 Task B 必须可启动，并同时断言 Task A 再次启动仍被 `active task run already exists` 拒绝。
+  - `src/team/task-run-service.ts` 中 Canvas Task run 创建改为只使用 `workspace.createRun(...)`，保留同一 Task active guard，不再走 Plan-level `createRunWithAdmission(...)`。
+  - `src/team/routes.ts` 不再把 `options.maxConcurrentRuns` 传给 `CanvasTaskRunService`；`TeamOrchestrator` / Plan run 仍继续使用 `TEAM_MAX_CONCURRENT_RUNS`。
+  - `docs/team-runtime.md`、`apps/team-console/README.md` 明确 Canvas Task run 不受 `TEAM_MAX_CONCURRENT_RUNS` 约束，该变量只管 Plan / TeamOrchestrator run admission。
+- **影响范围**: `src/team/task-run-service.ts`, `src/team/routes.ts`, `test/team-task-run-process.test.ts`, `docs/team-runtime.md`, `apps/team-console/README.md`, `docs/change-log.md`
+- **验证**: 新增测试已先红后绿；`node --test --import tsx test\team-task-run-process.test.ts` (14 passed)、`node --test --import tsx test\team-task-run-routes.test.ts` (10 passed)、`node --test --import tsx test\team-orchestrator-success.test.ts` (8 passed)、`node --test --import tsx test\team-routes.test.ts --test-name-pattern "maxConcurrentRuns"` (55 passed)、`npm --prefix apps/team-console run test` (370 passed)、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check` 已通过。
+- **边界**: 不放开同一 Task 多 active run，不调大 `TEAM_MAX_CONCURRENT_RUNS` 规避问题，不改主 `/playground` UI，不改 `.pi/skills` runtime skill，不引入临时后端环境。
+
+---
+
 ## 2026-05-27 — Team Console Task output fan-out 测试与文档
 
 - **主题**: 锁定 Team Console Typed Task Chain 的 fan-out 能力：一个 Task output port 可以连接到多个不同下游 Task 的同类型 input port。
