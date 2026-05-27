@@ -12,6 +12,21 @@
 
 ---
 
+## 2026-05-27 — Team Console Task output fan-out 测试与文档
+
+- **主题**: 锁定 Team Console Typed Task Chain 的 fan-out 能力：一个 Task output port 可以连接到多个不同下游 Task 的同类型 input port。
+- **变更内容**:
+  - 后端 API 测试：`test/team-task-routes.test.ts` 新增 fan-out 连接创建测试，确认同一 output port 到两个不同 target Task 的 POST 请求均返回 201。
+  - 后端 delivery 测试：`test/team-task-run-process.test.ts` 新增 happy path（上游完成 → 两个下游独立接收 artifact 并完成）和 failure isolation path（B 有 active run 导致 delivery 失败，C 仍成功，上游保持 completed）。
+  - 前端 canvas 测试：`apps/team-console/src/tests/app.test.tsx` 新增 fan-out 回归测试，确认同一 output port 可连续连接两个不同 target Task input port，DOM 渲染两条 task connection path。
+  - 现有 `src/team/task-connection-store.ts`、`src/team/task-run-service.ts`、`apps/team-console/src/app/App.tsx` 行为已正确支持 fan-out，不需要实现修改。
+  - 文档更新：`docs/team-runtime.md` 从"一对一"改为明确支持 fan-out，`apps/team-console/README.md` 同步。
+- **影响范围**: `test/team-task-routes.test.ts`, `test/team-task-run-process.test.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **验证**: `node --test --import tsx test/team-task-routes.test.ts` (17 passed)、`node --test --import tsx test/team-task-run-process.test.ts` (13 passed)、`npm --prefix apps/team-console run test` (370 passed)、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check` 已通过。
+- **边界**: 不做 merge / wait-all / reducer / 条件分支 / 循环 / 工作流引擎；不做同一 target Task 多 input bundling；不改 `src/team/**` 后端 runtime；不改主 `/playground` UI。
+
+---
+
 ## 2026-05-27 — Team Console Task run 并发边界回归测试与文档
 
 - **主题**: 锁定 Team Console Task run 并发规则：不同 Task 可同时运行，同一 Task 同时只允许一个 active run。

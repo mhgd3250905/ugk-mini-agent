@@ -75,7 +75,7 @@ Task 持久化在 `.data/team/tasks/<taskId>.json`，通过 `src/team/task-store
 
 ### Typed Task Chain V1
 
-Typed Task Chain V1 把 Task 设计成可组合的最小积木，但刻意不把 Team Console 做成万能工作流平台。规则很简单，也必须简单：一个上游 output port 只能连到一个类型相同的下游 input port。
+Typed Task Chain V1 把 Task 设计成可组合的最小积木，但刻意不把 Team Console 做成万能工作流平台。规则很简单，也必须简单：每条连接要求 `output.type === input.type`；同一个 output port 可以连接到多个不同下游 Task 的同类型 input port（fan-out）；但每条连接的四元组 `(fromTaskId, fromOutputPortId, toTaskId, toInputPortId)` 必须唯一。
 
 端口契约：
 
@@ -103,7 +103,7 @@ Typed Task Chain V1 把 Task 设计成可组合的最小积木，但刻意不把
   - `source_output_port_type_mismatch` — source output port type 与 connection type 不一致
   - `target_input_port_type_mismatch` — target input port type 与 connection type 不一致
 - 上游 run 完成后触发 downstream 时，如果 source Task 在 run 期间被归档，downstream 不会被触发；上游 accepted run 不受下游 stale 影响。
-- 当前 UI 只做一条线的最小交互，但 connection store 按 DAG 设计：未来可以自然扩展成一个输出连接多个下游、多节点链路和更完整的图编辑器。
+- Fan-out 交付规则：上游 accepted result 作为 typed artifact 分发给每个下游 Task 的连接；每个下游 Task 独立创建自己的 Canvas Task run。某个下游失败（例如已有 active run）只记录 `failed` delivery outcome，不阻塞其他下游或把上游 run 改成失败。不同下游 Task 可并行运行。
 
 Source node 输入契约：
 
@@ -1166,7 +1166,7 @@ Cancel/pause always takes priority over phase timeout — if a run is already ca
 9. **Controlled decomposition 只支持有界顺序执行** — 运行时只允许 `propagate -> leaf | none`、`leaf -> none`；child task 必须是 normal；不支持并行 child execution、无限传播或 nested for_each。
 10. **Decomposition UI 只展示，不编辑** — `/playground/team` 只显示 decomposer badge 和 split hierarchy；不提供可视化编辑器。Run detail API 通过 `taskDefinitions` 暴露由 expansion/decomposition records 汇总出的 generated child definitions；旧 run 或缺少记录的 run 会退回为普通「子任务」分组。
 11. **无 AgentTaskExpansionPlanner** — 动态任务扩展目前使用模板展开（`TemplateTaskExpansionPlanner`），尚无 AI 驱动的智能扩展。
-12. **Typed Task Chain V1 不是工作流平台** — 当前只支持 typed port 连接和上游通过 checker 后自动触发下游；不支持条件分支、循环、自由画布编排、真实 TTS 或 SSE 观察流。
+12. **Typed Task Chain V1 不是工作流平台** — 当前支持 typed port 连接、上游通过 checker 后自动触发下游、同一 output port fan-out 到多个不同下游 Task；不支持条件分支、循环、多上游 merge、wait-all、同一 target Task 多 input bundling 或自由工作流编排。
 
 ## 后续计划
 
