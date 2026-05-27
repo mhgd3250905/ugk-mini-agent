@@ -1459,7 +1459,9 @@ export function ExecutionMap({
       let sourceRect: AgentBranchRect;
       if (p.sourceId) {
         parentKey = p.sourceId;
-        sourceRect = finalRectByPanelId.get(p.sourceId) ?? taskBranchRectById.get(p.sourceId) ?? taskBranchNode;
+        const found = finalRectByPanelId.get(p.sourceId) ?? taskBranchRectById.get(p.sourceId);
+        if (!found) continue;
+        sourceRect = found;
       } else {
         parentKey = "__menu__";
         sourceRect = taskBranchNode;
