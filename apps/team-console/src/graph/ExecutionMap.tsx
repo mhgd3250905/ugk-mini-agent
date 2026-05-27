@@ -205,6 +205,8 @@ type TaskBranchMeasuredSize = {
   height: number;
 };
 
+type TaskBranchMeasuredSizeMap = Record<string, { width: number; height: number }>;
+
 type TaskSubtreeScope = "root" | "menu" | { panelId: string };
 
 function evidenceHeight(kind: EvidenceKind): number {
@@ -758,7 +760,7 @@ export function ExecutionMap({
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
   const [agentBranchRects, setAgentBranchRects] = useState<Record<string, AgentBranchRect>>({});
   const [taskChildBranchRects, setTaskChildBranchRects] = useState<Record<string, AgentBranchRect>>({});
-  const [taskBranchMeasuredSize, setTaskBranchMeasuredSize] = useState<TaskBranchMeasuredSize | null>(null);
+  const [taskBranchMeasuredSizes, setTaskBranchMeasuredSizes] = useState<TaskBranchMeasuredSizeMap>({});
   const [selectedAtlasNodeKeys, setSelectedAtlasNodeKeys] = useState<Set<string>>(new Set());
   const [maximizedBranch, setMaximizedBranch] = useState<MaximizedPanelState>(null);
   const [panelSizeOverrides, setPanelSizeOverrides] = useState<Record<string, { width: number; height: number }>>({});
@@ -766,7 +768,7 @@ export function ExecutionMap({
   const [taskBranchPositionOverrides, setTaskBranchPositionOverrides] = useState<Record<string, { x: number; y: number }>>({});
   const [panelMeasuredHeights, setPanelMeasuredHeights] = useState<Record<string, number>>({});
   const prevSelectionRef = useRef<string | null>(null);
-  const taskBranchShellRef = useRef<HTMLDivElement | null>(null);
+  const taskBranchShellRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const atlasNodeDragRef = useRef<AtlasNodeDragState | null>(null);
   const suppressAgentClickRef = useRef<string | null>(null);
   const suppressTaskClickRef = useRef<string | null>(null);
@@ -1405,7 +1407,7 @@ export function ExecutionMap({
   ).map((entry) => {
     const node = visibleTaskNodes.find((candidate) => candidate.nodeId === entry.nodeId);
     if (!node) return null;
-    const measuredSize = taskBranchMeasuredSize?.nodeId === node.nodeId ? taskBranchMeasuredSize : null;
+    const measuredSize = taskBranchMeasuredSizes[entry.id] ?? null;
     const base = {
       x: node.position.x + NODE_WIDTH + TASK_BRANCH_GAP,
       y: Math.max(0, node.position.y - 16),
@@ -1650,24 +1652,26 @@ export function ExecutionMap({
   useLayoutEffect(() => {
     if (hasActiveTaskLayoutInteraction()) return;
 
-    const nodeId = focusedTaskNode?.nodeId ?? null;
-    if (!nodeId || !taskBranchPanel) {
-      setTaskBranchMeasuredSize((current) => current ? null : current);
+    if (!taskBranchEntries.length) {
+      if (Object.keys(taskBranchMeasuredSizes).length > 0) setTaskBranchMeasuredSizes({});
       return;
     }
 
-    const element = taskBranchShellRef.current;
-    if (!element) return;
+    const next: TaskBranchMeasuredSizeMap = {};
+    for (const entry of taskBranchEntries) {
+      const element = taskBranchShellRefs.current[entry.id];
+      if (!element) continue;
+      const width = element.offsetWidth || TASK_MENU_BRANCH_WIDTH;
+      const height = element.offsetHeight || TASK_MENU_BRANCH_HEIGHT;
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) continue;
+      next[entry.id] = { width, height };
+    }
 
-    const width = element.offsetWidth || TASK_MENU_BRANCH_WIDTH;
-    const height = element.offsetHeight || TASK_MENU_BRANCH_HEIGHT;
-    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
-
-    setTaskBranchMeasuredSize((current) => (
-      current?.nodeId === nodeId && current.width === width && current.height === height
-        ? current
-        : { nodeId, width, height }
-    ));
+    setTaskBranchMeasuredSizes((current) => {
+      const keys = Object.keys(next);
+      if (keys.length === Object.keys(current).length && keys.every((k) => current[k]?.width === next[k]?.width && current[k]?.height === next[k]?.height)) return current;
+      return next;
+    });
   });
 
   useLayoutEffect(() => {
@@ -2768,7 +2772,7 @@ export function ExecutionMap({
             return (
               <div
                 key={`task-branch-${entry.id}`}
-                ref={isPrimary ? taskBranchShellRef : undefined}
+                ref={(el: HTMLDivElement | null) => { taskBranchShellRefs.current[entry.id] = el; }}
                 className="emap-task-branch-shell"
                 onPointerDownCapture={(event) => beginTaskBranchDrag(entry, event)}
                 onPointerMove={moveTaskBranchDrag}
