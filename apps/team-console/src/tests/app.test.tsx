@@ -6925,6 +6925,17 @@ describe("App", () => {
       const draggedTop = Number.parseFloat(editShell.style.top);
       expect(draggedLeft).not.toBeNaN();
 
+      // Resize edit panel via resize handle
+      const editResizeHandle = editShell.querySelector(".emap-panel-resize-handle") as HTMLElement;
+      expect(editResizeHandle).toBeTruthy();
+      firePointer(editResizeHandle, "pointerdown", { pointerId: 112, clientX: 800, clientY: 500 });
+      firePointer(editResizeHandle, "pointermove", { pointerId: 112, clientX: 850, clientY: 560 });
+      firePointer(editResizeHandle, "pointerup", { pointerId: 112, clientX: 850, clientY: 560, buttons: 0 });
+      const editResizedWidth = Number.parseFloat(editShell.style.width);
+      const editResizedHeight = Number.parseFloat(editShell.style.height);
+      expect(editResizedWidth).not.toBeNaN();
+      expect(editResizedHeight).not.toBeNaN();
+
       // Toggle edit closed via menu button
       const editToggle = Array.from(branch.querySelectorAll(".task-action-menu-button")).find(
         (btn) => btn.textContent?.includes("编辑"),
@@ -6942,6 +6953,8 @@ describe("App", () => {
       const reopenedShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="task-edit-"]') as HTMLElement;
       expect(Number.parseFloat(reopenedShell.style.left)).toBeCloseTo(draggedLeft, 1);
       expect(Number.parseFloat(reopenedShell.style.top)).toBeCloseTo(draggedTop, 1);
+      expect(Number.parseFloat(reopenedShell.style.width)).toBeCloseTo(editResizedWidth, 1);
+      expect(Number.parseFloat(reopenedShell.style.height)).toBeCloseTo(editResizedHeight, 1);
     });
 
     it("Leader chat panel preserves drag position and size after toggle close/reopen", async () => {
@@ -6978,14 +6991,15 @@ describe("App", () => {
       expect(draggedLeft).not.toBeNaN();
 
       // Resize leader panel via resize handle
-      const resizeHandle = leaderShell.querySelector(".agent-playground-branch-resize") as HTMLElement;
-      if (resizeHandle) {
-        firePointer(resizeHandle, "pointerdown", { pointerId: 104, clientX: 900, clientY: 600 });
-        firePointer(resizeHandle, "pointermove", { pointerId: 104, clientX: 940, clientY: 660 });
-        firePointer(resizeHandle, "pointerup", { pointerId: 104, clientX: 940, clientY: 660, buttons: 0 });
-        const resizedWidth = Number.parseFloat(leaderShell.style.width);
-        expect(resizedWidth).not.toBeNaN();
-      }
+      const resizeHandle = leaderShell.querySelector(".emap-panel-resize-handle") as HTMLElement;
+      expect(resizeHandle).toBeTruthy();
+      firePointer(resizeHandle, "pointerdown", { pointerId: 104, clientX: 900, clientY: 600 });
+      firePointer(resizeHandle, "pointermove", { pointerId: 104, clientX: 940, clientY: 660 });
+      firePointer(resizeHandle, "pointerup", { pointerId: 104, clientX: 940, clientY: 660, buttons: 0 });
+      const resizedWidth = Number.parseFloat(leaderShell.style.width);
+      const resizedHeight = Number.parseFloat(leaderShell.style.height);
+      expect(resizedWidth).not.toBeNaN();
+      expect(resizedHeight).not.toBeNaN();
 
       // Toggle leader chat closed via menu button
       const leaderToggle = Array.from(branch.querySelectorAll(".task-action-menu-button")).find(
@@ -7004,6 +7018,8 @@ describe("App", () => {
       const reopenedShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="task-leader-chat-"]') as HTMLElement;
       expect(Number.parseFloat(reopenedShell.style.left)).toBeCloseTo(draggedLeft, 1);
       expect(Number.parseFloat(reopenedShell.style.top)).toBeCloseTo(draggedTop, 1);
+      expect(Number.parseFloat(reopenedShell.style.width)).toBeCloseTo(resizedWidth, 1);
+      expect(Number.parseFloat(reopenedShell.style.height)).toBeCloseTo(resizedHeight, 1);
     });
 
     it("Run observer preserves drag position after toggle close/reopen", async () => {
