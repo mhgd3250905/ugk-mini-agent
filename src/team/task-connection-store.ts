@@ -2,9 +2,9 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { generateTaskConnectionId } from "./ids.js";
 import { findInputPort, findOutputPort } from "./task-port-contract.js";
-import { resolveConnectionStaleReason, wouldCreateTaskConnectionCycle } from "./task-chain-contract.js";
+import { resolveConnectionStaleReason, wouldCreateTaskConnectionCycle, wouldCreateTaskGraphCycle, type TaskGraphEdge } from "./task-chain-contract.js";
 import type { TaskStore } from "./task-store.js";
-import type { ResolvedTaskConnection, TeamTaskConnection } from "./types.js";
+import type { ResolvedTaskConnection, TeamTaskConnection, TeamTaskDependency } from "./types.js";
 
 export interface CreateTaskConnectionInput {
 	fromTaskId: string;
@@ -24,6 +24,12 @@ export class TaskConnectionStore {
 	) {
 		this.filePath = join(rootDir, "task-connections.json");
 	}
+
+	setExistingDependencies(deps: () => Promise<TeamTaskDependency[]>): void {
+		this.getExistingDependencies = deps;
+	}
+
+	private getExistingDependencies: (() => Promise<TeamTaskDependency[]>) | undefined;
 
 	async list(): Promise<TeamTaskConnection[]> {
 		const connections = await this.readAll();
@@ -86,6 +92,16 @@ export class TaskConnectionStore {
 			}
 			if (wouldCreateTaskConnectionCycle(connections, fromTaskId, toTaskId)) {
 				throw new Error("task connection would create a cycle");
+			}
+			const existingDeps = this.getExistingDependencies ? await this.getExistingDependencies() : [];
+			if (existingDeps.length > 0) {
+				const edges = [
+					...connections.map(c => ({ fromTaskId: c.fromTaskId, toTaskId: c.toTaskId })),
+					...existingDeps.map(d => ({ fromTaskId: d.fromTaskId, toTaskId: d.toTaskId })),
+				];
+				if (wouldCreateTaskGraphCycle(edges, fromTaskId, toTaskId)) {
+					throw new Error("task connection would create a cycle");
+				}
 			}
 
 			const timestamp = now();

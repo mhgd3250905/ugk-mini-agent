@@ -1,5 +1,5 @@
 import { findInputPort, findOutputPort } from "./task-port-contract.js";
-import type { TaskConnectionStaleReason, TeamCanvasTask, TeamTaskConnection } from "./types.js";
+import type { TaskConnectionStaleReason, TaskDependencyStaleReason, TeamCanvasTask, TeamTaskConnection, TeamTaskDependency } from "./types.js";
 
 export function resolveConnectionStaleReason(
 	sourceTask: TeamCanvasTask | null,
@@ -24,11 +24,34 @@ export function wouldCreateTaskConnectionCycle(
 	fromTaskId: string,
 	toTaskId: string,
 ): boolean {
+	const edges = connections.map(c => ({ fromTaskId: c.fromTaskId, toTaskId: c.toTaskId }));
+	return wouldCreateTaskGraphCycle(edges, fromTaskId, toTaskId);
+}
+
+export function wouldCreateTaskDependencyCycle(
+	dependencies: TeamTaskDependency[],
+	fromTaskId: string,
+	toTaskId: string,
+): boolean {
+	const edges = dependencies.map(d => ({ fromTaskId: d.fromTaskId, toTaskId: d.toTaskId }));
+	return wouldCreateTaskGraphCycle(edges, fromTaskId, toTaskId);
+}
+
+export interface TaskGraphEdge {
+	fromTaskId: string;
+	toTaskId: string;
+}
+
+export function wouldCreateTaskGraphCycle(
+	existingEdges: TaskGraphEdge[],
+	fromTaskId: string,
+	toTaskId: string,
+): boolean {
 	const outgoing = new Map<string, string[]>();
-	for (const connection of connections) {
-		const targets = outgoing.get(connection.fromTaskId) ?? [];
-		targets.push(connection.toTaskId);
-		outgoing.set(connection.fromTaskId, targets);
+	for (const edge of existingEdges) {
+		const targets = outgoing.get(edge.fromTaskId) ?? [];
+		targets.push(edge.toTaskId);
+		outgoing.set(edge.fromTaskId, targets);
 	}
 	const stack = [toTaskId];
 	const seen = new Set<string>();
@@ -42,4 +65,15 @@ export function wouldCreateTaskConnectionCycle(
 		}
 	}
 	return false;
+}
+
+export function resolveDependencyStaleReason(
+	sourceTask: TeamCanvasTask | null,
+	targetTask: TeamCanvasTask | null,
+): TaskDependencyStaleReason | null {
+	if (!sourceTask) return "source_task_missing";
+	if (sourceTask.archived) return "source_task_archived";
+	if (!targetTask) return "target_task_missing";
+	if (targetTask.archived) return "target_task_archived";
+	return null;
 }

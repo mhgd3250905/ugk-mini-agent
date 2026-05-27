@@ -256,6 +256,27 @@ export interface ResolvedTaskConnection extends TeamTaskConnection {
 export type TeamCanvasSourceNodeType = "text" | "file";
 export type TeamCanvasSourcePortType = "string" | "md" | "json" | "html" | "file";
 
+export interface TeamTaskDependency {
+	schemaVersion: "team/task-dependency-1";
+	dependencyId: string;
+	fromTaskId: string;
+	toTaskId: string;
+	trigger: "on_success";
+	createdAt: string;
+	updatedAt: string;
+}
+
+export type TaskDependencyStaleReason =
+	| "source_task_missing"
+	| "source_task_archived"
+	| "target_task_missing"
+	| "target_task_archived";
+
+export interface ResolvedTaskDependency extends TeamTaskDependency {
+	status: "active" | "stale";
+	staleReason?: TaskDependencyStaleReason;
+}
+
 export interface TeamCanvasSourceNode {
 	schemaVersion: "team/source-node-1";
 	sourceNodeId: string;

@@ -13,3 +13,4 @@ export const generateSourceNodeId = (): string => `source_${compact()}`;
 export const generateSourceConnectionId = (): string => `source_conn_${compact()}`;
 export const generateSourceArtifactId = (): string => `source_artifact_${compact()}`;
 export const generateTaskArtifactId = (): string => `artifact_${compact()}`;
+export const generateTaskDependencyId = (): string => `dep_${compact()}`;
