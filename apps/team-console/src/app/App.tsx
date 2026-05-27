@@ -1555,12 +1555,15 @@ export function App() {
   const openTaskEditBranch = useCallback((task: TeamCanvasTask) => {
     setTaskEditDraftByTaskId((current) => ({
       ...current,
-      [task.taskId]: makeTaskEditDraft(task),
+      ...(current[task.taskId] ? {} : { [task.taskId]: makeTaskEditDraft(task) }),
     }));
-    setTaskEditWarningByTaskId((current) => {
-      const next = { ...current };
-      delete next[task.taskId];
-      return next;
+    setTaskEditWarningByTaskId((prev) => {
+      if (prev[task.taskId]) {
+        const next = { ...prev };
+        delete next[task.taskId];
+        return next;
+      }
+      return prev;
     });
     setTaskArchiveConfirming(false);
     setExpandedTaskBranch((current) => current ? { ...current, detailMode: "edit" } : current);
@@ -2388,23 +2391,34 @@ export function App() {
               type="button"
               className="task-action-menu-button"
               onClick={() => {
-                setTaskEditDraftByTaskId((current) => ({
-                  ...current,
-                  [task.taskId]: makeTaskEditDraft(task),
-                }));
-                setTaskEditWarningByTaskId((current) => {
-                  const next = { ...current };
-                  delete next[task.taskId];
-                  return next;
-                });
-                setTaskArchiveConfirming(false);
-                setExpandedTaskBranches((current) =>
-                  current.map((item) =>
-                    item.nodeId === branch.nodeId
-                      ? { ...item, detailMode: "edit" }
-                      : item
-                  )
-                );
+                if (detailMode === "edit") {
+                  setExpandedTaskBranches((current) =>
+                    current.map((item) =>
+                      item.nodeId === branch.nodeId ? { ...item, detailMode: null } : item
+                    )
+                  );
+                } else {
+                  setTaskEditDraftByTaskId((current) => ({
+                    ...current,
+                    ...(current[task.taskId] ? {} : { [task.taskId]: makeTaskEditDraft(task) }),
+                  }));
+                  setTaskEditWarningByTaskId((prev) => {
+                    if (prev[task.taskId]) {
+                      const next = { ...prev };
+                      delete next[task.taskId];
+                      return next;
+                    }
+                    return prev;
+                  });
+                  setTaskArchiveConfirming(false);
+                  setExpandedTaskBranches((current) =>
+                    current.map((item) =>
+                      item.nodeId === branch.nodeId
+                        ? { ...item, detailMode: "edit" }
+                        : item
+                    )
+                  );
+                }
               }}
             >
               {"\u7f16\u8f91"}
@@ -2413,19 +2427,27 @@ export function App() {
               type="button"
               className="task-action-menu-button"
               onClick={() => {
-                setTaskArchiveConfirming(false);
-                setExpandedTaskBranches((current) =>
-                  current.map((item) =>
-                    item.nodeId === branch.nodeId
-                      ? { ...item, detailMode: "leader-chat" }
-                      : item
-                  )
-                );
-                setTaskLeaderCopyByTaskId((current) => {
-                  const next = { ...current };
-                  delete next[task.taskId];
-                  return next;
-                });
+                if (detailMode === "leader-chat") {
+                  setExpandedTaskBranches((current) =>
+                    current.map((item) =>
+                      item.nodeId === branch.nodeId ? { ...item, detailMode: null } : item
+                    )
+                  );
+                } else {
+                  setTaskArchiveConfirming(false);
+                  setExpandedTaskBranches((current) =>
+                    current.map((item) =>
+                      item.nodeId === branch.nodeId
+                        ? { ...item, detailMode: "leader-chat" }
+                        : item
+                    )
+                  );
+                  setTaskLeaderCopyByTaskId((current) => {
+                    const next = { ...current };
+                    delete next[task.taskId];
+                    return next;
+                  });
+                }
               }}
             >
               {"\u5bf9\u8bdd Leader"}
@@ -2556,7 +2578,13 @@ export function App() {
         <button
           type="button"
           className="task-action-menu-button"
-          onClick={() => openTaskEditBranch(expandedTask)}
+          onClick={() => {
+            if (expandedTaskDetailMode === "edit") {
+              setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current);
+            } else {
+              openTaskEditBranch(expandedTask);
+            }
+          }}
         >
           编辑
         </button>
@@ -2564,13 +2592,17 @@ export function App() {
           type="button"
           className="task-action-menu-button"
           onClick={() => {
-            setTaskArchiveConfirming(false);
-            setTaskLeaderCopyByTaskId((current) => {
-              const next = { ...current };
-              delete next[expandedTask.taskId];
-              return next;
-            });
-            setExpandedTaskBranch((current) => current ? { ...current, detailMode: "leader-chat" } : current);
+            if (expandedTaskDetailMode === "leader-chat") {
+              setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current);
+            } else {
+              setTaskArchiveConfirming(false);
+              setTaskLeaderCopyByTaskId((current) => {
+                const next = { ...current };
+                delete next[expandedTask.taskId];
+                return next;
+              });
+              setExpandedTaskBranch((current) => current ? { ...current, detailMode: "leader-chat" } : current);
+            }
           }}
         >
           对话 Leader

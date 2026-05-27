@@ -1696,40 +1696,6 @@ export function ExecutionMap({
     if (changed) setPanelMeasuredHeights((current) => ({ ...current, ...updated }));
   });
 
-  useLayoutEffect(() => {
-    if (!taskChildBranchPanels?.length && Object.keys(panelSizeOverrides).length > 0) {
-      setPanelSizeOverrides({});
-    }
-    if (!taskChildBranchPanels?.length && Object.keys(panelPositionOverrides).length > 0) {
-      setPanelPositionOverrides({});
-      return;
-    }
-    if (!taskChildBranchPanels?.length) return;
-    const activeIds = new Set(taskChildBranchPanels.map((p) => p.id));
-    const staleSize = Object.keys(panelSizeOverrides).filter((id) => !activeIds.has(id));
-    if (staleSize.length > 0) {
-      setPanelSizeOverrides((current) => {
-        const next = { ...current };
-        for (const id of staleSize) delete next[id];
-        return next;
-      });
-    }
-    const stalePos = Object.keys(panelPositionOverrides).filter((id) => !activeIds.has(id));
-    if (stalePos.length > 0) {
-      setPanelPositionOverrides((current) => {
-        const next = { ...current };
-        for (const id of stalePos) delete next[id];
-        return next;
-      });
-    }
-  }, [taskChildBranchPanels, panelSizeOverrides, panelPositionOverrides]);
-
-  useLayoutEffect(() => {
-    if (!taskBranchPanel && Object.keys(taskBranchPositionOverrides).length > 0) {
-      setTaskBranchPositionOverrides({});
-    }
-  }, [taskBranchPanel, taskBranchPositionOverrides]);
-
   const translateTaskSubtree = useCallback((
     scope: TaskSubtreeScope,
     dx: number,
