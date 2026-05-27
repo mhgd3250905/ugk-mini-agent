@@ -1,6 +1,6 @@
 # 当前交接快照
 
-更新时间：`2026-05-26`
+更新时间：`2026-05-27`
 
 这份文档给新接手 `ugk-pi / UGK CLAW` 的 coding agent 看。它只记录当前稳定事实和接手入口；历史流水账看 `docs/change-log.md`。不要靠聊天记录拼现状，聊天上下文太肥时最容易把旧计划当新任务，挺蠢，也挺危险。
 
@@ -28,6 +28,54 @@
 - 本地工作区在打 tag / 推送后已清理未跟踪运行产物；新会话仍必须先执行 `git status --short --branch`
 
 注意：远端 Git 已更新不等于生产服务器已部署。服务器更新仍要按 `docs/server-ops.md` 的增量流程执行，不能把 push 当上线。
+
+## 2026-05-27 Team Console Task / WorkUnit worktree 快照
+
+当前 Team Console Task / WorkUnit redesign 继续在独立 worktree 开发：
+
+- Worktree：`E:\AII\ugk-pi\.worktrees\team-console-workunit-redesign`
+- 分支：`codex/team-console-workunit-redesign`
+- 最新提交：`da702a2 test(team): narrow task artifact bound input assertion`
+- 当前 tracked feature diff 已收口；如果 `git status --short` 仍显示 tracked dirty，先确认是否为新的用户改动或未提交交接记录。
+- 当前 untracked 仍有 `.codex/plans/*`、`.codex/skills/new-chat/`、`tmp-team-console-right-stack.png`；这些是本地协作 / 旧现场，除非用户明确要求，不要提交或删除。
+
+已完成并提交：
+
+- `1ecf7c6`：Team Console Live API 工具栏接入“文本输出 / 文件输出” Source 节点；文本 source 输出 `string`，文件 source 按扩展名推断 `md` / `json` / `html` / `string` / `file`。
+- Source 节点作为独立根节点渲染在 Execution Atlas，可拖动、框选、收纳到左侧 Hub，并可连接到同类型 Task input port；本地只保存 source 节点坐标和 Hub 收纳 id，不保存 source 内容。
+- Agent 对话分支、Task Leader 对话分支和 observer 文件详情面板支持标题栏双击最大化 / 还原，保留原标题栏拖动和右下角 resize。
+- `ef0b718` / `1e50232` / `b40bf2f` / `db4a29d`：补齐 Agent / Task / Source 根卡清理入口；Task 和 Source 走软归档，Agent 只移出 Team Console 画布；归档失败保留节点和错误 banner；README 引号字符修复已单独收口。
+- `540239e`：修复 Task 根节点归档失败时误清空确认状态的问题；`archiveTask()` 返回 boolean，失败时确认按钮仍保留。
+- `5758218`：Leader 对话分支显示“当前 Task 上下文”只读文本和复制按钮，方便复制到 Leader 会话里修改 Task 规则；Team Console 仍不解析 iframe 聊天文本。
+- `d0e35dd` / `0668d14` / `1fb9f25`：锁定 Task run 并发边界：不同 Task 可并行；同一 Task 同时只允许一个 active run；active run 轮询按 `taskId + runId` 独立收口，最后一个提交消除了并发测试的 React act warning。
+- `88e757c` / `dfded62` / `a3aaab8` / `2d1a217`：锁定 typed Task output fan-out：同一个 output port 可连接到多个不同下游 Task 的同类型 input port；上游 accepted result 会独立分发给每个下游；单个下游失败不阻塞其他下游或回滚上游；文档明确不做 merge / wait-all / 条件分支 / 同 target 多 input bundling。
+- `da702a2`：后端路由测试把 downstream bound input 收窄为 Task artifact，明确防止 Task-to-Task typed chain 被 canvas source artifact 混淆。
+- 文档已同步：`docs/change-log.md`、`docs/team-runtime.md`、`apps/team-console/README.md`。
+
+验证记录：
+
+- `npm --prefix apps/team-console run test`：370 passed
+- `npm --prefix apps/team-console run build`：通过
+- `npx tsc --noEmit`：通过
+- `git diff --check` / `git diff --cached --check`：通过
+- `node --test --import tsx test\team-task-routes.test.ts`：17 passed
+- `node --test --import tsx test\team-task-run-process.test.ts`：13 passed
+- `node --test --import tsx test\team-task-run-routes.test.ts`：10 passed
+- 浏览器真实 `http://127.0.0.1:5174/` 代理 Docker main `http://127.0.0.1:3000` 验证过 Source 创建、文件 md 推断、Source→Task 连接、Hub 收纳恢复、Agent 分支双击最大化 / 还原、文件详情双击最大化 / 还原；验证期间创建的临时 source / connection 已清理。
+- Root archive、Leader context copy、Task run concurrency 和 fan-out 最近几轮浏览器自动验证受 Chrome profile / dev server 可用性影响未全部重跑；对应路径已有前端 / 后端回归测试覆盖。
+
+已撤销的需求：
+
+- 用户撤回“`string` input port 作为关键词参数槽”的特化设计。
+- 后续不要实现：`string` 必填、缺少 `string` source 时阻止运行、同一 `string` input 自动替换旧 source、`team-task-creator` 自动生成 `query:string`。
+- 保留通用能力即可：text source 输出 `string`，如果 Task 自身有同类型 input，可按普通 typed source 连接；`string` 不再有关键词 / 参数槽特殊语义。
+
+推荐下一步：
+
+1. 新会话先确认用户的新目标，不要继续推进已撤销的 `string` 参数特化计划。
+2. 若继续做前端 UI，保持在 `apps/team-console/**`、`docs/team-runtime.md`、`apps/team-console/README.md`、`docs/change-log.md` 范围内；不改主 `/playground`，不改 `.pi/skills` runtime skill。
+3. 只有用户明确要求后端 typed Task chain 行为变更时才动 `src/team/**`；普通 UI / 测试 / 文档需求不要顺手改 runtime。
+4. 如果后续讨论“多个 upstream 合并到同一个 input”或“同一个 target Task 多 input 同时绑定”，先做需求设计，不要把它和已完成的 fan-out 混成一个功能。
 
 ## 2026-05-26 Team Console Task / WorkUnit 提交快照（最终稳定版）
 
