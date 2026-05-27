@@ -940,3 +940,231 @@ test("source node connections do not auto-trigger task runs by themselves", asyn
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+test("task output fan-out delivers same artifact to two downstream Tasks independently", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-fanout-delivery-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const sourceTask = await taskStore.create({
+			...validTaskInput,
+			workUnit: {
+				...validTaskInput.workUnit,
+				outputPorts: [{ id: "draft_md", label: "Markdown", type: "md" }],
+			},
+		});
+		const targetB = await taskStore.create({
+			title: "Target B",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "Target B",
+				input: { text: "Process markdown B." },
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+				outputContract: { text: "Output B." },
+				acceptance: { rules: ["must include B"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+		const targetC = await taskStore.create({
+			title: "Target C",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "Target C",
+				input: { text: "Process markdown C." },
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+				outputContract: { text: "Output C." },
+				acceptance: { rules: ["must include C"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+
+		await mkdir(join(root, "team"), { recursive: true });
+		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
+		const connB = await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "draft_md",
+			toTaskId: targetB.taskId,
+			toInputPortId: "source_md",
+		});
+		const connC = await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "draft_md",
+			toTaskId: targetC.taskId,
+			toInputPortId: "source_md",
+		});
+
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new ProcessEventRoleRunner(),
+			connectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const upstreamRun = await service.createRun(sourceTask.taskId);
+		const upstreamFinished = await waitForTerminalRun(service, upstreamRun.runId);
+		assert.equal(upstreamFinished.status, "completed");
+		assert.equal(upstreamFinished.taskStates[sourceTask.taskId]?.status, "succeeded");
+
+		const downstreamBRuns = await waitForTaskRuns(service, targetB.taskId, 1);
+		const downstreamBFinished = await waitForTerminalRun(service, downstreamBRuns[0]!.runId);
+		assert.equal(downstreamBFinished.status, "completed");
+		assert.equal(downstreamBFinished.source?.triggeredBy?.type, "task-connection");
+		assert.equal(downstreamBFinished.source?.triggeredBy?.fromTaskId, sourceTask.taskId);
+		assert.equal(downstreamBFinished.source?.triggeredBy?.fromRunId, upstreamRun.runId);
+		assert.equal(downstreamBFinished.source?.boundInputs?.length, 1);
+		assert.equal(downstreamBFinished.source?.boundInputs?.[0]?.inputPortId, "source_md");
+		assert.equal(downstreamBFinished.source?.boundInputs?.[0]?.artifact?.type, "md");
+		assert.equal(downstreamBFinished.source?.boundInputs?.[0]?.connectionId, connB.connectionId);
+
+		const downstreamCRuns = await waitForTaskRuns(service, targetC.taskId, 1);
+		const downstreamCFinished = await waitForTerminalRun(service, downstreamCRuns[0]!.runId);
+		assert.equal(downstreamCFinished.status, "completed");
+		assert.equal(downstreamCFinished.source?.triggeredBy?.type, "task-connection");
+		assert.equal(downstreamCFinished.source?.triggeredBy?.fromTaskId, sourceTask.taskId);
+		assert.equal(downstreamCFinished.source?.triggeredBy?.fromRunId, upstreamRun.runId);
+		assert.equal(downstreamCFinished.source?.boundInputs?.length, 1);
+		assert.equal(downstreamCFinished.source?.boundInputs?.[0]?.inputPortId, "source_md");
+		assert.equal(downstreamCFinished.source?.boundInputs?.[0]?.artifact?.type, "md");
+		assert.equal(downstreamCFinished.source?.boundInputs?.[0]?.connectionId, connC.connectionId);
+
+		const delivery = await waitForAttemptDelivery(workspace, upstreamRun.runId, sourceTask.taskId, 2);
+		assert.equal(delivery.length, 2);
+		const deliveryByConn = Object.fromEntries(delivery.map(d => [d.connectionId, d]));
+		assert.equal(deliveryByConn[connB.connectionId]?.status, "delivered");
+		assert.equal(deliveryByConn[connC.connectionId]?.status, "delivered");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("task output fan-out isolates downstream failure: B blocked by active run, C succeeds", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-fanout-isolation-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const sourceTask = await taskStore.create({
+			...validTaskInput,
+			workUnit: {
+				...validTaskInput.workUnit,
+				outputPorts: [{ id: "draft_md", label: "Markdown", type: "md" }],
+			},
+		});
+		const targetB = await taskStore.create({
+			title: "Target B (blocked)",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "Target B",
+				input: { text: "Process markdown B." },
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+				outputContract: { text: "Output B." },
+				acceptance: { rules: ["must include B"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+		const targetC = await taskStore.create({
+			title: "Target C",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "Target C",
+				input: { text: "Process markdown C." },
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+				outputContract: { text: "Output C." },
+				acceptance: { rules: ["must include C"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+
+		await mkdir(join(root, "team"), { recursive: true });
+		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
+		const connB = await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "draft_md",
+			toTaskId: targetB.taskId,
+			toInputPortId: "source_md",
+		});
+		const connC = await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "draft_md",
+			toTaskId: targetC.taskId,
+			toInputPortId: "source_md",
+		});
+
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+
+		let gatedWorkerStarted!: () => void;
+		const gatedWorkerStartedPromise = new Promise<void>((resolve) => { gatedWorkerStarted = resolve; });
+		let gatedWorkerProceed!: () => void;
+		const gatedWorkerProceedPromise = new Promise<void>((resolve) => { gatedWorkerProceed = resolve; });
+
+		class GatedDownstreamRunner implements TeamRoleRunner {
+			async runWorker(_input: WorkerInput): Promise<WorkerOutput> {
+				gatedWorkerStarted();
+				await gatedWorkerProceedPromise;
+				return { content: "gated worker", artifactRefs: [] };
+			}
+			async runChecker(_input: CheckerInput): Promise<CheckerOutput> {
+				return { verdict: "pass", reason: "ok", resultContent: "accepted" };
+			}
+			async runWatcher(_input: WatcherInput): Promise<WatcherOutput> {
+				return { decision: "accept_task", reason: "ok" };
+			}
+			async runFinalizer(_input: FinalizerInput): Promise<FinalizerOutput> {
+				return { finalReport: "ok" };
+			}
+			async runDecomposer(_input: DecomposerInput): Promise<DecomposerOutput> {
+				return { decision: "no_split", reason: "ok", children: [] };
+			}
+		}
+
+		let runnerCallCount = 0;
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => {
+				runnerCallCount++;
+				return runnerCallCount === 1 ? new GatedDownstreamRunner() : new ProcessEventRoleRunner();
+			},
+			connectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		// Pre-create an active run on target B (gated, stays active)
+		const preCreatedBRun = await service.createRun(targetB.taskId);
+		await gatedWorkerStartedPromise;
+
+		// Run source task; B delivery should fail but C should succeed
+		const upstreamRun = await service.createRun(sourceTask.taskId);
+		const upstreamFinished = await waitForTerminalRun(service, upstreamRun.runId);
+		assert.equal(upstreamFinished.status, "completed", "upstream must remain completed");
+		assert.equal(upstreamFinished.taskStates[sourceTask.taskId]?.status, "succeeded");
+
+		// Target C should have a completed downstream run
+		const downstreamCRuns = await waitForTaskRuns(service, targetC.taskId, 1);
+		const downstreamCFinished = await waitForTerminalRun(service, downstreamCRuns[0]!.runId);
+		assert.equal(downstreamCFinished.status, "completed");
+		assert.equal(downstreamCFinished.source?.triggeredBy?.fromTaskId, sourceTask.taskId);
+		assert.equal(downstreamCFinished.source?.boundInputs?.[0]?.connectionId, connC.connectionId);
+
+		// Delivery outcomes: B failed, C delivered
+		const delivery = await waitForAttemptDelivery(workspace, upstreamRun.runId, sourceTask.taskId, 2);
+		assert.equal(delivery.length, 2);
+		const deliveryByConn = Object.fromEntries(delivery.map(d => [d.connectionId, d]));
+		assert.equal(deliveryByConn[connB.connectionId]?.status, "failed");
+		assert.match(deliveryByConn[connB.connectionId]?.error ?? "", /active task run already exists/);
+		assert.equal(deliveryByConn[connC.connectionId]?.status, "delivered");
+
+		// Release gated B worker for cleanup
+		gatedWorkerProceed();
+		await waitForTerminalRun(service, preCreatedBRun.runId);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
