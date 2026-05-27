@@ -9,13 +9,13 @@
 可以直接把下面这段发给新的 coding agent：
 
 ```text
-请接手 `E:\AII\ugk-pi`。你维护的是 ugk-pi 代码仓库，不是产品运行时 Playground agent。
+请接手 `E:\AII\ugk-pi`。你维护的是 ugk-pi 代码仓库，不是产品运行时 Playground agent，也不是 `.pi/skills` runtime skill。
 
-开始前先读 `AGENTS.md`、`docs/handoff-current.md`、`docs/playground-current.md`、`docs/change-log.md`、`docs/traceability-map.md` 和 `DESIGN.md`。如果任务涉及 Chat / Agents / Conn 性能优化，直接看 `.codex/plans/2026-05-22-playground-chat-performance-handoff.md`、`.codex/plans/2026-05-22-playground-agents-performance-handoff.md`、`.codex/plans/2026-05-22-playground-conn-performance-handoff.md`。如果任务涉及 Qwen 思考流、GLM-5.1 上下文或模型源展示，先看 `docs/model-providers.md`、`docs/playground-current.md` 的 `2026-05-23` 条目和 `src/agent/agent-session-event-adapter.ts`。如果任务涉及 Team Console Task / WorkUnit redesign，先切到 `E:\AII\ugk-pi\.worktrees\team-console-workunit-redesign`，读 `apps/team-console/README.md`、`docs/team-runtime.md`、`docs/playground-current.md` 和 `docs/change-log.md`；这是独立 Team Console React/Vite worktree，不是产品运行时 Playground agent，也不是 `.pi/skills` runtime skill。不要提交 `.codex/plans/*`、`.codex/skills/new-chat/`、`.env`、`.data`、runtime 产物、temp 文件或未知 `.pi/skills/*/skills-lock.json`。
+开始前先读 `AGENTS.md`、`docs/handoff-current.md`、`docs/playground-current.md`、`docs/change-log.md`、`docs/traceability-map.md` 和 `DESIGN.md`。如果任务涉及 Chat / Agents / Conn 性能优化，直接看 `.codex/plans/2026-05-22-playground-chat-performance-handoff.md`、`.codex/plans/2026-05-22-playground-agents-performance-handoff.md`、`.codex/plans/2026-05-22-playground-conn-performance-handoff.md`。如果任务涉及 Qwen 思考流、GLM-5.1 上下文或模型源展示，先看 `docs/model-providers.md`、`docs/playground-current.md` 的 `2026-05-23` 条目和 `src/agent/agent-session-event-adapter.ts`。如果任务涉及 Team Console Task / WorkUnit，直接在 `E:\AII\ugk-pi` 的 `main` 上继续，读 `apps/team-console/README.md`、`docs/team-runtime.md`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx` 和 `apps/team-console/src/tests/app.test.tsx`；旧 worktree `E:\AII\ugk-pi\.worktrees\team-console-workunit-redesign` 已告一段落，不再作为后续开发入口。不要提交 `.codex/plans/*`、`.env`、`.data`、runtime 产物、temp 文件或未知 `.pi/skills/*/skills-lock.json`。
 
 开始前执行 `git status --short --branch`、`git log -1 --oneline`、`git show -s --format="%h %s" stable/playground-performance-2026-05-22`、`git log --oneline stable/playground-performance-2026-05-22..HEAD` 和 `git remote -v`。当前稳定产品基线 tag 是 `stable/playground-performance-2026-05-22`，指向 `f0aa1fd docs(playground): preserve performance handoffs`，已推送到 GitHub `origin` 和 Gitee `gitee`。后续是否继续开发、规划、部署，要先按用户新任务判断，不要擅自加功能。
 
-本地开发默认用 Docker：`docker compose up -d` 或 `docker compose restart ugk-pi`。固定入口是 `http://127.0.0.1:3000/playground`，健康检查是 `http://127.0.0.1:3000/healthz`。不要提交 `.env`、`.data/`、runtime 临时产物、public 报告、截图、浏览器 profile、部署包或未明确归档的临时文件。
+本地开发默认用 Docker：`docker compose up -d` 或 `docker compose restart ugk-pi`。固定产品入口是 `http://127.0.0.1:3000/playground`，Team Console 开发入口是 `http://127.0.0.1:5174/`，通过 Vite 同源代理转发 `/v1`、`/playground`、`/assets`、`/runtime`、`/vendor` 到真实 Docker 后端 `http://127.0.0.1:3000`；远程 FRP 访问 `5174` 时不要把 iframe 默认 base 写成 `127.0.0.1:3000`。不要开 `3100` 之类临时后端。不要提交 `.env`、`.data/`、runtime 临时产物、public 报告、截图、浏览器 profile、部署包或未明确归档的临时文件。
 ```
 
 ## 当前稳定基线
@@ -29,13 +29,42 @@
 
 注意：远端 Git 已更新不等于生产服务器已部署。服务器更新仍要按 `docs/server-ops.md` 的增量流程执行，不能把 push 当上线。
 
-## 2026-05-27 Team Console Task / WorkUnit worktree 快照
+## 2026-05-27 Team Console merge 后主线快照
 
-当前 Team Console Task / WorkUnit redesign 继续在独立 worktree 开发：
+Team Console Task / WorkUnit redesign 已通过 PR #1 合入 `main`：
+
+- 主目录：`E:\AII\ugk-pi`
+- 当前主线提交：`ed3414b feat(team-console): integrate Task WorkUnit redesign`
+- `main` 与 `origin/main`：`0 / 0`
+- 后续 Team Console 开发默认从主目录 `main` 继续，不再切回旧 feature worktree。
+- Docker 后端 `3000` 应使用主目录挂载到容器 `/app`；Team Console Vite `5174` 应从 `E:\AII\ugk-pi\apps\team-console` 启动并代理到 `http://127.0.0.1:3000`。Team Console iframe 默认使用同源 `/playground?...`，Vite 再代理到后端；只有显式设置 `VITE_TEAM_CONSOLE_PLAYGROUND_BASE_URL` 时才用独立公网后端 origin。
+- 用户本地产物 `E:\AII\ugk-pi\ugk-skills-hub\` 必须保留，不要移动或删除；它已加入本机 `.git/info/exclude`，不属于提交边界。
+- 主目录里有合并前备份：`backup/main-pre-team-console-sync-2026-05-27` 指向 `9a764bb`，`stash@{0}` 是同步 main 前的 dirty 备份。不要随手丢弃这些备份。
+
+最近主线验证：
+
+- `npm run test:team`：966 pass / 2 skip / 0 fail
+- `npm --prefix apps/team-console run test`：370 passed
+- `npm --prefix apps/team-console run build`：通过
+- `npx tsc --noEmit`：通过
+- `git diff --check`：通过
+- Docker `http://127.0.0.1:3000/healthz` 和 `http://127.0.0.1:3000/v1/team/healthz` 正常；`5174` 代理 `3000` 正常；`3100` 无监听。
+
+本轮 Team Console 远程 `5174` 修复现场：
+
+- 根因：Team Console 曾把 Vite 服务端代理目标 `TEAM_CONSOLE_API_TARGET=http://127.0.0.1:3000` 注入前端并作为 Agent / Leader iframe base URL；远程浏览器通过 `http://139.196.23.72:5174/` 打开时会误连用户自己机器的 `127.0.0.1:3000`。
+- 已改：`apps/team-console/src/app/App.tsx` 默认生成相对 `/playground?...` iframe URL；`apps/team-console/vite.config.ts` 代理 `/v1`、`/playground`、`/assets`、`/runtime`、`/vendor` 和 playground logo 静态资源；`TEAM_CONSOLE_API_TARGET` 不再暴露到 `import.meta.env`。
+- 当前 `5174` 已重启，监听 PID：`159668`；`3100` 无监听。
+- 远程验证：`http://139.196.23.72:5174/playground?view=chat&agentId=main&embed=team-console` 返回主 `/playground` HTML（`<title>UGK Claw</title>`）；`http://139.196.23.72:5174/src/app/App.tsx` 中不再包含 `VITE_TEAM_CONSOLE_API_TARGET` 或 `http://127.0.0.1:3000`；`http://139.196.23.72:5174/v1/model-config` 正常返回。
+- 已跑验证：`npm --prefix apps/team-console run test`（370 passed）、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check`。
+
+## 2026-05-27 Team Console Task / WorkUnit 历史 worktree 快照
+
+Team Console Task / WorkUnit redesign 的独立 worktree 已告一段落，仅作为历史现场保留：
 
 - Worktree：`E:\AII\ugk-pi\.worktrees\team-console-workunit-redesign`
 - 分支：`codex/team-console-workunit-redesign`
-- 最新提交：`da702a2 test(team): narrow task artifact bound input assertion`
+- 最新提交：`e77fc1f docs(team-console): document canvas task run admission scope`
 - 当前 tracked feature diff 已收口；如果 `git status --short` 仍显示 tracked dirty，先确认是否为新的用户改动或未提交交接记录。
 - 当前 untracked 仍有 `.codex/plans/*`、`.codex/skills/new-chat/`、`tmp-team-console-right-stack.png`；这些是本地协作 / 旧现场，除非用户明确要求，不要提交或删除。
 

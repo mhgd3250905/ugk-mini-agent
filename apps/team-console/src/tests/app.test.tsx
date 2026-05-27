@@ -783,6 +783,7 @@ describe("App", () => {
     expect(iframe?.getAttribute("src")).toContain("/playground?view=chat&agentId=main");
     expect(iframe?.getAttribute("src")).toContain("embed=team-console");
     expect(iframe?.getAttribute("src")).not.toContain("teamTaskMode=create");
+    expect(iframe?.getAttribute("src")).not.toContain("127.0.0.1");
   });
 
   it("clicking the expanded agent card collapses the embedded branch", async () => {
@@ -3727,15 +3728,16 @@ describe("App", () => {
     expect(await screen.findByText("请求失败 (500)")).toBeInTheDocument();
   });
 
-  it("vite proxy includes the Team Console API surface", () => {
+  it("vite proxy includes the Team Console API surface and embedded playground route", () => {
     const config = readFileSync("vite.config.ts", "utf8");
-    expect(config).toContain('"/v1/team"');
-    expect(config).toContain('"/v1/agents"');
-    expect(config).toContain('"/v1/assets"');
-    expect(config).toContain("VITE_TEAM_CONSOLE_API_TARGET");
+    expect(config).toContain('"/v1"');
+    expect(config).toContain('"/playground"');
+    expect(config).toContain('"/assets"');
+    expect(config).toContain('"/runtime"');
+    expect(config).toContain('"/vendor"');
+    expect(config).not.toContain("VITE_TEAM_CONSOLE_API_TARGET");
     expect(config).not.toContain('"/v1/conns"');
     expect(config).not.toContain('"/v1/activity"');
-    expect(config).not.toContain('"/playground"');
     expect(config).toContain("teamApiTarget");
   });
 
@@ -3834,6 +3836,8 @@ describe("App", () => {
     expect(readme).toContain("Agent workspace");
     expect(readme).toContain("/v1/agents");
     expect(readme).toContain("/v1/agents/status");
+    expect(readme).toContain("同源代理");
+    expect(readme).toContain("不会暴露给前端 iframe URL");
     expect(readme).toContain("真实状态投到卡片状态条和状态 pill");
     expect(readme).toContain("Agent 分支卡片");
     expect(readme).toContain("/playground?view=chat&agentId=<agentId>");
@@ -3903,6 +3907,8 @@ describe("App", () => {
     const runtimeDoc = readFileSync("../../docs/team-runtime.md", "utf8");
     expect(runtimeDoc).toContain("单击 Agent 节点会展开 Agent 分支卡片");
     expect(runtimeDoc).toContain("GET /v1/agents/status");
+    expect(runtimeDoc).toContain("同源代理承载 Live API 和嵌入式主 `/playground` iframe");
+    expect(runtimeDoc).toContain("不再暴露给浏览器端 iframe");
     expect(runtimeDoc).toContain("卡片状态条与状态 pill 会随真实运行态显示空闲、运行中或状态未知");
     expect(runtimeDoc).toContain("/playground?view=chat&agentId=<agentId>");
     expect(runtimeDoc).toContain("embed=team-console");

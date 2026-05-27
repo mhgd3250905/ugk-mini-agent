@@ -13,7 +13,6 @@ export type DataSource = "mock" | "live";
 type LiveRunMode = "workspace" | "latest";
 
 const CLEAN_AGENT_WORKSPACE_ID = "agent-workspace";
-const DEFAULT_PLAYGROUND_BASE_URL = "http://127.0.0.1:3000";
 const DATA_SOURCE_STORAGE_KEY = "ugk-team-console:data-source";
 const LIVE_AGENT_LAYOUT_STORAGE_KEY = "ugk-team-console:live-agent-layout:v1";
 const LIVE_TASK_LAYOUT_STORAGE_KEY = "ugk-team-console:live-task-layout:v1";
@@ -428,25 +427,23 @@ function mergeTaskRun(
   };
 }
 
-function playgroundBaseUrl(): string {
-  const configured =
-    import.meta.env.VITE_TEAM_CONSOLE_PLAYGROUND_BASE_URL ||
-    import.meta.env.VITE_TEAM_CONSOLE_API_TARGET;
-  const raw = typeof configured === "string" && configured.trim()
-    ? configured.trim()
-    : DEFAULT_PLAYGROUND_BASE_URL;
-  return raw.replace(/\/+$/, "");
+function playgroundBaseUrlPrefix(): string {
+  const configured = import.meta.env.VITE_TEAM_CONSOLE_PLAYGROUND_BASE_URL;
+  return typeof configured === "string" && configured.trim()
+    ? configured.trim().replace(/\/+$/, "")
+    : "";
 }
 
 function buildAgentPlaygroundUrl(agentId: string, mode: AgentBranchMode = "chat"): string {
-  const url = new URL("/playground", playgroundBaseUrl());
-  url.searchParams.set("view", "chat");
-  url.searchParams.set("agentId", agentId);
-  url.searchParams.set("embed", "team-console");
+  const params = new URLSearchParams({
+    view: "chat",
+    agentId,
+    embed: "team-console",
+  });
   if (mode === "task-create") {
-    url.searchParams.set("teamTaskMode", "create");
+    params.set("teamTaskMode", "create");
   }
-  return url.toString();
+  return `${playgroundBaseUrlPrefix()}/playground?${params.toString()}`;
 }
 
 function formatTaskLeaderContext(task: TeamCanvasTask): string {
@@ -490,13 +487,14 @@ function formatTaskLeaderContext(task: TeamCanvasTask): string {
 }
 
 function buildTaskLeaderPlaygroundUrl(task: TeamCanvasTask): string {
-  const url = new URL("/playground", playgroundBaseUrl());
-  url.searchParams.set("view", "chat");
-  url.searchParams.set("agentId", task.leaderAgentId);
-  url.searchParams.set("embed", "team-console");
-  url.searchParams.set("teamTaskId", task.taskId);
-  url.searchParams.set("teamTaskMode", "edit");
-  return url.toString();
+  const params = new URLSearchParams({
+    view: "chat",
+    agentId: task.leaderAgentId,
+    embed: "team-console",
+    teamTaskId: task.taskId,
+    teamTaskMode: "edit",
+  });
+  return `${playgroundBaseUrlPrefix()}/playground?${params.toString()}`;
 }
 
 function taskMenuPanelId(nodeId: string): string {

@@ -12,6 +12,34 @@
 
 ---
 
+## 2026-05-27 — Team Console 远程 iframe 与 Vite proxy 修复
+
+- **主题**: 修复远程通过 `5174` 访问 Team Console 时，Agent / Leader iframe 默认打到 `127.0.0.1:3000` 的问题。
+- **根因**: `apps/team-console/vite.config.ts` 将服务端代理目标 `TEAM_CONSOLE_API_TARGET` 注入为前端 `VITE_TEAM_CONSOLE_API_TARGET`，`App.tsx` 又把它作为 `/playground` iframe base URL。远程浏览器打开 `http://139.196.23.72:5174/` 时，iframe 会请求远端用户自己机器的 `127.0.0.1:3000`，而不是开发机后端。
+- **变更内容**:
+  - Team Console iframe 默认改为同源相对 `/playground?...`，只在显式设置 `VITE_TEAM_CONSOLE_PLAYGROUND_BASE_URL` 时使用独立公网 origin。
+  - Vite dev proxy 从少数 `/v1/team`、`/v1/agents`、`/v1/assets` 扩展为 `/v1`、`/playground`、`/assets`、`/runtime`、`/vendor` 和主 playground logo 静态资源，支撑同源 iframe 内的主 `/playground` 完整运行。
+  - `TEAM_CONSOLE_API_TARGET` 保留为 Vite 服务端代理目标，不再注入浏览器端 `import.meta.env`。
+  - 文档明确远程 FRP 场景不要把 iframe base 设为 loopback，并移除 `3100` 临时后端示例。
+- **影响范围**: `apps/team-console/src/app/App.tsx`, `apps/team-console/vite.config.ts`, `apps/team-console/src/tests/app.test.tsx`, `apps/team-console/README.md`, `docs/team-runtime.md`, `docs/change-log.md`
+- **验证**: 新增回归测试先红后绿；`npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "embedded playground|vite proxy"`、`npm --prefix apps/team-console run test`（370 passed）、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check` 已通过；重启 `5174` 后，本机和远程 `http://139.196.23.72:5174/playground?view=chat&agentId=main&embed=team-console` 均返回主 `/playground` HTML，远程 App module 不再包含 `VITE_TEAM_CONSOLE_API_TARGET` 或 `http://127.0.0.1:3000`。
+- **边界**: 不改主 `/playground` 产品 UI，不改 Team runtime 后端 API，不改 `.pi/skills` runtime skill，不开 `3100` 临时后端。
+
+---
+
+## 2026-05-27 — Team Console merge 后 main 接手口径
+
+- **主题**: Team Console Task / WorkUnit redesign 合入 `main` 后，更新新会话接手入口和本地运行口径。
+- **变更内容**:
+  - `docs/handoff-current.md` 的新会话提示改为从 `E:\AII\ugk-pi` 主目录 `main` 继续开发 Team Console，不再切回 `team-console-workunit-redesign` 历史 worktree。
+  - 记录 Docker 后端 `3000` + Team Console Vite `5174` 的本地运行边界，并明确不要开 `3100` 临时后端。
+  - 记录用户本地产物 `ugk-skills-hub/` 必须保留，已通过本机 `.git/info/exclude` 排除，不属于提交边界。
+- **影响范围**: `docs/handoff-current.md`, `docs/change-log.md`
+- **验证**: `git diff --check` 已通过。
+- **边界**: 不改源码，不改运行态数据，不提交 `.env`、`.data`、runtime 产物或旧 worktree 的 `.codex/plans/*`。
+
+---
+
 ## 2026-05-27 — Team Console Canvas Task run admission 后端修复
 
 - **主题**: 修复 Canvas Task run 误用 Plan run 全局 admission，确保不同 Task 可并行运行，同一 Task 仍只允许一个 active run。

@@ -34,17 +34,19 @@ npm run team-console:test   # 测试
 
 默认使用 Mock fixture 数据。顶部可切换 Live API 模式。
 
-本地开发时，Live API 依赖 Vite dev server 的 `/v1/team` 和 `/v1/agents` 代理。Agent 卡片状态复用主项目 `GET /v1/agents/status`，显示真实空闲 / 运行中状态；`/v1/assets` proxy 仍保留给 API adapter regression，但当前 Agent 分支卡片本身不再直接调用 asset API。默认代理目标是主 `ugk-pi` 服务：
+本地开发时，Live API 和嵌入式主 `/playground` iframe 都走 Vite dev server 的同源代理。代理覆盖 `/v1`、`/playground`、`/assets`、`/runtime` 和 `/vendor` 等主服务路径，避免远程访问 `http://<host>:5174/` 时把浏览器导向开发机自己的 `127.0.0.1`。Agent 卡片状态复用主项目 `GET /v1/agents/status`，显示真实空闲 / 运行中状态。默认代理目标是主 `ugk-pi` 服务：
 
 ```bash
 http://127.0.0.1:3000
 ```
 
-所以使用 Live API preview 或 Agent 分支 iframe 前，需要先确保主服务已经运行在 `http://127.0.0.1:3000`。如主服务不在默认端口，可用 `TEAM_CONSOLE_API_TARGET` 覆盖代理目标；Vite 会把同一个目标暴露给前端 iframe URL：
+所以使用 Live API preview 或 Agent 分支 iframe 前，需要先确保主服务已经运行在 `http://127.0.0.1:3000`。如主服务不在默认端口，可用 `TEAM_CONSOLE_API_TARGET` 覆盖 Vite 服务端代理目标；这个值不会暴露给前端 iframe URL。默认 iframe URL 是同源相对路径 `/playground?...`，远程 FRP 访问时仍留在 `5174` 入口，由 Vite 转发到真实后端。
 
 ```bash
-TEAM_CONSOLE_API_TARGET=http://127.0.0.1:3100 npm run dev
+TEAM_CONSOLE_API_TARGET=http://127.0.0.1:<port> npm run dev
 ```
+
+如果确实要让 iframe 绕过 Vite，直接打开一个浏览器可访问的后端公网入口，可显式设置 `VITE_TEAM_CONSOLE_PLAYGROUND_BASE_URL`，例如 `http://139.196.23.72`。远程用户场景不要把它设成 `http://127.0.0.1:3000`，那会重新变成访问用户自己机器的 loopback。
 
 Team Console shell 的 Live API 模式会真实请求：
 
@@ -74,7 +76,7 @@ Team Console shell 的 Live API 模式会真实请求：
 - `GET /v1/team/runs/:runId/tasks/:taskId/attempts`
 - `GET /v1/team/runs/:runId/tasks/:taskId/attempts/:attemptId/files/:fileName`
 
-Agent 分支卡片不经 Vite proxy 打开 `/playground`，而是直接把 iframe 指向主服务的 `/playground?view=chat&agentId=<agentId>&embed=team-console`。主 `/playground` 负责读取 `agentId` URL hint、切到对应 Agent 并继续处理自己的路由、对话、文件库、后台任务等行为；`embed=team-console` 会把 iframe 顶部 Agent 标签固定为只读标识，关闭 hover 切换菜单和点击跳转，避免 iframe 内 Agent 切换污染其他分支或主页面的 active Agent 选择。
+Agent 分支卡片默认通过同源 `/playground?view=chat&agentId=<agentId>&embed=team-console` iframe 打开主项目页面；开发态由 Vite 代理到主服务，显式配置 `VITE_TEAM_CONSOLE_PLAYGROUND_BASE_URL` 时才改为对应公网 origin。主 `/playground` 负责读取 `agentId` URL hint、切到对应 Agent 并继续处理自己的路由、对话、文件库、后台任务等行为；`embed=team-console` 会把 iframe 顶部 Agent 标签固定为只读标识，关闭 hover 切换菜单和点击跳转，避免 iframe 内 Agent 切换污染其他分支或主页面的 active Agent 选择。
 
 Live API 模式默认进入干净的 `Agent workspace`，不会在刷新或重新进入时自动渲染历史 Plan run。需要查看 Plan 运行图时，点击顶部 live 运行图切换条里的“最新 Run”，页面会按 `createdAt` 选择最新 run，再用该 run 的 `planId` 匹配 plan 后渲染执行图。Agent workspace 工具栏支持手动点击“刷新 Task”重新请求 `GET /v1/team/tasks`；刷新中会禁用重复点击，失败只显示错误，不清空现有 Task 卡片。当前端轮询到已知 active Canvas Task run 进入终态时，也会自动执行一次 live Task refresh，重新读取 `GET /v1/team/tasks`、`GET /v1/team/task-connections` 和每个 Task 的 `GET /v1/team/tasks/:taskId/runs`，用于发现 typed chain 自动触发的下游 Task run；用户从上游 Task 切到下游 Task 时不需要手动刷新。Task 操作菜单里的“运行”会单独调用 Canvas Task run API，不写入 Plan run 列表。请求失败会在页面顶部显示错误，不会继续展示旧 mock 数据。
 
