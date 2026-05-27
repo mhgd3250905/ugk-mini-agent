@@ -1227,6 +1227,8 @@ export function App() {
       setAttemptsByTaskId({});
       setTaskConnections([]);
       setTaskConnectionDraft(null);
+      setTaskDependencies([]);
+      setTaskDependencyDraft(null);
       setSourceNodes([]);
       setSourceConnections([]);
       setSourceConnectionDraft(null);
@@ -1248,6 +1250,8 @@ export function App() {
     setAttemptsByTaskId({});
     setTaskConnections([]);
     setTaskConnectionDraft(null);
+    setTaskDependencies([]);
+    setTaskDependencyDraft(null);
     setSourceNodes([]);
     setSourceConnections([]);
     setSourceConnectionDraft(null);
@@ -1290,6 +1294,8 @@ export function App() {
       setTaskNodes(makeTaskNodes(mockTeamTasks));
       setTaskConnections([]);
       setTaskConnectionDraft(null);
+      setTaskDependencies([]);
+      setTaskDependencyDraft(null);
       setSourceNodes([]);
       setSourceConnections([]);
       setSourceConnectionDraft(null);
@@ -1920,13 +1926,13 @@ export function App() {
   }, [taskDependencyDraft]);
 
   const completeTaskDependency = useCallback(async (toTaskId: string) => {
-    if (dataSource !== "live" || !taskDependencyDraft) return;
+    if (!taskDependencyDraft) return;
     if (taskDependencyDraft.fromTaskId === toTaskId) {
       setTaskDependencyDraft(null);
       return;
     }
     try {
-      const api = new LiveTeamApi();
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
       const dep = await api.createTaskDependency({
         fromTaskId: taskDependencyDraft.fromTaskId,
         toTaskId,

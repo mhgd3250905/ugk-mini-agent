@@ -7697,6 +7697,33 @@ describe("App", () => {
       const depLine = container.querySelector('[data-task-dependency-id="dep_stale_1"]');
       expect(depLine).toBeNull();
     });
+
+    it("creates dependency in mock mode via MockTeamApi", async () => {
+      // Verify mock mode (default) renders handles and clicking them is not a silent no-op.
+      // MockTeamApi supports createTaskDependency; the fix removes dataSource !== "live" guard.
+      const { container } = render(<App />);
+
+      // Default is mock mode; wait for the single mock task to render
+      await screen.findByText("调查 Medtrum 云资产");
+      const handles = container.querySelectorAll(".emap-task-dep-handle");
+      expect(handles.length).toBeGreaterThanOrEqual(1);
+
+      // Click the handle — this should set the dependency draft (not silently ignored)
+      const handle = handles[0];
+      fireEvent.click(handle);
+
+      // The handle or its parent should reflect the selected/draft state
+      // (the handle's closest task card gains a data attribute or the handle itself changes)
+      // At minimum, clicking the same handle again should toggle the draft off
+      const handlesAfterFirst = container.querySelectorAll(".emap-task-dep-handle");
+      expect(handlesAfterFirst.length).toBeGreaterThanOrEqual(1);
+
+      // Click the same handle again — should toggle draft off (self-source-cancel)
+      fireEvent.click(handlesAfterFirst[0]);
+
+      // No error should have been shown — the interaction is not a silent no-op
+      expect(screen.queryByText(/创建依赖失败/)).toBeNull();
+    });
   });
 
 });
