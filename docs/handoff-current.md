@@ -73,6 +73,18 @@ Team Console Task / WorkUnit redesign 已通过 PR #1 合入 `main`：
 - 浏览器验证：Codex in-app Browser 打开 `http://127.0.0.1:5174/`，能看到 ALL / Agent / Task segmented filter 和底部 Root node dock。注意当前本地页面曾看到 `/v1/team/task-dependencies` 404，判断是运行中的 `3000` 后端未重启到包含 dependency API 的最新代码；如要继续验证 dependency，需要先重启真实 Docker 后端，不要开 `3100` 临时后端。
 - 现场边界：不要 stage `.pi/skills/anthropics/skill-creator/**` 删除、`.pi/skills/skill-creator/`、`.codex/plans/*`、`public/medtrum-view/`；这些不是本轮收尾提交内容。
 
+## 2026-05-28 Team Console 对话节点全屏双击最大化修复快照
+
+修复 Team Console Execution Atlas 三类对话节点最大化行为不一致问题：
+
+- 已改：Agent branch pointerdown 不再无条件 `preventDefault` / `stopPropagation` / `setPointerCapture`，改为超过 4px 阈值后才捕获 pointer，与 Task child branch 一致。
+- 已改：最大化 overlay 从 `position: absolute; inset: 12px` 改为 `position: fixed; inset: 0` 覆盖整个浏览器 viewport。
+- 已改：最大化 overlay 通过 React portal 挂到 `document.body`，避免被 `.execution-map-container` 的 stacking context / `isolation: isolate` 压在页面 header 下。
+- 已改：移除 overlay 级"还原"按钮，还原统一靠标题栏双击；`收起` 仍是关闭分支。
+- 已改：A（Agent chat）/ B（Task Leader chat）/ C（Create Task chat）三条路径的标题栏双击最大化 / 还原行为已统一。
+- 涉及文件：`ExecutionMap.tsx`、`execution-map.css`、`app.test.tsx`、`README.md`、`team-runtime.md`、`change-log.md`、`handoff-current.md`。
+- 已验证：`npm --prefix apps/team-console run test -- --run`（439 passed）、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check`。
+
 ## 2026-05-28 Team Console Dock / 5174 后续修复快照
 
 Root Dock / Trash / Filter / Lasso 后，Team Console 又在主目录 `E:\AII\ugk-pi` 的 `main` 上完成了一组 Dock、连接线和固定 5174 入口修复。不要回旧 worktree 堆功能。

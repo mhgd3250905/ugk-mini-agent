@@ -1,4 +1,5 @@
 import { useMemo, useLayoutEffect, useRef, useState, useCallback, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { AgentRunStatus, AgentSummary, RunDetail, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasTask, TeamPlan, TaskStatus, TeamAttemptMetadata, TeamTaskState, TeamRunState, TeamTaskConnection, TeamTaskDependency, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
 import type { ExecutionNode, NodeKind } from "./execution-map-model";
 import { buildExecutionMapModel, CHILD_COLLAPSE_THRESHOLD } from "./execution-map-model";
@@ -360,22 +361,30 @@ function formatAgentRunStatus(status: AgentRunStatus | undefined): {
   };
 }
 
+function targetToElement(target: EventTarget | null): Element | null {
+  if (target instanceof Element) return target;
+  if (target instanceof Node && target.parentElement) return target.parentElement;
+  return null;
+}
+
 function canStartAgentBranchDrag(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false;
-  if (!target.closest(".agent-playground-branch-head") && !target.closest(".task-leader-branch-head")) return false;
-  return !target.closest("button, input, textarea, select, a, iframe, summary, details");
+  const el = targetToElement(target);
+  if (!el) return false;
+  if (!el.closest(".agent-playground-branch-head") && !el.closest(".task-leader-branch-head")) return false;
+  return !el.closest("button, input, textarea, select, a, iframe, summary, details");
 }
 
 function canTogglePanelMaximize(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false;
+  const el = targetToElement(target);
+  if (!el) return false;
   if (
-    !target.closest(".agent-playground-branch-head")
-    && !target.closest(".task-leader-branch-head")
-    && !target.closest(".emap-observer-node-head")
+    !el.closest(".agent-playground-branch-head")
+    && !el.closest(".task-leader-branch-head")
+    && !el.closest(".emap-observer-node-head")
   ) {
     return false;
   }
-  return !target.closest("button, input, textarea, select, a, iframe, summary, details, .emap-panel-resize-handle, .emap-agent-branch-resize-handle");
+  return !el.closest("button, input, textarea, select, a, iframe, summary, details, .emap-panel-resize-handle, .emap-agent-branch-resize-handle");
 }
 
 function viewportScale(viewport: AtlasViewport | undefined): number {
@@ -878,6 +887,7 @@ export function ExecutionMap({
   const suppressAgentClickRef = useRef<string | null>(null);
   const suppressTaskClickRef = useRef<string | null>(null);
   const agentBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
+  const agentBranchDragSuppressClickRef = useRef(false);
   const taskChildBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
   const taskChildDragSuppressClickRef = useRef(false);
   const panelResizeRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startWidth: number; startHeight: number; minWidth: number; minHeight: number } | null>(null);
@@ -1938,7 +1948,7 @@ export function ExecutionMap({
     : maximizedBranch?.kind === "task-child" && taskChildBranchPanel
       ? taskChildBranchPanel
       : maximizedTaskPanel;
-  const maximizedOverlay = maximizedBranchPanel ? (
+  const maximizedOverlay = maximizedBranchPanel ? createPortal(
     <div
       className="emap-maximized-branch-shell"
       onDoubleClick={(event) => {
@@ -1947,16 +1957,9 @@ export function ExecutionMap({
         setMaximizedBranch(null);
       }}
     >
-      <button
-        type="button"
-        className="emap-branch-restore-button"
-        aria-label="还原对话分支"
-        onClick={() => setMaximizedBranch(null)}
-      >
-        还原
-      </button>
       {maximizedBranchPanel}
-    </div>
+    </div>,
+    document.body
   ) : null;
   const dockActiveClass = rootDropTarget === "dock" ? " is-drop-active is-drop-hover" : "";
   const rootNodeScreenRect = (position: { x: number; y: number }, width: number, height: number) => {
@@ -2325,12 +2328,11 @@ export function ExecutionMap({
     </div>
   ) : null;
 
-  const overlay = nodeHub || maximizedOverlay || flightOverlay || trashEl ? (
+  const overlay = nodeHub || flightOverlay || trashEl ? (
     <>
       {nodeHub}
       {trashEl}
       {flightOverlay}
-      {maximizedOverlay}
     </>
   ) : nodeHub;
 
@@ -2526,8 +2528,6 @@ export function ExecutionMap({
 
   const beginAgentBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (!focusedAgentNode || !agentBranchNode || !canStartAgentBranchDrag(event.target)) return;
-    event.preventDefault();
-    event.stopPropagation();
     agentBranchInteractionRef.current = {
       kind: "drag",
       nodeId: focusedAgentNode.nodeId,
@@ -2535,8 +2535,9 @@ export function ExecutionMap({
       startClientX: event.clientX,
       startClientY: event.clientY,
       startRect: agentBranchNode,
+      hasMoved: false,
+      capturedTarget: null,
     };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
   }, [agentBranchNode, focusedAgentNode]);
 
   const beginAgentBranchResize = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -2557,12 +2558,23 @@ export function ExecutionMap({
   const moveAgentBranch = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const interaction = agentBranchInteractionRef.current;
     if (!interaction || interaction.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    event.stopPropagation();
 
     const scale = viewportScale(viewport);
     const dx = (event.clientX - interaction.startClientX) / scale;
     const dy = (event.clientY - interaction.startClientY) / scale;
+
+    if (interaction.kind === "drag") {
+      if (!interaction.hasMoved && Math.abs(dx) < AGENT_DRAG_THRESHOLD && Math.abs(dy) < AGENT_DRAG_THRESHOLD) return;
+      if (!interaction.hasMoved) {
+        interaction.hasMoved = true;
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+        interaction.capturedTarget = event.currentTarget;
+      }
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
     const nextRect = interaction.kind === "drag"
       ? clampAgentBranchRect({
         ...interaction.startRect,
@@ -2584,10 +2596,18 @@ export function ExecutionMap({
   const endAgentBranchInteraction = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const interaction = agentBranchInteractionRef.current;
     if (!interaction || interaction.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    event.stopPropagation();
+    if (interaction.kind === "drag" && interaction.hasMoved) {
+      event.preventDefault();
+      event.stopPropagation();
+      agentBranchDragSuppressClickRef.current = true;
+    } else if (interaction.kind === "resize") {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    if (interaction.capturedTarget) {
+      interaction.capturedTarget.releasePointerCapture?.(event.pointerId);
+    }
     agentBranchInteractionRef.current = null;
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
   }, []);
 
   const beginTaskChildBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
@@ -2791,6 +2811,8 @@ export function ExecutionMap({
   const isCollapsed = (id: string) => id.endsWith("__collapsed") || id.endsWith("__collapse_control");
   const parentOfCollapsed = (id: string) => id.replace(/__collapsed$|__collapse_control$/, "");
   return (
+    <>
+    {maximizedOverlay}
     <AtlasCanvasShell
       viewport={viewport}
       onViewportChange={onViewportChange}
@@ -3480,6 +3502,14 @@ export function ExecutionMap({
                 event.stopPropagation();
                 setMaximizedBranch({ kind: "agent" });
               }}
+              onClickCapture={(e) => {
+                if (agentBranchDragSuppressClickRef.current) {
+                  agentBranchDragSuppressClickRef.current = false;
+                  if (!(e.target instanceof Element && e.target.closest("button, input, textarea, select, a, iframe, summary, details"))) {
+                    e.stopPropagation();
+                  }
+                }
+              }}
               style={{
                 left: agentBranchNode.x,
                 top: agentBranchNode.y,
@@ -3754,5 +3784,6 @@ export function ExecutionMap({
           })}
         </div>
     </AtlasCanvasShell>
+    </>
   );
 }

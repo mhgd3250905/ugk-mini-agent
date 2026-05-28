@@ -25,6 +25,38 @@
 - **验证**: 新增 `test/runtime-dependencies.test.ts`，并扩展 `test/containerization.test.ts` 覆盖 Dockerfile、compose、`.env.example` 和 `runtime:check` 脚本事实。
 - **对应入口**: `src/agent/runtime-dependencies.ts`、`src/agent/agent-session-factory.ts`、`src/agent/background-agent-session-factory.ts`、`scripts/runtime-deps.mjs`、`docker-compose.yml`、`docker-compose.prod.yml`。
 
+## 2026-05-28 — Team Console 对话节点全屏双击最大化修复
+
+修复 Team Console Execution Atlas 里三类对话节点最大化行为不一致的问题，并把最大化改为真正全屏覆盖浏览器 viewport。
+
+影响范围：
+- `apps/team-console/src/graph/ExecutionMap.tsx`
+- `apps/team-console/src/graph/execution-map.css`
+- `apps/team-console/src/tests/app.test.tsx`
+- `apps/team-console/README.md`
+- `docs/team-runtime.md`
+- `docs/change-log.md`
+- `docs/handoff-current.md`
+
+修复内容：
+- A：Agent 节点点击展开的主项目对话分支，标题栏双击现在可以最大化 / 还原（之前被 pointerdown 过早 preventDefault / pointer capture 吞掉双击事件）
+- B：Task 节点出来的 Leader 对话分支，保留标题栏双击放大 / 还原
+- C：创建 Task 时选择 leader 打开的创建对话分支，标题栏双击现在可以最大化 / 还原
+- 最大化 overlay 改为 `position: fixed; inset: 0` 覆盖整个浏览器 viewport，不再是画布内 `position: absolute; inset: 12px`
+- 最大化 overlay 通过 React portal 挂到 `document.body`，避免被 `.execution-map-container` 的 stacking context / `isolation: isolate` 压在页面 header 下面
+- 移除 overlay 级"还原"按钮，还原统一靠标题栏双击；`收起` 仍是关闭分支
+- Agent branch 拖动改为延迟 pointer capture（超过 4px 阈值后才捕获），与 Task child branch 一致
+
+验证命令：
+```bash
+npm --prefix apps/team-console run test -- --run src/tests/app.test.tsx -t "double-clicks|restore button|fullscreen|Task creation branch|leader chat"
+npm --prefix apps/team-console run test -- --run
+npm --prefix apps/team-console run build
+npx tsc --noEmit
+```
+
+入口：`http://127.0.0.1:5174/`
+
 ## 2026-05-28 — Team Console Dock 拖拽碰撞命中
 
 - **主题**: 将根节点拖入底部 Dock 的命中规则从“指针点进入 Dock”优化为“根节点外框碰到 Dock 露出边缘”。

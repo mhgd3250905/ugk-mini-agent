@@ -2488,8 +2488,7 @@
     linear-gradient(135deg, transparent 0 68%, rgba(121, 216, 208, 0.82) 68% 76%, transparent 76%);
 }
 
-.emap-agent-branch-maximize-button,
-.emap-branch-restore-button {
+.emap-agent-branch-maximize-button {
   position: absolute;
   top: 10px;
   right: 72px;
@@ -2508,46 +2507,30 @@
   cursor: pointer;
 }
 
-.emap-agent-branch-maximize-button:hover,
-.emap-branch-restore-button:hover {
+.emap-agent-branch-maximize-button:hover {
   border-color: rgba(121, 216, 208, 0.66);
   background: rgba(121, 216, 208, 0.12);
 }
 
 .emap-maximized-branch-shell {
-  position: absolute;
-  inset: 12px;
+  position: fixed;
+  inset: 0;
   z-index: 28;
   display: grid;
   min-width: 0;
   min-height: 0;
   padding: 0;
-  background: rgba(2, 4, 11, 0.92);
-  border: 1px solid rgba(121, 216, 208, 0.32);
-  border-radius: 8px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
-}
-
-.emap-maximized-branch-shell::before {
-  content: "";
-  position: absolute;
-  inset: -12px;
-  z-index: -1;
-  background: rgba(2, 4, 11, 0.68);
-  backdrop-filter: blur(6px);
+  background: #02040b;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .emap-maximized-branch-shell > .agent-playground-branch {
   width: 100%;
   height: 100%;
   border: 0;
-}
-
-.emap-branch-restore-button {
-  right: 70px;
-  min-width: 48px;
-  height: 28px;
-  font-size: 11px;
+  border-radius: 0;
 }
 
 .emap-artifact-preview {

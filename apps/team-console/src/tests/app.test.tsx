@@ -3809,15 +3809,18 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "最大化对话分支" }));
 
-    const overlay = container.querySelector(".emap-maximized-branch-shell") as HTMLElement | null;
+    const overlay = document.querySelector(".emap-maximized-branch-shell") as HTMLElement | null;
     expect(overlay).toBeTruthy();
-    expect(overlay!.parentElement).toHaveClass("execution-map-container");
+    expect(overlay!.parentElement).toBe(document.body);
     expect(container.querySelector(".execution-map-scroll .emap-agent-branch-shell")).toBeNull();
     expect(overlay!.querySelector(".agent-playground-iframe")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "还原对话分支" }));
+    // Restore via double-click on overlay header (no dedicated restore button)
+    const overlayHeader = overlay!.querySelector(".agent-playground-branch-head") as HTMLElement | null;
+    expect(overlayHeader).toBeTruthy();
+    fireEvent.doubleClick(overlayHeader!);
 
-    expect(container.querySelector(".emap-maximized-branch-shell")).toBeNull();
+    expect(document.querySelector(".emap-maximized-branch-shell")).toBeNull();
     expect(container.querySelector(".execution-map-scroll .emap-agent-branch-shell")).toBeTruthy();
   });
 
@@ -3832,7 +3835,7 @@ describe("App", () => {
     expect(header).toBeTruthy();
     fireEvent.doubleClick(header!);
 
-    const overlay = container.querySelector(".emap-maximized-branch-shell") as HTMLElement | null;
+    const overlay = document.querySelector(".emap-maximized-branch-shell") as HTMLElement | null;
     expect(overlay).toBeTruthy();
     expect(container.querySelector(".execution-map-scroll .emap-agent-branch-shell")).toBeNull();
 
@@ -3840,8 +3843,186 @@ describe("App", () => {
     expect(overlayHeader).toBeTruthy();
     fireEvent.doubleClick(overlayHeader!);
 
-    expect(container.querySelector(".emap-maximized-branch-shell")).toBeNull();
+    expect(document.querySelector(".emap-maximized-branch-shell")).toBeNull();
     expect(container.querySelector(".execution-map-scroll .emap-agent-branch-shell")).toBeTruthy();
+  });
+
+  it("restore button does not exist in maximized overlay — double-click header to restore", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "最大化对话分支" }));
+
+    const overlay = document.querySelector(".emap-maximized-branch-shell") as HTMLElement | null;
+    expect(overlay).toBeTruthy();
+
+    // No restore button exists
+    expect(screen.queryByRole("button", { name: "还原对话分支" })).toBeNull();
+    expect(overlay!.querySelector(".emap-branch-restore-button")).toBeNull();
+
+    // Restore by double-clicking overlay header
+    const overlayHeader = overlay!.querySelector(".agent-playground-branch-head") as HTMLElement | null;
+    fireEvent.doubleClick(overlayHeader!);
+    expect(document.querySelector(".emap-maximized-branch-shell")).toBeNull();
+  });
+
+  it("maximized overlay uses fullscreen viewport CSS", async () => {
+    // Verify CSS rules from the stylesheet file
+    const css = readFileSync("src/graph/execution-map.css", "utf-8");
+    const shellRule = css.match(/\.emap-maximized-branch-shell\s*\{[^}]*\}/)?.[0];
+    expect(shellRule).toBeTruthy();
+    expect(shellRule).toContain("position: fixed");
+    expect(shellRule).toContain("inset: 0");
+
+    // Restore button rule should not exist
+    expect(css).not.toMatch(/\.emap-branch-restore-button\s*\{/);
+  });
+
+  it("double-clicks Task creation branch header to maximize and restore", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [{ agentId: "main", name: "主 Agent", description: "默认综合 agent" }],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/v1/team/tasks"));
+
+    fireEvent.click(screen.getByRole("button", { name: "创建 Task" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+    // Wait for branch
+    await waitFor(() => {
+      expect(container.querySelector(".agent-playground-branch")).toBeTruthy();
+    });
+
+    // Verify iframe has teamTaskMode=create
+    const iframe = container.querySelector(".agent-playground-branch iframe") as HTMLIFrameElement | null;
+    expect(iframe?.getAttribute("src")).toContain("teamTaskMode=create");
+    expect(iframe?.getAttribute("src")).not.toContain("teamTaskId=");
+
+    // Double-click header to maximize
+    const header = container.querySelector(".execution-map-scroll .agent-playground-branch-head") as HTMLElement | null;
+    expect(header).toBeTruthy();
+    fireEvent.doubleClick(header!);
+
+    const overlay = document.querySelector(".emap-maximized-branch-shell") as HTMLElement | null;
+    expect(overlay).toBeTruthy();
+    expect(container.querySelector(".execution-map-scroll .emap-agent-branch-shell")).toBeNull();
+
+    // iframe src preserved after maximize
+    const overlayIframe = overlay!.querySelector("iframe") as HTMLIFrameElement | null;
+    expect(overlayIframe?.getAttribute("src")).toContain("teamTaskMode=create");
+    expect(overlayIframe?.getAttribute("src")).not.toContain("teamTaskId=");
+
+    // No restore button
+    expect(overlay!.querySelector(".emap-branch-restore-button")).toBeNull();
+
+    // Double-click overlay header to restore
+    const overlayHeader = overlay!.querySelector(".agent-playground-branch-head") as HTMLElement | null;
+    fireEvent.doubleClick(overlayHeader!);
+
+    expect(document.querySelector(".emap-maximized-branch-shell")).toBeNull();
+    expect(container.querySelector(".execution-map-scroll .emap-agent-branch-shell")).toBeTruthy();
+  });
+
+  it("double-clicks a text node inside Task creation branch header to maximize and restore", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [{ agentId: "main", name: "主 Agent", description: "默认综合 agent" }],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/v1/team/tasks"));
+
+    fireEvent.click(screen.getByRole("button", { name: "创建 Task" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+    await waitFor(() => {
+      expect(container.querySelector(".agent-playground-branch")).toBeTruthy();
+    });
+
+    const header = container.querySelector(".execution-map-scroll .agent-playground-branch-head") as HTMLElement;
+    expect(header).toBeTruthy();
+
+    const titleEl = header.querySelector(".agent-playground-branch-title strong") as HTMLElement | null;
+    const titleTextNode = titleEl?.firstChild;
+    expect(titleTextNode?.nodeType).toBe(Node.TEXT_NODE);
+
+    fireEvent.doubleClick(titleTextNode as Text);
+
+    const overlay = document.querySelector(".emap-maximized-branch-shell") as HTMLElement | null;
+    expect(overlay).toBeTruthy();
+
+    const overlayHeader = overlay!.querySelector(".agent-playground-branch-head") as HTMLElement;
+    expect(overlayHeader).toBeTruthy();
+
+    const overlayTitleEl = overlayHeader.querySelector(".agent-playground-branch-title strong") as HTMLElement | null;
+    const overlayTitleTextNode = overlayTitleEl?.firstChild;
+    expect(overlayTitleTextNode?.nodeType).toBe(Node.TEXT_NODE);
+
+    fireEvent.doubleClick(overlayTitleTextNode as Text);
+
+    expect(document.querySelector(".emap-maximized-branch-shell")).toBeNull();
+    expect(container.querySelector(".execution-map-scroll .emap-agent-branch-shell")).toBeTruthy();
+  });
+
+  it("double-clicks leader chat header to maximize and restore", async () => {
+    const { container } = render(<App />);
+
+    const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
+    fireEvent.click(taskNode);
+
+    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    expect(branch).toBeTruthy();
+    fireEvent.click(within(branch!).getByRole("button", { name: "对话 Leader" }));
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-task-child-branch-shell iframe")).toBeTruthy();
+    });
+
+    const shell = container.querySelector(".emap-task-child-branch-shell") as HTMLElement | null;
+    expect(shell).toBeTruthy();
+    const header = shell!.querySelector(".agent-playground-branch-head") as HTMLElement | null;
+    expect(header).toBeTruthy();
+
+    // Double-click header to maximize
+    fireEvent.doubleClick(header!);
+
+    const overlay = document.querySelector(".emap-maximized-branch-shell") as HTMLElement | null;
+    expect(overlay).toBeTruthy();
+
+    // Verify iframe has teamTaskMode=edit
+    const overlayIframe = overlay!.querySelector("iframe") as HTMLIFrameElement | null;
+    expect(overlayIframe?.getAttribute("src")).toContain("teamTaskMode=edit");
+    expect(overlayIframe?.getAttribute("src")).toContain("teamTaskId=");
+
+    // No restore button
+    expect(overlay!.querySelector(".emap-branch-restore-button")).toBeNull();
+
+    // Double-click overlay header to restore
+    const overlayHeader = overlay!.querySelector(".agent-playground-branch-head") as HTMLElement | null;
+    fireEvent.doubleClick(overlayHeader!);
+
+    expect(document.querySelector(".emap-maximized-branch-shell")).toBeNull();
   });
 
   it("drags an agent card by world coordinates without opening the embedded branch", async () => {
@@ -4943,7 +5124,10 @@ describe("App", () => {
     expect(runtimeDoc).toContain("拖动分支标题栏移动分支");
     expect(runtimeDoc).toContain("右下角调整分支宽高");
     expect(runtimeDoc).toContain("空白画布左键长按框选多个 Agent / Task 节点");
-    expect(runtimeDoc).toContain("最大化到未缩放画布 overlay");
+    expect(runtimeDoc).toContain("标题栏双击最大化到全浏览器 viewport");
+    expect(runtimeDoc).toContain("position: fixed; inset: 0");
+    expect(runtimeDoc).toContain("没有单独的还原按钮");
+    expect(runtimeDoc).toContain("Agent 分支、Task Leader 分支和创建 Task 分支三类对话分支均支持此行为");
     expect(runtimeDoc).toContain(".emap-dialog-branch");
     expect(runtimeDoc).toContain("Live API 下已添加 Agent 与拖动后的画布位置会写入浏览器 `localStorage`");
     expect(runtimeDoc).toContain("底部 Dock 收纳状态和 segmented filter 选择");
@@ -5520,7 +5704,7 @@ describe("App", () => {
 
     fireEvent.doubleClick(detailHeader!);
 
-    const overlay = container.querySelector(".emap-maximized-branch-shell") as HTMLElement | null;
+    const overlay = document.querySelector(".emap-maximized-branch-shell") as HTMLElement | null;
     expect(overlay).toBeTruthy();
     expect(overlay!.querySelector(".emap-observer-file-detail-node")).toBeTruthy();
     expect(container.querySelector(".execution-map-scroll .emap-observer-file-detail-node")).toBeNull();
@@ -5529,7 +5713,7 @@ describe("App", () => {
     expect(overlayHeader).toBeTruthy();
     fireEvent.doubleClick(overlayHeader!);
 
-    expect(container.querySelector(".emap-maximized-branch-shell")).toBeNull();
+    expect(document.querySelector(".emap-maximized-branch-shell")).toBeNull();
     expect(container.querySelector(".execution-map-scroll .emap-observer-file-detail-node")).toBeTruthy();
   });
 
@@ -6132,7 +6316,7 @@ describe("App", () => {
     const maximizeButton = shell!.querySelector(".emap-agent-branch-maximize-button") as HTMLElement | null;
     expect(maximizeButton).toBeTruthy();
     fireEvent.click(maximizeButton!);
-    expect(container.querySelector(".emap-maximized-branch-shell")).toBeTruthy();
+    expect(document.querySelector(".emap-maximized-branch-shell")).toBeTruthy();
   });
 
   describe("assistantText priority in process nodes", () => {
