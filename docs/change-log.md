@@ -23,7 +23,9 @@
   - 空白画布左键长按后拖动触发框选（`SELECTION_LONG_PRESS_MS = 200`），快速拖动仍走 pan；Shift + 拖动仍兼容直接框选。
   - 测试覆盖 Dock 收纳/恢复、filter 切换、长按框选和快速 pan 不误触。
   - 文档更新：README.md、team-runtime.md 同步新交互描述。
+  - Codex 审核后补修 `trashRef` 类型、ALL filter 下 Source 可见性、快速 pan 首帧位移，以及 lasso fake timer 测试的 React `act()` warning。
 - **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`、`AtlasCanvasShell.tsx`、`execution-map.css`、`App.tsx`、`app.css`、`app.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`。
+- **最终验证**: `npm --prefix apps/team-console run test`（410 passed）、`npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "long-press lasso selection"`（2 passed，无 `not wrapped in act` warning）、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check 5add008..HEAD` 均通过。
 - **对应入口**: Team Console Execution Atlas 画布。
 
 ## 2026-05-28 — Team Console Task control dependency 交付修复

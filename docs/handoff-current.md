@@ -1,6 +1,6 @@
 # 当前交接快照
 
-更新时间：`2026-05-27`
+更新时间：`2026-05-28`
 
 这份文档给新接手 `ugk-pi / UGK CLAW` 的 coding agent 看。它只记录当前稳定事实和接手入口；历史流水账看 `docs/change-log.md`。不要靠聊天记录拼现状，聊天上下文太肥时最容易把旧计划当新任务，挺蠢，也挺危险。
 
@@ -49,6 +49,20 @@ Team Console Task / WorkUnit redesign 已通过 PR #1 合入 `main`：
 - `npx tsc --noEmit`：通过
 - `git diff --check`：通过
 - Docker `http://127.0.0.1:3000/healthz` 和 `http://127.0.0.1:3000/v1/team/healthz` 正常；`5174` 代理 `3000` 正常；`3100` 无监听。
+
+## 2026-05-28 Team Console root Dock / Trash / Filter / Lasso 收尾快照
+
+本轮 Team Console 根节点管理 UI 已完成并由 Codex 复核：
+
+- 功能实现最后一个提交：`1b23158 test(team-console): wrap lasso fake timers in act`；本次收尾文档提交在其后。
+- 已改：左侧 Root node Hub 替换为底部 macOS-like Dock；Agent / Task / Source 根节点可拖入 Dock 收纳，带缩小飞入动画；点击 Dock item 会弹出并恢复到收纳前位置。
+- 已改：拖动根节点时右下角出现垃圾桶 drop target；拖入后 Task / Source 走软归档确认，Agent 走本地移出确认，多选拖入支持批量确认 modal。
+- 已改：顶部增加 ALL / Agent / Task segmented filter；ALL 显示 Agent / Task / Source，Task 显示 Task / Source，Agent 只显示 Agent，选择持久化到 localStorage。
+- 已改：空白画布左键长按 200ms 后进入框选，多选节点可一起移动；快速拖动画布仍走 pan，Shift + 拖动仍兼容直接框选。
+- Codex 审核修复：`63d7ccd` 修复 `trashRef` 类型、ALL filter 下 Source 被误隐藏、快速拖动 pan 第一帧丢失；`1b23158` 把 lasso fake timer 测试包进 `act()`，去掉 React `not wrapped in act(...)` warning。
+- 已验证：`npm --prefix apps/team-console run test`（410 passed）、`npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "long-press lasso selection"`（2 passed，且无 act warning）、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check 5add008..HEAD` 均通过。
+- 浏览器验证：Codex in-app Browser 打开 `http://127.0.0.1:5174/`，能看到 ALL / Agent / Task segmented filter 和底部 Root node dock。注意当前本地页面曾看到 `/v1/team/task-dependencies` 404，判断是运行中的 `3000` 后端未重启到包含 dependency API 的最新代码；如要继续验证 dependency，需要先重启真实 Docker 后端，不要开 `3100` 临时后端。
+- 现场边界：不要 stage `.pi/skills/anthropics/skill-creator/**` 删除、`.pi/skills/skill-creator/`、`.codex/plans/*`、`public/medtrum-view/`；这些不是本轮收尾提交内容。
 
 本轮 Team Console 远程 `5174` 修复现场：
 
