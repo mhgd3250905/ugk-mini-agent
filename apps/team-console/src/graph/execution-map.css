@@ -892,6 +892,10 @@
   stroke: rgba(121, 216, 208, 0.84);
 }
 
+.emap-connector-socket-task-dependency .emap-connector-source-socket {
+  stroke: rgba(230, 170, 60, 0.85);
+}
+
 .emap-agent-branch-shell {
   position: absolute;
   z-index: 12;

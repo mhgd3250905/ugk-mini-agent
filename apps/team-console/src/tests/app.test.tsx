@@ -7993,6 +7993,106 @@ describe("App", () => {
       }
     });
 
+    it("renders dependency with source half socket and cut button", async () => {
+      const existingDep: TeamTaskDependency = {
+        schemaVersion: "team/task-dependency-1",
+        dependencyId: "dep_existing_1",
+        fromTaskId: depTaskA.taskId,
+        toTaskId: depTaskB.taskId,
+        trigger: "on_success",
+        status: "active",
+        createdAt: "2026-05-27T01:00:00.000Z",
+        updatedAt: "2026-05-27T01:00:00.000Z",
+      };
+      setupDepApi({ dependencies: [existingDep] });
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      await screen.findByText(depTaskA.title);
+
+      const depPath = container.querySelector('[data-task-dependency-id="dep_existing_1"]');
+      expect(depPath).toBeTruthy();
+
+      const g = depPath!.closest("g");
+      expect(g).toBeTruthy();
+      const socket = g!.querySelector(".emap-connector-socket-task-dependency .emap-connector-source-socket");
+      expect(socket).toBeTruthy();
+
+      const cutButton = screen.getByRole("button", { name: /切断依赖.*Dep Alpha.*Dep Beta/ });
+      expect(cutButton).toBeTruthy();
+      expect(cutButton.closest(".emap-link-cut-dep")).toBeTruthy();
+    });
+
+    it("cuts a dependency from the canvas cut button", async () => {
+      const existingDep: TeamTaskDependency = {
+        schemaVersion: "team/task-dependency-1",
+        dependencyId: "dep_cut_1",
+        fromTaskId: depTaskA.taskId,
+        toTaskId: depTaskB.taskId,
+        trigger: "on_success",
+        status: "active",
+        createdAt: "2026-05-27T01:00:00.000Z",
+        updatedAt: "2026-05-27T01:00:00.000Z",
+      };
+      setupDepApi({ dependencies: [existingDep] });
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      await screen.findByText(depTaskA.title);
+
+      expect(container.querySelector('[data-task-dependency-id="dep_cut_1"]')).toBeTruthy();
+
+      const cutButton = screen.getByRole("button", { name: /切断依赖/ });
+      fireEvent.click(cutButton);
+
+      await waitFor(() => {
+        expect(container.querySelector('[data-task-dependency-id="dep_cut_1"]')).toBeNull();
+      });
+    });
+
+    it("keeps dependency line on delete failure and shows error", async () => {
+      const existingDep: TeamTaskDependency = {
+        schemaVersion: "team/task-dependency-1",
+        dependencyId: "dep_fail_1",
+        fromTaskId: depTaskA.taskId,
+        toTaskId: depTaskB.taskId,
+        trigger: "on_success",
+        status: "active",
+        createdAt: "2026-05-27T01:00:00.000Z",
+        updatedAt: "2026-05-27T01:00:00.000Z",
+      };
+      const deps = [existingDep];
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [{ agentId: "main", name: "主 Agent", description: "默认" }] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks" && method === "GET") return new Response(JSON.stringify({ tasks: [depTaskA, depTaskB] }), { status: 200 });
+        if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+        if (url === "/v1/team/task-dependencies" && method === "GET") return new Response(JSON.stringify({ dependencies: deps }), { status: 200 });
+        if (url === `/v1/team/task-dependencies/${existingDep.dependencyId}` && method === "DELETE") {
+          return new Response(JSON.stringify({ error: "internal error" }), { status: 500 });
+        }
+        if (url === "/v1/team/source-nodes") return new Response(JSON.stringify([]), { status: 200 });
+        if (url === "/v1/team/source-connections") return new Response(JSON.stringify([]), { status: 200 });
+        if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        return new Response(JSON.stringify([]), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      await screen.findByText(depTaskA.title);
+
+      const cutButton = screen.getByRole("button", { name: /切断依赖/ });
+      fireEvent.click(cutButton);
+
+      await waitFor(() => {
+        expect(container.querySelector(".error-banner")).toBeTruthy();
+      });
+      expect(container.querySelector('[data-task-dependency-id="dep_fail_1"]')).toBeTruthy();
+    });
+
     it("creates a dependency via source then target click", async () => {
       let created = false;
       setupDepApi({

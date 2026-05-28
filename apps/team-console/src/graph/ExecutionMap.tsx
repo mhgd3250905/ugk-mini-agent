@@ -996,9 +996,9 @@ export function ExecutionMap({
         const sourceRect = { x: sourceNode.position.x, y: sourceNode.position.y, width: NODE_WIDTH, height: CANVAS_TASK_NODE_HEIGHT };
         const targetRect = { x: targetNode.position.x, y: targetNode.position.y, width: NODE_WIDTH, height: CANVAS_TASK_NODE_HEIGHT };
         const points = connectorAnchors(sourceRect, targetRect);
-        return { dep, path: straightPath(points.source.x, points.source.y, points.target.x, points.target.y) };
+        return { dep, path: straightPath(points.source.x, points.source.y, points.target.x, points.target.y), source: points.source, target: points.target };
       })
-      .filter((entry): entry is { dep: TeamTaskDependency; path: string } => Boolean(entry))
+      .filter((entry): entry is { dep: TeamTaskDependency; path: string; source: { x: number; y: number }; target: { x: number; y: number } } => Boolean(entry))
   ), [taskDependencies, taskNodeByTaskId]);
 
   const selectedChain = useMemo(() => {
@@ -2347,16 +2347,22 @@ export function ExecutionMap({
               )}
             </g>
           ))}
-          {taskDependencyLinks.map(({ dep, path }) => (
-            <path
-              key={dep.dependencyId}
-              d={path}
-              className="emap-link emap-link-task-dependency"
-              data-task-dependency-id={dep.dependencyId}
-              fill="none"
-              strokeWidth={2}
-              strokeDasharray="6 3"
-            />
+          {taskDependencyLinks.map(({ dep, path, source }) => (
+            <g key={dep.dependencyId}>
+              <path
+                d={path}
+                className="emap-link emap-link-task-dependency"
+                data-task-dependency-id={dep.dependencyId}
+                fill="none"
+                strokeWidth={2}
+                strokeDasharray="6 3"
+              />
+              {renderConnectorSourceSocket(
+                `${dep.dependencyId}-source-socket`,
+                source,
+                "emap-connector-socket-task-dependency",
+              )}
+            </g>
           ))}
           {sourceConnectionLinks.map(({ connection, path, source }) => (
             <g key={connection.connectionId}>
@@ -3117,6 +3123,33 @@ export function ExecutionMap({
                 onClick={(event) => {
                   event.stopPropagation();
                   onDeleteSourceConnection?.(connection.connectionId);
+                }}
+              >
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                  <line x1="3" y1="3" x2="13" y2="13" />
+                  <line x1="13" y1="3" x2="3" y2="13" />
+                </svg>
+              </button>
+            );
+          })}
+          {taskDependencyLinks.map(({ dep, source, target }) => {
+            const sourceTitle = tasksById?.get(dep.fromTaskId)?.title ?? dep.fromTaskId;
+            const targetTitle = tasksById?.get(dep.toTaskId)?.title ?? dep.toTaskId;
+            const mx = (source.x + target.x) / 2;
+            const my = (source.y + target.y) / 2;
+            const isPending = pendingDeleteDependencyId === dep.dependencyId;
+            return (
+              <button
+                key={`cut-dep-${dep.dependencyId}`}
+                type="button"
+                className={`emap-link-cut-button emap-link-cut-dep${isPending ? " is-pending" : ""}`}
+                style={{ left: mx - 12, top: my - 12 }}
+                aria-label={`切断依赖: ${sourceTitle} -> ${targetTitle}`}
+                aria-busy={isPending || undefined}
+                disabled={isPending}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDeleteTaskDependency?.(dep.dependencyId);
                 }}
               >
                 <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
