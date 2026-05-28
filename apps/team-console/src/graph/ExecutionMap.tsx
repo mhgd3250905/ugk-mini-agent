@@ -405,6 +405,25 @@ function rectsIntersect(
     && a.y + a.height > b.y;
 }
 
+function pointInDomRect(x: number, y: number, rect: Pick<DOMRect, "left" | "right" | "top" | "bottom">): boolean {
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+
+function domRectToRect(rect: Pick<DOMRect, "left" | "top" | "width" | "height">): AgentBranchRect {
+  return {
+    x: rect.left,
+    y: rect.top,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+function atlasDragEntryHeight(kind: AtlasNodeDragEntry["kind"]): number {
+  if (kind === "agent") return AGENT_NODE_HEIGHT;
+  if (kind === "source") return CANVAS_SOURCE_NODE_HEIGHT;
+  return CANVAS_TASK_NODE_HEIGHT;
+}
+
 function agentBranchConnectorPath(agentNode: AtlasAgentNode, branchRect: AgentBranchRect): string {
   const agentRect = {
     x: agentNode.position.x,
@@ -838,6 +857,7 @@ export function ExecutionMap({
   const [rootDropTarget, setRootDropTarget] = useState<"dock" | "trash" | null>(null);
   const [isAtlasDragging, setIsAtlasDragging] = useState(false);
   const [isDockExpanded, setIsDockExpanded] = useState(false);
+  const [hoveredLinkCutKey, setHoveredLinkCutKey] = useState<string | null>(null);
   const [flightAnimation, setFlightAnimation] = useState<DockFlightAnimation | null>(null);
   const [maximizedBranch, setMaximizedBranch] = useState<MaximizedPanelState>(null);
   const [panelSizeOverrides, setPanelSizeOverrides] = useState<Record<string, { width: number; height: number }>>({});
@@ -850,6 +870,7 @@ export function ExecutionMap({
   const flightTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const flightPhaseTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const dockIdleTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
+  const dockDragHitRef = useRef(false);
   const taskBranchShellRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const atlasNodeDragRef = useRef<AtlasNodeDragState | null>(null);
   const dockRef = useRef<HTMLElement | null>(null);
@@ -933,9 +954,37 @@ export function ExecutionMap({
     setIsDockExpanded(true);
   }, [clearDockIdleTimer]);
 
+  const revealLinkCut = useCallback((key: string) => {
+    setHoveredLinkCutKey(key);
+  }, []);
+
+  const hideLinkCut = useCallback((key: string) => {
+    setHoveredLinkCutKey((currentKey) => (currentKey === key ? null : currentKey));
+  }, []);
+
+  const syncHoveredLinkCutFromPoint = useCallback((clientX: number, clientY: number) => {
+    const elements = globalThis.document?.elementsFromPoint?.(clientX, clientY) ?? [];
+    const linkCutElement = elements.find((element) => element.hasAttribute("data-link-cut-key") || element.hasAttribute("data-link-cut-button-key"));
+    const nextKey = linkCutElement?.getAttribute("data-link-cut-key") ?? linkCutElement?.getAttribute("data-link-cut-button-key") ?? null;
+    setHoveredLinkCutKey((currentKey) => (currentKey === nextKey ? currentKey : nextKey));
+  }, []);
+
   useLayoutEffect(() => () => {
     clearDockIdleTimer();
   }, [clearDockIdleTimer]);
+
+  useLayoutEffect(() => {
+    const handleLinkCutPointerMove = (event: PointerEvent | MouseEvent) => {
+      syncHoveredLinkCutFromPoint(event.clientX, event.clientY);
+    };
+
+    globalThis.addEventListener("pointermove", handleLinkCutPointerMove);
+    globalThis.addEventListener("mousemove", handleLinkCutPointerMove);
+    return () => {
+      globalThis.removeEventListener("pointermove", handleLinkCutPointerMove);
+      globalThis.removeEventListener("mousemove", handleLinkCutPointerMove);
+    };
+  }, [syncHoveredLinkCutFromPoint]);
 
   useLayoutEffect(() => {
     if (!isDockExpanded) return undefined;
@@ -947,6 +996,10 @@ export function ExecutionMap({
       const isInsideDock = event.clientX >= rect.left && event.clientX <= rect.right
         && event.clientY >= rect.top && event.clientY <= rect.bottom;
       if (isInsideDock) {
+        clearDockIdleTimer();
+        return;
+      }
+      if (dockDragHitRef.current) {
         clearDockIdleTimer();
         return;
       }
@@ -1372,6 +1425,7 @@ export function ExecutionMap({
       entries: buildAtlasDragEntries(node, kind),
       hasMoved: false,
     };
+    dockDragHitRef.current = false;
     setIsAtlasDragging(true);
     event.currentTarget.setPointerCapture?.(event.pointerId);
   }, [buildAtlasDragEntries, canMoveAgents, canMoveSourceNodes, canMoveTasks, onMoveAgent, onMoveCanvasTask, onMoveSourceNode]);
@@ -1379,6 +1433,38 @@ export function ExecutionMap({
   const handleAgentPointerDown = useCallback((node: AtlasAgentNode, event: ReactPointerEvent<HTMLElement>) => {
     beginAtlasNodeDrag(node, "agent", event);
   }, [beginAtlasNodeDrag]);
+
+  const getDockHitForDrag = useCallback((drag: AtlasNodeDragState, event: ReactPointerEvent<HTMLElement>) => {
+    const dock = dockRef.current;
+    if (!dock) return null;
+    const dockRect = dock.getBoundingClientRect();
+    if (pointInDomRect(event.clientX, event.clientY, dockRect)) {
+      return { dockRect };
+    }
+
+    const nodesRect = evidenceContainerRef.current?.getBoundingClientRect();
+    if (!nodesRect) return null;
+    const scale = viewportScale(viewport);
+    const dx = event.clientX - drag.startClientX;
+    const dy = event.clientY - drag.startClientY;
+    const dockHitRect = domRectToRect(dockRect);
+    const hit = drag.entries.some((entry) => rectsIntersect(
+      {
+        x: nodesRect.left + entry.startPosition.x * scale + dx,
+        y: nodesRect.top + entry.startPosition.y * scale + dy,
+        width: NODE_WIDTH * scale,
+        height: atlasDragEntryHeight(entry.kind) * scale,
+      },
+      dockHitRect,
+    ));
+    return hit ? { dockRect } : null;
+  }, [viewport]);
+
+  const isPointerOverTrash = useCallback((event: ReactPointerEvent<HTMLElement>): boolean => {
+    const trash = trashRef.current;
+    if (!trash) return false;
+    return pointInDomRect(event.clientX, event.clientY, trash.getBoundingClientRect());
+  }, []);
 
   const handleAgentPointerMove = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const drag = atlasNodeDragRef.current;
@@ -1389,27 +1475,20 @@ export function ExecutionMap({
     const hasMoved = drag.hasMoved || Math.hypot(dx, dy) >= AGENT_DRAG_THRESHOLD;
     if (!hasMoved) return;
 
-    if (dockRef.current) {
-      const dockRect = dockRef.current.getBoundingClientRect();
-      const overDock = event.clientX >= dockRect.left && event.clientX <= dockRect.right
-        && event.clientY >= dockRect.top && event.clientY <= dockRect.bottom;
-      if (overDock) {
-        wakeDock();
-        setRootDropTarget("dock");
-      } else if (rootDropTarget === "dock") {
-        setRootDropTarget(null);
-        scheduleDockCollapse();
-      }
+    const overTrash = isPointerOverTrash(event);
+    const dockHit = overTrash ? null : getDockHitForDrag(drag, event);
+    dockDragHitRef.current = Boolean(dockHit);
+    if (dockHit) {
+      wakeDock();
+      setRootDropTarget("dock");
+    } else if (rootDropTarget === "dock") {
+      setRootDropTarget(null);
+      scheduleDockCollapse();
     }
-    if (trashRef.current) {
-      const trashRect = trashRef.current.getBoundingClientRect();
-      const overTrash = event.clientX >= trashRect.left && event.clientX <= trashRect.right
-        && event.clientY >= trashRect.top && event.clientY <= trashRect.bottom;
-      if (overTrash) {
-        setRootDropTarget("trash");
-      } else if (rootDropTarget === "trash") {
-        setRootDropTarget(null);
-      }
+    if (overTrash) {
+      setRootDropTarget("trash");
+    } else if (rootDropTarget === "trash") {
+      setRootDropTarget(null);
     }
 
     const scale = viewportScale(viewport);
@@ -1435,7 +1514,7 @@ export function ExecutionMap({
         atlasNodeDragRef.current = { ...atlasNodeDragRef.current!, lastTreeDx: dx / scale, lastTreeDy: dy / scale };
       }
     }
-  }, [onMoveAgent, onMoveCanvasTask, onMoveSourceNode, rootDropTarget, scheduleDockCollapse, taskBranchPanel, viewport, wakeDock]);
+  }, [getDockHitForDrag, isPointerOverTrash, onMoveAgent, onMoveCanvasTask, onMoveSourceNode, rootDropTarget, scheduleDockCollapse, taskBranchPanel, viewport, wakeDock]);
 
   const suppressNextAgentClick = useCallback((nodeId: string) => {
     suppressAgentClickRef.current = nodeId;
@@ -1484,11 +1563,10 @@ export function ExecutionMap({
   }, []);
 
   const checkDockDrop = useCallback((drag: AtlasNodeDragState, event: ReactPointerEvent<HTMLElement>): boolean => {
-    if (!dockRef.current || !drag.hasMoved) return false;
-    const dockRect = dockRef.current.getBoundingClientRect();
-    const inDock = event.clientX >= dockRect.left && event.clientX <= dockRect.right
-      && event.clientY >= dockRect.top && event.clientY <= dockRect.bottom;
-    if (!inDock) return false;
+    if (!drag.hasMoved) return false;
+    const dockHit = getDockHitForDrag(drag, event);
+    if (!dockHit) return false;
+    const { dockRect } = dockHit;
 
     // Roll back positions to pre-drag start so restore returns to original location
     for (const entry of drag.entries) {
@@ -1554,27 +1632,25 @@ export function ExecutionMap({
     }
 
     return true;
-  }, [onMinimizeAgent, onMinimizeCanvasTask, onMinimizeSourceNode, onMoveAgent, onMoveCanvasTask, onMoveSourceNode, startDockFlight, agentsById, tasksById, sourceNodesById, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes, viewport]);
+  }, [getDockHitForDrag, onMinimizeAgent, onMinimizeCanvasTask, onMinimizeSourceNode, onMoveAgent, onMoveCanvasTask, onMoveSourceNode, startDockFlight, agentsById, tasksById, sourceNodesById, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes, viewport]);
 
   const endAgentPointer = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const drag = atlasNodeDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.stopPropagation();
     atlasNodeDragRef.current = null;
+    dockDragHitRef.current = false;
     setIsAtlasDragging(false);
     event.currentTarget.releasePointerCapture?.(event.pointerId);
     setRootDropTarget(null);
 
     if (drag.hasMoved) {
       suppressNextAgentClick(drag.primaryNodeId);
-      if (checkDockDrop(drag, event)) return;
-      if (trashRef.current) {
-        const trashRect = trashRef.current.getBoundingClientRect();
-        if (event.clientX >= trashRect.left && event.clientX <= trashRect.right && event.clientY >= trashRect.top && event.clientY <= trashRect.bottom) {
-          onRootTrashDrop?.(drag.entries);
-          return;
-        }
+      if (isPointerOverTrash(event)) {
+        onRootTrashDrop?.(drag.entries);
+        return;
       }
+      if (checkDockDrop(drag, event)) return;
       return;
     }
 
@@ -1583,7 +1659,7 @@ export function ExecutionMap({
       suppressNextAgentClick(drag.primaryNodeId);
       onSelectAgent?.(node);
     }
-  }, [checkDockDrop, onSelectAgent, suppressNextAgentClick, visibleAgentNodes]);
+  }, [checkDockDrop, isPointerOverTrash, onRootTrashDrop, onSelectAgent, suppressNextAgentClick, visibleAgentNodes]);
 
   const handleAgentClick = useCallback((node: AtlasAgentNode) => {
     if (suppressAgentClickRef.current === node.nodeId) {
@@ -1615,20 +1691,18 @@ export function ExecutionMap({
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.stopPropagation();
     atlasNodeDragRef.current = null;
+    dockDragHitRef.current = false;
     setIsAtlasDragging(false);
     event.currentTarget.releasePointerCapture?.(event.pointerId);
     setRootDropTarget(null);
 
     if (drag.hasMoved) {
       suppressNextTaskClick(drag.primaryNodeId);
-      if (checkDockDrop(drag, event)) return;
-      if (trashRef.current) {
-        const trashRect = trashRef.current.getBoundingClientRect();
-        if (event.clientX >= trashRect.left && event.clientX <= trashRect.right && event.clientY >= trashRect.top && event.clientY <= trashRect.bottom) {
-          onRootTrashDrop?.(drag.entries);
-          return;
-        }
+      if (isPointerOverTrash(event)) {
+        onRootTrashDrop?.(drag.entries);
+        return;
       }
+      if (checkDockDrop(drag, event)) return;
       return;
     }
 
@@ -1637,7 +1711,7 @@ export function ExecutionMap({
       suppressNextTaskClick(drag.primaryNodeId);
       onSelectCanvasTask?.(node);
     }
-  }, [checkDockDrop, onSelectCanvasTask, suppressNextTaskClick, visibleTaskNodes]);
+  }, [checkDockDrop, isPointerOverTrash, onRootTrashDrop, onSelectCanvasTask, suppressNextTaskClick, visibleTaskNodes]);
 
   const handleTaskClick = useCallback((node: AtlasTaskNode) => {
     if (suppressTaskClickRef.current === node.nodeId) {
@@ -2783,57 +2857,99 @@ export function ExecutionMap({
               </g>
             );
           })}
-          {taskConnectionLinks.map(({ connection, path, source }) => (
-            <g key={connection.connectionId}>
-              <path
-                d={path}
-                className="emap-link emap-link-task-connection"
-                data-task-connection-id={connection.connectionId}
-                data-port-type={connection.type}
-                fill="none"
-                strokeWidth={2}
-              />
-              {renderConnectorSourceSocket(
-                `${connection.connectionId}-source-socket`,
-                source,
-                "emap-connector-socket-task-connection",
-              )}
-            </g>
-          ))}
-          {taskDependencyLinks.map(({ dep, path, source }) => (
-            <g key={dep.dependencyId}>
-              <path
-                d={path}
-                className="emap-link emap-link-task-dependency"
-                data-task-dependency-id={dep.dependencyId}
-                fill="none"
-                strokeWidth={2}
-                strokeDasharray="6 3"
-              />
-              {renderConnectorSourceSocket(
-                `${dep.dependencyId}-source-socket`,
-                source,
-                "emap-connector-socket-task-dependency",
-              )}
-            </g>
-          ))}
-          {sourceConnectionLinks.map(({ connection, path, source }) => (
-            <g key={connection.connectionId}>
-              <path
-                d={path}
-                className="emap-link emap-link-source-connection"
-                data-source-connection-id={connection.connectionId}
-                data-port-type={connection.type}
-                fill="none"
-                strokeWidth={2}
-              />
-              {renderConnectorSourceSocket(
-                `${connection.connectionId}-source-socket`,
-                source,
-                "emap-connector-socket-source-connection",
-              )}
-            </g>
-          ))}
+          {taskConnectionLinks.map(({ connection, path, source }) => {
+            const linkCutKey = `task:${connection.connectionId}`;
+            return (
+              <g key={connection.connectionId}>
+                <path
+                  d={path}
+                  className="emap-link emap-link-task-connection"
+                  data-task-connection-id={connection.connectionId}
+                  data-port-type={connection.type}
+                  fill="none"
+                  strokeWidth={2}
+                />
+                <path
+                  d={path}
+                  className="emap-link-hit-area"
+                  data-link-cut-key={linkCutKey}
+                  fill="none"
+                  strokeWidth={18}
+                  onMouseEnter={() => revealLinkCut(linkCutKey)}
+                  onMouseLeave={() => hideLinkCut(linkCutKey)}
+                  onPointerEnter={() => revealLinkCut(linkCutKey)}
+                  onPointerLeave={() => hideLinkCut(linkCutKey)}
+                />
+                {renderConnectorSourceSocket(
+                  `${connection.connectionId}-source-socket`,
+                  source,
+                  "emap-connector-socket-task-connection",
+                )}
+              </g>
+            );
+          })}
+          {taskDependencyLinks.map(({ dep, path, source }) => {
+            const linkCutKey = `dep:${dep.dependencyId}`;
+            return (
+              <g key={dep.dependencyId}>
+                <path
+                  d={path}
+                  className="emap-link emap-link-task-dependency"
+                  data-task-dependency-id={dep.dependencyId}
+                  fill="none"
+                  strokeWidth={2}
+                  strokeDasharray="6 3"
+                />
+                <path
+                  d={path}
+                  className="emap-link-hit-area"
+                  data-link-cut-key={linkCutKey}
+                  fill="none"
+                  strokeWidth={18}
+                  onMouseEnter={() => revealLinkCut(linkCutKey)}
+                  onMouseLeave={() => hideLinkCut(linkCutKey)}
+                  onPointerEnter={() => revealLinkCut(linkCutKey)}
+                  onPointerLeave={() => hideLinkCut(linkCutKey)}
+                />
+                {renderConnectorSourceSocket(
+                  `${dep.dependencyId}-source-socket`,
+                  source,
+                  "emap-connector-socket-task-dependency",
+                )}
+              </g>
+            );
+          })}
+          {sourceConnectionLinks.map(({ connection, path, source }) => {
+            const linkCutKey = `source:${connection.connectionId}`;
+            return (
+              <g key={connection.connectionId}>
+                <path
+                  d={path}
+                  className="emap-link emap-link-source-connection"
+                  data-source-connection-id={connection.connectionId}
+                  data-port-type={connection.type}
+                  fill="none"
+                  strokeWidth={2}
+                />
+                <path
+                  d={path}
+                  className="emap-link-hit-area"
+                  data-link-cut-key={linkCutKey}
+                  fill="none"
+                  strokeWidth={18}
+                  onMouseEnter={() => revealLinkCut(linkCutKey)}
+                  onMouseLeave={() => hideLinkCut(linkCutKey)}
+                  onPointerEnter={() => revealLinkCut(linkCutKey)}
+                  onPointerLeave={() => hideLinkCut(linkCutKey)}
+                />
+                {renderConnectorSourceSocket(
+                  `${connection.connectionId}-source-socket`,
+                  source,
+                  "emap-connector-socket-source-connection",
+                )}
+              </g>
+            );
+          })}
           {agentBranchPath && (
             <path
               key="agent-playground-branch"
@@ -3536,15 +3652,23 @@ export function ExecutionMap({
             const mx = (source.x + target.x) / 2;
             const my = (source.y + target.y) / 2;
             const isPending = pendingDeleteConnectionId === connection.connectionId;
+            const linkCutKey = `task:${connection.connectionId}`;
+            const isVisible = hoveredLinkCutKey === linkCutKey || isPending;
             return (
               <button
                 key={`cut-tc-${connection.connectionId}`}
                 type="button"
-                className={`emap-link-cut-button emap-link-cut-task${isPending ? " is-pending" : ""}`}
+                className={`emap-link-cut-button emap-link-cut-task${isVisible ? " is-visible" : ""}${isPending ? " is-pending" : ""}`}
                 style={{ left: mx - 12, top: my - 12 }}
+                data-link-cut-button-key={linkCutKey}
+                data-visible={isVisible ? "true" : "false"}
                 aria-label={`切断 Task 连接: ${sourceTitle} -> ${targetTitle}`}
                 aria-busy={isPending || undefined}
                 disabled={isPending}
+                onMouseEnter={() => revealLinkCut(linkCutKey)}
+                onMouseLeave={() => hideLinkCut(linkCutKey)}
+                onPointerEnter={() => revealLinkCut(linkCutKey)}
+                onPointerLeave={() => hideLinkCut(linkCutKey)}
                 onClick={(event) => {
                   event.stopPropagation();
                   onDeleteTaskConnection?.(connection.connectionId);
@@ -3564,15 +3688,23 @@ export function ExecutionMap({
             const mx = (source.x + target.x) / 2;
             const my = (source.y + target.y) / 2;
             const isPending = pendingDeleteSourceConnectionId === connection.connectionId;
+            const linkCutKey = `source:${connection.connectionId}`;
+            const isVisible = hoveredLinkCutKey === linkCutKey || isPending;
             return (
               <button
                 key={`cut-sc-${connection.connectionId}`}
                 type="button"
-                className={`emap-link-cut-button emap-link-cut-source${isPending ? " is-pending" : ""}`}
+                className={`emap-link-cut-button emap-link-cut-source${isVisible ? " is-visible" : ""}${isPending ? " is-pending" : ""}`}
                 style={{ left: mx - 12, top: my - 12 }}
+                data-link-cut-button-key={linkCutKey}
+                data-visible={isVisible ? "true" : "false"}
                 aria-label={`切断 Source 连接: ${sourceTitle} -> ${targetTitle}`}
                 aria-busy={isPending || undefined}
                 disabled={isPending}
+                onMouseEnter={() => revealLinkCut(linkCutKey)}
+                onMouseLeave={() => hideLinkCut(linkCutKey)}
+                onPointerEnter={() => revealLinkCut(linkCutKey)}
+                onPointerLeave={() => hideLinkCut(linkCutKey)}
                 onClick={(event) => {
                   event.stopPropagation();
                   onDeleteSourceConnection?.(connection.connectionId);
@@ -3591,15 +3723,23 @@ export function ExecutionMap({
             const mx = (source.x + target.x) / 2;
             const my = (source.y + target.y) / 2;
             const isPending = pendingDeleteDependencyId === dep.dependencyId;
+            const linkCutKey = `dep:${dep.dependencyId}`;
+            const isVisible = hoveredLinkCutKey === linkCutKey || isPending;
             return (
               <button
                 key={`cut-dep-${dep.dependencyId}`}
                 type="button"
-                className={`emap-link-cut-button emap-link-cut-dep${isPending ? " is-pending" : ""}`}
+                className={`emap-link-cut-button emap-link-cut-dep${isVisible ? " is-visible" : ""}${isPending ? " is-pending" : ""}`}
                 style={{ left: mx - 12, top: my - 12 }}
+                data-link-cut-button-key={linkCutKey}
+                data-visible={isVisible ? "true" : "false"}
                 aria-label={`切断依赖: ${sourceTitle} -> ${targetTitle}`}
                 aria-busy={isPending || undefined}
                 disabled={isPending}
+                onMouseEnter={() => revealLinkCut(linkCutKey)}
+                onMouseLeave={() => hideLinkCut(linkCutKey)}
+                onPointerEnter={() => revealLinkCut(linkCutKey)}
+                onPointerLeave={() => hideLinkCut(linkCutKey)}
                 onClick={(event) => {
                   event.stopPropagation();
                   onDeleteTaskDependency?.(dep.dependencyId);

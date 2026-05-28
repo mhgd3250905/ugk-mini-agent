@@ -436,6 +436,46 @@ describe("App", () => {
     expect(container.querySelector(".emap-link-cut-button")).toBeNull();
   });
 
+  it("reveals the Task connection cut button only while hovering the connection line", async () => {
+    const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+    const existingConnection: TeamTaskConnection = {
+      schemaVersion: "team/task-connection-1",
+      connectionId: "conn_hover_md",
+      fromTaskId: collectTask.taskId,
+      fromOutputPortId: "draft_md",
+      toTaskId: htmlTask.taskId,
+      toInputPortId: "source_md",
+      type: "md",
+      status: "active",
+      createdAt: "2026-05-25T00:00:00.000Z",
+      updatedAt: "2026-05-25T00:00:00.000Z",
+    };
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [collectTask, htmlTask] }), { status: 200 });
+      if (url === "/v1/team/task-connections" && method === "GET") return new Response(JSON.stringify({ connections: [existingConnection] }), { status: 200 });
+      if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const cutButton = await screen.findByRole("button", { name: /切断 Task 连接/ });
+    const hitArea = container.querySelector('[data-link-cut-key="task:conn_hover_md"]') as SVGPathElement | null;
+    expect(hitArea).toBeTruthy();
+    expect(cutButton).toHaveAttribute("data-visible", "false");
+
+    fireEvent.pointerEnter(hitArea!);
+    expect(cutButton).toHaveAttribute("data-visible", "true");
+
+    fireEvent.pointerLeave(hitArea!);
+    expect(cutButton).toHaveAttribute("data-visible", "false");
+  });
+
   it("keeps Task connection line on delete failure and shows error", async () => {
     const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
     const existingConnection: TeamTaskConnection = {
@@ -2265,6 +2305,54 @@ describe("App", () => {
     }
   });
 
+  it("expands and accepts Dock drop when a dragged root node collides with the collapsed edge", async () => {
+    const { container } = render(<App />);
+    const taskEl = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }) as HTMLElement;
+    const originalLeft = parseFloat(taskEl.style.left);
+    const originalTop = parseFloat(taskEl.style.top);
+    expect(Number.isFinite(originalLeft)).toBe(true);
+    expect(Number.isFinite(originalTop)).toBe(true);
+
+    vi.useFakeTimers();
+    try {
+      const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
+      expect(dock).toBeTruthy();
+      expect(dock).toHaveAttribute("data-dock-state", "collapsed");
+      const dockTop = originalTop + 260;
+      vi.spyOn(dock!, "getBoundingClientRect").mockReturnValue({
+        x: originalLeft - 20, y: dockTop, width: 360, height: 72,
+        left: originalLeft - 20, top: dockTop, right: originalLeft + 340, bottom: dockTop + 72,
+        toJSON: () => ({}),
+      } as DOMRect);
+
+      const PID = 45;
+      const startX = originalLeft + 50;
+      const startY = originalTop + 30;
+      const targetY = dockTop - 54;
+      expect(targetY).toBeLessThan(dockTop);
+      expect(originalTop + 168 + (targetY - startY)).toBeGreaterThan(dockTop);
+
+      firePointer(taskEl, "pointerdown", { pointerId: PID, clientX: startX, clientY: startY });
+      firePointer(taskEl, "pointermove", { pointerId: PID, clientX: startX, clientY: targetY });
+      expect(dock).toHaveAttribute("data-dock-state", "expanded");
+      expect(dock!.classList.contains("is-drop-hover")).toBe(true);
+
+      fireEvent.pointerMove(window, { clientX: startX + 1, clientY: targetY + 1 });
+      expect(dock).toHaveAttribute("data-dock-state", "expanded");
+      expect(dock!.classList.contains("is-drop-hover")).toBe(true);
+
+      firePointer(taskEl, "pointermove", { pointerId: PID, clientX: startX + 1, clientY: targetY + 1 });
+      expect(dock).toHaveAttribute("data-dock-state", "expanded");
+      expect(dock!.classList.contains("is-drop-hover")).toBe(true);
+
+      firePointer(taskEl, "pointerup", { pointerId: PID, clientX: startX, clientY: targetY });
+      expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeNull();
+      expect(within(dock!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps the Dock shell flat glass with one-root minimum width and even padding", () => {
     const executionMapCss = readFileSync("src/graph/execution-map.css", "utf8");
     const dockBlock = executionMapCss.match(/\.emap-root-dock \{(?<block>[\s\S]*?)\n\}/)?.groups?.block ?? "";
@@ -3426,6 +3514,54 @@ describe("App", () => {
     await waitFor(() => {
       expect(container.querySelector('[data-task-id="task_research_medtrum"]')).toBeNull();
     });
+  });
+
+  it("prefers trash drop when the pointer is inside trash even if the dragged root node intersects Dock", async () => {
+    const api = mockLiveTaskEditorApi();
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const atlasNodes = getAtlasNodes(container);
+    const taskCard = await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" });
+    expect(taskCard).toBeInTheDocument();
+
+    const taskEl = container.querySelector('[data-task-id="task_research_medtrum"]') as HTMLElement;
+    const dockEl = container.querySelector(".emap-root-dock") as HTMLElement | null;
+    expect(taskEl).toBeTruthy();
+    expect(dockEl).toBeTruthy();
+    vi.spyOn(dockEl!, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, width: 1000, height: 1000,
+      left: 0, top: 0, right: 1000, bottom: 1000,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    const originalLeft = parseFloat(taskEl.style.left);
+    const originalTop = parseFloat(taskEl.style.top);
+    const PID = 46;
+    const startX = originalLeft + 50;
+    const startY = originalTop + 30;
+    firePointer(taskEl, "pointerdown", { pointerId: PID, clientX: startX, clientY: startY });
+    firePointer(taskEl, "pointermove", { pointerId: PID, clientX: startX + 10, clientY: startY + 10 });
+
+    const trashEl = await waitFor(() => {
+      const el = container.querySelector(".emap-root-trash");
+      if (!el) throw new Error("trash not rendered");
+      return el as HTMLElement;
+    });
+    vi.spyOn(trashEl, "getBoundingClientRect").mockReturnValue({
+      x: 500, y: 500, width: 60, height: 40,
+      left: 500, top: 500, right: 560, bottom: 540,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    firePointer(taskEl, "pointermove", { pointerId: PID, clientX: 530, clientY: 520 });
+    firePointer(taskEl, "pointerup", { pointerId: PID, clientX: 530, clientY: 520 });
+
+    expect(api.archiveRequests).toBe(0);
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(within(dialog).getByText(/调查 Medtrum 云资产/)).toBeInTheDocument();
+    expect(within(dockEl!).queryByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ })).not.toBeInTheDocument();
   });
 
   it("keeps Task root nodes when root archive via trash fails", async () => {
@@ -8397,6 +8533,12 @@ describe("App", () => {
       const cutButton = screen.getByRole("button", { name: /切断依赖.*Dep Alpha.*Dep Beta/ });
       expect(cutButton).toBeTruthy();
       expect(cutButton.closest(".emap-link-cut-dep")).toBeTruthy();
+      expect(cutButton).toHaveAttribute("data-visible", "false");
+
+      const hitArea = g!.querySelector('[data-link-cut-key="dep:dep_existing_1"]') as SVGPathElement | null;
+      expect(hitArea).toBeTruthy();
+      fireEvent.pointerEnter(hitArea!);
+      expect(cutButton).toHaveAttribute("data-visible", "true");
     });
 
     it("cuts a dependency from the canvas cut button", async () => {

@@ -459,6 +459,7 @@
   stroke: rgba(122, 131, 151, 0.42);
   stroke-linecap: round;
   stroke-linejoin: round;
+  pointer-events: none;
   transition: stroke 0.2s, stroke-width 0.2s, opacity 0.2s, filter 0.2s;
 }
 
@@ -508,6 +509,13 @@
   filter: drop-shadow(0 0 3px rgba(230, 170, 60, 0.25));
 }
 
+.emap-link-hit-area {
+  stroke: transparent;
+  stroke-linecap: round;
+  pointer-events: stroke;
+  opacity: 0;
+}
+
 .emap-link-cut-button {
   position: absolute;
   width: 24px;
@@ -521,21 +529,28 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  pointer-events: auto;
-  opacity: 0.6;
-  transition: opacity 0.15s, background 0.15s, border-color 0.15s;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.78);
+  transform-origin: center;
+  transition: opacity 0.15s, transform 0.15s, background 0.15s, border-color 0.15s;
   z-index: 5;
 }
+.emap-link-cut-button.is-visible,
 .emap-link-cut-button:hover,
 .emap-link-cut-button:focus-visible {
+  pointer-events: auto;
   opacity: 1;
+  transform: scale(1);
   background: rgba(50, 50, 55, 0.95);
   border-color: rgba(255, 255, 255, 0.4);
   outline: none;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15);
 }
 .emap-link-cut-button.is-pending {
+  pointer-events: auto;
   opacity: 0.35;
+  transform: scale(1);
   cursor: wait;
 }
 
@@ -583,6 +598,11 @@
 .execution-map-nodes {
   position: relative;
   z-index: 1;
+  pointer-events: none;
+}
+
+.execution-map-nodes > *:not(.emap-link-cut-button) {
+  pointer-events: auto;
 }
 
 .emap-node {

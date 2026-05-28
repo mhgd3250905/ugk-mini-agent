@@ -68,8 +68,8 @@ Team Console Task / WorkUnit redesign 已通过 PR #1 合入 `main`：
 
 Root Dock / Trash / Filter / Lasso 后，Team Console 又在主目录 `E:\AII\ugk-pi` 的 `main` 上完成了一组 Dock、连接线和固定 5174 入口修复。不要回旧 worktree 堆功能。
 
-- 当前主线最新功能提交：`d794039 fix(team-console): prevent dock restore flicker`；本地 `main` 当前领先 `origin/main` 45 个提交，是否 push 由用户另行确认。
-- 当前工作区另有 Codex 未提交修复：Dock restore flight 改为真实 FLIP 动画，显式保留 `from` phase；`prefers-reduced-motion: reduce` 下不再把 flight transition 关成 `none`，并通过 Dock face / 节点 face 交叉淡入淡出完成样式切换。Task flight 的目标节点 face 已同步真实 Task 卡片的 `IN/OUT` port chip 和右侧 dependency handle，并用 `--emap-flight-content-scale` 匹配当前画布缩放；CSS 在 `.emap-node` 基础规则之后重新锁定 flight face 宽高，避免 fixed overlay 外框缩小但内部内容不缩放导致 `OUT` 行在还原途中被裁掉。Dock item 在 pending restore 期间立即变成完全透明的布局占位，不再显示 dashed 空槽或 icon/title/meta，避免视觉上像复制一张卡飞走。用户追加要求后，Dock 已改成常驻半隐藏收纳区：空 Dock 也保留一个根节点宽度的 2D 玻璃面板，不再渲染顶部发光把手；hover / focus / drag-over 自动上探展开；空 Dock 移出后立即收回，非空 Dock 移出后 3 秒收回。
+- 当前主线最新提交：`0d038ff docs(glm-plan): require behavior evidence`；Team Console Dock 最新功能提交：`618fb5b fix(team-console): polish root dock behavior`；本地 `main` 当前领先 `origin/main` 47 个提交，是否 push 由用户另行确认。
+- 当前工作区另有 Codex 未提交修复：Team Console Execution Atlas 三类可切断连接线（typed Task connection、Source connection、control dependency）的中点叉号改为按需显示；底部 Dock 拖拽命中从“指针点进入 Dock”扩展为“拖动中的根节点外框碰到 Dock 露出边缘”，并让 hover 展开和松手收纳共用同一套碰撞判断；拖拽碰撞唤起 Dock 后继续移动不会再被全局 pointer move 离开监听压回收起态；如果指针位于右下角垃圾桶，则垃圾桶优先于 Dock 碰撞收纳。涉及 `ExecutionMap.tsx`、`execution-map.css`、`app.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/change-log.md`、`docs/handoff-current.md`。
 - 固定入口已经 Docker 化：`docker compose up -d ugk-pi ugk-pi-team-console` 后访问 `http://127.0.0.1:5174/`；`5174` 由 `ugk-pi-team-console` 服务管理，不再依赖临时宿主 Vite 进程。Docker 内代理目标是 `http://ugk-pi:3000`，浏览器端通过同源 `/v1`、`/playground`、`/assets`、`/runtime`、`/vendor` 转发到真实后端。不要开 `3100` 临时后端。
 - 已完成并提交的相关修复：
   - `4d3902a`：`docker-compose.yml` 增加 `ugk-pi-team-console`，`5174` 成为固定功能入口；重启 `ugk-pi` 不再顺手打掉 Team Console 前端服务。
@@ -77,19 +77,26 @@ Root Dock / Trash / Filter / Lasso 后，Team Console 又在主目录 `E:\AII\ug
   - `9ec5d63` / `da5b148` / `aa471a9` / `575d090` / `27e2005`：typed Task connection、Source connection、control dependency 三类连接线都支持画布中点切断；control dependency source 端补齐半圆 socket；Dock item 视觉收口。
   - `c69e279` / `d02c619`：Dock minimize / restore flight 改为两阶段 `from -> to` 动画，测试覆盖 phase 和 transform 变化；React 19 SVG `<g>` key warning 过滤收窄到已知场景。
   - `d794039`：Dock restore 点击时延迟 `onRestoreAgent` / `onRestoreCanvasTask` / `onRestoreSourceNode` 到 flight 完成后执行；动画期间真实根节点不提前渲染，避免用户截图里的双影闪烁。Dock item pending restore 期间 disabled，防重复点击。
+  - `618fb5b`：Dock 改为常驻半隐藏收纳区，空态一个根节点宽度的 2D 玻璃面板，去掉顶部发光把手；空态移出立即收回，非空态移出 3 秒收回。
+  - `0d038ff`：repo-local `glm-plan` 技能强化行为证据要求，要求真实入口、focused tests 和浏览器 measured evidence。
 - Codex 复核补修：真实浏览器里 `prefers-reduced-motion: reduce` 会命中旧 CSS 的 `transition: none`，导致 Dock restore 从 Dock 直接跳到目标 ghost；现已保留短 transition，flight 内部 Dock face 渐隐、节点 face 渐显，并按 `.execution-map-nodes` 的真实 rect 计算目标坐标，避免 flight 清除时节点位置轻跳。
 - 最近验证记录：
-  - `npm --prefix apps/team-console run test`：431 passed
-  - `npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "empty Dock panel|non-empty Dock|collapsed panel|flat glass"`：4 passed
+  - `npm --prefix apps/team-console run test`：434 passed
+  - `npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "empty Dock panel|non-empty Dock|collapsed panel|collapsed edge|flat glass|drag-to-dock|trash drop|prefers trash drop"`：12 passed
+  - `npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "collides with the collapsed edge"`：1 passed
+  - `npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "prefers trash drop"`：1 passed
   - `npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "Dock|dock|restore flight|drag-to-dock|reduced-motion"`：15 passed
+  - `npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "reveals the Task connection cut button|renders dependency with source half socket"`：2 passed
   - `npm --prefix apps/team-console run build`：通过
   - `npx tsc --noEmit`：通过
   - `git diff --check`：通过
   - GLM 浏览器 measured evidence：restore flight 期间 Agent / Task real node 均不可见，flight 清除后按原 `style.left/top` 恢复。
   - Codex 浏览器 measured evidence：在 `prefers-reduced-motion: reduce` 为 true 的 Chrome 里，Dock restore flight 20ms 位于 Dock 且 Dock face/node face opacity 为 1/0，120ms 位于中途且 opacity 交叉，220ms rect 与最终真实节点 rect 完全一致，370ms 清除并显示真实节点；`HTML 制作 Task` restore flight 从起点到终点都已包含 `IN/OUT` ports 和 dependency handle，`--emap-flight-content-scale=0.67`，20/80/160ms 采样中 `OUT` row 均在 flight 外框内，flight 清除后真实 Task rect 与终点 rect 一致；`PTT热帖内容整理` restore 采样显示 pending Dock item 在 20/80/160ms 均为 `opacity: 0`、透明背景、`::after content: none`，但保留原 rect 占位。
   - Codex 浏览器 measured evidence：重启 `ugk-pi-team-console` 后在 `http://127.0.0.1:5174/` 验证 Dock 常驻空态，收起态 `data-dock-state="collapsed"`、`data-empty="true"`、宽 280px、仅露 18px；鼠标移入后展开到完整可见 52px，空 Dock pointer leave 后立即 collapsed；非空 Dock pointer leave 后 3 秒 collapsed；从根 Task 坐标拖拽路径靠近收起 Dock 面板时会展开。
+  - Codex 浏览器 measured evidence：重启 `ugk-pi-team-console` 后在 `http://127.0.0.1:5174/` 验证 Dock 碰撞拖拽，收起 Dock 顶边 `top=702`；拖拽 `HTML 制作 Task` 时指针最终停在 `y=694`，仍在 Dock 上方，但按卡片外框推算底边到 `y=771.48` 并已碰撞 Dock 边缘；连续多点拖拽后 Dock 保持 `data-dock-state="expanded"`、rect 为 `top=634.625 / bottom=720`，松手后 Task 从画布消失并进入 Dock，随后已手动恢复验证现场。
+  - Codex 浏览器 measured evidence：重启 `ugk-pi-team-console` 后在 `http://127.0.0.1:5174/` 验证 control dependency 切断按钮初始 `data-visible="false"`、`opacity: 0`、`pointer-events: none`，连接线透明 hit-area 为 `stroke-width="18"`；鼠标移到 hit-area 后按钮变为 `data-visible="true"`、`opacity: 1`、`pointer-events: auto`，移出后恢复隐藏。
 - 当前协作规范变更：`.codex/skills/glm-plan/SKILL.md` 已增强，后续发给 GLM 的计划必须要求真实入口行为证据、focused tests、浏览器 measured evidence，禁止把可自动验证的 UI 步骤甩给用户手动跑。
-- 当前工作区边界：不要 stage `.pi/skills/anthropics/skill-creator/**` 删除、`.pi/skills/skill-creator/`、`.codex/plans/*`、`public/medtrum-view/`、`public/anthropic-report.html`。本轮可考虑提交的 Team Console Dock 收尾文件为 `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/change-log.md`、`docs/handoff-current.md`；GLM 协作技能强化仍单独在 `.codex/skills/glm-plan/SKILL.md`。
+- 当前工作区边界：不要 stage `.pi/skills/anthropics/skill-creator/**` 删除、`.pi/skills/skill-creator/`、`.codex/plans/*`、`public/medtrum-view/`、`public/anthropic-report.html`。本轮可考虑提交的 Team Console 连接线 hover 与 Dock 碰撞拖拽修复文件为 `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/change-log.md`、`docs/handoff-current.md`。
 
 本轮 Team Console 远程 `5174` 修复现场：
 

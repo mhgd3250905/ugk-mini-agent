@@ -12,6 +12,31 @@
 
 ---
 
+## 2026-05-28 — Team Console Dock 拖拽碰撞命中
+
+- **主题**: 将根节点拖入底部 Dock 的命中规则从“指针点进入 Dock”优化为“根节点外框碰到 Dock 露出边缘”。
+- **变更内容**:
+  - `ExecutionMap.tsx` 新增统一 Dock hit 判断，保留指针进入 Dock 的旧路径，同时用拖拽中的 Agent / Task / Source 根节点屏幕矩形与 Dock 矩形做碰撞检测。
+  - Dock hover 展开和 pointerup 松手收纳共用同一套判断，避免只展开但最终不能收纳的假交互。
+  - 修复拖拽碰撞唤起 Dock 后继续移动时 Dock 反复展开 / 收回的问题：全局 pointer move 的“离开 Dock 自动收起”监听现在会识别正在进行的根节点碰撞命中，不再把空 Dock 立刻压回收起态。
+  - pointerup 时如果指针位于右下角垃圾桶，垃圾桶优先于 Dock 碰撞收纳，避免大卡片擦到 Dock 时抢走用户的归档意图。
+  - 回归测试覆盖指针停在 Dock 顶边上方、Task 外框底部已碰到收起 Dock 边缘时，Dock 必须展开，后续全局 pointer move 不能把 Dock 抖回收起态，松手后 Task 被收纳。
+  - 回归测试覆盖“指针在垃圾桶、卡片同时碰到 Dock”时必须打开归档确认而不是进入 Dock。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/tests/app.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`。
+- **验证**: 已跑通新增 focused test：`npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "collides with the collapsed edge"`、`npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "prefers trash drop"`；Dock / Trash 相关 focused tests：`npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "empty Dock panel|non-empty Dock|collapsed panel|collapsed edge|flat glass|drag-to-dock|trash drop|prefers trash drop"`（12 passed）；完整 `npm --prefix apps/team-console run test`（434 passed）、`npm --prefix apps/team-console run build`、`npx tsc --noEmit` 均通过。Codex in-app Browser 在 `http://127.0.0.1:5174/` 验证：收起 Dock 顶边 `top=702`，拖拽 `HTML 制作 Task` 时指针最终停在 `y=694`（仍在 Dock 上方），但按卡片外框推算底边到 `y=771.48`，已碰撞 Dock 边缘；连续多点拖拽后 Dock 保持 `data-dock-state="expanded"`、rect 为 `top=634.625 / bottom=720`，Task 从画布消失并进入 Dock，随后已手动恢复验证现场。
+- **对应入口**: Team Console Execution Atlas 底部 Dock 根节点拖拽收纳。
+
+## 2026-05-28 — Team Console 连接线切断按钮按需显示
+
+- **主题**: 将 Execution Atlas 连接线中点的切断叉号从常驻显示改为 hover / focus 时显示。
+- **变更内容**:
+  - `ExecutionMap.tsx` 为 typed Task connection、Source connection 和 control dependency 三类可切断线增加透明 hover hit-area，并用 `data-link-cut-key` / `data-visible` 控制对应切断按钮显隐。
+  - `execution-map.css` 默认隐藏 `.emap-link-cut-button`，只在线段 hover、按钮 hover / focus 或删除 pending 时显示，避免画布上常驻叉号造成视觉噪音。
+  - 回归测试覆盖 Task connection 和 control dependency 的默认隐藏、hover 后显示行为。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`。
+- **验证**: 已跑通 `npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "reveals the Task connection cut button|renders dependency with source half socket"`、`npm --prefix apps/team-console run test`（432 passed）、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`。Codex in-app Browser 在 `http://127.0.0.1:5174/` 验证 control dependency 切断按钮初始 `data-visible="false"` / `opacity: 0`，hover 到连接线透明 hit-area 后变为 `data-visible="true"` / `opacity: 1`，移出后恢复隐藏。
+- **对应入口**: Team Console Execution Atlas typed / source / dependency 连接线切断入口。
+
 ## 2026-05-28 — Team Console Dock 常驻半隐藏收纳区
 
 - **主题**: 将 Team Console 底部 Dock 改为常驻半隐藏收纳区，空 Dock 也保留固定宽度唤起区域。
