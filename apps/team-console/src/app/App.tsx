@@ -239,6 +239,8 @@ function formatAssistantText(raw: string): { lines: string[]; hiddenLineCount: n
     }
   }
   while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  lines.reverse();
+  while (lines.length > 0 && lines[0] === "") lines.shift();
   const maxLines = PROCESS_ASSISTANT_TEXT_MAX_LINES;
   if (lines.length <= maxLines) return { lines, hiddenLineCount: 0, truncatedLineCount };
   const visible = lines.slice(0, maxLines);

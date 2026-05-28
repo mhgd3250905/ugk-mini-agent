@@ -6512,9 +6512,9 @@ describe("App", () => {
       expect(assistantBlock).toBeTruthy();
       const paragraphs = assistantBlock!.querySelectorAll("p");
       expect(paragraphs.length).toBe(3);
-      expect(paragraphs[0]!.textContent).toBe("第一行内容。");
+      expect(paragraphs[0]!.textContent).toBe("第三行内容。");
       expect(paragraphs[1]!.textContent).toBe("第二行内容。");
-      expect(paragraphs[2]!.textContent).toBe("第三行内容。");
+      expect(paragraphs[2]!.textContent).toBe("第一行内容。");
       expect(assistantBlock!.querySelector(".emap-observer-process-assistant-truncated")).toBeNull();
     });
 
@@ -6550,6 +6550,8 @@ describe("App", () => {
       const assistantBlock = workerNode.querySelector(".emap-observer-process-assistant-text") as HTMLElement | null;
       const paragraphs = assistantBlock!.querySelectorAll("p");
       expect(paragraphs.length).toBeLessThanOrEqual(5);
+      expect(paragraphs[0]!.textContent).toBe("行 10 内容");
+      expect(paragraphs[4]!.textContent).toBe("行 6 内容");
       const hint = assistantBlock!.querySelector(".emap-observer-process-assistant-truncated");
       expect(hint).toBeTruthy();
       expect(hint).toHaveTextContent("已隐藏");
