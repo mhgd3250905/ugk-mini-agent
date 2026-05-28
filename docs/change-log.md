@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-29 — Team Console Task 卡片端口高度修复
+
+- **主题**: 修复 Task 根卡片角色区优化后，带 `IN` + `OUT` 双端口的卡片底部 `OUT` 行被固定高度裁掉的问题。
+- **变更内容**:
+  - Task 根卡片高度从固定 `168px` 改为按端口行数动态预留空间：无端口保持紧凑，一行端口增加高度，`IN` + `OUT` 双行端口增加到完整可见高度。
+  - 连接锚点、Task menu connector、lasso 框选、Dock restore 目标矩形和拖拽碰撞高度同步使用动态 Task 高度，避免视觉高度和交互命中区域不一致。
+  - typed port 回归测试新增 `data-port-row-count` 和 inline height 断言，锁住双端口 Task 卡片不能再次被裁剪。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/tests/app.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/handoff-current.md`。
+- **验证**: focused test 覆盖 typed input/output ports；真实 `http://127.0.0.1:5174/` 页面量测 `HTML 制作 Task` 的 `IN Markdown` 与 `OUT HTML` 两行都落在卡片 rect 内。
+- **对应入口**: Team Console Execution Atlas Task 根卡片，固定入口 `http://127.0.0.1:5174/`。
+
 ## 2026-05-29 — Team Console Atlas 菜单、垃圾桶、工具栏、卡片和缩放收口
 
 - **主题**: 修复 Team Console 多 Task 菜单焦点串台和垃圾桶取消位置残留，并继续优化 Atlas 顶部工具栏、Task 卡片层级和缩放清晰度。

@@ -141,6 +141,7 @@ const PREVIEW_GAP = 40;
 const PREVIEW_FALLBACK_HEIGHT = 180;
 const AGENT_NODE_HEIGHT = 112;
 const CANVAS_TASK_NODE_HEIGHT = 168;
+const CANVAS_TASK_PORT_ROW_EXTRA_HEIGHT = 24;
 const CANVAS_SOURCE_NODE_HEIGHT = 166;
 const DOCK_FLIGHT_PHASE_DELAY_MS = 48;
 const DOCK_FLIGHT_TRANSITION_MS = 240;
@@ -182,6 +183,7 @@ type AtlasNodeDragEntry = {
   nodeId: string;
   kind: "agent" | "task" | "source";
   startPosition: { x: number; y: number };
+  height: number;
 };
 
 type DockFlightRootKind = "agent" | "task" | "source";
@@ -459,10 +461,19 @@ function domRectToRect(rect: Pick<DOMRect, "left" | "top" | "width" | "height">)
   };
 }
 
-function atlasDragEntryHeight(kind: AtlasNodeDragEntry["kind"]): number {
+function atlasDragEntryHeight(kind: AtlasNodeDragEntry["kind"], task?: TeamCanvasTask): number {
   if (kind === "agent") return AGENT_NODE_HEIGHT;
   if (kind === "source") return CANVAS_SOURCE_NODE_HEIGHT;
-  return CANVAS_TASK_NODE_HEIGHT;
+  return canvasTaskNodeHeight(task);
+}
+
+function canvasTaskPortRowCount(task: TeamCanvasTask | undefined): number {
+  if (!task) return 0;
+  return (task.workUnit.inputPorts?.length ? 1 : 0) + (task.workUnit.outputPorts?.length ? 1 : 0);
+}
+
+function canvasTaskNodeHeight(task: TeamCanvasTask | undefined): number {
+  return CANVAS_TASK_NODE_HEIGHT + canvasTaskPortRowCount(task) * CANVAS_TASK_PORT_ROW_EXTRA_HEIGHT;
 }
 
 function agentBranchConnectorPath(agentNode: AtlasAgentNode, branchRect: AgentBranchRect): string {
@@ -483,12 +494,12 @@ function rightMiddleToLeftTopPath(sourceRect: AgentBranchRect, targetRect: Agent
   return straightPath(sx, sy, tx, ty);
 }
 
-function taskNodeRect(taskNode: AtlasTaskNode): AgentBranchRect {
+function taskNodeRect(taskNode: AtlasTaskNode, task?: TeamCanvasTask): AgentBranchRect {
   return {
     x: taskNode.position.x,
     y: taskNode.position.y,
     width: NODE_WIDTH,
-    height: CANVAS_TASK_NODE_HEIGHT,
+    height: canvasTaskNodeHeight(task),
   };
 }
 
@@ -532,8 +543,8 @@ function renderConnectorSourceSocket(
   );
 }
 
-function taskBranchConnectorPath(taskNode: AtlasTaskNode, branchRect: AgentBranchRect): string {
-  return rightMiddleToLeftTopPath(taskNodeRect(taskNode), branchRect);
+function taskBranchConnectorPath(taskNode: AtlasTaskNode, branchRect: AgentBranchRect, task?: TeamCanvasTask): string {
+  return rightMiddleToLeftTopPath(taskNodeRect(taskNode, task), branchRect);
 }
 
 function taskChildBranchConnectorPath(menuRect: AgentBranchRect, childRect: AgentBranchRect): string {
@@ -580,7 +591,7 @@ function taskConnectionPoints(
   const targetPort = inputPorts.find((port) => port.id === connection.toInputPortId);
   if (!sourcePort || sourcePort.type !== connection.type) return null;
   if (!targetPort || targetPort.type !== connection.type) return null;
-  return connectorAnchors(taskNodeRect(sourceNode), taskNodeRect(targetNode));
+  return connectorAnchors(taskNodeRect(sourceNode, sourceTask), taskNodeRect(targetNode, targetTask));
 }
 
 function sourceConnectionPoints(
@@ -598,7 +609,7 @@ function sourceConnectionPoints(
   const targetPort = targetTask.workUnit.inputPorts?.find((port) => port.id === connection.toInputPortId);
   if (source.outputPort.id !== connection.fromOutputPortId || source.outputPort.type !== connection.type) return null;
   if (!targetPort || targetPort.type !== connection.type) return null;
-  return connectorAnchors(sourceNodeRect(sourceNode), taskNodeRect(targetNode));
+  return connectorAnchors(sourceNodeRect(sourceNode), taskNodeRect(targetNode, targetTask));
 }
 
 export function summarizeCollapsedTaskStatus(children: Pick<ExecutionNode, "status">[]): TaskStatus {
@@ -1251,13 +1262,13 @@ export function ExecutionMap({
         const sourceNode = taskNodeByTaskId.get(dep.fromTaskId);
         const targetNode = taskNodeByTaskId.get(dep.toTaskId);
         if (!sourceNode || !targetNode) return null;
-        const sourceRect = { x: sourceNode.position.x, y: sourceNode.position.y, width: NODE_WIDTH, height: CANVAS_TASK_NODE_HEIGHT };
-        const targetRect = { x: targetNode.position.x, y: targetNode.position.y, width: NODE_WIDTH, height: CANVAS_TASK_NODE_HEIGHT };
+        const sourceRect = taskNodeRect(sourceNode, tasksById?.get(dep.fromTaskId));
+        const targetRect = taskNodeRect(targetNode, tasksById?.get(dep.toTaskId));
         const points = connectorAnchors(sourceRect, targetRect);
         return { dep, path: straightPath(points.source.x, points.source.y, points.target.x, points.target.y), source: points.source, target: points.target };
       })
       .filter((entry): entry is { dep: TeamTaskDependency; path: string; source: { x: number; y: number }; target: { x: number; y: number } } => Boolean(entry))
-  ), [taskDependencies, taskNodeByTaskId]);
+  ), [taskDependencies, taskNodeByTaskId, tasksById]);
 
   const selectedChain = useMemo(() => {
     if (!model) return new Set<string>();
@@ -1450,7 +1461,7 @@ export function ExecutionMap({
         x: node.position.x,
         y: node.position.y,
         width: NODE_WIDTH,
-        height: CANVAS_TASK_NODE_HEIGHT,
+        height: canvasTaskNodeHeight(tasksById?.get(node.taskId)),
       })) {
         next.add(atlasSelectionKey("task", node.nodeId));
       }
@@ -1466,32 +1477,37 @@ export function ExecutionMap({
       }
     }
     setSelectedAtlasNodeKeys(next);
-  }, [visibleAgentNodes, visibleSourceNodes, visibleTaskNodes]);
+  }, [tasksById, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes]);
 
   const buildAtlasDragEntries = useCallback((primary: AtlasAgentNode | AtlasTaskNode | AtlasSourceNode, kind: "agent" | "task" | "source"): AtlasNodeDragEntry[] => {
+    const entryHeight = (node: AtlasAgentNode | AtlasTaskNode | AtlasSourceNode, nodeKind: AtlasNodeDragEntry["kind"]) => (
+      nodeKind === "task"
+        ? atlasDragEntryHeight(nodeKind, tasksById?.get((node as AtlasTaskNode).taskId))
+        : atlasDragEntryHeight(nodeKind)
+    );
     const primaryKey = atlasSelectionKey(kind, primary.nodeId);
     if (!selectedAtlasNodeKeys.has(primaryKey)) {
-      return [{ nodeId: primary.nodeId, kind, startPosition: primary.position }];
+      return [{ nodeId: primary.nodeId, kind, startPosition: primary.position, height: entryHeight(primary, kind) }];
     }
 
     const entries: AtlasNodeDragEntry[] = [];
     for (const node of visibleAgentNodes) {
       if (selectedAtlasNodeKeys.has(atlasSelectionKey("agent", node.nodeId))) {
-        entries.push({ nodeId: node.nodeId, kind: "agent", startPosition: node.position });
+        entries.push({ nodeId: node.nodeId, kind: "agent", startPosition: node.position, height: entryHeight(node, "agent") });
       }
     }
     for (const node of visibleTaskNodes) {
       if (selectedAtlasNodeKeys.has(atlasSelectionKey("task", node.nodeId))) {
-        entries.push({ nodeId: node.nodeId, kind: "task", startPosition: node.position });
+        entries.push({ nodeId: node.nodeId, kind: "task", startPosition: node.position, height: entryHeight(node, "task") });
       }
     }
     for (const node of visibleSourceNodes) {
       if (selectedAtlasNodeKeys.has(atlasSelectionKey("source", node.nodeId))) {
-        entries.push({ nodeId: node.nodeId, kind: "source", startPosition: node.position });
+        entries.push({ nodeId: node.nodeId, kind: "source", startPosition: node.position, height: entryHeight(node, "source") });
       }
     }
-    return entries.length > 0 ? entries : [{ nodeId: primary.nodeId, kind, startPosition: primary.position }];
-  }, [selectedAtlasNodeKeys, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes]);
+    return entries.length > 0 ? entries : [{ nodeId: primary.nodeId, kind, startPosition: primary.position, height: entryHeight(primary, kind) }];
+  }, [selectedAtlasNodeKeys, tasksById, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes]);
 
   const beginAtlasNodeDrag = useCallback((
     node: AtlasAgentNode | AtlasTaskNode | AtlasSourceNode,
@@ -1540,7 +1556,7 @@ export function ExecutionMap({
         x: nodesRect.left + entry.startPosition.x * scale + dx,
         y: nodesRect.top + entry.startPosition.y * scale + dy,
         width: NODE_WIDTH * scale,
-        height: atlasDragEntryHeight(entry.kind) * scale,
+        height: entry.height * scale,
       },
       dockHitRect,
     ));
@@ -1993,7 +2009,7 @@ export function ExecutionMap({
     ...evidenceLayout.positions.map((p) => p.y + p.height),
     evidenceLayout.preview ? evidenceLayout.preview.y + evidenceLayout.preview.height : 0,
     ...visibleAgentNodes.map((node) => node.position.y + AGENT_NODE_HEIGHT),
-    ...visibleTaskNodes.map((node) => node.position.y + CANVAS_TASK_NODE_HEIGHT),
+    ...visibleTaskNodes.map((node) => node.position.y + canvasTaskNodeHeight(tasksById?.get(node.taskId))),
     ...visibleSourceNodes.map((node) => node.position.y + CANVAS_SOURCE_NODE_HEIGHT),
     agentBranchNode ? agentBranchNode.y + agentBranchNode.height : 0,
     ...taskBranchEntries.map((entry) => entry.rect.y + entry.rect.height),
@@ -2014,8 +2030,8 @@ export function ExecutionMap({
     : null;
   const taskBranchConnectors = taskBranchEntries.map((entry) => ({
     id: entry.id,
-    path: taskBranchConnectorPath(entry.node, entry.rect),
-    anchors: connectorAnchors(taskNodeRect(entry.node), entry.rect),
+    path: taskBranchConnectorPath(entry.node, entry.rect, tasksById?.get(entry.node.taskId)),
+    anchors: connectorAnchors(taskNodeRect(entry.node, tasksById?.get(entry.node.taskId)), entry.rect),
   }));
   const taskChildBranchPath = taskBranchNode && taskChildBranchNode
     ? taskChildBranchConnectorPath(taskBranchNode, taskChildBranchNode)
@@ -2206,7 +2222,7 @@ export function ExecutionMap({
               wakeDock();
               if (isRestoring) return;
               const itemRect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-              const targetRect = rootNodeScreenRect(node.position, NODE_WIDTH, CANVAS_TASK_NODE_HEIGHT);
+              const targetRect = rootNodeScreenRect(node.position, NODE_WIDTH, canvasTaskNodeHeight(tasksById?.get(node.taskId)));
               const doRestore = () => {
                 onRestoreCanvasTask?.(node);
                 setPendingRestoreRootKeys((prev) => {
@@ -3296,7 +3312,9 @@ export function ExecutionMap({
             const nodeStatusClass = latestTaskRun ? statusClass(latestTaskRun.status) : `status-${task.status}`;
             const inputPorts = task.workUnit.inputPorts ?? [];
             const outputPorts = task.workUnit.outputPorts ?? [];
-            const hasPorts = inputPorts.length > 0 || outputPorts.length > 0;
+            const portRowCount = canvasTaskPortRowCount(task);
+            const nodeHeight = canvasTaskNodeHeight(task);
+            const hasPorts = portRowCount > 0;
             return (
               <div
                 key={node.nodeId}
@@ -3305,9 +3323,10 @@ export function ExecutionMap({
                 className={`emap-node emap-atlas-card emap-canvas-task-node ${nodeStatusClass} ${isFocused ? "selected" : ""} ${isAtlasSelected ? "is-atlas-selected" : ""}`}
                 data-kind="canvas-task"
                 data-task-id={task.taskId}
+                data-port-row-count={portRowCount}
                 data-task-run-status={latestTaskRun?.status ?? "none"}
                 aria-label={task.title}
-                style={{ left: node.position.x, top: node.position.y, width: NODE_WIDTH, height: CANVAS_TASK_NODE_HEIGHT }}
+                style={{ left: node.position.x, top: node.position.y, width: NODE_WIDTH, height: nodeHeight }}
                 onPointerDown={(event) => handleTaskPointerDown(node, event)}
                 onPointerMove={handleTaskPointerMove}
                 onPointerUp={endTaskPointer}

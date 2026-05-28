@@ -51,6 +51,7 @@
 - 已改：根节点拖入右下角垃圾桶后，如果确认 modal 选择“取消”，Agent / Task / Source 会回到拖拽前坐标；Task 根节点会同步回滚菜单、Run observer、文件详情等子树位置。
 - 已改：Execution Atlas 顶部工具栏改为 command deck，左侧是筛选 / 添加 / 统计，右侧是 viewport 控制；保留原按钮 aria-label，不破坏测试和键盘可访问性。
 - 已改：Task 根卡片角色区改为 Leader 主协调条 + Worker / Checker 双轨布局；这只是 Team Console 卡片展示层调整，不改变 Task API 的 `leaderAgentId` / `workerAgentId` / `checkerAgentId` 契约。
+- 已改：带 typed ports 的 Task 根卡片高度按端口行数动态预留空间；`IN` + `OUT` 双端口卡片会完整显示两行 port chip，连接锚点、框选、Dock restore 和拖拽碰撞同步使用动态高度。后续不要再把 Task 根卡片写回固定 `168px`。
 - 已改：画布缩放从连续乘法改为固定可读档位 `45 / 50 / 67 / 75 / 90 / 100 / 110 / 125 / 150 / 180%`；pan offset 按当前 `devicePixelRatio` 对齐到设备像素，并增加字体渲染 hint。旧 `localStorage` 里的连续缩放值（例如 `0.91`）恢复时会归一化到最近固定档位，避免页面刷新后仍显示 `91%` 这类非标准缩放。注意：DOM `transform: scale()` 无法让任意比例都像原生 100% 一样清晰，这次是降低发虚和半像素抖动，不是物理外挂。
 - 涉及文件：`apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/app.css`、`apps/team-console/src/graph/AtlasCanvasShell.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app.test.tsx`、`apps/team-console/src/tests/execution-map-ui.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/change-log.md`、`docs/handoff-current.md`。
 - focused 验证已跑：Task delete confirmation（3 passed）、trash（7 passed）、toolbar grouping（1 passed）、Task card role hierarchy（4 passed）、Canvas pan and zoom（9 passed）、legacy stored canvas zoom normalization（1 passed）。最终全量验证看本轮最新提交后的记录。

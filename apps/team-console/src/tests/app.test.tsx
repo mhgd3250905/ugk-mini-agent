@@ -356,6 +356,13 @@ describe("App", () => {
     expect(within(collectNode).getByRole("button", { name: "输出 Markdown 文稿 md" })).toBeInTheDocument();
     expect(within(htmlNode).getByRole("button", { name: "输入 Markdown 文稿 md" })).toBeInTheDocument();
     expect(within(htmlNode).getByRole("button", { name: "输出 HTML 页面 html" })).toBeInTheDocument();
+    expect(collectNode).toHaveAttribute("data-port-row-count", "1");
+    expect(htmlNode).toHaveAttribute("data-port-row-count", "2");
+    const collectHeight = Number.parseFloat((collectNode as HTMLElement).style.height);
+    const htmlHeight = Number.parseFloat((htmlNode as HTMLElement).style.height);
+    expect(collectHeight).toBe(192);
+    expect(htmlHeight).toBe(216);
+    expect(htmlHeight).toBeGreaterThan(collectHeight);
   });
 
   it("creates same-type Task port connections and draws the connection line", async () => {
