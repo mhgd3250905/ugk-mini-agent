@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-28 — Team Console Dock 还原闪烁修复
+
+- **主题**: Dock item 还原动画期间真实根节点卡片提前显示导致双影闪烁。
+- **变更内容**:
+  - `ExecutionMap.tsx` 新增 `pendingRestoreRootKeys` state 和 `flightOnCompleteRef`，将 `onRestoreAgent`/`onRestoreCanvasTask`/`onRestoreSourceNode` 回调延迟到 restore flight 动画完成后才执行，消除动画期间真实节点和 flight overlay 重叠。
+  - `startDockFlight` 扩展为支持 `onComplete` 回调参数，处理 flight 中断时旧回调的清理。
+  - Dock item 在 pending restore 期间标记 `data-restoring="true"`、`aria-disabled`、`disabled`，防止重复点击。
+  - 无 `containerRect` 时回退为即时还原，不卡住 pending state。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/tests/app.test.tsx`。
+- **对应入口**: Team Console 底部 Dock 还原按钮。
+
 ## 2026-05-28 — Team Console 连接线切断入口与 Dock 视觉收口
 
 - **主题**: 三类画布连接线增加切断按钮，control dependency 补齐 source 半圆 socket，底部 Dock 视觉和交互收口。

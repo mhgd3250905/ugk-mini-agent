@@ -787,6 +787,7 @@ export function ExecutionMap({
   const [panelPositionOverrides, setPanelPositionOverrides] = useState<Record<string, { x: number; y: number }>>({});
   const [taskBranchPositionOverrides, setTaskBranchPositionOverrides] = useState<Record<string, { x: number; y: number }>>({});
   const [panelMeasuredHeights, setPanelMeasuredHeights] = useState<Record<string, number>>({});
+  const [pendingRestoreRootKeys, setPendingRestoreRootKeys] = useState<Set<string>>(new Set());
   const prevSelectionRef = useRef<string | null>(null);
   const flightIdRef = useRef(0);
   const flightTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
@@ -1329,9 +1330,19 @@ export function ExecutionMap({
     }, 0);
   }, []);
 
-  const startDockFlight = useCallback((flight: Omit<typeof flightAnimation extends infer T | null ? NonNullable<T> : never, "id" | "phase">) => {
+  const flightOnCompleteRef = useRef<(() => void) | null>(null);
+
+  const startDockFlight = useCallback((flight: Omit<typeof flightAnimation extends infer T | null ? NonNullable<T> : never, "id" | "phase">, options?: { onComplete?: () => void }) => {
     const id = ++flightIdRef.current;
     if (flightTimerRef.current != null) globalThis.clearTimeout(flightTimerRef.current);
+
+    const prevCallback = flightOnCompleteRef.current;
+    if (prevCallback) {
+      flightOnCompleteRef.current = null;
+      prevCallback();
+    }
+
+    flightOnCompleteRef.current = options?.onComplete ?? null;
     setFlightAnimation({ ...flight, id, phase: "from" });
     const scheduleFrame = globalThis.requestAnimationFrame?.bind(globalThis) ?? ((cb: FrameRequestCallback) => globalThis.setTimeout(() => cb(performance.now()), 16));
     scheduleFrame(() => {
@@ -1343,7 +1354,13 @@ export function ExecutionMap({
     });
     flightTimerRef.current = globalThis.setTimeout(() => {
       flightTimerRef.current = null;
+      const isCurrent = flightIdRef.current === id;
       setFlightAnimation((current) => current?.id === id ? null : current);
+      if (isCurrent) {
+        const cb = flightOnCompleteRef.current;
+        flightOnCompleteRef.current = null;
+        if (cb) cb();
+      }
     }, 280);
   }, []);
 
@@ -1746,29 +1763,45 @@ export function ExecutionMap({
       {hubAgentNodes.map((node) => {
         const agent = agentsById?.get(node.agentId);
         const label = agent?.name ?? node.agentId;
+        const restoreKey = atlasSelectionKey("agent", node.nodeId);
+        const isRestoring = pendingRestoreRootKeys.has(restoreKey);
         return (
           <button
             key={`dock-${node.nodeId}`}
             type="button"
             className="emap-root-dock-item emap-root-dock-item-agent"
             data-kind="agent"
+            data-restoring={isRestoring ? "true" : undefined}
             aria-label={`复原 Agent ${label}`}
+            aria-disabled={isRestoring || undefined}
+            disabled={isRestoring}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
+              if (isRestoring) return;
               const itemRect = (event.currentTarget as HTMLElement).getBoundingClientRect();
               const container = dockRef.current?.closest<HTMLElement>(".execution-map-container");
               const containerRect = container?.getBoundingClientRect();
               const vp = viewport ?? { x: 0, y: 0, scale: 1 };
-              onRestoreAgent?.(node);
+              const doRestore = () => {
+                onRestoreAgent?.(node);
+                setPendingRestoreRootKeys((prev) => {
+                  const next = new Set(prev);
+                  next.delete(restoreKey);
+                  return next;
+                });
+              };
               if (containerRect) {
+                setPendingRestoreRootKeys((prev) => new Set(prev).add(restoreKey));
                 const toX = containerRect.left + node.position.x * vp.scale + vp.x;
                 const toY = containerRect.top + node.position.y * vp.scale + vp.y;
                 startDockFlight({
                   fromX: itemRect.left, fromY: itemRect.top, fromW: itemRect.width, fromH: itemRect.height,
                   toX, toY, toW: NODE_WIDTH * vp.scale, toH: AGENT_NODE_HEIGHT * vp.scale,
                   kind: "restore", label,
-                });
+                }, { onComplete: doRestore });
+              } else {
+                doRestore();
               }
             }}
           >
@@ -1784,29 +1817,45 @@ export function ExecutionMap({
       {hubTaskNodes.map((node) => {
         const task = tasksById?.get(node.taskId);
         const label = task?.title ?? node.taskId;
+        const restoreKey = atlasSelectionKey("task", node.nodeId);
+        const isRestoring = pendingRestoreRootKeys.has(restoreKey);
         return (
           <button
             key={`dock-${node.nodeId}`}
             type="button"
             className="emap-root-dock-item emap-root-dock-item-task"
             data-kind="task"
+            data-restoring={isRestoring ? "true" : undefined}
             aria-label={`复原 Task ${label}`}
+            aria-disabled={isRestoring || undefined}
+            disabled={isRestoring}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
+              if (isRestoring) return;
               const itemRect = (event.currentTarget as HTMLElement).getBoundingClientRect();
               const container = dockRef.current?.closest<HTMLElement>(".execution-map-container");
               const containerRect = container?.getBoundingClientRect();
               const vp = viewport ?? { x: 0, y: 0, scale: 1 };
-              onRestoreCanvasTask?.(node);
+              const doRestore = () => {
+                onRestoreCanvasTask?.(node);
+                setPendingRestoreRootKeys((prev) => {
+                  const next = new Set(prev);
+                  next.delete(restoreKey);
+                  return next;
+                });
+              };
               if (containerRect) {
+                setPendingRestoreRootKeys((prev) => new Set(prev).add(restoreKey));
                 const toX = containerRect.left + node.position.x * vp.scale + vp.x;
                 const toY = containerRect.top + node.position.y * vp.scale + vp.y;
                 startDockFlight({
                   fromX: itemRect.left, fromY: itemRect.top, fromW: itemRect.width, fromH: itemRect.height,
                   toX, toY, toW: NODE_WIDTH * vp.scale, toH: CANVAS_TASK_NODE_HEIGHT * vp.scale,
                   kind: "restore", label,
-                });
+                }, { onComplete: doRestore });
+              } else {
+                doRestore();
               }
             }}
           >
@@ -1822,29 +1871,45 @@ export function ExecutionMap({
       {hubSourceNodes.map((node) => {
         const sourceNode = sourceNodesById?.get(node.sourceNodeId);
         const label = sourceNode?.title ?? node.sourceNodeId;
+        const restoreKey = atlasSelectionKey("source", node.nodeId);
+        const isRestoring = pendingRestoreRootKeys.has(restoreKey);
         return (
           <button
             key={`dock-${node.nodeId}`}
             type="button"
             className="emap-root-dock-item emap-root-dock-item-source"
             data-kind="source"
+            data-restoring={isRestoring ? "true" : undefined}
             aria-label={`复原 Source ${label}`}
+            aria-disabled={isRestoring || undefined}
+            disabled={isRestoring}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
+              if (isRestoring) return;
               const itemRect = (event.currentTarget as HTMLElement).getBoundingClientRect();
               const container = dockRef.current?.closest<HTMLElement>(".execution-map-container");
               const containerRect = container?.getBoundingClientRect();
               const vp = viewport ?? { x: 0, y: 0, scale: 1 };
-              onRestoreSourceNode?.(node);
+              const doRestore = () => {
+                onRestoreSourceNode?.(node);
+                setPendingRestoreRootKeys((prev) => {
+                  const next = new Set(prev);
+                  next.delete(restoreKey);
+                  return next;
+                });
+              };
               if (containerRect) {
+                setPendingRestoreRootKeys((prev) => new Set(prev).add(restoreKey));
                 const toX = containerRect.left + node.position.x * vp.scale + vp.x;
                 const toY = containerRect.top + node.position.y * vp.scale + vp.y;
                 startDockFlight({
                   fromX: itemRect.left, fromY: itemRect.top, fromW: itemRect.width, fromH: itemRect.height,
                   toX, toY, toW: NODE_WIDTH * vp.scale, toH: CANVAS_SOURCE_NODE_HEIGHT * vp.scale,
                   kind: "restore", label,
-                });
+                }, { onComplete: doRestore });
+              } else {
+                doRestore();
               }
             }}
           >

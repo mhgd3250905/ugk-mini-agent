@@ -2178,10 +2178,12 @@ describe("App", () => {
     fireEvent.click(within(dock!).getByRole("button", { name: /复原 Agent 主 Agent/ }));
     fireEvent.click(within(dock!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ }));
 
-    expect(container.querySelector('.emap-agent-node[data-agent-id="main"]')).toBeTruthy();
-    expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeTruthy();
-    expect(container.querySelector(".agent-playground-branch")).toBeTruthy();
-    expect(container.querySelector(".task-action-branch")).toBeTruthy();
+    await waitFor(() => {
+      expect(container.querySelector('.emap-agent-node[data-agent-id="main"]')).toBeTruthy();
+      expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeTruthy();
+      expect(container.querySelector(".agent-playground-branch")).toBeTruthy();
+      expect(container.querySelector(".task-action-branch")).toBeTruthy();
+    });
   });
 
   it("restores Agent root node to pre-drag position after drag-to-dock minimize", async () => {
@@ -2221,11 +2223,14 @@ describe("App", () => {
     // Restore from dock
     fireEvent.click(within(dock!).getByRole("button", { name: /复原 Agent 主 Agent/ }));
 
-    // Agent is back on canvas — assert position matches original
-    const restoredNode = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
-    expect(restoredNode).toBeTruthy();
-    const restoredLeft = parseFloat(restoredNode!.style.left);
-    const restoredTop = parseFloat(restoredNode!.style.top);
+    // Agent is back on canvas after restore flight completes
+    const restoredNode = await waitFor(() => {
+      const el = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    const restoredLeft = parseFloat(restoredNode.style.left);
+    const restoredTop = parseFloat(restoredNode.style.top);
     expect(restoredLeft).toBe(originalLeft);
     expect(restoredTop).toBe(originalTop);
   });
@@ -2267,11 +2272,14 @@ describe("App", () => {
     // Restore from dock
     fireEvent.click(within(dock!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ }));
 
-    // Task is back on canvas — assert position matches original
-    const restoredNode = container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]') as HTMLElement | null;
-    expect(restoredNode).toBeTruthy();
-    const restoredLeft = parseFloat(restoredNode!.style.left);
-    const restoredTop = parseFloat(restoredNode!.style.top);
+    // Task is back on canvas after restore flight completes
+    const restoredNode = await waitFor(() => {
+      const el = container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]') as HTMLElement | null;
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    const restoredLeft = parseFloat(restoredNode.style.left);
+    const restoredTop = parseFloat(restoredNode.style.top);
     expect(restoredLeft).toBe(originalLeft);
     expect(restoredTop).toBe(originalTop);
   });
@@ -2356,11 +2364,14 @@ describe("App", () => {
     // Restore from dock
     fireEvent.click(within(dock!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ }));
 
-    // Task root is back — assert position matches original
-    const restoredTask = container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]') as HTMLElement | null;
-    expect(restoredTask).toBeTruthy();
-    expect(parseFloat(restoredTask!.style.left)).toBe(taskOriginalLeft);
-    expect(parseFloat(restoredTask!.style.top)).toBe(taskOriginalTop);
+    // Task root is back after restore flight completes
+    const restoredTask = await waitFor(() => {
+      const el = container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]') as HTMLElement | null;
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    expect(parseFloat(restoredTask.style.left)).toBe(taskOriginalLeft);
+    expect(parseFloat(restoredTask.style.top)).toBe(taskOriginalTop);
 
     // Task menu branch should also be restored at the original position
     const restoredBranch = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
@@ -2399,6 +2410,15 @@ describe("App", () => {
       expect(flightFrom).toBeTruthy();
       expect((flightFrom as HTMLElement).style.transform).toBe("translate3d(0, 0, 0) scale(1)");
 
+      // Real node must not be visible while flight is active (flicker guard)
+      expect(container.querySelector('.emap-agent-node[data-agent-id="main"]')).toBeNull();
+
+      // Dock item should be disabled during pending restore
+      const dockItem = dock!.querySelector('.emap-root-dock-item[data-kind="agent"]');
+      expect(dockItem).toBeTruthy();
+      expect(dockItem!.getAttribute("data-restoring")).toBe("true");
+      expect(dockItem!.getAttribute("aria-disabled")).toBe("true");
+
       // Advance RAF + timers to trigger "to" phase
       await act(async () => {
         vi.advanceTimersByTime(64);
@@ -2409,6 +2429,9 @@ describe("App", () => {
       const toTransform = (flightTo as HTMLElement).style.transform;
       // "to" transform must differ from identity
       expect(toTransform).not.toBe("translate3d(0, 0, 0) scale(1)");
+
+      // Real node still hidden during "to" phase
+      expect(container.querySelector('.emap-agent-node[data-agent-id="main"]')).toBeNull();
 
       // Flight clears after timeout
       await act(async () => {
@@ -2421,6 +2444,112 @@ describe("App", () => {
       expect(restoredNode).toBeTruthy();
       expect(parseFloat(restoredNode!.style.left)).toBe(originalLeft);
       expect(parseFloat(restoredNode!.style.top)).toBe(originalTop);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("hides real Task node during restore flight and prevents duplicate restore", async () => {
+    const { container } = render(<App />);
+
+    // Task should be visible from mock fixture
+    await waitFor(() => {
+      expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeTruthy();
+    });
+    const taskEl = container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]') as HTMLElement;
+    const originalLeft = parseFloat(taskEl.style.left);
+    const originalTop = parseFloat(taskEl.style.top);
+
+    // Minimize task
+    fireEvent.click(within(taskEl).getByRole("button", { name: "收纳 Task" }));
+    expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeNull();
+
+    const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
+    expect(dock).toBeTruthy();
+    const restoreButton = within(dock!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ });
+
+    vi.useFakeTimers({ toFake: ["setTimeout", "requestAnimationFrame"] });
+    try {
+      fireEvent.click(restoreButton);
+
+      // Flight starts — real Task node must not be visible
+      const flightFrom = container.querySelector('.emap-root-dock-flight[data-flight-kind="restore"][data-flight-phase="from"]');
+      expect(flightFrom).toBeTruthy();
+      expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeNull();
+
+      // Dock item is disabled during pending restore
+      const dockItem = dock!.querySelector('.emap-root-dock-item[data-kind="task"]');
+      expect(dockItem).toBeTruthy();
+      expect(dockItem!.getAttribute("data-restoring")).toBe("true");
+
+      // Advance to "to" phase — still hidden
+      await act(async () => {
+        vi.advanceTimersByTime(64);
+      });
+      expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeNull();
+
+      // Flight clears — real Task node appears at original position
+      await act(async () => {
+        vi.advanceTimersByTime(400);
+      });
+      expect(container.querySelector(".emap-root-dock-flight")).toBeNull();
+
+      const restoredNode = container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]') as HTMLElement | null;
+      expect(restoredNode).toBeTruthy();
+      expect(parseFloat(restoredNode!.style.left)).toBe(originalLeft);
+      expect(parseFloat(restoredNode!.style.top)).toBe(originalTop);
+
+      // data-restoring should be cleared
+      const dockItemAfter = dock!.querySelector('.emap-root-dock-item[data-kind="task"]');
+      expect(dockItemAfter).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("prevents duplicate restore when Dock item is clicked during pending restore", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+    const agentNode = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
+    expect(agentNode).toBeTruthy();
+
+    fireEvent.click(within(agentNode!).getByRole("button", { name: "收纳 Agent" }));
+    expect(container.querySelector('.emap-agent-node[data-agent-id="main"]')).toBeNull();
+
+    const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
+    expect(dock).toBeTruthy();
+    const restoreButton = within(dock!).getByRole("button", { name: /复原 Agent 主 Agent/ });
+
+    vi.useFakeTimers({ toFake: ["setTimeout", "requestAnimationFrame"] });
+    try {
+      // First click starts restore
+      fireEvent.click(restoreButton);
+      expect(container.querySelector('.emap-root-dock-flight[data-flight-kind="restore"]')).toBeTruthy();
+
+      // Dock item is now disabled — second click should be ignored
+      const dockItem = dock!.querySelector('.emap-root-dock-item[data-kind="agent"]') as HTMLButtonElement;
+      expect(dockItem.disabled).toBe(true);
+
+      // Attempting another click on the disabled button should not create a second flight
+      // (HTML disabled buttons don't fire click events, but verify the state)
+      expect(dockItem.getAttribute("data-restoring")).toBe("true");
+
+      // Only one flight exists
+      const flights = container.querySelectorAll('.emap-root-dock-flight[data-flight-kind="restore"]');
+      expect(flights.length).toBe(1);
+
+      // Complete the flight
+      await act(async () => {
+        vi.advanceTimersByTime(400);
+      });
+      expect(container.querySelector(".emap-root-dock-flight")).toBeNull();
+
+      // Node restored exactly once
+      const restoredNode = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
+      expect(restoredNode).toBeTruthy();
     } finally {
       vi.useRealTimers();
     }
