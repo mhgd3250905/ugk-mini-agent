@@ -94,6 +94,12 @@ interface ExecutionMapProps {
   interactionMode?: AtlasInteractionMode;
   onRootTrashDrop?: (entries: AtlasNodeDragEntry[]) => void;
   rootNodeFilter?: "all" | "agent" | "task";
+  onDeleteTaskConnection?: (connectionId: string) => void;
+  onDeleteSourceConnection?: (connectionId: string) => void;
+  onDeleteTaskDependency?: (dependencyId: string) => void;
+  pendingDeleteConnectionId?: string | null;
+  pendingDeleteSourceConnectionId?: string | null;
+  pendingDeleteDependencyId?: string | null;
 }
 
 type TaskChildBranchPanelDescriptor = NonNullable<ExecutionMapProps["taskChildBranchPanels"]>[number];

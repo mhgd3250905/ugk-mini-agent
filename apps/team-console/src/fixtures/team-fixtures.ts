@@ -1329,6 +1329,12 @@ export class MockTeamApi {
     return { ...connection };
   }
 
+  async deleteTaskConnection(connectionId: string): Promise<void> {
+    const next = mockTaskConnections.filter((c) => c.connectionId !== connectionId);
+    if (next.length === mockTaskConnections.length) throw { message: "task connection not found" };
+    mockTaskConnections = next;
+  }
+
   async listTaskDependencies(): Promise<TeamTaskDependency[]> {
     return mockTaskDependencies.map((dep) => ({ ...dep }));
   }

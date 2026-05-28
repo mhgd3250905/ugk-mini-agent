@@ -52,6 +52,7 @@ export interface TeamApiProvider {
   listTasks(): Promise<TeamCanvasTask[]>;
   listTaskConnections(): Promise<TeamTaskConnection[]>;
   createTaskConnection(input: TeamTaskConnectionCreateRequest): Promise<TeamTaskConnection>;
+  deleteTaskConnection(connectionId: string): Promise<void>;
   listTaskDependencies(): Promise<TeamTaskDependency[]>;
   createTaskDependency(input: TeamTaskDependencyCreateRequest): Promise<TeamTaskDependency>;
   deleteTaskDependency(dependencyId: string): Promise<void>;
@@ -187,6 +188,19 @@ export class LiveTeamApi implements TeamApiProvider {
       }
       const body = (await res.json()) as TeamTaskConnectionMutationResponse;
       return body.connection;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async deleteTaskConnection(connectionId: string): Promise<void> {
+    try {
+      const res = await fetch(`${this.baseUrl}/task-connections/${encodeURIComponent(connectionId)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
     } catch (e) {
       throw toApiError(e);
     }

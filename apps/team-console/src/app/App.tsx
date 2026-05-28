@@ -1947,6 +1947,52 @@ export function App() {
     }
   }, [dataSource, taskDependencyDraft]);
 
+  const [pendingDeleteTaskConnectionId, setPendingDeleteTaskConnectionId] = useState<string | null>(null);
+  const [pendingDeleteSourceConnectionId, setPendingDeleteSourceConnectionId] = useState<string | null>(null);
+  const [pendingDeleteDependencyId, setPendingDeleteDependencyId] = useState<string | null>(null);
+
+  const deleteTaskConnection = useCallback(async (connectionId: string) => {
+    setPendingDeleteTaskConnectionId(connectionId);
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      await api.deleteTaskConnection(connectionId);
+      setTaskConnections((current) => current.filter((c) => c.connectionId !== connectionId));
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setPendingDeleteTaskConnectionId(null);
+    }
+  }, [dataSource]);
+
+  const deleteSourceConnectionAction = useCallback(async (connectionId: string) => {
+    setPendingDeleteSourceConnectionId(connectionId);
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      await api.deleteSourceConnection(connectionId);
+      setSourceConnections((current) => current.filter((c) => c.connectionId !== connectionId));
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setPendingDeleteSourceConnectionId(null);
+    }
+  }, [dataSource]);
+
+  const deleteTaskDependencyAction = useCallback(async (dependencyId: string) => {
+    setPendingDeleteDependencyId(dependencyId);
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      await api.deleteTaskDependency(dependencyId);
+      setTaskDependencies((current) => current.filter((d) => d.dependencyId !== dependencyId));
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setPendingDeleteDependencyId(null);
+    }
+  }, [dataSource]);
+
   const createTextSourceNode = useCallback(async () => {
     if (dataSource !== "live") return;
     try {
@@ -3252,6 +3298,12 @@ export function App() {
                 taskDependencyDraft={taskDependencyDraft}
                 onTaskDependencySourceSelect={beginTaskDependency}
                 onTaskDependencyTargetSelect={completeTaskDependency}
+                onDeleteTaskConnection={deleteTaskConnection}
+                onDeleteSourceConnection={deleteSourceConnectionAction}
+                onDeleteTaskDependency={deleteTaskDependencyAction}
+                pendingDeleteConnectionId={pendingDeleteTaskConnectionId}
+                pendingDeleteSourceConnectionId={pendingDeleteSourceConnectionId}
+                pendingDeleteDependencyId={pendingDeleteDependencyId}
                 sourceNodes={sourceAtlasNodes}
                 sourceNodesById={sourceNodesById}
                 sourceConnections={sourceConnections}
