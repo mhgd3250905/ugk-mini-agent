@@ -3778,7 +3778,7 @@ export function ExecutionMap({
                 key={`cut-tc-${connection.connectionId}`}
                 type="button"
                 className={`emap-link-cut-button emap-link-cut-task${isVisible ? " is-visible" : ""}${isPending ? " is-pending" : ""}`}
-                style={{ left: mx - 12, top: my - 12 }}
+                style={{ left: mx, top: my }}
                 data-link-cut-button-key={linkCutKey}
                 data-visible={isVisible ? "true" : "false"}
                 aria-label={`切断 Task 连接: ${sourceTitle} -> ${targetTitle}`}
@@ -3814,7 +3814,7 @@ export function ExecutionMap({
                 key={`cut-sc-${connection.connectionId}`}
                 type="button"
                 className={`emap-link-cut-button emap-link-cut-source${isVisible ? " is-visible" : ""}${isPending ? " is-pending" : ""}`}
-                style={{ left: mx - 12, top: my - 12 }}
+                style={{ left: mx, top: my }}
                 data-link-cut-button-key={linkCutKey}
                 data-visible={isVisible ? "true" : "false"}
                 aria-label={`切断 Source 连接: ${sourceTitle} -> ${targetTitle}`}
@@ -3849,7 +3849,7 @@ export function ExecutionMap({
                 key={`cut-dep-${dep.dependencyId}`}
                 type="button"
                 className={`emap-link-cut-button emap-link-cut-dep${isVisible ? " is-visible" : ""}${isPending ? " is-pending" : ""}`}
-                style={{ left: mx - 12, top: my - 12 }}
+                style={{ left: mx, top: my }}
                 data-link-cut-button-key={linkCutKey}
                 data-visible={isVisible ? "true" : "false"}
                 aria-label={`切断依赖: ${sourceTitle} -> ${targetTitle}`}

@@ -518,6 +518,7 @@
 
 .emap-link-cut-button {
   position: absolute;
+  box-sizing: border-box;
   width: 24px;
   height: 24px;
   padding: 0;
@@ -531,7 +532,7 @@
   justify-content: center;
   pointer-events: none;
   opacity: 0;
-  transform: scale(0.78);
+  transform: translate(-50%, -50%) scale(0.78);
   transform-origin: center;
   transition: opacity 0.15s, transform 0.15s, background 0.15s, border-color 0.15s;
   z-index: 5;
@@ -541,7 +542,7 @@
 .emap-link-cut-button:focus-visible {
   pointer-events: auto;
   opacity: 1;
-  transform: scale(1);
+  transform: translate(-50%, -50%) scale(1);
   background: rgba(50, 50, 55, 0.95);
   border-color: rgba(255, 255, 255, 0.4);
   outline: none;
@@ -550,7 +551,7 @@
 .emap-link-cut-button.is-pending {
   pointer-events: auto;
   opacity: 0.35;
-  transform: scale(1);
+  transform: translate(-50%, -50%) scale(1);
   cursor: wait;
 }
 

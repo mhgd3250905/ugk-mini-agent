@@ -415,6 +415,9 @@ describe("App", () => {
     expect(sourceY).toBe(Number.parseFloat(collectNode!.style.top) + Number.parseFloat(collectNode!.style.height) / 2);
     expect(targetX).toBe(Number.parseFloat(htmlNode!.style.left));
     expect(targetY).toBe(Number.parseFloat(htmlNode!.style.top));
+    const cutButton = screen.getByRole("button", { name: /切断 Task 连接/ }) as HTMLElement;
+    expect(Number.parseFloat(cutButton.style.left)).toBeCloseTo((sourceX + targetX) / 2, 4);
+    expect(Number.parseFloat(cutButton.style.top)).toBeCloseTo((sourceY + targetY) / 2, 4);
     expect(sourceSocket!.getAttribute("d")).toBe(`M${sourceX},${sourceY - 6} A6,6 0 0 1 ${sourceX},${sourceY + 6}`);
   });
 
@@ -5078,6 +5081,16 @@ describe("App", () => {
     expect(idCopyRule).toContain("cursor: copy");
     expect(idCopyRule).toContain("grid-template-columns: auto minmax(0, 1fr) auto");
     expect(taskAgentRule).toContain("grid-template-columns: 44px minmax(0, 1fr)");
+  });
+
+  it("centers link cut buttons on the connector point instead of using fixed offsets", () => {
+    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const cutRule = mapCss.match(/\.emap-link-cut-button\s*{[^}]*}/)?.[0] ?? "";
+    const visibleRule = mapCss.match(/\.emap-link-cut-button\.is-visible,\n\.emap-link-cut-button:hover,\n\.emap-link-cut-button:focus-visible\s*{[^}]*}/)?.[0] ?? "";
+
+    expect(cutRule).toContain("box-sizing: border-box");
+    expect(cutRule).toContain("transform: translate(-50%, -50%) scale(0.78)");
+    expect(visibleRule).toContain("transform: translate(-50%, -50%) scale(1)");
   });
 
   it("documents Agent Atlas mock and live behavior", () => {
