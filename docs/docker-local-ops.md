@@ -55,6 +55,23 @@ volumes:
 - 如果改了 `Dockerfile`、`package*.json`、系统依赖或镜像内安装内容，必须重建。
 - 如果新增技能或修改启动期配置，重启 app 更稳，因为运行时可能有模板缓存、进程内 registry 或已加载模块。
 
+## 共享 Python 依赖运行态
+
+Chat、Conn worker 和 Team worker 的 agent bash 环境现在共用同一个 Python venv。compose 会把宿主目录 `${UGK_RUNTIME_DEPS_HOST_DIR:-./.data/runtime-deps}` 挂到容器 `/app/.runtime-deps`，并把 `/app/.runtime-deps/python-venv-linux/bin` 放到 `PATH` 最前面。
+
+实际效果：
+
+- agent 直接运行 `python`、`pip` 或 `pip install ...` 时，命中的是共享 venv，不需要自己判断当前来自 Chat、Conn 还是 Team。
+- venv 初始化会加目录锁，避免 Chat / Conn / Team 同时启动时把半初始化的 Python 环境当成可用环境。
+- `pip install` / `pip uninstall` 通过 venv 内的 wrapper 自动串行化，并在成功后刷新 `/app/.runtime-deps/python-requirements.lock`，用于排查和交接。
+- `npm run runtime:check` 会初始化并检查这套共享 Python runtime，输出 venv、python、pip 和 lockfile 状态。
+- 宿主机直接跑 `npm run runtime:check` 时会使用平台专属 venv，例如 Windows 是 `.data/runtime-deps/python-venv-win32`；Docker 内固定使用 `python-venv-linux`，避免宿主 venv 污染容器。是的，跨 OS 硬共用一个 venv 这种想法很诱人，也很离谱。
+- `.data/runtime-deps` 是运行态缓存，不属于 Git。重建镜像不会清掉它；真要清理 Python 依赖，需要明确处理该目录。
+
+排障时别犯低级错：`docker compose exec ugk-pi which python` 查到的是新开的临时 shell，不一定等于正在运行的 Node / agent 子进程环境。要确认 agent 实际会继承什么，优先看服务启动日志里的 `runtime python ready`，或读取容器内真实 Node 进程的 `/proc/<pid>/environ`；当前真实服务进程应包含 `PATH=/app/.runtime-deps/python-venv-linux/bin:...`。
+
+这套机制只解决 Python 包。`ffmpeg`、`libreoffice`、`tesseract`、`poppler` 这类系统工具仍然属于镜像依赖，必须进 `Dockerfile`，然后执行 `docker compose up --build -d ...`。别指望一个 venv 能把系统二进制凭空变出来。
+
 ## 选择正确动作
 
 ### 只重启 app
@@ -91,6 +108,8 @@ docker compose restart ugk-pi ugk-pi-conn-worker ugk-pi-feishu-worker
 ```bash
 docker compose up --build -d ugk-pi ugk-pi-conn-worker ugk-pi-feishu-worker
 ```
+
+如果构建卡在 Debian `apt-get update` 或系统包下载，先在 `.env` 里设置 `APT_MIRROR_HOST=mirrors.aliyun.com` 后再重建；本地和生产 compose 都会把这个 build arg 透传给 `Dockerfile`。
 
 如果端口映射异常或容器是在端口冲突时创建的，释放端口后强制重建 app 容器：
 

@@ -7,6 +7,7 @@ import {
 	type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 import { prepareBrowserBoundBashEnvironment } from "../browser/browser-bound-bash.js";
+import { buildRuntimeDependencyEnvironment } from "./runtime-dependencies.js";
 import {
 	createProjectSettingsManager,
 	createSkillRestrictedResourceLoader,
@@ -50,10 +51,12 @@ export class ProjectBackgroundSessionFactory implements BackgroundAgentSessionFa
 		});
 		await resourceLoader.reload();
 		const settingsManager = createProjectSettingsManager(this.projectRoot);
+		const runtimeDependencyEnv = buildRuntimeDependencyEnvironment(this.projectRoot);
 		const browserEnv = await prepareBrowserBoundBashEnvironment({
 			workspaceRoot: input.workspace.rootPath,
 			browserId: input.browserId,
 			browserScope: input.browserScope,
+			env: { ...process.env, ...runtimeDependencyEnv },
 		});
 
 		const { session } = await createAgentSession({
@@ -68,6 +71,7 @@ export class ProjectBackgroundSessionFactory implements BackgroundAgentSessionFa
 						...context,
 						env: {
 							...context.env,
+							...runtimeDependencyEnv,
 							...getCurrentBackgroundWorkspaceEnvironment(),
 							...browserEnv,
 						},

@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-28 — Chat / Conn / Team 共享 Python runtime deps
+
+- **主题**: 让 Chat、Conn worker 和 Team worker 的 agent bash 环境共用同一个 Python venv，避免在 Chat 验证过的 skill 到 Conn / Team 运行时缺 Python 包。
+- **变更内容**:
+  - 新增 `scripts/runtime-deps.mjs`，负责加锁初始化 `/app/.runtime-deps/python-venv-linux`、检查 runtime 状态，并让 venv 内 `pip` wrapper 在安装 / 卸载后刷新 `python-requirements.lock`；宿主机直接检查时使用平台专属 venv，避免 Windows venv 污染 Docker Linux venv。
+  - Chat session factory 与 background session factory 都注入同一套 runtime dependency env，把共享 venv 的 `bin` 放到 agent bash `PATH` 最前面。
+  - 本地和生产 compose 为 `ugk-pi`、`ugk-pi-conn-worker`、`ugk-pi-team-worker` 统一挂载 `${UGK_RUNTIME_DEPS_HOST_DIR:-./.data/runtime-deps}:/app/.runtime-deps`，启动前执行 `node scripts/runtime-deps.mjs init`，并使用 `sh -c` 保留 compose 注入的 `PATH`。
+  - `Dockerfile` 增加 `python3-pip` 和 `python3-venv`，本地 compose 补齐 `APT_MIRROR_HOST` build arg 透传，`.dockerignore` 排除 `.worktrees` 防止本地 worktree 运行态污染 Docker build context，`.env.example` 增加 `UGK_RUNTIME_DEPS_HOST_DIR` / `UGK_RUNTIME_PYTHON_VENV_DIR`，`package.json` 增加 `npm run runtime:check`。
+  - `docs/docker-local-ops.md` 和 `AGENTS.md` 记录共享 Python venv 的运行口径，明确 `docker compose exec ... which python` 只能代表临时 shell，不能拿来判断 agent 子进程 PATH；重型系统工具仍进 `Dockerfile`。
+- **影响范围**: Python 包依赖现在是 Chat / Conn / Team 共享运行态；这不改变 `.pi/skills` 加载逻辑，也不把 `ffmpeg`、`libreoffice`、`tesseract`、`poppler` 这类系统工具伪装成 pip 依赖。
+- **验证**: 新增 `test/runtime-dependencies.test.ts`，并扩展 `test/containerization.test.ts` 覆盖 Dockerfile、compose、`.env.example` 和 `runtime:check` 脚本事实。
+- **对应入口**: `src/agent/runtime-dependencies.ts`、`src/agent/agent-session-factory.ts`、`src/agent/background-agent-session-factory.ts`、`scripts/runtime-deps.mjs`、`docker-compose.yml`、`docker-compose.prod.yml`。
+
 ## 2026-05-28 — Team Console Dock 拖拽碰撞命中
 
 - **主题**: 将根节点拖入底部 Dock 的命中规则从“指针点进入 Dock”优化为“根节点外框碰到 Dock 露出边缘”。

@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        APT_MIRROR_HOST: ${APT_MIRROR_HOST:-}
     depends_on:
       ugk-pi-browser:
         condition: service_healthy
@@ -15,6 +17,10 @@ services:
       PORT: 3000
       CONN_DATABASE_PATH: /var/lib/ugk-pi/conn/conn.sqlite
       UGK_MODEL_SETTINGS_PATH: /app/.data/agent/model-settings.json
+      UGK_RUNTIME_DEPS_DIR: /app/.runtime-deps
+      UGK_RUNTIME_PYTHON_VENV_DIR: /app/.runtime-deps/python-venv-linux
+      VIRTUAL_ENV: /app/.runtime-deps/python-venv-linux
+      PATH: /app/.runtime-deps/python-venv-linux/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       PUBLIC_BASE_URL: http://127.0.0.1:3000
       WEB_ACCESS_BROWSER_PUBLIC_BASE_URL: http://ugk-pi:3000
       WEB_ACCESS_BROWSER_PROVIDER: direct_cdp
@@ -35,8 +41,9 @@ services:
       - .:/app
       - /app/node_modules
       - ugk-pi-conn-db:/var/lib/ugk-pi/conn
+      - ${UGK_RUNTIME_DEPS_HOST_DIR:-./.data/runtime-deps}:/app/.runtime-deps
       - ${UGK_BROWSER_UPLOAD_DIR:-./.data/chrome-sidecar/upload}:/app/.data/browser-upload
-    command: npm start
+    command: sh -c "node scripts/runtime-deps.mjs init && npm start"
     networks:
       - ugk-pi-net
   ugk-pi-team-console:
@@ -66,6 +73,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        APT_MIRROR_HOST: ${APT_MIRROR_HOST:-}
     depends_on:
       ugk-pi-browser:
         condition: service_healthy
@@ -76,6 +85,10 @@ services:
     environment:
       CONN_DATABASE_PATH: /var/lib/ugk-pi/conn/conn.sqlite
       UGK_MODEL_SETTINGS_PATH: /app/.data/agent/model-settings.json
+      UGK_RUNTIME_DEPS_DIR: /app/.runtime-deps
+      UGK_RUNTIME_PYTHON_VENV_DIR: /app/.runtime-deps/python-venv-linux
+      VIRTUAL_ENV: /app/.runtime-deps/python-venv-linux
+      PATH: /app/.runtime-deps/python-venv-linux/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       CONN_WORKER_MAX_CONCURRENCY: ${CONN_WORKER_MAX_CONCURRENCY:-3}
       NOTIFICATION_BROADCAST_URL: http://ugk-pi:3000/v1/internal/notifications/broadcast
       PUBLIC_BASE_URL: http://127.0.0.1:3000
@@ -93,8 +106,9 @@ services:
       - .:/app
       - /app/node_modules
       - ugk-pi-conn-db:/var/lib/ugk-pi/conn
+      - ${UGK_RUNTIME_DEPS_HOST_DIR:-./.data/runtime-deps}:/app/.runtime-deps
       - ${UGK_BROWSER_UPLOAD_DIR:-./.data/chrome-sidecar/upload}:/app/.data/browser-upload
-    command: npm run worker:conn
+    command: sh -c "node scripts/runtime-deps.mjs init && npm run worker:conn"
     healthcheck:
       disable: true
     restart: unless-stopped
@@ -104,6 +118,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        APT_MIRROR_HOST: ${APT_MIRROR_HOST:-}
     depends_on:
       ugk-pi:
         condition: service_started
@@ -113,11 +129,16 @@ services:
       TEAM_RUNTIME_ENABLED: "true"
       TEAM_DATA_DIR: /app/.data/team
       TEAM_USE_MOCK_RUNNER: ${TEAM_USE_MOCK_RUNNER:-true}
+      UGK_RUNTIME_DEPS_DIR: /app/.runtime-deps
+      UGK_RUNTIME_PYTHON_VENV_DIR: /app/.runtime-deps/python-venv-linux
+      VIRTUAL_ENV: /app/.runtime-deps/python-venv-linux
+      PATH: /app/.runtime-deps/python-venv-linux/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       PUBLIC_BASE_URL: http://127.0.0.1:3000
     volumes:
       - .:/app
       - /app/node_modules
-    command: npm run worker:team
+      - ${UGK_RUNTIME_DEPS_HOST_DIR:-./.data/runtime-deps}:/app/.runtime-deps
+    command: sh -c "node scripts/runtime-deps.mjs init && npm run worker:team"
     healthcheck:
       disable: true
     restart: unless-stopped
@@ -127,6 +148,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        APT_MIRROR_HOST: ${APT_MIRROR_HOST:-}
     depends_on:
       ugk-pi:
         condition: service_started

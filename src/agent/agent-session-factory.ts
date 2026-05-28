@@ -12,6 +12,7 @@ import {
 	SettingsManager,
 } from "@mariozechner/pi-coding-agent";
 import { prepareBrowserBoundBashEnvironment } from "../browser/browser-bound-bash.js";
+import { buildRuntimeDependencyEnvironment } from "./runtime-dependencies.js";
 import {
 	parseJsonSettingsObject,
 	readJsonScalarSetting,
@@ -694,10 +695,12 @@ export function createDefaultAgentSessionFactory(
 
 			await resourceLoader.reload();
 			const settingsManager = createProjectSettingsManager(options.projectRoot);
+			const runtimeDependencyEnv = buildRuntimeDependencyEnvironment(options.projectRoot);
 			const browserEnv = await prepareBrowserBoundBashEnvironment({
 				workspaceRoot: options.projectRoot,
 				browserId: input.browserId,
 				browserScope: input.browserScope,
+				env: { ...process.env, ...runtimeDependencyEnv },
 			});
 
 			const { session } = await createAgentSession({
@@ -712,6 +715,7 @@ export function createDefaultAgentSessionFactory(
 							...context,
 							env: {
 								...context.env,
+								...runtimeDependencyEnv,
 								...browserEnv,
 							},
 						}),

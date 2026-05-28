@@ -22,6 +22,10 @@ services:
       WEB_ACCESS_BROWSER_UPLOAD_APP_DIR: /app/.data/browser-upload
       WEB_ACCESS_BROWSER_UPLOAD_BROWSER_DIR: /config/upload
       UGK_MODEL_SETTINGS_PATH: /app/.data/agent/model-settings.json
+      UGK_RUNTIME_DEPS_DIR: /app/.runtime-deps
+      UGK_RUNTIME_PYTHON_VENV_DIR: /app/.runtime-deps/python-venv-linux
+      VIRTUAL_ENV: /app/.runtime-deps/python-venv-linux
+      PATH: /app/.runtime-deps/python-venv-linux/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       PLAYGROUND_EXTERNALIZED: ${PLAYGROUND_EXTERNALIZED:-0}
       SEARXNG_BASE_URL: http://ugk-pi-searxng:8080
       TEAM_RUNTIME_ENABLED: "true"
@@ -34,13 +38,14 @@ services:
       - ${UGK_TEAM_DATA_DIR:-./.data/team}:/app/.data/team
       - ${UGK_BROWSER_UPLOAD_DIR:-./.data/chrome-sidecar/upload}:/app/.data/browser-upload
       - ${UGK_RUNTIME_SKILLS_USER_DIR:-./runtime/skills-user}:/app/runtime/skills-user
+      - ${UGK_RUNTIME_DEPS_HOST_DIR:-./.data/runtime-deps}:/app/.runtime-deps
     depends_on:
       ugk-pi-browser:
         condition: service_healthy
       ugk-pi-browser-cdp:
         condition: service_started
     restart: unless-stopped
-    command: /bin/sh -lc "mkdir -p /var/log/ugk-pi && npm start 2>&1 | tee -a /var/log/ugk-pi/app.log"
+    command: /bin/sh -c "mkdir -p /var/log/ugk-pi && { node scripts/runtime-deps.mjs init && npm start; } 2>&1 | tee -a /var/log/ugk-pi/app.log"
     healthcheck:
       test:
         [
@@ -78,6 +83,10 @@ services:
       WEB_ACCESS_BROWSER_UPLOAD_APP_DIR: /app/.data/browser-upload
       WEB_ACCESS_BROWSER_UPLOAD_BROWSER_DIR: /config/upload
       UGK_MODEL_SETTINGS_PATH: /app/.data/agent/model-settings.json
+      UGK_RUNTIME_DEPS_DIR: /app/.runtime-deps
+      UGK_RUNTIME_PYTHON_VENV_DIR: /app/.runtime-deps/python-venv-linux
+      VIRTUAL_ENV: /app/.runtime-deps/python-venv-linux
+      PATH: /app/.runtime-deps/python-venv-linux/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       PLAYGROUND_EXTERNALIZED: ${PLAYGROUND_EXTERNALIZED:-0}
       SEARXNG_BASE_URL: http://ugk-pi-searxng:8080
     volumes:
@@ -86,13 +95,14 @@ services:
       - ${UGK_AGENTS_DATA_DIR:-./.data/agents}:/app/.data/agents
       - ${UGK_BROWSER_UPLOAD_DIR:-./.data/chrome-sidecar/upload}:/app/.data/browser-upload
       - ${UGK_RUNTIME_SKILLS_USER_DIR:-./runtime/skills-user}:/app/runtime/skills-user
+      - ${UGK_RUNTIME_DEPS_HOST_DIR:-./.data/runtime-deps}:/app/.runtime-deps
     depends_on:
       ugk-pi-browser:
         condition: service_healthy
       ugk-pi-browser-cdp:
         condition: service_started
     restart: unless-stopped
-    command: /bin/sh -lc "mkdir -p /var/log/ugk-pi && npm run worker:conn 2>&1 | tee -a /var/log/ugk-pi/conn-worker.log"
+    command: /bin/sh -c "mkdir -p /var/log/ugk-pi && { node scripts/runtime-deps.mjs init && npm run worker:conn; } 2>&1 | tee -a /var/log/ugk-pi/conn-worker.log"
     healthcheck:
       disable: true
     networks:
@@ -112,6 +122,10 @@ services:
       TEAM_DATA_DIR: /app/.data/team
       TEAM_USE_MOCK_RUNNER: ${TEAM_USE_MOCK_RUNNER:-true}
       UGK_MODEL_SETTINGS_PATH: /app/.data/agent/model-settings.json
+      UGK_RUNTIME_DEPS_DIR: /app/.runtime-deps
+      UGK_RUNTIME_PYTHON_VENV_DIR: /app/.runtime-deps/python-venv-linux
+      VIRTUAL_ENV: /app/.runtime-deps/python-venv-linux
+      PATH: /app/.runtime-deps/python-venv-linux/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       PLAYGROUND_EXTERNALIZED: ${PLAYGROUND_EXTERNALIZED:-0}
       WEB_ACCESS_BROWSER_PUBLIC_BASE_URL: http://ugk-pi:3000
       WEB_ACCESS_BROWSER_PROVIDER: direct_cdp
@@ -129,11 +143,12 @@ services:
       - ${UGK_TEAM_DATA_DIR:-./.data/team}:/app/.data/team
       - ${UGK_BROWSER_UPLOAD_DIR:-./.data/chrome-sidecar/upload}:/app/.data/browser-upload
       - ${UGK_RUNTIME_SKILLS_USER_DIR:-./runtime/skills-user}:/app/runtime/skills-user
+      - ${UGK_RUNTIME_DEPS_HOST_DIR:-./.data/runtime-deps}:/app/.runtime-deps
     depends_on:
       ugk-pi:
         condition: service_healthy
     restart: unless-stopped
-    command: /bin/sh -lc "mkdir -p /var/log/ugk-pi && npm run worker:team 2>&1 | tee -a /var/log/ugk-pi/team-worker.log"
+    command: /bin/sh -c "mkdir -p /var/log/ugk-pi && { node scripts/runtime-deps.mjs init && npm run worker:team; } 2>&1 | tee -a /var/log/ugk-pi/team-worker.log"
     healthcheck:
       disable: true
     networks:
@@ -159,7 +174,7 @@ services:
       ugk-pi:
         condition: service_healthy
     restart: unless-stopped
-    command: /bin/sh -lc "mkdir -p /var/log/ugk-pi && npm run worker:feishu 2>&1 | tee -a /var/log/ugk-pi/feishu-worker.log"
+    command: /bin/sh -c "mkdir -p /var/log/ugk-pi && npm run worker:feishu 2>&1 | tee -a /var/log/ugk-pi/feishu-worker.log"
     healthcheck:
       disable: true
     networks:

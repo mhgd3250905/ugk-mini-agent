@@ -25,6 +25,7 @@
     "docker:chrome:check": "node scripts/sidecar-chrome.mjs check",
     "docker:chrome:status": "node scripts/sidecar-chrome.mjs status",
     "docker:chrome:open": "node scripts/sidecar-chrome.mjs open",
+    "runtime:check": "node scripts/runtime-deps.mjs check",
     "server:ops": "node scripts/server-ops.mjs",
     "worker:team": "tsx src/workers/team-worker.ts",
     "test:team": "node --test --test-concurrency=1 --import tsx test/team-*.test.ts",

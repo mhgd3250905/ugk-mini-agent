@@ -29,6 +29,15 @@
 
 注意：远端 Git 已更新不等于生产服务器已部署。服务器更新仍要按 `docs/server-ops.md` 的增量流程执行，不能把 push 当上线。
 
+## 2026-05-28 Chat / Conn / Team 共享 Python runtime deps 快照
+
+- Chat、Conn worker 和 Team worker 的 agent bash 环境共用 `/app/.runtime-deps/python-venv-linux`；宿主挂载源是 `${UGK_RUNTIME_DEPS_HOST_DIR:-./.data/runtime-deps}`。
+- `scripts/runtime-deps.mjs init` 会加锁初始化 venv；venv 内 `pip` / `pip3` wrapper 会串行安装并在成功 install / uninstall 后刷新 `/app/.runtime-deps/python-requirements.lock`。
+- 真实 agent 子进程环境由 `src/agent/runtime-dependencies.ts` 注入，后续 agent 可以正常执行 `python` / `pip install`，不要让它自己区分 Chat、Conn 或 Team。
+- 验证优先用 `npm run runtime:check`、服务日志 `runtime python ready`、或容器内真实 Node 进程 `/proc/<pid>/environ`。不要用 `docker compose exec ... which python` 的临时 shell 结果冒充 agent 实际 PATH。
+- 这只覆盖 Python 包。`ffmpeg`、`libreoffice`、`tesseract`、`poppler` 和稳定 PDF 转换器属于重型系统工具，后续要进 `Dockerfile` 并重建镜像。
+- 本轮实测 Canvas Task `task_d2f519578ed0` 跑通 LinkedIn 数据收集、SQLite 入库、HTML 报告、PDF 生成和页面刷新；过程中暴露的 PDF 问题是工具链不稳定，不是共享 Python venv 注入失败。
+
 ## 2026-05-27 Team Console merge 后主线快照
 
 Team Console Task / WorkUnit redesign 已通过 PR #1 合入 `main`：

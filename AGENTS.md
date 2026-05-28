@@ -182,6 +182,8 @@ This file provides the highest-level working rules for AI coding agents in this 
   - 再强刷浏览器
   - 不要第一反应去开 `3101`、`3102` 之类临时端口
 - 临时端口只允许短时排障；排障结束必须回到 `3000` 做最终验证。
+- Chat、Conn worker 和 Team worker 的 agent bash 环境共用 `/app/.runtime-deps/python-venv-linux`；compose 挂载源是 `${UGK_RUNTIME_DEPS_HOST_DIR:-./.data/runtime-deps}`，启动前由 `scripts/runtime-deps.mjs init` 初始化。agent 正常执行 `python`、`pip` 或 `pip install` 时不需要区分入口。宿主机直接跑 `docker compose exec ... which python` 会打开一个新的临时 shell，可能看不到服务进程继承的 `PATH`，不要据此判断 agent 运行环境坏了；验证用 `npm run runtime:check`、服务日志里的 `runtime python ready`，或读取真实 Node 进程 `/proc/<pid>/environ`。
+- 共享 venv 只解决 Python 包；`ffmpeg`、`libreoffice`、`tesseract`、`poppler`、稳定 PDF 转换器这类系统级 / 重型工具必须进 `Dockerfile` 并重建镜像。别把系统二进制伪装成 pip 依赖，后面接手的人不是来替你擦魔法灰的。
 
 ## 5. 关键路径
 
@@ -199,6 +201,7 @@ This file provides the highest-level working rules for AI coding agents in this 
 - agent 服务核心：`src/agent/agent-service.ts`，conversation catalog helper：`src/agent/agent-conversation-catalog.ts`，conversation command helper：`src/agent/agent-conversation-commands.ts`，conversation context helper：`src/agent/agent-conversation-context.ts`，conversation session helper：`src/agent/agent-conversation-session.ts`，conversation state helper：`src/agent/agent-conversation-state.ts`，terminal run helper：`src/agent/agent-terminal-run.ts`，queue message helper：`src/agent/agent-queue-message.ts`，prompt asset helper：`src/agent/agent-prompt-assets.ts`，run scope helper：`src/agent/agent-run-scope.ts`，run result helper：`src/agent/agent-run-result.ts`，session event adapter：`src/agent/agent-session-event-adapter.ts`，conversation history helper：`src/agent/agent-conversation-history.ts`，process text helper：`src/agent/agent-process-text.ts`，active run 视图 helper：`src/agent/agent-active-run-view.ts`，session event 守卫：`src/agent/agent-session-event-guards.ts`
 - web-access 任务结束清理：`src/agent/browser-cleanup.ts`
 - session 工厂：`src/agent/agent-session-factory.ts`
+- Chat / Conn / Team 共享 Python runtime deps：`src/agent/runtime-dependencies.ts`、`scripts/runtime-deps.mjs`
 - 资产库：`src/agent/asset-store.ts`
 - 文件交付协议：`src/agent/file-artifacts.ts`
 - 文件交付历史挂载与 `send_file` 结果合并：`src/agent/agent-file-history.ts`

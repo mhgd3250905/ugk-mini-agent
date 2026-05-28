@@ -35,7 +35,7 @@ test("container runtime files exist with the expected base configuration", () =>
 	assert.match(dockerfile, /ARG APT_MIRROR_HOST=""/);
 	assert.match(dockerfile, /deb\.debian\.org/);
 	assert.match(dockerfile, /security\.debian\.org/);
-	assert.match(dockerfile, /apt-get install -y --no-install-recommends git curl ca-certificates python3 python3-cryptography python3-yaml/i);
+	assert.match(dockerfile, /apt-get install -y --no-install-recommends git curl ca-certificates python3 python3-pip python3-venv python3-cryptography python3-yaml/i);
 	assert.doesNotMatch(dockerfile, /pip3 install/);
 	assert.match(dockerfile, /ENV HOST=0\.0\.0\.0/);
 	assert.match(dockerfile, /ENV PORT=3000/);
@@ -62,6 +62,10 @@ test("container runtime files exist with the expected base configuration", () =>
 	assert.match(compose, /HOST:\s*0\.0\.0\.0/);
 	assert.match(compose, /CONN_DATABASE_PATH:\s*\/var\/lib\/ugk-pi\/conn\/conn\.sqlite/);
 	assert.match(compose, /UGK_MODEL_SETTINGS_PATH:\s*\/app\/\.data\/agent\/model-settings\.json/);
+	assert.match(compose, /UGK_RUNTIME_DEPS_DIR:\s*\/app\/\.runtime-deps/);
+	assert.match(compose, /UGK_RUNTIME_PYTHON_VENV_DIR:\s*\/app\/\.runtime-deps\/python-venv-linux/);
+	assert.match(compose, /PATH:\s*\/app\/\.runtime-deps\/python-venv-linux\/bin:/);
+	assert.match(compose, /APT_MIRROR_HOST:\s*\$\{APT_MIRROR_HOST:-\}/);
 	assert.match(compose, /TEAM_RUNTIME_ENABLED:\s*"true"/);
 	assert.match(compose, /TEAM_DATA_DIR:\s*\/app\/\.data\/team/);
 	assert.match(compose, /TEAM_USE_MOCK_RUNNER:\s*\$\{TEAM_USE_MOCK_RUNNER:-true\}/);
@@ -101,10 +105,14 @@ test("container runtime files exist with the expected base configuration", () =>
 	assert.match(compose, /ensure-sidecar-chrome\.sh/);
 	assert.match(compose, /condition:\s*service_healthy/);
 	assert.match(compose, /TCP-LISTEN:9223,fork,bind=0\.0\.0\.0,reuseaddr/);
-	assert.match(compose, /command:\s*npm start/);
 	assert.match(compose, /npm run worker:conn/);
 	assert.match(compose, /npm run worker:team/);
+	assert.match(compose, /node scripts\/runtime-deps\.mjs init && npm start/);
+	assert.match(compose, /node scripts\/runtime-deps\.mjs init && npm run worker:conn/);
+	assert.match(compose, /node scripts\/runtime-deps\.mjs init && npm run worker:team/);
+	assert.doesNotMatch(compose, /sh -lc/);
 	assert.match(compose, /ugk-pi-conn-db:\/var\/lib\/ugk-pi\/conn/);
+	assert.match(compose, /\$\{UGK_RUNTIME_DEPS_HOST_DIR:-\.\/\.data\/runtime-deps\}:\/app\/\.runtime-deps/);
 	assert.match(compose, /\$\{UGK_BROWSER_UPLOAD_DIR:-\.\/\.data\/chrome-sidecar\/upload\}:\/app\/\.data\/browser-upload/);
 	assert.match(compose, /\$\{UGK_BROWSER_UPLOAD_DIR:-\.\/\.data\/chrome-sidecar\/upload\}:\/config\/upload/);
 	assert.match(compose, /\$\{UGK_BROWSER_CHROME_01_CONFIG_DIR:-\.\/\.data\/chrome-sidecar-chrome-01\}:\/config/);
@@ -141,6 +149,10 @@ test("container runtime files exist with the expected base configuration", () =>
 	assert.match(prodCompose, /env_file:/);
 	assert.match(prodCompose, /\.env/);
 	assert.match(prodCompose, /UGK_MODEL_SETTINGS_PATH:\s*\/app\/\.data\/agent\/model-settings\.json/);
+	assert.match(prodCompose, /UGK_RUNTIME_DEPS_DIR:\s*\/app\/\.runtime-deps/);
+	assert.match(prodCompose, /UGK_RUNTIME_PYTHON_VENV_DIR:\s*\/app\/\.runtime-deps\/python-venv-linux/);
+	assert.match(prodCompose, /PATH:\s*\/app\/\.runtime-deps\/python-venv-linux\/bin:/);
+	assert.match(prodCompose, /APT_MIRROR_HOST:\s*\$\{APT_MIRROR_HOST:-\}/);
 	assert.match(prodCompose, /TEAM_RUNTIME_ENABLED:\s*"true"/);
 	assert.match(prodCompose, /TEAM_DATA_DIR:\s*\/app\/\.data\/team/);
 	assert.match(prodCompose, /TEAM_USE_MOCK_RUNNER:\s*\$\{TEAM_USE_MOCK_RUNNER:-true\}/);
@@ -184,6 +196,10 @@ test("container runtime files exist with the expected base configuration", () =>
 	assert.match(prodCompose, /npm start/);
 	assert.match(prodCompose, /npm run worker:conn/);
 	assert.match(prodCompose, /npm run worker:team/);
+	assert.match(prodCompose, /node scripts\/runtime-deps\.mjs init && npm start/);
+	assert.match(prodCompose, /node scripts\/runtime-deps\.mjs init && npm run worker:conn/);
+	assert.match(prodCompose, /node scripts\/runtime-deps\.mjs init && npm run worker:team/);
+	assert.doesNotMatch(prodCompose, /sh -lc/);
 	assert.match(prodCompose, /healthcheck:/);
 	assert.match(prodCompose, /logs\/app/);
 	assert.match(prodCompose, /logs\/nginx/);
@@ -194,6 +210,7 @@ test("container runtime files exist with the expected base configuration", () =>
 	assert.match(prodCompose, /\$\{UGK_BROWSER_CHROME_01_CONFIG_DIR:-\.\/\.data\/chrome-sidecar-chrome-01\}:\/config/);
 	assert.match(prodCompose, /\$\{UGK_BROWSER_CHROME_02_CONFIG_DIR:-\.\/\.data\/chrome-sidecar-chrome-02\}:\/config/);
 	assert.match(prodCompose, /\$\{UGK_RUNTIME_SKILLS_USER_DIR:-\.\/runtime\/skills-user\}:\/app\/runtime\/skills-user/);
+	assert.match(prodCompose, /\$\{UGK_RUNTIME_DEPS_HOST_DIR:-\.\/\.data\/runtime-deps\}:\/app\/\.runtime-deps/);
 	assert.match(prodWorkerComposeBlock, /healthcheck:\s*\n\s*disable:\s*true/);
 	assert.doesNotMatch(prodWorkerComposeBlock, /ports:/);
 	assert.match(prodSearxngComposeBlock, /searxng\/searxng:latest/);
@@ -234,6 +251,8 @@ test("container runtime files exist with the expected base configuration", () =>
 	assert.match(envExample, /UGK_SEARXNG_CONFIG_DIR=\.\/deploy\/searxng/);
 	assert.match(envExample, /UGK_SEARXNG_CACHE_DIR=\.\/\.data\/searxng/);
 	assert.match(envExample, /UGK_RUNTIME_SKILLS_USER_DIR=\.\/runtime\/skills-user/);
+	assert.match(envExample, /UGK_RUNTIME_DEPS_HOST_DIR=\.\/\.data\/runtime-deps/);
+	assert.match(envExample, /UGK_RUNTIME_PYTHON_VENV_DIR=/);
 	assert.match(envExample, /APT_MIRROR_HOST=/);
 
 	const searxngSettings = readFileSync(join(projectRoot, "deploy", "searxng", "settings.yml"), "utf8");
@@ -245,6 +264,7 @@ test("container runtime files exist with the expected base configuration", () =>
 	assert.match(dockerignore, /node_modules/);
 	assert.match(dockerignore, /\.git/);
 	assert.match(dockerignore, /\.data/);
+	assert.match(dockerignore, /\.worktrees/);
 
 	const nginxConfig = readFileSync(nginxConfigPath, "utf8");
 	assert.match(nginxConfig, /proxy_pass http:\/\/ugk-pi:3000/);
@@ -264,6 +284,7 @@ test("container runtime files exist with the expected base configuration", () =>
 	assert.match(packageJson, /docker:chrome:check/);
 	assert.match(packageJson, /docker:chrome:status/);
 	assert.match(packageJson, /docker:chrome:open/);
+	assert.match(packageJson, /"runtime:check":\s*"node scripts\/runtime-deps\.mjs check"/);
 
 	const sidecarChromeScript = readFileSync(sidecarChromeScriptPath, "utf8");
 	assert.match(sidecarChromeScript, /hide-crash-restore-bubble/);
