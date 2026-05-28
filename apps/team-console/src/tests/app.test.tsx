@@ -2042,6 +2042,150 @@ describe("App", () => {
     expect(container.querySelector(".task-action-branch")).toBeTruthy();
   });
 
+  it("restores Agent root node to pre-drag position after drag-to-dock minimize", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+    const agentNode = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
+    expect(agentNode).toBeTruthy();
+
+    const originalLeft = parseFloat(agentNode!.style.left);
+    const originalTop = parseFloat(agentNode!.style.top);
+    expect(Number.isFinite(originalLeft)).toBe(true);
+    expect(Number.isFinite(originalTop)).toBe(true);
+
+    // Mock dock getBoundingClientRect so it is a valid drop target
+    const dockEl = container.querySelector(".emap-root-dock") as HTMLElement | null;
+    expect(dockEl).toBeTruthy();
+    vi.spyOn(dockEl!, "getBoundingClientRect").mockReturnValue({
+      x: 200, y: 700, width: 400, height: 60,
+      left: 200, top: 700, right: 600, bottom: 760,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    // Drag the agent node into the dock area
+    const PID = 1;
+    firePointer(agentNode!, "pointerdown", { pointerId: PID, clientX: originalLeft + 50, clientY: originalTop + 30 });
+    firePointer(agentNode!, "pointermove", { pointerId: PID, clientX: 300, clientY: 720 });
+    firePointer(agentNode!, "pointerup", { pointerId: PID, clientX: 300, clientY: 720 });
+
+    // Agent should be minimized
+    expect(container.querySelector('.emap-agent-node[data-agent-id="main"]')).toBeNull();
+    const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
+    expect(within(dock!).getByRole("button", { name: /复原 Agent 主 Agent/ })).toBeInTheDocument();
+
+    // Restore from dock
+    fireEvent.click(within(dock!).getByRole("button", { name: /复原 Agent 主 Agent/ }));
+
+    // Agent is back on canvas — assert position matches original
+    const restoredNode = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
+    expect(restoredNode).toBeTruthy();
+    const restoredLeft = parseFloat(restoredNode!.style.left);
+    const restoredTop = parseFloat(restoredNode!.style.top);
+    expect(restoredLeft).toBe(originalLeft);
+    expect(restoredTop).toBe(originalTop);
+  });
+
+  it("restores Task root node to pre-drag position after drag-to-dock minimize", async () => {
+    const { container } = render(<App />);
+
+    // Task should be visible from mock fixture
+    await waitFor(() => {
+      expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeTruthy();
+    });
+    const taskEl = container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]') as HTMLElement;
+
+    const originalLeft = parseFloat(taskEl.style.left);
+    const originalTop = parseFloat(taskEl.style.top);
+    expect(Number.isFinite(originalLeft)).toBe(true);
+    expect(Number.isFinite(originalTop)).toBe(true);
+
+    // Mock dock getBoundingClientRect
+    const dockEl = container.querySelector(".emap-root-dock") as HTMLElement | null;
+    expect(dockEl).toBeTruthy();
+    vi.spyOn(dockEl!, "getBoundingClientRect").mockReturnValue({
+      x: 200, y: 700, width: 400, height: 60,
+      left: 200, top: 700, right: 600, bottom: 760,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    // Drag the task node into the dock
+    const PID = 2;
+    firePointer(taskEl, "pointerdown", { pointerId: PID, clientX: originalLeft + 50, clientY: originalTop + 30 });
+    firePointer(taskEl, "pointermove", { pointerId: PID, clientX: 300, clientY: 720 });
+    firePointer(taskEl, "pointerup", { pointerId: PID, clientX: 300, clientY: 720 });
+
+    // Task should be minimized
+    expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeNull();
+    const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
+    expect(within(dock!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ })).toBeInTheDocument();
+
+    // Restore from dock
+    fireEvent.click(within(dock!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ }));
+
+    // Task is back on canvas — assert position matches original
+    const restoredNode = container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]') as HTMLElement | null;
+    expect(restoredNode).toBeTruthy();
+    const restoredLeft = parseFloat(restoredNode!.style.left);
+    const restoredTop = parseFloat(restoredNode!.style.top);
+    expect(restoredLeft).toBe(originalLeft);
+    expect(restoredTop).toBe(originalTop);
+  });
+
+  it("restores Task menu branch position after drag-to-dock minimize", async () => {
+    const { container } = render(<App />);
+
+    // Click task to open menu
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
+
+    // Task branch should be visible
+    const taskBranchShell = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
+    expect(taskBranchShell).toBeTruthy();
+
+    // Record original task root position and branch shell position
+    const taskEl = container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]') as HTMLElement | null;
+    expect(taskEl).toBeTruthy();
+    const taskOriginalLeft = parseFloat(taskEl!.style.left);
+    const taskOriginalTop = parseFloat(taskEl!.style.top);
+
+    // Mock dock getBoundingClientRect
+    const dockEl = container.querySelector(".emap-root-dock") as HTMLElement | null;
+    expect(dockEl).toBeTruthy();
+    vi.spyOn(dockEl!, "getBoundingClientRect").mockReturnValue({
+      x: 200, y: 700, width: 400, height: 60,
+      left: 200, top: 700, right: 600, bottom: 760,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    // Drag the task root node into the dock
+    const PID = 3;
+    firePointer(taskEl!, "pointerdown", { pointerId: PID, clientX: taskOriginalLeft + 50, clientY: taskOriginalTop + 30 });
+    firePointer(taskEl!, "pointermove", { pointerId: PID, clientX: 300, clientY: 720 });
+    firePointer(taskEl!, "pointerup", { pointerId: PID, clientX: 300, clientY: 720 });
+
+    // Task and branch should be minimized
+    expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeNull();
+    expect(container.querySelector(".emap-task-branch-shell")).toBeNull();
+
+    const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
+    expect(within(dock!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ })).toBeInTheDocument();
+
+    // Restore from dock
+    fireEvent.click(within(dock!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ }));
+
+    // Task root is back — assert position matches original
+    const restoredTask = container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]') as HTMLElement | null;
+    expect(restoredTask).toBeTruthy();
+    expect(parseFloat(restoredTask!.style.left)).toBe(taskOriginalLeft);
+    expect(parseFloat(restoredTask!.style.top)).toBe(taskOriginalTop);
+
+    // Task menu branch should also be restored (position reset)
+    const restoredBranch = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
+    expect(restoredBranch).toBeTruthy();
+  });
+
   it("opens the Task leader chat iframe from the action menu", async () => {
     const { container } = render(<App />);
 

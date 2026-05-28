@@ -1327,6 +1327,20 @@ export function ExecutionMap({
       && event.clientY >= dockRect.top && event.clientY <= dockRect.bottom;
     if (!inDock) return false;
 
+    // Roll back positions to pre-drag start so restore returns to original location
+    for (const entry of drag.entries) {
+      if (entry.kind === "agent") {
+        onMoveAgent?.(entry.nodeId, entry.startPosition);
+      } else if (entry.kind === "task") {
+        onMoveCanvasTask?.(entry.nodeId, entry.startPosition);
+        if (drag.lastTreeDx !== undefined || drag.lastTreeDy !== undefined) {
+          translateTaskSubtreeRef.current("root", -(drag.lastTreeDx ?? 0), -(drag.lastTreeDy ?? 0), entry.nodeId);
+        }
+      } else {
+        onMoveSourceNode?.(entry.nodeId, entry.startPosition);
+      }
+    }
+
     for (const entry of drag.entries) {
       if (entry.kind === "agent") {
         onMinimizeAgent?.(visibleAgentNodes.find((n) => n.nodeId === entry.nodeId) ?? { nodeId: entry.nodeId, kind: "agent", agentId: entry.nodeId, position: entry.startPosition });
@@ -1356,7 +1370,7 @@ export function ExecutionMap({
     }
 
     return true;
-  }, [onMinimizeAgent, onMinimizeCanvasTask, onMinimizeSourceNode, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes]);
+  }, [onMinimizeAgent, onMinimizeCanvasTask, onMinimizeSourceNode, onMoveAgent, onMoveCanvasTask, onMoveSourceNode, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes]);
 
   const endAgentPointer = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const drag = atlasNodeDragRef.current;
