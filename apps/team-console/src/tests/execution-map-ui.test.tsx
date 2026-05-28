@@ -250,9 +250,15 @@ describe("ExecutionMap UI", () => {
     const node = screen.getByRole("button", { name: /调查 Medtrum 云资产/ });
     expect(node).toBeInTheDocument();
     expect(within(node).getByText("Task")).toBeInTheDocument();
-    expect(within(node).getByText("leader: 主 Agent")).toBeInTheDocument();
-    expect(within(node).getByText("worker: 搜索 Agent")).toBeInTheDocument();
-    expect(within(node).getByText("checker: 主 Agent")).toBeInTheDocument();
+    const agentRows = Array.from(node.querySelectorAll(".emap-task-agent-row")).map((row) => ({
+      label: row.querySelector("b")?.textContent,
+      name: row.querySelector("em")?.textContent,
+    }));
+    expect(agentRows).toEqual([
+      { label: "leader", name: "主 Agent" },
+      { label: "worker", name: "搜索 Agent" },
+      { label: "checker", name: "主 Agent" },
+    ]);
   });
 
   it("calls onSelectCanvasTask when clicking a canvas Task card", () => {

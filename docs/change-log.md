@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-29 — Team Console 过程展示与根卡片 UI 优化
+
+- **主题**: 优化 Team Console Execution Atlas 的运行过程阅读顺序、根节点卡片信息排版和连接线切断按钮定位。
+- **变更内容**:
+  - Worker / Checker 过程里的 `assistantText.content` 改为最新内容显示在顶部，旧内容向下隐藏，避免运行中最新进展被固定高度滚动区压在底部看不到。
+  - Agent / Task 根卡片新增可点击复制的 `Agent ID` / `Task ID` chip，复制按钮会阻止父卡片点击，避免复制 ID 时误打开 Agent 分支或 Task 菜单。
+  - Task 根卡片的 leader / worker / checker 排版改为紧凑标签行；Task 运行中状态改为暖橘红边框、状态条和 pill 脉冲，区别于普通 ready / completed 状态。
+  - typed Task connection、Source connection 和 control dependency 的切断按钮改为用连接点作为按钮中心，再由 CSS `translate(-50%, -50%)` 居中，避免偏纵向连接线上的叉号被 fixed offset 推偏。
+- **影响范围**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/handoff-current.md`。
+- **验证**: focused tests 覆盖 process newest-first、ID copy 不误触分支、运行中 Task 视觉规则和 cut button 居中；最终验证见本轮提交记录。
+- **对应入口**: Team Console Execution Atlas，固定入口 `http://127.0.0.1:5174/`。
+
 ## 2026-05-28 — Chat / Conn / Team 共享 Python runtime deps
 
 - **主题**: 让 Chat、Conn worker 和 Team worker 的 agent bash 环境共用同一个 Python venv，避免在 Chat 验证过的 skill 到 Conn / Team 运行时缺 Python 包。

@@ -910,8 +910,11 @@ describe("App", () => {
     fireEvent.click(mainOption);
 
     const atlasNodes = getAtlasNodes(container);
-    expect(within(atlasNodes).getByText("主 Agent")).toBeInTheDocument();
-    expect(within(atlasNodes).getByText("main")).toBeInTheDocument();
+    const agentNode = atlasNodes.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
+    expect(agentNode).toBeTruthy();
+    expect(agentNode!).toHaveAttribute("aria-label", "主 Agent");
+    expect(within(agentNode!).getByText("主 Agent")).toBeInTheDocument();
+    expect(within(agentNode!).getByRole("button", { name: "复制 Agent ID main" })).toBeInTheDocument();
     expect(container.querySelector(".agent-canvas-board")).toBeNull();
     expect(screen.queryByRole("button", { name: /主 Agent[\s\S]*已加入/ })).toBeNull();
 
@@ -920,7 +923,7 @@ describe("App", () => {
     expect(joinedOption).toBeDisabled();
 
     fireEvent.click(joinedOption);
-    expect(within(atlasNodes).getAllByText("main")).toHaveLength(1);
+    expect(atlasNodes.querySelectorAll('.emap-agent-node[data-agent-id="main"]')).toHaveLength(1);
   });
 
   it("renders mock agent run states on atlas cards", async () => {
@@ -5102,6 +5105,8 @@ describe("App", () => {
     expect(readme).toContain("同源代理");
     expect(readme).toContain("不会暴露给前端 iframe URL");
     expect(readme).toContain("真实状态投到卡片状态条和状态 pill");
+    expect(readme).toContain("`Agent ID` / `Task ID` chip 可点击复制");
+    expect(readme).toContain("运行中 Task 使用暖橘红边框");
     expect(readme).toContain("Agent 分支卡片");
     expect(readme).toContain("/playground?view=chat&agentId=<agentId>");
     expect(readme).toContain("embed=team-console");
@@ -5146,6 +5151,7 @@ describe("App", () => {
     expect(readme).toContain("缺少 `roleProcesses`");
     expect(readme).toContain("只隐藏 DOM 明细");
     expect(readme).toContain("formatAssistantText");
+    expect(readme).toContain("最新行显示在顶部");
     expect(readme).toContain("不显示 tool group 折叠区或隐藏计数");
     expect(readme).toContain("不接 SSE");
     expect(readme).toContain("只展示 Agent 名字（从 agentsById 解析）、文件名和路径");
@@ -5173,6 +5179,8 @@ describe("App", () => {
     expect(runtimeDoc).toContain("同源代理承载 Live API 和嵌入式主 `/playground` iframe");
     expect(runtimeDoc).toContain("不再暴露给浏览器端 iframe");
     expect(runtimeDoc).toContain("卡片状态条与状态 pill 会随真实运行态显示空闲、运行中或状态未知");
+    expect(runtimeDoc).toContain("`Agent ID` / `Task ID` chip 可点击复制");
+    expect(runtimeDoc).toContain("Task 运行中状态使用暖橘红边框");
     expect(runtimeDoc).toContain("/playground?view=chat&agentId=<agentId>");
     expect(runtimeDoc).toContain("embed=team-console");
     expect(runtimeDoc).toContain("Team Console 不再维护本地 transcript + composer");
@@ -5211,6 +5219,8 @@ describe("App", () => {
     expect(runtimeDoc).toContain("不再渲染下半部 tool / method 调用明细");
     expect(runtimeDoc).toContain("additive frontend contract");
     expect(runtimeDoc).toContain("formatAssistantText");
+    expect(runtimeDoc).toContain("最新行显示在顶部");
+    expect(runtimeDoc).toContain("translate(-50%, -50%)");
     expect(runtimeDoc).toContain("前端不丢弃后端数据，只隐藏 DOM 明细");
     expect(runtimeDoc).toContain("SSE 观察流仍是后续后端能力");
     expect(runtimeDoc).toContain("base snapshot + dirty fields");
@@ -5240,6 +5250,8 @@ describe("App", () => {
     expect(changeLog).toContain("roleProcesses.checker");
     expect(changeLog).toContain("Team Console 过程节点隐藏方法调用明细");
     expect(changeLog).toContain("过程节点不再渲染下半部 tool / method 调用明细");
+    expect(changeLog).toContain("Team Console 过程展示与根卡片 UI 优化");
+    expect(changeLog).toContain("Task ID");
     expect(changeLog).toContain("Worker 过程");
     expect(changeLog).toContain("Checker 过程");
     expect(changeLog).toContain("不改 `src/team/**`");
