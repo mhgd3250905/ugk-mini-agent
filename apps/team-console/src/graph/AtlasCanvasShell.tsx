@@ -256,6 +256,11 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
           panY: pending.viewport.y,
         };
         setIsPanning(true);
+        updateViewport({
+          ...pending.viewport,
+          x: pending.viewport.x + dx,
+          y: pending.viewport.y + dy,
+        });
       }
       event.preventDefault();
       return;

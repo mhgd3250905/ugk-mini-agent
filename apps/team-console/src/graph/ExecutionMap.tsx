@@ -784,7 +784,7 @@ export function ExecutionMap({
   const taskBranchShellRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const atlasNodeDragRef = useRef<AtlasNodeDragState | null>(null);
   const dockRef = useRef<HTMLElement | null>(null);
-  const trashRef = useRef<HTMLElement | null>(null);
+  const trashRef = useRef<HTMLDivElement | null>(null);
   const suppressAgentClickRef = useRef<string | null>(null);
   const suppressTaskClickRef = useRef<string | null>(null);
   const agentBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
@@ -813,7 +813,7 @@ export function ExecutionMap({
   );
   const showAgents = rootNodeFilter === "all" || rootNodeFilter === "agent";
   const showTasks = rootNodeFilter === "all" || rootNodeFilter === "task";
-  const showSources = rootNodeFilter === "task";
+  const showSources = rootNodeFilter === "all" || rootNodeFilter === "task";
   const visibleAgentNodes = useMemo(
     () => showAgents ? unfilteredVisibleAgentNodes : [],
     [showAgents, unfilteredVisibleAgentNodes],
