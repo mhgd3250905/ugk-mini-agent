@@ -32,6 +32,19 @@ interface CanvasSelectionOrigin {
   viewport: AtlasViewport;
 }
 
+interface PendingLongPressSelection {
+  pointerId: number;
+  startLocalX: number;
+  startLocalY: number;
+  startClientX: number;
+  startClientY: number;
+  viewport: AtlasViewport;
+  timer: ReturnType<typeof globalThis.setTimeout>;
+}
+
+const SELECTION_LONG_PRESS_MS = 200;
+const PAN_THRESHOLD = 4;
+
 type ScreenSelectionRect = { left: number; top: number; width: number; height: number };
 
 const DEFAULT_VIEWPORT: AtlasViewport = { x: 0, y: 0, scale: 1 };
@@ -89,6 +102,7 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const dragOriginRef = useRef<CanvasDragOrigin | null>(null);
   const selectionOriginRef = useRef<CanvasSelectionOrigin | null>(null);
+  const pendingLongPressRef = useRef<PendingLongPressSelection | null>(null);
   const [internalViewport, setInternalViewport] = useState<AtlasViewport>(defaultViewport);
   const [isPanning, setIsPanning] = useState(false);
   const [selectionRect, setSelectionRect] = useState<ScreenSelectionRect | null>(null);
@@ -172,6 +186,34 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
       event.preventDefault();
       return;
     }
+    if (onSelectionComplete) {
+      const localPoint = pointerLocalPoint(mapContainerRef.current, event);
+      const client = pointerPoint(event);
+      const pendingTimer = globalThis.setTimeout(() => {
+        const pending = pendingLongPressRef.current;
+        if (!pending || pending.pointerId !== event.pointerId) return;
+        selectionOriginRef.current = {
+          pointerId: pending.pointerId,
+          startLocalX: pending.startLocalX,
+          startLocalY: pending.startLocalY,
+          viewport: pending.viewport,
+        };
+        pendingLongPressRef.current = null;
+        setSelectionRect(normalizeScreenRect(pending.startLocalX, pending.startLocalY, pending.startLocalX, pending.startLocalY));
+      }, SELECTION_LONG_PRESS_MS);
+      pendingLongPressRef.current = {
+        pointerId: event.pointerId,
+        startLocalX: localPoint.x,
+        startLocalY: localPoint.y,
+        startClientX: client.x,
+        startClientY: client.y,
+        viewport: currentViewport,
+        timer: pendingTimer,
+      };
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+      return;
+    }
     const point = pointerPoint(event);
     dragOriginRef.current = {
       pointerId: event.pointerId,
@@ -198,6 +240,26 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
       event.preventDefault();
       return;
     }
+    const pending = pendingLongPressRef.current;
+    if (pending && pending.pointerId === event.pointerId) {
+      const client = pointerPoint(event);
+      const dx = client.x - pending.startClientX;
+      const dy = client.y - pending.startClientY;
+      if (dx * dx + dy * dy > PAN_THRESHOLD * PAN_THRESHOLD) {
+        clearTimeout(pending.timer);
+        pendingLongPressRef.current = null;
+        dragOriginRef.current = {
+          pointerId: pending.pointerId,
+          startX: pending.startClientX,
+          startY: pending.startClientY,
+          panX: pending.viewport.x,
+          panY: pending.viewport.y,
+        };
+        setIsPanning(true);
+      }
+      event.preventDefault();
+      return;
+    }
     const origin = dragOriginRef.current;
     if (!origin || origin.pointerId !== event.pointerId) return;
     const point = pointerPoint(event);
@@ -209,6 +271,14 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
   }, [currentViewport, isLocked, updateViewport]);
 
   const endCanvasPan = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const pending = pendingLongPressRef.current;
+    if (pending && pending.pointerId === event.pointerId) {
+      clearTimeout(pending.timer);
+      pendingLongPressRef.current = null;
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+      event.preventDefault();
+      return;
+    }
     const selectionOrigin = selectionOriginRef.current;
     if (selectionOrigin && selectionOrigin.pointerId === event.pointerId) {
       const localPoint = pointerLocalPoint(mapContainerRef.current, event);
