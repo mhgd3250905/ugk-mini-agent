@@ -4,7 +4,7 @@ import type { AgentRunStatus, AgentSummary, TeamCanvasSourceConnection, TeamCanv
 import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, mockTeamTasks, MockTeamApi } from "../fixtures/team-fixtures";
 import { ExecutionMap, type AtlasAgentNode, type AtlasSourceNode, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { ROOT_ID } from "../graph/execution-map-layout";
-import type { AtlasViewport } from "../graph/AtlasCanvasShell";
+import { normalizeAtlasViewport, type AtlasViewport } from "../graph/AtlasCanvasShell";
 import { RUN_STATUS_LABELS, isActiveRun } from "../shared/status";
 import { renderTeamMarkdown } from "../shared/markdown";
 import "./app.css";
@@ -548,7 +548,7 @@ function readStoredViewport(value: unknown): AtlasViewport | undefined {
   if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(scale) || scale <= 0) {
     return undefined;
   }
-  return { x, y, scale };
+  return normalizeAtlasViewport({ x, y, scale });
 }
 
 function readStoredAgentBranch(value: unknown): AgentBranchState | null {

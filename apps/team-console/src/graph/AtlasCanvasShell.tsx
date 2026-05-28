@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
 
 export type AtlasViewport = { x: number; y: number; scale: number };
 export type AtlasInteractionMode = "free" | "locked";
@@ -50,7 +50,7 @@ type ScreenSelectionRect = { left: number; top: number; width: number; height: n
 const DEFAULT_VIEWPORT: AtlasViewport = { x: 0, y: 0, scale: 1 };
 const MIN_SCALE = 0.45;
 const MAX_SCALE = 1.8;
-const ZOOM_LEVELS = [0.45, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.8] as const;
+export const ATLAS_ZOOM_LEVELS = [0.45, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.8] as const;
 
 function clampScale(value: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number(value.toFixed(2))));
@@ -58,17 +58,17 @@ function clampScale(value: number): number {
 
 function nearestZoomLevel(value: number): number {
   const clamped = clampScale(value);
-  return ZOOM_LEVELS.reduce((closest, level) => (
+  return ATLAS_ZOOM_LEVELS.reduce((closest, level) => (
     Math.abs(level - clamped) < Math.abs(closest - clamped) ? level : closest
-  ), ZOOM_LEVELS[0]);
+  ), ATLAS_ZOOM_LEVELS[0]);
 }
 
 function nextZoomLevel(value: number, direction: "in" | "out"): number {
   const clamped = clampScale(value);
   if (direction === "in") {
-    return ZOOM_LEVELS.find((level) => level > clamped + 0.001) ?? MAX_SCALE;
+    return ATLAS_ZOOM_LEVELS.find((level) => level > clamped + 0.001) ?? MAX_SCALE;
   }
-  return [...ZOOM_LEVELS].reverse().find((level) => level < clamped - 0.001) ?? MIN_SCALE;
+  return [...ATLAS_ZOOM_LEVELS].reverse().find((level) => level < clamped - 0.001) ?? MIN_SCALE;
 }
 
 function snapCanvasOffset(value: number): number {
@@ -77,7 +77,7 @@ function snapCanvasOffset(value: number): number {
   return Math.round(value * safeRatio) / safeRatio;
 }
 
-function normalizeViewport(viewport: AtlasViewport): AtlasViewport {
+export function normalizeAtlasViewport(viewport: AtlasViewport): AtlasViewport {
   return {
     x: snapCanvasOffset(viewport.x),
     y: snapCanvasOffset(viewport.y),
@@ -135,11 +135,11 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
   const [internalViewport, setInternalViewport] = useState<AtlasViewport>(defaultViewport);
   const [isPanning, setIsPanning] = useState(false);
   const [selectionRect, setSelectionRect] = useState<ScreenSelectionRect | null>(null);
-  const currentViewport = viewport ?? internalViewport;
+  const currentViewport = useMemo(() => normalizeAtlasViewport(viewport ?? internalViewport), [internalViewport, viewport]);
   const isLocked = interactionMode === "locked";
 
   const updateViewport = useCallback((nextViewport: AtlasViewport) => {
-    const normalizedViewport = normalizeViewport(nextViewport);
+    const normalizedViewport = normalizeAtlasViewport(nextViewport);
     if (!viewport) {
       setInternalViewport(normalizedViewport);
     }
