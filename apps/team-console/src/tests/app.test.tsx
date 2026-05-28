@@ -299,9 +299,12 @@ describe("App", () => {
     const atlasNodes = getAtlasNodes(container);
     const taskNode = await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" });
     expect(taskNode).toBeInTheDocument();
-    expect(within(taskNode).getByText("leader")).toBeInTheDocument();
-    expect(within(taskNode).getByText("worker")).toBeInTheDocument();
-    expect(within(taskNode).getByText("checker")).toBeInTheDocument();
+    expect(within(taskNode).getByText("Leader")).toBeInTheDocument();
+    expect(within(taskNode).getByText("Worker")).toBeInTheDocument();
+    expect(within(taskNode).getByText("Checker")).toBeInTheDocument();
+    expect(taskNode.querySelector('.emap-task-agent-row[data-role="leader"]')).toHaveClass("role-leader");
+    expect(taskNode.querySelector('.emap-task-agent-row[data-role="worker"]')).toHaveClass("role-worker");
+    expect(taskNode.querySelector('.emap-task-agent-row[data-role="checker"]')).toHaveClass("role-checker");
     expect(within(taskNode).getAllByText("主 Agent").length).toBeGreaterThanOrEqual(2);
     expect(within(taskNode).getByText("搜索 Agent")).toBeInTheDocument();
   });

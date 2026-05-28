@@ -2847,24 +2847,53 @@
 
 .emap-task-agent-grid {
   display: grid;
-  gap: 2px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
   min-width: 0;
+  margin-top: 1px;
 }
 
 .emap-task-agent-row {
+  position: relative;
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
-  align-items: baseline;
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  gap: 2px;
   min-width: 0;
+  min-height: 28px;
+  padding: 4px 6px;
+  border: 1px solid rgba(151, 163, 188, 0.16);
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), transparent),
+    rgba(2, 4, 11, 0.24);
   color: var(--secondary);
-  font-size: 10px;
-  line-height: 1.12;
+  line-height: 1.1;
+  overflow: hidden;
+}
+
+.emap-task-agent-row.role-leader {
+  grid-column: 1 / -1;
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: center;
+  min-height: 30px;
+  border-color: rgba(255, 190, 96, 0.28);
+  background:
+    linear-gradient(90deg, rgba(255, 190, 96, 0.14), transparent 68%),
+    rgba(2, 4, 11, 0.24);
+}
+
+.emap-task-agent-row.role-worker {
+  border-color: rgba(121, 216, 208, 0.22);
+}
+
+.emap-task-agent-row.role-checker {
+  border-color: rgba(255, 214, 128, 0.2);
 }
 
 .emap-task-agent-row b {
-  color: rgba(216, 228, 241, 0.48);
-  font-size: 8px;
+  color: rgba(216, 228, 241, 0.5);
+  font-size: 7.5px;
   font-weight: 850;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -2872,11 +2901,19 @@
 
 .emap-task-agent-row em {
   min-width: 0;
-  color: var(--secondary);
+  color: rgba(216, 228, 241, 0.76);
   font-style: normal;
+  font-size: 9.5px;
+  font-weight: 690;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.emap-task-agent-row.role-leader em {
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 760;
 }
 
 .emap-task-ports {

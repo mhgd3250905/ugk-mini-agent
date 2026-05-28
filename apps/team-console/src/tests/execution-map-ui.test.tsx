@@ -253,12 +253,16 @@ describe("ExecutionMap UI", () => {
     const agentRows = Array.from(node.querySelectorAll(".emap-task-agent-row")).map((row) => ({
       label: row.querySelector("b")?.textContent,
       name: row.querySelector("em")?.textContent,
+      role: row.getAttribute("data-role"),
     }));
     expect(agentRows).toEqual([
-      { label: "leader", name: "主 Agent" },
-      { label: "worker", name: "搜索 Agent" },
-      { label: "checker", name: "主 Agent" },
+      { label: "Leader", name: "主 Agent", role: "leader" },
+      { label: "Worker", name: "搜索 Agent", role: "worker" },
+      { label: "Checker", name: "主 Agent", role: "checker" },
     ]);
+    expect(node.querySelector(".emap-task-agent-row.role-leader")).toBeTruthy();
+    expect(node.querySelector(".emap-task-agent-row.role-worker")).toBeTruthy();
+    expect(node.querySelector(".emap-task-agent-row.role-checker")).toBeTruthy();
   });
 
   it("calls onSelectCanvasTask when clicking a canvas Task card", () => {

@@ -3331,16 +3331,16 @@ export function ExecutionMap({
                     <span className="emap-node-title">{task.title}</span>
                     {renderNodeIdCopyButton("task", task.taskId)}
                     <div className="emap-task-agent-grid" aria-label={`${task.title} agents`}>
-                      <span className="emap-task-agent-row">
-                        <b>leader</b>
+                      <span className="emap-task-agent-row role-leader" data-role="leader">
+                        <b>Leader</b>
                         <em>{leader?.name ?? task.leaderAgentId}</em>
                       </span>
-                      <span className="emap-task-agent-row">
-                        <b>worker</b>
+                      <span className="emap-task-agent-row role-worker" data-role="worker">
+                        <b>Worker</b>
                         <em>{worker?.name ?? task.workUnit.workerAgentId}</em>
                       </span>
-                      <span className="emap-task-agent-row">
-                        <b>checker</b>
+                      <span className="emap-task-agent-row role-checker" data-role="checker">
+                        <b>Checker</b>
                         <em>{checker?.name ?? task.workUnit.checkerAgentId}</em>
                       </span>
                     </div>
