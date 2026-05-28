@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
 import { makeDiscoveryForEachPlan, makeDiscoveryForEachRun, makeSequentialPlan, makeSequentialRun, MOCK_AGENTS, mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
 import type { AgentChatProcessEntry, TeamAttemptMetadata, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasTask, TeamRunState, TeamTaskConnection, TeamTaskDependency } from "../api/team-types";
@@ -7826,7 +7826,7 @@ describe("App", () => {
 
       vi.useFakeTimers();
       firePointer(atlas, "pointerdown", { pointerId: 41, clientX: 220, clientY: 0 });
-      vi.advanceTimersByTime(SELECTION_LONG_PRESS_MS + 1);
+      act(() => { vi.advanceTimersByTime(SELECTION_LONG_PRESS_MS + 1); });
       firePointer(atlas, "pointermove", { pointerId: 41, clientX: 720, clientY: 420 });
       firePointer(atlas, "pointerup", { pointerId: 41, clientX: 720, clientY: 420, buttons: 0 });
       vi.useRealTimers();
@@ -7847,7 +7847,7 @@ describe("App", () => {
 
       vi.useFakeTimers();
       firePointer(atlas, "pointerdown", { pointerId: 42, clientX: 300, clientY: 200 });
-      vi.advanceTimersByTime(50);
+      act(() => { vi.advanceTimersByTime(50); });
       firePointer(atlas, "pointermove", { pointerId: 42, clientX: 400, clientY: 300 });
       firePointer(atlas, "pointerup", { pointerId: 42, clientX: 400, clientY: 300, buttons: 0 });
       vi.useRealTimers();
