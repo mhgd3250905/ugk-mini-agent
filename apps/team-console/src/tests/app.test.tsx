@@ -7772,7 +7772,7 @@ describe("App", () => {
       await within(atlasNodes).findByRole("button", { name: "主 Agent" });
       expect(atlasNodes.querySelector(".emap-canvas-task-node")).toBeTruthy();
 
-      const agentFilter = screen.getByRole("button", { name: /^Agent$/ });
+      const agentFilter = screen.getByRole("tab", { name: /^Agent$/ });
       fireEvent.click(agentFilter);
 
       expect(atlasNodes.querySelector(".emap-canvas-task-node")).toBeNull();
@@ -7787,7 +7787,7 @@ describe("App", () => {
       const atlasNodes = getAtlasNodes(container);
       await within(atlasNodes).findByRole("button", { name: "主 Agent" });
 
-      const taskFilter = screen.getByRole("button", { name: /^Task$/ });
+      const taskFilter = screen.getByRole("tab", { name: /^Task$/ });
       fireEvent.click(taskFilter);
 
       expect(atlasNodes.querySelector(".emap-agent-node")).toBeNull();
@@ -7802,10 +7802,10 @@ describe("App", () => {
       const atlasNodes = getAtlasNodes(container);
       await within(atlasNodes).findByRole("button", { name: "主 Agent" });
 
-      fireEvent.click(screen.getByRole("button", { name: /^Agent$/ }));
+      fireEvent.click(screen.getByRole("tab", { name: /^Agent$/ }));
       expect(atlasNodes.querySelector(".emap-canvas-task-node")).toBeNull();
 
-      fireEvent.click(screen.getByRole("button", { name: /^ALL$/ }));
+      fireEvent.click(screen.getByRole("tab", { name: /^ALL$/ }));
       expect(atlasNodes.querySelector(".emap-agent-node")).toBeTruthy();
       expect(atlasNodes.querySelector(".emap-canvas-task-node")).toBeTruthy();
     });

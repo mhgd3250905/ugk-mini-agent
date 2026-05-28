@@ -56,6 +56,7 @@ type StoredCanvasUiState = {
   minimizedAgentNodeIds?: string[];
   minimizedTaskNodeIds?: string[];
   minimizedSourceNodeIds?: string[];
+  rootNodeFilter?: "all" | "agent" | "task";
 };
 
 type TaskEditDirtyField = "title" | "leaderAgentId" | "workerAgentId" | "checkerAgentId";
@@ -611,6 +612,7 @@ function readStoredCanvasUiState(): StoredCanvasUiState | null {
       minimizedAgentNodeIds: readStringArray(parsed.minimizedAgentNodeIds),
       minimizedTaskNodeIds: readStringArray(parsed.minimizedTaskNodeIds),
       minimizedSourceNodeIds: readStringArray(parsed.minimizedSourceNodeIds),
+      rootNodeFilter: parsed.rootNodeFilter === "agent" || parsed.rootNodeFilter === "task" ? parsed.rootNodeFilter : undefined,
     };
   } catch {
     return null;
@@ -893,6 +895,7 @@ export function App() {
   const [taskArchiveSaving, setTaskArchiveSaving] = useState(false);
   const [rootArchiveConfirm, setRootArchiveConfirm] = useState<RootArchiveConfirm | null>(null);
   const [rootArchiveSaving, setRootArchiveSaving] = useState(false);
+  const [rootNodeFilter, setRootNodeFilter] = useState<"all" | "agent" | "task">("all");
   const [taskLeaderCopyByTaskId, setTaskLeaderCopyByTaskId] = useState<Partial<Record<string, TaskLeaderCopyEntry>>>({});
   const taskLeaderManualCopyRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
 
@@ -1040,6 +1043,7 @@ export function App() {
     setMinimizedAgentNodeIds((stored.minimizedAgentNodeIds ?? []).filter((nodeId) => agentNodeIds.has(nodeId)));
     setMinimizedTaskNodeIds((stored.minimizedTaskNodeIds ?? []).filter((nodeId) => taskNodeIds.has(nodeId)));
     setMinimizedSourceNodeIds((stored.minimizedSourceNodeIds ?? []).filter((nodeId) => sourceNodeIds.has(nodeId)));
+    if (stored.rootNodeFilter) setRootNodeFilter(stored.rootNodeFilter);
     setCanvasUiStateHydrated(true);
   }, [
     agentNodes,
@@ -1067,6 +1071,7 @@ export function App() {
       minimizedAgentNodeIds,
       minimizedTaskNodeIds,
       minimizedSourceNodeIds,
+      rootNodeFilter,
     });
   }, [
     canvasUiStateHydrated,
@@ -1078,6 +1083,7 @@ export function App() {
     minimizedAgentNodeIds,
     minimizedSourceNodeIds,
     minimizedTaskNodeIds,
+    rootNodeFilter,
     selectedFixtureId,
   ]);
 
@@ -2183,6 +2189,11 @@ export function App() {
 
   const agentToolbar = (
     <div className="agent-atlas-actions">
+      <div className="root-filter-segment" role="tablist" aria-label="根节点显示">
+        <button type="button" role="tab" aria-pressed={rootNodeFilter === "all"} className={`root-filter-btn${rootNodeFilter === "all" ? " is-active" : ""}`} onClick={() => setRootNodeFilter("all")}>ALL</button>
+        <button type="button" role="tab" aria-pressed={rootNodeFilter === "agent"} className={`root-filter-btn${rootNodeFilter === "agent" ? " is-active" : ""}`} onClick={() => setRootNodeFilter("agent")}>Agent</button>
+        <button type="button" role="tab" aria-pressed={rootNodeFilter === "task"} className={`root-filter-btn${rootNodeFilter === "task" ? " is-active" : ""}`} onClick={() => setRootNodeFilter("task")}>Task</button>
+      </div>
       <div className="agent-toolbar-group agent-toolbar-agent-group">
         <button
           type="button"
@@ -3283,6 +3294,7 @@ export function App() {
                 viewport={canvasViewport}
                 onViewportChange={setCanvasViewport}
                 toolbarStart={agentToolbar}
+                rootNodeFilter={rootNodeFilter}
                 onRootTrashDrop={(entries) => {
                   const items: Array<RootArchiveConfirm> = [];
                   for (const entry of entries) {

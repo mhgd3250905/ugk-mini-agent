@@ -96,6 +96,7 @@ interface ExecutionMapProps {
   toolbarStart?: ReactNode;
   interactionMode?: AtlasInteractionMode;
   onRootTrashDrop?: (entries: AtlasNodeDragEntry[]) => void;
+  rootNodeFilter?: "all" | "agent" | "task";
 }
 
 type TaskChildBranchPanelDescriptor = NonNullable<ExecutionMapProps["taskChildBranchPanels"]>[number];
@@ -755,6 +756,7 @@ export function ExecutionMap({
   toolbarStart,
   interactionMode = "free",
   onRootTrashDrop,
+  rootNodeFilter = "all",
 }: ExecutionMapProps) {
   const evidenceContainerRef = useRef<HTMLDivElement | null>(null);
   const [measuredHeights, setMeasuredHeights] = useState<MeasuredHeights>({});
@@ -797,29 +799,44 @@ export function ExecutionMap({
   const minimizedAgentNodeIdSet = useMemo(() => new Set(minimizedAgentNodeIds), [minimizedAgentNodeIds]);
   const minimizedTaskNodeIdSet = useMemo(() => new Set(minimizedTaskNodeIds), [minimizedTaskNodeIds]);
   const minimizedSourceNodeIdSet = useMemo(() => new Set(minimizedSourceNodeIds), [minimizedSourceNodeIds]);
-  const visibleAgentNodes = useMemo(
+  const unfilteredVisibleAgentNodes = useMemo(
     () => agentNodes.filter((node) => !minimizedAgentNodeIdSet.has(node.nodeId)),
     [agentNodes, minimizedAgentNodeIdSet],
   );
-  const visibleTaskNodes = useMemo(
+  const unfilteredVisibleTaskNodes = useMemo(
     () => taskNodes.filter((node) => !minimizedTaskNodeIdSet.has(node.nodeId)),
     [minimizedTaskNodeIdSet, taskNodes],
   );
-  const visibleSourceNodes = useMemo(
+  const unfilteredVisibleSourceNodes = useMemo(
     () => sourceNodes.filter((node) => !minimizedSourceNodeIdSet.has(node.nodeId)),
     [minimizedSourceNodeIdSet, sourceNodes],
   );
+  const showAgents = rootNodeFilter === "all" || rootNodeFilter === "agent";
+  const showTasks = rootNodeFilter === "all" || rootNodeFilter === "task";
+  const showSources = rootNodeFilter === "task";
+  const visibleAgentNodes = useMemo(
+    () => showAgents ? unfilteredVisibleAgentNodes : [],
+    [showAgents, unfilteredVisibleAgentNodes],
+  );
+  const visibleTaskNodes = useMemo(
+    () => showTasks ? unfilteredVisibleTaskNodes : [],
+    [showTasks, unfilteredVisibleTaskNodes],
+  );
+  const visibleSourceNodes = useMemo(
+    () => showSources ? unfilteredVisibleSourceNodes : [],
+    [showSources, unfilteredVisibleSourceNodes],
+  );
   const hubAgentNodes = useMemo(
-    () => agentNodes.filter((node) => minimizedAgentNodeIdSet.has(node.nodeId)),
-    [agentNodes, minimizedAgentNodeIdSet],
+    () => showAgents ? agentNodes.filter((node) => minimizedAgentNodeIdSet.has(node.nodeId)) : [],
+    [agentNodes, minimizedAgentNodeIdSet, showAgents],
   );
   const hubTaskNodes = useMemo(
-    () => taskNodes.filter((node) => minimizedTaskNodeIdSet.has(node.nodeId)),
-    [minimizedTaskNodeIdSet, taskNodes],
+    () => showTasks ? taskNodes.filter((node) => minimizedTaskNodeIdSet.has(node.nodeId)) : [],
+    [minimizedTaskNodeIdSet, showTasks, taskNodes],
   );
   const hubSourceNodes = useMemo(
-    () => sourceNodes.filter((node) => minimizedSourceNodeIdSet.has(node.nodeId)),
-    [minimizedSourceNodeIdSet, sourceNodes],
+    () => showSources ? sourceNodes.filter((node) => minimizedSourceNodeIdSet.has(node.nodeId)) : [],
+    [minimizedSourceNodeIdSet, showSources, sourceNodes],
   );
 
   const hasActiveTaskLayoutInteraction = () => {
