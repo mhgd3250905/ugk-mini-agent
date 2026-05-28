@@ -38,6 +38,23 @@
 - 这只覆盖 Python 包。`ffmpeg`、`libreoffice`、`tesseract`、`poppler` 和稳定 PDF 转换器属于重型系统工具，后续要进 `Dockerfile` 并重建镜像。
 - 本轮实测 Canvas Task `task_d2f519578ed0` 跑通 LinkedIn 数据收集、SQLite 入库、HTML 报告、PDF 生成和页面刷新；过程中暴露的 PDF 问题是工具链不稳定，不是共享 Python venv 注入失败。
 
+## 2026-05-29 Team Console 菜单 / 垃圾桶 / 工具栏 / 卡片 / 缩放快照
+
+- 已提交：
+  - `73ef3eb fix(team-console): scope task delete confirmation`
+  - `1d2161e fix(team-console): restore trash drop position on cancel`
+  - `66733ae feat(team-console): polish atlas command toolbar`
+  - `176b963 feat(team-console): sharpen task card role hierarchy`
+  - `697df90 feat(team-console): snap atlas zoom for sharper text`
+- 已改：Task 菜单删除确认按 branch `nodeId` 归属，不再使用全局 boolean + 最后聚焦 Task 判断；多个 Task 菜单同时展开时，点击 A 的“删除”只会在 A 菜单下方展开确认，不会串到 B。
+- 已改：根节点拖入右下角垃圾桶后，如果确认 modal 选择“取消”，Agent / Task / Source 会回到拖拽前坐标；Task 根节点会同步回滚菜单、Run observer、文件详情等子树位置。
+- 已改：Execution Atlas 顶部工具栏改为 command deck，左侧是筛选 / 添加 / 统计，右侧是 viewport 控制；保留原按钮 aria-label，不破坏测试和键盘可访问性。
+- 已改：Task 根卡片角色区改为 Leader 主协调条 + Worker / Checker 双轨布局；这只是 Team Console 卡片展示层调整，不改变 Task API 的 `leaderAgentId` / `workerAgentId` / `checkerAgentId` 契约。
+- 已改：画布缩放从连续乘法改为固定可读档位 `45 / 50 / 67 / 75 / 90 / 100 / 110 / 125 / 150 / 180%`；pan offset 按当前 `devicePixelRatio` 对齐到设备像素，并增加字体渲染 hint。注意：DOM `transform: scale()` 无法让任意比例都像原生 100% 一样清晰，这次是降低发虚和半像素抖动，不是物理外挂。
+- 涉及文件：`apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/app.css`、`apps/team-console/src/graph/AtlasCanvasShell.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app.test.tsx`、`apps/team-console/src/tests/execution-map-ui.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/change-log.md`、`docs/handoff-current.md`。
+- focused 验证已跑：Task delete confirmation（3 passed）、trash（7 passed）、toolbar grouping（1 passed）、Task card role hierarchy（4 passed）、Canvas pan and zoom（9 passed）。最终全量验证看本轮最新提交后的记录。
+- 继续接手时仍不要 stage `.pi/skills/anthropics/skill-creator/**` 删除、`.pi/skills/skill-creator/`、`.codex/plans/*`、`public/anthropic-report.html`、`public/medtrum-view/`、`runtime/android16-ble-evidence/`。
+
 ## 2026-05-29 Team Console 过程展示与根卡片 UI 快照
 
 - 已提交：

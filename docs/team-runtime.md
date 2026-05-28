@@ -1,6 +1,6 @@
 # Team Runtime v2
 
-更新时间：2026-05-26
+更新时间：2026-05-29
 
 本文档是 Team Runtime v2 的唯一权威源。v0.1 域名调查历史见文末归档章节。
 
@@ -26,6 +26,7 @@
 - Team Console Canvas source input 后端契约已建立：source node 持久化为独立画布输入节点，source connection 只表示 source node `value` output 到 Task input port 的绑定。直接点击 Task “运行”时，`POST /v1/team/tasks/:taskId/runs` 会把 active source connection 注入 `state.source.boundInputs[]`、worker/checker payload 和 prompt；source node 不伪装成 Task artifact，不写 `sourceTaskId` / `sourceRunId` / `sourceAttemptId`，也不会自动触发下游 Task run。
 - Team Console Canvas source 前端已接入 Live API：工具栏”文本输出”创建可编辑 `string` source node，”文件输出”通过浏览器文件选择器创建 file source 并按扩展名推断 `md` / `json` / `html` / `string` / `file`。Source 节点是独立根节点，可拖动、框选、连到同类型 Task input port，并可收纳到底部 Dock；本地只保存 source 节点坐标和 Dock 收纳 id，不保存 source 内容。Agent 对话分支、Task Leader 对话分支、创建 Task 对话分支和 observer 文件详情面板支持标题栏双击最大化 / 还原，最大化覆盖整个浏览器 viewport（`position: fixed; inset: 0`），没有单独的还原按钮，还原靠标题栏双击；原有标题栏拖动和右下角 resize 行为保持不变。
 - Team Console Execution Atlas 根卡片清理入口已收口为垃圾桶 drop target：Agent / Task / Source 根卡片不再提供直接”归档”或”移除”按钮，根节点清理统一通过拖入右下角垃圾桶触发确认 modal。Source 和 Task 确认后分别调用 `POST /v1/team/source-nodes/:sourceNodeId/archive` 和 `POST /v1/team/tasks/:taskId/archive`，归档成功后根卡片、Dock 条目、相关连接线、展开分支和本地 UI 状态同步清理。Agent 确认后只从 Team Console 画布移除本地引用，不会调用 Agent profile archive API。归档失败时节点保留并在顶部 error banner 显示错误信息。Task dependency handle 已从右下角裸文本 `dep` 改为右侧中部的 amber 圆形 socket，有语义化 aria-label 区分”设为依赖源”、”设为依赖目标”和”已选依赖源”三种状态。Control dependency 渲染的 dashed amber 线 source 端有半圆 socket，中点有切断按钮可直接删除。
+- Team Console Execution Atlas 交互和视觉已完成一轮收口：Task 菜单删除确认按具体 branch `nodeId` 隔离，不再被最后聚焦的菜单串台；根节点拖入垃圾桶后如果在确认 modal 选择取消，会把 Agent / Task / Source 恢复到拖拽前坐标，Task 子树同步回滚。顶部工具栏按 command deck 分成筛选 / 添加 / 统计和 viewport 控制区；Task 根卡片角色区使用 Leader 主协调条 + Worker / Checker 双轨区，避免角色信息继续堆成三行无层级文本。画布缩放改为固定可读档位 `45 / 50 / 67 / 75 / 90 / 100 / 110 / 125 / 150 / 180%`，pan offset 按 `devicePixelRatio` 对齐到设备像素，并配合字体渲染 hint 降低 DOM transform 缩放后的文字发虚。
 - Team Console Execution Atlas 三类连接线（typed Task connection、Source connection、control dependency）均可从画布切断：每条 active 线段中点有一个小型切断按钮，但默认隐藏；鼠标悬浮到连接线透明命中区域或按钮获得 focus 时才显示，避免画布上常驻叉号噪音。按钮颜色随连接线类型（绿色/青色/琥珀色），`aria-label` 包含源和目标名称，点击后直接调用对应 DELETE API，删除中按钮禁用，失败时保留原线并显示 error banner。
 - Team Console 底部 Dock 已优化为常驻根节点托盘：默认半隐藏在画布下方；即使没有已收纳节点也保留一个根节点宽度的 2D 玻璃面板，不再渲染顶部发光把手或渐变底色。鼠标悬浮、键盘 focus、指针进入 Dock，或拖动中的根节点外框碰到 Dock 露出边缘时会动画上探展开；空 Dock 在鼠标移走后立即收回，非空 Dock 在鼠标移走后 3 秒收回。松手收纳同样按根节点外框与 Dock 矩形碰撞判断，不要求指针点已进入 Dock 内部。每个 Dock item 按 kind 带左侧色条 glyph（Agent 绿 A、Task 琥珀 T、Source 青 S）和 title/meta 信息，固定宽度避免 hover 抖动，Dock item 与边框四向 padding 保持一致，hover 时 `translateY(-4px)` 上浮；drop active 态有 inset guide 视觉；flight 动画补充节点 title；支持 `prefers-reduced-motion` 降级。
 - Team Console preview 的 Execution Map 建模按优先级挂载 generated child：显式 `parentTaskId`、仅在单一 `for_each` parent 时使用的安全 `sourceItemId` fallback、标记 `fallback: true` 的 id prefix fallback，仍无法归属的任务进入 orphan group；model builder 不修改传入的 plan/run/taskDefinitions。大量子任务折叠 summary node 会按隐藏子任务状态汇总，不再固定显示成功。

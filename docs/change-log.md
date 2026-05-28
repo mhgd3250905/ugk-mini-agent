@@ -12,6 +12,19 @@
 
 ---
 
+## 2026-05-29 — Team Console Atlas 菜单、垃圾桶、工具栏、卡片和缩放收口
+
+- **主题**: 修复 Team Console 多 Task 菜单焦点串台和垃圾桶取消位置残留，并继续优化 Atlas 顶部工具栏、Task 卡片层级和缩放清晰度。
+- **变更内容**:
+  - Task 菜单里的删除确认和保存中状态改为按 branch `nodeId` 归属，多个 Task 菜单同时展开时，点击 A 的删除不会在最后聚焦的 B 菜单下方弹出确认。
+  - 根节点拖入右下角垃圾桶后，如果确认 modal 选择“取消”，Agent / Task / Source 会回滚到拖拽前坐标；Task 根节点会同步回滚菜单、observer、文件详情等子树。
+  - Execution Atlas 顶部工具栏改为 command deck：左侧承载筛选、添加和统计，右侧承载 viewport 控制，减少一排按钮堆砌感。
+  - Task 根卡片角色区改为 Leader 主协调条 + Worker / Checker 双轨布局；运行状态继续用边框、状态条和 pill 区分，避免角色和状态都糊成文字堆。
+  - 画布缩放改为固定可读档位，并把 pan offset 按 `devicePixelRatio` 对齐到设备像素；CSS 增加文字渲染 hint，降低 DOM `transform: scale()` 后的文字发虚和半像素抖动。
+- **影响范围**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/AtlasCanvasShell.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/app/app.css`、`apps/team-console/src/tests/app.test.tsx`、`apps/team-console/src/tests/execution-map-ui.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/handoff-current.md`。
+- **验证**: focused tests 覆盖 Task 删除确认归属、垃圾桶取消回滚、toolbar 分组、Task 角色区和 canvas pan/zoom；最终全量验证见本轮提交记录。
+- **对应入口**: Team Console Execution Atlas，固定入口 `http://127.0.0.1:5174/`。
+
 ## 2026-05-29 — Team Console 过程展示与根卡片 UI 优化
 
 - **主题**: 优化 Team Console Execution Atlas 的运行过程阅读顺序、根节点卡片信息排版和连接线切断按钮定位。
