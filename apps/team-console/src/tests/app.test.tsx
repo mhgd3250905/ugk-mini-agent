@@ -2141,14 +2141,21 @@ describe("App", () => {
     fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
 
     // Task branch should be visible
-    const taskBranchShell = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
-    expect(taskBranchShell).toBeTruthy();
+    const taskBranchShell = await waitFor(() => {
+      const el = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
+      expect(el).toBeTruthy();
+      return el!;
+    });
 
     // Record original task root position and branch shell position
     const taskEl = container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]') as HTMLElement | null;
     expect(taskEl).toBeTruthy();
     const taskOriginalLeft = parseFloat(taskEl!.style.left);
     const taskOriginalTop = parseFloat(taskEl!.style.top);
+    const branchOriginalLeft = parseFloat(taskBranchShell.style.left);
+    const branchOriginalTop = parseFloat(taskBranchShell.style.top);
+    expect(Number.isFinite(branchOriginalLeft)).toBe(true);
+    expect(Number.isFinite(branchOriginalTop)).toBe(true);
 
     // Mock dock getBoundingClientRect
     const dockEl = container.querySelector(".emap-root-dock") as HTMLElement | null;
@@ -2181,9 +2188,13 @@ describe("App", () => {
     expect(parseFloat(restoredTask!.style.left)).toBe(taskOriginalLeft);
     expect(parseFloat(restoredTask!.style.top)).toBe(taskOriginalTop);
 
-    // Task menu branch should also be restored (position reset)
+    // Task menu branch should also be restored at the original position
     const restoredBranch = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
     expect(restoredBranch).toBeTruthy();
+    const restoredBranchLeft = parseFloat(restoredBranch!.style.left);
+    const restoredBranchTop = parseFloat(restoredBranch!.style.top);
+    expect(restoredBranchLeft).toBe(branchOriginalLeft);
+    expect(restoredBranchTop).toBe(branchOriginalTop);
   });
 
   it("opens the Task leader chat iframe from the action menu", async () => {

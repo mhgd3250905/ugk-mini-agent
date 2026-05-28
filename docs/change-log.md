@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-28 — Team Console Dock 拖拽收纳恢复位置修复
+
+- **主题**: 修复根节点拖入底部 Dock 收纳后，点击 Dock 恢复时节点和已展开 Task 菜单出现在 Dock 附近而非拖拽前位置的问题。
+- **变更内容**:
+  - `checkDockDrop` 在命中 Dock 后先将每个拖拽 entry 回滚到 `startPosition`，对 Task entry 反向回滚 `translateTaskSubtree` 的累计 delta，再调用 minimize。
+  - 恢复后根节点（Agent / Task / Source）和 Task 展开菜单回到拖入 Dock 前的画布坐标，不再从 Dock 附近冒出。
+  - 新增 3 个测试：Agent 根节点拖入 Dock 后恢复原位、Task 根节点拖入 Dock 后恢复原位、Task 展开菜单随根节点拖入 Dock 后恢复原位（断言 style.left/top 坐标值）。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/tests/app.test.tsx`。
+- **最终验证**: `npm --prefix apps/team-console run test`（413 passed）、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check HEAD~1..HEAD` 均通过。
+- **对应入口**: Team Console Execution Atlas 画布拖拽根节点进 Dock。
+
 ## 2026-05-28 — Team Console root Dock / Trash / Filter / Lasso UI
 
 - **主题**: Team Console Execution Atlas 根节点管理交互升级：底部 Dock、拖入 Dock 收纳动画、垃圾桶 drop target、顶部 segmented filter、左键长按框选。
