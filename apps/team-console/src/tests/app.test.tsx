@@ -2389,19 +2389,41 @@ describe("App", () => {
     expect(dock).toBeTruthy();
     const restoreButton = within(dock!).getByRole("button", { name: /复原 Agent 主 Agent/ });
 
-    fireEvent.click(restoreButton);
+    // Enable fake timers right before the click that triggers flight
+    vi.useFakeTimers({ toFake: ["setTimeout", "requestAnimationFrame"] });
+    try {
+      fireEvent.click(restoreButton);
 
-    const flight = container.querySelector(".emap-root-dock-flight");
-    expect(flight).toBeTruthy();
+      // Phase 1: flight starts at "from" with identity transform
+      const flightFrom = container.querySelector('.emap-root-dock-flight[data-flight-kind="restore"][data-flight-phase="from"]');
+      expect(flightFrom).toBeTruthy();
+      expect((flightFrom as HTMLElement).style.transform).toBe("translate3d(0, 0, 0) scale(1)");
 
-    await waitFor(() => {
+      // Advance RAF + timers to trigger "to" phase
+      await act(async () => {
+        vi.advanceTimersByTime(64);
+      });
+
+      const flightTo = container.querySelector('.emap-root-dock-flight[data-flight-kind="restore"][data-flight-phase="to"]');
+      expect(flightTo).toBeTruthy();
+      const toTransform = (flightTo as HTMLElement).style.transform;
+      // "to" transform must differ from identity
+      expect(toTransform).not.toBe("translate3d(0, 0, 0) scale(1)");
+
+      // Flight clears after timeout
+      await act(async () => {
+        vi.advanceTimersByTime(400);
+      });
+
       expect(container.querySelector(".emap-root-dock-flight")).toBeNull();
-    }, { timeout: 500 });
 
-    const restoredNode = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
-    expect(restoredNode).toBeTruthy();
-    expect(parseFloat(restoredNode!.style.left)).toBe(originalLeft);
-    expect(parseFloat(restoredNode!.style.top)).toBe(originalTop);
+      const restoredNode = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
+      expect(restoredNode).toBeTruthy();
+      expect(parseFloat(restoredNode!.style.left)).toBe(originalLeft);
+      expect(parseFloat(restoredNode!.style.top)).toBe(originalTop);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("opens the Task leader chat iframe from the action menu", async () => {

@@ -777,6 +777,7 @@ export function ExecutionMap({
   const [rootDropTarget, setRootDropTarget] = useState<"dock" | "trash" | null>(null);
   const [isAtlasDragging, setIsAtlasDragging] = useState(false);
   const [flightAnimation, setFlightAnimation] = useState<{
+    id: number; phase: "from" | "to";
     fromX: number; fromY: number; fromW: number; fromH: number;
     toX: number; toY: number; toW: number; toH: number;
     kind: "minimize" | "restore"; label: string;
@@ -787,6 +788,8 @@ export function ExecutionMap({
   const [taskBranchPositionOverrides, setTaskBranchPositionOverrides] = useState<Record<string, { x: number; y: number }>>({});
   const [panelMeasuredHeights, setPanelMeasuredHeights] = useState<Record<string, number>>({});
   const prevSelectionRef = useRef<string | null>(null);
+  const flightIdRef = useRef(0);
+  const flightTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const taskBranchShellRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const atlasNodeDragRef = useRef<AtlasNodeDragState | null>(null);
   const dockRef = useRef<HTMLElement | null>(null);
@@ -1326,6 +1329,24 @@ export function ExecutionMap({
     }, 0);
   }, []);
 
+  const startDockFlight = useCallback((flight: Omit<typeof flightAnimation extends infer T | null ? NonNullable<T> : never, "id" | "phase">) => {
+    const id = ++flightIdRef.current;
+    if (flightTimerRef.current != null) globalThis.clearTimeout(flightTimerRef.current);
+    setFlightAnimation({ ...flight, id, phase: "from" });
+    const scheduleFrame = globalThis.requestAnimationFrame?.bind(globalThis) ?? ((cb: FrameRequestCallback) => globalThis.setTimeout(() => cb(performance.now()), 16));
+    scheduleFrame(() => {
+      scheduleFrame(() => {
+        setFlightAnimation((current) => (
+          current?.id === id ? { ...current, phase: "to" } : current
+        ));
+      });
+    });
+    flightTimerRef.current = globalThis.setTimeout(() => {
+      flightTimerRef.current = null;
+      setFlightAnimation((current) => current?.id === id ? null : current);
+    }, 280);
+  }, []);
+
   const checkDockDrop = useCallback((drag: AtlasNodeDragState, event: ReactPointerEvent<HTMLElement>): boolean => {
     if (!dockRef.current || !drag.hasMoved) return false;
     const dockRect = dockRef.current.getBoundingClientRect();
@@ -1381,16 +1402,15 @@ export function ExecutionMap({
           flightLabel = srcNode?.title ?? primaryEntry.nodeId;
         }
       }
-      setFlightAnimation({
+      startDockFlight({
         fromX: fromRect.left, fromY: fromRect.top, fromW: fromRect.width, fromH: fromRect.height,
         toX: dockRect.left + dockRect.width / 2 - 45, toY: dockRect.top + 4, toW: 90, toH: 48,
         kind: "minimize", label: flightLabel,
       });
-      globalThis.setTimeout(() => setFlightAnimation(null), 260);
     }
 
     return true;
-  }, [onMinimizeAgent, onMinimizeCanvasTask, onMinimizeSourceNode, onMoveAgent, onMoveCanvasTask, onMoveSourceNode, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes]);
+  }, [onMinimizeAgent, onMinimizeCanvasTask, onMinimizeSourceNode, onMoveAgent, onMoveCanvasTask, onMoveSourceNode, startDockFlight, agentsById, tasksById, sourceNodesById, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes]);
 
   const endAgentPointer = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const drag = atlasNodeDragRef.current;
@@ -1744,12 +1764,11 @@ export function ExecutionMap({
               if (containerRect) {
                 const toX = containerRect.left + node.position.x * vp.scale + vp.x;
                 const toY = containerRect.top + node.position.y * vp.scale + vp.y;
-                setFlightAnimation({
+                startDockFlight({
                   fromX: itemRect.left, fromY: itemRect.top, fromW: itemRect.width, fromH: itemRect.height,
                   toX, toY, toW: NODE_WIDTH * vp.scale, toH: AGENT_NODE_HEIGHT * vp.scale,
                   kind: "restore", label,
                 });
-                globalThis.setTimeout(() => setFlightAnimation(null), 260);
               }
             }}
           >
@@ -1783,12 +1802,11 @@ export function ExecutionMap({
               if (containerRect) {
                 const toX = containerRect.left + node.position.x * vp.scale + vp.x;
                 const toY = containerRect.top + node.position.y * vp.scale + vp.y;
-                setFlightAnimation({
+                startDockFlight({
                   fromX: itemRect.left, fromY: itemRect.top, fromW: itemRect.width, fromH: itemRect.height,
                   toX, toY, toW: NODE_WIDTH * vp.scale, toH: CANVAS_TASK_NODE_HEIGHT * vp.scale,
                   kind: "restore", label,
                 });
-                globalThis.setTimeout(() => setFlightAnimation(null), 260);
               }
             }}
           >
@@ -1822,12 +1840,11 @@ export function ExecutionMap({
               if (containerRect) {
                 const toX = containerRect.left + node.position.x * vp.scale + vp.x;
                 const toY = containerRect.top + node.position.y * vp.scale + vp.y;
-                setFlightAnimation({
+                startDockFlight({
                   fromX: itemRect.left, fromY: itemRect.top, fromW: itemRect.width, fromH: itemRect.height,
                   toX, toY, toW: NODE_WIDTH * vp.scale, toH: CANVAS_SOURCE_NODE_HEIGHT * vp.scale,
                   kind: "restore", label,
                 });
-                globalThis.setTimeout(() => setFlightAnimation(null), 260);
               }
             }}
           >
@@ -1845,13 +1862,17 @@ export function ExecutionMap({
   const flightOverlay = flightAnimation ? (
     <div
       className="emap-root-dock-flight"
+      data-flight-kind={flightAnimation.kind}
+      data-flight-phase={flightAnimation.phase}
       style={{
         left: `${flightAnimation.fromX}px`,
         top: `${flightAnimation.fromY}px`,
         width: `${flightAnimation.fromW}px`,
         height: `${flightAnimation.fromH}px`,
-        transform: `translate3d(${flightAnimation.toX - flightAnimation.fromX}px, ${flightAnimation.toY - flightAnimation.fromY}px, 0) scale(${Math.max(flightAnimation.toW / flightAnimation.fromW, 0.3)}, ${Math.max(flightAnimation.toH / flightAnimation.fromH, 0.3)})`,
-        opacity: 0.4,
+        transform: flightAnimation.phase === "to"
+          ? `translate3d(${flightAnimation.toX - flightAnimation.fromX}px, ${flightAnimation.toY - flightAnimation.fromY}px, 0) scale(${Math.max(flightAnimation.toW / flightAnimation.fromW, 0.3)}, ${Math.max(flightAnimation.toH / flightAnimation.fromH, 0.3)})`
+          : "translate3d(0, 0, 0) scale(1)",
+        opacity: flightAnimation.phase === "to" ? 0.4 : 1,
       }}
     >
       {flightAnimation.label && <span className="emap-root-dock-flight-label">{flightAnimation.label}</span>}
