@@ -12,6 +12,23 @@
 
 ---
 
+## 2026-05-28 — Team Console 连接线切断入口与 Dock 视觉收口
+
+- **主题**: 三类画布连接线增加切断按钮，control dependency 补齐 source 半圆 socket，底部 Dock 视觉和交互收口。
+- **变更内容**:
+  - 前端 `TeamApiProvider` 新增 `deleteTaskConnection` adapter，补齐 typed task connection 的 DELETE 调用。
+  - `App.tsx` 新增三个 delete callback（`deleteTaskConnection`、`deleteSourceConnectionAction`、`deleteTaskDependencyAction`），含 pending state 和 error 处理，通过 props 传入 `ExecutionMap`。
+  - `ExecutionMap` 在 typed task connection、source connection、control dependency 的线段中点渲染切断按钮（`.emap-link-cut-button`），按钮颜色随连接线类型（绿/青/琥珀），`aria-label` 包含源和目标名称。
+  - Control dependency SVG 从裸 `<path>` 改为 `<g>` 包裹，source 端渲染 amber 半圆 socket（`.emap-connector-socket-task-dependency`）。
+  - Dock item 新增 `data-kind` 属性和 kind class（`emap-root-dock-item-agent/task/source`），内部结构改为 icon span + copy span，icon 按 kind 带色条。
+  - Dock CSS 改造：radius 8px，顶部内高光线，max-width `min(82vw, 860px)`，item 固定宽度 120px，hover `translateY(-4px)`，drop active inset guide，flight 补充节点 title。
+  - 新增 `@media (prefers-reduced-motion: reduce)` 降级 Dock 和 cut button 动效。
+  - 后端测试锁定 `DELETE /v1/team/task-connections/:connectionId` 路由。
+  - 前端新增 7 个测试覆盖：typed task connection 切断（成功+失败）、source connection 切断、dependency socket 存在、dependency 切断（成功+失败）、Dock item DOM 结构。
+- **影响范围**: `apps/team-console/src/api/team-api.ts`、`apps/team-console/src/fixtures/team-fixtures.ts`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app.test.tsx`、`test/team-task-routes.test.ts`、`apps/team-console/README.md`、`docs/team-runtime.md`。
+- **最终验证**: `npm --prefix apps/team-console run test`（421 passed）、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`node --test --import tsx test/team-task-routes.test.ts`（26 passed）、`git diff --check` 均通过。
+- **对应入口**: Team Console Execution Atlas 画布连接线切断按钮、底部 Dock 视觉。
+
 ## 2026-05-28 — Team Console Dock 拖拽收纳恢复位置修复
 
 - **主题**: 修复根节点拖入底部 Dock 收纳后，点击 Dock 恢复时节点和已展开 Task 菜单出现在 Dock 附近而非拖拽前位置的问题。

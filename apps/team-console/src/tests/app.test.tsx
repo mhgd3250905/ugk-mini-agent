@@ -393,6 +393,7 @@ describe("App", () => {
   it("cuts a typed Task connection from the canvas cut button", async () => {
     const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
     const existingConnection: TeamTaskConnection = {
+      schemaVersion: "team/task-connection-1",
       connectionId: "conn_cut_md",
       fromTaskId: collectTask.taskId,
       fromOutputPortId: "draft_md",
@@ -438,6 +439,7 @@ describe("App", () => {
   it("keeps Task connection line on delete failure and shows error", async () => {
     const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
     const existingConnection: TeamTaskConnection = {
+      schemaVersion: "team/task-connection-1",
       connectionId: "conn_fail_md",
       fromTaskId: collectTask.taskId,
       fromOutputPortId: "draft_md",
@@ -477,17 +479,19 @@ describe("App", () => {
   it("cuts a Source connection from the canvas cut button", async () => {
     const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
     const sourceNode: TeamCanvasSourceNode = {
+      schemaVersion: "team/source-node-1",
       sourceNodeId: "src_brief",
       title: "brief.md 文件",
-      outputPort: { id: "brief_md", label: "Markdown 文稿", type: "md" },
-      kind: "file",
+      nodeType: "file",
+      outputPort: { id: "value", label: "Markdown 文稿", type: "md" },
       createdAt: "2026-05-25T00:00:00.000Z",
       updatedAt: "2026-05-25T00:00:00.000Z",
     };
     const sourceConnection: TeamCanvasSourceConnection = {
+      schemaVersion: "team/source-connection-1",
       connectionId: "sc_cut_md",
       fromSourceNodeId: "src_brief",
-      fromOutputPortId: "brief_md",
+      fromOutputPortId: "value",
       toTaskId: htmlTask.taskId,
       toInputPortId: "source_md",
       type: "md",
