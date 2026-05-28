@@ -12,6 +12,20 @@
 
 ---
 
+## 2026-05-28 — Team Console root Dock / Trash / Filter / Lasso UI
+
+- **主题**: Team Console Execution Atlas 根节点管理交互升级：底部 Dock、拖入 Dock 收纳动画、垃圾桶 drop target、顶部 segmented filter、左键长按框选。
+- **变更内容**:
+  - 底部 macOS-like Dock 替代左侧 Root node Hub，承载已收纳的 Agent / Task / Source 根节点。
+  - 根节点可拖入 Dock 收纳（带缩小飞入动画），点击 Dock item 恢复到收纳前位置（带弹出动画）。
+  - 拖动根节点时右下角出现垃圾桶 drop target；拖入后 Task / Source 走软归档确认，Agent 走本地移出确认；多选拖入支持批量确认 modal。
+  - 顶部增加 ALL / Agent / Task segmented filter，按分类过滤可见根节点，filter 切换只影响显示不删除状态，选择持久化到 localStorage。
+  - 空白画布左键长按后拖动触发框选（`SELECTION_LONG_PRESS_MS = 200`），快速拖动仍走 pan；Shift + 拖动仍兼容直接框选。
+  - 测试覆盖 Dock 收纳/恢复、filter 切换、长按框选和快速 pan 不误触。
+  - 文档更新：README.md、team-runtime.md 同步新交互描述。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`、`AtlasCanvasShell.tsx`、`execution-map.css`、`App.tsx`、`app.css`、`app.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`。
+- **对应入口**: Team Console Execution Atlas 画布。
+
 ## 2026-05-28 — Team Console Task control dependency 交付修复
 
 - **主题**: 修复 Codex review 对 Task control dependency 实现提出的交付问题：EOL whitespace 假 diff、mock 模式 dependency handle 点击无效、文档缺失。
