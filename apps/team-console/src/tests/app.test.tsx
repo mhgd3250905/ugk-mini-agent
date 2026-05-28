@@ -2186,6 +2186,96 @@ describe("App", () => {
     });
   });
 
+  it("keeps an empty Dock panel visible without a handle and collapses immediately after pointer leave", async () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(<App />);
+
+      const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
+      expect(dock).toBeTruthy();
+      expect(dock).toHaveAttribute("data-empty", "true");
+      expect(dock).toHaveAttribute("data-dock-state", "collapsed");
+      expect(dock!.querySelector(".emap-root-dock-peek")).toBeNull();
+
+      fireEvent.pointerEnter(dock!);
+      expect(dock).toHaveAttribute("data-dock-state", "expanded");
+
+      fireEvent.mouseMove(window, { clientX: 20, clientY: 20 });
+      expect(dock).toHaveAttribute("data-dock-state", "collapsed");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits 3 seconds to collapse a non-empty Dock after pointer leave", async () => {
+    const { container } = render(<App />);
+    const taskEl = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
+    fireEvent.click(within(taskEl).getByRole("button", { name: "收纳 Task" }));
+
+    const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
+    expect(dock).toBeTruthy();
+    expect(dock).toHaveAttribute("data-empty", "false");
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.pointerEnter(dock!);
+      expect(dock).toHaveAttribute("data-dock-state", "expanded");
+      fireEvent.mouseMove(window, { clientX: 20, clientY: 20 });
+
+      await act(async () => {
+        vi.advanceTimersByTime(2999);
+      });
+      expect(dock).toHaveAttribute("data-dock-state", "expanded");
+
+      await act(async () => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(dock).toHaveAttribute("data-dock-state", "collapsed");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("expands the Dock while dragging a root node over the collapsed panel and collapses when leaving empty", async () => {
+    const { container } = render(<App />);
+    const taskEl = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
+
+    vi.useFakeTimers();
+    try {
+      const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
+      expect(dock).toBeTruthy();
+      expect(dock).toHaveAttribute("data-dock-state", "collapsed");
+      vi.spyOn(dock!, "getBoundingClientRect").mockReturnValue({
+        x: 330, y: 748, width: 560, height: 78,
+        left: 330, top: 748, right: 890, bottom: 826,
+        toJSON: () => ({}),
+      } as DOMRect);
+
+      const PID = 44;
+      firePointer(taskEl, "pointerdown", { pointerId: PID, clientX: 300, clientY: 300 });
+      firePointer(taskEl, "pointermove", { pointerId: PID, clientX: 420, clientY: 762 });
+      expect(dock).toHaveAttribute("data-dock-state", "expanded");
+      expect(dock!.classList.contains("is-drop-hover")).toBe(true);
+
+      firePointer(taskEl, "pointermove", { pointerId: PID, clientX: 120, clientY: 180 });
+      expect(dock).toHaveAttribute("data-dock-state", "collapsed");
+      firePointer(taskEl, "pointerup", { pointerId: PID, clientX: 120, clientY: 180 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the Dock shell flat glass with one-root minimum width and even padding", () => {
+    const executionMapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const dockBlock = executionMapCss.match(/\.emap-root-dock \{(?<block>[\s\S]*?)\n\}/)?.groups?.block ?? "";
+
+    expect(dockBlock).toContain("min-width: min(72vw, var(--emap-root-dock-min-width, 280px))");
+    expect(dockBlock).toContain("padding: 12px");
+    expect(dockBlock).toContain("background: rgba(");
+    expect(dockBlock).toContain("backdrop-filter: blur(");
+    expect(dockBlock).not.toContain("linear-gradient");
+  });
+
   it("restores Agent root node to pre-drag position after drag-to-dock minimize", async () => {
     const { container } = render(<App />);
 
@@ -2405,10 +2495,15 @@ describe("App", () => {
     try {
       fireEvent.click(restoreButton);
 
-      // Phase 1: flight starts at "from" with identity transform
+      // Phase 1: FLIP flight starts visually over the Dock item, with target-sized card scaled down.
       const flightFrom = container.querySelector('.emap-root-dock-flight[data-flight-kind="restore"][data-flight-phase="from"]');
       expect(flightFrom).toBeTruthy();
-      expect((flightFrom as HTMLElement).style.transform).toBe("translate3d(0, 0, 0) scale(1)");
+      const fromTransform = (flightFrom as HTMLElement).style.transform;
+      expect(fromTransform).not.toBe("translate3d(0, 0, 0) scale(1)");
+      expect(fromTransform).toContain("scale(");
+      expect(parseFloat((flightFrom as HTMLElement).style.width)).toBeGreaterThan(100);
+      expect(flightFrom!.querySelector(".emap-root-dock-flight-dock-face")).toBeTruthy();
+      expect(flightFrom!.querySelector(".emap-root-dock-flight-node-face")).toBeTruthy();
 
       // Real node must not be visible while flight is active (flicker guard)
       expect(container.querySelector('.emap-agent-node[data-agent-id="main"]')).toBeNull();
@@ -2427,8 +2522,9 @@ describe("App", () => {
       const flightTo = container.querySelector('.emap-root-dock-flight[data-flight-kind="restore"][data-flight-phase="to"]');
       expect(flightTo).toBeTruthy();
       const toTransform = (flightTo as HTMLElement).style.transform;
-      // "to" transform must differ from identity
-      expect(toTransform).not.toBe("translate3d(0, 0, 0) scale(1)");
+      // "to" transform lands on the target card position.
+      expect(toTransform).toBe("translate3d(0, 0, 0) scale(1)");
+      expect(flightTo!.querySelector(".emap-root-dock-flight-node-face.emap-agent-node")).toBeTruthy();
 
       // Real node still hidden during "to" phase
       expect(container.querySelector('.emap-agent-node[data-agent-id="main"]')).toBeNull();
@@ -2450,31 +2546,40 @@ describe("App", () => {
   });
 
   it("hides real Task node during restore flight and prevents duplicate restore", async () => {
+    const baseTask = mockTeamTasks[0]!;
+    const originalInputPorts = baseTask.workUnit.inputPorts;
+    baseTask.workUnit.inputPorts = [{ id: "source_md", label: "Markdown 输入", type: "md" }];
+    resetMockTeamApiState();
+
     const { container } = render(<App />);
 
-    // Task should be visible from mock fixture
-    await waitFor(() => {
-      expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeTruthy();
-    });
-    const taskEl = container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]') as HTMLElement;
-    const originalLeft = parseFloat(taskEl.style.left);
-    const originalTop = parseFloat(taskEl.style.top);
-
-    // Minimize task
-    fireEvent.click(within(taskEl).getByRole("button", { name: "收纳 Task" }));
-    expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeNull();
-
-    const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
-    expect(dock).toBeTruthy();
-    const restoreButton = within(dock!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ });
-
-    vi.useFakeTimers({ toFake: ["setTimeout", "requestAnimationFrame"] });
     try {
+      // Task should be visible from mock fixture
+      await waitFor(() => {
+        expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeTruthy();
+      });
+      const taskEl = container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]') as HTMLElement;
+      const originalLeft = parseFloat(taskEl.style.left);
+      const originalTop = parseFloat(taskEl.style.top);
+
+      // Minimize task
+      fireEvent.click(within(taskEl).getByRole("button", { name: "收纳 Task" }));
+      expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeNull();
+
+      const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
+      expect(dock).toBeTruthy();
+      const restoreButton = within(dock!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ });
+
+      vi.useFakeTimers({ toFake: ["setTimeout", "requestAnimationFrame"] });
       fireEvent.click(restoreButton);
 
       // Flight starts — real Task node must not be visible
       const flightFrom = container.querySelector('.emap-root-dock-flight[data-flight-kind="restore"][data-flight-phase="from"]');
       expect(flightFrom).toBeTruthy();
+      expect((flightFrom as HTMLElement).style.transform).not.toBe("translate3d(0, 0, 0) scale(1)");
+      expect(parseFloat((flightFrom as HTMLElement).style.width)).toBeGreaterThan(100);
+      expect(flightFrom!.querySelector(".emap-root-dock-flight-dock-face")).toBeTruthy();
+      expect(flightFrom!.querySelector(".emap-root-dock-flight-node-face")).toBeTruthy();
       expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeNull();
 
       // Dock item is disabled during pending restore
@@ -2486,6 +2591,18 @@ describe("App", () => {
       await act(async () => {
         vi.advanceTimersByTime(64);
       });
+      const flightTo = container.querySelector('.emap-root-dock-flight[data-flight-kind="restore"][data-flight-phase="to"]') as HTMLElement | null;
+      expect(flightTo).toBeTruthy();
+      expect(flightTo!.style.transform).toBe("translate3d(0, 0, 0) scale(1)");
+      expect(flightTo!.style.getPropertyValue("--emap-flight-content-scale")).toBeTruthy();
+      const nodeFace = flightTo!.querySelector(".emap-root-dock-flight-node-face.emap-canvas-task-node") as HTMLElement | null;
+      expect(nodeFace).toBeTruthy();
+      expect(nodeFace!.querySelector(".emap-task-ports")).toBeTruthy();
+      expect(nodeFace!.querySelector(".emap-task-port-row-input")).toBeTruthy();
+      expect(nodeFace!.querySelector(".emap-task-port-row-output")).toBeTruthy();
+      expect(within(nodeFace!).getByText("Markdown 输入")).toBeInTheDocument();
+      expect(within(nodeFace!).getByText("Markdown 报告")).toBeInTheDocument();
+      expect(nodeFace!.querySelector(".emap-task-dep-handle")).toBeTruthy();
       expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeNull();
 
       // Flight clears — real Task node appears at original position
@@ -2504,7 +2621,46 @@ describe("App", () => {
       expect(dockItemAfter).toBeNull();
     } finally {
       vi.useRealTimers();
+      baseTask.workUnit.inputPorts = originalInputPorts;
+      resetMockTeamApiState();
     }
+  });
+
+  it("keeps Dock restore flight transition active under reduced-motion", () => {
+    const executionMapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const reducedMotionFlightBlock = executionMapCss.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.emap-root-dock-flight \{(?<block>[\s\S]*?)\n  \}/)?.groups?.block ?? "";
+
+    expect(reducedMotionFlightBlock).toContain("transform 0.18s ease-out");
+    expect(reducedMotionFlightBlock).toContain("opacity 0.12s ease-out");
+    expect(reducedMotionFlightBlock).not.toContain("transition: none");
+  });
+
+  it("keeps Dock flight node face layout scaled after base node CSS", () => {
+    const executionMapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const flightNodeFaceBlock = executionMapCss.match(/\.emap-root-dock-flight \.emap-root-dock-flight-node-face \{(?<block>[\s\S]*?)\n\}/)?.groups?.block ?? "";
+
+    expect(flightNodeFaceBlock).toContain("width: calc(100% / var(--emap-flight-content-scale, 1))");
+    expect(flightNodeFaceBlock).toContain("height: calc(100% / var(--emap-flight-content-scale, 1))");
+    expect(flightNodeFaceBlock).toContain("min-height: calc(100% / var(--emap-flight-content-scale, 1))");
+    expect(flightNodeFaceBlock).toContain("bottom: auto");
+    expect(flightNodeFaceBlock).toContain("transform: scale(var(--emap-flight-content-scale, 1))");
+  });
+
+  it("hides Dock item content while its restore flight is active", () => {
+    const executionMapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const restoringItemBlock = executionMapCss.match(/\.emap-root-dock-item\[data-restoring="true"\] \{(?<block>[\s\S]*?)\n\}/)?.groups?.block ?? "";
+    const restoringContentBlock = executionMapCss.match(/\.emap-root-dock-item\[data-restoring="true"\] \.emap-root-dock-icon,\n\.emap-root-dock-item\[data-restoring="true"\] \.emap-root-dock-copy \{(?<block>[\s\S]*?)\n\}/)?.groups?.block ?? "";
+    const restoringAfterBlock = executionMapCss.match(/\.emap-root-dock-item\[data-restoring="true"\]::after \{(?<block>[\s\S]*?)\n\}/)?.groups?.block ?? "";
+
+    expect(restoringItemBlock).toContain("cursor: default");
+    expect(restoringItemBlock).toContain("opacity: 0");
+    expect(restoringItemBlock).toContain("background: transparent");
+    expect(restoringItemBlock).toContain("transform: none");
+    expect(restoringItemBlock).toContain("transition: none");
+    expect(restoringAfterBlock).toContain("content: none");
+    expect(restoringContentBlock).toContain("opacity: 0");
+    expect(restoringContentBlock).toContain("translateY(-6px) scale(0.92)");
+    expect(restoringContentBlock).toContain("transition: none");
   });
 
   it("prevents duplicate restore when Dock item is clicked during pending restore", async () => {

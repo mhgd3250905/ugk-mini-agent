@@ -12,6 +12,47 @@
 
 ---
 
+## 2026-05-28 — Team Console Dock 常驻半隐藏收纳区
+
+- **主题**: 将 Team Console 底部 Dock 改为常驻半隐藏收纳区，空 Dock 也保留固定宽度唤起区域。
+- **变更内容**:
+  - `ExecutionMap.tsx` 为 Dock 增加 `collapsed / expanded` 状态、空态标记和按空 / 非空分支的收起计时器。
+  - Dock 在鼠标悬浮、键盘 focus、Dock 内 pointer move 或拖动根节点命中 Dock 时自动上探展开；空 Dock 移出后立即收回，非空 Dock 移出后 3 秒收回。
+  - 空 Dock 不再通过 `:empty` 隐藏，也不再渲染顶部发光把手；最小宽度收口为一个根节点宽度，避免用户看不到可拖入收纳区域。
+  - 拖动根节点命中 Dock 时继续保留 drop hover 反馈，并兼容既有 minimize / restore flight、pending restore 透明占位和 Task port flight 缩放逻辑。
+  - `execution-map.css` 使用 transform 控制 Dock 上探 / 收回，Dock 壳改为无渐变的 2D 玻璃质感，并让 Dock item 与边框四向 padding 保持一致；保留现有 kind glyph、hover、drop active 和 reduced-motion flight 行为。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`。
+- **验证**: 已新增并跑通 focused tests：`npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "empty Dock panel|non-empty Dock|collapsed panel|flat glass"`；旧 Dock 相关 focused tests：`npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "Dock|dock|restore flight|drag-to-dock|reduced-motion"`；完整 Team Console 测试、build、`npx tsc --noEmit` 和 `git diff --check` 均通过。Codex in-app Browser 在 `http://127.0.0.1:5174/` 真实验证空 Dock 几何状态：收起态宽 280px、仅露 18px，hover 后上探到完整可见 52px，pointer leave 后立即回收；非空 Dock pointer leave 后 3 秒回收；从根 Task 坐标拖拽路径靠近收起 Dock 面板时会展开。
+- **对应入口**: Team Console Execution Atlas 底部 Dock。
+
+## 2026-05-28 — Team Console Dock 还原真实动效修复
+
+- **主题**: 修复 Dock item 点击还原时先闪出目标位置幽灵卡、缺少可感知飞行动效的问题。
+- **变更内容**:
+  - `ExecutionMap.tsx` 将 Dock flight overlay 收口为 FLIP 动画：还原时渲染目标尺寸的飞行卡，并从 Dock item 坐标用 `transform` 缩放/平移到根节点目标坐标。
+  - `startDockFlight` 不再依赖双 `requestAnimationFrame` 赌首帧绘制，改为显式保留 `from` phase 窗口后再切到 `to` phase，避免真实浏览器吞掉起点帧。
+  - Flight overlay 内部拆成 Dock face 与真实节点 face 两层：还原运动中 Dock 样式渐隐、目标节点样式渐显，避免到终点才硬切样式。
+  - Task 还原 flight 的目标节点 face 同步渲染真实 Task 卡片里的 `IN/OUT` port chip 和右侧 dependency handle，避免动画结束后真实节点接管时再突然补出端口区导致二次变形。
+  - Flight 目标节点 face 新增 `--emap-flight-content-scale`，按当前画布 viewport scale 缩放内部真实卡片内容，并在 `.emap-node` 基础规则之后用更高优先级重声明 face 宽高，避免 fixed overlay 外框使用屏幕尺寸但内部文字/port 仍按 100% CSS 尺寸排版，造成 `OUT` 行在还原中被裁掉。
+  - Dock item 在 pending restore 期间立即变为完全透明的布局占位，不再显示 dashed 空槽或原有 icon / title / meta，避免视觉上出现“Dock 原卡还在，同时另一张卡飞走”的复制感。
+  - Restore 目标坐标改按 `.execution-map-nodes` 的真实 `getBoundingClientRect()` 计算，不再用外层 container 估算，避免 flight 清除时真实节点出现位置轻微跳动。
+  - `execution-map.css` 让 `prefers-reduced-motion: reduce` 下的 Dock flight 保留短 transition；旧规则直接 `transition: none` 会把还原动效变成目标位置闪烁。
+  - 回归测试覆盖 FLIP transform 起点、真实节点隐藏、reduced-motion 下 Dock flight transition 不被禁用。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app.test.tsx`。
+- **真实浏览器验证**: `http://127.0.0.1:5174/` 下 Chrome 采样显示 `prefers-reduced-motion: reduce` 为 true 时，20ms flight 位于 Dock 且 Dock face opacity=1/node face opacity=0，120ms 位于中途且两层 opacity 交叉，220ms flight rect 与最终真实节点 rect 完全一致，370ms flight 清除且真实节点出现；`HTML 制作 Task` restore 采样中 flight 全程已包含 `IN/OUT` ports 和 dependency handle，`--emap-flight-content-scale=0.67`，`OUT` 行在 20/80/160ms 均位于 flight 外框内，最终真实节点 rect 未变化；`PTT热帖内容整理` restore 采样显示 pending Dock item 在 20ms/80ms/160ms 均为 `opacity: 0`、透明背景、`::after content: none`，但保留原 rect 占位。
+- **对应入口**: Team Console 底部 Dock item 点击还原。
+
+## 2026-05-28 — glm-plan 协作验收规范强化
+
+- **主题**: 针对外部 GLM/coding agent 反复因弱验收返工的问题，强化 repo-local `glm-plan` 技能的计划模板和交付标准。
+- **变更内容**:
+  - `.codex/skills/glm-plan/SKILL.md` 新增常见返工模式清单，明确阻断“实现当证明”“只测元素存在”“假动画”“宽泛 suppress warning”“把浏览器验证甩给用户”等问题。
+  - 新增 Behavior Evidence Contract：验收优先级固定为真实入口行为、会失败的 focused tests、类型/构建检查、diff/提交纯净度。
+  - UI / 浏览器可见任务的计划必须写明真实 URL、selector / ARIA、before/after measured evidence 和浏览器自动化要求。
+  - sendable message 模板补充 UI 任务必须交付 measured evidence、禁止宽泛 suppress console warning。
+- **影响范围**: repo-local coding agent 协作流程，不影响产品运行时 `.pi/skills`。
+- **对应入口**: `.codex/skills/glm-plan/SKILL.md`。
+
 ## 2026-05-28 — Team Console Dock 还原闪烁修复
 
 - **主题**: Dock item 还原动画期间真实根节点卡片提前显示导致双影闪烁。

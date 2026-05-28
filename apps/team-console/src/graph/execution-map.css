@@ -122,34 +122,59 @@
 .emap-root-dock {
   position: absolute;
   left: 50%;
-  bottom: 14px;
-  transform: translateX(-50%);
+  bottom: 0;
+  transform: translate(-50%, calc(100% - 18px));
   z-index: 5;
   display: flex;
   align-items: stretch;
-  gap: 4px;
-  padding: 6px 10px;
+  justify-content: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: min(72vw, var(--emap-root-dock-min-width, 280px));
+  padding: 12px;
   min-height: 28px;
-  border: 1px solid rgba(122, 131, 151, 0.22);
+  border: 1px solid rgba(185, 207, 232, 0.18);
   border-radius: 8px;
-  background: rgba(9, 15, 26, 0.92);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 28px rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(14px);
+  background: rgba(8, 15, 24, 0.72);
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(16px) saturate(1.14);
   pointer-events: auto;
   max-width: min(82vw, 860px);
   overflow-x: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(122, 131, 151, 0.18) transparent;
-  transition: opacity 0.15s;
+  transition:
+    transform 0.22s cubic-bezier(0.2, 0.85, 0.2, 1),
+    opacity 0.16s ease-out,
+    border-color 0.16s ease-out,
+    box-shadow 0.16s ease-out,
+    background 0.16s ease-out;
 }
 
-.emap-root-dock:empty {
-  opacity: 0;
-  pointer-events: none;
+.emap-root-dock[data-dock-state="expanded"] {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.emap-root-dock[data-dock-state="collapsed"] {
+  opacity: 0.84;
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.emap-root-dock[data-empty="true"] {
+  min-height: 52px;
 }
 
 .emap-root-dock-item {
   appearance: none;
+  position: relative;
   flex-shrink: 0;
   display: flex;
   align-items: stretch;
@@ -166,6 +191,26 @@
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s, transform 0.15s;
   overflow: hidden;
+}
+
+.emap-root-dock-item[data-restoring="true"] {
+  cursor: default;
+  opacity: 0;
+  border-color: transparent;
+  background: transparent;
+  transform: none;
+  transition: none;
+}
+
+.emap-root-dock-item[data-restoring="true"]::after {
+  content: none;
+}
+
+.emap-root-dock-item[data-restoring="true"] .emap-root-dock-icon,
+.emap-root-dock-item[data-restoring="true"] .emap-root-dock-copy {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.92);
+  transition: none;
 }
 
 .emap-root-dock-icon {
@@ -199,6 +244,11 @@
   flex: 1;
   min-width: 0;
   padding: 4px 6px;
+  transition: opacity 0.12s ease-out, transform 0.16s ease-out;
+}
+
+.emap-root-dock-icon {
+  transition: opacity 0.12s ease-out, transform 0.16s ease-out;
 }
 
 .emap-root-dock-item:hover,
@@ -211,13 +261,19 @@
 
 .emap-root-dock.is-drop-active {
   border-color: rgba(121, 216, 208, 0.6);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 28px rgba(0, 0, 0, 0.32), inset 0 0 0 1px rgba(121, 216, 208, 0.15);
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 0 0 1px rgba(121, 216, 208, 0.15);
 }
 
 .emap-root-dock.is-drop-hover {
   border-color: rgba(121, 216, 208, 0.9);
-  background: rgba(121, 216, 208, 0.06);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 28px rgba(0, 0, 0, 0.32), inset 0 0 20px rgba(121, 216, 208, 0.06);
+  background: rgba(13, 32, 39, 0.78);
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 0 0 1px rgba(121, 216, 208, 0.22);
 }
 
 .emap-root-dock-kind,
@@ -255,23 +311,108 @@
   position: fixed;
   z-index: 100;
   pointer-events: none;
-  padding: 5px 8px;
-  border: 1px solid rgba(121, 216, 208, 0.5);
+  padding: 0;
+  border: 0;
   border-radius: 7px;
-  background: rgba(9, 15, 26, 0.95);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-  transition: transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1), opacity 0.22s ease-out;
+  overflow: visible;
+  background: transparent;
+  box-shadow: none;
+  transform-origin: top left;
+  will-change: transform, opacity;
+  transition:
+    transform 0.24s cubic-bezier(0.18, 0.88, 0.22, 1),
+    opacity 0.16s ease-out;
+  contain: layout paint;
 }
 
-.emap-root-dock-flight-label {
-  display: block;
-  font-size: 10px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.6);
+.emap-root-dock-flight-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 7px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 80px;
+  transition: opacity 0.18s ease-out;
+}
+
+.emap-root-dock-flight-dock-face {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(121, 216, 208, 0.32);
+  background: rgba(9, 15, 26, 0.9);
+  box-shadow:
+    0 0 0 1px rgba(121, 216, 208, 0.08),
+    0 12px 26px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.emap-root-dock-flight-task .emap-root-dock-flight-dock-face {
+  border-color: rgba(255, 190, 96, 0.34);
+  background: rgba(23, 18, 11, 0.9);
+}
+
+.emap-root-dock-flight-node-face {
+  position: absolute;
+  inset: 0;
+  width: calc(100% / var(--emap-flight-content-scale, 1));
+  height: calc(100% / var(--emap-flight-content-scale, 1));
+  min-height: 0;
+  margin: 0;
+  cursor: default;
+  transform: scale(var(--emap-flight-content-scale, 1));
+  transform-origin: top left;
+}
+
+.emap-root-dock-flight-node-face:hover {
+  transform: scale(var(--emap-flight-content-scale, 1));
+}
+
+.emap-root-dock-flight-node-face .emap-node-content {
+  pointer-events: none;
+}
+
+.emap-root-dock-flight-node-face .emap-task-port-chip,
+.emap-root-dock-flight-node-face .emap-task-dep-handle {
+  cursor: default;
+  pointer-events: none;
+}
+
+.emap-root-dock-flight-minimize {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  z-index: 2;
+  width: 26px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(122, 131, 151, 0.24);
+  border-radius: 4px;
+  background: rgba(2, 4, 11, 0.5);
+  color: var(--secondary);
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.emap-root-dock-flight[data-flight-kind="restore"][data-flight-phase="from"] .emap-root-dock-flight-dock-face,
+.emap-root-dock-flight[data-flight-kind="minimize"][data-flight-phase="to"] .emap-root-dock-flight-dock-face {
+  opacity: 1;
+}
+
+.emap-root-dock-flight[data-flight-kind="restore"][data-flight-phase="to"] .emap-root-dock-flight-dock-face,
+.emap-root-dock-flight[data-flight-kind="minimize"][data-flight-phase="from"] .emap-root-dock-flight-dock-face {
+  opacity: 0;
+}
+
+.emap-root-dock-flight[data-flight-kind="restore"][data-flight-phase="from"] .emap-root-dock-flight-node-face,
+.emap-root-dock-flight[data-flight-kind="minimize"][data-flight-phase="to"] .emap-root-dock-flight-node-face {
+  opacity: 0;
+}
+
+.emap-root-dock-flight[data-flight-kind="restore"][data-flight-phase="to"] .emap-root-dock-flight-node-face,
+.emap-root-dock-flight[data-flight-kind="minimize"][data-flight-phase="from"] .emap-root-dock-flight-node-face {
+  opacity: 1;
 }
 
 .emap-root-trash {
@@ -466,6 +607,17 @@
   box-shadow:
     0 10px 24px rgba(0, 0, 0, 0.24),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.emap-root-dock-flight .emap-root-dock-flight-node-face {
+  right: auto;
+  bottom: auto;
+  width: calc(100% / var(--emap-flight-content-scale, 1));
+  height: calc(100% / var(--emap-flight-content-scale, 1));
+  min-height: calc(100% / var(--emap-flight-content-scale, 1));
+  transform: scale(var(--emap-flight-content-scale, 1));
+  transform-origin: top left;
+  transition: opacity 0.18s ease-out;
 }
 
 .emap-node:focus-visible {
@@ -2864,7 +3016,10 @@
     transform: none;
   }
   .emap-root-dock-flight {
-    transition: none;
+    /* Keep a short transition; disabling this turns restore into a target flash. */
+    transition:
+      transform 0.18s ease-out,
+      opacity 0.12s ease-out;
   }
   .emap-link-cut-button {
     transition: none;
