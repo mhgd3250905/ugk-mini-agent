@@ -131,13 +131,15 @@
   padding: 6px 10px;
   min-height: 28px;
   border: 1px solid rgba(122, 131, 151, 0.22);
-  border-radius: 10px;
+  border-radius: 8px;
   background: rgba(9, 15, 26, 0.92);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 28px rgba(0, 0, 0, 0.32);
   backdrop-filter: blur(14px);
   pointer-events: auto;
-  max-width: 80vw;
+  max-width: min(82vw, 860px);
   overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(122, 131, 151, 0.18) transparent;
   transition: opacity 0.15s;
 }
 
@@ -149,36 +151,73 @@
 .emap-root-dock-item {
   appearance: none;
   flex-shrink: 0;
-  min-width: 90px;
-  max-width: 140px;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  width: 120px;
   min-height: 48px;
-  padding: 5px 8px;
-  border: 1px solid rgba(122, 131, 151, 0.2);
+  padding: 0;
+  border: 1px solid rgba(122, 131, 151, 0.18);
   border-radius: 7px;
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(255, 255, 255, 0.035);
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s, transform 0.15s;
+  overflow: hidden;
+}
+
+.emap-root-dock-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  font-size: 9px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.55);
+  writing-mode: horizontal-tb;
+}
+
+.emap-root-dock-item-agent .emap-root-dock-icon {
+  background: rgba(100, 210, 120, 0.18);
+  color: rgba(100, 210, 120, 0.85);
+}
+
+.emap-root-dock-item-task .emap-root-dock-icon {
+  background: rgba(230, 170, 60, 0.18);
+  color: rgba(230, 170, 60, 0.85);
+}
+
+.emap-root-dock-item-source .emap-root-dock-icon {
+  background: rgba(100, 200, 220, 0.18);
+  color: rgba(100, 200, 220, 0.85);
+}
+
+.emap-root-dock-copy {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
 }
 
 .emap-root-dock-item:hover,
 .emap-root-dock-item:focus-visible {
-  border-color: rgba(121, 216, 208, 0.62);
-  background: rgba(121, 216, 208, 0.08);
-  transform: translateY(-3px);
+  border-color: rgba(121, 216, 208, 0.52);
+  background: rgba(121, 216, 208, 0.07);
+  transform: translateY(-4px);
   outline: none;
 }
 
 .emap-root-dock.is-drop-active {
-  border-color: rgba(121, 216, 208, 0.7);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32), 0 0 0 2px rgba(121, 216, 208, 0.25);
+  border-color: rgba(121, 216, 208, 0.6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 28px rgba(0, 0, 0, 0.32), inset 0 0 0 1px rgba(121, 216, 208, 0.15);
 }
 
 .emap-root-dock.is-drop-hover {
   border-color: rgba(121, 216, 208, 0.9);
   background: rgba(121, 216, 208, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 28px rgba(0, 0, 0, 0.32), inset 0 0 20px rgba(121, 216, 208, 0.06);
 }
 
 .emap-root-dock-kind,
@@ -222,6 +261,17 @@
   background: rgba(9, 15, 26, 0.95);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
   transition: transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1), opacity 0.22s ease-out;
+}
+
+.emap-root-dock-flight-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 80px;
 }
 
 .emap-root-trash {
@@ -2806,4 +2856,17 @@
     margin-bottom: 8px;
   }
 
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .emap-root-dock-item:hover,
+  .emap-root-dock-item:focus-visible {
+    transform: none;
+  }
+  .emap-root-dock-flight {
+    transition: none;
+  }
+  .emap-link-cut-button {
+    transition: none;
+  }
 }

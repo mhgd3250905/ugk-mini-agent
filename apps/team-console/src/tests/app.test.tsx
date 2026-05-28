@@ -2272,6 +2272,38 @@ describe("App", () => {
     expect(restoredTop).toBe(originalTop);
   });
 
+  it("dock items have data-kind, kind class, icon, and copy DOM", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" }));
+    fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
+
+    const agentNode = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
+    const taskNode = container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]') as HTMLElement | null;
+    expect(agentNode).toBeTruthy();
+    expect(taskNode).toBeTruthy();
+
+    fireEvent.click(within(agentNode!).getByRole("button", { name: "收纳 Agent" }));
+    fireEvent.click(within(taskNode!).getByRole("button", { name: "收纳 Task" }));
+
+    const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
+    expect(dock).toBeTruthy();
+
+    const agentItem = dock!.querySelector('.emap-root-dock-item[data-kind="agent"]');
+    expect(agentItem).toBeTruthy();
+    expect(agentItem!.classList.contains("emap-root-dock-item-agent")).toBe(true);
+    expect(agentItem!.querySelector(".emap-root-dock-icon")).toBeTruthy();
+    expect(agentItem!.querySelector(".emap-root-dock-copy")).toBeTruthy();
+
+    const taskItem = dock!.querySelector('.emap-root-dock-item[data-kind="task"]');
+    expect(taskItem).toBeTruthy();
+    expect(taskItem!.classList.contains("emap-root-dock-item-task")).toBe(true);
+    expect(taskItem!.querySelector(".emap-root-dock-icon")).toBeTruthy();
+    expect(taskItem!.querySelector(".emap-root-dock-copy")).toBeTruthy();
+  });
+
   it("restores Task menu branch position after drag-to-dock minimize", async () => {
     const { container } = render(<App />);
 

@@ -1367,10 +1367,24 @@ export function ExecutionMap({
     const primaryEl = (event.currentTarget as HTMLElement).closest?.(`[data-node-id="${drag.primaryNodeId}"]`) as HTMLElement | null;
     if (primaryEl) {
       const fromRect = primaryEl.getBoundingClientRect();
+      const primaryEntry = drag.entries[0];
+      let flightLabel = "";
+      if (primaryEntry) {
+        if (primaryEntry.kind === "agent") {
+          const agent = agentsById?.get(primaryEntry.nodeId);
+          flightLabel = agent?.name ?? primaryEntry.nodeId;
+        } else if (primaryEntry.kind === "task") {
+          const task = tasksById?.get(primaryEntry.nodeId);
+          flightLabel = task?.title ?? primaryEntry.nodeId;
+        } else {
+          const srcNode = sourceNodesById?.get(primaryEntry.nodeId);
+          flightLabel = srcNode?.title ?? primaryEntry.nodeId;
+        }
+      }
       setFlightAnimation({
         fromX: fromRect.left, fromY: fromRect.top, fromW: fromRect.width, fromH: fromRect.height,
         toX: dockRect.left + dockRect.width / 2 - 45, toY: dockRect.top + 4, toW: 90, toH: 48,
-        kind: "minimize", label: "",
+        kind: "minimize", label: flightLabel,
       });
       globalThis.setTimeout(() => setFlightAnimation(null), 260);
     }
@@ -1716,7 +1730,8 @@ export function ExecutionMap({
           <button
             key={`dock-${node.nodeId}`}
             type="button"
-            className="emap-root-dock-item"
+            className="emap-root-dock-item emap-root-dock-item-agent"
+            data-kind="agent"
             aria-label={`复原 Agent ${label}`}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
@@ -1724,9 +1739,12 @@ export function ExecutionMap({
               onRestoreAgent?.(node);
             }}
           >
-            <span className="emap-root-dock-kind">Agent</span>
-            <span className="emap-root-dock-title">{label}</span>
-            <span className="emap-root-dock-meta">{node.agentId}</span>
+            <span className="emap-root-dock-icon" aria-hidden="true">A</span>
+            <span className="emap-root-dock-copy">
+              <span className="emap-root-dock-kind">Agent</span>
+              <span className="emap-root-dock-title">{label}</span>
+              <span className="emap-root-dock-meta">{node.agentId}</span>
+            </span>
           </button>
         );
       })}
@@ -1737,7 +1755,8 @@ export function ExecutionMap({
           <button
             key={`dock-${node.nodeId}`}
             type="button"
-            className="emap-root-dock-item"
+            className="emap-root-dock-item emap-root-dock-item-task"
+            data-kind="task"
             aria-label={`复原 Task ${label}`}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
@@ -1745,9 +1764,12 @@ export function ExecutionMap({
               onRestoreCanvasTask?.(node);
             }}
           >
-            <span className="emap-root-dock-kind">Task</span>
-            <span className="emap-root-dock-title">{label}</span>
-            <span className="emap-root-dock-meta">{node.taskId}</span>
+            <span className="emap-root-dock-icon" aria-hidden="true">T</span>
+            <span className="emap-root-dock-copy">
+              <span className="emap-root-dock-kind">Task</span>
+              <span className="emap-root-dock-title">{label}</span>
+              <span className="emap-root-dock-meta">{node.taskId}</span>
+            </span>
           </button>
         );
       })}
@@ -1758,7 +1780,8 @@ export function ExecutionMap({
           <button
             key={`dock-${node.nodeId}`}
             type="button"
-            className="emap-root-dock-item"
+            className="emap-root-dock-item emap-root-dock-item-source"
+            data-kind="source"
             aria-label={`复原 Source ${label}`}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
@@ -1766,9 +1789,12 @@ export function ExecutionMap({
               onRestoreSourceNode?.(node);
             }}
           >
-            <span className="emap-root-dock-kind">Source</span>
-            <span className="emap-root-dock-title">{label}</span>
-            <span className="emap-root-dock-meta">{sourceNode?.outputPort.type ?? node.sourceNodeId}</span>
+            <span className="emap-root-dock-icon" aria-hidden="true">S</span>
+            <span className="emap-root-dock-copy">
+              <span className="emap-root-dock-kind">Source</span>
+              <span className="emap-root-dock-title">{label}</span>
+              <span className="emap-root-dock-meta">{sourceNode?.outputPort.type ?? node.sourceNodeId}</span>
+            </span>
           </button>
         );
       })}
@@ -1785,7 +1811,9 @@ export function ExecutionMap({
         transform: `translate3d(${flightAnimation.toX - flightAnimation.fromX}px, ${flightAnimation.toY - flightAnimation.fromY}px, 0) scale(${Math.max(flightAnimation.toW / flightAnimation.fromW, 0.3)}, ${Math.max(flightAnimation.toH / flightAnimation.fromH, 0.3)})`,
         opacity: 0.4,
       }}
-    />
+    >
+      {flightAnimation.label && <span className="emap-root-dock-flight-label">{flightAnimation.label}</span>}
+    </div>
   ) : null;
 
   const trashEl = isAtlasDragging ? (
