@@ -7459,3 +7459,17 @@
   - [apps/team-console/src/app/App.tsx](/E:/AII/ugk-pi/apps/team-console/src/app/App.tsx)
   - [apps/team-console/src/tests/app.test.tsx](/E:/AII/ugk-pi/apps/team-console/src/tests/app.test.tsx)
   - 验证命令：`npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "dependency|archive|trash|移出|归档"`
+
+### Team Console 5174 固定入口
+- 日期：2026-05-28
+- 主题：把 `http://127.0.0.1:5174/` 从手动 Vite 进程收口为 Docker Compose 管理的本地固定 Team Console 入口。
+- 影响范围：
+  - `docker-compose.yml` — 新增 `ugk-pi-team-console` 服务，绑定 `127.0.0.1:5174:5174`，通过 compose 网络代理到 `http://ugk-pi:3000`，并用独立 volume 管理 `apps/team-console/node_modules`
+  - `apps/team-console/package.json` — 新增 `dev:docker`，容器内使用 `vite --host 0.0.0.0 --port 5174`
+  - `apps/team-console/README.md` — 记录固定入口、手动开发入口和 `3000` / `5174` 分工
+  - `docs/team-runtime.md` — 同步本地 compose 运行口径和验证命令
+- 对应入口：
+  - [docker-compose.yml](/E:/AII/ugk-pi/docker-compose.yml)
+  - [apps/team-console/package.json](/E:/AII/ugk-pi/apps/team-console/package.json)
+  - [apps/team-console/README.md](/E:/AII/ugk-pi/apps/team-console/README.md)
+  - [docs/team-runtime.md](/E:/AII/ugk-pi/docs/team-runtime.md)

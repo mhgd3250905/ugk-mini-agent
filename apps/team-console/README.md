@@ -8,7 +8,18 @@
 npm install
 ```
 
-## 启动开发
+## 固定本地入口
+
+Team Console 的固定本地入口由根目录 Docker Compose 管理：
+
+```bash
+docker compose up -d ugk-pi ugk-pi-team-console
+# 访问 http://127.0.0.1:5174
+```
+
+`5174` 是 Team Console 前端入口，`3000` 仍是真实后端入口。Docker 内的 Team Console 服务通过 `TEAM_CONSOLE_API_TARGET=http://ugk-pi:3000` 代理 `/v1`、`/playground`、`/assets`、`/runtime`、`/vendor` 等主服务路径。执行 `docker compose restart ugk-pi` 后，如果浏览器撞上后端重启窗口出现瞬时 500，等待 `ugk-pi` healthy 后刷新 `5174`，不要开 `3100` 临时后端。
+
+## 手动开发
 
 ```bash
 npm run dev
@@ -34,7 +45,7 @@ npm run team-console:test   # 测试
 
 默认使用 Mock fixture 数据。顶部可切换 Live API 模式。
 
-本地开发时，Live API 和嵌入式主 `/playground` iframe 都走 Vite dev server 的同源代理。代理覆盖 `/v1`、`/playground`、`/assets`、`/runtime` 和 `/vendor` 等主服务路径，避免远程访问 `http://<host>:5174/` 时把浏览器导向开发机自己的 `127.0.0.1`。Agent 卡片状态复用主项目 `GET /v1/agents/status`，显示真实空闲 / 运行中状态。默认代理目标是主 `ugk-pi` 服务：
+本地开发时，Live API 和嵌入式主 `/playground` iframe 都走 Vite dev server 的同源代理。代理覆盖 `/v1`、`/playground`、`/assets`、`/runtime` 和 `/vendor` 等主服务路径，避免远程访问 `http://<host>:5174/` 时把浏览器导向开发机自己的 `127.0.0.1`。Agent 卡片状态复用主项目 `GET /v1/agents/status`，显示真实空闲 / 运行中状态。手动 `npm run dev` 的默认代理目标是主 `ugk-pi` 服务：
 
 ```bash
 http://127.0.0.1:3000
