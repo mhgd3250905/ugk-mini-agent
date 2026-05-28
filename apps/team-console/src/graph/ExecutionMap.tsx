@@ -295,6 +295,38 @@ function statusClass(status: TaskStatus | RunDetail["status"]): string {
   }
 }
 
+async function copyPlainText(text: string): Promise<boolean> {
+  const clipboard = globalThis.navigator?.clipboard;
+  if (clipboard?.writeText) {
+    try {
+      await clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall through to the textarea fallback for non-secure local origins.
+    }
+  }
+
+  const doc = globalThis.document;
+  if (!doc?.body) return false;
+  const textarea = doc.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.setAttribute("data-copy-fallback", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  doc.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  try {
+    return Boolean(doc.execCommand?.("copy"));
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+  }
+}
+
 function selectLatestCanvasTaskRun(runs: TeamRunState[] | undefined): TeamRunState | null {
   if (!runs?.length) return null;
   return runs.reduce((latest, run) => {
@@ -874,11 +906,13 @@ export function ExecutionMap({
   const [taskBranchPositionOverrides, setTaskBranchPositionOverrides] = useState<Record<string, { x: number; y: number }>>({});
   const [panelMeasuredHeights, setPanelMeasuredHeights] = useState<Record<string, number>>({});
   const [pendingRestoreRootKeys, setPendingRestoreRootKeys] = useState<Set<string>>(new Set());
+  const [nodeIdCopyState, setNodeIdCopyState] = useState<{ key: string; status: "copied" | "failed" } | null>(null);
   const prevSelectionRef = useRef<string | null>(null);
   const flightIdRef = useRef(0);
   const flightTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const flightPhaseTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const dockIdleTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
+  const nodeIdCopyTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const dockDragHitRef = useRef(false);
   const taskBranchShellRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const atlasNodeDragRef = useRef<AtlasNodeDragState | null>(null);
@@ -972,6 +1006,48 @@ export function ExecutionMap({
     setHoveredLinkCutKey((currentKey) => (currentKey === key ? null : currentKey));
   }, []);
 
+  const clearNodeIdCopyTimer = useCallback(() => {
+    if (nodeIdCopyTimerRef.current != null) {
+      globalThis.clearTimeout(nodeIdCopyTimerRef.current);
+      nodeIdCopyTimerRef.current = null;
+    }
+  }, []);
+
+  const copyCanvasNodeId = useCallback(async (kind: "agent" | "task", id: string) => {
+    const key = `${kind}:${id}`;
+    const copied = await copyPlainText(id);
+    clearNodeIdCopyTimer();
+    setNodeIdCopyState({ key, status: copied ? "copied" : "failed" });
+    nodeIdCopyTimerRef.current = globalThis.setTimeout(() => {
+      nodeIdCopyTimerRef.current = null;
+      setNodeIdCopyState((current) => (current?.key === key ? null : current));
+    }, 1400);
+  }, [clearNodeIdCopyTimer]);
+
+  const renderNodeIdCopyButton = (kind: "agent" | "task", id: string): ReactNode => {
+    const key = `${kind}:${id}`;
+    const state = nodeIdCopyState?.key === key ? nodeIdCopyState.status : null;
+    const label = kind === "agent" ? "Agent ID" : "Task ID";
+    return (
+      <button
+        type="button"
+        className={`emap-node-id-copy${state ? ` is-${state}` : ""}`}
+        aria-label={`复制 ${label} ${id}`}
+        title={`复制 ${id}`}
+        onPointerDown={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          void copyCanvasNodeId(kind, id);
+        }}
+      >
+        <span className="emap-node-id-copy-label">{label}</span>
+        <code>{id}</code>
+        <span className="emap-node-id-copy-action">{state === "copied" ? "已复制" : state === "failed" ? "失败" : "复制"}</span>
+      </button>
+    );
+  };
+
   const syncHoveredLinkCutFromPoint = useCallback((clientX: number, clientY: number) => {
     const elements = globalThis.document?.elementsFromPoint?.(clientX, clientY) ?? [];
     const linkCutElement = elements.find((element) => element.hasAttribute("data-link-cut-key") || element.hasAttribute("data-link-cut-button-key"));
@@ -981,7 +1057,8 @@ export function ExecutionMap({
 
   useLayoutEffect(() => () => {
     clearDockIdleTimer();
-  }, [clearDockIdleTimer]);
+    clearNodeIdCopyTimer();
+  }, [clearDockIdleTimer, clearNodeIdCopyTimer]);
 
   useLayoutEffect(() => {
     const handleLinkCutPointerMove = (event: PointerEvent | MouseEvent) => {
@@ -3085,7 +3162,7 @@ export function ExecutionMap({
                   </div>
                   <div className="emap-node-body">
                     <span className="emap-node-title">{agent.name}</span>
-                    <span className="emap-node-meta">{agent.agentId}</span>
+                    {renderNodeIdCopyButton("agent", agent.agentId)}
                     <span className="emap-agent-description">{agent.description}</span>
                     <span className="emap-agent-binding">{formatAgentBinding(agent)}</span>
                   </div>
@@ -3246,9 +3323,21 @@ export function ExecutionMap({
                   </div>
                   <div className="emap-node-body">
                     <span className="emap-node-title">{task.title}</span>
-                    <span className="emap-node-meta">leader: {leader?.name ?? task.leaderAgentId}</span>
-                    <span className="emap-node-meta">worker: {worker?.name ?? task.workUnit.workerAgentId}</span>
-                    <span className="emap-node-meta">checker: {checker?.name ?? task.workUnit.checkerAgentId}</span>
+                    {renderNodeIdCopyButton("task", task.taskId)}
+                    <div className="emap-task-agent-grid" aria-label={`${task.title} agents`}>
+                      <span className="emap-task-agent-row">
+                        <b>leader</b>
+                        <em>{leader?.name ?? task.leaderAgentId}</em>
+                      </span>
+                      <span className="emap-task-agent-row">
+                        <b>worker</b>
+                        <em>{worker?.name ?? task.workUnit.workerAgentId}</em>
+                      </span>
+                      <span className="emap-task-agent-row">
+                        <b>checker</b>
+                        <em>{checker?.name ?? task.workUnit.checkerAgentId}</em>
+                      </span>
+                    </div>
                   </div>
                   {hasPorts && (
                     <div className="emap-task-ports" aria-label={`${task.title} ports`}>

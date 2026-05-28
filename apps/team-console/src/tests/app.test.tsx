@@ -295,9 +295,37 @@ describe("App", () => {
     const atlasNodes = getAtlasNodes(container);
     const taskNode = await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" });
     expect(taskNode).toBeInTheDocument();
-    expect(within(taskNode).getByText("leader: 主 Agent")).toBeInTheDocument();
-    expect(within(taskNode).getByText("worker: 搜索 Agent")).toBeInTheDocument();
-    expect(within(taskNode).getByText("checker: 主 Agent")).toBeInTheDocument();
+    expect(within(taskNode).getByText("leader")).toBeInTheDocument();
+    expect(within(taskNode).getByText("worker")).toBeInTheDocument();
+    expect(within(taskNode).getByText("checker")).toBeInTheDocument();
+    expect(within(taskNode).getAllByText("主 Agent").length).toBeGreaterThanOrEqual(2);
+    expect(within(taskNode).getByText("搜索 Agent")).toBeInTheDocument();
+  });
+
+  it("copies Agent and Task ids from root cards without opening branches", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      writable: true,
+      configurable: true,
+    });
+
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+    const atlasNodes = getAtlasNodes(container);
+    const agentNode = await within(atlasNodes).findByRole("button", { name: "主 Agent" });
+    fireEvent.click(within(agentNode).getByRole("button", { name: "复制 Agent ID main" }));
+    await waitFor(() => expect(writeText).toHaveBeenLastCalledWith("main"));
+    expect(container.querySelector(".emap-agent-branch-shell")).toBeNull();
+    expect(within(agentNode).getByText("已复制")).toBeInTheDocument();
+
+    const taskNode = await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" });
+    fireEvent.click(within(taskNode).getByRole("button", { name: "复制 Task ID task_research_medtrum" }));
+    await waitFor(() => expect(writeText).toHaveBeenLastCalledWith("task_research_medtrum"));
+    expect(container.querySelector(".task-action-branch")).toBeNull();
+    expect(within(taskNode).getByText("已复制")).toBeInTheDocument();
   });
 
   it("renders typed input and output ports on live Task cards", async () => {
@@ -5033,6 +5061,23 @@ describe("App", () => {
     expect(busyRule).not.toContain("rgba(121, 216, 208");
     expect(busyBarRule).toContain("rgb(255, 104, 64)");
     expect(busyPillRule).toContain("rgba(255, 104, 64");
+  });
+
+  it("uses a stronger warm accent for running Task cards", () => {
+    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const runningRule = mapCss.match(/\.emap-canvas-task-node\.status-running\s*{[^}]*}/)?.[0] ?? "";
+    const runningBarRule = mapCss.match(/\.emap-canvas-task-node\.status-running\s+\.emap-node-status-bar\s*{[^}]*}/)?.[0] ?? "";
+    const runningPillRule = mapCss.match(/\.emap-canvas-task-node\.status-running\s+\.emap-node-state-pill\.running,\n\.emap-canvas-task-node\.status-running\s+\.emap-node-state-pill\.queued\s*{[^}]*}/)?.[0] ?? "";
+    const idCopyRule = mapCss.match(/\.emap-node-id-copy\s*{[^}]*}/)?.[0] ?? "";
+    const taskAgentRule = mapCss.match(/\.emap-task-agent-row\s*{[^}]*}/)?.[0] ?? "";
+
+    expect(runningRule).toContain("rgba(255, 104, 64");
+    expect(runningBarRule).toContain("rgb(255, 104, 64)");
+    expect(runningBarRule).toContain("animation: pulse-bar");
+    expect(runningPillRule).toContain("display: inline-flex");
+    expect(idCopyRule).toContain("cursor: copy");
+    expect(idCopyRule).toContain("grid-template-columns: auto minmax(0, 1fr) auto");
+    expect(taskAgentRule).toContain("grid-template-columns: 44px minmax(0, 1fr)");
   });
 
   it("documents Agent Atlas mock and live behavior", () => {

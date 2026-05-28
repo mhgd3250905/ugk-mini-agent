@@ -921,6 +921,67 @@
   text-overflow: ellipsis;
 }
 
+.emap-node-id-copy {
+  appearance: none;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  height: 23px;
+  padding: 0 6px;
+  border: 1px solid rgba(122, 131, 151, 0.18);
+  border-radius: 5px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045), transparent 74%),
+    rgba(2, 4, 11, 0.34);
+  color: var(--secondary);
+  font: inherit;
+  cursor: copy;
+}
+
+.emap-node-id-copy:hover,
+.emap-node-id-copy:focus-visible {
+  border-color: rgba(121, 216, 208, 0.62);
+  background: rgba(121, 216, 208, 0.09);
+  color: var(--primary);
+  outline: none;
+}
+
+.emap-node-id-copy.is-copied {
+  border-color: rgba(116, 226, 151, 0.44);
+  color: rgb(116, 226, 151);
+  background: rgba(116, 226, 151, 0.09);
+}
+
+.emap-node-id-copy.is-failed {
+  border-color: rgba(255, 113, 136, 0.42);
+  color: var(--danger);
+  background: rgba(255, 113, 136, 0.08);
+}
+
+.emap-node-id-copy-label,
+.emap-node-id-copy-action {
+  font-size: 8px;
+  font-weight: 850;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.emap-node-id-copy code {
+  min-width: 0;
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .emap-node-error {
   min-width: 0;
   display: block;
@@ -2669,6 +2730,47 @@
   background: rgb(255, 190, 96);
 }
 
+.emap-canvas-task-node.status-running {
+  border-color: rgba(255, 104, 64, 0.76);
+  background:
+    linear-gradient(90deg, rgba(255, 104, 64, 0.16), transparent 60%),
+    linear-gradient(180deg, rgba(255, 190, 96, 0.15), transparent 42%),
+    var(--surface-raised);
+  box-shadow:
+    0 0 0 1px rgba(255, 104, 64, 0.22),
+    0 0 24px rgba(255, 104, 64, 0.16),
+    0 14px 30px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.emap-canvas-task-node.status-running .emap-node-status-bar {
+  color: rgb(255, 104, 64);
+  background: rgb(255, 104, 64);
+  box-shadow: 0 0 18px rgba(255, 104, 64, 0.6);
+  animation: pulse-bar 1.35s ease-in-out infinite;
+}
+
+.emap-canvas-task-node.status-running .emap-node-state-pill.running,
+.emap-canvas-task-node.status-running .emap-node-state-pill.queued {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: rgb(255, 190, 165);
+  border-color: rgba(255, 104, 64, 0.45);
+  background: rgba(255, 104, 64, 0.15);
+  box-shadow: 0 0 12px rgba(255, 104, 64, 0.1);
+}
+
+.emap-canvas-task-node.status-running .emap-node-state-pill.running::before,
+.emap-canvas-task-node.status-running .emap-node-state-pill.queued::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+
 .emap-canvas-task-node .emap-node-content {
   justify-content: flex-start;
   gap: 4px;
@@ -2677,7 +2779,41 @@
 }
 
 .emap-canvas-task-node .emap-node-body {
-  gap: 4px;
+  gap: 5px;
+}
+
+.emap-task-agent-grid {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.emap-task-agent-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  color: var(--secondary);
+  font-size: 10px;
+  line-height: 1.12;
+}
+
+.emap-task-agent-row b {
+  color: rgba(216, 228, 241, 0.48);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.emap-task-agent-row em {
+  min-width: 0;
+  color: var(--secondary);
+  font-style: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .emap-task-ports {
