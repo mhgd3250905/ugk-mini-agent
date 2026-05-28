@@ -5143,7 +5143,11 @@ describe("App", () => {
     const runningBarRule = mapCss.match(/\.emap-canvas-task-node\.status-running\s+\.emap-node-status-bar\s*{[^}]*}/)?.[0] ?? "";
     const runningPillRule = mapCss.match(/\.emap-canvas-task-node\.status-running\s+\.emap-node-state-pill\.running,\n\.emap-canvas-task-node\.status-running\s+\.emap-node-state-pill\.queued\s*{[^}]*}/)?.[0] ?? "";
     const idCopyRule = mapCss.match(/\.emap-node-id-copy\s*{[^}]*}/)?.[0] ?? "";
+    const taskAgentGridRule = mapCss.match(/\.emap-task-agent-grid\s*{[^}]*}/)?.[0] ?? "";
     const taskAgentRule = mapCss.match(/\.emap-task-agent-row\s*{[^}]*}/)?.[0] ?? "";
+    const taskLeaderRule = mapCss.match(/\.emap-task-agent-row\.role-leader\s*{[^}]*}/)?.[0] ?? "";
+    const taskWorkerRule = mapCss.match(/\.emap-task-agent-row\.role-worker\s*{[^}]*}/)?.[0] ?? "";
+    const taskCheckerRule = mapCss.match(/\.emap-task-agent-row\.role-checker\s*{[^}]*}/)?.[0] ?? "";
 
     expect(runningRule).toContain("rgba(255, 104, 64");
     expect(runningBarRule).toContain("rgb(255, 104, 64)");
@@ -5151,7 +5155,12 @@ describe("App", () => {
     expect(runningPillRule).toContain("display: inline-flex");
     expect(idCopyRule).toContain("cursor: copy");
     expect(idCopyRule).toContain("grid-template-columns: auto minmax(0, 1fr) auto");
-    expect(taskAgentRule).toContain("grid-template-columns: 44px minmax(0, 1fr)");
+    expect(taskAgentGridRule).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
+    expect(taskAgentRule).toContain("grid-template-columns: minmax(0, 1fr)");
+    expect(taskLeaderRule).toContain("grid-column: 1 / -1");
+    expect(taskLeaderRule).toContain("grid-template-columns: 54px minmax(0, 1fr)");
+    expect(taskWorkerRule).toContain("rgba(121, 216, 208");
+    expect(taskCheckerRule).toContain("rgba(255, 214, 128");
   });
 
   it("centers link cut buttons on the connector point instead of using fixed offsets", () => {
