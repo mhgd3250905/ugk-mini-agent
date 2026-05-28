@@ -21,6 +21,7 @@
   - Execution Atlas 顶部工具栏改为 command deck：左侧承载筛选、添加和统计，右侧承载 viewport 控制，减少一排按钮堆砌感。
   - Task 根卡片角色区改为 Leader 主协调条 + Worker / Checker 双轨布局；运行状态继续用边框、状态条和 pill 区分，避免角色和状态都糊成文字堆。
   - 画布缩放改为固定可读档位，并把 pan offset 按 `devicePixelRatio` 对齐到设备像素；CSS 增加文字渲染 hint，降低 DOM `transform: scale()` 后的文字发虚和半像素抖动。
+  - 旧 `localStorage` 里保存的连续缩放值（例如 `0.91`）在恢复时会归一化到最近固定档位，避免页面刷新后仍显示 `91%` 这类非标准缩放。
 - **影响范围**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/AtlasCanvasShell.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/app/app.css`、`apps/team-console/src/tests/app.test.tsx`、`apps/team-console/src/tests/execution-map-ui.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/handoff-current.md`。
 - **验证**: focused tests 覆盖 Task 删除确认归属、垃圾桶取消回滚、toolbar 分组、Task 角色区和 canvas pan/zoom；最终全量验证见本轮提交记录。
 - **对应入口**: Team Console Execution Atlas，固定入口 `http://127.0.0.1:5174/`。
