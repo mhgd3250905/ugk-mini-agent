@@ -1649,13 +1649,7 @@ export function ExecutionMap({
     }, DOCK_FLIGHT_DURATION_MS);
   }, []);
 
-  const checkDockDrop = useCallback((drag: AtlasNodeDragState, event: ReactPointerEvent<HTMLElement>): boolean => {
-    if (!drag.hasMoved) return false;
-    const dockHit = getDockHitForDrag(drag, event);
-    if (!dockHit) return false;
-    const { dockRect } = dockHit;
-
-    // Roll back positions to pre-drag start so restore returns to original location
+  const rollbackAtlasDragPositions = useCallback((drag: AtlasNodeDragState) => {
     for (const entry of drag.entries) {
       if (entry.kind === "agent") {
         onMoveAgent?.(entry.nodeId, entry.startPosition);
@@ -1668,6 +1662,16 @@ export function ExecutionMap({
         onMoveSourceNode?.(entry.nodeId, entry.startPosition);
       }
     }
+  }, [onMoveAgent, onMoveCanvasTask, onMoveSourceNode]);
+
+  const checkDockDrop = useCallback((drag: AtlasNodeDragState, event: ReactPointerEvent<HTMLElement>): boolean => {
+    if (!drag.hasMoved) return false;
+    const dockHit = getDockHitForDrag(drag, event);
+    if (!dockHit) return false;
+    const { dockRect } = dockHit;
+
+    // Roll back positions to pre-drag start so restore returns to original location.
+    rollbackAtlasDragPositions(drag);
 
     for (const entry of drag.entries) {
       if (entry.kind === "agent") {
@@ -1719,7 +1723,7 @@ export function ExecutionMap({
     }
 
     return true;
-  }, [getDockHitForDrag, onMinimizeAgent, onMinimizeCanvasTask, onMinimizeSourceNode, onMoveAgent, onMoveCanvasTask, onMoveSourceNode, startDockFlight, agentsById, tasksById, sourceNodesById, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes, viewport]);
+  }, [getDockHitForDrag, onMinimizeAgent, onMinimizeCanvasTask, onMinimizeSourceNode, rollbackAtlasDragPositions, startDockFlight, agentsById, tasksById, sourceNodesById, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes, viewport]);
 
   const endAgentPointer = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const drag = atlasNodeDragRef.current;
@@ -1734,6 +1738,7 @@ export function ExecutionMap({
     if (drag.hasMoved) {
       suppressNextAgentClick(drag.primaryNodeId);
       if (isPointerOverTrash(event)) {
+        rollbackAtlasDragPositions(drag);
         onRootTrashDrop?.(drag.entries);
         return;
       }
@@ -1746,7 +1751,7 @@ export function ExecutionMap({
       suppressNextAgentClick(drag.primaryNodeId);
       onSelectAgent?.(node);
     }
-  }, [checkDockDrop, isPointerOverTrash, onRootTrashDrop, onSelectAgent, suppressNextAgentClick, visibleAgentNodes]);
+  }, [checkDockDrop, isPointerOverTrash, onRootTrashDrop, onSelectAgent, rollbackAtlasDragPositions, suppressNextAgentClick, visibleAgentNodes]);
 
   const handleAgentClick = useCallback((node: AtlasAgentNode) => {
     if (suppressAgentClickRef.current === node.nodeId) {
@@ -1786,6 +1791,7 @@ export function ExecutionMap({
     if (drag.hasMoved) {
       suppressNextTaskClick(drag.primaryNodeId);
       if (isPointerOverTrash(event)) {
+        rollbackAtlasDragPositions(drag);
         onRootTrashDrop?.(drag.entries);
         return;
       }
@@ -1798,7 +1804,7 @@ export function ExecutionMap({
       suppressNextTaskClick(drag.primaryNodeId);
       onSelectCanvasTask?.(node);
     }
-  }, [checkDockDrop, isPointerOverTrash, onRootTrashDrop, onSelectCanvasTask, suppressNextTaskClick, visibleTaskNodes]);
+  }, [checkDockDrop, isPointerOverTrash, onRootTrashDrop, onSelectCanvasTask, rollbackAtlasDragPositions, suppressNextTaskClick, visibleTaskNodes]);
 
   const handleTaskClick = useCallback((node: AtlasTaskNode) => {
     if (suppressTaskClickRef.current === node.nodeId) {

@@ -3582,6 +3582,35 @@ describe("App", () => {
     });
   });
 
+  it("returns a Task root node to its original position after cancelling trash confirmation", async () => {
+    const api = mockLiveTaskEditorApi();
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const atlasNodes = getAtlasNodes(container);
+    await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" });
+    const taskEl = container.querySelector('[data-task-id="task_research_medtrum"]') as HTMLElement;
+    expect(taskEl).toBeTruthy();
+    const originalLeft = Number.parseFloat(taskEl.style.left);
+    const originalTop = Number.parseFloat(taskEl.style.top);
+
+    await dragNodeToTrash(container, taskEl);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    await waitFor(() => {
+      expect(Number.parseFloat(taskEl.style.left)).toBeCloseTo(originalLeft, 4);
+      expect(Number.parseFloat(taskEl.style.top)).toBeCloseTo(originalTop, 4);
+    });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+
+    expect(api.archiveRequests).toBe(0);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(Number.parseFloat(taskEl.style.left)).toBeCloseTo(originalLeft, 4);
+    expect(Number.parseFloat(taskEl.style.top)).toBeCloseTo(originalTop, 4);
+  });
+
   it("prefers trash drop when the pointer is inside trash even if the dragged root node intersects Dock", async () => {
     const api = mockLiveTaskEditorApi();
     const { container } = render(<App />);
