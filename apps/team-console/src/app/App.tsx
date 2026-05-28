@@ -893,8 +893,8 @@ export function App() {
   const [taskEditDraftByTaskId, setTaskEditDraftByTaskId] = useState<Record<string, TaskEditDraft>>({});
   const [taskEditSavingByTaskIdInner, setTaskEditSavingByTaskIdInner] = useState<Record<string, boolean>>({});
   const [taskEditWarningByTaskId, setTaskEditWarningByTaskId] = useState<Record<string, string | null>>({});
-  const [taskArchiveConfirming, setTaskArchiveConfirming] = useState(false);
-  const [taskArchiveSaving, setTaskArchiveSaving] = useState(false);
+  const [taskArchiveConfirmNodeId, setTaskArchiveConfirmNodeId] = useState<string | null>(null);
+  const [taskArchiveSavingNodeId, setTaskArchiveSavingNodeId] = useState<string | null>(null);
   const [rootArchiveConfirm, setRootArchiveConfirm] = useState<RootArchiveConfirm | null>(null);
   const [rootArchiveSaving, setRootArchiveSaving] = useState(false);
   const [rootNodeFilter, setRootNodeFilter] = useState<"all" | "agent" | "task">("all");
@@ -973,8 +973,8 @@ export function App() {
       setTaskEditWarningByTaskId({});
       setTaskEditSavingByTaskIdInner({});
     }
-    setTaskArchiveConfirming(false);
-    setTaskArchiveSaving(false);
+    setTaskArchiveConfirmNodeId(null);
+    setTaskArchiveSavingNodeId(null);
   }, []);
 
   const closeTaskBranch = useCallback((nodeId?: string) => {
@@ -1587,7 +1587,7 @@ export function App() {
       }
       return prev;
     });
-    setTaskArchiveConfirming(false);
+    setTaskArchiveConfirmNodeId(null);
     setExpandedTaskBranch((current) => current ? { ...current, detailMode: "edit" } : current);
   }, []);
 
@@ -1684,7 +1684,8 @@ export function App() {
   }, [dataSource, refreshLiveTasks, taskEditDraftByTaskId, tasksById]);
 
   const archiveTask = useCallback(async (task: TeamCanvasTask, nodeId?: string): Promise<boolean> => {
-    setTaskArchiveSaving(true);
+    const savingKey = nodeId ?? task.taskId;
+    setTaskArchiveSavingNodeId(savingKey);
     try {
       const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
       await api.archiveTask(task.taskId);
@@ -1702,7 +1703,7 @@ export function App() {
       setError(errorMessage(e));
       return false;
     } finally {
-      setTaskArchiveSaving(false);
+      setTaskArchiveSavingNodeId((current) => current === savingKey ? null : current);
     }
   }, [closeTaskBranch, dataSource, refreshLiveTasks]);
 
@@ -2406,6 +2407,9 @@ export function App() {
         && detailMode === "run-observer"
         && branch.observedRunId === latestRun.runId,
     );
+    const taskDeleteConfirming = taskArchiveConfirmNodeId === branch.nodeId;
+    const taskDeleteSaving = taskArchiveSavingNodeId === branch.nodeId;
+    const anyTaskArchiveSaving = Boolean(taskArchiveSavingNodeId);
     return [{
       id: taskMenuPanelId(branch.nodeId),
       nodeId: branch.nodeId,
@@ -2508,7 +2512,7 @@ export function App() {
                     }
                     return prev;
                   });
-                  setTaskArchiveConfirming(false);
+                  setTaskArchiveConfirmNodeId(null);
                   setExpandedTaskBranches((current) =>
                     current.map((item) =>
                       item.nodeId === branch.nodeId
@@ -2532,7 +2536,7 @@ export function App() {
                     )
                   );
                 } else {
-                  setTaskArchiveConfirming(false);
+                  setTaskArchiveConfirmNodeId(null);
                   setExpandedTaskBranches((current) =>
                     current.map((item) =>
                       item.nodeId === branch.nodeId
@@ -2550,27 +2554,27 @@ export function App() {
             >
               {"\u5bf9\u8bdd Leader"}
             </button>
-            {taskArchiveConfirming && expandedTaskBranch?.nodeId === branch.nodeId ? (
+            {taskDeleteConfirming ? (
               <div className="task-delete-confirm" role="group" aria-label={`${task.title} \u5220\u9664\u786e\u8ba4`}>
                 <p>{"\u5220\u9664\u4f1a\u8c03\u7528 archive \u8f6f\u5f52\u6863\uff0c\u4e0d\u4f1a\u542f\u52a8 Task run\uff0c\u4e5f\u4e0d\u4f1a\u628a Task \u5b9a\u4e49\u5199\u5165 localStorage\u3002"}</p>
                 <div className="task-delete-actions">
                   <button
                     type="button"
                     className="task-action-menu-button"
-                    disabled={taskArchiveSaving}
-                    onClick={() => setTaskArchiveConfirming(false)}
+                    disabled={anyTaskArchiveSaving}
+                    onClick={() => setTaskArchiveConfirmNodeId(null)}
                   >
                     {"\u53d6\u6d88"}
                   </button>
                   <button
                     type="button"
                     className="task-action-menu-button danger"
-                    disabled={taskArchiveSaving}
+                    disabled={anyTaskArchiveSaving}
                     onClick={() => {
                       void archiveTask(task, branch.nodeId);
                     }}
                   >
-                    {taskArchiveSaving ? "\u5220\u9664\u4e2d..." : "\u786e\u8ba4\u5220\u9664"}
+                    {taskDeleteSaving ? "\u5220\u9664\u4e2d..." : "\u786e\u8ba4\u5220\u9664"}
                   </button>
                 </div>
               </div>
@@ -2578,9 +2582,9 @@ export function App() {
               <button
                 type="button"
                 className="task-action-menu-button danger"
-                disabled={taskArchiveSaving}
+                disabled={anyTaskArchiveSaving}
                 onClick={() => {
-                  setTaskArchiveConfirming(true);
+                  setTaskArchiveConfirmNodeId(branch.nodeId);
                 }}
               >
                 {"\u5220\u9664"}
@@ -2693,7 +2697,7 @@ export function App() {
             if (expandedTaskDetailMode === "leader-chat") {
               setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current);
             } else {
-              setTaskArchiveConfirming(false);
+              setTaskArchiveConfirmNodeId(null);
               setTaskLeaderCopyByTaskId((current) => {
                 const next = { ...current };
                 delete next[expandedTask.taskId];
@@ -2705,27 +2709,27 @@ export function App() {
         >
           对话 Leader
         </button>
-        {taskArchiveConfirming ? (
+        {expandedTaskBranch && taskArchiveConfirmNodeId === expandedTaskBranch.nodeId ? (
           <div className="task-delete-confirm" role="group" aria-label={`${expandedTask.title} 删除确认`}>
             <p>删除会调用 archive 软归档，不会启动 Task run，也不会把 Task 定义写入 localStorage。</p>
             <div className="task-delete-actions">
               <button
                 type="button"
                 className="task-action-menu-button"
-                disabled={taskArchiveSaving}
-                onClick={() => setTaskArchiveConfirming(false)}
+                disabled={Boolean(taskArchiveSavingNodeId)}
+                onClick={() => setTaskArchiveConfirmNodeId(null)}
               >
                 取消
               </button>
               <button
                 type="button"
                 className="task-action-menu-button danger"
-                disabled={taskArchiveSaving}
+                disabled={Boolean(taskArchiveSavingNodeId)}
                 onClick={() => {
                   void archiveExpandedTask();
                 }}
               >
-                {taskArchiveSaving ? "删除中..." : "确认删除"}
+                {taskArchiveSavingNodeId === expandedTaskBranch.nodeId ? "删除中..." : "确认删除"}
               </button>
             </div>
           </div>
@@ -2733,7 +2737,8 @@ export function App() {
           <button
             type="button"
             className="task-action-menu-button danger"
-            onClick={() => setTaskArchiveConfirming(true)}
+            disabled={Boolean(taskArchiveSavingNodeId)}
+            onClick={() => setTaskArchiveConfirmNodeId(expandedTaskBranch?.nodeId ?? expandedTask.taskId)}
           >
             删除
           </button>
@@ -3150,7 +3155,7 @@ export function App() {
     }
 
     return panels;
-  }, [agents, agentsById, copyTaskLeaderContext, expandedTaskBranches, saveTaskEdit, taskEditDraftByTaskId, taskEditSavingByTaskIdInner, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunsByTaskId, tasksById]);
+  }, [agents, agentsById, archiveTask, cancelTaskRun, copyTaskLeaderContext, expandedTaskBranches, runTask, saveTaskEdit, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskIdInner, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById]);
 
   return (
     <div className="app-shell">

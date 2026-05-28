@@ -3298,6 +3298,38 @@ describe("App", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("keeps Task delete confirmation scoped to the clicked menu when another Task was focused last", async () => {
+    const secondTask: TeamCanvasTask = {
+      ...cloneTaskFixture(),
+      taskId: "task_delete_scope_b",
+      title: "删除范围测试 B",
+      workUnit: {
+        ...cloneTaskFixture().workUnit,
+        title: "删除范围测试 B",
+      },
+    };
+    mockTeamTasks.push(secondTask);
+    resetMockTeamApiState();
+    try {
+      const { container } = render(<App />);
+      const atlasNodes = getAtlasNodes(container);
+      fireEvent.click(await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" }));
+      fireEvent.click(await within(atlasNodes).findByRole("button", { name: "删除范围测试 B" }));
+
+      const firstMenu = screen.getByLabelText("调查 Medtrum 云资产 Task 操作");
+      const secondMenu = screen.getByLabelText("删除范围测试 B Task 操作");
+      fireEvent.click(within(firstMenu).getByRole("button", { name: "删除" }));
+
+      expect(within(firstMenu).getByRole("group", { name: "调查 Medtrum 云资产 删除确认" })).toBeInTheDocument();
+      expect(within(firstMenu).getByText(/archive 软归档/)).toBeInTheDocument();
+      expect(secondMenu.querySelector(".task-delete-confirm")).toBeNull();
+      expect(container.querySelectorAll(".task-delete-confirm")).toHaveLength(1);
+    } finally {
+      mockTeamTasks.pop();
+      resetMockTeamApiState();
+    }
+  });
+
   it("cancels Task delete confirmation without archiving", async () => {
     const api = mockLiveTaskEditorApi();
     const { container } = render(<App />);
