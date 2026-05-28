@@ -7442,3 +7442,20 @@
   - [src/integrations/feishu/http-agent-gateway.ts](/E:/AII/ugk-pi/src/integrations/feishu/http-agent-gateway.ts)
   - [test/feishu-ws-subscription.test.ts](/E:/AII/ugk-pi/test/feishu-ws-subscription.test.ts)
   - [test/feishu-http-agent-gateway.test.ts](/E:/AII/ugk-pi/test/feishu-http-agent-gateway.test.ts)
+
+### Team Console dependency handle 与 root cleanup 入口收口
+- 日期：2026-05-28
+- 主题：Task control dependency handle 从右下角裸文本 dep 改为右侧中部 amber 圆形 socket；根卡片归档/移除按钮移除，清理统一走右下角垃圾桶 drop target。
+- 影响范围：
+  - `apps/team-console/src/graph/ExecutionMap.tsx` — 移除 `onRemoveAgent` / `onArchiveCanvasTask` / `onArchiveSourceNode` props 和对应按钮渲染；dep handle 改为 amber 圆形 SVG glyph + 语义 aria-label
+  - `apps/team-console/src/graph/execution-map.css` — `.emap-task-dep-handle` 改为右侧中部 28px 圆形定位；删除 `.emap-node-archive-button` 死样式
+  - `apps/team-console/src/app/App.tsx` — 删除 `requestRemoveAgentNode` / `requestArchiveCanvasTask` / `requestArchiveSourceNode` dead callbacks 和对应 ExecutionMap props
+  - `apps/team-console/src/tests/app.test.tsx` — 新增"根卡片不渲染直接清理按钮"测试和 trash drop 路径覆盖；dep handle aria-label 可访问性断言
+  - `apps/team-console/README.md` — 更新 dependency handle 说明和 root cleanup 入口描述
+  - `docs/team-runtime.md` — 同步 Team Console 当前 UI 口径
+- 对应入口：
+  - [apps/team-console/src/graph/ExecutionMap.tsx](/E:/AII/ugk-pi/apps/team-console/src/graph/ExecutionMap.tsx)
+  - [apps/team-console/src/graph/execution-map.css](/E:/AII/ugk-pi/apps/team-console/src/graph/execution-map.css)
+  - [apps/team-console/src/app/App.tsx](/E:/AII/ugk-pi/apps/team-console/src/app/App.tsx)
+  - [apps/team-console/src/tests/app.test.tsx](/E:/AII/ugk-pi/apps/team-console/src/tests/app.test.tsx)
+  - 验证命令：`npm --prefix apps/team-console run test -- src/tests/app.test.tsx -t "dependency|archive|trash|移出|归档"`

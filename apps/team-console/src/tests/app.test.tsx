@@ -2707,7 +2707,88 @@ describe("App", () => {
     expect(container.querySelector('[data-task-id="task_research_medtrum"]')).toBeTruthy();
   });
 
-  it("archives Source root nodes", async () => {
+  it("does not render direct archive/remove buttons on root cards", async () => {
+    const task: TeamCanvasTask = {
+      ...cloneTaskFixture(),
+      taskId: "task_no_button_test",
+      title: "无按钮 Task",
+      workUnit: {
+        ...cloneTaskFixture().workUnit,
+        title: "无按钮 Task",
+        inputPorts: [{ id: "in1", label: "输入", type: "string" }],
+        outputPorts: [],
+      },
+    };
+    const sourceNode: TeamCanvasSourceNode = {
+      schemaVersion: "team/source-node-1",
+      sourceNodeId: "source_no_button_test",
+      title: "无按钮 Source",
+      nodeType: "text",
+      outputPort: { id: "value", label: "文本", type: "string" },
+      content: { text: "test" },
+      createdAt: "2026-05-27T00:00:00.000Z",
+      updatedAt: "2026-05-27T00:00:00.000Z",
+    };
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [task] }), { status: 200 });
+      if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === "/v1/team/source-nodes") return new Response(JSON.stringify({ sourceNodes: [sourceNode] }), { status: 200 });
+      if (url === "/v1/team/source-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    // Task root card: no archive button
+    const atlasNodes = getAtlasNodes(container);
+    const taskCard = await within(atlasNodes).findByRole("button", { name: "无按钮 Task" });
+    expect(within(taskCard).queryByRole("button", { name: /归档 Task/ })).toBeNull();
+    expect(within(taskCard).getByRole("button", { name: "收纳 Task" })).toBeInTheDocument();
+
+    // Source root card: no archive button
+    const sourceCard = await within(atlasNodes).findByRole("group", { name: "无按钮 Source" });
+    expect(within(sourceCard).queryByRole("button", { name: /归档 Source/ })).toBeNull();
+    expect(within(sourceCard).getByRole("button", { name: "收纳 Source" })).toBeInTheDocument();
+
+    // Agent root card: no remove button
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+    const agentCard = within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" });
+    expect(within(agentCard).queryByRole("button", { name: /移出画布 Agent/ })).toBeNull();
+    expect(within(agentCard).getByRole("button", { name: "收纳 Agent" })).toBeInTheDocument();
+  });
+
+  async function dragNodeToTrash(cont: HTMLElement, nodeEl: HTMLElement) {
+    const PID = 42;
+    const startX = 100;
+    const startY = 100;
+
+    firePointer(nodeEl, "pointerdown", { pointerId: PID, clientX: startX, clientY: startY });
+
+    // Move past drag threshold so hasMoved becomes true and isAtlasDragging renders the trash
+    firePointer(nodeEl, "pointermove", { pointerId: PID, clientX: startX + 10, clientY: startY + 10 });
+
+    // Wait for the trash element to appear (rendered conditionally when isAtlasDragging)
+    const trashEl = await waitFor(() => {
+      const el = cont.querySelector(".emap-root-trash");
+      if (!el) throw new Error("trash not rendered");
+      return el as HTMLElement;
+    });
+    const trashRect = { x: 500, y: 500, width: 60, height: 40, left: 500, top: 500, right: 560, bottom: 540, toJSON: () => ({}) };
+    vi.spyOn(trashEl, "getBoundingClientRect").mockReturnValue(trashRect as unknown as DOMRect);
+
+    // Move into trash area
+    firePointer(nodeEl, "pointermove", { pointerId: PID, clientX: 530, clientY: 520 });
+    // Drop on trash
+    firePointer(nodeEl, "pointerup", { pointerId: PID, clientX: 530, clientY: 520 });
+  }
+
+  it("archives Source root nodes via trash drop", async () => {
     const task: TeamCanvasTask = {
       ...cloneTaskFixture(),
       taskId: "task_source_archive_target",
@@ -2780,9 +2861,12 @@ describe("App", () => {
     expect(sourceCard).toBeInTheDocument();
     expect(container.querySelector(`[data-source-connection-id="${sourceConnection.connectionId}"]`)).toBeTruthy();
 
-    const archiveButton = within(sourceCard).getByRole("button", { name: `归档 Source ${sourceNode.title}` });
-    fireEvent.click(archiveButton);
+    // Drag source node to trash
+    const sourceEl = container.querySelector(`[data-source-node-id="${sourceNode.sourceNodeId}"]`) as HTMLElement;
+    expect(sourceEl).toBeTruthy();
+    await dragNodeToTrash(container, sourceEl);
 
+    // Confirm modal opens
     expect(sourceArchiveRequests).toBe(0);
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveAttribute("aria-modal", "true");
@@ -2800,7 +2884,7 @@ describe("App", () => {
     expect(container.querySelector(`[data-source-connection-id="${sourceConnection.connectionId}"]`)).toBeNull();
   });
 
-  it("archives Task root nodes", async () => {
+  it("archives Task root nodes via trash drop", async () => {
     const api = mockLiveTaskEditorApi();
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
@@ -2809,8 +2893,10 @@ describe("App", () => {
     const taskCard = await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" });
     expect(taskCard).toBeInTheDocument();
 
-    const archiveButton = within(taskCard).getByRole("button", { name: "归档 Task 调查 Medtrum 云资产" });
-    fireEvent.click(archiveButton);
+    // Drag task node to trash
+    const taskEl = container.querySelector('[data-task-id="task_research_medtrum"]') as HTMLElement;
+    expect(taskEl).toBeTruthy();
+    await dragNodeToTrash(container, taskEl);
 
     expect(api.archiveRequests).toBe(0);
     const dialog = await screen.findByRole("dialog");
@@ -2828,7 +2914,7 @@ describe("App", () => {
     });
   });
 
-  it("keeps Task root nodes when root archive fails", async () => {
+  it("keeps Task root nodes when root archive via trash fails", async () => {
     const api = mockLiveTaskEditorApi({ archiveStatus: 500, archiveError: "root task archive failed" });
     const { container } = render(<App />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
@@ -2837,8 +2923,10 @@ describe("App", () => {
     const taskCard = await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" });
     expect(taskCard).toBeInTheDocument();
 
-    const archiveButton = within(taskCard).getByRole("button", { name: "归档 Task 调查 Medtrum 云资产" });
-    fireEvent.click(archiveButton);
+    // Drag task node to trash
+    const taskEl = container.querySelector('[data-task-id="task_research_medtrum"]') as HTMLElement;
+    expect(taskEl).toBeTruthy();
+    await dragNodeToTrash(container, taskEl);
 
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveAttribute("aria-modal", "true");
@@ -2854,7 +2942,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "确认归档" })).toBeInTheDocument();
   });
 
-  it("removes Agent root nodes from the local canvas", async () => {
+  it("removes Agent root nodes from the local canvas via trash drop", async () => {
     let agentArchiveCalled = false;
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input);
@@ -2883,8 +2971,10 @@ describe("App", () => {
     const agentCard = within(atlasNodes).getByRole("button", { name: "主 Agent" });
     expect(agentCard).toBeInTheDocument();
 
-    const removeButton = within(agentCard).getByRole("button", { name: "移出画布 Agent 主 Agent" });
-    fireEvent.click(removeButton);
+    // Drag agent node to trash
+    const agentEl = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement;
+    expect(agentEl).toBeTruthy();
+    await dragNodeToTrash(container, agentEl);
 
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveAttribute("aria-modal", "true");
@@ -2902,7 +2992,7 @@ describe("App", () => {
     }
   });
 
-  it("keeps Source root nodes when archive fails", async () => {
+  it("keeps Source root nodes when archive via trash fails", async () => {
     const sourceNode: TeamCanvasSourceNode = {
       schemaVersion: "team/source-node-1",
       sourceNodeId: "source_archive_fail_1",
@@ -2933,9 +3023,12 @@ describe("App", () => {
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
     const atlasNodes = getAtlasNodes(container);
-    const sourceCard = await within(atlasNodes).findByRole("group", { name: "归档失败文本" });
-    const archiveButton = within(sourceCard).getByRole("button", { name: "归档 Source 归档失败文本" });
-    fireEvent.click(archiveButton);
+    await within(atlasNodes).findByRole("group", { name: "归档失败文本" });
+
+    // Drag source node to trash
+    const sourceEl = container.querySelector(`[data-source-node-id="${sourceNode.sourceNodeId}"]`) as HTMLElement;
+    expect(sourceEl).toBeTruthy();
+    await dragNodeToTrash(container, sourceEl);
 
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveAttribute("aria-modal", "true");
@@ -7746,7 +7839,7 @@ describe("App", () => {
       });
     }
 
-    it("renders dependency handles on Task cards", async () => {
+    it("renders dependency handles on Task cards with accessible labels", async () => {
       setupDepApi();
       const { container } = render(<App />);
       fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
@@ -7754,6 +7847,12 @@ describe("App", () => {
       await screen.findByText(depTaskA.title);
       const handles = container.querySelectorAll(".emap-task-dep-handle");
       expect(handles.length).toBeGreaterThanOrEqual(2);
+      // Handle should not display bare "dep" text
+      for (const handle of Array.from(handles)) {
+        const text = handle.textContent?.trim() ?? "";
+        expect(text).not.toBe("dep");
+        expect(handle).toHaveAttribute("aria-label");
+      }
     });
 
     it("creates a dependency via source then target click", async () => {

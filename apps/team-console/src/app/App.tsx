@@ -1709,18 +1709,6 @@ export function App() {
     await archiveTask(expandedTask, expandedTaskBranch?.nodeId);
   }, [archiveTask, expandedTask, expandedTaskBranch?.nodeId]);
 
-  const requestArchiveSourceNode = useCallback((sourceNodeId: string, nodeId: string, title: string) => {
-    setRootArchiveConfirm({ kind: "source", sourceNodeId, nodeId, title });
-  }, []);
-
-  const requestArchiveCanvasTask = useCallback((task: TeamCanvasTask, nodeId: string) => {
-    setRootArchiveConfirm({ kind: "task", task, nodeId });
-  }, []);
-
-  const requestRemoveAgentNode = useCallback((nodeId: string, agentId: string, name: string) => {
-    setRootArchiveConfirm({ kind: "agent", nodeId, agentId, name });
-  }, []);
-
   const confirmRootArchive = useCallback(async () => {
     if (!rootArchiveConfirm || rootArchiveSaving) return;
     setRootArchiveSaving(true);
@@ -3255,7 +3243,6 @@ export function App() {
                 minimizedAgentNodeIds={minimizedAgentNodeIds}
                 onMinimizeAgent={minimizeAgentNode}
                 onRestoreAgent={restoreAgentNode}
-                onRemoveAgent={(node, agent) => requestRemoveAgentNode(node.nodeId, agent.agentId, agent.name)}
                 agentBranchPanel={expandedAgentBranchPanel}
                 taskNodes={taskNodes}
                 tasksById={tasksById}
@@ -3276,12 +3263,10 @@ export function App() {
                 minimizedTaskNodeIds={minimizedTaskNodeIds}
                 onMinimizeCanvasTask={minimizeTaskNode}
                 onRestoreCanvasTask={restoreTaskNode}
-                onArchiveCanvasTask={(node, task) => requestArchiveCanvasTask(task, node.nodeId)}
                 onMoveSourceNode={moveSourceNode}
                 minimizedSourceNodeIds={minimizedSourceNodeIds}
                 onMinimizeSourceNode={minimizeSourceNode}
                 onRestoreSourceNode={restoreSourceNode}
-                onArchiveSourceNode={(node, sourceNode) => requestArchiveSourceNode(sourceNode.sourceNodeId, node.nodeId, sourceNode.title)}
                 onSourceOutputPortSelect={beginSourcePortConnection}
                 onSourceTextChange={updateTextSourceNode}
                 onTaskOutputPortSelect={beginTaskPortConnection}
@@ -3299,7 +3284,8 @@ export function App() {
                   const items: Array<RootArchiveConfirm> = [];
                   for (const entry of entries) {
                     if (entry.kind === "agent") {
-                      const agent = agentsById?.get(entry.nodeId);
+                      const agentNode = agentNodes.find((n) => n.nodeId === entry.nodeId);
+                      const agent = agentNode ? agentsById?.get(agentNode.agentId) : undefined;
                       if (agent) items.push({ kind: "agent", nodeId: entry.nodeId, agentId: agent.agentId, name: agent.name });
                     } else if (entry.kind === "task") {
                       const taskNode = taskNodes.find((n) => n.nodeId === entry.nodeId);

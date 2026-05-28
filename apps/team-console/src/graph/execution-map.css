@@ -319,25 +319,34 @@
 
 .emap-task-dep-handle {
   position: absolute;
-  bottom: 2px;
-  right: 36px;
-  font-size: 9px;
-  padding: 1px 5px;
-  border-radius: 3px;
-  border: 1px solid rgba(230, 170, 60, 0.5);
+  top: 50%;
+  right: -14px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid rgba(230, 170, 60, 0.5);
   background: rgba(230, 170, 60, 0.12);
   color: rgb(180, 130, 40);
   cursor: pointer;
-  z-index: 2;
-  line-height: 1.2;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
-.emap-task-dep-handle:hover {
+.emap-task-dep-handle:hover,
+.emap-task-dep-handle:focus-visible {
   background: rgba(230, 170, 60, 0.28);
+  border-color: rgba(230, 170, 60, 0.8);
+  box-shadow: 0 0 6px rgba(230, 170, 60, 0.3);
+  outline: none;
 }
 .emap-task-dep-handle.is-selected {
   background: rgba(230, 170, 60, 0.38);
   border-color: rgb(230, 170, 60);
   color: rgb(200, 150, 30);
+  box-shadow: 0 0 8px rgba(230, 170, 60, 0.4);
 }
 
 .execution-map-nodes {
@@ -457,34 +466,6 @@
 .emap-node-minimize-button:focus-visible {
   border-color: rgba(121, 216, 208, 0.68);
   color: var(--accent);
-  outline: none;
-}
-
-.emap-node-archive-button {
-  appearance: none;
-  position: absolute;
-  right: 37px;
-  bottom: 7px;
-  z-index: 2;
-  height: 22px;
-  padding: 0 6px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(122, 131, 151, 0.24);
-  border-radius: 4px;
-  background: rgba(2, 4, 11, 0.5);
-  color: var(--secondary);
-  font: inherit;
-  font-size: 10px;
-  font-weight: 750;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.emap-node-archive-button:hover,
-.emap-node-archive-button:focus-visible {
-  border-color: rgba(216, 121, 121, 0.68);
-  color: #f5a5a5;
   outline: none;
 }
 
