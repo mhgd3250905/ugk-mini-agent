@@ -14,6 +14,8 @@
   cursor: grab;
   touch-action: none;
   user-select: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 .execution-map-container.is-panning {
@@ -46,6 +48,7 @@
   min-width: fit-content;
   transform-origin: 0 0;
   will-change: transform;
+  backface-visibility: hidden;
 }
 
 .execution-map-scroll.is-hidden {

@@ -50,10 +50,39 @@ type ScreenSelectionRect = { left: number; top: number; width: number; height: n
 const DEFAULT_VIEWPORT: AtlasViewport = { x: 0, y: 0, scale: 1 };
 const MIN_SCALE = 0.45;
 const MAX_SCALE = 1.8;
-const ZOOM_STEP = 1.1;
+const ZOOM_LEVELS = [0.45, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.8] as const;
 
 function clampScale(value: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number(value.toFixed(2))));
+}
+
+function nearestZoomLevel(value: number): number {
+  const clamped = clampScale(value);
+  return ZOOM_LEVELS.reduce((closest, level) => (
+    Math.abs(level - clamped) < Math.abs(closest - clamped) ? level : closest
+  ), ZOOM_LEVELS[0]);
+}
+
+function nextZoomLevel(value: number, direction: "in" | "out"): number {
+  const clamped = clampScale(value);
+  if (direction === "in") {
+    return ZOOM_LEVELS.find((level) => level > clamped + 0.001) ?? MAX_SCALE;
+  }
+  return [...ZOOM_LEVELS].reverse().find((level) => level < clamped - 0.001) ?? MIN_SCALE;
+}
+
+function snapCanvasOffset(value: number): number {
+  const ratio = globalThis.window?.devicePixelRatio ?? 1;
+  const safeRatio = Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+  return Math.round(value * safeRatio) / safeRatio;
+}
+
+function normalizeViewport(viewport: AtlasViewport): AtlasViewport {
+  return {
+    x: snapCanvasOffset(viewport.x),
+    y: snapCanvasOffset(viewport.y),
+    scale: nearestZoomLevel(viewport.scale),
+  };
 }
 
 function formatCanvasNumber(value: number): string {
@@ -110,17 +139,17 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
   const isLocked = interactionMode === "locked";
 
   const updateViewport = useCallback((nextViewport: AtlasViewport) => {
+    const normalizedViewport = normalizeViewport(nextViewport);
     if (!viewport) {
-      setInternalViewport(nextViewport);
+      setInternalViewport(normalizedViewport);
     }
-    onViewportChange?.(nextViewport);
+    onViewportChange?.(normalizedViewport);
   }, [onViewportChange, viewport]);
 
   const handleCanvasWheel = useCallback((event: globalThis.WheelEvent) => {
     if (isLocked) return;
     event.preventDefault();
-    const direction = event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
-    const nextScale = clampScale(currentViewport.scale * direction);
+    const nextScale = nextZoomLevel(currentViewport.scale, event.deltaY < 0 ? "in" : "out");
     if (nextScale === currentViewport.scale) return;
 
     const container = mapContainerRef.current;
@@ -151,7 +180,7 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
     if (isLocked) return;
     updateViewport({
       ...currentViewport,
-      scale: clampScale(currentViewport.scale * ZOOM_STEP),
+      scale: nextZoomLevel(currentViewport.scale, "in"),
     });
   }, [currentViewport, isLocked, updateViewport]);
 
@@ -159,7 +188,7 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
     if (isLocked) return;
     updateViewport({
       ...currentViewport,
-      scale: clampScale(currentViewport.scale / ZOOM_STEP),
+      scale: nextZoomLevel(currentViewport.scale, "out"),
     });
   }, [currentViewport, isLocked, updateViewport]);
 

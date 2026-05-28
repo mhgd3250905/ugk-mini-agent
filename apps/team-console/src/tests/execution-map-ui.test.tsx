@@ -1457,6 +1457,34 @@ describe("Canvas pan and zoom", () => {
     expect(stage.style.transform).toContain("translate(30px, 36px)");
   });
 
+  it("snaps canvas pan offsets to device pixels", () => {
+    const devicePixelRatioDescriptor = Object.getOwnPropertyDescriptor(window, "devicePixelRatio");
+    Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: 2 });
+
+    try {
+      const { container, stage } = renderCanvasMap();
+
+      firePointer(container, "pointerdown", { pointerId: 2, clientX: 10, clientY: 10 });
+      firePointer(container, "pointermove", { pointerId: 2, clientX: 40.25, clientY: 46.25 });
+      firePointer(container, "pointerup", { pointerId: 2, clientX: 40.25, clientY: 46.25, buttons: 0 });
+
+      expect(stage.style.transform).toContain("translate(30.5px, 36.5px)");
+    } finally {
+      if (devicePixelRatioDescriptor) {
+        Object.defineProperty(window, "devicePixelRatio", devicePixelRatioDescriptor);
+      } else {
+        delete (window as { devicePixelRatio?: number }).devicePixelRatio;
+      }
+    }
+  });
+
+  it("uses rendering hints that reduce scaled text blur", () => {
+    const css = readFileSync("src/graph/execution-map.css", "utf8");
+    expect(css).toContain("text-rendering: optimizeLegibility");
+    expect(css).toContain("-webkit-font-smoothing: antialiased");
+    expect(css).toContain("backface-visibility: hidden");
+  });
+
   it("pointer down on a node does not start pan and still supports click", () => {
     const plan = makeSequentialPlan();
     const run = makeSequentialRun();
