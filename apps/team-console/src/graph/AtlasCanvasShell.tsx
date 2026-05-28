@@ -325,11 +325,21 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
     >
       {!isLocked && (
         <div className="execution-map-toolbar" aria-label="视图工具">
-          {toolbarStart}
-          <button type="button" onClick={zoomIn}>放大</button>
-          <button type="button" onClick={zoomOut}>缩小</button>
-          <button type="button" onClick={resetView}>重置视图</button>
-          <span className="execution-map-zoom">{zoomPercent}</span>
+          <div className="execution-map-toolbar-main">
+            {toolbarStart}
+          </div>
+          <div className="execution-map-toolbar-viewport" aria-label="画布视图控制">
+            <button type="button" className="execution-map-icon-button" onClick={zoomIn} aria-label="放大" title="放大">
+              <span aria-hidden="true">+</span>
+            </button>
+            <button type="button" className="execution-map-icon-button" onClick={zoomOut} aria-label="缩小" title="缩小">
+              <span aria-hidden="true">-</span>
+            </button>
+            <button type="button" className="execution-map-reset-button" onClick={resetView} aria-label="重置视图" title="重置视图">
+              <span aria-hidden="true">1:1</span>
+            </button>
+            <span className="execution-map-zoom" aria-label={`当前缩放 ${zoomPercent}`}>{zoomPercent}</span>
+          </div>
         </div>
       )}
       <div

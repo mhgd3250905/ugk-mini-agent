@@ -279,6 +279,10 @@ describe("App", () => {
   it("groups atlas toolbar stats and Task actions", () => {
     const { container } = render(<App />);
 
+    expect(container.querySelector(".execution-map-toolbar-main")).toBeTruthy();
+    expect(container.querySelector(".execution-map-toolbar-viewport")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "放大" })).toHaveClass("execution-map-icon-button");
+    expect(screen.getByRole("button", { name: "重置视图" })).toHaveClass("execution-map-reset-button");
     const toolbar = container.querySelector(".agent-atlas-actions") as HTMLElement | null;
     expect(toolbar).toBeTruthy();
     expect(toolbar!.querySelector(".agent-atlas-stats")).toBeTruthy();
