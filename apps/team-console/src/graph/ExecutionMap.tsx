@@ -757,6 +757,12 @@ export function ExecutionMap({
   interactionMode = "free",
   onRootTrashDrop,
   rootNodeFilter = "all",
+  onDeleteTaskConnection,
+  onDeleteSourceConnection,
+  onDeleteTaskDependency,
+  pendingDeleteConnectionId,
+  pendingDeleteSourceConnectionId,
+  pendingDeleteDependencyId,
 }: ExecutionMapProps) {
   const evidenceContainerRef = useRef<HTMLDivElement | null>(null);
   const [measuredHeights, setMeasuredHeights] = useState<MeasuredHeights>({});
@@ -966,18 +972,18 @@ export function ExecutionMap({
       .filter((connection) => connection.status !== "stale")
       .map((connection) => {
         const points = taskConnectionPoints(connection, taskNodeByTaskId, tasksById);
-        return points ? { connection, path: straightPath(points.source.x, points.source.y, points.target.x, points.target.y), source: points.source } : null;
+        return points ? { connection, path: straightPath(points.source.x, points.source.y, points.target.x, points.target.y), source: points.source, target: points.target } : null;
       })
-      .filter((entry): entry is { connection: TeamTaskConnection; path: string; source: { x: number; y: number } } => Boolean(entry))
+      .filter((entry): entry is { connection: TeamTaskConnection; path: string; source: { x: number; y: number }; target: { x: number; y: number } } => Boolean(entry))
   ), [taskConnections, taskNodeByTaskId, tasksById]);
   const sourceConnectionLinks = useMemo(() => (
     sourceConnections
       .filter((connection) => connection.status !== "stale")
       .map((connection) => {
         const points = sourceConnectionPoints(connection, sourceNodeBySourceId, taskNodeByTaskId, sourceNodesById, tasksById);
-        return points ? { connection, path: straightPath(points.source.x, points.source.y, points.target.x, points.target.y), source: points.source } : null;
+        return points ? { connection, path: straightPath(points.source.x, points.source.y, points.target.x, points.target.y), source: points.source, target: points.target } : null;
       })
-      .filter((entry): entry is { connection: TeamCanvasSourceConnection; path: string; source: { x: number; y: number } } => Boolean(entry))
+      .filter((entry): entry is { connection: TeamCanvasSourceConnection; path: string; source: { x: number; y: number }; target: { x: number; y: number } } => Boolean(entry))
   ), [sourceConnections, sourceNodeBySourceId, sourceNodesById, taskNodeByTaskId, tasksById]);
 
   const taskDependencyLinks = useMemo(() => (
@@ -3065,6 +3071,61 @@ export function ExecutionMap({
               )}
             </div>
           ))}
+          {taskConnectionLinks.map(({ connection, source, target }) => {
+            const sourceTitle = tasksById?.get(connection.fromTaskId)?.title ?? connection.fromTaskId;
+            const targetTitle = tasksById?.get(connection.toTaskId)?.title ?? connection.toTaskId;
+            const mx = (source.x + target.x) / 2;
+            const my = (source.y + target.y) / 2;
+            const isPending = pendingDeleteConnectionId === connection.connectionId;
+            return (
+              <button
+                key={`cut-tc-${connection.connectionId}`}
+                type="button"
+                className={`emap-link-cut-button emap-link-cut-task${isPending ? " is-pending" : ""}`}
+                style={{ left: mx - 12, top: my - 12 }}
+                aria-label={`切断 Task 连接: ${sourceTitle} -> ${targetTitle}`}
+                aria-busy={isPending || undefined}
+                disabled={isPending}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDeleteTaskConnection?.(connection.connectionId);
+                }}
+              >
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                  <line x1="3" y1="3" x2="13" y2="13" />
+                  <line x1="13" y1="3" x2="3" y2="13" />
+                </svg>
+              </button>
+            );
+          })}
+          {sourceConnectionLinks.map(({ connection, source, target }) => {
+            const srcNode = sourceNodesById?.get(connection.fromSourceNodeId);
+            const sourceTitle = srcNode?.title ?? connection.fromSourceNodeId;
+            const targetTitle = tasksById?.get(connection.toTaskId)?.title ?? connection.toTaskId;
+            const mx = (source.x + target.x) / 2;
+            const my = (source.y + target.y) / 2;
+            const isPending = pendingDeleteSourceConnectionId === connection.connectionId;
+            return (
+              <button
+                key={`cut-sc-${connection.connectionId}`}
+                type="button"
+                className={`emap-link-cut-button emap-link-cut-source${isPending ? " is-pending" : ""}`}
+                style={{ left: mx - 12, top: my - 12 }}
+                aria-label={`切断 Source 连接: ${sourceTitle} -> ${targetTitle}`}
+                aria-busy={isPending || undefined}
+                disabled={isPending}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDeleteSourceConnection?.(connection.connectionId);
+                }}
+              >
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                  <line x1="3" y1="3" x2="13" y2="13" />
+                  <line x1="13" y1="3" x2="3" y2="13" />
+                </svg>
+              </button>
+            );
+          })}
         </div>
     </AtlasCanvasShell>
   );

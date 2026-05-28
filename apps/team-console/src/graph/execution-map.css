@@ -317,6 +317,46 @@
   filter: drop-shadow(0 0 3px rgba(230, 170, 60, 0.25));
 }
 
+.emap-link-cut-button {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  background: rgba(30, 30, 35, 0.85);
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s;
+  z-index: 5;
+}
+.emap-link-cut-button:hover,
+.emap-link-cut-button:focus-visible {
+  opacity: 1;
+  background: rgba(50, 50, 55, 0.95);
+  border-color: rgba(255, 255, 255, 0.4);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15);
+}
+.emap-link-cut-button.is-pending {
+  opacity: 0.35;
+  cursor: wait;
+}
+
+.emap-link-cut-task { border-color: rgba(100, 210, 120, 0.4); color: rgb(100, 210, 120); }
+.emap-link-cut-task:hover, .emap-link-cut-task:focus-visible { border-color: rgba(100, 210, 120, 0.7); }
+
+.emap-link-cut-source { border-color: rgba(100, 200, 220, 0.4); color: rgb(100, 200, 220); }
+.emap-link-cut-source:hover, .emap-link-cut-source:focus-visible { border-color: rgba(100, 200, 220, 0.7); }
+
+.emap-link-cut-dep { border-color: rgba(230, 170, 60, 0.4); color: rgb(230, 170, 60); }
+.emap-link-cut-dep:hover, .emap-link-cut-dep:focus-visible { border-color: rgba(230, 170, 60, 0.7); }
+
 .emap-task-dep-handle {
   position: absolute;
   top: 50%;

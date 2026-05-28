@@ -390,6 +390,144 @@ describe("App", () => {
     expect(sourceSocket!.getAttribute("d")).toBe(`M${sourceX},${sourceY - 6} A6,6 0 0 1 ${sourceX},${sourceY + 6}`);
   });
 
+  it("cuts a typed Task connection from the canvas cut button", async () => {
+    const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+    const existingConnection: TeamTaskConnection = {
+      connectionId: "conn_cut_md",
+      fromTaskId: collectTask.taskId,
+      fromOutputPortId: "draft_md",
+      toTaskId: htmlTask.taskId,
+      toInputPortId: "source_md",
+      type: "md",
+      status: "active",
+      createdAt: "2026-05-25T00:00:00.000Z",
+      updatedAt: "2026-05-25T00:00:00.000Z",
+    };
+    let connections = [existingConnection];
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [collectTask, htmlTask] }), { status: 200 });
+      if (url === "/v1/team/task-connections" && method === "GET") return new Response(JSON.stringify({ connections }), { status: 200 });
+      if (url === `/v1/team/task-connections/${existingConnection.connectionId}` && method === "DELETE") {
+        connections = [];
+        return new Response(null, { status: 204 });
+      }
+      if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const cutButton = await screen.findByRole("button", { name: /切断 Task 连接/ });
+    expect(cutButton).toBeTruthy();
+    expect(cutButton.closest(".emap-link-cut-task")).toBeTruthy();
+
+    expect(container.querySelector('[data-task-connection-id="conn_cut_md"]')).toBeTruthy();
+    fireEvent.click(cutButton);
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-task-connection-id="conn_cut_md"]')).toBeNull();
+    });
+    expect(container.querySelector(".emap-link-cut-button")).toBeNull();
+  });
+
+  it("keeps Task connection line on delete failure and shows error", async () => {
+    const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+    const existingConnection: TeamTaskConnection = {
+      connectionId: "conn_fail_md",
+      fromTaskId: collectTask.taskId,
+      fromOutputPortId: "draft_md",
+      toTaskId: htmlTask.taskId,
+      toInputPortId: "source_md",
+      type: "md",
+      status: "active",
+      createdAt: "2026-05-25T00:00:00.000Z",
+      updatedAt: "2026-05-25T00:00:00.000Z",
+    };
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [collectTask, htmlTask] }), { status: 200 });
+      if (url === "/v1/team/task-connections" && method === "GET") return new Response(JSON.stringify({ connections: [existingConnection] }), { status: 200 });
+      if (url === `/v1/team/task-connections/${existingConnection.connectionId}` && method === "DELETE") {
+        return new Response(JSON.stringify({ error: "internal error" }), { status: 500 });
+      }
+      if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const cutButton = await screen.findByRole("button", { name: /切断 Task 连接/ });
+    fireEvent.click(cutButton);
+
+    await waitFor(() => {
+      expect(container.querySelector(".error-banner")).toBeTruthy();
+    });
+    expect(container.querySelector('[data-task-connection-id="conn_fail_md"]')).toBeTruthy();
+  });
+
+  it("cuts a Source connection from the canvas cut button", async () => {
+    const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+    const sourceNode: TeamCanvasSourceNode = {
+      sourceNodeId: "src_brief",
+      title: "brief.md 文件",
+      outputPort: { id: "brief_md", label: "Markdown 文稿", type: "md" },
+      kind: "file",
+      createdAt: "2026-05-25T00:00:00.000Z",
+      updatedAt: "2026-05-25T00:00:00.000Z",
+    };
+    const sourceConnection: TeamCanvasSourceConnection = {
+      connectionId: "sc_cut_md",
+      fromSourceNodeId: "src_brief",
+      fromOutputPortId: "brief_md",
+      toTaskId: htmlTask.taskId,
+      toInputPortId: "source_md",
+      type: "md",
+      status: "active",
+      createdAt: "2026-05-25T00:00:00.000Z",
+      updatedAt: "2026-05-25T00:00:00.000Z",
+    };
+    let connections = [sourceConnection];
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [collectTask, htmlTask] }), { status: 200 });
+      if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === "/v1/team/source-nodes") return new Response(JSON.stringify({ sourceNodes: [sourceNode] }), { status: 200 });
+      if (url === "/v1/team/source-connections" && method === "GET") return new Response(JSON.stringify({ connections }), { status: 200 });
+      if (url === `/v1/team/source-connections/${sourceConnection.connectionId}` && method === "DELETE") {
+        connections = [];
+        return new Response(null, { status: 204 });
+      }
+      if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    const cutButton = await screen.findByRole("button", { name: /切断 Source 连接/ });
+    expect(cutButton).toBeTruthy();
+    expect(cutButton.closest(".emap-link-cut-source")).toBeTruthy();
+
+    expect(container.querySelector('[data-source-connection-id="sc_cut_md"]')).toBeTruthy();
+    fireEvent.click(cutButton);
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-source-connection-id="sc_cut_md"]')).toBeNull();
+    });
+  });
+
   it("creates editable text source nodes and connects them to same-type Task inputs", async () => {
     const task = {
       ...cloneTaskFixture(),
