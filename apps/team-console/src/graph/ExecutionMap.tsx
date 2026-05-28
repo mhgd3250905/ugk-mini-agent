@@ -1736,7 +1736,21 @@ export function ExecutionMap({
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
+              const itemRect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+              const container = dockRef.current?.closest<HTMLElement>(".execution-map-container");
+              const containerRect = container?.getBoundingClientRect();
+              const vp = viewport ?? { x: 0, y: 0, scale: 1 };
               onRestoreAgent?.(node);
+              if (containerRect) {
+                const toX = containerRect.left + node.position.x * vp.scale + vp.x;
+                const toY = containerRect.top + node.position.y * vp.scale + vp.y;
+                setFlightAnimation({
+                  fromX: itemRect.left, fromY: itemRect.top, fromW: itemRect.width, fromH: itemRect.height,
+                  toX, toY, toW: NODE_WIDTH * vp.scale, toH: AGENT_NODE_HEIGHT * vp.scale,
+                  kind: "restore", label,
+                });
+                globalThis.setTimeout(() => setFlightAnimation(null), 260);
+              }
             }}
           >
             <span className="emap-root-dock-icon" aria-hidden="true">A</span>
@@ -1761,7 +1775,21 @@ export function ExecutionMap({
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
+              const itemRect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+              const container = dockRef.current?.closest<HTMLElement>(".execution-map-container");
+              const containerRect = container?.getBoundingClientRect();
+              const vp = viewport ?? { x: 0, y: 0, scale: 1 };
               onRestoreCanvasTask?.(node);
+              if (containerRect) {
+                const toX = containerRect.left + node.position.x * vp.scale + vp.x;
+                const toY = containerRect.top + node.position.y * vp.scale + vp.y;
+                setFlightAnimation({
+                  fromX: itemRect.left, fromY: itemRect.top, fromW: itemRect.width, fromH: itemRect.height,
+                  toX, toY, toW: NODE_WIDTH * vp.scale, toH: CANVAS_TASK_NODE_HEIGHT * vp.scale,
+                  kind: "restore", label,
+                });
+                globalThis.setTimeout(() => setFlightAnimation(null), 260);
+              }
             }}
           >
             <span className="emap-root-dock-icon" aria-hidden="true">T</span>
@@ -1786,7 +1814,21 @@ export function ExecutionMap({
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
+              const itemRect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+              const container = dockRef.current?.closest<HTMLElement>(".execution-map-container");
+              const containerRect = container?.getBoundingClientRect();
+              const vp = viewport ?? { x: 0, y: 0, scale: 1 };
               onRestoreSourceNode?.(node);
+              if (containerRect) {
+                const toX = containerRect.left + node.position.x * vp.scale + vp.x;
+                const toY = containerRect.top + node.position.y * vp.scale + vp.y;
+                setFlightAnimation({
+                  fromX: itemRect.left, fromY: itemRect.top, fromW: itemRect.width, fromH: itemRect.height,
+                  toX, toY, toW: NODE_WIDTH * vp.scale, toH: CANVAS_SOURCE_NODE_HEIGHT * vp.scale,
+                  kind: "restore", label,
+                });
+                globalThis.setTimeout(() => setFlightAnimation(null), 260);
+              }
             }}
           >
             <span className="emap-root-dock-icon" aria-hidden="true">S</span>

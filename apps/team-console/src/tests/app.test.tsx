@@ -2371,6 +2371,39 @@ describe("App", () => {
     expect(restoredBranchTop).toBe(branchOriginalTop);
   });
 
+  it("shows restore flight animation when clicking Dock item and preserves position", async () => {
+    const { container } = render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+    fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+    const agentNode = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
+    expect(agentNode).toBeTruthy();
+    const originalLeft = parseFloat(agentNode!.style.left);
+    const originalTop = parseFloat(agentNode!.style.top);
+
+    fireEvent.click(within(agentNode!).getByRole("button", { name: "收纳 Agent" }));
+    expect(container.querySelector('.emap-agent-node[data-agent-id="main"]')).toBeNull();
+
+    const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
+    expect(dock).toBeTruthy();
+    const restoreButton = within(dock!).getByRole("button", { name: /复原 Agent 主 Agent/ });
+
+    fireEvent.click(restoreButton);
+
+    const flight = container.querySelector(".emap-root-dock-flight");
+    expect(flight).toBeTruthy();
+
+    await waitFor(() => {
+      expect(container.querySelector(".emap-root-dock-flight")).toBeNull();
+    }, { timeout: 500 });
+
+    const restoredNode = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
+    expect(restoredNode).toBeTruthy();
+    expect(parseFloat(restoredNode!.style.left)).toBe(originalLeft);
+    expect(parseFloat(restoredNode!.style.top)).toBe(originalTop);
+  });
+
   it("opens the Task leader chat iframe from the action menu", async () => {
     const { container } = render(<App />);
 
