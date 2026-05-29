@@ -1,6 +1,5 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { generateTaskConnectionId } from "./ids.js";
+import { JsonCollectionStore } from "./json-collection-store.js";
 import { findInputPort, findOutputPort } from "./task-port-contract.js";
 import { resolveConnectionStaleReason, wouldCreateTaskConnectionCycle, wouldCreateTaskGraphCycle, type TaskGraphEdge } from "./task-chain-contract.js";
 import type { TaskStore } from "./task-store.js";
@@ -16,13 +15,19 @@ export interface CreateTaskConnectionInput {
 const now = () => new Date().toISOString();
 
 export class TaskConnectionStore {
-	private readonly filePath: string;
+	private readonly collection: JsonCollectionStore<TeamTaskConnection>;
 
 	constructor(
 		private readonly rootDir: string,
 		private readonly taskStore: TaskStore,
 	) {
-		this.filePath = join(rootDir, "task-connections.json");
+		this.collection = new JsonCollectionStore<TeamTaskConnection>({
+			rootDir,
+			fileName: "task-connections.json",
+			schemaVersion: "team/task-connection-1",
+			lockDirName: ".task-connections.lock",
+			errorLabel: "task connection store",
+		});
 	}
 
 	setExistingDependencies(deps: () => Promise<TeamTaskDependency[]>): void {
@@ -32,7 +37,7 @@ export class TaskConnectionStore {
 	private getExistingDependencies: (() => Promise<TeamTaskDependency[]>) | undefined;
 
 	async list(): Promise<TeamTaskConnection[]> {
-		const connections = await this.readAll();
+		const connections = await this.collection.readAll();
 		return connections.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 	}
 
@@ -80,8 +85,8 @@ export class TaskConnectionStore {
 			throw new Error(`port type mismatch: ${fromPort.type} -> ${toPort.type}`);
 		}
 
-		return this.withMutationLock(async () => {
-			const connections = await this.readAll();
+		return this.collection.withMutationLock(async () => {
+			const connections = await this.collection.readAll();
 			if (connections.some(connection =>
 				connection.fromTaskId === fromTaskId &&
 				connection.fromOutputPortId === fromOutputPortId &&
@@ -95,7 +100,7 @@ export class TaskConnectionStore {
 			}
 			const existingDeps = this.getExistingDependencies ? await this.getExistingDependencies() : [];
 			if (existingDeps.length > 0) {
-				const edges = [
+				const edges: TaskGraphEdge[] = [
 					...connections.map(c => ({ fromTaskId: c.fromTaskId, toTaskId: c.toTaskId })),
 					...existingDeps.map(d => ({ fromTaskId: d.fromTaskId, toTaskId: d.toTaskId })),
 				];
@@ -116,77 +121,19 @@ export class TaskConnectionStore {
 				createdAt: timestamp,
 				updatedAt: timestamp,
 			};
-			await this.writeAll([...connections, connection]);
+			await this.collection.writeAll([...connections, connection]);
 			return connection;
 		});
 	}
 
 	async delete(connectionId: string): Promise<boolean> {
-		return this.withMutationLock(async () => {
-			const connections = await this.readAll();
+		return this.collection.withMutationLock(async () => {
+			const connections = await this.collection.readAll();
 			const next = connections.filter(connection => connection.connectionId !== connectionId);
 			if (next.length === connections.length) return false;
-			await this.writeAll(next);
+			await this.collection.writeAll(next);
 			return true;
 		});
-	}
-
-	private async readAll(): Promise<TeamTaskConnection[]> {
-		let content: string;
-		try {
-			content = await readFile(this.filePath, "utf8");
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-			throw new Error(`task connection store read failed: ${(error as Error).message}`);
-		}
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(content);
-		} catch {
-			throw new Error("task connection store contains invalid JSON");
-		}
-		if (!Array.isArray(parsed)) {
-			throw new Error("task connection store does not contain an array");
-		}
-		return parsed
-			.filter((connection: unknown) => (connection as Record<string, unknown>)?.schemaVersion === "team/task-connection-1")
-			.map(connection => connection as TeamTaskConnection);
-	}
-
-	private async withMutationLock<T>(fn: () => Promise<T>): Promise<T> {
-		await mkdir(this.rootDir, { recursive: true });
-		const lockDir = join(this.rootDir, ".task-connections.lock");
-		let acquired = false;
-		for (let attempt = 0; attempt < 100; attempt++) {
-			try {
-				await mkdir(lockDir);
-				acquired = true;
-				break;
-			} catch (error) {
-				const code = (error as NodeJS.ErrnoException).code;
-				if (code !== "EEXIST" && code !== "EPERM") throw error;
-				await new Promise(resolve => setTimeout(resolve, 10));
-			}
-		}
-		if (!acquired) {
-			throw new Error("task connection store lock busy");
-		}
-		try {
-			return await fn();
-		} finally {
-			await rm(lockDir, { recursive: true, force: true });
-		}
-	}
-
-	private async writeAll(connections: TeamTaskConnection[]): Promise<void> {
-		await mkdir(this.rootDir, { recursive: true });
-		const tmp = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
-		try {
-			await writeFile(tmp, JSON.stringify(connections, null, 2), "utf8");
-			await rename(tmp, this.filePath);
-		} finally {
-			await rm(tmp, { force: true }).catch(() => {});
-		}
 	}
 }
 

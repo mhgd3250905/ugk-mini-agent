@@ -1,6 +1,5 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { generateTaskDependencyId } from "./ids.js";
+import { JsonCollectionStore } from "./json-collection-store.js";
 import { resolveDependencyStaleReason, wouldCreateTaskGraphCycle, type TaskGraphEdge } from "./task-chain-contract.js";
 import type { TaskStore } from "./task-store.js";
 import type { ResolvedTaskDependency, TeamTaskDependency, TeamTaskConnection } from "./types.js";
@@ -8,14 +7,20 @@ import type { ResolvedTaskDependency, TeamTaskDependency, TeamTaskConnection } f
 const now = () => new Date().toISOString();
 
 export class TaskDependencyStore {
-	private readonly filePath: string;
+	private readonly collection: JsonCollectionStore<TeamTaskDependency>;
 	private getExistingConnections: (() => Promise<TeamTaskConnection[]>) | undefined;
 
 	constructor(
 		private readonly rootDir: string,
 		private readonly taskStore: TaskStore,
 	) {
-		this.filePath = join(rootDir, "task-dependencies.json");
+		this.collection = new JsonCollectionStore<TeamTaskDependency>({
+			rootDir,
+			fileName: "task-dependencies.json",
+			schemaVersion: "team/task-dependency-1",
+			lockDirName: ".task-dependencies.lock",
+			errorLabel: "task dependency store",
+		});
 	}
 
 	setExistingConnections(connections: () => Promise<TeamTaskConnection[]>): void {
@@ -23,7 +28,7 @@ export class TaskDependencyStore {
 	}
 
 	async list(): Promise<TeamTaskDependency[]> {
-		const dependencies = await this.readAll();
+		const dependencies = await this.collection.readAll();
 		return dependencies.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 	}
 
@@ -61,8 +66,8 @@ export class TaskDependencyStore {
 		if (!toTask) throw new Error(`task not found: ${toTaskId}`);
 		if (toTask.archived) throw new Error(`archived task cannot be dependency target: ${toTaskId}`);
 
-		return this.withMutationLock(async () => {
-			const dependencies = await this.readAll();
+		return this.collection.withMutationLock(async () => {
+			const dependencies = await this.collection.readAll();
 			if (dependencies.some(dep =>
 				dep.fromTaskId === fromTaskId &&
 				dep.toTaskId === toTaskId
@@ -91,77 +96,19 @@ export class TaskDependencyStore {
 				createdAt: timestamp,
 				updatedAt: timestamp,
 			};
-			await this.writeAll([...dependencies, dependency]);
+			await this.collection.writeAll([...dependencies, dependency]);
 			return dependency;
 		});
 	}
 
 	async delete(dependencyId: string): Promise<boolean> {
-		return this.withMutationLock(async () => {
-			const dependencies = await this.readAll();
+		return this.collection.withMutationLock(async () => {
+			const dependencies = await this.collection.readAll();
 			const next = dependencies.filter(dep => dep.dependencyId !== dependencyId);
 			if (next.length === dependencies.length) return false;
-			await this.writeAll(next);
+			await this.collection.writeAll(next);
 			return true;
 		});
-	}
-
-	private async readAll(): Promise<TeamTaskDependency[]> {
-		let content: string;
-		try {
-			content = await readFile(this.filePath, "utf8");
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-			throw new Error(`task dependency store read failed: ${(error as Error).message}`);
-		}
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(content);
-		} catch {
-			throw new Error("task dependency store contains invalid JSON");
-		}
-		if (!Array.isArray(parsed)) {
-			throw new Error("task dependency store does not contain an array");
-		}
-		return parsed
-			.filter((dep: unknown) => (dep as Record<string, unknown>)?.schemaVersion === "team/task-dependency-1")
-			.map(dep => dep as TeamTaskDependency);
-	}
-
-	private async withMutationLock<T>(fn: () => Promise<T>): Promise<T> {
-		await mkdir(this.rootDir, { recursive: true });
-		const lockDir = join(this.rootDir, ".task-dependencies.lock");
-		let acquired = false;
-		for (let attempt = 0; attempt < 100; attempt++) {
-			try {
-				await mkdir(lockDir);
-				acquired = true;
-				break;
-			} catch (error) {
-				const code = (error as NodeJS.ErrnoException).code;
-				if (code !== "EEXIST" && code !== "EPERM") throw error;
-				await new Promise(resolve => setTimeout(resolve, 10));
-			}
-		}
-		if (!acquired) {
-			throw new Error("task dependency store lock busy");
-		}
-		try {
-			return await fn();
-		} finally {
-			await rm(lockDir, { recursive: true, force: true });
-		}
-	}
-
-	private async writeAll(dependencies: TeamTaskDependency[]): Promise<void> {
-		await mkdir(this.rootDir, { recursive: true });
-		const tmp = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
-		try {
-			await writeFile(tmp, JSON.stringify(dependencies, null, 2), "utf8");
-			await rename(tmp, this.filePath);
-		} finally {
-			await rm(tmp, { force: true }).catch(() => {});
-		}
 	}
 }
 
