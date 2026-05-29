@@ -226,8 +226,11 @@ test("CanvasTaskAttemptRunner: checker revision limit exceeded", async () => {
 			checkerProfileId: "checker_1",
 		});
 		assert.equal(outcome.status, "failed");
-		assert.match(outcome.errorSummary!, /checker revision limit/);
+		assert.equal(outcome.errorSummary, "checker revision limit exceeded");
 		assert.ok(outcome.resultRef);
+
+		const attempts = await workspace.listAttempts(runId, task.id);
+		assert.equal(attempts[0]!.errorSummary, "checker revision limit exceeded");
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

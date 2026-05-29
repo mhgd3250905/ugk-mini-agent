@@ -119,8 +119,9 @@ export class CanvasTaskAttemptRunner {
 			await workspace.updateAttemptPhase(runId, task.id, attemptId, "checker_revising");
 			feedback = checkerOut.feedback;
 			if (revisionIndex >= this.maxCheckerRevisions) {
-				const errorSummary = `checker revision limit (${this.maxCheckerRevisions}) exceeded`;
-				const failRef = await workspace.writeFailedResult(runId, task.id, attemptId, errorSummary);
+				const failContent = `checker revision limit (${this.maxCheckerRevisions}) exceeded`;
+				const errorSummary = "checker revision limit exceeded";
+				const failRef = await workspace.writeFailedResult(runId, task.id, attemptId, failContent);
 				await workspace.finishAttempt(runId, task.id, attemptId, { status: "failed", phase: "failed", resultRef: failRef, errorSummary });
 				return { status: "failed", resultRef: failRef, errorSummary };
 			}
