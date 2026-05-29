@@ -1,7 +1,7 @@
 import { generateTaskConnectionId } from "./ids.js";
 import { JsonCollectionStore } from "./json-collection-store.js";
 import { findInputPort, findOutputPort } from "./task-port-contract.js";
-import { resolveConnectionStaleReason, wouldCreateTaskConnectionCycle, wouldCreateTaskGraphCycle, type TaskGraphEdge } from "./task-chain-contract.js";
+import { isDuplicateTypedConnection, resolveConnectionStaleReason, wouldCreateMixedCycle } from "./task-graph.js";
 import type { TaskStore } from "./task-store.js";
 import type { ResolvedTaskConnection, TeamTaskConnection, TeamTaskDependency } from "./types.js";
 
@@ -87,26 +87,12 @@ export class TaskConnectionStore {
 
 		return this.collection.withMutationLock(async () => {
 			const connections = await this.collection.readAll();
-			if (connections.some(connection =>
-				connection.fromTaskId === fromTaskId &&
-				connection.fromOutputPortId === fromOutputPortId &&
-				connection.toTaskId === toTaskId &&
-				connection.toInputPortId === toInputPortId
-			)) {
+			if (isDuplicateTypedConnection(connections, fromTaskId, fromOutputPortId, toTaskId, toInputPortId)) {
 				throw new Error("task connection already exists");
 			}
-			if (wouldCreateTaskConnectionCycle(connections, fromTaskId, toTaskId)) {
-				throw new Error("task connection would create a cycle");
-			}
 			const existingDeps = this.getExistingDependencies ? await this.getExistingDependencies() : [];
-			if (existingDeps.length > 0) {
-				const edges: TaskGraphEdge[] = [
-					...connections.map(c => ({ fromTaskId: c.fromTaskId, toTaskId: c.toTaskId })),
-					...existingDeps.map(d => ({ fromTaskId: d.fromTaskId, toTaskId: d.toTaskId })),
-				];
-				if (wouldCreateTaskGraphCycle(edges, fromTaskId, toTaskId)) {
-					throw new Error("task connection would create a cycle");
-				}
+			if (wouldCreateMixedCycle(connections, existingDeps, fromTaskId, toTaskId)) {
+				throw new Error("task connection would create a cycle");
 			}
 
 			const timestamp = now();

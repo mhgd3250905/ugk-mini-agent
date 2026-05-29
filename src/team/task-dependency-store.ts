@@ -1,6 +1,6 @@
 import { generateTaskDependencyId } from "./ids.js";
 import { JsonCollectionStore } from "./json-collection-store.js";
-import { resolveDependencyStaleReason, wouldCreateTaskGraphCycle, type TaskGraphEdge } from "./task-chain-contract.js";
+import { isDuplicateDependency, resolveDependencyStaleReason, wouldCreateMixedCycle } from "./task-graph.js";
 import type { TaskStore } from "./task-store.js";
 import type { ResolvedTaskDependency, TeamTaskDependency, TeamTaskConnection } from "./types.js";
 
@@ -68,21 +68,12 @@ export class TaskDependencyStore {
 
 		return this.collection.withMutationLock(async () => {
 			const dependencies = await this.collection.readAll();
-			if (dependencies.some(dep =>
-				dep.fromTaskId === fromTaskId &&
-				dep.toTaskId === toTaskId
-			)) {
+			if (isDuplicateDependency(dependencies, fromTaskId, toTaskId)) {
 				throw new Error("task dependency already exists");
 			}
 
-			const edges: TaskGraphEdge[] = [
-				...dependencies.map(d => ({ fromTaskId: d.fromTaskId, toTaskId: d.toTaskId })),
-			];
 			const existingConns = this.getExistingConnections ? await this.getExistingConnections() : [];
-			if (existingConns.length > 0) {
-				edges.push(...existingConns.map(c => ({ fromTaskId: c.fromTaskId, toTaskId: c.toTaskId })));
-			}
-			if (wouldCreateTaskGraphCycle(edges, fromTaskId, toTaskId)) {
+			if (wouldCreateMixedCycle(existingConns, dependencies, fromTaskId, toTaskId)) {
 				throw new Error("task dependency would create a cycle");
 			}
 
