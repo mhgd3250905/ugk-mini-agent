@@ -22,23 +22,32 @@ import {
 import { linkMidpoint } from "../graph/link-layout";
 import type { TeamCanvasTask } from "../api/team-types";
 
+function makeWorkUnit(overrides: Record<string, unknown> = {}) {
+  return {
+    title: "Test WorkUnit",
+    input: { text: "" },
+    inputPorts: [] as [],
+    outputPorts: [] as [],
+    outputContract: { text: "" },
+    acceptance: { rules: [] as string[] },
+    workerAgentId: "worker",
+    checkerAgentId: "checker",
+    ...overrides,
+  };
+}
+
 function makeTask(overrides: Record<string, unknown> = {}): TeamCanvasTask {
   return {
     taskId: "task_1",
     title: "Test Task",
     status: "ready",
     leaderAgentId: "main",
-    workUnit: {
-      workerAgentId: "worker",
-      checkerAgentId: "checker",
-      inputPorts: [],
-      outputPorts: [],
-      inputText: "",
-      outputContract: "",
-      acceptanceRules: [],
-    },
+    workUnit: makeWorkUnit(),
+    createdAt: "",
+    updatedAt: "",
+    archived: false,
     ...overrides,
-  } as unknown as TeamCanvasTask;
+  } as TeamCanvasTask;
 }
 
 describe("atlas-geometry: node sizing", () => {
@@ -48,30 +57,10 @@ describe("atlas-geometry: node sizing", () => {
   });
 
   it("canvasTaskPortRowCount counts input and output port rows", () => {
-    const withInput = makeTask({
-      workUnit: {
-        workerAgentId: "w",
-        checkerAgentId: "c",
-        inputPorts: [{ id: "in1", type: "md", label: "input" }],
-        outputPorts: [],
-        inputText: "",
-        outputContract: "",
-        acceptanceRules: [],
-      },
-    } as Partial<TeamCanvasTask>);
+    const withInput = makeTask({ workUnit: makeWorkUnit({ inputPorts: [{ id: "in1", type: "md", label: "input" }] }) });
     expect(canvasTaskPortRowCount(withInput)).toBe(1);
 
-    const withBoth = makeTask({
-      workUnit: {
-        workerAgentId: "w",
-        checkerAgentId: "c",
-        inputPorts: [{ id: "in1", type: "md", label: "input" }],
-        outputPorts: [{ id: "out1", type: "md", label: "output" }],
-        inputText: "",
-        outputContract: "",
-        acceptanceRules: [],
-      },
-    } as Partial<TeamCanvasTask>);
+    const withBoth = makeTask({ workUnit: makeWorkUnit({ inputPorts: [{ id: "in1", type: "md", label: "input" }], outputPorts: [{ id: "out1", type: "md", label: "output" }] }) });
     expect(canvasTaskPortRowCount(withBoth)).toBe(2);
   });
 
@@ -81,17 +70,7 @@ describe("atlas-geometry: node sizing", () => {
   });
 
   it("canvasTaskNodeHeight adds port row extra height", () => {
-    const withBoth = makeTask({
-      workUnit: {
-        workerAgentId: "w",
-        checkerAgentId: "c",
-        inputPorts: [{ id: "in1", type: "md", label: "input" }],
-        outputPorts: [{ id: "out1", type: "md", label: "output" }],
-        inputText: "",
-        outputContract: "",
-        acceptanceRules: [],
-      },
-    } as Partial<TeamCanvasTask>);
+    const withBoth = makeTask({ workUnit: makeWorkUnit({ inputPorts: [{ id: "in1", type: "md", label: "input" }], outputPorts: [{ id: "out1", type: "md", label: "output" }] }) });
     expect(canvasTaskNodeHeight(withBoth)).toBe(CANVAS_TASK_NODE_HEIGHT + 2 * CANVAS_TASK_PORT_ROW_EXTRA_HEIGHT);
   });
 
