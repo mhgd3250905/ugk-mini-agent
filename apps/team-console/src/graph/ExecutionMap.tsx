@@ -1052,9 +1052,7 @@ export function ExecutionMap({
           void copyCanvasNodeId(kind, id);
         }}
       >
-        <span className="emap-node-id-copy-label">{label}</span>
-        <code>{id}</code>
-        <span className="emap-node-id-copy-action">{state === "copied" ? "已复制" : state === "failed" ? "失败" : "复制"}</span>
+        <code>{state === "copied" ? "已复制" : state === "failed" ? "失败" : id}</code>
       </button>
     );
   };

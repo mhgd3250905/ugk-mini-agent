@@ -66,6 +66,7 @@
   - `ae74de6 fix(team-console): center link cut buttons on connectors`
 - 已改：Worker / Checker 过程里的 `assistantText.content` 现在按最新行在顶部展示，旧行向下隐藏；这修正了运行中最新进展被固定高度滚动区压到底部的问题。
 - 已改：Agent / Task 根卡片新增可点击复制的 `Agent ID` / `Task ID` chip；复制按钮会阻止父卡片 click / keydown，不会误打开 Agent 分支或 Task 菜单。
+- 已改：根卡片 ID chip 默认只显示实际 id，不再在 chip 内显示 `Agent ID` / `Task ID` / `复制` 三段文案；复制成功后同一位置短暂显示 `已复制`，`aria-label` 仍保留完整复制说明。
 - 已改：Task 根卡片 leader / worker / checker 改成紧凑标签行；运行中 Task 改为暖橘红边框、状态条和状态 pill 脉冲，明显区别于普通 ready / completed 状态。
 - 已改：typed Task connection、Source connection、control dependency 的切断按钮使用连接点作为 `left/top`，CSS 通过 `translate(-50%, -50%)` 居中，避免偏纵向连接线上的叉号固定 offset 偏移。
 - 涉及文件：`apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/change-log.md`、`docs/handoff-current.md`。

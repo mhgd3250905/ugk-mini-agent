@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-29 — Team Console 根卡片 ID chip 精简
+
+- **主题**: 精简 Agent / Task 根卡片上的 ID 复制按钮，去掉 chip 内部重复的 `Agent ID` / `Task ID` 和 `复制` 文案。
+- **变更内容**:
+  - 根卡片 ID chip 默认只显示实际 id 文本；点击后同一位置短暂显示 `已复制`，失败时显示 `失败`。
+  - `aria-label` 仍保留完整的 `复制 Agent ID <id>` / `复制 Task ID <id>`，不牺牲可访问性和测试定位。
+  - CSS 从三列 label / id / action 改为单列 id-only 布局，减少卡片横向拥挤。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/handoff-current.md`。
+- **验证**: focused test 覆盖 Agent / Task ID chip 默认只显示 id、复制后显示 `已复制` 且不打开分支。
+- **对应入口**: Team Console Execution Atlas 根卡片，固定入口 `http://127.0.0.1:5174/`。
+
 ## 2026-05-29 — Team Console 根卡片视觉层级重排
 
 - **主题**: 重排 Agent / Task / Source 根卡片的信息层级，缓解 Task 卡片把 ID、角色、端口、依赖按钮和收纳按钮挤在一起的问题。

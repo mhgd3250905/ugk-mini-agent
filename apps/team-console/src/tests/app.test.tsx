@@ -323,13 +323,21 @@ describe("App", () => {
 
     const atlasNodes = getAtlasNodes(container);
     const agentNode = await within(atlasNodes).findByRole("button", { name: "主 Agent" });
-    fireEvent.click(within(agentNode).getByRole("button", { name: "复制 Agent ID main" }));
+    const agentCopyButton = within(agentNode).getByRole("button", { name: "复制 Agent ID main" });
+    expect(agentCopyButton).toHaveTextContent("main");
+    expect(agentCopyButton).not.toHaveTextContent("Agent ID");
+    expect(agentCopyButton).not.toHaveTextContent("复制");
+    fireEvent.click(agentCopyButton);
     await waitFor(() => expect(writeText).toHaveBeenLastCalledWith("main"));
     expect(container.querySelector(".emap-agent-branch-shell")).toBeNull();
     expect(within(agentNode).getByText("已复制")).toBeInTheDocument();
 
     const taskNode = await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" });
-    fireEvent.click(within(taskNode).getByRole("button", { name: "复制 Task ID task_research_medtrum" }));
+    const taskCopyButton = within(taskNode).getByRole("button", { name: "复制 Task ID task_research_medtrum" });
+    expect(taskCopyButton).toHaveTextContent("task_research_medtrum");
+    expect(taskCopyButton).not.toHaveTextContent("Task ID");
+    expect(taskCopyButton).not.toHaveTextContent("复制");
+    fireEvent.click(taskCopyButton);
     await waitFor(() => expect(writeText).toHaveBeenLastCalledWith("task_research_medtrum"));
     expect(container.querySelector(".task-action-branch")).toBeNull();
     expect(within(taskNode).getByText("已复制")).toBeInTheDocument();
@@ -5201,7 +5209,7 @@ describe("App", () => {
     expect(atlasCardRule).toContain("--emap-card-action-rail: 38px");
     expect(atlasRailRule).toContain("border-left");
     expect(idCopyRule).toContain("cursor: copy");
-    expect(idCopyRule).toContain("grid-template-columns: auto minmax(0, 1fr) auto");
+    expect(idCopyRule).toContain("grid-template-columns: minmax(0, 1fr)");
     expect(taskAgentGridRule).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
     expect(taskAgentGridRule).toContain("padding: 4px");
     expect(taskAgentRule).toContain("grid-template-columns: minmax(0, 1fr)");
@@ -5231,7 +5239,7 @@ describe("App", () => {
     expect(readme).toContain("同源代理");
     expect(readme).toContain("不会暴露给前端 iframe URL");
     expect(readme).toContain("真实状态投到卡片状态条和状态 pill");
-    expect(readme).toContain("`Agent ID` / `Task ID` chip 可点击复制");
+    expect(readme).toContain("id chip 可点击复制，默认只显示实际 id");
     expect(readme).toContain("运行中 Task 使用暖橘红边框");
     expect(readme).toContain("Agent 分支卡片");
     expect(readme).toContain("/playground?view=chat&agentId=<agentId>");
@@ -5305,7 +5313,7 @@ describe("App", () => {
     expect(runtimeDoc).toContain("同源代理承载 Live API 和嵌入式主 `/playground` iframe");
     expect(runtimeDoc).toContain("不再暴露给浏览器端 iframe");
     expect(runtimeDoc).toContain("卡片状态条与状态 pill 会随真实运行态显示空闲、运行中或状态未知");
-    expect(runtimeDoc).toContain("`Agent ID` / `Task ID` chip 可点击复制");
+    expect(runtimeDoc).toContain("id chip 可点击复制，默认只显示实际 id");
     expect(runtimeDoc).toContain("Task 运行中状态使用暖橘红边框");
     expect(runtimeDoc).toContain("/playground?view=chat&agentId=<agentId>");
     expect(runtimeDoc).toContain("embed=team-console");
