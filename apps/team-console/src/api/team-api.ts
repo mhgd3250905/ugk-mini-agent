@@ -46,10 +46,18 @@ import type {
 } from "./team-types";
 import { readAgentChatSse } from "./agent-chat-sse";
 
-export interface TeamApiProvider {
+export interface TeamRuntimeGateway {
   listPlans(): Promise<TeamPlan[]>;
   listRuns(): Promise<TeamRunState[]>;
+  getRunDetail(runId: string): Promise<RunDetail>;
+  listAttempts(runId: string, taskId: string): Promise<TeamAttemptMetadata[]>;
+  readAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string): Promise<string>;
+}
+
+export interface CanvasTaskGateway {
   listTasks(): Promise<TeamCanvasTask[]>;
+  updateTask(taskId: string, patch: TeamTaskUpdateRequest): Promise<TeamTaskMutationResponse>;
+  archiveTask(taskId: string): Promise<TeamTaskMutationResponse>;
   listTaskConnections(): Promise<TeamTaskConnection[]>;
   createTaskConnection(input: TeamTaskConnectionCreateRequest): Promise<TeamTaskConnection>;
   deleteTaskConnection(connectionId: string): Promise<void>;
@@ -69,11 +77,9 @@ export interface TeamApiProvider {
   cancelTaskRun(runId: string): Promise<TeamRunState>;
   listTaskRunAttempts(runId: string, taskId: string): Promise<TeamAttemptMetadata[]>;
   readTaskRunAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string): Promise<string>;
-  updateTask(taskId: string, patch: TeamTaskUpdateRequest): Promise<TeamTaskMutationResponse>;
-  archiveTask(taskId: string): Promise<TeamTaskMutationResponse>;
-  getRunDetail(runId: string): Promise<RunDetail>;
-  listAttempts(runId: string, taskId: string): Promise<TeamAttemptMetadata[]>;
-  readAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string): Promise<string>;
+}
+
+export interface AgentWorkspaceGateway {
   listAgents(): Promise<AgentSummary[]>;
   listAgentRunStatuses(): Promise<AgentRunStatus[]>;
   listAgentConversations(agentId: string): Promise<AgentConversationCatalogResponse>;
@@ -94,9 +100,14 @@ export interface TeamApiProvider {
     request: AgentConversationEventsRequest,
     onEvent: (event: AgentChatStreamEvent) => void,
   ): Promise<void>;
+}
+
+export interface AssetGateway {
   listAssets(limit?: number): Promise<AgentAssetSummary[]>;
   uploadFilesAsAssets(files: File[], conversationId?: string): Promise<AgentAssetSummary[]>;
 }
+
+export type TeamApiProvider = TeamRuntimeGateway & CanvasTaskGateway & AgentWorkspaceGateway & AssetGateway;
 
 function toApiError(error: unknown): TeamApiError {
   if (error instanceof TypeError && error.message === "Failed to fetch") {
