@@ -23,6 +23,8 @@ import { closeBrowserTargetsForScope } from "../agent/browser-cleanup.js";
 import { loadAgentProfilesSync } from "../agent/agent-profile-catalog.js";
 import { setBrowserScopeRoute } from "../browser/browser-scope-routes.js";
 import { configureSseResponse, writeSseEvent, startSseHeartbeat, endSseResponse } from "../routes/chat-sse.js";
+import { idParam, jsonBody, optionalJsonBody, parseIncludeArchived } from "./route-parsers.js";
+import { sendMappedError } from "./route-errors.js";
 
 export interface TeamRouteOptions {
 	teamDataDir: string;
@@ -126,12 +128,12 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 
 	app.get("/v1/team/tasks", async (request, reply) => {
 		const query = request.query as { includeArchived?: string };
-		const tasks = await taskStore.list({ includeArchived: query.includeArchived === "1" || query.includeArchived === "true" });
+		const tasks = await taskStore.list({ includeArchived: parseIncludeArchived(request) });
 		reply.send({ tasks });
 	});
 
 	app.post("/v1/team/tasks", async (request, reply) => {
-		const body = request.body as Record<string, unknown>;
+		const body = jsonBody(request);
 		try {
 			const task = await taskStore.create({
 				title: body.title as string,
@@ -148,15 +150,15 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.get("/v1/team/tasks/:taskId", async (request, reply) => {
-		const { taskId } = request.params as { taskId: string };
+		const taskId = idParam(request, "taskId");
 		const task = await taskStore.get(taskId);
 		if (!task) { reply.code(404).send({ error: "task not found" }); return; }
 		sendTask(reply, task);
 	});
 
 	app.patch("/v1/team/tasks/:taskId", async (request, reply) => {
-		const { taskId } = request.params as { taskId: string };
-		const body = request.body as Record<string, unknown>;
+		const taskId = idParam(request, "taskId");
+		const body = jsonBody(request);
 		const patch: UpdateTeamCanvasTaskInput = {};
 		if (Object.hasOwn(body, "title")) patch.title = body.title as string;
 		if (Object.hasOwn(body, "leaderAgentId")) patch.leaderAgentId = body.leaderAgentId as string;
@@ -166,26 +168,24 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			const task = await taskStore.update(taskId, patch);
 			sendTask(reply, task);
 		} catch (err) {
-			const msg = (err as Error).message;
-			reply.code(msg.includes("not found") ? 404 : msg.includes("locked") ? 409 : 400).send({ error: msg });
+			sendMappedError(reply, err, [["not found", 404], ["locked", 409]]);
 		}
 	});
 
 	app.post("/v1/team/tasks/:taskId/archive", async (request, reply) => {
-		const { taskId } = request.params as { taskId: string };
+		const taskId = idParam(request, "taskId");
 		try {
 			const task = await taskStore.archive(taskId);
 			sendTask(reply, task);
 		} catch (err) {
-			const msg = (err as Error).message;
-			reply.code(msg.includes("not found") ? 404 : 400).send({ error: msg });
+			sendMappedError(reply, err, [["not found", 404]]);
 		}
 	});
 
 	app.get("/v1/team/source-nodes", async (request, reply) => {
 		const query = request.query as { includeArchived?: string };
 		try {
-			const sourceNodes = await sourceNodeStore.list({ includeArchived: query.includeArchived === "1" || query.includeArchived === "true" });
+			const sourceNodes = await sourceNodeStore.list({ includeArchived: parseIncludeArchived(request) });
 			reply.send({ sourceNodes });
 		} catch (err) {
 			reply.code(500).send({ error: (err as Error).message });
@@ -193,7 +193,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.post("/v1/team/source-nodes", async (request, reply) => {
-		const body = request.body as Record<string, unknown>;
+		const body = jsonBody(request);
 		try {
 			const sourceNode = await sourceNodeStore.create({
 				title: body.title as string,
@@ -208,8 +208,8 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.patch("/v1/team/source-nodes/:sourceNodeId", async (request, reply) => {
-		const { sourceNodeId } = request.params as { sourceNodeId: string };
-		const body = request.body as Record<string, unknown>;
+		const sourceNodeId = idParam(request, "sourceNodeId");
+		const body = jsonBody(request);
 		const patch: UpdateSourceNodeInput = {};
 		if (Object.hasOwn(body, "title")) patch.title = body.title as string;
 		if (Object.hasOwn(body, "nodeType")) patch.nodeType = body.nodeType as any;
@@ -219,19 +219,17 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			const sourceNode = await sourceNodeStore.update(sourceNodeId, patch);
 			reply.send({ sourceNode });
 		} catch (err) {
-			const msg = (err as Error).message;
-			reply.code(msg.includes("not found") ? 404 : 400).send({ error: msg });
+			sendMappedError(reply, err, [["not found", 404]]);
 		}
 	});
 
 	app.post("/v1/team/source-nodes/:sourceNodeId/archive", async (request, reply) => {
-		const { sourceNodeId } = request.params as { sourceNodeId: string };
+		const sourceNodeId = idParam(request, "sourceNodeId");
 		try {
 			const sourceNode = await sourceNodeStore.archive(sourceNodeId);
 			reply.send({ sourceNode });
 		} catch (err) {
-			const msg = (err as Error).message;
-			reply.code(msg.includes("not found") ? 404 : 400).send({ error: msg });
+			sendMappedError(reply, err, [["not found", 404]]);
 		}
 	});
 
@@ -245,7 +243,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.post("/v1/team/source-connections", async (request, reply) => {
-		const body = request.body as Record<string, unknown>;
+		const body = jsonBody(request);
 		try {
 			const connection = await sourceConnectionStore.create({
 				fromSourceNodeId: body.fromSourceNodeId as string,
@@ -255,25 +253,12 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			});
 			reply.code(201).send({ connection });
 		} catch (err) {
-			const msg = (err as Error).message;
-			if (msg.includes("source connection store") || msg.includes("lock busy")) {
-				reply.code(msg.includes("lock busy") ? 409 : 500).send({ error: msg });
-				return;
-			}
-			if (msg.includes("not found") || msg.includes("port not found")) {
-				reply.code(404).send({ error: msg });
-				return;
-			}
-			if (msg.includes("already exists") || msg.includes("archived")) {
-				reply.code(409).send({ error: msg });
-				return;
-			}
-			reply.code(400).send({ error: msg });
+			sendMappedError(reply, err, [["lock busy", 409], ["source connection store", 500], ["not found", 404], ["port not found", 404], ["already exists", 409], ["archived", 409]]);
 		}
 	});
 
 	app.delete("/v1/team/source-connections/:connectionId", async (request, reply) => {
-		const { connectionId } = request.params as { connectionId: string };
+		const connectionId = idParam(request, "connectionId");
 		try {
 			const deleted = await sourceConnectionStore.delete(connectionId);
 			if (!deleted) {
@@ -282,9 +267,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			}
 			reply.code(204).send();
 		} catch (err) {
-			const msg = (err as Error).message;
-			if (msg.includes("lock busy")) { reply.code(409).send({ error: msg }); return; }
-			reply.code(500).send({ error: msg });
+			sendMappedError(reply, err, [["lock busy", 409]], 500);
 		}
 	});
 
@@ -298,7 +281,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.post("/v1/team/task-connections", async (request, reply) => {
-		const body = request.body as Record<string, unknown>;
+		const body = jsonBody(request);
 		try {
 			const connection = await taskConnectionStore.create({
 				fromTaskId: body.fromTaskId as string,
@@ -308,25 +291,12 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			});
 			reply.code(201).send({ connection });
 		} catch (err) {
-			const msg = (err as Error).message;
-			if (msg.includes("task connection store") || msg.includes("lock busy")) {
-				reply.code(msg.includes("lock busy") ? 409 : 500).send({ error: msg });
-				return;
-			}
-			if (msg.includes("task not found") || msg.includes("port not found")) {
-				reply.code(404).send({ error: msg });
-				return;
-			}
-			if (msg.includes("already exists") || msg.includes("cycle") || msg.includes("archived")) {
-				reply.code(409).send({ error: msg });
-				return;
-			}
-			reply.code(400).send({ error: msg });
+			sendMappedError(reply, err, [["lock busy", 409], ["task connection store", 500], ["task not found", 404], ["port not found", 404], ["already exists", 409], ["cycle", 409], ["archived", 409]]);
 		}
 	});
 
 	app.delete("/v1/team/task-connections/:connectionId", async (request, reply) => {
-		const { connectionId } = request.params as { connectionId: string };
+		const connectionId = idParam(request, "connectionId");
 		try {
 			const deleted = await taskConnectionStore.delete(connectionId);
 			if (!deleted) {
@@ -335,9 +305,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			}
 			reply.code(204).send();
 		} catch (err) {
-			const msg = (err as Error).message;
-			if (msg.includes("lock busy")) { reply.code(409).send({ error: msg }); return; }
-			reply.code(500).send({ error: msg });
+			sendMappedError(reply, err, [["lock busy", 409]], 500);
 		}
 	});
 
@@ -354,7 +322,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		});
 
 		app.post("/v1/team/task-dependencies", async (request, reply) => {
-			const body = request.body as Record<string, unknown>;
+			const body = jsonBody(request);
 			try {
 				const dependency = await taskDependencyStore.create({
 					fromTaskId: body.fromTaskId as string,
@@ -362,25 +330,12 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 				});
 				reply.code(201).send({ dependency });
 			} catch (err) {
-				const msg = (err as Error).message;
-				if (msg.includes("task dependency store") || msg.includes("lock busy")) {
-					reply.code(msg.includes("lock busy") ? 409 : 500).send({ error: msg });
-					return;
-				}
-				if (msg.includes("task not found")) {
-					reply.code(404).send({ error: msg });
-					return;
-				}
-				if (msg.includes("already exists") || msg.includes("cycle") || msg.includes("archived") || msg.includes("same task")) {
-					reply.code(409).send({ error: msg });
-					return;
-				}
-				reply.code(400).send({ error: msg });
+				sendMappedError(reply, err, [["lock busy", 409], ["task dependency store", 500], ["task not found", 404], ["already exists", 409], ["cycle", 409], ["archived", 409], ["same task", 409]]);
 			}
 		});
 
 		app.delete("/v1/team/task-dependencies/:dependencyId", async (request, reply) => {
-			const { dependencyId } = request.params as { dependencyId: string };
+			const dependencyId = idParam(request, "dependencyId");
 			try {
 				const deleted = await taskDependencyStore.delete(dependencyId);
 				if (!deleted) {
@@ -389,13 +344,11 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 				}
 				reply.code(204).send();
 			} catch (err) {
-				const msg = (err as Error).message;
-				if (msg.includes("lock busy")) { reply.code(409).send({ error: msg }); return; }
-				reply.code(500).send({ error: msg });
+				sendMappedError(reply, err, [["lock busy", 409]], 500);
 			}
 		});
 	app.get("/v1/team/tasks/:taskId/runs", async (request, reply) => {
-		const { taskId } = request.params as { taskId: string };
+		const taskId = idParam(request, "taskId");
 		const task = await taskStore.get(taskId);
 		if (!task) { reply.code(404).send({ error: "task not found" }); return; }
 		const runs = await taskRunService.listRuns(taskId);
@@ -403,8 +356,8 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.post("/v1/team/tasks/:taskId/runs", async (request, reply) => {
-		const { taskId } = request.params as { taskId: string };
-		const body = request.body as Record<string, unknown> | undefined;
+		const taskId = idParam(request, "taskId");
+		const body = optionalJsonBody(request);
 		try {
 			let maxRunDurationMinutes: number | undefined;
 			if (body?.maxRunDurationMinutes != null) {
@@ -418,32 +371,30 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			const state = await taskRunService.createRun(taskId, { maxRunDurationMinutes, includeSourceBindings: true });
 			reply.code(201).send(state);
 		} catch (err) {
-			const msg = (err as Error).message;
-			if (msg.includes("task not found")) { reply.code(404).send({ error: "task not found" }); return; }
-			reply.code(msg.includes("ready") || msg.includes("archived") || msg.includes("active") ? 409 : 400).send({ error: msg });
+			sendMappedError(reply, err, [["task not found", 404], ["ready", 409], ["archived", 409], ["active", 409]]);
 		}
 	});
 
 	app.get("/v1/team/task-runs/:runId", async (request, reply) => {
-		const { runId } = request.params as { runId: string };
+		const runId = idParam(request, "runId");
 		const state = await taskRunService.getRun(runId);
 		if (!state) { reply.code(404).send({ error: "task run not found" }); return; }
 		reply.send(state);
 	});
 
 	app.post("/v1/team/task-runs/:runId/cancel", async (request, reply) => {
-		const { runId } = request.params as { runId: string };
+		const runId = idParam(request, "runId");
 		try {
 			const state = await taskRunService.cancelRun(runId, "user cancel");
 			reply.send(state);
 		} catch (err) {
-			const msg = (err as Error).message;
-			reply.code(msg.includes("not found") ? 404 : msg.includes("terminal") ? 409 : 400).send({ error: msg });
+			sendMappedError(reply, err, [["not found", 404], ["terminal", 409]]);
 		}
 	});
 
 	app.get("/v1/team/task-runs/:runId/tasks/:taskId/attempts", async (request, reply) => {
-		const { runId, taskId } = request.params as { runId: string; taskId: string };
+		const runId = idParam(request, "runId");
+		const taskId = idParam(request, "taskId");
 		const state = await taskRunService.getRun(runId);
 		if (!state) { reply.code(404).send({ error: "task run not found" }); return; }
 		if (!state.taskStates[taskId]) { reply.code(404).send({ error: "task not found" }); return; }
@@ -456,7 +407,10 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.get("/v1/team/task-runs/:runId/tasks/:taskId/attempts/:attemptId/files/:fileName", async (request, reply) => {
-		const { runId, taskId, attemptId, fileName } = request.params as { runId: string; taskId: string; attemptId: string; fileName: string };
+		const runId = idParam(request, "runId");
+		const taskId = idParam(request, "taskId");
+		const attemptId = idParam(request, "attemptId");
+		const fileName = idParam(request, "fileName");
 		const state = await taskRunService.getRun(runId);
 		if (!state) { reply.code(404).send({ error: "task run not found" }); return; }
 		if (!state.taskStates[taskId]) { reply.code(404).send({ error: "task not found" }); return; }
@@ -484,7 +438,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.post("/v1/team/plan-drafts", async (request, reply) => {
-		const body = request.body as Record<string, unknown>;
+		const body = jsonBody(request);
 		try {
 			await validateUsableTeamUnit(unitStore, body.defaultTeamUnitId as string | undefined);
 			const draft = buildTeamPlanDraft({
@@ -500,7 +454,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.post("/v1/team/plans", async (request, reply) => {
-		const body = request.body as Record<string, unknown>;
+		const body = jsonBody(request);
 		try {
 			await validateUsableTeamUnit(unitStore, body.defaultTeamUnitId as string | undefined);
 			const plan = await planStore.create({
@@ -517,15 +471,15 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.get("/v1/team/plans/:planId", async (request, reply) => {
-		const { planId } = request.params as { planId: string };
+		const planId = idParam(request, "planId");
 		const plan = await planStore.get(planId);
 		if (!plan) { reply.code(404).send({ error: "plan not found" }); return; }
 		reply.send(plan);
 	});
 
 	app.patch("/v1/team/plans/:planId", async (request, reply) => {
-		const { planId } = request.params as { planId: string };
-		const body = request.body as Record<string, unknown>;
+		const planId = idParam(request, "planId");
+		const body = jsonBody(request);
 		try {
 			const plan = await planStore.updateEditablePlan(planId, {
 				title: body.title as string | undefined,
@@ -535,13 +489,12 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			} as Parameters<typeof planStore.updateEditablePlan>[1]);
 			reply.send(plan);
 		} catch (err) {
-			const msg = (err as Error).message;
-			reply.code(msg.includes("immutable") ? 409 : 400).send({ error: msg });
+			sendMappedError(reply, err, [["immutable", 409]]);
 		}
 	});
 
 	app.patch("/v1/team/plans/:planId/default-team", async (request, reply) => {
-		const { planId } = request.params as { planId: string };
+		const planId = idParam(request, "planId");
 		const body = request.body as { defaultTeamUnitId?: string };
 		if (!body.defaultTeamUnitId) { reply.code(400).send({ error: "defaultTeamUnitId is required" }); return; }
 		try {
@@ -556,7 +509,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.post("/v1/team/plans/:planId/archive", async (request, reply) => {
-		const { planId } = request.params as { planId: string };
+		const planId = idParam(request, "planId");
 		try {
 			const locks = computeTeamConfigLocks(await workspace.listStates(), await unitStore.list());
 			if (locks.lockedPlanIds.has(planId)) { reply.code(409).send({ error: "locked by active run" }); return; }
@@ -568,20 +521,19 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.delete("/v1/team/plans/:planId", async (request, reply) => {
-		const { planId } = request.params as { planId: string };
+		const planId = idParam(request, "planId");
 		try {
 			await planStore.deleteUnused(planId);
 			reply.code(204).send();
 		} catch (err) {
-			const msg = (err as Error).message;
-			reply.code(msg.includes("used plan") ? 409 : 404).send({ error: msg });
+			sendMappedError(reply, err, [["used plan", 409]], 404);
 		}
 	});
 
 	app.post("/v1/team/plans/:planId/runs", async (request, reply) => {
-		const { planId } = request.params as { planId: string };
+		const planId = idParam(request, "planId");
 		try {
-			const body = request.body as Record<string, unknown> | undefined;
+			const body = optionalJsonBody(request);
 			let perRunTimeout: number | undefined;
 			if (body?.maxRunDurationMinutes != null) {
 				const raw = body.maxRunDurationMinutes;
@@ -597,8 +549,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			const state = await orchestrator.createRun(planId, runOptions);
 			reply.code(201).send(state);
 		} catch (err) {
-			const msg = (err as Error).message;
-			reply.code(msg.includes("active run") || msg.includes("admission lock busy") ? 409 : 400).send({ error: msg });
+			sendMappedError(reply, err, [["active run", 409], ["admission lock busy", 409]]);
 		}
 	});
 
@@ -610,7 +561,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.post("/v1/team/team-units", async (request, reply) => {
-		const body = request.body as Record<string, unknown>;
+		const body = jsonBody(request);
 		try {
 			const decomposerProfileId = (body.decomposerProfileId as string | undefined) ?? body.workerProfileId as string;
 			validateTeamUnitProfileIds(options, [
@@ -636,15 +587,15 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.get("/v1/team/team-units/:teamUnitId", async (request, reply) => {
-		const { teamUnitId } = request.params as { teamUnitId: string };
+		const teamUnitId = idParam(request, "teamUnitId");
 		const unit = await unitStore.get(teamUnitId);
 		if (!unit) { reply.code(404).send({ error: "team unit not found" }); return; }
 		reply.send(unit);
 	});
 
 	app.patch("/v1/team/team-units/:teamUnitId", async (request, reply) => {
-		const { teamUnitId } = request.params as { teamUnitId: string };
-		const body = request.body as Record<string, unknown>;
+		const teamUnitId = idParam(request, "teamUnitId");
+		const body = jsonBody(request);
 		try {
 			const locks = computeTeamConfigLocks(await workspace.listStates(), await unitStore.list());
 			if (locks.lockedTeamUnitIds.has(teamUnitId)) { reply.code(409).send({ error: "locked by active run" }); return; }
@@ -672,7 +623,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.delete("/v1/team/team-units/:teamUnitId", async (request, reply) => {
-		const { teamUnitId } = request.params as { teamUnitId: string };
+		const teamUnitId = idParam(request, "teamUnitId");
 		try {
 			const locks = computeTeamConfigLocks(await workspace.listStates(), await unitStore.list());
 			if (locks.lockedTeamUnitIds.has(teamUnitId)) { reply.code(409).send({ error: "locked by active run" }); return; }
@@ -684,7 +635,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.post("/v1/team/team-units/:teamUnitId/archive", async (request, reply) => {
-		const { teamUnitId } = request.params as { teamUnitId: string };
+		const teamUnitId = idParam(request, "teamUnitId");
 		try {
 			const locks = computeTeamConfigLocks(await workspace.listStates(), await unitStore.list());
 			if (locks.lockedTeamUnitIds.has(teamUnitId)) { reply.code(409).send({ error: "locked by active run" }); return; }
@@ -703,7 +654,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.get("/v1/team/runs/:runId", async (request, reply) => {
-		const { runId } = request.params as { runId: string };
+		const runId = idParam(request, "runId");
 		const state = await workspace.getState(runId);
 		if (!state) { reply.code(404).send({ error: "run not found" }); return; }
 		const plan = await planStore.get(state.planId);
@@ -711,7 +662,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.post("/v1/team/runs/:runId/pause", async (request, reply) => {
-		const { runId } = request.params as { runId: string };
+		const runId = idParam(request, "runId");
 		try {
 			const orchestrator = makeOrchestrator();
 			const state = await orchestrator.pauseRun(runId, "user pause");
@@ -722,7 +673,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.post("/v1/team/runs/:runId/resume", async (request, reply) => {
-		const { runId } = request.params as { runId: string };
+		const runId = idParam(request, "runId");
 		try {
 			const orchestrator = makeOrchestrator();
 			const state = await orchestrator.resumeRun(runId);
@@ -733,14 +684,13 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.post("/v1/team/runs/:runId/cancel", async (request, reply) => {
-		const { runId } = request.params as { runId: string };
+		const runId = idParam(request, "runId");
 		try {
 			const orchestrator = makeOrchestrator();
 			const state = await orchestrator.cancelRun(runId, "user cancel");
 			reply.send(state);
 		} catch (err) {
-			const msg = (err as Error).message;
-			reply.code(msg.includes("terminal") ? 409 : 400).send({ error: msg });
+			sendMappedError(reply, err, [["terminal", 409]]);
 		}
 	});
 
@@ -750,7 +700,8 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	const ACTIVE_RUN_STATUSES = new Set(["queued", "running", "paused"]);
 
 	app.patch("/v1/team/runs/:runId/tasks/:taskId/manual-disposition", async (request, reply) => {
-		const { runId, taskId } = request.params as { runId: string; taskId: string };
+		const runId = idParam(request, "runId");
+		const taskId = idParam(request, "taskId");
 		const body = request.body as { disposition?: string };
 		const validDispositions = new Set(["default", "skip", "force_rerun"]);
 		if (!body.disposition || !validDispositions.has(body.disposition)) {
@@ -772,7 +723,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.patch("/v1/team/runs/:runId/tasks/manual-dispositions", async (request, reply) => {
-		const { runId } = request.params as { runId: string };
+		const runId = idParam(request, "runId");
 		const body = request.body as { updates?: Array<{ taskId: string; disposition: string }> };
 		if (!Array.isArray(body.updates) || body.updates.length === 0) {
 		reply.code(400).send({ error: "updates must be a non-empty array of { taskId, disposition }" });
@@ -806,33 +757,31 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.post("/v1/team/runs/:runId/rerun", async (request, reply) => {
-		const { runId } = request.params as { runId: string };
+		const runId = idParam(request, "runId");
 		try {
 		const orchestrator = makeOrchestrator();
 		const state = await orchestrator.rerunRun(runId);
 		const plan = await planStore.get(state.planId);
 		reply.send(await buildRunDetailResponse(state, plan, workspace));
 		} catch (err) {
-		const msg = (err as Error).message;
-		reply.code(msg.includes("cannot rerun") ? 409 : 400).send({ error: msg });
+		sendMappedError(reply, err, [["cannot rerun", 409]]);
 		}
 	});
 
 
 	app.delete("/v1/team/runs/:runId", async (request, reply) => {
-		const { runId } = request.params as { runId: string };
+		const runId = idParam(request, "runId");
 		try {
 			const orchestrator = makeOrchestrator();
 			await orchestrator.deleteTerminalRun(runId);
 			reply.code(204).send();
 		} catch (err) {
-			const msg = (err as Error).message;
-			reply.code(msg.includes("non-terminal") ? 409 : 404).send({ error: msg });
+			sendMappedError(reply, err, [["non-terminal", 409]], 404);
 		}
 	});
 
 	app.get("/v1/team/runs/:runId/final-report", async (request, reply) => {
-		const { runId } = request.params as { runId: string };
+		const runId = idParam(request, "runId");
 		const state = await workspace.getState(runId);
 		if (!state) { reply.code(404).send({ error: "run not found" }); return; }
 		const report = await workspace.readFinalReport(runId);
@@ -845,7 +794,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 
 		// SSE: run state snapshots
 		app.get("/v1/team/runs/:runId/events", async (request, reply) => {
-			const { runId } = request.params as { runId: string };
+			const runId = idParam(request, "runId");
 			const state = await workspace.getState(runId);
 			if (!state) { reply.code(404).send({ error: "run not found" }); return; }
 
@@ -916,7 +865,8 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 
 		// Attempt read-only API (safe path resolution)
 		app.get("/v1/team/runs/:runId/tasks/:taskId/attempts", async (request, reply) => {
-			const { runId, taskId } = request.params as { runId: string; taskId: string };
+			const runId = idParam(request, "runId");
+			const taskId = idParam(request, "taskId");
 			const state = await workspace.getState(runId);
 			if (!state) { reply.code(404).send({ error: "run not found" }); return; }
 			if (!state.taskStates[taskId]) { reply.code(404).send({ error: "task not found" }); return; }
@@ -929,7 +879,10 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		});
 
 		app.get("/v1/team/runs/:runId/tasks/:taskId/attempts/:attemptId/files/:fileName", async (request, reply) => {
-			const { runId, taskId, attemptId, fileName } = request.params as { runId: string; taskId: string; attemptId: string; fileName: string };
+			const runId = idParam(request, "runId");
+			const taskId = idParam(request, "taskId");
+			const attemptId = idParam(request, "attemptId");
+			const fileName = idParam(request, "fileName");
 			const state = await workspace.getState(runId);
 			if (!state) { reply.code(404).send({ error: "run not found" }); return; }
 			if (!state.taskStates[taskId]) { reply.code(404).send({ error: "task not found" }); return; }

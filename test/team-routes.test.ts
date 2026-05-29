@@ -1409,3 +1409,81 @@ test("P24: POST rerun rejects active run", async () => {
 		try { await rm(root, { recursive: true, force: true }); } catch {}
 	}
 });
+
+
+	// ── Route error mapping tests (Step 06) ──
+
+	test("GET /v1/team/team-units/nonexistent returns 404", async () => {
+		const { app, root } = await buildTestServer();
+		try {
+			const res = await app.inject({ method: "GET", url: "/v1/team/team-units/team_nonexistent" });
+			assert.equal(res.statusCode, 404);
+			assert.match(res.json().error, /team unit not found/);
+			await app.close();
+		} finally {
+			try { await rm(root, { recursive: true, force: true }); } catch {}
+		}
+	});
+
+	test("GET /v1/team/runs/nonexistent returns 404", async () => {
+		const { app, root } = await buildTestServer();
+		try {
+			const res = await app.inject({ method: "GET", url: "/v1/team/runs/run_nonexistent" });
+			assert.equal(res.statusCode, 404);
+			assert.match(res.json().error, /run not found/);
+			await app.close();
+		} finally {
+			try { await rm(root, { recursive: true, force: true }); } catch {}
+		}
+	});
+
+	test("GET /v1/team/runs/:runId/final-report returns 404 for missing run", async () => {
+		const { app, root } = await buildTestServer();
+		try {
+			const res = await app.inject({ method: "GET", url: "/v1/team/runs/run_nonexistent/final-report" });
+			assert.equal(res.statusCode, 404);
+			await app.close();
+		} finally {
+			try { await rm(root, { recursive: true, force: true }); } catch {}
+		}
+	});
+
+	test("POST /v1/team/runs/:runId/cancel returns 400 for missing run", async () => {
+		const { app, root } = await buildTestServer();
+		try {
+			const res = await app.inject({ method: "POST", url: "/v1/team/runs/run_nonexistent/cancel" });
+			assert.equal(res.statusCode, 400);
+			await app.close();
+		} finally {
+			try { await rm(root, { recursive: true, force: true }); } catch {}
+		}
+	});
+
+	test("DELETE /v1/team/runs/:runId returns 409 for queued (non-terminal) run", async () => {
+		const { app, root } = await buildTestServer();
+		try {
+			const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+			const planRes = await app.inject({ method: "POST", url: "/v1/team/plans", payload: planBody(unitRes.json().teamUnitId) });
+			const runRes = await app.inject({ method: "POST", url: "/v1/team/plans/" + planRes.json().planId + "/runs" });
+			const runId = runRes.json().runId;
+
+			const delRes = await app.inject({ method: "DELETE", url: "/v1/team/runs/" + runId });
+			assert.equal(delRes.statusCode, 409);
+			assert.match(delRes.json().error, /non-terminal/);
+
+			await app.close();
+		} finally {
+			try { await rm(root, { recursive: true, force: true }); } catch {}
+		}
+	});
+
+	test("POST /v1/team/tasks with missing title returns 400", async () => {
+		const { app, root } = await buildTestServer();
+		try {
+			const res = await app.inject({ method: "POST", url: "/v1/team/tasks", payload: {} });
+			assert.equal(res.statusCode, 400);
+			await app.close();
+		} finally {
+			try { await rm(root, { recursive: true, force: true }); } catch {}
+		}
+	});
