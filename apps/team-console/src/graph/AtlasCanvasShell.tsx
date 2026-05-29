@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { normalizeAtlasViewport as _normalizeAtlasViewport, nextZoomLevel } from "./atlas-geometry";
+
+export const normalizeAtlasViewport = _normalizeAtlasViewport;
 
 export type AtlasViewport = { x: number; y: number; scale: number };
 export type AtlasInteractionMode = "free" | "locked";
@@ -48,42 +51,6 @@ const PAN_THRESHOLD = 4;
 type ScreenSelectionRect = { left: number; top: number; width: number; height: number };
 
 const DEFAULT_VIEWPORT: AtlasViewport = { x: 0, y: 0, scale: 1 };
-const MIN_SCALE = 0.45;
-const MAX_SCALE = 1.8;
-export const ATLAS_ZOOM_LEVELS = [0.45, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.8] as const;
-
-function clampScale(value: number): number {
-  return Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number(value.toFixed(2))));
-}
-
-function nearestZoomLevel(value: number): number {
-  const clamped = clampScale(value);
-  return ATLAS_ZOOM_LEVELS.reduce((closest, level) => (
-    Math.abs(level - clamped) < Math.abs(closest - clamped) ? level : closest
-  ), ATLAS_ZOOM_LEVELS[0]);
-}
-
-function nextZoomLevel(value: number, direction: "in" | "out"): number {
-  const clamped = clampScale(value);
-  if (direction === "in") {
-    return ATLAS_ZOOM_LEVELS.find((level) => level > clamped + 0.001) ?? MAX_SCALE;
-  }
-  return [...ATLAS_ZOOM_LEVELS].reverse().find((level) => level < clamped - 0.001) ?? MIN_SCALE;
-}
-
-function snapCanvasOffset(value: number): number {
-  const ratio = globalThis.window?.devicePixelRatio ?? 1;
-  const safeRatio = Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
-  return Math.round(value * safeRatio) / safeRatio;
-}
-
-export function normalizeAtlasViewport(viewport: AtlasViewport): AtlasViewport {
-  return {
-    x: snapCanvasOffset(viewport.x),
-    y: snapCanvasOffset(viewport.y),
-    scale: nearestZoomLevel(viewport.scale),
-  };
-}
 
 function formatCanvasNumber(value: number): string {
   return String(Number(value.toFixed(2)));

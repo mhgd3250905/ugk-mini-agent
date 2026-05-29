@@ -6,6 +6,23 @@ import { buildExecutionMapModel, CHILD_COLLAPSE_THRESHOLD } from "./execution-ma
 import { layoutExecutionMap, ROOT_ID, NODE_WIDTH, straightPath, type ExecutionMapLayout } from "./execution-map-layout";
 import { RUN_STATUS_LABELS, TASK_STATUS_LABELS } from "../shared/status";
 import { AtlasCanvasShell, type AtlasInteractionMode, type AtlasSelectionRect, type AtlasViewport } from "./AtlasCanvasShell";
+import {
+  AGENT_NODE_HEIGHT,
+  CANVAS_SOURCE_NODE_HEIGHT,
+  canvasTaskNodeHeight,
+  canvasTaskPortRowCount,
+  atlasDragEntryHeight,
+  taskNodeRect,
+  rightMiddleAnchor,
+  connectorAnchors,
+  agentBranchConnectorPath,
+  taskBranchConnectorPath,
+  taskChildBranchConnectorPath,
+  taskConnectionPoints,
+  sourceConnectionPoints,
+  type AtlasRect,
+} from "./atlas-geometry";
+import { linkMidpoint } from "./link-layout";
 import "./execution-map.css";
 
 const KIND_LABELS: Record<NodeKind | "collapsed" | "orphan_group", string> = {
@@ -139,10 +156,6 @@ const EVIDENCE_GAP = 12;
 const PREVIEW_W = 360;
 const PREVIEW_GAP = 40;
 const PREVIEW_FALLBACK_HEIGHT = 180;
-const AGENT_NODE_HEIGHT = 132;
-const CANVAS_TASK_NODE_HEIGHT = 184;
-const CANVAS_TASK_PORT_ROW_EXTRA_HEIGHT = 28;
-const CANVAS_SOURCE_NODE_HEIGHT = 166;
 const DOCK_FLIGHT_PHASE_DELAY_MS = 48;
 const DOCK_FLIGHT_TRANSITION_MS = 240;
 const DOCK_FLIGHT_SETTLE_MS = 56;
@@ -242,20 +255,13 @@ type AtlasNodeDragState = {
   lastTreeDy?: number;
 };
 
-type AgentBranchRect = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
-
 type AgentBranchInteractionState = {
   kind: "drag" | "resize";
   nodeId: string;
   pointerId: number;
   startClientX: number;
   startClientY: number;
-  startRect: AgentBranchRect;
+  startRect: AtlasRect;
   hasMoved?: boolean;
   capturedTarget?: HTMLDivElement | null;
 };
@@ -425,7 +431,7 @@ function viewportScale(viewport: AtlasViewport | undefined): number {
   return viewport && Number.isFinite(viewport.scale) && viewport.scale > 0 ? viewport.scale : 1;
 }
 
-function clampAgentBranchRect(rect: AgentBranchRect): AgentBranchRect {
+function clampAtlasRect(rect: AtlasRect): AtlasRect {
   return {
     x: rect.x,
     y: rect.y,
@@ -452,78 +458,12 @@ function pointInDomRect(x: number, y: number, rect: Pick<DOMRect, "left" | "righ
   return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
 }
 
-function domRectToRect(rect: Pick<DOMRect, "left" | "top" | "width" | "height">): AgentBranchRect {
+function domRectToRect(rect: Pick<DOMRect, "left" | "top" | "width" | "height">): AtlasRect {
   return {
     x: rect.left,
     y: rect.top,
     width: rect.width,
     height: rect.height,
-  };
-}
-
-function atlasDragEntryHeight(kind: AtlasNodeDragEntry["kind"], task?: TeamCanvasTask): number {
-  if (kind === "agent") return AGENT_NODE_HEIGHT;
-  if (kind === "source") return CANVAS_SOURCE_NODE_HEIGHT;
-  return canvasTaskNodeHeight(task);
-}
-
-function canvasTaskPortRowCount(task: TeamCanvasTask | undefined): number {
-  if (!task) return 0;
-  return (task.workUnit.inputPorts?.length ? 1 : 0) + (task.workUnit.outputPorts?.length ? 1 : 0);
-}
-
-function canvasTaskNodeHeight(task: TeamCanvasTask | undefined): number {
-  return CANVAS_TASK_NODE_HEIGHT + canvasTaskPortRowCount(task) * CANVAS_TASK_PORT_ROW_EXTRA_HEIGHT;
-}
-
-function agentBranchConnectorPath(agentNode: AtlasAgentNode, branchRect: AgentBranchRect): string {
-  const agentRect = {
-    x: agentNode.position.x,
-    y: agentNode.position.y,
-    width: NODE_WIDTH,
-    height: AGENT_NODE_HEIGHT,
-  };
-  return rightMiddleToLeftTopPath(agentRect, branchRect);
-}
-
-function rightMiddleToLeftTopPath(sourceRect: AgentBranchRect, targetRect: AgentBranchRect): string {
-  const sx = sourceRect.x + sourceRect.width;
-  const sy = sourceRect.y + sourceRect.height / 2;
-  const tx = targetRect.x;
-  const ty = targetRect.y;
-  return straightPath(sx, sy, tx, ty);
-}
-
-function taskNodeRect(taskNode: AtlasTaskNode, task?: TeamCanvasTask): AgentBranchRect {
-  return {
-    x: taskNode.position.x,
-    y: taskNode.position.y,
-    width: NODE_WIDTH,
-    height: canvasTaskNodeHeight(task),
-  };
-}
-
-function sourceNodeRect(sourceNode: AtlasSourceNode): AgentBranchRect {
-  return {
-    x: sourceNode.position.x,
-    y: sourceNode.position.y,
-    width: NODE_WIDTH,
-    height: CANVAS_SOURCE_NODE_HEIGHT,
-  };
-}
-
-function rightMiddleAnchor(rect: AgentBranchRect): { x: number; y: number } {
-  return { x: rect.x + rect.width, y: rect.y + rect.height / 2 };
-}
-
-function leftTopAnchor(rect: AgentBranchRect): { x: number; y: number } {
-  return { x: rect.x, y: rect.y };
-}
-
-function connectorAnchors(sourceRect: AgentBranchRect, targetRect: AgentBranchRect) {
-  return {
-    source: rightMiddleAnchor(sourceRect),
-    target: leftTopAnchor(targetRect),
   };
 }
 
@@ -541,14 +481,6 @@ function renderConnectorSourceSocket(
       />
     </g>
   );
-}
-
-function taskBranchConnectorPath(taskNode: AtlasTaskNode, branchRect: AgentBranchRect, task?: TeamCanvasTask): string {
-  return rightMiddleToLeftTopPath(taskNodeRect(taskNode, task), branchRect);
-}
-
-function taskChildBranchConnectorPath(menuRect: AgentBranchRect, childRect: AgentBranchRect): string {
-  return rightMiddleToLeftTopPath(menuRect, childRect);
 }
 
 function taskMenuPanelId(nodeId: string): string {
@@ -573,43 +505,6 @@ function TaskDependencyHandleIcon() {
       <line x1="13" y1="8" x2="16" y2="8" />
     </svg>
   );
-}
-
-function taskConnectionPoints(
-  connection: TeamTaskConnection,
-  taskNodeByTaskId: Map<string, AtlasTaskNode>,
-  tasksById: Map<string, TeamCanvasTask> | undefined,
-): { source: { x: number; y: number }; target: { x: number; y: number } } | null {
-  const sourceNode = taskNodeByTaskId.get(connection.fromTaskId);
-  const targetNode = taskNodeByTaskId.get(connection.toTaskId);
-  const sourceTask = tasksById?.get(connection.fromTaskId);
-  const targetTask = tasksById?.get(connection.toTaskId);
-  if (!sourceNode || !targetNode || !sourceTask || !targetTask) return null;
-  const outputPorts = sourceTask.workUnit.outputPorts ?? [];
-  const inputPorts = targetTask.workUnit.inputPorts ?? [];
-  const sourcePort = outputPorts.find((port) => port.id === connection.fromOutputPortId);
-  const targetPort = inputPorts.find((port) => port.id === connection.toInputPortId);
-  if (!sourcePort || sourcePort.type !== connection.type) return null;
-  if (!targetPort || targetPort.type !== connection.type) return null;
-  return connectorAnchors(taskNodeRect(sourceNode, sourceTask), taskNodeRect(targetNode, targetTask));
-}
-
-function sourceConnectionPoints(
-  connection: TeamCanvasSourceConnection,
-  sourceNodeBySourceId: Map<string, AtlasSourceNode>,
-  taskNodeByTaskId: Map<string, AtlasTaskNode>,
-  sourceNodesById: Map<string, TeamCanvasSourceNode> | undefined,
-  tasksById: Map<string, TeamCanvasTask> | undefined,
-): { source: { x: number; y: number }; target: { x: number; y: number } } | null {
-  const sourceNode = sourceNodeBySourceId.get(connection.fromSourceNodeId);
-  const targetNode = taskNodeByTaskId.get(connection.toTaskId);
-  const source = sourceNodesById?.get(connection.fromSourceNodeId);
-  const targetTask = tasksById?.get(connection.toTaskId);
-  if (!sourceNode || !targetNode || !source || !targetTask) return null;
-  const targetPort = targetTask.workUnit.inputPorts?.find((port) => port.id === connection.toInputPortId);
-  if (source.outputPort.id !== connection.fromOutputPortId || source.outputPort.type !== connection.type) return null;
-  if (!targetPort || targetPort.type !== connection.type) return null;
-  return connectorAnchors(sourceNodeRect(sourceNode), taskNodeRect(targetNode, targetTask));
 }
 
 export function summarizeCollapsedTaskStatus(children: Pick<ExecutionNode, "status">[]): TaskStatus {
@@ -902,8 +797,8 @@ export function ExecutionMap({
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
   const [artifactPreviewState, setArtifactPreviewState] = useState<Record<string, ArtifactPreviewState>>({});
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
-  const [agentBranchRects, setAgentBranchRects] = useState<Record<string, AgentBranchRect>>({});
-  const [taskChildBranchRects, setTaskChildBranchRects] = useState<Record<string, AgentBranchRect>>({});
+  const [agentBranchRects, setAtlasRects] = useState<Record<string, AtlasRect>>({});
+  const [taskChildBranchRects, setTaskChildBranchRects] = useState<Record<string, AtlasRect>>({});
   const [taskBranchMeasuredSizes, setTaskBranchMeasuredSizes] = useState<TaskBranchMeasuredSizeMap>({});
   const [selectedAtlasNodeKeys, setSelectedAtlasNodeKeys] = useState<Set<string>>(new Set());
   const [rootDropTarget, setRootDropTarget] = useState<"dock" | "trash" | null>(null);
@@ -936,9 +831,9 @@ export function ExecutionMap({
   const taskChildBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
   const taskChildDragSuppressClickRef = useRef(false);
   const panelResizeRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startWidth: number; startHeight: number; minWidth: number; minHeight: number } | null>(null);
-  const panelDragRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startRect: AgentBranchRect; hasMoved: boolean; capturedTarget: HTMLDivElement | null; lastDx: number; lastDy: number } | null>(null);
+  const panelDragRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startRect: AtlasRect; hasMoved: boolean; capturedTarget: HTMLDivElement | null; lastDx: number; lastDy: number } | null>(null);
   const panelDragSuppressClickRef = useRef(false);
-  const taskBranchDragRef = useRef<{ nodeId: string; pointerId: number; startClientX: number; startClientY: number; startRect: AgentBranchRect; hasMoved: boolean; capturedTarget: HTMLDivElement | null; lastDx: number; lastDy: number } | null>(null);
+  const taskBranchDragRef = useRef<{ nodeId: string; pointerId: number; startClientX: number; startClientY: number; startRect: AtlasRect; hasMoved: boolean; capturedTarget: HTMLDivElement | null; lastDx: number; lastDy: number } | null>(null);
   const taskBranchDragSuppressClickRef = useRef(false);
   const translateTaskSubtreeRef = useRef<(scope: TaskSubtreeScope, dx: number, dy: number, nodeId?: string) => void>(() => {});
   const minimizedAgentNodeIdSet = useMemo(() => new Set(minimizedAgentNodeIds), [minimizedAgentNodeIds]);
@@ -1951,16 +1846,16 @@ export function ExecutionMap({
     const taskBranchRectById = new Map(taskBranchEntries.map((entry) => [entry.id, entry.rect]));
     type Entry = {
       panel: TaskChildBranchPanelDescriptor;
-      rect: AgentBranchRect;
-      sourceRect: AgentBranchRect;
+      rect: AtlasRect;
+      sourceRect: AtlasRect;
       parentKey: string;
     };
     const entries: Entry[] = [];
-    const finalRectByPanelId = new Map<string, AgentBranchRect>();
+    const finalRectByPanelId = new Map<string, AtlasRect>();
     const bottomByParent = new Map<string, number>();
     for (const p of taskChildBranchPanels) {
       let parentKey: string;
-      let sourceRect: AgentBranchRect;
+      let sourceRect: AtlasRect;
       if (p.sourceId) {
         parentKey = p.sourceId;
         const found = finalRectByPanelId.get(p.sourceId) ?? taskBranchRectById.get(p.sourceId);
@@ -1980,7 +1875,7 @@ export function ExecutionMap({
       const x = sourceRect.x + sourceRect.width + TASK_CHILD_BRANCH_GAP;
       const prevBottom = bottomByParent.get(parentKey) ?? sourceRect.y;
       const y = prevBottom === sourceRect.y ? sourceRect.y : prevBottom + panelGap;
-      const baseRect: AgentBranchRect = { x, y, width: w, height: h };
+      const baseRect: AtlasRect = { x, y, width: w, height: h };
       const posOverride = activePanelIds.has(p.id) ? panelPositionOverrides[p.id] : undefined;
       const rect = posOverride ? { ...baseRect, x: posOverride.x, y: posOverride.y } : baseRect;
       entries.push({ panel: p, rect, sourceRect, parentKey });
@@ -2016,7 +1911,7 @@ export function ExecutionMap({
     200,
   );
   const agentBranchPath = focusedAgentNode && agentBranchNode
-    ? agentBranchConnectorPath(focusedAgentNode, agentBranchNode)
+    ? agentBranchConnectorPath(focusedAgentNode, agentBranchNode, NODE_WIDTH)
     : null;
   const agentBranchAnchors = focusedAgentNode && agentBranchNode
     ? connectorAnchors({
@@ -2673,18 +2568,18 @@ export function ExecutionMap({
     event.stopPropagation();
 
     const nextRect = interaction.kind === "drag"
-      ? clampAgentBranchRect({
+      ? clampAtlasRect({
         ...interaction.startRect,
         x: interaction.startRect.x + dx,
         y: interaction.startRect.y + dy,
       })
-      : clampAgentBranchRect({
+      : clampAtlasRect({
         ...interaction.startRect,
         width: interaction.startRect.width + dx,
         height: interaction.startRect.height + dy,
       });
 
-    setAgentBranchRects((current) => ({
+    setAtlasRects((current) => ({
       ...current,
       [interaction.nodeId]: nextRect,
     }));
@@ -2757,12 +2652,12 @@ export function ExecutionMap({
     event.stopPropagation();
 
     const nextRect = interaction.kind === "drag"
-      ? clampAgentBranchRect({
+      ? clampAtlasRect({
         ...interaction.startRect,
         x: interaction.startRect.x + dx,
         y: interaction.startRect.y + dy,
       })
-      : clampAgentBranchRect({
+      : clampAtlasRect({
         ...interaction.startRect,
         width: interaction.startRect.width + dx,
         height: interaction.startRect.height + dy,
@@ -3746,8 +3641,7 @@ export function ExecutionMap({
           {taskConnectionLinks.map(({ connection, source, target }) => {
             const sourceTitle = tasksById?.get(connection.fromTaskId)?.title ?? connection.fromTaskId;
             const targetTitle = tasksById?.get(connection.toTaskId)?.title ?? connection.toTaskId;
-            const mx = (source.x + target.x) / 2;
-            const my = (source.y + target.y) / 2;
+            const { x: mx, y: my } = linkMidpoint(source, target);
             const isPending = pendingDeleteConnectionId === connection.connectionId;
             const linkCutKey = `task:${connection.connectionId}`;
             const isVisible = hoveredLinkCutKey === linkCutKey || isPending;
@@ -3782,8 +3676,7 @@ export function ExecutionMap({
             const srcNode = sourceNodesById?.get(connection.fromSourceNodeId);
             const sourceTitle = srcNode?.title ?? connection.fromSourceNodeId;
             const targetTitle = tasksById?.get(connection.toTaskId)?.title ?? connection.toTaskId;
-            const mx = (source.x + target.x) / 2;
-            const my = (source.y + target.y) / 2;
+            const { x: mx, y: my } = linkMidpoint(source, target);
             const isPending = pendingDeleteSourceConnectionId === connection.connectionId;
             const linkCutKey = `source:${connection.connectionId}`;
             const isVisible = hoveredLinkCutKey === linkCutKey || isPending;
@@ -3817,8 +3710,7 @@ export function ExecutionMap({
           {taskDependencyLinks.map(({ dep, source, target }) => {
             const sourceTitle = tasksById?.get(dep.fromTaskId)?.title ?? dep.fromTaskId;
             const targetTitle = tasksById?.get(dep.toTaskId)?.title ?? dep.toTaskId;
-            const mx = (source.x + target.x) / 2;
-            const my = (source.y + target.y) / 2;
+            const { x: mx, y: my } = linkMidpoint(source, target);
             const isPending = pendingDeleteDependencyId === dep.dependencyId;
             const linkCutKey = `dep:${dep.dependencyId}`;
             const isVisible = hoveredLinkCutKey === linkCutKey || isPending;

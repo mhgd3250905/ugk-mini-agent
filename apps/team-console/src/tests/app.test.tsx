@@ -5294,7 +5294,9 @@ describe("App", () => {
     expect(idCopyRule).toContain("width: fit-content");
     expect(idCopyRule).toContain("max-width: min(100%, 178px)");
     expect(idCopyRule).not.toContain("width: 100%");
-    expect(executionMapSource).toContain("const AGENT_NODE_HEIGHT = 132");
+    expect(executionMapSource).toContain("AGENT_NODE_HEIGHT");
+    const atlasGeometrySource = readFileSync("src/graph/atlas-geometry.ts", "utf8");
+    expect(atlasGeometrySource).toContain("export const AGENT_NODE_HEIGHT = 132");
     expect(taskAgentGridRule).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
     expect(taskAgentGridRule).toContain("padding: 4px");
     expect(taskAgentRule).toContain("grid-template-columns: minmax(0, 1fr)");
