@@ -3187,21 +3187,6 @@ export function ExecutionMap({
                     <span className="emap-agent-binding">{formatAgentBinding(agent)}</span>
                   </div>
                 </div>
-                {onMinimizeAgent && (
-                  <button
-                    type="button"
-                    className="emap-node-minimize-button"
-                    aria-label="收纳 Agent"
-                    title={`收纳 ${agent.name}`}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onMinimizeAgent(node);
-                    }}
-                  >
-                    收
-                  </button>
-                )}
               </div>
             );
           })}
@@ -3279,21 +3264,6 @@ export function ExecutionMap({
                     </div>
                   </div>
                 </div>
-                {onMinimizeSourceNode && (
-                  <button
-                    type="button"
-                    className="emap-node-minimize-button"
-                    aria-label="收纳 Source"
-                    title={`收纳 ${sourceNode.title}`}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onMinimizeSourceNode(node);
-                    }}
-                  >
-                    收
-                  </button>
-                )}
               </div>
             );
           })}
@@ -3449,21 +3419,6 @@ export function ExecutionMap({
                     }}
                   >
                     <TaskDependencyHandleIcon />
-                  </button>
-                )}
-                {onMinimizeCanvasTask && (
-                  <button
-                    type="button"
-                    className="emap-node-minimize-button"
-                    aria-label="收纳 Task"
-                    title={`收纳 ${task.title}`}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onMinimizeCanvasTask(node);
-                    }}
-                  >
-                    收
                   </button>
                 )}
               </div>

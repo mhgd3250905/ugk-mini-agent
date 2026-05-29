@@ -765,7 +765,6 @@
 
 .emap-atlas-card {
   min-height: 112px;
-  --emap-card-action-rail: 38px;
   border-radius: 8px;
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.055), transparent 32%),
@@ -776,50 +775,6 @@
 .emap-atlas-card .emap-node-content {
   position: relative;
   z-index: 1;
-  padding-right: calc(var(--emap-card-action-rail) + 10px);
-}
-
-.emap-atlas-card::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 0;
-  width: var(--emap-card-action-rail);
-  border-left: 1px solid rgba(122, 131, 151, 0.16);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.055), transparent 46%),
-    rgba(2, 4, 11, 0.2);
-  pointer-events: none;
-}
-
-.emap-node-minimize-button {
-  appearance: none;
-  position: absolute;
-  right: 6px;
-  bottom: 8px;
-  z-index: 2;
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(122, 131, 151, 0.24);
-  border-radius: 6px;
-  background: rgba(2, 4, 11, 0.5);
-  color: var(--secondary);
-  font: inherit;
-  font-size: 10px;
-  font-weight: 750;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.emap-node-minimize-button:hover,
-.emap-node-minimize-button:focus-visible {
-  border-color: rgba(121, 216, 208, 0.68);
-  color: var(--accent);
-  outline: none;
 }
 
 .emap-node.chain-selected {
@@ -2859,7 +2814,7 @@
   justify-content: flex-start;
   gap: 6px;
   padding: 10px 10px 11px 11px;
-  padding-right: calc(var(--emap-card-action-rail) + 10px);
+  padding-right: 44px;
 }
 
 .emap-canvas-task-node .emap-node-body {
@@ -3062,7 +3017,6 @@
   justify-content: flex-start;
   gap: 6px;
   padding: 10px 10px 11px 11px;
-  padding-right: calc(var(--emap-card-action-rail) + 10px);
 }
 
 .emap-source-node .emap-node-state-pill.source {
@@ -3156,7 +3110,6 @@
   justify-content: flex-start;
   gap: 5px;
   padding: 10px 10px 11px 11px;
-  padding-right: calc(var(--emap-card-action-rail) + 10px);
 }
 
 .emap-agent-node .emap-node-body {

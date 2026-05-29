@@ -47,6 +47,29 @@ function firePointer(
   fireEvent(target, event);
 }
 
+function dragRootNodeToDock(container: HTMLElement, nodeEl: HTMLElement, pointerId = 91) {
+  const dockEl = container.querySelector(".emap-root-dock") as HTMLElement | null;
+  expect(dockEl).toBeTruthy();
+  vi.spyOn(dockEl!, "getBoundingClientRect").mockReturnValue({
+    x: 200,
+    y: 700,
+    width: 400,
+    height: 60,
+    left: 200,
+    top: 700,
+    right: 600,
+    bottom: 760,
+    toJSON: () => ({}),
+  } as DOMRect);
+
+  const originalLeft = parseFloat(nodeEl.style.left || "0");
+  const originalTop = parseFloat(nodeEl.style.top || "0");
+  firePointer(nodeEl, "pointerdown", { pointerId, clientX: originalLeft + 50, clientY: originalTop + 30 });
+  firePointer(nodeEl, "pointermove", { pointerId, clientX: 300, clientY: 720 });
+  firePointer(nodeEl, "pointerup", { pointerId, clientX: 300, clientY: 720, buttons: 0 });
+  return dockEl!;
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -2300,8 +2323,8 @@ describe("App", () => {
     expect(container.querySelector(".agent-playground-branch")).toBeTruthy();
     expect(container.querySelector(".task-action-branch")).toBeTruthy();
 
-    fireEvent.click(within(agentNode!).getByRole("button", { name: "收纳 Agent" }));
-    fireEvent.click(within(taskNode!).getByRole("button", { name: "收纳 Task" }));
+    dragRootNodeToDock(container, agentNode!, 11);
+    dragRootNodeToDock(container, taskNode!, 12);
 
     expect(container.querySelector('.emap-agent-node[data-agent-id="main"]')).toBeNull();
     expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeNull();
@@ -2348,7 +2371,7 @@ describe("App", () => {
   it("waits 3 seconds to collapse a non-empty Dock after pointer leave", async () => {
     const { container } = render(<App />);
     const taskEl = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
-    fireEvent.click(within(taskEl).getByRole("button", { name: "收纳 Task" }));
+    dragRootNodeToDock(container, taskEl, 13);
 
     const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
     expect(dock).toBeTruthy();
@@ -2574,8 +2597,8 @@ describe("App", () => {
     expect(agentNode).toBeTruthy();
     expect(taskNode).toBeTruthy();
 
-    fireEvent.click(within(agentNode!).getByRole("button", { name: "收纳 Agent" }));
-    fireEvent.click(within(taskNode!).getByRole("button", { name: "收纳 Task" }));
+    dragRootNodeToDock(container, agentNode!, 21);
+    dragRootNodeToDock(container, taskNode!, 22);
 
     const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
     expect(dock).toBeTruthy();
@@ -2670,7 +2693,7 @@ describe("App", () => {
     const originalLeft = parseFloat(agentNode!.style.left);
     const originalTop = parseFloat(agentNode!.style.top);
 
-    fireEvent.click(within(agentNode!).getByRole("button", { name: "收纳 Agent" }));
+    dragRootNodeToDock(container, agentNode!, 23);
     expect(container.querySelector('.emap-agent-node[data-agent-id="main"]')).toBeNull();
 
     const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
@@ -2750,7 +2773,7 @@ describe("App", () => {
       const originalTop = parseFloat(taskEl.style.top);
 
       // Minimize task
-      fireEvent.click(within(taskEl).getByRole("button", { name: "收纳 Task" }));
+      dragRootNodeToDock(container, taskEl, 24);
       expect(container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeNull();
 
       const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
@@ -2859,7 +2882,7 @@ describe("App", () => {
     const agentNode = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
     expect(agentNode).toBeTruthy();
 
-    fireEvent.click(within(agentNode!).getByRole("button", { name: "收纳 Agent" }));
+    dragRootNodeToDock(container, agentNode!, 25);
     expect(container.querySelector('.emap-agent-node[data-agent-id="main"]')).toBeNull();
 
     const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
@@ -3481,19 +3504,19 @@ describe("App", () => {
     const atlasNodes = getAtlasNodes(container);
     const taskCard = await within(atlasNodes).findByRole("button", { name: "无按钮 Task" });
     expect(within(taskCard).queryByRole("button", { name: /归档 Task/ })).toBeNull();
-    expect(within(taskCard).getByRole("button", { name: "收纳 Task" })).toBeInTheDocument();
+    expect(within(taskCard).queryByRole("button", { name: "收纳 Task" })).toBeNull();
 
     // Source root card: no archive button
     const sourceCard = await within(atlasNodes).findByRole("group", { name: "无按钮 Source" });
     expect(within(sourceCard).queryByRole("button", { name: /归档 Source/ })).toBeNull();
-    expect(within(sourceCard).getByRole("button", { name: "收纳 Source" })).toBeInTheDocument();
+    expect(within(sourceCard).queryByRole("button", { name: "收纳 Source" })).toBeNull();
 
     // Agent root card: no remove button
     fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
     fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
     const agentCard = within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" });
     expect(within(agentCard).queryByRole("button", { name: /移出画布 Agent/ })).toBeNull();
-    expect(within(agentCard).getByRole("button", { name: "收纳 Agent" })).toBeInTheDocument();
+    expect(within(agentCard).queryByRole("button", { name: "收纳 Agent" })).toBeNull();
   });
 
   async function dragNodeToTrash(cont: HTMLElement, nodeEl: HTMLElement) {
@@ -5202,7 +5225,7 @@ describe("App", () => {
     const runningBarRule = mapCss.match(/\.emap-canvas-task-node\.status-running\s+\.emap-node-status-bar\s*{[^}]*}/)?.[0] ?? "";
     const runningPillRule = mapCss.match(/\.emap-canvas-task-node\.status-running\s+\.emap-node-state-pill\.running,\n\.emap-canvas-task-node\.status-running\s+\.emap-node-state-pill\.queued\s*{[^}]*}/)?.[0] ?? "";
     const atlasCardRule = mapCss.match(/\.emap-atlas-card\s*{[^}]*}/)?.[0] ?? "";
-    const atlasRailRule = mapCss.match(/\.emap-atlas-card::before\s*{[^}]*}/)?.[0] ?? "";
+    const taskNodeContentRule = mapCss.match(/\.emap-canvas-task-node\s+\.emap-node-content\s*{[^}]*}/)?.[0] ?? "";
     const idCopyRule = mapCss.match(/\.emap-node-id-copy\s*{[^}]*}/)?.[0] ?? "";
     const executionMapSource = readFileSync("src/graph/ExecutionMap.tsx", "utf8");
     const taskAgentGridRule = mapCss.match(/\.emap-task-agent-grid\s*{[^}]*}/)?.[0] ?? "";
@@ -5215,8 +5238,10 @@ describe("App", () => {
     expect(runningBarRule).toContain("rgb(255, 104, 64)");
     expect(runningBarRule).toContain("animation: pulse-bar");
     expect(runningPillRule).toContain("display: inline-flex");
-    expect(atlasCardRule).toContain("--emap-card-action-rail: 38px");
-    expect(atlasRailRule).toContain("border-left");
+    expect(atlasCardRule).not.toContain("--emap-card-action-rail");
+    expect(mapCss).not.toContain(".emap-atlas-card::before");
+    expect(mapCss).not.toContain(".emap-node-minimize-button");
+    expect(taskNodeContentRule).toContain("padding-right: 44px");
     expect(idCopyRule).toContain("cursor: copy");
     expect(idCopyRule).toContain("grid-template-columns: minmax(0, 1fr)");
     expect(idCopyRule).toContain("justify-self: start");

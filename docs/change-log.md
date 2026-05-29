@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-29 — Team Console 根卡片收纳按钮与 action rail 移除
+
+- **主题**: 移除 Agent / Task / Source 根卡片内的“收”按钮和右侧纵向 action rail，减少卡片右侧割裂感。
+- **变更内容**:
+  - 根卡片不再渲染 `.emap-node-minimize-button`；收纳能力保留为拖入底部 Dock，清理能力继续走右下角垃圾桶 drop target。
+  - `.emap-atlas-card::before` action rail 与对应右侧 padding 移除；Agent / Source 内容区恢复均匀内边距，Task 只为右侧 dependency handle 保留必要空间。
+  - Dock 相关回归测试改为真实拖拽根节点到 Dock，不再依赖已经移除的卡片内按钮。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/handoff-current.md`。
+- **验证**: focused tests 锁定根卡片不再出现收纳按钮、CSS 不再包含 action rail，同时保留 drag-to-Dock / restore 行为；真实页面量测根卡片按钮数量和 rail 伪元素。
+- **对应入口**: Team Console Execution Atlas 根卡片，固定入口 `http://127.0.0.1:5174/`。
+
 ## 2026-05-29 — Team Console Agent 根卡片内边距修复
 
 - **主题**: 修复 Agent 根卡片底部 binding 文本贴到边框的问题。
