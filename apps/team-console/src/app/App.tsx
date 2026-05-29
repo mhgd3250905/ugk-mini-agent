@@ -3,6 +3,7 @@ import { LiveTeamApi } from "../api/team-api";
 import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
 import { ALL_FIXTURES, MockTeamApi } from "../fixtures/team-fixtures";
 import { useTeamConsoleLiveData, type DataSource, type LiveRunMode, type TeamConsoleUiResetReason, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
+import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchState } from "./use-task-branch-stack";
 import { ExecutionMap, type AtlasAgentNode, type AtlasSourceNode, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { normalizeAtlasViewport, type AtlasViewport } from "../graph/AtlasCanvasShell";
 import { RUN_STATUS_LABELS, isActiveRun } from "../shared/status";
@@ -28,16 +29,6 @@ type AgentBranchState = {
   nodeId: string;
   agentId: string;
   mode: AgentBranchMode;
-};
-
-type TaskBranchDetailMode = "leader-chat" | "edit" | "run-observer";
-
-type TaskBranchState = {
-  nodeId: string;
-  taskId: string;
-  detailMode: TaskBranchDetailMode | null;
-  observedRunId?: string;
-  selectedFileKeys?: string[];
 };
 
 type StoredCanvasUiState = {
@@ -820,7 +811,6 @@ export function App() {
   const sourceFileInputRef = useRef<HTMLInputElement | null>(null);
   const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
   const [expandedAgentBranch, setExpandedAgentBranch] = useState<AgentBranchState | null>(null);
-  const [expandedTaskBranches, setExpandedTaskBranches] = useState<TaskBranchState[]>([]);
   const [minimizedAgentNodeIds, setMinimizedAgentNodeIds] = useState<string[]>([]);
   const [minimizedTaskNodeIds, setMinimizedTaskNodeIds] = useState<string[]>([]);
   const [minimizedSourceNodeIds, setMinimizedSourceNodeIds] = useState<string[]>([]);
@@ -862,17 +852,23 @@ export function App() {
     setTaskArchiveSavingNodeId(null);
   }, []);
 
-  const closeTaskBranch = useCallback((nodeId?: string) => {
-    setExpandedTaskBranches((current) => {
-      if (nodeId) {
-        const closing = current.find((branch) => branch.nodeId === nodeId);
-        if (closing) clearTaskPanelState(closing.taskId);
-        return current.filter((branch) => branch.nodeId !== nodeId);
-      }
-      clearTaskPanelState();
-      return [];
-    });
-  }, [clearTaskPanelState]);
+  const closeTaskPickersBeforeTaskBranch = useCallback(() => {
+    setAgentPickerOpen(false);
+    setTaskLeaderPickerOpen(false);
+  }, []);
+
+  const {
+    expandedTaskBranches,
+    expandedTaskBranch,
+    setExpandedTaskBranches,
+    setExpandedTaskBranch,
+    closeTaskBranch,
+    openOrToggleTaskBranch,
+    pruneTaskBranches,
+  } = useTaskBranchStack({
+    onClearTaskPanelState: clearTaskPanelState,
+    onBeforeOpenTaskBranch: closeTaskPickersBeforeTaskBranch,
+  });
 
   const resetContextUi = useCallback((reason: TeamConsoleUiResetReason) => {
     setSelectedTaskId(null);
@@ -942,23 +938,6 @@ export function App() {
   const addedAgentIds = useMemo(() => new Set(agentNodes.map((node) => node.agentId)), [agentNodes]);
   const canvasUiContextKey = dataSource === "mock" ? `mock:${selectedFixtureId}` : `live:${liveRunMode}`;
   const hydratedCanvasUiContextKeyRef = useRef<string | null>(null);
-  const expandedTaskBranch = expandedTaskBranches[expandedTaskBranches.length - 1] ?? null;
-  const setExpandedTaskBranch = useCallback((
-    updater: TaskBranchState | null | ((current: TaskBranchState | null) => TaskBranchState | null),
-  ) => {
-    setExpandedTaskBranches((current) => {
-      const active = current[current.length - 1] ?? null;
-      const next = typeof updater === "function" ? updater(active) : updater;
-      if (!next) {
-        return active ? current.filter((branch) => branch.nodeId !== active.nodeId) : current;
-      }
-      const exists = current.some((branch) => branch.nodeId === next.nodeId);
-      if (exists) {
-        return current.map((branch) => branch.nodeId === next.nodeId ? next : branch);
-      }
-      return [...current, next];
-    });
-  }, []);
   const expandedAgentNode = expandedAgentBranch
     ? agentNodes.find((node) => node.nodeId === expandedAgentBranch.nodeId) ?? null
     : null;
@@ -1112,8 +1091,8 @@ export function App() {
   }, [dataSource, liveSourceNodesHydrated, sourceAtlasNodes]);
 
   useEffect(() => {
-    setExpandedTaskBranches((current) => current.filter((branch) => tasksById.has(branch.taskId)));
-  }, [tasksById]);
+    pruneTaskBranches(tasksById);
+  }, [pruneTaskBranches, tasksById]);
 
   useEffect(() => {
     setSourceConnections((current) => (
@@ -1190,16 +1169,8 @@ export function App() {
   }, [expandedAgentBranch, refreshLiveTasksAfterLeavingTaskCreateBranch]);
 
   const toggleTaskBranch = useCallback((node: AtlasTaskNode) => {
-    setAgentPickerOpen(false);
-    setTaskLeaderPickerOpen(false);
-    setExpandedTaskBranches((current) => {
-      const existing = current.find((branch) => branch.nodeId === node.nodeId);
-      if (existing) {
-        return current.filter((branch) => branch.nodeId !== node.nodeId);
-      }
-      return [...current, { nodeId: node.nodeId, taskId: node.taskId, detailMode: null as TaskBranchDetailMode | null }];
-    });
-  }, []);
+    openOrToggleTaskBranch(node);
+  }, [openOrToggleTaskBranch]);
 
   const openTaskCreateBranch = useCallback((leaderAgentId: string) => {
     const nodeId = `agent-${leaderAgentId}`;

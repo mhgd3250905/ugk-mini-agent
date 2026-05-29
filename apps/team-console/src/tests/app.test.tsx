@@ -7691,6 +7691,48 @@ describe("App", () => {
       expect(branchBStill).toBeTruthy();
     });
 
+    it("closing one Task action branch clears only its own delete confirmation", async () => {
+      setupLiveMultiTaskApi();
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const taskANode = await within(getAtlasNodes(container)).findByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      await waitFor(() => expect(container.querySelector(".task-action-branch")).toBeTruthy());
+      const branchA = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskA.taskId),
+      ) as HTMLElement | undefined;
+      expect(branchA).toBeTruthy();
+
+      const deleteButtonA = Array.from(branchA!.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("删除"),
+      )!;
+      fireEvent.click(deleteButtonA);
+      expect(within(branchA!).getByRole("group", { name: `${taskA.title} 删除确认` })).toBeInTheDocument();
+
+      const taskBNode = within(getAtlasNodes(container)).getByRole("button", { name: taskB.title });
+      fireEvent.click(taskBNode);
+      await waitFor(() => {
+        expect(container.querySelectorAll(".task-action-branch").length).toBeGreaterThanOrEqual(2);
+      });
+      const branchB = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskB.taskId),
+      ) as HTMLElement | undefined;
+      expect(branchB).toBeTruthy();
+      expect(within(branchB!).queryByRole("group", { name: `${taskA.title} 删除确认` })).toBeNull();
+
+      fireEvent.click(within(branchA!).getByRole("button", { name: `收起 ${taskA.title} Task 操作` }));
+
+      await waitFor(() => {
+        const remainingBranches = Array.from(container.querySelectorAll(".task-action-branch")) as HTMLElement[];
+        expect(remainingBranches).toHaveLength(1);
+        expect(remainingBranches[0]).toHaveTextContent(taskB.taskId);
+        expect(remainingBranches[0]).not.toHaveTextContent(taskA.taskId);
+      });
+      expect(container.querySelector(".task-delete-confirm")).toBeNull();
+      expect(container.querySelector(".task-edit-branch")).toBeNull();
+    });
+
     it("multiple run observer panels preserve positions when opening new ones", async () => {
       const runA: TeamRunState = {
         runId: "mrun_alpha_1",
