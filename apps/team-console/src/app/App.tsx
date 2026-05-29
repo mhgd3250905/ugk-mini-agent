@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } fro
 import { LiveTeamApi } from "../api/team-api";
 import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
 import { ALL_FIXTURES, MockTeamApi } from "../fixtures/team-fixtures";
-import { useTeamConsoleLiveData, type DataSource, type LiveRunMode, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
+import { useTeamConsoleLiveData, type DataSource, type LiveRunMode, type TeamConsoleUiResetReason, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
 import { ExecutionMap, type AtlasAgentNode, type AtlasSourceNode, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { normalizeAtlasViewport, type AtlasViewport } from "../graph/AtlasCanvasShell";
 import { RUN_STATUS_LABELS, isActiveRun } from "../shared/status";
@@ -874,6 +874,31 @@ export function App() {
     });
   }, [clearTaskPanelState]);
 
+  const resetContextUi = useCallback((reason: TeamConsoleUiResetReason) => {
+    setSelectedTaskId(null);
+    setTaskConnectionDraft(null);
+    setTaskDependencyDraft(null);
+    setSourceConnectionDraft(null);
+    setTaskRunSavingByTaskId({});
+    setTaskRunObserverByRunId({});
+
+    if (reason === "mock-fixture" || reason === "mock-workspace" || reason === "live-workspace-loading") {
+      setSourceAtlasNodes([]);
+    }
+
+    if (reason === "live-workspace-loading") {
+      setAgentPickerOpen(false);
+      setTaskLeaderPickerOpen(false);
+      setTaskNodes([]);
+      setLiveTaskNodesHydrated(false);
+      setLiveSourceNodesHydrated(false);
+    }
+
+    if (reason === "mock-workspace" || reason === "live-run-mode") {
+      setCanvasViewport({ x: 0, y: 0, scale: 1 });
+    }
+  }, []);
+
   const liveData = useTeamConsoleLiveData({
     onApplyLiveTasks: useCallback((nextTasks: TeamCanvasTask[]) => {
       setTaskNodes((current) => makeTaskNodes(nextTasks, liveTaskRefreshPositions(current)));
@@ -888,6 +913,7 @@ export function App() {
       setExpandedAgentBranch(null);
       closeTaskBranch();
     }, [closeTaskBranch]),
+    onResetContextUi: resetContextUi,
     selectedTaskId,
   });
   const {
@@ -914,6 +940,8 @@ export function App() {
   const sourceNodesById = useMemo(() => new Map(sourceNodes.map((node) => [node.sourceNodeId, node])), [sourceNodes]);
   const agentRunStatusesById = useMemo(() => new Map(Object.entries(agentRunStatusById)), [agentRunStatusById]);
   const addedAgentIds = useMemo(() => new Set(agentNodes.map((node) => node.agentId)), [agentNodes]);
+  const canvasUiContextKey = dataSource === "mock" ? `mock:${selectedFixtureId}` : `live:${liveRunMode}`;
+  const hydratedCanvasUiContextKeyRef = useRef<string | null>(null);
   const expandedTaskBranch = expandedTaskBranches[expandedTaskBranches.length - 1] ?? null;
   const setExpandedTaskBranch = useCallback((
     updater: TaskBranchState | null | ((current: TaskBranchState | null) => TaskBranchState | null),
@@ -954,7 +982,7 @@ export function App() {
 
   useEffect(() => {
     setCanvasUiStateHydrated(false);
-  }, [dataSource, selectedFixtureId, liveRunMode]);
+  }, [canvasUiContextKey]);
 
   useEffect(() => {
     setMinimizedAgentNodeIds((current) => {
@@ -981,6 +1009,7 @@ export function App() {
 
     const stored = readStoredCanvasUiState();
     if (!stored || !canvasUiContextMatches(stored, dataSource, selectedFixtureId, liveRunMode)) {
+      hydratedCanvasUiContextKeyRef.current = canvasUiContextKey;
       setCanvasUiStateHydrated(true);
       return;
     }
@@ -1009,10 +1038,12 @@ export function App() {
     setMinimizedTaskNodeIds((stored.minimizedTaskNodeIds ?? []).filter((nodeId) => taskNodeIds.has(nodeId)));
     setMinimizedSourceNodeIds((stored.minimizedSourceNodeIds ?? []).filter((nodeId) => sourceNodeIds.has(nodeId)));
     if (stored.rootNodeFilter) setRootNodeFilter(stored.rootNodeFilter);
+    hydratedCanvasUiContextKeyRef.current = canvasUiContextKey;
     setCanvasUiStateHydrated(true);
   }, [
     agentNodes,
     agentsById,
+    canvasUiContextKey,
     canvasUiStateHydrated,
     dataSource,
     liveAgentNodesHydrated,
@@ -1026,6 +1057,7 @@ export function App() {
 
   useEffect(() => {
     if (!canvasUiStateHydrated) return;
+    if (hydratedCanvasUiContextKeyRef.current !== canvasUiContextKey) return;
     writeStoredCanvasUiState({
       schemaVersion: 1,
       dataSource,
@@ -1039,6 +1071,7 @@ export function App() {
       rootNodeFilter,
     });
   }, [
+    canvasUiContextKey,
     canvasUiStateHydrated,
     canvasViewport,
     dataSource,

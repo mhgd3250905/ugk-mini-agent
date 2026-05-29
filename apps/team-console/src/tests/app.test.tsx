@@ -648,6 +648,52 @@ describe("App", () => {
     });
   });
 
+  it("clears live Source cards and resets viewport when switching back to the clean mock workspace", async () => {
+    const liveSourceNode: TeamCanvasSourceNode = {
+      schemaVersion: "team/source-node-1",
+      sourceNodeId: "src_live_reset_probe",
+      title: "Live reset probe.md",
+      nodeType: "file",
+      outputPort: { id: "value", label: "Markdown 文稿", type: "md" },
+      content: { fileName: "Live reset probe.md", mimeType: "text/markdown", size: 12 },
+      createdAt: "2026-05-29T00:00:00.000Z",
+      updatedAt: "2026-05-29T00:00:00.000Z",
+    };
+
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [] }), { status: 200 });
+      if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === "/v1/team/task-dependencies") return new Response(JSON.stringify({ dependencies: [] }), { status: 200 });
+      if (url === "/v1/team/source-nodes") return new Response(JSON.stringify({ sourceNodes: [liveSourceNode] }), { status: 200 });
+      if (url === "/v1/team/source-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-source-node-id="src_live_reset_probe"]')).toBeTruthy();
+    });
+    expect(within(getAtlasNodes(container)).getByRole("group", { name: "Live reset probe.md" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "放大" }));
+    expect(screen.getByLabelText("当前缩放 110%")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "mock" } });
+    fireEvent.click(screen.getByRole("button", { name: "Agent workspace" }));
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-source-node-id="src_live_reset_probe"]')).toBeNull();
+      expect(screen.getByLabelText("当前缩放 100%")).toBeInTheDocument();
+      expect(getAtlasStage(container).style.transform).toBe("translate(0px, 0px) scale(1)");
+    });
+  });
+
   it("creates editable text source nodes and connects them to same-type Task inputs", async () => {
     const task = {
       ...cloneTaskFixture(),

@@ -7,6 +7,11 @@ import { isActiveRun } from "../shared/status";
 
 export type DataSource = "mock" | "live";
 export type LiveRunMode = "workspace" | "latest";
+export type TeamConsoleUiResetReason =
+  | "mock-fixture"
+  | "mock-workspace"
+  | "live-workspace-loading"
+  | "live-run-mode";
 
 const DATA_SOURCE_STORAGE_KEY = "ugk-team-console:data-source";
 
@@ -73,6 +78,7 @@ export interface UseTeamConsoleLiveDataOptions {
   onApplyLiveTasks: (tasks: TeamCanvasTask[]) => void;
   onApplyLiveSources: (sources: TeamCanvasSourceNode[]) => void;
   onCloseBranches: () => void;
+  onResetContextUi: (reason: TeamConsoleUiResetReason) => void;
   selectedTaskId: string | null;
 }
 
@@ -114,7 +120,7 @@ export interface UseTeamConsoleLiveDataReturn {
 }
 
 export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): UseTeamConsoleLiveDataReturn {
-  const { onApplyLiveTasks, onApplyLiveSources, onCloseBranches, selectedTaskId } = options;
+  const { onApplyLiveTasks, onApplyLiveSources, onCloseBranches, onResetContextUi, selectedTaskId } = options;
 
   const [dataSource, setDataSource] = useState<DataSource>(() => readStoredDataSource());
   const [selectedFixtureId, setSelectedFixtureId] = useState<string>(CLEAN_AGENT_WORKSPACE_ID);
@@ -238,6 +244,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
   useEffect(() => {
     if (dataSource === "mock") {
       if (selectedFixtureId === CLEAN_AGENT_WORKSPACE_ID) {
+        onResetContextUi("mock-workspace");
         setPlan(null);
         setRun(null);
         setAttemptsByTaskId({});
@@ -246,6 +253,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
       } else {
         const entry = ALL_FIXTURES.find((fixture) => fixture.id === selectedFixtureId);
         if (entry) {
+          onResetContextUi("mock-fixture");
           setPlan(entry.plan);
           setRun(entry.run);
           setAttemptsByTaskId({});
@@ -254,7 +262,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
         }
       }
     }
-  }, [dataSource, selectedFixtureId]);
+  }, [dataSource, onResetContextUi, selectedFixtureId]);
 
   // Initial data load + agent run status polling
   useEffect(() => {
@@ -289,6 +297,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
       };
     }
 
+    onResetContextUi("live-workspace-loading");
     setAgents([]);
     setAgentRunStatusById({});
     setTasks([]);
@@ -337,13 +346,14 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
         globalThis.clearInterval(refreshTimer);
       }
     };
-  }, [applyLiveSources, applyLiveTasks, onCloseBranches, dataSource, loadTaskRunsForTasks, onApplyLiveTasks, onApplyLiveSources]);
+  }, [applyLiveSources, applyLiveTasks, onCloseBranches, onResetContextUi, dataSource, loadTaskRunsForTasks, onApplyLiveTasks, onApplyLiveSources]);
 
   // Live run mode loading (plans/runs for "latest" mode)
   useEffect(() => {
     if (dataSource !== "live") return;
 
     onCloseBranches();
+    onResetContextUi("live-run-mode");
     if (liveRunMode === "workspace") {
       setPlan(null);
       setRun(null);
@@ -403,7 +413,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     return () => {
       cancelled = true;
     };
-  }, [onCloseBranches, dataSource, liveRunMode]);
+  }, [onCloseBranches, onResetContextUi, dataSource, liveRunMode]);
 
   // Attempts loading for selected task
   useEffect(() => {
