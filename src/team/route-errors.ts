@@ -13,3 +13,7 @@ export function sendMappedError(reply: FastifyReply, err: unknown, rules: ErrorR
 	const msg = (err as Error).message;
 	reply.code(mapErrorStatus(msg, rules, fallback)).send({ error: msg });
 }
+
+export function sendNotFound(reply: FastifyReply, label: string): void {
+	reply.code(404).send({ error: `${label} not found` });
+}

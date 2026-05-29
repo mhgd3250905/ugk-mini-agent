@@ -1487,3 +1487,87 @@ test("P24: POST rerun rejects active run", async () => {
 			try { await rm(root, { recursive: true, force: true }); } catch {}
 		}
 	});
+
+	test("GET /v1/team/tasks/:taskId response includes task and warnings", async () => {
+		const { app, root } = await buildTestServer();
+		try {
+			const createRes = await app.inject({
+				method: "POST",
+				url: "/v1/team/tasks",
+				payload: { title: "稳定性任务", leaderAgentId: "main", status: "ready", workUnit: { title: "工作", input: { text: "测试输入" }, outputContract: { text: "输出" }, acceptance: { rules: ["完成"] }, workerAgentId: "main", checkerAgentId: "main" } },
+			});
+			assert.equal(createRes.statusCode, 201);
+			const taskId = createRes.json().task.taskId;
+
+			const res = await app.inject({ method: "GET", url: "/v1/team/tasks/" + taskId });
+			assert.equal(res.statusCode, 200);
+			const body = res.json();
+			assert.ok(body.task, "response has task field");
+			assert.ok(Array.isArray(body.warnings), "response has warnings array");
+			assert.equal(body.task.taskId, taskId);
+
+			await app.close();
+		} finally {
+			try { await rm(root, { recursive: true, force: true }); } catch {}
+		}
+	});
+
+	test("GET /v1/team/plans/:planId returns unwrapped plan", async () => {
+		const { app, root } = await buildTestServer();
+		try {
+			const unitRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+			const createRes = await app.inject({ method: "POST", url: "/v1/team/plans", payload: planBody(unitRes.json().teamUnitId) });
+			const planId = createRes.json().planId;
+
+			const res = await app.inject({ method: "GET", url: "/v1/team/plans/" + planId });
+			assert.equal(res.statusCode, 200);
+			const body = res.json();
+			assert.equal(body.planId, planId);
+			assert.ok(body.title);
+			assert.ok(!body.plan, "plan is not double-wrapped");
+
+			await app.close();
+		} finally {
+			try { await rm(root, { recursive: true, force: true }); } catch {}
+		}
+	});
+
+	test("GET /v1/team/team-units/:teamUnitId returns unwrapped unit", async () => {
+		const { app, root } = await buildTestServer();
+		try {
+			const createRes = await app.inject({ method: "POST", url: "/v1/team/team-units", payload: unitBody });
+			const unitId = createRes.json().teamUnitId;
+
+			const res = await app.inject({ method: "GET", url: "/v1/team/team-units/" + unitId });
+			assert.equal(res.statusCode, 200);
+			const body = res.json();
+			assert.equal(body.teamUnitId, unitId);
+			assert.ok(body.title);
+			assert.ok(!body.unit, "unit is not double-wrapped");
+
+			await app.close();
+		} finally {
+			try { await rm(root, { recursive: true, force: true }); } catch {}
+		}
+	});
+
+	test("sendNotFound produces consistent error shape", async () => {
+		const { app, root } = await buildTestServer();
+		try {
+			const res = await app.inject({ method: "GET", url: "/v1/team/tasks/nonexistent" });
+			assert.equal(res.statusCode, 404);
+			assert.deepEqual(res.json(), { error: "task not found" });
+
+			const planRes = await app.inject({ method: "GET", url: "/v1/team/plans/nonexistent" });
+			assert.equal(planRes.statusCode, 404);
+			assert.deepEqual(planRes.json(), { error: "plan not found" });
+
+			const unitRes = await app.inject({ method: "GET", url: "/v1/team/team-units/nonexistent" });
+			assert.equal(unitRes.statusCode, 404);
+			assert.deepEqual(unitRes.json(), { error: "team unit not found" });
+
+			await app.close();
+		} finally {
+			try { await rm(root, { recursive: true, force: true }); } catch {}
+		}
+	});
