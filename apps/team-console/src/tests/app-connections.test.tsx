@@ -1,11 +1,11 @@
-import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { App } from '../app/App';
-import { mockTeamTasks, resetMockTeamApiState } from '../fixtures/team-fixtures';
-import type { TeamCanvasTask, TeamTaskDependency } from '../api/team-types';
-import { getAtlas, getAtlasNodes, firePointer } from './test-utils';
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { App } from "../app/App";
+import { mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
+import type { TeamCanvasTask, TeamTaskDependency } from "../api/team-types";
+import { getAtlas, getAtlasNodes, firePointer } from "./app-dom-test-utils";
 
-describe('App', () => {
+describe("App", () => {
   beforeEach(() => {
     resetMockTeamApiState();
     window.localStorage.clear();

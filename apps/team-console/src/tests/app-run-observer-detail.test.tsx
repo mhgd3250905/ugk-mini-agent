@@ -1,11 +1,13 @@
-import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { App } from '../app/App';
-import { resetMockTeamApiState } from '../fixtures/team-fixtures';
-import type { TeamAttemptMetadata, TeamCanvasTask, TeamRunState } from '../api/team-types';
-import { getAtlasNodes, firePointer, cloneTaskFixture, makeLiveTaskRunFixture, makeLegacyAttemptFixture } from './test-utils';
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { App } from "../app/App";
+import { resetMockTeamApiState } from "../fixtures/team-fixtures";
+import type { TeamAttemptMetadata, TeamCanvasTask, TeamRunState } from "../api/team-types";
+import { getAtlasNodes, firePointer } from "./app-dom-test-utils";
+import { cloneTaskFixture } from "./team-task-test-fixtures";
+import { makeLiveTaskRunFixture, makeLegacyAttemptFixture } from "./team-run-test-fixtures";
 
-describe('App', () => {
+describe("App", () => {
   beforeEach(() => {
     resetMockTeamApiState();
     window.localStorage.clear();

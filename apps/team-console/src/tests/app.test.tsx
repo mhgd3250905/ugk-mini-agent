@@ -4,7 +4,10 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { App } from "../app/App";
 import { makeDiscoveryForEachPlan, makeDiscoveryForEachRun, makeSequentialPlan, makeSequentialRun, MOCK_AGENTS, mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
 import type { AgentChatProcessEntry, TeamAttemptMetadata, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasTask, TeamRunState, TeamTaskConnection } from "../api/team-types";
-import { getAtlas, getAtlasNodes, getAtlasStage, firePointer, dragRootNodeToDock, deferred, cloneTaskFixture, makeLiveTaskRunFixture, makeLegacyAttemptFixture, mockLiveTaskEditorApi, makeTypedTaskChainFixtures } from "./test-utils";
+import { getAtlas, getAtlasNodes, getAtlasStage, firePointer, dragRootNodeToDock, deferred } from "./app-dom-test-utils";
+import { cloneTaskFixture, makeTypedTaskChainFixtures } from "./team-task-test-fixtures";
+import { makeLiveTaskRunFixture, makeLegacyAttemptFixture } from "./team-run-test-fixtures";
+import { mockLiveTaskEditorApi } from "./team-api-test-mocks";
 
 describe("App", () => {
   beforeEach(() => {
