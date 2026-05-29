@@ -1,20 +1,17 @@
-import { join } from "node:path";
+import { mkdir } from "node:fs/promises";
 import { TaskStore } from "./task-store.js";
 import { RunWorkspace } from "./run-workspace.js";
 import { computeTeamRunSummary } from "./team-summary.js";
 import { progressMessages } from "./progress.js";
-import { runWithTimeout } from "./task-attempt-runner.js";
-import { validateTeamOutput } from "./output-validator.js";
-import { writeTimingSpan } from "./timing.js";
-import { TeamRoleProcessRecorder } from "./task-run-process-recorder.js";
 import { buildTeamCanvasSourceArtifact, buildTeamTaskTypedArtifact, formatBoundInputsForPrompt } from "./task-artifact-handoff.js";
 import type { TaskConnectionStore } from "./task-connection-store.js";
 import type { TaskDependencyStore } from "./task-dependency-store.js";
 import { resolveSourceConnectionStaleReason, type SourceConnectionStore } from "./source-connection-store.js";
 import type { SourceNodeStore } from "./source-node-store.js";
-import type { ProfileAwareTeamRoleRunner, TeamRoleRunner, WorkerOutput, CheckerOutput } from "./role-runner.js";
-import type { TeamCanvasTask, TeamOutputValidationResult, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskDeliveryOutcome } from "./types.js";
+import type { ProfileAwareTeamRoleRunner, TeamRoleRunner } from "./role-runner.js";
+import type { TeamCanvasTask, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskDeliveryOutcome } from "./types.js";
 import { planDownstreamDelivery } from "./downstream-delivery.js";
+import { CanvasTaskAttemptRunner } from "./canvas-task-attempt-runner.js";
 
 export interface CanvasTaskRunServiceOptions {
 	taskStore: TaskStore;
@@ -87,12 +84,6 @@ function canvasTaskToPlan(task: TeamCanvasTask, boundInputs: TeamTaskBoundInput[
 	};
 }
 
-function summarizeOutputValidationFailure(result: TeamOutputValidationResult): string {
-	const failed = result.checks.find(check => !check.ok && check.name !== "json_parse")
-		?? result.checks.find(check => !check.ok);
-	return `output validation failed: ${failed?.message ?? failed?.name ?? "unknown validation failure"}`;
-}
-
 function isAbortLike(error: unknown): boolean {
 	return error instanceof Error && /abort|cancel/i.test(error.message);
 }
@@ -106,14 +97,18 @@ function sanitizeDeliveryError(error: unknown): string {
 
 export class CanvasTaskRunService {
 	private readonly activeControllers = new Map<string, AbortController>();
-	private readonly activeRoleRecorders = new Map<string, Set<TeamRoleProcessRecorder>>();
 	private readonly cancellingRunIds = new Set<string>();
-	private readonly maxCheckerRevisions: number;
-	private readonly phaseTimeouts: { workerMs: number; checkerMs: number };
+	private readonly attemptRunner: CanvasTaskAttemptRunner;
 
 	constructor(private readonly options: CanvasTaskRunServiceOptions) {
-		this.maxCheckerRevisions = Math.max(1, Math.floor(options.maxCheckerRevisions ?? 3));
-		this.phaseTimeouts = options.phaseTimeouts ?? DEFAULT_TASK_RUN_TIMEOUTS;
+		const maxCheckerRevisions = Math.max(1, Math.floor(options.maxCheckerRevisions ?? 3));
+		const phaseTimeouts = options.phaseTimeouts ?? DEFAULT_TASK_RUN_TIMEOUTS;
+		this.attemptRunner = new CanvasTaskAttemptRunner({
+			workspace: options.workspace,
+			dataDir: options.dataDir,
+			maxCheckerRevisions,
+			phaseTimeouts,
+		});
 	}
 
 	async createRun(taskId: string, runOptions: CanvasTaskRunOptions = {}): Promise<TeamRunState> {
@@ -205,7 +200,7 @@ export class CanvasTaskRunService {
 			state.lastError = reason;
 			state.activeElapsedMs = this.accumulateElapsed(state);
 			state.lease = null;
-			await this.cancelActiveRoleProcesses(runId, reason);
+			await this.attemptRunner.cancelActiveProcesses(runId, reason);
 			for (const [taskId, taskState] of Object.entries(state.taskStates)) {
 				if (taskState.status === "pending" || taskState.status === "running" || taskState.status === "interrupted") {
 					taskState.status = "cancelled";
@@ -263,9 +258,9 @@ export class CanvasTaskRunService {
 		}
 
 		try {
-			let state = await this.transitionToRunning(runId, task.id);
+			await this.transitionToRunning(runId, task.id);
 			const { attemptId, attemptRoot } = await this.options.workspace.createAttempt(runId, task.id);
-			state = await this.options.workspace.patchState(runId, (latest) => {
+			await this.options.workspace.patchState(runId, (latest) => {
 				const taskState = latest.taskStates[task.id];
 				if (!taskState) return;
 				taskState.attemptCount += 1;
@@ -273,7 +268,22 @@ export class CanvasTaskRunService {
 				latest.summary = computeTeamRunSummary(latest.taskStates);
 			});
 
-			await this.runWorkerCheckerLoop(state, task, attemptId, attemptRoot, roleRunner, signal, canvasTask);
+			const outcome = await this.attemptRunner.runAttempt({
+				runId,
+				task,
+				attemptId,
+				attemptRoot,
+				roleRunner,
+				signal,
+				workerProfileId: canvasTask.workUnit.workerAgentId,
+				checkerProfileId: canvasTask.workUnit.checkerAgentId,
+			});
+
+			if (outcome.status === "succeeded") {
+				await this.completeRunSucceeded(runId, task.id, attemptId, outcome.resultRef!);
+			} else {
+				await this.completeRunFailed(runId, task.id, outcome.errorSummary!, outcome.resultRef ?? undefined);
+			}
 		} catch (error) {
 			const current = await this.getRun(runId);
 			if (this.cancellingRunIds.has(runId) || (current && current.status === "cancelled")) return;
@@ -298,212 +308,7 @@ export class CanvasTaskRunService {
 		});
 	}
 
-	private async runWorkerCheckerLoop(
-		state: TeamRunState,
-		task: TeamTask,
-		attemptId: string,
-		attemptRoot: string,
-		roleRunner: TeamRoleRunner,
-		signal: AbortSignal,
-		canvasTask: TeamCanvasTask,
-	): Promise<void> {
-		let feedback: string | undefined;
-		for (let revisionIndex = 1; revisionIndex <= this.maxCheckerRevisions; revisionIndex++) {
-			this.throwIfAborted(signal);
-			const workerOut = await this.runWorker(state.runId, task, attemptId, attemptRoot, revisionIndex, feedback, roleRunner, signal, canvasTask.workUnit.workerAgentId);
-			this.throwIfAborted(signal);
-			const workerRef = await this.options.workspace.writeWorkerOutput(state.runId, task.id, attemptId, revisionIndex, workerOut.content);
-			await this.options.workspace.recordAttemptWorkerOutput(state.runId, task.id, attemptId, {
-				outputRef: workerRef,
-				outputIndex: revisionIndex,
-				runtimeContext: workerOut.runtimeContext,
-			});
-			await this.options.workspace.updateAttemptPhase(state.runId, task.id, attemptId, "worker_completed");
-
-			const workerValidation = await validateTeamOutput({
-				workspace: this.options.workspace,
-				runId: state.runId,
-				task,
-				attemptId,
-				contents: [{ ref: workerRef, content: workerOut.content }],
-			});
-
-			await this.markTaskProgress(state.runId, task.id, "checker_reviewing", progressMessages.checker_reviewing);
-			const checkerOut = await this.runChecker(state.runId, task, attemptId, workerRef, workerValidation, roleRunner, signal, canvasTask.workUnit.checkerAgentId);
-			this.throwIfAborted(signal);
-			await this.recordCheckerResult(state.runId, task.id, attemptId, revisionIndex, checkerOut);
-
-			if (checkerOut.verdict === "pass") {
-				const resultContent = checkerOut.resultContent ?? workerOut.content;
-				const acceptedValidation = await validateTeamOutput({
-					workspace: this.options.workspace,
-					runId: state.runId,
-					task,
-					attemptId,
-					contents: [
-						{ ref: "checker.resultContent", content: resultContent },
-						{ ref: workerRef, content: workerOut.content },
-					],
-				});
-				if (!acceptedValidation.ok) {
-					await this.finishTaskFailed(state.runId, task.id, attemptId, summarizeOutputValidationFailure(acceptedValidation));
-					return;
-				}
-				const resultRef = await this.options.workspace.writeAcceptedResult(state.runId, task.id, attemptId, resultContent);
-				await this.options.workspace.updateAttemptPhase(state.runId, task.id, attemptId, "checker_passed");
-				await this.finishTaskSucceeded(state.runId, task.id, attemptId, resultRef);
-				return;
-			}
-
-			if (checkerOut.verdict === "fail") {
-				const failRef = await this.options.workspace.writeFailedResult(state.runId, task.id, attemptId, checkerOut.resultContent ?? checkerOut.reason);
-				await this.finishTaskFailed(state.runId, task.id, attemptId, checkerOut.reason, failRef);
-				return;
-			}
-
-			await this.options.workspace.updateAttemptPhase(state.runId, task.id, attemptId, "checker_revising");
-			feedback = checkerOut.feedback;
-			if (revisionIndex >= this.maxCheckerRevisions) {
-				const failRef = await this.options.workspace.writeFailedResult(state.runId, task.id, attemptId, `checker revision limit (${this.maxCheckerRevisions}) exceeded`);
-				await this.finishTaskFailed(state.runId, task.id, attemptId, "checker revision limit exceeded", failRef);
-				return;
-			}
-			await this.markTaskProgress(state.runId, task.id, "worker_revising", progressMessages.worker_revising);
-		}
-	}
-
-	private async runWorker(
-		runId: string,
-		task: TeamTask,
-		attemptId: string,
-		attemptRoot: string,
-		outputIndex: number,
-		feedback: string | undefined,
-		roleRunner: TeamRoleRunner,
-		signal: AbortSignal,
-		profileId: string,
-	): Promise<WorkerOutput> {
-		await this.options.workspace.updateAttemptPhase(runId, task.id, attemptId, "worker_running");
-		const started = new Date();
-		const recorder = this.createRoleProcessRecorder(runId, task.id, attemptId, "worker", profileId);
-		try {
-			await recorder.start();
-			const output = await runWithTimeout("worker", this.phaseTimeouts.workerMs, signal, async (localSignal) => roleRunner.runWorker({
-				runId,
-				task,
-				attemptId,
-				workDir: join(attemptRoot, "work"),
-				outputDir: join(attemptRoot, "output"),
-				acceptanceRules: task.acceptance.rules,
-				feedback,
-				signal: localSignal,
-				onSessionEvent: (event) => recorder.handleRawEvent(event),
-			}));
-			await recorder.succeed();
-			return output;
-		} catch (error) {
-			if (isAbortLike(error)) {
-				await recorder.cancel("run cancelled");
-			} else {
-				await recorder.fail(error instanceof Error ? error.message : String(error));
-			}
-			throw error;
-		} finally {
-			await recorder.flush().catch(() => {});
-			this.releaseRoleProcessRecorder(runId, recorder);
-			const finished = new Date();
-			await writeTimingSpan(this.options.dataDir, {
-				runId,
-				taskId: task.id,
-				attemptId,
-				phase: `worker_${outputIndex}`,
-				startedAt: started.toISOString(),
-				finishedAt: finished.toISOString(),
-				durationMs: finished.getTime() - started.getTime(),
-			});
-		}
-	}
-
-	private async runChecker(
-		runId: string,
-		task: TeamTask,
-		attemptId: string,
-		workerRef: string,
-		outputValidation: TeamOutputValidationResult,
-		roleRunner: TeamRoleRunner,
-		signal: AbortSignal,
-		profileId: string,
-	): Promise<CheckerOutput> {
-		await this.options.workspace.updateAttemptPhase(runId, task.id, attemptId, "checker_reviewing");
-		const started = new Date();
-		const recorder = this.createRoleProcessRecorder(runId, task.id, attemptId, "checker", profileId);
-		try {
-			await recorder.start();
-			const output = await runWithTimeout("checker", this.phaseTimeouts.checkerMs, signal, async (localSignal) => roleRunner.runChecker({
-				runId,
-				task,
-				attemptId,
-				workerOutputRef: workerRef,
-				acceptanceRules: task.acceptance.rules,
-				outputValidation,
-				signal: localSignal,
-				onSessionEvent: (event) => recorder.handleRawEvent(event),
-			}));
-			await recorder.succeed();
-			return output;
-		} catch (error) {
-			if (isAbortLike(error)) {
-				await recorder.cancel("run cancelled");
-			} else {
-				await recorder.fail(error instanceof Error ? error.message : String(error));
-			}
-			throw error;
-		} finally {
-			await recorder.flush().catch(() => {});
-			this.releaseRoleProcessRecorder(runId, recorder);
-			const finished = new Date();
-			await writeTimingSpan(this.options.dataDir, {
-				runId,
-				taskId: task.id,
-				attemptId,
-				phase: "checker",
-				startedAt: started.toISOString(),
-				finishedAt: finished.toISOString(),
-				durationMs: finished.getTime() - started.getTime(),
-			});
-		}
-	}
-
-	private async recordCheckerResult(runId: string, taskId: string, attemptId: string, revisionIndex: number, checkerOut: CheckerOutput): Promise<void> {
-		const recordRef = await this.options.workspace.writeCheckerVerdict(runId, taskId, attemptId, revisionIndex, checkerOut);
-		let feedbackRef: string | null = null;
-		if (checkerOut.feedback) {
-			feedbackRef = await this.options.workspace.writeCheckerOutput(runId, taskId, attemptId, revisionIndex, checkerOut.feedback);
-		}
-		await this.options.workspace.recordAttemptCheckerResult(runId, taskId, attemptId, {
-			verdict: checkerOut.verdict,
-			reason: checkerOut.reason,
-			feedback: checkerOut.feedback,
-			resultContentRef: null,
-			revisionIndex,
-			recordRef,
-			feedbackRef,
-			runtimeContext: checkerOut.runtimeContext,
-		});
-	}
-
-	private async markTaskProgress(runId: string, taskId: string, phase: "checker_reviewing" | "worker_revising", message: string): Promise<void> {
-		const timestamp = now();
-		await this.options.workspace.patchState(runId, (state) => {
-			const taskState = state.taskStates[taskId];
-			if (!taskState || state.status !== "running") return;
-			taskState.progress = { phase, message, updatedAt: timestamp };
-			state.updatedAt = timestamp;
-		});
-	}
-
-	private async finishTaskSucceeded(runId: string, taskId: string, attemptId: string, resultRef: string): Promise<void> {
-		await this.options.workspace.finishAttempt(runId, taskId, attemptId, { status: "succeeded", phase: "succeeded", resultRef });
+	private async completeRunSucceeded(runId: string, taskId: string, attemptId: string, resultRef: string): Promise<void> {
 		const timestamp = now();
 		await this.options.workspace.patchState(runId, (state) => {
 			const taskState = state.taskStates[taskId];
@@ -526,6 +331,28 @@ export class CanvasTaskRunService {
 		} catch {
 			// Downstream delivery setup/diagnostics must not fail an accepted upstream run.
 		}
+	}
+
+	private async completeRunFailed(runId: string, taskId: string, errorSummary: string, resultRef?: string): Promise<void> {
+		const effectiveResultRef = resultRef ?? await this.options.workspace.writeFailedResult(runId, taskId, "", errorSummary);
+		const timestamp = now();
+		await this.options.workspace.patchState(runId, (state) => {
+			const taskState = state.taskStates[taskId];
+			if (taskState) {
+				taskState.status = "failed";
+				taskState.resultRef = effectiveResultRef;
+				taskState.errorSummary = errorSummary;
+				taskState.progress = { phase: "failed", message: progressMessages.failed, updatedAt: timestamp };
+			}
+			state.status = "completed_with_failures";
+			state.currentTaskId = null;
+			state.lastError = errorSummary;
+			state.activeElapsedMs = this.accumulateElapsed(state);
+			state.finishedAt = timestamp;
+			state.lease = null;
+			state.summary = computeTeamRunSummary(state.taskStates);
+			state.updatedAt = timestamp;
+		});
 	}
 
 	private async triggerDownstreamRuns(runId: string, taskId: string, attemptId: string, resultRef: string): Promise<void> {
@@ -643,32 +470,9 @@ export class CanvasTaskRunService {
 		}
 	}
 
-	private async finishTaskFailed(runId: string, taskId: string, attemptId: string, errorSummary: string, resultRef?: string): Promise<void> {
-		const effectiveResultRef = resultRef ?? await this.options.workspace.writeFailedResult(runId, taskId, attemptId, errorSummary);
-		await this.options.workspace.finishAttempt(runId, taskId, attemptId, { status: "failed", phase: "failed", resultRef: effectiveResultRef, errorSummary });
-		const timestamp = now();
-		await this.options.workspace.patchState(runId, (state) => {
-			const taskState = state.taskStates[taskId];
-			if (taskState) {
-				taskState.status = "failed";
-				taskState.resultRef = effectiveResultRef;
-				taskState.errorSummary = errorSummary;
-				taskState.progress = { phase: "failed", message: progressMessages.failed, updatedAt: timestamp };
-			}
-			state.status = "completed_with_failures";
-			state.currentTaskId = null;
-			state.lastError = errorSummary;
-			state.activeElapsedMs = this.accumulateElapsed(state);
-			state.finishedAt = timestamp;
-			state.lease = null;
-			state.summary = computeTeamRunSummary(state.taskStates);
-			state.updatedAt = timestamp;
-		});
-	}
-
 	private async failRun(runId: string, message: string): Promise<void> {
 		const timestamp = now();
-		await this.failActiveRoleProcesses(runId, message);
+		await this.attemptRunner.failActiveProcesses(runId, message);
 		await this.options.workspace.patchState(runId, async (state) => {
 			for (const [taskId, taskState] of Object.entries(state.taskStates)) {
 				if (taskState.status === "pending" || taskState.status === "running" || taskState.status === "interrupted") {
@@ -698,50 +502,5 @@ export class CanvasTaskRunService {
 	private accumulateElapsed(state: TeamRunState): number {
 		if (!state.startedAt) return state.activeElapsedMs;
 		return Math.max(0, Date.now() - new Date(state.startedAt).getTime());
-	}
-
-	private throwIfAborted(signal: AbortSignal): void {
-		if (!signal.aborted) return;
-		throw signal.reason instanceof Error ? signal.reason : new Error("run cancelled");
-	}
-
-	private createRoleProcessRecorder(
-		runId: string,
-		taskId: string,
-		attemptId: string,
-		role: "worker" | "checker",
-		profileId: string,
-	): TeamRoleProcessRecorder {
-		const recorder = new TeamRoleProcessRecorder({
-			workspace: this.options.workspace,
-			runId,
-			taskId,
-			attemptId,
-			role,
-			profileId,
-		});
-		const recorders = this.activeRoleRecorders.get(runId) ?? new Set<TeamRoleProcessRecorder>();
-		recorders.add(recorder);
-		this.activeRoleRecorders.set(runId, recorders);
-		return recorder;
-	}
-
-	private releaseRoleProcessRecorder(runId: string, recorder: TeamRoleProcessRecorder): void {
-		const recorders = this.activeRoleRecorders.get(runId);
-		if (!recorders) return;
-		recorders.delete(recorder);
-		if (recorders.size === 0) {
-			this.activeRoleRecorders.delete(runId);
-		}
-	}
-
-	private async cancelActiveRoleProcesses(runId: string, reason: string): Promise<void> {
-		const recorders = [...(this.activeRoleRecorders.get(runId) ?? [])];
-		await Promise.all(recorders.map((recorder) => recorder.cancel(reason).catch(() => {})));
-	}
-
-	private async failActiveRoleProcesses(runId: string, message: string): Promise<void> {
-		const recorders = [...(this.activeRoleRecorders.get(runId) ?? [])];
-		await Promise.all(recorders.map((recorder) => recorder.fail(message).catch(() => {})));
 	}
 }
