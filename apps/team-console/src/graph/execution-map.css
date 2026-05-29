@@ -1017,7 +1017,9 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  width: 100%;
+  justify-self: start;
+  width: fit-content;
+  max-width: min(100%, 178px);
   min-width: 0;
   height: 21px;
   padding: 0 6px;

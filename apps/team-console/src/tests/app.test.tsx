@@ -5210,6 +5210,10 @@ describe("App", () => {
     expect(atlasRailRule).toContain("border-left");
     expect(idCopyRule).toContain("cursor: copy");
     expect(idCopyRule).toContain("grid-template-columns: minmax(0, 1fr)");
+    expect(idCopyRule).toContain("justify-self: start");
+    expect(idCopyRule).toContain("width: fit-content");
+    expect(idCopyRule).toContain("max-width: min(100%, 178px)");
+    expect(idCopyRule).not.toContain("width: 100%");
     expect(taskAgentGridRule).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
     expect(taskAgentGridRule).toContain("padding: 4px");
     expect(taskAgentRule).toContain("grid-template-columns: minmax(0, 1fr)");

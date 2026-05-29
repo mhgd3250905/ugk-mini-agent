@@ -12,6 +12,16 @@
 
 ---
 
+## 2026-05-29 — Team Console 根卡片 ID chip 宽度收口
+
+- **主题**: 修正 Agent / Task 根卡片 ID chip 视觉上撑满整行的问题，让它保持内容型徽章而不是表单输入框。
+- **变更内容**:
+  - `.emap-node-id-copy` 改为 `justify-self: start` + `width: fit-content`，边框按实际 id 文本收缩。
+  - 长 id 保留 `max-width` 和省略号，不让字符串挤爆卡片，也不再默认占满整行。
+- **影响范围**: `apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/handoff-current.md`。
+- **验证**: focused CSS test 锁定 ID chip 不能回退到 `width: 100%`，真实页面量测 chip 宽度小于所在内容列。
+- **对应入口**: Team Console Execution Atlas 根卡片，固定入口 `http://127.0.0.1:5174/`。
+
 ## 2026-05-29 — Team Console 根卡片 ID chip 精简
 
 - **主题**: 精简 Agent / Task 根卡片上的 ID 复制按钮，去掉 chip 内部重复的 `Agent ID` / `Task ID` 和 `复制` 文案。
