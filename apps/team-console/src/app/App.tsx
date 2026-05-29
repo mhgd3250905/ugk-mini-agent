@@ -1,19 +1,14 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { AgentRunStatus, AgentSummary, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskConnection, TeamTaskDependency, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
-import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, mockTeamTasks, MockTeamApi } from "../fixtures/team-fixtures";
+import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
+import { ALL_FIXTURES, MockTeamApi } from "../fixtures/team-fixtures";
+import { useTeamConsoleLiveData, type DataSource, type LiveRunMode, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
 import { ExecutionMap, type AtlasAgentNode, type AtlasSourceNode, type AtlasTaskNode } from "../graph/ExecutionMap";
-import { ROOT_ID } from "../graph/execution-map-layout";
 import { normalizeAtlasViewport, type AtlasViewport } from "../graph/AtlasCanvasShell";
 import { RUN_STATUS_LABELS, isActiveRun } from "../shared/status";
 import { renderTeamMarkdown } from "../shared/markdown";
 import "./app.css";
 
-export type DataSource = "mock" | "live";
-type LiveRunMode = "workspace" | "latest";
-
-const CLEAN_AGENT_WORKSPACE_ID = "agent-workspace";
-const DATA_SOURCE_STORAGE_KEY = "ugk-team-console:data-source";
 const LIVE_AGENT_LAYOUT_STORAGE_KEY = "ugk-team-console:live-agent-layout:v1";
 const LIVE_TASK_LAYOUT_STORAGE_KEY = "ugk-team-console:live-task-layout:v1";
 const LIVE_SOURCE_LAYOUT_STORAGE_KEY = "ugk-team-console:live-source-layout:v1";
@@ -410,32 +405,6 @@ function selectLatestRun(runs: TeamRunState[]): TeamRunState | null {
   }, runs[0]);
 }
 
-function sortRunsByCreatedAt(runs: TeamRunState[]): TeamRunState[] {
-  return [...runs].sort((a, b) => {
-    const aTime = Date.parse(a.createdAt);
-    const bTime = Date.parse(b.createdAt);
-    if (!Number.isFinite(aTime) && !Number.isFinite(bTime)) return 0;
-    if (!Number.isFinite(aTime)) return 1;
-    if (!Number.isFinite(bTime)) return -1;
-    return bTime - aTime;
-  });
-}
-
-function mergeTaskRun(
-  current: Record<string, TeamRunState[]>,
-  taskId: string,
-  runState: TeamRunState,
-): Record<string, TeamRunState[]> {
-  const runs = current[taskId] ?? [];
-  const nextRuns = runs.some((run) => run.runId === runState.runId)
-    ? runs.map((run) => run.runId === runState.runId ? runState : run)
-    : [runState, ...runs];
-  return {
-    ...current,
-    [taskId]: sortRunsByCreatedAt(nextRuns),
-  };
-}
-
 function playgroundBaseUrlPrefix(): string {
   const configured = import.meta.env.VITE_TEAM_CONSOLE_PLAYGROUND_BASE_URL;
   return typeof configured === "string" && configured.trim()
@@ -508,18 +477,6 @@ function buildTaskLeaderPlaygroundUrl(task: TeamCanvasTask): string {
 
 function taskMenuPanelId(nodeId: string): string {
   return `task-menu-${nodeId}`;
-}
-
-function agentRunStatusRecord(statuses: AgentRunStatus[]): Record<string, AgentRunStatus> {
-  return Object.fromEntries(statuses.map((status) => [status.agentId, status]));
-}
-
-function readStoredDataSource(): DataSource {
-  try {
-    return globalThis.localStorage?.getItem(DATA_SOURCE_STORAGE_KEY) === "live" ? "live" : "mock";
-  } catch {
-    return "mock";
-  }
 }
 
 function readRecord(value: unknown): Record<string, unknown> | null {
@@ -846,30 +803,12 @@ function makeAgentNode(agentId: string, index: number): AtlasAgentNode {
 }
 
 export function App() {
-  const [dataSource, setDataSource] = useState<DataSource>(() => readStoredDataSource());
-  const [selectedFixtureId, setSelectedFixtureId] = useState<string>(CLEAN_AGENT_WORKSPACE_ID);
-  const [liveRunMode, setLiveRunMode] = useState<LiveRunMode>("workspace");
-  const [plan, setPlan] = useState<TeamPlan | null>(null);
-  const [run, setRun] = useState<RunDetail | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [attemptsByTaskId, setAttemptsByTaskId] = useState<Record<string, TeamAttemptMetadata[]>>({});
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [agents, setAgents] = useState<AgentSummary[]>(MOCK_AGENTS);
-  const [agentRunStatusById, setAgentRunStatusById] = useState<Record<string, AgentRunStatus>>(
-    () => agentRunStatusRecord(MOCK_AGENT_RUN_STATUSES),
-  );
   const [agentNodes, setAgentNodes] = useState<AtlasAgentNode[]>([]);
   const [liveAgentNodesHydrated, setLiveAgentNodesHydrated] = useState(false);
-  const [tasks, setTasks] = useState<TeamCanvasTask[]>([]);
-  const [taskConnections, setTaskConnections] = useState<TeamTaskConnection[]>([]);
   const [taskConnectionDraft, setTaskConnectionDraft] = useState<TaskConnectionDraft | null>(null);
-  const [taskDependencies, setTaskDependencies] = useState<TeamTaskDependency[]>([]);
   const [taskDependencyDraft, setTaskDependencyDraft] = useState<{ fromTaskId: string } | null>(null);
-  const [sourceNodes, setSourceNodes] = useState<TeamCanvasSourceNode[]>([]);
-  const [sourceConnections, setSourceConnections] = useState<TeamCanvasSourceConnection[]>([]);
   const [sourceConnectionDraft, setSourceConnectionDraft] = useState<SourceConnectionDraft | null>(null);
-  const [taskRunsByTaskId, setTaskRunsByTaskId] = useState<Record<string, TeamRunState[]>>({});
   const [taskRunSavingByTaskId, setTaskRunSavingByTaskId] = useState<Record<string, boolean>>({});
   const [taskRunObserverByRunId, setTaskRunObserverByRunId] = useState<Record<string, TaskRunObserverState>>({});
   const [taskNodes, setTaskNodes] = useState<AtlasTaskNode[]>([]);
@@ -878,10 +817,6 @@ export function App() {
   const [liveSourceNodesHydrated, setLiveSourceNodesHydrated] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [taskLeaderPickerOpen, setTaskLeaderPickerOpen] = useState(false);
-  const [liveTasksRefreshing, setLiveTasksRefreshing] = useState(false);
-  const liveTasksRefreshInFlightRef = useRef<Promise<void> | null>(null);
-  const liveTaskDiscoveryRefreshTimersRef = useRef<ReturnType<typeof globalThis.setTimeout>[]>([]);
-  const liveTaskDiscoveryRefreshRunIdsRef = useRef<Set<string>>(new Set());
   const sourceFileInputRef = useRef<HTMLInputElement | null>(null);
   const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
   const [expandedAgentBranch, setExpandedAgentBranch] = useState<AgentBranchState | null>(null);
@@ -900,6 +835,79 @@ export function App() {
   const [rootNodeFilter, setRootNodeFilter] = useState<"all" | "agent" | "task">("all");
   const [taskLeaderCopyByTaskId, setTaskLeaderCopyByTaskId] = useState<Partial<Record<string, TaskLeaderCopyEntry>>>({});
   const taskLeaderManualCopyRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+
+  const clearTaskPanelState = useCallback((taskId?: string) => {
+    if (taskId) {
+      setTaskEditDraftByTaskId((current) => {
+        const next = { ...current };
+        delete next[taskId];
+        return next;
+      });
+      setTaskEditWarningByTaskId((current) => {
+        const next = { ...current };
+        delete next[taskId];
+        return next;
+      });
+      setTaskEditSavingByTaskIdInner((current) => {
+        const next = { ...current };
+        delete next[taskId];
+        return next;
+      });
+    } else {
+      setTaskEditDraftByTaskId({});
+      setTaskEditWarningByTaskId({});
+      setTaskEditSavingByTaskIdInner({});
+    }
+    setTaskArchiveConfirmNodeId(null);
+    setTaskArchiveSavingNodeId(null);
+  }, []);
+
+  const closeTaskBranch = useCallback((nodeId?: string) => {
+    setExpandedTaskBranches((current) => {
+      if (nodeId) {
+        const closing = current.find((branch) => branch.nodeId === nodeId);
+        if (closing) clearTaskPanelState(closing.taskId);
+        return current.filter((branch) => branch.nodeId !== nodeId);
+      }
+      clearTaskPanelState();
+      return [];
+    });
+  }, [clearTaskPanelState]);
+
+  const liveData = useTeamConsoleLiveData({
+    onApplyLiveTasks: useCallback((nextTasks: TeamCanvasTask[]) => {
+      setTaskNodes((current) => makeTaskNodes(nextTasks, liveTaskRefreshPositions(current)));
+      setLiveTaskNodesHydrated(true);
+    }, []),
+    onApplyLiveSources: useCallback((nextSources: TeamCanvasSourceNode[]) => {
+      setSourceAtlasNodes((current) => makeSourceNodes(nextSources, liveSourceRefreshPositions(current)));
+      setLiveSourceNodesHydrated(true);
+    }, []),
+    onCloseBranches: useCallback(() => {
+      setTaskLeaderPickerOpen(false);
+      setExpandedAgentBranch(null);
+      closeTaskBranch();
+    }, [closeTaskBranch]),
+    selectedTaskId,
+  });
+  const {
+    dataSource, setDataSource,
+    selectedFixtureId, setSelectedFixtureId,
+    liveRunMode, setLiveRunMode,
+    loading, error, setError,
+    liveTasksRefreshing,
+    agents, agentRunStatusById,
+    plan, run, attemptsByTaskId,
+    tasks, taskConnections, taskDependencies,
+    sourceNodes, sourceConnections,
+    taskRunsByTaskId, setTaskRunsByTaskId,
+    refreshLiveTasks,
+    refreshLiveTasksAfterLeavingTaskCreateBranch,
+    readAttemptFile,
+    setTaskConnections, setTaskDependencies,
+    setSourceNodes, setSourceConnections,
+    setTasks,
+  } = liveData;
 
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
   const tasksById = useMemo(() => new Map(tasks.map((task) => [task.taskId, task])), [tasks]);
@@ -940,54 +948,9 @@ export function App() {
     ? expandedTaskRuns.find((taskRun) => taskRun.runId === observedTaskRunId) ?? null
     : null;
 
-  const activeCanvasTaskRunIds = useMemo(() => (
-    Object.values(taskRunsByTaskId)
-      .flat()
-      .filter((taskRun) => isActiveRun(taskRun.status) && taskRun.source?.taskId)
-      .map((taskRun) => ({ runId: taskRun.runId, taskId: taskRun.source!.taskId }))
-  ), [taskRunsByTaskId]);
-
   const selectTask = useCallback((taskId: string) => {
     setSelectedTaskId((current) => current === taskId ? null : taskId);
   }, []);
-
-  const clearTaskPanelState = useCallback((taskId?: string) => {
-    if (taskId) {
-      setTaskEditDraftByTaskId((current) => {
-        const next = { ...current };
-        delete next[taskId];
-        return next;
-      });
-      setTaskEditWarningByTaskId((current) => {
-        const next = { ...current };
-        delete next[taskId];
-        return next;
-      });
-      setTaskEditSavingByTaskIdInner((current) => {
-        const next = { ...current };
-        delete next[taskId];
-        return next;
-      });
-    } else {
-      setTaskEditDraftByTaskId({});
-      setTaskEditWarningByTaskId({});
-      setTaskEditSavingByTaskIdInner({});
-    }
-    setTaskArchiveConfirmNodeId(null);
-    setTaskArchiveSavingNodeId(null);
-  }, []);
-
-  const closeTaskBranch = useCallback((nodeId?: string) => {
-    setExpandedTaskBranches((current) => {
-      if (nodeId) {
-        const closing = current.find((branch) => branch.nodeId === nodeId);
-        if (closing) clearTaskPanelState(closing.taskId);
-        return current.filter((branch) => branch.nodeId !== nodeId);
-      }
-      clearTaskPanelState();
-      return [];
-    });
-  }, [clearTaskPanelState]);
 
   useEffect(() => {
     setCanvasUiStateHydrated(false);
@@ -1090,12 +1053,6 @@ export function App() {
   ]);
 
   useEffect(() => {
-    try {
-      globalThis.localStorage?.setItem(DATA_SOURCE_STORAGE_KEY, dataSource);
-    } catch {}
-  }, [dataSource]);
-
-  useEffect(() => {
     if (dataSource !== "live") {
       setLiveAgentNodesHydrated(false);
       setLiveTaskNodesHydrated(false);
@@ -1103,11 +1060,8 @@ export function App() {
       return;
     }
     setAgentNodes(readStoredLiveAgentNodes());
-    setTaskLeaderPickerOpen(false);
-    setExpandedAgentBranch(null);
-    closeTaskBranch();
     setLiveAgentNodesHydrated(true);
-  }, [closeTaskBranch, dataSource]);
+  }, [dataSource]);
 
   useEffect(() => {
     if (dataSource !== "live" || !liveAgentNodesHydrated) return;
@@ -1133,354 +1087,6 @@ export function App() {
       current.filter((connection) => sourceNodesById.has(connection.fromSourceNodeId) && tasksById.has(connection.toTaskId))
     ));
   }, [sourceNodesById, tasksById]);
-
-  const applyLiveTasks = useCallback((nextTasks: TeamCanvasTask[]) => {
-    setTasks(nextTasks);
-    setTaskNodes((current) => makeTaskNodes(nextTasks, liveTaskRefreshPositions(current)));
-    setLiveTaskNodesHydrated(true);
-  }, []);
-
-  const applyLiveSources = useCallback((nextSources: TeamCanvasSourceNode[]) => {
-    const activeSources = nextSources.filter((sourceNode) => !sourceNode.archived);
-    setSourceNodes(activeSources);
-    setSourceAtlasNodes((current) => makeSourceNodes(activeSources, liveSourceRefreshPositions(current)));
-    setLiveSourceNodesHydrated(true);
-  }, []);
-
-  const loadTaskRunsForTasks = useCallback(async (
-    api: Pick<LiveTeamApi, "listTaskRuns">,
-    nextTasks: TeamCanvasTask[],
-  ) => {
-    const entries = await Promise.all(nextTasks.map(async (task) => {
-      const runs = await api.listTaskRuns(task.taskId).catch(() => []);
-      return [task.taskId, sortRunsByCreatedAt(runs)] as const;
-    }));
-    setTaskRunsByTaskId(Object.fromEntries(entries));
-  }, []);
-
-  const refreshLiveTasks = useCallback(async () => {
-    if (liveTasksRefreshInFlightRef.current) {
-      return liveTasksRefreshInFlightRef.current;
-    }
-
-    const refresh = (async () => {
-      setLiveTasksRefreshing(true);
-      try {
-        const api = new LiveTeamApi();
-        const [nextTasks, nextConnections, nextDeps, nextSourceNodes, nextSourceConnections] = await Promise.all([
-          api.listTasks(),
-          api.listTaskConnections(),
-          api.listTaskDependencies(),
-          api.listSourceNodes(),
-          api.listSourceConnections(),
-        ]);
-        applyLiveTasks(nextTasks);
-        setTaskConnections(nextConnections);
-        setTaskDependencies(nextDeps);
-        applyLiveSources(nextSourceNodes);
-        setSourceConnections(nextSourceConnections);
-        setTaskConnectionDraft(null);
-        setTaskDependencyDraft(null);
-        setSourceConnectionDraft(null);
-        await loadTaskRunsForTasks(api, nextTasks);
-        setError(null);
-      } finally {
-        liveTasksRefreshInFlightRef.current = null;
-        setLiveTasksRefreshing(false);
-      }
-    })();
-    liveTasksRefreshInFlightRef.current = refresh;
-    return refresh;
-  }, [applyLiveSources, applyLiveTasks, loadTaskRunsForTasks]);
-
-  const scheduleLiveTaskDiscoveryRefresh = useCallback(() => {
-    if (dataSource !== "live") return;
-    for (const delayMs of [350, 1200]) {
-      const timer = globalThis.setTimeout(() => {
-        liveTaskDiscoveryRefreshTimersRef.current = liveTaskDiscoveryRefreshTimersRef.current.filter((item) => item !== timer);
-        void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
-      }, delayMs);
-      liveTaskDiscoveryRefreshTimersRef.current.push(timer);
-    }
-  }, [dataSource, refreshLiveTasks]);
-
-  useEffect(() => () => {
-    for (const timer of liveTaskDiscoveryRefreshTimersRef.current) {
-      globalThis.clearTimeout(timer);
-    }
-    liveTaskDiscoveryRefreshTimersRef.current = [];
-  }, []);
-
-  useEffect(() => {
-    if (dataSource === "live") return;
-    for (const timer of liveTaskDiscoveryRefreshTimersRef.current) {
-      globalThis.clearTimeout(timer);
-    }
-    liveTaskDiscoveryRefreshTimersRef.current = [];
-    liveTaskDiscoveryRefreshRunIdsRef.current.clear();
-  }, [dataSource]);
-
-  const refreshLiveTasksAfterLeavingTaskCreateBranch = useCallback((branch: AgentBranchState | null) => {
-    if (dataSource !== "live" || branch?.mode !== "task-create") return;
-    void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
-  }, [dataSource, refreshLiveTasks]);
-
-  const loadFixture = useCallback((fixtureId: string) => {
-    setTaskLeaderPickerOpen(false);
-    setExpandedAgentBranch(null);
-    closeTaskBranch();
-    if (fixtureId === CLEAN_AGENT_WORKSPACE_ID) {
-      setPlan(null);
-      setRun(null);
-      setSelectedTaskId(null);
-      setAttemptsByTaskId({});
-      setTaskConnections([]);
-      setTaskConnectionDraft(null);
-      setTaskDependencies([]);
-      setTaskDependencyDraft(null);
-      setSourceNodes([]);
-      setSourceConnections([]);
-      setSourceConnectionDraft(null);
-      setSourceAtlasNodes([]);
-      setTaskRunsByTaskId({});
-      setTaskRunSavingByTaskId({});
-      setTaskRunObserverByRunId({});
-      setError(null);
-      setLoading(false);
-      setCanvasViewport({ x: 0, y: 0, scale: 1 });
-      return;
-    }
-
-    const entry = ALL_FIXTURES.find((fixture) => fixture.id === fixtureId);
-    if (!entry) return;
-    setPlan(entry.plan);
-    setRun(entry.run);
-    setSelectedTaskId(null);
-    setAttemptsByTaskId({});
-    setTaskConnections([]);
-    setTaskConnectionDraft(null);
-    setTaskDependencies([]);
-    setTaskDependencyDraft(null);
-    setSourceNodes([]);
-    setSourceConnections([]);
-    setSourceConnectionDraft(null);
-    setSourceAtlasNodes([]);
-    setTaskRunsByTaskId({});
-    setTaskRunSavingByTaskId({});
-    setTaskRunObserverByRunId({});
-    setError(null);
-    setLoading(false);
-  }, [closeTaskBranch]);
-
-  useEffect(() => {
-    if (dataSource === "mock") {
-      loadFixture(selectedFixtureId);
-    }
-  }, [dataSource, selectedFixtureId, loadFixture]);
-
-  useEffect(() => {
-    setExpandedAgentBranch(null);
-    closeTaskBranch();
-    let cancelled = false;
-    let refreshTimer: ReturnType<typeof globalThis.setInterval> | undefined;
-    const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-
-    async function loadAgentRunStatuses() {
-      try {
-        const statuses = await api.listAgentRunStatuses();
-        if (!cancelled) {
-          setAgentRunStatusById(agentRunStatusRecord(statuses));
-        }
-      } catch {
-        // Keep the last known status on transient polling failures.
-      }
-    }
-
-    if (dataSource === "mock") {
-      setAgents(MOCK_AGENTS);
-      setAgentRunStatusById(agentRunStatusRecord(MOCK_AGENT_RUN_STATUSES));
-      setTasks(mockTeamTasks);
-      setTaskNodes(makeTaskNodes(mockTeamTasks));
-      setTaskConnections([]);
-      setTaskConnectionDraft(null);
-      setTaskDependencies([]);
-      setTaskDependencyDraft(null);
-      setSourceNodes([]);
-      setSourceConnections([]);
-      setSourceConnectionDraft(null);
-      setSourceAtlasNodes([]);
-      setTaskRunsByTaskId({});
-      setTaskRunObserverByRunId({});
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setAgents([]);
-    setAgentPickerOpen(false);
-    setTaskLeaderPickerOpen(false);
-    setAgentRunStatusById({});
-    setTasks([]);
-    setTaskConnections([]);
-    setTaskConnectionDraft(null);
-    setSourceNodes([]);
-    setSourceConnections([]);
-    setSourceConnectionDraft(null);
-    setTaskRunsByTaskId({});
-    setTaskRunSavingByTaskId({});
-    setTaskRunObserverByRunId({});
-    setTaskNodes([]);
-    setLiveTaskNodesHydrated(false);
-    setSourceAtlasNodes([]);
-    setLiveSourceNodesHydrated(false);
-
-    async function loadLiveWorkspace() {
-      try {
-        const [nextAgents, nextStatuses, nextTasks, nextConnections, nextDeps, nextSourceNodes, nextSourceConnections] = await Promise.all([
-          api.listAgents(),
-          api.listAgentRunStatuses(),
-          api.listTasks(),
-          api.listTaskConnections(),
-          api.listTaskDependencies(),
-          api.listSourceNodes(),
-          api.listSourceConnections(),
-        ]);
-        if (!cancelled) {
-          setAgents(nextAgents);
-          setAgentRunStatusById(agentRunStatusRecord(nextStatuses));
-          applyLiveTasks(nextTasks);
-          setTaskConnections(nextConnections);
-          setTaskDependencies(nextDeps);
-          applyLiveSources(nextSourceNodes);
-          setSourceConnections(nextSourceConnections);
-          void loadTaskRunsForTasks(api, nextTasks);
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError(errorMessage(e));
-        }
-      }
-    }
-
-    void loadLiveWorkspace();
-    refreshTimer = globalThis.setInterval(() => {
-      void loadAgentRunStatuses();
-    }, 3000);
-
-    return () => {
-      cancelled = true;
-      if (refreshTimer !== undefined) {
-        globalThis.clearInterval(refreshTimer);
-      }
-    };
-  }, [applyLiveSources, applyLiveTasks, closeTaskBranch, dataSource, loadTaskRunsForTasks]);
-
-  useEffect(() => {
-    if (dataSource !== "live") return;
-
-    setExpandedAgentBranch(null);
-    closeTaskBranch();
-    if (liveRunMode === "workspace") {
-      setPlan(null);
-      setRun(null);
-      setSelectedTaskId(null);
-      setAttemptsByTaskId({});
-      setError(null);
-      setLoading(false);
-      setCanvasViewport({ x: 0, y: 0, scale: 1 });
-      return;
-    }
-
-    let cancelled = false;
-    const api = new LiveTeamApi();
-
-    setPlan(null);
-    setRun(null);
-    setSelectedTaskId(null);
-    setAttemptsByTaskId({});
-    setError(null);
-    setLoading(true);
-
-    async function loadLiveData() {
-      try {
-        const [plans, runs] = await Promise.all([
-          api.listPlans(),
-          api.listRuns(),
-        ]);
-        const selectedRun = selectLatestRun(runs);
-        if (!selectedRun) {
-          if (!cancelled) {
-            setPlan(null);
-            setRun(null);
-          }
-          return;
-        }
-
-        const runDetail = await api.getRunDetail(selectedRun.runId);
-        const runPlan = plans.find((candidate) => candidate.planId === runDetail.planId);
-        if (!runPlan) {
-          throw { message: `Plan not found for run: ${runDetail.runId}` };
-        }
-
-        if (!cancelled) {
-          setPlan(runPlan);
-          setRun(runDetail);
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError(errorMessage(e));
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    void loadLiveData();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [closeTaskBranch, dataSource, liveRunMode]);
-
-  useEffect(() => {
-    if (!run || !selectedTaskId || selectedTaskId === ROOT_ID) return;
-    if (attemptsByTaskId[selectedTaskId]) return;
-
-    let cancelled = false;
-    const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-
-    async function loadAttempts() {
-      try {
-        const attempts = await api.listAttempts(run!.runId, selectedTaskId!);
-        if (!cancelled && attempts.length > 0) {
-          setAttemptsByTaskId((current) => ({
-            ...current,
-            [selectedTaskId!]: attempts,
-          }));
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError(errorMessage(e));
-        }
-      }
-    }
-
-    void loadAttempts();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [dataSource, run, selectedTaskId, attemptsByTaskId]);
-
-  const readAttemptFile = useCallback(
-    (runId: string, taskId: string, attemptId: string, fileName: string) => {
-      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-      return api.readAttemptFile(runId, taskId, attemptId, fileName);
-    },
-    [dataSource],
-  );
 
   const addAgentNode = useCallback((agentId: string) => {
     setAgentNodes((current) => {
@@ -2082,42 +1688,6 @@ export function App() {
     if (!expandedTask || !activeExpandedTaskRun) return;
     await cancelTaskRun(expandedTask, activeExpandedTaskRun);
   }, [activeExpandedTaskRun, cancelTaskRun, expandedTask]);
-
-  useEffect(() => {
-    if (activeCanvasTaskRunIds.length === 0) return;
-    let cancelled = false;
-    const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-
-    async function refreshActiveTaskRuns() {
-      for (const active of activeCanvasTaskRunIds) {
-        try {
-          const fresh = await api.getTaskRun(active.runId);
-          if (!cancelled) {
-            setTaskRunsByTaskId((current) => mergeTaskRun(current, active.taskId, fresh));
-            if (dataSource === "live" && !isActiveRun(fresh.status) && !liveTaskDiscoveryRefreshRunIdsRef.current.has(fresh.runId)) {
-              liveTaskDiscoveryRefreshRunIdsRef.current.add(fresh.runId);
-              void refreshLiveTasks().catch((e) => {
-                if (!cancelled) setError(errorMessage(e));
-              });
-              scheduleLiveTaskDiscoveryRefresh();
-            }
-          }
-        } catch {
-          // Keep the last visible task run state on transient polling failures.
-        }
-      }
-    }
-
-    const timer = globalThis.setInterval(() => {
-      void refreshActiveTaskRuns();
-    }, 2000);
-    void refreshActiveTaskRuns();
-
-    return () => {
-      cancelled = true;
-      globalThis.clearInterval(timer);
-    };
-  }, [activeCanvasTaskRunIds, dataSource, refreshLiveTasks, scheduleLiveTaskDiscoveryRefresh]);
 
   useEffect(() => {
     const taskId = expandedTask?.taskId;
