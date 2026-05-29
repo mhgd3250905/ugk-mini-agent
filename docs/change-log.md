@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-29 — Team Console 根卡片视觉层级重排
+
+- **主题**: 重排 Agent / Task / Source 根卡片的信息层级，缓解 Task 卡片把 ID、角色、端口、依赖按钮和收纳按钮挤在一起的问题。
+- **变更内容**:
+  - 梳理根卡片信息：Agent 卡展示 kind / status / title / Agent ID / description / model-browser binding / 收纳；Task 卡展示 kind / status / title / Task ID / Leader / Worker / Checker / typed `IN`/`OUT` ports / dependency handle / 收纳；Source 卡展示 kind / source type / title / text 或 file meta / output port / 收纳。
+  - 根卡片新增右侧 action rail，依赖 handle 和收纳按钮固定在动作轨内，正文内容不再和按钮共用同一视觉区域。
+  - Task 卡片角色区改为单个 crew panel，Leader 作为主协调行，Worker / Checker 作为双轨行；端口区改为底部 I/O shelf，并和角色区用分隔线区分。
+  - Task 卡片基础高度和每个 port row 的高度预算增加，让新布局有可读留白，而不是继续压缩字体。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/handoff-current.md`。
+- **验证**: focused tests 覆盖 Task card DOM、typed ports、action rail / crew panel CSS、Dock 碰撞高度；真实 `http://127.0.0.1:5174/` 页面量测 Agent / Task 卡片正文元素没有越过右侧 action rail，双端口 Task 的 `IN`/`OUT` 端口仍在卡片内。
+- **对应入口**: Team Console Execution Atlas 根卡片，固定入口 `http://127.0.0.1:5174/`。
+
 ## 2026-05-29 — Team Console Task 卡片端口高度修复
 
 - **主题**: 修复 Task 根卡片角色区优化后，带 `IN` + `OUT` 双端口的卡片底部 `OUT` 行被固定高度裁掉的问题。

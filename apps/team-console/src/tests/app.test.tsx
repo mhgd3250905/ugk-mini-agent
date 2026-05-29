@@ -360,8 +360,8 @@ describe("App", () => {
     expect(htmlNode).toHaveAttribute("data-port-row-count", "2");
     const collectHeight = Number.parseFloat((collectNode as HTMLElement).style.height);
     const htmlHeight = Number.parseFloat((htmlNode as HTMLElement).style.height);
-    expect(collectHeight).toBe(192);
-    expect(htmlHeight).toBe(216);
+    expect(collectHeight).toBe(212);
+    expect(htmlHeight).toBe(240);
     expect(htmlHeight).toBeGreaterThan(collectHeight);
   });
 
@@ -2412,8 +2412,9 @@ describe("App", () => {
       const startX = originalLeft + 50;
       const startY = originalTop + 30;
       const targetY = dockTop - 54;
+      const taskHeight = Number.parseFloat(taskEl.style.height);
       expect(targetY).toBeLessThan(dockTop);
-      expect(originalTop + 168 + (targetY - startY)).toBeGreaterThan(dockTop);
+      expect(originalTop + taskHeight + (targetY - startY)).toBeGreaterThan(dockTop);
 
       firePointer(taskEl, "pointerdown", { pointerId: PID, clientX: startX, clientY: startY });
       firePointer(taskEl, "pointermove", { pointerId: PID, clientX: startX, clientY: targetY });
@@ -5184,6 +5185,8 @@ describe("App", () => {
     const runningRule = mapCss.match(/\.emap-canvas-task-node\.status-running\s*{[^}]*}/)?.[0] ?? "";
     const runningBarRule = mapCss.match(/\.emap-canvas-task-node\.status-running\s+\.emap-node-status-bar\s*{[^}]*}/)?.[0] ?? "";
     const runningPillRule = mapCss.match(/\.emap-canvas-task-node\.status-running\s+\.emap-node-state-pill\.running,\n\.emap-canvas-task-node\.status-running\s+\.emap-node-state-pill\.queued\s*{[^}]*}/)?.[0] ?? "";
+    const atlasCardRule = mapCss.match(/\.emap-atlas-card\s*{[^}]*}/)?.[0] ?? "";
+    const atlasRailRule = mapCss.match(/\.emap-atlas-card::before\s*{[^}]*}/)?.[0] ?? "";
     const idCopyRule = mapCss.match(/\.emap-node-id-copy\s*{[^}]*}/)?.[0] ?? "";
     const taskAgentGridRule = mapCss.match(/\.emap-task-agent-grid\s*{[^}]*}/)?.[0] ?? "";
     const taskAgentRule = mapCss.match(/\.emap-task-agent-row\s*{[^}]*}/)?.[0] ?? "";
@@ -5195,12 +5198,16 @@ describe("App", () => {
     expect(runningBarRule).toContain("rgb(255, 104, 64)");
     expect(runningBarRule).toContain("animation: pulse-bar");
     expect(runningPillRule).toContain("display: inline-flex");
+    expect(atlasCardRule).toContain("--emap-card-action-rail: 38px");
+    expect(atlasRailRule).toContain("border-left");
     expect(idCopyRule).toContain("cursor: copy");
     expect(idCopyRule).toContain("grid-template-columns: auto minmax(0, 1fr) auto");
     expect(taskAgentGridRule).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
+    expect(taskAgentGridRule).toContain("padding: 4px");
     expect(taskAgentRule).toContain("grid-template-columns: minmax(0, 1fr)");
+    expect(taskAgentRule).toContain("border-left");
     expect(taskLeaderRule).toContain("grid-column: 1 / -1");
-    expect(taskLeaderRule).toContain("grid-template-columns: 54px minmax(0, 1fr)");
+    expect(taskLeaderRule).toContain("grid-template-columns: 46px minmax(0, 1fr)");
     expect(taskWorkerRule).toContain("rgba(121, 216, 208");
     expect(taskCheckerRule).toContain("rgba(255, 214, 128");
   });
