@@ -5,6 +5,7 @@ import { ALL_FIXTURES, MockTeamApi } from "../fixtures/team-fixtures";
 import { useTeamConsoleLiveData, type DataSource, type LiveRunMode, type TeamConsoleUiResetReason, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
 import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchState } from "./use-task-branch-stack";
 import { hasDirtyTaskEditConflict, useTaskEditState } from "./use-task-edit-state";
+import { useTaskLeaderCopy } from "./use-task-leader-copy";
 import { ExecutionMap, type AtlasAgentNode, type AtlasSourceNode, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { normalizeAtlasViewport, type AtlasViewport } from "../graph/AtlasCanvasShell";
 import { RUN_STATUS_LABELS, isActiveRun } from "../shared/status";
@@ -44,11 +45,6 @@ type StoredCanvasUiState = {
   minimizedTaskNodeIds?: string[];
   minimizedSourceNodeIds?: string[];
   rootNodeFilter?: "all" | "agent" | "task";
-};
-
-type TaskLeaderCopyEntry = {
-  state: "copied" | "failed";
-  manualCopyText?: string;
 };
 
 type TaskConnectionDraft = {
@@ -784,8 +780,12 @@ export function App() {
   const [rootArchiveConfirm, setRootArchiveConfirm] = useState<RootArchiveConfirm | null>(null);
   const [rootArchiveSaving, setRootArchiveSaving] = useState(false);
   const [rootNodeFilter, setRootNodeFilter] = useState<"all" | "agent" | "task">("all");
-  const [taskLeaderCopyByTaskId, setTaskLeaderCopyByTaskId] = useState<Partial<Record<string, TaskLeaderCopyEntry>>>({});
-  const taskLeaderManualCopyRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+  const {
+    taskLeaderCopyByTaskId,
+    copyTaskLeaderContext,
+    clearTaskLeaderCopy,
+    registerTaskLeaderManualCopyRef,
+  } = useTaskLeaderCopy();
 
   const clearTaskPanelState = useCallback((taskId?: string) => {
     clearTaskEditState(taskId);
@@ -1294,63 +1294,6 @@ export function App() {
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, [rootArchiveConfirm, rootArchiveSaving]);
-
-  useEffect(() => {
-    for (const [taskId, entry] of Object.entries(taskLeaderCopyByTaskId)) {
-      if (!entry) continue;
-      if (entry.state !== "failed" || !entry.manualCopyText) continue;
-      const textarea = taskLeaderManualCopyRefs.current[taskId];
-      textarea?.focus();
-      textarea?.select();
-      break;
-    }
-  }, [taskLeaderCopyByTaskId]);
-
-  const copyTaskLeaderContext = useCallback(async (taskId: string, text: string) => {
-    setTaskLeaderCopyByTaskId((current) => {
-      const next = { ...current };
-      delete next[taskId];
-      return next;
-    });
-    try {
-      const clipboard = globalThis.navigator?.clipboard;
-      if (clipboard?.writeText) {
-        try {
-          await clipboard.writeText(text);
-          setTaskLeaderCopyByTaskId((current) => ({
-            ...current,
-            [taskId]: { state: "copied" },
-          }));
-          return;
-        } catch { /* fall through to textarea fallback */ }
-      }
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.setAttribute("data-copy-fallback", "");
-      ta.style.position = "fixed";
-      ta.style.left = "-9999px";
-      document.body.appendChild(ta);
-      const prev = document.activeElement as HTMLElement | null;
-      ta.focus();
-      ta.select();
-      try {
-        const execCopy = document.execCommand?.bind(document);
-        if (!execCopy?.("copy")) throw new Error("execCommand copy returned false");
-        setTaskLeaderCopyByTaskId((current) => ({
-          ...current,
-          [taskId]: { state: "copied" },
-        }));
-      } finally {
-        ta.remove();
-        prev?.focus();
-      }
-    } catch {
-      setTaskLeaderCopyByTaskId((current) => ({
-        ...current,
-        [taskId]: { state: "failed", manualCopyText: text },
-      }));
-    }
-  }, []);
 
   const runTask = useCallback(async (task: TeamCanvasTask) => {
     const taskId = task.taskId;
@@ -2020,11 +1963,7 @@ export function App() {
                         : item
                     )
                   );
-                  setTaskLeaderCopyByTaskId((current) => {
-                    const next = { ...current };
-                    delete next[task.taskId];
-                    return next;
-                  });
+                  clearTaskLeaderCopy(task.taskId);
                 }
               }}
             >
@@ -2174,11 +2113,7 @@ export function App() {
               setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current);
             } else {
               setTaskArchiveConfirmNodeId(null);
-              setTaskLeaderCopyByTaskId((current) => {
-                const next = { ...current };
-                delete next[expandedTask.taskId];
-                return next;
-              });
+              clearTaskLeaderCopy(expandedTask.taskId);
               setExpandedTaskBranch((current) => current ? { ...current, detailMode: "leader-chat" } : current);
             }
           }}
@@ -2366,7 +2301,7 @@ export function App() {
 
       if (branch.detailMode === "leader-chat") {
         const copyEntry = taskLeaderCopyByTaskId[task.taskId] ?? null;
-        const copyState: "idle" | TaskLeaderCopyEntry["state"] = copyEntry?.state ?? "idle";
+        const copyState = copyEntry?.state ?? "idle";
         const manualCopyText = copyEntry?.manualCopyText ?? null;
         panels.push({
           id: `task-leader-chat-${branch.nodeId}`,
@@ -2419,9 +2354,7 @@ export function App() {
                 <div className="task-leader-copy-fallback" role="group" aria-label="Task 上下文手动复制">
                   <p>自动复制失败。下面文本已选中，按 Ctrl+C 后再粘贴到 Leader 对话。</p>
                   <textarea
-                    ref={(node) => {
-                      taskLeaderManualCopyRefs.current[task.taskId] = node;
-                    }}
+                    ref={(node) => registerTaskLeaderManualCopyRef(task.taskId, node)}
                     aria-label="手动复制 Task 上下文"
                     readOnly
                     value={manualCopyText}
@@ -2587,7 +2520,7 @@ export function App() {
     }
 
     return panels;
-  }, [agents, agentsById, archiveTask, cancelTaskRun, clearTaskEditWarning, copyTaskLeaderContext, expandedTaskBranches, openTaskEditDraft, runTask, saveTaskEdit, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskEditDraft]);
+  }, [agents, agentsById, archiveTask, cancelTaskRun, clearTaskEditWarning, copyTaskLeaderContext, expandedTaskBranches, openTaskEditDraft, registerTaskLeaderManualCopyRef, runTask, saveTaskEdit, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskEditDraft]);
 
   return (
     <div className="app-shell">

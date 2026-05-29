@@ -7718,6 +7718,57 @@ describe("App", () => {
       expect(within(chatB!).queryByLabelText("手动复制 Task 上下文")).toBeNull();
     });
 
+    it("clears stale Leader copy fallback when reopening the same Leader chat", async () => {
+      setupLiveMultiTaskApi();
+      Object.defineProperty(navigator, "clipboard", {
+        value: undefined,
+        writable: true,
+        configurable: true,
+      });
+      Object.defineProperty(document, "execCommand", {
+        value: vi.fn().mockReturnValue(false),
+        writable: true,
+        configurable: true,
+      });
+
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const taskANode = await within(getAtlasNodes(container)).findByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      await waitFor(() => expect(container.querySelector(".task-action-branch")).toBeTruthy());
+
+      const branchA = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskA.taskId),
+      )!;
+      const leaderButton = () => Array.from(branchA.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("对话 Leader"),
+      )!;
+
+      fireEvent.click(leaderButton());
+      await waitFor(() => expect(container.querySelector(".task-leader-chat-branch")).toBeTruthy());
+
+      let chatA = container.querySelector(".task-leader-chat-branch") as HTMLElement;
+      fireEvent.click(within(chatA).getByRole("button", { name: /复制 Task 上下文/ }));
+
+      await waitFor(() => {
+        expect(within(chatA).getByRole("status").textContent).toContain("复制失败");
+        expect(within(chatA).getByLabelText("手动复制 Task 上下文")).toBeInTheDocument();
+      });
+
+      fireEvent.click(leaderButton());
+      await waitFor(() => expect(container.querySelector(".task-leader-chat-branch")).toBeNull());
+
+      fireEvent.click(leaderButton());
+      await waitFor(() => expect(container.querySelector(".task-leader-chat-branch")).toBeTruthy());
+
+      chatA = container.querySelector(".task-leader-chat-branch") as HTMLElement;
+      expect(within(chatA).queryByRole("status")).toBeNull();
+      expect(within(chatA).queryByLabelText("手动复制 Task 上下文")).toBeNull();
+      expect(chatA).not.toHaveTextContent("复制失败");
+      expect(chatA).not.toHaveTextContent("已复制");
+    });
+
     it("closing one leader chat does not close the other", async () => {
       setupLiveMultiTaskApi();
       const { container } = render(<App />);
