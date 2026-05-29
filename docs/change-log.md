@@ -12,6 +12,16 @@
 
 ---
 
+## 2026-05-29 — Team Console Agent 根卡片内边距修复
+
+- **主题**: 修复 Agent 根卡片底部 binding 文本贴到边框的问题。
+- **变更内容**:
+  - Agent 根卡片固定高度从 `112px` 提升到 `132px`，给 title、id chip、description 和 model/browser binding 留出完整垂直空间。
+  - 高度仍走 `AGENT_NODE_HEIGHT` 常量，拖拽碰撞、Dock restore、连接锚点和画布尺寸计算同步使用同一高度，避免视觉尺寸和交互命中区分裂。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/tests/app.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`、`docs/handoff-current.md`。
+- **验证**: focused CSS/source test 锁定 Agent 根卡片高度预算；真实页面量测 Agent binding 底部与卡片边框保留可见间距。
+- **对应入口**: Team Console Execution Atlas Agent 根卡片，固定入口 `http://127.0.0.1:5174/`。
+
 ## 2026-05-29 — Team Console 根卡片 ID chip 宽度收口
 
 - **主题**: 修正 Agent / Task 根卡片 ID chip 视觉上撑满整行的问题，让它保持内容型徽章而不是表单输入框。

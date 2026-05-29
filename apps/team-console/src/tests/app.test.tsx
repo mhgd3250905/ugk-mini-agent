@@ -1239,8 +1239,11 @@ describe("App", () => {
     const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
     fireEvent.click(taskNode);
 
-    const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
-    expect(branch).toBeTruthy();
+    let branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+    await waitFor(() => {
+      branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+      expect(branch).toBeTruthy();
+    });
     const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
     fireEvent.click(runSummary);
 
@@ -2101,7 +2104,11 @@ describe("App", () => {
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
     fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
-    expect(within(container.querySelector(".task-action-branch")!).getByText("task_research_medtrum")).toBeInTheDocument();
+    await waitFor(() => {
+      const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+      expect(branch).toBeTruthy();
+      expect(within(branch!).getByText("task_research_medtrum")).toBeInTheDocument();
+    });
 
     fireEvent.click(getAtlasNodes(container).querySelector('[data-task-id="task_review_medtrum"]') as HTMLElement);
 
@@ -3927,7 +3934,8 @@ describe("App", () => {
 
     const branchLink = container.querySelector(".emap-link-agent-branch") as SVGPathElement | null;
     expect(branchLink).toBeTruthy();
-    expect(branchLink!.getAttribute("d")).toContain("M640,56");
+    expect(branchLink!.getAttribute("d")).toContain("M640,66");
+    expect(branchLink!.getAttribute("d")).not.toContain("M500,132");
     expect(branchLink!.getAttribute("d")).not.toContain("M500,112");
   });
 
@@ -5196,6 +5204,7 @@ describe("App", () => {
     const atlasCardRule = mapCss.match(/\.emap-atlas-card\s*{[^}]*}/)?.[0] ?? "";
     const atlasRailRule = mapCss.match(/\.emap-atlas-card::before\s*{[^}]*}/)?.[0] ?? "";
     const idCopyRule = mapCss.match(/\.emap-node-id-copy\s*{[^}]*}/)?.[0] ?? "";
+    const executionMapSource = readFileSync("src/graph/ExecutionMap.tsx", "utf8");
     const taskAgentGridRule = mapCss.match(/\.emap-task-agent-grid\s*{[^}]*}/)?.[0] ?? "";
     const taskAgentRule = mapCss.match(/\.emap-task-agent-row\s*{[^}]*}/)?.[0] ?? "";
     const taskLeaderRule = mapCss.match(/\.emap-task-agent-row\.role-leader\s*{[^}]*}/)?.[0] ?? "";
@@ -5214,6 +5223,7 @@ describe("App", () => {
     expect(idCopyRule).toContain("width: fit-content");
     expect(idCopyRule).toContain("max-width: min(100%, 178px)");
     expect(idCopyRule).not.toContain("width: 100%");
+    expect(executionMapSource).toContain("const AGENT_NODE_HEIGHT = 132");
     expect(taskAgentGridRule).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
     expect(taskAgentGridRule).toContain("padding: 4px");
     expect(taskAgentRule).toContain("grid-template-columns: minmax(0, 1fr)");
