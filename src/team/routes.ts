@@ -371,7 +371,12 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			const state = await taskRunService.createRun(taskId, { maxRunDurationMinutes, includeSourceBindings: true });
 			reply.code(201).send(state);
 		} catch (err) {
-			sendMappedError(reply, err, [["task not found", 404], ["ready", 409], ["archived", 409], ["active", 409]]);
+			const msg = (err as Error).message;
+			if (msg.includes("task not found")) {
+				reply.code(404).send({ error: "task not found" });
+				return;
+			}
+			sendMappedError(reply, err, [["ready", 409], ["archived", 409], ["active", 409]]);
 		}
 	});
 

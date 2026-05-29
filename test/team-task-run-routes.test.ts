@@ -314,6 +314,7 @@ test("POST /v1/team/tasks/:taskId/runs rejects non-ready or archived tasks", asy
 
 		const missingRun = await app.inject({ method: "POST", url: "/v1/team/tasks/task_missing/runs" });
 		assert.equal(missingRun.statusCode, 404);
+		assert.deepEqual(missingRun.json(), { error: "task not found" });
 	} finally {
 		await app.close();
 		await rm(root, { recursive: true, force: true });
