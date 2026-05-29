@@ -4,6 +4,7 @@ import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, Te
 import { ALL_FIXTURES, MockTeamApi } from "../fixtures/team-fixtures";
 import { useTeamConsoleLiveData, type DataSource, type LiveRunMode, type TeamConsoleUiResetReason, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
 import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchState } from "./use-task-branch-stack";
+import { hasDirtyTaskEditConflict, useTaskEditState } from "./use-task-edit-state";
 import { ExecutionMap, type AtlasAgentNode, type AtlasSourceNode, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { normalizeAtlasViewport, type AtlasViewport } from "../graph/AtlasCanvasShell";
 import { RUN_STATUS_LABELS, isActiveRun } from "../shared/status";
@@ -43,26 +44,6 @@ type StoredCanvasUiState = {
   minimizedTaskNodeIds?: string[];
   minimizedSourceNodeIds?: string[];
   rootNodeFilter?: "all" | "agent" | "task";
-};
-
-type TaskEditDirtyField = "title" | "leaderAgentId" | "workerAgentId" | "checkerAgentId";
-
-type TaskEditBaseSnapshot = {
-  title: string;
-  leaderAgentId: string;
-  workerAgentId: string;
-  checkerAgentId: string;
-  updatedAt: string;
-};
-
-type TaskEditDraft = {
-  taskId: string;
-  title: string;
-  leaderAgentId: string;
-  workerAgentId: string;
-  checkerAgentId: string;
-  base: TaskEditBaseSnapshot;
-  dirtyFields: Partial<Record<TaskEditDirtyField, true>>;
 };
 
 type TaskLeaderCopyEntry = {
@@ -755,35 +736,6 @@ function inferSourceFileType(file: File): TeamCanvasSourcePortType {
   return "file";
 }
 
-function makeTaskEditDraft(task: TeamCanvasTask): TaskEditDraft {
-  const base = {
-    title: task.title,
-    leaderAgentId: task.leaderAgentId,
-    workerAgentId: task.workUnit.workerAgentId,
-    checkerAgentId: task.workUnit.checkerAgentId,
-    updatedAt: task.updatedAt,
-  };
-  return {
-    taskId: task.taskId,
-    title: base.title,
-    leaderAgentId: base.leaderAgentId,
-    workerAgentId: base.workerAgentId,
-    checkerAgentId: base.checkerAgentId,
-    base,
-    dirtyFields: {},
-  };
-}
-
-function hasDirtyTaskEditConflict(task: TeamCanvasTask, draft: TaskEditDraft): boolean {
-  const dirty = draft.dirtyFields;
-  return Boolean(
-    (dirty.title && task.title !== draft.base.title && draft.title.trim() !== task.title) ||
-    (dirty.leaderAgentId && task.leaderAgentId !== draft.base.leaderAgentId && draft.leaderAgentId !== task.leaderAgentId) ||
-    (dirty.workerAgentId && task.workUnit.workerAgentId !== draft.base.workerAgentId && draft.workerAgentId !== task.workUnit.workerAgentId) ||
-    (dirty.checkerAgentId && task.workUnit.checkerAgentId !== draft.base.checkerAgentId && draft.checkerAgentId !== task.workUnit.checkerAgentId)
-  );
-}
-
 function makeAgentNode(agentId: string, index: number): AtlasAgentNode {
   return {
     nodeId: `agent-${agentId}`,
@@ -815,9 +767,18 @@ export function App() {
   const [minimizedTaskNodeIds, setMinimizedTaskNodeIds] = useState<string[]>([]);
   const [minimizedSourceNodeIds, setMinimizedSourceNodeIds] = useState<string[]>([]);
   const [canvasUiStateHydrated, setCanvasUiStateHydrated] = useState(false);
-  const [taskEditDraftByTaskId, setTaskEditDraftByTaskId] = useState<Record<string, TaskEditDraft>>({});
-  const [taskEditSavingByTaskIdInner, setTaskEditSavingByTaskIdInner] = useState<Record<string, boolean>>({});
-  const [taskEditWarningByTaskId, setTaskEditWarningByTaskId] = useState<Record<string, string | null>>({});
+  const {
+    taskEditDraftByTaskId,
+    taskEditSavingByTaskId,
+    taskEditWarningByTaskId,
+    openTaskEditDraft,
+    updateTaskEditDraft,
+    replaceTaskEditDraft,
+    clearTaskEditState,
+    clearTaskEditWarning,
+    setTaskEditWarning,
+    setTaskEditSaving,
+  } = useTaskEditState();
   const [taskArchiveConfirmNodeId, setTaskArchiveConfirmNodeId] = useState<string | null>(null);
   const [taskArchiveSavingNodeId, setTaskArchiveSavingNodeId] = useState<string | null>(null);
   const [rootArchiveConfirm, setRootArchiveConfirm] = useState<RootArchiveConfirm | null>(null);
@@ -827,30 +788,10 @@ export function App() {
   const taskLeaderManualCopyRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
 
   const clearTaskPanelState = useCallback((taskId?: string) => {
-    if (taskId) {
-      setTaskEditDraftByTaskId((current) => {
-        const next = { ...current };
-        delete next[taskId];
-        return next;
-      });
-      setTaskEditWarningByTaskId((current) => {
-        const next = { ...current };
-        delete next[taskId];
-        return next;
-      });
-      setTaskEditSavingByTaskIdInner((current) => {
-        const next = { ...current };
-        delete next[taskId];
-        return next;
-      });
-    } else {
-      setTaskEditDraftByTaskId({});
-      setTaskEditWarningByTaskId({});
-      setTaskEditSavingByTaskIdInner({});
-    }
+    clearTaskEditState(taskId);
     setTaskArchiveConfirmNodeId(null);
     setTaskArchiveSavingNodeId(null);
-  }, []);
+  }, [clearTaskEditState]);
 
   const closeTaskPickersBeforeTaskBranch = useCallback(() => {
     setAgentPickerOpen(false);
@@ -1185,21 +1126,10 @@ export function App() {
   }, []);
 
   const openTaskEditBranch = useCallback((task: TeamCanvasTask) => {
-    setTaskEditDraftByTaskId((current) => ({
-      ...current,
-      ...(current[task.taskId] ? {} : { [task.taskId]: makeTaskEditDraft(task) }),
-    }));
-    setTaskEditWarningByTaskId((prev) => {
-      if (prev[task.taskId]) {
-        const next = { ...prev };
-        delete next[task.taskId];
-        return next;
-      }
-      return prev;
-    });
+    openTaskEditDraft(task);
     setTaskArchiveConfirmNodeId(null);
     setExpandedTaskBranch((current) => current ? { ...current, detailMode: "edit" } : current);
-  }, []);
+  }, [openTaskEditDraft, setExpandedTaskBranch]);
 
   const openTaskRunObserverBranch = useCallback((runId: string) => {
     clearTaskPanelState();
@@ -1230,10 +1160,7 @@ export function App() {
     const title = draft.title.trim();
 
     if (hasDirtyTaskEditConflict(task, draft)) {
-      setTaskEditWarningByTaskId((current) => ({
-        ...current,
-        [taskId]: "Task 已经在后台更新，请重新打开编辑节点后再保存。",
-      }));
+      setTaskEditWarning(taskId, "Task 已经在后台更新，请重新打开编辑节点后再保存。");
       return;
     }
 
@@ -1253,20 +1180,12 @@ export function App() {
       };
     }
     if (Object.keys(patch).length === 0) {
-      setTaskEditWarningByTaskId((current) => {
-        const next = { ...current };
-        delete next[taskId];
-        return next;
-      });
+      clearTaskEditWarning(taskId);
       return;
     }
 
-    setTaskEditSavingByTaskIdInner((current) => ({ ...current, [taskId]: true }));
-    setTaskEditWarningByTaskId((current) => {
-      const next = { ...current };
-      delete next[taskId];
-      return next;
-    });
+    setTaskEditSaving(taskId, true);
+    clearTaskEditWarning(taskId);
     try {
       const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
       const response = await api.updateTask(taskId, patch);
@@ -1277,21 +1196,15 @@ export function App() {
         setTasks(nextTasks);
         setTaskNodes((current) => makeTaskNodes(nextTasks, liveTaskRefreshPositions(current)));
       }
-      setTaskEditDraftByTaskId((current) => ({
-        ...current,
-        [taskId]: makeTaskEditDraft(response.task),
-      }));
-      setTaskEditWarningByTaskId((current) => ({
-        ...current,
-        [taskId]: response.warnings?.join(" ") ?? null,
-      }));
+      replaceTaskEditDraft(response.task);
+      setTaskEditWarning(taskId, response.warnings?.join(" ") ?? null);
       setError(null);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
-      setTaskEditSavingByTaskIdInner((current) => ({ ...current, [taskId]: false }));
+      setTaskEditSaving(taskId, false);
     }
-  }, [dataSource, refreshLiveTasks, taskEditDraftByTaskId, tasksById]);
+  }, [clearTaskEditWarning, dataSource, refreshLiveTasks, replaceTaskEditDraft, setTaskEditSaving, setTaskEditWarning, taskEditDraftByTaskId, tasksById]);
 
   const archiveTask = useCallback(async (task: TeamCanvasTask, nodeId?: string): Promise<boolean> => {
     const savingKey = nodeId ?? task.taskId;
@@ -2074,18 +1987,7 @@ export function App() {
                     )
                   );
                 } else {
-                  setTaskEditDraftByTaskId((current) => ({
-                    ...current,
-                    ...(current[task.taskId] ? {} : { [task.taskId]: makeTaskEditDraft(task) }),
-                  }));
-                  setTaskEditWarningByTaskId((prev) => {
-                    if (prev[task.taskId]) {
-                      const next = { ...prev };
-                      delete next[task.taskId];
-                      return next;
-                    }
-                    return prev;
-                  });
+                  openTaskEditDraft(task);
                   setTaskArchiveConfirmNodeId(null);
                   setExpandedTaskBranches((current) =>
                     current.map((item) =>
@@ -2346,7 +2248,7 @@ export function App() {
       if (branch.detailMode === "edit") {
         const draft = taskEditDraftByTaskId[task.taskId];
         const warning = taskEditWarningByTaskId[task.taskId] ?? null;
-        const saving = Boolean(taskEditSavingByTaskIdInner[task.taskId]);
+        const saving = Boolean(taskEditSavingByTaskId[task.taskId]);
         if (draft) {
           panels.push({
             id: `task-edit-${branch.nodeId}`,
@@ -2392,34 +2294,14 @@ export function App() {
                       <span>Task 名称</span>
                       <input
                         value={draft.title}
-                        onChange={(event) => setTaskEditDraftByTaskId((current) => {
-                          const existing = current[task.taskId];
-                          return existing ? {
-                            ...current,
-                            [task.taskId]: {
-                              ...existing,
-                              title: event.target.value,
-                              dirtyFields: { ...existing.dirtyFields, title: true },
-                            },
-                          } : current;
-                        })}
+                        onChange={(event) => updateTaskEditDraft(task.taskId, "title", event.target.value)}
                       />
                     </label>
                     <label className="task-edit-field">
                       <span>Leader Agent</span>
                       <select
                         value={draft.leaderAgentId}
-                        onChange={(event) => setTaskEditDraftByTaskId((current) => {
-                          const existing = current[task.taskId];
-                          return existing ? {
-                            ...current,
-                            [task.taskId]: {
-                              ...existing,
-                              leaderAgentId: event.target.value,
-                              dirtyFields: { ...existing.dirtyFields, leaderAgentId: true },
-                            },
-                          } : current;
-                        })}
+                        onChange={(event) => updateTaskEditDraft(task.taskId, "leaderAgentId", event.target.value)}
                       >
                         {agents.map((agent) => (
                           <option key={agent.agentId} value={agent.agentId}>
@@ -2432,17 +2314,7 @@ export function App() {
                       <span>Worker Agent</span>
                       <select
                         value={draft.workerAgentId}
-                        onChange={(event) => setTaskEditDraftByTaskId((current) => {
-                          const existing = current[task.taskId];
-                          return existing ? {
-                            ...current,
-                            [task.taskId]: {
-                              ...existing,
-                              workerAgentId: event.target.value,
-                              dirtyFields: { ...existing.dirtyFields, workerAgentId: true },
-                            },
-                          } : current;
-                        })}
+                        onChange={(event) => updateTaskEditDraft(task.taskId, "workerAgentId", event.target.value)}
                       >
                         {agents.map((agent) => (
                           <option key={agent.agentId} value={agent.agentId}>
@@ -2455,17 +2327,7 @@ export function App() {
                       <span>Checker Agent</span>
                       <select
                         value={draft.checkerAgentId}
-                        onChange={(event) => setTaskEditDraftByTaskId((current) => {
-                          const existing = current[task.taskId];
-                          return existing ? {
-                            ...current,
-                            [task.taskId]: {
-                              ...existing,
-                              checkerAgentId: event.target.value,
-                              dirtyFields: { ...existing.dirtyFields, checkerAgentId: true },
-                            },
-                          } : current;
-                        })}
+                        onChange={(event) => updateTaskEditDraft(task.taskId, "checkerAgentId", event.target.value)}
                       >
                         {agents.map((agent) => (
                           <option key={agent.agentId} value={agent.agentId}>
@@ -2480,11 +2342,7 @@ export function App() {
                       type="button"
                       className="task-action-menu-button"
                       onClick={() => {
-                        setTaskEditWarningByTaskId((current) => {
-                          const next = { ...current };
-                          delete next[task.taskId];
-                          return next;
-                        });
+                        clearTaskEditWarning(task.taskId);
                         setExpandedTaskBranches((current) =>
                           current.map((item) =>
                             item.nodeId === branch.nodeId ? { ...item, detailMode: null } : item
@@ -2729,7 +2587,7 @@ export function App() {
     }
 
     return panels;
-  }, [agents, agentsById, archiveTask, cancelTaskRun, copyTaskLeaderContext, expandedTaskBranches, runTask, saveTaskEdit, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskIdInner, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById]);
+  }, [agents, agentsById, archiveTask, cancelTaskRun, clearTaskEditWarning, copyTaskLeaderContext, expandedTaskBranches, openTaskEditDraft, runTask, saveTaskEdit, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskEditDraft]);
 
   return (
     <div className="app-shell">

@@ -7523,6 +7523,89 @@ describe("App", () => {
       expect(hasBeta).toBe(true);
     });
 
+    it("closing one Task action branch clears only that Task edit draft", async () => {
+      setupLiveMultiTaskApi();
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const taskANode = await within(getAtlasNodes(container)).findByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      await waitFor(() => expect(container.querySelector(".task-action-branch")).toBeTruthy());
+      const branchA = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskA.taskId),
+      ) as HTMLElement | undefined;
+      expect(branchA).toBeTruthy();
+      const editButtonA = Array.from(branchA!.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("编辑"),
+      )!;
+      fireEvent.click(editButtonA);
+      await waitFor(() => expect(container.querySelector(".task-edit-branch")).toBeTruthy());
+      const editPanelA = Array.from(container.querySelectorAll(".task-edit-branch")).find(
+        (el) => el.textContent?.includes(taskA.taskId),
+      ) as HTMLElement | undefined;
+      expect(editPanelA).toBeTruthy();
+      fireEvent.change(within(editPanelA!).getByLabelText("Task 名称"), { target: { value: "Unsaved Alpha" } });
+
+      const taskBNode = within(getAtlasNodes(container)).getByRole("button", { name: taskB.title });
+      fireEvent.click(taskBNode);
+      await waitFor(() => {
+        expect(container.querySelectorAll(".task-action-branch").length).toBeGreaterThanOrEqual(2);
+      });
+      const branchB = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskB.taskId),
+      ) as HTMLElement | undefined;
+      expect(branchB).toBeTruthy();
+      const editButtonB = Array.from(branchB!.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("编辑"),
+      )!;
+      fireEvent.click(editButtonB);
+      await waitFor(() => expect(container.querySelectorAll(".task-edit-branch")).toHaveLength(2));
+      const editPanelB = Array.from(container.querySelectorAll(".task-edit-branch")).find(
+        (el) => el.textContent?.includes(taskB.taskId),
+      ) as HTMLElement | undefined;
+      expect(editPanelB).toBeTruthy();
+      fireEvent.change(within(editPanelB!).getByLabelText("Task 名称"), { target: { value: "Unsaved Beta" } });
+
+      fireEvent.click(within(branchA!).getByRole("button", { name: `收起 ${taskA.title} Task 操作` }));
+
+      await waitFor(() => {
+        const remainingEditPanels = Array.from(container.querySelectorAll(".task-edit-branch")) as HTMLElement[];
+        expect(remainingEditPanels).toHaveLength(1);
+        expect(remainingEditPanels[0]).toHaveTextContent(taskB.taskId);
+        expect(remainingEditPanels[0]).not.toHaveTextContent(taskA.taskId);
+      });
+      const remainingEditPanel = container.querySelector(".task-edit-branch") as HTMLElement;
+      expect(within(remainingEditPanel).getByLabelText("Task 名称")).toHaveValue("Unsaved Beta");
+      expect(container.querySelector(".task-action-branch")!).toHaveTextContent(taskB.taskId);
+
+      fireEvent.click(taskANode);
+      await waitFor(() => {
+        const branches = Array.from(container.querySelectorAll(".task-action-branch"));
+        expect(branches.some((el) => el.textContent?.includes(taskA.taskId))).toBe(true);
+      });
+      const reopenedBranchA = Array.from(container.querySelectorAll(".task-action-branch")).find(
+        (el) => el.textContent?.includes(taskA.taskId),
+      ) as HTMLElement | undefined;
+      expect(reopenedBranchA).toBeTruthy();
+      const reopenedEditButtonA = Array.from(reopenedBranchA!.querySelectorAll(".task-action-menu-button")).find(
+        (btn) => btn.textContent?.includes("编辑"),
+      )!;
+      fireEvent.click(reopenedEditButtonA);
+
+      await waitFor(() => {
+        const reopenedEditPanelA = Array.from(container.querySelectorAll(".task-edit-branch")).find(
+          (el) => el.textContent?.includes(taskA.taskId),
+        ) as HTMLElement | undefined;
+        expect(reopenedEditPanelA).toBeTruthy();
+        expect(within(reopenedEditPanelA!).getByLabelText("Task 名称")).toHaveValue(taskA.title);
+      });
+      const stillOpenEditPanelB = Array.from(container.querySelectorAll(".task-edit-branch")).find(
+        (el) => el.textContent?.includes(taskB.taskId),
+      ) as HTMLElement | undefined;
+      expect(stillOpenEditPanelB).toBeTruthy();
+      expect(within(stillOpenEditPanelB!).getByLabelText("Task 名称")).toHaveValue("Unsaved Beta");
+    });
+
     it("multiple Task leader chat panels can be open simultaneously", async () => {
       setupLiveMultiTaskApi();
       const { container } = render(<App />);
