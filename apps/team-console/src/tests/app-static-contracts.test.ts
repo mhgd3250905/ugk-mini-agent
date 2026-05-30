@@ -7,6 +7,9 @@ describe("Team Console static contracts", () => {
 
     expect(appSource).toContain("taskBranchPanels={taskBranchPanelItems}");
     expect(appSource).not.toContain("taskBranchPanel={expandedTaskBranchPanel}");
+    expect(appSource).not.toContain("taskChildBranchPanel={expandedTaskChildBranchPanel}");
+    expect(appSource).not.toContain("taskChildBranchInteractive={");
+    expect(appSource).not.toContain("const expandedTaskChildBranchPanel");
     expect(appSource).not.toContain("const expandedTaskBranchPanel");
     expect(appSource).not.toContain("runExpandedTask");
     expect(appSource).not.toContain("cancelExpandedTaskRun");
@@ -19,9 +22,15 @@ describe("Team Console static contracts", () => {
   it("keeps Task root drag subtree sync on the multi-branch panel path", () => {
     const mapSource = readFileSync("src/graph/ExecutionMap.tsx", "utf8");
 
-    expect(mapSource).toContain("const hasTaskBranchTree = Boolean(taskBranchPanel || taskBranchPanels?.length);");
+    expect(mapSource).toContain("taskBranchPanels?: Array");
+    expect(mapSource).toContain("taskChildBranchPanels?: Array");
+    expect(mapSource).toContain("const hasTaskBranchTree = Boolean(taskBranchPanels?.length);");
     expect(mapSource).toContain('entry.kind === "task" && hasTaskBranchTree');
+    expect(mapSource).not.toContain("taskBranchPanel?:");
+    expect(mapSource).not.toContain("taskChildBranchPanel?:");
+    expect(mapSource).not.toContain("taskChildBranchInteractive?:");
     expect(mapSource).not.toContain('entry.kind === "task" && taskBranchPanel');
+    expect(mapSource).not.toContain("taskChildBranchNode && taskChildBranchPanel");
   });
 
   it("vite proxy includes the Team Console API surface and embedded playground route", () => {

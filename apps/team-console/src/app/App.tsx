@@ -1972,8 +1972,6 @@ export function App() {
       ),
     }];
   });
-  const expandedTaskChildBranchPanel = null;
-
   const taskChildBranchPanels = useMemo(() => {
     const panels: Array<{
       id: string;
@@ -2511,8 +2509,6 @@ export function App() {
                 onTaskOutputPortSelect={beginTaskPortConnection}
                 onTaskInputPortSelect={completeTaskPortConnection}
                 taskBranchPanels={taskBranchPanelItems}
-                taskChildBranchPanel={expandedTaskChildBranchPanel}
-                taskChildBranchInteractive={false}
                 taskChildBranchPanels={taskChildBranchPanels}
                 viewport={canvasViewport}
                 onViewportChange={setCanvasViewport}

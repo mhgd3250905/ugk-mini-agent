@@ -1229,8 +1229,12 @@ describe("Artifact preview nodes", () => {
           taskNodes={[taskNode]}
           tasksById={new Map([[task.taskId, task]])}
           focusedTaskNodeId={taskNode.nodeId}
-          taskBranchPanel={<section className="task-action-branch">操作菜单</section>}
-          taskChildBranchPanel={<section className="task-edit-branch">编辑节点</section>}
+          taskBranchPanels={[
+            { id: "task-branch", nodeId: taskNode.nodeId, panel: <section className="task-action-branch">操作菜单</section> },
+          ]}
+          taskChildBranchPanels={[
+            { id: "task-child", sourceId: "task-branch", panel: <section className="task-edit-branch">编辑节点</section> },
+          ]}
         />,
       );
 
@@ -1329,10 +1333,13 @@ describe("Artifact preview nodes", () => {
           taskNodes={[taskNode]}
           tasksById={new Map([[task.taskId, task]])}
           focusedTaskNodeId={taskNode.nodeId}
-          taskBranchPanel={<section className="task-action-branch">操作菜单</section>}
+          taskBranchPanels={[
+            { id: "task-branch", nodeId: taskNode.nodeId, panel: <section className="task-action-branch">操作菜单</section> },
+          ]}
           taskChildBranchPanels={[
             {
               id: "process-worker",
+              sourceId: "task-branch",
               width: 300,
               autoHeight: true,
               panel: <section className="emap-observer-node">{content}</section>,

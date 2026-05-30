@@ -85,14 +85,11 @@ interface ExecutionMapProps {
   onSourceTextChange?: (sourceNodeId: string, text: string) => void;
   canMoveTasks?: boolean;
   canMoveSourceNodes?: boolean;
-  taskBranchPanel?: ReactNode;
   taskBranchPanels?: Array<{
     id: string;
     nodeId: string;
     panel: ReactNode;
   }>;
-  taskChildBranchPanel?: ReactNode;
-  taskChildBranchInteractive?: boolean;
   taskChildBranchPanels?: Array<{
     id: string;
     panel: ReactNode;
@@ -124,7 +121,6 @@ type TaskChildBranchPanelDescriptor = NonNullable<ExecutionMapProps["taskChildBr
 
 type MaximizedPanelState =
   | { kind: "agent" }
-  | { kind: "task-child" }
   | { kind: "task-panel"; panelId: string }
   | null;
 
@@ -773,10 +769,7 @@ export function ExecutionMap({
   onSourceTextChange,
   canMoveTasks = true,
   canMoveSourceNodes = true,
-  taskBranchPanel,
   taskBranchPanels,
-  taskChildBranchPanel,
-  taskChildBranchInteractive = false,
   taskChildBranchPanels,
   viewport,
   onViewportChange,
@@ -798,7 +791,6 @@ export function ExecutionMap({
   const [artifactPreviewState, setArtifactPreviewState] = useState<Record<string, ArtifactPreviewState>>({});
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
   const [agentBranchRects, setAtlasRects] = useState<Record<string, AtlasRect>>({});
-  const [taskChildBranchRects, setTaskChildBranchRects] = useState<Record<string, AtlasRect>>({});
   const [taskBranchMeasuredSizes, setTaskBranchMeasuredSizes] = useState<TaskBranchMeasuredSizeMap>({});
   const [selectedAtlasNodeKeys, setSelectedAtlasNodeKeys] = useState<Set<string>>(new Set());
   const [rootDropTarget, setRootDropTarget] = useState<"dock" | "trash" | null>(null);
@@ -828,15 +820,13 @@ export function ExecutionMap({
   const suppressTaskClickRef = useRef<string | null>(null);
   const agentBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
   const agentBranchDragSuppressClickRef = useRef(false);
-  const taskChildBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
-  const taskChildDragSuppressClickRef = useRef(false);
   const panelResizeRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startWidth: number; startHeight: number; minWidth: number; minHeight: number } | null>(null);
   const panelDragRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startRect: AtlasRect; hasMoved: boolean; capturedTarget: HTMLDivElement | null; lastDx: number; lastDy: number } | null>(null);
   const panelDragSuppressClickRef = useRef(false);
   const taskBranchDragRef = useRef<{ nodeId: string; pointerId: number; startClientX: number; startClientY: number; startRect: AtlasRect; hasMoved: boolean; capturedTarget: HTMLDivElement | null; lastDx: number; lastDy: number } | null>(null);
   const taskBranchDragSuppressClickRef = useRef(false);
   const translateTaskSubtreeRef = useRef<(scope: TaskSubtreeScope, dx: number, dy: number, nodeId?: string) => void>(() => {});
-  const hasTaskBranchTree = Boolean(taskBranchPanel || taskBranchPanels?.length);
+  const hasTaskBranchTree = Boolean(taskBranchPanels?.length);
   const minimizedAgentNodeIdSet = useMemo(() => new Set(minimizedAgentNodeIds), [minimizedAgentNodeIds]);
   const minimizedTaskNodeIdSet = useMemo(() => new Set(minimizedTaskNodeIds), [minimizedTaskNodeIds]);
   const minimizedSourceNodeIdSet = useMemo(() => new Set(minimizedSourceNodeIds), [minimizedSourceNodeIds]);
@@ -1012,7 +1002,6 @@ export function ExecutionMap({
     const atlasDrag = atlasNodeDragRef.current;
     return Boolean(
       taskBranchDragRef.current
-      || taskChildBranchInteractionRef.current
       || panelDragRef.current
       || panelResizeRef.current
       || atlasDrag?.entries.some((entry) => entry.kind === "task" || entry.kind === "source"),
@@ -1799,12 +1788,7 @@ export function ExecutionMap({
   const focusedTaskNode = focusedTaskNodeId
     ? visibleTaskNodes.find((node) => node.nodeId === focusedTaskNodeId) ?? null
     : null;
-  const taskBranchEntries = (taskBranchPanels?.length
-    ? taskBranchPanels
-    : focusedTaskNode && taskBranchPanel
-      ? [{ id: "task-branch", nodeId: focusedTaskNode.nodeId, panel: taskBranchPanel }]
-      : []
-  ).map((entry) => {
+  const taskBranchEntries = (taskBranchPanels ?? []).map((entry) => {
     const node = visibleTaskNodes.find((candidate) => candidate.nodeId === entry.nodeId);
     if (!node) return null;
     const measuredSize = taskBranchMeasuredSizes[entry.id] ?? null;
@@ -1827,19 +1811,6 @@ export function ExecutionMap({
     ?? null
   );
   const taskBranchNode = primaryTaskBranchEntry?.rect ?? null;
-  const taskChildBranchDefaultNode = taskBranchNode
-    ? {
-      x: taskBranchNode.x + taskBranchNode.width + TASK_CHILD_BRANCH_GAP,
-      y: taskBranchNode.y,
-      width: TASK_CHILD_BRANCH_WIDTH,
-      height: TASK_CHILD_BRANCH_HEIGHT,
-    }
-    : null;
-  const taskChildBranchNode = taskBranchNode && taskChildBranchPanel
-    ? taskChildBranchInteractive && focusedTaskNode
-      ? taskChildBranchRects[focusedTaskNode.nodeId] ?? taskChildBranchDefaultNode
-      : taskChildBranchDefaultNode
-    : null;
   const taskChildBranchPanelsLayout = useMemo(() => {
     if (!taskBranchNode || !taskChildBranchPanels?.length) return [];
     const panelGap = 8;
@@ -1893,8 +1864,8 @@ export function ExecutionMap({
   }, [taskBranchNode, taskBranchEntries, taskChildBranchPanels, panelSizeOverrides, panelMeasuredHeights, panelPositionOverrides]);
   const agentBranchRight = agentBranchNode ? agentBranchNode.x + agentBranchNode.width : 0;
   const taskBranchRight = Math.max(
+    0,
     ...taskBranchEntries.map((entry) => entry.rect.x + entry.rect.width),
-    taskChildBranchNode ? taskChildBranchNode.x + taskChildBranchNode.width : 0,
     ...taskChildBranchPanelsLayout.map((p) => p.rect.x + p.rect.width),
   );
   const svgWidth = Math.max(700, evidenceRight + 28, previewRight + 28, agentRight + 28, taskRight + 28, sourceRight + 28, agentBranchRight + 28, taskBranchRight + 28);
@@ -1907,7 +1878,6 @@ export function ExecutionMap({
     ...visibleSourceNodes.map((node) => node.position.y + CANVAS_SOURCE_NODE_HEIGHT),
     agentBranchNode ? agentBranchNode.y + agentBranchNode.height : 0,
     ...taskBranchEntries.map((entry) => entry.rect.y + entry.rect.height),
-    taskChildBranchNode ? taskChildBranchNode.y + taskChildBranchNode.height : 0,
     ...taskChildBranchPanelsLayout.map((p) => p.rect.y + p.rect.height),
     200,
   );
@@ -1927,20 +1897,12 @@ export function ExecutionMap({
     path: taskBranchConnectorPath(entry.node, entry.rect, tasksById?.get(entry.node.taskId)),
     anchors: connectorAnchors(taskNodeRect(entry.node, tasksById?.get(entry.node.taskId)), entry.rect),
   }));
-  const taskChildBranchPath = taskBranchNode && taskChildBranchNode
-    ? taskChildBranchConnectorPath(taskBranchNode, taskChildBranchNode)
-    : null;
-  const taskChildBranchAnchors = taskBranchNode && taskChildBranchNode
-    ? connectorAnchors(taskBranchNode, taskChildBranchNode)
-    : null;
   const maximizedTaskPanel = maximizedBranch?.kind === "task-panel"
     ? taskChildBranchPanelsLayout.find((p) => p.id === maximizedBranch.panelId)?.panel ?? null
     : null;
   const maximizedBranchPanel = maximizedBranch?.kind === "agent" && agentBranchPanel
     ? agentBranchPanel
-    : maximizedBranch?.kind === "task-child" && taskChildBranchPanel
-      ? taskChildBranchPanel
-      : maximizedTaskPanel;
+    : maximizedTaskPanel;
   const maximizedOverlay = maximizedBranchPanel ? createPortal(
     <div
       className="emap-maximized-branch-shell"
@@ -2332,12 +2294,11 @@ export function ExecutionMap({
   useLayoutEffect(() => {
     if (
       (maximizedBranch?.kind === "agent" && !agentBranchPanel)
-      || (maximizedBranch?.kind === "task-child" && !taskChildBranchPanel)
       || (maximizedBranch?.kind === "task-panel" && !taskChildBranchPanelsLayout.some((p) => p.id === maximizedBranch.panelId))
     ) {
       setMaximizedBranch(null);
     }
-  }, [agentBranchPanel, maximizedBranch, taskChildBranchPanel, taskChildBranchPanelsLayout]);
+  }, [agentBranchPanel, maximizedBranch, taskChildBranchPanelsLayout]);
 
   useLayoutEffect(() => {
     if (hasActiveTaskLayoutInteraction()) return;
@@ -2442,20 +2403,13 @@ export function ExecutionMap({
       });
     }
 
-    if ((scope === "root" || scope === "menu") && taskChildBranchNode && targetNodeId === focusedTaskNode?.nodeId) {
-      setTaskChildBranchRects((prev) => {
-        const current = prev[targetNodeId] ?? taskChildBranchNode;
-        return { ...prev, [targetNodeId]: { ...current, x: current.x + dx, y: current.y + dy } };
-      });
-    }
-
     if (scope === "root" && targetTaskBranchNode) {
       setTaskBranchPositionOverrides((prev) => ({
         ...prev,
         [targetNodeId]: { x: targetTaskBranchNode.x + dx, y: targetTaskBranchNode.y + dy },
       }));
     }
-  }, [focusedTaskNode, taskBranchEntries, taskBranchNode, taskChildBranchNode, taskChildBranchPanelsLayout]);
+  }, [focusedTaskNode, taskBranchEntries, taskBranchNode, taskChildBranchPanelsLayout]);
 
   translateTaskSubtreeRef.current = translateTaskSubtree;
 
@@ -2601,92 +2555,6 @@ export function ExecutionMap({
       interaction.capturedTarget.releasePointerCapture?.(event.pointerId);
     }
     agentBranchInteractionRef.current = null;
-  }, []);
-
-  const beginTaskChildBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!taskChildBranchInteractive || !focusedTaskNode || !taskChildBranchNode || !canStartAgentBranchDrag(event.target)) return;
-    taskChildBranchInteractionRef.current = {
-      kind: "drag",
-      nodeId: focusedTaskNode.nodeId,
-      pointerId: event.pointerId,
-      startClientX: event.clientX,
-      startClientY: event.clientY,
-      startRect: taskChildBranchNode,
-      hasMoved: false,
-      capturedTarget: null,
-    };
-  }, [focusedTaskNode, taskChildBranchInteractive, taskChildBranchNode]);
-
-  const beginTaskChildBranchResize = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (!taskChildBranchInteractive || !focusedTaskNode || !taskChildBranchNode) return;
-    event.preventDefault();
-    event.stopPropagation();
-    taskChildBranchInteractionRef.current = {
-      kind: "resize",
-      nodeId: focusedTaskNode.nodeId,
-      pointerId: event.pointerId,
-      startClientX: event.clientX,
-      startClientY: event.clientY,
-      startRect: taskChildBranchNode,
-    };
-    event.currentTarget.parentElement?.setPointerCapture?.(event.pointerId);
-  }, [focusedTaskNode, taskChildBranchInteractive, taskChildBranchNode]);
-
-  const moveTaskChildBranch = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const interaction = taskChildBranchInteractionRef.current;
-    if (!interaction || interaction.pointerId !== event.pointerId) return;
-
-    const scale = viewportScale(viewport);
-    const dx = (event.clientX - interaction.startClientX) / scale;
-    const dy = (event.clientY - interaction.startClientY) / scale;
-
-    if (interaction.kind === "drag") {
-      if (!interaction.hasMoved && Math.abs(dx) < AGENT_DRAG_THRESHOLD && Math.abs(dy) < AGENT_DRAG_THRESHOLD) return;
-      if (!interaction.hasMoved) {
-        interaction.hasMoved = true;
-        event.currentTarget.setPointerCapture?.(event.pointerId);
-        interaction.capturedTarget = event.currentTarget;
-      }
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    const nextRect = interaction.kind === "drag"
-      ? clampAtlasRect({
-        ...interaction.startRect,
-        x: interaction.startRect.x + dx,
-        y: interaction.startRect.y + dy,
-      })
-      : clampAtlasRect({
-        ...interaction.startRect,
-        width: interaction.startRect.width + dx,
-        height: interaction.startRect.height + dy,
-      });
-
-    setTaskChildBranchRects((current) => ({
-      ...current,
-      [interaction.nodeId]: nextRect,
-    }));
-  }, [viewport]);
-
-  const endTaskChildBranchInteraction = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const interaction = taskChildBranchInteractionRef.current;
-    if (!interaction || interaction.pointerId !== event.pointerId) return;
-    if (interaction.kind === "drag" && interaction.hasMoved) {
-      event.preventDefault();
-      event.stopPropagation();
-      taskChildDragSuppressClickRef.current = true;
-    } else if (interaction.kind === "resize") {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-    if (interaction.capturedTarget) {
-      interaction.capturedTarget.releasePointerCapture?.(event.pointerId);
-    } else if (interaction.kind === "resize") {
-      event.currentTarget.releasePointerCapture?.(event.pointerId);
-    }
-    taskChildBranchInteractionRef.current = null;
   }, []);
 
   const beginPanelResize = useCallback((panelId: string, minWidth: number, minHeight: number, event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -2990,16 +2858,6 @@ export function ExecutionMap({
               )}
             </g>
           ))}
-          {taskChildBranchPath && (
-            <path
-              key="task-child-branch"
-              d={taskChildBranchPath}
-              className="emap-link emap-link-task-branch emap-link-task-child-branch"
-              fill="none"
-              strokeWidth={2}
-            />
-          )}
-          {taskChildBranchAnchors && renderConnectorSourceSocket("task-child-branch-source-socket", taskChildBranchAnchors.source, "emap-connector-socket-task-child-branch")}
           {taskChildBranchPanelsLayout.map((p) => (
             <g key={`task-child-panel-${p.id}`}>
               <path
@@ -3529,58 +3387,6 @@ export function ExecutionMap({
               </div>
             );
           })}
-          {taskChildBranchNode && taskChildBranchPanel && maximizedBranch?.kind !== "task-child" && (
-            <div
-              className="emap-task-child-branch-shell"
-              onPointerDownCapture={taskChildBranchInteractive ? beginTaskChildBranchDrag : undefined}
-              onPointerMove={taskChildBranchInteractive ? moveTaskChildBranch : undefined}
-              onPointerUp={taskChildBranchInteractive ? endTaskChildBranchInteraction : undefined}
-              onPointerCancel={taskChildBranchInteractive ? endTaskChildBranchInteraction : undefined}
-              onDoubleClick={(event) => {
-                if (!canTogglePanelMaximize(event.target)) return;
-                event.stopPropagation();
-                setMaximizedBranch({ kind: "task-child" });
-              }}
-              onClickCapture={(e) => {
-                if (taskChildDragSuppressClickRef.current) {
-                  taskChildDragSuppressClickRef.current = false;
-                  if (!(e.target instanceof Element && e.target.closest("button, input, textarea, select, a, iframe, summary, details"))) {
-                    e.stopPropagation();
-                  }
-                }
-              }}
-              style={{
-                left: taskChildBranchNode.x,
-                top: taskChildBranchNode.y,
-                width: taskChildBranchNode.width,
-                height: taskChildBranchNode.height,
-              }}
-            >
-              {taskChildBranchPanel}
-              {taskChildBranchInteractive && (
-                <>
-                  <button
-                    type="button"
-                    className="emap-agent-branch-maximize-button"
-                    aria-label="最大化对话分支"
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setMaximizedBranch({ kind: "task-child" });
-                    }}
-                  >
-                    ⛶
-                  </button>
-                  <button
-                    type="button"
-                    className="emap-agent-branch-resize-handle"
-                    aria-label="调整对话分支大小"
-                    onPointerDown={beginTaskChildBranchResize}
-                  />
-                </>
-              )}
-            </div>
-          )}
           {taskChildBranchPanelsLayout.filter((p) => !(maximizedBranch?.kind === "task-panel" && maximizedBranch.panelId === p.id)).map((p) => (
             <div
               key={`task-child-panel-${p.id}`}

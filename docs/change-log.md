@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-30 — Team Console ExecutionMap Task 分支单数 props 移除
+
+- **主题**: 移除 `ExecutionMap` 中遗留的 Task 分支单数 props，避免测试或后续代码继续从旧 `taskBranchPanel` / `taskChildBranchPanel` 路径绕回单分支假设。
+- **变更内容**:
+  - `ExecutionMap` 的 Task 分支入口统一为 `taskBranchPanels` 和 `taskChildBranchPanels`，删除单数 fallback layout、connector、drag/resize、maximize 和 render 分支。
+  - 直接调用 `ExecutionMap` 的剩余测试迁移到 descriptor 数组，保留菜单测量、child panel 几何和 auto-height drag 暂停断言。
+  - 静态契约测试禁止旧单数 props、旧 App 传参和旧单数 root-drag gate 回归。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/tests/app-static-contracts.test.ts`、`apps/team-console/src/tests/execution-map-ui.test.tsx`。
+- **验证**: Team Console focused tests、全量 tests、build、顶层 `tsc` 和真实 `http://127.0.0.1:5174/` 拖动 observer 验证均通过。
+- **对应入口**: Team Console Execution Atlas 的 Task branch / child panel 布局与拖动链路。
+
 ## 2026-05-30 — Team Console Task 分支单数 fallback 移除
 
 - **主题**: 移除 Team Console `App.tsx` 中遗留的单 Task 分支 fallback，避免 Task 菜单、运行观察和文件详情继续分裂成单数 / 多分支两套状态路径。
