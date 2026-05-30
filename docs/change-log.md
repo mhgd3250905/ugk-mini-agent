@@ -19,7 +19,7 @@
   - Task run observer 轮询在发现自己观察的 active run 已进入终态时，也会触发 live Task/run 列表刷新和延迟发现刷新。
   - 新增回归测试覆盖“上游 observer 消费 terminal transition 后，下游新 run 仍能自动合入 `taskRunsByTaskId` 并显示 running”的竞态。
 - **影响范围**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/tests/app-canvas-connections.test.tsx`。
-- **验证**: focused canvas connection tests 通过；真实 `task_aeb07a91d49a -> task_d725e753ebd8` 链路确认后端下游 run 已创建，observer 过程数据可显示。
+- **验证**: focused canvas connection tests、Team Console 全量 tests、build、顶层 `tsc` 和 `git diff --check` 通过；真实 `task_aeb07a91d49a` 的 `run_dc95d1221603` 成功后，未手动刷新页面，前端自动显示下游 `task_d725e753ebd8` 的 `run_42096616784e` 为 running，并能看到 worker 过程数据。
 - **对应入口**: Team Console Execution Atlas 的 Task dependency auto-start、Task action menu run summary 和 run observer。
 
 ## 2026-05-30 — Team Console Task 分支 focused 语义收口

@@ -29,9 +29,36 @@
 
 注意：远端 Git 已更新不等于生产服务器已部署。服务器更新仍要按 `docs/server-ops.md` 的增量流程执行，不能把 push 当上线。
 
+## 2026-05-30 Team Console Task 串联运行观察 / 下游自动发现快照
+
+- 本轮修复聚焦 Team Console Task 串联执行，不涉及主 `/playground` 产品 UI，也没有修改 `.pi/skills` runtime skill。
+- 相关功能提交：
+  - `cb59730 fix(team-console): poll all task run observers`
+  - `45a992e fix(team-console): remove task branch single fallback`
+  - `5f8b370 refactor(team-console): remove task branch single props`
+  - `1d244cd refactor(team-console): clarify focused task branch state`
+  - `f8981d4 fix(team-console): discover downstream runs from observers`
+- 已修复的问题：
+  - 多个 Task run observer 同时展开时，轮询不再只服务最后一个 observer；上游过程和 Accepted Result 文件详情不会因为下游 Task 激活而卡在“正在读取文件”。
+  - Task 分支状态已从历史单分支 fallback 收口到多分支路径，`ExecutionMap` 不再接收 `taskBranchPanel` / `taskChildBranchPanel` 这类单数 props。
+  - 打开的 run observer 如果先消费到上游 run 的 terminal transition，也会触发 live Task/run 列表刷新和延迟发现刷新；否则下游 run 已经由后端创建，前端却要手动点“刷新 Task”才能看到，这种蠢竞态会回来。
+- 真实链路验证：
+  - 上游 `task_aeb07a91d49a` 本轮 run `run_dc95d1221603` 最终 `completed / succeeded`，Accepted Result 为 `tasks/task_aeb07a91d49a/attempts/attempt_d46908a26cba/accepted-result.md`。
+  - 后端通过 active dependency `dep_7a384fdd7bd1` 自动触发下游 `task_d725e753ebd8`，新 run 为 `run_42096616784e`，`source.triggeredBy.fromRunId = run_dc95d1221603`。
+  - Codex in-app Browser 观察 `http://127.0.0.1:5174/`：未手动点击“刷新 Task”，页面自动显示 X Task 为 `Task已完成`、Ins Task 为 `Task执行中`，并能看到 `run_42096616784e` 及 worker 过程文本。
+  - 观测时下游 `run_42096616784e` 已进入真实执行链路，worker 输出存在，随后进入 `checker_reviewing`；如果后续未完成，要先区分业务验收返工和链路触发问题，别又把任务内部质量问题扣到自动发现机制头上。
+- 最近验证：
+  - `npm --prefix apps/team-console run test -- --run src/tests/app-canvas-connections.test.tsx`
+  - `npm --prefix apps/team-console run test -- --run src/tests/app-canvas-connections.test.tsx src/tests/app-run-observer.test.tsx src/tests/app-task-branches.test.tsx src/tests/app-run-observer-interactions.test.tsx`
+  - `npm --prefix apps/team-console run test -- --run`
+  - `npm --prefix apps/team-console run build`
+  - `npx tsc --noEmit`
+  - `git diff --check`
+- 继续接手时仍以 `git status --short --branch` 为准，不要沿用旧文档里的 ahead 数字。不要 stage `.pi/skills/anthropics/skill-creator/**` 删除、`.pi/skills/skill-creator/`、`.codex/plans/*`、public/runtime 报告产物、`generate_report.py`、`generate_report_v2.py` 或 `report_template.html`。
+
 ## 2026-05-30 Team Console 架构治理 / 测试拆分收尾快照
 
-- Team Console 架构治理 Step 13 系列已完成到测试拆分收尾，最新提交：`de51f4e refactor(team-console): split canvas state tests`。本地 `main` 当前领先 `origin/main` 104 个提交，是否推送由用户另行确认。
+- Team Console 架构治理 Step 13 系列已完成到测试拆分收尾，测试拆分功能提交曾收口到 `de51f4e refactor(team-console): split canvas state tests`；此后还有 Task 分支 / run observer / 下游发现修复提交。当前 ahead 数字一律以 `git status --short --branch` 为准，别再抄旧的 `ahead 104`。
 - `apps/team-console/src/tests/app.test.tsx` 已从巨型集成测试文件收缩为 8 个 App smoke / root basics / leader chat usability 回归测试。不要为了把它清空继续机械拆分；剩余测试是刻意保留的入口级覆盖。
 - 已拆出的 App 级测试按主题分布在 `apps/team-console/src/tests/app-*.test.*`，包括 task branch、live data、run observer、root dock/trash、branch windowing、atlas drag、connection rendering、task leader/edit、canvas connections/state、mock branches 和 static contracts。后续维护先改对应主题文件，不要把新大块测试塞回 `app.test.tsx`。
 - 本轮是测试架构重构，没有改变 Team Console 用户可见行为、API、运行方式或主 `/playground` 产品 UI；因此没有追加 `docs/change-log.md` 产品流水账。
