@@ -1,18 +1,23 @@
 ---
 name: glm-plan
-description: Creates a repo-local execution plan and a ready-to-send task message for a separate GLM/coding agent. Use when the user says to call glm-plan, asks to hand work to another agent, or wants a detailed plan/message/file for an external agent to implement.
+description: Creates repo-local requirement/step plans and ready-to-send messages for a separate GLM/coding agent. Use when the user says to call glm-plan, asks to hand work to another agent, or wants a detailed plan/message/file for an external agent to implement.
 ---
 
 # glm-plan
 
 ## Purpose
 
-Use this skill to turn a desired next task into two deliverables:
+Use this skill to turn a desired next task into repo-local planning artifacts and a ready-to-send instruction for a lower-capability external coding agent.
 
-1. A detailed implementation plan saved under `.codex/plans/`.
-2. A concise message the user can send directly to the external agent.
+Default deliverables:
+
+1. A repo-local requirement or execution plan saved under `.codex/plans/`.
+2. A step-specific message document under `.codex/plans/` when the task is part of a larger series.
+3. A concise sendable message in the final response that the user can paste directly to the external agent.
 
 This skill is for coding-agent handoff work in this repository. It must not create or edit runtime product skills under `.pi/skills/`.
+
+Assume GLM is a useful executor but weaker at inference, scope control, and architectural judgment. Do not leave it to infer intent, boundaries, hidden prerequisites, or verification standards. If a senior reviewer would hold a fact in their head, write it into the plan or message.
 
 ## GLM Failure Patterns To Guard Against
 
@@ -25,13 +30,19 @@ Recent GLM handoffs in this repository have often been sent back for rework for 
 - Manual-verification handoff: the agent asks the user to run browser console snippets when the task can be verified by the coding agent with available browser/devtools automation.
 - Happy-path-only tests: edge cases such as restore after minimize, stale timeout, failed API call, concurrent click, old data, or hidden/minimized state are not covered.
 - Scope drift disguised as polish: unrelated formatting, refactors, visual redesign, or extra commits appear because the task boundary was not strict enough.
+- Overloaded mega-task failure: a large request is handed to GLM as one vague mission, so it guesses sequencing, mixes unrelated edits, and produces a diff that is hard to review.
 
 When writing a plan, convert any relevant failure pattern into an explicit task, test, or acceptance criterion. Do not rely on the external agent to infer the quality bar. Spell it out.
 
 ## Required Outputs
 
-- Plan file: `.codex/plans/YYYY-MM-DD-<topic>-plan.md`
-- Sendable message: included in the final response in a fenced `text` block
+- Small task plan file: `.codex/plans/YYYY-MM-DD-<topic>-plan.md`
+- Large task requirement/index file: `.codex/plans/YYYY-MM-DD-<topic>-requirements.md` or `.codex/plans/YYYY-MM-DD-<topic>-step-index.md`
+- Per-step plan file for large tasks: `.codex/plans/YYYY-MM-DD-<topic>-step-NN-<slug>-plan.md`
+- Per-step message file for large tasks: `.codex/plans/YYYY-MM-DD-<topic>-step-NN-<slug>-message.txt`
+- Sendable message: included in the final response in a fenced `text` block, usually matching the message file
+
+If the user asks for a large or ongoing initiative, do not hand GLM the whole initiative. Create or update the requirement/index document, then prepare only the next small executable step unless the user explicitly asks for a full batch of messages.
 
 If the user only says "调用 glm-plan" without a topic, infer the topic from the current conversation and latest project state. If inference is risky, ask one short clarification question.
 
@@ -47,12 +58,62 @@ If the user only says "调用 glm-plan" without a topic, infer the topic from th
    - what phases/tasks are already completed
    - current test status if known
    - dirty/untracked files that the external agent must not commit
-3. Write a plan file under `.codex/plans/`.
-4. Write a sendable message that points the external agent to that plan file.
-5. Final response should include:
+3. Classify task size:
+   - Small: one bounded behavior, one subsystem, a small file set, and one verification loop.
+   - Large: multiple subsystems, multiple user-visible behaviors, migration/refactor series, ambiguous sequencing, or likely more than one review/commit checkpoint.
+4. For a small task, write one plan file under `.codex/plans/`.
+5. For a large task:
+   - write or update a requirement/index document with the overall objective, non-goals, phase list, known facts, and done criteria
+   - choose the next smallest safe step
+   - write a step-specific plan file
+   - write a step-specific message file
+6. Write a sendable message that points the external agent to the exact plan/message files.
+7. Final response should include:
+   - the requirement/index file path when created or updated
    - the plan file path
+   - the message file path when created
    - the message to send
    - any local untracked files to warn about
+
+After each external-agent step, Codex should review the diff, rerun verification, decide whether to commit, and only then generate the next step. Do not pre-authorize GLM to continue through multiple steps without review.
+
+## Large Task Slicing Rules
+
+Large work must be sliced into steps that GLM can finish without architectural improvisation. Each step should satisfy most of these constraints:
+
+- One primary behavior, test group, module boundary, or mechanical migration.
+- One expected commit.
+- Usually 1-3 production files or 1-3 test files.
+- A focused diff that a reviewer can audit in one pass.
+- A focused verification command that completes quickly.
+- Clear stop conditions if the baseline differs from the plan.
+- No dependency on GLM remembering previous chat context beyond the files named in the message.
+
+Prefer many boring steps over one clever step. A clever mega-plan is how you get creative damage and then spend the afternoon cleaning it up. If the task cannot be sliced cleanly, write the uncertainty into the requirement/index document and make the next step an investigation-only plan.
+
+Each large-task requirement/index document must include:
+
+- Overall objective and why it matters.
+- Current repo baseline and latest relevant commits.
+- Completed steps and their commit hashes, when known.
+- Remaining backlog in recommended order.
+- Non-goals and forbidden systems/files.
+- Shared verification baseline for the whole series.
+- Per-step review gate: GLM stops after delivery, Codex audits before the next step.
+- Commit policy: whether GLM may commit; default is no stage/no commit unless the user explicitly says otherwise.
+
+Each per-step plan must include:
+
+- Step name and sequence number.
+- The exact subset of the requirement it handles.
+- The exact files it may read and modify.
+- The exact tests or blocks to move/change when the task is mechanical.
+- Import cleanup rules and known symbols to preserve.
+- Focused baseline command to run before editing when useful.
+- Focused verification commands and final verification commands.
+- Delivery report template with enough detail for Codex to review without guessing.
+
+Each per-step message file must be paste-ready and self-contained. It must not say "see the conversation above". It should include baseline, must-read files, exact scope, forbidden scope, execution rules, verification commands, and delivery format.
 
 ## Plan File Contract
 
@@ -62,7 +123,7 @@ The plan must be usable by an agent that has never seen the project. Include:
 - Current baseline
 - Must-read files
 - Absolute scope boundary
-- Explicit "禁止做" list
+- Explicit "Do not do" list
 - Task-by-task execution steps
 - Exact files likely to modify
 - Tests to write before implementation
@@ -79,7 +140,9 @@ For UI or browser-visible work, the plan must also include:
 - The expected before/after observable evidence: bounding rects, computed styles, data attributes, network status, screenshots, canvas pixels, or visible state changes.
 - A browser automation requirement. If browser automation is unavailable, the agent must report it as a blocker or limitation; it must not silently replace it with "please manually verify" unless the user explicitly accepts that.
 
-Prefer 4-8 tasks. Each task should be independently committable.
+Prefer 4-8 tasks for a normal plan. For a GLM step plan, prefer 1-3 tasks and one reviewable commit boundary.
+
+For GLM, "concise" must never mean "underspecified". Use concrete file paths, test names, command lines, route names, selectors, block markers, and commit boundaries. Vague instructions such as "clean this up", "split related tests", or "verify normally" are not acceptable unless immediately followed by exact examples and boundaries.
 
 ## Behavior Evidence Contract
 
@@ -99,6 +162,7 @@ Require the external agent to include concrete evidence in its delivery report:
 - For API behavior: include status codes and payload shape checks from the real route or route test.
 - For warning suppression: quote the exact warning pattern being suppressed and explain why the filter cannot hide unrelated warnings.
 - For bug fixes: name the old failing behavior and the test or browser step that now catches it.
+- For mechanical migration: prove equivalence with block comparison, test counts, or another concrete invariant.
 
 Ban delivery claims such as "should work", "manual verification recommended", "looks fine", or "implemented according to plan" when no runtime evidence is supplied.
 
@@ -111,6 +175,7 @@ Every generated plan and sendable message must explicitly protect against format
 - Plans must require reviewers to inspect `git diff --stat`, `git diff --numstat`, and suspicious large diffs before accepting work.
 - If a small feature produces thousands of changed lines, the external agent must stop and investigate line ending/formatter churn before continuing.
 - Verification must include `git diff --check`; when large UI/test files are touched, also include `git ls-files --eol <touched files>` or equivalent EOL inspection if diff size looks suspicious.
+- For untracked new files, `git diff --check` is not enough. Require an explicit trailing-whitespace and EOL check, for example `Select-String -LiteralPath <new-file> -Pattern '[ \t]+$'` and `git ls-files --eol --others --exclude-standard <new-file>` on Windows.
 - Delivery reports must mention whether any mechanical formatting or EOL normalization occurred. If it occurred unintentionally, it must be reverted before handoff.
 
 ## External Agent Control Rules
@@ -118,7 +183,7 @@ Every generated plan and sendable message must explicitly protect against format
 Always include these rules in the plan and sendable message:
 
 - Strictly follow the plan; do not redesign the system.
-- One task, one commit.
+- Default to no stage and no commit. If the user explicitly authorizes commits, use one task, one commit.
 - Write tests before implementation where behavior changes.
 - Do not broaden scope.
 - Preserve existing line endings and formatting; do not create EOL-only or formatter-only churn.
@@ -164,12 +229,15 @@ For frontend visual work, require at least one test that fails against the previ
 请接手 <repo path> 的 <task name>。
 
 当前基线：
-- 最新 commit: <hash>
-- 已完成：<completed phases>
-- 当前验证：<known verification result>
+- 最新 commit: <hash and subject>
+- 分支状态: <branch/ahead/behind>
+- 已完成: <completed phases or commits>
+- 当前验证: <known verification result>
+- 暂存区: <empty or exact state>
 
 必须先读：
 - AGENTS.md
+- <requirement/index file if any>
 - <plan file>
 - <relevant docs>
 - <relevant source/tests>
@@ -178,28 +246,36 @@ For frontend visual work, require at least one test that fails against the previ
 - <plan file>
 
 本轮只做：
-- <scope bullets>
+- <scope bullet 1>
+- <scope bullet 2>
 
 禁止做：
 - 不做 <explicit non-goals>
 - 不改 <forbidden files/systems>
+- 不创建计划外文件
 - 不做整文件格式化或换行符转换；保持 touched files 的既有 EOL/格式
-- 不提交 .env/.data/runtime 产物/temp 文件/未知 .pi/skills/*/skills-lock.json
+- 不 stage、不 commit，除非本条消息明确授权
+- 不使用 git add -A
+- 不提交 .env/.data/runtime 产物/temp 文件/报告产物/未知 .pi/skills/*/skills-lock.json
 
 执行要求：
-- 每个 Task 先补测试，再写实现
-- 每个 Task 单独 commit
+- 这是第 <N> 步，只处理本步范围，完成后停下交付
+- 行为变更先补测试，再写实现；纯机械迁移必须做等价性检查
 - 遇到计划外问题先停下说明，不要顺手扩范围
 - 如果小改动产生超大 diff，先检查是否为 EOL/formatter churn，修正后再继续
 - UI/交互任务必须在真实入口做浏览器验证，交付 measured evidence；不要把可自动验证的步骤丢给用户手动做
 - 不允许宽泛 suppress console warning；必须修根因或精确限定到已知 warning
 
 最终验证：
-- npm run test:team
+- <focused test command>
+- <combined or full test command>
+- <build command if relevant>
 - npx tsc --noEmit
 - git diff --check
-- git diff --stat / git diff --numstat，确认没有异常大规模格式噪音
-- UI 任务补充浏览器验证记录：URL、操作步骤、selector/ARIA、before/after measured values
+- git diff --stat / git diff --numstat，确认没有异常大规模格式噪声
+- git ls-files --eol <touched files>
+- 对新 untracked 文件补充 trailing whitespace 和 EOL 检查
+- git diff --cached --stat
 
-完成后按计划里的交付报告模板回复。
+完成后按计划里的交付报告模板回复。不要 stage，不要 commit。
 ```
