@@ -800,7 +800,7 @@ export function App() {
 
   const {
     expandedTaskBranches,
-    expandedTaskBranch,
+    focusedTaskBranch,
     setExpandedTaskBranches,
     closeTaskBranch,
     openOrToggleTaskBranch,
@@ -2494,7 +2494,7 @@ export function App() {
                 sourceConnections={sourceConnections}
                 sourceConnectionDraft={sourceConnectionDraft}
                 taskRunsByTaskId={taskRunsByTaskId}
-                focusedTaskNodeId={expandedTaskBranch?.nodeId ?? null}
+                focusedTaskNodeId={focusedTaskBranch?.nodeId ?? null}
                 onSelectCanvasTask={toggleTaskBranch}
                 onMoveCanvasTask={moveTaskNode}
                 minimizedTaskNodeIds={minimizedTaskNodeIds}

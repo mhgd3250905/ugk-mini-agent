@@ -19,6 +19,20 @@ describe("Team Console static contracts", () => {
     expect(appSource).not.toContain("openTaskEditBranch");
   });
 
+  it("keeps the Task branch hook singular value named as focused state", () => {
+    const hookSource = readFileSync("src/app/use-task-branch-stack.ts", "utf8");
+    const appSource = readFileSync("src/app/App.tsx", "utf8");
+
+    expect(hookSource).toContain("focusedTaskBranch: TaskBranchState | null");
+    expect(hookSource).toContain("const focusedTaskBranch = useMemo(");
+    expect(hookSource).toContain("focusedTaskBranch,");
+    expect(hookSource).not.toContain("expandedTaskBranch: TaskBranchState | null");
+    expect(hookSource).not.toMatch(/\bsetExpandedTaskBranch\b/);
+    expect(hookSource).not.toContain("type TaskBranchUpdater");
+    expect(appSource).toContain("focusedTaskNodeId={focusedTaskBranch?.nodeId ?? null}");
+    expect(appSource).not.toContain("focusedTaskNodeId={expandedTaskBranch?.nodeId ?? null}");
+  });
+
   it("keeps Task root drag subtree sync on the multi-branch panel path", () => {
     const mapSource = readFileSync("src/graph/ExecutionMap.tsx", "utf8");
 

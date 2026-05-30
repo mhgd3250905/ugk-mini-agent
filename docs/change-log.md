@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-30 — Team Console Task 分支 focused 语义收口
+
+- **主题**: 将 Task 分支栈里剩余的单数 `expandedTaskBranch` 语义改名为 `focusedTaskBranch`，避免后续代码继续把“最后一个展开分支”误当成全局唯一 Task 分支状态。
+- **变更内容**:
+  - `useTaskBranchStack` 继续保留 `expandedTaskBranches` 作为唯一多分支状态模型，单数派生值改名为 `focusedTaskBranch`，语义仍是最后一个展开分支。
+  - 删除已经没有外部调用的 `setExpandedTaskBranch` 和 `TaskBranchUpdater`，减少重新引入单分支写入口的机会。
+  - 静态契约测试锁定 hook / App 入口，禁止旧单数 hook API 和旧 `focusedTaskNodeId={expandedTaskBranch?.nodeId ?? null}` 回归。
+- **影响范围**: `apps/team-console/src/app/use-task-branch-stack.ts`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/tests/app-static-contracts.test.ts`。
+- **验证**: focused tests、Team Console 全量 tests、build、顶层 `tsc` 和 `git diff --check` 均通过。
+- **对应入口**: Team Console Execution Atlas 的 Task branch state hook 与 Task 根卡片 focused 状态。
+
 ## 2026-05-30 — Team Console ExecutionMap Task 分支单数 props 移除
 
 - **主题**: 移除 `ExecutionMap` 中遗留的 Task 分支单数 props，避免测试或后续代码继续从旧 `taskBranchPanel` / `taskChildBranchPanel` 路径绕回单分支假设。
