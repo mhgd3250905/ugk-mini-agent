@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-30 — Team Console Task 分支单数 fallback 移除
+
+- **主题**: 移除 Team Console `App.tsx` 中遗留的单 Task 分支 fallback，避免 Task 菜单、运行观察和文件详情继续分裂成单数 / 多分支两套状态路径。
+- **变更内容**:
+  - 删除 `expandedTaskBranchPanel` 及仅服务该 fallback 的编辑、运行观察、归档、运行和停止 helper，Task 操作菜单统一走 `taskBranchPanels={taskBranchPanelItems}`。
+  - `ExecutionMap` 的 Task 根节点拖动同步开关改为识别任意 Task branch tree，避免移除单数 `taskBranchPanel` 后，已有位置覆盖的 run observer 不再跟随根节点移动。
+  - 静态契约测试锁定 `App.tsx` 不能重新接回单数 fallback，并锁定 Task 根拖动同步不能再只依赖旧 `taskBranchPanel` 单数 prop。
+- **影响范围**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/tests/app-static-contracts.test.ts`。
+- **验证**: focused tests 覆盖静态契约、多 Task 分支、run observer、observer 拖动交互；全量测试和 build 见本轮提交记录。
+- **对应入口**: Team Console Execution Atlas 的 Task 操作菜单与 run observer，固定入口 `http://127.0.0.1:5174/`。
+
 ## 2026-05-30 — Team Console 运行观察多分支与文件详情修复
 
 - **主题**: 修复 Team Task 串联运行后，多个 Task 运行观察面板同时展开时，上游面板无过程数据、Accepted Result 文件详情一直停在“正在读取文件”的问题。

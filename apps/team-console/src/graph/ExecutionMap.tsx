@@ -836,6 +836,7 @@ export function ExecutionMap({
   const taskBranchDragRef = useRef<{ nodeId: string; pointerId: number; startClientX: number; startClientY: number; startRect: AtlasRect; hasMoved: boolean; capturedTarget: HTMLDivElement | null; lastDx: number; lastDy: number } | null>(null);
   const taskBranchDragSuppressClickRef = useRef(false);
   const translateTaskSubtreeRef = useRef<(scope: TaskSubtreeScope, dx: number, dy: number, nodeId?: string) => void>(() => {});
+  const hasTaskBranchTree = Boolean(taskBranchPanel || taskBranchPanels?.length);
   const minimizedAgentNodeIdSet = useMemo(() => new Set(minimizedAgentNodeIds), [minimizedAgentNodeIds]);
   const minimizedTaskNodeIdSet = useMemo(() => new Set(minimizedTaskNodeIds), [minimizedTaskNodeIds]);
   const minimizedSourceNodeIdSet = useMemo(() => new Set(minimizedSourceNodeIds), [minimizedSourceNodeIds]);
@@ -1501,7 +1502,7 @@ export function ExecutionMap({
       } else {
         onMoveSourceNode?.(entry.nodeId, nextPosition);
       }
-      if (entry.kind === "task" && taskBranchPanel) {
+      if (entry.kind === "task" && hasTaskBranchTree) {
         const treeDx = dx / scale - (drag.lastTreeDx ?? 0);
         const treeDy = dy / scale - (drag.lastTreeDy ?? 0);
         if (treeDx !== 0 || treeDy !== 0) {
@@ -1510,7 +1511,7 @@ export function ExecutionMap({
         atlasNodeDragRef.current = { ...atlasNodeDragRef.current!, lastTreeDx: dx / scale, lastTreeDy: dy / scale };
       }
     }
-  }, [getDockHitForDrag, isPointerOverTrash, onMoveAgent, onMoveCanvasTask, onMoveSourceNode, rootDropTarget, scheduleDockCollapse, taskBranchPanel, viewport, wakeDock]);
+  }, [getDockHitForDrag, hasTaskBranchTree, isPointerOverTrash, onMoveAgent, onMoveCanvasTask, onMoveSourceNode, rootDropTarget, scheduleDockCollapse, viewport, wakeDock]);
 
   const suppressNextAgentClick = useCallback((nodeId: string) => {
     suppressAgentClickRef.current = nodeId;

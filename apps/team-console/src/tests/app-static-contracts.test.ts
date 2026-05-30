@@ -2,6 +2,28 @@ import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 
 describe("Team Console static contracts", () => {
+  it("keeps App task branches on the multi-branch panel path", () => {
+    const appSource = readFileSync("src/app/App.tsx", "utf8");
+
+    expect(appSource).toContain("taskBranchPanels={taskBranchPanelItems}");
+    expect(appSource).not.toContain("taskBranchPanel={expandedTaskBranchPanel}");
+    expect(appSource).not.toContain("const expandedTaskBranchPanel");
+    expect(appSource).not.toContain("runExpandedTask");
+    expect(appSource).not.toContain("cancelExpandedTaskRun");
+    expect(appSource).not.toContain("archiveExpandedTask");
+    expect(appSource).not.toContain("openTaskRunObserverBranch");
+    expect(appSource).not.toContain("closeTaskRunObserverBranch");
+    expect(appSource).not.toContain("openTaskEditBranch");
+  });
+
+  it("keeps Task root drag subtree sync on the multi-branch panel path", () => {
+    const mapSource = readFileSync("src/graph/ExecutionMap.tsx", "utf8");
+
+    expect(mapSource).toContain("const hasTaskBranchTree = Boolean(taskBranchPanel || taskBranchPanels?.length);");
+    expect(mapSource).toContain('entry.kind === "task" && hasTaskBranchTree');
+    expect(mapSource).not.toContain('entry.kind === "task" && taskBranchPanel');
+  });
+
   it("vite proxy includes the Team Console API surface and embedded playground route", () => {
     const config = readFileSync("vite.config.ts", "utf8");
     expect(config).toContain('"/v1"');

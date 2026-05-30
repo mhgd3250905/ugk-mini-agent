@@ -802,7 +802,6 @@ export function App() {
     expandedTaskBranches,
     expandedTaskBranch,
     setExpandedTaskBranches,
-    setExpandedTaskBranch,
     closeTaskBranch,
     openOrToggleTaskBranch,
     pruneTaskBranches,
@@ -883,14 +882,6 @@ export function App() {
     ? agentNodes.find((node) => node.nodeId === expandedAgentBranch.nodeId) ?? null
     : null;
   const expandedAgent = expandedAgentNode ? agentsById.get(expandedAgentNode.agentId) ?? null : null;
-  const expandedTaskNode = expandedTaskBranch
-    ? taskNodes.find((node) => node.nodeId === expandedTaskBranch.nodeId) ?? null
-    : null;
-  const expandedTask = expandedTaskNode ? tasksById.get(expandedTaskNode.taskId) ?? null : null;
-  const expandedTaskRuns = expandedTask ? taskRunsByTaskId[expandedTask.taskId] ?? [] : [];
-  const latestExpandedTaskRun = selectLatestRun(expandedTaskRuns);
-  const activeExpandedTaskRun = expandedTaskRuns.find((taskRun) => isActiveRun(taskRun.status)) ?? null;
-  const expandedTaskRunSaving = expandedTask ? Boolean(taskRunSavingByTaskId[expandedTask.taskId]) : false;
   const runObserverTargets = useMemo(() => expandedTaskBranches.flatMap((branch) => {
     if (branch.detailMode !== "run-observer" || !branch.observedRunId) return [];
     const node = taskNodes.find((candidate) => candidate.nodeId === branch.nodeId) ?? null;
@@ -1133,31 +1124,6 @@ export function App() {
     setExpandedAgentBranch({ nodeId, agentId: leaderAgentId, mode: "task-create" });
   }, []);
 
-  const openTaskEditBranch = useCallback((task: TeamCanvasTask) => {
-    openTaskEditDraft(task);
-    setTaskArchiveConfirmNodeId(null);
-    setExpandedTaskBranch((current) => current ? { ...current, detailMode: "edit" } : current);
-  }, [openTaskEditDraft, setExpandedTaskBranch]);
-
-  const openTaskRunObserverBranch = useCallback((runId: string) => {
-    clearTaskPanelState();
-    setExpandedTaskBranch((current) => current ? {
-      ...current,
-      detailMode: "run-observer",
-      observedRunId: runId,
-      selectedFileKeys: [],
-    } : current);
-  }, [clearTaskPanelState]);
-
-  const closeTaskRunObserverBranch = useCallback(() => {
-    setExpandedTaskBranch((current) => current ? {
-      ...current,
-      detailMode: null,
-      observedRunId: undefined,
-      selectedFileKeys: [],
-    } : current);
-  }, []);
-
   const saveTaskEdit = useCallback(async (taskId: string) => {
     const task = tasksById.get(taskId);
     const draft = taskEditDraftByTaskId[taskId];
@@ -1238,11 +1204,6 @@ export function App() {
     }
   }, [closeTaskBranch, dataSource, refreshLiveTasks]);
 
-  const archiveExpandedTask = useCallback(async () => {
-    if (!expandedTask) return;
-    await archiveTask(expandedTask, expandedTaskBranch?.nodeId);
-  }, [archiveTask, expandedTask, expandedTaskBranch?.nodeId]);
-
   const confirmRootArchive = useCallback(async () => {
     if (!rootArchiveConfirm || rootArchiveSaving) return;
     setRootArchiveSaving(true);
@@ -1317,11 +1278,6 @@ export function App() {
       setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: false }));
     }
   }, [dataSource]);
-
-  const runExpandedTask = useCallback(async () => {
-    if (!expandedTask) return;
-    await runTask(expandedTask);
-  }, [expandedTask, runTask]);
 
   const beginTaskPortConnection = useCallback((taskId: string, port: TeamTaskOutputPort) => {
     setTaskConnectionDraft({
@@ -1551,11 +1507,6 @@ export function App() {
       setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: false }));
     }
   }, [dataSource]);
-
-  const cancelExpandedTaskRun = useCallback(async () => {
-    if (!expandedTask || !activeExpandedTaskRun) return;
-    await cancelTaskRun(expandedTask, activeExpandedTaskRun);
-  }, [activeExpandedTaskRun, cancelTaskRun, expandedTask]);
 
   useEffect(() => {
     if (runObserverTargets.length === 0) return;
@@ -2021,153 +1972,6 @@ export function App() {
       ),
     }];
   });
-  const expandedTaskDetailMode = expandedTaskBranch?.detailMode ?? null;
-  const expandedTaskRunButtonLabel = expandedTaskRunSaving
-    ? "启动中..."
-    : activeExpandedTaskRun
-      ? "运行中"
-      : latestExpandedTaskRun
-        ? "重新运行"
-        : "运行";
-  const latestExpandedTaskRunSummaryLabel = latestExpandedTaskRun && isActiveRun(latestExpandedTaskRun.status)
-    ? "运行中"
-    : "最近运行";
-  const latestExpandedTaskRunIsObserved = Boolean(
-    latestExpandedTaskRun
-      && expandedTaskDetailMode === "run-observer"
-      && expandedTaskBranch?.observedRunId === latestExpandedTaskRun.runId,
-  );
-  const expandedTaskBranchPanel = expandedTaskNode && expandedTask ? (
-    <section className="task-leader-branch task-action-branch emap-menu-branch" aria-label={`${expandedTask.title} Task 操作`}>
-      <header className="task-leader-branch-head">
-        <div className="task-leader-branch-title">
-          <span>Task 操作</span>
-          <strong>{expandedTask.title}</strong>
-          <code>{expandedTask.taskId}</code>
-        </div>
-        <button
-          type="button"
-          className="task-leader-branch-collapse"
-          onClick={() => closeTaskBranch()}
-          aria-label={`收起 ${expandedTask.title} Task 操作`}
-        >
-          收起
-        </button>
-      </header>
-      <div className="task-action-menu" aria-label={`${expandedTask.title} 操作菜单`}>
-        <button
-          type="button"
-          className="task-action-menu-button"
-          disabled={expandedTaskRunSaving || Boolean(activeExpandedTaskRun) || expandedTask.status !== "ready"}
-          title={expandedTask.status === "ready" ? "启动这个 Task 的 WorkUnit run" : "只有 ready Task 可以运行"}
-          onClick={() => {
-            void runExpandedTask();
-          }}
-        >
-          {expandedTaskRunButtonLabel}
-        </button>
-        {activeExpandedTaskRun && (
-          <button
-            type="button"
-            className="task-action-menu-button"
-            disabled={expandedTaskRunSaving}
-            onClick={() => {
-              void cancelExpandedTaskRun();
-            }}
-          >
-            停止
-          </button>
-        )}
-        {latestExpandedTaskRun && (
-          <button
-            type="button"
-            className="task-run-summary"
-            aria-label={`${expandedTask.title} ${latestExpandedTaskRunSummaryLabel} ${RUN_STATUS_LABELS[latestExpandedTaskRun.status]} 阶段 ${taskRunPhase(latestExpandedTaskRun, expandedTask.taskId)}`}
-            onClick={() => (
-              latestExpandedTaskRunIsObserved
-                ? closeTaskRunObserverBranch()
-                : openTaskRunObserverBranch(latestExpandedTaskRun.runId)
-            )}
-          >
-            <span className="task-run-summary-kicker">{latestExpandedTaskRunSummaryLabel}</span>
-            <span className="task-run-summary-head">
-              <strong>{RUN_STATUS_LABELS[latestExpandedTaskRun.status]}</strong>
-              <em>{latestExpandedTaskRunIsObserved ? "收起输出" : "查看输出"}</em>
-            </span>
-            <span className="task-run-summary-metrics">
-              <span><b>阶段</b><strong>{taskRunPhase(latestExpandedTaskRun, expandedTask.taskId)}</strong></span>
-              <span><b>耗时</b><strong>{taskRunElapsed(latestExpandedTaskRun)}</strong></span>
-              <span><b>Attempts</b><strong>{taskRunAttempts(latestExpandedTaskRun, expandedTask.taskId)}</strong></span>
-            </span>
-            <span className="task-run-summary-message">{taskRunMessage(latestExpandedTaskRun, expandedTask.taskId)}</span>
-            <code>{latestExpandedTaskRun.runId}</code>
-          </button>
-        )}
-        <button
-          type="button"
-          className="task-action-menu-button"
-          onClick={() => {
-            if (expandedTaskDetailMode === "edit") {
-              setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current);
-            } else {
-              openTaskEditBranch(expandedTask);
-            }
-          }}
-        >
-          编辑
-        </button>
-        <button
-          type="button"
-          className="task-action-menu-button"
-          onClick={() => {
-            if (expandedTaskDetailMode === "leader-chat") {
-              setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current);
-            } else {
-              setTaskArchiveConfirmNodeId(null);
-              clearTaskLeaderCopy(expandedTask.taskId);
-              setExpandedTaskBranch((current) => current ? { ...current, detailMode: "leader-chat" } : current);
-            }
-          }}
-        >
-          对话 Leader
-        </button>
-        {expandedTaskBranch && taskArchiveConfirmNodeId === expandedTaskBranch.nodeId ? (
-          <div className="task-delete-confirm" role="group" aria-label={`${expandedTask.title} 删除确认`}>
-            <p>删除会调用 archive 软归档，不会启动 Task run，也不会把 Task 定义写入 localStorage。</p>
-            <div className="task-delete-actions">
-              <button
-                type="button"
-                className="task-action-menu-button"
-                disabled={Boolean(taskArchiveSavingNodeId)}
-                onClick={() => setTaskArchiveConfirmNodeId(null)}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="task-action-menu-button danger"
-                disabled={Boolean(taskArchiveSavingNodeId)}
-                onClick={() => {
-                  void archiveExpandedTask();
-                }}
-              >
-                {taskArchiveSavingNodeId === expandedTaskBranch.nodeId ? "删除中..." : "确认删除"}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            type="button"
-            className="task-action-menu-button danger"
-            disabled={Boolean(taskArchiveSavingNodeId)}
-            onClick={() => setTaskArchiveConfirmNodeId(expandedTaskBranch?.nodeId ?? expandedTask.taskId)}
-          >
-            删除
-          </button>
-        )}
-      </div>
-    </section>
-  ) : null;
   const expandedTaskChildBranchPanel = null;
 
   const taskChildBranchPanels = useMemo(() => {
@@ -2692,7 +2496,7 @@ export function App() {
                 sourceConnections={sourceConnections}
                 sourceConnectionDraft={sourceConnectionDraft}
                 taskRunsByTaskId={taskRunsByTaskId}
-                focusedTaskNodeId={expandedTaskNode?.nodeId ?? null}
+                focusedTaskNodeId={expandedTaskBranch?.nodeId ?? null}
                 onSelectCanvasTask={toggleTaskBranch}
                 onMoveCanvasTask={moveTaskNode}
                 minimizedTaskNodeIds={minimizedTaskNodeIds}
@@ -2706,7 +2510,6 @@ export function App() {
                 onSourceTextChange={updateTextSourceNode}
                 onTaskOutputPortSelect={beginTaskPortConnection}
                 onTaskInputPortSelect={completeTaskPortConnection}
-                taskBranchPanel={expandedTaskBranchPanel}
                 taskBranchPanels={taskBranchPanelItems}
                 taskChildBranchPanel={expandedTaskChildBranchPanel}
                 taskChildBranchInteractive={false}
