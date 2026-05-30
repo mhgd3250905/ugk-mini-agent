@@ -1,6 +1,6 @@
 # 当前交接快照
 
-更新时间：`2026-05-29`
+更新时间：`2026-05-30`
 
 这份文档给新接手 `ugk-pi / UGK CLAW` 的 coding agent 看。它只记录当前稳定事实和接手入口；历史流水账看 `docs/change-log.md`。不要靠聊天记录拼现状，聊天上下文太肥时最容易把旧计划当新任务，挺蠢，也挺危险。
 
@@ -28,6 +28,15 @@
 - 本地工作区在打 tag / 推送后已清理未跟踪运行产物；新会话仍必须先执行 `git status --short --branch`
 
 注意：远端 Git 已更新不等于生产服务器已部署。服务器更新仍要按 `docs/server-ops.md` 的增量流程执行，不能把 push 当上线。
+
+## 2026-05-30 Team Console 架构治理 / 测试拆分收尾快照
+
+- Team Console 架构治理 Step 13 系列已完成到测试拆分收尾，最新提交：`de51f4e refactor(team-console): split canvas state tests`。本地 `main` 当前领先 `origin/main` 104 个提交，是否推送由用户另行确认。
+- `apps/team-console/src/tests/app.test.tsx` 已从巨型集成测试文件收缩为 8 个 App smoke / root basics / leader chat usability 回归测试。不要为了把它清空继续机械拆分；剩余测试是刻意保留的入口级覆盖。
+- 已拆出的 App 级测试按主题分布在 `apps/team-console/src/tests/app-*.test.*`，包括 task branch、live data、run observer、root dock/trash、branch windowing、atlas drag、connection rendering、task leader/edit、canvas connections/state、mock branches 和 static contracts。后续维护先改对应主题文件，不要把新大块测试塞回 `app.test.tsx`。
+- 本轮是测试架构重构，没有改变 Team Console 用户可见行为、API、运行方式或主 `/playground` 产品 UI；因此没有追加 `docs/change-log.md` 产品流水账。
+- 最新完整验证已跑：`npm --prefix apps/team-console run test -- --run`（24 files / 478 passed）、`npm --prefix apps/team-console run build`、`npx tsc --noEmit`、`git diff --check` 均通过。
+- 继续接手时仍不要 stage `.pi/skills/anthropics/skill-creator/**` 删除、`.pi/skills/skill-creator/`、`.codex/plans/*`、public/runtime 报告产物、`generate_report.py`、`generate_report_v2.py` 或 `report_template.html`。
 
 ## 2026-05-28 Chat / Conn / Team 共享 Python runtime deps 快照
 
