@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-05-30 — Team Console 运行观察多分支与文件详情修复
+
+- **主题**: 修复 Team Task 串联运行后，多个 Task 运行观察面板同时展开时，上游面板无过程数据、Accepted Result 文件详情一直停在“正在读取文件”的问题。
+- **变更内容**:
+  - 运行观察轮询从单个当前 Task 分支改为覆盖所有已展开的 `run-observer` 分支，避免下游 Task 激活后把上游观察面板晾成空壳。
+  - 观察目标依赖改为稳定签名，防止刷新 run 状态触发 effect 自我清理，导致 attempt 文件内容请求返回后被丢弃。
+  - 回归测试覆盖多个观察分支同时展开、各自过程数据加载，以及延迟返回的 Accepted Result 文件内容能正常渲染。
+- **影响范围**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/tests/app-run-observer.test.tsx`。
+- **验证**: `npm --prefix apps/team-console run test -- --run src/tests/app-run-observer.test.tsx`；重启 `ugk-pi-team-console` 后在 `http://127.0.0.1:5174/` 验证 `task_aeb07a91d49a` 的过程与 Accepted Result 文件详情均能显示。
+- **对应入口**: Team Console Execution Atlas 的 Task run observer，固定入口 `http://127.0.0.1:5174/`。
+
 ## 2026-05-29 — Team Console 根卡片收纳按钮与 action rail 移除
 
 - **主题**: 移除 Agent / Task / Source 根卡片内的“收”按钮和右侧纵向 action rail，减少卡片右侧割裂感。

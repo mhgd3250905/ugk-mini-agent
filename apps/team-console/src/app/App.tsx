@@ -891,10 +891,18 @@ export function App() {
   const latestExpandedTaskRun = selectLatestRun(expandedTaskRuns);
   const activeExpandedTaskRun = expandedTaskRuns.find((taskRun) => isActiveRun(taskRun.status)) ?? null;
   const expandedTaskRunSaving = expandedTask ? Boolean(taskRunSavingByTaskId[expandedTask.taskId]) : false;
-  const observedTaskRunId = expandedTaskBranch?.detailMode === "run-observer" ? expandedTaskBranch.observedRunId ?? null : null;
-  const observedTaskRun = observedTaskRunId
-    ? expandedTaskRuns.find((taskRun) => taskRun.runId === observedTaskRunId) ?? null
-    : null;
+  const runObserverTargets = useMemo(() => expandedTaskBranches.flatMap((branch) => {
+    if (branch.detailMode !== "run-observer" || !branch.observedRunId) return [];
+    const node = taskNodes.find((candidate) => candidate.nodeId === branch.nodeId) ?? null;
+    const task = node ? tasksById.get(node.taskId) ?? null : null;
+    if (!task) return [];
+    const taskRun = (taskRunsByTaskId[task.taskId] ?? []).find((run) => run.runId === branch.observedRunId) ?? null;
+    if (!taskRun) return [];
+    return [{ taskId: task.taskId, runId: taskRun.runId, status: taskRun.status }];
+  }), [expandedTaskBranches, taskNodes, taskRunsByTaskId, tasksById]);
+  const runObserverTargetSignature = useMemo(() => runObserverTargets
+    .map((target) => `${target.taskId}\u0000${target.runId}\u0000${target.status}`)
+    .join("\u0001"), [runObserverTargets]);
 
   const selectTask = useCallback((taskId: string) => {
     setSelectedTaskId((current) => current === taskId ? null : taskId);
@@ -1550,15 +1558,14 @@ export function App() {
   }, [activeExpandedTaskRun, cancelTaskRun, expandedTask]);
 
   useEffect(() => {
-    const taskId = expandedTask?.taskId;
-    if (!taskId || !observedTaskRunId || expandedTaskBranch?.detailMode !== "run-observer") return;
+    if (runObserverTargets.length === 0) return;
 
     let cancelled = false;
-    const runId = observedTaskRunId;
-    const observedTaskId = taskId;
     const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
 
-    async function refreshTaskRunObserver() {
+    async function refreshTaskRunObserver(target: typeof runObserverTargets[number]) {
+      const runId = target.runId;
+      const observedTaskId = target.taskId;
       setTaskRunObserverByRunId((current) => ({
         ...current,
         [runId]: {
@@ -1619,7 +1626,7 @@ export function App() {
         }));
       } catch (e) {
         if (cancelled) return;
-        const isActiveObserverPoll = !observedTaskRun || isActiveRun(observedTaskRun.status);
+        const isActiveObserverPoll = isActiveRun(target.status);
         setTaskRunObserverByRunId((current) => ({
           ...current,
           [runId]: {
@@ -1633,8 +1640,12 @@ export function App() {
       }
     }
 
-    const shouldPoll = !observedTaskRun || isActiveRun(observedTaskRun.status);
-    void refreshTaskRunObserver();
+    async function refreshTaskRunObservers() {
+      await Promise.all(runObserverTargets.map((target) => refreshTaskRunObserver(target)));
+    }
+
+    const shouldPoll = runObserverTargets.some((target) => isActiveRun(target.status));
+    void refreshTaskRunObservers();
     if (!shouldPoll) {
       return () => {
         cancelled = true;
@@ -1642,14 +1653,14 @@ export function App() {
     }
 
     const timer = globalThis.setInterval(() => {
-      void refreshTaskRunObserver();
+      void refreshTaskRunObservers();
     }, 2000);
 
     return () => {
       cancelled = true;
       globalThis.clearInterval(timer);
     };
-  }, [dataSource, expandedTask?.taskId, expandedTaskBranch?.detailMode, observedTaskRun?.status, observedTaskRunId]);
+  }, [dataSource, runObserverTargetSignature]);
 
   const canCreateTask = dataSource === "live" && agents.length > 0;
   const canRefreshTasks = dataSource === "live" && !liveTasksRefreshing;
