@@ -864,6 +864,7 @@ export function App() {
     sourceNodes, sourceConnections,
     taskRunsByTaskId, setTaskRunsByTaskId,
     refreshLiveTasks,
+    scheduleLiveTaskDiscoveryRefresh,
     refreshLiveTasksAfterLeavingTaskCreateBranch,
     readAttemptFile,
     setTaskConnections, setTaskDependencies,
@@ -1536,6 +1537,12 @@ export function App() {
         if (cancelled) return;
 
         setTaskRunsByTaskId((current) => mergeTaskRun(current, observedTaskId, freshRun));
+        if (dataSource === "live" && isActiveRun(target.status) && !isActiveRun(freshRun.status)) {
+          void refreshLiveTasks().catch((e) => {
+            if (!cancelled) setError(errorMessage(e));
+          });
+          scheduleLiveTaskDiscoveryRefresh();
+        }
         setTaskRunObserverByRunId((current) => ({
           ...current,
           [runId]: {
@@ -1611,7 +1618,7 @@ export function App() {
       cancelled = true;
       globalThis.clearInterval(timer);
     };
-  }, [dataSource, runObserverTargetSignature]);
+  }, [dataSource, refreshLiveTasks, runObserverTargetSignature, scheduleLiveTaskDiscoveryRefresh, setError]);
 
   const canCreateTask = dataSource === "live" && agents.length > 0;
   const canRefreshTasks = dataSource === "live" && !liveTasksRefreshing;

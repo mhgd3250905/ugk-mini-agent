@@ -12,6 +12,16 @@
 
 ---
 
+## 2026-05-30 — Team Console observer 终态触发下游 run 发现
+
+- **主题**: 修复打开 run observer 时，observer 轮询先把上游 run 写入终态，导致 active-run polling 失去终态转换检测机会、下游自动创建的 run 不会自动出现在前端的问题。
+- **变更内容**:
+  - Task run observer 轮询在发现自己观察的 active run 已进入终态时，也会触发 live Task/run 列表刷新和延迟发现刷新。
+  - 新增回归测试覆盖“上游 observer 消费 terminal transition 后，下游新 run 仍能自动合入 `taskRunsByTaskId` 并显示 running”的竞态。
+- **影响范围**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/tests/app-canvas-connections.test.tsx`。
+- **验证**: focused canvas connection tests 通过；真实 `task_aeb07a91d49a -> task_d725e753ebd8` 链路确认后端下游 run 已创建，observer 过程数据可显示。
+- **对应入口**: Team Console Execution Atlas 的 Task dependency auto-start、Task action menu run summary 和 run observer。
+
 ## 2026-05-30 — Team Console Task 分支 focused 语义收口
 
 - **主题**: 将 Task 分支栈里剩余的单数 `expandedTaskBranch` 语义改名为 `focusedTaskBranch`，避免后续代码继续把“最后一个展开分支”误当成全局唯一 Task 分支状态。

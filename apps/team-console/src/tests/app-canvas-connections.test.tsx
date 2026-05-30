@@ -5,7 +5,7 @@ import { MOCK_AGENTS, resetMockTeamApiState } from "../fixtures/team-fixtures";
 import type { TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamRunState, TeamTaskConnection } from "../api/team-types";
 import { getAtlasNodes, getAtlasStage } from "./app-dom-test-utils";
 import { cloneTaskFixture, makeTypedTaskChainFixtures } from "./team-task-test-fixtures";
-import { makeLiveTaskRunFixture } from "./team-run-test-fixtures";
+import { makeLegacyAttemptFixture, makeLiveTaskRunFixture } from "./team-run-test-fixtures";
 
 describe("App", () => {
   beforeEach(() => {
@@ -611,6 +611,132 @@ describe("App", () => {
       });
       expect(within(branch).getByText("downstream running")).toBeInTheDocument();
       expect(downstreamRunRequestsAfterTerminal).toBeGreaterThanOrEqual(2);
+    });
+
+    it("discovers downstream runs when an open observer consumes the upstream terminal transition", async () => {
+      const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+      const connection: TeamTaskConnection = {
+        schemaVersion: "team/task-connection-1",
+        connectionId: "conn_observer_auto_md",
+        fromTaskId: collectTask.taskId,
+        fromOutputPortId: "draft_md",
+        toTaskId: htmlTask.taskId,
+        toInputPortId: "source_md",
+        type: "md",
+        createdAt: "2026-05-25T00:00:00.000Z",
+        updatedAt: "2026-05-25T00:00:00.000Z",
+      };
+      const upstreamRunning: TeamRunState = {
+        ...makeLiveTaskRunFixture(collectTask, "run_upstream_observer_auto"),
+        status: "running",
+        finishedAt: null,
+        taskStates: {
+          [collectTask.taskId]: {
+            status: "running",
+            attemptCount: 1,
+            activeAttemptId: "attempt_upstream_observer_auto",
+            resultRef: null,
+            errorSummary: null,
+            progress: { phase: "worker_running", message: "running", updatedAt: "2026-05-25T00:00:02.000Z" },
+          },
+        },
+        summary: { totalTasks: 1, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+      };
+      const upstreamCompleted: TeamRunState = {
+        ...makeLiveTaskRunFixture(collectTask, "run_upstream_observer_auto"),
+        status: "completed",
+        finishedAt: "2026-05-25T00:00:10.000Z",
+      };
+      const downstreamRunning: TeamRunState = {
+        ...makeLiveTaskRunFixture(htmlTask, "run_downstream_observer_auto"),
+        source: {
+          type: "canvas-task",
+          taskId: htmlTask.taskId,
+          triggeredBy: {
+            type: "task-connection",
+            connectionId: connection.connectionId,
+            fromTaskId: collectTask.taskId,
+            fromRunId: upstreamCompleted.runId,
+            fromAttemptId: "attempt_upstream_observer_auto",
+          },
+        },
+        status: "running",
+        createdAt: "2026-05-25T00:00:10.250Z",
+        startedAt: "2026-05-25T00:00:10.300Z",
+        finishedAt: null,
+        taskStates: {
+          [htmlTask.taskId]: {
+            status: "running",
+            attemptCount: 1,
+            activeAttemptId: "attempt_downstream_observer_auto",
+            resultRef: null,
+            errorSummary: null,
+            progress: { phase: "worker_running", message: "observer-discovered downstream", updatedAt: "2026-05-25T00:00:11.000Z" },
+          },
+        },
+        summary: { totalTasks: 1, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+      };
+      const upstreamAttempt = {
+        ...makeLegacyAttemptFixture(collectTask),
+        attemptId: "attempt_upstream_observer_auto",
+        status: "succeeded" as const,
+        phase: "succeeded",
+      };
+      let upstreamRunRequests = 0;
+      let observerSawTerminal = false;
+      let downstreamRunRequestsAfterObserver = 0;
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [collectTask, htmlTask] }), { status: 200 });
+        if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [connection] }), { status: 200 });
+        if (url === `/v1/team/tasks/${collectTask.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [observerSawTerminal ? upstreamCompleted : upstreamRunning] }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${htmlTask.taskId}/runs`) {
+          if (!observerSawTerminal) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+          downstreamRunRequestsAfterObserver += 1;
+          return new Response(JSON.stringify({ runs: [downstreamRunning] }), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${upstreamRunning.runId}`) {
+          upstreamRunRequests += 1;
+          if (upstreamRunRequests === 1) return new Response(JSON.stringify(upstreamRunning), { status: 200 });
+          observerSawTerminal = true;
+          return new Response(JSON.stringify(upstreamCompleted), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${upstreamRunning.runId}/tasks/${collectTask.taskId}/attempts`) {
+          return new Response(JSON.stringify({ attempts: [upstreamAttempt] }), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${downstreamRunning.runId}`) {
+          return new Response(JSON.stringify(downstreamRunning), { status: 200 });
+        }
+        if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        return new Response(JSON.stringify([]), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const atlasNodes = getAtlasNodes(container);
+      const collectNode = await within(atlasNodes).findByRole("button", { name: "搜集内容 Task" });
+      await waitFor(() => expect(upstreamRunRequests).toBeGreaterThanOrEqual(1));
+      fireEvent.click(collectNode);
+      const upstreamBranch = await screen.findByRole("region", { name: "搜集内容 Task Task 操作" });
+      const upstreamRunId = await within(upstreamBranch).findByText("run_upstream_observer_auto");
+      fireEvent.click(upstreamRunId.closest("button")!);
+
+      await waitFor(() => {
+        const downstreamNode = atlasNodes.querySelector(`[data-task-id="${htmlTask.taskId}"]`);
+        expect(downstreamNode).toHaveClass("status-running");
+      });
+
+      fireEvent.click(atlasNodes.querySelector(`[data-task-id="${htmlTask.taskId}"]`) as HTMLElement);
+      const branch = await screen.findByRole("region", { name: "HTML 制作 Task Task 操作" });
+      expect(within(branch).getByText("run_downstream_observer_auto")).toBeInTheDocument();
+      expect(within(branch).getByText("observer-discovered downstream")).toBeInTheDocument();
+      expect(downstreamRunRequestsAfterObserver).toBeGreaterThanOrEqual(1);
     });
 
     it("blocks mismatched Task port connections before calling the API", async () => {
