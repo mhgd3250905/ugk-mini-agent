@@ -12,6 +12,23 @@
 
 ---
 
+## 2026-05-30 — Team Console 浅色主题与明暗切换
+
+- **主题**: 将 `5174` Team Console 功能界面切到浅色默认主题，并提供明暗主题切换。
+- **变更内容**:
+  - `apps/team-console/src/app/app.css` 的全局 token、顶部栏、fixture bar、segmented filter 和统计 pill 改为浅色表面。
+  - `apps/team-console/src/graph/execution-map.css` 的画布网格、工具栏、根卡片、底部 Dock、Task 操作菜单和分支面板改为浅色层级；`创建 Task` 的 leader 选择菜单同步浅色化。
+  - 顶部栏新增主题切换按钮，使用 `ugk-team-console:theme:v1` 保存 `light` / `dark`，默认浅色，深色保留原有暗色画布口径。
+  - 保留 Task 运行中暖橘红、Task 默认琥珀、Agent / Source 青绿色等状态色，用浅色背景下的边框和 tint 承载状态；Agent 运行中状态 tag 在浅色主题下使用更深的暖红文字提升可读性。
+  - 对照原始深色 CSS 补齐深色主题覆盖，恢复 Task 卡片内部 agent grid / row、状态 pill、ID chip、Dock item、分支头、运行观察面板、端口 chip 和 Source 输入框的暗色表面。
+  - Task 操作菜单里的运行状态摘要、展开后的 run observer 顶部栏、Task 编辑面板和表单控件改为浅色默认表面，并为深色主题保留原暗色覆盖。
+  - Run observer 内容区继续清理浅色主题暗色残留：process 滚动条、file detail 滚动条、process/file detail 面板、pre/code 输出块、Markdown 正文、artifact preview 和 iframe 占位背景均改为浅色默认，并保留深色覆盖。
+  - Task 依赖连接按钮和节点间连线起点半圆 socket 改为浅色默认表面，并在深色主题下恢复原暗色填充。
+  - 增加静态 CSS 契约测试，锁定浅色 token、浅色 atlas canvas、leader picker 浅色表面、主题切换入口、Task 子面板浅色表面、连接控件浅色表面和深色卡片内部回归覆盖。
+- **影响范围**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/app.css`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app-static-contracts.test.ts`、`docs/team-runtime.md`。
+- **验证**: `app-static-contracts` 和 `execution-map-ui` focused tests 通过；`npm run team-console:build` 通过；浏览器截图检查主画布、Task 操作菜单、`创建 Task` leader picker 和深色切换均可用。完整 `team-console:test` 当前仍受既有 `window.localStorage.clear is not a function` 测试环境问题阻断，未进入相关 UI 断言。
+- **对应入口**: Team Console 固定入口 `http://127.0.0.1:5174/`。
+
 ## 2026-05-29 — Team Console 根卡片收纳按钮与 action rail 移除
 
 - **主题**: 移除 Agent / Task / Source 根卡片内的“收”按钮和右侧纵向 action rail，减少卡片右侧割裂感。

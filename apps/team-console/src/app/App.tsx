@@ -16,6 +16,7 @@ const LIVE_AGENT_LAYOUT_STORAGE_KEY = "ugk-team-console:live-agent-layout:v1";
 const LIVE_TASK_LAYOUT_STORAGE_KEY = "ugk-team-console:live-task-layout:v1";
 const LIVE_SOURCE_LAYOUT_STORAGE_KEY = "ugk-team-console:live-source-layout:v1";
 const CANVAS_UI_STATE_STORAGE_KEY = "ugk-team-console:canvas-ui-state:v1";
+const TEAM_CONSOLE_THEME_STORAGE_KEY = "ugk-team-console:theme:v1";
 const TASK_RUN_PROCESS_LABELS: Record<TeamAttemptRoleProcessRole, string> = {
   worker: "Worker 过程",
   checker: "Checker 过程",
@@ -26,6 +27,7 @@ const PROCESS_ASSISTANT_TEXT_MAX_LINES = 5;
 const PROCESS_ASSISTANT_TEXT_MAX_LINE_CHARS = 200;
 
 type AgentBranchMode = "chat" | "task-create";
+type TeamConsoleTheme = "light" | "dark";
 
 type AgentBranchState = {
   nodeId: string;
@@ -741,7 +743,25 @@ function makeAgentNode(agentId: string, index: number): AtlasAgentNode {
   };
 }
 
+function readStoredTheme(): TeamConsoleTheme {
+  try {
+    const value = globalThis.localStorage?.getItem(TEAM_CONSOLE_THEME_STORAGE_KEY);
+    return value === "dark" ? "dark" : "light";
+  } catch {
+    return "light";
+  }
+}
+
+function storeTheme(theme: TeamConsoleTheme): void {
+  try {
+    globalThis.localStorage?.setItem(TEAM_CONSOLE_THEME_STORAGE_KEY, theme);
+  } catch {
+    // Theme persistence is best-effort; the UI state still updates in memory.
+  }
+}
+
 export function App() {
+  const [theme, setTheme] = useState<TeamConsoleTheme>(() => readStoredTheme());
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [agentNodes, setAgentNodes] = useState<AtlasAgentNode[]>([]);
   const [liveAgentNodesHydrated, setLiveAgentNodesHydrated] = useState(false);
@@ -792,6 +812,10 @@ export function App() {
     setTaskArchiveConfirmNodeId(null);
     setTaskArchiveSavingNodeId(null);
   }, [clearTaskEditState]);
+
+  useEffect(() => {
+    storeTheme(theme);
+  }, [theme]);
 
   const closeTaskPickersBeforeTaskBranch = useCallback(() => {
     setAgentPickerOpen(false);
@@ -2523,13 +2547,22 @@ export function App() {
   }, [agents, agentsById, archiveTask, cancelTaskRun, clearTaskEditWarning, copyTaskLeaderContext, expandedTaskBranches, openTaskEditDraft, registerTaskLeaderManualCopyRef, runTask, saveTaskEdit, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskEditDraft]);
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-theme={theme}>
       <header className="app-header">
         <div className="app-header-left">
           <h1 className="app-title">团队控制台</h1>
           <span className="app-subtitle">执行地图预览</span>
         </div>
         <div className="app-header-right">
+          <button
+            type="button"
+            className="theme-toggle-btn"
+            aria-label="切换主题"
+            aria-pressed={theme === "dark"}
+            onClick={() => setTheme((current) => current === "light" ? "dark" : "light")}
+          >
+            {theme === "light" ? "浅色" : "深色"}
+          </button>
           <select
             id="team-console-data-source"
             name="teamConsoleDataSource"
