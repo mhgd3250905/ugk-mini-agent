@@ -1,8 +1,213 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
-import { makeDiscoveryForEachPlan, makeDiscoveryForEachRun, makeSequentialPlan, makeSequentialRun, MOCK_AGENTS, mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
+import { CLEAN_AGENT_WORKSPACE_ID, useTeamConsoleLiveData } from "../app/use-team-console-live-data";
+import type { TeamAttemptMetadata, TeamCanvasTask, TeamRunState } from "../api/team-types";
+import {
+  makeDiscoveryForEachPlan,
+  makeDiscoveryForEachRun,
+  makeSequentialPlan,
+  makeSequentialRun,
+  MOCK_AGENTS,
+  mockDiscoveryGeneratedTasks,
+  mockDiscoveryRootTask,
+  mockTeamTasks,
+  resetMockTeamApiState,
+} from "../fixtures/team-fixtures";
 import { getAtlasNodes, firePointer, deferred } from "./app-dom-test-utils";
+
+function noop() {}
+
+function canvasTaskRun(taskId: string, runId: string, status: TeamRunState["status"] = "completed"): TeamRunState {
+  return {
+    runId,
+    planId: `canvas_task_${taskId}`,
+    source: { type: "canvas-task", taskId },
+    teamUnitId: `canvas_task_unit_${taskId}`,
+    status,
+    createdAt: "2026-05-31T00:00:00.000Z",
+    startedAt: status === "queued" ? null : "2026-05-31T00:00:01.000Z",
+    finishedAt: status === "running" || status === "queued" ? null : "2026-05-31T00:00:02.000Z",
+    currentTaskId: status === "running" ? taskId : null,
+    taskStates: {
+      [taskId]: {
+        status: status === "running" || status === "queued" ? "running" : "succeeded",
+        attemptCount: status === "queued" ? 0 : 1,
+        activeAttemptId: status === "queued" ? null : `attempt_${runId}`,
+        resultRef: status === "completed" ? `tasks/${taskId}/attempts/attempt_${runId}/accepted-result.md` : null,
+        errorSummary: null,
+        progress: {
+          phase: status,
+          message: status === "running" ? "执行中" : "",
+          updatedAt: "2026-05-31T00:00:02.000Z",
+        },
+      },
+    },
+    summary: {
+      totalTasks: 1,
+      succeededTasks: status === "completed" ? 1 : 0,
+      failedTasks: 0,
+      cancelledTasks: 0,
+      skippedTasks: 0,
+    },
+  };
+}
+
+function generatedAttempt(taskId = "task_generated_vultr", attemptId = "attempt_generated_vultr"): TeamAttemptMetadata {
+  return {
+    attemptId,
+    taskId,
+    status: "succeeded",
+    phase: "succeeded",
+    createdAt: "2026-05-31T00:00:01.000Z",
+    updatedAt: "2026-05-31T00:00:02.000Z",
+    finishedAt: "2026-05-31T00:00:02.000Z",
+    worker: [{
+      outputIndex: 1,
+      outputRef: `tasks/${taskId}/attempts/${attemptId}/worker-output-001.md`,
+      runtimeContext: {
+        requestedProfileId: "search",
+        resolvedProfileId: "search",
+        fallbackUsed: false,
+        browserId: null,
+        browserScope: `team-task:${taskId}:worker`,
+      },
+    }],
+    checker: [{
+      verdict: "pass",
+      reason: "accepted",
+      resultContentRef: null,
+      revisionIndex: 1,
+      recordRef: `tasks/${taskId}/attempts/${attemptId}/checker-verdict-001.json`,
+      feedbackRef: null,
+      runtimeContext: {
+        requestedProfileId: "reviewer",
+        resolvedProfileId: "reviewer",
+        fallbackUsed: false,
+        browserId: null,
+        browserScope: `team-task:${taskId}:checker`,
+      },
+    }],
+    watcher: null,
+    resultRef: `tasks/${taskId}/attempts/${attemptId}/accepted-result.md`,
+    errorSummary: null,
+    files: ["worker-output-001.md", "checker-verdict-001.json", "accepted-result.md"],
+    roleProcesses: {
+      worker: {
+        role: "worker",
+        profileId: "search",
+        status: "succeeded",
+        startedAt: "2026-05-31T00:00:01.000Z",
+        updatedAt: "2026-05-31T00:00:02.000Z",
+        finishedAt: "2026-05-31T00:00:02.000Z",
+        assistantText: { content: "generated Worker process loaded", updatedAt: "2026-05-31T00:00:02.000Z" },
+        process: { title: "Worker 过程", narration: ["done"], currentAction: "生成输出", kind: "ok", isComplete: true, entries: [] },
+      },
+      checker: {
+        role: "checker",
+        profileId: "reviewer",
+        status: "succeeded",
+        startedAt: "2026-05-31T00:00:01.000Z",
+        updatedAt: "2026-05-31T00:00:02.000Z",
+        finishedAt: "2026-05-31T00:00:02.000Z",
+        assistantText: { content: "generated Checker process loaded", updatedAt: "2026-05-31T00:00:02.000Z" },
+        process: { title: "Checker 过程", narration: ["accepted"], currentAction: "验收输出", kind: "ok", isComplete: true, entries: [] },
+      },
+    },
+  };
+}
+
+function LiveDataProbe() {
+  const liveData = useTeamConsoleLiveData({
+    onApplyLiveTasks: noop,
+    onApplyLiveSources: noop,
+    onCloseBranches: noop,
+    onResetContextUi: noop,
+    selectedTaskId: null,
+  });
+  return (
+    <pre data-testid="live-data-probe">
+      {JSON.stringify({
+        tasks: liveData.tasks.map((task) => task.taskId),
+        generated: Object.fromEntries(Object.entries(liveData.generatedTasksByDiscoveryTaskId).map(([taskId, tasks]) => [
+          taskId,
+          tasks.map((task) => task.taskId),
+        ])),
+        runKeys: Object.keys(liveData.taskRunsByTaskId).sort(),
+        summaries: liveData.discoverySummariesByTaskId,
+        diagnostics: (liveData as {
+          discoveryDispatchDiagnosticsByTaskId?: Record<string, Array<{ itemId: string; error: string | null }>>;
+        }).discoveryDispatchDiagnosticsByTaskId ?? {},
+      })}
+    </pre>
+  );
+}
+
+function readLiveDataProbe(): {
+  tasks: string[];
+  generated: Record<string, string[]>;
+  runKeys: string[];
+  summaries: Record<string, {
+    generatedTaskCount: number;
+    activeGeneratedTaskCount: number;
+    staleGeneratedTaskCount: number;
+    runningGeneratedRunCount: number;
+    failedDispatchCount?: number;
+  }>;
+  diagnostics: Record<string, Array<{ itemId: string; error: string | null }>>;
+} {
+  return JSON.parse(screen.getByTestId("live-data-probe").textContent || "{}");
+}
+
+async function openMockDiscoverySubcanvas(container: HTMLElement): Promise<{
+  atlas: HTMLElement;
+  panel: HTMLElement;
+}> {
+  const atlas = getAtlasNodes(container);
+  const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
+  fireEvent.click(discoveryNode);
+  fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+  const panel = await waitFor(() => {
+    const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+    expect(node).toBeTruthy();
+    return node!;
+  });
+  return { atlas, panel };
+}
+
+function getGeneratedCard(panel: HTMLElement, taskId: string): HTMLElement {
+  const card = panel.querySelector(`[data-generated-task-id="${taskId}"]`) as HTMLElement | null;
+  expect(card).toBeTruthy();
+  return card!;
+}
+
+function resetGeneratedSnapshot(task: TeamCanvasTask): TeamCanvasTask {
+  const latestManagedWorkUnit = task.generatedSource?.latestManagedWorkUnit;
+  if (!task.generatedSource || !latestManagedWorkUnit) {
+    throw new Error(`Missing generated managed snapshot for ${task.taskId}`);
+  }
+  return {
+    ...task,
+    title: latestManagedWorkUnit.title,
+    workUnit: { ...latestManagedWorkUnit },
+    generatedSource: {
+      ...task.generatedSource,
+      workUnitMode: "managed",
+      latestManagedWorkUnit: { ...latestManagedWorkUnit },
+    },
+    updatedAt: "2026-05-31T00:12:00.000Z",
+  };
+}
+
+function discoveryRootAttempt(discoveryDispatch?: TeamAttemptMetadata["discoveryDispatch"]): TeamAttemptMetadata {
+  const attempt = generatedAttempt(mockDiscoveryRootTask.taskId, "attempt_discovery_root");
+  return {
+    ...attempt,
+    createdAt: "2026-05-31T00:05:00.000Z",
+    updatedAt: "2026-05-31T00:06:00.000Z",
+    ...(discoveryDispatch !== undefined ? { discoveryDispatch } : {}),
+  };
+}
 
 describe("App", () => {
   beforeEach(() => {
@@ -16,7 +221,1067 @@ describe("App", () => {
     vi.unstubAllGlobals();
   });
 
+  it("opens the mock Discovery generated catalog from the root Task menu without root child cards", async () => {
+    const { container } = render(<App />);
+    const atlas = getAtlasNodes(container);
+    const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
+
+    fireEvent.click(discoveryNode);
+    const toggle = await screen.findByRole("button", { name: "Discovery 子画布" });
+    fireEvent.click(toggle);
+
+    const panel = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+    expect(panel).toBeTruthy();
+    expect(panel!.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+
+    const vultrCard = panel!.querySelector('[data-generated-task-id="task_generated_vultr"]') as HTMLElement | null;
+    const hetznerCard = panel!.querySelector('[data-generated-task-id="task_generated_hetzner"]') as HTMLElement | null;
+    expect(vultrCard).toHaveAttribute("data-generated-item-status", "active");
+    expect(vultrCard).toHaveAttribute("data-generated-workunit-mode", "managed");
+    expect(vultrCard).toHaveAttribute("data-generated-run-status", "none");
+    expect(hetznerCard).toHaveAttribute("data-generated-item-status", "stale");
+    expect(hetznerCard).toHaveAttribute("data-generated-workunit-mode", "customized");
+    expect(hetznerCard).toHaveAttribute("data-generated-run-status", "none");
+    expect(within(vultrCard!).getByText("核查 Vultr 公开证据")).toBeInTheDocument();
+    expect(within(hetznerCard!).getByText("核查 Hetzner 公开证据")).toBeInTheDocument();
+    expect(panel!.querySelector('[data-generated-task-id="task_generated_archived_ovh"]')).toBeNull();
+    expect(within(atlas).queryByRole("button", { name: "核查 Vultr 公开证据" })).toBeNull();
+    expect(within(atlas).queryByRole("button", { name: "核查 Hetzner 公开证据" })).toBeNull();
+
+    fireEvent.click(toggle);
+    await waitFor(() => {
+      expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeNull();
+    });
+    expect(screen.getByRole("button", { name: "Discovery 子画布" })).toBeInTheDocument();
+  });
+
+  it("light-edits a mock generated Task inside the Discovery subcanvas without creating a root card", async () => {
+    const { container } = render(<App />);
+    const { atlas, panel } = await openMockDiscoverySubcanvas(container);
+    const vultrCard = getGeneratedCard(panel, "task_generated_vultr");
+    const editButton = vultrCard.querySelector('[data-generated-action="edit"]') as HTMLButtonElement | null;
+    expect(editButton).toBeTruthy();
+
+    fireEvent.click(editButton!);
+
+    const editPanel = await waitFor(() => {
+      const node = container.querySelector('[data-generated-edit-task-id="task_generated_vultr"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    fireEvent.change(within(editPanel).getByLabelText("Task 名称"), {
+      target: { value: "用户改写 Vultr generated" },
+    });
+    fireEvent.click(within(editPanel).getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      const refreshedCard = getGeneratedCard(panel, "task_generated_vultr");
+      expect(within(refreshedCard).getByText("用户改写 Vultr generated")).toBeInTheDocument();
+      expect(refreshedCard).toHaveAttribute("data-generated-workunit-mode", "customized");
+    });
+    expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
+    expect(within(atlas).queryByRole("button", { name: "用户改写 Vultr generated" })).toBeNull();
+  });
+
+  it("resets a mock customized generated Task to its managed snapshot inside the Discovery subcanvas", async () => {
+    const { container } = render(<App />);
+    const { atlas, panel } = await openMockDiscoverySubcanvas(container);
+    const hetznerCard = getGeneratedCard(panel, "task_generated_hetzner");
+    expect(hetznerCard).toHaveAttribute("data-generated-item-status", "stale");
+    expect(hetznerCard).toHaveAttribute("data-generated-workunit-mode", "customized");
+    expect(within(hetznerCard).getByText("hetzner")).toBeInTheDocument();
+    const resetButton = hetznerCard.querySelector('[data-generated-action="reset-workunit"]') as HTMLButtonElement | null;
+    expect(resetButton).toBeTruthy();
+
+    fireEvent.click(resetButton!);
+
+    await waitFor(() => {
+      const refreshedCard = getGeneratedCard(panel, "task_generated_hetzner");
+      expect(within(refreshedCard).getByText("派发器核查 Hetzner 公开证据")).toBeInTheDocument();
+      expect(refreshedCard).toHaveAttribute("data-generated-workunit-mode", "managed");
+      expect(refreshedCard).toHaveAttribute("data-generated-item-status", "stale");
+      expect(within(refreshedCard).getByText("hetzner")).toBeInTheDocument();
+      expect(refreshedCard.querySelector('[data-generated-action="reset-workunit"]')).toBeNull();
+    });
+    expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
+    expect(within(atlas).queryByRole("button", { name: "派发器核查 Hetzner 公开证据" })).toBeNull();
+  });
+
+  it("soft-archives a mock generated Task from the Discovery subcanvas without creating root cards", async () => {
+    const { container } = render(<App />);
+    const { atlas, panel } = await openMockDiscoverySubcanvas(container);
+    const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
+    await waitFor(() => expect(within(discoveryNode).getByText("2 items")).toBeInTheDocument());
+    expect(within(discoveryNode).getByText("1 active")).toBeInTheDocument();
+    expect(within(discoveryNode).getByText("1 stale")).toBeInTheDocument();
+    expect(within(discoveryNode).getByText("1 blocked")).toBeInTheDocument();
+    expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+
+    const vultrCard = getGeneratedCard(panel, "task_generated_vultr");
+    fireEvent.click(vultrCard.querySelector('[data-generated-action="archive"]')!);
+    const confirm = await waitFor(() => {
+      const node = panel.querySelector('[data-generated-archive-confirm-for="task_generated_vultr"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+
+    fireEvent.click(within(confirm).getByRole("button", { name: "确认归档" }));
+
+    await waitFor(() => {
+      expect(panel.querySelector('[data-generated-task-id="task_generated_vultr"]')).toBeNull();
+      expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(1);
+    });
+    expect(getGeneratedCard(panel, "task_generated_hetzner")).toBeTruthy();
+    expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
+    expect(within(discoveryNode).getByText("1 items")).toBeInTheDocument();
+    expect(within(discoveryNode).getByText("0 active")).toBeInTheDocument();
+    expect(within(discoveryNode).getByText("1 stale")).toBeInTheDocument();
+    expect(within(discoveryNode).getByText("1 blocked")).toBeInTheDocument();
+    expect(within(atlas).queryByRole("button", { name: "核查 Vultr 公开证据" })).toBeNull();
+    expect(within(atlas).queryByRole("button", { name: "核查 Hetzner 公开证据" })).toBeNull();
+  });
+
+  it("clears generated archive confirmation when the Discovery subcanvas is closed", async () => {
+    const { container } = render(<App />);
+    const { panel } = await openMockDiscoverySubcanvas(container);
+    const vultrCard = getGeneratedCard(panel, "task_generated_vultr");
+
+    fireEvent.click(vultrCard.querySelector('[data-generated-action="archive"]')!);
+    await waitFor(() => {
+      expect(panel.querySelector('[data-generated-archive-confirm-for="task_generated_vultr"]')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: `收起 ${mockDiscoveryRootTask.title} Discovery 子画布` }));
+
+    await waitFor(() => {
+      expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeNull();
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+    const reopenedPanel = await waitFor(() => {
+      const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+
+    expect(getGeneratedCard(reopenedPanel, "task_generated_vultr")).toBeTruthy();
+    expect(reopenedPanel.querySelector('[data-generated-archive-confirm-for="task_generated_vultr"]')).toBeNull();
+  });
+
+  it("clears generated edit observer and file detail state after archiving that generated child", async () => {
+    const { container } = render(<App />);
+    const { panel } = await openMockDiscoverySubcanvas(container);
+    const vultrCard = getGeneratedCard(panel, "task_generated_vultr");
+
+    fireEvent.click(vultrCard.querySelector('[data-generated-action="edit"]')!);
+    await waitFor(() => {
+      expect(container.querySelector('[data-generated-edit-task-id="task_generated_vultr"]')).toBeTruthy();
+    });
+
+    fireEvent.click(vultrCard.querySelector('[data-generated-action="run"]')!);
+    const observeButton = await waitFor(() => {
+      expect(vultrCard).toHaveAttribute("data-generated-run-status", "completed");
+      const button = vultrCard.querySelector('[data-generated-action="observe-run"]') as HTMLButtonElement | null;
+      expect(button).toBeTruthy();
+      return button!;
+    });
+    fireEvent.click(observeButton);
+    const observerPanel = await waitFor(() => {
+      const node = container.querySelector('[data-generated-observer-task-id="task_generated_vultr"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    const workerFileRow = observerPanel.querySelector('.emap-observer-file-row[data-file-kind="worker"]') as HTMLElement | null;
+    expect(workerFileRow).toBeTruthy();
+    fireEvent.click(workerFileRow!);
+    await waitFor(() => {
+      expect(container.querySelector(".emap-observer-file-detail-node")).toBeTruthy();
+    });
+
+    fireEvent.click(vultrCard.querySelector('[data-generated-action="archive"]')!);
+    const confirm = await waitFor(() => {
+      const node = panel.querySelector('[data-generated-archive-confirm-for="task_generated_vultr"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    fireEvent.click(within(confirm).getByRole("button", { name: "确认归档" }));
+
+    await waitFor(() => {
+      expect(panel.querySelector('[data-generated-task-id="task_generated_vultr"]')).toBeNull();
+      expect(container.querySelector('[data-generated-edit-task-id="task_generated_vultr"]')).toBeNull();
+      expect(container.querySelector('[data-generated-observer-task-id="task_generated_vultr"]')).toBeNull();
+      expect(container.querySelector(".emap-observer-file-detail-node")).toBeNull();
+    });
+    expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
+  });
+
+  it("runs a mock generated Task and opens its observer and file detail from the Discovery subcanvas", async () => {
+    const { container } = render(<App />);
+    const atlas = getAtlasNodes(container);
+    const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
+
+    fireEvent.click(discoveryNode);
+    fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+
+    const panel = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+    expect(panel).toBeTruthy();
+    const vultrCard = panel!.querySelector('[data-generated-task-id="task_generated_vultr"]') as HTMLElement | null;
+    expect(vultrCard).toBeTruthy();
+
+    const runButton = vultrCard!.querySelector('[data-generated-action="run"]') as HTMLButtonElement | null;
+    expect(runButton).toBeTruthy();
+    expect(runButton).toBeEnabled();
+    fireEvent.click(runButton!);
+
+    await waitFor(() => {
+      expect(vultrCard).toHaveAttribute("data-generated-run-status", "completed");
+    });
+    expect(within(atlas).queryByRole("button", { name: "核查 Vultr 公开证据" })).toBeNull();
+    expect(within(atlas).queryByRole("button", { name: "核查 Hetzner 公开证据" })).toBeNull();
+
+    const observeButton = await waitFor(() => {
+      const button = vultrCard!.querySelector('[data-generated-action="observe-run"]') as HTMLButtonElement | null;
+      expect(button).toBeTruthy();
+      return button!;
+    });
+    fireEvent.click(observeButton);
+
+    const observerPanel = await waitFor(() => {
+      const panelNode = container.querySelector('[data-generated-observer-task-id="task_generated_vultr"]') as HTMLElement | null;
+      expect(panelNode).toBeTruthy();
+      return panelNode!;
+    });
+    expect(observerPanel).toHaveAttribute("data-generated-observer-run-id");
+    expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
+
+    expect(observerPanel.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
+    expect(observerPanel.querySelector('.emap-observer-process-node[data-process-role="checker"]')).toBeTruthy();
+    expect(within(observerPanel).getByText("worker-output-001.md")).toBeInTheDocument();
+    expect(within(observerPanel).getByText("checker-verdict-001.json")).toBeInTheDocument();
+    expect(within(observerPanel).getByText("accepted-result.md")).toBeInTheDocument();
+
+    const workerFileRow = observerPanel.querySelector('.emap-observer-file-row[data-file-kind="worker"]') as HTMLElement | null;
+    expect(workerFileRow).toBeTruthy();
+    fireEvent.click(workerFileRow!);
+    const fileDetail = await waitFor(() => {
+      const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
+      expect(detail).toBeTruthy();
+      return detail!;
+    });
+    expect(fileDetail).toHaveTextContent("Mock worker output for 核查 Vultr 公开证据");
+
+    fireEvent.click(observeButton);
+    await waitFor(() => {
+      expect(container.querySelector('[data-generated-observer-task-id="task_generated_vultr"]')).toBeNull();
+    });
+    expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
+  });
+
+  it("does not show the Discovery subcanvas toggle for normal root Tasks", async () => {
+    const { container } = render(<App />);
+    const atlas = getAtlasNodes(container);
+    const normalTask = mockTeamTasks[0]!;
+    const normalTaskNode = await within(atlas).findByRole("button", { name: normalTask.title });
+
+    fireEvent.click(normalTaskNode);
+
+    const menu = await screen.findByLabelText(`${normalTask.title} 操作菜单`);
+    expect(within(menu).queryByRole("button", { name: "Discovery 子画布" })).toBeNull();
+  });
+
+  it("restores an open Discovery subcanvas from stored Task branch state", async () => {
+    window.localStorage.setItem("ugk-team-console:canvas-ui-state:v1", JSON.stringify({
+      schemaVersion: 1,
+      dataSource: "mock",
+      selectedFixtureId: CLEAN_AGENT_WORKSPACE_ID,
+      expandedTaskBranches: [{
+        nodeId: `task-node-${mockDiscoveryRootTask.taskId}`,
+        taskId: mockDiscoveryRootTask.taskId,
+        detailMode: "discovery-subcanvas",
+      }],
+    }));
+
+    const { container } = render(<App />);
+
+    await waitFor(() => {
+      expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
+    });
+  });
+
+  it("hydrates a generated edit draft when restored Discovery branch state includes a generated edit id", async () => {
+    window.localStorage.setItem("ugk-team-console:canvas-ui-state:v1", JSON.stringify({
+      schemaVersion: 1,
+      dataSource: "mock",
+      selectedFixtureId: CLEAN_AGENT_WORKSPACE_ID,
+      expandedTaskBranches: [{
+        nodeId: `task-node-${mockDiscoveryRootTask.taskId}`,
+        taskId: mockDiscoveryRootTask.taskId,
+        detailMode: "discovery-subcanvas",
+        discoveryGeneratedEditTaskId: "task_generated_vultr",
+      }],
+    }));
+
+    const { container } = render(<App />);
+
+    const panel = await waitFor(() => {
+      const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    const vultrCard = getGeneratedCard(panel, "task_generated_vultr");
+    expect(vultrCard).toHaveAttribute("data-generated-editing", "true");
+    await waitFor(() => {
+      expect(container.querySelector('[data-generated-edit-task-id="task_generated_vultr"]')).toBeTruthy();
+    });
+  });
+
+  it("clears a generated child edit draft when the root Discovery branch is closed", async () => {
+    const staleTitle = "Unsaved stale generated title";
+    const { container } = render(<App />);
+    const { panel } = await openMockDiscoverySubcanvas(container);
+    const vultrCard = getGeneratedCard(panel, "task_generated_vultr");
+
+    fireEvent.click(vultrCard.querySelector('[data-generated-action="edit"]')!);
+    const firstEditPanel = await waitFor(() => {
+      const node = container.querySelector('[data-generated-edit-task-id="task_generated_vultr"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    fireEvent.change(within(firstEditPanel).getByLabelText("Task 名称"), {
+      target: { value: staleTitle },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: `收起 ${mockDiscoveryRootTask.title} Task 操作` }));
+    await waitFor(() => {
+      expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeNull();
+      expect(container.querySelector('[data-generated-edit-task-id="task_generated_vultr"]')).toBeNull();
+    });
+
+    const atlas = getAtlasNodes(container);
+    fireEvent.click(within(atlas).getByRole("button", { name: "发现云服务候选" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+    const reopenedPanel = await waitFor(() => {
+      const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    const reopenedCard = getGeneratedCard(reopenedPanel, "task_generated_vultr");
+    fireEvent.click(reopenedCard.querySelector('[data-generated-action="edit"]')!);
+
+    const reopenedEditPanel = await waitFor(() => {
+      const node = container.querySelector('[data-generated-edit-task-id="task_generated_vultr"]') as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    expect(within(reopenedEditPanel).getByLabelText("Task 名称")).toHaveValue("核查 Vultr 公开证据");
+    expect(within(reopenedEditPanel).getByLabelText("Task 名称")).not.toHaveValue(staleTitle);
+  });
+
+  it("ignores malformed stored generated observer state without dropping the Discovery subcanvas branch", async () => {
+    window.localStorage.setItem("ugk-team-console:canvas-ui-state:v1", JSON.stringify({
+      schemaVersion: 1,
+      dataSource: "mock",
+      selectedFixtureId: CLEAN_AGENT_WORKSPACE_ID,
+      expandedTaskBranches: [{
+        nodeId: `task-node-${mockDiscoveryRootTask.taskId}`,
+        taskId: mockDiscoveryRootTask.taskId,
+        detailMode: "discovery-subcanvas",
+        discoveryGeneratedObserver: { taskId: 123, runId: "" },
+      }],
+    }));
+
+    const { container } = render(<App />);
+
+    await waitFor(() => {
+      expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
+    });
+    expect(container.querySelector("[data-generated-observer-task-id]")).toBeNull();
+  });
+
   describe("live data", () => {
+    it("does not request generated child catalogs when live root Tasks contain no Discovery root", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const liveTask = mockTeamTasks[0]!;
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 });
+        if (url === "/v1/team/tasks/task_research_medtrum/runs") {
+          return new Response(JSON.stringify({ runs: [canvasTaskRun(liveTask.taskId, "run_root_task")] }), { status: 200 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      render(<LiveDataProbe />);
+
+      await waitFor(() => expect(readLiveDataProbe().tasks).toEqual([liveTask.taskId]));
+      await waitFor(() => expect(readLiveDataProbe().runKeys).toEqual([liveTask.taskId]));
+      expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url)).some((url) => url.includes("/generated-tasks"))).toBe(false);
+      expect(readLiveDataProbe().generated).toEqual({});
+    });
+
+    it("loads Discovery generated child catalogs without putting generated Tasks in root live state", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const rootTask = mockTeamTasks[0]!;
+      const generatedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+      const generatedRun = canvasTaskRun(generatedTasks[0]!.taskId, "run_generated_vultr", "running");
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [rootTask, mockDiscoveryRootTask] }), { status: 200 });
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+          return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${rootTask.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [canvasTaskRun(rootTask.taskId, "run_root_task")] }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [canvasTaskRun(mockDiscoveryRootTask.taskId, "run_discovery_root")] }), { status: 200 });
+        }
+        if (url === "/v1/team/tasks/task_generated_vultr/runs") {
+          return new Response(JSON.stringify({ runs: [generatedRun] }), { status: 200 });
+        }
+        if (url === "/v1/team/tasks/task_generated_hetzner/runs") {
+          return new Response(JSON.stringify({ runs: [canvasTaskRun("task_generated_hetzner", "run_generated_hetzner")] }), { status: 200 });
+        }
+        if (url === "/v1/team/task-runs/run_generated_vultr") {
+          return new Response(JSON.stringify({ message: "not polled in this test" }), { status: 404 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      render(<LiveDataProbe />);
+
+      await waitFor(() => {
+        expect(readLiveDataProbe().generated[mockDiscoveryRootTask.taskId]).toEqual([
+          "task_generated_vultr",
+          "task_generated_hetzner",
+        ]);
+      });
+      const probe = readLiveDataProbe();
+      expect(probe.tasks).toEqual([rootTask.taskId, mockDiscoveryRootTask.taskId]);
+      expect(probe.runKeys).toEqual([
+        mockDiscoveryRootTask.taskId,
+        "task_generated_hetzner",
+        "task_generated_vultr",
+        rootTask.taskId,
+      ]);
+      expect(probe.summaries[mockDiscoveryRootTask.taskId]).toEqual({
+        generatedTaskCount: 2,
+        activeGeneratedTaskCount: 1,
+        staleGeneratedTaskCount: 1,
+        runningGeneratedRunCount: 1,
+        failedDispatchCount: 0,
+      });
+      expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toContain(
+        `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`,
+      );
+    });
+
+    it("loads blocked Discovery dispatch diagnostics from the latest root attempt metadata", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const generatedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+      const discoveryRun = canvasTaskRun(mockDiscoveryRootTask.taskId, "run_discovery_root");
+      const discoveryAttempt = discoveryRootAttempt([
+        {
+          itemId: "vultr",
+          status: "created",
+          generatedTaskId: "task_generated_vultr",
+          createdAt: "2026-05-31T00:05:10.000Z",
+        },
+        {
+          itemId: "digitalocean",
+          status: "blocked",
+          error: "dispatcher output parse error: invalid JSON",
+          createdAt: "2026-05-31T00:05:11.000Z",
+        },
+      ]);
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+          return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [discoveryRun] }), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${discoveryRun.runId}/tasks/${mockDiscoveryRootTask.taskId}/attempts`) {
+          return new Response(JSON.stringify({ attempts: [discoveryAttempt] }), { status: 200 });
+        }
+        if (/^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url)) {
+          return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      render(<LiveDataProbe />);
+
+      await waitFor(() => {
+        expect(readLiveDataProbe().summaries[mockDiscoveryRootTask.taskId]?.failedDispatchCount).toBe(1);
+      });
+      const probe = readLiveDataProbe();
+      expect(probe.diagnostics[mockDiscoveryRootTask.taskId]).toEqual([
+        expect.objectContaining({
+          itemId: "digitalocean",
+          error: "dispatcher output parse error: invalid JSON",
+        }),
+      ]);
+      expect(probe.diagnostics[mockDiscoveryRootTask.taskId]?.some((item) => item.itemId === "vultr")).toBe(false);
+      expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toContain(
+        `/v1/team/task-runs/${discoveryRun.runId}/tasks/${mockDiscoveryRootTask.taskId}/attempts`,
+      );
+    });
+
+    it("passes live Discovery summary into the root canvas without rendering generated children as root cards", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const rootTask = mockTeamTasks[0]!;
+      const generatedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+      const generatedRun = canvasTaskRun(generatedTasks[0]!.taskId, "run_generated_vultr", "running");
+      const discoveryRun = canvasTaskRun(mockDiscoveryRootTask.taskId, "run_discovery_root");
+      const discoveryAttempt = discoveryRootAttempt([
+        {
+          itemId: "vultr",
+          status: "created",
+          generatedTaskId: "task_generated_vultr",
+          createdAt: "2026-05-31T00:05:10.000Z",
+        },
+        {
+          itemId: "digitalocean",
+          status: "blocked",
+          error: "dispatcher output parse error: invalid JSON",
+          createdAt: "2026-05-31T00:05:11.000Z",
+        },
+      ]);
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [rootTask, mockDiscoveryRootTask] }), { status: 200 });
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+          return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${rootTask.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [canvasTaskRun(rootTask.taskId, "run_root_task")] }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [discoveryRun] }), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${discoveryRun.runId}/tasks/${mockDiscoveryRootTask.taskId}/attempts`) {
+          return new Response(JSON.stringify({ attempts: [discoveryAttempt] }), { status: 200 });
+        }
+        if (url === "/v1/team/tasks/task_generated_vultr/runs") {
+          return new Response(JSON.stringify({ runs: [generatedRun] }), { status: 200 });
+        }
+        if (url === "/v1/team/tasks/task_generated_hetzner/runs") {
+          return new Response(JSON.stringify({ runs: [canvasTaskRun("task_generated_hetzner", "run_generated_hetzner")] }), { status: 200 });
+        }
+        if (url === "/v1/team/task-runs/run_generated_vultr") {
+          return new Response(JSON.stringify({ message: "not polled in this test" }), { status: 404 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+
+      const atlas = getAtlasNodes(container);
+      const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
+      await waitFor(() => expect(within(discoveryNode).getByText("2 items")).toBeInTheDocument());
+      await waitFor(() => expect(discoveryNode).toHaveAttribute("data-discovery-failed-dispatch-count", "1"));
+      expect(within(discoveryNode).getByText("1 active")).toBeInTheDocument();
+      expect(within(discoveryNode).getByText("1 stale")).toBeInTheDocument();
+      expect(within(discoveryNode).getByText("1 running")).toBeInTheDocument();
+      expect(within(discoveryNode).getByText("1 blocked")).toBeInTheDocument();
+      expect(within(atlas).queryByRole("button", { name: "核查 Vultr 公开证据" })).toBeNull();
+      expect(within(atlas).queryByRole("button", { name: "核查 Hetzner 公开证据" })).toBeNull();
+
+      fireEvent.click(discoveryNode);
+      fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+      const panel = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+      expect(panel).toBeTruthy();
+      const vultrCard = panel!.querySelector('[data-generated-task-id="task_generated_vultr"]') as HTMLElement | null;
+      expect(vultrCard).toHaveAttribute("data-generated-item-status", "active");
+      expect(vultrCard).toHaveAttribute("data-generated-workunit-mode", "managed");
+      expect(vultrCard).toHaveAttribute("data-generated-run-status", "running");
+      expect(within(vultrCard!).getByText("执行中")).toBeInTheDocument();
+      const diagnostics = panel!.querySelector(`[data-discovery-dispatch-diagnostics-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+      expect(diagnostics).toBeTruthy();
+      expect(diagnostics).toHaveAttribute("data-dispatch-blocked-count", "1");
+      const blockedItem = diagnostics!.querySelector('[data-dispatch-item-id="digitalocean"]') as HTMLElement | null;
+      expect(blockedItem).toBeTruthy();
+      expect(blockedItem).toHaveTextContent("dispatcher output parse error: invalid JSON");
+      expect(diagnostics!.querySelector('[data-dispatch-item-id="vultr"]')).toBeNull();
+    });
+
+    it("keeps old Discovery attempt metadata safe with zero failed dispatch diagnostics", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const generatedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+      const discoveryRun = canvasTaskRun(mockDiscoveryRootTask.taskId, "run_discovery_root");
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+          return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [discoveryRun] }), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${discoveryRun.runId}/tasks/${mockDiscoveryRootTask.taskId}/attempts`) {
+          return new Response(JSON.stringify({ attempts: [discoveryRootAttempt()] }), { status: 200 });
+        }
+        if (/^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url)) {
+          return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const atlas = getAtlasNodes(container);
+      const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
+      await waitFor(() => expect(discoveryNode).toHaveAttribute("data-discovery-failed-dispatch-count", "0"));
+      expect(within(discoveryNode).queryByText(/blocked|dispatch failed/i)).toBeNull();
+
+      fireEvent.click(discoveryNode);
+      fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+      const panel = await waitFor(() => {
+        const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      expect(panel.querySelector("[data-discovery-dispatch-diagnostics-for]")).toBeNull();
+      expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+    });
+
+    it("opens a live active generated Task observer from the Discovery subcanvas without root Task state ownership", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const rootTask = mockTeamTasks[0]!;
+      const generatedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+      let generatedRun = canvasTaskRun("task_generated_vultr", "run_generated_vultr", "running");
+      const generatedRunAttempt = generatedAttempt("task_generated_vultr", "attempt_run_generated_vultr");
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [rootTask, mockDiscoveryRootTask] }), { status: 200 });
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+          return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${rootTask.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [canvasTaskRun(rootTask.taskId, "run_root_task")] }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [canvasTaskRun(mockDiscoveryRootTask.taskId, "run_discovery_root")] }), { status: 200 });
+        }
+        if (url === "/v1/team/tasks/task_generated_vultr/runs") {
+          return new Response(JSON.stringify({ runs: [generatedRun] }), { status: 200 });
+        }
+        if (url === "/v1/team/tasks/task_generated_hetzner/runs") {
+          return new Response(JSON.stringify({ runs: [canvasTaskRun("task_generated_hetzner", "run_generated_hetzner")] }), { status: 200 });
+        }
+        if (url === "/v1/team/task-runs/run_generated_vultr") {
+          return new Response(JSON.stringify(generatedRun), { status: 200 });
+        }
+        if (url === "/v1/team/task-runs/run_generated_vultr/cancel") {
+          generatedRun = canvasTaskRun("task_generated_vultr", "run_generated_vultr", "cancelled");
+          return new Response(JSON.stringify(generatedRun), { status: 200 });
+        }
+        if (url === "/v1/team/task-runs/run_generated_vultr/tasks/task_generated_vultr/attempts") {
+          return new Response(JSON.stringify({ attempts: [generatedRunAttempt] }), { status: 200 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const atlas = getAtlasNodes(container);
+      const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
+      fireEvent.click(discoveryNode);
+      fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+
+      const panel = await waitFor(() => {
+        const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      const vultrCard = panel.querySelector('[data-generated-task-id="task_generated_vultr"]') as HTMLElement | null;
+      expect(vultrCard).toHaveAttribute("data-generated-run-status", "running");
+      const runButton = vultrCard!.querySelector('[data-generated-action="run"]') as HTMLButtonElement | null;
+      const cancelButton = vultrCard!.querySelector('[data-generated-action="cancel"]') as HTMLButtonElement | null;
+      const observeButton = vultrCard!.querySelector('[data-generated-action="observe-run"]') as HTMLButtonElement | null;
+      expect(runButton).toBeDisabled();
+      expect(runButton).toHaveTextContent("运行中");
+      expect(cancelButton).toBeTruthy();
+      expect(cancelButton).toBeEnabled();
+      expect(observeButton).toBeTruthy();
+
+      fireEvent.click(observeButton!);
+      const observerPanel = await waitFor(() => {
+        const node = container.querySelector('[data-generated-observer-task-id="task_generated_vultr"]') as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      expect(observerPanel).toHaveAttribute("data-generated-observer-run-id", "run_generated_vultr");
+      expect(within(atlas).queryByRole("button", { name: "核查 Vultr 公开证据" })).toBeNull();
+      expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toContain(
+        "/v1/team/task-runs/run_generated_vultr/tasks/task_generated_vultr/attempts",
+      );
+
+      fireEvent.click(cancelButton!);
+      await waitFor(() => {
+        expect(vultrCard).toHaveAttribute("data-generated-run-status", "cancelled");
+      });
+      const cancelCall = vi.mocked(fetch).mock.calls.find(([url]) => String(url) === "/v1/team/task-runs/run_generated_vultr/cancel");
+      expect(cancelCall?.[1]).toMatchObject({ method: "POST" });
+    });
+
+    it("resets a live generated Task through the existing reset endpoint without root Task ownership", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const generatedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+      const resetTask = resetGeneratedSnapshot(generatedTasks.find((task) => task.taskId === "task_generated_hetzner")!);
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+          return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+        }
+        if (url === "/v1/team/tasks/task_generated_hetzner/generated-workunit/reset") {
+          expect(init).toMatchObject({ method: "POST" });
+          return new Response(JSON.stringify({ task: resetTask, warnings: [] }), { status: 200 });
+        }
+        if (/^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url)) {
+          return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ connections: [], dependencies: [], sourceNodes: [] }), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const atlas = getAtlasNodes(container);
+      const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
+      fireEvent.click(discoveryNode);
+      fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+      const panel = await waitFor(() => {
+        const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+
+      const hetznerCard = getGeneratedCard(panel, "task_generated_hetzner");
+      fireEvent.click(hetznerCard.querySelector('[data-generated-action="reset-workunit"]')!);
+
+      await waitFor(() => {
+        const refreshedCard = getGeneratedCard(panel, "task_generated_hetzner");
+        expect(within(refreshedCard).getByText(resetTask.title)).toBeInTheDocument();
+        expect(refreshedCard).toHaveAttribute("data-generated-workunit-mode", "managed");
+      });
+      expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toContain(
+        "/v1/team/tasks/task_generated_hetzner/generated-workunit/reset",
+      );
+      expect(within(atlas).queryByRole("button", { name: resetTask.title })).toBeNull();
+    });
+
+    it("archives a live generated Task through the existing archive endpoint without root Task ownership", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const generatedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+      const vultrTask = generatedTasks.find((task) => task.taskId === "task_generated_vultr")!;
+      const archivedVultrTask: TeamCanvasTask = {
+        ...vultrTask,
+        archived: true,
+        status: "archived",
+        updatedAt: "2026-05-31T00:20:00.000Z",
+      };
+      const discoveryRun = canvasTaskRun(mockDiscoveryRootTask.taskId, "run_discovery_root");
+      const discoveryAttempt = discoveryRootAttempt([
+        {
+          itemId: "vultr",
+          status: "created",
+          generatedTaskId: "task_generated_vultr",
+          createdAt: "2026-05-31T00:05:10.000Z",
+        },
+        {
+          itemId: "digitalocean",
+          status: "blocked",
+          error: "dispatcher output parse error: invalid JSON",
+          createdAt: "2026-05-31T00:05:11.000Z",
+        },
+      ]);
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+          return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [discoveryRun] }), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${discoveryRun.runId}/tasks/${mockDiscoveryRootTask.taskId}/attempts`) {
+          return new Response(JSON.stringify({ attempts: [discoveryAttempt] }), { status: 200 });
+        }
+        if (url === "/v1/team/tasks/task_generated_vultr/archive") {
+          expect(init).toMatchObject({ method: "POST" });
+          return new Response(JSON.stringify({ task: archivedVultrTask, warnings: [] }), { status: 200 });
+        }
+        if (/^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url)) {
+          return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ connections: [], dependencies: [], sourceNodes: [] }), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const atlas = getAtlasNodes(container);
+      const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
+      await waitFor(() => expect(within(discoveryNode).getByText("2 items")).toBeInTheDocument());
+      await waitFor(() => expect(discoveryNode).toHaveAttribute("data-discovery-failed-dispatch-count", "1"));
+      fireEvent.click(discoveryNode);
+      fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+      const panel = await waitFor(() => {
+        const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+      const rootTaskFetchCountBeforeArchive = vi.mocked(fetch).mock.calls
+        .filter(([url]) => String(url) === "/v1/team/tasks").length;
+
+      fireEvent.click(getGeneratedCard(panel, "task_generated_vultr").querySelector('[data-generated-action="archive"]')!);
+      const confirm = await waitFor(() => {
+        const node = panel.querySelector('[data-generated-archive-confirm-for="task_generated_vultr"]') as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      fireEvent.click(within(confirm).getByRole("button", { name: "确认归档" }));
+
+      await waitFor(() => {
+        expect(panel.querySelector('[data-generated-task-id="task_generated_vultr"]')).toBeNull();
+        expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(1);
+      });
+      expect(getGeneratedCard(panel, "task_generated_hetzner")).toBeTruthy();
+      expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toContain(
+        "/v1/team/tasks/task_generated_vultr/archive",
+      );
+      expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url) === "/v1/team/tasks")).toHaveLength(rootTaskFetchCountBeforeArchive);
+      expect(within(discoveryNode).getByText("1 items")).toBeInTheDocument();
+      expect(within(discoveryNode).getByText("0 active")).toBeInTheDocument();
+      expect(within(discoveryNode).getByText("1 stale")).toBeInTheDocument();
+      expect(within(discoveryNode).getByText("1 blocked")).toBeInTheDocument();
+      expect(within(atlas).queryByRole("button", { name: "核查 Vultr 公开证据" })).toBeNull();
+      expect(within(atlas).queryByRole("button", { name: "核查 Hetzner 公开证据" })).toBeNull();
+    });
+
+    it("keeps Discovery summary aligned with refreshed generated catalog when archive resolves after refresh", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const initialGeneratedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+      const vultrTask = initialGeneratedTasks.find((task) => task.taskId === "task_generated_vultr")!;
+      const archivedVultrTask: TeamCanvasTask = {
+        ...vultrTask,
+        archived: true,
+        status: "archived",
+        updatedAt: "2026-05-31T00:21:00.000Z",
+      };
+      const scalewayTask: TeamCanvasTask = {
+        ...vultrTask,
+        taskId: "task_generated_scaleway",
+        title: "核查 Scaleway 公开证据",
+        createdAt: "2026-05-31T00:10:00.000Z",
+        updatedAt: "2026-05-31T00:10:00.000Z",
+        generatedSource: {
+          ...vultrTask.generatedSource!,
+          sourceItemId: "scaleway",
+          itemStatus: "active",
+          itemPayload: { id: "scaleway", title: "Scaleway", type: "cloud-provider" },
+          latestDiscoveredAt: "2026-05-31T00:10:00.000Z",
+        },
+        workUnit: {
+          ...vultrTask.workUnit,
+          title: "核查 Scaleway 公开证据",
+          input: { text: "核查 Scaleway 的官网、产品和公开证据。" },
+        },
+      };
+      const refreshedGeneratedTasks = [...initialGeneratedTasks, scalewayTask];
+      const archiveResponse = deferred<Response>();
+      const discoveryRun = canvasTaskRun(mockDiscoveryRootTask.taskId, "run_discovery_root");
+      const discoveryAttempt = discoveryRootAttempt([
+        {
+          itemId: "digitalocean",
+          status: "blocked",
+          error: "dispatcher output parse error: invalid JSON",
+          createdAt: "2026-05-31T00:05:11.000Z",
+        },
+      ]);
+      let generatedCatalogRequests = 0;
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+          generatedCatalogRequests += 1;
+          return new Response(JSON.stringify({
+            tasks: generatedCatalogRequests === 1 ? initialGeneratedTasks : refreshedGeneratedTasks,
+          }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [discoveryRun] }), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${discoveryRun.runId}/tasks/${mockDiscoveryRootTask.taskId}/attempts`) {
+          return new Response(JSON.stringify({ attempts: [discoveryAttempt] }), { status: 200 });
+        }
+        if (url === "/v1/team/tasks/task_generated_vultr/archive") {
+          expect(init).toMatchObject({ method: "POST" });
+          return archiveResponse.promise;
+        }
+        if (/^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url)) {
+          return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ connections: [], dependencies: [], sourceNodes: [] }), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const atlas = getAtlasNodes(container);
+      const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
+      await waitFor(() => expect(within(discoveryNode).getByText("2 items")).toBeInTheDocument());
+      expect(within(discoveryNode).getByText("1 active")).toBeInTheDocument();
+      expect(within(discoveryNode).getByText("1 stale")).toBeInTheDocument();
+      expect(within(discoveryNode).getByText("1 blocked")).toBeInTheDocument();
+
+      fireEvent.click(discoveryNode);
+      fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+      const panel = await waitFor(() => {
+        const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+
+      fireEvent.click(getGeneratedCard(panel, "task_generated_vultr").querySelector('[data-generated-action="archive"]')!);
+      const confirm = await waitFor(() => {
+        const node = panel.querySelector('[data-generated-archive-confirm-for="task_generated_vultr"]') as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      fireEvent.click(within(confirm).getByRole("button", { name: "确认归档" }));
+
+      fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
+
+      await waitFor(() => {
+        expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(3);
+        expect(getGeneratedCard(panel, "task_generated_scaleway")).toBeTruthy();
+        expect(within(discoveryNode).getByText("3 items")).toBeInTheDocument();
+      });
+
+      archiveResponse.resolve(new Response(JSON.stringify({ task: archivedVultrTask, warnings: [] }), { status: 200 }));
+
+      await waitFor(() => {
+        expect(panel.querySelector('[data-generated-task-id="task_generated_vultr"]')).toBeNull();
+        expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+        expect(getGeneratedCard(panel, "task_generated_hetzner")).toBeTruthy();
+        expect(getGeneratedCard(panel, "task_generated_scaleway")).toBeTruthy();
+        expect(within(discoveryNode).getByText("2 items")).toBeInTheDocument();
+        expect(within(discoveryNode).getByText("1 active")).toBeInTheDocument();
+        expect(within(discoveryNode).getByText("1 stale")).toBeInTheDocument();
+        expect(within(discoveryNode).getByText("1 blocked")).toBeInTheDocument();
+      });
+      expect(within(atlas).queryByRole("button", { name: "核查 Scaleway 公开证据" })).toBeNull();
+      expect(within(atlas).queryByRole("button", { name: "核查 Vultr 公开证据" })).toBeNull();
+      expect(within(atlas).queryByRole("button", { name: "核查 Hetzner 公开证据" })).toBeNull();
+    });
+
+    it("keeps the Discovery subcanvas and generated catalog when live generated archive fails", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const generatedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+          return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+        }
+        if (url === "/v1/team/tasks/task_generated_vultr/archive") {
+          return new Response(JSON.stringify({ error: { message: "archive failed" } }), { status: 500 });
+        }
+        if (/^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url)) {
+          return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ connections: [], dependencies: [], sourceNodes: [] }), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const atlas = getAtlasNodes(container);
+      const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
+      await waitFor(() => expect(within(discoveryNode).getByText("2 items")).toBeInTheDocument());
+      fireEvent.click(discoveryNode);
+      fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+      const panel = await waitFor(() => {
+        const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+
+      fireEvent.click(getGeneratedCard(panel, "task_generated_vultr").querySelector('[data-generated-action="archive"]')!);
+      const confirm = await waitFor(() => {
+        const node = panel.querySelector('[data-generated-archive-confirm-for="task_generated_vultr"]') as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      fireEvent.click(within(confirm).getByRole("button", { name: "确认归档" }));
+
+      expect(await screen.findByText("archive failed")).toBeInTheDocument();
+      expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
+      expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+      expect(getGeneratedCard(panel, "task_generated_vultr")).toBeTruthy();
+      expect(within(discoveryNode).getByText("2 items")).toBeInTheDocument();
+      expect(within(discoveryNode).getByText("1 active")).toBeInTheDocument();
+      expect(within(discoveryNode).getByText("1 stale")).toBeInTheDocument();
+      expect(within(atlas).queryByRole("button", { name: "核查 Vultr 公开证据" })).toBeNull();
+    });
+
+    it("keeps the Discovery subcanvas open and shows an error when generated reset fails", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const generatedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+          return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+        }
+        if (url === "/v1/team/tasks/task_generated_hetzner/generated-workunit/reset") {
+          return new Response(JSON.stringify({ error: { message: "reset failed" } }), { status: 500 });
+        }
+        if (/^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url)) {
+          return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ connections: [], dependencies: [], sourceNodes: [] }), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const atlas = getAtlasNodes(container);
+      const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
+      fireEvent.click(discoveryNode);
+      fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+      const panel = await waitFor(() => {
+        const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+
+      fireEvent.click(getGeneratedCard(panel, "task_generated_hetzner").querySelector('[data-generated-action="reset-workunit"]')!);
+
+      expect(await screen.findByText("reset failed")).toBeInTheDocument();
+      expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
+      expect(getGeneratedCard(panel, "task_generated_hetzner")).toHaveAttribute("data-generated-workunit-mode", "customized");
+      expect(within(atlas).queryByRole("button", { name: "核查 Hetzner 公开证据" })).toBeNull();
+    });
+
     it("has mock and live options", () => {
       render(<App />);
       const options = screen.getAllByRole("option");

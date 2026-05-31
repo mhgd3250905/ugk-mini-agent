@@ -1,6 +1,6 @@
 # Team Runtime v2
 
-更新时间：2026-05-29
+更新时间：2026-05-31
 
 本文档是 Team Runtime v2 的唯一权威源。v0.1 域名调查历史见文末归档章节。
 
@@ -26,6 +26,10 @@
 - Team Console Canvas source input 后端契约已建立：source node 持久化为独立画布输入节点，source connection 只表示 source node `value` output 到 Task input port 的绑定。直接点击 Task “运行”时，`POST /v1/team/tasks/:taskId/runs` 会把 active source connection 注入 `state.source.boundInputs[]`、worker/checker payload 和 prompt；source node 不伪装成 Task artifact，不写 `sourceTaskId` / `sourceRunId` / `sourceAttemptId`，也不会自动触发下游 Task run。
 - Team Console Canvas source 前端已接入 Live API：工具栏”文本输出”创建可编辑 `string` source node，”文件输出”通过浏览器文件选择器创建 file source 并按扩展名推断 `md` / `json` / `html` / `string` / `file`。Source 节点是独立根节点，可拖动、框选、连到同类型 Task input port，并可收纳到底部 Dock；本地只保存 source 节点坐标和 Dock 收纳 id，不保存 source 内容。Agent 对话分支、Task Leader 对话分支、创建 Task 对话分支和 observer 文件详情面板支持标题栏双击最大化 / 还原，最大化覆盖整个浏览器 viewport（`position: fixed; inset: 0`），没有单独的还原按钮，还原靠标题栏双击；原有标题栏拖动和右下角 resize 行为保持不变。
 - Team Console Execution Atlas 根卡片清理入口已收口为垃圾桶 drop target：Agent / Task / Source 根卡片不再提供直接”归档”或”移除”按钮，根节点清理统一通过拖入右下角垃圾桶触发确认 modal。Source 和 Task 确认后分别调用 `POST /v1/team/source-nodes/:sourceNodeId/archive` 和 `POST /v1/team/tasks/:taskId/archive`，归档成功后根卡片、Dock 条目、相关连接线、展开分支和本地 UI 状态同步清理。Agent 确认后只从 Team Console 画布移除本地引用，不会调用 Agent profile archive API。归档失败时节点保留并在顶部 error banner 显示错误信息。Task dependency handle 已从右下角裸文本 `dep` 改为右侧中部的 amber 圆形 socket，有语义化 aria-label 区分”设为依赖源”、”设为依赖目标”和”已选依赖源”三种状态。Control dependency 渲染的 dashed amber 线 source 端有半圆 socket，中点有切断按钮可直接删除。
+- Team Console Discovery runtime 已接通到 generated Task 自动执行：`POST /v1/team/tasks` 可创建 `canvasKind="discovery"` 的 root Task 并保存 `discoverySpec`，`GET /v1/team/tasks/:taskId/generated-tasks` 只读返回该 Discovery root 下的 active/stale generated Task catalog；Discovery root 的 Canvas Task run 会按 runtime `type="discovery"` 执行、持久化标准 `discovery-result.json`、调用 dispatcher 创建/复用 generated Tasks、标记 stale，并对本次 dispatch 成功且仍 active/ready 的 generated Tasks 通过固定 3 并发池自动启动 Canvas Task runs。public POST/PATCH 仍拒绝 `generatedSource`，避免调用方伪造 generated Task 身份。
+- Discovery generated Task reset-to-managed 契约和 5174 子画布 UI 已接入：`TeamGeneratedTaskSource.latestManagedWorkUnit` 可选保存最新 managed WorkUnit snapshot；Discovery rerun 会在 managed/customized 两条路径都刷新该 snapshot。public WorkUnit 编辑仍会把 generated Task 标记为 `customized` 且保留 snapshot；`POST /v1/team/tasks/:taskId/generated-workunit/reset` 可将非 archived generated Task 的可见 `title/workUnit` 恢复为最新 managed snapshot 并标记回 `managed`。5174 Discovery 子画布只对 customized 且有 snapshot 的 generated child 显示 reset-to-managed。
+- Team Console 5174 data layer 已开始消费 Discovery generated child catalog 和 failed dispatch diagnostics：Live API adapter 暴露 `listGeneratedTasks(discoveryTaskId, { includeArchived })`，旧后端 404 按空 catalog 处理；`useTeamConsoleLiveData()` 在 root Tasks 中识别 `canvasKind="discovery"` 后读取 generated child catalog，并用既有 `listTaskRuns()` / `listTaskRunAttempts()` 读取最新 root Discovery run attempt 的 `discoveryDispatch[]`。它维护 `generatedTasksByDiscoveryTaskId`、`discoverySummariesByTaskId`、`discoveryDispatchDiagnosticsByTaskId` 和 generated Task 的 `taskRunsByTaskId` run summaries；只有 `status="blocked"` 的 dispatch outcome 计入 failed dispatch。generated Tasks 仍不会进入 root `tasks` state 或主 canvas/root list；没有 Discovery root 时不请求 generated catalog endpoint。
+- Team Console 5174 Discovery root summary、子画布 catalog、failed dispatch diagnostics、generated run observer、generated light edit/reset 和 generated scoped archive 已接入：root Discovery Task 卡片使用 `canvasKind="discovery"` 身份渲染为 Discovery 卡片，并显示 generated 总数、active、stale、running 和 blocked dispatch 计数；Task 操作菜单中的 `Discovery 子画布` toggle 会从既有 child panel 系统打开 generated catalog panel，展示非 archived generated Tasks 的 title、active/stale、managed/customized 和 latest run status。子画布会显示最新 blocked dispatch item 的 item id 和 concise error，不展示 raw `itemPayload`，也不会把 diagnostics 伪造成 generated Task。generated child card 可直接运行、停止 active run，从 latest run 打开 Worker / Checker observer 和 attempt 文件详情，也可打开 `data-generated-edit-task-id` 浅编辑 panel 修改 Task 名称、Leader / Worker / Checker Agent。generated title edit 会同时 PATCH `title` 和 `workUnit.title`，让后端按既有规则把 generated WorkUnit 标记为 `customized`；reset 调用 Team Console adapter 的 `resetGeneratedTaskWorkUnit(taskId)` 并只替换对应 Discovery catalog child。generated child 归档调用既有 `POST /v1/team/tasks/:taskId/archive` 软归档，成功后只从 `generatedTasksByDiscoveryTaskId[sourceDiscoveryTaskId]` 移除该 child，清理该 child 的 edit/observer/file-detail UI 状态，并保持 root Discovery branch 和子画布打开。普通 Task 卡片不显示 Discovery 身份、summary 或子画布入口；generated Tasks 仍不会出现在主 root canvas。
 - Team Console Execution Atlas 交互和视觉已完成一轮收口：Task 菜单删除确认按具体 branch `nodeId` 隔离，不再被最后聚焦的菜单串台；根节点拖入垃圾桶后如果在确认 modal 选择取消，会把 Agent / Task / Source 恢复到拖拽前坐标，Task 子树同步回滚。顶部工具栏按 command deck 分成筛选 / 添加 / 统计和 viewport 控制区；Agent / Task / Source 根卡片统一按身份区、内容区和底部 I/O 区分层，不再显示卡片内“收”按钮，也不再使用右侧 action rail 切割；收纳统一通过拖入底部 Dock 完成，Task dependency handle 仍保留在 Task 卡片右侧中部；Task 根卡片角色区使用单个 crew panel，Leader 是主协调行，Worker / Checker 是双轨执行与验收行；带 typed ports 的 Task 根卡片高度按端口行数增长，`IN` + `OUT` 双端口卡片必须完整显示两行 port chip，相关连接锚点、框选、Dock restore 和拖拽碰撞区域同步使用同一动态高度。画布缩放改为固定可读档位 `45 / 50 / 67 / 75 / 90 / 100 / 110 / 125 / 150 / 180%`，pan offset 按 `devicePixelRatio` 对齐到设备像素，并配合字体渲染 hint 降低 DOM transform 缩放后的文字发虚。
 - Team Console Execution Atlas 三类连接线（typed Task connection、Source connection、control dependency）均可从画布切断：每条 active 线段中点有一个小型切断按钮，但默认隐藏；鼠标悬浮到连接线透明命中区域或按钮获得 focus 时才显示，避免画布上常驻叉号噪音。按钮颜色随连接线类型（绿色/青色/琥珀色），`aria-label` 包含源和目标名称，点击后直接调用对应 DELETE API，删除中按钮禁用，失败时保留原线并显示 error banner。
 - Team Console 底部 Dock 已优化为常驻根节点托盘：默认半隐藏在画布下方；即使没有已收纳节点也保留一个根节点宽度的 2D 玻璃面板，不再渲染顶部发光把手或渐变底色。鼠标悬浮、键盘 focus、指针进入 Dock，或拖动中的根节点外框碰到 Dock 露出边缘时会动画上探展开；空 Dock 在鼠标移走后立即收回，非空 Dock 在鼠标移走后 3 秒收回。松手收纳同样按根节点外框与 Dock 矩形碰撞判断，不要求指针点已进入 Dock 内部。每个 Dock item 按 kind 带左侧色条 glyph（Agent 绿 A、Task 琥珀 T、Source 青 S）和 title/meta 信息，固定宽度避免 hover 抖动，Dock item 与边框四向 padding 保持一致，hover 时 `translateY(-4px)` 上浮；drop active 态有 inset guide 视觉；flight 动画补充节点 title；支持 `prefers-reduced-motion` 降级。
@@ -78,6 +82,33 @@ Task 持久化在 `.data/team/tasks/<taskId>.json`，通过 `src/team/task-store
 - 创建走 `POST /v1/team/tasks`
 - 更新走 `GET /v1/team/tasks`、`GET /v1/team/tasks/:taskId`、`PATCH /v1/team/tasks/:taskId`
 - 不启动 run，不调用 `POST /v1/team/plans/:planId/runs`，不直接写 `.data/team`，不改 Agent profile / 模型 / browser binding / 技能安装
+
+### Discovery Task catalog and run validation
+
+Discovery Task 是 Team Console 画布上的 root Task，`canvasKind="discovery"`，必须携带 `discoverySpec`。当前已开放 catalog/API 层，并接入 Canvas Task run 的输出校验和标准结果持久化：
+
+- `POST /v1/team/tasks` 继续兼容普通 Task 创建，同时接受 Discovery root Task 的 `canvasKind` 和 `discoverySpec`，返回 `{ task, warnings }`。
+- `PATCH /v1/team/tasks/:taskId` 继续兼容普通 Task 浅编辑，同时只允许 Discovery root Task 更新 `discoverySpec`；normal root Task 携带 `discoverySpec` 会被拒绝。
+- public `POST /v1/team/tasks` 不允许携带 `generatedSource`，public `PATCH /v1/team/tasks/:taskId` 不允许携带 `canvasKind` 或 `generatedSource`。generated Task 身份只能由后续 Discovery dispatch/upsert 逻辑维护，不能由外部调用方伪造。
+- `GET /v1/team/tasks` 默认只返回 root catalog：normal root Task 和 Discovery root Task。generated Tasks 默认隐藏，只有显式 `?includeGenerated=1` 或 `?includeGenerated=true` 才会并入 `tasks` 数组；`includeArchived` 语义保持不变并可与 `includeGenerated` 组合。
+- `GET /v1/team/tasks/:taskId/generated-tasks` 是只读子 catalog route，只接受真实 Discovery root Task。缺失 parent 返回 404，normal root parent 返回 400。响应为 `{ tasks }`，默认排除 archived generated Tasks，`?includeArchived=1|true` 时包含。
+- Discovery root 被直接运行时，Canvas Task 会转换为 runtime `TeamTask` 的 `type="discovery"`，并携带 `discovery.outputKey = discoverySpec.outputKey`；normal root 和 generated Task 仍按 `type="normal"` 运行。
+- Canvas Task run 会把 `workUnit.outputCheck` 透传到 runtime `TeamTask.outputCheck`。因此 normal Task 配置了 JSON/object/html/file 输出校验时，checker 口头 pass 不能绕过 runtime validation。
+- Discovery accepted output 必须是可解析 JSON object，且配置的 `outputKey` 值必须是 item object array；每个 item 必须有非空 string `id`。校验失败时 run 进入 `completed_with_failures`，Task state 为 `failed`，不会写 `discovery-result.json`。
+- Discovery 校验成功后仍写 `accepted-result.md`，并额外写 `discovery-result.json`，schema 为 `team/discovery-result-1`，包含 `taskId`、`attemptId`、`outputKey`、`items`、`sourceRef`、`createdAt`。attempt `resultRef` 继续指向 `accepted-result.md`。
+- 当前 route 不附加 run summary，也不新增 5174 UI 控件；generated Task 创建/复用、stale marking 和 auto-run scheduler 都在 Canvas Task run service 的 Discovery 成功路径内完成。
+
+### Discovery dispatcher role contract
+
+Discovery dispatcher 是独立 role，不复用旧 Plan decomposer。旧 `runDecomposer` 仍只负责把一个 Plan `TeamTask` 拆成 child `TeamTask[]`；Discovery dispatcher 输入一个 Discovery item，输出一个 generated Task 的 WorkUnit draft。
+
+- `src/team/role-runner.ts` 新增 role-local `DiscoveryDispatchInput`、`DiscoveryDispatchWorkUnitDraft`、`DiscoveryDispatchOutput`，并在 `MockRoleRunner` / `AgentProfileRoleRunner` 暴露 `runDiscoveryDispatcher(input)`。
+- Dispatcher input 包含 `runId`、Discovery task id/title、Discovery goal、dispatch goal、`outputKey`、exact `itemId`、完整 `itemPayload`、required/recommended item fields，以及默认 `generatedWorkerAgentId` / `generatedCheckerAgentId` 上下文。
+- `generatedWorkerAgentId` / `generatedCheckerAgentId` 只能作为 prompt 上下文；dispatcher output v1 不允许选择或覆盖 worker、checker、leader、source identity、`outputPorts` 或 `outputCheck`。
+- Dispatcher JSON output 固定为 `{ "itemId": "...", "workUnit": { "title": "...", "input": { "text": "..." }, "outputContract": { "text": "..." }, "acceptance": { "rules": ["..."] } } }`。
+- `parseDiscoveryDispatchRoleOutput()` 只有在 `itemId` 精确匹配、WorkUnit 文本字段非空、`acceptance.rules` 是非空 string[]、且 top-level / `workUnit` 内没有 forbidden fields 时返回 `ok: true`。invalid JSON、item mismatch、invalid schema 或 forbidden fields 都返回 `ok: false`，不 throw。
+- `AgentProfileRoleRunner` 使用独立 role name `discovery-dispatcher`，role key 由 `discoveryTaskId + itemId` 派生并做 path-safe sanitization，避免 raw item id 进入 workspace 路径；profile 选择顺序是 `dispatcherProfileId > decomposerProfileId > workerProfileId`。
+- 当前 dispatcher contract 只产出 WorkUnit draft，不创建或更新 generated Tasks，不标记 stale，不启动 generated Task auto-run，不新增 route，不改 5174 UI。
 
 ### Typed Task Chain V1
 
@@ -365,6 +396,52 @@ tasks/<taskId>/attempts/<attemptId>/discovery-result.json
 - 若 run 无 `discovery-result.json`（旧 run 或旧 attempt），runtime 回退到传统解析：依次尝试 `accepted-result.md`、`worker-output-001.md`、以及其中引用的 run-scoped 文件路径。legacy fallback 纯为向后兼容，新 run 一律走标准化路径
 - `accepted-result.md` 仍是人类可读结果（checker/watcher 产出），不再是 `for_each` 的主数据源
 
+#### Discovery generated Task upsert（Step 06）
+
+Discovery root Canvas Task 成功后，Canvas Task run service 会读取本次 attempt 的 `discovery-result.json`，按每个 item 调用当前 role runner 的 `runDiscoveryDispatcher()`，并把合法 dispatcher draft 写成真实 generated `TeamCanvasTask`。
+
+- generated Task 身份键为 `sourceDiscoveryTaskId + sourceItemId`；同一 Discovery root 的同一 item id rerun 会复用同一个 `taskId`
+- 首次出现会创建 `status="ready"` 的 generated Task；`leaderAgentId` 继承 Discovery root，`workerAgentId` / `checkerAgentId` 使用 `discoverySpec.generatedWorkerAgentId` / `generatedCheckerAgentId`
+- `generatedSource` 使用 `schemaVersion="team/generated-task-source-1"`，并记录 `itemStatus="active"`、`itemPayload`、latest run / attempt / discoveredAt 和 `workUnitMode="managed"`
+- `generatedSource.latestManagedWorkUnit` 是可选 latest managed snapshot；旧 generated Task 缺字段继续可读，字段存在时必须满足完整 WorkUnit schema
+- rerun 时始终更新 source metadata 和 `latestManagedWorkUnit`；只有 `workUnitMode="managed"` 时才覆盖 generated Task `title` 和可见 `workUnit`
+- 用户通过 public Task update 修改 generated Task `workUnit` 后，`workUnitMode` 会变成 `customized` 且保留 `latestManagedWorkUnit`；之后 Discovery rerun 不覆盖用户改过的 title/input/output contract/acceptance rules，但仍刷新 latest managed snapshot
+- `POST /v1/team/tasks/:taskId/generated-workunit/reset` 会把非 archived generated Task 的可见 `title/workUnit` 恢复到 `latestManagedWorkUnit` 并把 `workUnitMode` 标记回 `managed`；缺失 snapshot 的旧数据返回 409，不猜测重建
+- 最新 `discovery-result.json` 中缺失的同源 generated Tasks 会标记 `generatedSource.itemStatus="stale"`；不 archive，不改 WorkUnit，不影响其他 Discovery root 的 generated Tasks
+- dispatcher 输出 `ok:false`、item mismatch、TaskStore upsert 错误或缺失 optional `runDiscoveryDispatcher()` 时，只记录该 item 的 blocked outcome，不把已 accepted 的 Discovery run 改成 failed
+- attempt metadata 可选记录 `discoveryDispatch[]`，status 为 `created` / `updated` / `blocked` / `stale_marked`；旧 attempt 没有该字段时继续按缺省读取
+
+#### Discovery generated Task auto-run scheduler（Step 07）
+
+Discovery dispatch/upsert diagnostics 写入后，runtime 会对本次 Discovery result 中成功创建或更新、`generatedSource.itemStatus="active"` 且当前 `status="ready"` 的 generated Tasks 自动调用 `CanvasTaskRunService.createRun()`。这是固定 v1 调度，不引入新的持久化队列文件，也不绕过现有 worker/checker、observer、cancel、output validation 和文件记录路径。
+
+- v1 并发固定为 3；即使旧数据里的 `discoverySpec.autoRun.concurrency` 异常，也回退到 3。调度池会等待一个 generated run 进入 terminal 后再启动下一个候选，不会一次性把全部 run launch 出去再假装 chunk。
+- 候选只来自本次 dispatch 成功的 active generated Tasks；blocked dispatch item、stale generated Task、`generatedSource.itemStatus !== "active"` 的 Task 都不会 auto-run。
+- generated Task 当前不是 `ready` 时不启动，记录 `skipped_not_runnable`；已有 queued/running/paused run 时记录 `skipped_already_running`，并尽量带上 existing `generatedRunId`。
+- launch 失败只写 attempt metadata，不把已经 accepted 的 Discovery run 改成 failed。
+- generated run 的 `TeamRunState.source` 仍是 `{ type: "canvas-task", taskId: <generatedTaskId> }`；`source.triggeredBy` 使用 `{ type: "discovery-generated-task", discoveryTaskId, discoveryRunId, discoveryAttemptId, sourceItemId }` 记录 Discovery 溯源。
+- attempt metadata 可选记录 `discoveryGeneratedRuns[]`，status 为 `started` / `skipped_already_running` / `skipped_not_runnable` / `failed`；旧 attempt 或 malformed metadata 继续按缺省读取。
+
+#### Team Console Discovery data/API seam、root summary、subcanvas catalog、generated observer、dispatch diagnostics 和 scoped archive（Step 08A-08E2C）
+
+5174 Team Console 的 API/data seam 现在能读取 Discovery root 的 generated child catalog，并从最新 root Discovery run attempt metadata 读取 blocked dispatch diagnostics，再把聚合 summary 投到 root Discovery 卡片；root Discovery Task 菜单还能打开独立 Discovery subcanvas catalog panel。这个 panel 支持 generated child run/cancel、latest-run observer、attempt file detail、light edit、reset-to-managed、blocked dispatch diagnostics 和 scoped soft archive/delete。
+
+- `LiveTeamApi.listGeneratedTasks(discoveryTaskId, options?)` 调用 `GET /v1/team/tasks/:taskId/generated-tasks`，会 URL encode `taskId`，并只在 `includeArchived` 为 true 时追加 `includeArchived=1`。
+- live adapter 接受 `{ tasks }` 响应，也兼容 bare array；404 返回空数组，避免旧本地后端让整个 console 挂掉。
+- Mock API fixture 包含一个 Discovery root、active generated child、stale generated child 和 archived generated child；`listTasks()` 仍只返回 root Tasks，generated children 只能通过 `listGeneratedTasks()` 读取，默认排除 archived。
+- `useTeamConsoleLiveData()` 维护非视觉状态：`generatedTasksByDiscoveryTaskId`、`discoverySummariesByTaskId` 和 `discoveryDispatchDiagnosticsByTaskId`。summary 当前包含 generated 总数、active 数、stale 数、running generated run 数和 failed dispatch 数；failed dispatch 只统计最新 root Discovery attempt 的 `discoveryDispatch[].status === "blocked"`。
+- 初始 live load 和 `refreshLiveTasks()` 都先以 root `GET /v1/team/tasks` 为主画布 canonical list，再按 Discovery roots 拉 child catalog；generated Tasks 不进入 root `tasks` state，也不会出现在主 canvas/root list。
+- generated children 的 `GET /v1/team/tasks/:taskId/runs` 结果会并入现有 `taskRunsByTaskId`，subcanvas run/cancel 和 observer 均复用当前 Canvas Task run 管线。
+- Root Discovery 卡片显示 `Discovery` 身份和 `items / active / stale / running / blocked` summary row，并暴露 `data-discovery-failed-dispatch-count`；该 summary 只来自 `discoverySummariesByTaskId`，缺失时回退为 0，不把 generated child 直接挂进 root `tasks`。
+- Discovery 卡片额外高度由 `canvasTaskNodeHeight()` 统一计算，避免 summary row 挤压 agent grid、typed ports、dependency handle 或 drag/drop hitbox。
+- Task 操作菜单只在 root Discovery Task 上显示 `Discovery 子画布` toggle；普通 Task 和 generated child 不显示该入口。
+- Subcanvas catalog panel 复用既有 `taskChildBranchPanels` child panel 系统，`sourceId` 指向当前 Task menu panel，并从 `generatedTasksByDiscoveryTaskId[discoveryTaskId]` 渲染非 archived generated Tasks。
+- Subcanvas diagnostics block 暴露 `data-discovery-dispatch-diagnostics-for`、`data-dispatch-blocked-count` 和 `data-dispatch-item-id`，只显示 blocked item id 与 concise error，不展示 raw `itemPayload`，也不把 diagnostics 生成 Task。
+- 每张 generated card 暴露稳定 data attrs：`data-discovery-subcanvas-for`、`data-generated-task-id`、`data-generated-item-status`、`data-generated-workunit-mode`、`data-generated-run-status`，并用 `data-generated-action="run|cancel|observe-run|edit|reset-workunit|archive"` 标记 run/stop/latest-run observer、浅编辑、reset 和 scoped 归档操作。
+- generated child observer 是 root Discovery branch 的嵌套状态：`detailMode="discovery-subcanvas"` 保持子画布打开，`discoveryGeneratedObserver` 指向 generated task/run/file selection。它使用 `generatedTasksByDiscoveryTaskId` 派生的 generated lookup，不读 root `tasksById`，也不把 generated Task 塞进 root `taskNodes`。
+- generated observer 继续走单一 `taskRunObserverByRunId` effect，调用既有 `GET /v1/team/task-runs/:runId/tasks/:taskId/attempts` 和 attempt file API；panel 暴露 `data-generated-observer-task-id` / `data-generated-observer-run-id`，文件详情从 generated observer panel 继续向右展开。
+- generated child archive/delete 只在 Discovery 子画布 generated card 内显示 scoped confirm（`data-generated-archive-confirm-for`），确认后调用 Team Console adapter 的 `archiveTask(taskId)` / 既有 `POST /v1/team/tasks/:taskId/archive`。成功时只过滤所属 `generatedTasksByDiscoveryTaskId[sourceDiscoveryTaskId]` 并重算 root Discovery generated/active/stale/running summary，blocked dispatch count 保持独立；失败时保留 generated card 和 Discovery 子画布并显示页面 error banner。
+
 #### Output Contract Validation (P26)
 
 `TeamOutputValidationResult` 是 runtime 生成的确定性证据，不由 LLM 自评产生。结构包含 `ok`、`kind`、`sourceRef`、`normalizedRef` 和逐项 `checks[]`。
@@ -544,6 +621,8 @@ queued → running → completed / completed_with_failures / failed / cancelled
 - `resultRef` — 最终结果文件引用
 - `errorSummary` — 错误摘要
 - `finishedAt` — 完成时间
+- `discoveryDispatch[]` — Discovery item 转 generated Task 的诊断记录，status 为 `created` / `updated` / `blocked` / `stale_marked`
+- `discoveryGeneratedRuns[]` — Discovery generated Task auto-run launch 诊断记录，status 为 `started` / `skipped_already_running` / `skipped_not_runnable` / `failed`
 
 `runtimeContext` 记录角色 session 的实际解析结果：`requestedProfileId`、`resolvedProfileId`、`fallbackUsed`、`fallbackReason`、`browserId`、`browserScope`。旧 attempt 不含该字段时仍可正常读取。
 
@@ -584,10 +663,12 @@ run 内相对路径，指向 accepted 或 failed 结果文件。格式如 `tasks
 
 | 方法 | 路径 | 语义 |
 |------|------|------|
-| GET | `/v1/team/tasks` | 列出未归档 Task；`?includeArchived=1` 可包含归档记录 |
-| POST | `/v1/team/tasks` | 创建 Task draft；必须包含 `leaderAgentId` 和完整 `workUnit` |
+| GET | `/v1/team/tasks` | 列出未归档 root Task；`?includeArchived=1` 可包含归档 root，`?includeGenerated=1|true` 才包含 generated Tasks |
+| POST | `/v1/team/tasks` | 创建普通 Task draft 或 Discovery root Task；必须包含 `leaderAgentId` 和完整 `workUnit`，Discovery root 还需 `canvasKind="discovery"` 和 `discoverySpec`；public route 拒绝 `generatedSource` |
 | GET | `/v1/team/tasks/:taskId` | 查看单个 Task |
-| PATCH | `/v1/team/tasks/:taskId` | 更新未归档 Task draft 的 `title`、`leaderAgentId`、`workUnit` 或 `status`；不允许修改 locked Task 的 `workUnit` |
+| GET | `/v1/team/tasks/:taskId/generated-tasks` | 只读列出某个 Discovery root Task 旗下 generated Tasks；默认排除 archived，`?includeArchived=1|true` 时包含 |
+| POST | `/v1/team/tasks/:taskId/generated-workunit/reset` | 将非 archived generated Task 的 visible WorkUnit/title 恢复到 `generatedSource.latestManagedWorkUnit`，并把 `workUnitMode` 标记回 `managed`；缺失 snapshot 返回 409 |
+| PATCH | `/v1/team/tasks/:taskId` | 更新未归档 Task draft 的 `title`、`leaderAgentId`、`workUnit`、`status` 或 Discovery root 的 `discoverySpec`；public route 拒绝 `canvasKind` / `generatedSource`，不允许修改 locked Task 的 `workUnit` |
 | POST | `/v1/team/tasks/:taskId/archive` | 软归档 Task |
 | GET | `/v1/team/tasks/:taskId/runs` | 列出某个 Canvas Task 的独立 Task run |
 | POST | `/v1/team/tasks/:taskId/runs` | 启动某个 ready Canvas Task 的 worker → checker run |
@@ -997,8 +1078,8 @@ docker compose up -d --scale ugk-pi-team-worker=2  # 多 worker 验证
 | `src/team/plan-validation.ts` | Plan create/update schema policy：task type、decomposer、for_each、outputCheck 校验 |
 | `src/team/config-locks.ts` | 活跃 run 对 Plan / TeamUnit / AgentProfile 的锁计算 |
 | `src/team/agent-profile-role-runner.ts` | 真实 AgentProfile runner adapter：profile/session/browser/workspace/abort/runtimeContext 接线 |
-| `src/team/role-prompt-contract.ts` | 纯 role prompt contract：worker/checker/watcher/finalizer/decomposer prompt builder、JSONish parser 和 output normalizer |
-| `src/team/role-runner.ts` | mock runner 与 runner interface（含 `runDecomposer` contract） |
+| `src/team/role-prompt-contract.ts` | 纯 role prompt contract：worker/checker/watcher/finalizer/decomposer/discovery-dispatcher prompt builder、JSONish parser 和 output normalizer |
+| `src/team/role-runner.ts` | mock runner 与 runner interface（含 `runDecomposer` 和 `runDiscoveryDispatcher` contract） |
 | `src/team/task-expansion-planner.ts` | 动态任务扩展：`TaskExpansionPlanner` 接口、`TemplateTaskExpansionPlanner` 模板实现 |
 | `src/team/ids.ts` | ID 生成 |
 | `src/team/path-refs.ts` | resultRef 路径验证和解析 |

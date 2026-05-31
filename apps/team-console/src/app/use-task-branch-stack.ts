@@ -1,6 +1,12 @@
 import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 
-export type TaskBranchDetailMode = "leader-chat" | "edit" | "run-observer";
+export type TaskBranchDetailMode = "leader-chat" | "edit" | "run-observer" | "discovery-subcanvas";
+
+export type TaskBranchGeneratedObserverState = {
+  taskId: string;
+  runId: string;
+  selectedFileKeys?: string[];
+};
 
 export type TaskBranchState = {
   nodeId: string;
@@ -8,6 +14,8 @@ export type TaskBranchState = {
   detailMode: TaskBranchDetailMode | null;
   observedRunId?: string;
   selectedFileKeys?: string[];
+  discoveryGeneratedObserver?: TaskBranchGeneratedObserverState;
+  discoveryGeneratedEditTaskId?: string;
 };
 
 type TaskBranchRoot = {
@@ -45,7 +53,12 @@ export function useTaskBranchStack(options: UseTaskBranchStackOptions): UseTaskB
     setExpandedTaskBranches((current) => {
       if (nodeId) {
         const closing = current.find((branch) => branch.nodeId === nodeId);
-        if (closing) onClearTaskPanelState(closing.taskId);
+        if (closing) {
+          onClearTaskPanelState(closing.taskId);
+          if (closing.discoveryGeneratedEditTaskId && closing.discoveryGeneratedEditTaskId !== closing.taskId) {
+            onClearTaskPanelState(closing.discoveryGeneratedEditTaskId);
+          }
+        }
         return current.filter((branch) => branch.nodeId !== nodeId);
       }
       onClearTaskPanelState();

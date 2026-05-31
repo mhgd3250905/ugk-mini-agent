@@ -85,16 +85,44 @@ export interface DecomposerOutput {
 	runtimeContext?: TeamRoleRuntimeContext;
 }
 
+export interface DiscoveryDispatchInput {
+	runId: string;
+	discoveryTaskId: string;
+	discoveryTaskTitle: string;
+	discoveryGoal: string;
+	dispatchGoal: string;
+	outputKey: string;
+	itemId: string;
+	itemPayload: Record<string, unknown>;
+	requiredItemFields: string[];
+	recommendedItemFields?: string[];
+	generatedWorkerAgentId?: string;
+	generatedCheckerAgentId?: string;
+	signal?: AbortSignal;
+}
+
+export interface DiscoveryDispatchWorkUnitDraft {
+	title: string;
+	input: { text: string };
+	outputContract: { text: string };
+	acceptance: { rules: string[] };
+}
+
+export type DiscoveryDispatchOutput =
+	| { ok: true; itemId: string; workUnit: DiscoveryDispatchWorkUnitDraft; runtimeContext?: TeamRoleRuntimeContext }
+	| { ok: false; itemId: string; error: string; rawContent?: string; runtimeContext?: TeamRoleRuntimeContext };
+
 export interface TeamRoleRunner {
 	runWorker(input: WorkerInput): Promise<WorkerOutput>;
 	runChecker(input: CheckerInput): Promise<CheckerOutput>;
 	runWatcher(input: WatcherInput): Promise<WatcherOutput>;
 	runFinalizer(input: FinalizerInput): Promise<FinalizerOutput>;
 	runDecomposer(input: DecomposerInput): Promise<DecomposerOutput>;
+	runDiscoveryDispatcher?(input: DiscoveryDispatchInput): Promise<DiscoveryDispatchOutput>;
 }
 
 export interface ProfileAwareTeamRoleRunner extends TeamRoleRunner {
-	setProfileIds(profiles: { workerProfileId: string; checkerProfileId: string; watcherProfileId: string; finalizerProfileId: string; decomposerProfileId: string }): void;
+	setProfileIds(profiles: { workerProfileId: string; checkerProfileId: string; watcherProfileId: string; finalizerProfileId: string; decomposerProfileId: string; dispatcherProfileId?: string }): void;
 }
 
 export interface MockRoleRunnerConfig {
@@ -102,6 +130,7 @@ export interface MockRoleRunnerConfig {
 	checkerOutputs?: CheckerOutput[];
 	watcherOutputs?: WatcherOutput[];
 	decomposerOutputs?: DecomposerOutput[];
+	discoveryDispatchOutputs?: DiscoveryDispatchOutput[];
 	finalReport?: string;
 }
 
@@ -110,10 +139,12 @@ export class MockRoleRunner implements TeamRoleRunner {
 	private checkerCallIndex = 0;
 	private watcherCallIndex = 0;
 	private decomposerCallIndex = 0;
+	private discoveryDispatcherCallIndex = 0;
 	private readonly workerOutputs: string[];
 	private readonly checkerOutputs: CheckerOutput[];
 	private readonly watcherOutputs: WatcherOutput[];
 	private readonly decomposerOutputs: DecomposerOutput[];
+	private readonly discoveryDispatchOutputs: DiscoveryDispatchOutput[];
 	private readonly finalReportContent: string;
 
 	constructor(config: MockRoleRunnerConfig = {}) {
@@ -121,6 +152,7 @@ export class MockRoleRunner implements TeamRoleRunner {
 		this.checkerOutputs = config.checkerOutputs ?? [];
 		this.watcherOutputs = config.watcherOutputs ?? [];
 		this.decomposerOutputs = config.decomposerOutputs ?? [];
+		this.discoveryDispatchOutputs = config.discoveryDispatchOutputs ?? [];
 		this.finalReportContent = config.finalReport ?? "# 最终汇总\n\n全部任务已完成。";
 	}
 
@@ -154,10 +186,26 @@ export class MockRoleRunner implements TeamRoleRunner {
 		return output;
 	}
 
+	async runDiscoveryDispatcher(input: DiscoveryDispatchInput): Promise<DiscoveryDispatchOutput> {
+		const output = this.discoveryDispatchOutputs[this.discoveryDispatcherCallIndex] ?? {
+			ok: true as const,
+			itemId: input.itemId,
+			workUnit: {
+				title: `Dispatch discovery item ${input.itemId}`,
+				input: { text: `Process discovery item ${input.itemId} from ${input.discoveryTaskTitle}.` },
+				outputContract: { text: `Return a concise result for discovery item ${input.itemId}.` },
+				acceptance: { rules: [`Result addresses discovery item ${input.itemId}.`] },
+			},
+		};
+		this.discoveryDispatcherCallIndex++;
+		return output;
+	}
+
 	reset(): void {
 		this.workerCallIndex = 0;
 		this.checkerCallIndex = 0;
 		this.watcherCallIndex = 0;
 		this.decomposerCallIndex = 0;
+		this.discoveryDispatcherCallIndex = 0;
 	}
 }

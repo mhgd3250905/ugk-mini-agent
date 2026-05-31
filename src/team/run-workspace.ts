@@ -9,6 +9,8 @@ import type {
 	TeamAttemptWatcherSummary,
 	TeamAttemptWorkerSummary,
 	TeamDiscoveryResultRecord,
+	TeamDiscoveryDispatchOutcome,
+	TeamDiscoveryGeneratedRunOutcome,
 	TeamPlan,
 	TeamRunState,
 	TeamTask,
@@ -117,6 +119,14 @@ export class RunWorkspace {
 
 	async recordAttemptDeliveryOutcomes(runId: string, taskId: string, attemptId: string, outcomes: TeamTaskDeliveryOutcome[]): Promise<void> {
 		await this.attempts.recordAttemptDeliveryOutcomes(runId, taskId, attemptId, outcomes);
+	}
+
+	async recordAttemptDiscoveryDispatchOutcomes(runId: string, taskId: string, attemptId: string, outcomes: TeamDiscoveryDispatchOutcome[]): Promise<void> {
+		await this.attempts.recordAttemptDiscoveryDispatchOutcomes(runId, taskId, attemptId, outcomes);
+	}
+
+	async recordAttemptDiscoveryGeneratedRunOutcomes(runId: string, taskId: string, attemptId: string, outcomes: TeamDiscoveryGeneratedRunOutcome[]): Promise<void> {
+		await this.attempts.recordAttemptDiscoveryGeneratedRunOutcomes(runId, taskId, attemptId, outcomes);
 	}
 
 	async finishAttempt(

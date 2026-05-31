@@ -1,0 +1,78 @@
+请接手 `E:\AII\ugk-pi` 的 Team Console Discovery Step 08E2A review fixes。
+
+当前基线：
+- 最新 commit：`af0362a docs(team-console): record task chain validation`
+- Step 08E2A generated child light edit/reset UI 已本地完成但未 stage、未 commit。
+- Codex review 发现两个窄问题：reload 后 restored generated edit id 会出现“card 显示编辑中但 edit panel 不存在”；关闭整个 Discovery branch 时不会清理 generated child edit draft。
+- 既有 08E2A 验证曾通过：`app-live-data.test.tsx` 39 passed，Team Console API/contract 90 passed，Team Console tsc/build/full Vitest、top-level `npx tsc --noEmit`、`git diff --check` passed。
+- 当前工作区有大量既有 dirty/untracked 文件，尤其 `.pi/skills/anthropics/skill-creator/**` tracked deletions、`.pi/skills/skill-creator/`、`.codex/plans/*`、public/runtime 报告产物。它们不是本轮内容，别恢复、别 stage。
+- 暂存区应为空；本轮不 stage、不 commit。
+
+必须先读：
+- `AGENTS.md`
+- `.codex/plans/2026-05-30-team-console-discovery-requirements.md`
+- `.codex/plans/2026-05-31-team-console-discovery-step-08e2a-generated-edit-reset-ui-plan.md`
+- `.codex/plans/2026-05-31-team-console-discovery-step-08e2a-review-fixes-plan.md`
+- `apps/team-console/src/app/App.tsx`
+- `apps/team-console/src/app/use-task-branch-stack.ts`
+- `apps/team-console/src/app/use-task-edit-state.ts`
+- `apps/team-console/src/tests/app-live-data.test.tsx`
+- `docs/change-log.md`
+
+严格按计划文件执行：
+- `.codex/plans/2026-05-31-team-console-discovery-step-08e2a-review-fixes-plan.md`
+
+本轮只做：
+- 修复 restored `discoveryGeneratedEditTaskId`：页面 reload 后，如果该 id 指向真实 generated child 且 draft 缺失，要 hydrate edit draft，让 `[data-generated-edit-task-id="task_generated_vultr"]` 自动出现；不能让 card 卡在 `data-generated-editing="true"` 但 panel 不存在的假状态。
+- 修复 branch close cleanup：关闭整个 root Discovery branch 时，除了清 `closing.taskId`，还要清 `closing.discoveryGeneratedEditTaskId` 对应的 generated draft，避免未保存草稿在 reopen 后复活。
+- 先补 focused tests，再写实现。
+
+禁止做：
+- 不做 Step 08E2B failed dispatch diagnostics。
+- 不改 backend routes/store/runtime/dispatcher/scheduler/Team worker。
+- 不改 API adapter、fixture schema、`ExecutionMap.tsx`、`atlas-geometry.ts`，除非计划判断完全错误并先停下报告。
+- 不改主 `/playground`。
+- 不改 `.pi/skills/**`、runtime skill、`skills-lock.json`。
+- 不把 generated child 塞进 root `tasksById` / root `taskNodes` / root canvas。
+- 不做 generated child archive/delete。
+- 不创建计划外文件。
+- 不做整文件格式化或换行符转换；保持 touched files 既有 EOL/格式。
+- 不 stage、不 commit、不 push。
+- 不使用 `git add -A`。
+- 不提交 `.env`、`.data`、runtime 产物、temp 文件、截图、报告产物、未知 `.pi/skills/*/skills-lock.json`。
+
+测试要求：
+- 在 `apps/team-console/src/tests/app-live-data.test.tsx` 先加 RED tests。
+- Test 1：seed `ugk-team-console:canvas-ui-state:v1`，让 expanded Discovery branch 包含 `detailMode: "discovery-subcanvas"` 和 `discoveryGeneratedEditTaskId: "task_generated_vultr"`；render 后断言 subcanvas 存在、`[data-generated-edit-task-id="task_generated_vultr"]` 存在、对应 card `data-generated-editing="true"`。
+- Test 2：打开 mock Discovery subcanvas -> 打开 `task_generated_vultr` edit -> 输入未保存 stale title -> 关闭整个 root Discovery branch -> 重新打开 subcanvas/edit；断言 title draft 是当前 generated task title，不是 stale title。
+
+实现建议：
+- 在 `App.tsx` 用 effect 扫描 `expandedTaskBranches` 中 `detailMode === "discovery-subcanvas"` 且有 `discoveryGeneratedEditTaskId` 的 branch。
+- 用 `generatedTasksById` 解析 generated task；如果存在且 `taskEditDraftByTaskId[taskId]` 缺失，调用 `openTaskEditDraft(generatedTask)`。
+- 不要在 render 里 set state。
+- 在 `use-task-branch-stack.ts` 的 `closeTaskBranch(nodeId)` 中，closing branch 存在时清 `closing.taskId`，并在 `closing.discoveryGeneratedEditTaskId` 存在且不同于 root task id 时再清一次。
+- 关闭全部 branch 的 `onClearTaskPanelState()` 无参语义保持不变。
+- `docs/change-log.md` 可加一句 2026-05-31 review fix；不要碰 `docs/team-runtime.md`，除非发现它已经和代码事实冲突。
+
+最终验证：
+- `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx`
+- `npm --prefix apps/team-console test -- --run src/tests/team-api.test.ts src/tests/team-contract-drift.test.ts`
+- `npm --prefix apps/team-console exec tsc -- --noEmit -p tsconfig.json`
+- `npm --prefix apps/team-console run build`
+- `npm --prefix apps/team-console test`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `git diff --stat`
+- `git diff --numstat`
+- `git ls-files --eol apps/team-console/src/app/App.tsx apps/team-console/src/app/use-task-branch-stack.ts apps/team-console/src/tests/app-live-data.test.tsx docs/change-log.md`（如果没改 docs/change-log.md，就从命令里去掉）
+- `git diff --cached --stat`
+
+浏览器验证必须在真实入口完成：
+- URL：`http://127.0.0.1:5174/`
+- 用 mock / 示例数据。
+- Reload restore：打开 Discovery subcanvas，打开 `task_generated_vultr` edit，reload 页面；报告 `[data-discovery-subcanvas-for="task_discovery_cloud_vendors"]` count、`[data-generated-edit-task-id="task_generated_vultr"]` count、card `data-generated-editing`。
+- Branch close cleanup：打开 `task_generated_vultr` edit，输入未保存 stale title，关闭整个 root Discovery branch，重新打开 subcanvas/edit；报告 title input value，确认不是 stale title。
+- Regression boundary：报告 root canvas generated title matches count 仍为 0，console issues，screenshot path。截图放 `runtime/`，不要 stage。
+- 如果 browser automation 不能直接操作 localStorage，不要让用户跑 console snippet；用上面的 UI reload 路径验证。
+
+完成后按计划里的 Delivery Report Template 回复。不要 stage，不要 commit。

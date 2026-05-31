@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildServer } from "../src/server.js";
 import type { AgentService } from "../src/agent/agent-service.js";
+import { TaskStore } from "../src/team/task-store.js";
 
 function createAgentServiceStub() {
 	return {
@@ -33,13 +34,13 @@ async function buildTestServer() {
 	process.env.UGK_AGENT_DATA_DIR = join(root, "agent");
 	process.env.CONN_DATABASE_PATH = join(root, "conn", "conn.sqlite");
 	const app = await buildServer({ agentService: createAgentServiceStub() });
-	return { app, root };
+	return { app, root, teamDir };
 }
 
 const taskPayload = {
 	title: "调查 Medtrum 相关云服务器资产",
 	leaderAgentId: "main",
-	status: "ready",
+	status: "ready" as const,
 	workUnit: {
 		title: "调查 Medtrum 相关云服务器资产",
 		input: { text: "围绕 Medtrum 相关公开云服务器资产进行搜索和证据整理。" },
@@ -49,6 +50,65 @@ const taskPayload = {
 		checkerAgentId: "main",
 	},
 };
+
+const discoverySpec = {
+	schemaVersion: "team/discovery-spec-1" as const,
+	discoveryGoal: "发现 Medtrum 相关公开域名资产。",
+	outputKey: "items",
+	itemIdField: "id" as const,
+	requiredItemFields: ["id"],
+	recommendedItemFields: ["title", "type"],
+	dispatchGoal: "逐项核查每个域名的归属、证据和风险。",
+	dispatcherAgentId: "main",
+	generatedWorkerAgentId: "search",
+	generatedCheckerAgentId: "main",
+	autoRun: { enabled: true as const, concurrency: 3 as const },
+};
+
+function discoveryTaskPayload(overrides: Record<string, unknown> = {}) {
+	return {
+		...taskPayload,
+		canvasKind: "discovery",
+		discoverySpec,
+		...overrides,
+	};
+}
+
+function generatedSource(
+	sourceDiscoveryTaskId: string,
+	sourceItemId: string,
+	itemStatus: "active" | "stale" = "active",
+	options: { latestManagedWorkUnit?: typeof taskPayload.workUnit } = {},
+) {
+	return {
+		schemaVersion: "team/generated-task-source-1" as const,
+		sourceDiscoveryTaskId,
+		sourceItemId,
+		itemStatus,
+		itemPayload: { id: sourceItemId, title: `Item ${sourceItemId}`, type: "domain" },
+		latestDiscoveryRunId: `run_${sourceItemId}`,
+		latestDiscoveryAttemptId: `attempt_${sourceItemId}`,
+		latestDiscoveredAt: "2026-05-30T00:00:00.000Z",
+		workUnitMode: "managed" as const,
+		...(options.latestManagedWorkUnit ? { latestManagedWorkUnit: options.latestManagedWorkUnit } : {}),
+	};
+}
+
+async function seedGeneratedTask(
+	teamDir: string,
+	sourceDiscoveryTaskId: string,
+	sourceItemId: string,
+	itemStatus: "active" | "stale" = "active",
+	options: { latestManagedWorkUnit?: typeof taskPayload.workUnit } = {},
+) {
+	const store = new TaskStore(teamDir, { getAgentIds: () => ["main", "search"] });
+	return store.create({
+		...taskPayload,
+		title: `Generated ${sourceItemId}`,
+		workUnit: { ...taskPayload.workUnit, title: `Generated ${sourceItemId}` },
+		generatedSource: generatedSource(sourceDiscoveryTaskId, sourceItemId, itemStatus, options),
+	});
+}
 
 function withPorts(
 	payload: typeof taskPayload,
@@ -85,6 +145,322 @@ test("POST /v1/team/tasks creates an independent Task resource", async () => {
 
 		await app.close();
 	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("POST /v1/team/tasks creates a Discovery root Task resource", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const createRes = await app.inject({ method: "POST", url: "/v1/team/tasks", payload: discoveryTaskPayload() });
+		assert.equal(createRes.statusCode, 201);
+		const body = createRes.json();
+		assert.ok(body.task.taskId.startsWith("task_"));
+		assert.equal(body.task.canvasKind, "discovery");
+		assert.deepEqual(body.task.discoverySpec, discoverySpec);
+		assert.equal(body.task.generatedSource, undefined);
+		assert.equal(body.task.planId, undefined, "Discovery Task creation must not create a single-task Plan");
+
+		const plansRes = await app.inject({ method: "GET", url: "/v1/team/plans" });
+		assert.equal(plansRes.statusCode, 200);
+		assert.equal(plansRes.json().length, 0);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("POST /v1/team/tasks rejects invalid Discovery payloads", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const missingSpec = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: discoveryTaskPayload({ discoverySpec: undefined }),
+		});
+		assert.equal(missingSpec.statusCode, 400);
+		assert.match(missingSpec.json().error, /discoverySpec is required for discovery tasks/);
+
+		const missingIdField = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: discoveryTaskPayload({
+				discoverySpec: { ...discoverySpec, requiredItemFields: ["title"] },
+			}),
+		});
+		assert.equal(missingIdField.statusCode, 400);
+		assert.match(missingIdField.json().error, /discoverySpec.requiredItemFields must include id/);
+
+		const unknownGeneratedWorker = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: discoveryTaskPayload({
+				discoverySpec: { ...discoverySpec, generatedWorkerAgentId: "missing-worker" },
+			}),
+		});
+		assert.equal(unknownGeneratedWorker.statusCode, 400);
+		assert.match(unknownGeneratedWorker.json().error, /agent profile not found: missing-worker/);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("POST /v1/team/tasks rejects public generatedSource creation", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const res = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: {
+				...taskPayload,
+				generatedSource: generatedSource("task_discovery", "item_public"),
+			},
+		});
+		assert.equal(res.statusCode, 400);
+		assert.match(res.json().error, /generated Task source identity cannot be created through this route/);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/tasks hides generated Tasks by default and includes them explicitly", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const normal = (await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload })).json().task;
+		const discovery = (await app.inject({ method: "POST", url: "/v1/team/tasks", payload: discoveryTaskPayload() })).json().task;
+		const generated = await seedGeneratedTask(teamDir, discovery.taskId, "item_active");
+
+		const defaultList = await app.inject({ method: "GET", url: "/v1/team/tasks" });
+		assert.equal(defaultList.statusCode, 200);
+		assert.deepEqual(
+			new Set(defaultList.json().tasks.map((task: any) => task.taskId)),
+			new Set([normal.taskId, discovery.taskId]),
+		);
+		assert.ok(defaultList.json().tasks.every((task: any) => task.generatedSource === undefined));
+
+		const includeGenerated = await app.inject({ method: "GET", url: "/v1/team/tasks?includeGenerated=1" });
+		assert.equal(includeGenerated.statusCode, 200);
+		assert.ok(includeGenerated.json().tasks.some((task: any) => task.taskId === generated.taskId));
+		assert.ok(includeGenerated.json().tasks.some((task: any) => task.taskId === normal.taskId));
+		assert.ok(includeGenerated.json().tasks.some((task: any) => task.taskId === discovery.taskId));
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/tasks/:taskId/generated-tasks returns one Discovery root child catalog", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const discovery = (await app.inject({ method: "POST", url: "/v1/team/tasks", payload: discoveryTaskPayload() })).json().task;
+		const otherDiscovery = (await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: discoveryTaskPayload({ title: "Other discovery" }),
+		})).json().task;
+		const active = await seedGeneratedTask(teamDir, discovery.taskId, "active_item");
+		const stale = await seedGeneratedTask(teamDir, discovery.taskId, "stale_item", "stale");
+		const archived = await seedGeneratedTask(teamDir, discovery.taskId, "archived_item");
+		await seedGeneratedTask(teamDir, otherDiscovery.taskId, "other_item");
+		await new TaskStore(teamDir, { getAgentIds: () => ["main", "search"] }).archive(archived.taskId);
+
+		const defaultList = await app.inject({ method: "GET", url: `/v1/team/tasks/${discovery.taskId}/generated-tasks` });
+		assert.equal(defaultList.statusCode, 200);
+		assert.deepEqual(
+			new Set(defaultList.json().tasks.map((task: any) => task.taskId)),
+			new Set([active.taskId, stale.taskId]),
+		);
+		assert.deepEqual(
+			new Set(defaultList.json().tasks.map((task: any) => task.generatedSource.itemStatus)),
+			new Set(["active", "stale"]),
+		);
+
+		const includeArchived = await app.inject({
+			method: "GET",
+			url: `/v1/team/tasks/${discovery.taskId}/generated-tasks?includeArchived=true`,
+		});
+		assert.equal(includeArchived.statusCode, 200);
+		assert.ok(includeArchived.json().tasks.some((task: any) => task.taskId === archived.taskId));
+		assert.ok(includeArchived.json().tasks.every((task: any) => task.generatedSource.sourceDiscoveryTaskId === discovery.taskId));
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/tasks/:taskId/generated-tasks rejects missing or non-Discovery parents", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const missing = await app.inject({ method: "GET", url: "/v1/team/tasks/task_missing/generated-tasks" });
+		assert.equal(missing.statusCode, 404);
+
+		const normal = (await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload })).json().task;
+		const normalParent = await app.inject({ method: "GET", url: `/v1/team/tasks/${normal.taskId}/generated-tasks` });
+		assert.equal(normalParent.statusCode, 400);
+		assert.match(normalParent.json().error, /generated tasks can only be listed for Discovery root tasks/);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("PATCH /v1/team/tasks/:taskId forwards discoverySpec only for Discovery roots", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const discovery = (await app.inject({ method: "POST", url: "/v1/team/tasks", payload: discoveryTaskPayload() })).json().task;
+		const normal = (await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload })).json().task;
+		const nextSpec = { ...discoverySpec, dispatchGoal: "改为逐项核查备案、证据和风险。" };
+
+		const updateDiscovery = await app.inject({
+			method: "PATCH",
+			url: `/v1/team/tasks/${discovery.taskId}`,
+			payload: { discoverySpec: nextSpec },
+		});
+		assert.equal(updateDiscovery.statusCode, 200);
+		assert.deepEqual(updateDiscovery.json().task.discoverySpec, nextSpec);
+
+		const updateNormal = await app.inject({
+			method: "PATCH",
+			url: `/v1/team/tasks/${normal.taskId}`,
+			payload: { discoverySpec: nextSpec },
+		});
+		assert.equal(updateNormal.statusCode, 400);
+		assert.match(updateNormal.json().error, /normal root task cannot carry discoverySpec/);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("PATCH /v1/team/tasks/:taskId rejects public identity updates", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const normal = (await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload })).json().task;
+
+		const canvasKind = await app.inject({
+			method: "PATCH",
+			url: `/v1/team/tasks/${normal.taskId}`,
+			payload: { canvasKind: "discovery" },
+		});
+		assert.equal(canvasKind.statusCode, 400);
+		assert.match(canvasKind.json().error, /canvasKind cannot be updated through this route/);
+
+		const source = await app.inject({
+			method: "PATCH",
+			url: `/v1/team/tasks/${normal.taskId}`,
+			payload: { generatedSource: generatedSource("task_discovery", "item_public") },
+		});
+		assert.equal(source.statusCode, 400);
+		assert.match(source.json().error, /generated Task source identity cannot be updated through this route/);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("PATCH /v1/team/tasks/:taskId marks generated Task WorkUnit edits as customized", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const generated = await seedGeneratedTask(teamDir, "task_discovery", "item_customized", "active", {
+			latestManagedWorkUnit: taskPayload.workUnit,
+		});
+		const res = await app.inject({
+			method: "PATCH",
+			url: `/v1/team/tasks/${generated.taskId}`,
+			payload: {
+				workUnit: { ...generated.workUnit, input: { text: "用户改写后的输入" } },
+			},
+		});
+		assert.equal(res.statusCode, 200);
+		assert.equal(res.json().task.workUnit.input.text, "用户改写后的输入");
+		assert.equal(res.json().task.generatedSource.workUnitMode, "customized");
+		assert.deepEqual(res.json().task.generatedSource.latestManagedWorkUnit, taskPayload.workUnit);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("POST /v1/team/tasks/:taskId/generated-workunit/reset restores generated Task managed snapshot", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const latestManagedWorkUnit = {
+			...taskPayload.workUnit,
+			title: "Managed generated WorkUnit",
+			input: { text: "派发器最新输入" },
+			outputContract: { text: "派发器最新输出" },
+			acceptance: { rules: ["派发器最新规则"] },
+		};
+		const generated = await seedGeneratedTask(teamDir, "task_discovery", "item_reset", "active", {
+			latestManagedWorkUnit,
+		});
+		const customized = await app.inject({
+			method: "PATCH",
+			url: `/v1/team/tasks/${generated.taskId}`,
+			payload: {
+				title: "用户改名 generated",
+				workUnit: {
+					...generated.workUnit,
+					title: "用户改写 WorkUnit",
+					input: { text: "用户输入" },
+				},
+			},
+		});
+		assert.equal(customized.statusCode, 200);
+		assert.equal(customized.json().task.generatedSource.workUnitMode, "customized");
+
+		const reset = await app.inject({
+			method: "POST",
+			url: `/v1/team/tasks/${generated.taskId}/generated-workunit/reset`,
+		});
+
+		assert.equal(reset.statusCode, 200);
+		assert.equal(reset.json().task.title, latestManagedWorkUnit.title);
+		assert.deepEqual(reset.json().task.workUnit, latestManagedWorkUnit);
+		assert.equal(reset.json().task.generatedSource.workUnitMode, "managed");
+		assert.equal(reset.json().task.generatedSource.sourceDiscoveryTaskId, "task_discovery");
+		assert.equal(reset.json().task.generatedSource.sourceItemId, "item_reset");
+		assert.deepEqual(reset.json().task.generatedSource.latestManagedWorkUnit, latestManagedWorkUnit);
+		assert.ok(Array.isArray(reset.json().warnings));
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("POST /v1/team/tasks/:taskId/generated-workunit/reset rejects invalid reset targets", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const normal = (await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload })).json().task;
+		const discovery = (await app.inject({ method: "POST", url: "/v1/team/tasks", payload: discoveryTaskPayload() })).json().task;
+		const oldGenerated = await seedGeneratedTask(teamDir, discovery.taskId, "old_item");
+		const archived = await seedGeneratedTask(teamDir, discovery.taskId, "archived_item", "active", {
+			latestManagedWorkUnit: taskPayload.workUnit,
+		});
+		await new TaskStore(teamDir, { getAgentIds: () => ["main", "search"] }).archive(archived.taskId);
+
+		const missing = await app.inject({ method: "POST", url: "/v1/team/tasks/task_missing/generated-workunit/reset" });
+		assert.equal(missing.statusCode, 404);
+
+		const normalReset = await app.inject({ method: "POST", url: `/v1/team/tasks/${normal.taskId}/generated-workunit/reset` });
+		assert.equal(normalReset.statusCode, 400);
+		assert.match(normalReset.json().error, /generated WorkUnit reset requires a generated task/);
+
+		const discoveryReset = await app.inject({ method: "POST", url: `/v1/team/tasks/${discovery.taskId}/generated-workunit/reset` });
+		assert.equal(discoveryReset.statusCode, 400);
+		assert.match(discoveryReset.json().error, /generated WorkUnit reset requires a generated task/);
+
+		const archivedReset = await app.inject({ method: "POST", url: `/v1/team/tasks/${archived.taskId}/generated-workunit/reset` });
+		assert.equal(archivedReset.statusCode, 409);
+		assert.match(archivedReset.json().error, /archived generated task cannot reset WorkUnit/);
+
+		const oldGeneratedReset = await app.inject({ method: "POST", url: `/v1/team/tasks/${oldGenerated.taskId}/generated-workunit/reset` });
+		assert.equal(oldGeneratedReset.statusCode, 409);
+		assert.match(oldGeneratedReset.json().error, /latest managed WorkUnit snapshot is missing/);
+	} finally {
+		await app.close();
 		await rm(root, { recursive: true, force: true });
 	}
 });

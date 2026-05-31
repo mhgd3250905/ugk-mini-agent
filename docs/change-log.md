@@ -12,6 +12,166 @@
 
 ---
 
+## 2026-05-31 — Team Console Discovery generated child archive/delete UI
+
+- **主题**: 给 5174 Discovery 子画布 generated child card 增加 scoped soft archive/delete 操作。
+- **变更内容**:
+  - generated child card 新增 `data-generated-action="archive"` 和局部确认块 `data-generated-archive-confirm-for`，不复用 root Task 的归档 modal 或 root `archiveTask()` branch cleanup。
+  - 确认后调用既有 `CanvasTaskGateway.archiveTask(taskId)` / `POST /v1/team/tasks/:taskId/archive`；这是软归档，不新增 endpoint，不做 hard delete、restore 或 unarchive。
+  - 成功后只从 `generatedTasksByDiscoveryTaskId[sourceDiscoveryTaskId]` 移除该 generated child，并重算 root Discovery generated/active/stale/running summary；blocked dispatch count 继续来自 diagnostics，不随 child archive 删除。
+  - 归档同一个 generated child 时同步清理该 child 的 edit draft、warning/saving、generated observer 和 generated observer file-detail selection；root Discovery branch 和 Discovery 子画布保持打开。
+  - 失败时保留 generated card 和 Discovery 子画布，并通过现有页面 error banner 展示错误。
+- **影响范围**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/use-team-console-live-data.ts`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`、`.codex/plans/2026-05-30-team-console-discovery-requirements.md`。
+- **验证**: focused App live-data tests 已按 TDD 先 RED 后 GREEN，覆盖 mock success、state cleanup、live endpoint 和 failure path；完整 Step 08E2C 验证见本轮交付报告。
+- **对应入口**: 5174 Team Console root Discovery Task -> `Discovery 子画布` -> generated child card；本步不改 `src/team/**` backend routes/store/runtime/dispatcher/scheduler，不改 Discovery dispatch/upsert/auto-run/schema，不碰主 `/playground` 或 `.pi/skills/**`。
+
+## 2026-05-31 — Team Console Discovery failed dispatch diagnostics
+
+- **主题**: 在 5174 Discovery root summary 和子画布显示 blocked dispatcher diagnostics。
+- **变更内容**:
+  - `useTeamConsoleLiveData()` 从既有 `listTaskRuns()` / `listTaskRunAttempts()` 读取最新 root Discovery run attempt 的 `TeamAttemptMetadata.discoveryDispatch[]`，只把 `status="blocked"` 计入 failed dispatch diagnostics。
+  - root Discovery 卡片 summary 新增 blocked dispatch 计数，并暴露 `data-discovery-failed-dispatch-count`；普通 Task 卡片不显示该计数或属性。
+  - Discovery 子画布新增 diagnostics block，暴露 `data-discovery-dispatch-diagnostics-for`、`data-dispatch-blocked-count` 和 `data-dispatch-item-id`，只展示 blocked item id 与 concise error。
+  - 旧 metadata 缺失 `discoveryDispatch` 或 attempt 读取失败时安全降级为 0，不影响 generated child catalog 或子画布打开。
+- **影响范围**: `apps/team-console/src/app/use-team-console-live-data.ts`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/fixtures/team-fixtures.ts`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/src/tests/execution-map-ui.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`。
+- **验证**: focused App live-data / ExecutionMap UI tests 覆盖 RED/GREEN；完整 Step 08E2B 验证见本轮交付报告。
+- **对应入口**: 5174 Team Console root Discovery Task card 和 `Discovery 子画布`；本步不新增后端 endpoint，不改 `src/team/**` runtime/store/route/dispatcher/scheduler，不创建 generated Tasks from diagnostics，不改主 `/playground` 或 `.pi/skills/**`。
+
+## 2026-05-31 — Team Console Discovery generated Task edit/reset UI
+
+- **主题**: 给 5174 Discovery 子画布 generated child card 增加浅编辑和 reset-to-managed UI。
+- **变更内容**:
+  - generated child card 新增 `data-generated-action="edit"`，从 Discovery subcanvas 派生 `data-generated-edit-task-id` panel，只允许修改 Task 名称、Leader Agent、Worker Agent、Checker Agent。
+  - generated Task 保存继续调用既有 `PATCH /v1/team/tasks/:taskId`；标题变更会同时 patch visible `title` 和 `workUnit.title`，让后端按现有规则把 `workUnitMode` 标记为 `customized`，避免 Discovery rerun 误覆盖用户标题。
+  - customized 且存在 `generatedSource.latestManagedWorkUnit` 的 generated child 新增 `data-generated-action="reset-workunit"`，调用 `resetGeneratedTaskWorkUnit(taskId)`，只替换 `generatedTasksByDiscoveryTaskId[sourceDiscoveryTaskId]` 中的对应 child。
+  - generated edit/reset 状态挂在 root Discovery branch 的 `discoveryGeneratedEditTaskId` 和 generated catalog state 下；generated children 仍不进入 root `tasks`、root `tasksById`、root `taskNodes` 或主 root canvas。
+  - Review fix: reload 恢复 `discoveryGeneratedEditTaskId` 时会为真实 generated child hydrate edit draft；关闭整个 root Discovery branch 时同步清理 generated child edit draft，避免 stale 未保存草稿复活。
+- **影响范围**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/use-task-branch-stack.ts`、`apps/team-console/src/app/use-team-console-live-data.ts`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`。
+- **验证**: focused App live-data tests 已覆盖 mock edit、mock reset、live reset endpoint 和 reset failure 保持子画布打开；完整 Step 08E2A 验证见本轮交付报告。
+- **对应入口**: 5174 Team Console root Discovery Task -> `Discovery 子画布` -> generated child card；本步不实现 failed dispatch diagnostics、generated archive/delete，不改 backend routes/store/runtime/dispatcher/scheduler、主 `/playground` 或 `.pi/skills`。
+
+## 2026-05-31 — Team Console Discovery generated WorkUnit reset contract
+
+- **主题**: 为 Discovery generated Task 增加 latest managed WorkUnit 快照和 reset-to-managed API seam。
+- **变更内容**:
+  - `TeamGeneratedTaskSource` 新增可选 `latestManagedWorkUnit?: TeamWorkUnitDefinition`，旧 generated Task 无该字段继续可读；字段存在时按 WorkUnit schema 校验。
+  - `TaskStore.upsertGeneratedTaskFromDiscovery()` 在 create、managed rerun 和 customized rerun 都刷新 latest managed snapshot；customized rerun 仍不覆盖 visible `title/workUnit`。
+  - public generated WorkUnit edit 继续标记 `workUnitMode="customized"` 且保留 snapshot；新增 `TaskStore.resetGeneratedTaskWorkUnit()` 和 `POST /v1/team/tasks/:taskId/generated-workunit/reset`，只对非 archived generated Task 且存在 snapshot 时恢复 visible WorkUnit/title 并标记 managed。
+  - Team Console API adapter 新增 `resetGeneratedTaskWorkUnit(taskId)`；Mock adapter 真实更新 generated catalog，不是假返回。
+- **影响范围**: `src/team/types.ts`、`src/team/task-validation.ts`、`src/team/task-store.ts`、`src/team/routes.ts`、`apps/team-console/src/api/team-types.ts`、`apps/team-console/src/api/team-api.ts`、`apps/team-console/src/fixtures/team-fixtures.ts`、相关测试、`docs/team-runtime.md`、`apps/team-console/README.md`。
+- **验证**: focused store/routes/API/contract tests 已通过；完整 Step 08E1 验证见本轮交付报告。
+- **对应入口**: `POST /v1/team/tasks/:taskId/generated-workunit/reset`；本步只做 contract/store/route/API adapter，不做 5174 UI，不改 generated child light edit/diagnostics、scheduler、dispatcher、主 `/playground` 或 `.pi/skills`。
+
+## 2026-05-31 — Team Console Discovery generated Task observer
+
+- **主题**: 给 5174 Discovery 子画布 generated child card 增加 run/cancel 和 latest run observer/file detail。
+- **变更内容**:
+  - generated child card 新增 `data-generated-action="run|cancel|observe-run"` 操作，run/stop 继续调用既有 Canvas Task run API adapter，不新增后端接口。
+  - `TaskBranchState` 增加嵌套 `discoveryGeneratedObserver`，让 generated observer 挂在 root Discovery subcanvas branch 下；旧存储状态兼容，malformed nested observer 只忽略该 observer，不丢 root branch。
+  - generated observer 使用 `generatedTasksByDiscoveryTaskId` 派生的 `generatedTasksById` 查找 generated child，不读 root `tasksById`，也不把 generated child 放进 root `taskNodes`。
+  - run observer attempts/files 继续复用单一 `taskRunObserverByRunId` effect、`listTaskRunAttempts()` 和 `readTaskRunAttemptFile()`，generated observer panel 暴露 `data-generated-observer-task-id` / `data-generated-observer-run-id`，文件详情从该 panel 派生。
+- **影响范围**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/use-task-branch-stack.ts`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`。
+- **验证**: focused App live-data / root run observer tests 和 Team Console `tsc` 已通过；完整 Step 08D 验证见本轮交付报告。
+- **对应入口**: 5174 Team Console root Discovery Task action menu -> `Discovery 子画布`；本步不改 backend routes/store/runtime runner/dispatcher/scheduler、`.pi/skills`、主 `/playground`、generated child edit/archive/delete/reset-to-managed 或 failed dispatch diagnostics。
+
+## 2026-05-31 — Team Console Discovery subcanvas catalog panel
+
+- **主题**: 给 5174 root Discovery Task 菜单增加 generated child catalog 子画布。
+- **变更内容**:
+  - `App` 新增 `discovery-subcanvas` Task branch detail mode，root Discovery Task 的操作菜单显示 `Discovery 子画布` toggle；普通 Task 不显示该入口。
+  - Discovery 子画布复用既有 `taskChildBranchPanels`，`sourceId` 指向当前 Task menu panel，并从 `generatedTasksByDiscoveryTaskId[discoveryTaskId]` 渲染非 archived generated Tasks。
+  - generated child card 暴露 `data-discovery-subcanvas-for`、`data-generated-task-id`、`data-generated-item-status`、`data-generated-workunit-mode`、`data-generated-run-status`，展示 title、active/stale、managed/customized 和 latest run status。
+  - generated Tasks 仍不进入 root canvas；本步不实现 generated child edit/run/cancel/archive/observer/file-detail。
+- **影响范围**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/use-task-branch-stack.ts`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`。
+- **验证**: focused App live-data / ExecutionMap UI tests 已通过；完整 Step 08C 验证见本轮交付报告。
+- **对应入口**: 5174 Team Console root Discovery Task action menu；本步不改 backend routes/store/runtime/scheduler/dispatcher、role prompt/parser、`.pi/skills`、主 `/playground` 或 generated child 操作能力。
+
+## 2026-05-31 — Team Console Discovery root summary surface
+
+- **主题**: 在 5174 Team Console root Discovery 卡片上显示 Discovery 身份和 generated child summary。
+- **变更内容**:
+  - `ExecutionMap` 接收 `discoverySummariesByTaskId`，仅对 `canvasKind="discovery"` 且非 generated child 的 root Task 渲染 `Discovery` 身份、`data-canvas-kind="discovery"`、专用卡片 class 和 `items / active / stale / running` summary row。
+  - `App` 将 live data hook 的 Discovery summary 传入 Execution Atlas；mock data source 默认包含 Discovery root 和非 archived generated catalog，便于 5174 本地视觉验证。
+  - `atlas-geometry` 为 Discovery root 卡片增加统一高度，drag hitbox、Dock flight、dependency geometry 和视觉卡片高度使用同一计算源。
+  - generated child Tasks 仍只保留在 child catalog / generated summaries 中，不作为主 root canvas cards 渲染。
+- **影响范围**: `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/atlas-geometry.ts`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/use-team-console-live-data.ts`、`apps/team-console/src/tests/execution-map-ui.test.tsx`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`。
+- **验证**: focused ExecutionMap UI / live-data / contract drift tests、Team Console `tsc`、Team Console build、Team Console full Vitest、top-level `npx tsc --noEmit`、`git diff --check` 和 5174 mock 浏览器验证均已通过。
+- **对应入口**: 5174 Team Console root canvas Discovery 卡片；本步不改 backend routes/store/runtime/scheduler/dispatcher、role prompt/parser、`.pi/skills`、主 `/playground` 或 Discovery subcanvas。
+
+## 2026-05-31 — Team Console Discovery data/API seam
+
+- **主题**: 让 5174 Team Console data layer 消费 Discovery generated child catalog，并产出非视觉 Discovery summary。
+- **变更内容**:
+  - `LiveTeamApi` / `MockTeamApi` 新增 `listGeneratedTasks(discoveryTaskId, options?)`；live route 调 `GET /v1/team/tasks/:taskId/generated-tasks`，URL encode `taskId`，`includeArchived` 时追加查询参数，404 按空列表处理，并兼容 `{ tasks }` 和 bare array。
+  - Mock fixture 增加 Discovery root、active generated child、stale generated child 和 archived generated child；`listTasks()` 仍只返回 root Tasks，generated children 只能通过 `listGeneratedTasks()` 读取，默认排除 archived。
+  - `useTeamConsoleLiveData()` 新增 `generatedTasksByDiscoveryTaskId` 和 `discoverySummariesByTaskId`，初始 live load / refresh 只在 root catalog 包含 `canvasKind="discovery"` 时读取 child catalog。
+  - generated Tasks 不进入 root `tasks` state，也不渲染到主 canvas/root list；generated child run summaries 会并入既有 `taskRunsByTaskId`，供后续 subcanvas/UI 复用。
+- **影响范围**: `apps/team-console/src/api/team-api.ts`、`apps/team-console/src/app/use-team-console-live-data.ts`、`apps/team-console/src/fixtures/team-fixtures.ts`、`apps/team-console/src/tests/team-api.test.ts`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`。
+- **验证**: focused Team Console API/live-data tests 已通过；完整 Step 08A 验证见本轮交付报告。
+- **对应入口**: 5174 Team Console Live API data layer；本步不改 backend routes/runtime、ExecutionMap 视觉、Discovery subcanvas、Task 卡片/menu、`.pi/skills` 或主 `/playground` UI。
+
+## 2026-05-31 — Team Console Discovery generated Task auto-run scheduler
+
+- **主题**: Discovery dispatch/upsert 成功后自动运行本次 active generated Tasks，并记录 launch diagnostics。
+- **变更内容**:
+  - `CanvasTaskRunService` 在 Discovery attempt 成功且 `discoverySpec.autoRun.enabled === true` 时，只从本次 dispatch 成功创建/更新的 active generated Tasks 生成 auto-run 候选。
+  - generated Task auto-run 通过 `CanvasTaskRunService.createRun()` 启动，固定 v1 并发池为 3；候选 run 进入 terminal 后才补下一个，避免一次性全量 launch。
+  - blocked dispatch item、stale generated Task、`generatedSource.itemStatus !== "active"`、非 `ready` Task 和已有 active run 的 generated Task 不会重复启动；分别记录 `skipped_not_runnable` 或 `skipped_already_running`。
+  - generated run `source.triggeredBy` 新增 `discovery-generated-task` variant，记录 Discovery root task/run/attempt 和 source item id。
+  - attempt metadata 新增可选 `discoveryGeneratedRuns[]` outcome 记录，旧 attempt / malformed metadata 继续兼容读取。
+- **影响范围**: `src/team/types.ts`、`src/team/run-workspace.ts`、`src/team/run-workspace-attempts.ts`、`src/team/task-run-service.ts`、`apps/team-console/src/api/team-types.ts`、`apps/team-console/src/tests/team-contract-drift.test.ts`、`test/team-run-workspace.test.ts`、`test/team-task-run-process.test.ts`、`docs/team-runtime.md`。
+- **验证**: focused workspace / Canvas Task run tests 已通过；完整 Step 07 验证见本轮交付报告。
+- **对应入口**: Team Console Discovery root Task run、generated Task Canvas Task run、attempt metadata diagnostics；本步不改 routes、5174 UI、role prompt/parser、AgentProfile runner、Plan orchestrator、team worker 或 `.pi/skills`。
+
+## 2026-05-31 — Team Console Discovery generated Task upsert
+
+- **主题**: Discovery root Task 成功后按 `discovery-result.json` 派发 item，并创建 / 复用真实 generated Team Canvas Tasks。
+- **变更内容**:
+  - `TaskStore` 新增内部 `upsertGeneratedTaskFromDiscovery()` 和 `markGeneratedTasksStaleForDiscovery()`，身份键为 `sourceDiscoveryTaskId + sourceItemId`；managed WorkUnit rerun 覆盖，customized WorkUnit 只更新 source metadata。
+  - `CanvasTaskRunService` 在 Discovery attempt 成功后读取 `discovery-result.json`，逐 item 调用 optional `runDiscoveryDispatcher()`；合法 draft 创建或更新 generated Task，缺失 dispatcher / invalid output / upsert 错误只记录 blocked outcome，不改 Discovery run terminal status。
+  - generated Task 创建时继承 Discovery root leader，使用 `discoverySpec.generatedWorkerAgentId` / `generatedCheckerAgentId`，状态为 `ready`，`generatedSource.itemStatus="active"` 且 `workUnitMode="managed"`。
+  - 最新 Discovery result 缺失的同源 generated Tasks 标记为 `stale`，不 archive，不改 WorkUnit；本步不启动 generated Task auto-run scheduler。
+  - attempt metadata 新增可选 `discoveryDispatch[]` outcome 记录，旧 attempt / malformed metadata 继续兼容读取。
+- **影响范围**: `src/team/types.ts`、`src/team/run-workspace.ts`、`src/team/run-workspace-attempts.ts`、`src/team/task-store.ts`、`src/team/task-run-service.ts`、`test/team-task-store.test.ts`、`test/team-run-workspace.test.ts`、`test/team-task-run-process.test.ts`、`docs/team-runtime.md`。
+- **验证**: focused store / workspace / Canvas Task run tests 已通过；完整 Step 06 验证见本轮交付报告。
+- **对应入口**: Team Console Discovery root Task run、generated Task catalog、attempt metadata diagnostics；本步不改 routes、5174 UI、role prompt/parser、AgentProfile runner 或 `.pi/skills`。
+
+## 2026-05-30 — Team Console Discovery dispatcher role contract
+
+- **主题**: 新增 Discovery dispatcher role contract，把单个 Discovery item 转成 generated Task WorkUnit draft。
+- **变更内容**:
+  - `TeamRoleRunner` / `MockRoleRunner` / `AgentProfileRoleRunner` 增加 `runDiscoveryDispatcher(input)`，并新增 role-local input/output/draft types。
+  - `role-prompt-contract` 新增 `buildDiscoveryDispatchPrompt()` 和 `parseDiscoveryDispatchRoleOutput()`；parser 对 invalid JSON、item mismatch、invalid schema、forbidden fields 返回 `ok:false`，不 throw。
+  - Dispatcher prompt 包含 Discovery task、Discovery goal、dispatch goal、outputKey、required/recommended fields、exact item id、完整 item payload JSON 和 forbidden identity/source/output 字段约束。
+  - 真实 AgentProfile runner 使用独立 `discovery-dispatcher` role，profile fallback 为 `dispatcherProfileId > decomposerProfileId > workerProfileId`，workspace role key 对 `discoveryTaskId + itemId` 做 path-safe sanitization。
+- **影响范围**: `src/team/role-runner.ts`、`src/team/role-prompt-contract.ts`、`src/team/agent-profile-role-runner.ts`、`test/team-role-prompt-contract.test.ts`、`test/team-role-runner.test.ts`、`test/team-agent-profile-runner.test.ts`、`docs/team-runtime.md`。
+- **验证**: focused role prompt/runner/AgentProfile runner tests 已通过；完整 Step 05 验证见本轮交付报告。
+- **对应入口**: Team Console Discovery dispatcher role contract；本步不创建 generated Tasks、不标记 stale、不启动 auto-run scheduler。
+
+## 2026-05-30 — Team Console Discovery run output validation
+
+- **主题**: 让 Discovery root Canvas Task 按 runtime `type="discovery"` 执行，校验 accepted output 并持久化标准发现结果。
+- **变更内容**:
+  - Canvas Task run 转 runtime Task 时，`canvasKind="discovery"` 映射为 `type="discovery"` 并携带 `discovery.outputKey`；normal root / generated Task 仍为 `normal`。
+  - Canvas Task run 透传 `workUnit.outputCheck`，normal Task 的结构化输出校验不再被 checker pass 绕过。
+  - `json_items` / Discovery 输出校验成功时返回 parsed `items`；Discovery accepted output 缺少 configured outputKey array 或稳定 string `id` 时 run 失败且不写 `discovery-result.json`。
+  - Discovery 成功 run 除继续写 `accepted-result.md` 外，额外写入 `discovery-result.json`，schemaVersion 为 `team/discovery-result-1`，attempt `resultRef` 仍指向 `accepted-result.md`。
+- **影响范围**: `src/team/types.ts`、`src/team/output-validator.ts`、`src/team/task-run-service.ts`、`src/team/canvas-task-attempt-runner.ts`、`test/team-output-validator.test.ts`、`test/team-task-run-process.test.ts`、`docs/team-runtime.md`。
+- **验证**: focused validator / Canvas Task run tests 已通过；完整 Step 04 验证见本轮交付报告。
+- **对应入口**: Team Console Canvas Task run、Discovery root Task output validation、attempt 标准结果文件。
+
+## 2026-05-30 — Team Console Discovery Task catalog routes
+
+- **主题**: 开放 Discovery root Task 的 Task API catalog 层，并把 generated Tasks 默认从 root list 隐藏。
+- **变更内容**:
+  - `POST /v1/team/tasks` 继续兼容普通 Task 创建，同时转发 `canvasKind` / `discoverySpec` 创建 Discovery root Task，并明确拒绝 public `generatedSource`。
+  - `PATCH /v1/team/tasks/:taskId` 支持 Discovery root 更新 `discoverySpec`，并明确拒绝 public `canvasKind` / `generatedSource` 身份字段更新。
+  - `GET /v1/team/tasks` 默认只返回 root Tasks，显式 `includeGenerated=1|true` 才包含 generated Tasks；`includeArchived` 语义保持可组合。
+  - 新增 `GET /v1/team/tasks/:taskId/generated-tasks` 只读子 catalog route，只接受 Discovery root parent，响应 `{ tasks }`，默认排除 archived generated Tasks。
+- **影响范围**: `src/team/routes.ts`、`src/team/route-parsers.ts`、`test/team-task-routes.test.ts`、`docs/team-runtime.md`、`apps/team-console/README.md`。
+- **验证**: `node --test --import tsx test/team-task-routes.test.ts` 已通过；完整 Step 03 验证见本轮交付报告。
+- **对应入口**: Team Console Live API 的 Task catalog、Discovery root Task 创建 / spec 更新、generated Task 子 catalog。
+
 ## 2026-05-30 — Team Console observer 终态触发下游 run 发现
 
 - **主题**: 修复打开 run observer 时，observer 轮询先把上游 run 写入终态，导致 active-run polling 失去终态转换检测机会、下游自动创建的 run 不会自动出现在前端的问题。

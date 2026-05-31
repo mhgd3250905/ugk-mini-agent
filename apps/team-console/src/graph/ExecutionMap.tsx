@@ -11,6 +11,7 @@ import {
   CANVAS_SOURCE_NODE_HEIGHT,
   canvasTaskNodeHeight,
   canvasTaskPortRowCount,
+  isDiscoveryRootTask,
   atlasDragEntryHeight,
   taskNodeRect,
   rightMiddleAnchor,
@@ -115,6 +116,15 @@ interface ExecutionMapProps {
   pendingDeleteConnectionId?: string | null;
   pendingDeleteSourceConnectionId?: string | null;
   pendingDeleteDependencyId?: string | null;
+  discoverySummariesByTaskId?: Record<string, {
+    generatedTaskCount: number;
+    activeGeneratedTaskCount: number;
+    staleGeneratedTaskCount: number;
+    runningGeneratedRunCount: number;
+    failedDispatchCount: number;
+    latestDispatchRunId?: string;
+    latestDispatchAttemptId?: string;
+  }>;
 }
 
 type TaskChildBranchPanelDescriptor = NonNullable<ExecutionMapProps["taskChildBranchPanels"]>[number];
@@ -783,6 +793,7 @@ export function ExecutionMap({
   pendingDeleteConnectionId,
   pendingDeleteSourceConnectionId,
   pendingDeleteDependencyId,
+  discoverySummariesByTaskId = {},
 }: ExecutionMapProps) {
   const evidenceContainerRef = useRef<HTMLDivElement | null>(null);
   const [measuredHeights, setMeasuredHeights] = useState<MeasuredHeights>({});
@@ -3032,6 +3043,17 @@ export function ExecutionMap({
             const isAtlasSelected = selectedAtlasNodeKeys.has(atlasSelectionKey("task", node.nodeId));
             const latestTaskRun = selectLatestCanvasTaskRun(taskRunsByTaskId[task.taskId]);
             const nodeStatusClass = latestTaskRun ? statusClass(latestTaskRun.status) : `status-${task.status}`;
+            const isDiscoveryRoot = isDiscoveryRootTask(task);
+            const discoverySummary = isDiscoveryRoot
+              ? discoverySummariesByTaskId[task.taskId] ?? {
+                generatedTaskCount: 0,
+                activeGeneratedTaskCount: 0,
+                staleGeneratedTaskCount: 0,
+                runningGeneratedRunCount: 0,
+                failedDispatchCount: 0,
+              }
+              : null;
+            const failedDispatchCount = discoverySummary?.failedDispatchCount ?? 0;
             const inputPorts = task.workUnit.inputPorts ?? [];
             const outputPorts = task.workUnit.outputPorts ?? [];
             const portRowCount = canvasTaskPortRowCount(task);
@@ -3042,8 +3064,10 @@ export function ExecutionMap({
                 key={node.nodeId}
                 role="button"
                 tabIndex={0}
-                className={`emap-node emap-atlas-card emap-canvas-task-node ${nodeStatusClass} ${isFocused ? "selected" : ""} ${isAtlasSelected ? "is-atlas-selected" : ""}`}
+                className={`emap-node emap-atlas-card emap-canvas-task-node ${isDiscoveryRoot ? "emap-discovery-task-node" : ""} ${nodeStatusClass} ${isFocused ? "selected" : ""} ${isAtlasSelected ? "is-atlas-selected" : ""}`}
                 data-kind="canvas-task"
+                data-canvas-kind={isDiscoveryRoot ? "discovery" : undefined}
+                data-discovery-failed-dispatch-count={isDiscoveryRoot ? String(failedDispatchCount) : undefined}
                 data-task-id={task.taskId}
                 data-port-row-count={portRowCount}
                 data-task-run-status={latestTaskRun?.status ?? "none"}
@@ -3063,7 +3087,7 @@ export function ExecutionMap({
                 <div className="emap-node-status-bar" />
                 <div className="emap-node-content">
                   <div className="emap-node-header">
-                    <span className="emap-node-kind">Task</span>
+                    <span className="emap-node-kind">{isDiscoveryRoot ? "Discovery" : "Task"}</span>
                     <span className={`emap-node-state-pill ${latestTaskRun?.status ?? task.status}`}>
                       {latestTaskRun ? RUN_STATUS_LABELS[latestTaskRun.status] : task.status}
                     </span>
@@ -3086,6 +3110,17 @@ export function ExecutionMap({
                       </span>
                     </div>
                   </div>
+                  {discoverySummary && (
+                    <div className="emap-discovery-summary-row" aria-label={`${task.title} Discovery summary`}>
+                      <span>{discoverySummary.generatedTaskCount} items</span>
+                      <span>{discoverySummary.activeGeneratedTaskCount} active</span>
+                      <span>{discoverySummary.staleGeneratedTaskCount} stale</span>
+                      <span>{discoverySummary.runningGeneratedRunCount} running</span>
+                      {failedDispatchCount > 0 && (
+                        <span className="emap-discovery-summary-failed">{failedDispatchCount} blocked</span>
+                      )}
+                    </div>
+                  )}
                   {hasPorts && (
                     <div className="emap-task-ports" aria-label={`${task.title} ports`}>
                       {inputPorts.length > 0 && (

@@ -53,6 +53,51 @@ test("P26: validator accepts pure discovery JSON object with stable ids", async 
 	}
 });
 
+test("Step04: discovery validator returns parsed items for configured output key", async () => {
+	const { root, workspace, runId, attemptId, task } = await setup();
+	try {
+		const items = [{ id: "vultr", name: "Vultr" }];
+		const result = await validateTeamOutput({
+			workspace,
+			runId,
+			task,
+			attemptId,
+			contents: [{ ref: "worker-output-001.md", content: JSON.stringify({ vendors: items }) }],
+		});
+		assert.equal(result.ok, true);
+		assert.equal(result.kind, "discovery");
+		assert.deepEqual(result.items, items);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+test("Step04: json_items outputCheck returns parsed items", async () => {
+	const task: TeamTask = {
+		id: "scan_items",
+		title: "Scan items",
+		input: { text: "scan" },
+		acceptance: { rules: ["ok"] },
+		outputCheck: { type: "json_items", outputKey: "items", requiredFields: ["slug"] },
+	};
+	const { root, workspace, runId, attemptId } = await setup(task);
+	try {
+		const items = [{ slug: "alpha", label: "Alpha" }];
+		const result = await validateTeamOutput({
+			workspace,
+			runId,
+			task,
+			attemptId,
+			contents: [{ ref: "worker-output-001.md", content: JSON.stringify({ items }) }],
+		});
+		assert.equal(result.ok, true);
+		assert.equal(result.kind, "json_items");
+		assert.deepEqual(result.items, items);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
 test("P26: validator accepts fenced discovery JSON", async () => {
 	const { root, workspace, runId, attemptId, task } = await setup();
 	try {

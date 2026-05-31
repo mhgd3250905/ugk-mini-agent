@@ -1,0 +1,98 @@
+请接手 `E:\AII\ugk-pi` 的 Team Console Discovery Step 08E2B：failed dispatch diagnostics。
+
+当前基线：
+- 最新 commit：`af0362a docs(team-console): record task chain validation`
+- 当前工作区已有本地 unstaged Discovery 08A-08E2A 和 08E2A review fixes 改动；不要 stage、不要 commit。
+- Codex 刚复核 08E2A review fixes：`app-live-data.test.tsx` 41 passed，Team Console API/contract 90 passed，`git diff --check` passed，`git diff --cached --stat` 为空。
+- 既有 dirty 边界：`.pi/skills/anthropics/skill-creator/**` tracked deletions 不是本轮内容，别恢复、别 stage；`.pi/skills/skill-creator/`、`.codex/plans/*`、public/runtime 报告产物、临时 HTML/脚本都不要提交。
+
+必须先读：
+- `AGENTS.md`
+- `.codex/plans/2026-05-30-team-console-discovery-requirements.md`
+- `.codex/plans/2026-05-31-team-console-discovery-step-08e2a-generated-edit-reset-ui-plan.md`
+- `.codex/plans/2026-05-31-team-console-discovery-step-08e2a-review-fixes-plan.md`
+- `.codex/plans/2026-05-31-team-console-discovery-step-08e2b-failed-dispatch-diagnostics-plan.md`
+- `apps/team-console/src/api/team-api.ts`
+- `apps/team-console/src/api/team-types.ts`
+- `apps/team-console/src/app/use-team-console-live-data.ts`
+- `apps/team-console/src/app/App.tsx`
+- `apps/team-console/src/graph/ExecutionMap.tsx`
+- `apps/team-console/src/graph/execution-map.css`
+- `apps/team-console/src/fixtures/team-fixtures.ts`
+- `apps/team-console/src/tests/app-live-data.test.tsx`
+- `apps/team-console/src/tests/execution-map-ui.test.tsx`
+- `apps/team-console/README.md`
+- `docs/team-runtime.md`
+- `docs/change-log.md`
+
+严格按计划文件执行：
+- `.codex/plans/2026-05-31-team-console-discovery-step-08e2b-failed-dispatch-diagnostics-plan.md`
+
+本轮只做：
+- 从已有 `TeamAttemptMetadata.discoveryDispatch[]` 读取 `status === "blocked"` 的 Discovery dispatcher outcomes。
+- root Discovery card summary 显示 compact failed/blocked dispatch count，并暴露 `data-discovery-failed-dispatch-count="<number>"`。
+- Discovery 子画布显示 latest blocked dispatch item diagnostics，暴露 `data-discovery-dispatch-diagnostics-for="<discoveryTaskId>"`、`data-dispatch-blocked-count="<number>"`、`data-dispatch-item-id="<itemId>"`。
+- 更新 focused tests 和 5174 docs/change-log/requirements 状态。
+
+禁止做：
+- 不新增 backend endpoint。
+- 不改 `src/team/**` 后端 routes/store/runtime/dispatcher/scheduler。
+- 不改 `TeamDiscoveryDispatchOutcome` schema。
+- 不创建或 rerun Discovery dispatcher 行为。
+- 不创建 generated Tasks from diagnostics。
+- 不实现 generated archive/delete。
+- 不把 generated child 塞进 root `tasksById` / root `taskNodes` / root canvas。
+- 不暴露 raw `itemPayload` 或大段 raw role output。
+- 不改主 `/playground`。
+- 不改 `.pi/skills/**`、runtime skill、`skills-lock.json`。
+- 不创建计划外文件。
+- 不做整文件格式化或换行符转换；保持 touched files 既有 EOL/格式。
+- 不 stage、不 commit、不 push。
+- 不使用 `git add -A`。
+
+执行要求：
+- 这是 Step 08E2B，只处理 failed dispatch diagnostics，完成后停下交付。
+- 行为变更先补 tests，再写实现；先确认 RED。
+- 数据来源必须是既有 `listTaskRuns()` + `listTaskRunAttempts()` / existing attempt metadata，不准新开 API。
+- 缺失 run、缺失 attempts、旧 metadata 无 `discoveryDispatch` 时 count 为 0，子画布仍可打开，generated catalog 仍正常。
+- `listTaskRunAttempts()` 失败时不能丢 generated catalog、不能关 UI；按计划做安全降级。
+- UI/交互任务必须在真实入口 `http://127.0.0.1:5174/` 做浏览器验证，交付 measured evidence；不要把可自动验证的步骤丢给用户手动做。
+- 不允许宽泛 suppress console warning；必须修根因或精确限定已知 warning。
+
+测试至少覆盖：
+- Live data seam：mock root Discovery run + attempts，其中 `discoveryDispatch` 有一个 `created` 和一个 `blocked`；断言 summary failed count 是 1，diagnostics 只包含 blocked item/error，不把 created item 当 failed。
+- Live UI：root Discovery card 有 `data-discovery-failed-dispatch-count="1"`；打开 `Discovery 子画布` 后 diagnostics block 存在，blocked item id/error 可见；generated children 仍不进 root canvas。
+- Missing/old metadata：attempt 没有 `discoveryDispatch` 或为空时 failed count 为 0，diagnostics block absent，subcanvas/generated catalog 仍正常。
+- ExecutionMap：只有 root Discovery card 显示 failed dispatch count/text；普通 Task card 不显示。
+
+最终验证：
+- `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx src/tests/execution-map-ui.test.tsx`
+- `npm --prefix apps/team-console test -- --run src/tests/team-api.test.ts src/tests/team-contract-drift.test.ts`
+- `npm --prefix apps/team-console exec tsc -- --noEmit -p tsconfig.json`
+- `npm --prefix apps/team-console run build`
+- `npm --prefix apps/team-console test`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `git diff --stat`
+- `git diff --numstat`
+- `git ls-files --eol apps/team-console/src/app/use-team-console-live-data.ts apps/team-console/src/app/App.tsx apps/team-console/src/graph/ExecutionMap.tsx apps/team-console/src/graph/execution-map.css apps/team-console/src/fixtures/team-fixtures.ts apps/team-console/src/tests/app-live-data.test.tsx apps/team-console/src/tests/execution-map-ui.test.tsx apps/team-console/README.md docs/team-runtime.md docs/change-log.md .codex/plans/2026-05-30-team-console-discovery-requirements.md`
+- `git diff --cached --stat`
+
+浏览器验证必须报告：
+- URL：`http://127.0.0.1:5174/`
+- data source：mock / 示例数据
+- `[data-canvas-kind="discovery"]` count
+- root Discovery card `data-discovery-failed-dispatch-count`
+- visible root summary failed/blocked label text
+- `[data-discovery-subcanvas-for="task_discovery_cloud_vendors"]` count
+- `[data-discovery-dispatch-diagnostics-for="task_discovery_cloud_vendors"]` count
+- `data-dispatch-blocked-count`
+- visible blocked item id 和 error text
+- panel 内 `[data-generated-task-id]` count
+- root canvas generated title matches 仍为 0
+- screenshot path，放在 `runtime/` 下，不要 stage
+- console issues
+
+如果 5174 还在跑旧代码，重启 Team Console dev service/container 后再验；不要让用户跑 console snippet。
+
+完成后按计划里的 Delivery Report Template 回复。不要 stage，不要 commit。

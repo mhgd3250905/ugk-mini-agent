@@ -104,6 +104,12 @@ export class CanvasTaskAttemptRunner {
 					return { status: "failed", resultRef: failRef, errorSummary };
 				}
 				const resultRef = await workspace.writeAcceptedResult(runId, task.id, attemptId, resultContent);
+				const discoveryErrorSummary = await this.writeDiscoveryResultIfNeeded(runId, task, attemptId, acceptedValidation, resultRef);
+				if (discoveryErrorSummary) {
+					const failRef = await workspace.writeFailedResult(runId, task.id, attemptId, discoveryErrorSummary);
+					await workspace.finishAttempt(runId, task.id, attemptId, { status: "failed", phase: "failed", resultRef: failRef, errorSummary: discoveryErrorSummary });
+					return { status: "failed", resultRef: failRef, errorSummary: discoveryErrorSummary };
+				}
 				await workspace.updateAttemptPhase(runId, task.id, attemptId, "checker_passed");
 				await workspace.finishAttempt(runId, task.id, attemptId, { status: "succeeded", phase: "succeeded", resultRef });
 				return { status: "succeeded", resultRef, errorSummary: null };
@@ -129,6 +135,39 @@ export class CanvasTaskAttemptRunner {
 		}
 
 		return { status: "failed", resultRef: null, errorSummary: "unexpected loop exit" };
+	}
+
+	private async writeDiscoveryResultIfNeeded(
+		runId: string,
+		task: TeamTask,
+		attemptId: string,
+		acceptedValidation: TeamOutputValidationResult,
+		acceptedResultRef: string,
+	): Promise<string | null> {
+		if (task.type !== "discovery") return null;
+		const outputKey = task.discovery?.outputKey?.trim();
+		if (!outputKey) return "output validation failed: discovery outputKey is required";
+		const items = acceptedValidation.items;
+		if (!items) return "output validation failed: discovery items were not parsed";
+		for (let i = 0; i < items.length; i++) {
+			const id = items[i]?.id;
+			if (typeof id !== "string" || !id.trim()) {
+				return `output validation failed: item ${i} missing required field 'id'`;
+			}
+		}
+		const sourceRef = acceptedValidation.sourceRef === "checker.resultContent"
+			? acceptedResultRef
+			: acceptedValidation.normalizedRef ?? acceptedValidation.sourceRef ?? acceptedResultRef;
+		await this.options.workspace.writeDiscoveryResult(runId, task.id, attemptId, {
+			schemaVersion: "team/discovery-result-1",
+			taskId: task.id,
+			attemptId,
+			outputKey,
+			items,
+			sourceRef,
+			createdAt: new Date().toISOString(),
+		});
+		return null;
 	}
 
 	async cancelActiveProcesses(runId: string, reason: string): Promise<void> {

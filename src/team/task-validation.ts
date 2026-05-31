@@ -1,4 +1,12 @@
-import type { TeamCanvasTask, TeamCanvasTaskStatus, TeamWorkUnitDefinition } from "./types.js";
+import type {
+	TeamCanvasTask,
+	TeamCanvasTaskKind,
+	TeamCanvasTaskStatus,
+	TeamDiscoverySpec,
+	TeamGeneratedTaskSource,
+	TeamTaskOutputCheck,
+	TeamWorkUnitDefinition,
+} from "./types.js";
 import { validateTaskPorts } from "./task-port-contract.js";
 
 const CREATE_STATUSES = new Set<TeamCanvasTaskStatus>(["drafting", "ready"]);
@@ -9,9 +17,12 @@ export interface TaskValidationContext {
 }
 
 export interface CreateTeamCanvasTaskInput {
+	canvasKind?: TeamCanvasTaskKind;
 	title: string;
 	leaderAgentId: string;
 	workUnit: TeamWorkUnitDefinition;
+	discoverySpec?: TeamDiscoverySpec;
+	generatedSource?: TeamGeneratedTaskSource;
 	status?: TeamCanvasTaskStatus;
 	createdByAgentId?: string;
 }
@@ -20,6 +31,7 @@ export interface UpdateTeamCanvasTaskInput {
 	title?: string;
 	leaderAgentId?: string;
 	workUnit?: TeamWorkUnitDefinition;
+	discoverySpec?: TeamDiscoverySpec;
 	status?: TeamCanvasTaskStatus;
 }
 
@@ -33,6 +45,67 @@ function assertNonEmptyString(value: unknown, message: string): string {
 function assertKnownAgent(agentId: string, context: TaskValidationContext): void {
 	if (context.availableAgentIds && !context.availableAgentIds.has(agentId)) {
 		throw new Error(`agent profile not found: ${agentId}`);
+	}
+}
+
+function assertOptionalNonEmptyString(value: unknown, message: string): void {
+	if (value !== undefined) {
+		assertNonEmptyString(value, message);
+	}
+}
+
+function assertOptionalBoolean(value: unknown, message: string): void {
+	if (value !== undefined && typeof value !== "boolean") {
+		throw new Error(message);
+	}
+}
+
+function assertStringArray(value: unknown, message: string): string[] {
+	if (!Array.isArray(value) || value.some(item => typeof item !== "string" || !item.trim())) {
+		throw new Error(message);
+	}
+	return value;
+}
+
+function assertOptionalStringArray(value: unknown, message: string): void {
+	if (value !== undefined) {
+		assertStringArray(value, message);
+	}
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const prototype = Object.getPrototypeOf(value);
+	return prototype === Object.prototype || prototype === null;
+}
+
+function validateOutputCheck(outputCheck: TeamTaskOutputCheck | undefined): void {
+	if (outputCheck === undefined) return;
+	if (!isPlainRecord(outputCheck)) {
+		throw new Error("workUnit.outputCheck must be an object");
+	}
+	const type = outputCheck.type;
+	if (type !== "json_items" && type !== "json_object" && type !== "html_fragment" && type !== "file_exists") {
+		throw new Error("workUnit.outputCheck.type is invalid");
+	}
+	switch (type) {
+		case "json_items":
+			assertOptionalNonEmptyString(outputCheck.outputKey, "workUnit.outputCheck.outputKey must be a non-empty string");
+			assertOptionalBoolean(outputCheck.allowDirectArray, "workUnit.outputCheck.allowDirectArray must be a boolean");
+			assertOptionalStringArray(outputCheck.requiredFields, "workUnit.outputCheck.requiredFields must contain only non-empty strings");
+			break;
+		case "json_object":
+			assertOptionalStringArray(outputCheck.requiredFields, "workUnit.outputCheck.requiredFields must contain only non-empty strings");
+			break;
+		case "html_fragment":
+			assertOptionalStringArray(outputCheck.requiredSubstrings, "workUnit.outputCheck.requiredSubstrings must contain only non-empty strings");
+			assertOptionalStringArray(outputCheck.requiredSelectors, "workUnit.outputCheck.requiredSelectors must contain only non-empty strings");
+			assertOptionalStringArray(outputCheck.forbiddenTags, "workUnit.outputCheck.forbiddenTags must contain only non-empty strings");
+			assertOptionalBoolean(outputCheck.requireFence, "workUnit.outputCheck.requireFence must be a boolean");
+			break;
+		case "file_exists":
+			assertOptionalNonEmptyString(outputCheck.path, "workUnit.outputCheck.path must be a non-empty string");
+			break;
 	}
 }
 
@@ -53,11 +126,102 @@ function validateWorkUnit(workUnit: TeamWorkUnitDefinition | undefined, context:
 	if (workUnit.acceptance.rules.some(rule => typeof rule !== "string" || !rule.trim())) {
 		throw new Error("workUnit.acceptance.rules must contain only non-empty rules");
 	}
+	validateOutputCheck(workUnit.outputCheck);
 	validateTaskPorts(workUnit);
 	return workUnit;
 }
 
+function validateDiscoverySpec(discoverySpec: TeamDiscoverySpec | undefined, context: TaskValidationContext): void {
+	if (!discoverySpec || typeof discoverySpec !== "object" || Array.isArray(discoverySpec)) {
+		throw new Error("discoverySpec is required for discovery tasks");
+	}
+	if (discoverySpec.schemaVersion !== "team/discovery-spec-1") {
+		throw new Error("discoverySpec.schemaVersion is invalid");
+	}
+	assertNonEmptyString(discoverySpec.discoveryGoal, "discoverySpec.discoveryGoal is required");
+	assertNonEmptyString(discoverySpec.outputKey, "discoverySpec.outputKey is required");
+	if (discoverySpec.itemIdField !== "id") {
+		throw new Error("discoverySpec.itemIdField must be id");
+	}
+	const requiredItemFields = assertStringArray(
+		discoverySpec.requiredItemFields,
+		"discoverySpec.requiredItemFields must contain at least one non-empty field",
+	);
+	if (requiredItemFields.length === 0) {
+		throw new Error("discoverySpec.requiredItemFields must contain at least one non-empty field");
+	}
+	if (!requiredItemFields.includes("id")) {
+		throw new Error("discoverySpec.requiredItemFields must include id");
+	}
+	assertOptionalStringArray(
+		discoverySpec.recommendedItemFields,
+		"discoverySpec.recommendedItemFields must contain only non-empty strings",
+	);
+	assertNonEmptyString(discoverySpec.dispatchGoal, "discoverySpec.dispatchGoal is required");
+	const dispatcherAgentId = assertNonEmptyString(discoverySpec.dispatcherAgentId, "discoverySpec.dispatcherAgentId is required");
+	const generatedWorkerAgentId = assertNonEmptyString(
+		discoverySpec.generatedWorkerAgentId,
+		"discoverySpec.generatedWorkerAgentId is required",
+	);
+	const generatedCheckerAgentId = assertNonEmptyString(
+		discoverySpec.generatedCheckerAgentId,
+		"discoverySpec.generatedCheckerAgentId is required",
+	);
+	assertKnownAgent(dispatcherAgentId, context);
+	assertKnownAgent(generatedWorkerAgentId, context);
+	assertKnownAgent(generatedCheckerAgentId, context);
+	if (discoverySpec.autoRun?.enabled !== true) {
+		throw new Error("discoverySpec.autoRun.enabled must be true");
+	}
+	if (discoverySpec.autoRun.concurrency !== 3) {
+		throw new Error("discoverySpec.autoRun.concurrency must be 3");
+	}
+}
+
+function validateGeneratedSource(generatedSource: TeamGeneratedTaskSource | undefined, context: TaskValidationContext): void {
+	if (!generatedSource || typeof generatedSource !== "object" || Array.isArray(generatedSource)) {
+		throw new Error("generatedSource is required for generated tasks");
+	}
+	if (generatedSource.schemaVersion !== "team/generated-task-source-1") {
+		throw new Error("generatedSource.schemaVersion is invalid");
+	}
+	assertNonEmptyString(generatedSource.sourceDiscoveryTaskId, "generatedSource.sourceDiscoveryTaskId is required");
+	assertNonEmptyString(generatedSource.sourceItemId, "generatedSource.sourceItemId is required");
+	if (generatedSource.itemStatus !== "active" && generatedSource.itemStatus !== "stale") {
+		throw new Error("generatedSource.itemStatus is invalid");
+	}
+	if (!isPlainRecord(generatedSource.itemPayload)) {
+		throw new Error("generatedSource.itemPayload must be a plain object");
+	}
+	assertOptionalNonEmptyString(generatedSource.latestDiscoveryRunId, "generatedSource.latestDiscoveryRunId must be a non-empty string");
+	assertOptionalNonEmptyString(generatedSource.latestDiscoveryAttemptId, "generatedSource.latestDiscoveryAttemptId must be a non-empty string");
+	assertOptionalNonEmptyString(generatedSource.latestDiscoveredAt, "generatedSource.latestDiscoveredAt must be a non-empty string");
+	if (generatedSource.workUnitMode !== "managed" && generatedSource.workUnitMode !== "customized") {
+		throw new Error("generatedSource.workUnitMode is invalid");
+	}
+	if (generatedSource.latestManagedWorkUnit !== undefined) {
+		validateWorkUnit(generatedSource.latestManagedWorkUnit, context);
+	}
+}
+
 export function validateCreateTaskInput(input: CreateTeamCanvasTaskInput, context: TaskValidationContext = {}): void {
+	const rawCanvasKind = (input as { canvasKind?: unknown }).canvasKind;
+	if (rawCanvasKind !== undefined && rawCanvasKind !== "task" && rawCanvasKind !== "discovery") {
+		throw new Error("canvasKind is invalid");
+	}
+	if (input.canvasKind === "discovery") {
+		if (input.generatedSource !== undefined) {
+			throw new Error("discovery root task cannot carry generatedSource");
+		}
+		validateDiscoverySpec(input.discoverySpec, context);
+	} else if (input.generatedSource !== undefined) {
+		if (input.discoverySpec !== undefined) {
+			throw new Error("generated task cannot carry discoverySpec");
+		}
+		validateGeneratedSource(input.generatedSource, context);
+	} else if (input.discoverySpec !== undefined) {
+		throw new Error("normal root task cannot carry discoverySpec");
+	}
 	assertNonEmptyString(input.title, "task title is required");
 	const leaderAgentId = assertNonEmptyString(input.leaderAgentId, "leaderAgentId is required");
 	assertKnownAgent(leaderAgentId, context);
@@ -72,6 +236,13 @@ export function validateCreateTaskInput(input: CreateTeamCanvasTaskInput, contex
 }
 
 export function validateTaskUpdateInput(existing: TeamCanvasTask, patch: UpdateTeamCanvasTaskInput, context: TaskValidationContext = {}): void {
+	const rawPatch = patch as UpdateTeamCanvasTaskInput & { canvasKind?: unknown; generatedSource?: unknown };
+	if (rawPatch.canvasKind !== undefined) {
+		throw new Error("canvasKind cannot be updated");
+	}
+	if (rawPatch.generatedSource !== undefined) {
+		throw new Error("generatedSource cannot be updated");
+	}
 	if (existing.archived) {
 		throw new Error("archived task cannot be edited");
 	}
@@ -87,6 +258,15 @@ export function validateTaskUpdateInput(existing: TeamCanvasTask, patch: UpdateT
 	}
 	if (patch.workUnit !== undefined) {
 		validateWorkUnit(patch.workUnit, context);
+	}
+	if (patch.discoverySpec !== undefined) {
+		if (existing.generatedSource) {
+			throw new Error("generated task cannot carry discoverySpec");
+		}
+		if (existing.canvasKind !== "discovery") {
+			throw new Error("normal root task cannot carry discoverySpec");
+		}
+		validateDiscoverySpec(patch.discoverySpec, context);
 	}
 	if (patch.status !== undefined && !PATCH_STATUSES.has(patch.status)) {
 		throw new Error("task status must be drafting or ready");

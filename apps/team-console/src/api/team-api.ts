@@ -56,7 +56,12 @@ export interface TeamRuntimeGateway {
 
 export interface CanvasTaskGateway {
   listTasks(): Promise<TeamCanvasTask[]>;
+  listGeneratedTasks(
+    discoveryTaskId: string,
+    options?: { includeArchived?: boolean },
+  ): Promise<TeamCanvasTask[]>;
   updateTask(taskId: string, patch: TeamTaskUpdateRequest): Promise<TeamTaskMutationResponse>;
+  resetGeneratedTaskWorkUnit(taskId: string): Promise<TeamTaskMutationResponse>;
   archiveTask(taskId: string): Promise<TeamTaskMutationResponse>;
   listTaskConnections(): Promise<TeamTaskConnection[]>;
   createTaskConnection(input: TeamTaskConnectionCreateRequest): Promise<TeamTaskConnection>;
@@ -165,6 +170,29 @@ export class LiveTeamApi implements TeamApiProvider {
   async listTasks(): Promise<TeamCanvasTask[]> {
     try {
       const res = await fetch(`${this.baseUrl}/tasks`);
+      if (!res.ok) throw res;
+      const body = (await res.json()) as TeamCanvasTaskListResponse | TeamCanvasTask[];
+      if (Array.isArray(body)) return body;
+      return Array.isArray(body.tasks) ? body.tasks : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async listGeneratedTasks(
+    discoveryTaskId: string,
+    options?: { includeArchived?: boolean },
+  ): Promise<TeamCanvasTask[]> {
+    try {
+      const params = new URLSearchParams();
+      if (options?.includeArchived) {
+        params.set("includeArchived", "1");
+      }
+      const query = params.toString();
+      const res = await fetch(
+        `${this.baseUrl}/tasks/${encodeURIComponent(discoveryTaskId)}/generated-tasks${query ? `?${query}` : ""}`,
+      );
+      if (res.status === 404) return [];
       if (!res.ok) throw res;
       const body = (await res.json()) as TeamCanvasTaskListResponse | TeamCanvasTask[];
       if (Array.isArray(body)) return body;
@@ -458,6 +486,21 @@ export class LiveTeamApi implements TeamApiProvider {
   async archiveTask(taskId: string): Promise<TeamTaskMutationResponse> {
     try {
       const res = await fetch(`${this.baseUrl}/tasks/${encodeURIComponent(taskId)}/archive`, {
+        method: "POST",
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      return (await res.json()) as TeamTaskMutationResponse;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async resetGeneratedTaskWorkUnit(taskId: string): Promise<TeamTaskMutationResponse> {
+    try {
+      const res = await fetch(`${this.baseUrl}/tasks/${encodeURIComponent(taskId)}/generated-workunit/reset`, {
         method: "POST",
         headers: { accept: "application/json" },
       });

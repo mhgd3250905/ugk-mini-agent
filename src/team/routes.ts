@@ -23,7 +23,7 @@ import { closeBrowserTargetsForScope } from "../agent/browser-cleanup.js";
 import { loadAgentProfilesSync } from "../agent/agent-profile-catalog.js";
 import { setBrowserScopeRoute } from "../browser/browser-scope-routes.js";
 import { configureSseResponse, writeSseEvent, startSseHeartbeat, endSseResponse } from "../routes/chat-sse.js";
-import { idParam, jsonBody, optionalJsonBody, parseIncludeArchived } from "./route-parsers.js";
+import { idParam, jsonBody, optionalJsonBody, parseIncludeArchived, parseIncludeGenerated } from "./route-parsers.js";
 import { sendMappedError, sendNotFound } from "./route-errors.js";
 import { sendTaskResponse } from "./route-presenters.js";
 
@@ -125,19 +125,27 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 
 
 	app.get("/v1/team/tasks", async (request, reply) => {
-		const query = request.query as { includeArchived?: string };
-		const tasks = await taskStore.list({ includeArchived: parseIncludeArchived(request) });
+		const tasks = await taskStore.list({
+			includeArchived: parseIncludeArchived(request),
+			includeGenerated: parseIncludeGenerated(request),
+		});
 		reply.send({ tasks });
 	});
 
 	app.post("/v1/team/tasks", async (request, reply) => {
 		const body = jsonBody(request);
+		if (Object.hasOwn(body, "generatedSource")) {
+			reply.code(400).send({ error: "generated Task source identity cannot be created through this route" });
+			return;
+		}
 		try {
 			const task = await taskStore.create({
+				canvasKind: body.canvasKind as any,
 				title: body.title as string,
 				leaderAgentId: body.leaderAgentId as string,
 				status: body.status as any,
 				workUnit: body.workUnit as any,
+				discoverySpec: body.discoverySpec as any,
 				createdByAgentId: body.createdByAgentId as string | undefined,
 			});
 			reply.code(201);
@@ -154,19 +162,52 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		sendTaskResponse(reply, task);
 	});
 
+	app.get("/v1/team/tasks/:taskId/generated-tasks", async (request, reply) => {
+		const taskId = idParam(request, "taskId");
+		const task = await taskStore.get(taskId);
+		if (!task) { sendNotFound(reply, "task"); return; }
+		if (task.canvasKind !== "discovery") {
+			reply.code(400).send({ error: "generated tasks can only be listed for Discovery root tasks" });
+			return;
+		}
+		const tasks = await taskStore.listGeneratedForDiscoveryTask(taskId, {
+			includeArchived: parseIncludeArchived(request),
+		});
+		reply.send({ tasks });
+	});
+
 	app.patch("/v1/team/tasks/:taskId", async (request, reply) => {
 		const taskId = idParam(request, "taskId");
 		const body = jsonBody(request);
+		if (Object.hasOwn(body, "canvasKind")) {
+			reply.code(400).send({ error: "canvasKind cannot be updated through this route" });
+			return;
+		}
+		if (Object.hasOwn(body, "generatedSource")) {
+			reply.code(400).send({ error: "generated Task source identity cannot be updated through this route" });
+			return;
+		}
 		const patch: UpdateTeamCanvasTaskInput = {};
 		if (Object.hasOwn(body, "title")) patch.title = body.title as string;
 		if (Object.hasOwn(body, "leaderAgentId")) patch.leaderAgentId = body.leaderAgentId as string;
 		if (Object.hasOwn(body, "workUnit")) patch.workUnit = body.workUnit as any;
+		if (Object.hasOwn(body, "discoverySpec")) patch.discoverySpec = body.discoverySpec as any;
 		if (Object.hasOwn(body, "status")) patch.status = body.status as any;
 		try {
 			const task = await taskStore.update(taskId, patch);
 			sendTaskResponse(reply, task);
 		} catch (err) {
 			sendMappedError(reply, err, [["not found", 404], ["locked", 409]]);
+		}
+	});
+
+	app.post("/v1/team/tasks/:taskId/generated-workunit/reset", async (request, reply) => {
+		const taskId = idParam(request, "taskId");
+		try {
+			const task = await taskStore.resetGeneratedTaskWorkUnit(taskId);
+			sendTaskResponse(reply, task);
+		} catch (err) {
+			sendMappedError(reply, err, [["not found", 404], ["archived", 409], ["latest managed", 409]]);
 		}
 	});
 

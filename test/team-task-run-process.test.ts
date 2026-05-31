@@ -15,8 +15,11 @@ import type {
 	CheckerOutput,
 	DecomposerInput,
 	DecomposerOutput,
+	DiscoveryDispatchInput,
+	DiscoveryDispatchOutput,
 	FinalizerInput,
 	FinalizerOutput,
+	ProfileAwareTeamRoleRunner,
 	TeamRoleRunner,
 	WatcherInput,
 	WatcherOutput,
@@ -24,7 +27,7 @@ import type {
 	WorkerOutput,
 } from "../src/team/role-runner.js";
 import type { RawAgentSessionEventLike } from "../src/agent/agent-session-factory.js";
-import type { TeamRunState } from "../src/team/types.js";
+import type { TeamDiscoveryDispatchOutcome, TeamDiscoveryGeneratedRunOutcome, TeamRunState } from "../src/team/types.js";
 
 type ProcessAwareWorkerInput = WorkerInput & { onSessionEvent?: (event: RawAgentSessionEventLike) => void };
 type ProcessAwareCheckerInput = CheckerInput & { onSessionEvent?: (event: RawAgentSessionEventLike) => void };
@@ -41,6 +44,20 @@ const validTaskInput = {
 		workerAgentId: "search",
 		checkerAgentId: "main",
 	},
+};
+
+const validDiscoverySpec = {
+	schemaVersion: "team/discovery-spec-1" as const,
+	discoveryGoal: "发现可用云服务器供应商。",
+	outputKey: "vendors",
+	itemIdField: "id" as const,
+	requiredItemFields: ["id"],
+	recommendedItemFields: ["name", "type"],
+	dispatchGoal: "逐项核查供应商可用性和价格。",
+	dispatcherAgentId: "main",
+	generatedWorkerAgentId: "search",
+	generatedCheckerAgentId: "main",
+	autoRun: { enabled: true as const, concurrency: 3 as const },
 };
 
 async function waitForTerminalRun(service: CanvasTaskRunService, runId: string): Promise<TeamRunState> {
@@ -71,6 +88,48 @@ async function waitForAttemptDelivery(workspace: RunWorkspace, runId: string, ta
 		await new Promise(resolve => setTimeout(resolve, 25));
 	}
 	throw new Error(`attempt delivery outcomes did not reach length ${expectedLength} for run ${runId} task ${taskId}`);
+}
+
+async function waitForAttemptDiscoveryDispatch(workspace: RunWorkspace, runId: string, taskId: string, expectedLength = 1): Promise<TeamDiscoveryDispatchOutcome[]> {
+	for (let i = 0; i < 80; i++) {
+		const attempts = await workspace.listAttempts(runId, taskId);
+		const dispatch = attempts[0]?.discoveryDispatch;
+		if (dispatch && dispatch.length >= expectedLength) return dispatch;
+		await new Promise(resolve => setTimeout(resolve, 25));
+	}
+	throw new Error(`attempt discovery dispatch outcomes did not reach length ${expectedLength} for run ${runId} task ${taskId}`);
+}
+
+async function waitForAttemptDiscoveryGeneratedRuns(workspace: RunWorkspace, runId: string, taskId: string, expectedLength = 1): Promise<TeamDiscoveryGeneratedRunOutcome[]> {
+	for (let i = 0; i < 80; i++) {
+		const attempts = await workspace.listAttempts(runId, taskId);
+		const launches = attempts[0]?.discoveryGeneratedRuns;
+		if (launches && launches.length >= expectedLength) return launches;
+		await new Promise(resolve => setTimeout(resolve, 25));
+	}
+	throw new Error(`attempt discovery generated run outcomes did not reach length ${expectedLength} for run ${runId} task ${taskId}`);
+}
+
+async function waitForGeneratedWorkerStarts(runner: { generatedWorkerStarts: string[] }, expectedLength: number): Promise<void> {
+	for (let i = 0; i < 80; i++) {
+		if (runner.generatedWorkerStarts.length >= expectedLength) return;
+		await new Promise(resolve => setTimeout(resolve, 25));
+	}
+	throw new Error(`generated workers did not reach start count ${expectedLength}`);
+}
+
+function createDeferred(): { promise: Promise<void>; resolve: () => void; reject: (error: unknown) => void } {
+	let resolve!: () => void;
+	let reject!: (error: unknown) => void;
+	const promise = new Promise<void>((res, rej) => {
+		resolve = res;
+		reject = rej;
+	});
+	return { promise, resolve, reject };
+}
+
+async function removeTempRoot(root: string): Promise<void> {
+	await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 }
 
 class ProcessEventRoleRunner implements TeamRoleRunner {
@@ -129,6 +188,86 @@ class ProcessEventRoleRunner implements TeamRoleRunner {
 
 	async runDecomposer(_input: DecomposerInput): Promise<DecomposerOutput> {
 		return { decision: "no_split", reason: "ok", children: [] };
+	}
+}
+
+class DiscoveryDispatchingRunner extends ProcessEventRoleRunner implements ProfileAwareTeamRoleRunner {
+	readonly dispatchInputs: DiscoveryDispatchInput[] = [];
+	readonly profileIdsHistory: Array<Parameters<ProfileAwareTeamRoleRunner["setProfileIds"]>[0]> = [];
+	profileIds: Parameters<ProfileAwareTeamRoleRunner["setProfileIds"]>[0] | undefined;
+
+	constructor(
+		private readonly items: Array<Record<string, unknown>>,
+		private readonly dispatchOutputs: DiscoveryDispatchOutput[] = [],
+	) {
+		super();
+	}
+
+	setProfileIds(profiles: Parameters<ProfileAwareTeamRoleRunner["setProfileIds"]>[0]): void {
+		this.profileIds = profiles;
+		this.profileIdsHistory.push(profiles);
+	}
+
+	async runChecker(_input: CheckerInput): Promise<CheckerOutput> {
+		return {
+			verdict: "pass",
+			reason: "ok",
+			resultContent: JSON.stringify({ vendors: this.items }),
+		};
+	}
+
+	async runDiscoveryDispatcher(input: DiscoveryDispatchInput): Promise<DiscoveryDispatchOutput> {
+		this.dispatchInputs.push(input);
+		const configured = this.dispatchOutputs.shift();
+		if (configured) return configured;
+		return {
+			ok: true,
+			itemId: input.itemId,
+			workUnit: {
+				title: `核查 ${input.itemId}`,
+				input: { text: `核查供应商 ${input.itemId}` },
+				outputContract: { text: `输出 ${input.itemId} 的核查报告。` },
+				acceptance: { rules: [`报告必须覆盖 ${input.itemId}`] },
+			},
+		};
+	}
+}
+
+class DiscoveryAcceptedNoDispatcherRunner extends ProcessEventRoleRunner {
+	constructor(private readonly items: Array<Record<string, unknown>>) {
+		super();
+	}
+
+	async runChecker(_input: CheckerInput): Promise<CheckerOutput> {
+		return {
+			verdict: "pass",
+			reason: "ok",
+			resultContent: JSON.stringify({ vendors: this.items }),
+		};
+	}
+}
+
+class GatedDiscoveryGeneratedRunner extends DiscoveryDispatchingRunner {
+	readonly generatedWorkerStarts: string[] = [];
+	readonly releaseGeneratedWorkers: Array<() => void> = [];
+	activeGeneratedWorkers = 0;
+	maxActiveGeneratedWorkers = 0;
+
+	async runWorker(input: ProcessAwareWorkerInput): Promise<WorkerOutput> {
+		if (input.task.type === "discovery") {
+			return super.runWorker(input);
+		}
+		this.generatedWorkerStarts.push(input.task.id);
+		this.activeGeneratedWorkers++;
+		this.maxActiveGeneratedWorkers = Math.max(this.maxActiveGeneratedWorkers, this.activeGeneratedWorkers);
+		const gate = createDeferred();
+		this.releaseGeneratedWorkers.push(gate.resolve);
+		try {
+			await gate.promise;
+			return { content: `generated ${input.task.id} result`, artifactRefs: [] };
+		} finally {
+			this.activeGeneratedWorkers--;
+		}
 	}
 }
 
@@ -314,6 +453,769 @@ test("CanvasTaskRunService records worker and checker process snapshots on attem
 		assert.match(roleProcesses?.checker?.assistantText?.content ?? "", /我在核对条目数量。验收通过。/);
 		assert.ok(roleProcesses?.checker?.assistantText?.updatedAt);
 		assert.equal(roleProcesses?.checker?.process?.entries.some(entry => entry.toolCallId === "checker_tool_1"), true);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("Step04: Discovery Canvas Task run writes standard discovery result after accepted output", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-discovery-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const task = await taskStore.create({
+			...validTaskInput,
+			title: "发现云服务器供应商",
+			canvasKind: "discovery",
+			discoverySpec: validDiscoverySpec,
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "发现云服务器供应商",
+				input: { text: "搜索并输出云服务器供应商 JSON。" },
+				outputContract: { text: "输出 JSON object，vendors 为数组，每项包含稳定 id。" },
+				acceptance: { rules: ["vendors 必须是数组", "每项必须有 id"] },
+			},
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		let capturedWorkerInput: WorkerInput | undefined;
+
+		class DiscoveryAcceptedRunner extends ProcessEventRoleRunner {
+			async runWorker(input: WorkerInput): Promise<WorkerOutput> {
+				capturedWorkerInput = input;
+				return { content: "ordinary worker text that old normal tasks would accept", artifactRefs: [] };
+			}
+			async runChecker(_input: CheckerInput): Promise<CheckerOutput> {
+				return {
+					verdict: "pass",
+					reason: "ok",
+					resultContent: JSON.stringify({ vendors: [{ id: "vultr", name: "Vultr" }] }),
+				};
+			}
+		}
+
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new DiscoveryAcceptedRunner(),
+			dataDir: join(root, "task-runs"),
+		});
+
+		const created = await service.createRun(task.taskId);
+		const finished = await waitForTerminalRun(service, created.runId);
+		assert.equal(finished.status, "completed");
+		assert.equal(finished.taskStates[task.taskId]?.status, "succeeded");
+		assert.equal(capturedWorkerInput?.task.type, "discovery");
+		assert.equal(capturedWorkerInput?.task.discovery?.outputKey, "vendors");
+
+		const attempts = await workspace.listAttempts(created.runId, task.taskId);
+		assert.equal(attempts.length, 1);
+		const attempt = attempts[0]!;
+		assert.equal(attempt.resultRef, `tasks/${task.taskId}/attempts/${attempt.attemptId}/accepted-result.md`);
+		assert.ok(attempt.files.includes("accepted-result.md"));
+		assert.ok(attempt.files.includes("discovery-result.json"));
+
+		const result = await workspace.readDiscoveryResult(created.runId, task.taskId, attempt.attemptId);
+		assert.ok(result);
+		assert.equal(result.schemaVersion, "team/discovery-result-1");
+		assert.equal(result.taskId, task.taskId);
+		assert.equal(result.attemptId, attempt.attemptId);
+		assert.equal(result.outputKey, "vendors");
+		assert.deepEqual(result.items.map(item => item.id), ["vultr"]);
+		assert.equal(result.sourceRef, `tasks/${task.taskId}/attempts/${attempt.attemptId}/accepted-result.md`);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("Step07: successful Discovery dispatch auto-runs active generated Tasks", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-discovery-dispatch-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const discovery = await taskStore.create({
+			...validTaskInput,
+			title: "发现云服务器供应商",
+			canvasKind: "discovery",
+			discoverySpec: validDiscoverySpec,
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "发现云服务器供应商",
+				input: { text: "搜索并输出云服务器供应商 JSON。" },
+				outputContract: { text: "输出 JSON object，vendors 为数组，每项包含稳定 id。" },
+				acceptance: { rules: ["vendors 必须是数组", "每项必须有 id"] },
+			},
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const runner = new DiscoveryDispatchingRunner([
+			{ id: "vultr", name: "Vultr", type: "cloud" },
+			{ id: "hetzner", name: "Hetzner", type: "cloud" },
+		]);
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => runner,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const created = await service.createRun(discovery.taskId);
+		const finished = await waitForTerminalRun(service, created.runId);
+		assert.equal(finished.status, "completed");
+		assert.equal(finished.taskStates[discovery.taskId]?.status, "succeeded");
+
+		const dispatch = await waitForAttemptDiscoveryDispatch(workspace, created.runId, discovery.taskId, 2);
+		assert.ok(runner.profileIdsHistory.some(profiles => profiles.dispatcherProfileId === "main"));
+		assert.deepEqual(runner.dispatchInputs.map(input => input.itemId), ["vultr", "hetzner"]);
+		assert.equal(runner.dispatchInputs[0]!.discoveryTaskId, discovery.taskId);
+		assert.equal(runner.dispatchInputs[0]!.discoveryGoal, validDiscoverySpec.discoveryGoal);
+		assert.equal(runner.dispatchInputs[0]!.dispatchGoal, validDiscoverySpec.dispatchGoal);
+		assert.equal(runner.dispatchInputs[0]!.generatedWorkerAgentId, "search");
+		assert.equal(runner.dispatchInputs[0]!.generatedCheckerAgentId, "main");
+
+		assert.deepEqual(dispatch.map(outcome => outcome.status), ["created", "created"]);
+		assert.deepEqual(dispatch.map(outcome => outcome.itemId), ["vultr", "hetzner"]);
+		assert.ok(dispatch.every(outcome => outcome.generatedTaskId));
+		assert.ok(dispatch.every(outcome => outcome.workUnitMode === "managed"));
+
+		const generated = await taskStore.listGeneratedForDiscoveryTask(discovery.taskId);
+		assert.equal(generated.length, 2);
+		const byItemId = Object.fromEntries(generated.map(task => [task.generatedSource!.sourceItemId, task]));
+		for (const itemId of ["vultr", "hetzner"]) {
+			const generatedTask = byItemId[itemId]!;
+			assert.equal(generatedTask.status, "ready");
+			assert.equal(generatedTask.leaderAgentId, "main");
+			assert.equal(generatedTask.workUnit.workerAgentId, "search");
+			assert.equal(generatedTask.workUnit.checkerAgentId, "main");
+			assert.equal(generatedTask.generatedSource?.itemStatus, "active");
+			assert.equal(generatedTask.generatedSource?.latestDiscoveryRunId, created.runId);
+			assert.ok(generatedTask.generatedSource?.latestDiscoveryAttemptId);
+			assert.ok(generatedTask.generatedSource?.latestDiscoveredAt);
+			assert.equal(generatedTask.workUnit.title, `核查 ${itemId}`);
+		}
+
+		const launchOutcomes = await waitForAttemptDiscoveryGeneratedRuns(workspace, created.runId, discovery.taskId, 2);
+		assert.deepEqual(new Set(launchOutcomes.map(outcome => outcome.status)), new Set(["started"]));
+		assert.deepEqual(new Set(launchOutcomes.map(outcome => outcome.itemId)), new Set(["vultr", "hetzner"]));
+		for (const outcome of launchOutcomes) {
+			assert.ok(outcome.generatedRunId);
+			const generatedTask = byItemId[outcome.itemId]!;
+			assert.equal(outcome.generatedTaskId, generatedTask.taskId);
+			const runs = await service.listRuns(generatedTask.taskId);
+			assert.equal(runs.length, 1);
+			const generatedRun = runs[0]!;
+			assert.equal(generatedRun.runId, outcome.generatedRunId);
+			await waitForTerminalRun(service, generatedRun.runId);
+			assert.equal(generatedRun.source?.type, "canvas-task");
+			assert.equal(generatedRun.source?.taskId, generatedTask.taskId);
+			assert.equal(generatedRun.source?.triggeredBy?.type, "discovery-generated-task");
+			if (generatedRun.source?.triggeredBy?.type === "discovery-generated-task") {
+				assert.equal(generatedRun.source.triggeredBy.discoveryTaskId, discovery.taskId);
+				assert.equal(generatedRun.source.triggeredBy.discoveryRunId, created.runId);
+				assert.equal(generatedRun.source.triggeredBy.discoveryAttemptId, generatedTask.generatedSource?.latestDiscoveryAttemptId);
+				assert.equal(generatedRun.source.triggeredBy.sourceItemId, outcome.itemId);
+			}
+		}
+	} finally {
+		await removeTempRoot(root);
+	}
+});
+
+test("Step07: auto-run enforces concurrency 3", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-discovery-autorun-concurrency-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const discovery = await taskStore.create({
+			...validTaskInput,
+			title: "发现云服务器供应商",
+			canvasKind: "discovery",
+			discoverySpec: validDiscoverySpec,
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "发现云服务器供应商",
+				input: { text: "搜索并输出云服务器供应商 JSON。" },
+				outputContract: { text: "输出 JSON object，vendors 为数组，每项包含稳定 id。" },
+				acceptance: { rules: ["vendors 必须是数组", "每项必须有 id"] },
+			},
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const runner = new GatedDiscoveryGeneratedRunner([
+			{ id: "vultr" },
+			{ id: "hetzner" },
+			{ id: "ovh" },
+			{ id: "linode" },
+		]);
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => runner,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const created = await service.createRun(discovery.taskId);
+		const finished = await waitForTerminalRun(service, created.runId);
+		assert.equal(finished.status, "completed");
+		await waitForAttemptDiscoveryDispatch(workspace, created.runId, discovery.taskId, 4);
+		await waitForGeneratedWorkerStarts(runner, 3);
+		assert.equal(runner.generatedWorkerStarts.length, 3);
+		assert.equal(runner.activeGeneratedWorkers, 3);
+		assert.equal(runner.maxActiveGeneratedWorkers, 3);
+
+		runner.releaseGeneratedWorkers[0]!();
+		await waitForGeneratedWorkerStarts(runner, 4);
+		assert.equal(runner.maxActiveGeneratedWorkers, 3);
+		for (const release of runner.releaseGeneratedWorkers.slice(1)) release();
+
+		const launchOutcomes = await waitForAttemptDiscoveryGeneratedRuns(workspace, created.runId, discovery.taskId, 4);
+		assert.deepEqual(new Set(launchOutcomes.map(outcome => outcome.status)), new Set(["started"]));
+		const generated = await taskStore.listGeneratedForDiscoveryTask(discovery.taskId);
+		for (const task of generated) {
+			const runs = await service.listRuns(task.taskId);
+			assert.equal(runs.length, 1);
+			const terminal = await waitForTerminalRun(service, runs[0]!.runId);
+			assert.equal(terminal.status, "completed");
+		}
+		assert.equal(runner.maxActiveGeneratedWorkers, 3);
+	} finally {
+		await removeTempRoot(root);
+	}
+});
+
+test("Step07: already-running generated Task is skipped without failing Discovery", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-discovery-already-running-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const discovery = await taskStore.create({
+			...validTaskInput,
+			title: "发现云服务器供应商",
+			canvasKind: "discovery",
+			discoverySpec: validDiscoverySpec,
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "发现云服务器供应商",
+				input: { text: "搜索并输出云服务器供应商 JSON。" },
+				outputContract: { text: "输出 JSON object，vendors 为数组，每项包含稳定 id。" },
+				acceptance: { rules: ["vendors 必须是数组", "每项必须有 id"] },
+			},
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const runner = new GatedDiscoveryGeneratedRunner([{ id: "vultr" }]);
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => runner,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const firstRun = await service.createRun(discovery.taskId);
+		await waitForTerminalRun(service, firstRun.runId);
+		await waitForAttemptDiscoveryDispatch(workspace, firstRun.runId, discovery.taskId);
+		await waitForGeneratedWorkerStarts(runner, 1);
+		const generated = (await taskStore.listGeneratedForDiscoveryTask(discovery.taskId))[0]!;
+		const existingRun = (await service.listRuns(generated.taskId)).find(run => run.status === "queued" || run.status === "running" || run.status === "paused");
+		assert.ok(existingRun);
+
+		const secondRun = await service.createRun(discovery.taskId);
+		const secondFinished = await waitForTerminalRun(service, secondRun.runId);
+		assert.equal(secondFinished.status, "completed");
+		const launchOutcomes = await waitForAttemptDiscoveryGeneratedRuns(workspace, secondRun.runId, discovery.taskId);
+		assert.equal(launchOutcomes.length, 1);
+		assert.equal(launchOutcomes[0]!.status, "skipped_already_running");
+		assert.equal(launchOutcomes[0]!.generatedRunId, existingRun.runId);
+		assert.equal((await service.listRuns(generated.taskId)).length, 1);
+
+		runner.releaseGeneratedWorkers[0]!();
+		await waitForTerminalRun(service, existingRun.runId);
+	} finally {
+		await removeTempRoot(root);
+	}
+});
+
+test("Step07: not-ready generated Task launch is recorded without failing Discovery", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-discovery-not-ready-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const discovery = await taskStore.create({
+			...validTaskInput,
+			title: "发现云服务器供应商",
+			canvasKind: "discovery",
+			discoverySpec: validDiscoverySpec,
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "发现云服务器供应商",
+				input: { text: "搜索并输出云服务器供应商 JSON。" },
+				outputContract: { text: "输出 JSON object，vendors 为数组，每项包含稳定 id。" },
+				acceptance: { rules: ["vendors 必须是数组", "每项必须有 id"] },
+			},
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const runners = [
+			new DiscoveryDispatchingRunner([{ id: "vultr" }]),
+			new DiscoveryDispatchingRunner([{ id: "vultr", name: "Vultr rerun" }]),
+		];
+		let runnerIndex = 0;
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => runners[Math.min(runnerIndex++, runners.length - 1)]!,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const firstRun = await service.createRun(discovery.taskId);
+		await waitForTerminalRun(service, firstRun.runId);
+		await waitForAttemptDiscoveryGeneratedRuns(workspace, firstRun.runId, discovery.taskId);
+		const generated = (await taskStore.listGeneratedForDiscoveryTask(discovery.taskId))[0]!;
+		assert.equal((await service.listRuns(generated.taskId)).length, 1);
+
+		await taskStore.update(generated.taskId, { status: "drafting" });
+		const secondRun = await service.createRun(discovery.taskId);
+		const secondFinished = await waitForTerminalRun(service, secondRun.runId);
+		assert.equal(secondFinished.status, "completed");
+		const dispatch = await waitForAttemptDiscoveryDispatch(workspace, secondRun.runId, discovery.taskId);
+		assert.equal(dispatch[0]!.status, "updated");
+		const launchOutcomes = await waitForAttemptDiscoveryGeneratedRuns(workspace, secondRun.runId, discovery.taskId);
+		assert.equal(launchOutcomes.length, 1);
+		assert.equal(launchOutcomes[0]!.status, "skipped_not_runnable");
+		assert.match(launchOutcomes[0]!.error ?? "", /ready/);
+		assert.equal((await service.listRuns(generated.taskId)).length, 1);
+
+		const updated = await taskStore.get(generated.taskId);
+		assert.equal(updated?.status, "drafting");
+		assert.deepEqual(updated?.generatedSource?.itemPayload, { id: "vultr", name: "Vultr rerun" });
+		assert.equal(updated?.generatedSource?.latestDiscoveryRunId, secondRun.runId);
+	} finally {
+		await removeTempRoot(root);
+	}
+});
+
+test("Step07: blocked dispatch items and stale items are not auto-run", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-discovery-blocked-stale-autorun-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const discovery = await taskStore.create({
+			...validTaskInput,
+			title: "发现云服务器供应商",
+			canvasKind: "discovery",
+			discoverySpec: validDiscoverySpec,
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "发现云服务器供应商",
+				input: { text: "搜索并输出云服务器供应商 JSON。" },
+				outputContract: { text: "输出 JSON object，vendors 为数组，每项包含稳定 id。" },
+				acceptance: { rules: ["vendors 必须是数组", "每项必须有 id"] },
+			},
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const runners = [
+			new DiscoveryDispatchingRunner([{ id: "stale" }]),
+			new DiscoveryDispatchingRunner(
+				[{ id: "blocked" }, { id: "active" }],
+				[
+					{ ok: false, itemId: "blocked", error: "dispatcher blocked this item" },
+					{
+						ok: true,
+						itemId: "active",
+						workUnit: {
+							title: "核查 active",
+							input: { text: "核查 active。" },
+							outputContract: { text: "输出 active 报告。" },
+							acceptance: { rules: ["包含 active"] },
+						},
+					},
+				],
+			),
+		];
+		let runnerIndex = 0;
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => runners[Math.min(runnerIndex++, runners.length - 1)]!,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const firstRun = await service.createRun(discovery.taskId);
+		await waitForTerminalRun(service, firstRun.runId);
+		await waitForAttemptDiscoveryGeneratedRuns(workspace, firstRun.runId, discovery.taskId);
+		const firstGenerated = (await taskStore.listGeneratedForDiscoveryTask(discovery.taskId))[0]!;
+		assert.equal((await service.listRuns(firstGenerated.taskId)).length, 1);
+
+		const secondRun = await service.createRun(discovery.taskId);
+		await waitForTerminalRun(service, secondRun.runId);
+		const dispatch = await waitForAttemptDiscoveryDispatch(workspace, secondRun.runId, discovery.taskId, 3);
+		const dispatchByItem = Object.fromEntries(dispatch.map(outcome => [outcome.itemId, outcome]));
+		assert.equal(dispatchByItem.blocked?.status, "blocked");
+		assert.equal(dispatchByItem.stale?.status, "stale_marked");
+		assert.equal(dispatchByItem.active?.status, "created");
+
+		const launchOutcomes = await waitForAttemptDiscoveryGeneratedRuns(workspace, secondRun.runId, discovery.taskId);
+		assert.equal(launchOutcomes.length, 1);
+		assert.equal(launchOutcomes[0]!.itemId, "active");
+		assert.equal(launchOutcomes[0]!.status, "started");
+		const generated = await taskStore.listGeneratedForDiscoveryTask(discovery.taskId);
+		const byItemId = Object.fromEntries(generated.map(task => [task.generatedSource!.sourceItemId, task]));
+		assert.equal(byItemId.stale?.generatedSource?.itemStatus, "stale");
+		assert.equal((await service.listRuns(byItemId.stale!.taskId)).length, 1);
+		assert.equal(byItemId.blocked, undefined);
+		assert.equal((await service.listRuns(byItemId.active!.taskId)).length, 1);
+	} finally {
+		await removeTempRoot(root);
+	}
+});
+
+test("Step06: Discovery rerun reuses managed generated Tasks and marks missing items stale", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-discovery-rerun-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const discovery = await taskStore.create({
+			...validTaskInput,
+			title: "发现云服务器供应商",
+			canvasKind: "discovery",
+			discoverySpec: validDiscoverySpec,
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "发现云服务器供应商",
+				input: { text: "搜索并输出云服务器供应商 JSON。" },
+				outputContract: { text: "输出 JSON object，vendors 为数组，每项包含稳定 id。" },
+				acceptance: { rules: ["vendors 必须是数组", "每项必须有 id"] },
+			},
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const runners = [
+			new DiscoveryDispatchingRunner([{ id: "vultr", name: "Vultr" }, { id: "hetzner", name: "Hetzner" }]),
+			new DiscoveryDispatchingRunner(
+				[{ id: "vultr", name: "Vultr updated" }, { id: "ovh", name: "OVH" }],
+				[{
+					ok: true,
+					itemId: "vultr",
+					workUnit: {
+						title: "更新核查 Vultr",
+						input: { text: "使用最新 Discovery payload 重新核查 Vultr。" },
+						outputContract: { text: "输出更新后的 Vultr 报告。" },
+						acceptance: { rules: ["必须包含更新后的供应商名称"] },
+					},
+				}],
+			),
+		];
+		let runnerIndex = 0;
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => runners[Math.min(runnerIndex++, runners.length - 1)]!,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const firstRun = await service.createRun(discovery.taskId);
+		await waitForTerminalRun(service, firstRun.runId);
+		await waitForAttemptDiscoveryDispatch(workspace, firstRun.runId, discovery.taskId, 2);
+		await waitForAttemptDiscoveryGeneratedRuns(workspace, firstRun.runId, discovery.taskId, 2);
+		const firstGenerated = await taskStore.listGeneratedForDiscoveryTask(discovery.taskId);
+		const vultrTaskId = firstGenerated.find(task => task.generatedSource?.sourceItemId === "vultr")!.taskId;
+		const hetznerTaskId = firstGenerated.find(task => task.generatedSource?.sourceItemId === "hetzner")!.taskId;
+
+		const secondRun = await service.createRun(discovery.taskId);
+		const secondFinished = await waitForTerminalRun(service, secondRun.runId);
+		assert.equal(secondFinished.status, "completed");
+		const secondDispatch = await waitForAttemptDiscoveryDispatch(workspace, secondRun.runId, discovery.taskId, 3);
+		assert.deepEqual(new Set(secondDispatch.map(outcome => outcome.status)), new Set(["updated", "created", "stale_marked"]));
+
+		const generated = await taskStore.listGeneratedForDiscoveryTask(discovery.taskId);
+		const byItemId = Object.fromEntries(generated.map(task => [task.generatedSource!.sourceItemId, task]));
+		assert.equal(byItemId.vultr?.taskId, vultrTaskId);
+		assert.equal(byItemId.vultr?.title, "更新核查 Vultr");
+		assert.equal(byItemId.vultr?.workUnit.input.text, "使用最新 Discovery payload 重新核查 Vultr。");
+		assert.deepEqual(byItemId.vultr?.generatedSource?.itemPayload, { id: "vultr", name: "Vultr updated" });
+		assert.equal(byItemId.vultr?.generatedSource?.latestDiscoveryRunId, secondRun.runId);
+		assert.equal(byItemId.vultr?.generatedSource?.itemStatus, "active");
+		assert.equal(byItemId.hetzner?.taskId, hetznerTaskId);
+		assert.equal(byItemId.hetzner?.generatedSource?.itemStatus, "stale");
+		assert.equal(byItemId.hetzner?.archived, false);
+		assert.equal(byItemId.ovh?.generatedSource?.itemStatus, "active");
+		await waitForAttemptDiscoveryGeneratedRuns(workspace, secondRun.runId, discovery.taskId, 2);
+		for (const task of generated) {
+			for (const run of await service.listRuns(task.taskId)) {
+				await waitForTerminalRun(service, run.runId);
+			}
+		}
+	} finally {
+		await removeTempRoot(root);
+	}
+});
+
+test("Step06: customized generated WorkUnit is protected on Discovery rerun", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-discovery-customized-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const discovery = await taskStore.create({
+			...validTaskInput,
+			title: "发现云服务器供应商",
+			canvasKind: "discovery",
+			discoverySpec: validDiscoverySpec,
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "发现云服务器供应商",
+				input: { text: "搜索并输出云服务器供应商 JSON。" },
+				outputContract: { text: "输出 JSON object，vendors 为数组，每项包含稳定 id。" },
+				acceptance: { rules: ["vendors 必须是数组", "每项必须有 id"] },
+			},
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const runners = [
+			new DiscoveryDispatchingRunner([{ id: "vultr", name: "Vultr" }]),
+			new DiscoveryDispatchingRunner(
+				[{ id: "vultr", name: "Vultr rerun" }],
+				[{
+					ok: true,
+					itemId: "vultr",
+					workUnit: {
+						title: "派发器新 Vultr 标题",
+						input: { text: "派发器新输入。" },
+						outputContract: { text: "派发器新输出。" },
+						acceptance: { rules: ["派发器新规则"] },
+					},
+				}],
+			),
+		];
+		let runnerIndex = 0;
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => runners[Math.min(runnerIndex++, runners.length - 1)]!,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const firstRun = await service.createRun(discovery.taskId);
+		await waitForTerminalRun(service, firstRun.runId);
+		await waitForAttemptDiscoveryDispatch(workspace, firstRun.runId, discovery.taskId);
+		await waitForAttemptDiscoveryGeneratedRuns(workspace, firstRun.runId, discovery.taskId);
+		const generated = (await taskStore.listGeneratedForDiscoveryTask(discovery.taskId))[0]!;
+		await taskStore.update(generated.taskId, {
+			title: "用户保留标题",
+			workUnit: {
+				...generated.workUnit,
+				title: "用户保留 WorkUnit",
+				input: { text: "用户保留输入。" },
+				outputContract: { text: "用户保留输出。" },
+				acceptance: { rules: ["用户保留规则"] },
+			},
+		});
+
+		const secondRun = await service.createRun(discovery.taskId);
+		await waitForTerminalRun(service, secondRun.runId);
+		const dispatch = await waitForAttemptDiscoveryDispatch(workspace, secondRun.runId, discovery.taskId);
+		assert.equal(dispatch[0]!.status, "updated");
+		assert.equal(dispatch[0]!.workUnitMode, "customized");
+
+		const reused = await taskStore.get(generated.taskId);
+		assert.equal(reused?.title, "用户保留标题");
+		assert.equal(reused?.workUnit.title, "用户保留 WorkUnit");
+		assert.equal(reused?.workUnit.input.text, "用户保留输入。");
+		assert.equal(reused?.workUnit.outputContract.text, "用户保留输出。");
+		assert.deepEqual(reused?.workUnit.acceptance.rules, ["用户保留规则"]);
+		assert.deepEqual(reused?.generatedSource?.itemPayload, { id: "vultr", name: "Vultr rerun" });
+		assert.equal(reused?.generatedSource?.latestDiscoveryRunId, secondRun.runId);
+		assert.equal(reused?.generatedSource?.workUnitMode, "customized");
+		await waitForAttemptDiscoveryGeneratedRuns(workspace, secondRun.runId, discovery.taskId);
+		for (const run of await service.listRuns(generated.taskId)) {
+			await waitForTerminalRun(service, run.runId);
+		}
+	} finally {
+		await removeTempRoot(root);
+	}
+});
+
+test("Step06: invalid dispatcher output blocks only that item and keeps Discovery run completed", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-discovery-blocked-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const discovery = await taskStore.create({
+			...validTaskInput,
+			title: "发现云服务器供应商",
+			canvasKind: "discovery",
+			discoverySpec: validDiscoverySpec,
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "发现云服务器供应商",
+				input: { text: "搜索并输出云服务器供应商 JSON。" },
+				outputContract: { text: "输出 JSON object，vendors 为数组，每项包含稳定 id。" },
+				acceptance: { rules: ["vendors 必须是数组", "每项必须有 id"] },
+			},
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const runner = new DiscoveryDispatchingRunner(
+			[{ id: "broken", name: "Broken" }, { id: "vultr", name: "Vultr" }],
+			[
+				{ ok: false, itemId: "broken", error: "discovery dispatcher output parse error: invalid JSON" },
+				{
+					ok: true,
+					itemId: "vultr",
+					workUnit: {
+						title: "核查 Vultr",
+						input: { text: "核查 Vultr。" },
+						outputContract: { text: "输出 Vultr 报告。" },
+						acceptance: { rules: ["包含 Vultr"] },
+					},
+				},
+			],
+		);
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => runner,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const created = await service.createRun(discovery.taskId);
+		const finished = await waitForTerminalRun(service, created.runId);
+		assert.equal(finished.status, "completed");
+		const dispatch = await waitForAttemptDiscoveryDispatch(workspace, created.runId, discovery.taskId, 2);
+		const byItemId = Object.fromEntries(dispatch.map(outcome => [outcome.itemId, outcome]));
+		assert.equal(byItemId.broken?.status, "blocked");
+		assert.match(byItemId.broken?.error ?? "", /invalid JSON/);
+		assert.equal(byItemId.vultr?.status, "created");
+
+		const generated = await taskStore.listGeneratedForDiscoveryTask(discovery.taskId);
+		assert.deepEqual(generated.map(task => task.generatedSource?.sourceItemId), ["vultr"]);
+		await waitForAttemptDiscoveryGeneratedRuns(workspace, created.runId, discovery.taskId);
+		for (const run of await service.listRuns(generated[0]!.taskId)) {
+			await waitForTerminalRun(service, run.runId);
+		}
+	} finally {
+		await removeTempRoot(root);
+	}
+});
+
+test("Step06: missing runDiscoveryDispatcher support records blocked outcomes without failing Discovery run", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-discovery-no-dispatcher-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const discovery = await taskStore.create({
+			...validTaskInput,
+			title: "发现云服务器供应商",
+			canvasKind: "discovery",
+			discoverySpec: validDiscoverySpec,
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "发现云服务器供应商",
+				input: { text: "搜索并输出云服务器供应商 JSON。" },
+				outputContract: { text: "输出 JSON object，vendors 为数组，每项包含稳定 id。" },
+				acceptance: { rules: ["vendors 必须是数组", "每项必须有 id"] },
+			},
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new DiscoveryAcceptedNoDispatcherRunner([{ id: "vultr" }, { id: "hetzner" }]),
+			dataDir: join(root, "task-runs"),
+		});
+
+		const created = await service.createRun(discovery.taskId);
+		const finished = await waitForTerminalRun(service, created.runId);
+		assert.equal(finished.status, "completed");
+		const dispatch = await waitForAttemptDiscoveryDispatch(workspace, created.runId, discovery.taskId, 2);
+		assert.deepEqual(dispatch.map(outcome => outcome.status), ["blocked", "blocked"]);
+		assert.ok(dispatch.every(outcome => /runDiscoveryDispatcher/.test(outcome.error ?? "")));
+		assert.deepEqual(await taskStore.listGeneratedForDiscoveryTask(discovery.taskId), []);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("Step04: Discovery Canvas Task run rejects invalid item ids and writes no standard result", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-discovery-invalid-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const task = await taskStore.create({
+			...validTaskInput,
+			title: "发现云服务器供应商",
+			canvasKind: "discovery",
+			discoverySpec: validDiscoverySpec,
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "发现云服务器供应商",
+				input: { text: "搜索并输出云服务器供应商 JSON。" },
+				outputContract: { text: "输出 JSON object，vendors 为数组，每项包含稳定 id。" },
+				acceptance: { rules: ["vendors 必须是数组", "每项必须有 id"] },
+			},
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+
+		class InvalidDiscoveryOutputRunner extends ProcessEventRoleRunner {
+			async runWorker(_input: WorkerInput): Promise<WorkerOutput> {
+				return { content: "worker text", artifactRefs: [] };
+			}
+			async runChecker(_input: CheckerInput): Promise<CheckerOutput> {
+				return {
+					verdict: "pass",
+					reason: "mock checker accepted invalid discovery output",
+					resultContent: JSON.stringify({ vendors: [{ name: "Missing id" }] }),
+				};
+			}
+		}
+
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new InvalidDiscoveryOutputRunner(),
+			dataDir: join(root, "task-runs"),
+		});
+
+		const created = await service.createRun(task.taskId);
+		const finished = await waitForTerminalRun(service, created.runId);
+		assert.equal(finished.status, "completed_with_failures");
+		assert.equal(finished.taskStates[task.taskId]?.status, "failed");
+		assert.match(finished.taskStates[task.taskId]?.errorSummary ?? "", /output validation failed/);
+		assert.match(finished.taskStates[task.taskId]?.errorSummary ?? "", /required field 'id'/);
+
+		const attempts = await workspace.listAttempts(created.runId, task.taskId);
+		assert.equal(attempts.length, 1);
+		const attempt = attempts[0]!;
+		assert.equal(await workspace.readDiscoveryResult(created.runId, task.taskId, attempt.attemptId), null);
+		assert.equal(attempt.files.includes("discovery-result.json"), false);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("Step04: normal Canvas Task run honors workUnit outputCheck", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-output-check-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const outputCheck = { type: "json_object" as const, requiredFields: ["summary"] };
+		const task = await taskStore.create({
+			...validTaskInput,
+			workUnit: {
+				...validTaskInput.workUnit,
+				outputContract: { text: "输出 JSON object，必须包含 summary。" },
+				outputCheck,
+			},
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		let capturedWorkerInput: WorkerInput | undefined;
+
+		class InvalidJsonObjectRunner extends ProcessEventRoleRunner {
+			async runWorker(input: WorkerInput): Promise<WorkerOutput> {
+				capturedWorkerInput = input;
+				return { content: JSON.stringify({ notes: "missing summary" }), artifactRefs: [] };
+			}
+			async runChecker(_input: CheckerInput): Promise<CheckerOutput> {
+				return {
+					verdict: "pass",
+					reason: "mock checker accepted invalid normal output",
+					resultContent: JSON.stringify({ notes: "missing summary" }),
+				};
+			}
+		}
+
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new InvalidJsonObjectRunner(),
+			dataDir: join(root, "task-runs"),
+		});
+
+		const created = await service.createRun(task.taskId);
+		const finished = await waitForTerminalRun(service, created.runId);
+		assert.equal(finished.status, "completed_with_failures");
+		assert.equal(finished.taskStates[task.taskId]?.status, "failed");
+		assert.deepEqual(capturedWorkerInput?.task.outputCheck, outputCheck);
+		assert.match(finished.taskStates[task.taskId]?.errorSummary ?? "", /missing required field 'summary'/);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

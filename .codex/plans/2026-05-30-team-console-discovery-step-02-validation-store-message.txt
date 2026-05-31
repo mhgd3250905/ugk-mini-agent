@@ -1,0 +1,78 @@
+请接手 E:\AII\ugk-pi 的 Team Console Discovery 节点第 02 步：后端 validation + TaskStore 语义。
+
+当前基线：
+- 最新 commit: af0362a docs(team-console): record task chain validation
+- 分支状态: main...origin/main [ahead 6]
+- 已完成: Step 01/01A 已添加并修正 Discovery / generated Task 类型契约；TeamDiscoverySpec 使用 generatedWorkerAgentId/generatedCheckerAgentId；当前稳定 tag stable/team-console-task-chain-2026-05-30 已推送 GitHub 和 Gitee
+- 当前验证: Codex review 复跑通过 contract drift test、Team Console tsc、npx tsc --noEmit、git diff --check；本步仍必须自行复跑指定验证
+- 暂存区: 应为空；执行前用 git diff --cached --stat 确认
+- Dirty 边界: .pi/skills/anthropics/skill-creator/** 是既有 tracked deletion，不要 stage、不要恢复；.pi/skills/skill-creator/、.codex/plans/*、public/runtime 报告、临时 HTML、generate_report*.py、report_template.html 不要提交
+
+必须先读：
+- AGENTS.md
+- apps/team-console/README.md
+- docs/team-runtime.md
+- .codex/plans/2026-05-30-team-console-discovery-requirements.md
+- .codex/plans/2026-05-30-team-console-discovery-step-02-validation-store-plan.md
+- src/team/types.ts
+- src/team/task-validation.ts
+- src/team/task-store.ts
+- test/team-task-store.test.ts
+
+严格按计划文件执行：
+- .codex/plans/2026-05-30-team-console-discovery-step-02-validation-store-plan.md
+
+本轮只做：
+- 在 TaskStore 层支持 Discovery root Task 和 generated Task 的验证/持久化。
+- 默认 list 隐藏 generated Tasks。
+- 增加 includeGenerated 和按 Discovery id 查询 generated Tasks 的 store 能力。
+- generated Task 的 workUnit 被编辑时标记 workUnitMode="customized"。
+- 补 focused TaskStore 测试。
+- 完成后停下交付。
+
+禁止做：
+- 不改 src/team/routes.ts
+- 不改 src/team/task-run-service.ts
+- 不改 src/team/canvas-task-attempt-runner.ts
+- 不改 src/team/role-prompt-contract.ts
+- 不改 src/team/agent-profile-role-runner.ts
+- 不改 apps/team-console/src/**
+- 不改 .pi/skills/**
+- 不实现 Discovery run、dispatcher、auto-run scheduler、5174 UI 或 runtime skill
+- 不创建计划外文件
+- 不做整文件格式化或换行符转换；保持 touched files 的既有 EOL/格式
+- 不 stage、不 commit，除非用户另行明确授权
+- 不使用 git add -A
+- 不提交 .env/.data/runtime 产物/temp 文件/报告产物/未知 .pi/skills/*/skills-lock.json
+
+执行要求：
+- missing canvasKind 表示普通 root Task。
+- canvasKind="discovery" 必须有 discoverySpec，且不能有 generatedSource。
+- generated Task 必须有 generatedSource，不能是 discovery，不能有 discoverySpec。
+- TeamDiscoverySpec.generatedWorkerAgentId/generatedCheckerAgentId 是 generated item Task 的默认 worker/checker，不是 Discovery 节点自身的 worker/checker。
+- Discovery 节点自身仍使用 workUnit.workerAgentId/checkerAgentId 执行和验收。
+- 不允许通过 public update 改 generatedSource 身份字段。
+- 行为变更先补测试，再写实现。
+- 遇到计划外问题先停下说明，不要顺手扩范围。
+- 如果小改动产生超大 diff，先检查是否为 EOL/formatter churn，修正后再继续。
+
+最终验证：
+- node --test --import tsx test/team-task-store.test.ts
+- npx tsc --noEmit
+- git diff --check
+- git diff --stat -- src/team/task-validation.ts src/team/task-store.ts test/team-task-store.test.ts
+- git diff --numstat -- src/team/task-validation.ts src/team/task-store.ts test/team-task-store.test.ts
+- git ls-files --eol src/team/task-validation.ts src/team/task-store.ts test/team-task-store.test.ts
+- git diff --cached --stat
+
+完成后按这个格式回复：
+1. 改了哪些文件。
+2. 新增了哪些 validation rules 和 store methods/options。
+3. 列出新增/修改的测试。
+4. 明确说明没有改 routes、runtime runner、UI、scheduler、docs、.pi/skills。
+5. 每条验证命令和结果。
+6. diff stat / numstat 摘要，并说明是否存在异常大规模格式噪声。
+7. 是否有 EOL 或 formatter-only churn。
+8. 是否有计划假设不成立。
+
+不要 stage，不要 commit。

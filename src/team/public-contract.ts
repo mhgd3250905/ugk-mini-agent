@@ -12,8 +12,15 @@
 // Types returned as-is by the API
 export type {
 	TeamCanvasTask,
+	TeamCanvasTaskKind,
 	TeamCanvasSourceNode,
+	TeamDiscoverySpec,
+	TeamGeneratedTaskItemStatus,
+	TeamGeneratedTaskSource,
+	TeamGeneratedTaskWorkUnitMode,
 	TeamRunState,
+	TeamTaskOutputCheck,
+	TeamWorkUnitDefinition,
 } from "./types.js";
 
 // "Resolved" variants: the API returns these with status/staleReason

@@ -30,8 +30,14 @@ interface ResolvedReference {
 	message?: string;
 }
 
-function okResult(kind: ValidationKind, sourceRef: string | null, checks: ValidationCheck[], normalizedRef?: string | null): TeamOutputValidationResult {
-	return { ok: true, kind, sourceRef, checks, normalizedRef };
+function okResult(
+	kind: ValidationKind,
+	sourceRef: string | null,
+	checks: ValidationCheck[],
+	normalizedRef?: string | null,
+	items?: Array<Record<string, unknown>>,
+): TeamOutputValidationResult {
+	return { ok: true, kind, sourceRef, checks, normalizedRef, ...(items ? { items } : {}) };
 }
 
 function failResult(kind: ValidationKind, sourceRef: string | null, checks: ValidationCheck[], normalizedRef?: string | null): TeamOutputValidationResult {
@@ -168,6 +174,7 @@ function validateJsonItems(content: string, check: Extract<TeamTaskOutputCheck, 
 	}
 	checks.push({ name: "outputKey_array", ok: true, path: outputKey });
 	const requiredFields = check.requiredFields ?? [];
+	const items: Array<Record<string, unknown>> = [];
 	for (let i = 0; i < arr.length; i++) {
 		const item = arr[i];
 		if (!item || typeof item !== "object" || Array.isArray(item)) {
@@ -175,6 +182,7 @@ function validateJsonItems(content: string, check: Extract<TeamTaskOutputCheck, 
 			return failResult(kind, sourceRef, checks, normalizedRef);
 		}
 		const obj = item as Record<string, unknown>;
+		items.push(obj);
 		for (const field of requiredFields) {
 			if (typeof obj[field] !== "string" || !obj[field].trim()) {
 				checks.push({ name: field === "id" ? "item_stable_id" : "required_field", ok: false, message: `item ${i} missing required field '${field}'`, path: field });
@@ -183,7 +191,7 @@ function validateJsonItems(content: string, check: Extract<TeamTaskOutputCheck, 
 		}
 	}
 	checks.push({ name: "item_object", ok: true }, { name: "item_stable_id", ok: true });
-	return okResult(kind, sourceRef, checks, normalizedRef);
+	return okResult(kind, sourceRef, checks, normalizedRef, items);
 }
 
 function validateJsonObject(content: string, check: Extract<TeamTaskOutputCheck, { type: "json_object" }>, kind: ValidationKind, sourceRef: string, normalizedRef?: string | null): TeamOutputValidationResult {

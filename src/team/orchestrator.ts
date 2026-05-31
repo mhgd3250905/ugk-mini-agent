@@ -234,6 +234,10 @@ export class TeamOrchestrator {
 			}
 
 			state = (await this.workspace.getState(runId))!;
+			if (state.status === "running" && this.isTimedOut(state)) {
+				await this.handleTimeout(state, plan);
+				return (await this.workspace.getState(runId))!;
+			}
 			if (state.status === "running" && !this.shouldStop(state)) {
 				await this.runFinalizer(state, plan, signal);
 			}
