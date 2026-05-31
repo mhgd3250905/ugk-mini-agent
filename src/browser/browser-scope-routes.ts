@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { renameWithTransientRetry } from "../file-system.js";
 
 export interface BrowserScopeRoute {
 	browserId: string;
@@ -89,7 +90,7 @@ async function writeBrowserScopeRouteStore(cachePath: string, store: BrowserScop
 	await mkdir(dirname(cachePath), { recursive: true });
 	const tempPath = `${cachePath}.tmp`;
 	await writeFile(tempPath, JSON.stringify(store, null, 2));
-	await rename(tempPath, cachePath);
+	await renameWithTransientRetry(tempPath, cachePath);
 }
 
 async function updateBrowserScopeRouteStore(

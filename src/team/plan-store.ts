@@ -1,5 +1,6 @@
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { renameWithTransientRetry } from "../file-system.js";
 import type { TeamPlan } from "./types.js";
 import { generatePlanId } from "./ids.js";
 import { validateCreatePlanInput, validatePlanTasks } from "./plan-validation.js";
@@ -103,7 +104,7 @@ export class PlanStore {
 		const filePath = join(planDir, "plan.json");
 		const tmp = filePath + ".tmp";
 		await writeFile(tmp, JSON.stringify(plan, null, 2), "utf8");
-		await rename(tmp, filePath);
+		await renameWithTransientRetry(tmp, filePath);
 	}
 
 	private async readJson<T>(filePath: string): Promise<T | null> {

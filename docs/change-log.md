@@ -12,6 +12,18 @@
 
 ---
 
+## 2026-05-31 — Cross-platform atomic JSON write retry
+
+- **主题**: 收口 Windows/跨平台临时文件占用导致的 atomic JSON replace 间歇失败。
+- **变更内容**:
+  - 新增共享 `renameWithTransientRetry()`，对 atomic write 的最终 rename/replace 步骤遇到 transient `EACCES` / `EBUSY` / `EPERM` 时做有限重试和线性退避。
+  - `ConversationStore`、`AssetStore`、Feishu settings/conversation map、browser scope routes、Team plan/run/task/source-node/unit/json collection stores 等原有 temp-file -> rename 写入点统一改走共享 helper。
+  - 保持现有写入模型不变：仍先写临时文件，再原子替换目标文件；非 transient rename 错误继续抛出。
+  - focused tests 覆盖 ConversationStore 与 Feishu conversation map 的 transient rename retry。
+- **影响范围**: `src/file-system.ts`、`src/agent/conversation-store.ts`、`src/agent/asset-store.ts`、`src/agent/agent-profile-catalog.ts`、`src/browser/browser-scope-routes.ts`、`src/integrations/feishu/*store.ts`、`src/team/*store.ts`、相关测试。
+- **验证**: `npm test` 通过，1991 tests / 1989 passed / 2 skipped / 0 failed；`npx tsc --noEmit` 和 `git diff --check` 通过。
+- **对应入口**: 本地 JSON state/catalog/index 文件持久化路径；这是跨平台 I/O 稳定性修复，不改变 API contract 或业务数据结构。
+
 ## 2026-05-31 — Team Console Discovery generated child archive/delete UI
 
 - **主题**: 给 5174 Discovery 子画布 generated child card 增加 scoped soft archive/delete 操作。

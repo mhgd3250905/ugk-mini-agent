@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { renameWithTransientRetry } from "../file-system.js";
 import { generateRunId } from "./ids.js";
 import { progressMessages } from "./progress.js";
 import { RunStateEvents } from "./run-state-events.js";
@@ -228,7 +229,7 @@ export class RunStateStore {
 		const tmp = `${filePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
 		try {
 			await writeFile(tmp, JSON.stringify(state, null, 2), "utf8");
-			await rename(tmp, filePath);
+			await renameWithTransientRetry(tmp, filePath);
 		} finally {
 			await rm(tmp, { force: true }).catch(() => {});
 		}

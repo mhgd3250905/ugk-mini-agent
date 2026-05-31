@@ -1,5 +1,6 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
+import { renameWithTransientRetry } from "../file-system.js";
 import { generateSourceNodeId } from "./ids.js";
 import type { TeamCanvasSourceNode, TeamCanvasSourceNodeType, TeamCanvasSourcePortType } from "./types.js";
 
@@ -164,7 +165,7 @@ export class SourceNodeStore {
 		const tmp = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
 		try {
 			await writeFile(tmp, JSON.stringify(nodes, null, 2), "utf8");
-			await rename(tmp, this.filePath);
+			await renameWithTransientRetry(tmp, this.filePath);
 		} finally {
 			await rm(tmp, { force: true }).catch(() => {});
 		}

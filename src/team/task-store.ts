@@ -1,5 +1,6 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { renameWithTransientRetry } from "../file-system.js";
 import { generateTaskId } from "./ids.js";
 import type { TeamCanvasTask, TeamCanvasTaskStatus, TeamWorkUnitDefinition } from "./types.js";
 import {
@@ -259,7 +260,7 @@ export class TaskStore {
 		const filePath = join(tasksDir, `${task.taskId}.json`);
 		const tmp = filePath + ".tmp";
 		await writeFile(tmp, JSON.stringify(task, null, 2), "utf8");
-		await rename(tmp, filePath);
+		await renameWithTransientRetry(tmp, filePath);
 	}
 
 	private async readJson<T>(filePath: string): Promise<T | null> {

@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { cp, mkdir, readdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
+import { renameWithTransientRetry } from "../file-system.js";
 import {
 	DEFAULT_AGENT_ID,
 	SEARCH_AGENT_ID,
@@ -441,7 +442,7 @@ async function writeStoredAgentProfileCatalogFile(
 	await mkdir(catalogDir, { recursive: true });
 	try {
 		await writeFile(tempPath, JSON.stringify(catalog, null, 2) + "\n", "utf8");
-		await rename(tempPath, catalogPath);
+		await renameWithTransientRetry(tempPath, catalogPath);
 	} catch (error) {
 		await unlink(tempPath).catch(() => undefined);
 		throw error;

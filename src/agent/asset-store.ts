@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
+import { renameWithTransientRetry } from "../file-system.js";
 import type { AgentFileArtifact, AgentFileDraft } from "./file-artifacts.js";
 
 export type AssetKind = "text" | "binary" | "metadata";
@@ -340,7 +341,7 @@ export class AssetStore implements AssetStoreLike {
 		await mkdir(dir, { recursive: true });
 		try {
 			await writeFile(tempPath, JSON.stringify(index, null, 2), "utf8");
-			await rename(tempPath, this.options.indexPath);
+			await renameWithTransientRetry(tempPath, this.options.indexPath);
 		} catch (error) {
 			await unlink(tempPath).catch(() => undefined);
 			throw error;

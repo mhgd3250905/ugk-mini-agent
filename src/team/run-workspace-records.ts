@@ -1,5 +1,6 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { renameWithTransientRetry } from "../file-system.js";
 import { progressMessages } from "./progress.js";
 import type { RunStateStore } from "./run-workspace-state.js";
 import type { TaskDecompositionRecord, TaskExpansionRecord, TeamRunState, TeamTask } from "./types.js";
@@ -20,7 +21,7 @@ export class RunRecordStore {
 		const filePath = join(dir, taskRecordFileName(record.parentTaskId));
 		const tmp = filePath + ".tmp";
 		await writeFile(tmp, JSON.stringify(record, null, 2), "utf8");
-		await rename(tmp, filePath);
+		await renameWithTransientRetry(tmp, filePath);
 	}
 
 	async readExpansion(runId: string, parentTaskId: string): Promise<TaskExpansionRecord | null> {
@@ -33,7 +34,7 @@ export class RunRecordStore {
 		const filePath = join(dir, taskRecordFileName(record.parentTaskId));
 		const tmp = filePath + ".tmp";
 		await writeFile(tmp, JSON.stringify(record, null, 2), "utf8");
-		await rename(tmp, filePath);
+		await renameWithTransientRetry(tmp, filePath);
 	}
 
 	async readDecomposition(runId: string, parentTaskId: string): Promise<TaskDecompositionRecord | null> {

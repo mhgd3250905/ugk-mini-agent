@@ -1,5 +1,6 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { renameWithTransientRetry } from "../file-system.js";
 
 export interface JsonCollectionStoreOptions {
 	rootDir: string;
@@ -45,7 +46,7 @@ export class JsonCollectionStore<T> {
 		const tmp = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
 		try {
 			await writeFile(tmp, JSON.stringify(items, null, 2), "utf8");
-			await rename(tmp, this.filePath);
+			await renameWithTransientRetry(tmp, this.filePath);
 		} finally {
 			await rm(tmp, { force: true }).catch(() => {});
 		}

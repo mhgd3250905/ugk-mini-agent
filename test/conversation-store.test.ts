@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, stat, utimes, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rename, stat, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ConversationStore } from "../src/agent/conversation-store.js";
@@ -176,6 +176,31 @@ test("serializes concurrent conversation writes without losing fields", async ()
 	assert.equal(persisted.conversations["manual:parallel"]?.title, "Parallel");
 	assert.equal(persisted.conversations["manual:parallel"]?.preview, "kept");
 	assert.equal(persisted.conversations["manual:parallel"]?.messageCount, 3);
+});
+
+test("retries transient file replacement failures while writing state", async () => {
+	const indexPath = await createTempPath();
+	let attempts = 0;
+	const store = new ConversationStore(indexPath, {
+		renameFile: async (source, target) => {
+			attempts += 1;
+			if (attempts === 1) {
+				const error = new Error("temporary file replacement lock") as NodeJS.ErrnoException;
+				error.code = "EPERM";
+				throw error;
+			}
+			await rename(source, target);
+		},
+		renameRetryDelayMs: 0,
+	});
+
+	await store.set("manual:rename-retry", "E:/sessions/retry.jsonl");
+
+	assert.equal(attempts, 2);
+	const persisted = JSON.parse(await readFile(indexPath, "utf8")) as {
+		conversations: Record<string, { sessionFile?: string }>;
+	};
+	assert.equal(persisted.conversations["manual:rename-retry"]?.sessionFile, "E:/sessions/retry.jsonl");
 });
 
 test("lists conversations ordered by most recent update", async () => {
