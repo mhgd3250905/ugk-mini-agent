@@ -38,6 +38,7 @@ import { registerFeishuSettingsRoutes } from "./routes/feishu-settings.js";
 import { registerModelConfigRoutes } from "./routes/model-config.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
 import { registerPlaygroundRoute } from "./routes/playground.js";
+import { registerPublicSiteRoutes } from "./routes/public-site.js";
 import { registerRuntimeDebugRoutes } from "./routes/runtime-debug.js";
 import { registerStaticRoutes } from "./routes/static.js";
 import { registerArtifactRoutes } from "./routes/artifacts.js";
@@ -172,6 +173,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
 		assetStore,
 		projectRoot: config.projectRoot,
 	});
+	registerPublicSiteRoutes(app, { projectRoot: config.projectRoot });
 	registerPlaygroundRoute(app, { projectRoot: config.projectRoot });
 	registerStaticRoutes(app, { projectRoot: config.projectRoot });
 	registerActivityRoutes(app, { activityStore });
