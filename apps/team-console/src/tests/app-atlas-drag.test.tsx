@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
 import { resetMockTeamApiState } from "../fixtures/team-fixtures";
 import { getAtlas, getAtlasNodes, firePointer } from "./app-dom-test-utils";
@@ -38,6 +38,69 @@ describe("App", () => {
       expect(Number.parseFloat(agentNode.style.top)).toBeCloseTo(initialTop + 30, 4);
       expect(atlas).toHaveAttribute("data-agent-focus", "none");
       expect(container.querySelector(".agent-playground-branch")).toBeNull();
+    });
+
+    it("starts card dragging from the visible ID copy controls", async () => {
+      const { container } = render(<App />);
+
+      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+      const atlasNodes = getAtlasNodes(container);
+      const agentNode = within(atlasNodes).getByRole("button", { name: "主 Agent" }) as HTMLElement;
+      const taskNode = await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" }) as HTMLElement;
+      const agentIdCopy = within(agentNode).getByRole("button", { name: /复制 Agent ID main/ });
+      const taskIdCopy = within(taskNode).getByRole("button", { name: /复制 Task ID task_research_medtrum/ });
+      const initialAgentLeft = Number.parseFloat(agentNode.style.left);
+      const initialAgentTop = Number.parseFloat(agentNode.style.top);
+      const initialTaskLeft = Number.parseFloat(taskNode.style.left);
+      const initialTaskTop = Number.parseFloat(taskNode.style.top);
+
+      firePointer(agentIdCopy, "pointerdown", { pointerId: 41, clientX: 120, clientY: 100 });
+      firePointer(agentIdCopy, "pointermove", { pointerId: 41, clientX: 160, clientY: 126 });
+      firePointer(agentIdCopy, "pointerup", { pointerId: 41, clientX: 160, clientY: 126, buttons: 0 });
+
+      firePointer(taskIdCopy, "pointerdown", { pointerId: 42, clientX: 260, clientY: 260 });
+      firePointer(taskIdCopy, "pointermove", { pointerId: 42, clientX: 306, clientY: 290 });
+      firePointer(taskIdCopy, "pointerup", { pointerId: 42, clientX: 306, clientY: 290, buttons: 0 });
+
+      expect(Number.parseFloat(agentNode.style.left)).toBeCloseTo(initialAgentLeft + 40, 4);
+      expect(Number.parseFloat(agentNode.style.top)).toBeCloseTo(initialAgentTop + 26, 4);
+      expect(Number.parseFloat(taskNode.style.left)).toBeCloseTo(initialTaskLeft + 46, 4);
+      expect(Number.parseFloat(taskNode.style.top)).toBeCloseTo(initialTaskTop + 30, 4);
+      expect(container.querySelector(".agent-playground-branch")).toBeNull();
+      expect(container.querySelector(".task-action-branch")).toBeNull();
+    });
+
+    it("copies ids when pressing and releasing the ID controls without dragging", async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, "clipboard", {
+        value: { writeText },
+        writable: true,
+        configurable: true,
+      });
+      const { container } = render(<App />);
+
+      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+
+      const atlasNodes = getAtlasNodes(container);
+      const agentNode = within(atlasNodes).getByRole("button", { name: "主 Agent" }) as HTMLElement;
+      const taskNode = await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" }) as HTMLElement;
+      const agentIdCopy = within(agentNode).getByRole("button", { name: /复制 Agent ID main/ });
+      const taskIdCopy = within(taskNode).getByRole("button", { name: /复制 Task ID task_research_medtrum/ });
+
+      firePointer(agentIdCopy, "pointerdown", { pointerId: 51, clientX: 120, clientY: 100 });
+      firePointer(agentIdCopy, "pointerup", { pointerId: 51, clientX: 120, clientY: 100, buttons: 0 });
+      await waitFor(() => expect(writeText).toHaveBeenLastCalledWith("main"));
+      expect(container.querySelector(".agent-playground-branch")).toBeNull();
+      expect(within(agentNode).getByText("已复制")).toBeInTheDocument();
+
+      firePointer(taskIdCopy, "pointerdown", { pointerId: 52, clientX: 260, clientY: 260 });
+      firePointer(taskIdCopy, "pointerup", { pointerId: 52, clientX: 260, clientY: 260, buttons: 0 });
+      await waitFor(() => expect(writeText).toHaveBeenLastCalledWith("task_research_medtrum"));
+      expect(container.querySelector(".task-action-branch")).toBeNull();
+      expect(within(taskNode).getByText("已复制")).toBeInTheDocument();
     });
 
     it("box-selects atlas nodes and drags the selected set together", async () => {

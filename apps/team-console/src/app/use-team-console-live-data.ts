@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { LiveTeamApi } from "../api/team-api";
 import type { AgentRunStatus, AgentSummary, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskConnection, TeamTaskDependency } from "../api/team-types";
-import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, mockTeamTasks, MockTeamApi } from "../fixtures/team-fixtures";
+import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, mockDiscoveryGeneratedTasks, mockDiscoveryRootTask, mockTeamTasks, MockTeamApi } from "../fixtures/team-fixtures";
 import { ROOT_ID } from "../graph/execution-map-layout";
 import { isActiveRun } from "../shared/status";
 
@@ -12,6 +12,7 @@ export type TeamConsoleUiResetReason =
   | "live-workspace-loading";
 
 const DATA_SOURCE_STORAGE_KEY = "ugk-team-console:data-source";
+const DISCOVERY_CATALOG_REFRESH_DELAYS_MS = [350, 1200, 3000, 8000, 15000, 30000, 60000, 120000, 180000, 300000];
 
 export const CLEAN_AGENT_WORKSPACE_ID = "agent-workspace";
 
@@ -33,6 +34,17 @@ function readStoredDataSource(): DataSource {
 
 function agentRunStatusRecord(statuses: AgentRunStatus[]): Record<string, AgentRunStatus> {
   return Object.fromEntries(statuses.map((status) => [status.agentId, status]));
+}
+
+function selectLatestRun(runs: TeamRunState[]): TeamRunState | null {
+  if (!runs.length) return null;
+  return runs.reduce((latest, run) => {
+    const latestTime = Date.parse(latest.createdAt);
+    const runTime = Date.parse(run.createdAt);
+    if (!Number.isFinite(runTime)) return latest;
+    if (!Number.isFinite(latestTime)) return run;
+    return runTime >= latestTime ? run : latest;
+  }, runs[0]);
 }
 
 function sortRunsByCreatedAt(runs: TeamRunState[]): TeamRunState[] {
@@ -59,6 +71,126 @@ export function mergeTaskRun(
     ...current,
     [taskId]: sortRunsByCreatedAt(nextRuns),
   };
+}
+
+export interface TeamDiscoverySummary {
+  generatedTaskCount: number;
+  activeGeneratedTaskCount: number;
+  staleGeneratedTaskCount: number;
+  runningGeneratedRunCount: number;
+  failedDispatchCount: number;
+  latestDispatchRunId?: string;
+  latestDispatchAttemptId?: string;
+}
+
+export interface TeamDiscoveryDispatchDiagnostic {
+  itemId: string;
+  status: "blocked";
+  error: string | null;
+  createdAt: string;
+  runId: string;
+  attemptId: string;
+}
+
+type DiscoveryCatalogLoadResult = {
+  generatedTasksByDiscoveryTaskId: Record<string, TeamCanvasTask[]>;
+  taskRunsByTaskId: Record<string, TeamRunState[]>;
+  discoveryDispatchDiagnosticsByTaskId: Record<string, TeamDiscoveryDispatchDiagnostic[]>;
+  error: string | null;
+};
+
+function discoveryRootTasks(tasks: TeamCanvasTask[]): TeamCanvasTask[] {
+  return tasks.filter((task) => task.canvasKind === "discovery" && !task.generatedSource);
+}
+
+function flattenGeneratedTasks(generatedTasksByDiscoveryTaskId: Record<string, TeamCanvasTask[]>): TeamCanvasTask[] {
+  return Object.values(generatedTasksByDiscoveryTaskId).flat();
+}
+
+function summarizeDiscoveryCatalogs(
+  generatedTasksByDiscoveryTaskId: Record<string, TeamCanvasTask[]>,
+  taskRunsByTaskId: Record<string, TeamRunState[]>,
+  discoveryDispatchDiagnosticsByTaskId: Record<string, TeamDiscoveryDispatchDiagnostic[]> = {},
+): Record<string, TeamDiscoverySummary> {
+  return Object.fromEntries(Object.entries(generatedTasksByDiscoveryTaskId).map(([discoveryTaskId, generatedTasks]) => [
+    discoveryTaskId,
+    (() => {
+      const diagnostics = discoveryDispatchDiagnosticsByTaskId[discoveryTaskId] ?? [];
+      return {
+        generatedTaskCount: generatedTasks.length,
+        activeGeneratedTaskCount: generatedTasks.filter((task) => task.generatedSource?.itemStatus === "active").length,
+        staleGeneratedTaskCount: generatedTasks.filter((task) => task.generatedSource?.itemStatus === "stale").length,
+        runningGeneratedRunCount: generatedTasks.reduce((count, task) => (
+          count + (taskRunsByTaskId[task.taskId] ?? []).filter((run) => isActiveRun(run.status)).length
+        ), 0),
+        failedDispatchCount: diagnostics.length,
+        ...(diagnostics[0]?.runId ? { latestDispatchRunId: diagnostics[0].runId } : {}),
+        ...(diagnostics[0]?.attemptId ? { latestDispatchAttemptId: diagnostics[0].attemptId } : {}),
+      };
+    })(),
+  ]));
+}
+
+function attemptTime(attempt: TeamAttemptMetadata): number {
+  const updatedAt = Date.parse(attempt.updatedAt);
+  if (Number.isFinite(updatedAt)) return updatedAt;
+  const createdAt = Date.parse(attempt.createdAt);
+  return Number.isFinite(createdAt) ? createdAt : Number.NEGATIVE_INFINITY;
+}
+
+function selectLatestAttempt(attempts: TeamAttemptMetadata[]): TeamAttemptMetadata | null {
+  if (!attempts.length) return null;
+  return attempts.reduce((latest, attempt) => {
+    const latestTime = attemptTime(latest);
+    const currentTime = attemptTime(attempt);
+    return currentTime >= latestTime ? attempt : latest;
+  }, attempts[0]);
+}
+
+function blockedDispatchDiagnosticsFromAttempt(
+  run: TeamRunState,
+  attempt: TeamAttemptMetadata | null,
+): TeamDiscoveryDispatchDiagnostic[] {
+  if (!attempt || !Array.isArray(attempt.discoveryDispatch)) return [];
+  return attempt.discoveryDispatch
+    .filter((outcome) => outcome.status === "blocked")
+    .map((outcome) => {
+      const itemId = typeof outcome.itemId === "string" ? outcome.itemId.trim() : "";
+      const error = typeof outcome.error === "string" && outcome.error.trim() ? outcome.error : null;
+      const createdAt = typeof outcome.createdAt === "string" && outcome.createdAt
+        ? outcome.createdAt
+        : attempt.updatedAt || attempt.createdAt;
+      return {
+        itemId,
+        status: "blocked" as const,
+        error,
+        createdAt,
+        runId: run.runId,
+        attemptId: attempt.attemptId,
+      };
+    })
+    .filter((diagnostic) => diagnostic.itemId.length > 0);
+}
+
+async function readDiscoveryDispatchDiagnosticsForTasks(
+  api: Pick<LiveTeamApi, "listTaskRunAttempts">,
+  discoveryTasks: TeamCanvasTask[],
+  taskRunsByTaskId: Record<string, TeamRunState[]>,
+): Promise<Record<string, TeamDiscoveryDispatchDiagnostic[]>> {
+  const entries = await Promise.all(discoveryTasks.map(async (task) => {
+    const latestRun = selectLatestRun(taskRunsByTaskId[task.taskId] ?? []);
+    if (!latestRun) return [task.taskId, []] as const;
+    try {
+      const attempts = await api.listTaskRunAttempts(latestRun.runId, task.taskId);
+      return [
+        task.taskId,
+        blockedDispatchDiagnosticsFromAttempt(latestRun, selectLatestAttempt(attempts)),
+      ] as const;
+    } catch {
+      return [task.taskId, []] as const;
+    }
+  }));
+  return Object.fromEntries(entries);
 }
 
 export interface UseTeamConsoleLiveDataOptions {
@@ -91,12 +223,16 @@ export interface UseTeamConsoleLiveDataReturn {
   sourceNodes: TeamCanvasSourceNode[];
   sourceConnections: TeamCanvasSourceConnection[];
   taskRunsByTaskId: Record<string, TeamRunState[]>;
+  generatedTasksByDiscoveryTaskId: Record<string, TeamCanvasTask[]>;
+  discoverySummariesByTaskId: Record<string, TeamDiscoverySummary>;
+  discoveryDispatchDiagnosticsByTaskId: Record<string, TeamDiscoveryDispatchDiagnostic[]>;
 
-  refreshLiveTasks: () => Promise<void>;
+  refreshLiveTasks: (options?: { silent?: boolean }) => Promise<void>;
   scheduleLiveTaskDiscoveryRefresh: () => void;
   refreshLiveTasksAfterLeavingTaskCreateBranch: (branch: { mode?: string } | null) => void;
   readAttemptFile: (runId: string, taskId: string, attemptId: string, fileName: string) => Promise<string>;
   setTaskRunsByTaskId: React.Dispatch<React.SetStateAction<Record<string, TeamRunState[]>>>;
+  setGeneratedTasksByDiscoveryTaskId: React.Dispatch<React.SetStateAction<Record<string, TeamCanvasTask[]>>>;
   setTaskConnections: React.Dispatch<React.SetStateAction<TeamTaskConnection[]>>;
   setTaskDependencies: React.Dispatch<React.SetStateAction<TeamTaskDependency[]>>;
   setSourceNodes: React.Dispatch<React.SetStateAction<TeamCanvasSourceNode[]>>;
@@ -124,10 +260,17 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
   const [sourceNodes, setSourceNodes] = useState<TeamCanvasSourceNode[]>([]);
   const [sourceConnections, setSourceConnections] = useState<TeamCanvasSourceConnection[]>([]);
   const [taskRunsByTaskId, setTaskRunsByTaskId] = useState<Record<string, TeamRunState[]>>({});
+  const [generatedTasksByDiscoveryTaskId, setGeneratedTasksByDiscoveryTaskId] = useState<Record<string, TeamCanvasTask[]>>({});
+  const [discoveryDispatchDiagnosticsByTaskId, setDiscoveryDispatchDiagnosticsByTaskId] = useState<Record<string, TeamDiscoveryDispatchDiagnostic[]>>({});
   const [liveTasksRefreshing, setLiveTasksRefreshing] = useState(false);
   const liveTasksRefreshInFlightRef = useRef<Promise<void> | null>(null);
   const liveTaskDiscoveryRefreshTimersRef = useRef<ReturnType<typeof globalThis.setTimeout>[]>([]);
   const liveTaskDiscoveryRefreshRunIdsRef = useRef<Set<string>>(new Set());
+  const discoverySummariesByTaskId = useMemo(() => summarizeDiscoveryCatalogs(
+    generatedTasksByDiscoveryTaskId,
+    taskRunsByTaskId,
+    discoveryDispatchDiagnosticsByTaskId,
+  ), [discoveryDispatchDiagnosticsByTaskId, generatedTasksByDiscoveryTaskId, taskRunsByTaskId]);
 
   // Persist dataSource to localStorage
   useEffect(() => {
@@ -147,24 +290,78 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     onApplyLiveSources(activeSources);
   }, [onApplyLiveSources]);
 
-  const loadTaskRunsForTasks = useCallback(async (
+  const readTaskRunsForTasks = useCallback(async (
     api: Pick<LiveTeamApi, "listTaskRuns">,
     nextTasks: TeamCanvasTask[],
-  ) => {
+  ): Promise<Record<string, TeamRunState[]>> => {
     const entries = await Promise.all(nextTasks.map(async (task) => {
       const runs = await api.listTaskRuns(task.taskId).catch(() => []);
       return [task.taskId, sortRunsByCreatedAt(runs)] as const;
     }));
-    setTaskRunsByTaskId(Object.fromEntries(entries));
+    return Object.fromEntries(entries);
   }, []);
 
-  const refreshLiveTasks = useCallback(async () => {
+  const loadDiscoveryCatalogsForTasks = useCallback(async (
+    api: Pick<LiveTeamApi, "listGeneratedTasks" | "listTaskRuns" | "listTaskRunAttempts">,
+    nextTasks: TeamCanvasTask[],
+  ): Promise<DiscoveryCatalogLoadResult> => {
+    const discoveryTasks = discoveryRootTasks(nextTasks);
+    if (discoveryTasks.length === 0) {
+      const rootRunsByTaskId = await readTaskRunsForTasks(api, nextTasks);
+      return {
+        generatedTasksByDiscoveryTaskId: {},
+        taskRunsByTaskId: rootRunsByTaskId,
+        discoveryDispatchDiagnosticsByTaskId: {},
+        error: null,
+      };
+    }
+
+    let firstCatalogError: string | null = null;
+    const generatedEntries = await Promise.all(discoveryTasks.map(async (task) => {
+      try {
+        const generatedTasks = await api.listGeneratedTasks(task.taskId);
+        return [task.taskId, generatedTasks] as const;
+      } catch (e) {
+        firstCatalogError ??= errorMessage(e);
+        return [task.taskId, []] as const;
+      }
+    }));
+    const nextGeneratedTasksByDiscoveryTaskId = Object.fromEntries(generatedEntries);
+    const nextTaskRunsByTaskId = await readTaskRunsForTasks(api, [
+      ...nextTasks,
+      ...flattenGeneratedTasks(nextGeneratedTasksByDiscoveryTaskId),
+    ]);
+    const nextDiscoveryDispatchDiagnosticsByTaskId = await readDiscoveryDispatchDiagnosticsForTasks(
+      api,
+      discoveryTasks,
+      nextTaskRunsByTaskId,
+    );
+    return {
+      generatedTasksByDiscoveryTaskId: nextGeneratedTasksByDiscoveryTaskId,
+      taskRunsByTaskId: nextTaskRunsByTaskId,
+      discoveryDispatchDiagnosticsByTaskId: nextDiscoveryDispatchDiagnosticsByTaskId,
+      error: firstCatalogError,
+    };
+  }, [readTaskRunsForTasks]);
+
+  const applyDiscoveryCatalogLoadResult = useCallback((result: DiscoveryCatalogLoadResult) => {
+    setGeneratedTasksByDiscoveryTaskId(result.generatedTasksByDiscoveryTaskId);
+    setTaskRunsByTaskId(result.taskRunsByTaskId);
+    setDiscoveryDispatchDiagnosticsByTaskId(result.discoveryDispatchDiagnosticsByTaskId);
+  }, []);
+
+  const refreshLiveTasks = useCallback(async (options: { silent?: boolean } = {}) => {
+    const showRefreshState = options.silent !== true;
     if (liveTasksRefreshInFlightRef.current) {
-      return liveTasksRefreshInFlightRef.current;
+      if (showRefreshState) setLiveTasksRefreshing(true);
+      try {
+        return await liveTasksRefreshInFlightRef.current;
+      } finally {
+        if (showRefreshState) setLiveTasksRefreshing(false);
+      }
     }
 
     const refresh = (async () => {
-      setLiveTasksRefreshing(true);
       try {
         const api = new LiveTeamApi();
         const [nextTasks, nextConnections, nextDeps, nextSourceNodes, nextSourceConns] = await Promise.all([
@@ -179,23 +376,32 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
         setTaskDependencies(nextDeps);
         applyLiveSources(nextSourceNodes);
         setSourceConnections(nextSourceConns);
-        await loadTaskRunsForTasks(api, nextTasks);
-        setError(null);
+        const discoveryCatalogResult = await loadDiscoveryCatalogsForTasks(api, nextTasks);
+        applyDiscoveryCatalogLoadResult(discoveryCatalogResult);
+        setError(discoveryCatalogResult.error);
       } finally {
         liveTasksRefreshInFlightRef.current = null;
-        setLiveTasksRefreshing(false);
       }
     })();
     liveTasksRefreshInFlightRef.current = refresh;
-    return refresh;
-  }, [applyLiveSources, applyLiveTasks, loadTaskRunsForTasks]);
+    if (showRefreshState) setLiveTasksRefreshing(true);
+    try {
+      return await refresh;
+    } finally {
+      if (showRefreshState) setLiveTasksRefreshing(false);
+    }
+  }, [applyDiscoveryCatalogLoadResult, applyLiveSources, applyLiveTasks, loadDiscoveryCatalogsForTasks]);
 
   const scheduleLiveTaskDiscoveryRefresh = useCallback(() => {
     if (dataSource !== "live") return;
-    for (const delayMs of [350, 1200]) {
+    for (const timer of liveTaskDiscoveryRefreshTimersRef.current) {
+      globalThis.clearTimeout(timer);
+    }
+    liveTaskDiscoveryRefreshTimersRef.current = [];
+    for (const delayMs of DISCOVERY_CATALOG_REFRESH_DELAYS_MS) {
       const timer = globalThis.setTimeout(() => {
         liveTaskDiscoveryRefreshTimersRef.current = liveTaskDiscoveryRefreshTimersRef.current.filter((item) => item !== timer);
-        void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
+        void refreshLiveTasks({ silent: true }).catch((e) => setError(errorMessage(e)));
       }, delayMs);
       liveTaskDiscoveryRefreshTimersRef.current.push(timer);
     }
@@ -221,7 +427,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
 
   const refreshLiveTasksAfterLeavingTaskCreateBranch = useCallback((branch: { mode?: string } | null) => {
     if (dataSource !== "live" || branch?.mode !== "task-create") return;
-    void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
+    void refreshLiveTasks({ silent: true }).catch((e) => setError(errorMessage(e)));
   }, [dataSource, refreshLiveTasks]);
 
   // Mock fixture loading
@@ -267,15 +473,27 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     }
 
     if (dataSource === "mock") {
+      const mockGeneratedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+      const mockGeneratedTasksByDiscoveryTaskId = {
+        [mockDiscoveryRootTask.taskId]: mockGeneratedTasks,
+      };
+      const mockRootTasks = [...mockTeamTasks, mockDiscoveryRootTask];
+      const mockApi = new MockTeamApi();
       setAgents(MOCK_AGENTS);
       setAgentRunStatusById(agentRunStatusRecord(MOCK_AGENT_RUN_STATUSES));
-      setTasks(mockTeamTasks);
-      onApplyLiveTasks(mockTeamTasks);
+      setTasks(mockRootTasks);
+      onApplyLiveTasks(mockRootTasks);
       setTaskConnections([]);
       setTaskDependencies([]);
       setSourceNodes([]);
       setSourceConnections([]);
       setTaskRunsByTaskId({});
+      setGeneratedTasksByDiscoveryTaskId(mockGeneratedTasksByDiscoveryTaskId);
+      setDiscoveryDispatchDiagnosticsByTaskId({});
+      void loadDiscoveryCatalogsForTasks(mockApi, mockRootTasks).then((discoveryCatalogResult) => {
+        if (cancelled) return;
+        applyDiscoveryCatalogLoadResult(discoveryCatalogResult);
+      });
       return () => {
         cancelled = true;
       };
@@ -295,6 +513,8 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     setSourceNodes([]);
     setSourceConnections([]);
     setTaskRunsByTaskId({});
+    setGeneratedTasksByDiscoveryTaskId({});
+    setDiscoveryDispatchDiagnosticsByTaskId({});
 
     async function loadLiveWorkspace() {
       try {
@@ -315,7 +535,15 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
           setTaskDependencies(nextDeps);
           applyLiveSources(nextSourceNodes);
           setSourceConnections(nextSourceConns);
-          void loadTaskRunsForTasks(api, nextTasks);
+          void loadDiscoveryCatalogsForTasks(api, nextTasks).then((discoveryCatalogResult) => {
+            if (cancelled) return;
+            applyDiscoveryCatalogLoadResult(discoveryCatalogResult);
+            if (discoveryCatalogResult.error) {
+              setError(discoveryCatalogResult.error);
+            } else {
+              setError(null);
+            }
+          });
         }
       } catch (e) {
         if (!cancelled) {
@@ -335,7 +563,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
         globalThis.clearInterval(refreshTimer);
       }
     };
-  }, [applyLiveSources, applyLiveTasks, onCloseBranches, onResetContextUi, dataSource, loadTaskRunsForTasks, onApplyLiveTasks, onApplyLiveSources]);
+  }, [applyDiscoveryCatalogLoadResult, applyLiveSources, applyLiveTasks, onCloseBranches, onResetContextUi, dataSource, loadDiscoveryCatalogsForTasks, onApplyLiveTasks, onApplyLiveSources]);
 
   // Attempts loading for selected task
   useEffect(() => {
@@ -396,7 +624,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
             setTaskRunsByTaskId((current) => mergeTaskRun(current, active.taskId, fresh));
             if (dataSource === "live" && !isActiveRun(fresh.status) && !liveTaskDiscoveryRefreshRunIdsRef.current.has(fresh.runId)) {
               liveTaskDiscoveryRefreshRunIdsRef.current.add(fresh.runId);
-              void refreshLiveTasks().catch((e) => {
+              void refreshLiveTasks({ silent: true }).catch((e) => {
                 if (!cancelled) setError(errorMessage(e));
               });
               scheduleLiveTaskDiscoveryRefresh();
@@ -440,12 +668,16 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     sourceNodes,
     sourceConnections,
     taskRunsByTaskId,
+    generatedTasksByDiscoveryTaskId,
+    discoverySummariesByTaskId,
+    discoveryDispatchDiagnosticsByTaskId,
 
     refreshLiveTasks,
     scheduleLiveTaskDiscoveryRefresh,
     refreshLiveTasksAfterLeavingTaskCreateBranch,
     readAttemptFile,
     setTaskRunsByTaskId,
+    setGeneratedTasksByDiscoveryTaskId,
     setTaskConnections,
     setTaskDependencies,
     setSourceNodes,

@@ -8,6 +8,7 @@ import { App } from "../app/App";
 import {
   ALL_FIXTURES,
   MockTeamApi,
+  mockDiscoveryRootTask,
   mockTeamTasks,
   makeSequentialPlan,
   makeSequentialRun,
@@ -257,6 +258,146 @@ describe("ExecutionMap UI", () => {
     expect(node.querySelector(".emap-task-agent-row.role-leader")).toBeTruthy();
     expect(node.querySelector(".emap-task-agent-row.role-worker")).toBeTruthy();
     expect(node.querySelector(".emap-task-agent-row.role-checker")).toBeTruthy();
+  });
+
+  it("renders Discovery root card identity and supplied summary counts", () => {
+    const taskNode: AtlasTaskNode = {
+      nodeId: `task-node-${mockDiscoveryRootTask.taskId}`,
+      kind: "canvas-task",
+      taskId: mockDiscoveryRootTask.taskId,
+      position: { x: 280, y: 180 },
+    };
+
+    render(
+      <ExecutionMap
+        selectedTaskId={null}
+        onSelectTask={() => {}}
+        taskNodes={[taskNode]}
+        tasksById={new Map([[mockDiscoveryRootTask.taskId, mockDiscoveryRootTask]])}
+        agentsById={new Map([
+          ["main", { agentId: "main", name: "主 Agent", description: "默认" }],
+          ["search", { agentId: "search", name: "搜索 Agent", description: "搜索" }],
+          ["reviewer", { agentId: "reviewer", name: "Review Agent", description: "验收" }],
+        ])}
+        discoverySummariesByTaskId={{
+          [mockDiscoveryRootTask.taskId]: {
+            generatedTaskCount: 2,
+            activeGeneratedTaskCount: 1,
+            staleGeneratedTaskCount: 1,
+            runningGeneratedRunCount: 1,
+            failedDispatchCount: 2,
+          },
+        }}
+      />,
+    );
+
+    const node = screen.getByRole("button", { name: /发现云服务候选/ });
+    expect(node).toHaveClass("emap-discovery-task-node");
+    expect(node).toHaveAttribute("data-canvas-kind", "discovery");
+    expect(within(node).getByText("Discovery")).toBeInTheDocument();
+    expect(within(node).getByText("2 items")).toBeInTheDocument();
+    expect(within(node).getByText("1 active")).toBeInTheDocument();
+    expect(within(node).getByText("1 stale")).toBeInTheDocument();
+    expect(within(node).getByText("1 running")).toBeInTheDocument();
+    expect(within(node).getByText("2 blocked")).toBeInTheDocument();
+    expect(node).toHaveAttribute("data-discovery-failed-dispatch-count", "2");
+  });
+
+  it("keeps normal Task cards labelled as Task without Discovery summary", () => {
+    const task = mockTeamTasks[0]!;
+    const taskNode: AtlasTaskNode = {
+      nodeId: `task-node-${task.taskId}`,
+      kind: "canvas-task",
+      taskId: task.taskId,
+      position: { x: 280, y: 180 },
+    };
+
+    render(
+      <ExecutionMap
+        selectedTaskId={null}
+        onSelectTask={() => {}}
+        taskNodes={[taskNode]}
+        tasksById={new Map([[task.taskId, task]])}
+        agentsById={new Map([
+          ["main", { agentId: "main", name: "主 Agent", description: "默认" }],
+          ["search", { agentId: "search", name: "搜索 Agent", description: "搜索" }],
+        ])}
+        discoverySummariesByTaskId={{
+          [task.taskId]: {
+            generatedTaskCount: 9,
+            activeGeneratedTaskCount: 8,
+            staleGeneratedTaskCount: 1,
+            runningGeneratedRunCount: 7,
+            failedDispatchCount: 2,
+          },
+        }}
+      />,
+    );
+
+    const node = screen.getByRole("button", { name: /调查 Medtrum 云资产/ });
+    expect(node).not.toHaveClass("emap-discovery-task-node");
+    expect(node).not.toHaveAttribute("data-canvas-kind", "discovery");
+    expect(within(node).getByText("Task")).toBeInTheDocument();
+    expect(within(node).queryByText("Discovery")).toBeNull();
+    expect(within(node).queryByText("9 items")).toBeNull();
+    expect(within(node).queryByText("7 running")).toBeNull();
+    expect(within(node).queryByText("2 blocked")).toBeNull();
+    expect(node).not.toHaveAttribute("data-discovery-failed-dispatch-count");
+  });
+
+  it("allocates extra card height for Discovery root summary inside the node", () => {
+    const normalTask = {
+      ...mockTeamTasks[0]!,
+      taskId: "task_normal_without_ports",
+      title: "普通无端口 Task",
+      workUnit: {
+        ...mockTeamTasks[0]!.workUnit,
+        title: "普通无端口 Task",
+        inputPorts: undefined,
+        outputPorts: undefined,
+      },
+    };
+    const taskNodes: AtlasTaskNode[] = [
+      {
+        nodeId: `task-node-${normalTask.taskId}`,
+        kind: "canvas-task",
+        taskId: normalTask.taskId,
+        position: { x: 280, y: 180 },
+      },
+      {
+        nodeId: `task-node-${mockDiscoveryRootTask.taskId}`,
+        kind: "canvas-task",
+        taskId: mockDiscoveryRootTask.taskId,
+        position: { x: 600, y: 180 },
+      },
+    ];
+
+    render(
+      <ExecutionMap
+        selectedTaskId={null}
+        onSelectTask={() => {}}
+        taskNodes={taskNodes}
+        tasksById={new Map([
+          [normalTask.taskId, normalTask],
+          [mockDiscoveryRootTask.taskId, mockDiscoveryRootTask],
+        ])}
+        agentsById={new Map([
+          ["main", { agentId: "main", name: "主 Agent", description: "默认" }],
+          ["search", { agentId: "search", name: "搜索 Agent", description: "搜索" }],
+          ["reviewer", { agentId: "reviewer", name: "Review Agent", description: "验收" }],
+        ])}
+        discoverySummariesByTaskId={{}}
+      />,
+    );
+
+    const normalNode = screen.getByRole("button", { name: /普通无端口 Task/ });
+    const discoveryNode = screen.getByRole("button", { name: /发现云服务候选/ });
+    const normalHeight = Number.parseFloat(normalNode.style.height);
+    const discoveryHeight = Number.parseFloat(discoveryNode.style.height);
+
+    expect(discoveryHeight).toBeGreaterThan(normalHeight);
+    expect(discoveryHeight - normalHeight).toBeGreaterThanOrEqual(28);
+    expect(discoveryNode.querySelector(".emap-discovery-summary-row")).toBeTruthy();
   });
 
   it("calls onSelectCanvasTask when clicking a canvas Task card", () => {
@@ -1190,8 +1331,12 @@ describe("Artifact preview nodes", () => {
           taskNodes={[taskNode]}
           tasksById={new Map([[task.taskId, task]])}
           focusedTaskNodeId={taskNode.nodeId}
-          taskBranchPanel={<section className="task-action-branch">操作菜单</section>}
-          taskChildBranchPanel={<section className="task-edit-branch">编辑节点</section>}
+          taskBranchPanels={[
+            { id: "task-branch", nodeId: taskNode.nodeId, panel: <section className="task-action-branch">操作菜单</section> },
+          ]}
+          taskChildBranchPanels={[
+            { id: "task-child", sourceId: "task-branch", panel: <section className="task-edit-branch">编辑节点</section> },
+          ]}
         />,
       );
 
@@ -1290,10 +1435,13 @@ describe("Artifact preview nodes", () => {
           taskNodes={[taskNode]}
           tasksById={new Map([[task.taskId, task]])}
           focusedTaskNodeId={taskNode.nodeId}
-          taskBranchPanel={<section className="task-action-branch">操作菜单</section>}
+          taskBranchPanels={[
+            { id: "task-branch", nodeId: taskNode.nodeId, panel: <section className="task-action-branch">操作菜单</section> },
+          ]}
           taskChildBranchPanels={[
             {
               id: "process-worker",
+              sourceId: "task-branch",
               width: 300,
               autoHeight: true,
               panel: <section className="emap-observer-node">{content}</section>,

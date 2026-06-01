@@ -266,7 +266,11 @@ function formatPromptDateTime(date: Date, timeZone: string): string {
 }
 
 function normalizePublicBaseUrl(publicBaseUrl?: string): string {
-	return String(publicBaseUrl || process.env.PUBLIC_BASE_URL || `http://127.0.0.1:${process.env.PORT || "3000"}`).replace(
+	const configured = String(publicBaseUrl || process.env.PUBLIC_BASE_URL || "").trim();
+	const baseUrl = configured && configured.toLowerCase() !== "auto"
+		? configured
+		: `http://127.0.0.1:${process.env.PORT || "3000"}`;
+	return baseUrl.replace(
 		/\/+$/,
 		"",
 	);

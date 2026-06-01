@@ -1,0 +1,105 @@
+请接手 E:\AII\ugk-pi 的 Team Console Discovery 节点第 07 步：generated Task auto-run scheduler。
+
+当前基线：
+- 最新 commit: af0362a docs(team-console): record task chain validation
+- 分支状态: main...origin/main [ahead 6]
+- 稳定 tag: stable/team-console-task-chain-2026-05-30 已推送 GitHub 和 Gitee
+- 已完成: Step 01/01A contracts；Step 02 validation/store；Step 03 API catalog routes；Step 04 Discovery run output validation；Step 05 dispatcher role contract；Step 06 generated Task upsert/stale/dispatch outcomes
+- Step 06 Codex review 补了一个小防线：src/team/task-store.ts 的 managed generated Task reuse 写入前会跑 validateCreateTaskInput；test/team-task-store.test.ts 增加 invalid managed generated WorkUnit update 回归测试
+- 当前验证: Step 06 review 后 focused store/runtime/workspace/role tests 通过；Team Console contract drift、Team Console tsc、npx tsc --noEmit、git diff --check 通过；npm run test:team 第二次通过 1122 tests, 1120 pass, 2 skipped。第一次命中已知 decomposition timeout 抖动，目标文件单跑通过
+- 暂存区: 应为空；执行前用 git diff --cached --stat 确认
+- 当前本地源码已有未提交 Discovery diff，不要恢复它们
+- Dirty 边界: .pi/skills/anthropics/skill-creator/** 是既有 tracked deletion，不要 stage、不要恢复；.pi/skills/skill-creator/、.codex/plans/*、public/runtime 报告、临时 HTML、generate_report*.py、report_template.html 不要提交
+
+必须先读：
+- AGENTS.md
+- docs/team-runtime.md
+- docs/change-log.md
+- .codex/plans/2026-05-30-team-console-discovery-requirements.md
+- .codex/plans/2026-05-31-team-console-discovery-step-06-generated-task-upsert-plan.md
+- .codex/plans/2026-05-31-team-console-discovery-step-07-generated-task-auto-run-plan.md
+- src/team/types.ts
+- src/team/task-run-service.ts
+- src/team/task-store.ts
+- src/team/run-workspace.ts
+- src/team/run-workspace-attempts.ts
+- apps/team-console/src/api/team-types.ts
+- apps/team-console/src/tests/team-contract-drift.test.ts
+- test/team-task-run-process.test.ts
+- test/team-run-workspace.test.ts
+
+严格按计划文件执行：
+- .codex/plans/2026-05-31-team-console-discovery-step-07-generated-task-auto-run-plan.md
+
+本轮只做：
+- Discovery dispatch/upsert 成功后，自动运行 active generated Tasks。
+- 用固定 v1 并发池 3 控制 generated Task runs。
+- 记录 generated run launch outcomes 到 attempt metadata。
+- 给 generated run source.triggeredBy 增加 Discovery 溯源 metadata。
+- 更新 Team Console public type mirror 和 drift guard。
+- 补 focused tests 和 docs。
+- 完成后停下交付。
+
+禁止做：
+- 不改 5174 UI
+- 不改 routes / route-parsers
+- 不改 role prompt/parser
+- 不改 AgentProfile runner
+- 不改 Plan orchestrator
+- 不改 src/workers/team-worker.ts
+- 不改 .pi/skills/**
+- 不改主 /playground 产品 UI
+- 不创建持久化队列文件
+- 不把并发池伪装成 chunk 后一次性全 launch；并发必须真实不超过 3 个 active generated runs
+- 不创建计划外文件
+- 不做整文件格式化或换行符转换；保持 touched files 的既有 EOL/格式
+- 不 stage、不 commit，除非用户另行明确授权
+- 不使用 git add -A
+- 不提交 .env/.data/runtime 产物/temp 文件/报告产物/未知 .pi/skills/*/skills-lock.json
+
+执行要求：
+- 这是第 07 步，只处理 generated Task auto-run scheduler，完成后停下交付。
+- 行为变更先补测试，再写实现。
+- 不要改 Step 06 的 item -> generated Task upsert 语义，除非是类型适配。
+- 自动运行候选只来自本次 Discovery result 中 dispatch 成功并处于 active 的 generated Tasks。
+- blocked dispatch item 不 auto-run。
+- stale generated Task 不 auto-run。
+- generatedSource.itemStatus !== "active" 不 auto-run。
+- generated Task status !== "ready" 不 auto-run，记录 skipped_not_runnable 或 failed，不得让 Discovery run 失败。
+- 如果 generated Task 已有 active run（queued/running/paused），记录 skipped_already_running，不要启动第二个 run。
+- generated runs 必须通过 CanvasTaskRunService.createRun() 启动，不能绕过现有 runner/observer/files/cancel/output validation。
+- createRun 时传 triggeredBy: { type: "discovery-generated-task", discoveryTaskId, discoveryRunId, discoveryAttemptId, sourceItemId }。
+- launch failure 只记录 outcome，不得把已 accepted 的 Discovery run 改成 failed。
+- 如果 npm run test:team 命中已知 decomposition timeout 抖动，单跑 test/team-orchestrator-decomposition.test.ts，然后重跑 npm run test:team，并如实报告。
+
+最终验证：
+- node --test --import tsx test/team-run-workspace.test.ts
+- node --test --import tsx test/team-task-run-process.test.ts
+- node --test --import tsx test/team-task-store.test.ts
+- node --test --import tsx test/team-role-prompt-contract.test.ts
+- node --test --import tsx test/team-role-runner.test.ts
+- node --test --import tsx test/team-agent-profile-runner.test.ts
+- npm run test:team
+- npm --prefix apps/team-console test -- --run src/tests/team-contract-drift.test.ts
+- npm --prefix apps/team-console exec tsc -- --noEmit -p tsconfig.json
+- npx tsc --noEmit
+- git diff --check
+- git diff --stat -- src/team/types.ts src/team/task-run-service.ts src/team/run-workspace.ts src/team/run-workspace-attempts.ts apps/team-console/src/api/team-types.ts apps/team-console/src/tests/team-contract-drift.test.ts test/team-task-run-process.test.ts test/team-run-workspace.test.ts docs/team-runtime.md docs/change-log.md
+- git diff --numstat -- src/team/types.ts src/team/task-run-service.ts src/team/run-workspace.ts src/team/run-workspace-attempts.ts apps/team-console/src/api/team-types.ts apps/team-console/src/tests/team-contract-drift.test.ts test/team-task-run-process.test.ts test/team-run-workspace.test.ts docs/team-runtime.md docs/change-log.md
+- git ls-files --eol src/team/types.ts src/team/task-run-service.ts src/team/run-workspace.ts src/team/run-workspace-attempts.ts apps/team-console/src/api/team-types.ts apps/team-console/src/tests/team-contract-drift.test.ts test/team-task-run-process.test.ts test/team-run-workspace.test.ts docs/team-runtime.md docs/change-log.md
+- git diff --cached --stat
+
+完成后按这个格式回复：
+1. 改了哪些文件。
+2. Auto-run scheduler 行为，特别说明候选选择和并发限制。
+3. Generated run audit metadata 行为。
+4. Attempt metadata / launch outcome 行为。
+5. 新增了哪些 tests，并说明每个 test 抓住的旧/缺失行为。
+6. 更新了哪些文档。
+7. 明确说明没有改 5174 UI、routes、role prompt/parser、AgentProfile runner、Plan orchestrator、team worker、runtime skills、主 /playground。
+8. 每条验证命令和结果。
+9. diff stat / numstat 摘要，并说明是否存在异常大规模格式噪声。
+10. 是否有 EOL 或 formatter-only churn。
+11. 是否有计划假设不成立。
+
+不要 stage，不要 commit。

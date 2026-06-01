@@ -1,0 +1,83 @@
+请接手 `E:\AII\ugk-pi` 的 Team Console Discovery Step 08C：Discovery subcanvas catalog panel。
+
+当前基线：
+- 分支：`main...origin/main [ahead 6]`
+- 最新 commit：`af0362a docs(team-console): record task chain validation`
+- 当前 Discovery 已完成到 Step 08B：5174 root Discovery card 已显示 `Discovery` 身份、`data-canvas-kind="discovery"`、items/active/stale/running summary row；generated child Tasks 仍不进入 root canvas。
+- Step 08B 已由 Codex 复核：focused Team Console tests、Team Console tsc、Team Console build、Team Console full tests、top-level `npx tsc --noEmit`、`git diff --check`、5174 mock browser verification 均通过。
+- 暂存区应为空；不要 stage，不要 commit。
+- 既有 dirty 边界：`.pi/skills/anthropics/skill-creator/**` tracked deletions 不是本轮内容，别恢复、别 stage；`.pi/skills/skill-creator/`、`.codex/plans/*`、public/runtime 报告产物、临时 HTML/脚本都不要提交。
+
+必须先读：
+- `AGENTS.md`
+- `.codex/plans/2026-05-30-team-console-discovery-requirements.md`
+- `.codex/plans/2026-05-31-team-console-discovery-step-08c-subcanvas-catalog-plan.md`
+- `apps/team-console/README.md`
+- `docs/team-runtime.md`
+- `docs/change-log.md`
+- `apps/team-console/src/app/App.tsx`
+- `apps/team-console/src/app/use-task-branch-stack.ts`
+- `apps/team-console/src/app/use-team-console-live-data.ts`
+- `apps/team-console/src/graph/ExecutionMap.tsx`
+- `apps/team-console/src/graph/execution-map.css`
+- `apps/team-console/src/fixtures/team-fixtures.ts`
+- `apps/team-console/src/tests/app-live-data.test.tsx`
+- `apps/team-console/src/tests/execution-map-ui.test.tsx`
+
+严格按计划文件执行：
+- `.codex/plans/2026-05-31-team-console-discovery-step-08c-subcanvas-catalog-plan.md`
+
+本轮只做：
+- 给 root Discovery Task 的 Task action menu 增加一个 Discovery-only toggle，例如 `Discovery 子画布`。
+- toggle 打开一个复用现有 `taskChildBranchPanels` 的 child panel，`sourceId` 指向当前 Task menu panel。
+- panel 从 `generatedTasksByDiscoveryTaskId[discoveryTaskId]` 渲染非 archived generated child Tasks。
+- 每个 generated child card 显示 title、item status(active/stale)、workUnitMode(managed/customized)、latest run status；加稳定 data attrs：`data-discovery-subcanvas-for`、`data-generated-task-id`、`data-generated-item-status`、`data-generated-workunit-mode`、`data-generated-run-status`。
+- 保持 generated child Tasks 不进入 root canvas。
+- 更新 focused tests、5174 docs 和 change-log。
+
+禁止做：
+- 不改 backend routes/store/validation/runtime runner/dispatcher/scheduler/Team worker。
+- 不改 `.pi/skills/**`、runtime skill、`skills-lock.json`。
+- 不改主 `/playground` 产品 UI。
+- 不把 generated child Tasks 渲染成 root canvas cards。
+- 不实现 generated child edit/run/cancel/delete/archive/observer/file-detail；这些留给 Step 08D。
+- 不用 root `tasksById` 或 root `taskNodes` 冒充 generated child 数据源。
+- 不创建计划外文件；如果确实需要新测试文件，先在报告里说明原因，并做 untracked trailing whitespace/EOL 检查。
+- 不做整文件格式化或换行符转换；保持 touched files 既有 EOL/格式。
+- 不 stage、不 commit、不 push。
+- 不使用 `git add -A`。
+- 不提交 `.env`、`.data`、runtime 产物、temp 文件、截图、报告产物、未知 `.pi/skills/*/skills-lock.json`。
+
+执行要求：
+- 这是 Step 08C，只做 subcanvas catalog panel，完成后停下交付。
+- 行为变更先补 tests，再写实现。
+- 遇到计划外问题先停下说明，不要顺手扩范围。
+- 如果小改动产生超大 diff，先检查是否 EOL/formatter churn，修正后再继续。
+- UI 任务必须在真实入口 `http://127.0.0.1:5174/` 做浏览器验证，交付 measured evidence；不要让用户手动验证。
+- 不允许宽泛 suppress console warning；必须修根因或精确限定已知 warning。
+
+最终验证：
+- `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx src/tests/execution-map-ui.test.tsx`
+- `npm --prefix apps/team-console test -- --run src/tests/team-contract-drift.test.ts`
+- `npm --prefix apps/team-console exec tsc -- --noEmit -p tsconfig.json`
+- `npm --prefix apps/team-console run build`
+- `npm --prefix apps/team-console test`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `git diff --stat` / `git diff --numstat`，确认没有异常大规模格式噪声
+- `git ls-files --eol <touched files>`
+- 如果有新 untracked 文件，跑 `Select-String -LiteralPath <new-file> -Pattern '[ \t]+$'` 和 `git ls-files --eol --others --exclude-standard <new-file>`
+- `git diff --cached --stat`
+
+浏览器验证必须报告：
+- URL：`http://127.0.0.1:5174/`
+- data source：mock / 示例数据
+- 操作：点击 `发现云服务候选`，再点击 `Discovery 子画布`
+- `[data-discovery-subcanvas-for="task_discovery_cloud_vendors"]` count
+- panel 内 `[data-generated-task-id]` count
+- `task_generated_vultr` 和 `task_generated_hetzner` 的 data attrs / visible labels
+- root canvas 内 `核查 Vultr 公开证据`、`核查 Hetzner 公开证据` root card matches 仍为 0
+- subcanvas panel rect、first generated card rect、cards 是否在 panel bounds 内
+- screenshot path，放在 `runtime/` 下，不要 stage
+
+完成后按计划里的 Delivery Report Template 回复。不要 stage，不要 commit。

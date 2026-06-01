@@ -1,6 +1,12 @@
 import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 
-export type TaskBranchDetailMode = "leader-chat" | "edit" | "run-observer";
+export type TaskBranchDetailMode = "leader-chat" | "edit" | "run-observer" | "discovery-subcanvas";
+
+export type TaskBranchGeneratedObserverState = {
+  taskId: string;
+  runId: string;
+  selectedFileKeys?: string[];
+};
 
 export type TaskBranchState = {
   nodeId: string;
@@ -8,12 +14,9 @@ export type TaskBranchState = {
   detailMode: TaskBranchDetailMode | null;
   observedRunId?: string;
   selectedFileKeys?: string[];
+  discoveryGeneratedObserver?: TaskBranchGeneratedObserverState;
+  discoveryGeneratedEditTaskId?: string;
 };
-
-type TaskBranchUpdater =
-  | TaskBranchState
-  | null
-  | ((current: TaskBranchState | null) => TaskBranchState | null);
 
 type TaskBranchRoot = {
   nodeId: string;
@@ -31,9 +34,8 @@ interface UseTaskBranchStackOptions {
 
 interface UseTaskBranchStackReturn {
   expandedTaskBranches: TaskBranchState[];
-  expandedTaskBranch: TaskBranchState | null;
+  focusedTaskBranch: TaskBranchState | null;
   setExpandedTaskBranches: Dispatch<SetStateAction<TaskBranchState[]>>;
-  setExpandedTaskBranch: (updater: TaskBranchUpdater) => void;
   closeTaskBranch: (nodeId?: string) => void;
   openOrToggleTaskBranch: (node: TaskBranchRoot) => void;
   pruneTaskBranches: (tasksById: TaskBranchLookup) => void;
@@ -42,31 +44,21 @@ interface UseTaskBranchStackReturn {
 export function useTaskBranchStack(options: UseTaskBranchStackOptions): UseTaskBranchStackReturn {
   const { onClearTaskPanelState, onBeforeOpenTaskBranch } = options;
   const [expandedTaskBranches, setExpandedTaskBranches] = useState<TaskBranchState[]>([]);
-  const expandedTaskBranch = useMemo(
+  const focusedTaskBranch = useMemo(
     () => expandedTaskBranches[expandedTaskBranches.length - 1] ?? null,
     [expandedTaskBranches],
   );
-
-  const setExpandedTaskBranch = useCallback((updater: TaskBranchUpdater) => {
-    setExpandedTaskBranches((current) => {
-      const active = current[current.length - 1] ?? null;
-      const next = typeof updater === "function" ? updater(active) : updater;
-      if (!next) {
-        return active ? current.filter((branch) => branch.nodeId !== active.nodeId) : current;
-      }
-      const exists = current.some((branch) => branch.nodeId === next.nodeId);
-      if (exists) {
-        return current.map((branch) => branch.nodeId === next.nodeId ? next : branch);
-      }
-      return [...current, next];
-    });
-  }, []);
 
   const closeTaskBranch = useCallback((nodeId?: string) => {
     setExpandedTaskBranches((current) => {
       if (nodeId) {
         const closing = current.find((branch) => branch.nodeId === nodeId);
-        if (closing) onClearTaskPanelState(closing.taskId);
+        if (closing) {
+          onClearTaskPanelState(closing.taskId);
+          if (closing.discoveryGeneratedEditTaskId && closing.discoveryGeneratedEditTaskId !== closing.taskId) {
+            onClearTaskPanelState(closing.discoveryGeneratedEditTaskId);
+          }
+        }
         return current.filter((branch) => branch.nodeId !== nodeId);
       }
       onClearTaskPanelState();
@@ -91,9 +83,8 @@ export function useTaskBranchStack(options: UseTaskBranchStackOptions): UseTaskB
 
   return {
     expandedTaskBranches,
-    expandedTaskBranch,
+    focusedTaskBranch,
     setExpandedTaskBranches,
-    setExpandedTaskBranch,
     closeTaskBranch,
     openOrToggleTaskBranch,
     pruneTaskBranches,

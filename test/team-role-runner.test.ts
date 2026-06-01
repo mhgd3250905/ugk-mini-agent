@@ -1,6 +1,34 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { MockRoleRunner } from "../src/team/role-runner.js";
+import type { DiscoveryDispatchInput, DiscoveryDispatchWorkUnitDraft } from "../src/team/role-runner.js";
+
+function makeDiscoveryDispatchInput(overrides: Partial<DiscoveryDispatchInput> = {}): DiscoveryDispatchInput {
+	return {
+		runId: "run_1",
+		discoveryTaskId: "task_discovery",
+		discoveryTaskTitle: "Vendor discovery",
+		discoveryGoal: "Find qualified vendors.",
+		dispatchGoal: "Create one work unit per vendor.",
+		outputKey: "vendors",
+		itemId: "vendor_1",
+		itemPayload: { id: "vendor_1", title: "Vendor One", type: "vendor" },
+		requiredItemFields: ["id"],
+		recommendedItemFields: ["title", "type"],
+		generatedWorkerAgentId: "worker-default",
+		generatedCheckerAgentId: "checker-default",
+		...overrides,
+	};
+}
+
+function makeDraft(title: string): DiscoveryDispatchWorkUnitDraft {
+	return {
+		title,
+		input: { text: `Do ${title}` },
+		outputContract: { text: `Output ${title}` },
+		acceptance: { rules: [`Accept ${title}`] },
+	};
+}
 
 test("MockRoleRunner defaults: worker returns task done, checker pass, watcher accept", async () => {
 	const runner = new MockRoleRunner();
@@ -104,4 +132,49 @@ test("MockRoleRunner reset clears decomposer call index", async () => {
 	const out = await runner.runDecomposer(input);
 	assert.equal(out.decision, "split");
 	assert.equal(out.reason, "first");
+});
+
+test("MockRoleRunner runDiscoveryDispatcher defaults to valid draft for supplied itemId", async () => {
+	const runner = new MockRoleRunner();
+	const out = await runner.runDiscoveryDispatcher(makeDiscoveryDispatchInput({ itemId: "vendor_42" }));
+
+	assert.equal(out.ok, true);
+	assert.equal(out.itemId, "vendor_42");
+	if (out.ok) {
+		assert.match(out.workUnit.title, /vendor_42/);
+		assert.match(out.workUnit.input.text, /vendor_42/);
+		assert.ok(out.workUnit.acceptance.rules.length > 0);
+	}
+});
+
+test("MockRoleRunner configured discovery dispatch outputs cycle through arrays", async () => {
+	const runner = new MockRoleRunner({
+		discoveryDispatchOutputs: [
+			{ ok: true, itemId: "vendor_1", workUnit: makeDraft("first") },
+			{ ok: false, itemId: "vendor_2", error: "invalid dispatch" },
+		],
+	});
+
+	const first = await runner.runDiscoveryDispatcher(makeDiscoveryDispatchInput({ itemId: "vendor_1" }));
+	const second = await runner.runDiscoveryDispatcher(makeDiscoveryDispatchInput({ itemId: "vendor_2" }));
+
+	assert.equal(first.ok, true);
+	if (first.ok) assert.equal(first.workUnit.title, "first");
+	assert.deepEqual(second, { ok: false, itemId: "vendor_2", error: "invalid dispatch" });
+});
+
+test("MockRoleRunner reset clears discovery dispatcher call index", async () => {
+	const runner = new MockRoleRunner({
+		discoveryDispatchOutputs: [
+			{ ok: true, itemId: "vendor_1", workUnit: makeDraft("first") },
+			{ ok: true, itemId: "vendor_1", workUnit: makeDraft("second") },
+		],
+	});
+
+	await runner.runDiscoveryDispatcher(makeDiscoveryDispatchInput());
+	runner.reset();
+	const out = await runner.runDiscoveryDispatcher(makeDiscoveryDispatchInput());
+
+	assert.equal(out.ok, true);
+	if (out.ok) assert.equal(out.workUnit.title, "first");
 });

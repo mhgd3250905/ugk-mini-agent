@@ -16,3 +16,8 @@ export function parseIncludeArchived(request: FastifyRequest): boolean {
 	const query = request.query as { includeArchived?: string };
 	return query.includeArchived === "1" || query.includeArchived === "true";
 }
+
+export function parseIncludeGenerated(request: FastifyRequest): boolean {
+	const query = request.query as { includeGenerated?: string };
+	return query.includeGenerated === "1" || query.includeGenerated === "true";
+}

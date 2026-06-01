@@ -22,6 +22,18 @@ export type AttemptStatus = "running" | "succeeded" | "failed" | "interrupted" |
 export type TaskType = "normal" | "discovery" | "for_each";
 export type GeneratedSource = "for_each" | "decomposition";
 
+export type TeamTaskOutputCheck =
+  | { type: "json_items"; outputKey?: string; allowDirectArray?: boolean; requiredFields?: string[] }
+  | { type: "json_object"; requiredFields?: string[] }
+  | {
+      type: "html_fragment";
+      requiredSubstrings?: string[];
+      requiredSelectors?: string[];
+      forbiddenTags?: string[];
+      requireFence?: boolean;
+    }
+  | { type: "file_exists"; path?: string };
+
 export type AttemptLifecyclePhase =
   | "created"
   | "worker_running"
@@ -129,6 +141,32 @@ export type TeamTaskDeliveryOutcome =
   | TeamTaskTypedConnectionDeliveryOutcome
   | TeamTaskControlDependencyDeliveryOutcome;
 
+export type TeamDiscoveryDispatchOutcomeStatus = "created" | "updated" | "blocked" | "stale_marked";
+
+export interface TeamDiscoveryDispatchOutcome {
+  itemId: string;
+  status: TeamDiscoveryDispatchOutcomeStatus;
+  generatedTaskId?: string;
+  workUnitMode?: TeamGeneratedTaskWorkUnitMode;
+  error?: string;
+  createdAt: string;
+}
+
+export type TeamDiscoveryGeneratedRunOutcomeStatus =
+  | "started"
+  | "skipped_already_running"
+  | "skipped_not_runnable"
+  | "failed";
+
+export interface TeamDiscoveryGeneratedRunOutcome {
+  itemId: string;
+  generatedTaskId: string;
+  status: TeamDiscoveryGeneratedRunOutcomeStatus;
+  generatedRunId?: string;
+  error?: string;
+  createdAt: string;
+}
+
 export interface TeamAttemptMetadata {
   attemptId: string;
   taskId: string;
@@ -145,6 +183,8 @@ export interface TeamAttemptMetadata {
   files: string[];
   roleProcesses?: TeamAttemptRoleProcesses;
   downstreamDelivery?: TeamTaskDeliveryOutcome[];
+  discoveryDispatch?: TeamDiscoveryDispatchOutcome[];
+  discoveryGeneratedRuns?: TeamDiscoveryGeneratedRunOutcome[];
 }
 
 export interface TeamTask {
@@ -181,6 +221,39 @@ export interface TeamPlan {
 }
 
 export type TeamCanvasTaskStatus = "drafting" | "ready" | "locked" | "archived";
+export type TeamCanvasTaskKind = "task" | "discovery";
+export type TeamGeneratedTaskItemStatus = "active" | "stale";
+export type TeamGeneratedTaskWorkUnitMode = "managed" | "customized";
+
+export interface TeamDiscoverySpec {
+  schemaVersion: "team/discovery-spec-1";
+  discoveryGoal: string;
+  outputKey: string;
+  itemIdField: "id";
+  requiredItemFields: string[];
+  recommendedItemFields?: string[];
+  dispatchGoal: string;
+  dispatcherAgentId: string;
+  generatedWorkerAgentId: string;
+  generatedCheckerAgentId: string;
+  autoRun: {
+    enabled: true;
+    concurrency: 3;
+  };
+}
+
+export interface TeamGeneratedTaskSource {
+  schemaVersion: "team/generated-task-source-1";
+  sourceDiscoveryTaskId: string;
+  sourceItemId: string;
+  itemStatus: TeamGeneratedTaskItemStatus;
+  itemPayload: Record<string, unknown>;
+  latestDiscoveryRunId?: string;
+  latestDiscoveryAttemptId?: string;
+  latestDiscoveredAt?: string;
+  workUnitMode: TeamGeneratedTaskWorkUnitMode;
+  latestManagedWorkUnit?: TeamWorkUnitDefinition;
+}
 
 export interface TeamWorkUnitDefinition {
   title: string;
@@ -188,6 +261,7 @@ export interface TeamWorkUnitDefinition {
   inputPorts?: TeamTaskInputPort[];
   outputPorts?: TeamTaskOutputPort[];
   outputContract: { text: string };
+  outputCheck?: TeamTaskOutputCheck;
   acceptance: { rules: string[] };
   workerAgentId: string;
   checkerAgentId: string;
@@ -407,9 +481,12 @@ export type TeamTaskBoundInput = TeamTaskArtifactBoundInput | TeamCanvasSourceBo
 
 export interface TeamCanvasTask {
   taskId: string;
+  canvasKind?: TeamCanvasTaskKind;
   title: string;
   leaderAgentId: string;
   workUnit: TeamWorkUnitDefinition;
+  discoverySpec?: TeamDiscoverySpec;
+  generatedSource?: TeamGeneratedTaskSource;
   status: TeamCanvasTaskStatus;
   createdAt: string;
   updatedAt: string;
@@ -449,6 +526,7 @@ export interface TeamRunState {
   source?: {
     type: "canvas-task";
     taskId: string;
+    publicBaseUrl?: string;
     triggeredBy?:
       | {
           type: "task-connection";
@@ -463,6 +541,16 @@ export interface TeamRunState {
           fromTaskId: string;
           fromRunId: string;
           fromAttemptId: string;
+        }
+      | {
+          type: "discovery-generated-task";
+          discoveryTaskId: string;
+          discoveryRunId: string;
+          discoveryAttemptId: string;
+          sourceItemId: string;
+          fromTaskId?: never;
+          fromRunId?: never;
+          fromAttemptId?: never;
         };
     boundInputs?: TeamTaskBoundInput[];
   };

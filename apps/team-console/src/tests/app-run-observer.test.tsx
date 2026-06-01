@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
 import { mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
 import type { AgentChatProcessEntry, TeamAttemptMetadata, TeamRunState } from "../api/team-types";
@@ -162,6 +162,163 @@ describe("App", () => {
       expect(within(checkerProcessNode!).queryByText("复核输出契约")).toBeNull();
     });
 
+    it("loads process data for every open Task run observer branch", async () => {
+      const taskA = {
+        ...cloneTaskFixture(),
+        taskId: "task_observer_a",
+        title: "Observer A Task",
+        workUnit: { ...cloneTaskFixture().workUnit, title: "Observer A Task" },
+      };
+      const taskB = {
+        ...cloneTaskFixture(),
+        taskId: "task_observer_b",
+        title: "Observer B Task",
+        workUnit: { ...cloneTaskFixture().workUnit, title: "Observer B Task" },
+      };
+      const runA = makeLiveTaskRunFixture(taskA, "run_observer_a");
+      const runB = makeLiveTaskRunFixture(taskB, "run_observer_b");
+      const attemptA: TeamAttemptMetadata = {
+        ...makeLegacyAttemptFixture(taskA),
+        attemptId: "attempt_observer_a",
+        resultRef: `tasks/${taskA.taskId}/attempts/attempt_observer_a/accepted-result-a.md`,
+        files: ["accepted-result-a.md"],
+        roleProcesses: {
+          worker: {
+            role: "worker",
+            profileId: "main",
+            status: "succeeded",
+            startedAt: "2026-05-25T00:00:01.000Z",
+            updatedAt: "2026-05-25T00:00:05.000Z",
+            finishedAt: "2026-05-25T00:00:05.000Z",
+            assistantText: { content: "A branch worker process loaded", updatedAt: "2026-05-25T00:00:05.000Z" },
+            process: {
+              title: "Worker",
+              narration: ["A branch narration"],
+              currentAction: "A branch action",
+              isComplete: true,
+              entries: [],
+            },
+          },
+        },
+      };
+      const attemptB: TeamAttemptMetadata = {
+        ...makeLegacyAttemptFixture(taskB),
+        attemptId: "attempt_observer_b",
+        roleProcesses: {
+          worker: {
+            role: "worker",
+            profileId: "main",
+            status: "succeeded",
+            startedAt: "2026-05-25T00:00:01.000Z",
+            updatedAt: "2026-05-25T00:00:05.000Z",
+            finishedAt: "2026-05-25T00:00:05.000Z",
+            assistantText: { content: "B branch worker process loaded", updatedAt: "2026-05-25T00:00:05.000Z" },
+            process: {
+              title: "Worker",
+              narration: ["B branch narration"],
+              currentAction: "B branch action",
+              isComplete: true,
+              entries: [],
+            },
+          },
+        },
+      };
+      let acceptedResultFileCalls = 0;
+      let resolveAcceptedResultFile: ((response: Response) => void) | null = null;
+      const acceptedResultFile = new Promise<Response>((resolve) => {
+        resolveAcceptedResultFile = resolve;
+      });
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [
+              { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+              { agentId: "search", name: "搜索 Agent", description: "搜索" },
+            ],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [taskA, taskB] }), { status: 200 });
+        if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+        if (url === "/v1/team/task-dependencies") return new Response(JSON.stringify({ dependencies: [] }), { status: 200 });
+        if (url === "/v1/team/source-nodes") return new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 });
+        if (url === "/v1/team/source-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+        if (url === `/v1/team/tasks/${taskA.taskId}/runs`) return new Response(JSON.stringify({ runs: [runA] }), { status: 200 });
+        if (url === `/v1/team/tasks/${taskB.taskId}/runs`) return new Response(JSON.stringify({ runs: [runB] }), { status: 200 });
+        if (url === `/v1/team/task-runs/${runA.runId}`) return new Response(JSON.stringify(runA), { status: 200 });
+        if (url === `/v1/team/task-runs/${runB.runId}`) return new Response(JSON.stringify(runB), { status: 200 });
+        if (url === `/v1/team/task-runs/${runA.runId}/tasks/${taskA.taskId}/attempts`) {
+          return new Response(JSON.stringify({ attempts: [attemptA] }), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${runB.runId}/tasks/${taskB.taskId}/attempts`) {
+          return new Response(JSON.stringify({ attempts: [attemptB] }), { status: 200 });
+        }
+        if (url.endsWith("/files/accepted-result-a.md")) {
+          acceptedResultFileCalls += 1;
+          if (acceptedResultFileCalls === 2) return acceptedResultFile;
+          return new Promise<Response>(() => {});
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const taskANode = await within(getAtlasNodes(container)).findByRole("button", { name: taskA.title });
+      fireEvent.click(taskANode);
+      const branchA = await waitFor(() => {
+        const branch = Array.from(container.querySelectorAll(".task-action-branch")).find(
+          (el) => el.textContent?.includes(taskA.taskId),
+        ) as HTMLElement | undefined;
+        expect(branch).toBeTruthy();
+        return branch!;
+      });
+      fireEvent.click(await within(branchA).findByRole("button", { name: /最近运行/ }));
+
+      const resultFileRow = await waitFor(() => {
+        const node = container.querySelector('.emap-observer-file-row[data-file-kind="result"]') as HTMLElement | null;
+        expect(node).toBeTruthy();
+        expect(acceptedResultFileCalls).toBe(1);
+        return node!;
+      });
+
+      const taskBNode = await within(getAtlasNodes(container)).findByRole("button", { name: taskB.title });
+      fireEvent.click(taskBNode);
+      const branchB = await waitFor(() => {
+        const branch = Array.from(container.querySelectorAll(".task-action-branch")).find(
+          (el) => el.textContent?.includes(taskB.taskId),
+        ) as HTMLElement | undefined;
+        expect(branch).toBeTruthy();
+        return branch!;
+      });
+      fireEvent.click(await within(branchB).findByRole("button", { name: /最近运行/ }));
+
+      await waitFor(() => {
+        const observerShells = Array.from(container.querySelectorAll('.emap-task-child-branch-shell[data-panel-id^="run-observer"]')) as HTMLElement[];
+        expect(observerShells).toHaveLength(2);
+        expect(observerShells.some((shell) => shell.textContent?.includes("A branch worker process loaded"))).toBe(true);
+        expect(observerShells.some((shell) => shell.textContent?.includes("B branch worker process loaded"))).toBe(true);
+      });
+
+      fireEvent.click(resultFileRow);
+      await waitFor(() => {
+        expect(acceptedResultFileCalls).toBe(2);
+        expect(container.querySelector(".emap-observer-file-detail-node")).toHaveTextContent("正在读取文件");
+      });
+      await act(async () => {
+        resolveAcceptedResultFile?.(new Response("# A accepted result", { status: 200 }));
+        await acceptedResultFile;
+      });
+
+      await waitFor(() => {
+        const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
+        expect(detail).toBeTruthy();
+        expect(detail).toHaveTextContent("A accepted result");
+      });
+    });
+
     it("keeps the Task run observer usable when legacy attempts have no roleProcesses", async () => {
       const task = cloneTaskFixture();
       const taskRun = makeLiveTaskRunFixture(task);
@@ -284,6 +441,55 @@ describe("App", () => {
       expect(container.querySelector('[data-observer-section="worker-files"]')).toBeEmptyDOMElement();
       expect(container.querySelector('[data-observer-section="checker-files"]')).toBeEmptyDOMElement();
       expect(container.querySelector('[data-observer-section="result-files"]')).toBeEmptyDOMElement();
+    });
+
+    it("describes terminal run observers with no attempt files without implying polling will fill them", async () => {
+      const task = cloneTaskFixture();
+      const taskRun = makeLiveTaskRunFixture(task, "terminal-empty-files-run");
+      const attempt: TeamAttemptMetadata = {
+        ...makeLegacyAttemptFixture(task),
+        status: "failed",
+        phase: "failed",
+        files: [],
+        errorSummary: "worker failed before writing output",
+      };
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [
+              { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+              { agentId: "search", name: "搜索 Agent", description: "搜索" },
+            ],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [task] }), { status: 200 });
+        if (url === `/v1/team/tasks/${task.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [taskRun] }), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${taskRun.runId}/tasks/${task.taskId}/attempts`) {
+          return new Response(JSON.stringify({ attempts: [attempt] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
+      fireEvent.click(taskNode);
+
+      const branch = await waitFor(() => {
+        const node = container.querySelector(".task-action-branch") as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      const runSummary = await within(branch).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+      fireEvent.click(runSummary);
+
+      expect(await screen.findByText("该 attempt 未产生可展示文件。请查看 Worker / Checker 过程或错误摘要。")).toBeInTheDocument();
+      expect(screen.queryByText("暂无 attempt 文件。运行刚启动时这里会随轮询补齐。")).toBeNull();
     });
 
     it("does not render volatile refresh metadata in an active Task run observer", async () => {
@@ -774,6 +980,92 @@ describe("App", () => {
         return detail!;
       });
       expect(detailNode).toHaveTextContent("Legacy worker output");
+    });
+
+    it("pretty-prints structured JSON from markdown-named accepted result files", async () => {
+      const task = cloneTaskFixture();
+      const taskRun = makeLiveTaskRunFixture(task, "run_json_md_result");
+      const attemptId = "attempt_json_md_result";
+      const resultRef = `tasks/${task.taskId}/attempts/${attemptId}/accepted-result.md`;
+      const attempt: TeamAttemptMetadata = {
+        ...makeLegacyAttemptFixture(task),
+        attemptId,
+        resultRef,
+        files: ["accepted-result.md"],
+      };
+      taskRun.taskStates[task.taskId] = {
+        ...taskRun.taskStates[task.taskId]!,
+        activeAttemptId: attemptId,
+        resultRef,
+      };
+      const resultContent = JSON.stringify({
+        platform: "Reddit",
+        sentiment: "mixed",
+        sources: [{ url: "https://www.reddit.com/r/LocalLLaMA/" }],
+      });
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [
+              { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+              { agentId: "search", name: "搜索 Agent", description: "搜索" },
+            ],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [task] }), { status: 200 });
+        if (url === `/v1/team/tasks/${task.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [taskRun] }), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${taskRun.runId}`) {
+          return new Response(JSON.stringify(taskRun), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${taskRun.runId}/tasks/${task.taskId}/attempts`) {
+          return new Response(JSON.stringify({ attempts: [attempt] }), { status: 200 });
+        }
+        if (url.endsWith("/files/accepted-result.md")) {
+          return new Response(resultContent, { status: 200 });
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: task.title });
+      fireEvent.click(taskNode);
+
+      const branch = await waitFor(() => {
+        const node = container.querySelector(".task-action-branch") as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      const runSummary = await waitFor(() => {
+        const node = branch.querySelector(".task-run-summary") as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      fireEvent.click(runSummary);
+
+      const resultFileRow = await waitFor(() => {
+        const node = container.querySelector('.emap-observer-file-row[data-file-kind="result"]') as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      fireEvent.click(resultFileRow);
+
+      const detailNode = await waitFor(() => {
+        const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
+        expect(detail).toBeTruthy();
+        return detail!;
+      });
+      const jsonPre = detailNode.querySelector('pre[data-file-format="json"]');
+      expect(jsonPre).toBeTruthy();
+      expect(jsonPre).toHaveTextContent('"platform": "Reddit"');
+      expect(jsonPre).toHaveTextContent('"url": "https://www.reddit.com/r/LocalLLaMA/"');
+      expect(detailNode.querySelector('[data-file-format="markdown"]')).toBeNull();
     });
 
     it("renders HTML-like content as text in file detail, not as injected HTML", async () => {

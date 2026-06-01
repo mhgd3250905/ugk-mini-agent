@@ -8,7 +8,10 @@ import type {
 	TeamAttemptRoleProcess,
 	TeamAttemptWatcherSummary,
 	TeamAttemptWorkerSummary,
+	TeamDiscoveryAggregationRecord,
 	TeamDiscoveryResultRecord,
+	TeamDiscoveryDispatchOutcome,
+	TeamDiscoveryGeneratedRunOutcome,
 	TeamPlan,
 	TeamRunState,
 	TeamTask,
@@ -119,6 +122,14 @@ export class RunWorkspace {
 		await this.attempts.recordAttemptDeliveryOutcomes(runId, taskId, attemptId, outcomes);
 	}
 
+	async recordAttemptDiscoveryDispatchOutcomes(runId: string, taskId: string, attemptId: string, outcomes: TeamDiscoveryDispatchOutcome[]): Promise<void> {
+		await this.attempts.recordAttemptDiscoveryDispatchOutcomes(runId, taskId, attemptId, outcomes);
+	}
+
+	async recordAttemptDiscoveryGeneratedRunOutcomes(runId: string, taskId: string, attemptId: string, outcomes: TeamDiscoveryGeneratedRunOutcome[]): Promise<void> {
+		await this.attempts.recordAttemptDiscoveryGeneratedRunOutcomes(runId, taskId, attemptId, outcomes);
+	}
+
 	async finishAttempt(
 		runId: string,
 		taskId: string,
@@ -161,8 +172,16 @@ export class RunWorkspace {
 		return this.attempts.writeDiscoveryResult(runId, taskId, attemptId, record);
 	}
 
+	async writeDiscoveryAggregation(runId: string, taskId: string, attemptId: string, record: TeamDiscoveryAggregationRecord): Promise<string> {
+		return this.attempts.writeDiscoveryAggregation(runId, taskId, attemptId, record);
+	}
+
 	async readDiscoveryResult(runId: string, taskId: string, attemptId: string): Promise<TeamDiscoveryResultRecord | null> {
 		return this.attempts.readDiscoveryResult(runId, taskId, attemptId);
+	}
+
+	async readDiscoveryAggregation(runId: string, taskId: string, attemptId: string): Promise<TeamDiscoveryAggregationRecord | null> {
+		return this.attempts.readDiscoveryAggregation(runId, taskId, attemptId);
 	}
 
 	async listAttempts(runId: string, taskId: string): Promise<Array<TeamAttemptMetadata & { files: string[] }>> {

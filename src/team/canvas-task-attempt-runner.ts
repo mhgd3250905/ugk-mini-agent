@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { mkdir } from "node:fs/promises";
 import type { TeamRoleRunner, WorkerOutput, CheckerOutput } from "./role-runner.js";
 import type { TeamTask, TeamOutputValidationResult } from "./types.js";
 import type { RunWorkspace } from "./run-workspace.js";
@@ -20,6 +21,7 @@ export interface CanvasTaskAttemptInput {
 	task: TeamTask;
 	attemptId: string;
 	attemptRoot: string;
+	publicBaseUrl?: string;
 	roleRunner: TeamRoleRunner;
 	signal: AbortSignal;
 	workerProfileId: string;
@@ -42,6 +44,17 @@ function summarizeOutputValidationFailure(result: TeamOutputValidationResult): s
 	return `output validation failed: ${failed?.message ?? failed?.name ?? "unknown validation failure"}`;
 }
 
+function buildTeamRoleArtifactBaseUrl(
+	publicBaseUrl: string | undefined,
+	runId: string,
+	roleKey: string,
+	role: string,
+): string | undefined {
+	const normalizedBaseUrl = publicBaseUrl?.trim().replace(/\/+$/, "");
+	if (!normalizedBaseUrl) return undefined;
+	return `${normalizedBaseUrl}/v1/team/task-runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(roleKey)}/${encodeURIComponent(role)}`;
+}
+
 export class CanvasTaskAttemptRunner {
 	private readonly activeRecorders = new Map<string, Set<TeamRoleProcessRecorder>>();
 	private readonly maxCheckerRevisions: number;
@@ -54,13 +67,13 @@ export class CanvasTaskAttemptRunner {
 
 	async runAttempt(input: CanvasTaskAttemptInput): Promise<CanvasTaskAttemptOutcome> {
 		const { workspace, dataDir } = this.options;
-		const { runId, task, attemptId, attemptRoot, roleRunner, signal, workerProfileId, checkerProfileId } = input;
+		const { runId, task, attemptId, attemptRoot, publicBaseUrl, roleRunner, signal, workerProfileId, checkerProfileId } = input;
 
 		let feedback: string | undefined;
 		for (let revisionIndex = 1; revisionIndex <= this.maxCheckerRevisions; revisionIndex++) {
 			this.throwIfAborted(signal);
 
-			const workerOut = await this.runWorker(runId, task, attemptId, attemptRoot, revisionIndex, feedback, roleRunner, signal, workerProfileId);
+			const workerOut = await this.runWorker(runId, task, attemptId, attemptRoot, publicBaseUrl, revisionIndex, feedback, roleRunner, signal, workerProfileId);
 			this.throwIfAborted(signal);
 
 			const workerRef = await workspace.writeWorkerOutput(runId, task.id, attemptId, revisionIndex, workerOut.content);
@@ -80,7 +93,7 @@ export class CanvasTaskAttemptRunner {
 			});
 
 			await this.markTaskProgress(runId, task.id, "checker_reviewing", progressMessages.checker_reviewing);
-			const checkerOut = await this.runChecker(runId, task, attemptId, workerRef, workerValidation, roleRunner, signal, checkerProfileId);
+			const checkerOut = await this.runChecker(runId, task, attemptId, workerRef, workerValidation, publicBaseUrl, roleRunner, signal, checkerProfileId);
 			this.throwIfAborted(signal);
 
 			await this.recordCheckerResult(runId, task.id, attemptId, revisionIndex, checkerOut);
@@ -104,6 +117,12 @@ export class CanvasTaskAttemptRunner {
 					return { status: "failed", resultRef: failRef, errorSummary };
 				}
 				const resultRef = await workspace.writeAcceptedResult(runId, task.id, attemptId, resultContent);
+				const discoveryErrorSummary = await this.writeDiscoveryResultIfNeeded(runId, task, attemptId, acceptedValidation, resultRef);
+				if (discoveryErrorSummary) {
+					const failRef = await workspace.writeFailedResult(runId, task.id, attemptId, discoveryErrorSummary);
+					await workspace.finishAttempt(runId, task.id, attemptId, { status: "failed", phase: "failed", resultRef: failRef, errorSummary: discoveryErrorSummary });
+					return { status: "failed", resultRef: failRef, errorSummary: discoveryErrorSummary };
+				}
 				await workspace.updateAttemptPhase(runId, task.id, attemptId, "checker_passed");
 				await workspace.finishAttempt(runId, task.id, attemptId, { status: "succeeded", phase: "succeeded", resultRef });
 				return { status: "succeeded", resultRef, errorSummary: null };
@@ -131,6 +150,39 @@ export class CanvasTaskAttemptRunner {
 		return { status: "failed", resultRef: null, errorSummary: "unexpected loop exit" };
 	}
 
+	private async writeDiscoveryResultIfNeeded(
+		runId: string,
+		task: TeamTask,
+		attemptId: string,
+		acceptedValidation: TeamOutputValidationResult,
+		acceptedResultRef: string,
+	): Promise<string | null> {
+		if (task.type !== "discovery") return null;
+		const outputKey = task.discovery?.outputKey?.trim();
+		if (!outputKey) return "output validation failed: discovery outputKey is required";
+		const items = acceptedValidation.items;
+		if (!items) return "output validation failed: discovery items were not parsed";
+		for (let i = 0; i < items.length; i++) {
+			const id = items[i]?.id;
+			if (typeof id !== "string" || !id.trim()) {
+				return `output validation failed: item ${i} missing required field 'id'`;
+			}
+		}
+		const sourceRef = acceptedValidation.sourceRef === "checker.resultContent"
+			? acceptedResultRef
+			: acceptedValidation.normalizedRef ?? acceptedValidation.sourceRef ?? acceptedResultRef;
+		await this.options.workspace.writeDiscoveryResult(runId, task.id, attemptId, {
+			schemaVersion: "team/discovery-result-1",
+			taskId: task.id,
+			attemptId,
+			outputKey,
+			items,
+			sourceRef,
+			createdAt: new Date().toISOString(),
+		});
+		return null;
+	}
+
 	async cancelActiveProcesses(runId: string, reason: string): Promise<void> {
 		const recorders = [...(this.activeRecorders.get(runId) ?? [])];
 		await Promise.all(recorders.map(r => r.cancel(reason).catch(() => {})));
@@ -151,6 +203,7 @@ export class CanvasTaskAttemptRunner {
 		task: TeamTask,
 		attemptId: string,
 		attemptRoot: string,
+		publicBaseUrl: string | undefined,
 		outputIndex: number,
 		feedback: string | undefined,
 		roleRunner: TeamRoleRunner,
@@ -163,12 +216,16 @@ export class CanvasTaskAttemptRunner {
 		const recorder = this.createProcessRecorder(runId, task.id, attemptId, "worker", profileId);
 		try {
 			await recorder.start();
+			const artifactPublicDir = join(dataDir, "runs", runId, "agent-workspaces", attemptId, "worker", "output");
+			await mkdir(artifactPublicDir, { recursive: true });
 			const output = await runWithTimeout("worker", this.phaseTimeouts.workerMs, signal, async (localSignal) => roleRunner.runWorker({
 				runId,
 				task,
 				attemptId,
 				workDir: join(attemptRoot, "work"),
-				outputDir: join(attemptRoot, "output"),
+				outputDir: artifactPublicDir,
+				artifactPublicDir,
+				artifactPublicBaseUrl: buildTeamRoleArtifactBaseUrl(publicBaseUrl, runId, attemptId, "worker"),
 				acceptanceRules: task.acceptance.rules,
 				feedback,
 				signal: localSignal,
@@ -205,6 +262,7 @@ export class CanvasTaskAttemptRunner {
 		attemptId: string,
 		workerRef: string,
 		outputValidation: TeamOutputValidationResult,
+		publicBaseUrl: string | undefined,
 		roleRunner: TeamRoleRunner,
 		signal: AbortSignal,
 		profileId: string,
@@ -215,11 +273,15 @@ export class CanvasTaskAttemptRunner {
 		const recorder = this.createProcessRecorder(runId, task.id, attemptId, "checker", profileId);
 		try {
 			await recorder.start();
+			const checkerArtifactPublicDir = join(this.options.dataDir, "runs", runId, "agent-workspaces", attemptId, "checker", "output");
+			await mkdir(checkerArtifactPublicDir, { recursive: true });
 			const output = await runWithTimeout("checker", this.phaseTimeouts.checkerMs, signal, async (localSignal) => roleRunner.runChecker({
 				runId,
 				task,
 				attemptId,
 				workerOutputRef: workerRef,
+				artifactPublicDir: checkerArtifactPublicDir,
+				artifactPublicBaseUrl: buildTeamRoleArtifactBaseUrl(publicBaseUrl, runId, attemptId, "checker"),
 				acceptanceRules: task.acceptance.rules,
 				outputValidation,
 				signal: localSignal,

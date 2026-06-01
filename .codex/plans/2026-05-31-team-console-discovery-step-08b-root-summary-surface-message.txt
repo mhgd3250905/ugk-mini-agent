@@ -1,0 +1,161 @@
+请继续 Step 08B：Team Console Discovery root summary surface。
+
+这一步只做 5174 主画布上的 Discovery root 卡片身份和摘要展示，不做 subcanvas。别一脚油门冲进完整 UI，那是 Step 08C 的事。范围要小，证据要硬。
+
+请先读：
+
+- `AGENTS.md`
+- `docs/handoff-current.md`
+- `docs/change-log.md`
+- `docs/team-runtime.md`
+- `apps/team-console/README.md`
+- `.codex/plans/2026-05-30-team-console-discovery-requirements.md`
+- `.codex/plans/2026-05-31-team-console-discovery-step-08b-root-summary-surface-plan.md`
+- `apps/team-console/src/app/use-team-console-live-data.ts`
+- `apps/team-console/src/app/App.tsx`
+- `apps/team-console/src/graph/ExecutionMap.tsx`
+- `apps/team-console/src/graph/atlas-geometry.ts`
+- `apps/team-console/src/graph/execution-map.css`
+- `apps/team-console/src/fixtures/team-fixtures.ts`
+- `apps/team-console/src/tests/execution-map-ui.test.tsx`
+- `apps/team-console/src/tests/app-live-data.test.tsx`
+
+开始前执行并记录：
+
+- `git status --short --branch`
+- `git log -5 --oneline`
+- `git diff --stat`
+- `git diff --cached --stat`
+
+当前事实：
+
+- 分支仍是 `main...origin/main [ahead 6]`。
+- Discovery Step 01-08A 已本地完成、验证、review，未 stage、未 commit。
+- Step08A 已有 `LiveTeamApi.listGeneratedTasks()`、`generatedTasksByDiscoveryTaskId`、`discoverySummariesByTaskId`，generated child run summaries 已合并进 `taskRunsByTaskId`。
+- Step08A review 后额外删了两个 build-only unused symbols；`npm --prefix apps/team-console run build`、Team Console full tests、Team Console tsc、顶层 `npx tsc --noEmit`、`git diff --check` 均通过。
+
+本步允许修改：
+
+- `apps/team-console/src/app/App.tsx`
+- `apps/team-console/src/app/use-team-console-live-data.ts`
+- `apps/team-console/src/graph/ExecutionMap.tsx`
+- `apps/team-console/src/graph/atlas-geometry.ts`
+- `apps/team-console/src/graph/execution-map.css`
+- `apps/team-console/src/tests/execution-map-ui.test.tsx`
+- `apps/team-console/src/tests/app-live-data.test.tsx`
+- `apps/team-console/README.md`
+- `docs/team-runtime.md`
+- `docs/change-log.md`
+- `.codex/plans/2026-05-30-team-console-discovery-requirements.md`
+- 只有在 mock 浏览器验证需要稳定 fixture 暴露时，才碰 `apps/team-console/src/fixtures/team-fixtures.ts`。
+
+本步禁止修改：
+
+- 不做 Discovery subcanvas
+- 不在 root canvas 渲染 generated Task child cards
+- 不做 generated Task edit panel
+- 不做 failed dispatch count / attempt metadata observer 读取
+- 不做 Discovery 创建面板
+- 不改 backend routes/store/runtime/scheduler/dispatcher
+- 不改 role prompt/parser、AgentProfile runner、Plan orchestrator
+- 不改 `.pi/skills/**`
+- 不改主 `/playground` 产品 UI
+- 不做整文件格式化或换行符转换
+- 不 stage、不 commit、不 push、不用 `git add -A`
+
+实现要求：
+
+1. 把 `discoverySummariesByTaskId` 从 `useTeamConsoleLiveData()` 经 `App.tsx` 传给 `ExecutionMap`。
+   - `ExecutionMap` prop 保持 optional。
+   - shape 为 generated 总数、active 数、stale 数、running generated run 数。
+
+2. Discovery root card 视觉身份：
+   - 条件：`task.canvasKind === "discovery"` 且没有 `generatedSource`。
+   - kind label 显示 `Discovery`，普通 Task 仍显示 `Task`。
+   - 加稳定 DOM attribute：例如 `data-canvas-kind="discovery"`。
+   - 加稳定 class：例如 `emap-discovery-task-node`。
+   - 保持点击、拖拽、Dock、dependency handle、ports、run status、observer 行为不变。
+
+3. Discovery root card 摘要：
+   - 只在 Discovery root card 上显示。
+   - 显示 generated total、active、stale、running generated run count。
+   - 建议文案：`2 items`、`1 active`、`1 stale`、`1 running`。
+   - summary 缺失时用 0 counts，不要崩。
+   - 不做 failed dispatch count，它属于后续 observer/detail 步。
+
+4. 布局稳定：
+   - 摘要不能覆盖 title、copy button、Leader/Worker/Checker、ports、dependency handle、status pill。
+   - 如果需要高度，必须在 `atlas-geometry.ts` 做 Discovery-only height increment，让 card height、drag hitbox、dock flight、dependency line geometry 使用同一来源。不要只用 CSS 硬撑。
+
+5. 为浏览器验证提供稳定 mock：
+   - 5174 mock workspace 要能看到 Discovery root summary。
+   - generated child fixtures 不能出现在 root canvas。
+   - 可以让 mock mode 初始化 `discoverySummariesByTaskId`，但不要把 `核查 Vultr 公开证据` / `核查 Hetzner 公开证据` 渲染成 root card。
+
+测试要求：
+
+- `execution-map-ui.test.tsx`
+  - Discovery root card 渲染 `Discovery`、`data-canvas-kind="discovery"`、`emap-discovery-task-node`。
+  - supplied summary counts 可见。
+  - normal Task 仍是 `Task`，没有 Discovery summary。
+  - Discovery card height 足够容纳 summary，至少要有一个明确高度/DOM containment 断言，别只测文字存在。
+
+- `app-live-data.test.tsx`
+  - 证明 Step08A summary 能传到 `ExecutionMap`。
+  - 证明 generated child titles 不作为 root canvas cards 渲染。
+  - 证明 generated catalog fetch 完成后 Discovery root card 显示 counts。
+
+浏览器验证必须做：
+
+- 入口：`http://127.0.0.1:5174/`
+- 用 Browser/DevTools 自动化，不要把人工检查甩给用户。
+- 如果 5174 dev server 没开，启动 Team Console dev server；不要开 `3100` 之类临时后端。
+- 推荐使用 mock data source，保证可重复。
+
+浏览器报告必须包含：
+
+- URL
+- data source
+- `[data-canvas-kind="discovery"]` DOM count
+- generated child titles `核查 Vultr 公开证据`、`核查 Hetzner 公开证据` 没有作为 root card 出现的 DOM evidence
+- Discovery card 可见 summary text
+- summary row 和 card 的 bounding rect，证明 summary 在 card 内且没有压到 agent grid
+- screenshot path（如果工具能截图）
+
+验证至少跑：
+
+- `npm --prefix apps/team-console test -- --run src/tests/execution-map-ui.test.tsx`
+- `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx`
+- `npm --prefix apps/team-console test -- --run src/tests/team-contract-drift.test.ts`
+- `npm --prefix apps/team-console exec tsc -- --noEmit -p tsconfig.json`
+- `npm --prefix apps/team-console run build`
+- `npm --prefix apps/team-console test`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `git diff --cached --stat`
+
+另外检查 scoped diff：
+
+- `git diff --stat -- apps/team-console/src/app/App.tsx apps/team-console/src/app/use-team-console-live-data.ts apps/team-console/src/graph/ExecutionMap.tsx apps/team-console/src/graph/atlas-geometry.ts apps/team-console/src/graph/execution-map.css apps/team-console/src/tests/execution-map-ui.test.tsx apps/team-console/src/tests/app-live-data.test.tsx apps/team-console/README.md docs/team-runtime.md docs/change-log.md`
+- `git diff --numstat -- apps/team-console/src/app/App.tsx apps/team-console/src/app/use-team-console-live-data.ts apps/team-console/src/graph/ExecutionMap.tsx apps/team-console/src/graph/atlas-geometry.ts apps/team-console/src/graph/execution-map.css apps/team-console/src/tests/execution-map-ui.test.tsx apps/team-console/src/tests/app-live-data.test.tsx apps/team-console/README.md docs/team-runtime.md docs/change-log.md`
+- `git ls-files --eol -- apps/team-console/src/app/App.tsx apps/team-console/src/app/use-team-console-live-data.ts apps/team-console/src/graph/ExecutionMap.tsx apps/team-console/src/graph/atlas-geometry.ts apps/team-console/src/graph/execution-map.css apps/team-console/src/tests/execution-map-ui.test.tsx apps/team-console/src/tests/app-live-data.test.tsx apps/team-console/README.md docs/team-runtime.md docs/change-log.md`
+
+如果新增 untracked 文件，要额外跑：
+
+- `Select-String -LiteralPath <new-file> -Pattern '[ \t]+$'`
+- `git ls-files --eol --others --exclude-standard <new-file>`
+
+完成后按这个格式回复：
+
+1. 改动文件
+2. UI/data 行为变化
+3. 新增/更新测试
+4. 浏览器验证证据
+5. 文档更新
+6. 明确未改
+7. 验证结果
+8. diff stat / numstat
+9. EOL / formatter-only churn
+10. 计划假设或偏离
+
+不要 stage，不要 commit，不要 push。

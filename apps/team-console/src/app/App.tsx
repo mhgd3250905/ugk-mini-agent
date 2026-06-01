@@ -3,10 +3,10 @@ import { LiveTeamApi } from "../api/team-api";
 import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
 import { MockTeamApi } from "../fixtures/team-fixtures";
 import { useTeamConsoleLiveData, type DataSource, type TeamConsoleUiResetReason, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
-import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchState } from "./use-task-branch-stack";
+import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchGeneratedObserverState, type TaskBranchState } from "./use-task-branch-stack";
 import { hasDirtyTaskEditConflict, useTaskEditState } from "./use-task-edit-state";
 import { useTaskLeaderCopy } from "./use-task-leader-copy";
-import { ExecutionMap, type AtlasAgentNode, type AtlasSourceNode, type AtlasTaskNode } from "../graph/ExecutionMap";
+import { ExecutionMap, type AtlasAgentNode, type AtlasBranchLayoutState, type AtlasSourceNode, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { normalizeAtlasViewport, type AtlasViewport } from "../graph/AtlasCanvasShell";
 import { RUN_STATUS_LABELS, isActiveRun } from "../shared/status";
 import { renderTeamMarkdown } from "../shared/markdown";
@@ -40,12 +40,21 @@ type StoredCanvasUiState = {
   dataSource: DataSource;
   selectedFixtureId?: string;
   viewport?: AtlasViewport;
+  agentNodes?: StoredAgentNodePosition[];
+  taskNodePositions?: StoredTaskPosition[];
+  sourceNodePositions?: StoredSourcePosition[];
   expandedAgentBranch?: AgentBranchState | null;
   expandedTaskBranches?: TaskBranchState[];
+  branchLayout?: AtlasBranchLayoutState;
   minimizedAgentNodeIds?: string[];
   minimizedTaskNodeIds?: string[];
   minimizedSourceNodeIds?: string[];
   rootNodeFilter?: "all" | "agent" | "task";
+};
+
+type StoredAgentNodePosition = {
+  agentId: string;
+  position: { x: number; y: number };
 };
 
 type TaskConnectionDraft = {
@@ -310,7 +319,19 @@ function renderMarkdownContent(content: string): ReactNode {
   );
 }
 
+function contentLooksLikeStructuredJson(content: string): boolean {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return false;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed !== null && (typeof parsed === "object" || Array.isArray(parsed));
+  } catch {
+    return false;
+  }
+}
+
 function renderFileDetailContent(fileName: string, content: string): ReactNode {
+  if (contentLooksLikeStructuredJson(content)) return renderJsonContent(content);
   const format = fileFormatFromName(fileName);
   if (format === "json") return renderJsonContent(content);
   if (format === "markdown") return renderMarkdownContent(content);
@@ -372,6 +393,78 @@ function selectLatestRun(runs: TeamRunState[]): TeamRunState | null {
     if (!Number.isFinite(latestTime)) return run;
     return runTime >= latestTime ? run : latest;
   }, runs[0]);
+}
+
+function runTimeForOrdering(run: TeamRunState | null | undefined): number {
+  if (!run) return Number.NEGATIVE_INFINITY;
+  const finishedAt = Date.parse(run.finishedAt ?? "");
+  if (Number.isFinite(finishedAt)) return finishedAt;
+  const startedAt = Date.parse(run.startedAt ?? "");
+  if (Number.isFinite(startedAt)) return startedAt;
+  const createdAt = Date.parse(run.createdAt);
+  return Number.isFinite(createdAt) ? createdAt : Number.NEGATIVE_INFINITY;
+}
+
+function selectActiveDiscoveryRootRun(
+  discoveryTaskId: string,
+  taskRunsByTaskId: Record<string, TeamRunState[]>,
+): TeamRunState | null {
+  return (taskRunsByTaskId[discoveryTaskId] ?? []).find((run) => isActiveRun(run.status)) ?? null;
+}
+
+function isGeneratedRunFromDiscoveryRun(run: TeamRunState, discoveryTaskId: string, discoveryRunId: string): boolean {
+  return run.source?.triggeredBy?.type === "discovery-generated-task"
+    && run.source.triggeredBy.discoveryTaskId === discoveryTaskId
+    && run.source.triggeredBy.discoveryRunId === discoveryRunId;
+}
+
+function visibleDiscoveryGeneratedRuns(
+  generatedTask: TeamCanvasTask,
+  discoveryTaskId: string,
+  activeDiscoveryRun: TeamRunState | null,
+  taskRunsByTaskId: Record<string, TeamRunState[]>,
+): TeamRunState[] {
+  const runs = taskRunsByTaskId[generatedTask.taskId] ?? [];
+  if (!activeDiscoveryRun) return runs;
+  const generatedSourceRunId = generatedTask.generatedSource?.latestDiscoveryRunId;
+  if (generatedSourceRunId !== activeDiscoveryRun.runId) return [];
+  return runs.filter((run) => isGeneratedRunFromDiscoveryRun(run, discoveryTaskId, activeDiscoveryRun.runId));
+}
+
+function sortDiscoveryGeneratedTasksForSubcanvas(
+  tasks: TeamCanvasTask[],
+  taskRunsByTaskId: Record<string, TeamRunState[]>,
+  discoveryTaskId: string,
+  activeDiscoveryRun: TeamRunState | null,
+): TeamCanvasTask[] {
+  return [...tasks].sort((a, b) => {
+    const aRuns = visibleDiscoveryGeneratedRuns(a, discoveryTaskId, activeDiscoveryRun, taskRunsByTaskId);
+    const bRuns = visibleDiscoveryGeneratedRuns(b, discoveryTaskId, activeDiscoveryRun, taskRunsByTaskId);
+    const aActiveRun = aRuns.find((run) => isActiveRun(run.status)) ?? null;
+    const bActiveRun = bRuns.find((run) => isActiveRun(run.status)) ?? null;
+    const aActive = Boolean(aActiveRun);
+    const bActive = Boolean(bActiveRun);
+    if (aActive !== bActive) return aActive ? -1 : 1;
+    if (aActive && bActive) {
+      return runTimeForOrdering(bActiveRun) - runTimeForOrdering(aActiveRun);
+    }
+    const aLatest = selectLatestRun(aRuns);
+    const bLatest = selectLatestRun(bRuns);
+    const aHasTerminal = Boolean(aLatest && !isActiveRun(aLatest.status));
+    const bHasTerminal = Boolean(bLatest && !isActiveRun(bLatest.status));
+    if (aHasTerminal !== bHasTerminal) return aHasTerminal ? -1 : 1;
+    if (aHasTerminal && bHasTerminal) {
+      const diff = runTimeForOrdering(bLatest) - runTimeForOrdering(aLatest);
+      if (diff !== 0) return diff;
+    }
+    const aDiscoveredAt = Date.parse(a.generatedSource?.latestDiscoveredAt ?? "");
+    const bDiscoveredAt = Date.parse(b.generatedSource?.latestDiscoveredAt ?? "");
+    if (Number.isFinite(aDiscoveredAt) || Number.isFinite(bDiscoveredAt)) {
+      return (Number.isFinite(aDiscoveredAt) ? aDiscoveredAt : Number.NEGATIVE_INFINITY)
+        - (Number.isFinite(bDiscoveredAt) ? bDiscoveredAt : Number.NEGATIVE_INFINITY);
+    }
+    return 0;
+  });
 }
 
 function playgroundBaseUrlPrefix(): string {
@@ -465,6 +558,20 @@ function readStringArray(value: unknown): string[] {
   return result;
 }
 
+function readStoredGeneratedObserver(value: unknown): TaskBranchGeneratedObserverState | undefined {
+  const record = readRecord(value);
+  if (!record) return undefined;
+  const taskId = typeof record.taskId === "string" ? record.taskId.trim() : "";
+  const runId = typeof record.runId === "string" ? record.runId.trim() : "";
+  if (!taskId || !runId) return undefined;
+  const selectedFileKeys = readStringArray(record.selectedFileKeys);
+  return {
+    taskId,
+    runId,
+    ...(selectedFileKeys.length > 0 ? { selectedFileKeys } : {}),
+  };
+}
+
 function readStoredViewport(value: unknown): AtlasViewport | undefined {
   const record = readRecord(value);
   if (!record) return undefined;
@@ -500,22 +607,131 @@ function readStoredTaskBranches(value: unknown): TaskBranchState[] {
     seen.add(nodeId);
     const rawDetailMode = record.detailMode;
     const detailMode: TaskBranchDetailMode | null =
-      rawDetailMode === "leader-chat" || rawDetailMode === "edit" || rawDetailMode === "run-observer"
+      rawDetailMode === "leader-chat" || rawDetailMode === "edit" || rawDetailMode === "run-observer" || rawDetailMode === "discovery-subcanvas"
         ? rawDetailMode
         : null;
     const observedRunId = typeof record.observedRunId === "string" && record.observedRunId.trim()
       ? record.observedRunId.trim()
       : undefined;
     const selectedFileKeys = readStringArray(record.selectedFileKeys);
+    const discoveryGeneratedObserver = readStoredGeneratedObserver(record.discoveryGeneratedObserver);
+    const discoveryGeneratedEditTaskId = typeof record.discoveryGeneratedEditTaskId === "string" && record.discoveryGeneratedEditTaskId.trim()
+      ? record.discoveryGeneratedEditTaskId.trim()
+      : undefined;
     result.push({
       nodeId,
       taskId,
       detailMode,
       ...(observedRunId ? { observedRunId } : {}),
       ...(selectedFileKeys.length > 0 ? { selectedFileKeys } : {}),
+      ...(discoveryGeneratedObserver ? { discoveryGeneratedObserver } : {}),
+      ...(discoveryGeneratedEditTaskId ? { discoveryGeneratedEditTaskId } : {}),
     });
   }
   return result;
+}
+
+function readStoredAgentNodePositions(value: unknown): StoredAgentNodePosition[] {
+  if (!Array.isArray(value)) return [];
+  const result: StoredAgentNodePosition[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const record = item as { agentId?: unknown; position?: { x?: unknown; y?: unknown } };
+    const agentId = typeof record.agentId === "string" ? record.agentId.trim() : "";
+    const x = Number(record.position?.x);
+    const y = Number(record.position?.y);
+    if (!agentId || seen.has(agentId) || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+    seen.add(agentId);
+    result.push({ agentId, position: { x, y } });
+  }
+  return result;
+}
+
+function readStoredTaskNodePositions(value: unknown): StoredTaskPosition[] {
+  if (!Array.isArray(value)) return [];
+  const result: StoredTaskPosition[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const record = item as { taskId?: unknown; position?: { x?: unknown; y?: unknown } };
+    const taskId = typeof record.taskId === "string" ? record.taskId.trim() : "";
+    const x = Number(record.position?.x);
+    const y = Number(record.position?.y);
+    if (!taskId || seen.has(taskId) || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+    seen.add(taskId);
+    result.push({ taskId, position: { x, y } });
+  }
+  return result;
+}
+
+function readStoredSourceNodePositions(value: unknown): StoredSourcePosition[] {
+  if (!Array.isArray(value)) return [];
+  const result: StoredSourcePosition[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const record = item as { sourceNodeId?: unknown; position?: { x?: unknown; y?: unknown } };
+    const sourceNodeId = typeof record.sourceNodeId === "string" ? record.sourceNodeId.trim() : "";
+    const x = Number(record.position?.x);
+    const y = Number(record.position?.y);
+    if (!sourceNodeId || seen.has(sourceNodeId) || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+    seen.add(sourceNodeId);
+    result.push({ sourceNodeId, position: { x, y } });
+  }
+  return result;
+}
+
+function readStoredPositionMap(value: unknown): Record<string, { x: number; y: number }> {
+  const record = readRecord(value);
+  if (!record) return {};
+  const result: Record<string, { x: number; y: number }> = {};
+  for (const [key, raw] of Object.entries(record)) {
+    const item = readRecord(raw);
+    const x = Number(item?.x);
+    const y = Number(item?.y);
+    if (!key || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+    result[key] = { x, y };
+  }
+  return result;
+}
+
+function readStoredSizeMap(value: unknown): Record<string, { width: number; height: number }> {
+  const record = readRecord(value);
+  if (!record) return {};
+  const result: Record<string, { width: number; height: number }> = {};
+  for (const [key, raw] of Object.entries(record)) {
+    const item = readRecord(raw);
+    const width = Number(item?.width);
+    const height = Number(item?.height);
+    if (!key || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) continue;
+    result[key] = { width, height };
+  }
+  return result;
+}
+
+function readStoredRectMap(value: unknown): NonNullable<AtlasBranchLayoutState["agentBranchRects"]> {
+  const record = readRecord(value);
+  if (!record) return {};
+  const result: NonNullable<AtlasBranchLayoutState["agentBranchRects"]> = {};
+  for (const [key, raw] of Object.entries(record)) {
+    const item = readRecord(raw);
+    const x = Number(item?.x);
+    const y = Number(item?.y);
+    const width = Number(item?.width);
+    const height = Number(item?.height);
+    if (!key || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) continue;
+    result[key] = { x, y, width, height };
+  }
+  return result;
+}
+
+function readStoredBranchLayout(value: unknown): AtlasBranchLayoutState {
+  const record = readRecord(value);
+  if (!record) return {};
+  return {
+    agentBranchRects: readStoredRectMap(record.agentBranchRects),
+    taskBranchPositions: readStoredPositionMap(record.taskBranchPositions),
+    taskChildPanelPositions: readStoredPositionMap(record.taskChildPanelPositions),
+    taskChildPanelSizes: readStoredSizeMap(record.taskChildPanelSizes),
+  };
 }
 
 function readStoredCanvasUiState(): StoredCanvasUiState | null {
@@ -533,8 +749,12 @@ function readStoredCanvasUiState(): StoredCanvasUiState | null {
       dataSource,
       ...(selectedFixtureId ? { selectedFixtureId } : {}),
       ...(viewport ? { viewport } : {}),
+      agentNodes: readStoredAgentNodePositions(parsed.agentNodes),
+      taskNodePositions: readStoredTaskNodePositions(parsed.taskNodePositions),
+      sourceNodePositions: readStoredSourceNodePositions(parsed.sourceNodePositions),
       expandedAgentBranch: readStoredAgentBranch(parsed.expandedAgentBranch),
       expandedTaskBranches: readStoredTaskBranches(parsed.expandedTaskBranches),
+      branchLayout: readStoredBranchLayout(parsed.branchLayout),
       minimizedAgentNodeIds: readStringArray(parsed.minimizedAgentNodeIds),
       minimizedTaskNodeIds: readStringArray(parsed.minimizedTaskNodeIds),
       minimizedSourceNodeIds: readStringArray(parsed.minimizedSourceNodeIds),
@@ -757,6 +977,83 @@ function storeTheme(theme: TeamConsoleTheme): void {
   }
 }
 
+function sameAgentNodes(left: AtlasAgentNode[], right: AtlasAgentNode[]): boolean {
+  return left.length === right.length
+    && left.every((node, index) => {
+      const other = right[index];
+      return other
+        && node.nodeId === other.nodeId
+        && node.agentId === other.agentId
+        && node.position.x === other.position.x
+        && node.position.y === other.position.y;
+    });
+}
+
+function sameTaskNodes(left: AtlasTaskNode[], right: AtlasTaskNode[]): boolean {
+  return left.length === right.length
+    && left.every((node, index) => {
+      const other = right[index];
+      return other
+        && node.nodeId === other.nodeId
+        && node.taskId === other.taskId
+        && node.position.x === other.position.x
+        && node.position.y === other.position.y;
+    });
+}
+
+function sameSourceNodes(left: AtlasSourceNode[], right: AtlasSourceNode[]): boolean {
+  return left.length === right.length
+    && left.every((node, index) => {
+      const other = right[index];
+      return other
+        && node.nodeId === other.nodeId
+        && node.sourceNodeId === other.sourceNodeId
+        && node.position.x === other.position.x
+        && node.position.y === other.position.y;
+    });
+}
+
+function mergeStoredAgentNodes(agentNodes: AtlasAgentNode[], storedNodes: StoredAgentNodePosition[] | undefined, agentsById: Map<string, unknown>): AtlasAgentNode[] {
+  if (!storedNodes?.length) return agentNodes;
+  const byAgentId = new Map(agentNodes.map((node) => [node.agentId, node]));
+  const nextNodes = [...agentNodes];
+  for (const stored of storedNodes) {
+    if (!agentsById.has(stored.agentId)) continue;
+    const existingIndex = nextNodes.findIndex((node) => node.agentId === stored.agentId);
+    if (existingIndex >= 0) {
+      nextNodes[existingIndex] = { ...nextNodes[existingIndex]!, position: stored.position };
+      continue;
+    }
+    if (!byAgentId.has(stored.agentId)) {
+      nextNodes.push({
+        nodeId: `agent-${stored.agentId}`,
+        kind: "agent",
+        agentId: stored.agentId,
+        position: stored.position,
+      });
+    }
+  }
+  return nextNodes;
+}
+
+function mergeStoredTaskNodePositions(taskNodes: AtlasTaskNode[], storedPositions: StoredTaskPosition[] | undefined): AtlasTaskNode[] {
+  if (!storedPositions?.length) return taskNodes;
+  const positions = new Map(storedPositions.map((item) => [item.taskId, item.position]));
+  return taskNodes.map((node) => {
+    const position = positions.get(node.taskId);
+    return position ? { ...node, position } : node;
+  });
+}
+
+function mergeStoredSourceNodePositions(sourceNodes: AtlasSourceNode[], storedPositions: StoredSourcePosition[] | undefined): AtlasSourceNode[] {
+  if (!storedPositions?.length) return sourceNodes;
+  const positions = new Map(storedPositions.map((item) => [item.sourceNodeId, item.position]));
+  return sourceNodes.map((node) => {
+    const position = positions.get(node.sourceNodeId);
+    return position ? { ...node, position } : node;
+  });
+}
+
 export function App() {
   const [theme, setTheme] = useState<TeamConsoleTheme>(() => readStoredTheme());
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -766,6 +1063,9 @@ export function App() {
   const [taskDependencyDraft, setTaskDependencyDraft] = useState<{ fromTaskId: string } | null>(null);
   const [sourceConnectionDraft, setSourceConnectionDraft] = useState<SourceConnectionDraft | null>(null);
   const [taskRunSavingByTaskId, setTaskRunSavingByTaskId] = useState<Record<string, boolean>>({});
+  const [generatedResetSavingByTaskId, setGeneratedResetSavingByTaskId] = useState<Record<string, boolean>>({});
+  const [generatedArchiveConfirmTaskId, setGeneratedArchiveConfirmTaskId] = useState<string | null>(null);
+  const [generatedArchiveSavingByTaskId, setGeneratedArchiveSavingByTaskId] = useState<Record<string, boolean>>({});
   const [taskRunObserverByRunId, setTaskRunObserverByRunId] = useState<Record<string, TaskRunObserverState>>({});
   const [taskNodes, setTaskNodes] = useState<AtlasTaskNode[]>([]);
   const [liveTaskNodesHydrated, setLiveTaskNodesHydrated] = useState(false);
@@ -776,6 +1076,12 @@ export function App() {
   const sourceFileInputRef = useRef<HTMLInputElement | null>(null);
   const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
   const [expandedAgentBranch, setExpandedAgentBranch] = useState<AgentBranchState | null>(null);
+  const [canvasBranchLayout, setCanvasBranchLayout] = useState<AtlasBranchLayoutState>({});
+  const updateCanvasBranchLayout = useCallback((layout: AtlasBranchLayoutState) => {
+    setCanvasBranchLayout((current) => (
+      JSON.stringify(current) === JSON.stringify(layout) ? current : layout
+    ));
+  }, []);
   const [minimizedAgentNodeIds, setMinimizedAgentNodeIds] = useState<string[]>([]);
   const [minimizedTaskNodeIds, setMinimizedTaskNodeIds] = useState<string[]>([]);
   const [minimizedSourceNodeIds, setMinimizedSourceNodeIds] = useState<string[]>([]);
@@ -814,6 +1120,25 @@ export function App() {
     storeTheme(theme);
   }, [theme]);
 
+  const clearGeneratedArchiveUiForTasks = useCallback((taskIds: string[]) => {
+    if (taskIds.length === 0) return;
+    const taskIdSet = new Set(taskIds);
+    setGeneratedArchiveConfirmTaskId((current) => (
+      current && taskIdSet.has(current) ? null : current
+    ));
+    setGeneratedArchiveSavingByTaskId((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const taskId of taskIdSet) {
+        if (taskId in next) {
+          delete next[taskId];
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, []);
+
   const closeTaskPickersBeforeTaskBranch = useCallback(() => {
     setAgentPickerOpen(false);
     setTaskLeaderPickerOpen(false);
@@ -821,9 +1146,8 @@ export function App() {
 
   const {
     expandedTaskBranches,
-    expandedTaskBranch,
+    focusedTaskBranch,
     setExpandedTaskBranches,
-    setExpandedTaskBranch,
     closeTaskBranch,
     openOrToggleTaskBranch,
     pruneTaskBranches,
@@ -838,6 +1162,9 @@ export function App() {
     setTaskDependencyDraft(null);
     setSourceConnectionDraft(null);
     setTaskRunSavingByTaskId({});
+    setGeneratedResetSavingByTaskId({});
+    setGeneratedArchiveConfirmTaskId(null);
+    setGeneratedArchiveSavingByTaskId({});
     setTaskRunObserverByRunId({});
 
     if (reason === "mock-fixture" || reason === "mock-workspace" || reason === "live-workspace-loading") {
@@ -854,6 +1181,7 @@ export function App() {
 
     if (reason === "mock-workspace") {
       setCanvasViewport({ x: 0, y: 0, scale: 1 });
+      setCanvasBranchLayout({});
     }
   }, []);
 
@@ -883,8 +1211,9 @@ export function App() {
     plan, run, attemptsByTaskId,
     tasks, taskConnections, taskDependencies,
     sourceNodes, sourceConnections,
-    taskRunsByTaskId, setTaskRunsByTaskId,
+    taskRunsByTaskId, generatedTasksByDiscoveryTaskId, discoverySummariesByTaskId, discoveryDispatchDiagnosticsByTaskId, setTaskRunsByTaskId, setGeneratedTasksByDiscoveryTaskId,
     refreshLiveTasks,
+    scheduleLiveTaskDiscoveryRefresh,
     refreshLiveTasksAfterLeavingTaskCreateBranch,
     readAttemptFile,
     setTaskConnections, setTaskDependencies,
@@ -894,6 +1223,9 @@ export function App() {
 
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
   const tasksById = useMemo(() => new Map(tasks.map((task) => [task.taskId, task])), [tasks]);
+  const generatedTasksById = useMemo(() => new Map(
+    Object.values(generatedTasksByDiscoveryTaskId).flat().map((task) => [task.taskId, task]),
+  ), [generatedTasksByDiscoveryTaskId]);
   const sourceNodesById = useMemo(() => new Map(sourceNodes.map((node) => [node.sourceNodeId, node])), [sourceNodes]);
   const agentRunStatusesById = useMemo(() => new Map(Object.entries(agentRunStatusById)), [agentRunStatusById]);
   const addedAgentIds = useMemo(() => new Set(agentNodes.map((node) => node.agentId)), [agentNodes]);
@@ -903,42 +1235,98 @@ export function App() {
     ? agentNodes.find((node) => node.nodeId === expandedAgentBranch.nodeId) ?? null
     : null;
   const expandedAgent = expandedAgentNode ? agentsById.get(expandedAgentNode.agentId) ?? null : null;
-  const expandedTaskNode = expandedTaskBranch
-    ? taskNodes.find((node) => node.nodeId === expandedTaskBranch.nodeId) ?? null
-    : null;
-  const expandedTask = expandedTaskNode ? tasksById.get(expandedTaskNode.taskId) ?? null : null;
-  const expandedTaskRuns = expandedTask ? taskRunsByTaskId[expandedTask.taskId] ?? [] : [];
-  const latestExpandedTaskRun = selectLatestRun(expandedTaskRuns);
-  const activeExpandedTaskRun = expandedTaskRuns.find((taskRun) => isActiveRun(taskRun.status)) ?? null;
-  const expandedTaskRunSaving = expandedTask ? Boolean(taskRunSavingByTaskId[expandedTask.taskId]) : false;
-  const observedTaskRunId = expandedTaskBranch?.detailMode === "run-observer" ? expandedTaskBranch.observedRunId ?? null : null;
-  const observedTaskRun = observedTaskRunId
-    ? expandedTaskRuns.find((taskRun) => taskRun.runId === observedTaskRunId) ?? null
-    : null;
+  const runObserverTargets = useMemo(() => expandedTaskBranches.flatMap((branch) => {
+    const rootTargets = (() => {
+      if (branch.detailMode !== "run-observer" || !branch.observedRunId) return [];
+      const node = taskNodes.find((candidate) => candidate.nodeId === branch.nodeId) ?? null;
+      const task = node ? tasksById.get(node.taskId) ?? null : null;
+      if (!task) return [];
+      const taskRun = (taskRunsByTaskId[task.taskId] ?? []).find((run) => run.runId === branch.observedRunId) ?? null;
+      if (!taskRun) return [];
+      return [{ taskId: task.taskId, runId: taskRun.runId, status: taskRun.status }];
+    })();
+    if (branch.detailMode !== "discovery-subcanvas" || !branch.discoveryGeneratedObserver) return rootTargets;
+    const generatedTask = generatedTasksById.get(branch.discoveryGeneratedObserver.taskId) ?? null;
+    if (!generatedTask) return rootTargets;
+    const node = taskNodes.find((candidate) => candidate.nodeId === branch.nodeId) ?? null;
+    const discoveryTask = node ? tasksById.get(node.taskId) ?? null : null;
+    if (!discoveryTask || discoveryTask.canvasKind !== "discovery" || discoveryTask.generatedSource) return rootTargets;
+    const activeDiscoveryRun = selectActiveDiscoveryRootRun(discoveryTask.taskId, taskRunsByTaskId);
+    const taskRun = visibleDiscoveryGeneratedRuns(generatedTask, discoveryTask.taskId, activeDiscoveryRun, taskRunsByTaskId)
+      .find((run) => run.runId === branch.discoveryGeneratedObserver?.runId) ?? null;
+    if (!taskRun) return rootTargets;
+    return [
+      ...rootTargets,
+      { taskId: generatedTask.taskId, runId: taskRun.runId, status: taskRun.status },
+    ];
+  }), [expandedTaskBranches, generatedTasksById, taskNodes, taskRunsByTaskId, tasksById]);
+  const runObserverTargetSignature = useMemo(() => runObserverTargets
+    .map((target) => `${target.taskId}\u0000${target.runId}\u0000${target.status}`)
+    .join("\u0001"), [runObserverTargets]);
+  const openDiscoverySubcanvasGeneratedTaskIds = useMemo(() => {
+    const taskIds = new Set<string>();
+    for (const branch of expandedTaskBranches) {
+      if (branch.detailMode !== "discovery-subcanvas") continue;
+      for (const generatedTask of generatedTasksByDiscoveryTaskId[branch.taskId] ?? []) {
+        if (!generatedTask.archived) {
+          taskIds.add(generatedTask.taskId);
+        }
+      }
+    }
+    return taskIds;
+  }, [expandedTaskBranches, generatedTasksByDiscoveryTaskId]);
 
   const selectTask = useCallback((taskId: string) => {
     setSelectedTaskId((current) => current === taskId ? null : taskId);
   }, []);
 
   useEffect(() => {
+    if (generatedArchiveConfirmTaskId && !openDiscoverySubcanvasGeneratedTaskIds.has(generatedArchiveConfirmTaskId)) {
+      setGeneratedArchiveConfirmTaskId(null);
+    }
+    setGeneratedArchiveSavingByTaskId((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const taskId of Object.keys(next)) {
+        if (!openDiscoverySubcanvasGeneratedTaskIds.has(taskId)) {
+          delete next[taskId];
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [generatedArchiveConfirmTaskId, openDiscoverySubcanvasGeneratedTaskIds]);
+
+  useEffect(() => {
     setCanvasUiStateHydrated(false);
   }, [canvasUiContextKey]);
 
   useEffect(() => {
+    if (dataSource === "live" && !liveAgentNodesHydrated) return;
     setMinimizedAgentNodeIds((current) => {
       const nodeIds = new Set(agentNodes.filter((node) => agentsById.has(node.agentId)).map((node) => node.nodeId));
       const next = current.filter((nodeId) => nodeIds.has(nodeId));
       return next.length === current.length ? current : next;
     });
-  }, [agentNodes, agentsById]);
+  }, [agentNodes, agentsById, dataSource, liveAgentNodesHydrated]);
 
   useEffect(() => {
+    if (dataSource === "live" && !liveTaskNodesHydrated) return;
     setMinimizedTaskNodeIds((current) => {
       const nodeIds = new Set(taskNodes.map((node) => node.nodeId));
       const next = current.filter((nodeId) => nodeIds.has(nodeId));
       return next.length === current.length ? current : next;
     });
-  }, [taskNodes]);
+  }, [dataSource, liveTaskNodesHydrated, taskNodes]);
+
+  useEffect(() => {
+    if (dataSource === "live" && !liveSourceNodesHydrated) return;
+    setMinimizedSourceNodeIds((current) => {
+      const nodeIds = new Set(sourceAtlasNodes.map((node) => node.nodeId));
+      const next = current.filter((nodeId) => nodeIds.has(nodeId));
+      return next.length === current.length ? current : next;
+    });
+  }, [dataSource, liveSourceNodesHydrated, sourceAtlasNodes]);
 
   useEffect(() => {
     if (canvasUiStateHydrated) return;
@@ -949,17 +1337,31 @@ export function App() {
 
     const stored = readStoredCanvasUiState();
     if (!stored || !canvasUiContextMatches(stored, dataSource, selectedFixtureId)) {
+      setCanvasBranchLayout({});
       hydratedCanvasUiContextKeyRef.current = canvasUiContextKey;
       setCanvasUiStateHydrated(true);
       return;
     }
 
-    const validAgentNodes = agentNodes.filter((node) => agentsById.has(node.agentId));
+    const nextAgentNodes = mergeStoredAgentNodes(agentNodes, stored.agentNodes, agentsById);
+    const nextTaskNodes = mergeStoredTaskNodePositions(taskNodes, stored.taskNodePositions);
+    const nextSourceNodes = mergeStoredSourceNodePositions(sourceAtlasNodes, stored.sourceNodePositions);
+    if (!sameAgentNodes(agentNodes, nextAgentNodes)) {
+      setAgentNodes(nextAgentNodes);
+    }
+    if (!sameTaskNodes(taskNodes, nextTaskNodes)) {
+      setTaskNodes(nextTaskNodes);
+    }
+    if (!sameSourceNodes(sourceAtlasNodes, nextSourceNodes)) {
+      setSourceAtlasNodes(nextSourceNodes);
+    }
+
+    const validAgentNodes = nextAgentNodes.filter((node) => agentsById.has(node.agentId));
     const agentNodeIds = new Set(validAgentNodes.map((node) => node.nodeId));
     const agentIds = new Set(validAgentNodes.map((node) => node.agentId));
-    const taskNodeIds = new Set(taskNodes.map((node) => node.nodeId));
-    const taskIds = new Set(taskNodes.map((node) => node.taskId));
-    const sourceNodeIds = new Set(sourceAtlasNodes.map((node) => node.nodeId));
+    const taskNodeIds = new Set(nextTaskNodes.map((node) => node.nodeId));
+    const taskIds = new Set(nextTaskNodes.map((node) => node.taskId));
+    const sourceNodeIds = new Set(nextSourceNodes.map((node) => node.nodeId));
     const nextAgentBranch = stored.expandedAgentBranch
       && agentNodeIds.has(stored.expandedAgentBranch.nodeId)
       && agentIds.has(stored.expandedAgentBranch.agentId)
@@ -974,6 +1376,7 @@ export function App() {
     }
     setExpandedAgentBranch(nextAgentBranch);
     setExpandedTaskBranches(nextTaskBranches);
+    setCanvasBranchLayout(stored.branchLayout ?? {});
     setMinimizedAgentNodeIds((stored.minimizedAgentNodeIds ?? []).filter((nodeId) => agentNodeIds.has(nodeId)));
     setMinimizedTaskNodeIds((stored.minimizedTaskNodeIds ?? []).filter((nodeId) => taskNodeIds.has(nodeId)));
     setMinimizedSourceNodeIds((stored.minimizedSourceNodeIds ?? []).filter((nodeId) => sourceNodeIds.has(nodeId)));
@@ -1002,8 +1405,21 @@ export function App() {
       dataSource,
       ...(dataSource === "mock" ? { selectedFixtureId } : {}),
       viewport: canvasViewport,
+      agentNodes: agentNodes.map((node) => ({
+        agentId: node.agentId,
+        position: { x: node.position.x, y: node.position.y },
+      })),
+      taskNodePositions: taskNodes.map((node) => ({
+        taskId: node.taskId,
+        position: { x: node.position.x, y: node.position.y },
+      })),
+      sourceNodePositions: sourceAtlasNodes.map((node) => ({
+        sourceNodeId: node.sourceNodeId,
+        position: { x: node.position.x, y: node.position.y },
+      })),
       expandedAgentBranch,
       expandedTaskBranches,
+      branchLayout: canvasBranchLayout,
       minimizedAgentNodeIds,
       minimizedTaskNodeIds,
       minimizedSourceNodeIds,
@@ -1012,8 +1428,10 @@ export function App() {
   }, [
     canvasUiContextKey,
     canvasUiStateHydrated,
+    canvasBranchLayout,
     canvasViewport,
     dataSource,
+    agentNodes,
     expandedAgentBranch,
     expandedTaskBranches,
     minimizedAgentNodeIds,
@@ -1021,6 +1439,8 @@ export function App() {
     minimizedTaskNodeIds,
     rootNodeFilter,
     selectedFixtureId,
+    sourceAtlasNodes,
+    taskNodes,
   ]);
 
   useEffect(() => {
@@ -1052,6 +1472,16 @@ export function App() {
   useEffect(() => {
     pruneTaskBranches(tasksById);
   }, [pruneTaskBranches, tasksById]);
+
+  useEffect(() => {
+    for (const branch of expandedTaskBranches) {
+      if (branch.detailMode !== "discovery-subcanvas" || !branch.discoveryGeneratedEditTaskId) continue;
+      const generatedTask = generatedTasksById.get(branch.discoveryGeneratedEditTaskId);
+      if (generatedTask && !taskEditDraftByTaskId[generatedTask.taskId]) {
+        openTaskEditDraft(generatedTask);
+      }
+    }
+  }, [expandedTaskBranches, generatedTasksById, openTaskEditDraft, taskEditDraftByTaskId]);
 
   useEffect(() => {
     setSourceConnections((current) => (
@@ -1143,37 +1573,52 @@ export function App() {
     setExpandedAgentBranch({ nodeId, agentId: leaderAgentId, mode: "task-create" });
   }, []);
 
-  const openTaskEditBranch = useCallback((task: TeamCanvasTask) => {
-    openTaskEditDraft(task);
-    setTaskArchiveConfirmNodeId(null);
-    setExpandedTaskBranch((current) => current ? { ...current, detailMode: "edit" } : current);
-  }, [openTaskEditDraft, setExpandedTaskBranch]);
+  const replaceGeneratedTaskInCatalog = useCallback((nextTask: TeamCanvasTask) => {
+    const sourceDiscoveryTaskId = nextTask.generatedSource?.sourceDiscoveryTaskId;
+    if (!sourceDiscoveryTaskId) return;
+    setGeneratedTasksByDiscoveryTaskId((current) => {
+      const currentTasks = current[sourceDiscoveryTaskId] ?? [];
+      if (!currentTasks.some((task) => task.taskId === nextTask.taskId)) return current;
+      return {
+        ...current,
+        [sourceDiscoveryTaskId]: currentTasks.map((task) =>
+          task.taskId === nextTask.taskId ? nextTask : task
+        ),
+      };
+    });
+  }, [setGeneratedTasksByDiscoveryTaskId]);
 
-  const openTaskRunObserverBranch = useCallback((runId: string) => {
-    clearTaskPanelState();
-    setExpandedTaskBranch((current) => current ? {
-      ...current,
-      detailMode: "run-observer",
-      observedRunId: runId,
-      selectedFileKeys: [],
-    } : current);
-  }, [clearTaskPanelState]);
-
-  const closeTaskRunObserverBranch = useCallback(() => {
-    setExpandedTaskBranch((current) => current ? {
-      ...current,
-      detailMode: null,
-      observedRunId: undefined,
-      selectedFileKeys: [],
-    } : current);
-  }, []);
+  const clearGeneratedTaskPanelState = useCallback((taskId: string) => {
+    clearGeneratedArchiveUiForTasks([taskId]);
+    clearTaskEditState(taskId);
+    clearTaskEditWarning(taskId);
+    setExpandedTaskBranches((current) => current.map((item) => {
+      const nextEditTaskId = item.discoveryGeneratedEditTaskId === taskId ? undefined : item.discoveryGeneratedEditTaskId;
+      const nextGeneratedObserver = item.discoveryGeneratedObserver?.taskId === taskId
+        ? undefined
+        : item.discoveryGeneratedObserver;
+      if (nextEditTaskId === item.discoveryGeneratedEditTaskId && nextGeneratedObserver === item.discoveryGeneratedObserver) {
+        return item;
+      }
+      return {
+        ...item,
+        discoveryGeneratedEditTaskId: nextEditTaskId,
+        discoveryGeneratedObserver: nextGeneratedObserver,
+      };
+    }));
+  }, [clearGeneratedArchiveUiForTasks, clearTaskEditState, clearTaskEditWarning, setExpandedTaskBranches]);
 
   const saveTaskEdit = useCallback(async (taskId: string) => {
-    const task = tasksById.get(taskId);
+    const task = tasksById.get(taskId) ?? generatedTasksById.get(taskId);
     const draft = taskEditDraftByTaskId[taskId];
     if (!task || !draft || draft.taskId !== taskId) return;
 
     const patch: TeamTaskUpdateRequest = {};
+    let nextWorkUnit: TeamCanvasTask["workUnit"] | undefined;
+    const ensureWorkUnitPatch = () => {
+      nextWorkUnit ??= { ...task.workUnit };
+      return nextWorkUnit;
+    };
     const dirty = draft.dirtyFields;
     const title = draft.title.trim();
 
@@ -1184,6 +1629,9 @@ export function App() {
 
     if (dirty.title && title !== task.title) {
       patch.title = title;
+      if (task.generatedSource) {
+        ensureWorkUnitPatch().title = title;
+      }
     }
     if (dirty.leaderAgentId && draft.leaderAgentId !== task.leaderAgentId) {
       patch.leaderAgentId = draft.leaderAgentId;
@@ -1191,11 +1639,12 @@ export function App() {
     const workerChanged = Boolean(dirty.workerAgentId) && draft.workerAgentId !== task.workUnit.workerAgentId;
     const checkerChanged = Boolean(dirty.checkerAgentId) && draft.checkerAgentId !== task.workUnit.checkerAgentId;
     if (workerChanged || checkerChanged) {
-      patch.workUnit = {
-        ...task.workUnit,
-        ...(workerChanged ? { workerAgentId: draft.workerAgentId } : {}),
-        ...(checkerChanged ? { checkerAgentId: draft.checkerAgentId } : {}),
-      };
+      const workUnit = ensureWorkUnitPatch();
+      if (workerChanged) workUnit.workerAgentId = draft.workerAgentId;
+      if (checkerChanged) workUnit.checkerAgentId = draft.checkerAgentId;
+    }
+    if (nextWorkUnit) {
+      patch.workUnit = nextWorkUnit;
     }
     if (Object.keys(patch).length === 0) {
       clearTaskEditWarning(taskId);
@@ -1207,7 +1656,9 @@ export function App() {
     try {
       const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
       const response = await api.updateTask(taskId, patch);
-      if (dataSource === "live") {
+      if (response.task.generatedSource) {
+        replaceGeneratedTaskInCatalog(response.task);
+      } else if (dataSource === "live") {
         await refreshLiveTasks();
       } else {
         const nextTasks = await api.listTasks();
@@ -1222,7 +1673,7 @@ export function App() {
     } finally {
       setTaskEditSaving(taskId, false);
     }
-  }, [clearTaskEditWarning, dataSource, refreshLiveTasks, replaceTaskEditDraft, setTaskEditSaving, setTaskEditWarning, taskEditDraftByTaskId, tasksById]);
+  }, [clearTaskEditWarning, dataSource, generatedTasksById, refreshLiveTasks, replaceGeneratedTaskInCatalog, replaceTaskEditDraft, setTaskEditSaving, setTaskEditWarning, taskEditDraftByTaskId, tasksById]);
 
   const archiveTask = useCallback(async (task: TeamCanvasTask, nodeId?: string): Promise<boolean> => {
     const savingKey = nodeId ?? task.taskId;
@@ -1248,10 +1699,36 @@ export function App() {
     }
   }, [closeTaskBranch, dataSource, refreshLiveTasks]);
 
-  const archiveExpandedTask = useCallback(async () => {
-    if (!expandedTask) return;
-    await archiveTask(expandedTask, expandedTaskBranch?.nodeId);
-  }, [archiveTask, expandedTask, expandedTaskBranch?.nodeId]);
+  const archiveGeneratedTask = useCallback(async (task: TeamCanvasTask): Promise<void> => {
+    const taskId = task.taskId;
+    const sourceDiscoveryTaskId = task.generatedSource?.sourceDiscoveryTaskId;
+    if (!sourceDiscoveryTaskId) {
+      setError("generated Task archive requires a Discovery source");
+      return;
+    }
+    setGeneratedArchiveSavingByTaskId((current) => ({ ...current, [taskId]: true }));
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      const response = await api.archiveTask(taskId);
+      if (response.task.archived || response.task.status === "archived") {
+        setGeneratedTasksByDiscoveryTaskId((current) => ({
+          ...current,
+          [sourceDiscoveryTaskId]: (current[sourceDiscoveryTaskId] ?? []).filter((generatedTask) => generatedTask.taskId !== taskId),
+        }));
+        clearGeneratedTaskPanelState(taskId);
+      }
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setGeneratedArchiveSavingByTaskId((current) => {
+        if (!(taskId in current)) return current;
+        const next = { ...current };
+        delete next[taskId];
+        return next;
+      });
+    }
+  }, [clearGeneratedTaskPanelState, dataSource, setGeneratedTasksByDiscoveryTaskId]);
 
   const confirmRootArchive = useCallback(async () => {
     if (!rootArchiveConfirm || rootArchiveSaving) return;
@@ -1328,10 +1805,28 @@ export function App() {
     }
   }, [dataSource]);
 
-  const runExpandedTask = useCallback(async () => {
-    if (!expandedTask) return;
-    await runTask(expandedTask);
-  }, [expandedTask, runTask]);
+  const resetGeneratedTaskWorkUnit = useCallback(async (task: TeamCanvasTask) => {
+    const taskId = task.taskId;
+    if (!task.generatedSource) {
+      setError("generated WorkUnit reset requires a generated task");
+      return;
+    }
+    setGeneratedResetSavingByTaskId((current) => ({ ...current, [taskId]: true }));
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      const response = await api.resetGeneratedTaskWorkUnit(taskId);
+      replaceGeneratedTaskInCatalog(response.task);
+      if (taskEditDraftByTaskId[taskId]) {
+        replaceTaskEditDraft(response.task);
+      }
+      setTaskEditWarning(taskId, response.warnings?.join(" ") ?? null);
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setGeneratedResetSavingByTaskId((current) => ({ ...current, [taskId]: false }));
+    }
+  }, [dataSource, replaceGeneratedTaskInCatalog, replaceTaskEditDraft, setTaskEditWarning, taskEditDraftByTaskId]);
 
   const beginTaskPortConnection = useCallback((taskId: string, port: TeamTaskOutputPort) => {
     setTaskConnectionDraft({
@@ -1562,21 +2057,15 @@ export function App() {
     }
   }, [dataSource]);
 
-  const cancelExpandedTaskRun = useCallback(async () => {
-    if (!expandedTask || !activeExpandedTaskRun) return;
-    await cancelTaskRun(expandedTask, activeExpandedTaskRun);
-  }, [activeExpandedTaskRun, cancelTaskRun, expandedTask]);
-
   useEffect(() => {
-    const taskId = expandedTask?.taskId;
-    if (!taskId || !observedTaskRunId || expandedTaskBranch?.detailMode !== "run-observer") return;
+    if (runObserverTargets.length === 0) return;
 
     let cancelled = false;
-    const runId = observedTaskRunId;
-    const observedTaskId = taskId;
     const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
 
-    async function refreshTaskRunObserver() {
+    async function refreshTaskRunObserver(target: typeof runObserverTargets[number]) {
+      const runId = target.runId;
+      const observedTaskId = target.taskId;
       setTaskRunObserverByRunId((current) => ({
         ...current,
         [runId]: {
@@ -1596,6 +2085,12 @@ export function App() {
         if (cancelled) return;
 
         setTaskRunsByTaskId((current) => mergeTaskRun(current, observedTaskId, freshRun));
+        if (dataSource === "live" && isActiveRun(target.status) && !isActiveRun(freshRun.status)) {
+          void refreshLiveTasks({ silent: true }).catch((e) => {
+            if (!cancelled) setError(errorMessage(e));
+          });
+          scheduleLiveTaskDiscoveryRefresh();
+        }
         setTaskRunObserverByRunId((current) => ({
           ...current,
           [runId]: {
@@ -1637,7 +2132,7 @@ export function App() {
         }));
       } catch (e) {
         if (cancelled) return;
-        const isActiveObserverPoll = !observedTaskRun || isActiveRun(observedTaskRun.status);
+        const isActiveObserverPoll = isActiveRun(target.status);
         setTaskRunObserverByRunId((current) => ({
           ...current,
           [runId]: {
@@ -1651,8 +2146,12 @@ export function App() {
       }
     }
 
-    const shouldPoll = !observedTaskRun || isActiveRun(observedTaskRun.status);
-    void refreshTaskRunObserver();
+    async function refreshTaskRunObservers() {
+      await Promise.all(runObserverTargets.map((target) => refreshTaskRunObserver(target)));
+    }
+
+    const shouldPoll = runObserverTargets.some((target) => isActiveRun(target.status));
+    void refreshTaskRunObservers();
     if (!shouldPoll) {
       return () => {
         cancelled = true;
@@ -1660,14 +2159,14 @@ export function App() {
     }
 
     const timer = globalThis.setInterval(() => {
-      void refreshTaskRunObserver();
+      void refreshTaskRunObservers();
     }, 2000);
 
     return () => {
       cancelled = true;
       globalThis.clearInterval(timer);
     };
-  }, [dataSource, expandedTask?.taskId, expandedTaskBranch?.detailMode, observedTaskRun?.status, observedTaskRunId]);
+  }, [dataSource, refreshLiveTasks, runObserverTargetSignature, scheduleLiveTaskDiscoveryRefresh, setError]);
 
   const canCreateTask = dataSource === "live" && agents.length > 0;
   const canRefreshTasks = dataSource === "live" && !liveTasksRefreshing;
@@ -2019,6 +2518,43 @@ export function App() {
             >
               {"\u5bf9\u8bdd Leader"}
             </button>
+            {task.canvasKind === "discovery" && !task.generatedSource && (
+              <button
+                type="button"
+                className="task-action-menu-button"
+                onClick={() => {
+                  if (branch.discoveryGeneratedEditTaskId) {
+                    clearTaskEditState(branch.discoveryGeneratedEditTaskId);
+                  }
+                  const nextDetailMode = detailMode === "discovery-subcanvas" ? null : "discovery-subcanvas";
+                  if (detailMode === "discovery-subcanvas") {
+                    clearGeneratedArchiveUiForTasks(
+                      (generatedTasksByDiscoveryTaskId[task.taskId] ?? []).map((generatedTask) => generatedTask.taskId),
+                    );
+                  } else if (dataSource === "live") {
+                    void refreshLiveTasks({ silent: true }).catch((e) => setError(errorMessage(e)));
+                    scheduleLiveTaskDiscoveryRefresh();
+                  }
+                  setTaskArchiveConfirmNodeId(null);
+                  setExpandedTaskBranches((current) =>
+                    current.map((item) =>
+                      item.nodeId === branch.nodeId
+                        ? {
+                            ...item,
+                            detailMode: nextDetailMode,
+                            observedRunId: undefined,
+                            selectedFileKeys: [],
+                            discoveryGeneratedObserver: undefined,
+                            discoveryGeneratedEditTaskId: undefined,
+                          }
+                        : item
+                    )
+                  );
+                }}
+              >
+                Discovery 子画布
+              </button>
+            )}
             {taskDeleteConfirming ? (
               <div className="task-delete-confirm" role="group" aria-label={`${task.title} \u5220\u9664\u786e\u8ba4`}>
                 <p>{"\u5220\u9664\u4f1a\u8c03\u7528 archive \u8f6f\u5f52\u6863\uff0c\u4e0d\u4f1a\u542f\u52a8 Task run\uff0c\u4e5f\u4e0d\u4f1a\u628a Task \u5b9a\u4e49\u5199\u5165 localStorage\u3002"}</p>
@@ -2060,155 +2596,6 @@ export function App() {
       ),
     }];
   });
-  const expandedTaskDetailMode = expandedTaskBranch?.detailMode ?? null;
-  const expandedTaskRunButtonLabel = expandedTaskRunSaving
-    ? "启动中..."
-    : activeExpandedTaskRun
-      ? "运行中"
-      : latestExpandedTaskRun
-        ? "重新运行"
-        : "运行";
-  const latestExpandedTaskRunSummaryLabel = latestExpandedTaskRun && isActiveRun(latestExpandedTaskRun.status)
-    ? "运行中"
-    : "最近运行";
-  const latestExpandedTaskRunIsObserved = Boolean(
-    latestExpandedTaskRun
-      && expandedTaskDetailMode === "run-observer"
-      && expandedTaskBranch?.observedRunId === latestExpandedTaskRun.runId,
-  );
-  const expandedTaskBranchPanel = expandedTaskNode && expandedTask ? (
-    <section className="task-leader-branch task-action-branch emap-menu-branch" aria-label={`${expandedTask.title} Task 操作`}>
-      <header className="task-leader-branch-head">
-        <div className="task-leader-branch-title">
-          <span>Task 操作</span>
-          <strong>{expandedTask.title}</strong>
-          <code>{expandedTask.taskId}</code>
-        </div>
-        <button
-          type="button"
-          className="task-leader-branch-collapse"
-          onClick={() => closeTaskBranch()}
-          aria-label={`收起 ${expandedTask.title} Task 操作`}
-        >
-          收起
-        </button>
-      </header>
-      <div className="task-action-menu" aria-label={`${expandedTask.title} 操作菜单`}>
-        <button
-          type="button"
-          className="task-action-menu-button"
-          disabled={expandedTaskRunSaving || Boolean(activeExpandedTaskRun) || expandedTask.status !== "ready"}
-          title={expandedTask.status === "ready" ? "启动这个 Task 的 WorkUnit run" : "只有 ready Task 可以运行"}
-          onClick={() => {
-            void runExpandedTask();
-          }}
-        >
-          {expandedTaskRunButtonLabel}
-        </button>
-        {activeExpandedTaskRun && (
-          <button
-            type="button"
-            className="task-action-menu-button"
-            disabled={expandedTaskRunSaving}
-            onClick={() => {
-              void cancelExpandedTaskRun();
-            }}
-          >
-            停止
-          </button>
-        )}
-        {latestExpandedTaskRun && (
-          <button
-            type="button"
-            className="task-run-summary"
-            aria-label={`${expandedTask.title} ${latestExpandedTaskRunSummaryLabel} ${RUN_STATUS_LABELS[latestExpandedTaskRun.status]} 阶段 ${taskRunPhase(latestExpandedTaskRun, expandedTask.taskId)}`}
-            onClick={() => (
-              latestExpandedTaskRunIsObserved
-                ? closeTaskRunObserverBranch()
-                : openTaskRunObserverBranch(latestExpandedTaskRun.runId)
-            )}
-          >
-            <span className="task-run-summary-kicker">{latestExpandedTaskRunSummaryLabel}</span>
-            <span className="task-run-summary-head">
-              <strong>{RUN_STATUS_LABELS[latestExpandedTaskRun.status]}</strong>
-              <em>{latestExpandedTaskRunIsObserved ? "收起输出" : "查看输出"}</em>
-            </span>
-            <span className="task-run-summary-metrics">
-              <span><b>阶段</b><strong>{taskRunPhase(latestExpandedTaskRun, expandedTask.taskId)}</strong></span>
-              <span><b>耗时</b><strong>{taskRunElapsed(latestExpandedTaskRun)}</strong></span>
-              <span><b>Attempts</b><strong>{taskRunAttempts(latestExpandedTaskRun, expandedTask.taskId)}</strong></span>
-            </span>
-            <span className="task-run-summary-message">{taskRunMessage(latestExpandedTaskRun, expandedTask.taskId)}</span>
-            <code>{latestExpandedTaskRun.runId}</code>
-          </button>
-        )}
-        <button
-          type="button"
-          className="task-action-menu-button"
-          onClick={() => {
-            if (expandedTaskDetailMode === "edit") {
-              setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current);
-            } else {
-              openTaskEditBranch(expandedTask);
-            }
-          }}
-        >
-          编辑
-        </button>
-        <button
-          type="button"
-          className="task-action-menu-button"
-          onClick={() => {
-            if (expandedTaskDetailMode === "leader-chat") {
-              setExpandedTaskBranch((current) => current ? { ...current, detailMode: null } : current);
-            } else {
-              setTaskArchiveConfirmNodeId(null);
-              clearTaskLeaderCopy(expandedTask.taskId);
-              setExpandedTaskBranch((current) => current ? { ...current, detailMode: "leader-chat" } : current);
-            }
-          }}
-        >
-          对话 Leader
-        </button>
-        {expandedTaskBranch && taskArchiveConfirmNodeId === expandedTaskBranch.nodeId ? (
-          <div className="task-delete-confirm" role="group" aria-label={`${expandedTask.title} 删除确认`}>
-            <p>删除会调用 archive 软归档，不会启动 Task run，也不会把 Task 定义写入 localStorage。</p>
-            <div className="task-delete-actions">
-              <button
-                type="button"
-                className="task-action-menu-button"
-                disabled={Boolean(taskArchiveSavingNodeId)}
-                onClick={() => setTaskArchiveConfirmNodeId(null)}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="task-action-menu-button danger"
-                disabled={Boolean(taskArchiveSavingNodeId)}
-                onClick={() => {
-                  void archiveExpandedTask();
-                }}
-              >
-                {taskArchiveSavingNodeId === expandedTaskBranch.nodeId ? "删除中..." : "确认删除"}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            type="button"
-            className="task-action-menu-button danger"
-            disabled={Boolean(taskArchiveSavingNodeId)}
-            onClick={() => setTaskArchiveConfirmNodeId(expandedTaskBranch?.nodeId ?? expandedTask.taskId)}
-          >
-            删除
-          </button>
-        )}
-      </div>
-    </section>
-  ) : null;
-  const expandedTaskChildBranchPanel = null;
-
   const taskChildBranchPanels = useMemo(() => {
     const panels: Array<{
       id: string;
@@ -2229,6 +2616,411 @@ export function App() {
       const task = node ? tasksById.get(node.taskId) ?? null : null;
       if (!node || !task) continue;
       const menuPanelId = taskMenuPanelId(branch.nodeId);
+
+      if (branch.detailMode === "discovery-subcanvas" && task.canvasKind === "discovery" && !task.generatedSource) {
+        const activeDiscoveryRun = selectActiveDiscoveryRootRun(task.taskId, taskRunsByTaskId);
+        const generatedTasks = sortDiscoveryGeneratedTasksForSubcanvas(
+          (generatedTasksByDiscoveryTaskId[task.taskId] ?? []).filter((generatedTask) => !generatedTask.archived),
+          taskRunsByTaskId,
+          task.taskId,
+          activeDiscoveryRun,
+        );
+        const dispatchDiagnostics = discoveryDispatchDiagnosticsByTaskId[task.taskId] ?? [];
+        panels.push({
+          id: `discovery-subcanvas-${branch.nodeId}`,
+          width: 440,
+          autoHeight: true,
+          sourceId: menuPanelId,
+          panel: (
+            <section
+              className="task-leader-branch emap-panel-branch discovery-subcanvas-panel"
+              data-discovery-subcanvas-for={task.taskId}
+              aria-label={`${task.title} Discovery 子画布`}
+            >
+              <header className="task-leader-branch-head">
+                <div className="task-leader-branch-title">
+                  <span>Discovery 子画布</span>
+                  <strong>{task.title}</strong>
+                  <code>{task.taskId}</code>
+                </div>
+                <button
+                  type="button"
+                  className="task-leader-branch-collapse"
+                  onClick={() => {
+                    if (branch.discoveryGeneratedEditTaskId) {
+                      clearTaskEditState(branch.discoveryGeneratedEditTaskId);
+                    }
+                    clearGeneratedArchiveUiForTasks(generatedTasks.map((generatedTask) => generatedTask.taskId));
+                    setExpandedTaskBranches((current) =>
+                      current.map((item) =>
+                        item.nodeId === branch.nodeId
+                          ? {
+                              ...item,
+                              detailMode: null,
+                              discoveryGeneratedObserver: undefined,
+                              discoveryGeneratedEditTaskId: undefined,
+                            }
+                          : item
+                      )
+                    );
+                  }}
+                  aria-label={`收起 ${task.title} Discovery 子画布`}
+                >
+                  收起
+                </button>
+              </header>
+              {dispatchDiagnostics.length > 0 && (
+                <section
+                  className="discovery-dispatch-diagnostics"
+                  data-discovery-dispatch-diagnostics-for={task.taskId}
+                  data-dispatch-blocked-count={dispatchDiagnostics.length}
+                  aria-label={`${task.title} dispatch diagnostics`}
+                >
+                  <div className="discovery-dispatch-diagnostics-head">
+                    <span>派发阻塞</span>
+                    <strong>{dispatchDiagnostics.length} blocked</strong>
+                  </div>
+                  <div className="discovery-dispatch-diagnostic-list">
+                    {dispatchDiagnostics.map((diagnostic) => (
+                      <article
+                        key={`${diagnostic.attemptId}:${diagnostic.itemId}:${diagnostic.createdAt}`}
+                        className="discovery-dispatch-diagnostic-item"
+                        data-dispatch-item-id={diagnostic.itemId}
+                      >
+                        <code>{diagnostic.itemId}</code>
+                        <span>{diagnostic.error ?? "Dispatcher blocked without error message."}</span>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              )}
+              <div className="discovery-subcanvas-list" aria-label={`${task.title} generated Task catalog`}>
+                {generatedTasks.length === 0 ? (
+                  <div className="discovery-subcanvas-empty">暂无 generated Tasks。</div>
+                ) : generatedTasks.map((generatedTask) => {
+                  const generatedSource = generatedTask.generatedSource;
+                  const itemStatus = generatedSource?.itemStatus ?? "active";
+                  const workUnitMode = generatedSource?.workUnitMode ?? "managed";
+                  const generatedRuns = visibleDiscoveryGeneratedRuns(generatedTask, task.taskId, activeDiscoveryRun, taskRunsByTaskId);
+                  const latestGeneratedRun = selectLatestRun(generatedRuns);
+                  const activeGeneratedRun = generatedRuns.find((taskRun) => isActiveRun(taskRun.status)) ?? null;
+                  const runSaving = Boolean(taskRunSavingByTaskId[generatedTask.taskId]);
+                  const resetSaving = Boolean(generatedResetSavingByTaskId[generatedTask.taskId]);
+                  const archiveSaving = Boolean(generatedArchiveSavingByTaskId[generatedTask.taskId]);
+                  const latestRunStatus = latestGeneratedRun?.status ?? "none";
+                  const generatedIsEditing = branch.discoveryGeneratedEditTaskId === generatedTask.taskId;
+                  const archiveConfirmOpen = generatedArchiveConfirmTaskId === generatedTask.taskId;
+                  const canResetToManaged = workUnitMode === "customized" && Boolean(generatedSource?.latestManagedWorkUnit);
+                  const waitingForCurrentDiscoveryRun = Boolean(activeDiscoveryRun) && generatedSource?.latestDiscoveryRunId !== activeDiscoveryRun?.runId;
+                  const generatedRunIsObserved = Boolean(
+                    latestGeneratedRun
+                      && branch.discoveryGeneratedObserver?.taskId === generatedTask.taskId
+                      && branch.discoveryGeneratedObserver?.runId === latestGeneratedRun.runId,
+                  );
+                  const generatedRunButtonLabel = runSaving
+                    ? "启动中..."
+                    : activeGeneratedRun
+                      ? "运行中"
+                      : latestGeneratedRun
+                        ? "重新运行"
+                        : "运行";
+                  return (
+                    <article
+                      key={generatedTask.taskId}
+                      className={`discovery-generated-card is-${itemStatus} ${generatedRunIsObserved ? "is-observed" : ""} ${generatedIsEditing ? "is-editing" : ""}`}
+                      data-generated-task-id={generatedTask.taskId}
+                      data-generated-item-status={itemStatus}
+                      data-generated-workunit-mode={workUnitMode}
+                      data-generated-run-status={latestRunStatus}
+                      data-generated-run-scope={waitingForCurrentDiscoveryRun ? "pending-current-discovery" : "current"}
+                      data-generated-editing={generatedIsEditing ? "true" : "false"}
+                      data-generated-reset-saving={resetSaving ? "true" : "false"}
+                      data-generated-archive-saving={archiveSaving ? "true" : "false"}
+                    >
+                      <div className="discovery-generated-card-head">
+                        <strong>{generatedTask.title}</strong>
+                        <code>{generatedSource?.sourceItemId ?? generatedTask.taskId}</code>
+                      </div>
+                      <div className="discovery-generated-card-meta">
+                        <span>{itemStatus}</span>
+                        <span>{workUnitMode}</span>
+                        <span>{waitingForCurrentDiscoveryRun ? "等待本轮发现" : latestGeneratedRun ? RUN_STATUS_LABELS[latestGeneratedRun.status] : "none"}</span>
+                      </div>
+                      <div className="discovery-generated-card-actions">
+                        <button
+                          type="button"
+                          className={`discovery-generated-action ${generatedIsEditing ? "selected" : ""}`}
+                          data-generated-action="edit"
+                          aria-label={`${generatedTask.title} ${generatedIsEditing ? "收起 generated Task 浅编辑" : "打开 generated Task 浅编辑"}`}
+                          onClick={() => {
+                            if (generatedIsEditing) {
+                              clearTaskEditState(generatedTask.taskId);
+                            } else {
+                              openTaskEditDraft(generatedTask);
+                            }
+                            setExpandedTaskBranches((current) => current.map((item) =>
+                              item.nodeId === branch.nodeId
+                                ? {
+                                    ...item,
+                                    detailMode: "discovery-subcanvas",
+                                    discoveryGeneratedEditTaskId: generatedIsEditing ? undefined : generatedTask.taskId,
+                                  }
+                                : item
+                            ));
+                          }}
+                        >
+                          {generatedIsEditing ? "收起编辑" : "编辑"}
+                        </button>
+                        {canResetToManaged && (
+                          <button
+                            type="button"
+                            className="discovery-generated-action reset"
+                            data-generated-action="reset-workunit"
+                            disabled={resetSaving}
+                            title="恢复为 Discovery 派发器最新 managed WorkUnit"
+                            onClick={() => {
+                              void resetGeneratedTaskWorkUnit(generatedTask);
+                            }}
+                          >
+                            {resetSaving ? "恢复中..." : "恢复 managed"}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="discovery-generated-action danger"
+                          data-generated-action="archive"
+                          disabled={archiveSaving}
+                          title="通过现有 Canvas Task 归档接口软归档这个 generated Task"
+                          onClick={() => setGeneratedArchiveConfirmTaskId(generatedTask.taskId)}
+                        >
+                          {archiveSaving ? "归档中..." : "归档"}
+                        </button>
+                        <button
+                          type="button"
+                          className="discovery-generated-action"
+                          data-generated-action="run"
+                          disabled={runSaving || Boolean(activeGeneratedRun) || generatedTask.status !== "ready"}
+                          title={generatedTask.status === "ready" ? "启动这个 generated Task 的 WorkUnit run" : "只有 ready generated Task 可以运行"}
+                          onClick={() => {
+                            void runTask(generatedTask);
+                          }}
+                        >
+                          {generatedRunButtonLabel}
+                        </button>
+                        {activeGeneratedRun && (
+                          <button
+                            type="button"
+                            className="discovery-generated-action"
+                            data-generated-action="cancel"
+                            disabled={runSaving}
+                            onClick={() => {
+                              void cancelTaskRun(generatedTask, activeGeneratedRun);
+                            }}
+                          >
+                            停止
+                          </button>
+                        )}
+                        {latestGeneratedRun && (
+                          <button
+                            type="button"
+                            className={`discovery-generated-action summary ${generatedRunIsObserved ? "selected" : ""}`}
+                            data-generated-action="observe-run"
+                            aria-label={`${generatedTask.title} ${generatedRunIsObserved ? "收起 generated run observer" : "打开 generated run observer"}`}
+                            onClick={() => {
+                              setExpandedTaskBranches((current) => current.map((item) => {
+                                if (item.nodeId !== branch.nodeId) return item;
+                                const isSameObserver = item.discoveryGeneratedObserver?.taskId === generatedTask.taskId
+                                  && item.discoveryGeneratedObserver?.runId === latestGeneratedRun.runId;
+                                return {
+                                  ...item,
+                                  detailMode: "discovery-subcanvas",
+                                  observedRunId: undefined,
+                                  selectedFileKeys: [],
+                                  discoveryGeneratedObserver: isSameObserver
+                                    ? undefined
+                                    : {
+                                        taskId: generatedTask.taskId,
+                                        runId: latestGeneratedRun.runId,
+                                        selectedFileKeys: [],
+                                      },
+                                };
+                              }));
+                            }}
+                          >
+                            {generatedRunIsObserved ? "收起输出" : "查看输出"}
+                          </button>
+                        )}
+                      </div>
+                      {archiveConfirmOpen && (
+                        <div
+                          className="discovery-generated-archive-confirm"
+                          data-generated-archive-confirm-for={generatedTask.taskId}
+                        >
+                          <span>确认软归档这个 generated Task？</span>
+                          <div className="discovery-generated-archive-confirm-actions">
+                            <button
+                              type="button"
+                              className="discovery-generated-action danger"
+                              data-generated-action="archive-confirm"
+                              disabled={archiveSaving}
+                              onClick={() => {
+                                void archiveGeneratedTask(generatedTask);
+                              }}
+                            >
+                              确认归档
+                            </button>
+                            <button
+                              type="button"
+                              className="discovery-generated-action"
+                              data-generated-action="archive-cancel"
+                              disabled={archiveSaving}
+                              onClick={() => setGeneratedArchiveConfirmTaskId(null)}
+                            >
+                              取消
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          ),
+        });
+        const generatedEditTask = branch.discoveryGeneratedEditTaskId
+          ? generatedTasks.find((generatedTask) => generatedTask.taskId === branch.discoveryGeneratedEditTaskId) ?? null
+          : null;
+        if (generatedEditTask) {
+          const draft = taskEditDraftByTaskId[generatedEditTask.taskId];
+          const warning = taskEditWarningByTaskId[generatedEditTask.taskId] ?? null;
+          const saving = Boolean(taskEditSavingByTaskId[generatedEditTask.taskId]);
+          if (draft) {
+            panels.push({
+              id: `generated-task-edit-${branch.nodeId}-${generatedEditTask.taskId}`,
+              width: 500,
+              height: 430,
+              sourceId: `discovery-subcanvas-${branch.nodeId}`,
+              resizable: true,
+              interactive: true,
+              panel: (
+                <section
+                  className="task-leader-branch emap-panel-branch task-edit-branch generated-task-edit-branch"
+                  data-generated-edit-task-id={generatedEditTask.taskId}
+                  aria-label={`${generatedEditTask.title} Generated Task 浅编辑`}
+                >
+                  <header className="task-leader-branch-head">
+                    <div className="task-leader-branch-title">
+                      <span>Generated Task 浅编辑</span>
+                      <strong>{generatedEditTask.title}</strong>
+                      <code>{generatedEditTask.taskId}</code>
+                    </div>
+                    <button
+                      type="button"
+                      className="task-leader-branch-collapse"
+                      onClick={() => {
+                        clearTaskEditState(generatedEditTask.taskId);
+                        setExpandedTaskBranches((current) =>
+                          current.map((item) =>
+                            item.nodeId === branch.nodeId
+                              ? { ...item, discoveryGeneratedEditTaskId: undefined }
+                              : item
+                          )
+                        );
+                      }}
+                      aria-label={`收起 ${generatedEditTask.title} Generated Task 浅编辑`}
+                    >
+                      收起
+                    </button>
+                  </header>
+                  <form
+                    className="task-edit-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void saveTaskEdit(generatedEditTask.taskId);
+                    }}
+                  >
+                    <div className="task-edit-note">
+                      只允许修改名称和执行 Agent；sourceDiscoveryTaskId / sourceItemId / item payload 由 Discovery 维护。
+                    </div>
+                    {warning && <div className="task-edit-warning" role="status">{warning}</div>}
+                    <div className="task-edit-grid">
+                      <label className="task-edit-field">
+                        <span>Task 名称</span>
+                        <input
+                          value={draft.title}
+                          onChange={(event) => updateTaskEditDraft(generatedEditTask.taskId, "title", event.target.value)}
+                        />
+                      </label>
+                      <label className="task-edit-field">
+                        <span>Leader Agent</span>
+                        <select
+                          value={draft.leaderAgentId}
+                          onChange={(event) => updateTaskEditDraft(generatedEditTask.taskId, "leaderAgentId", event.target.value)}
+                        >
+                          {agents.map((agent) => (
+                            <option key={agent.agentId} value={agent.agentId}>
+                              {agent.name} ({agent.agentId})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="task-edit-field">
+                        <span>Worker Agent</span>
+                        <select
+                          value={draft.workerAgentId}
+                          onChange={(event) => updateTaskEditDraft(generatedEditTask.taskId, "workerAgentId", event.target.value)}
+                        >
+                          {agents.map((agent) => (
+                            <option key={agent.agentId} value={agent.agentId}>
+                              {agent.name} ({agent.agentId})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="task-edit-field">
+                        <span>Checker Agent</span>
+                        <select
+                          value={draft.checkerAgentId}
+                          onChange={(event) => updateTaskEditDraft(generatedEditTask.taskId, "checkerAgentId", event.target.value)}
+                        >
+                          {agents.map((agent) => (
+                            <option key={agent.agentId} value={agent.agentId}>
+                              {agent.name} ({agent.agentId})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="task-edit-actions">
+                      <button
+                        type="button"
+                        className="task-action-menu-button"
+                        onClick={() => {
+                          clearTaskEditState(generatedEditTask.taskId);
+                          setExpandedTaskBranches((current) =>
+                            current.map((item) =>
+                              item.nodeId === branch.nodeId
+                                ? { ...item, discoveryGeneratedEditTaskId: undefined }
+                                : item
+                            )
+                          );
+                        }}
+                      >
+                        返回子画布
+                      </button>
+                      <button type="submit" className="task-action-menu-button primary" disabled={saving}>
+                        {saving ? "保存中..." : "保存"}
+                      </button>
+                    </div>
+                  </form>
+                </section>
+              ),
+            });
+          }
+        }
+        continue;
+      }
 
       if (branch.detailMode === "edit") {
         const draft = taskEditDraftByTaskId[task.taskId];
@@ -2425,38 +3217,32 @@ export function App() {
       }
     }
 
-    for (const branch of expandedTaskBranches) {
-      if (branch.detailMode !== "run-observer" || !branch.observedRunId) continue;
-      const node = taskNodes.find((candidate) => candidate.nodeId === branch.nodeId) ?? null;
-      const task = node ? tasksById.get(node.taskId) ?? null : null;
-      if (!node || !task) continue;
-      const observedTaskRun = (taskRunsByTaskId[task.taskId] ?? []).find((taskRun) => taskRun.runId === branch.observedRunId) ?? null;
-      if (!observedTaskRun) continue;
-
+    const pushTaskRunObserverPanels = ({
+      observedTaskRun,
+      selectedFileKeys,
+      sourceId,
+      runObserverPanelId,
+      fileDetailPanelIdPrefix,
+      toggleFile,
+      generatedTaskId,
+    }: {
+      observedTaskRun: TeamRunState;
+      selectedFileKeys: string[];
+      sourceId: string;
+      runObserverPanelId: string;
+      fileDetailPanelIdPrefix: string;
+      toggleFile: (key: string) => void;
+      generatedTaskId?: string;
+    }) => {
       const observerState = taskRunObserverByRunId[observedTaskRun.runId] ?? null;
       const attempts = observerState?.attempts ?? [];
       const fileDescriptors = attempts.length > 0 ? buildTaskRunFileDescriptors(attempts) : [];
       const latestAttempt = selectLatestAttempt(attempts);
-      const selectedFileKeys = branch.selectedFileKeys ?? [];
       const selectedFileKeySet = new Set(selectedFileKeys);
       const selectedFileDescriptors = selectedFileKeys
         .map((key) => fileDescriptors.find((descriptor) => descriptor.key === key) ?? null)
         .filter((descriptor): descriptor is TaskRunObserverFileDescriptor => Boolean(descriptor));
       const observedTaskRunIsActive = isActiveRun(observedTaskRun.status);
-      const runObserverPanelId = `run-observer-${branch.nodeId}`;
-
-      const toggleFile = (key: string) => {
-        setExpandedTaskBranches((current) => current.map((item) => {
-          if (item.nodeId !== branch.nodeId) return item;
-          const currentKeys = item.selectedFileKeys ?? [];
-          return {
-            ...item,
-            selectedFileKeys: currentKeys.includes(key)
-              ? currentKeys.filter((fileKey) => fileKey !== key)
-              : [...currentKeys, key],
-          };
-        }));
-      };
 
       const renderFileRow = (descriptor: TaskRunObserverFileDescriptor) => {
         const isSelected = selectedFileKeySet.has(descriptor.key);
@@ -2496,14 +3282,23 @@ export function App() {
       const checkerFiles = fileDescriptors.filter((d) => d.kind === "checker");
       const resultFiles = fileDescriptors.filter((d) => d.kind === "result");
       const hasFiles = fileDescriptors.length > 0;
+      const emptyFilesMessage = attempts.length === 0
+        ? "该运行没有 attempt 记录。可能是子任务未启动、已跳过，或旧运行未保存 attempt。"
+        : latestAttempt?.status === "failed"
+          ? "该 attempt 未产生可展示文件。请查看 Worker / Checker 过程或错误摘要。"
+          : "该 attempt 未产生可展示文件。";
 
       panels.push({
         id: runObserverPanelId,
         width: 420,
         autoHeight: true,
-        sourceId: taskMenuPanelId(branch.nodeId),
+        sourceId,
         panel: (
-          <div className={`emap-run-observer-panel ${observedTaskRunIsActive ? "active" : "terminal"}`}>
+          <div
+            className={`emap-run-observer-panel ${observedTaskRunIsActive ? "active" : "terminal"}`}
+            data-generated-observer-task-id={generatedTaskId}
+            data-generated-observer-run-id={generatedTaskId ? observedTaskRun.runId : undefined}
+          >
             <header className="emap-run-observer-head">
               <span>{"\u8fd0\u884c\u89c2\u5bdf"}</span>
               <strong>{RUN_STATUS_LABELS[observedTaskRun.status]}</strong>
@@ -2524,7 +3319,7 @@ export function App() {
               {renderFileSection("\u9a8c\u6536\u7ed3\u679c", resultFiles)}
             </div>
             {!hasFiles && !observerState?.loading && !observedTaskRunIsActive && (
-              <div className="emap-observer-empty">{"\u6682\u65e0 attempt \u6587\u4ef6\u3002\u8fd0\u884c\u521a\u542f\u52a8\u65f6\u8fd9\u91cc\u4f1a\u968f\u8f6e\u8be2\u8865\u9f50\u3002"}</div>
+              <div className="emap-observer-empty">{emptyFilesMessage}</div>
             )}
           </div>
         ),
@@ -2533,7 +3328,7 @@ export function App() {
       for (const descriptor of selectedFileDescriptors) {
         const fileState = observerState?.files[descriptor.key];
         panels.push({
-          id: `file-detail-${branch.nodeId}-${descriptor.key}`.replace(/[^A-Za-z0-9_-]/g, "-"),
+          id: `${fileDetailPanelIdPrefix}-${descriptor.key}`.replace(/[^A-Za-z0-9_-]/g, "-"),
           width: 460,
           height: 420,
           sourceId: runObserverPanelId,
@@ -2567,10 +3362,86 @@ export function App() {
           ),
         });
       }
+    };
+
+    for (const branch of expandedTaskBranches) {
+      if (branch.detailMode !== "run-observer" || !branch.observedRunId) continue;
+      const node = taskNodes.find((candidate) => candidate.nodeId === branch.nodeId) ?? null;
+      const task = node ? tasksById.get(node.taskId) ?? null : null;
+      if (!node || !task) continue;
+      const observedTaskRun = (taskRunsByTaskId[task.taskId] ?? []).find((taskRun) => taskRun.runId === branch.observedRunId) ?? null;
+      if (!observedTaskRun) continue;
+
+      const toggleFile = (key: string) => {
+        setExpandedTaskBranches((current) => current.map((item) => {
+          if (item.nodeId !== branch.nodeId) return item;
+          const currentKeys = item.selectedFileKeys ?? [];
+          return {
+            ...item,
+            selectedFileKeys: currentKeys.includes(key)
+              ? currentKeys.filter((fileKey) => fileKey !== key)
+              : [...currentKeys, key],
+          };
+        }));
+      };
+
+      pushTaskRunObserverPanels({
+        observedTaskRun,
+        selectedFileKeys: branch.selectedFileKeys ?? [],
+        sourceId: taskMenuPanelId(branch.nodeId),
+        runObserverPanelId: `run-observer-${branch.nodeId}`,
+        fileDetailPanelIdPrefix: `file-detail-${branch.nodeId}`,
+        toggleFile,
+      });
+    }
+
+    for (const branch of expandedTaskBranches) {
+      if (branch.detailMode !== "discovery-subcanvas" || !branch.discoveryGeneratedObserver) continue;
+      const node = taskNodes.find((candidate) => candidate.nodeId === branch.nodeId) ?? null;
+      const discoveryTask = node ? tasksById.get(node.taskId) ?? null : null;
+      if (!node || !discoveryTask || discoveryTask.canvasKind !== "discovery" || discoveryTask.generatedSource) continue;
+
+      const generatedObserver = branch.discoveryGeneratedObserver;
+      const generatedTask = generatedTasksById.get(generatedObserver.taskId) ?? null;
+      if (!generatedTask || generatedTask.generatedSource?.sourceDiscoveryTaskId !== discoveryTask.taskId) continue;
+      const activeDiscoveryRun = selectActiveDiscoveryRootRun(discoveryTask.taskId, taskRunsByTaskId);
+      const observedTaskRun = visibleDiscoveryGeneratedRuns(generatedTask, discoveryTask.taskId, activeDiscoveryRun, taskRunsByTaskId)
+        .find((taskRun) => taskRun.runId === generatedObserver.runId) ?? null;
+      if (!observedTaskRun) continue;
+
+      const toggleFile = (key: string) => {
+        setExpandedTaskBranches((current) => current.map((item) => {
+          if (item.nodeId !== branch.nodeId) return item;
+          const currentObserver = item.discoveryGeneratedObserver;
+          if (!currentObserver || currentObserver.taskId !== generatedTask.taskId || currentObserver.runId !== observedTaskRun.runId) {
+            return item;
+          }
+          const currentKeys = currentObserver.selectedFileKeys ?? [];
+          return {
+            ...item,
+            discoveryGeneratedObserver: {
+              ...currentObserver,
+              selectedFileKeys: currentKeys.includes(key)
+                ? currentKeys.filter((fileKey) => fileKey !== key)
+                : [...currentKeys, key],
+            },
+          };
+        }));
+      };
+
+      pushTaskRunObserverPanels({
+        observedTaskRun,
+        selectedFileKeys: generatedObserver.selectedFileKeys ?? [],
+        sourceId: `discovery-subcanvas-${branch.nodeId}`,
+        runObserverPanelId: `generated-run-observer-${branch.nodeId}-${generatedTask.taskId}`,
+        fileDetailPanelIdPrefix: `generated-file-detail-${branch.nodeId}-${generatedTask.taskId}`,
+        toggleFile,
+        generatedTaskId: generatedTask.taskId,
+      });
     }
 
     return panels;
-  }, [agents, agentsById, archiveTask, cancelTaskRun, clearTaskEditWarning, copyTaskLeaderContext, expandedTaskBranches, openTaskEditDraft, registerTaskLeaderManualCopyRef, runTask, saveTaskEdit, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskEditDraft]);
+  }, [agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearTaskEditState, clearTaskEditWarning, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, expandedTaskBranches, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, openTaskEditDraft, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runTask, saveTaskEdit, scheduleLiveTaskDiscoveryRefresh, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskEditDraft]);
 
   return (
     <div className="app-shell" data-theme={theme}>
@@ -2664,7 +3535,8 @@ export function App() {
                 sourceConnections={sourceConnections}
                 sourceConnectionDraft={sourceConnectionDraft}
                 taskRunsByTaskId={taskRunsByTaskId}
-                focusedTaskNodeId={expandedTaskNode?.nodeId ?? null}
+                discoverySummariesByTaskId={discoverySummariesByTaskId}
+                focusedTaskNodeId={focusedTaskBranch?.nodeId ?? null}
                 onSelectCanvasTask={toggleTaskBranch}
                 onMoveCanvasTask={moveTaskNode}
                 minimizedTaskNodeIds={minimizedTaskNodeIds}
@@ -2678,13 +3550,12 @@ export function App() {
                 onSourceTextChange={updateTextSourceNode}
                 onTaskOutputPortSelect={beginTaskPortConnection}
                 onTaskInputPortSelect={completeTaskPortConnection}
-                taskBranchPanel={expandedTaskBranchPanel}
                 taskBranchPanels={taskBranchPanelItems}
-                taskChildBranchPanel={expandedTaskChildBranchPanel}
-                taskChildBranchInteractive={false}
                 taskChildBranchPanels={taskChildBranchPanels}
                 viewport={canvasViewport}
                 onViewportChange={setCanvasViewport}
+                branchLayout={canvasBranchLayout}
+                onBranchLayoutChange={updateCanvasBranchLayout}
                 toolbarStart={agentToolbar}
                 toolbarEnd={mapToolbarControls}
                 rootNodeFilter={rootNodeFilter}

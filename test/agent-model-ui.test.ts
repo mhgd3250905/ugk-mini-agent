@@ -66,6 +66,16 @@ test("standalone agents page follows the home cockpit visual system", () => {
 	assert.match(page, /body\[data-standalone-theme="cockpit"\] \.ag-stat-card/);
 });
 
+test("standalone agents page exposes a real child agent skill refresh action", () => {
+	const page = renderAgentsPage();
+
+	assert.match(page, /function apiRefreshSkill\(agentId, skillName\)/);
+	assert.match(page, /\/skills\/" \+ encodeURIComponent\(skillName\) \+ "\/refresh"/);
+	assert.match(page, /function handleRefreshSkillFromMain\(skillName\)/);
+	assert.match(page, /已从主 Agent 更新/);
+	assert.match(page, /refreshBtn\.textContent = state\.refreshingSkillName === skill\.skillName \? "更新中\.\.\." : "更新"/);
+});
+
 test("playground model settings follow the active agent default model outside main", () => {
 	const page = renderPlaygroundPage();
 

@@ -1,6 +1,7 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
+import { renameWithTransientRetry } from "../../file-system.js";
 import type { FeishuDeliveryTarget } from "./types.js";
 
 export interface FeishuRuntimeSettings {
@@ -88,7 +89,7 @@ export class FeishuSettingsStore {
 		await mkdir(dirname(this.options.settingsPath), { recursive: true });
 		const tempPath = `${this.options.settingsPath}.${process.pid}.${randomUUID()}.tmp`;
 		await writeFile(tempPath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
-		await rename(tempPath, this.options.settingsPath);
+		await renameWithTransientRetry(tempPath, this.options.settingsPath);
 	}
 }
 

@@ -99,7 +99,7 @@ export function getAppConfig(projectRoot: string = process.cwd()): AppConfig {
 	return {
 		host: process.env.HOST ?? "127.0.0.1",
 		port: Number(process.env.PORT ?? "3000"),
-		publicBaseUrl: process.env.PUBLIC_BASE_URL?.trim() || undefined,
+		publicBaseUrl: normalizeConfiguredPublicBaseUrl(process.env.PUBLIC_BASE_URL),
 		projectRoot,
 		dataDir,
 		agentDataDir,
@@ -127,4 +127,12 @@ export function getAppConfig(projectRoot: string = process.cwd()): AppConfig {
 		teamFinalizerPhaseTimeoutMs: Number(process.env.TEAM_FINALIZER_PHASE_TIMEOUT_MS ?? "300000"),
 		teamMaxRunDurationMinutes: Number(process.env.TEAM_MAX_RUN_DURATION_MINUTES ?? "100"),
 	};
+}
+
+export function normalizeConfiguredPublicBaseUrl(value: string | undefined): string | undefined {
+	const normalized = value?.trim().replace(/\/+$/, "");
+	if (!normalized || normalized.toLowerCase() === "auto") {
+		return undefined;
+	}
+	return normalized;
 }

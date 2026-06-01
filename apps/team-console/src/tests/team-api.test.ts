@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { MockTeamApi, resetMockTeamApiState, mockTeamTasks } from "../fixtures/team-fixtures";
+import {
+  MockTeamApi,
+  resetMockTeamApiState,
+  mockDiscoveryGeneratedTasks,
+  mockDiscoveryRootTask,
+  mockTeamTasks,
+} from "../fixtures/team-fixtures";
 import { LiveTeamApi } from "../api/team-api";
 import {
   ALL_FIXTURES,
@@ -109,10 +115,59 @@ describe("MockTeamApi", () => {
 
     expect(tasks.length).toBeGreaterThan(0);
     expect(tasks[0]?.taskId).toBe("task_research_medtrum");
+    expect(tasks.some((task) => task.taskId === mockDiscoveryRootTask.taskId && task.canvasKind === "discovery")).toBe(true);
+    expect(tasks.every((task) => task.generatedSource === undefined)).toBe(true);
     expect(tasks[0]?.leaderAgentId).toBeTruthy();
     expect(tasks[0]?.workUnit.workerAgentId).toBeTruthy();
     expect(tasks[0]?.workUnit.checkerAgentId).toBeTruthy();
     expect(tasks[0]?.workUnit.acceptance.rules.length).toBeGreaterThan(0);
+  });
+
+  it("keeps mock generated Discovery children behind listGeneratedTasks", async () => {
+    const rootTasks = await api.listTasks();
+    const generatedTasks = await api.listGeneratedTasks(mockDiscoveryRootTask.taskId);
+    const generatedWithArchived = await api.listGeneratedTasks(mockDiscoveryRootTask.taskId, { includeArchived: true });
+
+    expect(rootTasks.map((task) => task.taskId)).toContain(mockDiscoveryRootTask.taskId);
+    expect(rootTasks.map((task) => task.taskId)).not.toEqual(
+      expect.arrayContaining(mockDiscoveryGeneratedTasks.map((task) => task.taskId)),
+    );
+    expect(generatedTasks.map((task) => task.taskId)).toEqual([
+      "task_generated_vultr",
+      "task_generated_hetzner",
+    ]);
+    expect(new Set(generatedTasks.map((task) => task.generatedSource?.itemStatus))).toEqual(new Set(["active", "stale"]));
+    expect(generatedWithArchived.map((task) => task.taskId)).toEqual([
+      "task_generated_vultr",
+      "task_generated_hetzner",
+      "task_generated_archived_ovh",
+    ]);
+  });
+
+  it("resets mock generated Discovery children to the stored managed snapshot", async () => {
+    const before = (await api.listGeneratedTasks(mockDiscoveryRootTask.taskId, { includeArchived: true }))
+      .find((task) => task.taskId === "task_generated_hetzner");
+
+    expect(before?.generatedSource?.workUnitMode).toBe("customized");
+    expect(before?.generatedSource?.latestManagedWorkUnit).toBeDefined();
+
+    const response = await api.resetGeneratedTaskWorkUnit("task_generated_hetzner");
+
+    expect(response.task.taskId).toBe("task_generated_hetzner");
+    expect(response.task.title).toBe(before?.generatedSource?.latestManagedWorkUnit?.title);
+    expect(response.task.workUnit).toEqual(before?.generatedSource?.latestManagedWorkUnit);
+    expect(response.task.generatedSource).toMatchObject({
+      sourceDiscoveryTaskId: mockDiscoveryRootTask.taskId,
+      sourceItemId: "hetzner",
+      itemStatus: "stale",
+      workUnitMode: "managed",
+      itemPayload: before?.generatedSource?.itemPayload,
+    });
+    expect(response.task.generatedSource?.latestManagedWorkUnit).toEqual(before?.generatedSource?.latestManagedWorkUnit);
+
+    const after = (await api.listGeneratedTasks(mockDiscoveryRootTask.taskId, { includeArchived: true }))
+      .find((task) => task.taskId === "task_generated_hetzner");
+    expect(after).toEqual(response.task);
   });
 
   it("updates mock Team Tasks and preserves warnings", async () => {
@@ -129,7 +184,9 @@ describe("MockTeamApi", () => {
     expect(response.task.title).toBe("更新后的 Task");
     expect(response.task.workUnit.checkerAgentId).toBe(task.workUnit.workerAgentId);
     expect(response.warnings?.[0]).toContain("self-checking weakens independent acceptance");
-    await expect(api.listTasks()).resolves.toEqual([response.task]);
+    const listed = await api.listTasks();
+    expect(listed.find((candidate) => candidate.taskId === task.taskId)).toEqual(response.task);
+    expect(listed.some((candidate) => candidate.generatedSource)).toBe(false);
   });
 
   it("archives mock Team Tasks without deleting the fixture definition", async () => {
@@ -139,7 +196,9 @@ describe("MockTeamApi", () => {
 
     expect(response.task.archived).toBe(true);
     expect(response.task.status).toBe("archived");
-    await expect(api.listTasks()).resolves.toEqual([]);
+    await expect(api.listTasks()).resolves.not.toEqual(expect.arrayContaining([expect.objectContaining({
+      taskId: task.taskId,
+    })]));
     expect(mockTeamTasks[0]?.archived).toBe(false);
   });
 
@@ -359,6 +418,41 @@ describe("LiveTeamApi", () => {
     expect(tasks[0]?.status).toBe("drafting");
   });
 
+  it("fetches live generated Discovery child catalog with an encoded task id", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const generatedTask = mockDiscoveryGeneratedTasks[0]!;
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ tasks: [generatedTask] }), { status: 200 }));
+
+    const tasks = await api.listGeneratedTasks("task/a b");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/tasks/task%2Fa%20b/generated-tasks");
+    expect(tasks).toEqual([generatedTask]);
+  });
+
+  it("adds includeArchived only for live generated Discovery child catalog requests that need it", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ tasks: [] }), { status: 200 }));
+
+    await api.listGeneratedTasks("task/a b", { includeArchived: true });
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/tasks/task%2Fa%20b/generated-tasks?includeArchived=1");
+  });
+
+  it("treats missing live generated Discovery child catalog endpoint as an empty list", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response("not found", { status: 404 }));
+
+    await expect(api.listGeneratedTasks("task_discovery")).resolves.toEqual([]);
+  });
+
+  it("accepts bare array live generated Discovery child catalog responses", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const generatedTask = mockDiscoveryGeneratedTasks[1]!;
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify([generatedTask]), { status: 200 }));
+
+    await expect(api.listGeneratedTasks("task_discovery")).resolves.toEqual([generatedTask]);
+  });
+
   it("lists and creates live typed Task connections", async () => {
     const api = new LiveTeamApi("/v1/team");
     const connection = {
@@ -441,6 +535,39 @@ describe("LiveTeamApi", () => {
       headers: { accept: "application/json" },
     });
     expect(response.task.archived).toBe(true);
+  });
+
+  it("posts live generated WorkUnit reset to the encoded endpoint", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const task = {
+      ...mockDiscoveryGeneratedTasks[0]!,
+      generatedSource: {
+        ...mockDiscoveryGeneratedTasks[0]!.generatedSource!,
+        workUnitMode: "managed" as const,
+      },
+    };
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ task, warnings: [] }), { status: 200 }));
+
+    const response = await api.resetGeneratedTaskWorkUnit("task/a b");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/tasks/task%2Fa%20b/generated-workunit/reset", {
+      method: "POST",
+      headers: { accept: "application/json" },
+    });
+    expect(response.task.taskId).toBe(task.taskId);
+    expect(response.warnings).toEqual([]);
+  });
+
+  it("maps non-OK live generated WorkUnit reset responses through API errors", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      error: "latest managed WorkUnit snapshot is missing",
+    }), { status: 409 }));
+
+    await expect(api.resetGeneratedTaskWorkUnit("task_without_snapshot")).rejects.toEqual({
+      message: "latest managed WorkUnit snapshot is missing",
+      status: 409,
+    });
   });
 
   it("lists live Canvas Task runs for a Task", async () => {

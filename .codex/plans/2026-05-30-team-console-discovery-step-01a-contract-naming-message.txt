@@ -1,0 +1,72 @@
+请接手 E:\AII\ugk-pi 的 Team Console Discovery 节点第 01A 步：契约命名修正。
+
+当前基线：
+- 最新 commit: af0362a docs(team-console): record task chain validation
+- 分支状态: main...origin/main [ahead 6]
+- 已完成: 第 01 步已添加 Discovery Task / generated Task 的共享类型；Codex review 发现 TeamDiscoverySpec.workerAgentId/checkerAgentId 命名容易和 Discovery Task 自己的 workUnit.workerAgentId/checkerAgentId 混淆
+- 当前验证: 第 01 步已通过 Team Console contract drift test、Team Console tsc、npx tsc --noEmit、git diff --check；本步仍必须自行复跑指定验证
+- 暂存区: 应为空；执行前用 git diff --cached --stat 确认
+- Dirty 边界: .pi/skills/anthropics/skill-creator/** 是既有 tracked deletion，不要 stage、不要恢复；.pi/skills/skill-creator/、.codex/plans/*、public/runtime 报告、临时 HTML、generate_report*.py、report_template.html 不要提交
+
+必须先读：
+- AGENTS.md
+- apps/team-console/README.md
+- docs/team-runtime.md
+- .codex/plans/2026-05-30-team-console-discovery-requirements.md
+- .codex/plans/2026-05-30-team-console-discovery-step-01a-contract-naming-plan.md
+- src/team/types.ts
+- apps/team-console/src/api/team-types.ts
+- apps/team-console/src/tests/team-contract-drift.test.ts
+
+严格按计划文件执行：
+- .codex/plans/2026-05-30-team-console-discovery-step-01a-contract-naming-plan.md
+
+本轮只做：
+- 在 backend/frontend TeamDiscoverySpec 中把 workerAgentId 改名为 generatedWorkerAgentId。
+- 在 backend/frontend TeamDiscoverySpec 中把 checkerAgentId 改名为 generatedCheckerAgentId。
+- 保持 contract drift guard 通过。
+- 完成后停下交付。
+
+禁止做：
+- 不实现 runtime behavior、route、store、UI、runner、scheduler、skill
+- 不改 src/team/task-validation.ts
+- 不改 src/team/task-store.ts
+- 不改 src/team/routes.ts
+- 不改 src/team/task-run-service.ts
+- 不改 src/team/role-prompt-contract.ts
+- 不改 apps/team-console/src/app/*
+- 不改 apps/team-console/src/graph/*
+- 不改 .pi/skills/**
+- 不创建计划外文件
+- 不做整文件格式化或换行符转换；保持 touched files 的既有 EOL/格式
+- 不 stage、不 commit，除非用户另行明确授权
+- 不使用 git add -A
+- 不提交 .env/.data/runtime 产物/temp 文件/报告产物/未知 .pi/skills/*/skills-lock.json
+
+执行要求：
+- TeamCanvasTask.workUnit.workerAgentId/checkerAgentId 表示执行和验收 Discovery 节点自身。
+- TeamDiscoverySpec.generatedWorkerAgentId/generatedCheckerAgentId 表示生成出来的 item Task 默认 worker/checker。
+- TeamDiscoverySpec.dispatcherAgentId 表示为每个 item 设计 WorkUnit 的 dispatcher/decomposer agent。
+- 不要保留 workerAgentId/checkerAgentId 作为 DiscoverySpec alias；当前没有 persisted Discovery records，应该干净改名。
+- 如果计划假设不成立，停下说明，不要顺手扩大范围。
+- 如果小改动产生超大 diff，先检查是否为 EOL/formatter churn，修正后再继续。
+
+最终验证：
+- npm --prefix apps/team-console test -- --run src/tests/team-contract-drift.test.ts
+- npm --prefix apps/team-console exec tsc -- --noEmit -p tsconfig.json
+- npx tsc --noEmit
+- git diff --check
+- git diff --stat -- src/team/types.ts apps/team-console/src/api/team-types.ts apps/team-console/src/tests/team-contract-drift.test.ts
+- git diff --numstat -- src/team/types.ts apps/team-console/src/api/team-types.ts apps/team-console/src/tests/team-contract-drift.test.ts
+- git ls-files --eol src/team/types.ts apps/team-console/src/api/team-types.ts apps/team-console/src/tests/team-contract-drift.test.ts
+- git diff --cached --stat
+
+完成后按这个格式回复：
+1. 字段重命名结果。
+2. 明确说明没有改 runtime behavior、route、store、UI、runner、scheduler、skill。
+3. 每条验证命令和结果。
+4. diff stat / numstat 摘要，并说明是否存在异常大规模格式噪声。
+5. 是否有 EOL 或 formatter-only churn。
+6. 是否有计划假设不成立。
+
+不要 stage，不要 commit。

@@ -891,21 +891,290 @@ export const mockTeamTasks: TeamCanvasTask[] = [
   },
 ];
 
-function cloneMockTeamTask(task: TeamCanvasTask): TeamCanvasTask {
-  return {
-    ...task,
-    workUnit: {
-      ...task.workUnit,
-      input: { ...task.workUnit.input },
-      inputPorts: task.workUnit.inputPorts ? task.workUnit.inputPorts.map((port) => ({ ...port })) : undefined,
-      outputPorts: task.workUnit.outputPorts ? task.workUnit.outputPorts.map((port) => ({ ...port })) : undefined,
-      outputContract: { ...task.workUnit.outputContract },
-      acceptance: { rules: [...task.workUnit.acceptance.rules] },
+export const mockDiscoveryRootTask: TeamCanvasTask = {
+  taskId: "task_discovery_cloud_vendors",
+  canvasKind: "discovery",
+  title: "发现云服务候选",
+  leaderAgentId: "main",
+  status: "ready",
+  createdAt: "2026-05-31T00:00:00.000Z",
+  updatedAt: "2026-05-31T00:00:00.000Z",
+  archived: false,
+  discoverySpec: {
+    schemaVersion: "team/discovery-spec-1",
+    discoveryGoal: "发现适合后续核查的云服务候选。",
+    outputKey: "items",
+    itemIdField: "id",
+    requiredItemFields: ["id"],
+    recommendedItemFields: ["title", "type"],
+    dispatchGoal: "逐项生成云服务公开证据核查 Task。",
+    dispatcherAgentId: "main",
+    generatedWorkerAgentId: "search",
+    generatedCheckerAgentId: "reviewer",
+    autoRun: { enabled: true, concurrency: 3 },
+  },
+  workUnit: {
+    title: "发现云服务候选",
+    input: { text: "发现可被后续 Task 独立核查的云服务候选。" },
+    outputContract: { text: "输出 JSON，包含 items 数组，每个 item 至少有稳定 id。" },
+    outputCheck: {
+      type: "json_items",
+      outputKey: "items",
+      requiredFields: ["id"],
     },
+    acceptance: {
+      rules: [
+        "输出必须是包含 items 的 JSON",
+        "每个 item 必须有稳定字符串 id",
+      ],
+    },
+    workerAgentId: "search",
+    checkerAgentId: "reviewer",
+  },
+};
+
+export const mockDiscoveryGeneratedTasks: TeamCanvasTask[] = [
+  {
+    taskId: "task_generated_vultr",
+    title: "核查 Vultr 公开证据",
+    leaderAgentId: "main",
+    status: "ready",
+    createdAt: "2026-05-31T00:01:00.000Z",
+    updatedAt: "2026-05-31T00:01:00.000Z",
+    archived: false,
+    generatedSource: {
+      schemaVersion: "team/generated-task-source-1",
+      sourceDiscoveryTaskId: mockDiscoveryRootTask.taskId,
+      sourceItemId: "vultr",
+      itemStatus: "active",
+      itemPayload: { id: "vultr", title: "Vultr", type: "cloud-provider" },
+      latestDiscoveryRunId: "run_discovery_cloud_vendors",
+      latestDiscoveryAttemptId: "attempt_discovery_cloud_vendors",
+      latestDiscoveredAt: "2026-05-31T00:01:00.000Z",
+      workUnitMode: "managed",
+      latestManagedWorkUnit: {
+        title: "核查 Vultr 公开证据",
+        input: { text: "核查 Vultr 的官网、产品和公开证据。" },
+        outputPorts: [{ id: "report_md", label: "Markdown 报告", type: "md" }],
+        outputContract: { text: "输出 Markdown 证据核查报告。" },
+        acceptance: {
+          rules: [
+            "必须给出来源",
+            "必须标明证据可信度",
+          ],
+        },
+        workerAgentId: "search",
+        checkerAgentId: "reviewer",
+      },
+    },
+    workUnit: {
+      title: "核查 Vultr 公开证据",
+      input: { text: "核查 Vultr 的官网、产品和公开证据。" },
+      outputPorts: [{ id: "report_md", label: "Markdown 报告", type: "md" }],
+      outputContract: { text: "输出 Markdown 证据核查报告。" },
+      acceptance: {
+        rules: [
+          "必须给出来源",
+          "必须标明证据可信度",
+        ],
+      },
+      workerAgentId: "search",
+      checkerAgentId: "reviewer",
+    },
+  },
+  {
+    taskId: "task_generated_hetzner",
+    title: "核查 Hetzner 公开证据",
+    leaderAgentId: "main",
+    status: "ready",
+    createdAt: "2026-05-31T00:02:00.000Z",
+    updatedAt: "2026-05-31T00:02:00.000Z",
+    archived: false,
+    generatedSource: {
+      schemaVersion: "team/generated-task-source-1",
+      sourceDiscoveryTaskId: mockDiscoveryRootTask.taskId,
+      sourceItemId: "hetzner",
+      itemStatus: "stale",
+      itemPayload: { id: "hetzner", title: "Hetzner", type: "cloud-provider" },
+      latestDiscoveryRunId: "run_discovery_cloud_vendors",
+      latestDiscoveryAttemptId: "attempt_discovery_cloud_vendors",
+      latestDiscoveredAt: "2026-05-31T00:02:00.000Z",
+      workUnitMode: "customized",
+      latestManagedWorkUnit: {
+        title: "派发器核查 Hetzner 公开证据",
+        input: { text: "按 Discovery 最新 item 核查 Hetzner 的官网、产品和公开证据。" },
+        outputPorts: [{ id: "report_md", label: "Markdown 报告", type: "md" }],
+        outputContract: { text: "输出 Markdown 证据核查报告。" },
+        acceptance: {
+          rules: [
+            "必须给出来源",
+            "必须标明证据可信度",
+          ],
+        },
+        workerAgentId: "search",
+        checkerAgentId: "reviewer",
+      },
+    },
+    workUnit: {
+      title: "核查 Hetzner 公开证据",
+      input: { text: "核查 Hetzner 的官网、产品和公开证据。" },
+      outputPorts: [{ id: "report_md", label: "Markdown 报告", type: "md" }],
+      outputContract: { text: "输出 Markdown 证据核查报告。" },
+      acceptance: {
+        rules: [
+          "必须给出来源",
+          "必须标明证据可信度",
+        ],
+      },
+      workerAgentId: "search",
+      checkerAgentId: "reviewer",
+    },
+  },
+  {
+    taskId: "task_generated_archived_ovh",
+    title: "核查 OVH 公开证据",
+    leaderAgentId: "main",
+    status: "archived",
+    createdAt: "2026-05-31T00:03:00.000Z",
+    updatedAt: "2026-05-31T00:03:00.000Z",
+    archived: true,
+    generatedSource: {
+      schemaVersion: "team/generated-task-source-1",
+      sourceDiscoveryTaskId: mockDiscoveryRootTask.taskId,
+      sourceItemId: "ovh",
+      itemStatus: "active",
+      itemPayload: { id: "ovh", title: "OVH", type: "cloud-provider" },
+      latestDiscoveryRunId: "run_discovery_cloud_vendors",
+      latestDiscoveryAttemptId: "attempt_discovery_cloud_vendors",
+      latestDiscoveredAt: "2026-05-31T00:03:00.000Z",
+      workUnitMode: "managed",
+      latestManagedWorkUnit: {
+        title: "核查 OVH 公开证据",
+        input: { text: "核查 OVH 的官网、产品和公开证据。" },
+        outputContract: { text: "输出 Markdown 证据核查报告。" },
+        acceptance: { rules: ["必须给出来源"] },
+        workerAgentId: "search",
+        checkerAgentId: "reviewer",
+      },
+    },
+    workUnit: {
+      title: "核查 OVH 公开证据",
+      input: { text: "核查 OVH 的官网、产品和公开证据。" },
+      outputContract: { text: "输出 Markdown 证据核查报告。" },
+      acceptance: { rules: ["必须给出来源"] },
+      workerAgentId: "search",
+      checkerAgentId: "reviewer",
+    },
+  },
+];
+
+const mockDiscoveryRootRunState: TeamRunState = {
+  runId: "run_discovery_cloud_vendors",
+  planId: `canvas_task_${mockDiscoveryRootTask.taskId}`,
+  source: { type: "canvas-task", taskId: mockDiscoveryRootTask.taskId },
+  teamUnitId: `canvas_task_unit_${mockDiscoveryRootTask.taskId}`,
+  status: "completed",
+  createdAt: "2026-05-31T00:04:00.000Z",
+  startedAt: "2026-05-31T00:04:01.000Z",
+  finishedAt: "2026-05-31T00:04:30.000Z",
+  currentTaskId: null,
+  taskStates: {
+    [mockDiscoveryRootTask.taskId]: {
+      status: "succeeded",
+      attemptCount: 1,
+      activeAttemptId: "attempt_discovery_cloud_vendors",
+      resultRef: `tasks/${mockDiscoveryRootTask.taskId}/attempts/attempt_discovery_cloud_vendors/accepted-result.md`,
+      errorSummary: null,
+      progress: {
+        phase: "succeeded",
+        message: "Discovery accepted with one blocked dispatch item.",
+        updatedAt: "2026-05-31T00:04:30.000Z",
+      },
+    },
+  },
+  summary: {
+    totalTasks: 1,
+    succeededTasks: 1,
+    failedTasks: 0,
+    cancelledTasks: 0,
+    skippedTasks: 0,
+  },
+};
+
+const mockDiscoveryRootAttemptMetadata: TeamAttemptMetadata = {
+  attemptId: "attempt_discovery_cloud_vendors",
+  taskId: mockDiscoveryRootTask.taskId,
+  status: "succeeded",
+  phase: "succeeded",
+  createdAt: "2026-05-31T00:04:01.000Z",
+  updatedAt: "2026-05-31T00:04:30.000Z",
+  finishedAt: "2026-05-31T00:04:30.000Z",
+  worker: [],
+  checker: [],
+  watcher: null,
+  resultRef: `tasks/${mockDiscoveryRootTask.taskId}/attempts/attempt_discovery_cloud_vendors/accepted-result.md`,
+  errorSummary: null,
+  files: ["accepted-result.md"],
+  discoveryDispatch: [
+    {
+      itemId: "vultr",
+      status: "created",
+      generatedTaskId: "task_generated_vultr",
+      createdAt: "2026-05-31T00:04:20.000Z",
+    },
+    {
+      itemId: "digitalocean",
+      status: "blocked",
+      error: "dispatcher output parse error: invalid JSON",
+      createdAt: "2026-05-31T00:04:21.000Z",
+    },
+  ],
+};
+
+function cloneMockWorkUnit(workUnit: TeamCanvasTask["workUnit"]): TeamCanvasTask["workUnit"] {
+  return {
+    ...workUnit,
+    input: { ...workUnit.input },
+    inputPorts: workUnit.inputPorts ? workUnit.inputPorts.map((port) => ({ ...port })) : undefined,
+    outputPorts: workUnit.outputPorts ? workUnit.outputPorts.map((port) => ({ ...port })) : undefined,
+    outputContract: { ...workUnit.outputContract },
+    acceptance: { rules: [...workUnit.acceptance.rules] },
   };
 }
 
-let mockCanvasTasks: TeamCanvasTask[] = mockTeamTasks.map(cloneMockTeamTask);
+function cloneMockTeamTask(task: TeamCanvasTask): TeamCanvasTask {
+  return {
+    ...task,
+    discoverySpec: task.discoverySpec
+      ? {
+          ...task.discoverySpec,
+          requiredItemFields: [...task.discoverySpec.requiredItemFields],
+          recommendedItemFields: task.discoverySpec.recommendedItemFields
+            ? [...task.discoverySpec.recommendedItemFields]
+            : undefined,
+          autoRun: { ...task.discoverySpec.autoRun },
+        }
+      : undefined,
+    generatedSource: task.generatedSource
+      ? {
+          ...task.generatedSource,
+          itemPayload: { ...task.generatedSource.itemPayload },
+          ...(task.generatedSource.latestManagedWorkUnit
+            ? { latestManagedWorkUnit: cloneMockWorkUnit(task.generatedSource.latestManagedWorkUnit) }
+            : {}),
+        }
+      : undefined,
+    workUnit: cloneMockWorkUnit(task.workUnit),
+  };
+}
+
+const mockCanvasTaskSeed: TeamCanvasTask[] = [
+  ...mockTeamTasks,
+  mockDiscoveryRootTask,
+  ...mockDiscoveryGeneratedTasks,
+];
+
+let mockCanvasTasks: TeamCanvasTask[] = mockCanvasTaskSeed.map(cloneMockTeamTask);
 let mockTaskRunCounter = 0;
 let mockTaskConnectionCounter = 0;
 let mockTaskRunsByTaskId = new Map<string, TeamRunState[]>();
@@ -918,6 +1187,17 @@ let mockSourceNodes: TeamCanvasSourceNode[] = [];
 let mockSourceConnections: TeamCanvasSourceConnection[] = [];
 let mockSourceNodeCounter = 0;
 let mockSourceConnectionCounter = 0;
+
+function seedMockDiscoveryDispatchState() {
+  mockTaskRunsByTaskId.set(mockDiscoveryRootTask.taskId, [cloneTeamRunState(mockDiscoveryRootRunState)]);
+  mockTaskRunAttempts.set(`${mockDiscoveryRootRunState.runId}/${mockDiscoveryRootTask.taskId}`, [
+    {
+      ...mockDiscoveryRootAttemptMetadata,
+      files: [...mockDiscoveryRootAttemptMetadata.files],
+      discoveryDispatch: mockDiscoveryRootAttemptMetadata.discoveryDispatch?.map((outcome) => ({ ...outcome })),
+    },
+  ]);
+}
 
 function cloneMockSourceNode(node: TeamCanvasSourceNode): TeamCanvasSourceNode {
   return {
@@ -998,7 +1278,7 @@ export function resetMockTeamApiState() {
   mockConversationsByAgent.clear();
   mockCurrentConversationIds.clear();
   mockPendingRuns.clear();
-  mockCanvasTasks = mockTeamTasks.map(cloneMockTeamTask);
+  mockCanvasTasks = mockCanvasTaskSeed.map(cloneMockTeamTask);
   mockTaskRunsByTaskId = new Map();
   mockTaskRunAttempts = new Map();
   mockTaskRunFiles = new Map();
@@ -1014,7 +1294,10 @@ export function resetMockTeamApiState() {
   mockConversationCounter = 0;
   mockRunCounter = 0;
   mockMessageCounter = 0;
+  seedMockDiscoveryDispatchState();
 }
+
+seedMockDiscoveryDispatchState();
 
 function cloneTeamRunState(run: TeamRunState): TeamRunState {
   return {
@@ -1298,7 +1581,21 @@ export class MockTeamApi {
   }
 
   async listTasks(): Promise<TeamCanvasTask[]> {
-    return mockCanvasTasks.filter((task) => !task.archived).map(cloneMockTeamTask);
+    return mockCanvasTasks
+      .filter((task) => !task.archived && !task.generatedSource)
+      .map(cloneMockTeamTask);
+  }
+
+  async listGeneratedTasks(
+    discoveryTaskId: string,
+    options?: { includeArchived?: boolean },
+  ): Promise<TeamCanvasTask[]> {
+    return mockCanvasTasks
+      .filter((task) => (
+        task.generatedSource?.sourceDiscoveryTaskId === discoveryTaskId
+        && (options?.includeArchived || !task.archived)
+      ))
+      .map(cloneMockTeamTask);
   }
 
   async listTaskConnections(): Promise<TeamTaskConnection[]> {
@@ -1505,12 +1802,46 @@ export class MockTeamApi {
     const index = mockCanvasTasks.findIndex((task) => task.taskId === taskId);
     if (index < 0) throw { message: `Task not found: ${taskId}` };
     const current = mockCanvasTasks[index]!;
+    const generatedSource = current.generatedSource
+      ? {
+          ...current.generatedSource,
+          ...(patch.workUnit ? { workUnitMode: "customized" as const } : {}),
+        }
+      : undefined;
     const next: TeamCanvasTask = {
       ...current,
       ...patch,
+      ...(generatedSource ? { generatedSource } : {}),
       workUnit: patch.workUnit
         ? cloneMockTeamTask({ ...current, workUnit: patch.workUnit }).workUnit
         : cloneMockTeamTask(current).workUnit,
+      updatedAt: ts(),
+    };
+    mockCanvasTasks[index] = cloneMockTeamTask(next);
+    return {
+      task: cloneMockTeamTask(next),
+      warnings: mockTaskWarnings(next),
+    };
+  }
+
+  async resetGeneratedTaskWorkUnit(taskId: string): Promise<TeamTaskMutationResponse> {
+    const index = mockCanvasTasks.findIndex((task) => task.taskId === taskId);
+    if (index < 0) throw { message: `Task not found: ${taskId}` };
+    const current = mockCanvasTasks[index]!;
+    if (!current.generatedSource) throw { message: "generated WorkUnit reset requires a generated task" };
+    if (current.archived) throw { message: "archived generated task cannot reset WorkUnit" };
+    const latestManagedWorkUnit = current.generatedSource.latestManagedWorkUnit;
+    if (!latestManagedWorkUnit) throw { message: "latest managed WorkUnit snapshot is missing" };
+    const workUnit = cloneMockWorkUnit(latestManagedWorkUnit);
+    const next: TeamCanvasTask = {
+      ...current,
+      title: workUnit.title,
+      workUnit,
+      generatedSource: {
+        ...current.generatedSource,
+        workUnitMode: "managed",
+        latestManagedWorkUnit: cloneMockWorkUnit(latestManagedWorkUnit),
+      },
       updatedAt: ts(),
     };
     mockCanvasTasks[index] = cloneMockTeamTask(next);

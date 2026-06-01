@@ -100,6 +100,67 @@ export interface TeamTaskControlDependencyDeliveryOutcome {
 
 export type TeamTaskDeliveryOutcome = TeamTaskTypedConnectionDeliveryOutcome | TeamTaskControlDependencyDeliveryOutcome;
 
+export type TeamDiscoveryDispatchOutcomeStatus = "created" | "updated" | "blocked" | "stale_marked";
+
+export interface TeamDiscoveryDispatchOutcome {
+	itemId: string;
+	status: TeamDiscoveryDispatchOutcomeStatus;
+	generatedTaskId?: string;
+	workUnitMode?: TeamGeneratedTaskWorkUnitMode;
+	error?: string;
+	createdAt: string;
+}
+
+export type TeamDiscoveryGeneratedRunOutcomeStatus =
+	| "started"
+	| "skipped_already_running"
+	| "skipped_not_runnable"
+	| "failed";
+
+export interface TeamDiscoveryGeneratedRunOutcome {
+	itemId: string;
+	generatedTaskId: string;
+	status: TeamDiscoveryGeneratedRunOutcomeStatus;
+	generatedRunId?: string;
+	error?: string;
+	createdAt: string;
+}
+
+export type TeamDiscoveryAggregationResultStatus = "succeeded" | "failed" | "cancelled" | "skipped" | "missing";
+
+export interface TeamDiscoveryAggregationRecord {
+	schemaVersion: "team/discovery-aggregation-1";
+	discoveryTaskId: string;
+	discoveryRunId: string;
+	discoveryAttemptId: string;
+	outputKey: string;
+	sourceResultRef: string | null;
+	createdAt: string;
+	summary: {
+		totalItems: number;
+		generatedTasks: number;
+		succeeded: number;
+		failed: number;
+		cancelled: number;
+		skipped: number;
+		missingResult: number;
+	};
+	items: Array<{
+		itemId: string;
+		itemPayload: Record<string, unknown>;
+		dispatch: TeamDiscoveryDispatchOutcome | null;
+		generatedTaskId?: string;
+		generatedRunId?: string;
+		generatedRunStatus?: RunStatus;
+		result: {
+			status: TeamDiscoveryAggregationResultStatus;
+			resultRef?: string | null;
+			content?: string;
+			errorSummary?: string | null;
+		};
+	}>;
+}
+
 export interface TeamAttemptMetadata {
 	attemptId: string;
 	taskId: string;
@@ -118,6 +179,8 @@ export interface TeamAttemptMetadata {
 		checker?: TeamAttemptRoleProcess;
 	};
 	downstreamDelivery?: TeamTaskDeliveryOutcome[];
+	discoveryDispatch?: TeamDiscoveryDispatchOutcome[];
+	discoveryGeneratedRuns?: TeamDiscoveryGeneratedRunOutcome[];
 }
 export type CheckerVerdict = "pass" | "revise" | "fail";
 export type WatcherDecision = "accept_task" | "confirm_failed" | "request_revision";
@@ -168,6 +231,7 @@ export interface TeamOutputValidationResult {
 	sourceRef: string | null;
 	checks: Array<{ name: string; ok: boolean; message?: string; path?: string }>;
 	normalizedRef?: string | null;
+	items?: Array<Record<string, unknown>>;
 }
 
 export interface TeamTaskDecomposerPolicy {
@@ -219,12 +283,47 @@ export interface TeamPlan {
 
 export type TeamCanvasTaskStatus = "drafting" | "ready" | "locked" | "archived";
 
+export type TeamCanvasTaskKind = "task" | "discovery";
+export type TeamGeneratedTaskItemStatus = "active" | "stale";
+export type TeamGeneratedTaskWorkUnitMode = "managed" | "customized";
+
+export interface TeamDiscoverySpec {
+	schemaVersion: "team/discovery-spec-1";
+	discoveryGoal: string;
+	outputKey: string;
+	itemIdField: "id";
+	requiredItemFields: string[];
+	recommendedItemFields?: string[];
+	dispatchGoal: string;
+	dispatcherAgentId: string;
+	generatedWorkerAgentId: string;
+	generatedCheckerAgentId: string;
+	autoRun: {
+		enabled: true;
+		concurrency: 3;
+	};
+}
+
+export interface TeamGeneratedTaskSource {
+	schemaVersion: "team/generated-task-source-1";
+	sourceDiscoveryTaskId: string;
+	sourceItemId: string;
+	itemStatus: TeamGeneratedTaskItemStatus;
+	itemPayload: Record<string, unknown>;
+	latestDiscoveryRunId?: string;
+	latestDiscoveryAttemptId?: string;
+	latestDiscoveredAt?: string;
+	workUnitMode: TeamGeneratedTaskWorkUnitMode;
+	latestManagedWorkUnit?: TeamWorkUnitDefinition;
+}
+
 export interface TeamWorkUnitDefinition {
 	title: string;
 	input: { text: string };
 	inputPorts?: TeamTaskInputPort[];
 	outputPorts?: TeamTaskOutputPort[];
 	outputContract: { text: string };
+	outputCheck?: TeamTaskOutputCheck;
 	acceptance: { rules: string[] };
 	workerAgentId: string;
 	checkerAgentId: string;
@@ -388,9 +487,12 @@ export type TeamTaskBoundInput = TeamTaskArtifactBoundInput | TeamCanvasSourceBo
 
 export interface TeamCanvasTask {
 	taskId: string;
+	canvasKind?: TeamCanvasTaskKind;
 	title: string;
 	leaderAgentId: string;
 	workUnit: TeamWorkUnitDefinition;
+	discoverySpec?: TeamDiscoverySpec;
+	generatedSource?: TeamGeneratedTaskSource;
 	status: TeamCanvasTaskStatus;
 	createdAt: string;
 	updatedAt: string;
@@ -423,9 +525,20 @@ export interface TeamRunState {
 	source?: {
 		type: "canvas-task";
 		taskId: string;
+		publicBaseUrl?: string;
 		triggeredBy?:
 			| { type: "task-connection"; connectionId: string; fromTaskId: string; fromRunId: string; fromAttemptId: string }
-			| { type: "task-dependency"; dependencyId: string; fromTaskId: string; fromRunId: string; fromAttemptId: string };
+			| { type: "task-dependency"; dependencyId: string; fromTaskId: string; fromRunId: string; fromAttemptId: string }
+			| {
+				type: "discovery-generated-task";
+				discoveryTaskId: string;
+				discoveryRunId: string;
+				discoveryAttemptId: string;
+				sourceItemId: string;
+				fromTaskId?: never;
+				fromRunId?: never;
+				fromAttemptId?: never;
+			};
 		boundInputs?: TeamTaskBoundInput[];
 	};
 	teamUnitId: string;

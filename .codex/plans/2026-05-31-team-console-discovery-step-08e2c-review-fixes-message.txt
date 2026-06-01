@@ -1,0 +1,84 @@
+请接手 `E:\AII\ugk-pi` 的 Team Console Discovery Step 08E2C review fixes：generated child archive/delete UI 状态一致性修复。
+
+当前基线：
+- 最新 commit：`af0362a docs(team-console): record task chain validation`
+- 分支状态：`main...origin/main [ahead 6]`
+- 当前工作区已有本地 unstaged Discovery 08A-08E2C 改动；不要 stage、不要 commit。
+- 08E2C 初版已实现并通过过一轮验证：App live-data focused 47 passed、Team Console API/contract 90 passed、Team Console tsc/build/full Vitest 522 passed、top-level `npx tsc --noEmit` passed、`git diff --check` passed、`git diff --cached --stat` empty。
+- 当前 review 发现两个问题：archive 成功后 root Discovery summary 可能用 stale closure 计算；关闭/重开 Discovery 子画布后 generated archive confirm 可能残留。
+- 既有 dirty 边界：`.pi/skills/anthropics/skill-creator/**` tracked deletions 不是本轮内容，别恢复、别 stage；`.pi/skills/skill-creator/`、public/runtime 报告产物、临时 HTML/脚本、其他 `.codex/plans/*` 都不要提交。
+
+必须先读：
+- `AGENTS.md`
+- `.codex/plans/2026-05-30-team-console-discovery-requirements.md`
+- `.codex/plans/2026-05-31-team-console-discovery-step-08e2c-generated-archive-delete-plan.md`
+- `.codex/plans/2026-05-31-team-console-discovery-step-08e2c-generated-archive-delete-message.txt`
+- `.codex/plans/2026-05-31-team-console-discovery-step-08e2c-review-fixes-plan.md`
+- `apps/team-console/src/app/App.tsx`
+- `apps/team-console/src/app/use-team-console-live-data.ts`
+- `apps/team-console/src/app/use-task-branch-stack.ts`
+- `apps/team-console/src/tests/app-live-data.test.tsx`
+- `apps/team-console/src/fixtures/team-fixtures.ts`
+
+严格按计划文件执行：
+- `.codex/plans/2026-05-31-team-console-discovery-step-08e2c-review-fixes-plan.md`
+
+本轮只做：
+- 修复 generated archive 成功后 root Discovery summary 可能从 async stale closure 计算的问题。
+- 修复 generated archive confirm/saving UI state 在 Discovery 子画布/root branch 关闭后残留的问题。
+- 先补 focused tests，让旧行为 RED，再实现。
+- 保持 generated archive 仍走既有 `CanvasTaskGateway.archiveTask(taskId)` / `POST /v1/team/tasks/:taskId/archive`。
+
+禁止做：
+- 不新增 backend endpoint。
+- 不改 `src/team/**`。
+- 不改 Discovery dispatch、generated upsert、auto-run scheduler、`TeamDiscoveryDispatchOutcome`。
+- 不做 hard delete、物理删除、restore/unarchive。
+- 不改 generated edit/reset/archive 用户语义，除非是本轮两条状态一致性修复。
+- 不把 generated child 塞进 root `tasks` / `tasksById` / `taskNodes` / root canvas。
+- 不关闭 root Discovery branch，不归档 root Discovery Task。
+- 不碰主 `/playground`。
+- 不碰 `.pi/skills/**`、runtime skill、`skills-lock.json`。
+- 不创建计划外文件。
+- 不做整文件格式化或换行符转换；保持 touched files 既有 EOL/格式。
+- 不 stage、不 commit、不 push。
+- 不使用 `git add -A`。
+
+执行要求：
+- 这是 review-fix 小步，只处理两条 review finding，完成后停下交付。别把这活干成第二遍 08E2C，没必要，代码会被你改成一锅粥。
+- 行为变更先补 tests，再写实现；先确认 RED。
+- Test 1 必须覆盖：打开 generated archive confirm，关闭 Discovery 子画布，重开后 confirm 不应残留。
+- Test 2 必须覆盖：archive 请求 pending 期间触发 live `刷新 Task`，generated catalog refresh 返回额外 generated child，archive resolve 后 subcanvas card count 和 root summary count 必须一致。旧实现会因为 summary 用 stale closure 算成错误 count。
+- 推荐实现：在 `use-team-console-live-data.ts` 中让 `discoverySummariesByTaskId` 由 `generatedTasksByDiscoveryTaskId`、`taskRunsByTaskId`、`discoveryDispatchDiagnosticsByTaskId` 通过 `useMemo` 派生；移除 `setDiscoverySummariesByTaskId` 暴露和 `App.tsx` 里的手动 summary 更新。
+- 推荐实现：在 `App.tsx` 中给 generated archive confirm/saving 增加 scoped cleanup helper，关闭 Discovery 子画布时清理该 root 下 generated task ids 的 archive UI state；必要时加 defensive effect 清掉不再属于打开 subcanvas 的 confirm。
+- 遇到计划假设不成立先停下说明，不要顺手扩大范围。
+- 如果小改动产生超大 diff，先检查是否为 EOL/formatter churn，修正后再继续。
+- UI/交互任务必须在真实入口 `http://127.0.0.1:5174/` 做浏览器验证，交付 measured evidence；不要把可自动验证的步骤丢给用户手动做。
+- 不允许宽泛 suppress console warning；已知 `/favicon.ico` 404 如果出现，报告为无关资源 404，不要谎称 console 空。
+
+最终验证：
+- `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx`
+- `npm --prefix apps/team-console test -- --run src/tests/team-api.test.ts src/tests/team-contract-drift.test.ts`
+- `npm --prefix apps/team-console exec tsc -- --noEmit -p tsconfig.json`
+- `npm --prefix apps/team-console run build`
+- `npm --prefix apps/team-console test`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `git diff --stat`
+- `git diff --numstat`
+- `git ls-files --eol apps/team-console/src/app/App.tsx apps/team-console/src/app/use-team-console-live-data.ts apps/team-console/src/tests/app-live-data.test.tsx`
+- `git diff --cached --stat`
+
+浏览器验证必须报告：
+- URL：`http://127.0.0.1:5174/`
+- data source：mock / 示例数据
+- 打开 root Discovery card 和 `Discovery 子画布`
+- 打开 `task_generated_vultr` 的 archive confirm
+- 关闭 Discovery 子画布并重开，确认 `[data-generated-archive-confirm-for="task_generated_vultr"]` absent
+- 再跑一次正常 archive happy path：archive 前 `[data-generated-task-id]` count = 2，root summary = `2 items / 1 active / 1 stale / 1 blocked`
+- archive `task_generated_vultr` 后 `[data-generated-task-id]` count = 1，`task_generated_vultr` absent，`task_generated_hetzner` visible，root summary = `1 items / 0 active / 1 stale / 1 blocked`
+- Discovery 子画布仍打开，root canvas generated title matches = 0
+- screenshot path，放在 `runtime/` 下，不要 stage
+- console issues；如果只有 favicon 404，要如实写，不要写 `[]`
+
+完成后按计划里的 Delivery Report Template 回复。不要 stage，不要 commit。

@@ -2,6 +2,51 @@ import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 
 describe("Team Console static contracts", () => {
+  it("keeps App task branches on the multi-branch panel path", () => {
+    const appSource = readFileSync("src/app/App.tsx", "utf8");
+
+    expect(appSource).toContain("taskBranchPanels={taskBranchPanelItems}");
+    expect(appSource).not.toContain("taskBranchPanel={expandedTaskBranchPanel}");
+    expect(appSource).not.toContain("taskChildBranchPanel={expandedTaskChildBranchPanel}");
+    expect(appSource).not.toContain("taskChildBranchInteractive={");
+    expect(appSource).not.toContain("const expandedTaskChildBranchPanel");
+    expect(appSource).not.toContain("const expandedTaskBranchPanel");
+    expect(appSource).not.toContain("runExpandedTask");
+    expect(appSource).not.toContain("cancelExpandedTaskRun");
+    expect(appSource).not.toContain("archiveExpandedTask");
+    expect(appSource).not.toContain("openTaskRunObserverBranch");
+    expect(appSource).not.toContain("closeTaskRunObserverBranch");
+    expect(appSource).not.toContain("openTaskEditBranch");
+  });
+
+  it("keeps the Task branch hook singular value named as focused state", () => {
+    const hookSource = readFileSync("src/app/use-task-branch-stack.ts", "utf8");
+    const appSource = readFileSync("src/app/App.tsx", "utf8");
+
+    expect(hookSource).toContain("focusedTaskBranch: TaskBranchState | null");
+    expect(hookSource).toContain("const focusedTaskBranch = useMemo(");
+    expect(hookSource).toContain("focusedTaskBranch,");
+    expect(hookSource).not.toContain("expandedTaskBranch: TaskBranchState | null");
+    expect(hookSource).not.toMatch(/\bsetExpandedTaskBranch\b/);
+    expect(hookSource).not.toContain("type TaskBranchUpdater");
+    expect(appSource).toContain("focusedTaskNodeId={focusedTaskBranch?.nodeId ?? null}");
+    expect(appSource).not.toContain("focusedTaskNodeId={expandedTaskBranch?.nodeId ?? null}");
+  });
+
+  it("keeps Task root drag subtree sync on the multi-branch panel path", () => {
+    const mapSource = readFileSync("src/graph/ExecutionMap.tsx", "utf8");
+
+    expect(mapSource).toContain("taskBranchPanels?: Array");
+    expect(mapSource).toContain("taskChildBranchPanels?: Array");
+    expect(mapSource).toContain("const hasTaskBranchTree = Boolean(taskBranchPanels?.length);");
+    expect(mapSource).toContain('entry.kind === "task" && hasTaskBranchTree');
+    expect(mapSource).not.toContain("taskBranchPanel?:");
+    expect(mapSource).not.toContain("taskChildBranchPanel?:");
+    expect(mapSource).not.toContain("taskChildBranchInteractive?:");
+    expect(mapSource).not.toContain('entry.kind === "task" && taskBranchPanel');
+    expect(mapSource).not.toContain("taskChildBranchNode && taskChildBranchPanel");
+  });
+
   it("vite proxy includes the Team Console API surface and embedded playground route", () => {
     const config = readFileSync("vite.config.ts", "utf8");
     expect(config).toContain('"/v1"');
@@ -577,18 +622,12 @@ describe("Team Console static contracts", () => {
     expect(playgroundCurrent).toContain("不接 SSE");
 
     const changeLog = readFileSync("../../docs/change-log.md", "utf8");
-    expect(changeLog).toContain("2026-05-25 — Team Console Task run process nodes UI budget");
-    expect(changeLog).toContain("2026-05-26 — Team Console 自动发现下游 Task run");
-    expect(changeLog).toContain("不接 SSE");
-    expect(changeLog).toContain("2026-05-25 — Team Console Task run process nodes 前端实现");
-    expect(changeLog).toContain("roleProcesses.worker");
-    expect(changeLog).toContain("roleProcesses.checker");
-    expect(changeLog).toContain("Team Console 过程节点隐藏方法调用明细");
-    expect(changeLog).toContain("过程节点不再渲染下半部 tool / method 调用明细");
-    expect(changeLog).toContain("Team Console 过程展示与根卡片 UI 优化");
-    expect(changeLog).toContain("Task ID");
-    expect(changeLog).toContain("Worker 过程");
-    expect(changeLog).toContain("Checker 过程");
-    expect(changeLog).toContain("不改 `src/team/**`");
+    expect(changeLog).toContain("2026-06-01 — Team Console Run observer JSON result rendering");
+    expect(changeLog).toContain("accepted-result.md");
+    expect(changeLog).toContain("JSON pretty print");
+    expect(changeLog).toContain("2026-05-30 — Team Console 浅色主题与明暗切换");
+    expect(changeLog).toContain("沉浸式画布");
+    expect(changeLog).toContain("历史记录裁剪说明");
+    expect(changeLog).not.toContain("2026-05-25 — Team Console Task run process nodes UI budget");
   });
 });

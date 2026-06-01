@@ -10,7 +10,10 @@ import type {
 	TeamAttemptRoleProcess,
 	TeamAttemptWatcherSummary,
 	TeamAttemptWorkerSummary,
+	TeamDiscoveryAggregationRecord,
 	TeamDiscoveryResultRecord,
+	TeamDiscoveryDispatchOutcome,
+	TeamDiscoveryGeneratedRunOutcome,
 	TeamTaskDeliveryOutcome,
 } from "./types.js";
 
@@ -102,6 +105,24 @@ export class RunAttemptStore {
 		});
 	}
 
+	async recordAttemptDiscoveryDispatchOutcomes(runId: string, taskId: string, attemptId: string, outcomes: TeamDiscoveryDispatchOutcome[]): Promise<void> {
+		if (outcomes.length === 0) return;
+		await this.mutateAttempt(runId, taskId, attemptId, (attempt) => {
+			attempt.discoveryDispatch = outcomes;
+			attempt.updatedAt = now();
+			return attempt;
+		});
+	}
+
+	async recordAttemptDiscoveryGeneratedRunOutcomes(runId: string, taskId: string, attemptId: string, outcomes: TeamDiscoveryGeneratedRunOutcome[]): Promise<void> {
+		if (outcomes.length === 0) return;
+		await this.mutateAttempt(runId, taskId, attemptId, (attempt) => {
+			attempt.discoveryGeneratedRuns = outcomes;
+			attempt.updatedAt = now();
+			return attempt;
+		});
+	}
+
 	async finishAttempt(
 		runId: string,
 		taskId: string,
@@ -162,6 +183,11 @@ export class RunAttemptStore {
 		return `tasks/${taskId}/attempts/${attemptId}/discovery-result.json`;
 	}
 
+	async writeDiscoveryAggregation(runId: string, taskId: string, attemptId: string, record: TeamDiscoveryAggregationRecord): Promise<string> {
+		await this.writeAttemptFile(runId, taskId, attemptId, "discovery-aggregation.json", JSON.stringify(record, null, 2));
+		return `tasks/${taskId}/attempts/${attemptId}/discovery-aggregation.json`;
+	}
+
 	async readDiscoveryResult(runId: string, taskId: string, attemptId: string): Promise<TeamDiscoveryResultRecord | null> {
 		const content = await this.readAttemptFile(runId, taskId, attemptId, "discovery-result.json");
 		if (!content) return null;
@@ -169,6 +195,20 @@ export class RunAttemptStore {
 			const parsed = JSON.parse(content);
 			if (parsed && typeof parsed === "object" && parsed.schemaVersion === "team/discovery-result-1") {
 				return parsed as TeamDiscoveryResultRecord;
+			}
+			return null;
+		} catch {
+			return null;
+		}
+	}
+
+	async readDiscoveryAggregation(runId: string, taskId: string, attemptId: string): Promise<TeamDiscoveryAggregationRecord | null> {
+		const content = await this.readAttemptFile(runId, taskId, attemptId, "discovery-aggregation.json");
+		if (!content) return null;
+		try {
+			const parsed = JSON.parse(content);
+			if (parsed && typeof parsed === "object" && parsed.schemaVersion === "team/discovery-aggregation-1") {
+				return parsed as TeamDiscoveryAggregationRecord;
 			}
 			return null;
 		} catch {
@@ -244,6 +284,8 @@ export class RunAttemptStore {
 		const updatedAt = (raw.updatedAt as string) || createdAt;
 		const roleProcesses = this.normalizeRoleProcesses(raw.roleProcesses);
 		const downstreamDelivery = this.normalizeDeliveryOutcomes(raw.downstreamDelivery);
+		const discoveryDispatch = this.normalizeDiscoveryDispatchOutcomes(raw.discoveryDispatch);
+		const discoveryGeneratedRuns = this.normalizeDiscoveryGeneratedRunOutcomes(raw.discoveryGeneratedRuns);
 		return {
 			attemptId: (raw.attemptId as string) || fallbackAttemptId,
 			taskId: (raw.taskId as string) || fallbackTaskId,
@@ -259,6 +301,8 @@ export class RunAttemptStore {
 			errorSummary: (raw.errorSummary as string | null) ?? null,
 			...(roleProcesses ? { roleProcesses } : {}),
 			...(downstreamDelivery ? { downstreamDelivery } : {}),
+			...(discoveryDispatch ? { discoveryDispatch } : {}),
+			...(discoveryGeneratedRuns ? { discoveryGeneratedRuns } : {}),
 		};
 	}
 
@@ -339,6 +383,63 @@ export class RunAttemptStore {
 			};
 			if (typeof value.staleReason === "string") outcome.staleReason = value.staleReason as import("./types.js").TaskConnectionStaleReason;
 			if (typeof value.downstreamRunId === "string") outcome.downstreamRunId = value.downstreamRunId;
+			if (typeof value.error === "string") outcome.error = value.error;
+			outcomes.push(outcome);
+		}
+		return outcomes.length > 0 ? outcomes : undefined;
+	}
+
+	private normalizeDiscoveryDispatchOutcomes(raw: unknown): TeamDiscoveryDispatchOutcome[] | undefined {
+		if (!Array.isArray(raw) || raw.length === 0) return undefined;
+		const validStatuses = new Set(["created", "updated", "blocked", "stale_marked"]);
+		const validModes = new Set(["managed", "customized"]);
+		const outcomes: TeamDiscoveryDispatchOutcome[] = [];
+		for (const item of raw) {
+			if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+			const value = item as Record<string, unknown>;
+			const itemId = value.itemId;
+			const status = value.status;
+			const createdAt = value.createdAt;
+			if (typeof itemId !== "string" || !itemId.trim()) continue;
+			if (typeof status !== "string" || !validStatuses.has(status)) continue;
+			if (typeof createdAt !== "string" || !createdAt.trim()) continue;
+			const outcome: TeamDiscoveryDispatchOutcome = {
+				itemId,
+				status: status as import("./types.js").TeamDiscoveryDispatchOutcomeStatus,
+				createdAt,
+			};
+			if (typeof value.generatedTaskId === "string" && value.generatedTaskId.trim()) outcome.generatedTaskId = value.generatedTaskId;
+			if (typeof value.workUnitMode === "string" && validModes.has(value.workUnitMode)) {
+				outcome.workUnitMode = value.workUnitMode as import("./types.js").TeamGeneratedTaskWorkUnitMode;
+			}
+			if (typeof value.error === "string") outcome.error = value.error;
+			outcomes.push(outcome);
+		}
+		return outcomes.length > 0 ? outcomes : undefined;
+	}
+
+	private normalizeDiscoveryGeneratedRunOutcomes(raw: unknown): TeamDiscoveryGeneratedRunOutcome[] | undefined {
+		if (!Array.isArray(raw) || raw.length === 0) return undefined;
+		const validStatuses = new Set(["started", "skipped_already_running", "skipped_not_runnable", "failed"]);
+		const outcomes: TeamDiscoveryGeneratedRunOutcome[] = [];
+		for (const item of raw) {
+			if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+			const value = item as Record<string, unknown>;
+			const itemId = value.itemId;
+			const generatedTaskId = value.generatedTaskId;
+			const status = value.status;
+			const createdAt = value.createdAt;
+			if (typeof itemId !== "string" || !itemId.trim()) continue;
+			if (typeof generatedTaskId !== "string" || !generatedTaskId.trim()) continue;
+			if (typeof status !== "string" || !validStatuses.has(status)) continue;
+			if (typeof createdAt !== "string" || !createdAt.trim()) continue;
+			const outcome: TeamDiscoveryGeneratedRunOutcome = {
+				itemId,
+				generatedTaskId,
+				status: status as import("./types.js").TeamDiscoveryGeneratedRunOutcomeStatus,
+				createdAt,
+			};
+			if (typeof value.generatedRunId === "string" && value.generatedRunId.trim()) outcome.generatedRunId = value.generatedRunId;
 			if (typeof value.error === "string") outcome.error = value.error;
 			outcomes.push(outcome);
 		}

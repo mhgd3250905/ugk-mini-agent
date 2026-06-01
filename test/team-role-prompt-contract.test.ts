@@ -3,14 +3,16 @@ import assert from "node:assert/strict";
 import {
 	buildCheckerPrompt,
 	buildDecomposerPrompt,
+	buildDiscoveryDispatchPrompt,
 	buildFinalizerPrompt,
 	buildWatcherPrompt,
 	buildWorkerPrompt,
 	parseCheckerRoleOutput,
 	parseDecomposerRoleOutput,
+	parseDiscoveryDispatchRoleOutput,
 	parseWatcherRoleOutput,
 } from "../src/team/role-prompt-contract.js";
-import type { DecomposerInput } from "../src/team/role-runner.js";
+import type { DecomposerInput, DiscoveryDispatchInput } from "../src/team/role-runner.js";
 import type { TeamPlan, TeamTask, TeamOutputValidationResult } from "../src/team/types.js";
 
 function makeTask(overrides: Partial<TeamTask> = {}): TeamTask {
@@ -40,6 +42,29 @@ function makePlan(overrides: Partial<TeamPlan> = {}): TeamPlan {
 	};
 }
 
+function makeDiscoveryDispatchInput(overrides: Partial<DiscoveryDispatchInput> = {}): DiscoveryDispatchInput {
+	return {
+		runId: "run_1",
+		discoveryTaskId: "task_discovery",
+		discoveryTaskTitle: "Vendor discovery",
+		discoveryGoal: "Find qualified vendors for Android 16 BLE validation.",
+		dispatchGoal: "Create one due-diligence work unit for each discovered vendor.",
+		outputKey: "vendors",
+		itemId: "vendor_1",
+		itemPayload: {
+			id: "vendor_1",
+			title: "Acme Sensors",
+			type: "vendor",
+			website: "https://example.com",
+		},
+		requiredItemFields: ["id"],
+		recommendedItemFields: ["title", "type"],
+		generatedWorkerAgentId: "worker-default",
+		generatedCheckerAgentId: "checker-default",
+		...overrides,
+	};
+}
+
 test("buildWorkerPrompt preserves discovery output contract and generated item identity", () => {
 	const prompt = buildWorkerPrompt(
 		makeTask({
@@ -60,6 +85,122 @@ test("buildWorkerPrompt preserves discovery output contract and generated item i
 	assert.ok(prompt.includes("vendor_1"), "worker prompt must include source item id");
 	assert.ok(prompt.includes("Vendor One"), "worker prompt must include source item title");
 	assert.ok(prompt.includes("最高优先级"), "worker prompt must include identity priority");
+});
+
+test("buildDiscoveryDispatchPrompt includes discovery context, exact item payload, schema, and identity bans", () => {
+	const input = makeDiscoveryDispatchInput();
+	const prompt = buildDiscoveryDispatchPrompt(input);
+
+	assert.ok(prompt.includes(input.discoveryTaskId), "prompt must include Discovery task id");
+	assert.ok(prompt.includes(input.discoveryTaskTitle), "prompt must include Discovery task title");
+	assert.ok(prompt.includes(input.discoveryGoal), "prompt must include Discovery goal");
+	assert.ok(prompt.includes(input.dispatchGoal), "prompt must include dispatch goal");
+	assert.ok(prompt.includes(input.outputKey), "prompt must include output key");
+	assert.ok(prompt.includes(input.itemId), "prompt must include exact item id");
+	assert.ok(prompt.includes('"website": "https://example.com"'), "prompt must include full item payload JSON");
+	assert.ok(prompt.includes("requiredItemFields") && prompt.includes("id"), "prompt must include required item fields");
+	assert.ok(prompt.includes("recommendedItemFields") && prompt.includes("title") && prompt.includes("type"), "prompt must include recommended item fields");
+	assert.ok(prompt.includes('"workUnit"') && prompt.includes('"acceptance"'), "prompt must include strict output schema");
+	assert.ok(prompt.includes("workerAgentId") && prompt.includes("checkerAgentId"), "prompt must ban worker/checker identity output");
+	assert.ok(prompt.includes("generatedSource") && prompt.includes("sourceDiscoveryTaskId"), "prompt must ban source identity output");
+});
+
+test("parseDiscoveryDispatchRoleOutput accepts valid JSON workUnit draft", () => {
+	const out = parseDiscoveryDispatchRoleOutput(
+		JSON.stringify({
+			itemId: "vendor_1",
+			workUnit: {
+				title: "Assess Acme Sensors",
+				input: { text: "Research Acme Sensors and summarize BLE validation fit." },
+				outputContract: { text: "Markdown due-diligence report with cited evidence." },
+				acceptance: { rules: ["Cites at least two relevant sources", "States suitability risks"] },
+			},
+		}),
+		"vendor_1",
+	);
+
+	assert.equal(out.ok, true);
+	if (out.ok) {
+		assert.equal(out.itemId, "vendor_1");
+		assert.equal(out.workUnit.title, "Assess Acme Sensors");
+		assert.deepEqual(out.workUnit.acceptance.rules, ["Cites at least two relevant sources", "States suitability risks"]);
+	}
+});
+
+test("parseDiscoveryDispatchRoleOutput rejects item id mismatch", () => {
+	const out = parseDiscoveryDispatchRoleOutput(
+		JSON.stringify({
+			itemId: "vendor_2",
+			workUnit: {
+				title: "Assess vendor",
+				input: { text: "Do work" },
+				outputContract: { text: "Report" },
+				acceptance: { rules: ["ok"] },
+			},
+		}),
+		"vendor_1",
+	);
+
+	assert.equal(out.ok, false);
+	assert.equal(out.itemId, "vendor_1");
+	assert.match(out.error, /item/i);
+});
+
+test("parseDiscoveryDispatchRoleOutput rejects forbidden top-level and workUnit fields", () => {
+	const forbiddenTopLevel = parseDiscoveryDispatchRoleOutput(
+		JSON.stringify({
+			itemId: "vendor_1",
+			workerAgentId: "rogue-worker",
+			workUnit: {
+				title: "Assess vendor",
+				input: { text: "Do work" },
+				outputContract: { text: "Report" },
+				acceptance: { rules: ["ok"] },
+			},
+		}),
+		"vendor_1",
+	);
+	const forbiddenWorkUnit = parseDiscoveryDispatchRoleOutput(
+		JSON.stringify({
+			itemId: "vendor_1",
+			workUnit: {
+				title: "Assess vendor",
+				input: { text: "Do work" },
+				outputContract: { text: "Report" },
+				acceptance: { rules: ["ok"] },
+				generatedSource: { sourceDiscoveryTaskId: "task_discovery" },
+				outputCheck: { type: "json_object" },
+			},
+		}),
+		"vendor_1",
+	);
+
+	assert.equal(forbiddenTopLevel.ok, false);
+	assert.match(forbiddenTopLevel.error, /workerAgentId/);
+	assert.equal(forbiddenWorkUnit.ok, false);
+	assert.match(forbiddenWorkUnit.error, /generatedSource|outputCheck/);
+});
+
+test("parseDiscoveryDispatchRoleOutput rejects invalid schema and invalid JSON without throwing", () => {
+	const emptyDraft = parseDiscoveryDispatchRoleOutput(
+		JSON.stringify({
+			itemId: "vendor_1",
+			workUnit: {
+				title: "",
+				input: { text: "Do work" },
+				outputContract: { text: "Report" },
+				acceptance: { rules: [] },
+			},
+		}),
+		"vendor_1",
+	);
+	const invalidJson = parseDiscoveryDispatchRoleOutput("not json", "vendor_1");
+
+	assert.equal(emptyDraft.ok, false);
+	assert.match(emptyDraft.error, /schema|workUnit/i);
+	assert.equal(invalidJson.ok, false);
+	assert.equal(invalidJson.itemId, "vendor_1");
+	assert.match(invalidJson.error, /json/i);
 });
 
 test("checker and watcher prompts preserve output validation evidence guardrails", () => {

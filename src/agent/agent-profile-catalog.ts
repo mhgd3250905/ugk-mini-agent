@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { cp, mkdir, readdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
+import { renameWithTransientRetry } from "../file-system.js";
 import {
 	DEFAULT_AGENT_ID,
 	SEARCH_AGENT_ID,
@@ -441,7 +442,7 @@ async function writeStoredAgentProfileCatalogFile(
 	await mkdir(catalogDir, { recursive: true });
 	try {
 		await writeFile(tempPath, JSON.stringify(catalog, null, 2) + "\n", "utf8");
-		await rename(tempPath, catalogPath);
+		await renameWithTransientRetry(tempPath, catalogPath);
 	} catch (error) {
 		await unlink(tempPath).catch(() => undefined);
 		throw error;
@@ -606,6 +607,60 @@ export async function installStoredAgentProfileSkill(
 		throw new Error(`invalid skill target: ${skillName}`);
 	}
 	await mkdir(targetRoot, { recursive: true });
+	await cp(sourceDir, targetDir, {
+		recursive: true,
+		force: true,
+		errorOnExist: false,
+	});
+	return { agentId, skillName, targetRoot, targetDir };
+}
+
+async function findInstalledAgentSkillDir(profile: AgentProfile, skillName: string): Promise<{ targetRoot: string; targetDir: string } | undefined> {
+	for (const targetRoot of profile.allowedSkillPaths) {
+		const directTargetDir = join(targetRoot, skillName);
+		if (!isPathWithin(targetRoot, directTargetDir)) {
+			throw new Error(`invalid skill target: ${skillName}`);
+		}
+		if (existsSync(directTargetDir)) {
+			return { targetRoot, targetDir: directTargetDir };
+		}
+		const skillFiles = await collectSkillMetadataFiles(targetRoot);
+		for (const skillFile of skillFiles) {
+			if (!isPathWithin(targetRoot, skillFile)) {
+				continue;
+			}
+			const content = await readFile(skillFile, "utf8");
+			const metadataName = parseSkillMetadataName(content);
+			if (metadataName === skillName) {
+				return { targetRoot, targetDir: dirname(skillFile) };
+			}
+		}
+	}
+	return undefined;
+}
+
+export async function refreshStoredAgentProfileSkillFromMain(
+	projectRoot: string,
+	agentId: string,
+	inputSkillName: unknown,
+): Promise<AgentProfileSkillChangeResult> {
+	const skillName = normalizeSkillName(inputSkillName);
+	const profile = await resolveMutableAgentProfile(projectRoot, agentId);
+	const sourceDir = await findMainAgentSkillDir(projectRoot, skillName);
+	if (!sourceDir) {
+		throw new Error(`main agent does not have skill ${skillName}`);
+	}
+	const installed = await findInstalledAgentSkillDir(profile, skillName);
+	const targetRoot = installed?.targetRoot ?? profile.allowedSkillPaths[1] ?? profile.allowedSkillPaths[0];
+	if (!targetRoot) {
+		throw new Error(`agent ${agentId} does not have a skill target root`);
+	}
+	const targetDir = installed?.targetDir ?? join(targetRoot, skillName);
+	if (!isPathWithin(targetRoot, targetDir)) {
+		throw new Error(`invalid skill target: ${skillName}`);
+	}
+	await mkdir(targetRoot, { recursive: true });
+	await rm(targetDir, { recursive: true, force: true });
 	await cp(sourceDir, targetDir, {
 		recursive: true,
 		force: true,

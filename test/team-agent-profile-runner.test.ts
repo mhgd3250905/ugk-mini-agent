@@ -4,9 +4,10 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { AgentProfileRoleRunner } from "../src/team/agent-profile-role-runner.js";
-import type { TeamRoleRunner } from "../src/team/role-runner.js";
+import type { DiscoveryDispatchInput, TeamRoleRunner } from "../src/team/role-runner.js";
 import type { BackgroundAgentSessionFactory } from "../src/agent/background-agent-runner.js";
 import type { ResolvedBackgroundAgentSnapshot } from "../src/agent/background-agent-profile.js";
+import { getCurrentBackgroundWorkspaceEnvironment } from "../src/agent/background-workspace-context.js";
 
 function makeFakeSessionFactory(responses: string[]): BackgroundAgentSessionFactory {
 	let callIndex = 0;
@@ -60,6 +61,7 @@ interface CapturedSessionInput {
 	browserId?: string;
 	browserScope?: string;
 	snapshot: ResolvedBackgroundAgentSnapshot;
+	workspaceRootPath?: string;
 }
 
 function makeCapturingSessionFactory(responses: string[]) {
@@ -72,6 +74,7 @@ function makeCapturingSessionFactory(responses: string[]) {
 			browserId?: string;
 			browserScope?: string;
 			snapshot: ResolvedBackgroundAgentSnapshot;
+			workspace?: { rootPath?: string };
 		}) => {
 			captured.push({
 				runId: input.runId,
@@ -79,6 +82,7 @@ function makeCapturingSessionFactory(responses: string[]) {
 				browserId: input.browserId,
 				browserScope: input.browserScope,
 				snapshot: input.snapshot,
+				workspaceRootPath: input.workspace?.rootPath,
 			});
 			const content = responses[callIndex] ?? "ok";
 			callIndex++;
@@ -90,6 +94,41 @@ function makeCapturingSessionFactory(responses: string[]) {
 		},
 	};
 	return { factory: factory as unknown as BackgroundAgentSessionFactory, captured };
+}
+
+function makeDiscoveryDispatchInput(overrides: Partial<DiscoveryDispatchInput> = {}): DiscoveryDispatchInput {
+	return {
+		runId: "run_discovery_dispatch",
+		discoveryTaskId: "task_discovery",
+		discoveryTaskTitle: "Vendor discovery",
+		discoveryGoal: "Find qualified vendors for Android 16 BLE validation.",
+		dispatchGoal: "Create one due-diligence work unit for each discovered vendor.",
+		outputKey: "vendors",
+		itemId: "vendor_1",
+		itemPayload: {
+			id: "vendor_1",
+			title: "Acme Sensors",
+			type: "vendor",
+			website: "https://example.com",
+		},
+		requiredItemFields: ["id"],
+		recommendedItemFields: ["title", "type"],
+		generatedWorkerAgentId: "worker-default",
+		generatedCheckerAgentId: "checker-default",
+		...overrides,
+	};
+}
+
+function makeDiscoveryDispatchOutputJson(itemId = "vendor_1"): string {
+	return JSON.stringify({
+		itemId,
+		workUnit: {
+			title: "Assess Acme Sensors",
+			input: { text: "Research Acme Sensors and summarize BLE validation fit." },
+			outputContract: { text: "Markdown due-diligence report with cited evidence." },
+			acceptance: { rules: ["Cites relevant sources"] },
+		},
+	});
 }
 
 interface CapturedRouteCall {
@@ -125,6 +164,53 @@ test("AgentProfileRoleRunner runWorker returns content", async () => {
 			acceptanceRules: ["完成"],
 		});
 		assert.equal(out.content, "任务执行完毕");
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
+test("AgentProfileRoleRunner exposes Team artifact public directory and URL to worker sessions", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ap-artifact-public-"));
+	try {
+		let capturedPrompt = "";
+		let capturedEnv: Record<string, string | undefined> = {};
+		const sessionFactory = {
+			createSession: async () => ({
+				prompt: async (prompt: string) => {
+					capturedPrompt = prompt;
+					capturedEnv = getCurrentBackgroundWorkspaceEnvironment();
+				},
+				subscribe: () => () => {},
+				messages: [{ role: "assistant", content: [{ type: "text", text: "done" }], stopReason: "end_turn" }],
+			}),
+		} as unknown as BackgroundAgentSessionFactory;
+		const runner: TeamRoleRunner = new AgentProfileRoleRunner({
+			projectRoot: root,
+			teamDataDir: root,
+			watcherProfileId: "w",
+			workerProfileId: "wo",
+			checkerProfileId: "c",
+			finalizerProfileId: "f",
+			profileResolver: fakeProfileResolver as never,
+			sessionFactory,
+		});
+
+		await runner.runWorker({
+			runId: "run_public_artifact",
+			task: { id: "task_1", title: "公开报告", input: { text: "生成报告" }, acceptance: { rules: ["生成 HTML"] } },
+			attemptId: "attempt_public",
+			workDir: join(root, "work"),
+			outputDir: join(root, "output"),
+			artifactPublicBaseUrl: "http://example.test/v1/team/task-runs/run_public_artifact/artifacts/attempt_public/worker",
+			acceptanceRules: ["生成 HTML"],
+		});
+
+		assert.ok(capturedPrompt.includes("ARTIFACT_PUBLIC_DIR"), "worker prompt must mention official artifact directory");
+		assert.match(capturedEnv.ARTIFACT_PUBLIC_DIR ?? "", /agent-workspaces[\\/]+attempt_public[\\/]+worker[\\/]+output$/);
+		assert.equal(
+			capturedEnv.ARTIFACT_PUBLIC_BASE_URL,
+			"http://example.test/v1/team/task-runs/run_public_artifact/artifacts/attempt_public/worker",
+		);
 	} finally {
 		await rm(root, { recursive: true }).catch(() => {});
 	}
@@ -1304,6 +1390,196 @@ test("P17: worker and checker with different browserId must not silently share",
 		assert.equal(captured[1]!.browserId, undefined);
 		assert.notEqual(captured[0]!.browserId, captured[1]!.browserId,
 			"worker and checker must not silently share browserId");
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
+// ── Discovery dispatcher runner ──
+
+test("runDiscoveryDispatcher uses dispatcherProfileId and discovery-dispatcher scope with sanitized item key", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dispatcher-"));
+	try {
+		const { factory, captured } = makeCapturingSessionFactory([makeDiscoveryDispatchOutputJson("vendor/slash")]);
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root,
+			teamDataDir: root,
+			workerProfileId: "p-worker",
+			checkerProfileId: "p-checker",
+			watcherProfileId: "p-watcher",
+			finalizerProfileId: "p-finalizer",
+			decomposerProfileId: "p-decomposer",
+			dispatcherProfileId: "p-dispatcher",
+			profileResolver: makeFakeProfileResolver({
+				"p-dispatcher": { defaultBrowserId: "browser-dispatcher" },
+				"p-decomposer": { defaultBrowserId: "browser-decomposer" },
+				"p-worker": { defaultBrowserId: "browser-worker" },
+			}) as never,
+			sessionFactory: factory,
+		});
+
+		const out = await runner.runDiscoveryDispatcher(makeDiscoveryDispatchInput({
+			itemId: "vendor/slash",
+			itemPayload: { id: "vendor/slash", title: "Slash Vendor", type: "vendor" },
+		}));
+
+		assert.equal(captured[0]!.snapshot.profileId, "p-dispatcher");
+		assert.equal(captured[0]!.browserId, "browser-dispatcher");
+		assert.ok(captured[0]!.browserScope?.includes("discovery-dispatcher"));
+		assert.ok(captured[0]!.workspaceRootPath?.includes("discovery-dispatcher"));
+		assert.ok(!captured[0]!.browserScope?.includes("vendor/slash"), "browser scope must not include raw path-like item id");
+		assert.ok(!captured[0]!.workspaceRootPath?.includes("vendor/slash"), "workspace path must not include raw path-like item id");
+		assert.equal(out.ok, true);
+		assert.equal(out.runtimeContext?.requestedProfileId, "p-dispatcher");
+		assert.equal(out.runtimeContext?.browserId, "browser-dispatcher");
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
+test("runDiscoveryDispatcher prompt includes discovery dispatch context and exact item payload", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dispatcher-"));
+	try {
+		let capturedPrompt = "";
+		const sessionFactory = {
+			createSession: async () => ({
+				prompt: async (p: string) => { capturedPrompt = p; },
+				subscribe: () => () => {},
+				messages: [{ role: "assistant", content: [{ type: "text", text: makeDiscoveryDispatchOutputJson() }], stopReason: "end_turn" }],
+			}),
+		} as unknown as BackgroundAgentSessionFactory;
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root,
+			teamDataDir: root,
+			workerProfileId: "p-worker",
+			checkerProfileId: "p-checker",
+			watcherProfileId: "p-watcher",
+			finalizerProfileId: "p-finalizer",
+			decomposerProfileId: "p-decomposer",
+			dispatcherProfileId: "p-dispatcher",
+			profileResolver: makeFakeProfileResolver({ "p-dispatcher": {} }) as never,
+			sessionFactory,
+		});
+
+		await runner.runDiscoveryDispatcher(makeDiscoveryDispatchInput());
+
+		assert.ok(capturedPrompt.includes("Vendor discovery"), "prompt must include Discovery task title");
+		assert.ok(capturedPrompt.includes("Find qualified vendors"), "prompt must include Discovery goal");
+		assert.ok(capturedPrompt.includes("Create one due-diligence work unit"), "prompt must include dispatch goal");
+		assert.ok(capturedPrompt.includes("vendor_1"), "prompt must include exact item id");
+		assert.ok(capturedPrompt.includes('"website": "https://example.com"'), "prompt must include full item payload JSON");
+		assert.ok(capturedPrompt.includes("workerAgentId") && capturedPrompt.includes("generatedSource"), "prompt must include forbidden output fields");
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
+test("runDiscoveryDispatcher returns valid parsed output plus runtime context", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dispatcher-"));
+	try {
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root,
+			teamDataDir: root,
+			workerProfileId: "p-worker",
+			checkerProfileId: "p-checker",
+			watcherProfileId: "p-watcher",
+			finalizerProfileId: "p-finalizer",
+			dispatcherProfileId: "p-dispatcher",
+			profileResolver: makeFakeProfileResolver({ "p-dispatcher": { defaultBrowserId: "browser-dispatcher" } }) as never,
+			sessionFactory: makeFakeSessionFactory([makeDiscoveryDispatchOutputJson()]),
+		});
+
+		const out = await runner.runDiscoveryDispatcher(makeDiscoveryDispatchInput());
+
+		assert.equal(out.ok, true);
+		if (out.ok) {
+			assert.equal(out.itemId, "vendor_1");
+			assert.equal(out.workUnit.title, "Assess Acme Sensors");
+		}
+		assert.equal(out.runtimeContext?.requestedProfileId, "p-dispatcher");
+		assert.equal(out.runtimeContext?.browserId, "browser-dispatcher");
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
+test("runDiscoveryDispatcher returns ok false with runtime context on invalid session output", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dispatcher-"));
+	try {
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root,
+			teamDataDir: root,
+			workerProfileId: "p-worker",
+			checkerProfileId: "p-checker",
+			watcherProfileId: "p-watcher",
+			finalizerProfileId: "p-finalizer",
+			dispatcherProfileId: "p-dispatcher",
+			profileResolver: makeFakeProfileResolver({ "p-dispatcher": { defaultBrowserId: "browser-dispatcher" } }) as never,
+			sessionFactory: makeFakeSessionFactory(["not json"]),
+		});
+
+		const out = await runner.runDiscoveryDispatcher(makeDiscoveryDispatchInput());
+
+		assert.equal(out.ok, false);
+		assert.equal(out.itemId, "vendor_1");
+		assert.match(out.error, /json/i);
+		assert.equal(out.runtimeContext?.requestedProfileId, "p-dispatcher");
+		assert.equal(out.runtimeContext?.browserId, "browser-dispatcher");
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
+test("runDiscoveryDispatcher falls back from dispatcherProfileId to decomposerProfileId then workerProfileId", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dispatcher-"));
+	try {
+		const capturedProfiles: string[] = [];
+		const profileResolver = {
+			resolve: async (ref: { profileId: string }) => {
+				capturedProfiles.push(ref.profileId);
+				return {
+					profileId: ref.profileId,
+					profileVersion: "1",
+					agentSpecId: "team-default",
+					agentSpecVersion: "1",
+					skillSetId: "team-default",
+					skillSetVersion: "1",
+					skills: [],
+					modelPolicyId: "team-default",
+					modelPolicyVersion: "1",
+					provider: "test",
+					model: "test-model",
+					upgradePolicy: "latest" as const,
+					resolvedAt: new Date().toISOString(),
+				};
+			},
+		};
+		const withDecomposer = new AgentProfileRoleRunner({
+			projectRoot: root,
+			teamDataDir: root,
+			workerProfileId: "p-worker",
+			checkerProfileId: "p-checker",
+			watcherProfileId: "p-watcher",
+			finalizerProfileId: "p-finalizer",
+			decomposerProfileId: "p-decomposer",
+			profileResolver: profileResolver as never,
+			sessionFactory: makeFakeSessionFactory([makeDiscoveryDispatchOutputJson()]),
+		});
+		const workerFallback = new AgentProfileRoleRunner({
+			projectRoot: root,
+			teamDataDir: root,
+			workerProfileId: "p-worker",
+			checkerProfileId: "p-checker",
+			watcherProfileId: "p-watcher",
+			finalizerProfileId: "p-finalizer",
+			profileResolver: profileResolver as never,
+			sessionFactory: makeFakeSessionFactory([makeDiscoveryDispatchOutputJson()]),
+		});
+
+		await withDecomposer.runDiscoveryDispatcher(makeDiscoveryDispatchInput());
+		await workerFallback.runDiscoveryDispatcher(makeDiscoveryDispatchInput());
+
+		assert.deepEqual(capturedProfiles, ["p-decomposer", "p-worker"]);
 	} finally {
 		await rm(root, { recursive: true }).catch(() => {});
 	}

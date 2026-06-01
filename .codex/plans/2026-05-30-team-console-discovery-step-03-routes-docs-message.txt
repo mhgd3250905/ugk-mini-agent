@@ -1,0 +1,97 @@
+请接手 E:\AII\ugk-pi 的 Team Console Discovery 节点第 03 步：Task API routes + catalog docs。
+
+当前基线：
+- 最新 commit: af0362a docs(team-console): record task chain validation
+- 分支状态: main...origin/main [ahead 6]
+- 已完成: Step 01/01A 已添加 Discovery / generated Task 共享类型，字段使用 generatedWorkerAgentId/generatedCheckerAgentId；Step 02 已添加 backend validation 和 TaskStore 语义
+- 当前验证: Codex review 已通过 node --test --import tsx test/team-task-store.test.ts（19 tests）、npm run test:team（1081 tests, 1079 pass, 2 skipped）、Team Console contract drift test、Team Console tsc、npx tsc --noEmit、git diff --check
+- 暂存区: 应为空；执行前用 git diff --cached --stat 确认
+- 当前本地源码已有未提交 Discovery diff: src/team/types.ts、src/team/public-contract.ts、src/team/task-validation.ts、src/team/task-store.ts、test/team-task-store.test.ts、apps/team-console/src/api/team-types.ts、apps/team-console/src/tests/team-contract-drift.test.ts；不要恢复它们
+- Dirty 边界: .pi/skills/anthropics/skill-creator/** 是既有 tracked deletion，不要 stage、不要恢复；.pi/skills/skill-creator/、.codex/plans/*、public/runtime 报告、临时 HTML、generate_report*.py、report_template.html 不要提交
+
+必须先读：
+- AGENTS.md
+- apps/team-console/README.md
+- docs/team-runtime.md
+- .codex/plans/2026-05-30-team-console-discovery-requirements.md
+- .codex/plans/2026-05-30-team-console-discovery-step-03-routes-docs-plan.md
+- src/team/routes.ts
+- src/team/route-parsers.ts
+- src/team/route-presenters.ts
+- src/team/task-validation.ts
+- src/team/task-store.ts
+- test/team-task-routes.test.ts
+- test/team-task-store.test.ts
+
+严格按计划文件执行：
+- .codex/plans/2026-05-30-team-console-discovery-step-03-routes-docs-plan.md
+
+本轮只做：
+- 让 /v1/team/tasks API 暴露 Discovery root Task 创建和 discoverySpec 更新。
+- 让 /v1/team/tasks 默认继续隐藏 generated Tasks，并支持显式 includeGenerated 查询。
+- 新增 GET /v1/team/tasks/:taskId/generated-tasks 只读子 catalog route。
+- 补 focused route tests 和 Team runtime/API 文档。
+- 完成后停下交付。
+
+禁止做：
+- 不实现 Discovery run、output validation persistence、dispatcher/decomposer、generated Task upsert、stale marking batch、auto-run scheduler
+- 不改 src/team/task-run-service.ts
+- 不改 src/team/canvas-task-attempt-runner.ts
+- 不改 src/team/role-prompt-contract.ts
+- 不改 src/team/agent-profile-role-runner.ts
+- 不改 src/team/orchestrator.ts
+- 不改 src/team/task-store.ts
+- 不改 src/team/task-validation.ts
+- 不改 apps/team-console/src/**
+- 不改 .pi/skills/**
+- 不改主 /playground 产品 UI
+- 不创建 public generated Task create API；generatedSource 不能通过 POST /v1/team/tasks 创建
+- 不创建计划外文件
+- 不做整文件格式化或换行符转换；保持 touched files 的既有 EOL/格式
+- 不 stage、不 commit，除非用户另行明确授权
+- 不使用 git add -A
+- 不提交 .env/.data/runtime 产物/temp 文件/报告产物/未知 .pi/skills/*/skills-lock.json
+
+执行要求：
+- 这是第 03 步，只处理 routes + route tests + docs，完成后停下交付。
+- 行为变更先补 route tests，再写实现。
+- POST /v1/team/tasks 必须继续兼容普通 Task 创建，同时转发 canvasKind/discoverySpec 给 TaskStore.create。
+- POST /v1/team/tasks 如果收到 generatedSource，必须 400，不能静默忽略。
+- PATCH /v1/team/tasks/:taskId 必须转发 discoverySpec 给 TaskStore.update。
+- PATCH /v1/team/tasks/:taskId 如果收到 canvasKind 或 generatedSource，必须 400，不能静默忽略。
+- GET /v1/team/tasks 默认只返回 root Tasks；includeGenerated=1/true 才包含 generated Tasks；includeArchived 语义保持不变。
+- GET /v1/team/tasks/:taskId/generated-tasks 只接受 Discovery root Task parent；missing parent 404，normal Task parent 400。
+- generated-tasks route 返回 { tasks }，默认排除 archived generated Tasks，includeArchived=1/true 时包含。
+- route tests 需要通过真实 app.inject 证明 status code 和 response shape，不能只测 store。
+- 如果需要在 route tests 里准备 generated Task，直接用 TaskStore 指向测试 TEAM_DATA_DIR seed；不要通过 public POST generatedSource 来 seed，因为本步必须拒绝这个 public backdoor。
+- 遇到计划外问题先停下说明，不要顺手扩范围。
+- 如果小改动产生超大 diff，先检查是否为 EOL/formatter churn，修正后再继续。
+- 不允许宽泛 suppress console warning；本步正常不需要 warning suppression。
+
+最终验证：
+- node --test --import tsx test/team-task-routes.test.ts
+- node --test --import tsx test/team-task-store.test.ts
+- npm run test:team
+- npm --prefix apps/team-console test -- --run src/tests/team-contract-drift.test.ts
+- npm --prefix apps/team-console exec tsc -- --noEmit -p tsconfig.json
+- npx tsc --noEmit
+- git diff --check
+- git diff --stat -- src/team/routes.ts src/team/route-parsers.ts test/team-task-routes.test.ts docs/team-runtime.md apps/team-console/README.md docs/change-log.md
+- git diff --numstat -- src/team/routes.ts src/team/route-parsers.ts test/team-task-routes.test.ts docs/team-runtime.md apps/team-console/README.md docs/change-log.md
+- git ls-files --eol src/team/routes.ts src/team/route-parsers.ts test/team-task-routes.test.ts docs/team-runtime.md apps/team-console/README.md docs/change-log.md
+- git diff --cached --stat
+
+如果 src/team/route-parsers.ts、apps/team-console/README.md 或 docs/change-log.md 没有被修改，scoped diff/EOL 命令里可以省略对应文件，并在交付报告中明确说明。
+
+完成后按这个格式回复：
+1. 改了哪些文件。
+2. 新增或改变了哪些 route 行为。
+3. 新增了哪些 route tests，并说明每组 test 证明的 status code / response shape。
+4. 更新了哪些文档。
+5. 明确说明没有改 runner、scheduler、dispatcher、UI、.pi/skills。
+6. 每条验证命令和结果。
+7. diff stat / numstat 摘要，并说明是否存在异常大规模格式噪声。
+8. 是否有 EOL 或 formatter-only churn。
+9. 是否有计划假设不成立。
+
+不要 stage，不要 commit。

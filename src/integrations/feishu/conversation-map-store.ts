@@ -1,12 +1,20 @@
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { renameWithTransientRetry, type RenameFile } from "../../file-system.js";
 
 type ConversationMap = Record<string, string>;
+
+interface FeishuConversationMapStoreOptions {
+	indexPath: string;
+	renameFile?: RenameFile;
+	renameMaxAttempts?: number;
+	renameRetryDelayMs?: number;
+}
 
 export class FeishuConversationMapStore {
 	private writeQueue: Promise<void> = Promise.resolve();
 
-	constructor(private readonly options: { indexPath: string }) {}
+	constructor(private readonly options: FeishuConversationMapStoreOptions) {}
 
 	async get(key: string): Promise<string | undefined> {
 		const index = await this.readIndex();
@@ -55,7 +63,7 @@ export class FeishuConversationMapStore {
 		await mkdir(dir, { recursive: true });
 		try {
 			await writeFile(tempPath, JSON.stringify(index, null, 2), "utf8");
-			await rename(tempPath, this.options.indexPath);
+			await renameWithTransientRetry(tempPath, this.options.indexPath, this.options);
 		} catch (error) {
 			await unlink(tempPath).catch(() => undefined);
 			throw error;

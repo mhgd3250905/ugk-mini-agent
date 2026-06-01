@@ -7,6 +7,7 @@ import { straightPath, NODE_WIDTH } from "./execution-map-layout";
 export const AGENT_NODE_HEIGHT = 132;
 export const CANVAS_TASK_NODE_HEIGHT = 184;
 export const CANVAS_TASK_PORT_ROW_EXTRA_HEIGHT = 28;
+export const CANVAS_TASK_DISCOVERY_SUMMARY_EXTRA_HEIGHT = 28;
 export const CANVAS_SOURCE_NODE_HEIGHT = 166;
 
 // ── Rect type ──────────────────────────────────────────────────────
@@ -20,8 +21,14 @@ export function canvasTaskPortRowCount(task: TeamCanvasTask | undefined): number
   return (task.workUnit.inputPorts?.length ? 1 : 0) + (task.workUnit.outputPorts?.length ? 1 : 0);
 }
 
+export function isDiscoveryRootTask(task: TeamCanvasTask | undefined): boolean {
+  return task?.canvasKind === "discovery" && !task.generatedSource;
+}
+
 export function canvasTaskNodeHeight(task: TeamCanvasTask | undefined): number {
-  return CANVAS_TASK_NODE_HEIGHT + canvasTaskPortRowCount(task) * CANVAS_TASK_PORT_ROW_EXTRA_HEIGHT;
+  return CANVAS_TASK_NODE_HEIGHT
+    + canvasTaskPortRowCount(task) * CANVAS_TASK_PORT_ROW_EXTRA_HEIGHT
+    + (isDiscoveryRootTask(task) ? CANVAS_TASK_DISCOVERY_SUMMARY_EXTRA_HEIGHT : 0);
 }
 
 export function atlasDragEntryHeight(kind: "agent" | "task" | "source", task?: TeamCanvasTask): number {

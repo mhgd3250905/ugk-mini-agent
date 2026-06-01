@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { FeishuConversationMapStore } from "../src/integrations/feishu/conversation-map-store.js";
@@ -793,6 +793,31 @@ test("FeishuConversationMapStore preserves concurrent chat mappings", async () =
 		assert.equal(persisted[entry.key], entry.conversationId);
 	}
 	assert.equal(Object.keys(persisted).length, entries.length);
+});
+
+test("FeishuConversationMapStore retries transient file replacement failures", async () => {
+	const root = await mkdtemp(join(tmpdir(), "ugk-pi-feishu-"));
+	const indexPath = join(root, ".data", "agent", "feishu", "conversation-map.json");
+	let attempts = 0;
+	const store = new FeishuConversationMapStore({
+		indexPath,
+		renameFile: async (source, target) => {
+			attempts += 1;
+			if (attempts === 1) {
+				const error = new Error("temporary file replacement lock") as NodeJS.ErrnoException;
+				error.code = "EBUSY";
+				throw error;
+			}
+			await rename(source, target);
+		},
+		renameRetryDelayMs: 0,
+	});
+
+	await store.getOrCreate("chat:retry", () => "feishu:chat:retry");
+
+	assert.equal(attempts, 2);
+	const persisted = JSON.parse(await readFile(indexPath, "utf8")) as Record<string, string>;
+	assert.equal(persisted["chat:retry"], "feishu:chat:retry");
 });
 
 test("FeishuService downloads incoming file resources and passes them to the agent", async () => {

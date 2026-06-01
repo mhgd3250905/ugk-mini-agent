@@ -1,5 +1,6 @@
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { renameWithTransientRetry } from "../file-system.js";
 import type { TeamUnit } from "./types.js";
 import { generateTeamUnitId } from "./ids.js";
 
@@ -80,7 +81,7 @@ export class TeamUnitStore {
 		await mkdir(dir, { recursive: true });
 		const tmp = filePath + ".tmp";
 		await writeFile(tmp, JSON.stringify(teamUnit, null, 2), "utf8");
-		await rename(tmp, filePath);
+		await renameWithTransientRetry(tmp, filePath);
 	}
 
 	private normalize(unit: TeamUnit): TeamUnit {

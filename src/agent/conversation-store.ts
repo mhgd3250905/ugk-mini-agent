@@ -1,5 +1,6 @@
-import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { renameWithTransientRetry, type RenameFile } from "../file-system.js";
 
 export interface ConversationEntry {
 	sessionFile?: string;
@@ -29,13 +30,22 @@ interface CachedConversationStoreState {
 	state: ConversationStoreState;
 }
 
+interface ConversationStoreOptions {
+	renameFile?: RenameFile;
+	renameMaxAttempts?: number;
+	renameRetryDelayMs?: number;
+}
+
 const FALLBACK_ENTRY_UPDATED_AT = new Date(0).toISOString();
 
 export class ConversationStore {
 	private cache?: CachedConversationStoreState;
 	private writeQueue: Promise<void> = Promise.resolve();
 
-	constructor(private readonly indexPath: string) {}
+	constructor(
+		private readonly indexPath: string,
+		private readonly options: ConversationStoreOptions = {},
+	) {}
 
 	async get(conversationId: string): Promise<ConversationEntry | undefined> {
 		const state = await this.readState();
@@ -196,7 +206,7 @@ export class ConversationStore {
 		await mkdir(dir, { recursive: true });
 		try {
 			await writeFile(tempPath, this.stringifyState(state), "utf8");
-			await rename(tempPath, this.indexPath);
+			await renameWithTransientRetry(tempPath, this.indexPath, this.options);
 			const fileStat = await stat(this.indexPath);
 			this.cacheState(state, this.getMtimeKey(fileStat.mtimeMs));
 		} catch (error) {

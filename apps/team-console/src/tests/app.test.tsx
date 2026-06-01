@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
-import { mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
+import { mockDiscoveryRootTask, mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
 import { getAtlasNodes, firePointer } from "./app-dom-test-utils";
 
 describe("App", () => {
@@ -56,7 +56,7 @@ describe("App", () => {
     expect(toolbar!.querySelector(".agent-atlas-stats")).toBeTruthy();
     expect(toolbar!.querySelector(".task-toolbar-group")).toBeTruthy();
     expect(within(toolbar!).getByLabelText("Agent 数量")).toHaveTextContent("0");
-    expect(within(toolbar!).getByLabelText("当前 Task 数量")).toHaveTextContent(`${mockTeamTasks.length} 个 Task`);
+    expect(within(toolbar!).getByLabelText("当前 Task 数量")).toHaveTextContent(`${[...mockTeamTasks, mockDiscoveryRootTask].length} 个 Task`);
     expect(within(toolbar!.querySelector(".task-toolbar-group") as HTMLElement).getByRole("button", { name: "创建 Task" })).toBeInTheDocument();
     expect(within(toolbar!.querySelector(".task-toolbar-group") as HTMLElement).getByRole("button", { name: "刷新 Task" })).toBeInTheDocument();
   });

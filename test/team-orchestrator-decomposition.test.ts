@@ -835,9 +835,14 @@ test("cancel during decomposed child task wins over timeout", async () => {
 });
 
 test("run timeout fails unfinished decomposed children and parent", async () => {
+	let childStarted!: () => void;
+	const childStartedPromise = new Promise<void>(resolve => {
+		childStarted = resolve;
+	});
 	class SlowFirstChildRunner extends DecompositionCaptureRunner {
 		override async runWorker(input: WorkerInput) {
 			if (input.task.id === "task_1__a") {
+				childStarted();
 				await new Promise(resolve => setTimeout(resolve, 80));
 			}
 			return super.runWorker(input);
@@ -862,11 +867,13 @@ test("run timeout fails unfinished decomposed children and parent", async () => 
 	}, runner);
 	try {
 		const state = await orchestrator.createRun(plan.planId);
+		const runPromise = orchestrator.runToCompletion(state.runId);
+		await childStartedPromise;
 		const patched = (await workspace.getState(state.runId))!;
-		patched.maxRunDurationMinutes = 0.0005;
+		patched.maxRunDurationMinutes = 0.0001;
 		await workspace.saveState(patched);
 
-		const final = await orchestrator.runToCompletion(state.runId);
+		const final = await runPromise;
 
 		assert.equal(final.status, "failed");
 		assert.equal(final.taskStates.task_1?.status, "failed");

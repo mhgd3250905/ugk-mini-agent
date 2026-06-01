@@ -1,5 +1,8 @@
-import type { CheckerInput, CheckerOutput, WatcherInput, WatcherOutput, FinalizerInput, DecomposerInput, DecomposerOutput } from "./role-runner.js";
+import type { CheckerInput, CheckerOutput, WatcherInput, WatcherOutput, FinalizerInput, DecomposerInput, DecomposerOutput, DiscoveryDispatchInput, DiscoveryDispatchOutput, DiscoveryDispatchWorkUnitDraft } from "./role-runner.js";
 import type { TeamTask, TeamPlan, TeamTaskDecomposerMode, TeamTaskSourceItem } from "./types.js";
+
+type WithoutRuntimeContext<T> = T extends unknown ? Omit<T, "runtimeContext"> : never;
+type DiscoveryDispatchParsedOutput = WithoutRuntimeContext<DiscoveryDispatchOutput>;
 
 function getEffectiveSourceItem(task: TeamTask): TeamTaskSourceItem | null {
 	if (!task.generated) return null;
@@ -70,7 +73,9 @@ ${acceptanceRules.map((r, i) => `${i + 1}. ${r}`).join("\n")}
 
 ## 输出要求
 - 自由输出你的工作结果（markdown 格式）
-- 产出的文件放在当前工作目录
+- 私有中间文件放在当前工作目录
+- 需要交付给用户或让 checker 访问验证的文件，必须写入环境变量 ARTIFACT_PUBLIC_DIR 指向的目录
+- 如果 ARTIFACT_PUBLIC_BASE_URL 存在，对外可访问链接必须基于它拼接，不要启动临时本地 HTTP server，也不要输出 localhost 临时端口
 ${feedback ? `\n## 上次反馈（请针对反馈修改）\n${feedback}` : ""}`;
 	prompt += buildOutputContractBlock(task);
 	prompt += buildSourceItemIdentityBlock(task);
@@ -286,6 +291,78 @@ JSON 格式：
 - 不要在 JSON 前后添加任何文字`;
 }
 
+const DISCOVERY_DISPATCH_FORBIDDEN_FIELDS = [
+	"workerAgentId",
+	"checkerAgentId",
+	"leaderAgentId",
+	"generatedWorkerAgentId",
+	"generatedCheckerAgentId",
+	"canvasKind",
+	"discoverySpec",
+	"generatedSource",
+	"sourceDiscoveryTaskId",
+	"sourceItemId",
+	"itemPayload",
+	"itemStatus",
+	"workUnitMode",
+	"outputPorts",
+	"outputCheck",
+];
+
+export function buildDiscoveryDispatchPrompt(input: DiscoveryDispatchInput): string {
+	const recommended = input.recommendedItemFields ?? [];
+	const generatedAgentContext = [
+		input.generatedWorkerAgentId ? `- default generated worker profile id（仅上下文，不得输出）：${input.generatedWorkerAgentId}` : "",
+		input.generatedCheckerAgentId ? `- default generated checker profile id（仅上下文，不得输出）：${input.generatedCheckerAgentId}` : "",
+	].filter(Boolean).join("\n");
+	return `你是一个 Discovery dispatcher。请把一个已验证的 Discovery item 设计成一个 generated Team Canvas Task 的 WorkUnit 草案。
+
+## Discovery task
+- discoveryTaskId: ${input.discoveryTaskId}
+- title: ${input.discoveryTaskTitle}
+
+## Discovery goal
+${input.discoveryGoal}
+
+## Dispatch goal
+${input.dispatchGoal}
+
+## Item schema guidance
+- outputKey: ${input.outputKey}
+- requiredItemFields: ${input.requiredItemFields.join(", ")}
+- recommendedItemFields: ${recommended.join(", ")}
+- exact itemId: ${input.itemId}
+${generatedAgentContext ? `\n## Default generated agent context\n${generatedAgentContext}` : ""}
+
+## Full item payload JSON
+\`\`\`json
+${JSON.stringify(input.itemPayload, null, 2)}
+\`\`\`
+
+## Output requirements
+只输出一个严格 JSON object，不要输出 markdown、解释文字或代码围栏。
+
+JSON schema:
+\`\`\`json
+{
+  "itemId": "${input.itemId}",
+  "workUnit": {
+    "title": "Generated task title",
+    "input": { "text": "Precise worker prompt for this item" },
+    "outputContract": { "text": "Expected output contract" },
+    "acceptance": { "rules": ["Concrete acceptance rule"] }
+  }
+}
+\`\`\`
+
+Hard constraints:
+- itemId 必须精确等于 "${input.itemId}"。
+- workUnit.title、workUnit.input.text、workUnit.outputContract.text 必须是非空 string。
+- workUnit.acceptance.rules 必须是非空 string[]。
+- 不得输出 worker/checker/leader/source identity 字段。
+- 禁止字段：${DISCOVERY_DISPATCH_FORBIDDEN_FIELDS.join(", ")}。`;
+}
+
 function parseJsonResponse<T>(text: string): T {
 	// Fast path: entire text is JSON after stripping fences
 	const stripped = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
@@ -389,6 +466,27 @@ interface DecomposerJsonOutput {
 	children?: unknown[];
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function findForbiddenDiscoveryDispatchField(value: unknown): string | null {
+	if (Array.isArray(value)) {
+		for (const item of value) {
+			const found = findForbiddenDiscoveryDispatchField(item);
+			if (found) return found;
+		}
+		return null;
+	}
+	if (!isPlainObject(value)) return null;
+	for (const key of Object.keys(value)) {
+		if (DISCOVERY_DISPATCH_FORBIDDEN_FIELDS.includes(key)) return key;
+		const found = findForbiddenDiscoveryDispatchField(value[key]);
+		if (found) return found;
+	}
+	return null;
+}
+
 const VALID_CHECKER_VERDICTS = new Set<string>(["pass", "revise", "fail"]);
 const VALID_WATCHER_DECISIONS = new Set<string>(["accept_task", "confirm_failed", "request_revision"]);
 const VALID_REVISION_MODES = new Set<string>(["amend", "redo"]);
@@ -475,6 +573,52 @@ function normalizeDecomposerOutput(parsed: unknown, maxChildren: number): Omit<D
 	return { decision, reason, children: children as TeamTask[] };
 }
 
+function parseDiscoveryDispatchError(expectedItemId: string, error: string, rawContent: string): DiscoveryDispatchParsedOutput {
+	return { ok: false, itemId: expectedItemId, error, rawContent };
+}
+
+function normalizeDiscoveryDispatchOutput(parsed: unknown, expectedItemId: string, rawContent: string): DiscoveryDispatchParsedOutput {
+	if (!isPlainObject(parsed)) {
+		return parseDiscoveryDispatchError(expectedItemId, "discovery dispatcher output parse error: top-level value must be an object", rawContent);
+	}
+	const forbidden = findForbiddenDiscoveryDispatchField(parsed);
+	if (forbidden) {
+		return parseDiscoveryDispatchError(expectedItemId, `discovery dispatcher output includes forbidden field: ${forbidden}`, rawContent);
+	}
+	if (typeof parsed.itemId !== "string" || !parsed.itemId.trim()) {
+		return parseDiscoveryDispatchError(expectedItemId, "discovery dispatcher output parse error: itemId must be a non-empty string", rawContent);
+	}
+	if (parsed.itemId !== expectedItemId) {
+		return parseDiscoveryDispatchError(expectedItemId, `discovery dispatcher item mismatch: expected ${expectedItemId}, got ${parsed.itemId}`, rawContent);
+	}
+	if (!isPlainObject(parsed.workUnit)) {
+		return parseDiscoveryDispatchError(expectedItemId, "discovery dispatcher output parse error: workUnit must be an object", rawContent);
+	}
+	const workUnit = parsed.workUnit;
+	const input = workUnit.input;
+	const outputContract = workUnit.outputContract;
+	const acceptance = workUnit.acceptance;
+	if (typeof workUnit.title !== "string" || !workUnit.title.trim()) {
+		return parseDiscoveryDispatchError(expectedItemId, "discovery dispatcher output parse error: workUnit.title must be a non-empty string", rawContent);
+	}
+	if (!isPlainObject(input) || typeof input.text !== "string" || !input.text.trim()) {
+		return parseDiscoveryDispatchError(expectedItemId, "discovery dispatcher output parse error: workUnit.input.text must be a non-empty string", rawContent);
+	}
+	if (!isPlainObject(outputContract) || typeof outputContract.text !== "string" || !outputContract.text.trim()) {
+		return parseDiscoveryDispatchError(expectedItemId, "discovery dispatcher output parse error: workUnit.outputContract.text must be a non-empty string", rawContent);
+	}
+	if (!isPlainObject(acceptance) || !Array.isArray(acceptance.rules) || acceptance.rules.length === 0 || !acceptance.rules.every(rule => typeof rule === "string" && rule.trim())) {
+		return parseDiscoveryDispatchError(expectedItemId, "discovery dispatcher output parse error: workUnit.acceptance.rules must be a non-empty string array", rawContent);
+	}
+	const draft: DiscoveryDispatchWorkUnitDraft = {
+		title: workUnit.title,
+		input: { text: input.text },
+		outputContract: { text: outputContract.text },
+		acceptance: { rules: acceptance.rules as string[] },
+	};
+	return { ok: true, itemId: expectedItemId, workUnit: draft };
+}
+
 export function parseCheckerRoleOutput(content: string): Omit<CheckerOutput, "runtimeContext"> {
 	try {
 		const parsed = parseJsonResponse<CheckerJsonOutput>(content);
@@ -515,5 +659,14 @@ export function parseDecomposerRoleOutput(content: string, maxChildren: number):
 		return { decision: "no_split", reason: "decomposer output parse error: invalid schema", children: [] };
 	} catch {
 		return { decision: "no_split", reason: "decomposer output parse error", children: [] };
+	}
+}
+
+export function parseDiscoveryDispatchRoleOutput(content: string, expectedItemId: string): DiscoveryDispatchParsedOutput {
+	try {
+		const parsed = parseJsonResponse<unknown>(content);
+		return normalizeDiscoveryDispatchOutput(parsed, expectedItemId, content);
+	} catch {
+		return parseDiscoveryDispatchError(expectedItemId, "discovery dispatcher output parse error: invalid JSON", content);
 	}
 }
