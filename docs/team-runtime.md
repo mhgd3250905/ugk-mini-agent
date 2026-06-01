@@ -10,6 +10,8 @@
 
 > 2026-06-01 补充：Canvas Task role session 会注入 `ARTIFACT_PUBLIC_DIR` 和 `ARTIFACT_PUBLIC_BASE_URL`。需要交付或让 checker 访问的文件必须写入 `ARTIFACT_PUBLIC_DIR`，对外链接必须基于 `/v1/team/task-runs/:runId/artifacts/:roleKey/:role/...`，不要再启动临时 `localhost` 文件服务。Task run 的 `source.publicBaseUrl` 会从配置或请求 host/proto 推导；`PUBLIC_BASE_URL=auto` 表示自动推导。
 
+> 2026-06-01 真实运行验证：用户从 Team Console Live API 重新运行 Discovery root Task `task_c70580219a00`，root run 为 `run_614c9ccdb9f8`。本轮 root 发现 17 个 item，dispatcher/upsert 17 个 active generated Task 且 0 blocked，固定 3 并发 auto-run pool 启动全部 17 个 generated child。最终 12 succeeded、5 failed，root 在所有 child 终态后才 `completed`，并写出 `discovery-aggregation.json`；aggregation summary 为 `totalItems=17`、`generatedTasks=17`、`succeeded=12`、`failed=5`、`missingResult=0`。失败集中在 worker timeout、模型侧 `data_inspection_failed` 和 checker 抓出的伪造/不可验证输出，不是 root gating 或 aggregation handoff 问题。
+
 本文档是 Team Runtime v2 的唯一权威源。v0.1 域名调查历史见文末归档章节。
 
 ## 当前目标

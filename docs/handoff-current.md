@@ -50,8 +50,9 @@ git log -- <path>
 当前已确认：
 
 - 分支：`main`
-- 远程状态：`main...origin/main [ahead 17]`
-- 最新提交：`6d7b14b fix(team-console): preserve ID copy click while dragging`
+- 本次文档收口前远程状态：`main...origin/main`，本地与 `origin/main` 对齐。
+- 本次文档收口前最新提交：`4d43987 Merge pull request #2 from codex/public-site-readme`。
+- 本次文档收口后预计本地会有一个 docs-only 提交；继续工作前以 `git status --short --branch` 和 `git log -1 --oneline` 为准。
 - 无 staged changes。
 - tracked 工作区干净；以 `git status --short` 为准。
 - 未跟踪 runtime/public 产物禁止提交：
@@ -88,21 +89,24 @@ git log --oneline origin/main..HEAD
 
 ## 真实 UI 验证事实
 
-- 用户从 Team Console Live API 重新运行 `task_c70580219a00`。
-- 新 root run：`run_87395c3f9132`。
-- root 发现阶段产出 14 个 item。
-- generated child 全部终态后 root 才 `completed`。
-- generated child 结果：11 succeeded，3 failed。
-- 失败项：`reddit-claudecode`、`github-aider`、`v2ex-search`，原因均为 `worker timeout`。
-- root attempt 成功写出 `discovery-aggregation.json`。
-- 下游 HTML 报告 Task 新 run：`run_78d423dfeaeb`。
-- 下游 bound input artifact 的 `fileRef` 已确认为 `tasks/task_c70580219a00/attempts/attempt_69f8999ffe0b/discovery-aggregation.json`。
-- 下游 worker 已基于 aggregation 生成 HTML 报告。
-- 主后端稳定文件链接可访问：`http://127.0.0.1:3000/v1/files/7cae52ab-c3cd-4cd4-aef3-b38e7c6ccbbd`。
-- 下游最终失败原因是 `checker timeout`，不是 aggregation 或下游输入错误。
+- 用户在 Team Console Live API 重新运行 Discovery root Task `task_c70580219a00`。
+- 最新 root run：`run_614c9ccdb9f8`；root attempt：`attempt_d3dbed73acf1`。
+- root 发现阶段产出 17 个 item；dispatcher/upsert 完成本轮 17 个 active generated Task，且 0 blocked。
+- 固定 3 并发 auto-run pool 正常补位，17/17 个 generated child run 都被启动并进入终态。
+- generated child 结果：12 succeeded，5 failed；root 在全部 child 终态前保持 `running`，最后才 `completed`。
+- root attempt 已写出 `discovery-aggregation.json`，summary 为 `totalItems=17`、`generatedTasks=17`、`succeeded=12`、`failed=5`、`cancelled=0`、`missingResult=0`。
+- aggregation 文件：`.data/team/task-runs/runs/run_614c9ccdb9f8/tasks/task_c70580219a00/attempts/attempt_d3dbed73acf1/discovery-aggregation.json`。
+- 失败项：
+  - `reddit-claudeai`：`worker timeout`
+  - `github-opencode-discussions`：`worker timeout`
+  - `reddit-cursor`：模型侧 `data_inspection_failed`
+  - `hn-algolia`：checker 判定 findings 伪造 / 不可验证
+  - `zhihu-topic-ai-coding`：checker 判定知乎 URL / 数据明显幻觉
+- 结论：Discovery root gating、generated child auto-run pool 和 aggregation 落盘链路健康；当前主要风险是 generated child 的数据源可达性、worker timeout 和 checker 抓出的幻觉输出。
 
 ## 已验证命令
 
+- `task_c70580219a00` 最新真实运行监控：`run_614c9ccdb9f8` completed，aggregation summary 为 17 generated / 12 succeeded / 5 failed。
 - `node --test --import tsx test\team-task-run-process.test.ts`：35 passed。
 - `node --test --import tsx test\team-task-run-routes.test.ts`：12 passed。
 - `node --test --import tsx test\team-agent-profile-runner.test.ts`：60 passed。
@@ -120,6 +124,7 @@ git log --oneline origin/main..HEAD
 ## 未完成 / 风险
 
 - 下游“JSON 数据生成 HTML 报告”Task 的 checker timeout 需要后续优化；这不是 Discovery aggregation bug。
+- 真实 Discovery child 失败集中在 worker timeout、模型内容检查拦截和 checker 抓 hallucination；优先考虑缩小 generated Task 范围、改进 checker acceptance、增加源站反爬/可达性说明，而不是改 root aggregation。
 - 旧 run 或旧 worker 输出里可能仍同时提到临时 `localhost:9001` 和 `/v1/files/...`；新 Task role prompt / env 已要求使用 `ARTIFACT_PUBLIC_BASE_URL`，但具体报告 Task 的 checker 仍需要按 acceptance 验证可访问性。
 - deterministic validator 当前不做 URL 可达性通用机制；可达性要求应由用户创建 Task 时写入 checker acceptance，只有高频复用再考虑可选 `outputCheck`。
 

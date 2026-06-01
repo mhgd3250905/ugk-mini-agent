@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-01 — Discovery live run validation handoff
+
+- **主题**: 记录 `task_c70580219a00` 最新真实 Discovery run 的 root gating、generated auto-run pool 和 aggregation 验证结论。
+- **影响范围**: Team Console / Canvas Task / Discovery runtime 接手事实；确认 `run_614c9ccdb9f8` 在 17 个 generated child 全部终态后才完成，并写出 `discovery-aggregation.json`。
+- **验证**: 通过只读 Team Live API 监控确认 17 generated / 12 succeeded / 5 failed；`discovery-aggregation.json` summary 为 `totalItems=17`、`generatedTasks=17`、`succeeded=12`、`failed=5`、`missingResult=0`。
+- **对应入口**: `docs/handoff-current.md`、`docs/team-runtime.md`、Team Console `http://127.0.0.1:5174/`、root Task `task_c70580219a00`。
+
 ## 2026-06-01 — Team Console ID copy drag gesture split
 
 - **主题**: 修复节点 ID 区域短按复制与拖拽卡片的手势冲突。
