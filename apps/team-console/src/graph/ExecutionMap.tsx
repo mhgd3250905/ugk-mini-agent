@@ -266,6 +266,7 @@ type AtlasNodeDragState = {
   startClientY: number;
   entries: AtlasNodeDragEntry[];
   hasMoved: boolean;
+  copyOnClick?: { kind: "agent" | "task"; id: string };
   lastTreeDx?: number;
   lastTreeDy?: number;
 };
@@ -839,6 +840,7 @@ export function ExecutionMap({
   const dockRef = useRef<HTMLElement | null>(null);
   const dockItemsRef = useRef<HTMLDivElement | null>(null);
   const trashRef = useRef<HTMLDivElement | null>(null);
+  const pendingNodeIdCopyPointerRef = useRef<{ pointerId: number; kind: "agent" | "task"; id: string } | null>(null);
   const suppressAgentClickRef = useRef<string | null>(null);
   const suppressTaskClickRef = useRef<string | null>(null);
   const agentBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
@@ -1008,6 +1010,9 @@ export function ExecutionMap({
         className={`emap-node-id-copy${state ? ` is-${state}` : ""}`}
         aria-label={`复制 ${label} ${id}`}
         title={`复制 ${id}`}
+        onPointerDownCapture={(event) => {
+          pendingNodeIdCopyPointerRef.current = { pointerId: event.pointerId, kind, id };
+        }}
         onKeyDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation();
@@ -1478,6 +1483,15 @@ export function ExecutionMap({
     if (kind === "agent" && (!canMoveAgents || !onMoveAgent)) return;
     if (kind === "task" && (!canMoveTasks || !onMoveCanvasTask)) return;
     if (kind === "source" && (!canMoveSourceNodes || !onMoveSourceNode)) return;
+    const pendingCopyPointer = pendingNodeIdCopyPointerRef.current?.pointerId === event.pointerId
+      ? pendingNodeIdCopyPointerRef.current
+      : null;
+    const copyButton = event.target instanceof Element ? event.target.closest(".emap-node-id-copy") : null;
+    const copyOnClick = pendingCopyPointer && pendingCopyPointer.kind === kind
+      ? pendingCopyPointer
+      : copyButton && kind !== "source"
+        ? { kind, id: kind === "agent" ? (node as AtlasAgentNode).agentId : (node as AtlasTaskNode).taskId }
+        : null;
     atlasNodeDragRef.current = {
       primaryNodeId: node.nodeId,
       primaryKind: kind,
@@ -1486,6 +1500,7 @@ export function ExecutionMap({
       startClientY: event.clientY,
       entries: buildAtlasDragEntries(node, kind),
       hasMoved: false,
+      ...(copyOnClick && kind !== "source" ? { copyOnClick: copyOnClick as { kind: "agent" | "task"; id: string } } : {}),
     };
     dockDragHitRef.current = false;
     setIsAtlasDragging(true);
@@ -1705,6 +1720,9 @@ export function ExecutionMap({
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.stopPropagation();
     atlasNodeDragRef.current = null;
+    if (pendingNodeIdCopyPointerRef.current?.pointerId === event.pointerId) {
+      pendingNodeIdCopyPointerRef.current = null;
+    }
     dockDragHitRef.current = false;
     setIsAtlasDragging(false);
     event.currentTarget.releasePointerCapture?.(event.pointerId);
@@ -1721,12 +1739,18 @@ export function ExecutionMap({
       return;
     }
 
+    if (drag.copyOnClick?.kind === "agent") {
+      suppressNextAgentClick(drag.primaryNodeId);
+      void copyCanvasNodeId("agent", drag.copyOnClick.id);
+      return;
+    }
+
     const node = visibleAgentNodes.find((candidate) => candidate.nodeId === drag.primaryNodeId);
     if (drag.primaryKind === "agent" && node) {
       suppressNextAgentClick(drag.primaryNodeId);
       onSelectAgent?.(node);
     }
-  }, [checkDockDrop, isPointerOverTrash, onRootTrashDrop, onSelectAgent, rollbackAtlasDragPositions, suppressNextAgentClick, visibleAgentNodes]);
+  }, [checkDockDrop, copyCanvasNodeId, isPointerOverTrash, onRootTrashDrop, onSelectAgent, rollbackAtlasDragPositions, suppressNextAgentClick, visibleAgentNodes]);
 
   const handleAgentClick = useCallback((node: AtlasAgentNode) => {
     if (suppressAgentClickRef.current === node.nodeId) {
@@ -1758,6 +1782,9 @@ export function ExecutionMap({
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.stopPropagation();
     atlasNodeDragRef.current = null;
+    if (pendingNodeIdCopyPointerRef.current?.pointerId === event.pointerId) {
+      pendingNodeIdCopyPointerRef.current = null;
+    }
     dockDragHitRef.current = false;
     setIsAtlasDragging(false);
     event.currentTarget.releasePointerCapture?.(event.pointerId);
@@ -1774,12 +1801,18 @@ export function ExecutionMap({
       return;
     }
 
+    if (drag.copyOnClick?.kind === "task") {
+      suppressNextTaskClick(drag.primaryNodeId);
+      void copyCanvasNodeId("task", drag.copyOnClick.id);
+      return;
+    }
+
     const node = visibleTaskNodes.find((candidate) => candidate.nodeId === drag.primaryNodeId);
     if (drag.primaryKind === "task" && node) {
       suppressNextTaskClick(drag.primaryNodeId);
       onSelectCanvasTask?.(node);
     }
-  }, [checkDockDrop, isPointerOverTrash, onRootTrashDrop, onSelectCanvasTask, rollbackAtlasDragPositions, suppressNextTaskClick, visibleTaskNodes]);
+  }, [checkDockDrop, copyCanvasNodeId, isPointerOverTrash, onRootTrashDrop, onSelectCanvasTask, rollbackAtlasDragPositions, suppressNextTaskClick, visibleTaskNodes]);
 
   const handleTaskClick = useCallback((node: AtlasTaskNode) => {
     if (suppressTaskClickRef.current === node.nodeId) {

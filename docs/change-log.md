@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-01 — Team Console ID copy drag gesture split
+
+- **主题**: 修复节点 ID 区域短按复制与拖拽卡片的手势冲突。
+- **影响范围**: Execution Atlas root Agent / Task 卡片 ID 复制按钮。
+- **验证**: `npm --prefix apps\team-console run test -- --run src\tests\app-atlas-drag.test.tsx src\tests\app.test.tsx`、`npx tsc --noEmit`、`git diff --check`。
+- **对应入口**: `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/tests/app-atlas-drag.test.tsx`。
+
 ## 2026-06-01 — Team Console branch panel layout persistence
 
 - **主题**: 补齐 Team Console 画布展开面板的位置持久化，修复刷新后 Task 操作/详情面板回到自动布局的问题。
