@@ -14,6 +14,18 @@
 
 ---
 
+## 2026-06-01 — Team Console canvas dock and Agent skill fixes
+
+- **主题**: 修复子 Agent 技能更新、Team Console 画布收纳、布局恢复、dock 翻页和节点 ID 拖拽冲突。
+- **变更内容**:
+  - `/playground/agents` 子 Agent 技能区新增从主 Agent 覆盖更新单个技能的接口和按钮，更新前会清理目标技能目录，避免旧文件残留。
+  - 画布底部 dock 同时稳定收纳 Agent / Task / Source，不再被顶部 Agent/Task 筛选器误隐藏；Task 收纳后继续显示最新 run 状态。
+  - 画布 root Agent / Task / Source 的位置和收纳状态写入 canvas UI state，刷新或重开页面后恢复；live loading 空列表不再误清理收纳状态。
+  - dock 隐藏原生横向滚动条，改用左右翻页按钮；节点 ID 复制按钮保留点击复制，但拖动时交回卡片处理。
+- **影响范围**: `/playground/agents`、Team Console Execution Atlas root canvas、bottom dock、canvas UI localStorage 状态。
+- **验证**: `npm test` 通过（2013 tests / 2011 passed / 2 skipped / 0 failed），`npx tsc --noEmit`，`git diff --check`。
+- **对应入口**: `src/routes/agent-profiles.ts`、`src/agent/agent-profile-catalog.ts`、`src/ui/agents-page.ts`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`。
+
 ## 2026-06-01 — Team Task public artifact URL and quiet refresh contract
 
 - **主题**: 收口 Canvas Task 交付文件的公开访问契约，并避免后台 Discovery 刷新抢占“刷新 Task”按钮状态。
