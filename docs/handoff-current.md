@@ -47,13 +47,13 @@ git log -- <path>
 
 ## 当前 Git 现场
 
-接手时已确认：
+当前已确认：
 
 - 分支：`main`
-- 远程状态：`main...origin/main [ahead 8]`
-- 最新提交：`cf7c8fa fix(fs): retry transient atomic file replacements`
+- 远程状态：`main...origin/main [ahead 17]`
+- 最新提交：`6d7b14b fix(team-console): preserve ID copy click while dragging`
 - 无 staged changes。
-- 当前 tracked 修改集中在 Team Console / Discovery runtime / Task artifact contract / docs / tests；以 `git status --short` 为准。
+- tracked 工作区干净；以 `git status --short` 为准。
 - 未跟踪 runtime/public 产物禁止提交：
   - `public/developer-forum-sources-report.html`
   - `public/forum-sources-report.html`
@@ -82,6 +82,9 @@ git log --oneline origin/main..HEAD
 - Team Console 后台刷新已区分 silent refresh；active run 终态刷新、打开 Discovery 子画布和延迟 catalog refresh 不再抢占工具栏“刷新 Task”按钮加载态。
 - Canvas Task run 会记录 `source.publicBaseUrl`；`PUBLIC_BASE_URL=auto` 表示按当前请求 host/proto 或本地端口自动推导公开 base URL。
 - Team role session 注入 `ARTIFACT_PUBLIC_DIR` 和 `ARTIFACT_PUBLIC_BASE_URL`；需要交付的报告/HTML 应写到 public output 目录，并通过 `/v1/team/task-runs/:runId/artifacts/:roleKey/:role/...` 稳定访问。
+- `/playground/agents` 子 Agent 技能区已支持从主 Agent 覆盖更新单个技能。
+- Team Console Execution Atlas 已修复 root Agent / Task / Source 位置、dock 收纳状态、Task 操作/子面板布局持久化、dock 翻页按钮，以及 ID 区域短按复制 / 拖动卡片手势冲突。
+- 用户已在真实 UI 验证上述 Team Console 画布和 ID 复制/拖拽修复通过。
 
 ## 真实 UI 验证事实
 
@@ -105,9 +108,13 @@ git log --oneline origin/main..HEAD
 - `node --test --import tsx test\team-agent-profile-runner.test.ts`：60 passed。
 - `npm --prefix apps\team-console run test -- --run src\tests\app-live-data.test.tsx`：53 passed。
 - `npm --prefix apps\team-console run test -- --run src\tests\app-run-observer.test.tsx`：18 passed。
+- `npm --prefix apps\team-console run test -- --run src\tests\app-root-dock.test.tsx src\tests\app-canvas-state.test.tsx src\tests\app-atlas-drag.test.tsx`：passed。
+- `npm --prefix apps\team-console run test -- --run src\tests\app-branch-windowing.test.tsx src\tests\app-task-branches.test.tsx src\tests\app-task-leader.test.tsx`：passed。
+- `npm --prefix apps\team-console run test -- --run src\tests\app-atlas-drag.test.tsx src\tests\app.test.tsx`：passed。
+- `node --test --import tsx test\chat-agent-routes.test.ts test\agent-model-ui.test.ts`：23 passed。
 - `npx tsc --noEmit`：passed。
 - `git diff --check`：passed。
-- `npm test`：2011 tests，2009 passed，2 skipped，0 failed。
+- `npm test`：2013 tests，2011 passed，2 skipped，0 failed。
 - Docker 服务已重启过，`/healthz` 正常。
 
 ## 未完成 / 风险
