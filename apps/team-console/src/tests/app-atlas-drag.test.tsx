@@ -22,9 +22,9 @@ describe("App", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
       fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
-      fireEvent.click(screen.getByRole("button", { name: "放大" }));
 
       const atlas = getAtlas(container);
+      fireEvent.wheel(atlas, { deltaY: -120, clientX: 120, clientY: 120 });
       const agentNode = within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" }) as HTMLElement;
       const initialLeft = Number.parseFloat(agentNode.style.left);
       const initialTop = Number.parseFloat(agentNode.style.top);

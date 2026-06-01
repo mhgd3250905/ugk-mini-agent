@@ -453,7 +453,7 @@
 - `C:\Users\29485\Downloads\0429-ui-fix.md` 中的桌面布局重构已合回源码：桌面端左侧 `desktop-conversation-rail` 贯穿全高，底部承载 `设置` 菜单（模型源 / 飞书设置 / 主题切换）；右侧 `topbar` 移到第二列，只承载 `新会话`、`文件库`、`后台任务`、`消息` 和右侧上下文电池。上传文件入口已移到 composer 左侧 `+` 按钮，技能按钮不再作为可见导航项。手机端仍走独立 `mobile-topbar`，`max-width: 640px` 下只隐藏桌面操作按钮；上下文电池复用同一个 `topbar-context-slot` 并定位到手机状态栏右侧。
 - 消息气泡导出图片现在会同时收集内联 `<style>` 和 `/playground/` 下的外链 stylesheet，再注入导出 SVG；runtime 外部化模式下的 `styles.css` / `extensions/custom-styles.css` 不应再导致 PNG 只剩纯文字。
 - 深色主题 `body::after` 与浅色主题 `:root[data-theme="light"] body::after` 只保留顶部装饰光晕，不再叠加左右侧 `linear-gradient` 遮罩，避免页面两侧被压暗或染灰。
-- 移动端顶部品牌和 `chat-stage-watermark` 使用 `public/ugk-claw-logo.svg` / `public/ugk-claw-logo-light.svg`，桌面端继续使用 ASCII 品牌；移动端隐藏 ASCII，避免 box drawing 字符在窄屏字体栈下变形。
+- `chat-stage-watermark` 是对话画布中心的 UGK Claw SVG icon 水印，使用 `public/ugk-claw-logo.svg` / `public/ugk-claw-logo-light.svg`，保持很低透明度、`pointer-events: none`，消息区和 composer 始终在水印上层。桌面顶部品牌继续使用 ASCII；画布水印不再使用 ASCII，避免背景文字抢层级。
 - 浅色主题下 `file-download` 与 `asset-pill` 使用白色轻量承载面；深色主题保留冷色边框。
 - “回到底部”按钮桌面端仍贴近 transcript 右下，移动端改为 fixed 并按 `env(safe-area-inset-bottom)` 避让底部 composer。
 

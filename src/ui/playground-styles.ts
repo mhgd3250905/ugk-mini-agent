@@ -701,11 +701,28 @@ export function getPlaygroundStyles(): string {
 			left: 50%;
 			top: 50%;
 			z-index: 0;
-			width: max-content;
-			max-width: min(92%, 980px);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			width: clamp(150px, 18vw, 280px);
+			max-width: min(56%, 280px);
+			height: auto;
 			transform: translate(-50%, -50%);
-			overflow: hidden;
+			opacity: 0.12;
+			overflow: visible;
 			pointer-events: none;
+		}
+
+		.chat-stage-watermark .ugk-svg-logo-watermark {
+			display: block;
+			width: 100%;
+			height: auto;
+			opacity: 1;
+			filter: saturate(0.92);
+		}
+
+		.chat-stage-watermark .ugk-ascii-logo-watermark {
+			display: none;
 		}
 
 		.ugk-ascii-logo-watermark {
@@ -4693,6 +4710,9 @@ export function getPlaygroundStyles(): string {
 				display: flex;
 				align-items: center;
 				justify-content: center;
+				width: min(180px, 48vw);
+				max-width: 48vw;
+				opacity: 0.11;
 			}
 
 			.chat-stage-watermark .ugk-ascii-logo-watermark {

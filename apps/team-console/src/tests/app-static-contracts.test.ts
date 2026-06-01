@@ -70,6 +70,139 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toMatch(/\.execution-map-container\s*{[^}]*min-width:\s*0;[^}]*max-width:\s*100%;/s);
   });
 
+  it("uses a light default theme for the Team Console app chrome", () => {
+    const appCss = readFileSync("src/app/app.css", "utf8");
+
+    expect(appCss).toContain("--bg: #f6f8fb");
+    expect(appCss).toContain("--surface: #ffffff");
+    expect(appCss).toContain("--surface-raised: #f9fbff");
+    expect(appCss).toContain("--primary: #182230");
+    expect(appCss).toContain("--secondary: #667085");
+    expect(appCss).toMatch(/body\s*{[^}]*background:\s*var\(--bg\);/s);
+  });
+
+  it("uses a light atlas canvas while preserving task and agent state accents", () => {
+    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const canvasRule = mapCss.match(/\.execution-map-container\s*{[^}]*}/)?.[0] ?? "";
+    const nodeRule = mapCss.match(/\.emap-node\s*{[^}]*}/)?.[0] ?? "";
+    const branchRule = mapCss.match(/\.emap-dialog-branch,\n\.agent-playground-branch\s*{[^}]*}/)?.[0] ?? "";
+
+    expect(canvasRule).toContain("linear-gradient(180deg, #eef3f8 0%, #f8fafc 100%)");
+    expect(canvasRule).toContain("rgba(101, 119, 145, 0.16) 1px");
+    expect(nodeRule).toContain("0 10px 24px rgba(15, 23, 42, 0.1)");
+    expect(branchRule).toContain("background: var(--surface)");
+    expect(mapCss).toContain("rgba(255, 104, 64");
+    expect(mapCss).toContain("rgba(255, 190, 96");
+  });
+
+  it("keeps the dark atlas canvas grid at the original tile size", () => {
+    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const darkCanvasRule = mapCss.match(/\[data-theme="dark"\] \.execution-map-container\s*{[^}]*}/)?.[0] ?? "";
+
+    expect(darkCanvasRule).toContain("linear-gradient(180deg, #050813 0%, #02040b 100%)");
+    expect(darkCanvasRule).toContain("rgba(255, 255, 255, 0.025) 1px");
+    expect(darkCanvasRule).toContain("background-size: 32px 32px, 32px 32px, auto");
+  });
+
+  it("keeps the Task leader picker on the light theme surface", () => {
+    const appCss = readFileSync("src/app/app.css", "utf8");
+    const pickerRule = appCss.match(/\.agent-picker\s*{[^}]*}/)?.[0] ?? "";
+    const optionRule = appCss.match(/\.agent-picker-option\s*{[^}]*}/)?.[0] ?? "";
+    const hoverRule = appCss.match(/\.agent-picker-option:hover:not\(:disabled\)\s*{[^}]*}/)?.[0] ?? "";
+
+    expect(pickerRule).toContain("background: rgba(255, 255, 255, 0.96)");
+    expect(pickerRule).not.toContain("rgba(8, 11, 19");
+    expect(optionRule).toContain("background: rgba(248, 250, 252, 0.82)");
+    expect(optionRule).not.toContain("rgba(16, 20, 31");
+    expect(hoverRule).toContain("background: rgba(22, 124, 128, 0.08)");
+  });
+
+  it("exposes a persisted light/dark theme toggle in the app shell", () => {
+    const appSource = readFileSync("src/app/App.tsx", "utf8");
+    const appCss = readFileSync("src/app/app.css", "utf8");
+
+    expect(appSource).toContain('TEAM_CONSOLE_THEME_STORAGE_KEY = "ugk-team-console:theme:v1"');
+    expect(appSource).toContain('data-theme={theme}');
+    expect(appSource).toContain('aria-label="切换主题"');
+    expect(appSource).toContain('className="map-toolbar-controls"');
+    expect(appSource).toContain("toolbarEnd={mapToolbarControls}");
+    expect(appSource).not.toContain('className="app-header"');
+    expect(appSource).not.toContain('className="app-header-right"');
+    expect(appSource).not.toContain("团队控制台");
+    expect(appSource).not.toContain("执行地图预览");
+    expect(appSource).toContain("setTheme((current) =>");
+    expect(appSource).toContain('className="theme-toggle-track"');
+    expect(appSource).toContain('className="theme-toggle-thumb"');
+    expect(appSource).toContain('className="theme-toggle-icon theme-toggle-sun"');
+    expect(appSource).toContain('className="theme-toggle-icon theme-toggle-moon"');
+    expect(appSource).not.toContain("theme-toggle-label");
+    expect(appCss).toContain('[data-theme="dark"]');
+    expect(appCss).toContain(".theme-toggle-btn");
+    expect(appCss).toContain(".theme-toggle-track");
+    expect(appCss).toContain(".theme-toggle-thumb");
+    expect(appCss).toContain(".map-toolbar-controls");
+    expect(appCss).not.toContain(".app-header");
+    expect(appCss).not.toContain(".app-title");
+    expect(appCss).not.toContain(".app-subtitle");
+    expect(appCss).not.toContain(".theme-toggle-label");
+    expect(appCss).toContain("transform: translateX(16px)");
+    expect(appCss).toContain("cubic-bezier(0.2, 0.8, 0.2, 1)");
+  });
+
+  it("does not render the obsolete live run switcher bar", () => {
+    const appSource = readFileSync("src/app/App.tsx", "utf8");
+
+    expect(appSource).not.toContain("live-run-bar");
+    expect(appSource).not.toContain("运行图：");
+    expect(appSource).not.toContain("最新 Run");
+  });
+
+  it("does not render the obsolete mock fixture switcher bar", () => {
+    const appSource = readFileSync("src/app/App.tsx", "utf8");
+    const appCss = readFileSync("src/app/app.css", "utf8");
+
+    expect(appSource).not.toContain('className="fixture-bar"');
+    expect(appSource).not.toContain("示例：");
+    expect(appSource).not.toContain("ALL_FIXTURES.map");
+    expect(appCss).not.toContain(".fixture-bar");
+    expect(appCss).not.toContain(".fixture-btn");
+  });
+
+  it("uses an animated sliding segment for root node filters", () => {
+    const appSource = readFileSync("src/app/App.tsx", "utf8");
+    const appCss = readFileSync("src/app/app.css", "utf8");
+    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const segmentRule = appCss.match(/\.root-filter-segment\s*{[^}]*}/)?.[0] ?? "";
+    const sliderRule = appCss.match(/\.root-filter-segment::before\s*{[^}]*}/)?.[0] ?? "";
+    const agentRule = appCss.match(/\.root-filter-segment\[data-active-filter="agent"\]::before\s*{[^}]*}/)?.[0] ?? "";
+    const taskRule = appCss.match(/\.root-filter-segment\[data-active-filter="task"\]::before\s*{[^}]*}/)?.[0] ?? "";
+    const activeButtonRule = appCss.match(/\.root-filter-btn\.is-active\s*{[^}]*}/)?.[0] ?? "";
+    const toolbarResetRule = mapCss.match(/\.execution-map-toolbar \.root-filter-btn\s*{[^}]*}/)?.[0] ?? "";
+    const toolbarHoverResetRule = mapCss.match(/\.execution-map-toolbar \.root-filter-btn:hover\s*{[^}]*}/)?.[0] ?? "";
+    const toolbarSideRule = mapCss.match(/\.execution-map-toolbar-side\s*{[^}]*}/)?.[0] ?? "";
+
+    expect(appSource).toContain("data-active-filter={rootNodeFilter}");
+    expect(toolbarSideRule).toContain("display: inline-flex");
+    expect(toolbarSideRule).toContain("align-items: center");
+    expect(segmentRule).toContain("position: relative");
+    expect(segmentRule).toContain("border-radius: 8px");
+    expect(segmentRule).toContain("overflow: hidden");
+    expect(sliderRule).toContain('content: ""');
+    expect(sliderRule).toContain("width: var(--root-filter-item-width)");
+    expect(sliderRule).toContain("border-radius: 6px");
+    expect(sliderRule).toContain("transition:");
+    expect(sliderRule).toContain("cubic-bezier(0.2, 0.8, 0.2, 1)");
+    expect(agentRule).toContain("transform: translateX(var(--root-filter-item-width))");
+    expect(taskRule).toContain("transform: translateX(calc(var(--root-filter-item-width) * 2))");
+    expect(activeButtonRule).not.toContain("background:");
+    expect(activeButtonRule).not.toContain("box-shadow:");
+    expect(toolbarResetRule).toContain("border: 0");
+    expect(toolbarResetRule).toContain("background: transparent");
+    expect(toolbarResetRule).toContain("box-shadow: none");
+    expect(toolbarHoverResetRule).toContain("background: transparent");
+    expect(toolbarHoverResetRule).toContain("transform: none");
+  });
+
   it("keeps the merged run observer outer panel auto-height while process sections use themed internal scrollbars", () => {
     const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
     const panelRule = mapCss.match(/\.emap-run-observer-panel\s*{[^}]*}/)?.[0] ?? "";
@@ -86,29 +219,54 @@ describe("Team Console static contracts", () => {
     const detailBodyRule = mapCss.match(/\.emap-observer-file-detail-body\s*{[^}]*}/)?.[0] ?? "";
     const detailScrollbarRule = mapCss.match(/\.emap-observer-file-detail-body::-webkit-scrollbar\s*{[^}]*}/)?.[0] ?? "";
     const detailThumbRule = mapCss.match(/\.emap-observer-file-detail-body::-webkit-scrollbar-thumb\s*{[^}]*}/)?.[0] ?? "";
+    const observerNodeRule = mapCss.match(/\.emap-observer-node\s*{[^}]*}/)?.[0] ?? "";
+    const processNodeRule = mapCss.match(/\.emap-observer-process-node\s*{[^}]*}/)?.[0] ?? "";
+    const fileDetailRule = mapCss.match(/\.emap-observer-file-detail-node\s*{[^}]*}/)?.[0] ?? "";
+    const detailPreRule = mapCss.match(/\.task-run-detail-pre\s*{[^}]*}/)?.[0] ?? "";
+    const mdContentRule = mapCss.match(/\.team-md-content\s*{[^}]*}/)?.[0] ?? "";
+    const maximizeButtonRule = mapCss.match(/\.emap-agent-branch-maximize-button\s*{[^}]*}/)?.[0] ?? "";
+    const artifactPreviewRule = mapCss.match(/\.emap-artifact-preview\s*{[^}]*}/)?.[0] ?? "";
 
     expect(panelRule).toContain("overflow: visible");
     expect(panelRule).not.toContain("overflow: auto");
     expect(stageRule).toContain("height: 204px");
     expect(processTopRule).toContain("overflow-y: auto");
     expect(processTopRule).toContain("scrollbar-width: thin");
-    expect(processTopRule).toContain("scrollbar-color");
+    expect(processTopRule).toContain("scrollbar-color: rgba(22, 124, 128, 0.58) rgba(226, 232, 240, 0.78)");
     expect(scrollbarRule).toContain("width: 8px");
     expect(scrollbarRule).not.toContain("display: none");
-    expect(thumbRule).toContain("rgba(121, 216, 208");
+    expect(thumbRule).toContain("border: 2px solid rgba(226, 232, 240, 0.78)");
+    expect(thumbRule).toContain("rgba(22, 124, 128");
     expect(checkerThumbRule).toContain("rgba(255, 206, 118");
     expect(detailBodyRule).toContain("scrollbar-width: thin");
-    expect(detailBodyRule).toContain("scrollbar-color");
+    expect(detailBodyRule).toContain("scrollbar-color: rgba(22, 124, 128, 0.58) rgba(226, 232, 240, 0.78)");
     expect(detailScrollbarRule).toContain("width: 8px");
-    expect(detailThumbRule).toContain("rgba(121, 216, 208");
+    expect(detailThumbRule).toContain("border: 2px solid rgba(226, 232, 240, 0.78)");
+    expect(detailThumbRule).toContain("rgba(22, 124, 128");
+    expect(observerNodeRule).toContain("background: rgba(255, 255, 255, 0.92)");
+    expect(processNodeRule).toContain("rgba(255, 255, 255, 0.88)");
+    expect(fileDetailRule).toContain("rgba(255, 255, 255, 0.92)");
+    expect(detailPreRule).toContain("background: rgba(248, 250, 252, 0.92)");
+    expect(detailPreRule).toContain("color: var(--primary)");
+    expect(mdContentRule).toContain("color: var(--primary)");
+    expect(maximizeButtonRule).toContain("background: rgba(255, 255, 255, 0.88)");
+    expect(artifactPreviewRule).toContain("background: rgba(255, 255, 255, 0.96)");
     expect(connectorSocketRule).toContain("pointer-events: none");
     expect(sourceSocketRule).toContain("stroke-width: 1.6");
     expect(sourceSocketRule).toContain("stroke-linecap: round");
     expect(sourceSocketRule).toContain("vector-effect: non-scaling-stroke");
+    expect(sourceSocketRule).toContain("fill: rgba(255, 255, 255, 0.92)");
     expect(sourceSocketRule).toContain("rgba(255, 190, 96");
     expect(taskConnectionSocketRule).toContain("rgba(103, 210, 168");
     expect(agentSocketRule).toContain("rgba(121, 216, 208");
     expect(evidenceSocketRule).toContain("rgba(121, 216, 208");
+    expect(mapCss).toContain('[data-theme="dark"] .emap-connector-source-socket');
+    expect(mapCss).toContain("fill: rgba(7, 12, 22, 0.94)");
+    expect(mapCss).toContain('[data-theme="dark"] .emap-run-observer-panel .emap-observer-process-top');
+    expect(mapCss).toContain('[data-theme="dark"] .emap-observer-file-detail-body');
+    expect(mapCss).toContain('[data-theme="dark"] .emap-observer-node');
+    expect(mapCss).toContain('[data-theme="dark"] .task-run-detail-pre');
+    expect(mapCss).toContain('[data-theme="dark"] .emap-artifact-preview');
     expect(mapCss).not.toContain(".emap-connector-anchor-ring");
     expect(mapCss).not.toContain(".emap-connector-anchor-dot");
   });
@@ -147,6 +305,9 @@ describe("Team Console static contracts", () => {
     expect(busyRule).not.toContain("rgba(121, 216, 208");
     expect(busyBarRule).toContain("rgb(255, 104, 64)");
     expect(busyPillRule).toContain("rgba(255, 104, 64");
+    expect(busyPillRule).toContain("color: #8f2a13");
+    expect(busyPillRule).not.toContain("rgb(255, 190, 165)");
+    expect(mapCss).toContain('[data-theme="dark"] .emap-agent-node[data-agent-run-state="busy"] .emap-node-state-pill.running');
   });
 
   it("uses a stronger warm accent for running Task cards", () => {
@@ -163,6 +324,8 @@ describe("Team Console static contracts", () => {
     const taskLeaderRule = mapCss.match(/\.emap-task-agent-row\.role-leader\s*{[^}]*}/)?.[0] ?? "";
     const taskWorkerRule = mapCss.match(/\.emap-task-agent-row\.role-worker\s*{[^}]*}/)?.[0] ?? "";
     const taskCheckerRule = mapCss.match(/\.emap-task-agent-row\.role-checker\s*{[^}]*}/)?.[0] ?? "";
+    const portHoverRule = mapCss.match(/\.emap-task-port-chip:hover,\n\.emap-task-port-chip:focus-visible\s*{[^}]*}/)?.[0] ?? "";
+    const portSelectedRule = mapCss.match(/\.emap-task-port-output\.is-selected\s*{[^}]*}/)?.[0] ?? "";
 
     expect(runningRule).toContain("rgba(255, 104, 64");
     expect(runningBarRule).toContain("rgb(255, 104, 64)");
@@ -182,13 +345,125 @@ describe("Team Console static contracts", () => {
     const atlasGeometrySource = readFileSync("src/graph/atlas-geometry.ts", "utf8");
     expect(atlasGeometrySource).toContain("export const AGENT_NODE_HEIGHT = 132");
     expect(taskAgentGridRule).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
-    expect(taskAgentGridRule).toContain("padding: 4px");
+    expect(taskAgentGridRule).not.toContain("padding:");
+    expect(taskAgentGridRule).not.toContain("border:");
+    expect(taskAgentGridRule).not.toContain("border-radius:");
+    expect(taskAgentGridRule).not.toContain("background:");
     expect(taskAgentRule).toContain("grid-template-columns: minmax(0, 1fr)");
     expect(taskAgentRule).toContain("border-left");
     expect(taskLeaderRule).toContain("grid-column: 1 / -1");
     expect(taskLeaderRule).toContain("grid-template-columns: 46px minmax(0, 1fr)");
-    expect(taskWorkerRule).toContain("rgba(121, 216, 208");
-    expect(taskCheckerRule).toContain("rgba(255, 214, 128");
+    expect(taskWorkerRule).toContain("rgba(22, 124, 128");
+    expect(taskCheckerRule).toContain("rgba(184, 115, 0");
+    expect(portHoverRule).toContain("background: rgba(22, 124, 128, 0.1)");
+    expect(portHoverRule).not.toContain("rgba(52, 81, 68");
+    expect(portSelectedRule).toContain("border-color: rgba(184, 115, 0, 0.58)");
+    expect(portSelectedRule).toContain("background: rgba(255, 190, 96, 0.22)");
+    expect(portSelectedRule).toContain("box-shadow: 0 0 0 1px rgba(184, 115, 0, 0.16)");
+    expect(mapCss).toContain('[data-theme="dark"] .emap-task-port-output.is-selected');
+  });
+
+  it("restores dark card internals when the Team Console theme is dark", () => {
+    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+
+    expect(mapCss).toContain('[data-theme="dark"] .emap-node-state-pill');
+    expect(mapCss).toContain("background: rgba(255, 255, 255, 0.04)");
+    expect(mapCss).toContain('[data-theme="dark"] .emap-node-id-copy');
+    expect(mapCss).toContain("rgba(2, 4, 11, 0.28)");
+    expect(mapCss).toContain('[data-theme="dark"] .emap-root-dock-item');
+    expect(mapCss).toContain("rgba(255, 255, 255, 0.035)");
+    expect(mapCss).toContain('[data-theme="dark"] .agent-playground-branch-head');
+    expect(mapCss).toContain("background: rgba(15, 24, 38, 0.96)");
+    expect(mapCss).toContain('[data-theme="dark"] .task-leader-branch-hint');
+    expect(mapCss).toContain("background: rgba(255, 190, 96, 0.06)");
+    expect(mapCss).toContain('[data-theme="dark"] .emap-run-observer-panel');
+    expect(mapCss).toContain("rgba(6, 11, 18, 0.98)");
+    expect(mapCss).not.toContain('[data-theme="dark"] .emap-task-agent-grid');
+    expect(mapCss).toContain('[data-theme="dark"] .emap-task-agent-row');
+    expect(mapCss).toContain("rgba(16, 22, 32, 0.36)");
+    expect(mapCss).toContain('[data-theme="dark"] .emap-task-agent-row b');
+    expect(mapCss).toContain("rgba(216, 228, 241, 0.54)");
+    expect(mapCss).toContain('[data-theme="dark"] .emap-task-agent-row em');
+    expect(mapCss).toContain("rgba(232, 239, 247, 0.84)");
+  });
+
+  it("keeps dark toolbar action buttons from being flattened by generic map button styles", () => {
+    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+
+    expect(mapCss).toContain('[data-theme="dark"] .execution-map-toolbar .agent-add-btn');
+    expect(mapCss).toContain("border-color: rgba(121, 216, 208, 0.42)");
+    expect(mapCss).toContain("rgba(13, 30, 36, 0.68)");
+    expect(mapCss).toContain("color: rgb(182, 246, 240)");
+    expect(mapCss).toContain("box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08)");
+    expect(mapCss).toContain('[data-theme="dark"] .execution-map-toolbar .agent-add-btn:hover');
+    expect(mapCss).toContain("border-color: rgba(121, 216, 208, 0.76)");
+  });
+
+  it("keeps zoom buttons removed and restores dark root filter tab highlights", () => {
+    const appCss = readFileSync("src/app/app.css", "utf8");
+    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const darkToolbarButtonRule = mapCss.match(/\[data-theme="dark"\] \.execution-map-toolbar button\s*{[^}]*}/)?.[0] ?? "";
+    const darkToolbarHoverRule = mapCss.match(/\[data-theme="dark"\] \.execution-map-toolbar button:hover\s*{[^}]*}/)?.[0] ?? "";
+    const darkRootFilterSliderRule = appCss.match(/\[data-theme="dark"\] \.root-filter-segment::before\s*{[^}]*}/)?.[0] ?? "";
+    const darkRootFilterRule = appCss.match(/\[data-theme="dark"\] \.root-filter-btn\.is-active\s*{[^}]*}/)?.[0] ?? "";
+    const darkRootFilterHoverRule = appCss.match(/\[data-theme="dark"\] \.root-filter-btn:not\(\.is-active\):hover\s*{[^}]*}/)?.[0] ?? "";
+    const darkRootFilterToolbarResetRule = mapCss.match(/\[data-theme="dark"\] \.execution-map-toolbar \.root-filter-btn\s*{[^}]*}/)?.[0] ?? "";
+
+    expect(mapCss).not.toContain(".execution-map-toolbar-viewport");
+    expect(mapCss).not.toContain(".execution-map-icon-button");
+    expect(mapCss).not.toContain(".execution-map-reset-button");
+    expect(mapCss).not.toContain(".execution-map-zoom");
+    expect(darkToolbarButtonRule).toContain("box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08)");
+    expect(darkToolbarButtonRule).not.toContain("rgba(255, 255, 255, 0.88)");
+    expect(darkToolbarHoverRule).toContain("background: rgba(121, 216, 208, 0.12)");
+    expect(darkToolbarHoverRule).toContain("box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1)");
+    expect(darkRootFilterSliderRule).toContain("box-shadow:");
+    expect(darkRootFilterSliderRule).toContain("inset 0 1px 0 rgba(255, 255, 255, 0.18)");
+    expect(darkRootFilterSliderRule).toContain("rgba(121, 216, 208, 0.42)");
+    expect(darkRootFilterRule).not.toContain("rgba(255, 255, 255, 0.84)");
+    expect(darkRootFilterHoverRule).not.toContain("background:");
+    expect(darkRootFilterHoverRule).toContain("color: rgba(232, 239, 247, 0.92)");
+    expect(darkRootFilterToolbarResetRule).toContain("background: transparent");
+    expect(darkRootFilterToolbarResetRule).toContain("box-shadow: none");
+  });
+
+  it("uses light surfaces for Task menu run summaries, run observer headers, and edit panels", () => {
+    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const summaryRule = mapCss.match(/\.task-run-summary\s*{[^}]*}/)?.[0] ?? "";
+    const summaryHeadRule = mapCss.match(/\.task-run-summary-head\s+strong\s*{[^}]*}/)?.[0] ?? "";
+    const observerHeadRule = mapCss.match(/\.emap-run-observer-head\s*{[^}]*}/)?.[0] ?? "";
+    const observerHeadSpanRule = mapCss.match(/\.emap-run-observer-head\s+span\s*{[^}]*}/)?.[0] ?? "";
+    const editFormRule = mapCss.match(/\.task-edit-form\s*{[^}]*}/)?.[0] ?? "";
+    const editNoteRule = mapCss.match(/\.task-edit-note,\n\.task-edit-warning\s*{[^}]*}/)?.[0] ?? "";
+    const editFieldRule = mapCss.match(/\.task-edit-field\s+input,\n\.task-edit-field\s+select\s*{[^}]*}/)?.[0] ?? "";
+
+    expect(summaryRule).toContain("rgba(255, 255, 255, 0.88)");
+    expect(summaryRule).toContain("color: var(--primary)");
+    expect(summaryRule).not.toContain("rgba(12, 20, 28, 0.72)");
+    expect(summaryHeadRule).toContain("color: var(--primary)");
+    expect(observerHeadRule).toContain("background: rgba(248, 250, 252, 0.84)");
+    expect(observerHeadSpanRule).toContain("rgba(71, 85, 105, 0.68)");
+    expect(editFormRule).toContain("rgba(255, 255, 255, 0.96)");
+    expect(editNoteRule).toContain("background: rgba(248, 250, 252, 0.82)");
+    expect(editFieldRule).toContain("background: rgba(255, 255, 255, 0.92)");
+    expect(mapCss).toContain('[data-theme="dark"] .task-run-summary');
+    expect(mapCss).toContain('[data-theme="dark"] .emap-run-observer-head');
+    expect(mapCss).toContain('[data-theme="dark"] .task-edit-form');
+  });
+
+  it("uses a light amber surface for the Task dependency connector button", () => {
+    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const depHandleRule = mapCss.match(/(?:^|\n)\.emap-task-dep-handle\s*{[^}]*}/)?.[0] ?? "";
+    const depHandleHoverRule = mapCss.match(/\.emap-task-dep-handle:hover,\n\.emap-task-dep-handle:focus-visible\s*{[^}]*}/)?.[0] ?? "";
+
+    expect(depHandleRule).toContain("border: 1.5px solid rgba(184, 115, 0, 0.34)");
+    expect(depHandleRule).toContain("rgba(255, 248, 235, 0.88)");
+    expect(depHandleRule).toContain("color: #9a5f00");
+    expect(depHandleRule).not.toContain("rgba(2, 4, 11, 0.42)");
+    expect(depHandleHoverRule).toContain("background: rgba(255, 190, 96, 0.18)");
+    expect(depHandleHoverRule).toContain("border-color: rgba(184, 115, 0, 0.58)");
+    expect(mapCss).toContain('[data-theme="dark"] .emap-task-dep-handle');
+    expect(mapCss).toContain("rgba(2, 4, 11, 0.42)");
   });
 
   it("centers link cut buttons on the connector point instead of using fixed offsets", () => {
@@ -347,18 +622,12 @@ describe("Team Console static contracts", () => {
     expect(playgroundCurrent).toContain("不接 SSE");
 
     const changeLog = readFileSync("../../docs/change-log.md", "utf8");
-    expect(changeLog).toContain("2026-05-25 — Team Console Task run process nodes UI budget");
-    expect(changeLog).toContain("2026-05-26 — Team Console 自动发现下游 Task run");
-    expect(changeLog).toContain("不接 SSE");
-    expect(changeLog).toContain("2026-05-25 — Team Console Task run process nodes 前端实现");
-    expect(changeLog).toContain("roleProcesses.worker");
-    expect(changeLog).toContain("roleProcesses.checker");
-    expect(changeLog).toContain("Team Console 过程节点隐藏方法调用明细");
-    expect(changeLog).toContain("过程节点不再渲染下半部 tool / method 调用明细");
-    expect(changeLog).toContain("Team Console 过程展示与根卡片 UI 优化");
-    expect(changeLog).toContain("Task ID");
-    expect(changeLog).toContain("Worker 过程");
-    expect(changeLog).toContain("Checker 过程");
-    expect(changeLog).toContain("不改 `src/team/**`");
+    expect(changeLog).toContain("2026-06-01 — Team Console Run observer JSON result rendering");
+    expect(changeLog).toContain("accepted-result.md");
+    expect(changeLog).toContain("JSON pretty print");
+    expect(changeLog).toContain("2026-05-30 — Team Console 浅色主题与明暗切换");
+    expect(changeLog).toContain("沉浸式画布");
+    expect(changeLog).toContain("历史记录裁剪说明");
+    expect(changeLog).not.toContain("2026-05-25 — Team Console Task run process nodes UI budget");
   });
 });

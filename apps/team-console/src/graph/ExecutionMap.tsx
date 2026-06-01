@@ -109,6 +109,7 @@ interface ExecutionMapProps {
   branchLayout?: AtlasBranchLayoutState;
   onBranchLayoutChange?: (layout: AtlasBranchLayoutState) => void;
   toolbarStart?: ReactNode;
+  toolbarEnd?: ReactNode;
   interactionMode?: AtlasInteractionMode;
   onRootTrashDrop?: (entries: AtlasNodeDragEntry[]) => void;
   rootNodeFilter?: "all" | "agent" | "task";
@@ -796,6 +797,7 @@ export function ExecutionMap({
   branchLayout,
   onBranchLayoutChange,
   toolbarStart,
+  toolbarEnd,
   interactionMode = "free",
   onRootTrashDrop,
   rootNodeFilter = "all",
@@ -2828,6 +2830,7 @@ export function ExecutionMap({
       viewport={viewport}
       onViewportChange={onViewportChange}
       toolbarStart={toolbarStart}
+      toolbarEnd={toolbarEnd}
       agentFocusId={focusedAgentNode?.agentId ?? null}
       interactionMode={interactionMode}
       onSelectionComplete={handleAtlasSelectionComplete}

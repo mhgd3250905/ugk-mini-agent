@@ -24,7 +24,7 @@ function initialTaskStates(plan: TeamPlan): Record<string, TeamTaskState> {
 }
 
 const now = () => new Date().toISOString();
-const ADMISSION_LOCK_TIMEOUT_MS = 10_000;
+const ADMISSION_LOCK_TIMEOUT_MS = 30_000;
 const ADMISSION_LOCK_RETRY_INTERVAL_MS = 10;
 
 function leaseExpiresAt(ttlMs: number): string {

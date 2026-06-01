@@ -355,6 +355,16 @@ async function waitForWorkerProcess(workspace: RunWorkspace, runId: string, task
 	throw new Error("worker process did not appear");
 }
 
+async function waitForWorkerAssistantText(workspace: RunWorkspace, runId: string, taskId: string, expectedText: string) {
+	for (let i = 0; i < 40; i++) {
+		const attempts = await workspace.listAttempts(runId, taskId);
+		const worker = attempts[0]?.roleProcesses?.worker;
+		if (worker?.assistantText?.content === expectedText) return worker;
+		await new Promise(resolve => setTimeout(resolve, 25));
+	}
+	throw new Error("worker assistant text did not appear");
+}
+
 test("Canvas Task run admission allows different active Tasks but rejects the same active Task", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-task-run-admission-"));
 	let releaseGatedWorker: (() => void) | undefined;
@@ -1407,7 +1417,7 @@ test("CanvasTaskRunService keeps cancelled attempt terminal fields when late rol
 		});
 
 		const created = await service.createRun(task.taskId);
-		const runningWorker = await waitForWorkerProcess(workspace, created.runId, task.taskId);
+		const runningWorker = await waitForWorkerAssistantText(workspace, created.runId, task.taskId, "取消前文本。");
 		assert.equal(runningWorker.status, "running");
 
 		const cancelled = await service.cancelRun(created.runId);
@@ -1453,7 +1463,7 @@ test("CanvasTaskRunService flushes cancelled worker process when task run is can
 		});
 
 		const created = await service.createRun(task.taskId);
-		const runningWorker = await waitForWorkerProcess(workspace, created.runId, task.taskId);
+		const runningWorker = await waitForWorkerAssistantText(workspace, created.runId, task.taskId, "取消前文本。");
 		assert.equal(runningWorker.status, "running");
 
 		const cancelled = await service.cancelRun(created.runId);

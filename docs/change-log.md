@@ -119,6 +119,26 @@
 - **验证**: `npm --prefix apps\team-console run test -- --run src\tests\app-run-observer.test.tsx` 通过，17 passed。
 - **对应入口**: Team Console `http://127.0.0.1:5174/` -> Live API -> Discovery 子画布 -> generated child latest run observer -> `accepted-result.md` 文件详情。
 
+## 2026-05-31 — Playground 画布水印居中
+
+- **主题**: 将 `3000` `/playground` 对话画布背景从 ASCII 水印改为居中的 UGK Claw SVG icon 水印。
+- **影响范围**: `src/ui/playground-styles.ts`、`src/ui/playground-theme-controller.ts`、`test/server.test.ts`、`docs/playground-current.md`。
+- **对应入口**: 主项目对话页 `http://127.0.0.1:3000/playground`。
+- **验证**: `node --test --import tsx test/server.test.ts --test-name-pattern "GET /playground uses a desktop geek cockpit layout"` 通过。
+
+## 2026-05-30 — Team Console 浅色主题与明暗切换
+
+- **主题**: 将 `5174` Team Console 功能界面切到浅色默认主题，并提供明暗主题切换。
+- **变更内容**:
+  - `apps/team-console/src/app/app.css` 的全局 token、画布内 toolbar、segmented filter 和统计 pill 改为浅色表面。
+  - `apps/team-console/src/graph/execution-map.css` 的画布网格、工具栏、根卡片、底部 Dock、Task 操作菜单和分支面板改为浅色层级；`创建 Task` 的 leader 选择菜单同步浅色化。
+  - 新增主题切换按钮，使用 `ugk-team-console:theme:v1` 保存 `light` / `dark`，默认浅色，深色保留原有暗色画布口径；主题切换和数据来源选择移动到画布 toolbar 右侧。
+  - 将 Team Console 改为沉浸式画布：移除页面 header、Mock fixture 切换栏、Live API 下旧的 `运行图：Agent workspace / 最新 Run` 切换条，以及右侧 `+ / - / 1:1 / 100%` 缩放控件；保留滚轮缩放、拖动画布、Agent / Task workspace 主入口和 Mock fixture 回归数据。
+  - 增加静态 CSS 契约测试，锁定浅色 token、浅色 atlas canvas、leader picker 浅色表面、主题切换入口、Task 子面板浅色表面、连接控件浅色表面和深色卡片内部回归覆盖。
+- **影响范围**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/app.css`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app-static-contracts.test.ts`、`docs/team-runtime.md`。
+- **验证**: Team Console build、Team Console 全量 Vitest、顶层 `npx tsc --noEmit`、`node --test --import tsx test\server.test.ts` 和 `git diff --check` 已在 PR merge 前验证通过。
+- **对应入口**: Team Console 固定入口 `http://127.0.0.1:5174/`。
+
 ## 2026-05-31 — Team Console Discovery delayed generated catalog refresh
 
 - **主题**: 修复 Discovery root 完成后 generated child 晚到，导致子画布空白或显示旧 run 状态的问题。

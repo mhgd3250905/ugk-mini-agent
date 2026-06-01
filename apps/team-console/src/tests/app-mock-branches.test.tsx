@@ -71,10 +71,6 @@ describe("App", () => {
     it("expands an agent card into an embedded playground branch and keeps the atlas visible", async () => {
       const { container } = render(<App />);
 
-      fireEvent.click(screen.getByRole("button", { name: "顺序 run" }));
-      expect(screen.getByText("执行运行")).toBeInTheDocument();
-      expect(screen.getByText("Research vendor A")).toBeInTheDocument();
-
       fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
       fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
       fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
@@ -93,8 +89,8 @@ describe("App", () => {
       expect(stage.style.transform).toBe(initialTransform);
       expect(stage).not.toHaveAttribute("aria-hidden", "true");
       expect(container.querySelector(".agent-focus-workspace")).toBeNull();
-      expect(screen.getByText("执行运行")).toBeInTheDocument();
-      expect(screen.getByText("Research vendor A")).toBeInTheDocument();
+      expect(screen.queryByText("执行运行")).toBeNull();
+      expect(screen.getByRole("button", { name: "调查 Medtrum 云资产" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "搜索 Agent" })).toBeInTheDocument();
       const mainNode = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
       const searchNode = container.querySelector('.emap-agent-node[data-agent-id="search"]') as HTMLElement | null;

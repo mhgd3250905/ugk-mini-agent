@@ -4,10 +4,6 @@ import { App } from "../app/App";
 import { CLEAN_AGENT_WORKSPACE_ID, useTeamConsoleLiveData } from "../app/use-team-console-live-data";
 import type { TeamAttemptMetadata, TeamCanvasTask, TeamRunState } from "../api/team-types";
 import {
-  makeDiscoveryForEachPlan,
-  makeDiscoveryForEachRun,
-  makeSequentialPlan,
-  makeSequentialRun,
   MOCK_AGENTS,
   mockDiscoveryGeneratedTasks,
   mockDiscoveryRootTask,
@@ -1573,25 +1569,16 @@ describe("App", () => {
       expect(values).toContain("live");
       expect(labels).toContain("示例数据");
       expect(labels).toContain("实时 API");
-      expect(screen.getByText("示例：")).toBeInTheDocument();
+      expect(screen.queryByText("示例：")).toBeNull();
     });
 
-    it("localizes visible fixture menu labels", () => {
+    it("does not render the obsolete mock fixture switcher", () => {
       render(<App />);
 
-      expect(screen.getByRole("button", { name: "发现 + 逐项处理" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "任务拆分" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "发现 + 逐项处理" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "任务拆分" })).toBeNull();
       expect(screen.queryByText("Discovery + ForEach")).toBeNull();
       expect(screen.queryByText("Decomposition split")).toBeNull();
-    });
-
-    it("switches back to the old demo fixture for runtime atlas regression", () => {
-      render(<App />);
-
-      fireEvent.click(screen.getByRole("button", { name: "顺序 run" }));
-
-      expect(screen.getByText("执行运行")).toBeInTheDocument();
-      expect(screen.getByText("Research vendor A")).toBeInTheDocument();
     });
 
     it("keeps Live API on a clean agent workspace until a run is requested", async () => {
@@ -1619,8 +1606,9 @@ describe("App", () => {
       expect(fetch).toHaveBeenNthCalledWith(5, "/v1/team/task-dependencies");
       expect(fetch).toHaveBeenNthCalledWith(6, "/v1/team/source-nodes");
       expect(fetch).toHaveBeenNthCalledWith(7, "/v1/team/source-connections");
-      expect(screen.getByRole("button", { name: "Agent workspace" })).toHaveClass("active");
-      expect(screen.getByRole("button", { name: "最新 Run" })).not.toHaveClass("active");
+      expect(screen.queryByText("运行图：")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Agent workspace" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "最新 Run" })).toBeNull();
       expect(screen.queryByText("执行运行")).toBeNull();
       expect(screen.queryByText("Research vendor A")).toBeNull();
       expect(fetch).not.toHaveBeenCalledWith("/v1/team/plans");
@@ -1647,42 +1635,6 @@ describe("App", () => {
       expect(screen.queryByText("请求失败 (404)")).toBeNull();
       expect(await screen.findByText(liveTask.title)).toBeInTheDocument();
       expect(container.querySelector(".task-create-btn")).toBeEnabled();
-    });
-
-    it("fetches live plans, runs, and selected run detail when latest Run is requested", async () => {
-      const plan = makeSequentialPlan();
-      const run = makeSequentialRun();
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ dependencies: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify([plan]), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify([run]), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify(run), { status: 200 }));
-
-      render(<App />);
-      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(7));
-      fireEvent.click(screen.getByRole("button", { name: "最新 Run" }));
-
-      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(10));
-      expect(fetch).toHaveBeenNthCalledWith(1, "/v1/agents");
-      expect(fetch).toHaveBeenNthCalledWith(2, "/v1/agents/status", {
-        method: "GET",
-        headers: { accept: "application/json" },
-      });
-      expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/tasks");
-      expect(fetch).toHaveBeenNthCalledWith(4, "/v1/team/task-connections");
-      expect(fetch).toHaveBeenNthCalledWith(5, "/v1/team/task-dependencies");
-      expect(fetch).toHaveBeenNthCalledWith(6, "/v1/team/source-nodes");
-      expect(fetch).toHaveBeenNthCalledWith(7, "/v1/team/source-connections");
-      expect(fetch).toHaveBeenNthCalledWith(8, "/v1/team/plans");
-      expect(fetch).toHaveBeenNthCalledWith(9, "/v1/team/runs");
-      expect(fetch).toHaveBeenNthCalledWith(10, "/v1/team/runs/run_seq_001");
     });
 
     it("loads live agent catalog when switching to Live API", async () => {
@@ -2194,7 +2146,7 @@ describe("App", () => {
       });
     });
 
-    it("refreshes live Task cards when returning to Agent workspace", async () => {
+    it("refreshes live Task cards from the toolbar without a run mode switch", async () => {
       const firstTask = mockTeamTasks[0]!;
       const secondTask = {
         ...firstTask,
@@ -2205,8 +2157,6 @@ describe("App", () => {
           title: "刷新后出现的新 Task",
         },
       };
-      const plan = makeSequentialPlan();
-      const run = makeSequentialRun();
       let taskRequests = 0;
       vi.mocked(fetch).mockImplementation(async (input) => {
         const url = String(input);
@@ -2227,9 +2177,6 @@ describe("App", () => {
             tasks: taskRequests === 1 ? [firstTask] : [firstTask, secondTask],
           }), { status: 200 });
         }
-        if (url === "/v1/team/plans") return new Response(JSON.stringify([plan]), { status: 200 });
-        if (url === "/v1/team/runs") return new Response(JSON.stringify([run]), { status: 200 });
-        if (url === "/v1/team/runs/run_seq_001") return new Response(JSON.stringify(run), { status: 200 });
         return new Response(JSON.stringify([]), { status: 200 });
       });
 
@@ -2237,9 +2184,7 @@ describe("App", () => {
       fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
       expect(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" })).toBeInTheDocument();
 
-      fireEvent.click(screen.getByRole("button", { name: "最新 Run" }));
-      expect(await screen.findByText("Research vendor A")).toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: "Agent workspace" }));
+      fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
 
       await waitFor(() => expect(taskRequests).toBe(2));
       expect(await within(getAtlasNodes(container)).findByRole("button", { name: "刷新后出现的新 Task" })).toBeInTheDocument();
@@ -2247,8 +2192,6 @@ describe("App", () => {
 
     it("keeps dragged live Task positions after a live Task refresh", async () => {
       const liveTask = mockTeamTasks[0]!;
-      const plan = makeSequentialPlan();
-      const run = makeSequentialRun();
       let taskRequests = 0;
       vi.mocked(fetch).mockImplementation(async (input) => {
         const url = String(input);
@@ -2267,9 +2210,6 @@ describe("App", () => {
           taskRequests += 1;
           return new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 });
         }
-        if (url === "/v1/team/plans") return new Response(JSON.stringify([plan]), { status: 200 });
-        if (url === "/v1/team/runs") return new Response(JSON.stringify([run]), { status: 200 });
-        if (url === "/v1/team/runs/run_seq_001") return new Response(JSON.stringify(run), { status: 200 });
         return new Response(JSON.stringify([]), { status: 200 });
       });
 
@@ -2281,86 +2221,12 @@ describe("App", () => {
       firePointer(taskNode, "pointermove", { pointerId: 42, clientX: 190, clientY: 155 });
       firePointer(taskNode, "pointerup", { pointerId: 42, clientX: 190, clientY: 155, buttons: 0 });
 
-      fireEvent.click(screen.getByRole("button", { name: "最新 Run" }));
-      expect(await screen.findByText("Research vendor A")).toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: "Agent workspace" }));
+      fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
 
       await waitFor(() => expect(taskRequests).toBe(2));
       const refreshedTaskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }) as HTMLElement;
       expect(Number.parseFloat(refreshedTaskNode.style.left)).toBeCloseTo(350, 4);
       expect(Number.parseFloat(refreshedTaskNode.style.top)).toBeCloseTo(255, 4);
-    });
-
-    it("renders the selected live run after loading", async () => {
-      const plan = {
-        ...makeSequentialPlan(),
-        planId: "plan_live_001",
-        tasks: [
-          {
-            ...makeSequentialPlan().tasks[0],
-            id: "live_task_1",
-            title: "Live-only vendor task",
-          },
-        ],
-      };
-      const run = {
-        ...makeSequentialRun(),
-        runId: "run_live_001",
-        planId: "plan_live_001",
-        taskStates: {
-          live_task_1: makeSequentialRun().taskStates.task_1,
-        },
-        summary: { totalTasks: 1, succeededTasks: 1, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
-      };
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ dependencies: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify([plan]), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify([run]), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify(run), { status: 200 }));
-
-      render(<App />);
-      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(7));
-      fireEvent.click(screen.getByRole("button", { name: "最新 Run" }));
-
-      expect(await screen.findByText("Live-only vendor task")).toBeInTheDocument();
-    });
-
-    it("renders source sockets on atlas parent-child branch links", async () => {
-      const plan = makeDiscoveryForEachPlan();
-      const run = makeDiscoveryForEachRun();
-      vi.mocked(fetch).mockImplementation(async (input) => {
-        const url = String(input);
-        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
-        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
-        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [] }), { status: 200 });
-        if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
-        if (url === "/v1/team/plans") return new Response(JSON.stringify([plan]), { status: 200 });
-        if (url === "/v1/team/runs") return new Response(JSON.stringify([run]), { status: 200 });
-        if (url === `/v1/team/runs/${run.runId}`) return new Response(JSON.stringify(run), { status: 200 });
-        return new Response(JSON.stringify([]), { status: 200 });
-      });
-
-      const { container } = render(<App />);
-      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
-      fireEvent.click(await screen.findByRole("button", { name: "最新 Run" }));
-
-      expect(await screen.findByText("Process Alpha")).toBeInTheDocument();
-      const branchPath = container.querySelector(".emap-link-branch") as SVGPathElement | null;
-      const sourceSocket = branchPath?.parentElement?.querySelector(".emap-connector-socket-task-branch .emap-connector-source-socket") as SVGPathElement | null;
-      const branchD = branchPath?.getAttribute("d") ?? "";
-      const moveMatch = branchD.match(/^M([\d.]+),([\d.]+)/);
-      expect(sourceSocket).toBeTruthy();
-      expect(moveMatch).toBeTruthy();
-      const sourceX = Number.parseFloat(moveMatch![1]!);
-      const sourceY = Number.parseFloat(moveMatch![2]!);
-      expect(sourceSocket!.getAttribute("d")).toBe(`M${sourceX},${sourceY - 6} A6,6 0 0 1 ${sourceX},${sourceY + 6}`);
     });
 
     it("keeps live agent workspace usable when no live team run exists", async () => {

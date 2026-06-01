@@ -196,6 +196,10 @@ export function getPlaygroundThemeStyles(): string {
 			box-shadow: none;
 		}
 
+		:root[data-theme="light"] .chat-stage-watermark {
+			opacity: 0.08;
+		}
+
 		:root[data-theme="light"] .ugk-ascii-logo-watermark {
 			color: rgba(51, 112, 196, 0.14);
 			text-shadow:

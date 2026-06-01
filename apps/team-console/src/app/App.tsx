@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { LiveTeamApi } from "../api/team-api";
 import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
-import { ALL_FIXTURES, MockTeamApi } from "../fixtures/team-fixtures";
-import { useTeamConsoleLiveData, type DataSource, type LiveRunMode, type TeamConsoleUiResetReason, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
+import { MockTeamApi } from "../fixtures/team-fixtures";
+import { useTeamConsoleLiveData, type DataSource, type TeamConsoleUiResetReason, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
 import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchGeneratedObserverState, type TaskBranchState } from "./use-task-branch-stack";
 import { hasDirtyTaskEditConflict, useTaskEditState } from "./use-task-edit-state";
 import { useTaskLeaderCopy } from "./use-task-leader-copy";
@@ -16,6 +16,7 @@ const LIVE_AGENT_LAYOUT_STORAGE_KEY = "ugk-team-console:live-agent-layout:v1";
 const LIVE_TASK_LAYOUT_STORAGE_KEY = "ugk-team-console:live-task-layout:v1";
 const LIVE_SOURCE_LAYOUT_STORAGE_KEY = "ugk-team-console:live-source-layout:v1";
 const CANVAS_UI_STATE_STORAGE_KEY = "ugk-team-console:canvas-ui-state:v1";
+const TEAM_CONSOLE_THEME_STORAGE_KEY = "ugk-team-console:theme:v1";
 const TASK_RUN_PROCESS_LABELS: Record<TeamAttemptRoleProcessRole, string> = {
   worker: "Worker 过程",
   checker: "Checker 过程",
@@ -26,6 +27,7 @@ const PROCESS_ASSISTANT_TEXT_MAX_LINES = 5;
 const PROCESS_ASSISTANT_TEXT_MAX_LINE_CHARS = 200;
 
 type AgentBranchMode = "chat" | "task-create";
+type TeamConsoleTheme = "light" | "dark";
 
 type AgentBranchState = {
   nodeId: string;
@@ -37,7 +39,6 @@ type StoredCanvasUiState = {
   schemaVersion: 1;
   dataSource: DataSource;
   selectedFixtureId?: string;
-  liveRunMode?: LiveRunMode;
   viewport?: AtlasViewport;
   agentNodes?: StoredAgentNodePosition[];
   taskNodePositions?: StoredTaskPosition[];
@@ -742,13 +743,11 @@ function readStoredCanvasUiState(): StoredCanvasUiState | null {
     const dataSource = parsed.dataSource === "live" ? "live" : parsed.dataSource === "mock" ? "mock" : null;
     if (!dataSource) return null;
     const selectedFixtureId = typeof parsed.selectedFixtureId === "string" ? parsed.selectedFixtureId : undefined;
-    const liveRunMode = parsed.liveRunMode === "latest" ? "latest" : parsed.liveRunMode === "workspace" ? "workspace" : undefined;
     const viewport = readStoredViewport(parsed.viewport);
     return {
       schemaVersion: 1,
       dataSource,
       ...(selectedFixtureId ? { selectedFixtureId } : {}),
-      ...(liveRunMode ? { liveRunMode } : {}),
       ...(viewport ? { viewport } : {}),
       agentNodes: readStoredAgentNodePositions(parsed.agentNodes),
       taskNodePositions: readStoredTaskNodePositions(parsed.taskNodePositions),
@@ -772,12 +771,12 @@ function writeStoredCanvasUiState(state: StoredCanvasUiState) {
   } catch {}
 }
 
-function canvasUiContextMatches(state: StoredCanvasUiState, dataSource: DataSource, selectedFixtureId: string, liveRunMode: LiveRunMode): boolean {
+function canvasUiContextMatches(state: StoredCanvasUiState, dataSource: DataSource, selectedFixtureId: string): boolean {
   if (state.dataSource !== dataSource) return false;
   if (dataSource === "mock") {
     return (state.selectedFixtureId ?? CLEAN_AGENT_WORKSPACE_ID) === selectedFixtureId;
   }
-  return (state.liveRunMode ?? "workspace") === liveRunMode;
+  return true;
 }
 
 function readStoredLiveAgentNodes(): AtlasAgentNode[] {
@@ -961,6 +960,23 @@ function makeAgentNode(agentId: string, index: number): AtlasAgentNode {
   };
 }
 
+function readStoredTheme(): TeamConsoleTheme {
+  try {
+    const value = globalThis.localStorage?.getItem(TEAM_CONSOLE_THEME_STORAGE_KEY);
+    return value === "dark" ? "dark" : "light";
+  } catch {
+    return "light";
+  }
+}
+
+function storeTheme(theme: TeamConsoleTheme): void {
+  try {
+    globalThis.localStorage?.setItem(TEAM_CONSOLE_THEME_STORAGE_KEY, theme);
+  } catch {
+    // Theme persistence is best-effort; the UI state still updates in memory.
+  }
+}
+
 function sameAgentNodes(left: AtlasAgentNode[], right: AtlasAgentNode[]): boolean {
   return left.length === right.length
     && left.every((node, index) => {
@@ -1039,6 +1055,7 @@ function mergeStoredSourceNodePositions(sourceNodes: AtlasSourceNode[], storedPo
 }
 
 export function App() {
+  const [theme, setTheme] = useState<TeamConsoleTheme>(() => readStoredTheme());
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [agentNodes, setAgentNodes] = useState<AtlasAgentNode[]>([]);
   const [liveAgentNodesHydrated, setLiveAgentNodesHydrated] = useState(false);
@@ -1099,6 +1116,10 @@ export function App() {
     setTaskArchiveSavingNodeId(null);
   }, [clearTaskEditState]);
 
+  useEffect(() => {
+    storeTheme(theme);
+  }, [theme]);
+
   const clearGeneratedArchiveUiForTasks = useCallback((taskIds: string[]) => {
     if (taskIds.length === 0) return;
     const taskIdSet = new Set(taskIds);
@@ -1158,7 +1179,7 @@ export function App() {
       setLiveSourceNodesHydrated(false);
     }
 
-    if (reason === "mock-workspace" || reason === "live-run-mode") {
+    if (reason === "mock-workspace") {
       setCanvasViewport({ x: 0, y: 0, scale: 1 });
       setCanvasBranchLayout({});
     }
@@ -1183,8 +1204,7 @@ export function App() {
   });
   const {
     dataSource, setDataSource,
-    selectedFixtureId, setSelectedFixtureId,
-    liveRunMode, setLiveRunMode,
+    selectedFixtureId,
     loading, error, setError,
     liveTasksRefreshing,
     agents, agentRunStatusById,
@@ -1209,7 +1229,7 @@ export function App() {
   const sourceNodesById = useMemo(() => new Map(sourceNodes.map((node) => [node.sourceNodeId, node])), [sourceNodes]);
   const agentRunStatusesById = useMemo(() => new Map(Object.entries(agentRunStatusById)), [agentRunStatusById]);
   const addedAgentIds = useMemo(() => new Set(agentNodes.map((node) => node.agentId)), [agentNodes]);
-  const canvasUiContextKey = dataSource === "mock" ? `mock:${selectedFixtureId}` : `live:${liveRunMode}`;
+  const canvasUiContextKey = dataSource === "mock" ? `mock:${selectedFixtureId}` : "live";
   const hydratedCanvasUiContextKeyRef = useRef<string | null>(null);
   const expandedAgentNode = expandedAgentBranch
     ? agentNodes.find((node) => node.nodeId === expandedAgentBranch.nodeId) ?? null
@@ -1316,7 +1336,7 @@ export function App() {
     if (!ready) return;
 
     const stored = readStoredCanvasUiState();
-    if (!stored || !canvasUiContextMatches(stored, dataSource, selectedFixtureId, liveRunMode)) {
+    if (!stored || !canvasUiContextMatches(stored, dataSource, selectedFixtureId)) {
       setCanvasBranchLayout({});
       hydratedCanvasUiContextKeyRef.current = canvasUiContextKey;
       setCanvasUiStateHydrated(true);
@@ -1370,7 +1390,6 @@ export function App() {
     canvasUiStateHydrated,
     dataSource,
     liveAgentNodesHydrated,
-    liveRunMode,
     liveSourceNodesHydrated,
     liveTaskNodesHydrated,
     selectedFixtureId,
@@ -1384,7 +1403,7 @@ export function App() {
     writeStoredCanvasUiState({
       schemaVersion: 1,
       dataSource,
-      ...(dataSource === "mock" ? { selectedFixtureId } : { liveRunMode }),
+      ...(dataSource === "mock" ? { selectedFixtureId } : {}),
       viewport: canvasViewport,
       agentNodes: agentNodes.map((node) => ({
         agentId: node.agentId,
@@ -1415,7 +1434,6 @@ export function App() {
     agentNodes,
     expandedAgentBranch,
     expandedTaskBranches,
-    liveRunMode,
     minimizedAgentNodeIds,
     minimizedSourceNodeIds,
     minimizedTaskNodeIds,
@@ -2155,7 +2173,7 @@ export function App() {
 
   const agentToolbar = (
     <div className="agent-atlas-actions">
-      <div className="root-filter-segment" role="tablist" aria-label="根节点显示">
+      <div className="root-filter-segment" data-active-filter={rootNodeFilter} role="tablist" aria-label="根节点显示">
         <button type="button" role="tab" aria-pressed={rootNodeFilter === "all"} className={`root-filter-btn${rootNodeFilter === "all" ? " is-active" : ""}`} onClick={() => setRootNodeFilter("all")}>ALL</button>
         <button type="button" role="tab" aria-pressed={rootNodeFilter === "agent"} className={`root-filter-btn${rootNodeFilter === "agent" ? " is-active" : ""}`} onClick={() => setRootNodeFilter("agent")}>Agent</button>
         <button type="button" role="tab" aria-pressed={rootNodeFilter === "task"} className={`root-filter-btn${rootNodeFilter === "task" ? " is-active" : ""}`} onClick={() => setRootNodeFilter("task")}>Task</button>
@@ -2277,6 +2295,38 @@ export function App() {
           }}
         />
       </div>
+    </div>
+  );
+
+  const mapToolbarControls = (
+    <div className="map-toolbar-controls" aria-label="全局视图设置">
+      <button
+        type="button"
+        className="theme-toggle-btn"
+        aria-label="切换主题"
+        aria-pressed={theme === "dark"}
+        onClick={() => setTheme((current) => current === "light" ? "dark" : "light")}
+      >
+        <span className="theme-toggle-track" aria-hidden="true">
+          <span className="theme-toggle-icon theme-toggle-sun">☀</span>
+          <span className="theme-toggle-icon theme-toggle-moon">☾</span>
+          <span className="theme-toggle-thumb" />
+        </span>
+      </button>
+      <select
+        id="team-console-data-source"
+        name="teamConsoleDataSource"
+        value={dataSource}
+        onChange={(event) => {
+          const nextSource = event.target.value as DataSource;
+          setDataSource(nextSource);
+        }}
+        className="datasource-select"
+        aria-label="数据来源"
+      >
+        <option value="mock">示例数据</option>
+        <option value="live">实时 API</option>
+      </select>
     </div>
   );
 
@@ -3394,74 +3444,7 @@ export function App() {
   }, [agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearTaskEditState, clearTaskEditWarning, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, expandedTaskBranches, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, openTaskEditDraft, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runTask, saveTaskEdit, scheduleLiveTaskDiscoveryRefresh, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskEditDraft]);
 
   return (
-    <div className="app-shell">
-      <header className="app-header">
-        <div className="app-header-left">
-          <h1 className="app-title">团队控制台</h1>
-          <span className="app-subtitle">执行地图预览</span>
-        </div>
-        <div className="app-header-right">
-          <select
-            id="team-console-data-source"
-            name="teamConsoleDataSource"
-            value={dataSource}
-            onChange={(event) => {
-              const nextSource = event.target.value as DataSource;
-              setDataSource(nextSource);
-              if (nextSource === "live") {
-                setLiveRunMode("workspace");
-              }
-            }}
-            className="datasource-select"
-          >
-            <option value="mock">示例数据</option>
-            <option value="live">实时 API</option>
-          </select>
-        </div>
-      </header>
-
-      {dataSource === "mock" && (
-        <div className="fixture-bar">
-          <span className="fixture-label">示例：</span>
-          <button
-            className={`fixture-btn ${selectedFixtureId === CLEAN_AGENT_WORKSPACE_ID ? "active" : ""}`}
-            onClick={() => setSelectedFixtureId(CLEAN_AGENT_WORKSPACE_ID)}
-          >
-            Agent workspace
-          </button>
-          {ALL_FIXTURES.map((fixture) => (
-            <button
-              key={fixture.id}
-              className={`fixture-btn ${selectedFixtureId === fixture.id ? "active" : ""}`}
-              onClick={() => setSelectedFixtureId(fixture.id)}
-            >
-              {fixture.label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {dataSource === "live" && (
-        <div className="fixture-bar live-run-bar">
-          <span className="fixture-label">运行图：</span>
-          <button
-            className={`fixture-btn ${liveRunMode === "workspace" ? "active" : ""}`}
-            onClick={() => {
-              setLiveRunMode("workspace");
-              void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
-            }}
-          >
-            Agent workspace
-          </button>
-          <button
-            className={`fixture-btn ${liveRunMode === "latest" ? "active" : ""}`}
-            onClick={() => setLiveRunMode("latest")}
-          >
-            最新 Run
-          </button>
-        </div>
-      )}
-
+    <div className="app-shell" data-theme={theme}>
       {error && (
         <div className="error-banner">{error}</div>
       )}
@@ -3574,6 +3557,7 @@ export function App() {
                 branchLayout={canvasBranchLayout}
                 onBranchLayoutChange={updateCanvasBranchLayout}
                 toolbarStart={agentToolbar}
+                toolbarEnd={mapToolbarControls}
                 rootNodeFilter={rootNodeFilter}
                 onRootTrashDrop={(entries) => {
                   const items: Array<RootArchiveConfirm> = [];
