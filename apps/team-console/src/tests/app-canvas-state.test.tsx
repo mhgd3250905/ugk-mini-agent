@@ -96,7 +96,6 @@ describe("App", () => {
       const { container } = render(<App />);
 
       await waitFor(() => {
-        expect(screen.getByText("90%")).toBeInTheDocument();
         expect(getAtlasStage(container).style.transform).toBe("translate(10px, 20px) scale(0.9)");
       });
     });

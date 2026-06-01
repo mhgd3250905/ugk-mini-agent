@@ -84,11 +84,6 @@ Team Console shell 的 Live API 模式会真实请求：
 - `GET /v1/team/task-runs/:runId/tasks/:taskId/attempts/:attemptId/files/:fileName`
 - `PATCH /v1/team/tasks/:taskId`
 - `POST /v1/team/tasks/:taskId/archive`
-- `GET /v1/team/plans`
-- `GET /v1/team/runs`
-- `GET /v1/team/runs/:runId`
-- `GET /v1/team/runs/:runId/tasks/:taskId/attempts`
-- `GET /v1/team/runs/:runId/tasks/:taskId/attempts/:attemptId/files/:fileName`
 
 Agent 分支卡片默认通过同源 `/playground?view=chat&agentId=<agentId>&embed=team-console` iframe 打开主项目页面；开发态由 Vite 代理到主服务，显式配置 `VITE_TEAM_CONSOLE_PLAYGROUND_BASE_URL` 时才改为对应公网 origin。主 `/playground` 负责读取 `agentId` URL hint、切到对应 Agent 并继续处理自己的路由、对话、文件库、后台任务等行为；`embed=team-console` 会把 iframe 顶部 Agent 标签固定为只读标识，关闭 hover 切换菜单和点击跳转，避免 iframe 内 Agent 切换污染其他分支或主页面的 active Agent 选择。
 
@@ -184,7 +179,7 @@ Mock fixture 覆盖以下场景：
 
 点击可预览 artifact card 会读取同一 run/task/attempt 下的真实 attempt 文件并展开第二级预览节点：`.md` / `.txt` 按安全文本展示，`.json` pretty print，`.html` 只放进 sandbox iframe，不注入主 DOM。
 
-桌面端 evidence / preview card 使用 absolute 定位在 selected node 右侧，并由 dashed SVG link 连接。桌面画布支持鼠标滚轮缩放、背景拖拽平移、空白画布左键长按框选多节点（Shift + 拖动仍兼容直接框选）、拖动已选节点集合，以及”放大 / 缩小 / 重置视图”工具按钮；这些只是本地 UI 状态，不持久化。Evidence / preview 的布局高度测量以 transform-independent 的 `offsetHeight` 为准，避免 CSS scale 后把 `getBoundingClientRect().height` 写回 layout 造成测量反馈循环；滚轮缩放使用原生 non-passive `wheel` listener，并使用固定缩放档位而不是连续乘法缩放。移动端 `720px` 以下 evidence / preview card 改为 normal flow，同级插入在 selected node 正下方，保持 8px gap 和无横向 overflow。
+桌面端 evidence / preview card 使用 absolute 定位在 selected node 右侧，并由 dashed SVG link 连接。桌面画布支持鼠标滚轮缩放、背景拖拽平移、空白画布左键长按框选多节点（Shift + 拖动仍兼容直接框选）和拖动已选节点集合；右侧显式缩放按钮已移除。Evidence / preview 的布局高度测量以 transform-independent 的 `offsetHeight` 为准，避免 CSS scale 后把 `getBoundingClientRect().height` 写回 layout 造成测量反馈循环；滚轮缩放使用原生 non-passive `wheel` listener，并使用固定缩放档位而不是连续乘法缩放。移动端 `720px` 以下 evidence / preview card 改为 normal flow，同级插入在 selected node 正下方，保持 8px gap 和无横向 overflow。
 
 ### 折叠行为
 
