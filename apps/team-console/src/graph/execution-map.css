@@ -209,9 +209,7 @@
   backdrop-filter: blur(16px) saturate(1.14);
   pointer-events: auto;
   max-width: min(82vw, 860px);
-  overflow-x: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(122, 131, 151, 0.18) transparent;
+  overflow: hidden;
   transition:
     transform 0.22s cubic-bezier(0.2, 0.85, 0.2, 1),
     opacity 0.16s ease-out,
@@ -235,6 +233,62 @@
 
 .emap-root-dock[data-empty="true"] {
   min-height: 52px;
+}
+
+.emap-root-dock-items {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  max-width: calc(min(82vw, 860px) - 64px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+}
+
+.emap-root-dock-items::-webkit-scrollbar {
+  display: none;
+}
+
+.emap-root-dock-page-btn {
+  appearance: none;
+  flex: 0 0 auto;
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  min-height: 48px;
+  padding: 0;
+  border: 1px solid rgba(122, 131, 151, 0.18);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--secondary);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, opacity 0.15s;
+}
+
+.emap-root-dock-page-btn:hover:not(:disabled),
+.emap-root-dock-page-btn:focus-visible:not(:disabled) {
+  border-color: rgba(121, 216, 208, 0.52);
+  background: rgba(121, 216, 208, 0.08);
+  color: var(--primary);
+  outline: none;
+}
+
+.emap-root-dock-page-btn:disabled {
+  opacity: 0.34;
+  cursor: default;
+}
+
+.emap-root-dock-page-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .emap-root-dock-item {

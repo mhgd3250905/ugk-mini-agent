@@ -826,6 +826,7 @@ export function ExecutionMap({
   const taskBranchShellRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const atlasNodeDragRef = useRef<AtlasNodeDragState | null>(null);
   const dockRef = useRef<HTMLElement | null>(null);
+  const dockItemsRef = useRef<HTMLDivElement | null>(null);
   const trashRef = useRef<HTMLDivElement | null>(null);
   const suppressAgentClickRef = useRef<string | null>(null);
   const suppressTaskClickRef = useRef<string | null>(null);
@@ -881,6 +882,35 @@ export function ExecutionMap({
     [minimizedSourceNodeIdSet, sourceNodes],
   );
   const dockNodeCount = hubAgentNodes.length + hubTaskNodes.length + hubSourceNodes.length;
+  const [dockPageState, setDockPageState] = useState({ canPageLeft: false, canPageRight: false });
+
+  const updateDockPageState = useCallback(() => {
+    const el = dockItemsRef.current;
+    if (!el) {
+      setDockPageState({ canPageLeft: false, canPageRight: false });
+      return;
+    }
+    const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+    const canPageLeft = el.scrollLeft > 1;
+    const canPageRight = el.scrollLeft < maxScrollLeft - 1;
+    setDockPageState((current) => (
+      current.canPageLeft === canPageLeft && current.canPageRight === canPageRight
+        ? current
+        : { canPageLeft, canPageRight }
+    ));
+  }, []);
+
+  const pageDock = useCallback((direction: "left" | "right") => {
+    const el = dockItemsRef.current;
+    if (!el) return;
+    const pageWidth = Math.max(120, Math.floor(el.clientWidth * 0.82));
+    const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+    el.scrollLeft = Math.max(
+      0,
+      Math.min(maxScrollLeft, el.scrollLeft + (direction === "left" ? -pageWidth : pageWidth)),
+    );
+    updateDockPageState();
+  }, [updateDockPageState]);
 
   const clearDockIdleTimer = useCallback(() => {
     if (dockIdleTimerRef.current != null) {
@@ -905,6 +935,10 @@ export function ExecutionMap({
     clearDockIdleTimer();
     setIsDockExpanded(true);
   }, [clearDockIdleTimer]);
+
+  useLayoutEffect(() => {
+    updateDockPageState();
+  }, [dockNodeCount, isDockExpanded, updateDockPageState]);
 
   const revealLinkCut = useCallback((key: string) => {
     setHoveredLinkCutKey(key);
@@ -2017,7 +2051,26 @@ export function ExecutionMap({
       onPointerLeave={() => scheduleDockCollapse()}
       onBlur={() => scheduleDockCollapse()}
     >
-      {hubAgentNodes.map((node) => {
+      {dockNodeCount > 0 && (
+        <button
+          type="button"
+          className="emap-root-dock-page-btn emap-root-dock-page-btn-left"
+          aria-label="Dock 向左翻页"
+          disabled={!dockPageState.canPageLeft}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            wakeDock();
+            pageDock("left");
+          }}
+        >
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M12.5 4.5 7 10l5.5 5.5" />
+          </svg>
+        </button>
+      )}
+      <div ref={dockItemsRef} className="emap-root-dock-items" onScroll={updateDockPageState}>
+        {hubAgentNodes.map((node) => {
         const flightDetails = agentFlightDetails(node);
         const label = flightDetails.label;
         const restoreKey = atlasSelectionKey("agent", node.nodeId);
@@ -2068,8 +2121,8 @@ export function ExecutionMap({
             </span>
           </button>
         );
-      })}
-      {hubTaskNodes.map((node) => {
+        })}
+        {hubTaskNodes.map((node) => {
         const flightDetails = taskFlightDetails(node);
         const label = flightDetails.label;
         const restoreKey = atlasSelectionKey("task", node.nodeId);
@@ -2121,8 +2174,8 @@ export function ExecutionMap({
             </span>
           </button>
         );
-      })}
-      {hubSourceNodes.map((node) => {
+        })}
+        {hubSourceNodes.map((node) => {
         const sourceNode = sourceNodesById?.get(node.sourceNodeId);
         const flightDetails = sourceFlightDetails(node);
         const label = flightDetails.label;
@@ -2173,7 +2226,26 @@ export function ExecutionMap({
             </span>
           </button>
         );
-      })}
+        })}
+      </div>
+      {dockNodeCount > 0 && (
+        <button
+          type="button"
+          className="emap-root-dock-page-btn emap-root-dock-page-btn-right"
+          aria-label="Dock 向右翻页"
+          disabled={!dockPageState.canPageRight}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            wakeDock();
+            pageDock("right");
+          }}
+        >
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M7.5 4.5 13 10l-5.5 5.5" />
+          </svg>
+        </button>
+      )}
     </aside>
   );
   const flightOverlay = flightAnimation ? (() => {
