@@ -976,7 +976,6 @@ export function ExecutionMap({
         className={`emap-node-id-copy${state ? ` is-${state}` : ""}`}
         aria-label={`复制 ${label} ${id}`}
         title={`复制 ${id}`}
-        onPointerDown={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation();
