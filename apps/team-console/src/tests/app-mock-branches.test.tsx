@@ -71,10 +71,6 @@ describe("App", () => {
     it("expands an agent card into an embedded playground branch and keeps the atlas visible", async () => {
       const { container } = render(<App />);
 
-      fireEvent.click(screen.getByRole("button", { name: "顺序 run" }));
-      expect(screen.getByText("执行运行")).toBeInTheDocument();
-      expect(screen.getByText("Research vendor A")).toBeInTheDocument();
-
       fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
       fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
       fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));

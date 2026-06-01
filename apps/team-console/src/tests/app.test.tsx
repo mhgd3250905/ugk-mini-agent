@@ -16,14 +16,11 @@ describe("App", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders the title", () => {
-    render(<App />);
-    expect(screen.getByText("团队控制台")).toBeInTheDocument();
-  });
-
-  it("renders the subtitle", () => {
-    render(<App />);
-    expect(screen.getByText("执行地图预览")).toBeInTheDocument();
+  it("renders without the old page header", () => {
+    const { container } = render(<App />);
+    expect(container.querySelector(".app-header")).toBeNull();
+    expect(screen.queryByText("团队控制台")).toBeNull();
+    expect(screen.queryByText("执行地图预览")).toBeNull();
   });
 
   it("renders datasource selector", () => {
@@ -50,9 +47,10 @@ describe("App", () => {
     const { container } = render(<App />);
 
     expect(container.querySelector(".execution-map-toolbar-main")).toBeTruthy();
-    expect(container.querySelector(".execution-map-toolbar-viewport")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "放大" })).toHaveClass("execution-map-icon-button");
-    expect(screen.getByRole("button", { name: "重置视图" })).toHaveClass("execution-map-reset-button");
+    expect(container.querySelector(".execution-map-toolbar-viewport")).toBeNull();
+    expect(screen.queryByRole("button", { name: "放大" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "缩小" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "重置视图" })).toBeNull();
     const toolbar = container.querySelector(".agent-atlas-actions") as HTMLElement | null;
     expect(toolbar).toBeTruthy();
     expect(toolbar!.querySelector(".agent-atlas-stats")).toBeTruthy();

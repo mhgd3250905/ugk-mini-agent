@@ -3621,8 +3621,10 @@ test("GET /playground uses a desktop geek cockpit layout", async () => {
 	assert.match(response.body, /class="ugk-svg-logo ugk-svg-logo-light ugk-svg-logo-watermark" src="\/ugk-claw-logo-light\.svg"/);
 	assert.match(response.body, /class="ugk-ascii-logo ugk-ascii-logo-watermark"/);
 	assert.match(response.body, /\.ugk-ascii-logo\s*\{[\s\S]*font-family:\s*"Courier New", Consolas, "Cascadia Mono", monospace;/);
-	assert.match(response.body, /\.chat-stage-watermark\s*\{[\s\S]*width:\s*max-content;/);
-	assert.match(response.body, /\.ugk-ascii-logo-watermark\s*\{[\s\S]*color:\s*rgba\(138, 170, 218, 0\.2\);/);
+	assert.match(response.body, /\.chat-stage-watermark\s*\{[\s\S]*width:\s*clamp\(150px, 18vw, 280px\);[\s\S]*opacity:\s*0\.12;/);
+	assert.match(response.body, /\.chat-stage-watermark \.ugk-svg-logo-watermark\s*\{[\s\S]*display:\s*block;[\s\S]*width:\s*100%;[\s\S]*opacity:\s*1;/);
+	assert.match(response.body, /\.chat-stage-watermark \.ugk-ascii-logo-watermark\s*\{[\s\S]*display:\s*none;/);
+	assert.doesNotMatch(response.body, /\.chat-stage-watermark\s*\{[^}]*width:\s*max-content;/);
 	assert.match(response.body, /\.chat-stage > :not\(\.chat-stage-watermark\)\s*\{[\s\S]*z-index:\s*1;/);
 	assert.match(response.body, /\.landing-side-right\s*\{[\s\S]*justify-self:\s*end;/);
 	assert.match(response.body, /\.landing-side-right\s*\{[\s\S]*position:\s*static;/);
@@ -3642,7 +3644,7 @@ test("GET /playground uses a desktop geek cockpit layout", async () => {
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.topbar::before\s*\{[\s\S]*display:\s*none;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.desktop-conversation-rail\s*\{[\s\S]*background:[\s\S]*#ffffff;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.chat-stage\s*\{[\s\S]*border-color:\s*transparent;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/);
-	assert.match(response.body, /:root\[data-theme="light"\]\s+\.ugk-ascii-logo-watermark\s*\{[\s\S]*color:\s*rgba\(51, 112, 196, 0\.14\);/);
+	assert.match(response.body, /:root\[data-theme="light"\]\s+\.chat-stage-watermark\s*\{[\s\S]*opacity:\s*0\.08;/);
 	assert.doesNotMatch(response.body, /:root\[data-theme="light"\]\s+\.chat-stage\s*\{[\s\S]*rgba\(255, 255, 255, 0\.78\);/);
 	await app.close();
 });

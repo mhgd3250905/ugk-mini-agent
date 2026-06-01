@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
 import { mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
-import { getAtlasNodes, getAtlasStage } from "./app-dom-test-utils";
+import { getAtlas, getAtlasNodes, getAtlasStage } from "./app-dom-test-utils";
 
 describe("App", () => {
   beforeEach(() => {
@@ -51,7 +51,7 @@ describe("App", () => {
       fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
       fireEvent.click(within(getAtlasNodes(first.container)).getByRole("button", { name: "主 Agent" }));
       fireEvent.click(await within(getAtlasNodes(first.container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
-      fireEvent.click(screen.getByRole("button", { name: "放大" }));
+      fireEvent.wheel(getAtlas(first.container), { deltaY: -120, clientX: 120, clientY: 120 });
 
       expect(first.container.querySelector(".agent-playground-branch")).toBeTruthy();
       expect(first.container.querySelector(".task-action-branch")).toBeTruthy();
@@ -90,7 +90,6 @@ describe("App", () => {
       window.localStorage.setItem("ugk-team-console:canvas-ui-state:v1", JSON.stringify({
         schemaVersion: 1,
         dataSource: "live",
-        liveRunMode: "workspace",
         viewport: { x: 10.25, y: 20.25, scale: 0.91 },
       }));
 

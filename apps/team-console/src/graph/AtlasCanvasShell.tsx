@@ -15,6 +15,7 @@ interface AtlasCanvasShellProps {
   defaultViewport?: AtlasViewport;
   onViewportChange?: (viewport: AtlasViewport) => void;
   toolbarStart?: ReactNode;
+  toolbarEnd?: ReactNode;
   agentFocusId?: string | null;
   interactionMode?: AtlasInteractionMode;
   onSelectionComplete?: (rect: AtlasSelectionRect) => void;
@@ -94,7 +95,7 @@ function toWorldSelectionRect(screenRect: ScreenSelectionRect, viewport: AtlasVi
   };
 }
 
-export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewport, defaultViewport = DEFAULT_VIEWPORT, onViewportChange, toolbarStart, agentFocusId, interactionMode = "free", onSelectionComplete }: AtlasCanvasShellProps) {
+export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewport, defaultViewport = DEFAULT_VIEWPORT, onViewportChange, toolbarStart, toolbarEnd, agentFocusId, interactionMode = "free", onSelectionComplete }: AtlasCanvasShellProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const dragOriginRef = useRef<CanvasDragOrigin | null>(null);
   const selectionOriginRef = useRef<CanvasSelectionOrigin | null>(null);
@@ -142,29 +143,6 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
       container.removeEventListener("wheel", handleCanvasWheel);
     };
   }, [handleCanvasWheel]);
-
-  const zoomIn = useCallback(() => {
-    if (isLocked) return;
-    updateViewport({
-      ...currentViewport,
-      scale: nextZoomLevel(currentViewport.scale, "in"),
-    });
-  }, [currentViewport, isLocked, updateViewport]);
-
-  const zoomOut = useCallback(() => {
-    if (isLocked) return;
-    updateViewport({
-      ...currentViewport,
-      scale: nextZoomLevel(currentViewport.scale, "out"),
-    });
-  }, [currentViewport, isLocked, updateViewport]);
-
-  const resetView = useCallback(() => {
-    if (isLocked) return;
-    dragOriginRef.current = null;
-    setIsPanning(false);
-    updateViewport(DEFAULT_VIEWPORT);
-  }, [isLocked, updateViewport]);
 
   const handleCanvasPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (isLocked) return;
@@ -306,7 +284,6 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
   }, [onSelectionComplete]);
 
   const canvasTransform = `translate(${formatCanvasNumber(currentViewport.x)}px, ${formatCanvasNumber(currentViewport.y)}px) scale(${formatCanvasNumber(currentViewport.scale)})`;
-  const zoomPercent = `${Math.round(currentViewport.scale * 100)}%`;
 
   return (
     <div
@@ -324,17 +301,8 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
           <div className="execution-map-toolbar-main">
             {toolbarStart}
           </div>
-          <div className="execution-map-toolbar-viewport" aria-label="画布视图控制">
-            <button type="button" className="execution-map-icon-button" onClick={zoomIn} aria-label="放大" title="放大">
-              <span aria-hidden="true">+</span>
-            </button>
-            <button type="button" className="execution-map-icon-button" onClick={zoomOut} aria-label="缩小" title="缩小">
-              <span aria-hidden="true">-</span>
-            </button>
-            <button type="button" className="execution-map-reset-button" onClick={resetView} aria-label="重置视图" title="重置视图">
-              <span aria-hidden="true">1:1</span>
-            </button>
-            <span className="execution-map-zoom" aria-label={`当前缩放 ${zoomPercent}`}>{zoomPercent}</span>
+          <div className="execution-map-toolbar-side">
+            {toolbarEnd}
           </div>
         </div>
       )}

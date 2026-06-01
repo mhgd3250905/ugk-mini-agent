@@ -45,12 +45,6 @@ function collapsedNode(): HTMLElement {
   return node as HTMLElement;
 }
 
-function firstTaskTitleNode(title: string): HTMLElement {
-  const titleNode = screen.getAllByText(title)[0];
-  expect(titleNode).toBeTruthy();
-  return titleNode as HTMLElement;
-}
-
 async function realSuccessOfficialAttempts(): Promise<TeamAttemptMetadata[]> {
   return new MockTeamApi().listAttempts(
     "run_real_success_foreach_001",
@@ -435,43 +429,10 @@ describe("ExecutionMap UI", () => {
 });
 
 describe("App integration", () => {
-  it("switches fixtures", () => {
+  it("does not render the obsolete fixture switcher", () => {
     render(<App />);
-    const failedBtn = screen.getByText("失败 run");
-    fireEvent.click(failedBtn);
-    expect(screen.getByText(/Worker timeout/)).toBeInTheDocument();
-  });
-
-  it("renders evidence nodes when selecting a task", () => {
-    const { container } = render(<App />);
-    fireEvent.click(screen.getByText("顺序 run"));
-    fireEvent.click(firstTaskTitleNode("Research vendor A"));
-
-    const evidenceNodes = container.querySelectorAll(".execution-map-nodes > .emap-evidence-node");
-    expect(evidenceNodes.length).toBeGreaterThan(0);
-    expect(container.querySelector(".emap-inline-detail")).toBeNull();
-    expect(container.querySelector(".workspace-detail")).toBeNull();
-  });
-
-  it("clicking the selected task again hides evidence nodes", () => {
-    const { container } = render(<App />);
-
-    fireEvent.click(screen.getByText("顺序 run"));
-    fireEvent.click(firstTaskTitleNode("Research vendor A"));
-    const afterSelect = container.querySelectorAll(".execution-map-nodes > .emap-evidence-node");
-    expect(afterSelect.length).toBeGreaterThan(0);
-
-    fireEvent.click(firstTaskTitleNode("Research vendor A"));
-    const afterDeselect = container.querySelectorAll(".execution-map-nodes > .emap-evidence-node");
-    expect(afterDeselect.length).toBe(0);
-  });
-
-  it("fixture bar keeps horizontal scrolling without native bright scrollbar chrome", () => {
-    const css = readFileSync("src/app/app.css", "utf8");
-
-    expect(css).toContain("overflow-x: auto");
-    expect(css).toContain("scrollbar-width: none");
-    expect(css).toContain(".fixture-bar::-webkit-scrollbar");
+    expect(screen.queryByText("示例：")).toBeNull();
+    expect(screen.queryByRole("button", { name: "失败 run" })).toBeNull();
   });
 });
 
@@ -1406,7 +1367,7 @@ describe("Canvas pan and zoom", () => {
 
     fireEvent.wheel(container, { deltaY: -120, clientX: 120, clientY: 120 });
 
-    expect(screen.getByText("110%")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/当前缩放/)).toBeNull();
     expect(stage.style.transform).toContain("scale(1.1)");
   });
 
@@ -1419,32 +1380,28 @@ describe("Canvas pan and zoom", () => {
     addSpy.mockRestore();
   });
 
-  it("zoom toolbar clamps at min and max", () => {
-    const { stage } = renderCanvasMap();
-    const zoomIn = screen.getByRole("button", { name: "放大" });
-    const zoomOut = screen.getByRole("button", { name: "缩小" });
+  it("wheel zoom clamps at min and max without rendering zoom controls", () => {
+    const { container, stage } = renderCanvasMap();
 
-    for (let i = 0; i < 20; i += 1) fireEvent.click(zoomIn);
-    expect(screen.getByText("180%")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "放大" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "缩小" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "重置视图" })).toBeNull();
+
+    for (let i = 0; i < 20; i += 1) fireEvent.wheel(container, { deltaY: -120, clientX: 120, clientY: 120 });
     expect(stage.style.transform).toContain("scale(1.8)");
 
-    for (let i = 0; i < 40; i += 1) fireEvent.click(zoomOut);
-    expect(screen.getByText("45%")).toBeInTheDocument();
+    for (let i = 0; i < 40; i += 1) fireEvent.wheel(container, { deltaY: 120, clientX: 120, clientY: 120 });
     expect(stage.style.transform).toContain("scale(0.45)");
   });
 
-  it("reset returns pan and zoom to the default transform", () => {
+  it("does not render the obsolete reset view control", () => {
     const { container, stage } = renderCanvasMap();
 
     fireEvent.wheel(container, { deltaY: -120, clientX: 120, clientY: 120 });
     firePointer(container, "pointerdown", { pointerId: 1, clientX: 10, clientY: 10 });
     firePointer(container, "pointermove", { pointerId: 1, clientX: 40, clientY: 50 });
     expect(stage.style.transform).not.toBe("translate(0px, 0px) scale(1)");
-
-    fireEvent.click(screen.getByRole("button", { name: "重置视图" }));
-
-    expect(screen.getByText("100%")).toBeInTheDocument();
-    expect(stage.style.transform).toBe("translate(0px, 0px) scale(1)");
+    expect(screen.queryByRole("button", { name: "重置视图" })).toBeNull();
   });
 
   it("dragging empty canvas changes pan", () => {
@@ -1549,7 +1506,8 @@ describe("Canvas pan and zoom", () => {
     fireEvent.click(screen.getByRole("button", { name: /探寻方向：搜索引擎官方免费 API/ }));
 
     expect(await screen.findByText("Worker 输出 1")).toBeInTheDocument();
-    expect(screen.getByText("110%")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/当前缩放/)).toBeNull();
+    expect((container.querySelector(".execution-map-scroll") as HTMLElement).style.transform).toContain("scale(1.1)");
 
     rectSpy.mockRestore();
     if (offsetDescriptor) {

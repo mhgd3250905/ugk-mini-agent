@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { App } from "../app/App";
 import { MOCK_AGENTS, resetMockTeamApiState } from "../fixtures/team-fixtures";
 import type { TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamRunState, TeamTaskConnection } from "../api/team-types";
-import { getAtlasNodes, getAtlasStage } from "./app-dom-test-utils";
+import { getAtlas, getAtlasNodes, getAtlasStage } from "./app-dom-test-utils";
 import { cloneTaskFixture, makeTypedTaskChainFixtures } from "./team-task-test-fixtures";
 import { makeLiveTaskRunFixture } from "./team-run-test-fixtures";
 
@@ -335,15 +335,14 @@ describe("App", () => {
       });
       expect(within(getAtlasNodes(container)).getByRole("group", { name: "Live reset probe.md" })).toBeInTheDocument();
 
-      fireEvent.click(screen.getByRole("button", { name: "放大" }));
-      expect(screen.getByLabelText("当前缩放 110%")).toBeInTheDocument();
+      fireEvent.wheel(getAtlas(container), { deltaY: -120, clientX: 120, clientY: 120 });
+      expect(screen.queryByLabelText(/当前缩放/)).toBeNull();
 
       fireEvent.change(screen.getByRole("combobox"), { target: { value: "mock" } });
-      fireEvent.click(screen.getByRole("button", { name: "Agent workspace" }));
 
       await waitFor(() => {
         expect(container.querySelector('[data-source-node-id="src_live_reset_probe"]')).toBeNull();
-        expect(screen.getByLabelText("当前缩放 100%")).toBeInTheDocument();
+        expect(screen.queryByLabelText(/当前缩放/)).toBeNull();
         expect(getAtlasStage(container).style.transform).toBe("translate(0px, 0px) scale(1)");
       });
     });

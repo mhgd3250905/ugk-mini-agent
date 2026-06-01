@@ -6,12 +6,10 @@ import { ROOT_ID } from "../graph/execution-map-layout";
 import { isActiveRun } from "../shared/status";
 
 export type DataSource = "mock" | "live";
-export type LiveRunMode = "workspace" | "latest";
 export type TeamConsoleUiResetReason =
   | "mock-fixture"
   | "mock-workspace"
-  | "live-workspace-loading"
-  | "live-run-mode";
+  | "live-workspace-loading";
 
 const DATA_SOURCE_STORAGE_KEY = "ugk-team-console:data-source";
 
@@ -35,17 +33,6 @@ function readStoredDataSource(): DataSource {
 
 function agentRunStatusRecord(statuses: AgentRunStatus[]): Record<string, AgentRunStatus> {
   return Object.fromEntries(statuses.map((status) => [status.agentId, status]));
-}
-
-function selectLatestRun(runs: TeamRunState[]): TeamRunState | null {
-  if (!runs.length) return null;
-  return runs.reduce((latest, run) => {
-    const latestTime = Date.parse(latest.createdAt);
-    const runTime = Date.parse(run.createdAt);
-    if (!Number.isFinite(runTime)) return latest;
-    if (!Number.isFinite(latestTime)) return run;
-    return runTime >= latestTime ? run : latest;
-  }, runs[0]);
 }
 
 function sortRunsByCreatedAt(runs: TeamRunState[]): TeamRunState[] {
@@ -87,8 +74,6 @@ export interface UseTeamConsoleLiveDataReturn {
   setDataSource: React.Dispatch<React.SetStateAction<DataSource>>;
   selectedFixtureId: string;
   setSelectedFixtureId: React.Dispatch<React.SetStateAction<string>>;
-  liveRunMode: LiveRunMode;
-  setLiveRunMode: React.Dispatch<React.SetStateAction<LiveRunMode>>;
 
   loading: boolean;
   error: string | null;
@@ -124,7 +109,6 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
 
   const [dataSource, setDataSource] = useState<DataSource>(() => readStoredDataSource());
   const [selectedFixtureId, setSelectedFixtureId] = useState<string>(CLEAN_AGENT_WORKSPACE_ID);
-  const [liveRunMode, setLiveRunMode] = useState<LiveRunMode>("workspace");
   const [plan, setPlan] = useState<TeamPlan | null>(null);
   const [run, setRun] = useState<RunDetail | null>(null);
   const [attemptsByTaskId, setAttemptsByTaskId] = useState<Record<string, TeamAttemptMetadata[]>>({});
@@ -298,6 +282,11 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     }
 
     onResetContextUi("live-workspace-loading");
+    setPlan(null);
+    setRun(null);
+    setAttemptsByTaskId({});
+    setError(null);
+    setLoading(false);
     setAgents([]);
     setAgentRunStatusById({});
     setTasks([]);
@@ -347,73 +336,6 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
       }
     };
   }, [applyLiveSources, applyLiveTasks, onCloseBranches, onResetContextUi, dataSource, loadTaskRunsForTasks, onApplyLiveTasks, onApplyLiveSources]);
-
-  // Live run mode loading (plans/runs for "latest" mode)
-  useEffect(() => {
-    if (dataSource !== "live") return;
-
-    onCloseBranches();
-    onResetContextUi("live-run-mode");
-    if (liveRunMode === "workspace") {
-      setPlan(null);
-      setRun(null);
-      setAttemptsByTaskId({});
-      setError(null);
-      setLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    const api = new LiveTeamApi();
-
-    setPlan(null);
-    setRun(null);
-    setAttemptsByTaskId({});
-    setError(null);
-    setLoading(true);
-
-    async function loadLiveData() {
-      try {
-        const [plans, runs] = await Promise.all([
-          api.listPlans(),
-          api.listRuns(),
-        ]);
-        const selectedRun = selectLatestRun(runs);
-        if (!selectedRun) {
-          if (!cancelled) {
-            setPlan(null);
-            setRun(null);
-          }
-          return;
-        }
-
-        const runDetail = await api.getRunDetail(selectedRun.runId);
-        const runPlan = plans.find((candidate) => candidate.planId === runDetail.planId);
-        if (!runPlan) {
-          throw { message: `Plan not found for run: ${runDetail.runId}` };
-        }
-
-        if (!cancelled) {
-          setPlan(runPlan);
-          setRun(runDetail);
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError(errorMessage(e));
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    void loadLiveData();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [onCloseBranches, onResetContextUi, dataSource, liveRunMode]);
 
   // Attempts loading for selected task
   useEffect(() => {
@@ -502,9 +424,6 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     setDataSource,
     selectedFixtureId,
     setSelectedFixtureId,
-    liveRunMode,
-    setLiveRunMode,
-
     loading,
     error,
     setError,

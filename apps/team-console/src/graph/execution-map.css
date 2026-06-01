@@ -80,21 +80,18 @@
 }
 
 .execution-map-toolbar-main {
+  flex: 1 1 auto;
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.execution-map-toolbar-viewport {
+.execution-map-toolbar-side {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px;
-  border: 1px solid rgba(101, 119, 145, 0.2);
-  border-radius: 7px;
-  background: rgba(241, 245, 249, 0.78);
+  gap: 8px;
 }
 
 .execution-map-toolbar button {
@@ -119,19 +116,28 @@
     transform 0.14s ease-out;
 }
 
-.execution-map-toolbar .execution-map-icon-button {
-  width: 32px;
-  padding: 0;
-  font-family: var(--font-mono);
-  font-size: 15px;
-  line-height: 1;
+.execution-map-toolbar .root-filter-btn {
+  min-width: var(--root-filter-item-width);
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
 }
 
-.execution-map-toolbar .execution-map-reset-button {
-  min-width: 42px;
-  padding: 0 9px;
-  font-family: var(--font-mono);
-  font-size: 10px;
+.execution-map-toolbar .theme-toggle-btn {
+  min-width: 0;
+  width: 48px;
+  height: 32px;
+  padding: 3px;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.82)),
+    rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 8px 18px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
 }
 
 .execution-map-toolbar button:hover {
@@ -139,6 +145,24 @@
   color: var(--accent);
   background: rgba(22, 124, 128, 0.08);
   transform: translateY(-1px);
+}
+
+.execution-map-toolbar .root-filter-btn:hover {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.execution-map-toolbar .theme-toggle-btn:hover,
+.execution-map-toolbar .theme-toggle-btn:focus-visible {
+  border-color: rgba(22, 124, 128, 0.45);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(232, 244, 244, 0.88)),
+    rgba(22, 124, 128, 0.08);
+  box-shadow:
+    0 10px 22px rgba(15, 23, 42, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
 }
 
 .execution-map-toolbar button:focus-visible {
@@ -168,20 +192,6 @@
     0 0 0 1px rgba(121, 216, 208, 0.18),
     0 0 24px rgba(121, 216, 208, 0.12);
   pointer-events: none;
-}
-
-.execution-map-zoom {
-  min-width: 45px;
-  height: 30px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 0 4px 0 8px;
-  color: rgba(71, 85, 105, 0.72);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 760;
-  text-align: right;
 }
 
 .emap-root-dock {
@@ -2827,12 +2837,6 @@
   gap: 3px;
   min-width: 0;
   margin-top: 1px;
-  padding: 4px;
-  border: 1px solid rgba(101, 119, 145, 0.16);
-  border-radius: 7px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.72), transparent),
-    rgba(226, 232, 240, 0.62);
 }
 
 .emap-task-agent-row {
@@ -2964,18 +2968,20 @@
 
 .emap-task-port-chip:hover,
 .emap-task-port-chip:focus-visible {
-  border-color: rgba(120, 218, 180, 0.58);
-  background: rgba(52, 81, 68, 0.38);
+  border-color: rgba(22, 124, 128, 0.46);
+  background: rgba(22, 124, 128, 0.1);
   outline: none;
 }
 
 .emap-task-port-input.is-compatible {
-  border-color: rgba(120, 218, 180, 0.62);
+  border-color: rgba(22, 124, 128, 0.52);
+  background: rgba(22, 124, 128, 0.1);
 }
 
 .emap-task-port-output.is-selected {
-  border-color: rgba(255, 205, 120, 0.72);
-  background: rgba(94, 67, 28, 0.5);
+  border-color: rgba(184, 115, 0, 0.58);
+  background: rgba(255, 190, 96, 0.22);
+  box-shadow: 0 0 0 1px rgba(184, 115, 0, 0.16);
 }
 
 .emap-canvas-task-node.status-ready .emap-node-state-pill {
@@ -3265,6 +3271,7 @@
     linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
     linear-gradient(180deg, #050813 0%, #02040b 100%);
+  background-size: 32px 32px, 32px 32px, auto;
 }
 
 [data-theme="dark"] .execution-map-container::before {
@@ -3285,16 +3292,67 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-[data-theme="dark"] .execution-map-toolbar-viewport {
-  border-color: rgba(122, 131, 151, 0.2);
-  background: rgba(2, 4, 11, 0.38);
-}
-
 [data-theme="dark"] .execution-map-toolbar button {
   border-color: rgba(151, 163, 188, 0.22);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.025)),
     rgba(20, 28, 42, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .execution-map-toolbar .root-filter-btn {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-theme="dark"] .execution-map-toolbar .theme-toggle-btn {
+  border-color: rgba(122, 131, 151, 0.34);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.025)),
+    rgba(16, 20, 31, 0.9);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .execution-map-toolbar button:hover {
+  border-color: rgba(121, 216, 208, 0.55);
+  color: rgb(182, 246, 240);
+  background: rgba(121, 216, 208, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .execution-map-toolbar .root-filter-btn:hover {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+[data-theme="dark"] .execution-map-toolbar .theme-toggle-btn:hover,
+[data-theme="dark"] .execution-map-toolbar .theme-toggle-btn:focus-visible {
+  border-color: rgba(121, 216, 208, 0.55);
+  background:
+    linear-gradient(180deg, rgba(121, 216, 208, 0.11), rgba(121, 216, 208, 0.04)),
+    rgba(16, 20, 31, 0.92);
+  box-shadow:
+    0 12px 26px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .execution-map-toolbar button:focus-visible {
+  border-color: rgba(121, 216, 208, 0.76);
+  outline-color: rgba(121, 216, 208, 0.24);
+}
+
+[data-theme="dark"] .execution-map-toolbar button:disabled:hover {
+  border-color: rgba(151, 163, 188, 0.22);
+  color: var(--primary);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.025)),
+    rgba(20, 28, 42, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 [data-theme="dark"] .execution-map-toolbar .agent-add-btn {
@@ -3669,13 +3727,6 @@
   border-color: rgba(122, 131, 151, 0.22);
 }
 
-[data-theme="dark"] .emap-task-agent-grid {
-  border-color: rgba(122, 131, 151, 0.16);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent),
-    rgba(2, 4, 11, 0.22);
-}
-
 [data-theme="dark"] .emap-task-agent-row {
   border-left-color: rgba(151, 163, 188, 0.24);
   background:
@@ -3720,6 +3771,27 @@
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.055), transparent),
     rgba(16, 22, 32, 0.58);
+}
+
+[data-theme="dark"] .emap-task-port-chip:hover,
+[data-theme="dark"] .emap-task-port-chip:focus-visible {
+  border-color: rgba(120, 218, 180, 0.62);
+  background: rgba(52, 81, 68, 0.38);
+}
+
+[data-theme="dark"] .emap-task-port-input.is-compatible {
+  border-color: rgba(120, 218, 180, 0.62);
+  background: rgba(52, 81, 68, 0.38);
+}
+
+[data-theme="dark"] .emap-task-port-output.is-selected {
+  border-color: rgba(255, 205, 120, 0.88);
+  background:
+    linear-gradient(180deg, rgba(255, 205, 120, 0.22), rgba(255, 190, 96, 0.12)),
+    rgba(94, 67, 28, 0.58);
+  box-shadow:
+    0 0 0 1px rgba(255, 205, 120, 0.18),
+    0 0 10px rgba(255, 190, 96, 0.16);
 }
 
 [data-theme="dark"] .emap-source-text-input {
