@@ -387,6 +387,22 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toContain("rgba(232, 239, 247, 0.84)");
   });
 
+  it("keeps Discovery subcanvas light by default while preserving dark theme overrides", () => {
+    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const discoverySubcanvasRule = mapCss.match(/\.discovery-subcanvas-panel\s*{[^}]*}/)?.[0] ?? "";
+    const discoveryGeneratedCardRule = mapCss.match(/\.discovery-generated-card\s*{[^}]*}/)?.[0] ?? "";
+
+    expect(discoverySubcanvasRule).toContain("rgba(255, 255, 255, 0.98)");
+    expect(discoverySubcanvasRule).not.toContain("rgba(7, 12, 22");
+    expect(discoveryGeneratedCardRule).toContain("color: var(--primary)");
+    expect(discoveryGeneratedCardRule).toContain("rgba(255, 255, 255, 0.88)");
+    expect(discoveryGeneratedCardRule).not.toContain("color: #d8e4f1");
+    expect(mapCss).toContain('[data-theme="dark"] .discovery-subcanvas-panel');
+    expect(mapCss).toContain('[data-theme="dark"] .discovery-generated-card');
+    expect(mapCss).toContain("rgba(7, 12, 22, 0.98)");
+    expect(mapCss).toContain("color: #d8e4f1");
+  });
+
   it("keeps dark toolbar action buttons from being flattened by generic map button styles", () => {
     const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
 
