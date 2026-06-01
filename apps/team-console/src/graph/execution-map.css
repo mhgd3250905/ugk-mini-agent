@@ -372,6 +372,45 @@
   font-size: 9px;
 }
 
+.emap-root-dock-state {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 16px;
+  margin-top: 4px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(122, 131, 151, 0.12);
+  color: var(--secondary);
+  font-size: 9px;
+  font-weight: 760;
+  line-height: 1;
+}
+
+.emap-root-dock-state.running,
+.emap-root-dock-state.queued {
+  background: rgba(121, 216, 208, 0.13);
+  color: var(--accent);
+}
+
+.emap-root-dock-state.completed,
+.emap-root-dock-state.succeeded {
+  background: rgba(116, 226, 151, 0.12);
+  color: var(--success);
+}
+
+.emap-root-dock-state.failed {
+  background: rgba(255, 113, 136, 0.12);
+  color: var(--danger);
+}
+
+.emap-root-dock-state.paused,
+.emap-root-dock-state.completed_with_failures {
+  background: rgba(245, 180, 80, 0.13);
+  color: var(--warning);
+}
+
 .emap-root-dock-flight {
   position: fixed;
   z-index: 100;

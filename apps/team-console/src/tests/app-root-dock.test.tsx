@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
-import { mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
+import { mockDiscoveryRootTask, mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
 import { getAtlasNodes, firePointer, dragRootNodeToDock } from "./app-dom-test-utils";
 
 describe("App", () => {
@@ -324,6 +324,46 @@ describe("App", () => {
       expect(taskItem!.classList.contains("emap-root-dock-item-task")).toBe(true);
       expect(taskItem!.querySelector(".emap-root-dock-icon")).toBeTruthy();
       expect(taskItem!.querySelector(".emap-root-dock-copy")).toBeTruthy();
+    });
+
+    it("keeps minimized Agent and Task nodes visible in Dock while root filters change", async () => {
+      const { container } = render(<App />);
+
+      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+      const agentNode = container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
+      const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
+      expect(agentNode).toBeTruthy();
+
+      dragRootNodeToDock(container, agentNode!, 26);
+      dragRootNodeToDock(container, taskNode, 27);
+
+      fireEvent.click(screen.getByRole("tab", { name: "Task" }));
+      const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
+      expect(dock).toBeTruthy();
+      expect(within(dock!).getByRole("button", { name: /复原 Agent 主 Agent/ })).toBeInTheDocument();
+      expect(within(dock!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("tab", { name: "Agent" }));
+      expect(within(dock!).getByRole("button", { name: /复原 Agent 主 Agent/ })).toBeInTheDocument();
+      expect(within(dock!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ })).toBeInTheDocument();
+    });
+
+    it("shows the latest minimized Task run status in the Dock", async () => {
+      const { container } = render(<App />);
+      const taskNode = await waitFor(() => {
+        const el = container.querySelector(`.emap-canvas-task-node[data-task-id="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+        expect(el).toBeTruthy();
+        return el!;
+      });
+
+      dragRootNodeToDock(container, taskNode, 28);
+
+      const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
+      expect(dock).toBeTruthy();
+      const dockTask = dock!.querySelector(`.emap-root-dock-item-task[data-task-run-status="completed"]`);
+      expect(dockTask).toBeTruthy();
+      expect(within(dockTask as HTMLElement).getByText("已完成")).toBeInTheDocument();
     });
 
     it("restores Task menu branch position after drag-to-dock minimize", async () => {

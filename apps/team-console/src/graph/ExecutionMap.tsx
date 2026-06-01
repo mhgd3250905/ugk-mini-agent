@@ -869,16 +869,16 @@ export function ExecutionMap({
     [showSources, unfilteredVisibleSourceNodes],
   );
   const hubAgentNodes = useMemo(
-    () => showAgents ? agentNodes.filter((node) => minimizedAgentNodeIdSet.has(node.nodeId)) : [],
-    [agentNodes, minimizedAgentNodeIdSet, showAgents],
+    () => agentNodes.filter((node) => minimizedAgentNodeIdSet.has(node.nodeId)),
+    [agentNodes, minimizedAgentNodeIdSet],
   );
   const hubTaskNodes = useMemo(
-    () => showTasks ? taskNodes.filter((node) => minimizedTaskNodeIdSet.has(node.nodeId)) : [],
-    [minimizedTaskNodeIdSet, showTasks, taskNodes],
+    () => taskNodes.filter((node) => minimizedTaskNodeIdSet.has(node.nodeId)),
+    [minimizedTaskNodeIdSet, taskNodes],
   );
   const hubSourceNodes = useMemo(
-    () => showSources ? sourceNodes.filter((node) => minimizedSourceNodeIdSet.has(node.nodeId)) : [],
-    [minimizedSourceNodeIdSet, showSources, sourceNodes],
+    () => sourceNodes.filter((node) => minimizedSourceNodeIdSet.has(node.nodeId)),
+    [minimizedSourceNodeIdSet, sourceNodes],
   );
   const dockNodeCount = hubAgentNodes.length + hubTaskNodes.length + hubSourceNodes.length;
 
@@ -2064,6 +2064,7 @@ export function ExecutionMap({
               <span className="emap-root-dock-kind">Agent</span>
               <span className="emap-root-dock-title">{label}</span>
               <span className="emap-root-dock-meta">{node.agentId}</span>
+              <span className={`emap-root-dock-state ${flightDetails.targetPillClass}`}>{flightDetails.targetPill}</span>
             </span>
           </button>
         );
@@ -2079,8 +2080,9 @@ export function ExecutionMap({
             type="button"
             className="emap-root-dock-item emap-root-dock-item-task"
             data-kind="task"
+            data-task-run-status={flightDetails.targetPillClass}
             data-restoring={isRestoring ? "true" : undefined}
-            aria-label={`复原 Task ${label}`}
+            aria-label={`复原 Task ${label} ${flightDetails.targetPill}`}
             aria-disabled={isRestoring || undefined}
             disabled={isRestoring}
             onPointerDown={(event) => event.stopPropagation()}
@@ -2115,6 +2117,7 @@ export function ExecutionMap({
               <span className="emap-root-dock-kind">Task</span>
               <span className="emap-root-dock-title">{label}</span>
               <span className="emap-root-dock-meta">{node.taskId}</span>
+              <span className={`emap-root-dock-state ${flightDetails.targetPillClass}`}>{flightDetails.targetPill}</span>
             </span>
           </button>
         );
