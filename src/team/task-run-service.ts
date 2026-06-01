@@ -9,7 +9,7 @@ import type { TaskDependencyStore } from "./task-dependency-store.js";
 import { resolveSourceConnectionStaleReason, type SourceConnectionStore } from "./source-connection-store.js";
 import type { SourceNodeStore } from "./source-node-store.js";
 import type { ProfileAwareTeamRoleRunner, TeamRoleRunner } from "./role-runner.js";
-import type { TeamCanvasTask, TeamDiscoveryDispatchOutcome, TeamDiscoveryGeneratedRunOutcome, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskDeliveryOutcome } from "./types.js";
+import type { TeamCanvasTask, TeamDiscoveryAggregationRecord, TeamDiscoveryDispatchOutcome, TeamDiscoveryGeneratedRunOutcome, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskDeliveryOutcome } from "./types.js";
 import { planDownstreamDelivery } from "./downstream-delivery.js";
 import { CanvasTaskAttemptRunner } from "./canvas-task-attempt-runner.js";
 
@@ -47,13 +47,17 @@ const GENERATED_TASK_AUTORUN_POLL_MS = 25;
 
 type TaskRunSource = NonNullable<TeamRunState["source"]>;
 type DiscoveryGeneratedTaskCandidate = { itemId: string; task: TeamCanvasTask };
-type DiscoveryGeneratedTaskDispatchResult = { autoRunCandidates: DiscoveryGeneratedTaskCandidate[] };
+type DiscoveryGeneratedTaskDispatchResult = {
+	autoRunCandidates: DiscoveryGeneratedTaskCandidate[];
+	outcomes: TeamDiscoveryDispatchOutcome[];
+};
 
 export interface CanvasTaskRunOptions {
 	maxRunDurationMinutes?: number;
 	boundInputs?: TeamTaskBoundInput[];
 	triggeredBy?: TaskRunSource["triggeredBy"];
 	includeSourceBindings?: boolean;
+	publicBaseUrl?: string;
 }
 
 function canvasTaskToTeamTask(task: TeamCanvasTask, boundInputs: TeamTaskBoundInput[] = []): TeamTask {
@@ -167,6 +171,7 @@ export class CanvasTaskRunService {
 		state.source = {
 			type: "canvas-task",
 			taskId: task.taskId,
+			...(runOptions.publicBaseUrl ? { publicBaseUrl: runOptions.publicBaseUrl } : {}),
 			...(runOptions.triggeredBy ? { triggeredBy: runOptions.triggeredBy } : {}),
 			...(boundInputs.length > 0 ? { boundInputs } : {}),
 		};
@@ -221,6 +226,8 @@ export class CanvasTaskRunService {
 		const state = await this.getRun(runId);
 		if (!state) throw new Error(`run not found: ${runId}`);
 		if (TERMINAL_RUN_STATUSES.has(state.status)) throw new Error(`cannot cancel terminal run: ${state.status}`);
+		const sourceTask = state.source?.taskId ? await this.options.taskStore.get(state.source.taskId) : null;
+		const shouldCancelDiscoveryGeneratedRuns = sourceTask?.canvasKind === "discovery" && !sourceTask.generatedSource;
 
 		this.cancellingRunIds.add(runId);
 		this.activeControllers.get(runId)?.abort(new Error(reason));
@@ -250,10 +257,25 @@ export class CanvasTaskRunService {
 			state.summary = computeTeamRunSummary(state.taskStates);
 			state.updatedAt = timestamp;
 			await this.options.workspace.saveState(state);
+			if (shouldCancelDiscoveryGeneratedRuns) {
+				await this.cancelDiscoveryGeneratedRunsForRun(runId, reason);
+			}
 
 			return state;
 		} finally {
 			this.cancellingRunIds.delete(runId);
+		}
+	}
+
+	private async cancelDiscoveryGeneratedRunsForRun(discoveryRunId: string, reason: string): Promise<void> {
+		const runs = await this.listRuns();
+		const generatedRuns = runs.filter(run =>
+			ACTIVE_RUN_STATUSES.has(run.status)
+			&& run.source?.triggeredBy?.type === "discovery-generated-task"
+			&& run.source.triggeredBy.discoveryRunId === discoveryRunId
+		);
+		for (const run of generatedRuns) {
+			await this.cancelRun(run.runId, reason).catch(() => {});
 		}
 	}
 
@@ -307,6 +329,7 @@ export class CanvasTaskRunService {
 				task,
 				attemptId,
 				attemptRoot,
+				publicBaseUrl: initialState.source?.publicBaseUrl,
 				roleRunner,
 				signal,
 				workerProfileId: canvasTask.workUnit.workerAgentId,
@@ -351,6 +374,77 @@ export class CanvasTaskRunService {
 		roleRunner: TeamRoleRunner,
 		signal: AbortSignal,
 	): Promise<void> {
+		if (canvasTask.canvasKind === "discovery") {
+			await this.markDiscoveryRunWaitingForGeneratedTasks(runId, taskId, resultRef);
+			let discoveryDispatchResult: DiscoveryGeneratedTaskDispatchResult | null = null;
+			try {
+				discoveryDispatchResult = await this.dispatchDiscoveryGeneratedTasks(runId, canvasTask, attemptId, roleRunner, signal);
+			} catch {
+				// Discovery dispatch diagnostics must not fail an accepted Discovery run.
+			}
+			if (signal.aborted || await this.isRunCancelledOrMissing(runId)) return;
+			let generatedRunOutcomes: TeamDiscoveryGeneratedRunOutcome[] = [];
+			if (discoveryDispatchResult) {
+				generatedRunOutcomes = await this.autoRunDiscoveryGeneratedTasks(
+					runId,
+					canvasTask,
+					attemptId,
+					discoveryDispatchResult.autoRunCandidates,
+					signal,
+				).catch(() => []);
+			}
+			if (signal.aborted || await this.isRunCancelledOrMissing(runId)) return;
+			await this.writeDiscoveryAggregation(
+				runId,
+				canvasTask,
+				attemptId,
+				discoveryDispatchResult?.outcomes ?? [],
+				generatedRunOutcomes,
+			).catch(() => {});
+			await this.markRunSucceeded(runId, taskId, resultRef);
+			try {
+				await this.triggerDownstreamRuns(runId, taskId, attemptId, resultRef);
+			} catch {
+				// Downstream delivery setup/diagnostics must not fail an accepted upstream run.
+			}
+			return;
+		}
+
+		await this.markRunSucceeded(runId, taskId, resultRef);
+		try {
+			await this.triggerDownstreamRuns(runId, taskId, attemptId, resultRef);
+		} catch {
+			// Downstream delivery setup/diagnostics must not fail an accepted upstream run.
+		}
+	}
+
+	private async isRunCancelledOrMissing(runId: string): Promise<boolean> {
+		const state = await this.getRun(runId);
+		return !state || state.status === "cancelled";
+	}
+
+	private async markDiscoveryRunWaitingForGeneratedTasks(runId: string, taskId: string, resultRef: string): Promise<void> {
+		const timestamp = now();
+		await this.options.workspace.patchState(runId, (state) => {
+			const taskState = state.taskStates[taskId];
+			if (taskState) {
+				taskState.status = "running";
+				taskState.resultRef = resultRef;
+				taskState.errorSummary = null;
+				taskState.progress = {
+					phase: "writing_result",
+					message: "正在派发并运行 Discovery generated Tasks",
+					updatedAt: timestamp,
+				};
+			}
+			state.status = "running";
+			state.currentTaskId = taskId;
+			state.summary = computeTeamRunSummary(state.taskStates);
+			state.updatedAt = timestamp;
+		});
+	}
+
+	private async markRunSucceeded(runId: string, taskId: string, resultRef: string): Promise<void> {
 		const timestamp = now();
 		await this.options.workspace.patchState(runId, (state) => {
 			const taskState = state.taskStates[taskId];
@@ -368,21 +462,6 @@ export class CanvasTaskRunService {
 			state.summary = computeTeamRunSummary(state.taskStates);
 			state.updatedAt = timestamp;
 		});
-		let discoveryDispatchResult: DiscoveryGeneratedTaskDispatchResult | null = null;
-		try {
-			discoveryDispatchResult = await this.dispatchDiscoveryGeneratedTasks(runId, canvasTask, attemptId, roleRunner, signal);
-		} catch {
-			// Discovery dispatch diagnostics must not fail an accepted Discovery run.
-		}
-		const discoveryGeneratedAutoRun = discoveryDispatchResult
-			? this.autoRunDiscoveryGeneratedTasks(runId, canvasTask, attemptId, discoveryDispatchResult.autoRunCandidates, signal).catch(() => {})
-			: Promise.resolve();
-		try {
-			await this.triggerDownstreamRuns(runId, taskId, attemptId, resultRef);
-		} catch {
-			// Downstream delivery setup/diagnostics must not fail an accepted upstream run.
-		}
-		await discoveryGeneratedAutoRun;
 	}
 
 	private async dispatchDiscoveryGeneratedTasks(
@@ -398,13 +477,14 @@ export class CanvasTaskRunService {
 		const createdAt = now();
 		const discoveryResult = await this.options.workspace.readDiscoveryResult(runId, canvasTask.taskId, attemptId);
 		if (!discoveryResult) {
-			await this.options.workspace.recordAttemptDiscoveryDispatchOutcomes(runId, canvasTask.taskId, attemptId, [{
+			const outcomes: TeamDiscoveryDispatchOutcome[] = [{
 				itemId: "__discovery_result__",
 				status: "blocked",
 				error: "discovery-result.json was not found for accepted Discovery run",
 				createdAt,
-			}]);
-			return { autoRunCandidates: [] };
+			}];
+			await this.options.workspace.recordAttemptDiscoveryDispatchOutcomes(runId, canvasTask.taskId, attemptId, outcomes);
+			return { autoRunCandidates: [], outcomes };
 		}
 
 		const outcomes: TeamDiscoveryDispatchOutcome[] = [];
@@ -523,7 +603,7 @@ export class CanvasTaskRunService {
 			});
 		}
 		await this.options.workspace.recordAttemptDiscoveryDispatchOutcomes(runId, canvasTask.taskId, attemptId, outcomes);
-		return { autoRunCandidates };
+		return { autoRunCandidates, outcomes };
 	}
 
 	private async autoRunDiscoveryGeneratedTasks(
@@ -532,10 +612,10 @@ export class CanvasTaskRunService {
 		discoveryAttemptId: string,
 		candidates: DiscoveryGeneratedTaskCandidate[],
 		signal: AbortSignal,
-	): Promise<void> {
+	): Promise<TeamDiscoveryGeneratedRunOutcome[]> {
 		const autoRun = discoveryTask.discoverySpec?.autoRun;
-		if (autoRun?.enabled !== true) return;
-		if (candidates.length === 0) return;
+		if (autoRun?.enabled !== true) return [];
+		if (candidates.length === 0) return [];
 
 		const concurrency = autoRun.concurrency === GENERATED_TASK_AUTORUN_CONCURRENCY
 			? GENERATED_TASK_AUTORUN_CONCURRENCY
@@ -544,6 +624,7 @@ export class CanvasTaskRunService {
 		let nextIndex = 0;
 		const runWorker = async (): Promise<void> => {
 			while (nextIndex < candidates.length) {
+				if (signal.aborted) return;
 				const index = nextIndex;
 				nextIndex++;
 				const candidate = candidates[index]!;
@@ -554,16 +635,19 @@ export class CanvasTaskRunService {
 					candidate,
 					signal,
 				});
+				if (signal.aborted) return;
 			}
 		};
 
 		await Promise.all(Array.from({ length: Math.min(concurrency, candidates.length) }, () => runWorker()));
+		const compactOutcomes = outcomes.filter((outcome): outcome is TeamDiscoveryGeneratedRunOutcome => Boolean(outcome));
 		await this.options.workspace.recordAttemptDiscoveryGeneratedRunOutcomes(
 			discoveryRunId,
 			discoveryTask.taskId,
 			discoveryAttemptId,
-			outcomes.filter((outcome): outcome is TeamDiscoveryGeneratedRunOutcome => Boolean(outcome)),
+			compactOutcomes,
 		);
+		return compactOutcomes;
 	}
 
 	private async launchDiscoveryGeneratedTaskRun(input: {
@@ -576,6 +660,7 @@ export class CanvasTaskRunService {
 		const { discoveryRunId, discoveryTaskId, discoveryAttemptId, candidate, signal } = input;
 		const createdAt = now();
 		const latestTask = await this.options.taskStore.get(candidate.task.taskId);
+		const discoveryRun = await this.getRun(discoveryRunId);
 		if (!latestTask || latestTask.archived || latestTask.generatedSource?.itemStatus !== "active") {
 			return {
 				itemId: candidate.itemId,
@@ -608,6 +693,7 @@ export class CanvasTaskRunService {
 
 		try {
 			const generatedRun = await this.createRun(latestTask.taskId, {
+				publicBaseUrl: discoveryRun?.source?.publicBaseUrl,
 				triggeredBy: {
 					type: "discovery-generated-task",
 					discoveryTaskId,
@@ -620,6 +706,9 @@ export class CanvasTaskRunService {
 				await this.waitForTerminalGeneratedRun(generatedRun.runId, signal);
 			} catch {
 				// The launch succeeded; waiting is only used to enforce the v1 pool.
+				if (signal.aborted) {
+					await this.cancelRun(generatedRun.runId, "discovery root run cancelled").catch(() => {});
+				}
 			}
 			return {
 				itemId: candidate.itemId,
@@ -668,6 +757,116 @@ export class CanvasTaskRunService {
 		}
 	}
 
+	private async writeDiscoveryAggregation(
+		discoveryRunId: string,
+		discoveryTask: TeamCanvasTask,
+		discoveryAttemptId: string,
+		dispatchOutcomes: TeamDiscoveryDispatchOutcome[],
+		generatedRunOutcomes: TeamDiscoveryGeneratedRunOutcome[],
+	): Promise<string | null> {
+		const discoveryResult = await this.options.workspace.readDiscoveryResult(discoveryRunId, discoveryTask.taskId, discoveryAttemptId);
+		if (!discoveryResult) return null;
+
+		const dispatchByItemId = new Map(dispatchOutcomes.map(outcome => [outcome.itemId, outcome]));
+		const launchByItemId = new Map(generatedRunOutcomes.map(outcome => [outcome.itemId, outcome]));
+		const generatedTasks = await this.options.taskStore.listGeneratedForDiscoveryTask(discoveryTask.taskId);
+		const generatedTaskByItemId = new Map(generatedTasks.map(task => [task.generatedSource!.sourceItemId, task]));
+		const summary: TeamDiscoveryAggregationRecord["summary"] = {
+			totalItems: discoveryResult.items.length,
+			generatedTasks: 0,
+			succeeded: 0,
+			failed: 0,
+			cancelled: 0,
+			skipped: 0,
+			missingResult: 0,
+		};
+		const items: TeamDiscoveryAggregationRecord["items"] = [];
+
+		for (const itemPayload of discoveryResult.items) {
+			const itemId = typeof itemPayload.id === "string" ? itemPayload.id : "";
+			const dispatch = itemId ? dispatchByItemId.get(itemId) ?? null : null;
+			const launch = itemId ? launchByItemId.get(itemId) : undefined;
+			const generatedTaskId = dispatch?.generatedTaskId ?? (itemId ? generatedTaskByItemId.get(itemId)?.taskId : undefined);
+			const generatedRunId = launch?.generatedRunId;
+			let generatedRunStatus: TeamRunState["status"] | undefined;
+			let result: TeamDiscoveryAggregationRecord["items"][number]["result"] = {
+				status: "missing",
+				errorSummary: "generated child run result was not found",
+			};
+
+			if (generatedTaskId) summary.generatedTasks += 1;
+
+			if (!generatedTaskId || dispatch?.status === "blocked") {
+				result = {
+					status: "skipped",
+					errorSummary: dispatch?.error ?? "discovery item was not dispatched to a generated task",
+				};
+			} else if (!generatedRunId) {
+				result = {
+					status: launch?.status === "failed" ? "failed" : "skipped",
+					errorSummary: launch?.error ?? "generated child run was not started",
+				};
+			} else {
+				const generatedRun = await this.getRun(generatedRunId);
+				generatedRunStatus = generatedRun?.status;
+				const taskState = generatedRun?.taskStates[generatedTaskId];
+				const resultRef = taskState?.resultRef ?? null;
+				const content = resultRef ? await this.options.workspace.readRunScopedFile(generatedRunId, resultRef) : null;
+				if (taskState?.status === "succeeded" && content) {
+					result = { status: "succeeded", resultRef, content, errorSummary: null };
+				} else if (taskState?.status === "failed" || generatedRun?.status === "failed" || generatedRun?.status === "completed_with_failures") {
+					result = {
+						status: "failed",
+						resultRef,
+						...(content ? { content } : {}),
+						errorSummary: taskState?.errorSummary ?? generatedRun?.lastError ?? null,
+					};
+				} else if (taskState?.status === "cancelled" || generatedRun?.status === "cancelled") {
+					result = {
+						status: "cancelled",
+						resultRef,
+						...(content ? { content } : {}),
+						errorSummary: taskState?.errorSummary ?? generatedRun?.lastError ?? null,
+					};
+				} else {
+					result = {
+						status: "missing",
+						resultRef,
+						errorSummary: taskState?.errorSummary ?? "generated child run did not produce a readable result",
+					};
+				}
+			}
+
+			if (result.status === "succeeded") summary.succeeded += 1;
+			if (result.status === "failed") summary.failed += 1;
+			if (result.status === "cancelled") summary.cancelled += 1;
+			if (result.status === "skipped") summary.skipped += 1;
+			if (result.status === "missing") summary.missingResult += 1;
+
+			items.push({
+				itemId,
+				itemPayload,
+				dispatch,
+				...(generatedTaskId ? { generatedTaskId } : {}),
+				...(generatedRunId ? { generatedRunId } : {}),
+				...(generatedRunStatus ? { generatedRunStatus } : {}),
+				result,
+			});
+		}
+
+		return this.options.workspace.writeDiscoveryAggregation(discoveryRunId, discoveryTask.taskId, discoveryAttemptId, {
+			schemaVersion: "team/discovery-aggregation-1",
+			discoveryTaskId: discoveryTask.taskId,
+			discoveryRunId,
+			discoveryAttemptId,
+			outputKey: discoveryResult.outputKey,
+			sourceResultRef: `tasks/${discoveryTask.taskId}/attempts/${discoveryAttemptId}/discovery-result.json`,
+			createdAt: now(),
+			summary,
+			items,
+		});
+	}
+
 	private async completeRunFailed(runId: string, taskId: string, errorSummary: string, resultRef?: string): Promise<void> {
 		const effectiveResultRef = resultRef ?? await this.options.workspace.writeFailedResult(runId, taskId, "", errorSummary);
 		const timestamp = now();
@@ -699,10 +898,11 @@ export class CanvasTaskRunService {
 		const dependencies = dependencyStore ? await dependencyStore.listFromTask(taskId) : [];
 		if (connections.length === 0 && dependencies.length === 0) return;
 
+		const sourceRun = await this.getRun(runId);
 		const sourceTask = await this.options.taskStore.get(taskId);
-		const content = sourceTask && !sourceTask.archived
-			? (await this.options.workspace.readRunScopedFile(runId, resultRef) ?? "")
-			: "";
+		const artifactSource = sourceTask && !sourceTask.archived
+			? await this.resolveDownstreamArtifactSource(runId, taskId, attemptId, resultRef, sourceTask)
+			: { resultRef, content: "" };
 
 		const targetTaskIds = new Set([
 			...connections.map(c => c.toTaskId),
@@ -714,7 +914,7 @@ export class CanvasTaskRunService {
 		}
 
 		const actions = planDownstreamDelivery(
-			{ runId, taskId, attemptId, resultRef, resultContent: content },
+			{ runId, taskId, attemptId, resultRef: artifactSource.resultRef, resultContent: artifactSource.content },
 			{ sourceTask, connections, dependencies, getTask: (id) => taskCache.get(id) ?? null },
 		);
 
@@ -750,6 +950,7 @@ export class CanvasTaskRunService {
 								inputPortId: action.connection.toInputPortId,
 								artifact,
 							}],
+							publicBaseUrl: sourceRun?.source?.publicBaseUrl,
 							triggeredBy: action.triggeredBy,
 						});
 						outcomes.push({
@@ -774,6 +975,7 @@ export class CanvasTaskRunService {
 				case "trigger_control_run":
 					try {
 						const downstreamRun = await this.createRun(action.targetTask.taskId, {
+							publicBaseUrl: sourceRun?.source?.publicBaseUrl,
 							triggeredBy: action.triggeredBy,
 						});
 						outcomes.push({
@@ -803,6 +1005,37 @@ export class CanvasTaskRunService {
 		} catch {
 			// Diagnostic persistence must not fail the accepted upstream run.
 		}
+	}
+
+	private async resolveDownstreamArtifactSource(
+		runId: string,
+		taskId: string,
+		attemptId: string,
+		resultRef: string,
+		sourceTask: TeamCanvasTask,
+	): Promise<{ resultRef: string; content: string }> {
+		if (sourceTask.canvasKind === "discovery") {
+			const discoveryAggregation = await this.options.workspace.readDiscoveryAggregation(runId, taskId, attemptId);
+			if (discoveryAggregation) {
+				const discoveryAggregationRef = `tasks/${taskId}/attempts/${attemptId}/discovery-aggregation.json`;
+				const discoveryAggregationContent = await this.options.workspace.readRunScopedFile(runId, discoveryAggregationRef);
+				if (discoveryAggregationContent) {
+					return { resultRef: discoveryAggregationRef, content: discoveryAggregationContent };
+				}
+			}
+			const discoveryResult = await this.options.workspace.readDiscoveryResult(runId, taskId, attemptId);
+			if (discoveryResult) {
+				const discoveryResultRef = `tasks/${taskId}/attempts/${attemptId}/discovery-result.json`;
+				const discoveryContent = await this.options.workspace.readRunScopedFile(runId, discoveryResultRef);
+				if (discoveryContent) {
+					return { resultRef: discoveryResultRef, content: discoveryContent };
+				}
+			}
+		}
+		return {
+			resultRef,
+			content: await this.options.workspace.readRunScopedFile(runId, resultRef) ?? "",
+		};
 	}
 
 	private async failRun(runId: string, message: string): Promise<void> {

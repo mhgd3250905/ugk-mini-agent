@@ -73,7 +73,9 @@ ${acceptanceRules.map((r, i) => `${i + 1}. ${r}`).join("\n")}
 
 ## 输出要求
 - 自由输出你的工作结果（markdown 格式）
-- 产出的文件放在当前工作目录
+- 私有中间文件放在当前工作目录
+- 需要交付给用户或让 checker 访问验证的文件，必须写入环境变量 ARTIFACT_PUBLIC_DIR 指向的目录
+- 如果 ARTIFACT_PUBLIC_BASE_URL 存在，对外可访问链接必须基于它拼接，不要启动临时本地 HTTP server，也不要输出 localhost 临时端口
 ${feedback ? `\n## 上次反馈（请针对反馈修改）\n${feedback}` : ""}`;
 	prompt += buildOutputContractBlock(task);
 	prompt += buildSourceItemIdentityBlock(task);

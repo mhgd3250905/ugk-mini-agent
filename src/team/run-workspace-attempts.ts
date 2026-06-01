@@ -10,6 +10,7 @@ import type {
 	TeamAttemptRoleProcess,
 	TeamAttemptWatcherSummary,
 	TeamAttemptWorkerSummary,
+	TeamDiscoveryAggregationRecord,
 	TeamDiscoveryResultRecord,
 	TeamDiscoveryDispatchOutcome,
 	TeamDiscoveryGeneratedRunOutcome,
@@ -182,6 +183,11 @@ export class RunAttemptStore {
 		return `tasks/${taskId}/attempts/${attemptId}/discovery-result.json`;
 	}
 
+	async writeDiscoveryAggregation(runId: string, taskId: string, attemptId: string, record: TeamDiscoveryAggregationRecord): Promise<string> {
+		await this.writeAttemptFile(runId, taskId, attemptId, "discovery-aggregation.json", JSON.stringify(record, null, 2));
+		return `tasks/${taskId}/attempts/${attemptId}/discovery-aggregation.json`;
+	}
+
 	async readDiscoveryResult(runId: string, taskId: string, attemptId: string): Promise<TeamDiscoveryResultRecord | null> {
 		const content = await this.readAttemptFile(runId, taskId, attemptId, "discovery-result.json");
 		if (!content) return null;
@@ -189,6 +195,20 @@ export class RunAttemptStore {
 			const parsed = JSON.parse(content);
 			if (parsed && typeof parsed === "object" && parsed.schemaVersion === "team/discovery-result-1") {
 				return parsed as TeamDiscoveryResultRecord;
+			}
+			return null;
+		} catch {
+			return null;
+		}
+	}
+
+	async readDiscoveryAggregation(runId: string, taskId: string, attemptId: string): Promise<TeamDiscoveryAggregationRecord | null> {
+		const content = await this.readAttemptFile(runId, taskId, attemptId, "discovery-aggregation.json");
+		if (!content) return null;
+		try {
+			const parsed = JSON.parse(content);
+			if (parsed && typeof parsed === "object" && parsed.schemaVersion === "team/discovery-aggregation-1") {
+				return parsed as TeamDiscoveryAggregationRecord;
 			}
 			return null;
 		} catch {

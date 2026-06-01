@@ -526,6 +526,7 @@ export interface TeamRunState {
   source?: {
     type: "canvas-task";
     taskId: string;
+    publicBaseUrl?: string;
     triggeredBy?:
       | {
           type: "task-connection";

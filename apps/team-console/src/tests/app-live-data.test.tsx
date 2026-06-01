@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
 import { CLEAN_AGENT_WORKSPACE_ID, useTeamConsoleLiveData } from "../app/use-team-console-live-data";
 import type { TeamAttemptMetadata, TeamCanvasTask, TeamRunState } from "../api/team-types";
@@ -49,6 +49,39 @@ function canvasTaskRun(taskId: string, runId: string, status: TeamRunState["stat
       failedTasks: 0,
       cancelledTasks: 0,
       skippedTasks: 0,
+    },
+  };
+}
+
+function generatedCanvasTaskRun(
+  taskId: string,
+  runId: string,
+  input: {
+    status?: TeamRunState["status"];
+    discoveryTaskId: string;
+    discoveryRunId: string;
+    sourceItemId: string;
+    createdAt?: string;
+    finishedAt?: string | null;
+  },
+): TeamRunState {
+  const status = input.status ?? "completed";
+  return {
+    ...canvasTaskRun(taskId, runId, status),
+    createdAt: input.createdAt ?? "2026-05-31T00:00:00.000Z",
+    finishedAt: input.finishedAt === undefined
+      ? status === "running" || status === "queued" ? null : "2026-05-31T00:00:02.000Z"
+      : input.finishedAt,
+    source: {
+      type: "canvas-task",
+      taskId,
+      triggeredBy: {
+        type: "discovery-generated-task",
+        discoveryTaskId: input.discoveryTaskId,
+        discoveryRunId: input.discoveryRunId,
+        discoveryAttemptId: `attempt_${input.discoveryRunId}`,
+        sourceItemId: input.sourceItemId,
+      },
     },
   };
 }
@@ -138,8 +171,27 @@ function LiveDataProbe() {
         diagnostics: (liveData as {
           discoveryDispatchDiagnosticsByTaskId?: Record<string, Array<{ itemId: string; error: string | null }>>;
         }).discoveryDispatchDiagnosticsByTaskId ?? {},
+        refreshing: liveData.liveTasksRefreshing,
       })}
     </pre>
+  );
+}
+
+function LiveRefreshProbe() {
+  const liveData = useTeamConsoleLiveData({
+    onApplyLiveTasks: noop,
+    onApplyLiveSources: noop,
+    onCloseBranches: noop,
+    onResetContextUi: noop,
+    selectedTaskId: null,
+  });
+  return (
+    <div>
+      <span data-testid="live-refreshing">{String(liveData.liveTasksRefreshing)}</span>
+      <button type="button" onClick={() => liveData.scheduleLiveTaskDiscoveryRefresh()}>schedule</button>
+      <button type="button" onClick={() => void liveData.refreshLiveTasks()}>manual</button>
+      <button type="button" onClick={() => void liveData.refreshLiveTasks({ silent: true })}>silent</button>
+    </div>
   );
 }
 
@@ -155,6 +207,7 @@ function readLiveDataProbe(): {
     failedDispatchCount?: number;
   }>;
   diagnostics: Record<string, Array<{ itemId: string; error: string | null }>>;
+  refreshing?: boolean;
 } {
   return JSON.parse(screen.getByTestId("live-data-probe").textContent || "{}");
 }
@@ -217,6 +270,7 @@ describe("App", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -625,7 +679,7 @@ describe("App", () => {
       window.localStorage.setItem("ugk-team-console:data-source", "live");
       const rootTask = mockTeamTasks[0]!;
       const generatedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
-      const generatedRun = canvasTaskRun(generatedTasks[0]!.taskId, "run_generated_vultr", "running");
+      const generatedRun = canvasTaskRun("task_generated_vultr", "run_generated_vultr", "running");
       vi.mocked(fetch).mockImplementation(async (input) => {
         const url = String(input);
         if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
@@ -678,6 +732,52 @@ describe("App", () => {
       expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toContain(
         `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`,
       );
+    });
+
+    it("continues polling delayed Discovery generated catalogs after the root run completes", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const generatedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+      const runningDiscoveryRun = canvasTaskRun(mockDiscoveryRootTask.taskId, "run_delayed_discovery", "running");
+      const completedDiscoveryRun = canvasTaskRun(mockDiscoveryRootTask.taskId, "run_delayed_discovery", "completed");
+      let rootRunCompleted = false;
+      let generatedCatalogRequests = 0;
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+          generatedCatalogRequests += 1;
+          return new Response(JSON.stringify({
+            tasks: generatedCatalogRequests >= 5 ? generatedTasks : [],
+          }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [rootRunCompleted ? completedDiscoveryRun : runningDiscoveryRun] }), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${runningDiscoveryRun.runId}`) {
+          rootRunCompleted = true;
+          return new Response(JSON.stringify(completedDiscoveryRun), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${completedDiscoveryRun.runId}/tasks/${mockDiscoveryRootTask.taskId}/attempts`) {
+          return new Response(JSON.stringify({ attempts: [] }), { status: 200 });
+        }
+        if (/^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url)) {
+          return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      render(<LiveDataProbe />);
+
+      await waitFor(() => expect(readLiveDataProbe().tasks).toEqual([mockDiscoveryRootTask.taskId]));
+      await waitFor(() => {
+        expect(readLiveDataProbe().generated[mockDiscoveryRootTask.taskId]).toEqual([
+          "task_generated_vultr",
+          "task_generated_hetzner",
+        ]);
+      }, { timeout: 7000 });
+      expect(generatedCatalogRequests).toBeGreaterThanOrEqual(5);
     });
 
     it("loads blocked Discovery dispatch diagnostics from the latest root attempt metadata", async () => {
@@ -736,10 +836,190 @@ describe("App", () => {
       );
     });
 
+    it("clears stale generated child run status while a new Discovery root run is active", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const activeDiscoveryRun = canvasTaskRun(mockDiscoveryRootTask.taskId, "run_current_discovery", "running");
+      const generatedTasks = mockDiscoveryGeneratedTasks
+        .filter((task) => !task.archived)
+        .map((task) => ({
+          ...task,
+          generatedSource: task.generatedSource
+            ? { ...task.generatedSource, latestDiscoveryRunId: "run_previous_discovery" }
+            : task.generatedSource,
+        }));
+      const oldGeneratedRun = generatedCanvasTaskRun("task_generated_vultr", "run_previous_vultr", {
+        discoveryTaskId: mockDiscoveryRootTask.taskId,
+        discoveryRunId: "run_previous_discovery",
+        sourceItemId: "vultr",
+      });
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+          return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [activeDiscoveryRun] }), { status: 200 });
+        }
+        if (url === "/v1/team/tasks/task_generated_vultr/runs") {
+          return new Response(JSON.stringify({ runs: [oldGeneratedRun] }), { status: 200 });
+        }
+        if (/^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url)) {
+          return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${activeDiscoveryRun.runId}`) {
+          return new Response(JSON.stringify(activeDiscoveryRun), { status: 200 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const atlas = getAtlasNodes(container);
+      const discoveryNode = await within(atlas).findByRole("button", { name: mockDiscoveryRootTask.title });
+      fireEvent.click(discoveryNode);
+      fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+
+      const panel = await waitFor(() => {
+        const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      const vultrCard = getGeneratedCard(panel, "task_generated_vultr");
+      expect(vultrCard).toHaveAttribute("data-generated-run-status", "none");
+      expect(vultrCard).toHaveAttribute("data-generated-run-scope", "pending-current-discovery");
+      expect(vultrCard).toHaveTextContent("等待本轮发现");
+      expect(vultrCard).not.toHaveTextContent("已完成");
+      expect(vultrCard.querySelector('[data-generated-action="observe-run"]')).toBeNull();
+    });
+
+    it("keeps Discovery subcanvas order stable: running first, then completed by finished time descending", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const baseGenerated = mockDiscoveryGeneratedTasks.filter((task) => !task.archived)[0]!;
+      const makeGenerated = (taskId: string, itemId: string, title: string): TeamCanvasTask => ({
+        ...baseGenerated,
+        taskId,
+        title,
+        workUnit: { ...baseGenerated.workUnit, title },
+        generatedSource: {
+          ...baseGenerated.generatedSource!,
+          sourceItemId: itemId,
+          itemPayload: { id: itemId, title },
+          latestDiscoveryRunId: "run_current_discovery",
+          latestDiscoveredAt: "2026-05-31T00:00:00.000Z",
+        },
+      });
+      const alpha = makeGenerated("task_generated_alpha", "alpha", "Alpha");
+      const beta = makeGenerated("task_generated_beta", "beta", "Beta");
+      const gamma = makeGenerated("task_generated_gamma", "gamma", "Gamma");
+      const rootRun = canvasTaskRun(mockDiscoveryRootTask.taskId, "run_current_discovery", "completed");
+      const runsByTaskId: Record<string, TeamRunState[]> = {
+        [alpha.taskId]: [generatedCanvasTaskRun(alpha.taskId, "run_alpha", {
+          discoveryTaskId: mockDiscoveryRootTask.taskId,
+          discoveryRunId: "run_current_discovery",
+          sourceItemId: "alpha",
+          finishedAt: "2026-05-31T00:03:00.000Z",
+        })],
+        [beta.taskId]: [generatedCanvasTaskRun(beta.taskId, "run_beta", {
+          discoveryTaskId: mockDiscoveryRootTask.taskId,
+          discoveryRunId: "run_current_discovery",
+          sourceItemId: "beta",
+          finishedAt: "2026-05-31T00:05:00.000Z",
+        })],
+        [gamma.taskId]: [generatedCanvasTaskRun(gamma.taskId, "run_gamma", {
+          status: "running",
+          discoveryTaskId: mockDiscoveryRootTask.taskId,
+          discoveryRunId: "run_current_discovery",
+          sourceItemId: "gamma",
+          createdAt: "2026-05-31T00:01:00.000Z",
+        })],
+      };
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+          return new Response(JSON.stringify({ tasks: [alpha, beta, gamma] }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [rootRun] }), { status: 200 });
+        }
+        const runMatch = url.match(/^\/v1\/team\/tasks\/([^/]+)\/runs$/);
+        if (runMatch) {
+          return new Response(JSON.stringify({ runs: runsByTaskId[runMatch[1]!] ?? [] }), { status: 200 });
+        }
+        if (url === "/v1/team/task-runs/run_gamma") {
+          return new Response(JSON.stringify(runsByTaskId[gamma.taskId]![0]), { status: 200 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const atlas = getAtlasNodes(container);
+      fireEvent.click(await within(atlas).findByRole("button", { name: mockDiscoveryRootTask.title }));
+      fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+
+      const panel = await waitFor(() => {
+        const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      await waitFor(() => {
+        expect(Array.from(panel.querySelectorAll("[data-generated-task-id]")).map((node) => node.getAttribute("data-generated-task-id"))).toEqual([
+          gamma.taskId,
+          beta.taskId,
+          alpha.taskId,
+        ]);
+      });
+    });
+
+    it("keeps the Refresh Task button idle while a silent live task refresh is in flight", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      let taskRequests = 0;
+      let resolveDelayedTasks: ((response: Response) => void) | null = null;
+      const delayedTasks = new Promise<Response>((resolve) => {
+        resolveDelayedTasks = resolve;
+      });
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") {
+          taskRequests += 1;
+          if (taskRequests >= 2) return delayedTasks;
+          return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+          return new Response(JSON.stringify({ tasks: [] }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      render(<LiveRefreshProbe />);
+      await waitFor(() => expect(taskRequests).toBe(1));
+      expect(screen.getByTestId("live-refreshing")).toHaveTextContent("false");
+
+      fireEvent.click(screen.getByRole("button", { name: "silent" }));
+      await waitFor(() => expect(taskRequests).toBe(2));
+      expect(screen.getByTestId("live-refreshing")).toHaveTextContent("false");
+
+      resolveDelayedTasks!(new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 }));
+      await act(async () => {
+        await Promise.resolve();
+      });
+    });
+
     it("passes live Discovery summary into the root canvas without rendering generated children as root cards", async () => {
       window.localStorage.setItem("ugk-team-console:data-source", "live");
       const rootTask = mockTeamTasks[0]!;
-      const generatedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+      const generatedTasks = [...mockDiscoveryGeneratedTasks.filter((task) => !task.archived)].reverse();
       const generatedRun = canvasTaskRun(generatedTasks[0]!.taskId, "run_generated_vultr", "running");
       const discoveryRun = canvasTaskRun(mockDiscoveryRootTask.taskId, "run_discovery_root");
       const discoveryAttempt = discoveryRootAttempt([
@@ -803,6 +1083,8 @@ describe("App", () => {
       const panel = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
       expect(panel).toBeTruthy();
       const vultrCard = panel!.querySelector('[data-generated-task-id="task_generated_vultr"]') as HTMLElement | null;
+      const cards = Array.from(panel!.querySelectorAll<HTMLElement>("[data-generated-task-id]"));
+      expect(cards[0]).toHaveAttribute("data-generated-task-id", "task_generated_vultr");
       expect(vultrCard).toHaveAttribute("data-generated-item-status", "active");
       expect(vultrCard).toHaveAttribute("data-generated-workunit-mode", "managed");
       expect(vultrCard).toHaveAttribute("data-generated-run-status", "running");
@@ -1115,16 +1397,15 @@ describe("App", () => {
           createdAt: "2026-05-31T00:05:11.000Z",
         },
       ]);
-      let generatedCatalogRequests = 0;
+      let showRefreshedGeneratedCatalog = false;
       vi.mocked(fetch).mockImplementation(async (input, init) => {
         const url = String(input);
         if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
         if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
         if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
         if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
-          generatedCatalogRequests += 1;
           return new Response(JSON.stringify({
-            tasks: generatedCatalogRequests === 1 ? initialGeneratedTasks : refreshedGeneratedTasks,
+            tasks: showRefreshedGeneratedCatalog ? refreshedGeneratedTasks : initialGeneratedTasks,
           }), { status: 200 });
         }
         if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
@@ -1168,6 +1449,7 @@ describe("App", () => {
       });
       fireEvent.click(within(confirm).getByRole("button", { name: "确认归档" }));
 
+      showRefreshedGeneratedCatalog = true;
       fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
 
       await waitFor(() => {

@@ -443,6 +443,55 @@ describe("App", () => {
       expect(container.querySelector('[data-observer-section="result-files"]')).toBeEmptyDOMElement();
     });
 
+    it("describes terminal run observers with no attempt files without implying polling will fill them", async () => {
+      const task = cloneTaskFixture();
+      const taskRun = makeLiveTaskRunFixture(task, "terminal-empty-files-run");
+      const attempt: TeamAttemptMetadata = {
+        ...makeLegacyAttemptFixture(task),
+        status: "failed",
+        phase: "failed",
+        files: [],
+        errorSummary: "worker failed before writing output",
+      };
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [
+              { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+              { agentId: "search", name: "搜索 Agent", description: "搜索" },
+            ],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [task] }), { status: 200 });
+        if (url === `/v1/team/tasks/${task.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [taskRun] }), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${taskRun.runId}/tasks/${task.taskId}/attempts`) {
+          return new Response(JSON.stringify({ attempts: [attempt] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
+      fireEvent.click(taskNode);
+
+      const branch = await waitFor(() => {
+        const node = container.querySelector(".task-action-branch") as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      const runSummary = await within(branch).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+      fireEvent.click(runSummary);
+
+      expect(await screen.findByText("该 attempt 未产生可展示文件。请查看 Worker / Checker 过程或错误摘要。")).toBeInTheDocument();
+      expect(screen.queryByText("暂无 attempt 文件。运行刚启动时这里会随轮询补齐。")).toBeNull();
+    });
+
     it("does not render volatile refresh metadata in an active Task run observer", async () => {
       const task = cloneTaskFixture();
       const taskRun = makeLiveTaskRunFixture(task, "active-task-run-2");
@@ -931,6 +980,92 @@ describe("App", () => {
         return detail!;
       });
       expect(detailNode).toHaveTextContent("Legacy worker output");
+    });
+
+    it("pretty-prints structured JSON from markdown-named accepted result files", async () => {
+      const task = cloneTaskFixture();
+      const taskRun = makeLiveTaskRunFixture(task, "run_json_md_result");
+      const attemptId = "attempt_json_md_result";
+      const resultRef = `tasks/${task.taskId}/attempts/${attemptId}/accepted-result.md`;
+      const attempt: TeamAttemptMetadata = {
+        ...makeLegacyAttemptFixture(task),
+        attemptId,
+        resultRef,
+        files: ["accepted-result.md"],
+      };
+      taskRun.taskStates[task.taskId] = {
+        ...taskRun.taskStates[task.taskId]!,
+        activeAttemptId: attemptId,
+        resultRef,
+      };
+      const resultContent = JSON.stringify({
+        platform: "Reddit",
+        sentiment: "mixed",
+        sources: [{ url: "https://www.reddit.com/r/LocalLLaMA/" }],
+      });
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [
+              { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+              { agentId: "search", name: "搜索 Agent", description: "搜索" },
+            ],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [task] }), { status: 200 });
+        if (url === `/v1/team/tasks/${task.taskId}/runs`) {
+          return new Response(JSON.stringify({ runs: [taskRun] }), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${taskRun.runId}`) {
+          return new Response(JSON.stringify(taskRun), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${taskRun.runId}/tasks/${task.taskId}/attempts`) {
+          return new Response(JSON.stringify({ attempts: [attempt] }), { status: 200 });
+        }
+        if (url.endsWith("/files/accepted-result.md")) {
+          return new Response(resultContent, { status: 200 });
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: task.title });
+      fireEvent.click(taskNode);
+
+      const branch = await waitFor(() => {
+        const node = container.querySelector(".task-action-branch") as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      const runSummary = await waitFor(() => {
+        const node = branch.querySelector(".task-run-summary") as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      fireEvent.click(runSummary);
+
+      const resultFileRow = await waitFor(() => {
+        const node = container.querySelector('.emap-observer-file-row[data-file-kind="result"]') as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      fireEvent.click(resultFileRow);
+
+      const detailNode = await waitFor(() => {
+        const detail = container.querySelector(".emap-observer-file-detail-node") as HTMLElement | null;
+        expect(detail).toBeTruthy();
+        return detail!;
+      });
+      const jsonPre = detailNode.querySelector('pre[data-file-format="json"]');
+      expect(jsonPre).toBeTruthy();
+      expect(jsonPre).toHaveTextContent('"platform": "Reddit"');
+      expect(jsonPre).toHaveTextContent('"url": "https://www.reddit.com/r/LocalLLaMA/"');
+      expect(detailNode.querySelector('[data-file-format="markdown"]')).toBeNull();
     });
 
     it("renders HTML-like content as text in file detail, not as injected HTML", async () => {

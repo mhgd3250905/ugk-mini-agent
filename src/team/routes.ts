@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import { join } from "node:path";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { PlanStore } from "./plan-store.js";
 import { TaskStore } from "./task-store.js";
 import { TeamUnitStore } from "./team-unit-store.js";
@@ -26,12 +28,71 @@ import { configureSseResponse, writeSseEvent, startSseHeartbeat, endSseResponse 
 import { idParam, jsonBody, optionalJsonBody, parseIncludeArchived, parseIncludeGenerated } from "./route-parsers.js";
 import { sendMappedError, sendNotFound } from "./route-errors.js";
 import { sendTaskResponse } from "./route-presenters.js";
+import { isPathInside, resolveContentType } from "../routes/file-route-utils.js";
 
 export interface TeamRouteOptions {
 	teamDataDir: string;
 	projectRoot: string;
 	maxConcurrentRuns?: number;
 	maxRunDurationMinutes?: number;
+	publicBaseUrl?: string;
+}
+
+function configuredPublicBaseUrl(value: string | undefined): string | undefined {
+	const trimmed = value?.trim().replace(/\/+$/, "");
+	if (!trimmed || trimmed.toLowerCase() === "auto") return undefined;
+	return trimmed;
+}
+
+function requestPublicBaseUrl(request: FastifyRequest, configured: string | undefined): string | undefined {
+	const explicit = configuredPublicBaseUrl(configured);
+	if (explicit) return explicit;
+	const forwardedHost = request.headers["x-forwarded-host"];
+	const hostHeader = Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost ?? request.headers.host;
+	const host = String(hostHeader ?? "").split(",", 1)[0]?.trim();
+	if (!host) return undefined;
+	const forwardedProto = request.headers["x-forwarded-proto"];
+	const protoHeader = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
+	const proto = String(protoHeader ?? request.protocol ?? "http").split(",", 1)[0]?.trim() || "http";
+	return `${proto}://${host}`.replace(/\/+$/, "");
+}
+
+function isSafeTeamArtifactSegment(value: string): boolean {
+	return Boolean(value) && !value.includes("..") && /^[A-Za-z0-9._:-]+$/.test(value);
+}
+
+async function sendTeamRoleArtifact(
+	reply: FastifyReply,
+	options: {
+		teamDataDir: string;
+		runId: string;
+		roleKey: string;
+		role: string;
+		relativePath?: string;
+	},
+) {
+	if (!isSafeTeamArtifactSegment(options.roleKey) || !isSafeTeamArtifactSegment(options.role)) {
+		return reply.code(400).send({ error: "invalid artifact path" });
+	}
+	const outputDir = resolve(options.teamDataDir, "runs", options.runId, "agent-workspaces", options.roleKey, options.role, "output");
+	const requestedPath = String(options.relativePath ?? "index.html").replace(/\\/g, "/").replace(/^\/+/, "");
+	if (!requestedPath || requestedPath.includes("\0")) {
+		return reply.status(404).send();
+	}
+	const filePath = resolve(outputDir, requestedPath);
+	if (!isPathInside(filePath, outputDir)) {
+		return reply.code(400).send({ error: "invalid artifact path" });
+	}
+	try {
+		const fileStat = await stat(filePath);
+		if (!fileStat.isFile()) return reply.status(404).send();
+		reply.type(resolveContentType(filePath));
+		reply.header("content-length", fileStat.size);
+		reply.header("cache-control", "no-store, no-cache, must-revalidate");
+		return reply.send(createReadStream(filePath));
+	} catch {
+		return reply.status(404).send();
+	}
 }
 
 function createRoleRunner(options: TeamRouteOptions): TeamRoleRunner {
@@ -407,7 +468,11 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 				}
 				maxRunDurationMinutes = num;
 			}
-			const state = await taskRunService.createRun(taskId, { maxRunDurationMinutes, includeSourceBindings: true });
+			const state = await taskRunService.createRun(taskId, {
+				maxRunDurationMinutes,
+				includeSourceBindings: true,
+				publicBaseUrl: requestPublicBaseUrl(request, options.publicBaseUrl),
+			});
 			reply.code(201).send(state);
 		} catch (err) {
 			const msg = (err as Error).message;
@@ -468,6 +533,36 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		} catch {
 			reply.code(404).send({ error: "file not found" });
 		}
+	});
+
+	app.get("/v1/team/task-runs/:runId/artifacts/:roleKey/:role", async (request, reply) => {
+		const runId = idParam(request, "runId");
+		const roleKey = idParam(request, "roleKey");
+		const role = idParam(request, "role");
+		const state = await taskRunService.getRun(runId);
+		if (!state) { sendNotFound(reply, "task run"); return; }
+		return await sendTeamRoleArtifact(reply, {
+			teamDataDir: taskRunDataDir,
+			runId,
+			roleKey,
+			role,
+		});
+	});
+
+	app.get("/v1/team/task-runs/:runId/artifacts/:roleKey/:role/*", async (request, reply) => {
+		const runId = idParam(request, "runId");
+		const roleKey = idParam(request, "roleKey");
+		const role = idParam(request, "role");
+		const relativePath = idParam(request, "*");
+		const state = await taskRunService.getRun(runId);
+		if (!state) { sendNotFound(reply, "task run"); return; }
+		return await sendTeamRoleArtifact(reply, {
+			teamDataDir: taskRunDataDir,
+			runId,
+			roleKey,
+			role,
+			relativePath,
+		});
 	});
 
 	// ── Plans ──

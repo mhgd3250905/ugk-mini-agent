@@ -122,7 +122,7 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 		const workspace = await this.createRoleWorkspace(input.runId, input.attemptId, "worker");
 		const prompt = buildWorkerPrompt(input.task, input.acceptanceRules, input.feedback);
 
-		const sessionResult = await this.runSession(snapshot, this.options.workerProfileId, input.runId, workspace, prompt, input.signal, { role: "worker", roleKey: input.attemptId }, input.onSessionEvent);
+		const sessionResult = await this.runSession(snapshot, this.options.workerProfileId, input.runId, workspace, prompt, input.signal, { role: "worker", roleKey: input.attemptId, artifactPublicBaseUrl: input.artifactPublicBaseUrl }, input.onSessionEvent);
 
 		return { content: sessionResult.content, artifactRefs: [], runtimeContext: sessionResult.runtimeContext };
 	}
@@ -133,7 +133,7 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 		const workerOutput = await readRefContent(this.options.teamDataDir, input.runId, input.workerOutputRef);
 		const prompt = buildCheckerPrompt(input.task, input.acceptanceRules, workerOutput, input.outputValidation);
 
-		const sessionResult = await this.runSession(snapshot, this.options.checkerProfileId, input.runId, workspace, prompt, input.signal, { role: "checker", roleKey: input.attemptId }, input.onSessionEvent);
+		const sessionResult = await this.runSession(snapshot, this.options.checkerProfileId, input.runId, workspace, prompt, input.signal, { role: "checker", roleKey: input.attemptId, artifactPublicBaseUrl: input.artifactPublicBaseUrl }, input.onSessionEvent);
 		const content = sessionResult.content;
 
 		return { ...parseCheckerRoleOutput(content), runtimeContext: sessionResult.runtimeContext };
@@ -144,7 +144,7 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 		const workspace = await this.createRoleWorkspace(input.runId, input.attemptId, "watcher");
 		const prompt = buildWatcherPrompt(input.task, input.workUnitStatus, input.resultRef, input.errorSummary, input.outputValidation);
 
-		const sessionResult = await this.runSession(snapshot, this.options.watcherProfileId, input.runId, workspace, prompt, input.signal, { role: "watcher", roleKey: input.attemptId });
+		const sessionResult = await this.runSession(snapshot, this.options.watcherProfileId, input.runId, workspace, prompt, input.signal, { role: "watcher", roleKey: input.attemptId, artifactPublicBaseUrl: input.artifactPublicBaseUrl });
 		const content = sessionResult.content;
 
 		return { ...parseWatcherRoleOutput(content), runtimeContext: sessionResult.runtimeContext };
@@ -164,7 +164,7 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 
 		const prompt = buildFinalizerPrompt(input.plan, taskResultsWithContent, input.runSummary);
 
-		const sessionResult = await this.runSession(snapshot, this.options.finalizerProfileId, input.runId, workspace, prompt, input.signal, { role: "finalizer", roleKey: "finalizer" });
+		const sessionResult = await this.runSession(snapshot, this.options.finalizerProfileId, input.runId, workspace, prompt, input.signal, { role: "finalizer", roleKey: "finalizer", artifactPublicBaseUrl: input.artifactPublicBaseUrl });
 
 		return { finalReport: sessionResult.content, runtimeContext: sessionResult.runtimeContext };
 	}
@@ -176,7 +176,7 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 		const workspace = await this.createRoleWorkspace(input.runId, roleKey, "decomposer");
 		const prompt = buildDecomposerPrompt(input);
 
-		const sessionResult = await this.runSession(snapshot, requestedProfileId, input.runId, workspace, prompt, input.signal, { role: "decomposer", roleKey });
+		const sessionResult = await this.runSession(snapshot, requestedProfileId, input.runId, workspace, prompt, input.signal, { role: "decomposer", roleKey, artifactPublicBaseUrl: input.artifactPublicBaseUrl });
 		const content = sessionResult.content;
 
 		return { ...parseDecomposerRoleOutput(content, input.maxChildren), runtimeContext: sessionResult.runtimeContext };
@@ -190,7 +190,7 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 		const workspace = await this.createRoleWorkspace(input.runId, roleKey, role);
 		const prompt = buildDiscoveryDispatchPrompt(input);
 
-		const sessionResult = await this.runSession(snapshot, requestedProfileId, input.runId, workspace, prompt, input.signal, { role, roleKey });
+		const sessionResult = await this.runSession(snapshot, requestedProfileId, input.runId, workspace, prompt, input.signal, { role, roleKey, artifactPublicBaseUrl: input.artifactPublicBaseUrl });
 		const content = sessionResult.content;
 		const parsed = parseDiscoveryDispatchRoleOutput(content, input.itemId);
 
@@ -222,7 +222,7 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 		workspace: { rootPath: string; workDir: string; outputDir: string; sessionDir: string },
 		prompt: string,
 		signal: AbortSignal | undefined,
-		roleContext: { role: string; roleKey: string },
+		roleContext: { role: string; roleKey: string; artifactPublicBaseUrl?: string },
 		onSessionEvent?: (event: RawAgentSessionEventLike) => void,
 	): Promise<{ content: string; runtimeContext: TeamRoleRuntimeContext }> {
 		const browserId = snapshot.defaultBrowserId ?? this.options.defaultBrowserId;
@@ -275,6 +275,8 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 				WORK_DIR: workspace.workDir,
 				INPUT_DIR: workspace.workDir,
 				LOGS_DIR: workspace.outputDir,
+				ARTIFACT_PUBLIC_DIR: workspace.outputDir,
+				ARTIFACT_PUBLIC_BASE_URL: roleContext.artifactPublicBaseUrl,
 			};
 
 			await runWithScopedAgentEnvironment(browserCleanupScope, async () => {

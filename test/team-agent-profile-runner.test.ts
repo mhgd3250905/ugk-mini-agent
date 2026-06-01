@@ -7,6 +7,7 @@ import { AgentProfileRoleRunner } from "../src/team/agent-profile-role-runner.js
 import type { DiscoveryDispatchInput, TeamRoleRunner } from "../src/team/role-runner.js";
 import type { BackgroundAgentSessionFactory } from "../src/agent/background-agent-runner.js";
 import type { ResolvedBackgroundAgentSnapshot } from "../src/agent/background-agent-profile.js";
+import { getCurrentBackgroundWorkspaceEnvironment } from "../src/agent/background-workspace-context.js";
 
 function makeFakeSessionFactory(responses: string[]): BackgroundAgentSessionFactory {
 	let callIndex = 0;
@@ -163,6 +164,53 @@ test("AgentProfileRoleRunner runWorker returns content", async () => {
 			acceptanceRules: ["完成"],
 		});
 		assert.equal(out.content, "任务执行完毕");
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
+test("AgentProfileRoleRunner exposes Team artifact public directory and URL to worker sessions", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ap-artifact-public-"));
+	try {
+		let capturedPrompt = "";
+		let capturedEnv: Record<string, string | undefined> = {};
+		const sessionFactory = {
+			createSession: async () => ({
+				prompt: async (prompt: string) => {
+					capturedPrompt = prompt;
+					capturedEnv = getCurrentBackgroundWorkspaceEnvironment();
+				},
+				subscribe: () => () => {},
+				messages: [{ role: "assistant", content: [{ type: "text", text: "done" }], stopReason: "end_turn" }],
+			}),
+		} as unknown as BackgroundAgentSessionFactory;
+		const runner: TeamRoleRunner = new AgentProfileRoleRunner({
+			projectRoot: root,
+			teamDataDir: root,
+			watcherProfileId: "w",
+			workerProfileId: "wo",
+			checkerProfileId: "c",
+			finalizerProfileId: "f",
+			profileResolver: fakeProfileResolver as never,
+			sessionFactory,
+		});
+
+		await runner.runWorker({
+			runId: "run_public_artifact",
+			task: { id: "task_1", title: "公开报告", input: { text: "生成报告" }, acceptance: { rules: ["生成 HTML"] } },
+			attemptId: "attempt_public",
+			workDir: join(root, "work"),
+			outputDir: join(root, "output"),
+			artifactPublicBaseUrl: "http://example.test/v1/team/task-runs/run_public_artifact/artifacts/attempt_public/worker",
+			acceptanceRules: ["生成 HTML"],
+		});
+
+		assert.ok(capturedPrompt.includes("ARTIFACT_PUBLIC_DIR"), "worker prompt must mention official artifact directory");
+		assert.match(capturedEnv.ARTIFACT_PUBLIC_DIR ?? "", /agent-workspaces[\\/]+attempt_public[\\/]+worker[\\/]+output$/);
+		assert.equal(
+			capturedEnv.ARTIFACT_PUBLIC_BASE_URL,
+			"http://example.test/v1/team/task-runs/run_public_artifact/artifacts/attempt_public/worker",
+		);
 	} finally {
 		await rm(root, { recursive: true }).catch(() => {});
 	}

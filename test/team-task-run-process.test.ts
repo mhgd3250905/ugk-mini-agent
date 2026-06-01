@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { TaskStore } from "../src/team/task-store.js";
@@ -268,6 +268,18 @@ class GatedDiscoveryGeneratedRunner extends DiscoveryDispatchingRunner {
 		} finally {
 			this.activeGeneratedWorkers--;
 		}
+	}
+}
+
+class GatedDiscoveryGeneratedWithDownstreamRunner extends GatedDiscoveryGeneratedRunner {
+	readonly downstreamWorkerStarts: string[] = [];
+
+	async runWorker(input: ProcessAwareWorkerInput): Promise<WorkerOutput> {
+		if (input.task.type !== "discovery" && !input.task.title.startsWith("核查 ")) {
+			this.downstreamWorkerStarts.push(input.task.id);
+			return { content: `downstream ${input.task.id} result`, artifactRefs: [] };
+		}
+		return super.runWorker(input);
 	}
 }
 
@@ -649,10 +661,11 @@ test("Step07: auto-run enforces concurrency 3", async () => {
 		});
 
 		const created = await service.createRun(discovery.taskId);
-		const finished = await waitForTerminalRun(service, created.runId);
-		assert.equal(finished.status, "completed");
 		await waitForAttemptDiscoveryDispatch(workspace, created.runId, discovery.taskId, 4);
 		await waitForGeneratedWorkerStarts(runner, 3);
+		const waitingParent = await service.getRun(created.runId);
+		assert.equal(waitingParent?.status, "running");
+		assert.equal(waitingParent?.taskStates[discovery.taskId]?.status, "running");
 		assert.equal(runner.generatedWorkerStarts.length, 3);
 		assert.equal(runner.activeGeneratedWorkers, 3);
 		assert.equal(runner.maxActiveGeneratedWorkers, 3);
@@ -664,6 +677,8 @@ test("Step07: auto-run enforces concurrency 3", async () => {
 
 		const launchOutcomes = await waitForAttemptDiscoveryGeneratedRuns(workspace, created.runId, discovery.taskId, 4);
 		assert.deepEqual(new Set(launchOutcomes.map(outcome => outcome.status)), new Set(["started"]));
+		const finished = await waitForTerminalRun(service, created.runId);
+		assert.equal(finished.status, "completed");
 		const generated = await taskStore.listGeneratedForDiscoveryTask(discovery.taskId);
 		for (const task of generated) {
 			const runs = await service.listRuns(task.taskId);
@@ -672,6 +687,144 @@ test("Step07: auto-run enforces concurrency 3", async () => {
 			assert.equal(terminal.status, "completed");
 		}
 		assert.equal(runner.maxActiveGeneratedWorkers, 3);
+	} finally {
+		await removeTempRoot(root);
+	}
+});
+
+test("Discovery typed downstream waits until generated auto-runs finish", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-discovery-downstream-gate-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const discovery = await taskStore.create({
+			...validTaskInput,
+			title: "发现云服务器供应商",
+			canvasKind: "discovery",
+			discoverySpec: validDiscoverySpec,
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "发现云服务器供应商",
+				input: { text: "搜索并输出云服务器供应商 JSON。" },
+				outputPorts: [{ id: "vendors_json", label: "供应商 JSON", type: "json" }],
+				outputContract: { text: "输出 JSON object，vendors 为数组，每项包含稳定 id。" },
+				acceptance: { rules: ["vendors 必须是数组", "每项必须有 id"] },
+			},
+		});
+		const downstream = await taskStore.create({
+			title: "生成 HTML 报告",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "生成 HTML 报告",
+				input: { text: "基于 JSON 数据生成 HTML 报告。" },
+				inputPorts: [{ id: "source_json", label: "源 JSON", type: "json" }],
+				outputContract: { text: "输出 HTML 报告。" },
+				acceptance: { rules: ["必须包含 HTML"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+
+		await mkdir(join(root, "team"), { recursive: true });
+		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
+		const connection = await connectionStore.create({
+			fromTaskId: discovery.taskId,
+			fromOutputPortId: "vendors_json",
+			toTaskId: downstream.taskId,
+			toInputPortId: "source_json",
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const runner = new GatedDiscoveryGeneratedWithDownstreamRunner([{ id: "vultr" }]);
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => runner,
+			connectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const created = await service.createRun(discovery.taskId);
+		await waitForAttemptDiscoveryDispatch(workspace, created.runId, discovery.taskId, 1);
+		await waitForGeneratedWorkerStarts(runner, 1);
+
+		const waitingParent = await service.getRun(created.runId);
+		assert.equal(waitingParent?.status, "running");
+		assert.equal(waitingParent?.taskStates[discovery.taskId]?.status, "running");
+		assert.equal((await service.listRuns(downstream.taskId)).length, 0, "downstream must not start while generated child is running");
+
+		runner.releaseGeneratedWorkers[0]!();
+		const parentFinished = await waitForTerminalRun(service, created.runId);
+		assert.equal(parentFinished.status, "completed");
+		assert.equal(parentFinished.taskStates[discovery.taskId]?.status, "succeeded");
+
+		const downstreamRuns = await waitForTaskRuns(service, downstream.taskId, 1);
+		const downstreamFinished = await waitForTerminalRun(service, downstreamRuns[0]!.runId);
+		assert.equal(downstreamFinished.status, "completed");
+		assert.equal(downstreamFinished.source?.triggeredBy?.type, "task-connection");
+		assert.equal(downstreamFinished.source?.boundInputs?.[0]?.connectionId, connection.connectionId);
+		assert.deepEqual(runner.downstreamWorkerStarts, [downstream.taskId]);
+
+		const delivery = await waitForAttemptDelivery(workspace, created.runId, discovery.taskId);
+		assert.equal(delivery[0]?.status, "delivered");
+	} finally {
+		await removeTempRoot(root);
+	}
+});
+
+test("Discovery root cancel cascades to active generated auto-runs and stops launching queued items", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-discovery-cancel-generated-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const discovery = await taskStore.create({
+			...validTaskInput,
+			title: "发现云服务器供应商",
+			canvasKind: "discovery",
+			discoverySpec: validDiscoverySpec,
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "发现云服务器供应商",
+				input: { text: "搜索并输出云服务器供应商 JSON。" },
+				outputContract: { text: "输出 JSON object，vendors 为数组，每项包含稳定 id。" },
+				acceptance: { rules: ["vendors 必须是数组", "每项必须有 id"] },
+			},
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const runner = new GatedDiscoveryGeneratedRunner([
+			{ id: "vultr" },
+			{ id: "hetzner" },
+			{ id: "ovh" },
+			{ id: "linode" },
+		]);
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => runner,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const created = await service.createRun(discovery.taskId);
+		await waitForAttemptDiscoveryDispatch(workspace, created.runId, discovery.taskId, 4);
+		await waitForGeneratedWorkerStarts(runner, 3);
+		assert.equal(runner.generatedWorkerStarts.length, 3);
+		assert.equal(runner.activeGeneratedWorkers, 3);
+
+		const cancelled = await service.cancelRun(created.runId, "user cancel");
+		assert.equal(cancelled.status, "cancelled");
+		assert.equal(cancelled.taskStates[discovery.taskId]?.status, "cancelled");
+
+		await new Promise(resolve => setTimeout(resolve, 150));
+		assert.equal(runner.generatedWorkerStarts.length, 3, "cancelled Discovery root must not launch queued generated items");
+
+		const generated = await taskStore.listGeneratedForDiscoveryTask(discovery.taskId);
+		const generatedRuns = await Promise.all(generated.map(async task => [task, await service.listRuns(task.taskId)] as const));
+		const started = generatedRuns.filter(([, runs]) => runs.length > 0);
+		const unstarted = generatedRuns.filter(([, runs]) => runs.length === 0);
+		assert.equal(started.length, 3);
+		assert.equal(unstarted.length, 1);
+		assert.deepEqual(new Set(started.map(([, runs]) => runs[0]!.status)), new Set(["cancelled"]));
+
+		for (const release of runner.releaseGeneratedWorkers) release();
+		await new Promise(resolve => setTimeout(resolve, 50));
 	} finally {
 		await removeTempRoot(root);
 	}
@@ -703,13 +856,31 @@ test("Step07: already-running generated Task is skipped without failing Discover
 			dataDir: join(root, "task-runs"),
 		});
 
-		const firstRun = await service.createRun(discovery.taskId);
-		await waitForTerminalRun(service, firstRun.runId);
-		await waitForAttemptDiscoveryDispatch(workspace, firstRun.runId, discovery.taskId);
+		const generated = await taskStore.create({
+			title: "核查 vultr",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "核查 vultr",
+				input: { text: "核查供应商 vultr" },
+				outputContract: { text: "输出 vultr 的核查报告。" },
+				acceptance: { rules: ["报告必须覆盖 vultr"] },
+				workerAgentId: "search",
+				checkerAgentId: "main",
+			},
+			generatedSource: {
+				schemaVersion: "team/generated-task-source-1",
+				sourceDiscoveryTaskId: discovery.taskId,
+				sourceItemId: "vultr",
+				itemStatus: "active",
+				itemPayload: { id: "vultr" },
+				workUnitMode: "managed",
+			},
+		});
+		const existingRun = await service.createRun(generated.taskId);
 		await waitForGeneratedWorkerStarts(runner, 1);
-		const generated = (await taskStore.listGeneratedForDiscoveryTask(discovery.taskId))[0]!;
-		const existingRun = (await service.listRuns(generated.taskId)).find(run => run.status === "queued" || run.status === "running" || run.status === "paused");
-		assert.ok(existingRun);
+		const existingRunState = (await service.listRuns(generated.taskId)).find(run => run.status === "queued" || run.status === "running" || run.status === "paused");
+		assert.ok(existingRunState);
 
 		const secondRun = await service.createRun(discovery.taskId);
 		const secondFinished = await waitForTerminalRun(service, secondRun.runId);
@@ -717,7 +888,7 @@ test("Step07: already-running generated Task is skipped without failing Discover
 		const launchOutcomes = await waitForAttemptDiscoveryGeneratedRuns(workspace, secondRun.runId, discovery.taskId);
 		assert.equal(launchOutcomes.length, 1);
 		assert.equal(launchOutcomes[0]!.status, "skipped_already_running");
-		assert.equal(launchOutcomes[0]!.generatedRunId, existingRun.runId);
+		assert.equal(launchOutcomes[0]!.generatedRunId, existingRunState.runId);
 		assert.equal((await service.listRuns(generated.taskId)).length, 1);
 
 		runner.releaseGeneratedWorkers[0]!();
@@ -1744,6 +1915,278 @@ test("downstream worker receives bound input prompt and payload from upstream ty
 		assert.ok(payload?.boundInputs, "payload should contain boundInputs");
 		assert.equal(payload!.boundInputs!.length, 1);
 		assert.equal(payload!.boundInputs![0]!.inputPortId, "source_md");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("Discovery downstream receives aggregation when accepted result is a worker file reference", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-discovery-downstream-json-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const sourceTask = await taskStore.create({
+			...validTaskInput,
+			title: "发现论坛来源",
+			canvasKind: "discovery",
+			discoverySpec: validDiscoverySpec,
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "发现论坛来源",
+				input: { text: "发现并输出论坛来源 JSON。" },
+				outputPorts: [{ id: "forum_sources", label: "Forum sources", type: "json" }],
+				outputContract: { text: "输出 JSON object，vendors 为数组，每项包含稳定 id。" },
+				acceptance: { rules: ["vendors 必须是数组", "每项必须有 id"] },
+			},
+		});
+		const targetTask = await taskStore.create({
+			title: "HTML 制作",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "HTML 制作",
+				input: { text: "根据上游 JSON 制作 HTML 页面。" },
+				inputPorts: [{ id: "source_json", label: "Source JSON", type: "json" }],
+				outputContract: { text: "输出 HTML 页面。" },
+				acceptance: { rules: ["必须使用上游 JSON"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+
+		await mkdir(join(root, "team"), { recursive: true });
+		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
+		await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "forum_sources",
+			toTaskId: targetTask.taskId,
+			toInputPortId: "source_json",
+		});
+
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		let capturedDownstreamInput: WorkerInput | undefined;
+
+		class ReferencedDiscoveryResultRunner extends ProcessEventRoleRunner {
+			async runWorker(input: WorkerInput): Promise<WorkerOutput> {
+				if (input.task.type === "discovery") {
+					const workerDir = join(root, "task-runs", "runs", input.runId, "agent-workspaces", input.attemptId, "worker");
+					await mkdir(workerDir, { recursive: true });
+					await writeFile(
+						join(workerDir, "forum-sources.json"),
+						JSON.stringify({ vendors: [{ id: "vultr", name: "Vultr" }] }),
+						"utf8",
+					);
+					return { content: "worker/forum-sources.json", artifactRefs: [] };
+				}
+				if (input.task.title === "HTML 制作") {
+					capturedDownstreamInput = input;
+					return { content: "downstream worker result", artifactRefs: [] };
+				}
+				return { content: `generated ${input.task.id} result`, artifactRefs: [] };
+			}
+
+			async runChecker(input: CheckerInput): Promise<CheckerOutput> {
+				if (input.task.type === "discovery") {
+					return { verdict: "pass", reason: "ok", resultContent: "worker/forum-sources.json" };
+				}
+				return { verdict: "pass", reason: "ok", resultContent: `${input.task.id} accepted` };
+			}
+
+			async runDiscoveryDispatcher(input: DiscoveryDispatchInput): Promise<DiscoveryDispatchOutput> {
+				return {
+					ok: true,
+					itemId: input.itemId,
+					workUnit: {
+						title: `核查 ${input.itemId}`,
+						input: { text: `核查 ${input.itemId}` },
+						outputContract: { text: `输出 ${input.itemId} 的核查报告。` },
+						acceptance: { rules: [`报告必须覆盖 ${input.itemId}`] },
+					},
+				};
+			}
+		}
+
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new ReferencedDiscoveryResultRunner(),
+			connectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const upstreamRun = await service.createRun(sourceTask.taskId);
+		const upstreamFinished = await waitForTerminalRun(service, upstreamRun.runId);
+		assert.equal(upstreamFinished.status, "completed");
+
+		const upstreamAttempts = await workspace.listAttempts(upstreamRun.runId, sourceTask.taskId);
+		const upstreamAttempt = upstreamAttempts[0]!;
+		assert.equal(await workspace.readAttemptFile(upstreamRun.runId, sourceTask.taskId, upstreamAttempt.attemptId, "accepted-result.md"), "worker/forum-sources.json");
+
+		const downstreamRuns = await waitForTaskRuns(service, targetTask.taskId, 1);
+		const downstreamFinished = await waitForTerminalRun(service, downstreamRuns[0]!.runId);
+		assert.equal(downstreamFinished.status, "completed");
+
+		assert.ok(capturedDownstreamInput, "downstream worker input should have been captured");
+		const boundInputPayload = capturedDownstreamInput!.task.input.payload as { boundInputs?: Array<{ artifact: { fileRef: string; content?: string; preview: string } }> } | undefined;
+		const artifact = boundInputPayload!.boundInputs![0]!.artifact;
+		assert.equal(artifact.fileRef, `tasks/${sourceTask.taskId}/attempts/${upstreamAttempt.attemptId}/discovery-aggregation.json`);
+		assert.notEqual(artifact.content, "worker/forum-sources.json");
+		const aggregation = JSON.parse(artifact.content ?? "");
+		assert.equal(aggregation.schemaVersion, "team/discovery-aggregation-1");
+		assert.equal(aggregation.sourceResultRef, `tasks/${sourceTask.taskId}/attempts/${upstreamAttempt.attemptId}/discovery-result.json`);
+		assert.equal(aggregation.items[0]?.itemId, "vultr");
+		assert.equal(aggregation.items[0]?.result?.status, "succeeded");
+		assert.doesNotMatch(artifact.content ?? "", /worker\/forum-sources\.json/);
+		assert.match(capturedDownstreamInput!.task.input.text, /BEGIN_TYPED_ARTIFACT_CONTENT/);
+		assert.match(capturedDownstreamInput!.task.input.text, /discovery-aggregation\.json/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("Discovery downstream receives aggregated generated child results after auto-runs finish", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-discovery-downstream-aggregation-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const sourceTask = await taskStore.create({
+			...validTaskInput,
+			title: "发现论坛来源",
+			canvasKind: "discovery",
+			discoverySpec: validDiscoverySpec,
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "发现论坛来源",
+				input: { text: "发现并输出论坛来源 JSON。" },
+				outputPorts: [{ id: "forum_sources", label: "Forum sources", type: "json" }],
+				outputContract: { text: "输出 JSON object，vendors 为数组，每项包含稳定 id。" },
+				acceptance: { rules: ["vendors 必须是数组", "每项必须有 id"] },
+			},
+		});
+		const targetTask = await taskStore.create({
+			title: "HTML 制作",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "HTML 制作",
+				input: { text: "根据上游 JSON 制作 HTML 页面。" },
+				inputPorts: [{ id: "source_json", label: "Source JSON", type: "json" }],
+				outputContract: { text: "输出 HTML 页面。" },
+				acceptance: { rules: ["必须使用 generated child 搜索结果"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+
+		await mkdir(join(root, "team"), { recursive: true });
+		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
+		await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "forum_sources",
+			toTaskId: targetTask.taskId,
+			toInputPortId: "source_json",
+		});
+
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		let capturedDownstreamInput: WorkerInput | undefined;
+
+		class AggregatingDiscoveryRunner extends ProcessEventRoleRunner {
+			async runChecker(input: CheckerInput): Promise<CheckerOutput> {
+				if (input.task.type === "discovery") {
+					return {
+						verdict: "pass",
+						reason: "ok",
+						resultContent: JSON.stringify({
+							vendors: [
+								{ id: "reddit", name: "Reddit" },
+								{ id: "github", name: "GitHub" },
+							],
+						}),
+					};
+				}
+				if (input.task.title === "HTML 制作") {
+					return { verdict: "pass", reason: "ok", resultContent: "downstream accepted" };
+				}
+				const itemId = input.task.title.replace(/^核查\s+/, "");
+				return {
+					verdict: "pass",
+					reason: "ok",
+					resultContent: JSON.stringify({
+						itemId,
+						findings: [`${itemId} 用户反馈摘要`],
+						sources: [`https://example.com/${itemId}`],
+					}),
+				};
+			}
+
+			async runWorker(input: WorkerInput): Promise<WorkerOutput> {
+				if (input.task.type === "discovery") return { content: "root worker", artifactRefs: [] };
+				if (input.task.title === "HTML 制作") {
+					capturedDownstreamInput = input;
+					return { content: "downstream worker result", artifactRefs: [] };
+				}
+				const itemId = input.task.title.replace(/^核查\s+/, "");
+				return {
+					content: JSON.stringify({ itemId, workerOnly: true }),
+					artifactRefs: [],
+				};
+			}
+
+			async runDiscoveryDispatcher(input: DiscoveryDispatchInput): Promise<DiscoveryDispatchOutput> {
+				return {
+					ok: true,
+					itemId: input.itemId,
+					workUnit: {
+						title: `核查 ${input.itemId}`,
+						input: { text: `核查 ${input.itemId} 的用户反馈` },
+						outputContract: { text: `输出 ${input.itemId} 的结构化搜索结果。` },
+						acceptance: { rules: [`结果必须覆盖 ${input.itemId}`] },
+					},
+				};
+			}
+		}
+
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new AggregatingDiscoveryRunner(),
+			connectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const upstreamRun = await service.createRun(sourceTask.taskId);
+		const upstreamFinished = await waitForTerminalRun(service, upstreamRun.runId);
+		assert.equal(upstreamFinished.status, "completed");
+
+		const upstreamAttempts = await workspace.listAttempts(upstreamRun.runId, sourceTask.taskId);
+		const upstreamAttempt = upstreamAttempts[0]!;
+		const downstreamRuns = await waitForTaskRuns(service, targetTask.taskId, 1);
+		await waitForTerminalRun(service, downstreamRuns[0]!.runId);
+
+		assert.ok(capturedDownstreamInput, "downstream worker input should have been captured");
+		const boundInputPayload = capturedDownstreamInput!.task.input.payload as { boundInputs?: Array<{ artifact: { fileRef: string; content?: string; preview: string } }> } | undefined;
+		const artifact = boundInputPayload!.boundInputs![0]!.artifact;
+		assert.equal(artifact.fileRef, `tasks/${sourceTask.taskId}/attempts/${upstreamAttempt.attemptId}/discovery-aggregation.json`);
+		assert.ok(artifact.content, "aggregation content should be included in the downstream prompt payload");
+		const aggregation = JSON.parse(artifact.content!);
+		assert.equal(aggregation.schemaVersion, "team/discovery-aggregation-1");
+		assert.equal(aggregation.discoveryTaskId, sourceTask.taskId);
+		assert.equal(aggregation.discoveryRunId, upstreamRun.runId);
+		assert.equal(aggregation.discoveryAttemptId, upstreamAttempt.attemptId);
+		assert.deepEqual(aggregation.summary, {
+			totalItems: 2,
+			generatedTasks: 2,
+			succeeded: 2,
+			failed: 0,
+			cancelled: 0,
+			skipped: 0,
+			missingResult: 0,
+		});
+		assert.deepEqual(aggregation.items.map((item: { itemId: string }) => item.itemId), ["reddit", "github"]);
+		assert.equal(aggregation.items[0].result.status, "succeeded");
+		assert.match(aggregation.items[0].result.content, /reddit 用户反馈摘要/);
+		assert.equal(aggregation.items[1].result.status, "succeeded");
+		assert.match(aggregation.items[1].result.content, /github 用户反馈摘要/);
+		assert.match(capturedDownstreamInput!.task.input.text, /discovery-aggregation\.json/);
+		assert.match(capturedDownstreamInput!.task.input.text, /reddit 用户反馈摘要/);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

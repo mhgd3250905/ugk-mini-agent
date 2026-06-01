@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildServer } from "../src/server.js";
@@ -143,6 +143,70 @@ test("POST /v1/team/tasks/:taskId/runs executes a Canvas Task without creating a
 		const planRunsRes = await app.inject({ method: "GET", url: "/v1/team/runs" });
 		assert.equal(planRunsRes.statusCode, 200);
 		assert.deepEqual(planRunsRes.json(), []);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("POST /v1/team/tasks/:taskId/runs stores request-derived public base URL for Task artifacts", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const createTask = await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload });
+		assert.equal(createTask.statusCode, 201);
+		const task = createTask.json().task;
+
+		const runRes = await app.inject({
+			method: "POST",
+			url: `/v1/team/tasks/${task.taskId}/runs`,
+			headers: {
+				host: "team.example.test:8443",
+				"x-forwarded-proto": "https",
+			},
+		});
+		assert.equal(runRes.statusCode, 201);
+		const created = runRes.json() as TeamRunState;
+		assert.equal(created.source?.publicBaseUrl, "https://team.example.test:8443");
+		await waitForTerminalRun(app, created.runId);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/task-runs/:runId/artifacts serves files from role output directories", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const createTask = await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload });
+		assert.equal(createTask.statusCode, 201);
+		const task = createTask.json().task;
+
+		const runRes = await app.inject({ method: "POST", url: `/v1/team/tasks/${task.taskId}/runs` });
+		assert.equal(runRes.statusCode, 201);
+		const created = runRes.json() as TeamRunState;
+		const finished = await waitForTerminalRun(app, created.runId);
+		assert.equal(finished.status, "completed");
+
+		const attemptsRes = await app.inject({ method: "GET", url: `/v1/team/task-runs/${created.runId}/tasks/${task.taskId}/attempts` });
+		assert.equal(attemptsRes.statusCode, 200);
+		const attemptId = attemptsRes.json().attempts[0].attemptId as string;
+		const outputDir = join(root, "team", "task-runs", "runs", created.runId, "agent-workspaces", attemptId, "worker", "output");
+		await mkdir(outputDir, { recursive: true });
+		await writeFile(join(outputDir, "report.html"), "<h1>Team report</h1>", "utf8");
+
+		const response = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/${created.runId}/artifacts/${attemptId}/worker/report.html`,
+		});
+		assert.equal(response.statusCode, 200);
+		assert.match(response.headers["content-type"] as string, /text\/html/);
+		assert.equal(response.body, "<h1>Team report</h1>");
+
+		const traversal = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/${created.runId}/artifacts/${attemptId}/worker/..%2Fattempt.json`,
+		});
+		assert.equal(traversal.statusCode, 400);
 	} finally {
 		await app.close();
 		await rm(root, { recursive: true, force: true });

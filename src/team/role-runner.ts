@@ -7,6 +7,8 @@ export interface WorkerInput {
 	attemptId: string;
 	workDir: string;
 	outputDir: string;
+	artifactPublicDir?: string;
+	artifactPublicBaseUrl?: string;
 	acceptanceRules: string[];
 	feedback?: string;
 	signal?: AbortSignal;
@@ -24,6 +26,8 @@ export interface CheckerInput {
 	task: TeamTask;
 	attemptId: string;
 	workerOutputRef: string;
+	artifactPublicDir?: string;
+	artifactPublicBaseUrl?: string;
 	acceptanceRules: string[];
 	outputValidation?: TeamOutputValidationResult;
 	signal?: AbortSignal;
@@ -45,6 +49,8 @@ export interface WatcherInput {
 	workUnitStatus: "passed" | "failed";
 	resultRef: string | null;
 	errorSummary: string | null;
+	artifactPublicDir?: string;
+	artifactPublicBaseUrl?: string;
 	outputValidation?: TeamOutputValidationResult;
 	signal?: AbortSignal;
 }
@@ -62,6 +68,8 @@ export interface FinalizerInput {
 	plan: TeamPlan;
 	runSummary?: { totalTasks: number; succeededTasks: number; failedTasks: number; cancelledTasks: number; skippedTasks: number };
 	taskResults: Array<{ taskId: string; status: "succeeded" | "failed" | "cancelled" | "skipped"; resultRef: string | null; errorSummary: string | null; previousErrorSummary?: string | null; manualDisposition?: string }>;
+	artifactPublicDir?: string;
+	artifactPublicBaseUrl?: string;
 	signal?: AbortSignal;
 }
 
@@ -75,6 +83,8 @@ export interface DecomposerInput {
 	plan: TeamPlan;
 	task: TeamTask;
 	maxChildren: number;
+	artifactPublicDir?: string;
+	artifactPublicBaseUrl?: string;
 	signal?: AbortSignal;
 }
 
@@ -98,6 +108,8 @@ export interface DiscoveryDispatchInput {
 	recommendedItemFields?: string[];
 	generatedWorkerAgentId?: string;
 	generatedCheckerAgentId?: string;
+	artifactPublicDir?: string;
+	artifactPublicBaseUrl?: string;
 	signal?: AbortSignal;
 }
 

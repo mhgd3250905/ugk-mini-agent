@@ -8,6 +8,7 @@ import type {
 	TeamAttemptRoleProcess,
 	TeamAttemptWatcherSummary,
 	TeamAttemptWorkerSummary,
+	TeamDiscoveryAggregationRecord,
 	TeamDiscoveryResultRecord,
 	TeamDiscoveryDispatchOutcome,
 	TeamDiscoveryGeneratedRunOutcome,
@@ -171,8 +172,16 @@ export class RunWorkspace {
 		return this.attempts.writeDiscoveryResult(runId, taskId, attemptId, record);
 	}
 
+	async writeDiscoveryAggregation(runId: string, taskId: string, attemptId: string, record: TeamDiscoveryAggregationRecord): Promise<string> {
+		return this.attempts.writeDiscoveryAggregation(runId, taskId, attemptId, record);
+	}
+
 	async readDiscoveryResult(runId: string, taskId: string, attemptId: string): Promise<TeamDiscoveryResultRecord | null> {
 		return this.attempts.readDiscoveryResult(runId, taskId, attemptId);
+	}
+
+	async readDiscoveryAggregation(runId: string, taskId: string, attemptId: string): Promise<TeamDiscoveryAggregationRecord | null> {
+		return this.attempts.readDiscoveryAggregation(runId, taskId, attemptId);
 	}
 
 	async listAttempts(runId: string, taskId: string): Promise<Array<TeamAttemptMetadata & { files: string[] }>> {

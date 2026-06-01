@@ -126,6 +126,41 @@ export interface TeamDiscoveryGeneratedRunOutcome {
 	createdAt: string;
 }
 
+export type TeamDiscoveryAggregationResultStatus = "succeeded" | "failed" | "cancelled" | "skipped" | "missing";
+
+export interface TeamDiscoveryAggregationRecord {
+	schemaVersion: "team/discovery-aggregation-1";
+	discoveryTaskId: string;
+	discoveryRunId: string;
+	discoveryAttemptId: string;
+	outputKey: string;
+	sourceResultRef: string | null;
+	createdAt: string;
+	summary: {
+		totalItems: number;
+		generatedTasks: number;
+		succeeded: number;
+		failed: number;
+		cancelled: number;
+		skipped: number;
+		missingResult: number;
+	};
+	items: Array<{
+		itemId: string;
+		itemPayload: Record<string, unknown>;
+		dispatch: TeamDiscoveryDispatchOutcome | null;
+		generatedTaskId?: string;
+		generatedRunId?: string;
+		generatedRunStatus?: RunStatus;
+		result: {
+			status: TeamDiscoveryAggregationResultStatus;
+			resultRef?: string | null;
+			content?: string;
+			errorSummary?: string | null;
+		};
+	}>;
+}
+
 export interface TeamAttemptMetadata {
 	attemptId: string;
 	taskId: string;
@@ -490,6 +525,7 @@ export interface TeamRunState {
 	source?: {
 		type: "canvas-task";
 		taskId: string;
+		publicBaseUrl?: string;
 		triggeredBy?:
 			| { type: "task-connection"; connectionId: string; fromTaskId: string; fromRunId: string; fromAttemptId: string }
 			| { type: "task-dependency"; dependencyId: string; fromTaskId: string; fromRunId: string; fromAttemptId: string }

@@ -12,6 +12,7 @@ This file provides the highest-level working rules for AI coding agents in this 
 - 云服务器增量更新：只读 `3.1` 的生产状态边界、`8.2`，然后进入 `docs/server-ops.md`；需要命令速查再看 `docs/server-ops-quick-reference.md`，只有迁移、回滚或异常排障才展开单云长手册。
 - 本地 Docker 启动 / 重建 / 端口 / 运行态排障：先读 `docs/docker-local-ops.md`，再决定 `restart`、`up --build`、处理 orphan nginx 或检查 SQLite。
 - Playground 前端修改：先读 `docs/playground-current.md` 和 `DESIGN.md`，再看第 `6.C` 场景文件；手机端不要按桌面压缩版推断。
+- Team Console / Canvas Task / `/team-task` 修改：先读 `docs/handoff-current.md`、`apps/team-console/README.md`、`docs/team-runtime.md` 和第 `6.I` 场景文件；不要默认读完整 `docs/change-log.md`。
 - conn / Feishu / 后台任务：先看第 `6.G` 场景文件和 `docs/runtime-assets-conn-feishu.md`，不要先翻部署手册。
 - Agent profile / 自定义 Agent：先看第 `6.F` 场景，运行态以 API 和 `/app/.data/agents` 挂载为准，不要手写 `profiles.json`。
 
@@ -23,15 +24,22 @@ This file provides the highest-level working rules for AI coding agents in this 
 - **禁止写入：** 单次 UI 微调、发布流水账、排障过程、详细测试矩阵、长篇模块设计、已经有专门文档承载的细节。
 - **细节去处：**
   - 架构治理：`docs/architecture-governance-guide.md`
-  - 更新记录：`docs/change-log.md`
+  - 近期更新记录：`docs/change-log.md`
+  - 当前交接快照：`docs/handoff-current.md`
   - 开发任务收尾 / 换 agent 交接：`.codex/skills/feature-handoff/SKILL.md`
   - Playground 当前 UI：`docs/playground-current.md`
   - Conn / Activity / Feishu：`docs/runtime-assets-conn-feishu.md`
   - 本地 Docker / 运行态防踩坑：`docs/docker-local-ops.md`
   - 生产部署：`docs/server-ops.md` 和对应云手册
+  - 本地计划草稿：`.codex/plans/`，只放仍在执行或等待确认的计划
   - 按场景找代码：`docs/traceability-map.md`
 - **新增规则门槛：** 只有跨多次任务、影响后续 agent 行为、或会造成高风险误操作的规则，才进 `AGENTS.md`。
-- **过期规则处理：** 如果某条事实变成历史事实，迁到对应专题文档或 `docs/change-log.md`，不要继续堆在本文件里。
+- **容量与生命周期：**
+  - `docs/handoff-current.md` 只保留当前接手事实，目标不超过 150 行；新一轮交接应替换旧快照，不要追加成长篇日记。
+  - `docs/change-log.md` 只保留近期窗口，目标不超过 500 行或最近 30 天；稳定后的旧条目交给 Git 历史。
+  - `.codex/plans/` 里的计划完成后，应删除、压缩进当前交接，或提升为专题文档；不要把已执行计划永久留在默认接手路径。
+  - 专题文档超过约 1000 行时，先考虑拆分为索引 + 子文档；不要继续把排障过程和测试流水账塞进同一个文件。
+- **过期规则处理：** 如果某条事实变成历史事实，迁到对应专题文档；过期流水账不要继续堆在本文件或 `docs/change-log.md` 里，交给 Git 历史追溯。
 
 ## 1. 通信准则
 
@@ -383,6 +391,25 @@ This file provides the highest-level working rules for AI coding agents in this 
 - `runtime/screenshot.mjs`
 - `runtime/screenshot-mobile.mjs`
 
+### I 场景：查 Team Console / Canvas Task / `/team-task` / Discovery
+
+- `docs/handoff-current.md`
+- `apps/team-console/README.md`
+- `docs/team-runtime.md`
+- `.pi/skills/team-task-creator/SKILL.md`
+- `src/team/types.ts`
+- `src/team/task-run-service.ts`
+- `src/team/run-workspace.ts`
+- `src/team/run-workspace-attempts.ts`
+- `test/team-task-creator-skill.test.ts`
+- `test/team-task-run-process.test.ts`
+- `apps/team-console/src/app/App.tsx`
+- `apps/team-console/src/app/use-team-console-live-data.ts`
+- `apps/team-console/src/tests/app-live-data.test.tsx`
+- `apps/team-console/src/tests/app-run-observer.test.tsx`
+
+`docs/change-log.md` 只作为近期窗口和行为变更索引，不是全量历史档案。需要追溯旧阶段时用 `git log -- <path>` / `git show <commit>:<path>`，别让每次接手都重读旧流水账。
+
 ## 7. 文档分层
 
 - `AGENTS.md`
@@ -396,7 +423,11 @@ This file provides the highest-level working rules for AI coding agents in this 
 - `docs/architecture-governance-guide.md`
   - 架构治理与后续 agent 接手总入口；决定是否重构、先读哪些治理地图、跑哪些验证时先看它
 - `docs/change-log.md`
-  - 统一更新记录；行为变更、接口变更、运行口径变更、文档结构变更都要留痕
+  - 近期更新记录窗口；行为变更、接口变更、运行口径变更、文档结构变更要留痕，但旧稳定流水账应裁剪，历史追溯交给 Git
+- `docs/handoff-current.md`
+  - 当前接手快照；只放维护边界、当前 Git 现场、已验证事实、未完成风险和禁止事项。新快照替换旧快照，不追加历史流水账
+- `.codex/plans/`
+  - 本地计划草稿目录；只保留未执行、待确认或仍有复用价值的计划。已完成计划应删除、压缩进交接，或提升为正式专题文档
 - `.codex/skills/`
   - 维护本仓库的 coding agent 使用的开发协作技能；不要和产品运行时 `.pi/skills/` 混用
 - `docs/playground-current.md`
@@ -443,11 +474,17 @@ This file provides the highest-level working rules for AI coding agents in this 
 
 - 不要把"代码里出现了某段字符串"当作修复完成；要验证真实入口、真实状态、真实行为。
 - 任何影响外部行为、运行方式、接口、文档结构或协作约定的改动，必须在同一轮同步更新文档系统，不能等"之后有空再补"。
-- 每次这类改动完成后，都要追加更新记录到 `docs/change-log.md`，至少写清：
+- 每次这类改动完成后，都要追加一条短记录到 `docs/change-log.md` 的近期窗口，至少写清：
   - 日期
   - 改动主题
   - 影响范围
   - 对应源码或文档入口
+- `docs/change-log.md` 不是永久归档。旧稳定记录应定期裁剪，不要把单次 UI 微调、排障过程、完整测试矩阵或部署流水账长期留在常规接手路径里。
+- 文档改动收尾时要做膨胀检查：
+  - `docs/handoff-current.md` 是否仍是当前事实，且约 150 行以内
+  - `docs/change-log.md` 是否仍是近期窗口，且约 500 行以内
+  - `AGENTS.md` 是否只新增长期规则，没有塞入单次过程
+  - `.codex/plans/` 是否留下了已完成但无复用价值的计划
 - 前端任务统一遵守：
   - 先锁定用户点名的真实 DOM / 组件 / 状态
   - 先查约束链，再改样式或脚本

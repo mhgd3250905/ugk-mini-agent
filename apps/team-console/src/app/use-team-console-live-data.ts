@@ -14,6 +14,7 @@ export type TeamConsoleUiResetReason =
   | "live-run-mode";
 
 const DATA_SOURCE_STORAGE_KEY = "ugk-team-console:data-source";
+const DISCOVERY_CATALOG_REFRESH_DELAYS_MS = [350, 1200, 3000, 8000, 15000, 30000, 60000, 120000, 180000, 300000];
 
 export const CLEAN_AGENT_WORKSPACE_ID = "agent-workspace";
 
@@ -230,7 +231,7 @@ export interface UseTeamConsoleLiveDataReturn {
   discoverySummariesByTaskId: Record<string, TeamDiscoverySummary>;
   discoveryDispatchDiagnosticsByTaskId: Record<string, TeamDiscoveryDispatchDiagnostic[]>;
 
-  refreshLiveTasks: () => Promise<void>;
+  refreshLiveTasks: (options?: { silent?: boolean }) => Promise<void>;
   scheduleLiveTaskDiscoveryRefresh: () => void;
   refreshLiveTasksAfterLeavingTaskCreateBranch: (branch: { mode?: string } | null) => void;
   readAttemptFile: (runId: string, taskId: string, attemptId: string, fileName: string) => Promise<string>;
@@ -354,13 +355,18 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     setDiscoveryDispatchDiagnosticsByTaskId(result.discoveryDispatchDiagnosticsByTaskId);
   }, []);
 
-  const refreshLiveTasks = useCallback(async () => {
+  const refreshLiveTasks = useCallback(async (options: { silent?: boolean } = {}) => {
+    const showRefreshState = options.silent !== true;
     if (liveTasksRefreshInFlightRef.current) {
-      return liveTasksRefreshInFlightRef.current;
+      if (showRefreshState) setLiveTasksRefreshing(true);
+      try {
+        return await liveTasksRefreshInFlightRef.current;
+      } finally {
+        if (showRefreshState) setLiveTasksRefreshing(false);
+      }
     }
 
     const refresh = (async () => {
-      setLiveTasksRefreshing(true);
       try {
         const api = new LiveTeamApi();
         const [nextTasks, nextConnections, nextDeps, nextSourceNodes, nextSourceConns] = await Promise.all([
@@ -380,19 +386,27 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
         setError(discoveryCatalogResult.error);
       } finally {
         liveTasksRefreshInFlightRef.current = null;
-        setLiveTasksRefreshing(false);
       }
     })();
     liveTasksRefreshInFlightRef.current = refresh;
-    return refresh;
+    if (showRefreshState) setLiveTasksRefreshing(true);
+    try {
+      return await refresh;
+    } finally {
+      if (showRefreshState) setLiveTasksRefreshing(false);
+    }
   }, [applyDiscoveryCatalogLoadResult, applyLiveSources, applyLiveTasks, loadDiscoveryCatalogsForTasks]);
 
   const scheduleLiveTaskDiscoveryRefresh = useCallback(() => {
     if (dataSource !== "live") return;
-    for (const delayMs of [350, 1200]) {
+    for (const timer of liveTaskDiscoveryRefreshTimersRef.current) {
+      globalThis.clearTimeout(timer);
+    }
+    liveTaskDiscoveryRefreshTimersRef.current = [];
+    for (const delayMs of DISCOVERY_CATALOG_REFRESH_DELAYS_MS) {
       const timer = globalThis.setTimeout(() => {
         liveTaskDiscoveryRefreshTimersRef.current = liveTaskDiscoveryRefreshTimersRef.current.filter((item) => item !== timer);
-        void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
+        void refreshLiveTasks({ silent: true }).catch((e) => setError(errorMessage(e)));
       }, delayMs);
       liveTaskDiscoveryRefreshTimersRef.current.push(timer);
     }
@@ -418,7 +432,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
 
   const refreshLiveTasksAfterLeavingTaskCreateBranch = useCallback((branch: { mode?: string } | null) => {
     if (dataSource !== "live" || branch?.mode !== "task-create") return;
-    void refreshLiveTasks().catch((e) => setError(errorMessage(e)));
+    void refreshLiveTasks({ silent: true }).catch((e) => setError(errorMessage(e)));
   }, [dataSource, refreshLiveTasks]);
 
   // Mock fixture loading
@@ -677,7 +691,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
             setTaskRunsByTaskId((current) => mergeTaskRun(current, active.taskId, fresh));
             if (dataSource === "live" && !isActiveRun(fresh.status) && !liveTaskDiscoveryRefreshRunIdsRef.current.has(fresh.runId)) {
               liveTaskDiscoveryRefreshRunIdsRef.current.add(fresh.runId);
-              void refreshLiveTasks().catch((e) => {
+              void refreshLiveTasks({ silent: true }).catch((e) => {
                 if (!cancelled) setError(errorMessage(e));
               });
               scheduleLiveTaskDiscoveryRefresh();

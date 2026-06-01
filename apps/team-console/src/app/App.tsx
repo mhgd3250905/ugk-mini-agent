@@ -309,7 +309,19 @@ function renderMarkdownContent(content: string): ReactNode {
   );
 }
 
+function contentLooksLikeStructuredJson(content: string): boolean {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return false;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed !== null && (typeof parsed === "object" || Array.isArray(parsed));
+  } catch {
+    return false;
+  }
+}
+
 function renderFileDetailContent(fileName: string, content: string): ReactNode {
+  if (contentLooksLikeStructuredJson(content)) return renderJsonContent(content);
   const format = fileFormatFromName(fileName);
   if (format === "json") return renderJsonContent(content);
   if (format === "markdown") return renderMarkdownContent(content);
@@ -371,6 +383,78 @@ function selectLatestRun(runs: TeamRunState[]): TeamRunState | null {
     if (!Number.isFinite(latestTime)) return run;
     return runTime >= latestTime ? run : latest;
   }, runs[0]);
+}
+
+function runTimeForOrdering(run: TeamRunState | null | undefined): number {
+  if (!run) return Number.NEGATIVE_INFINITY;
+  const finishedAt = Date.parse(run.finishedAt ?? "");
+  if (Number.isFinite(finishedAt)) return finishedAt;
+  const startedAt = Date.parse(run.startedAt ?? "");
+  if (Number.isFinite(startedAt)) return startedAt;
+  const createdAt = Date.parse(run.createdAt);
+  return Number.isFinite(createdAt) ? createdAt : Number.NEGATIVE_INFINITY;
+}
+
+function selectActiveDiscoveryRootRun(
+  discoveryTaskId: string,
+  taskRunsByTaskId: Record<string, TeamRunState[]>,
+): TeamRunState | null {
+  return (taskRunsByTaskId[discoveryTaskId] ?? []).find((run) => isActiveRun(run.status)) ?? null;
+}
+
+function isGeneratedRunFromDiscoveryRun(run: TeamRunState, discoveryTaskId: string, discoveryRunId: string): boolean {
+  return run.source?.triggeredBy?.type === "discovery-generated-task"
+    && run.source.triggeredBy.discoveryTaskId === discoveryTaskId
+    && run.source.triggeredBy.discoveryRunId === discoveryRunId;
+}
+
+function visibleDiscoveryGeneratedRuns(
+  generatedTask: TeamCanvasTask,
+  discoveryTaskId: string,
+  activeDiscoveryRun: TeamRunState | null,
+  taskRunsByTaskId: Record<string, TeamRunState[]>,
+): TeamRunState[] {
+  const runs = taskRunsByTaskId[generatedTask.taskId] ?? [];
+  if (!activeDiscoveryRun) return runs;
+  const generatedSourceRunId = generatedTask.generatedSource?.latestDiscoveryRunId;
+  if (generatedSourceRunId !== activeDiscoveryRun.runId) return [];
+  return runs.filter((run) => isGeneratedRunFromDiscoveryRun(run, discoveryTaskId, activeDiscoveryRun.runId));
+}
+
+function sortDiscoveryGeneratedTasksForSubcanvas(
+  tasks: TeamCanvasTask[],
+  taskRunsByTaskId: Record<string, TeamRunState[]>,
+  discoveryTaskId: string,
+  activeDiscoveryRun: TeamRunState | null,
+): TeamCanvasTask[] {
+  return [...tasks].sort((a, b) => {
+    const aRuns = visibleDiscoveryGeneratedRuns(a, discoveryTaskId, activeDiscoveryRun, taskRunsByTaskId);
+    const bRuns = visibleDiscoveryGeneratedRuns(b, discoveryTaskId, activeDiscoveryRun, taskRunsByTaskId);
+    const aActiveRun = aRuns.find((run) => isActiveRun(run.status)) ?? null;
+    const bActiveRun = bRuns.find((run) => isActiveRun(run.status)) ?? null;
+    const aActive = Boolean(aActiveRun);
+    const bActive = Boolean(bActiveRun);
+    if (aActive !== bActive) return aActive ? -1 : 1;
+    if (aActive && bActive) {
+      return runTimeForOrdering(bActiveRun) - runTimeForOrdering(aActiveRun);
+    }
+    const aLatest = selectLatestRun(aRuns);
+    const bLatest = selectLatestRun(bRuns);
+    const aHasTerminal = Boolean(aLatest && !isActiveRun(aLatest.status));
+    const bHasTerminal = Boolean(bLatest && !isActiveRun(bLatest.status));
+    if (aHasTerminal !== bHasTerminal) return aHasTerminal ? -1 : 1;
+    if (aHasTerminal && bHasTerminal) {
+      const diff = runTimeForOrdering(bLatest) - runTimeForOrdering(aLatest);
+      if (diff !== 0) return diff;
+    }
+    const aDiscoveredAt = Date.parse(a.generatedSource?.latestDiscoveredAt ?? "");
+    const bDiscoveredAt = Date.parse(b.generatedSource?.latestDiscoveredAt ?? "");
+    if (Number.isFinite(aDiscoveredAt) || Number.isFinite(bDiscoveredAt)) {
+      return (Number.isFinite(aDiscoveredAt) ? aDiscoveredAt : Number.NEGATIVE_INFINITY)
+        - (Number.isFinite(bDiscoveredAt) ? bDiscoveredAt : Number.NEGATIVE_INFINITY);
+    }
+    return 0;
+  });
 }
 
 function playgroundBaseUrlPrefix(): string {
@@ -944,7 +1028,11 @@ export function App() {
     if (branch.detailMode !== "discovery-subcanvas" || !branch.discoveryGeneratedObserver) return rootTargets;
     const generatedTask = generatedTasksById.get(branch.discoveryGeneratedObserver.taskId) ?? null;
     if (!generatedTask) return rootTargets;
-    const taskRun = (taskRunsByTaskId[generatedTask.taskId] ?? [])
+    const node = taskNodes.find((candidate) => candidate.nodeId === branch.nodeId) ?? null;
+    const discoveryTask = node ? tasksById.get(node.taskId) ?? null : null;
+    if (!discoveryTask || discoveryTask.canvasKind !== "discovery" || discoveryTask.generatedSource) return rootTargets;
+    const activeDiscoveryRun = selectActiveDiscoveryRootRun(discoveryTask.taskId, taskRunsByTaskId);
+    const taskRun = visibleDiscoveryGeneratedRuns(generatedTask, discoveryTask.taskId, activeDiscoveryRun, taskRunsByTaskId)
       .find((run) => run.runId === branch.discoveryGeneratedObserver?.runId) ?? null;
     if (!taskRun) return rootTargets;
     return [
@@ -1737,7 +1825,7 @@ export function App() {
 
         setTaskRunsByTaskId((current) => mergeTaskRun(current, observedTaskId, freshRun));
         if (dataSource === "live" && isActiveRun(target.status) && !isActiveRun(freshRun.status)) {
-          void refreshLiveTasks().catch((e) => {
+          void refreshLiveTasks({ silent: true }).catch((e) => {
             if (!cancelled) setError(errorMessage(e));
           });
           scheduleLiveTaskDiscoveryRefresh();
@@ -2145,10 +2233,14 @@ export function App() {
                   if (branch.discoveryGeneratedEditTaskId) {
                     clearTaskEditState(branch.discoveryGeneratedEditTaskId);
                   }
+                  const nextDetailMode = detailMode === "discovery-subcanvas" ? null : "discovery-subcanvas";
                   if (detailMode === "discovery-subcanvas") {
                     clearGeneratedArchiveUiForTasks(
                       (generatedTasksByDiscoveryTaskId[task.taskId] ?? []).map((generatedTask) => generatedTask.taskId),
                     );
+                  } else if (dataSource === "live") {
+                    void refreshLiveTasks({ silent: true }).catch((e) => setError(errorMessage(e)));
+                    scheduleLiveTaskDiscoveryRefresh();
                   }
                   setTaskArchiveConfirmNodeId(null);
                   setExpandedTaskBranches((current) =>
@@ -2156,7 +2248,7 @@ export function App() {
                       item.nodeId === branch.nodeId
                         ? {
                             ...item,
-                            detailMode: detailMode === "discovery-subcanvas" ? null : "discovery-subcanvas",
+                            detailMode: nextDetailMode,
                             observedRunId: undefined,
                             selectedFileKeys: [],
                             discoveryGeneratedObserver: undefined,
@@ -2233,7 +2325,13 @@ export function App() {
       const menuPanelId = taskMenuPanelId(branch.nodeId);
 
       if (branch.detailMode === "discovery-subcanvas" && task.canvasKind === "discovery" && !task.generatedSource) {
-        const generatedTasks = (generatedTasksByDiscoveryTaskId[task.taskId] ?? []).filter((generatedTask) => !generatedTask.archived);
+        const activeDiscoveryRun = selectActiveDiscoveryRootRun(task.taskId, taskRunsByTaskId);
+        const generatedTasks = sortDiscoveryGeneratedTasksForSubcanvas(
+          (generatedTasksByDiscoveryTaskId[task.taskId] ?? []).filter((generatedTask) => !generatedTask.archived),
+          taskRunsByTaskId,
+          task.taskId,
+          activeDiscoveryRun,
+        );
         const dispatchDiagnostics = discoveryDispatchDiagnosticsByTaskId[task.taskId] ?? [];
         panels.push({
           id: `discovery-subcanvas-${branch.nodeId}`,
@@ -2310,7 +2408,7 @@ export function App() {
                   const generatedSource = generatedTask.generatedSource;
                   const itemStatus = generatedSource?.itemStatus ?? "active";
                   const workUnitMode = generatedSource?.workUnitMode ?? "managed";
-                  const generatedRuns = taskRunsByTaskId[generatedTask.taskId] ?? [];
+                  const generatedRuns = visibleDiscoveryGeneratedRuns(generatedTask, task.taskId, activeDiscoveryRun, taskRunsByTaskId);
                   const latestGeneratedRun = selectLatestRun(generatedRuns);
                   const activeGeneratedRun = generatedRuns.find((taskRun) => isActiveRun(taskRun.status)) ?? null;
                   const runSaving = Boolean(taskRunSavingByTaskId[generatedTask.taskId]);
@@ -2320,6 +2418,7 @@ export function App() {
                   const generatedIsEditing = branch.discoveryGeneratedEditTaskId === generatedTask.taskId;
                   const archiveConfirmOpen = generatedArchiveConfirmTaskId === generatedTask.taskId;
                   const canResetToManaged = workUnitMode === "customized" && Boolean(generatedSource?.latestManagedWorkUnit);
+                  const waitingForCurrentDiscoveryRun = Boolean(activeDiscoveryRun) && generatedSource?.latestDiscoveryRunId !== activeDiscoveryRun?.runId;
                   const generatedRunIsObserved = Boolean(
                     latestGeneratedRun
                       && branch.discoveryGeneratedObserver?.taskId === generatedTask.taskId
@@ -2340,6 +2439,7 @@ export function App() {
                       data-generated-item-status={itemStatus}
                       data-generated-workunit-mode={workUnitMode}
                       data-generated-run-status={latestRunStatus}
+                      data-generated-run-scope={waitingForCurrentDiscoveryRun ? "pending-current-discovery" : "current"}
                       data-generated-editing={generatedIsEditing ? "true" : "false"}
                       data-generated-reset-saving={resetSaving ? "true" : "false"}
                       data-generated-archive-saving={archiveSaving ? "true" : "false"}
@@ -2351,7 +2451,7 @@ export function App() {
                       <div className="discovery-generated-card-meta">
                         <span>{itemStatus}</span>
                         <span>{workUnitMode}</span>
-                        <span>{latestGeneratedRun ? RUN_STATUS_LABELS[latestGeneratedRun.status] : "none"}</span>
+                        <span>{waitingForCurrentDiscoveryRun ? "等待本轮发现" : latestGeneratedRun ? RUN_STATUS_LABELS[latestGeneratedRun.status] : "none"}</span>
                       </div>
                       <div className="discovery-generated-card-actions">
                         <button
@@ -2889,6 +2989,11 @@ export function App() {
       const checkerFiles = fileDescriptors.filter((d) => d.kind === "checker");
       const resultFiles = fileDescriptors.filter((d) => d.kind === "result");
       const hasFiles = fileDescriptors.length > 0;
+      const emptyFilesMessage = attempts.length === 0
+        ? "该运行没有 attempt 记录。可能是子任务未启动、已跳过，或旧运行未保存 attempt。"
+        : latestAttempt?.status === "failed"
+          ? "该 attempt 未产生可展示文件。请查看 Worker / Checker 过程或错误摘要。"
+          : "该 attempt 未产生可展示文件。";
 
       panels.push({
         id: runObserverPanelId,
@@ -2921,7 +3026,7 @@ export function App() {
               {renderFileSection("\u9a8c\u6536\u7ed3\u679c", resultFiles)}
             </div>
             {!hasFiles && !observerState?.loading && !observedTaskRunIsActive && (
-              <div className="emap-observer-empty">{"\u6682\u65e0 attempt \u6587\u4ef6\u3002\u8fd0\u884c\u521a\u542f\u52a8\u65f6\u8fd9\u91cc\u4f1a\u968f\u8f6e\u8be2\u8865\u9f50\u3002"}</div>
+              <div className="emap-observer-empty">{emptyFilesMessage}</div>
             )}
           </div>
         ),
@@ -3006,7 +3111,8 @@ export function App() {
       const generatedObserver = branch.discoveryGeneratedObserver;
       const generatedTask = generatedTasksById.get(generatedObserver.taskId) ?? null;
       if (!generatedTask || generatedTask.generatedSource?.sourceDiscoveryTaskId !== discoveryTask.taskId) continue;
-      const observedTaskRun = (taskRunsByTaskId[generatedTask.taskId] ?? [])
+      const activeDiscoveryRun = selectActiveDiscoveryRootRun(discoveryTask.taskId, taskRunsByTaskId);
+      const observedTaskRun = visibleDiscoveryGeneratedRuns(generatedTask, discoveryTask.taskId, activeDiscoveryRun, taskRunsByTaskId)
         .find((taskRun) => taskRun.runId === generatedObserver.runId) ?? null;
       if (!observedTaskRun) continue;
 
@@ -3042,7 +3148,7 @@ export function App() {
     }
 
     return panels;
-  }, [agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearTaskEditState, clearTaskEditWarning, copyTaskLeaderContext, discoveryDispatchDiagnosticsByTaskId, expandedTaskBranches, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, openTaskEditDraft, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runTask, saveTaskEdit, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskEditDraft]);
+  }, [agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearTaskEditState, clearTaskEditWarning, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, expandedTaskBranches, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, openTaskEditDraft, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runTask, saveTaskEdit, scheduleLiveTaskDiscoveryRefresh, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskEditDraft]);
 
   return (
     <div className="app-shell">
