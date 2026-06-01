@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
 import { mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
-import { getAtlasNodes, getAtlasStage } from "./app-dom-test-utils";
+import { dragRootNodeToDock, firePointer, getAtlasNodes, getAtlasStage } from "./app-dom-test-utils";
 
 describe("App", () => {
   beforeEach(() => {
@@ -99,6 +99,59 @@ describe("App", () => {
       await waitFor(() => {
         expect(screen.getByText("90%")).toBeInTheDocument();
         expect(getAtlasStage(container).style.transform).toBe("translate(10px, 20px) scale(0.9)");
+      });
+    });
+
+    it("persists moved root positions and docked nodes across a browser reload", async () => {
+      const first = render(<App />);
+
+      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+      const agentNode = within(getAtlasNodes(first.container)).getByRole("button", { name: "主 Agent" }) as HTMLElement;
+      const taskNode = await within(getAtlasNodes(first.container)).findByRole("button", { name: "调查 Medtrum 云资产" }) as HTMLElement;
+
+      const agentLeft = Number.parseFloat(agentNode.style.left);
+      const agentTop = Number.parseFloat(agentNode.style.top);
+      firePointer(agentNode, "pointerdown", { pointerId: 101, clientX: agentLeft + 20, clientY: agentTop + 20 });
+      firePointer(agentNode, "pointermove", { pointerId: 101, clientX: agentLeft + 84, clientY: agentTop + 52 });
+      firePointer(agentNode, "pointerup", { pointerId: 101, clientX: agentLeft + 84, clientY: agentTop + 52, buttons: 0 });
+
+      const movedAgentLeft = Number.parseFloat(agentNode.style.left);
+      const movedAgentTop = Number.parseFloat(agentNode.style.top);
+      expect(movedAgentLeft).toBeCloseTo(agentLeft + 64, 4);
+      expect(movedAgentTop).toBeCloseTo(agentTop + 32, 4);
+
+      const taskLeft = Number.parseFloat(taskNode.style.left);
+      const taskTop = Number.parseFloat(taskNode.style.top);
+      firePointer(taskNode, "pointerdown", { pointerId: 102, clientX: taskLeft + 20, clientY: taskTop + 20 });
+      firePointer(taskNode, "pointermove", { pointerId: 102, clientX: taskLeft + 132, clientY: taskTop + 72 });
+      firePointer(taskNode, "pointerup", { pointerId: 102, clientX: taskLeft + 132, clientY: taskTop + 72, buttons: 0 });
+      const movedTaskLeft = Number.parseFloat(taskNode.style.left);
+      const movedTaskTop = Number.parseFloat(taskNode.style.top);
+      expect(movedTaskLeft).toBeCloseTo(taskLeft + 112, 4);
+      expect(movedTaskTop).toBeCloseTo(taskTop + 52, 4);
+
+      dragRootNodeToDock(first.container, taskNode, 103);
+      expect(first.container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeNull();
+      first.unmount();
+
+      const second = render(<App />);
+      await waitFor(() => {
+        const restoredAgent = second.container.querySelector('.emap-agent-node[data-agent-id="main"]') as HTMLElement | null;
+        expect(restoredAgent).toBeTruthy();
+        expect(Number.parseFloat(restoredAgent!.style.left)).toBeCloseTo(movedAgentLeft, 4);
+        expect(Number.parseFloat(restoredAgent!.style.top)).toBeCloseTo(movedAgentTop, 4);
+        expect(second.container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeNull();
+      });
+
+      const dock = second.container.querySelector(".emap-root-dock") as HTMLElement | null;
+      expect(dock).toBeTruthy();
+      fireEvent.click(within(dock!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ }));
+      await waitFor(() => {
+        const restoredTask = second.container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]') as HTMLElement | null;
+        expect(restoredTask).toBeTruthy();
+        expect(Number.parseFloat(restoredTask!.style.left)).toBeCloseTo(movedTaskLeft, 4);
+        expect(Number.parseFloat(restoredTask!.style.top)).toBeCloseTo(movedTaskTop, 4);
       });
     });
   });

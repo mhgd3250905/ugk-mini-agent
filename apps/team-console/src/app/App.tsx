@@ -39,12 +39,20 @@ type StoredCanvasUiState = {
   selectedFixtureId?: string;
   liveRunMode?: LiveRunMode;
   viewport?: AtlasViewport;
+  agentNodes?: StoredAgentNodePosition[];
+  taskNodePositions?: StoredTaskPosition[];
+  sourceNodePositions?: StoredSourcePosition[];
   expandedAgentBranch?: AgentBranchState | null;
   expandedTaskBranches?: TaskBranchState[];
   minimizedAgentNodeIds?: string[];
   minimizedTaskNodeIds?: string[];
   minimizedSourceNodeIds?: string[];
   rootNodeFilter?: "all" | "agent" | "task";
+};
+
+type StoredAgentNodePosition = {
+  agentId: string;
+  position: { x: number; y: number };
 };
 
 type TaskConnectionDraft = {
@@ -621,6 +629,54 @@ function readStoredTaskBranches(value: unknown): TaskBranchState[] {
   return result;
 }
 
+function readStoredAgentNodePositions(value: unknown): StoredAgentNodePosition[] {
+  if (!Array.isArray(value)) return [];
+  const result: StoredAgentNodePosition[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const record = item as { agentId?: unknown; position?: { x?: unknown; y?: unknown } };
+    const agentId = typeof record.agentId === "string" ? record.agentId.trim() : "";
+    const x = Number(record.position?.x);
+    const y = Number(record.position?.y);
+    if (!agentId || seen.has(agentId) || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+    seen.add(agentId);
+    result.push({ agentId, position: { x, y } });
+  }
+  return result;
+}
+
+function readStoredTaskNodePositions(value: unknown): StoredTaskPosition[] {
+  if (!Array.isArray(value)) return [];
+  const result: StoredTaskPosition[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const record = item as { taskId?: unknown; position?: { x?: unknown; y?: unknown } };
+    const taskId = typeof record.taskId === "string" ? record.taskId.trim() : "";
+    const x = Number(record.position?.x);
+    const y = Number(record.position?.y);
+    if (!taskId || seen.has(taskId) || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+    seen.add(taskId);
+    result.push({ taskId, position: { x, y } });
+  }
+  return result;
+}
+
+function readStoredSourceNodePositions(value: unknown): StoredSourcePosition[] {
+  if (!Array.isArray(value)) return [];
+  const result: StoredSourcePosition[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const record = item as { sourceNodeId?: unknown; position?: { x?: unknown; y?: unknown } };
+    const sourceNodeId = typeof record.sourceNodeId === "string" ? record.sourceNodeId.trim() : "";
+    const x = Number(record.position?.x);
+    const y = Number(record.position?.y);
+    if (!sourceNodeId || seen.has(sourceNodeId) || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+    seen.add(sourceNodeId);
+    result.push({ sourceNodeId, position: { x, y } });
+  }
+  return result;
+}
+
 function readStoredCanvasUiState(): StoredCanvasUiState | null {
   try {
     const raw = globalThis.localStorage?.getItem(CANVAS_UI_STATE_STORAGE_KEY);
@@ -638,6 +694,9 @@ function readStoredCanvasUiState(): StoredCanvasUiState | null {
       ...(selectedFixtureId ? { selectedFixtureId } : {}),
       ...(liveRunMode ? { liveRunMode } : {}),
       ...(viewport ? { viewport } : {}),
+      agentNodes: readStoredAgentNodePositions(parsed.agentNodes),
+      taskNodePositions: readStoredTaskNodePositions(parsed.taskNodePositions),
+      sourceNodePositions: readStoredSourceNodePositions(parsed.sourceNodePositions),
       expandedAgentBranch: readStoredAgentBranch(parsed.expandedAgentBranch),
       expandedTaskBranches: readStoredTaskBranches(parsed.expandedTaskBranches),
       minimizedAgentNodeIds: readStringArray(parsed.minimizedAgentNodeIds),
@@ -843,6 +902,83 @@ function makeAgentNode(agentId: string, index: number): AtlasAgentNode {
     agentId,
     position: { x: 360 + index * 320, y: 0 },
   };
+}
+
+function sameAgentNodes(left: AtlasAgentNode[], right: AtlasAgentNode[]): boolean {
+  return left.length === right.length
+    && left.every((node, index) => {
+      const other = right[index];
+      return other
+        && node.nodeId === other.nodeId
+        && node.agentId === other.agentId
+        && node.position.x === other.position.x
+        && node.position.y === other.position.y;
+    });
+}
+
+function sameTaskNodes(left: AtlasTaskNode[], right: AtlasTaskNode[]): boolean {
+  return left.length === right.length
+    && left.every((node, index) => {
+      const other = right[index];
+      return other
+        && node.nodeId === other.nodeId
+        && node.taskId === other.taskId
+        && node.position.x === other.position.x
+        && node.position.y === other.position.y;
+    });
+}
+
+function sameSourceNodes(left: AtlasSourceNode[], right: AtlasSourceNode[]): boolean {
+  return left.length === right.length
+    && left.every((node, index) => {
+      const other = right[index];
+      return other
+        && node.nodeId === other.nodeId
+        && node.sourceNodeId === other.sourceNodeId
+        && node.position.x === other.position.x
+        && node.position.y === other.position.y;
+    });
+}
+
+function mergeStoredAgentNodes(agentNodes: AtlasAgentNode[], storedNodes: StoredAgentNodePosition[] | undefined, agentsById: Map<string, unknown>): AtlasAgentNode[] {
+  if (!storedNodes?.length) return agentNodes;
+  const byAgentId = new Map(agentNodes.map((node) => [node.agentId, node]));
+  const nextNodes = [...agentNodes];
+  for (const stored of storedNodes) {
+    if (!agentsById.has(stored.agentId)) continue;
+    const existingIndex = nextNodes.findIndex((node) => node.agentId === stored.agentId);
+    if (existingIndex >= 0) {
+      nextNodes[existingIndex] = { ...nextNodes[existingIndex]!, position: stored.position };
+      continue;
+    }
+    if (!byAgentId.has(stored.agentId)) {
+      nextNodes.push({
+        nodeId: `agent-${stored.agentId}`,
+        kind: "agent",
+        agentId: stored.agentId,
+        position: stored.position,
+      });
+    }
+  }
+  return nextNodes;
+}
+
+function mergeStoredTaskNodePositions(taskNodes: AtlasTaskNode[], storedPositions: StoredTaskPosition[] | undefined): AtlasTaskNode[] {
+  if (!storedPositions?.length) return taskNodes;
+  const positions = new Map(storedPositions.map((item) => [item.taskId, item.position]));
+  return taskNodes.map((node) => {
+    const position = positions.get(node.taskId);
+    return position ? { ...node, position } : node;
+  });
+}
+
+function mergeStoredSourceNodePositions(sourceNodes: AtlasSourceNode[], storedPositions: StoredSourcePosition[] | undefined): AtlasSourceNode[] {
+  if (!storedPositions?.length) return sourceNodes;
+  const positions = new Map(storedPositions.map((item) => [item.sourceNodeId, item.position]));
+  return sourceNodes.map((node) => {
+    const position = positions.get(node.sourceNodeId);
+    return position ? { ...node, position } : node;
+  });
 }
 
 export function App() {
@@ -1082,20 +1218,31 @@ export function App() {
   }, [canvasUiContextKey]);
 
   useEffect(() => {
+    if (dataSource === "live" && !liveAgentNodesHydrated) return;
     setMinimizedAgentNodeIds((current) => {
       const nodeIds = new Set(agentNodes.filter((node) => agentsById.has(node.agentId)).map((node) => node.nodeId));
       const next = current.filter((nodeId) => nodeIds.has(nodeId));
       return next.length === current.length ? current : next;
     });
-  }, [agentNodes, agentsById]);
+  }, [agentNodes, agentsById, dataSource, liveAgentNodesHydrated]);
 
   useEffect(() => {
+    if (dataSource === "live" && !liveTaskNodesHydrated) return;
     setMinimizedTaskNodeIds((current) => {
       const nodeIds = new Set(taskNodes.map((node) => node.nodeId));
       const next = current.filter((nodeId) => nodeIds.has(nodeId));
       return next.length === current.length ? current : next;
     });
-  }, [taskNodes]);
+  }, [dataSource, liveTaskNodesHydrated, taskNodes]);
+
+  useEffect(() => {
+    if (dataSource === "live" && !liveSourceNodesHydrated) return;
+    setMinimizedSourceNodeIds((current) => {
+      const nodeIds = new Set(sourceAtlasNodes.map((node) => node.nodeId));
+      const next = current.filter((nodeId) => nodeIds.has(nodeId));
+      return next.length === current.length ? current : next;
+    });
+  }, [dataSource, liveSourceNodesHydrated, sourceAtlasNodes]);
 
   useEffect(() => {
     if (canvasUiStateHydrated) return;
@@ -1111,12 +1258,25 @@ export function App() {
       return;
     }
 
-    const validAgentNodes = agentNodes.filter((node) => agentsById.has(node.agentId));
+    const nextAgentNodes = mergeStoredAgentNodes(agentNodes, stored.agentNodes, agentsById);
+    const nextTaskNodes = mergeStoredTaskNodePositions(taskNodes, stored.taskNodePositions);
+    const nextSourceNodes = mergeStoredSourceNodePositions(sourceAtlasNodes, stored.sourceNodePositions);
+    if (!sameAgentNodes(agentNodes, nextAgentNodes)) {
+      setAgentNodes(nextAgentNodes);
+    }
+    if (!sameTaskNodes(taskNodes, nextTaskNodes)) {
+      setTaskNodes(nextTaskNodes);
+    }
+    if (!sameSourceNodes(sourceAtlasNodes, nextSourceNodes)) {
+      setSourceAtlasNodes(nextSourceNodes);
+    }
+
+    const validAgentNodes = nextAgentNodes.filter((node) => agentsById.has(node.agentId));
     const agentNodeIds = new Set(validAgentNodes.map((node) => node.nodeId));
     const agentIds = new Set(validAgentNodes.map((node) => node.agentId));
-    const taskNodeIds = new Set(taskNodes.map((node) => node.nodeId));
-    const taskIds = new Set(taskNodes.map((node) => node.taskId));
-    const sourceNodeIds = new Set(sourceAtlasNodes.map((node) => node.nodeId));
+    const taskNodeIds = new Set(nextTaskNodes.map((node) => node.nodeId));
+    const taskIds = new Set(nextTaskNodes.map((node) => node.taskId));
+    const sourceNodeIds = new Set(nextSourceNodes.map((node) => node.nodeId));
     const nextAgentBranch = stored.expandedAgentBranch
       && agentNodeIds.has(stored.expandedAgentBranch.nodeId)
       && agentIds.has(stored.expandedAgentBranch.agentId)
@@ -1160,6 +1320,18 @@ export function App() {
       dataSource,
       ...(dataSource === "mock" ? { selectedFixtureId } : { liveRunMode }),
       viewport: canvasViewport,
+      agentNodes: agentNodes.map((node) => ({
+        agentId: node.agentId,
+        position: { x: node.position.x, y: node.position.y },
+      })),
+      taskNodePositions: taskNodes.map((node) => ({
+        taskId: node.taskId,
+        position: { x: node.position.x, y: node.position.y },
+      })),
+      sourceNodePositions: sourceAtlasNodes.map((node) => ({
+        sourceNodeId: node.sourceNodeId,
+        position: { x: node.position.x, y: node.position.y },
+      })),
       expandedAgentBranch,
       expandedTaskBranches,
       minimizedAgentNodeIds,
@@ -1172,6 +1344,7 @@ export function App() {
     canvasUiStateHydrated,
     canvasViewport,
     dataSource,
+    agentNodes,
     expandedAgentBranch,
     expandedTaskBranches,
     liveRunMode,
@@ -1180,6 +1353,8 @@ export function App() {
     minimizedTaskNodeIds,
     rootNodeFilter,
     selectedFixtureId,
+    sourceAtlasNodes,
+    taskNodes,
   ]);
 
   useEffect(() => {
