@@ -10,6 +10,7 @@ import {
 	listStoredAgentProfileSkills,
 	normalizeOptionalModelSelection,
 	removeStoredAgentProfileSkill,
+	refreshStoredAgentProfileSkillFromMain,
 	updateStoredAgentProfile,
 	updateStoredAgentProfileSkillEnabled,
 } from "../agent/agent-profile-catalog.js";
@@ -439,6 +440,41 @@ export function registerAgentProfileRoutes(app: FastifyInstance, deps: AgentProf
 				return { removed: true, ...removed };
 			} catch (error) {
 				return sendBadRequest(reply, error instanceof Error ? error.message : "Unable to remove agent skill.");
+			}
+		},
+	);
+
+	app.post(
+		"/v1/agents/:agentId/skills/:skillName/refresh",
+		async (
+			request: FastifyRequest<{ Params: { agentId?: string; skillName?: string } }>,
+			reply,
+		): Promise<
+			| {
+					agentId: string;
+					skillName: string;
+					targetRoot: string;
+					targetDir: string;
+			  }
+			| FastifyReply
+		> => {
+			const { agentId, skillName } = request.params ?? {};
+			if (!agentId || !deps.projectRoot || !deps.agentServiceRegistry) {
+				return sendUnknownAgent(reply, agentId);
+			}
+			const teamLockResponse = await sendTeamProfileLockIfNeeded(agentId, reply);
+			if (teamLockResponse) {
+				return teamLockResponse;
+			}
+			if (!resolveScopedAgentServiceOrSend(deps.agentServiceRegistry, reply, agentId)) {
+				return reply;
+			}
+			try {
+				const refreshed = await refreshStoredAgentProfileSkillFromMain(deps.projectRoot, agentId, skillName);
+				deps.agentTemplateRegistry?.invalidate(agentId);
+				return refreshed;
+			} catch (error) {
+				return sendBadRequest(reply, error instanceof Error ? error.message : "Unable to refresh agent skill.");
 			}
 		},
 	);

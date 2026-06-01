@@ -531,6 +531,10 @@ function getAgentsPageCss(): string {
 		}
 
 		.ag-skill-item--disabled { opacity: 0.6; }
+			.ag-skill-actions {
+				display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+				flex-wrap: wrap;
+			}
 			.ag-skill-toggle {
 				min-width: 40px; height: 28px; padding: 0 8px;
 				border: 1px solid var(--border); border-radius: 6px;
@@ -830,6 +834,7 @@ function getAgentsPageJs(): string {
 			supportCatalogsError: "",
 			archivePendingId: "",
 			removingSkillName: "",
+			refreshingSkillName: "",
 			refreshing: false,
 			skillsExpanded: false,
 			skillsLoadedByAgentId: {},
@@ -880,6 +885,10 @@ function getAgentsPageJs(): string {
 
 		async function apiRemoveSkill(agentId, skillName) {
 			await fetchJson("/v1/agents/" + agentId + "/skills/" + encodeURIComponent(skillName), { method: "DELETE" });
+		}
+
+		async function apiRefreshSkill(agentId, skillName) {
+			await fetchJson("/v1/agents/" + agentId + "/skills/" + encodeURIComponent(skillName) + "/refresh", { method: "POST" });
 		}
 
 		async function apiToggleSkill(agentId, skillName, enabled) {
@@ -1383,13 +1392,24 @@ function getAgentsPageJs(): string {
 				item.appendChild(info);
 
 				if (agent && agent.agentId !== "main" && skill.skillName) {
+					var actions = document.createElement("div");
+					actions.className = "ag-skill-actions";
+					var refreshBtn = document.createElement("button");
+					refreshBtn.type = "button";
+					refreshBtn.className = "ag-btn ag-btn--outline";
+					refreshBtn.textContent = state.refreshingSkillName === skill.skillName ? "更新中..." : "更新";
+					refreshBtn.disabled = state.refreshingSkillName === skill.skillName || state.removingSkillName === skill.skillName;
+					refreshBtn.addEventListener("click", function() { handleRefreshSkillFromMain(skill.skillName); });
+					actions.appendChild(refreshBtn);
+
 					var delBtn = document.createElement("button");
 					delBtn.type = "button";
 					delBtn.className = "ag-btn ag-btn--danger";
 					delBtn.textContent = state.removingSkillName === skill.skillName ? "删除中..." : "删除";
-					delBtn.disabled = state.removingSkillName === skill.skillName;
+					delBtn.disabled = state.removingSkillName === skill.skillName || state.refreshingSkillName === skill.skillName;
 					delBtn.addEventListener("click", function() { handleRemoveSkill(skill.skillName); });
-					item.appendChild(delBtn);
+					actions.appendChild(delBtn);
+					item.appendChild(actions);
 				}
 
 				container.appendChild(item);
@@ -1498,6 +1518,28 @@ function getAgentsPageJs(): string {
 			} catch (e) { showToast(e.message || "移除失败", "danger"); }
 			finally {
 				state.removingSkillName = "";
+				if (state.selectedId === agentId) renderSkillsList(agentId);
+			}
+		}
+
+		async function handleRefreshSkillFromMain(skillName) {
+			if (!state.selectedId || state.refreshingSkillName) return;
+			var agentId = state.selectedId;
+			state.refreshingSkillName = skillName;
+			renderSkillsList(agentId);
+			try {
+				await apiRefreshSkill(agentId, skillName);
+				await apiFetchAgentSkills(agentId);
+				if (state.selectedId === agentId) {
+					renderSkillsList(agentId);
+					renderStats();
+					var agent = state.agents.find(function(a) { return a.agentId === agentId; });
+					if (agent) renderDetailMiniStats(agent, getStatusBadge(agent));
+				}
+				showToast("已从主 Agent 更新 " + skillName, "ok");
+			} catch (e) { showToast(e.message || "更新失败", "danger"); }
+			finally {
+				state.refreshingSkillName = "";
 				if (state.selectedId === agentId) renderSkillsList(agentId);
 			}
 		}

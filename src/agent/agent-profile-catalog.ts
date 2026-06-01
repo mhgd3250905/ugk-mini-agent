@@ -615,6 +615,60 @@ export async function installStoredAgentProfileSkill(
 	return { agentId, skillName, targetRoot, targetDir };
 }
 
+async function findInstalledAgentSkillDir(profile: AgentProfile, skillName: string): Promise<{ targetRoot: string; targetDir: string } | undefined> {
+	for (const targetRoot of profile.allowedSkillPaths) {
+		const directTargetDir = join(targetRoot, skillName);
+		if (!isPathWithin(targetRoot, directTargetDir)) {
+			throw new Error(`invalid skill target: ${skillName}`);
+		}
+		if (existsSync(directTargetDir)) {
+			return { targetRoot, targetDir: directTargetDir };
+		}
+		const skillFiles = await collectSkillMetadataFiles(targetRoot);
+		for (const skillFile of skillFiles) {
+			if (!isPathWithin(targetRoot, skillFile)) {
+				continue;
+			}
+			const content = await readFile(skillFile, "utf8");
+			const metadataName = parseSkillMetadataName(content);
+			if (metadataName === skillName) {
+				return { targetRoot, targetDir: dirname(skillFile) };
+			}
+		}
+	}
+	return undefined;
+}
+
+export async function refreshStoredAgentProfileSkillFromMain(
+	projectRoot: string,
+	agentId: string,
+	inputSkillName: unknown,
+): Promise<AgentProfileSkillChangeResult> {
+	const skillName = normalizeSkillName(inputSkillName);
+	const profile = await resolveMutableAgentProfile(projectRoot, agentId);
+	const sourceDir = await findMainAgentSkillDir(projectRoot, skillName);
+	if (!sourceDir) {
+		throw new Error(`main agent does not have skill ${skillName}`);
+	}
+	const installed = await findInstalledAgentSkillDir(profile, skillName);
+	const targetRoot = installed?.targetRoot ?? profile.allowedSkillPaths[1] ?? profile.allowedSkillPaths[0];
+	if (!targetRoot) {
+		throw new Error(`agent ${agentId} does not have a skill target root`);
+	}
+	const targetDir = installed?.targetDir ?? join(targetRoot, skillName);
+	if (!isPathWithin(targetRoot, targetDir)) {
+		throw new Error(`invalid skill target: ${skillName}`);
+	}
+	await mkdir(targetRoot, { recursive: true });
+	await rm(targetDir, { recursive: true, force: true });
+	await cp(sourceDir, targetDir, {
+		recursive: true,
+		force: true,
+		errorOnExist: false,
+	});
+	return { agentId, skillName, targetRoot, targetDir };
+}
+
 export async function removeStoredAgentProfileSkill(
 	projectRoot: string,
 	agentId: string,

@@ -442,6 +442,49 @@ test("POST and DELETE /v1/agents/:agentId/skills manage custom agent skill copie
 	assert.equal(removed.json().removed, true);
 });
 
+test("POST /v1/agents/:agentId/skills/:skillName/refresh overwrites a custom agent skill from main", async () => {
+	const projectRoot = await mkdtemp(join(tmpdir(), "ugk-pi-agent-route-"));
+	const mainSkillDir = join(projectRoot, ".pi", "skills", "web-access");
+	await mkdir(mainSkillDir, { recursive: true });
+	await writeFile(join(mainSkillDir, "SKILL.md"), "# web-access v1\n", "utf8");
+	const registry = createTestRegistryForRoot(projectRoot);
+	const app = await buildServer({
+		agentService: createScopedAgentService("main"),
+		agentServiceRegistry: registry,
+		agentProfileProjectRoot: projectRoot,
+	});
+	await app.inject({
+		method: "POST",
+		url: "/v1/agents",
+		payload: {
+			agentId: "research",
+			name: "研究 Agent",
+			description: "用于资料研究。",
+		},
+	});
+	await app.inject({
+		method: "POST",
+		url: "/v1/agents/research/skills",
+		payload: {
+			skillName: "web-access",
+		},
+	});
+	const copiedSkillDir = join(projectRoot, ".data", "agents", "research", "user-skills", "web-access");
+	await writeFile(join(mainSkillDir, "SKILL.md"), "# web-access v2\n", "utf8");
+	await writeFile(join(copiedSkillDir, "stale.txt"), "old", "utf8");
+
+	const refreshed = await app.inject({
+		method: "POST",
+		url: "/v1/agents/research/skills/web-access/refresh",
+	});
+
+	assert.equal(refreshed.statusCode, 200);
+	assert.equal(refreshed.json().agentId, "research");
+	assert.equal(refreshed.json().skillName, "web-access");
+	assert.equal(await readFile(join(copiedSkillDir, "SKILL.md"), "utf8"), "# web-access v2\n");
+	await assert.rejects(() => readFile(join(copiedSkillDir, "stale.txt"), "utf8"), /ENOENT/);
+});
+
 test("agent skill management rejects main and missing main skills", async () => {
 	const projectRoot = await mkdtemp(join(tmpdir(), "ugk-pi-agent-route-"));
 	const registry = createTestRegistryForRoot(projectRoot);
