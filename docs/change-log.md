@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-01 — Team Console light theme surface completion
+
+- **主题**: 补齐 Team Console 浅色主题覆盖，避免子画布和 Agent workspace 局部面板继续使用暗色硬编码。
+- **影响范围**: `5174` Execution Atlas 的 Discovery 子画布、generated child card、dispatch diagnostics、Agent workspace 面板、上下文用量、对话气泡、composer、资产行和归档确认 modal；暗色主题通过 `[data-theme="dark"]` override 保留原暗色层级。
+- **验证**: `docker exec -w /app/apps/team-console ugk-pi-ugk-pi-team-console-1 npm run test -- src/tests/app-static-contracts.test.ts`、`docker exec -w /app/apps/team-console ugk-pi-ugk-pi-team-console-1 npm run build`、`git diff --check`；浏览器 computed style 验证浅色/暗色切换。
+- **对应入口**: `apps/team-console/src/app/app.css`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app-static-contracts.test.ts`、Team Console `http://127.0.0.1:5174/`。
+
 ## 2026-06-01 — Discovery live run validation handoff
 
 - **主题**: 记录 `task_c70580219a00` 最新真实 Discovery run 的 root gating、generated auto-run pool 和 aggregation 验证结论。

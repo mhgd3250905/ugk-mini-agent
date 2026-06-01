@@ -117,6 +117,29 @@ describe("Team Console static contracts", () => {
     expect(hoverRule).toContain("background: rgba(22, 124, 128, 0.08)");
   });
 
+  it("keeps Agent workspace panels on the light theme surface", () => {
+    const appCss = readFileSync("src/app/app.css", "utf8");
+    const topbarRule = appCss.match(/\.agent-focus-topbar-action\s*{[^}]*}/)?.[0] ?? "";
+    const panelRule = appCss.match(/\.agent-focus-panel\s*{[^}]*}/)?.[0] ?? "";
+    const messageBodyRule = appCss.match(/\.agent-focus-message-body\s*{[^}]*}/)?.[0] ?? "";
+    const composerRule = appCss.match(/\.agent-focus-composer\s*{[^}]*}/)?.[0] ?? "";
+    const modalRule = appCss.match(/\.root-archive-modal\s*{[^}]*}/)?.[0] ?? "";
+
+    expect(topbarRule).toContain("background: rgba(255, 255, 255, 0.88)");
+    expect(topbarRule).not.toContain("rgba(16, 20, 31");
+    expect(panelRule).toContain("rgba(255, 255, 255, 0.98)");
+    expect(panelRule).not.toContain("rgba(19, 24, 38");
+    expect(messageBodyRule).toContain("rgba(255, 255, 255, 0.96)");
+    expect(messageBodyRule).not.toContain("rgba(18, 22, 35");
+    expect(composerRule).toContain("rgba(255, 255, 255, 0.96)");
+    expect(composerRule).not.toContain("rgba(14, 18, 31");
+    expect(modalRule).toContain("background: rgba(255, 255, 255, 0.98)");
+    expect(appCss).toContain('[data-theme="dark"] .agent-focus-panel');
+    expect(appCss).toContain('[data-theme="dark"] .agent-focus-message-body');
+    expect(appCss).toContain('[data-theme="dark"] .agent-focus-composer');
+    expect(appCss).toContain('[data-theme="dark"] .root-archive-modal');
+  });
+
   it("exposes a persisted light/dark theme toggle in the app shell", () => {
     const appSource = readFileSync("src/app/App.tsx", "utf8");
     const appCss = readFileSync("src/app/app.css", "utf8");
