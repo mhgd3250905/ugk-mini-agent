@@ -460,6 +460,9 @@ test("GET / renders the public Agent Board first homepage", async () => {
 	assert.match(response.body, /\/site-assets\/capability-context-materials\.png/);
 	assert.match(response.body, /\/site-assets\/capability-role-execute\.png/);
 	assert.match(response.body, /\/site-assets\/capability-inspect-evidence\.png/);
+	assert.match(response.body, /team-canvas-product-hero\.png[^>]+fetchpriority="high"/);
+	assert.match(response.body, /team-console-hero\.png[^>]+loading="lazy"/);
+	assert.match(response.body, /agent-role-checker\.png[^>]+loading="lazy"/);
 	await app.close();
 });
 

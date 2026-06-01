@@ -947,7 +947,7 @@ export function renderPublicSitePage(): string {
 				</div>
 
 				<div class="hero-art-wrap" aria-label="Agent 画板产品视觉">
-					<img class="hero-art" src="/site-assets/team-canvas-product-hero.png" alt="抽象的 UGK CLAW Agent 画板产品视觉，任务节点、Agent 节点和证据节点连接在同一个工作面上" />
+					<img class="hero-art" src="/site-assets/team-canvas-product-hero.png" alt="抽象的 UGK CLAW Agent 画板产品视觉，任务节点、Agent 节点和证据节点连接在同一个工作面上" fetchpriority="high" decoding="async" />
 					<div class="hero-art-note">
 						<strong>概念化产品视觉。</strong>
 						它表达 Agent 画板的工作方式；真实产品界面在下一屏。
@@ -983,7 +983,7 @@ export function renderPublicSitePage(): string {
 				</div>
 
 				<figure class="product-shot">
-					<img src="/site-assets/team-console-hero.png" alt="UGK CLAW Agent 画板真实界面截图" />
+					<img src="/site-assets/team-console-hero.png" alt="UGK CLAW Agent 画板真实界面截图" loading="lazy" decoding="async" />
 					<figcaption class="product-caption">
 						<span><strong>Agent 画板</strong> 是当前对外介绍优先展示的真实产品入口，不是概念图。</span>
 						<code>actual product</code>
@@ -1041,7 +1041,7 @@ export function renderPublicSitePage(): string {
 				<div class="capability-grid use-case-grid">
 					<article class="capability">
 						<div class="capability-visual">
-							<img src="/site-assets/capability-create-task.png" alt="目标被整理成清晰任务卡片的 Agent 画板视觉" />
+							<img src="/site-assets/capability-create-task.png" alt="目标被整理成清晰任务卡片的 Agent 画板视觉" loading="lazy" decoding="async" />
 						</div>
 						<div class="capability-copy">
 							<span>01 / isolate</span>
@@ -1051,7 +1051,7 @@ export function renderPublicSitePage(): string {
 					</article>
 					<article class="capability">
 						<div class="capability-visual">
-							<img src="/site-assets/capability-context-materials.png" alt="文件页面和浏览器上下文汇入任务资料区的视觉" />
+							<img src="/site-assets/capability-context-materials.png" alt="文件页面和浏览器上下文汇入任务资料区的视觉" loading="lazy" decoding="async" />
 						</div>
 						<div class="capability-copy">
 							<span>02 / context</span>
@@ -1061,7 +1061,7 @@ export function renderPublicSitePage(): string {
 					</article>
 					<article class="capability">
 						<div class="capability-visual">
-							<img src="/site-assets/capability-role-execute.png" alt="Leader Worker Checker 角色节点协同执行任务的视觉" />
+							<img src="/site-assets/capability-role-execute.png" alt="Leader Worker Checker 角色节点协同执行任务的视觉" loading="lazy" decoding="async" />
 						</div>
 						<div class="capability-copy">
 							<span>03 / execute</span>
@@ -1071,7 +1071,7 @@ export function renderPublicSitePage(): string {
 					</article>
 					<article class="capability">
 						<div class="capability-visual">
-							<img src="/site-assets/capability-inspect-evidence.png" alt="输出文件和运行证据通过扫描检查的视觉" />
+							<img src="/site-assets/capability-inspect-evidence.png" alt="输出文件和运行证据通过扫描检查的视觉" loading="lazy" decoding="async" />
 						</div>
 						<div class="capability-copy">
 							<span>04 / accept</span>
@@ -1092,7 +1092,7 @@ export function renderPublicSitePage(): string {
 				<div class="experience-grid">
 					<article class="experience role-leader">
 						<div class="role-visual">
-							<img src="/site-assets/agent-role-leader.png" alt="组长 Leader 角色视觉，中心调度台把任务和成员连接起来" />
+							<img src="/site-assets/agent-role-leader.png" alt="组长 Leader 角色视觉，中心调度台把任务和成员连接起来" loading="lazy" decoding="async" />
 						</div>
 						<div class="role-copy">
 							<span>Leader</span>
@@ -1102,7 +1102,7 @@ export function renderPublicSitePage(): string {
 					</article>
 					<article class="experience role-worker">
 						<div class="role-visual">
-							<img src="/site-assets/agent-role-worker.png" alt="执行员 Worker 角色视觉，机械臂正在处理任务和资料产物" />
+							<img src="/site-assets/agent-role-worker.png" alt="执行员 Worker 角色视觉，机械臂正在处理任务和资料产物" loading="lazy" decoding="async" />
 						</div>
 						<div class="role-copy">
 							<span>Worker</span>
@@ -1112,7 +1112,7 @@ export function renderPublicSitePage(): string {
 					</article>
 					<article class="experience role-checker">
 						<div class="role-visual">
-							<img src="/site-assets/agent-role-checker.png" alt="审核员 Checker 角色视觉，放大镜正在检查错误和运行证据" />
+							<img src="/site-assets/agent-role-checker.png" alt="审核员 Checker 角色视觉，放大镜正在检查错误和运行证据" loading="lazy" decoding="async" />
 						</div>
 						<div class="role-copy">
 							<span>Checker</span>
