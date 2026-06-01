@@ -6,7 +6,7 @@ import { useTeamConsoleLiveData, type DataSource, type LiveRunMode, type TeamCon
 import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchGeneratedObserverState, type TaskBranchState } from "./use-task-branch-stack";
 import { hasDirtyTaskEditConflict, useTaskEditState } from "./use-task-edit-state";
 import { useTaskLeaderCopy } from "./use-task-leader-copy";
-import { ExecutionMap, type AtlasAgentNode, type AtlasSourceNode, type AtlasTaskNode } from "../graph/ExecutionMap";
+import { ExecutionMap, type AtlasAgentNode, type AtlasBranchLayoutState, type AtlasSourceNode, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { normalizeAtlasViewport, type AtlasViewport } from "../graph/AtlasCanvasShell";
 import { RUN_STATUS_LABELS, isActiveRun } from "../shared/status";
 import { renderTeamMarkdown } from "../shared/markdown";
@@ -44,6 +44,7 @@ type StoredCanvasUiState = {
   sourceNodePositions?: StoredSourcePosition[];
   expandedAgentBranch?: AgentBranchState | null;
   expandedTaskBranches?: TaskBranchState[];
+  branchLayout?: AtlasBranchLayoutState;
   minimizedAgentNodeIds?: string[];
   minimizedTaskNodeIds?: string[];
   minimizedSourceNodeIds?: string[];
@@ -677,6 +678,61 @@ function readStoredSourceNodePositions(value: unknown): StoredSourcePosition[] {
   return result;
 }
 
+function readStoredPositionMap(value: unknown): Record<string, { x: number; y: number }> {
+  const record = readRecord(value);
+  if (!record) return {};
+  const result: Record<string, { x: number; y: number }> = {};
+  for (const [key, raw] of Object.entries(record)) {
+    const item = readRecord(raw);
+    const x = Number(item?.x);
+    const y = Number(item?.y);
+    if (!key || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+    result[key] = { x, y };
+  }
+  return result;
+}
+
+function readStoredSizeMap(value: unknown): Record<string, { width: number; height: number }> {
+  const record = readRecord(value);
+  if (!record) return {};
+  const result: Record<string, { width: number; height: number }> = {};
+  for (const [key, raw] of Object.entries(record)) {
+    const item = readRecord(raw);
+    const width = Number(item?.width);
+    const height = Number(item?.height);
+    if (!key || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) continue;
+    result[key] = { width, height };
+  }
+  return result;
+}
+
+function readStoredRectMap(value: unknown): NonNullable<AtlasBranchLayoutState["agentBranchRects"]> {
+  const record = readRecord(value);
+  if (!record) return {};
+  const result: NonNullable<AtlasBranchLayoutState["agentBranchRects"]> = {};
+  for (const [key, raw] of Object.entries(record)) {
+    const item = readRecord(raw);
+    const x = Number(item?.x);
+    const y = Number(item?.y);
+    const width = Number(item?.width);
+    const height = Number(item?.height);
+    if (!key || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) continue;
+    result[key] = { x, y, width, height };
+  }
+  return result;
+}
+
+function readStoredBranchLayout(value: unknown): AtlasBranchLayoutState {
+  const record = readRecord(value);
+  if (!record) return {};
+  return {
+    agentBranchRects: readStoredRectMap(record.agentBranchRects),
+    taskBranchPositions: readStoredPositionMap(record.taskBranchPositions),
+    taskChildPanelPositions: readStoredPositionMap(record.taskChildPanelPositions),
+    taskChildPanelSizes: readStoredSizeMap(record.taskChildPanelSizes),
+  };
+}
+
 function readStoredCanvasUiState(): StoredCanvasUiState | null {
   try {
     const raw = globalThis.localStorage?.getItem(CANVAS_UI_STATE_STORAGE_KEY);
@@ -699,6 +755,7 @@ function readStoredCanvasUiState(): StoredCanvasUiState | null {
       sourceNodePositions: readStoredSourceNodePositions(parsed.sourceNodePositions),
       expandedAgentBranch: readStoredAgentBranch(parsed.expandedAgentBranch),
       expandedTaskBranches: readStoredTaskBranches(parsed.expandedTaskBranches),
+      branchLayout: readStoredBranchLayout(parsed.branchLayout),
       minimizedAgentNodeIds: readStringArray(parsed.minimizedAgentNodeIds),
       minimizedTaskNodeIds: readStringArray(parsed.minimizedTaskNodeIds),
       minimizedSourceNodeIds: readStringArray(parsed.minimizedSourceNodeIds),
@@ -1002,6 +1059,12 @@ export function App() {
   const sourceFileInputRef = useRef<HTMLInputElement | null>(null);
   const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
   const [expandedAgentBranch, setExpandedAgentBranch] = useState<AgentBranchState | null>(null);
+  const [canvasBranchLayout, setCanvasBranchLayout] = useState<AtlasBranchLayoutState>({});
+  const updateCanvasBranchLayout = useCallback((layout: AtlasBranchLayoutState) => {
+    setCanvasBranchLayout((current) => (
+      JSON.stringify(current) === JSON.stringify(layout) ? current : layout
+    ));
+  }, []);
   const [minimizedAgentNodeIds, setMinimizedAgentNodeIds] = useState<string[]>([]);
   const [minimizedTaskNodeIds, setMinimizedTaskNodeIds] = useState<string[]>([]);
   const [minimizedSourceNodeIds, setMinimizedSourceNodeIds] = useState<string[]>([]);
@@ -1097,6 +1160,7 @@ export function App() {
 
     if (reason === "mock-workspace" || reason === "live-run-mode") {
       setCanvasViewport({ x: 0, y: 0, scale: 1 });
+      setCanvasBranchLayout({});
     }
   }, []);
 
@@ -1253,6 +1317,7 @@ export function App() {
 
     const stored = readStoredCanvasUiState();
     if (!stored || !canvasUiContextMatches(stored, dataSource, selectedFixtureId, liveRunMode)) {
+      setCanvasBranchLayout({});
       hydratedCanvasUiContextKeyRef.current = canvasUiContextKey;
       setCanvasUiStateHydrated(true);
       return;
@@ -1291,6 +1356,7 @@ export function App() {
     }
     setExpandedAgentBranch(nextAgentBranch);
     setExpandedTaskBranches(nextTaskBranches);
+    setCanvasBranchLayout(stored.branchLayout ?? {});
     setMinimizedAgentNodeIds((stored.minimizedAgentNodeIds ?? []).filter((nodeId) => agentNodeIds.has(nodeId)));
     setMinimizedTaskNodeIds((stored.minimizedTaskNodeIds ?? []).filter((nodeId) => taskNodeIds.has(nodeId)));
     setMinimizedSourceNodeIds((stored.minimizedSourceNodeIds ?? []).filter((nodeId) => sourceNodeIds.has(nodeId)));
@@ -1334,6 +1400,7 @@ export function App() {
       })),
       expandedAgentBranch,
       expandedTaskBranches,
+      branchLayout: canvasBranchLayout,
       minimizedAgentNodeIds,
       minimizedTaskNodeIds,
       minimizedSourceNodeIds,
@@ -1342,6 +1409,7 @@ export function App() {
   }, [
     canvasUiContextKey,
     canvasUiStateHydrated,
+    canvasBranchLayout,
     canvasViewport,
     dataSource,
     agentNodes,
@@ -3503,6 +3571,8 @@ export function App() {
                 taskChildBranchPanels={taskChildBranchPanels}
                 viewport={canvasViewport}
                 onViewportChange={setCanvasViewport}
+                branchLayout={canvasBranchLayout}
+                onBranchLayoutChange={updateCanvasBranchLayout}
                 toolbarStart={agentToolbar}
                 rootNodeFilter={rootNodeFilter}
                 onRootTrashDrop={(entries) => {

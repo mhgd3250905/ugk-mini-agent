@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-01 — Team Console branch panel layout persistence
+
+- **主题**: 补齐 Team Console 画布展开面板的位置持久化，修复刷新后 Task 操作/详情面板回到自动布局的问题。
+- **影响范围**: Execution Atlas 中 Agent 对话面板、Task 操作面板、Task 子面板的位置和尺寸恢复。
+- **验证**: `npm --prefix apps\team-console run test -- --run src\tests\app-canvas-state.test.tsx src\tests\app-branch-windowing.test.tsx src\tests\app-task-branches.test.tsx src\tests\app-task-leader.test.tsx`、`npx tsc --noEmit`、`git diff --check`。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/tests/app-canvas-state.test.tsx`。
+
 ## 2026-06-01 — Team Console canvas dock and Agent skill fixes
 
 - **主题**: 修复子 Agent 技能更新、Team Console 画布收纳、布局恢复、dock 翻页和节点 ID 拖拽冲突。

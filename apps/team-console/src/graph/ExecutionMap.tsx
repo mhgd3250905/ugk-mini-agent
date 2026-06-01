@@ -106,6 +106,8 @@ interface ExecutionMapProps {
   }>;
   viewport?: AtlasViewport;
   onViewportChange?: (viewport: AtlasViewport) => void;
+  branchLayout?: AtlasBranchLayoutState;
+  onBranchLayoutChange?: (layout: AtlasBranchLayoutState) => void;
   toolbarStart?: ReactNode;
   interactionMode?: AtlasInteractionMode;
   onRootTrashDrop?: (entries: AtlasNodeDragEntry[]) => void;
@@ -155,6 +157,13 @@ export type AtlasSourceNode = {
   kind: "canvas-source";
   sourceNodeId: string;
   position: { x: number; y: number };
+};
+
+export type AtlasBranchLayoutState = {
+  agentBranchRects?: Record<string, AtlasRect>;
+  taskBranchPositions?: Record<string, { x: number; y: number }>;
+  taskChildPanelPositions?: Record<string, { x: number; y: number }>;
+  taskChildPanelSizes?: Record<string, { width: number; height: number }>;
 };
 
 const EVIDENCE_W = 240;
@@ -783,6 +792,8 @@ export function ExecutionMap({
   taskChildBranchPanels,
   viewport,
   onViewportChange,
+  branchLayout,
+  onBranchLayoutChange,
   toolbarStart,
   interactionMode = "free",
   onRootTrashDrop,
@@ -801,7 +812,7 @@ export function ExecutionMap({
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
   const [artifactPreviewState, setArtifactPreviewState] = useState<Record<string, ArtifactPreviewState>>({});
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
-  const [agentBranchRects, setAtlasRects] = useState<Record<string, AtlasRect>>({});
+  const [agentBranchRects, setAtlasRects] = useState<Record<string, AtlasRect>>(() => branchLayout?.agentBranchRects ?? {});
   const [taskBranchMeasuredSizes, setTaskBranchMeasuredSizes] = useState<TaskBranchMeasuredSizeMap>({});
   const [selectedAtlasNodeKeys, setSelectedAtlasNodeKeys] = useState<Set<string>>(new Set());
   const [rootDropTarget, setRootDropTarget] = useState<"dock" | "trash" | null>(null);
@@ -810,9 +821,9 @@ export function ExecutionMap({
   const [hoveredLinkCutKey, setHoveredLinkCutKey] = useState<string | null>(null);
   const [flightAnimation, setFlightAnimation] = useState<DockFlightAnimation | null>(null);
   const [maximizedBranch, setMaximizedBranch] = useState<MaximizedPanelState>(null);
-  const [panelSizeOverrides, setPanelSizeOverrides] = useState<Record<string, { width: number; height: number }>>({});
-  const [panelPositionOverrides, setPanelPositionOverrides] = useState<Record<string, { x: number; y: number }>>({});
-  const [taskBranchPositionOverrides, setTaskBranchPositionOverrides] = useState<Record<string, { x: number; y: number }>>({});
+  const [panelSizeOverrides, setPanelSizeOverrides] = useState<Record<string, { width: number; height: number }>>(() => branchLayout?.taskChildPanelSizes ?? {});
+  const [panelPositionOverrides, setPanelPositionOverrides] = useState<Record<string, { x: number; y: number }>>(() => branchLayout?.taskChildPanelPositions ?? {});
+  const [taskBranchPositionOverrides, setTaskBranchPositionOverrides] = useState<Record<string, { x: number; y: number }>>(() => branchLayout?.taskBranchPositions ?? {});
   const [panelMeasuredHeights, setPanelMeasuredHeights] = useState<Record<string, number>>({});
   const [pendingRestoreRootKeys, setPendingRestoreRootKeys] = useState<Set<string>>(new Set());
   const [nodeIdCopyState, setNodeIdCopyState] = useState<{ key: string; status: "copied" | "failed" } | null>(null);
@@ -939,6 +950,27 @@ export function ExecutionMap({
   useLayoutEffect(() => {
     updateDockPageState();
   }, [dockNodeCount, isDockExpanded, updateDockPageState]);
+
+  useLayoutEffect(() => {
+    if (!branchLayout) return;
+    const nextAgentRects = branchLayout.agentBranchRects ?? {};
+    const nextTaskBranchPositions = branchLayout.taskBranchPositions ?? {};
+    const nextPanelPositions = branchLayout.taskChildPanelPositions ?? {};
+    const nextPanelSizes = branchLayout.taskChildPanelSizes ?? {};
+    setAtlasRects((current) => JSON.stringify(current) === JSON.stringify(nextAgentRects) ? current : nextAgentRects);
+    setTaskBranchPositionOverrides((current) => JSON.stringify(current) === JSON.stringify(nextTaskBranchPositions) ? current : nextTaskBranchPositions);
+    setPanelPositionOverrides((current) => JSON.stringify(current) === JSON.stringify(nextPanelPositions) ? current : nextPanelPositions);
+    setPanelSizeOverrides((current) => JSON.stringify(current) === JSON.stringify(nextPanelSizes) ? current : nextPanelSizes);
+  }, [branchLayout]);
+
+  useLayoutEffect(() => {
+    onBranchLayoutChange?.({
+      agentBranchRects,
+      taskBranchPositions: taskBranchPositionOverrides,
+      taskChildPanelPositions: panelPositionOverrides,
+      taskChildPanelSizes: panelSizeOverrides,
+    });
+  }, [agentBranchRects, onBranchLayoutChange, panelPositionOverrides, panelSizeOverrides, taskBranchPositionOverrides]);
 
   const revealLinkCut = useCallback((key: string) => {
     setHoveredLinkCutKey(key);

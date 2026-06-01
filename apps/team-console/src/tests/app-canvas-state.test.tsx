@@ -154,5 +154,45 @@ describe("App", () => {
         expect(Number.parseFloat(restoredTask!.style.top)).toBeCloseTo(movedTaskTop, 4);
       });
     });
+
+    it("persists dragged Task branch panel positions across a browser reload", async () => {
+      const first = render(<App />);
+
+      const taskNode = await within(getAtlasNodes(first.container)).findByRole("button", { name: "调查 Medtrum 云资产" });
+      fireEvent.click(taskNode);
+
+      const branchShell = await waitFor(() => {
+        const shell = first.container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
+        expect(shell).toBeTruthy();
+        return shell!;
+      });
+      const header = branchShell.querySelector(".task-leader-branch-head") as HTMLElement | null;
+      expect(header).toBeTruthy();
+
+      const initialLeft = Number.parseFloat(branchShell.style.left);
+      const initialTop = Number.parseFloat(branchShell.style.top);
+      firePointer(header!, "pointerdown", { pointerId: 104, clientX: initialLeft + 20, clientY: initialTop + 20 });
+      firePointer(branchShell, "pointermove", { pointerId: 104, clientX: initialLeft + 124, clientY: initialTop + 68 });
+      firePointer(branchShell, "pointerup", { pointerId: 104, clientX: initialLeft + 124, clientY: initialTop + 68, buttons: 0 });
+
+      const movedLeft = Number.parseFloat(branchShell.style.left);
+      const movedTop = Number.parseFloat(branchShell.style.top);
+      expect(movedLeft).toBeCloseTo(initialLeft + 104, 4);
+      expect(movedTop).toBeCloseTo(initialTop + 48, 4);
+      await waitFor(() => {
+        expect(window.localStorage.getItem("ugk-team-console:canvas-ui-state:v1")).toContain('"branchLayout"');
+        expect(window.localStorage.getItem("ugk-team-console:canvas-ui-state:v1")).toContain('"taskBranchPositions"');
+      });
+
+      first.unmount();
+      const second = render(<App />);
+
+      await waitFor(() => {
+        const restoredShell = second.container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
+        expect(restoredShell).toBeTruthy();
+        expect(Number.parseFloat(restoredShell!.style.left)).toBeCloseTo(movedLeft, 4);
+        expect(Number.parseFloat(restoredShell!.style.top)).toBeCloseTo(movedTop, 4);
+      });
+    });
   });
 });
