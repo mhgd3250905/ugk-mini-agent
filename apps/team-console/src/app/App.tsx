@@ -28,7 +28,7 @@ const PROCESS_NARRATION_MAX_CHARS = 220;
 const PROCESS_ASSISTANT_TEXT_MAX_LINES = 5;
 const PROCESS_ASSISTANT_TEXT_MAX_LINE_CHARS = 200;
 const DISCOVERY_QUEUE_INITIAL_CARD_LIMIT = 18;
-const CANVAS_LOADING_MIN_VISIBLE_MS = 520;
+const CANVAS_LOADING_MIN_VISIBLE_MS = 1000;
 
 type AgentBranchMode = "chat" | "task-create";
 type TeamConsoleTheme = "light" | "dark";

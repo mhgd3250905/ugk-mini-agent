@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
 import { mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
 import { dragRootNodeToDock, firePointer, getAtlas, getAtlasNodes, getAtlasStage } from "./app-dom-test-utils";
@@ -35,11 +35,18 @@ describe("App", () => {
       expect(screen.getByRole("status")).toHaveTextContent("正在恢复画布状态...");
       expect(container.querySelector(".root-filter-segment")).toBeNull();
 
+      await act(async () => {
+        await new Promise((resolve) => globalThis.setTimeout(resolve, 900));
+      });
+
+      expect(screen.getByRole("status")).toHaveTextContent("正在恢复画布状态...");
+      expect(container.querySelector(".root-filter-segment")).toBeNull();
+
       await waitFor(() => {
         expect(screen.getByRole("tab", { name: "Agent" })).toHaveClass("is-active");
         expect(screen.getByRole("tab", { name: "ALL" })).not.toHaveClass("is-active");
         expect(container.querySelector(".root-filter-segment")).toHaveAttribute("data-active-filter", "agent");
-      });
+      }, { timeout: 1600 });
     });
 
     it("does not render the root filter before delayed shared live layout hydration", async () => {
@@ -103,7 +110,7 @@ describe("App", () => {
         expect(container.querySelector(".root-filter-segment")).toHaveAttribute("data-active-filter", "task");
         expect(screen.getByRole("tab", { name: "Task" })).toHaveClass("is-active");
         expect(screen.getByRole("tab", { name: "ALL" })).not.toHaveClass("is-active");
-      });
+      }, { timeout: 1600 });
     });
 
     it("restores open live canvas branches and viewport after a browser reload", async () => {

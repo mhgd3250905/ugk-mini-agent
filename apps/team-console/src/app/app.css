@@ -265,21 +265,46 @@ body {
 
 .canvas-loading-bar {
   position: relative;
-  width: min(220px, 46vw);
-  height: 2px;
+  width: min(240px, 50vw);
+  height: 6px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(121, 216, 208, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
+    rgba(121, 216, 208, 0.1);
+  box-shadow:
+    inset 0 0 0 1px rgba(121, 216, 208, 0.18),
+    0 10px 24px rgba(0, 0, 0, 0.16);
 }
 
 .canvas-loading-bar::before {
   content: "";
   position: absolute;
-  inset: 0;
-  width: 42%;
+  top: 1px;
+  bottom: 1px;
+  left: 0;
+  width: 34%;
   border-radius: inherit;
-  background: linear-gradient(90deg, transparent, rgba(164, 244, 236, 0.95), transparent);
-  animation: canvas-loading-scan 1.15s ease-in-out infinite;
+  background:
+    linear-gradient(90deg, rgba(121, 216, 208, 0), rgba(164, 244, 236, 0.98), rgba(242, 201, 109, 0.88));
+  box-shadow:
+    0 0 14px rgba(121, 216, 208, 0.42),
+    0 0 1px rgba(255, 255, 255, 0.48);
+  animation: canvas-loading-scroll 1s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+
+.canvas-loading-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.12) 0 1px,
+    transparent 1px 18px
+  );
+  opacity: 0.4;
+  animation: canvas-loading-track 1s linear infinite;
 }
 
 @keyframes canvas-loading-pulse {
@@ -297,19 +322,28 @@ body {
   }
 }
 
-@keyframes canvas-loading-scan {
+@keyframes canvas-loading-scroll {
   from {
-    transform: translateX(-105%);
+    transform: translateX(-110%);
   }
 
   to {
-    transform: translateX(245%);
+    transform: translateX(320%);
+  }
+}
+
+@keyframes canvas-loading-track {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(18px);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .canvas-loading-mark span,
-  .canvas-loading-bar::before {
+  .canvas-loading-mark span {
     animation: none;
   }
 }
