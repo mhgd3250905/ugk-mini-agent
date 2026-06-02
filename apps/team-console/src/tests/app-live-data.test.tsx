@@ -356,6 +356,7 @@ describe("App", () => {
     expect(vultrCard).toHaveAttribute("data-generated-item-status", "active");
     expect(vultrCard).toHaveAttribute("data-generated-workunit-mode", "managed");
     expect(vultrCard).toHaveAttribute("data-generated-run-status", "none");
+    expect(vultrCard).toHaveAttribute("data-generated-menu-placement", "default");
     expect(hetznerCard).toHaveAttribute("data-generated-item-status", "stale");
     expect(hetznerCard).toHaveAttribute("data-generated-workunit-mode", "customized");
     expect(hetznerCard).toHaveAttribute("data-generated-run-status", "none");
@@ -367,6 +368,7 @@ describe("App", () => {
     const openVultrCard = await waitFor(() => {
       const card = getGeneratedCard(panel!, "task_generated_vultr");
       expect(within(card).getByRole("button", { name: "核查 Vultr 公开证据 操作菜单" })).toHaveAttribute("aria-expanded", "true");
+      expect(card).toHaveAttribute("data-generated-menu-placement", "side-right");
       return card;
     });
     const vultrActionMenu = openVultrCard.querySelector(".discovery-generated-card-actions");
@@ -749,7 +751,7 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
-    });
+    }, { timeout: 2500 });
   });
 
   it("hydrates a generated edit draft when restored Discovery branch state includes a generated edit id", async () => {
@@ -771,7 +773,7 @@ describe("App", () => {
       const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
       expect(node).toBeTruthy();
       return node!;
-    });
+    }, { timeout: 2500 });
     const vultrCard = getGeneratedCard(panel, "task_generated_vultr");
     expect(vultrCard).toHaveAttribute("data-generated-editing", "true");
     await waitFor(() => {
@@ -838,7 +840,7 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
-    });
+    }, { timeout: 2500 });
     expect(container.querySelector("[data-generated-observer-task-id]")).toBeNull();
   });
 

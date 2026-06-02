@@ -30,6 +30,8 @@ const PROCESS_ASSISTANT_TEXT_MAX_LINE_CHARS = 200;
 const DISCOVERY_QUEUE_INITIAL_CARD_LIMIT = 18;
 const CANVAS_LOADING_MIN_VISIBLE_MS = 1000;
 
+type GeneratedActionMenuPlacement = "default" | "side-left" | "side-right";
+
 type AgentBranchMode = "chat" | "task-create";
 type TeamConsoleTheme = "light" | "dark";
 type DiscoveryGeneratedVisualState = "running" | "queued" | "done" | "failed" | "stale" | "idle";
@@ -1272,6 +1274,7 @@ export function App() {
   const [generatedArchiveConfirmTaskId, setGeneratedArchiveConfirmTaskId] = useState<string | null>(null);
   const [generatedArchiveSavingByTaskId, setGeneratedArchiveSavingByTaskId] = useState<Record<string, boolean>>({});
   const [generatedActionMenuTaskId, setGeneratedActionMenuTaskId] = useState<string | null>(null);
+  const [generatedActionMenuPlacementByTaskId, setGeneratedActionMenuPlacementByTaskId] = useState<Record<string, GeneratedActionMenuPlacement>>({});
   const [taskRunObserverByRunId, setTaskRunObserverByRunId] = useState<Record<string, TaskRunObserverState>>({});
   const [runHistoryTaskId, setRunHistoryTaskId] = useState<string | null>(null);
   const [runHistoryItems, setRunHistoryItems] = useState<TeamTaskRunHistoryItem[]>([]);
@@ -1387,6 +1390,7 @@ export function App() {
     setGeneratedResetSavingByTaskId({});
     setGeneratedArchiveConfirmTaskId(null);
     setGeneratedArchiveSavingByTaskId({});
+    setGeneratedActionMenuPlacementByTaskId({});
     setTaskRunObserverByRunId({});
     setRunHistoryTaskId(null);
     setRunHistoryItems([]);
@@ -3261,7 +3265,10 @@ export function App() {
         const hiddenQueuedTaskCount = queuedGeneratedTaskCards.length - queuedPreviewCards.length;
         const doneGeneratedTaskCount = queuedGeneratedTaskCards.filter((card) => card.visualState === "done").length;
         const waitingGeneratedTaskCount = queuedGeneratedTaskCards.length - doneGeneratedTaskCount;
-        const renderGeneratedCard = (card: (typeof generatedTaskCards)[number]) => {
+        const renderGeneratedCard = (
+          card: (typeof generatedTaskCards)[number],
+          menuPlacement: GeneratedActionMenuPlacement = "default",
+        ) => {
           const {
             activeGeneratedRun,
             archiveConfirmOpen,
@@ -3283,6 +3290,7 @@ export function App() {
           } = card;
           const generatedActionMenuOpen = generatedActionMenuTaskId === generatedTask.taskId;
           const generatedActionMenuId = `generated-action-menu-${branch.nodeId}-${generatedTask.taskId}`;
+          const generatedActionMenuPlacement = generatedActionMenuPlacementByTaskId[generatedTask.taskId] ?? menuPlacement;
           return (
             <article
               key={generatedTask.taskId}
@@ -3297,6 +3305,7 @@ export function App() {
               data-generated-editing={generatedIsEditing ? "true" : "false"}
               data-generated-reset-saving={resetSaving ? "true" : "false"}
               data-generated-archive-saving={archiveSaving ? "true" : "false"}
+              data-generated-menu-placement={generatedActionMenuPlacement}
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
                   setGeneratedActionMenuTaskId((current) => current === generatedTask.taskId ? null : current);
@@ -3314,9 +3323,24 @@ export function App() {
                 aria-label={`${generatedTask.title} 操作菜单`}
                 aria-expanded={generatedActionMenuOpen}
                 aria-controls={generatedActionMenuId}
-                onClick={() => setGeneratedActionMenuTaskId((current) =>
-                  current === generatedTask.taskId ? null : generatedTask.taskId
-                )}
+                onClick={(event) => {
+                  const cardElement = event.currentTarget.closest(".discovery-generated-card") as HTMLElement | null;
+                  const laneElement = cardElement?.closest(".discovery-subcanvas-running-grid, .discovery-subcanvas-queue-grid") as HTMLElement | null;
+                  if (cardElement && laneElement) {
+                    const cardRect = cardElement.getBoundingClientRect();
+                    const laneRect = laneElement.getBoundingClientRect();
+                    const placement = cardRect.left + cardRect.width / 2 > laneRect.left + laneRect.width / 2
+                      ? "side-left"
+                      : "side-right";
+                    setGeneratedActionMenuPlacementByTaskId((current) => ({
+                      ...current,
+                      [generatedTask.taskId]: placement,
+                    }));
+                  }
+                  setGeneratedActionMenuTaskId((current) =>
+                    current === generatedTask.taskId ? null : generatedTask.taskId
+                  );
+                }}
               >
                 <span aria-hidden="true">⋮</span>
               </button>
@@ -3587,7 +3611,10 @@ export function App() {
                         <div className="discovery-subcanvas-empty compact">当前并发池没有运行中的 generated Task。</div>
                       ) : (
                         <div className="discovery-subcanvas-running-grid">
-                          {runningGeneratedTaskCards.map(renderGeneratedCard)}
+                          {runningGeneratedTaskCards.map((card, index) => renderGeneratedCard(
+                            card,
+                            index % discoveryConcurrency >= Math.ceil(discoveryConcurrency / 2) ? "side-left" : "default",
+                          ))}
                         </div>
                       )}
                     </section>
@@ -3608,7 +3635,13 @@ export function App() {
                             data-generated-queue-visible-count={queuedPreviewCards.length}
                             data-generated-queue-total-count={queuedGeneratedTaskCards.length}
                           >
-                            {queuedPreviewCards.map(renderGeneratedCard)}
+                            {queuedPreviewCards.map((card, index) => {
+                              const queueColumns = discoveryConcurrency * 2;
+                              return renderGeneratedCard(
+                                card,
+                                index % queueColumns >= discoveryConcurrency ? "side-left" : "default",
+                              );
+                            })}
                           </div>
                           {hiddenQueuedTaskCount > 0 && (
                             <button
@@ -4188,7 +4221,7 @@ export function App() {
     }
 
     return panels;
-  }, [agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskEditState, clearTaskEditWarning, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, openTaskEditDraft, openTaskRunHistory, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runTask, saveTaskEdit, scheduleLiveTaskDiscoveryRefresh, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskEditDraft]);
+  }, [agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskEditState, clearTaskEditWarning, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuPlacementByTaskId, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, openTaskEditDraft, openTaskRunHistory, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runTask, saveTaskEdit, scheduleLiveTaskDiscoveryRefresh, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskEditDraft]);
 
   const runHistoryDrawer = runHistoryTask ? (() => {
     const selectedDetail = selectedRunHistoryItem
