@@ -3649,6 +3649,7 @@ export function App() {
               id: `generated-task-edit-${branch.nodeId}-${generatedEditTask.taskId}`,
               width: 500,
               height: 430,
+              autoHeight: true,
               sourceId: `discovery-subcanvas-${branch.nodeId}`,
               resizable: true,
               interactive: true,

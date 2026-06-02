@@ -2234,7 +2234,14 @@
 }
 
 .generated-task-edit-branch {
+  height: auto;
+  overflow: visible;
   border-color: rgba(255, 190, 96, 0.28);
+}
+
+.generated-task-edit-branch .task-edit-form {
+  flex: 0 0 auto;
+  overflow: visible;
 }
 
 .emap-observer-node {
@@ -3857,6 +3864,10 @@
     max-width: 100%;
     height: min(72vh, 620px) !important;
     margin-bottom: 8px;
+  }
+
+  .emap-task-child-branch-shell:has(.generated-task-edit-branch) {
+    height: auto !important;
   }
 
   .emap-task-branch-shell {
