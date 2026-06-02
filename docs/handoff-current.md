@@ -1,6 +1,6 @@
 # 当前交接快照
 
-更新时间：`2026-06-02`
+更新时间：`2026-06-03`
 
 这份文档只记录当前接手所需事实。历史流水账不要塞回来；需要追溯旧阶段时用 Git 历史和专题文档。若本文件与当前用户提示、`git status` 或真实运行结果冲突，以后者为准。
 
@@ -50,7 +50,7 @@ git log -- <path>
 当前已确认：
 
 - 分支：`main`。
-- 本轮 Git 保存包含 Team Console / Canvas Task run history、Discovery 子画布 generated child 操作菜单和浅编辑面板布局收口；继续工作前以 `git status --short --branch` 和 `git log -1 --oneline` 为准。
+- 本轮 Git 保存包含 Canvas Task adaptive timeout、Team Task 模板/clone API、`/team-task` 模板契约、Team Console 复制面板和 UI-only Group；继续工作前以 `git status --short --branch` 和 `git log -1 --oneline` 为准。
 - 本轮不提交 `.codex/config.toml`、`.codex/plans/*`、`.omo/`、`github-trending.txt`、runtime/public 报告产物或截图。
 - 未跟踪 runtime/public 产物禁止提交：
   - `public/developer-forum-sources-report.html`
@@ -88,6 +88,10 @@ git log --oneline origin/main..HEAD
 - 新增 `GET /v1/team/tasks/:taskId/run-history` 和 `PATCH /v1/team/task-runs/:runId/annotation`；详情仍复用既有 `GET /v1/team/task-runs/:runId`、attempts 和 attempt file API。
 - Discovery 子画布 generated child card 的操作入口已收口为悬浮时显示的纵向菜单按钮；点击后在按钮下方弹出 popover，允许超出子画布边界显示，并包含编辑、归档、运行记录和运行入口。generated Task 浅编辑面板按内容自适应高度，不再在表单内部显示滚动条。
 - Canvas Task 独立 run 的 worker/checker phase timeout 已改为 adaptive idle timeout + hard cap；`tool_execution_end` 和 role public output 文件变化会刷新 idle，普通文本 / thinking 不续命，timeout 失败会在 attempt failed result 中留下 `timeoutType`、`elapsedMs` 和 `lastStructuralActivityReason` 等证据。
+- Team Task 模板契约已接入：Task 可带 `templateConfig.parameters`，正文使用 `{{parameterId}}` 占位；`/team-task` skill 在模板 Task 场景下必须生成模板预览，clone/实例化走 `POST /v1/team/tasks/:taskId/clone` 并填 `templateBindings`。
+- Team Task clone API 已接入：普通 root Task 可复制改名，模板 Task 可复制并替换参数，clone 不复制 run history、active run 或 generated child；generated Task 禁止走 root clone route。
+- Team Console Task 操作菜单已增加“复制”面板；普通工具型 Task 可直接复制改名，模板 Task 会渲染参数输入。
+- Team Console Execution Atlas 已增加 UI-only Group：框选多个 root Task 后可创建 Group，Group 只保存到 canvas UI state，支持折叠/展开成员 Task，不写后端 Task 数据。
 - 真实验证 run 仍在继续跑：用户启动 Discovery root Task `task_99e064aea8e3`，root run `run_d5f4d7975885` 的 root attempt `attempt_3ac49ea2c5af` 已 `succeeded`，并写出 `accepted-result.md` / `discovery-result.json`；dispatcher 创建 10 个、更新 4 个 generated Tasks，标记 9 个旧 item stale；generated child auto-run pool 已按并发 3 运行。观察到 child `task_071756d4a504` 在多轮工具完成后刷新 worker idle 并进入 checker，证明 adaptive timeout 真实生效。不要取消这个 run，除非用户明确要求。
 - Canvas Task run 会记录 `source.publicBaseUrl`；`PUBLIC_BASE_URL=auto` 表示按当前请求 host/proto 或本地端口自动推导公开 base URL。
 - Team role session 注入 `ARTIFACT_PUBLIC_DIR` 和 `ARTIFACT_PUBLIC_BASE_URL`；需要交付的报告/HTML 应写到 public output 目录，并通过 `/v1/team/task-runs/:runId/artifacts/:roleKey/:role/...` 稳定访问。

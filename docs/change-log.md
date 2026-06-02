@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-03 — Team Task templates, clone API and UI groups
+
+- **主题**: Team Task 支持模板参数、Task clone API、Team Console 复制面板和 UI-only Group。模板 Task 用 `templateConfig.parameters` 与 `{{parameterId}}` 占位；复制/实例化走 `POST /v1/team/tasks/:taskId/clone`，普通 Task 可复制改名，模板 Task 可填 bindings，generated Task 禁止走 root clone route。Execution Atlas 可从框选的 root Task 创建 Group，并在 canvas UI state 中保存折叠/展开状态。
+- **影响范围**: `/team-task` skill 创建模板 Task 的契约、`/v1/team/tasks` payload、`/v1/team/tasks/:taskId/clone` API、Team Console Task 操作菜单和 Execution Atlas group UI；不改主 `/playground` 产品 UI，不把 Group 写进后端 Task 数据。
+- **验证**: `node --test --import tsx test\team-task-store.test.ts`、`node --test --import tsx test\team-task-routes.test.ts`、`node --test --import tsx test\team-task-creator-skill.test.ts`、`npm --prefix apps\team-console run test -- --run src\tests\team-api.test.ts src\tests\team-contract-drift.test.ts`、`npm --prefix apps\team-console run test -- --run src\tests\app-connections.test.tsx src\tests\app-live-data.test.tsx src\tests\execution-map-ui.test.tsx`、`npx tsc --noEmit`、`git diff --check`。
+- **对应入口**: `src/team/task-store.ts`、`src/team/routes.ts`、`src/team/types.ts`、`.pi/skills/team-task-creator/SKILL.md`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`。
+
 ## 2026-06-02 — Canvas Task adaptive phase timeout
 
 - **主题**: Canvas Task 独立 run 的 worker/checker phase timeout 改为 adaptive idle timeout + hard cap；工具完成事件和 role public output 文件变化会刷新 idle 窗口，普通文本 / thinking 输出不会续命，hard cap 防止持续结构性进展无限运行。
