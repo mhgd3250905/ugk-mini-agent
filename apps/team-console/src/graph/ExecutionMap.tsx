@@ -77,6 +77,9 @@ interface ExecutionMapProps {
   minimizedTaskNodeIds?: string[];
   onMinimizeCanvasTask?: (node: AtlasTaskNode) => void;
   onRestoreCanvasTask?: (node: AtlasTaskNode) => void;
+  taskGroups?: AtlasTaskGroup[];
+  onToggleTaskGroup?: (groupId: string) => void;
+  onAtlasSelectionChange?: (entries: AtlasSelectedNodeEntry[]) => void;
   onTaskOutputPortSelect?: (taskId: string, port: TeamTaskOutputPort) => void;
   onTaskInputPortSelect?: (taskId: string, port: TeamTaskInputPort) => void;
   onMoveSourceNode?: (nodeId: string, position: { x: number; y: number }) => void;
@@ -153,6 +156,18 @@ export type AtlasTaskNode = {
   taskId: string;
   position: { x: number; y: number };
 };
+
+export type AtlasTaskGroup = {
+  groupId: string;
+  title: string;
+  taskNodeIds: string[];
+  collapsed: boolean;
+};
+
+export type AtlasSelectedNodeEntry =
+  | { kind: "agent"; nodeId: string; agentId: string }
+  | { kind: "task"; nodeId: string; taskId: string }
+  | { kind: "source"; nodeId: string; sourceNodeId: string };
 
 export type AtlasSourceNode = {
   nodeId: string;
@@ -829,6 +844,9 @@ export function ExecutionMap({
   minimizedTaskNodeIds = [],
   onMinimizeCanvasTask,
   onRestoreCanvasTask,
+  taskGroups = [],
+  onToggleTaskGroup,
+  onAtlasSelectionChange,
   onTaskOutputPortSelect,
   onTaskInputPortSelect,
   onMoveSourceNode,
@@ -921,13 +939,23 @@ export function ExecutionMap({
   const showAgents = rootNodeFilter === "all" || rootNodeFilter === "agent";
   const showTasks = rootNodeFilter === "all" || rootNodeFilter === "task";
   const showSources = rootNodeFilter === "all" || rootNodeFilter === "task";
+  const collapsedTaskGroupNodeIdSet = useMemo(() => {
+    const nodeIds = new Set<string>();
+    for (const group of taskGroups) {
+      if (!group.collapsed) continue;
+      for (const nodeId of group.taskNodeIds) {
+        nodeIds.add(nodeId);
+      }
+    }
+    return nodeIds;
+  }, [taskGroups]);
   const visibleAgentNodes = useMemo(
     () => showAgents ? unfilteredVisibleAgentNodes : [],
     [showAgents, unfilteredVisibleAgentNodes],
   );
   const visibleTaskNodes = useMemo(
-    () => showTasks ? unfilteredVisibleTaskNodes : [],
-    [showTasks, unfilteredVisibleTaskNodes],
+    () => showTasks ? unfilteredVisibleTaskNodes.filter((node) => !collapsedTaskGroupNodeIdSet.has(node.nodeId)) : [],
+    [collapsedTaskGroupNodeIdSet, showTasks, unfilteredVisibleTaskNodes],
   );
   const visibleSourceNodes = useMemo(
     () => showSources ? unfilteredVisibleSourceNodes : [],
@@ -1175,6 +1203,30 @@ export function ExecutionMap({
       return unchanged ? current : next;
     });
   }, [visibleAgentNodes, visibleSourceNodes, visibleTaskNodes]);
+
+  const selectedAtlasEntries = useMemo<AtlasSelectedNodeEntry[]>(() => {
+    const entries: AtlasSelectedNodeEntry[] = [];
+    for (const node of visibleAgentNodes) {
+      if (selectedAtlasNodeKeys.has(atlasSelectionKey("agent", node.nodeId))) {
+        entries.push({ kind: "agent", nodeId: node.nodeId, agentId: node.agentId });
+      }
+    }
+    for (const node of visibleTaskNodes) {
+      if (selectedAtlasNodeKeys.has(atlasSelectionKey("task", node.nodeId))) {
+        entries.push({ kind: "task", nodeId: node.nodeId, taskId: node.taskId });
+      }
+    }
+    for (const node of visibleSourceNodes) {
+      if (selectedAtlasNodeKeys.has(atlasSelectionKey("source", node.nodeId))) {
+        entries.push({ kind: "source", nodeId: node.nodeId, sourceNodeId: node.sourceNodeId });
+      }
+    }
+    return entries;
+  }, [selectedAtlasNodeKeys, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes]);
+
+  useEffect(() => {
+    onAtlasSelectionChange?.(selectedAtlasEntries);
+  }, [onAtlasSelectionChange, selectedAtlasEntries]);
 
   const model = useMemo(() => plan && run ? buildExecutionMapModel(plan, run) : null, [plan, run]);
 
@@ -2266,6 +2318,29 @@ export function ExecutionMap({
       ].filter(Boolean),
     };
   };
+  const taskGroupRenderItems = useMemo(() => {
+    if (!showTasks) return [];
+    return taskGroups.flatMap((group) => {
+      const nodes = group.taskNodeIds
+        .map((nodeId) => unfilteredVisibleTaskNodes.find((node) => node.nodeId === nodeId) ?? null)
+        .filter((node): node is AtlasTaskNode => Boolean(node));
+      if (nodes.length === 0) return [];
+      const minX = Math.min(...nodes.map((node) => node.position.x));
+      const minY = Math.min(...nodes.map((node) => node.position.y));
+      const maxX = Math.max(...nodes.map((node) => node.position.x + NODE_WIDTH));
+      const maxY = Math.max(...nodes.map((node) => node.position.y + canvasTaskNodeHeight(tasksById?.get(node.taskId))));
+      return [{
+        group,
+        taskCount: nodes.length,
+        rect: {
+          x: minX - 18,
+          y: minY - 42,
+          width: Math.max(220, maxX - minX + 36),
+          height: group.collapsed ? 78 : maxY - minY + 64,
+        },
+      }];
+    });
+  }, [showTasks, taskGroups, tasksById, unfilteredVisibleTaskNodes]);
   const nodeHub = (
     <aside
       ref={dockRef}
@@ -3282,6 +3357,46 @@ export function ExecutionMap({
         </svg>
 
         <div className="execution-map-nodes" ref={evidenceContainerRef} style={{ width: svgWidth, minHeight: maxY + 40 }}>
+          {taskGroupRenderItems.map(({ group, rect, taskCount }) => (
+            group.collapsed ? (
+              <button
+                key={group.groupId}
+                type="button"
+                className="emap-task-group-card is-collapsed"
+                style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
+                aria-label={`展开 ${group.title} ${taskCount} Tasks`}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={() => onToggleTaskGroup?.(group.groupId)}
+              >
+                <span className="emap-task-group-kicker">Group</span>
+                <strong>{group.title}</strong>
+                <span>{taskCount} Tasks</span>
+              </button>
+            ) : (
+              <div
+                key={group.groupId}
+                role="group"
+                className="emap-task-group-frame"
+                aria-label={group.title}
+                style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
+                data-task-group-id={group.groupId}
+              >
+                <div className="emap-task-group-head">
+                  <span className="emap-task-group-kicker">Group</span>
+                  <strong>{group.title}</strong>
+                  <span>{taskCount} Tasks</span>
+                  <button
+                    type="button"
+                    aria-label={`折叠 ${group.title}`}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={() => onToggleTaskGroup?.(group.groupId)}
+                  >
+                    折叠
+                  </button>
+                </div>
+              </div>
+            )
+          ))}
           {model && run && (
             <button
               type="button"

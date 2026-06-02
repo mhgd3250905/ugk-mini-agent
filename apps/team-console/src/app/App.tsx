@@ -6,7 +6,7 @@ import { useTeamConsoleLiveData, type DataSource, type TeamConsoleUiResetReason,
 import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchGeneratedObserverState, type TaskBranchState } from "./use-task-branch-stack";
 import { hasDirtyTaskEditConflict, useTaskEditState } from "./use-task-edit-state";
 import { useTaskLeaderCopy } from "./use-task-leader-copy";
-import { ExecutionMap, type AtlasAgentNode, type AtlasBranchLayoutState, type AtlasSourceNode, type AtlasTaskNode } from "../graph/ExecutionMap";
+import { ExecutionMap, type AtlasAgentNode, type AtlasBranchLayoutState, type AtlasSelectedNodeEntry, type AtlasSourceNode, type AtlasTaskGroup, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { normalizeAtlasViewport, type AtlasViewport } from "../graph/AtlasCanvasShell";
 import { RUN_STATUS_LABELS, isActiveRun } from "../shared/status";
 import { renderTeamMarkdown } from "../shared/markdown";
@@ -49,6 +49,7 @@ type StoredCanvasUiState = {
   agentNodes?: StoredAgentNodePosition[];
   taskNodePositions?: StoredTaskPosition[];
   sourceNodePositions?: StoredSourcePosition[];
+  taskGroups?: AtlasTaskGroup[];
   expandedAgentBranch?: AgentBranchState | null;
   expandedTaskBranches?: TaskBranchState[];
   branchLayout?: AtlasBranchLayoutState;
@@ -731,6 +732,28 @@ function readStoredTaskBranches(value: unknown): TaskBranchState[] {
   return result;
 }
 
+function readStoredTaskGroups(value: unknown): AtlasTaskGroup[] {
+  if (!Array.isArray(value)) return [];
+  const result: AtlasTaskGroup[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const record = readRecord(item);
+    if (!record) continue;
+    const groupId = typeof record.groupId === "string" ? record.groupId.trim() : "";
+    const title = typeof record.title === "string" ? record.title.trim() : "";
+    const taskNodeIds = readStringArray(record.taskNodeIds);
+    if (!groupId || !title || taskNodeIds.length === 0 || seen.has(groupId)) continue;
+    seen.add(groupId);
+    result.push({
+      groupId,
+      title,
+      taskNodeIds,
+      collapsed: record.collapsed === true,
+    });
+  }
+  return result;
+}
+
 function readStoredAgentNodePositions(value: unknown): StoredAgentNodePosition[] {
   if (!Array.isArray(value)) return [];
   const result: StoredAgentNodePosition[] = [];
@@ -853,6 +876,7 @@ function parseStoredCanvasUiState(value: unknown): StoredCanvasUiState | null {
     agentNodes: readStoredAgentNodePositions(parsed.agentNodes),
     taskNodePositions: readStoredTaskNodePositions(parsed.taskNodePositions),
     sourceNodePositions: readStoredSourceNodePositions(parsed.sourceNodePositions),
+    taskGroups: readStoredTaskGroups(parsed.taskGroups),
     expandedAgentBranch: readStoredAgentBranch(parsed.expandedAgentBranch),
     expandedTaskBranches: readStoredTaskBranches(parsed.expandedTaskBranches),
     branchLayout: readStoredBranchLayout(parsed.branchLayout),
@@ -1289,6 +1313,8 @@ export function App() {
   const [runHistoryCopyStatus, setRunHistoryCopyStatus] = useState<string | null>(null);
   const [runHistorySavingRunId, setRunHistorySavingRunId] = useState<string | null>(null);
   const [taskNodes, setTaskNodes] = useState<AtlasTaskNode[]>([]);
+  const [taskGroups, setTaskGroups] = useState<AtlasTaskGroup[]>([]);
+  const [selectedAtlasEntries, setSelectedAtlasEntries] = useState<AtlasSelectedNodeEntry[]>([]);
   const [taskCloneDraftByTaskId, setTaskCloneDraftByTaskId] = useState<Record<string, TaskCloneDraft>>({});
   const [taskCloneSavingByTaskId, setTaskCloneSavingByTaskId] = useState<Record<string, boolean>>({});
   const [liveTaskNodesHydrated, setLiveTaskNodesHydrated] = useState(false);
@@ -1452,6 +1478,8 @@ export function App() {
     setTaskConnectionDraft(null);
     setTaskDependencyDraft(null);
     setSourceConnectionDraft(null);
+    setTaskGroups([]);
+    setSelectedAtlasEntries([]);
     setTaskRunSavingByTaskId({});
     setTaskCloneDraftByTaskId({});
     setTaskCloneSavingByTaskId({});
@@ -1905,6 +1933,17 @@ export function App() {
   }, [dataSource, liveTaskNodesHydrated, taskNodes]);
 
   useEffect(() => {
+    const nodeIds = new Set(taskNodes.map((node) => node.nodeId));
+    setTaskGroups((current) => {
+      const next = current.flatMap((group) => {
+        const taskNodeIds = group.taskNodeIds.filter((nodeId) => nodeIds.has(nodeId));
+        return taskNodeIds.length > 0 ? [{ ...group, taskNodeIds }] : [];
+      });
+      return JSON.stringify(next) === JSON.stringify(current) ? current : next;
+    });
+  }, [taskNodes]);
+
+  useEffect(() => {
     if (dataSource === "live" && !liveSourceNodesHydrated) return;
     setMinimizedSourceNodeIds((current) => {
       const nodeIds = new Set(sourceAtlasNodes.map((node) => node.nodeId));
@@ -1924,6 +1963,7 @@ export function App() {
     if (!stored) {
       setCanvasUiStateRestoreHasStoredState(false);
       setCanvasBranchLayout({});
+      setTaskGroups([]);
       hydratedCanvasUiContextKeyRef.current = canvasUiContextKey;
       setCanvasUiStateHydrated(true);
       return;
@@ -1949,6 +1989,10 @@ export function App() {
     const taskNodeIds = new Set(nextTaskNodes.map((node) => node.nodeId));
     const taskIds = new Set(nextTaskNodes.map((node) => node.taskId));
     const sourceNodeIds = new Set(nextSourceNodes.map((node) => node.nodeId));
+    const nextTaskGroups = (stored.taskGroups ?? []).flatMap((group) => {
+      const taskGroupNodeIds = group.taskNodeIds.filter((nodeId) => taskNodeIds.has(nodeId));
+      return taskGroupNodeIds.length > 0 ? [{ ...group, taskNodeIds: taskGroupNodeIds }] : [];
+    });
     const nextAgentBranch = stored.expandedAgentBranch
       && agentNodeIds.has(stored.expandedAgentBranch.nodeId)
       && agentIds.has(stored.expandedAgentBranch.agentId)
@@ -1963,6 +2007,7 @@ export function App() {
     }
     setExpandedAgentBranch(nextAgentBranch);
     setExpandedTaskBranches(nextTaskBranches);
+    setTaskGroups(nextTaskGroups);
     setCanvasBranchLayout(stored.branchLayout ?? {});
     setMinimizedAgentNodeIds((stored.minimizedAgentNodeIds ?? []).filter((nodeId) => agentNodeIds.has(nodeId)));
     setMinimizedTaskNodeIds((stored.minimizedTaskNodeIds ?? []).filter((nodeId) => taskNodeIds.has(nodeId)));
@@ -2006,6 +2051,7 @@ export function App() {
         sourceNodeId: node.sourceNodeId,
         position: { x: node.position.x, y: node.position.y },
       })),
+      taskGroups,
       expandedAgentBranch,
       expandedTaskBranches,
       branchLayout: canvasBranchLayout,
@@ -2040,6 +2086,7 @@ export function App() {
     rootNodeFilter,
     selectedFixtureId,
     sourceAtlasNodes,
+    taskGroups,
     taskNodes,
   ]);
 
@@ -2846,6 +2893,30 @@ export function App() {
 
   const canCreateTask = dataSource === "live" && agents.length > 0;
   const canRefreshTasks = dataSource === "live" && !liveTasksRefreshing;
+  const selectedTaskNodeEntries = selectedAtlasEntries.filter((entry): entry is Extract<AtlasSelectedNodeEntry, { kind: "task" }> => entry.kind === "task");
+  const canCreateTaskGroup = selectedTaskNodeEntries.length >= 2;
+  const createTaskGroupFromSelection = useCallback(() => {
+    const taskNodeIds = Array.from(new Set(selectedTaskNodeEntries.map((entry) => entry.nodeId)));
+    if (taskNodeIds.length < 2) return;
+    setTaskGroups((current) => {
+      const nextIndex = current.length + 1;
+      return [
+        ...current,
+        {
+          groupId: `task-group-${Date.now().toString(36)}-${nextIndex}`,
+          title: `Group ${nextIndex}`,
+          taskNodeIds,
+          collapsed: false,
+        },
+      ];
+    });
+  }, [selectedTaskNodeEntries]);
+
+  const toggleTaskGroup = useCallback((groupId: string) => {
+    setTaskGroups((current) => current.map((group) => (
+      group.groupId === groupId ? { ...group, collapsed: !group.collapsed } : group
+    )));
+  }, []);
 
   const agentToolbar = (
     <div className="agent-atlas-actions">
@@ -2923,6 +2994,14 @@ export function App() {
           }}
         >
           {liveTasksRefreshing ? "刷新中..." : "刷新 Task"}
+        </button>
+        <button
+          type="button"
+          className="agent-add-btn task-group-create-btn"
+          disabled={!canCreateTaskGroup}
+          onClick={createTaskGroupFromSelection}
+        >
+          创建 Group{selectedTaskNodeEntries.length > 0 ? ` (${selectedTaskNodeEntries.length})` : ""}
         </button>
         {taskLeaderPickerOpen && (
           <div className="agent-picker task-leader-picker" aria-label="Task leader catalog">
@@ -4775,6 +4854,9 @@ export function App() {
                 minimizedTaskNodeIds={minimizedTaskNodeIds}
                 onMinimizeCanvasTask={minimizeTaskNode}
                 onRestoreCanvasTask={restoreTaskNode}
+                taskGroups={taskGroups}
+                onToggleTaskGroup={toggleTaskGroup}
+                onAtlasSelectionChange={setSelectedAtlasEntries}
                 onMoveSourceNode={moveSourceNode}
                 minimizedSourceNodeIds={minimizedSourceNodeIds}
                 onMinimizeSourceNode={minimizeSourceNode}

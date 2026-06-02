@@ -461,6 +461,38 @@ describe("App", () => {
       expect(taskNode).toHaveClass("is-atlas-selected");
     });
 
+    it("creates a UI-only Group from selected Tasks and toggles its collapsed card", async () => {
+      const { container } = render(<App />);
+      const atlas = getAtlas(container);
+      const atlasNodes = getAtlasNodes(container);
+      const firstTask = await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" }) as HTMLElement;
+      const secondTask = await within(atlasNodes).findByRole("button", { name: "发现云服务候选" }) as HTMLElement;
+
+      vi.useFakeTimers();
+      firePointer(atlas, "pointerdown", { pointerId: 43, clientX: 240, clientY: 180 });
+      act(() => { vi.advanceTimersByTime(SELECTION_LONG_PRESS_MS + 1); });
+      firePointer(atlas, "pointermove", { pointerId: 43, clientX: 940, clientY: 430 });
+      firePointer(atlas, "pointerup", { pointerId: 43, clientX: 940, clientY: 430, buttons: 0 });
+      vi.useRealTimers();
+
+      expect(firstTask).toHaveClass("is-atlas-selected");
+      expect(secondTask).toHaveClass("is-atlas-selected");
+
+      fireEvent.click(screen.getByRole("button", { name: /创建 Group/ }));
+
+      const group = await screen.findByRole("group", { name: "Group 1" });
+      expect(within(group).getByText("2 Tasks")).toBeInTheDocument();
+
+      fireEvent.click(within(group).getByRole("button", { name: "折叠 Group 1" }));
+      expect(atlasNodes.querySelector('[data-task-id="task_research_medtrum"]')).toBeNull();
+      expect(atlasNodes.querySelector('[data-task-id="task_discovery_cloud_vendors"]')).toBeNull();
+      const collapsedGroup = await screen.findByRole("button", { name: "展开 Group 1 2 Tasks" });
+
+      fireEvent.click(collapsedGroup);
+      expect(await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" })).toBeInTheDocument();
+      expect(await within(atlasNodes).findByRole("button", { name: "发现云服务候选" })).toBeInTheDocument();
+    });
+
     it("pans instead of selecting on quick drag before long-press delay", async () => {
       const { container } = render(<App />);
       fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
