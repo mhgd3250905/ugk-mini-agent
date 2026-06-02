@@ -19,6 +19,8 @@ This skill is for coding-agent handoff work in this repository. It must not crea
 
 Assume GLM is a useful executor but weaker at inference, scope control, and architectural judgment. Do not leave it to infer intent, boundaries, hidden prerequisites, or verification standards. If a senior reviewer would hold a fact in their head, write it into the plan or message.
 
+Treat GLM as a literal low-inference worker, not as a peer reviewer. If the workspace is messy or the plan has implicit protected behavior, GLM will likely damage it. Prevent that before handoff; do not blame the executor after the fact.
+
 ## GLM Failure Patterns To Guard Against
 
 Recent GLM handoffs in this repository have often been sent back for rework for predictable reasons. Every plan and sendable message should proactively block these failure modes:
@@ -31,8 +33,55 @@ Recent GLM handoffs in this repository have often been sent back for rework for 
 - Happy-path-only tests: edge cases such as restore after minimize, stale timeout, failed API call, concurrent click, old data, or hidden/minimized state are not covered.
 - Scope drift disguised as polish: unrelated formatting, refactors, visual redesign, or extra commits appear because the task boundary was not strict enough.
 - Overloaded mega-task failure: a large request is handed to GLM as one vague mission, so it guesses sequencing, mixes unrelated edits, and produces a diff that is hard to review.
+- Dirty-workspace confusion: GLM receives uncommitted unrelated or previously completed work in the same files it must edit, then overwrites or "simplifies" behavior it was never told to preserve.
+- Protected-UI regression: a plan says "do not change UI" but does not name the exact classes, DOM structure, visible labels, screenshots, tests, or browser evidence that must remain unchanged.
+- Implicit-state regression: persisted UI state, dock/minimize state, cached data, or local optimistic guards are not listed as protected invariants, so GLM breaks them while changing data loading.
+- Literalism failure: GLM follows the files named in the plan but misses surrounding constraints because they were described abstractly instead of as exact selectors, endpoints, test names, and forbidden edits.
 
 When writing a plan, convert any relevant failure pattern into an explicit task, test, or acceptance criterion. Do not rely on the external agent to infer the quality bar. Spell it out.
+
+## Mandatory Handoff Workspace Preparation
+
+Before writing or sending any GLM plan/message, Codex must make the workspace hard to misuse.
+
+1. Inspect the workspace:
+   - run `git status --short --branch`
+   - run `git diff --stat`
+   - run `git diff --cached --stat`
+   - run `git log -5 --oneline`
+2. Classify all dirty tracked changes:
+   - completed and approved work
+   - work GLM is supposed to continue
+   - unrelated user/generated changes
+   - accidental or suspicious changes
+3. Do not hand GLM a broad dirty source tree. If completed work exists in files GLM may touch, first either:
+   - commit it with user approval or an explicit user request to save work, or
+   - stop and ask the user whether to commit, stash, or defer GLM.
+4. If GLM must continue a dirty diff, the plan must list every dirty tracked file, say which files it may modify, and require GLM to stop if any other tracked file changes.
+5. Keep untracked artifacts out of GLM's path:
+   - list exact untracked files/directories that must not be touched
+   - never tell GLM to run `git add -A`
+   - default to no stage/no commit
+6. For UI work already verified by Codex, preserve a baseline before GLM:
+   - commit the baseline when the user has asked to save it, or
+   - capture the exact protected DOM/classes/visible behavior/tests/browser evidence in the requirement and message
+7. If the workspace cannot be made safe, do not generate a paste-ready GLM instruction yet. Report the blocker and propose the smallest cleanup step.
+
+This is not bureaucracy. Giving a weak executor a messy workspace is negligent project management.
+
+## Low-Inference Plan Writing Rules
+
+Write plans as if GLM will do exactly what is written and nothing that is merely implied.
+
+- Prefer exact file paths, function names, route names, selectors, ARIA labels, CSS class names, data attributes, and test names over prose.
+- Include "protected invariants" for any behavior that must survive the step, especially previously restored UI, persisted state, cached state, local optimistic guards, endpoint request budgets, and no-regression browser flows.
+- Include "must not change" selectors/classes when UI is nearby, even if the task is nominally backend or data loading.
+- Include "stop conditions": baseline commit mismatch, unexpected dirty files, unexpected endpoint shape, unexpectedly large diff, EOL churn, failed focused test, browser evidence contradicting tests.
+- Require GLM to prove absence of regression, not just presence of the new feature.
+- When the task touches a high-risk file such as `App.tsx`, CSS, shared hooks, route files, or persistence code, include at least one regression test or browser check for the most valuable existing behavior in that file.
+- Avoid vague verbs such as "clean up", "simplify", "align", "polish", or "refactor" unless the plan immediately defines the exact block and acceptable diff.
+- Do not ask GLM to interpret screenshots or product taste unless the message includes exact observable acceptance criteria.
+- For every "do not change X", include the test, selector, or grep/static contract that will catch X changing when feasible.
 
 ## Required Outputs
 
@@ -58,22 +107,32 @@ If the user only says "调用 glm-plan" without a topic, infer the topic from th
    - what phases/tasks are already completed
    - current test status if known
    - dirty/untracked files that the external agent must not commit
-3. Classify task size:
+3. Prepare the handoff workspace:
+   - if tracked source changes are completed, get them committed/saved before GLM edits nearby files
+   - if tracked dirty files must remain dirty, list them explicitly and define which ones GLM may touch
+   - if unrelated dirty files exist, do not proceed until they are isolated, committed, stashed with approval, or excluded by exact instructions
+   - never rely on GLM to distinguish "existing good dirty work" from "work it should replace"
+4. Define protected invariants:
+   - previously completed behavior that must not regress
+   - DOM/CSS selectors, state keys, request budgets, route shapes, or tests that protect those behaviors
+   - explicit stop conditions if these invariants cannot be verified
+5. Classify task size:
    - Small: one bounded behavior, one subsystem, a small file set, and one verification loop.
    - Large: multiple subsystems, multiple user-visible behaviors, migration/refactor series, ambiguous sequencing, or likely more than one review/commit checkpoint.
-4. For a small task, write one plan file under `.codex/plans/`.
-5. For a large task:
+6. For a small task, write one plan file under `.codex/plans/`.
+7. For a large task:
    - write or update a requirement/index document with the overall objective, non-goals, phase list, known facts, and done criteria
    - choose the next smallest safe step
    - write a step-specific plan file
    - write a step-specific message file
-6. Write a sendable message that points the external agent to the exact plan/message files.
-7. Final response should include:
+8. Write a sendable message that points the external agent to the exact plan/message files.
+9. Final response should include:
    - the requirement/index file path when created or updated
    - the plan file path
    - the message file path when created
    - the message to send
    - any local untracked files to warn about
+   - whether the tracked workspace is clean enough for GLM and what cleanup was done or deliberately deferred
 
 After each external-agent step, Codex should review the diff, rerun verification, decide whether to commit, and only then generate the next step. Do not pre-authorize GLM to continue through multiple steps without review.
 
@@ -96,8 +155,10 @@ Each large-task requirement/index document must include:
 - Overall objective and why it matters.
 - Current repo baseline and latest relevant commits.
 - Completed steps and their commit hashes, when known.
+- Workspace hygiene status: clean tracked tree preferred; otherwise exact dirty tracked files and why they are safe.
 - Remaining backlog in recommended order.
 - Non-goals and forbidden systems/files.
+- Protected invariants from completed steps, with tests/selectors/browser checks that prove they remain intact.
 - Shared verification baseline for the whole series.
 - Per-step review gate: GLM stops after delivery, Codex audits before the next step.
 - Commit policy: whether GLM may commit; default is no stage/no commit unless the user explicitly says otherwise.
@@ -107,6 +168,8 @@ Each per-step plan must include:
 - Step name and sequence number.
 - The exact subset of the requirement it handles.
 - The exact files it may read and modify.
+- The exact current dirty-file boundary and what to do if it differs.
+- Protected invariants and forbidden regressions for nearby code.
 - The exact tests or blocks to move/change when the task is mechanical.
 - Import cleanup rules and known symbols to preserve.
 - Focused baseline command to run before editing when useful.
@@ -121,8 +184,10 @@ The plan must be usable by an agent that has never seen the project. Include:
 
 - Goal
 - Current baseline
+- Workspace hygiene / dirty-file boundary
 - Must-read files
 - Absolute scope boundary
+- Protected invariants / existing behavior that must not regress
 - Explicit "Do not do" list
 - Task-by-task execution steps
 - Exact files likely to modify
@@ -138,6 +203,7 @@ For UI or browser-visible work, the plan must also include:
 - The exact local URL or route to verify, for example `http://127.0.0.1:5174/`.
 - The real DOM selectors, ARIA labels, or user actions that exercise the changed behavior.
 - The expected before/after observable evidence: bounding rects, computed styles, data attributes, network status, screenshots, canvas pixels, or visible state changes.
+- The protected UI evidence that must remain unchanged, including class names, data attributes, visible text that must stay absent/present, and persisted localStorage keys when relevant.
 - A browser automation requirement. If browser automation is unavailable, the agent must report it as a blocker or limitation; it must not silently replace it with "please manually verify" unless the user explicitly accepts that.
 
 Prefer 4-8 tasks for a normal plan. For a GLM step plan, prefer 1-3 tasks and one reviewable commit boundary.
@@ -162,6 +228,7 @@ Require the external agent to include concrete evidence in its delivery report:
 - For API behavior: include status codes and payload shape checks from the real route or route test.
 - For warning suppression: quote the exact warning pattern being suppressed and explain why the filter cannot hide unrelated warnings.
 - For bug fixes: name the old failing behavior and the test or browser step that now catches it.
+- For regression-sensitive work: name the existing behavior protected by the step and include evidence that it still works.
 - For mechanical migration: prove equivalence with block comparison, test counts, or another concrete invariant.
 
 Ban delivery claims such as "should work", "manual verification recommended", "looks fine", or "implemented according to plan" when no runtime evidence is supplied.
@@ -183,9 +250,12 @@ Every generated plan and sendable message must explicitly protect against format
 Always include these rules in the plan and sendable message:
 
 - Strictly follow the plan; do not redesign the system.
+- Before editing, run the baseline `git status --short --branch` and stop if it does not match the message's expected dirty-file boundary.
 - Default to no stage and no commit. If the user explicitly authorizes commits, use one task, one commit.
 - Write tests before implementation where behavior changes.
 - Do not broaden scope.
+- Do not modify files outside the allowed list. If a compile error appears to require another file, stop and report unless the plan explicitly allows a tiny alignment edit.
+- Preserve all protected invariants listed in the message. If an invariant conflicts with the implementation, stop rather than deleting or simplifying it.
 - Preserve existing line endings and formatting; do not create EOL-only or formatter-only churn.
 - Stop and report if blocked or if a plan assumption is wrong.
 - Do not commit `.env`, `.data`, runtime artifacts, temp files, unknown `.pi/skills/*`, or `skills-lock.json`.
@@ -234,6 +304,13 @@ For frontend visual work, require at least one test that fails against the previ
 - 已完成: <completed phases or commits>
 - 当前验证: <known verification result>
 - 暂存区: <empty or exact state>
+- tracked 工作区: <clean or exact dirty files>
+- 未跟踪文件禁止触碰: <exact list>
+
+工作区整理状态：
+- Codex 已保存/提交的基线: <commit or not applicable>
+- GLM 允许修改的 dirty tracked files: <none or exact list>
+- 如果 `git status --short --branch` 与本消息不一致，立刻停止并报告，不要继续编辑
 
 必须先读：
 - AGENTS.md
@@ -249,9 +326,15 @@ For frontend visual work, require at least one test that fails against the previ
 - <scope bullet 1>
 - <scope bullet 2>
 
+必须保护的既有行为：
+- <invariant 1, with selector/test/browser evidence>
+- <invariant 2, with selector/test/browser evidence>
+- 如果实现会破坏以上任一行为，停止并报告，不要删除、简化或重做它
+
 禁止做：
 - 不做 <explicit non-goals>
 - 不改 <forbidden files/systems>
+- 不改允许列表之外的文件；如果编译错误似乎需要改别的文件，先停止说明
 - 不创建计划外文件
 - 不做整文件格式化或换行符转换；保持 touched files 的既有 EOL/格式
 - 不 stage、不 commit，除非本条消息明确授权
@@ -260,8 +343,11 @@ For frontend visual work, require at least one test that fails against the previ
 
 执行要求：
 - 这是第 <N> 步，只处理本步范围，完成后停下交付
+- 编辑前先运行 `git status --short --branch`，确认工作区边界与本消息一致
 - 行为变更先补测试，再写实现；纯机械迁移必须做等价性检查
 - 遇到计划外问题先停下说明，不要顺手扩范围
+- 不要重构、重排或“顺手优化”计划没有点名的代码块
+- 对高风险文件（App.tsx、CSS、共享 hook、route、持久化状态）必须包含既有行为回归证据
 - 如果小改动产生超大 diff，先检查是否为 EOL/formatter churn，修正后再继续
 - UI/交互任务必须在真实入口做浏览器验证，交付 measured evidence；不要把可自动验证的步骤丢给用户手动做
 - 不允许宽泛 suppress console warning；必须修根因或精确限定到已知 warning
