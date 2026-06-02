@@ -500,6 +500,28 @@ export interface TeamCanvasTask {
 	archived: boolean;
 }
 
+export interface TeamDiscoveryGeneratedTaskSummary {
+	taskId: string;
+	canvasKind?: TeamCanvasTaskKind;
+	title: string;
+	leaderAgentId: string;
+	status: TeamCanvasTaskStatus;
+	createdAt: string;
+	updatedAt: string;
+	archived: boolean;
+	generatedSource: {
+		schemaVersion: "team/generated-task-source-1";
+		sourceDiscoveryTaskId: string;
+		sourceItemId: string;
+		itemStatus: TeamGeneratedTaskItemStatus;
+		latestDiscoveryRunId?: string;
+		latestDiscoveryAttemptId?: string;
+		latestDiscoveredAt?: string;
+		workUnitMode: TeamGeneratedTaskWorkUnitMode;
+		canResetToManaged?: boolean;
+	};
+}
+
 export interface TeamProgress {
 	phase: ProgressPhase;
 	message: string;

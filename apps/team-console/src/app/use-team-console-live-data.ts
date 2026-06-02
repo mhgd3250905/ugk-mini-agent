@@ -107,6 +107,29 @@ function flattenGeneratedTasks(generatedTasksByDiscoveryTaskId: Record<string, T
   return Object.values(generatedTasksByDiscoveryTaskId).flat();
 }
 
+function hasTaskDetail(task: TeamCanvasTask): boolean {
+  return Boolean((task as Partial<TeamCanvasTask>).workUnit);
+}
+
+function mergeGeneratedTaskSummaryIntoFullTask(existing: TeamCanvasTask, incoming: TeamCanvasTask): TeamCanvasTask {
+  return {
+    ...existing,
+    canvasKind: incoming.canvasKind ?? existing.canvasKind,
+    title: incoming.title,
+    leaderAgentId: incoming.leaderAgentId,
+    status: incoming.status,
+    createdAt: incoming.createdAt,
+    updatedAt: incoming.updatedAt,
+    archived: incoming.archived,
+    generatedSource: existing.generatedSource && incoming.generatedSource
+      ? {
+          ...existing.generatedSource,
+          ...incoming.generatedSource,
+        }
+      : existing.generatedSource,
+  };
+}
+
 function summarizeDiscoveryCatalogs(
   generatedTasksByDiscoveryTaskId: Record<string, TeamCanvasTask[]>,
   taskRunsByTaskId: Record<string, TeamRunState[]>,
@@ -241,6 +264,7 @@ export interface UseTeamConsoleLiveDataReturn {
   setTasks: React.Dispatch<React.SetStateAction<TeamCanvasTask[]>>;
   markGeneratedTaskReplaced: (taskId: string) => void;
   markGeneratedTaskArchived: (taskId: string) => void;
+  ensureGeneratedTaskDetail: (taskId: string) => Promise<TeamCanvasTask | null>;
 }
 
 export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): UseTeamConsoleLiveDataReturn {
@@ -278,6 +302,10 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
   const locallyArchivedGeneratedTaskIdsRef = useRef<Set<string>>(new Set());
   const loadedDiscoveryCatalogTaskIdsRef = useRef<Set<string>>(new Set());
   const loadingDiscoveryCatalogTaskIdsRef = useRef<Set<string>>(new Set());
+  const generatedTaskDetailInFlightRef = useRef<Map<string, Promise<TeamCanvasTask | null>>>(new Map());
+  const generatedTaskDetailCacheRef = useRef<Map<string, TeamCanvasTask>>(new Map());
+  const generatedTasksByDiscoveryTaskIdRef = useRef<Record<string, TeamCanvasTask[]>>(generatedTasksByDiscoveryTaskId);
+  generatedTasksByDiscoveryTaskIdRef.current = generatedTasksByDiscoveryTaskId;
   const discoverySummariesByTaskId = useMemo(() => summarizeDiscoveryCatalogs(
     generatedTasksByDiscoveryTaskId,
     taskRunsByTaskId,
@@ -321,7 +349,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
   }, []);
 
   const loadDiscoveryCatalogsForTaskIds = useCallback(async (
-    api: Pick<LiveTeamApi, "listGeneratedTasks" | "listTaskRunsByTaskIds" | "listTaskRunAttempts">,
+    api: Pick<LiveTeamApi, "listGeneratedTaskSummaries" | "listTaskRunsByTaskIds" | "listTaskRunAttempts">,
     rootTasks: TeamCanvasTask[],
     discoveryTaskIds: string[],
   ): Promise<DiscoveryCatalogLoadResult> => {
@@ -339,8 +367,8 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     let firstCatalogError: string | null = null;
     const generatedEntries = await Promise.all(requestedRoots.map(async (task) => {
       try {
-        const generatedTasks = await api.listGeneratedTasks(task.taskId);
-        return [task.taskId, generatedTasks] as const;
+        const summaries = await api.listGeneratedTaskSummaries(task.taskId);
+        return [task.taskId, summaries as unknown as TeamCanvasTask[]] as const;
       } catch (e) {
         firstCatalogError ??= errorMessage(e);
         return [task.taskId, []] as const;
@@ -363,18 +391,12 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
   }, [readTaskRunsForTasks]);
 
   const loadAllDiscoveryCatalogs = useCallback(async (
-    api: Pick<LiveTeamApi, "listGeneratedTasks" | "listTaskRunsByTaskIds" | "listTaskRunAttempts">,
+    api: Pick<LiveTeamApi, "listGeneratedTaskSummaries" | "listTaskRunsByTaskIds" | "listTaskRunAttempts">,
     nextTasks: TeamCanvasTask[],
   ): Promise<DiscoveryCatalogLoadResult> => {
     const discoveryTasks = discoveryRootTasks(nextTasks);
     return loadDiscoveryCatalogsForTaskIds(api, nextTasks, discoveryTasks.map((t) => t.taskId));
   }, [loadDiscoveryCatalogsForTaskIds]);
-
-  const applyDiscoveryCatalogLoadResult = useCallback((result: DiscoveryCatalogLoadResult) => {
-    setGeneratedTasksByDiscoveryTaskId(result.generatedTasksByDiscoveryTaskId);
-    setTaskRunsByTaskId(result.taskRunsByTaskId);
-    setDiscoveryDispatchDiagnosticsByTaskId(result.discoveryDispatchDiagnosticsByTaskId);
-  }, []);
 
   const mergeDiscoveryCatalogLoadResult = useCallback((result: DiscoveryCatalogLoadResult) => {
     const replaced = recentlyReplacedGeneratedTaskIdsRef.current;
@@ -386,9 +408,14 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
         merged[discoveryId] = incomingTasks
           .filter((incoming) => !archivedIds.has(incoming.taskId))
           .map((incoming) => {
-            if (!replaced.has(incoming.taskId)) return incoming;
             const existing = existingTasks.find((t) => t.taskId === incoming.taskId);
-            return existing && existing.updatedAt >= incoming.updatedAt ? existing : incoming;
+            if (replaced.has(incoming.taskId) && existing && existing.updatedAt >= incoming.updatedAt) {
+              return existing;
+            }
+            if (existing && hasTaskDetail(existing) && !hasTaskDetail(incoming)) {
+              return mergeGeneratedTaskSummaryIntoFullTask(existing, incoming);
+            }
+            return incoming;
           });
       }
       return merged;
@@ -518,6 +545,50 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     locallyArchivedGeneratedTaskIdsRef.current.add(taskId);
   }, []);
 
+  const ensureGeneratedTaskDetail = useCallback(async (taskId: string): Promise<TeamCanvasTask | null> => {
+    const detailKey = `${dataSource}:${taskId}`;
+    const cached = generatedTaskDetailCacheRef.current.get(detailKey);
+    if (cached) return cached;
+    const allGenerated = Object.values(generatedTasksByDiscoveryTaskIdRef.current).flat();
+    const existing = allGenerated.find((task) => task.taskId === taskId);
+    if (existing && hasTaskDetail(existing)) return existing;
+    const inFlight = generatedTaskDetailInFlightRef.current.get(detailKey);
+    if (inFlight) return inFlight;
+    const request = Promise.resolve().then(async () => {
+      try {
+        const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+        const fullTask = await api.getTask(taskId);
+        if (!fullTask) return null;
+        generatedTaskDetailCacheRef.current.set(detailKey, fullTask);
+        const sourceDiscoveryTaskId = fullTask.generatedSource?.sourceDiscoveryTaskId;
+        if (sourceDiscoveryTaskId) {
+          setGeneratedTasksByDiscoveryTaskId((current) => {
+            const catalog = current[sourceDiscoveryTaskId] ?? [];
+            if (!catalog.some((task) => task.taskId === taskId)) return current;
+            const next = {
+              ...current,
+              [sourceDiscoveryTaskId]: catalog.map((task) =>
+                task.taskId === taskId ? fullTask : task
+              ),
+            };
+            generatedTasksByDiscoveryTaskIdRef.current = next;
+            return next;
+          });
+        }
+        return fullTask;
+      } catch (e) {
+        setError(errorMessage(e));
+        return null;
+      } finally {
+        globalThis.setTimeout(() => {
+          generatedTaskDetailInFlightRef.current.delete(detailKey);
+        }, 0);
+      }
+    });
+    generatedTaskDetailInFlightRef.current.set(detailKey, request);
+    return request;
+  }, [dataSource]);
+
   // Clear discovery timers when switching away from live
   useEffect(() => {
     if (dataSource === "live") return;
@@ -597,7 +668,12 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
       setDiscoveryDispatchDiagnosticsByTaskId({});
       void loadAllDiscoveryCatalogs(mockApi, mockRootTasks).then((discoveryCatalogResult) => {
         if (cancelled) return;
-        applyDiscoveryCatalogLoadResult(discoveryCatalogResult);
+        if (Object.keys(discoveryCatalogResult.discoveryDispatchDiagnosticsByTaskId).length > 0) {
+          setDiscoveryDispatchDiagnosticsByTaskId(discoveryCatalogResult.discoveryDispatchDiagnosticsByTaskId);
+        }
+        if (discoveryCatalogResult.error) {
+          setError(discoveryCatalogResult.error);
+        }
       });
       return () => {
         cancelled = true;
@@ -850,5 +926,6 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     setTasks,
     markGeneratedTaskReplaced,
     markGeneratedTaskArchived,
+    ensureGeneratedTaskDetail,
   };
 }

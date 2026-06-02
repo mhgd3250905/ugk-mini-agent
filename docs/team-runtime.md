@@ -1,6 +1,8 @@
 # Team Runtime v2
 
-更新时间：2026-06-01
+更新时间：2026-06-02
+
+> 2026-06-02 补充：Team Console Discovery 子画布的 generated catalog 首屏加载改为 summary view。`GET /v1/team/tasks/:taskId/generated-tasks?view=summary` 只返回卡片展示、状态排序和 `canResetToManaged` 所需轻量字段，不返回 `workUnit`、`latestManagedWorkUnit`、`generatedSource.itemPayload` 等 heavy detail；默认无 `view` 仍返回 full generated Tasks 以保持兼容。5174 打开子画布时消费 summary，编辑 generated Task 前再 lazy fetch `GET /v1/team/tasks/:generatedTaskId` 取得完整 Task；full detail 请求按 `dataSource:taskId` 去重，summary refresh 不覆盖已经取得的 full detail，full detail 失败会清理半开编辑状态并允许下一次点击重试。
 
 > 2026-05-31 补充：Team Console Live API 在 Discovery root run 进入终态后，会继续用有限延迟刷新追踪 `GET /v1/team/tasks/:taskId/generated-tasks` 和 generated child run summaries；打开 `Discovery 子画布` 时也会主动刷新并启动同一组延迟刷新。这个机制用于覆盖 root 完成后 dispatcher / generated child auto-run 晚到数十秒到数分钟的窗口，避免用户看到空子画布或旧 run 状态。它只消费既有只读 catalog/run API，不新增 backend endpoint，也不把 generated child 放进 root task list/root canvas。
 

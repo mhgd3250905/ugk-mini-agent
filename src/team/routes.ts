@@ -19,7 +19,7 @@ import { SourceNodeStore, type UpdateSourceNodeInput } from "./source-node-store
 import { MockRoleRunner } from "./role-runner.js";
 import type { TeamRoleRunner } from "./role-runner.js";
 import { buildRunDetailResponse } from "./run-presenter.js";
-import type { TeamRunState } from "./types.js";
+import type { TeamDiscoveryGeneratedTaskSummary, TeamRunState } from "./types.js";
 import { AgentProfileRoleRunner } from "./agent-profile-role-runner.js";
 import { closeBrowserTargetsForScope } from "../agent/browser-cleanup.js";
 import { loadAgentProfilesSync } from "../agent/agent-profile-catalog.js";
@@ -134,6 +134,32 @@ async function validateUsableTeamUnit(unitStore: TeamUnitStore, teamUnitId: stri
 	}
 }
 
+function toGeneratedTaskSummary(task: import("./types.js").TeamCanvasTask): import("./types.js").TeamDiscoveryGeneratedTaskSummary {
+	const source = task.generatedSource;
+	if (!source) throw new Error("generated task summary requires generatedSource");
+	return {
+		taskId: task.taskId,
+		canvasKind: task.canvasKind,
+		title: task.title,
+		leaderAgentId: task.leaderAgentId,
+		status: task.status,
+		createdAt: task.createdAt,
+		updatedAt: task.updatedAt,
+		archived: task.archived,
+		generatedSource: {
+			schemaVersion: source.schemaVersion,
+			sourceDiscoveryTaskId: source.sourceDiscoveryTaskId,
+			sourceItemId: source.sourceItemId,
+			itemStatus: source.itemStatus,
+			latestDiscoveryRunId: source.latestDiscoveryRunId,
+			latestDiscoveryAttemptId: source.latestDiscoveryAttemptId,
+			latestDiscoveredAt: source.latestDiscoveredAt,
+			workUnitMode: source.workUnitMode,
+			canResetToManaged: Boolean(source.latestManagedWorkUnit),
+		},
+	};
+}
+
 export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptions): void {
 	const planStore = new PlanStore(options.teamDataDir);
 	const taskStore = new TaskStore(options.teamDataDir, {
@@ -231,9 +257,20 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			reply.code(400).send({ error: "generated tasks can only be listed for Discovery root tasks" });
 			return;
 		}
+		const query = request.query as { view?: string };
+		const view = query.view;
+		if (view !== undefined && view !== "summary") {
+			reply.code(400).send({ error: "unknown view parameter; supported values: summary" });
+			return;
+		}
 		const tasks = await taskStore.listGeneratedForDiscoveryTask(taskId, {
 			includeArchived: parseIncludeArchived(request),
 		});
+		if (view === "summary") {
+			const summaries: TeamDiscoveryGeneratedTaskSummary[] = tasks.map(toGeneratedTaskSummary);
+			reply.send({ tasks: summaries });
+			return;
+		}
 		reply.send({ tasks });
 	});
 

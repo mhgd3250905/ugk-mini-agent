@@ -453,6 +453,74 @@ describe("LiveTeamApi", () => {
     await expect(api.listGeneratedTasks("task_discovery")).resolves.toEqual([generatedTask]);
   });
 
+  it("listGeneratedTaskSummaries calls /generated-tasks?view=summary", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const summary = {
+      taskId: "task_summary_1",
+      title: "Summary item",
+      leaderAgentId: "main",
+      status: "ready",
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:00.000Z",
+      archived: false,
+      generatedSource: {
+        schemaVersion: "team/generated-task-source-1" as const,
+        sourceDiscoveryTaskId: "task_discovery",
+        sourceItemId: "item_1",
+        itemStatus: "active" as const,
+        workUnitMode: "customized" as const,
+        canResetToManaged: true,
+      },
+    };
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ tasks: [summary] }), { status: 200 }));
+
+    const summaries = await api.listGeneratedTaskSummaries("task_discovery");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/tasks/task_discovery/generated-tasks?view=summary");
+    expect(summaries).toEqual([summary]);
+  });
+
+  it("listGeneratedTaskSummaries includes includeArchived parameter", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ tasks: [] }), { status: 200 }));
+
+    await api.listGeneratedTaskSummaries("task/a b", { includeArchived: true });
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/tasks/task%2Fa%20b/generated-tasks?view=summary&includeArchived=1");
+  });
+
+  it("listGeneratedTaskSummaries treats 404 as empty", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response("not found", { status: 404 }));
+
+    await expect(api.listGeneratedTaskSummaries("task_discovery")).resolves.toEqual([]);
+  });
+
+  it("listGeneratedTaskSummaries normalizes malformed body to empty array", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ tasks: null }), { status: 200 }));
+
+    await expect(api.listGeneratedTaskSummaries("task_discovery")).resolves.toEqual([]);
+  });
+
+  it("getTask fetches a single task by id", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const task = mockTeamTasks[0]!;
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ task }), { status: 200 }));
+
+    const result = await api.getTask("task/a b");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/tasks/task%2Fa%20b");
+    expect(result).toEqual(task);
+  });
+
+  it("getTask returns null for 404", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response("not found", { status: 404 }));
+
+    await expect(api.getTask("task_missing")).resolves.toBeNull();
+  });
+
   it("lists and creates live typed Task connections", async () => {
     const api = new LiveTeamApi("/v1/team");
     const connection = {

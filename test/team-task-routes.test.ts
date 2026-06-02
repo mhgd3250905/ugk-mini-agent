@@ -78,7 +78,7 @@ function generatedSource(
 	sourceDiscoveryTaskId: string,
 	sourceItemId: string,
 	itemStatus: "active" | "stale" = "active",
-	options: { latestManagedWorkUnit?: typeof taskPayload.workUnit } = {},
+	options: { latestManagedWorkUnit?: typeof taskPayload.workUnit; workUnitMode?: "managed" | "customized" } = {},
 ) {
 	return {
 		schemaVersion: "team/generated-task-source-1" as const,
@@ -89,7 +89,7 @@ function generatedSource(
 		latestDiscoveryRunId: `run_${sourceItemId}`,
 		latestDiscoveryAttemptId: `attempt_${sourceItemId}`,
 		latestDiscoveredAt: "2026-05-30T00:00:00.000Z",
-		workUnitMode: "managed" as const,
+		workUnitMode: options.workUnitMode ?? "managed" as const,
 		...(options.latestManagedWorkUnit ? { latestManagedWorkUnit: options.latestManagedWorkUnit } : {}),
 	};
 }
@@ -99,7 +99,7 @@ async function seedGeneratedTask(
 	sourceDiscoveryTaskId: string,
 	sourceItemId: string,
 	itemStatus: "active" | "stale" = "active",
-	options: { latestManagedWorkUnit?: typeof taskPayload.workUnit } = {},
+	options: { latestManagedWorkUnit?: typeof taskPayload.workUnit; workUnitMode?: "managed" | "customized" } = {},
 ) {
 	const store = new TaskStore(teamDir, { getAgentIds: () => ["main", "search"] });
 	return store.create({
@@ -300,6 +300,103 @@ test("GET /v1/team/tasks/:taskId/generated-tasks rejects missing or non-Discover
 		const normalParent = await app.inject({ method: "GET", url: `/v1/team/tasks/${normal.taskId}/generated-tasks` });
 		assert.equal(normalParent.statusCode, 400);
 		assert.match(normalParent.json().error, /generated tasks can only be listed for Discovery root tasks/);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+
+test("GET /v1/team/tasks/:taskId/generated-tasks view=summary returns light summary without heavy fields", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const discovery = (await app.inject({ method: "POST", url: "/v1/team/tasks", payload: discoveryTaskPayload() })).json().task;
+		const active = await seedGeneratedTask(teamDir, discovery.taskId, "active_item");
+		const stale = await seedGeneratedTask(teamDir, discovery.taskId, "stale_item", "stale");
+		const customized = await seedGeneratedTask(teamDir, discovery.taskId, "customized_item", "active", {
+			latestManagedWorkUnit: taskPayload.workUnit,
+			workUnitMode: "customized",
+		});
+
+		const summaryRes = await app.inject({ method: "GET", url: `/v1/team/tasks/${discovery.taskId}/generated-tasks?view=summary` });
+		assert.equal(summaryRes.statusCode, 200);
+		const summaries = summaryRes.json().tasks;
+		assert.equal(summaries.length, 3);
+		const summaryTaskIds = new Set(summaries.map((t: any) => t.taskId));
+		assert.ok(summaryTaskIds.has(active.taskId));
+		assert.ok(summaryTaskIds.has(stale.taskId));
+		assert.ok(summaryTaskIds.has(customized.taskId));
+
+		for (const s of summaries) {
+			assert.equal(typeof s.taskId, "string");
+			assert.equal(typeof s.title, "string");
+			assert.equal(typeof s.status, "string");
+			assert.equal(typeof s.updatedAt, "string");
+			assert.equal(typeof s.archived, "boolean");
+			assert.ok(s.generatedSource);
+			assert.equal(s.generatedSource.schemaVersion, "team/generated-task-source-1");
+			assert.equal(typeof s.generatedSource.sourceDiscoveryTaskId, "string");
+			assert.equal(typeof s.generatedSource.sourceItemId, "string");
+			assert.ok(["active", "stale"].includes(s.generatedSource.itemStatus));
+			assert.equal(typeof s.generatedSource.workUnitMode, "string");
+			assert.equal(s.workUnit, undefined, "summary must not include workUnit");
+			assert.equal(s.discoverySpec, undefined, "summary must not include discoverySpec");
+			assert.equal(s.generatedSource.itemPayload, undefined, "summary must not include itemPayload");
+			assert.equal(s.generatedSource.latestManagedWorkUnit, undefined, "summary must not include latestManagedWorkUnit");
+		}
+		const customizedSummary = summaries.find((s: any) => s.taskId === customized.taskId);
+		assert.equal(customizedSummary.generatedSource.workUnitMode, "customized");
+		assert.equal(customizedSummary.generatedSource.canResetToManaged, true);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/tasks/:taskId/generated-tasks default view still returns full generated tasks with workUnit", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const discovery = (await app.inject({ method: "POST", url: "/v1/team/tasks", payload: discoveryTaskPayload() })).json().task;
+		await seedGeneratedTask(teamDir, discovery.taskId, "full_item");
+
+		const fullRes = await app.inject({ method: "GET", url: `/v1/team/tasks/${discovery.taskId}/generated-tasks` });
+		assert.equal(fullRes.statusCode, 200);
+		const tasks = fullRes.json().tasks;
+		assert.equal(tasks.length, 1);
+		assert.ok(tasks[0].workUnit, "default view must include workUnit");
+		assert.equal(tasks[0].workUnit.workerAgentId, "search");
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/tasks/:taskId/generated-tasks rejects unknown view parameter", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const discovery = (await app.inject({ method: "POST", url: "/v1/team/tasks", payload: discoveryTaskPayload() })).json().task;
+		const badView = await app.inject({ method: "GET", url: `/v1/team/tasks/${discovery.taskId}/generated-tasks?view=compact` });
+		assert.equal(badView.statusCode, 400);
+		assert.match(badView.json().error, /unknown view parameter/);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/tasks/:taskId/generated-tasks view=summary supports includeArchived", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const discovery = (await app.inject({ method: "POST", url: "/v1/team/tasks", payload: discoveryTaskPayload() })).json().task;
+		await seedGeneratedTask(teamDir, discovery.taskId, "summary_active");
+		const archived = await seedGeneratedTask(teamDir, discovery.taskId, "summary_archived");
+		await new TaskStore(teamDir, { getAgentIds: () => ["main", "search"] }).archive(archived.taskId);
+
+		const withoutArchived = await app.inject({ method: "GET", url: `/v1/team/tasks/${discovery.taskId}/generated-tasks?view=summary` });
+		assert.equal(withoutArchived.json().tasks.length, 1);
+
+		const withArchived = await app.inject({ method: "GET", url: `/v1/team/tasks/${discovery.taskId}/generated-tasks?view=summary&includeArchived=true` });
+		assert.equal(withArchived.json().tasks.length, 2);
 	} finally {
 		await app.close();
 		await rm(root, { recursive: true, force: true });

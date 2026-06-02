@@ -29,6 +29,7 @@ import type {
   TeamCanvasSourceNodeListResponse,
   TeamCanvasSourceNodeMutationResponse,
   TeamCanvasSourceNodeUpdateRequest,
+  TeamDiscoveryGeneratedTaskSummary,
   TeamTaskConnection,
   TeamTaskConnectionCreateRequest,
   TeamTaskConnectionListResponse,
@@ -61,6 +62,11 @@ export interface CanvasTaskGateway {
     discoveryTaskId: string,
     options?: { includeArchived?: boolean },
   ): Promise<TeamCanvasTask[]>;
+  listGeneratedTaskSummaries(
+    discoveryTaskId: string,
+    options?: { includeArchived?: boolean },
+  ): Promise<TeamDiscoveryGeneratedTaskSummary[]>;
+  getTask(taskId: string): Promise<TeamCanvasTask | null>;
   updateTask(taskId: string, patch: TeamTaskUpdateRequest): Promise<TeamTaskMutationResponse>;
   resetGeneratedTaskWorkUnit(taskId: string): Promise<TeamTaskMutationResponse>;
   archiveTask(taskId: string): Promise<TeamTaskMutationResponse>;
@@ -201,6 +207,40 @@ export class LiveTeamApi implements TeamApiProvider {
       const body = (await res.json()) as TeamCanvasTaskListResponse | TeamCanvasTask[];
       if (Array.isArray(body)) return body;
       return Array.isArray(body.tasks) ? body.tasks : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async listGeneratedTaskSummaries(
+    discoveryTaskId: string,
+    options?: { includeArchived?: boolean },
+  ): Promise<TeamDiscoveryGeneratedTaskSummary[]> {
+    try {
+      const params = new URLSearchParams({ view: "summary" });
+      if (options?.includeArchived) {
+        params.set("includeArchived", "1");
+      }
+      const res = await fetch(
+        `${this.baseUrl}/tasks/${encodeURIComponent(discoveryTaskId)}/generated-tasks?${params.toString()}`,
+      );
+      if (res.status === 404) return [];
+      if (!res.ok) throw res;
+      const body = (await res.json()) as { tasks: TeamDiscoveryGeneratedTaskSummary[] } | TeamDiscoveryGeneratedTaskSummary[];
+      if (Array.isArray(body)) return body;
+      return Array.isArray(body.tasks) ? body.tasks : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async getTask(taskId: string): Promise<TeamCanvasTask | null> {
+    try {
+      const res = await fetch(`${this.baseUrl}/tasks/${encodeURIComponent(taskId)}`);
+      if (res.status === 404) return null;
+      if (!res.ok) throw res;
+      const body = (await res.json()) as TeamTaskMutationResponse;
+      return body.task;
     } catch (e) {
       throw toApiError(e);
     }

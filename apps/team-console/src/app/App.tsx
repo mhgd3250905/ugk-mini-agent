@@ -1296,6 +1296,7 @@ export function App() {
     setTasks,
     markGeneratedTaskReplaced,
     markGeneratedTaskArchived,
+    ensureGeneratedTaskDetail,
   } = liveData;
 
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
@@ -1303,6 +1304,7 @@ export function App() {
   const generatedTasksById = useMemo(() => new Map(
     Object.values(generatedTasksByDiscoveryTaskId).flat().map((task) => [task.taskId, task]),
   ), [generatedTasksByDiscoveryTaskId]);
+  const generatedEditDetailHandledTaskIdsRef = useRef<Set<string>>(new Set());
   const sourceNodesById = useMemo(() => new Map(sourceNodes.map((node) => [node.sourceNodeId, node])), [sourceNodes]);
   const agentRunStatusesById = useMemo(() => new Map(Object.entries(agentRunStatusById)), [agentRunStatusById]);
   const addedAgentIds = useMemo(() => new Set(agentNodes.map((node) => node.agentId)), [agentNodes]);
@@ -1550,15 +1552,43 @@ export function App() {
     pruneTaskBranches(tasksById);
   }, [pruneTaskBranches, tasksById]);
 
+  const clearGeneratedEditDetailFailure = useCallback((nodeId: string, taskId: string) => {
+    generatedEditDetailHandledTaskIdsRef.current.delete(taskId);
+    clearTaskEditState(taskId);
+    setExpandedTaskBranches((current) => current.map((item) => (
+      item.nodeId === nodeId && item.discoveryGeneratedEditTaskId === taskId
+        ? { ...item, discoveryGeneratedEditTaskId: undefined }
+        : item
+    )));
+  }, [clearTaskEditState, setExpandedTaskBranches]);
+
   useEffect(() => {
     for (const branch of expandedTaskBranches) {
       if (branch.detailMode !== "discovery-subcanvas" || !branch.discoveryGeneratedEditTaskId) continue;
       const generatedTask = generatedTasksById.get(branch.discoveryGeneratedEditTaskId);
       if (generatedTask && !taskEditDraftByTaskId[generatedTask.taskId]) {
-        openTaskEditDraft(generatedTask);
+        if (generatedEditDetailHandledTaskIdsRef.current.has(generatedTask.taskId)) continue;
+        if ((generatedTask as TeamCanvasTask).workUnit) {
+          openTaskEditDraft(generatedTask as TeamCanvasTask);
+        } else {
+          void ensureGeneratedTaskDetail(generatedTask.taskId).then((fullTask) => {
+            if (fullTask) {
+              openTaskEditDraft(fullTask);
+            } else {
+              clearGeneratedEditDetailFailure(branch.nodeId, generatedTask.taskId);
+            }
+          });
+        }
       }
     }
-  }, [expandedTaskBranches, generatedTasksById, openTaskEditDraft, taskEditDraftByTaskId]);
+  }, [
+    clearGeneratedEditDetailFailure,
+    ensureGeneratedTaskDetail,
+    expandedTaskBranches,
+    generatedTasksById,
+    openTaskEditDraft,
+    taskEditDraftByTaskId,
+  ]);
 
   useEffect(() => {
     setSourceConnections((current) => (
@@ -2720,7 +2750,9 @@ export function App() {
           const latestRunStatus = latestGeneratedRun?.status ?? "none";
           const generatedIsEditing = branch.discoveryGeneratedEditTaskId === generatedTask.taskId;
           const archiveConfirmOpen = generatedArchiveConfirmTaskId === generatedTask.taskId;
-          const canResetToManaged = workUnitMode === "customized" && Boolean(generatedSource?.latestManagedWorkUnit);
+          const summaryResetAvailable = (generatedSource as { canResetToManaged?: boolean } | undefined)?.canResetToManaged === true;
+          const canResetToManaged = workUnitMode === "customized"
+            && (Boolean(generatedSource?.latestManagedWorkUnit) || summaryResetAvailable);
           const waitingForCurrentDiscoveryRun = Boolean(activeDiscoveryRun) && generatedSource?.latestDiscoveryRunId !== activeDiscoveryRun?.runId;
           const visualState = discoveryGeneratedVisualState(itemStatus, latestGeneratedRun, activeGeneratedRun, waitingForCurrentDiscoveryRun);
           const generatedOrdinal = String(generatedTaskIndex + 1).padStart(2, "0");
@@ -2809,7 +2841,18 @@ export function App() {
                     if (generatedIsEditing) {
                       clearTaskEditState(generatedTask.taskId);
                     } else {
-                      openTaskEditDraft(generatedTask);
+                      generatedEditDetailHandledTaskIdsRef.current.add(generatedTask.taskId);
+                      if ((generatedTask as TeamCanvasTask).workUnit) {
+                        openTaskEditDraft(generatedTask as TeamCanvasTask);
+                      } else {
+                        void ensureGeneratedTaskDetail(generatedTask.taskId).then((fullTask) => {
+                          if (fullTask) {
+                            openTaskEditDraft(fullTask);
+                          } else {
+                            clearGeneratedEditDetailFailure(branch.nodeId, generatedTask.taskId);
+                          }
+                        });
+                      }
                     }
                     setExpandedTaskBranches((current) => current.map((item) =>
                       item.nodeId === branch.nodeId
@@ -3602,7 +3645,7 @@ export function App() {
     }
 
     return panels;
-  }, [agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearTaskEditState, clearTaskEditWarning, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, expandedTaskBranches, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, openTaskEditDraft, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runTask, saveTaskEdit, scheduleLiveTaskDiscoveryRefresh, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskEditDraft]);
+  }, [agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskEditState, clearTaskEditWarning, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, openTaskEditDraft, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runTask, saveTaskEdit, scheduleLiveTaskDiscoveryRefresh, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskEditDraft]);
 
   return (
     <div className="app-shell" data-theme={theme}>

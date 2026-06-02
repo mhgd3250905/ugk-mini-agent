@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-02 — Team Console Discovery summary catalog loading
+
+- **主题**: 优化 Discovery 子画布 generated catalog 加载路径，打开子画布时读取轻量 summary，只有编辑等需要完整 WorkUnit 时再 lazy fetch full task detail。
+- **影响范围**: `5174` Live API 的 Discovery 子画布、generated card 操作菜单、generated Task 编辑入口和 `/v1/team/tasks/:taskId/generated-tasks?view=summary` 后端 route；generated Tasks 仍不进入 root canvas/root task list。
+- **验证**: `docker exec -w /app/apps/team-console ugk-pi-ugk-pi-team-console-1 npx vitest run src/tests/app-live-data.test.tsx src/tests/team-api.test.ts`、`docker exec -w /app/apps/team-console ugk-pi-ugk-pi-team-console-1 npm run build`、`docker exec -w /app ugk-pi-ugk-pi-1 node --test --test-concurrency=1 --import tsx --test-name-pattern "view=summary|default view still returns full|unknown view|includeArchived" test/team-task-routes.test.ts`、浏览器确认子画布走 `?view=summary` 且旧 `/tasks/:id/runs` fan-out 未恢复。
+- **对应入口**: `src/team/routes.ts`、`src/team/types.ts`、`apps/team-console/src/api/team-api.ts`、`apps/team-console/src/app/use-team-console-live-data.ts`、`apps/team-console/src/app/App.tsx`。
+
 ## 2026-06-01 — Team Console light theme surface completion
 
 - **主题**: 补齐 Team Console 浅色主题覆盖，避免子画布和 Agent workspace 局部面板继续使用暗色硬编码。

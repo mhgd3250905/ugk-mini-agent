@@ -34,6 +34,7 @@ import type {
   TeamTask,
   TeamTaskState,
   TeamCanvasTaskRunByTaskListResponse,
+  TeamDiscoveryGeneratedTaskSummary,
   TaskDefinition,
   TeamAttemptMetadata,
 } from "../api/team-types";
@@ -1597,6 +1598,43 @@ export class MockTeamApi {
         && (options?.includeArchived || !task.archived)
       ))
       .map(cloneMockTeamTask);
+  }
+
+  async listGeneratedTaskSummaries(
+    discoveryTaskId: string,
+    options?: { includeArchived?: boolean },
+  ): Promise<TeamDiscoveryGeneratedTaskSummary[]> {
+    const tasks = mockCanvasTasks
+      .filter((task) => (
+        task.generatedSource?.sourceDiscoveryTaskId === discoveryTaskId
+        && (options?.includeArchived || !task.archived)
+      ));
+    return tasks.map((task) => ({
+      taskId: task.taskId,
+      canvasKind: task.canvasKind,
+      title: task.title,
+      leaderAgentId: task.leaderAgentId,
+      status: task.status,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
+      archived: task.archived,
+      generatedSource: {
+        schemaVersion: task.generatedSource!.schemaVersion,
+        sourceDiscoveryTaskId: task.generatedSource!.sourceDiscoveryTaskId,
+        sourceItemId: task.generatedSource!.sourceItemId,
+        itemStatus: task.generatedSource!.itemStatus,
+        latestDiscoveryRunId: task.generatedSource!.latestDiscoveryRunId,
+        latestDiscoveryAttemptId: task.generatedSource!.latestDiscoveryAttemptId,
+        latestDiscoveredAt: task.generatedSource!.latestDiscoveredAt,
+        workUnitMode: task.generatedSource!.workUnitMode,
+        canResetToManaged: Boolean(task.generatedSource!.latestManagedWorkUnit),
+      },
+    }));
+  }
+
+  async getTask(taskId: string): Promise<TeamCanvasTask | null> {
+    const task = mockCanvasTasks.find((task) => task.taskId === taskId);
+    return task ? cloneMockTeamTask(task) : null;
   }
 
   async listTaskConnections(): Promise<TeamTaskConnection[]> {
