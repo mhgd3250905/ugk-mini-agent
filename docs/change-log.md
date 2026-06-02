@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-02 — Team Console maximized branch dark theme
+
+- **主题**: 修复 Team Console 深色模式下最大化 Agent/Task 分支 header 变成浅色的问题；最大化 overlay 通过 portal 挂到 `body` 时会丢失 App 根节点的主题作用域，现在 overlay 自身携带 `data-theme`。
+- **影响范围**: `5174` Execution Atlas 的最大化对话分支、Leader 对话分支和其他可最大化分支；普通非最大化分支不变。
+- **验证**: Docker 内 focused Vitest 通过，Docker 内 Team Console build 通过；浏览器在 `http://127.0.0.1:5174/` 深色模式下确认 overlay 为 `data-theme="dark"`，header 背景为 `rgba(15, 24, 38, 0.96)`。
+- **对应入口**: `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/tests/app-branch-windowing.test.tsx`。
+
 ## 2026-06-02 — Team Console shared canvas layout across ports
 
 - **主题**: Team Console live 模式的画布 UI 状态改为通过主后端共享保存，避免不同端口因 `localStorage` 按 origin 隔离导致节点位置、viewport、展开分支和 dock 状态不一致。

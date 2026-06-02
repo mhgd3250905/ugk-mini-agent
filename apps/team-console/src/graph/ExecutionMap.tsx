@@ -40,6 +40,7 @@ const KIND_LABELS: Record<NodeKind | "collapsed" | "orphan_group", string> = {
 };
 
 interface ExecutionMapProps {
+  theme?: "light" | "dark";
   plan?: TeamPlan | null;
   run?: RunDetail | null;
   selectedTaskId: string | null;
@@ -791,6 +792,7 @@ export function buildArtifactBranches(
 }
 
 export function ExecutionMap({
+  theme = "light",
   plan,
   run,
   selectedTaskId,
@@ -2177,6 +2179,7 @@ export function ExecutionMap({
   const maximizedOverlay = maximizedBranchPanel ? createPortal(
     <div
       className="emap-maximized-branch-shell"
+      data-theme={theme}
       onDoubleClick={(event) => {
         if (!canTogglePanelMaximize(event.target)) return;
         event.stopPropagation();

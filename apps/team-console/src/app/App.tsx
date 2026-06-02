@@ -3815,6 +3815,7 @@ export function App() {
           <div className="workspace">
             <div className="workspace-map">
               <ExecutionMap
+                theme={theme}
                 plan={plan}
                 run={run}
                 selectedTaskId={selectedTaskId}

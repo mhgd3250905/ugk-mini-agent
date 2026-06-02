@@ -154,6 +154,22 @@ describe("App", () => {
       expect(container.querySelector(".execution-map-scroll .emap-agent-branch-shell")).toBeTruthy();
     });
 
+    it("keeps maximized branch overlay inside the dark theme scope", async () => {
+      window.localStorage.setItem("ugk-team-console:theme:v1", "dark");
+      const { container } = render(<App />);
+
+      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+      fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" }));
+
+      fireEvent.click(screen.getByRole("button", { name: "最大化对话分支" }));
+
+      const overlay = document.querySelector(".emap-maximized-branch-shell") as HTMLElement | null;
+      expect(overlay).toBeTruthy();
+      expect(overlay).toHaveAttribute("data-theme", "dark");
+      expect(overlay!.querySelector(".agent-playground-branch-head")).toBeTruthy();
+    });
+
     it("double-clicks a playground branch header to maximize and restore it", async () => {
       const { container } = render(<App />);
 
