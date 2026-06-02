@@ -50,7 +50,7 @@ git log -- <path>
 当前已确认：
 
 - 分支：`main`。
-- 本轮 Git 保存包含 Team Console / Canvas Task 性能与布局收口的 tracked 改动；继续工作前以 `git status --short --branch` 和 `git log -1 --oneline` 为准。
+- 本轮 Git 保存包含 Team Console / Canvas Task run history、Discovery 子画布 generated child 操作菜单和浅编辑面板布局收口；继续工作前以 `git status --short --branch` 和 `git log -1 --oneline` 为准。
 - 本轮不提交 `.codex/config.toml`、`.codex/plans/*`、`.omo/`、`github-trending.txt`、runtime/public 报告产物或截图。
 - 未跟踪 runtime/public 产物禁止提交：
   - `public/developer-forum-sources-report.html`
@@ -86,6 +86,7 @@ git log --oneline origin/main..HEAD
 - Team Console Task 操作菜单已增加“运行记录”入口，按 Task 打开画布外右侧抽屉；历史列表只请求 summary，不把全部历史 run/attempt/file 渲染进 Atlas 主画布，点击单条 run 后才懒加载 attempts 和文件内容。
 - Canvas Task run 标注已独立持久化到 `.data/team/task-runs/run-annotations.json`；支持每个 Task 单一 best 标记、软归档和备注，不改写 `.data/team/task-runs/runs/<runId>` 下的 run/attempt/result/process 文件本体。
 - 新增 `GET /v1/team/tasks/:taskId/run-history` 和 `PATCH /v1/team/task-runs/:runId/annotation`；详情仍复用既有 `GET /v1/team/task-runs/:runId`、attempts 和 attempt file API。
+- Discovery 子画布 generated child card 的操作入口已收口为悬浮时显示的纵向菜单按钮；点击后在按钮下方弹出 popover，允许超出子画布边界显示，并包含编辑、归档、运行记录和运行入口。generated Task 浅编辑面板按内容自适应高度，不再在表单内部显示滚动条。
 - Canvas Task run 会记录 `source.publicBaseUrl`；`PUBLIC_BASE_URL=auto` 表示按当前请求 host/proto 或本地端口自动推导公开 base URL。
 - Team role session 注入 `ARTIFACT_PUBLIC_DIR` 和 `ARTIFACT_PUBLIC_BASE_URL`；需要交付的报告/HTML 应写到 public output 目录，并通过 `/v1/team/task-runs/:runId/artifacts/:roleKey/:role/...` 稳定访问。
 - `/playground/agents` 子 Agent 技能区已支持从主 Agent 覆盖更新单个技能。
@@ -136,6 +137,11 @@ git log --oneline origin/main..HEAD
 - `npm --prefix apps\team-console run build`：passed。
 - `npx tsc --noEmit`：passed。
 - 浏览器验证 `http://127.0.0.1:5174/`：Live API Task “运行记录”抽屉打开成功；只打开抽屉时请求 `run-history`，点击 run 后才请求 attempts，点击文件后在抽屉内展示预览；浅色/深色抽屉滚动布局正常。
+- `npm --prefix apps\team-console run test -- --run src\tests\app-live-data.test.tsx`：69 passed。
+- `npm --prefix apps\team-console run build`：passed。
+- `npx tsc --noEmit`：passed。
+- `git diff --check`：passed。
+- 浏览器验证 `http://127.0.0.1:5174/`：Discovery generated child card popover 菜单和 generated Task 浅编辑面板通过；表单 `overflow-y: visible` 且无内部滚动条，用户确认通过。
 - Docker compose 已按项目口径启动；`http://127.0.0.1:3000/playground`、`http://127.0.0.1:3000/healthz`、`http://127.0.0.1:5174/` 均返回 200。
 
 ## 未完成 / 风险

@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-02 — Team Console Discovery child action menu polish
+
+- **主题**: 收口 Discovery 子画布 generated child card 的操作入口：卡片悬浮才显示纵向菜单按钮，点击后在按钮下方弹出 popover 菜单，菜单可超出子画布边界；菜单内包含编辑、归档、运行记录和运行入口。generated Task 浅编辑面板按内容自适应高度，不再在表单内部显示滚动条。
+- **影响范围**: `5174` Execution Atlas 的 Discovery 子画布 generated child card、操作 popover、generated Task 运行记录入口和浅编辑面板；主 `/playground` UI 不受影响。
+- **验证**: `npm --prefix apps\team-console run test -- --run src\tests\app-live-data.test.tsx`、`npm --prefix apps\team-console run build`、`npx tsc --noEmit`、`git diff --check`，并在 Docker Team Console `http://127.0.0.1:5174/` 浏览器验证通过。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/execution-map.css`。
+
 ## 2026-06-02 — Team Task run history drawer
 
 - **主题**: 为每个 Team Console Task 增加“运行记录”抽屉，按 Task 查看历史 Canvas Task runs、结果引用、过程/文件详情、最佳标记和软归档状态；历史记录不渲染进主画布节点。
