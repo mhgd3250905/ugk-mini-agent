@@ -37,6 +37,70 @@ describe("App", () => {
       expect(container.querySelector(".root-filter-segment")).toHaveAttribute("data-active-filter", "agent");
     });
 
+    it("does not render the root filter before delayed shared live layout hydration", async () => {
+      const liveTask = mockTeamTasks[0]!;
+      let resolveLayout: ((response: Response) => void) | null = null;
+      const layoutResponse = new Promise<Response>((resolve) => {
+        resolveLayout = resolve;
+      });
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [{ agentId: "main", name: "主 Agent", description: "默认综合 agent" }],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") {
+          return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        }
+        if (url === "/v1/team/console-layout") {
+          return layoutResponse;
+        }
+        if (url === "/v1/team/tasks") {
+          return new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return new Response(JSON.stringify({ runsByTaskId: { [liveTask.taskId]: [] } }), { status: 200 });
+        }
+        if (url.includes("connections")) {
+          return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+        }
+        if (url === "/v1/team/task-dependencies") {
+          return new Response(JSON.stringify({ dependencies: [] }), { status: 200 });
+        }
+        if (url === "/v1/team/source-nodes") {
+          return new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify([]), { status: 200 });
+      });
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+
+      const { container } = render(<App />);
+
+      expect(container.querySelector(".root-filter-segment")).toBeNull();
+      expect(screen.getByText("正在恢复画布状态...")).toBeInTheDocument();
+
+      resolveLayout!(new Response(JSON.stringify({
+        state: {
+          schemaVersion: 1,
+          states: {
+            live: {
+              schemaVersion: 1,
+              dataSource: "live",
+              taskNodePositions: [{ taskId: liveTask.taskId, position: { x: 420, y: 260 } }],
+              rootNodeFilter: "task",
+            },
+          },
+        },
+      }), { status: 200 }));
+
+      await waitFor(() => {
+        expect(container.querySelector(".root-filter-segment")).toHaveAttribute("data-active-filter", "task");
+        expect(screen.getByRole("tab", { name: "Task" })).toHaveClass("is-active");
+        expect(screen.getByRole("tab", { name: "ALL" })).not.toHaveClass("is-active");
+      });
+    });
+
     it("restores open live canvas branches and viewport after a browser reload", async () => {
       const liveTask = mockTeamTasks[0]!;
       vi.mocked(fetch).mockImplementation(async (input) => {

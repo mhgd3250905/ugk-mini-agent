@@ -3774,6 +3774,8 @@ export function App() {
     return panels;
   }, [agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskEditState, clearTaskEditWarning, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, openTaskEditDraft, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runTask, saveTaskEdit, scheduleLiveTaskDiscoveryRefresh, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskEditDraft]);
 
+  const canvasStateRestorePending = !loading && !canvasUiStateHydrated;
+
   return (
     <div className="app-shell" data-theme={theme}>
       {error && (
@@ -3823,9 +3825,9 @@ export function App() {
       )}
 
       <main className="app-main">
-        {loading ? (
+        {loading || canvasStateRestorePending ? (
           <div className="empty-state">
-            <p>正在加载实时运行...</p>
+            <p>{loading ? "正在加载实时运行..." : "正在恢复画布状态..."}</p>
           </div>
         ) : (
           <div className="workspace">

@@ -16,9 +16,9 @@
 
 ## 2026-06-02 — Team Console root filter refresh flicker
 
-- **主题**: 修复刷新 Team Console 时根节点筛选先显示 `ALL`、随后跳回上次 `Agent`/`Task` 的闪缩；root filter 现在首帧直接从本地 canvas UI state 初始化，不再等 hydration 后二次覆盖。
-- **影响范围**: `5174` Execution Atlas 顶部 `ALL / Agent / Task` segmented control 和刷新后的首屏布局稳定性；后续共享 live layout hydration 仍可覆盖最新服务端状态。
-- **验证**: Docker 内 focused Vitest 通过，Docker 内 Team Console build 通过；浏览器预置 `Agent` 持久化状态后打开 `http://127.0.0.1:5174/`，首轮 DOM 为 `data-active-filter="agent"` 且 `Agent` 按钮 active。
+- **主题**: 修复刷新 Team Console 时根节点筛选先显示 `ALL`、随后跳回上次 `Agent`/`Task` 的闪缩；root filter 会优先从本地 canvas UI state 初始化，若 live 共享布局还没加载完则暂不渲染画布，避免先显示错误 filter。
+- **影响范围**: `5174` Execution Atlas 顶部 `ALL / Agent / Task` segmented control 和刷新后的首屏布局稳定性；共享 live layout hydration 完成后再一次性显示正确筛选。
+- **验证**: Docker 内 focused Vitest 通过，Docker 内 Team Console build 通过；浏览器切到 live 后打开 `http://127.0.0.1:5174/`，最终 DOM 为 `data-active-filter="task"` 且 `Task` 按钮 active，`ALL` 不 active。
 - **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/tests/app-canvas-state.test.tsx`。
 
 ## 2026-06-02 — Team Console maximized branch dark theme
