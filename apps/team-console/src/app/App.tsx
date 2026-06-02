@@ -17,6 +17,7 @@ const LIVE_TASK_LAYOUT_STORAGE_KEY = "ugk-team-console:live-task-layout:v1";
 const LIVE_SOURCE_LAYOUT_STORAGE_KEY = "ugk-team-console:live-source-layout:v1";
 const CANVAS_UI_STATE_STORAGE_KEY = "ugk-team-console:canvas-ui-state:v1";
 const CANVAS_UI_STATE_BY_CONTEXT_STORAGE_KEY = "ugk-team-console:canvas-ui-state-by-context:v1";
+const DATA_SOURCE_STORAGE_KEY = "ugk-team-console:data-source";
 const TEAM_CONSOLE_THEME_STORAGE_KEY = "ugk-team-console:theme:v1";
 const TASK_RUN_PROCESS_LABELS: Record<TeamAttemptRoleProcessRole, string> = {
   worker: "Worker 过程",
@@ -31,6 +32,7 @@ const DISCOVERY_QUEUE_INITIAL_CARD_LIMIT = 18;
 type AgentBranchMode = "chat" | "task-create";
 type TeamConsoleTheme = "light" | "dark";
 type DiscoveryGeneratedVisualState = "running" | "queued" | "done" | "failed" | "stale" | "idle";
+type RootNodeFilter = "all" | "agent" | "task";
 
 type AgentBranchState = {
   nodeId: string;
@@ -52,7 +54,7 @@ type StoredCanvasUiState = {
   minimizedAgentNodeIds?: string[];
   minimizedTaskNodeIds?: string[];
   minimizedSourceNodeIds?: string[];
-  rootNodeFilter?: "all" | "agent" | "task";
+  rootNodeFilter?: RootNodeFilter;
 };
 
 type StoredCanvasUiStateByContext = {
@@ -851,6 +853,20 @@ function readStoredCanvasUiState(
   }
 }
 
+function readStoredInitialDataSource(): DataSource {
+  try {
+    return globalThis.localStorage?.getItem(DATA_SOURCE_STORAGE_KEY) === "live" ? "live" : "mock";
+  } catch {
+    return "mock";
+  }
+}
+
+function readInitialRootNodeFilter(): RootNodeFilter {
+  const dataSource = readStoredInitialDataSource();
+  const state = readStoredCanvasUiState(dataSource, CLEAN_AGENT_WORKSPACE_ID);
+  return state?.rootNodeFilter ?? "all";
+}
+
 function writeStoredCanvasUiState(state: StoredCanvasUiState): StoredCanvasUiStateByContext | null {
   try {
     globalThis.localStorage?.setItem(CANVAS_UI_STATE_STORAGE_KEY, JSON.stringify(state));
@@ -1198,7 +1214,7 @@ export function App() {
   const [taskArchiveSavingNodeId, setTaskArchiveSavingNodeId] = useState<string | null>(null);
   const [rootArchiveConfirm, setRootArchiveConfirm] = useState<RootArchiveConfirm | null>(null);
   const [rootArchiveSaving, setRootArchiveSaving] = useState(false);
-  const [rootNodeFilter, setRootNodeFilter] = useState<"all" | "agent" | "task">("all");
+  const [rootNodeFilter, setRootNodeFilter] = useState<RootNodeFilter>(() => readInitialRootNodeFilter());
   const {
     taskLeaderCopyByTaskId,
     copyTaskLeaderContext,

@@ -17,6 +17,26 @@ describe("App", () => {
   });
 
   describe("canvas state", () => {
+    it("initializes the root filter from stored canvas state before hydration", () => {
+      window.localStorage.setItem("ugk-team-console:canvas-ui-state-by-context:v1", JSON.stringify({
+        schemaVersion: 1,
+        states: {
+          "mock:agent-workspace": {
+            schemaVersion: 1,
+            dataSource: "mock",
+            selectedFixtureId: "agent-workspace",
+            rootNodeFilter: "agent",
+          },
+        },
+      }));
+
+      const { container } = render(<App />);
+
+      expect(screen.getByRole("tab", { name: "Agent" })).toHaveClass("is-active");
+      expect(screen.getByRole("tab", { name: "ALL" })).not.toHaveClass("is-active");
+      expect(container.querySelector(".root-filter-segment")).toHaveAttribute("data-active-filter", "agent");
+    });
+
     it("restores open live canvas branches and viewport after a browser reload", async () => {
       const liveTask = mockTeamTasks[0]!;
       vi.mocked(fetch).mockImplementation(async (input) => {
