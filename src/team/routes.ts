@@ -484,6 +484,28 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		}
 	});
 
+	app.get("/v1/team/task-runs/by-task", async (request, reply) => {
+		const query = request.query as { taskIds?: string; limit?: string };
+		const rawTaskIds = query.taskIds ?? "";
+		const taskIds = [...new Set(rawTaskIds.split(",").map(s => s.trim()).filter(Boolean))];
+		if (taskIds.length === 0) {
+			reply.code(400).send({ error: "taskIds query parameter is required" });
+			return;
+		}
+		if (taskIds.length > 100) {
+			reply.code(400).send({ error: "maximum 100 taskIds allowed" });
+			return;
+		}
+		const limitRaw = query.limit;
+		const limit = limitRaw != null ? Number(limitRaw) : undefined;
+		if (limit != null && (!Number.isFinite(limit) || limit <= 0)) {
+			reply.code(400).send({ error: "limit must be a positive number" });
+			return;
+		}
+		const runsByTaskId = await taskRunService.listRunsByTaskIds(taskIds, limit != null ? { limit } : undefined);
+		reply.send({ runsByTaskId });
+	});
+
 	app.get("/v1/team/task-runs/:runId", async (request, reply) => {
 		const runId = idParam(request, "runId");
 		const state = await taskRunService.getRun(runId);

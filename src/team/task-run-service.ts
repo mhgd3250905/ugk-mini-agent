@@ -36,6 +36,17 @@ const now = () => new Date().toISOString();
 const ACTIVE_RUN_STATUSES = new Set(["queued", "running", "paused"]);
 const TERMINAL_RUN_STATUSES = new Set(["completed", "completed_with_failures", "failed", "cancelled"]);
 
+function sortRunsByCreatedAtDesc(runs: TeamRunState[]): TeamRunState[] {
+	return [...runs].sort((a, b) => {
+		const aTime = Date.parse(a.createdAt);
+		const bTime = Date.parse(b.createdAt);
+		if (!Number.isFinite(aTime) && !Number.isFinite(bTime)) return 0;
+		if (!Number.isFinite(aTime)) return 1;
+		if (!Number.isFinite(bTime)) return -1;
+		return bTime - aTime;
+	});
+}
+
 const DEFAULT_TASK_RUN_TIMEOUTS = {
 	workerMs: 900_000,
 	checkerMs: 300_000,
@@ -184,6 +195,28 @@ export class CanvasTaskRunService {
 	async listRuns(taskId?: string): Promise<TeamRunState[]> {
 		const states = await this.options.workspace.listStates();
 		return taskId ? states.filter(state => state.source?.type === "canvas-task" && state.source.taskId === taskId) : states;
+	}
+
+	async listRunsByTaskIds(taskIds: string[], opts?: { limit?: number }): Promise<Record<string, TeamRunState[]>> {
+		const states = await this.options.workspace.listStates();
+		const canvasRuns = states.filter(state => state.source?.type === "canvas-task");
+		const byTaskId = new Map<string, TeamRunState[]>();
+		for (const state of canvasRuns) {
+			const tid = state.source!.taskId;
+			let arr = byTaskId.get(tid);
+			if (!arr) { arr = []; byTaskId.set(tid, arr); }
+			arr.push(state);
+		}
+		const result: Record<string, TeamRunState[]> = {};
+		const limit = opts?.limit;
+		for (const taskId of taskIds) {
+			let runs = byTaskId.get(taskId) ?? [];
+			if (limit != null && limit > 0) {
+				runs = sortRunsByCreatedAtDesc(runs).slice(0, limit);
+			}
+			result[taskId] = runs;
+		}
+		return result;
 	}
 
 	async getRun(runId: string): Promise<TeamRunState | null> {

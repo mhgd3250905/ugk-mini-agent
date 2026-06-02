@@ -153,6 +153,70 @@ describe("App", () => {
       });
     });
 
+    it("keeps live docked root nodes when switching to mock data and back", async () => {
+      const liveTask = mockTeamTasks[0]!;
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [{ agentId: "main", name: "主 Agent", description: "默认综合 agent" }],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") {
+          return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        }
+        if (url === "/v1/team/tasks") {
+          return new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return new Response(JSON.stringify({ runsByTaskId: { [liveTask.taskId]: [] } }), { status: 200 });
+        }
+        if (url.includes("/connections")) {
+          return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+        }
+        if (url === "/v1/team/task-dependencies") {
+          return new Response(JSON.stringify({ dependencies: [] }), { status: 200 });
+        }
+        if (url === "/v1/team/source-nodes") {
+          return new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 });
+        }
+        if (url === "/v1/team/source-connections") {
+          return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify([]), { status: 200 });
+      });
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      window.localStorage.setItem("ugk-team-console:canvas-ui-state:v1", JSON.stringify({
+        schemaVersion: 1,
+        dataSource: "live",
+        taskNodePositions: [{ taskId: liveTask.taskId, position: { x: 280, y: 220 } }],
+        minimizedTaskNodeIds: [`task-node-${liveTask.taskId}`],
+      }));
+
+      const { container } = render(<App />);
+
+      const dock = await waitFor(() => {
+        const node = container.querySelector(".emap-root-dock") as HTMLElement | null;
+        expect(node).toBeTruthy();
+        expect(within(node!).getByRole("button", { name: new RegExp(`复原 Task ${liveTask.title}`) })).toBeInTheDocument();
+        expect(container.querySelector(`.emap-canvas-task-node[data-task-id="${liveTask.taskId}"]`)).toBeNull();
+        return node!;
+      });
+
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "mock" } });
+      await waitFor(() => {
+        expect(screen.getByRole("combobox")).toHaveValue("mock");
+        expect(container.querySelector(".emap-canvas-task-node")).toBeTruthy();
+      });
+
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+      await waitFor(() => {
+        expect(screen.getByRole("combobox")).toHaveValue("live");
+        expect(within(dock).getByRole("button", { name: new RegExp(`复原 Task ${liveTask.title}`) })).toBeInTheDocument();
+        expect(container.querySelector(`.emap-canvas-task-node[data-task-id="${liveTask.taskId}"]`)).toBeNull();
+      });
+    });
+
     it("persists dragged Task branch panel positions across a browser reload", async () => {
       const first = render(<App />);
 

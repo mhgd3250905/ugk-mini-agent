@@ -745,3 +745,240 @@ test("source connection API rejects source-to-task type mismatch", async () => {
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+test("GET /v1/team/task-runs/by-task returns runs grouped by taskId", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const task1Res = await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload });
+		const task2Res = await app.inject({ method: "POST", url: "/v1/team/tasks", payload: { ...taskPayload, title: "第二个任务" } });
+		assert.equal(task1Res.statusCode, 201);
+		assert.equal(task2Res.statusCode, 201);
+		const task1 = task1Res.json().task;
+		const task2 = task2Res.json().task;
+
+		const run1Res = await app.inject({ method: "POST", url: `/v1/team/tasks/${task1.taskId}/runs` });
+		assert.equal(run1Res.statusCode, 201);
+		const run1 = run1Res.json() as TeamRunState;
+		await waitForTerminalRun(app, run1.runId);
+
+		const run2Res = await app.inject({ method: "POST", url: `/v1/team/tasks/${task2.taskId}/runs` });
+		assert.equal(run2Res.statusCode, 201);
+		const run2 = run2Res.json() as TeamRunState;
+		await waitForTerminalRun(app, run2.runId);
+
+		const res = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/by-task?taskIds=${task1.taskId},${task2.taskId}`,
+		});
+		assert.equal(res.statusCode, 200);
+		const body = res.json() as { runsByTaskId: Record<string, TeamRunState[]> };
+		assert.ok(body.runsByTaskId[task1.taskId], "should contain task1 key");
+		assert.ok(body.runsByTaskId[task2.taskId], "should contain task2 key");
+		assert.equal(body.runsByTaskId[task1.taskId].length, 1);
+		assert.equal(body.runsByTaskId[task2.taskId].length, 1);
+		assert.equal(body.runsByTaskId[task1.taskId][0].runId, run1.runId);
+		assert.equal(body.runsByTaskId[task2.taskId][0].runId, run2.runId);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/task-runs/by-task applies limit per task", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const taskRes = await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload });
+		assert.equal(taskRes.statusCode, 201);
+		const task = taskRes.json().task;
+
+		const runIds: string[] = [];
+		for (let i = 0; i < 3; i++) {
+			const runRes = await app.inject({ method: "POST", url: `/v1/team/tasks/${task.taskId}/runs` });
+			assert.equal(runRes.statusCode, 201);
+			const run = runRes.json() as TeamRunState;
+			runIds.push(run.runId);
+			await waitForTerminalRun(app, run.runId);
+		}
+
+		const res = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/by-task?taskIds=${task.taskId}&limit=2`,
+		});
+		assert.equal(res.statusCode, 200);
+		const body = res.json() as { runsByTaskId: Record<string, TeamRunState[]> };
+		assert.equal(body.runsByTaskId[task.taskId].length, 2);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/task-runs/by-task returns empty arrays for taskIds with no runs", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const taskRes = await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload });
+		assert.equal(taskRes.statusCode, 201);
+		const task = taskRes.json().task;
+
+		const res = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/by-task?taskIds=${task.taskId}`,
+		});
+		assert.equal(res.statusCode, 200);
+		const body = res.json() as { runsByTaskId: Record<string, TeamRunState[]> };
+		assert.ok(Array.isArray(body.runsByTaskId[task.taskId]));
+		assert.equal(body.runsByTaskId[task.taskId].length, 0);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/task-runs/by-task validates taskIds is required", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const res = await app.inject({
+			method: "GET",
+			url: "/v1/team/task-runs/by-task",
+		});
+		assert.equal(res.statusCode, 400);
+		assert.match(res.json().error, /taskIds.*required/);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/task-runs/by-task validates max 100 taskIds", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const ids = Array.from({ length: 101 }, (_, i) => `id_${i}`).join(",");
+		const res = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/by-task?taskIds=${ids}`,
+		});
+		assert.equal(res.statusCode, 400);
+		assert.match(res.json().error, /maximum 100/);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/task-runs/by-task validates limit is positive", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const res = await app.inject({
+			method: "GET",
+			url: "/v1/team/task-runs/by-task?taskIds=t1&limit=-1",
+		});
+		assert.equal(res.statusCode, 400);
+		assert.match(res.json().error, /positive/);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/task-runs/by-task with single taskId", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const taskRes = await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload });
+		assert.equal(taskRes.statusCode, 201);
+		const task = taskRes.json().task;
+
+		const runRes = await app.inject({ method: "POST", url: `/v1/team/tasks/${task.taskId}/runs` });
+		assert.equal(runRes.statusCode, 201);
+		const run = runRes.json() as TeamRunState;
+		await waitForTerminalRun(app, run.runId);
+
+		const res = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/by-task?taskIds=${task.taskId}`,
+		});
+		assert.equal(res.statusCode, 200);
+		const body = res.json() as { runsByTaskId: Record<string, TeamRunState[]> };
+		const keys = Object.keys(body.runsByTaskId);
+		assert.equal(keys.length, 1);
+		assert.equal(keys[0], task.taskId);
+		assert.equal(body.runsByTaskId[task.taskId].length, 1);
+		assert.equal(body.runsByTaskId[task.taskId][0].runId, run.runId);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+
+test("GET /v1/team/task-runs/by-task deduplicates taskIds before checking limit", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const taskRes = await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload });
+		assert.equal(taskRes.statusCode, 201);
+		const task = taskRes.json().task;
+
+		const runRes = await app.inject({ method: "POST", url: `/v1/team/tasks/${task.taskId}/runs` });
+		assert.equal(runRes.statusCode, 201);
+		await waitForTerminalRun(app, runRes.json().runId);
+
+		const ids = Array.from({ length: 102 }, () => task.taskId).join(",");
+		const res = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/by-task?taskIds=${ids}`,
+		});
+		assert.equal(res.statusCode, 200);
+		const body = res.json() as { runsByTaskId: Record<string, TeamRunState[]> };
+		const keys = Object.keys(body.runsByTaskId);
+		assert.equal(keys.length, 1);
+		assert.equal(keys[0], task.taskId);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/task-runs/by-task with limit=1 returns the latest run by createdAt", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const taskRes = await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload });
+		assert.equal(taskRes.statusCode, 201);
+		const task = taskRes.json().task;
+
+		const runIds: string[] = [];
+		for (let i = 0; i < 3; i++) {
+			const runRes = await app.inject({ method: "POST", url: `/v1/team/tasks/${task.taskId}/runs` });
+			assert.equal(runRes.statusCode, 201);
+			runIds.push(runRes.json().runId);
+			await waitForTerminalRun(app, runRes.json().runId);
+		}
+
+		const res = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/by-task?taskIds=${task.taskId}&limit=1`,
+		});
+		assert.equal(res.statusCode, 200);
+		const body = res.json() as { runsByTaskId: Record<string, TeamRunState[]> };
+		assert.equal(body.runsByTaskId[task.taskId].length, 1);
+		assert.equal(body.runsByTaskId[task.taskId][0].runId, runIds[runIds.length - 1],
+			"limit=1 should return the latest run by createdAt");
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/task-runs/by-task returns 400 for more than 100 unique taskIds", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const ids = Array.from({ length: 101 }, (_, i) => `unique_id_${i}`).join(",");
+		const res = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/by-task?taskIds=${ids}`,
+		});
+		assert.equal(res.statusCode, 400);
+		assert.match(res.json().error, /maximum 100/);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});

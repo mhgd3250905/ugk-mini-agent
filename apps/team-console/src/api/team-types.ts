@@ -574,6 +574,10 @@ export interface TeamCanvasTaskRunListResponse {
   runs: TeamRunState[];
 }
 
+export interface TeamCanvasTaskRunByTaskListResponse {
+  runsByTaskId: Record<string, TeamRunState[]>;
+}
+
 export interface SourceItemData {
   id: string;
   name: string;

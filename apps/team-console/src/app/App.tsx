@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { LiveTeamApi } from "../api/team-api";
 import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
 import { MockTeamApi } from "../fixtures/team-fixtures";
@@ -16,6 +16,7 @@ const LIVE_AGENT_LAYOUT_STORAGE_KEY = "ugk-team-console:live-agent-layout:v1";
 const LIVE_TASK_LAYOUT_STORAGE_KEY = "ugk-team-console:live-task-layout:v1";
 const LIVE_SOURCE_LAYOUT_STORAGE_KEY = "ugk-team-console:live-source-layout:v1";
 const CANVAS_UI_STATE_STORAGE_KEY = "ugk-team-console:canvas-ui-state:v1";
+const CANVAS_UI_STATE_BY_CONTEXT_STORAGE_KEY = "ugk-team-console:canvas-ui-state-by-context:v1";
 const TEAM_CONSOLE_THEME_STORAGE_KEY = "ugk-team-console:theme:v1";
 const TASK_RUN_PROCESS_LABELS: Record<TeamAttemptRoleProcessRole, string> = {
   worker: "Worker 过程",
@@ -28,6 +29,7 @@ const PROCESS_ASSISTANT_TEXT_MAX_LINE_CHARS = 200;
 
 type AgentBranchMode = "chat" | "task-create";
 type TeamConsoleTheme = "light" | "dark";
+type DiscoveryGeneratedVisualState = "running" | "queued" | "done" | "failed" | "stale" | "idle";
 
 type AgentBranchState = {
   nodeId: string;
@@ -50,6 +52,11 @@ type StoredCanvasUiState = {
   minimizedTaskNodeIds?: string[];
   minimizedSourceNodeIds?: string[];
   rootNodeFilter?: "all" | "agent" | "task";
+};
+
+type StoredCanvasUiStateByContext = {
+  schemaVersion: 1;
+  states: Record<string, StoredCanvasUiState>;
 };
 
 type StoredAgentNodePosition = {
@@ -452,7 +459,7 @@ function sortDiscoveryGeneratedTasksForSubcanvas(
     const bLatest = selectLatestRun(bRuns);
     const aHasTerminal = Boolean(aLatest && !isActiveRun(aLatest.status));
     const bHasTerminal = Boolean(bLatest && !isActiveRun(bLatest.status));
-    if (aHasTerminal !== bHasTerminal) return aHasTerminal ? -1 : 1;
+    if (aHasTerminal !== bHasTerminal) return aHasTerminal ? 1 : -1;
     if (aHasTerminal && bHasTerminal) {
       const diff = runTimeForOrdering(bLatest) - runTimeForOrdering(aLatest);
       if (diff !== 0) return diff;
@@ -465,6 +472,22 @@ function sortDiscoveryGeneratedTasksForSubcanvas(
     }
     return 0;
   });
+}
+
+function discoveryGeneratedVisualState(
+  itemStatus: string,
+  latestRun: TeamRunState | null,
+  activeRun: TeamRunState | null,
+  waitingForCurrentDiscoveryRun: boolean,
+): DiscoveryGeneratedVisualState {
+  if (activeRun) return "running";
+  if (waitingForCurrentDiscoveryRun) return "queued";
+  if (latestRun?.status === "failed" || latestRun?.status === "cancelled" || latestRun?.status === "completed_with_failures") {
+    return "failed";
+  }
+  if (latestRun && !isActiveRun(latestRun.status)) return "done";
+  if (itemStatus === "stale") return "stale";
+  return "idle";
 }
 
 function playgroundBaseUrlPrefix(): string {
@@ -734,32 +757,70 @@ function readStoredBranchLayout(value: unknown): AtlasBranchLayoutState {
   };
 }
 
-function readStoredCanvasUiState(): StoredCanvasUiState | null {
+function canvasUiContextKeyFor(dataSource: DataSource, selectedFixtureId: string): string {
+  return dataSource === "mock" ? `mock:${selectedFixtureId}` : "live";
+}
+
+function parseStoredCanvasUiState(value: unknown): StoredCanvasUiState | null {
+  const parsed = readRecord(value);
+  if (!parsed || parsed.schemaVersion !== 1) return null;
+  const dataSource = parsed.dataSource === "live" ? "live" : parsed.dataSource === "mock" ? "mock" : null;
+  if (!dataSource) return null;
+  const selectedFixtureId = typeof parsed.selectedFixtureId === "string" ? parsed.selectedFixtureId : undefined;
+  const viewport = readStoredViewport(parsed.viewport);
+  return {
+    schemaVersion: 1,
+    dataSource,
+    ...(selectedFixtureId ? { selectedFixtureId } : {}),
+    ...(viewport ? { viewport } : {}),
+    agentNodes: readStoredAgentNodePositions(parsed.agentNodes),
+    taskNodePositions: readStoredTaskNodePositions(parsed.taskNodePositions),
+    sourceNodePositions: readStoredSourceNodePositions(parsed.sourceNodePositions),
+    expandedAgentBranch: readStoredAgentBranch(parsed.expandedAgentBranch),
+    expandedTaskBranches: readStoredTaskBranches(parsed.expandedTaskBranches),
+    branchLayout: readStoredBranchLayout(parsed.branchLayout),
+    minimizedAgentNodeIds: readStringArray(parsed.minimizedAgentNodeIds),
+    minimizedTaskNodeIds: readStringArray(parsed.minimizedTaskNodeIds),
+    minimizedSourceNodeIds: readStringArray(parsed.minimizedSourceNodeIds),
+    rootNodeFilter: parsed.rootNodeFilter === "agent" || parsed.rootNodeFilter === "task" ? parsed.rootNodeFilter : undefined,
+  };
+}
+
+function readStoredCanvasUiStateByContext(): StoredCanvasUiStateByContext {
+  try {
+    const raw = globalThis.localStorage?.getItem(CANVAS_UI_STATE_BY_CONTEXT_STORAGE_KEY);
+    if (!raw) return { schemaVersion: 1, states: {} };
+    const parsed = readRecord(JSON.parse(raw));
+    if (!parsed || parsed.schemaVersion !== 1) return { schemaVersion: 1, states: {} };
+    const rawStates = readRecord(parsed.states);
+    if (!rawStates) return { schemaVersion: 1, states: {} };
+    const states: Record<string, StoredCanvasUiState> = {};
+    for (const [key, value] of Object.entries(rawStates)) {
+      const state = parseStoredCanvasUiState(value);
+      if (state && canvasUiContextMatches(state, state.dataSource, state.selectedFixtureId ?? CLEAN_AGENT_WORKSPACE_ID)) {
+        states[key] = state;
+      }
+    }
+    return { schemaVersion: 1, states };
+  } catch {
+    return { schemaVersion: 1, states: {} };
+  }
+}
+
+function readStoredCanvasUiState(dataSource: DataSource, selectedFixtureId: string): StoredCanvasUiState | null {
+  const contextKey = canvasUiContextKeyFor(dataSource, selectedFixtureId);
+  const byContext = readStoredCanvasUiStateByContext();
+  const scopedState = byContext.states[contextKey];
+  if (scopedState && canvasUiContextMatches(scopedState, dataSource, selectedFixtureId)) {
+    return scopedState;
+  }
+
   try {
     const raw = globalThis.localStorage?.getItem(CANVAS_UI_STATE_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = readRecord(JSON.parse(raw));
-    if (!parsed || parsed.schemaVersion !== 1) return null;
-    const dataSource = parsed.dataSource === "live" ? "live" : parsed.dataSource === "mock" ? "mock" : null;
-    if (!dataSource) return null;
-    const selectedFixtureId = typeof parsed.selectedFixtureId === "string" ? parsed.selectedFixtureId : undefined;
-    const viewport = readStoredViewport(parsed.viewport);
-    return {
-      schemaVersion: 1,
-      dataSource,
-      ...(selectedFixtureId ? { selectedFixtureId } : {}),
-      ...(viewport ? { viewport } : {}),
-      agentNodes: readStoredAgentNodePositions(parsed.agentNodes),
-      taskNodePositions: readStoredTaskNodePositions(parsed.taskNodePositions),
-      sourceNodePositions: readStoredSourceNodePositions(parsed.sourceNodePositions),
-      expandedAgentBranch: readStoredAgentBranch(parsed.expandedAgentBranch),
-      expandedTaskBranches: readStoredTaskBranches(parsed.expandedTaskBranches),
-      branchLayout: readStoredBranchLayout(parsed.branchLayout),
-      minimizedAgentNodeIds: readStringArray(parsed.minimizedAgentNodeIds),
-      minimizedTaskNodeIds: readStringArray(parsed.minimizedTaskNodeIds),
-      minimizedSourceNodeIds: readStringArray(parsed.minimizedSourceNodeIds),
-      rootNodeFilter: parsed.rootNodeFilter === "agent" || parsed.rootNodeFilter === "task" ? parsed.rootNodeFilter : undefined,
-    };
+    const legacyState = parseStoredCanvasUiState(JSON.parse(raw));
+    if (!legacyState || !canvasUiContextMatches(legacyState, dataSource, selectedFixtureId)) return null;
+    return legacyState;
   } catch {
     return null;
   }
@@ -768,6 +829,10 @@ function readStoredCanvasUiState(): StoredCanvasUiState | null {
 function writeStoredCanvasUiState(state: StoredCanvasUiState) {
   try {
     globalThis.localStorage?.setItem(CANVAS_UI_STATE_STORAGE_KEY, JSON.stringify(state));
+    const contextKey = canvasUiContextKeyFor(state.dataSource, state.selectedFixtureId ?? CLEAN_AGENT_WORKSPACE_ID);
+    const byContext = readStoredCanvasUiStateByContext();
+    byContext.states[contextKey] = state;
+    globalThis.localStorage?.setItem(CANVAS_UI_STATE_BY_CONTEXT_STORAGE_KEY, JSON.stringify(byContext));
   } catch {}
 }
 
@@ -1185,6 +1250,15 @@ export function App() {
     }
   }, []);
 
+  const openDiscoveryTaskIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const branch of expandedTaskBranches) {
+      if (branch.detailMode !== "discovery-subcanvas") continue;
+      ids.push(branch.taskId);
+    }
+    return ids;
+  }, [expandedTaskBranches]);
+
   const liveData = useTeamConsoleLiveData({
     onApplyLiveTasks: useCallback((nextTasks: TeamCanvasTask[]) => {
       setTaskNodes((current) => makeTaskNodes(nextTasks, liveTaskRefreshPositions(current)));
@@ -1201,6 +1275,7 @@ export function App() {
     }, [closeTaskBranch]),
     onResetContextUi: resetContextUi,
     selectedTaskId,
+    openDiscoveryTaskIds,
   });
   const {
     dataSource, setDataSource,
@@ -1219,6 +1294,8 @@ export function App() {
     setTaskConnections, setTaskDependencies,
     setSourceNodes, setSourceConnections,
     setTasks,
+    markGeneratedTaskReplaced,
+    markGeneratedTaskArchived,
   } = liveData;
 
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
@@ -1335,8 +1412,8 @@ export function App() {
       : taskNodes.length > 0;
     if (!ready) return;
 
-    const stored = readStoredCanvasUiState();
-    if (!stored || !canvasUiContextMatches(stored, dataSource, selectedFixtureId)) {
+    const stored = readStoredCanvasUiState(dataSource, selectedFixtureId);
+    if (!stored) {
       setCanvasBranchLayout({});
       hydratedCanvasUiContextKeyRef.current = canvasUiContextKey;
       setCanvasUiStateHydrated(true);
@@ -1576,6 +1653,7 @@ export function App() {
   const replaceGeneratedTaskInCatalog = useCallback((nextTask: TeamCanvasTask) => {
     const sourceDiscoveryTaskId = nextTask.generatedSource?.sourceDiscoveryTaskId;
     if (!sourceDiscoveryTaskId) return;
+    markGeneratedTaskReplaced(nextTask.taskId);
     setGeneratedTasksByDiscoveryTaskId((current) => {
       const currentTasks = current[sourceDiscoveryTaskId] ?? [];
       if (!currentTasks.some((task) => task.taskId === nextTask.taskId)) return current;
@@ -1586,7 +1664,7 @@ export function App() {
         ),
       };
     });
-  }, [setGeneratedTasksByDiscoveryTaskId]);
+  }, [setGeneratedTasksByDiscoveryTaskId, markGeneratedTaskReplaced]);
 
   const clearGeneratedTaskPanelState = useCallback((taskId: string) => {
     clearGeneratedArchiveUiForTasks([taskId]);
@@ -1716,6 +1794,7 @@ export function App() {
           [sourceDiscoveryTaskId]: (current[sourceDiscoveryTaskId] ?? []).filter((generatedTask) => generatedTask.taskId !== taskId),
         }));
         clearGeneratedTaskPanelState(taskId);
+        markGeneratedTaskArchived(taskId);
       }
       setError(null);
     } catch (e) {
@@ -1728,7 +1807,7 @@ export function App() {
         return next;
       });
     }
-  }, [clearGeneratedTaskPanelState, dataSource, setGeneratedTasksByDiscoveryTaskId]);
+  }, [clearGeneratedTaskPanelState, dataSource, markGeneratedTaskArchived, setGeneratedTasksByDiscoveryTaskId]);
 
   const confirmRootArchive = useCallback(async () => {
     if (!rootArchiveConfirm || rootArchiveSaving) return;
@@ -2531,9 +2610,6 @@ export function App() {
                     clearGeneratedArchiveUiForTasks(
                       (generatedTasksByDiscoveryTaskId[task.taskId] ?? []).map((generatedTask) => generatedTask.taskId),
                     );
-                  } else if (dataSource === "live") {
-                    void refreshLiveTasks({ silent: true }).catch((e) => setError(errorMessage(e)));
-                    scheduleLiveTaskDiscoveryRefresh();
                   }
                   setTaskArchiveConfirmNodeId(null);
                   setExpandedTaskBranches((current) =>
@@ -2626,9 +2702,244 @@ export function App() {
           activeDiscoveryRun,
         );
         const dispatchDiagnostics = discoveryDispatchDiagnosticsByTaskId[task.taskId] ?? [];
+        const discoveryConcurrency = Math.max(1, task.discoverySpec?.autoRun?.concurrency ?? 3);
+        const discoverySubcanvasStyle = {
+          "--discovery-running-columns": String(discoveryConcurrency),
+          "--discovery-queue-columns": String(discoveryConcurrency * 2),
+        } as CSSProperties;
+        const generatedTaskCards = generatedTasks.map((generatedTask, generatedTaskIndex) => {
+          const generatedSource = generatedTask.generatedSource;
+          const itemStatus = generatedSource?.itemStatus ?? "active";
+          const workUnitMode = generatedSource?.workUnitMode ?? "managed";
+          const generatedRuns = visibleDiscoveryGeneratedRuns(generatedTask, task.taskId, activeDiscoveryRun, taskRunsByTaskId);
+          const latestGeneratedRun = selectLatestRun(generatedRuns);
+          const activeGeneratedRun = generatedRuns.find((taskRun) => isActiveRun(taskRun.status)) ?? null;
+          const runSaving = Boolean(taskRunSavingByTaskId[generatedTask.taskId]);
+          const resetSaving = Boolean(generatedResetSavingByTaskId[generatedTask.taskId]);
+          const archiveSaving = Boolean(generatedArchiveSavingByTaskId[generatedTask.taskId]);
+          const latestRunStatus = latestGeneratedRun?.status ?? "none";
+          const generatedIsEditing = branch.discoveryGeneratedEditTaskId === generatedTask.taskId;
+          const archiveConfirmOpen = generatedArchiveConfirmTaskId === generatedTask.taskId;
+          const canResetToManaged = workUnitMode === "customized" && Boolean(generatedSource?.latestManagedWorkUnit);
+          const waitingForCurrentDiscoveryRun = Boolean(activeDiscoveryRun) && generatedSource?.latestDiscoveryRunId !== activeDiscoveryRun?.runId;
+          const visualState = discoveryGeneratedVisualState(itemStatus, latestGeneratedRun, activeGeneratedRun, waitingForCurrentDiscoveryRun);
+          const generatedOrdinal = String(generatedTaskIndex + 1).padStart(2, "0");
+          const generatedRunIsObserved = Boolean(
+            latestGeneratedRun
+              && branch.discoveryGeneratedObserver?.taskId === generatedTask.taskId
+              && branch.discoveryGeneratedObserver?.runId === latestGeneratedRun.runId,
+          );
+          const generatedRunButtonLabel = runSaving
+            ? "启动中..."
+            : activeGeneratedRun
+              ? "运行中"
+              : latestGeneratedRun
+                ? "重新运行"
+                : "运行";
+          return {
+            activeGeneratedRun,
+            archiveConfirmOpen,
+            archiveSaving,
+            canResetToManaged,
+            generatedIsEditing,
+            generatedOrdinal,
+            generatedRunButtonLabel,
+            generatedRunIsObserved,
+            generatedTask,
+            itemStatus,
+            latestGeneratedRun,
+            latestRunStatus,
+            resetSaving,
+            runSaving,
+            visualState,
+            waitingForCurrentDiscoveryRun,
+            workUnitMode,
+          };
+        });
+        const runningGeneratedTaskCards = generatedTaskCards.filter((card) => card.visualState === "running");
+        const queuedGeneratedTaskCards = generatedTaskCards.filter((card) => card.visualState !== "running");
+        const doneGeneratedTaskCount = queuedGeneratedTaskCards.filter((card) => card.visualState === "done").length;
+        const waitingGeneratedTaskCount = queuedGeneratedTaskCards.length - doneGeneratedTaskCount;
+        const renderGeneratedCard = (card: (typeof generatedTaskCards)[number]) => {
+          const {
+            activeGeneratedRun,
+            archiveConfirmOpen,
+            archiveSaving,
+            canResetToManaged,
+            generatedIsEditing,
+            generatedOrdinal,
+            generatedRunButtonLabel,
+            generatedRunIsObserved,
+            generatedTask,
+            itemStatus,
+            latestGeneratedRun,
+            latestRunStatus,
+            resetSaving,
+            runSaving,
+            visualState,
+            waitingForCurrentDiscoveryRun,
+            workUnitMode,
+          } = card;
+          return (
+            <article
+              key={generatedTask.taskId}
+              className={`discovery-generated-card state-${visualState} is-${itemStatus} ${generatedRunIsObserved ? "is-observed" : ""} ${generatedIsEditing ? "is-editing" : ""}`}
+              data-generated-task-id={generatedTask.taskId}
+              data-generated-item-status={itemStatus}
+              data-generated-workunit-mode={workUnitMode}
+              data-generated-run-status={latestRunStatus}
+              data-generated-visual-state={visualState}
+              data-generated-ordinal={generatedOrdinal}
+              data-generated-run-scope={waitingForCurrentDiscoveryRun ? "pending-current-discovery" : "current"}
+              data-generated-editing={generatedIsEditing ? "true" : "false"}
+              data-generated-reset-saving={resetSaving ? "true" : "false"}
+              data-generated-archive-saving={archiveSaving ? "true" : "false"}
+            >
+              <span className="discovery-generated-card-watermark" aria-hidden="true">{generatedOrdinal}</span>
+              <div className="discovery-generated-card-head">
+                <strong>{generatedTask.title}</strong>
+              </div>
+              <div className="discovery-generated-card-actions">
+                <button
+                  type="button"
+                  className={`discovery-generated-action ${generatedIsEditing ? "selected" : ""}`}
+                  data-generated-action="edit"
+                  aria-label={`${generatedTask.title} ${generatedIsEditing ? "收起 generated Task 浅编辑" : "打开 generated Task 浅编辑"}`}
+                  onClick={() => {
+                    if (generatedIsEditing) {
+                      clearTaskEditState(generatedTask.taskId);
+                    } else {
+                      openTaskEditDraft(generatedTask);
+                    }
+                    setExpandedTaskBranches((current) => current.map((item) =>
+                      item.nodeId === branch.nodeId
+                        ? {
+                            ...item,
+                            detailMode: "discovery-subcanvas",
+                            discoveryGeneratedEditTaskId: generatedIsEditing ? undefined : generatedTask.taskId,
+                          }
+                        : item
+                    ));
+                  }}
+                >
+                  {generatedIsEditing ? "收起编辑" : "编辑"}
+                </button>
+                {canResetToManaged && (
+                  <button
+                    type="button"
+                    className="discovery-generated-action reset"
+                    data-generated-action="reset-workunit"
+                    disabled={resetSaving}
+                    title="恢复为 Discovery 派发器最新 managed WorkUnit"
+                    onClick={() => {
+                      void resetGeneratedTaskWorkUnit(generatedTask);
+                    }}
+                  >
+                    {resetSaving ? "恢复中..." : "恢复 managed"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="discovery-generated-action danger"
+                  data-generated-action="archive"
+                  disabled={archiveSaving}
+                  title="通过现有 Canvas Task 归档接口软归档这个 generated Task"
+                  onClick={() => setGeneratedArchiveConfirmTaskId(generatedTask.taskId)}
+                >
+                  {archiveSaving ? "归档中..." : "归档"}
+                </button>
+                <button
+                  type="button"
+                  className="discovery-generated-action"
+                  data-generated-action="run"
+                  disabled={runSaving || Boolean(activeGeneratedRun) || generatedTask.status !== "ready"}
+                  title={generatedTask.status === "ready" ? "启动这个 generated Task 的 WorkUnit run" : "只有 ready generated Task 可以运行"}
+                  onClick={() => {
+                    void runTask(generatedTask);
+                  }}
+                >
+                  {generatedRunButtonLabel}
+                </button>
+                {activeGeneratedRun && (
+                  <button
+                    type="button"
+                    className="discovery-generated-action"
+                    data-generated-action="cancel"
+                    disabled={runSaving}
+                    onClick={() => {
+                      void cancelTaskRun(generatedTask, activeGeneratedRun);
+                    }}
+                  >
+                    停止
+                  </button>
+                )}
+                {latestGeneratedRun && (
+                  <button
+                    type="button"
+                    className={`discovery-generated-action summary ${generatedRunIsObserved ? "selected" : ""}`}
+                    data-generated-action="observe-run"
+                    aria-label={`${generatedTask.title} ${generatedRunIsObserved ? "收起 generated run observer" : "打开 generated run observer"}`}
+                    onClick={() => {
+                      setExpandedTaskBranches((current) => current.map((item) => {
+                        if (item.nodeId !== branch.nodeId) return item;
+                        const isSameObserver = item.discoveryGeneratedObserver?.taskId === generatedTask.taskId
+                          && item.discoveryGeneratedObserver?.runId === latestGeneratedRun.runId;
+                        return {
+                          ...item,
+                          detailMode: "discovery-subcanvas",
+                          observedRunId: undefined,
+                          selectedFileKeys: [],
+                          discoveryGeneratedObserver: isSameObserver
+                            ? undefined
+                            : {
+                                taskId: generatedTask.taskId,
+                                runId: latestGeneratedRun.runId,
+                                selectedFileKeys: [],
+                              },
+                        };
+                      }));
+                    }}
+                  >
+                    {generatedRunIsObserved ? "收起输出" : "查看输出"}
+                  </button>
+                )}
+              </div>
+              {archiveConfirmOpen && (
+                <div
+                  className="discovery-generated-archive-confirm"
+                  data-generated-archive-confirm-for={generatedTask.taskId}
+                >
+                  <span>确认软归档这个 generated Task？</span>
+                  <div className="discovery-generated-archive-confirm-actions">
+                    <button
+                      type="button"
+                      className="discovery-generated-action danger"
+                      data-generated-action="archive-confirm"
+                      disabled={archiveSaving}
+                      onClick={() => {
+                        void archiveGeneratedTask(generatedTask);
+                      }}
+                    >
+                      确认归档
+                    </button>
+                    <button
+                      type="button"
+                      className="discovery-generated-action"
+                      data-generated-action="archive-cancel"
+                      disabled={archiveSaving}
+                      onClick={() => setGeneratedArchiveConfirmTaskId(null)}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              )}
+            </article>
+          );
+        };
         panels.push({
           id: `discovery-subcanvas-${branch.nodeId}`,
-          width: 440,
+          width: 620,
           autoHeight: true,
           sourceId: menuPanelId,
           panel: (
@@ -2636,6 +2947,7 @@ export function App() {
               className="task-leader-branch emap-panel-branch discovery-subcanvas-panel"
               data-discovery-subcanvas-for={task.taskId}
               aria-label={`${task.title} Discovery 子画布`}
+              style={discoverySubcanvasStyle}
             >
               <header className="task-leader-branch-head">
                 <div className="task-leader-branch-title">
@@ -2697,193 +3009,42 @@ export function App() {
               <div className="discovery-subcanvas-list" aria-label={`${task.title} generated Task catalog`}>
                 {generatedTasks.length === 0 ? (
                   <div className="discovery-subcanvas-empty">暂无 generated Tasks。</div>
-                ) : generatedTasks.map((generatedTask) => {
-                  const generatedSource = generatedTask.generatedSource;
-                  const itemStatus = generatedSource?.itemStatus ?? "active";
-                  const workUnitMode = generatedSource?.workUnitMode ?? "managed";
-                  const generatedRuns = visibleDiscoveryGeneratedRuns(generatedTask, task.taskId, activeDiscoveryRun, taskRunsByTaskId);
-                  const latestGeneratedRun = selectLatestRun(generatedRuns);
-                  const activeGeneratedRun = generatedRuns.find((taskRun) => isActiveRun(taskRun.status)) ?? null;
-                  const runSaving = Boolean(taskRunSavingByTaskId[generatedTask.taskId]);
-                  const resetSaving = Boolean(generatedResetSavingByTaskId[generatedTask.taskId]);
-                  const archiveSaving = Boolean(generatedArchiveSavingByTaskId[generatedTask.taskId]);
-                  const latestRunStatus = latestGeneratedRun?.status ?? "none";
-                  const generatedIsEditing = branch.discoveryGeneratedEditTaskId === generatedTask.taskId;
-                  const archiveConfirmOpen = generatedArchiveConfirmTaskId === generatedTask.taskId;
-                  const canResetToManaged = workUnitMode === "customized" && Boolean(generatedSource?.latestManagedWorkUnit);
-                  const waitingForCurrentDiscoveryRun = Boolean(activeDiscoveryRun) && generatedSource?.latestDiscoveryRunId !== activeDiscoveryRun?.runId;
-                  const generatedRunIsObserved = Boolean(
-                    latestGeneratedRun
-                      && branch.discoveryGeneratedObserver?.taskId === generatedTask.taskId
-                      && branch.discoveryGeneratedObserver?.runId === latestGeneratedRun.runId,
-                  );
-                  const generatedRunButtonLabel = runSaving
-                    ? "启动中..."
-                    : activeGeneratedRun
-                      ? "运行中"
-                      : latestGeneratedRun
-                        ? "重新运行"
-                        : "运行";
-                  return (
-                    <article
-                      key={generatedTask.taskId}
-                      className={`discovery-generated-card is-${itemStatus} ${generatedRunIsObserved ? "is-observed" : ""} ${generatedIsEditing ? "is-editing" : ""}`}
-                      data-generated-task-id={generatedTask.taskId}
-                      data-generated-item-status={itemStatus}
-                      data-generated-workunit-mode={workUnitMode}
-                      data-generated-run-status={latestRunStatus}
-                      data-generated-run-scope={waitingForCurrentDiscoveryRun ? "pending-current-discovery" : "current"}
-                      data-generated-editing={generatedIsEditing ? "true" : "false"}
-                      data-generated-reset-saving={resetSaving ? "true" : "false"}
-                      data-generated-archive-saving={archiveSaving ? "true" : "false"}
+                ) : (
+                  <>
+                    <section
+                      className="discovery-subcanvas-lane discovery-subcanvas-lane-running"
+                      aria-label={`${task.title} 正在运行 generated Tasks`}
                     >
-                      <div className="discovery-generated-card-head">
-                        <strong>{generatedTask.title}</strong>
-                        <code>{generatedSource?.sourceItemId ?? generatedTask.taskId}</code>
+                      <div className="discovery-subcanvas-lane-head">
+                        <span>正在运行</span>
+                        <strong>{runningGeneratedTaskCards.length}/{discoveryConcurrency}</strong>
                       </div>
-                      <div className="discovery-generated-card-meta">
-                        <span>{itemStatus}</span>
-                        <span>{workUnitMode}</span>
-                        <span>{waitingForCurrentDiscoveryRun ? "等待本轮发现" : latestGeneratedRun ? RUN_STATUS_LABELS[latestGeneratedRun.status] : "none"}</span>
-                      </div>
-                      <div className="discovery-generated-card-actions">
-                        <button
-                          type="button"
-                          className={`discovery-generated-action ${generatedIsEditing ? "selected" : ""}`}
-                          data-generated-action="edit"
-                          aria-label={`${generatedTask.title} ${generatedIsEditing ? "收起 generated Task 浅编辑" : "打开 generated Task 浅编辑"}`}
-                          onClick={() => {
-                            if (generatedIsEditing) {
-                              clearTaskEditState(generatedTask.taskId);
-                            } else {
-                              openTaskEditDraft(generatedTask);
-                            }
-                            setExpandedTaskBranches((current) => current.map((item) =>
-                              item.nodeId === branch.nodeId
-                                ? {
-                                    ...item,
-                                    detailMode: "discovery-subcanvas",
-                                    discoveryGeneratedEditTaskId: generatedIsEditing ? undefined : generatedTask.taskId,
-                                  }
-                                : item
-                            ));
-                          }}
-                        >
-                          {generatedIsEditing ? "收起编辑" : "编辑"}
-                        </button>
-                        {canResetToManaged && (
-                          <button
-                            type="button"
-                            className="discovery-generated-action reset"
-                            data-generated-action="reset-workunit"
-                            disabled={resetSaving}
-                            title="恢复为 Discovery 派发器最新 managed WorkUnit"
-                            onClick={() => {
-                              void resetGeneratedTaskWorkUnit(generatedTask);
-                            }}
-                          >
-                            {resetSaving ? "恢复中..." : "恢复 managed"}
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="discovery-generated-action danger"
-                          data-generated-action="archive"
-                          disabled={archiveSaving}
-                          title="通过现有 Canvas Task 归档接口软归档这个 generated Task"
-                          onClick={() => setGeneratedArchiveConfirmTaskId(generatedTask.taskId)}
-                        >
-                          {archiveSaving ? "归档中..." : "归档"}
-                        </button>
-                        <button
-                          type="button"
-                          className="discovery-generated-action"
-                          data-generated-action="run"
-                          disabled={runSaving || Boolean(activeGeneratedRun) || generatedTask.status !== "ready"}
-                          title={generatedTask.status === "ready" ? "启动这个 generated Task 的 WorkUnit run" : "只有 ready generated Task 可以运行"}
-                          onClick={() => {
-                            void runTask(generatedTask);
-                          }}
-                        >
-                          {generatedRunButtonLabel}
-                        </button>
-                        {activeGeneratedRun && (
-                          <button
-                            type="button"
-                            className="discovery-generated-action"
-                            data-generated-action="cancel"
-                            disabled={runSaving}
-                            onClick={() => {
-                              void cancelTaskRun(generatedTask, activeGeneratedRun);
-                            }}
-                          >
-                            停止
-                          </button>
-                        )}
-                        {latestGeneratedRun && (
-                          <button
-                            type="button"
-                            className={`discovery-generated-action summary ${generatedRunIsObserved ? "selected" : ""}`}
-                            data-generated-action="observe-run"
-                            aria-label={`${generatedTask.title} ${generatedRunIsObserved ? "收起 generated run observer" : "打开 generated run observer"}`}
-                            onClick={() => {
-                              setExpandedTaskBranches((current) => current.map((item) => {
-                                if (item.nodeId !== branch.nodeId) return item;
-                                const isSameObserver = item.discoveryGeneratedObserver?.taskId === generatedTask.taskId
-                                  && item.discoveryGeneratedObserver?.runId === latestGeneratedRun.runId;
-                                return {
-                                  ...item,
-                                  detailMode: "discovery-subcanvas",
-                                  observedRunId: undefined,
-                                  selectedFileKeys: [],
-                                  discoveryGeneratedObserver: isSameObserver
-                                    ? undefined
-                                    : {
-                                        taskId: generatedTask.taskId,
-                                        runId: latestGeneratedRun.runId,
-                                        selectedFileKeys: [],
-                                      },
-                                };
-                              }));
-                            }}
-                          >
-                            {generatedRunIsObserved ? "收起输出" : "查看输出"}
-                          </button>
-                        )}
-                      </div>
-                      {archiveConfirmOpen && (
-                        <div
-                          className="discovery-generated-archive-confirm"
-                          data-generated-archive-confirm-for={generatedTask.taskId}
-                        >
-                          <span>确认软归档这个 generated Task？</span>
-                          <div className="discovery-generated-archive-confirm-actions">
-                            <button
-                              type="button"
-                              className="discovery-generated-action danger"
-                              data-generated-action="archive-confirm"
-                              disabled={archiveSaving}
-                              onClick={() => {
-                                void archiveGeneratedTask(generatedTask);
-                              }}
-                            >
-                              确认归档
-                            </button>
-                            <button
-                              type="button"
-                              className="discovery-generated-action"
-                              data-generated-action="archive-cancel"
-                              disabled={archiveSaving}
-                              onClick={() => setGeneratedArchiveConfirmTaskId(null)}
-                            >
-                              取消
-                            </button>
-                          </div>
+                      {runningGeneratedTaskCards.length === 0 ? (
+                        <div className="discovery-subcanvas-empty compact">当前并发池没有运行中的 generated Task。</div>
+                      ) : (
+                        <div className="discovery-subcanvas-running-grid">
+                          {runningGeneratedTaskCards.map(renderGeneratedCard)}
                         </div>
                       )}
-                    </article>
-                  );
-                })}
+                    </section>
+                    <section
+                      className="discovery-subcanvas-lane discovery-subcanvas-lane-queue"
+                      aria-label={`${task.title} generated Task 执行队列`}
+                    >
+                      <div className="discovery-subcanvas-lane-head">
+                        <span>执行队列</span>
+                        <strong>{waitingGeneratedTaskCount} queued · {doneGeneratedTaskCount} done</strong>
+                      </div>
+                      {queuedGeneratedTaskCards.length === 0 ? (
+                        <div className="discovery-subcanvas-empty compact">暂无排队或已完成 generated Task。</div>
+                      ) : (
+                        <div className="discovery-subcanvas-queue-grid">
+                          {queuedGeneratedTaskCards.map(renderGeneratedCard)}
+                        </div>
+                      )}
+                    </section>
+                  </>
+                )}
               </div>
             </section>
           ),

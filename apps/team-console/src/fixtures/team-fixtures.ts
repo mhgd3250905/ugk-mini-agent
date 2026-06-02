@@ -33,6 +33,7 @@ import type {
   TeamRunState,
   TeamTask,
   TeamTaskState,
+  TeamCanvasTaskRunByTaskListResponse,
   TaskDefinition,
   TeamAttemptMetadata,
 } from "../api/team-types";
@@ -1749,6 +1750,17 @@ export class MockTeamApi {
 
   async listTaskRuns(taskId: string): Promise<TeamRunState[]> {
     return (mockTaskRunsByTaskId.get(taskId) ?? []).map(cloneTeamRunState);
+  }
+
+  async listTaskRunsByTaskIds(taskIds: string[]): Promise<TeamCanvasTaskRunByTaskListResponse> {
+    const runsByTaskId: Record<string, TeamRunState[]> = {};
+    for (const taskId of taskIds) {
+      const runs = mockTaskRunsByTaskId.get(taskId);
+      if (runs) {
+        runsByTaskId[taskId] = runs.map(cloneTeamRunState);
+      }
+    }
+    return { runsByTaskId };
   }
 
   async createTaskRun(taskId: string): Promise<TeamRunState> {

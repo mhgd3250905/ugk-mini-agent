@@ -146,13 +146,18 @@ function generatedAttempt(taskId = "task_generated_vultr", attemptId = "attempt_
   };
 }
 
-function LiveDataProbe() {
+function byTaskRunsResponse(runsByTaskId: Record<string, TeamRunState[]>): Response {
+  return new Response(JSON.stringify({ runsByTaskId }), { status: 200 });
+}
+
+function LiveDataProbe({ openDiscoveryTaskIds = [] }: { openDiscoveryTaskIds?: string[] } = {}) {
   const liveData = useTeamConsoleLiveData({
     onApplyLiveTasks: noop,
     onApplyLiveSources: noop,
     onCloseBranches: noop,
     onResetContextUi: noop,
     selectedTaskId: null,
+    openDiscoveryTaskIds,
   });
   return (
     <pre data-testid="live-data-probe">
@@ -180,6 +185,7 @@ function LiveRefreshProbe() {
     onCloseBranches: noop,
     onResetContextUi: noop,
     selectedTaskId: null,
+    openDiscoveryTaskIds: [],
   });
   return (
     <div>
@@ -339,7 +345,8 @@ describe("App", () => {
     const hetznerCard = getGeneratedCard(panel, "task_generated_hetzner");
     expect(hetznerCard).toHaveAttribute("data-generated-item-status", "stale");
     expect(hetznerCard).toHaveAttribute("data-generated-workunit-mode", "customized");
-    expect(within(hetznerCard).getByText("hetzner")).toBeInTheDocument();
+    expect(hetznerCard).toHaveAttribute("data-generated-visual-state", "stale");
+    expect(hetznerCard.querySelector(".discovery-generated-card-watermark")).toHaveTextContent("02");
     const resetButton = hetznerCard.querySelector('[data-generated-action="reset-workunit"]') as HTMLButtonElement | null;
     expect(resetButton).toBeTruthy();
 
@@ -350,7 +357,7 @@ describe("App", () => {
       expect(within(refreshedCard).getByText("派发器核查 Hetzner 公开证据")).toBeInTheDocument();
       expect(refreshedCard).toHaveAttribute("data-generated-workunit-mode", "managed");
       expect(refreshedCard).toHaveAttribute("data-generated-item-status", "stale");
-      expect(within(refreshedCard).getByText("hetzner")).toBeInTheDocument();
+      expect(refreshedCard).toHaveAttribute("data-generated-visual-state", "stale");
       expect(refreshedCard.querySelector('[data-generated-action="reset-workunit"]')).toBeNull();
     });
     expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
@@ -649,6 +656,242 @@ describe("App", () => {
   });
 
   describe("live data", () => {
+    describe("lazy Discovery catalog loading", () => {
+      it("does not request /generated-tasks on initial load with Discovery root but no open subcanvas", async () => {
+        window.localStorage.setItem("ugk-team-console:data-source", "live");
+        const rootTask = mockTeamTasks[0]!;
+        vi.mocked(fetch).mockImplementation(async (input) => {
+          const url = String(input);
+          if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+          if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+          if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [rootTask, mockDiscoveryRootTask] }), { status: 200 });
+          if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse({});
+          return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+        });
+
+        render(<LiveDataProbe />);
+
+        await waitFor(() => expect(readLiveDataProbe().tasks).toEqual([rootTask.taskId, mockDiscoveryRootTask.taskId]));
+        await waitFor(() => expect(readLiveDataProbe().runKeys.length).toBeGreaterThanOrEqual(1));
+
+        const calledUrls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+        const generatedCalls = calledUrls.filter((url) => url.includes("/generated-tasks"));
+        const individualRunCalls = calledUrls.filter((url) => /^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url));
+        expect(generatedCalls).toHaveLength(0);
+        expect(individualRunCalls).toHaveLength(0);
+        expect(readLiveDataProbe().generated).toEqual({});
+      });
+
+      it("requests /generated-tasks only for open Discovery roots when subcanvas is open", async () => {
+        window.localStorage.setItem("ugk-team-console:data-source", "live");
+        const rootTask = mockTeamTasks[0]!;
+        const generatedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+        vi.mocked(fetch).mockImplementation(async (input) => {
+          const url = String(input);
+          if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+          if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+          if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [rootTask, mockDiscoveryRootTask] }), { status: 200 });
+          if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+            return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+          }
+          if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse({});
+          return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+        });
+
+        render(<LiveDataProbe openDiscoveryTaskIds={[mockDiscoveryRootTask.taskId]} />);
+
+        await waitFor(() => {
+          expect(readLiveDataProbe().generated[mockDiscoveryRootTask.taskId]).toEqual([
+            "task_generated_vultr",
+            "task_generated_hetzner",
+          ]);
+        });
+
+        const calledUrls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+        const generatedCalls = calledUrls.filter((url) => url.includes("/generated-tasks"));
+        const individualRunCalls = calledUrls.filter((url) => /^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url));
+        expect(generatedCalls).toHaveLength(1);
+        expect(generatedCalls[0]).toContain(mockDiscoveryRootTask.taskId);
+        expect(individualRunCalls).toHaveLength(0);
+      });
+
+      it("does not refresh closed Discovery subcanvas on silent refresh", async () => {
+        window.localStorage.setItem("ugk-team-console:data-source", "live");
+        const rootTask = mockTeamTasks[0]!;
+        const generatedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+        let generatedCatalogRequests = 0;
+        vi.mocked(fetch).mockImplementation(async (input) => {
+          const url = String(input);
+          if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+          if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+          if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [rootTask, mockDiscoveryRootTask] }), { status: 200 });
+          if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+            generatedCatalogRequests += 1;
+            return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+          }
+          if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse({});
+          return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+        });
+
+        const { rerender } = render(<LiveDataProbe openDiscoveryTaskIds={[mockDiscoveryRootTask.taskId]} />);
+
+        await waitFor(() => {
+          expect(readLiveDataProbe().generated[mockDiscoveryRootTask.taskId]).toEqual([
+            "task_generated_vultr",
+            "task_generated_hetzner",
+          ]);
+        });
+        const openCount = generatedCatalogRequests;
+        expect(openCount).toBeGreaterThanOrEqual(1);
+
+        rerender(<LiveDataProbe openDiscoveryTaskIds={[]} />);
+
+        await act(async () => { await Promise.resolve(); });
+
+        const probeAfterClose = readLiveDataProbe();
+        expect(probeAfterClose.generated[mockDiscoveryRootTask.taskId]).toEqual([
+          "task_generated_vultr",
+          "task_generated_hetzner",
+        ]);
+
+        await act(async () => { await Promise.resolve(); });
+        const afterCloseCount = generatedCatalogRequests;
+        expect(afterCloseCount).toBe(openCount);
+      });
+
+      it("App click open Discovery subcanvas produces exactly one /generated-tasks request", async () => {
+        window.localStorage.setItem("ugk-team-console:data-source", "live");
+        const generatedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+        vi.mocked(fetch).mockImplementation(async (input) => {
+          const url = String(input);
+          if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+          if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+          if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
+          if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+            return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+          }
+          if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse({});
+          return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+        });
+
+        const { container } = render(<App />);
+        const atlas = getAtlasNodes(container);
+        const discoveryNode = await within(atlas).findByRole("button", { name: mockDiscoveryRootTask.title });
+        fireEvent.click(discoveryNode);
+        fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+
+        const panel = await waitFor(() => {
+          const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+          expect(node).toBeTruthy();
+          return node!;
+        });
+        await waitFor(() => {
+          expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+        });
+
+        const calledUrls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+        const generatedCalls = calledUrls.filter((url) => url.includes("/generated-tasks"));
+        const individualRunCalls = calledUrls.filter((url) => /^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url));
+        expect(generatedCalls).toHaveLength(1);
+        expect(generatedCalls[0]).toContain(mockDiscoveryRootTask.taskId);
+        expect(individualRunCalls).toHaveLength(0);
+      });
+
+      it("App close Discovery subcanvas then manual refresh produces zero new /generated-tasks requests", async () => {
+        window.localStorage.setItem("ugk-team-console:data-source", "live");
+        const generatedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+        let generatedCatalogRequests = 0;
+        vi.mocked(fetch).mockImplementation(async (input) => {
+          const url = String(input);
+          if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+          if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+          if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
+          if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+            generatedCatalogRequests += 1;
+            return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+          }
+          if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse({});
+          return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+        });
+
+        const { container } = render(<App />);
+        const atlas = getAtlasNodes(container);
+        const discoveryNode = await within(atlas).findByRole("button", { name: mockDiscoveryRootTask.title });
+        fireEvent.click(discoveryNode);
+        fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+
+        await waitFor(() => {
+          expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
+        });
+        await waitFor(() => {
+          const panel = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)!;
+          expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+        });
+        const openCount = generatedCatalogRequests;
+        expect(openCount).toBeGreaterThanOrEqual(1);
+
+        fireEvent.click(screen.getByRole("button", { name: `收起 ${mockDiscoveryRootTask.title} Discovery 子画布` }));
+        await waitFor(() => {
+          expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeNull();
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
+        await waitFor(() => expect(screen.getByRole("button", { name: "刷新 Task" })).toBeEnabled());
+
+        expect(generatedCatalogRequests).toBe(openCount);
+      });
+
+      it("clears scoped catalog error on successful retry", async () => {
+        window.localStorage.setItem("ugk-team-console:data-source", "live");
+        const generatedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+        let failCatalog = true;
+        vi.mocked(fetch).mockImplementation(async (input) => {
+          const url = String(input);
+          if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+          if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+          if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
+          if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+            if (failCatalog) {
+              failCatalog = false;
+              return new Response(JSON.stringify({ error: { message: "catalog load failed" } }), { status: 500 });
+            }
+            return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+          }
+          if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse({});
+          return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+        });
+
+        function CatalogErrorProbe({ openDiscoveryTaskIds }: { openDiscoveryTaskIds: string[] }) {
+          const liveData = useTeamConsoleLiveData({
+            onApplyLiveTasks: noop,
+            onApplyLiveSources: noop,
+            onCloseBranches: noop,
+            onResetContextUi: noop,
+            selectedTaskId: null,
+            openDiscoveryTaskIds,
+          });
+          return (
+            <div>
+              <span data-testid="catalog-error">{liveData.error ?? "none"}</span>
+              <button type="button" onClick={() => void liveData.refreshLiveTasks()}>refresh</button>
+            </div>
+          );
+        }
+
+        render(<CatalogErrorProbe openDiscoveryTaskIds={[mockDiscoveryRootTask.taskId]} />);
+
+        await waitFor(() => {
+          expect(screen.getByTestId("catalog-error")).not.toHaveTextContent("none");
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: "refresh" }));
+
+        await waitFor(() => {
+          expect(screen.getByTestId("catalog-error")).toHaveTextContent("none");
+        });
+      });
+    });
+
     it("does not request generated child catalogs when live root Tasks contain no Discovery root", async () => {
       window.localStorage.setItem("ugk-team-console:data-source", "live");
       const liveTask = mockTeamTasks[0]!;
@@ -671,6 +914,40 @@ describe("App", () => {
       expect(readLiveDataProbe().generated).toEqual({});
     });
 
+    it("loads Discovery generated task runs with a single bulk by-task request and zero individual run calls", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const rootTask = mockTeamTasks[0]!;
+      const generatedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [rootTask, mockDiscoveryRootTask] }), { status: 200 });
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
+          return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse({});
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      render(<LiveDataProbe openDiscoveryTaskIds={[mockDiscoveryRootTask.taskId]} />);
+
+      await waitFor(() => {
+        expect(readLiveDataProbe().generated[mockDiscoveryRootTask.taskId]).toEqual([
+          "task_generated_vultr",
+          "task_generated_hetzner",
+        ]);
+      });
+
+      const calledUrls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+      const byTaskCalls = calledUrls.filter((url) => url.startsWith("/v1/team/task-runs/by-task?"));
+      const individualRunCalls = calledUrls.filter((url) => /^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url));
+      expect(byTaskCalls.length).toBeGreaterThanOrEqual(1);
+      expect(individualRunCalls).toHaveLength(0);
+    });
+
     it("loads Discovery generated child catalogs without putting generated Tasks in root live state", async () => {
       window.localStorage.setItem("ugk-team-console:data-source", "live");
       const rootTask = mockTeamTasks[0]!;
@@ -684,17 +961,13 @@ describe("App", () => {
         if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
           return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
         }
-        if (url === `/v1/team/tasks/${rootTask.taskId}/runs`) {
-          return new Response(JSON.stringify({ runs: [canvasTaskRun(rootTask.taskId, "run_root_task")] }), { status: 200 });
-        }
-        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
-          return new Response(JSON.stringify({ runs: [canvasTaskRun(mockDiscoveryRootTask.taskId, "run_discovery_root")] }), { status: 200 });
-        }
-        if (url === "/v1/team/tasks/task_generated_vultr/runs") {
-          return new Response(JSON.stringify({ runs: [generatedRun] }), { status: 200 });
-        }
-        if (url === "/v1/team/tasks/task_generated_hetzner/runs") {
-          return new Response(JSON.stringify({ runs: [canvasTaskRun("task_generated_hetzner", "run_generated_hetzner")] }), { status: 200 });
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse({
+            [rootTask.taskId]: [canvasTaskRun(rootTask.taskId, "run_root_task")],
+            [mockDiscoveryRootTask.taskId]: [canvasTaskRun(mockDiscoveryRootTask.taskId, "run_discovery_root")],
+            task_generated_vultr: [generatedRun],
+            task_generated_hetzner: [canvasTaskRun("task_generated_hetzner", "run_generated_hetzner")],
+          });
         }
         if (url === "/v1/team/task-runs/run_generated_vultr") {
           return new Response(JSON.stringify({ message: "not polled in this test" }), { status: 404 });
@@ -702,7 +975,7 @@ describe("App", () => {
         return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
       });
 
-      render(<LiveDataProbe />);
+      render(<LiveDataProbe openDiscoveryTaskIds={[mockDiscoveryRootTask.taskId]} />);
 
       await waitFor(() => {
         expect(readLiveDataProbe().generated[mockDiscoveryRootTask.taskId]).toEqual([
@@ -748,8 +1021,10 @@ describe("App", () => {
             tasks: generatedCatalogRequests >= 5 ? generatedTasks : [],
           }), { status: 200 });
         }
-        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
-          return new Response(JSON.stringify({ runs: [rootRunCompleted ? completedDiscoveryRun : runningDiscoveryRun] }), { status: 200 });
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse({
+            [mockDiscoveryRootTask.taskId]: [rootRunCompleted ? completedDiscoveryRun : runningDiscoveryRun],
+          });
         }
         if (url === `/v1/team/task-runs/${runningDiscoveryRun.runId}`) {
           rootRunCompleted = true;
@@ -758,13 +1033,10 @@ describe("App", () => {
         if (url === `/v1/team/task-runs/${completedDiscoveryRun.runId}/tasks/${mockDiscoveryRootTask.taskId}/attempts`) {
           return new Response(JSON.stringify({ attempts: [] }), { status: 200 });
         }
-        if (/^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url)) {
-          return new Response(JSON.stringify({ runs: [] }), { status: 200 });
-        }
         return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
       });
 
-      render(<LiveDataProbe />);
+      render(<LiveDataProbe openDiscoveryTaskIds={[mockDiscoveryRootTask.taskId]} />);
 
       await waitFor(() => expect(readLiveDataProbe().tasks).toEqual([mockDiscoveryRootTask.taskId]));
       await waitFor(() => {
@@ -802,19 +1074,16 @@ describe("App", () => {
         if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
           return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
         }
-        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
-          return new Response(JSON.stringify({ runs: [discoveryRun] }), { status: 200 });
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse({ [mockDiscoveryRootTask.taskId]: [discoveryRun] });
         }
         if (url === `/v1/team/task-runs/${discoveryRun.runId}/tasks/${mockDiscoveryRootTask.taskId}/attempts`) {
           return new Response(JSON.stringify({ attempts: [discoveryAttempt] }), { status: 200 });
         }
-        if (/^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url)) {
-          return new Response(JSON.stringify({ runs: [] }), { status: 200 });
-        }
         return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
       });
 
-      render(<LiveDataProbe />);
+      render(<LiveDataProbe openDiscoveryTaskIds={[mockDiscoveryRootTask.taskId]} />);
 
       await waitFor(() => {
         expect(readLiveDataProbe().summaries[mockDiscoveryRootTask.taskId]?.failedDispatchCount).toBe(1);
@@ -857,14 +1126,11 @@ describe("App", () => {
         if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
           return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
         }
-        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
-          return new Response(JSON.stringify({ runs: [activeDiscoveryRun] }), { status: 200 });
-        }
-        if (url === "/v1/team/tasks/task_generated_vultr/runs") {
-          return new Response(JSON.stringify({ runs: [oldGeneratedRun] }), { status: 200 });
-        }
-        if (/^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url)) {
-          return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse({
+            [mockDiscoveryRootTask.taskId]: [activeDiscoveryRun],
+            task_generated_vultr: [oldGeneratedRun],
+          });
         }
         if (url === `/v1/team/task-runs/${activeDiscoveryRun.runId}`) {
           return new Response(JSON.stringify(activeDiscoveryRun), { status: 200 });
@@ -886,7 +1152,7 @@ describe("App", () => {
       const vultrCard = getGeneratedCard(panel, "task_generated_vultr");
       expect(vultrCard).toHaveAttribute("data-generated-run-status", "none");
       expect(vultrCard).toHaveAttribute("data-generated-run-scope", "pending-current-discovery");
-      expect(vultrCard).toHaveTextContent("等待本轮发现");
+      expect(vultrCard).toHaveAttribute("data-generated-visual-state", "queued");
       expect(vultrCard).not.toHaveTextContent("已完成");
       expect(vultrCard.querySelector('[data-generated-action="observe-run"]')).toBeNull();
     });
@@ -941,12 +1207,8 @@ describe("App", () => {
         if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
           return new Response(JSON.stringify({ tasks: [alpha, beta, gamma] }), { status: 200 });
         }
-        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
-          return new Response(JSON.stringify({ runs: [rootRun] }), { status: 200 });
-        }
-        const runMatch = url.match(/^\/v1\/team\/tasks\/([^/]+)\/runs$/);
-        if (runMatch) {
-          return new Response(JSON.stringify({ runs: runsByTaskId[runMatch[1]!] ?? [] }), { status: 200 });
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse({ [mockDiscoveryRootTask.taskId]: [rootRun], ...runsByTaskId });
         }
         if (url === "/v1/team/task-runs/run_gamma") {
           return new Response(JSON.stringify(runsByTaskId[gamma.taskId]![0]), { status: 200 });
@@ -1040,20 +1302,16 @@ describe("App", () => {
         if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
           return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
         }
-        if (url === `/v1/team/tasks/${rootTask.taskId}/runs`) {
-          return new Response(JSON.stringify({ runs: [canvasTaskRun(rootTask.taskId, "run_root_task")] }), { status: 200 });
-        }
-        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
-          return new Response(JSON.stringify({ runs: [discoveryRun] }), { status: 200 });
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse({
+            [rootTask.taskId]: [canvasTaskRun(rootTask.taskId, "run_root_task")],
+            [mockDiscoveryRootTask.taskId]: [discoveryRun],
+            task_generated_vultr: [generatedRun],
+            task_generated_hetzner: [canvasTaskRun("task_generated_hetzner", "run_generated_hetzner")],
+          });
         }
         if (url === `/v1/team/task-runs/${discoveryRun.runId}/tasks/${mockDiscoveryRootTask.taskId}/attempts`) {
           return new Response(JSON.stringify({ attempts: [discoveryAttempt] }), { status: 200 });
-        }
-        if (url === "/v1/team/tasks/task_generated_vultr/runs") {
-          return new Response(JSON.stringify({ runs: [generatedRun] }), { status: 200 });
-        }
-        if (url === "/v1/team/tasks/task_generated_hetzner/runs") {
-          return new Response(JSON.stringify({ runs: [canvasTaskRun("task_generated_hetzner", "run_generated_hetzner")] }), { status: 200 });
         }
         if (url === "/v1/team/task-runs/run_generated_vultr") {
           return new Response(JSON.stringify({ message: "not polled in this test" }), { status: 404 });
@@ -1065,17 +1323,18 @@ describe("App", () => {
 
       const atlas = getAtlasNodes(container);
       const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
+      expect(within(atlas).queryByRole("button", { name: "核查 Vultr 公开证据" })).toBeNull();
+      expect(within(atlas).queryByRole("button", { name: "核查 Hetzner 公开证据" })).toBeNull();
+
+      fireEvent.click(discoveryNode);
+      fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+
       await waitFor(() => expect(within(discoveryNode).getByText("2 items")).toBeInTheDocument());
       await waitFor(() => expect(discoveryNode).toHaveAttribute("data-discovery-failed-dispatch-count", "1"));
       expect(within(discoveryNode).getByText("1 active")).toBeInTheDocument();
       expect(within(discoveryNode).getByText("1 stale")).toBeInTheDocument();
       expect(within(discoveryNode).getByText("1 running")).toBeInTheDocument();
       expect(within(discoveryNode).getByText("1 blocked")).toBeInTheDocument();
-      expect(within(atlas).queryByRole("button", { name: "核查 Vultr 公开证据" })).toBeNull();
-      expect(within(atlas).queryByRole("button", { name: "核查 Hetzner 公开证据" })).toBeNull();
-
-      fireEvent.click(discoveryNode);
-      fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
       const panel = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
       expect(panel).toBeTruthy();
       const vultrCard = panel!.querySelector('[data-generated-task-id="task_generated_vultr"]') as HTMLElement | null;
@@ -1084,7 +1343,7 @@ describe("App", () => {
       expect(vultrCard).toHaveAttribute("data-generated-item-status", "active");
       expect(vultrCard).toHaveAttribute("data-generated-workunit-mode", "managed");
       expect(vultrCard).toHaveAttribute("data-generated-run-status", "running");
-      expect(within(vultrCard!).getByText("执行中")).toBeInTheDocument();
+      expect(vultrCard).toHaveAttribute("data-generated-visual-state", "running");
       const diagnostics = panel!.querySelector(`[data-discovery-dispatch-diagnostics-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
       expect(diagnostics).toBeTruthy();
       expect(diagnostics).toHaveAttribute("data-dispatch-blocked-count", "1");
@@ -1149,17 +1408,13 @@ describe("App", () => {
         if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
           return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
         }
-        if (url === `/v1/team/tasks/${rootTask.taskId}/runs`) {
-          return new Response(JSON.stringify({ runs: [canvasTaskRun(rootTask.taskId, "run_root_task")] }), { status: 200 });
-        }
-        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
-          return new Response(JSON.stringify({ runs: [canvasTaskRun(mockDiscoveryRootTask.taskId, "run_discovery_root")] }), { status: 200 });
-        }
-        if (url === "/v1/team/tasks/task_generated_vultr/runs") {
-          return new Response(JSON.stringify({ runs: [generatedRun] }), { status: 200 });
-        }
-        if (url === "/v1/team/tasks/task_generated_hetzner/runs") {
-          return new Response(JSON.stringify({ runs: [canvasTaskRun("task_generated_hetzner", "run_generated_hetzner")] }), { status: 200 });
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse({
+            [rootTask.taskId]: [canvasTaskRun(rootTask.taskId, "run_root_task")],
+            [mockDiscoveryRootTask.taskId]: [canvasTaskRun(mockDiscoveryRootTask.taskId, "run_discovery_root")],
+            task_generated_vultr: [generatedRun],
+            task_generated_hetzner: [canvasTaskRun("task_generated_hetzner", "run_generated_hetzner")],
+          });
         }
         if (url === "/v1/team/task-runs/run_generated_vultr") {
           return new Response(JSON.stringify(generatedRun), { status: 200 });
@@ -1210,7 +1465,7 @@ describe("App", () => {
 
       fireEvent.click(cancelButton!);
       await waitFor(() => {
-        expect(vultrCard).toHaveAttribute("data-generated-run-status", "cancelled");
+        expect(getGeneratedCard(panel, "task_generated_vultr")).toHaveAttribute("data-generated-run-status", "cancelled");
       });
       const cancelCall = vi.mocked(fetch).mock.calls.find(([url]) => String(url) === "/v1/team/task-runs/run_generated_vultr/cancel");
       expect(cancelCall?.[1]).toMatchObject({ method: "POST" });
@@ -1232,6 +1487,9 @@ describe("App", () => {
           expect(init).toMatchObject({ method: "POST" });
           return new Response(JSON.stringify({ task: resetTask, warnings: [] }), { status: 200 });
         }
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse({});
+        }
         if (/^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url)) {
           return new Response(JSON.stringify({ runs: [] }), { status: 200 });
         }
@@ -1247,6 +1505,9 @@ describe("App", () => {
         const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
         expect(node).toBeTruthy();
         return node!;
+      });
+      await waitFor(() => {
+        expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
       });
 
       const hetznerCard = getGeneratedCard(panel, "task_generated_hetzner");
@@ -1296,8 +1557,8 @@ describe("App", () => {
         if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`) {
           return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
         }
-        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
-          return new Response(JSON.stringify({ runs: [discoveryRun] }), { status: 200 });
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse({ [mockDiscoveryRootTask.taskId]: [discoveryRun] });
         }
         if (url === `/v1/team/task-runs/${discoveryRun.runId}/tasks/${mockDiscoveryRootTask.taskId}/attempts`) {
           return new Response(JSON.stringify({ attempts: [discoveryAttempt] }), { status: 200 });
@@ -1306,19 +1567,16 @@ describe("App", () => {
           expect(init).toMatchObject({ method: "POST" });
           return new Response(JSON.stringify({ task: archivedVultrTask, warnings: [] }), { status: 200 });
         }
-        if (/^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url)) {
-          return new Response(JSON.stringify({ runs: [] }), { status: 200 });
-        }
         return new Response(JSON.stringify({ connections: [], dependencies: [], sourceNodes: [] }), { status: 200 });
       });
 
       const { container } = render(<App />);
       const atlas = getAtlasNodes(container);
       const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
-      await waitFor(() => expect(within(discoveryNode).getByText("2 items")).toBeInTheDocument());
-      await waitFor(() => expect(discoveryNode).toHaveAttribute("data-discovery-failed-dispatch-count", "1"));
       fireEvent.click(discoveryNode);
       fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+      await waitFor(() => expect(within(discoveryNode).getByText("2 items")).toBeInTheDocument());
+      await waitFor(() => expect(discoveryNode).toHaveAttribute("data-discovery-failed-dispatch-count", "1"));
       const panel = await waitFor(() => {
         const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
         expect(node).toBeTruthy();
@@ -1404,8 +1662,8 @@ describe("App", () => {
             tasks: showRefreshedGeneratedCatalog ? refreshedGeneratedTasks : initialGeneratedTasks,
           }), { status: 200 });
         }
-        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`) {
-          return new Response(JSON.stringify({ runs: [discoveryRun] }), { status: 200 });
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse({ [mockDiscoveryRootTask.taskId]: [discoveryRun] });
         }
         if (url === `/v1/team/task-runs/${discoveryRun.runId}/tasks/${mockDiscoveryRootTask.taskId}/attempts`) {
           return new Response(JSON.stringify({ attempts: [discoveryAttempt] }), { status: 200 });
@@ -1414,28 +1672,28 @@ describe("App", () => {
           expect(init).toMatchObject({ method: "POST" });
           return archiveResponse.promise;
         }
-        if (/^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url)) {
-          return new Response(JSON.stringify({ runs: [] }), { status: 200 });
-        }
         return new Response(JSON.stringify({ connections: [], dependencies: [], sourceNodes: [] }), { status: 200 });
       });
 
       const { container } = render(<App />);
       const atlas = getAtlasNodes(container);
       const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
+
+      fireEvent.click(discoveryNode);
+      fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
       await waitFor(() => expect(within(discoveryNode).getByText("2 items")).toBeInTheDocument());
       expect(within(discoveryNode).getByText("1 active")).toBeInTheDocument();
       expect(within(discoveryNode).getByText("1 stale")).toBeInTheDocument();
       expect(within(discoveryNode).getByText("1 blocked")).toBeInTheDocument();
 
-      fireEvent.click(discoveryNode);
-      fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
       const panel = await waitFor(() => {
         const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
         expect(node).toBeTruthy();
         return node!;
       });
-      expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+      await waitFor(() => {
+        expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+      });
 
       fireEvent.click(getGeneratedCard(panel, "task_generated_vultr").querySelector('[data-generated-action="archive"]')!);
       const confirm = await waitFor(() => {
@@ -1494,13 +1752,16 @@ describe("App", () => {
       const { container } = render(<App />);
       const atlas = getAtlasNodes(container);
       const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
-      await waitFor(() => expect(within(discoveryNode).getByText("2 items")).toBeInTheDocument());
       fireEvent.click(discoveryNode);
       fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+      await waitFor(() => expect(within(discoveryNode).getByText("2 items")).toBeInTheDocument());
       const panel = await waitFor(() => {
         const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
         expect(node).toBeTruthy();
         return node!;
+      });
+      await waitFor(() => {
+        expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
       });
 
       fireEvent.click(getGeneratedCard(panel, "task_generated_vultr").querySelector('[data-generated-action="archive"]')!);
@@ -2261,6 +2522,150 @@ describe("App", () => {
       fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
       expect(await screen.findByText("请求失败 (500)")).toBeInTheDocument();
+    });
+
+    it("listTaskRunsByTaskIds([]) does not trigger a fetch call", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const liveTask = mockTeamTasks[0]!;
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 });
+        if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse({});
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      render(<LiveDataProbe />);
+
+      await waitFor(() => expect(readLiveDataProbe().tasks).toEqual([liveTask.taskId]));
+
+      const byTaskUrls = vi.mocked(fetch).mock.calls
+        .map(([url]) => String(url))
+        .filter((url) => url.startsWith("/v1/team/task-runs/by-task?"));
+      expect(byTaskUrls).toHaveLength(1);
+      const params = new URLSearchParams(byTaskUrls[0]!.split("?")[1]);
+      expect(params.get("taskIds")).toBe(liveTask.taskId);
+    });
+
+    it("splits >100 taskIds into multiple bulk by-task requests and merges results", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const { TASK_RUNS_BY_TASK_IDS_CHUNK_SIZE } = await import("../api/team-api");
+      const rootTask = mockTeamTasks[0]!;
+      const discoveryTask = mockDiscoveryRootTask;
+      const generatedTasks: TeamCanvasTask[] = [];
+      for (let i = 0; i < TASK_RUNS_BY_TASK_IDS_CHUNK_SIZE + 5; i++) {
+        const baseGen = mockDiscoveryGeneratedTasks[0]!;
+        generatedTasks.push({
+          ...baseGen,
+          taskId: `task_gen_bulk_${i}`,
+          title: `Generated ${i}`,
+          workUnit: { ...baseGen.workUnit, title: `Generated ${i}` },
+          generatedSource: {
+            ...baseGen.generatedSource!,
+            sourceItemId: `item_${i}`,
+            itemPayload: { id: `item_${i}`, title: `Item ${i}` },
+          },
+        });
+      }
+      const allTaskIds = [rootTask.taskId, discoveryTask.taskId, ...generatedTasks.map((t) => t.taskId)];
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [rootTask, discoveryTask] }), { status: 200 });
+        if (url === `/v1/team/tasks/${discoveryTask.taskId}/generated-tasks`) {
+          return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse({});
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      render(<LiveDataProbe openDiscoveryTaskIds={[discoveryTask.taskId]} />);
+
+      await waitFor(() => {
+        expect(readLiveDataProbe().generated[discoveryTask.taskId]).toHaveLength(TASK_RUNS_BY_TASK_IDS_CHUNK_SIZE + 5);
+      });
+
+      const byTaskUrls = vi.mocked(fetch).mock.calls
+        .map(([url]) => String(url))
+        .filter((url) => url.startsWith("/v1/team/task-runs/by-task?"));
+      expect(byTaskUrls.length).toBeGreaterThanOrEqual(2);
+      const individualRunCalls = vi.mocked(fetch).mock.calls
+        .map(([url]) => String(url))
+        .filter((url) => /^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url));
+      expect(individualRunCalls).toHaveLength(0);
+
+      const probe = readLiveDataProbe();
+      expect(probe.runKeys.length).toBe(allTaskIds.length);
+    });
+
+    it("keeps runsByTaskId state when >100 root+generated ids are loaded without N+1 fallback", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const { TASK_RUNS_BY_TASK_IDS_CHUNK_SIZE } = await import("../api/team-api");
+      const rootTask = mockTeamTasks[0]!;
+      const discoveryTask = mockDiscoveryRootTask;
+      const generatedTasks: TeamCanvasTask[] = [];
+      for (let i = 0; i < TASK_RUNS_BY_TASK_IDS_CHUNK_SIZE + 2; i++) {
+        const baseGen = mockDiscoveryGeneratedTasks[0]!;
+        generatedTasks.push({
+          ...baseGen,
+          taskId: `task_gen_state_${i}`,
+          title: `Gen state ${i}`,
+          workUnit: { ...baseGen.workUnit, title: `Gen state ${i}` },
+          generatedSource: {
+            ...baseGen.generatedSource!,
+            sourceItemId: `item_state_${i}`,
+            itemPayload: { id: `item_state_${i}`, title: `Item state ${i}` },
+          },
+        });
+      }
+      const runForRoot = canvasTaskRun(rootTask.taskId, "run_state_root");
+      const runForDiscovery = canvasTaskRun(discoveryTask.taskId, "run_state_discovery");
+      const runsByTaskId: Record<string, TeamRunState[]> = {
+        [rootTask.taskId]: [runForRoot],
+        [discoveryTask.taskId]: [runForDiscovery],
+      };
+      for (let i = 0; i < 3; i++) {
+        const genId = generatedTasks[i]!.taskId;
+        runsByTaskId[genId] = [canvasTaskRun(genId, `run_state_gen_${i}`, i === 0 ? "running" : "completed")];
+      }
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [rootTask, discoveryTask] }), { status: 200 });
+        if (url === `/v1/team/tasks/${discoveryTask.taskId}/generated-tasks`) {
+          return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse(runsByTaskId);
+        }
+        if (url === "/v1/team/task-runs/run_state_gen_0") {
+          return new Response(JSON.stringify(runsByTaskId[generatedTasks[0]!.taskId]![0]), { status: 200 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      render(<LiveDataProbe openDiscoveryTaskIds={[discoveryTask.taskId]} />);
+
+      await waitFor(() => {
+        const probe = readLiveDataProbe();
+        expect(probe.runKeys).toContain(rootTask.taskId);
+        expect(probe.runKeys).toContain(discoveryTask.taskId);
+        expect(probe.generated[discoveryTask.taskId]).toBeTruthy();
+      });
+
+      const individualRunCalls = vi.mocked(fetch).mock.calls
+        .map(([url]) => String(url))
+        .filter((url) => /^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url));
+      expect(individualRunCalls).toHaveLength(0);
+
+      const probe = readLiveDataProbe();
+      expect(probe.summaries[discoveryTask.taskId]).toBeTruthy();
+      expect(probe.summaries[discoveryTask.taskId]!.generatedTaskCount).toBe(TASK_RUNS_BY_TASK_IDS_CHUNK_SIZE + 2);
     });
   });
 });

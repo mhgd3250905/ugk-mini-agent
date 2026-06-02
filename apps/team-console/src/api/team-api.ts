@@ -18,6 +18,7 @@ import type {
   AgentSwitchConversationResponse,
   TeamCanvasTask,
   TeamCanvasTaskListResponse,
+  TeamCanvasTaskRunByTaskListResponse,
   TeamCanvasTaskRunListResponse,
   TeamCanvasSourceConnection,
   TeamCanvasSourceConnectionCreateRequest,
@@ -77,6 +78,7 @@ export interface CanvasTaskGateway {
   createSourceConnection(input: TeamCanvasSourceConnectionCreateRequest): Promise<TeamCanvasSourceConnection>;
   deleteSourceConnection(connectionId: string): Promise<void>;
   listTaskRuns(taskId: string): Promise<TeamRunState[]>;
+  listTaskRunsByTaskIds(taskIds: string[]): Promise<TeamCanvasTaskRunByTaskListResponse>;
   createTaskRun(taskId: string): Promise<TeamRunState>;
   getTaskRun(runId: string): Promise<TeamRunState>;
   cancelTaskRun(runId: string): Promise<TeamRunState>;
@@ -143,6 +145,8 @@ async function responseToApiError(response: Response, fallbackMessage: string): 
     status: response.status,
   };
 }
+
+export const TASK_RUNS_BY_TASK_IDS_CHUNK_SIZE = 100;
 
 export class LiveTeamApi implements TeamApiProvider {
   constructor(private baseUrl: string = "/v1/team") {}
@@ -399,6 +403,32 @@ export class LiveTeamApi implements TeamApiProvider {
       const body = (await res.json()) as TeamCanvasTaskRunListResponse | TeamRunState[];
       if (Array.isArray(body)) return body;
       return Array.isArray(body.runs) ? body.runs : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async listTaskRunsByTaskIds(taskIds: string[]): Promise<TeamCanvasTaskRunByTaskListResponse> {
+    const unique = [...new Set(taskIds)];
+    if (unique.length === 0) return { runsByTaskId: {} };
+    try {
+      const chunks: string[][] = [];
+      for (let i = 0; i < unique.length; i += TASK_RUNS_BY_TASK_IDS_CHUNK_SIZE) {
+        chunks.push(unique.slice(i, i + TASK_RUNS_BY_TASK_IDS_CHUNK_SIZE));
+      }
+      const responses = await Promise.all(chunks.map(async (chunk) => {
+        const params = new URLSearchParams({ taskIds: chunk.join(",") });
+        const res = await fetch(`${this.baseUrl}/task-runs/by-task?${params}`);
+        if (!res.ok) throw res;
+        return (await res.json()) as TeamCanvasTaskRunByTaskListResponse;
+      }));
+      const merged: Record<string, TeamRunState[]> = {};
+      for (const response of responses) {
+        for (const [id, runs] of Object.entries(response.runsByTaskId)) {
+          merged[id] = runs;
+        }
+      }
+      return { runsByTaskId: merged };
     } catch (e) {
       throw toApiError(e);
     }
