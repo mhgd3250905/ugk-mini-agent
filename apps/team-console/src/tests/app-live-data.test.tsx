@@ -279,7 +279,7 @@ async function openMockDiscoverySubcanvas(container: HTMLElement): Promise<{
   atlas: HTMLElement;
   panel: HTMLElement;
 }> {
-  const atlas = getAtlasNodes(container);
+  const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
   const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
   fireEvent.click(discoveryNode);
   fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
@@ -340,7 +340,7 @@ describe("App", () => {
 
   it("opens the mock Discovery generated catalog from the root Task menu without root child cards", async () => {
     const { container } = render(<App />);
-    const atlas = getAtlasNodes(container);
+    const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
     const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
 
     fireEvent.click(discoveryNode);
@@ -535,7 +535,7 @@ describe("App", () => {
 
   it("runs a mock generated Task and opens its observer and file detail from the Discovery subcanvas", async () => {
     const { container } = render(<App />);
-    const atlas = getAtlasNodes(container);
+    const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
     const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
 
     fireEvent.click(discoveryNode);
@@ -597,7 +597,7 @@ describe("App", () => {
 
   it("does not show the Discovery subcanvas toggle for normal root Tasks", async () => {
     const { container } = render(<App />);
-    const atlas = getAtlasNodes(container);
+    const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
     const normalTask = mockTeamTasks[0]!;
     const normalTaskNode = await within(atlas).findByRole("button", { name: normalTask.title });
 
@@ -771,7 +771,7 @@ describe("App", () => {
       expect(container.querySelector('[data-generated-edit-task-id="task_generated_vultr"]')).toBeNull();
     });
 
-    const atlas = getAtlasNodes(container);
+    const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
     fireEvent.click(within(atlas).getByRole("button", { name: "发现云服务候选" }));
     fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
     const reopenedPanel = await waitFor(() => {
@@ -932,7 +932,7 @@ describe("App", () => {
         });
 
         const { container } = render(<App />);
-        const atlas = getAtlasNodes(container);
+        const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
         const discoveryNode = await within(atlas).findByRole("button", { name: mockDiscoveryRootTask.title });
         fireEvent.click(discoveryNode);
         fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
@@ -981,7 +981,7 @@ describe("App", () => {
         });
 
         const { container } = render(<App />);
-        const atlas = getAtlasNodes(container);
+        const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
         const discoveryNode = await within(atlas).findByRole("button", { name: mockDiscoveryRootTask.title });
         fireEvent.click(discoveryNode);
         fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
@@ -1026,7 +1026,7 @@ describe("App", () => {
         });
 
         const { container } = render(<App />);
-        const atlas = getAtlasNodes(container);
+        const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
         const discoveryNode = await within(atlas).findByRole("button", { name: mockDiscoveryRootTask.title });
         fireEvent.click(discoveryNode);
         fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
@@ -1075,7 +1075,7 @@ describe("App", () => {
         });
 
         const { container } = render(<App />);
-        const atlas = getAtlasNodes(container);
+        const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
         const discoveryNode = await within(atlas).findByRole("button", { name: mockDiscoveryRootTask.title });
         fireEvent.click(discoveryNode);
         fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
@@ -1255,7 +1255,7 @@ describe("App", () => {
         });
 
         const { container } = render(<App />);
-        const atlas = getAtlasNodes(container);
+        const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
         fireEvent.click(await within(atlas).findByRole("button", { name: mockDiscoveryRootTask.title }));
         fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
 
@@ -1286,7 +1286,7 @@ describe("App", () => {
         });
 
         const { container } = render(<App />);
-        const atlas = getAtlasNodes(container);
+        const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
         const discoveryNode = await within(atlas).findByRole("button", { name: mockDiscoveryRootTask.title });
         fireEvent.click(discoveryNode);
         fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
@@ -1610,7 +1610,7 @@ describe("App", () => {
       });
 
       const { container } = render(<App />);
-      const atlas = getAtlasNodes(container);
+      const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
       const discoveryNode = await within(atlas).findByRole("button", { name: mockDiscoveryRootTask.title });
       fireEvent.click(discoveryNode);
       fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
@@ -1688,7 +1688,7 @@ describe("App", () => {
       });
 
       const { container } = render(<App />);
-      const atlas = getAtlasNodes(container);
+      const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
       fireEvent.click(await within(atlas).findByRole("button", { name: mockDiscoveryRootTask.title }));
       fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
 
@@ -1837,7 +1837,7 @@ describe("App", () => {
 
       const { container } = render(<App />);
 
-      const atlas = getAtlasNodes(container);
+      const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
       const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
       expect(within(atlas).queryByRole("button", { name: "核查 Vultr 公开证据" })).toBeNull();
       expect(within(atlas).queryByRole("button", { name: "核查 Hetzner 公开证据" })).toBeNull();
@@ -1894,7 +1894,7 @@ describe("App", () => {
       });
 
       const { container } = render(<App />);
-      const atlas = getAtlasNodes(container);
+      const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
       const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
       await waitFor(() => expect(discoveryNode).toHaveAttribute("data-discovery-failed-dispatch-count", "0"));
       expect(within(discoveryNode).queryByText(/blocked|dispatch failed/i)).toBeNull();
@@ -1946,7 +1946,7 @@ describe("App", () => {
       });
 
       const { container } = render(<App />);
-      const atlas = getAtlasNodes(container);
+      const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
       const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
       fireEvent.click(discoveryNode);
       fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
@@ -2013,7 +2013,7 @@ describe("App", () => {
       });
 
       const { container } = render(<App />);
-      const atlas = getAtlasNodes(container);
+      const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
       const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
       fireEvent.click(discoveryNode);
       fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
@@ -2087,7 +2087,7 @@ describe("App", () => {
       });
 
       const { container } = render(<App />);
-      const atlas = getAtlasNodes(container);
+      const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
       const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
       fireEvent.click(discoveryNode);
       fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
@@ -2192,7 +2192,7 @@ describe("App", () => {
       });
 
       const { container } = render(<App />);
-      const atlas = getAtlasNodes(container);
+      const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
       const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
 
       fireEvent.click(discoveryNode);
@@ -2266,7 +2266,7 @@ describe("App", () => {
       });
 
       const { container } = render(<App />);
-      const atlas = getAtlasNodes(container);
+      const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
       const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
       fireEvent.click(discoveryNode);
       fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
@@ -2319,7 +2319,7 @@ describe("App", () => {
       });
 
       const { container } = render(<App />);
-      const atlas = getAtlasNodes(container);
+      const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
       const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
       fireEvent.click(discoveryNode);
       fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));

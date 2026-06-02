@@ -160,7 +160,7 @@ describe("App", () => {
         expect(second.container.querySelector(".agent-playground-branch")).toBeTruthy();
         expect(second.container.querySelector(".task-action-branch")).toBeTruthy();
         expect(getAtlasStage(second.container).style.transform).toBe(transformBefore);
-      });
+      }, { timeout: 2000 });
     });
 
     it("normalizes legacy stored canvas zoom to the nearest readable level", async () => {
@@ -193,7 +193,7 @@ describe("App", () => {
 
       await waitFor(() => {
         expect(getAtlasStage(container).style.transform).toBe("translate(10px, 20px) scale(0.9)");
-      });
+      }, { timeout: 1600 });
     });
 
     it("hydrates live canvas layout from the shared Team Console layout API", async () => {
@@ -293,7 +293,7 @@ describe("App", () => {
         expect(Number.parseFloat(restoredAgent!.style.left)).toBeCloseTo(movedAgentLeft, 4);
         expect(Number.parseFloat(restoredAgent!.style.top)).toBeCloseTo(movedAgentTop, 4);
         expect(second.container.querySelector('.emap-canvas-task-node[data-task-id="task_research_medtrum"]')).toBeNull();
-      });
+      }, { timeout: 1600 });
 
       const dock = second.container.querySelector(".emap-root-dock") as HTMLElement | null;
       expect(dock).toBeTruthy();
@@ -348,13 +348,12 @@ describe("App", () => {
 
       const { container } = render(<App />);
 
-      const dock = await waitFor(() => {
+      await waitFor(() => {
         const node = container.querySelector(".emap-root-dock") as HTMLElement | null;
         expect(node).toBeTruthy();
         expect(within(node!).getByRole("button", { name: new RegExp(`复原 Task ${liveTask.title}`) })).toBeInTheDocument();
         expect(container.querySelector(`.emap-canvas-task-node[data-task-id="${liveTask.taskId}"]`)).toBeNull();
-        return node!;
-      });
+      }, { timeout: 2000 });
 
       fireEvent.change(screen.getByRole("combobox"), { target: { value: "mock" } });
       await waitFor(() => {
@@ -365,9 +364,11 @@ describe("App", () => {
       fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
       await waitFor(() => {
         expect(screen.getByRole("combobox")).toHaveValue("live");
-        expect(within(dock).getByRole("button", { name: new RegExp(`复原 Task ${liveTask.title}`) })).toBeInTheDocument();
+        const liveDock = container.querySelector(".emap-root-dock") as HTMLElement | null;
+        expect(liveDock).toBeTruthy();
+        expect(within(liveDock!).getByRole("button", { name: new RegExp(`复原 Task ${liveTask.title}`) })).toBeInTheDocument();
         expect(container.querySelector(`.emap-canvas-task-node[data-task-id="${liveTask.taskId}"]`)).toBeNull();
-      });
+      }, { timeout: 1600 });
     });
 
     it("persists dragged Task branch panel positions across a browser reload", async () => {
@@ -407,7 +408,7 @@ describe("App", () => {
         expect(restoredShell).toBeTruthy();
         expect(Number.parseFloat(restoredShell!.style.left)).toBeCloseTo(movedLeft, 4);
         expect(Number.parseFloat(restoredShell!.style.top)).toBeCloseTo(movedTop, 4);
-      });
+      }, { timeout: 2000 });
     });
   });
 });

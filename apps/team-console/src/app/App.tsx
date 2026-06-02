@@ -1259,6 +1259,7 @@ function mergeStoredSourceNodePositions(sourceNodes: AtlasSourceNode[], storedPo
 }
 
 export function App() {
+  const initialDataSourceRef = useRef<DataSource>(readStoredInitialDataSource());
   const [theme, setTheme] = useState<TeamConsoleTheme>(() => readStoredTheme());
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [agentNodes, setAgentNodes] = useState<AtlasAgentNode[]>([]);
@@ -4366,7 +4367,9 @@ export function App() {
   const canvasStateRestorePending = !loading && !canvasUiStateHydrated;
   const canvasLoadingMinimumMs = loading || canvasUiStateRestoreHasStoredState
     ? CANVAS_LOADING_MIN_VISIBLE_MS
-    : 0;
+    : dataSource === "live" && initialDataSourceRef.current === "live" && !sharedCanvasUiStateLoaded
+      ? 1
+      : 0;
   const canvasLoadingVisible = useMinimumVisibleFlag(
     loading || canvasStateRestorePending,
     canvasLoadingMinimumMs,
