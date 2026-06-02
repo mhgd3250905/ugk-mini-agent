@@ -14,6 +14,20 @@
 
 ---
 
+## 2026-06-02 — Team Console shared canvas layout across ports
+
+- **主题**: Team Console live 模式的画布 UI 状态改为通过主后端共享保存，避免不同端口因 `localStorage` 按 origin 隔离导致节点位置、viewport、展开分支和 dock 状态不一致。
+- **影响范围**: `5174`/`3000` 等不同入口打开 Team Console live 模式时的画布布局恢复；mock/fixture 模式仍保留本地隔离，不影响示例数据调试。
+- **验证**: `node --test --import tsx --test-name-pattern "console-layout" test/team-task-run-routes.test.ts`、`npx vitest run src/tests/app-canvas-state.test.tsx --testNamePattern "shared Team Console layout API"`、`npm --prefix apps/team-console run build`、浏览器打开 `http://127.0.0.1:5174/` 确认页面非空且画布节点渲染。
+- **对应入口**: `src/team/routes.ts`、`apps/team-console/src/api/team-api.ts`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/tests/app-canvas-state.test.tsx`、`test/team-task-run-routes.test.ts`。
+
+## 2026-06-02 — Team Console Refresh Task perceived latency
+
+- **主题**: 优化顶部“刷新 Task”按钮的体感延迟，手动刷新在 root Task catalog、source/connection catalog 和 root run summary 完成后即释放按钮；已打开的 Discovery 子画布 generated catalog、generated run summary 和 dispatch diagnostics 改为后台继续刷新并合入。
+- **影响范围**: `5174` Live API 的工具栏“刷新 Task”按钮、打开中的 Discovery 子画布刷新链路；不新增 backend endpoint，不把 generated child 放进 root task list/root canvas。
+- **验证**: 新增回归测试覆盖按钮在 delayed generated run summary 未返回时已恢复；focused Team Console Vitest 294 passed。
+- **对应入口**: `apps/team-console/src/app/use-team-console-live-data.ts`、`apps/team-console/src/tests/app-live-data.test.tsx`。
+
 ## 2026-06-02 — Team Console Discovery summary catalog loading
 
 - **主题**: 优化 Discovery 子画布 generated catalog 加载路径，打开子画布时读取轻量 summary，只有编辑等需要完整 WorkUnit 时再 lazy fetch full task detail。

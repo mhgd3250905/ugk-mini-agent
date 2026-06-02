@@ -16,6 +16,7 @@ export type TaskBranchState = {
   selectedFileKeys?: string[];
   discoveryGeneratedObserver?: TaskBranchGeneratedObserverState;
   discoveryGeneratedEditTaskId?: string;
+  discoveryQueueExpanded?: boolean;
 };
 
 type TaskBranchRoot = {

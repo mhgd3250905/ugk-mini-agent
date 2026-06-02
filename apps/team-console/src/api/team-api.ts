@@ -57,6 +57,8 @@ export interface TeamRuntimeGateway {
 }
 
 export interface CanvasTaskGateway {
+  getConsoleLayout(): Promise<TeamConsoleLayoutResponse>;
+  saveConsoleLayout(state: unknown | null): Promise<TeamConsoleLayoutResponse>;
   listTasks(): Promise<TeamCanvasTask[]>;
   listGeneratedTasks(
     discoveryTaskId: string,
@@ -84,11 +86,11 @@ export interface CanvasTaskGateway {
   createSourceConnection(input: TeamCanvasSourceConnectionCreateRequest): Promise<TeamCanvasSourceConnection>;
   deleteSourceConnection(connectionId: string): Promise<void>;
   listTaskRuns(taskId: string): Promise<TeamRunState[]>;
-  listTaskRunsByTaskIds(taskIds: string[]): Promise<TeamCanvasTaskRunByTaskListResponse>;
+  listTaskRunsByTaskIds(taskIds: string[], options?: { limit?: number; view?: "summary" }): Promise<TeamCanvasTaskRunByTaskListResponse>;
   createTaskRun(taskId: string): Promise<TeamRunState>;
   getTaskRun(runId: string): Promise<TeamRunState>;
   cancelTaskRun(runId: string): Promise<TeamRunState>;
-  listTaskRunAttempts(runId: string, taskId: string): Promise<TeamAttemptMetadata[]>;
+  listTaskRunAttempts(runId: string, taskId: string, options?: { view?: "dispatch-diagnostics" }): Promise<TeamAttemptMetadata[]>;
   readTaskRunAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string): Promise<string>;
 }
 
@@ -119,6 +121,11 @@ export interface AssetGateway {
   listAssets(limit?: number): Promise<AgentAssetSummary[]>;
   uploadFilesAsAssets(files: File[], conversationId?: string): Promise<AgentAssetSummary[]>;
 }
+
+export type TeamConsoleLayoutResponse = {
+  state: unknown | null;
+  updatedAt?: string | null;
+};
 
 export type TeamApiProvider = TeamRuntimeGateway & CanvasTaskGateway & AgentWorkspaceGateway & AssetGateway;
 
@@ -154,14 +161,51 @@ async function responseToApiError(response: Response, fallbackMessage: string): 
 
 export const TASK_RUNS_BY_TASK_IDS_CHUNK_SIZE = 100;
 
+type JsonGetResponse<T> = {
+  body: T | null;
+  ok: boolean;
+  status: number;
+};
+
+const inFlightJsonGets = new Map<string, Promise<JsonGetResponse<unknown>>>();
+
+async function fetchJsonGet<T>(url: string, init?: RequestInit): Promise<JsonGetResponse<T>> {
+  const method = init?.method ?? "GET";
+  if (method !== "GET") {
+    const res = init === undefined ? await fetch(url) : await fetch(url, init);
+    const body = await res.json().catch(() => null) as T | null;
+    return { body, ok: res.ok, status: res.status };
+  }
+  const key = `${url}\n${JSON.stringify(init?.headers ?? null)}`;
+  const existing = inFlightJsonGets.get(key) as Promise<JsonGetResponse<T>> | undefined;
+  if (existing) return existing;
+  const request = (async (): Promise<JsonGetResponse<T>> => {
+    const res = init === undefined ? await fetch(url) : await fetch(url, init);
+    const body = await res.json().catch(() => null) as T | null;
+    return { body, ok: res.ok, status: res.status };
+  })();
+  inFlightJsonGets.set(key, request as Promise<JsonGetResponse<unknown>>);
+  try {
+    return await request;
+  } finally {
+    if (inFlightJsonGets.get(key) === request) {
+      inFlightJsonGets.delete(key);
+    }
+  }
+}
+
+function throwJsonGetError(response: JsonGetResponse<unknown>): never {
+  throw { message: `请求失败 (${response.status})`, status: response.status };
+}
+
 export class LiveTeamApi implements TeamApiProvider {
   constructor(private baseUrl: string = "/v1/team") {}
 
   async listPlans(): Promise<TeamPlan[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/plans`);
-      if (!res.ok) throw res;
-      return (await res.json()) as TeamPlan[];
+      const res = await fetchJsonGet<TeamPlan[]>(`${this.baseUrl}/plans`);
+      if (!res.ok) throwJsonGetError(res);
+      return Array.isArray(res.body) ? res.body : [];
     } catch (e) {
       throw toApiError(e);
     }
@@ -169,9 +213,40 @@ export class LiveTeamApi implements TeamApiProvider {
 
   async listRuns(): Promise<TeamRunState[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/runs`);
-      if (!res.ok) throw res;
-      return (await res.json()) as TeamRunState[];
+      const res = await fetchJsonGet<TeamRunState[]>(`${this.baseUrl}/runs`);
+      if (!res.ok) throwJsonGetError(res);
+      return Array.isArray(res.body) ? res.body : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async getConsoleLayout(): Promise<TeamConsoleLayoutResponse> {
+    try {
+      const res = await fetchJsonGet<TeamConsoleLayoutResponse>(`${this.baseUrl}/console-layout`);
+      if (res.status === 404) return { state: null, updatedAt: null };
+      if (!res.ok) throwJsonGetError(res);
+      return {
+        state: res.body?.state ?? null,
+        updatedAt: res.body?.updatedAt ?? null,
+      };
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async saveConsoleLayout(state: unknown | null): Promise<TeamConsoleLayoutResponse> {
+    try {
+      const res = await fetchJsonGet<TeamConsoleLayoutResponse>(`${this.baseUrl}/console-layout`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state }),
+      });
+      if (!res.ok) throwJsonGetError(res);
+      return {
+        state: res.body?.state ?? null,
+        updatedAt: res.body?.updatedAt ?? null,
+      };
     } catch (e) {
       throw toApiError(e);
     }
@@ -179,11 +254,11 @@ export class LiveTeamApi implements TeamApiProvider {
 
   async listTasks(): Promise<TeamCanvasTask[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/tasks`);
-      if (!res.ok) throw res;
-      const body = (await res.json()) as TeamCanvasTaskListResponse | TeamCanvasTask[];
+      const res = await fetchJsonGet<TeamCanvasTaskListResponse | TeamCanvasTask[]>(`${this.baseUrl}/tasks`);
+      if (!res.ok) throwJsonGetError(res);
+      const body = res.body;
       if (Array.isArray(body)) return body;
-      return Array.isArray(body.tasks) ? body.tasks : [];
+      return Array.isArray(body?.tasks) ? body.tasks : [];
     } catch (e) {
       throw toApiError(e);
     }
@@ -199,14 +274,14 @@ export class LiveTeamApi implements TeamApiProvider {
         params.set("includeArchived", "1");
       }
       const query = params.toString();
-      const res = await fetch(
+      const res = await fetchJsonGet<TeamCanvasTaskListResponse | TeamCanvasTask[]>(
         `${this.baseUrl}/tasks/${encodeURIComponent(discoveryTaskId)}/generated-tasks${query ? `?${query}` : ""}`,
       );
       if (res.status === 404) return [];
-      if (!res.ok) throw res;
-      const body = (await res.json()) as TeamCanvasTaskListResponse | TeamCanvasTask[];
+      if (!res.ok) throwJsonGetError(res);
+      const body = res.body;
       if (Array.isArray(body)) return body;
-      return Array.isArray(body.tasks) ? body.tasks : [];
+      return Array.isArray(body?.tasks) ? body.tasks : [];
     } catch (e) {
       throw toApiError(e);
     }
@@ -221,14 +296,14 @@ export class LiveTeamApi implements TeamApiProvider {
       if (options?.includeArchived) {
         params.set("includeArchived", "1");
       }
-      const res = await fetch(
+      const res = await fetchJsonGet<{ tasks: TeamDiscoveryGeneratedTaskSummary[] } | TeamDiscoveryGeneratedTaskSummary[]>(
         `${this.baseUrl}/tasks/${encodeURIComponent(discoveryTaskId)}/generated-tasks?${params.toString()}`,
       );
       if (res.status === 404) return [];
-      if (!res.ok) throw res;
-      const body = (await res.json()) as { tasks: TeamDiscoveryGeneratedTaskSummary[] } | TeamDiscoveryGeneratedTaskSummary[];
+      if (!res.ok) throwJsonGetError(res);
+      const body = res.body;
       if (Array.isArray(body)) return body;
-      return Array.isArray(body.tasks) ? body.tasks : [];
+      return Array.isArray(body?.tasks) ? body.tasks : [];
     } catch (e) {
       throw toApiError(e);
     }
@@ -236,11 +311,10 @@ export class LiveTeamApi implements TeamApiProvider {
 
   async getTask(taskId: string): Promise<TeamCanvasTask | null> {
     try {
-      const res = await fetch(`${this.baseUrl}/tasks/${encodeURIComponent(taskId)}`);
+      const res = await fetchJsonGet<TeamTaskMutationResponse>(`${this.baseUrl}/tasks/${encodeURIComponent(taskId)}`);
       if (res.status === 404) return null;
-      if (!res.ok) throw res;
-      const body = (await res.json()) as TeamTaskMutationResponse;
-      return body.task;
+      if (!res.ok) throwJsonGetError(res);
+      return res.body?.task ?? null;
     } catch (e) {
       throw toApiError(e);
     }
@@ -248,12 +322,12 @@ export class LiveTeamApi implements TeamApiProvider {
 
   async listTaskConnections(): Promise<TeamTaskConnection[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/task-connections`);
+      const res = await fetchJsonGet<TeamTaskConnectionListResponse | TeamTaskConnection[]>(`${this.baseUrl}/task-connections`);
       if (res.status === 404) return [];
-      if (!res.ok) throw res;
-      const body = (await res.json()) as TeamTaskConnectionListResponse | TeamTaskConnection[];
+      if (!res.ok) throwJsonGetError(res);
+      const body = res.body;
       if (Array.isArray(body)) return body;
-      return Array.isArray(body.connections) ? body.connections : [];
+      return Array.isArray(body?.connections) ? body.connections : [];
     } catch (e) {
       throw toApiError(e);
     }
@@ -291,12 +365,12 @@ export class LiveTeamApi implements TeamApiProvider {
 
   async listTaskDependencies(): Promise<TeamTaskDependency[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/task-dependencies`);
+      const res = await fetchJsonGet<TeamTaskDependencyListResponse | TeamTaskDependency[]>(`${this.baseUrl}/task-dependencies`);
       if (res.status === 404) return [];
-      if (!res.ok) throw res;
-      const body = (await res.json()) as TeamTaskDependencyListResponse | TeamTaskDependency[];
+      if (!res.ok) throwJsonGetError(res);
+      const body = res.body;
       if (Array.isArray(body)) return body;
-      return Array.isArray(body.dependencies) ? body.dependencies : [];
+      return Array.isArray(body?.dependencies) ? body.dependencies : [];
     } catch (e) {
       throw toApiError(e);
     }
@@ -334,11 +408,11 @@ export class LiveTeamApi implements TeamApiProvider {
 
   async listSourceNodes(): Promise<TeamCanvasSourceNode[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/source-nodes`);
-      if (!res.ok) throw res;
-      const body = (await res.json()) as TeamCanvasSourceNodeListResponse | TeamCanvasSourceNode[];
+      const res = await fetchJsonGet<TeamCanvasSourceNodeListResponse | TeamCanvasSourceNode[]>(`${this.baseUrl}/source-nodes`);
+      if (!res.ok) throwJsonGetError(res);
+      const body = res.body;
       if (Array.isArray(body)) return body;
-      return Array.isArray(body.sourceNodes) ? body.sourceNodes : [];
+      return Array.isArray(body?.sourceNodes) ? body.sourceNodes : [];
     } catch (e) {
       throw toApiError(e);
     }
@@ -396,11 +470,11 @@ export class LiveTeamApi implements TeamApiProvider {
 
   async listSourceConnections(): Promise<TeamCanvasSourceConnection[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/source-connections`);
-      if (!res.ok) throw res;
-      const body = (await res.json()) as TeamCanvasSourceConnectionListResponse | TeamCanvasSourceConnection[];
+      const res = await fetchJsonGet<TeamCanvasSourceConnectionListResponse | TeamCanvasSourceConnection[]>(`${this.baseUrl}/source-connections`);
+      if (!res.ok) throwJsonGetError(res);
+      const body = res.body;
       if (Array.isArray(body)) return body;
-      return Array.isArray(body.connections) ? body.connections : [];
+      return Array.isArray(body?.connections) ? body.connections : [];
     } catch (e) {
       throw toApiError(e);
     }
@@ -438,17 +512,17 @@ export class LiveTeamApi implements TeamApiProvider {
 
   async listTaskRuns(taskId: string): Promise<TeamRunState[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/tasks/${encodeURIComponent(taskId)}/runs`);
-      if (!res.ok) throw res;
-      const body = (await res.json()) as TeamCanvasTaskRunListResponse | TeamRunState[];
+      const res = await fetchJsonGet<TeamCanvasTaskRunListResponse | TeamRunState[]>(`${this.baseUrl}/tasks/${encodeURIComponent(taskId)}/runs`);
+      if (!res.ok) throwJsonGetError(res);
+      const body = res.body;
       if (Array.isArray(body)) return body;
-      return Array.isArray(body.runs) ? body.runs : [];
+      return Array.isArray(body?.runs) ? body.runs : [];
     } catch (e) {
       throw toApiError(e);
     }
   }
 
-  async listTaskRunsByTaskIds(taskIds: string[]): Promise<TeamCanvasTaskRunByTaskListResponse> {
+  async listTaskRunsByTaskIds(taskIds: string[], options?: { limit?: number; view?: "summary" }): Promise<TeamCanvasTaskRunByTaskListResponse> {
     const unique = [...new Set(taskIds)];
     if (unique.length === 0) return { runsByTaskId: {} };
     try {
@@ -458,9 +532,11 @@ export class LiveTeamApi implements TeamApiProvider {
       }
       const responses = await Promise.all(chunks.map(async (chunk) => {
         const params = new URLSearchParams({ taskIds: chunk.join(",") });
-        const res = await fetch(`${this.baseUrl}/task-runs/by-task?${params}`);
-        if (!res.ok) throw res;
-        return (await res.json()) as TeamCanvasTaskRunByTaskListResponse;
+        if (options?.limit != null) params.set("limit", String(options.limit));
+        if (options?.view) params.set("view", options.view);
+        const res = await fetchJsonGet<TeamCanvasTaskRunByTaskListResponse>(`${this.baseUrl}/task-runs/by-task?${params}`);
+        if (!res.ok) throwJsonGetError(res);
+        return res.body ?? { runsByTaskId: {} };
       }));
       const merged: Record<string, TeamRunState[]> = {};
       for (const response of responses) {
@@ -491,9 +567,10 @@ export class LiveTeamApi implements TeamApiProvider {
 
   async getTaskRun(runId: string): Promise<TeamRunState> {
     try {
-      const res = await fetch(`${this.baseUrl}/task-runs/${encodeURIComponent(runId)}`);
-      if (!res.ok) throw res;
-      return (await res.json()) as TeamRunState;
+      const res = await fetchJsonGet<TeamRunState>(`${this.baseUrl}/task-runs/${encodeURIComponent(runId)}`);
+      if (!res.ok) throwJsonGetError(res);
+      if (!res.body) throw { message: `请求失败 (${res.status})`, status: res.status };
+      return res.body;
     } catch (e) {
       throw toApiError(e);
     }
@@ -514,12 +591,14 @@ export class LiveTeamApi implements TeamApiProvider {
     }
   }
 
-  async listTaskRunAttempts(runId: string, taskId: string): Promise<TeamAttemptMetadata[]> {
+  async listTaskRunAttempts(runId: string, taskId: string, options?: { view?: "dispatch-diagnostics" }): Promise<TeamAttemptMetadata[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/task-runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/attempts`);
-      if (!res.ok) throw res;
-      const body = (await res.json()) as { attempts?: TeamAttemptMetadata[] };
-      return Array.isArray(body.attempts) ? body.attempts : [];
+      const params = new URLSearchParams();
+      if (options?.view) params.set("view", options.view);
+      const query = params.size > 0 ? `?${params}` : "";
+      const res = await fetchJsonGet<{ attempts?: TeamAttemptMetadata[] }>(`${this.baseUrl}/task-runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/attempts${query}`);
+      if (!res.ok) throwJsonGetError(res);
+      return Array.isArray(res.body?.attempts) ? res.body.attempts : [];
     } catch (e) {
       throw toApiError(e);
     }
@@ -585,9 +664,10 @@ export class LiveTeamApi implements TeamApiProvider {
 
   async getRunDetail(runId: string): Promise<RunDetail> {
     try {
-      const res = await fetch(`${this.baseUrl}/runs/${encodeURIComponent(runId)}`);
-      if (!res.ok) throw res;
-      return (await res.json()) as RunDetail;
+      const res = await fetchJsonGet<RunDetail>(`${this.baseUrl}/runs/${encodeURIComponent(runId)}`);
+      if (!res.ok) throwJsonGetError(res);
+      if (!res.body) throw { message: `请求失败 (${res.status})`, status: res.status };
+      return res.body;
     } catch (e) {
       throw toApiError(e);
     }
@@ -595,10 +675,9 @@ export class LiveTeamApi implements TeamApiProvider {
 
   async listAttempts(runId: string, taskId: string): Promise<TeamAttemptMetadata[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/attempts`);
-      if (!res.ok) throw res;
-      const body = (await res.json()) as { attempts?: TeamAttemptMetadata[] };
-      return Array.isArray(body.attempts) ? body.attempts : [];
+      const res = await fetchJsonGet<{ attempts?: TeamAttemptMetadata[] }>(`${this.baseUrl}/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/attempts`);
+      if (!res.ok) throwJsonGetError(res);
+      return Array.isArray(res.body?.attempts) ? res.body.attempts : [];
     } catch (e) {
       throw toApiError(e);
     }
@@ -618,10 +697,9 @@ export class LiveTeamApi implements TeamApiProvider {
 
   async listAgents(): Promise<AgentSummary[]> {
     try {
-      const res = await fetch("/v1/agents");
-      if (!res.ok) throw res;
-      const body = (await res.json()) as AgentCatalogResponse;
-      return Array.isArray(body.agents) ? body.agents : [];
+      const res = await fetchJsonGet<AgentCatalogResponse>("/v1/agents");
+      if (!res.ok) throwJsonGetError(res);
+      return Array.isArray(res.body?.agents) ? res.body.agents : [];
     } catch (e) {
       throw toApiError(e);
     }
@@ -629,13 +707,12 @@ export class LiveTeamApi implements TeamApiProvider {
 
   async listAgentRunStatuses(): Promise<AgentRunStatus[]> {
     try {
-      const res = await fetch("/v1/agents/status", {
+      const res = await fetchJsonGet<AgentRunStatusListResponse>("/v1/agents/status", {
         method: "GET",
         headers: { accept: "application/json" },
       });
-      if (!res.ok) throw res;
-      const body = (await res.json()) as AgentRunStatusListResponse;
-      return Array.isArray(body.agents) ? body.agents : [];
+      if (!res.ok) throwJsonGetError(res);
+      return Array.isArray(res.body?.agents) ? res.body.agents : [];
     } catch (e) {
       throw toApiError(e);
     }

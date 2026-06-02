@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { normalizeAtlasViewport as _normalizeAtlasViewport, nextZoomLevel } from "./atlas-geometry";
 
 export const normalizeAtlasViewport = _normalizeAtlasViewport;
@@ -57,6 +57,14 @@ function formatCanvasNumber(value: number): string {
   return String(Number(value.toFixed(2)));
 }
 
+function formatCanvasTransform(viewport: AtlasViewport): string {
+  return `translate(${formatCanvasNumber(viewport.x)}px, ${formatCanvasNumber(viewport.y)}px) scale(${formatCanvasNumber(viewport.scale)})`;
+}
+
+function sameViewport(a: AtlasViewport | null | undefined, b: AtlasViewport | null | undefined): boolean {
+  return Boolean(a && b && a.x === b.x && a.y === b.y && a.scale === b.scale);
+}
+
 function canStartCanvasPan(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return true;
   return !target.closest(".emap-node, .emap-evidence-node, .emap-artifact-preview, .execution-map-toolbar, .emap-root-dock, .emap-root-trash, .agent-focus-workspace, .emap-agent-branch-shell, .emap-task-branch-shell, .emap-task-child-branch-shell, .agent-playground-branch, button, select, input, textarea, a, iframe, summary, details");
@@ -97,26 +105,54 @@ function toWorldSelectionRect(screenRect: ScreenSelectionRect, viewport: AtlasVi
 
 export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewport, defaultViewport = DEFAULT_VIEWPORT, onViewportChange, toolbarStart, toolbarEnd, agentFocusId, interactionMode = "free", onSelectionComplete }: AtlasCanvasShellProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const dragOriginRef = useRef<CanvasDragOrigin | null>(null);
   const selectionOriginRef = useRef<CanvasSelectionOrigin | null>(null);
   const pendingLongPressRef = useRef<PendingLongPressSelection | null>(null);
-  const [internalViewport, setInternalViewport] = useState<AtlasViewport>(defaultViewport);
+  const [renderViewport, setRenderViewport] = useState<AtlasViewport>(() => normalizeAtlasViewport(viewport ?? defaultViewport));
   const [isPanning, setIsPanning] = useState(false);
   const [selectionRect, setSelectionRect] = useState<ScreenSelectionRect | null>(null);
-  const currentViewport = useMemo(() => normalizeAtlasViewport(viewport ?? internalViewport), [internalViewport, viewport]);
+  const currentViewportRef = useRef<AtlasViewport>(renderViewport);
+  const committedViewportRef = useRef<AtlasViewport>(renderViewport);
+  const lastExternalViewportRef = useRef<AtlasViewport | null>(viewport ? renderViewport : null);
   const isLocked = interactionMode === "locked";
 
-  const updateViewport = useCallback((nextViewport: AtlasViewport) => {
-    const normalizedViewport = normalizeAtlasViewport(nextViewport);
-    if (!viewport) {
-      setInternalViewport(normalizedViewport);
+  const applyViewportToStage = useCallback((nextViewport: AtlasViewport) => {
+    if (stageRef.current) {
+      stageRef.current.style.transform = formatCanvasTransform(nextViewport);
     }
+  }, []);
+
+  const commitViewport = useCallback((nextViewport: AtlasViewport) => {
+    const normalizedViewport = normalizeAtlasViewport(nextViewport);
+    currentViewportRef.current = normalizedViewport;
+    committedViewportRef.current = normalizedViewport;
+    setRenderViewport((current) => (sameViewport(current, normalizedViewport) ? current : normalizedViewport));
+    applyViewportToStage(normalizedViewport);
     onViewportChange?.(normalizedViewport);
-  }, [onViewportChange, viewport]);
+  }, [applyViewportToStage, onViewportChange]);
+
+  const updateVisualViewport = useCallback((nextViewport: AtlasViewport) => {
+    const normalizedViewport = normalizeAtlasViewport(nextViewport);
+    currentViewportRef.current = normalizedViewport;
+    applyViewportToStage(normalizedViewport);
+  }, [applyViewportToStage]);
+
+  useEffect(() => {
+    if (!viewport) return;
+    const normalizedViewport = normalizeAtlasViewport(viewport);
+    if (sameViewport(lastExternalViewportRef.current, normalizedViewport)) return;
+    lastExternalViewportRef.current = normalizedViewport;
+    committedViewportRef.current = normalizedViewport;
+    currentViewportRef.current = normalizedViewport;
+    setRenderViewport((current) => (sameViewport(current, normalizedViewport) ? current : normalizedViewport));
+    applyViewportToStage(normalizedViewport);
+  }, [applyViewportToStage, viewport]);
 
   const handleCanvasWheel = useCallback((event: globalThis.WheelEvent) => {
     if (isLocked) return;
     event.preventDefault();
+    const currentViewport = currentViewportRef.current;
     const nextScale = nextZoomLevel(currentViewport.scale, event.deltaY < 0 ? "in" : "out");
     if (nextScale === currentViewport.scale) return;
 
@@ -128,12 +164,12 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
     const worldX = (cursorX - currentViewport.x) / currentViewport.scale;
     const worldY = (cursorY - currentViewport.y) / currentViewport.scale;
 
-    updateViewport({
+    commitViewport({
       x: cursorX - worldX * nextScale,
       y: cursorY - worldY * nextScale,
       scale: nextScale,
     });
-  }, [currentViewport, isLocked, updateViewport]);
+  }, [commitViewport, isLocked]);
 
   useEffect(() => {
     const container = mapContainerRef.current;
@@ -147,6 +183,7 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
   const handleCanvasPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (isLocked) return;
     if ((event.button ?? 0) !== 0 || !canStartCanvasPan(event.target)) return;
+    const currentViewport = currentViewportRef.current;
     if (event.shiftKey && onSelectionComplete) {
       const localPoint = pointerLocalPoint(mapContainerRef.current, event);
       selectionOriginRef.current = {
@@ -198,7 +235,7 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
     };
     setIsPanning(true);
     event.currentTarget.setPointerCapture?.(event.pointerId);
-  }, [currentViewport, isLocked, onSelectionComplete]);
+  }, [isLocked, onSelectionComplete]);
 
   const handleCanvasPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (isLocked) return;
@@ -230,7 +267,7 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
           panY: pending.viewport.y,
         };
         setIsPanning(true);
-        updateViewport({
+        updateVisualViewport({
           ...pending.viewport,
           x: pending.viewport.x + dx,
           y: pending.viewport.y + dy,
@@ -242,12 +279,12 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
     const origin = dragOriginRef.current;
     if (!origin || origin.pointerId !== event.pointerId) return;
     const point = pointerPoint(event);
-    updateViewport({
-      ...currentViewport,
+    updateVisualViewport({
+      ...currentViewportRef.current,
       x: origin.panX + point.x - origin.startX,
       y: origin.panY + point.y - origin.startY,
     });
-  }, [currentViewport, isLocked, updateViewport]);
+  }, [isLocked, updateVisualViewport]);
 
   const endCanvasPan = useCallback((event: PointerEvent<HTMLDivElement>) => {
     const pending = pendingLongPressRef.current;
@@ -280,10 +317,13 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
     if (!origin || origin.pointerId !== event.pointerId) return;
     dragOriginRef.current = null;
     setIsPanning(false);
+    if (!sameViewport(committedViewportRef.current, currentViewportRef.current)) {
+      commitViewport(currentViewportRef.current);
+    }
     event.currentTarget.releasePointerCapture?.(event.pointerId);
-  }, [onSelectionComplete]);
+  }, [commitViewport, onSelectionComplete]);
 
-  const canvasTransform = `translate(${formatCanvasNumber(currentViewport.x)}px, ${formatCanvasNumber(currentViewport.y)}px) scale(${formatCanvasNumber(currentViewport.scale)})`;
+  const canvasTransform = formatCanvasTransform(renderViewport);
 
   return (
     <div
@@ -307,6 +347,7 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
         </div>
       )}
       <div
+        ref={stageRef}
         className={`execution-map-scroll ${hideWorld ? "is-hidden" : ""}`}
         style={{ transform: canvasTransform }}
         aria-hidden={hideWorld ? "true" : undefined}

@@ -100,6 +100,63 @@ describe("App", () => {
       });
     });
 
+    it("hydrates live canvas layout from the shared Team Console layout API", async () => {
+      const liveTask = mockTeamTasks[0]!;
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [{ agentId: "main", name: "主 Agent", description: "默认综合 agent" }],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") {
+          return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        }
+        if (url === "/v1/team/console-layout") {
+          return new Response(JSON.stringify({
+            state: {
+              schemaVersion: 1,
+              states: {
+                live: {
+                  schemaVersion: 1,
+                  dataSource: "live",
+                  taskNodePositions: [{ taskId: liveTask.taskId, position: { x: 420, y: 260 } }],
+                  viewport: { x: 18, y: 30, scale: 0.9 },
+                },
+              },
+            },
+          }), { status: 200 });
+        }
+        if (url === "/v1/team/tasks") {
+          return new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return new Response(JSON.stringify({ runsByTaskId: { [liveTask.taskId]: [] } }), { status: 200 });
+        }
+        if (url.includes("connections")) {
+          return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+        }
+        if (url === "/v1/team/task-dependencies") {
+          return new Response(JSON.stringify({ dependencies: [] }), { status: 200 });
+        }
+        if (url === "/v1/team/source-nodes") {
+          return new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify([]), { status: 200 });
+      });
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+
+      const { container } = render(<App />);
+
+      await waitFor(() => {
+        const taskNode = container.querySelector(`.emap-canvas-task-node[data-task-id="${liveTask.taskId}"]`) as HTMLElement | null;
+        expect(taskNode).toBeTruthy();
+        expect(Number.parseFloat(taskNode!.style.left)).toBeCloseTo(420, 4);
+        expect(Number.parseFloat(taskNode!.style.top)).toBeCloseTo(260, 4);
+        expect(getAtlasStage(container).style.transform).toBe("translate(18px, 30px) scale(0.9)");
+      });
+    });
+
     it("persists moved root positions and docked nodes across a browser reload", async () => {
       const first = render(<App />);
 

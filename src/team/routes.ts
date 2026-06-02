@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { PlanStore } from "./plan-store.js";
 import { TaskStore } from "./task-store.js";
@@ -19,7 +19,7 @@ import { SourceNodeStore, type UpdateSourceNodeInput } from "./source-node-store
 import { MockRoleRunner } from "./role-runner.js";
 import type { TeamRoleRunner } from "./role-runner.js";
 import { buildRunDetailResponse } from "./run-presenter.js";
-import type { TeamDiscoveryGeneratedTaskSummary, TeamRunState } from "./types.js";
+import type { TeamAttemptMetadata, TeamDiscoveryGeneratedTaskSummary, TeamRunState } from "./types.js";
 import { AgentProfileRoleRunner } from "./agent-profile-role-runner.js";
 import { closeBrowserTargetsForScope } from "../agent/browser-cleanup.js";
 import { loadAgentProfilesSync } from "../agent/agent-profile-catalog.js";
@@ -55,6 +55,78 @@ function requestPublicBaseUrl(request: FastifyRequest, configured: string | unde
 	const protoHeader = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
 	const proto = String(protoHeader ?? request.protocol ?? "http").split(",", 1)[0]?.trim() || "http";
 	return `${proto}://${host}`.replace(/\/+$/, "");
+}
+
+function summarizeRunState(state: TeamRunState): TeamRunState {
+	return {
+		...state,
+		source: state.source
+			? {
+				...state.source,
+				...(state.source.boundInputs ? { boundInputs: undefined } : {}),
+			}
+			: undefined,
+	};
+}
+
+function readRouteRecord(value: unknown): Record<string, unknown> | null {
+	return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function isValidTeamConsoleLayoutState(value: unknown): boolean {
+	if (value === null) return true;
+	const record = readRouteRecord(value);
+	if (!record || record.schemaVersion !== 1) return false;
+	return readRouteRecord(record.states) !== null;
+}
+
+async function readTeamConsoleLayout(teamDataDir: string): Promise<{ state: unknown | null; updatedAt: string | null }> {
+	try {
+		const raw = await readFile(join(teamDataDir, "team-console-layout.json"), "utf8");
+		const parsed = readRouteRecord(JSON.parse(raw));
+		if (!parsed || parsed.schemaVersion !== 1 || !isValidTeamConsoleLayoutState(parsed.state)) {
+			return { state: null, updatedAt: null };
+		}
+		return {
+			state: parsed.state ?? null,
+			updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : null,
+		};
+	} catch {
+		return { state: null, updatedAt: null };
+	}
+}
+
+async function writeTeamConsoleLayout(teamDataDir: string, state: unknown): Promise<{ state: unknown | null; updatedAt: string }> {
+	if (!isValidTeamConsoleLayoutState(state)) {
+		throw new Error("invalid console layout state");
+	}
+	const updatedAt = new Date().toISOString();
+	const document = {
+		schemaVersion: 1,
+		state: state ?? null,
+		updatedAt,
+	};
+	await mkdir(teamDataDir, { recursive: true });
+	await writeFile(join(teamDataDir, "team-console-layout.json"), JSON.stringify(document, null, 2), "utf8");
+	return { state: document.state, updatedAt };
+}
+
+function summarizeAttemptDispatchDiagnostics(attempt: TeamAttemptMetadata): TeamAttemptMetadata {
+	return {
+		attemptId: attempt.attemptId,
+		taskId: attempt.taskId,
+		status: attempt.status,
+		phase: attempt.phase,
+		createdAt: attempt.createdAt,
+		updatedAt: attempt.updatedAt,
+		finishedAt: attempt.finishedAt,
+		worker: [],
+		checker: [],
+		watcher: null,
+		resultRef: attempt.resultRef,
+		errorSummary: attempt.errorSummary,
+		...(attempt.discoveryDispatch ? { discoveryDispatch: attempt.discoveryDispatch } : {}),
+	};
 }
 
 function isSafeTeamArtifactSegment(value: string): boolean {
@@ -210,6 +282,18 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 
 	// ── Canvas Tasks ──
 
+	app.get("/v1/team/console-layout", async (_request, reply) => {
+		reply.send(await readTeamConsoleLayout(options.teamDataDir));
+	});
+
+	app.patch("/v1/team/console-layout", async (request, reply) => {
+		const body = jsonBody(request);
+		try {
+			reply.send(await writeTeamConsoleLayout(options.teamDataDir, body.state ?? null));
+		} catch (err) {
+			reply.code(400).send({ error: (err as Error).message });
+		}
+	});
 
 	app.get("/v1/team/tasks", async (request, reply) => {
 		const tasks = await taskStore.list({
@@ -522,7 +606,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.get("/v1/team/task-runs/by-task", async (request, reply) => {
-		const query = request.query as { taskIds?: string; limit?: string };
+		const query = request.query as { taskIds?: string; limit?: string; view?: string };
 		const rawTaskIds = query.taskIds ?? "";
 		const taskIds = [...new Set(rawTaskIds.split(",").map(s => s.trim()).filter(Boolean))];
 		if (taskIds.length === 0) {
@@ -539,7 +623,20 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			reply.code(400).send({ error: "limit must be a positive number" });
 			return;
 		}
+		const view = query.view ?? "full";
+		if (view !== "full" && view !== "summary") {
+			reply.code(400).send({ error: "unknown view parameter" });
+			return;
+		}
 		const runsByTaskId = await taskRunService.listRunsByTaskIds(taskIds, limit != null ? { limit } : undefined);
+		if (view === "summary") {
+			reply.send({
+				runsByTaskId: Object.fromEntries(
+					Object.entries(runsByTaskId).map(([taskId, runs]) => [taskId, runs.map(summarizeRunState)]),
+				),
+			});
+			return;
+		}
 		reply.send({ runsByTaskId });
 	});
 
@@ -563,11 +660,21 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	app.get("/v1/team/task-runs/:runId/tasks/:taskId/attempts", async (request, reply) => {
 		const runId = idParam(request, "runId");
 		const taskId = idParam(request, "taskId");
+		const query = request.query as { view?: string };
+		const view = query.view ?? "full";
+		if (view !== "full" && view !== "dispatch-diagnostics") {
+			reply.code(400).send({ error: "unknown view parameter" });
+			return;
+		}
 		const state = await taskRunService.getRun(runId);
 		if (!state) { sendNotFound(reply, "task run"); return; }
 		if (!state.taskStates[taskId]) { sendNotFound(reply, "task"); return; }
 		try {
 			const attempts = await taskRunWorkspace.listAttempts(runId, taskId);
+			if (view === "dispatch-diagnostics") {
+				reply.send({ attempts: attempts.map(summarizeAttemptDispatchDiagnostics) });
+				return;
+			}
 			reply.send({ attempts });
 		} catch {
 			reply.send({ attempts: [] });

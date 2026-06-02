@@ -1790,12 +1790,14 @@ export class MockTeamApi {
     return (mockTaskRunsByTaskId.get(taskId) ?? []).map(cloneTeamRunState);
   }
 
-  async listTaskRunsByTaskIds(taskIds: string[]): Promise<TeamCanvasTaskRunByTaskListResponse> {
+  async listTaskRunsByTaskIds(taskIds: string[], options?: { limit?: number; view?: "summary" }): Promise<TeamCanvasTaskRunByTaskListResponse> {
     const runsByTaskId: Record<string, TeamRunState[]> = {};
     for (const taskId of taskIds) {
       const runs = mockTaskRunsByTaskId.get(taskId);
       if (runs) {
-        runsByTaskId[taskId] = runs.map(cloneTeamRunState);
+        runsByTaskId[taskId] = runs
+          .slice(0, options?.limit ?? runs.length)
+          .map(cloneTeamRunState);
       }
     }
     return { runsByTaskId };
@@ -1838,7 +1840,8 @@ export class MockTeamApi {
     throw { message: `Task run not found: ${runId}` };
   }
 
-  async listTaskRunAttempts(runId: string, taskId: string): Promise<TeamAttemptMetadata[]> {
+  async listTaskRunAttempts(runId: string, taskId: string, options?: { view?: "dispatch-diagnostics" }): Promise<TeamAttemptMetadata[]> {
+    void options;
     return mockTaskRunAttempts.get(`${runId}/${taskId}`) ?? [];
   }
 

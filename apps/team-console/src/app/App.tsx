@@ -26,6 +26,7 @@ const PROCESS_CURRENT_ACTION_MAX_CHARS = 96;
 const PROCESS_NARRATION_MAX_CHARS = 220;
 const PROCESS_ASSISTANT_TEXT_MAX_LINES = 5;
 const PROCESS_ASSISTANT_TEXT_MAX_LINE_CHARS = 200;
+const DISCOVERY_QUEUE_INITIAL_CARD_LIMIT = 18;
 
 type AgentBranchMode = "chat" | "task-create";
 type TeamConsoleTheme = "light" | "dark";
@@ -641,6 +642,7 @@ function readStoredTaskBranches(value: unknown): TaskBranchState[] {
     const discoveryGeneratedEditTaskId = typeof record.discoveryGeneratedEditTaskId === "string" && record.discoveryGeneratedEditTaskId.trim()
       ? record.discoveryGeneratedEditTaskId.trim()
       : undefined;
+    const discoveryQueueExpanded = record.discoveryQueueExpanded === true;
     result.push({
       nodeId,
       taskId,
@@ -649,6 +651,7 @@ function readStoredTaskBranches(value: unknown): TaskBranchState[] {
       ...(selectedFileKeys.length > 0 ? { selectedFileKeys } : {}),
       ...(discoveryGeneratedObserver ? { discoveryGeneratedObserver } : {}),
       ...(discoveryGeneratedEditTaskId ? { discoveryGeneratedEditTaskId } : {}),
+      ...(discoveryQueueExpanded ? { discoveryQueueExpanded } : {}),
     });
   }
   return result;
@@ -786,30 +789,52 @@ function parseStoredCanvasUiState(value: unknown): StoredCanvasUiState | null {
   };
 }
 
+function parseStoredCanvasUiStateByContext(value: unknown): StoredCanvasUiStateByContext {
+  const parsed = readRecord(value);
+  if (!parsed || parsed.schemaVersion !== 1) return { schemaVersion: 1, states: {} };
+  const rawStates = readRecord(parsed.states);
+  if (!rawStates) return { schemaVersion: 1, states: {} };
+  const states: Record<string, StoredCanvasUiState> = {};
+  for (const [key, value] of Object.entries(rawStates)) {
+    const state = parseStoredCanvasUiState(value);
+    if (state && canvasUiContextMatches(state, state.dataSource, state.selectedFixtureId ?? CLEAN_AGENT_WORKSPACE_ID)) {
+      states[key] = state;
+    }
+  }
+  return { schemaVersion: 1, states };
+}
+
 function readStoredCanvasUiStateByContext(): StoredCanvasUiStateByContext {
   try {
     const raw = globalThis.localStorage?.getItem(CANVAS_UI_STATE_BY_CONTEXT_STORAGE_KEY);
     if (!raw) return { schemaVersion: 1, states: {} };
-    const parsed = readRecord(JSON.parse(raw));
-    if (!parsed || parsed.schemaVersion !== 1) return { schemaVersion: 1, states: {} };
-    const rawStates = readRecord(parsed.states);
-    if (!rawStates) return { schemaVersion: 1, states: {} };
-    const states: Record<string, StoredCanvasUiState> = {};
-    for (const [key, value] of Object.entries(rawStates)) {
-      const state = parseStoredCanvasUiState(value);
-      if (state && canvasUiContextMatches(state, state.dataSource, state.selectedFixtureId ?? CLEAN_AGENT_WORKSPACE_ID)) {
-        states[key] = state;
-      }
-    }
-    return { schemaVersion: 1, states };
+    return parseStoredCanvasUiStateByContext(JSON.parse(raw));
   } catch {
     return { schemaVersion: 1, states: {} };
   }
 }
 
-function readStoredCanvasUiState(dataSource: DataSource, selectedFixtureId: string): StoredCanvasUiState | null {
+function mergeCanvasUiStateByContext(
+  localState: StoredCanvasUiStateByContext,
+  sharedState: StoredCanvasUiStateByContext | null,
+): StoredCanvasUiStateByContext {
+  if (!sharedState) return localState;
+  return {
+    schemaVersion: 1,
+    states: {
+      ...localState.states,
+      ...sharedState.states,
+    },
+  };
+}
+
+function readStoredCanvasUiState(
+  dataSource: DataSource,
+  selectedFixtureId: string,
+  sharedState: StoredCanvasUiStateByContext | null = null,
+): StoredCanvasUiState | null {
   const contextKey = canvasUiContextKeyFor(dataSource, selectedFixtureId);
-  const byContext = readStoredCanvasUiStateByContext();
+  const byContext = mergeCanvasUiStateByContext(readStoredCanvasUiStateByContext(), sharedState);
   const scopedState = byContext.states[contextKey];
   if (scopedState && canvasUiContextMatches(scopedState, dataSource, selectedFixtureId)) {
     return scopedState;
@@ -826,14 +851,17 @@ function readStoredCanvasUiState(dataSource: DataSource, selectedFixtureId: stri
   }
 }
 
-function writeStoredCanvasUiState(state: StoredCanvasUiState) {
+function writeStoredCanvasUiState(state: StoredCanvasUiState): StoredCanvasUiStateByContext | null {
   try {
     globalThis.localStorage?.setItem(CANVAS_UI_STATE_STORAGE_KEY, JSON.stringify(state));
     const contextKey = canvasUiContextKeyFor(state.dataSource, state.selectedFixtureId ?? CLEAN_AGENT_WORKSPACE_ID);
     const byContext = readStoredCanvasUiStateByContext();
     byContext.states[contextKey] = state;
     globalThis.localStorage?.setItem(CANVAS_UI_STATE_BY_CONTEXT_STORAGE_KEY, JSON.stringify(byContext));
-  } catch {}
+    return byContext;
+  } catch {
+    return null;
+  }
 }
 
 function canvasUiContextMatches(state: StoredCanvasUiState, dataSource: DataSource, selectedFixtureId: string): boolean {
@@ -1151,6 +1179,9 @@ export function App() {
   const [minimizedTaskNodeIds, setMinimizedTaskNodeIds] = useState<string[]>([]);
   const [minimizedSourceNodeIds, setMinimizedSourceNodeIds] = useState<string[]>([]);
   const [canvasUiStateHydrated, setCanvasUiStateHydrated] = useState(false);
+  const [sharedCanvasUiState, setSharedCanvasUiState] = useState<StoredCanvasUiStateByContext | null>(null);
+  const [sharedCanvasUiStateLoaded, setSharedCanvasUiStateLoaded] = useState(false);
+  const sharedCanvasUiStateSaveTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const {
     taskEditDraftByTaskId,
     taskEditSavingByTaskId,
@@ -1377,6 +1408,38 @@ export function App() {
   }, [generatedArchiveConfirmTaskId, openDiscoverySubcanvasGeneratedTaskIds]);
 
   useEffect(() => {
+    if (dataSource !== "live") {
+      setSharedCanvasUiState(null);
+      setSharedCanvasUiStateLoaded(false);
+      return;
+    }
+    let cancelled = false;
+    setSharedCanvasUiStateLoaded(false);
+    void new LiveTeamApi().getConsoleLayout()
+      .then((response) => {
+        if (cancelled) return;
+        setSharedCanvasUiState(response.state ? parseStoredCanvasUiStateByContext(response.state) : null);
+      })
+      .catch(() => {
+        if (!cancelled) setSharedCanvasUiState(null);
+      })
+      .finally(() => {
+        if (!cancelled) setSharedCanvasUiStateLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dataSource]);
+
+  useEffect(() => {
+    return () => {
+      if (sharedCanvasUiStateSaveTimerRef.current) {
+        globalThis.clearTimeout(sharedCanvasUiStateSaveTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     setCanvasUiStateHydrated(false);
   }, [canvasUiContextKey]);
 
@@ -1410,11 +1473,11 @@ export function App() {
   useEffect(() => {
     if (canvasUiStateHydrated) return;
     const ready = dataSource === "live"
-      ? liveAgentNodesHydrated && liveTaskNodesHydrated && liveSourceNodesHydrated
+      ? liveAgentNodesHydrated && liveTaskNodesHydrated && liveSourceNodesHydrated && sharedCanvasUiStateLoaded
       : taskNodes.length > 0;
     if (!ready) return;
 
-    const stored = readStoredCanvasUiState(dataSource, selectedFixtureId);
+    const stored = readStoredCanvasUiState(dataSource, selectedFixtureId, sharedCanvasUiState);
     if (!stored) {
       setCanvasBranchLayout({});
       hydratedCanvasUiContextKeyRef.current = canvasUiContextKey;
@@ -1472,6 +1535,8 @@ export function App() {
     liveSourceNodesHydrated,
     liveTaskNodesHydrated,
     selectedFixtureId,
+    sharedCanvasUiState,
+    sharedCanvasUiStateLoaded,
     sourceAtlasNodes,
     taskNodes,
   ]);
@@ -1479,7 +1544,7 @@ export function App() {
   useEffect(() => {
     if (!canvasUiStateHydrated) return;
     if (hydratedCanvasUiContextKeyRef.current !== canvasUiContextKey) return;
-    writeStoredCanvasUiState({
+    const nextState: StoredCanvasUiState = {
       schemaVersion: 1,
       dataSource,
       ...(dataSource === "mock" ? { selectedFixtureId } : {}),
@@ -1503,7 +1568,18 @@ export function App() {
       minimizedTaskNodeIds,
       minimizedSourceNodeIds,
       rootNodeFilter,
-    });
+    };
+    const nextByContext = writeStoredCanvasUiState(nextState);
+    if (dataSource === "live" && nextByContext) {
+      setSharedCanvasUiState(nextByContext);
+      if (sharedCanvasUiStateSaveTimerRef.current) {
+        globalThis.clearTimeout(sharedCanvasUiStateSaveTimerRef.current);
+      }
+      sharedCanvasUiStateSaveTimerRef.current = globalThis.setTimeout(() => {
+        sharedCanvasUiStateSaveTimerRef.current = null;
+        void new LiveTeamApi().saveConsoleLayout(nextByContext).catch(() => {});
+      }, 250);
+    }
   }, [
     canvasUiContextKey,
     canvasUiStateHydrated,
@@ -2652,6 +2728,7 @@ export function App() {
                             selectedFileKeys: [],
                             discoveryGeneratedObserver: undefined,
                             discoveryGeneratedEditTaskId: undefined,
+                            discoveryQueueExpanded: false,
                           }
                         : item
                     )
@@ -2790,6 +2867,17 @@ export function App() {
         });
         const runningGeneratedTaskCards = generatedTaskCards.filter((card) => card.visualState === "running");
         const queuedGeneratedTaskCards = generatedTaskCards.filter((card) => card.visualState !== "running");
+        const forceVisibleQueuedTaskIds = new Set([
+          branch.discoveryGeneratedObserver?.taskId,
+          branch.discoveryGeneratedEditTaskId,
+          generatedArchiveConfirmTaskId,
+        ].filter((taskId): taskId is string => typeof taskId === "string" && taskId.length > 0));
+        const queuedPreviewCards = branch.discoveryQueueExpanded
+          ? queuedGeneratedTaskCards
+          : queuedGeneratedTaskCards.filter((card, index) => (
+              index < DISCOVERY_QUEUE_INITIAL_CARD_LIMIT || forceVisibleQueuedTaskIds.has(card.generatedTask.taskId)
+            ));
+        const hiddenQueuedTaskCount = queuedGeneratedTaskCards.length - queuedPreviewCards.length;
         const doneGeneratedTaskCount = queuedGeneratedTaskCards.filter((card) => card.visualState === "done").length;
         const waitingGeneratedTaskCount = queuedGeneratedTaskCards.length - doneGeneratedTaskCount;
         const renderGeneratedCard = (card: (typeof generatedTaskCards)[number]) => {
@@ -3012,10 +3100,11 @@ export function App() {
                           ? {
                               ...item,
                               detailMode: null,
-                              discoveryGeneratedObserver: undefined,
-                              discoveryGeneratedEditTaskId: undefined,
-                            }
-                          : item
+                            discoveryGeneratedObserver: undefined,
+                            discoveryGeneratedEditTaskId: undefined,
+                            discoveryQueueExpanded: false,
+                          }
+                        : item
                       )
                     );
                   }}
@@ -3081,9 +3170,31 @@ export function App() {
                       {queuedGeneratedTaskCards.length === 0 ? (
                         <div className="discovery-subcanvas-empty compact">暂无排队或已完成 generated Task。</div>
                       ) : (
-                        <div className="discovery-subcanvas-queue-grid">
-                          {queuedGeneratedTaskCards.map(renderGeneratedCard)}
-                        </div>
+                        <>
+                          <div
+                            className="discovery-subcanvas-queue-grid"
+                            data-generated-queue-visible-count={queuedPreviewCards.length}
+                            data-generated-queue-total-count={queuedGeneratedTaskCards.length}
+                          >
+                            {queuedPreviewCards.map(renderGeneratedCard)}
+                          </div>
+                          {hiddenQueuedTaskCount > 0 && (
+                            <button
+                              type="button"
+                              className="discovery-subcanvas-show-all"
+                              data-generated-action="show-all-queued"
+                              onClick={() => {
+                                setExpandedTaskBranches((current) => current.map((item) =>
+                                  item.nodeId === branch.nodeId
+                                    ? { ...item, discoveryQueueExpanded: true }
+                                    : item
+                                ));
+                              }}
+                            >
+                              显示全部 {queuedGeneratedTaskCards.length} 个 generated Task
+                            </button>
+                          )}
+                        </>
                       )}
                     </section>
                   </>

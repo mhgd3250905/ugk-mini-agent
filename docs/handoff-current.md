@@ -1,6 +1,6 @@
 # 当前交接快照
 
-更新时间：`2026-06-01`
+更新时间：`2026-06-02`
 
 这份文档只记录当前接手所需事实。历史流水账不要塞回来；需要追溯旧阶段时用 Git 历史和专题文档。若本文件与当前用户提示、`git status` 或真实运行结果冲突，以后者为准。
 
@@ -49,12 +49,9 @@ git log -- <path>
 
 当前已确认：
 
-- 分支：`main`
-- 本次文档收口前远程状态：`main...origin/main`，本地与 `origin/main` 对齐。
-- 本次文档收口前最新提交：`4d43987 Merge pull request #2 from codex/public-site-readme`。
-- 本次文档收口后预计本地会有一个 docs-only 提交；继续工作前以 `git status --short --branch` 和 `git log -1 --oneline` 为准。
-- 无 staged changes。
-- tracked 工作区干净；以 `git status --short` 为准。
+- 分支：`main`。
+- 本轮 Git 保存包含 Team Console / Canvas Task 性能与布局收口的 tracked 改动；继续工作前以 `git status --short --branch` 和 `git log -1 --oneline` 为准。
+- 本轮不提交 `.codex/config.toml`、`.codex/plans/*`、`.omo/`、`github-trending.txt`、runtime/public 报告产物或截图。
 - 未跟踪 runtime/public 产物禁止提交：
   - `public/developer-forum-sources-report.html`
   - `public/forum-sources-report.html`
@@ -81,6 +78,10 @@ git log --oneline origin/main..HEAD
 - terminal run 没有可展示 attempt 文件时，文案不再误导用户等待“刚启动后补齐”。
 - Discovery 子画布只展示当前 root run 对应的 generated child run；新 root 运行期间不会继续露出上一轮 child 的旧完成状态，active child 置顶，终态 child 按完成时间倒序。
 - Team Console 后台刷新已区分 silent refresh；active run 终态刷新、打开 Discovery 子画布和延迟 catalog refresh 不再抢占工具栏“刷新 Task”按钮加载态。
+- Team Console 顶部“刷新 Task”按钮已进一步收口：手动刷新在 root Task/source/connection/root run summary 完成后立即释放按钮；已打开 Discovery 子画布的 generated catalog/run summary/dispatch diagnostics 在后台合入，不再拖住按钮。
+- Discovery 子画布 generated catalog 已改走 lightweight summary；只有编辑 generated Task 等需要完整 WorkUnit 时才 lazy fetch full task detail。
+- `/v1/team/task-runs/by-task?view=summary` 会省略 heavy `source.boundInputs`；`/v1/team/task-runs/:runId/tasks/:taskId/attempts?view=dispatch-diagnostics` 会省略 heavy role process 字段，只保留 dispatch diagnostics 所需摘要。
+- Team Console live 模式画布 UI 状态已改为通过 `/v1/team/console-layout` 共享保存；从 `3000`、`5174` 等不同入口打开时，节点位置、viewport、展开分支、dock/收纳状态保持一致。mock/fixture 仍保留本地隔离。
 - Canvas Task run 会记录 `source.publicBaseUrl`；`PUBLIC_BASE_URL=auto` 表示按当前请求 host/proto 或本地端口自动推导公开 base URL。
 - Team role session 注入 `ARTIFACT_PUBLIC_DIR` 和 `ARTIFACT_PUBLIC_BASE_URL`；需要交付的报告/HTML 应写到 public output 目录，并通过 `/v1/team/task-runs/:runId/artifacts/:roleKey/:role/...` 稳定访问。
 - `/playground/agents` 子 Agent 技能区已支持从主 Agent 覆盖更新单个技能。
@@ -120,6 +121,11 @@ git log --oneline origin/main..HEAD
 - `git diff --check`：passed。
 - `npm test`：2013 tests，2011 passed，2 skipped，0 failed。
 - Docker 服务已重启过，`/healthz` 正常。
+- `npm exec tsc -- --noEmit --pretty false`：passed。
+- `node --test --import tsx --test-name-pattern "console-layout|view=summary|dispatch-diagnostics" test/team-task-run-routes.test.ts`：4 passed。
+- `npm --prefix apps/team-console run build`：passed。
+- `npx vitest run src/tests/app-canvas-state.test.tsx src/tests/app-live-data.test.tsx src/tests/team-api.test.ts --testNamePattern "shared Team Console layout API|Refresh Task|summary|dispatch"`：13 passed，145 skipped。
+- Docker compose 已按项目口径启动；`http://127.0.0.1:3000/playground`、`http://127.0.0.1:3000/healthz`、`http://127.0.0.1:5174/` 均返回 200。
 
 ## 未完成 / 风险
 

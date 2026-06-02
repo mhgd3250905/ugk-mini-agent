@@ -1562,6 +1562,35 @@ describe("Canvas pan and zoom", () => {
     expect(stage.style.transform).toContain("translate(30px, 36px)");
   });
 
+  it("keeps pan movement local until the pointer gesture is committed", () => {
+    const onViewportChange = vi.fn();
+    const plan = makeSequentialPlan();
+    const run = makeSequentialRun();
+    const { container } = render(
+      <ExecutionMap
+        plan={plan}
+        run={run}
+        selectedTaskId={null}
+        onSelectTask={() => {}}
+        viewport={{ x: 0, y: 0, scale: 1 }}
+        onViewportChange={onViewportChange}
+      />,
+    );
+    const viewport = container.querySelector(".execution-map-container") as HTMLElement;
+    const stage = container.querySelector(".execution-map-scroll") as HTMLElement;
+
+    firePointer(viewport, "pointerdown", { pointerId: 11, clientX: 12, clientY: 20 });
+    firePointer(viewport, "pointermove", { pointerId: 11, clientX: 42, clientY: 56 });
+
+    expect(stage.style.transform).toContain("translate(30px, 36px)");
+    expect(onViewportChange).not.toHaveBeenCalled();
+
+    firePointer(viewport, "pointerup", { pointerId: 11, clientX: 42, clientY: 56, buttons: 0 });
+
+    expect(onViewportChange).toHaveBeenCalledTimes(1);
+    expect(onViewportChange).toHaveBeenLastCalledWith({ x: 30, y: 36, scale: 1 });
+  });
+
   it("snaps canvas pan offsets to device pixels", () => {
     const devicePixelRatioDescriptor = Object.getOwnPropertyDescriptor(window, "devicePixelRatio");
     Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: 2 });
@@ -1606,6 +1635,62 @@ describe("Canvas pan and zoom", () => {
 
     expect(stage.style.transform).toBe("translate(0px, 0px) scale(1)");
     expect(onSelectTask).toHaveBeenCalledWith("task_2");
+  });
+
+  it("caches dock and trash hit-test geometry while dragging atlas root nodes", async () => {
+    const task = mockTeamTasks[0]!;
+    const taskNode: AtlasTaskNode = {
+      nodeId: "task-node",
+      kind: "canvas-task",
+      taskId: task.taskId,
+      position: { x: 280, y: 220 },
+    };
+    const onMoveCanvasTask = vi.fn();
+    const rectReads: string[] = [];
+    const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getMockRect(this: HTMLElement) {
+      const className = String(this.getAttribute("class") ?? "");
+      if (
+        className.includes("emap-root-dock")
+        || className.includes("emap-root-trash")
+        || className.includes("execution-map-nodes")
+      ) {
+        rectReads.push(className);
+      }
+      if (className.includes("emap-root-dock")) {
+        return { left: 900, top: 24, right: 1180, bottom: 120, width: 280, height: 96, x: 900, y: 24, toJSON: () => ({}) } as DOMRect;
+      }
+      if (className.includes("emap-root-trash")) {
+        return { left: 900, top: 500, right: 1180, bottom: 620, width: 280, height: 120, x: 900, y: 500, toJSON: () => ({}) } as DOMRect;
+      }
+      if (className.includes("execution-map-nodes")) {
+        return { left: 0, top: 0, right: 1400, bottom: 900, width: 1400, height: 900, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+      }
+      return originalGetBoundingClientRect.call(this);
+    });
+
+    const { container } = render(
+      <ExecutionMap
+        plan={makeSequentialPlan()}
+        run={makeSequentialRun()}
+        selectedTaskId={null}
+        onSelectTask={() => {}}
+        taskNodes={[taskNode]}
+        tasksById={new Map([[task.taskId, task]])}
+        onMoveCanvasTask={onMoveCanvasTask}
+      />,
+    );
+    const renderedTaskNode = await within(container).findByRole("button", { name: task.title });
+
+    firePointer(renderedTaskNode, "pointerdown", { pointerId: 72, clientX: 320, clientY: 260 });
+    firePointer(renderedTaskNode, "pointermove", { pointerId: 72, clientX: 360, clientY: 290 });
+    const readsAfterCache = rectReads.length;
+    firePointer(renderedTaskNode, "pointermove", { pointerId: 72, clientX: 390, clientY: 310 });
+    firePointer(renderedTaskNode, "pointerup", { pointerId: 72, clientX: 390, clientY: 310, buttons: 0 });
+
+    expect(readsAfterCache).toBeGreaterThan(0);
+    expect(rectReads).toHaveLength(readsAfterCache);
+    expect(onMoveCanvasTask).toHaveBeenCalled();
   });
 
   it("selecting an expanded child after zoom does not enter a measurement feedback loop", async () => {

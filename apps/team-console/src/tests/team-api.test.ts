@@ -662,6 +662,32 @@ describe("LiveTeamApi", () => {
     expect(runs[0]?.runId).toBe("run_canvas_1");
   });
 
+  it("lists live Canvas Task run summaries by task id with limit and summary view", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      runsByTaskId: {
+        task_1: [{
+          runId: "run_canvas_1",
+          planId: "canvas_task_task_1",
+          source: { type: "canvas-task", taskId: "task_1" },
+          teamUnitId: "canvas_task_unit_task_1",
+          status: "completed",
+          createdAt: "2026-05-25T00:00:00.000Z",
+          startedAt: "2026-05-25T00:00:00.000Z",
+          finishedAt: "2026-05-25T00:00:01.000Z",
+          currentTaskId: null,
+          taskStates: {},
+          summary: { totalTasks: 1, succeededTasks: 1, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+        }],
+      },
+    }), { status: 200 }));
+
+    const response = await api.listTaskRunsByTaskIds(["task_1"], { limit: 1, view: "summary" });
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/task-runs/by-task?taskIds=task_1&limit=1&view=summary");
+    expect(response.runsByTaskId.task_1?.[0]?.runId).toBe("run_canvas_1");
+  });
+
   it("creates, reads, and cancels live Canvas Task runs", async () => {
     const api = new LiveTeamApi("/v1/team");
     const run = {
@@ -726,6 +752,39 @@ describe("LiveTeamApi", () => {
     );
     expect(attempts[0]?.attemptId).toBe("attempt/a b");
     expect(content).toBe("accepted result");
+  });
+
+  it("reads live Canvas Task dispatch diagnostics attempts with a light view", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({
+      attempts: [{
+        attemptId: "attempt_dispatch",
+        taskId: "task_dispatch",
+        status: "succeeded",
+        phase: "succeeded",
+        createdAt: "2026-05-25T00:00:00.000Z",
+        updatedAt: "2026-05-25T00:00:02.000Z",
+        finishedAt: "2026-05-25T00:00:02.000Z",
+        worker: [],
+        checker: [],
+        watcher: null,
+        resultRef: null,
+        errorSummary: null,
+        discoveryDispatch: [{
+          itemId: "item_1",
+          status: "blocked",
+          error: "missing id",
+          createdAt: "2026-05-25T00:00:01.000Z",
+        }],
+      }],
+    }), { status: 200 }));
+
+    const attempts = await api.listTaskRunAttempts("run/a b", "task/c d", { view: "dispatch-diagnostics" });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/v1/team/task-runs/run%2Fa%20b/tasks/task%2Fc%20d/attempts?view=dispatch-diagnostics",
+    );
+    expect(attempts[0]?.discoveryDispatch?.[0]?.status).toBe("blocked");
   });
 
   it("preserves downstream delivery outcomes from live Canvas Task attempts", async () => {
@@ -842,6 +901,25 @@ describe("LiveTeamApi", () => {
     expect(agents).toEqual([
       { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
     ]);
+  });
+
+  it("coalesces concurrent identical live JSON GET requests", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    let resolveResponse: (response: Response) => void = () => {};
+    vi.mocked(fetch).mockReturnValue(new Promise<Response>((resolve) => {
+      resolveResponse = resolve;
+    }));
+
+    const first = api.listTasks();
+    const second = api.listTasks();
+    resolveResponse(new Response(JSON.stringify({ tasks: [mockTeamTasks[0]!] }), { status: 200 }));
+
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      [mockTeamTasks[0]!],
+      [mockTeamTasks[0]!],
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledWith("/v1/team/tasks");
   });
 
   it("listAgentRunStatuses calls /v1/agents/status and returns statuses", async () => {

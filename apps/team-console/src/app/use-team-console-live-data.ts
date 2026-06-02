@@ -204,7 +204,7 @@ async function readDiscoveryDispatchDiagnosticsForTasks(
     const latestRun = selectLatestRun(taskRunsByTaskId[task.taskId] ?? []);
     if (!latestRun) return [task.taskId, []] as const;
     try {
-      const attempts = await api.listTaskRunAttempts(latestRun.runId, task.taskId);
+      const attempts = await api.listTaskRunAttempts(latestRun.runId, task.taskId, { view: "dispatch-diagnostics" });
       return [
         task.taskId,
         blockedDispatchDiagnosticsFromAttempt(latestRun, selectLatestAttempt(attempts)),
@@ -337,7 +337,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     if (nextTasks.length === 0) return {};
     const taskIds = nextTasks.map((task) => task.taskId);
     try {
-      const { runsByTaskId } = await api.listTaskRunsByTaskIds(taskIds);
+      const { runsByTaskId } = await api.listTaskRunsByTaskIds(taskIds, { limit: 1, view: "summary" });
       const sorted: Record<string, TeamRunState[]> = {};
       for (const taskId of taskIds) {
         sorted[taskId] = sortRunsByCreatedAt(runsByTaskId[taskId] ?? []);
@@ -437,6 +437,28 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     }
   }, []);
 
+  const refreshOpenDiscoveryCatalogs = useCallback((
+    api: Pick<LiveTeamApi, "listGeneratedTaskSummaries" | "listTaskRunsByTaskIds" | "listTaskRunAttempts">,
+    rootTasks: TeamCanvasTask[],
+    discoveryTaskIds: string[],
+  ) => {
+    const discoveryRootIdSet = new Set(discoveryRootTasks(rootTasks).map((task) => task.taskId));
+    const validOpenIds = discoveryTaskIds.filter((taskId) => discoveryRootIdSet.has(taskId));
+    if (validOpenIds.length === 0) return;
+    void loadDiscoveryCatalogsForTaskIds(api, rootTasks, validOpenIds)
+      .then((discoveryCatalogResult) => {
+        const openSet = new Set(openDiscoveryTaskIdsRef.current);
+        if (!validOpenIds.every((id) => openSet.has(id))) return;
+        mergeDiscoveryCatalogLoadResult(discoveryCatalogResult);
+        if (!discoveryCatalogResult.error) {
+          for (const discoveryTaskId of Object.keys(discoveryCatalogResult.generatedTasksByDiscoveryTaskId)) {
+            loadedDiscoveryCatalogTaskIdsRef.current.add(discoveryTaskId);
+          }
+        }
+      })
+      .catch((e) => setError(errorMessage(e)));
+  }, [loadDiscoveryCatalogsForTaskIds, mergeDiscoveryCatalogLoadResult]);
+
   const refreshLiveTasks = useCallback(async (options: { silent?: boolean } = {}) => {
     const showRefreshState = options.silent !== true;
     if (liveTasksRefreshInFlightRef.current) {
@@ -474,17 +496,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
           }
           return merged;
         });
-        const discoveryRootIdSet = new Set(discoveryRootTasks(nextTasks).map((task) => task.taskId));
-        const openDiscoveryIds = openDiscoveryTaskIdsRef.current.filter((taskId) => discoveryRootIdSet.has(taskId));
-        if (openDiscoveryIds.length > 0) {
-          const discoveryCatalogResult = await loadDiscoveryCatalogsForTaskIds(api, nextTasks, openDiscoveryIds);
-          mergeDiscoveryCatalogLoadResult(discoveryCatalogResult);
-          if (!discoveryCatalogResult.error) {
-            for (const discoveryTaskId of Object.keys(discoveryCatalogResult.generatedTasksByDiscoveryTaskId)) {
-              loadedDiscoveryCatalogTaskIdsRef.current.add(discoveryTaskId);
-            }
-          }
-        }
+        refreshOpenDiscoveryCatalogs(api, nextTasks, openDiscoveryTaskIdsRef.current);
       } finally {
         liveTasksRefreshInFlightRef.current = null;
       }
@@ -496,7 +508,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     } finally {
       if (showRefreshState) setLiveTasksRefreshing(false);
     }
-  }, [applyLiveSources, applyLiveTasks, loadDiscoveryCatalogsForTaskIds, mergeDiscoveryCatalogLoadResult, readTaskRunsForTasks]);
+  }, [applyLiveSources, applyLiveTasks, readTaskRunsForTasks, refreshOpenDiscoveryCatalogs]);
 
   const scheduleLiveTaskDiscoveryRefresh = useCallback(() => {
     if (dataSource !== "live") return;

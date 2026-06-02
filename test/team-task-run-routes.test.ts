@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildServer } from "../src/server.js";
 import type { AgentService } from "../src/agent/agent-service.js";
-import type { TeamRunState, TeamTaskDeliveryOutcome } from "../src/team/types.js";
+import type { TeamPlan, TeamRunState, TeamTaskDeliveryOutcome } from "../src/team/types.js";
+import { RunWorkspace } from "../src/team/run-workspace.js";
 
 function createAgentServiceStub() {
 	return {
@@ -28,12 +29,13 @@ function createAgentServiceStub() {
 
 async function buildTestServer() {
 	const root = await mkdtemp(join(tmpdir(), "team-task-run-api-"));
+	const teamDir = join(root, "team");
 	process.env.TEAM_RUNTIME_ENABLED = "true";
-	process.env.TEAM_DATA_DIR = join(root, "team");
+	process.env.TEAM_DATA_DIR = teamDir;
 	process.env.UGK_AGENT_DATA_DIR = join(root, "agent");
 	process.env.CONN_DATABASE_PATH = join(root, "conn", "conn.sqlite");
 	const app = await buildServer({ agentService: createAgentServiceStub() });
-	return { app, root };
+	return { app, root, teamDir };
 }
 
 const taskPayload = {
@@ -63,6 +65,22 @@ function withPorts(
 			...payload.workUnit,
 			...ports,
 		},
+	};
+}
+
+function singleTaskPlan(taskId: string, title = "summary heavy"): TeamPlan {
+	return {
+		schemaVersion: "team/plan-1",
+		planId: `canvas_task_${taskId}`,
+		title,
+		defaultTeamUnitId: `canvas_task_unit_${taskId}`,
+		goal: { text: title },
+		tasks: [{ id: taskId, title, input: { text: title }, acceptance: { rules: ["ok"] } }],
+		outputContract: { text: "output" },
+		archived: false,
+		createdAt: "2026-06-02T00:00:00.000Z",
+		updatedAt: "2026-06-02T00:00:00.000Z",
+		runCount: 0,
 	};
 }
 
@@ -143,6 +161,143 @@ test("POST /v1/team/tasks/:taskId/runs executes a Canvas Task without creating a
 		const planRunsRes = await app.inject({ method: "GET", url: "/v1/team/runs" });
 		assert.equal(planRunsRes.statusCode, 200);
 		assert.deepEqual(planRunsRes.json(), []);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET/PATCH /v1/team/console-layout persists Team Console canvas UI state", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const empty = await app.inject({ method: "GET", url: "/v1/team/console-layout" });
+		assert.equal(empty.statusCode, 200);
+		assert.equal(empty.json().state, null);
+
+		const state = {
+			schemaVersion: 1,
+			states: {
+				live: {
+					schemaVersion: 1,
+					dataSource: "live",
+					taskNodePositions: [{ taskId: "task_shared_layout", position: { x: 420, y: 260 } }],
+					viewport: { x: 12, y: 24, scale: 0.9 },
+				},
+			},
+		};
+		const patch = await app.inject({
+			method: "PATCH",
+			url: "/v1/team/console-layout",
+			payload: { state },
+		});
+		assert.equal(patch.statusCode, 200);
+		assert.deepEqual(patch.json().state, state);
+
+		const loaded = await app.inject({ method: "GET", url: "/v1/team/console-layout" });
+		assert.equal(loaded.statusCode, 200);
+		assert.deepEqual(loaded.json().state, state);
+		assert.match(loaded.json().updatedAt, /^\d{4}-\d{2}-\d{2}T/);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("PATCH /v1/team/console-layout rejects malformed canvas UI state", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const res = await app.inject({
+			method: "PATCH",
+			url: "/v1/team/console-layout",
+			payload: { state: { schemaVersion: 2, states: {} } },
+		});
+		assert.equal(res.statusCode, 400);
+		assert.match(res.json().error, /invalid console layout state/);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/task-runs/:runId/tasks/:taskId/attempts view=dispatch-diagnostics omits heavy process fields", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const taskId = "task_dispatch_diagnostics";
+		const taskRunWorkspace = new RunWorkspace(join(teamDir, "task-runs"));
+		const state = await taskRunWorkspace.createRun(singleTaskPlan(taskId, "dispatch diagnostics"), `canvas_task_unit_${taskId}`);
+		state.source = { type: "canvas-task", taskId };
+		await taskRunWorkspace.saveState(state);
+
+		const { attemptId } = await taskRunWorkspace.createAttempt(state.runId, taskId);
+		await taskRunWorkspace.recordAttemptRoleProcess(state.runId, taskId, attemptId, {
+			role: "worker",
+			profileId: "search",
+			status: "succeeded",
+			startedAt: "2026-06-02T00:00:01.000Z",
+			updatedAt: "2026-06-02T00:00:02.000Z",
+			finishedAt: "2026-06-02T00:00:02.000Z",
+			assistantText: { content: "x".repeat(4096), updatedAt: "2026-06-02T00:00:02.000Z" },
+			process: {
+				title: "Worker process",
+				narration: ["heavy"],
+				isComplete: true,
+				entries: [{
+					id: "entry_heavy",
+					kind: "tool",
+					title: "heavy",
+					detail: "y".repeat(4096),
+					createdAt: "2026-06-02T00:00:02.000Z",
+				}],
+			},
+		});
+		await taskRunWorkspace.recordAttemptDiscoveryDispatchOutcomes(state.runId, taskId, attemptId, [{
+			itemId: "item_blocked",
+			status: "blocked",
+			error: "missing id",
+			createdAt: "2026-06-02T00:00:03.000Z",
+		}]);
+
+		const summaryRes = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/${state.runId}/tasks/${taskId}/attempts?view=dispatch-diagnostics`,
+		});
+		assert.equal(summaryRes.statusCode, 200);
+		const summaryAttempt = summaryRes.json().attempts[0];
+		assert.equal(summaryAttempt.attemptId, attemptId);
+		assert.equal(summaryAttempt.roleProcesses, undefined, "dispatch diagnostics view must omit roleProcesses");
+		assert.deepEqual(summaryAttempt.worker, []);
+		assert.deepEqual(summaryAttempt.checker, []);
+		assert.equal(summaryAttempt.discoveryDispatch[0].status, "blocked");
+
+		const fullRes = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/${state.runId}/tasks/${taskId}/attempts`,
+		});
+		assert.equal(fullRes.statusCode, 200);
+		const fullAttempt = fullRes.json().attempts[0];
+		assert.equal(fullAttempt.roleProcesses.worker.assistantText.content, "x".repeat(4096));
+		assert.equal(fullAttempt.roleProcesses.worker.process.entries[0].detail, "y".repeat(4096));
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/task-runs/:runId/tasks/:taskId/attempts rejects unknown view parameter", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const taskId = "task_attempt_bad_view";
+		const taskRunWorkspace = new RunWorkspace(join(teamDir, "task-runs"));
+		const state = await taskRunWorkspace.createRun(singleTaskPlan(taskId, "bad view"), `canvas_task_unit_${taskId}`);
+		state.source = { type: "canvas-task", taskId };
+		await taskRunWorkspace.saveState(state);
+
+		const res = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/${state.runId}/tasks/${taskId}/attempts?view=compact`,
+		});
+		assert.equal(res.statusCode, 400);
+		assert.match(res.json().error, /unknown view parameter/);
 	} finally {
 		await app.close();
 		await rm(root, { recursive: true, force: true });
@@ -807,6 +962,75 @@ test("GET /v1/team/task-runs/by-task applies limit per task", async () => {
 		assert.equal(res.statusCode, 200);
 		const body = res.json() as { runsByTaskId: Record<string, TeamRunState[]> };
 		assert.equal(body.runsByTaskId[task.taskId].length, 2);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/task-runs/by-task view=summary omits heavy bound input content", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const taskId = "task_summary_heavy";
+		const taskRunWorkspace = new RunWorkspace(join(teamDir, "task-runs"));
+		const plan = singleTaskPlan(taskId);
+		const fullState = await taskRunWorkspace.createRun(plan, plan.defaultTeamUnitId);
+		fullState.source = {
+			type: "canvas-task",
+			taskId,
+			boundInputs: [{
+				connectionId: "conn_heavy",
+				inputPortId: "raw_json",
+				artifact: {
+					schemaVersion: "team/task-artifact-1",
+					artifactId: "artifact_heavy",
+					type: "json",
+					sourceTaskId: "task_source",
+					sourceRunId: "run_source",
+					sourceAttemptId: "attempt_source",
+					sourceOutputPortId: "json",
+					fileRef: "tasks/task_source/attempts/attempt_source/result.json",
+					preview: "x".repeat(2048),
+					content: "y".repeat(4096),
+					createdAt: "2026-06-02T00:00:04.000Z",
+				},
+			}],
+		};
+		await taskRunWorkspace.saveState(fullState);
+
+		const summaryRes = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/by-task?taskIds=${taskId}&limit=1&view=summary`,
+		});
+		assert.equal(summaryRes.statusCode, 200);
+		const summaryRun = summaryRes.json().runsByTaskId[taskId][0] as TeamRunState;
+		assert.equal(summaryRun.runId, fullState.runId);
+		assert.equal(summaryRun.source?.taskId, taskId);
+		assert.equal(summaryRun.source?.boundInputs, undefined, "summary view must not include boundInputs");
+
+		const fullRes = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/by-task?taskIds=${taskId}&limit=1`,
+		});
+		assert.equal(fullRes.statusCode, 200);
+		const fullRun = fullRes.json().runsByTaskId[taskId][0] as TeamRunState;
+		assert.equal(fullRun.source?.boundInputs?.[0]?.artifact.preview, "x".repeat(2048));
+		assert.equal(fullRun.source?.boundInputs?.[0]?.artifact.content, "y".repeat(4096));
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/task-runs/by-task rejects unknown view parameter", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const res = await app.inject({
+			method: "GET",
+			url: "/v1/team/task-runs/by-task?taskIds=t1&view=compact",
+		});
+		assert.equal(res.statusCode, 400);
+		assert.match(res.json().error, /unknown view parameter/);
 	} finally {
 		await app.close();
 		await rm(root, { recursive: true, force: true });

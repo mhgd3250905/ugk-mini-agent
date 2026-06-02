@@ -1,4 +1,4 @@
-import { useMemo, useLayoutEffect, useRef, useState, useCallback, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useMemo, useLayoutEffect, useEffect, useRef, useState, useCallback, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { AgentRunStatus, AgentSummary, RunDetail, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasTask, TeamPlan, TaskStatus, TeamAttemptMetadata, TeamTaskState, TeamRunState, TeamTaskConnection, TeamTaskDependency, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
 import type { ExecutionNode, NodeKind } from "./execution-map-model";
@@ -214,6 +214,23 @@ type AtlasNodeDragEntry = {
   startPosition: { x: number; y: number };
   height: number;
 };
+
+type CachedDomRect = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+};
+
+type AtlasDragHitTestRects = {
+  dock: CachedDomRect | null;
+  trash: CachedDomRect | null;
+  nodes: CachedDomRect | null;
+};
+
+let atlasDragHitTestRectsCache: { pointerId: number; rects: AtlasDragHitTestRects } | null = null;
 
 type DockFlightRootKind = "agent" | "task" | "source";
 
@@ -484,6 +501,24 @@ function domRectToRect(rect: Pick<DOMRect, "left" | "top" | "width" | "height">)
   };
 }
 
+function cacheDomRect(element: HTMLElement | null, options: { allowZeroSize?: boolean } = {}): CachedDomRect | null {
+  if (!element) return null;
+  const rect = element.getBoundingClientRect();
+  const width = Number.isFinite(rect.width) ? rect.width : 0;
+  const height = Number.isFinite(rect.height) ? rect.height : 0;
+  if (!options.allowZeroSize && (width <= 0 || height <= 0)) {
+    return null;
+  }
+  return {
+    left: rect.left,
+    top: rect.top,
+    right: rect.right,
+    bottom: rect.bottom,
+    width,
+    height,
+  };
+}
+
 function renderConnectorSourceSocket(
   key: string,
   source: { x: number; y: number },
@@ -556,7 +591,19 @@ function previewFileFromAttempt(attempt: TeamAttemptMetadata, path: string | und
   return attempt.files.includes(parsed.fileName) ? parsed : undefined;
 }
 
-function measureLayoutHeight(node: HTMLElement, fallback: number): number {
+function measureObservedLayoutHeight(fallback: number, entry?: ResizeObserverEntry): number {
+  const borderBox = entry?.borderBoxSize;
+  const borderBoxSize = Array.isArray(borderBox) ? borderBox[0] : borderBox;
+  const borderBoxHeight = Math.round(borderBoxSize?.blockSize ?? 0);
+  if (Number.isFinite(borderBoxHeight) && borderBoxHeight > 0) return borderBoxHeight;
+
+  const contentHeight = Math.round(entry?.contentRect.height ?? 0);
+  if (Number.isFinite(contentHeight) && contentHeight > 0) return contentHeight;
+
+  return fallback;
+}
+
+function measureFallbackLayoutHeight(node: HTMLElement, fallback: number): number {
   const offsetHeight = Math.round(node.offsetHeight);
   if (Number.isFinite(offsetHeight) && offsetHeight > 0) return offsetHeight;
 
@@ -951,8 +998,15 @@ export function ExecutionMap({
     setIsDockExpanded(true);
   }, [clearDockIdleTimer]);
 
-  useLayoutEffect(() => {
-    updateDockPageState();
+  useEffect(() => {
+    const frame = globalThis.requestAnimationFrame?.(() => {
+      updateDockPageState();
+    });
+    return () => {
+      if (frame != null) {
+        globalThis.cancelAnimationFrame?.(frame);
+      }
+    };
   }, [dockNodeCount, isDockExpanded, updateDockPageState]);
 
   useLayoutEffect(() => {
@@ -1323,43 +1377,121 @@ export function ExecutionMap({
     return { positions, preview, links };
   }, [evidence, layout.nodePositions, selectedTaskId, measuredHeights, selectedArtifactId, artifactPreviewState, previewHeights]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (evidence.length === 0 || !evidenceContainerRef.current) return;
     const container = evidenceContainerRef.current;
-    const nodes = container.querySelectorAll<HTMLElement>(".emap-evidence-node");
+    const nodes = Array.from(container.querySelectorAll<HTMLElement>(".emap-evidence-node"));
     if (nodes.length === 0) return;
 
-    const updated: MeasuredHeights = {};
-    let changed = false;
     const fallbackHeights = new Map(evidence.map((entry) => [entry.id, evidenceHeight(entry.kind)]));
-    for (const node of nodes) {
-      const id = node.dataset.evidenceId;
-      if (!id) continue;
-      const h = measureLayoutHeight(node, fallbackHeights.get(id) ?? 0);
-      if (!Number.isFinite(h) || h <= 0) continue;
-      updated[id] = h;
-      if ((measuredHeights[id] ?? 0) !== h) changed = true;
+    if (typeof ResizeObserver === "undefined") {
+      const updated: MeasuredHeights = {};
+      for (const node of nodes) {
+        const id = node.dataset.evidenceId;
+        if (!id) continue;
+        const h = measureFallbackLayoutHeight(node, fallbackHeights.get(id) ?? 0);
+        if (!Number.isFinite(h) || h <= 0) continue;
+        updated[id] = h;
+      }
+      if (Object.keys(updated).length === 0) return;
+      setMeasuredHeights((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const [id, h] of Object.entries(updated)) {
+          if ((current[id] ?? 0) !== h) {
+            next[id] = h;
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+      return;
     }
-    if (changed) setMeasuredHeights(updated);
-  }, [evidence, evidenceLayout, measuredHeights]);
 
-  useLayoutEffect(() => {
+    const updateHeights = (entries: ResizeObserverEntry[]) => {
+      const updated: MeasuredHeights = {};
+      for (const entry of entries) {
+        const node = entry.target instanceof HTMLElement ? entry.target : null;
+        const id = node?.dataset.evidenceId;
+        if (!node || !id) continue;
+        const h = measureObservedLayoutHeight(fallbackHeights.get(id) ?? 0, entry);
+        if (!Number.isFinite(h) || h <= 0) continue;
+        updated[id] = h;
+      }
+      if (Object.keys(updated).length === 0) return;
+      setMeasuredHeights((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const [id, h] of Object.entries(updated)) {
+          if ((current[id] ?? 0) !== h) {
+            next[id] = h;
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+    };
+    const observer = new ResizeObserver(updateHeights);
+    nodes.forEach((node) => observer.observe(node));
+    return () => observer.disconnect();
+  }, [evidence]);
+
+  useEffect(() => {
     if (!evidenceContainerRef.current) return;
-    const nodes = evidenceContainerRef.current.querySelectorAll<HTMLElement>(".emap-artifact-preview");
+    const nodes = Array.from(evidenceContainerRef.current.querySelectorAll<HTMLElement>(".emap-artifact-preview"));
     if (nodes.length === 0) return;
 
-    const updated: MeasuredHeights = {};
-    let changed = false;
-    for (const node of nodes) {
-      const id = node.dataset.previewId;
-      if (!id) continue;
-      const h = measureLayoutHeight(node, PREVIEW_FALLBACK_HEIGHT);
-      if (!Number.isFinite(h) || h <= 0) continue;
-      updated[id] = h;
-      if ((previewHeights[id] ?? 0) !== h) changed = true;
+    if (typeof ResizeObserver === "undefined") {
+      const updated: MeasuredHeights = {};
+      for (const node of nodes) {
+        const id = node.dataset.previewId;
+        if (!id) continue;
+        const h = measureFallbackLayoutHeight(node, PREVIEW_FALLBACK_HEIGHT);
+        if (!Number.isFinite(h) || h <= 0) continue;
+        updated[id] = h;
+      }
+      if (Object.keys(updated).length === 0) return;
+      setPreviewHeights((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const [id, h] of Object.entries(updated)) {
+          if ((current[id] ?? 0) !== h) {
+            next[id] = h;
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+      return;
     }
-    if (changed) setPreviewHeights((current) => ({ ...current, ...updated }));
-  }, [evidenceLayout.preview, previewHeights]);
+
+    const updateHeights = (entries: ResizeObserverEntry[]) => {
+      const updated: MeasuredHeights = {};
+      for (const entry of entries) {
+        const node = entry.target instanceof HTMLElement ? entry.target : null;
+        const id = node?.dataset.previewId;
+        if (!node || !id) continue;
+        const h = measureObservedLayoutHeight(PREVIEW_FALLBACK_HEIGHT, entry);
+        if (!Number.isFinite(h) || h <= 0) continue;
+        updated[id] = h;
+      }
+      if (Object.keys(updated).length === 0) return;
+      setPreviewHeights((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const [id, h] of Object.entries(updated)) {
+          if ((current[id] ?? 0) !== h) {
+            next[id] = h;
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+    };
+    const observer = new ResizeObserver(updateHeights);
+    nodes.forEach((node) => observer.observe(node));
+    return () => observer.disconnect();
+  }, [evidenceLayout.preview]);
 
   const toggleExpand = useCallback((parentTaskId: string) => {
     setExpandedTaskIds((prev) => {
@@ -1505,6 +1637,7 @@ export function ExecutionMap({
       ...(copyOnClick && kind !== "source" ? { copyOnClick: copyOnClick as { kind: "agent" | "task"; id: string } } : {}),
     };
     dockDragHitRef.current = false;
+    atlasDragHitTestRectsCache = null;
     setIsAtlasDragging(true);
     event.currentTarget.setPointerCapture?.(event.pointerId);
   }, [buildAtlasDragEntries, canMoveAgents, canMoveSourceNodes, canMoveTasks, onMoveAgent, onMoveCanvasTask, onMoveSourceNode]);
@@ -1513,15 +1646,27 @@ export function ExecutionMap({
     beginAtlasNodeDrag(node, "agent", event);
   }, [beginAtlasNodeDrag]);
 
+  const getAtlasDragHitTestRects = useCallback((drag: AtlasNodeDragState): AtlasDragHitTestRects => {
+    const current = atlasDragHitTestRectsCache?.pointerId === drag.pointerId
+      ? atlasDragHitTestRectsCache.rects
+      : undefined;
+    if (current?.dock && current.trash && current.nodes) return current;
+    const hitTestRects = {
+      dock: current?.dock ?? cacheDomRect(dockRef.current, { allowZeroSize: true }),
+      trash: current?.trash ?? cacheDomRect(trashRef.current),
+      nodes: current?.nodes ?? cacheDomRect(evidenceContainerRef.current, { allowZeroSize: true }),
+    };
+    atlasDragHitTestRectsCache = { pointerId: drag.pointerId, rects: hitTestRects };
+    return hitTestRects;
+  }, []);
+
   const getDockHitForDrag = useCallback((drag: AtlasNodeDragState, event: ReactPointerEvent<HTMLElement>) => {
-    const dock = dockRef.current;
-    if (!dock) return null;
-    const dockRect = dock.getBoundingClientRect();
+    const { dock: dockRect, nodes: nodesRect } = getAtlasDragHitTestRects(drag);
+    if (!dockRect) return null;
     if (pointInDomRect(event.clientX, event.clientY, dockRect)) {
       return { dockRect };
     }
 
-    const nodesRect = evidenceContainerRef.current?.getBoundingClientRect();
     if (!nodesRect) return null;
     const scale = viewportScale(viewport);
     const dx = event.clientX - drag.startClientX;
@@ -1537,13 +1682,12 @@ export function ExecutionMap({
       dockHitRect,
     ));
     return hit ? { dockRect } : null;
-  }, [viewport]);
+  }, [getAtlasDragHitTestRects, viewport]);
 
-  const isPointerOverTrash = useCallback((event: ReactPointerEvent<HTMLElement>): boolean => {
-    const trash = trashRef.current;
-    if (!trash) return false;
-    return pointInDomRect(event.clientX, event.clientY, trash.getBoundingClientRect());
-  }, []);
+  const isPointerOverTrash = useCallback((drag: AtlasNodeDragState, event: ReactPointerEvent<HTMLElement>): boolean => {
+    const { trash } = getAtlasDragHitTestRects(drag);
+    return trash ? pointInDomRect(event.clientX, event.clientY, trash) : false;
+  }, [getAtlasDragHitTestRects]);
 
   const handleAgentPointerMove = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const drag = atlasNodeDragRef.current;
@@ -1554,7 +1698,7 @@ export function ExecutionMap({
     const hasMoved = drag.hasMoved || Math.hypot(dx, dy) >= AGENT_DRAG_THRESHOLD;
     if (!hasMoved) return;
 
-    const overTrash = isPointerOverTrash(event);
+    const overTrash = isPointerOverTrash(drag, event);
     const dockHit = overTrash ? null : getDockHitForDrag(drag, event);
     dockDragHitRef.current = Boolean(dockHit);
     if (dockHit) {
@@ -1732,18 +1876,24 @@ export function ExecutionMap({
 
     if (drag.hasMoved) {
       suppressNextAgentClick(drag.primaryNodeId);
-      if (isPointerOverTrash(event)) {
+      if (isPointerOverTrash(drag, event)) {
         rollbackAtlasDragPositions(drag);
         onRootTrashDrop?.(drag.entries);
+        atlasDragHitTestRectsCache = null;
         return;
       }
-      if (checkDockDrop(drag, event)) return;
+      if (checkDockDrop(drag, event)) {
+        atlasDragHitTestRectsCache = null;
+        return;
+      }
+      atlasDragHitTestRectsCache = null;
       return;
     }
 
     if (drag.copyOnClick?.kind === "agent") {
       suppressNextAgentClick(drag.primaryNodeId);
       void copyCanvasNodeId("agent", drag.copyOnClick.id);
+      atlasDragHitTestRectsCache = null;
       return;
     }
 
@@ -1752,6 +1902,7 @@ export function ExecutionMap({
       suppressNextAgentClick(drag.primaryNodeId);
       onSelectAgent?.(node);
     }
+    atlasDragHitTestRectsCache = null;
   }, [checkDockDrop, copyCanvasNodeId, isPointerOverTrash, onRootTrashDrop, onSelectAgent, rollbackAtlasDragPositions, suppressNextAgentClick, visibleAgentNodes]);
 
   const handleAgentClick = useCallback((node: AtlasAgentNode) => {
@@ -1794,18 +1945,24 @@ export function ExecutionMap({
 
     if (drag.hasMoved) {
       suppressNextTaskClick(drag.primaryNodeId);
-      if (isPointerOverTrash(event)) {
+      if (isPointerOverTrash(drag, event)) {
         rollbackAtlasDragPositions(drag);
         onRootTrashDrop?.(drag.entries);
+        atlasDragHitTestRectsCache = null;
         return;
       }
-      if (checkDockDrop(drag, event)) return;
+      if (checkDockDrop(drag, event)) {
+        atlasDragHitTestRectsCache = null;
+        return;
+      }
+      atlasDragHitTestRectsCache = null;
       return;
     }
 
     if (drag.copyOnClick?.kind === "task") {
       suppressNextTaskClick(drag.primaryNodeId);
       void copyCanvasNodeId("task", drag.copyOnClick.id);
+      atlasDragHitTestRectsCache = null;
       return;
     }
 
@@ -1814,6 +1971,7 @@ export function ExecutionMap({
       suppressNextTaskClick(drag.primaryNodeId);
       onSelectCanvasTask?.(node);
     }
+    atlasDragHitTestRectsCache = null;
   }, [checkDockDrop, copyCanvasNodeId, isPointerOverTrash, onRootTrashDrop, onSelectCanvasTask, rollbackAtlasDragPositions, suppressNextTaskClick, visibleTaskNodes]);
 
   const handleTaskClick = useCallback((node: AtlasTaskNode) => {
@@ -1899,23 +2057,25 @@ export function ExecutionMap({
   const focusedTaskNode = focusedTaskNodeId
     ? visibleTaskNodes.find((node) => node.nodeId === focusedTaskNodeId) ?? null
     : null;
-  const taskBranchEntries = (taskBranchPanels ?? []).map((entry) => {
-    const node = visibleTaskNodes.find((candidate) => candidate.nodeId === entry.nodeId);
-    if (!node) return null;
-    const measuredSize = taskBranchMeasuredSizes[entry.id] ?? null;
-    const base = {
-      x: node.position.x + NODE_WIDTH + TASK_BRANCH_GAP,
-      y: Math.max(0, node.position.y - 16),
-      width: measuredSize?.width ?? TASK_MENU_BRANCH_WIDTH,
-      height: measuredSize?.height ?? TASK_MENU_BRANCH_HEIGHT,
-    };
-    const posOverride = taskBranchPositionOverrides[node.nodeId];
-    return {
-      ...entry,
-      node,
-      rect: posOverride ? { ...base, x: posOverride.x, y: posOverride.y } : base,
-    };
-  }).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+  const taskBranchEntries = useMemo(() => (
+    (taskBranchPanels ?? []).map((entry) => {
+      const node = visibleTaskNodes.find((candidate) => candidate.nodeId === entry.nodeId);
+      if (!node) return null;
+      const measuredSize = taskBranchMeasuredSizes[entry.id] ?? null;
+      const base = {
+        x: node.position.x + NODE_WIDTH + TASK_BRANCH_GAP,
+        y: Math.max(0, node.position.y - 16),
+        width: measuredSize?.width ?? TASK_MENU_BRANCH_WIDTH,
+        height: measuredSize?.height ?? TASK_MENU_BRANCH_HEIGHT,
+      };
+      const posOverride = taskBranchPositionOverrides[node.nodeId];
+      return {
+        ...entry,
+        node,
+        rect: posOverride ? { ...base, x: posOverride.x, y: posOverride.y } : base,
+      };
+    }).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+  ), [taskBranchPanels, taskBranchPositionOverrides, taskBranchMeasuredSizes, visibleTaskNodes]);
   const primaryTaskBranchEntry = (
     taskBranchEntries.find((entry) => entry.node.nodeId === focusedTaskNodeId)
     ?? taskBranchEntries[0]
@@ -2452,56 +2612,146 @@ export function ExecutionMap({
     }
   }, [agentBranchPanel, maximizedBranch, taskChildBranchPanelsLayout]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (hasActiveTaskLayoutInteraction()) return;
 
     if (!taskBranchEntries.length) {
-      if (Object.keys(taskBranchMeasuredSizes).length > 0) setTaskBranchMeasuredSizes({});
+      setTaskBranchMeasuredSizes((current) => (Object.keys(current).length > 0 ? {} : current));
       return;
     }
 
-    const next: TaskBranchMeasuredSizeMap = {};
+    if (typeof ResizeObserver === "undefined") {
+      const updates: TaskBranchMeasuredSizeMap = {};
+      for (const entry of taskBranchEntries) {
+        const element = taskBranchShellRefs.current[entry.id];
+        if (!element) continue;
+        const width = element.offsetWidth || TASK_MENU_BRANCH_WIDTH;
+        const height = element.offsetHeight || TASK_MENU_BRANCH_HEIGHT;
+        if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) continue;
+        updates[entry.id] = { width, height };
+      }
+      if (Object.keys(updates).length === 0) return;
+      setTaskBranchMeasuredSizes((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const [id, size] of Object.entries(updates)) {
+          if (next[id]?.width !== size.width || next[id]?.height !== size.height) {
+            next[id] = size;
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+      return;
+    }
+
+    const elementIds = new Map<Element, string>();
+    const observer = new ResizeObserver((entries) => {
+      const updates: TaskBranchMeasuredSizeMap = {};
+      for (const entry of entries) {
+        const id = elementIds.get(entry.target);
+        if (!id) continue;
+        const width = Math.round(entry.contentRect.width) || TASK_MENU_BRANCH_WIDTH;
+        const height = Math.round(entry.contentRect.height) || TASK_MENU_BRANCH_HEIGHT;
+        if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) continue;
+        updates[id] = { width, height };
+      }
+      if (Object.keys(updates).length === 0) return;
+      setTaskBranchMeasuredSizes((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const [id, size] of Object.entries(updates)) {
+          if (next[id]?.width !== size.width || next[id]?.height !== size.height) {
+            next[id] = size;
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+    });
+
     for (const entry of taskBranchEntries) {
       const element = taskBranchShellRefs.current[entry.id];
       if (!element) continue;
-      const width = element.offsetWidth || TASK_MENU_BRANCH_WIDTH;
-      const height = element.offsetHeight || TASK_MENU_BRANCH_HEIGHT;
-      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) continue;
-      next[entry.id] = { width, height };
+      elementIds.set(element, entry.id);
+      observer.observe(element);
     }
 
-    setTaskBranchMeasuredSizes((current) => {
-      const keys = Object.keys(next);
-      if (keys.length === Object.keys(current).length && keys.every((k) => current[k]?.width === next[k]?.width && current[k]?.height === next[k]?.height)) return current;
-      return next;
-    });
-  });
+    return () => observer.disconnect();
+  }, [taskBranchEntries]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (hasActiveTaskLayoutInteraction()) return;
 
     if (!taskChildBranchPanels?.length) {
-      if (Object.keys(panelMeasuredHeights).length > 0) setPanelMeasuredHeights({});
+      setPanelMeasuredHeights((current) => (Object.keys(current).length > 0 ? {} : current));
       return;
     }
     const autoPanels = taskChildBranchPanels.filter((p) => p.autoHeight);
     if (autoPanels.length === 0) return;
     const nodes = evidenceContainerRef.current?.querySelectorAll<HTMLElement>("[data-panel-id]");
     if (!nodes?.length) return;
-    const updated: Record<string, number> = {};
-    let changed = false;
+
+    const autoPanelIds = new Set(autoPanels.map((p) => p.id));
+    if (typeof ResizeObserver === "undefined") {
+      const updated: Record<string, number> = {};
+      for (const node of nodes) {
+        const id = node.dataset.panelId;
+        if (!id || !autoPanelIds.has(id)) continue;
+        const panel = autoPanels.find((p) => p.id === id);
+        const h = measureFallbackLayoutHeight(node, panel?.height ?? 120);
+        if (!Number.isFinite(h) || h <= 0) continue;
+        updated[id] = h;
+      }
+      if (Object.keys(updated).length === 0) return;
+      setPanelMeasuredHeights((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const [id, h] of Object.entries(updated)) {
+          if ((current[id] ?? 0) !== h) {
+            next[id] = h;
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+      return;
+    }
+
+    const elementIds = new Map<Element, string>();
+    const observer = new ResizeObserver((entries) => {
+      const updated: Record<string, number> = {};
+      for (const entry of entries) {
+        const id = elementIds.get(entry.target);
+        if (!id) continue;
+        const h = Math.round(entry.contentRect.height);
+        if (!Number.isFinite(h) || h <= 0) continue;
+        updated[id] = h;
+      }
+      if (Object.keys(updated).length === 0) return;
+      setPanelMeasuredHeights((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const [id, h] of Object.entries(updated)) {
+          if ((next[id] ?? 0) !== h) {
+            next[id] = h;
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+    });
+
     for (const node of nodes) {
       const id = node.dataset.panelId;
       if (!id) continue;
-      const panel = autoPanels.find((p) => p.id === id);
-      if (!panel) continue;
-      const h = measureLayoutHeight(node, panel.height ?? 120);
-      if (!Number.isFinite(h) || h <= 0) continue;
-      updated[id] = h;
-      if ((panelMeasuredHeights[id] ?? 0) !== h) changed = true;
+      if (!autoPanelIds.has(id)) continue;
+      elementIds.set(node, id);
+      observer.observe(node);
     }
-    if (changed) setPanelMeasuredHeights((current) => ({ ...current, ...updated }));
-  });
+
+    return () => observer.disconnect();
+  }, [taskChildBranchPanels, taskChildBranchPanelsLayout]);
 
   const translateTaskSubtree = useCallback((
     scope: TaskSubtreeScope,
