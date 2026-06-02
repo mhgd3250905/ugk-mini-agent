@@ -637,6 +637,25 @@ describe("App", () => {
     expect(within(menu).queryByRole("button", { name: "Discovery 子画布" })).toBeNull();
   });
 
+  it("clones a normal Task from the Task action menu", async () => {
+    const { container } = render(<App />);
+    const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
+    const normalTask = mockTeamTasks[0]!;
+    const normalTaskNode = await within(atlas).findByRole("button", { name: normalTask.title });
+
+    fireEvent.click(normalTaskNode);
+    const menu = await screen.findByLabelText(`${normalTask.title} 操作菜单`);
+    fireEvent.click(within(menu).getByRole("button", { name: "复制" }));
+
+    const clonePanel = await screen.findByLabelText(`${normalTask.title} Task 复制`);
+    fireEvent.change(within(clonePanel).getByLabelText("新 Task 名称"), {
+      target: { value: "复制后的论坛查询 Task" },
+    });
+    fireEvent.click(within(clonePanel).getByRole("button", { name: "创建复制" }));
+
+    expect(await within(getAtlasNodes(container)).findByRole("button", { name: "复制后的论坛查询 Task" })).toBeInTheDocument();
+  });
+
   it("opens a per-Task run history drawer and lazily loads run details", async () => {
     const liveTask = mockTeamTasks[0]!;
     const latestRun = canvasTaskRun(liveTask.taskId, "run_history_latest");

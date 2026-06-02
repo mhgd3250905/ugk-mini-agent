@@ -124,6 +124,11 @@ type TaskRunHistoryDetailState = {
   error: string | null;
 };
 
+type TaskCloneDraft = {
+  title: string;
+  templateBindings: Record<string, string>;
+};
+
 type RootArchiveConfirm =
   | { kind: "source"; sourceNodeId: string; nodeId: string; title: string }
   | { kind: "task"; task: TeamCanvasTask; nodeId: string }
@@ -700,7 +705,7 @@ function readStoredTaskBranches(value: unknown): TaskBranchState[] {
     seen.add(nodeId);
     const rawDetailMode = record.detailMode;
     const detailMode: TaskBranchDetailMode | null =
-      rawDetailMode === "leader-chat" || rawDetailMode === "edit" || rawDetailMode === "run-observer" || rawDetailMode === "discovery-subcanvas"
+      rawDetailMode === "leader-chat" || rawDetailMode === "edit" || rawDetailMode === "clone" || rawDetailMode === "run-observer" || rawDetailMode === "discovery-subcanvas"
         ? rawDetailMode
         : null;
     const observedRunId = typeof record.observedRunId === "string" && record.observedRunId.trim()
@@ -1284,6 +1289,8 @@ export function App() {
   const [runHistoryCopyStatus, setRunHistoryCopyStatus] = useState<string | null>(null);
   const [runHistorySavingRunId, setRunHistorySavingRunId] = useState<string | null>(null);
   const [taskNodes, setTaskNodes] = useState<AtlasTaskNode[]>([]);
+  const [taskCloneDraftByTaskId, setTaskCloneDraftByTaskId] = useState<Record<string, TaskCloneDraft>>({});
+  const [taskCloneSavingByTaskId, setTaskCloneSavingByTaskId] = useState<Record<string, boolean>>({});
   const [liveTaskNodesHydrated, setLiveTaskNodesHydrated] = useState(false);
   const [sourceAtlasNodes, setSourceAtlasNodes] = useState<AtlasSourceNode[]>([]);
   const [liveSourceNodesHydrated, setLiveSourceNodesHydrated] = useState(false);
@@ -1332,11 +1339,73 @@ export function App() {
     registerTaskLeaderManualCopyRef,
   } = useTaskLeaderCopy();
 
+  const clearTaskCloneState = useCallback((taskId?: string) => {
+    if (!taskId) {
+      setTaskCloneDraftByTaskId({});
+      setTaskCloneSavingByTaskId({});
+      return;
+    }
+    setTaskCloneDraftByTaskId((current) => {
+      if (!(taskId in current)) return current;
+      const next = { ...current };
+      delete next[taskId];
+      return next;
+    });
+    setTaskCloneSavingByTaskId((current) => {
+      if (!(taskId in current)) return current;
+      const next = { ...current };
+      delete next[taskId];
+      return next;
+    });
+  }, []);
+
+  const openTaskCloneDraft = useCallback((task: TeamCanvasTask) => {
+    const templateBindings = Object.fromEntries(
+      (task.templateConfig?.parameters ?? []).map((parameter) => [parameter.id, parameter.defaultValue ?? ""]),
+    );
+    setTaskCloneDraftByTaskId((current) => ({
+      ...current,
+      [task.taskId]: {
+        title: `${task.title} 副本`,
+        templateBindings,
+      },
+    }));
+  }, []);
+
+  const updateTaskCloneTitle = useCallback((taskId: string, title: string) => {
+    setTaskCloneDraftByTaskId((current) => {
+      const draft = current[taskId];
+      if (!draft) return current;
+      return {
+        ...current,
+        [taskId]: { ...draft, title },
+      };
+    });
+  }, []);
+
+  const updateTaskCloneBinding = useCallback((taskId: string, parameterId: string, value: string) => {
+    setTaskCloneDraftByTaskId((current) => {
+      const draft = current[taskId];
+      if (!draft) return current;
+      return {
+        ...current,
+        [taskId]: {
+          ...draft,
+          templateBindings: {
+            ...draft.templateBindings,
+            [parameterId]: value,
+          },
+        },
+      };
+    });
+  }, []);
+
   const clearTaskPanelState = useCallback((taskId?: string) => {
     clearTaskEditState(taskId);
+    clearTaskCloneState(taskId);
     setTaskArchiveConfirmNodeId(null);
     setTaskArchiveSavingNodeId(null);
-  }, [clearTaskEditState]);
+  }, [clearTaskCloneState, clearTaskEditState]);
 
   useEffect(() => {
     storeTheme(theme);
@@ -1384,6 +1453,8 @@ export function App() {
     setTaskDependencyDraft(null);
     setSourceConnectionDraft(null);
     setTaskRunSavingByTaskId({});
+    setTaskCloneDraftByTaskId({});
+    setTaskCloneSavingByTaskId({});
     setGeneratedResetSavingByTaskId({});
     setGeneratedArchiveConfirmTaskId(null);
     setGeneratedArchiveSavingByTaskId({});
@@ -2233,6 +2304,52 @@ export function App() {
     }
   }, [clearTaskEditWarning, dataSource, generatedTasksById, refreshLiveTasks, replaceGeneratedTaskInCatalog, replaceTaskEditDraft, setTaskEditSaving, setTaskEditWarning, taskEditDraftByTaskId, tasksById]);
 
+  const cloneTask = useCallback(async (task: TeamCanvasTask, nodeId: string): Promise<void> => {
+    const draft = taskCloneDraftByTaskId[task.taskId];
+    if (!draft || task.generatedSource) return;
+    const title = draft.title.trim();
+    const templateBindings = task.templateConfig
+      ? Object.fromEntries(
+          (task.templateConfig.parameters ?? []).map((parameter) => [
+            parameter.id,
+            (draft.templateBindings[parameter.id] ?? "").trim(),
+          ]),
+        )
+      : undefined;
+
+    setTaskCloneSavingByTaskId((current) => ({ ...current, [task.taskId]: true }));
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      await api.cloneTask(task.taskId, {
+        ...(title ? { title } : {}),
+        ...(templateBindings ? { templateBindings } : {}),
+      });
+      if (dataSource === "live") {
+        await refreshLiveTasks();
+      } else {
+        const nextTasks = await api.listTasks();
+        setTasks(nextTasks);
+        setTaskNodes((current) => makeTaskNodes(nextTasks, liveTaskRefreshPositions(current)));
+      }
+      clearTaskCloneState(task.taskId);
+      setExpandedTaskBranches((current) =>
+        current.map((item) =>
+          item.nodeId === nodeId ? { ...item, detailMode: null } : item
+        )
+      );
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setTaskCloneSavingByTaskId((current) => {
+        if (!(task.taskId in current)) return current;
+        const next = { ...current };
+        delete next[task.taskId];
+        return next;
+      });
+    }
+  }, [clearTaskCloneState, dataSource, refreshLiveTasks, setTasks, taskCloneDraftByTaskId]);
+
   const archiveTask = useCallback(async (task: TeamCanvasTask, nodeId?: string): Promise<boolean> => {
     const savingKey = nodeId ?? task.taskId;
     setTaskArchiveSavingNodeId(savingKey);
@@ -3038,6 +3155,32 @@ export function App() {
               type="button"
               className="task-action-menu-button"
               onClick={() => {
+                if (detailMode === "clone") {
+                  clearTaskCloneState(task.taskId);
+                  setExpandedTaskBranches((current) =>
+                    current.map((item) =>
+                      item.nodeId === branch.nodeId ? { ...item, detailMode: null } : item
+                    )
+                  );
+                } else {
+                  openTaskCloneDraft(task);
+                  setTaskArchiveConfirmNodeId(null);
+                  setExpandedTaskBranches((current) =>
+                    current.map((item) =>
+                      item.nodeId === branch.nodeId
+                        ? { ...item, detailMode: "clone" }
+                        : item
+                    )
+                  );
+                }
+              }}
+            >
+              复制
+            </button>
+            <button
+              type="button"
+              className="task-action-menu-button"
+              onClick={() => {
                 if (detailMode === "edit") {
                   setExpandedTaskBranches((current) =>
                     current.map((item) =>
@@ -3772,6 +3915,98 @@ export function App() {
         continue;
       }
 
+      if (branch.detailMode === "clone") {
+        const draft = taskCloneDraftByTaskId[task.taskId];
+        const saving = Boolean(taskCloneSavingByTaskId[task.taskId]);
+        if (draft) {
+          const templateParameters = task.templateConfig?.parameters ?? [];
+          panels.push({
+            id: `task-clone-${branch.nodeId}`,
+            width: 520,
+            height: task.templateConfig ? 560 : 400,
+            sourceId: menuPanelId,
+            resizable: true,
+            interactive: true,
+            panel: (
+              <section className="task-leader-branch emap-panel-branch task-edit-branch" aria-label={`${task.title} Task 复制`}>
+                <header className="task-leader-branch-head">
+                  <div className="task-leader-branch-title">
+                    <span>Task 复制</span>
+                    <strong>{task.title}</strong>
+                    <code>{task.taskId}</code>
+                  </div>
+                  <button
+                    type="button"
+                    className="task-leader-branch-collapse"
+                    onClick={() => {
+                      clearTaskCloneState(task.taskId);
+                      setExpandedTaskBranches((current) =>
+                        current.map((item) =>
+                          item.nodeId === branch.nodeId ? { ...item, detailMode: null } : item
+                        )
+                      );
+                    }}
+                    aria-label={`收起 ${task.title} Task 复制`}
+                  >
+                    收起
+                  </button>
+                </header>
+                <form
+                  className="task-edit-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void cloneTask(task, branch.nodeId);
+                  }}
+                >
+                  <div className="task-edit-note">
+                    复制只复制 Task 定义，不复制运行记录、进行中的 run 或 generated 子任务。
+                  </div>
+                  <div className="task-edit-grid">
+                    <label className="task-edit-field">
+                      <span>新 Task 名称</span>
+                      <input
+                        value={draft.title}
+                        onChange={(event) => updateTaskCloneTitle(task.taskId, event.target.value)}
+                      />
+                    </label>
+                    {templateParameters.map((parameter) => (
+                      <label key={parameter.id} className="task-edit-field">
+                        <span>{parameter.label}{parameter.required ? " *" : ""}</span>
+                        <input
+                          value={draft.templateBindings[parameter.id] ?? ""}
+                          placeholder={parameter.description ?? parameter.id}
+                          onChange={(event) => updateTaskCloneBinding(task.taskId, parameter.id, event.target.value)}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <div className="task-edit-actions">
+                    <button
+                      type="button"
+                      className="task-action-menu-button"
+                      onClick={() => {
+                        clearTaskCloneState(task.taskId);
+                        setExpandedTaskBranches((current) =>
+                          current.map((item) =>
+                            item.nodeId === branch.nodeId ? { ...item, detailMode: null } : item
+                          )
+                        );
+                      }}
+                    >
+                      返回菜单
+                    </button>
+                    <button type="submit" className="task-action-menu-button primary" disabled={saving}>
+                      {saving ? "创建中..." : "创建复制"}
+                    </button>
+                  </div>
+                </form>
+              </section>
+            ),
+          });
+        }
+        continue;
+      }
+
       if (branch.detailMode === "edit") {
         const draft = taskEditDraftByTaskId[task.taskId];
         const warning = taskEditWarningByTaskId[task.taskId] ?? null;
@@ -4191,7 +4426,7 @@ export function App() {
     }
 
     return panels;
-  }, [agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskEditState, clearTaskEditWarning, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, openTaskEditDraft, openTaskRunHistory, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runTask, saveTaskEdit, scheduleLiveTaskDiscoveryRefresh, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskEditDraft]);
+  }, [agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskCloneState, clearTaskEditState, clearTaskEditWarning, cloneTask, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, openTaskEditDraft, openTaskRunHistory, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runTask, saveTaskEdit, scheduleLiveTaskDiscoveryRefresh, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskCloneDraftByTaskId, taskCloneSavingByTaskId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskCloneBinding, updateTaskCloneTitle, updateTaskEditDraft]);
 
   const runHistoryDrawer = runHistoryTask ? (() => {
     const selectedDetail = selectedRunHistoryItem
