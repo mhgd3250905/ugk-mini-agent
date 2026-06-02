@@ -1345,6 +1345,11 @@
   will-change: left, top;
 }
 
+.emap-task-child-branch-shell:has(.discovery-subcanvas-panel) {
+  contain: layout style;
+  overflow: visible;
+}
+
 .emap-dialog-branch,
 .agent-playground-branch {
   display: flex;
@@ -1756,6 +1761,7 @@
 
 .discovery-subcanvas-panel {
   height: auto;
+  overflow: visible;
   border-color: rgba(22, 124, 128, 0.26);
   background:
     linear-gradient(180deg, rgba(22, 124, 128, 0.06), transparent 48%),
@@ -2120,7 +2126,7 @@
 .discovery-generated-card-actions {
   position: absolute;
   top: 34px;
-  left: 7px;
+  right: 7px;
   z-index: 5;
   display: grid;
   gap: 5px;
@@ -2138,31 +2144,10 @@
   transition: opacity 120ms ease, transform 120ms ease;
 }
 
-.discovery-generated-card[data-generated-menu-placement="side-left"] .discovery-generated-card-actions {
-  top: 7px;
-  left: auto;
-  right: calc(100% + 8px);
-  transform: translateX(4px);
-}
-
-.discovery-generated-card[data-generated-menu-placement="side-right"] .discovery-generated-card-actions {
-  top: 7px;
-  left: calc(100% + 8px);
-  transform: translateX(-4px);
-}
-
 .discovery-generated-card.is-action-menu-open .discovery-generated-card-actions {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
-}
-
-.discovery-generated-card.is-action-menu-open[data-generated-menu-placement="side-left"] .discovery-generated-card-actions {
-  transform: translateX(0);
-}
-
-.discovery-generated-card.is-action-menu-open[data-generated-menu-placement="side-right"] .discovery-generated-card-actions {
-  transform: translateX(0);
 }
 
 .discovery-generated-action {
