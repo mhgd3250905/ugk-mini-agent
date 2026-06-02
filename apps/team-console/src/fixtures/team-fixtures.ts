@@ -1149,6 +1149,53 @@ function cloneMockWorkUnit(workUnit: TeamCanvasTask["workUnit"]): TeamCanvasTask
   };
 }
 
+function applyMockTemplateBindings(value: string, bindings: Record<string, string>): string {
+  return value.replace(/\{\{([A-Za-z][A-Za-z0-9_-]{0,63})\}\}/g, (match, key: string) => bindings[key] ?? match);
+}
+
+function buildMockTemplateBindings(task: TeamCanvasTask, input: TeamTaskCloneRequest): Record<string, string> {
+  const templateConfig = task.templateConfig;
+  if (!templateConfig) return {};
+  const raw = input.templateBindings ?? {};
+  const bindings: Record<string, string> = {};
+  for (const parameter of templateConfig.parameters) {
+    const rawValue = raw[parameter.id] ?? parameter.defaultValue;
+    if (typeof rawValue !== "string" || !rawValue.trim()) {
+      if (parameter.required !== false) {
+        throw { message: `template binding is required: ${parameter.id}` };
+      }
+      continue;
+    }
+    bindings[parameter.id] = rawValue.trim();
+  }
+  return bindings;
+}
+
+function applyMockBindingsToWorkUnit(
+  workUnit: TeamCanvasTask["workUnit"],
+  bindings: Record<string, string>,
+): TeamCanvasTask["workUnit"] {
+  return {
+    ...workUnit,
+    title: applyMockTemplateBindings(workUnit.title, bindings),
+    input: { text: applyMockTemplateBindings(workUnit.input.text, bindings) },
+    outputContract: { text: applyMockTemplateBindings(workUnit.outputContract.text, bindings) },
+    acceptance: { rules: workUnit.acceptance.rules.map((rule) => applyMockTemplateBindings(rule, bindings)) },
+  };
+}
+
+function applyMockBindingsToDiscoverySpec(
+  discoverySpec: TeamCanvasTask["discoverySpec"],
+  bindings: Record<string, string>,
+): TeamCanvasTask["discoverySpec"] {
+  if (!discoverySpec) return undefined;
+  return {
+    ...discoverySpec,
+    discoveryGoal: applyMockTemplateBindings(discoverySpec.discoveryGoal, bindings),
+    dispatchGoal: applyMockTemplateBindings(discoverySpec.dispatchGoal, bindings),
+  };
+}
+
 function cloneMockTeamTask(task: TeamCanvasTask): TeamCanvasTask {
   return {
     ...task,
@@ -1955,17 +2002,29 @@ export class MockTeamApi {
     const source = mockCanvasTasks.find((task) => task.taskId === taskId);
     if (!source) throw { message: `Task not found: ${taskId}` };
     if (source.generatedSource) throw { message: "generated Task cannot be cloned through this route" };
+    const bindings = buildMockTemplateBindings(source, input);
     const now = ts();
     const next: TeamCanvasTask = {
       ...cloneMockTeamTask(source),
       taskId: `mock_task_clone_${Math.random().toString(16).slice(2, 10)}`,
-      title: input.title?.trim() || `${source.title} copy`,
+      title: applyMockTemplateBindings(input.title?.trim() || `${source.title} copy`, bindings),
+      workUnit: applyMockBindingsToWorkUnit(cloneMockWorkUnit(source.workUnit), bindings),
+      discoverySpec: applyMockBindingsToDiscoverySpec(source.discoverySpec, bindings),
       status: source.status === "ready" ? "ready" : "drafting",
       createdAt: now,
       updatedAt: now,
       archived: false,
       generatedSource: undefined,
       templateConfig: undefined,
+      ...(source.templateConfig
+        ? {
+            templateInstance: {
+              schemaVersion: "team/task-template-instance-1",
+              sourceTaskId: source.taskId,
+              bindings,
+            },
+          }
+        : { templateInstance: undefined }),
     };
     mockCanvasTasks.unshift(cloneMockTeamTask(next));
     return {

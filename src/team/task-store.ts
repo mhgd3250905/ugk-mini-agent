@@ -178,8 +178,9 @@ export class TaskStore {
 		const bindings = templateConfig ? buildTemplateBindings(templateConfig, input.templateBindings) : {};
 		const workUnit = applyBindingsToWorkUnit(cloneWorkUnit(source.workUnit), bindings);
 		const discoverySpec = applyBindingsToDiscoverySpec(cloneDiscoverySpec(source.discoverySpec), bindings);
-		const title = input.title?.trim()
-			? input.title.trim()
+		const rawTitle = input.title?.trim();
+		const title = rawTitle
+			? replaceTemplatePlaceholders(rawTitle, bindings)
 			: replaceTemplatePlaceholders(source.title, bindings);
 		return await this.create({
 			title,

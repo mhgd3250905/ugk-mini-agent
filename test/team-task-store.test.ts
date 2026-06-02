@@ -162,6 +162,12 @@ test("TaskStore clones a template task by applying bindings and recording its te
 			bindings: { keyword: "GLM-5.1" },
 		});
 
+		const renamed = await (store as any).clone(template.taskId, {
+			title: "全网查询 {{keyword}} 副本",
+			templateBindings: { keyword: "Claude Code" },
+		});
+		assert.equal(renamed.title, "全网查询 Claude Code 副本");
+
 		await assert.rejects(
 			() => (store as any).clone(template.taskId, { templateBindings: {} }),
 			{ message: "template binding is required: keyword" },

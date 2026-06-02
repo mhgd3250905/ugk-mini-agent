@@ -204,12 +204,15 @@ test("POST /v1/team/tasks/:taskId/clone instantiates template bindings", async (
 		const cloneRes = await app.inject({
 			method: "POST",
 			url: `/v1/team/tasks/${template.taskId}/clone`,
-			payload: { templateBindings: { keyword: "MiniMax M3" } },
+			payload: {
+				title: "全网查询 {{keyword}} 副本",
+				templateBindings: { keyword: "MiniMax M3" },
+			},
 		});
 		assert.equal(cloneRes.statusCode, 201);
 		const cloned = cloneRes.json().task;
 		assert.notEqual(cloned.taskId, template.taskId);
-		assert.equal(cloned.title, "全网查询 MiniMax M3");
+		assert.equal(cloned.title, "全网查询 MiniMax M3 副本");
 		assert.equal(cloned.workUnit.input.text, "围绕 MiniMax M3 进行公开来源检索。");
 		assert.equal(cloned.templateConfig, undefined);
 		assert.deepEqual(cloned.templateInstance, {
