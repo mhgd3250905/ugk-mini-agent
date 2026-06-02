@@ -369,7 +369,9 @@ describe("App", () => {
       expect(within(card).getByRole("button", { name: "核查 Vultr 公开证据 操作菜单" })).toHaveAttribute("aria-expanded", "true");
       return card;
     });
-    expect(openVultrCard.querySelector(".discovery-generated-card-actions")).toHaveAttribute("role", "menu");
+    const vultrActionMenu = openVultrCard.querySelector(".discovery-generated-card-actions");
+    expect(vultrActionMenu).toHaveAttribute("role", "menu");
+    expect(within(vultrActionMenu as HTMLElement).getByRole("menuitem", { name: "运行记录" })).toBeInTheDocument();
     fireEvent.keyDown(openVultrCard, { key: "Escape" });
     await waitFor(() => {
       const card = getGeneratedCard(panel!, "task_generated_vultr");
@@ -384,6 +386,20 @@ describe("App", () => {
       expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeNull();
     });
     expect(screen.getByRole("button", { name: "Discovery 子画布" })).toBeInTheDocument();
+  });
+
+  it("opens generated Task run history from the Discovery subcanvas action menu", async () => {
+    const { container } = render(<App />);
+    const { panel } = await openMockDiscoverySubcanvas(container);
+    const vultrCard = getGeneratedCard(panel, "task_generated_vultr");
+    fireEvent.click(within(vultrCard).getByRole("button", { name: "核查 Vultr 公开证据 操作菜单" }));
+    fireEvent.click(within(vultrCard).getByRole("menuitem", { name: "运行记录" }));
+
+    const drawer = await screen.findByRole("complementary", { name: "核查 Vultr 公开证据 运行记录" });
+    expect(within(drawer).getByText("task_generated_vultr")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(drawer).getByText("暂无可见运行记录。")).toBeInTheDocument();
+    });
   });
 
   it("light-edits a mock generated Task inside the Discovery subcanvas without creating a root card", async () => {
