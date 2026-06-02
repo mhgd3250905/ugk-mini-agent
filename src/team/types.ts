@@ -182,6 +182,28 @@ export interface TeamAttemptMetadata {
 	discoveryDispatch?: TeamDiscoveryDispatchOutcome[];
 	discoveryGeneratedRuns?: TeamDiscoveryGeneratedRunOutcome[];
 }
+
+export interface TeamTaskRunAnnotation {
+	runId: string;
+	taskId: string;
+	best: boolean;
+	archived: boolean;
+	note?: string;
+	updatedAt: string;
+}
+
+export interface TeamTaskRunHistoryItem {
+	run: TeamRunState;
+	annotation: TeamTaskRunAnnotation;
+}
+
+export interface TeamTaskRunHistoryResponse {
+	taskId: string;
+	total: number;
+	limit: number;
+	offset: number;
+	runs: TeamTaskRunHistoryItem[];
+}
 export type CheckerVerdict = "pass" | "revise" | "fail";
 export type WatcherDecision = "accept_task" | "confirm_failed" | "request_revision";
 export type WatcherRevisionMode = "amend" | "redo";

@@ -607,6 +607,102 @@ describe("App", () => {
     expect(within(menu).queryByRole("button", { name: "Discovery 子画布" })).toBeNull();
   });
 
+  it("opens a per-Task run history drawer and lazily loads run details", async () => {
+    const liveTask = mockTeamTasks[0]!;
+    const latestRun = canvasTaskRun(liveTask.taskId, "run_history_latest");
+    latestRun.createdAt = "2026-06-02T01:00:00.000Z";
+    latestRun.startedAt = "2026-06-02T01:00:01.000Z";
+    latestRun.finishedAt = "2026-06-02T01:00:04.000Z";
+    const olderRun = canvasTaskRun(liveTask.taskId, "run_history_older");
+    olderRun.createdAt = "2026-06-01T01:00:00.000Z";
+    olderRun.startedAt = "2026-06-01T01:00:01.000Z";
+    olderRun.finishedAt = "2026-06-01T01:00:05.000Z";
+    const attempt = generatedAttempt(liveTask.taskId, "attempt_history_latest");
+
+    window.localStorage.setItem("ugk-team-console:data-source", "live");
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/v1/team/console-layout") return new Response(JSON.stringify({ state: null, updatedAt: null }), { status: 200 });
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 });
+      if (url.startsWith("/v1/team/task-runs/by-task?")) {
+        return byTaskRunsResponse({ [liveTask.taskId]: [latestRun] });
+      }
+      if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === "/v1/team/task-dependencies") return new Response(JSON.stringify({ dependencies: [] }), { status: 200 });
+      if (url === "/v1/team/source-nodes") return new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 });
+      if (url === "/v1/team/source-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === `/v1/team/tasks/${liveTask.taskId}/run-history?limit=50&offset=0`) {
+        return new Response(JSON.stringify({
+          taskId: liveTask.taskId,
+          total: 2,
+          limit: 50,
+          offset: 0,
+          runs: [
+            { run: latestRun, annotation: { runId: latestRun.runId, taskId: liveTask.taskId, best: false, archived: false, updatedAt: "2026-06-02T01:00:05.000Z" } },
+            { run: olderRun, annotation: { runId: olderRun.runId, taskId: liveTask.taskId, best: true, archived: false, note: "质量最好", updatedAt: "2026-06-01T01:00:05.000Z" } },
+          ],
+        }), { status: 200 });
+      }
+      if (url === `/v1/team/task-runs/${latestRun.runId}/tasks/${liveTask.taskId}/attempts`) {
+        return new Response(JSON.stringify({ attempts: [attempt] }), { status: 200 });
+      }
+      if (url === `/v1/team/task-runs/${latestRun.runId}/tasks/${liveTask.taskId}/attempts/${attempt.attemptId}/files/accepted-result.md`) {
+        return new Response("accepted history result", { status: 200 });
+      }
+      if (url === `/v1/team/task-runs/${latestRun.runId}/annotation` && init?.method === "PATCH") {
+        return new Response(JSON.stringify({
+          annotation: { runId: latestRun.runId, taskId: liveTask.taskId, best: true, archived: false, updatedAt: "2026-06-02T01:00:06.000Z" },
+        }), { status: 200 });
+      }
+      if (url === `/v1/team/task-runs/${olderRun.runId}/annotation` && init?.method === "PATCH") {
+        return new Response(JSON.stringify({
+          annotation: { runId: olderRun.runId, taskId: liveTask.taskId, best: true, archived: true, note: "质量最好", updatedAt: "2026-06-01T01:00:06.000Z" },
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    const atlas = await waitFor(() => getAtlasNodes(container));
+    const taskNode = await within(atlas).findByRole("button", { name: liveTask.title });
+    fireEvent.click(taskNode);
+    const menu = await screen.findByLabelText(`${liveTask.title} 操作菜单`);
+
+    fireEvent.click(within(menu).getByRole("button", { name: "运行记录" }));
+    const drawer = await screen.findByRole("complementary", { name: `${liveTask.title} 运行记录` });
+
+    expect(within(drawer).getByText("run_history_latest")).toBeInTheDocument();
+    expect(within(drawer).getByText("run_history_older")).toBeInTheDocument();
+    expect(within(drawer).getByText("质量最好")).toBeInTheDocument();
+    expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).not.toContain(
+      `/v1/team/task-runs/${latestRun.runId}/tasks/${liveTask.taskId}/attempts`,
+    );
+
+    fireEvent.click(within(drawer).getByRole("button", { name: /run_history_latest/ }));
+    await waitFor(() => {
+      expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toContain(
+        `/v1/team/task-runs/${latestRun.runId}/tasks/${liveTask.taskId}/attempts`,
+      );
+    });
+    expect(await within(drawer).findByText("accepted-result.md")).toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole("button", { name: /accepted-result.md/ }));
+    expect(await within(drawer).findByText("accepted history result")).toBeInTheDocument();
+
+    fireEvent.click(within(drawer).getByRole("button", { name: "标为最佳" }));
+    await waitFor(() => {
+      expect(within(drawer).getByText("最佳")).toBeInTheDocument();
+    });
+
+    fireEvent.click(within(drawer).getAllByRole("button", { name: "归档记录" })[1]!);
+    await waitFor(() => {
+      expect(within(drawer).queryByText("run_history_older")).toBeNull();
+    });
+  });
+
   it("restores an open Discovery subcanvas from stored Task branch state", async () => {
     window.localStorage.setItem("ugk-team-console:canvas-ui-state:v1", JSON.stringify({
       schemaVersion: 1,
@@ -2276,24 +2372,30 @@ describe("App", () => {
       render(<App />);
       fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(7));
-      expect(fetch).toHaveBeenNthCalledWith(1, "/v1/agents");
-      expect(fetch).toHaveBeenNthCalledWith(2, "/v1/agents/status", {
+      await waitFor(() => expect(fetch).toHaveBeenCalledWith("/v1/team/source-connections"));
+      const calledUrls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+      expect(calledUrls).toEqual(expect.arrayContaining([
+        "/v1/agents",
+        "/v1/team/tasks",
+        "/v1/team/task-connections",
+        "/v1/team/task-dependencies",
+        "/v1/team/source-nodes",
+        "/v1/team/source-connections",
+      ]));
+      expect(fetch).toHaveBeenCalledWith("/v1/agents/status", {
         method: "GET",
         headers: { accept: "application/json" },
       });
-      expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/tasks");
-      expect(fetch).toHaveBeenNthCalledWith(4, "/v1/team/task-connections");
-      expect(fetch).toHaveBeenNthCalledWith(5, "/v1/team/task-dependencies");
-      expect(fetch).toHaveBeenNthCalledWith(6, "/v1/team/source-nodes");
-      expect(fetch).toHaveBeenNthCalledWith(7, "/v1/team/source-connections");
       expect(screen.queryByText("运行图：")).toBeNull();
       expect(screen.queryByRole("button", { name: "Agent workspace" })).toBeNull();
       expect(screen.queryByRole("button", { name: "最新 Run" })).toBeNull();
       expect(screen.queryByText("执行运行")).toBeNull();
       expect(screen.queryByText("Research vendor A")).toBeNull();
-      expect(fetch).not.toHaveBeenCalledWith("/v1/team/plans");
-      expect(fetch).not.toHaveBeenCalledWith("/v1/team/runs");
+      expect(calledUrls).not.toContain("/v1/team/plans");
+      expect(calledUrls).not.toContain("/v1/team/runs");
+      expect(calledUrls.filter((url) => /^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url))).toHaveLength(0);
+      expect(calledUrls.some((url) => url.includes("/run-history"))).toBe(false);
+      expect(calledUrls.some((url) => url.includes("/attempts"))).toBe(false);
       expect(await screen.findByText(liveTask.title)).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "添加 Agent" })).toBeEnabled();
     });
@@ -2333,17 +2435,20 @@ describe("App", () => {
       render(<App />);
       fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(7));
-      expect(fetch).toHaveBeenNthCalledWith(1, "/v1/agents");
-      expect(fetch).toHaveBeenNthCalledWith(2, "/v1/agents/status", {
+      await waitFor(() => expect(fetch).toHaveBeenCalledWith("/v1/team/source-connections"));
+      const calledUrls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+      expect(calledUrls).toEqual(expect.arrayContaining([
+        "/v1/agents",
+        "/v1/team/tasks",
+        "/v1/team/task-connections",
+        "/v1/team/task-dependencies",
+        "/v1/team/source-nodes",
+        "/v1/team/source-connections",
+      ]));
+      expect(fetch).toHaveBeenCalledWith("/v1/agents/status", {
         method: "GET",
         headers: { accept: "application/json" },
       });
-      expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/tasks");
-      expect(fetch).toHaveBeenNthCalledWith(4, "/v1/team/task-connections");
-      expect(fetch).toHaveBeenNthCalledWith(5, "/v1/team/task-dependencies");
-      expect(fetch).toHaveBeenNthCalledWith(6, "/v1/team/source-nodes");
-      expect(fetch).toHaveBeenNthCalledWith(7, "/v1/team/source-connections");
     });
 
     it("keeps Task creation disabled in mock mode", () => {
@@ -2705,7 +2810,7 @@ describe("App", () => {
       first.unmount();
 
       const second = render(<App />);
-      expect(screen.getByRole("combobox")).toHaveValue("live");
+      expect(await screen.findByRole("combobox", undefined, { timeout: 2500 })).toHaveValue("live");
 
       const restoredAgentNode = await within(getAtlasNodes(second.container)).findByRole("button", { name: "主 Agent" }) as HTMLElement;
       expect(Number.parseFloat(restoredAgentNode.style.left)).toBeCloseTo(430, 4);
@@ -2757,7 +2862,7 @@ describe("App", () => {
       first.unmount();
 
       const second = render(<App />);
-      expect(screen.getByRole("combobox")).toHaveValue("live");
+      expect(await screen.findByRole("combobox", undefined, { timeout: 2500 })).toHaveValue("live");
       const restoredTaskNode = await within(getAtlasNodes(second.container)).findByRole("button", { name: "调查 Medtrum 云资产" }) as HTMLElement;
       expect(Number.parseFloat(restoredTaskNode.style.left)).toBeCloseTo(350, 4);
       expect(Number.parseFloat(restoredTaskNode.style.top)).toBeCloseTo(255, 4);
@@ -2925,7 +3030,12 @@ describe("App", () => {
       const { container } = render(<App />);
       fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(7));
+      await waitFor(() => expect(fetch).toHaveBeenCalledWith("/v1/team/source-connections"));
+      const calledUrls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+      expect(calledUrls).not.toContain("/v1/team/runs");
+      expect(calledUrls.filter((url) => /^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url))).toHaveLength(0);
+      expect(calledUrls.some((url) => url.includes("/run-history"))).toBe(false);
+      expect(calledUrls.some((url) => url.includes("/attempts"))).toBe(false);
       expect(screen.queryByText("没有可显示的 live run")).toBeNull();
       expect(screen.getByRole("button", { name: "添加 Agent" })).toBeEnabled();
 

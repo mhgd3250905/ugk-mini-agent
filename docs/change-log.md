@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-02 — Team Task run history drawer
+
+- **主题**: 为每个 Team Console Task 增加“运行记录”抽屉，按 Task 查看历史 Canvas Task runs、结果引用、过程/文件详情、最佳标记和软归档状态；历史记录不渲染进主画布节点。
+- **影响范围**: `5174` Task 操作菜单、右侧 run history drawer、Canvas Task run history API 和 `.data/team/task-runs/run-annotations.json` 标注索引；既有 run/attempt/result/process 文件仍是真实来源。
+- **验证**: `node --test --import tsx test\team-task-run-routes.test.ts`、`npm --prefix apps\team-console run test -- --run src\tests\app-live-data.test.tsx src\tests\app-run-observer.test.tsx`、`npm --prefix apps\team-console run test -- --run src\tests\team-api.test.ts --testNamePattern "run history|annotations"`、`npm --prefix apps\team-console run build`、`npx tsc --noEmit`。
+- **对应入口**: `src/team/routes.ts`、`src/team/task-run-annotation-store.ts`、`src/team/types.ts`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/app.css`、`apps/team-console/src/api/team-api.ts`。
+
 ## 2026-06-02 — Team Console canvas restore loading polish
 
 - **主题**: Team Console 画布恢复态改为带动画标记和滚动进度条的 `role="status"` loading，并设置 1 秒最小可见时长，避免恢复过快时文字一闪而过。

@@ -187,6 +187,38 @@ export interface TeamAttemptMetadata {
   discoveryGeneratedRuns?: TeamDiscoveryGeneratedRunOutcome[];
 }
 
+export interface TeamTaskRunAnnotation {
+  runId: string;
+  taskId: string;
+  best: boolean;
+  archived: boolean;
+  note?: string;
+  updatedAt: string;
+}
+
+export interface TeamTaskRunHistoryItem {
+  run: TeamRunState;
+  annotation: TeamTaskRunAnnotation;
+}
+
+export interface TeamTaskRunHistoryResponse {
+  taskId: string;
+  total: number;
+  limit: number;
+  offset: number;
+  runs: TeamTaskRunHistoryItem[];
+}
+
+export interface TeamTaskRunAnnotationMutationResponse {
+  annotation: TeamTaskRunAnnotation;
+}
+
+export interface TeamTaskRunAnnotationPatchRequest {
+  best?: boolean;
+  archived?: boolean;
+  note?: string | null;
+}
+
 export interface TeamTask {
   id: string;
   type?: TaskType;

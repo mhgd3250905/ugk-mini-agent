@@ -19,7 +19,7 @@ import { SourceNodeStore, type UpdateSourceNodeInput } from "./source-node-store
 import { MockRoleRunner } from "./role-runner.js";
 import type { TeamRoleRunner } from "./role-runner.js";
 import { buildRunDetailResponse } from "./run-presenter.js";
-import type { TeamAttemptMetadata, TeamDiscoveryGeneratedTaskSummary, TeamRunState } from "./types.js";
+import type { TeamAttemptMetadata, TeamDiscoveryGeneratedTaskSummary, TeamRunState, TeamTaskRunHistoryResponse } from "./types.js";
 import { AgentProfileRoleRunner } from "./agent-profile-role-runner.js";
 import { closeBrowserTargetsForScope } from "../agent/browser-cleanup.js";
 import { loadAgentProfilesSync } from "../agent/agent-profile-catalog.js";
@@ -29,6 +29,7 @@ import { idParam, jsonBody, optionalJsonBody, parseIncludeArchived, parseInclude
 import { sendMappedError, sendNotFound } from "./route-errors.js";
 import { sendTaskResponse } from "./route-presenters.js";
 import { isPathInside, resolveContentType } from "../routes/file-route-utils.js";
+import { TaskRunAnnotationStore } from "./task-run-annotation-store.js";
 
 export interface TeamRouteOptions {
 	teamDataDir: string;
@@ -247,6 +248,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	const workspace = new RunWorkspace(options.teamDataDir);
 	const taskRunDataDir = join(options.teamDataDir, "task-runs");
 	const taskRunWorkspace = new RunWorkspace(taskRunDataDir);
+	const taskRunAnnotationStore = new TaskRunAnnotationStore(taskRunDataDir);
 	const taskRunService = new CanvasTaskRunService({
 		taskStore,
 		workspace: taskRunWorkspace,
@@ -576,6 +578,39 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		reply.send({ runs });
 	});
 
+	app.get("/v1/team/tasks/:taskId/run-history", async (request, reply) => {
+		const taskId = idParam(request, "taskId");
+		const task = await taskStore.get(taskId);
+		if (!task) { sendNotFound(reply, "task"); return; }
+		const query = request.query as { limit?: string; offset?: string };
+		const rawLimit = query.limit != null ? Number(query.limit) : 50;
+		const rawOffset = query.offset != null ? Number(query.offset) : 0;
+		if (!Number.isFinite(rawLimit) || rawLimit <= 0) {
+			reply.code(400).send({ error: "limit must be a positive number" });
+			return;
+		}
+		if (!Number.isFinite(rawOffset) || rawOffset < 0) {
+			reply.code(400).send({ error: "offset must be a non-negative number" });
+			return;
+		}
+		const limit = Math.min(100, Math.floor(rawLimit));
+		const offset = Math.floor(rawOffset);
+		const includeArchived = parseIncludeArchived(request);
+		const runs = await taskRunService.listRuns(taskId);
+		const annotations = await taskRunAnnotationStore.listForTask(runs.map(run => run.runId), taskId);
+		const visibleRuns = runs
+			.map(run => ({ run: summarizeRunState(run), annotation: annotations[run.runId]! }))
+			.filter(item => includeArchived || !item.annotation.archived);
+		const response: TeamTaskRunHistoryResponse = {
+			taskId,
+			total: visibleRuns.length,
+			limit,
+			offset,
+			runs: visibleRuns.slice(offset, offset + limit),
+		};
+		reply.send(response);
+	});
+
 	app.post("/v1/team/tasks/:taskId/runs", async (request, reply) => {
 		const taskId = idParam(request, "taskId");
 		const body = optionalJsonBody(request);
@@ -654,6 +689,25 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			reply.send(state);
 		} catch (err) {
 			sendMappedError(reply, err, [["not found", 404], ["terminal", 409]]);
+		}
+	});
+
+	app.patch("/v1/team/task-runs/:runId/annotation", async (request, reply) => {
+		const runId = idParam(request, "runId");
+		const state = await taskRunService.getRun(runId);
+		if (!state?.source?.taskId) { sendNotFound(reply, "task run"); return; }
+		const body = jsonBody(request);
+		const patch: { best?: boolean; archived?: boolean; note?: string | null } = {};
+		if (Object.hasOwn(body, "best")) patch.best = body.best === true;
+		if (Object.hasOwn(body, "archived")) patch.archived = body.archived === true;
+		if (Object.hasOwn(body, "note")) {
+			patch.note = typeof body.note === "string" ? body.note : null;
+		}
+		try {
+			const annotation = await taskRunAnnotationStore.patch(runId, state.source.taskId, patch);
+			reply.send({ annotation });
+		} catch (err) {
+			sendMappedError(reply, err, [["lock busy", 409]], 500);
 		}
 	});
 

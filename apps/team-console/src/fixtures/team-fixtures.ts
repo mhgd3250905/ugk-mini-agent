@@ -35,6 +35,10 @@ import type {
   TeamTaskState,
   TeamCanvasTaskRunByTaskListResponse,
   TeamDiscoveryGeneratedTaskSummary,
+  TeamTaskRunAnnotation,
+  TeamTaskRunAnnotationMutationResponse,
+  TeamTaskRunAnnotationPatchRequest,
+  TeamTaskRunHistoryResponse,
   TaskDefinition,
   TeamAttemptMetadata,
 } from "../api/team-types";
@@ -1182,6 +1186,7 @@ let mockTaskConnectionCounter = 0;
 let mockTaskRunsByTaskId = new Map<string, TeamRunState[]>();
 let mockTaskRunAttempts = new Map<string, TeamAttemptMetadata[]>();
 let mockTaskRunFiles = new Map<string, string>();
+let mockTaskRunAnnotations = new Map<string, TeamTaskRunAnnotation>();
 let mockTaskConnections: TeamTaskConnection[] = [];
 let mockTaskDependencies: TeamTaskDependency[] = [];
 let mockTaskDependencyCounter = 0;
@@ -1284,6 +1289,7 @@ export function resetMockTeamApiState() {
   mockTaskRunsByTaskId = new Map();
   mockTaskRunAttempts = new Map();
   mockTaskRunFiles = new Map();
+  mockTaskRunAnnotations = new Map();
   mockTaskConnections = [];
   mockTaskDependencies = [];
   mockTaskDependencyCounter = 0;
@@ -1314,6 +1320,20 @@ function cloneTeamRunState(run: TeamRunState): TeamRunState {
     ])),
     summary: { ...run.summary },
   };
+}
+
+function defaultMockTaskRunAnnotation(runId: string, taskId: string): TeamTaskRunAnnotation {
+  return {
+    runId,
+    taskId,
+    best: false,
+    archived: false,
+    updatedAt: ts(),
+  };
+}
+
+function cloneMockTaskRunAnnotation(annotation: TeamTaskRunAnnotation): TeamTaskRunAnnotation {
+  return { ...annotation };
 }
 
 function createMockTaskRun(task: TeamCanvasTask): TeamRunState {
@@ -1790,6 +1810,27 @@ export class MockTeamApi {
     return (mockTaskRunsByTaskId.get(taskId) ?? []).map(cloneTeamRunState);
   }
 
+  async listTaskRunHistory(
+    taskId: string,
+    options?: { limit?: number; offset?: number; includeArchived?: boolean },
+  ): Promise<TeamTaskRunHistoryResponse> {
+    const runs = (mockTaskRunsByTaskId.get(taskId) ?? [])
+      .map((run) => ({
+        run: cloneTeamRunState(run),
+        annotation: cloneMockTaskRunAnnotation(mockTaskRunAnnotations.get(run.runId) ?? defaultMockTaskRunAnnotation(run.runId, taskId)),
+      }))
+      .filter((item) => options?.includeArchived || !item.annotation.archived);
+    const limit = options?.limit ?? 50;
+    const offset = options?.offset ?? 0;
+    return {
+      taskId,
+      total: runs.length,
+      limit,
+      offset,
+      runs: runs.slice(offset, offset + limit),
+    };
+  }
+
   async listTaskRunsByTaskIds(taskIds: string[], options?: { limit?: number; view?: "summary" }): Promise<TeamCanvasTaskRunByTaskListResponse> {
     const runsByTaskId: Record<string, TeamRunState[]> = {};
     for (const taskId of taskIds) {
@@ -1838,6 +1879,38 @@ export class MockTeamApi {
       return cloneTeamRunState(run);
     }
     throw { message: `Task run not found: ${runId}` };
+  }
+
+  async updateTaskRunAnnotation(runId: string, patch: TeamTaskRunAnnotationPatchRequest): Promise<TeamTaskRunAnnotationMutationResponse> {
+    let taskId: string | null = null;
+    for (const [candidateTaskId, runs] of mockTaskRunsByTaskId.entries()) {
+      if (runs.some((candidate) => candidate.runId === runId)) {
+        taskId = candidateTaskId;
+        break;
+      }
+    }
+    if (!taskId) throw { message: `Task run not found: ${runId}` };
+    const current = mockTaskRunAnnotations.get(runId) ?? defaultMockTaskRunAnnotation(runId, taskId);
+    const updated: TeamTaskRunAnnotation = {
+      ...current,
+      updatedAt: ts(),
+    };
+    if (patch.best !== undefined) updated.best = patch.best;
+    if (patch.archived !== undefined) updated.archived = patch.archived;
+    if (Object.hasOwn(patch, "note")) {
+      const note = typeof patch.note === "string" ? patch.note.trim() : "";
+      if (note) updated.note = note;
+      else delete updated.note;
+    }
+    if (updated.best) {
+      for (const [otherRunId, annotation] of mockTaskRunAnnotations.entries()) {
+        if (otherRunId !== runId && annotation.taskId === taskId && annotation.best) {
+          mockTaskRunAnnotations.set(otherRunId, { ...annotation, best: false, updatedAt: updated.updatedAt });
+        }
+      }
+    }
+    mockTaskRunAnnotations.set(runId, updated);
+    return { annotation: cloneMockTaskRunAnnotation(updated) };
   }
 
   async listTaskRunAttempts(runId: string, taskId: string, options?: { view?: "dispatch-diagnostics" }): Promise<TeamAttemptMetadata[]> {

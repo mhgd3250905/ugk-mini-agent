@@ -1206,3 +1206,159 @@ test("GET /v1/team/task-runs/by-task returns 400 for more than 100 unique taskId
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+test("GET /v1/team/tasks/:taskId/run-history returns paged task run summaries with annotations", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const taskRes = await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload });
+		assert.equal(taskRes.statusCode, 201);
+		const task = taskRes.json().task;
+
+		const runIds: string[] = [];
+		for (let i = 0; i < 3; i++) {
+			const runRes = await app.inject({ method: "POST", url: `/v1/team/tasks/${task.taskId}/runs` });
+			assert.equal(runRes.statusCode, 201);
+			const run = runRes.json() as TeamRunState;
+			runIds.push(run.runId);
+			await waitForTerminalRun(app, run.runId);
+		}
+
+		const bestRes = await app.inject({
+			method: "PATCH",
+			url: `/v1/team/task-runs/${runIds[1]}/annotation`,
+			payload: { best: true, note: "质量最好" },
+		});
+		assert.equal(bestRes.statusCode, 200);
+
+		const historyRes = await app.inject({
+			method: "GET",
+			url: `/v1/team/tasks/${task.taskId}/run-history?limit=2&offset=0`,
+		});
+		assert.equal(historyRes.statusCode, 200);
+		const body = historyRes.json() as {
+			total: number;
+			limit: number;
+			offset: number;
+			runs: Array<{ run: TeamRunState; annotation: { best: boolean; archived: boolean; note?: string } }>;
+		};
+		assert.equal(body.total, 3);
+		assert.equal(body.limit, 2);
+		assert.equal(body.offset, 0);
+		assert.equal(body.runs.length, 2);
+		assert.deepEqual(body.runs.map(item => item.run.runId), [runIds[2], runIds[1]]);
+		assert.equal(body.runs[1]!.annotation.best, true);
+		assert.equal(body.runs[1]!.annotation.note, "质量最好");
+		assert.equal(body.runs[0]!.run.source?.boundInputs, undefined, "history summaries must omit heavy boundInputs");
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("PATCH /v1/team/task-runs/:runId/annotation keeps one best run per task", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const taskRes = await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload });
+		assert.equal(taskRes.statusCode, 201);
+		const task = taskRes.json().task;
+
+		const firstRunRes = await app.inject({ method: "POST", url: `/v1/team/tasks/${task.taskId}/runs` });
+		assert.equal(firstRunRes.statusCode, 201);
+		const firstRun = firstRunRes.json() as TeamRunState;
+		await waitForTerminalRun(app, firstRun.runId);
+
+		const secondRunRes = await app.inject({ method: "POST", url: `/v1/team/tasks/${task.taskId}/runs` });
+		assert.equal(secondRunRes.statusCode, 201);
+		const secondRun = secondRunRes.json() as TeamRunState;
+		await waitForTerminalRun(app, secondRun.runId);
+
+		assert.equal((await app.inject({
+			method: "PATCH",
+			url: `/v1/team/task-runs/${firstRun.runId}/annotation`,
+			payload: { best: true },
+		})).statusCode, 200);
+		assert.equal((await app.inject({
+			method: "PATCH",
+			url: `/v1/team/task-runs/${secondRun.runId}/annotation`,
+			payload: { best: true },
+		})).statusCode, 200);
+
+		const historyRes = await app.inject({ method: "GET", url: `/v1/team/tasks/${task.taskId}/run-history` });
+		assert.equal(historyRes.statusCode, 200);
+		const bestRuns = historyRes.json().runs.filter((item: { annotation: { best: boolean } }) => item.annotation.best);
+		assert.equal(bestRuns.length, 1);
+		assert.equal(bestRuns[0].run.runId, secondRun.runId);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("run annotation soft archive hides history rows without deleting attempts", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const taskRes = await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload });
+		assert.equal(taskRes.statusCode, 201);
+		const task = taskRes.json().task;
+
+		const runRes = await app.inject({ method: "POST", url: `/v1/team/tasks/${task.taskId}/runs` });
+		assert.equal(runRes.statusCode, 201);
+		const run = runRes.json() as TeamRunState;
+		await waitForTerminalRun(app, run.runId);
+
+		const archiveRes = await app.inject({
+			method: "PATCH",
+			url: `/v1/team/task-runs/${run.runId}/annotation`,
+			payload: { archived: true },
+		});
+		assert.equal(archiveRes.statusCode, 200);
+
+		const hiddenRes = await app.inject({ method: "GET", url: `/v1/team/tasks/${task.taskId}/run-history` });
+		assert.equal(hiddenRes.statusCode, 200);
+		assert.equal(hiddenRes.json().total, 0);
+		assert.equal(hiddenRes.json().runs.length, 0);
+
+		const visibleRes = await app.inject({
+			method: "GET",
+			url: `/v1/team/tasks/${task.taskId}/run-history?includeArchived=1`,
+		});
+		assert.equal(visibleRes.statusCode, 200);
+		assert.equal(visibleRes.json().total, 1);
+		assert.equal(visibleRes.json().runs[0].annotation.archived, true);
+
+		const attemptsRes = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/${run.runId}/tasks/${task.taskId}/attempts`,
+		});
+		assert.equal(attemptsRes.statusCode, 200);
+		assert.equal(attemptsRes.json().attempts.length, 1, "soft archive must not delete attempt records");
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("task run annotation rejects missing and non Canvas Task runs", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const missingRes = await app.inject({
+			method: "PATCH",
+			url: "/v1/team/task-runs/run_missing/annotation",
+			payload: { best: true },
+		});
+		assert.equal(missingRes.statusCode, 404);
+
+		const workspace = new RunWorkspace(teamDir);
+		const plan = singleTaskPlan("plan_task");
+		const planRun = await workspace.createRun(plan, plan.defaultTeamUnitId);
+		const res = await app.inject({
+			method: "PATCH",
+			url: `/v1/team/task-runs/${planRun.runId}/annotation`,
+			payload: { best: true },
+		});
+		assert.equal(res.statusCode, 404);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});

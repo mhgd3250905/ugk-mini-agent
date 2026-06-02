@@ -83,6 +83,9 @@ git log --oneline origin/main..HEAD
 - `/v1/team/task-runs/by-task?view=summary` 会省略 heavy `source.boundInputs`；`/v1/team/task-runs/:runId/tasks/:taskId/attempts?view=dispatch-diagnostics` 会省略 heavy role process 字段，只保留 dispatch diagnostics 所需摘要。
 - Team Console live 模式画布 UI 状态已改为通过 `/v1/team/console-layout` 共享保存；从 `3000`、`5174` 等不同入口打开时，节点位置、viewport、展开分支、dock/收纳状态保持一致。mock/fixture 仍保留本地隔离。
 - Team Console 画布恢复态已设置 1 秒最小可见时长，并使用 `role="status"` 的动画 loading 与滚动进度条；刷新时不会再让 root filter 或恢复文案一闪而过。
+- Team Console Task 操作菜单已增加“运行记录”入口，按 Task 打开画布外右侧抽屉；历史列表只请求 summary，不把全部历史 run/attempt/file 渲染进 Atlas 主画布，点击单条 run 后才懒加载 attempts 和文件内容。
+- Canvas Task run 标注已独立持久化到 `.data/team/task-runs/run-annotations.json`；支持每个 Task 单一 best 标记、软归档和备注，不改写 `.data/team/task-runs/runs/<runId>` 下的 run/attempt/result/process 文件本体。
+- 新增 `GET /v1/team/tasks/:taskId/run-history` 和 `PATCH /v1/team/task-runs/:runId/annotation`；详情仍复用既有 `GET /v1/team/task-runs/:runId`、attempts 和 attempt file API。
 - Canvas Task run 会记录 `source.publicBaseUrl`；`PUBLIC_BASE_URL=auto` 表示按当前请求 host/proto 或本地端口自动推导公开 base URL。
 - Team role session 注入 `ARTIFACT_PUBLIC_DIR` 和 `ARTIFACT_PUBLIC_BASE_URL`；需要交付的报告/HTML 应写到 public output 目录，并通过 `/v1/team/task-runs/:runId/artifacts/:roleKey/:role/...` 稳定访问。
 - `/playground/agents` 子 Agent 技能区已支持从主 Agent 覆盖更新单个技能。
@@ -127,6 +130,12 @@ git log --oneline origin/main..HEAD
 - `npm --prefix apps/team-console run build`：passed。
 - `npx vitest run src/tests/app-canvas-state.test.tsx src/tests/app-live-data.test.tsx src/tests/team-api.test.ts --testNamePattern "shared Team Console layout API|Refresh Task|summary|dispatch"`：13 passed，145 skipped。
 - `docker exec -w /app/apps/team-console ugk-pi-ugk-pi-team-console-1 npx vitest run src/tests/app-canvas-state.test.tsx --testNamePattern "root filter|delayed shared"`：2 passed，6 skipped。
+- `node --test --import tsx test\team-task-run-routes.test.ts`：32 passed。
+- `npm --prefix apps\team-console run test -- --run src\tests\app-live-data.test.tsx src\tests\app-run-observer.test.tsx`：86 passed。
+- `npm --prefix apps\team-console run test -- --run src\tests\team-api.test.ts --testNamePattern "run history|annotations"`：2 passed，85 skipped。
+- `npm --prefix apps\team-console run build`：passed。
+- `npx tsc --noEmit`：passed。
+- 浏览器验证 `http://127.0.0.1:5174/`：Live API Task “运行记录”抽屉打开成功；只打开抽屉时请求 `run-history`，点击 run 后才请求 attempts，点击文件后在抽屉内展示预览；浅色/深色抽屉滚动布局正常。
 - Docker compose 已按项目口径启动；`http://127.0.0.1:3000/playground`、`http://127.0.0.1:3000/healthz`、`http://127.0.0.1:5174/` 均返回 200。
 
 ## 未完成 / 风险

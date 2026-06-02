@@ -662,6 +662,68 @@ describe("LiveTeamApi", () => {
     expect(runs[0]?.runId).toBe("run_canvas_1");
   });
 
+  it("lists live Canvas Task run history with paging and archived rows", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      taskId: "task/a b",
+      total: 1,
+      limit: 20,
+      offset: 40,
+      runs: [{
+        run: {
+          runId: "run_canvas_1",
+          planId: "canvas_task_task_1",
+          source: { type: "canvas-task", taskId: "task/a b" },
+          teamUnitId: "canvas_task_unit_task_1",
+          status: "completed",
+          createdAt: "2026-05-25T00:00:00.000Z",
+          startedAt: "2026-05-25T00:00:00.000Z",
+          finishedAt: "2026-05-25T00:00:01.000Z",
+          currentTaskId: null,
+          taskStates: {},
+          summary: { totalTasks: 1, succeededTasks: 1, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+        },
+        annotation: {
+          runId: "run_canvas_1",
+          taskId: "task/a b",
+          best: true,
+          archived: false,
+          note: "质量最好",
+          updatedAt: "2026-05-25T00:00:03.000Z",
+        },
+      }],
+    }), { status: 200 }));
+
+    const history = await api.listTaskRunHistory("task/a b", { limit: 20, offset: 40, includeArchived: true });
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/tasks/task%2Fa%20b/run-history?limit=20&offset=40&includeArchived=1");
+    expect(history.runs[0]?.run.runId).toBe("run_canvas_1");
+    expect(history.runs[0]?.annotation.best).toBe(true);
+  });
+
+  it("patches live Canvas Task run annotations", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      annotation: {
+        runId: "run/a b",
+        taskId: "task_1",
+        best: true,
+        archived: false,
+        note: "质量最好",
+        updatedAt: "2026-05-25T00:00:03.000Z",
+      },
+    }), { status: 200 }));
+
+    const response = await api.updateTaskRunAnnotation("run/a b", { best: true, note: "质量最好" });
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/task-runs/run%2Fa%20b/annotation", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ best: true, note: "质量最好" }),
+    });
+    expect(response.annotation.best).toBe(true);
+  });
+
   it("lists live Canvas Task run summaries by task id with limit and summary view", async () => {
     const api = new LiveTeamApi("/v1/team");
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({

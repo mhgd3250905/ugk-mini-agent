@@ -81,8 +81,10 @@ Team Console shell 的 Live API 模式会真实请求：
 - `POST /v1/team/task-dependencies`
 - `DELETE /v1/team/task-dependencies/:dependencyId`
 - `GET /v1/team/tasks/:taskId/runs`
+- `GET /v1/team/tasks/:taskId/run-history`
 - `POST /v1/team/tasks/:taskId/runs`
 - `GET /v1/team/task-runs/:runId`
+- `PATCH /v1/team/task-runs/:runId/annotation`
 - `POST /v1/team/task-runs/:runId/cancel`
 - `GET /v1/team/task-runs/:runId/tasks/:taskId/attempts`
 - `GET /v1/team/task-runs/:runId/tasks/:taskId/attempts/:attemptId/files/:fileName`
@@ -91,6 +93,8 @@ Team Console shell 的 Live API 模式会真实请求：
 - `POST /v1/team/tasks/:taskId/archive`
 
 Run observer 文件详情不会只靠扩展名判断格式：内容去掉首尾空白后以 `{` 或 `[` 开头、且能解析为 JSON object/array 时，会优先按 JSON pretty print 展示；普通 `.md` 仍走安全 Markdown 渲染。这样 `accepted-result.md` 里承载机器可读 JSON 时不会被 Markdown 链接化或压成不可读长行。
+
+Task 操作菜单里的“运行记录”打开右侧抽屉，只按当前 Task 读取 `GET /v1/team/tasks/:taskId/run-history` 的轻量历史 summary。默认隐藏软归档 run，可切换显示；标记“最佳”通过 `PATCH /v1/team/task-runs/:runId/annotation` 写入 run annotation，并保证同一 Task 只有一个 best。点击某条 run 后才复用既有 attempts/files 接口懒加载过程摘要和文件预览，主 Atlas 画布不会渲染全部历史 attempts/files。第一版“删除”语义是软归档，不删除 `.data/team/task-runs/runs/<runId>` 下的真实 run 目录。
 
 Canvas Task role session 会收到 `ARTIFACT_PUBLIC_DIR` 和 `ARTIFACT_PUBLIC_BASE_URL`。需要交付给用户或 checker 访问的 HTML/报告文件应写入该 public output 目录，并输出基于 `/v1/team/task-runs/:runId/artifacts/:roleKey/:role/...` 的稳定链接；不要在 worker 输出里混入临时 `localhost` 端口链接。
 

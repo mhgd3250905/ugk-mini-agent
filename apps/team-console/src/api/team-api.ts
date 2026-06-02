@@ -45,6 +45,9 @@ import type {
   TeamApiError,
   TeamRunState,
   TeamAttemptMetadata,
+  TeamTaskRunAnnotationMutationResponse,
+  TeamTaskRunAnnotationPatchRequest,
+  TeamTaskRunHistoryResponse,
 } from "./team-types";
 import { readAgentChatSse } from "./agent-chat-sse";
 
@@ -86,10 +89,15 @@ export interface CanvasTaskGateway {
   createSourceConnection(input: TeamCanvasSourceConnectionCreateRequest): Promise<TeamCanvasSourceConnection>;
   deleteSourceConnection(connectionId: string): Promise<void>;
   listTaskRuns(taskId: string): Promise<TeamRunState[]>;
+  listTaskRunHistory(
+    taskId: string,
+    options?: { limit?: number; offset?: number; includeArchived?: boolean },
+  ): Promise<TeamTaskRunHistoryResponse>;
   listTaskRunsByTaskIds(taskIds: string[], options?: { limit?: number; view?: "summary" }): Promise<TeamCanvasTaskRunByTaskListResponse>;
   createTaskRun(taskId: string): Promise<TeamRunState>;
   getTaskRun(runId: string): Promise<TeamRunState>;
   cancelTaskRun(runId: string): Promise<TeamRunState>;
+  updateTaskRunAnnotation(runId: string, patch: TeamTaskRunAnnotationPatchRequest): Promise<TeamTaskRunAnnotationMutationResponse>;
   listTaskRunAttempts(runId: string, taskId: string, options?: { view?: "dispatch-diagnostics" }): Promise<TeamAttemptMetadata[]>;
   readTaskRunAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string): Promise<string>;
 }
@@ -522,6 +530,26 @@ export class LiveTeamApi implements TeamApiProvider {
     }
   }
 
+  async listTaskRunHistory(
+    taskId: string,
+    options?: { limit?: number; offset?: number; includeArchived?: boolean },
+  ): Promise<TeamTaskRunHistoryResponse> {
+    try {
+      const params = new URLSearchParams();
+      if (options?.limit != null) params.set("limit", String(options.limit));
+      if (options?.offset != null) params.set("offset", String(options.offset));
+      if (options?.includeArchived) params.set("includeArchived", "1");
+      const query = params.toString();
+      const res = await fetchJsonGet<TeamTaskRunHistoryResponse>(
+        `${this.baseUrl}/tasks/${encodeURIComponent(taskId)}/run-history${query ? `?${query}` : ""}`,
+      );
+      if (!res.ok) throwJsonGetError(res);
+      return res.body ?? { taskId, total: 0, limit: options?.limit ?? 50, offset: options?.offset ?? 0, runs: [] };
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
   async listTaskRunsByTaskIds(taskIds: string[], options?: { limit?: number; view?: "summary" }): Promise<TeamCanvasTaskRunByTaskListResponse> {
     const unique = [...new Set(taskIds)];
     if (unique.length === 0) return { runsByTaskId: {} };
@@ -586,6 +614,22 @@ export class LiveTeamApi implements TeamApiProvider {
         throw await responseToApiError(res, `请求失败 (${res.status})`);
       }
       return (await res.json()) as TeamRunState;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async updateTaskRunAnnotation(runId: string, patch: TeamTaskRunAnnotationPatchRequest): Promise<TeamTaskRunAnnotationMutationResponse> {
+    try {
+      const res = await fetch(`${this.baseUrl}/task-runs/${encodeURIComponent(runId)}/annotation`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      return (await res.json()) as TeamTaskRunAnnotationMutationResponse;
     } catch (e) {
       throw toApiError(e);
     }
