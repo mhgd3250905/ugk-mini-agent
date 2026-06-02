@@ -84,6 +84,26 @@ test("team-task-creator skill previews full Task JSON and waits for user confirm
 	assert.match(skill, /inputPorts[\s\S]*outputPorts|outputPorts[\s\S]*inputPorts/);
 });
 
+test("team-task-creator skill supports template Task creation with fillable parameters", async () => {
+	const skill = await readSkill();
+	assert.match(skill, /template Task|模板 Task|模板任务/i);
+	assert.match(skill, /关键词先空出来|后续填写|fillable parameter|template parameter|模板参数/i);
+	assert.match(skill, /templateConfig/);
+	assert.match(skill, /team\/task-template-1/);
+	assert.match(skill, /\{\{keyword\}\}/);
+	assert.match(skill, /parameters[\s\S]*id[\s\S]*label/);
+	assert.match(skill, /POST\s+\/v1\/team\/tasks/);
+});
+
+test("team-task-creator skill distinguishes template creation from cloning or running", async () => {
+	const skill = await readSkill();
+	assert.match(skill, /POST\s+\/v1\/team\/tasks\/:taskId\/clone/);
+	assert.match(skill, /templateBindings/);
+	assert.match(skill, /clone|复制|实例化/i);
+	assert.match(skill, /must not start|不得启动|不要启动/i);
+	assert.match(skill, /full Task JSON|完整 Task JSON|完整的 Task JSON/i);
+});
+
 test("team-task-creator skill documents Task create and update APIs", async () => {
 	const skill = await readSkill();
 	assert.match(skill, /POST\s+\/v1\/team\/tasks/);

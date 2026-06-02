@@ -29,6 +29,38 @@ This skill has two activation paths:
 - `checkerAgentId` is required. It is the Agent that will accept or reject the WorkUnit result in a future run.
 - A Task is not `Plan tasks.length === 1`, not a single-task Plan, and not a TeamUnit.
 
+## Template Task Contract
+
+Use a template Task / 模板 Task when the user wants a reusable Task shape where only a keyword or small variable changes later, such as "域名查询模板，关键词先空出来", "后续填写关键词", "各大论坛搜索 {{keyword}} 讨论", or a reusable md-to-html utility. A template Task is still created through `POST /v1/team/tasks`; it is not a run and must not start execution.
+
+Template placeholders must use double braces, for example `{{keyword}}`. Do not use vague blanks, Chinese brackets, or invisible empty strings. Put placeholders only in human-facing strings such as `title`, `workUnit.title`, `workUnit.input.text`, `workUnit.outputContract.text`, `workUnit.acceptance.rules`, and Discovery `discoveryGoal` / `dispatchGoal`.
+
+Template preview payloads must include `templateConfig`:
+
+```json
+{
+  "templateConfig": {
+    "schemaVersion": "team/task-template-1",
+    "parameters": [
+      {
+        "id": "keyword",
+        "label": "关键词",
+        "description": "后续复制或实例化时填写的查询关键词。",
+        "required": true
+      }
+    ]
+  }
+}
+```
+
+When the user wants to copy / clone / 复制 / 实例化 an existing template Task, show the required `templateBindings` and wait for confirmation, then call `POST /v1/team/tasks/:taskId/clone`. Example clone payload:
+
+```json
+{ "templateBindings": { "keyword": "GLM-5.1" } }
+```
+
+For non-template utility Tasks, cloning may use only a new `title`; it still must not start a run. Generated child Tasks are Discovery-managed and must not be cloned by this skill.
+
 ## Typed Port Contract
 
 Every Task draft preview and API payload must include both arrays:
