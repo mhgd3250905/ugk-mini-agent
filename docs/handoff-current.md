@@ -87,7 +87,7 @@ git log --oneline origin/main..HEAD
 - Team role session 注入 `ARTIFACT_PUBLIC_DIR` 和 `ARTIFACT_PUBLIC_BASE_URL`；需要交付的报告/HTML 应写到 public output 目录，并通过 `/v1/team/task-runs/:runId/artifacts/:roleKey/:role/...` 稳定访问。
 - `/playground/agents` 子 Agent 技能区已支持从主 Agent 覆盖更新单个技能。
 - Team Console Execution Atlas 已修复 root Agent / Task / Source 位置、dock 收纳状态、Task 操作/子面板布局持久化、dock 翻页按钮，以及 ID 区域短按复制 / 拖动卡片手势冲突。
-- 用户已在真实 UI 验证上述 Team Console 画布和 ID 复制/拖拽修复通过。
+- 用户已在真实 UI 验证上述 Team Console 画布、ID 复制/拖拽修复和 1 秒画布恢复 loading 通过。
 
 ## 真实 UI 验证事实
 

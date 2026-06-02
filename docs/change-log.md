@@ -18,7 +18,7 @@
 
 - **主题**: Team Console 画布恢复态改为带动画标记和滚动进度条的 `role="status"` loading，并设置 1 秒最小可见时长，避免恢复过快时文字一闪而过。
 - **影响范围**: `5174` Execution Atlas 刷新、live 共享布局 hydration 和 mock canvas state 初始化时的恢复态展示；真实画布仍在状态恢复完成后一次性显示正确 filter。
-- **验证**: Docker 内 focused Vitest 通过，覆盖恢复态先出现、最小展示时间后再显示正确 `Agent`/`Task` filter。
+- **验证**: Docker 内 focused Vitest 通过，覆盖恢复态先出现、最小展示时间后再显示正确 `Agent`/`Task` filter；用户已在真实 `5174` 页面确认通过。
 - **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/app.css`、`apps/team-console/src/tests/app-canvas-state.test.tsx`。
 
 ## 2026-06-02 — Team Console root filter refresh flicker
