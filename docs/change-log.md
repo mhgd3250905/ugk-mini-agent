@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-02 — Canvas Task adaptive phase timeout
+
+- **主题**: Canvas Task 独立 run 的 worker/checker phase timeout 改为 adaptive idle timeout + hard cap；工具完成事件和 role public output 文件变化会刷新 idle 窗口，普通文本 / thinking 输出不会续命，hard cap 防止持续结构性进展无限运行。
+- **影响范围**: `POST /v1/team/tasks/:taskId/runs` 启动的 Canvas Task worker/checker 执行路径、attempt timeout 失败证据和 `CanvasTaskRunService` 测试覆盖；Plan / TeamOrchestrator 的 watcher/finalizer 固定 timeout 路径不变，Team Console UI 不受影响。
+- **验证**: `node --test --import tsx --test-name-pattern "extends worker idle|artifact file|text or thinking|hard cap" test\team-task-run-process.test.ts`、`node --test --import tsx test\team-task-run-process.test.ts`、`node --test --import tsx test\team-task-run-routes.test.ts`、`npx tsc --noEmit`、`npm test`、`git diff --check`。真实运行验证：`task_99e064aea8e3` / `run_d5f4d7975885` 的 root worker/checker 正常通过；generated child `task_071756d4a504` 在多轮工具完成后刷新 idle 并进入 checker。
+- **对应入口**: `src/team/task-attempt-runner.ts`、`src/team/canvas-task-attempt-runner.ts`、`src/team/task-run-service.ts`、`test/team-task-run-process.test.ts`、`docs/team-runtime.md`。
+
 ## 2026-06-02 — Team Console Discovery child action menu polish
 
 - **主题**: 收口 Discovery 子画布 generated child card 的操作入口：卡片悬浮才显示纵向菜单按钮，点击后在按钮下方弹出 popover 菜单，菜单可超出子画布边界；菜单内包含编辑、归档、运行记录和运行入口。generated Task 浅编辑面板按内容自适应高度，不再在表单内部显示滚动条。

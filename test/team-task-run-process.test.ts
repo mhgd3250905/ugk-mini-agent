@@ -128,6 +128,10 @@ function createDeferred(): { promise: Promise<void>; resolve: () => void; reject
 	return { promise, resolve, reject };
 }
 
+function delayMs(ms: number): Promise<void> {
+	return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function removeTempRoot(root: string): Promise<void> {
 	await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 }
@@ -303,6 +307,82 @@ class CancellableWorkerRoleRunner extends ProcessEventRoleRunner {
 	}
 }
 
+class ToolProgressDelaysWorkerRunner extends ProcessEventRoleRunner {
+	async runWorker(input: ProcessAwareWorkerInput): Promise<WorkerOutput> {
+		input.onSessionEvent?.({
+			type: "tool_execution_start",
+			toolCallId: "worker_tool_progress",
+			toolName: "slow-search",
+			args: { q: "timeout regression" },
+		});
+		await delayMs(20);
+		input.onSessionEvent?.({
+			type: "tool_execution_end",
+			toolCallId: "worker_tool_progress",
+			toolName: "slow-search",
+			result: "search finished",
+			isError: false,
+		});
+		await delayMs(25);
+		return { content: "worker result after structural progress", artifactRefs: [] };
+	}
+}
+
+class ArtifactFileProgressWorkerRunner extends ProcessEventRoleRunner {
+	async runWorker(input: ProcessAwareWorkerInput): Promise<WorkerOutput> {
+		assert.ok(input.artifactPublicDir);
+		await delayMs(20);
+		await writeFile(join(input.artifactPublicDir, "progress.txt"), "structural file progress");
+		await delayMs(25);
+		return { content: "worker result after file progress", artifactRefs: [] };
+	}
+}
+
+class TextOnlyWorkerRunner extends ProcessEventRoleRunner {
+	async runWorker(input: ProcessAwareWorkerInput): Promise<WorkerOutput> {
+		for (let i = 0; i < 6; i++) {
+			input.onSessionEvent?.({
+				type: "message_update",
+				assistantMessageEvent: { type: "text_delta", delta: `text-${i}` },
+			});
+			input.onSessionEvent?.({
+				type: "message_update",
+				assistantMessageEvent: { type: "thinking_delta", delta: `thinking-${i}` },
+			});
+			await delayMs(10);
+		}
+		return { content: "text-only worker result", artifactRefs: [] };
+	}
+}
+
+class ContinualToolProgressWorkerRunner extends ProcessEventRoleRunner {
+	async runWorker(input: ProcessAwareWorkerInput): Promise<WorkerOutput> {
+		let index = 0;
+		const timer = setInterval(() => {
+			input.onSessionEvent?.({
+				type: "tool_execution_end",
+				toolCallId: `worker_tool_${index}`,
+				toolName: "poll",
+				result: `poll ${index}`,
+				isError: false,
+			});
+			index++;
+		}, 10);
+		try {
+			await new Promise<never>((_resolve, reject) => {
+				if (input.signal?.aborted) {
+					reject(new Error("aborted"));
+					return;
+				}
+				input.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+			});
+			throw new Error("unreachable");
+		} finally {
+			clearInterval(timer);
+		}
+	}
+}
+
 class LateEventAfterCancelRoleRunner extends ProcessEventRoleRunner {
 	private workerSessionEvent: ((event: RawAgentSessionEventLike) => void) | undefined;
 	private lateEventSentResolve!: () => void;
@@ -475,6 +555,139 @@ test("CanvasTaskRunService records worker and checker process snapshots on attem
 		assert.match(roleProcesses?.checker?.assistantText?.content ?? "", /我在核对条目数量。验收通过。/);
 		assert.ok(roleProcesses?.checker?.assistantText?.updatedAt);
 		assert.equal(roleProcesses?.checker?.process?.entries.some(entry => entry.toolCallId === "checker_tool_1"), true);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("CanvasTaskRunService extends worker idle timeout after tool completion", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-adaptive-tool-progress-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const task = await taskStore.create(validTaskInput);
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new ToolProgressDelaysWorkerRunner(),
+			dataDir: join(root, "task-runs"),
+			phaseTimeouts: {
+				workerMs: 40,
+				checkerMs: 100,
+				workerHardCapMs: 200,
+				checkerHardCapMs: 200,
+			},
+		});
+
+		const created = await service.createRun(task.taskId);
+		const finished = await waitForTerminalRun(service, created.runId);
+
+		assert.equal(finished.status, "completed");
+		assert.equal(finished.taskStates[task.taskId]?.status, "succeeded");
+		const attempts = await workspace.listAttempts(created.runId, task.taskId);
+		assert.equal(attempts[0]?.worker.length, 1);
+		assert.equal(attempts[0]?.roleProcesses?.worker?.status, "succeeded");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("CanvasTaskRunService extends worker idle timeout after artifact file progress", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-adaptive-file-progress-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const task = await taskStore.create(validTaskInput);
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new ArtifactFileProgressWorkerRunner(),
+			dataDir: join(root, "task-runs"),
+			phaseTimeouts: {
+				workerMs: 40,
+				checkerMs: 100,
+				workerHardCapMs: 200,
+				checkerHardCapMs: 200,
+			},
+		});
+
+		const created = await service.createRun(task.taskId);
+		const finished = await waitForTerminalRun(service, created.runId);
+
+		assert.equal(finished.status, "completed");
+		assert.equal(finished.taskStates[task.taskId]?.status, "succeeded");
+		const attempts = await workspace.listAttempts(created.runId, task.taskId);
+		assert.equal(attempts[0]?.roleProcesses?.worker?.status, "succeeded");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("CanvasTaskRunService does not extend worker idle timeout for text or thinking only", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-adaptive-text-timeout-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const task = await taskStore.create(validTaskInput);
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new TextOnlyWorkerRunner(),
+			dataDir: join(root, "task-runs"),
+			phaseTimeouts: {
+				workerMs: 30,
+				checkerMs: 100,
+				workerHardCapMs: 200,
+				checkerHardCapMs: 200,
+			},
+		});
+
+		const created = await service.createRun(task.taskId);
+		const finished = await waitForTerminalRun(service, created.runId);
+
+		assert.equal(finished.status, "failed");
+		assert.equal(finished.taskStates[task.taskId]?.errorSummary, "worker timeout");
+		const attempts = await workspace.listAttempts(created.runId, task.taskId);
+		const resultRef = attempts[0]?.resultRef;
+		assert.ok(resultRef);
+		const failedResult = await workspace.readRunScopedFile(created.runId, resultRef);
+		assert.match(failedResult ?? "", /timeoutType: idle/);
+		assert.match(failedResult ?? "", /lastStructuralActivityReason: phase started/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("CanvasTaskRunService worker hard cap wins even when structural progress continues", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-adaptive-hardcap-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const task = await taskStore.create(validTaskInput);
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new ContinualToolProgressWorkerRunner(),
+			dataDir: join(root, "task-runs"),
+			phaseTimeouts: {
+				workerMs: 30,
+				checkerMs: 100,
+				workerHardCapMs: 70,
+				checkerHardCapMs: 200,
+			},
+		});
+
+		const created = await service.createRun(task.taskId);
+		const finished = await waitForTerminalRun(service, created.runId);
+
+		assert.equal(finished.status, "failed");
+		assert.equal(finished.taskStates[task.taskId]?.errorSummary, "worker timeout");
+		const attempts = await workspace.listAttempts(created.runId, task.taskId);
+		const resultRef = attempts[0]?.resultRef;
+		assert.ok(resultRef);
+		const failedResult = await workspace.readRunScopedFile(created.runId, resultRef);
+		assert.match(failedResult ?? "", /timeoutType: hard_cap/);
+		assert.match(failedResult ?? "", /lastStructuralActivityReason: tool_finished poll/);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

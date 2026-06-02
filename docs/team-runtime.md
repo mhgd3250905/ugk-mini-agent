@@ -2,6 +2,10 @@
 
 更新时间：2026-06-02
 
+> 2026-06-02 补充：Canvas Task 独立 run 的 worker/checker phase timeout 已改为 adaptive idle timeout + hard cap。worker/checker 的既有 phase timeout 值现在作为 idle 窗口：只有 `tool_execution_end` 或 role public output 目录中文件新增/变化这类结构性进展会刷新 idle 窗口；普通文本输出和 thinking delta 不续命。worker hard cap 默认 60 分钟，checker hard cap 默认 30 分钟，hard cap 到点会强制失败，即使期间持续有工具完成事件。timeout 失败会在 attempt failed result 中写入 `timeoutType`、`idleMs`、`hardCapMs`、`elapsedMs` 和 `lastStructuralActivityReason`，便于区分“真的没结构性进展”和“被总时长兜底截断”。
+
+> 2026-06-03 真实运行验证：用户从 Team Console 启动 Discovery root Task `task_99e064aea8e3`，root run 为 `run_d5f4d7975885`，root attempt 为 `attempt_3ac49ea2c5af`。root worker 在多轮 SearXNG/bash 工具完成后正常进入 checker 并 `succeeded`，未被旧固定 15 分钟窗口误杀；root attempt 写出 `accepted-result.md`、`discovery-result.json`、`checker-verdict-001.json` 和 `worker-output-001.md`。dispatcher 随后创建 10 个、更新 4 个 generated Tasks，并将 9 个旧 generated items 标记 stale；auto-run pool 以固定并发 3 启动本轮 generated child runs。观察到 child `task_071756d4a504` 的 worker 在早期工具结束后继续产生新的 `tool_execution_end`，idle 窗口被刷新，最终从 `worker_running` 进入 `checker_reviewing`，证明 adaptive idle 在真实 run 中按结构性进展续命。
+
 > 2026-06-02 补充：Team Console Discovery 子画布的 generated catalog 首屏加载改为 summary view。`GET /v1/team/tasks/:taskId/generated-tasks?view=summary` 只返回卡片展示、状态排序和 `canResetToManaged` 所需轻量字段，不返回 `workUnit`、`latestManagedWorkUnit`、`generatedSource.itemPayload` 等 heavy detail；默认无 `view` 仍返回 full generated Tasks 以保持兼容。5174 打开子画布时消费 summary，编辑 generated Task 前再 lazy fetch `GET /v1/team/tasks/:generatedTaskId` 取得完整 Task；full detail 请求按 `dataSource:taskId` 去重，summary refresh 不覆盖已经取得的 full detail，full detail 失败会清理半开编辑状态并允许下一次点击重试。
 
 > 2026-06-02 补充：Canvas Task run history 现在有用户可见的 Task 级入口。`GET /v1/team/tasks/:taskId/run-history` 返回 summary-only 历史列表并合并 `.data/team/task-runs/run-annotations.json` 中的 best / archived / note；`PATCH /v1/team/task-runs/:runId/annotation` 只写标注索引，`best=true` 会清除同一 Task 其他 run 的 best。真实过程、attempt metadata、result 和文件内容仍来自 `.data/team/task-runs/runs/<runId>` 及既有 attempts/files API；软归档只隐藏默认历史列表，不删除 run 目录。
@@ -1294,6 +1298,14 @@ Each role phase has an independent timeout:
 - `TEAM_CHECKER_PHASE_TIMEOUT_MS` (default 300000 = 5 min)
 - `TEAM_WATCHER_PHASE_TIMEOUT_MS` (default 300000 = 5 min)
 - `TEAM_FINALIZER_PHASE_TIMEOUT_MS` (default 300000 = 5 min)
+
+Canvas Task 独立 run 只对 worker/checker 使用 adaptive phase timeout：
+
+- `TEAM_WORKER_PHASE_TIMEOUT_MS` / `TEAM_CHECKER_PHASE_TIMEOUT_MS` 仍是外部配置入口，但在 Canvas Task run 中语义为 idle window，而不是固定总时长。
+- 结构性进展只包括 role session 的 `tool_execution_end` 和 role public output 目录文件新增/变化；普通 message text/thinking 不刷新 idle window。
+- hard cap 是内部兜底：worker 默认 3600000ms，checker 默认 1800000ms。hard cap 优先防止工具循环或持续写文件无限续命。
+- timeout 失败仍使用既有 `worker timeout` / `checker timeout` 摘要；attempt result 会额外写 timeout 证据字段。
+- Plan / TeamOrchestrator run 仍使用原固定 `runWithTimeout` 路径，watcher/finalizer 不受 Canvas adaptive timeout 影响。
 
 ### Run Timeout
 

@@ -1,3 +1,6 @@
+import type { Dirent } from "node:fs";
+import { readdir, stat } from "node:fs/promises";
+import { join } from "node:path";
 import type { TeamOutputValidationResult, TeamRunState, TeamTask } from "./types.js";
 import type { TeamRoleRunner, CheckerOutput, WatcherOutput, WorkerOutput } from "./role-runner.js";
 import { RunWorkspace } from "./run-workspace.js";
@@ -11,6 +14,56 @@ export interface TaskAttemptPhaseTimeouts {
 	workerMs: number;
 	checkerMs: number;
 	watcherMs: number;
+}
+
+export type AdaptivePhaseTimeoutType = "idle" | "hard_cap";
+
+export interface AdaptivePhaseTimeoutInput {
+	phase: string;
+	idleMs: number;
+	hardCapMs: number;
+	parentSignal: AbortSignal;
+	activityDirs?: string[];
+	pollMs?: number;
+}
+
+export type StructuralActivityMarker = (reason: string) => void;
+
+export class AdaptivePhaseTimeoutError extends Error {
+	readonly timeoutType: AdaptivePhaseTimeoutType;
+	readonly phase: string;
+	readonly idleMs: number;
+	readonly hardCapMs: number;
+	readonly startedAt: string;
+	readonly elapsedMs: number;
+	readonly lastStructuralActivityAt: string;
+	readonly lastStructuralActivityReason: string;
+
+	constructor(input: {
+		phase: string;
+		timeoutType: AdaptivePhaseTimeoutType;
+		idleMs: number;
+		hardCapMs: number;
+		startedAtMs: number;
+		elapsedMs: number;
+		lastStructuralActivityAtMs: number;
+		lastStructuralActivityReason: string;
+	}) {
+		super(`${input.phase} timeout`);
+		this.name = "AdaptivePhaseTimeoutError";
+		this.phase = input.phase;
+		this.timeoutType = input.timeoutType;
+		this.idleMs = input.idleMs;
+		this.hardCapMs = input.hardCapMs;
+		this.startedAt = new Date(input.startedAtMs).toISOString();
+		this.elapsedMs = input.elapsedMs;
+		this.lastStructuralActivityAt = new Date(input.lastStructuralActivityAtMs).toISOString();
+		this.lastStructuralActivityReason = input.lastStructuralActivityReason;
+	}
+}
+
+export function isAdaptivePhaseTimeoutError(error: unknown): error is AdaptivePhaseTimeoutError {
+	return error instanceof AdaptivePhaseTimeoutError;
 }
 
 interface WorkUnitRunResult {
@@ -76,6 +129,144 @@ export async function runWithTimeout<T>(
 	} finally {
 		removeParentListener();
 		if (timeout) clearTimeout(timeout);
+	}
+}
+
+export async function runWithAdaptivePhaseTimeout<T>(
+	input: AdaptivePhaseTimeoutInput,
+	fn: (signal: AbortSignal, markStructuralActivity: StructuralActivityMarker) => Promise<T>,
+): Promise<T> {
+	const idleMs = Math.max(1, Math.floor(input.idleMs));
+	const hardCapMs = Math.max(idleMs, Math.floor(input.hardCapMs));
+	const startedAtMs = Date.now();
+	let lastStructuralActivityAtMs = startedAtMs;
+	let lastStructuralActivityReason = "phase started";
+	const controller = new AbortController();
+	let interval: ReturnType<typeof setInterval> | null = null;
+	let removeParentListener = (): void => {};
+	let timeoutReject: ((error: Error) => void) | null = null;
+	let settled = false;
+	let polling = false;
+	const activityDirs = [...new Set(input.activityDirs ?? [])];
+	let directorySignatures = await collectDirectorySignatures(activityDirs);
+
+	const markStructuralActivity: StructuralActivityMarker = (reason) => {
+		lastStructuralActivityAtMs = Date.now();
+		lastStructuralActivityReason = reason.trim() || "structural activity";
+	};
+
+	function rejectWith(error: Error): void {
+		if (settled) return;
+		settled = true;
+		controller.abort(error);
+		timeoutReject?.(error);
+	}
+
+	function rejectWithTimeout(timeoutType: AdaptivePhaseTimeoutType): void {
+		const nowMs = Date.now();
+		rejectWith(new AdaptivePhaseTimeoutError({
+			phase: input.phase,
+			timeoutType,
+			idleMs,
+			hardCapMs,
+			startedAtMs,
+			elapsedMs: nowMs - startedAtMs,
+			lastStructuralActivityAtMs,
+			lastStructuralActivityReason,
+		}));
+	}
+
+	async function pollStructuralFiles(): Promise<void> {
+		if (activityDirs.length === 0 || polling) return;
+		polling = true;
+		try {
+			const nextSignatures = await collectDirectorySignatures(activityDirs);
+			for (const [filePath, signature] of nextSignatures) {
+				if (directorySignatures.get(filePath) !== signature) {
+					markStructuralActivity(`artifact file changed ${filePath}`);
+					break;
+				}
+			}
+			directorySignatures = nextSignatures;
+		} finally {
+			polling = false;
+		}
+	}
+
+	function checkTimeouts(): void {
+		if (settled || controller.signal.aborted) return;
+		const nowMs = Date.now();
+		if (nowMs - startedAtMs >= hardCapMs) {
+			rejectWithTimeout("hard_cap");
+			return;
+		}
+		if (nowMs - lastStructuralActivityAtMs >= idleMs) {
+			rejectWithTimeout("idle");
+		}
+	}
+
+	if (input.parentSignal.aborted) {
+		throw input.parentSignal.reason instanceof Error ? input.parentSignal.reason : new Error("aborted");
+	}
+	const onParentAbort = () => {
+		const reason = input.parentSignal.reason instanceof Error ? input.parentSignal.reason : new Error("aborted");
+		rejectWith(reason);
+	};
+	input.parentSignal.addEventListener("abort", onParentAbort, { once: true });
+	removeParentListener = () => input.parentSignal.removeEventListener("abort", onParentAbort);
+
+	const pollMs = input.pollMs ?? Math.max(5, Math.min(1_000, Math.floor(idleMs / 4)));
+	const timeoutPromise = new Promise<never>((_resolve, reject) => {
+		timeoutReject = reject;
+		interval = setInterval(() => {
+			if (activityDirs.length === 0) {
+				checkTimeouts();
+				return;
+			}
+			void pollStructuralFiles().finally(checkTimeouts);
+		}, pollMs);
+	});
+
+	try {
+		const result = await Promise.race([fn(controller.signal, markStructuralActivity), timeoutPromise]);
+		settled = true;
+		return result;
+	} finally {
+		settled = true;
+		removeParentListener();
+		if (interval) clearInterval(interval);
+	}
+}
+
+async function collectDirectorySignatures(dirs: string[]): Promise<Map<string, string>> {
+	const signatures = new Map<string, string>();
+	for (const dir of dirs) {
+		await collectDirectorySignature(dir, dir, signatures);
+	}
+	return signatures;
+}
+
+async function collectDirectorySignature(rootDir: string, currentDir: string, signatures: Map<string, string>): Promise<void> {
+	let entries: Dirent<string>[];
+	try {
+		entries = await readdir(currentDir, { withFileTypes: true });
+	} catch {
+		return;
+	}
+	for (const entry of entries) {
+		const filePath = join(currentDir, entry.name);
+		if (entry.isDirectory()) {
+			await collectDirectorySignature(rootDir, filePath, signatures);
+			continue;
+		}
+		if (!entry.isFile()) continue;
+		try {
+			const fileStat = await stat(filePath);
+			const relativePath = filePath.slice(rootDir.length + 1).replace(/\\/g, "/");
+			signatures.set(relativePath || entry.name, `${fileStat.size}:${fileStat.mtimeMs}`);
+		} catch {
+			// File changed between readdir and stat; the next poll will observe it.
+		}
 	}
 }
 

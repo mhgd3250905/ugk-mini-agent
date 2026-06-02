@@ -3,17 +3,32 @@ import { mkdir } from "node:fs/promises";
 import type { TeamRoleRunner, WorkerOutput, CheckerOutput } from "./role-runner.js";
 import type { TeamTask, TeamOutputValidationResult } from "./types.js";
 import type { RunWorkspace } from "./run-workspace.js";
-import { runWithTimeout } from "./task-attempt-runner.js";
+import {
+	AdaptivePhaseTimeoutError,
+	isAdaptivePhaseTimeoutError,
+	runWithAdaptivePhaseTimeout,
+	type StructuralActivityMarker,
+} from "./task-attempt-runner.js";
 import { validateTeamOutput } from "./output-validator.js";
 import { writeTimingSpan } from "./timing.js";
 import { progressMessages } from "./progress.js";
 import { TeamRoleProcessRecorder } from "./task-run-process-recorder.js";
+import type { RawAgentSessionEventLike } from "../agent/agent-session-factory.js";
+
+export interface CanvasTaskPhaseTimeouts {
+	workerMs?: number;
+	checkerMs?: number;
+	workerIdleMs?: number;
+	checkerIdleMs?: number;
+	workerHardCapMs?: number;
+	checkerHardCapMs?: number;
+}
 
 export interface CanvasTaskAttemptRunnerOptions {
 	workspace: RunWorkspace;
 	dataDir: string;
 	maxCheckerRevisions: number;
-	phaseTimeouts: { workerMs: number; checkerMs: number };
+	phaseTimeouts: CanvasTaskPhaseTimeouts;
 }
 
 export interface CanvasTaskAttemptInput {
@@ -58,7 +73,7 @@ function buildTeamRoleArtifactBaseUrl(
 export class CanvasTaskAttemptRunner {
 	private readonly activeRecorders = new Map<string, Set<TeamRoleProcessRecorder>>();
 	private readonly maxCheckerRevisions: number;
-	private readonly phaseTimeouts: { workerMs: number; checkerMs: number };
+	private readonly phaseTimeouts: CanvasTaskPhaseTimeouts;
 
 	constructor(private readonly options: CanvasTaskAttemptRunnerOptions) {
 		this.maxCheckerRevisions = options.maxCheckerRevisions;
@@ -218,7 +233,14 @@ export class CanvasTaskAttemptRunner {
 			await recorder.start();
 			const artifactPublicDir = join(dataDir, "runs", runId, "agent-workspaces", attemptId, "worker", "output");
 			await mkdir(artifactPublicDir, { recursive: true });
-			const output = await runWithTimeout("worker", this.phaseTimeouts.workerMs, signal, async (localSignal) => roleRunner.runWorker({
+			const timeout = this.resolveRoleTimeout("worker");
+			const output = await runWithAdaptivePhaseTimeout({
+				phase: "worker",
+				idleMs: timeout.idleMs,
+				hardCapMs: timeout.hardCapMs,
+				parentSignal: signal,
+				activityDirs: [artifactPublicDir],
+			}, async (localSignal, markStructuralActivity) => roleRunner.runWorker({
 				runId,
 				task,
 				attemptId,
@@ -229,7 +251,7 @@ export class CanvasTaskAttemptRunner {
 				acceptanceRules: task.acceptance.rules,
 				feedback,
 				signal: localSignal,
-				onSessionEvent: (event) => recorder.handleRawEvent(event),
+				onSessionEvent: (event) => this.handleRoleSessionEvent(recorder, markStructuralActivity, event),
 			}));
 			await recorder.succeed();
 			return output;
@@ -238,6 +260,9 @@ export class CanvasTaskAttemptRunner {
 				await recorder.cancel("run cancelled");
 			} else {
 				await recorder.fail(error instanceof Error ? error.message : String(error));
+			}
+			if (isAdaptivePhaseTimeoutError(error)) {
+				await this.persistTimeoutFailure(runId, task.id, attemptId, error);
 			}
 			throw error;
 		} finally {
@@ -275,7 +300,14 @@ export class CanvasTaskAttemptRunner {
 			await recorder.start();
 			const checkerArtifactPublicDir = join(this.options.dataDir, "runs", runId, "agent-workspaces", attemptId, "checker", "output");
 			await mkdir(checkerArtifactPublicDir, { recursive: true });
-			const output = await runWithTimeout("checker", this.phaseTimeouts.checkerMs, signal, async (localSignal) => roleRunner.runChecker({
+			const timeout = this.resolveRoleTimeout("checker");
+			const output = await runWithAdaptivePhaseTimeout({
+				phase: "checker",
+				idleMs: timeout.idleMs,
+				hardCapMs: timeout.hardCapMs,
+				parentSignal: signal,
+				activityDirs: [checkerArtifactPublicDir],
+			}, async (localSignal, markStructuralActivity) => roleRunner.runChecker({
 				runId,
 				task,
 				attemptId,
@@ -285,7 +317,7 @@ export class CanvasTaskAttemptRunner {
 				acceptanceRules: task.acceptance.rules,
 				outputValidation,
 				signal: localSignal,
-				onSessionEvent: (event) => recorder.handleRawEvent(event),
+				onSessionEvent: (event) => this.handleRoleSessionEvent(recorder, markStructuralActivity, event),
 			}));
 			await recorder.succeed();
 			return output;
@@ -294,6 +326,9 @@ export class CanvasTaskAttemptRunner {
 				await recorder.cancel("run cancelled");
 			} else {
 				await recorder.fail(error instanceof Error ? error.message : String(error));
+			}
+			if (isAdaptivePhaseTimeoutError(error)) {
+				await this.persistTimeoutFailure(runId, task.id, attemptId, error);
 			}
 			throw error;
 		} finally {
@@ -370,5 +405,54 @@ export class CanvasTaskAttemptRunner {
 		if (recorders.size === 0) {
 			this.activeRecorders.delete(runId);
 		}
+	}
+
+	private resolveRoleTimeout(role: "worker" | "checker"): { idleMs: number; hardCapMs: number } {
+		if (role === "worker") {
+			const idleMs = this.phaseTimeouts.workerIdleMs ?? this.phaseTimeouts.workerMs ?? 900_000;
+			const hardCapMs = this.phaseTimeouts.workerHardCapMs ?? Math.max(idleMs, 3_600_000);
+			return { idleMs, hardCapMs };
+		}
+		const idleMs = this.phaseTimeouts.checkerIdleMs ?? this.phaseTimeouts.checkerMs ?? 600_000;
+		const hardCapMs = this.phaseTimeouts.checkerHardCapMs ?? Math.max(idleMs, 1_800_000);
+		return { idleMs, hardCapMs };
+	}
+
+	private handleRoleSessionEvent(
+		recorder: TeamRoleProcessRecorder,
+		markStructuralActivity: StructuralActivityMarker,
+		event: RawAgentSessionEventLike,
+	): void {
+		recorder.handleRawEvent(event);
+		if (event.type !== "tool_execution_end") return;
+		const toolName = typeof event.toolName === "string" ? event.toolName : "unknown";
+		markStructuralActivity(`tool_finished ${toolName}`);
+	}
+
+	private async persistTimeoutFailure(
+		runId: string,
+		taskId: string,
+		attemptId: string,
+		error: AdaptivePhaseTimeoutError,
+	): Promise<void> {
+		const timeoutEvidence = [
+			`${error.phase} timeout`,
+			"",
+			`timeoutType: ${error.timeoutType}`,
+			`phase: ${error.phase}`,
+			`idleMs: ${error.idleMs}`,
+			`hardCapMs: ${error.hardCapMs}`,
+			`startedAt: ${error.startedAt}`,
+			`elapsedMs: ${error.elapsedMs}`,
+			`lastStructuralActivityAt: ${error.lastStructuralActivityAt}`,
+			`lastStructuralActivityReason: ${error.lastStructuralActivityReason}`,
+		].join("\n");
+		const failRef = await this.options.workspace.writeFailedResult(runId, taskId, attemptId, timeoutEvidence);
+		await this.options.workspace.finishAttempt(runId, taskId, attemptId, {
+			status: "failed",
+			phase: "failed",
+			resultRef: failRef,
+			errorSummary: error.message,
+		});
 	}
 }

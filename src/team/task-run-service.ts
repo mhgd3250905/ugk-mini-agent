@@ -11,7 +11,7 @@ import type { SourceNodeStore } from "./source-node-store.js";
 import type { ProfileAwareTeamRoleRunner, TeamRoleRunner } from "./role-runner.js";
 import type { TeamCanvasTask, TeamDiscoveryAggregationRecord, TeamDiscoveryDispatchOutcome, TeamDiscoveryGeneratedRunOutcome, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskDeliveryOutcome } from "./types.js";
 import { planDownstreamDelivery } from "./downstream-delivery.js";
-import { CanvasTaskAttemptRunner } from "./canvas-task-attempt-runner.js";
+import { CanvasTaskAttemptRunner, type CanvasTaskPhaseTimeouts } from "./canvas-task-attempt-runner.js";
 
 export interface CanvasTaskRunServiceOptions {
 	taskStore: TaskStore;
@@ -23,10 +23,7 @@ export interface CanvasTaskRunServiceOptions {
 	sourceConnectionStore?: SourceConnectionStore;
 	dataDir: string;
 	maxCheckerRevisions?: number;
-	phaseTimeouts?: {
-		workerMs: number;
-		checkerMs: number;
-	};
+	phaseTimeouts?: CanvasTaskPhaseTimeouts;
 	/** Canvas Task runs intentionally ignore Plan-level global run admission. */
 	maxConcurrentRuns?: number;
 	maxRunDurationMinutes?: number;
@@ -50,6 +47,8 @@ function sortRunsByCreatedAtDesc(runs: TeamRunState[]): TeamRunState[] {
 const DEFAULT_TASK_RUN_TIMEOUTS = {
 	workerMs: 900_000,
 	checkerMs: 300_000,
+	workerHardCapMs: 3_600_000,
+	checkerHardCapMs: 1_800_000,
 };
 
 const DELIVERY_ERROR_LIMIT = 500;
