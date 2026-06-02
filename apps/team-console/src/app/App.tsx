@@ -28,6 +28,7 @@ const PROCESS_NARRATION_MAX_CHARS = 220;
 const PROCESS_ASSISTANT_TEXT_MAX_LINES = 5;
 const PROCESS_ASSISTANT_TEXT_MAX_LINE_CHARS = 200;
 const DISCOVERY_QUEUE_INITIAL_CARD_LIMIT = 18;
+const CANVAS_LOADING_MIN_VISIBLE_MS = 520;
 
 type AgentBranchMode = "chat" | "task-create";
 type TeamConsoleTheme = "light" | "dark";
@@ -865,6 +866,34 @@ function readInitialRootNodeFilter(): RootNodeFilter {
   const dataSource = readStoredInitialDataSource();
   const state = readStoredCanvasUiState(dataSource, CLEAN_AGENT_WORKSPACE_ID);
   return state?.rootNodeFilter ?? "all";
+}
+
+function useMinimumVisibleFlag(active: boolean, minVisibleMs: number): boolean {
+  const [visible, setVisible] = useState(active);
+  const visibleSinceRef = useRef<number | null>(active ? Date.now() : null);
+
+  useEffect(() => {
+    if (active) {
+      visibleSinceRef.current = Date.now();
+      setVisible(true);
+      return undefined;
+    }
+
+    if (!visible) return undefined;
+
+    const visibleSince = visibleSinceRef.current ?? Date.now();
+    const remainingMs = Math.max(0, minVisibleMs - (Date.now() - visibleSince));
+    const timer = globalThis.setTimeout(() => {
+      visibleSinceRef.current = null;
+      setVisible(false);
+    }, remainingMs);
+
+    return () => {
+      globalThis.clearTimeout(timer);
+    };
+  }, [active, minVisibleMs, visible]);
+
+  return visible;
 }
 
 function writeStoredCanvasUiState(state: StoredCanvasUiState): StoredCanvasUiStateByContext | null {
@@ -3775,6 +3804,11 @@ export function App() {
   }, [agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskEditState, clearTaskEditWarning, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, openTaskEditDraft, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runTask, saveTaskEdit, scheduleLiveTaskDiscoveryRefresh, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskEditDraft]);
 
   const canvasStateRestorePending = !loading && !canvasUiStateHydrated;
+  const canvasLoadingVisible = useMinimumVisibleFlag(
+    loading || canvasStateRestorePending,
+    CANVAS_LOADING_MIN_VISIBLE_MS,
+  );
+  const canvasLoadingText = loading ? "正在加载实时运行..." : "正在恢复画布状态...";
 
   return (
     <div className="app-shell" data-theme={theme}>
@@ -3825,9 +3859,15 @@ export function App() {
       )}
 
       <main className="app-main">
-        {loading || canvasStateRestorePending ? (
-          <div className="empty-state">
-            <p>{loading ? "正在加载实时运行..." : "正在恢复画布状态..."}</p>
+        {canvasLoadingVisible ? (
+          <div className="empty-state canvas-loading-state" role="status" aria-live="polite">
+            <div className="canvas-loading-mark" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+            <p>{canvasLoadingText}</p>
+            <div className="canvas-loading-bar" aria-hidden="true" />
           </div>
         ) : (
           <div className="workspace">

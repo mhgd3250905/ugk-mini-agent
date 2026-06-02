@@ -210,9 +210,108 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-direction: column;
   height: 100%;
   color: var(--secondary);
   font-size: 13px;
+}
+
+.canvas-loading-state {
+  gap: 14px;
+  min-height: 280px;
+  background:
+    linear-gradient(180deg, rgba(121, 216, 208, 0.055), transparent 42%),
+    repeating-linear-gradient(90deg, rgba(121, 216, 208, 0.045) 0 1px, transparent 1px 56px),
+    repeating-linear-gradient(0deg, rgba(121, 216, 208, 0.035) 0 1px, transparent 1px 56px),
+    var(--bg);
+}
+
+.canvas-loading-state p {
+  margin: 0;
+  color: var(--secondary);
+  font-size: 13px;
+  font-weight: 560;
+  letter-spacing: 0;
+}
+
+.canvas-loading-mark {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 8px);
+  gap: 7px;
+  align-items: end;
+  height: 28px;
+}
+
+.canvas-loading-mark span {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, rgba(164, 244, 236, 0.95), rgba(79, 140, 154, 0.78));
+  box-shadow:
+    0 0 0 1px rgba(121, 216, 208, 0.2),
+    0 0 18px rgba(121, 216, 208, 0.26);
+  animation: canvas-loading-pulse 0.92s ease-in-out infinite;
+}
+
+.canvas-loading-mark span:nth-child(2) {
+  animation-delay: 0.12s;
+}
+
+.canvas-loading-mark span:nth-child(3) {
+  animation-delay: 0.24s;
+}
+
+.canvas-loading-bar {
+  position: relative;
+  width: min(220px, 46vw);
+  height: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(121, 216, 208, 0.12);
+}
+
+.canvas-loading-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 42%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, rgba(164, 244, 236, 0.95), transparent);
+  animation: canvas-loading-scan 1.15s ease-in-out infinite;
+}
+
+@keyframes canvas-loading-pulse {
+  0%,
+  100% {
+    height: 8px;
+    opacity: 0.48;
+    transform: translateY(0);
+  }
+
+  42% {
+    height: 24px;
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes canvas-loading-scan {
+  from {
+    transform: translateX(-105%);
+  }
+
+  to {
+    transform: translateX(245%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-loading-mark span,
+  .canvas-loading-bar::before {
+    animation: none;
+  }
 }
 
 .workspace {

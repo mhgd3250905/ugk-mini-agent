@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-02 — Team Console canvas restore loading polish
+
+- **主题**: Team Console 画布恢复态改为带动画标记和扫描条的 `role="status"` loading，并设置 520ms 最小可见时长，避免恢复过快时文字一闪而过。
+- **影响范围**: `5174` Execution Atlas 刷新、live 共享布局 hydration 和 mock canvas state 初始化时的恢复态展示；真实画布仍在状态恢复完成后一次性显示正确 filter。
+- **验证**: Docker 内 focused Vitest 通过，覆盖恢复态先出现、最小展示时间后再显示正确 `Agent`/`Task` filter。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/app.css`、`apps/team-console/src/tests/app-canvas-state.test.tsx`。
+
 ## 2026-06-02 — Team Console root filter refresh flicker
 
 - **主题**: 修复刷新 Team Console 时根节点筛选先显示 `ALL`、随后跳回上次 `Agent`/`Task` 的闪缩；root filter 会优先从本地 canvas UI state 初始化，若 live 共享布局还没加载完则暂不渲染画布，避免先显示错误 filter。

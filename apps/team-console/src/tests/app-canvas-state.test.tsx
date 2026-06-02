@@ -17,7 +17,7 @@ describe("App", () => {
   });
 
   describe("canvas state", () => {
-    it("initializes the root filter from stored canvas state before hydration", () => {
+    it("initializes the root filter from stored canvas state after the minimum restore loading time", async () => {
       window.localStorage.setItem("ugk-team-console:canvas-ui-state-by-context:v1", JSON.stringify({
         schemaVersion: 1,
         states: {
@@ -32,9 +32,14 @@ describe("App", () => {
 
       const { container } = render(<App />);
 
-      expect(screen.getByRole("tab", { name: "Agent" })).toHaveClass("is-active");
-      expect(screen.getByRole("tab", { name: "ALL" })).not.toHaveClass("is-active");
-      expect(container.querySelector(".root-filter-segment")).toHaveAttribute("data-active-filter", "agent");
+      expect(screen.getByRole("status")).toHaveTextContent("正在恢复画布状态...");
+      expect(container.querySelector(".root-filter-segment")).toBeNull();
+
+      await waitFor(() => {
+        expect(screen.getByRole("tab", { name: "Agent" })).toHaveClass("is-active");
+        expect(screen.getByRole("tab", { name: "ALL" })).not.toHaveClass("is-active");
+        expect(container.querySelector(".root-filter-segment")).toHaveAttribute("data-active-filter", "agent");
+      });
     });
 
     it("does not render the root filter before delayed shared live layout hydration", async () => {
