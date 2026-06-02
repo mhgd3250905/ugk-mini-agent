@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { renameWithTransientRetry } from "../file-system.js";
 import { generateTaskId } from "./ids.js";
-import type { TeamCanvasTask, TeamCanvasTaskStatus, TeamWorkUnitDefinition } from "./types.js";
+import type { TeamCanvasTask, TeamCanvasTaskStatus, TeamDiscoverySpec, TeamTaskTemplateConfig, TeamWorkUnitDefinition } from "./types.js";
 import {
 	type CreateTeamCanvasTaskInput,
 	type TaskValidationContext,
@@ -33,8 +33,65 @@ export interface UpsertGeneratedTaskFromDiscoveryInput {
 	workUnit: Omit<TeamWorkUnitDefinition, "workerAgentId" | "checkerAgentId">;
 }
 
+export interface CloneTeamCanvasTaskInput {
+	title?: string;
+	templateBindings?: Record<string, string>;
+}
+
 function cloneWorkUnit(workUnit: TeamWorkUnitDefinition): TeamWorkUnitDefinition {
 	return JSON.parse(JSON.stringify(workUnit)) as TeamWorkUnitDefinition;
+}
+
+function cloneDiscoverySpec(discoverySpec: TeamDiscoverySpec | undefined): TeamDiscoverySpec | undefined {
+	return discoverySpec ? JSON.parse(JSON.stringify(discoverySpec)) as TeamDiscoverySpec : undefined;
+}
+
+function cloneTemplateConfig(templateConfig: TeamTaskTemplateConfig | undefined): TeamTaskTemplateConfig | undefined {
+	return templateConfig ? JSON.parse(JSON.stringify(templateConfig)) as TeamTaskTemplateConfig : undefined;
+}
+
+function replaceTemplatePlaceholders(value: string, bindings: Record<string, string>): string {
+	return value.replace(/\{\{([A-Za-z][A-Za-z0-9_-]{0,63})\}\}/g, (match, key: string) => {
+		return bindings[key] ?? match;
+	});
+}
+
+function applyBindingsToWorkUnit(workUnit: TeamWorkUnitDefinition, bindings: Record<string, string>): TeamWorkUnitDefinition {
+	return {
+		...workUnit,
+		title: replaceTemplatePlaceholders(workUnit.title, bindings),
+		input: { text: replaceTemplatePlaceholders(workUnit.input.text, bindings) },
+		outputContract: { text: replaceTemplatePlaceholders(workUnit.outputContract.text, bindings) },
+		acceptance: { rules: workUnit.acceptance.rules.map(rule => replaceTemplatePlaceholders(rule, bindings)) },
+	};
+}
+
+function applyBindingsToDiscoverySpec(discoverySpec: TeamDiscoverySpec | undefined, bindings: Record<string, string>): TeamDiscoverySpec | undefined {
+	if (!discoverySpec) return undefined;
+	return {
+		...discoverySpec,
+		discoveryGoal: replaceTemplatePlaceholders(discoverySpec.discoveryGoal, bindings),
+		dispatchGoal: replaceTemplatePlaceholders(discoverySpec.dispatchGoal, bindings),
+	};
+}
+
+function buildTemplateBindings(
+	templateConfig: TeamTaskTemplateConfig,
+	inputBindings: Record<string, string> | undefined,
+): Record<string, string> {
+	const raw = inputBindings ?? {};
+	const bindings: Record<string, string> = {};
+	for (const parameter of templateConfig.parameters) {
+		const rawValue = raw[parameter.id] ?? parameter.defaultValue;
+		if (typeof rawValue !== "string" || !rawValue.trim()) {
+			if (parameter.required !== false) {
+				throw new Error(`template binding is required: ${parameter.id}`);
+			}
+			continue;
+		}
+		bindings[parameter.id] = rawValue.trim();
+	}
+	return bindings;
 }
 
 export class TaskStore {
@@ -54,6 +111,8 @@ export class TaskStore {
 			...(input.canvasKind ? { canvasKind: input.canvasKind } : {}),
 			...(input.discoverySpec ? { discoverySpec: input.discoverySpec } : {}),
 			...(input.generatedSource ? { generatedSource: input.generatedSource } : {}),
+			...(input.templateConfig ? { templateConfig: input.templateConfig } : {}),
+			...(input.templateInstance ? { templateInstance: input.templateInstance } : {}),
 			status: input.status ?? "drafting",
 			createdAt: now,
 			updatedAt: now,
@@ -104,6 +163,42 @@ export class TaskStore {
 		}
 		await this.write(updated);
 		return updated;
+	}
+
+	async clone(taskId: string, input: CloneTeamCanvasTaskInput = {}): Promise<TeamCanvasTask> {
+		const source = await this.get(taskId);
+		if (!source) throw new Error(`task not found: ${taskId}`);
+		if (source.generatedSource) {
+			throw new Error("generated Task cannot be cloned through this route");
+		}
+		if (source.archived) {
+			throw new Error("archived task cannot be cloned");
+		}
+		const templateConfig = cloneTemplateConfig(source.templateConfig);
+		const bindings = templateConfig ? buildTemplateBindings(templateConfig, input.templateBindings) : {};
+		const workUnit = applyBindingsToWorkUnit(cloneWorkUnit(source.workUnit), bindings);
+		const discoverySpec = applyBindingsToDiscoverySpec(cloneDiscoverySpec(source.discoverySpec), bindings);
+		const title = input.title?.trim()
+			? input.title.trim()
+			: replaceTemplatePlaceholders(source.title, bindings);
+		return await this.create({
+			title,
+			leaderAgentId: source.leaderAgentId,
+			workUnit,
+			...(source.canvasKind ? { canvasKind: source.canvasKind } : {}),
+			...(discoverySpec ? { discoverySpec } : {}),
+			...(templateConfig
+				? {
+					templateInstance: {
+						schemaVersion: "team/task-template-instance-1",
+						sourceTaskId: source.taskId,
+						bindings,
+					},
+				}
+				: {}),
+			status: source.status === "ready" ? "ready" : "drafting",
+			...(source.createdByAgentId ? { createdByAgentId: source.createdByAgentId } : {}),
+		});
 	}
 
 	async listGeneratedForDiscoveryTask(discoveryTaskId: string, options: TaskStoreListOptions = {}): Promise<TeamCanvasTask[]> {

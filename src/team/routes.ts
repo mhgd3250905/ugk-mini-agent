@@ -319,6 +319,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 				status: body.status as any,
 				workUnit: body.workUnit as any,
 				discoverySpec: body.discoverySpec as any,
+				templateConfig: body.templateConfig as any,
 				createdByAgentId: body.createdByAgentId as string | undefined,
 			});
 			reply.code(201);
@@ -333,6 +334,21 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		const task = await taskStore.get(taskId);
 		if (!task) { sendNotFound(reply, "task"); return; }
 		sendTaskResponse(reply, task);
+	});
+
+	app.post("/v1/team/tasks/:taskId/clone", async (request, reply) => {
+		const taskId = idParam(request, "taskId");
+		const body = optionalJsonBody(request) ?? {};
+		try {
+			const task = await taskStore.clone(taskId, {
+				title: body.title as string | undefined,
+				templateBindings: body.templateBindings as Record<string, string> | undefined,
+			});
+			reply.code(201);
+			sendTaskResponse(reply, task);
+		} catch (err) {
+			sendMappedError(reply, err, [["not found", 404], ["archived", 409], ["generated Task", 409]]);
+		}
 	});
 
 	app.get("/v1/team/tasks/:taskId/generated-tasks", async (request, reply) => {
@@ -376,6 +392,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		if (Object.hasOwn(body, "leaderAgentId")) patch.leaderAgentId = body.leaderAgentId as string;
 		if (Object.hasOwn(body, "workUnit")) patch.workUnit = body.workUnit as any;
 		if (Object.hasOwn(body, "discoverySpec")) patch.discoverySpec = body.discoverySpec as any;
+		if (Object.hasOwn(body, "templateConfig")) patch.templateConfig = body.templateConfig as any;
 		if (Object.hasOwn(body, "status")) patch.status = body.status as any;
 		try {
 			const task = await taskStore.update(taskId, patch);

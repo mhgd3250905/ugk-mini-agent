@@ -287,6 +287,25 @@ export interface TeamGeneratedTaskSource {
   latestManagedWorkUnit?: TeamWorkUnitDefinition;
 }
 
+export interface TeamTaskTemplateParameter {
+  id: string;
+  label: string;
+  description?: string;
+  required?: boolean;
+  defaultValue?: string;
+}
+
+export interface TeamTaskTemplateConfig {
+  schemaVersion: "team/task-template-1";
+  parameters: TeamTaskTemplateParameter[];
+}
+
+export interface TeamTaskTemplateInstance {
+  schemaVersion: "team/task-template-instance-1";
+  sourceTaskId: string;
+  bindings: Record<string, string>;
+}
+
 export interface TeamWorkUnitDefinition {
   title: string;
   input: { text: string };
@@ -519,6 +538,8 @@ export interface TeamCanvasTask {
   workUnit: TeamWorkUnitDefinition;
   discoverySpec?: TeamDiscoverySpec;
   generatedSource?: TeamGeneratedTaskSource;
+  templateConfig?: TeamTaskTemplateConfig;
+  templateInstance?: TeamTaskTemplateInstance;
   status: TeamCanvasTaskStatus;
   createdAt: string;
   updatedAt: string;
@@ -561,7 +582,13 @@ export interface TeamTaskUpdateRequest {
   title?: string;
   leaderAgentId?: string;
   workUnit?: TeamWorkUnitDefinition;
+  templateConfig?: TeamTaskTemplateConfig;
   status?: TeamCanvasTaskStatus;
+}
+
+export interface TeamTaskCloneRequest {
+  title?: string;
+  templateBindings?: Record<string, string>;
 }
 
 export interface TeamTaskState {

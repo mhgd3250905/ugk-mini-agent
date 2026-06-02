@@ -189,6 +189,20 @@ describe("MockTeamApi", () => {
     expect(listed.some((candidate) => candidate.generatedSource)).toBe(false);
   });
 
+  it("clones mock Team Tasks", async () => {
+    const task = mockTeamTasks[0]!;
+
+    const response = await (api as unknown as {
+      cloneTask(taskId: string, input: { title?: string; templateBindings?: Record<string, string> }): Promise<{ task: typeof task }>;
+    }).cloneTask(task.taskId, { title: "复制后的工具 Task" });
+
+    expect(response.task.taskId).not.toBe(task.taskId);
+    expect(response.task.title).toBe("复制后的工具 Task");
+    expect(response.task.workUnit).toEqual(task.workUnit);
+    const listed = await api.listTasks();
+    expect(listed.map((candidate) => candidate.taskId)).toContain(response.task.taskId);
+  });
+
   it("archives mock Team Tasks without deleting the fixture definition", async () => {
     const task = mockTeamTasks[0]!;
 
@@ -589,6 +603,29 @@ describe("LiveTeamApi", () => {
     expect(response.warnings).toEqual([
       "workerAgentId and checkerAgentId are the same; self-checking weakens independent acceptance.",
     ]);
+  });
+
+  it("posts live Task clone requests to the encoded clone endpoint", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const task = { ...mockTeamTasks[0]!, taskId: "task_cloned", title: "GLM-5.1 论坛查询" };
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ task }), { status: 201 }));
+
+    const response = await (api as unknown as {
+      cloneTask(taskId: string, input: { title?: string; templateBindings?: Record<string, string> }): Promise<{ task: typeof task }>;
+    }).cloneTask("task/a b", {
+      title: "GLM-5.1 论坛查询",
+      templateBindings: { keyword: "GLM-5.1" },
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/tasks/task%2Fa%20b/clone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "GLM-5.1 论坛查询",
+        templateBindings: { keyword: "GLM-5.1" },
+      }),
+    });
+    expect(response.task.taskId).toBe("task_cloned");
   });
 
   it("archives live Team Tasks through the soft archive endpoint", async () => {

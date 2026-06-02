@@ -65,6 +65,13 @@ const discoverySpec = {
 	autoRun: { enabled: true as const, concurrency: 3 as const },
 };
 
+const templateConfig = {
+	schemaVersion: "team/task-template-1" as const,
+	parameters: [
+		{ id: "keyword", label: "关键词", required: true as const },
+	],
+};
+
 function discoveryTaskPayload(overrides: Record<string, unknown> = {}) {
 	return {
 		...taskPayload,
@@ -145,6 +152,81 @@ test("POST /v1/team/tasks creates an independent Task resource", async () => {
 
 		await app.close();
 	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("POST /v1/team/tasks creates a template Task resource", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const createRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: {
+				...taskPayload,
+				title: "全网查询 {{keyword}}",
+				workUnit: {
+					...taskPayload.workUnit,
+					title: "全网查询 {{keyword}}",
+					input: { text: "围绕 {{keyword}} 进行公开来源检索。" },
+				},
+				templateConfig,
+			},
+		});
+		assert.equal(createRes.statusCode, 201);
+		const body = createRes.json();
+		assert.deepEqual(body.task.templateConfig, templateConfig);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("POST /v1/team/tasks/:taskId/clone instantiates template bindings", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const createRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: {
+				...taskPayload,
+				title: "全网查询 {{keyword}}",
+				workUnit: {
+					...taskPayload.workUnit,
+					title: "全网查询 {{keyword}}",
+					input: { text: "围绕 {{keyword}} 进行公开来源检索。" },
+				},
+				templateConfig,
+			},
+		});
+		const template = createRes.json().task;
+
+		const cloneRes = await app.inject({
+			method: "POST",
+			url: `/v1/team/tasks/${template.taskId}/clone`,
+			payload: { templateBindings: { keyword: "MiniMax M3" } },
+		});
+		assert.equal(cloneRes.statusCode, 201);
+		const cloned = cloneRes.json().task;
+		assert.notEqual(cloned.taskId, template.taskId);
+		assert.equal(cloned.title, "全网查询 MiniMax M3");
+		assert.equal(cloned.workUnit.input.text, "围绕 MiniMax M3 进行公开来源检索。");
+		assert.equal(cloned.templateConfig, undefined);
+		assert.deepEqual(cloned.templateInstance, {
+			schemaVersion: "team/task-template-instance-1",
+			sourceTaskId: template.taskId,
+			bindings: { keyword: "MiniMax M3" },
+		});
+
+		const missingBinding = await app.inject({
+			method: "POST",
+			url: `/v1/team/tasks/${template.taskId}/clone`,
+			payload: { templateBindings: {} },
+		});
+		assert.equal(missingBinding.statusCode, 400);
+		assert.match(missingBinding.json().error, /template binding is required: keyword/);
+	} finally {
+		await app.close();
 		await rm(root, { recursive: true, force: true });
 	}
 });

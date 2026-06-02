@@ -26,6 +26,7 @@ import type {
   TeamTaskConnectionCreateRequest,
   TeamTaskDependency,
   TeamTaskDependencyCreateRequest,
+  TeamTaskCloneRequest,
   TeamTaskMutationResponse,
   TeamTaskUpdateRequest,
   TeamPlan,
@@ -1944,6 +1945,29 @@ export class MockTeamApi {
       updatedAt: ts(),
     };
     mockCanvasTasks[index] = cloneMockTeamTask(next);
+    return {
+      task: cloneMockTeamTask(next),
+      warnings: mockTaskWarnings(next),
+    };
+  }
+
+  async cloneTask(taskId: string, input: TeamTaskCloneRequest): Promise<TeamTaskMutationResponse> {
+    const source = mockCanvasTasks.find((task) => task.taskId === taskId);
+    if (!source) throw { message: `Task not found: ${taskId}` };
+    if (source.generatedSource) throw { message: "generated Task cannot be cloned through this route" };
+    const now = ts();
+    const next: TeamCanvasTask = {
+      ...cloneMockTeamTask(source),
+      taskId: `mock_task_clone_${Math.random().toString(16).slice(2, 10)}`,
+      title: input.title?.trim() || `${source.title} copy`,
+      status: source.status === "ready" ? "ready" : "drafting",
+      createdAt: now,
+      updatedAt: now,
+      archived: false,
+      generatedSource: undefined,
+      templateConfig: undefined,
+    };
+    mockCanvasTasks.unshift(cloneMockTeamTask(next));
     return {
       task: cloneMockTeamTask(next),
       warnings: mockTaskWarnings(next),

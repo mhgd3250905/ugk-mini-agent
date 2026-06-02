@@ -5,6 +5,8 @@ import type {
 	TeamDiscoverySpec,
 	TeamGeneratedTaskSource,
 	TeamTaskOutputCheck,
+	TeamTaskTemplateConfig,
+	TeamTaskTemplateInstance,
 	TeamWorkUnitDefinition,
 } from "./types.js";
 import { validateTaskPorts } from "./task-port-contract.js";
@@ -23,6 +25,8 @@ export interface CreateTeamCanvasTaskInput {
 	workUnit: TeamWorkUnitDefinition;
 	discoverySpec?: TeamDiscoverySpec;
 	generatedSource?: TeamGeneratedTaskSource;
+	templateConfig?: TeamTaskTemplateConfig;
+	templateInstance?: TeamTaskTemplateInstance;
 	status?: TeamCanvasTaskStatus;
 	createdByAgentId?: string;
 }
@@ -32,6 +36,7 @@ export interface UpdateTeamCanvasTaskInput {
 	leaderAgentId?: string;
 	workUnit?: TeamWorkUnitDefinition;
 	discoverySpec?: TeamDiscoverySpec;
+	templateConfig?: TeamTaskTemplateConfig;
 	status?: TeamCanvasTaskStatus;
 }
 
@@ -204,6 +209,72 @@ function validateGeneratedSource(generatedSource: TeamGeneratedTaskSource | unde
 	}
 }
 
+function assertStableTemplateParameterId(value: unknown, message: string): string {
+	if (typeof value !== "string" || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(value)) {
+		throw new Error(message);
+	}
+	return value;
+}
+
+function validateTemplateConfig(templateConfig: TeamTaskTemplateConfig | undefined): void {
+	if (templateConfig === undefined) return;
+	if (!templateConfig || typeof templateConfig !== "object" || Array.isArray(templateConfig)) {
+		throw new Error("templateConfig must be an object");
+	}
+	if (templateConfig.schemaVersion !== "team/task-template-1") {
+		throw new Error("templateConfig.schemaVersion is invalid");
+	}
+	if (!Array.isArray(templateConfig.parameters) || templateConfig.parameters.length === 0) {
+		throw new Error("templateConfig.parameters must contain at least one parameter");
+	}
+	const ids = new Set<string>();
+	for (const [index, parameter] of templateConfig.parameters.entries()) {
+		if (!parameter || typeof parameter !== "object" || Array.isArray(parameter)) {
+			throw new Error(`templateConfig.parameters[${index}] must be an object`);
+		}
+		const id = assertStableTemplateParameterId(
+			parameter.id,
+			`templateConfig.parameters[${index}].id must be a stable identifier`,
+		);
+		if (ids.has(id)) {
+			throw new Error(`templateConfig.parameters contains duplicate parameter id: ${id}`);
+		}
+		ids.add(id);
+		assertNonEmptyString(parameter.label, `templateConfig.parameters[${index}].label is required`);
+		assertOptionalNonEmptyString(
+			parameter.description,
+			`templateConfig.parameters[${index}].description must be a non-empty string`,
+		);
+		assertOptionalNonEmptyString(
+			parameter.defaultValue,
+			`templateConfig.parameters[${index}].defaultValue must be a non-empty string`,
+		);
+		if (parameter.required !== undefined && typeof parameter.required !== "boolean") {
+			throw new Error(`templateConfig.parameters[${index}].required must be a boolean`);
+		}
+	}
+}
+
+function validateTemplateInstance(templateInstance: TeamTaskTemplateInstance | undefined): void {
+	if (templateInstance === undefined) return;
+	if (!templateInstance || typeof templateInstance !== "object" || Array.isArray(templateInstance)) {
+		throw new Error("templateInstance must be an object");
+	}
+	if (templateInstance.schemaVersion !== "team/task-template-instance-1") {
+		throw new Error("templateInstance.schemaVersion is invalid");
+	}
+	assertNonEmptyString(templateInstance.sourceTaskId, "templateInstance.sourceTaskId is required");
+	if (!isPlainRecord(templateInstance.bindings)) {
+		throw new Error("templateInstance.bindings must be a plain object");
+	}
+	for (const [key, value] of Object.entries(templateInstance.bindings)) {
+		assertStableTemplateParameterId(key, `templateInstance.bindings parameter id is invalid: ${key}`);
+		if (typeof value !== "string" || !value.trim()) {
+			throw new Error(`templateInstance.bindings.${key} must be a non-empty string`);
+		}
+	}
+}
+
 export function validateCreateTaskInput(input: CreateTeamCanvasTaskInput, context: TaskValidationContext = {}): void {
 	const rawCanvasKind = (input as { canvasKind?: unknown }).canvasKind;
 	if (rawCanvasKind !== undefined && rawCanvasKind !== "task" && rawCanvasKind !== "discovery") {
@@ -232,6 +303,11 @@ export function validateCreateTaskInput(input: CreateTeamCanvasTaskInput, contex
 	if (input.createdByAgentId !== undefined) {
 		const createdByAgentId = assertNonEmptyString(input.createdByAgentId, "createdByAgentId must be a non-empty string");
 		assertKnownAgent(createdByAgentId, context);
+	}
+	validateTemplateConfig(input.templateConfig);
+	validateTemplateInstance(input.templateInstance);
+	if (input.templateConfig !== undefined && input.templateInstance !== undefined) {
+		throw new Error("template task cannot also be a template instance");
 	}
 }
 
@@ -271,6 +347,7 @@ export function validateTaskUpdateInput(existing: TeamCanvasTask, patch: UpdateT
 	if (patch.status !== undefined && !PATCH_STATUSES.has(patch.status)) {
 		throw new Error("task status must be drafting or ready");
 	}
+	validateTemplateConfig(patch.templateConfig);
 }
 
 export function buildTaskWarnings(task: Pick<TeamCanvasTask, "workUnit">): string[] {

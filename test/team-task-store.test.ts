@@ -57,6 +57,18 @@ const validGeneratedSourceWithSnapshot = {
 	latestManagedWorkUnit: validLatestManagedWorkUnit,
 };
 
+const validTemplateConfig = {
+	schemaVersion: "team/task-template-1" as const,
+	parameters: [
+		{
+			id: "keyword",
+			label: "关键词",
+			description: "要查询的品牌、模型或产品关键词。",
+			required: true,
+		},
+	],
+};
+
 function createStore(root: string): TaskStore {
 	return new TaskStore(root, { getAgentIds: () => knownAgents });
 }
@@ -77,6 +89,106 @@ test("TaskStore creates a valid independent canvas task with one WorkUnit", asyn
 
 		const got = await store.get(task.taskId);
 		assert.deepEqual(got, task);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("TaskStore creates a template canvas task and validates template parameters", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-store-"));
+	try {
+		const store = createStore(root);
+		const task = await store.create({
+			...validTaskInput,
+			title: "全网查询 {{keyword}}",
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "全网查询 {{keyword}}",
+				input: { text: "围绕 {{keyword}} 进行公开来源检索。" },
+			},
+			templateConfig: validTemplateConfig,
+		} as never);
+
+		assert.deepEqual((task as any).templateConfig, validTemplateConfig);
+		const got = await store.get(task.taskId);
+		assert.deepEqual((got as any)?.templateConfig, validTemplateConfig);
+
+		await assert.rejects(
+			() => store.create({
+				...validTaskInput,
+				templateConfig: {
+					schemaVersion: "team/task-template-1",
+					parameters: [{ id: "bad id", label: "Bad" }],
+				},
+			} as never),
+			{ message: "templateConfig.parameters[0].id must be a stable identifier" },
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("TaskStore clones a template task by applying bindings and recording its template source", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-store-"));
+	try {
+		const store = createStore(root);
+		const template = await store.create({
+			...validTaskInput,
+			title: "全网查询 {{keyword}}",
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "全网查询 {{keyword}}",
+				input: { text: "围绕 {{keyword}} 进行公开来源检索。" },
+				outputContract: { text: "输出 {{keyword}} 的中文 Markdown 报告。" },
+				acceptance: { rules: ["必须包含 {{keyword}} 的来源证据"] },
+			},
+			templateConfig: validTemplateConfig,
+		} as never);
+
+		const cloned = await (store as any).clone(template.taskId, {
+			templateBindings: { keyword: "GLM-5.1" },
+		});
+
+		assert.notEqual(cloned.taskId, template.taskId);
+		assert.equal(cloned.title, "全网查询 GLM-5.1");
+		assert.equal(cloned.workUnit.title, "全网查询 GLM-5.1");
+		assert.equal(cloned.workUnit.input.text, "围绕 GLM-5.1 进行公开来源检索。");
+		assert.equal(cloned.workUnit.outputContract.text, "输出 GLM-5.1 的中文 Markdown 报告。");
+		assert.deepEqual(cloned.workUnit.acceptance.rules, ["必须包含 GLM-5.1 的来源证据"]);
+		assert.equal(cloned.templateConfig, undefined);
+		assert.deepEqual(cloned.templateInstance, {
+			schemaVersion: "team/task-template-instance-1",
+			sourceTaskId: template.taskId,
+			bindings: { keyword: "GLM-5.1" },
+		});
+
+		await assert.rejects(
+			() => (store as any).clone(template.taskId, { templateBindings: {} }),
+			{ message: "template binding is required: keyword" },
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("TaskStore clones a normal task without copying generated identity or run history", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-store-"));
+	try {
+		const store = createStore(root);
+		const source = await store.create(validTaskInput);
+		const cloned = await (store as any).clone(source.taskId, { title: "复制后的 HTML 工具 Task" });
+
+		assert.notEqual(cloned.taskId, source.taskId);
+		assert.equal(cloned.title, "复制后的 HTML 工具 Task");
+		assert.equal(cloned.workUnit.title, validTaskInput.workUnit.title);
+		assert.equal(cloned.generatedSource, undefined);
+		assert.equal(cloned.archived, false);
+
+		const generated = await store.create({ ...validTaskInput, generatedSource: validGeneratedSource });
+		await assert.rejects(
+			() => (store as any).clone(generated.taskId, {}),
+			{ message: "generated Task cannot be cloned through this route" },
+		);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

@@ -38,6 +38,7 @@ import type {
   TeamTaskDependencyCreateRequest,
   TeamTaskDependencyListResponse,
   TeamTaskDependencyMutationResponse,
+  TeamTaskCloneRequest,
   TeamTaskMutationResponse,
   TeamTaskUpdateRequest,
   TeamPlan,
@@ -73,6 +74,7 @@ export interface CanvasTaskGateway {
   ): Promise<TeamDiscoveryGeneratedTaskSummary[]>;
   getTask(taskId: string): Promise<TeamCanvasTask | null>;
   updateTask(taskId: string, patch: TeamTaskUpdateRequest): Promise<TeamTaskMutationResponse>;
+  cloneTask(taskId: string, input: TeamTaskCloneRequest): Promise<TeamTaskMutationResponse>;
   resetGeneratedTaskWorkUnit(taskId: string): Promise<TeamTaskMutationResponse>;
   archiveTask(taskId: string): Promise<TeamTaskMutationResponse>;
   listTaskConnections(): Promise<TeamTaskConnection[]>;
@@ -666,6 +668,22 @@ export class LiveTeamApi implements TeamApiProvider {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      return (await res.json()) as TeamTaskMutationResponse;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async cloneTask(taskId: string, input: TeamTaskCloneRequest): Promise<TeamTaskMutationResponse> {
+    try {
+      const res = await fetch(`${this.baseUrl}/tasks/${encodeURIComponent(taskId)}/clone`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
       });
       if (!res.ok) {
         throw await responseToApiError(res, `请求失败 (${res.status})`);
