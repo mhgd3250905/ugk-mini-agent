@@ -361,6 +361,20 @@ describe("App", () => {
     expect(hetznerCard).toHaveAttribute("data-generated-run-status", "none");
     expect(within(vultrCard!).getByText("核查 Vultr 公开证据")).toBeInTheDocument();
     expect(within(hetznerCard!).getByText("核查 Hetzner 公开证据")).toBeInTheDocument();
+    const vultrMenuButton = within(vultrCard!).getByRole("button", { name: "核查 Vultr 公开证据 操作菜单" });
+    expect(vultrMenuButton).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(vultrMenuButton);
+    const openVultrCard = await waitFor(() => {
+      const card = getGeneratedCard(panel!, "task_generated_vultr");
+      expect(within(card).getByRole("button", { name: "核查 Vultr 公开证据 操作菜单" })).toHaveAttribute("aria-expanded", "true");
+      return card;
+    });
+    expect(openVultrCard.querySelector(".discovery-generated-card-actions")).toHaveAttribute("role", "menu");
+    fireEvent.keyDown(openVultrCard, { key: "Escape" });
+    await waitFor(() => {
+      const card = getGeneratedCard(panel!, "task_generated_vultr");
+      expect(within(card).getByRole("button", { name: "核查 Vultr 公开证据 操作菜单" })).toHaveAttribute("aria-expanded", "false");
+    });
     expect(panel!.querySelector('[data-generated-task-id="task_generated_archived_ovh"]')).toBeNull();
     expect(within(atlas).queryByRole("button", { name: "核查 Vultr 公开证据" })).toBeNull();
     expect(within(atlas).queryByRole("button", { name: "核查 Hetzner 公开证据" })).toBeNull();

@@ -1271,6 +1271,7 @@ export function App() {
   const [generatedResetSavingByTaskId, setGeneratedResetSavingByTaskId] = useState<Record<string, boolean>>({});
   const [generatedArchiveConfirmTaskId, setGeneratedArchiveConfirmTaskId] = useState<string | null>(null);
   const [generatedArchiveSavingByTaskId, setGeneratedArchiveSavingByTaskId] = useState<Record<string, boolean>>({});
+  const [generatedActionMenuTaskId, setGeneratedActionMenuTaskId] = useState<string | null>(null);
   const [taskRunObserverByRunId, setTaskRunObserverByRunId] = useState<Record<string, TaskRunObserverState>>({});
   const [runHistoryTaskId, setRunHistoryTaskId] = useState<string | null>(null);
   const [runHistoryItems, setRunHistoryItems] = useState<TeamTaskRunHistoryItem[]>([]);
@@ -1761,6 +1762,9 @@ export function App() {
     if (generatedArchiveConfirmTaskId && !openDiscoverySubcanvasGeneratedTaskIds.has(generatedArchiveConfirmTaskId)) {
       setGeneratedArchiveConfirmTaskId(null);
     }
+    if (dataSource === "live" && generatedActionMenuTaskId && !generatedTasksById.has(generatedActionMenuTaskId)) {
+      setGeneratedActionMenuTaskId(null);
+    }
     setGeneratedArchiveSavingByTaskId((current) => {
       let changed = false;
       const next = { ...current };
@@ -1772,7 +1776,7 @@ export function App() {
       }
       return changed ? next : current;
     });
-  }, [generatedArchiveConfirmTaskId, openDiscoverySubcanvasGeneratedTaskIds]);
+  }, [dataSource, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedTasksById, openDiscoverySubcanvasGeneratedTaskIds]);
 
   useEffect(() => {
     if (dataSource !== "live") {
@@ -3277,10 +3281,12 @@ export function App() {
             waitingForCurrentDiscoveryRun,
             workUnitMode,
           } = card;
+          const generatedActionMenuOpen = generatedActionMenuTaskId === generatedTask.taskId;
+          const generatedActionMenuId = `generated-action-menu-${branch.nodeId}-${generatedTask.taskId}`;
           return (
             <article
               key={generatedTask.taskId}
-              className={`discovery-generated-card state-${visualState} is-${itemStatus} ${generatedRunIsObserved ? "is-observed" : ""} ${generatedIsEditing ? "is-editing" : ""}`}
+              className={`discovery-generated-card state-${visualState} is-${itemStatus} ${generatedRunIsObserved ? "is-observed" : ""} ${generatedIsEditing ? "is-editing" : ""} ${generatedActionMenuOpen ? "is-action-menu-open" : ""}`}
               data-generated-task-id={generatedTask.taskId}
               data-generated-item-status={itemStatus}
               data-generated-workunit-mode={workUnitMode}
@@ -3291,18 +3297,43 @@ export function App() {
               data-generated-editing={generatedIsEditing ? "true" : "false"}
               data-generated-reset-saving={resetSaving ? "true" : "false"}
               data-generated-archive-saving={archiveSaving ? "true" : "false"}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setGeneratedActionMenuTaskId((current) => current === generatedTask.taskId ? null : current);
+                }
+              }}
             >
               <span className="discovery-generated-card-watermark" aria-hidden="true">{generatedOrdinal}</span>
               <div className="discovery-generated-card-head">
                 <strong>{generatedTask.title}</strong>
               </div>
-              <div className="discovery-generated-card-actions">
+              <button
+                type="button"
+                className="discovery-generated-menu-trigger"
+                data-generated-action="menu"
+                aria-label={`${generatedTask.title} 操作菜单`}
+                aria-expanded={generatedActionMenuOpen}
+                aria-controls={generatedActionMenuId}
+                onClick={() => setGeneratedActionMenuTaskId((current) =>
+                  current === generatedTask.taskId ? null : generatedTask.taskId
+                )}
+              >
+                <span aria-hidden="true">⋮</span>
+              </button>
+              <div
+                id={generatedActionMenuId}
+                className="discovery-generated-card-actions"
+                role="menu"
+                aria-label={`${generatedTask.title} 操作`}
+              >
                 <button
                   type="button"
                   className={`discovery-generated-action ${generatedIsEditing ? "selected" : ""}`}
                   data-generated-action="edit"
+                  role="menuitem"
                   aria-label={`${generatedTask.title} ${generatedIsEditing ? "收起 generated Task 浅编辑" : "打开 generated Task 浅编辑"}`}
                   onClick={() => {
+                    setGeneratedActionMenuTaskId(null);
                     if (generatedIsEditing) {
                       clearTaskEditState(generatedTask.taskId);
                     } else {
@@ -3337,9 +3368,11 @@ export function App() {
                     type="button"
                     className="discovery-generated-action reset"
                     data-generated-action="reset-workunit"
+                    role="menuitem"
                     disabled={resetSaving}
                     title="恢复为 Discovery 派发器最新 managed WorkUnit"
                     onClick={() => {
+                      setGeneratedActionMenuTaskId(null);
                       void resetGeneratedTaskWorkUnit(generatedTask);
                     }}
                   >
@@ -3350,9 +3383,13 @@ export function App() {
                   type="button"
                   className="discovery-generated-action danger"
                   data-generated-action="archive"
+                  role="menuitem"
                   disabled={archiveSaving}
                   title="通过现有 Canvas Task 归档接口软归档这个 generated Task"
-                  onClick={() => setGeneratedArchiveConfirmTaskId(generatedTask.taskId)}
+                  onClick={() => {
+                    setGeneratedActionMenuTaskId(null);
+                    setGeneratedArchiveConfirmTaskId(generatedTask.taskId);
+                  }}
                 >
                   {archiveSaving ? "归档中..." : "归档"}
                 </button>
@@ -3360,9 +3397,11 @@ export function App() {
                   type="button"
                   className="discovery-generated-action"
                   data-generated-action="run"
+                  role="menuitem"
                   disabled={runSaving || Boolean(activeGeneratedRun) || generatedTask.status !== "ready"}
                   title={generatedTask.status === "ready" ? "启动这个 generated Task 的 WorkUnit run" : "只有 ready generated Task 可以运行"}
                   onClick={() => {
+                    setGeneratedActionMenuTaskId(null);
                     void runTask(generatedTask);
                   }}
                 >
@@ -3373,8 +3412,10 @@ export function App() {
                     type="button"
                     className="discovery-generated-action"
                     data-generated-action="cancel"
+                    role="menuitem"
                     disabled={runSaving}
                     onClick={() => {
+                      setGeneratedActionMenuTaskId(null);
                       void cancelTaskRun(generatedTask, activeGeneratedRun);
                     }}
                   >
@@ -3386,8 +3427,10 @@ export function App() {
                     type="button"
                     className={`discovery-generated-action summary ${generatedRunIsObserved ? "selected" : ""}`}
                     data-generated-action="observe-run"
+                    role="menuitem"
                     aria-label={`${generatedTask.title} ${generatedRunIsObserved ? "收起 generated run observer" : "打开 generated run observer"}`}
                     onClick={() => {
+                      setGeneratedActionMenuTaskId(null);
                       setExpandedTaskBranches((current) => current.map((item) => {
                         if (item.nodeId !== branch.nodeId) return item;
                         const isSameObserver = item.discoveryGeneratedObserver?.taskId === generatedTask.taskId
@@ -4133,7 +4176,7 @@ export function App() {
     }
 
     return panels;
-  }, [agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskEditState, clearTaskEditWarning, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, openTaskEditDraft, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runTask, saveTaskEdit, scheduleLiveTaskDiscoveryRefresh, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskEditDraft]);
+  }, [agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskEditState, clearTaskEditWarning, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, openTaskEditDraft, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runTask, saveTaskEdit, scheduleLiveTaskDiscoveryRefresh, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskEditDraft]);
 
   const runHistoryDrawer = runHistoryTask ? (() => {
     const selectedDetail = selectedRunHistoryItem
