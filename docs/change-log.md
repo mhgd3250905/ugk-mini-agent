@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-03 — Team Console refresh reference stability
+
+- **主题**: Team Console Live API refresh 增加前端引用稳定合并：未变化的 root Task、run summary 和已 lazy fetched 的 generated full detail 在刷新后保持对象引用；root Task 从 catalog 删除或归档后，对应 root run state 同步清理。
+- **影响范围**: `5174` Live API 的 root catalog refresh、root run summary merge、Discovery generated summary merge 和 Execution Atlas 重渲染边界；本轮不新增 `since` / cursor 后端增量 contract。
+- **验证**: `npm --prefix apps\team-console run test -- --run src\tests\team-api.test.ts src\tests\app-live-data.test.tsx src\tests\app-run-observer.test.tsx`。
+- **对应入口**: `apps/team-console/src/app/use-team-console-live-data.ts`、`apps/team-console/src/tests/app-live-data.test.tsx`、`docs/team-console-refresh-performance-plan.md`。
+
 ## 2026-06-03 — Team Console Discovery scoped refresh
 
 - **主题**: Team Console Discovery 子画布刷新改为按当前打开的 `discoveryTaskId` 独立订阅；未打开子画布时不请求 generated catalog / dispatch diagnostics，关闭后忽略迟到 response，多个子画布互不拖累。

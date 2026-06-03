@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { AgentRunStatus, AgentSummary, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskConnection, TeamTaskDependency } from "../api/team-types";
+import type { AgentRunStatus, AgentSummary, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskConnection, TeamTaskDependency, TeamTaskState } from "../api/team-types";
 import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, mockDiscoveryGeneratedTasks, mockDiscoveryRootTask, mockTeamTasks, MockTeamApi } from "../fixtures/team-fixtures";
 import { ROOT_ID } from "../graph/execution-map-layout";
 import { isActiveRun } from "../shared/status";
@@ -58,6 +58,128 @@ function sortRunsByCreatedAt(runs: TeamRunState[]): TeamRunState[] {
   });
 }
 
+function sameReferenceArray<T>(a: T[], b: T[]): boolean {
+  return a.length === b.length && a.every((item, index) => item === b[index]);
+}
+
+function generatedSourceIdentityKey(task: TeamCanvasTask): string {
+  const source = task.generatedSource;
+  if (!source) return "";
+  const canResetToManaged = Boolean(
+    source.latestManagedWorkUnit || (source as { canResetToManaged?: boolean }).canResetToManaged,
+  );
+  return [
+    source.sourceDiscoveryTaskId,
+    source.sourceItemId,
+    source.itemStatus,
+    source.latestDiscoveryRunId ?? "",
+    source.latestDiscoveryAttemptId ?? "",
+    source.latestDiscoveredAt ?? "",
+    source.workUnitMode,
+    canResetToManaged,
+  ].join("|");
+}
+
+function taskCatalogIdentityKey(task: TeamCanvasTask): string {
+  return [
+    task.taskId,
+    task.canvasKind ?? "",
+    task.title,
+    task.leaderAgentId,
+    task.status,
+    task.updatedAt,
+    task.archived,
+    generatedSourceIdentityKey(task),
+  ].join("|");
+}
+
+function mergeTaskCatalog(current: TeamCanvasTask[], incoming: TeamCanvasTask[]): TeamCanvasTask[] {
+  if (current.length === 0) return incoming;
+  const currentById = new Map(current.map((task) => [task.taskId, task]));
+  const next = incoming.map((task) => {
+    const existing = currentById.get(task.taskId);
+    return existing && taskCatalogIdentityKey(existing) === taskCatalogIdentityKey(task) ? existing : task;
+  });
+  return sameReferenceArray(current, next) ? current : next;
+}
+
+function taskStateIdentityKey(state: TeamTaskState): string {
+  return [
+    state.status,
+    state.manualDisposition ?? "",
+    state.attemptCount,
+    state.activeAttemptId ?? "",
+    state.resultRef ?? "",
+    state.errorSummary ?? "",
+    state.progress.phase,
+    state.progress.message,
+    state.progress.updatedAt,
+  ].join("|");
+}
+
+function runStateIdentityKey(run: TeamRunState): string {
+  const taskStateKeys = Object.entries(run.taskStates)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([taskId, state]) => `${taskId}:${taskStateIdentityKey(state)}`)
+    .join(";");
+  return [
+    run.runId,
+    run.status,
+    run.startedAt ?? "",
+    run.finishedAt ?? "",
+    run.currentTaskId ?? "",
+    run.summary.totalTasks,
+    run.summary.succeededTasks,
+    run.summary.failedTasks,
+    run.summary.cancelledTasks,
+    run.summary.skippedTasks,
+    taskStateKeys,
+  ].join("|");
+}
+
+function mergeRunArray(current: TeamRunState[], incoming: TeamRunState[]): TeamRunState[] {
+  const currentById = new Map(current.map((run) => [run.runId, run]));
+  const next = sortRunsByCreatedAt(incoming.map((run) => {
+    const existing = currentById.get(run.runId);
+    return existing && runStateIdentityKey(existing) === runStateIdentityKey(run) ? existing : run;
+  }));
+  return sameReferenceArray(current, next) ? current : next;
+}
+
+function mergeTaskRunMap(
+  current: Record<string, TeamRunState[]>,
+  incoming: Record<string, TeamRunState[]>,
+): Record<string, TeamRunState[]> {
+  let changed = false;
+  const next = { ...current };
+  for (const [taskId, runs] of Object.entries(incoming)) {
+    const mergedRuns = mergeRunArray(current[taskId] ?? [], runs);
+    if (current[taskId] !== mergedRuns) {
+      next[taskId] = mergedRuns;
+      changed = true;
+    }
+  }
+  return changed ? next : current;
+}
+
+function mergeRootTaskRunMap(
+  current: Record<string, TeamRunState[]>,
+  incoming: Record<string, TeamRunState[]>,
+  previousRootTaskIds: Set<string>,
+  nextRootTaskIds: Set<string>,
+): Record<string, TeamRunState[]> {
+  let changed = false;
+  const next = { ...current };
+  for (const taskId of previousRootTaskIds) {
+    if (!nextRootTaskIds.has(taskId) && taskId in next) {
+      delete next[taskId];
+      changed = true;
+    }
+  }
+  const merged = mergeTaskRunMap(next, incoming);
+  return changed || merged !== next ? merged : current;
+}
+
 export function mergeTaskRun(
   current: Record<string, TeamRunState[]>,
   taskId: string,
@@ -65,12 +187,13 @@ export function mergeTaskRun(
 ): Record<string, TeamRunState[]> {
   const runs = current[taskId] ?? [];
   const nextRuns = runs.some((run) => run.runId === runState.runId)
-    ? runs.map((run) => run.runId === runState.runId ? runState : run)
+    ? runs.map((run) => {
+        if (run.runId !== runState.runId) return run;
+        return runStateIdentityKey(run) === runStateIdentityKey(runState) ? run : runState;
+      })
     : [runState, ...runs];
-  return {
-    ...current,
-    [taskId]: sortRunsByCreatedAt(nextRuns),
-  };
+  const sortedRuns = sortRunsByCreatedAt(nextRuns);
+  return sameReferenceArray(runs, sortedRuns) ? current : { ...current, [taskId]: sortedRuns };
 }
 
 export interface TeamDiscoverySummary {
@@ -320,8 +443,10 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
   }, [dataSource]);
 
   const applyLiveTasks = useCallback((nextTasks: TeamCanvasTask[]) => {
-    setTasks(nextTasks);
-    onApplyLiveTasks(nextTasks);
+    const mergedTasks = mergeTaskCatalog(tasksRef.current, nextTasks);
+    tasksRef.current = mergedTasks;
+    setTasks(mergedTasks);
+    onApplyLiveTasks(mergedTasks);
   }, [onApplyLiveTasks]);
 
   const applyLiveSources = useCallback((nextSources: TeamCanvasSourceNode[]) => {
@@ -412,6 +537,9 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
             if (replaced.has(incoming.taskId) && existing && existing.updatedAt >= incoming.updatedAt) {
               return existing;
             }
+            if (existing && taskCatalogIdentityKey(existing) === taskCatalogIdentityKey(incoming)) {
+              return existing;
+            }
             if (existing && hasTaskDetail(existing) && !hasTaskDetail(incoming)) {
               return mergeGeneratedTaskSummaryIntoFullTask(existing, incoming);
             }
@@ -420,10 +548,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
       }
       return merged;
     });
-    setTaskRunsByTaskId((current) => ({
-      ...current,
-      ...result.taskRunsByTaskId,
-    }));
+    setTaskRunsByTaskId((current) => mergeTaskRunMap(current, result.taskRunsByTaskId));
     setDiscoveryDispatchDiagnosticsByTaskId((current) => ({
       ...current,
       ...result.discoveryDispatchDiagnosticsByTaskId,
@@ -487,6 +612,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
           api.listSourceNodes(),
           api.listSourceConnections(),
         ]);
+        const previousRootTaskIds = new Set(tasksRef.current.map((task) => task.taskId));
         applyLiveTasks(nextTasks);
         setTaskConnections(nextConnections);
         setTaskDependencies(nextDeps);
@@ -495,13 +621,8 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
         setError(null);
         const rootRunsByTaskId = await readTaskRunsForTasks(api, nextTasks);
         setTaskRunsByTaskId((current) => {
-          const merged = { ...current, ...rootRunsByTaskId };
-          for (const task of nextTasks) {
-            if (!(task.taskId in rootRunsByTaskId)) {
-              delete merged[task.taskId];
-            }
-          }
-          return merged;
+          const nextRootTaskIds = new Set(nextTasks.map((task) => task.taskId));
+          return mergeRootTaskRunMap(current, rootRunsByTaskId, previousRootTaskIds, nextRootTaskIds);
         });
         refreshOpenDiscoveryCatalogs(api, nextTasks, openDiscoveryTaskIdsRef.current);
       } finally {

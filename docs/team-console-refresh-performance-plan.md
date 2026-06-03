@@ -331,6 +331,14 @@
 - 前端 merge changed/deleted，未变化对象保持引用不变。
 - 减少 `ExecutionMap` 大面积重渲染。
 
+进度：
+
+- 已完成第一段：前端 root Task catalog refresh 会按 `taskId + updatedAt + status + title + identity` 合并，未变化 root Task 保持对象引用。
+- 已完成第一段：root run summary 和 active run summary 会按 run/task progress 摘要合并，未变化 run 保持对象引用。
+- 已完成第一段：Discovery generated summary refresh 不覆盖已经 lazy fetched 的 full generated Task detail；summary 未变化时保留 full detail 对象引用和编辑所需 `workUnit`。
+- 已完成第一段：root Task 从 live catalog 消失时，会从 root `taskRunsByTaskId` 清理对应 run state，避免 deleted/archived root 继续污染 refresh state。
+- 未完成：后端 `since` / cursor 增量 contract。建议等聚合型 root summary endpoint 或明确 serverVersion 语义一起做，不要只加一个前端不消费的装饰查询参数。
+
 测试：
 
 - unchanged task 对象引用保持。

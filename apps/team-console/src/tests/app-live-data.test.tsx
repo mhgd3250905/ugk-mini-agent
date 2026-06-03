@@ -186,21 +186,60 @@ function LiveDataProbe({ openDiscoveryTaskIds = [] }: { openDiscoveryTaskIds?: s
     openDiscoveryTaskIds,
   });
   return (
-    <pre data-testid="live-data-probe">
-      {JSON.stringify({
-        tasks: liveData.tasks.map((task) => task.taskId),
-        generated: Object.fromEntries(Object.entries(liveData.generatedTasksByDiscoveryTaskId).map(([taskId, tasks]) => [
-          taskId,
-          tasks.map((task) => task.taskId),
-        ])),
-        runKeys: Object.keys(liveData.taskRunsByTaskId).sort(),
-        summaries: liveData.discoverySummariesByTaskId,
-        diagnostics: (liveData as {
-          discoveryDispatchDiagnosticsByTaskId?: Record<string, Array<{ itemId: string; error: string | null }>>;
-        }).discoveryDispatchDiagnosticsByTaskId ?? {},
-        refreshing: liveData.liveTasksRefreshing,
-      })}
-    </pre>
+    <div>
+      <pre data-testid="live-data-probe">
+        {JSON.stringify({
+          tasks: liveData.tasks.map((task) => task.taskId),
+          generated: Object.fromEntries(Object.entries(liveData.generatedTasksByDiscoveryTaskId).map(([taskId, tasks]) => [
+            taskId,
+            tasks.map((task) => task.taskId),
+          ])),
+          runKeys: Object.keys(liveData.taskRunsByTaskId).sort(),
+          summaries: liveData.discoverySummariesByTaskId,
+          diagnostics: (liveData as {
+            discoveryDispatchDiagnosticsByTaskId?: Record<string, Array<{ itemId: string; error: string | null }>>;
+          }).discoveryDispatchDiagnosticsByTaskId ?? {},
+          refreshing: liveData.liveTasksRefreshing,
+        })}
+      </pre>
+      <button type="button" onClick={() => void liveData.refreshLiveTasks()}>probe refresh</button>
+    </div>
+  );
+}
+
+type LiveReferenceSnapshot = {
+  task: TeamCanvasTask | null;
+  run: TeamRunState | null;
+  generated: TeamCanvasTask | null;
+  generatedHasWorkUnit: boolean;
+};
+
+let latestLiveReferenceSnapshot: LiveReferenceSnapshot | null = null;
+
+function LiveReferenceProbe({ openDiscoveryTaskIds = [] }: { openDiscoveryTaskIds?: string[] } = {}) {
+  const liveData = useTeamConsoleLiveData({
+    onApplyLiveTasks: noop,
+    onApplyLiveSources: noop,
+    onCloseBranches: noop,
+    onResetContextUi: noop,
+    selectedTaskId: null,
+    openDiscoveryTaskIds,
+  });
+  const task = liveData.tasks[0] ?? null;
+  const run = task ? liveData.taskRunsByTaskId[task.taskId]?.[0] ?? null : null;
+  const generated = Object.values(liveData.generatedTasksByDiscoveryTaskId).flat()
+    .find((candidate) => candidate.taskId === "task_generated_vultr") ?? null;
+  latestLiveReferenceSnapshot = {
+    task,
+    run,
+    generated,
+    generatedHasWorkUnit: Boolean((generated as Partial<TeamCanvasTask> | null)?.workUnit),
+  };
+  return (
+    <div>
+      <button type="button" onClick={() => void liveData.refreshLiveTasks()}>probe refresh</button>
+      <button type="button" onClick={() => void liveData.ensureGeneratedTaskDetail("task_generated_vultr")}>ensure generated detail</button>
+    </div>
   );
 }
 
@@ -328,6 +367,7 @@ function discoveryRootAttempt(discoveryDispatch?: TeamAttemptMetadata["discovery
 describe("App", () => {
   beforeEach(() => {
     resetMockTeamApiState();
+    latestLiveReferenceSnapshot = null;
     window.localStorage.clear();
     vi.stubGlobal("fetch", vi.fn());
   });
@@ -3522,6 +3562,90 @@ describe("App", () => {
       const probe = readLiveDataProbe();
       expect(probe.summaries[discoveryTask.taskId]).toBeTruthy();
       expect(probe.summaries[discoveryTask.taskId]!.generatedTaskCount).toBe(TASK_RUNS_BY_TASK_IDS_CHUNK_SIZE + 2);
+    });
+
+    it("keeps unchanged live Task, run summary, and full generated detail references stable across refresh", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const rootTask = mockTeamTasks[0]!;
+      const rootRun = canvasTaskRun(rootTask.taskId, "run_reference_root", "completed");
+      const fullGeneratedTask = mockDiscoveryGeneratedTasks.find((task) => task.taskId === "task_generated_vultr")!;
+      const generatedTasks = [generatedSummary(fullGeneratedTask)];
+      let taskCatalogRequests = 0;
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") {
+          taskCatalogRequests += 1;
+          return new Response(JSON.stringify({ tasks: [{ ...rootTask }, { ...mockDiscoveryRootTask }] }), { status: 200 });
+        }
+        if (url.startsWith(`/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`)) {
+          return new Response(JSON.stringify({ tasks: generatedTasks.map((task) => ({ ...task })) }), { status: 200 });
+        }
+        if (url === "/v1/team/tasks/task_generated_vultr") {
+          return new Response(JSON.stringify({ task: { ...fullGeneratedTask } }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse({ [rootTask.taskId]: [{ ...rootRun }] });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      render(<LiveReferenceProbe openDiscoveryTaskIds={[mockDiscoveryRootTask.taskId]} />);
+
+      await waitFor(() => {
+        expect(latestLiveReferenceSnapshot?.task?.taskId).toBe(rootTask.taskId);
+        expect(latestLiveReferenceSnapshot?.run?.runId).toBe(rootRun.runId);
+        expect(latestLiveReferenceSnapshot?.generated?.taskId).toBe("task_generated_vultr");
+      });
+      fireEvent.click(screen.getByRole("button", { name: "ensure generated detail" }));
+      await waitFor(() => expect(latestLiveReferenceSnapshot?.generatedHasWorkUnit).toBe(true));
+      const before = latestLiveReferenceSnapshot!;
+
+      fireEvent.click(screen.getByRole("button", { name: "probe refresh" }));
+      await waitFor(() => expect(taskCatalogRequests).toBe(2));
+      await act(async () => { await Promise.resolve(); });
+
+      expect(latestLiveReferenceSnapshot?.task).toBe(before.task);
+      expect(latestLiveReferenceSnapshot?.run).toBe(before.run);
+      expect(latestLiveReferenceSnapshot?.generated).toBe(before.generated);
+      expect(latestLiveReferenceSnapshot?.generatedHasWorkUnit).toBe(true);
+    });
+
+    it("removes deleted root Task runs from live state during refresh", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const taskA = { ...mockTeamTasks[0]!, taskId: "task_root_keep", title: "Keep root" };
+      const taskB = { ...mockTeamTasks[1]!, taskId: "task_root_delete", title: "Delete root" };
+      const runA = canvasTaskRun(taskA.taskId, "run_root_keep");
+      const runB = canvasTaskRun(taskB.taskId, "run_root_delete");
+      let returnDeletedTask = true;
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") {
+          const tasks = returnDeletedTask ? [taskA, taskB] : [taskA];
+          return new Response(JSON.stringify({ tasks }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse(returnDeletedTask
+            ? { [taskA.taskId]: [runA], [taskB.taskId]: [runB] }
+            : { [taskA.taskId]: [runA] }
+          );
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      render(<LiveDataProbe />);
+
+      await waitFor(() => expect(readLiveDataProbe().tasks).toEqual([taskA.taskId, taskB.taskId]));
+      await waitFor(() => expect(readLiveDataProbe().runKeys).toEqual([taskB.taskId, taskA.taskId]));
+
+      returnDeletedTask = false;
+      fireEvent.click(screen.getByRole("button", { name: "probe refresh" }));
+
+      await waitFor(() => expect(readLiveDataProbe().tasks).toEqual([taskA.taskId]));
+      expect(readLiveDataProbe().runKeys).toEqual([taskA.taskId]);
     });
 
     it("polls only lightweight run summaries when root active runs are not expanded", async () => {
