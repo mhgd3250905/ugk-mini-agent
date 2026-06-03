@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { applyBindingsToDiscoverySpec, applyBindingsToWorkUnit, buildTemplateRunBindings, replaceTemplatePlaceholders, TaskStore } from "./task-store.js";
-import { RunWorkspace } from "./run-workspace.js";
+import type { RunWorkspace } from "./run-workspace.js";
 import { computeTeamRunSummary } from "./team-summary.js";
 import { progressMessages } from "./progress.js";
 import { buildTeamCanvasSourceArtifact, buildTeamTaskTypedArtifact, formatBoundInputsForPrompt } from "./task-artifact-handoff.js";
@@ -12,11 +12,30 @@ import type { ProfileAwareTeamRoleRunner, TeamRoleRunner } from "./role-runner.j
 import type { TeamCanvasTask, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskDeliveryOutcome } from "./types.js";
 import { DiscoveryRunLifecycle } from "./discovery-run-lifecycle.js";
 import { planDownstreamDelivery } from "./downstream-delivery.js";
-import { CanvasTaskAttemptRunner, type CanvasTaskPhaseTimeouts } from "./canvas-task-attempt-runner.js";
+import { CanvasTaskAttemptRunner, type CanvasTaskAttemptWorkspace, type CanvasTaskPhaseTimeouts } from "./canvas-task-attempt-runner.js";
+
+export type CanvasTaskRunWorkspace = CanvasTaskAttemptWorkspace & Pick<RunWorkspace,
+	| "createRun"
+	| "saveState"
+	| "listStates"
+	| "listStateSummaries"
+	| "getState"
+	| "createAttempt"
+	| "finishAttempt"
+	| "patchState"
+	| "writeFailedResult"
+	| "recordAttemptDeliveryOutcomes"
+	| "readDiscoveryAggregation"
+	| "readDiscoveryResult"
+	| "readRunScopedFile"
+	| "recordAttemptDiscoveryDispatchOutcomes"
+	| "recordAttemptDiscoveryGeneratedRunOutcomes"
+	| "writeDiscoveryAggregation"
+>;
 
 export interface CanvasTaskRunServiceOptions {
 	taskStore: TaskStore;
-	workspace: RunWorkspace;
+	workspace: CanvasTaskRunWorkspace;
 	createRoleRunner: () => TeamRoleRunner;
 	connectionStore?: TaskConnectionStore;
 	dependencyStore?: TaskDependencyStore;
