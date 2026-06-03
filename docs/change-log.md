@@ -18,6 +18,7 @@
 
 - **主题**: 模板 Task 本体支持直接运行和当前/最近参数复用。模板参数状态独立保存在 Task 的 `templateState.currentBindings`，`POST /v1/team/tasks/:taskId/runs` 可接收 per-run `templateBindings` override；缺 required 参数时 Team Console 打开参数面板，已有参数时直接运行。每个 run 在 `source.templateBindings` 记录当次快照，生成的 plan、worker prompt、workUnit、Discovery spec、output contract 和 acceptance 均使用绑定后的值。
 - **影响范围**: `/v1/team/tasks/:taskId/runs`、`PATCH /v1/team/tasks/:taskId` 的模板状态字段、`CanvasTaskRunService`、Team Console Task 操作菜单参数面板、Mock/Live Team API contract；clone API 保留但不再是模板参数运行主路径。
+- **真实验证**: 用户通过 Team Console 参数面板运行模板 Task `task_ae82bc41efad`，keyword 为 `Minimax M3是不是很糟糕`；run `run_83673cbd8acc` 的 `source.templateBindings.keyword` 记录快照，`plan.json` 中 `{{keyword}}` 为 0 次，worker 首条 prompt 已使用绑定后的 keyword。
 - **验证**: `node --test --import tsx test\team-task-store.test.ts`、`node --test --import tsx test\team-task-routes.test.ts`、`node --test --import tsx test\team-task-run-process.test.ts`、`npm --prefix apps\team-console run test -- --run src\tests\team-api.test.ts src\tests\app-live-data.test.tsx`、`node --test --import tsx test\team-task-creator-skill.test.ts`、`npx tsc --noEmit`、`git diff --check`。
 - **对应入口**: `src/team/task-store.ts`、`src/team/task-run-service.ts`、`src/team/routes.ts`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/api/team-api.ts`、`.pi/skills/team-task-creator/SKILL.md`。
 

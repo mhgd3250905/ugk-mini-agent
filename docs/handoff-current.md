@@ -117,6 +117,10 @@ git log --oneline origin/main..HEAD
   - `hn-algolia`：checker 判定 findings 伪造 / 不可验证
   - `zhihu-topic-ai-coding`：checker 判定知乎 URL / 数据明显幻觉
 - 结论：Discovery root gating、generated child auto-run pool 和 aggregation 落盘链路健康；当前主要风险是 generated child 的数据源可达性、worker timeout 和 checker 抓出的幻觉输出。
+- 用户在 Team Console Live API 对模板 Task `task_ae82bc41efad` 通过弹出的“参数”节点填写并运行，keyword 为 `Minimax M3是不是很糟糕`。
+- 模板参数链路已真实验证：Task 本体仍保留 `{{keyword}}`，`templateState.currentBindings.keyword` 保存当前参数；run `run_83673cbd8acc` / attempt `attempt_6f01a41df589` 的 `source.templateBindings.keyword` 记录同一快照。
+- `run_83673cbd8acc` 的 `plan.json` 中 `{{keyword}}` 出现次数为 0，`Minimax M3是不是很糟糕` 出现 6 次；worker 首条 prompt 标题和描述均使用绑定后的 keyword。worker 后续搜索时把查询简化为 `Minimax M3`，这是执行 Agent 搜索策略，不是 runtime 参数绑定失败。
+- 该 run 的 root worker/checker 已 succeeded 并写出 `accepted-result.md`、`discovery-result.json`、`checker-verdict-001.json`、`worker-output-001.md`；dispatcher 已开始生成 Discovery child Tasks，例如 `zhihu`、`hackernews`、`github`、`twitter_x`、`openrouter`、`bilibili`、`reddit`、`v2ex`。
 
 ## 已验证命令
 
@@ -166,7 +170,7 @@ git log --oneline origin/main..HEAD
 
 ## 未完成 / 风险
 
-- 已修复但需真实 UI 复测：模板 Task 本体直接运行已有正式参数绑定。`templateState.currentBindings` 保存当前/最近参数，缺 required 参数时 Team Console 打开参数面板；已有参数或 default 时直接运行；`POST /v1/team/tasks/:taskId/runs` 可接收本次 `templateBindings` override 并写回当前参数；每次 run 在 `source.templateBindings` 记录当时快照，生成 workUnit / discoverySpec / plan / prompt 时使用绑定后的值，不再保留 `{{keyword}}`。
+- 已真实 UI 复测：模板 Task 本体直接运行已有正式参数绑定。`templateState.currentBindings` 保存当前/最近参数，缺 required 参数时 Team Console 打开参数面板；已有参数或 default 时直接运行；`POST /v1/team/tasks/:taskId/runs` 可接收本次 `templateBindings` override 并写回当前参数；每次 run 在 `source.templateBindings` 记录当时快照，生成 workUnit / discoverySpec / plan / prompt 时使用绑定后的值，不再保留 `{{keyword}}`。
 - 下游“JSON 数据生成 HTML 报告”Task 的 checker timeout 需要后续优化；这不是 Discovery aggregation bug。
 - 真实 Discovery child 失败集中在 worker timeout、模型内容检查拦截和 checker 抓 hallucination；优先考虑缩小 generated Task 范围、改进 checker acceptance、增加源站反爬/可达性说明，而不是改 root aggregation。
 - 旧 run 或旧 worker 输出里可能仍同时提到临时 `localhost:9001` 和 `/v1/files/...`；新 Task role prompt / env 已要求使用 `ARTIFACT_PUBLIC_BASE_URL`，但具体报告 Task 的 checker 仍需要按 acceptance 验证可访问性。
