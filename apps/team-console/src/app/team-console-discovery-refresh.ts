@@ -1,4 +1,5 @@
 import type { TeamCanvasTask, TeamRunState, TeamAttemptMetadata } from "../api/team-types";
+import type { LiveTeamApi } from "../api/team-api";
 import { isActiveRun } from "../shared/status";
 
 export type TeamDiscoveryStage =
@@ -22,6 +23,8 @@ export interface TeamDiscoverySummary {
   latestDispatchRunId?: string;
   latestDispatchAttemptId?: string;
 }
+
+export type TeamDiscoveryDispatchApi = Pick<LiveTeamApi, "listTaskRunAttempts">;
 
 export interface TeamDiscoveryDispatchDiagnostic {
   itemId: string;
@@ -170,7 +173,7 @@ export function summarizeDiscoveryCatalogs(
 }
 
 export async function readDiscoveryDispatchForTasks(
-  api: Pick<import("../api/team-api").LiveTeamApi, "listTaskRunAttempts">,
+  api: TeamDiscoveryDispatchApi,
   discoveryTasks: TeamCanvasTask[],
   taskRunsByTaskId: Record<string, TeamRunState[]>,
 ): Promise<{

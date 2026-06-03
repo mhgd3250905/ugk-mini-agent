@@ -68,6 +68,24 @@ function agentRunStatusRecord(statuses: AgentRunStatus[]): Record<string, AgentR
   return Object.fromEntries(statuses.map((status) => [status.agentId, status]));
 }
 
+type TeamConsoleTaskRunSummaryApi = Pick<LiveTeamApi, "listTaskRunsByTaskIds">;
+
+type TeamConsoleRootSummaryApi = Pick<LiveTeamApi,
+  | "getRootSummary"
+  | "listTaskCatalog"
+  | "listTaskConnections"
+  | "listTaskDependencies"
+  | "listSourceNodes"
+  | "listSourceConnections"
+  | "listTaskRunsByTaskIds"
+>;
+
+type TeamConsoleDiscoveryCatalogApi = Pick<LiveTeamApi,
+  | "listGeneratedTaskSummaryCatalog"
+  | "listTaskRunsByTaskIds"
+  | "listTaskRunAttempts"
+>;
+
 type DiscoveryCatalogLoadResult = {
   generatedTasksByDiscoveryTaskId: Record<string, TeamCanvasTask[]>;
   deletedGeneratedTaskIdsByDiscoveryTaskId: Record<string, string[]>;
@@ -222,7 +240,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
   }, [onApplyLiveSources]);
 
   const readTaskRunsForTasks = useCallback(async (
-    api: Pick<LiveTeamApi, "listTaskRunsByTaskIds">,
+    api: TeamConsoleTaskRunSummaryApi,
     nextTasks: TeamCanvasTask[],
     since?: string | null,
   ): Promise<TaskRunLoadResult> => {
@@ -259,15 +277,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
   }, []);
 
   const readRootSummary = useCallback(async (
-    api: Pick<LiveTeamApi,
-      | "getRootSummary"
-      | "listTaskCatalog"
-      | "listTaskConnections"
-      | "listTaskDependencies"
-      | "listSourceNodes"
-      | "listSourceConnections"
-      | "listTaskRunsByTaskIds"
-    >,
+    api: TeamConsoleRootSummaryApi,
     taskSince?: string | null,
     runSince?: string | null,
   ): Promise<RootSummaryLoadResult> => {
@@ -319,7 +329,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
   }, [readTaskRunsForTasks]);
 
   const loadDiscoveryCatalogsForTaskIds = useCallback(async (
-    api: Pick<LiveTeamApi, "listGeneratedTaskSummaryCatalog" | "listTaskRunsByTaskIds" | "listTaskRunAttempts">,
+    api: TeamConsoleDiscoveryCatalogApi,
     rootTasks: TeamCanvasTask[],
     discoveryTaskIds: string[],
   ): Promise<DiscoveryCatalogLoadResult> => {
@@ -405,7 +415,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
   }, [readTaskRunsForTasks]);
 
   const loadAllDiscoveryCatalogs = useCallback(async (
-    api: Pick<LiveTeamApi, "listGeneratedTaskSummaryCatalog" | "listTaskRunsByTaskIds" | "listTaskRunAttempts">,
+    api: TeamConsoleDiscoveryCatalogApi,
     nextTasks: TeamCanvasTask[],
   ): Promise<DiscoveryCatalogLoadResult> => {
     const discoveryTasks = discoveryRootTasks(nextTasks);
@@ -468,7 +478,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
   }, []);
 
   const refreshDiscoveryCatalogForTaskId = useCallback((
-    api: Pick<LiveTeamApi, "listGeneratedTaskSummaryCatalog" | "listTaskRunsByTaskIds" | "listTaskRunAttempts">,
+    api: TeamConsoleDiscoveryCatalogApi,
     rootTasks: TeamCanvasTask[],
     discoveryTaskId: string,
   ) => {
@@ -484,7 +494,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
   }, [loadDiscoveryCatalogsForTaskIds, mergeDiscoveryCatalogLoadResult]);
 
   const refreshOpenDiscoveryCatalogs = useCallback((
-    api: Pick<LiveTeamApi, "listGeneratedTaskSummaryCatalog" | "listTaskRunsByTaskIds" | "listTaskRunAttempts">,
+    api: TeamConsoleDiscoveryCatalogApi,
     rootTasks: TeamCanvasTask[],
     discoveryTaskIds: string[],
   ) => {
