@@ -8,7 +8,11 @@ export type DiscoverySubscriptionState = {
   generatedRunSummaryVersionByTaskId: Readonly<Record<string, string | null>>;
 };
 
-export type DiscoverySubscriptionPruneResult = DiscoverySubscriptionState & {
+export type DiscoverySubscriptionPruneResult = {
+  loadedTaskIds: Set<string>;
+  loadingTaskIds: Set<string>;
+  generatedCatalogVersionByTaskId: Record<string, string | null>;
+  generatedRunSummaryVersionByTaskId: Record<string, string | null>;
   shouldClearTimers: boolean;
 };
 

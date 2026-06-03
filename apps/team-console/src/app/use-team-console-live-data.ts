@@ -814,10 +814,10 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
       },
       openDiscoveryTaskIds,
     );
-    loadedDiscoveryCatalogTaskIdsRef.current = pruned.loadedTaskIds as Set<string>;
-    loadingDiscoveryCatalogTaskIdsRef.current = pruned.loadingTaskIds as Set<string>;
-    generatedCatalogVersionByDiscoveryTaskIdRef.current = pruned.generatedCatalogVersionByTaskId as Record<string, string | null>;
-    generatedRunSummaryVersionByDiscoveryTaskIdRef.current = pruned.generatedRunSummaryVersionByTaskId as Record<string, string | null>;
+    loadedDiscoveryCatalogTaskIdsRef.current = pruned.loadedTaskIds;
+    loadingDiscoveryCatalogTaskIdsRef.current = pruned.loadingTaskIds;
+    generatedCatalogVersionByDiscoveryTaskIdRef.current = pruned.generatedCatalogVersionByTaskId;
+    generatedRunSummaryVersionByDiscoveryTaskIdRef.current = pruned.generatedRunSummaryVersionByTaskId;
     if (pruned.shouldClearTimers) {
       for (const timer of liveTaskDiscoveryRefreshTimersRef.current) {
         globalThis.clearTimeout(timer);
