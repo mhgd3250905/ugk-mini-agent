@@ -1,5 +1,14 @@
 import type { TeamPlan, TeamRunState, TeamTask } from "./types.js";
-import { RunWorkspace } from "./run-workspace.js";
+import type { RunWorkspace } from "./run-workspace.js";
+
+export type ParallelChildStateWriterWorkspace = Pick<RunWorkspace, "patchState">;
+
+export type ExpandedChildExecutionWorkspace = Pick<RunWorkspace,
+	| "getState"
+	| "saveState"
+	| "patchState"
+	| "readExpansion"
+>;
 import { computeTeamRunSummary } from "./team-summary.js";
 import { progressMessages } from "./progress.js";
 
@@ -14,7 +23,7 @@ const PARALLEL_FOR_EACH_CONCURRENCY = 3;
 
 export class ParallelChildStateWriter implements TeamStateWriter {
 	constructor(
-		private readonly workspace: RunWorkspace,
+		private readonly workspace: ParallelChildStateWriterWorkspace,
 		private readonly runId: string,
 		private readonly taskId: string,
 	) {}
@@ -33,7 +42,7 @@ export class ParallelChildStateWriter implements TeamStateWriter {
 }
 
 export function hydrateExpandedChildTasks(
-	children: NonNullable<Awaited<ReturnType<RunWorkspace["readExpansion"]>>>["children"],
+	children: NonNullable<Awaited<ReturnType<ExpandedChildExecutionWorkspace["readExpansion"]>>>["children"],
 	parentTaskId: string,
 ): TeamTask[] {
 	return children.map(c => {
@@ -61,7 +70,7 @@ export function hydrateExpandedChildTasks(
 }
 
 export interface ExpandedChildExecutionModuleOptions {
-	workspace: RunWorkspace;
+	workspace: ExpandedChildExecutionWorkspace;
 	shouldStop: (state: TeamRunState | null | undefined) => boolean;
 	isTimedOut: (state: TeamRunState) => boolean;
 	handleTimeout: (state: TeamRunState, plan: TeamPlan) => Promise<void>;
