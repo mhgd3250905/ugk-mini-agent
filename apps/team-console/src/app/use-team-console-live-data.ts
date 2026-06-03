@@ -28,6 +28,11 @@ import {
   readDiscoveryDispatchForTasks,
   summarizeDiscoveryCatalogs,
 } from "./team-console-discovery-refresh";
+import {
+  selectOpenDiscoveryRootIds,
+  selectDiscoveryCatalogTaskIdsToLoad,
+  pruneDiscoverySubscriptionStateForOpenIds,
+} from "./team-console-discovery-subscription";
 
 export { mergeTaskRun } from "./team-console-live-refresh-state";
 export type { TeamDiscoveryDispatchDiagnostic, TeamDiscoveryStage, TeamDiscoverySummary } from "./team-console-discovery-refresh";
@@ -483,8 +488,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     rootTasks: TeamCanvasTask[],
     discoveryTaskIds: string[],
   ) => {
-    const discoveryRootIdSet = new Set(discoveryRootTasks(rootTasks).map((task) => task.taskId));
-    const validOpenIds = discoveryTaskIds.filter((taskId) => discoveryRootIdSet.has(taskId));
+    const validOpenIds = selectOpenDiscoveryRootIds(rootTasks, discoveryTaskIds);
     if (validOpenIds.length === 0) return;
     for (const discoveryTaskId of validOpenIds) {
       refreshDiscoveryCatalogForTaskId(api, rootTasks, discoveryTaskId);
@@ -564,8 +568,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
         if (openDiscoveryTaskIdsRef.current.length === 0) return;
         const currentTasks = tasksRef.current;
         if (currentTasks.length === 0) return;
-        const discoveryRootIdSet = new Set(discoveryRootTasks(currentTasks).map((t) => t.taskId));
-        const validOpenIds = openDiscoveryTaskIdsRef.current.filter((id) => discoveryRootIdSet.has(id));
+        const validOpenIds = selectOpenDiscoveryRootIds(currentTasks, openDiscoveryTaskIdsRef.current);
         if (validOpenIds.length === 0) return;
         const api = new LiveTeamApi();
         for (const discoveryTaskId of validOpenIds) {
@@ -802,18 +805,20 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
   // Clear discovery refresh timers when all subcanvases close
   useEffect(() => {
     if (dataSource !== "live") return;
-    const openSet = new Set(openDiscoveryTaskIds);
-    for (const taskId of Array.from(loadedDiscoveryCatalogTaskIdsRef.current)) {
-      if (!openSet.has(taskId)) {
-        loadedDiscoveryCatalogTaskIdsRef.current.delete(taskId);
-        delete generatedCatalogVersionByDiscoveryTaskIdRef.current[taskId];
-        delete generatedRunSummaryVersionByDiscoveryTaskIdRef.current[taskId];
-      }
-    }
-    for (const taskId of Array.from(loadingDiscoveryCatalogTaskIdsRef.current)) {
-      if (!openSet.has(taskId)) loadingDiscoveryCatalogTaskIdsRef.current.delete(taskId);
-    }
-    if (openDiscoveryTaskIds.length === 0) {
+    const pruned = pruneDiscoverySubscriptionStateForOpenIds(
+      {
+        loadedTaskIds: loadedDiscoveryCatalogTaskIdsRef.current,
+        loadingTaskIds: loadingDiscoveryCatalogTaskIdsRef.current,
+        generatedCatalogVersionByTaskId: generatedCatalogVersionByDiscoveryTaskIdRef.current,
+        generatedRunSummaryVersionByTaskId: generatedRunSummaryVersionByDiscoveryTaskIdRef.current,
+      },
+      openDiscoveryTaskIds,
+    );
+    loadedDiscoveryCatalogTaskIdsRef.current = pruned.loadedTaskIds as Set<string>;
+    loadingDiscoveryCatalogTaskIdsRef.current = pruned.loadingTaskIds as Set<string>;
+    generatedCatalogVersionByDiscoveryTaskIdRef.current = pruned.generatedCatalogVersionByTaskId as Record<string, string | null>;
+    generatedRunSummaryVersionByDiscoveryTaskIdRef.current = pruned.generatedRunSummaryVersionByTaskId as Record<string, string | null>;
+    if (pruned.shouldClearTimers) {
       for (const timer of liveTaskDiscoveryRefreshTimersRef.current) {
         globalThis.clearTimeout(timer);
       }
@@ -827,12 +832,12 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     if (openDiscoveryTaskIds.length === 0) return;
     if (tasks.length === 0) return;
 
-    const discoveryRootIdSet = new Set(discoveryRootTasks(tasks).map((t) => t.taskId));
-    const idsToLoad = openDiscoveryTaskIds.filter((id) =>
-      discoveryRootIdSet.has(id)
-      && !loadedDiscoveryCatalogTaskIdsRef.current.has(id)
-      && !loadingDiscoveryCatalogTaskIdsRef.current.has(id)
-    );
+    const idsToLoad = selectDiscoveryCatalogTaskIdsToLoad({
+      rootTasks: tasks,
+      openDiscoveryTaskIds,
+      loadedTaskIds: loadedDiscoveryCatalogTaskIdsRef.current,
+      loadingTaskIds: loadingDiscoveryCatalogTaskIdsRef.current,
+    });
     if (idsToLoad.length === 0) return;
 
     const api = new LiveTeamApi();
