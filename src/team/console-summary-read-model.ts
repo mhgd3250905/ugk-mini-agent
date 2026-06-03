@@ -152,16 +152,25 @@ export type RunViewResult =
 	| { status: "ok"; view: "summary"; state: TeamRunState }
 	| { status: "ok"; view: "process-summary"; data: { run: TeamRunState; attempts: TeamAttemptMetadata[] } };
 
+export type TeamConsoleSummaryTaskStore = Pick<TaskStore, "list" | "listGeneratedForDiscoveryTask">;
+export type TeamConsoleSummaryTaskRunService = Pick<CanvasTaskRunService, "listRunSummariesByTaskIds" | "listRunsByTaskIds" | "getRun">;
+export type TeamConsoleSummaryAttemptStore = Pick<RunWorkspace, "listAttempts">;
+export type TeamConsoleSummarySourceNodeStore = Pick<SourceNodeStore, "list">;
+export type TeamConsoleSummarySourceConnectionStore = Pick<SourceConnectionStore, "listResolved">;
+export type TeamConsoleSummaryTaskConnectionStore = Pick<TaskConnectionStore, "listResolved">;
+export type TeamConsoleSummaryTaskDependencyStore = Pick<TaskDependencyStore, "listResolved">;
+export type TeamConsoleSummaryReadModelDeps = {
+	taskStore: TeamConsoleSummaryTaskStore;
+	taskRunService: TeamConsoleSummaryTaskRunService;
+	taskRunWorkspace: TeamConsoleSummaryAttemptStore;
+	sourceNodeStore: TeamConsoleSummarySourceNodeStore;
+	sourceConnectionStore: TeamConsoleSummarySourceConnectionStore;
+	taskConnectionStore: TeamConsoleSummaryTaskConnectionStore;
+	taskDependencyStore: TeamConsoleSummaryTaskDependencyStore;
+};
+
 export class TeamConsoleSummaryReadModel {
-	constructor(private readonly deps: {
-		taskStore: Pick<TaskStore, "list" | "get" | "listGeneratedForDiscoveryTask">;
-		taskRunService: Pick<CanvasTaskRunService, "listRunSummariesByTaskIds" | "listRunsByTaskIds" | "getRun">;
-		taskRunWorkspace: Pick<RunWorkspace, "listAttempts">;
-		sourceNodeStore: Pick<SourceNodeStore, "list">;
-		sourceConnectionStore: Pick<SourceConnectionStore, "listResolved">;
-		taskConnectionStore: Pick<TaskConnectionStore, "listResolved">;
-		taskDependencyStore: Pick<TaskDependencyStore, "listResolved">;
-	}) {}
+	constructor(private readonly deps: TeamConsoleSummaryReadModelDeps) {}
 
 	async getRootSummary(input: { taskSince?: string; runSince?: string }): Promise<RootSummaryResult> {
 		const { taskSince, runSince } = input;
