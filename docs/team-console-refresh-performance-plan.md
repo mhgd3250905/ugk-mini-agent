@@ -344,6 +344,7 @@
 - 已完成第二段：`LiveTeamApi` / `MockTeamApi` / `use-team-console-live-data.ts` 都真实消费 cursor，不是装饰查询参数；旧 `listTasks()` 和旧 `{ tasks }` / `{ runsByTaskId }` 响应仍兼容。
 - 已完成第三段：`GET /v1/team/tasks/:taskId/generated-tasks?view=summary&since=<iso>` 返回 changed generated child summaries、`deletedTaskIds` 和 `serverVersion`；打开 Discovery 子画布后 generated catalog 和 generated/root run summary 都按 cursor 增量刷新，空增量不清空既有 child。
 - 已完成第三段：新增聚合型 `GET /v1/team/console/root-summary`，一次返回 root Tasks、source/connection/dependency basic、root latest run summary、deleted ids 和独立 `serverVersion.taskCatalog` / `serverVersion.taskRunSummary`。前端初始加载和手动刷新优先走该 endpoint，旧拆分请求保留 fallback。
+- 已完成第四段：`TaskStore.list()` 使用 tasks 目录 mtime 缓存 root/generated task catalog；`RunStateStore` 维护跨进程 `runs/state-index.json` 轻量 run summary index，`root-summary` 和 `task-runs/by-task?view=summary` 不再每次读取全部 run state JSON。Docker 本地实测 warm 增量 `root-summary` 从约 2.1s 降到 37-82ms。
 
 测试：
 
@@ -354,6 +355,7 @@
 - root run summary `since` 返回 changed/serverVersion，空增量不清空本地 run map。
 - Discovery generated summary `since` 返回 changed/deleted/serverVersion，空增量不清空已打开子画布。
 - root summary endpoint 返回 root catalog + source/connection/dependency + latest run summary，并支持独立 task/run cursor。
+- warm 增量 root summary 避免全量 run state / task JSON 读盘；首次请求仍会构建 index/cache，后续刷新走轻量路径。
 
 ### Step 5：Discovery 阶段可见性
 
@@ -435,6 +437,6 @@ node --test --import tsx test\team-task-run-process.test.ts
 
 ## 推荐执行顺序
 
-Step 1-6 以及 refresh/API 尾项已完成到第一版可消费 contract、阶段可见性、Discovery runtime overlap、Discovery child summary 增量和聚合型 root summary endpoint。当前 refresh 性能计划剩余项不再是接口缺口，而是远程 FRP / 大量真实运行下的继续观测和针对性调优。
+Step 1-6 以及 refresh/API 尾项已完成到第一版可消费 contract、阶段可见性、Discovery runtime overlap、Discovery child summary 增量、聚合型 root summary endpoint 和后端 warm refresh 缓存/index。当前 refresh 性能计划剩余项不再是接口缺口，而是远程 FRP / 大量真实运行下的继续观测和针对性调优。
 
 Step 6 已按 runtime 边界单独完成，没有混入 Step 5 的刷新/API/UI 阶段提示。后续 deterministic / bulk dispatcher 仍需另起设计，别把它塞回 Team Console refresh 改动里。

@@ -26,6 +26,24 @@ function initialTaskStates(plan: TeamPlan): Record<string, TeamTaskState> {
 const now = () => new Date().toISOString();
 const ADMISSION_LOCK_TIMEOUT_MS = 30_000;
 const ADMISSION_LOCK_RETRY_INTERVAL_MS = 10;
+const STATE_INDEX_SCHEMA_VERSION = "team/run-state-index-1";
+
+interface RunStateIndexFile {
+	schemaVersion: typeof STATE_INDEX_SCHEMA_VERSION;
+	states: TeamRunState[];
+}
+
+function summarizeIndexedState(state: TeamRunState): TeamRunState {
+	return {
+		...state,
+		source: state.source
+			? {
+				...state.source,
+				...(state.source.boundInputs ? { boundInputs: undefined } : {}),
+			}
+			: undefined,
+	};
+}
 
 function leaseExpiresAt(ttlMs: number): string {
 	return new Date(Date.now() + ttlMs).toISOString();
@@ -111,6 +129,7 @@ export class RunStateStore {
 	async saveState(state: TeamRunState): Promise<void> {
 		await this.withStateWriteLock(state.runId, async () => {
 			await this.writeStateFile(state);
+			await this.upsertStateIndexEntry(state);
 			this.events.notify(state);
 		});
 	}
@@ -131,6 +150,7 @@ export class RunStateStore {
 				state.updatedAt = ts;
 			}
 			await this.writeStateFile(state);
+			await this.upsertStateIndexEntry(state);
 			this.events.notify(state);
 			return state;
 		});
@@ -220,8 +240,15 @@ export class RunStateStore {
 		}
 	}
 
+	async listStateSummaries(): Promise<TeamRunState[]> {
+		const index = await this.readStateIndex();
+		if (index) return sortStatesByCreatedAtDesc(index.states);
+		return sortStatesByCreatedAtDesc(await this.rebuildStateIndex());
+	}
+
 	async deleteRun(runId: string): Promise<void> {
 		await rm(join(this.rootDir, "runs", runId), { recursive: true, force: true });
+		await this.removeStateIndexEntry(runId);
 	}
 
 	private async writeStateFile(state: TeamRunState): Promise<void> {
@@ -233,6 +260,87 @@ export class RunStateStore {
 		} finally {
 			await rm(tmp, { force: true }).catch(() => {});
 		}
+	}
+
+	private async rebuildStateIndex(): Promise<TeamRunState[]> {
+		const states = (await this.listStates()).map(summarizeIndexedState);
+		await this.writeStateIndex({ schemaVersion: STATE_INDEX_SCHEMA_VERSION, states });
+		return states;
+	}
+
+	private async upsertStateIndexEntry(state: TeamRunState): Promise<void> {
+		await this.withStateIndexLock(async () => {
+			const index = await this.readStateIndex() ?? {
+				schemaVersion: STATE_INDEX_SCHEMA_VERSION,
+				states: (await this.listStates()).map(summarizeIndexedState),
+			};
+			const summary = summarizeIndexedState(state);
+			const states = index.states.filter((item) => item.runId !== summary.runId);
+			states.push(summary);
+			await this.writeStateIndex({ schemaVersion: STATE_INDEX_SCHEMA_VERSION, states });
+		});
+	}
+
+	private async removeStateIndexEntry(runId: string): Promise<void> {
+		await this.withStateIndexLock(async () => {
+			const index = await this.readStateIndex();
+			if (!index) return;
+			await this.writeStateIndex({
+				schemaVersion: STATE_INDEX_SCHEMA_VERSION,
+				states: index.states.filter((item) => item.runId !== runId),
+			});
+		});
+	}
+
+	private async readStateIndex(): Promise<RunStateIndexFile | null> {
+		try {
+			const data = await readFile(this.stateIndexPath(), "utf8");
+			const parsed = JSON.parse(data) as RunStateIndexFile;
+			if (parsed.schemaVersion !== STATE_INDEX_SCHEMA_VERSION || !Array.isArray(parsed.states)) return null;
+			return {
+				schemaVersion: STATE_INDEX_SCHEMA_VERSION,
+				states: parsed.states.filter((state) => state?.schemaVersion === "team/state-1"),
+			};
+		} catch {
+			return null;
+		}
+	}
+
+	private async writeStateIndex(index: RunStateIndexFile): Promise<void> {
+		await mkdir(join(this.rootDir, "runs"), { recursive: true });
+		const filePath = this.stateIndexPath();
+		const tmp = `${filePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
+		try {
+			await writeFile(tmp, JSON.stringify(index), "utf8");
+			await renameWithTransientRetry(tmp, filePath);
+		} finally {
+			await rm(tmp, { force: true }).catch(() => {});
+		}
+	}
+
+	private stateIndexPath(): string {
+		return join(this.rootDir, "runs", "state-index.json");
+	}
+
+	private async withStateIndexLock<T>(fn: () => Promise<T>): Promise<T> {
+		const runsDir = join(this.rootDir, "runs");
+		await mkdir(runsDir, { recursive: true });
+		const lockDir = join(runsDir, ".state-index.lock");
+		for (let attempt = 0; attempt < 100; attempt++) {
+			try {
+				await mkdir(lockDir);
+				try {
+					return await fn();
+				} finally {
+					await rm(lockDir, { recursive: true, force: true });
+				}
+			} catch (error) {
+				const code = (error as NodeJS.ErrnoException).code;
+				if (code !== "EEXIST" && code !== "EPERM") throw error;
+				await new Promise(resolve => setTimeout(resolve, 10));
+			}
+		}
+		throw new Error("state index lock busy");
 	}
 
 	private async withAdmissionLock<T>(fn: () => Promise<T>): Promise<T> {
@@ -305,4 +413,8 @@ export class RunStateStore {
 			return null;
 		}
 	}
+}
+
+function sortStatesByCreatedAtDesc(states: TeamRunState[]): TeamRunState[] {
+	return [...states].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }

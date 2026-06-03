@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-03 — Team Console root-summary warm refresh cache
+
+- **主题**: Team Console 聚合 root summary 后端刷新路径增加 warm cache / index。`TaskStore.list()` 使用 tasks 目录 mtime 缓存 catalog；`RunStateStore` 维护跨进程 `runs/state-index.json` 轻量 run summary index；`GET /v1/team/console/root-summary` 和 `GET /v1/team/task-runs/by-task?view=summary` 不再每次读取全部 Task/run state JSON。
+- **影响范围**: `5174` Live API 手动“刷新 Task”、静默刷新、root latest run summary 和 generated/root summary 查询；完整 run detail、attempt、文件内容和主 `/playground` UI 不受影响。首次请求仍会构建 cache/index，后续同 cursor 增量走轻量路径。
+- **验证**: `node --test --test-concurrency=1 --import tsx test\team-task-run-routes.test.ts test\team-task-routes.test.ts`、`npm run test:team`、`npx tsc --noEmit`、`npm --prefix apps\team-console run build`、`git diff --check`；Docker 本地实测 warm root-summary 增量 37-82ms。
+- **对应入口**: `src/team/run-workspace-state.ts`、`src/team/task-store.ts`、`src/team/task-run-service.ts`、`src/team/routes.ts`、`docs/team-console-refresh-performance-plan.md`。
+
 ## 2026-06-03 — Team Console root and Discovery summary refresh contracts
 
 - **主题**: Team Console refresh/API 主线补齐聚合型 root summary 与 Discovery generated child summary 增量 contract。新增 `GET /v1/team/console/root-summary` 聚合 root tasks、latest root run summaries、source / connection / dependency catalog，并支持独立 `taskSince` / `runSince` cursor；`GET /v1/team/tasks/:taskId/generated-tasks?view=summary&since=...` 返回 changed generated summaries、`deletedTaskIds` 和 `serverVersion`。

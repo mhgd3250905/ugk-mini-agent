@@ -381,7 +381,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			: [];
 		const rootTaskIds = visibleRootTasks.map((task) => task.taskId);
 		const runsByTaskId = rootTaskIds.length > 0
-			? await taskRunService.listRunsByTaskIds(rootTaskIds, { limit: 1 })
+			? await taskRunService.listRunSummariesByTaskIds(rootTaskIds, { limit: 1 })
 			: {};
 		const taskRunSummaryServerVersion = maxUpdatedAt(Object.values(runsByTaskId).flat());
 		const filteredRunsByTaskId = Object.fromEntries(
@@ -843,7 +843,9 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			reply.code(400).send({ error: (err as Error).message });
 			return;
 		}
-		const runsByTaskId = await taskRunService.listRunsByTaskIds(taskIds, limit != null ? { limit } : undefined);
+		const runsByTaskId = view === "summary"
+			? await taskRunService.listRunSummariesByTaskIds(taskIds, limit != null ? { limit } : undefined)
+			: await taskRunService.listRunsByTaskIds(taskIds, limit != null ? { limit } : undefined);
 		const serverVersion = maxUpdatedAt(Object.values(runsByTaskId).flat());
 		const filteredRunsByTaskId = since
 			? Object.fromEntries(

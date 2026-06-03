@@ -86,6 +86,10 @@ export class RunWorkspace {
 		return this.state.listStates();
 	}
 
+	async listStateSummaries(): Promise<TeamRunState[]> {
+		return this.state.listStateSummaries();
+	}
+
 	async deleteRun(runId: string): Promise<void> {
 		await this.state.deleteRun(runId);
 	}

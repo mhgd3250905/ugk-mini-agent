@@ -44,6 +44,27 @@ function sortRunsByCreatedAtDesc(runs: TeamRunState[]): TeamRunState[] {
 	});
 }
 
+function groupCanvasRunsByTaskIds(states: TeamRunState[], taskIds: string[], opts?: { limit?: number }): Record<string, TeamRunState[]> {
+	const canvasRuns = states.filter(state => state.source?.type === "canvas-task");
+	const byTaskId = new Map<string, TeamRunState[]>();
+	for (const state of canvasRuns) {
+		const tid = state.source!.taskId;
+		let arr = byTaskId.get(tid);
+		if (!arr) { arr = []; byTaskId.set(tid, arr); }
+		arr.push(state);
+	}
+	const result: Record<string, TeamRunState[]> = {};
+	const limit = opts?.limit;
+	for (const taskId of taskIds) {
+		let runs = byTaskId.get(taskId) ?? [];
+		if (limit != null && limit > 0) {
+			runs = sortRunsByCreatedAtDesc(runs).slice(0, limit);
+		}
+		result[taskId] = runs;
+	}
+	return result;
+}
+
 const DEFAULT_TASK_RUN_TIMEOUTS = {
 	workerMs: 900_000,
 	checkerMs: 300_000,
@@ -224,24 +245,12 @@ export class CanvasTaskRunService {
 
 	async listRunsByTaskIds(taskIds: string[], opts?: { limit?: number }): Promise<Record<string, TeamRunState[]>> {
 		const states = await this.options.workspace.listStates();
-		const canvasRuns = states.filter(state => state.source?.type === "canvas-task");
-		const byTaskId = new Map<string, TeamRunState[]>();
-		for (const state of canvasRuns) {
-			const tid = state.source!.taskId;
-			let arr = byTaskId.get(tid);
-			if (!arr) { arr = []; byTaskId.set(tid, arr); }
-			arr.push(state);
-		}
-		const result: Record<string, TeamRunState[]> = {};
-		const limit = opts?.limit;
-		for (const taskId of taskIds) {
-			let runs = byTaskId.get(taskId) ?? [];
-			if (limit != null && limit > 0) {
-				runs = sortRunsByCreatedAtDesc(runs).slice(0, limit);
-			}
-			result[taskId] = runs;
-		}
-		return result;
+		return groupCanvasRunsByTaskIds(states, taskIds, opts);
+	}
+
+	async listRunSummariesByTaskIds(taskIds: string[], opts?: { limit?: number }): Promise<Record<string, TeamRunState[]>> {
+		const states = await this.options.workspace.listStateSummaries();
+		return groupCanvasRunsByTaskIds(states, taskIds, opts);
 	}
 
 	async getRun(runId: string): Promise<TeamRunState | null> {

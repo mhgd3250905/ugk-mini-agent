@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { renameWithTransientRetry } from "../file-system.js";
 import { generateTaskId } from "./ids.js";
@@ -110,6 +110,8 @@ export function buildTemplateRunBindings(
 }
 
 export class TaskStore {
+	private listCache: { dirMtimeMs: number; tasks: TeamCanvasTask[] } | null = null;
+
 	constructor(
 		private readonly rootDir: string,
 		private readonly options: TaskStoreOptions = {},
@@ -140,24 +142,11 @@ export class TaskStore {
 	}
 
 	async list(options: TaskStoreListOptions = {}): Promise<TeamCanvasTask[]> {
-		const tasksDir = join(this.rootDir, "tasks");
-		try {
-			const { readdir } = await import("node:fs/promises");
-			const files = await readdir(tasksDir);
-			const tasks: TeamCanvasTask[] = [];
-			for (const file of files) {
-				if (!file.endsWith(".json")) continue;
-				const data = await this.readJson<TeamCanvasTask>(join(tasksDir, file));
-				if (!data) continue;
-				const task = this.normalize(data);
-				if (!options.includeArchived && task.archived) continue;
-				if (!options.includeGenerated && task.generatedSource) continue;
-				tasks.push(task);
-			}
-			return tasks.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-		} catch {
-			return [];
-		}
+		const tasks = await this.readCachedTasks();
+		return tasks
+			.filter((task) => options.includeArchived || !task.archived)
+			.filter((task) => options.includeGenerated || !task.generatedSource)
+			.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 	}
 
 	async get(taskId: string): Promise<TeamCanvasTask | null> {
@@ -394,6 +383,31 @@ export class TaskStore {
 		const tmp = filePath + ".tmp";
 		await writeFile(tmp, JSON.stringify(task, null, 2), "utf8");
 		await renameWithTransientRetry(tmp, filePath);
+		this.listCache = null;
+	}
+
+	private async readCachedTasks(): Promise<TeamCanvasTask[]> {
+		const tasksDir = join(this.rootDir, "tasks");
+		try {
+			const dirStat = await stat(tasksDir);
+			if (this.listCache && this.listCache.dirMtimeMs === dirStat.mtimeMs) {
+				return [...this.listCache.tasks];
+			}
+			const { readdir } = await import("node:fs/promises");
+			const files = await readdir(tasksDir);
+			const tasks: TeamCanvasTask[] = [];
+			for (const file of files) {
+				if (!file.endsWith(".json")) continue;
+				const data = await this.readJson<TeamCanvasTask>(join(tasksDir, file));
+				if (!data) continue;
+				tasks.push(this.normalize(data));
+			}
+			this.listCache = { dirMtimeMs: dirStat.mtimeMs, tasks };
+			return [...tasks];
+		} catch {
+			this.listCache = null;
+			return [];
+		}
 	}
 
 	private async readJson<T>(filePath: string): Promise<T | null> {

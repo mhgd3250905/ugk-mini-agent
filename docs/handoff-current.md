@@ -77,6 +77,7 @@ git log --oneline origin/main..HEAD
 - Team Console refresh performance plan 已完成 Step 3：Discovery 子画布 scoped refresh；未打开 Discovery 子画布时不请求 generated catalog / dispatch diagnostics；打开多个 Discovery 子画布时按 `discoveryTaskId` 独立刷新，关闭后忽略迟到 response。
 - Team Console refresh performance plan 已完成 Step 4 第一段：前端 live refresh 合并保持 root Task、run summary、generated full detail 引用稳定；generated summary 不覆盖已经 lazy fetched 的 full generated Task detail；root Task 从 live catalog 消失时清理对应 root run state。
 - Team Console refresh performance plan 已完成 Step 4 第二段：`GET /v1/team/tasks?since=...` 返回 changed root Tasks、`deletedTaskIds` 和 `serverVersion`；`GET /v1/team/task-runs/by-task?...&since=...` 返回 changed root run summaries、预留 `deletedRunIdsByTaskId` 和 `serverVersion`；`LiveTeamApi` / `MockTeamApi` / `use-team-console-live-data.ts` 都真实消费 cursor，空增量不会清空现有 state。
+- Team Console refresh performance plan 已完成 Step 4 后端 warm refresh 收口：`TaskStore.list()` 使用 tasks 目录 mtime 缓存；`RunStateStore` 维护跨进程 `runs/state-index.json` 轻量 summary index；`GET /v1/team/console/root-summary` 与 `GET /v1/team/task-runs/by-task?view=summary` 不再每次读取全部 Task/run state JSON。Docker 本地实测增量 root-summary warm 请求为 37-82ms；首次请求仍会构建 cache/index。
 - Team Console refresh performance plan 已完成 Step 5 第一版：Discovery root 卡片和 Discovery 子画布显示 `Discovery` / `Dispatch` / `Auto-run` / `Aggregation` / `Cancelled` 阶段，并显示 processed、running、completed、generated、blocked 聚合计数；本步不改 dispatcher / auto-run pool / aggregation runtime 行为。
 - Team Console refresh performance plan 已完成 Step 6 runtime：Discovery dispatcher 仍顺序处理 item，但每个 item upsert 成 active generated Task 后会立即进入固定 3 并发 auto-run pool；root gating、cancel cascade、stale marking、aggregation 和 typed downstream 语义保持不变。
 - `/team-task` skill 已改成通用 Task 设计向导，支持外行用户自然语言创建普通 Task 或 Discovery Task。
@@ -172,6 +173,13 @@ git log --oneline origin/main..HEAD
 - `git diff --check`：passed。
 - `npm test`：2013 tests，2011 passed，2 skipped，0 failed。
 - Docker 服务已重启过，`/healthz` 正常。
+- `node --test --test-concurrency=1 --import tsx test\team-task-run-routes.test.ts test\team-task-routes.test.ts`：84 passed。
+- `npm run test:team`：1201 passed，2 skipped，0 failed。
+- `npx tsc --noEmit`：passed。
+- `npm --prefix apps\team-console run build`：passed；仍有既有 Vite chunk size warning。
+- `npm test`：2061 passed，2 skipped，0 failed。
+- `git diff --check`：passed。
+- Docker smoke after restart：`ugk-pi`、`ugk-pi-team-worker` 已重启；`/healthz` 29ms；`GET /v1/team/console/root-summary` 首次 2293ms / 45047 bytes，随后相同 cursor 增量 37-82ms / 3221 bytes；`GET /v1/team/tasks` warm 3-4ms；`GET /v1/team/task-runs/by-task?...&view=summary` warm 9-11ms。
 - `npm exec tsc -- --noEmit --pretty false`：passed。
 - `node --test --import tsx --test-name-pattern "console-layout|view=summary|dispatch-diagnostics" test/team-task-run-routes.test.ts`：4 passed。
 - `npm --prefix apps/team-console run build`：passed。
@@ -202,7 +210,7 @@ git log --oneline origin/main..HEAD
 
 ## 未完成 / 风险
 
-- Team Console refresh performance plan 的 refresh/API 主线已完成到当前可收口版本：root catalog、root run summary、generated child summary 都有 `since` / `serverVersion` contract，前端优先消费聚合型 `GET /v1/team/console/root-summary`，旧拆分请求仅作为兼容 fallback；Step 6 runtime 也已完成，不要再把它和刷新性能/API/UI 阶段提示混在一个大改里。
+- Team Console refresh performance plan 的 refresh/API 主线已完成到当前可收口版本：root catalog、root run summary、generated child summary 都有 `since` / `serverVersion` contract，前端优先消费聚合型 `GET /v1/team/console/root-summary`，旧拆分请求仅作为兼容 fallback；后端 warm refresh 已通过 cache/index 避免重复全量读盘；Step 6 runtime 也已完成，不要再把它和刷新性能/API/UI 阶段提示混在一个大改里。
 - 用户反馈 Task 和并行 run 增多后，Team Console 通过远程 FRP 使用时刷新越来越慢，且打开期间偶发整屏“画布加载中”。已落地专题分析和行动方案：`docs/team-console-refresh-performance-plan.md`。当前 Step 1-6 已完成到第一版可消费 contract / 阶段可见性 / runtime overlap；下一轮应基于真实 FRP 大量 run 观测做针对性调优，或另起 deterministic / bulk dispatcher runtime 设计。
 - `task_fb6e3f9cd973` 最近旧 Discovery runs 说明大量 item 场景下曾卡在逐 item dispatcher 阶段：`run_169c5d988eb7` 产出 56 items 但 `discoveryDispatchCount=0` / `discoveryGeneratedRunsCount=0` 后被 `user cancel`；`run_fa6daa6ad620` 产出 50 items，dispatch created 5 / updated 12 / blocked 33 / stale_marked 10 后被 `user cancel`。Step 6 已缓解“全部 dispatch 后才 auto-run”的等待，但每 item dispatcher 成本、blocked item 和源站可达性仍可能拖慢真实 run。
 - 已真实 UI 复测：模板 Task 本体直接运行已有正式参数绑定。`templateState.currentBindings` 保存当前/最近参数，缺 required 参数时 Team Console 打开参数面板；已有参数或 default 时直接运行；`POST /v1/team/tasks/:taskId/runs` 可接收本次 `templateBindings` override 并写回当前参数；每次 run 在 `source.templateBindings` 记录当时快照，生成 workUnit / discoverySpec / plan / prompt 时使用绑定后的值，不再保留 `{{keyword}}`。
