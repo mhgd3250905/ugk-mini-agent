@@ -19,13 +19,14 @@ import { SourceNodeStore, type UpdateSourceNodeInput } from "./source-node-store
 import { MockRoleRunner } from "./role-runner.js";
 import type { TeamRoleRunner } from "./role-runner.js";
 import { buildRunDetailResponse } from "./run-presenter.js";
-import type { TeamAttemptMetadata, TeamAttemptRoleProcess, TeamDiscoveryGeneratedTaskSummary, TeamRunState, TeamTaskRunHistoryResponse } from "./types.js";
+import type { TeamRunState, TeamTaskRunHistoryResponse } from "./types.js";
 import { AgentProfileRoleRunner } from "./agent-profile-role-runner.js";
 import { closeBrowserTargetsForScope } from "../agent/browser-cleanup.js";
 import { loadAgentProfilesSync } from "../agent/agent-profile-catalog.js";
 import { setBrowserScopeRoute } from "../browser/browser-scope-routes.js";
 import { configureSseResponse, writeSseEvent, startSseHeartbeat, endSseResponse } from "../routes/chat-sse.js";
 import { idParam, jsonBody, optionalJsonBody, parseIncludeArchived, parseIncludeGenerated } from "./route-parsers.js";
+import { TeamConsoleSummaryReadModel, summarizeRunState, summarizeAttemptDispatchDiagnostics } from "./console-summary-read-model.js";
 import { sendMappedError, sendNotFound } from "./route-errors.js";
 import { sendTaskResponse } from "./route-presenters.js";
 import { isPathInside, resolveContentType } from "../routes/file-route-utils.js";
@@ -58,22 +59,6 @@ function requestPublicBaseUrl(request: FastifyRequest, configured: string | unde
 	return `${proto}://${host}`.replace(/\/+$/, "");
 }
 
-function summarizeRunState(state: TeamRunState, taskId?: string): TeamRunState {
-	const taskStates = taskId && state.taskStates[taskId]
-		? { [taskId]: state.taskStates[taskId] }
-		: state.taskStates;
-	return {
-		...state,
-		taskStates,
-		source: state.source
-			? {
-				...state.source,
-				...(state.source.boundInputs ? { boundInputs: undefined } : {}),
-			}
-			: undefined,
-	};
-}
-
 function readSinceCursor(value: unknown): string | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value !== "string") throw new Error("since must be an ISO timestamp");
@@ -82,15 +67,6 @@ function readSinceCursor(value: unknown): string | undefined {
 	const parsed = new Date(trimmed);
 	if (!Number.isFinite(parsed.getTime())) throw new Error("since must be an ISO timestamp");
 	return parsed.toISOString();
-}
-
-function maxUpdatedAt(items: Array<{ updatedAt?: string }>): string | null {
-	let latest: string | null = null;
-	for (const item of items) {
-		if (typeof item.updatedAt !== "string") continue;
-		if (latest === null || item.updatedAt > latest) latest = item.updatedAt;
-	}
-	return latest;
 }
 
 function readRouteRecord(value: unknown): Record<string, unknown> | null {
@@ -145,49 +121,6 @@ async function writeTeamConsoleLayout(teamDataDir: string, state: unknown): Prom
 	await mkdir(teamDataDir, { recursive: true });
 	await writeFile(join(teamDataDir, "team-console-layout.json"), JSON.stringify(document, null, 2), "utf8");
 	return { state: document.state, updatedAt };
-}
-
-function summarizeAttemptDispatchDiagnostics(attempt: TeamAttemptMetadata): TeamAttemptMetadata {
-	return {
-		attemptId: attempt.attemptId,
-		taskId: attempt.taskId,
-		status: attempt.status,
-		phase: attempt.phase,
-		createdAt: attempt.createdAt,
-		updatedAt: attempt.updatedAt,
-		finishedAt: attempt.finishedAt,
-		worker: [],
-		checker: [],
-		watcher: null,
-		resultRef: attempt.resultRef,
-		errorSummary: attempt.errorSummary,
-		...(attempt.discoveryDispatch ? { discoveryDispatch: attempt.discoveryDispatch } : {}),
-	};
-}
-
-function summarizeRoleProcess(roleProcess: TeamAttemptRoleProcess | undefined): TeamAttemptRoleProcess | undefined {
-	if (!roleProcess) return undefined;
-	return {
-		...roleProcess,
-		process: roleProcess.process
-			? {
-				...roleProcess.process,
-				entries: [],
-			}
-			: null,
-	};
-}
-
-function summarizeAttemptProcessSummary(attempt: TeamAttemptMetadata): TeamAttemptMetadata {
-	return {
-		...attempt,
-		roleProcesses: attempt.roleProcesses
-			? {
-				worker: summarizeRoleProcess(attempt.roleProcesses.worker),
-				checker: summarizeRoleProcess(attempt.roleProcesses.checker),
-			}
-			: undefined,
-	};
 }
 
 function isSafeTeamArtifactSegment(value: string): boolean {
@@ -267,32 +200,6 @@ async function validateUsableTeamUnit(unitStore: TeamUnitStore, teamUnitId: stri
 	}
 }
 
-function toGeneratedTaskSummary(task: import("./types.js").TeamCanvasTask): import("./types.js").TeamDiscoveryGeneratedTaskSummary {
-	const source = task.generatedSource;
-	if (!source) throw new Error("generated task summary requires generatedSource");
-	return {
-		taskId: task.taskId,
-		canvasKind: task.canvasKind,
-		title: task.title,
-		leaderAgentId: task.leaderAgentId,
-		status: task.status,
-		createdAt: task.createdAt,
-		updatedAt: task.updatedAt,
-		archived: task.archived,
-		generatedSource: {
-			schemaVersion: source.schemaVersion,
-			sourceDiscoveryTaskId: source.sourceDiscoveryTaskId,
-			sourceItemId: source.sourceItemId,
-			itemStatus: source.itemStatus,
-			latestDiscoveryRunId: source.latestDiscoveryRunId,
-			latestDiscoveryAttemptId: source.latestDiscoveryAttemptId,
-			latestDiscoveredAt: source.latestDiscoveredAt,
-			workUnitMode: source.workUnitMode,
-			canResetToManaged: Boolean(source.latestManagedWorkUnit),
-		},
-	};
-}
-
 export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptions): void {
 	const planStore = new PlanStore(options.teamDataDir);
 	const taskStore = new TaskStore(options.teamDataDir, {
@@ -320,6 +227,15 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		dataDir: taskRunDataDir,
 		maxCheckerRevisions: 3,
 		maxRunDurationMinutes: options.maxRunDurationMinutes,
+	});
+	const readModel = new TeamConsoleSummaryReadModel({
+		taskStore,
+		taskRunService,
+		taskRunWorkspace,
+		sourceNodeStore,
+		sourceConnectionStore,
+		taskConnectionStore,
+		taskDependencyStore,
 	});
 
 	function makeOrchestrator(): TeamOrchestrator {
@@ -368,50 +284,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			reply.code(400).send({ error: (err as Error).message });
 			return;
 		}
-		const allRootTasks = await taskStore.list({
-			includeArchived: true,
-			includeGenerated: false,
-		});
-		const visibleRootTasks = allRootTasks.filter((task) => !task.archived);
-		const tasks = taskSince ? visibleRootTasks.filter((task) => task.updatedAt > taskSince) : visibleRootTasks;
-		const deletedTaskIds = taskSince
-			? allRootTasks
-				.filter((task) => task.archived && task.updatedAt > taskSince)
-				.map((task) => task.taskId)
-			: [];
-		const rootTaskIds = visibleRootTasks.map((task) => task.taskId);
-		const runsByTaskId = rootTaskIds.length > 0
-			? await taskRunService.listRunSummariesByTaskIds(rootTaskIds, { limit: 1 })
-			: {};
-		const taskRunSummaryServerVersion = maxUpdatedAt(Object.values(runsByTaskId).flat());
-		const filteredRunsByTaskId = Object.fromEntries(
-			rootTaskIds.map((taskId) => {
-				const runs = runsByTaskId[taskId] ?? [];
-				const filtered = runSince ? runs.filter((run) => run.updatedAt > runSince) : runs;
-				return [taskId, filtered.map(run => summarizeRunState(run, taskId))];
-			}),
-		);
-		const deletedRunIdsByTaskId = Object.fromEntries(rootTaskIds.map((taskId) => [taskId, [] as string[]]));
-		const [sourceNodes, sourceConnections, taskConnections, taskDependencies] = await Promise.all([
-			sourceNodeStore.list(),
-			sourceConnectionStore.listResolved(),
-			taskConnectionStore.listResolved(),
-			taskDependencyStore.listResolved(),
-		]);
-		reply.send({
-			tasks,
-			deletedTaskIds,
-			taskRunsByTaskId: filteredRunsByTaskId,
-			deletedRunIdsByTaskId,
-			sourceNodes,
-			sourceConnections,
-			taskConnections,
-			taskDependencies,
-			serverVersion: {
-				taskCatalog: maxUpdatedAt(allRootTasks),
-				taskRunSummary: taskRunSummaryServerVersion,
-			},
-		});
+		reply.send(await readModel.getRootSummary({ taskSince, runSince }));
 	});
 
 	app.get("/v1/team/tasks", async (request, reply) => {
@@ -425,22 +298,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		}
 		const includeArchived = parseIncludeArchived(request);
 		const includeGenerated = parseIncludeGenerated(request);
-		const allMatchingTasks = await taskStore.list({
-			includeArchived: true,
-			includeGenerated,
-		});
-		const visibleTasks = allMatchingTasks.filter((task) => includeArchived || !task.archived);
-		const tasks = since ? visibleTasks.filter((task) => task.updatedAt > since) : visibleTasks;
-		const deletedTaskIds = since && !includeArchived
-			? allMatchingTasks
-				.filter((task) => task.archived && task.updatedAt > since)
-				.map((task) => task.taskId)
-			: [];
-		reply.send({
-			tasks,
-			deletedTaskIds,
-			serverVersion: maxUpdatedAt(allMatchingTasks),
-		});
+		reply.send(await readModel.listRootTasks({ since, includeArchived, includeGenerated }));
 	});
 
 	app.post("/v1/team/tasks", async (request, reply) => {
@@ -511,23 +369,12 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			return;
 		}
 		const includeArchived = parseIncludeArchived(request);
-		const allGeneratedTasks = await taskStore.listGeneratedForDiscoveryTask(taskId, {
-			includeArchived: true,
-		});
-		const visibleTasks = allGeneratedTasks.filter((generatedTask) => includeArchived || !generatedTask.archived);
-		const tasks = since ? visibleTasks.filter((generatedTask) => generatedTask.updatedAt > since) : visibleTasks;
-		const deletedTaskIds = since && !includeArchived
-			? allGeneratedTasks
-				.filter((generatedTask) => generatedTask.archived && generatedTask.updatedAt > since)
-				.map((generatedTask) => generatedTask.taskId)
-			: [];
-		const serverVersion = maxUpdatedAt(allGeneratedTasks);
-		if (view === "summary") {
-			const summaries: TeamDiscoveryGeneratedTaskSummary[] = tasks.map(toGeneratedTaskSummary);
-			reply.send({ tasks: summaries, deletedTaskIds, serverVersion });
-			return;
-		}
-		reply.send({ tasks, deletedTaskIds, serverVersion });
+		reply.send(await readModel.listGeneratedTasks({
+			discoveryTaskId: taskId,
+			since,
+			includeArchived,
+			view: view === "summary" ? "summary" : "full",
+		}));
 	});
 
 	app.patch("/v1/team/tasks/:taskId", async (request, reply) => {
@@ -843,27 +690,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			reply.code(400).send({ error: (err as Error).message });
 			return;
 		}
-		const runsByTaskId = view === "summary"
-			? await taskRunService.listRunSummariesByTaskIds(taskIds, limit != null ? { limit } : undefined)
-			: await taskRunService.listRunsByTaskIds(taskIds, limit != null ? { limit } : undefined);
-		const serverVersion = maxUpdatedAt(Object.values(runsByTaskId).flat());
-		const filteredRunsByTaskId = since
-			? Object.fromEntries(
-				Object.entries(runsByTaskId).map(([taskId, runs]) => [taskId, runs.filter((run) => run.updatedAt > since)]),
-			)
-			: runsByTaskId;
-		const deletedRunIdsByTaskId = Object.fromEntries(taskIds.map((taskId) => [taskId, [] as string[]]));
-		if (view === "summary") {
-			reply.send({
-				runsByTaskId: Object.fromEntries(
-					Object.entries(filteredRunsByTaskId).map(([taskId, runs]) => [taskId, runs.map(run => summarizeRunState(run, taskId))]),
-				),
-				deletedRunIdsByTaskId,
-				serverVersion,
-			});
-			return;
-		}
-		reply.send({ runsByTaskId: filteredRunsByTaskId, deletedRunIdsByTaskId, serverVersion });
+		reply.send(await readModel.listRunsByTaskIds({ taskIds, limit, view: view as "full" | "summary", since }));
 	});
 
 	app.get("/v1/team/task-runs/:runId", async (request, reply) => {
@@ -875,29 +702,15 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			reply.code(400).send({ error: "unknown view parameter" });
 			return;
 		}
-		const state = await taskRunService.getRun(runId);
-		if (!state) { sendNotFound(reply, "task run"); return; }
-		if (view === "summary") {
-			if (taskId && !state.taskStates[taskId]) { sendNotFound(reply, "task"); return; }
-			reply.send(summarizeRunState(state, taskId || undefined));
+		const result = await readModel.getRunView({ runId, taskId, view: view as "full" | "summary" | "process-summary" });
+		if (result.status === "run_not_found") { sendNotFound(reply, "task run"); return; }
+		if (result.status === "task_id_required") {
+			reply.code(400).send({ error: "taskId query parameter is required for process-summary" });
 			return;
 		}
-		if (view === "process-summary") {
-			if (!taskId) {
-				reply.code(400).send({ error: "taskId query parameter is required for process-summary" });
-				return;
-			}
-			if (!state.taskStates[taskId]) { sendNotFound(reply, "task"); return; }
-			try {
-				const attempts = await taskRunWorkspace.listAttempts(runId, taskId);
-				reply.send({ run: summarizeRunState(state, taskId), attempts: attempts.map(summarizeAttemptProcessSummary) });
-				return;
-			} catch {
-				reply.send({ run: summarizeRunState(state, taskId), attempts: [] });
-				return;
-			}
-		}
-		reply.send(state);
+		if (result.status === "task_not_found") { sendNotFound(reply, "task"); return; }
+		if (result.view === "process-summary") { reply.send(result.data); return; }
+		reply.send(result.state);
 	});
 
 	app.post("/v1/team/task-runs/:runId/cancel", async (request, reply) => {
