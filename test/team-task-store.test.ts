@@ -177,6 +177,43 @@ test("TaskStore clones a template task by applying bindings and recording its te
 	}
 });
 
+test("TaskStore stores current bindings separately from template config", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-store-"));
+	try {
+		const store = createStore(root);
+		const template = await store.create({
+			...validTaskInput,
+			title: "全网查询 {{keyword}}",
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "全网查询 {{keyword}}",
+				input: { text: "围绕 {{keyword}} 进行公开来源检索。" },
+			},
+			templateConfig: validTemplateConfig,
+		} as never);
+
+		const updated = await store.updateTemplateCurrentBindings(template.taskId, { keyword: "MiniMax M3" });
+
+		assert.deepEqual(updated.templateConfig, validTemplateConfig);
+		assert.deepEqual(updated.templateState?.currentBindings, { keyword: "MiniMax M3" });
+		assert.equal(updated.templateState?.schemaVersion, "team/task-template-state-1");
+		assert.equal(updated.templateInstance, undefined);
+		assert.equal(updated.title, "全网查询 {{keyword}}");
+		assert.equal(updated.workUnit.input.text, "围绕 {{keyword}} 进行公开来源检索。");
+
+		const got = await store.get(template.taskId);
+		assert.deepEqual(got?.templateState?.currentBindings, { keyword: "MiniMax M3" });
+
+		const normal = await store.create(validTaskInput);
+		await assert.rejects(
+			() => store.updateTemplateCurrentBindings(normal.taskId, { keyword: "MiniMax M3" }),
+			{ message: "template current bindings require a template task" },
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("TaskStore clones a normal task without copying generated identity or run history", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-task-store-"));
 	try {

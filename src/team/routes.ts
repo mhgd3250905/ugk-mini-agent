@@ -74,6 +74,18 @@ function readRouteRecord(value: unknown): Record<string, unknown> | null {
 	return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
+function readOptionalStringRecord(value: unknown, label: string): Record<string, string> | undefined {
+	if (value === undefined) return undefined;
+	const record = readRouteRecord(value);
+	if (!record) throw new Error(`${label} must be an object`);
+	const output: Record<string, string> = {};
+	for (const [key, raw] of Object.entries(record)) {
+		if (typeof raw !== "string") throw new Error(`${label}.${key} must be a string`);
+		output[key] = raw;
+	}
+	return output;
+}
+
 function isValidTeamConsoleLayoutState(value: unknown): boolean {
 	if (value === null) return true;
 	const record = readRouteRecord(value);
@@ -393,6 +405,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		if (Object.hasOwn(body, "workUnit")) patch.workUnit = body.workUnit as any;
 		if (Object.hasOwn(body, "discoverySpec")) patch.discoverySpec = body.discoverySpec as any;
 		if (Object.hasOwn(body, "templateConfig")) patch.templateConfig = body.templateConfig as any;
+		if (Object.hasOwn(body, "templateState")) patch.templateState = body.templateState as any;
 		if (Object.hasOwn(body, "status")) patch.status = body.status as any;
 		try {
 			const task = await taskStore.update(taskId, patch);
@@ -643,6 +656,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			}
 			const state = await taskRunService.createRun(taskId, {
 				maxRunDurationMinutes,
+				templateBindings: readOptionalStringRecord(body?.templateBindings, "templateBindings"),
 				includeSourceBindings: true,
 				publicBaseUrl: requestPublicBaseUrl(request, options.publicBaseUrl),
 			});
@@ -653,7 +667,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 				reply.code(404).send({ error: "task not found" });
 				return;
 			}
-			sendMappedError(reply, err, [["ready", 409], ["archived", 409], ["active", 409]]);
+			sendMappedError(reply, err, [["templateBindings", 400], ["template binding", 400], ["template bindings require", 400], ["ready", 409], ["archived", 409], ["active", 409]]);
 		}
 	});
 

@@ -1,5 +1,5 @@
 import { mkdir } from "node:fs/promises";
-import { TaskStore } from "./task-store.js";
+import { applyBindingsToDiscoverySpec, applyBindingsToWorkUnit, buildTemplateRunBindings, replaceTemplatePlaceholders, TaskStore } from "./task-store.js";
 import { RunWorkspace } from "./run-workspace.js";
 import { computeTeamRunSummary } from "./team-summary.js";
 import { progressMessages } from "./progress.js";
@@ -65,9 +65,29 @@ type DiscoveryGeneratedTaskDispatchResult = {
 export interface CanvasTaskRunOptions {
 	maxRunDurationMinutes?: number;
 	boundInputs?: TeamTaskBoundInput[];
+	templateBindings?: Record<string, string>;
 	triggeredBy?: TaskRunSource["triggeredBy"];
 	includeSourceBindings?: boolean;
 	publicBaseUrl?: string;
+}
+
+function applyTemplateBindingsToTask(task: TeamCanvasTask, bindings: Record<string, string>): TeamCanvasTask {
+	return {
+		...task,
+		title: replaceTemplatePlaceholders(task.title, bindings),
+		workUnit: applyBindingsToWorkUnit(task.workUnit, bindings),
+		...(task.discoverySpec ? { discoverySpec: applyBindingsToDiscoverySpec(task.discoverySpec, bindings) } : {}),
+	};
+}
+
+function resolveTemplateBindings(task: TeamCanvasTask, inputBindings: Record<string, string> | undefined): Record<string, string> | undefined {
+	if (!task.templateConfig) {
+		if (inputBindings && Object.keys(inputBindings).length > 0) {
+			throw new Error("template bindings require a template task");
+		}
+		return undefined;
+	}
+	return buildTemplateRunBindings(task.templateConfig, task.templateState, inputBindings);
 }
 
 function canvasTaskToTeamTask(task: TeamCanvasTask, boundInputs: TeamTaskBoundInput[] = []): TeamTask {
@@ -167,11 +187,16 @@ export class CanvasTaskRunService {
 		const activeRun = (await this.listRuns(taskId)).find(run => ACTIVE_RUN_STATUSES.has(run.status));
 		if (activeRun) throw new Error(`active task run already exists: ${activeRun.runId}`);
 
+		const templateBindings = resolveTemplateBindings(task, runOptions.templateBindings);
+		const storedTask = templateBindings && runOptions.templateBindings
+			? await this.options.taskStore.updateTemplateCurrentBindings(task.taskId, templateBindings)
+			: task;
+		const runnableTask = templateBindings ? applyTemplateBindingsToTask(storedTask, templateBindings) : storedTask;
 		const boundInputs = [
 			...(runOptions.boundInputs ?? []),
-			...(runOptions.includeSourceBindings ? await this.buildSourceBoundInputs(task) : []),
+			...(runOptions.includeSourceBindings ? await this.buildSourceBoundInputs(runnableTask) : []),
 		];
-		const plan = canvasTaskToPlan(task, boundInputs);
+		const plan = canvasTaskToPlan(runnableTask, boundInputs);
 		const createOptions = runOptions.maxRunDurationMinutes != null
 			? { maxRunDurationMinutes: runOptions.maxRunDurationMinutes }
 			: this.options.maxRunDurationMinutes != null
@@ -184,6 +209,7 @@ export class CanvasTaskRunService {
 			...(runOptions.publicBaseUrl ? { publicBaseUrl: runOptions.publicBaseUrl } : {}),
 			...(runOptions.triggeredBy ? { triggeredBy: runOptions.triggeredBy } : {}),
 			...(boundInputs.length > 0 ? { boundInputs } : {}),
+			...(templateBindings ? { templateBindings } : {}),
 		};
 		await this.options.workspace.saveState(state);
 
@@ -326,11 +352,14 @@ export class CanvasTaskRunService {
 		if (!initialState) return;
 		const taskId = initialState.source?.taskId;
 		if (!taskId) return;
-		const canvasTask = await this.options.taskStore.get(taskId);
-		if (!canvasTask || canvasTask.archived) {
+		const storedTask = await this.options.taskStore.get(taskId);
+		if (!storedTask || storedTask.archived) {
 			await this.failRun(runId, "task no longer exists or has been archived");
 			return;
 		}
+		const canvasTask = initialState.source?.templateBindings
+			? applyTemplateBindingsToTask(storedTask, initialState.source.templateBindings)
+			: storedTask;
 
 		const task = canvasTaskToTeamTask(canvasTask, initialState.source?.boundInputs ?? []);
 		const roleRunner = this.options.createRoleRunner();

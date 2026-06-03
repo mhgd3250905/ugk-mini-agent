@@ -50,6 +50,8 @@ git log -- <path>
 当前已确认：
 
 - 分支：`main`。
+- 截至本次 new-chat 交接，分支为 `main...origin/main [ahead 7]`，最新提交为 `ba094c9 Fix template clone title bindings`。
+- 当前 cached 为空；存在 4 个未提交半成品改动：`src/team/routes.ts`、`src/team/task-run-service.ts`、`src/team/task-store.ts`、`src/team/types.ts`。这些改动只是模板 Task 参数化 run 的后端雏形，未补 Team Console UI、Mock API、测试和文档，不能当作已完成修复提交。
 - 本轮 Git 保存包含 Canvas Task adaptive timeout、Team Task 模板/clone API、`/team-task` 模板契约、Team Console 复制面板和 UI-only Group；继续工作前以 `git status --short --branch` 和 `git log -1 --oneline` 为准。
 - 本轮不提交 `.codex/config.toml`、`.codex/plans/*`、`.omo/`、`github-trending.txt`、runtime/public 报告产物或截图。
 - 未跟踪 runtime/public 产物禁止提交：
@@ -88,7 +90,7 @@ git log --oneline origin/main..HEAD
 - 新增 `GET /v1/team/tasks/:taskId/run-history` 和 `PATCH /v1/team/task-runs/:runId/annotation`；详情仍复用既有 `GET /v1/team/task-runs/:runId`、attempts 和 attempt file API。
 - Discovery 子画布 generated child card 的操作入口已收口为悬浮时显示的纵向菜单按钮；点击后在按钮下方弹出 popover，允许超出子画布边界显示，并包含编辑、归档、运行记录和运行入口。generated Task 浅编辑面板按内容自适应高度，不再在表单内部显示滚动条。
 - Canvas Task 独立 run 的 worker/checker phase timeout 已改为 adaptive idle timeout + hard cap；`tool_execution_end` 和 role public output 文件变化会刷新 idle，普通文本 / thinking 不续命，timeout 失败会在 attempt failed result 中留下 `timeoutType`、`elapsedMs` 和 `lastStructuralActivityReason` 等证据。
-- Team Task 模板契约已接入：Task 可带 `templateConfig.parameters`，正文使用 `{{parameterId}}` 占位；`/team-task` skill 在模板 Task 场景下必须生成模板预览，clone/实例化走 `POST /v1/team/tasks/:taskId/clone` 并填 `templateBindings`。
+- Team Task 模板契约已接入：Task 可带 `templateConfig.parameters`，正文使用 `{{parameterId}}` 占位；`/team-task` skill 在模板 Task 场景下必须生成模板预览。模板 Task 本体现在可直接运行，当前/最近参数保存在 `templateState.currentBindings`，run 快照保存在 `source.templateBindings`；复制/实例化仍走 `POST /v1/team/tasks/:taskId/clone` 并填 `templateBindings`，但不再是参数化运行主路径。
 - Team Task clone API 已接入：普通 root Task 可复制改名，模板 Task 可复制并替换参数，clone 不复制 run history、active run 或 generated child；generated Task 禁止走 root clone route。
 - Team Console Task 操作菜单已增加“复制”面板；普通工具型 Task 可直接复制改名，模板 Task 会渲染参数输入。
 - Team Console Execution Atlas 已增加 UI-only Group：框选多个 root Task 后可创建 Group，Group 只保存到 canvas UI state，支持折叠/展开成员 Task，不写后端 Task 数据。
@@ -118,6 +120,13 @@ git log --oneline origin/main..HEAD
 
 ## 已验证命令
 
+- `node --test --import tsx test\team-task-store.test.ts`：31 passed。
+- `node --test --import tsx test\team-task-routes.test.ts`：45 passed。
+- `node --test --import tsx test\team-task-run-process.test.ts`：40 passed。
+- `npm --prefix apps\team-console run test -- --run src\tests\team-api.test.ts src\tests\app-live-data.test.tsx`：162 passed。
+- `node --test --import tsx test\team-task-creator-skill.test.ts`：23 passed。
+- `npx tsc --noEmit`：passed。
+- `git diff --check`：passed。
 - `task_c70580219a00` 最新真实运行监控：`run_614c9ccdb9f8` completed，aggregation summary 为 17 generated / 12 succeeded / 5 failed。
 - `node --test --import tsx --test-name-pattern "extends worker idle|artifact file|text or thinking|hard cap" test\team-task-run-process.test.ts`：4 passed。
 - `node --test --import tsx test\team-task-run-process.test.ts`：39 passed。
@@ -157,6 +166,7 @@ git log --oneline origin/main..HEAD
 
 ## 未完成 / 风险
 
+- 已修复但需真实 UI 复测：模板 Task 本体直接运行已有正式参数绑定。`templateState.currentBindings` 保存当前/最近参数，缺 required 参数时 Team Console 打开参数面板；已有参数或 default 时直接运行；`POST /v1/team/tasks/:taskId/runs` 可接收本次 `templateBindings` override 并写回当前参数；每次 run 在 `source.templateBindings` 记录当时快照，生成 workUnit / discoverySpec / plan / prompt 时使用绑定后的值，不再保留 `{{keyword}}`。
 - 下游“JSON 数据生成 HTML 报告”Task 的 checker timeout 需要后续优化；这不是 Discovery aggregation bug。
 - 真实 Discovery child 失败集中在 worker timeout、模型内容检查拦截和 checker 抓 hallucination；优先考虑缩小 generated Task 范围、改进 checker acceptance、增加源站反爬/可达性说明，而不是改 root aggregation。
 - 旧 run 或旧 worker 输出里可能仍同时提到临时 `localhost:9001` 和 `/v1/files/...`；新 Task role prompt / env 已要求使用 `ARTIFACT_PUBLIC_BASE_URL`，但具体报告 Task 的 checker 仍需要按 acceptance 验证可访问性。

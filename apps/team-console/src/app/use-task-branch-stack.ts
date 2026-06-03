@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 
-export type TaskBranchDetailMode = "leader-chat" | "edit" | "clone" | "run-observer" | "discovery-subcanvas";
+export type TaskBranchDetailMode = "leader-chat" | "edit" | "clone" | "parameters" | "run-observer" | "discovery-subcanvas";
 
 export type TaskBranchGeneratedObserverState = {
   taskId: string;

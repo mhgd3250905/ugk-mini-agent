@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { renameWithTransientRetry } from "../file-system.js";
 import { generateTaskId } from "./ids.js";
-import type { TeamCanvasTask, TeamCanvasTaskStatus, TeamDiscoverySpec, TeamTaskTemplateConfig, TeamWorkUnitDefinition } from "./types.js";
+import type { TeamCanvasTask, TeamCanvasTaskStatus, TeamDiscoverySpec, TeamTaskTemplateConfig, TeamTaskTemplateState, TeamWorkUnitDefinition } from "./types.js";
 import {
 	type CreateTeamCanvasTaskInput,
 	type TaskValidationContext,
@@ -50,13 +50,17 @@ function cloneTemplateConfig(templateConfig: TeamTaskTemplateConfig | undefined)
 	return templateConfig ? JSON.parse(JSON.stringify(templateConfig)) as TeamTaskTemplateConfig : undefined;
 }
 
-function replaceTemplatePlaceholders(value: string, bindings: Record<string, string>): string {
+function cloneTemplateState(templateState: TeamTaskTemplateState | undefined): TeamTaskTemplateState | undefined {
+	return templateState ? JSON.parse(JSON.stringify(templateState)) as TeamTaskTemplateState : undefined;
+}
+
+export function replaceTemplatePlaceholders(value: string, bindings: Record<string, string>): string {
 	return value.replace(/\{\{([A-Za-z][A-Za-z0-9_-]{0,63})\}\}/g, (match, key: string) => {
 		return bindings[key] ?? match;
 	});
 }
 
-function applyBindingsToWorkUnit(workUnit: TeamWorkUnitDefinition, bindings: Record<string, string>): TeamWorkUnitDefinition {
+export function applyBindingsToWorkUnit(workUnit: TeamWorkUnitDefinition, bindings: Record<string, string>): TeamWorkUnitDefinition {
 	return {
 		...workUnit,
 		title: replaceTemplatePlaceholders(workUnit.title, bindings),
@@ -66,7 +70,7 @@ function applyBindingsToWorkUnit(workUnit: TeamWorkUnitDefinition, bindings: Rec
 	};
 }
 
-function applyBindingsToDiscoverySpec(discoverySpec: TeamDiscoverySpec | undefined, bindings: Record<string, string>): TeamDiscoverySpec | undefined {
+export function applyBindingsToDiscoverySpec(discoverySpec: TeamDiscoverySpec | undefined, bindings: Record<string, string>): TeamDiscoverySpec | undefined {
 	if (!discoverySpec) return undefined;
 	return {
 		...discoverySpec,
@@ -75,7 +79,7 @@ function applyBindingsToDiscoverySpec(discoverySpec: TeamDiscoverySpec | undefin
 	};
 }
 
-function buildTemplateBindings(
+export function buildTemplateBindings(
 	templateConfig: TeamTaskTemplateConfig,
 	inputBindings: Record<string, string> | undefined,
 ): Record<string, string> {
@@ -92,6 +96,17 @@ function buildTemplateBindings(
 		bindings[parameter.id] = rawValue.trim();
 	}
 	return bindings;
+}
+
+export function buildTemplateRunBindings(
+	templateConfig: TeamTaskTemplateConfig,
+	templateState: TeamTaskTemplateState | undefined,
+	inputBindings: Record<string, string> | undefined,
+): Record<string, string> {
+	return buildTemplateBindings(templateConfig, {
+		...(templateState?.currentBindings ?? {}),
+		...(inputBindings ?? {}),
+	});
 }
 
 export class TaskStore {
@@ -112,6 +127,7 @@ export class TaskStore {
 			...(input.discoverySpec ? { discoverySpec: input.discoverySpec } : {}),
 			...(input.generatedSource ? { generatedSource: input.generatedSource } : {}),
 			...(input.templateConfig ? { templateConfig: input.templateConfig } : {}),
+			...(input.templateState ? { templateState: input.templateState } : {}),
 			...(input.templateInstance ? { templateInstance: input.templateInstance } : {}),
 			status: input.status ?? "drafting",
 			createdAt: now,
@@ -295,6 +311,26 @@ export class TaskStore {
 		return updated;
 	}
 
+	async updateTemplateCurrentBindings(taskId: string, bindings: Record<string, string>): Promise<TeamCanvasTask> {
+		const existing = await this.get(taskId);
+		if (!existing) throw new Error(`task not found: ${taskId}`);
+		if (!existing.templateConfig) {
+			throw new Error("template current bindings require a template task");
+		}
+		const currentBindings = buildTemplateBindings(existing.templateConfig, bindings);
+		const updated: TeamCanvasTask = {
+			...existing,
+			templateState: {
+				schemaVersion: "team/task-template-state-1",
+				currentBindings,
+				updatedAt: new Date().toISOString(),
+			},
+			updatedAt: new Date().toISOString(),
+		};
+		await this.write(updated);
+		return updated;
+	}
+
 	async markGeneratedTasksStaleForDiscovery(
 		discoveryTaskId: string,
 		activeSourceItemIds: ReadonlySet<string>,
@@ -347,6 +383,7 @@ export class TaskStore {
 			...task,
 			status,
 			archived: task.archived ?? false,
+			...(task.templateState ? { templateState: cloneTemplateState(task.templateState) } : {}),
 		};
 	}
 

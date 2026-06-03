@@ -40,6 +40,7 @@ import type {
   TeamTaskDependencyMutationResponse,
   TeamTaskCloneRequest,
   TeamTaskMutationResponse,
+  TeamTaskRunCreateRequest,
   TeamTaskUpdateRequest,
   TeamPlan,
   RunDetail,
@@ -96,7 +97,7 @@ export interface CanvasTaskGateway {
     options?: { limit?: number; offset?: number; includeArchived?: boolean },
   ): Promise<TeamTaskRunHistoryResponse>;
   listTaskRunsByTaskIds(taskIds: string[], options?: { limit?: number; view?: "summary" }): Promise<TeamCanvasTaskRunByTaskListResponse>;
-  createTaskRun(taskId: string): Promise<TeamRunState>;
+  createTaskRun(taskId: string, input?: TeamTaskRunCreateRequest): Promise<TeamRunState>;
   getTaskRun(runId: string): Promise<TeamRunState>;
   cancelTaskRun(runId: string): Promise<TeamRunState>;
   updateTaskRunAnnotation(runId: string, patch: TeamTaskRunAnnotationPatchRequest): Promise<TeamTaskRunAnnotationMutationResponse>;
@@ -580,11 +581,12 @@ export class LiveTeamApi implements TeamApiProvider {
     }
   }
 
-  async createTaskRun(taskId: string): Promise<TeamRunState> {
+  async createTaskRun(taskId: string, input?: TeamTaskRunCreateRequest): Promise<TeamRunState> {
     try {
       const res = await fetch(`${this.baseUrl}/tasks/${encodeURIComponent(taskId)}/runs`, {
         method: "POST",
-        headers: { accept: "application/json" },
+        headers: input ? { accept: "application/json", "Content-Type": "application/json" } : { accept: "application/json" },
+        ...(input ? { body: JSON.stringify(input) } : {}),
       });
       if (!res.ok) {
         throw await responseToApiError(res, `请求失败 (${res.status})`);

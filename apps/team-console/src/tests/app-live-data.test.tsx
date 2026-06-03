@@ -656,6 +656,132 @@ describe("App", () => {
     expect(await within(getAtlasNodes(container)).findByRole("button", { name: "复制后的论坛查询 Task" })).toBeInTheDocument();
   });
 
+  it("opens template parameters before running a live template Task with missing required bindings", async () => {
+    const templateTask: TeamCanvasTask = {
+      ...mockTeamTasks[0]!,
+      taskId: "task_template_keyword",
+      title: "全网查询 {{keyword}}",
+      workUnit: {
+        ...mockTeamTasks[0]!.workUnit,
+        title: "全网查询 {{keyword}}",
+        input: { text: "围绕 {{keyword}} 进行公开来源检索。" },
+      },
+      templateConfig: {
+        schemaVersion: "team/task-template-1",
+        parameters: [{ id: "keyword", label: "关键词", required: true }],
+      },
+      templateState: undefined,
+    };
+    const updatedTemplateTask: TeamCanvasTask = {
+      ...templateTask,
+      templateState: {
+        schemaVersion: "team/task-template-state-1",
+        currentBindings: { keyword: "MiniMax M3" },
+        updatedAt: "2026-06-03T00:00:00.000Z",
+      },
+    };
+    const run = canvasTaskRun(templateTask.taskId, "run_template_keyword");
+    run.source = { type: "canvas-task", taskId: templateTask.taskId, templateBindings: { keyword: "MiniMax M3" } };
+
+    window.localStorage.setItem("ugk-team-console:data-source", "live");
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/v1/team/console-layout") return new Response(JSON.stringify({ state: null, updatedAt: null }), { status: 200 });
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [templateTask] }), { status: 200 });
+      if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse({});
+      if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === "/v1/team/task-dependencies") return new Response(JSON.stringify({ dependencies: [] }), { status: 200 });
+      if (url === "/v1/team/source-nodes") return new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 });
+      if (url === "/v1/team/source-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === `/v1/team/tasks/${templateTask.taskId}` && init?.method === "PATCH") {
+        return new Response(JSON.stringify({ task: updatedTemplateTask }), { status: 200 });
+      }
+      if (url === `/v1/team/tasks/${templateTask.taskId}/runs` && init?.method === "POST") {
+        return new Response(JSON.stringify(run), { status: 201 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    const atlas = await waitFor(() => getAtlasNodes(container));
+    fireEvent.click(await within(atlas).findByRole("button", { name: templateTask.title }));
+    const menu = await screen.findByLabelText(`${templateTask.title} 操作菜单`);
+
+    fireEvent.click(within(menu).getByRole("button", { name: "运行" }));
+
+    const parameterPanel = await screen.findByLabelText(`${templateTask.title} Task 参数`);
+    expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).not.toContain(`/v1/team/tasks/${templateTask.taskId}/runs`);
+    fireEvent.change(within(parameterPanel).getByLabelText(/关键词/), {
+      target: { value: "MiniMax M3" },
+    });
+    fireEvent.click(within(parameterPanel).getByRole("button", { name: "保存并运行" }));
+
+    await waitFor(() => {
+      expect(vi.mocked(fetch).mock.calls.some(([url, init]) =>
+        String(url) === `/v1/team/tasks/${templateTask.taskId}` && init?.method === "PATCH"
+      )).toBe(true);
+      expect(vi.mocked(fetch).mock.calls.some(([url, init]) =>
+        String(url) === `/v1/team/tasks/${templateTask.taskId}/runs`
+        && init?.method === "POST"
+        && String(init.body).includes("MiniMax M3")
+      )).toBe(true);
+    });
+  });
+
+  it("runs a live template Task directly when current bindings already exist", async () => {
+    const templateTask: TeamCanvasTask = {
+      ...mockTeamTasks[0]!,
+      taskId: "task_template_current_keyword",
+      title: "全网查询 {{keyword}}",
+      templateConfig: {
+        schemaVersion: "team/task-template-1",
+        parameters: [{ id: "keyword", label: "关键词", required: true }],
+      },
+      templateState: {
+        schemaVersion: "team/task-template-state-1",
+        currentBindings: { keyword: "GLM-5.1" },
+        updatedAt: "2026-06-03T00:00:00.000Z",
+      },
+    };
+    const run = canvasTaskRun(templateTask.taskId, "run_template_current_keyword");
+    run.source = { type: "canvas-task", taskId: templateTask.taskId, templateBindings: { keyword: "GLM-5.1" } };
+    window.localStorage.setItem("ugk-team-console:data-source", "live");
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/v1/team/console-layout") return new Response(JSON.stringify({ state: null, updatedAt: null }), { status: 200 });
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [templateTask] }), { status: 200 });
+      if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse({});
+      if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === "/v1/team/task-dependencies") return new Response(JSON.stringify({ dependencies: [] }), { status: 200 });
+      if (url === "/v1/team/source-nodes") return new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 });
+      if (url === "/v1/team/source-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === `/v1/team/tasks/${templateTask.taskId}/runs` && init?.method === "POST") {
+        return new Response(JSON.stringify(run), { status: 201 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    const atlas = await waitFor(() => getAtlasNodes(container));
+    fireEvent.click(await within(atlas).findByRole("button", { name: templateTask.title }));
+    const menu = await screen.findByLabelText(`${templateTask.title} 操作菜单`);
+
+    fireEvent.click(within(menu).getByRole("button", { name: "运行" }));
+
+    await waitFor(() => {
+      const runCall = vi.mocked(fetch).mock.calls.find(([url, init]) =>
+        String(url) === `/v1/team/tasks/${templateTask.taskId}/runs` && init?.method === "POST"
+      );
+      expect(runCall).toBeTruthy();
+      expect(runCall?.[1]?.body).toBeUndefined();
+    });
+    expect(screen.queryByLabelText(`${templateTask.title} Task 参数`)).toBeNull();
+  });
+
   it("opens a per-Task run history drawer and lazily loads run details", async () => {
     const liveTask = mockTeamTasks[0]!;
     const latestRun = canvasTaskRun(liveTask.taskId, "run_history_latest");

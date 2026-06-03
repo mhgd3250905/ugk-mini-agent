@@ -306,6 +306,12 @@ export interface TeamTaskTemplateInstance {
   bindings: Record<string, string>;
 }
 
+export interface TeamTaskTemplateState {
+  schemaVersion: "team/task-template-state-1";
+  currentBindings: Record<string, string>;
+  updatedAt: string;
+}
+
 export interface TeamWorkUnitDefinition {
   title: string;
   input: { text: string };
@@ -539,6 +545,7 @@ export interface TeamCanvasTask {
   discoverySpec?: TeamDiscoverySpec;
   generatedSource?: TeamGeneratedTaskSource;
   templateConfig?: TeamTaskTemplateConfig;
+  templateState?: TeamTaskTemplateState;
   templateInstance?: TeamTaskTemplateInstance;
   status: TeamCanvasTaskStatus;
   createdAt: string;
@@ -583,11 +590,16 @@ export interface TeamTaskUpdateRequest {
   leaderAgentId?: string;
   workUnit?: TeamWorkUnitDefinition;
   templateConfig?: TeamTaskTemplateConfig;
+  templateState?: TeamTaskTemplateState;
   status?: TeamCanvasTaskStatus;
 }
 
 export interface TeamTaskCloneRequest {
   title?: string;
+  templateBindings?: Record<string, string>;
+}
+
+export interface TeamTaskRunCreateRequest {
   templateBindings?: Record<string, string>;
 }
 
@@ -632,8 +644,9 @@ export interface TeamRunState {
           fromTaskId?: never;
           fromRunId?: never;
           fromAttemptId?: never;
-        };
+    };
     boundInputs?: TeamTaskBoundInput[];
+    templateBindings?: Record<string, string>;
   };
   teamUnitId: string;
   status: RunStatus;

@@ -130,6 +130,10 @@ type TaskCloneDraft = {
   templateBindings: Record<string, string>;
 };
 
+type TaskParameterDraft = {
+  templateBindings: Record<string, string>;
+};
+
 type RootArchiveConfirm =
   | { kind: "source"; sourceNodeId: string; nodeId: string; title: string }
   | { kind: "task"; task: TeamCanvasTask; nodeId: string }
@@ -706,7 +710,7 @@ function readStoredTaskBranches(value: unknown): TaskBranchState[] {
     seen.add(nodeId);
     const rawDetailMode = record.detailMode;
     const detailMode: TaskBranchDetailMode | null =
-      rawDetailMode === "leader-chat" || rawDetailMode === "edit" || rawDetailMode === "clone" || rawDetailMode === "run-observer" || rawDetailMode === "discovery-subcanvas"
+      rawDetailMode === "leader-chat" || rawDetailMode === "edit" || rawDetailMode === "clone" || rawDetailMode === "parameters" || rawDetailMode === "run-observer" || rawDetailMode === "discovery-subcanvas"
         ? rawDetailMode
         : null;
     const observedRunId = typeof record.observedRunId === "string" && record.observedRunId.trim()
@@ -1287,6 +1291,30 @@ function mergeStoredSourceNodePositions(sourceNodes: AtlasSourceNode[], storedPo
   });
 }
 
+function templateBindingsForTask(task: TeamCanvasTask): Record<string, string> {
+  return Object.fromEntries(
+    (task.templateConfig?.parameters ?? []).map((parameter) => [
+      parameter.id,
+      task.templateState?.currentBindings?.[parameter.id] ?? parameter.defaultValue ?? "",
+    ]),
+  );
+}
+
+function hasMissingRequiredTemplateBindings(task: TeamCanvasTask, bindings = templateBindingsForTask(task)): boolean {
+  return (task.templateConfig?.parameters ?? []).some((parameter) =>
+    parameter.required !== false && !(bindings[parameter.id] ?? "").trim()
+  );
+}
+
+function normalizedTemplateBindings(task: TeamCanvasTask, bindings: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    (task.templateConfig?.parameters ?? []).flatMap((parameter) => {
+      const value = (bindings[parameter.id] ?? "").trim();
+      return value ? [[parameter.id, value]] : [];
+    }),
+  );
+}
+
 export function App() {
   const initialDataSourceRef = useRef<DataSource>(readStoredInitialDataSource());
   const [theme, setTheme] = useState<TeamConsoleTheme>(() => readStoredTheme());
@@ -1317,6 +1345,8 @@ export function App() {
   const [selectedAtlasEntries, setSelectedAtlasEntries] = useState<AtlasSelectedNodeEntry[]>([]);
   const [taskCloneDraftByTaskId, setTaskCloneDraftByTaskId] = useState<Record<string, TaskCloneDraft>>({});
   const [taskCloneSavingByTaskId, setTaskCloneSavingByTaskId] = useState<Record<string, boolean>>({});
+  const [taskParameterDraftByTaskId, setTaskParameterDraftByTaskId] = useState<Record<string, TaskParameterDraft>>({});
+  const [taskParameterSavingByTaskId, setTaskParameterSavingByTaskId] = useState<Record<string, boolean>>({});
   const [liveTaskNodesHydrated, setLiveTaskNodesHydrated] = useState(false);
   const [sourceAtlasNodes, setSourceAtlasNodes] = useState<AtlasSourceNode[]>([]);
   const [liveSourceNodesHydrated, setLiveSourceNodesHydrated] = useState(false);
@@ -1385,6 +1415,51 @@ export function App() {
     });
   }, []);
 
+  const clearTaskParameterState = useCallback((taskId?: string) => {
+    if (!taskId) {
+      setTaskParameterDraftByTaskId({});
+      setTaskParameterSavingByTaskId({});
+      return;
+    }
+    setTaskParameterDraftByTaskId((current) => {
+      if (!(taskId in current)) return current;
+      const next = { ...current };
+      delete next[taskId];
+      return next;
+    });
+    setTaskParameterSavingByTaskId((current) => {
+      if (!(taskId in current)) return current;
+      const next = { ...current };
+      delete next[taskId];
+      return next;
+    });
+  }, []);
+
+  const openTaskParameterDraft = useCallback((task: TeamCanvasTask) => {
+    setTaskParameterDraftByTaskId((current) => ({
+      ...current,
+      [task.taskId]: {
+        templateBindings: templateBindingsForTask(task),
+      },
+    }));
+  }, []);
+
+  const updateTaskParameterBinding = useCallback((taskId: string, parameterId: string, value: string) => {
+    setTaskParameterDraftByTaskId((current) => {
+      const draft = current[taskId];
+      if (!draft) return current;
+      return {
+        ...current,
+        [taskId]: {
+          templateBindings: {
+            ...draft.templateBindings,
+            [parameterId]: value,
+          },
+        },
+      };
+    });
+  }, []);
+
   const openTaskCloneDraft = useCallback((task: TeamCanvasTask) => {
     const templateBindings = Object.fromEntries(
       (task.templateConfig?.parameters ?? []).map((parameter) => [parameter.id, parameter.defaultValue ?? ""]),
@@ -1429,9 +1504,10 @@ export function App() {
   const clearTaskPanelState = useCallback((taskId?: string) => {
     clearTaskEditState(taskId);
     clearTaskCloneState(taskId);
+    clearTaskParameterState(taskId);
     setTaskArchiveConfirmNodeId(null);
     setTaskArchiveSavingNodeId(null);
-  }, [clearTaskCloneState, clearTaskEditState]);
+  }, [clearTaskCloneState, clearTaskEditState, clearTaskParameterState]);
 
   useEffect(() => {
     storeTheme(theme);
@@ -1483,6 +1559,8 @@ export function App() {
     setTaskRunSavingByTaskId({});
     setTaskCloneDraftByTaskId({});
     setTaskCloneSavingByTaskId({});
+    setTaskParameterDraftByTaskId({});
+    setTaskParameterSavingByTaskId({});
     setGeneratedResetSavingByTaskId({});
     setGeneratedArchiveConfirmTaskId(null);
     setGeneratedArchiveSavingByTaskId({});
@@ -2397,6 +2475,62 @@ export function App() {
     }
   }, [clearTaskCloneState, dataSource, refreshLiveTasks, setTasks, taskCloneDraftByTaskId]);
 
+  const applyTaskParameterStateLocally = useCallback((taskId: string, templateBindings: Record<string, string>) => {
+    const updatedAt = new Date().toISOString();
+    setTasks((current) => current.map((task) => (
+      task.taskId === taskId
+        ? {
+            ...task,
+            templateState: {
+              schemaVersion: "team/task-template-state-1",
+              currentBindings: templateBindings,
+              updatedAt,
+            },
+            updatedAt,
+          }
+        : task
+    )));
+  }, [setTasks]);
+
+  const saveTaskParameters = useCallback(async (task: TeamCanvasTask): Promise<Record<string, string> | null> => {
+    const draft = taskParameterDraftByTaskId[task.taskId];
+    if (!draft || !task.templateConfig) return null;
+    const templateBindings = normalizedTemplateBindings(task, draft.templateBindings);
+    if (hasMissingRequiredTemplateBindings(task, templateBindings)) {
+      setError("请先填写必填模板参数。");
+      return null;
+    }
+
+    setTaskParameterSavingByTaskId((current) => ({ ...current, [task.taskId]: true }));
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      const response = await api.updateTask(task.taskId, {
+        templateState: {
+          schemaVersion: "team/task-template-state-1",
+          currentBindings: templateBindings,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+      if (response.task.generatedSource) {
+        replaceGeneratedTaskInCatalog(response.task);
+      } else if (dataSource === "live") {
+        applyTaskParameterStateLocally(task.taskId, templateBindings);
+      } else {
+        const nextTasks = await api.listTasks();
+        setTasks(nextTasks);
+        setTaskNodes((current) => makeTaskNodes(nextTasks, liveTaskRefreshPositions(current)));
+      }
+      openTaskParameterDraft(response.task);
+      setError(null);
+      return templateBindings;
+    } catch (e) {
+      setError(errorMessage(e));
+      return null;
+    } finally {
+      setTaskParameterSavingByTaskId((current) => ({ ...current, [task.taskId]: false }));
+    }
+  }, [applyTaskParameterStateLocally, dataSource, openTaskParameterDraft, replaceGeneratedTaskInCatalog, setTasks, taskParameterDraftByTaskId]);
+
   const archiveTask = useCallback(async (task: TeamCanvasTask, nodeId?: string): Promise<boolean> => {
     const savingKey = nodeId ?? task.taskId;
     setTaskArchiveSavingNodeId(savingKey);
@@ -2513,12 +2647,25 @@ export function App() {
     return () => document.removeEventListener("keydown", handler);
   }, [rootArchiveConfirm, rootArchiveSaving]);
 
-  const runTask = useCallback(async (task: TeamCanvasTask) => {
+  const runTask = useCallback(async (task: TeamCanvasTask, nodeId?: string, overrideBindings?: Record<string, string>) => {
     const taskId = task.taskId;
+    if (task.templateConfig && !overrideBindings && hasMissingRequiredTemplateBindings(task)) {
+      openTaskParameterDraft(task);
+      if (nodeId) {
+        setExpandedTaskBranches((current) => current.map((item) =>
+          item.nodeId === nodeId ? { ...item, detailMode: "parameters" } : item
+        ));
+      }
+      setError(null);
+      return;
+    }
     setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: true }));
     try {
       const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-      const taskRun = await api.createTaskRun(taskId);
+      const taskRun = await api.createTaskRun(taskId, overrideBindings ? { templateBindings: overrideBindings } : undefined);
+      if (task.templateConfig && overrideBindings) {
+        applyTaskParameterStateLocally(taskId, overrideBindings);
+      }
       setTaskRunsByTaskId((current) => mergeTaskRun(current, taskId, taskRun));
       setError(null);
     } catch (e) {
@@ -2526,7 +2673,7 @@ export function App() {
     } finally {
       setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: false }));
     }
-  }, [dataSource]);
+  }, [applyTaskParameterStateLocally, dataSource, openTaskParameterDraft]);
 
   const resetGeneratedTaskWorkUnit = useCallback(async (task: TeamCanvasTask) => {
     const taskId = task.taskId;
@@ -3171,7 +3318,7 @@ export function App() {
               disabled={runSaving || Boolean(activeRun) || task.status !== "ready"}
               title={task.status === "ready" ? "\u542f\u52a8\u8fd9\u4e2a Task \u7684 WorkUnit run" : "\u53ea\u6709 ready Task \u53ef\u4ee5\u8fd0\u884c"}
               onClick={() => {
-                void runTask(task);
+                void runTask(task, branch.nodeId);
               }}
             >
               {runButtonLabel}
@@ -3256,6 +3403,34 @@ export function App() {
             >
               复制
             </button>
+            {task.templateConfig && (
+              <button
+                type="button"
+                className="task-action-menu-button"
+                onClick={() => {
+                  if (detailMode === "parameters") {
+                    clearTaskParameterState(task.taskId);
+                    setExpandedTaskBranches((current) =>
+                      current.map((item) =>
+                        item.nodeId === branch.nodeId ? { ...item, detailMode: null } : item
+                      )
+                    );
+                  } else {
+                    openTaskParameterDraft(task);
+                    setTaskArchiveConfirmNodeId(null);
+                    setExpandedTaskBranches((current) =>
+                      current.map((item) =>
+                        item.nodeId === branch.nodeId
+                          ? { ...item, detailMode: "parameters" }
+                          : item
+                      )
+                    );
+                  }
+                }}
+              >
+                参数
+              </button>
+            )}
             <button
               type="button"
               className="task-action-menu-button"
@@ -4086,6 +4261,105 @@ export function App() {
         continue;
       }
 
+      if (branch.detailMode === "parameters") {
+        const draft = taskParameterDraftByTaskId[task.taskId];
+        const saving = Boolean(taskParameterSavingByTaskId[task.taskId]);
+        const runSaving = Boolean(taskRunSavingByTaskId[task.taskId]);
+        const templateParameters = task.templateConfig?.parameters ?? [];
+        if (draft && task.templateConfig) {
+          panels.push({
+            id: `task-parameters-${branch.nodeId}`,
+            width: 520,
+            height: 460,
+            sourceId: menuPanelId,
+            resizable: true,
+            interactive: true,
+            panel: (
+              <section className="task-leader-branch emap-panel-branch task-edit-branch" aria-label={`${task.title} Task 参数`}>
+                <header className="task-leader-branch-head">
+                  <div className="task-leader-branch-title">
+                    <span>Task 参数</span>
+                    <strong>{task.title}</strong>
+                    <code>{task.taskId}</code>
+                  </div>
+                  <button
+                    type="button"
+                    className="task-leader-branch-collapse"
+                    onClick={() => {
+                      clearTaskParameterState(task.taskId);
+                      setExpandedTaskBranches((current) =>
+                        current.map((item) =>
+                          item.nodeId === branch.nodeId ? { ...item, detailMode: null } : item
+                        )
+                      );
+                    }}
+                    aria-label={`收起 ${task.title} Task 参数`}
+                  >
+                    收起
+                  </button>
+                </header>
+                <form
+                  className="task-edit-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void saveTaskParameters(task);
+                  }}
+                >
+                  <div className="task-edit-note">
+                    参数会保存为该模板 Task 的当前值；每次运行仍会在 run source 中记录当次快照。
+                  </div>
+                  <div className="task-edit-grid">
+                    {templateParameters.map((parameter) => (
+                      <label key={parameter.id} className="task-edit-field">
+                        <span>{parameter.label}{parameter.required !== false ? " *" : ""}</span>
+                        <input
+                          value={draft.templateBindings[parameter.id] ?? ""}
+                          placeholder={parameter.description ?? parameter.id}
+                          onChange={(event) => updateTaskParameterBinding(task.taskId, parameter.id, event.target.value)}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <div className="task-edit-actions">
+                    <button
+                      type="button"
+                      className="task-action-menu-button"
+                      onClick={() => {
+                        clearTaskParameterState(task.taskId);
+                        setExpandedTaskBranches((current) =>
+                          current.map((item) =>
+                            item.nodeId === branch.nodeId ? { ...item, detailMode: null } : item
+                          )
+                        );
+                      }}
+                    >
+                      返回菜单
+                    </button>
+                    <button type="submit" className="task-action-menu-button" disabled={saving || runSaving}>
+                      {saving ? "保存中..." : "保存参数"}
+                    </button>
+                    <button
+                      type="button"
+                      className="task-action-menu-button primary"
+                      disabled={saving || runSaving || task.status !== "ready"}
+                      onClick={async () => {
+                        const bindings = await saveTaskParameters(task);
+                        if (bindings) {
+                          await runTask(task, branch.nodeId, bindings);
+                        }
+                      }}
+                    >
+                      {runSaving ? "启动中..." : "保存并运行"}
+                    </button>
+                  </div>
+                </form>
+              </section>
+            ),
+          });
+        }
+        continue;
+      }
+
       if (branch.detailMode === "edit") {
         const draft = taskEditDraftByTaskId[task.taskId];
         const warning = taskEditWarningByTaskId[task.taskId] ?? null;
@@ -4505,7 +4779,7 @@ export function App() {
     }
 
     return panels;
-  }, [agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskCloneState, clearTaskEditState, clearTaskEditWarning, cloneTask, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, openTaskEditDraft, openTaskRunHistory, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runTask, saveTaskEdit, scheduleLiveTaskDiscoveryRefresh, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskCloneDraftByTaskId, taskCloneSavingByTaskId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskCloneBinding, updateTaskCloneTitle, updateTaskEditDraft]);
+  }, [agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskCloneState, clearTaskEditState, clearTaskEditWarning, clearTaskParameterState, cloneTask, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, openTaskEditDraft, openTaskParameterDraft, openTaskRunHistory, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runTask, saveTaskEdit, saveTaskParameters, scheduleLiveTaskDiscoveryRefresh, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskCloneDraftByTaskId, taskCloneSavingByTaskId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskParameterDraftByTaskId, taskParameterSavingByTaskId, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskCloneBinding, updateTaskCloneTitle, updateTaskEditDraft, updateTaskParameterBinding]);
 
   const runHistoryDrawer = runHistoryTask ? (() => {
     const selectedDetail = selectedRunHistoryItem

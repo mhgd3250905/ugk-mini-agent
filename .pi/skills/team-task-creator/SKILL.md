@@ -45,7 +45,7 @@ Template preview payloads must include `templateConfig`:
       {
         "id": "keyword",
         "label": "关键词",
-        "description": "后续复制或实例化时填写的查询关键词。",
+        "description": "后续运行、复制或实例化时填写的查询关键词。",
         "required": true
       }
     ]
@@ -53,7 +53,9 @@ Template preview payloads must include `templateConfig`:
 }
 ```
 
-When the user wants to copy / clone / 复制 / 实例化 an existing template Task, show the required `templateBindings` and wait for confirmation, then call `POST /v1/team/tasks/:taskId/clone`. Example clone payload:
+When the user wants to run an existing template Task, do not clone it as the main path. Team Console and the run API will store current/recent bindings on the template Task and snapshot each run in `run.source.templateBindings`; missing required parameters are collected before `POST /v1/team/tasks/:taskId/runs`.
+
+When the user explicitly wants to copy / clone / 复制 / 实例化 an existing template Task, show the required `templateBindings` and wait for confirmation, then call `POST /v1/team/tasks/:taskId/clone`. Example clone payload:
 
 ```json
 { "templateBindings": { "keyword": "GLM-5.1" } }

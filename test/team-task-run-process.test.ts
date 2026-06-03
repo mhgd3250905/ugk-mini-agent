@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { TaskStore } from "../src/team/task-store.js";
@@ -555,6 +555,68 @@ test("CanvasTaskRunService records worker and checker process snapshots on attem
 		assert.match(roleProcesses?.checker?.assistantText?.content ?? "", /我在核对条目数量。验收通过。/);
 		assert.ok(roleProcesses?.checker?.assistantText?.updatedAt);
 		assert.equal(roleProcesses?.checker?.process?.entries.some(entry => entry.toolCallId === "checker_tool_1"), true);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("CanvasTaskRunService binds template parameters before writing plan and worker prompt input", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-template-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const template = await taskStore.create({
+			...validTaskInput,
+			title: "全网查询 {{keyword}}",
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "全网查询 {{keyword}}",
+				input: { text: "围绕 {{keyword}} 进行公开来源检索。" },
+				outputContract: { text: "输出 {{keyword}} 的中文 Markdown 报告。" },
+				acceptance: { rules: ["必须包含 {{keyword}} 的来源证据"] },
+			},
+			templateConfig: {
+				schemaVersion: "team/task-template-1",
+				parameters: [{ id: "keyword", label: "关键词", required: true }],
+			},
+		} as never);
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		let capturedWorkerInput: WorkerInput | undefined;
+		class CaptureTemplateWorkerInputRunner extends ProcessEventRoleRunner {
+			async runWorker(input: WorkerInput): Promise<WorkerOutput> {
+				capturedWorkerInput = input;
+				return { content: "worker result", artifactRefs: [] };
+			}
+		}
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new CaptureTemplateWorkerInputRunner(),
+			dataDir: join(root, "task-runs"),
+		});
+
+		await assert.rejects(
+			() => service.createRun(template.taskId),
+			{ message: "template binding is required: keyword" },
+		);
+
+		const created = await service.createRun(template.taskId, {
+			templateBindings: { keyword: "MiniMax M3" },
+		});
+		const finished = await waitForTerminalRun(service, created.runId);
+		assert.equal(finished.status, "completed");
+		assert.deepEqual(finished.source?.templateBindings, { keyword: "MiniMax M3" });
+
+		const planText = await readFile(join(root, "task-runs", "runs", created.runId, "plan.json"), "utf8");
+		assert.match(planText, /MiniMax M3/);
+		assert.doesNotMatch(planText, /\{\{keyword\}\}/);
+		assert.ok(capturedWorkerInput);
+		assert.equal(capturedWorkerInput!.task.title, "全网查询 MiniMax M3");
+		assert.match(capturedWorkerInput!.task.input.text, /围绕 MiniMax M3/);
+		assert.doesNotMatch(capturedWorkerInput!.task.input.text, /\{\{keyword\}\}/);
+
+		const stored = await taskStore.get(template.taskId);
+		assert.deepEqual(stored?.templateState?.currentBindings, { keyword: "MiniMax M3" });
+		assert.equal(stored?.workUnit.input.text, "围绕 {{keyword}} 进行公开来源检索。");
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

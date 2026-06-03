@@ -7,6 +7,7 @@ import type {
 	TeamTaskOutputCheck,
 	TeamTaskTemplateConfig,
 	TeamTaskTemplateInstance,
+	TeamTaskTemplateState,
 	TeamWorkUnitDefinition,
 } from "./types.js";
 import { validateTaskPorts } from "./task-port-contract.js";
@@ -26,6 +27,7 @@ export interface CreateTeamCanvasTaskInput {
 	discoverySpec?: TeamDiscoverySpec;
 	generatedSource?: TeamGeneratedTaskSource;
 	templateConfig?: TeamTaskTemplateConfig;
+	templateState?: TeamTaskTemplateState;
 	templateInstance?: TeamTaskTemplateInstance;
 	status?: TeamCanvasTaskStatus;
 	createdByAgentId?: string;
@@ -37,6 +39,7 @@ export interface UpdateTeamCanvasTaskInput {
 	workUnit?: TeamWorkUnitDefinition;
 	discoverySpec?: TeamDiscoverySpec;
 	templateConfig?: TeamTaskTemplateConfig;
+	templateState?: TeamTaskTemplateState;
 	status?: TeamCanvasTaskStatus;
 }
 
@@ -275,6 +278,30 @@ function validateTemplateInstance(templateInstance: TeamTaskTemplateInstance | u
 	}
 }
 
+function validateTemplateBindingsRecord(value: unknown, label: string): void {
+	if (!isPlainRecord(value)) {
+		throw new Error(`${label} must be a plain object`);
+	}
+	for (const [key, rawValue] of Object.entries(value)) {
+		assertStableTemplateParameterId(key, `${label} parameter id is invalid: ${key}`);
+		if (typeof rawValue !== "string" || !rawValue.trim()) {
+			throw new Error(`${label}.${key} must be a non-empty string`);
+		}
+	}
+}
+
+function validateTemplateState(templateState: TeamTaskTemplateState | undefined): void {
+	if (templateState === undefined) return;
+	if (!templateState || typeof templateState !== "object" || Array.isArray(templateState)) {
+		throw new Error("templateState must be an object");
+	}
+	if (templateState.schemaVersion !== "team/task-template-state-1") {
+		throw new Error("templateState.schemaVersion is invalid");
+	}
+	validateTemplateBindingsRecord(templateState.currentBindings, "templateState.currentBindings");
+	assertNonEmptyString(templateState.updatedAt, "templateState.updatedAt is required");
+}
+
 export function validateCreateTaskInput(input: CreateTeamCanvasTaskInput, context: TaskValidationContext = {}): void {
 	const rawCanvasKind = (input as { canvasKind?: unknown }).canvasKind;
 	if (rawCanvasKind !== undefined && rawCanvasKind !== "task" && rawCanvasKind !== "discovery") {
@@ -305,9 +332,13 @@ export function validateCreateTaskInput(input: CreateTeamCanvasTaskInput, contex
 		assertKnownAgent(createdByAgentId, context);
 	}
 	validateTemplateConfig(input.templateConfig);
+	validateTemplateState(input.templateState);
 	validateTemplateInstance(input.templateInstance);
 	if (input.templateConfig !== undefined && input.templateInstance !== undefined) {
 		throw new Error("template task cannot also be a template instance");
+	}
+	if (input.templateState !== undefined && input.templateConfig === undefined) {
+		throw new Error("templateState requires templateConfig");
 	}
 }
 
@@ -348,6 +379,11 @@ export function validateTaskUpdateInput(existing: TeamCanvasTask, patch: UpdateT
 		throw new Error("task status must be drafting or ready");
 	}
 	validateTemplateConfig(patch.templateConfig);
+	validateTemplateState(patch.templateState);
+	const nextTemplateConfig = patch.templateConfig !== undefined ? patch.templateConfig : existing.templateConfig;
+	if (patch.templateState !== undefined && nextTemplateConfig === undefined) {
+		throw new Error("templateState requires templateConfig");
+	}
 }
 
 export function buildTaskWarnings(task: Pick<TeamCanvasTask, "workUnit">): string[] {
