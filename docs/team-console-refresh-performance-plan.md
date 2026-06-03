@@ -252,11 +252,13 @@
 - 如果 root 被取消，显示取消发生在哪个阶段：discovery、dispatch、auto-run、aggregation。
 - dispatch outcomes 应在过程中增量落盘或至少周期性落盘；当前最新 run 出现 workspace 已创建但 `discoveryDispatch` 为空，诊断价值不足。
 
-运行时后续可选优化：
+运行时补充进度：
 
-- 边 dispatch 边启动 generated child，而不是全部 dispatch 完才 auto-run。
+- Step 6 已完成：Discovery runtime 已改为边 dispatch 边启动 generated child。dispatcher 仍顺序处理 item，但每个 item upsert 成 active generated Task 后立即进入固定 3 并发 auto-run pool，不再等全部 dispatch 结束。
+- root gating 不变：仍等待 dispatch loop、stale marking、generated child terminal 和 `discovery-aggregation.json` 后才 completed / 触发 downstream。
+- cancel 语义不变：root 取消会停止后续 dispatch/launch，并取消已启动的 generated child runs。
 - 或用 deterministic / bulk dispatcher 减少每 item 一次模型调用。
-- 这些属于 runtime 行为优化，应作为第二阶段，不要和本轮 UI 刷新瘦身混在一个大提交里。
+- deterministic / bulk dispatcher 仍是后续可选优化，不要和刷新 API/UI 阶段混在一起。
 
 ## 行动计划
 
@@ -340,7 +342,7 @@
 - 已完成第二段：`GET /v1/team/tasks?since=<iso>` 返回 changed root Tasks、`deletedTaskIds` 和 `serverVersion`；归档或从默认 root catalog 消失的 Task 会通过 deleted cursor 合入前端。
 - 已完成第二段：`GET /v1/team/task-runs/by-task?taskIds=...&view=summary&since=<iso>` 返回 changed run summaries、预留 `deletedRunIdsByTaskId` 和 `serverVersion`；空增量不会清空既有 run state。
 - 已完成第二段：`LiveTeamApi` / `MockTeamApi` / `use-team-console-live-data.ts` 都真实消费 cursor，不是装饰查询参数；旧 `listTasks()` 和旧 `{ tasks }` / `{ runsByTaskId }` 响应仍兼容。
-- 未完成：Discovery child summary 的 `since` contract、聚合型 root summary endpoint，以及 Step 5 的 discovery / dispatch / auto-run / aggregation 阶段可见性。
+- 未完成：Discovery child summary 的 `since` contract、聚合型 root summary endpoint。
 
 测试：
 
@@ -370,6 +372,27 @@
 - attempt 有 discoveryDispatch partial 时显示 processed count。
 - discoveryDispatch 为空但 root accepted + generated workspace 不应误显示 child running。
 - user cancel 显示为取消，不显示成失败。
+
+### Step 6：Discovery 边 dispatch 边 auto-run
+
+目标：
+
+- Discovery root worker/checker 通过后，dispatcher 顺序处理 item。
+- 每个 item 成功 upsert active generated Task 后立即进入固定 3 并发 auto-run pool。
+- root 仍等待 dispatch、stale marking、generated child terminal 和 aggregation 后才触发 downstream。
+
+进度：
+
+- 已完成：`CanvasTaskRunService` 将 Discovery dispatch 与 generated auto-run 合并为 runtime pipeline；`attempt.discoveryDispatch` 与 `attempt.discoveryGeneratedRuns` 会随进度增量落盘。
+- 已完成：blocked / invalid / stale item 不进入 auto-run；`markGeneratedTasksStaleForDiscovery()` 仍在 dispatch loop 结束后执行。
+- 已完成：root cancel 会停止后续 dispatch/launch，并取消已启动 generated child runs。
+- 已完成：typed downstream 仍优先消费 `discovery-aggregation.json`，不会在 generated child 仍运行或 dispatch 未结束时提前触发。
+
+测试：
+
+- 第一个 generated child 可在第二个 item dispatcher 仍运行时启动。
+- root cancel during streaming dispatch 只取消已启动 generated run，不继续创建/启动后续 items。
+- 固定 3 并发、blocked/stale 跳过和 aggregation/downstream gating 回归通过。
 
 ## 验证矩阵
 
@@ -409,6 +432,6 @@ node --test --import tsx test\team-task-run-process.test.ts
 
 ## 推荐执行顺序
 
-Step 1-5 已完成到第一版可消费 contract 和阶段可见性。后续可继续收口 Discovery child summary 的 `since` contract、聚合型 root summary endpoint，或进入 Step 6 runtime 设计。
+Step 1-6 已完成到第一版可消费 contract、阶段可见性和 Discovery runtime overlap。后续可继续收口 Discovery child summary 的 `since` contract 或聚合型 root summary endpoint。
 
-Step 6 的“边 dispatch 边 auto-run”属于 runtime 行为优化，必须单独设计 admission、取消、aggregation 和回归测试。别把它和 Step 5 的刷新/API/UI 阶段提示混成一个大改，真这么干就是把本来能审的改动搅成一锅浆糊。
+Step 6 已按 runtime 边界单独完成，没有混入 Step 5 的刷新/API/UI 阶段提示。后续 deterministic / bulk dispatcher 仍需另起设计，别把它塞回 Team Console refresh 改动里。

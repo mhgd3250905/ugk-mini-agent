@@ -78,6 +78,7 @@ git log --oneline origin/main..HEAD
 - Team Console refresh performance plan 已完成 Step 4 第一段：前端 live refresh 合并保持 root Task、run summary、generated full detail 引用稳定；generated summary 不覆盖已经 lazy fetched 的 full generated Task detail；root Task 从 live catalog 消失时清理对应 root run state。
 - Team Console refresh performance plan 已完成 Step 4 第二段：`GET /v1/team/tasks?since=...` 返回 changed root Tasks、`deletedTaskIds` 和 `serverVersion`；`GET /v1/team/task-runs/by-task?...&since=...` 返回 changed root run summaries、预留 `deletedRunIdsByTaskId` 和 `serverVersion`；`LiveTeamApi` / `MockTeamApi` / `use-team-console-live-data.ts` 都真实消费 cursor，空增量不会清空现有 state。
 - Team Console refresh performance plan 已完成 Step 5 第一版：Discovery root 卡片和 Discovery 子画布显示 `Discovery` / `Dispatch` / `Auto-run` / `Aggregation` / `Cancelled` 阶段，并显示 processed、running、completed、generated、blocked 聚合计数；本步不改 dispatcher / auto-run pool / aggregation runtime 行为。
+- Team Console refresh performance plan 已完成 Step 6 runtime：Discovery dispatcher 仍顺序处理 item，但每个 item upsert 成 active generated Task 后会立即进入固定 3 并发 auto-run pool；root gating、cancel cascade、stale marking、aggregation 和 typed downstream 语义保持不变。
 - `/team-task` skill 已改成通用 Task 设计向导，支持外行用户自然语言创建普通 Task 或 Discovery Task。
 - Discovery root run 已修正：root 不再在 generated child 运行中提前完成；取消 root 会级联取消本轮 generated child；子画布 active child 置顶。
 - Discovery aggregation 已实现：generated child 全部终态后，root attempt 写 `discovery-aggregation.json`。
@@ -193,9 +194,9 @@ git log --oneline origin/main..HEAD
 
 ## 未完成 / 风险
 
-- Team Console refresh performance plan 还没全部完成：Discovery child summary 的 `since` contract、聚合型 root summary endpoint 仍未做；Step 6 边 dispatch 边 auto-run 属 runtime 行为优化，必须单独设计，不要和刷新性能/API/UI 阶段提示混在一个大改里。
-- 用户反馈 Task 和并行 run 增多后，Team Console 通过远程 FRP 使用时刷新越来越慢，且打开期间偶发整屏“画布加载中”。已落地专题分析和行动方案：`docs/team-console-refresh-performance-plan.md`。当前 Step 1-5 已完成到第一版可消费 contract / 阶段可见性；下一轮可评估 Discovery child summary 增量 contract 或进入 Step 6 runtime 设计。
-- `task_fb6e3f9cd973` 最近真实 Discovery runs 说明大量 item 场景下会卡在逐 item dispatcher 阶段：`run_169c5d988eb7` 产出 56 items 但 `discoveryDispatchCount=0` / `discoveryGeneratedRunsCount=0` 后被 `user cancel`；`run_fa6daa6ad620` 产出 50 items，dispatch created 5 / updated 12 / blocked 33 / stale_marked 10 后被 `user cancel`。这不是 keyword 绑定问题；UI 需要显示 dispatch 阶段，runtime 后续再考虑边 dispatch 边 auto-run。
+- Team Console refresh performance plan 还没全部完成：Discovery child summary 的 `since` contract、聚合型 root summary endpoint 仍未做；Step 6 runtime 已完成，不要再把它和刷新性能/API/UI 阶段提示混在一个大改里。
+- 用户反馈 Task 和并行 run 增多后，Team Console 通过远程 FRP 使用时刷新越来越慢，且打开期间偶发整屏“画布加载中”。已落地专题分析和行动方案：`docs/team-console-refresh-performance-plan.md`。当前 Step 1-6 已完成到第一版可消费 contract / 阶段可见性 / runtime overlap；下一轮可评估 Discovery child summary 增量 contract 或聚合型 root summary endpoint。
+- `task_fb6e3f9cd973` 最近旧 Discovery runs 说明大量 item 场景下曾卡在逐 item dispatcher 阶段：`run_169c5d988eb7` 产出 56 items 但 `discoveryDispatchCount=0` / `discoveryGeneratedRunsCount=0` 后被 `user cancel`；`run_fa6daa6ad620` 产出 50 items，dispatch created 5 / updated 12 / blocked 33 / stale_marked 10 后被 `user cancel`。Step 6 已缓解“全部 dispatch 后才 auto-run”的等待，但每 item dispatcher 成本、blocked item 和源站可达性仍可能拖慢真实 run。
 - 已真实 UI 复测：模板 Task 本体直接运行已有正式参数绑定。`templateState.currentBindings` 保存当前/最近参数，缺 required 参数时 Team Console 打开参数面板；已有参数或 default 时直接运行；`POST /v1/team/tasks/:taskId/runs` 可接收本次 `templateBindings` override 并写回当前参数；每次 run 在 `source.templateBindings` 记录当时快照，生成 workUnit / discoverySpec / plan / prompt 时使用绑定后的值，不再保留 `{{keyword}}`。
 - 下游“JSON 数据生成 HTML 报告”Task 的 checker timeout 需要后续优化；这不是 Discovery aggregation bug。
 - 真实 Discovery child 失败集中在 worker timeout、模型内容检查拦截和 checker 抓 hallucination；优先考虑缩小 generated Task 范围、改进 checker acceptance、增加源站反爬/可达性说明，而不是改 root aggregation。
@@ -217,8 +218,8 @@ git log --oneline origin/main..HEAD
 
 等待用户说明新的优化项，再判断落点：
 
-- Team Console 刷新性能剩余项：先读 `docs/team-console-refresh-performance-plan.md` Step 6 和剩余 API 建议。若继续做 Discovery child summary 增量，先设计 `since` / cursor / `serverVersion` contract 和测试，再改 API / LiveTeamApi / `use-team-console-live-data.ts`；别用“前端全量拉取后过滤”假装增量。
-- Discovery runtime 行为：Step 6 边 dispatch 边 auto-run 是后续 runtime 优化，落点在 `src/team/**` 和 `test/team-task-run-process.test.ts`，不要和 Team Console refresh 合并提交。
+- Team Console 刷新性能剩余项：先读 `docs/team-console-refresh-performance-plan.md` 的剩余 API 建议。若继续做 Discovery child summary 增量，先设计 `since` / cursor / `serverVersion` contract 和测试，再改 API / LiveTeamApi / `use-team-console-live-data.ts`；别用“前端全量拉取后过滤”假装增量。
+- Discovery runtime 行为：Step 6 已完成；后续若要做 deterministic / bulk dispatcher，需要另起 runtime 设计，不要和 Team Console refresh 合并提交。
 - `/team-task` 体验：改 `.pi/skills/team-task-creator/SKILL.md` 和 skill 测试。
 - Team Console UI：改 `apps/team-console/src/app/**` 和对应 vitest。
 - runtime 行为：改 `src/team/**` 和 `test/team-task-run-process.test.ts`。

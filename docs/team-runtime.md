@@ -1,6 +1,8 @@
 # Team Runtime v2
 
-更新时间：2026-06-02
+更新时间：2026-06-03
+
+> 2026-06-03 补充：Discovery root 的 dispatcher 与 generated child auto-run 已改为 overlap。root worker/checker 通过并写出 `discovery-result.json` 后，runtime 仍顺序 dispatch 每个 item，但每个 item upsert 出 active generated Task 后会立即进入固定 3 并发 auto-run pool，不再等待全部 items dispatch 完才启动 child run。`attempt.discoveryDispatch` 和 `attempt.discoveryGeneratedRuns` 会随进度增量写入；缺失/blocked item 和 stale marking 语义不变。root 仍必须等 dispatch loop、stale marking、generated auto-run pool drain 和 `discovery-aggregation.json` 写入后才 `completed` 并触发 typed downstream；取消 root 会停止后续 dispatch/launch，并取消已启动的 generated child runs。
 
 > 2026-06-02 补充：Canvas Task 独立 run 的 worker/checker phase timeout 已改为 adaptive idle timeout + hard cap。worker/checker 的既有 phase timeout 值现在作为 idle 窗口：只有 `tool_execution_end` 或 role public output 目录中文件新增/变化这类结构性进展会刷新 idle 窗口；普通文本输出和 thinking delta 不续命。worker hard cap 默认 60 分钟，checker hard cap 默认 30 分钟，hard cap 到点会强制失败，即使期间持续有工具完成事件。timeout 失败会在 attempt failed result 中写入 `timeoutType`、`idleMs`、`hardCapMs`、`elapsedMs` 和 `lastStructuralActivityReason`，便于区分“真的没结构性进展”和“被总时长兜底截断”。
 

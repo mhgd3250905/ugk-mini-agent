@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-03 — Discovery dispatch auto-run overlap
+
+- **主题**: Discovery root runtime 改为边 dispatch 边启动 generated child auto-run。dispatcher 仍顺序处理 item，但每个 item upsert 成 active generated Task 后立即进入固定 3 并发 auto-run pool；`attempt.discoveryDispatch` 和 `attempt.discoveryGeneratedRuns` 会随进度增量落盘。
+- **影响范围**: Canvas Task Discovery root run 的 runtime 行为、cancel cascade、aggregation 和 typed downstream gating；不改主 `/playground` UI，不改 Team Console refresh API/UI，不新增 endpoint。
+- **验证**: `node --test --import tsx test\team-task-run-process.test.ts`、`node --test --import tsx test\team-task-run-routes.test.ts`、`npx tsc --noEmit`、`git diff --check`。
+- **对应入口**: `src/team/task-run-service.ts`、`test/team-task-run-process.test.ts`、`docs/team-runtime.md`、`docs/team-console-refresh-performance-plan.md`。
+
 ## 2026-06-03 — Team Console Discovery stage visibility
 
 - **主题**: Team Console Discovery root 卡片和 Discovery 子画布新增阶段可见性：从 root/generated run summary 与 dispatch diagnostics 派生 `Discovery`、`Dispatch`、`Auto-run`、`Aggregation`、`Cancelled` 阶段，并显示 processed / running / completed / generated / blocked 聚合计数。

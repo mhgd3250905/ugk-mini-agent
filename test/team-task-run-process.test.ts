@@ -118,6 +118,14 @@ async function waitForGeneratedWorkerStarts(runner: { generatedWorkerStarts: str
 	throw new Error(`generated workers did not reach start count ${expectedLength}`);
 }
 
+async function waitForDispatchInputs(runner: { dispatchInputs: DiscoveryDispatchInput[] }, expectedLength: number): Promise<void> {
+	for (let i = 0; i < 80; i++) {
+		if (runner.dispatchInputs.length >= expectedLength) return;
+		await new Promise(resolve => setTimeout(resolve, 25));
+	}
+	throw new Error(`dispatcher inputs did not reach count ${expectedLength}`);
+}
+
 function createDeferred(): { promise: Promise<void>; resolve: () => void; reject: (error: unknown) => void } {
 	let resolve!: () => void;
 	let reject!: (error: unknown) => void;
@@ -276,6 +284,49 @@ class GatedDiscoveryGeneratedRunner extends DiscoveryDispatchingRunner {
 }
 
 class GatedDiscoveryGeneratedWithDownstreamRunner extends GatedDiscoveryGeneratedRunner {
+	readonly downstreamWorkerStarts: string[] = [];
+
+	async runWorker(input: ProcessAwareWorkerInput): Promise<WorkerOutput> {
+		if (input.task.type !== "discovery" && !input.task.title.startsWith("核查 ")) {
+			this.downstreamWorkerStarts.push(input.task.id);
+			return { content: `downstream ${input.task.id} result`, artifactRefs: [] };
+		}
+		return super.runWorker(input);
+	}
+}
+
+class StreamingDispatchGatedGeneratedRunner extends GatedDiscoveryGeneratedRunner {
+	private readonly gatedItemId: string;
+	private readonly dispatchGate = createDeferred();
+
+	constructor(items: Array<Record<string, unknown>>, gatedItemId = "hetzner") {
+		super(items);
+		this.gatedItemId = gatedItemId;
+	}
+
+	releaseDispatchGate(): void {
+		this.dispatchGate.resolve();
+	}
+
+	async runDiscoveryDispatcher(input: DiscoveryDispatchInput): Promise<DiscoveryDispatchOutput> {
+		this.dispatchInputs.push(input);
+		if (input.itemId === this.gatedItemId) {
+			await this.dispatchGate.promise;
+		}
+		return {
+			ok: true,
+			itemId: input.itemId,
+			workUnit: {
+				title: `核查 ${input.itemId}`,
+				input: { text: `核查供应商 ${input.itemId}` },
+				outputContract: { text: `输出 ${input.itemId} 的核查报告。` },
+				acceptance: { rules: [`报告必须覆盖 ${input.itemId}`] },
+			},
+		};
+	}
+}
+
+class StreamingDispatchGatedGeneratedWithDownstreamRunner extends StreamingDispatchGatedGeneratedRunner {
 	readonly downstreamWorkerStarts: string[] = [];
 
 	async runWorker(input: ProcessAwareWorkerInput): Promise<WorkerOutput> {
@@ -914,6 +965,73 @@ test("Step07: successful Discovery dispatch auto-runs active generated Tasks", a
 	}
 });
 
+test("Discovery dispatch starts generated auto-run before all items finish dispatching", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-discovery-streaming-dispatch-"));
+	const runner = new StreamingDispatchGatedGeneratedRunner([
+		{ id: "vultr" },
+		{ id: "hetzner" },
+		{ id: "ovh" },
+		{ id: "linode" },
+	]);
+	let service: CanvasTaskRunService | undefined;
+	let created: TeamRunState | undefined;
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const discovery = await taskStore.create({
+			...validTaskInput,
+			title: "发现云服务器供应商",
+			canvasKind: "discovery",
+			discoverySpec: validDiscoverySpec,
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "发现云服务器供应商",
+				input: { text: "搜索并输出云服务器供应商 JSON。" },
+				outputContract: { text: "输出 JSON object，vendors 为数组，每项包含稳定 id。" },
+				acceptance: { rules: ["vendors 必须是数组", "每项必须有 id"] },
+			},
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => runner,
+			dataDir: join(root, "task-runs"),
+		});
+
+		created = await service.createRun(discovery.taskId);
+		await waitForDispatchInputs(runner, 2);
+		await delayMs(150);
+
+		assert.equal(runner.dispatchInputs[1]?.itemId, "hetzner");
+		assert.equal(runner.generatedWorkerStarts.length, 1, "first generated child should start while second item is still dispatching");
+
+		const attempts = await workspace.listAttempts(created.runId, discovery.taskId);
+		assert.ok((attempts[0]?.discoveryDispatch?.length ?? 0) >= 1, "dispatch progress should be recorded before all items finish dispatching");
+
+		runner.releaseDispatchGate();
+		for (let i = 0; i < 40; i++) {
+			for (const release of runner.releaseGeneratedWorkers.splice(0)) release();
+			const latest = await service.getRun(created.runId);
+			if (latest && ["completed", "completed_with_failures", "failed", "cancelled"].includes(latest.status)) break;
+			await delayMs(25);
+		}
+		const finished = await waitForTerminalRun(service, created.runId);
+		assert.equal(finished.status, "completed");
+	} finally {
+		runner.releaseDispatchGate();
+		for (let i = 0; i < 20; i++) {
+			for (const release of runner.releaseGeneratedWorkers.splice(0)) release();
+			if (service && created) {
+				const latest = await service.getRun(created.runId).catch(() => null);
+				if (latest && ["completed", "completed_with_failures", "failed", "cancelled"].includes(latest.status)) break;
+			}
+			await delayMs(25);
+		}
+		if (service && created) await waitForTerminalRun(service, created.runId).catch(() => {});
+		await removeTempRoot(root);
+	}
+});
+
 test("Step07: auto-run enforces concurrency 3", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-task-run-discovery-autorun-concurrency-"));
 	try {
@@ -977,8 +1095,85 @@ test("Step07: auto-run enforces concurrency 3", async () => {
 	}
 });
 
+test("Discovery root cancel during streaming dispatch cancels active generated run and stops later launches", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-discovery-streaming-cancel-"));
+	const runner = new StreamingDispatchGatedGeneratedRunner([
+		{ id: "vultr" },
+		{ id: "hetzner" },
+		{ id: "ovh" },
+		{ id: "linode" },
+	]);
+	let service: CanvasTaskRunService | undefined;
+	let created: TeamRunState | undefined;
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const discovery = await taskStore.create({
+			...validTaskInput,
+			title: "发现云服务器供应商",
+			canvasKind: "discovery",
+			discoverySpec: validDiscoverySpec,
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "发现云服务器供应商",
+				input: { text: "搜索并输出云服务器供应商 JSON。" },
+				outputContract: { text: "输出 JSON object，vendors 为数组，每项包含稳定 id。" },
+				acceptance: { rules: ["vendors 必须是数组", "每项必须有 id"] },
+			},
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => runner,
+			dataDir: join(root, "task-runs"),
+		});
+		const runService = service;
+
+		created = await runService.createRun(discovery.taskId);
+		await waitForDispatchInputs(runner, 2);
+		await waitForGeneratedWorkerStarts(runner, 1);
+
+		const cancelled = await runService.cancelRun(created.runId, "user cancel");
+		assert.equal(cancelled.status, "cancelled");
+		assert.equal(cancelled.taskStates[discovery.taskId]?.status, "cancelled");
+
+		runner.releaseDispatchGate();
+		await delayMs(150);
+		assert.equal(runner.generatedWorkerStarts.length, 1, "cancelled Discovery root must not launch later generated items");
+
+		const generated = await taskStore.listGeneratedForDiscoveryTask(discovery.taskId);
+		const generatedRuns = await Promise.all(generated.map(async task => [task, await runService.listRuns(task.taskId)] as const));
+		const started = generatedRuns.filter(([, runs]) => runs.length > 0);
+		assert.equal(started.length, 1);
+		assert.equal(generated.length, 1, "cancelled Discovery root must not create later generated tasks after cancellation");
+		assert.deepEqual(new Set(started.map(([, runs]) => runs[0]!.status)), new Set(["cancelled"]));
+
+		const attempts = await workspace.listAttempts(created.runId, discovery.taskId);
+		const attempt = attempts[0]!;
+		assert.equal(await workspace.readAttemptFile(created.runId, discovery.taskId, attempt.attemptId, "discovery-aggregation.json"), null);
+	} finally {
+		runner.releaseDispatchGate();
+		for (let i = 0; i < 20; i++) {
+			for (const release of runner.releaseGeneratedWorkers.splice(0)) release();
+			if (service && created) {
+				const latest = await service.getRun(created.runId).catch(() => null);
+				if (latest && ["completed", "completed_with_failures", "failed", "cancelled"].includes(latest.status)) break;
+			}
+			await delayMs(25);
+		}
+		if (service && created) await service.cancelRun(created.runId, "test cleanup").catch(() => {});
+		await removeTempRoot(root);
+	}
+});
+
 test("Discovery typed downstream waits until generated auto-runs finish", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-task-run-discovery-downstream-gate-"));
+	const runner = new StreamingDispatchGatedGeneratedWithDownstreamRunner([
+		{ id: "vultr" },
+		{ id: "hetzner" },
+	]);
+	let service: CanvasTaskRunService | undefined;
+	let created: TeamRunState | undefined;
 	try {
 		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
 		const discovery = await taskStore.create({
@@ -1019,8 +1214,7 @@ test("Discovery typed downstream waits until generated auto-runs finish", async 
 			toInputPortId: "source_json",
 		});
 		const workspace = new RunWorkspace(join(root, "task-runs"));
-		const runner = new GatedDiscoveryGeneratedWithDownstreamRunner([{ id: "vultr" }]);
-		const service = new CanvasTaskRunService({
+		service = new CanvasTaskRunService({
 			taskStore,
 			workspace,
 			createRoleRunner: () => runner,
@@ -1028,16 +1222,22 @@ test("Discovery typed downstream waits until generated auto-runs finish", async 
 			dataDir: join(root, "task-runs"),
 		});
 
-		const created = await service.createRun(discovery.taskId);
-		await waitForAttemptDiscoveryDispatch(workspace, created.runId, discovery.taskId, 1);
+		created = await service.createRun(discovery.taskId);
+		await waitForDispatchInputs(runner, 2);
 		await waitForGeneratedWorkerStarts(runner, 1);
 
 		const waitingParent = await service.getRun(created.runId);
 		assert.equal(waitingParent?.status, "running");
 		assert.equal(waitingParent?.taskStates[discovery.taskId]?.status, "running");
-		assert.equal((await service.listRuns(downstream.taskId)).length, 0, "downstream must not start while generated child is running");
+		assert.equal((await service.listRuns(downstream.taskId)).length, 0, "downstream must not start while generated child is running and dispatch is still active");
 
-		runner.releaseGeneratedWorkers[0]!();
+		runner.releaseDispatchGate();
+		for (let i = 0; i < 40; i++) {
+			for (const release of runner.releaseGeneratedWorkers.splice(0)) release();
+			const latest = await service.getRun(created.runId);
+			if (latest && ["completed", "completed_with_failures", "failed", "cancelled"].includes(latest.status)) break;
+			await delayMs(25);
+		}
 		const parentFinished = await waitForTerminalRun(service, created.runId);
 		assert.equal(parentFinished.status, "completed");
 		assert.equal(parentFinished.taskStates[discovery.taskId]?.status, "succeeded");
@@ -1052,6 +1252,16 @@ test("Discovery typed downstream waits until generated auto-runs finish", async 
 		const delivery = await waitForAttemptDelivery(workspace, created.runId, discovery.taskId);
 		assert.equal(delivery[0]?.status, "delivered");
 	} finally {
+		runner.releaseDispatchGate();
+		for (let i = 0; i < 20; i++) {
+			for (const release of runner.releaseGeneratedWorkers.splice(0)) release();
+			if (service && created) {
+				const latest = await service.getRun(created.runId).catch(() => null);
+				if (latest && ["completed", "completed_with_failures", "failed", "cancelled"].includes(latest.status)) break;
+			}
+			await delayMs(25);
+		}
+		if (service && created) await waitForTerminalRun(service, created.runId).catch(() => {});
 		await removeTempRoot(root);
 	}
 });
