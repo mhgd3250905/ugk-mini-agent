@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-03 — Team Console root and Discovery summary refresh contracts
+
+- **主题**: Team Console refresh/API 主线补齐聚合型 root summary 与 Discovery generated child summary 增量 contract。新增 `GET /v1/team/console/root-summary` 聚合 root tasks、latest root run summaries、source / connection / dependency catalog，并支持独立 `taskSince` / `runSince` cursor；`GET /v1/team/tasks/:taskId/generated-tasks?view=summary&since=...` 返回 changed generated summaries、`deletedTaskIds` 和 `serverVersion`。
+- **影响范围**: `5174` Live API 的初始加载、手动刷新、静默刷新和打开 Discovery 子画布后的 generated child summary 合并；前端优先 root summary endpoint，旧拆分 catalog / run summary 请求只作为兼容 fallback。空增量不会清空已打开的 Discovery child，generated full task detail 仍按需 lazy fetch。
+- **验证**: `node --test --import tsx --test-name-pattern "root-summary|generated-tasks view=summary supports since" test\team-task-run-routes.test.ts`、`npx vitest run src\tests\team-api.test.ts src\tests\app-live-data.test.tsx --testNamePattern "lazy Discovery catalog|since cursors|root summary|generated Discovery child summaries|unchanged live Task|deleted root Task|active root run summary|full generated detail|Refresh Task"`。
+- **对应入口**: `src/team/routes.ts`、`apps/team-console/src/api/team-api.ts`、`apps/team-console/src/app/use-team-console-live-data.ts`、`docs/team-runtime.md`、`docs/team-console-refresh-performance-plan.md`。
+
 ## 2026-06-03 — Discovery dispatch auto-run overlap
 
 - **主题**: Discovery root runtime 改为边 dispatch 边启动 generated child auto-run。dispatcher 仍顺序处理 item，但每个 item upsert 成 active generated Task 后立即进入固定 3 并发 auto-run pool；`attempt.discoveryDispatch` 和 `attempt.discoveryGeneratedRuns` 会随进度增量落盘。

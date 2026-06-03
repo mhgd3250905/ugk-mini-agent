@@ -357,6 +357,63 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		}
 	});
 
+	app.get("/v1/team/console/root-summary", async (request, reply) => {
+		const query = request.query as { taskSince?: string; runSince?: string };
+		let taskSince: string | undefined;
+		let runSince: string | undefined;
+		try {
+			taskSince = readSinceCursor(query.taskSince);
+			runSince = readSinceCursor(query.runSince);
+		} catch (err) {
+			reply.code(400).send({ error: (err as Error).message });
+			return;
+		}
+		const allRootTasks = await taskStore.list({
+			includeArchived: true,
+			includeGenerated: false,
+		});
+		const visibleRootTasks = allRootTasks.filter((task) => !task.archived);
+		const tasks = taskSince ? visibleRootTasks.filter((task) => task.updatedAt > taskSince) : visibleRootTasks;
+		const deletedTaskIds = taskSince
+			? allRootTasks
+				.filter((task) => task.archived && task.updatedAt > taskSince)
+				.map((task) => task.taskId)
+			: [];
+		const rootTaskIds = visibleRootTasks.map((task) => task.taskId);
+		const runsByTaskId = rootTaskIds.length > 0
+			? await taskRunService.listRunsByTaskIds(rootTaskIds, { limit: 1 })
+			: {};
+		const taskRunSummaryServerVersion = maxUpdatedAt(Object.values(runsByTaskId).flat());
+		const filteredRunsByTaskId = Object.fromEntries(
+			rootTaskIds.map((taskId) => {
+				const runs = runsByTaskId[taskId] ?? [];
+				const filtered = runSince ? runs.filter((run) => run.updatedAt > runSince) : runs;
+				return [taskId, filtered.map(run => summarizeRunState(run, taskId))];
+			}),
+		);
+		const deletedRunIdsByTaskId = Object.fromEntries(rootTaskIds.map((taskId) => [taskId, [] as string[]]));
+		const [sourceNodes, sourceConnections, taskConnections, taskDependencies] = await Promise.all([
+			sourceNodeStore.list(),
+			sourceConnectionStore.listResolved(),
+			taskConnectionStore.listResolved(),
+			taskDependencyStore.listResolved(),
+		]);
+		reply.send({
+			tasks,
+			deletedTaskIds,
+			taskRunsByTaskId: filteredRunsByTaskId,
+			deletedRunIdsByTaskId,
+			sourceNodes,
+			sourceConnections,
+			taskConnections,
+			taskDependencies,
+			serverVersion: {
+				taskCatalog: maxUpdatedAt(allRootTasks),
+				taskRunSummary: taskRunSummaryServerVersion,
+			},
+		});
+	});
+
 	app.get("/v1/team/tasks", async (request, reply) => {
 		const query = request.query as { since?: string };
 		let since: string | undefined;
@@ -440,21 +497,37 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			reply.code(400).send({ error: "generated tasks can only be listed for Discovery root tasks" });
 			return;
 		}
-		const query = request.query as { view?: string };
+		const query = request.query as { view?: string; since?: string };
 		const view = query.view;
 		if (view !== undefined && view !== "summary") {
 			reply.code(400).send({ error: "unknown view parameter; supported values: summary" });
 			return;
 		}
-		const tasks = await taskStore.listGeneratedForDiscoveryTask(taskId, {
-			includeArchived: parseIncludeArchived(request),
-		});
-		if (view === "summary") {
-			const summaries: TeamDiscoveryGeneratedTaskSummary[] = tasks.map(toGeneratedTaskSummary);
-			reply.send({ tasks: summaries });
+		let since: string | undefined;
+		try {
+			since = readSinceCursor(query.since);
+		} catch (err) {
+			reply.code(400).send({ error: (err as Error).message });
 			return;
 		}
-		reply.send({ tasks });
+		const includeArchived = parseIncludeArchived(request);
+		const allGeneratedTasks = await taskStore.listGeneratedForDiscoveryTask(taskId, {
+			includeArchived: true,
+		});
+		const visibleTasks = allGeneratedTasks.filter((generatedTask) => includeArchived || !generatedTask.archived);
+		const tasks = since ? visibleTasks.filter((generatedTask) => generatedTask.updatedAt > since) : visibleTasks;
+		const deletedTaskIds = since && !includeArchived
+			? allGeneratedTasks
+				.filter((generatedTask) => generatedTask.archived && generatedTask.updatedAt > since)
+				.map((generatedTask) => generatedTask.taskId)
+			: [];
+		const serverVersion = maxUpdatedAt(allGeneratedTasks);
+		if (view === "summary") {
+			const summaries: TeamDiscoveryGeneratedTaskSummary[] = tasks.map(toGeneratedTaskSummary);
+			reply.send({ tasks: summaries, deletedTaskIds, serverVersion });
+			return;
+		}
+		reply.send({ tasks, deletedTaskIds, serverVersion });
 	});
 
 	app.patch("/v1/team/tasks/:taskId", async (request, reply) => {

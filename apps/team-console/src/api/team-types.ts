@@ -582,6 +582,27 @@ export interface TeamDiscoveryGeneratedTaskSummary {
   };
 }
 
+export interface TeamDiscoveryGeneratedTaskSummaryCatalogResponse {
+  tasks: TeamDiscoveryGeneratedTaskSummary[];
+  deletedTaskIds?: string[];
+  serverVersion?: string | null;
+}
+
+export interface TeamConsoleRootSummaryResponse {
+  tasks: TeamCanvasTask[];
+  deletedTaskIds?: string[];
+  taskRunsByTaskId: Record<string, TeamRunState[]>;
+  deletedRunIdsByTaskId?: Record<string, string[]>;
+  sourceNodes: TeamCanvasSourceNode[];
+  sourceConnections: TeamCanvasSourceConnection[];
+  taskConnections: TeamTaskConnection[];
+  taskDependencies: TeamTaskDependency[];
+  serverVersion: {
+    taskCatalog?: string | null;
+    taskRunSummary?: string | null;
+  };
+}
+
 export interface TeamTaskMutationResponse {
   task: TeamCanvasTask;
   warnings?: string[];

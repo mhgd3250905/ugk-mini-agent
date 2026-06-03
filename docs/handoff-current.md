@@ -132,6 +132,14 @@ git log --oneline origin/main..HEAD
 
 ## 已验证命令
 
+- `node --test --import tsx --test-name-pattern "root-summary|generated-tasks view=summary supports since" test\team-task-run-routes.test.ts`：3 passed。
+- `node --test --import tsx test\team-task-run-routes.test.ts`：38 passed。
+- `npx vitest run src\tests\team-api.test.ts src\tests\app-live-data.test.tsx src\tests\app-run-observer.test.tsx`：194 passed。
+- `npm --prefix apps\team-console run build`：passed；仍有既有 Vite chunk size warning。
+- `npx tsc --noEmit`：passed。
+- `npm test`：2061 passed，2 skipped，0 failed。
+- `git diff --check`：passed。
+- Docker smoke：已重启 `ugk-pi`、`ugk-pi-team-worker`、`ugk-pi-team-console`；`http://127.0.0.1:3000/healthz` 返回 `{"ok":true}`；`http://127.0.0.1:5174/` 返回 200；`GET /v1/team/console/root-summary` 返回 root summary payload 和 `serverVersion`。
 - `node --test --import tsx test\team-task-routes.test.ts`：45 passed。
 - `node --test --import tsx test\team-task-run-routes.test.ts`：34 passed。
 - `npm --prefix apps\team-console run test -- --run src\tests\team-api.test.ts src\tests\app-live-data.test.tsx src\tests\app-run-observer.test.tsx`：186 passed。
@@ -194,8 +202,8 @@ git log --oneline origin/main..HEAD
 
 ## 未完成 / 风险
 
-- Team Console refresh performance plan 还没全部完成：Discovery child summary 的 `since` contract、聚合型 root summary endpoint 仍未做；Step 6 runtime 已完成，不要再把它和刷新性能/API/UI 阶段提示混在一个大改里。
-- 用户反馈 Task 和并行 run 增多后，Team Console 通过远程 FRP 使用时刷新越来越慢，且打开期间偶发整屏“画布加载中”。已落地专题分析和行动方案：`docs/team-console-refresh-performance-plan.md`。当前 Step 1-6 已完成到第一版可消费 contract / 阶段可见性 / runtime overlap；下一轮可评估 Discovery child summary 增量 contract 或聚合型 root summary endpoint。
+- Team Console refresh performance plan 的 refresh/API 主线已完成到当前可收口版本：root catalog、root run summary、generated child summary 都有 `since` / `serverVersion` contract，前端优先消费聚合型 `GET /v1/team/console/root-summary`，旧拆分请求仅作为兼容 fallback；Step 6 runtime 也已完成，不要再把它和刷新性能/API/UI 阶段提示混在一个大改里。
+- 用户反馈 Task 和并行 run 增多后，Team Console 通过远程 FRP 使用时刷新越来越慢，且打开期间偶发整屏“画布加载中”。已落地专题分析和行动方案：`docs/team-console-refresh-performance-plan.md`。当前 Step 1-6 已完成到第一版可消费 contract / 阶段可见性 / runtime overlap；下一轮应基于真实 FRP 大量 run 观测做针对性调优，或另起 deterministic / bulk dispatcher runtime 设计。
 - `task_fb6e3f9cd973` 最近旧 Discovery runs 说明大量 item 场景下曾卡在逐 item dispatcher 阶段：`run_169c5d988eb7` 产出 56 items 但 `discoveryDispatchCount=0` / `discoveryGeneratedRunsCount=0` 后被 `user cancel`；`run_fa6daa6ad620` 产出 50 items，dispatch created 5 / updated 12 / blocked 33 / stale_marked 10 后被 `user cancel`。Step 6 已缓解“全部 dispatch 后才 auto-run”的等待，但每 item dispatcher 成本、blocked item 和源站可达性仍可能拖慢真实 run。
 - 已真实 UI 复测：模板 Task 本体直接运行已有正式参数绑定。`templateState.currentBindings` 保存当前/最近参数，缺 required 参数时 Team Console 打开参数面板；已有参数或 default 时直接运行；`POST /v1/team/tasks/:taskId/runs` 可接收本次 `templateBindings` override 并写回当前参数；每次 run 在 `source.templateBindings` 记录当时快照，生成 workUnit / discoverySpec / plan / prompt 时使用绑定后的值，不再保留 `{{keyword}}`。
 - 下游“JSON 数据生成 HTML 报告”Task 的 checker timeout 需要后续优化；这不是 Discovery aggregation bug。
@@ -218,7 +226,7 @@ git log --oneline origin/main..HEAD
 
 等待用户说明新的优化项，再判断落点：
 
-- Team Console 刷新性能剩余项：先读 `docs/team-console-refresh-performance-plan.md` 的剩余 API 建议。若继续做 Discovery child summary 增量，先设计 `since` / cursor / `serverVersion` contract 和测试，再改 API / LiveTeamApi / `use-team-console-live-data.ts`；别用“前端全量拉取后过滤”假装增量。
+- Team Console 刷新性能：refresh/API 主线已收口；后续先看真实 FRP / 大量 run 下的具体慢点，再决定是继续压缩 payload、减少轮询、还是做视窗化渲染，不要凭感觉继续堆 endpoint。
 - Discovery runtime 行为：Step 6 已完成；后续若要做 deterministic / bulk dispatcher，需要另起 runtime 设计，不要和 Team Console refresh 合并提交。
 - `/team-task` 体验：改 `.pi/skills/team-task-creator/SKILL.md` 和 skill 测试。
 - Team Console UI：改 `apps/team-console/src/app/**` 和对应 vitest。

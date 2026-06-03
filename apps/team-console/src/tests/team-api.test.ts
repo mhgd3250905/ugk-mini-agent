@@ -535,6 +535,74 @@ describe("LiveTeamApi", () => {
     await expect(api.listGeneratedTaskSummaries("task_discovery")).resolves.toEqual([]);
   });
 
+  it("fetches live generated Discovery child summaries incrementally with since cursor", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const summary = {
+      taskId: "task_summary_changed",
+      title: "Changed Summary",
+      leaderAgentId: "main",
+      status: "ready",
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-03T00:00:01.000Z",
+      archived: false,
+      generatedSource: {
+        schemaVersion: "team/generated-task-source-1" as const,
+        sourceDiscoveryTaskId: "task_discovery",
+        sourceItemId: "item_changed",
+        itemStatus: "active" as const,
+        workUnitMode: "managed" as const,
+      },
+    };
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      tasks: [summary],
+      deletedTaskIds: ["task_deleted"],
+      serverVersion: "2026-06-03T00:00:02.000Z",
+    }), { status: 200 }));
+
+    const catalog = await api.listGeneratedTaskSummaryCatalog("task_discovery", {
+      since: "2026-06-03T00:00:00.000Z",
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/tasks/task_discovery/generated-tasks?view=summary&since=2026-06-03T00%3A00%3A00.000Z");
+    expect(catalog).toEqual({
+      tasks: [summary],
+      deletedTaskIds: ["task_deleted"],
+      serverVersion: "2026-06-03T00:00:02.000Z",
+    });
+  });
+
+  it("fetches live Team Console root summary with independent cursors", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const task = mockTeamTasks[0]!;
+    const run = makeSequentialRun();
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      tasks: [task],
+      deletedTaskIds: ["task_deleted"],
+      taskRunsByTaskId: { [task.taskId]: [run] },
+      deletedRunIdsByTaskId: { [task.taskId]: [] },
+      sourceNodes: [],
+      sourceConnections: [],
+      taskConnections: [],
+      taskDependencies: [],
+      serverVersion: {
+        taskCatalog: "2026-06-03T00:00:01.000Z",
+        taskRunSummary: "2026-06-03T00:00:02.000Z",
+      },
+    }), { status: 200 }));
+
+    const summary = await api.getRootSummary({
+      taskSince: "2026-06-03T00:00:00.000Z",
+      runSince: "2026-06-03T00:00:01.000Z",
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/console/root-summary?taskSince=2026-06-03T00%3A00%3A00.000Z&runSince=2026-06-03T00%3A00%3A01.000Z");
+    expect(summary.tasks).toEqual([task]);
+    expect(summary.deletedTaskIds).toEqual(["task_deleted"]);
+    expect(summary.taskRunsByTaskId[task.taskId]?.[0]?.runId).toBe(run.runId);
+    expect(summary.serverVersion.taskCatalog).toBe("2026-06-03T00:00:01.000Z");
+    expect(summary.serverVersion.taskRunSummary).toBe("2026-06-03T00:00:02.000Z");
+  });
+
   it("getTask fetches a single task by id", async () => {
     const api = new LiveTeamApi("/v1/team");
     const task = mockTeamTasks[0]!;

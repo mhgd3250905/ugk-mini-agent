@@ -150,6 +150,28 @@ function byTaskRunsResponse(runsByTaskId: Record<string, TeamRunState[]>): Respo
   return new Response(JSON.stringify({ runsByTaskId }), { status: 200 });
 }
 
+function rootSummaryResponse(input: {
+  tasks?: TeamCanvasTask[];
+  taskRunsByTaskId?: Record<string, TeamRunState[]>;
+  taskCatalogVersion?: string | null;
+  taskRunSummaryVersion?: string | null;
+} = {}): Response {
+  return new Response(JSON.stringify({
+    tasks: input.tasks ?? [],
+    deletedTaskIds: [],
+    taskRunsByTaskId: input.taskRunsByTaskId ?? {},
+    deletedRunIdsByTaskId: {},
+    sourceNodes: [],
+    sourceConnections: [],
+    taskConnections: [],
+    taskDependencies: [],
+    serverVersion: {
+      taskCatalog: input.taskCatalogVersion ?? null,
+      taskRunSummary: input.taskRunSummaryVersion ?? null,
+    },
+  }), { status: 200 });
+}
+
 function generatedSummary(task: TeamCanvasTask): TeamDiscoveryGeneratedTaskSummary {
   const source = task.generatedSource;
   if (!source) throw new Error(`Missing generated source for ${task.taskId}`);
@@ -216,7 +238,10 @@ type LiveReferenceSnapshot = {
 
 let latestLiveReferenceSnapshot: LiveReferenceSnapshot | null = null;
 
-function LiveReferenceProbe({ openDiscoveryTaskIds = [] }: { openDiscoveryTaskIds?: string[] } = {}) {
+function LiveReferenceProbe({
+  openDiscoveryTaskIds = [],
+  targetTaskId,
+}: { openDiscoveryTaskIds?: string[]; targetTaskId?: string } = {}) {
   const liveData = useTeamConsoleLiveData({
     onApplyLiveTasks: noop,
     onApplyLiveSources: noop,
@@ -225,7 +250,9 @@ function LiveReferenceProbe({ openDiscoveryTaskIds = [] }: { openDiscoveryTaskId
     selectedTaskId: null,
     openDiscoveryTaskIds,
   });
-  const task = liveData.tasks[0] ?? null;
+  const task = (targetTaskId ? liveData.tasks.find((candidate) => candidate.taskId === targetTaskId) : null)
+    ?? liveData.tasks[0]
+    ?? null;
   const run = task ? liveData.taskRunsByTaskId[task.taskId]?.[0] ?? null : null;
   const generated = Object.values(liveData.generatedTasksByDiscoveryTaskId).flat()
     .find((candidate) => candidate.taskId === "task_generated_vultr") ?? null;
@@ -2863,27 +2890,22 @@ describe("App", () => {
 
     it("keeps Live API on a clean agent workspace until a run is requested", async () => {
       const liveTask = mockTeamTasks[0]!;
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ dependencies: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }));
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") return rootSummaryResponse({ tasks: [liveTask] });
+        return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 500 });
+      });
 
       render(<App />);
       fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-      await waitFor(() => expect(fetch).toHaveBeenCalledWith("/v1/team/source-connections"));
+      await waitFor(() => expect(fetch).toHaveBeenCalledWith("/v1/team/console/root-summary"));
       const calledUrls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
       expect(calledUrls).toEqual(expect.arrayContaining([
         "/v1/agents",
-        "/v1/team/tasks",
-        "/v1/team/task-connections",
-        "/v1/team/task-dependencies",
-        "/v1/team/source-nodes",
-        "/v1/team/source-connections",
+        "/v1/team/console/root-summary",
       ]));
       expect(fetch).toHaveBeenCalledWith("/v1/agents/status", {
         method: "GET",
@@ -2896,6 +2918,8 @@ describe("App", () => {
       expect(screen.queryByText("Research vendor A")).toBeNull();
       expect(calledUrls).not.toContain("/v1/team/plans");
       expect(calledUrls).not.toContain("/v1/team/runs");
+      expect(calledUrls).not.toContain("/v1/team/tasks");
+      expect(calledUrls).not.toContain("/v1/team/task-connections");
       expect(calledUrls.filter((url) => /^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url))).toHaveLength(0);
       expect(calledUrls.some((url) => url.includes("/run-history"))).toBe(false);
       expect(calledUrls.some((url) => url.includes("/attempts"))).toBe(false);
@@ -2905,14 +2929,19 @@ describe("App", () => {
 
     it("keeps Live API usable when the typed connection endpoint is not deployed yet", async () => {
       const liveTask = mockTeamTasks[0]!;
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response("not found", { status: 404 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
-        .mockResolvedValue(new Response(JSON.stringify({ runs: [] }), { status: 200 }));
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") return new Response("not found", { status: 404 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [liveTask] }), { status: 200 });
+        if (url === "/v1/team/task-connections") return new Response("not found", { status: 404 });
+        if (url === "/v1/team/task-dependencies") return new Response(JSON.stringify({ dependencies: [] }), { status: 200 });
+        if (url === "/v1/team/source-nodes") return new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 });
+        if (url === "/v1/team/source-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+        if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse({});
+        return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 500 });
+      });
 
       const { container } = render(<App />);
       fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
@@ -2924,29 +2953,28 @@ describe("App", () => {
     });
 
     it("loads live agent catalog when switching to Live API", async () => {
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(new Response(JSON.stringify({
-          agents: [{ agentId: "main", name: "主 Agent", description: "默认综合 agent" }],
-        }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [{ agentId: "main", name: "主 Agent", status: "idle" }] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ dependencies: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }));
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [{ agentId: "main", name: "主 Agent", description: "默认综合 agent" }],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") {
+          return new Response(JSON.stringify({ agents: [{ agentId: "main", name: "主 Agent", status: "idle" }] }), { status: 200 });
+        }
+        if (url === "/v1/team/console/root-summary") return rootSummaryResponse();
+        return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 500 });
+      });
 
       render(<App />);
       fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-      await waitFor(() => expect(fetch).toHaveBeenCalledWith("/v1/team/source-connections"));
+      await waitFor(() => expect(fetch).toHaveBeenCalledWith("/v1/team/console/root-summary"));
       const calledUrls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
       expect(calledUrls).toEqual(expect.arrayContaining([
         "/v1/agents",
-        "/v1/team/tasks",
-        "/v1/team/task-connections",
-        "/v1/team/task-dependencies",
-        "/v1/team/source-nodes",
-        "/v1/team/source-connections",
+        "/v1/team/console/root-summary",
       ]));
       expect(fetch).toHaveBeenCalledWith("/v1/agents/status", {
         method: "GET",
@@ -3519,23 +3547,27 @@ describe("App", () => {
     });
 
     it("keeps live agent workspace usable when no live team run exists", async () => {
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(new Response(JSON.stringify({
-          agents: [{ agentId: "main", name: "主 Agent", description: "默认综合 agent" }],
-        }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ agents: [{ agentId: "main", name: "主 Agent", status: "idle" }] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ tasks: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ dependencies: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ connections: [] }), { status: 200 }));
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [{ agentId: "main", name: "主 Agent", description: "默认综合 agent" }],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") {
+          return new Response(JSON.stringify({ agents: [{ agentId: "main", name: "主 Agent", status: "idle" }] }), { status: 200 });
+        }
+        if (url === "/v1/team/console/root-summary") return rootSummaryResponse();
+        return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 500 });
+      });
 
       const { container } = render(<App />);
       fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
 
-      await waitFor(() => expect(fetch).toHaveBeenCalledWith("/v1/team/source-connections"));
+      await waitFor(() => expect(fetch).toHaveBeenCalledWith("/v1/team/console/root-summary"));
       const calledUrls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
       expect(calledUrls).not.toContain("/v1/team/runs");
+      expect(calledUrls).not.toContain("/v1/team/tasks");
       expect(calledUrls.filter((url) => /^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url))).toHaveLength(0);
       expect(calledUrls.some((url) => url.includes("/run-history"))).toBe(false);
       expect(calledUrls.some((url) => url.includes("/attempts"))).toBe(false);
@@ -3601,11 +3633,11 @@ describe("App", () => {
           },
         });
       }
-      const allTaskIds = [rootTask.taskId, discoveryTask.taskId, ...generatedTasks.map((t) => t.taskId)];
       vi.mocked(fetch).mockImplementation(async (input) => {
         const url = String(input);
         if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
         if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") return rootSummaryResponse({ tasks: [rootTask, discoveryTask] });
         if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [rootTask, discoveryTask] }), { status: 200 });
         if (url.startsWith(`/v1/team/tasks/${discoveryTask.taskId}/generated-tasks`)) {
           return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
@@ -3631,8 +3663,10 @@ describe("App", () => {
         .filter((url) => /^\/v1\/team\/tasks\/[^/]+\/runs$/.test(url));
       expect(individualRunCalls).toHaveLength(0);
 
-      const probe = readLiveDataProbe();
-      expect(probe.runKeys.length).toBe(allTaskIds.length);
+      const requestedTaskIds = new Set(
+        byTaskUrls.flatMap((url) => new URLSearchParams(url.split("?")[1]).get("taskIds")?.split(",") ?? []),
+      );
+      expect([...requestedTaskIds].sort()).toEqual([...new Set([discoveryTask.taskId, ...generatedTasks.map((t) => t.taskId)])].sort());
     });
 
     it("keeps runsByTaskId state when >100 root+generated ids are loaded without N+1 fallback", async () => {
@@ -3707,13 +3741,21 @@ describe("App", () => {
       const rootRun = canvasTaskRun(rootTask.taskId, "run_reference_root", "completed");
       const fullGeneratedTask = mockDiscoveryGeneratedTasks.find((task) => task.taskId === "task_generated_vultr")!;
       const generatedTasks = [generatedSummary(fullGeneratedTask)];
-      let taskCatalogRequests = 0;
+      let rootSummaryRequests = 0;
       vi.mocked(fetch).mockImplementation(async (input) => {
         const url = String(input);
         if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
         if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url.startsWith("/v1/team/console/root-summary")) {
+          rootSummaryRequests += 1;
+          return rootSummaryResponse({
+            tasks: [{ ...rootTask }, { ...mockDiscoveryRootTask }],
+            taskRunsByTaskId: { [rootTask.taskId]: [{ ...rootRun }] },
+            taskCatalogVersion: "2026-06-03T00:00:00.000Z",
+            taskRunSummaryVersion: "2026-06-03T00:00:10.000Z",
+          });
+        }
         if (url === "/v1/team/tasks") {
-          taskCatalogRequests += 1;
           return new Response(JSON.stringify({ tasks: [{ ...rootTask }, { ...mockDiscoveryRootTask }] }), { status: 200 });
         }
         if (url.startsWith(`/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`)) {
@@ -3728,7 +3770,7 @@ describe("App", () => {
         return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
       });
 
-      render(<LiveReferenceProbe openDiscoveryTaskIds={[mockDiscoveryRootTask.taskId]} />);
+      render(<LiveReferenceProbe openDiscoveryTaskIds={[mockDiscoveryRootTask.taskId]} targetTaskId={rootTask.taskId} />);
 
       await waitFor(() => {
         expect(latestLiveReferenceSnapshot?.task?.taskId).toBe(rootTask.taskId);
@@ -3740,7 +3782,7 @@ describe("App", () => {
       const before = latestLiveReferenceSnapshot!;
 
       fireEvent.click(screen.getByRole("button", { name: "probe refresh" }));
-      await waitFor(() => expect(taskCatalogRequests).toBe(2));
+      await waitFor(() => expect(rootSummaryRequests).toBe(2));
       await act(async () => { await Promise.resolve(); });
 
       expect(latestLiveReferenceSnapshot?.task).toBe(before.task);
@@ -3802,6 +3844,143 @@ describe("App", () => {
       });
       expect(readLiveDataProbe().tasks).toEqual([rootTask.taskId]);
       expect(readLiveDataProbe().runKeys).toEqual([rootTask.taskId]);
+    });
+
+    it("uses the root summary endpoint for live initial load and manual refresh", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const rootTask = mockTeamTasks[0]!;
+      const rootRun = canvasTaskRun(rootTask.taskId, "run_root_summary_live", "completed");
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") {
+          return new Response(JSON.stringify({
+            tasks: [rootTask],
+            deletedTaskIds: [],
+            taskRunsByTaskId: { [rootTask.taskId]: [rootRun] },
+            deletedRunIdsByTaskId: { [rootTask.taskId]: [] },
+            sourceNodes: [],
+            sourceConnections: [],
+            taskConnections: [],
+            taskDependencies: [],
+            serverVersion: {
+              taskCatalog: "2026-06-03T00:00:00.000Z",
+              taskRunSummary: "2026-06-03T00:00:10.000Z",
+            },
+          }), { status: 200 });
+        }
+        if (url === "/v1/team/console/root-summary?taskSince=2026-06-03T00%3A00%3A00.000Z&runSince=2026-06-03T00%3A00%3A10.000Z") {
+          return new Response(JSON.stringify({
+            tasks: [],
+            deletedTaskIds: [],
+            taskRunsByTaskId: { [rootTask.taskId]: [] },
+            deletedRunIdsByTaskId: { [rootTask.taskId]: [] },
+            sourceNodes: [],
+            sourceConnections: [],
+            taskConnections: [],
+            taskDependencies: [],
+            serverVersion: {
+              taskCatalog: "2026-06-03T00:00:00.000Z",
+              taskRunSummary: "2026-06-03T00:00:10.000Z",
+            },
+          }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 500 });
+      });
+
+      render(<LiveDataProbe />);
+
+      await waitFor(() => expect(readLiveDataProbe().tasks).toEqual([rootTask.taskId]));
+      await waitFor(() => expect(readLiveDataProbe().runKeys).toEqual([rootTask.taskId]));
+      fireEvent.click(screen.getByRole("button", { name: "probe refresh" }));
+
+      await waitFor(() => {
+        const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+        expect(urls).toContain("/v1/team/console/root-summary");
+        expect(urls).toContain("/v1/team/console/root-summary?taskSince=2026-06-03T00%3A00%3A00.000Z&runSince=2026-06-03T00%3A00%3A10.000Z");
+      });
+      const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+      expect(urls.some((url) => url === "/v1/team/tasks" || url.startsWith("/v1/team/tasks?since="))).toBe(false);
+      expect(readLiveDataProbe().tasks).toEqual([rootTask.taskId]);
+      expect(readLiveDataProbe().runKeys).toEqual([rootTask.taskId]);
+    });
+
+    it("uses generated child summary since cursor without clearing empty increments", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const rootTask = mockTeamTasks[0]!;
+      const generated = generatedSummary(mockDiscoveryGeneratedTasks[0]!);
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") {
+          return new Response(JSON.stringify({
+            tasks: [rootTask, mockDiscoveryRootTask],
+            deletedTaskIds: [],
+            taskRunsByTaskId: {},
+            deletedRunIdsByTaskId: {},
+            sourceNodes: [],
+            sourceConnections: [],
+            taskConnections: [],
+            taskDependencies: [],
+            serverVersion: {
+              taskCatalog: "2026-06-03T00:00:00.000Z",
+              taskRunSummary: null,
+            },
+          }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/console/root-summary?")) {
+          return new Response(JSON.stringify({
+            tasks: [],
+            deletedTaskIds: [],
+            taskRunsByTaskId: {},
+            deletedRunIdsByTaskId: {},
+            sourceNodes: [],
+            sourceConnections: [],
+            taskConnections: [],
+            taskDependencies: [],
+            serverVersion: {
+              taskCatalog: "2026-06-03T00:00:00.000Z",
+              taskRunSummary: null,
+            },
+          }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks?view=summary`) {
+          return new Response(JSON.stringify({
+            tasks: [generated],
+            deletedTaskIds: [],
+            serverVersion: "2026-06-03T00:00:20.000Z",
+          }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks?view=summary&since=2026-06-03T00%3A00%3A20.000Z`) {
+          return new Response(JSON.stringify({
+            tasks: [],
+            deletedTaskIds: [],
+            serverVersion: "2026-06-03T00:00:20.000Z",
+          }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return new Response(JSON.stringify({
+            runsByTaskId: {},
+            deletedRunIdsByTaskId: {},
+            serverVersion: "2026-06-03T00:00:30.000Z",
+          }), { status: 200 });
+        }
+        if (url.includes("/attempts")) return new Response(JSON.stringify({ attempts: [] }), { status: 200 });
+        return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 500 });
+      });
+
+      render(<LiveDataProbe openDiscoveryTaskIds={[mockDiscoveryRootTask.taskId]} />);
+
+      await waitFor(() => expect(readLiveDataProbe().generated[mockDiscoveryRootTask.taskId]).toEqual([generated.taskId]));
+      fireEvent.click(screen.getByRole("button", { name: "probe refresh" }));
+
+      await waitFor(() => {
+        const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+        expect(urls).toContain(`/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks?view=summary&since=2026-06-03T00%3A00%3A20.000Z`);
+      });
+      expect(readLiveDataProbe().generated[mockDiscoveryRootTask.taskId]).toEqual([generated.taskId]);
     });
 
     it("removes deleted root Task runs from live state during refresh", async () => {

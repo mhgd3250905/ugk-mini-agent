@@ -23,6 +23,7 @@ import type {
   TeamCanvasSourceNodeUpdateRequest,
   TeamCanvasTask,
   TeamCanvasTaskListResponse,
+  TeamConsoleRootSummaryResponse,
   TeamTaskConnection,
   TeamTaskConnectionCreateRequest,
   TeamTaskDependency,
@@ -37,6 +38,7 @@ import type {
   TeamTask,
   TeamTaskState,
   TeamCanvasTaskRunByTaskListResponse,
+  TeamDiscoveryGeneratedTaskSummaryCatalogResponse,
   TeamDiscoveryGeneratedTaskSummary,
   TeamTaskRunAnnotation,
   TeamTaskRunAnnotationMutationResponse,
@@ -1695,6 +1697,31 @@ export class MockTeamApi {
     return (await this.listTaskCatalog()).tasks;
   }
 
+  async getRootSummary(options?: { taskSince?: string; runSince?: string }): Promise<TeamConsoleRootSummaryResponse> {
+    const catalog = await this.listTaskCatalog(options?.taskSince ? { since: options.taskSince } : undefined);
+    const allRootTasks = mockCanvasTasks
+      .filter((task) => !task.archived && !task.generatedSource)
+      .map(cloneMockTeamTask);
+    const taskRuns = await this.listTaskRunsByTaskIds(
+      allRootTasks.map((task) => task.taskId),
+      { limit: 1, view: "summary", ...(options?.runSince ? { since: options.runSince } : {}) },
+    );
+    return {
+      tasks: catalog.tasks,
+      deletedTaskIds: catalog.deletedTaskIds,
+      taskRunsByTaskId: taskRuns.runsByTaskId,
+      deletedRunIdsByTaskId: taskRuns.deletedRunIdsByTaskId,
+      sourceNodes: await this.listSourceNodes(),
+      sourceConnections: await this.listSourceConnections(),
+      taskConnections: await this.listTaskConnections(),
+      taskDependencies: await this.listTaskDependencies(),
+      serverVersion: {
+        taskCatalog: catalog.serverVersion,
+        taskRunSummary: taskRuns.serverVersion,
+      },
+    };
+  }
+
   async listGeneratedTasks(
     discoveryTaskId: string,
     options?: { includeArchived?: boolean },
@@ -1709,14 +1736,31 @@ export class MockTeamApi {
 
   async listGeneratedTaskSummaries(
     discoveryTaskId: string,
-    options?: { includeArchived?: boolean },
+    options?: { includeArchived?: boolean; since?: string },
   ): Promise<TeamDiscoveryGeneratedTaskSummary[]> {
+    return (await this.listGeneratedTaskSummaryCatalog(discoveryTaskId, options)).tasks;
+  }
+
+  async listGeneratedTaskSummaryCatalog(
+    discoveryTaskId: string,
+    options?: { includeArchived?: boolean; since?: string },
+  ): Promise<TeamDiscoveryGeneratedTaskSummaryCatalogResponse> {
     const tasks = mockCanvasTasks
       .filter((task) => (
         task.generatedSource?.sourceDiscoveryTaskId === discoveryTaskId
         && (options?.includeArchived || !task.archived)
+        && (!options?.since || task.updatedAt > options.since)
       ));
-    return tasks.map((task) => ({
+    const allGenerated = mockCanvasTasks.filter((task) => task.generatedSource?.sourceDiscoveryTaskId === discoveryTaskId);
+    const serverVersion = allGenerated
+      .reduce<string | null>((latest, task) => latest === null || task.updatedAt > latest ? task.updatedAt : latest, null);
+    const deletedTaskIds = options?.since && !options.includeArchived
+      ? allGenerated
+        .filter((task) => task.archived && task.updatedAt > options.since!)
+        .map((task) => task.taskId)
+      : [];
+    return {
+      tasks: tasks.map((task) => ({
       taskId: task.taskId,
       canvasKind: task.canvasKind,
       title: task.title,
@@ -1736,7 +1780,10 @@ export class MockTeamApi {
         workUnitMode: task.generatedSource!.workUnitMode,
         canResetToManaged: Boolean(task.generatedSource!.latestManagedWorkUnit),
       },
-    }));
+      })),
+      deletedTaskIds,
+      serverVersion,
+    };
   }
 
   async getTask(taskId: string): Promise<TeamCanvasTask | null> {

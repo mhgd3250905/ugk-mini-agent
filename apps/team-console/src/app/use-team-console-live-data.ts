@@ -292,7 +292,11 @@ type TeamDiscoveryDispatchProgress = {
 
 type DiscoveryCatalogLoadResult = {
   generatedTasksByDiscoveryTaskId: Record<string, TeamCanvasTask[]>;
+  deletedGeneratedTaskIdsByDiscoveryTaskId: Record<string, string[]>;
+  generatedCatalogServerVersionByTaskId: Record<string, string | null>;
+  generatedRunSummaryServerVersionByTaskId: Record<string, string | null>;
   taskRunsByTaskId: Record<string, TeamRunState[]>;
+  deletedRunIdsByTaskId: Record<string, string[]>;
   discoveryDispatchDiagnosticsByTaskId: Record<string, TeamDiscoveryDispatchDiagnostic[]>;
   discoveryDispatchProgressByTaskId: Record<string, TeamDiscoveryDispatchProgress>;
   error: string | null;
@@ -302,6 +306,19 @@ type TaskRunLoadResult = {
   runsByTaskId: Record<string, TeamRunState[]>;
   deletedRunIdsByTaskId: Record<string, string[]>;
   serverVersion: string | null;
+};
+
+type RootSummaryLoadResult = {
+  taskCatalog: {
+    tasks: TeamCanvasTask[];
+    deletedTaskIds: string[];
+    serverVersion: string | null;
+  };
+  taskRuns: TaskRunLoadResult;
+  taskConnections: TeamTaskConnection[];
+  taskDependencies: TeamTaskDependency[];
+  sourceNodes: TeamCanvasSourceNode[];
+  sourceConnections: TeamCanvasSourceConnection[];
 };
 
 function discoveryRootTasks(tasks: TeamCanvasTask[]): TeamCanvasTask[] {
@@ -333,6 +350,37 @@ function mergeGeneratedTaskSummaryIntoFullTask(existing: TeamCanvasTask, incomin
         }
       : existing.generatedSource,
   };
+}
+
+function mergeGeneratedTaskCatalogIncremental(
+  current: TeamCanvasTask[],
+  incoming: TeamCanvasTask[],
+  deletedTaskIds: string[] = [],
+): TeamCanvasTask[] {
+  const deleted = new Set(deletedTaskIds);
+  const incomingById = new Map(incoming.map((task) => [task.taskId, task]));
+  const mergedById = new Map<string, TeamCanvasTask>();
+  for (const existing of current) {
+    if (deleted.has(existing.taskId)) continue;
+    const incomingTask = incomingById.get(existing.taskId);
+    if (!incomingTask) {
+      mergedById.set(existing.taskId, existing);
+      continue;
+    }
+    if (existing && taskCatalogIdentityKey(existing) === taskCatalogIdentityKey(incomingTask)) {
+      mergedById.set(existing.taskId, existing);
+    } else if (hasTaskDetail(existing) && !hasTaskDetail(incomingTask)) {
+      mergedById.set(existing.taskId, mergeGeneratedTaskSummaryIntoFullTask(existing, incomingTask));
+    } else {
+      mergedById.set(existing.taskId, incomingTask);
+    }
+    incomingById.delete(existing.taskId);
+  }
+  for (const task of incomingById.values()) {
+    if (!deleted.has(task.taskId)) mergedById.set(task.taskId, task);
+  }
+  const next = [...mergedById.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return sameReferenceArray(current, next) ? current : next;
 }
 
 function summarizeDiscoveryCatalogs(
@@ -568,6 +616,8 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
   const locallyArchivedGeneratedTaskIdsRef = useRef<Set<string>>(new Set());
   const loadedDiscoveryCatalogTaskIdsRef = useRef<Set<string>>(new Set());
   const loadingDiscoveryCatalogTaskIdsRef = useRef<Set<string>>(new Set());
+  const generatedCatalogVersionByDiscoveryTaskIdRef = useRef<Record<string, string | null>>({});
+  const generatedRunSummaryVersionByDiscoveryTaskIdRef = useRef<Record<string, string | null>>({});
   const generatedTaskDetailInFlightRef = useRef<Map<string, Promise<TeamCanvasTask | null>>>(new Map());
   const generatedTaskDetailCacheRef = useRef<Map<string, TeamCanvasTask>>(new Map());
   const generatedTasksByDiscoveryTaskIdRef = useRef<Record<string, TeamCanvasTask[]>>(generatedTasksByDiscoveryTaskId);
@@ -636,8 +686,68 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     }
   }, []);
 
+  const readRootSummary = useCallback(async (
+    api: Pick<LiveTeamApi,
+      | "getRootSummary"
+      | "listTaskCatalog"
+      | "listTaskConnections"
+      | "listTaskDependencies"
+      | "listSourceNodes"
+      | "listSourceConnections"
+      | "listTaskRunsByTaskIds"
+    >,
+    taskSince?: string | null,
+    runSince?: string | null,
+  ): Promise<RootSummaryLoadResult> => {
+    try {
+      const summary = await api.getRootSummary({
+        ...(taskSince ? { taskSince } : {}),
+        ...(runSince ? { runSince } : {}),
+      });
+      return {
+        taskCatalog: {
+          tasks: summary.tasks,
+          deletedTaskIds: summary.deletedTaskIds ?? [],
+          serverVersion: summary.serverVersion.taskCatalog ?? null,
+        },
+        taskRuns: {
+          runsByTaskId: summary.taskRunsByTaskId,
+          deletedRunIdsByTaskId: summary.deletedRunIdsByTaskId ?? {},
+          serverVersion: summary.serverVersion.taskRunSummary ?? null,
+        },
+        taskConnections: summary.taskConnections,
+        taskDependencies: summary.taskDependencies,
+        sourceNodes: summary.sourceNodes,
+        sourceConnections: summary.sourceConnections,
+      };
+    } catch {
+      const [taskCatalog, nextConnections, nextDeps, nextSourceNodes, nextSourceConns] = await Promise.all([
+        api.listTaskCatalog(taskSince ? { since: taskSince } : undefined),
+        api.listTaskConnections(),
+        api.listTaskDependencies(),
+        api.listSourceNodes(),
+        api.listSourceConnections(),
+      ]);
+      const currentTasks = taskSince
+        ? mergeTaskCatalogIncremental(tasksRef.current, taskCatalog.tasks, taskCatalog.deletedTaskIds ?? [])
+        : taskCatalog.tasks;
+      return {
+        taskCatalog: {
+          tasks: taskCatalog.tasks,
+          deletedTaskIds: taskCatalog.deletedTaskIds ?? [],
+          serverVersion: taskCatalog.serverVersion ?? null,
+        },
+        taskRuns: await readTaskRunsForTasks(api, currentTasks, runSince),
+        taskConnections: nextConnections,
+        taskDependencies: nextDeps,
+        sourceNodes: nextSourceNodes,
+        sourceConnections: nextSourceConns,
+      };
+    }
+  }, [readTaskRunsForTasks]);
+
   const loadDiscoveryCatalogsForTaskIds = useCallback(async (
-    api: Pick<LiveTeamApi, "listGeneratedTaskSummaries" | "listTaskRunsByTaskIds" | "listTaskRunAttempts">,
+    api: Pick<LiveTeamApi, "listGeneratedTaskSummaryCatalog" | "listTaskRunsByTaskIds" | "listTaskRunAttempts">,
     rootTasks: TeamCanvasTask[],
     discoveryTaskIds: string[],
   ): Promise<DiscoveryCatalogLoadResult> => {
@@ -646,7 +756,11 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     if (requestedRoots.length === 0) {
       return {
         generatedTasksByDiscoveryTaskId: {},
+        deletedGeneratedTaskIdsByDiscoveryTaskId: {},
+        generatedCatalogServerVersionByTaskId: {},
+        generatedRunSummaryServerVersionByTaskId: {},
         taskRunsByTaskId: {},
+        deletedRunIdsByTaskId: {},
         discoveryDispatchDiagnosticsByTaskId: {},
         discoveryDispatchProgressByTaskId: {},
         error: null,
@@ -656,24 +770,62 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     let firstCatalogError: string | null = null;
     const generatedEntries = await Promise.all(requestedRoots.map(async (task) => {
       try {
-        const summaries = await api.listGeneratedTaskSummaries(task.taskId);
-        return [task.taskId, summaries as unknown as TeamCanvasTask[]] as const;
+        const since = loadedDiscoveryCatalogTaskIdsRef.current.has(task.taskId)
+          ? generatedCatalogVersionByDiscoveryTaskIdRef.current[task.taskId]
+          : null;
+        const catalog = await api.listGeneratedTaskSummaryCatalog(task.taskId, {
+          ...(since ? { since } : {}),
+        });
+        return [task.taskId, {
+          tasks: catalog.tasks as unknown as TeamCanvasTask[],
+          deletedTaskIds: catalog.deletedTaskIds ?? [],
+          serverVersion: catalog.serverVersion ?? null,
+          incremental: Boolean(since),
+        }] as const;
       } catch (e) {
         firstCatalogError ??= errorMessage(e);
-        return [task.taskId, []] as const;
+        return [task.taskId, {
+          tasks: [] as TeamCanvasTask[],
+          deletedTaskIds: [] as string[],
+          serverVersion: null,
+          incremental: loadedDiscoveryCatalogTaskIdsRef.current.has(task.taskId),
+        }] as const;
       }
     }));
-    const nextGeneratedTasksByDiscoveryTaskId = Object.fromEntries(generatedEntries);
+    const nextGeneratedTasksByDiscoveryTaskId = Object.fromEntries(generatedEntries.map(([taskId, result]) => {
+      const current = generatedTasksByDiscoveryTaskIdRef.current[taskId] ?? [];
+      const next = result.incremental
+        ? mergeGeneratedTaskCatalogIncremental(current, result.tasks, result.deletedTaskIds)
+        : result.tasks;
+      return [taskId, next];
+    }));
+    const deletedGeneratedTaskIdsByDiscoveryTaskId = Object.fromEntries(
+      generatedEntries.map(([taskId, result]) => [taskId, result.deletedTaskIds]),
+    );
+    const generatedCatalogServerVersionByTaskId = Object.fromEntries(
+      generatedEntries.map(([taskId, result]) => [taskId, result.serverVersion]),
+    );
     const allGenerated = flattenGeneratedTasks(nextGeneratedTasksByDiscoveryTaskId);
-    const nextTaskRunLoad = await readTaskRunsForTasks(api, [...requestedRoots, ...allGenerated]);
+    const runSinceValues = requestedRoots
+      .map((task) => generatedRunSummaryVersionByDiscoveryTaskIdRef.current[task.taskId])
+      .filter((value): value is string => typeof value === "string" && value.length > 0);
+    const runSince = runSinceValues.length > 0 ? runSinceValues.sort().at(0) : null;
+    const nextTaskRunLoad = await readTaskRunsForTasks(api, [...requestedRoots, ...allGenerated], runSince);
     const nextDiscoveryDispatch = await readDiscoveryDispatchForTasks(
       api,
       requestedRoots,
       nextTaskRunLoad.runsByTaskId,
     );
+    const generatedRunSummaryServerVersionByTaskId = Object.fromEntries(
+      requestedRoots.map((task) => [task.taskId, nextTaskRunLoad.serverVersion]),
+    );
     return {
       generatedTasksByDiscoveryTaskId: nextGeneratedTasksByDiscoveryTaskId,
+      deletedGeneratedTaskIdsByDiscoveryTaskId,
+      generatedCatalogServerVersionByTaskId,
+      generatedRunSummaryServerVersionByTaskId,
       taskRunsByTaskId: nextTaskRunLoad.runsByTaskId,
+      deletedRunIdsByTaskId: nextTaskRunLoad.deletedRunIdsByTaskId,
       discoveryDispatchDiagnosticsByTaskId: nextDiscoveryDispatch.diagnosticsByTaskId,
       discoveryDispatchProgressByTaskId: nextDiscoveryDispatch.progressByTaskId,
       error: firstCatalogError,
@@ -681,7 +833,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
   }, [readTaskRunsForTasks]);
 
   const loadAllDiscoveryCatalogs = useCallback(async (
-    api: Pick<LiveTeamApi, "listGeneratedTaskSummaries" | "listTaskRunsByTaskIds" | "listTaskRunAttempts">,
+    api: Pick<LiveTeamApi, "listGeneratedTaskSummaryCatalog" | "listTaskRunsByTaskIds" | "listTaskRunAttempts">,
     nextTasks: TeamCanvasTask[],
   ): Promise<DiscoveryCatalogLoadResult> => {
     const discoveryTasks = discoveryRootTasks(nextTasks);
@@ -694,6 +846,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     setGeneratedTasksByDiscoveryTaskId((current) => {
       const merged = { ...current };
       for (const [discoveryId, incomingTasks] of Object.entries(result.generatedTasksByDiscoveryTaskId)) {
+        const deletedIds = result.deletedGeneratedTaskIdsByDiscoveryTaskId[discoveryId] ?? [];
         const existingTasks = current[discoveryId] ?? [];
         merged[discoveryId] = incomingTasks
           .filter((incoming) => !archivedIds.has(incoming.taskId))
@@ -710,10 +863,29 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
             }
             return incoming;
           });
+        if (deletedIds.length > 0) {
+          const deleted = new Set(deletedIds);
+          merged[discoveryId] = merged[discoveryId].filter((task) => !deleted.has(task.taskId));
+        }
       }
       return merged;
     });
-    setTaskRunsByTaskId((current) => mergeTaskRunMap(current, result.taskRunsByTaskId));
+    setTaskRunsByTaskId((current) => {
+      let next = current;
+      const deletedGeneratedIds = Object.values(result.deletedGeneratedTaskIdsByDiscoveryTaskId).flat();
+      if (deletedGeneratedIds.length > 0) {
+        const copy = { ...next };
+        let changed = false;
+        for (const taskId of deletedGeneratedIds) {
+          if (taskId in copy) {
+            delete copy[taskId];
+            changed = true;
+          }
+        }
+        if (changed) next = copy;
+      }
+      return mergeTaskRunMapIncremental(next, result.taskRunsByTaskId, result.deletedRunIdsByTaskId);
+    });
     setDiscoveryDispatchDiagnosticsByTaskId((current) => ({
       ...current,
       ...result.discoveryDispatchDiagnosticsByTaskId,
@@ -722,6 +894,12 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
       ...current,
       ...result.discoveryDispatchProgressByTaskId,
     }));
+    for (const [taskId, version] of Object.entries(result.generatedCatalogServerVersionByTaskId)) {
+      if (version) generatedCatalogVersionByDiscoveryTaskIdRef.current[taskId] = version;
+    }
+    for (const [taskId, version] of Object.entries(result.generatedRunSummaryServerVersionByTaskId)) {
+      if (version) generatedRunSummaryVersionByDiscoveryTaskIdRef.current[taskId] = version;
+    }
     if (result.error) {
       lastCatalogErrorRef.current = result.error;
       setError(result.error);
@@ -732,7 +910,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
   }, []);
 
   const refreshDiscoveryCatalogForTaskId = useCallback((
-    api: Pick<LiveTeamApi, "listGeneratedTaskSummaries" | "listTaskRunsByTaskIds" | "listTaskRunAttempts">,
+    api: Pick<LiveTeamApi, "listGeneratedTaskSummaryCatalog" | "listTaskRunsByTaskIds" | "listTaskRunAttempts">,
     rootTasks: TeamCanvasTask[],
     discoveryTaskId: string,
   ) => {
@@ -748,7 +926,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
   }, [loadDiscoveryCatalogsForTaskIds, mergeDiscoveryCatalogLoadResult]);
 
   const refreshOpenDiscoveryCatalogs = useCallback((
-    api: Pick<LiveTeamApi, "listGeneratedTaskSummaries" | "listTaskRunsByTaskIds" | "listTaskRunAttempts">,
+    api: Pick<LiveTeamApi, "listGeneratedTaskSummaryCatalog" | "listTaskRunsByTaskIds" | "listTaskRunAttempts">,
     rootTasks: TeamCanvasTask[],
     discoveryTaskIds: string[],
   ) => {
@@ -775,13 +953,9 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
       try {
         const api = new LiveTeamApi();
         const taskCatalogSince = liveTaskCatalogVersionRef.current;
-        const [taskCatalog, nextConnections, nextDeps, nextSourceNodes, nextSourceConns] = await Promise.all([
-          api.listTaskCatalog(taskCatalogSince ? { since: taskCatalogSince } : undefined),
-          api.listTaskConnections(),
-          api.listTaskDependencies(),
-          api.listSourceNodes(),
-          api.listSourceConnections(),
-        ]);
+        const runSummarySince = liveTaskRunSummaryVersionRef.current;
+        const rootSummary = await readRootSummary(api, taskCatalogSince, runSummarySince);
+        const taskCatalog = rootSummary.taskCatalog;
         const previousRootTaskIds = new Set(tasksRef.current.map((task) => task.taskId));
         const nextTasks = taskCatalogSince
           ? mergeTaskCatalogIncremental(tasksRef.current, taskCatalog.tasks, taskCatalog.deletedTaskIds ?? [])
@@ -790,13 +964,12 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
           liveTaskCatalogVersionRef.current = taskCatalog.serverVersion;
         }
         applyLiveTasks(nextTasks);
-        setTaskConnections(nextConnections);
-        setTaskDependencies(nextDeps);
-        applyLiveSources(nextSourceNodes);
-        setSourceConnections(nextSourceConns);
+        setTaskConnections(rootSummary.taskConnections);
+        setTaskDependencies(rootSummary.taskDependencies);
+        applyLiveSources(rootSummary.sourceNodes);
+        setSourceConnections(rootSummary.sourceConnections);
         setError(null);
-        const runSummarySince = liveTaskRunSummaryVersionRef.current;
-        const rootRunLoad = await readTaskRunsForTasks(api, nextTasks, runSummarySince);
+        const rootRunLoad = rootSummary.taskRuns;
         if (rootRunLoad.serverVersion) {
           liveTaskRunSummaryVersionRef.current = rootRunLoad.serverVersion;
         }
@@ -824,7 +997,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     } finally {
       if (showRefreshState) setLiveTasksRefreshing(false);
     }
-  }, [applyLiveSources, applyLiveTasks, readTaskRunsForTasks, refreshOpenDiscoveryCatalogs]);
+  }, [applyLiveSources, applyLiveTasks, readRootSummary, refreshOpenDiscoveryCatalogs]);
 
   const scheduleLiveTaskDiscoveryRefresh = useCallback(() => {
     if (dataSource !== "live") return;
@@ -920,6 +1093,8 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     liveTaskDiscoveryRefreshRunIdsRef.current.clear();
     loadedDiscoveryCatalogTaskIdsRef.current.clear();
     loadingDiscoveryCatalogTaskIdsRef.current.clear();
+    generatedCatalogVersionByDiscoveryTaskIdRef.current = {};
+    generatedRunSummaryVersionByDiscoveryTaskIdRef.current = {};
   }, [dataSource]);
 
   const refreshLiveTasksAfterLeavingTaskCreateBranch = useCallback((branch: { mode?: string } | null) => {
@@ -1024,37 +1199,32 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     setDiscoveryDispatchProgressByTaskId({});
     liveTaskCatalogVersionRef.current = null;
     liveTaskRunSummaryVersionRef.current = null;
+    generatedCatalogVersionByDiscoveryTaskIdRef.current = {};
+    generatedRunSummaryVersionByDiscoveryTaskIdRef.current = {};
 
     async function loadLiveWorkspace() {
       try {
-        const [nextAgents, nextStatuses, taskCatalog, nextConnections, nextDeps, nextSourceNodes, nextSourceConns] = await Promise.all([
+        const [nextAgents, nextStatuses, rootSummary] = await Promise.all([
           api.listAgents(),
           api.listAgentRunStatuses(),
-          api.listTaskCatalog(),
-          api.listTaskConnections(),
-          api.listTaskDependencies(),
-          api.listSourceNodes(),
-          api.listSourceConnections(),
+          readRootSummary(api),
         ]);
         if (!cancelled) {
-          const nextTasks = taskCatalog.tasks;
-          if (taskCatalog.serverVersion) {
-            liveTaskCatalogVersionRef.current = taskCatalog.serverVersion;
+          const nextTasks = rootSummary.taskCatalog.tasks;
+          if (rootSummary.taskCatalog.serverVersion) {
+            liveTaskCatalogVersionRef.current = rootSummary.taskCatalog.serverVersion;
           }
           setAgents(nextAgents);
           setAgentRunStatusById(agentRunStatusRecord(nextStatuses));
           applyLiveTasks(nextTasks);
-          setTaskConnections(nextConnections);
-          setTaskDependencies(nextDeps);
-          applyLiveSources(nextSourceNodes);
-          setSourceConnections(nextSourceConns);
-          const rootRunLoad = await readTaskRunsForTasks(api, nextTasks);
-          if (!cancelled) {
-            if (rootRunLoad.serverVersion) {
-              liveTaskRunSummaryVersionRef.current = rootRunLoad.serverVersion;
-            }
-            setTaskRunsByTaskId(rootRunLoad.runsByTaskId);
+          setTaskConnections(rootSummary.taskConnections);
+          setTaskDependencies(rootSummary.taskDependencies);
+          applyLiveSources(rootSummary.sourceNodes);
+          setSourceConnections(rootSummary.sourceConnections);
+          if (rootSummary.taskRuns.serverVersion) {
+            liveTaskRunSummaryVersionRef.current = rootSummary.taskRuns.serverVersion;
           }
+          setTaskRunsByTaskId(rootSummary.taskRuns.runsByTaskId);
         }
       } catch (e) {
         if (!cancelled) {
@@ -1074,14 +1244,18 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
         globalThis.clearInterval(refreshTimer);
       }
     };
-  }, [applyLiveSources, applyLiveTasks, onCloseBranches, onResetContextUi, dataSource, onApplyLiveTasks, onApplyLiveSources, readTaskRunsForTasks]);
+  }, [applyLiveSources, applyLiveTasks, onCloseBranches, onResetContextUi, dataSource, onApplyLiveTasks, onApplyLiveSources, readRootSummary]);
 
   // Clear discovery refresh timers when all subcanvases close
   useEffect(() => {
     if (dataSource !== "live") return;
     const openSet = new Set(openDiscoveryTaskIds);
     for (const taskId of Array.from(loadedDiscoveryCatalogTaskIdsRef.current)) {
-      if (!openSet.has(taskId)) loadedDiscoveryCatalogTaskIdsRef.current.delete(taskId);
+      if (!openSet.has(taskId)) {
+        loadedDiscoveryCatalogTaskIdsRef.current.delete(taskId);
+        delete generatedCatalogVersionByDiscoveryTaskIdRef.current[taskId];
+        delete generatedRunSummaryVersionByDiscoveryTaskIdRef.current[taskId];
+      }
     }
     for (const taskId of Array.from(loadingDiscoveryCatalogTaskIdsRef.current)) {
       if (!openSet.has(taskId)) loadingDiscoveryCatalogTaskIdsRef.current.delete(taskId);

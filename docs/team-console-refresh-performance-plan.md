@@ -342,7 +342,8 @@
 - 已完成第二段：`GET /v1/team/tasks?since=<iso>` 返回 changed root Tasks、`deletedTaskIds` 和 `serverVersion`；归档或从默认 root catalog 消失的 Task 会通过 deleted cursor 合入前端。
 - 已完成第二段：`GET /v1/team/task-runs/by-task?taskIds=...&view=summary&since=<iso>` 返回 changed run summaries、预留 `deletedRunIdsByTaskId` 和 `serverVersion`；空增量不会清空既有 run state。
 - 已完成第二段：`LiveTeamApi` / `MockTeamApi` / `use-team-console-live-data.ts` 都真实消费 cursor，不是装饰查询参数；旧 `listTasks()` 和旧 `{ tasks }` / `{ runsByTaskId }` 响应仍兼容。
-- 未完成：Discovery child summary 的 `since` contract、聚合型 root summary endpoint。
+- 已完成第三段：`GET /v1/team/tasks/:taskId/generated-tasks?view=summary&since=<iso>` 返回 changed generated child summaries、`deletedTaskIds` 和 `serverVersion`；打开 Discovery 子画布后 generated catalog 和 generated/root run summary 都按 cursor 增量刷新，空增量不清空既有 child。
+- 已完成第三段：新增聚合型 `GET /v1/team/console/root-summary`，一次返回 root Tasks、source/connection/dependency basic、root latest run summary、deleted ids 和独立 `serverVersion.taskCatalog` / `serverVersion.taskRunSummary`。前端初始加载和手动刷新优先走该 endpoint，旧拆分请求保留 fallback。
 
 测试：
 
@@ -351,6 +352,8 @@
 - 后台 summary 不覆盖 full generated detail 和编辑 draft。
 - root task catalog `since` 返回 changed/deleted/serverVersion。
 - root run summary `since` 返回 changed/serverVersion，空增量不清空本地 run map。
+- Discovery generated summary `since` 返回 changed/deleted/serverVersion，空增量不清空已打开子画布。
+- root summary endpoint 返回 root catalog + source/connection/dependency + latest run summary，并支持独立 task/run cursor。
 
 ### Step 5：Discovery 阶段可见性
 
@@ -432,6 +435,6 @@ node --test --import tsx test\team-task-run-process.test.ts
 
 ## 推荐执行顺序
 
-Step 1-6 已完成到第一版可消费 contract、阶段可见性和 Discovery runtime overlap。后续可继续收口 Discovery child summary 的 `since` contract 或聚合型 root summary endpoint。
+Step 1-6 以及 refresh/API 尾项已完成到第一版可消费 contract、阶段可见性、Discovery runtime overlap、Discovery child summary 增量和聚合型 root summary endpoint。当前 refresh 性能计划剩余项不再是接口缺口，而是远程 FRP / 大量真实运行下的继续观测和针对性调优。
 
 Step 6 已按 runtime 边界单独完成，没有混入 Step 5 的刷新/API/UI 阶段提示。后续 deterministic / bulk dispatcher 仍需另起设计，别把它塞回 Team Console refresh 改动里。

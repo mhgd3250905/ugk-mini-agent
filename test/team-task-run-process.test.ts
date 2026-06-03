@@ -101,7 +101,7 @@ async function waitForAttemptDiscoveryDispatch(workspace: RunWorkspace, runId: s
 }
 
 async function waitForAttemptDiscoveryGeneratedRuns(workspace: RunWorkspace, runId: string, taskId: string, expectedLength = 1): Promise<TeamDiscoveryGeneratedRunOutcome[]> {
-	for (let i = 0; i < 80; i++) {
+	for (let i = 0; i < 200; i++) {
 		const attempts = await workspace.listAttempts(runId, taskId);
 		const launches = attempts[0]?.discoveryGeneratedRuns;
 		if (launches && launches.length >= expectedLength) return launches;

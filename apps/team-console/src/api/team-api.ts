@@ -20,6 +20,7 @@ import type {
   TeamCanvasTaskListResponse,
   TeamCanvasTaskRunByTaskListResponse,
   TeamCanvasTaskRunListResponse,
+  TeamConsoleRootSummaryResponse,
   TeamCanvasSourceConnection,
   TeamCanvasSourceConnectionCreateRequest,
   TeamCanvasSourceConnectionListResponse,
@@ -29,6 +30,7 @@ import type {
   TeamCanvasSourceNodeListResponse,
   TeamCanvasSourceNodeMutationResponse,
   TeamCanvasSourceNodeUpdateRequest,
+  TeamDiscoveryGeneratedTaskSummaryCatalogResponse,
   TeamDiscoveryGeneratedTaskSummary,
   TeamTaskConnection,
   TeamTaskConnectionCreateRequest,
@@ -65,6 +67,7 @@ export interface TeamRuntimeGateway {
 export interface CanvasTaskGateway {
   getConsoleLayout(): Promise<TeamConsoleLayoutResponse>;
   saveConsoleLayout(state: unknown | null): Promise<TeamConsoleLayoutResponse>;
+  getRootSummary(options?: { taskSince?: string; runSince?: string }): Promise<TeamConsoleRootSummaryResponse>;
   listTaskCatalog(options?: { since?: string }): Promise<TeamCanvasTaskListResponse>;
   listTasks(): Promise<TeamCanvasTask[]>;
   listGeneratedTasks(
@@ -73,8 +76,12 @@ export interface CanvasTaskGateway {
   ): Promise<TeamCanvasTask[]>;
   listGeneratedTaskSummaries(
     discoveryTaskId: string,
-    options?: { includeArchived?: boolean },
+    options?: { includeArchived?: boolean; since?: string },
   ): Promise<TeamDiscoveryGeneratedTaskSummary[]>;
+  listGeneratedTaskSummaryCatalog(
+    discoveryTaskId: string,
+    options?: { includeArchived?: boolean; since?: string },
+  ): Promise<TeamDiscoveryGeneratedTaskSummaryCatalogResponse>;
   getTask(taskId: string): Promise<TeamCanvasTask | null>;
   updateTask(taskId: string, patch: TeamTaskUpdateRequest): Promise<TeamTaskMutationResponse>;
   cloneTask(taskId: string, input: TeamTaskCloneRequest): Promise<TeamTaskMutationResponse>;
@@ -266,6 +273,39 @@ export class LiveTeamApi implements TeamApiProvider {
     }
   }
 
+  async getRootSummary(options?: { taskSince?: string; runSince?: string }): Promise<TeamConsoleRootSummaryResponse> {
+    try {
+      const params = new URLSearchParams();
+      if (options?.taskSince) params.set("taskSince", options.taskSince);
+      if (options?.runSince) params.set("runSince", options.runSince);
+      const query = params.toString();
+      const res = await fetchJsonGet<TeamConsoleRootSummaryResponse>(
+        `${this.baseUrl}/console/root-summary${query ? `?${query}` : ""}`,
+      );
+      if (!res.ok) throwJsonGetError(res);
+      const body = res.body;
+      if (!body || Array.isArray(body) || typeof body !== "object" || !("taskRunsByTaskId" in body)) {
+        throw { message: "malformed root summary response", status: res.status };
+      }
+      return {
+        tasks: Array.isArray(body?.tasks) ? body.tasks : [],
+        deletedTaskIds: Array.isArray(body?.deletedTaskIds) ? body.deletedTaskIds : [],
+        taskRunsByTaskId: body?.taskRunsByTaskId ?? {},
+        deletedRunIdsByTaskId: body?.deletedRunIdsByTaskId ?? {},
+        sourceNodes: Array.isArray(body?.sourceNodes) ? body.sourceNodes : [],
+        sourceConnections: Array.isArray(body?.sourceConnections) ? body.sourceConnections : [],
+        taskConnections: Array.isArray(body?.taskConnections) ? body.taskConnections : [],
+        taskDependencies: Array.isArray(body?.taskDependencies) ? body.taskDependencies : [],
+        serverVersion: {
+          taskCatalog: typeof body?.serverVersion?.taskCatalog === "string" ? body.serverVersion.taskCatalog : null,
+          taskRunSummary: typeof body?.serverVersion?.taskRunSummary === "string" ? body.serverVersion.taskRunSummary : null,
+        },
+      };
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
   async listTaskCatalog(options?: { since?: string }): Promise<TeamCanvasTaskListResponse> {
     try {
       const params = new URLSearchParams();
@@ -316,21 +356,37 @@ export class LiveTeamApi implements TeamApiProvider {
 
   async listGeneratedTaskSummaries(
     discoveryTaskId: string,
-    options?: { includeArchived?: boolean },
+    options?: { includeArchived?: boolean; since?: string },
   ): Promise<TeamDiscoveryGeneratedTaskSummary[]> {
+    return (await this.listGeneratedTaskSummaryCatalog(discoveryTaskId, options)).tasks;
+  }
+
+  async listGeneratedTaskSummaryCatalog(
+    discoveryTaskId: string,
+    options?: { includeArchived?: boolean; since?: string },
+  ): Promise<TeamDiscoveryGeneratedTaskSummaryCatalogResponse> {
     try {
       const params = new URLSearchParams({ view: "summary" });
       if (options?.includeArchived) {
         params.set("includeArchived", "1");
       }
+      if (options?.since) params.set("since", options.since);
       const res = await fetchJsonGet<{ tasks: TeamDiscoveryGeneratedTaskSummary[] } | TeamDiscoveryGeneratedTaskSummary[]>(
         `${this.baseUrl}/tasks/${encodeURIComponent(discoveryTaskId)}/generated-tasks?${params.toString()}`,
       );
-      if (res.status === 404) return [];
+      if (res.status === 404) return { tasks: [], deletedTaskIds: [], serverVersion: null };
       if (!res.ok) throwJsonGetError(res);
       const body = res.body;
-      if (Array.isArray(body)) return body;
-      return Array.isArray(body?.tasks) ? body.tasks : [];
+      if (Array.isArray(body)) return { tasks: body, deletedTaskIds: [], serverVersion: null };
+      return {
+        tasks: Array.isArray(body?.tasks) ? body.tasks : [],
+        deletedTaskIds: Array.isArray((body as TeamDiscoveryGeneratedTaskSummaryCatalogResponse | null)?.deletedTaskIds)
+          ? (body as TeamDiscoveryGeneratedTaskSummaryCatalogResponse).deletedTaskIds
+          : [],
+        serverVersion: typeof (body as TeamDiscoveryGeneratedTaskSummaryCatalogResponse | null)?.serverVersion === "string"
+          ? (body as TeamDiscoveryGeneratedTaskSummaryCatalogResponse).serverVersion
+          : null,
+      };
     } catch (e) {
       throw toApiError(e);
     }

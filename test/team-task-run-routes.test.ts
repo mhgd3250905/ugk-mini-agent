@@ -7,6 +7,7 @@ import { buildServer } from "../src/server.js";
 import type { AgentService } from "../src/agent/agent-service.js";
 import type { TeamPlan, TeamRunState, TeamTaskDeliveryOutcome } from "../src/team/types.js";
 import { RunWorkspace } from "../src/team/run-workspace.js";
+import { TaskStore } from "../src/team/task-store.js";
 
 function createAgentServiceStub() {
 	return {
@@ -213,6 +214,186 @@ test("PATCH /v1/team/console-layout rejects malformed canvas UI state", async ()
 		});
 		assert.equal(res.statusCode, 400);
 		assert.match(res.json().error, /invalid console layout state/);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/console/root-summary returns root tasks with latest run summaries", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const createTask = await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload });
+		assert.equal(createTask.statusCode, 201);
+		const task = createTask.json().task;
+		const taskRunWorkspace = new RunWorkspace(join(teamDir, "task-runs"));
+		const run = await taskRunWorkspace.createRun(singleTaskPlan(task.taskId, "root summary"), `canvas_task_unit_${task.taskId}`);
+		run.source = { type: "canvas-task", taskId: task.taskId };
+		await taskRunWorkspace.saveState(run);
+		await taskRunWorkspace.patchState(run.runId, (state) => {
+			state.status = "running";
+			state.updatedAt = new Date().toISOString();
+		});
+
+		const res = await app.inject({ method: "GET", url: "/v1/team/console/root-summary" });
+
+		assert.equal(res.statusCode, 200);
+		const body = res.json();
+		assert.deepEqual(body.tasks.map((item: { taskId: string }) => item.taskId), [task.taskId]);
+		assert.deepEqual(body.taskRunsByTaskId[task.taskId].map((item: TeamRunState) => item.runId), [run.runId]);
+		assert.equal(body.taskRunsByTaskId[task.taskId][0].status, "running");
+		assert.deepEqual(body.deletedTaskIds, []);
+		assert.deepEqual(body.deletedRunIdsByTaskId[task.taskId], []);
+		assert.equal(typeof body.serverVersion.taskCatalog, "string");
+		assert.equal(typeof body.serverVersion.taskRunSummary, "string");
+		assert.ok(Array.isArray(body.sourceNodes));
+		assert.ok(Array.isArray(body.sourceConnections));
+		assert.ok(Array.isArray(body.taskConnections));
+		assert.ok(Array.isArray(body.taskDependencies));
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/console/root-summary supports independent task and run since cursors", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const createTask = await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload });
+		assert.equal(createTask.statusCode, 201);
+		const task = createTask.json().task;
+		const taskRunWorkspace = new RunWorkspace(join(teamDir, "task-runs"));
+		const run = await taskRunWorkspace.createRun(singleTaskPlan(task.taskId, "root summary since"), `canvas_task_unit_${task.taskId}`);
+		run.source = { type: "canvas-task", taskId: task.taskId };
+		await taskRunWorkspace.saveState(run);
+		const initial = await app.inject({ method: "GET", url: "/v1/team/console/root-summary" });
+		assert.equal(initial.statusCode, 200);
+		const taskSince = initial.json().serverVersion.taskCatalog;
+		const runSince = initial.json().serverVersion.taskRunSummary;
+
+		const unchanged = await app.inject({
+			method: "GET",
+			url: `/v1/team/console/root-summary?taskSince=${encodeURIComponent(taskSince)}&runSince=${encodeURIComponent(runSince)}`,
+		});
+
+		assert.equal(unchanged.statusCode, 200);
+		assert.deepEqual(unchanged.json().tasks, []);
+		assert.deepEqual(unchanged.json().taskRunsByTaskId[task.taskId], []);
+		assert.equal(unchanged.json().serverVersion.taskCatalog, taskSince);
+		assert.equal(unchanged.json().serverVersion.taskRunSummary, runSince);
+
+		await new Promise(resolve => setTimeout(resolve, 2));
+		await taskRunWorkspace.patchState(run.runId, (state) => {
+			state.status = "running";
+			state.updatedAt = new Date().toISOString();
+		});
+
+		const changedRun = await app.inject({
+			method: "GET",
+			url: `/v1/team/console/root-summary?taskSince=${encodeURIComponent(taskSince)}&runSince=${encodeURIComponent(runSince)}`,
+		});
+
+		assert.equal(changedRun.statusCode, 200);
+		assert.deepEqual(changedRun.json().tasks, []);
+		assert.deepEqual(changedRun.json().taskRunsByTaskId[task.taskId].map((item: TeamRunState) => item.runId), [run.runId]);
+		assert.equal(changedRun.json().taskRunsByTaskId[task.taskId][0].status, "running");
+		assert.equal(changedRun.json().serverVersion.taskCatalog, taskSince);
+		assert.notEqual(changedRun.json().serverVersion.taskRunSummary, runSince);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/tasks/:taskId/generated-tasks view=summary supports since cursor and deleted ids", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const createDiscovery = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: {
+				...taskPayload,
+				canvasKind: "discovery",
+				title: "Discovery summary since root",
+				workUnit: {
+					...taskPayload.workUnit,
+					outputCheck: { type: "json_items", outputKey: "items", requiredFields: ["id"] },
+				},
+				discoverySpec: {
+					schemaVersion: "team/discovery-spec-1",
+					discoveryGoal: "discover smoke items",
+					outputKey: "items",
+					itemIdField: "id",
+					requiredItemFields: ["id"],
+					dispatchGoal: "dispatch each item",
+					dispatcherAgentId: "search",
+					generatedWorkerAgentId: "search",
+					generatedCheckerAgentId: "main",
+					autoRun: { enabled: true, concurrency: 3 },
+				},
+			},
+		});
+		assert.equal(createDiscovery.statusCode, 201);
+		const discoveryTask = createDiscovery.json().task;
+		const taskStore = new TaskStore(teamDir);
+		const first = await taskStore.create({
+			title: "Generated first",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: taskPayload.workUnit,
+			generatedSource: {
+				schemaVersion: "team/generated-task-source-1",
+				sourceDiscoveryTaskId: discoveryTask.taskId,
+				sourceItemId: "first",
+				itemStatus: "active",
+				itemPayload: { id: "first" },
+				latestDiscoveryRunId: "run_discovery_1",
+				latestDiscoveryAttemptId: "attempt_discovery_1",
+				latestDiscoveredAt: "2026-06-03T00:00:00.000Z",
+				workUnitMode: "managed",
+				latestManagedWorkUnit: taskPayload.workUnit,
+			},
+		});
+
+		const initial = await app.inject({
+			method: "GET",
+			url: `/v1/team/tasks/${discoveryTask.taskId}/generated-tasks?view=summary`,
+		});
+		assert.equal(initial.statusCode, 200);
+		assert.deepEqual(initial.json().tasks.map((task: { taskId: string }) => task.taskId), [first.taskId]);
+		assert.deepEqual(initial.json().deletedTaskIds, []);
+		const since = initial.json().serverVersion;
+
+		const unchanged = await app.inject({
+			method: "GET",
+			url: `/v1/team/tasks/${discoveryTask.taskId}/generated-tasks?view=summary&since=${encodeURIComponent(since)}`,
+		});
+		assert.equal(unchanged.statusCode, 200);
+		assert.deepEqual(unchanged.json().tasks, []);
+		assert.deepEqual(unchanged.json().deletedTaskIds, []);
+		assert.equal(unchanged.json().serverVersion, since);
+
+		await new Promise(resolve => setTimeout(resolve, 2));
+		const updated = await taskStore.update(first.taskId, { title: "Generated first updated" });
+		const changed = await app.inject({
+			method: "GET",
+			url: `/v1/team/tasks/${discoveryTask.taskId}/generated-tasks?view=summary&since=${encodeURIComponent(since)}`,
+		});
+		assert.equal(changed.statusCode, 200);
+		assert.deepEqual(changed.json().tasks.map((task: { taskId: string; title: string }) => [task.taskId, task.title]), [[first.taskId, updated.title]]);
+		assert.deepEqual(changed.json().deletedTaskIds, []);
+		assert.notEqual(changed.json().serverVersion, since);
+
+		await new Promise(resolve => setTimeout(resolve, 2));
+		await taskStore.archive(first.taskId);
+		const deleted = await app.inject({
+			method: "GET",
+			url: `/v1/team/tasks/${discoveryTask.taskId}/generated-tasks?view=summary&since=${encodeURIComponent(changed.json().serverVersion)}`,
+		});
+		assert.equal(deleted.statusCode, 200);
+		assert.deepEqual(deleted.json().tasks, []);
+		assert.deepEqual(deleted.json().deletedTaskIds, [first.taskId]);
+		assert.notEqual(deleted.json().serverVersion, changed.json().serverVersion);
 	} finally {
 		await app.close();
 		await rm(root, { recursive: true, force: true });

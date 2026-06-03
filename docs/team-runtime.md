@@ -4,6 +4,8 @@
 
 > 2026-06-03 补充：Discovery root 的 dispatcher 与 generated child auto-run 已改为 overlap。root worker/checker 通过并写出 `discovery-result.json` 后，runtime 仍顺序 dispatch 每个 item，但每个 item upsert 出 active generated Task 后会立即进入固定 3 并发 auto-run pool，不再等待全部 items dispatch 完才启动 child run。`attempt.discoveryDispatch` 和 `attempt.discoveryGeneratedRuns` 会随进度增量写入；缺失/blocked item 和 stale marking 语义不变。root 仍必须等 dispatch loop、stale marking、generated auto-run pool drain 和 `discovery-aggregation.json` 写入后才 `completed` 并触发 typed downstream；取消 root 会停止后续 dispatch/launch，并取消已启动的 generated child runs。
 
+> 2026-06-03 补充：Team Console refresh API 尾项已收口。`GET /v1/team/console/root-summary` 一次返回 root Tasks、source/connection/dependency basic、root latest run summary、deleted ids 和独立 `serverVersion.taskCatalog` / `serverVersion.taskRunSummary`；前端初始加载和手动刷新优先消费该 endpoint，旧拆分请求保留 fallback。`GET /v1/team/tasks/:taskId/generated-tasks?view=summary&since=<iso>` 返回 changed generated child summaries、`deletedTaskIds` 和 `serverVersion`；打开 Discovery 子画布后 generated catalog 和 child/root run summary 都按 cursor 增量刷新，空增量不会清空已打开子画布。
+
 > 2026-06-02 补充：Canvas Task 独立 run 的 worker/checker phase timeout 已改为 adaptive idle timeout + hard cap。worker/checker 的既有 phase timeout 值现在作为 idle 窗口：只有 `tool_execution_end` 或 role public output 目录中文件新增/变化这类结构性进展会刷新 idle 窗口；普通文本输出和 thinking delta 不续命。worker hard cap 默认 60 分钟，checker hard cap 默认 30 分钟，hard cap 到点会强制失败，即使期间持续有工具完成事件。timeout 失败会在 attempt failed result 中写入 `timeoutType`、`idleMs`、`hardCapMs`、`elapsedMs` 和 `lastStructuralActivityReason`，便于区分“真的没结构性进展”和“被总时长兜底截断”。
 
 > 2026-06-03 真实运行验证：用户从 Team Console 启动 Discovery root Task `task_99e064aea8e3`，root run 为 `run_d5f4d7975885`，root attempt 为 `attempt_3ac49ea2c5af`。root worker 在多轮 SearXNG/bash 工具完成后正常进入 checker 并 `succeeded`，未被旧固定 15 分钟窗口误杀；root attempt 写出 `accepted-result.md`、`discovery-result.json`、`checker-verdict-001.json` 和 `worker-output-001.md`。dispatcher 随后创建 10 个、更新 4 个 generated Tasks，并将 9 个旧 generated items 标记 stale；auto-run pool 以固定并发 3 启动本轮 generated child runs。观察到 child `task_071756d4a504` 的 worker 在早期工具结束后继续产生新的 `tool_execution_end`，idle 窗口被刷新，最终从 `worker_running` 进入 `checker_reviewing`，证明 adaptive idle 在真实 run 中按结构性进展续命。
@@ -714,10 +716,11 @@ run 内相对路径，指向 accepted 或 failed 结果文件。格式如 `tasks
 
 | 方法 | 路径 | 语义 |
 |------|------|------|
+| GET | `/v1/team/console/root-summary` | Team Console root 轻量摘要聚合接口；返回 root Tasks、source nodes/connections、task connections/dependencies、root latest run summaries、deleted ids 和 `{ taskCatalog, taskRunSummary }` serverVersion；支持 `taskSince` / `runSince` 独立 cursor |
 | GET | `/v1/team/tasks` | 列出未归档 root Task；`?includeArchived=1` 可包含归档 root，`?includeGenerated=1|true` 才包含 generated Tasks |
 | POST | `/v1/team/tasks` | 创建普通 Task draft 或 Discovery root Task；必须包含 `leaderAgentId` 和完整 `workUnit`，Discovery root 还需 `canvasKind="discovery"` 和 `discoverySpec`；public route 拒绝 `generatedSource` |
 | GET | `/v1/team/tasks/:taskId` | 查看单个 Task |
-| GET | `/v1/team/tasks/:taskId/generated-tasks` | 只读列出某个 Discovery root Task 旗下 generated Tasks；默认排除 archived，`?includeArchived=1|true` 时包含 |
+| GET | `/v1/team/tasks/:taskId/generated-tasks` | 只读列出某个 Discovery root Task 旗下 generated Tasks；默认排除 archived，`?includeArchived=1|true` 时包含；`?view=summary&since=<iso>` 返回 changed summaries、`deletedTaskIds` 和 `serverVersion` |
 | POST | `/v1/team/tasks/:taskId/generated-workunit/reset` | 将非 archived generated Task 的 visible WorkUnit/title 恢复到 `generatedSource.latestManagedWorkUnit`，并把 `workUnitMode` 标记回 `managed`；缺失 snapshot 返回 409 |
 | PATCH | `/v1/team/tasks/:taskId` | 更新未归档 Task draft 的 `title`、`leaderAgentId`、`workUnit`、`status` 或 Discovery root 的 `discoverySpec`；public route 拒绝 `canvasKind` / `generatedSource`，不允许修改 locked Task 的 `workUnit` |
 | POST | `/v1/team/tasks/:taskId/archive` | 软归档 Task |
