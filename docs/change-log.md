@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-03 — Team Console refresh performance plan
+
+- **主题**: 记录 Team Console 在 Task / 并行 run / Discovery generated child 增多后的刷新性能分析，并形成按展开状态分层刷新的优化方案：root summary 永远轻量刷新，Task process、Discovery 子画布、generated child process 和文件/历史详情按需订阅。
+- **影响范围**: 后续 Team Console Live API 数据层、Canvas Task run summary API、Discovery 子画布 summary、run observer 轮询和 Execution Atlas 渲染边界；本条只落文档，不改源码。
+- **对应入口**: `docs/team-console-refresh-performance-plan.md`、`apps/team-console/src/app/use-team-console-live-data.ts`、`apps/team-console/src/api/team-api.ts`、`src/team/routes.ts`。
+
 ## 2026-06-03 — Team Console run history branch cards
 
 - **主题**: 将 Team Console Task “运行记录”从右侧 drawer 收口为 Execution Atlas 子节点：先展示历史 run 列表卡片，点击单条记录后在其下游展开运行观察卡片；从历史记录打开的运行观察顶部补回开始时间、结束时间和“复制给 Agent 分析”按钮。

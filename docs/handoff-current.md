@@ -20,12 +20,13 @@
 2. `docs/handoff-current.md`
 3. `apps/team-console/README.md`
 4. `docs/team-runtime.md`
-5. `.pi/skills/team-task-creator/SKILL.md`
-6. `src/team/types.ts`
-7. `src/team/task-run-service.ts`
-8. `src/team/run-workspace.ts`
-9. `src/team/run-workspace-attempts.ts`
-10. 相关测试：`test/team-task-creator-skill.test.ts`、`test/team-task-run-process.test.ts`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/src/tests/app-run-observer.test.tsx`
+5. `docs/team-console-refresh-performance-plan.md`
+6. `.pi/skills/team-task-creator/SKILL.md`
+7. `src/team/types.ts`
+8. `src/team/task-run-service.ts`
+9. `src/team/run-workspace.ts`
+10. `src/team/run-workspace-attempts.ts`
+11. 相关测试：`test/team-task-creator-skill.test.ts`、`test/team-task-run-process.test.ts`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/src/tests/app-run-observer.test.tsx`
 
 `docs/change-log.md` 现在只保留近期窗口。需要旧事实时用：
 
@@ -173,6 +174,8 @@ git log --oneline origin/main..HEAD
 
 ## 未完成 / 风险
 
+- 用户反馈 Task 和并行 run 增多后，Team Console 通过远程 FRP 使用时刷新越来越慢，且打开期间偶发整屏“画布加载中”。已落地专题分析和行动方案：`docs/team-console-refresh-performance-plan.md`。下一轮优先做 root summary / expanded process summary 分层刷新，不要继续在前端全量拉取后过滤。
+- `task_fb6e3f9cd973` 最近真实 Discovery runs 说明大量 item 场景下会卡在逐 item dispatcher 阶段：`run_169c5d988eb7` 产出 56 items 但 `discoveryDispatchCount=0` / `discoveryGeneratedRunsCount=0` 后被 `user cancel`；`run_fa6daa6ad620` 产出 50 items，dispatch created 5 / updated 12 / blocked 33 / stale_marked 10 后被 `user cancel`。这不是 keyword 绑定问题；UI 需要显示 dispatch 阶段，runtime 后续再考虑边 dispatch 边 auto-run。
 - 已真实 UI 复测：模板 Task 本体直接运行已有正式参数绑定。`templateState.currentBindings` 保存当前/最近参数，缺 required 参数时 Team Console 打开参数面板；已有参数或 default 时直接运行；`POST /v1/team/tasks/:taskId/runs` 可接收本次 `templateBindings` override 并写回当前参数；每次 run 在 `source.templateBindings` 记录当时快照，生成 workUnit / discoverySpec / plan / prompt 时使用绑定后的值，不再保留 `{{keyword}}`。
 - 下游“JSON 数据生成 HTML 报告”Task 的 checker timeout 需要后续优化；这不是 Discovery aggregation bug。
 - 真实 Discovery child 失败集中在 worker timeout、模型内容检查拦截和 checker 抓 hallucination；优先考虑缩小 generated Task 范围、改进 checker acceptance、增加源站反爬/可达性说明，而不是改 root aggregation。
@@ -194,6 +197,7 @@ git log --oneline origin/main..HEAD
 
 等待用户说明新的优化项，再判断落点：
 
+- Team Console 刷新性能：先读 `docs/team-console-refresh-performance-plan.md`，按 root summary / expanded process summary / Discovery scoped summary 分阶段改 API、LiveTeamApi/MockTeamApi 和 `use-team-console-live-data.ts`，优先证明未展开 10 个 active Task 时不会请求 full run process。
 - `/team-task` 体验：改 `.pi/skills/team-task-creator/SKILL.md` 和 skill 测试。
 - Team Console UI：改 `apps/team-console/src/app/**` 和对应 vitest。
 - runtime 行为：改 `src/team/**` 和 `test/team-task-run-process.test.ts`。
