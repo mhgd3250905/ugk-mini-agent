@@ -437,6 +437,22 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     }
   }, []);
 
+  const refreshDiscoveryCatalogForTaskId = useCallback((
+    api: Pick<LiveTeamApi, "listGeneratedTaskSummaries" | "listTaskRunsByTaskIds" | "listTaskRunAttempts">,
+    rootTasks: TeamCanvasTask[],
+    discoveryTaskId: string,
+  ) => {
+    void loadDiscoveryCatalogsForTaskIds(api, rootTasks, [discoveryTaskId])
+      .then((discoveryCatalogResult) => {
+        if (!openDiscoveryTaskIdsRef.current.includes(discoveryTaskId)) return;
+        mergeDiscoveryCatalogLoadResult(discoveryCatalogResult);
+        if (!discoveryCatalogResult.error && discoveryCatalogResult.generatedTasksByDiscoveryTaskId[discoveryTaskId]) {
+          loadedDiscoveryCatalogTaskIdsRef.current.add(discoveryTaskId);
+        }
+      })
+      .catch((e) => setError(errorMessage(e)));
+  }, [loadDiscoveryCatalogsForTaskIds, mergeDiscoveryCatalogLoadResult]);
+
   const refreshOpenDiscoveryCatalogs = useCallback((
     api: Pick<LiveTeamApi, "listGeneratedTaskSummaries" | "listTaskRunsByTaskIds" | "listTaskRunAttempts">,
     rootTasks: TeamCanvasTask[],
@@ -445,19 +461,10 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     const discoveryRootIdSet = new Set(discoveryRootTasks(rootTasks).map((task) => task.taskId));
     const validOpenIds = discoveryTaskIds.filter((taskId) => discoveryRootIdSet.has(taskId));
     if (validOpenIds.length === 0) return;
-    void loadDiscoveryCatalogsForTaskIds(api, rootTasks, validOpenIds)
-      .then((discoveryCatalogResult) => {
-        const openSet = new Set(openDiscoveryTaskIdsRef.current);
-        if (!validOpenIds.every((id) => openSet.has(id))) return;
-        mergeDiscoveryCatalogLoadResult(discoveryCatalogResult);
-        if (!discoveryCatalogResult.error) {
-          for (const discoveryTaskId of Object.keys(discoveryCatalogResult.generatedTasksByDiscoveryTaskId)) {
-            loadedDiscoveryCatalogTaskIdsRef.current.add(discoveryTaskId);
-          }
-        }
-      })
-      .catch((e) => setError(errorMessage(e)));
-  }, [loadDiscoveryCatalogsForTaskIds, mergeDiscoveryCatalogLoadResult]);
+    for (const discoveryTaskId of validOpenIds) {
+      refreshDiscoveryCatalogForTaskId(api, rootTasks, discoveryTaskId);
+    }
+  }, [refreshDiscoveryCatalogForTaskId]);
 
   const refreshLiveTasks = useCallback(async (options: { silent?: boolean } = {}) => {
     const showRefreshState = options.silent !== true;
@@ -526,20 +533,13 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
         const validOpenIds = openDiscoveryTaskIdsRef.current.filter((id) => discoveryRootIdSet.has(id));
         if (validOpenIds.length === 0) return;
         const api = new LiveTeamApi();
-        void loadDiscoveryCatalogsForTaskIds(api, currentTasks, validOpenIds)
-          .then((result) => {
-            const openSet = new Set(openDiscoveryTaskIdsRef.current);
-            if (!validOpenIds.every((id) => openSet.has(id))) return;
-            mergeDiscoveryCatalogLoadResult(result);
-            for (const discoveryTaskId of Object.keys(result.generatedTasksByDiscoveryTaskId)) {
-              loadedDiscoveryCatalogTaskIdsRef.current.add(discoveryTaskId);
-            }
-          })
-          .catch(() => { /* transient */ });
+        for (const discoveryTaskId of validOpenIds) {
+          refreshDiscoveryCatalogForTaskId(api, currentTasks, discoveryTaskId);
+        }
       }, delayMs);
       liveTaskDiscoveryRefreshTimersRef.current.push(timer);
     }
-  }, [dataSource, loadDiscoveryCatalogsForTaskIds, mergeDiscoveryCatalogLoadResult]);
+  }, [dataSource, refreshDiscoveryCatalogForTaskId]);
 
   // Cleanup discovery timers on unmount
   useEffect(() => () => {
@@ -785,37 +785,27 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     );
     if (idsToLoad.length === 0) return;
 
-    let cancelled = false;
     const api = new LiveTeamApi();
     for (const taskId of idsToLoad) {
       loadingDiscoveryCatalogTaskIdsRef.current.add(taskId);
     }
 
-    void (async () => {
-      try {
-        const result = await loadDiscoveryCatalogsForTaskIds(api, tasks, idsToLoad);
-        if (!cancelled) {
-          const openSet = new Set(openDiscoveryTaskIdsRef.current);
-          if (!idsToLoad.every((id) => openSet.has(id))) return;
+    for (const discoveryTaskId of idsToLoad) {
+      void loadDiscoveryCatalogsForTaskIds(api, tasks, [discoveryTaskId])
+        .then((result) => {
+          if (!openDiscoveryTaskIdsRef.current.includes(discoveryTaskId)) return;
           mergeDiscoveryCatalogLoadResult(result);
-          if (!result.error) {
-            for (const discoveryTaskId of Object.keys(result.generatedTasksByDiscoveryTaskId)) {
-              loadedDiscoveryCatalogTaskIdsRef.current.add(discoveryTaskId);
-            }
+          if (!result.error && result.generatedTasksByDiscoveryTaskId[discoveryTaskId]) {
+            loadedDiscoveryCatalogTaskIdsRef.current.add(discoveryTaskId);
           }
-        }
-      } catch {
-        // Transient failure during scoped Discovery catalog load.
-      } finally {
-        for (const taskId of idsToLoad) {
-          loadingDiscoveryCatalogTaskIdsRef.current.delete(taskId);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+        })
+        .catch(() => {
+          // Transient failure during scoped Discovery catalog load.
+        })
+        .finally(() => {
+          loadingDiscoveryCatalogTaskIdsRef.current.delete(discoveryTaskId);
+        });
+    }
   }, [dataSource, openDiscoveryTaskIds, tasks, loadDiscoveryCatalogsForTaskIds, mergeDiscoveryCatalogLoadResult]);
 
   // Attempts loading for selected task

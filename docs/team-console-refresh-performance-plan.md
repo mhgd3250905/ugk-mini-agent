@@ -308,10 +308,19 @@
 - 同时打开多个 Discovery 子画布时按 ID 独立刷新。
 - 关闭后取消/忽略后续 response。
 
+进度：
+
+- 已完成：live 初始加载和无打开子画布的 refresh 不再请求 generated catalog 或 dispatch diagnostics。
+- 已完成：打开 Discovery 子画布时只对当前打开的 `discoveryTaskId` 请求 `GET /v1/team/tasks/:taskId/generated-tasks?view=summary`、root/generated latest run summary 和 root dispatch diagnostics。
+- 已完成：同时打开多个 Discovery 子画布时按 ID 独立刷新；关闭其中一个后，该子画布迟到 response 会被忽略，仍打开的子画布继续合入自己的 response。
+- generated child observer 继续复用 Step 2 的 `GET /v1/team/task-runs/:runId?view=process-summary&taskId=:taskId`，只有展开 child observer 时才请求过程摘要。
+
 测试：
 
 - 未打开 Discovery 子画布时不请求 generated catalog / dispatch diagnostics。
 - 打开 1 个只请求 1 个 discovery summary。
+- 同时打开多个 Discovery 子画布时分别请求各自的 scoped summary。
+- 关闭一个 Discovery 子画布后忽略该 ID 的迟到 response，不影响仍打开的子画布。
 - generated child observer 展开时才请求 child process summary。
 
 ### Step 4：增量刷新和引用稳定

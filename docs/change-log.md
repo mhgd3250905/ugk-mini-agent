@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-03 — Team Console Discovery scoped refresh
+
+- **主题**: Team Console Discovery 子画布刷新改为按当前打开的 `discoveryTaskId` 独立订阅；未打开子画布时不请求 generated catalog / dispatch diagnostics，关闭后忽略迟到 response，多个子画布互不拖累。
+- **影响范围**: `5174` Live API 的 Discovery 子画布首拉、手动/静默刷新后的后台 generated summary / dispatch diagnostics 刷新、root run 终态后的延迟 catalog refresh；不新增后端 endpoint，不把 generated child 放进 root canvas。
+- **验证**: `node --test --import tsx test\team-task-routes.test.ts`、`node --test --import tsx test\team-task-run-routes.test.ts`、`npm --prefix apps\team-console run test -- --run src\tests\team-api.test.ts src\tests\app-live-data.test.tsx src\tests\app-run-observer.test.tsx`、`npm --prefix apps\team-console run build`、`npx tsc --noEmit`、`git diff --check`。
+- **对应入口**: `apps/team-console/src/app/use-team-console-live-data.ts`、`apps/team-console/src/tests/app-live-data.test.tsx`、`docs/team-console-refresh-performance-plan.md`。
+
 ## 2026-06-03 — Team Console run refresh summaries
 
 - **主题**: Team Console active run 刷新从 full run/attempts 默认拉取改为按展开状态分层：未展开 root Task 只请求 `GET /v1/team/task-runs/:runId?view=summary&taskId=:taskId`，展开 Run observer 时才请求 `GET /v1/team/task-runs/:runId?view=process-summary&taskId=:taskId`。

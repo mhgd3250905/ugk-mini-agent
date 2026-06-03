@@ -1084,6 +1084,120 @@ describe("App", () => {
         expect(individualRunCalls).toHaveLength(0);
       });
 
+      it("refreshes multiple open Discovery subcanvases independently by id", async () => {
+        window.localStorage.setItem("ugk-team-console:data-source", "live");
+        const secondDiscoveryTask: TeamCanvasTask = {
+          ...mockDiscoveryRootTask,
+          taskId: "task_discovery_second",
+          title: "第二个 Discovery root",
+          workUnit: { ...mockDiscoveryRootTask.workUnit, title: "第二个 Discovery root" },
+        };
+        const firstGeneratedTask = mockDiscoveryGeneratedTasks.find((task) => task.taskId === "task_generated_vultr")!;
+        const secondGeneratedTask: TeamCanvasTask = {
+          ...firstGeneratedTask,
+          taskId: "task_generated_second",
+          title: "Second generated",
+          workUnit: { ...firstGeneratedTask.workUnit, title: "Second generated" },
+          generatedSource: {
+            ...firstGeneratedTask.generatedSource!,
+            sourceDiscoveryTaskId: secondDiscoveryTask.taskId,
+            sourceItemId: "second-item",
+            itemPayload: { id: "second-item", title: "Second item" },
+          },
+        };
+        vi.mocked(fetch).mockImplementation(async (input) => {
+          const url = String(input);
+          if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+          if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+          if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask, secondDiscoveryTask] }), { status: 200 });
+          if (url.startsWith(`/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`)) {
+            return new Response(JSON.stringify({ tasks: [generatedSummary(firstGeneratedTask)] }), { status: 200 });
+          }
+          if (url.startsWith(`/v1/team/tasks/${secondDiscoveryTask.taskId}/generated-tasks`)) {
+            return new Response(JSON.stringify({ tasks: [generatedSummary(secondGeneratedTask)] }), { status: 200 });
+          }
+          if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse({});
+          return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+        });
+
+        render(<LiveDataProbe openDiscoveryTaskIds={[mockDiscoveryRootTask.taskId, secondDiscoveryTask.taskId]} />);
+
+        await waitFor(() => {
+          const probe = readLiveDataProbe();
+          expect(probe.generated[mockDiscoveryRootTask.taskId]).toEqual(["task_generated_vultr"]);
+          expect(probe.generated[secondDiscoveryTask.taskId]).toEqual(["task_generated_second"]);
+        });
+
+        const generatedCalls = vi.mocked(fetch).mock.calls
+          .map(([url]) => String(url))
+          .filter((url) => url.includes("/generated-tasks"));
+        expect(generatedCalls).toEqual([
+          `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks?view=summary`,
+          `/v1/team/tasks/${secondDiscoveryTask.taskId}/generated-tasks?view=summary`,
+        ]);
+      });
+
+      it("ignores a closed Discovery subcanvas response without dropping still-open subcanvas data", async () => {
+        window.localStorage.setItem("ugk-team-console:data-source", "live");
+        const secondDiscoveryTask: TeamCanvasTask = {
+          ...mockDiscoveryRootTask,
+          taskId: "task_discovery_late_close",
+          title: "迟到关闭 Discovery root",
+          workUnit: { ...mockDiscoveryRootTask.workUnit, title: "迟到关闭 Discovery root" },
+        };
+        const firstGeneratedTask = mockDiscoveryGeneratedTasks.find((task) => task.taskId === "task_generated_vultr")!;
+        const secondGeneratedTask: TeamCanvasTask = {
+          ...firstGeneratedTask,
+          taskId: "task_generated_late_close",
+          title: "Late generated",
+          workUnit: { ...firstGeneratedTask.workUnit, title: "Late generated" },
+          generatedSource: {
+            ...firstGeneratedTask.generatedSource!,
+            sourceDiscoveryTaskId: secondDiscoveryTask.taskId,
+            sourceItemId: "late-close-item",
+            itemPayload: { id: "late-close-item", title: "Late close item" },
+          },
+        };
+        const firstCatalog = deferred<Response>();
+        const secondCatalog = deferred<Response>();
+        vi.mocked(fetch).mockImplementation(async (input) => {
+          const url = String(input);
+          if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+          if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+          if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask, secondDiscoveryTask] }), { status: 200 });
+          if (url.startsWith(`/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`)) {
+            return firstCatalog.promise;
+          }
+          if (url.startsWith(`/v1/team/tasks/${secondDiscoveryTask.taskId}/generated-tasks`)) {
+            return secondCatalog.promise;
+          }
+          if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse({});
+          return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+        });
+
+        const { rerender } = render(<LiveDataProbe openDiscoveryTaskIds={[mockDiscoveryRootTask.taskId, secondDiscoveryTask.taskId]} />);
+
+        await waitFor(() => {
+          const generatedCalls = vi.mocked(fetch).mock.calls
+            .map(([url]) => String(url))
+            .filter((url) => url.includes("/generated-tasks"));
+          expect(generatedCalls).toHaveLength(2);
+        });
+
+        rerender(<LiveDataProbe openDiscoveryTaskIds={[mockDiscoveryRootTask.taskId]} />);
+
+        await act(async () => {
+          firstCatalog.resolve(new Response(JSON.stringify({ tasks: [generatedSummary(firstGeneratedTask)] }), { status: 200 }));
+          secondCatalog.resolve(new Response(JSON.stringify({ tasks: [generatedSummary(secondGeneratedTask)] }), { status: 200 }));
+          await Promise.all([firstCatalog.promise, secondCatalog.promise]);
+        });
+
+        await waitFor(() => {
+          expect(readLiveDataProbe().generated[mockDiscoveryRootTask.taskId]).toEqual(["task_generated_vultr"]);
+        });
+        expect(readLiveDataProbe().generated[secondDiscoveryTask.taskId]).toBeUndefined();
+      });
+
       it("does not refresh closed Discovery subcanvas on silent refresh", async () => {
         window.localStorage.setItem("ugk-team-console:data-source", "live");
         const rootTask = mockTeamTasks[0]!;
@@ -3445,7 +3559,10 @@ describe("App", () => {
       await waitFor(() => expect(readLiveDataProbe().runKeys).toHaveLength(10));
       await waitFor(() => {
         const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
-        expect(urls.filter((url) => /\/v1\/team\/task-runs\/run_active_root_\d+\?view=summary&taskId=/.test(url))).toHaveLength(10);
+        const polledTaskIds = new Set(urls
+          .map((url) => url.match(/\/v1\/team\/task-runs\/run_active_root_\d+\?view=summary&taskId=(task_active_root_\d+)$/)?.[1])
+          .filter((taskId): taskId is string => Boolean(taskId)));
+        expect(polledTaskIds).toEqual(new Set(rootTasks.map((task) => task.taskId)));
       });
       const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
       expect(urls.filter((url) => /^\/v1\/team\/task-runs\/run_active_root_\d+$/.test(url))).toHaveLength(0);
