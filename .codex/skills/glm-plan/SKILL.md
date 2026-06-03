@@ -37,8 +37,27 @@ Recent GLM handoffs in this repository have often been sent back for rework for 
 - Protected-UI regression: a plan says "do not change UI" but does not name the exact classes, DOM structure, visible labels, screenshots, tests, or browser evidence that must remain unchanged.
 - Implicit-state regression: persisted UI state, dock/minimize state, cached data, or local optimistic guards are not listed as protected invariants, so GLM breaks them while changing data loading.
 - Literalism failure: GLM follows the files named in the plan but misses surrounding constraints because they were described abstractly instead of as exact selectors, endpoints, test names, and forbidden edits.
+- Tracked-diff tunnel vision: GLM reports `git diff --stat` / `git diff --check` as if they cover untracked new files. They do not. New files need separate `git ls-files --others --exclude-standard`, EOL, and trailing-whitespace checks.
+- Incomplete file-change accounting: GLM says "1 file changed" when a new untracked Module exists, because normal diff stats omit the new file. Plans must require a changed-files section that combines `git status --short`, tracked diff stats, and explicit untracked new files.
+- Test-passing-as-clean-code: GLM leaves unused imports or decorative comments because `tsc` does not necessarily enforce `noUnusedLocals`, ASCII-only edits, or comment quality. Plans must call out import cleanup and non-functional code hygiene explicitly.
+- Cosmetic structure comments: GLM adds section-divider comments or decorative non-ASCII characters in new files. For this repo, ban decorative comments; comments must explain non-obvious behavior, not label obvious sections.
+- Overclaiming protected-boundary compliance: GLM reports protected files were untouched without proving it. Plans must require exact `git diff -- <protected-file>` or equivalent status evidence when working in a dirty tree.
+- Shape-unchanged handwaving: GLM says "response shape unchanged" because tests passed, without naming the protected endpoint fields. Plans must require the delivery report to list the exact protected contracts and the tests or route assertions that cover them.
+- Broad-refactor temptation in shared files: GLM treats extracting a Module as permission to rewrite nearby hook, route, or service logic. Plans must explicitly distinguish "move these exact helpers" from "do not rewrite lifecycle/API/timer/rendering code".
 
 When writing a plan, convert any relevant failure pattern into an explicit task, test, or acceptance criterion. Do not rely on the external agent to infer the quality bar. Spell it out.
+
+## Observed GLM Review Corrections
+
+When prior GLM work in this repo came back for review, Codex repeatedly had to ask for small but telling corrections. Every future handoff should proactively prevent these:
+
+- If the task creates a new file, require GLM to say "normal `git diff --stat` excludes this untracked file" and then list the new file separately.
+- If the repo has approved dirty work from earlier steps, require GLM to preserve it and provide a protected-file diff check in the report.
+- If moving code into a new Module, require GLM to remove unused imports created by the move even when TypeScript passes.
+- If creating a new source file, require ASCII-only content unless the moved code already contained necessary non-ASCII user-visible strings.
+- If adding comments, require GLM to justify why each comment explains non-obvious behavior. Ban decorative section dividers and comments that only restate names.
+- If asserting "no API/UI behavior changed", require GLM to name the concrete endpoints, exported functions, selectors, or tests that prove that claim.
+- If reporting EOL/whitespace cleanliness, require separate evidence for both tracked touched files and untracked new files.
 
 ## Mandatory Handoff Workspace Preparation
 
@@ -60,6 +79,8 @@ Before writing or sending any GLM plan/message, Codex must make the workspace ha
 4. If GLM must continue a dirty diff, the plan must list every dirty tracked file, say which files it may modify, and require GLM to stop if any other tracked file changes.
 5. Keep untracked artifacts out of GLM's path:
    - list exact untracked files/directories that must not be touched
+   - distinguish existing untracked artifacts from new files allowed for the current step
+   - require separate status/EOL/trailing-whitespace checks for every allowed new untracked file
    - never tell GLM to run `git add -A`
    - default to no stage/no commit
 6. For UI work already verified by Codex, preserve a baseline before GLM:
@@ -82,6 +103,10 @@ Write plans as if GLM will do exactly what is written and nothing that is merely
 - Avoid vague verbs such as "clean up", "simplify", "align", "polish", or "refactor" unless the plan immediately defines the exact block and acceptable diff.
 - Do not ask GLM to interpret screenshots or product taste unless the message includes exact observable acceptance criteria.
 - For every "do not change X", include the test, selector, or grep/static contract that will catch X changing when feasible.
+- For every protected dirty file, include the exact command GLM must run to prove it did not change, such as `git diff -- <path>`.
+- For every new file, include the exact command GLM must run to prove it is present and clean, such as `git ls-files --others --exclude-standard <path>` plus trailing-whitespace and EOL checks.
+- If a step is a mechanical extraction, name the exact functions/helpers/classes to move and state which nearby lifecycle/API/timer/rendering code must stay in place.
+- Require report claims to be evidence-shaped: "endpoint X still returns fields A/B/C, protected by test Y" is acceptable; "shape unchanged" by itself is not.
 
 ## Required Outputs
 
@@ -175,6 +200,7 @@ Each per-step plan must include:
 - Focused baseline command to run before editing when useful.
 - Focused verification commands and final verification commands.
 - Delivery report template with enough detail for Codex to review without guessing.
+- A "report accuracy" section when new files or dirty protected files are involved: normal tracked diff stats are incomplete; GLM must combine `git status`, tracked diff stats, and explicit untracked-file evidence.
 
 Each per-step message file must be paste-ready and self-contained. It must not say "see the conversation above". It should include baseline, must-read files, exact scope, forbidden scope, execution rules, verification commands, and delivery format.
 
@@ -210,6 +236,13 @@ Prefer 4-8 tasks for a normal plan. For a GLM step plan, prefer 1-3 tasks and on
 
 For GLM, "concise" must never mean "underspecified". Use concrete file paths, test names, command lines, route names, selectors, block markers, and commit boundaries. Vague instructions such as "clean this up", "split related tests", or "verify normally" are not acceptable unless immediately followed by exact examples and boundaries.
 
+For extraction/refactor steps, include a "do not improvise" clause with this shape:
+
+- Move only these exact functions/classes: `<names>`.
+- Keep these systems in place: `<React state/effects/API calls/timers/routes/public exports/etc.>`.
+- Preserve these import/export contracts: `<exported symbol and old import path>`.
+- If the extracted Module appears to require wider rewrites, stop and report instead of simplifying the caller.
+
 ## Behavior Evidence Contract
 
 Every plan must define what evidence is strong enough to accept the work. Use this hierarchy:
@@ -230,8 +263,11 @@ Require the external agent to include concrete evidence in its delivery report:
 - For bug fixes: name the old failing behavior and the test or browser step that now catches it.
 - For regression-sensitive work: name the existing behavior protected by the step and include evidence that it still works.
 - For mechanical migration: prove equivalence with block comparison, test counts, or another concrete invariant.
+- For new files: list the file under both "created files" and "untracked files", and include EOL/trailing-whitespace evidence because normal `git diff --check` will not inspect it.
+- For protected dirty files: quote the exact command used to prove the file's diff did not change during the step.
 
 Ban delivery claims such as "should work", "manual verification recommended", "looks fine", or "implemented according to plan" when no runtime evidence is supplied.
+Also ban vague report claims such as "shape unchanged", "clean execution", "files untouched", or "EOL ok" unless the report includes the concrete command/test/contract evidence behind the claim.
 
 ## Formatting And EOL Hygiene
 
@@ -244,6 +280,9 @@ Every generated plan and sendable message must explicitly protect against format
 - Verification must include `git diff --check`; when large UI/test files are touched, also include `git ls-files --eol <touched files>` or equivalent EOL inspection if diff size looks suspicious.
 - For untracked new files, `git diff --check` is not enough. Require an explicit trailing-whitespace and EOL check, for example `Select-String -LiteralPath <new-file> -Pattern '[ \t]+$'` and `git ls-files --eol --others --exclude-standard <new-file>` on Windows.
 - Delivery reports must mention whether any mechanical formatting or EOL normalization occurred. If it occurred unintentionally, it must be reverted before handoff.
+- Delivery reports must not summarize changed files from `git diff --stat` alone when new untracked files exist. They must show tracked diff stats and untracked created files separately.
+- New source files must use plain ASCII comments unless a non-ASCII string is required for user-visible copy or copied existing behavior. Decorative dividers, box-drawing characters, and ornamental headings are not acceptable.
+- Import cleanup is a required hygiene check even if `npx tsc --noEmit` passes; some TypeScript configs do not reject unused imports.
 
 ## External Agent Control Rules
 
@@ -261,6 +300,9 @@ Always include these rules in the plan and sendable message:
 - Do not commit `.env`, `.data`, runtime artifacts, temp files, unknown `.pi/skills/*`, or `skills-lock.json`.
 - For UI work, verify in the browser at the real local URL and include measured evidence. Do not push browser verification onto the user if automation is available.
 - Do not suppress warnings broadly. Fix the cause, or narrow the suppression to the exact known message and element/source.
+- Do not add decorative section comments or ornamental non-ASCII separators. Comments must explain non-obvious behavior.
+- When the task is a refactor/extraction, do not rewrite adjacent lifecycle/API/timer/rendering logic unless the plan names that exact logic.
+- In the final report, do not use `git diff --stat` as the only source of truth for changed files. Include `git status --short --branch` and explicit untracked-file evidence.
 
 ## Testing Guidance
 
