@@ -268,6 +268,12 @@
 - 前端初始加载和手动刷新只拿 root summary。
 - root 画布不需要 full task/run 即可渲染基础状态。
 
+进度：
+
+- 已完成第一段落地：`GET /v1/team/task-runs/:runId?view=summary&taskId=:taskId` 支持单 run 轻量状态，`GET /v1/team/task-runs/by-task?...&view=summary` 会把 `taskStates` 裁到对应 Task。
+- active root run polling 已改为按 `taskId` 请求 run summary；10 个 active root Task 全部未展开时，不请求 full run process / attempts / files。
+- 尚未新增聚合型 `GET /v1/team/console/root-summary`；初始加载和手动刷新仍沿用现有 root catalog + bulk latest run summary 组合。
+
 测试：
 
 - 后端 route 测试覆盖 summary 字段不含 heavy workUnit / boundInputs / attempts。
@@ -281,6 +287,12 @@
 - run observer 打开时订阅该 `taskId + runId` process summary。
 - 未展开 observer 的 active runs 只刷新 basic status。
 - 收起 observer 后停止 process polling。
+
+进度：
+
+- 已新增 `GET /v1/team/task-runs/:runId?view=process-summary&taskId=:taskId`，返回当前 Task 的 run summary + attempts process summary；role process 保留状态、assistant text、current action / narration，清空 heavy `entries`。
+- Team Console observer 已改为展开几个 observer 就请求几个 process summary；打开第二个 observer 不再重复首刷第一个 observer。
+- 文件内容仍按 observer 文件路径读取，且已避免依赖重复刷新来解析正在读取的文件。
 
 测试：
 

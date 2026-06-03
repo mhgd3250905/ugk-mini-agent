@@ -41,6 +41,7 @@ import type {
   TeamTaskRunAnnotationMutationResponse,
   TeamTaskRunAnnotationPatchRequest,
   TeamTaskRunHistoryResponse,
+  TeamTaskRunProcessSummaryResponse,
   TaskDefinition,
   TeamAttemptMetadata,
 } from "../api/team-types";
@@ -1947,12 +1948,20 @@ export class MockTeamApi {
     return cloneTeamRunState(run);
   }
 
-  async getTaskRun(runId: string): Promise<TeamRunState> {
+  async getTaskRun(runId: string, options?: { view?: "summary"; taskId?: string }): Promise<TeamRunState> {
+    void options;
     for (const runs of mockTaskRunsByTaskId.values()) {
       const run = runs.find((candidate) => candidate.runId === runId);
       if (run) return cloneTeamRunState(run);
     }
     throw { message: `Task run not found: ${runId}` };
+  }
+
+  async getTaskRunProcessSummary(runId: string, taskId: string): Promise<TeamTaskRunProcessSummaryResponse> {
+    return {
+      run: await this.getTaskRun(runId, { view: "summary", taskId }),
+      attempts: await this.listTaskRunAttempts(runId, taskId),
+    };
   }
 
   async cancelTaskRun(runId: string): Promise<TeamRunState> {

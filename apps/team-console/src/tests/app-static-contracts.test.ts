@@ -569,7 +569,7 @@ describe("Team Console static contracts", () => {
     expect(readme).toContain("teamTaskMode=create");
     expect(readme).toContain("`/team-task` skill 调用 `POST /v1/team/tasks`");
     expect(readme).toContain("手动点击“刷新 Task”");
-    expect(readme).toContain("active Canvas Task run 进入终态");
+    expect(readme).toContain("active Canvas Task run 会通过 `GET /v1/team/task-runs/:runId?view=summary&taskId=:taskId` 轮询基础状态");
     expect(readme).toContain("typed chain 自动触发的下游 Task run");
     expect(readme).toContain("关闭创建分支后会重新请求 `GET /v1/team/tasks`");
     expect(readme).toContain("点击 Task 卡片会先展开紧凑 Task 操作菜单节点");
@@ -581,7 +581,7 @@ describe("Team Console static contracts", () => {
     expect(readme).toContain("Checker 过程");
     expect(readme).toContain("不再渲染下半部 tool / method 调用明细");
     expect(readme).toContain("缺少 `roleProcesses`");
-    expect(readme).toContain("只隐藏 DOM 明细");
+    expect(readme).toContain("默认观察面板不拉取也不渲染 tool 明细");
     expect(readme).toContain("formatAssistantText");
     expect(readme).toContain("最新行显示在顶部");
     expect(readme).toContain("不显示 tool group 折叠区或隐藏计数");
@@ -658,7 +658,7 @@ describe("Team Console static contracts", () => {
     expect(runtimeDoc).toContain("base snapshot + dirty fields");
     expect(runtimeDoc).toContain("input text、output contract、acceptance rules");
     expect(runtimeDoc).toContain("关闭创建分支、浅编辑保存成功、归档成功后会重新请求 `GET /v1/team/tasks`");
-    expect(runtimeDoc).toContain("active Canvas Task run 通过 `GET /v1/team/task-runs/:runId` 轮询进入终态");
+    expect(runtimeDoc).toContain("active Canvas Task run 通过 `GET /v1/team/task-runs/:runId?view=summary&taskId=:taskId` 轮询基础状态并进入终态");
     expect(runtimeDoc).toContain("所有 Task run 列表");
     expect(runtimeDoc).not.toContain("Focus Mode 特殊 Agent 对话界面");
     expect(runtimeDoc).not.toContain("WorkUnit run 未实现");

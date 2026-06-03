@@ -1719,6 +1719,8 @@ export function App() {
   ), [generatedTasksByDiscoveryTaskId]);
   const taskRunsByTaskIdRef = useRef(taskRunsByTaskId);
   taskRunsByTaskIdRef.current = taskRunsByTaskId;
+  const runObserverInitialRefreshKeysRef = useRef<Set<string>>(new Set());
+  const runObserverOpenTargetKeysRef = useRef<Set<string>>(new Set());
   const generatedEditDetailHandledTaskIdsRef = useRef<Set<string>>(new Set());
   const sourceNodesById = useMemo(() => new Map(sourceNodes.map((node) => [node.sourceNodeId, node])), [sourceNodes]);
   const agentRunStatusesById = useMemo(() => new Map(Object.entries(agentRunStatusById)), [agentRunStatusById]);
@@ -1767,6 +1769,9 @@ export function App() {
   const runObserverTargetSignature = useMemo(() => runObserverTargets
     .map((target) => `${target.taskId}\u0000${target.runId}\u0000${target.status}`)
     .join("\u0001"), [runObserverTargets]);
+  runObserverOpenTargetKeysRef.current = new Set(
+    runObserverTargets.map((target) => `${dataSource}\u0000${target.taskId}\u0000${target.runId}`),
+  );
   const openDiscoverySubcanvasGeneratedTaskIds = useMemo(() => {
     const taskIds = new Set<string>();
     for (const branch of expandedTaskBranches) {
@@ -2990,10 +2995,7 @@ export function App() {
       }));
 
       try {
-        const [freshRun, attempts] = await Promise.all([
-          api.getTaskRun(runId),
-          api.listTaskRunAttempts(runId, observedTaskId),
-        ]);
+        const { run: freshRun, attempts } = await api.getTaskRunProcessSummary(runId, observedTaskId);
         if (cancelled) return;
 
         setTaskRunsByTaskId((current) => mergeTaskRun(current, observedTaskId, freshRun));
@@ -3028,7 +3030,10 @@ export function App() {
             return [descriptor.key, { error: errorMessage(e) }] as const;
           }
         }));
-        if (cancelled || fileEntries.length === 0) return;
+        if (
+          fileEntries.length === 0 ||
+          !runObserverOpenTargetKeysRef.current.has(`${dataSource}\u0000${observedTaskId}\u0000${runId}`)
+        ) return;
         setTaskRunObserverByRunId((current) => ({
           ...current,
           [runId]: {
@@ -3058,12 +3063,25 @@ export function App() {
       }
     }
 
-    async function refreshTaskRunObservers() {
-      await Promise.all(runObserverTargets.map((target) => refreshTaskRunObserver(target)));
+    const targetRefreshKey = (target: typeof runObserverTargets[number]) => (
+      `${dataSource}\u0000${target.taskId}\u0000${target.runId}\u0000${target.status}`
+    );
+
+    const initialRefreshTargets = runObserverTargets.filter((target) => {
+      const key = targetRefreshKey(target);
+      if (runObserverInitialRefreshKeysRef.current.has(key)) return false;
+      runObserverInitialRefreshKeysRef.current.add(key);
+      return true;
+    });
+
+    async function refreshTaskRunObservers(targets = runObserverTargets) {
+      await Promise.all(targets.map((target) => refreshTaskRunObserver(target)));
     }
 
     const shouldPoll = runObserverTargets.some((target) => isActiveRun(target.status));
-    void refreshTaskRunObservers();
+    if (initialRefreshTargets.length > 0) {
+      void refreshTaskRunObservers(initialRefreshTargets);
+    }
     if (!shouldPoll) {
       return () => {
         cancelled = true;

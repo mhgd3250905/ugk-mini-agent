@@ -50,6 +50,7 @@ import type {
   TeamTaskRunAnnotationMutationResponse,
   TeamTaskRunAnnotationPatchRequest,
   TeamTaskRunHistoryResponse,
+  TeamTaskRunProcessSummaryResponse,
 } from "./team-types";
 import { readAgentChatSse } from "./agent-chat-sse";
 
@@ -98,7 +99,8 @@ export interface CanvasTaskGateway {
   ): Promise<TeamTaskRunHistoryResponse>;
   listTaskRunsByTaskIds(taskIds: string[], options?: { limit?: number; view?: "summary" }): Promise<TeamCanvasTaskRunByTaskListResponse>;
   createTaskRun(taskId: string, input?: TeamTaskRunCreateRequest): Promise<TeamRunState>;
-  getTaskRun(runId: string): Promise<TeamRunState>;
+  getTaskRun(runId: string, options?: { view?: "summary"; taskId?: string }): Promise<TeamRunState>;
+  getTaskRunProcessSummary(runId: string, taskId: string): Promise<TeamTaskRunProcessSummaryResponse>;
   cancelTaskRun(runId: string): Promise<TeamRunState>;
   updateTaskRunAnnotation(runId: string, patch: TeamTaskRunAnnotationPatchRequest): Promise<TeamTaskRunAnnotationMutationResponse>;
   listTaskRunAttempts(runId: string, taskId: string, options?: { view?: "dispatch-diagnostics" }): Promise<TeamAttemptMetadata[]>;
@@ -597,12 +599,41 @@ export class LiveTeamApi implements TeamApiProvider {
     }
   }
 
-  async getTaskRun(runId: string): Promise<TeamRunState> {
+  async getTaskRun(runId: string, options?: { view?: "summary"; taskId?: string }): Promise<TeamRunState> {
     try {
-      const res = await fetchJsonGet<TeamRunState>(`${this.baseUrl}/task-runs/${encodeURIComponent(runId)}`);
+      const params = new URLSearchParams();
+      if (options?.view) params.set("view", options.view);
+      if (options?.taskId) params.set("taskId", options.taskId);
+      const query = params.size > 0 ? `?${params}` : "";
+      const res = await fetchJsonGet<TeamRunState>(`${this.baseUrl}/task-runs/${encodeURIComponent(runId)}${query}`);
       if (!res.ok) throwJsonGetError(res);
       if (!res.body) throw { message: `请求失败 (${res.status})`, status: res.status };
+      if (typeof res.body.runId !== "string" && options?.view) {
+        const fallback = await fetchJsonGet<TeamRunState>(`${this.baseUrl}/task-runs/${encodeURIComponent(runId)}`);
+        if (!fallback.ok) throwJsonGetError(fallback);
+        if (!fallback.body) throw { message: `请求失败 (${fallback.status})`, status: fallback.status };
+        return fallback.body;
+      }
       return res.body;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async getTaskRunProcessSummary(runId: string, taskId: string): Promise<TeamTaskRunProcessSummaryResponse> {
+    try {
+      const params = new URLSearchParams({ view: "process-summary", taskId });
+      const res = await fetchJsonGet<TeamTaskRunProcessSummaryResponse>(`${this.baseUrl}/task-runs/${encodeURIComponent(runId)}?${params}`);
+      if (!res.ok) throwJsonGetError(res);
+      if (!res.body) throw { message: `请求失败 (${res.status})`, status: res.status };
+      if (res.body.run && Array.isArray(res.body.attempts)) return res.body;
+      const legacyRun = typeof (res.body as unknown as TeamRunState).runId === "string"
+        ? res.body as unknown as TeamRunState
+        : await this.getTaskRun(runId);
+      return {
+        run: legacyRun,
+        attempts: await this.listTaskRunAttempts(runId, taskId),
+      };
     } catch (e) {
       throw toApiError(e);
     }

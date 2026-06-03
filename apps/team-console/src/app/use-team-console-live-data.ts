@@ -872,7 +872,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     async function refreshActiveTaskRuns() {
       for (const active of activeRunIds) {
         try {
-          const fresh = await api.getTaskRun(active.runId);
+          const fresh = await api.getTaskRun(active.runId, { view: "summary", taskId: active.taskId });
           if (!cancelled) {
             setTaskRunsByTaskId((current) => mergeTaskRun(current, active.taskId, fresh));
             if (dataSource === "live" && !isActiveRun(fresh.status) && !liveTaskDiscoveryRefreshRunIdsRef.current.has(fresh.runId)) {

@@ -275,10 +275,10 @@ Team Console 的 Task 前端闭环只负责画布入口和刷新，不拥有 Tas
 - 点击“创建 Task”先选择 leader Agent，再打开 `/playground?view=chat&agentId=<leaderAgentId>&embed=team-console&teamTaskMode=create` iframe；Team Console 只打开 leader Agent iframe，不直接创建 Task。
 - 创建 / 更新仍由 iframe 内用户显式触发 `/team-task`，并由 runtime skill 调 `POST /v1/team/tasks` 或 `PATCH /v1/team/tasks/:taskId`；Team Console 不解析 iframe 聊天文本创建 Task，不替用户确认 skill 预览 JSON。
 - 用户可手动点击“刷新 Task”重新拉取 `GET /v1/team/tasks`；刷新中禁用重复点击，失败保留当前 Task 卡片并显示错误。
-- 当已知 active Canvas Task run 通过 `GET /v1/team/task-runs/:runId` 轮询进入终态时，Live API 前端会自动触发一次 Task refresh，重新读取 Task catalog、connections 和所有 Task run 列表，用于发现 typed chain 自动启动的下游 run；用户从上游 Task 切到下游 Task 时不需要手动刷新。
+- 当已知 active Canvas Task run 通过 `GET /v1/team/task-runs/:runId?view=summary&taskId=:taskId` 轮询基础状态并进入终态时，Live API 前端会自动触发一次 Task refresh，重新读取 Task catalog、connections 和所有 Task run 列表，用于发现 typed chain 自动启动的下游 run；用户从上游 Task 切到下游 Task 时不需要手动刷新。
 - 关闭创建分支、浅编辑保存成功、归档成功后会重新请求 `GET /v1/team/tasks`，用于把后端事实刷回画布。
-- 点击“运行”会调用 `POST /v1/team/tasks/:taskId/runs` 启动独立 Canvas Task run；前端通过 `GET /v1/team/tasks/:taskId/runs` 读取历史，通过 `GET /v1/team/task-runs/:runId` 轮询 active 状态。这个 run 只属于 Canvas Task，不进入 Plan run 列表，也不会增加 Plan `runCount`。
-- 点击 Task 菜单里的”最近运行”或”运行中”摘要会展开或收起 Run observer；摘要区域直接展示运行状态、阶段、耗时、attempt 数、进度消息和 run id；Run observer 不再单独渲染 Run 状态 canvas 子节点。Run observer 使用单个合并 `run-observer` 面板，而不是多个独立 canvas 子节点。合并面板内部固定顺序为：worker 过程 → worker 输出文件 → checker 过程 → checker 输出文件 → result 文件。文件条目以紧凑行（`.emap-observer-file-row`）展示在合并面板内部，而不是单独的 canvas 节点。点击文件行会在右侧展开第二级文件详情面板，根据文件扩展名使用安全渲染（JSON pretty print、Markdown 使用 `marked` 安全渲染、文本原样展示），不执行 HTML，不使用 `dangerouslySetInnerHTML`；JSON 解析失败时会显示 parse error 消息。文件详情节点支持右下角拖动调整宽高，最小尺寸 360×280，拖动后连接线和布局同步更新。连接线使用 fixed right-middle 到 left-middle 锚点，反向角度时自动重路由，并只在 source 出线端显示半圆 socket。SSE 观察流仍是后续后端能力，不在第一版里硬做。
+- 点击“运行”会调用 `POST /v1/team/tasks/:taskId/runs` 启动独立 Canvas Task run；前端通过 `GET /v1/team/tasks/:taskId/runs` 读取历史，通过 `GET /v1/team/task-runs/:runId?view=summary&taskId=:taskId` 轮询未展开 active 状态。这个 run 只属于 Canvas Task，不进入 Plan run 列表，也不会增加 Plan `runCount`。
+- 点击 Task 菜单里的”最近运行”或”运行中”摘要会展开或收起 Run observer；摘要区域直接展示运行状态、阶段、耗时、attempt 数、进度消息和 run id；Run observer 不再单独渲染 Run 状态 canvas 子节点。Run observer 使用 `GET /v1/team/task-runs/:runId?view=process-summary&taskId=:taskId` 读取展开 run 的过程摘要，并使用单个合并 `run-observer` 面板，而不是多个独立 canvas 子节点。合并面板内部固定顺序为：worker 过程 → worker 输出文件 → checker 过程 → checker 输出文件 → result 文件。文件条目以紧凑行（`.emap-observer-file-row`）展示在合并面板内部，而不是单独的 canvas 节点。点击文件行会在右侧展开第二级文件详情面板，根据文件扩展名使用安全渲染（JSON pretty print、Markdown 使用 `marked` 安全渲染、文本原样展示），不执行 HTML，不使用 `dangerouslySetInnerHTML`；JSON 解析失败时会显示 parse error 消息。文件详情节点支持右下角拖动调整宽高，最小尺寸 360×280，拖动后连接线和布局同步更新。连接线使用 fixed right-middle 到 left-middle 锚点，反向角度时自动重路由，并只在 source 出线端显示半圆 socket。SSE 观察流仍是后续后端能力，不在第一版里硬做。
 - Run observer 的过程部分读取 `attempt.roleProcesses.worker` / `attempt.roleProcesses.checker`，在合并面板中分别以"Worker 过程"和"Checker 过程"标题展示，按优先级展示 `assistantText.content`（Agent 自述 / 推理，`formatAssistantText()` 保留换行、中文标点断句、每行独立 `<p>`，最多 5 行超限提示，单行超过 200 字符会截断）、current action + 最新 narration（fallback）。过程部分不再渲染下半部 tool / method 调用明细；完整过程数据仍在 attempt metadata 中，前端不丢弃后端数据，只隐藏 DOM 明细。缺少 `roleProcesses` 时前端保持兼容渲染等待态，不影响菜单运行摘要、文件行和文件详情。
 - 第一版 Task run 只执行 `workUnit.workerAgentId` 和 `workUnit.checkerAgentId`，不启动 watcher/finalizer，不支持 pause/resume/rerun；active run 可通过 `POST /v1/team/task-runs/:runId/cancel` 停止。
 
@@ -718,6 +718,8 @@ run 内相对路径，指向 accepted 或 failed 结果文件。格式如 `tasks
 | GET | `/v1/team/tasks/:taskId/runs` | 列出某个 Canvas Task 的独立 Task run |
 | POST | `/v1/team/tasks/:taskId/runs` | 启动某个 ready Canvas Task 的 worker → checker run |
 | GET | `/v1/team/task-runs/:runId` | 读取独立 Task run 状态 |
+| GET | `/v1/team/task-runs/:runId?view=summary&taskId=:taskId` | 读取某个 Task 在该 run 内的轻量状态，用于未展开 active run polling |
+| GET | `/v1/team/task-runs/:runId?view=process-summary&taskId=:taskId` | 读取展开 Run observer 所需的 run summary 与 attempts process summary，不返回 heavy process entries |
 | POST | `/v1/team/task-runs/:runId/cancel` | 取消 active Task run |
 | GET | `/v1/team/task-runs/:runId/tasks/:taskId/attempts` | 读取 Task run 的 attempt metadata，包含可选 `roleProcesses.worker` / `roleProcesses.checker` |
 | GET | `/v1/team/task-runs/:runId/tasks/:taskId/attempts/:attemptId/files/:fileName` | 读取 Task run 的 attempt 文件 |

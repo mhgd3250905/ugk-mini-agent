@@ -672,6 +672,11 @@ export interface TeamCanvasTaskRunByTaskListResponse {
   runsByTaskId: Record<string, TeamRunState[]>;
 }
 
+export interface TeamTaskRunProcessSummaryResponse {
+  run: TeamRunState;
+  attempts: TeamAttemptMetadata[];
+}
+
 export interface SourceItemData {
   id: string;
   name: string;

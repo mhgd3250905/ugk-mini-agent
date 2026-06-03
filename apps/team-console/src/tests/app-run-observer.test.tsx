@@ -23,6 +23,10 @@ describe("App", () => {
     return new Response(JSON.stringify({ runsByTaskId }), { status: 200 });
   }
 
+  function processSummaryResponse(run: TeamRunState, attempts: TeamAttemptMetadata[]): Response {
+    return new Response(JSON.stringify({ run, attempts }), { status: 200 });
+  }
+
   describe("run observer", () => {
     it("starts a mock Task run from the action menu and shows the latest run state", async () => {
       const { container } = render(<App />);
@@ -264,7 +268,7 @@ describe("App", () => {
         }
         if (url.endsWith("/files/accepted-result-a.md")) {
           acceptedResultFileCalls += 1;
-          if (acceptedResultFileCalls === 2) return acceptedResultFile;
+          if (acceptedResultFileCalls === 1) return acceptedResultFile;
           return new Promise<Response>(() => {});
         }
         return new Response(JSON.stringify({}), { status: 200 });
@@ -311,7 +315,7 @@ describe("App", () => {
 
       fireEvent.click(resultFileRow);
       await waitFor(() => {
-        expect(acceptedResultFileCalls).toBe(2);
+        expect(acceptedResultFileCalls).toBe(1);
         expect(container.querySelector(".emap-observer-file-detail-node")).toHaveTextContent("正在读取文件");
       });
       await act(async () => {
@@ -324,6 +328,125 @@ describe("App", () => {
         expect(detail).toBeTruthy();
         expect(detail).toHaveTextContent("A accepted result");
       });
+    });
+
+    it("refreshes process summary only for expanded active run observers", async () => {
+      const taskA = {
+        ...cloneTaskFixture(),
+        taskId: "task_process_summary_a",
+        title: "Process Summary A",
+        workUnit: { ...cloneTaskFixture().workUnit, title: "Process Summary A" },
+      };
+      const taskB = {
+        ...cloneTaskFixture(),
+        taskId: "task_process_summary_b",
+        title: "Process Summary B",
+        workUnit: { ...cloneTaskFixture().workUnit, title: "Process Summary B" },
+      };
+      const taskC = {
+        ...cloneTaskFixture(),
+        taskId: "task_process_summary_c",
+        title: "Process Summary C",
+        workUnit: { ...cloneTaskFixture().workUnit, title: "Process Summary C" },
+      };
+      const runA = { ...makeLiveTaskRunFixture(taskA, "run_process_summary_a"), status: "running" as const, finishedAt: null };
+      const runB = { ...makeLiveTaskRunFixture(taskB, "run_process_summary_b"), status: "running" as const, finishedAt: null };
+      const runC = { ...makeLiveTaskRunFixture(taskC, "run_process_summary_c"), status: "running" as const, finishedAt: null };
+      const attemptA: TeamAttemptMetadata = {
+        ...makeLegacyAttemptFixture(taskA),
+        roleProcesses: {
+          worker: {
+            role: "worker",
+            profileId: "main",
+            status: "running",
+            startedAt: "2026-05-25T00:00:01.000Z",
+            updatedAt: "2026-05-25T00:00:05.000Z",
+            finishedAt: null,
+            assistantText: { content: "A process summary loaded", updatedAt: "2026-05-25T00:00:05.000Z" },
+            process: { title: "Worker", narration: [], currentAction: "A action", isComplete: false, entries: [] },
+          },
+        },
+      };
+      const attemptB: TeamAttemptMetadata = {
+        ...makeLegacyAttemptFixture(taskB),
+        roleProcesses: {
+          worker: {
+            role: "worker",
+            profileId: "main",
+            status: "running",
+            startedAt: "2026-05-25T00:00:01.000Z",
+            updatedAt: "2026-05-25T00:00:05.000Z",
+            finishedAt: null,
+            assistantText: { content: "B process summary loaded", updatedAt: "2026-05-25T00:00:05.000Z" },
+            process: { title: "Worker", narration: [], currentAction: "B action", isComplete: false, entries: [] },
+          },
+        },
+      };
+      const runsByTaskId = {
+        [taskA.taskId]: [runA],
+        [taskB.taskId]: [runB],
+        [taskC.taskId]: [runC],
+      };
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") {
+          return new Response(JSON.stringify({
+            agents: [
+              { agentId: "main", name: "主 Agent", description: "默认综合 agent" },
+              { agentId: "search", name: "搜索 Agent", description: "搜索" },
+            ],
+          }), { status: 200 });
+        }
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [taskA, taskB, taskC] }), { status: 200 });
+        if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse(runsByTaskId);
+        if (url === `/v1/team/task-runs/${runA.runId}?view=summary&taskId=${taskA.taskId}`) return new Response(JSON.stringify(runA), { status: 200 });
+        if (url === `/v1/team/task-runs/${runB.runId}?view=summary&taskId=${taskB.taskId}`) return new Response(JSON.stringify(runB), { status: 200 });
+        if (url === `/v1/team/task-runs/${runC.runId}?view=summary&taskId=${taskC.taskId}`) return new Response(JSON.stringify(runC), { status: 200 });
+        if (url === `/v1/team/task-runs/${runA.runId}?view=process-summary&taskId=${taskA.taskId}`) return processSummaryResponse(runA, [attemptA]);
+        if (url === `/v1/team/task-runs/${runB.runId}?view=process-summary&taskId=${taskB.taskId}`) return processSummaryResponse(runB, [attemptB]);
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
+      fireEvent.click(await within(atlas).findByRole("button", { name: taskA.title }));
+      let branchA = await waitFor(() => {
+        const branch = Array.from(container.querySelectorAll(".task-action-branch")).find(
+          (el) => el.textContent?.includes(taskA.taskId),
+        ) as HTMLElement | undefined;
+        expect(branch).toBeTruthy();
+        return branch!;
+      });
+      fireEvent.click(await within(branchA).findByRole("button", { name: /运行中[\s\S]*执行中/ }));
+
+      fireEvent.click(await within(atlas).findByRole("button", { name: taskB.title }));
+      const branchB = await waitFor(() => {
+        const branch = Array.from(container.querySelectorAll(".task-action-branch")).find(
+          (el) => el.textContent?.includes(taskB.taskId),
+        ) as HTMLElement | undefined;
+        expect(branch).toBeTruthy();
+        return branch!;
+      });
+      fireEvent.click(await within(branchB).findByRole("button", { name: /运行中[\s\S]*执行中/ }));
+
+      await waitFor(() => {
+        const observerShells = Array.from(container.querySelectorAll('.emap-task-child-branch-shell[data-panel-id^="run-observer"]')) as HTMLElement[];
+        expect(observerShells).toHaveLength(2);
+        expect(observerShells.some((shell) => shell.textContent?.includes("A process summary loaded"))).toBe(true);
+        expect(observerShells.some((shell) => shell.textContent?.includes("B process summary loaded"))).toBe(true);
+      });
+
+      const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+      expect(urls.filter((url) => url.includes("view=process-summary"))).toEqual([
+        `/v1/team/task-runs/${runA.runId}?view=process-summary&taskId=${taskA.taskId}`,
+        `/v1/team/task-runs/${runB.runId}?view=process-summary&taskId=${taskB.taskId}`,
+      ]);
+      expect(urls.some((url) => url === `/v1/team/task-runs/${runC.runId}?view=process-summary&taskId=${taskC.taskId}`)).toBe(false);
+      expect(urls.some((url) => /^\/v1\/team\/task-runs\/run_process_summary_[abc]$/.test(url))).toBe(false);
+      expect(urls.some((url) => url.includes("/attempts"))).toBe(false);
     });
 
     it("keeps the Task run observer usable when legacy attempts have no roleProcesses", async () => {

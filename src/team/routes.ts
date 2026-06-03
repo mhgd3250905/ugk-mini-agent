@@ -19,7 +19,7 @@ import { SourceNodeStore, type UpdateSourceNodeInput } from "./source-node-store
 import { MockRoleRunner } from "./role-runner.js";
 import type { TeamRoleRunner } from "./role-runner.js";
 import { buildRunDetailResponse } from "./run-presenter.js";
-import type { TeamAttemptMetadata, TeamDiscoveryGeneratedTaskSummary, TeamRunState, TeamTaskRunHistoryResponse } from "./types.js";
+import type { TeamAttemptMetadata, TeamAttemptRoleProcess, TeamDiscoveryGeneratedTaskSummary, TeamRunState, TeamTaskRunHistoryResponse } from "./types.js";
 import { AgentProfileRoleRunner } from "./agent-profile-role-runner.js";
 import { closeBrowserTargetsForScope } from "../agent/browser-cleanup.js";
 import { loadAgentProfilesSync } from "../agent/agent-profile-catalog.js";
@@ -58,9 +58,13 @@ function requestPublicBaseUrl(request: FastifyRequest, configured: string | unde
 	return `${proto}://${host}`.replace(/\/+$/, "");
 }
 
-function summarizeRunState(state: TeamRunState): TeamRunState {
+function summarizeRunState(state: TeamRunState, taskId?: string): TeamRunState {
+	const taskStates = taskId && state.taskStates[taskId]
+		? { [taskId]: state.taskStates[taskId] }
+		: state.taskStates;
 	return {
 		...state,
+		taskStates,
 		source: state.source
 			? {
 				...state.source,
@@ -139,6 +143,31 @@ function summarizeAttemptDispatchDiagnostics(attempt: TeamAttemptMetadata): Team
 		resultRef: attempt.resultRef,
 		errorSummary: attempt.errorSummary,
 		...(attempt.discoveryDispatch ? { discoveryDispatch: attempt.discoveryDispatch } : {}),
+	};
+}
+
+function summarizeRoleProcess(roleProcess: TeamAttemptRoleProcess | undefined): TeamAttemptRoleProcess | undefined {
+	if (!roleProcess) return undefined;
+	return {
+		...roleProcess,
+		process: roleProcess.process
+			? {
+				...roleProcess.process,
+				entries: [],
+			}
+			: null,
+	};
+}
+
+function summarizeAttemptProcessSummary(attempt: TeamAttemptMetadata): TeamAttemptMetadata {
+	return {
+		...attempt,
+		roleProcesses: attempt.roleProcesses
+			? {
+				worker: summarizeRoleProcess(attempt.roleProcesses.worker),
+				checker: summarizeRoleProcess(attempt.roleProcesses.checker),
+			}
+			: undefined,
 	};
 }
 
@@ -698,7 +727,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		if (view === "summary") {
 			reply.send({
 				runsByTaskId: Object.fromEntries(
-					Object.entries(runsByTaskId).map(([taskId, runs]) => [taskId, runs.map(summarizeRunState)]),
+					Object.entries(runsByTaskId).map(([taskId, runs]) => [taskId, runs.map(run => summarizeRunState(run, taskId))]),
 				),
 			});
 			return;
@@ -708,8 +737,35 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 
 	app.get("/v1/team/task-runs/:runId", async (request, reply) => {
 		const runId = idParam(request, "runId");
+		const query = request.query as { view?: string; taskId?: string };
+		const view = query.view ?? "full";
+		const taskId = typeof query.taskId === "string" ? query.taskId.trim() : "";
+		if (view !== "full" && view !== "summary" && view !== "process-summary") {
+			reply.code(400).send({ error: "unknown view parameter" });
+			return;
+		}
 		const state = await taskRunService.getRun(runId);
 		if (!state) { sendNotFound(reply, "task run"); return; }
+		if (view === "summary") {
+			if (taskId && !state.taskStates[taskId]) { sendNotFound(reply, "task"); return; }
+			reply.send(summarizeRunState(state, taskId || undefined));
+			return;
+		}
+		if (view === "process-summary") {
+			if (!taskId) {
+				reply.code(400).send({ error: "taskId query parameter is required for process-summary" });
+				return;
+			}
+			if (!state.taskStates[taskId]) { sendNotFound(reply, "task"); return; }
+			try {
+				const attempts = await taskRunWorkspace.listAttempts(runId, taskId);
+				reply.send({ run: summarizeRunState(state, taskId), attempts: attempts.map(summarizeAttemptProcessSummary) });
+				return;
+			} catch {
+				reply.send({ run: summarizeRunState(state, taskId), attempts: [] });
+				return;
+			}
+		}
 		reply.send(state);
 	});
 

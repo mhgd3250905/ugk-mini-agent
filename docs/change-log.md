@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-03 — Team Console run refresh summaries
+
+- **主题**: Team Console active run 刷新从 full run/attempts 默认拉取改为按展开状态分层：未展开 root Task 只请求 `GET /v1/team/task-runs/:runId?view=summary&taskId=:taskId`，展开 Run observer 时才请求 `GET /v1/team/task-runs/:runId?view=process-summary&taskId=:taskId`。
+- **影响范围**: `/v1/team/task-runs/:runId` 新增 `summary` / `process-summary` view；`by-task?view=summary` 会裁剪到对应 Task 的 `taskStates`；Team Console Live API adapter、active polling、Run observer polling 和 Mock API contract 同步更新。旧 full run / full attempts 路径保留作兼容和排障。
+- **验证**: `node --test --import tsx test\team-task-routes.test.ts`、`node --test --import tsx test\team-task-run-routes.test.ts`、`npm --prefix apps\team-console run test -- --run src\tests\team-api.test.ts src\tests\app-live-data.test.tsx src\tests\app-run-observer.test.tsx`、`npm --prefix apps\team-console run build`、`npx tsc --noEmit`、`git diff --check`。
+- **对应入口**: `src/team/routes.ts`、`apps/team-console/src/api/team-api.ts`、`apps/team-console/src/app/use-team-console-live-data.ts`、`apps/team-console/src/app/App.tsx`、`docs/team-console-refresh-performance-plan.md`。
+
 ## 2026-06-03 — Team Console refresh performance plan
 
 - **主题**: 记录 Team Console 在 Task / 并行 run / Discovery generated child 增多后的刷新性能分析，并形成按展开状态分层刷新的优化方案：root summary 永远轻量刷新，Task process、Discovery 子画布、generated child process 和文件/历史详情按需订阅。

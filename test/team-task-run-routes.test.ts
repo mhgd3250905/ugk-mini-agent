@@ -1022,6 +1022,129 @@ test("GET /v1/team/task-runs/by-task view=summary omits heavy bound input conten
 	}
 });
 
+test("GET /v1/team/task-runs/:runId view=summary returns lightweight run state", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const taskId = "task_run_summary_view";
+		const taskRunWorkspace = new RunWorkspace(join(teamDir, "task-runs"));
+		const plan = singleTaskPlan(taskId, "run summary view");
+		const fullState = await taskRunWorkspace.createRun(plan, plan.defaultTeamUnitId);
+		fullState.source = {
+			type: "canvas-task",
+			taskId,
+			boundInputs: [{
+				connectionId: "conn_heavy",
+				inputPortId: "raw_json",
+				artifact: {
+					schemaVersion: "team/task-artifact-1",
+					artifactId: "artifact_heavy",
+					type: "json",
+					sourceTaskId: "task_source",
+					sourceRunId: "run_source",
+					sourceAttemptId: "attempt_source",
+					sourceOutputPortId: "json",
+					fileRef: "tasks/task_source/attempts/attempt_source/result.json",
+					preview: "x".repeat(2048),
+					content: "y".repeat(4096),
+					createdAt: "2026-06-02T00:00:04.000Z",
+				},
+			}],
+		};
+		await taskRunWorkspace.saveState(fullState);
+
+		const summaryRes = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/${fullState.runId}?view=summary&taskId=${taskId}`,
+		});
+		assert.equal(summaryRes.statusCode, 200);
+		const summary = summaryRes.json() as TeamRunState;
+		assert.equal(summary.runId, fullState.runId);
+		assert.equal(summary.source?.taskId, taskId);
+		assert.equal(summary.source?.boundInputs, undefined, "summary view must not include boundInputs");
+		assert.deepEqual(Object.keys(summary.taskStates), [taskId], "summary view should keep only the requested task state");
+
+		const fullRes = await app.inject({ method: "GET", url: `/v1/team/task-runs/${fullState.runId}` });
+		assert.equal(fullRes.statusCode, 200);
+		const full = fullRes.json() as TeamRunState;
+		assert.equal(full.source?.boundInputs?.[0]?.artifact.content, "y".repeat(4096));
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("GET /v1/team/task-runs/:runId view=process-summary returns run and latest process attempts without heavy inputs", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const taskId = "task_process_summary_view";
+		const taskRunWorkspace = new RunWorkspace(join(teamDir, "task-runs"));
+		const plan = singleTaskPlan(taskId, "process summary view");
+		const state = await taskRunWorkspace.createRun(plan, plan.defaultTeamUnitId);
+		state.source = {
+			type: "canvas-task",
+			taskId,
+			boundInputs: [{
+				connectionId: "conn_heavy",
+				inputPortId: "raw_json",
+				artifact: {
+					schemaVersion: "team/task-artifact-1",
+					artifactId: "artifact_heavy",
+					type: "json",
+					sourceTaskId: "task_source",
+					sourceRunId: "run_source",
+					sourceAttemptId: "attempt_source",
+					sourceOutputPortId: "json",
+					fileRef: "tasks/task_source/attempts/attempt_source/result.json",
+					preview: "x".repeat(2048),
+					content: "y".repeat(4096),
+					createdAt: "2026-06-02T00:00:04.000Z",
+				},
+			}],
+		};
+		await taskRunWorkspace.saveState(state);
+
+		const { attemptId } = await taskRunWorkspace.createAttempt(state.runId, taskId);
+		await taskRunWorkspace.recordAttemptRoleProcess(state.runId, taskId, attemptId, {
+			role: "worker",
+			profileId: "search",
+			status: "running",
+			startedAt: "2026-06-02T00:00:01.000Z",
+			updatedAt: "2026-06-02T00:00:02.000Z",
+			finishedAt: null,
+			assistantText: { content: "worker visible process", updatedAt: "2026-06-02T00:00:02.000Z" },
+			process: {
+				title: "Worker process",
+				narration: ["visible narration"],
+				currentAction: "visible action",
+				isComplete: false,
+				entries: [{
+					id: "entry_heavy",
+					kind: "tool",
+					title: "heavy",
+					detail: "z".repeat(4096),
+					createdAt: "2026-06-02T00:00:02.000Z",
+				}],
+			},
+		});
+
+		const summaryRes = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/${state.runId}?view=process-summary&taskId=${taskId}`,
+		});
+		assert.equal(summaryRes.statusCode, 200);
+		const body = summaryRes.json();
+		assert.equal(body.run.runId, state.runId);
+		assert.equal(body.run.source.boundInputs, undefined, "process summary run must not include boundInputs");
+		assert.equal(body.attempts.length, 1);
+		assert.equal(body.attempts[0].attemptId, attemptId);
+		assert.equal(body.attempts[0].roleProcesses.worker.assistantText.content, "worker visible process");
+		assert.deepEqual(body.attempts[0].roleProcesses.worker.process.entries, [], "process summary must omit heavy tool entries");
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("GET /v1/team/task-runs/by-task rejects unknown view parameter", async () => {
 	const { app, root } = await buildTestServer();
 	try {
