@@ -24,8 +24,26 @@ export interface CanvasTaskPhaseTimeouts {
 	checkerHardCapMs?: number;
 }
 
+export type CanvasTaskAttemptWorkspace = Pick<RunWorkspace,
+	| "writeWorkerOutput"
+	| "recordAttemptWorkerOutput"
+	| "updateAttemptPhase"
+	| "writeFailedResult"
+	| "finishAttempt"
+	| "writeAcceptedResult"
+	| "writeDiscoveryResult"
+	| "writeCheckerVerdict"
+	| "writeCheckerOutput"
+	| "recordAttemptCheckerResult"
+	| "patchState"
+	| "recordAttemptRoleProcess"
+	| "readAttemptFile"
+	| "readAttemptRoleWorkspaceFile"
+	| "readRunScopedFile"
+>;
+
 export interface CanvasTaskAttemptRunnerOptions {
-	workspace: RunWorkspace;
+	workspace: CanvasTaskAttemptWorkspace;
 	dataDir: string;
 	maxCheckerRevisions: number;
 	phaseTimeouts: CanvasTaskPhaseTimeouts;

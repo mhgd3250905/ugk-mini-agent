@@ -5,8 +5,10 @@ import type { ChatProcessBody, ChatProcessEntryBody, ChatStreamEvent } from "../
 import type { RunWorkspace } from "./run-workspace.js";
 import type { TeamAttemptRoleProcess, TeamAttemptRoleProcessStatus } from "./types.js";
 
+export type TeamRoleProcessRecorderWorkspace = Pick<RunWorkspace, "recordAttemptRoleProcess">;
+
 export interface TeamRoleProcessRecorderOptions {
-	workspace: RunWorkspace;
+	workspace: TeamRoleProcessRecorderWorkspace;
 	runId: string;
 	taskId: string;
 	attemptId: string;
