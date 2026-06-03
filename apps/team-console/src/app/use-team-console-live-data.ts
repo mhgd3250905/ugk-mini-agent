@@ -5,17 +5,18 @@ import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, mockDiscoveryGenera
 import { ROOT_ID } from "../graph/execution-map-layout";
 import { isActiveRun } from "../shared/status";
 import {
-  taskCatalogIdentityKey,
   mergeTaskCatalog,
   mergeTaskCatalogIncremental,
   sortRunsByCreatedAt,
   mergeTaskRunMapIncremental,
   mergeRootTaskRunMap,
-  hasTaskDetail,
-  mergeGeneratedTaskSummaryIntoFullTask,
-  mergeGeneratedTaskCatalogIncremental,
   mergeTaskRun,
 } from "./team-console-live-refresh-state";
+import {
+  hasTaskDetail,
+  mergeGeneratedTaskCatalogIncremental,
+  mergeGeneratedTaskCatalogForRefresh,
+} from "./team-console-generated-detail-policy";
 import type {
   TeamDiscoveryDispatchDiagnostic,
   TeamDiscoveryDispatchProgress,
@@ -414,25 +415,11 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
       for (const [discoveryId, incomingTasks] of Object.entries(result.generatedTasksByDiscoveryTaskId)) {
         const deletedIds = result.deletedGeneratedTaskIdsByDiscoveryTaskId[discoveryId] ?? [];
         const existingTasks = current[discoveryId] ?? [];
-        merged[discoveryId] = incomingTasks
-          .filter((incoming) => !archivedIds.has(incoming.taskId))
-          .map((incoming) => {
-            const existing = existingTasks.find((t) => t.taskId === incoming.taskId);
-            if (replaced.has(incoming.taskId) && existing && existing.updatedAt >= incoming.updatedAt) {
-              return existing;
-            }
-            if (existing && taskCatalogIdentityKey(existing) === taskCatalogIdentityKey(incoming)) {
-              return existing;
-            }
-            if (existing && hasTaskDetail(existing) && !hasTaskDetail(incoming)) {
-              return mergeGeneratedTaskSummaryIntoFullTask(existing, incoming);
-            }
-            return incoming;
-          });
-        if (deletedIds.length > 0) {
-          const deleted = new Set(deletedIds);
-          merged[discoveryId] = merged[discoveryId].filter((task) => !deleted.has(task.taskId));
-        }
+        merged[discoveryId] = mergeGeneratedTaskCatalogForRefresh(existingTasks, incomingTasks, {
+          deletedTaskIds: deletedIds.length > 0 ? deletedIds : undefined,
+          locallyArchivedTaskIds: archivedIds,
+          recentlyReplacedTaskIds: replaced,
+        });
       }
       return merged;
     });

@@ -189,60 +189,6 @@ export function mergeRootTaskRunMap(
   return changed || merged !== next ? merged : current;
 }
 
-export function hasTaskDetail(task: TeamCanvasTask): boolean {
-  return Boolean((task as Partial<TeamCanvasTask>).workUnit);
-}
-
-export function mergeGeneratedTaskSummaryIntoFullTask(existing: TeamCanvasTask, incoming: TeamCanvasTask): TeamCanvasTask {
-  return {
-    ...existing,
-    canvasKind: incoming.canvasKind ?? existing.canvasKind,
-    title: incoming.title,
-    leaderAgentId: incoming.leaderAgentId,
-    status: incoming.status,
-    createdAt: incoming.createdAt,
-    updatedAt: incoming.updatedAt,
-    archived: incoming.archived,
-    generatedSource: existing.generatedSource && incoming.generatedSource
-      ? {
-          ...existing.generatedSource,
-          ...incoming.generatedSource,
-        }
-      : existing.generatedSource,
-  };
-}
-
-export function mergeGeneratedTaskCatalogIncremental(
-  current: TeamCanvasTask[],
-  incoming: TeamCanvasTask[],
-  deletedTaskIds: string[] = [],
-): TeamCanvasTask[] {
-  const deleted = new Set(deletedTaskIds);
-  const incomingById = new Map(incoming.map((task) => [task.taskId, task]));
-  const mergedById = new Map<string, TeamCanvasTask>();
-  for (const existing of current) {
-    if (deleted.has(existing.taskId)) continue;
-    const incomingTask = incomingById.get(existing.taskId);
-    if (!incomingTask) {
-      mergedById.set(existing.taskId, existing);
-      continue;
-    }
-    if (existing && taskCatalogIdentityKey(existing) === taskCatalogIdentityKey(incomingTask)) {
-      mergedById.set(existing.taskId, existing);
-    } else if (hasTaskDetail(existing) && !hasTaskDetail(incomingTask)) {
-      mergedById.set(existing.taskId, mergeGeneratedTaskSummaryIntoFullTask(existing, incomingTask));
-    } else {
-      mergedById.set(existing.taskId, incomingTask);
-    }
-    incomingById.delete(existing.taskId);
-  }
-  for (const task of incomingById.values()) {
-    if (!deleted.has(task.taskId)) mergedById.set(task.taskId, task);
-  }
-  const next = [...mergedById.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  return sameReferenceArray(current, next) ? current : next;
-}
-
 export function mergeTaskRun(
   current: Record<string, TeamRunState[]>,
   taskId: string,
