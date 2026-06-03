@@ -25,6 +25,29 @@ type DiscoveryGeneratedTaskDispatchResult = {
 };
 type TriggeredBy = NonNullable<TeamRunState["source"]>["triggeredBy"];
 
+export type DiscoveryRunLifecycleTaskStore = Pick<TaskStore,
+	| "upsertGeneratedTaskFromDiscovery"
+	| "markGeneratedTasksStaleForDiscovery"
+	| "listGeneratedForDiscoveryTask"
+	| "get"
+>;
+
+export type DiscoveryRunLifecycleWorkspace = Pick<RunWorkspace,
+	| "patchState"
+	| "readDiscoveryResult"
+	| "recordAttemptDiscoveryDispatchOutcomes"
+	| "recordAttemptDiscoveryGeneratedRunOutcomes"
+	| "writeDiscoveryAggregation"
+	| "readRunScopedFile"
+>;
+
+export type DiscoveryRunLifecycleRuns = {
+	getRun(runId: string): Promise<TeamRunState | null>;
+	listRuns(taskId?: string): Promise<TeamRunState[]>;
+	createRun(taskId: string, options?: { publicBaseUrl?: string; triggeredBy?: TriggeredBy }): Promise<TeamRunState>;
+	cancelRun(runId: string, reason?: string): Promise<TeamRunState>;
+};
+
 function sanitizeDeliveryError(error: unknown): string {
 	const raw = error instanceof Error ? error.message : String(error);
 	const trimmed = raw.trim();
@@ -59,14 +82,9 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 export interface DiscoveryRunLifecycleOptions {
-	taskStore: Pick<TaskStore, "upsertGeneratedTaskFromDiscovery" | "markGeneratedTasksStaleForDiscovery" | "listGeneratedForDiscoveryTask" | "get">;
-	workspace: Pick<RunWorkspace, "patchState" | "readDiscoveryResult" | "recordAttemptDiscoveryDispatchOutcomes" | "recordAttemptDiscoveryGeneratedRunOutcomes" | "writeDiscoveryAggregation" | "readRunScopedFile">;
-	runs: {
-		getRun(runId: string): Promise<TeamRunState | null>;
-		listRuns(taskId?: string): Promise<TeamRunState[]>;
-		createRun(taskId: string, options?: { publicBaseUrl?: string; triggeredBy?: TriggeredBy }): Promise<TeamRunState>;
-		cancelRun(runId: string, reason?: string): Promise<TeamRunState>;
-	};
+	taskStore: DiscoveryRunLifecycleTaskStore;
+	workspace: DiscoveryRunLifecycleWorkspace;
+	runs: DiscoveryRunLifecycleRuns;
 }
 
 export class DiscoveryRunLifecycle {
