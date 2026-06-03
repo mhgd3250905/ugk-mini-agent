@@ -2632,6 +2632,87 @@
   font-size: 11px;
 }
 
+.emap-run-observer-history-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(122, 131, 151, 0.12);
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.emap-run-observer-history-times {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.emap-run-observer-history-times span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.emap-run-observer-history-times small {
+  color: var(--secondary);
+  font-size: 9px;
+  font-weight: 820;
+  line-height: 1.25;
+}
+
+.emap-run-observer-history-times time {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emap-run-observer-copy-analysis {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(22, 124, 128, 0.24);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--accent);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 780;
+  cursor: pointer;
+}
+
+.emap-run-observer-copy-analysis:hover {
+  border-color: rgba(22, 124, 128, 0.48);
+  background: rgba(22, 124, 128, 0.08);
+}
+
+.emap-run-observer-copy-status {
+  justify-self: end;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 820;
+  line-height: 1.25;
+}
+
+.emap-run-observer-copy-fallback {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 86px;
+  resize: vertical;
+  border: 1px solid rgba(201, 53, 77, 0.22);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
 .emap-run-observer-stage {
   position: relative;
   display: grid;
@@ -4517,6 +4598,11 @@
 
 [data-theme="dark"] .emap-run-observer-head span {
   color: rgba(216, 228, 241, 0.58);
+}
+
+[data-theme="dark"] .emap-run-observer-history-summary {
+  border-bottom-color: rgba(121, 216, 208, 0.12);
+  background: rgba(7, 12, 22, 0.44);
 }
 
 [data-theme="dark"] .emap-run-observer-panel .emap-observer-process-top {

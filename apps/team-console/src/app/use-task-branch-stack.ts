@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 
-export type TaskBranchDetailMode = "leader-chat" | "edit" | "clone" | "parameters" | "run-observer" | "discovery-subcanvas";
+export type TaskBranchDetailMode = "leader-chat" | "edit" | "clone" | "parameters" | "run-history" | "run-observer" | "discovery-subcanvas";
 
 export type TaskBranchGeneratedObserverState = {
   taskId: string;
@@ -14,6 +14,7 @@ export type TaskBranchState = {
   detailMode: TaskBranchDetailMode | null;
   observedRunId?: string;
   selectedFileKeys?: string[];
+  runHistoryTaskId?: string;
   discoveryGeneratedObserver?: TaskBranchGeneratedObserverState;
   discoveryGeneratedEditTaskId?: string;
   discoveryQueueExpanded?: boolean;

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
+import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunAnnotation, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
 import { MockTeamApi } from "../fixtures/team-fixtures";
 import { useTeamConsoleLiveData, type DataSource, type TeamConsoleUiResetReason, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
 import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchGeneratedObserverState, type TaskBranchState } from "./use-task-branch-stack";
@@ -109,20 +109,14 @@ type TaskRunObserverFileState = {
   error?: string;
 };
 
+type RunHistoryAnalysisTask = Pick<TeamCanvasTask, "taskId" | "title">;
+
 type TaskRunObserverState = {
   loading: boolean;
   attempts: TeamAttemptMetadata[];
   files: Record<string, TaskRunObserverFileState>;
   error: string | null;
   lastUpdatedAt: string | null;
-};
-
-type TaskRunHistoryDetailState = {
-  loading: boolean;
-  attempts: TeamAttemptMetadata[];
-  files: Record<string, TaskRunObserverFileState>;
-  selectedFileKey: string | null;
-  error: string | null;
 };
 
 type TaskCloneDraft = {
@@ -175,26 +169,34 @@ function elapsedText(startedAt: string | null | undefined, finishedAt: string | 
 }
 
 function taskRunPhase(run: TeamRunState, taskId: string): string {
-  return run.taskStates[taskId]?.progress.phase || run.status;
+  return run.taskStates?.[taskId]?.progress.phase || run.status;
 }
 
 function taskRunMessage(run: TeamRunState, taskId: string): string {
-  return run.taskStates[taskId]?.progress.message || "暂无阶段消息";
+  return run.taskStates?.[taskId]?.progress.message || "暂无阶段消息";
 }
 
 function taskRunAttempts(run: TeamRunState, taskId: string): number {
-  return run.taskStates[taskId]?.attemptCount ?? 0;
+  return run.taskStates?.[taskId]?.attemptCount ?? 0;
 }
 
 function taskRunElapsed(run: TeamRunState): string {
   return elapsedText(run.startedAt ?? run.createdAt, run.finishedAt).replace(/^耗时\s*/, "");
 }
 
-function formatRunTimestamp(value: string | null | undefined): string {
-  if (!value) return "未记录";
-  const time = Date.parse(value);
-  if (!Number.isFinite(time)) return value;
-  return new Date(time).toLocaleString();
+function formatRunTimestamp(value: string | null | undefined, fallback = "未记录"): string {
+  if (!value) return fallback;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return fallback;
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
 function taskRunTriggerLabel(run: TeamRunState): string {
@@ -209,42 +211,98 @@ function taskRunTriggerLabel(run: TeamRunState): string {
 }
 
 function taskRunResultRef(run: TeamRunState, taskId: string): string {
-  return run.taskStates[taskId]?.resultRef ?? "无";
+  return run.taskStates?.[taskId]?.resultRef ?? "无";
 }
 
 function taskRunErrorSummary(run: TeamRunState, taskId: string): string {
-  return run.taskStates[taskId]?.errorSummary ?? "无";
+  return run.taskStates?.[taskId]?.errorSummary ?? "无";
 }
 
-function buildTaskRunAnalysisContext(
-  task: TeamCanvasTask,
-  item: TeamTaskRunHistoryItem,
-  detail: TaskRunHistoryDetailState | null,
+function defaultTaskRunAnnotation(runId: string, taskId: string): TeamTaskRunAnnotation {
+  return {
+    runId,
+    taskId,
+    best: false,
+    archived: false,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function sortRunHistoryItems(items: TeamTaskRunHistoryItem[]): TeamTaskRunHistoryItem[] {
+  return [...items].sort((a, b) => {
+    const aTime = Date.parse(a.run.createdAt);
+    const bTime = Date.parse(b.run.createdAt);
+    if (!Number.isFinite(aTime) && !Number.isFinite(bTime)) return 0;
+    if (!Number.isFinite(aTime)) return 1;
+    if (!Number.isFinite(bTime)) return -1;
+    return bTime - aTime;
+  });
+}
+
+function mergeRunHistoryItems(
+  apiItems: TeamTaskRunHistoryItem[],
+  localRuns: TeamRunState[],
+  taskId: string,
+  includeArchived: boolean,
+): TeamTaskRunHistoryItem[] {
+  const byRunId = new Map<string, TeamTaskRunHistoryItem>();
+  for (const item of apiItems) {
+    const run = item?.run;
+    if (!run || typeof run.runId !== "string" || !run.runId) continue;
+    const annotation = item.annotation
+      ? {
+          ...defaultTaskRunAnnotation(run.runId, taskId),
+          ...item.annotation,
+          runId: run.runId,
+          taskId: item.annotation.taskId || taskId,
+        }
+      : defaultTaskRunAnnotation(run.runId, taskId);
+    byRunId.set(run.runId, { run, annotation });
+  }
+  for (const run of localRuns) {
+    if (!run || typeof run.runId !== "string" || !run.runId) continue;
+    if (byRunId.has(run.runId)) continue;
+    byRunId.set(run.runId, {
+      run,
+      annotation: defaultTaskRunAnnotation(run.runId, taskId),
+    });
+  }
+  const merged = sortRunHistoryItems([...byRunId.values()]);
+  return includeArchived ? merged : merged.filter((item) => !item.annotation.archived);
+}
+
+function buildRunHistoryAnalysisContext(
+  task: RunHistoryAnalysisTask,
+  run: TeamRunState,
+  attempts: TeamAttemptMetadata[],
+  fileDescriptors: TaskRunObserverFileDescriptor[],
 ): string {
-  const latestAttempt = detail ? selectLatestAttempt(detail.attempts) : null;
-  const fileDescriptors = detail ? buildTaskRunFileDescriptors(detail.attempts) : [];
-  const selectedResult = fileDescriptors.find((descriptor) => descriptor.kind === "result")
-    ?? fileDescriptors[0]
-    ?? null;
-  const selectedFile = selectedResult ? detail?.files[selectedResult.key] : null;
-  const content = selectedFile?.content
-    ? selectedFile.content.replace(/\s+/g, " ").trim().slice(0, 1200)
-    : "";
+  const latestAttempt = selectLatestAttempt(attempts);
+  const fileLines = fileDescriptors.slice(0, 12).map((descriptor) =>
+    `- ${descriptor.kind}: ${descriptor.fileName} (${descriptor.path})`
+  );
   return [
+    "# Historical Task Run Analysis Context",
+    "",
     `Task: ${task.title}`,
-    `taskId: ${task.taskId}`,
-    `runId: ${item.run.runId}`,
-    `status: ${item.run.status}`,
-    `createdAt: ${item.run.createdAt}`,
-    `startedAt: ${item.run.startedAt ?? "null"}`,
-    `finishedAt: ${item.run.finishedAt ?? "null"}`,
-    `best: ${item.annotation.best ? "true" : "false"}`,
-    `archived: ${item.annotation.archived ? "true" : "false"}`,
-    `errorSummary: ${taskRunErrorSummary(item.run, task.taskId)}`,
-    `resultRef: ${taskRunResultRef(item.run, task.taskId)}`,
-    latestAttempt ? `latestAttempt: ${latestAttempt.attemptId} ${latestAttempt.status}` : "latestAttempt: 未加载",
-    selectedResult ? `mainFile: ${selectedResult.path}` : "mainFile: 未加载",
-    content ? `mainContentSummary: ${content}` : "mainContentSummary: 未加载或无内容",
+    `Task ID: ${task.taskId}`,
+    `Run ID: ${run.runId}`,
+    `Run status: ${run.status}`,
+    `Task status: ${run.taskStates?.[task.taskId]?.status ?? "unknown"}`,
+    `Phase: ${taskRunPhase(run, task.taskId)}`,
+    `Message: ${taskRunMessage(run, task.taskId)}`,
+    `Created at: ${run.createdAt}`,
+    `Started at: ${run.startedAt ?? "none"}`,
+    `Finished at: ${run.finishedAt ?? "none"}`,
+    `Result ref: ${taskRunResultRef(run, task.taskId)}`,
+    `Error summary: ${taskRunErrorSummary(run, task.taskId)}`,
+    `Attempts: ${attempts.length}`,
+    latestAttempt ? `Latest attempt: ${latestAttempt.attemptId} (${latestAttempt.status}, ${latestAttempt.phase})` : "Latest attempt: none",
+    "",
+    "Files:",
+    fileLines.length > 0 ? fileLines.join("\n") : "- none",
+    "",
+    "Please analyze this historical run, focusing on the failure cause, output quality, and recommended next action.",
   ].join("\n");
 }
 
@@ -710,11 +768,14 @@ function readStoredTaskBranches(value: unknown): TaskBranchState[] {
     seen.add(nodeId);
     const rawDetailMode = record.detailMode;
     const detailMode: TaskBranchDetailMode | null =
-      rawDetailMode === "leader-chat" || rawDetailMode === "edit" || rawDetailMode === "clone" || rawDetailMode === "parameters" || rawDetailMode === "run-observer" || rawDetailMode === "discovery-subcanvas"
+      rawDetailMode === "leader-chat" || rawDetailMode === "edit" || rawDetailMode === "clone" || rawDetailMode === "parameters" || rawDetailMode === "run-history" || rawDetailMode === "run-observer" || rawDetailMode === "discovery-subcanvas"
         ? rawDetailMode
         : null;
     const observedRunId = typeof record.observedRunId === "string" && record.observedRunId.trim()
       ? record.observedRunId.trim()
+      : undefined;
+    const runHistoryTaskId = typeof record.runHistoryTaskId === "string" && record.runHistoryTaskId.trim()
+      ? record.runHistoryTaskId.trim()
       : undefined;
     const selectedFileKeys = readStringArray(record.selectedFileKeys);
     const discoveryGeneratedObserver = readStoredGeneratedObserver(record.discoveryGeneratedObserver);
@@ -727,6 +788,7 @@ function readStoredTaskBranches(value: unknown): TaskBranchState[] {
       taskId,
       detailMode,
       ...(observedRunId ? { observedRunId } : {}),
+      ...(runHistoryTaskId ? { runHistoryTaskId } : {}),
       ...(selectedFileKeys.length > 0 ? { selectedFileKeys } : {}),
       ...(discoveryGeneratedObserver ? { discoveryGeneratedObserver } : {}),
       ...(discoveryGeneratedEditTaskId ? { discoveryGeneratedEditTaskId } : {}),
@@ -1337,9 +1399,9 @@ export function App() {
   const [runHistoryLoading, setRunHistoryLoading] = useState(false);
   const [runHistoryError, setRunHistoryError] = useState<string | null>(null);
   const [selectedRunHistoryRunId, setSelectedRunHistoryRunId] = useState<string | null>(null);
-  const [runHistoryDetailsByRunId, setRunHistoryDetailsByRunId] = useState<Record<string, TaskRunHistoryDetailState>>({});
-  const [runHistoryCopyStatus, setRunHistoryCopyStatus] = useState<string | null>(null);
   const [runHistorySavingRunId, setRunHistorySavingRunId] = useState<string | null>(null);
+  const [runHistoryAnalysisCopyState, setRunHistoryAnalysisCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [runHistoryAnalysisManualText, setRunHistoryAnalysisManualText] = useState<string | null>(null);
   const [taskNodes, setTaskNodes] = useState<AtlasTaskNode[]>([]);
   const [taskGroups, setTaskGroups] = useState<AtlasTaskGroup[]>([]);
   const [selectedAtlasEntries, setSelectedAtlasEntries] = useState<AtlasSelectedNodeEntry[]>([]);
@@ -1353,6 +1415,7 @@ export function App() {
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [taskLeaderPickerOpen, setTaskLeaderPickerOpen] = useState(false);
   const sourceFileInputRef = useRef<HTMLInputElement | null>(null);
+  const runHistoryAnalysisManualCopyRef = useRef<HTMLTextAreaElement | null>(null);
   const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
   const [expandedAgentBranch, setExpandedAgentBranch] = useState<AgentBranchState | null>(null);
   const [canvasBranchLayout, setCanvasBranchLayout] = useState<AtlasBranchLayoutState>({});
@@ -1364,6 +1427,12 @@ export function App() {
   const [minimizedAgentNodeIds, setMinimizedAgentNodeIds] = useState<string[]>([]);
   const [minimizedTaskNodeIds, setMinimizedTaskNodeIds] = useState<string[]>([]);
   const [minimizedSourceNodeIds, setMinimizedSourceNodeIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (runHistoryAnalysisCopyState !== "failed" || !runHistoryAnalysisManualText) return;
+    runHistoryAnalysisManualCopyRef.current?.focus();
+    runHistoryAnalysisManualCopyRef.current?.select();
+  }, [runHistoryAnalysisCopyState, runHistoryAnalysisManualText]);
   const [canvasUiStateHydrated, setCanvasUiStateHydrated] = useState(false);
   const [canvasUiStateRestoreHasStoredState, setCanvasUiStateRestoreHasStoredState] = useState(
     () => readStoredCanvasUiState(readStoredInitialDataSource(), CLEAN_AGENT_WORKSPACE_ID) !== null,
@@ -1572,9 +1641,9 @@ export function App() {
     setRunHistoryLoading(false);
     setRunHistoryError(null);
     setSelectedRunHistoryRunId(null);
-    setRunHistoryDetailsByRunId({});
-    setRunHistoryCopyStatus(null);
     setRunHistorySavingRunId(null);
+    setRunHistoryAnalysisCopyState("idle");
+    setRunHistoryAnalysisManualText(null);
 
     if (reason === "mock-fixture" || reason === "mock-workspace" || reason === "live-workspace-loading") {
       setSourceAtlasNodes([]);
@@ -1648,11 +1717,17 @@ export function App() {
   const generatedTasksById = useMemo(() => new Map(
     Object.values(generatedTasksByDiscoveryTaskId).flat().map((task) => [task.taskId, task]),
   ), [generatedTasksByDiscoveryTaskId]);
+  const taskRunsByTaskIdRef = useRef(taskRunsByTaskId);
+  taskRunsByTaskIdRef.current = taskRunsByTaskId;
   const generatedEditDetailHandledTaskIdsRef = useRef<Set<string>>(new Set());
   const sourceNodesById = useMemo(() => new Map(sourceNodes.map((node) => [node.sourceNodeId, node])), [sourceNodes]);
   const agentRunStatusesById = useMemo(() => new Map(Object.entries(agentRunStatusById)), [agentRunStatusById]);
   const addedAgentIds = useMemo(() => new Set(agentNodes.map((node) => node.agentId)), [agentNodes]);
   const canvasUiContextKey = dataSource === "mock" ? `mock:${selectedFixtureId}` : "live";
+  const activeRunHistoryTaskId = useMemo(() => {
+    const branch = [...expandedTaskBranches].reverse().find((item) => item.detailMode === "run-history");
+    return branch?.runHistoryTaskId ?? (branch ? branch.taskId : runHistoryTaskId);
+  }, [expandedTaskBranches, runHistoryTaskId]);
   const hydratedCanvasUiContextKeyRef = useRef<string | null>(null);
   const expandedAgentNode = expandedAgentBranch
     ? agentNodes.find((node) => node.nodeId === expandedAgentBranch.nodeId) ?? null
@@ -1660,13 +1735,19 @@ export function App() {
   const expandedAgent = expandedAgentNode ? agentsById.get(expandedAgentNode.agentId) ?? null : null;
   const runObserverTargets = useMemo(() => expandedTaskBranches.flatMap((branch) => {
     const rootTargets = (() => {
-      if (branch.detailMode !== "run-observer" || !branch.observedRunId) return [];
+      if ((branch.detailMode !== "run-observer" && branch.detailMode !== "run-history") || !branch.observedRunId) return [];
       const node = taskNodes.find((candidate) => candidate.nodeId === branch.nodeId) ?? null;
       const task = node ? tasksById.get(node.taskId) ?? null : null;
       if (!task) return [];
-      const taskRun = (taskRunsByTaskId[task.taskId] ?? []).find((run) => run.runId === branch.observedRunId) ?? null;
+      const targetTaskId = branch.detailMode === "run-history"
+        ? branch.runHistoryTaskId ?? activeRunHistoryTaskId ?? task.taskId
+        : task.taskId;
+      const taskRun = (taskRunsByTaskId[targetTaskId] ?? []).find((run) => run.runId === branch.observedRunId)
+        ?? (branch.detailMode === "run-history"
+          ? runHistoryItems.find((item) => item.annotation.taskId === targetTaskId && item.run.runId === branch.observedRunId)?.run ?? null
+          : null);
       if (!taskRun) return [];
-      return [{ taskId: task.taskId, runId: taskRun.runId, status: taskRun.status }];
+      return [{ taskId: targetTaskId, runId: taskRun.runId, status: taskRun.status }];
     })();
     if (branch.detailMode !== "discovery-subcanvas" || !branch.discoveryGeneratedObserver) return rootTargets;
     const generatedTask = generatedTasksById.get(branch.discoveryGeneratedObserver.taskId) ?? null;
@@ -1682,7 +1763,7 @@ export function App() {
       ...rootTargets,
       { taskId: generatedTask.taskId, runId: taskRun.runId, status: taskRun.status },
     ];
-  }), [expandedTaskBranches, generatedTasksById, taskNodes, taskRunsByTaskId, tasksById]);
+  }), [activeRunHistoryTaskId, expandedTaskBranches, generatedTasksById, runHistoryItems, taskNodes, taskRunsByTaskId, tasksById]);
   const runObserverTargetSignature = useMemo(() => runObserverTargets
     .map((target) => `${target.taskId}\u0000${target.runId}\u0000${target.status}`)
     .join("\u0001"), [runObserverTargets]);
@@ -1703,59 +1784,122 @@ export function App() {
     setSelectedTaskId((current) => current === taskId ? null : taskId);
   }, []);
 
-  const runHistoryTask = runHistoryTaskId
-    ? tasksById.get(runHistoryTaskId) ?? generatedTasksById.get(runHistoryTaskId) ?? null
-    : null;
-  const selectedRunHistoryItem = selectedRunHistoryRunId
-    ? runHistoryItems.find((item) => item.run.runId === selectedRunHistoryRunId) ?? null
-    : null;
-
-  const openTaskRunHistory = useCallback((taskId: string) => {
+  const openTaskRunHistory = useCallback((taskId: string, nodeId?: string, seedRuns: TeamRunState[] = []) => {
+    const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+    const initialItems = mergeRunHistoryItems([], seedRuns, taskId, false);
     setRunHistoryTaskId(taskId);
     setRunHistoryIncludeArchived(false);
-    setRunHistoryItems([]);
-    setRunHistoryTotal(0);
+    setRunHistoryItems(initialItems);
+    setRunHistoryTotal(initialItems.length);
     setSelectedRunHistoryRunId(null);
-    setRunHistoryDetailsByRunId({});
     setRunHistoryError(null);
-    setRunHistoryCopyStatus(null);
-  }, []);
+    setRunHistoryLoading(false);
+    setRunHistoryAnalysisCopyState("idle");
+    setRunHistoryAnalysisManualText(null);
+    void Promise.resolve().then(() => api.listTaskRunHistory(taskId, {
+      limit: 50,
+      offset: 0,
+      includeArchived: false,
+    })).then((response) => {
+      const merged = mergeRunHistoryItems(
+        response.runs,
+        [...seedRuns, ...(taskRunsByTaskIdRef.current[taskId] ?? [])],
+        taskId,
+        false,
+      );
+      setRunHistoryItems(merged);
+      setRunHistoryTotal(Math.max(response.total, merged.length));
+      setRunHistoryLoading(false);
+    }).catch((e) => {
+      setRunHistoryItems([]);
+      setRunHistoryTotal(0);
+      setRunHistoryLoading(false);
+      setRunHistoryError(errorMessage(e));
+    });
+    if (nodeId) {
+      setExpandedTaskBranches((current) => current.map((item) => (
+        item.nodeId === nodeId
+          ? { ...item, detailMode: "run-history", runHistoryTaskId: taskId, observedRunId: undefined, selectedFileKeys: [] }
+          : item
+      )));
+    }
+  }, [dataSource, setExpandedTaskBranches]);
 
   const closeTaskRunHistory = useCallback(() => {
     setRunHistoryTaskId(null);
     setRunHistoryItems([]);
     setRunHistoryTotal(0);
     setSelectedRunHistoryRunId(null);
-    setRunHistoryDetailsByRunId({});
     setRunHistoryError(null);
-    setRunHistoryCopyStatus(null);
     setRunHistorySavingRunId(null);
+    setRunHistoryAnalysisCopyState("idle");
+    setRunHistoryAnalysisManualText(null);
+  }, []);
+
+  const copyRunHistoryAnalysisContext = useCallback(async (
+    task: RunHistoryAnalysisTask,
+    run: TeamRunState,
+    attempts: TeamAttemptMetadata[],
+    fileDescriptors: TaskRunObserverFileDescriptor[],
+  ) => {
+    const text = buildRunHistoryAnalysisContext(task, run, attempts, fileDescriptors);
+    setRunHistoryAnalysisCopyState("idle");
+    setRunHistoryAnalysisManualText(null);
+    try {
+      const clipboard = globalThis.navigator?.clipboard;
+      if (clipboard?.writeText) {
+        try {
+          await clipboard.writeText(text);
+          setRunHistoryAnalysisCopyState("copied");
+          return;
+        } catch { /* fall through to textarea fallback */ }
+      }
+
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("data-copy-fallback", "");
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      const prev = document.activeElement as HTMLElement | null;
+      ta.focus();
+      ta.select();
+      try {
+        const execCopy = document.execCommand?.bind(document);
+        if (!execCopy?.("copy")) throw new Error("execCommand copy returned false");
+        setRunHistoryAnalysisCopyState("copied");
+      } finally {
+        ta.remove();
+        prev?.focus();
+      }
+    } catch {
+      setRunHistoryAnalysisCopyState("failed");
+      setRunHistoryAnalysisManualText(text);
+    }
   }, []);
 
   useEffect(() => {
-    if (!runHistoryTaskId) return;
-    if (tasksById.has(runHistoryTaskId) || generatedTasksById.has(runHistoryTaskId)) return;
-    closeTaskRunHistory();
-  }, [closeTaskRunHistory, generatedTasksById, runHistoryTaskId, tasksById]);
-
-  useEffect(() => {
-    if (!runHistoryTaskId) return;
+    if (!activeRunHistoryTaskId) return;
     let cancelled = false;
     const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-    setRunHistoryLoading(true);
+    setRunHistoryLoading(false);
     setRunHistoryError(null);
     setSelectedRunHistoryRunId(null);
-    setRunHistoryDetailsByRunId({});
-    setRunHistoryCopyStatus(null);
 
-    void api.listTaskRunHistory(runHistoryTaskId, {
+    void Promise.resolve().then(() => api.listTaskRunHistory(activeRunHistoryTaskId, {
       limit: 50,
       offset: 0,
       includeArchived: runHistoryIncludeArchived,
-    }).then((response) => {
+    })).then((response) => {
       if (cancelled) return;
-      setRunHistoryItems(response.runs);
-      setRunHistoryTotal(response.total);
+      const merged = mergeRunHistoryItems(
+        response.runs,
+        taskRunsByTaskIdRef.current[activeRunHistoryTaskId] ?? [],
+        activeRunHistoryTaskId,
+        runHistoryIncludeArchived,
+      );
+      setRunHistoryItems(merged);
+      setRunHistoryTotal(Math.max(response.total, merged.length));
       setRunHistoryLoading(false);
     }).catch((e) => {
       if (cancelled) return;
@@ -1768,114 +1912,36 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [dataSource, runHistoryIncludeArchived, runHistoryTaskId]);
+  }, [activeRunHistoryTaskId, dataSource, runHistoryIncludeArchived, taskRunsByTaskId]);
 
   const loadMoreRunHistory = useCallback(async () => {
-    if (!runHistoryTaskId || runHistoryLoading || runHistoryItems.length >= runHistoryTotal) return;
+    if (!activeRunHistoryTaskId || runHistoryLoading || runHistoryItems.length >= runHistoryTotal) return;
     const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
     setRunHistoryLoading(true);
     setRunHistoryError(null);
     try {
-      const response = await api.listTaskRunHistory(runHistoryTaskId, {
+      const response = await api.listTaskRunHistory(activeRunHistoryTaskId, {
         limit: 50,
         offset: runHistoryItems.length,
         includeArchived: runHistoryIncludeArchived,
       });
-      setRunHistoryItems((current) => [...current, ...response.runs]);
-      setRunHistoryTotal(response.total);
+      setRunHistoryItems((current) => mergeRunHistoryItems(
+        [...current, ...response.runs],
+        [],
+        activeRunHistoryTaskId,
+        runHistoryIncludeArchived,
+      ));
+      setRunHistoryTotal(Math.max(response.total, runHistoryItems.length));
     } catch (e) {
       setRunHistoryError(errorMessage(e));
     } finally {
       setRunHistoryLoading(false);
     }
-  }, [dataSource, runHistoryIncludeArchived, runHistoryItems.length, runHistoryLoading, runHistoryTaskId, runHistoryTotal]);
-
-  const loadRunHistoryDetails = useCallback(async (item: TeamTaskRunHistoryItem) => {
-    const existing = runHistoryDetailsByRunId[item.run.runId];
-    if (existing?.loading || existing?.attempts.length) return;
-    const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-    setRunHistoryDetailsByRunId((current) => ({
-      ...current,
-      [item.run.runId]: {
-        loading: true,
-        attempts: current[item.run.runId]?.attempts ?? [],
-        files: current[item.run.runId]?.files ?? {},
-        selectedFileKey: current[item.run.runId]?.selectedFileKey ?? null,
-        error: null,
-      },
-    }));
-    try {
-      const attempts = await api.listTaskRunAttempts(item.run.runId, item.annotation.taskId);
-      setRunHistoryDetailsByRunId((current) => ({
-        ...current,
-        [item.run.runId]: {
-          loading: false,
-          attempts,
-          files: current[item.run.runId]?.files ?? {},
-          selectedFileKey: current[item.run.runId]?.selectedFileKey ?? null,
-          error: null,
-        },
-      }));
-    } catch (e) {
-      setRunHistoryDetailsByRunId((current) => ({
-        ...current,
-        [item.run.runId]: {
-          loading: false,
-          attempts: current[item.run.runId]?.attempts ?? [],
-          files: current[item.run.runId]?.files ?? {},
-          selectedFileKey: current[item.run.runId]?.selectedFileKey ?? null,
-          error: errorMessage(e),
-        },
-      }));
-    }
-  }, [dataSource, runHistoryDetailsByRunId]);
+  }, [activeRunHistoryTaskId, dataSource, runHistoryIncludeArchived, runHistoryItems.length, runHistoryLoading, runHistoryTotal]);
 
   const selectRunHistoryItem = useCallback((item: TeamTaskRunHistoryItem) => {
     setSelectedRunHistoryRunId(item.run.runId);
-    setRunHistoryCopyStatus(null);
-    void loadRunHistoryDetails(item);
-  }, [loadRunHistoryDetails]);
-
-  const readRunHistoryFile = useCallback(async (item: TeamTaskRunHistoryItem, descriptor: TaskRunObserverFileDescriptor) => {
-    const runId = item.run.runId;
-    const existing = runHistoryDetailsByRunId[runId]?.files[descriptor.key];
-    setRunHistoryDetailsByRunId((current) => ({
-      ...current,
-      [runId]: {
-        loading: current[runId]?.loading ?? false,
-        attempts: current[runId]?.attempts ?? [],
-        files: current[runId]?.files ?? {},
-        selectedFileKey: descriptor.key,
-        error: current[runId]?.error ?? null,
-      },
-    }));
-    if (existing?.content || existing?.error) return;
-    const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-    try {
-      const content = await api.readTaskRunAttemptFile(runId, item.annotation.taskId, descriptor.attemptId, descriptor.fileName);
-      setRunHistoryDetailsByRunId((current) => ({
-        ...current,
-        [runId]: {
-          loading: current[runId]?.loading ?? false,
-          attempts: current[runId]?.attempts ?? [],
-          files: { ...(current[runId]?.files ?? {}), [descriptor.key]: { content } },
-          selectedFileKey: descriptor.key,
-          error: current[runId]?.error ?? null,
-        },
-      }));
-    } catch (e) {
-      setRunHistoryDetailsByRunId((current) => ({
-        ...current,
-        [runId]: {
-          loading: current[runId]?.loading ?? false,
-          attempts: current[runId]?.attempts ?? [],
-          files: { ...(current[runId]?.files ?? {}), [descriptor.key]: { error: errorMessage(e) } },
-          selectedFileKey: descriptor.key,
-          error: current[runId]?.error ?? null,
-        },
-      }));
-    }
-  }, [dataSource, runHistoryDetailsByRunId]);
+  }, []);
 
   const patchRunHistoryAnnotation = useCallback(async (
     item: TeamTaskRunHistoryItem,
@@ -1910,30 +1976,6 @@ export function App() {
       setRunHistorySavingRunId(null);
     }
   }, [dataSource, runHistoryIncludeArchived]);
-
-  const copySelectedRunHistoryForAgent = useCallback(async () => {
-    if (!runHistoryTask || !selectedRunHistoryItem) return;
-    const detail = runHistoryDetailsByRunId[selectedRunHistoryItem.run.runId] ?? null;
-    const text = buildTaskRunAnalysisContext(runHistoryTask, selectedRunHistoryItem, detail);
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const textarea = document.createElement("textarea");
-        textarea.value = text;
-        textarea.setAttribute("readonly", "true");
-        textarea.style.position = "fixed";
-        textarea.style.left = "-9999px";
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand("copy");
-        document.body.removeChild(textarea);
-      }
-      setRunHistoryCopyStatus("已复制");
-    } catch (e) {
-      setRunHistoryCopyStatus(`复制失败: ${errorMessage(e)}`);
-    }
-  }, [runHistoryDetailsByRunId, runHistoryTask, selectedRunHistoryItem]);
 
   useEffect(() => {
     if (generatedArchiveConfirmTaskId && !openDiscoverySubcanvasGeneratedTaskIds.has(generatedArchiveConfirmTaskId)) {
@@ -3373,7 +3415,18 @@ export function App() {
             <button
               type="button"
               className="task-action-menu-button"
-              onClick={() => openTaskRunHistory(task.taskId)}
+              onClick={() => {
+                if (detailMode === "run-history") {
+                  setExpandedTaskBranches((current) => current.map((item) => (
+                    item.nodeId === branch.nodeId
+                      ? { ...item, detailMode: null, runHistoryTaskId: undefined, observedRunId: undefined, selectedFileKeys: [] }
+                      : item
+                  )));
+                  closeTaskRunHistory();
+                } else {
+                  openTaskRunHistory(task.taskId, branch.nodeId);
+                }
+              }}
             >
               运行记录
             </button>
@@ -3577,6 +3630,139 @@ export function App() {
       const task = node ? tasksById.get(node.taskId) ?? null : null;
       if (!node || !task) continue;
       const menuPanelId = taskMenuPanelId(branch.nodeId);
+      const runHistoryPanelId = `run-history-${branch.nodeId}`;
+
+      if (branch.detailMode === "run-history") {
+        const historyTaskId = branch.runHistoryTaskId ?? activeRunHistoryTaskId ?? task.taskId;
+        const historyTask = historyTaskId
+          ? tasksById.get(historyTaskId) ?? generatedTasksById.get(historyTaskId) ?? task
+          : task;
+        panels.push({
+          id: runHistoryPanelId,
+          width: 520,
+          autoHeight: true,
+          sourceId: menuPanelId,
+          panel: (
+            <section className="emap-run-history-panel" aria-label={`${historyTask.title} 运行记录`}>
+              <header className="emap-run-history-head">
+                <div className="emap-run-history-title">
+                  <span>运行记录</span>
+                  <strong>{historyTask.title}</strong>
+                  <code>{historyTask.taskId}</code>
+                </div>
+                <button
+                  type="button"
+                  className="emap-run-history-close"
+                  onClick={() => {
+                    setExpandedTaskBranches((current) => current.map((item) => (
+                      item.nodeId === branch.nodeId
+                        ? { ...item, detailMode: null, runHistoryTaskId: undefined, observedRunId: undefined, selectedFileKeys: [] }
+                        : item
+                    )));
+                    closeTaskRunHistory();
+                  }}
+                  aria-label={`收起 ${historyTask.title} 运行记录`}
+                >
+                  收起
+                </button>
+              </header>
+              <div className="emap-run-history-toolbar">
+                <label className="emap-run-history-archive-toggle">
+                  <input
+                    type="checkbox"
+                    checked={runHistoryIncludeArchived}
+                    onChange={(event) => setRunHistoryIncludeArchived(event.currentTarget.checked)}
+                  />
+                  显示已归档
+                </label>
+                <span className="emap-run-history-count">{runHistoryItems.length} / {runHistoryTotal}</span>
+              </div>
+              {runHistoryError && (
+                <div className="emap-run-history-error" role="status">{runHistoryError}</div>
+              )}
+              <div className="emap-run-history-list" aria-label={`${historyTask.title} run history list`}>
+                {runHistoryItems.map((item) => {
+                  const run = item.run;
+                  const taskState = run.taskStates?.[item.annotation.taskId] ?? null;
+                  const selected = branch.observedRunId === run.runId || selectedRunHistoryRunId === run.runId;
+                  const saving = runHistorySavingRunId === run.runId;
+                  const errorSummary = taskRunErrorSummary(run, item.annotation.taskId);
+                  return (
+                    <article
+                      key={run.runId}
+                      className={`emap-run-history-item ${selected ? "selected" : ""} ${item.annotation.best ? "best" : ""} ${item.annotation.archived ? "archived" : ""}`}
+                      data-run-id={run.runId}
+                    >
+                      <button
+                        type="button"
+                        className="emap-run-history-row"
+                        aria-label={`${run.runId} ${RUN_STATUS_LABELS[run.status]} 运行详情`}
+                        onClick={() => {
+                          selectRunHistoryItem(item);
+                          setRunHistoryAnalysisCopyState("idle");
+                          setRunHistoryAnalysisManualText(null);
+                          setExpandedTaskBranches((current) => current.map((candidate) => (
+                            candidate.nodeId === branch.nodeId
+                              ? { ...candidate, detailMode: "run-history", runHistoryTaskId: historyTask.taskId, observedRunId: run.runId, selectedFileKeys: [] }
+                              : candidate
+                          )));
+                        }}
+                      >
+                        <span className="emap-run-history-trigger">{taskRunTriggerLabel(run)}</span>
+                        <span className="emap-run-history-status">
+                          <strong>{RUN_STATUS_LABELS[run.status]}</strong>
+                          <small>{taskState?.status ?? "unknown"}</small>
+                        </span>
+                        <span className="emap-run-history-duration">
+                          <strong>{taskRunElapsed(run)}</strong>
+                          <small>{taskRunResultRef(run, item.annotation.taskId)}</small>
+                        </span>
+                        <code>{run.runId}</code>
+                        {item.annotation.best && <span className="emap-run-history-badge best">最佳</span>}
+                        {item.annotation.archived && <span className="emap-run-history-badge archived">已归档</span>}
+                        {item.annotation.note && <small className="emap-run-history-note">{item.annotation.note}</small>}
+                        {errorSummary !== "无" && <span className="emap-run-history-row-error">{errorSummary}</span>}
+                      </button>
+                      <div className="emap-run-history-actions">
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() => { void patchRunHistoryAnnotation(item, { best: !item.annotation.best }); }}
+                        >
+                          {item.annotation.best ? "取消最佳" : "标为最佳"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() => { void patchRunHistoryAnnotation(item, { archived: !item.annotation.archived }); }}
+                        >
+                          {item.annotation.archived ? "恢复记录" : "归档记录"}
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+                {!runHistoryLoading && runHistoryItems.length === 0 && (
+                  <div className="emap-run-history-empty">暂无可见运行记录。</div>
+                )}
+                {runHistoryLoading && (
+                  <div className="emap-run-history-empty" role="status">正在加载运行记录...</div>
+                )}
+                {runHistoryItems.length < runHistoryTotal && (
+                  <button
+                    type="button"
+                    className="emap-run-history-load-more"
+                    disabled={runHistoryLoading}
+                    onClick={() => { void loadMoreRunHistory(); }}
+                  >
+                    加载更多
+                  </button>
+                )}
+              </div>
+            </section>
+          ),
+        });
+      }
 
       if (branch.detailMode === "discovery-subcanvas" && task.canvasKind === "discovery" && !task.generatedSource) {
         const activeDiscoveryRun = selectActiveDiscoveryRootRun(task.taskId, taskRunsByTaskId);
@@ -3799,7 +3985,7 @@ export function App() {
                   role="menuitem"
                   onClick={() => {
                     setGeneratedActionMenuTaskId(null);
-                    openTaskRunHistory(generatedTask.taskId);
+                    openTaskRunHistory(generatedTask.taskId, branch.nodeId, latestGeneratedRun ? [latestGeneratedRun] : []);
                   }}
                 >
                   运行记录
@@ -4563,6 +4749,7 @@ export function App() {
       fileDetailPanelIdPrefix,
       toggleFile,
       generatedTaskId,
+      historyTask,
     }: {
       observedTaskRun: TeamRunState;
       selectedFileKeys: string[];
@@ -4571,6 +4758,7 @@ export function App() {
       fileDetailPanelIdPrefix: string;
       toggleFile: (key: string) => void;
       generatedTaskId?: string;
+      historyTask?: RunHistoryAnalysisTask;
     }) => {
       const observerState = taskRunObserverByRunId[observedTaskRun.runId] ?? null;
       const attempts = observerState?.attempts ?? [];
@@ -4641,6 +4829,48 @@ export function App() {
               <span>{"\u8fd0\u884c\u89c2\u5bdf"}</span>
               <strong>{RUN_STATUS_LABELS[observedTaskRun.status]}</strong>
             </header>
+            {historyTask && (
+              <section className="emap-run-observer-history-summary" aria-label="历史运行摘要">
+                <div className="emap-run-observer-history-times">
+                  <span>
+                    <small>开始时间</small>
+                    <time dateTime={observedTaskRun.startedAt ?? observedTaskRun.createdAt}>
+                      {formatRunTimestamp(observedTaskRun.startedAt ?? observedTaskRun.createdAt)}
+                    </time>
+                  </span>
+                  <span>
+                    <small>结束时间</small>
+                    <time dateTime={observedTaskRun.finishedAt ?? undefined}>
+                      {formatRunTimestamp(observedTaskRun.finishedAt, isActiveRun(observedTaskRun.status) ? "未结束" : "未记录")}
+                    </time>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="emap-run-observer-copy-analysis"
+                  onClick={() => {
+                    void copyRunHistoryAnalysisContext(historyTask, observedTaskRun, attempts, fileDescriptors);
+                  }}
+                >
+                  复制给 Agent 分析
+                </button>
+                {runHistoryAnalysisCopyState !== "idle" && (
+                  <span role="status" className="emap-run-observer-copy-status">
+                    {runHistoryAnalysisCopyState === "copied" ? "已复制" : "复制失败"}
+                  </span>
+                )}
+                {runHistoryAnalysisCopyState === "failed" && runHistoryAnalysisManualText && (
+                  <textarea
+                    ref={runHistoryAnalysisManualCopyRef}
+                    className="emap-run-observer-copy-fallback"
+                    aria-label="手动复制历史运行分析上下文"
+                    readOnly
+                    value={runHistoryAnalysisManualText}
+                    onFocus={(event) => event.currentTarget.select()}
+                  />
+                )}
+              </section>
+            )}
             <div className="emap-run-observer-stage worker" data-observer-section="worker-process">
               {renderRoleProcessNode("worker", latestAttempt?.roleProcesses?.worker)}
             </div>
@@ -4703,12 +4933,21 @@ export function App() {
     };
 
     for (const branch of expandedTaskBranches) {
-      if (branch.detailMode !== "run-observer" || !branch.observedRunId) continue;
+      if ((branch.detailMode !== "run-observer" && branch.detailMode !== "run-history") || !branch.observedRunId) continue;
       const node = taskNodes.find((candidate) => candidate.nodeId === branch.nodeId) ?? null;
       const task = node ? tasksById.get(node.taskId) ?? null : null;
       if (!node || !task) continue;
-      const observedTaskRun = (taskRunsByTaskId[task.taskId] ?? []).find((taskRun) => taskRun.runId === branch.observedRunId) ?? null;
+      const targetTaskId = branch.detailMode === "run-history"
+        ? branch.runHistoryTaskId ?? activeRunHistoryTaskId ?? task.taskId
+        : task.taskId;
+      const observedTaskRun = (taskRunsByTaskId[targetTaskId] ?? []).find((taskRun) => taskRun.runId === branch.observedRunId)
+        ?? (branch.detailMode === "run-history"
+          ? runHistoryItems.find((item) => item.annotation.taskId === targetTaskId && item.run.runId === branch.observedRunId)?.run ?? null
+          : null);
       if (!observedTaskRun) continue;
+      const historyTask = branch.detailMode === "run-history"
+        ? tasksById.get(targetTaskId) ?? generatedTasksById.get(targetTaskId) ?? task
+        : undefined;
 
       const toggleFile = (key: string) => {
         setExpandedTaskBranches((current) => current.map((item) => {
@@ -4726,10 +4965,11 @@ export function App() {
       pushTaskRunObserverPanels({
         observedTaskRun,
         selectedFileKeys: branch.selectedFileKeys ?? [],
-        sourceId: taskMenuPanelId(branch.nodeId),
+        sourceId: branch.detailMode === "run-history" ? `run-history-${branch.nodeId}` : taskMenuPanelId(branch.nodeId),
         runObserverPanelId: `run-observer-${branch.nodeId}`,
         fileDetailPanelIdPrefix: `file-detail-${branch.nodeId}`,
         toggleFile,
+        historyTask,
       });
     }
 
@@ -4779,237 +5019,7 @@ export function App() {
     }
 
     return panels;
-  }, [agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskCloneState, clearTaskEditState, clearTaskEditWarning, clearTaskParameterState, cloneTask, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, openTaskEditDraft, openTaskParameterDraft, openTaskRunHistory, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runTask, saveTaskEdit, saveTaskParameters, scheduleLiveTaskDiscoveryRefresh, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskCloneDraftByTaskId, taskCloneSavingByTaskId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskParameterDraftByTaskId, taskParameterSavingByTaskId, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskCloneBinding, updateTaskCloneTitle, updateTaskEditDraft, updateTaskParameterBinding]);
-
-  const runHistoryDrawer = runHistoryTask ? (() => {
-    const selectedDetail = selectedRunHistoryItem
-      ? runHistoryDetailsByRunId[selectedRunHistoryItem.run.runId] ?? null
-      : null;
-    const selectedAttempts = selectedDetail?.attempts ?? [];
-    const latestAttempt = selectLatestAttempt(selectedAttempts);
-    const fileDescriptors = buildTaskRunFileDescriptors(selectedAttempts);
-    const workerFiles = fileDescriptors.filter((descriptor) => descriptor.kind === "worker");
-    const checkerFiles = fileDescriptors.filter((descriptor) => descriptor.kind === "checker");
-    const resultFiles = fileDescriptors.filter((descriptor) => descriptor.kind === "result");
-    const selectedFileDescriptor = selectedDetail?.selectedFileKey
-      ? fileDescriptors.find((descriptor) => descriptor.key === selectedDetail.selectedFileKey) ?? null
-      : null;
-    const selectedFileState = selectedFileDescriptor && selectedRunHistoryItem
-      ? selectedDetail?.files[selectedFileDescriptor.key] ?? null
-      : null;
-    const renderHistoryFileSection = (label: string, descriptors: TaskRunObserverFileDescriptor[]) => {
-      if (!selectedRunHistoryItem || descriptors.length === 0) return null;
-      return (
-        <div className="run-history-file-section">
-          <span className="run-history-section-kicker">{label}</span>
-          <div className="run-history-file-list">
-            {descriptors.map((descriptor) => (
-              <button
-                type="button"
-                key={descriptor.key}
-                className={`run-history-file-row ${selectedDetail?.selectedFileKey === descriptor.key ? "selected" : ""}`}
-                onClick={() => { void readRunHistoryFile(selectedRunHistoryItem, descriptor); }}
-              >
-                <span>{descriptor.title}</span>
-                <code>{descriptor.fileName}</code>
-              </button>
-            ))}
-          </div>
-        </div>
-      );
-    };
-
-    return (
-      <aside className="run-history-drawer" role="complementary" aria-label={`${runHistoryTask.title} 运行记录`}>
-        <header className="run-history-head">
-          <div className="run-history-title">
-            <span>运行记录</span>
-            <strong>{runHistoryTask.title}</strong>
-            <code>{runHistoryTask.taskId}</code>
-          </div>
-          <button
-            type="button"
-            className="run-history-close"
-            onClick={closeTaskRunHistory}
-            aria-label="关闭运行记录"
-          >
-            收起
-          </button>
-        </header>
-
-        <div className="run-history-toolbar">
-          <label className="run-history-archive-toggle">
-            <input
-              type="checkbox"
-              checked={runHistoryIncludeArchived}
-              onChange={(event) => setRunHistoryIncludeArchived(event.currentTarget.checked)}
-            />
-            显示已归档
-          </label>
-          <span className="run-history-count">{runHistoryItems.length} / {runHistoryTotal}</span>
-        </div>
-
-        {runHistoryError && (
-          <div className="run-history-error" role="status">{runHistoryError}</div>
-        )}
-
-        <div className="run-history-body">
-          <section className="run-history-list" aria-label="Task run history">
-            <div className="run-history-table-head" aria-hidden="true">
-              <span>Run</span>
-              <span>状态</span>
-              <span>结果</span>
-              <span>操作</span>
-            </div>
-            {runHistoryItems.map((item) => {
-              const run = item.run;
-              const taskState = run.taskStates[item.annotation.taskId] ?? null;
-              const selected = selectedRunHistoryRunId === run.runId;
-              const saving = runHistorySavingRunId === run.runId;
-              return (
-                <div
-                  key={run.runId}
-                  className={`run-history-row-shell ${selected ? "selected" : ""} ${item.annotation.best ? "best" : ""} ${item.annotation.archived ? "archived" : ""}`}
-                >
-                  <button
-                    type="button"
-                    className="run-history-row"
-                    aria-label={`${run.runId} ${RUN_STATUS_LABELS[run.status]}`}
-                    onClick={() => selectRunHistoryItem(item)}
-                  >
-                    <span className="run-history-row-main">
-                      <span className="run-history-row-badges">
-                        {item.annotation.best && <strong className="run-history-best-badge">最佳</strong>}
-                        {item.annotation.archived && <strong className="run-history-archived-badge">已归档</strong>}
-                        <em>{taskRunTriggerLabel(run)}</em>
-                      </span>
-                      <code>{run.runId}</code>
-                      {item.annotation.note && <small>{item.annotation.note}</small>}
-                    </span>
-                    <span className="run-history-row-status">
-                      <strong>{RUN_STATUS_LABELS[run.status]}</strong>
-                      <small>{taskState?.status ?? "unknown"}</small>
-                    </span>
-                    <span className="run-history-row-result">
-                      <strong>{taskRunElapsed(run)}</strong>
-                      <small>{taskRunResultRef(run, item.annotation.taskId)}</small>
-                    </span>
-                    <span className="run-history-row-time">
-                      <small>{formatRunTimestamp(run.createdAt)}</small>
-                      <small>{formatRunTimestamp(run.finishedAt)}</small>
-                    </span>
-                    {taskRunErrorSummary(run, item.annotation.taskId) !== "无" && (
-                      <span className="run-history-row-error">{taskRunErrorSummary(run, item.annotation.taskId)}</span>
-                    )}
-                  </button>
-                  <div className="run-history-row-actions">
-                    <button
-                      type="button"
-                      disabled={saving}
-                      onClick={() => { void patchRunHistoryAnnotation(item, { best: !item.annotation.best }); }}
-                    >
-                      {item.annotation.best ? "取消最佳" : "标为最佳"}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={saving}
-                      onClick={() => { void patchRunHistoryAnnotation(item, { archived: !item.annotation.archived }); }}
-                    >
-                      {item.annotation.archived ? "恢复记录" : "归档记录"}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-            {!runHistoryLoading && runHistoryItems.length === 0 && (
-              <div className="run-history-empty">暂无可见运行记录。</div>
-            )}
-            {runHistoryLoading && (
-              <div className="run-history-empty" role="status">正在加载运行记录...</div>
-            )}
-            {runHistoryItems.length < runHistoryTotal && (
-              <button
-                type="button"
-                className="run-history-load-more"
-                disabled={runHistoryLoading}
-                onClick={() => { void loadMoreRunHistory(); }}
-              >
-                加载更多
-              </button>
-            )}
-          </section>
-
-          <section className="run-history-detail" aria-label="Run detail">
-            {selectedRunHistoryItem ? (
-              <>
-                <header className="run-history-detail-head">
-                  <div>
-                    <span>Run detail</span>
-                    <strong>{selectedRunHistoryItem.run.runId}</strong>
-                  </div>
-                  <button
-                    type="button"
-                    className="run-history-copy"
-                    onClick={() => { void copySelectedRunHistoryForAgent(); }}
-                  >
-                    复制给 Agent 分析
-                  </button>
-                </header>
-                {runHistoryCopyStatus && <div className="run-history-copy-status">{runHistoryCopyStatus}</div>}
-                <div className="run-history-detail-meta">
-                  <span><b>开始</b>{formatRunTimestamp(selectedRunHistoryItem.run.startedAt ?? selectedRunHistoryItem.run.createdAt)}</span>
-                  <span><b>结束</b>{formatRunTimestamp(selectedRunHistoryItem.run.finishedAt)}</span>
-                  <span><b>耗时</b>{taskRunElapsed(selectedRunHistoryItem.run)}</span>
-                  <span><b>resultRef</b>{taskRunResultRef(selectedRunHistoryItem.run, selectedRunHistoryItem.annotation.taskId)}</span>
-                </div>
-                {selectedDetail?.loading ? (
-                  <div className="run-history-empty" role="status">正在加载 attempt metadata...</div>
-                ) : selectedDetail?.error ? (
-                  <div className="run-history-error" role="status">{selectedDetail.error}</div>
-                ) : (
-                  <>
-                    <div className="run-history-process-grid">
-                      {renderRoleProcessNode("worker", latestAttempt?.roleProcesses?.worker)}
-                      {renderRoleProcessNode("checker", latestAttempt?.roleProcesses?.checker)}
-                    </div>
-                    <div className="run-history-files">
-                      {renderHistoryFileSection("Worker 文件", workerFiles)}
-                      {renderHistoryFileSection("Checker 文件", checkerFiles)}
-                      {renderHistoryFileSection("Result 文件", resultFiles)}
-                    </div>
-                    {fileDescriptors.length === 0 && selectedAttempts.length > 0 && (
-                      <div className="run-history-empty">该 run 有 attempt metadata，但没有可预览文件。</div>
-                    )}
-                    {selectedAttempts.length === 0 && (
-                      <div className="run-history-empty">点击后未找到 attempt 记录。</div>
-                    )}
-                    {selectedFileDescriptor && (
-                      <section className="run-history-file-preview" aria-label={selectedFileDescriptor.title}>
-                        <header>
-                          <span>{selectedFileDescriptor.title}</span>
-                          <code>{selectedFileDescriptor.fileName}</code>
-                        </header>
-                        {selectedFileState?.error ? (
-                          <div className="run-history-error">{selectedFileState.error}</div>
-                        ) : selectedFileState?.content ? (
-                          renderFileDetailContent(selectedFileDescriptor.fileName, selectedFileState.content)
-                        ) : (
-                          <div className="run-history-empty" role="status">正在读取文件...</div>
-                        )}
-                      </section>
-                    )}
-                  </>
-                )}
-              </>
-            ) : (
-              <div className="run-history-empty">选择一条 run 查看过程摘要、结果文件和内容预览。</div>
-            )}
-          </section>
-        </div>
-      </aside>
-    );
-  })() : null;
-
+  }, [activeRunHistoryTaskId, agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskCloneState, clearTaskEditState, clearTaskEditWarning, clearTaskParameterState, cloneTask, closeTaskRunHistory, copyRunHistoryAnalysisContext, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, loadMoreRunHistory, openTaskEditDraft, openTaskParameterDraft, openTaskRunHistory, patchRunHistoryAnnotation, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runHistoryAnalysisCopyState, runHistoryAnalysisManualText, runHistoryError, runHistoryIncludeArchived, runHistoryItems, runHistoryLoading, runHistorySavingRunId, runHistoryTotal, runTask, saveTaskEdit, saveTaskParameters, scheduleLiveTaskDiscoveryRefresh, selectRunHistoryItem, selectedRunHistoryRunId, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskCloneDraftByTaskId, taskCloneSavingByTaskId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskParameterDraftByTaskId, taskParameterSavingByTaskId, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskCloneBinding, updateTaskCloneTitle, updateTaskEditDraft, updateTaskParameterBinding]);
   const canvasStateRestorePending = !loading && !canvasUiStateHydrated;
   const canvasLoadingMinimumMs = loading || canvasUiStateRestoreHasStoredState
     ? CANVAS_LOADING_MIN_VISIBLE_MS
@@ -5176,7 +5186,6 @@ export function App() {
           </div>
         )}
       </main>
-      {runHistoryDrawer}
     </div>
   );
 }

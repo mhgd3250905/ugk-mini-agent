@@ -395,10 +395,11 @@ describe("App", () => {
     fireEvent.click(within(vultrCard).getByRole("button", { name: "核查 Vultr 公开证据 操作菜单" }));
     fireEvent.click(within(vultrCard).getByRole("menuitem", { name: "运行记录" }));
 
-    const drawer = await screen.findByRole("complementary", { name: "核查 Vultr 公开证据 运行记录" });
-    expect(within(drawer).getByText("task_generated_vultr")).toBeInTheDocument();
+    const historyPanel = await screen.findByRole("region", { name: "核查 Vultr 公开证据 运行记录" });
+    expect(screen.queryByRole("complementary", { name: "核查 Vultr 公开证据 运行记录" })).toBeNull();
+    expect(within(historyPanel).getByText("task_generated_vultr")).toBeInTheDocument();
     await waitFor(() => {
-      expect(within(drawer).getByText("暂无可见运行记录。")).toBeInTheDocument();
+      expect(within(historyPanel).getByText("暂无可见运行记录。")).toBeInTheDocument();
     });
   });
 
@@ -564,6 +565,13 @@ describe("App", () => {
   });
 
   it("runs a mock generated Task and opens its observer and file detail from the Discovery subcanvas", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      writable: true,
+      configurable: true,
+    });
+
     const { container } = render(<App />);
     const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
     const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
@@ -600,6 +608,7 @@ describe("App", () => {
       return panelNode!;
     });
     expect(observerPanel).toHaveAttribute("data-generated-observer-run-id");
+    const generatedRunId = observerPanel.getAttribute("data-generated-observer-run-id")!;
     expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
 
     expect(observerPanel.querySelector('.emap-observer-process-node[data-process-role="worker"]')).toBeTruthy();
@@ -623,6 +632,27 @@ describe("App", () => {
       expect(container.querySelector('[data-generated-observer-task-id="task_generated_vultr"]')).toBeNull();
     });
     expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
+
+    fireEvent.click(vultrCard!.querySelector('[data-generated-action="menu"]')!);
+    fireEvent.click(within(vultrCard!).getByRole("menuitem", { name: "运行记录" }));
+    const historyPanel = await screen.findByRole("region", { name: "核查 Vultr 公开证据 运行记录" });
+    expect(await within(historyPanel).findByText(generatedRunId)).toBeInTheDocument();
+
+    fireEvent.click(within(historyPanel).getByRole("button", { name: new RegExp(generatedRunId) }));
+    const historyObserverPanel = await waitFor(() => {
+      const panelNode = container.querySelector(".emap-run-observer-panel") as HTMLElement | null;
+      expect(panelNode).toBeTruthy();
+      return panelNode!;
+    });
+    expect(within(historyObserverPanel).getByText("开始时间")).toBeInTheDocument();
+    expect(within(historyObserverPanel).getByText("结束时间")).toBeInTheDocument();
+    const copyAnalysisButton = within(historyObserverPanel).getByRole("button", { name: "复制给 Agent 分析" });
+    fireEvent.click(copyAnalysisButton);
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(expect.stringContaining(generatedRunId));
+    });
+    expect(within(historyObserverPanel).getByRole("status")).toHaveTextContent("已复制");
+    expect(await within(historyObserverPanel).findByText("accepted-result.md")).toBeInTheDocument();
   });
 
   it("does not show the Discovery subcanvas toggle for normal root Tasks", async () => {
@@ -782,7 +812,7 @@ describe("App", () => {
     expect(screen.queryByLabelText(`${templateTask.title} Task 参数`)).toBeNull();
   });
 
-  it("opens a per-Task run history drawer and lazily loads run details", async () => {
+  it("opens a per-Task run history branch card and lazily loads run details", async () => {
     const liveTask = mockTeamTasks[0]!;
     const latestRun = canvasTaskRun(liveTask.taskId, "run_history_latest");
     latestRun.createdAt = "2026-06-02T01:00:00.000Z";
@@ -848,33 +878,40 @@ describe("App", () => {
     const menu = await screen.findByLabelText(`${liveTask.title} 操作菜单`);
 
     fireEvent.click(within(menu).getByRole("button", { name: "运行记录" }));
-    const drawer = await screen.findByRole("complementary", { name: `${liveTask.title} 运行记录` });
+    const historyPanel = await screen.findByRole("region", { name: `${liveTask.title} 运行记录` });
+    expect(screen.queryByRole("complementary", { name: `${liveTask.title} 运行记录` })).toBeNull();
 
-    expect(within(drawer).getByText("run_history_latest")).toBeInTheDocument();
-    expect(within(drawer).getByText("run_history_older")).toBeInTheDocument();
-    expect(within(drawer).getByText("质量最好")).toBeInTheDocument();
+    expect(within(historyPanel).getByText("run_history_latest")).toBeInTheDocument();
+    expect(within(historyPanel).getByText("run_history_older")).toBeInTheDocument();
+    expect(within(historyPanel).getByText("质量最好")).toBeInTheDocument();
     expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).not.toContain(
       `/v1/team/task-runs/${latestRun.runId}/tasks/${liveTask.taskId}/attempts`,
     );
 
-    fireEvent.click(within(drawer).getByRole("button", { name: /run_history_latest/ }));
+    fireEvent.click(within(historyPanel).getByRole("button", { name: /run_history_latest/ }));
     await waitFor(() => {
       expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toContain(
         `/v1/team/task-runs/${latestRun.runId}/tasks/${liveTask.taskId}/attempts`,
       );
     });
-    expect(await within(drawer).findByText("accepted-result.md")).toBeInTheDocument();
-    fireEvent.click(within(drawer).getByRole("button", { name: /accepted-result.md/ }));
-    expect(await within(drawer).findByText("accepted history result")).toBeInTheDocument();
+    const observerPanel = await waitFor(() => {
+      const panelNode = container.querySelector(".emap-run-observer-panel") as HTMLElement | null;
+      expect(panelNode).toBeTruthy();
+      return panelNode!;
+    });
+    expect(within(observerPanel).getByText("开始时间")).toBeInTheDocument();
+    expect(await within(observerPanel).findByText("accepted-result.md")).toBeInTheDocument();
+    fireEvent.click(within(observerPanel).getByRole("button", { name: /accepted-result.md/ }));
+    expect(await screen.findByText("accepted history result")).toBeInTheDocument();
 
-    fireEvent.click(within(drawer).getByRole("button", { name: "标为最佳" }));
+    fireEvent.click(within(historyPanel).getByRole("button", { name: "标为最佳" }));
     await waitFor(() => {
-      expect(within(drawer).getByText("最佳")).toBeInTheDocument();
+      expect(within(historyPanel).getByText("最佳")).toBeInTheDocument();
     });
 
-    fireEvent.click(within(drawer).getAllByRole("button", { name: "归档记录" })[1]!);
+    fireEvent.click(within(historyPanel).getAllByRole("button", { name: "归档记录" })[1]!);
     await waitFor(() => {
-      expect(within(drawer).queryByText("run_history_older")).toBeNull();
+      expect(within(historyPanel).queryByText("run_history_older")).toBeNull();
     });
   });
 

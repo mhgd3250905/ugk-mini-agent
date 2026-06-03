@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-03 — Team Console run history branch cards
+
+- **主题**: 将 Team Console Task “运行记录”从右侧 drawer 收口为 Execution Atlas 子节点：先展示历史 run 列表卡片，点击单条记录后在其下游展开运行观察卡片；从历史记录打开的运行观察顶部补回开始时间、结束时间和“复制给 Agent 分析”按钮。
+- **影响范围**: `5174` Task 操作菜单、Discovery generated Task 操作菜单、运行记录列表、历史 run 详情观察卡片和复制给 Agent 的分析上下文；普通最新运行观察卡片不显示历史摘要。
+- **验证**: `npm --prefix apps/team-console run test -- --run src/tests/app-live-data.test.tsx src/tests/app-run-observer.test.tsx`、`npm --prefix apps/team-console run build`、`git diff --check`，并重启 Docker Team Console 后确认 `http://127.0.0.1:5174/` 返回 200、主后端 `/healthz` 正常。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/use-task-branch-stack.ts`、`apps/team-console/src/app/app.css`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app-live-data.test.tsx`。
+
 ## 2026-06-03 — Team Task template current parameters
 
 - **主题**: 模板 Task 本体支持直接运行和当前/最近参数复用。模板参数状态独立保存在 Task 的 `templateState.currentBindings`，`POST /v1/team/tasks/:taskId/runs` 可接收 per-run `templateBindings` override；缺 required 参数时 Team Console 打开参数面板，已有参数时直接运行。每个 run 在 `source.templateBindings` 记录当次快照，生成的 plan、worker prompt、workUnit、Discovery spec、output contract 和 acceptance 均使用绑定后的值。
