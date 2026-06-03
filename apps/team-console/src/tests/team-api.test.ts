@@ -406,6 +406,24 @@ describe("LiveTeamApi", () => {
     expect(tasks[0]?.workUnit.workerAgentId).toBe("search");
   });
 
+  it("fetches live Team Task catalog incrementally with since cursor", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      tasks: [],
+      deletedTaskIds: ["task_archived"],
+      serverVersion: "2026-06-03T00:00:01.000Z",
+    }), { status: 200 }));
+
+    const catalog = await api.listTaskCatalog({ since: "2026-06-03T00:00:00.000Z" });
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/tasks?since=2026-06-03T00%3A00%3A00.000Z");
+    expect(catalog).toEqual({
+      tasks: [],
+      deletedTaskIds: ["task_archived"],
+      serverVersion: "2026-06-03T00:00:01.000Z",
+    });
+  });
+
   it("accepts bare array live Team Task catalog responses", async () => {
     const api = new LiveTeamApi("/v1/team");
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify([{

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties, 
 import { LiveTeamApi } from "../api/team-api";
 import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunAnnotation, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
 import { MockTeamApi } from "../fixtures/team-fixtures";
-import { useTeamConsoleLiveData, type DataSource, type TeamConsoleUiResetReason, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
+import { useTeamConsoleLiveData, type DataSource, type TeamConsoleUiResetReason, type TeamDiscoveryStage, type TeamDiscoverySummary, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
 import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchGeneratedObserverState, type TaskBranchState } from "./use-task-branch-stack";
 import { hasDirtyTaskEditConflict, useTaskEditState } from "./use-task-edit-state";
 import { useTaskLeaderCopy } from "./use-task-leader-copy";
@@ -626,6 +626,46 @@ function discoveryGeneratedVisualState(
   if (latestRun && !isActiveRun(latestRun.status)) return "done";
   if (itemStatus === "stale") return "stale";
   return "idle";
+}
+
+function discoveryStageLabel(stage: TeamDiscoveryStage): string {
+  switch (stage) {
+    case "discovering": return "Discovery";
+    case "dispatching": return "Dispatch";
+    case "auto-running": return "Auto-run";
+    case "aggregating": return "Aggregation";
+    case "completed": return "Aggregation";
+    case "cancelled": return "Cancelled";
+    default: return "Idle";
+  }
+}
+
+function discoveryStageFromRun(run: TeamRunState | null): TeamDiscoveryStage {
+  if (run?.status === "cancelled") return "cancelled";
+  if (run && isActiveRun(run.status)) return "discovering";
+  if (run?.status === "completed" || run?.status === "completed_with_failures" || run?.status === "failed") return "completed";
+  return "idle";
+}
+
+function discoveryStageMeta(summary: TeamDiscoverySummary | undefined, latestRun: TeamRunState | null): {
+  stage: TeamDiscoveryStage;
+  label: string;
+  processed: number;
+  blocked: number;
+  running: number;
+  completed: number;
+  generated: number;
+} {
+  const stage = summary?.stage ?? discoveryStageFromRun(latestRun);
+  return {
+    stage,
+    label: discoveryStageLabel(stage),
+    processed: summary?.dispatchProcessedCount ?? 0,
+    blocked: summary?.failedDispatchCount ?? 0,
+    running: summary?.runningGeneratedRunCount ?? 0,
+    completed: summary?.completedGeneratedRunCount ?? 0,
+    generated: summary?.generatedTaskCount ?? 0,
+  };
 }
 
 function playgroundBaseUrlPrefix(): string {
@@ -3784,6 +3824,8 @@ export function App() {
 
       if (branch.detailMode === "discovery-subcanvas" && task.canvasKind === "discovery" && !task.generatedSource) {
         const activeDiscoveryRun = selectActiveDiscoveryRootRun(task.taskId, taskRunsByTaskId);
+        const latestDiscoveryRun = selectLatestRun(taskRunsByTaskId[task.taskId] ?? []);
+        const discoveryStage = discoveryStageMeta(discoverySummariesByTaskId[task.taskId], latestDiscoveryRun);
         const generatedTasks = sortDiscoveryGeneratedTasksForSubcanvas(
           (generatedTasksByDiscoveryTaskId[task.taskId] ?? []).filter((generatedTask) => !generatedTask.archived),
           taskRunsByTaskId,
@@ -4148,6 +4190,19 @@ export function App() {
                   收起
                 </button>
               </header>
+              <div
+                className={`discovery-stage-strip stage-${discoveryStage.stage}`}
+                data-discovery-stage-for={task.taskId}
+                data-discovery-stage={discoveryStage.stage}
+                aria-label={`${task.title} Discovery stage ${discoveryStage.label}`}
+              >
+                <strong>{discoveryStage.label}</strong>
+                {discoveryStage.processed > 0 && <span>{discoveryStage.processed} processed</span>}
+                {discoveryStage.running > 0 && <span>{discoveryStage.running} running</span>}
+                {discoveryStage.completed > 0 && <span>{discoveryStage.completed} completed</span>}
+                {discoveryStage.generated > 0 && <span>{discoveryStage.generated} generated</span>}
+                {discoveryStage.blocked > 0 && <span className="danger">{discoveryStage.blocked} blocked</span>}
+              </div>
               {dispatchDiagnostics.length > 0 && (
                 <section
                   className="discovery-dispatch-diagnostics"

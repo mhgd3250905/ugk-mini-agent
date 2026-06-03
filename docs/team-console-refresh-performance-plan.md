@@ -60,8 +60,8 @@
 但 summary 还不够“基础运行态”：
 
 - `summarizeRunState()` 目前基本只是省略 `source.boundInputs`，仍返回接近完整 `TeamRunState`。
-- `GET /v1/team/task-runs/:runId` 没有 summary/detail view，active polling 只能拿 full run state。
-- 没有 `since` / `updatedAfter` / version 增量语义。即使只有 1 个 Task 变化，刷新也常返回全部请求范围的数据。
+- `GET /v1/team/task-runs/:runId` 已有 `summary` / `process-summary` view，但 summary 仍可继续裁剪。
+- `GET /v1/team/tasks` 和 `GET /v1/team/task-runs/by-task` 已支持第一版 `since` / `serverVersion` 增量语义；Discovery summary 仍未接增量。
 - 没有把 root task run summary、expanded run process summary、Discovery child summary 建成明确的三个 contract。
 
 ### 真实运行问题锚点
@@ -337,13 +337,18 @@
 - 已完成第一段：root run summary 和 active run summary 会按 run/task progress 摘要合并，未变化 run 保持对象引用。
 - 已完成第一段：Discovery generated summary refresh 不覆盖已经 lazy fetched 的 full generated Task detail；summary 未变化时保留 full detail 对象引用和编辑所需 `workUnit`。
 - 已完成第一段：root Task 从 live catalog 消失时，会从 root `taskRunsByTaskId` 清理对应 run state，避免 deleted/archived root 继续污染 refresh state。
-- 未完成：后端 `since` / cursor 增量 contract。建议等聚合型 root summary endpoint 或明确 serverVersion 语义一起做，不要只加一个前端不消费的装饰查询参数。
+- 已完成第二段：`GET /v1/team/tasks?since=<iso>` 返回 changed root Tasks、`deletedTaskIds` 和 `serverVersion`；归档或从默认 root catalog 消失的 Task 会通过 deleted cursor 合入前端。
+- 已完成第二段：`GET /v1/team/task-runs/by-task?taskIds=...&view=summary&since=<iso>` 返回 changed run summaries、预留 `deletedRunIdsByTaskId` 和 `serverVersion`；空增量不会清空既有 run state。
+- 已完成第二段：`LiveTeamApi` / `MockTeamApi` / `use-team-console-live-data.ts` 都真实消费 cursor，不是装饰查询参数；旧 `listTasks()` 和旧 `{ tasks }` / `{ runsByTaskId }` 响应仍兼容。
+- 未完成：Discovery child summary 的 `since` contract、聚合型 root summary endpoint，以及 Step 5 的 discovery / dispatch / auto-run / aggregation 阶段可见性。
 
 测试：
 
 - unchanged task 对象引用保持。
 - deleted/archived task 从画布、dock、branch state 清理。
 - 后台 summary 不覆盖 full generated detail 和编辑 draft。
+- root task catalog `since` 返回 changed/deleted/serverVersion。
+- root run summary `since` 返回 changed/serverVersion，空增量不清空本地 run map。
 
 ### Step 5：Discovery 阶段可见性
 
@@ -352,6 +357,13 @@
 - UI 明确显示 discovery / dispatch / auto-run / aggregation 阶段。
 - dispatch progress 可见。
 - 被取消时显示取消阶段。
+
+进度：
+
+- 已完成第一版：`use-team-console-live-data.ts` 从最新 root run summary、打开子画布后的 generated summary / generated run summary，以及 `dispatch-diagnostics` attempt metadata 派生 `TeamDiscoveryStage`。
+- 已完成第一版：root Discovery 卡片暴露 `data-discovery-stage`，summary row 显示 `Discovery` / `Dispatch` / `Auto-run` / `Aggregation` / `Cancelled` 阶段 pill 和 processed count。
+- 已完成第一版：Discovery 子画布顶部显示阶段条 `data-discovery-stage-for`，展示 processed、running、completed、generated、blocked 聚合计数，取消态显示 `Cancelled`，不伪装成失败。
+- 本步只做 API/data/UI 阶段可见性，不改变 dispatcher、auto-run pool、root aggregation 或取消传播的 runtime 行为。
 
 测试：
 
@@ -397,6 +409,6 @@ node --test --import tsx test\team-task-run-process.test.ts
 
 ## 推荐执行顺序
 
-下一轮先做 Step 1 和 Step 2。理由很简单：这两步能直接解决“10 个 Task 并行但未展开时画布仍慢”的主痛点，且不会改变 Discovery runtime 语义。
+Step 1-5 已完成到第一版可消费 contract 和阶段可见性。后续可继续收口 Discovery child summary 的 `since` contract、聚合型 root summary endpoint，或进入 Step 6 runtime 设计。
 
-Discovery 阶段提示和边 dispatch 边 run 很重要，但应该在 root summary / process summary 边界稳定后再做。不然继续在现在的大状态对象上打补丁，只会把刷新逻辑修成一锅浆糊。
+Step 6 的“边 dispatch 边 auto-run”属于 runtime 行为优化，必须单独设计 admission、取消、aggregation 和回归测试。别把它和 Step 5 的刷新/API/UI 阶段提示混成一个大改，真这么干就是把本来能审的改动搅成一锅浆糊。

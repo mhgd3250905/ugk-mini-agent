@@ -124,11 +124,14 @@ interface ExecutionMapProps {
   pendingDeleteSourceConnectionId?: string | null;
   pendingDeleteDependencyId?: string | null;
   discoverySummariesByTaskId?: Record<string, {
+    stage?: "idle" | "discovering" | "dispatching" | "auto-running" | "aggregating" | "completed" | "cancelled";
     generatedTaskCount: number;
     activeGeneratedTaskCount: number;
     staleGeneratedTaskCount: number;
     runningGeneratedRunCount: number;
+    completedGeneratedRunCount?: number;
     failedDispatchCount: number;
+    dispatchProcessedCount?: number;
     latestDispatchRunId?: string;
     latestDispatchAttemptId?: string;
   }>;
@@ -394,6 +397,20 @@ function selectLatestCanvasTaskRun(runs: TeamRunState[] | undefined): TeamRunSta
     if (!Number.isFinite(latestTime)) return run;
     return runTime >= latestTime ? run : latest;
   }, runs[0]);
+}
+
+type DiscoveryStage = "idle" | "discovering" | "dispatching" | "auto-running" | "aggregating" | "completed" | "cancelled";
+
+function discoveryStageLabel(stage: DiscoveryStage | undefined): string {
+  switch (stage) {
+    case "discovering": return "Discovery";
+    case "dispatching": return "Dispatch";
+    case "auto-running": return "Auto-run";
+    case "aggregating": return "Aggregation";
+    case "completed": return "Aggregation";
+    case "cancelled": return "Cancelled";
+    default: return "Idle";
+  }
 }
 
 function createEmptyLayout(): ExecutionMapLayout {
@@ -3560,10 +3577,18 @@ export function ExecutionMap({
                 activeGeneratedTaskCount: 0,
                 staleGeneratedTaskCount: 0,
                 runningGeneratedRunCount: 0,
+                completedGeneratedRunCount: 0,
                 failedDispatchCount: 0,
+                dispatchProcessedCount: 0,
+                stage: latestTaskRun?.status === "cancelled"
+                  ? "cancelled"
+                  : latestTaskRun && (latestTaskRun.status === "running" || latestTaskRun.status === "queued")
+                    ? "discovering"
+                    : "idle",
               }
               : null;
             const failedDispatchCount = discoverySummary?.failedDispatchCount ?? 0;
+            const discoveryStage = discoverySummary?.stage ?? "idle";
             const inputPorts = task.workUnit.inputPorts ?? [];
             const outputPorts = task.workUnit.outputPorts ?? [];
             const portRowCount = canvasTaskPortRowCount(task);
@@ -3578,6 +3603,7 @@ export function ExecutionMap({
                 data-kind="canvas-task"
                 data-canvas-kind={isDiscoveryRoot ? "discovery" : undefined}
                 data-discovery-failed-dispatch-count={isDiscoveryRoot ? String(failedDispatchCount) : undefined}
+                data-discovery-stage={isDiscoveryRoot ? discoveryStage : undefined}
                 data-task-id={task.taskId}
                 data-port-row-count={portRowCount}
                 data-task-run-status={latestTaskRun?.status ?? "none"}
@@ -3622,6 +3648,10 @@ export function ExecutionMap({
                   </div>
                   {discoverySummary && (
                     <div className="emap-discovery-summary-row" aria-label={`${task.title} Discovery summary`}>
+                      <span className={`emap-discovery-stage-pill stage-${discoveryStage}`}>{discoveryStageLabel(discoveryStage)}</span>
+                      {discoverySummary.dispatchProcessedCount ? (
+                        <span>{discoverySummary.dispatchProcessedCount} processed</span>
+                      ) : null}
                       <span>{discoverySummary.generatedTaskCount} items</span>
                       <span>{discoverySummary.activeGeneratedTaskCount} active</span>
                       <span>{discoverySummary.staleGeneratedTaskCount} stale</span>

@@ -22,6 +22,7 @@ import type {
   TeamCanvasSourceNodeCreateRequest,
   TeamCanvasSourceNodeUpdateRequest,
   TeamCanvasTask,
+  TeamCanvasTaskListResponse,
   TeamTaskConnection,
   TeamTaskConnectionCreateRequest,
   TeamTaskDependency,
@@ -1679,10 +1680,19 @@ export class MockTeamApi {
     return ALL_FIXTURES.map((f) => f.run);
   }
 
-  async listTasks(): Promise<TeamCanvasTask[]> {
-    return mockCanvasTasks
+  async listTaskCatalog(options?: { since?: string }): Promise<TeamCanvasTaskListResponse> {
+    const tasks = mockCanvasTasks
       .filter((task) => !task.archived && !task.generatedSource)
+      .filter((task) => !options?.since || task.updatedAt > options.since)
       .map(cloneMockTeamTask);
+    const serverVersion = mockCanvasTasks
+      .filter((task) => !task.generatedSource)
+      .reduce<string | null>((latest, task) => latest === null || task.updatedAt > latest ? task.updatedAt : latest, null);
+    return { tasks, deletedTaskIds: [], serverVersion };
+  }
+
+  async listTasks(): Promise<TeamCanvasTask[]> {
+    return (await this.listTaskCatalog()).tasks;
   }
 
   async listGeneratedTasks(
@@ -1908,17 +1918,23 @@ export class MockTeamApi {
     };
   }
 
-  async listTaskRunsByTaskIds(taskIds: string[], options?: { limit?: number; view?: "summary" }): Promise<TeamCanvasTaskRunByTaskListResponse> {
+  async listTaskRunsByTaskIds(taskIds: string[], options?: { limit?: number; view?: "summary"; since?: string }): Promise<TeamCanvasTaskRunByTaskListResponse> {
     const runsByTaskId: Record<string, TeamRunState[]> = {};
     for (const taskId of taskIds) {
       const runs = mockTaskRunsByTaskId.get(taskId);
       if (runs) {
         runsByTaskId[taskId] = runs
+          .filter((run) => !options?.since || (run.updatedAt ?? run.finishedAt ?? run.startedAt ?? run.createdAt) > options.since)
           .slice(0, options?.limit ?? runs.length)
           .map(cloneTeamRunState);
       }
     }
-    return { runsByTaskId };
+    const serverVersion = [...mockTaskRunsByTaskId.values()].flat()
+      .reduce<string | null>((latest, run) => {
+        const version = run.updatedAt ?? run.finishedAt ?? run.startedAt ?? run.createdAt;
+        return latest === null || version > latest ? version : latest;
+      }, null);
+    return { runsByTaskId, deletedRunIdsByTaskId: Object.fromEntries(taskIds.map((taskId) => [taskId, []])), serverVersion };
   }
 
   async createTaskRun(taskId: string, input?: TeamTaskRunCreateRequest): Promise<TeamRunState> {

@@ -74,6 +74,25 @@ function summarizeRunState(state: TeamRunState, taskId?: string): TeamRunState {
 	};
 }
 
+function readSinceCursor(value: unknown): string | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "string") throw new Error("since must be an ISO timestamp");
+	const trimmed = value.trim();
+	if (!trimmed) return undefined;
+	const parsed = new Date(trimmed);
+	if (!Number.isFinite(parsed.getTime())) throw new Error("since must be an ISO timestamp");
+	return parsed.toISOString();
+}
+
+function maxUpdatedAt(items: Array<{ updatedAt?: string }>): string | null {
+	let latest: string | null = null;
+	for (const item of items) {
+		if (typeof item.updatedAt !== "string") continue;
+		if (latest === null || item.updatedAt > latest) latest = item.updatedAt;
+	}
+	return latest;
+}
+
 function readRouteRecord(value: unknown): Record<string, unknown> | null {
 	return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
@@ -339,11 +358,32 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.get("/v1/team/tasks", async (request, reply) => {
-		const tasks = await taskStore.list({
-			includeArchived: parseIncludeArchived(request),
-			includeGenerated: parseIncludeGenerated(request),
+		const query = request.query as { since?: string };
+		let since: string | undefined;
+		try {
+			since = readSinceCursor(query.since);
+		} catch (err) {
+			reply.code(400).send({ error: (err as Error).message });
+			return;
+		}
+		const includeArchived = parseIncludeArchived(request);
+		const includeGenerated = parseIncludeGenerated(request);
+		const allMatchingTasks = await taskStore.list({
+			includeArchived: true,
+			includeGenerated,
 		});
-		reply.send({ tasks });
+		const visibleTasks = allMatchingTasks.filter((task) => includeArchived || !task.archived);
+		const tasks = since ? visibleTasks.filter((task) => task.updatedAt > since) : visibleTasks;
+		const deletedTaskIds = since && !includeArchived
+			? allMatchingTasks
+				.filter((task) => task.archived && task.updatedAt > since)
+				.map((task) => task.taskId)
+			: [];
+		reply.send({
+			tasks,
+			deletedTaskIds,
+			serverVersion: maxUpdatedAt(allMatchingTasks),
+		});
 	});
 
 	app.post("/v1/team/tasks", async (request, reply) => {
@@ -701,7 +741,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	});
 
 	app.get("/v1/team/task-runs/by-task", async (request, reply) => {
-		const query = request.query as { taskIds?: string; limit?: string; view?: string };
+		const query = request.query as { taskIds?: string; limit?: string; view?: string; since?: string };
 		const rawTaskIds = query.taskIds ?? "";
 		const taskIds = [...new Set(rawTaskIds.split(",").map(s => s.trim()).filter(Boolean))];
 		if (taskIds.length === 0) {
@@ -723,16 +763,32 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			reply.code(400).send({ error: "unknown view parameter" });
 			return;
 		}
+		let since: string | undefined;
+		try {
+			since = readSinceCursor(query.since);
+		} catch (err) {
+			reply.code(400).send({ error: (err as Error).message });
+			return;
+		}
 		const runsByTaskId = await taskRunService.listRunsByTaskIds(taskIds, limit != null ? { limit } : undefined);
+		const serverVersion = maxUpdatedAt(Object.values(runsByTaskId).flat());
+		const filteredRunsByTaskId = since
+			? Object.fromEntries(
+				Object.entries(runsByTaskId).map(([taskId, runs]) => [taskId, runs.filter((run) => run.updatedAt > since)]),
+			)
+			: runsByTaskId;
+		const deletedRunIdsByTaskId = Object.fromEntries(taskIds.map((taskId) => [taskId, [] as string[]]));
 		if (view === "summary") {
 			reply.send({
 				runsByTaskId: Object.fromEntries(
-					Object.entries(runsByTaskId).map(([taskId, runs]) => [taskId, runs.map(run => summarizeRunState(run, taskId))]),
+					Object.entries(filteredRunsByTaskId).map(([taskId, runs]) => [taskId, runs.map(run => summarizeRunState(run, taskId))]),
 				),
+				deletedRunIdsByTaskId,
+				serverVersion,
 			});
 			return;
 		}
-		reply.send({ runsByTaskId });
+		reply.send({ runsByTaskId: filteredRunsByTaskId, deletedRunIdsByTaskId, serverVersion });
 	});
 
 	app.get("/v1/team/task-runs/:runId", async (request, reply) => {

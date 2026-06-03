@@ -556,6 +556,8 @@ export interface TeamCanvasTask {
 
 export interface TeamCanvasTaskListResponse {
   tasks: TeamCanvasTask[];
+  deletedTaskIds?: string[];
+  serverVersion?: string | null;
 }
 
 export interface TeamDiscoveryGeneratedTaskSummary {
@@ -614,6 +616,7 @@ export interface TeamTaskState {
 }
 
 export interface TeamRunState {
+  schemaVersion?: "team/state-1";
   runId: string;
   planId: string;
   source?: {
@@ -662,6 +665,7 @@ export interface TeamRunState {
     cancelledTasks: number;
     skippedTasks: number;
   };
+  updatedAt?: string;
 }
 
 export interface TeamCanvasTaskRunListResponse {
@@ -670,6 +674,8 @@ export interface TeamCanvasTaskRunListResponse {
 
 export interface TeamCanvasTaskRunByTaskListResponse {
   runsByTaskId: Record<string, TeamRunState[]>;
+  deletedRunIdsByTaskId?: Record<string, string[]>;
+  serverVersion?: string | null;
 }
 
 export interface TeamTaskRunProcessSummaryResponse {

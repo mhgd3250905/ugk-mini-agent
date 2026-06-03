@@ -1022,6 +1022,58 @@ test("GET /v1/team/task-runs/by-task view=summary omits heavy bound input conten
 	}
 });
 
+test("GET /v1/team/task-runs/by-task supports since cursor for changed run summaries", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const taskId = "task_run_summary_since";
+		const taskRunWorkspace = new RunWorkspace(join(teamDir, "task-runs"));
+		const plan = singleTaskPlan(taskId, "run summary since");
+		const first = await taskRunWorkspace.createRun(plan, plan.defaultTeamUnitId);
+		first.source = { type: "canvas-task", taskId };
+		await taskRunWorkspace.saveState(first);
+
+		const initial = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/by-task?taskIds=${taskId}&limit=1&view=summary`,
+		});
+		assert.equal(initial.statusCode, 200);
+		assert.equal(initial.json().serverVersion, first.updatedAt);
+		assert.deepEqual(initial.json().runsByTaskId[taskId].map((run: TeamRunState) => run.runId), [first.runId]);
+
+		const unchanged = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/by-task?taskIds=${taskId}&limit=1&view=summary&since=${encodeURIComponent(initial.json().serverVersion)}`,
+		});
+		assert.equal(unchanged.statusCode, 200);
+		assert.deepEqual(unchanged.json().runsByTaskId[taskId], []);
+		assert.deepEqual(unchanged.json().deletedRunIdsByTaskId[taskId], []);
+		assert.equal(unchanged.json().serverVersion, initial.json().serverVersion);
+
+		await new Promise(resolve => setTimeout(resolve, 2));
+		await taskRunWorkspace.patchState(first.runId, (state) => {
+			state.status = "running";
+			state.currentTaskId = taskId;
+			state.taskStates[taskId]!.status = "running";
+			state.taskStates[taskId]!.progress = {
+				phase: "worker_running",
+				message: "working",
+				updatedAt: new Date().toISOString(),
+			};
+		});
+		const changed = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/by-task?taskIds=${taskId}&limit=1&view=summary&since=${encodeURIComponent(initial.json().serverVersion)}`,
+		});
+		assert.equal(changed.statusCode, 200);
+		assert.deepEqual(changed.json().runsByTaskId[taskId].map((run: TeamRunState) => run.runId), [first.runId]);
+		assert.equal(changed.json().runsByTaskId[taskId][0].status, "running");
+		assert.notEqual(changed.json().serverVersion, initial.json().serverVersion);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("GET /v1/team/task-runs/:runId view=summary returns lightweight run state", async () => {
 	const { app, root, teamDir } = await buildTestServer();
 	try {

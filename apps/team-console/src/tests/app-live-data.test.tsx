@@ -1828,13 +1828,13 @@ describe("App", () => {
         "task_generated_vultr",
         rootTask.taskId,
       ]);
-      expect(probe.summaries[mockDiscoveryRootTask.taskId]).toEqual({
+      expect(probe.summaries[mockDiscoveryRootTask.taskId]).toEqual(expect.objectContaining({
         generatedTaskCount: 2,
         activeGeneratedTaskCount: 1,
         staleGeneratedTaskCount: 1,
         runningGeneratedRunCount: 1,
         failedDispatchCount: 0,
-      });
+      }));
       expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toContain(
         `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks?view=summary`,
       );
@@ -1851,12 +1851,14 @@ describe("App", () => {
         const url = String(input);
         if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
         if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
-        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
         if (url.startsWith(`/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`)) {
           generatedCatalogRequests += 1;
           return new Response(JSON.stringify({
             tasks: generatedCatalogRequests >= 5 ? generatedTasks : [],
           }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/tasks")) {
+          return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
         }
         if (url.startsWith("/v1/team/task-runs/by-task?")) {
           return byTaskRunsResponse({
@@ -1866,6 +1868,9 @@ describe("App", () => {
         if (url === `/v1/team/task-runs/${runningDiscoveryRun.runId}`) {
           rootRunCompleted = true;
           return new Response(JSON.stringify(completedDiscoveryRun), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${runningDiscoveryRun.runId}/tasks/${mockDiscoveryRootTask.taskId}/attempts?view=dispatch-diagnostics`) {
+          return new Response(JSON.stringify({ attempts: [] }), { status: 200 });
         }
         if (url === `/v1/team/task-runs/${completedDiscoveryRun.runId}/tasks/${mockDiscoveryRootTask.taskId}/attempts?view=dispatch-diagnostics`) {
           return new Response(JSON.stringify({ attempts: [] }), { status: 200 });
@@ -1883,7 +1888,7 @@ describe("App", () => {
         ]);
       }, { timeout: 7000 });
       expect(generatedCatalogRequests).toBeGreaterThanOrEqual(5);
-    });
+    }, 10000);
 
     it("loads blocked Discovery dispatch diagnostics from the latest root attempt metadata", async () => {
       window.localStorage.setItem("ugk-team-console:data-source", "live");
@@ -1936,6 +1941,138 @@ describe("App", () => {
       expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toContain(
         `/v1/team/task-runs/${discoveryRun.runId}/tasks/${mockDiscoveryRootTask.taskId}/attempts?view=dispatch-diagnostics`,
       );
+    });
+
+    it("shows Discovery dispatch progress stage from partial dispatch diagnostics", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const discoveryRun = canvasTaskRun(mockDiscoveryRootTask.taskId, "run_discovery_dispatching", "running");
+      const discoveryAttempt = discoveryRootAttempt([
+        {
+          itemId: "vultr",
+          status: "created",
+          generatedTaskId: "task_generated_vultr",
+          createdAt: "2026-05-31T00:05:10.000Z",
+        },
+        {
+          itemId: "digitalocean",
+          status: "blocked",
+          error: "dispatcher output parse error: invalid JSON",
+          createdAt: "2026-05-31T00:05:11.000Z",
+        },
+      ]);
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
+        if (url.startsWith(`/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`)) {
+          return new Response(JSON.stringify({ tasks: [] }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse({ [mockDiscoveryRootTask.taskId]: [discoveryRun] });
+        }
+        if (url === `/v1/team/task-runs/${discoveryRun.runId}`) {
+          return new Response(JSON.stringify(discoveryRun), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${discoveryRun.runId}/tasks/${mockDiscoveryRootTask.taskId}/attempts?view=dispatch-diagnostics`) {
+          return new Response(JSON.stringify({ attempts: [discoveryAttempt] }), { status: 200 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
+      const discoveryNode = await within(atlas).findByRole("button", { name: mockDiscoveryRootTask.title });
+      fireEvent.click(discoveryNode);
+      fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+
+      const panel = await waitFor(() => {
+        const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      await waitFor(() => {
+        const refreshedNode = container.querySelector(`[data-task-id="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+        expect(refreshedNode).toHaveAttribute("data-discovery-stage", "dispatching");
+        expect(within(refreshedNode!).getByText("Dispatch")).toBeInTheDocument();
+        expect(within(refreshedNode!).getByText("2 processed")).toBeInTheDocument();
+      });
+      const stage = panel.querySelector(`[data-discovery-stage-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+      expect(stage).toHaveAttribute("data-discovery-stage", "dispatching");
+      expect(stage).toHaveTextContent("Dispatch");
+      expect(stage).toHaveTextContent("2 processed");
+      expect(stage).toHaveTextContent("1 blocked");
+    });
+
+    it("shows Discovery auto-run and cancellation stages without confusing them with failure", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const generatedTasks = mockDiscoveryGeneratedTasks.filter((task) => !task.archived);
+      const activeDiscoveryRun = canvasTaskRun(mockDiscoveryRootTask.taskId, "run_discovery_auto", "running");
+      const cancelledDiscoveryRun = canvasTaskRun(mockDiscoveryRootTask.taskId, "run_discovery_auto", "cancelled");
+      const generatedRun = generatedCanvasTaskRun("task_generated_vultr", "run_generated_vultr", {
+        status: "running",
+        discoveryTaskId: mockDiscoveryRootTask.taskId,
+        discoveryRunId: activeDiscoveryRun.runId,
+        sourceItemId: "vultr",
+      });
+      let cancelled = false;
+      let taskCatalogRequests = 0;
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") {
+          taskCatalogRequests += 1;
+          if (taskCatalogRequests >= 2) cancelled = true;
+          return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
+        }
+        if (url.startsWith(`/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`)) {
+          return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse({
+            [mockDiscoveryRootTask.taskId]: [cancelled ? cancelledDiscoveryRun : activeDiscoveryRun],
+            task_generated_vultr: [generatedRun],
+          });
+        }
+        if (url === `/v1/team/task-runs/${activeDiscoveryRun.runId}`) {
+          return new Response(JSON.stringify(activeDiscoveryRun), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${generatedRun.runId}`) {
+          return new Response(JSON.stringify(generatedRun), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${activeDiscoveryRun.runId}/tasks/${mockDiscoveryRootTask.taskId}/attempts?view=dispatch-diagnostics`) {
+          return new Response(JSON.stringify({ attempts: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
+      const discoveryNode = await within(atlas).findByRole("button", { name: mockDiscoveryRootTask.title });
+      fireEvent.click(discoveryNode);
+      fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+
+      const panel = await waitFor(() => {
+        const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      await waitFor(() => {
+        const stage = panel.querySelector(`[data-discovery-stage-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+        expect(stage).toHaveAttribute("data-discovery-stage", "auto-running");
+        expect(stage).toHaveTextContent("Auto-run");
+        expect(stage).toHaveTextContent("1 running");
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
+
+      await waitFor(() => {
+        const stage = panel.querySelector(`[data-discovery-stage-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+        expect(stage).toHaveAttribute("data-discovery-stage", "cancelled");
+        expect(stage).toHaveTextContent("Cancelled");
+        expect(stage).not.toHaveTextContent("Failed");
+      });
     });
 
     it("clears stale generated child run status while a new Discovery root run is active", async () => {
@@ -3610,6 +3747,61 @@ describe("App", () => {
       expect(latestLiveReferenceSnapshot?.run).toBe(before.run);
       expect(latestLiveReferenceSnapshot?.generated).toBe(before.generated);
       expect(latestLiveReferenceSnapshot?.generatedHasWorkUnit).toBe(true);
+    });
+
+    it("uses since cursors for live Task and run summary refresh without clearing empty increments", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const rootTask = mockTeamTasks[0]!;
+      const rootRun = canvasTaskRun(rootTask.taskId, "run_incremental_root", "completed");
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") {
+          return new Response(JSON.stringify({
+            tasks: [rootTask],
+            deletedTaskIds: [],
+            serverVersion: "2026-06-03T00:00:00.000Z",
+          }), { status: 200 });
+        }
+        if (url === "/v1/team/tasks?since=2026-06-03T00%3A00%3A00.000Z") {
+          return new Response(JSON.stringify({
+            tasks: [],
+            deletedTaskIds: [],
+            serverVersion: "2026-06-03T00:00:00.000Z",
+          }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          const params = new URLSearchParams(url.split("?")[1]);
+          if (params.get("since") === "2026-06-03T00:00:10.000Z") {
+            return byTaskRunsResponse({});
+          }
+          return new Response(JSON.stringify({
+            runsByTaskId: { [rootTask.taskId]: [rootRun] },
+            deletedRunIdsByTaskId: { [rootTask.taskId]: [] },
+            serverVersion: "2026-06-03T00:00:10.000Z",
+          }), { status: 200 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      render(<LiveDataProbe />);
+
+      await waitFor(() => expect(readLiveDataProbe().tasks).toEqual([rootTask.taskId]));
+      await waitFor(() => expect(readLiveDataProbe().runKeys).toEqual([rootTask.taskId]));
+
+      fireEvent.click(screen.getByRole("button", { name: "probe refresh" }));
+
+      await waitFor(() => {
+        const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+        expect(urls).toContain("/v1/team/tasks?since=2026-06-03T00%3A00%3A00.000Z");
+        expect(urls.some((url) => (
+          url.startsWith("/v1/team/task-runs/by-task?")
+          && new URLSearchParams(url.split("?")[1]).get("since") === "2026-06-03T00:00:10.000Z"
+        ))).toBe(true);
+      });
+      expect(readLiveDataProbe().tasks).toEqual([rootTask.taskId]);
+      expect(readLiveDataProbe().runKeys).toEqual([rootTask.taskId]);
     });
 
     it("removes deleted root Task runs from live state during refresh", async () => {

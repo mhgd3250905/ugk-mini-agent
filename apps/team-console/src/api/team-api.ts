@@ -65,6 +65,7 @@ export interface TeamRuntimeGateway {
 export interface CanvasTaskGateway {
   getConsoleLayout(): Promise<TeamConsoleLayoutResponse>;
   saveConsoleLayout(state: unknown | null): Promise<TeamConsoleLayoutResponse>;
+  listTaskCatalog(options?: { since?: string }): Promise<TeamCanvasTaskListResponse>;
   listTasks(): Promise<TeamCanvasTask[]>;
   listGeneratedTasks(
     discoveryTaskId: string,
@@ -97,7 +98,7 @@ export interface CanvasTaskGateway {
     taskId: string,
     options?: { limit?: number; offset?: number; includeArchived?: boolean },
   ): Promise<TeamTaskRunHistoryResponse>;
-  listTaskRunsByTaskIds(taskIds: string[], options?: { limit?: number; view?: "summary" }): Promise<TeamCanvasTaskRunByTaskListResponse>;
+  listTaskRunsByTaskIds(taskIds: string[], options?: { limit?: number; view?: "summary"; since?: string }): Promise<TeamCanvasTaskRunByTaskListResponse>;
   createTaskRun(taskId: string, input?: TeamTaskRunCreateRequest): Promise<TeamRunState>;
   getTaskRun(runId: string, options?: { view?: "summary"; taskId?: string }): Promise<TeamRunState>;
   getTaskRunProcessSummary(runId: string, taskId: string): Promise<TeamTaskRunProcessSummaryResponse>;
@@ -265,16 +266,29 @@ export class LiveTeamApi implements TeamApiProvider {
     }
   }
 
-  async listTasks(): Promise<TeamCanvasTask[]> {
+  async listTaskCatalog(options?: { since?: string }): Promise<TeamCanvasTaskListResponse> {
     try {
-      const res = await fetchJsonGet<TeamCanvasTaskListResponse | TeamCanvasTask[]>(`${this.baseUrl}/tasks`);
+      const params = new URLSearchParams();
+      if (options?.since) params.set("since", options.since);
+      const query = params.toString();
+      const res = await fetchJsonGet<TeamCanvasTaskListResponse | TeamCanvasTask[]>(
+        `${this.baseUrl}/tasks${query ? `?${query}` : ""}`,
+      );
       if (!res.ok) throwJsonGetError(res);
       const body = res.body;
-      if (Array.isArray(body)) return body;
-      return Array.isArray(body?.tasks) ? body.tasks : [];
+      if (Array.isArray(body)) return { tasks: body, deletedTaskIds: [], serverVersion: null };
+      return {
+        tasks: Array.isArray(body?.tasks) ? body.tasks : [],
+        deletedTaskIds: Array.isArray(body?.deletedTaskIds) ? body.deletedTaskIds : [],
+        serverVersion: typeof body?.serverVersion === "string" ? body.serverVersion : null,
+      };
     } catch (e) {
       throw toApiError(e);
     }
+  }
+
+  async listTasks(): Promise<TeamCanvasTask[]> {
+    return (await this.listTaskCatalog()).tasks;
   }
 
   async listGeneratedTasks(
@@ -555,9 +569,9 @@ export class LiveTeamApi implements TeamApiProvider {
     }
   }
 
-  async listTaskRunsByTaskIds(taskIds: string[], options?: { limit?: number; view?: "summary" }): Promise<TeamCanvasTaskRunByTaskListResponse> {
+  async listTaskRunsByTaskIds(taskIds: string[], options?: { limit?: number; view?: "summary"; since?: string }): Promise<TeamCanvasTaskRunByTaskListResponse> {
     const unique = [...new Set(taskIds)];
-    if (unique.length === 0) return { runsByTaskId: {} };
+    if (unique.length === 0) return { runsByTaskId: {}, deletedRunIdsByTaskId: {}, serverVersion: null };
     try {
       const chunks: string[][] = [];
       for (let i = 0; i < unique.length; i += TASK_RUNS_BY_TASK_IDS_CHUNK_SIZE) {
@@ -567,17 +581,26 @@ export class LiveTeamApi implements TeamApiProvider {
         const params = new URLSearchParams({ taskIds: chunk.join(",") });
         if (options?.limit != null) params.set("limit", String(options.limit));
         if (options?.view) params.set("view", options.view);
+        if (options?.since) params.set("since", options.since);
         const res = await fetchJsonGet<TeamCanvasTaskRunByTaskListResponse>(`${this.baseUrl}/task-runs/by-task?${params}`);
         if (!res.ok) throwJsonGetError(res);
         return res.body ?? { runsByTaskId: {} };
       }));
       const merged: Record<string, TeamRunState[]> = {};
+      const deletedRunIdsByTaskId: Record<string, string[]> = {};
+      let serverVersion: string | null = null;
       for (const response of responses) {
         for (const [id, runs] of Object.entries(response.runsByTaskId)) {
           merged[id] = runs;
         }
+        for (const [id, runIds] of Object.entries(response.deletedRunIdsByTaskId ?? {})) {
+          deletedRunIdsByTaskId[id] = runIds;
+        }
+        if (typeof response.serverVersion === "string" && (serverVersion === null || response.serverVersion > serverVersion)) {
+          serverVersion = response.serverVersion;
+        }
       }
-      return { runsByTaskId: merged };
+      return { runsByTaskId: merged, deletedRunIdsByTaskId, serverVersion };
     } catch (e) {
       throw toApiError(e);
     }

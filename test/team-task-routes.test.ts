@@ -437,6 +437,42 @@ test("GET /v1/team/tasks hides generated Tasks by default and includes them expl
 	}
 });
 
+test("GET /v1/team/tasks supports since cursor with changed and deleted root Tasks", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const first = (await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload })).json().task;
+		const initial = await app.inject({ method: "GET", url: "/v1/team/tasks" });
+		assert.equal(initial.statusCode, 200);
+		assert.equal(typeof initial.json().serverVersion, "string");
+		assert.equal(initial.json().serverVersion, first.updatedAt);
+
+		const unchanged = await app.inject({ method: "GET", url: `/v1/team/tasks?since=${encodeURIComponent(initial.json().serverVersion)}` });
+		assert.equal(unchanged.statusCode, 200);
+		assert.deepEqual(unchanged.json().tasks, []);
+		assert.deepEqual(unchanged.json().deletedTaskIds, []);
+		assert.equal(unchanged.json().serverVersion, initial.json().serverVersion);
+
+		await new Promise(resolve => setTimeout(resolve, 2));
+		const second = (await app.inject({ method: "POST", url: "/v1/team/tasks", payload: { ...taskPayload, title: "新增增量 Task" } })).json().task;
+		const changed = await app.inject({ method: "GET", url: `/v1/team/tasks?since=${encodeURIComponent(initial.json().serverVersion)}` });
+		assert.equal(changed.statusCode, 200);
+		assert.deepEqual(changed.json().tasks.map((task: any) => task.taskId), [second.taskId]);
+		assert.deepEqual(changed.json().deletedTaskIds, []);
+		assert.equal(changed.json().serverVersion, second.updatedAt);
+
+		await new Promise(resolve => setTimeout(resolve, 2));
+		await app.inject({ method: "POST", url: `/v1/team/tasks/${first.taskId}/archive` });
+		const deleted = await app.inject({ method: "GET", url: `/v1/team/tasks?since=${encodeURIComponent(initial.json().serverVersion)}` });
+		assert.equal(deleted.statusCode, 200);
+		assert.deepEqual(deleted.json().deletedTaskIds, [first.taskId]);
+		assert.equal(deleted.json().tasks.some((task: any) => task.taskId === first.taskId), false);
+		assert.equal(typeof deleted.json().serverVersion, "string");
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("GET /v1/team/tasks/:taskId/generated-tasks returns one Discovery root child catalog", async () => {
 	const { app, root, teamDir } = await buildTestServer();
 	try {

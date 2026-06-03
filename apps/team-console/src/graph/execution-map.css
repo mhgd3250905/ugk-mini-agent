@@ -1863,6 +1863,48 @@
   color: var(--accent);
 }
 
+.discovery-stage-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 10px 10px 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(22, 124, 128, 0.18);
+  border-radius: 7px;
+  background: rgba(236, 248, 248, 0.78);
+  color: rgba(15, 83, 88, 0.82);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.discovery-stage-strip strong,
+.discovery-stage-strip span {
+  min-width: 0;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.74);
+  white-space: nowrap;
+}
+
+.discovery-stage-strip strong {
+  color: var(--accent);
+}
+
+.discovery-stage-strip.stage-auto-running strong,
+.discovery-stage-strip.stage-aggregating strong {
+  color: var(--warning);
+}
+
+.discovery-stage-strip.stage-cancelled strong,
+.discovery-stage-strip .danger {
+  color: var(--danger);
+}
+
 .discovery-dispatch-diagnostics {
   display: grid;
   gap: 8px;
@@ -3626,6 +3668,26 @@
   background: rgba(255, 122, 122, 0.1);
 }
 
+.emap-discovery-summary-row .emap-discovery-stage-pill {
+  max-width: 82px;
+  color: #d7fff6;
+  border-color: rgba(67, 217, 190, 0.34);
+  background: rgba(67, 217, 190, 0.13);
+}
+
+.emap-discovery-summary-row .emap-discovery-stage-pill.stage-auto-running,
+.emap-discovery-summary-row .emap-discovery-stage-pill.stage-aggregating {
+  color: #ffe6bd;
+  border-color: rgba(246, 174, 77, 0.34);
+  background: rgba(246, 174, 77, 0.13);
+}
+
+.emap-discovery-summary-row .emap-discovery-stage-pill.stage-cancelled {
+  color: #ffd6d6;
+  border-color: rgba(255, 122, 122, 0.3);
+  background: rgba(255, 122, 122, 0.1);
+}
+
 .emap-task-agent-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4331,6 +4393,17 @@
 [data-theme="dark"] .discovery-subcanvas-panel .task-leader-branch-head {
   background: rgba(12, 27, 36, 0.96);
   border-bottom-color: rgba(121, 216, 208, 0.2);
+}
+
+[data-theme="dark"] .discovery-stage-strip {
+  border-color: rgba(121, 216, 208, 0.22);
+  background: rgba(12, 27, 36, 0.74);
+  color: rgba(216, 228, 241, 0.78);
+}
+
+[data-theme="dark"] .discovery-stage-strip strong,
+[data-theme="dark"] .discovery-stage-strip span {
+  background: rgba(8, 12, 20, 0.58);
 }
 
 [data-theme="dark"] .discovery-dispatch-diagnostics {

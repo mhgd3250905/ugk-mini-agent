@@ -14,6 +14,20 @@
 
 ---
 
+## 2026-06-03 — Team Console Discovery stage visibility
+
+- **主题**: Team Console Discovery root 卡片和 Discovery 子画布新增阶段可见性：从 root/generated run summary 与 dispatch diagnostics 派生 `Discovery`、`Dispatch`、`Auto-run`、`Aggregation`、`Cancelled` 阶段，并显示 processed / running / completed / generated / blocked 聚合计数。
+- **影响范围**: `5174` Execution Atlas 的 Discovery root summary row、Discovery 子画布阶段条和 `use-team-console-live-data` 的 Discovery summary 派生；本轮不改 dispatcher / auto-run pool / aggregation runtime 行为，也不做 Step 6 边 dispatch 边 auto-run。
+- **验证**: `npm --prefix apps\team-console run test -- --run src\tests\team-api.test.ts src\tests\app-live-data.test.tsx src\tests\app-run-observer.test.tsx`。
+- **对应入口**: `apps/team-console/src/app/use-team-console-live-data.ts`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`docs/team-console-refresh-performance-plan.md`。
+
+## 2026-06-03 — Team Console incremental refresh contract
+
+- **主题**: Team Console root catalog 和 root run summary refresh 接入第一版 `since` / `serverVersion` 增量 contract。`GET /v1/team/tasks?since=...` 返回 changed root Tasks、`deletedTaskIds` 和 `serverVersion`；`GET /v1/team/task-runs/by-task?...&since=...` 返回 changed run summaries、预留 `deletedRunIdsByTaskId` 和 `serverVersion`。Live API adapter 与 `use-team-console-live-data` 已真实消费 cursor，空增量不会清空本地状态。
+- **影响范围**: `5174` Live API 的静默刷新、手动刷新、root Task 归档/删除合并、root run summary 合并和 Mock API contract；旧 `listTasks()`、旧 `{ tasks }` / `{ runsByTaskId }` 响应保持兼容。本轮不做 Discovery 阶段提示，也不改 runtime 边 dispatch 边 auto-run。
+- **验证**: `node --test --import tsx test\team-task-routes.test.ts`、`node --test --import tsx test\team-task-run-routes.test.ts`、`npm --prefix apps\team-console run test -- --run src\tests\team-api.test.ts src\tests\app-live-data.test.tsx src\tests\app-run-observer.test.tsx`、`npm --prefix apps\team-console run build`、`npx tsc --noEmit`、`git diff --check`。
+- **对应入口**: `src/team/routes.ts`、`apps/team-console/src/api/team-api.ts`、`apps/team-console/src/app/use-team-console-live-data.ts`、`docs/team-console-refresh-performance-plan.md`。
+
 ## 2026-06-03 — Team Console refresh reference stability
 
 - **主题**: Team Console Live API refresh 增加前端引用稳定合并：未变化的 root Task、run summary 和已 lazy fetched 的 generated full detail 在刷新后保持对象引用；root Task 从 catalog 删除或归档后，对应 root run state 同步清理。
