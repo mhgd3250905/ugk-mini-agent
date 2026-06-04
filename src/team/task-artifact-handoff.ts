@@ -70,7 +70,10 @@ export function formatBoundInputsForPrompt(boundInputs: TeamTaskBoundInput[]): s
 		: hasSource
 			? "## 已绑定画布 source node 输入"
 			: "## 已绑定上游 typed artifact 输入";
-	return `${heading}\n${blocks.join("\n\n")}`;
+	const directive = hasTaskArtifact
+		? "\n**重要**：你必须使用下方 BEGIN/END 包裹的上游输入内容作为本任务的唯一上游数据来源。不要从旧资产、文件库、workspace 残留或历史 run 中推断或搜索上游数据。"
+		: "";
+	return `${heading}${directive}\n${blocks.join("\n\n")}`;
 }
 
 function isCanvasSourceBoundInput(input: TeamTaskBoundInput): input is TeamCanvasSourceBoundInput {

@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-04 — Manual upstream run selection
+
+- **主题**: Canvas Task Run 支持手动选择上游历史 run 作为下游输入。`POST /v1/team/tasks/:taskId/runs` 新增可选 `upstreamRunSelections` 字段，允许指定 typed connection 对应的上游历史成功 run，而非自动取最新 run。artifact 解析逻辑与自动下游一致。
+- **影响范围**: Canvas Task Run 创建 API 和 `TeamRunState.source`；不改主 `/playground` UI，不改 Team Console 展示结构，不影响 Plan / TeamOrchestrator run。
+- **对应入口**: `docs/team-runtime.md`。
+
 ## 2026-06-04 — Discovery subcanvas generated Task card interactions
 
 - **主题**: Team Console Discovery 子画布 generated Task 网格交互收口：去掉 generated item 菜单里的“运行记录”入口，改为点击 item 卡片展开/再次点击收起运行记录；卡片增加 hover / active / 已展开视觉反馈，running 卡片保持橙红状态；item 右上角菜单外点自动收起。

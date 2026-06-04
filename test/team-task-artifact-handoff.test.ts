@@ -137,6 +137,7 @@ test("formatBoundInputsForPrompt keeps legacy task artifact prompt output unchan
 
 	assert.equal(formatBoundInputsForPrompt([legacyInput]), [
 		"## 已绑定上游 typed artifact 输入",
+			"**重要**：你必须使用下方 BEGIN/END 包裹的上游输入内容作为本任务的唯一上游数据来源。不要从旧资产、文件库、workspace 残留或历史 run 中推断或搜索上游数据。",
 		"### 输入 1: md",
 		"- connectionId: conn_1",
 		"- inputPortId: source_md",

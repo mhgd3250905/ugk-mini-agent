@@ -500,6 +500,22 @@ export interface TeamTaskTypedArtifact {
 	createdAt: string;
 }
 
+export interface TeamManualUpstreamRunSelection {
+	connectionId: string;
+	fromRunId: string;
+}
+
+export interface TeamManualUpstreamRunSelectionRecord {
+	connectionId: string;
+	fromTaskId: string;
+	fromRunId: string;
+	fromAttemptId: string;
+	fromOutputPortId: string;
+	toInputPortId: string;
+	artifactId: string;
+	createdAt: string;
+}
+
 export interface TeamCanvasSourceArtifact {
 	schemaVersion: "team/source-artifact-1";
 	artifactId: string;
@@ -612,6 +628,7 @@ export interface TeamRunState {
 				fromAttemptId?: never;
 			};
 		boundInputs?: TeamTaskBoundInput[];
+		manualUpstreamSelections?: TeamManualUpstreamRunSelectionRecord[];
 		templateBindings?: Record<string, string>;
 	};
 	teamUnitId: string;

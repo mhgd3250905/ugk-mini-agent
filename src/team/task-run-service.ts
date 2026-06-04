@@ -10,10 +10,11 @@ import type { TaskDependencyStore } from "./task-dependency-store.js";
 import { resolveSourceConnectionStaleReason, type SourceConnectionStore } from "./source-connection-store.js";
 import type { SourceNodeStore } from "./source-node-store.js";
 import type { ProfileAwareTeamRoleRunner, TeamRoleRunner } from "./role-runner.js";
-import type { TeamCanvasTask, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskDeliveryOutcome } from "./types.js";
+import type { TeamCanvasTask, TeamManualUpstreamRunSelection, TeamManualUpstreamRunSelectionRecord, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskDeliveryOutcome } from "./types.js";
 import { DiscoveryRunLifecycle } from "./discovery-run-lifecycle.js";
 import { planDownstreamDelivery } from "./downstream-delivery.js";
 import { CanvasTaskAttemptRunner, type CanvasTaskAttemptWorkspace, type CanvasTaskPhaseTimeouts } from "./canvas-task-attempt-runner.js";
+import { resolveConnectionStaleReason } from "./task-chain-contract.js";
 
 export type CanvasTaskRunWorkspace = CanvasTaskAttemptWorkspace & Pick<RunWorkspace,
 	| "createRun"
@@ -112,6 +113,7 @@ export interface CanvasTaskRunOptions {
 	triggeredBy?: TaskRunSource["triggeredBy"];
 	includeSourceBindings?: boolean;
 	publicBaseUrl?: string;
+	upstreamRunSelections?: TeamManualUpstreamRunSelection[];
 }
 
 export interface CanvasTaskDetachedRunRecoveryResult {
@@ -232,8 +234,12 @@ export class CanvasTaskRunService {
 			? await this.options.taskStore.updateTemplateCurrentBindings(task.taskId, templateBindings)
 			: task;
 		const runnableTask = templateBindings ? applyTemplateBindingsToTask(storedTask, templateBindings) : storedTask;
+		const resolvedUpstream = runOptions.upstreamRunSelections?.length
+			? await this.resolveUpstreamRunSelections(runnableTask, runOptions.upstreamRunSelections)
+			: { boundInputs: [] as TeamTaskBoundInput[], manualSelections: [] as TeamManualUpstreamRunSelectionRecord[] };
 		const boundInputs = [
 			...(runOptions.boundInputs ?? []),
+			...resolvedUpstream.boundInputs,
 			...(runOptions.includeSourceBindings ? await this.buildSourceBoundInputs(runnableTask) : []),
 		];
 		const plan = canvasTaskToPlan(runnableTask, boundInputs);
@@ -249,6 +255,7 @@ export class CanvasTaskRunService {
 			...(runOptions.publicBaseUrl ? { publicBaseUrl: runOptions.publicBaseUrl } : {}),
 			...(runOptions.triggeredBy ? { triggeredBy: runOptions.triggeredBy } : {}),
 			...(boundInputs.length > 0 ? { boundInputs } : {}),
+			...(resolvedUpstream.manualSelections.length > 0 ? { manualUpstreamSelections: resolvedUpstream.manualSelections } : {}),
 			...(templateBindings ? { templateBindings } : {}),
 		};
 		await this.options.workspace.saveState(state);
@@ -326,6 +333,124 @@ export class CanvasTaskRunService {
 			});
 		}
 		return boundInputs;
+	}
+
+	private async resolveUpstreamRunSelections(
+		targetTask: TeamCanvasTask,
+		selections: TeamManualUpstreamRunSelection[],
+	): Promise<{ boundInputs: TeamTaskBoundInput[]; manualSelections: TeamManualUpstreamRunSelectionRecord[] }> {
+		const connectionStore = this.options.connectionStore;
+		if (!connectionStore) throw new Error("task connection store required for upstream run selections");
+
+		const boundInputs: TeamTaskBoundInput[] = [];
+		const manualSelections: TeamManualUpstreamRunSelectionRecord[] = [];
+		const seenConnectionIds = new Set<string>();
+
+		for (const selection of selections) {
+			if (seenConnectionIds.has(selection.connectionId)) {
+				throw new Error(`duplicate upstreamRunSelections connectionId: ${selection.connectionId}`);
+			}
+			seenConnectionIds.add(selection.connectionId);
+		}
+
+		for (const selection of selections) {
+			const connection = (await connectionStore.list()).find(c => c.connectionId === selection.connectionId);
+			if (!connection) throw new Error(`connection not found: ${selection.connectionId}`);
+			if (connection.toTaskId !== targetTask.taskId) {
+				throw new Error(`connection ${selection.connectionId} does not target task ${targetTask.taskId}`);
+			}
+
+			const sourceTask = await this.options.taskStore.get(connection.fromTaskId);
+			if (!sourceTask) throw new Error(`upstream task not found: ${connection.fromTaskId}`);
+			const staleReason = resolveConnectionStaleReason(sourceTask, targetTask, connection);
+			if (staleReason) {
+				throw new Error(`connection ${selection.connectionId} is stale: ${staleReason}`);
+			}
+
+			const upstreamRun = await this.getRun(selection.fromRunId);
+			if (!upstreamRun) throw new Error(`upstream run not found: ${selection.fromRunId}`);
+			if (upstreamRun.source?.type !== "canvas-task" || upstreamRun.source.taskId !== connection.fromTaskId) {
+				throw new Error(`upstream run ${selection.fromRunId} does not belong to task ${connection.fromTaskId}`);
+			}
+			if (!TERMINAL_RUN_STATUSES.has(upstreamRun.status)) {
+				throw new Error(`upstream run ${selection.fromRunId} is not terminal: ${upstreamRun.status}`);
+			}
+			if (upstreamRun.status !== "completed") {
+				throw new Error(`upstream run ${selection.fromRunId} did not complete successfully: ${upstreamRun.status}`);
+			}
+
+			const upstreamTaskState = upstreamRun.taskStates[connection.fromTaskId];
+			if (!upstreamTaskState || upstreamTaskState.status !== "succeeded" || !upstreamTaskState.activeAttemptId) {
+				throw new Error(`upstream run ${selection.fromRunId} has no accepted artifact for task ${connection.fromTaskId}`);
+			}
+
+			const attemptId = upstreamTaskState.activeAttemptId;
+			const resultRef = upstreamTaskState.resultRef!;
+
+			const artifactSource = await this.resolveUpstreamRunArtifactSource(
+				selection.fromRunId, connection.fromTaskId, attemptId, resultRef, sourceTask,
+			);
+
+			const artifact = buildTeamTaskTypedArtifact({
+				type: connection.type,
+				sourceTaskId: connection.fromTaskId,
+				sourceRunId: selection.fromRunId,
+				sourceAttemptId: attemptId,
+				sourceOutputPortId: connection.fromOutputPortId,
+				fileRef: artifactSource.resultRef,
+				content: artifactSource.content,
+			});
+
+			boundInputs.push({
+				connectionId: connection.connectionId,
+				inputPortId: connection.toInputPortId,
+				artifact,
+			});
+
+			manualSelections.push({
+				connectionId: connection.connectionId,
+				fromTaskId: connection.fromTaskId,
+				fromRunId: selection.fromRunId,
+				fromAttemptId: attemptId,
+				fromOutputPortId: connection.fromOutputPortId,
+				toInputPortId: connection.toInputPortId,
+				artifactId: artifact.artifactId,
+				createdAt: now(),
+			});
+		}
+
+		return { boundInputs, manualSelections };
+	}
+
+	private async resolveUpstreamRunArtifactSource(
+		runId: string,
+		taskId: string,
+		attemptId: string,
+		resultRef: string,
+		sourceTask: TeamCanvasTask,
+	): Promise<{ resultRef: string; content: string }> {
+		if (sourceTask.canvasKind === "discovery") {
+			const discoveryAggregation = await this.options.workspace.readDiscoveryAggregation(runId, taskId, attemptId);
+			if (discoveryAggregation) {
+				const discoveryAggregationRef = `tasks/${taskId}/attempts/${attemptId}/discovery-aggregation.json`;
+				const discoveryAggregationContent = await this.options.workspace.readRunScopedFile(runId, discoveryAggregationRef);
+				if (discoveryAggregationContent) {
+					return { resultRef: discoveryAggregationRef, content: discoveryAggregationContent };
+				}
+			}
+			const discoveryResult = await this.options.workspace.readDiscoveryResult(runId, taskId, attemptId);
+			if (discoveryResult) {
+				const discoveryResultRef = `tasks/${taskId}/attempts/${attemptId}/discovery-result.json`;
+				const discoveryContent = await this.options.workspace.readRunScopedFile(runId, discoveryResultRef);
+				if (discoveryContent) {
+					return { resultRef: discoveryResultRef, content: discoveryContent };
+				}
+			}
+		}
+		return {
+			resultRef,
+			content: await this.options.workspace.readRunScopedFile(runId, resultRef) ?? "",
+		};
 	}
 
 	async cancelRun(runId: string, reason = "user cancel"): Promise<TeamRunState> {

@@ -1718,3 +1718,220 @@ test("task run annotation rejects missing and non Canvas Task runs", async () =>
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+test("POST /v1/team/tasks/:taskId/runs with valid upstreamRunSelections creates run with manual upstream trace", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const collectRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts(taskPayload, {
+				outputPorts: [{ id: "draft_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		const htmlRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts({ ...taskPayload, title: "HTML Task" }, {
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		assert.equal(collectRes.statusCode, 201);
+		assert.equal(htmlRes.statusCode, 201);
+		const collect = collectRes.json().task;
+		const html = htmlRes.json().task;
+
+		const connectionRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/task-connections",
+			payload: {
+				fromTaskId: collect.taskId,
+				fromOutputPortId: "draft_md",
+				toTaskId: html.taskId,
+				toInputPortId: "source_md",
+			},
+		});
+		assert.equal(connectionRes.statusCode, 201);
+		const connection = connectionRes.json().connection;
+
+		const upstreamRunRes = await app.inject({ method: "POST", url: `/v1/team/tasks/${collect.taskId}/runs` });
+		assert.equal(upstreamRunRes.statusCode, 201);
+		const upstreamRun = upstreamRunRes.json() as TeamRunState;
+		const upstreamFinished = await waitForTerminalRun(app, upstreamRun.runId);
+		assert.equal(upstreamFinished.status, "completed");
+		const autoDownstreamRuns = await waitForTaskRunCount(app, html.taskId, 1);
+		await waitForTerminalRun(app, autoDownstreamRuns[0]!.runId);
+
+		const runRes = await app.inject({
+			method: "POST",
+			url: `/v1/team/tasks/${html.taskId}/runs`,
+			payload: {
+				upstreamRunSelections: [{ connectionId: connection.connectionId, fromRunId: upstreamRun.runId }],
+			},
+		});
+		assert.equal(runRes.statusCode, 201);
+		const created = runRes.json() as TeamRunState;
+		assert.equal(created.source?.boundInputs?.length, 1);
+		assert.equal(created.source?.boundInputs?.[0]?.connectionId, connection.connectionId);
+		const typedArtifact = created.source?.boundInputs?.[0]?.artifact as import("../src/team/types.js").TeamTaskTypedArtifact;
+		assert.equal(typedArtifact.sourceRunId, upstreamRun.runId);
+		assert.equal(created.source?.manualUpstreamSelections?.length, 1);
+		assert.equal(created.source?.manualUpstreamSelections?.[0]?.fromRunId, upstreamRun.runId);
+		assert.equal(created.source?.triggeredBy, undefined);
+
+		await waitForTerminalRun(app, created.runId);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("POST /v1/team/tasks/:taskId/runs rejects bad upstreamRunSelections shape", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const taskRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: taskPayload,
+		});
+		assert.equal(taskRes.statusCode, 201);
+		const task = taskRes.json().task;
+
+		const notArray = await app.inject({
+			method: "POST",
+			url: `/v1/team/tasks/${task.taskId}/runs`,
+			payload: { upstreamRunSelections: "bad" },
+		});
+		assert.equal(notArray.statusCode, 400);
+		assert.match(notArray.json().error, /must be an array/);
+
+		const badShape = await app.inject({
+			method: "POST",
+			url: `/v1/team/tasks/${task.taskId}/runs`,
+			payload: { upstreamRunSelections: [{ connectionId: 123 }] },
+		});
+		assert.equal(badShape.statusCode, 400);
+		assert.match(badShape.json().error, /connectionId and fromRunId/);
+
+		const unknownConn = await app.inject({
+			method: "POST",
+			url: `/v1/team/tasks/${task.taskId}/runs`,
+			payload: { upstreamRunSelections: [{ connectionId: "conn_unknown", fromRunId: "run_1" }] },
+		});
+		assert.equal(unknownConn.statusCode, 400);
+		assert.match(unknownConn.json().error, /connection not found/);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("POST /v1/team/tasks/:taskId/runs rejects upstreamRunSelections with connection targeting different task", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const task1Res = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts(taskPayload, {
+				outputPorts: [{ id: "draft_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		const task2Res = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts({ ...taskPayload, title: "Task 2" }, {
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		const task3Res = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts({ ...taskPayload, title: "Task 3" }, {
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		assert.equal(task1Res.statusCode, 201);
+		assert.equal(task2Res.statusCode, 201);
+		assert.equal(task3Res.statusCode, 201);
+		const task1 = task1Res.json().task;
+		const task2 = task2Res.json().task;
+		const task3 = task3Res.json().task;
+
+		const connectionRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/task-connections",
+			payload: {
+				fromTaskId: task1.taskId,
+				fromOutputPortId: "draft_md",
+				toTaskId: task2.taskId,
+				toInputPortId: "source_md",
+			},
+		});
+		assert.equal(connectionRes.statusCode, 201);
+		const connection = connectionRes.json().connection;
+
+		const wrongTarget = await app.inject({
+			method: "POST",
+			url: `/v1/team/tasks/${task3.taskId}/runs`,
+			payload: { upstreamRunSelections: [{ connectionId: connection.connectionId, fromRunId: "run_fake" }] },
+		});
+		assert.equal(wrongTarget.statusCode, 400);
+		assert.match(wrongTarget.json().error, /does not target task/);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("POST /v1/team/tasks/:taskId/runs rejects duplicate upstreamRunSelections connectionId", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const task1Res = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts(taskPayload, {
+				outputPorts: [{ id: "draft_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		const task2Res = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: withPorts({ ...taskPayload, title: "Task 2" }, {
+				inputPorts: [{ id: "source_md", label: "Markdown", type: "md" }],
+			}),
+		});
+		assert.equal(task1Res.statusCode, 201);
+		assert.equal(task2Res.statusCode, 201);
+		const task1 = task1Res.json().task;
+		const task2 = task2Res.json().task;
+
+		const connectionRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/task-connections",
+			payload: {
+				fromTaskId: task1.taskId,
+				fromOutputPortId: "draft_md",
+				toTaskId: task2.taskId,
+				toInputPortId: "source_md",
+			},
+		});
+		assert.equal(connectionRes.statusCode, 201);
+		const connection = connectionRes.json().connection;
+
+		const duplicate = await app.inject({
+			method: "POST",
+			url: `/v1/team/tasks/${task2.taskId}/runs`,
+			payload: {
+				upstreamRunSelections: [
+					{ connectionId: connection.connectionId, fromRunId: "run_first" },
+					{ connectionId: connection.connectionId, fromRunId: "run_second" },
+				],
+			},
+		});
+		assert.equal(duplicate.statusCode, 400);
+		assert.match(duplicate.json().error, new RegExp("duplicate upstreamRunSelections connectionId: " + connection.connectionId));
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});

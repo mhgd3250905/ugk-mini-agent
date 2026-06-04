@@ -20,6 +20,7 @@ import { MockRoleRunner } from "./role-runner.js";
 import type { TeamRoleRunner } from "./role-runner.js";
 import { buildRunDetailResponse } from "./run-presenter.js";
 import type { TeamRunState, TeamTaskRunHistoryResponse } from "./types.js";
+import type { TeamManualUpstreamRunSelection } from "./types.js";
 import { AgentProfileRoleRunner } from "./agent-profile-role-runner.js";
 import { closeBrowserTargetsForScope } from "../agent/browser-cleanup.js";
 import { loadAgentProfilesSync } from "../agent/agent-profile-catalog.js";
@@ -646,11 +647,44 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 				}
 				maxRunDurationMinutes = num;
 			}
+			let upstreamRunSelections: TeamManualUpstreamRunSelection[] | undefined;
+			if (body?.upstreamRunSelections != null) {
+				if (!Array.isArray(body.upstreamRunSelections)) {
+					reply.code(400).send({ error: "upstreamRunSelections must be an array" });
+					return;
+				}
+				const parsed: TeamManualUpstreamRunSelection[] = [];
+				for (const sel of body.upstreamRunSelections) {
+					if (!sel || typeof sel !== "object" || typeof sel.connectionId !== "string" || typeof sel.fromRunId !== "string") {
+						reply.code(400).send({ error: "each upstreamRunSelection must have string connectionId and fromRunId" });
+						return;
+					}
+					parsed.push({ connectionId: sel.connectionId, fromRunId: sel.fromRunId });
+				}
+				for (const sel of parsed) {
+					const connection = (await taskConnectionStore.list()).find(c => c.connectionId === sel.connectionId);
+					if (!connection) {
+						reply.code(400).send({ error: "connection not found: " + sel.connectionId });
+						return;
+					}
+					if (connection.toTaskId !== taskId) {
+						reply.code(400).send({ error: "connection " + sel.connectionId + " does not target task " + taskId });
+						return;
+					}
+					const resolved = (await taskConnectionStore.listResolved()).find(c => c.connectionId === sel.connectionId);
+					if (resolved?.status === "stale") {
+						reply.code(400).send({ error: "connection " + sel.connectionId + " is stale: " + resolved.staleReason });
+						return;
+					}
+				}
+				upstreamRunSelections = parsed;
+			}
 			const state = await taskRunService.createRun(taskId, {
 				maxRunDurationMinutes,
 				templateBindings: readOptionalStringRecord(body?.templateBindings, "templateBindings"),
 				includeSourceBindings: true,
 				publicBaseUrl: requestPublicBaseUrl(request, options.publicBaseUrl),
+				upstreamRunSelections,
 			});
 			reply.code(201).send(state);
 		} catch (err) {
@@ -659,7 +693,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 				reply.code(404).send({ error: "task not found" });
 				return;
 			}
-			sendMappedError(reply, err, [["templateBindings", 400], ["template binding", 400], ["template bindings require", 400], ["ready", 409], ["archived", 409], ["active", 409]]);
+			sendMappedError(reply, err, [["templateBindings", 400], ["template binding", 400], ["template bindings require", 400], ["ready", 409], ["archived", 409], ["active", 409], ["connection not found", 400], ["duplicate upstreamRunSelections connectionId", 400], ["does not target task", 400], ["stale", 400], ["upstream", 400], ["not terminal", 400], ["did not complete", 400], ["no accepted artifact", 400], ["does not belong", 400]]);
 		}
 	});
 

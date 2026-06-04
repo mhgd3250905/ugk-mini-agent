@@ -220,6 +220,17 @@ Source node 输入契约：
 - TTS 只作为类型系统 fixture：未来 `md -> audio` 的 Task 可以复用同一套 port / artifact / connection 规则。
 - 第一条真实验收链路固定为”搜集内容 Task 输出 `md` -> HTML 制作 Task 输入 `md`、输出 `html`”。
 
+### Manual Upstream Run Selection
+
+Typed Task Chain 的自动下游由刚完成的上游 run 触发；手动启动下游 Task run 时，Manual Upstream Run Selection 允许显式指定上游历史 run 作为输入来源。
+
+- `POST /v1/team/tasks/:taskId/runs` 新增可选 body 字段 `upstreamRunSelections: Array<{ connectionId, fromRunId }>`。
+- 每个 selection 的 `connectionId` 必须指向当前 active typed task connection，且该 connection 的 `toTaskId` 等于目标 Task。
+- `fromRunId` 必须属于 connection 的 `fromTaskId`，且该 run 必须处于 terminal 状态并成功通过 checker。
+- artifact 解析逻辑与自动下游一致：Discovery 类型上游优先 `discovery-aggregation.json`，fallback `discovery-result.json`；普通 task 使用 `resultRef`。
+- `TeamRunState.source` 记录 `manualUpstreamSelections[]`，与 `triggeredBy` 分开——`triggeredBy` 描述自动触发来源，`manualUpstreamSelections` 描述手动选择的上游输入。
+- `source.boundInputs[]` 包含选中的上游 artifact，结构和自动下游一致。
+
 ### Task Control Dependencies
 
 Control dependency 是 typed connection 之外的第二类 Task DAG 边。它只表达”Task A 成功完成后自动启动 Task B”，不传数据、不要求端口、不生成 artifact、不写 `boundInputs`。
