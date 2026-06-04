@@ -1132,6 +1132,11 @@
   gap: 8px;
 }
 
+.emap-atlas-card .emap-node-header {
+  align-items: flex-start;
+  padding-right: 92px;
+}
+
 .emap-node-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1169,6 +1174,13 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.emap-atlas-card .emap-node-state-pill {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  max-width: 88px;
 }
 
 .emap-node-state-pill.succeeded {

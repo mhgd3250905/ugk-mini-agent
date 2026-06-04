@@ -410,6 +410,18 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toContain("rgba(232, 239, 247, 0.84)");
   });
 
+  it("pins atlas card status pills to the top right", () => {
+    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+
+    const headerRule = mapCss.match(/\.emap-atlas-card\s+\.emap-node-header\s*{[^}]*}/)?.[0] ?? "";
+    const pillRule = mapCss.match(/\.emap-atlas-card\s+\.emap-node-state-pill\s*{[^}]*}/)?.[0] ?? "";
+
+    expect(headerRule).toContain("padding-right: 92px");
+    expect(pillRule).toContain("position: absolute");
+    expect(pillRule).toContain("top: 8px");
+    expect(pillRule).toContain("right: 10px");
+  });
+
   it("keeps Discovery subcanvas light by default while preserving dark theme overrides", () => {
     const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
     const appTsx = readFileSync("src/app/App.tsx", "utf8");
