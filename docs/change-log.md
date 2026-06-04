@@ -20,6 +20,12 @@
 - **影响范围**: Canvas Task Run 创建 API 和 `TeamRunState.source`；不改主 `/playground` UI，不改 Team Console 展示结构，不影响 Plan / TeamOrchestrator run。
 - **对应入口**: `docs/team-runtime.md`。
 
+## 2026-06-04 — Manual upstream API read model contract
+
+- **主题**: 钉死 manual upstream selection 的 API/read model 响应形状。full run detail 保留 `source.boundInputs[]` 和 `source.manualUpstreamSelections[]`；by-task summary、single summary、process-summary、run-history 和 root-summary 继续省略 heavy `source.boundInputs`，同时可保留 lightweight `source.manualUpstreamSelections[]` 作为诊断 trace。
+- **影响范围**: Canvas Task Run 只读 API contract 和路由测试；production read model 当前已满足契约，本轮未改 `src/team/**` runtime 行为，不新增 endpoint，不碰 Team Console UI。
+- **对应入口**: `test/team-task-run-routes.test.ts`、`docs/team-runtime.md`。
+
 ## 2026-06-04 — Discovery subcanvas generated Task card interactions
 
 - **主题**: Team Console Discovery 子画布 generated Task 网格交互收口：去掉 generated item 菜单里的“运行记录”入口，改为点击 item 卡片展开/再次点击收起运行记录；卡片增加 hover / active / 已展开视觉反馈，running 卡片保持橙红状态；item 右上角菜单外点自动收起。

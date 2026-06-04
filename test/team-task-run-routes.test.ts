@@ -1779,6 +1779,59 @@ test("POST /v1/team/tasks/:taskId/runs with valid upstreamRunSelections creates 
 		assert.equal(created.source?.manualUpstreamSelections?.[0]?.fromRunId, upstreamRun.runId);
 		assert.equal(created.source?.triggeredBy, undefined);
 
+		const fullDetailRes = await app.inject({ method: "GET", url: `/v1/team/task-runs/${created.runId}` });
+		assert.equal(fullDetailRes.statusCode, 200);
+		const fullDetail = fullDetailRes.json() as TeamRunState;
+		assert.equal(fullDetail.source?.boundInputs?.length, 1, "full run detail must include boundInputs");
+		assert.equal(fullDetail.source?.manualUpstreamSelections?.[0]?.fromRunId, upstreamRun.runId);
+		assert.equal(fullDetail.source?.triggeredBy, undefined, "manual run detail must not invent triggeredBy");
+
+		const byTaskSummaryRes = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/by-task?taskIds=${html.taskId}&limit=1&view=summary`,
+		});
+		assert.equal(byTaskSummaryRes.statusCode, 200);
+		const byTaskSummary = byTaskSummaryRes.json().runsByTaskId[html.taskId][0] as TeamRunState;
+		assert.equal(byTaskSummary.runId, created.runId);
+		assert.equal(byTaskSummary.source?.boundInputs, undefined, "by-task summary must omit heavy boundInputs");
+		assert.equal(byTaskSummary.source?.manualUpstreamSelections?.[0]?.fromRunId, upstreamRun.runId);
+
+		const singleSummaryRes = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/${created.runId}?view=summary&taskId=${html.taskId}`,
+		});
+		assert.equal(singleSummaryRes.statusCode, 200);
+		const singleSummary = singleSummaryRes.json() as TeamRunState;
+		assert.equal(singleSummary.source?.boundInputs, undefined, "single summary must omit heavy boundInputs");
+		assert.equal(singleSummary.source?.manualUpstreamSelections?.[0]?.fromRunId, upstreamRun.runId);
+		assert.deepEqual(Object.keys(singleSummary.taskStates), [html.taskId]);
+
+		const processSummaryRes = await app.inject({
+			method: "GET",
+			url: `/v1/team/task-runs/${created.runId}?view=process-summary&taskId=${html.taskId}`,
+		});
+		assert.equal(processSummaryRes.statusCode, 200);
+		const processSummary = processSummaryRes.json();
+		assert.equal(processSummary.run.source?.boundInputs, undefined, "process summary must omit heavy boundInputs");
+		assert.equal(processSummary.run.source?.manualUpstreamSelections?.[0]?.fromRunId, upstreamRun.runId);
+
+		const historyRes = await app.inject({
+			method: "GET",
+			url: `/v1/team/tasks/${html.taskId}/run-history?limit=1`,
+		});
+		assert.equal(historyRes.statusCode, 200);
+		const historyRun = historyRes.json().runs[0].run as TeamRunState;
+		assert.equal(historyRun.runId, created.runId);
+		assert.equal(historyRun.source?.boundInputs, undefined, "run history must omit heavy boundInputs");
+		assert.equal(historyRun.source?.manualUpstreamSelections?.[0]?.fromRunId, upstreamRun.runId);
+
+		const rootSummaryRes = await app.inject({ method: "GET", url: "/v1/team/console/root-summary" });
+		assert.equal(rootSummaryRes.statusCode, 200);
+		const rootSummaryRun = rootSummaryRes.json().taskRunsByTaskId[html.taskId][0] as TeamRunState;
+		assert.equal(rootSummaryRun.runId, created.runId);
+		assert.equal(rootSummaryRun.source?.boundInputs, undefined, "root summary must omit heavy boundInputs");
+		assert.equal(rootSummaryRun.source?.manualUpstreamSelections?.[0]?.fromRunId, upstreamRun.runId);
+
 		await waitForTerminalRun(app, created.runId);
 	} finally {
 		await app.close();
