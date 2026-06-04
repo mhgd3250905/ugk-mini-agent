@@ -29,9 +29,9 @@
 
 ## 当前 Git 现场
 
-- 分支：`feature/main-latest-followup-2026-06-04`。
-- 当前分支状态以 `git status --short --branch` 为准；本轮 Team Console / Canvas Task / Discovery 架构清理和 Discovery generated Task 子画布 UI 跟进已收口。
-- 当前最新本地功能基线包括 `2e0d8aa Refine Discovery subcanvas generated task layout` 以及后续 Discovery generated item 卡片交互优化提交。
+- 分支：`main`。
+- 当前分支状态以 `git status --short --branch` 为准；截至本快照，本地 `main` ahead `origin/main` 8 个提交，最新保存点为 `8cd4d6b Merge branch 'codex/pr-5-team-console-discovery-subcanvas'`。
+- 当前最新本地功能基线包括 Discovery dispatcher semantic compiler / retry、Discovery generated item 卡片交互优化，以及 PR #5 的 Team Console Discovery 子画布 UI merge。
 - 当前本地 ahead 提交包含 Team Console refresh performance Step 1-6、Discovery dispatch auto-run overlap、Team Task 模板/clone/API/UI group、Canvas Task adaptive timeout、Team Console run history 和本轮 architecture cleanup commits。
 - 本轮默认不提交 `.codex/config.toml`、`.codex/plans/**`、`.omo/`、`github-trending.txt`、runtime/public 报告产物或截图；Step 19/20 的 `.codex/plans/**` report 只是本地审查证据。
 - 未跟踪 runtime/public 产物禁止提交：`public/developer-forum-sources-report.html`、`public/forum-sources-report.html`、`public/medtrum-view/`。
@@ -62,12 +62,14 @@ git log --oneline origin/main..HEAD
 - Canvas Task detached active run 已收口：主服务重启或后台执行链路丢失后，Team routes 注册会重启 detached `queued` run，并将 detached `running` run 标记为 failed，避免无执行者的 run 长时间假运行。
 - 本轮收尾 architecture cleanup 已完成并验证。关键 Module / Interface 包括 `DiscoveryRunLifecycle`、`TeamConsoleSummaryReadModel`、Team Console live refresh state / Discovery refresh / generated detail policy / Discovery subscription helpers、`CanvasTaskAttemptWorkspace`、`CanvasTaskRunWorkspace`、`CanvasTaskRunTaskStore`、Discovery lifecycle dependency Interfaces、summary read-model dependency Interfaces、live refresh API adapter types、child execution workspace Interfaces、`TaskAttemptLifecycleWorkspace`、`TeamRunDetailWorkspaceReader`、task/source/dependency connection store reader Interfaces。
 - Step 19 已审查 `TeamOrchestrator` / `RunWorkspace`：`TeamOrchestrator` 当前依赖 20 个 workspace 方法，直接加 20-method `TeamOrchestratorWorkspace = Pick<RunWorkspace, ...>` 只是浅 Interface，不增加有意义的 Depth / Seam。当前建议停止本轮架构清理；若未来继续，单独规划高风险 Discovery result assembly / aggregation Module。
+- Team Console PR #5 已本地合并并保存为 merge commit；本地保护分支 `codex/save-before-pr5-20260604-discovery-dispatch` 指向合并前的 `ad75801`。
 
 ## 真实 UI / 运行验证事实
 
 - Discovery root Task `task_c70580219a00` 的真实 run `run_614c9ccdb9f8` 已完成：root 发现 17 items，dispatcher/upsert 17 个 active generated Task，0 blocked，固定 3 并发 auto-run pool 启动 17/17 generated child run，最终 12 succeeded / 5 failed，root 最后写出 `discovery-aggregation.json`。
 - 模板 Task `task_ae82bc41efad` 通过 Team Console 参数面板运行，keyword 为 `Minimax M3是不是很糟糕`；run `run_83673cbd8acc` 的 `plan.json` 中 `{{keyword}}` 出现 0 次，绑定后的 keyword 出现 6 次，证明 runtime 参数绑定链路有效。
 - 已观察到 generated child 失败主要来自 worker timeout、模型数据检查拦截和 checker 抓出的 hallucination，不是 root aggregation 或 Team Console refresh contract 问题。
+- Team Console Docker dev server 在 PR #5 合并后曾继续渲染旧 transformed module：直接请求 `http://127.0.0.1:5174/src/app/App.tsx` 已是新源码，但页面 DOM 仍有旧的 generated item `run-history` 菜单和独立 running lane。只重启 `ugk-pi-team-console` 容器后恢复，不需要重启主 `ugk-pi` 或 worker。
 
 ## 最新验证
 
@@ -77,6 +79,7 @@ git log --oneline origin/main..HEAD
   - `npm --prefix apps/team-console run build`：passed；仍有既有 Vite chunk size warning。
   - `git diff --check`：passed。
   - 本地浏览器 `http://127.0.0.1:5174/` reload 后 console error 为 0。
+  - PR #5 合并后本地 `docker compose restart ugk-pi-team-console`，Chrome DevTools 验证 `task_ec690cdc8bd4` Discovery 子画布：generated card 数量 41，generated item 菜单 `run-history` action 数量 0，独立 `.discovery-subcanvas-lane-running` 数量 0，点击卡片可展开运行记录面板。
 - Team architecture cleanup Step 20 final validation：
   - `npm test`：2063 tests，2061 passed，2 skipped，0 failed。
   - `npm --prefix apps\team-console run test -- --run src\tests\team-api.test.ts src\tests\app-live-data.test.tsx src\tests\app-run-observer.test.tsx`：194 passed。
