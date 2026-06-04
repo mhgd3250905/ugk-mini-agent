@@ -17,7 +17,7 @@
 ## 2026-06-04 — Discovery dispatcher semantic compiler
 
 - **主题**: Discovery dispatcher 实时 agent 输出从完整 WorkUnit JSON 改为 semantic patch。agent 只输出 `itemId`、`title`、`workerInstruction` 和可选 item-specific hints；本地 deterministic compiler 使用 `DiscoveryDispatchInput + semantic patch` 生成最终 `workUnit`，并保底 `outputContract.text` 与 `acceptance.rules`。
-- **影响范围**: Canvas Task Discovery root run 的 dispatcher prompt / parser / runner integration；`TeamRoleRunner.runDiscoveryDispatcher()` 成功返回 shape 保持 `{ ok:true, itemId, workUnit, runtimeContext? }`。不改 Discovery pipeline、generated queue 3 并发、TaskStore generated schema、Team Console UI、主 `/playground` UI、`.pi/skills/**` 或 routes。
+- **影响范围**: Canvas Task Discovery root run 的 dispatcher prompt / parser / runner integration；`TeamRoleRunner.runDiscoveryDispatcher()` 成功返回 shape 保持 `{ ok:true, itemId, workUnit, runtimeContext? }`。Dispatcher semantic prompt 不再包含 JSON code fence 示例，并明确要求输出首尾必须是 `{` / `}`，降低模型照抄围栏导致 strict parser blocked 的概率。不改 Discovery pipeline、generated queue 3 并发、TaskStore generated schema、Team Console UI、主 `/playground` UI、`.pi/skills/**` 或 routes。
 - **验证**: `node --test --import tsx test\team-role-prompt-contract.test.ts test\team-agent-profile-runner.test.ts test\team-task-run-process.test.ts`、`npx tsc --noEmit`、`npm test` 与 `git diff --check` 已通过。
 - **对应入口**: `src/team/role-prompt-contract.ts`、`src/team/discovery-dispatch-workunit-compiler.ts`、`src/team/agent-profile-role-runner.ts`、`test/team-role-prompt-contract.test.ts`、`test/team-agent-profile-runner.test.ts`、`docs/team-runtime.md`。
 

@@ -344,16 +344,15 @@ ${input.dispatchGoal}
 - exact itemId: ${input.itemId}
 ${generatedAgentContext ? `\n## Default generated agent context\n${generatedAgentContext}` : ""}
 
-## Full item payload JSON
-\`\`\`json
+## Full item payload JSON (input context; do not copy this block as output)
 ${JSON.stringify(input.itemPayload, null, 2)}
-\`\`\`
 
 ## Output requirements
 只输出一个严格 JSON object，不要输出 markdown、解释文字或代码围栏。
+- 输出内容 trim 后第一个字符必须是 "{"，最后一个字符必须是 "}"。
+- 不要使用 markdown 代码围栏。
 
-Semantic patch JSON schema:
-\`\`\`json
+Semantic patch JSON object shape:
 {
   "itemId": "${input.itemId}",
   "title": "Short generated task title",
@@ -361,7 +360,6 @@ Semantic patch JSON schema:
   "itemAcceptanceHints": ["Optional item-specific acceptance hint"],
   "outputContractHint": "Optional item-specific output focus"
 }
-\`\`\`
 
 Hard constraints:
 - itemId 必须精确等于 "${input.itemId}"。

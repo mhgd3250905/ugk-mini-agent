@@ -140,15 +140,15 @@ Discovery Task 是 Team Console 画布上的 root Task，`canvasKind="discovery"
 
 ### Discovery dispatcher role contract
 
-Discovery dispatcher 是独立 role，不复用旧 Plan decomposer。旧 `runDecomposer` 仍只负责把一个 Plan `TeamTask` 拆成 child `TeamTask[]`；Discovery dispatcher 输入一个 Discovery item，输出一个 generated Task 的 WorkUnit draft。
+Discovery dispatcher 是独立 role，不复用旧 Plan decomposer。旧 `runDecomposer` 仍只负责把一个 Plan `TeamTask` 拆成 child `TeamTask[]`；Discovery dispatcher 输入一个 Discovery item，只输出这个 item 的 semantic patch，完整 generated Task WorkUnit 由本地 deterministic compiler 生成。
 
-- `src/team/role-runner.ts` 新增 role-local `DiscoveryDispatchInput`、`DiscoveryDispatchWorkUnitDraft`、`DiscoveryDispatchOutput`，并在 `MockRoleRunner` / `AgentProfileRoleRunner` 暴露 `runDiscoveryDispatcher(input)`。
+- `src/team/role-runner.ts` 的 `DiscoveryDispatchInput`、`DiscoveryDispatchOutput` 和 `runDiscoveryDispatcher(input)` 保持 role 边界；成功返回仍对 runtime 暴露 `{ ok: true, itemId, workUnit, runtimeContext? }`。
 - Dispatcher input 包含 `runId`、Discovery task id/title、Discovery goal、dispatch goal、`outputKey`、exact `itemId`、完整 `itemPayload`、required/recommended item fields，以及默认 `generatedWorkerAgentId` / `generatedCheckerAgentId` 上下文。
-- `generatedWorkerAgentId` / `generatedCheckerAgentId` 只能作为 prompt 上下文；dispatcher output v1 不允许选择或覆盖 worker、checker、leader、source identity、`outputPorts` 或 `outputCheck`。
-- Dispatcher JSON output 固定为 `{ "itemId": "...", "workUnit": { "title": "...", "input": { "text": "..." }, "outputContract": { "text": "..." }, "acceptance": { "rules": ["..."] } } }`。
-- `parseDiscoveryDispatchRoleOutput()` 只有在 `itemId` 精确匹配、WorkUnit 文本字段非空、`acceptance.rules` 是非空 string[]、且 top-level / `workUnit` 内没有 forbidden fields 时返回 `ok: true`。invalid JSON、item mismatch、invalid schema 或 forbidden fields 都返回 `ok: false`，不 throw。为兼容真实模型常见 schema drift，parser 会把误放到 `workUnit.input.outputContract`、`workUnit.input.acceptance` 或 `workUnit.input.outputContract.acceptance` 的完整字段归位；仍不会补造缺失的 contract 文本或 acceptance rules。
+- `generatedWorkerAgentId` / `generatedCheckerAgentId` 只能作为 prompt 上下文；dispatcher semantic patch 不允许选择或覆盖 worker、checker、leader、source identity、`outputPorts`、`outputCheck`、`workUnit`、`outputContract` 或 `acceptance`。
+- Dispatcher JSON output 固定为 `{ "itemId": "...", "title": "...", "workerInstruction": "...", "itemAcceptanceHints": ["..."], "outputContractHint": "..." }`；prompt 不使用 JSON code fence 示例，并明确要求 trim 后第一个字符是 `{`、最后一个字符是 `}`。
+- `parseDiscoveryDispatchSemanticPatch()` 只接受整个输出是严格 JSON object；fenced JSON、文字包裹 JSON、item mismatch、invalid schema 或 forbidden fields 都返回 `ok: false`，不 throw。旧 `parseDiscoveryDispatchRoleOutput()` 仅保留 legacy parser coverage，不再是实时 dispatcher 成功路径。
 - `AgentProfileRoleRunner` 使用独立 role name `discovery-dispatcher`，role key 由 `discoveryTaskId + itemId` 派生并做 path-safe sanitization，避免 raw item id 进入 workspace 路径；profile 选择顺序是 `dispatcherProfileId > decomposerProfileId > workerProfileId`。
-- 当前 dispatcher contract 只产出 WorkUnit draft，不创建或更新 generated Tasks，不标记 stale，不启动 generated Task auto-run，不新增 route，不改 5174 UI。
+- 当前 dispatcher contract 只产出 semantic patch，不创建或更新 generated Tasks，不标记 stale，不启动 generated Task auto-run，不新增 route，不改 5174 UI。
 
 ### Typed Task Chain V1
 

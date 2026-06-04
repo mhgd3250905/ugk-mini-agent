@@ -89,7 +89,7 @@ test("buildWorkerPrompt preserves discovery output contract and generated item i
 	assert.ok(prompt.includes("最高优先级"), "worker prompt must include identity priority");
 });
 
-test("buildDiscoveryDispatchPrompt includes discovery context, exact item payload, semantic patch schema, and forbidden fields", () => {
+test("buildDiscoveryDispatchPrompt includes discovery context, exact item payload, semantic patch shape, strict JSON-only wording, and forbidden fields", () => {
 	const input = makeDiscoveryDispatchInput();
 	const prompt = buildDiscoveryDispatchPrompt(input);
 
@@ -105,6 +105,9 @@ test("buildDiscoveryDispatchPrompt includes discovery context, exact item payloa
 	assert.ok(prompt.includes('"workerInstruction"'), "prompt must include semantic patch schema");
 	assert.ok(prompt.includes('"itemAcceptanceHints"'), "prompt must include optional item-specific acceptance hints");
 	assert.ok(prompt.includes('"outputContractHint"'), "prompt must include optional item-specific output hint");
+	assert.ok(!prompt.includes("```json"), "dispatcher semantic patch prompt must not include JSON code fences");
+	assert.ok(prompt.includes('第一个字符必须是 "{"'), "prompt must require a bare JSON object start");
+	assert.ok(prompt.includes('最后一个字符必须是 "}"'), "prompt must require a bare JSON object end");
 	assert.ok(!prompt.includes('"workUnit": {'), "prompt must not ask for full WorkUnit schema");
 	assert.ok(prompt.includes("workerAgentId") && prompt.includes("checkerAgentId"), "prompt must ban worker/checker identity output");
 	assert.ok(prompt.includes("generatedSource") && prompt.includes("sourceDiscoveryTaskId"), "prompt must ban source identity output");
