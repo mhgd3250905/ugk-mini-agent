@@ -2,11 +2,13 @@
 
 更新时间：2026-06-03
 
-> 2026-06-03 补充：Discovery root 的 dispatcher 与 generated child auto-run 已改为 overlap。root worker/checker 通过并写出 `discovery-result.json` 后，runtime 仍顺序 dispatch 每个 item，但每个 item upsert 出 active generated Task 后会立即进入固定 3 并发 auto-run pool，不再等待全部 items dispatch 完才启动 child run。`attempt.discoveryDispatch` 和 `attempt.discoveryGeneratedRuns` 会随进度增量写入；缺失/blocked item 和 stale marking 语义不变。root 仍必须等 dispatch loop、stale marking、generated auto-run pool drain 和 `discovery-aggregation.json` 写入后才 `completed` 并触发 typed downstream；取消 root 会停止后续 dispatch/launch，并取消已启动的 generated child runs。
+> 2026-06-04 补充：Discovery dispatch / generated auto-run pipeline 已按 producer/consumer 边界收口。root worker/checker 通过并写出 `discovery-result.json` 后，runtime 使用单 dispatcher producer 顺序消费 raw `items[]`；每个 item upsert 出 active generated Task 后会立即 enqueue 到独立 generated run queue。generated run queue 固定 3 并发消费，不等待全部 items dispatch 完才启动 child run。因此任一时刻的设计上限是 `1` 个 dispatcher producer + `3` 个 generated child runs。`attempt.discoveryDispatch` 和 `attempt.discoveryGeneratedRuns` 会随进度增量写入；缺失/blocked item 和 stale marking 语义不变。root 仍必须等 dispatch producer、stale marking、generated run queue drain 和 `discovery-aggregation.json` 写入后才 `completed` 并触发 typed downstream；取消 root 会停止后续 dispatch/launch，并取消已启动的 generated child runs。
 
 > 2026-06-03 补充：Team Console refresh API 尾项已收口。`GET /v1/team/console/root-summary` 一次返回 root Tasks、source/connection/dependency basic、root latest run summary、deleted ids 和独立 `serverVersion.taskCatalog` / `serverVersion.taskRunSummary`；前端初始加载和手动刷新优先消费该 endpoint，旧拆分请求保留 fallback。`GET /v1/team/tasks/:taskId/generated-tasks?view=summary&since=<iso>` 返回 changed generated child summaries、`deletedTaskIds` 和 `serverVersion`；打开 Discovery 子画布后 generated catalog 和 child/root run summary 都按 cursor 增量刷新，空增量不会清空已打开子画布。
 
 > 2026-06-02 补充：Canvas Task 独立 run 的 worker/checker phase timeout 已改为 adaptive idle timeout + hard cap。worker/checker 的既有 phase timeout 值现在作为 idle 窗口：只有 `tool_execution_end` 或 role public output 目录中文件新增/变化这类结构性进展会刷新 idle 窗口；普通文本输出和 thinking delta 不续命。worker hard cap 默认 60 分钟，checker hard cap 默认 30 分钟，hard cap 到点会强制失败，即使期间持续有工具完成事件。timeout 失败会在 attempt failed result 中写入 `timeoutType`、`idleMs`、`hardCapMs`、`elapsedMs` 和 `lastStructuralActivityReason`，便于区分“真的没结构性进展”和“被总时长兜底截断”。
+
+> 2026-06-04 补充：Canvas Task 独立 run 由主服务进程内的 `CanvasTaskRunService` 后台执行，不由 `ugk-pi-team-worker` lease/reclaim。服务进程重启或后台执行链路丢失后，历史 `queued` Canvas run 会在 Team routes 注册时重新启动；历史 `running` Canvas run 会被收口为 `failed`，`lastError="canvas task run interrupted before completion"`，避免无后台执行者的 run 长时间假运行。
 
 > 2026-06-03 真实运行验证：用户从 Team Console 启动 Discovery root Task `task_99e064aea8e3`，root run 为 `run_d5f4d7975885`，root attempt 为 `attempt_3ac49ea2c5af`。root worker 在多轮 SearXNG/bash 工具完成后正常进入 checker 并 `succeeded`，未被旧固定 15 分钟窗口误杀；root attempt 写出 `accepted-result.md`、`discovery-result.json`、`checker-verdict-001.json` 和 `worker-output-001.md`。dispatcher 随后创建 10 个、更新 4 个 generated Tasks，并将 9 个旧 generated items 标记 stale；auto-run pool 以固定并发 3 启动本轮 generated child runs。观察到 child `task_071756d4a504` 的 worker 在早期工具结束后继续产生新的 `tool_execution_end`，idle 窗口被刷新，最终从 `worker_running` 进入 `checker_reviewing`，证明 adaptive idle 在真实 run 中按结构性进展续命。
 
@@ -132,7 +134,7 @@ Discovery Task 是 Team Console 画布上的 root Task，`canvasKind="discovery"
 - Canvas Task run 会把 `workUnit.outputCheck` 透传到 runtime `TeamTask.outputCheck`。因此 normal Task 配置了 JSON/object/html/file 输出校验时，checker 口头 pass 不能绕过 runtime validation。
 - Discovery accepted output 必须是可解析 JSON object，且配置的 `outputKey` 值必须是 item object array；每个 item 必须有非空 string `id`。校验失败时 run 进入 `completed_with_failures`，Task state 为 `failed`，不会写 `discovery-result.json`。
 - Discovery 校验成功后仍写 `accepted-result.md`，并额外写 `discovery-result.json`，schema 为 `team/discovery-result-1`，包含 `taskId`、`attemptId`、`outputKey`、`items`、`sourceRef`、`createdAt`。attempt `resultRef` 继续指向 `accepted-result.md`。当 generated child auto-run pool 结束后，root attempt 还会写 `discovery-aggregation.json`，schema 为 `team/discovery-aggregation-1`，作为 typed downstream 的优先 JSON artifact。
-- 当前 route 不附加 run summary，也不新增 5174 UI 控件；generated Task 创建/复用、stale marking 和 auto-run scheduler 都在 Canvas Task run service 的 Discovery 成功路径内完成。
+- 当前 route 不附加 run summary，也不新增 5174 UI 控件；generated Task 创建/复用、stale marking 和 auto-run scheduler 都在 Canvas Task run service 的 Discovery 成功路径内完成。实现边界是单 dispatcher producer + generated run queue consumer：producer 负责从 `discovery-result.json` 的 raw item 生成/更新 Task 并 enqueue，consumer 负责固定 3 并发启动 generated child run。
 
 ### Discovery dispatcher role contract
 
@@ -142,7 +144,7 @@ Discovery dispatcher 是独立 role，不复用旧 Plan decomposer。旧 `runDec
 - Dispatcher input 包含 `runId`、Discovery task id/title、Discovery goal、dispatch goal、`outputKey`、exact `itemId`、完整 `itemPayload`、required/recommended item fields，以及默认 `generatedWorkerAgentId` / `generatedCheckerAgentId` 上下文。
 - `generatedWorkerAgentId` / `generatedCheckerAgentId` 只能作为 prompt 上下文；dispatcher output v1 不允许选择或覆盖 worker、checker、leader、source identity、`outputPorts` 或 `outputCheck`。
 - Dispatcher JSON output 固定为 `{ "itemId": "...", "workUnit": { "title": "...", "input": { "text": "..." }, "outputContract": { "text": "..." }, "acceptance": { "rules": ["..."] } } }`。
-- `parseDiscoveryDispatchRoleOutput()` 只有在 `itemId` 精确匹配、WorkUnit 文本字段非空、`acceptance.rules` 是非空 string[]、且 top-level / `workUnit` 内没有 forbidden fields 时返回 `ok: true`。invalid JSON、item mismatch、invalid schema 或 forbidden fields 都返回 `ok: false`，不 throw。
+- `parseDiscoveryDispatchRoleOutput()` 只有在 `itemId` 精确匹配、WorkUnit 文本字段非空、`acceptance.rules` 是非空 string[]、且 top-level / `workUnit` 内没有 forbidden fields 时返回 `ok: true`。invalid JSON、item mismatch、invalid schema 或 forbidden fields 都返回 `ok: false`，不 throw。为兼容真实模型常见 schema drift，parser 会把误放到 `workUnit.input.outputContract`、`workUnit.input.acceptance` 或 `workUnit.input.outputContract.acceptance` 的完整字段归位；仍不会补造缺失的 contract 文本或 acceptance rules。
 - `AgentProfileRoleRunner` 使用独立 role name `discovery-dispatcher`，role key 由 `discoveryTaskId + itemId` 派生并做 path-safe sanitization，避免 raw item id 进入 workspace 路径；profile 选择顺序是 `dispatcherProfileId > decomposerProfileId > workerProfileId`。
 - 当前 dispatcher contract 只产出 WorkUnit draft，不创建或更新 generated Tasks，不标记 stale，不启动 generated Task auto-run，不新增 route，不改 5174 UI。
 
@@ -462,7 +464,7 @@ Discovery root Canvas Task 成功后，Canvas Task run service 会读取本次 a
 - `POST /v1/team/tasks/:taskId/generated-workunit/reset` 会把非 archived generated Task 的可见 `title/workUnit` 恢复到 `latestManagedWorkUnit` 并把 `workUnitMode` 标记回 `managed`；缺失 snapshot 的旧数据返回 409，不猜测重建
 - 最新 `discovery-result.json` 中缺失的同源 generated Tasks 会标记 `generatedSource.itemStatus="stale"`；不 archive，不改 WorkUnit，不影响其他 Discovery root 的 generated Tasks
 - dispatcher 输出 `ok:false`、item mismatch、TaskStore upsert 错误或缺失 optional `runDiscoveryDispatcher()` 时，只记录该 item 的 blocked outcome，不把已 accepted 的 Discovery run 改成 failed
-- attempt metadata 可选记录 `discoveryDispatch[]`，status 为 `created` / `updated` / `blocked` / `stale_marked`；旧 attempt 没有该字段时继续按缺省读取
+- attempt metadata 可选记录 `discoveryDispatch[]`，status 为 `created` / `updated` / `blocked` / `stale_marked`；每条 outcome 的 `createdAt` 记录该 item 实际落盘时间，旧 attempt 没有该字段时继续按缺省读取
 
 #### Discovery generated Task auto-run scheduler（Step 07）
 
@@ -1320,6 +1322,7 @@ Canvas Task 独立 run 只对 worker/checker 使用 adaptive phase timeout：
 - 结构性进展只包括 role session 的 `tool_execution_end` 和 role public output 目录文件新增/变化；普通 message text/thinking 不刷新 idle window。
 - hard cap 是内部兜底：worker 默认 3600000ms，checker 默认 1800000ms。hard cap 优先防止工具循环或持续写文件无限续命。
 - timeout 失败仍使用既有 `worker timeout` / `checker timeout` 摘要；attempt result 会额外写 timeout 证据字段。
+- 如果主服务重启导致 Canvas Task 后台执行者丢失，`registerTeamRoutes()` 会调用 `CanvasTaskRunService.recoverDetachedRuns()`：detached `queued` run 重新进入后台执行，detached `running` run 直接失败收口，不再无限显示 running。
 - Plan / TeamOrchestrator run 仍使用原固定 `runWithTimeout` 路径，watcher/finalizer 不受 Canvas adaptive timeout 影响。
 
 ### Run Timeout

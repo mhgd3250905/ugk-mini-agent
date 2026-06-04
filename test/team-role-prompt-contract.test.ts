@@ -127,6 +127,50 @@ test("parseDiscoveryDispatchRoleOutput accepts valid JSON workUnit draft", () =>
 	}
 });
 
+test("parseDiscoveryDispatchRoleOutput normalizes misplaced workUnit contract fields", () => {
+	const outputContractInInput = parseDiscoveryDispatchRoleOutput(
+		JSON.stringify({
+			itemId: "vendor_1",
+			workUnit: {
+				title: "Assess vendor",
+				input: {
+					text: "Do work",
+					outputContract: { text: "Report" },
+					acceptance: { rules: ["ok"] },
+				},
+			},
+		}),
+		"vendor_1",
+	);
+	const acceptanceInOutputContract = parseDiscoveryDispatchRoleOutput(
+		JSON.stringify({
+			itemId: "vendor_1",
+			workUnit: {
+				title: "Assess vendor",
+				input: {
+					text: "Do work",
+					outputContract: {
+						text: "Report",
+						acceptance: { rules: ["ok"] },
+					},
+				},
+			},
+		}),
+		"vendor_1",
+	);
+
+	assert.equal(outputContractInInput.ok, true);
+	assert.equal(acceptanceInOutputContract.ok, true);
+	if (outputContractInInput.ok) {
+		assert.equal(outputContractInInput.workUnit.outputContract.text, "Report");
+		assert.deepEqual(outputContractInInput.workUnit.acceptance.rules, ["ok"]);
+	}
+	if (acceptanceInOutputContract.ok) {
+		assert.equal(acceptanceInOutputContract.workUnit.outputContract.text, "Report");
+		assert.deepEqual(acceptanceInOutputContract.workUnit.acceptance.rules, ["ok"]);
+	}
+});
+
 test("parseDiscoveryDispatchRoleOutput rejects item id mismatch", () => {
 	const out = parseDiscoveryDispatchRoleOutput(
 		JSON.stringify({

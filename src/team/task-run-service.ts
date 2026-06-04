@@ -114,6 +114,11 @@ export interface CanvasTaskRunOptions {
 	publicBaseUrl?: string;
 }
 
+export interface CanvasTaskDetachedRunRecoveryResult {
+	startedRunIds: string[];
+	failedRunIds: string[];
+}
+
 function applyTemplateBindingsToTask(task: TeamCanvasTask, bindings: Record<string, string>): TeamCanvasTask {
 	return {
 		...task,
@@ -265,6 +270,26 @@ export class CanvasTaskRunService {
 	async listRunSummariesByTaskIds(taskIds: string[], opts?: { limit?: number }): Promise<Record<string, TeamRunState[]>> {
 		const states = await this.options.workspace.listStateSummaries();
 		return groupCanvasRunsByTaskIds(states, taskIds, opts);
+	}
+
+	async recoverDetachedRuns(): Promise<CanvasTaskDetachedRunRecoveryResult> {
+		const startedRunIds: string[] = [];
+		const failedRunIds: string[] = [];
+		const runs = await this.listRuns();
+		for (const run of runs) {
+			if (!ACTIVE_RUN_STATUSES.has(run.status)) continue;
+			if (this.activeControllers.has(run.runId)) continue;
+			if (run.status === "queued") {
+				this.startBackgroundRun(run.runId);
+				startedRunIds.push(run.runId);
+				continue;
+			}
+			if (run.status === "running") {
+				await this.failRun(run.runId, "canvas task run interrupted before completion");
+				failedRunIds.push(run.runId);
+			}
+		}
+		return { startedRunIds, failedRunIds };
 	}
 
 	async getRun(runId: string): Promise<TeamRunState | null> {

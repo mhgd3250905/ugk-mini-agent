@@ -5,6 +5,7 @@ import type {
 	TeamCanvasTask,
 	TeamDiscoveryAggregationRecord,
 	TeamDiscoveryDispatchOutcome,
+	TeamDiscoveryResultRecord,
 	TeamDiscoveryGeneratedRunOutcome,
 	TeamRunState,
 } from "./types.js";
@@ -19,11 +20,14 @@ const GENERATED_TASK_AUTORUN_CONCURRENCY = 3;
 const GENERATED_TASK_AUTORUN_POLL_MS = 25;
 
 type DiscoveryGeneratedTaskCandidate = { itemId: string; task: TeamCanvasTask };
+type DiscoveryGeneratedRunQueue = { enqueue: (candidate: DiscoveryGeneratedTaskCandidate) => void; drain: () => Promise<void> };
 type DiscoveryGeneratedTaskDispatchResult = {
 	outcomes: TeamDiscoveryDispatchOutcome[];
 	generatedRunOutcomes: TeamDiscoveryGeneratedRunOutcome[];
 };
 type TriggeredBy = NonNullable<TeamRunState["source"]>["triggeredBy"];
+type DiscoverySpec = NonNullable<TeamCanvasTask["discoverySpec"]>;
+type DiscoveryDispatcher = NonNullable<TeamRoleRunner["runDiscoveryDispatcher"]>;
 
 export type DiscoveryRunLifecycleTaskStore = Pick<TaskStore,
 	| "upsertGeneratedTaskFromDiscovery"
@@ -173,14 +177,14 @@ export class DiscoveryRunLifecycle {
 		if (canvasTask.canvasKind !== "discovery") return null;
 		const discoverySpec = canvasTask.discoverySpec;
 		if (!discoverySpec) return null;
-		const createdAt = now();
+		const dispatchStartedAt = now();
 		const discoveryResult = await this.workspace.readDiscoveryResult(runId, canvasTask.taskId, attemptId);
 		if (!discoveryResult) {
 			const outcomes: TeamDiscoveryDispatchOutcome[] = [{
 				itemId: "__discovery_result__",
 				status: "blocked",
 				error: "discovery-result.json was not found for accepted Discovery run",
-				createdAt,
+				createdAt: dispatchStartedAt,
 			}];
 			await this.workspace.recordAttemptDiscoveryDispatchOutcomes(runId, canvasTask.taskId, attemptId, outcomes);
 			return { outcomes, generatedRunOutcomes: [] };
@@ -203,7 +207,7 @@ export class DiscoveryRunLifecycle {
 				generatedRunOutcomes,
 			).catch(() => {});
 		};
-		const autoRunPool = this.createDiscoveryGeneratedAutoRunPool({
+		const generatedRunQueue = this.createDiscoveryGeneratedAutoRunQueue({
 			discoveryRunId: runId,
 			discoveryTaskId: canvasTask.taskId,
 			discoveryAttemptId: attemptId,
@@ -215,6 +219,62 @@ export class DiscoveryRunLifecycle {
 			},
 		});
 
+		await this.dispatchDiscoveryItemsToGeneratedRunQueue({
+			runId,
+			canvasTask,
+			attemptId,
+			discoverySpec,
+			discoveryResult,
+			dispatchStartedAt,
+			runDispatcher,
+			outcomes,
+			activeItemIds,
+			generatedRunQueue,
+			signal,
+			recordDispatchProgress,
+		});
+
+		if (!signal.aborted && !await this.isRunCancelledOrMissing(runId)) {
+			const staleTasks = await this.taskStore.markGeneratedTasksStaleForDiscovery(
+				canvasTask.taskId,
+				activeItemIds,
+				{
+					latestDiscoveryRunId: runId,
+					latestDiscoveryAttemptId: attemptId,
+					latestDiscoveredAt: dispatchStartedAt,
+				},
+			);
+			for (const task of staleTasks) {
+				outcomes.push({
+					itemId: task.generatedSource!.sourceItemId,
+					status: "stale_marked",
+					generatedTaskId: task.taskId,
+					workUnitMode: task.generatedSource!.workUnitMode,
+					createdAt: now(),
+				});
+			}
+			await recordDispatchProgress();
+		}
+
+		await generatedRunQueue.drain();
+		return { outcomes, generatedRunOutcomes };
+	}
+
+	private async dispatchDiscoveryItemsToGeneratedRunQueue(input: {
+		runId: string;
+		canvasTask: TeamCanvasTask;
+		attemptId: string;
+		discoverySpec: DiscoverySpec;
+		discoveryResult: TeamDiscoveryResultRecord;
+		dispatchStartedAt: string;
+		runDispatcher: DiscoveryDispatcher | null;
+		outcomes: TeamDiscoveryDispatchOutcome[];
+		activeItemIds: Set<string>;
+		generatedRunQueue: DiscoveryGeneratedRunQueue;
+		signal: AbortSignal;
+		recordDispatchProgress: () => Promise<void>;
+	}): Promise<void> {
+		const { runId, discoveryResult, runDispatcher, outcomes, activeItemIds, signal, recordDispatchProgress } = input;
 		if (!runDispatcher) {
 			for (const item of discoveryResult.items) {
 				if (signal.aborted || await this.isRunCancelledOrMissing(runId)) break;
@@ -224,132 +284,146 @@ export class DiscoveryRunLifecycle {
 					itemId,
 					status: "blocked",
 					error: "role runner does not implement runDiscoveryDispatcher",
-					createdAt,
+					createdAt: now(),
 				});
 				await recordDispatchProgress();
 			}
-		} else {
-			for (const item of discoveryResult.items) {
-				if (signal.aborted || await this.isRunCancelledOrMissing(runId)) break;
-				const itemId = typeof item.id === "string" && item.id.trim() ? item.id : "";
-				if (!itemId) {
-					outcomes.push({
-						itemId: "__invalid_item_id__",
-						status: "blocked",
-						error: "discovery item id is invalid",
-						createdAt,
-					});
-					await recordDispatchProgress();
-					continue;
-				}
-				activeItemIds.add(itemId);
-				try {
-					const dispatch = await runDispatcher({
-						runId,
-						discoveryTaskId: canvasTask.taskId,
-						discoveryTaskTitle: canvasTask.title,
-						discoveryGoal: discoverySpec.discoveryGoal,
-						dispatchGoal: discoverySpec.dispatchGoal,
-						outputKey: discoveryResult.outputKey,
-						itemId,
-						itemPayload: item,
-						requiredItemFields: discoverySpec.requiredItemFields,
-						...(discoverySpec.recommendedItemFields ? { recommendedItemFields: discoverySpec.recommendedItemFields } : {}),
-						generatedWorkerAgentId: discoverySpec.generatedWorkerAgentId,
-						generatedCheckerAgentId: discoverySpec.generatedCheckerAgentId,
-						signal,
-					});
-					if (signal.aborted || await this.isRunCancelledOrMissing(runId)) break;
-					if (!dispatch.ok) {
-						outcomes.push({
-							itemId,
-							status: "blocked",
-							error: dispatch.error,
-							createdAt,
-						});
-						await recordDispatchProgress();
-						continue;
-					}
-					if (dispatch.itemId !== itemId) {
-						outcomes.push({
-							itemId,
-							status: "blocked",
-							error: `discovery dispatcher item mismatch: expected ${itemId}, got ${dispatch.itemId}`,
-							createdAt,
-						});
-						await recordDispatchProgress();
-						continue;
-					}
-					const upsert = await this.taskStore.upsertGeneratedTaskFromDiscovery({
-						sourceDiscoveryTaskId: canvasTask.taskId,
-						sourceItemId: itemId,
-						itemPayload: item,
-						latestDiscoveryRunId: runId,
-						latestDiscoveryAttemptId: attemptId,
-						latestDiscoveredAt: createdAt,
-						leaderAgentId: canvasTask.leaderAgentId,
-						generatedWorkerAgentId: discoverySpec.generatedWorkerAgentId,
-						generatedCheckerAgentId: discoverySpec.generatedCheckerAgentId,
-						workUnit: dispatch.workUnit,
-					});
-					outcomes.push({
-						itemId,
-						status: upsert.created ? "created" : "updated",
-						generatedTaskId: upsert.task.taskId,
-						workUnitMode: upsert.task.generatedSource?.workUnitMode,
-						createdAt,
-					});
-					await recordDispatchProgress();
-					if (upsert.task.generatedSource?.itemStatus === "active") {
-						autoRunPool.enqueue({ itemId, task: upsert.task });
-					}
-				} catch (error) {
-					if (signal.aborted || await this.isRunCancelledOrMissing(runId)) break;
-					outcomes.push({
-						itemId,
-						status: "blocked",
-						error: sanitizeDeliveryError(error),
-						createdAt,
-					});
-					await recordDispatchProgress();
-				}
-			}
+			return;
 		}
 
-		if (!signal.aborted && !await this.isRunCancelledOrMissing(runId)) {
-			const staleTasks = await this.taskStore.markGeneratedTasksStaleForDiscovery(
-				canvasTask.taskId,
-				activeItemIds,
-				{
-					latestDiscoveryRunId: runId,
-					latestDiscoveryAttemptId: attemptId,
-					latestDiscoveredAt: createdAt,
-				},
-			);
-			for (const task of staleTasks) {
-				outcomes.push({
-					itemId: task.generatedSource!.sourceItemId,
-					status: "stale_marked",
-					generatedTaskId: task.taskId,
-					workUnitMode: task.generatedSource!.workUnitMode,
-					createdAt,
-				});
-			}
-			await recordDispatchProgress();
+		for (const item of discoveryResult.items) {
+			if (signal.aborted || await this.isRunCancelledOrMissing(runId)) break;
+			const shouldContinue = await this.dispatchOneDiscoveryItemToGeneratedRunQueue(input, item);
+			if (!shouldContinue) break;
 		}
-
-		await autoRunPool.drain();
-		return { outcomes, generatedRunOutcomes };
 	}
 
-	private createDiscoveryGeneratedAutoRunPool(input: {
+	private async dispatchOneDiscoveryItemToGeneratedRunQueue(
+		input: {
+			runId: string;
+			canvasTask: TeamCanvasTask;
+			attemptId: string;
+			discoverySpec: DiscoverySpec;
+			discoveryResult: TeamDiscoveryResultRecord;
+			dispatchStartedAt: string;
+			runDispatcher: DiscoveryDispatcher | null;
+			outcomes: TeamDiscoveryDispatchOutcome[];
+			activeItemIds: Set<string>;
+			generatedRunQueue: DiscoveryGeneratedRunQueue;
+			signal: AbortSignal;
+			recordDispatchProgress: () => Promise<void>;
+		},
+		item: Record<string, unknown>,
+	): Promise<boolean> {
+		const {
+			runId,
+			canvasTask,
+			attemptId,
+			discoverySpec,
+			discoveryResult,
+			dispatchStartedAt,
+			runDispatcher,
+			outcomes,
+			activeItemIds,
+			generatedRunQueue,
+			signal,
+			recordDispatchProgress,
+		} = input;
+		if (!runDispatcher) return false;
+		const itemId = typeof item.id === "string" && item.id.trim() ? item.id : "";
+		if (!itemId) {
+			outcomes.push({
+				itemId: "__invalid_item_id__",
+				status: "blocked",
+				error: "discovery item id is invalid",
+				createdAt: now(),
+			});
+			await recordDispatchProgress();
+			return true;
+		}
+		activeItemIds.add(itemId);
+		try {
+			const dispatch = await runDispatcher({
+				runId,
+				discoveryTaskId: canvasTask.taskId,
+				discoveryTaskTitle: canvasTask.title,
+				discoveryGoal: discoverySpec.discoveryGoal,
+				dispatchGoal: discoverySpec.dispatchGoal,
+				outputKey: discoveryResult.outputKey,
+				itemId,
+				itemPayload: item,
+				requiredItemFields: discoverySpec.requiredItemFields,
+				...(discoverySpec.recommendedItemFields ? { recommendedItemFields: discoverySpec.recommendedItemFields } : {}),
+				generatedWorkerAgentId: discoverySpec.generatedWorkerAgentId,
+				generatedCheckerAgentId: discoverySpec.generatedCheckerAgentId,
+				signal,
+			});
+			if (signal.aborted || await this.isRunCancelledOrMissing(runId)) return false;
+			if (!dispatch.ok) {
+				outcomes.push({
+					itemId,
+					status: "blocked",
+					error: dispatch.error,
+					createdAt: now(),
+				});
+				await recordDispatchProgress();
+				return true;
+			}
+			if (dispatch.itemId !== itemId) {
+				outcomes.push({
+					itemId,
+					status: "blocked",
+					error: `discovery dispatcher item mismatch: expected ${itemId}, got ${dispatch.itemId}`,
+					createdAt: now(),
+				});
+				await recordDispatchProgress();
+				return true;
+			}
+			const upsert = await this.taskStore.upsertGeneratedTaskFromDiscovery({
+				sourceDiscoveryTaskId: canvasTask.taskId,
+				sourceItemId: itemId,
+				itemPayload: item,
+				latestDiscoveryRunId: runId,
+				latestDiscoveryAttemptId: attemptId,
+				latestDiscoveredAt: dispatchStartedAt,
+				leaderAgentId: canvasTask.leaderAgentId,
+				generatedWorkerAgentId: discoverySpec.generatedWorkerAgentId,
+				generatedCheckerAgentId: discoverySpec.generatedCheckerAgentId,
+				workUnit: dispatch.workUnit,
+			});
+			outcomes.push({
+				itemId,
+				status: upsert.created ? "created" : "updated",
+				generatedTaskId: upsert.task.taskId,
+				workUnitMode: upsert.task.generatedSource?.workUnitMode,
+				createdAt: now(),
+			});
+			await recordDispatchProgress();
+			if (upsert.task.generatedSource?.itemStatus === "active") {
+				generatedRunQueue.enqueue({ itemId, task: upsert.task });
+			}
+			return true;
+		} catch (error) {
+			if (signal.aborted || await this.isRunCancelledOrMissing(runId)) return false;
+			outcomes.push({
+				itemId,
+				status: "blocked",
+				error: sanitizeDeliveryError(error),
+				createdAt: now(),
+			});
+			await recordDispatchProgress();
+			return true;
+		}
+	}
+
+	private createDiscoveryGeneratedAutoRunQueue(input: {
 		discoveryRunId: string;
 		discoveryTaskId: string;
 		discoveryAttemptId: string;
 		enabled: boolean;
 		signal: AbortSignal;
 		onOutcome: (outcome: TeamDiscoveryGeneratedRunOutcome) => Promise<void>;
-	}): { enqueue: (candidate: DiscoveryGeneratedTaskCandidate) => void; drain: () => Promise<void> } {
+	}): DiscoveryGeneratedRunQueue {
 		const queue: DiscoveryGeneratedTaskCandidate[] = [];
 		const concurrency = input.enabled ? GENERATED_TASK_AUTORUN_CONCURRENCY : 0;
 		let activeCount = 0;

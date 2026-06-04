@@ -298,6 +298,8 @@ class GatedDiscoveryGeneratedWithDownstreamRunner extends GatedDiscoveryGenerate
 class StreamingDispatchGatedGeneratedRunner extends GatedDiscoveryGeneratedRunner {
 	private readonly gatedItemId: string;
 	private readonly dispatchGate = createDeferred();
+	activeDispatchers = 0;
+	maxActiveDispatchers = 0;
 
 	constructor(items: Array<Record<string, unknown>>, gatedItemId = "hetzner") {
 		super(items);
@@ -310,19 +312,25 @@ class StreamingDispatchGatedGeneratedRunner extends GatedDiscoveryGeneratedRunne
 
 	async runDiscoveryDispatcher(input: DiscoveryDispatchInput): Promise<DiscoveryDispatchOutput> {
 		this.dispatchInputs.push(input);
-		if (input.itemId === this.gatedItemId) {
-			await this.dispatchGate.promise;
+		this.activeDispatchers++;
+		this.maxActiveDispatchers = Math.max(this.maxActiveDispatchers, this.activeDispatchers);
+		try {
+			if (input.itemId === this.gatedItemId) {
+				await this.dispatchGate.promise;
+			}
+			return {
+				ok: true,
+				itemId: input.itemId,
+				workUnit: {
+					title: `核查 ${input.itemId}`,
+					input: { text: `核查供应商 ${input.itemId}` },
+					outputContract: { text: `输出 ${input.itemId} 的核查报告。` },
+					acceptance: { rules: [`报告必须覆盖 ${input.itemId}`] },
+				},
+			};
+		} finally {
+			this.activeDispatchers--;
 		}
-		return {
-			ok: true,
-			itemId: input.itemId,
-			workUnit: {
-				title: `核查 ${input.itemId}`,
-				input: { text: `核查供应商 ${input.itemId}` },
-				outputContract: { text: `输出 ${input.itemId} 的核查报告。` },
-				acceptance: { rules: [`报告必须覆盖 ${input.itemId}`] },
-			},
-		};
 	}
 }
 
@@ -564,6 +572,60 @@ test("Canvas Task run admission allows different active Tasks but rejects the sa
 		releaseGatedWorker?.();
 		if (service && taskARun) await waitForTerminalRun(service, taskARun.runId).catch(() => {});
 		if (service && taskBRun) await waitForTerminalRun(service, taskBRun.runId).catch(() => {});
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("CanvasTaskRunService fails detached active runs after service restart", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-detached-recovery-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const task = await taskStore.create(validTaskInput);
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const timestamp = new Date().toISOString();
+		const plan = {
+			schemaVersion: "team/plan-1" as const,
+			planId: `canvas_task_${task.taskId}`,
+			title: task.title,
+			defaultTeamUnitId: `canvas_task_unit_${task.taskId}`,
+			goal: { text: task.workUnit.input.text },
+			tasks: [
+				{ id: task.taskId, title: task.title, input: task.workUnit.input, acceptance: task.workUnit.acceptance },
+			],
+			outputContract: task.workUnit.outputContract,
+			archived: false,
+			createdAt: timestamp,
+			updatedAt: timestamp,
+			runCount: 0,
+		};
+		const run = await workspace.createRun(plan, plan.defaultTeamUnitId);
+		run.source = { type: "canvas-task", taskId: task.taskId };
+		run.status = "running";
+		run.startedAt = timestamp;
+		run.currentTaskId = task.taskId;
+		run.taskStates[task.taskId]!.status = "running";
+		run.taskStates[task.taskId]!.progress = {
+			phase: "worker_running",
+			message: "执行中",
+			updatedAt: timestamp,
+		};
+		await workspace.saveState(run);
+
+		const restartedService = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new ProcessEventRoleRunner(),
+			dataDir: join(root, "task-runs"),
+		});
+
+		const recovered = await restartedService.recoverDetachedRuns();
+		const state = await restartedService.getRun(run.runId);
+
+		assert.equal(recovered.failedRunIds.includes(run.runId), true);
+		assert.equal(state?.status, "failed");
+		assert.equal(state?.lastError, "canvas task run interrupted before completion");
+		assert.equal(state?.taskStates[task.taskId]?.status, "failed");
+	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
 });
@@ -1003,7 +1065,9 @@ test("Discovery dispatch starts generated auto-run before all items finish dispa
 		await delayMs(150);
 
 		assert.equal(runner.dispatchInputs[1]?.itemId, "hetzner");
+		assert.equal(runner.maxActiveDispatchers, 1, "dispatcher producer must stay single-lane");
 		assert.equal(runner.generatedWorkerStarts.length, 1, "first generated child should start while second item is still dispatching");
+		assert.equal(runner.maxActiveGeneratedWorkers, 1);
 
 		const attempts = await workspace.listAttempts(created.runId, discovery.taskId);
 		assert.ok((attempts[0]?.discoveryDispatch?.length ?? 0) >= 1, "dispatch progress should be recorded before all items finish dispatching");

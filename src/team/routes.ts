@@ -228,6 +228,9 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		maxCheckerRevisions: 3,
 		maxRunDurationMinutes: options.maxRunDurationMinutes,
 	});
+	void taskRunService.recoverDetachedRuns().catch((error) => {
+		app.log.warn({ error }, "failed to recover detached Canvas Task runs");
+	});
 	const readModel = new TeamConsoleSummaryReadModel({
 		taskStore,
 		taskRunService,

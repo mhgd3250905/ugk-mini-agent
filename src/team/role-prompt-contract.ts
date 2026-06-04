@@ -577,6 +577,12 @@ function parseDiscoveryDispatchError(expectedItemId: string, error: string, rawC
 	return { ok: false, itemId: expectedItemId, error, rawContent };
 }
 
+function normalizeDiscoveryDispatchObjectField(value: unknown): Record<string, unknown> | null {
+	if (isPlainObject(value)) return value;
+	if (typeof value === "string" && value.trim()) return { text: value };
+	return null;
+}
+
 function normalizeDiscoveryDispatchOutput(parsed: unknown, expectedItemId: string, rawContent: string): DiscoveryDispatchParsedOutput {
 	if (!isPlainObject(parsed)) {
 		return parseDiscoveryDispatchError(expectedItemId, "discovery dispatcher output parse error: top-level value must be an object", rawContent);
@@ -604,17 +610,26 @@ function normalizeDiscoveryDispatchOutput(parsed: unknown, expectedItemId: strin
 	if (!isPlainObject(input) || typeof input.text !== "string" || !input.text.trim()) {
 		return parseDiscoveryDispatchError(expectedItemId, "discovery dispatcher output parse error: workUnit.input.text must be a non-empty string", rawContent);
 	}
-	if (!isPlainObject(outputContract) || typeof outputContract.text !== "string" || !outputContract.text.trim()) {
+	const normalizedOutputContract = normalizeDiscoveryDispatchObjectField(outputContract)
+		?? normalizeDiscoveryDispatchObjectField(input.outputContract);
+	const normalizedAcceptance = isPlainObject(acceptance)
+		? acceptance
+		: isPlainObject(input.acceptance)
+			? input.acceptance
+			: isPlainObject(normalizedOutputContract?.acceptance)
+				? normalizedOutputContract.acceptance
+				: null;
+	if (!normalizedOutputContract || typeof normalizedOutputContract.text !== "string" || !normalizedOutputContract.text.trim()) {
 		return parseDiscoveryDispatchError(expectedItemId, "discovery dispatcher output parse error: workUnit.outputContract.text must be a non-empty string", rawContent);
 	}
-	if (!isPlainObject(acceptance) || !Array.isArray(acceptance.rules) || acceptance.rules.length === 0 || !acceptance.rules.every(rule => typeof rule === "string" && rule.trim())) {
+	if (!normalizedAcceptance || !Array.isArray(normalizedAcceptance.rules) || normalizedAcceptance.rules.length === 0 || !normalizedAcceptance.rules.every(rule => typeof rule === "string" && rule.trim())) {
 		return parseDiscoveryDispatchError(expectedItemId, "discovery dispatcher output parse error: workUnit.acceptance.rules must be a non-empty string array", rawContent);
 	}
 	const draft: DiscoveryDispatchWorkUnitDraft = {
 		title: workUnit.title,
 		input: { text: input.text },
-		outputContract: { text: outputContract.text },
-		acceptance: { rules: acceptance.rules as string[] },
+		outputContract: { text: normalizedOutputContract.text },
+		acceptance: { rules: normalizedAcceptance.rules as string[] },
 	};
 	return { ok: true, itemId: expectedItemId, workUnit: draft };
 }

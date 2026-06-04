@@ -14,6 +14,20 @@
 
 ---
 
+## 2026-06-04 — Discovery dispatcher schema drift recovery
+
+- **主题**: Discovery dispatcher parser 兼容真实模型常见 schema drift。模型把 `outputContract` / `acceptance` 错放到 `workUnit.input` 或 `workUnit.input.outputContract` 时，parser 会在字段完整且非空的前提下归位，不再把该 item 误标记为 blocked；仍拒绝缺失 contract、缺失 acceptance、item mismatch、forbidden fields 和 invalid JSON。`discoveryDispatch[].createdAt` 改为逐 outcome 记录真实落盘时间，避免整批 item 看起来同一秒完成。
+- **影响范围**: Canvas Task Discovery root run 的 dispatcher output parsing 和 attempt diagnostics；同时把 dispatch / generated auto-run 实现边界整理为单 dispatcher producer + 固定 3 并发 generated run queue consumer。不改 Team Console UI、不改 generated Task 创建 API、不新增 endpoint。
+- **验证**: `node --test --import tsx test\team-role-prompt-contract.test.ts test\team-task-run-process.test.ts` 已通过。
+- **对应入口**: `src/team/role-prompt-contract.ts`、`src/team/discovery-run-lifecycle.ts`、`test/team-role-prompt-contract.test.ts`、`docs/team-runtime.md`。
+
+## 2026-06-04 — Canvas Task detached run recovery
+
+- **主题**: Canvas Task run 增加 detached active run 收口。主服务重启或后台执行链路丢失后，Team routes 注册会调用 `CanvasTaskRunService.recoverDetachedRuns()`；detached `queued` run 重新启动，detached `running` run 标记为 failed，避免无执行者的 run 长时间假运行。
+- **影响范围**: `POST /v1/team/tasks/:taskId/runs` 产生的 Canvas Task / Discovery generated child run 的恢复语义；不改主 `/playground` UI，不改 Team Console 展示结构，不影响 Plan / TeamOrchestrator run。
+- **验证**: `node --test --import tsx test\team-task-run-process.test.ts`、`node --test --import tsx test\team-task-run-routes.test.ts` 已通过。
+- **对应入口**: `src/team/task-run-service.ts`、`src/team/routes.ts`、`test/team-task-run-process.test.ts`、`docs/team-runtime.md`。
+
 ## 2026-06-04 — Team Console architecture cleanup closeout
 
 - **主题**: 完成 Team Console / Canvas Task / Discovery 收尾架构清理。Discovery lifecycle、Team Console summary read model、live refresh state、Discovery refresh projection、generated detail merge policy、Discovery subscription state、attempt/run workspace Interfaces、store reader Interfaces 等浅依赖已收口；`TeamOrchestrator` / `RunWorkspace` 经 Step 19 调查后决定不做 20-method shallow Interface，后续若要拆只单独规划 Discovery result assembly / aggregation Module。
