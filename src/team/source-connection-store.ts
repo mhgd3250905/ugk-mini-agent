@@ -11,6 +11,9 @@ import type {
 	TeamCanvasTask,
 } from "./types.js";
 
+export type SourceConnectionStoreSourceNodeReader = Pick<SourceNodeStore, "get">;
+export type SourceConnectionStoreTaskReader = Pick<TaskStore, "get">;
+
 export interface CreateSourceConnectionInput {
 	fromSourceNodeId: string;
 	fromOutputPortId: string;
@@ -25,8 +28,8 @@ export class SourceConnectionStore {
 
 	constructor(
 		private readonly rootDir: string,
-		private readonly sourceNodeStore: SourceNodeStore,
-		private readonly taskStore: TaskStore,
+		private readonly sourceNodeStore: SourceConnectionStoreSourceNodeReader,
+		private readonly taskStore: SourceConnectionStoreTaskReader,
 	) {
 		this.collection = new JsonCollectionStore<TeamCanvasSourceConnection>({
 			rootDir,
