@@ -1,13 +1,13 @@
 # 当前交接快照
 
-更新时间：`2026-06-04`
+更新时间：`2026-06-05`
 
 这份文档只记录当前接手所需事实。历史流水账不要塞回来；需要追溯旧阶段时用 Git 历史、专题文档和 `docs/change-log.md`。若本文件与当前用户提示、`git status` 或真实运行结果冲突，以后者为准。
 
 ## 当前维护边界
 
-- 当前维护对象：Team Console / Canvas Task / runtime `/team-task` 创建与 Discovery 运行路径。
-- 不维护：主 `/playground` UI 重做、云服务器部署推送、无关 `.pi/skills/**`、运行时 public 产物。
+- 当前维护对象：Team Console / Canvas Task / runtime `/team-task` / Discovery 的 run-context 合同。
+- 不维护：主 `/playground` UI 重做、云服务器推送、无关 `.pi/skills/**`、运行时 public 产物。
 - 固定 Team Console 本地入口：`http://127.0.0.1:5174/`。
 - 固定主后端入口：`http://127.0.0.1:3000`。
 - Team Console Live API 通过 `5174` 同源代理访问 `/v1`、`/playground`、`/assets`、`/runtime`、`/vendor`。
@@ -20,27 +20,31 @@
 2. `docs/handoff-current.md`
 3. `apps/team-console/README.md`
 4. `docs/team-runtime.md`
-5. `docs/team-console-refresh-performance-plan.md`
+5. `.codex/plans/2026-06-04-team-task-run-context-requirements.md`
 6. `.pi/skills/team-task-creator/SKILL.md`
 7. `src/team/types.ts`
 8. `src/team/task-run-service.ts`
 9. `src/team/run-workspace.ts`
-10. 相关测试：`test/team-task-run-process.test.ts`、`test/team-task-run-routes.test.ts`、`test/team-task-routes.test.ts`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/src/tests/app-run-observer.test.tsx`
+10. 相关测试：`test/team-task-run-process.test.ts`、`test/team-task-run-routes.test.ts`、`apps/team-console/src/tests/team-api.test.ts`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/src/tests/app-run-observer.test.tsx`
 
 ## 当前 Git 现场
 
-- 分支：`main`。
-- 当前分支状态以 `git status --short --branch` 为准；截至本快照，本地 `main` ahead `origin/main` 8 个提交，最新保存点为 `8cd4d6b Merge branch 'codex/pr-5-team-console-discovery-subcanvas'`。
-- 当前最新本地功能基线包括 Discovery dispatcher semantic compiler / retry、Discovery generated item 卡片交互优化，以及 PR #5 的 Team Console Discovery 子画布 UI merge。
-- 当前本地 ahead 提交包含 Team Console refresh performance Step 1-6、Discovery dispatch auto-run overlap、Team Task 模板/clone/API/UI group、Canvas Task adaptive timeout、Team Console run history 和本轮 architecture cleanup commits。
-- 本轮默认不提交 `.codex/config.toml`、`.codex/plans/**`、`.omo/`、`github-trending.txt`、runtime/public 报告产物或截图；Step 19/20 的 `.codex/plans/**` report 只是本地审查证据。
-- 未跟踪 runtime/public 产物禁止提交：`public/developer-forum-sources-report.html`、`public/forum-sources-report.html`、`public/medtrum-view/`。
+- 分支状态：`main...origin/main [ahead 5]`。
+- 最新 commit：`6f8c37b Add manual upstream input diagnostics`。
+- Step 06 handoff 开始时 tracked diff 为空，staged diff 为空。
+- 当前 ahead 提交：
+  - `81b7eea Support manual upstream run selection`
+  - `9342b41 Pin manual upstream run read models`
+  - `35eae0c Add Team Console loaded run state`
+  - `81a51f8 Wire loaded upstream runs into Team Console launches`
+  - `6f8c37b Add manual upstream input diagnostics`
+- 不要提交这些本地未跟踪物件：`.codex/config.toml`、既有 `.codex/plans/**`、`.omo/`、`github-trending.txt`、`public/developer-forum-sources-report.html`、`public/forum-sources-report.html`、`public/medtrum-view/`。
 
 继续工作前先执行：
 
 ```bash
 git status --short --branch
-git log -5 --oneline
+git log -6 --oneline
 git diff --stat
 git diff --cached --stat
 git log --oneline origin/main..HEAD
@@ -48,83 +52,83 @@ git log --oneline origin/main..HEAD
 
 ## 当前已完成事实
 
-- Team Console refresh performance Step 1-6 已完成：active root run / observer 分层 summary、Discovery scoped refresh、引用稳定合并、root/generated summary `since` contract、root-summary warm cache / run summary index、Discovery 阶段可见性、边 dispatch 边 generated child auto-run。
-- Discovery runtime 已收口：root gating 等待 dispatch、generated child 终态和 aggregation；root cancel 级联取消 generated child；aggregation 写 `discovery-aggregation.json`；typed downstream 优先消费 aggregation。
-- Discovery dispatch / generated auto-run pipeline 当前语义：Discovery accepted result 写出 `discovery-result.json` 后，单 dispatcher producer 顺序把 raw item 转成 generated Task 并 enqueue；generated run queue consumer 固定 3 并发运行 child。设计上限是 1 个 dispatcher + 3 个 generated child runs，不做 dispatcher 并发。
-- Discovery dispatcher 实时路径已切到 semantic patch：agent 只输出 `itemId`、`title`、`workerInstruction` 和可选 item-specific hints；本地 deterministic compiler 生成完整 `workUnit`，并保底 `outputContract.text` / `acceptance.rules`。旧 full WorkUnit parser 仅保留为 legacy coverage，实时 runner 不再依赖模型输出完整 WorkUnit。
-- Dispatcher semantic prompt 已移除 JSON code fence 示例，并明确要求输出 trim 后首尾为 `{` / `}`；真实 GLM Discovery run 仍会稳定输出单一 JSON code fence，因此 parser 只对“整段内容就是一个 JSON code fence”的情况做 deterministic unwrap。不要改回宽松 embedded JSON extraction。
-- Dispatcher semantic patch parse failure 会触发一次 repair retry：runner 把错误原因和原始输出打回 dispatcher，要求只重写 bare JSON object；retry 仍失败才 blocked。不要改成无限重试或从解释文字里硬抽 JSON。
-- Discovery dispatcher parser 仍拒绝 item mismatch、invalid JSON、empty semantic fields 和递归 forbidden fields；如果模型继续输出 `workUnit` / `outputContract` / `acceptance` / worker-checker-source identity，会把该 item 记录为 blocked，不静默清理。
-- Team Task 模板链路已收口：Task 可带 `templateConfig.parameters`，本体可直接运行，`templateState.currentBindings` 保存当前参数，run `source.templateBindings` 保存当次快照，clone API 仍保留但不再是模板参数运行主路径。
-- Team Console 画布已支持共享 layout、UI-only Group、Task run history 分支、Discovery generated child 菜单/编辑/运行记录入口、silent refresh 和画布恢复 loading 收口。
-- Discovery 子画布 generated Task 网格已统一承担运行状态和运行记录入口：running item 排前并保持橙红状态，点击 item 展开/再次点击收起运行记录，右上角菜单只保留编辑/归档/运行/输出等操作并支持外点关闭。
-- Canvas Task 独立 run 已使用 adaptive idle timeout + hard cap，工具完成和 public output 文件变化刷新 idle，普通文本/thinking 不续命。
-- Canvas Task detached active run 已收口：主服务重启或后台执行链路丢失后，Team routes 注册会重启 detached `queued` run，并将 detached `running` run 标记为 failed，避免无执行者的 run 长时间假运行。
-- 本轮收尾 architecture cleanup 已完成并验证。关键 Module / Interface 包括 `DiscoveryRunLifecycle`、`TeamConsoleSummaryReadModel`、Team Console live refresh state / Discovery refresh / generated detail policy / Discovery subscription helpers、`CanvasTaskAttemptWorkspace`、`CanvasTaskRunWorkspace`、`CanvasTaskRunTaskStore`、Discovery lifecycle dependency Interfaces、summary read-model dependency Interfaces、live refresh API adapter types、child execution workspace Interfaces、`TaskAttemptLifecycleWorkspace`、`TeamRunDetailWorkspaceReader`、task/source/dependency connection store reader Interfaces。
-- Step 19 已审查 `TeamOrchestrator` / `RunWorkspace`：`TeamOrchestrator` 当前依赖 20 个 workspace 方法，直接加 20-method `TeamOrchestratorWorkspace = Pick<RunWorkspace, ...>` 只是浅 Interface，不增加有意义的 Depth / Seam。当前建议停止本轮架构清理；若未来继续，单独规划高风险 Discovery result assembly / aggregation Module。
-- Team Console PR #5 已本地合并并保存为 merge commit；本地保护分支 `codex/save-before-pr5-20260604-discovery-dispatch` 指向合并前的 `ad75801`。
+- `POST /v1/team/tasks/:taskId/runs` 支持可选 `upstreamRunSelections: Array<{ connectionId, fromRunId }>`；不传该字段时保持旧行为。
+- 后端会把选中的上游历史 run 解析为显式 `source.boundInputs[]`，并把提示词/payload 指向该 bound input，避免 worker 自己猜旧 asset 或旧 workspace 文件。
+- 手动选择 trace 记录在 `source.manualUpstreamSelections[]`；手动直接启动的下游 run 不伪造 `source.triggeredBy`。
+- 自动 typed downstream 仍使用 `source.triggeredBy.type === "task-connection"` 和 `downstreamDelivery`。
+- Full run detail 保留 heavy `source.boundInputs[]` 和 `source.manualUpstreamSelections[]`。
+- Summary-style API 继续省略 heavy `source.boundInputs[]`，但可保留 lightweight `source.manualUpstreamSelections[]` 作为诊断 trace。
+- Discovery 作为上游时，手动选择的历史 run 优先绑定该 run 的 `discovery-aggregation.json`，没有 aggregation 时 fallback 到 `discovery-result.json`。
+- Team Console 运行记录行可 `装载此记录` / `取消装载`；已装载状态只保存 `{ taskId, runId }` 引用，不保存 artifact/content/attempt/files。
+- 启动下游 Task 时，Team Console 只从指向目标 Task 的非 stale typed connection 生成 `upstreamRunSelections[]`。
+- 上游 Task 有 queued/running/paused active run 时，active upstream run 优先于 historical loaded run。
+- 当前页面内已知 loaded run 非 `completed` 时，前端不发送该 selection；从持久化 UI state 恢复后状态未知的 selection 交由后端最终校验。
+- Step 05 run observer 诊断区展示 lightweight manual upstream trace；artifact `type` / `fileRef` 只通过当前 opened observer run 的 full detail enrichment 补齐。
+- Step 05 full-detail enrichment 对每个 opened observer run 只尝试一次；成功和失败都会设置 attempted guard，不随 2 秒 active poll 重复拉取。
+- Run observer 不持久化、不渲染 artifact content、preview 或完整 artifact 对象。
 
-## 真实 UI / 运行验证事实
+## 验证证据
 
-- Discovery root Task `task_c70580219a00` 的真实 run `run_614c9ccdb9f8` 已完成：root 发现 17 items，dispatcher/upsert 17 个 active generated Task，0 blocked，固定 3 并发 auto-run pool 启动 17/17 generated child run，最终 12 succeeded / 5 failed，root 最后写出 `discovery-aggregation.json`。
-- 模板 Task `task_ae82bc41efad` 通过 Team Console 参数面板运行，keyword 为 `Minimax M3是不是很糟糕`；run `run_83673cbd8acc` 的 `plan.json` 中 `{{keyword}}` 出现 0 次，绑定后的 keyword 出现 6 次，证明 runtime 参数绑定链路有效。
-- 已观察到 generated child 失败主要来自 worker timeout、模型数据检查拦截和 checker 抓出的 hallucination，不是 root aggregation 或 Team Console refresh contract 问题。
-- Team Console Docker dev server 在 PR #5 合并后曾继续渲染旧 transformed module：直接请求 `http://127.0.0.1:5174/src/app/App.tsx` 已是新源码，但页面 DOM 仍有旧的 generated item `run-history` 菜单和独立 running lane。只重启 `ugk-pi-team-console` 容器后恢复，不需要重启主 `ugk-pi` 或 worker。
+- Step 01 backend 验证通过：
+  - `node --test --import tsx test\team-task-run-process.test.ts test\team-task-run-routes.test.ts`：91/91 pass。
+  - `npx tsc --noEmit`：pass。
+  - `git diff --check`：pass。
+- Step 02 read model 验证通过：
+  - manual upstream / summary focused route tests：11/11 pass。
+  - upstream run selection / Discovery / manual upstream focused process tests：6/6 pass。
+  - `node --test --import tsx test\team-task-run-routes.test.ts`：42/42 pass。
+  - `npx tsc --noEmit`、`git diff --check`：pass。
+- Step 03 Team Console loaded run state 验证通过：
+  - `app-run-observer.test.tsx`：23/23 pass。
+  - `app-live-data.test.tsx` + `app-run-observer.test.tsx`：105/105 pass。
+  - Team Console build、`npx tsc --noEmit`、`git diff --check`：pass。
+- Step 04 launch wiring 验证通过：
+  - `app-run-observer.test.tsx`：33/33 pass。
+  - `team-api.test.ts` + `app-live-data.test.tsx` + `app-run-observer.test.tsx`：210/210 pass。
+  - Team Console build、`npx tsc --noEmit`、`git diff --check`：pass。
+- Step 05 diagnostics 验证通过：
+  - `app-run-observer.test.tsx`：39/39 pass。
+  - `team-api.test.ts` + `app-live-data.test.tsx` + `app-run-observer.test.tsx`：216/216 pass。
+  - Team Console build、`npx tsc --noEmit`、`git diff --check`：pass。
+- Step 05 browser 验证使用 `http://127.0.0.1:5174/`，在只重启 `ugk-pi-team-console` 清理 Vite stale transformed module 后确认：
+  - manual downstream observer 渲染 `data-observer-section="input-diagnostics"`。
+  - manual row 渲染 `data-input-diagnostic-kind="manual-upstream"`。
+  - active poll 刷新期间 manual detail request count 保持 1。
+  - heavy artifact content / preview 字符串未渲染。
+  - ordinary run observer full-detail diagnostic request count 为 0。
+  - console error/warn count 为 0。
 
-## 最新验证
+## 已知运行口径
 
-- Discovery generated Task 子画布 UI 跟进：
-  - `npm --prefix apps/team-console run test -- --run src/tests/app-static-contracts.test.ts -t "keeps Discovery subcanvas light"`：1 passed。
-  - `npm --prefix apps/team-console run test -- --run src/tests/app-live-data.test.tsx`：82 passed。
-  - `npm --prefix apps/team-console run build`：passed；仍有既有 Vite chunk size warning。
-  - `git diff --check`：passed。
-  - 本地浏览器 `http://127.0.0.1:5174/` reload 后 console error 为 0。
-  - PR #5 合并后本地 `docker compose restart ugk-pi-team-console`，Chrome DevTools 验证 `task_ec690cdc8bd4` Discovery 子画布：generated card 数量 41，generated item 菜单 `run-history` action 数量 0，独立 `.discovery-subcanvas-lane-running` 数量 0，点击卡片可展开运行记录面板。
-- Team architecture cleanup Step 20 final validation：
-  - `npm test`：2063 tests，2061 passed，2 skipped，0 failed。
-  - `npm --prefix apps\team-console run test -- --run src\tests\team-api.test.ts src\tests\app-live-data.test.tsx src\tests\app-run-observer.test.tsx`：194 passed。
-  - `npm --prefix apps\team-console run build`：passed；仍有既有 Vite chunk size warning。
-  - `npx tsc --noEmit`：passed。
-  - `git diff --check`：passed。
-- Discovery dispatcher semantic compiler Step 01 focused validation：
-  - `node --test --import tsx test\team-role-prompt-contract.test.ts test\team-agent-profile-runner.test.ts test\team-task-run-process.test.ts`：121 passed。
-  - `npx tsc --noEmit`：passed。
-  - `npm test`：2071 tests，2069 passed，2 skipped，0 failed。
-  - `git diff --check`：passed。
-- Discovery dispatcher semantic compiler smoke：
-  - 本地真实 runner 环境为 `TEAM_USE_MOCK_RUNNER=false`，`task-decomposer` 使用 GLM dispatcher。
-  - Smoke root run 中 bare semantic patch item 成功生成 managed WorkUnit、upsert generated Task 并启动 child run；fenced JSON item 被记录为 dispatcher semantic patch parse error blocked。
-- Discovery dispatcher real-run observation：
-  - Task `task_d696b40cdd13` 的 GLM dispatcher 输出语义 JSON 正确，但连续 item 都包在单一 `json` code fence 中；这会被旧 strict parser 全部 blocked。
-  - 修正方向是只解包单一完整 code fence，仍拒绝解释文字、embedded JSON、trailing prose 和 forbidden fields。
-- Discovery dispatcher retry observation:
-  - Task `task_ec690cdc8bd4` 真实 run 中 45 个 dispatcher item 已观察到大部分 created，少数 blocked 来自模型输出截断或在 JSON 前加解释文字；新增 repair retry 用于把这类 parse failure 打回 dispatcher 进行一次格式修复。
-- 更早的分步验证不要继续复制到本文件；需要追溯用 `docs/change-log.md` 或 Git 历史。
+- Browser revalidation 对纯 Step 06 文档收口不是必需项；若以后声称新的浏览器证据，必须来自 `http://127.0.0.1:5174/` 且使用自动化。
+- 如果 `5174/src/app/App.tsx` 已是新源码但页面 DOM 仍像旧版，只重启 `ugk-pi-team-console` 容器并硬刷新；不要重启主 `ugk-pi` 或乱开临时后端端口。
+- Team Console Vite build 的 chunk size warning 是既有非阻塞 warning，不等于本轮失败。
 
-## 未完成 / 风险
+## 受保护不变式
 
-- Team Console refresh/API 主线已收口到当前可用版本；下一轮性能工作应先基于真实 FRP / 大量 run 观测定位慢点，再决定继续压缩 payload、减少轮询或做视窗化渲染。
-- Discovery Step 6 已缓解“全部 dispatch 后才 auto-run”的等待；Step 01 semantic compiler 已降低每 item 结构化输出负担，但 dispatcher 仍是逐 item 顺序调用模型、generated child auto-run 固定 3 并发；大量 item、源站可达性和每 item 语义判断成本仍可能拖慢真实 run。
-- 真实 Discovery child 失败集中在 worker timeout、模型内容检查拦截和 checker hallucination 判定；优先改 Task 范围、checker acceptance 和源站可达性说明，不要急着改 root aggregation。
-- 下游“JSON 数据生成 HTML 报告”Task 的 checker timeout 需要后续单独优化；这不是 Discovery aggregation bug。
-- deterministic validator 当前不做 URL 可达性通用机制；可达性要求应先写进具体 Task checker acceptance。
+- `POST /v1/team/tasks/:taskId/runs` 不带 `upstreamRunSelections` 时保持旧行为。
+- Source node direct binding 仍使用 `source: "canvas-source"`，不自动触发 Task run。
+- 自动 typed downstream 仍记录 `source.triggeredBy.type === "task-connection"` 和 `downstreamDelivery`。
+- 手动 direct downstream run 不伪造 `source.triggeredBy`。
+- Summary-style API responses 继续省略 heavy `source.boundInputs`。
+- Full run detail 是暴露 heavy `source.boundInputs` 的唯一常规 read model。
+- Team Console persisted state 只保存 `{ taskId, runId }`，不保存 artifact 内容。
+- Run observer 不持久化或渲染 artifact content / preview / full artifact objects。
+- Step 05 full-detail enrichment 对同一 opened observer run 保持一次尝试预算。
+
+## 未完成 / 下一步候选
+
+- 本系列没有待完成的必需 runtime 实现；除非发现新 bug，不要继续改 `src/**`、`apps/team-console/src/**` 或 CSS。
+- 若用户要求发布，才 push `main` 到 `origin` / `gitee`；当前不要 stage、不要 commit、不要 push。
+- 后续产品工作应从本 run-context contract 继续，而不是回到“让 agent 自己猜旧 asset”的旧模式。
+- 如果要继续优化 `/team-task` 体验，另起任务再评估 `.pi/skills/team-task-creator/SKILL.md`，不要混进本 handoff 收口。
 
 ## 禁止事项
 
-- 不 push；用户测试和确认后再决定。
 - 不提交 `.env`、`.data/`、runtime/public 报告产物、截图、部署包、备份目录。
 - 不提交 `.codex/plans/**`，除非用户明确要求。
 - 不改主 `/playground` 产品 UI，除非用户明确要求。
-- 不新增 backend endpoint 来绕过 Discovery 创建或 aggregation。
+- 不新增 backend endpoint 来绕过 typed connection / run-context 合同。
 - 不手工 POST API 当作真实用户测试主路径。
 - 不把 generated child 塞进 root tasks / root canvas。
-- 不碰无关 `.pi/skills/**`；只有用户明确要求 `/team-task` skill 优化时才改 `.pi/skills/team-task-creator/SKILL.md`。
-
-## 下一步判断
-
-- Team Console 刷新性能：先观测真实慢点，再规划下一步，不要凭感觉继续堆 endpoint。
-- Discovery runtime 行为：若要 deterministic / bulk dispatcher，另起 runtime 设计，不和 Team Console refresh 混提交。
-- `/team-task` 体验：改 `.pi/skills/team-task-creator/SKILL.md` 和 skill 测试。
-- Team Console UI：改 `apps/team-console/src/app/**` 和对应 Vitest。
-- runtime 行为：改 `src/team/**` 和 `test/team-task-run-process.test.ts`。
-- checker/output contract：优先改 Task contract / checker acceptance，不急着加通用 validator。
+- 不碰无关 `.pi/skills/**`。
