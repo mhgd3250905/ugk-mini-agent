@@ -4,6 +4,8 @@ import { isDuplicateDependency, resolveDependencyStaleReason, wouldCreateMixedCy
 import type { TaskStore } from "./task-store.js";
 import type { ResolvedTaskDependency, TeamTaskDependency, TeamTaskConnection } from "./types.js";
 
+export type TaskDependencyStoreTaskReader = Pick<TaskStore, "get">;
+
 const now = () => new Date().toISOString();
 
 export class TaskDependencyStore {
@@ -12,7 +14,7 @@ export class TaskDependencyStore {
 
 	constructor(
 		private readonly rootDir: string,
-		private readonly taskStore: TaskStore,
+		private readonly taskStore: TaskDependencyStoreTaskReader,
 	) {
 		this.collection = new JsonCollectionStore<TeamTaskDependency>({
 			rootDir,
