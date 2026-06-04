@@ -27,6 +27,45 @@ describe("App", () => {
     return new Response(JSON.stringify({ run, attempts }), { status: 200 });
   }
 
+  function rootSummaryResponse(
+    tasks = mockTeamTasks,
+    taskRunsByTaskId: Record<string, TeamRunState[]> = {},
+  ): Response {
+    return new Response(JSON.stringify({
+      tasks,
+      deletedTaskIds: [],
+      taskRunsByTaskId,
+      deletedRunIdsByTaskId: {},
+      sourceNodes: [],
+      sourceConnections: [],
+      taskConnections: [],
+      taskDependencies: [],
+      serverVersion: {
+        taskCatalog: null,
+        taskRunSummary: null,
+      },
+    }), { status: 200 });
+  }
+
+  function runHistoryResponse(taskId: string, runs: TeamRunState[]): Response {
+    return new Response(JSON.stringify({
+      taskId,
+      total: runs.length,
+      limit: 50,
+      offset: 0,
+      runs: runs.map((run) => ({
+        run,
+        annotation: {
+          runId: run.runId,
+          taskId,
+          best: false,
+          archived: false,
+          updatedAt: "2026-06-04T00:00:00.000Z",
+        },
+      })),
+    }), { status: 200 });
+  }
+
   describe("run observer", () => {
     it("starts a mock Task run from the action menu and shows the latest run state", async () => {
       const { container } = render(<App />);
@@ -1410,6 +1449,208 @@ describe("App", () => {
       expect(within(branch!).getByRole("button", { name: /运行中[\s\S]*排队中/ })).toBeInTheDocument();
       expect(within(branch!).getByText("排队中")).toBeInTheDocument();
       expect(within(branch!).getByRole("button", { name: "运行中" })).toBeDisabled();
+    });
+
+    it("loads and unloads a historical Task run from run history without starting a Task run", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const task = {
+        ...cloneTaskFixture(),
+        taskId: "task_loaded_history",
+        title: "Loaded History Task",
+        workUnit: { ...cloneTaskFixture().workUnit, title: "Loaded History Task" },
+      };
+      const historicalRun = makeLiveTaskRunFixture(task, "run_loaded_history");
+      const createdRun = makeLiveTaskRunFixture(task, "run_loaded_history_created");
+      const runPostBodies: Array<BodyInit | null | undefined> = [];
+
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/v1/team/console-layout") return new Response(JSON.stringify({ state: null, updatedAt: null }), { status: 200 });
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") return rootSummaryResponse([task], { [task.taskId]: [] });
+        if (url === `/v1/team/tasks/${task.taskId}/run-history?limit=50&offset=0`) {
+          return runHistoryResponse(task.taskId, [historicalRun]);
+        }
+        if (url === `/v1/team/tasks/${task.taskId}/runs` && method === "POST") {
+          runPostBodies.push(init?.body);
+          return new Response(JSON.stringify(createdRun), { status: 201 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const atlas = await waitFor(() => getAtlasNodes(container));
+      const taskNode = await within(atlas).findByRole("button", { name: task.title });
+      fireEvent.click(taskNode);
+      const menu = await screen.findByLabelText(`${task.title} 操作菜单`);
+      fireEvent.click(within(menu).getByRole("button", { name: "运行记录" }));
+
+      const historyPanel = await screen.findByRole("region", { name: `${task.title} 运行记录` });
+      const historicalRow = await waitFor(() => {
+        const row = historyPanel.querySelector(`[data-run-id="${historicalRun.runId}"]`) as HTMLElement | null;
+        expect(row).toBeTruthy();
+        return row!;
+      });
+      fireEvent.click(within(historicalRow).getByRole("button", { name: "装载此记录" }));
+
+      const loadedRow = await waitFor(() => {
+        const row = historyPanel.querySelector(`[data-run-id="${historicalRun.runId}"]`) as HTMLElement | null;
+        expect(row).toBeTruthy();
+        expect(row).toHaveAttribute("data-loaded-run", "true");
+        expect(row).toHaveAttribute("data-loaded-run-state", "loaded");
+        return row!;
+      });
+      expect(within(loadedRow).getByText("已装载")).toBeInTheDocument();
+      expect(screen.getByRole("region", { name: `${task.title} 运行记录` })).toBeInTheDocument();
+      expect(runPostBodies).toHaveLength(0);
+
+      fireEvent.click(within(loadedRow).getByRole("button", { name: "取消装载" }));
+      await waitFor(() => {
+        expect(historyPanel.querySelector(`[data-run-id="${historicalRun.runId}"]`)).toHaveAttribute("data-loaded-run-state", "none");
+        expect(within(historyPanel).queryByText("已装载")).toBeNull();
+      });
+      expect(screen.getByRole("region", { name: `${task.title} 运行记录` })).toBeInTheDocument();
+      expect(runPostBodies).toHaveLength(0);
+
+      fireEvent.click(within(historyPanel).getByRole("button", { name: "装载此记录" }));
+      fireEvent.click(within(menu).getByRole("button", { name: "运行" }));
+      await waitFor(() => expect(runPostBodies).toHaveLength(1));
+      expect(runPostBodies[0]).toBeUndefined();
+    });
+
+    it("marks a loaded historical run as suppressed while the same Task has an active run", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const task = {
+        ...cloneTaskFixture(),
+        taskId: "task_loaded_active_override",
+        title: "Loaded Active Override Task",
+        workUnit: { ...cloneTaskFixture().workUnit, title: "Loaded Active Override Task" },
+      };
+      const runningRun = { ...makeLiveTaskRunFixture(task, "run_active_override_current"), status: "running" as const, finishedAt: null };
+      const historicalRun = makeLiveTaskRunFixture(task, "run_active_override_history");
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/team/console-layout") return new Response(JSON.stringify({ state: null, updatedAt: null }), { status: 200 });
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") return rootSummaryResponse([task], { [task.taskId]: [runningRun] });
+        if (url === `/v1/team/tasks/${task.taskId}/run-history?limit=50&offset=0`) {
+          return runHistoryResponse(task.taskId, [historicalRun]);
+        }
+        if (url === `/v1/team/task-runs/${runningRun.runId}?view=summary&taskId=${task.taskId}`) {
+          return new Response(JSON.stringify(runningRun), { status: 200 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const atlas = await waitFor(() => getAtlasNodes(container));
+      const taskNode = await within(atlas).findByRole("button", { name: task.title });
+      fireEvent.click(taskNode);
+      const menu = await screen.findByLabelText(`${task.title} 操作菜单`);
+      fireEvent.click(within(menu).getByRole("button", { name: "运行记录" }));
+
+      const historyPanel = await screen.findByRole("region", { name: `${task.title} 运行记录` });
+      const historicalRow = await waitFor(() => {
+        const row = historyPanel.querySelector(`[data-run-id="${historicalRun.runId}"]`) as HTMLElement | null;
+        expect(row).toBeTruthy();
+        return row!;
+      });
+      fireEvent.click(within(historicalRow).getByRole("button", { name: "装载此记录" }));
+
+      const loadedRow = await waitFor(() => {
+        const row = historyPanel.querySelector(`[data-run-id="${historicalRun.runId}"]`) as HTMLElement | null;
+        expect(row).toBeTruthy();
+        expect(row).toHaveAttribute("data-loaded-run", "true");
+        expect(row).toHaveAttribute("data-loaded-run-state", "suppressed");
+        return row!;
+      });
+      expect(within(loadedRow).getByText("已装载（活跃 run 优先）")).toBeInTheDocument();
+      expect(loadedRow.querySelector("[data-loaded-run-marker]")).toHaveAttribute("data-loaded-run-marker", "suppressed");
+    });
+
+    it("restores valid loaded run selection and prunes stale selections from canvas UI state", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const task = {
+        ...cloneTaskFixture(),
+        taskId: "task_loaded_restore",
+        title: "Loaded Restore Task",
+        workUnit: { ...cloneTaskFixture().workUnit, title: "Loaded Restore Task" },
+      };
+      const historicalRun = makeLiveTaskRunFixture(task, "run_loaded_restore_history");
+      const staleTaskId = "task_missing_loaded_selection";
+      window.localStorage.setItem("ugk-team-console:canvas-ui-state:v1", JSON.stringify({
+        schemaVersion: 1,
+        dataSource: "live",
+        taskNodePositions: [{
+          taskId: task.taskId,
+          position: { x: 160, y: 120 },
+        }],
+        expandedTaskBranches: [],
+        loadedTaskRunSelections: [
+          { taskId: task.taskId, runId: historicalRun.runId },
+          { taskId: staleTaskId, runId: "run_stale_loaded_selection" },
+        ],
+      }));
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/team/console-layout") return new Response(JSON.stringify({ state: null, updatedAt: null }), { status: 200 });
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") return rootSummaryResponse([task], { [task.taskId]: [] });
+        if (url === `/v1/team/tasks/${task.taskId}/run-history?limit=50&offset=0`) {
+          return runHistoryResponse(task.taskId, [historicalRun]);
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
+      const taskNode = await within(atlas).findByRole("button", { name: task.title });
+      fireEvent.click(taskNode);
+      const menu = await screen.findByLabelText(`${task.title} 操作菜单`);
+      fireEvent.click(within(menu).getByRole("button", { name: "运行记录" }));
+
+      const historyPanel = await screen.findByRole("region", { name: `${task.title} 运行记录` });
+      const loadedRow = await waitFor(() => {
+        const row = historyPanel.querySelector(`[data-run-id="${historicalRun.runId}"]`) as HTMLElement | null;
+        expect(row).toBeTruthy();
+        expect(row).toHaveAttribute("data-loaded-run", "true");
+        expect(row).toHaveAttribute("data-loaded-run-state", "loaded");
+        return row!;
+      });
+      expect(within(loadedRow).getByText("已装载")).toBeInTheDocument();
+
+      await waitFor(() => {
+        const raw = window.localStorage.getItem("ugk-team-console:canvas-ui-state:v1");
+        expect(raw).toBeTruthy();
+        const stored = JSON.parse(raw!) as { loadedTaskRunSelections?: Array<{ taskId: string; runId: string }> };
+        expect(stored.loadedTaskRunSelections).toEqual([{ taskId: task.taskId, runId: historicalRun.runId }]);
+        expect(stored.loadedTaskRunSelections?.some((selection) => selection.taskId === staleTaskId)).toBe(false);
+      });
+    });
+
+    it("renders with old canvas UI state that has no loaded run selection field", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "mock");
+      window.localStorage.setItem("ugk-team-console:canvas-ui-state:v1", JSON.stringify({
+        schemaVersion: 1,
+        dataSource: "mock",
+        selectedFixtureId: "agent-workspace",
+        taskNodePositions: mockTeamTasks.map((task, index) => ({
+          taskId: task.taskId,
+          position: { x: 160 + index * 220, y: 120 },
+        })),
+        expandedTaskBranches: [],
+      }));
+
+      const { container } = render(<App />);
+
+      const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
+      expect(await within(atlas).findByRole("button", { name: "调查 Medtrum 云资产" })).toBeInTheDocument();
     });
 
   });

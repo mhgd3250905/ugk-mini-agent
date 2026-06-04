@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-04 — Team Console loaded historical Task run state
+
+- **主题**: Team Console 运行记录面板新增历史 Task run 装载 UI 状态。每个 Task 可在 run history 行上“装载此记录”或“取消装载”，行内显示“已装载”；同一 Task 存在 active run 时显示“已装载（活跃 run 优先）”，避免历史 run 被误认为当前执行上下文。
+- **影响范围**: `5174` Team Console UI 状态、运行记录面板和 canvas UI state 持久化；只保存 `{ taskId, runId }` 引用，不保存 artifact/content/attempt/files。本步不改 backend，不改 `LiveTeamApi.createTaskRun()` 请求语义，不发送 `upstreamRunSelections`。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/tests/app-run-observer.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`。
+
 ## 2026-06-04 — Manual upstream run selection
 
 - **主题**: Canvas Task Run 支持手动选择上游历史 run 作为下游输入。`POST /v1/team/tasks/:taskId/runs` 新增可选 `upstreamRunSelections` 字段，允许指定 typed connection 对应的上游历史成功 run，而非自动取最新 run。artifact 解析逻辑与自动下游一致。

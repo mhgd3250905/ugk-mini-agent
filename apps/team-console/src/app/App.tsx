@@ -57,6 +57,7 @@ type StoredCanvasUiState = {
   minimizedTaskNodeIds?: string[];
   minimizedSourceNodeIds?: string[];
   rootNodeFilter?: RootNodeFilter;
+  loadedTaskRunSelections?: StoredLoadedTaskRunSelection[];
 };
 
 type StoredCanvasUiStateByContext = {
@@ -84,6 +85,11 @@ type SourceConnectionDraft = {
 type StoredTaskPosition = {
   taskId: string;
   position: { x: number; y: number };
+};
+
+type StoredLoadedTaskRunSelection = {
+  taskId: string;
+  runId: string;
 };
 
 type StoredSourcePosition = {
@@ -842,6 +848,45 @@ function readStoredTaskBranches(value: unknown): TaskBranchState[] {
   return result;
 }
 
+function readStoredLoadedTaskRunSelections(value: unknown): StoredLoadedTaskRunSelection[] {
+  if (!Array.isArray(value)) return [];
+  const result: StoredLoadedTaskRunSelection[] = [];
+  const seenTaskIds = new Set<string>();
+  for (const item of value) {
+    const record = readRecord(item);
+    if (!record) continue;
+    const taskId = typeof record.taskId === "string" ? record.taskId.trim() : "";
+    const runId = typeof record.runId === "string" ? record.runId.trim() : "";
+    if (!taskId || !runId || seenTaskIds.has(taskId)) continue;
+    seenTaskIds.add(taskId);
+    result.push({ taskId, runId });
+  }
+  return result;
+}
+
+function filterLoadedTaskRunSelectionsByTaskIds(
+  selections: StoredLoadedTaskRunSelection[],
+  taskIds: ReadonlySet<string>,
+): StoredLoadedTaskRunSelection[] {
+  return selections.filter((selection) => taskIds.has(selection.taskId));
+}
+
+function filterLoadedTaskRunByTaskId(
+  selectionsByTaskId: Record<string, string>,
+  taskIds: ReadonlySet<string>,
+): Record<string, string> {
+  let changed = false;
+  const result: Record<string, string> = {};
+  for (const [taskId, runId] of Object.entries(selectionsByTaskId)) {
+    if (!taskIds.has(taskId)) {
+      changed = true;
+      continue;
+    }
+    result[taskId] = runId;
+  }
+  return changed ? result : selectionsByTaskId;
+}
+
 function readStoredTaskGroups(value: unknown): AtlasTaskGroup[] {
   if (!Array.isArray(value)) return [];
   const result: AtlasTaskGroup[] = [];
@@ -994,6 +1039,7 @@ function parseStoredCanvasUiState(value: unknown): StoredCanvasUiState | null {
     minimizedTaskNodeIds: readStringArray(parsed.minimizedTaskNodeIds),
     minimizedSourceNodeIds: readStringArray(parsed.minimizedSourceNodeIds),
     rootNodeFilter: parsed.rootNodeFilter === "agent" || parsed.rootNodeFilter === "task" ? parsed.rootNodeFilter : undefined,
+    loadedTaskRunSelections: readStoredLoadedTaskRunSelections(parsed.loadedTaskRunSelections),
   };
 }
 
@@ -1446,6 +1492,7 @@ export function App() {
   const [runHistorySavingRunId, setRunHistorySavingRunId] = useState<string | null>(null);
   const [runHistoryAnalysisCopyState, setRunHistoryAnalysisCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [runHistoryAnalysisManualText, setRunHistoryAnalysisManualText] = useState<string | null>(null);
+  const [loadedTaskRunByTaskId, setLoadedTaskRunByTaskId] = useState<Record<string, string>>({});
   const [taskNodes, setTaskNodes] = useState<AtlasTaskNode[]>([]);
   const [taskGroups, setTaskGroups] = useState<AtlasTaskGroup[]>([]);
   const [selectedAtlasEntries, setSelectedAtlasEntries] = useState<AtlasSelectedNodeEntry[]>([]);
@@ -2005,6 +2052,22 @@ export function App() {
     setSelectedRunHistoryRunId(item.run.runId);
   }, []);
 
+  const loadRunHistoryItem = useCallback((item: TeamTaskRunHistoryItem) => {
+    setLoadedTaskRunByTaskId((current) => ({
+      ...current,
+      [item.annotation.taskId]: item.run.runId,
+    }));
+  }, []);
+
+  const unloadRunHistoryItem = useCallback((item: TeamTaskRunHistoryItem) => {
+    setLoadedTaskRunByTaskId((current) => {
+      if (current[item.annotation.taskId] !== item.run.runId) return current;
+      const next = { ...current };
+      delete next[item.annotation.taskId];
+      return next;
+    });
+  }, []);
+
   const patchRunHistoryAnnotation = useCallback(async (
     item: TeamTaskRunHistoryItem,
     patch: { best?: boolean; archived?: boolean },
@@ -2157,6 +2220,7 @@ export function App() {
       setCanvasUiStateRestoreHasStoredState(false);
       setCanvasBranchLayout({});
       setTaskGroups([]);
+      setLoadedTaskRunByTaskId({});
       hydratedCanvasUiContextKeyRef.current = canvasUiContextKey;
       setCanvasUiStateHydrated(true);
       return;
@@ -2181,6 +2245,8 @@ export function App() {
     const agentIds = new Set(validAgentNodes.map((node) => node.agentId));
     const taskNodeIds = new Set(nextTaskNodes.map((node) => node.nodeId));
     const taskIds = new Set(nextTaskNodes.map((node) => node.taskId));
+    const loadedTaskIds = new Set(taskIds);
+    for (const taskId of generatedTasksById.keys()) loadedTaskIds.add(taskId);
     const sourceNodeIds = new Set(nextSourceNodes.map((node) => node.nodeId));
     const nextTaskGroups = (stored.taskGroups ?? []).flatMap((group) => {
       const taskGroupNodeIds = group.taskNodeIds.filter((nodeId) => taskNodeIds.has(nodeId));
@@ -2202,6 +2268,13 @@ export function App() {
     setExpandedTaskBranches(nextTaskBranches);
     setTaskGroups(nextTaskGroups);
     setCanvasBranchLayout(stored.branchLayout ?? {});
+    setLoadedTaskRunByTaskId(Object.fromEntries(filterLoadedTaskRunSelectionsByTaskIds(
+      stored.loadedTaskRunSelections ?? [],
+      loadedTaskIds,
+    ).map((selection) => [
+      selection.taskId,
+      selection.runId,
+    ])));
     setMinimizedAgentNodeIds((stored.minimizedAgentNodeIds ?? []).filter((nodeId) => agentNodeIds.has(nodeId)));
     setMinimizedTaskNodeIds((stored.minimizedTaskNodeIds ?? []).filter((nodeId) => taskNodeIds.has(nodeId)));
     setMinimizedSourceNodeIds((stored.minimizedSourceNodeIds ?? []).filter((nodeId) => sourceNodeIds.has(nodeId)));
@@ -2214,6 +2287,7 @@ export function App() {
     canvasUiContextKey,
     canvasUiStateHydrated,
     dataSource,
+    generatedTasksById,
     liveAgentNodesHydrated,
     liveSourceNodesHydrated,
     liveTaskNodesHydrated,
@@ -2226,7 +2300,16 @@ export function App() {
 
   useEffect(() => {
     if (!canvasUiStateHydrated) return;
+    const taskIds = new Set(taskNodes.map((node) => node.taskId));
+    for (const taskId of generatedTasksById.keys()) taskIds.add(taskId);
+    setLoadedTaskRunByTaskId((current) => filterLoadedTaskRunByTaskId(current, taskIds));
+  }, [canvasUiStateHydrated, generatedTasksById, taskNodes]);
+
+  useEffect(() => {
+    if (!canvasUiStateHydrated) return;
     if (hydratedCanvasUiContextKeyRef.current !== canvasUiContextKey) return;
+    const validLoadedTaskIds = new Set(taskNodes.map((node) => node.taskId));
+    for (const taskId of generatedTasksById.keys()) validLoadedTaskIds.add(taskId);
     const nextState: StoredCanvasUiState = {
       schemaVersion: 1,
       dataSource,
@@ -2252,6 +2335,10 @@ export function App() {
       minimizedTaskNodeIds,
       minimizedSourceNodeIds,
       rootNodeFilter,
+      loadedTaskRunSelections: filterLoadedTaskRunSelectionsByTaskIds(
+        Object.entries(loadedTaskRunByTaskId).map(([taskId, runId]) => ({ taskId, runId })),
+        validLoadedTaskIds,
+      ),
     };
     const nextByContext = writeStoredCanvasUiState(nextState);
     if (dataSource === "live" && nextByContext) {
@@ -2273,6 +2360,8 @@ export function App() {
     agentNodes,
     expandedAgentBranch,
     expandedTaskBranches,
+    generatedTasksById,
+    loadedTaskRunByTaskId,
     minimizedAgentNodeIds,
     minimizedSourceNodeIds,
     minimizedTaskNodeIds,
@@ -3786,11 +3875,17 @@ export function App() {
                   const selected = branch.observedRunId === run.runId || selectedRunHistoryRunId === run.runId;
                   const saving = runHistorySavingRunId === run.runId;
                   const errorSummary = taskRunErrorSummary(run, item.annotation.taskId);
+                  const loadedRunId = loadedTaskRunByTaskId[item.annotation.taskId];
+                  const loaded = loadedRunId === run.runId;
+                  const loadedSuppressedByActiveRun = loaded && (taskRunsByTaskId[item.annotation.taskId] ?? []).some((candidate) => isActiveRun(candidate.status));
+                  const loadedState = loaded ? loadedSuppressedByActiveRun ? "suppressed" : "loaded" : "none";
                   return (
                     <article
                       key={run.runId}
-                      className={`emap-run-history-item ${selected ? "selected" : ""} ${item.annotation.best ? "best" : ""} ${item.annotation.archived ? "archived" : ""}`}
+                      className={`emap-run-history-item ${selected ? "selected" : ""} ${item.annotation.best ? "best" : ""} ${item.annotation.archived ? "archived" : ""} ${loaded ? "loaded" : ""}`}
                       data-run-id={run.runId}
+                      data-loaded-run={loaded ? "true" : "false"}
+                      data-loaded-run-state={loadedState}
                     >
                       <button
                         type="button"
@@ -3819,12 +3914,35 @@ export function App() {
                           <small>{taskRunResultRef(run, item.annotation.taskId)}</small>
                         </span>
                         <code>{run.runId}</code>
+                        {loaded && (
+                          <span className="emap-run-history-badge loaded" data-loaded-run-marker={loadedState}>
+                            {loadedSuppressedByActiveRun ? "已装载（活跃 run 优先）" : "已装载"}
+                          </span>
+                        )}
                         {item.annotation.best && <span className="emap-run-history-badge best">最佳</span>}
                         {item.annotation.archived && <span className="emap-run-history-badge archived">已归档</span>}
                         {item.annotation.note && <small className="emap-run-history-note">{item.annotation.note}</small>}
                         {errorSummary !== "无" && <span className="emap-run-history-row-error">{errorSummary}</span>}
                       </button>
                       <div className="emap-run-history-actions">
+                        {loaded ? (
+                          <button
+                            type="button"
+                            data-run-load-action="unload"
+                            onClick={() => { unloadRunHistoryItem(item); }}
+                          >
+                            取消装载
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            data-run-load-action="load"
+                            disabled={isActiveRun(run.status)}
+                            onClick={() => { loadRunHistoryItem(item); }}
+                          >
+                            装载此记录
+                          </button>
+                        )}
                         <button
                           type="button"
                           disabled={saving}
@@ -5134,7 +5252,7 @@ export function App() {
     }
 
     return panels;
-  }, [activeRunHistoryTaskId, agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskCloneState, clearTaskEditState, clearTaskEditWarning, clearTaskParameterState, cloneTask, closeTaskRunHistory, copyRunHistoryAnalysisContext, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, loadMoreRunHistory, openTaskEditDraft, openTaskParameterDraft, openTaskRunHistory, patchRunHistoryAnnotation, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runHistoryAnalysisCopyState, runHistoryAnalysisManualText, runHistoryError, runHistoryIncludeArchived, runHistoryItems, runHistoryLoading, runHistorySavingRunId, runHistoryTotal, runTask, saveTaskEdit, saveTaskParameters, scheduleLiveTaskDiscoveryRefresh, selectRunHistoryItem, selectedRunHistoryRunId, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskCloneDraftByTaskId, taskCloneSavingByTaskId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskParameterDraftByTaskId, taskParameterSavingByTaskId, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, updateTaskCloneBinding, updateTaskCloneTitle, updateTaskEditDraft, updateTaskParameterBinding]);
+  }, [activeRunHistoryTaskId, agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskCloneState, clearTaskEditState, clearTaskEditWarning, clearTaskParameterState, cloneTask, closeTaskRunHistory, copyRunHistoryAnalysisContext, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, loadMoreRunHistory, loadRunHistoryItem, loadedTaskRunByTaskId, openTaskEditDraft, openTaskParameterDraft, openTaskRunHistory, patchRunHistoryAnnotation, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runHistoryAnalysisCopyState, runHistoryAnalysisManualText, runHistoryError, runHistoryIncludeArchived, runHistoryItems, runHistoryLoading, runHistorySavingRunId, runHistoryTotal, runTask, saveTaskEdit, saveTaskParameters, scheduleLiveTaskDiscoveryRefresh, selectRunHistoryItem, selectedRunHistoryRunId, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskCloneDraftByTaskId, taskCloneSavingByTaskId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskParameterDraftByTaskId, taskParameterSavingByTaskId, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, unloadRunHistoryItem, updateTaskCloneBinding, updateTaskCloneTitle, updateTaskEditDraft, updateTaskParameterBinding]);
   const canvasStateRestorePending = !loading && !canvasUiStateHydrated;
   const canvasLoadingMinimumMs = loading || canvasUiStateRestoreHasStoredState
     ? CANVAS_LOADING_MIN_VISIBLE_MS
