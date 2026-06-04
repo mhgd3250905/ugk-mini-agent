@@ -120,6 +120,14 @@ export interface DiscoveryDispatchWorkUnitDraft {
 	acceptance: { rules: string[] };
 }
 
+export interface DiscoveryDispatchSemanticPatch {
+	itemId: string;
+	title: string;
+	workerInstruction: string;
+	itemAcceptanceHints?: string[];
+	outputContractHint?: string;
+}
+
 export type DiscoveryDispatchOutput =
 	| { ok: true; itemId: string; workUnit: DiscoveryDispatchWorkUnitDraft; runtimeContext?: TeamRoleRuntimeContext }
 	| { ok: false; itemId: string; error: string; rawContent?: string; runtimeContext?: TeamRoleRuntimeContext };

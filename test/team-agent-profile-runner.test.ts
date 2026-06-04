@@ -119,15 +119,13 @@ function makeDiscoveryDispatchInput(overrides: Partial<DiscoveryDispatchInput> =
 	};
 }
 
-function makeDiscoveryDispatchOutputJson(itemId = "vendor_1"): string {
+function makeDiscoveryDispatchPatchJson(itemId = "vendor_1"): string {
 	return JSON.stringify({
 		itemId,
-		workUnit: {
-			title: "Assess Acme Sensors",
-			input: { text: "Research Acme Sensors and summarize BLE validation fit." },
-			outputContract: { text: "Markdown due-diligence report with cited evidence." },
-			acceptance: { rules: ["Cites relevant sources"] },
-		},
+		title: "Assess Acme Sensors",
+		workerInstruction: "Research Acme Sensors and summarize BLE validation fit.",
+		itemAcceptanceHints: ["Cites relevant sources"],
+		outputContractHint: "Include BLE validation fit evidence.",
 	});
 }
 
@@ -1400,7 +1398,7 @@ test("P17: worker and checker with different browserId must not silently share",
 test("runDiscoveryDispatcher uses dispatcherProfileId and discovery-dispatcher scope with sanitized item key", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-dispatcher-"));
 	try {
-		const { factory, captured } = makeCapturingSessionFactory([makeDiscoveryDispatchOutputJson("vendor/slash")]);
+		const { factory, captured } = makeCapturingSessionFactory([makeDiscoveryDispatchPatchJson("vendor/slash")]);
 		const runner = new AgentProfileRoleRunner({
 			projectRoot: root,
 			teamDataDir: root,
@@ -1437,7 +1435,7 @@ test("runDiscoveryDispatcher uses dispatcherProfileId and discovery-dispatcher s
 	}
 });
 
-test("runDiscoveryDispatcher prompt includes discovery dispatch context and exact item payload", async () => {
+test("runDiscoveryDispatcher prompt asks for semantic patch and includes discovery dispatch context and exact item payload", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-dispatcher-"));
 	try {
 		let capturedPrompt = "";
@@ -1445,7 +1443,7 @@ test("runDiscoveryDispatcher prompt includes discovery dispatch context and exac
 			createSession: async () => ({
 				prompt: async (p: string) => { capturedPrompt = p; },
 				subscribe: () => () => {},
-				messages: [{ role: "assistant", content: [{ type: "text", text: makeDiscoveryDispatchOutputJson() }], stopReason: "end_turn" }],
+				messages: [{ role: "assistant", content: [{ type: "text", text: makeDiscoveryDispatchPatchJson() }], stopReason: "end_turn" }],
 			}),
 		} as unknown as BackgroundAgentSessionFactory;
 		const runner = new AgentProfileRoleRunner({
@@ -1468,13 +1466,16 @@ test("runDiscoveryDispatcher prompt includes discovery dispatch context and exac
 		assert.ok(capturedPrompt.includes("Create one due-diligence work unit"), "prompt must include dispatch goal");
 		assert.ok(capturedPrompt.includes("vendor_1"), "prompt must include exact item id");
 		assert.ok(capturedPrompt.includes('"website": "https://example.com"'), "prompt must include full item payload JSON");
+		assert.ok(capturedPrompt.includes('"workerInstruction"'), "prompt must ask for semantic worker instruction");
+		assert.ok(capturedPrompt.includes('"itemAcceptanceHints"'), "prompt must ask for optional semantic acceptance hints");
+		assert.ok(!capturedPrompt.includes('"workUnit": {'), "prompt must not ask for full WorkUnit");
 		assert.ok(capturedPrompt.includes("workerAgentId") && capturedPrompt.includes("generatedSource"), "prompt must include forbidden output fields");
 	} finally {
 		await rm(root, { recursive: true }).catch(() => {});
 	}
 });
 
-test("runDiscoveryDispatcher returns valid parsed output plus runtime context", async () => {
+test("runDiscoveryDispatcher compiles semantic patch into full WorkUnit plus runtime context", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-dispatcher-"));
 	try {
 		const runner = new AgentProfileRoleRunner({
@@ -1486,7 +1487,7 @@ test("runDiscoveryDispatcher returns valid parsed output plus runtime context", 
 			finalizerProfileId: "p-finalizer",
 			dispatcherProfileId: "p-dispatcher",
 			profileResolver: makeFakeProfileResolver({ "p-dispatcher": { defaultBrowserId: "browser-dispatcher" } }) as never,
-			sessionFactory: makeFakeSessionFactory([makeDiscoveryDispatchOutputJson()]),
+			sessionFactory: makeFakeSessionFactory([makeDiscoveryDispatchPatchJson()]),
 		});
 
 		const out = await runner.runDiscoveryDispatcher(makeDiscoveryDispatchInput());
@@ -1495,6 +1496,10 @@ test("runDiscoveryDispatcher returns valid parsed output plus runtime context", 
 		if (out.ok) {
 			assert.equal(out.itemId, "vendor_1");
 			assert.equal(out.workUnit.title, "Assess Acme Sensors");
+			assert.ok(out.workUnit.input.text.includes("Research Acme Sensors"));
+			assert.ok(out.workUnit.input.text.includes('"website": "https://example.com"'));
+			assert.ok(out.workUnit.outputContract.text.includes("Include BLE validation fit evidence."));
+			assert.ok(out.workUnit.acceptance.rules.includes("Cites relevant sources"));
 		}
 		assert.equal(out.runtimeContext?.requestedProfileId, "p-dispatcher");
 		assert.equal(out.runtimeContext?.browserId, "browser-dispatcher");
@@ -1523,6 +1528,38 @@ test("runDiscoveryDispatcher returns ok false with runtime context on invalid se
 		assert.equal(out.ok, false);
 		assert.equal(out.itemId, "vendor_1");
 		assert.match(out.error, /json/i);
+		assert.equal(out.runtimeContext?.requestedProfileId, "p-dispatcher");
+		assert.equal(out.runtimeContext?.browserId, "browser-dispatcher");
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
+test("runDiscoveryDispatcher rejects invalid semantic patch and preserves runtime context", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dispatcher-"));
+	try {
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root,
+			teamDataDir: root,
+			workerProfileId: "p-worker",
+			checkerProfileId: "p-checker",
+			watcherProfileId: "p-watcher",
+			finalizerProfileId: "p-finalizer",
+			dispatcherProfileId: "p-dispatcher",
+			profileResolver: makeFakeProfileResolver({ "p-dispatcher": { defaultBrowserId: "browser-dispatcher" } }) as never,
+			sessionFactory: makeFakeSessionFactory([JSON.stringify({
+				itemId: "vendor_1",
+				title: "Assess Acme Sensors",
+				workerInstruction: "Research vendor",
+				workUnit: { title: "rogue full WorkUnit" },
+			})]),
+		});
+
+		const out = await runner.runDiscoveryDispatcher(makeDiscoveryDispatchInput());
+
+		assert.equal(out.ok, false);
+		assert.equal(out.itemId, "vendor_1");
+		assert.match(out.error, /workUnit/);
 		assert.equal(out.runtimeContext?.requestedProfileId, "p-dispatcher");
 		assert.equal(out.runtimeContext?.browserId, "browser-dispatcher");
 	} finally {
@@ -1563,7 +1600,7 @@ test("runDiscoveryDispatcher falls back from dispatcherProfileId to decomposerPr
 			finalizerProfileId: "p-finalizer",
 			decomposerProfileId: "p-decomposer",
 			profileResolver: profileResolver as never,
-			sessionFactory: makeFakeSessionFactory([makeDiscoveryDispatchOutputJson()]),
+			sessionFactory: makeFakeSessionFactory([makeDiscoveryDispatchPatchJson()]),
 		});
 		const workerFallback = new AgentProfileRoleRunner({
 			projectRoot: root,
@@ -1573,7 +1610,7 @@ test("runDiscoveryDispatcher falls back from dispatcherProfileId to decomposerPr
 			watcherProfileId: "p-watcher",
 			finalizerProfileId: "p-finalizer",
 			profileResolver: profileResolver as never,
-			sessionFactory: makeFakeSessionFactory([makeDiscoveryDispatchOutputJson()]),
+			sessionFactory: makeFakeSessionFactory([makeDiscoveryDispatchPatchJson()]),
 		});
 
 		await withDecomposer.runDiscoveryDispatcher(makeDiscoveryDispatchInput());

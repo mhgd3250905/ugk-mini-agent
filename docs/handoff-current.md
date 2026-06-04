@@ -51,7 +51,8 @@ git log --oneline origin/main..HEAD
 - Team Console refresh performance Step 1-6 已完成：active root run / observer 分层 summary、Discovery scoped refresh、引用稳定合并、root/generated summary `since` contract、root-summary warm cache / run summary index、Discovery 阶段可见性、边 dispatch 边 generated child auto-run。
 - Discovery runtime 已收口：root gating 等待 dispatch、generated child 终态和 aggregation；root cancel 级联取消 generated child；aggregation 写 `discovery-aggregation.json`；typed downstream 优先消费 aggregation。
 - Discovery dispatch / generated auto-run pipeline 当前语义：Discovery accepted result 写出 `discovery-result.json` 后，单 dispatcher producer 顺序把 raw item 转成 generated Task 并 enqueue；generated run queue consumer 固定 3 并发运行 child。设计上限是 1 个 dispatcher + 3 个 generated child runs，不做 dispatcher 并发。
-- Discovery dispatcher parser 已兼容真实模型常见 schema drift：若模型把完整 `outputContract` / `acceptance` 错放到 `workUnit.input` 或 `workUnit.input.outputContract`，parser 会归位并继续创建 generated Task；仍拒绝缺失字段、item mismatch、forbidden fields 和 invalid JSON。`discoveryDispatch[].createdAt` 现在逐 outcome 记录真实落盘时间。
+- Discovery dispatcher 实时路径已切到 semantic patch：agent 只输出 `itemId`、`title`、`workerInstruction` 和可选 item-specific hints；本地 deterministic compiler 生成完整 `workUnit`，并保底 `outputContract.text` / `acceptance.rules`。旧 full WorkUnit parser 仅保留为 legacy coverage，实时 runner 不再依赖模型输出完整 WorkUnit。
+- Discovery dispatcher parser 仍拒绝 item mismatch、invalid JSON、empty semantic fields 和递归 forbidden fields；如果模型继续输出 `workUnit` / `outputContract` / `acceptance` / worker-checker-source identity，会把该 item 记录为 blocked，不静默清理。
 - Team Task 模板链路已收口：Task 可带 `templateConfig.parameters`，本体可直接运行，`templateState.currentBindings` 保存当前参数，run `source.templateBindings` 保存当次快照，clone API 仍保留但不再是模板参数运行主路径。
 - Team Console 画布已支持共享 layout、UI-only Group、Task run history 分支、Discovery generated child 菜单/编辑/运行记录入口、silent refresh 和画布恢复 loading 收口。
 - Canvas Task 独立 run 已使用 adaptive idle timeout + hard cap，工具完成和 public output 文件变化刷新 idle，普通文本/thinking 不续命。
@@ -73,12 +74,17 @@ git log --oneline origin/main..HEAD
   - `npm --prefix apps\team-console run build`：passed；仍有既有 Vite chunk size warning。
   - `npx tsc --noEmit`：passed。
   - `git diff --check`：passed。
+- Discovery dispatcher semantic compiler Step 01 focused validation：
+  - `node --test --import tsx test\team-role-prompt-contract.test.ts test\team-agent-profile-runner.test.ts test\team-task-run-process.test.ts`：121 passed。
+  - `npx tsc --noEmit`：passed。
+  - `npm test`：2071 tests，2069 passed，2 skipped，0 failed。
+  - `git diff --check`：passed。
 - 更早的分步验证不要继续复制到本文件；需要追溯用 `docs/change-log.md` 或 Git 历史。
 
 ## 未完成 / 风险
 
 - Team Console refresh/API 主线已收口到当前可用版本；下一轮性能工作应先基于真实 FRP / 大量 run 观测定位慢点，再决定继续压缩 payload、减少轮询或做视窗化渲染。
-- Discovery Step 6 已缓解“全部 dispatch 后才 auto-run”的等待，但 dispatcher 仍是逐 item 顺序调用模型、generated child auto-run 固定 3 并发；大量 item、源站可达性和每 item dispatcher 成本仍可能拖慢真实 run。
+- Discovery Step 6 已缓解“全部 dispatch 后才 auto-run”的等待；Step 01 semantic compiler 已降低每 item 结构化输出负担，但 dispatcher 仍是逐 item 顺序调用模型、generated child auto-run 固定 3 并发；大量 item、源站可达性和每 item 语义判断成本仍可能拖慢真实 run。
 - 真实 Discovery child 失败集中在 worker timeout、模型内容检查拦截和 checker hallucination 判定；优先改 Task 范围、checker acceptance 和源站可达性说明，不要急着改 root aggregation。
 - 下游“JSON 数据生成 HTML 报告”Task 的 checker timeout 需要后续单独优化；这不是 Discovery aggregation bug。
 - deterministic validator 当前不做 URL 可达性通用机制；可达性要求应先写进具体 Task checker acceptance。

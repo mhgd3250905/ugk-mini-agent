@@ -2,7 +2,8 @@ import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { TeamRoleRunner, ProfileAwareTeamRoleRunner, WorkerInput, WorkerOutput, CheckerInput, CheckerOutput, WatcherInput, WatcherOutput, FinalizerInput, FinalizerOutput, DecomposerInput, DecomposerOutput, DiscoveryDispatchInput, DiscoveryDispatchOutput } from "./role-runner.js";
 import type { TeamRoleRuntimeContext } from "./types.js";
-import { buildWorkerPrompt, buildCheckerPrompt, buildWatcherPrompt, buildFinalizerPrompt, buildDecomposerPrompt, buildDiscoveryDispatchPrompt, parseCheckerRoleOutput, parseWatcherRoleOutput, parseDecomposerRoleOutput, parseDiscoveryDispatchRoleOutput } from "./role-prompt-contract.js";
+import { buildWorkerPrompt, buildCheckerPrompt, buildWatcherPrompt, buildFinalizerPrompt, buildDecomposerPrompt, buildDiscoveryDispatchPrompt, parseCheckerRoleOutput, parseWatcherRoleOutput, parseDecomposerRoleOutput, parseDiscoveryDispatchSemanticPatch } from "./role-prompt-contract.js";
+import { compileDiscoveryDispatchWorkUnit } from "./discovery-dispatch-workunit-compiler.js";
 import type { BackgroundAgentSessionFactory } from "../agent/background-agent-runner.js";
 import { BackgroundAgentProfileResolver } from "../agent/background-agent-profile.js";
 import type { ResolvedBackgroundAgentSnapshot, BackgroundAgentProfileRef } from "../agent/background-agent-profile.js";
@@ -192,10 +193,15 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 
 		const sessionResult = await this.runSession(snapshot, requestedProfileId, input.runId, workspace, prompt, input.signal, { role, roleKey, artifactPublicBaseUrl: input.artifactPublicBaseUrl });
 		const content = sessionResult.content;
-		const parsed = parseDiscoveryDispatchRoleOutput(content, input.itemId);
+		const parsed = parseDiscoveryDispatchSemanticPatch(content, input.itemId);
 
 		if (parsed.ok) {
-			return { ...parsed, runtimeContext: sessionResult.runtimeContext };
+			return {
+				ok: true,
+				itemId: parsed.itemId,
+				workUnit: compileDiscoveryDispatchWorkUnit(input, parsed.patch),
+				runtimeContext: sessionResult.runtimeContext,
+			};
 		}
 		return { ...parsed, runtimeContext: sessionResult.runtimeContext };
 	}

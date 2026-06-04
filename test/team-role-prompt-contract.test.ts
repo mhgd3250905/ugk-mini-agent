@@ -9,9 +9,11 @@ import {
 	buildWorkerPrompt,
 	parseCheckerRoleOutput,
 	parseDecomposerRoleOutput,
+	parseDiscoveryDispatchSemanticPatch,
 	parseDiscoveryDispatchRoleOutput,
 	parseWatcherRoleOutput,
 } from "../src/team/role-prompt-contract.js";
+import { compileDiscoveryDispatchWorkUnit } from "../src/team/discovery-dispatch-workunit-compiler.js";
 import type { DecomposerInput, DiscoveryDispatchInput } from "../src/team/role-runner.js";
 import type { TeamPlan, TeamTask, TeamOutputValidationResult } from "../src/team/types.js";
 
@@ -87,7 +89,7 @@ test("buildWorkerPrompt preserves discovery output contract and generated item i
 	assert.ok(prompt.includes("最高优先级"), "worker prompt must include identity priority");
 });
 
-test("buildDiscoveryDispatchPrompt includes discovery context, exact item payload, schema, and identity bans", () => {
+test("buildDiscoveryDispatchPrompt includes discovery context, exact item payload, semantic patch schema, and forbidden fields", () => {
 	const input = makeDiscoveryDispatchInput();
 	const prompt = buildDiscoveryDispatchPrompt(input);
 
@@ -100,12 +102,139 @@ test("buildDiscoveryDispatchPrompt includes discovery context, exact item payloa
 	assert.ok(prompt.includes('"website": "https://example.com"'), "prompt must include full item payload JSON");
 	assert.ok(prompt.includes("requiredItemFields") && prompt.includes("id"), "prompt must include required item fields");
 	assert.ok(prompt.includes("recommendedItemFields") && prompt.includes("title") && prompt.includes("type"), "prompt must include recommended item fields");
-	assert.ok(prompt.includes('"workUnit"') && prompt.includes('"acceptance"'), "prompt must include strict output schema");
+	assert.ok(prompt.includes('"workerInstruction"'), "prompt must include semantic patch schema");
+	assert.ok(prompt.includes('"itemAcceptanceHints"'), "prompt must include optional item-specific acceptance hints");
+	assert.ok(prompt.includes('"outputContractHint"'), "prompt must include optional item-specific output hint");
+	assert.ok(!prompt.includes('"workUnit": {'), "prompt must not ask for full WorkUnit schema");
 	assert.ok(prompt.includes("workerAgentId") && prompt.includes("checkerAgentId"), "prompt must ban worker/checker identity output");
 	assert.ok(prompt.includes("generatedSource") && prompt.includes("sourceDiscoveryTaskId"), "prompt must ban source identity output");
 });
 
-test("parseDiscoveryDispatchRoleOutput accepts valid JSON workUnit draft", () => {
+test("parseDiscoveryDispatchSemanticPatch accepts valid patch", () => {
+	const out = parseDiscoveryDispatchSemanticPatch(
+		JSON.stringify({
+			itemId: "vendor_1",
+			title: " Assess Acme Sensors ",
+			workerInstruction: " Research Acme Sensors and summarize BLE validation fit. ",
+			itemAcceptanceHints: [" Cites relevant sources ", "", "Cites relevant sources"],
+			outputContractHint: "Focus on BLE validation services.",
+		}),
+		"vendor_1",
+	);
+
+	assert.equal(out.ok, true);
+	if (out.ok) {
+		assert.equal(out.patch.itemId, "vendor_1");
+		assert.equal(out.patch.title, "Assess Acme Sensors");
+		assert.equal(out.patch.workerInstruction, "Research Acme Sensors and summarize BLE validation fit.");
+		assert.deepEqual(out.patch.itemAcceptanceHints, ["Cites relevant sources", "Cites relevant sources"]);
+		assert.equal(out.patch.outputContractHint, "Focus on BLE validation services.");
+	}
+});
+
+test("parseDiscoveryDispatchSemanticPatch rejects fenced and text-wrapped JSON", () => {
+	const fenced = parseDiscoveryDispatchSemanticPatch(
+		'```json\n{"itemId":"vendor_1","title":"Assess vendor","workerInstruction":"Do work"}\n```',
+		"vendor_1",
+	);
+	const embedded = parseDiscoveryDispatchSemanticPatch(
+		'Here is JSON: {"itemId":"vendor_1","title":"Assess vendor","workerInstruction":"Do work"}',
+		"vendor_1",
+	);
+	const wrapped = parseDiscoveryDispatchSemanticPatch(
+		'{"itemId":"vendor_1","title":"Assess vendor","workerInstruction":"Do work"}\nExplanation: done',
+		"vendor_1",
+	);
+
+	assert.equal(fenced.ok, false);
+	assert.match(fenced.error, /invalid JSON/);
+	assert.equal(embedded.ok, false);
+	assert.match(embedded.error, /invalid JSON/);
+	assert.equal(wrapped.ok, false);
+	assert.match(wrapped.error, /invalid JSON/);
+});
+
+test("parseDiscoveryDispatchSemanticPatch rejects item mismatch", () => {
+	const out = parseDiscoveryDispatchSemanticPatch(
+		JSON.stringify({
+			itemId: "vendor_2",
+			title: "Assess vendor",
+			workerInstruction: "Do work",
+		}),
+		"vendor_1",
+	);
+
+	assert.equal(out.ok, false);
+	assert.equal(out.itemId, "vendor_1");
+	assert.match(out.error, /item/i);
+});
+
+test("parseDiscoveryDispatchSemanticPatch rejects nested forbidden fields", () => {
+	const topLevel = parseDiscoveryDispatchSemanticPatch(
+		JSON.stringify({
+			itemId: "vendor_1",
+			title: "Assess vendor",
+			workerInstruction: "Do work",
+			workUnit: { title: "rogue" },
+		}),
+		"vendor_1",
+	);
+	const nested = parseDiscoveryDispatchSemanticPatch(
+		JSON.stringify({
+			itemId: "vendor_1",
+			title: "Assess vendor",
+			workerInstruction: "Do work",
+			itemAcceptanceHints: [
+				"ok",
+			],
+			nested: {
+				outputContract: { text: "rogue" },
+				acceptance: { rules: ["rogue"] },
+			},
+		}),
+		"vendor_1",
+	);
+
+	assert.equal(topLevel.ok, false);
+	assert.match(topLevel.error, /workUnit/);
+	assert.equal(nested.ok, false);
+	assert.match(nested.error, /outputContract|acceptance/);
+});
+
+test("compileDiscoveryDispatchWorkUnit builds deterministic full WorkUnit draft", () => {
+	const input = makeDiscoveryDispatchInput();
+	const workUnit = compileDiscoveryDispatchWorkUnit(input, {
+		itemId: "vendor_1",
+		title: " Assess Acme Sensors ",
+		workerInstruction: " Research only this vendor. ",
+		itemAcceptanceHints: [
+			" Cites relevant sources ",
+			"",
+			"Cites relevant sources",
+			"States source limitations",
+		],
+		outputContractHint: " Include BLE validation fit score. ",
+	});
+
+	assert.equal(workUnit.title, "Assess Acme Sensors");
+	assert.ok(workUnit.input.text.includes("Discovery task: Vendor discovery"));
+	assert.ok(workUnit.input.text.includes(input.discoveryGoal));
+	assert.ok(workUnit.input.text.includes(input.dispatchGoal));
+	assert.ok(workUnit.input.text.includes("Exact item id: vendor_1"));
+	assert.ok(workUnit.input.text.includes('"website": "https://example.com"'), "compiler must include full item JSON");
+	assert.ok(workUnit.input.text.includes("Research only this vendor."));
+	assert.ok(workUnit.input.text.includes("Only process this exact Discovery item"));
+	assert.ok(workUnit.outputContract.text.includes("vendors"));
+	assert.ok(workUnit.outputContract.text.includes("vendor_1"));
+	assert.ok(workUnit.outputContract.text.includes("Include BLE validation fit score."));
+	assert.ok(workUnit.acceptance.rules.length > 0);
+	assert.equal(workUnit.acceptance.rules.filter(rule => rule === "Cites relevant sources").length, 1);
+	assert.ok(workUnit.acceptance.rules.includes("States source limitations"));
+	assert.ok(!("workerAgentId" in workUnit), "compiler must not inject worker identity");
+	assert.ok(!("checkerAgentId" in workUnit), "compiler must not inject checker identity");
+});
+
+test("parseDiscoveryDispatchRoleOutput legacy parser accepts valid JSON workUnit draft", () => {
 	const out = parseDiscoveryDispatchRoleOutput(
 		JSON.stringify({
 			itemId: "vendor_1",

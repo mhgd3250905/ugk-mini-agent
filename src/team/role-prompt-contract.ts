@@ -1,8 +1,11 @@
-import type { CheckerInput, CheckerOutput, WatcherInput, WatcherOutput, FinalizerInput, DecomposerInput, DecomposerOutput, DiscoveryDispatchInput, DiscoveryDispatchOutput, DiscoveryDispatchWorkUnitDraft } from "./role-runner.js";
+import type { CheckerInput, CheckerOutput, WatcherInput, WatcherOutput, FinalizerInput, DecomposerInput, DecomposerOutput, DiscoveryDispatchInput, DiscoveryDispatchOutput, DiscoveryDispatchSemanticPatch, DiscoveryDispatchWorkUnitDraft } from "./role-runner.js";
 import type { TeamTask, TeamPlan, TeamTaskDecomposerMode, TeamTaskSourceItem } from "./types.js";
 
 type WithoutRuntimeContext<T> = T extends unknown ? Omit<T, "runtimeContext"> : never;
 type DiscoveryDispatchParsedOutput = WithoutRuntimeContext<DiscoveryDispatchOutput>;
+type DiscoveryDispatchSemanticPatchParsedOutput =
+	| { ok: true; itemId: string; patch: DiscoveryDispatchSemanticPatch }
+	| { ok: false; itemId: string; error: string; rawContent?: string };
 
 function getEffectiveSourceItem(task: TeamTask): TeamTaskSourceItem | null {
 	if (!task.generated) return null;
@@ -291,7 +294,7 @@ JSON 格式：
 - 不要在 JSON 前后添加任何文字`;
 }
 
-const DISCOVERY_DISPATCH_FORBIDDEN_FIELDS = [
+const LEGACY_DISCOVERY_DISPATCH_FORBIDDEN_FIELDS = [
 	"workerAgentId",
 	"checkerAgentId",
 	"leaderAgentId",
@@ -309,13 +312,20 @@ const DISCOVERY_DISPATCH_FORBIDDEN_FIELDS = [
 	"outputCheck",
 ];
 
+const DISCOVERY_DISPATCH_SEMANTIC_PATCH_FORBIDDEN_FIELDS = [
+	"workUnit",
+	"outputContract",
+	"acceptance",
+	...LEGACY_DISCOVERY_DISPATCH_FORBIDDEN_FIELDS,
+];
+
 export function buildDiscoveryDispatchPrompt(input: DiscoveryDispatchInput): string {
 	const recommended = input.recommendedItemFields ?? [];
 	const generatedAgentContext = [
 		input.generatedWorkerAgentId ? `- default generated worker profile id（仅上下文，不得输出）：${input.generatedWorkerAgentId}` : "",
 		input.generatedCheckerAgentId ? `- default generated checker profile id（仅上下文，不得输出）：${input.generatedCheckerAgentId}` : "",
 	].filter(Boolean).join("\n");
-	return `你是一个 Discovery dispatcher。请把一个已验证的 Discovery item 设计成一个 generated Team Canvas Task 的 WorkUnit 草案。
+	return `你是一个 Discovery dispatcher。请为一个已验证的 Discovery item 输出语义补丁。你只负责描述这个 item 的具体处理语义；最终 WorkUnit 结构由本地 deterministic compiler 生成。
 
 ## Discovery task
 - discoveryTaskId: ${input.discoveryTaskId}
@@ -342,25 +352,24 @@ ${JSON.stringify(input.itemPayload, null, 2)}
 ## Output requirements
 只输出一个严格 JSON object，不要输出 markdown、解释文字或代码围栏。
 
-JSON schema:
+Semantic patch JSON schema:
 \`\`\`json
 {
   "itemId": "${input.itemId}",
-  "workUnit": {
-    "title": "Generated task title",
-    "input": { "text": "Precise worker prompt for this item" },
-    "outputContract": { "text": "Expected output contract" },
-    "acceptance": { "rules": ["Concrete acceptance rule"] }
-  }
+  "title": "Short generated task title",
+  "workerInstruction": "Specific instruction for the worker about this exact item only",
+  "itemAcceptanceHints": ["Optional item-specific acceptance hint"],
+  "outputContractHint": "Optional item-specific output focus"
 }
 \`\`\`
 
 Hard constraints:
 - itemId 必须精确等于 "${input.itemId}"。
-- workUnit.title、workUnit.input.text、workUnit.outputContract.text 必须是非空 string。
-- workUnit.acceptance.rules 必须是非空 string[]。
-- 不得输出 worker/checker/leader/source identity 字段。
-- 禁止字段：${DISCOVERY_DISPATCH_FORBIDDEN_FIELDS.join(", ")}。`;
+- title 和 workerInstruction 必须是非空 string。
+- itemAcceptanceHints 如存在，只能是 string[]，只写这个 item 特有的验收提示。
+- outputContractHint 如存在，只能是非空 string，只写这个 item 特有的输出重点。
+- 不得输出完整 WorkUnit、outputContract、acceptance、worker/checker/leader/source identity 字段。
+- 禁止字段：${DISCOVERY_DISPATCH_SEMANTIC_PATCH_FORBIDDEN_FIELDS.join(", ")}。`;
 }
 
 function parseJsonResponse<T>(text: string): T {
@@ -470,18 +479,18 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-function findForbiddenDiscoveryDispatchField(value: unknown): string | null {
+function findForbiddenDiscoveryDispatchField(value: unknown, forbiddenFields: readonly string[]): string | null {
 	if (Array.isArray(value)) {
 		for (const item of value) {
-			const found = findForbiddenDiscoveryDispatchField(item);
+			const found = findForbiddenDiscoveryDispatchField(item, forbiddenFields);
 			if (found) return found;
 		}
 		return null;
 	}
 	if (!isPlainObject(value)) return null;
 	for (const key of Object.keys(value)) {
-		if (DISCOVERY_DISPATCH_FORBIDDEN_FIELDS.includes(key)) return key;
-		const found = findForbiddenDiscoveryDispatchField(value[key]);
+		if (forbiddenFields.includes(key)) return key;
+		const found = findForbiddenDiscoveryDispatchField(value[key], forbiddenFields);
 		if (found) return found;
 	}
 	return null;
@@ -587,7 +596,7 @@ function normalizeDiscoveryDispatchOutput(parsed: unknown, expectedItemId: strin
 	if (!isPlainObject(parsed)) {
 		return parseDiscoveryDispatchError(expectedItemId, "discovery dispatcher output parse error: top-level value must be an object", rawContent);
 	}
-	const forbidden = findForbiddenDiscoveryDispatchField(parsed);
+	const forbidden = findForbiddenDiscoveryDispatchField(parsed, LEGACY_DISCOVERY_DISPATCH_FORBIDDEN_FIELDS);
 	if (forbidden) {
 		return parseDiscoveryDispatchError(expectedItemId, `discovery dispatcher output includes forbidden field: ${forbidden}`, rawContent);
 	}
@@ -634,6 +643,63 @@ function normalizeDiscoveryDispatchOutput(parsed: unknown, expectedItemId: strin
 	return { ok: true, itemId: expectedItemId, workUnit: draft };
 }
 
+function parseDiscoveryDispatchSemanticPatchError(expectedItemId: string, error: string, rawContent: string): DiscoveryDispatchSemanticPatchParsedOutput {
+	return { ok: false, itemId: expectedItemId, error, rawContent };
+}
+
+function normalizeDiscoveryDispatchSemanticPatch(parsed: unknown, expectedItemId: string, rawContent: string): DiscoveryDispatchSemanticPatchParsedOutput {
+	if (!isPlainObject(parsed)) {
+		return parseDiscoveryDispatchSemanticPatchError(expectedItemId, "discovery dispatcher semantic patch parse error: top-level value must be an object", rawContent);
+	}
+	const forbidden = findForbiddenDiscoveryDispatchField(parsed, DISCOVERY_DISPATCH_SEMANTIC_PATCH_FORBIDDEN_FIELDS);
+	if (forbidden) {
+		return parseDiscoveryDispatchSemanticPatchError(expectedItemId, `discovery dispatcher semantic patch includes forbidden field: ${forbidden}`, rawContent);
+	}
+	if (typeof parsed.itemId !== "string" || !parsed.itemId.trim()) {
+		return parseDiscoveryDispatchSemanticPatchError(expectedItemId, "discovery dispatcher semantic patch parse error: itemId must be a non-empty string", rawContent);
+	}
+	if (parsed.itemId !== expectedItemId) {
+		return parseDiscoveryDispatchSemanticPatchError(expectedItemId, `discovery dispatcher item mismatch: expected ${expectedItemId}, got ${parsed.itemId}`, rawContent);
+	}
+	if (typeof parsed.title !== "string" || !parsed.title.trim()) {
+		return parseDiscoveryDispatchSemanticPatchError(expectedItemId, "discovery dispatcher semantic patch parse error: title must be a non-empty string", rawContent);
+	}
+	if (typeof parsed.workerInstruction !== "string" || !parsed.workerInstruction.trim()) {
+		return parseDiscoveryDispatchSemanticPatchError(expectedItemId, "discovery dispatcher semantic patch parse error: workerInstruction must be a non-empty string", rawContent);
+	}
+	let itemAcceptanceHints: string[] | undefined;
+	if (parsed.itemAcceptanceHints !== undefined) {
+		if (!Array.isArray(parsed.itemAcceptanceHints)) {
+			return parseDiscoveryDispatchSemanticPatchError(expectedItemId, "discovery dispatcher semantic patch parse error: itemAcceptanceHints must be a string array", rawContent);
+		}
+		if (!parsed.itemAcceptanceHints.every(hint => typeof hint === "string")) {
+			return parseDiscoveryDispatchSemanticPatchError(expectedItemId, "discovery dispatcher semantic patch parse error: itemAcceptanceHints must contain only strings", rawContent);
+		}
+		const normalizedHints = parsed.itemAcceptanceHints.map(hint => hint.trim()).filter(Boolean);
+		if (normalizedHints.length > 0) {
+			itemAcceptanceHints = normalizedHints;
+		}
+	}
+	let outputContractHint: string | undefined;
+	if (parsed.outputContractHint !== undefined) {
+		if (typeof parsed.outputContractHint !== "string" || !parsed.outputContractHint.trim()) {
+			return parseDiscoveryDispatchSemanticPatchError(expectedItemId, "discovery dispatcher semantic patch parse error: outputContractHint must be a non-empty string", rawContent);
+		}
+		outputContractHint = parsed.outputContractHint.trim();
+	}
+	return {
+		ok: true,
+		itemId: expectedItemId,
+		patch: {
+			itemId: expectedItemId,
+			title: parsed.title.trim(),
+			workerInstruction: parsed.workerInstruction.trim(),
+			...(itemAcceptanceHints ? { itemAcceptanceHints } : {}),
+			...(outputContractHint ? { outputContractHint } : {}),
+		},
+	};
+}
+
 export function parseCheckerRoleOutput(content: string): Omit<CheckerOutput, "runtimeContext"> {
 	try {
 		const parsed = parseJsonResponse<CheckerJsonOutput>(content);
@@ -674,6 +740,15 @@ export function parseDecomposerRoleOutput(content: string, maxChildren: number):
 		return { decision: "no_split", reason: "decomposer output parse error: invalid schema", children: [] };
 	} catch {
 		return { decision: "no_split", reason: "decomposer output parse error", children: [] };
+	}
+}
+
+export function parseDiscoveryDispatchSemanticPatch(content: string, expectedItemId: string): DiscoveryDispatchSemanticPatchParsedOutput {
+	try {
+		const parsed = JSON.parse(content.trim()) as unknown;
+		return normalizeDiscoveryDispatchSemanticPatch(parsed, expectedItemId, content);
+	} catch {
+		return parseDiscoveryDispatchSemanticPatchError(expectedItemId, "discovery dispatcher semantic patch parse error: invalid JSON", content);
 	}
 }
 
