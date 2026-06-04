@@ -822,6 +822,9 @@ function readStoredTaskBranches(value: unknown): TaskBranchState[] {
     const discoveryGeneratedEditTaskId = typeof record.discoveryGeneratedEditTaskId === "string" && record.discoveryGeneratedEditTaskId.trim()
       ? record.discoveryGeneratedEditTaskId.trim()
       : undefined;
+    const discoveryGeneratedRunHistoryTaskId = typeof record.discoveryGeneratedRunHistoryTaskId === "string" && record.discoveryGeneratedRunHistoryTaskId.trim()
+      ? record.discoveryGeneratedRunHistoryTaskId.trim()
+      : undefined;
     const discoveryQueueExpanded = record.discoveryQueueExpanded === true;
     result.push({
       nodeId,
@@ -832,6 +835,7 @@ function readStoredTaskBranches(value: unknown): TaskBranchState[] {
       ...(selectedFileKeys.length > 0 ? { selectedFileKeys } : {}),
       ...(discoveryGeneratedObserver ? { discoveryGeneratedObserver } : {}),
       ...(discoveryGeneratedEditTaskId ? { discoveryGeneratedEditTaskId } : {}),
+      ...(discoveryGeneratedRunHistoryTaskId ? { discoveryGeneratedRunHistoryTaskId } : {}),
       ...(discoveryQueueExpanded ? { discoveryQueueExpanded } : {}),
     });
   }
@@ -1767,8 +1771,10 @@ export function App() {
   const addedAgentIds = useMemo(() => new Set(agentNodes.map((node) => node.agentId)), [agentNodes]);
   const canvasUiContextKey = dataSource === "mock" ? `mock:${selectedFixtureId}` : "live";
   const activeRunHistoryTaskId = useMemo(() => {
-    const branch = [...expandedTaskBranches].reverse().find((item) => item.detailMode === "run-history");
-    return branch?.runHistoryTaskId ?? (branch ? branch.taskId : runHistoryTaskId);
+    const branch = [...expandedTaskBranches].reverse().find((item) => (
+      item.detailMode === "run-history" || Boolean(item.discoveryGeneratedRunHistoryTaskId)
+    ));
+    return branch?.discoveryGeneratedRunHistoryTaskId ?? branch?.runHistoryTaskId ?? (branch ? branch.taskId : runHistoryTaskId);
   }, [expandedTaskBranches, runHistoryTaskId]);
   const hydratedCanvasUiContextKeyRef = useRef<string | null>(null);
   const expandedAgentNode = expandedAgentBranch
@@ -1777,15 +1783,19 @@ export function App() {
   const expandedAgent = expandedAgentNode ? agentsById.get(expandedAgentNode.agentId) ?? null : null;
   const runObserverTargets = useMemo(() => expandedTaskBranches.flatMap((branch) => {
     const rootTargets = (() => {
-      if ((branch.detailMode !== "run-observer" && branch.detailMode !== "run-history") || !branch.observedRunId) return [];
+      const discoveryRunHistoryTaskId = branch.detailMode === "discovery-subcanvas"
+        ? branch.discoveryGeneratedRunHistoryTaskId
+        : undefined;
+      const isRunHistoryMode = branch.detailMode === "run-history" || Boolean(discoveryRunHistoryTaskId);
+      if ((branch.detailMode !== "run-observer" && !isRunHistoryMode) || !branch.observedRunId) return [];
       const node = taskNodes.find((candidate) => candidate.nodeId === branch.nodeId) ?? null;
       const task = node ? tasksById.get(node.taskId) ?? null : null;
       if (!task) return [];
-      const targetTaskId = branch.detailMode === "run-history"
-        ? branch.runHistoryTaskId ?? activeRunHistoryTaskId ?? task.taskId
+      const targetTaskId = isRunHistoryMode
+        ? discoveryRunHistoryTaskId ?? branch.runHistoryTaskId ?? activeRunHistoryTaskId ?? task.taskId
         : task.taskId;
       const taskRun = (taskRunsByTaskId[targetTaskId] ?? []).find((run) => run.runId === branch.observedRunId)
-        ?? (branch.detailMode === "run-history"
+        ?? (isRunHistoryMode
           ? runHistoryItems.find((item) => item.annotation.taskId === targetTaskId && item.run.runId === branch.observedRunId)?.run ?? null
           : null);
       if (!taskRun) return [];
@@ -1864,7 +1874,14 @@ export function App() {
     if (nodeId) {
       setExpandedTaskBranches((current) => current.map((item) => (
         item.nodeId === nodeId
-          ? { ...item, detailMode: "run-history", runHistoryTaskId: taskId, observedRunId: undefined, selectedFileKeys: [] }
+          ? item.detailMode === "discovery-subcanvas"
+            ? {
+                ...item,
+                discoveryGeneratedRunHistoryTaskId: taskId,
+                observedRunId: undefined,
+                selectedFileKeys: [],
+              }
+            : { ...item, detailMode: "run-history", runHistoryTaskId: taskId, observedRunId: undefined, selectedFileKeys: [] }
           : item
       )));
     }
@@ -3617,6 +3634,7 @@ export function App() {
                             selectedFileKeys: [],
                             discoveryGeneratedObserver: undefined,
                             discoveryGeneratedEditTaskId: undefined,
+                            discoveryGeneratedRunHistoryTaskId: undefined,
                             discoveryQueueExpanded: false,
                           }
                         : item
@@ -3690,8 +3708,13 @@ export function App() {
       const menuPanelId = taskMenuPanelId(branch.nodeId);
       const runHistoryPanelId = `run-history-${branch.nodeId}`;
 
-      if (branch.detailMode === "run-history") {
-        const historyTaskId = branch.runHistoryTaskId ?? activeRunHistoryTaskId ?? task.taskId;
+      const discoveryRunHistoryTaskId = branch.detailMode === "discovery-subcanvas"
+        ? branch.discoveryGeneratedRunHistoryTaskId
+        : undefined;
+      const isRunHistoryPanelOpen = branch.detailMode === "run-history" || Boolean(discoveryRunHistoryTaskId);
+
+      if (isRunHistoryPanelOpen) {
+        const historyTaskId = discoveryRunHistoryTaskId ?? branch.runHistoryTaskId ?? activeRunHistoryTaskId ?? task.taskId;
         const historyTask = historyTaskId
           ? tasksById.get(historyTaskId) ?? generatedTasksById.get(historyTaskId) ?? task
           : task;
@@ -3699,7 +3722,7 @@ export function App() {
           id: runHistoryPanelId,
           width: 520,
           autoHeight: true,
-          sourceId: menuPanelId,
+          sourceId: discoveryRunHistoryTaskId ? `discovery-subcanvas-${branch.nodeId}` : menuPanelId,
           panel: (
             <section className="emap-run-history-panel" aria-label={`${historyTask.title} 运行记录`}>
               <header className="emap-run-history-head">
@@ -3714,7 +3737,14 @@ export function App() {
                   onClick={() => {
                     setExpandedTaskBranches((current) => current.map((item) => (
                       item.nodeId === branch.nodeId
-                        ? { ...item, detailMode: null, runHistoryTaskId: undefined, observedRunId: undefined, selectedFileKeys: [] }
+                        ? discoveryRunHistoryTaskId
+                          ? {
+                              ...item,
+                              discoveryGeneratedRunHistoryTaskId: undefined,
+                              observedRunId: undefined,
+                              selectedFileKeys: [],
+                            }
+                          : { ...item, detailMode: null, runHistoryTaskId: undefined, observedRunId: undefined, selectedFileKeys: [] }
                         : item
                     )));
                     closeTaskRunHistory();
@@ -3761,7 +3791,9 @@ export function App() {
                           setRunHistoryAnalysisManualText(null);
                           setExpandedTaskBranches((current) => current.map((candidate) => (
                             candidate.nodeId === branch.nodeId
-                              ? { ...candidate, detailMode: "run-history", runHistoryTaskId: historyTask.taskId, observedRunId: run.runId, selectedFileKeys: [] }
+                              ? discoveryRunHistoryTaskId
+                                ? { ...candidate, discoveryGeneratedRunHistoryTaskId: historyTask.taskId, observedRunId: run.runId, selectedFileKeys: [] }
+                                : { ...candidate, detailMode: "run-history", runHistoryTaskId: historyTask.taskId, observedRunId: run.runId, selectedFileKeys: [] }
                               : candidate
                           )));
                         }}
@@ -3835,7 +3867,6 @@ export function App() {
         const dispatchDiagnostics = discoveryDispatchDiagnosticsByTaskId[task.taskId] ?? [];
         const discoveryConcurrency = Math.max(1, task.discoverySpec?.autoRun?.concurrency ?? 3);
         const discoverySubcanvasStyle = {
-          "--discovery-running-columns": String(discoveryConcurrency),
           "--discovery-queue-columns": String(discoveryConcurrency * 2),
         } as CSSProperties;
         const generatedTaskCards = generatedTasks.map((generatedTask, generatedTaskIndex) => {
@@ -3889,21 +3920,21 @@ export function App() {
             workUnitMode,
           };
         });
-        const runningGeneratedTaskCards = generatedTaskCards.filter((card) => card.visualState === "running");
-        const queuedGeneratedTaskCards = generatedTaskCards.filter((card) => card.visualState !== "running");
         const forceVisibleQueuedTaskIds = new Set([
           branch.discoveryGeneratedObserver?.taskId,
           branch.discoveryGeneratedEditTaskId,
           generatedArchiveConfirmTaskId,
         ].filter((taskId): taskId is string => typeof taskId === "string" && taskId.length > 0));
-        const queuedPreviewCards = branch.discoveryQueueExpanded
-          ? queuedGeneratedTaskCards
-          : queuedGeneratedTaskCards.filter((card, index) => (
+        const generatedPreviewCards = branch.discoveryQueueExpanded
+          ? generatedTaskCards
+          : generatedTaskCards.filter((card, index) => (
               index < DISCOVERY_QUEUE_INITIAL_CARD_LIMIT || forceVisibleQueuedTaskIds.has(card.generatedTask.taskId)
             ));
-        const hiddenQueuedTaskCount = queuedGeneratedTaskCards.length - queuedPreviewCards.length;
-        const doneGeneratedTaskCount = queuedGeneratedTaskCards.filter((card) => card.visualState === "done").length;
-        const waitingGeneratedTaskCount = queuedGeneratedTaskCards.length - doneGeneratedTaskCount;
+        const hiddenGeneratedTaskCount = generatedTaskCards.length - generatedPreviewCards.length;
+        const runningGeneratedTaskCount = generatedTaskCards.filter((card) => card.visualState === "running").length;
+        const doneGeneratedTaskCount = generatedTaskCards.filter((card) => card.visualState === "done").length;
+        const failedGeneratedTaskCount = generatedTaskCards.filter((card) => card.visualState === "failed").length;
+        const waitingGeneratedTaskCount = generatedTaskCards.length - runningGeneratedTaskCount - doneGeneratedTaskCount - failedGeneratedTaskCount;
         const renderGeneratedCard = (card: (typeof generatedTaskCards)[number]) => {
           const {
             activeGeneratedRun,
@@ -4179,6 +4210,7 @@ export function App() {
                               detailMode: null,
                             discoveryGeneratedObserver: undefined,
                             discoveryGeneratedEditTaskId: undefined,
+                            discoveryGeneratedRunHistoryTaskId: undefined,
                             discoveryQueueExpanded: false,
                           }
                         : item
@@ -4232,62 +4264,41 @@ export function App() {
                 {generatedTasks.length === 0 ? (
                   <div className="discovery-subcanvas-empty">暂无 generated Tasks。</div>
                 ) : (
-                  <>
-                    <section
-                      className="discovery-subcanvas-lane discovery-subcanvas-lane-running"
-                      aria-label={`${task.title} 正在运行 generated Tasks`}
+                  <section
+                    className="discovery-subcanvas-lane discovery-subcanvas-lane-queue"
+                    aria-label={`${task.title} generated Task 网格`}
+                  >
+                    <div className="discovery-subcanvas-lane-head">
+                      <span>generated Task 网格</span>
+                      <strong>
+                        {runningGeneratedTaskCount} running · {waitingGeneratedTaskCount} queued · {doneGeneratedTaskCount} done
+                        {failedGeneratedTaskCount > 0 ? ` · ${failedGeneratedTaskCount} failed` : ""}
+                      </strong>
+                    </div>
+                    <div
+                      className="discovery-subcanvas-queue-grid"
+                      data-generated-queue-visible-count={generatedPreviewCards.length}
+                      data-generated-queue-total-count={generatedTaskCards.length}
                     >
-                      <div className="discovery-subcanvas-lane-head">
-                        <span>正在运行</span>
-                        <strong>{runningGeneratedTaskCards.length}/{discoveryConcurrency}</strong>
-                      </div>
-                      {runningGeneratedTaskCards.length === 0 ? (
-                        <div className="discovery-subcanvas-empty compact">当前并发池没有运行中的 generated Task。</div>
-                      ) : (
-                        <div className="discovery-subcanvas-running-grid">
-                          {runningGeneratedTaskCards.map(renderGeneratedCard)}
-                        </div>
-                      )}
-                    </section>
-                    <section
-                      className="discovery-subcanvas-lane discovery-subcanvas-lane-queue"
-                      aria-label={`${task.title} generated Task 执行队列`}
-                    >
-                      <div className="discovery-subcanvas-lane-head">
-                        <span>执行队列</span>
-                        <strong>{waitingGeneratedTaskCount} queued · {doneGeneratedTaskCount} done</strong>
-                      </div>
-                      {queuedGeneratedTaskCards.length === 0 ? (
-                        <div className="discovery-subcanvas-empty compact">暂无排队或已完成 generated Task。</div>
-                      ) : (
-                        <>
-                          <div
-                            className="discovery-subcanvas-queue-grid"
-                            data-generated-queue-visible-count={queuedPreviewCards.length}
-                            data-generated-queue-total-count={queuedGeneratedTaskCards.length}
-                          >
-                            {queuedPreviewCards.map(renderGeneratedCard)}
-                          </div>
-                          {hiddenQueuedTaskCount > 0 && (
-                            <button
-                              type="button"
-                              className="discovery-subcanvas-show-all"
-                              data-generated-action="show-all-queued"
-                              onClick={() => {
-                                setExpandedTaskBranches((current) => current.map((item) =>
-                                  item.nodeId === branch.nodeId
-                                    ? { ...item, discoveryQueueExpanded: true }
-                                    : item
-                                ));
-                              }}
-                            >
-                              显示全部 {queuedGeneratedTaskCards.length} 个 generated Task
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </section>
-                  </>
+                      {generatedPreviewCards.map(renderGeneratedCard)}
+                    </div>
+                    {hiddenGeneratedTaskCount > 0 && (
+                      <button
+                        type="button"
+                        className="discovery-subcanvas-show-all"
+                        data-generated-action="show-all-queued"
+                        onClick={() => {
+                          setExpandedTaskBranches((current) => current.map((item) =>
+                            item.nodeId === branch.nodeId
+                              ? { ...item, discoveryQueueExpanded: true }
+                              : item
+                          ));
+                        }}
+                      >
+                        显示全部 {generatedTaskCards.length} 个 generated Task
+                      </button>
+                    )}
+                  </section>
                 )}
               </div>
             </section>
@@ -5006,19 +5017,23 @@ export function App() {
     };
 
     for (const branch of expandedTaskBranches) {
-      if ((branch.detailMode !== "run-observer" && branch.detailMode !== "run-history") || !branch.observedRunId) continue;
+      const discoveryRunHistoryTaskId = branch.detailMode === "discovery-subcanvas"
+        ? branch.discoveryGeneratedRunHistoryTaskId
+        : undefined;
+      const isRunHistoryMode = branch.detailMode === "run-history" || Boolean(discoveryRunHistoryTaskId);
+      if ((branch.detailMode !== "run-observer" && !isRunHistoryMode) || !branch.observedRunId) continue;
       const node = taskNodes.find((candidate) => candidate.nodeId === branch.nodeId) ?? null;
       const task = node ? tasksById.get(node.taskId) ?? null : null;
       if (!node || !task) continue;
-      const targetTaskId = branch.detailMode === "run-history"
-        ? branch.runHistoryTaskId ?? activeRunHistoryTaskId ?? task.taskId
+      const targetTaskId = isRunHistoryMode
+        ? discoveryRunHistoryTaskId ?? branch.runHistoryTaskId ?? activeRunHistoryTaskId ?? task.taskId
         : task.taskId;
       const observedTaskRun = (taskRunsByTaskId[targetTaskId] ?? []).find((taskRun) => taskRun.runId === branch.observedRunId)
-        ?? (branch.detailMode === "run-history"
+        ?? (isRunHistoryMode
           ? runHistoryItems.find((item) => item.annotation.taskId === targetTaskId && item.run.runId === branch.observedRunId)?.run ?? null
           : null);
       if (!observedTaskRun) continue;
-      const historyTask = branch.detailMode === "run-history"
+      const historyTask = isRunHistoryMode
         ? tasksById.get(targetTaskId) ?? generatedTasksById.get(targetTaskId) ?? task
         : undefined;
 
@@ -5038,7 +5053,7 @@ export function App() {
       pushTaskRunObserverPanels({
         observedTaskRun,
         selectedFileKeys: branch.selectedFileKeys ?? [],
-        sourceId: branch.detailMode === "run-history" ? `run-history-${branch.nodeId}` : taskMenuPanelId(branch.nodeId),
+        sourceId: isRunHistoryMode ? `run-history-${branch.nodeId}` : taskMenuPanelId(branch.nodeId),
         runObserverPanelId: `run-observer-${branch.nodeId}`,
         fileDetailPanelIdPrefix: `file-detail-${branch.nodeId}`,
         toggleFile,

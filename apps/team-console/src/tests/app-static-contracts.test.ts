@@ -424,6 +424,7 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toContain(".discovery-generated-card-watermark");
     expect(mapCss).toContain(".discovery-generated-card.state-running::after");
     expect(mapCss).toContain("@keyframes discovery-generated-card-progress");
+    expect(mapCss).not.toContain(".discovery-subcanvas-running-grid");
     expect(mapCss).toContain(".discovery-generated-card.state-queued");
     expect(mapCss).toContain(".discovery-generated-card.state-done");
     expect(mapCss).toContain(".discovery-generated-card.state-failed");

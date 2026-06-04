@@ -465,6 +465,8 @@ describe("App", () => {
     const historyPanel = await screen.findByRole("region", { name: "核查 Vultr 公开证据 运行记录" });
     expect(screen.queryByRole("complementary", { name: "核查 Vultr 公开证据 运行记录" })).toBeNull();
     expect(within(historyPanel).getByText("task_generated_vultr")).toBeInTheDocument();
+    expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
+    expect(getGeneratedCard(panel, "task_generated_vultr")).toBeTruthy();
     await waitFor(() => {
       expect(within(historyPanel).getByText("暂无可见运行记录。")).toBeInTheDocument();
     });
@@ -2234,6 +2236,10 @@ describe("App", () => {
           alpha.taskId,
         ]);
       });
+      expect(within(panel).getByText("generated Task 网格")).toBeInTheDocument();
+      expect(within(panel).getByText("1 running · 0 queued · 2 done")).toBeInTheDocument();
+      expect(within(panel).queryByText("正在运行")).toBeNull();
+      expect(within(panel).queryByText("执行队列")).toBeNull();
     });
 
     it("keeps the Refresh Task button idle while a silent live task refresh is in flight", async () => {
