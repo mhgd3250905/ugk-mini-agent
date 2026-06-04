@@ -9,7 +9,10 @@ export type TeamRunDetailResponse = TeamRunState & {
 	taskDefinitions?: TeamRunDetailTaskDefinition[];
 };
 
-type RunDetailWorkspaceReader = Pick<RunWorkspace, "readExpansion" | "readDecomposition">;
+export type TeamRunDetailWorkspaceReader = Pick<RunWorkspace,
+	| "readExpansion"
+	| "readDecomposition"
+>;
 
 function expansionChildFallback(parentTask: TeamTask, child: { taskId: string; sourceItemId: string; title: string; task?: TeamTask }): TeamTask {
 	return child.task ?? {
@@ -27,7 +30,7 @@ function expansionChildFallback(parentTask: TeamTask, child: { taskId: string; s
 export async function buildRunDetailResponse(
 	state: TeamRunState,
 	plan: TeamPlan | null,
-	workspace: RunDetailWorkspaceReader,
+	workspace: TeamRunDetailWorkspaceReader,
 ): Promise<TeamRunDetailResponse> {
 	if (!plan) return state;
 	const definitions = new Map<string, TeamRunDetailTaskDefinition>();
