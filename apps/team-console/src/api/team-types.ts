@@ -622,8 +622,14 @@ export interface TeamTaskCloneRequest {
   templateBindings?: Record<string, string>;
 }
 
+export interface TeamManualUpstreamRunSelection {
+  connectionId: string;
+  fromRunId: string;
+}
+
 export interface TeamTaskRunCreateRequest {
   templateBindings?: Record<string, string>;
+  upstreamRunSelections?: TeamManualUpstreamRunSelection[];
 }
 
 export interface TeamTaskState {

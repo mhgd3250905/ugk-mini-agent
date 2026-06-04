@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunAnnotation, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
+import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunAnnotation, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort, TeamTaskConnection, TeamManualUpstreamRunSelection, TeamTaskRunCreateRequest } from "../api/team-types";
 import { MockTeamApi } from "../fixtures/team-fixtures";
 import { useTeamConsoleLiveData, type DataSource, type TeamConsoleUiResetReason, type TeamDiscoveryStage, type TeamDiscoverySummary, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
 import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchGeneratedObserverState, type TaskBranchState } from "./use-task-branch-stack";
@@ -1467,6 +1467,35 @@ function normalizedTemplateBindings(task: TeamCanvasTask, bindings: Record<strin
   );
 }
 
+type LoadedTaskRunSnapshot = {
+  taskId: string;
+  runId: string;
+  status: TeamRunState["status"];
+};
+
+function buildLoadedUpstreamRunSelections(
+  targetTask: TeamCanvasTask,
+  taskConnections: TeamTaskConnection[],
+  loadedTaskRunByTaskId: Record<string, string>,
+  loadedTaskRunSnapshotByTaskId: Record<string, LoadedTaskRunSnapshot>,
+  taskRunsByTaskId: Record<string, TeamRunState[]>,
+): TeamManualUpstreamRunSelection[] {
+  const selections: TeamManualUpstreamRunSelection[] = [];
+  for (const connection of taskConnections) {
+    if (connection.toTaskId !== targetTask.taskId || connection.status === "stale") continue;
+    const loadedRunId = loadedTaskRunByTaskId[connection.fromTaskId];
+    if (!loadedRunId) continue;
+    const loadedSnapshot = loadedTaskRunSnapshotByTaskId[connection.fromTaskId];
+    if (loadedSnapshot?.runId === loadedRunId && loadedSnapshot.status !== "completed") continue;
+    const knownRuns = taskRunsByTaskId[connection.fromTaskId] ?? [];
+    if (knownRuns.some((run) => isActiveRun(run.status))) continue;
+    const knownLoadedRun = knownRuns.find((run) => run.runId === loadedRunId);
+    if (knownLoadedRun && knownLoadedRun.status !== "completed") continue;
+    selections.push({ connectionId: connection.connectionId, fromRunId: loadedRunId });
+  }
+  return selections;
+}
+
 export function App() {
   const initialDataSourceRef = useRef<DataSource>(readStoredInitialDataSource());
   const [theme, setTheme] = useState<TeamConsoleTheme>(() => readStoredTheme());
@@ -1493,6 +1522,7 @@ export function App() {
   const [runHistoryAnalysisCopyState, setRunHistoryAnalysisCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [runHistoryAnalysisManualText, setRunHistoryAnalysisManualText] = useState<string | null>(null);
   const [loadedTaskRunByTaskId, setLoadedTaskRunByTaskId] = useState<Record<string, string>>({});
+  const [loadedTaskRunSnapshotByTaskId, setLoadedTaskRunSnapshotByTaskId] = useState<Record<string, LoadedTaskRunSnapshot>>({});
   const [taskNodes, setTaskNodes] = useState<AtlasTaskNode[]>([]);
   const [taskGroups, setTaskGroups] = useState<AtlasTaskGroup[]>([]);
   const [selectedAtlasEntries, setSelectedAtlasEntries] = useState<AtlasSelectedNodeEntry[]>([]);
@@ -1810,6 +1840,12 @@ export function App() {
   ), [generatedTasksByDiscoveryTaskId]);
   const taskRunsByTaskIdRef = useRef(taskRunsByTaskId);
   taskRunsByTaskIdRef.current = taskRunsByTaskId;
+  const taskConnectionsRef = useRef(taskConnections);
+  taskConnectionsRef.current = taskConnections;
+  const loadedTaskRunByTaskIdRef = useRef(loadedTaskRunByTaskId);
+  loadedTaskRunByTaskIdRef.current = loadedTaskRunByTaskId;
+  const loadedTaskRunSnapshotByTaskIdRef = useRef(loadedTaskRunSnapshotByTaskId);
+  loadedTaskRunSnapshotByTaskIdRef.current = loadedTaskRunSnapshotByTaskId;
   const runObserverInitialRefreshKeysRef = useRef<Set<string>>(new Set());
   const runObserverOpenTargetKeysRef = useRef<Set<string>>(new Set());
   const generatedEditDetailHandledTaskIdsRef = useRef<Set<string>>(new Set());
@@ -2057,11 +2093,25 @@ export function App() {
       ...current,
       [item.annotation.taskId]: item.run.runId,
     }));
+    setLoadedTaskRunSnapshotByTaskId((current) => ({
+      ...current,
+      [item.annotation.taskId]: {
+        taskId: item.annotation.taskId,
+        runId: item.run.runId,
+        status: item.run.status,
+      },
+    }));
   }, []);
 
   const unloadRunHistoryItem = useCallback((item: TeamTaskRunHistoryItem) => {
     setLoadedTaskRunByTaskId((current) => {
       if (current[item.annotation.taskId] !== item.run.runId) return current;
+      const next = { ...current };
+      delete next[item.annotation.taskId];
+      return next;
+    });
+    setLoadedTaskRunSnapshotByTaskId((current) => {
+      if (current[item.annotation.taskId]?.runId !== item.run.runId) return current;
       const next = { ...current };
       delete next[item.annotation.taskId];
       return next;
@@ -2221,6 +2271,7 @@ export function App() {
       setCanvasBranchLayout({});
       setTaskGroups([]);
       setLoadedTaskRunByTaskId({});
+      setLoadedTaskRunSnapshotByTaskId({});
       hydratedCanvasUiContextKeyRef.current = canvasUiContextKey;
       setCanvasUiStateHydrated(true);
       return;
@@ -2275,6 +2326,7 @@ export function App() {
       selection.taskId,
       selection.runId,
     ])));
+    setLoadedTaskRunSnapshotByTaskId({});
     setMinimizedAgentNodeIds((stored.minimizedAgentNodeIds ?? []).filter((nodeId) => agentNodeIds.has(nodeId)));
     setMinimizedTaskNodeIds((stored.minimizedTaskNodeIds ?? []).filter((nodeId) => taskNodeIds.has(nodeId)));
     setMinimizedSourceNodeIds((stored.minimizedSourceNodeIds ?? []).filter((nodeId) => sourceNodeIds.has(nodeId)));
@@ -2303,6 +2355,18 @@ export function App() {
     const taskIds = new Set(taskNodes.map((node) => node.taskId));
     for (const taskId of generatedTasksById.keys()) taskIds.add(taskId);
     setLoadedTaskRunByTaskId((current) => filterLoadedTaskRunByTaskId(current, taskIds));
+    setLoadedTaskRunSnapshotByTaskId((current) => {
+      let changed = false;
+      const next: Record<string, LoadedTaskRunSnapshot> = {};
+      for (const [taskId, snapshot] of Object.entries(current)) {
+        if (!taskIds.has(taskId)) {
+          changed = true;
+          continue;
+        }
+        next[taskId] = snapshot;
+      }
+      return changed ? next : current;
+    });
   }, [canvasUiStateHydrated, generatedTasksById, taskNodes]);
 
   useEffect(() => {
@@ -2866,7 +2930,32 @@ export function App() {
     setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: true }));
     try {
       const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-      const taskRun = await api.createTaskRun(taskId, overrideBindings ? { templateBindings: overrideBindings } : undefined);
+      let selectionTaskConnections = taskConnectionsRef.current;
+      let selectionTaskRunsByTaskId = taskRunsByTaskIdRef.current;
+      if (api instanceof LiveTeamApi) {
+        try {
+          const rootSummary = await api.getRootSummary();
+          selectionTaskConnections = rootSummary.taskConnections;
+          selectionTaskRunsByTaskId = rootSummary.taskRunsByTaskId;
+        } catch {
+          selectionTaskConnections = taskConnectionsRef.current;
+          selectionTaskRunsByTaskId = taskRunsByTaskIdRef.current;
+        }
+      }
+      const upstreamRunSelections = buildLoadedUpstreamRunSelections(
+        task,
+        selectionTaskConnections,
+        loadedTaskRunByTaskIdRef.current,
+        loadedTaskRunSnapshotByTaskIdRef.current,
+        selectionTaskRunsByTaskId,
+      );
+      const createRequest: TeamTaskRunCreateRequest | undefined = overrideBindings || upstreamRunSelections.length > 0
+        ? {
+            ...(overrideBindings ? { templateBindings: overrideBindings } : {}),
+            ...(upstreamRunSelections.length > 0 ? { upstreamRunSelections } : {}),
+          }
+        : undefined;
+      const taskRun = await api.createTaskRun(taskId, createRequest);
       if (task.templateConfig && overrideBindings) {
         applyTaskParameterStateLocally(taskId, overrideBindings);
       }

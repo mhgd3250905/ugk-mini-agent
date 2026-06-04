@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-04 — Team Console loaded upstream run launch
+
+- **主题**: Team Console 手动启动下游 Task 时，会把已装载的上游历史 run 转成 `upstreamRunSelections[]`。选择范围只限指向目标 Task 的非 stale typed task connection；上游 Task 没有 loaded run、同一上游 Task 有 active run、或当前内存态已知 loaded run 不是 `completed` 时，保持普通 run 请求。状态未知的持久化 selection 交由后端最终校验；前端不补最新 run、不查历史、不读旧 asset。
+- **影响范围**: `5174` Team Console 的 Task 操作菜单运行请求和前端 API 请求类型；不改 backend、不新增 endpoint、不碰 `src/team/**`，模板 Task 的 `templateBindings` 可与 `upstreamRunSelections[]` 共存。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/api/team-types.ts`、`apps/team-console/src/tests/team-api.test.ts`、`apps/team-console/src/tests/app-run-observer.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`。
+
 ## 2026-06-04 — Team Console loaded historical Task run state
 
 - **主题**: Team Console 运行记录面板新增历史 Task run 装载 UI 状态。每个 Task 可在 run history 行上“装载此记录”或“取消装载”，行内显示“已装载”；同一 Task 存在 active run 时显示“已装载（活跃 run 优先）”，避免历史 run 被误认为当前执行上下文。

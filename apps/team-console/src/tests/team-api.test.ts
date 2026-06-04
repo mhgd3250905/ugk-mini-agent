@@ -932,6 +932,68 @@ describe("LiveTeamApi", () => {
     expect(response.source?.templateBindings).toEqual({ keyword: "MiniMax M3" });
   });
 
+  it("posts live Canvas Task run upstream selections when provided", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const run = {
+      runId: "run_upstream",
+      planId: "canvas_task_task_1",
+      source: { type: "canvas-task", taskId: "task_1" },
+      teamUnitId: "canvas_task_unit_task_1",
+      status: "queued",
+      createdAt: "2026-05-25T00:00:00.000Z",
+      startedAt: null,
+      finishedAt: null,
+      currentTaskId: null,
+      taskStates: {},
+      summary: { totalTasks: 1, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+    };
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(run), { status: 201 }));
+
+    await api.createTaskRun("task/a b", {
+      upstreamRunSelections: [{ connectionId: "conn/a b", fromRunId: "run/a b" }],
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/tasks/task%2Fa%20b/runs", {
+      method: "POST",
+      headers: { accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        upstreamRunSelections: [{ connectionId: "conn/a b", fromRunId: "run/a b" }],
+      }),
+    });
+  });
+
+  it("posts live Canvas Task run template bindings and upstream selections together", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const run = {
+      runId: "run_template_upstream",
+      planId: "canvas_task_task_1",
+      source: { type: "canvas-task", taskId: "task_1", templateBindings: { keyword: "MiniMax M3" } },
+      teamUnitId: "canvas_task_unit_task_1",
+      status: "queued",
+      createdAt: "2026-05-25T00:00:00.000Z",
+      startedAt: null,
+      finishedAt: null,
+      currentTaskId: null,
+      taskStates: {},
+      summary: { totalTasks: 1, succeededTasks: 0, failedTasks: 0, cancelledTasks: 0, skippedTasks: 0 },
+    };
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(run), { status: 201 }));
+
+    await api.createTaskRun("task/a b", {
+      templateBindings: { keyword: "MiniMax M3" },
+      upstreamRunSelections: [{ connectionId: "conn/a b", fromRunId: "run/a b" }],
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/tasks/task%2Fa%20b/runs", {
+      method: "POST",
+      headers: { accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        templateBindings: { keyword: "MiniMax M3" },
+        upstreamRunSelections: [{ connectionId: "conn/a b", fromRunId: "run/a b" }],
+      }),
+    });
+  });
+
   it("reads live Canvas Task run attempts and files from task-run endpoints", async () => {
     const api = new LiveTeamApi("/v1/team");
     vi.mocked(fetch)

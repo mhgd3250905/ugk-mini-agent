@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
 import { mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
-import type { AgentChatProcessEntry, TeamAttemptMetadata, TeamRunState } from "../api/team-types";
+import type { AgentChatProcessEntry, TeamAttemptMetadata, TeamRunState, TeamTaskConnection } from "../api/team-types";
 import { getAtlasNodes, firePointer } from "./app-dom-test-utils";
-import { cloneTaskFixture } from "./team-task-test-fixtures";
+import { cloneTaskFixture, makeTypedTaskChainFixtures } from "./team-task-test-fixtures";
 import { makeLiveTaskRunFixture, makeLegacyAttemptFixture } from "./team-run-test-fixtures";
 
 describe("App", () => {
@@ -30,6 +30,7 @@ describe("App", () => {
   function rootSummaryResponse(
     tasks = mockTeamTasks,
     taskRunsByTaskId: Record<string, TeamRunState[]> = {},
+    taskConnections: TeamTaskConnection[] = [],
   ): Response {
     return new Response(JSON.stringify({
       tasks,
@@ -38,7 +39,7 @@ describe("App", () => {
       deletedRunIdsByTaskId: {},
       sourceNodes: [],
       sourceConnections: [],
-      taskConnections: [],
+      taskConnections,
       taskDependencies: [],
       serverVersion: {
         taskCatalog: null,
@@ -64,6 +65,10 @@ describe("App", () => {
         },
       })),
     }), { status: 200 });
+  }
+
+  function parsePostBody(body: BodyInit | null | undefined): unknown {
+    return typeof body === "string" ? JSON.parse(body) : body;
   }
 
   describe("run observer", () => {
@@ -1517,6 +1522,175 @@ describe("App", () => {
       fireEvent.click(within(historyPanel).getByRole("button", { name: "装载此记录" }));
       fireEvent.click(within(menu).getByRole("button", { name: "运行" }));
       await waitFor(() => expect(runPostBodies).toHaveLength(1));
+      expect(runPostBodies[0]).toBeUndefined();
+    });
+
+    async function startDownstreamTaskWithOptionalLoadedUpstream(options: {
+      loadUpstream?: boolean;
+      upstreamRun?: TeamRunState;
+      taskRunsByTaskId?: Record<string, TeamRunState[]>;
+      connection?: TeamTaskConnection;
+    } = {}) {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+      const upstreamRun = options.upstreamRun ?? makeLiveTaskRunFixture(collectTask, "run_collect_loaded_old");
+      const createdRun = makeLiveTaskRunFixture(htmlTask, "run_html_created_from_loaded");
+      const connection: TeamTaskConnection = options.connection ?? {
+        schemaVersion: "team/task-connection-1",
+        connectionId: "conn_collect_to_html",
+        fromTaskId: collectTask.taskId,
+        fromOutputPortId: "draft_md",
+        toTaskId: htmlTask.taskId,
+        toInputPortId: "source_md",
+        type: "md",
+        status: "active",
+        createdAt: "2026-06-04T00:00:00.000Z",
+        updatedAt: "2026-06-04T00:00:00.000Z",
+      };
+      const taskRunsByTaskId = options.taskRunsByTaskId ?? {
+        [collectTask.taskId]: [upstreamRun],
+        [htmlTask.taskId]: [],
+      };
+      const runPostBodies: Array<BodyInit | null | undefined> = [];
+
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/v1/team/console-layout") return new Response(JSON.stringify({ state: null, updatedAt: null }), { status: 200 });
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") return rootSummaryResponse([collectTask, htmlTask], taskRunsByTaskId, [connection]);
+        if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [connection] }), { status: 200 });
+        if (url === "/v1/team/task-dependencies") return new Response(JSON.stringify({ dependencies: [] }), { status: 200 });
+        if (url === "/v1/team/source-nodes") return new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 });
+        if (url === "/v1/team/source-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+        if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse(taskRunsByTaskId);
+        if (url.startsWith("/v1/team/task-runs/") && url.includes("?view=summary&taskId=")) {
+          const runId = decodeURIComponent(url.split("/v1/team/task-runs/")[1]!.split("?")[0]!);
+          const run = Object.values(taskRunsByTaskId).flat().find((candidate) => candidate.runId === runId);
+          return run
+            ? new Response(JSON.stringify(run), { status: 200 })
+            : new Response(JSON.stringify({ error: "missing run" }), { status: 404 });
+        }
+        if (url === `/v1/team/tasks/${collectTask.taskId}/run-history?limit=50&offset=0`) {
+          return runHistoryResponse(collectTask.taskId, [upstreamRun]);
+        }
+        if (url === `/v1/team/tasks/${htmlTask.taskId}/runs` && method === "POST") {
+          runPostBodies.push(init?.body);
+          return new Response(JSON.stringify(createdRun), { status: 201 });
+        }
+        return new Response(JSON.stringify([]), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const atlas = await waitFor(() => getAtlasNodes(container));
+
+      if (options.loadUpstream !== false) {
+        fireEvent.click(await within(atlas).findByRole("button", { name: collectTask.title }));
+        const upstreamMenu = await screen.findByLabelText(`${collectTask.title} 操作菜单`);
+        fireEvent.click(within(upstreamMenu).getByRole("button", { name: "运行记录" }));
+        const historyPanel = await screen.findByRole("region", { name: `${collectTask.title} 运行记录` });
+        const historicalRow = await waitFor(() => {
+          const row = historyPanel.querySelector(`[data-run-id="${upstreamRun.runId}"]`) as HTMLElement | null;
+          expect(row).toBeTruthy();
+          return row!;
+        });
+        fireEvent.click(within(historicalRow).getByRole("button", { name: "装载此记录" }));
+        await waitFor(() => expect(historicalRow).toHaveAttribute("data-loaded-run", "true"));
+      }
+
+      fireEvent.click(await within(atlas).findByRole("button", { name: htmlTask.title }));
+      const downstreamMenu = await screen.findByLabelText(`${htmlTask.title} 操作菜单`);
+      fireEvent.click(within(downstreamMenu).getByRole("button", { name: "运行" }));
+      await waitFor(() => expect(runPostBodies).toHaveLength(1));
+      return { runPostBodies, upstreamRun, connection };
+    }
+
+    it("sends loaded completed upstream run selection when starting a downstream Task", async () => {
+      const { runPostBodies, upstreamRun, connection } = await startDownstreamTaskWithOptionalLoadedUpstream();
+
+      expect(parsePostBody(runPostBodies[0])).toEqual({
+        upstreamRunSelections: [{ connectionId: connection.connectionId, fromRunId: upstreamRun.runId }],
+      });
+    });
+
+    it("keeps ordinary downstream Task run POST body empty when no upstream run is loaded", async () => {
+      const { runPostBodies } = await startDownstreamTaskWithOptionalLoadedUpstream({ loadUpstream: false });
+
+      expect(runPostBodies[0]).toBeUndefined();
+    });
+
+    it("does not send loaded upstream selection for a stale inbound connection", async () => {
+      const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+      const staleConnection: TeamTaskConnection = {
+        schemaVersion: "team/task-connection-1",
+        connectionId: "conn_stale_collect_to_html",
+        fromTaskId: collectTask.taskId,
+        fromOutputPortId: "draft_md",
+        toTaskId: htmlTask.taskId,
+        toInputPortId: "source_md",
+        type: "md",
+        status: "stale",
+        staleReason: "source_output_port_missing",
+        createdAt: "2026-06-04T00:00:00.000Z",
+        updatedAt: "2026-06-04T00:00:00.000Z",
+      };
+      const { runPostBodies } = await startDownstreamTaskWithOptionalLoadedUpstream({ connection: staleConnection });
+
+      expect(runPostBodies[0]).toBeUndefined();
+    });
+
+    it.each(["failed", "cancelled", "completed_with_failures"] as const)(
+      "does not send loaded upstream selection when the loaded run is %s",
+      async (status) => {
+        const { collectTask } = makeTypedTaskChainFixtures();
+        const upstreamRun = {
+          ...makeLiveTaskRunFixture(collectTask, `run_collect_loaded_${status}`),
+          status,
+        };
+        const { runPostBodies } = await startDownstreamTaskWithOptionalLoadedUpstream({ upstreamRun });
+
+        expect(runPostBodies[0]).toBeUndefined();
+      },
+    );
+
+    it.each(["failed", "cancelled", "completed_with_failures"] as const)(
+      "does not send loaded historical upstream selection when the loaded run is %s but latest summary has another completed run",
+      async (status) => {
+        const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+        const upstreamRun = {
+          ...makeLiveTaskRunFixture(collectTask, `run_collect_loaded_history_${status}`),
+          status,
+        };
+        const latestCompletedRun = makeLiveTaskRunFixture(collectTask, "run_collect_latest_completed");
+        const { runPostBodies } = await startDownstreamTaskWithOptionalLoadedUpstream({
+          upstreamRun,
+          taskRunsByTaskId: {
+            [collectTask.taskId]: [latestCompletedRun],
+            [htmlTask.taskId]: [],
+          },
+        });
+
+        expect(runPostBodies[0]).toBeUndefined();
+      },
+    );
+
+    it("does not send loaded historical upstream selection while the same upstream Task has an active run", async () => {
+      const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+      const historicalRun = makeLiveTaskRunFixture(collectTask, "run_collect_loaded_completed");
+      const activeRun = {
+        ...makeLiveTaskRunFixture(collectTask, "run_collect_active"),
+        status: "running" as const,
+        finishedAt: null,
+      };
+      const { runPostBodies } = await startDownstreamTaskWithOptionalLoadedUpstream({
+        upstreamRun: historicalRun,
+        taskRunsByTaskId: {
+          [collectTask.taskId]: [activeRun, historicalRun],
+          [htmlTask.taskId]: [],
+        },
+      });
+
       expect(runPostBodies[0]).toBeUndefined();
     });
 
