@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-04 — Discovery subcanvas generated Task card interactions
+
+- **主题**: Team Console Discovery 子画布 generated Task 网格交互收口：去掉 generated item 菜单里的“运行记录”入口，改为点击 item 卡片展开/再次点击收起运行记录；卡片增加 hover / active / 已展开视觉反馈，running 卡片保持橙红状态；item 右上角菜单外点自动收起。
+- **影响范围**: `5174` Execution Atlas 的 Discovery 子画布 generated Task 网格、generated item 操作菜单和运行记录分支；不改 runtime、后端 API response shape 或主 `/playground` UI。
+- **验证**: Team Console live-data Vitest、Discovery subcanvas static contract、Team Console build、`git diff --check` 和本地浏览器 `http://127.0.0.1:5174/` reload console error 检查通过。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/src/tests/app-static-contracts.test.ts`。
+
 ## 2026-06-04 — Team Console architecture cleanup closeout
 
 - **主题**: 完成 Team Console / Canvas Task / Discovery 收尾架构清理。Discovery lifecycle、Team Console summary read model、live refresh state、Discovery refresh projection、generated detail merge policy、Discovery subscription state、attempt/run workspace Interfaces、store reader Interfaces 等浅依赖已收口；`TeamOrchestrator` / `RunWorkspace` 经 Step 19 调查后决定不做 20-method shallow Interface，后续若要拆只单独规划 Discovery result assembly / aggregation Module。

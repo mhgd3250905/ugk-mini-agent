@@ -29,9 +29,9 @@
 
 ## 当前 Git 现场
 
-- 分支：`main`。
-- 当前分支状态以 `git status --short --branch` 为准；本轮 Team Console / Canvas Task / Discovery 架构清理已收口。
-- 最终源码基线：`bd0a28f Narrow task dependency store task reader`。
+- 分支：`feature/main-latest-followup-2026-06-04`。
+- 当前分支状态以 `git status --short --branch` 为准；本轮 Team Console / Canvas Task / Discovery 架构清理和 Discovery generated Task 子画布 UI 跟进已收口。
+- 当前最新本地功能基线包括 `2e0d8aa Refine Discovery subcanvas generated task layout` 以及后续 Discovery generated item 卡片交互优化提交。
 - 当前本地 ahead 提交包含 Team Console refresh performance Step 1-6、Discovery dispatch auto-run overlap、Team Task 模板/clone/API/UI group、Canvas Task adaptive timeout、Team Console run history 和本轮 architecture cleanup commits。
 - 本轮默认不提交 `.codex/config.toml`、`.codex/plans/**`、`.omo/`、`github-trending.txt`、runtime/public 报告产物或截图；Step 19/20 的 `.codex/plans/**` report 只是本地审查证据。
 - 未跟踪 runtime/public 产物禁止提交：`public/developer-forum-sources-report.html`、`public/forum-sources-report.html`、`public/medtrum-view/`。
@@ -52,6 +52,7 @@ git log --oneline origin/main..HEAD
 - Discovery runtime 已收口：root gating 等待 dispatch、generated child 终态和 aggregation；root cancel 级联取消 generated child；aggregation 写 `discovery-aggregation.json`；typed downstream 优先消费 aggregation。
 - Team Task 模板链路已收口：Task 可带 `templateConfig.parameters`，本体可直接运行，`templateState.currentBindings` 保存当前参数，run `source.templateBindings` 保存当次快照，clone API 仍保留但不再是模板参数运行主路径。
 - Team Console 画布已支持共享 layout、UI-only Group、Task run history 分支、Discovery generated child 菜单/编辑/运行记录入口、silent refresh 和画布恢复 loading 收口。
+- Discovery 子画布 generated Task 网格已统一承担运行状态和运行记录入口：running item 排前并保持橙红状态，点击 item 展开/再次点击收起运行记录，右上角菜单只保留编辑/归档/运行/输出等操作并支持外点关闭。
 - Canvas Task 独立 run 已使用 adaptive idle timeout + hard cap，工具完成和 public output 文件变化刷新 idle，普通文本/thinking 不续命。
 - 本轮收尾 architecture cleanup 已完成并验证。关键 Module / Interface 包括 `DiscoveryRunLifecycle`、`TeamConsoleSummaryReadModel`、Team Console live refresh state / Discovery refresh / generated detail policy / Discovery subscription helpers、`CanvasTaskAttemptWorkspace`、`CanvasTaskRunWorkspace`、`CanvasTaskRunTaskStore`、Discovery lifecycle dependency Interfaces、summary read-model dependency Interfaces、live refresh API adapter types、child execution workspace Interfaces、`TaskAttemptLifecycleWorkspace`、`TeamRunDetailWorkspaceReader`、task/source/dependency connection store reader Interfaces。
 - Step 19 已审查 `TeamOrchestrator` / `RunWorkspace`：`TeamOrchestrator` 当前依赖 20 个 workspace 方法，直接加 20-method `TeamOrchestratorWorkspace = Pick<RunWorkspace, ...>` 只是浅 Interface，不增加有意义的 Depth / Seam。当前建议停止本轮架构清理；若未来继续，单独规划高风险 Discovery result assembly / aggregation Module。
@@ -64,6 +65,12 @@ git log --oneline origin/main..HEAD
 
 ## 最新验证
 
+- Discovery generated Task 子画布 UI 跟进：
+  - `npm --prefix apps/team-console run test -- --run src/tests/app-static-contracts.test.ts -t "keeps Discovery subcanvas light"`：1 passed。
+  - `npm --prefix apps/team-console run test -- --run src/tests/app-live-data.test.tsx`：82 passed。
+  - `npm --prefix apps/team-console run build`：passed；仍有既有 Vite chunk size warning。
+  - `git diff --check`：passed。
+  - 本地浏览器 `http://127.0.0.1:5174/` reload 后 console error 为 0。
 - Team architecture cleanup Step 20 final validation：
   - `npm test`：2063 tests，2061 passed，2 skipped，0 failed。
   - `npm --prefix apps\team-console run test -- --run src\tests\team-api.test.ts src\tests\app-live-data.test.tsx src\tests\app-run-observer.test.tsx`：194 passed。

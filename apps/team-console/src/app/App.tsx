@@ -2060,6 +2060,17 @@ export function App() {
   }, [dataSource, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedTasksById, openDiscoverySubcanvasGeneratedTaskIds]);
 
   useEffect(() => {
+    if (!generatedActionMenuTaskId) return undefined;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest(`[data-generated-task-id="${generatedActionMenuTaskId}"]`)) return;
+      setGeneratedActionMenuTaskId(null);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [generatedActionMenuTaskId]);
+
+  useEffect(() => {
     if (dataSource !== "live") {
       setSharedCanvasUiState(null);
       setSharedCanvasUiStateLoaded(false);
@@ -3956,11 +3967,30 @@ export function App() {
             workUnitMode,
           } = card;
           const generatedActionMenuOpen = generatedActionMenuTaskId === generatedTask.taskId;
+          const generatedRunHistoryOpen = branch.discoveryGeneratedRunHistoryTaskId === generatedTask.taskId;
           const generatedActionMenuId = `generated-action-menu-${branch.nodeId}-${generatedTask.taskId}`;
+          const toggleGeneratedRunHistory = () => {
+            setGeneratedActionMenuTaskId(null);
+            if (generatedRunHistoryOpen) {
+              setExpandedTaskBranches((current) => current.map((item) =>
+                item.nodeId === branch.nodeId
+                  ? {
+                      ...item,
+                      discoveryGeneratedRunHistoryTaskId: undefined,
+                      observedRunId: undefined,
+                      selectedFileKeys: [],
+                    }
+                  : item
+              ));
+              closeTaskRunHistory();
+              return;
+            }
+            openTaskRunHistory(generatedTask.taskId, branch.nodeId, latestGeneratedRun ? [latestGeneratedRun] : []);
+          };
           return (
             <article
               key={generatedTask.taskId}
-              className={`discovery-generated-card state-${visualState} is-${itemStatus} ${generatedRunIsObserved ? "is-observed" : ""} ${generatedIsEditing ? "is-editing" : ""} ${generatedActionMenuOpen ? "is-action-menu-open" : ""}`}
+              className={`discovery-generated-card state-${visualState} is-${itemStatus} ${generatedRunIsObserved ? "is-observed" : ""} ${generatedIsEditing ? "is-editing" : ""} ${generatedActionMenuOpen ? "is-action-menu-open" : ""} ${generatedRunHistoryOpen ? "is-history-open" : ""}`}
               data-generated-task-id={generatedTask.taskId}
               data-generated-item-status={itemStatus}
               data-generated-workunit-mode={workUnitMode}
@@ -3971,9 +4001,15 @@ export function App() {
               data-generated-editing={generatedIsEditing ? "true" : "false"}
               data-generated-reset-saving={resetSaving ? "true" : "false"}
               data-generated-archive-saving={archiveSaving ? "true" : "false"}
+              data-generated-run-history-open={generatedRunHistoryOpen ? "true" : "false"}
+              onClick={toggleGeneratedRunHistory}
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
                   setGeneratedActionMenuTaskId((current) => current === generatedTask.taskId ? null : current);
+                }
+                if ((event.key === "Enter" || event.key === " ") && event.currentTarget === event.target) {
+                  event.preventDefault();
+                  toggleGeneratedRunHistory();
                 }
               }}
             >
@@ -3988,7 +4024,8 @@ export function App() {
                 aria-label={`${generatedTask.title} 操作菜单`}
                 aria-expanded={generatedActionMenuOpen}
                 aria-controls={generatedActionMenuId}
-                onClick={() => {
+                onClick={(event) => {
+                  event.stopPropagation();
                   setGeneratedActionMenuTaskId((current) =>
                     current === generatedTask.taskId ? null : generatedTask.taskId
                   );
@@ -4001,6 +4038,7 @@ export function App() {
                 className="discovery-generated-card-actions"
                 role="menu"
                 aria-label={`${generatedTask.title} 操作`}
+                onClick={(event) => event.stopPropagation()}
               >
                 <button
                   type="button"
@@ -4072,18 +4110,6 @@ export function App() {
                 <button
                   type="button"
                   className="discovery-generated-action"
-                  data-generated-action="run-history"
-                  role="menuitem"
-                  onClick={() => {
-                    setGeneratedActionMenuTaskId(null);
-                    openTaskRunHistory(generatedTask.taskId, branch.nodeId, latestGeneratedRun ? [latestGeneratedRun] : []);
-                  }}
-                >
-                  运行记录
-                </button>
-                <button
-                  type="button"
-                  className="discovery-generated-action"
                   data-generated-action="run"
                   role="menuitem"
                   disabled={runSaving || Boolean(activeGeneratedRun) || generatedTask.status !== "ready"}
@@ -4147,6 +4173,7 @@ export function App() {
                 <div
                   className="discovery-generated-archive-confirm"
                   data-generated-archive-confirm-for={generatedTask.taskId}
+                  onClick={(event) => event.stopPropagation()}
                 >
                   <span>确认软归档这个 generated Task？</span>
                   <div className="discovery-generated-archive-confirm-actions">
