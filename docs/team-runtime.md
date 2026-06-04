@@ -146,7 +146,7 @@ Discovery dispatcher 是独立 role，不复用旧 Plan decomposer。旧 `runDec
 - Dispatcher input 包含 `runId`、Discovery task id/title、Discovery goal、dispatch goal、`outputKey`、exact `itemId`、完整 `itemPayload`、required/recommended item fields，以及默认 `generatedWorkerAgentId` / `generatedCheckerAgentId` 上下文。
 - `generatedWorkerAgentId` / `generatedCheckerAgentId` 只能作为 prompt 上下文；dispatcher semantic patch 不允许选择或覆盖 worker、checker、leader、source identity、`outputPorts`、`outputCheck`、`workUnit`、`outputContract` 或 `acceptance`。
 - Dispatcher JSON output 固定为 `{ "itemId": "...", "title": "...", "workerInstruction": "...", "itemAcceptanceHints": ["..."], "outputContractHint": "..." }`；prompt 不使用 JSON code fence 示例，并明确要求 trim 后第一个字符是 `{`、最后一个字符是 `}`。
-- `parseDiscoveryDispatchSemanticPatch()` 只接受整个输出是严格 JSON object；fenced JSON、文字包裹 JSON、item mismatch、invalid schema 或 forbidden fields 都返回 `ok: false`，不 throw。旧 `parseDiscoveryDispatchRoleOutput()` 仅保留 legacy parser coverage，不再是实时 dispatcher 成功路径。
+- `parseDiscoveryDispatchSemanticPatch()` 接受 bare JSON object；若模型把整个 JSON object 包在单一 markdown code fence 中，会先 deterministic unwrap 再解析。文字包裹 JSON、embedded JSON、item mismatch、invalid schema 或 forbidden fields 都返回 `ok: false`，不 throw。旧 `parseDiscoveryDispatchRoleOutput()` 仅保留 legacy parser coverage，不再是实时 dispatcher 成功路径。
 - `AgentProfileRoleRunner` 使用独立 role name `discovery-dispatcher`，role key 由 `discoveryTaskId + itemId` 派生并做 path-safe sanitization，避免 raw item id 进入 workspace 路径；profile 选择顺序是 `dispatcherProfileId > decomposerProfileId > workerProfileId`。
 - 当前 dispatcher contract 只产出 semantic patch，不创建或更新 generated Tasks，不标记 stale，不启动 generated Task auto-run，不新增 route，不改 5174 UI。
 

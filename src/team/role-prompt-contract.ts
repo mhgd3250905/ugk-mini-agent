@@ -741,9 +741,18 @@ export function parseDecomposerRoleOutput(content: string, maxChildren: number):
 	}
 }
 
+function normalizeDiscoveryDispatchSemanticPatchJsonContent(content: string): string {
+	const trimmed = content.trim();
+	const singleFenceMatch = trimmed.match(/^```(?:json)?\s*\r?\n([\s\S]*?)\r?\n```$/);
+	if (singleFenceMatch) {
+		return singleFenceMatch[1].trim();
+	}
+	return trimmed;
+}
+
 export function parseDiscoveryDispatchSemanticPatch(content: string, expectedItemId: string): DiscoveryDispatchSemanticPatchParsedOutput {
 	try {
-		const parsed = JSON.parse(content.trim()) as unknown;
+		const parsed = JSON.parse(normalizeDiscoveryDispatchSemanticPatchJsonContent(content)) as unknown;
 		return normalizeDiscoveryDispatchSemanticPatch(parsed, expectedItemId, content);
 	} catch {
 		return parseDiscoveryDispatchSemanticPatchError(expectedItemId, "discovery dispatcher semantic patch parse error: invalid JSON", content);

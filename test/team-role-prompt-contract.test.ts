@@ -135,13 +135,21 @@ test("parseDiscoveryDispatchSemanticPatch accepts valid patch", () => {
 	}
 });
 
-test("parseDiscoveryDispatchSemanticPatch rejects fenced and text-wrapped JSON", () => {
+test("parseDiscoveryDispatchSemanticPatch accepts a single pure JSON fence but rejects text-wrapped JSON", () => {
 	const fenced = parseDiscoveryDispatchSemanticPatch(
 		'```json\n{"itemId":"vendor_1","title":"Assess vendor","workerInstruction":"Do work"}\n```',
 		"vendor_1",
 	);
+	const plainFenced = parseDiscoveryDispatchSemanticPatch(
+		'```\n{"itemId":"vendor_1","title":"Assess vendor","workerInstruction":"Do work"}\n```',
+		"vendor_1",
+	);
 	const embedded = parseDiscoveryDispatchSemanticPatch(
 		'Here is JSON: {"itemId":"vendor_1","title":"Assess vendor","workerInstruction":"Do work"}',
+		"vendor_1",
+	);
+	const fencedWithIntro = parseDiscoveryDispatchSemanticPatch(
+		'Here is JSON:\n```json\n{"itemId":"vendor_1","title":"Assess vendor","workerInstruction":"Do work"}\n```',
 		"vendor_1",
 	);
 	const wrapped = parseDiscoveryDispatchSemanticPatch(
@@ -149,10 +157,12 @@ test("parseDiscoveryDispatchSemanticPatch rejects fenced and text-wrapped JSON",
 		"vendor_1",
 	);
 
-	assert.equal(fenced.ok, false);
-	assert.match(fenced.error, /invalid JSON/);
+	assert.equal(fenced.ok, true);
+	assert.equal(plainFenced.ok, true);
 	assert.equal(embedded.ok, false);
 	assert.match(embedded.error, /invalid JSON/);
+	assert.equal(fencedWithIntro.ok, false);
+	assert.match(fencedWithIntro.error, /invalid JSON/);
 	assert.equal(wrapped.ok, false);
 	assert.match(wrapped.error, /invalid JSON/);
 });

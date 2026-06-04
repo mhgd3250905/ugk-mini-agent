@@ -52,7 +52,7 @@ git log --oneline origin/main..HEAD
 - Discovery runtime 已收口：root gating 等待 dispatch、generated child 终态和 aggregation；root cancel 级联取消 generated child；aggregation 写 `discovery-aggregation.json`；typed downstream 优先消费 aggregation。
 - Discovery dispatch / generated auto-run pipeline 当前语义：Discovery accepted result 写出 `discovery-result.json` 后，单 dispatcher producer 顺序把 raw item 转成 generated Task 并 enqueue；generated run queue consumer 固定 3 并发运行 child。设计上限是 1 个 dispatcher + 3 个 generated child runs，不做 dispatcher 并发。
 - Discovery dispatcher 实时路径已切到 semantic patch：agent 只输出 `itemId`、`title`、`workerInstruction` 和可选 item-specific hints；本地 deterministic compiler 生成完整 `workUnit`，并保底 `outputContract.text` / `acceptance.rules`。旧 full WorkUnit parser 仅保留为 legacy coverage，实时 runner 不再依赖模型输出完整 WorkUnit。
-- Dispatcher semantic prompt 已移除 JSON code fence 示例，并明确要求输出 trim 后首尾为 `{` / `}`；真实 GLM smoke 曾出现 fenced JSON 被 strict parser blocked，这是预期保护，不应改回宽松 fenced/embedded JSON parser。
+- Dispatcher semantic prompt 已移除 JSON code fence 示例，并明确要求输出 trim 后首尾为 `{` / `}`；真实 GLM Discovery run 仍会稳定输出单一 JSON code fence，因此 parser 只对“整段内容就是一个 JSON code fence”的情况做 deterministic unwrap。不要改回宽松 embedded JSON extraction。
 - Discovery dispatcher parser 仍拒绝 item mismatch、invalid JSON、empty semantic fields 和递归 forbidden fields；如果模型继续输出 `workUnit` / `outputContract` / `acceptance` / worker-checker-source identity，会把该 item 记录为 blocked，不静默清理。
 - Team Task 模板链路已收口：Task 可带 `templateConfig.parameters`，本体可直接运行，`templateState.currentBindings` 保存当前参数，run `source.templateBindings` 保存当次快照，clone API 仍保留但不再是模板参数运行主路径。
 - Team Console 画布已支持共享 layout、UI-only Group、Task run history 分支、Discovery generated child 菜单/编辑/运行记录入口、silent refresh 和画布恢复 loading 收口。
@@ -83,6 +83,9 @@ git log --oneline origin/main..HEAD
 - Discovery dispatcher semantic compiler smoke：
   - 本地真实 runner 环境为 `TEAM_USE_MOCK_RUNNER=false`，`task-decomposer` 使用 GLM dispatcher。
   - Smoke root run 中 bare semantic patch item 成功生成 managed WorkUnit、upsert generated Task 并启动 child run；fenced JSON item 被记录为 dispatcher semantic patch parse error blocked。
+- Discovery dispatcher real-run observation：
+  - Task `task_d696b40cdd13` 的 GLM dispatcher 输出语义 JSON 正确，但连续 item 都包在单一 `json` code fence 中；这会被旧 strict parser 全部 blocked。
+  - 修正方向是只解包单一完整 code fence，仍拒绝解释文字、embedded JSON、trailing prose 和 forbidden fields。
 - 更早的分步验证不要继续复制到本文件；需要追溯用 `docs/change-log.md` 或 Git 历史。
 
 ## 未完成 / 风险
