@@ -19,6 +19,7 @@ interface AtlasCanvasShellProps {
   agentFocusId?: string | null;
   interactionMode?: AtlasInteractionMode;
   onSelectionComplete?: (rect: AtlasSelectionRect) => void;
+  onCanvasPointerDown?: () => void;
 }
 
 interface CanvasDragOrigin {
@@ -103,7 +104,7 @@ function toWorldSelectionRect(screenRect: ScreenSelectionRect, viewport: AtlasVi
   };
 }
 
-export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewport, defaultViewport = DEFAULT_VIEWPORT, onViewportChange, toolbarStart, toolbarEnd, agentFocusId, interactionMode = "free", onSelectionComplete }: AtlasCanvasShellProps) {
+export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewport, defaultViewport = DEFAULT_VIEWPORT, onViewportChange, toolbarStart, toolbarEnd, agentFocusId, interactionMode = "free", onSelectionComplete, onCanvasPointerDown }: AtlasCanvasShellProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const dragOriginRef = useRef<CanvasDragOrigin | null>(null);
@@ -197,6 +198,7 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
       event.preventDefault();
       return;
     }
+    onCanvasPointerDown?.();
     if (onSelectionComplete) {
       const localPoint = pointerLocalPoint(mapContainerRef.current, event);
       const client = pointerPoint(event);
@@ -235,7 +237,7 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
     };
     setIsPanning(true);
     event.currentTarget.setPointerCapture?.(event.pointerId);
-  }, [isLocked, onSelectionComplete]);
+  }, [isLocked, onCanvasPointerDown, onSelectionComplete]);
 
   const handleCanvasPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (isLocked) return;

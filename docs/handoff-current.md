@@ -57,6 +57,7 @@ git log --oneline origin/main..HEAD
 - Discovery dispatcher parser 仍拒绝 item mismatch、invalid JSON、empty semantic fields 和递归 forbidden fields；如果模型继续输出 `workUnit` / `outputContract` / `acceptance` / worker-checker-source identity，会把该 item 记录为 blocked，不静默清理。
 - Team Task 模板链路已收口：Task 可带 `templateConfig.parameters`，本体可直接运行，`templateState.currentBindings` 保存当前参数，run `source.templateBindings` 保存当次快照，clone API 仍保留但不再是模板参数运行主路径。
 - Team Console 画布已支持共享 layout、UI-only Group、Task run history 分支、Discovery generated child 菜单/编辑/运行记录入口、silent refresh 和画布恢复 loading 收口。
+- Team Console Execution Atlas 框选已优化：框选节点有明显选中高亮，深色模式下高亮单独增强；点击已选节点集合外的空白或其他节点会清空框选，点击/拖动已选节点保留多选。UI-only Group 折叠态可拖动并在右侧显示 Task 数量；展开态可上锁/解锁和移除。锁定后 Group 不能移动/删除，内部 Task 也不能单独拖动。
 - Discovery 子画布 generated Task 网格已统一承担运行状态和运行记录入口：running item 排前并保持橙红状态，点击 item 展开/再次点击收起运行记录，右上角菜单只保留编辑/归档/运行/输出等操作并支持外点关闭。
 - Canvas Task 独立 run 已使用 adaptive idle timeout + hard cap，工具完成和 public output 文件变化刷新 idle，普通文本/thinking 不续命。
 - Canvas Task detached active run 已收口：主服务重启或后台执行链路丢失后，Team routes 注册会重启 detached `queued` run，并将 detached `running` run 标记为 failed，避免无执行者的 run 长时间假运行。
@@ -73,6 +74,12 @@ git log --oneline origin/main..HEAD
 
 ## 最新验证
 
+- Team Console lasso selection / UI-only Group 交互优化：
+  - `npm --prefix apps/team-console run test -- --run src/tests/app-connections.test.tsx`：23 passed。
+  - `npm --prefix apps/team-console run test -- --run src/tests/app-connections.test.tsx -t "long-press lasso selection"`：6 passed。
+  - `npm --prefix apps/team-console run build`：passed；仍有既有 Vite chunk size warning。
+  - `git diff --check`：passed。
+  - 本地 in-app browser `http://localhost:5174/` reload 后 console error 为 0。
 - Discovery generated Task 子画布 UI 跟进：
   - `npm --prefix apps/team-console run test -- --run src/tests/app-static-contracts.test.ts -t "keeps Discovery subcanvas light"`：1 passed。
   - `npm --prefix apps/team-console run test -- --run src/tests/app-live-data.test.tsx`：82 passed。
