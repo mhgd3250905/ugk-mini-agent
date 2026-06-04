@@ -5,6 +5,8 @@ import { isDuplicateTypedConnection, resolveConnectionStaleReason, wouldCreateMi
 import type { TaskStore } from "./task-store.js";
 import type { ResolvedTaskConnection, TeamTaskConnection, TeamTaskDependency } from "./types.js";
 
+export type TaskConnectionStoreTaskReader = Pick<TaskStore, "get">;
+
 export interface CreateTaskConnectionInput {
 	fromTaskId: string;
 	fromOutputPortId: string;
@@ -19,7 +21,7 @@ export class TaskConnectionStore {
 
 	constructor(
 		private readonly rootDir: string,
-		private readonly taskStore: TaskStore,
+		private readonly taskStore: TaskConnectionStoreTaskReader,
 	) {
 		this.collection = new JsonCollectionStore<TeamTaskConnection>({
 			rootDir,
