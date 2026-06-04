@@ -438,7 +438,7 @@ describe("App", () => {
     });
     const vultrActionMenu = openVultrCard.querySelector(".discovery-generated-card-actions");
     expect(vultrActionMenu).toHaveAttribute("role", "menu");
-    expect(within(vultrActionMenu as HTMLElement).getByRole("menuitem", { name: "运行记录" })).toBeInTheDocument();
+    expect(within(vultrActionMenu as HTMLElement).queryByRole("menuitem", { name: "运行记录" })).toBeNull();
     fireEvent.keyDown(openVultrCard, { key: "Escape" });
     await waitFor(() => {
       const card = getGeneratedCard(panel!, "task_generated_vultr");
@@ -455,18 +455,35 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Discovery 子画布" })).toBeInTheDocument();
   });
 
-  it("opens generated Task run history from the Discovery subcanvas action menu", async () => {
+  it("opens and closes generated Task run history from the Discovery subcanvas card", async () => {
     const { container } = render(<App />);
     const { panel } = await openMockDiscoverySubcanvas(container);
     const vultrCard = getGeneratedCard(panel, "task_generated_vultr");
-    fireEvent.click(within(vultrCard).getByRole("button", { name: "核查 Vultr 公开证据 操作菜单" }));
-    fireEvent.click(within(vultrCard).getByRole("menuitem", { name: "运行记录" }));
 
+    fireEvent.click(vultrCard);
     const historyPanel = await screen.findByRole("region", { name: "核查 Vultr 公开证据 运行记录" });
     expect(screen.queryByRole("complementary", { name: "核查 Vultr 公开证据 运行记录" })).toBeNull();
     expect(within(historyPanel).getByText("task_generated_vultr")).toBeInTheDocument();
+    expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
+    expect(getGeneratedCard(panel, "task_generated_vultr")).toBeTruthy();
+    expect(vultrCard).toHaveAttribute("data-generated-run-history-open", "true");
+
+    fireEvent.click(within(vultrCard).getByRole("button", { name: "核查 Vultr 公开证据 操作菜单" }));
+    expect(within(vultrCard).getByRole("button", { name: "核查 Vultr 公开证据 操作菜单" })).toHaveAttribute("aria-expanded", "true");
+    expect(within(vultrCard).queryByRole("menuitem", { name: "运行记录" })).toBeNull();
+    fireEvent.pointerDown(document.body);
     await waitFor(() => {
-      expect(within(historyPanel).getByText("暂无可见运行记录。")).toBeInTheDocument();
+      expect(within(vultrCard).getByRole("button", { name: "核查 Vultr 公开证据 操作菜单" })).toHaveAttribute("aria-expanded", "false");
+    });
+    fireEvent.click(vultrCard);
+    await waitFor(() => {
+      expect(screen.queryByRole("region", { name: "核查 Vultr 公开证据 运行记录" })).toBeNull();
+    });
+    expect(vultrCard).toHaveAttribute("data-generated-run-history-open", "false");
+    fireEvent.click(vultrCard);
+    const reopenedHistoryPanel = await screen.findByRole("region", { name: "核查 Vultr 公开证据 运行记录" });
+    await waitFor(() => {
+      expect(within(reopenedHistoryPanel).getByText("暂无可见运行记录。")).toBeInTheDocument();
     });
   });
 
@@ -700,8 +717,7 @@ describe("App", () => {
     });
     expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
 
-    fireEvent.click(vultrCard!.querySelector('[data-generated-action="menu"]')!);
-    fireEvent.click(within(vultrCard!).getByRole("menuitem", { name: "运行记录" }));
+    fireEvent.click(vultrCard!);
     const historyPanel = await screen.findByRole("region", { name: "核查 Vultr 公开证据 运行记录" });
     expect(await within(historyPanel).findByText(generatedRunId)).toBeInTheDocument();
 
@@ -2234,6 +2250,10 @@ describe("App", () => {
           alpha.taskId,
         ]);
       });
+      expect(within(panel).getByText("generated Task 网格")).toBeInTheDocument();
+      expect(within(panel).getByText("1 running · 0 queued · 2 done")).toBeInTheDocument();
+      expect(within(panel).queryByText("正在运行")).toBeNull();
+      expect(within(panel).queryByText("执行队列")).toBeNull();
     });
 
     it("keeps the Refresh Task button idle while a silent live task refresh is in flight", async () => {

@@ -420,10 +420,15 @@ describe("Team Console static contracts", () => {
     expect(discoverySubcanvasRule).not.toContain("rgba(7, 12, 22");
     expect(discoveryGeneratedCardRule).toContain("color: var(--primary)");
     expect(discoveryGeneratedCardRule).toContain("aspect-ratio: 1 / 1");
+    expect(discoveryGeneratedCardRule).toContain("cursor: pointer");
     expect(discoveryGeneratedCardRule).not.toContain("color: #d8e4f1");
+    expect(mapCss).toContain(".discovery-generated-card:hover");
+    expect(mapCss).toContain(".discovery-generated-card:active");
+    expect(mapCss).toContain(".discovery-generated-card.is-history-open");
     expect(mapCss).toContain(".discovery-generated-card-watermark");
     expect(mapCss).toContain(".discovery-generated-card.state-running::after");
     expect(mapCss).toContain("@keyframes discovery-generated-card-progress");
+    expect(mapCss).not.toContain(".discovery-subcanvas-running-grid");
     expect(mapCss).toContain(".discovery-generated-card.state-queued");
     expect(mapCss).toContain(".discovery-generated-card.state-done");
     expect(mapCss).toContain(".discovery-generated-card.state-failed");

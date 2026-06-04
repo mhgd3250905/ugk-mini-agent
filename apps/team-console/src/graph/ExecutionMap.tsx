@@ -2167,34 +2167,45 @@ export function ExecutionMap({
     const entries: Entry[] = [];
     const finalRectByPanelId = new Map<string, AtlasRect>();
     const bottomByParent = new Map<string, number>();
-    for (const p of taskChildBranchPanels) {
-      let parentKey: string;
-      let sourceRect: AtlasRect;
-      if (p.sourceId) {
-        parentKey = p.sourceId;
-        const found = finalRectByPanelId.get(p.sourceId) ?? taskBranchRectById.get(p.sourceId);
-        if (!found) continue;
-        sourceRect = found;
-      } else {
-        parentKey = "__menu__";
-        sourceRect = taskBranchNode;
+    let pendingPanels = [...taskChildBranchPanels];
+    while (pendingPanels.length > 0) {
+      const deferredPanels: TaskChildBranchPanelDescriptor[] = [];
+      let placedCount = 0;
+      for (const p of pendingPanels) {
+        let parentKey: string;
+        let sourceRect: AtlasRect;
+        if (p.sourceId) {
+          parentKey = p.sourceId;
+          const found = finalRectByPanelId.get(p.sourceId) ?? taskBranchRectById.get(p.sourceId);
+          if (!found) {
+            deferredPanels.push(p);
+            continue;
+          }
+          sourceRect = found;
+        } else {
+          parentKey = "__menu__";
+          sourceRect = taskBranchNode;
+        }
+        const sizeOverride = activePanelIds.has(p.id) ? panelSizeOverrides[p.id] : undefined;
+        const baseW = p.width ?? TASK_CHILD_BRANCH_WIDTH;
+        const baseH = p.autoHeight
+          ? (panelMeasuredHeights[p.id] ?? (p.height ?? 120))
+          : (p.height ?? TASK_CHILD_BRANCH_HEIGHT);
+        const w = sizeOverride?.width ?? baseW;
+        const h = sizeOverride?.height ?? baseH;
+        const x = sourceRect.x + sourceRect.width + TASK_CHILD_BRANCH_GAP;
+        const prevBottom = bottomByParent.get(parentKey) ?? sourceRect.y;
+        const y = prevBottom === sourceRect.y ? sourceRect.y : prevBottom + panelGap;
+        const baseRect: AtlasRect = { x, y, width: w, height: h };
+        const posOverride = activePanelIds.has(p.id) ? panelPositionOverrides[p.id] : undefined;
+        const rect = posOverride ? { ...baseRect, x: posOverride.x, y: posOverride.y } : baseRect;
+        entries.push({ panel: p, rect, sourceRect, parentKey });
+        finalRectByPanelId.set(p.id, rect);
+        bottomByParent.set(parentKey, y + h);
+        placedCount += 1;
       }
-      const sizeOverride = activePanelIds.has(p.id) ? panelSizeOverrides[p.id] : undefined;
-      const baseW = p.width ?? TASK_CHILD_BRANCH_WIDTH;
-      const baseH = p.autoHeight
-        ? (panelMeasuredHeights[p.id] ?? (p.height ?? 120))
-        : (p.height ?? TASK_CHILD_BRANCH_HEIGHT);
-      const w = sizeOverride?.width ?? baseW;
-      const h = sizeOverride?.height ?? baseH;
-      const x = sourceRect.x + sourceRect.width + TASK_CHILD_BRANCH_GAP;
-      const prevBottom = bottomByParent.get(parentKey) ?? sourceRect.y;
-      const y = prevBottom === sourceRect.y ? sourceRect.y : prevBottom + panelGap;
-      const baseRect: AtlasRect = { x, y, width: w, height: h };
-      const posOverride = activePanelIds.has(p.id) ? panelPositionOverrides[p.id] : undefined;
-      const rect = posOverride ? { ...baseRect, x: posOverride.x, y: posOverride.y } : baseRect;
-      entries.push({ panel: p, rect, sourceRect, parentKey });
-      finalRectByPanelId.set(p.id, rect);
-      bottomByParent.set(parentKey, y + h);
+      if (placedCount === 0) break;
+      pendingPanels = deferredPanels;
     }
     return entries.map((entry) => {
       return {
