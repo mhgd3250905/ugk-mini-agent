@@ -71,6 +71,31 @@ describe("App", () => {
     return typeof body === "string" ? JSON.parse(body) : body;
   }
 
+  async function openLiveRunObserver(options: {
+    taskTitle: string;
+    taskId: string;
+    runId: string;
+    container: HTMLElement;
+  }) {
+    const atlas = await waitFor(() => getAtlasNodes(options.container));
+    const taskNode = await within(atlas).findByRole("button", { name: options.taskTitle });
+    fireEvent.click(taskNode);
+    const menu = await screen.findByLabelText(`${options.taskTitle} 操作菜单`);
+    const runSummary = await waitFor(() => {
+      const node = menu.querySelector("button.task-run-summary") as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    fireEvent.click(runSummary);
+    return await waitFor(() => {
+      const observer = options.container.querySelector(
+        '.emap-task-child-branch-shell[data-panel-id^="run-observer"]',
+      ) as HTMLElement | null;
+      expect(observer).toBeTruthy();
+      return observer!;
+    });
+  }
+
   describe("run observer", () => {
     it("starts a mock Task run from the action menu and shows the latest run state", async () => {
       const { container } = render(<App />);
@@ -1385,6 +1410,419 @@ describe("App", () => {
 
       expect(Number.parseFloat(detailShell!.style.width)).toBeCloseTo(initialWidth + 100, 4);
       expect(Number.parseFloat(detailShell!.style.height)).toBeCloseTo(initialHeight + 60, 4);
+    });
+
+    it("renders manual upstream input diagnostics with full-detail artifact metadata", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+      const manualRun: TeamRunState = {
+        ...makeLiveTaskRunFixture(htmlTask, "run_manual_upstream_observed"),
+        source: {
+          type: "canvas-task",
+          taskId: htmlTask.taskId,
+          manualUpstreamSelections: [{
+            connectionId: "conn_collect_to_html",
+            fromTaskId: collectTask.taskId,
+            fromRunId: "run_collect_loaded_old",
+            fromAttemptId: "attempt_collect_old",
+            fromOutputPortId: "draft_md",
+            toInputPortId: "source_md",
+            artifactId: "artifact_collect_old",
+            createdAt: "2026-06-04T01:00:00.000Z",
+          }],
+        },
+      };
+      const fullDetailRun: TeamRunState = {
+        ...manualRun,
+        source: {
+          ...manualRun.source!,
+          boundInputs: [{
+            source: "task-artifact",
+            connectionId: "conn_collect_to_html",
+            inputPortId: "source_md",
+            artifact: {
+              schemaVersion: "team/task-artifact-1",
+              artifactId: "artifact_collect_old",
+              type: "md",
+              sourceTaskId: collectTask.taskId,
+              sourceRunId: "run_collect_loaded_old",
+              sourceAttemptId: "attempt_collect_old",
+              sourceOutputPortId: "draft_md",
+              fileRef: "tasks/task_collect/attempts/attempt_collect_old/accepted-result.md",
+              preview: "不要把这段 preview 存到 observer state，别犯低级错误",
+              content: "heavy content must not render",
+              createdAt: "2026-06-04T01:00:00.000Z",
+            },
+          }],
+        },
+      };
+      const attempt = makeLegacyAttemptFixture(htmlTask);
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/team/console-layout") return new Response(JSON.stringify({ state: null, updatedAt: null }), { status: 200 });
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") return rootSummaryResponse([collectTask, htmlTask], { [htmlTask.taskId]: [manualRun] });
+        if (url === `/v1/team/task-runs/${manualRun.runId}?view=process-summary&taskId=${htmlTask.taskId}`) {
+          return processSummaryResponse(manualRun, [attempt]);
+        }
+        if (url === `/v1/team/task-runs/${manualRun.runId}`) return new Response(JSON.stringify(fullDetailRun), { status: 200 });
+        if (url.endsWith("/files/worker-output-001.md")) return new Response("worker output", { status: 200 });
+        if (url.endsWith("/files/checker-verdict-001.json")) return new Response('{"verdict":"pass"}', { status: 200 });
+        if (url.endsWith("/files/accepted-result.md")) return new Response("accepted result", { status: 200 });
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const observer = await openLiveRunObserver({
+        taskTitle: htmlTask.title,
+        taskId: htmlTask.taskId,
+        runId: manualRun.runId,
+        container,
+      });
+
+      const diagnostics = await waitFor(() => {
+        const section = observer.querySelector('[data-observer-section="input-diagnostics"]') as HTMLElement | null;
+        expect(section).toBeTruthy();
+        return section!;
+      });
+      const manualRow = diagnostics.querySelector('[data-input-diagnostic-kind="manual-upstream"]') as HTMLElement | null;
+      expect(manualRow).toBeTruthy();
+      expect(manualRow).toHaveTextContent("手动上游输入");
+      expect(manualRow).toHaveTextContent("conn_collect_to_html");
+      expect(manualRow).toHaveTextContent(collectTask.taskId);
+      expect(manualRow).toHaveTextContent("run_collect_loaded_old");
+      expect(manualRow).toHaveTextContent("attempt_collect_old");
+      expect(manualRow).toHaveTextContent("draft_md -> source_md");
+      expect(manualRow).toHaveTextContent("artifact_collect_old");
+      expect(manualRow).toHaveTextContent("md");
+      expect(manualRow).toHaveTextContent("tasks/task_collect/attempts/attempt_collect_old/accepted-result.md");
+      expect(manualRow).not.toHaveTextContent("heavy content must not render");
+      expect(manualRow).not.toHaveTextContent("不要把这段 preview");
+    });
+
+    it("enriches an active manual upstream run only once across observer polls", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+      const activeManualRun: TeamRunState = {
+        ...makeLiveTaskRunFixture(htmlTask, "run_active_manual_upstream"),
+        status: "running",
+        finishedAt: null,
+        currentTaskId: htmlTask.taskId,
+        source: {
+          type: "canvas-task",
+          taskId: htmlTask.taskId,
+          manualUpstreamSelections: [{
+            connectionId: "conn_collect_to_html",
+            fromTaskId: collectTask.taskId,
+            fromRunId: "run_collect_loaded_old",
+            fromAttemptId: "attempt_collect_old",
+            fromOutputPortId: "draft_md",
+            toInputPortId: "source_md",
+            artifactId: "artifact_collect_old",
+            createdAt: "2026-06-04T01:00:00.000Z",
+          }],
+        },
+      };
+      const fullDetailRun: TeamRunState = {
+        ...activeManualRun,
+        source: {
+          ...activeManualRun.source!,
+          boundInputs: [{
+            source: "task-artifact",
+            connectionId: "conn_collect_to_html",
+            inputPortId: "source_md",
+            artifact: {
+              schemaVersion: "team/task-artifact-1",
+              artifactId: "artifact_collect_old",
+              type: "md",
+              sourceTaskId: collectTask.taskId,
+              sourceRunId: "run_collect_loaded_old",
+              sourceAttemptId: "attempt_collect_old",
+              sourceOutputPortId: "draft_md",
+              fileRef: "tasks/task_collect/attempts/attempt_collect_old/accepted-result.md",
+              preview: "heavy preview must not be stored",
+              content: "heavy content must not be stored",
+              createdAt: "2026-06-04T01:00:00.000Z",
+            },
+          }],
+        },
+      };
+      let processSummaryRequests = 0;
+      let fullDetailRequests = 0;
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/team/console-layout") return new Response(JSON.stringify({ state: null, updatedAt: null }), { status: 200 });
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") return rootSummaryResponse([collectTask, htmlTask], { [htmlTask.taskId]: [activeManualRun] });
+        if (url === `/v1/team/task-runs/${activeManualRun.runId}?view=summary&taskId=${htmlTask.taskId}`) {
+          return new Response(JSON.stringify(activeManualRun), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${activeManualRun.runId}?view=process-summary&taskId=${htmlTask.taskId}`) {
+          processSummaryRequests += 1;
+          return processSummaryResponse(activeManualRun, [makeLegacyAttemptFixture(htmlTask)]);
+        }
+        if (url === `/v1/team/task-runs/${activeManualRun.runId}`) {
+          fullDetailRequests += 1;
+          return new Response(JSON.stringify(fullDetailRun), { status: 200 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      const { container, unmount } = render(<App />);
+      const observer = await openLiveRunObserver({
+        taskTitle: htmlTask.title,
+        taskId: htmlTask.taskId,
+        runId: activeManualRun.runId,
+        container,
+      });
+      await waitFor(() => expect(observer.querySelector('[data-observer-section="input-diagnostics"]')).toBeTruthy());
+      expect(processSummaryRequests).toBe(1);
+      expect(fullDetailRequests).toBe(1);
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 2200));
+      });
+      await waitFor(() => expect(processSummaryRequests).toBeGreaterThanOrEqual(2));
+      expect(fullDetailRequests).toBe(1);
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 2200));
+      });
+      await waitFor(() => expect(processSummaryRequests).toBeGreaterThanOrEqual(3));
+      expect(fullDetailRequests).toBe(1);
+      unmount();
+    });
+
+    it("keeps manual downstream run trigger label as manual while showing upstream diagnostics", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+      const manualRun: TeamRunState = {
+        ...makeLiveTaskRunFixture(htmlTask, "run_manual_trigger_label"),
+        source: {
+          type: "canvas-task",
+          taskId: htmlTask.taskId,
+          manualUpstreamSelections: [{
+            connectionId: "conn_collect_to_html",
+            fromTaskId: collectTask.taskId,
+            fromRunId: "run_collect_loaded_old",
+            fromAttemptId: "attempt_collect_old",
+            fromOutputPortId: "draft_md",
+            toInputPortId: "source_md",
+            artifactId: "artifact_collect_old",
+            createdAt: "2026-06-04T01:00:00.000Z",
+          }],
+        },
+      };
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/team/console-layout") return new Response(JSON.stringify({ state: null, updatedAt: null }), { status: 200 });
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") return rootSummaryResponse([collectTask, htmlTask], { [htmlTask.taskId]: [] });
+        if (url === `/v1/team/tasks/${htmlTask.taskId}/run-history?limit=50&offset=0`) {
+          return runHistoryResponse(htmlTask.taskId, [manualRun]);
+        }
+        if (url === `/v1/team/task-runs/${manualRun.runId}?view=process-summary&taskId=${htmlTask.taskId}`) {
+          return processSummaryResponse(manualRun, [makeLegacyAttemptFixture(htmlTask)]);
+        }
+        if (url === `/v1/team/task-runs/${manualRun.runId}`) return new Response(JSON.stringify(manualRun), { status: 200 });
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const atlas = await waitFor(() => getAtlasNodes(container));
+      fireEvent.click(await within(atlas).findByRole("button", { name: htmlTask.title }));
+      const menu = await screen.findByLabelText(`${htmlTask.title} 操作菜单`);
+      fireEvent.click(within(menu).getByRole("button", { name: "运行记录" }));
+      const historyPanel = await screen.findByRole("region", { name: `${htmlTask.title} 运行记录` });
+      const historyRow = await waitFor(() => {
+        const row = historyPanel.querySelector(`[data-run-id="${manualRun.runId}"]`) as HTMLElement | null;
+        expect(row).toBeTruthy();
+        return row!;
+      });
+      expect(historyRow.querySelector(".emap-run-history-trigger")).toHaveTextContent("手动");
+      fireEvent.click(within(historyRow).getByRole("button", { name: /运行详情/ }));
+
+      const diagnostics = await waitFor(() => {
+        const section = container.querySelector('[data-observer-section="input-diagnostics"]') as HTMLElement | null;
+        expect(section).toBeTruthy();
+        return section!;
+      });
+      expect(diagnostics).toHaveTextContent("手动上游输入");
+      expect(historyRow.querySelector(".emap-run-history-trigger")).toHaveTextContent("手动");
+    });
+
+    it("does not render input diagnostics or request full detail for an ordinary run", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const task = {
+        ...cloneTaskFixture(),
+        taskId: "task_ordinary_observer",
+        title: "Ordinary Observer Task",
+        workUnit: { ...cloneTaskFixture().workUnit, title: "Ordinary Observer Task" },
+      };
+      const run = makeLiveTaskRunFixture(task, "run_ordinary_observer");
+      const requestedUrls: string[] = [];
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        requestedUrls.push(url);
+        if (url === "/v1/team/console-layout") return new Response(JSON.stringify({ state: null, updatedAt: null }), { status: 200 });
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") return rootSummaryResponse([task], { [task.taskId]: [run] });
+        if (url === `/v1/team/task-runs/${run.runId}?view=process-summary&taskId=${task.taskId}`) {
+          return processSummaryResponse(run, [makeLegacyAttemptFixture(task)]);
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const observer = await openLiveRunObserver({
+        taskTitle: task.title,
+        taskId: task.taskId,
+        runId: run.runId,
+        container,
+      });
+
+      await waitFor(() => expect(observer.querySelector('[data-observer-section="worker-process"]')).toBeTruthy());
+      expect(observer.querySelector('[data-observer-section="input-diagnostics"]')).toBeNull();
+      expect(requestedUrls.filter((url) => url === `/v1/team/task-runs/${run.runId}`)).toHaveLength(0);
+    });
+
+    it("falls back to lightweight manual upstream trace when full-detail enrichment fails", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+      const manualRun: TeamRunState = {
+        ...makeLiveTaskRunFixture(htmlTask, "run_manual_upstream_fallback"),
+        source: {
+          type: "canvas-task",
+          taskId: htmlTask.taskId,
+          manualUpstreamSelections: [{
+            connectionId: "conn_collect_to_html",
+            fromTaskId: collectTask.taskId,
+            fromRunId: "run_collect_loaded_old",
+            fromAttemptId: "attempt_collect_old",
+            fromOutputPortId: "draft_md",
+            toInputPortId: "source_md",
+            artifactId: "artifact_collect_old",
+            createdAt: "2026-06-04T01:00:00.000Z",
+          }],
+        },
+      };
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/team/console-layout") return new Response(JSON.stringify({ state: null, updatedAt: null }), { status: 200 });
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") return rootSummaryResponse([collectTask, htmlTask], { [htmlTask.taskId]: [manualRun] });
+        if (url === `/v1/team/task-runs/${manualRun.runId}?view=process-summary&taskId=${htmlTask.taskId}`) {
+          return processSummaryResponse(manualRun, [makeLegacyAttemptFixture(htmlTask)]);
+        }
+        if (url === `/v1/team/task-runs/${manualRun.runId}`) {
+          return new Response(JSON.stringify({ error: "full detail failed" }), { status: 500 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const observer = await openLiveRunObserver({
+        taskTitle: htmlTask.title,
+        taskId: htmlTask.taskId,
+        runId: manualRun.runId,
+        container,
+      });
+
+      const diagnostics = await waitFor(() => {
+        const section = observer.querySelector('[data-observer-section="input-diagnostics"]') as HTMLElement | null;
+        expect(section).toBeTruthy();
+        return section!;
+      });
+      expect(diagnostics).toHaveTextContent("手动上游输入");
+      expect(diagnostics).toHaveTextContent("conn_collect_to_html");
+      expect(diagnostics).toHaveTextContent("run_collect_loaded_old");
+      expect(diagnostics).toHaveTextContent("attempt_collect_old");
+      expect(diagnostics).toHaveTextContent("draft_md -> source_md");
+      expect(diagnostics).toHaveTextContent("artifact_collect_old");
+      expect(diagnostics).not.toHaveTextContent("请求失败");
+      expect(observer).not.toHaveTextContent("full detail failed");
+    });
+
+    it("does not retry failed manual upstream full-detail enrichment on active observer polls", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+      const activeManualRun: TeamRunState = {
+        ...makeLiveTaskRunFixture(htmlTask, "run_active_manual_upstream_full_detail_failed"),
+        status: "running",
+        finishedAt: null,
+        currentTaskId: htmlTask.taskId,
+        source: {
+          type: "canvas-task",
+          taskId: htmlTask.taskId,
+          manualUpstreamSelections: [{
+            connectionId: "conn_collect_to_html",
+            fromTaskId: collectTask.taskId,
+            fromRunId: "run_collect_loaded_old",
+            fromAttemptId: "attempt_collect_old",
+            fromOutputPortId: "draft_md",
+            toInputPortId: "source_md",
+            artifactId: "artifact_collect_old",
+            createdAt: "2026-06-04T01:00:00.000Z",
+          }],
+        },
+      };
+      let processSummaryRequests = 0;
+      let fullDetailRequests = 0;
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/team/console-layout") return new Response(JSON.stringify({ state: null, updatedAt: null }), { status: 200 });
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") return rootSummaryResponse([collectTask, htmlTask], { [htmlTask.taskId]: [activeManualRun] });
+        if (url === `/v1/team/task-runs/${activeManualRun.runId}?view=summary&taskId=${htmlTask.taskId}`) {
+          return new Response(JSON.stringify(activeManualRun), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${activeManualRun.runId}?view=process-summary&taskId=${htmlTask.taskId}`) {
+          processSummaryRequests += 1;
+          return processSummaryResponse(activeManualRun, [makeLegacyAttemptFixture(htmlTask)]);
+        }
+        if (url === `/v1/team/task-runs/${activeManualRun.runId}`) {
+          fullDetailRequests += 1;
+          return new Response(JSON.stringify({ error: "full detail failed" }), { status: 500 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      const { container, unmount } = render(<App />);
+      const observer = await openLiveRunObserver({
+        taskTitle: htmlTask.title,
+        taskId: htmlTask.taskId,
+        runId: activeManualRun.runId,
+        container,
+      });
+      const diagnostics = await waitFor(() => {
+        const section = observer.querySelector('[data-observer-section="input-diagnostics"]') as HTMLElement | null;
+        expect(section).toBeTruthy();
+        return section!;
+      });
+      expect(diagnostics).toHaveTextContent("手动上游输入");
+      expect(diagnostics).toHaveTextContent("conn_collect_to_html");
+      expect(diagnostics).toHaveTextContent("run_collect_loaded_old");
+      expect(fullDetailRequests).toBe(1);
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 2200));
+      });
+      await waitFor(() => expect(processSummaryRequests).toBeGreaterThanOrEqual(2));
+      expect(fullDetailRequests).toBe(1);
+      expect(observer).not.toHaveTextContent("full detail failed");
+      unmount();
     });
 
     it("starts a live Task run through the Task run API", async () => {

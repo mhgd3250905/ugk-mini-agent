@@ -1847,6 +1847,59 @@ body {
   min-height: 156px;
 }
 
+.emap-run-observer-input-diagnostics {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.emap-run-observer-input-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--secondary);
+}
+
+.emap-run-observer-input-row {
+  display: grid;
+  gap: 8px;
+}
+
+.emap-run-observer-input-badge {
+  width: max-content;
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, transparent);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.emap-run-observer-input-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.emap-run-observer-input-field {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.emap-run-observer-input-field small {
+  font-size: 11px;
+  color: var(--secondary);
+}
+
+.emap-run-observer-input-field code {
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+
 .run-history-files {
   display: grid;
   gap: 8px;

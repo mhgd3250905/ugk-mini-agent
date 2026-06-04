@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-04 — Team Console manual upstream input diagnostics
+
+- **主题**: Team Console run observer 新增手动上游输入诊断区。手动启动的下游 run 触发标签仍显示“手动”，observer 额外在 `data-observer-section="input-diagnostics"` 中显示“手动上游输入”和 `connectionId`、上游 task/run/attempt、端口映射、`artifactId`，full detail 可用时补 artifact `type` / `fileRef`。
+- **影响范围**: `5174` Team Console run observer、前端 API 类型和相关测试；不改 backend、不改 `src/team/**`、不改 `process-summary` 读模型、不改 Step 04 的 run 启动 body 构造或 loaded run 持久化规则。full detail enrichment 只在当前 observed run 有 `manualUpstreamSelections[]` 时调用，同一个 opened observer run 内成功或失败都只尝试一次，不随 active poll 重复拉 full detail；失败时保留 lightweight trace，不保存 artifact content / preview 到持久 UI state。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/api/team-types.ts`、`apps/team-console/src/tests/app-run-observer.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`。
+
 ## 2026-06-04 — Team Console loaded upstream run launch
 
 - **主题**: Team Console 手动启动下游 Task 时，会把已装载的上游历史 run 转成 `upstreamRunSelections[]`。选择范围只限指向目标 Task 的非 stale typed task connection；上游 Task 没有 loaded run、同一上游 Task 有 active run、或当前内存态已知 loaded run 不是 `completed` 时，保持普通 run 请求。状态未知的持久化 selection 交由后端最终校验；前端不补最新 run、不查历史、不读旧 asset。

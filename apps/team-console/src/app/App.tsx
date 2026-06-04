@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunAnnotation, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort, TeamTaskConnection, TeamManualUpstreamRunSelection, TeamTaskRunCreateRequest } from "../api/team-types";
+import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunAnnotation, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort, TeamTaskConnection, TeamManualUpstreamRunSelection, TeamTaskRunCreateRequest, TeamManualUpstreamRunSelectionRecord } from "../api/team-types";
 import { MockTeamApi } from "../fixtures/team-fixtures";
 import { useTeamConsoleLiveData, type DataSource, type TeamConsoleUiResetReason, type TeamDiscoveryStage, type TeamDiscoverySummary, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
 import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchGeneratedObserverState, type TaskBranchState } from "./use-task-branch-stack";
@@ -115,12 +115,26 @@ type TaskRunObserverFileState = {
   error?: string;
 };
 
+type ManualUpstreamInputMetadata = {
+  connectionId: string;
+  inputPortId: string;
+  artifactId: string;
+  type: string;
+  sourceTaskId: string;
+  sourceRunId: string;
+  sourceAttemptId: string;
+  sourceOutputPortId: string;
+  fileRef: string;
+};
+
 type RunHistoryAnalysisTask = Pick<TeamCanvasTask, "taskId" | "title">;
 
 type TaskRunObserverState = {
   loading: boolean;
   attempts: TeamAttemptMetadata[];
   files: Record<string, TaskRunObserverFileState>;
+  manualUpstreamInputMetadataByKey: Record<string, ManualUpstreamInputMetadata>;
+  manualUpstreamInputMetadataAttempted: boolean;
   error: string | null;
   lastUpdatedAt: string | null;
 };
@@ -214,6 +228,52 @@ function taskRunTriggerLabel(run: TeamRunState): string {
     case "discovery-generated-task": return "Discovery 生成";
     default: return "自动触发";
   }
+}
+
+function manualUpstreamSelectionKey(selection: Pick<
+  TeamManualUpstreamRunSelectionRecord,
+  "connectionId" | "fromRunId" | "fromAttemptId" | "fromOutputPortId" | "toInputPortId" | "artifactId"
+>): string {
+  return [
+    selection.connectionId,
+    selection.fromRunId,
+    selection.fromAttemptId,
+    selection.fromOutputPortId,
+    selection.toInputPortId,
+    selection.artifactId,
+  ].join("\u0000");
+}
+
+function manualUpstreamBoundInputKey(input: ManualUpstreamInputMetadata): string {
+  return [
+    input.connectionId,
+    input.sourceRunId,
+    input.sourceAttemptId,
+    input.sourceOutputPortId,
+    input.inputPortId,
+    input.artifactId,
+  ].join("\u0000");
+}
+
+function deriveManualUpstreamInputMetadata(run: TeamRunState): Record<string, ManualUpstreamInputMetadata> {
+  const entries: Array<[string, ManualUpstreamInputMetadata]> = [];
+  for (const input of run.source?.boundInputs ?? []) {
+    if (input.source === "canvas-source") continue;
+    const artifact = input.artifact;
+    const metadata: ManualUpstreamInputMetadata = {
+      connectionId: input.connectionId,
+      inputPortId: input.inputPortId,
+      artifactId: artifact.artifactId,
+      type: artifact.type,
+      sourceTaskId: artifact.sourceTaskId,
+      sourceRunId: artifact.sourceRunId,
+      sourceAttemptId: artifact.sourceAttemptId,
+      sourceOutputPortId: artifact.sourceOutputPortId,
+      fileRef: artifact.fileRef,
+    };
+    entries.push([manualUpstreamBoundInputKey(metadata), metadata]);
+  }
+  return Object.fromEntries(entries);
 }
 
 function taskRunResultRef(run: TeamRunState, taskId: string): string {
@@ -1511,6 +1571,7 @@ export function App() {
   const [generatedArchiveSavingByTaskId, setGeneratedArchiveSavingByTaskId] = useState<Record<string, boolean>>({});
   const [generatedActionMenuTaskId, setGeneratedActionMenuTaskId] = useState<string | null>(null);
   const [taskRunObserverByRunId, setTaskRunObserverByRunId] = useState<Record<string, TaskRunObserverState>>({});
+  const taskRunObserverByRunIdRef = useRef(taskRunObserverByRunId);
   const [runHistoryTaskId, setRunHistoryTaskId] = useState<string | null>(null);
   const [runHistoryItems, setRunHistoryItems] = useState<TeamTaskRunHistoryItem[]>([]);
   const [runHistoryTotal, setRunHistoryTotal] = useState(0);
@@ -1548,6 +1609,10 @@ export function App() {
   const [minimizedAgentNodeIds, setMinimizedAgentNodeIds] = useState<string[]>([]);
   const [minimizedTaskNodeIds, setMinimizedTaskNodeIds] = useState<string[]>([]);
   const [minimizedSourceNodeIds, setMinimizedSourceNodeIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    taskRunObserverByRunIdRef.current = taskRunObserverByRunId;
+  }, [taskRunObserverByRunId]);
 
   useEffect(() => {
     if (runHistoryAnalysisCopyState !== "failed" || !runHistoryAnalysisManualText) return;
@@ -3235,6 +3300,8 @@ export function App() {
           loading: true,
           attempts: current[runId]?.attempts ?? [],
           files: current[runId]?.files ?? {},
+          manualUpstreamInputMetadataByKey: current[runId]?.manualUpstreamInputMetadataByKey ?? {},
+          manualUpstreamInputMetadataAttempted: current[runId]?.manualUpstreamInputMetadataAttempted ?? false,
           error: null,
           lastUpdatedAt: current[runId]?.lastUpdatedAt ?? null,
         },
@@ -3242,6 +3309,52 @@ export function App() {
 
       try {
         const { run: freshRun, attempts } = await api.getTaskRunProcessSummary(runId, observedTaskId);
+        if (cancelled) return;
+        const hasManualUpstreamSelections = (freshRun.source?.manualUpstreamSelections ?? []).length > 0;
+        const currentObserverState = taskRunObserverByRunIdRef.current[runId];
+        let manualUpstreamInputMetadataByKey = hasManualUpstreamSelections
+          ? (currentObserverState?.manualUpstreamInputMetadataByKey ?? {})
+          : {};
+        let manualUpstreamInputMetadataAttempted = hasManualUpstreamSelections
+          ? (currentObserverState?.manualUpstreamInputMetadataAttempted ?? false)
+          : false;
+
+        if (hasManualUpstreamSelections && !manualUpstreamInputMetadataAttempted) {
+          manualUpstreamInputMetadataAttempted = true;
+          const stateBeforeFullDetail = taskRunObserverByRunIdRef.current[runId];
+          taskRunObserverByRunIdRef.current = {
+            ...taskRunObserverByRunIdRef.current,
+            [runId]: {
+              loading: stateBeforeFullDetail?.loading ?? true,
+              attempts: stateBeforeFullDetail?.attempts ?? [],
+              files: stateBeforeFullDetail?.files ?? {},
+              manualUpstreamInputMetadataByKey,
+              manualUpstreamInputMetadataAttempted,
+              error: stateBeforeFullDetail?.error ?? null,
+              lastUpdatedAt: stateBeforeFullDetail?.lastUpdatedAt ?? null,
+            },
+          };
+          setTaskRunObserverByRunId((current) => ({
+            ...current,
+            [runId]: {
+              loading: current[runId]?.loading ?? true,
+              attempts: current[runId]?.attempts ?? [],
+              files: current[runId]?.files ?? {},
+              manualUpstreamInputMetadataByKey: current[runId]?.manualUpstreamInputMetadataByKey ?? {},
+              manualUpstreamInputMetadataAttempted,
+              error: current[runId]?.error ?? null,
+              lastUpdatedAt: current[runId]?.lastUpdatedAt ?? null,
+            },
+          }));
+          try {
+            const fullDetailRun = await api.getTaskRun(runId);
+            if (!cancelled) {
+              manualUpstreamInputMetadataByKey = deriveManualUpstreamInputMetadata(fullDetailRun);
+            }
+          } catch {
+            manualUpstreamInputMetadataByKey = {};
+          }
+        }
         if (cancelled) return;
 
         setTaskRunsByTaskId((current) => mergeTaskRun(current, observedTaskId, freshRun));
@@ -3257,6 +3370,8 @@ export function App() {
             loading: false,
             attempts,
             files: current[runId]?.files ?? {},
+            manualUpstreamInputMetadataByKey,
+            manualUpstreamInputMetadataAttempted,
             error: null,
             lastUpdatedAt: new Date().toISOString(),
           },
@@ -3289,6 +3404,8 @@ export function App() {
               ...(current[runId]?.files ?? {}),
               ...Object.fromEntries(fileEntries),
             },
+            manualUpstreamInputMetadataByKey: current[runId]?.manualUpstreamInputMetadataByKey ?? manualUpstreamInputMetadataByKey,
+            manualUpstreamInputMetadataAttempted: current[runId]?.manualUpstreamInputMetadataAttempted ?? manualUpstreamInputMetadataAttempted,
             error: null,
             lastUpdatedAt: current[runId]?.lastUpdatedAt ?? new Date().toISOString(),
           },
@@ -3302,6 +3419,8 @@ export function App() {
             loading: false,
             attempts: current[runId]?.attempts ?? [],
             files: current[runId]?.files ?? {},
+            manualUpstreamInputMetadataByKey: current[runId]?.manualUpstreamInputMetadataByKey ?? {},
+            manualUpstreamInputMetadataAttempted: current[runId]?.manualUpstreamInputMetadataAttempted ?? false,
             error: isActiveObserverPoll ? null : errorMessage(e),
             lastUpdatedAt: current[runId]?.lastUpdatedAt ?? null,
           },
@@ -5087,6 +5206,8 @@ export function App() {
         .map((key) => fileDescriptors.find((descriptor) => descriptor.key === key) ?? null)
         .filter((descriptor): descriptor is TaskRunObserverFileDescriptor => Boolean(descriptor));
       const observedTaskRunIsActive = isActiveRun(observedTaskRun.status);
+      const manualUpstreamSelections = observedTaskRun.source?.manualUpstreamSelections ?? [];
+      const manualUpstreamInputMetadataByKey = observerState?.manualUpstreamInputMetadataByKey ?? {};
 
       const renderFileRow = (descriptor: TaskRunObserverFileDescriptor) => {
         const isSelected = selectedFileKeySet.has(descriptor.key);
@@ -5107,6 +5228,47 @@ export function App() {
             <code className="emap-observer-file-row-name">{descriptor.fileName}</code>
             <span className="emap-observer-file-row-path">{descriptor.path}</span>
           </button>
+        );
+      };
+
+      const renderDiagnosticField = (label: string, value: string | null | undefined) => {
+        if (!value) return null;
+        return (
+          <span className="emap-run-observer-input-field">
+            <small>{label}</small>
+            <code>{value}</code>
+          </span>
+        );
+      };
+
+      const renderInputDiagnostics = () => {
+        if (manualUpstreamSelections.length === 0) return null;
+        return (
+          <section className="emap-run-observer-input-diagnostics" data-observer-section="input-diagnostics">
+            <span className="emap-run-observer-input-title">输入来源</span>
+            {manualUpstreamSelections.map((selection) => {
+              const metadata = manualUpstreamInputMetadataByKey[manualUpstreamSelectionKey(selection)];
+              return (
+                <div
+                  key={`${selection.connectionId}-${selection.fromRunId}-${selection.artifactId}`}
+                  className="emap-run-observer-input-row"
+                  data-input-diagnostic-kind="manual-upstream"
+                >
+                  <span className="emap-run-observer-input-badge">手动上游输入</span>
+                  <div className="emap-run-observer-input-fields">
+                    {renderDiagnosticField("connectionId", selection.connectionId)}
+                    {renderDiagnosticField("fromTaskId", selection.fromTaskId)}
+                    {renderDiagnosticField("fromRunId", selection.fromRunId)}
+                    {renderDiagnosticField("fromAttemptId", selection.fromAttemptId)}
+                    {renderDiagnosticField("ports", `${selection.fromOutputPortId} -> ${selection.toInputPortId}`)}
+                    {renderDiagnosticField("artifactId", selection.artifactId)}
+                    {renderDiagnosticField("type", metadata?.type)}
+                    {renderDiagnosticField("fileRef", metadata?.fileRef)}
+                  </div>
+                </div>
+              );
+            })}
+          </section>
         );
       };
 
@@ -5189,6 +5351,7 @@ export function App() {
                 )}
               </section>
             )}
+            {renderInputDiagnostics()}
             <div className="emap-run-observer-stage worker" data-observer-section="worker-process">
               {renderRoleProcessNode("worker", latestAttempt?.roleProcesses?.worker)}
             </div>
