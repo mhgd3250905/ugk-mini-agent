@@ -3,11 +3,12 @@ import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { TeamOutputValidationResult, TeamRunState, TeamTask } from "./types.js";
 import type { TeamRoleRunner, CheckerOutput, WatcherOutput, WorkerOutput } from "./role-runner.js";
-import { RunWorkspace } from "./run-workspace.js";
+import type { RunWorkspace } from "./run-workspace.js";
 import { computeTeamRunSummary } from "./team-summary.js";
 import { progressMessages } from "./progress.js";
 import { writeTimingSpan } from "./timing.js";
 import { validateTeamOutput } from "./output-validator.js";
+import type { TeamOutputWorkspaceReader } from "./output-validator.js";
 import type { TeamStateWriter } from "./child-execution.js";
 
 export interface TaskAttemptPhaseTimeouts {
@@ -71,8 +72,27 @@ interface WorkUnitRunResult {
 	outputValidation: TeamOutputValidationResult;
 }
 
+export type TaskAttemptLifecycleWorkspace = TeamOutputWorkspaceReader & Pick<RunWorkspace,
+	| "getState"
+	| "createAttempt"
+	| "finishAttempt"
+	| "listAttempts"
+	| "patchState"
+	| "saveState"
+	| "updateAttemptPhase"
+	| "writeFailedResult"
+	| "writeWorkerOutput"
+	| "recordAttemptWorkerOutput"
+	| "writeCheckerVerdict"
+	| "writeCheckerOutput"
+	| "recordAttemptCheckerResult"
+	| "writeAcceptedResult"
+	| "writeWatcherReview"
+	| "recordAttemptWatcherResult"
+>;
+
 export interface TaskAttemptLifecycleRunnerOptions {
-	workspace: RunWorkspace;
+	workspace: TaskAttemptLifecycleWorkspace;
 	roleRunner: TeamRoleRunner;
 	dataDir: string;
 	maxCheckerRevisions: number;
