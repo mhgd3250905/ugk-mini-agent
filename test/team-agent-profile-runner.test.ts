@@ -1508,6 +1508,70 @@ test("runDiscoveryDispatcher compiles semantic patch into full WorkUnit plus run
 	}
 });
 
+test("runDiscoveryDispatcher retries once with parser feedback and compiles repaired semantic patch", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-dispatcher-"));
+	try {
+		const responses = [
+			`Here is the semantic patch:\n${makeDiscoveryDispatchPatchJson()}`,
+			makeDiscoveryDispatchPatchJson(),
+		];
+		let callIndex = 0;
+		const captured: CapturedSessionInput[] = [];
+		const prompts: string[] = [];
+		const sessionFactory = {
+			createSession: async (input: {
+				runId: string;
+				connId: string;
+				browserId?: string;
+				browserScope?: string;
+				snapshot: ResolvedBackgroundAgentSnapshot;
+				workspace?: { rootPath?: string };
+			}) => {
+				captured.push({
+					runId: input.runId,
+					connId: input.connId,
+					browserId: input.browserId,
+					browserScope: input.browserScope,
+					snapshot: input.snapshot,
+					workspaceRootPath: input.workspace?.rootPath,
+				});
+				const content = responses[callIndex] ?? "ok";
+				callIndex++;
+				return {
+					prompt: async (prompt: string) => { prompts.push(prompt); },
+					subscribe: () => () => {},
+					messages: [{ role: "assistant", content: [{ type: "text", text: content }], stopReason: "end_turn" }],
+				};
+			},
+		} as unknown as BackgroundAgentSessionFactory;
+		const runner = new AgentProfileRoleRunner({
+			projectRoot: root,
+			teamDataDir: root,
+			workerProfileId: "p-worker",
+			checkerProfileId: "p-checker",
+			watcherProfileId: "p-watcher",
+			finalizerProfileId: "p-finalizer",
+			dispatcherProfileId: "p-dispatcher",
+			profileResolver: makeFakeProfileResolver({ "p-dispatcher": { defaultBrowserId: "browser-dispatcher" } }) as never,
+			sessionFactory,
+		});
+
+		const out = await runner.runDiscoveryDispatcher(makeDiscoveryDispatchInput());
+
+		assert.equal(out.ok, true);
+		assert.equal(captured.length, 2, "dispatcher should create one repair session after parse failure");
+		assert.equal(prompts.length, 2);
+		assert.ok(prompts[1]!.includes("Previous output was rejected"), "repair prompt must include parser feedback section");
+		assert.ok(prompts[1]!.includes("discovery dispatcher semantic patch parse error"), "repair prompt must include parse error");
+		assert.ok(prompts[1]!.includes("Here is the semantic patch"), "repair prompt must include rejected raw output");
+		if (out.ok) {
+			assert.equal(out.workUnit.title, "Assess Acme Sensors");
+		}
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
 test("runDiscoveryDispatcher returns ok false with runtime context on invalid session output", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-dispatcher-"));
 	try {
@@ -1520,7 +1584,7 @@ test("runDiscoveryDispatcher returns ok false with runtime context on invalid se
 			finalizerProfileId: "p-finalizer",
 			dispatcherProfileId: "p-dispatcher",
 			profileResolver: makeFakeProfileResolver({ "p-dispatcher": { defaultBrowserId: "browser-dispatcher" } }) as never,
-			sessionFactory: makeFakeSessionFactory(["not json"]),
+			sessionFactory: makeFakeSessionFactory(["not json", "still not json"]),
 		});
 
 		const out = await runner.runDiscoveryDispatcher(makeDiscoveryDispatchInput());
@@ -1548,6 +1612,11 @@ test("runDiscoveryDispatcher rejects invalid semantic patch and preserves runtim
 			dispatcherProfileId: "p-dispatcher",
 			profileResolver: makeFakeProfileResolver({ "p-dispatcher": { defaultBrowserId: "browser-dispatcher" } }) as never,
 			sessionFactory: makeFakeSessionFactory([JSON.stringify({
+				itemId: "vendor_1",
+				title: "Assess Acme Sensors",
+				workerInstruction: "Research vendor",
+				workUnit: { title: "rogue full WorkUnit" },
+			}), JSON.stringify({
 				itemId: "vendor_1",
 				title: "Assess Acme Sensors",
 				workerInstruction: "Research vendor",

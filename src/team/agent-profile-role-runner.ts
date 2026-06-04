@@ -63,6 +63,31 @@ function buildDiscoveryDispatcherRoleKey(discoveryTaskId: string, itemId: string
 	return `dispatch_${sanitize(discoveryTaskId)}_${sanitize(itemId)}`.slice(0, 180);
 }
 
+const DISCOVERY_DISPATCH_REPAIR_RAW_CONTENT_MAX_CHARS = 8_000;
+
+function buildDiscoveryDispatchRepairPrompt(input: DiscoveryDispatchInput, error: string, rawContent: string | undefined): string {
+	const clippedRaw = (rawContent ?? "").slice(0, DISCOVERY_DISPATCH_REPAIR_RAW_CONTENT_MAX_CHARS);
+	return `${buildDiscoveryDispatchPrompt(input)}
+
+## Previous output was rejected
+error: ${error}
+
+Your previous output was not accepted by the deterministic JSON parser.
+Rewrite the semantic patch for exact itemId "${input.itemId}".
+
+Rules for this repair attempt:
+- Output only one JSON object.
+- The first non-whitespace character must be "{".
+- The last non-whitespace character must be "}".
+- Do not output markdown, code fences, explanations, headings, or any text outside the JSON object.
+- Do not output workUnit, outputContract, acceptance, worker/checker/leader/source identity, outputPorts, or outputCheck.
+
+Previous output:
+<previous_output>
+${clippedRaw}
+</previous_output>`;
+}
+
 async function readRefContent(teamDataDir: string, runId: string, ref: string): Promise<string> {
 	try {
 		return await readFile(join(teamDataDir, "runs", runId, ref), "utf8");
@@ -203,7 +228,18 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 				runtimeContext: sessionResult.runtimeContext,
 			};
 		}
-		return { ...parsed, runtimeContext: sessionResult.runtimeContext };
+		const repairPrompt = buildDiscoveryDispatchRepairPrompt(input, parsed.error, parsed.rawContent);
+		const repairSessionResult = await this.runSession(snapshot, requestedProfileId, input.runId, workspace, repairPrompt, input.signal, { role, roleKey, artifactPublicBaseUrl: input.artifactPublicBaseUrl });
+		const repaired = parseDiscoveryDispatchSemanticPatch(repairSessionResult.content, input.itemId);
+		if (repaired.ok) {
+			return {
+				ok: true,
+				itemId: repaired.itemId,
+				workUnit: compileDiscoveryDispatchWorkUnit(input, repaired.patch),
+				runtimeContext: repairSessionResult.runtimeContext,
+			};
+		}
+		return { ...repaired, runtimeContext: repairSessionResult.runtimeContext };
 	}
 
 	private async resolveProfile(profileId: string): Promise<ResolvedBackgroundAgentSnapshot> {
