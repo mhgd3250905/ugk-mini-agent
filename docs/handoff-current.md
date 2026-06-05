@@ -72,6 +72,7 @@ git log --oneline origin/main..HEAD
 - 验证 run：`task_e1846fa41c83` 的 `run_416bd5c5c693` 已 `completed`，`taskState.status="succeeded"`，`resultRef=tasks/task_e1846fa41c83/attempts/attempt_518df0a903c2/accepted-result.md`，报告 URL 为 `http://127.0.0.1:3000/v1/team/task-runs/run_416bd5c5c693/artifacts/attempt_518df0a903c2/worker/report.html`，HTTP 200。
 - 普通 Task-to-Task typed artifact handoff 已修复：手动 `upstreamRunSelections[]` 和自动 typed downstream 共用 runtime resolver。Discovery 上游保持 `discovery-aggregation.json` -> `discovery-result.json` 优先级；普通 Task 按 connection type 优先选择当前 attempt 的 `agent-workspaces/<attemptId>/worker/output/**` 机器可消费文件，`json` 只接受可解析 JSON object/array 的 `.json`；没有匹配时才 fallback 到 `accepted-result.md` / 既有 `resultRef`。
 - 2026-06-05 修复后真实链路验证：重启 `ugk-pi` / `ugk-pi-team-worker` 后，用 `task_e1846fa41c83` + `conn_52ab18a4ffc3` + 上游 `run_3cfcffe71bec` 启动新 run `run_4af859e1d834`。该 run 已 `completed`，`taskState.status="succeeded"`，`source.boundInputs[0].artifact.fileRef="agent-workspaces/attempt_b541b6717710/worker/output/structured-report.json"`，不是 `accepted-result.md`。下游 worker 生成的 HTML 报告实际文件为 `diabetes-report.html`，URL `http://127.0.0.1:3000/v1/team/task-runs/run_4af859e1d834/artifacts/attempt_a5b5ef9409ef/worker/diabetes-report.html` 返回 HTTP 200。
+- 2026-06-05 用户侧正常路径验证通过：用户从 Team Console 启动 `task_e1846fa41c83` 后，过程界面显示“手动上游输入”。后端 run `run_221b63509573` 已 `completed`，`taskState.status="succeeded"`，`source.boundInputs[0].artifact.fileRef="agent-workspaces/attempt_b541b6717710/worker/output/structured-report.json"`，下游报告 `diabetes-industry-report.html` URL `http://127.0.0.1:3000/v1/team/task-runs/run_221b63509573/artifacts/attempt_1033900d9857/worker/diabetes-industry-report.html` 返回 HTTP 200。用户确认测试通过。
 
 ## 验证证据
 
@@ -129,7 +130,7 @@ git log --oneline origin/main..HEAD
 
 ## 未完成 / 下一步候选
 
-- 本轮 typed artifact handoff 代码级测试和真实链路均已验证；后续若用户继续跑真实数据，可直接基于 `task_e1846fa41c83` 的新成功 run `run_4af859e1d834` 检查报告质量或继续迭代下游 Task。
+- 本轮 typed artifact handoff 代码级测试、真实链路和用户正常路径均已验证；后续若用户继续跑真实数据，可直接基于 `task_e1846fa41c83` 的成功 run `run_221b63509573` 检查报告质量或继续迭代下游 Task。
 - 若用户要求发布，才 push `main` 到 `origin` / `gitee`；当前不要提交运行产物、`.data`、public 报告或 `.codex/plans/**`。
 
 ## 禁止事项
