@@ -58,6 +58,13 @@
 - **影响范围**: Canvas Task Run 只读 API contract 和路由测试；production read model 当前已满足契约，本轮未改 `src/team/**` runtime 行为，不新增 endpoint，不碰 Team Console UI。
 - **对应入口**: `test/team-task-run-routes.test.ts`、`docs/team-runtime.md`。
 
+## 2026-06-04 — Team Console lasso selection and Group controls
+
+- **主题**: Team Console Execution Atlas 框选和 UI-only Group 交互优化。框选后节点高亮增强，深色模式下选中态更明显；点击已选节点集合外的空白或其他节点会清空框选，点击/拖动已选节点保留多选。折叠 Group 可拖动并在右侧显示 Task 数量；展开 Group 支持上锁/解锁和移除，锁定后 Group 及内部 Task 都不能移动，也不能删除 Group；审查合并时补充覆盖了锁定 Task 不会被混合多选拖拽带走的边界。
+- **影响范围**: `5174` Execution Atlas 的 lasso selection、root Task 多选、UI-only Group 折叠/展开/拖动/锁定/删除交互和对应本地 canvas UI state；不改后端 API、不删除 Task、不改 Discovery runtime。
+- **验证**: `apps/team-console` 的 `app-connections.test.tsx`、Team Console build、`git diff --check` 和本地浏览器 `http://localhost:5174/` reload console error 检查通过。
+- **对应入口**: `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/AtlasCanvasShell.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/tests/app-connections.test.tsx`。
+
 ## 2026-06-04 — Discovery subcanvas generated Task card interactions
 
 - **主题**: Team Console Discovery 子画布 generated Task 网格交互收口：去掉 generated item 菜单里的“运行记录”入口，改为点击 item 卡片展开/再次点击收起运行记录；卡片增加 hover / active / 已展开视觉反馈，running 卡片保持橙红状态；item 右上角菜单外点自动收起。

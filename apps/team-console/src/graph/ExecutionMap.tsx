@@ -79,6 +79,8 @@ interface ExecutionMapProps {
   onRestoreCanvasTask?: (node: AtlasTaskNode) => void;
   taskGroups?: AtlasTaskGroup[];
   onToggleTaskGroup?: (groupId: string) => void;
+  onToggleTaskGroupLock?: (groupId: string) => void;
+  onDeleteTaskGroup?: (groupId: string) => void;
   onAtlasSelectionChange?: (entries: AtlasSelectedNodeEntry[]) => void;
   onTaskOutputPortSelect?: (taskId: string, port: TeamTaskOutputPort) => void;
   onTaskInputPortSelect?: (taskId: string, port: TeamTaskInputPort) => void;
@@ -165,6 +167,7 @@ export type AtlasTaskGroup = {
   title: string;
   taskNodeIds: string[];
   collapsed: boolean;
+  locked?: boolean;
 };
 
 export type AtlasSelectedNodeEntry =
@@ -297,7 +300,8 @@ const DOCK_FLIGHT_KIND_LABELS: Record<DockFlightRootKind, string> = {
 
 type AtlasNodeDragState = {
   primaryNodeId: string;
-  primaryKind: "agent" | "task" | "source";
+  primaryKind: "agent" | "task" | "source" | "task-group";
+  groupId?: string;
   pointerId: number;
   startClientX: number;
   startClientY: number;
@@ -863,6 +867,8 @@ export function ExecutionMap({
   onRestoreCanvasTask,
   taskGroups = [],
   onToggleTaskGroup,
+  onToggleTaskGroupLock,
+  onDeleteTaskGroup,
   onAtlasSelectionChange,
   onTaskOutputPortSelect,
   onTaskInputPortSelect,
@@ -929,6 +935,7 @@ export function ExecutionMap({
   const pendingNodeIdCopyPointerRef = useRef<{ pointerId: number; kind: "agent" | "task"; id: string } | null>(null);
   const suppressAgentClickRef = useRef<string | null>(null);
   const suppressTaskClickRef = useRef<string | null>(null);
+  const suppressTaskGroupClickRef = useRef<string | null>(null);
   const agentBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
   const agentBranchDragSuppressClickRef = useRef(false);
   const panelResizeRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startWidth: number; startHeight: number; minWidth: number; minHeight: number } | null>(null);
@@ -960,6 +967,16 @@ export function ExecutionMap({
     const nodeIds = new Set<string>();
     for (const group of taskGroups) {
       if (!group.collapsed) continue;
+      for (const nodeId of group.taskNodeIds) {
+        nodeIds.add(nodeId);
+      }
+    }
+    return nodeIds;
+  }, [taskGroups]);
+  const lockedTaskGroupNodeIdSet = useMemo(() => {
+    const nodeIds = new Set<string>();
+    for (const group of taskGroups) {
+      if (!group.locked) continue;
       for (const nodeId of group.taskNodeIds) {
         nodeIds.add(nodeId);
       }
@@ -1648,6 +1665,10 @@ export function ExecutionMap({
     setSelectedAtlasNodeKeys(next);
   }, [tasksById, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes]);
 
+  const clearAtlasSelection = useCallback(() => {
+    setSelectedAtlasNodeKeys((current) => current.size === 0 ? current : new Set());
+  }, []);
+
   const buildAtlasDragEntries = useCallback((primary: AtlasAgentNode | AtlasTaskNode | AtlasSourceNode, kind: "agent" | "task" | "source"): AtlasNodeDragEntry[] => {
     const entryHeight = (node: AtlasAgentNode | AtlasTaskNode | AtlasSourceNode, nodeKind: AtlasNodeDragEntry["kind"]) => (
       nodeKind === "task"
@@ -1666,7 +1687,7 @@ export function ExecutionMap({
       }
     }
     for (const node of visibleTaskNodes) {
-      if (selectedAtlasNodeKeys.has(atlasSelectionKey("task", node.nodeId))) {
+      if (selectedAtlasNodeKeys.has(atlasSelectionKey("task", node.nodeId)) && !lockedTaskGroupNodeIdSet.has(node.nodeId)) {
         entries.push({ nodeId: node.nodeId, kind: "task", startPosition: node.position, height: entryHeight(node, "task") });
       }
     }
@@ -1676,7 +1697,20 @@ export function ExecutionMap({
       }
     }
     return entries.length > 0 ? entries : [{ nodeId: primary.nodeId, kind, startPosition: primary.position, height: entryHeight(primary, kind) }];
-  }, [selectedAtlasNodeKeys, tasksById, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes]);
+  }, [lockedTaskGroupNodeIdSet, selectedAtlasNodeKeys, tasksById, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes]);
+
+  const buildTaskGroupDragEntries = useCallback((group: AtlasTaskGroup): AtlasNodeDragEntry[] => {
+    return group.taskNodeIds.flatMap((nodeId) => {
+      const node = unfilteredVisibleTaskNodes.find((candidate) => candidate.nodeId === nodeId);
+      if (!node) return [];
+      return [{
+        nodeId: node.nodeId,
+        kind: "task" as const,
+        startPosition: node.position,
+        height: atlasDragEntryHeight("task", tasksById?.get(node.taskId)),
+      }];
+    });
+  }, [tasksById, unfilteredVisibleTaskNodes]);
 
   const beginAtlasNodeDrag = useCallback((
     node: AtlasAgentNode | AtlasTaskNode | AtlasSourceNode,
@@ -1685,6 +1719,11 @@ export function ExecutionMap({
   ) => {
     event.stopPropagation();
     if ((event.button ?? 0) !== 0) return;
+    const primaryKey = atlasSelectionKey(kind, node.nodeId);
+    if (selectedAtlasNodeKeys.size > 0 && !selectedAtlasNodeKeys.has(primaryKey)) {
+      clearAtlasSelection();
+    }
+    if (kind === "task" && lockedTaskGroupNodeIdSet.has(node.nodeId)) return;
     if (kind === "agent" && (!canMoveAgents || !onMoveAgent)) return;
     if (kind === "task" && (!canMoveTasks || !onMoveCanvasTask)) return;
     if (kind === "source" && (!canMoveSourceNodes || !onMoveSourceNode)) return;
@@ -1711,7 +1750,7 @@ export function ExecutionMap({
     atlasDragHitTestRectsCache = null;
     setIsAtlasDragging(true);
     event.currentTarget.setPointerCapture?.(event.pointerId);
-  }, [buildAtlasDragEntries, canMoveAgents, canMoveSourceNodes, canMoveTasks, onMoveAgent, onMoveCanvasTask, onMoveSourceNode]);
+  }, [buildAtlasDragEntries, canMoveAgents, canMoveSourceNodes, canMoveTasks, clearAtlasSelection, lockedTaskGroupNodeIdSet, onMoveAgent, onMoveCanvasTask, onMoveSourceNode, selectedAtlasNodeKeys]);
 
   const handleAgentPointerDown = useCallback((node: AtlasAgentNode, event: ReactPointerEvent<HTMLElement>) => {
     beginAtlasNodeDrag(node, "agent", event);
@@ -1770,7 +1809,7 @@ export function ExecutionMap({
     if (!hasMoved) return;
 
     const overTrash = isPointerOverTrash(drag, event);
-    const dockHit = overTrash ? null : getDockHitForDrag(drag, event);
+    const dockHit = overTrash || drag.primaryKind === "task-group" ? null : getDockHitForDrag(drag, event);
     dockDragHitRef.current = Boolean(dockHit);
     if (dockHit) {
       wakeDock();
@@ -2044,6 +2083,67 @@ export function ExecutionMap({
     }
     atlasDragHitTestRectsCache = null;
   }, [checkDockDrop, copyCanvasNodeId, isPointerOverTrash, onRootTrashDrop, onSelectCanvasTask, rollbackAtlasDragPositions, suppressNextTaskClick, visibleTaskNodes]);
+
+  const suppressNextTaskGroupClick = useCallback((groupId: string) => {
+    suppressTaskGroupClickRef.current = groupId;
+    globalThis.setTimeout(() => {
+      if (suppressTaskGroupClickRef.current === groupId) {
+        suppressTaskGroupClickRef.current = null;
+      }
+    }, 0);
+  }, []);
+
+  const beginTaskGroupDrag = useCallback((group: AtlasTaskGroup, event: ReactPointerEvent<HTMLElement>) => {
+    event.stopPropagation();
+    if ((event.button ?? 0) !== 0 || group.locked) return;
+    const entries = buildTaskGroupDragEntries(group);
+    if (entries.length === 0) return;
+    atlasNodeDragRef.current = {
+      primaryNodeId: group.groupId,
+      primaryKind: "task-group",
+      groupId: group.groupId,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      entries,
+      hasMoved: false,
+    };
+    dockDragHitRef.current = false;
+    atlasDragHitTestRectsCache = null;
+    setIsAtlasDragging(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }, [buildTaskGroupDragEntries]);
+
+  const endTaskGroupPointer = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    const drag = atlasNodeDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || drag.primaryKind !== "task-group") return;
+    event.stopPropagation();
+    atlasNodeDragRef.current = null;
+    dockDragHitRef.current = false;
+    setIsAtlasDragging(false);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    setRootDropTarget(null);
+
+    if (drag.hasMoved) {
+      suppressNextTaskGroupClick(drag.primaryNodeId);
+      if (isPointerOverTrash(drag, event)) {
+        rollbackAtlasDragPositions(drag);
+        if (drag.groupId) onDeleteTaskGroup?.(drag.groupId);
+      }
+      atlasDragHitTestRectsCache = null;
+      return;
+    }
+
+    atlasDragHitTestRectsCache = null;
+  }, [isPointerOverTrash, onDeleteTaskGroup, rollbackAtlasDragPositions, suppressNextTaskGroupClick]);
+
+  const handleTaskGroupClick = useCallback((groupId: string) => {
+    if (suppressTaskGroupClickRef.current === groupId) {
+      suppressTaskGroupClickRef.current = null;
+      return;
+    }
+    onToggleTaskGroup?.(groupId);
+  }, [onToggleTaskGroup]);
 
   const handleTaskClick = useCallback((node: AtlasTaskNode) => {
     if (suppressTaskClickRef.current === node.nodeId) {
@@ -3190,6 +3290,7 @@ export function ExecutionMap({
       agentFocusId={focusedAgentNode?.agentId ?? null}
       interactionMode={interactionMode}
       onSelectionComplete={handleAtlasSelectionComplete}
+      onCanvasPointerDown={clearAtlasSelection}
       overlay={overlay}
     >
         <svg
@@ -3390,34 +3491,75 @@ export function ExecutionMap({
               <button
                 key={group.groupId}
                 type="button"
-                className="emap-task-group-card is-collapsed"
+                className={`emap-task-group-card is-collapsed ${group.locked ? "is-locked" : ""}`}
                 style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
                 aria-label={`展开 ${group.title} ${taskCount} Tasks`}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={() => onToggleTaskGroup?.(group.groupId)}
+                data-task-group-id={group.groupId}
+                data-task-group-locked={group.locked ? "true" : "false"}
+                onPointerDown={(event) => beginTaskGroupDrag(group, event)}
+                onPointerMove={handleAgentPointerMove}
+                onPointerUp={endTaskGroupPointer}
+                onPointerCancel={endTaskGroupPointer}
+                onClick={() => handleTaskGroupClick(group.groupId)}
               >
-                <span className="emap-task-group-kicker">Group</span>
-                <strong>{group.title}</strong>
-                <span>{taskCount} Tasks</span>
+                <span className="emap-task-group-card-main">
+                  <span className="emap-task-group-kicker">{group.locked ? "Locked Group" : "Group"}</span>
+                  <strong>{group.title}</strong>
+                </span>
+                <span className="emap-task-group-count"><strong>{taskCount}</strong><span>Tasks</span></span>
               </button>
             ) : (
               <div
                 key={group.groupId}
                 role="group"
-                className="emap-task-group-frame"
+                className={`emap-task-group-frame ${group.locked ? "is-locked" : ""}`}
                 aria-label={group.title}
                 style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
                 data-task-group-id={group.groupId}
+                data-task-group-locked={group.locked ? "true" : "false"}
+                onPointerDown={(event) => beginTaskGroupDrag(group, event)}
+                onPointerMove={handleAgentPointerMove}
+                onPointerUp={endTaskGroupPointer}
+                onPointerCancel={endTaskGroupPointer}
               >
                 <div className="emap-task-group-head">
-                  <span className="emap-task-group-kicker">Group</span>
+                  <span className="emap-task-group-kicker">{group.locked ? "Locked Group" : "Group"}</span>
                   <strong>{group.title}</strong>
                   <span>{taskCount} Tasks</span>
                   <button
                     type="button"
-                    aria-label={`折叠 ${group.title}`}
+                    aria-label={`${group.locked ? "解锁" : "上锁"} ${group.title}`}
+                    className="emap-task-group-lock-button"
                     onPointerDown={(event) => event.stopPropagation()}
-                    onClick={() => onToggleTaskGroup?.(group.groupId)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onToggleTaskGroupLock?.(group.groupId);
+                    }}
+                  >
+                    {group.locked ? "解锁" : "上锁"}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`移除 ${group.title}`}
+                    className="emap-task-group-remove-button"
+                    disabled={group.locked}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (!group.locked) onDeleteTaskGroup?.(group.groupId);
+                    }}
+                  >
+                    移除
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`折叠 ${group.title}`}
+                    className="emap-task-group-collapse-button"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onToggleTaskGroup?.(group.groupId);
+                    }}
                   >
                     折叠
                   </button>

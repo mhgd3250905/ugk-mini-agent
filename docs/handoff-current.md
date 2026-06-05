@@ -73,6 +73,7 @@ git log --oneline origin/main..HEAD
 - 普通 Task-to-Task typed artifact handoff 已修复：手动 `upstreamRunSelections[]` 和自动 typed downstream 共用 runtime resolver。Discovery 上游保持 `discovery-aggregation.json` -> `discovery-result.json` 优先级；普通 Task 按 connection type 优先选择当前 attempt 的 `agent-workspaces/<attemptId>/worker/output/**` 机器可消费文件，`json` 只接受可解析 JSON object/array 的 `.json`；没有匹配时才 fallback 到 `accepted-result.md` / 既有 `resultRef`。
 - 2026-06-05 修复后真实链路验证：重启 `ugk-pi` / `ugk-pi-team-worker` 后，用 `task_e1846fa41c83` + `conn_52ab18a4ffc3` + 上游 `run_3cfcffe71bec` 启动新 run `run_4af859e1d834`。该 run 已 `completed`，`taskState.status="succeeded"`，`source.boundInputs[0].artifact.fileRef="agent-workspaces/attempt_b541b6717710/worker/output/structured-report.json"`，不是 `accepted-result.md`。下游 worker 生成的 HTML 报告实际文件为 `diabetes-report.html`，URL `http://127.0.0.1:3000/v1/team/task-runs/run_4af859e1d834/artifacts/attempt_a5b5ef9409ef/worker/diabetes-report.html` 返回 HTTP 200。
 - 2026-06-05 用户侧正常路径验证通过：用户从 Team Console 启动 `task_e1846fa41c83` 后，过程界面显示“手动上游输入”。后端 run `run_221b63509573` 已 `completed`，`taskState.status="succeeded"`，`source.boundInputs[0].artifact.fileRef="agent-workspaces/attempt_b541b6717710/worker/output/structured-report.json"`，下游报告 `diabetes-industry-report.html` URL `http://127.0.0.1:3000/v1/team/task-runs/run_221b63509573/artifacts/attempt_1033900d9857/worker/diabetes-industry-report.html` 返回 HTTP 200。用户确认测试通过。
+- Team Console Execution Atlas 框选和 UI-only Group 交互已优化：框选节点高亮增强，点击已选集合外的空白或其他节点会清空框选；折叠 Group 可拖动，展开 Group 可上锁/解锁/移除；锁定 Group 不能移动/删除，内部 Task 单独拖动或混合多选拖动时都不会被移动。
 
 ## 验证证据
 
@@ -115,6 +116,11 @@ git log --oneline origin/main..HEAD
 - Browser revalidation 对纯 Step 06 文档收口不是必需项；若以后声称新的浏览器证据，必须来自 `http://127.0.0.1:5174/` 且使用自动化。
 - 如果 `5174/src/app/App.tsx` 已是新源码但页面 DOM 仍像旧版，只重启 `ugk-pi-team-console` 容器并硬刷新；不要重启主 `ugk-pi` 或乱开临时后端端口。
 - Team Console Vite build 的 chunk size warning 是既有非阻塞 warning，不等于本轮失败。
+- Team Console lasso selection / UI-only Group 交互优化：
+  - PR review 时新增锁定 Group 混合多选拖拽回归测试，先红后绿：锁定 Group 内部 Task 不会被已选未锁 Agent 拖拽带走。
+  - `npm --prefix apps/team-console run test -- --run src/tests/app-connections.test.tsx -t "locks a Group"`：1 passed。
+  - PR 作者已验证：`app-connections.test.tsx`、`app-static-contracts.test.ts`、`execution-map-ui.test.tsx` Discovery root、`atlas-geometry.test.ts`、Team Console build、`git diff --check` 和本地浏览器 reload console error count 0。
+  - `npm --prefix apps/team-console run build`：passed；仍有既有 Vite chunk size warning。
 
 ## 受保护不变式
 

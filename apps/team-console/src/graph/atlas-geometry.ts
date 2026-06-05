@@ -7,7 +7,7 @@ import { straightPath, NODE_WIDTH } from "./execution-map-layout";
 export const AGENT_NODE_HEIGHT = 132;
 export const CANVAS_TASK_NODE_HEIGHT = 184;
 export const CANVAS_TASK_PORT_ROW_EXTRA_HEIGHT = 28;
-export const CANVAS_TASK_DISCOVERY_SUMMARY_EXTRA_HEIGHT = 28;
+export const CANVAS_TASK_DISCOVERY_SUMMARY_EXTRA_HEIGHT = 56;
 export const CANVAS_SOURCE_NODE_HEIGHT = 166;
 
 // ── Rect type ──────────────────────────────────────────────────────

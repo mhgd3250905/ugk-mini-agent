@@ -410,6 +410,18 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toContain("rgba(232, 239, 247, 0.84)");
   });
 
+  it("pins atlas card status pills to the top right", () => {
+    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+
+    const headerRule = mapCss.match(/\.emap-atlas-card\s+\.emap-node-header\s*{[^}]*}/)?.[0] ?? "";
+    const pillRule = mapCss.match(/\.emap-atlas-card\s+\.emap-node-state-pill\s*{[^}]*}/)?.[0] ?? "";
+
+    expect(headerRule).toContain("padding-right: 92px");
+    expect(pillRule).toContain("position: absolute");
+    expect(pillRule).toContain("top: 8px");
+    expect(pillRule).toContain("right: 10px");
+  });
+
   it("keeps Discovery subcanvas light by default while preserving dark theme overrides", () => {
     const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
     const appTsx = readFileSync("src/app/App.tsx", "utf8");
@@ -490,7 +502,7 @@ describe("Team Console static contracts", () => {
     const summaryHeadRule = mapCss.match(/\.task-run-summary-head\s+strong\s*{[^}]*}/)?.[0] ?? "";
     const observerHeadRule = mapCss.match(/\.emap-run-observer-head\s*{[^}]*}/)?.[0] ?? "";
     const observerHeadSpanRule = mapCss.match(/\.emap-run-observer-head\s+span\s*{[^}]*}/)?.[0] ?? "";
-    const editFormRule = mapCss.match(/\.task-edit-form\s*{[^}]*}/)?.[0] ?? "";
+    const editFormRule = mapCss.match(/(?:^|\n)\.task-edit-form\s*{[^}]*}/)?.[0] ?? "";
     const editNoteRule = mapCss.match(/\.task-edit-note,\n\.task-edit-warning\s*{[^}]*}/)?.[0] ?? "";
     const editFieldRule = mapCss.match(/\.task-edit-field\s+input,\n\.task-edit-field\s+select\s*{[^}]*}/)?.[0] ?? "";
 
@@ -679,11 +691,9 @@ describe("Team Console static contracts", () => {
     expect(playgroundCurrent).toContain("不接 SSE");
 
     const changeLog = readFileSync("../../docs/change-log.md", "utf8");
-    expect(changeLog).toContain("2026-06-01 — Team Console Run observer JSON result rendering");
+    expect(changeLog).toContain("2026-06-01 — Team Console interaction and public artifact fixes");
     expect(changeLog).toContain("accepted-result.md");
-    expect(changeLog).toContain("JSON pretty print");
-    expect(changeLog).toContain("2026-05-30 — Team Console 浅色主题与明暗切换");
-    expect(changeLog).toContain("沉浸式画布");
+    expect(changeLog).toContain("run observer JSON 结果展示");
     expect(changeLog).toContain("历史记录裁剪说明");
     expect(changeLog).not.toContain("2026-05-25 — Team Console Task run process nodes UI budget");
   });

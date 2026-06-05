@@ -964,6 +964,7 @@ function readStoredTaskGroups(value: unknown): AtlasTaskGroup[] {
       title,
       taskNodeIds,
       collapsed: record.collapsed === true,
+      locked: record.locked === true,
     });
   }
   return result;
@@ -3479,6 +3480,7 @@ export function App() {
           title: `Group ${nextIndex}`,
           taskNodeIds,
           collapsed: false,
+          locked: false,
         },
       ];
     });
@@ -3488,6 +3490,16 @@ export function App() {
     setTaskGroups((current) => current.map((group) => (
       group.groupId === groupId ? { ...group, collapsed: !group.collapsed } : group
     )));
+  }, []);
+
+  const toggleTaskGroupLock = useCallback((groupId: string) => {
+    setTaskGroups((current) => current.map((group) => (
+      group.groupId === groupId ? { ...group, locked: !group.locked } : group
+    )));
+  }, []);
+
+  const deleteTaskGroup = useCallback((groupId: string) => {
+    setTaskGroups((current) => current.filter((group) => group.groupId !== groupId || group.locked));
   }, []);
 
   const agentToolbar = (
@@ -5625,6 +5637,8 @@ export function App() {
                 onRestoreCanvasTask={restoreTaskNode}
                 taskGroups={taskGroups}
                 onToggleTaskGroup={toggleTaskGroup}
+                onToggleTaskGroupLock={toggleTaskGroupLock}
+                onDeleteTaskGroup={deleteTaskGroup}
                 onAtlasSelectionChange={setSelectedAtlasEntries}
                 onMoveSourceNode={moveSourceNode}
                 minimizedSourceNodeIds={minimizedSourceNodeIds}

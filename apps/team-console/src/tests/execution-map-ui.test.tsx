@@ -396,7 +396,7 @@ describe("ExecutionMap UI", () => {
     const discoveryHeight = Number.parseFloat(discoveryNode.style.height);
 
     expect(discoveryHeight).toBeGreaterThan(normalHeight);
-    expect(discoveryHeight - normalHeight).toBeGreaterThanOrEqual(28);
+    expect(discoveryHeight - normalHeight).toBeGreaterThanOrEqual(48);
     expect(discoveryNode.querySelector(".emap-discovery-summary-row")).toBeTruthy();
   });
 

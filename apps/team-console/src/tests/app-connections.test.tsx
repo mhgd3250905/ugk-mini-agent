@@ -493,6 +493,129 @@ describe("App", () => {
       expect(await within(atlasNodes).findByRole("button", { name: "发现云服务候选" })).toBeInTheDocument();
     });
 
+    it("clears lasso selection when clicking outside selected nodes", async () => {
+      const { container } = render(<App />);
+      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+      const atlas = getAtlas(container);
+      const atlasNodes = getAtlasNodes(container);
+      const firstTask = await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" }) as HTMLElement;
+      const secondTask = await within(atlasNodes).findByRole("button", { name: "发现云服务候选" }) as HTMLElement;
+      const agentNode = within(atlasNodes).getByRole("button", { name: "主 Agent" }) as HTMLElement;
+
+      vi.useFakeTimers();
+      firePointer(atlas, "pointerdown", { pointerId: 44, clientX: 240, clientY: 180 });
+      act(() => { vi.advanceTimersByTime(SELECTION_LONG_PRESS_MS + 1); });
+      firePointer(atlas, "pointermove", { pointerId: 44, clientX: 940, clientY: 430 });
+      firePointer(atlas, "pointerup", { pointerId: 44, clientX: 940, clientY: 430, buttons: 0 });
+      vi.useRealTimers();
+
+      expect(firstTask).toHaveClass("is-atlas-selected");
+      expect(secondTask).toHaveClass("is-atlas-selected");
+
+      firePointer(firstTask, "pointerdown", { pointerId: 45, clientX: 260, clientY: 210 });
+      firePointer(firstTask, "pointerup", { pointerId: 45, clientX: 260, clientY: 210, buttons: 0 });
+      expect(firstTask).toHaveClass("is-atlas-selected");
+      expect(secondTask).toHaveClass("is-atlas-selected");
+
+      firePointer(agentNode, "pointerdown", { pointerId: 46, clientX: 80, clientY: 120 });
+      firePointer(agentNode, "pointerup", { pointerId: 46, clientX: 80, clientY: 120, buttons: 0 });
+      expect(firstTask).not.toHaveClass("is-atlas-selected");
+      expect(secondTask).not.toHaveClass("is-atlas-selected");
+
+      vi.useFakeTimers();
+      firePointer(atlas, "pointerdown", { pointerId: 47, clientX: 240, clientY: 180 });
+      act(() => { vi.advanceTimersByTime(SELECTION_LONG_PRESS_MS + 1); });
+      firePointer(atlas, "pointermove", { pointerId: 47, clientX: 940, clientY: 430 });
+      firePointer(atlas, "pointerup", { pointerId: 47, clientX: 940, clientY: 430, buttons: 0 });
+      vi.useRealTimers();
+
+      expect(firstTask).toHaveClass("is-atlas-selected");
+      firePointer(atlas, "pointerdown", { pointerId: 48, clientX: 20, clientY: 20 });
+      firePointer(atlas, "pointerup", { pointerId: 48, clientX: 20, clientY: 20, buttons: 0 });
+      expect(firstTask).not.toHaveClass("is-atlas-selected");
+    });
+
+    it("moves a collapsed Group by dragging its card", async () => {
+      const { container } = render(<App />);
+      const atlas = getAtlas(container);
+      const atlasNodes = getAtlasNodes(container);
+      await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" });
+      await within(atlasNodes).findByRole("button", { name: "发现云服务候选" });
+
+      vi.useFakeTimers();
+      firePointer(atlas, "pointerdown", { pointerId: 49, clientX: 240, clientY: 180 });
+      act(() => { vi.advanceTimersByTime(SELECTION_LONG_PRESS_MS + 1); });
+      firePointer(atlas, "pointermove", { pointerId: 49, clientX: 940, clientY: 430 });
+      firePointer(atlas, "pointerup", { pointerId: 49, clientX: 940, clientY: 430, buttons: 0 });
+      vi.useRealTimers();
+      fireEvent.click(screen.getByRole("button", { name: /创建 Group/ }));
+      const group = await screen.findByRole("group", { name: "Group 1" });
+      fireEvent.click(within(group).getByRole("button", { name: "折叠 Group 1" }));
+      const collapsedGroup = await screen.findByRole("button", { name: "展开 Group 1 2 Tasks" }) as HTMLElement;
+
+      const groupLeft = parseFloat(collapsedGroup.style.left || "0");
+      const groupTop = parseFloat(collapsedGroup.style.top || "0");
+
+      firePointer(collapsedGroup, "pointerdown", { pointerId: 50, clientX: groupLeft + 20, clientY: groupTop + 20 });
+      firePointer(collapsedGroup, "pointermove", { pointerId: 50, clientX: groupLeft + 80, clientY: groupTop + 50 });
+      firePointer(collapsedGroup, "pointerup", { pointerId: 50, clientX: groupLeft + 80, clientY: groupTop + 50, buttons: 0 });
+
+      expect(parseFloat(collapsedGroup.style.left || "0")).toBe(groupLeft + 60);
+      expect(parseFloat(collapsedGroup.style.top || "0")).toBe(groupTop + 30);
+    });
+
+    it("locks a Group so it cannot be moved or removed until unlocked", async () => {
+      const { container } = render(<App />);
+      fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
+      fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
+      const atlas = getAtlas(container);
+      const atlasNodes = getAtlasNodes(container);
+      const agentNode = within(atlasNodes).getByRole("button", { name: "主 Agent" }) as HTMLElement;
+      const firstTask = await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" }) as HTMLElement;
+
+      vi.useFakeTimers();
+      firePointer(atlas, "pointerdown", { pointerId: 51, clientX: 20, clientY: 80 });
+      act(() => { vi.advanceTimersByTime(SELECTION_LONG_PRESS_MS + 1); });
+      firePointer(atlas, "pointermove", { pointerId: 51, clientX: 940, clientY: 430 });
+      firePointer(atlas, "pointerup", { pointerId: 51, clientX: 940, clientY: 430, buttons: 0 });
+      vi.useRealTimers();
+      expect(agentNode).toHaveClass("is-atlas-selected");
+      fireEvent.click(screen.getByRole("button", { name: /创建 Group/ }));
+      const group = await screen.findByRole("group", { name: "Group 1" });
+      fireEvent.click(within(group).getByRole("button", { name: "上锁 Group 1" }));
+
+      expect(group).toHaveClass("is-locked");
+      const removeButton = within(group).getByRole("button", { name: "移除 Group 1" });
+      expect(removeButton).toBeDisabled();
+      fireEvent.click(removeButton);
+      expect(screen.getByRole("group", { name: "Group 1" })).toBeInTheDocument();
+
+      const firstLeft = parseFloat(firstTask.style.left || "0");
+      const firstTop = parseFloat(firstTask.style.top || "0");
+      firePointer(firstTask, "pointerdown", { pointerId: 52, clientX: firstLeft + 20, clientY: firstTop + 20 });
+      firePointer(firstTask, "pointermove", { pointerId: 52, clientX: firstLeft + 100, clientY: firstTop + 60 });
+      firePointer(firstTask, "pointerup", { pointerId: 52, clientX: firstLeft + 100, clientY: firstTop + 60, buttons: 0 });
+      expect(parseFloat(firstTask.style.left || "0")).toBe(firstLeft);
+      expect(parseFloat(firstTask.style.top || "0")).toBe(firstTop);
+
+      const agentLeft = parseFloat(agentNode.style.left || "0");
+      const agentTop = parseFloat(agentNode.style.top || "0");
+      firePointer(agentNode, "pointerdown", { pointerId: 53, clientX: agentLeft + 20, clientY: agentTop + 20 });
+      firePointer(agentNode, "pointermove", { pointerId: 53, clientX: agentLeft + 100, clientY: agentTop + 60 });
+      firePointer(agentNode, "pointerup", { pointerId: 53, clientX: agentLeft + 100, clientY: agentTop + 60, buttons: 0 });
+      expect(parseFloat(agentNode.style.left || "0")).toBe(agentLeft + 80);
+      expect(parseFloat(agentNode.style.top || "0")).toBe(agentTop + 40);
+      expect(parseFloat(firstTask.style.left || "0")).toBe(firstLeft);
+      expect(parseFloat(firstTask.style.top || "0")).toBe(firstTop);
+
+      fireEvent.click(within(group).getByRole("button", { name: "解锁 Group 1" }));
+      expect(group).not.toHaveClass("is-locked");
+      fireEvent.click(within(group).getByRole("button", { name: "移除 Group 1" }));
+      expect(screen.queryByRole("group", { name: "Group 1" })).toBeNull();
+      expect(await within(atlasNodes).findByRole("button", { name: "调查 Medtrum 云资产" })).toBeInTheDocument();
+    });
+
     it("pans instead of selecting on quick drag before long-press delay", async () => {
       const { container } = render(<App />);
       fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
