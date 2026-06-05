@@ -262,6 +262,44 @@ export class RunAttemptStore {
 		}
 	}
 
+	async listAttemptRolePublicOutputFiles(runId: string, attemptId: string, role: "worker" | "checker" | "watcher"): Promise<Array<{ relativePath: string; normalizedRef: string }>> {
+		if (/[^a-zA-Z0-9_-]/.test(runId) || runId.includes("..")) return [];
+		if (/[^a-zA-Z0-9_-]/.test(attemptId) || attemptId.includes("..")) return [];
+		const runRoot = join(this.rootDir, "runs", runId);
+		const outputRoot = join(runRoot, "agent-workspaces", attemptId, role, "output");
+		const resolvedOutputRoot = path.resolve(outputRoot);
+		const resolvedRunRoot = path.resolve(runRoot);
+		if (!resolvedOutputRoot.startsWith(resolvedRunRoot + path.sep)) return [];
+
+		const files: Array<{ relativePath: string; normalizedRef: string }> = [];
+		const walk = async (dir: string): Promise<void> => {
+			const resolvedDir = path.resolve(dir);
+			if (!resolvedDir.startsWith(resolvedOutputRoot + path.sep) && resolvedDir !== resolvedOutputRoot) return;
+			let entries: import("node:fs").Dirent[];
+			try {
+				entries = await readdir(dir, { withFileTypes: true });
+			} catch {
+				return;
+			}
+			for (const entry of entries) {
+				const entryPath = join(dir, entry.name);
+				const resolvedEntry = path.resolve(entryPath);
+				if (!resolvedEntry.startsWith(resolvedOutputRoot + path.sep) && resolvedEntry !== resolvedOutputRoot) continue;
+				if (entry.isDirectory()) {
+					await walk(entryPath);
+					continue;
+				}
+				if (!entry.isFile()) continue;
+				files.push({
+					relativePath: path.relative(resolvedOutputRoot, resolvedEntry).replace(/\\/g, "/"),
+					normalizedRef: path.relative(resolvedRunRoot, resolvedEntry).replace(/\\/g, "/"),
+				});
+			}
+		};
+		await walk(outputRoot);
+		return files.sort((a, b) => a.normalizedRef.localeCompare(b.normalizedRef));
+	}
+
 	private async writeAttemptFile(runId: string, taskId: string, attemptId: string, fileName: string, content: string): Promise<void> {
 		const dir = join(this.rootDir, "runs", runId, "tasks", taskId, "attempts", attemptId);
 		await mkdir(dir, { recursive: true });

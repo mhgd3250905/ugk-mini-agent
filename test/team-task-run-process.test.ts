@@ -2479,6 +2479,228 @@ test("downstream worker receives bound input prompt and payload from upstream ty
 	}
 });
 
+test("downstream worker receives public worker JSON for typed artifact instead of accepted summary", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-handoff-public-json-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const sourceTask = await taskStore.create({
+			...validTaskInput,
+			title: "结构化数据采集",
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "结构化数据采集",
+				outputPorts: [{ id: "structured_json", label: "Structured JSON", type: "json" }],
+				outputContract: { text: "输出 JSON object。" },
+				acceptance: { rules: ["必须是合法 JSON"] },
+			},
+		});
+		const targetTask = await taskStore.create({
+			title: "HTML 制作",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "HTML 制作",
+				input: { text: "根据上游 JSON 制作 HTML 页面。" },
+				inputPorts: [{ id: "source_json", label: "Source JSON", type: "json" }],
+				outputContract: { text: "输出 HTML 页面。" },
+				acceptance: { rules: ["必须使用上游 JSON"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+
+		await mkdir(join(root, "team"), { recursive: true });
+		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
+		const connection = await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "structured_json",
+			toTaskId: targetTask.taskId,
+			toInputPortId: "source_json",
+		});
+
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		let capturedDownstreamInput: WorkerInput | undefined;
+
+		class PublicJsonRunner extends ProcessEventRoleRunner {
+			async runWorker(input: WorkerInput): Promise<WorkerOutput> {
+				if (input.task.id === sourceTask.taskId) {
+					assert.ok(input.artifactPublicDir);
+					await writeFile(
+						join(input.artifactPublicDir, "structured-report.json"),
+						JSON.stringify({ reportId: "real-json", rows: [{ title: "真实结构化数据" }] }),
+						"utf8",
+					);
+					return { content: "worker wrote structured-report.json", artifactRefs: [] };
+				}
+				if (input.task.id === targetTask.taskId) {
+					capturedDownstreamInput = input;
+					return { content: "downstream worker result", artifactRefs: [] };
+				}
+				return super.runWorker(input as ProcessAwareWorkerInput);
+			}
+
+			async runChecker(input: CheckerInput): Promise<CheckerOutput> {
+				if (input.task.id === sourceTask.taskId) {
+					return { verdict: "pass", reason: "ok", resultContent: "合法 JSON，81KB，验收通过。" };
+				}
+				return { verdict: "pass", reason: "ok", resultContent: "accepted downstream" };
+			}
+		}
+
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new PublicJsonRunner(),
+			connectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const upstreamRun = await service.createRun(sourceTask.taskId);
+		const upstreamFinished = await waitForTerminalRun(service, upstreamRun.runId);
+		assert.equal(upstreamFinished.status, "completed");
+		const downstreamRuns = await waitForTaskRuns(service, targetTask.taskId, 1);
+		const downstreamFinished = await waitForTerminalRun(service, downstreamRuns[0]!.runId);
+		assert.equal(downstreamFinished.status, "completed");
+
+		const boundInput = downstreamFinished.source?.boundInputs?.[0];
+		assert.ok(boundInput, "downstream run must persist bound input");
+		assert.equal(boundInput.connectionId, connection.connectionId);
+		const artifact = boundInput.artifact as import("../src/team/types.js").TeamTaskTypedArtifact;
+		assert.equal(artifact.type, "json");
+		assert.match(artifact.fileRef, /agent-workspaces\/attempt_[^/]+\/worker\/output\/structured-report\.json$/);
+		assert.doesNotMatch(artifact.fileRef, /accepted-result\.md$/);
+		const parsed = JSON.parse(artifact.content ?? artifact.preview);
+		assert.equal(parsed.reportId, "real-json");
+		assert.equal(parsed.rows[0].title, "真实结构化数据");
+		assert.doesNotMatch(artifact.content ?? artifact.preview, /验收通过/);
+
+		assert.ok(capturedDownstreamInput, "downstream worker input should be captured");
+		const payload = capturedDownstreamInput!.task.input.payload as { boundInputs?: Array<{ artifact: { fileRef: string; content?: string; preview: string } }> } | undefined;
+		const payloadArtifact = payload?.boundInputs?.[0]?.artifact;
+		assert.ok(payloadArtifact, "downstream payload must include typed artifact");
+		assert.equal(payloadArtifact.fileRef, artifact.fileRef);
+		assert.equal(JSON.parse(payloadArtifact.content ?? payloadArtifact.preview).reportId, "real-json");
+		assert.match(capturedDownstreamInput!.task.input.text, /真实结构化数据/);
+		assert.doesNotMatch(capturedDownstreamInput!.task.input.text, /验收通过/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("manual upstream run selection binds public worker JSON instead of accepted summary", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-manual-public-json-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const sourceTask = await taskStore.create({
+			...validTaskInput,
+			title: "结构化数据采集",
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "结构化数据采集",
+				outputPorts: [{ id: "structured_json", label: "Structured JSON", type: "json" }],
+				outputContract: { text: "输出 JSON object。" },
+				acceptance: { rules: ["必须是合法 JSON"] },
+			},
+		});
+		const targetTask = await taskStore.create({
+			title: "HTML 制作",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "HTML 制作",
+				input: { text: "根据指定历史 run 的 JSON 制作 HTML 页面。" },
+				inputPorts: [{ id: "source_json", label: "Source JSON", type: "json" }],
+				outputContract: { text: "输出 HTML 页面。" },
+				acceptance: { rules: ["必须使用上游 JSON"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+
+		await mkdir(join(root, "team"), { recursive: true });
+		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
+		const connection = await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "structured_json",
+			toTaskId: targetTask.taskId,
+			toInputPortId: "source_json",
+		});
+
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		let capturedManualInput: WorkerInput | undefined;
+
+		class ManualPublicJsonRunner extends ProcessEventRoleRunner {
+			async runWorker(input: WorkerInput): Promise<WorkerOutput> {
+				if (input.task.id === sourceTask.taskId) {
+					assert.ok(input.artifactPublicDir);
+					await writeFile(
+						join(input.artifactPublicDir, "structured-report.json"),
+						JSON.stringify({ reportId: "selected-run-json", rows: [{ title: "被手动选择的真实数据" }] }),
+						"utf8",
+					);
+					return { content: "worker wrote selected structured report", artifactRefs: [] };
+				}
+				if (input.task.id === targetTask.taskId) {
+					capturedManualInput = input;
+					return { content: "manual downstream worker result", artifactRefs: [] };
+				}
+				return super.runWorker(input as ProcessAwareWorkerInput);
+			}
+
+			async runChecker(input: CheckerInput): Promise<CheckerOutput> {
+				if (input.task.id === sourceTask.taskId) {
+					return { verdict: "pass", reason: "ok", resultContent: "合法 JSON，验收摘要，不是机器数据。" };
+				}
+				return { verdict: "pass", reason: "ok", resultContent: "accepted downstream" };
+			}
+		}
+
+		const serviceWithoutConnections = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new ManualPublicJsonRunner(),
+			dataDir: join(root, "task-runs"),
+		});
+		const upstreamRun = await serviceWithoutConnections.createRun(sourceTask.taskId);
+		const upstreamFinished = await waitForTerminalRun(serviceWithoutConnections, upstreamRun.runId);
+		assert.equal(upstreamFinished.status, "completed");
+
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new ManualPublicJsonRunner(),
+			connectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+		const manualRun = await service.createRun(targetTask.taskId, {
+			upstreamRunSelections: [{ connectionId: connection.connectionId, fromRunId: upstreamRun.runId }],
+		});
+		const manualFinished = await waitForTerminalRun(service, manualRun.runId);
+		assert.equal(manualFinished.status, "completed");
+		assert.equal(manualFinished.source?.triggeredBy, undefined);
+
+		const boundInput = manualFinished.source?.boundInputs?.[0];
+		assert.ok(boundInput, "manual downstream run must persist bound input");
+		const artifact = boundInput.artifact as import("../src/team/types.js").TeamTaskTypedArtifact;
+		assert.equal(artifact.sourceRunId, upstreamRun.runId);
+		assert.match(artifact.fileRef, /agent-workspaces\/attempt_[^/]+\/worker\/output\/structured-report\.json$/);
+		assert.doesNotMatch(artifact.fileRef, /accepted-result\.md$/);
+		assert.equal(JSON.parse(artifact.content ?? artifact.preview).reportId, "selected-run-json");
+		assert.doesNotMatch(artifact.content ?? artifact.preview, /验收摘要/);
+
+		assert.ok(capturedManualInput, "manual downstream worker input should be captured");
+		const payload = capturedManualInput!.task.input.payload as { boundInputs?: Array<{ artifact: { fileRef: string; content?: string; preview: string } }> } | undefined;
+		const payloadArtifact = payload?.boundInputs?.[0]?.artifact;
+		assert.ok(payloadArtifact, "manual downstream payload must include typed artifact");
+		assert.equal(payloadArtifact.fileRef, artifact.fileRef);
+		assert.equal(JSON.parse(payloadArtifact.content ?? payloadArtifact.preview).reportId, "selected-run-json");
+		assert.match(capturedManualInput!.task.input.text, /被手动选择的真实数据/);
+		assert.doesNotMatch(capturedManualInput!.task.input.text, /验收摘要/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("Discovery downstream receives aggregation when accepted result is a worker file reference", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-task-discovery-downstream-json-"));
 	try {

@@ -29,6 +29,7 @@ export type CanvasTaskRunWorkspace = CanvasTaskAttemptWorkspace & Pick<RunWorksp
 	| "recordAttemptDeliveryOutcomes"
 	| "readDiscoveryAggregation"
 	| "readDiscoveryResult"
+	| "listAttemptRolePublicOutputFiles"
 	| "readRunScopedFile"
 	| "recordAttemptDiscoveryDispatchOutcomes"
 	| "recordAttemptDiscoveryGeneratedRunOutcomes"
@@ -105,6 +106,7 @@ const DEFAULT_TASK_RUN_TIMEOUTS = {
 const DELIVERY_ERROR_LIMIT = 500;
 
 type TaskRunSource = NonNullable<TeamRunState["source"]>;
+type TypedArtifactSource = { resultRef: string; content: string };
 
 export interface CanvasTaskRunOptions {
 	maxRunDurationMinutes?: number;
@@ -387,8 +389,8 @@ export class CanvasTaskRunService {
 			const attemptId = upstreamTaskState.activeAttemptId;
 			const resultRef = upstreamTaskState.resultRef!;
 
-			const artifactSource = await this.resolveUpstreamRunArtifactSource(
-				selection.fromRunId, connection.fromTaskId, attemptId, resultRef, sourceTask,
+			const artifactSource = await this.resolveTaskTypedArtifactSource(
+				selection.fromRunId, connection.fromTaskId, attemptId, resultRef, sourceTask, connection.type,
 			);
 
 			const artifact = buildTeamTaskTypedArtifact({
@@ -422,13 +424,14 @@ export class CanvasTaskRunService {
 		return { boundInputs, manualSelections };
 	}
 
-	private async resolveUpstreamRunArtifactSource(
+	private async resolveTaskTypedArtifactSource(
 		runId: string,
 		taskId: string,
 		attemptId: string,
 		resultRef: string,
 		sourceTask: TeamCanvasTask,
-	): Promise<{ resultRef: string; content: string }> {
+		artifactType: string,
+	): Promise<TypedArtifactSource> {
 		if (sourceTask.canvasKind === "discovery") {
 			const discoveryAggregation = await this.options.workspace.readDiscoveryAggregation(runId, taskId, attemptId);
 			if (discoveryAggregation) {
@@ -447,10 +450,81 @@ export class CanvasTaskRunService {
 				}
 			}
 		}
+		const publicOutput = await this.resolveTypedWorkerPublicOutput(runId, attemptId, artifactType);
+		if (publicOutput) return publicOutput;
 		return {
 			resultRef,
 			content: await this.options.workspace.readRunScopedFile(runId, resultRef) ?? "",
 		};
+	}
+
+	private async resolveTypedWorkerPublicOutput(runId: string, attemptId: string, artifactType: string): Promise<TypedArtifactSource | null> {
+		const extensions = this.resolveTypedArtifactExtensions(artifactType);
+		if (!extensions) return null;
+		const files = await this.options.workspace.listAttemptRolePublicOutputFiles(runId, attemptId, "worker");
+		const candidates = files
+			.map(file => {
+				const ext = this.getLowerExtension(file.relativePath);
+				const extensionIndex = extensions.indexOf(ext);
+				return { ...file, ext, extensionIndex };
+			})
+			.filter(file => file.extensionIndex >= 0)
+			.sort((a, b) => {
+				if (a.extensionIndex !== b.extensionIndex) return a.extensionIndex - b.extensionIndex;
+				const aDepth = a.relativePath.split("/").length;
+				const bDepth = b.relativePath.split("/").length;
+				if (aDepth !== bDepth) return aDepth - bDepth;
+				return a.normalizedRef.localeCompare(b.normalizedRef);
+			});
+		for (const candidate of candidates) {
+			const content = await this.options.workspace.readRunScopedFile(runId, candidate.normalizedRef);
+			if (content == null) continue;
+			if (!this.contentMatchesArtifactType(content, artifactType)) continue;
+			return { resultRef: candidate.normalizedRef, content };
+		}
+		return null;
+	}
+
+	private resolveTypedArtifactExtensions(artifactType: string): string[] | null {
+		switch (artifactType.trim().toLowerCase()) {
+			case "json":
+				return [".json"];
+			case "html":
+				return [".html", ".htm"];
+			case "md":
+			case "markdown":
+				return [".md", ".markdown"];
+			case "text":
+			case "txt":
+			case "string":
+				return [".txt", ".md"];
+			default:
+				return null;
+		}
+	}
+
+	private getLowerExtension(fileRef: string): string {
+		const clean = fileRef.split(/[?#]/, 1)[0] ?? fileRef;
+		const slashIndex = clean.lastIndexOf("/");
+		const fileName = slashIndex >= 0 ? clean.slice(slashIndex + 1) : clean;
+		const dotIndex = fileName.lastIndexOf(".");
+		return dotIndex >= 0 ? fileName.slice(dotIndex).toLowerCase() : "";
+	}
+
+	private contentMatchesArtifactType(content: string, artifactType: string): boolean {
+		switch (artifactType.trim().toLowerCase()) {
+			case "json":
+				try {
+					const parsed = JSON.parse(content);
+					return parsed !== null && typeof parsed === "object";
+				} catch {
+					return false;
+				}
+			case "html":
+				return /<!doctype\s+html/i.test(content) || /<\s*[a-z][a-z0-9-]*(?:\s|>|\/)/i.test(content);
+			default:
+				return true;
+		}
 	}
 
 	async cancelRun(runId: string, reason = "user cancel"): Promise<TeamRunState> {
@@ -688,9 +762,7 @@ export class CanvasTaskRunService {
 
 		const sourceRun = await this.getRun(runId);
 		const sourceTask = await this.options.taskStore.get(taskId);
-		const artifactSource = sourceTask && !sourceTask.archived
-			? await this.resolveDownstreamArtifactSource(runId, taskId, attemptId, resultRef, sourceTask)
-			: { resultRef, content: "" };
+		const resultContent = await this.options.workspace.readRunScopedFile(runId, resultRef) ?? "";
 
 		const targetTaskIds = new Set([
 			...connections.map(c => c.toTaskId),
@@ -702,9 +774,10 @@ export class CanvasTaskRunService {
 		}
 
 		const actions = planDownstreamDelivery(
-			{ runId, taskId, attemptId, resultRef: artifactSource.resultRef, resultContent: artifactSource.content },
+			{ runId, taskId, attemptId, resultRef, resultContent },
 			{ sourceTask, connections, dependencies, getTask: (id) => taskCache.get(id) ?? null },
 		);
+		const typedArtifactSourceCache = new Map<string, Promise<TypedArtifactSource>>();
 
 		const outcomes: TeamTaskDeliveryOutcome[] = [];
 		for (const action of actions) {
@@ -731,7 +804,16 @@ export class CanvasTaskRunService {
 					break;
 				case "trigger_typed_run":
 					try {
-						const artifact = buildTeamTaskTypedArtifact(action.artifactParams);
+						const source = sourceTask
+							? await this.resolveCachedTaskTypedArtifactSource(
+								typedArtifactSourceCache, runId, taskId, attemptId, resultRef, sourceTask, action.connection.type,
+							)
+							: { resultRef: action.artifactParams.fileRef, content: action.artifactParams.content };
+						const artifact = buildTeamTaskTypedArtifact({
+							...action.artifactParams,
+							fileRef: source.resultRef,
+							content: source.content,
+						});
 						const downstreamRun = await this.createRun(action.targetTask.taskId, {
 							boundInputs: [{
 								connectionId: action.connection.connectionId,
@@ -795,35 +877,22 @@ export class CanvasTaskRunService {
 		}
 	}
 
-	private async resolveDownstreamArtifactSource(
+	private resolveCachedTaskTypedArtifactSource(
+		cache: Map<string, Promise<TypedArtifactSource>>,
 		runId: string,
 		taskId: string,
 		attemptId: string,
 		resultRef: string,
 		sourceTask: TeamCanvasTask,
-	): Promise<{ resultRef: string; content: string }> {
-		if (sourceTask.canvasKind === "discovery") {
-			const discoveryAggregation = await this.options.workspace.readDiscoveryAggregation(runId, taskId, attemptId);
-			if (discoveryAggregation) {
-				const discoveryAggregationRef = `tasks/${taskId}/attempts/${attemptId}/discovery-aggregation.json`;
-				const discoveryAggregationContent = await this.options.workspace.readRunScopedFile(runId, discoveryAggregationRef);
-				if (discoveryAggregationContent) {
-					return { resultRef: discoveryAggregationRef, content: discoveryAggregationContent };
-				}
-			}
-			const discoveryResult = await this.options.workspace.readDiscoveryResult(runId, taskId, attemptId);
-			if (discoveryResult) {
-				const discoveryResultRef = `tasks/${taskId}/attempts/${attemptId}/discovery-result.json`;
-				const discoveryContent = await this.options.workspace.readRunScopedFile(runId, discoveryResultRef);
-				if (discoveryContent) {
-					return { resultRef: discoveryResultRef, content: discoveryContent };
-				}
-			}
+		artifactType: string,
+	): Promise<TypedArtifactSource> {
+		const key = artifactType.trim().toLowerCase();
+		let cached = cache.get(key);
+		if (!cached) {
+			cached = this.resolveTaskTypedArtifactSource(runId, taskId, attemptId, resultRef, sourceTask, artifactType);
+			cache.set(key, cached);
 		}
-		return {
-			resultRef,
-			content: await this.options.workspace.readRunScopedFile(runId, resultRef) ?? "",
-		};
+		return cached;
 	}
 
 	private async failRun(runId: string, message: string): Promise<void> {

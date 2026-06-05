@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-05 — Team Task typed artifact handoff resolver
+
+- **主题**: 修复普通 Task-to-Task typed artifact handoff 默认绑定 `accepted-result.md` 摘要的问题。手动 `upstreamRunSelections[]` 和自动 typed downstream 现在共用同一 runtime resolver：Discovery 继续优先 `discovery-aggregation.json` / `discovery-result.json`；普通 Task 按 connection type 优先选择当前 attempt 的 worker public output 机器可消费文件，`json` 只接受可解析 JSON object/array 的 `.json`，没有匹配时才 fallback 到既有 `resultRef`。
+- **影响范围**: Canvas Task run 的 `source.boundInputs[].artifact.fileRef/content`、下游 worker prompt/payload、typed downstream fan-out；API 结构不变，不新增 endpoint，不改 Team Console UI 或主 `/playground`。
+- **验证**: 新增 manual upstream selection 与 automatic typed downstream 回归测试；`node --test --import tsx --test-name-pattern "typed artifact|upstream run selection|manual upstream|downstream" test\team-task-run-process.test.ts`、`node --test --import tsx test\team-task-artifact-handoff.test.ts`、`node --test --import tsx test\team-task-run-process.test.ts test\team-task-run-routes.test.ts`、`npx tsc --noEmit`、`git diff --check` 均通过。重启 `ugk-pi` / `ugk-pi-team-worker` 后，真实下游 run `run_4af859e1d834` 已 completed，`source.boundInputs[0].artifact.fileRef` 指向 `agent-workspaces/attempt_b541b6717710/worker/output/structured-report.json`，HTML 报告 `diabetes-report.html` HTTP 200。
+- **对应入口**: `src/team/task-run-service.ts`、`src/team/run-workspace-attempts.ts`、`src/team/run-workspace.ts`、`test/team-task-run-process.test.ts`、`docs/team-runtime.md`。
+
 ## 2026-06-05 — Team Task typed downstream live-run revalidation
 
 - **主题**: 真实链路排障确认 Team Console 对已装载历史上游 run 的启动请求已正确发送 `upstreamRunSelections[]`；此前 `task_e1846fa41c83` 裸跑的直接原因是本地 `ugk-pi` 主后端和 `ugk-pi-team-worker` 仍运行旧进程，未加载 Step 01 的后端 route/service 逻辑。重启这两个容器后，直接 HTTP POST 与 Team Console UI 启动的新 run 都能写入 `source.manualUpstreamSelections[]` 和 `source.boundInputs[]`。

@@ -200,6 +200,10 @@ export class RunWorkspace {
 		return this.attempts.readAttemptRoleWorkspaceFile(runId, attemptId, role, relativePath);
 	}
 
+	async listAttemptRolePublicOutputFiles(runId: string, attemptId: string, role: "worker" | "checker" | "watcher"): Promise<Array<{ relativePath: string; normalizedRef: string }>> {
+		return this.attempts.listAttemptRolePublicOutputFiles(runId, attemptId, role);
+	}
+
 	async writeFinalReport(runId: string, content: string): Promise<string> {
 		return this.artifacts.writeFinalReport(runId, content);
 	}
