@@ -912,6 +912,17 @@ test("GET /playground returns the test UI html", async () => {
 	assert.match(response.body, /execution,/);
 	assert.match(response.body, /type: "team_group"/);
 	assert.match(response.body, /execution\.type === "team_group"/);
+	assert.match(response.body, /function appendConnRunDetailLinkRow\(section, label, href\)/);
+	assert.match(
+		response.body,
+		/appendConnRunDetailLinkRow\(group, "Group JSON", groupId \? "\/v1\/team\/task-groups\/" \+ encodeURIComponent\(groupId\) : ""\)/,
+	);
+	assert.match(
+		response.body,
+		/appendConnRunDetailLinkRow\(group, "GroupRun JSON", groupRunId \? "\/v1\/team\/task-group-runs\/" \+ encodeURIComponent\(groupRunId\) : ""\)/,
+	);
+	assert.match(response.body, /link\.target = "_blank";/);
+	assert.match(response.body, /link\.rel = "noreferrer";/);
 	assert.match(
 		response.body,
 		/const isSkippedTeamGroupRun = snapshot\.skipped === true;[\s\S]*if \(isSkippedTeamGroupRun\) \{[\s\S]*appendConnRunDetailRow\(group, "Skipped"/,
@@ -2020,6 +2031,16 @@ test("standalone conn page can create team group conn executions", () => {
 	assert.match(response, /execution,/);
 	assert.match(response, /type: "team_group"/);
 	assert.match(response, /execution\.type === "team_group"/);
+	assert.match(
+		response,
+		/\["Group JSON", groupId \? "\/v1\/team\/task-groups\/" \+ encodeURIComponent\(groupId\) : ""\]/,
+	);
+	assert.match(
+		response,
+		/\["GroupRun JSON", groupRunId \? "\/v1\/team\/task-group-runs\/" \+ encodeURIComponent\(groupRunId\) : ""\]/,
+	);
+	assert.match(response, /link\.target = "_blank";/);
+	assert.match(response, /link\.rel = "noreferrer";/);
 	assert.match(
 		response,
 		/const isSkippedTeamGroupRun = snapshot\.skipped === true;[\s\S]*if \(isSkippedTeamGroupRun\) \{[\s\S]*skipped\.textContent = "Skipped: "/,

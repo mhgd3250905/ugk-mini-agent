@@ -1136,10 +1136,13 @@ function renderRunDetail(container, run, files, events) {
     heading.className = "conn-run-files-heading";
     heading.textContent = "Team Group";
     group.appendChild(heading);
+    const groupId = String(snapshotExecution?.groupId || snapshot.groupId || "");
+    const groupRunId = String(snapshot.groupRunId || "");
+    const groupRunStatus = String(snapshot.groupRunStatus || "");
     const fields = [
-      ["groupId", snapshotExecution?.groupId || snapshot.groupId || ""],
-      ["groupRunId", snapshot.groupRunId || ""],
-      ["groupRunStatus", snapshot.groupRunStatus || ""],
+      ["groupId", groupId],
+      ["groupRunId", groupRunId],
+      ["groupRunStatus", groupRunStatus],
     ];
     for (const [label, value] of fields) {
       if (!value) continue;
@@ -1148,6 +1151,22 @@ function renderRunDetail(container, run, files, events) {
       const code = document.createElement("code");
       code.textContent = String(value);
       row.appendChild(code);
+      group.appendChild(row);
+    }
+    const jsonLinks = [
+      ["Group JSON", groupId ? "/v1/team/task-groups/" + encodeURIComponent(groupId) : ""],
+      ["GroupRun JSON", groupRunId ? "/v1/team/task-group-runs/" + encodeURIComponent(groupRunId) : ""],
+    ];
+    for (const [label, href] of jsonLinks) {
+      if (!href) continue;
+      const row = document.createElement("span");
+      row.textContent = label + ": ";
+      const link = document.createElement("a");
+      link.href = href;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.textContent = "Open JSON";
+      row.appendChild(link);
       group.appendChild(row);
     }
     const isSkippedTeamGroupRun = snapshot.skipped === true;

@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-05 — Conn Team Group run detail diagnostics
+
+- **主题**: `/playground/conn` 和 `/playground` Conn manager 的 Team Group run detail 增加轻量 JSON 诊断链接。存在 `groupId` 时显示同源 `/v1/team/task-groups/<encoded groupId>`，存在 `groupRunId` 时显示同源 `/v1/team/task-group-runs/<encoded groupRunId>`，链接新窗口打开并使用 `noreferrer`。
+- **影响范围**: 仅 `src/ui` run detail 展示、静态页面合同测试和 Conn 运行文档；不新增后端 endpoint，不改变 Conn worker、GroupRun、TaskRun 执行 / 取消 / 状态映射，`agent_prompt` Conn 旧路径保持不变。
+- **对应入口**: `src/ui/conn-page-js.ts`、`src/ui/playground-conn-activity-controller.ts`、`test/server.test.ts`、`docs/runtime-assets-conn-feishu.md`。
+
 ## 2026-06-05 — Conn Team Group safe E2E and empty POST fix
 
 - **主题**: 完成 `team_group` Conn 的安全真实 E2E，并修复 Conn worker 启动 GroupRun 时空体 `POST` 携带 `content-type: application/json` 导致 Fastify 直接返回 `400 Bad Request` 的问题。`TeamGroupConnRunner` 现在只有请求体存在时才设置 JSON content-type，避免空 body 被主服务 JSON parser 拦截。

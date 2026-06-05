@@ -2360,6 +2360,21 @@ export function getConnActivityRendererScript(): string {
 			section.appendChild(row);
 		}
 
+		function appendConnRunDetailLinkRow(section, label, href) {
+			if (!href) {
+				return;
+			}
+			const row = document.createElement("span");
+			row.textContent = label + ": ";
+			const link = document.createElement("a");
+			link.href = href;
+			link.target = "_blank";
+			link.rel = "noreferrer";
+			link.textContent = "Open JSON";
+			row.appendChild(link);
+			section.appendChild(row);
+		}
+
 		function appendConnRunEvents(list, events) {
 			for (const event of events) {
 				const item = document.createElement("li");
@@ -2421,9 +2436,14 @@ export function getConnActivityRendererScript(): string {
 					const groupHeading = document.createElement("strong");
 					groupHeading.textContent = "Team Group";
 					group.appendChild(groupHeading);
-					appendConnRunDetailRow(group, "groupId", String(snapshotExecution?.groupId || snapshot.groupId || ""), { asCode: true });
-					appendConnRunDetailRow(group, "groupRunId", String(snapshot.groupRunId || ""), { asCode: true });
-					appendConnRunDetailRow(group, "groupRunStatus", String(snapshot.groupRunStatus || ""), { asCode: true });
+					const groupId = String(snapshotExecution?.groupId || snapshot.groupId || "");
+					const groupRunId = String(snapshot.groupRunId || "");
+					const groupRunStatus = String(snapshot.groupRunStatus || "");
+					appendConnRunDetailRow(group, "groupId", groupId, { asCode: true });
+					appendConnRunDetailRow(group, "groupRunId", groupRunId, { asCode: true });
+					appendConnRunDetailRow(group, "groupRunStatus", groupRunStatus, { asCode: true });
+					appendConnRunDetailLinkRow(group, "Group JSON", groupId ? "/v1/team/task-groups/" + encodeURIComponent(groupId) : "");
+					appendConnRunDetailLinkRow(group, "GroupRun JSON", groupRunId ? "/v1/team/task-group-runs/" + encodeURIComponent(groupRunId) : "");
 					const isSkippedTeamGroupRun = snapshot.skipped === true;
 					if (isSkippedTeamGroupRun) {
 						appendConnRunDetailRow(group, "Skipped", String(run.resultSummary || "Team Group run was skipped"));
