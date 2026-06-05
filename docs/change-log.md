@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-05 — Team Task typed downstream live-run revalidation
+
+- **主题**: 真实链路排障确认 Team Console 对已装载历史上游 run 的启动请求已正确发送 `upstreamRunSelections[]`；此前 `task_e1846fa41c83` 裸跑的直接原因是本地 `ugk-pi` 主后端和 `ugk-pi-team-worker` 仍运行旧进程，未加载 Step 01 的后端 route/service 逻辑。重启这两个容器后，直接 HTTP POST 与 Team Console UI 启动的新 run 都能写入 `source.manualUpstreamSelections[]` 和 `source.boundInputs[]`。
+- **影响范围**: 本地 Docker 运行口径和后续排障判断；这轮没有修改 production code。验证 run `run_416bd5c5c693` 已 `completed`，下游 `task_e1846fa41c83` 成功消费 `task_977d44da2fb9` 的历史 run `run_3cfcffe71bec` 并生成 HTML 报告。
+- **后续缺口**: 普通 Task-to-Task typed artifact handoff 仍有文件选择问题：当前默认绑定 checker `accepted-result.md`，当该文件只是验收摘要而真实机器可消费 JSON 位于 worker public output 时，下游只能靠 agent 自行查找真实文件。下一步应修 artifact selection / handoff，让 `json` typed artifact 直接绑定真实输出文件，`accepted-result.md` 仅作 fallback 或人类摘要。
+- **对应入口**: `docs/handoff-current.md`、`docs/team-runtime.md`、`src/team/task-run-service.ts`、`src/team/task-artifact-handoff.ts`、`test/team-task-run-process.test.ts`。
+
 ## 2026-06-04 — Team Console manual upstream input diagnostics
 
 - **主题**: Team Console run observer 新增手动上游输入诊断区。手动启动的下游 run 触发标签仍显示“手动”，observer 额外在 `data-observer-section="input-diagnostics"` 中显示“手动上游输入”和 `connectionId`、上游 task/run/attempt、端口映射、`artifactId`，full detail 可用时补 artifact `type` / `fileRef`。

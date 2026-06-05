@@ -1,6 +1,10 @@
 # Team Runtime v2
 
-更新时间：2026-06-03
+更新时间：2026-06-05
+
+> 2026-06-05 补充：真实运行排障确认，`task_e1846fa41c83` 从 Team Console 启动时前端已正确发送 `upstreamRunSelections[]`，此前新 run 仍缺 `source.boundInputs[]` 的原因是本地 `ugk-pi` 主后端和 `ugk-pi-team-worker` 仍运行旧进程；Step 01 后端代码提交后必须重启这两个非 watch 进程，不能只刷新 `5174`。重启后，直接 HTTP POST 和 UI 启动的新 run 都会写入 `source.manualUpstreamSelections[]` / `source.boundInputs[]`，验证 run `run_416bd5c5c693` 已 completed 并生成报告。
+
+> 2026-06-05 补充：typed artifact handoff 仍有一个待修契约缺口。普通 Task-to-Task artifact 当前默认绑定 checker accepted result (`accepted-result.md`)；如果上游 worker 把真正机器可消费 JSON 写在 role public output（例如 `worker/output/structured-report.json`），而 `accepted-result.md` 只是“合法JSON，81KB...”这类验收摘要，下游 JSON input 实际拿到的是摘要，不是真实 JSON。本次 run 能成功，是执行 agent 通过 `sourceRunId/fromAttemptId` 自行找到真实文件，不能把这种猜路径行为当作合同。下一步应让 typed artifact selection 优先选择与 output port 类型匹配的真实 worker public output 文件，`accepted-result.md` 只作为 fallback 或人类摘要。
 
 > 2026-06-04 补充：Step 01 新增的 `upstreamRunSelections[]` 已在 API/read model 层钉死响应形状。`GET /v1/team/task-runs/:runId` 默认/full detail 会保留 `source.boundInputs[]` 和 `source.manualUpstreamSelections[]`，且手动启动的下游 run 不会伪造 `source.triggeredBy`。summary 类响应继续省略 heavy `source.boundInputs`：包括 `GET /v1/team/task-runs/by-task?view=summary`、`GET /v1/team/task-runs/:runId?view=summary`、`GET /v1/team/task-runs/:runId?view=process-summary`、`GET /v1/team/tasks/:taskId/run-history` 和 `GET /v1/team/console/root-summary`；这些 lightweight 响应可保留 `source.manualUpstreamSelections[]` 作为诊断用 trace metadata。run history 仍是分页、summary-only，不新增 endpoint。
 
@@ -202,7 +206,7 @@ Source node 输入契约：
 
 产物传递契约：
 
-- 上游 Canvas Task run 必须成功并通过 checker，才会把 `accepted-result.md` 封装成 typed artifact。
+- 上游 Canvas Task run 必须成功并通过 checker，才会封装 typed artifact。当前普通 Task 仍默认使用 `accepted-result.md`；下一步要修为优先选择与 output port 类型匹配的 worker public output 机器可消费文件，`accepted-result.md` 仅 fallback。
 - artifact 至少包含 `artifactId`、`type`、`sourceTaskId`、`sourceRunId`、`sourceAttemptId`、`fileRef`、`preview` 和 `content`。
 - 下游自动 run 的 `TeamRunState.source` 会写入 `triggeredBy: { type: "task-connection", connectionId, fromTaskId, fromRunId, fromAttemptId }` 和 `boundInputs[]`。
 - `boundInputs[]` 会进入下游 WorkUnit 的 prompt 和 payload，Agent 看到的是明确绑定的 typed artifact 输入，不需要自己猜上游文件在哪。
