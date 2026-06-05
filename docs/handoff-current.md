@@ -88,6 +88,8 @@ git log --oneline origin/main..HEAD
 - GroupRun active polling 已补紧循环回归保护：相同 `groupRunId/status/updatedAt/finishedAt/observedRuns.length/entryRuns.length` 不写 React state，避免 `setState -> effect 重建 -> 立即 GET`。
 - Conn 后端 execution contract 已接入 Team Group：`execution` 支持 `{ type: "agent_prompt" }` 和 `{ type: "team_group", groupId }`，旧 Conn 默认归一化为 `agent_prompt`。SQLite 新增 `execution_json`，`/v1/conns` create/update/list/detail 均返回 normalized execution。
 - `ugk-pi-conn-worker` 对 `team_group` Conn run 不启动 BackgroundAgentRunner，而是调用主服务 GroupRun API 启动/轮询/取消；409 active guard 会作为 succeeded skipped 记录，summary 以 `Skipped:` 开头。
+- Conn 管理 UI 已接入 Team Group 执行对象：`/playground` 的 Conn manager 和 `/playground/conn` 独立页都可在 `agent_prompt` 与 `team_group` 间选择。选择 `team_group` 时只从后端 `GET /v1/team/task-groups` 读取 Group，不允许选择单 Task；保存 payload 使用 `execution: { type: "team_group", groupId }`，`target` 仍只表示结果投递目标。
+- Conn run detail 的 Team Group `Skipped` 展示只以 `resolvedSnapshot.skipped === true` 为准；failed GroupRun 不应显示 Skipped，而应保留普通 `groupRunStatus`、`errorText/resultText/resultSummary` 展示链路。
 
 ## 验证证据
 
@@ -143,6 +145,10 @@ git log --oneline origin/main..HEAD
   - `npm --prefix apps/team-console run test -- --run src/tests/app-static-contracts.test.ts`：27 pass。
   - `npm --prefix apps/team-console run build`：passed；仍有既有 Vite chunk size warning。
   - `npx tsc --noEmit`、`git diff --check`：pass。
+- Conn Team Group UI 验证通过：
+  - `node --test --import tsx test\server.test.ts`：168/168 pass。
+  - `npx tsc --noEmit`：pass。
+  - `git diff --check`：pass。
 
 ## 受保护不变式
 
@@ -159,7 +165,7 @@ git log --oneline origin/main..HEAD
 ## 未完成 / 下一步候选
 
 - 本轮 typed artifact handoff 代码级测试、真实链路和用户正常路径均已验证；后续若用户继续跑真实数据，可直接基于 `task_e1846fa41c83` 的成功 run `run_221b63509573` 检查报告质量或继续迭代下游 Task。
-- Conn scheduler 后端已能触发 Team GroupRun。下一步建议只做 Playground Conn UI / API 表单接线：Conn 只能选择 Team Group，不选择单 Task，不重载 `target.type`，继续复用后端 `execution.type="team_group"`。
+- Conn scheduler 后端和 Conn UI 已接入 Team Group。下一步建议做真实入口端到端验收：用后端闭合 Group 创建一个 `team_group` Conn，手动触发或定时触发后确认 ConnRun 启动同一个 GroupRun，Team Console 画布体现 Group 内 Task run 状态；同时验证 already-running guard 只产生 succeeded skipped，不把 failed GroupRun 伪装成 Skipped。
 - `origin/main` 已推送到 PR #6 合并版本；Gitee 未同步。当前不要提交运行产物、`.data`、public 报告或 `.codex/plans/**`。
 
 ## 禁止事项

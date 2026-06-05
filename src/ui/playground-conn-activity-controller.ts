@@ -53,6 +53,11 @@ export function getConnActivityElementRefsScript(): string {
 		const connEditorTitle = document.getElementById("conn-editor-title");
 		const connEditorError = document.getElementById("conn-editor-error");
 		const connEditorTitleInput = document.getElementById("conn-editor-title-input");
+		const connEditorExecutionType = document.getElementById("conn-editor-execution-type");
+		const connEditorTeamGroupRow = document.getElementById("conn-editor-team-group-row");
+		const connEditorTeamGroupId = document.getElementById("conn-editor-team-group-id");
+		const connEditorTeamGroupHint = document.getElementById("conn-editor-team-group-hint");
+		const connEditorTeamGroupPreview = document.getElementById("conn-editor-team-group-preview");
 		const connEditorPrompt = document.getElementById("conn-editor-prompt");
 		const connEditorTargetType = document.getElementById("conn-editor-target-type");
 		const connEditorTargetId = document.getElementById("conn-editor-target-id");
@@ -110,6 +115,7 @@ export function getConnActivityEditorScript(): string {
 				forceOverlay: options?.mode !== "workspace",
 			});
 			void loadConnBrowserCatalog().then(() => renderConnManager());
+			void fetchTeamTaskGroups().then(() => renderConnManager());
 			void loadConnManager({ silent: false });
 		}
 
@@ -136,6 +142,7 @@ export function getConnActivityEditorScript(): string {
 			renderConnEditor();
 			void loadAgentCatalog().then(() => renderConnEditorAgentOptions());
 			void loadConnBrowserCatalog().then(() => renderConnEditorBrowserOptions());
+			void fetchTeamTaskGroups().then(() => renderConnEditorTeamGroupOptions());
 			void ensureConnEditorModelConfig();
 			void loadAssets(true);
 			connEditorDialog.hidden = false;
@@ -207,9 +214,66 @@ export function getConnActivityEditorScript(): string {
 			}
 		}
 
+		function normalizeConnExecution(conn) {
+			const execution = conn?.execution && typeof conn.execution === "object" ? conn.execution : null;
+			if (execution?.type === "team_group") {
+				return { type: "team_group", groupId: String(execution.groupId || "").trim() };
+			}
+			return { type: "agent_prompt" };
+		}
+
+		function getConnEditorExecutionType() {
+			return String(connEditorExecutionType?.value || "agent_prompt").trim() === "team_group"
+				? "team_group"
+				: "agent_prompt";
+		}
+
+		function getConnEditorTeamTaskGroups() {
+			return Array.isArray(state.connEditorTeamTaskGroups) ? state.connEditorTeamTaskGroups : [];
+		}
+
+		function getTeamTaskGroupLabel(group) {
+			const groupId = String(group?.groupId || "").trim();
+			const title = String(group?.title || "").trim();
+			return title ? title + " · " + groupId : groupId;
+		}
+
+		function getTeamTaskGroupValidationMessage(group) {
+			if (group?.archived) {
+				return "Group 已归档，不能用于 Conn 调度";
+			}
+			if (group?.status !== "valid") {
+				const errors = Array.isArray(group?.validation?.errors) ? group.validation.errors : [];
+				const messages = errors
+					.map((entry) => String(entry?.message || entry?.code || "").trim())
+					.filter(Boolean);
+				return messages.length > 0 ? messages.join("；") : "Group 当前不是 valid 状态";
+			}
+			return "";
+		}
+
+		function isUsableTeamTaskGroup(group) {
+			return Boolean(group?.groupId && !group.archived && group.status === "valid");
+		}
+
+		function findConnEditorTeamTaskGroup(groupId) {
+			const normalized = String(groupId || "").trim();
+			return getConnEditorTeamTaskGroups().find((group) => String(group?.groupId || "").trim() === normalized) || null;
+		}
+
+		function describeConnExecution(conn) {
+			const execution = normalizeConnExecution(conn);
+			if (execution.type === "team_group") {
+				const group = findConnEditorTeamTaskGroup(execution.groupId);
+				return "Team Group · " + (group ? getTeamTaskGroupLabel(group) : execution.groupId);
+			}
+			return "提示词任务";
+		}
+
 		function buildConnEditorDraft(conn) {
 			const target = conn?.target || {};
 			const schedule = conn?.schedule || {};
+			const execution = normalizeConnExecution(conn);
 			const targetType =
 				target.type === "feishu_chat" || target.type === "feishu_user" ? target.type : "task_inbox";
 			const targetId =
@@ -221,6 +285,8 @@ export function getConnActivityEditorScript(): string {
 			return {
 				title: conn?.title || "",
 				prompt: conn?.prompt || "",
+				executionType: execution.type,
+				teamGroupId: execution.type === "team_group" ? execution.groupId : "",
 				targetType,
 				targetId,
 				scheduleKind: inferConnScheduleMode(schedule),
@@ -245,6 +311,8 @@ export function getConnActivityEditorScript(): string {
 
 		function fillConnEditor(draft) {
 			connEditorTitleInput.value = draft.title;
+			connEditorExecutionType.value = draft.executionType;
+			connEditorTeamGroupId.dataset.pendingValue = draft.teamGroupId;
 			connEditorPrompt.value = draft.prompt;
 			connEditorTargetType.value = draft.targetType;
 			connEditorTargetId.value = draft.targetId;
@@ -269,6 +337,7 @@ export function getConnActivityEditorScript(): string {
 			state.connEditorSelectedAssetRefs = normalizeConnAssetRefsText(draft.assetRefs);
 			connEditorAssetRefs.value = state.connEditorSelectedAssetRefs.join("\\\\n");
 			renderConnEditorSelectedAssets();
+			renderConnEditorTeamGroupOptions();
 			syncConnEditorTimePickers();
 		}
 
@@ -454,6 +523,27 @@ export function getConnActivityEditorScript(): string {
 		}
 
 		function setConnEditorSectionVisibility() {
+			const executionType = getConnEditorExecutionType();
+			const promptField = connEditorPrompt.closest(".conn-editor-field");
+			const modelGrid = connEditorForm.querySelector(".conn-editor-model-grid");
+			const advanced = connEditorForm.querySelector(".conn-editor-advanced");
+			const isTeamGroup = executionType === "team_group";
+			if (promptField) {
+				promptField.classList.toggle("is-hidden", isTeamGroup);
+			}
+			if (modelGrid) {
+				modelGrid.classList.toggle("is-hidden", isTeamGroup);
+			}
+			if (advanced) {
+				advanced.classList.toggle("is-hidden", isTeamGroup);
+			}
+			connEditorPrompt.required = !isTeamGroup;
+			connEditorTeamGroupRow.hidden = !isTeamGroup;
+			connEditorTeamGroupPreview.hidden = !isTeamGroup;
+			if (isTeamGroup) {
+				renderConnEditorTeamGroupOptions();
+			}
+
 			const targetType = connEditorTargetType.value;
 			connEditorTargetCurrent.hidden = targetType !== "task_inbox";
 			connEditorTargetId.parentElement.hidden = targetType === "task_inbox";
@@ -470,6 +560,118 @@ export function getConnActivityEditorScript(): string {
 					String(panel.dataset.schedulePanel || "").trim() !== scheduleKind,
 				);
 			}
+		}
+
+		function renderConnEditorTeamGroupOptions() {
+			if (!connEditorTeamGroupId) {
+				return;
+			}
+			const pendingValue = String(connEditorTeamGroupId.dataset.pendingValue || connEditorTeamGroupId.value || "").trim();
+			const groups = getConnEditorTeamTaskGroups();
+			connEditorTeamGroupId.innerHTML = "";
+
+			if (state.connEditorTeamTaskGroupsLoading) {
+				const option = document.createElement("option");
+				option.value = "";
+				option.textContent = "正在读取 Team Group...";
+				option.disabled = true;
+				connEditorTeamGroupId.appendChild(option);
+				connEditorTeamGroupId.disabled = true;
+				connEditorTeamGroupHint.textContent = "正在从 /v1/team/task-groups 读取后端 Group。";
+				connEditorTeamGroupPreview.textContent = "正在读取 Team Group...";
+				return;
+			}
+
+			if (state.connEditorTeamTaskGroupsError) {
+				const option = document.createElement("option");
+				option.value = "";
+				option.textContent = "Team Group 读取失败";
+				option.disabled = true;
+				connEditorTeamGroupId.appendChild(option);
+				connEditorTeamGroupId.disabled = false;
+				connEditorTeamGroupHint.textContent = state.connEditorTeamTaskGroupsError;
+				connEditorTeamGroupPreview.textContent = state.connEditorTeamTaskGroupsError;
+				return;
+			}
+
+			const placeholder = document.createElement("option");
+			placeholder.value = "";
+			placeholder.textContent = groups.length > 0 ? "选择 Team Group" : "暂无可用 Team Group";
+			placeholder.disabled = true;
+			connEditorTeamGroupId.appendChild(placeholder);
+
+			for (const group of groups) {
+				const groupId = String(group?.groupId || "").trim();
+				if (!groupId) {
+					continue;
+				}
+				const option = document.createElement("option");
+				option.value = groupId;
+				option.textContent = getTeamTaskGroupLabel(group);
+				const validationMessage = getTeamTaskGroupValidationMessage(group);
+				if (validationMessage) {
+					option.textContent += "（不可运行）";
+					option.disabled = true;
+					option.title = validationMessage;
+				}
+				connEditorTeamGroupId.appendChild(option);
+			}
+			if (pendingValue && !groups.some((group) => String(group?.groupId || "").trim() === pendingValue)) {
+				const option = document.createElement("option");
+				option.value = pendingValue;
+				option.textContent = pendingValue + "（未找到）";
+				option.disabled = true;
+				connEditorTeamGroupId.appendChild(option);
+			}
+
+			connEditorTeamGroupId.value = pendingValue && Array.from(connEditorTeamGroupId.options).some((option) => option.value === pendingValue)
+				? pendingValue
+				: "";
+			connEditorTeamGroupId.disabled = state.connEditorSaving || groups.length === 0;
+			delete connEditorTeamGroupId.dataset.pendingValue;
+			renderConnEditorTeamGroupPreview();
+		}
+
+		function renderConnEditorTeamGroupPreview() {
+			const groupId = String(connEditorTeamGroupId?.value || "").trim();
+			const group = findConnEditorTeamTaskGroup(groupId);
+			const selectedProblem = groupId ? (group ? getTeamTaskGroupValidationMessage(group) : "Team Group 不存在或已归档") : "";
+			if (!state.connEditorTeamTaskGroupsLoaded && !state.connEditorTeamTaskGroupsError) {
+				connEditorTeamGroupHint.textContent = "正在读取后端 Team Group。";
+			} else if (!groupId) {
+				connEditorTeamGroupHint.textContent = "请先选择可运行的 Team Group。";
+			} else if (selectedProblem) {
+				connEditorTeamGroupHint.textContent = selectedProblem;
+			} else {
+				connEditorTeamGroupHint.textContent = "保存后 Conn 会调度整个 Team Group，结果仍按下方投递目标发送。";
+			}
+			connEditorTeamGroupPreview.innerHTML = "";
+			const label = document.createElement("strong");
+			label.textContent = group ? getTeamTaskGroupLabel(group) : "Team Group";
+			const detail = document.createElement("span");
+			detail.textContent = group
+				? "状态：" + String(group.status || "unknown") + " / Head Tasks：" + (Array.isArray(group.headTaskIds) ? group.headTaskIds.length : 0)
+				: "请选择后端已有 Group，不能填写单个 Task。";
+			const id = document.createElement("code");
+			id.textContent = groupId || "未选择";
+			connEditorTeamGroupPreview.appendChild(label);
+			connEditorTeamGroupPreview.appendChild(detail);
+			connEditorTeamGroupPreview.appendChild(id);
+			if (selectedProblem) {
+				const problem = document.createElement("span");
+				problem.className = "conn-editor-target-note";
+				problem.textContent = selectedProblem;
+				connEditorTeamGroupPreview.appendChild(problem);
+			}
+		}
+
+		function isConnEditorTeamGroupSelectionReady() {
+			if (getConnEditorExecutionType() !== "team_group") {
+				return true;
+			}
+			const groupId = String(connEditorTeamGroupId?.value || "").trim();
+			const group = findConnEditorTeamTaskGroup(groupId);
+			return Boolean(group && isUsableTeamTaskGroup(group));
 		}
 
 		function renderConnEditorTargetPreview() {
@@ -721,7 +923,6 @@ export function getConnActivityEditorScript(): string {
 		function renderConnEditor() {
 			connEditorTitle.textContent = state.connEditorMode === "edit" ? "编辑后台任务" : "新建后台任务";
 			connEditorTargetCurrent.textContent = "task_inbox";
-			saveConnEditorButton.disabled = state.connEditorSaving || state.connEditorUploadingAssets;
 			saveConnEditorButton.textContent = state.connEditorSaving ? "保存中" : "保存";
 			connEditorUploadAssetsButton.disabled = state.connEditorSaving || state.connEditorUploadingAssets;
 			connEditorUploadAssetsButton.textContent = state.connEditorUploadingAssets ? "上传中" : "上传新文件";
@@ -731,6 +932,7 @@ export function getConnActivityEditorScript(): string {
 			renderConnEditorError(state.connEditorError);
 			renderConnEditorSelectedAssets();
 			setConnEditorSectionVisibility();
+			saveConnEditorButton.disabled = state.connEditorSaving || state.connEditorUploadingAssets || !isConnEditorTeamGroupSelectionReady();
 		}
 
 		async function uploadConnEditorFiles(files) {
@@ -812,21 +1014,43 @@ export function getConnActivityEditorScript(): string {
 			return { kind: "once", at };
 		}
 
+		function buildConnExecutionPayload() {
+			if (getConnEditorExecutionType() !== "team_group") {
+				return { type: "agent_prompt" };
+			}
+			const groupId = String(connEditorTeamGroupId?.value || "").trim();
+			const group = findConnEditorTeamTaskGroup(groupId);
+			if (!group || !isUsableTeamTaskGroup(group)) {
+				throw new Error("请先选择可运行的 Team Group");
+			}
+			return { type: "team_group", groupId };
+		}
+
+		function getConnEditorTeamGroupPrompt(groupId) {
+			const group = findConnEditorTeamTaskGroup(groupId);
+			return "Run Team Group: " + (group ? getTeamTaskGroupLabel(group) : groupId);
+		}
+
 		function readConnEditorPayload() {
 			const title = String(connEditorTitleInput.value || "").trim();
 			const prompt = String(connEditorPrompt.value || "").trim();
+			const execution = buildConnExecutionPayload();
 			if (!title) {
 				throw new Error("请填写标题");
 			}
-			if (!prompt) {
+			if (execution.type === "agent_prompt" && !prompt) {
 				throw new Error("请填写让它做什么");
 			}
 			const payload = {
 				title,
-				prompt,
+				prompt: execution.type === "team_group" ? (prompt || getConnEditorTeamGroupPrompt(execution.groupId)) : prompt,
+				execution,
 				target: buildConnTargetPayload(),
 				schedule: buildConnSchedulePayload(),
 			};
+			if (execution.type === "team_group") {
+				return payload;
+			}
 			const modelProvider = String(connEditorModelProvider?.value || "").trim();
 			const modelId = String(connEditorModelId?.value || "").trim();
 			if (!modelProvider || !modelId) {
@@ -918,11 +1142,14 @@ export function getConnActivityEditorScript(): string {
 
 			const isEditing = state.connEditorMode === "edit" && state.connEditorConnId;
 			const editingConn = isEditing ? getEditingConn() : null;
-			const confirmedExecutionBinding = await confirmConnExecutionBindingChangeIfNeeded(
-				editingConn,
-				payload.profileId,
-				Object.hasOwn(payload, "browserId") ? payload.browserId : "",
-			);
+			const isPromptExecution = payload.execution?.type !== "team_group";
+			const confirmedExecutionBinding = isPromptExecution
+				? await confirmConnExecutionBindingChangeIfNeeded(
+						editingConn,
+						payload.profileId,
+						Object.hasOwn(payload, "browserId") ? payload.browserId : "",
+					)
+				: true;
 			if (!confirmedExecutionBinding) {
 				return;
 			}
@@ -931,7 +1158,7 @@ export function getConnActivityEditorScript(): string {
 			const currentBrowserId = String(editingConn?.browserId || "").trim();
 			const nextBrowserId = String(Object.hasOwn(payload, "browserId") ? payload.browserId || "" : "").trim();
 			const executionBindingChanged =
-				Boolean(isEditing) && (currentProfileId !== nextProfileId || currentBrowserId !== nextBrowserId);
+				isPromptExecution && Boolean(isEditing) && (currentProfileId !== nextProfileId || currentBrowserId !== nextBrowserId);
 
 			state.connEditorSaving = true;
 			renderConnEditor();
@@ -1070,6 +1297,52 @@ export function getConnActivityApiScript(): string {
 			}
 			applyConnManagerUnreadCount(payload);
 			return Array.isArray(payload?.conns) ? payload.conns : [];
+		}
+
+		async function fetchTeamTaskGroups() {
+			if (state.connEditorTeamTaskGroupsLoaded) {
+				return state.connEditorTeamTaskGroups;
+			}
+			if (state.connEditorTeamTaskGroupsPromise) {
+				return state.connEditorTeamTaskGroupsPromise;
+			}
+			state.connEditorTeamTaskGroupsLoading = true;
+			state.connEditorTeamTaskGroupsError = "";
+			if (state.connEditorOpen) {
+				renderConnEditorTeamGroupOptions();
+			}
+			state.connEditorTeamTaskGroupsPromise = fetch("/v1/team/task-groups", {
+				method: "GET",
+				headers: { accept: "application/json" },
+			})
+				.then(async (response) => {
+					const payload = await response.json().catch(() => ({}));
+					if (!response.ok) {
+						throw new Error(payload?.error?.message || payload?.message || "无法读取 Team Group");
+					}
+					const groups = Array.isArray(payload?.groups)
+						? payload.groups
+						: Array.isArray(payload?.taskGroups)
+							? payload.taskGroups
+							: [];
+					state.connEditorTeamTaskGroups = groups;
+					state.connEditorTeamTaskGroupsLoaded = true;
+					return groups;
+				})
+				.catch((error) => {
+					state.connEditorTeamTaskGroups = [];
+					state.connEditorTeamTaskGroupsLoaded = false;
+					state.connEditorTeamTaskGroupsError = error instanceof Error ? error.message : "无法读取 Team Group";
+					return [];
+				})
+				.finally(() => {
+					state.connEditorTeamTaskGroupsLoading = false;
+					state.connEditorTeamTaskGroupsPromise = null;
+					if (state.connEditorOpen) {
+						renderConnEditor();
+					}
+				});
+			return state.connEditorTeamTaskGroupsPromise;
 		}
 
 		function applyConnManagerUnreadCount(payload) {
@@ -1828,6 +2101,11 @@ export function getConnActivityRendererScript(): string {
 				scheduleLine.appendChild(scheduleCode);
 				const timeLine = document.createElement("span");
 				timeLine.textContent = "运行节奏：" + describeConnTimingSummary(conn);
+				const executionLine = document.createElement("span");
+				executionLine.textContent = "执行对象：";
+				const executionCode = document.createElement("code");
+				executionCode.textContent = describeConnExecution(conn);
+				executionLine.appendChild(executionCode);
 				const agentLine = document.createElement("span");
 				agentLine.textContent = "执行 Agent：";
 				const agentCode = document.createElement("code");
@@ -1849,9 +2127,12 @@ export function getConnActivityRendererScript(): string {
 				meta.appendChild(targetLine);
 				meta.appendChild(scheduleLine);
 				meta.appendChild(timeLine);
-				meta.appendChild(agentLine);
-				meta.appendChild(browserLine);
-				meta.appendChild(modelLine);
+				meta.appendChild(executionLine);
+				if (normalizeConnExecution(conn).type !== "team_group") {
+					meta.appendChild(agentLine);
+					meta.appendChild(browserLine);
+					meta.appendChild(modelLine);
+				}
 				main.appendChild(titleRow);
 				main.appendChild(meta);
 				renderConnManagerRunList(conn, main);
@@ -2132,16 +2413,35 @@ export function getConnActivityRendererScript(): string {
 
 			const snapshot = run.resolvedSnapshot && typeof run.resolvedSnapshot === "object" ? run.resolvedSnapshot : null;
 			if (snapshot) {
-				const execution = document.createElement("section");
-				execution.className = "conn-run-section";
-				const executionHeading = document.createElement("strong");
-				executionHeading.textContent = "Execution Agent";
-				execution.appendChild(executionHeading);
-				const requestedAgent = snapshot.requestedAgentId || snapshot.profileId || "";
-				const actualAgent = snapshot.agentName || snapshot.agentId || snapshot.profileId || "";
-				appendConnRunDetailRow(execution, "requested", requestedAgent ? String(requestedAgent) : "", { asCode: true });
-				appendConnRunDetailRow(execution, "actual", actualAgent ? String(actualAgent) : "", { asCode: true });
-				if (snapshot.fallbackUsed) {
+				const snapshotExecution = snapshot.execution && typeof snapshot.execution === "object" ? snapshot.execution : null;
+				const isTeamGroupRun = snapshotExecution?.type === "team_group" || snapshot.groupId || snapshot.groupRunId || snapshot.groupRunStatus;
+				if (isTeamGroupRun) {
+					const group = document.createElement("section");
+					group.className = "conn-run-section";
+					const groupHeading = document.createElement("strong");
+					groupHeading.textContent = "Team Group";
+					group.appendChild(groupHeading);
+					appendConnRunDetailRow(group, "groupId", String(snapshotExecution?.groupId || snapshot.groupId || ""), { asCode: true });
+					appendConnRunDetailRow(group, "groupRunId", String(snapshot.groupRunId || ""), { asCode: true });
+					appendConnRunDetailRow(group, "groupRunStatus", String(snapshot.groupRunStatus || ""), { asCode: true });
+					const isSkippedTeamGroupRun = snapshot.skipped === true;
+					if (isSkippedTeamGroupRun) {
+						appendConnRunDetailRow(group, "Skipped", String(run.resultSummary || "Team Group run was skipped"));
+					}
+					if (group.childElementCount > 1) {
+						connRunDetailsBody.appendChild(group);
+					}
+				} else {
+					const execution = document.createElement("section");
+					execution.className = "conn-run-section";
+					const executionHeading = document.createElement("strong");
+					executionHeading.textContent = "Execution Agent";
+					execution.appendChild(executionHeading);
+					const requestedAgent = snapshot.requestedAgentId || snapshot.profileId || "";
+					const actualAgent = snapshot.agentName || snapshot.agentId || snapshot.profileId || "";
+					appendConnRunDetailRow(execution, "requested", requestedAgent ? String(requestedAgent) : "", { asCode: true });
+					appendConnRunDetailRow(execution, "actual", actualAgent ? String(actualAgent) : "", { asCode: true });
+					if (snapshot.fallbackUsed) {
 					appendConnRunDetailRow(
 						execution,
 						"fallback",
@@ -2155,8 +2455,9 @@ export function getConnActivityRendererScript(): string {
 					snapshot.provider && snapshot.model ? String(snapshot.provider) + " / " + String(snapshot.model) : "",
 					{ asCode: true },
 				);
-				if (execution.childElementCount > 1) {
-					connRunDetailsBody.appendChild(execution);
+					if (execution.childElementCount > 1) {
+						connRunDetailsBody.appendChild(execution);
+					}
 				}
 			}
 
@@ -2332,6 +2633,14 @@ export function getConnActivityEventHandlersScript(): string {
 			}
 		});
 
+		connEditorExecutionType.addEventListener("change", () => {
+			renderConnEditorError("");
+			if (getConnEditorExecutionType() === "team_group") {
+				void fetchTeamTaskGroups();
+			}
+			renderConnEditor();
+		});
+		connEditorTeamGroupId.addEventListener("change", renderConnEditor);
 		connEditorTargetType.addEventListener("change", renderConnEditor);
 		connEditorTargetId.addEventListener("input", renderConnEditorTargetPreview);
 		connEditorScheduleKind.addEventListener("change", renderConnEditor);

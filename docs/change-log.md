@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-05 — Conn UI selects Team Group execution
+
+- **主题**: Playground Conn manager 和 `/playground/conn` 独立页接入 `execution.type` 选择。旧 `agent_prompt` Conn 保持 prompt、Agent、browser、model、assets、binding confirmation 旧流程；新 `team_group` Conn 通过 `GET /v1/team/task-groups` 选择后端已有 Group，只保存 `execution: { type: "team_group", groupId }`，不把 Group 写进 `target.type`。本地无可用 Group 时显示空态并禁用保存。
+- **影响范围**: `src/ui` Conn 编辑器、Conn 列表/详情执行对象展示、run detail 的 Team Group snapshot 展示和静态 UI 合同测试；不改 `src/agent/**`、`src/routes/conns.ts`、`src/workers/**`、`src/team/**`、`apps/team-console/**` 或 `.pi/**`。
+- **对应入口**: `src/ui/playground-conn-activity.ts`、`src/ui/playground-conn-activity-controller.ts`、`src/ui/playground.ts`、`src/ui/conn-page-js.ts`、`src/ui/conn-page-css.ts`、`test/server.test.ts`。
+
 ## 2026-06-05 — Conn team_group execution backend contract
 
 - **主题**: Conn definition 新增 `execution` 合同：`{ type: "agent_prompt" }` 继续走既有 BackgroundAgentRunner，`{ type: "team_group", groupId }` 由 Conn worker 调主服务 GroupRun API 执行。SQLite 新增 `execution_json`，旧 row、缺失字段和畸形 execution JSON 都归一化为 `agent_prompt`；`/v1/conns` create/update/list/detail 返回 normalized execution。

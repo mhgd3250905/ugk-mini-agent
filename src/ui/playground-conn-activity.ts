@@ -561,6 +561,9 @@ export function getConnManagerActivityStyles(): string {
 
 		.conn-editor-field[hidden],
 		.conn-editor-field.is-hidden,
+		.conn-editor-grid.is-hidden,
+		.conn-editor-advanced.is-hidden,
+		.conn-editor-target-preview[hidden],
 		.conn-editor-current-target[hidden],
 		.conn-editor-error[hidden] {
 			display: none !important;
@@ -870,6 +873,20 @@ export function getConnActivityDialogs(): string {
 							<span>标题</span>
 							<input id="conn-editor-title-input" name="title" autocomplete="off" required />
 						</label>
+						<label class="conn-editor-field">
+							<span>执行对象</span>
+							<select id="conn-editor-execution-type" name="executionType">
+								<option value="agent_prompt">提示词任务</option>
+								<option value="team_group">Team Group</option>
+							</select>
+							<small class="conn-editor-field-hint">Team Group 只能从后端已有 Group 中选择，不能填写单个 Task。</small>
+						</label>
+						<label id="conn-editor-team-group-row" class="conn-editor-field" hidden>
+							<span>Team Group</span>
+							<select id="conn-editor-team-group-id" name="teamGroupId"></select>
+							<small id="conn-editor-team-group-hint" class="conn-editor-field-hint">请选择一个状态 valid 且未归档的 Group。</small>
+						</label>
+						<div id="conn-editor-team-group-preview" class="conn-editor-target-preview" hidden></div>
 						<label class="conn-editor-field">
 							<span>让它做什么</span>
 							<textarea id="conn-editor-prompt" name="prompt" rows="5" required></textarea>

@@ -1536,6 +1536,10 @@ export function getConnPageCss(): string {
 
     .conn-editor-field { display: grid; gap: 8px; }
 
+    .conn-editor-section-card[hidden],
+    .conn-editor-field[hidden],
+    .conn-editor-team-group-preview[hidden] { display: none; }
+
     .conn-editor-field > span:first-child {
       font-size: 13px;
       font-weight: 600;
@@ -1639,6 +1643,36 @@ export function getConnPageCss(): string {
     .conn-editor-target-block[hidden] { display: none; }
 
     .conn-editor-hint { font-size: 11px; color: var(--muted); }
+
+    .conn-editor-team-group-preview {
+      display: grid;
+      gap: 6px;
+      padding: 10px 12px;
+      border-radius: var(--radius-input);
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+      color: var(--fg-secondary);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .conn-editor-team-group-preview strong { color: var(--fg); }
+    .conn-editor-team-group-preview code { font-family: var(--font-mono); overflow-wrap: anywhere; }
+    .conn-editor-target-note { color: var(--danger); }
+
+    .conn-run-team-group {
+      display: grid;
+      gap: 6px;
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: var(--radius-input);
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--fg-secondary);
+      font-size: 12px;
+    }
+
+    .conn-run-team-group code { font-family: var(--font-mono); color: var(--fg); overflow-wrap: anywhere; }
 
     .conn-editor-asset-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 

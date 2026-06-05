@@ -903,6 +903,20 @@ test("GET /playground returns the test UI html", async () => {
 	assert.match(response.body, /\.conn-editor-field\.is-hidden/);
 	assert.match(response.body, /conn-editor-schedule-panel/);
 	assert.match(response.body, /conn-editor-title-input/);
+	assert.match(response.body, /conn-editor-execution-type/);
+	assert.match(response.body, /conn-editor-team-group-id/);
+	assert.match(response.body, /function fetchTeamTaskGroups\(/);
+	assert.match(response.body, /\/v1\/team\/task-groups/);
+	assert.match(response.body, /function buildConnExecutionPayload\(/);
+	assert.match(response.body, /const execution = buildConnExecutionPayload\(\);/);
+	assert.match(response.body, /execution,/);
+	assert.match(response.body, /type: "team_group"/);
+	assert.match(response.body, /execution\.type === "team_group"/);
+	assert.match(
+		response.body,
+		/const isSkippedTeamGroupRun = snapshot\.skipped === true;[\s\S]*if \(isSkippedTeamGroupRun\) \{[\s\S]*appendConnRunDetailRow\(group, "Skipped"/,
+	);
+	assert.doesNotMatch(response.body, /run\.status === "failed" && run\.errorText[\s\S]{0,260}Skipped/);
 	assert.match(response.body, /conn-editor-prompt/);
 	assert.match(response.body, /conn-editor-once-at/);
 	assert.match(response.body, /conn-editor-interval-start/);
@@ -934,6 +948,9 @@ test("GET /playground returns the test UI html", async () => {
 	assert.match(response.body, /function inferConnScheduleMode\(/);
 	assert.match(response.body, /function buildConnDailyCronExpression\(/);
 	assert.match(response.body, /conn-editor-profile-id/);
+	assert.match(response.body, /conn-editor-browser-id/);
+	assert.match(response.body, /conn-editor-model-provider/);
+	assert.match(response.body, /conn-editor-model-id/);
 	assert.match(response.body, /conn-editor-agent-spec-id/);
 	assert.match(response.body, /conn-editor-skill-set-id/);
 	assert.doesNotMatch(response.body, /conn-editor-model-policy-id/);
@@ -986,6 +1003,7 @@ test("GET /playground returns the test UI html", async () => {
 	assert.match(response.body, /运行节奏：/);
 	assert.match(response.body, /function openConnEditor\(/);
 	assert.match(response.body, /function submitConnEditor\(/);
+	assert.match(response.body, /x-ugk-browser-binding-confirmed/);
 	assert.match(response.body, /method:\s*isEditing \? "PATCH" : "POST"/);
 	assert.match(response.body, /isEditing \? "\/v1\/conns\/" \+ encodeURIComponent\(state\.connEditorConnId\) : "\/v1\/conns"/);
 	assert.match(response.body, /function scheduleConversationLayoutSync\(/);
@@ -1990,6 +2008,28 @@ test("standalone conn page keeps the new-task card visible when the task list is
 	assert.match(response, /const defaultRunAt = formatDateTimeLocal\(getDefaultEditorRunDate\(\)\)/);
 	assert.match(response, /id="editor-form-submit"[\s\S]*保存任务[\s\S]*id="editor-form-cancel"[\s\S]*取消/);
 	assert.match(response, /function showEditorError\(message, focusId\)[\s\S]*state\.editorError = message/);
+});
+
+test("standalone conn page can create team group conn executions", () => {
+	const response = renderConnPage();
+	assert.match(response, /editor-execution-type/);
+	assert.match(response, /editor-team-group-id/);
+	assert.match(response, /async function apiFetchTeamTaskGroups\(/);
+	assert.match(response, /\/v1\/team\/task-groups/);
+	assert.match(response, /function buildEditorExecutionPayload\(/);
+	assert.match(response, /execution,/);
+	assert.match(response, /type: "team_group"/);
+	assert.match(response, /execution\.type === "team_group"/);
+	assert.match(
+		response,
+		/const isSkippedTeamGroupRun = snapshot\.skipped === true;[\s\S]*if \(isSkippedTeamGroupRun\) \{[\s\S]*skipped\.textContent = "Skipped: "/,
+	);
+	assert.doesNotMatch(response, /run\.status === "failed" && run\.errorText[\s\S]{0,260}Skipped/);
+	assert.match(response, /editor-prompt/);
+	assert.match(response, /editor-profile-id/);
+	assert.match(response, /editor-browser-id/);
+	assert.match(response, /editor-model-provider/);
+	assert.match(response, /editor-model-id/);
 });
 
 test("standalone conn page disables run-now while a run is pending or running", () => {

@@ -164,15 +164,16 @@ playground 卡片当前规则：
 - 用户确认后才通过正式 API 写入执行 Agent；写完后必须重新读取 conn，确认 `profileId` 已按预期保存，不能只靠模型嘴上说“好了”。
 
 playground 现在可以直接创建和编辑 `conn`，表单字段会映射到同一套后端定义：
-- `title` / `prompt`：后台任务名称和执行输入。
-- `prompt` 继续由用户直接填写，作为后台任务的真实执行说明。
+- `title`：后台任务名称。
+- `execution`：编辑器里的“执行对象”。`agent_prompt` 是旧后台提示词任务，`prompt` 必填，`profileId / browserId / modelProvider / modelId / assetRefs` 继续按旧逻辑作为执行输入；`team_group` 选择后端 Team Group，UI 不要求用户填写 `prompt`，提交时可自动生成兼容旧 Conn 表结构的 prompt。
+- `team_group` 保存为 `execution: { "type": "team_group", "groupId": "<team group id>" }`。不要把 Group 写进 `target.type`，`target` 仍只表示结果投递目标。
 - 前台 chat 和后台 `conn` runner 在真正把用户输入交给 agent 之前，都会自动补一行 `[当前时间：<IANA 时区> <YYYY-MM-DD HH:mm:ss>]` 作为显式时间锚点；这是运行时内部上下文，不应在用户可见 transcript 里回显。
 - `target`：当前前台主选项是 `task_inbox`、`feishu_chat` 和 `feishu_user`；旧的 `conversation` 目标只保留后端兼容读取。目标在创建 / 编辑时固化，后续切换当前会话不会改变历史 conn 的投递归属。
 - 目标预览：playground 会在编辑器里展示目标摘要和目标编号。`task_inbox` 会明确提示结果进入任务消息页；飞书目标会提示“通过飞书 adapter 发送，任务消息页仍保留追溯记录”。
 - 默认表单只展示常用字段，目标编号、调度细节和高级设置按需展开；模型选择在常用区用 `API 源` / `模型` 下拉框完成，不再把 `modelPolicyId` 手写框甩给用户，界面不是飞控面板。
 - 时间配置收口成三种：`定时执行`、`间隔执行`、`每日执行`。playground 仍会映射成后端真正使用的 `once / interval / cron`，但界面不再暴露 cron、工作日或每周这些额外分支。
 - 三种模式的表单固定为：`定时执行` -> `执行时间`；`间隔执行` -> `首次执行时间 + 间隔（分钟）`；`每日执行` -> `每日执行时间`。
-- 后台任务列表的主要摘要已经收口为 `结果发到 / 执行方式 / 运行节奏 / 执行 Agent / 模型` 这几行人话口径，不再直接把 `target / schedule / next / last / maxRunMs` 这类字段名扔给使用者。
+- 后台任务列表的主要摘要已经收口为 `结果发到 / 执行方式 / 运行节奏 / 执行对象`；只有 `agent_prompt` Conn 继续展示执行 Agent / 浏览器 / 模型，`team_group` Conn 展示 `Team Group · <title or groupId>`。
 - 任务消息页里的来源和文件摘要统一成人话：来源显示为 `后台任务 / 飞书 / 助手 / 通知`，文件显示为“附 N 个文件”。
 - `schedule`：支持 `once`、`interval`、`cron`；`interval` 表单按分钟输入，落库仍是毫秒。
 - `maxRunMs`：表单按秒输入，提交时转换成毫秒；空值表示不设置单次运行上限。

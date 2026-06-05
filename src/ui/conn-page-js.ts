@@ -34,6 +34,11 @@ const state = {
   editorSupportCatalogsLoading: false,
   editorSupportCatalogsError: "",
   editorSupportCatalogsPromise: null,
+  editorTeamTaskGroups: [],
+  editorTeamTaskGroupsLoaded: false,
+  editorTeamTaskGroupsLoading: false,
+  editorTeamTaskGroupsError: "",
+  editorTeamTaskGroupsPromise: null,
   loadingMoreRunsConnId: "",
   loadingMoreRunId: "",
   runRefreshTimers: {},
@@ -105,6 +110,11 @@ async function apiFetchConns() {
     unreadLatestRunTimesByConnId: data.unreadLatestRunTimesByConnId || {},
     totalUnreadRuns: data.totalUnreadRuns || 0,
   };
+}
+
+async function apiFetchTeamTaskGroups() {
+  const data = await fetchJson("/v1/team/task-groups");
+  return Array.isArray(data.groups) ? data.groups : (Array.isArray(data.taskGroups) ? data.taskGroups : []);
 }
 
 async function apiFetchRuns(connId, before) {
@@ -725,7 +735,7 @@ function renderList() {
     const badgeClass = "conn-list-item-badge--" + (conn.status || "unknown");
     const statusLabel = STATUS_LABELS[conn.status] || conn.status || "未知";
     const schedSummary = describeSchedule(conn.schedule);
-    const metaText = (conn.profileId || "main") + (conn.modelProvider ? (" · " + conn.modelProvider) : "");
+    const metaText = "执行对象：" + describeConnExecution(conn);
 
     var unreadCount = state.unreadCountsByConnId[conn.connId] || 0;
     var unreadHtml = unreadCount > 0 ? '<div class="conn-list-item-unread">' + (unreadCount > 99 ? "99+" : String(unreadCount)) + '条未读</div>' : '';
@@ -807,7 +817,9 @@ function renderDetail() {
 
   const statusLabel = STATUS_LABELS[conn.status] || conn.status || "未知";
   const schedSummary = describeSchedule(conn.schedule);
-  const modelText = conn.modelId || "跟随默认";
+  const executionText = describeConnExecution(conn);
+  const isTeamGroupConn = normalizeConnExecution(conn).type === "team_group";
+  const modelText = isTeamGroupConn ? "Team Group" : (conn.modelId || "跟随默认");
   const nextRun = conn.nextRunAt ? formatTimestamp(conn.nextRunAt) : (conn.status === "completed" ? "已完成" : "待定");
   const lastRun = conn.lastRunAt ? formatTimestamp(conn.lastRunAt) : "无";
 
@@ -842,15 +854,18 @@ function renderDetail() {
   html += '  <div class="conn-card-title"><span class="conn-card-title-icon" style="background:rgba(6,182,212,0.12)"><svg viewBox="0 0 24 24" fill="none" stroke="#06B6D4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>任务配置</div>';
   html += '  <div class="conn-config-grid">';
   html += '    <div class="conn-config-item"><div class="conn-config-label">ID</div><div class="conn-config-value"><code>' + escapeHtml(conn.connId || "") + '</code><button class="conn-copy-btn" data-copy="' + escapeHtml(conn.connId || "") + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>复制</button></div></div>';
-  html += '    <div class="conn-config-item"><div class="conn-config-label">Agent</div><div class="conn-config-value">' + escapeHtml(conn.profileId || "main") + '</div></div>';
-  html += '    <div class="conn-config-item"><div class="conn-config-label">浏览器</div><div class="conn-config-value">' + escapeHtml(conn.browserId || "跟随 Agent") + '</div></div>';
+  html += '    <div class="conn-config-item"><div class="conn-config-label">执行对象</div><div class="conn-config-value">' + escapeHtml(executionText) + '</div></div>';
+  if (!isTeamGroupConn) {
+    html += '    <div class="conn-config-item"><div class="conn-config-label">Agent</div><div class="conn-config-value">' + escapeHtml(conn.profileId || "main") + '</div></div>';
+    html += '    <div class="conn-config-item"><div class="conn-config-label">浏览器</div><div class="conn-config-value">' + escapeHtml(conn.browserId || "跟随 Agent") + '</div></div>';
+  }
   html += '    <div class="conn-config-item"><div class="conn-config-label">投递目标</div><div class="conn-config-value">' + escapeHtml(describeTarget(conn.target)) + '</div></div>';
   html += '  </div>';
   html += '</div>';
 
   // ── 4. Prompt card with copy button ──
   const promptText = (conn.prompt || "").trim();
-  if (promptText) {
+  if (promptText && !isTeamGroupConn) {
     html += '<div class="conn-card">';
     html += '  <div class="conn-card-title"><span class="conn-card-title-icon" style="background:rgba(244,114,182,0.12)"><svg viewBox="0 0 24 24" fill="none" stroke="#F472B6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></span>Prompt' + '<button class="conn-copy-btn" data-copy-prompt="1" style="margin-left:auto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>复制</button></div>';
     html += '  <div class="conn-prompt-block">' + escapeHtml(promptText) + '</div>';
@@ -1112,6 +1127,38 @@ function renderRunDetail(container, run, files, events) {
     container.appendChild(healthEl);
   }
 
+  const snapshot = run.resolvedSnapshot && typeof run.resolvedSnapshot === "object" ? run.resolvedSnapshot : null;
+  const snapshotExecution = snapshot?.execution && typeof snapshot.execution === "object" ? snapshot.execution : null;
+  if (snapshot && (snapshotExecution?.type === "team_group" || snapshot.groupId || snapshot.groupRunId || snapshot.groupRunStatus)) {
+    const group = document.createElement("div");
+    group.className = "conn-run-team-group";
+    const heading = document.createElement("span");
+    heading.className = "conn-run-files-heading";
+    heading.textContent = "Team Group";
+    group.appendChild(heading);
+    const fields = [
+      ["groupId", snapshotExecution?.groupId || snapshot.groupId || ""],
+      ["groupRunId", snapshot.groupRunId || ""],
+      ["groupRunStatus", snapshot.groupRunStatus || ""],
+    ];
+    for (const [label, value] of fields) {
+      if (!value) continue;
+      const row = document.createElement("span");
+      row.textContent = label + ": ";
+      const code = document.createElement("code");
+      code.textContent = String(value);
+      row.appendChild(code);
+      group.appendChild(row);
+    }
+    const isSkippedTeamGroupRun = snapshot.skipped === true;
+    if (isSkippedTeamGroupRun) {
+      const skipped = document.createElement("span");
+      skipped.textContent = "Skipped: " + String(run.resultSummary || "Team Group run was skipped");
+      group.appendChild(skipped);
+    }
+    container.appendChild(group);
+  }
+
   // Result text
   const resultText = run.errorText || run.resultText || run.resultSummary;
   if (resultText) {
@@ -1241,9 +1288,65 @@ function resolveRunHealth(run, events) {
   return until <= Date.now() ? "疑似僵死" : "租约活跃";
 }
 
+function normalizeConnExecution(conn) {
+  const execution = conn?.execution && typeof conn.execution === "object" ? conn.execution : null;
+  if (execution?.type === "team_group") {
+    return { type: "team_group", groupId: String(execution.groupId || "").trim() };
+  }
+  return { type: "agent_prompt" };
+}
+
+function getEditorExecutionType() {
+  return String(($("editor-execution-type") || {}).value || "agent_prompt").trim() === "team_group" ? "team_group" : "agent_prompt";
+}
+
+function getEditorTeamTaskGroups() {
+  return Array.isArray(state.editorTeamTaskGroups) ? state.editorTeamTaskGroups : [];
+}
+
+function getTeamTaskGroupLabel(group) {
+  const groupId = String(group?.groupId || "").trim();
+  const title = String(group?.title || "").trim();
+  return title ? title + " · " + groupId : groupId;
+}
+
+function getTeamTaskGroupValidationMessage(group) {
+  if (group?.archived) return "Group 已归档，不能用于 Conn 调度";
+  if (group?.status !== "valid") {
+    const errors = Array.isArray(group?.validation?.errors) ? group.validation.errors : [];
+    const messages = errors.map(entry => String(entry?.message || entry?.code || "").trim()).filter(Boolean);
+    return messages.length > 0 ? messages.join("；") : "Group 当前不是 valid 状态";
+  }
+  return "";
+}
+
+function isUsableTeamTaskGroup(group) {
+  return Boolean(group?.groupId && !group.archived && group.status === "valid");
+}
+
+function findEditorTeamTaskGroup(groupId) {
+  const normalized = String(groupId || "").trim();
+  return getEditorTeamTaskGroups().find(group => String(group?.groupId || "").trim() === normalized) || null;
+}
+
+function describeConnExecution(conn) {
+  const execution = normalizeConnExecution(conn);
+  if (execution.type === "team_group") {
+    const group = findEditorTeamTaskGroup(execution.groupId);
+    return "Team Group · " + (group ? getTeamTaskGroupLabel(group) : execution.groupId);
+  }
+  return "提示词任务";
+}
+
 // ── Editor ─────────────────────────────────────────────────────────────────
 
 function getEditorSupportCatalogStatusText() {
+  if (getEditorExecutionType() === "team_group") {
+    if (state.editorTeamTaskGroupsLoading) return "正在加载 Team Group，请稍后保存";
+    if (state.editorTeamTaskGroupsError) return state.editorTeamTaskGroupsError;
+    if (!state.editorTeamTaskGroupsLoaded) return "Team Group 尚未加载，请稍后保存";
+    return "";
+  }
   if (state.editorSupportCatalogsLoading) return "正在加载运行配置，请稍后保存";
   if (state.editorSupportCatalogsError) return state.editorSupportCatalogsError;
   if (!state.editorSupportCatalogsLoaded) return "运行配置尚未加载，请稍后保存";
@@ -1252,6 +1355,15 @@ function getEditorSupportCatalogStatusText() {
 }
 
 function areEditorSupportCatalogsReady() {
+  if (getEditorExecutionType() === "team_group") {
+    return Boolean(
+      !state.editorSaving &&
+      state.editorTeamTaskGroupsLoaded &&
+      !state.editorTeamTaskGroupsLoading &&
+      !state.editorTeamTaskGroupsError &&
+      isEditorTeamGroupSelectionReady()
+    );
+  }
   return Boolean(
     state.editorSupportCatalogsLoaded &&
     !state.editorSupportCatalogsLoading &&
@@ -1266,10 +1378,13 @@ function isEditorSubmitDisabled() {
 
 function syncEditorSupportControls() {
   const disabled = isEditorSubmitDisabled();
+  const isTeamGroup = getEditorExecutionType() === "team_group";
   for (const id of ["editor-profile-id", "editor-browser-id", "editor-model-provider", "editor-model-id"]) {
     const el = $(id);
-    if (el) el.disabled = disabled;
+    if (el) el.disabled = disabled || isTeamGroup;
   }
+  const groupEl = $("editor-team-group-id");
+  if (groupEl) groupEl.disabled = state.editorSaving || state.editorTeamTaskGroupsLoading || getEditorTeamTaskGroups().length === 0;
 
   for (const id of ["editor-form-submit"]) {
     const el = $(id);
@@ -1291,6 +1406,7 @@ function syncEditorSupportControls() {
 function renderEditorSupportCatalogOptions() {
   renderEditorAgentOptions();
   renderEditorBrowserOptions();
+  renderEditorTeamGroupOptions();
   renderEditorModelOptions();
 }
 
@@ -1334,6 +1450,45 @@ function guardEditorSupportCatalogs() {
   }
 
   return true;
+}
+
+function isEditorTeamGroupSelectionReady() {
+  if (getEditorExecutionType() !== "team_group") return true;
+  const groupId = (($("editor-team-group-id") || {}).value || "").trim();
+  const group = findEditorTeamTaskGroup(groupId);
+  return Boolean(group && isUsableTeamTaskGroup(group));
+}
+
+async function loadEditorTeamTaskGroups() {
+  if (state.editorTeamTaskGroupsLoaded) {
+    renderEditorTeamGroupOptions();
+    syncEditorSupportControls();
+    return;
+  }
+  if (state.editorTeamTaskGroupsPromise) return state.editorTeamTaskGroupsPromise;
+
+  state.editorTeamTaskGroupsLoading = true;
+  state.editorTeamTaskGroupsError = "";
+  renderEditorTeamGroupOptions();
+  syncEditorSupportControls();
+
+  state.editorTeamTaskGroupsPromise = apiFetchTeamTaskGroups().then(groups => {
+    state.editorTeamTaskGroups = groups;
+    state.editorTeamTaskGroupsLoaded = true;
+  }).catch(err => {
+    state.editorTeamTaskGroups = [];
+    state.editorTeamTaskGroupsLoaded = false;
+    state.editorTeamTaskGroupsError = err instanceof Error ? err.message : "Team Group 加载失败";
+  }).finally(() => {
+    state.editorTeamTaskGroupsLoading = false;
+    state.editorTeamTaskGroupsPromise = null;
+    if (state.editorOpen) {
+      renderEditorTeamGroupOptions();
+      syncEditorSupportControls();
+    }
+  });
+
+  return state.editorTeamTaskGroupsPromise;
 }
 
 async function loadEditorSupportCatalogs() {
@@ -1387,6 +1542,7 @@ function openEditor(mode, conn) {
   renderList();
   renderDetail();
   void loadEditorSupportCatalogs();
+  void loadEditorTeamTaskGroups();
 }
 
 function closeEditor() {
@@ -1401,6 +1557,9 @@ function closeEditor() {
 
 function fillEditorForm(conn) {
   const titleInput = $("editor-title-input");
+  const execution = normalizeConnExecution(conn);
+  const executionType = $("editor-execution-type");
+  const teamGroupId = $("editor-team-group-id");
   const promptEl = $("editor-prompt");
   const schedKind = $("editor-schedule-kind");
   const onceAt = $("editor-once-at");
@@ -1418,6 +1577,8 @@ function fillEditorForm(conn) {
   const skillSetId = $("editor-skill-set-id");
 
   if (titleInput) titleInput.value = conn.title || "";
+  if (executionType) executionType.value = execution.type;
+  setPendingSelectValue(teamGroupId, execution.type === "team_group" ? execution.groupId : "");
   if (promptEl) promptEl.value = conn.prompt || "";
 
   const sched = conn.schedule || {};
@@ -1463,6 +1624,8 @@ function fillEditorForm(conn) {
   if (artifactKind) artifactKind.value = ad.expectedKind || "auto";
   if (artifactRepair) artifactRepair.value = String(ad.repairMaxAttempts ?? 2);
   if (artifactOpts) artifactOpts.style.display = ad.enabled ? "" : "none";
+  renderEditorTeamGroupOptions();
+  syncExecutionVisibility();
 }
 
 function clearEditorForm() {
@@ -1481,6 +1644,10 @@ function clearEditorForm() {
   if (schedKind) schedKind.value = "once";
   const targetType = $("editor-target-type");
   if (targetType) targetType.value = "task_inbox";
+  const executionType = $("editor-execution-type");
+  if (executionType) executionType.value = "agent_prompt";
+  const teamGroupId = $("editor-team-group-id");
+  setPendingSelectValue(teamGroupId, "");
   const profileId = $("editor-profile-id");
   setPendingSelectValue(profileId, "main");
   const browserId = $("editor-browser-id");
@@ -1506,6 +1673,8 @@ function clearEditorForm() {
   if (artifactRepair) artifactRepair.value = "2";
   const artifactOpts = $("editor-artifact-options");
   if (artifactOpts) artifactOpts.style.display = "none";
+  renderEditorTeamGroupOptions();
+  syncExecutionVisibility();
 }
 
 function showEditorError(message, focusId) {
@@ -1531,15 +1700,37 @@ function clearEditorError() {
   }
 }
 
+function buildEditorExecutionPayload() {
+  if (getEditorExecutionType() !== "team_group") return { type: "agent_prompt" };
+  const groupId = (($("editor-team-group-id") || {}).value || "").trim();
+  const group = findEditorTeamTaskGroup(groupId);
+  if (!group || !isUsableTeamTaskGroup(group)) {
+    showEditorError("请先选择可运行的 Team Group", "editor-team-group-id");
+    return null;
+  }
+  return { type: "team_group", groupId };
+}
+
+function getEditorTeamGroupPrompt(groupId) {
+  const group = findEditorTeamTaskGroup(groupId);
+  return "Run Team Group: " + (group ? getTeamTaskGroupLabel(group) : groupId);
+}
+
 function readEditorPayload() {
   const title = (($("editor-title-input") || {}).value || "").trim();
   const prompt = (($("editor-prompt") || {}).value || "").trim();
+  const execution = buildEditorExecutionPayload();
 
   if (!title) { showEditorError("请填写标题", "editor-title-input"); return null; }
-  if (!prompt) { showEditorError("请填写 Prompt", "editor-prompt"); return null; }
-  if (!guardEditorSupportCatalogs()) return null;
+  if (!execution) return null;
+  if (execution.type === "agent_prompt" && !prompt) { showEditorError("请填写 Prompt", "editor-prompt"); return null; }
+  if (execution.type === "agent_prompt" && !guardEditorSupportCatalogs()) return null;
 
-  const payload = { title, prompt };
+  const payload = {
+    title,
+    prompt: execution.type === "team_group" ? (prompt || getEditorTeamGroupPrompt(execution.groupId)) : prompt,
+    execution,
+  };
 
   // Schedule
   const schedKind = (($("editor-schedule-kind") || {}).value || "once");
@@ -1573,6 +1764,11 @@ function readEditorPayload() {
     const openId = (($("editor-target-id") || {}).value || "").trim();
     if (!openId) { showEditorError("请填写飞书用户 ID", "editor-target-id"); return null; }
     payload.target = { type: "feishu_user", openId };
+  }
+
+  if (execution.type === "team_group") {
+    clearEditorError();
+    return payload;
   }
 
   // Optional fields
@@ -1631,7 +1827,7 @@ async function submitEditor() {
 
   // Check if browser/profile binding changed
   let extraHeaders = {};
-  if (isEditing) {
+  if (isEditing && payload.execution?.type !== "team_group") {
     const orig = state.conns.find(c => c.connId === state.editorConnId);
     if (orig) {
       const profileChanged = (orig.profileId || "main") !== (payload.profileId || "main");
@@ -1716,6 +1912,20 @@ function renderEditorForm(body, titleEl, actionsEl) {
               <input id="editor-title-input" autocomplete="off" required placeholder="请输入任务标题" />
             </label>
             <label class="conn-editor-field">
+              <span>执行对象 <span class="required">*</span></span>
+              <select id="editor-execution-type">
+                <option value="agent_prompt">提示词任务</option>
+                <option value="team_group">Team Group</option>
+              </select>
+              <span class="field-helper">Team Group 只能选择后端已有 Group，不能选择单个 Task</span>
+            </label>
+            <label id="editor-team-group-row" class="conn-editor-field full-width" hidden>
+              <span>Team Group <span class="required">*</span></span>
+              <select id="editor-team-group-id"></select>
+              <span id="editor-team-group-hint" class="field-helper">请选择一个状态 valid 且未归档的 Group</span>
+            </label>
+            <div id="editor-team-group-preview" class="conn-editor-team-group-preview" hidden></div>
+            <label id="editor-prompt-row" class="conn-editor-field">
               <span>PROMPT <span class="required">*</span></span>
               <textarea id="editor-prompt" rows="6" required placeholder="请输入 Prompt 内容，支持多行输入..."></textarea>
               <span class="field-helper">支持 Markdown 与代码语法</span>
@@ -1777,7 +1987,7 @@ function renderEditorForm(body, titleEl, actionsEl) {
       </div>
 
       <!-- Row 2: Runtime Config (full width) -->
-      <div class="conn-editor-section-card">
+      <div id="editor-runtime-config-card" class="conn-editor-section-card">
         <div class="conn-editor-section-head">
           <div class="conn-editor-section-icon" style="background:rgba(6,182,212,0.12)">
               <svg viewBox="0 0 24 24" fill="none" stroke="#06B6D4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
@@ -1808,7 +2018,7 @@ function renderEditorForm(body, titleEl, actionsEl) {
       </div>
 
       <!-- Row 3: Advanced Settings (full width) -->
-      <div class="conn-editor-section-card">
+      <div id="editor-advanced-card" class="conn-editor-section-card">
         <div class="conn-editor-section-head">
           <div class="conn-editor-section-icon" style="background:rgba(245,158,11,0.12)">
               <svg viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -1845,7 +2055,7 @@ function renderEditorForm(body, titleEl, actionsEl) {
         </div>
       </div>
 
-            <div class="conn-editor-section-card">
+            <div id="editor-artifact-card" class="conn-editor-section-card">
         <div class="conn-editor-section-head">
           <div class="conn-editor-section-icon" style="background:rgba(34,197,94,0.12)">
             <svg viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -1905,13 +2115,24 @@ function renderEditorForm(body, titleEl, actionsEl) {
 
   renderEditorAgentOptions();
   renderEditorBrowserOptions();
+  renderEditorTeamGroupOptions();
   renderEditorModelOptions();
-  syncEditorSupportControls();
   syncScheduleVisibility();
   syncTargetVisibility();
+  syncExecutionVisibility();
   initializeFlatpickr();
 
   // Bind events
+  const executionTypeEl = $("editor-execution-type");
+  if (executionTypeEl) executionTypeEl.addEventListener("change", () => {
+    clearEditorError();
+    syncExecutionVisibility();
+  });
+  const teamGroupEl = $("editor-team-group-id");
+  if (teamGroupEl) teamGroupEl.addEventListener("change", () => {
+    renderEditorTeamGroupPreview();
+    syncEditorSupportControls();
+  });
   const schedKindEl = $("editor-schedule-kind");
   if (schedKindEl) schedKindEl.addEventListener("change", syncScheduleVisibility);
   const targetEl = $("editor-target-type");
@@ -1982,6 +2203,124 @@ function renderEditorBrowserOptions() {
   }
   sel.value = current;
   delete sel.dataset.pendingValue;
+}
+
+function renderEditorTeamGroupOptions() {
+  const sel = $("editor-team-group-id");
+  const hint = $("editor-team-group-hint");
+  const preview = $("editor-team-group-preview");
+  if (!sel) return;
+  const current = sel.dataset.pendingValue || sel.value || "";
+  const groups = getEditorTeamTaskGroups();
+  sel.innerHTML = "";
+
+  if (state.editorTeamTaskGroupsLoading) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "正在读取 Team Group...";
+    opt.disabled = true;
+    sel.appendChild(opt);
+    sel.disabled = true;
+    if (hint) hint.textContent = "正在从 /v1/team/task-groups 读取后端 Group。";
+    if (preview) preview.textContent = "正在读取 Team Group...";
+    return;
+  }
+
+  if (state.editorTeamTaskGroupsError) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Team Group 读取失败";
+    opt.disabled = true;
+    sel.appendChild(opt);
+    if (hint) hint.textContent = state.editorTeamTaskGroupsError;
+    if (preview) preview.textContent = state.editorTeamTaskGroupsError;
+    return;
+  }
+
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = groups.length > 0 ? "选择 Team Group" : "暂无可用 Team Group";
+  placeholder.disabled = true;
+  sel.appendChild(placeholder);
+
+  for (const group of groups) {
+    const groupId = String(group?.groupId || "").trim();
+    if (!groupId) continue;
+    const opt = document.createElement("option");
+    opt.value = groupId;
+    opt.textContent = getTeamTaskGroupLabel(group);
+    const validationMessage = getTeamTaskGroupValidationMessage(group);
+    if (validationMessage) {
+      opt.textContent += "（不可运行）";
+      opt.disabled = true;
+      opt.title = validationMessage;
+    }
+    sel.appendChild(opt);
+  }
+
+  if (current && !groups.some(group => String(group?.groupId || "").trim() === current)) {
+    const opt = document.createElement("option");
+    opt.value = current;
+    opt.textContent = current + "（未找到）";
+    opt.disabled = true;
+    sel.appendChild(opt);
+  }
+
+  sel.value = current && Array.from(sel.options).some(opt => opt.value === current) ? current : "";
+  delete sel.dataset.pendingValue;
+  renderEditorTeamGroupPreview();
+}
+
+function renderEditorTeamGroupPreview() {
+  const sel = $("editor-team-group-id");
+  const hint = $("editor-team-group-hint");
+  const preview = $("editor-team-group-preview");
+  if (!sel || !hint || !preview) return;
+  const groupId = String(sel.value || "").trim();
+  const group = findEditorTeamTaskGroup(groupId);
+  const selectedProblem = groupId ? (group ? getTeamTaskGroupValidationMessage(group) : "Team Group 不存在或已归档") : "";
+  if (!state.editorTeamTaskGroupsLoaded && !state.editorTeamTaskGroupsError) hint.textContent = "正在读取后端 Team Group。";
+  else if (!groupId) hint.textContent = "请先选择可运行的 Team Group。";
+  else if (selectedProblem) hint.textContent = selectedProblem;
+  else hint.textContent = "保存后 Conn 会调度整个 Team Group，结果仍按下方投递目标发送。";
+
+  preview.innerHTML = "";
+  const title = document.createElement("strong");
+  title.textContent = group ? getTeamTaskGroupLabel(group) : "Team Group";
+  const detail = document.createElement("span");
+  detail.textContent = group
+    ? "状态：" + String(group.status || "unknown") + " / Head Tasks：" + (Array.isArray(group.headTaskIds) ? group.headTaskIds.length : 0)
+    : "请选择后端已有 Group，不能填写单个 Task。";
+  const code = document.createElement("code");
+  code.textContent = groupId || "未选择";
+  preview.appendChild(title);
+  preview.appendChild(detail);
+  preview.appendChild(code);
+  if (selectedProblem) {
+    const problem = document.createElement("span");
+    problem.className = "conn-editor-target-note";
+    problem.textContent = selectedProblem;
+    preview.appendChild(problem);
+  }
+}
+
+function syncExecutionVisibility() {
+  const isTeamGroup = getEditorExecutionType() === "team_group";
+  for (const id of ["editor-prompt-row", "editor-runtime-config-card", "editor-advanced-card", "editor-artifact-card"]) {
+    const el = $(id);
+    if (el) el.hidden = isTeamGroup;
+  }
+  const groupRow = $("editor-team-group-row");
+  const groupPreview = $("editor-team-group-preview");
+  if (groupRow) groupRow.hidden = !isTeamGroup;
+  if (groupPreview) groupPreview.hidden = !isTeamGroup;
+  const promptEl = $("editor-prompt");
+  if (promptEl) promptEl.required = !isTeamGroup;
+  if (isTeamGroup) {
+    renderEditorTeamGroupOptions();
+    void loadEditorTeamTaskGroups();
+  }
+  syncEditorSupportControls();
 }
 
 function renderEditorModelOptions() {
