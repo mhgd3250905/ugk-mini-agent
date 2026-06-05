@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-05 — Team Console PR #6 merge and Vite runtime refresh
+
+- **主题**: 合并并推送 Team Console PR #6 的框选和 UI-only Group 交互优化。审查时补充锁定 Group 混合多选拖拽边界：锁定 Group 内部 Task 不会被已选未锁 Agent 拖拽带走。合并后用户看到旧 UI，根因确认不是 Git 或浏览器缓存，而是 `ugk-pi-team-console` Vite dev server 仍返回旧 transformed module；重启 `ugk-pi-team-console` 后 `5174/src/graph/ExecutionMap.tsx` 已包含 `onToggleTaskGroupLock`、`lockedTaskGroupNodeIdSet`、`data-task-group-locked`，页面重新加载后生效。
+- **影响范围**: `5174` Team Console 本地运行口径、Execution Atlas lasso selection、UI-only Group 折叠/拖动/锁定/删除、文档交接；不改主后端、不改 `/playground`、不改 Team Task runtime。
+- **验证**: PR 合并前通过 Team Console 交互相关 Vitest、`npx tsc --noEmit`、Team Console build 和 `git diff --check`；运行态排障时确认 `docker compose restart ugk-pi-team-console` 后源码模块和 CSS 均返回新标记，浏览器页面加载正常，控制台仅剩 `favicon.ico` 404。
+- **对应入口**: `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/AtlasCanvasShell.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/app/App.tsx`、`docs/handoff-current.md`。
+
 ## 2026-06-05 — Team Task typed artifact handoff resolver
 
 - **主题**: 修复普通 Task-to-Task typed artifact handoff 默认绑定 `accepted-result.md` 摘要的问题。手动 `upstreamRunSelections[]` 和自动 typed downstream 现在共用同一 runtime resolver：Discovery 继续优先 `discovery-aggregation.json` / `discovery-result.json`；普通 Task 按 connection type 优先选择当前 attempt 的 worker public output 机器可消费文件，`json` 只接受可解析 JSON object/array 的 `.json`，没有匹配时才 fallback 到既有 `resultRef`。

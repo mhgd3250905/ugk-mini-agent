@@ -94,6 +94,29 @@ docker compose restart ugk-pi
 docker compose restart ugk-pi ugk-pi-conn-worker ugk-pi-feishu-worker
 ```
 
+### Team Console 5174 仍显示旧 UI
+
+Team Console dev server 是单独的 `ugk-pi-team-console` 容器，入口是：
+
+```bash
+http://127.0.0.1:5174/
+```
+
+如果宿主机源码和容器 `/app` 都已经是新代码，但 `5174` 页面仍显示旧交互，别急着重启主后端。先直接查 Vite 返回的源码模块有没有新标记：
+
+```bash
+curl http://127.0.0.1:5174/src/graph/ExecutionMap.tsx
+curl http://127.0.0.1:5174/src/app/App.tsx
+```
+
+例如 Team Console PR #6 合并后，新代码应能在 `ExecutionMap.tsx` 里看到 `onToggleTaskGroupLock`、`lockedTaskGroupNodeIdSet`、`data-task-group-locked`。如果容器内文件有这些标记，但 `5174` 返回没有，说明 Vite dev server 的 transformed module / module graph 卡旧了。只重启 Team Console：
+
+```bash
+docker compose restart ugk-pi-team-console
+```
+
+重启后再硬刷新浏览器。不要为这个问题重启 `ugk-pi`、`ugk-pi-team-worker`，更不要开临时端口绕过 `5174`。这是前端 dev server 运行态缓存，不是后端 API 或 Git 没合上。
+
 ### 重建 app / worker
 
 适合：

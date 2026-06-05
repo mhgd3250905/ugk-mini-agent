@@ -29,16 +29,18 @@
 
 ## 当前 Git 现场
 
-- 分支状态：`main...origin/main [ahead 1]`，本轮 typed artifact handoff 修复完成后会继续 ahead。
-- 最新已确认本地 commit：`2d2ceb7 Document Team Task downstream runtime validation`；本轮修复提交以 `git log -1 --oneline` 为准。
-- 2026-06-05 typed handoff 修复开始前 tracked diff 为空，staged diff 为空。
-- 当前已保存提交：
+- 分支状态：`main...origin/main` 已对齐；继续前仍以 `git status --short --branch` 为准。
+- 最新已推送主线包含 `757dd3b Merge PR #6 Team Console lasso groups`；本轮文档收尾提交后最新提交以 `git log -1 --oneline` 为准。
+- 当前已保存并推送的关键提交：
   - `81b7eea Support manual upstream run selection`
   - `9342b41 Pin manual upstream run read models`
   - `35eae0c Add Team Console loaded run state`
   - `81a51f8 Wire loaded upstream runs into Team Console launches`
   - `6f8c37b Add manual upstream input diagnostics`
   - `1fcfbb1 Document Team Task run context handoff`
+  - `4d4adc0 Fix Team Task typed artifact handoff`
+  - `119b99c Document Team Task user validation`
+  - `757dd3b Merge PR #6 Team Console lasso groups`
 - 不要提交这些本地未跟踪物件：`.codex/config.toml`、既有 `.codex/plans/**`、`.omo/`、`github-trending.txt`、`public/developer-forum-sources-report.html`、`public/forum-sources-report.html`、`public/medtrum-view/`。
 
 继续工作前先执行：
@@ -74,6 +76,7 @@ git log --oneline origin/main..HEAD
 - 2026-06-05 修复后真实链路验证：重启 `ugk-pi` / `ugk-pi-team-worker` 后，用 `task_e1846fa41c83` + `conn_52ab18a4ffc3` + 上游 `run_3cfcffe71bec` 启动新 run `run_4af859e1d834`。该 run 已 `completed`，`taskState.status="succeeded"`，`source.boundInputs[0].artifact.fileRef="agent-workspaces/attempt_b541b6717710/worker/output/structured-report.json"`，不是 `accepted-result.md`。下游 worker 生成的 HTML 报告实际文件为 `diabetes-report.html`，URL `http://127.0.0.1:3000/v1/team/task-runs/run_4af859e1d834/artifacts/attempt_a5b5ef9409ef/worker/diabetes-report.html` 返回 HTTP 200。
 - 2026-06-05 用户侧正常路径验证通过：用户从 Team Console 启动 `task_e1846fa41c83` 后，过程界面显示“手动上游输入”。后端 run `run_221b63509573` 已 `completed`，`taskState.status="succeeded"`，`source.boundInputs[0].artifact.fileRef="agent-workspaces/attempt_b541b6717710/worker/output/structured-report.json"`，下游报告 `diabetes-industry-report.html` URL `http://127.0.0.1:3000/v1/team/task-runs/run_221b63509573/artifacts/attempt_1033900d9857/worker/diabetes-industry-report.html` 返回 HTTP 200。用户确认测试通过。
 - Team Console Execution Atlas 框选和 UI-only Group 交互已优化：框选节点高亮增强，点击已选集合外的空白或其他节点会清空框选；折叠 Group 可拖动，展开 Group 可上锁/解锁/移除；锁定 Group 不能移动/删除，内部 Task 单独拖动或混合多选拖动时都不会被移动。
+- 2026-06-05 PR #6 合并后用户看到旧 UI，根因确认是 `ugk-pi-team-console` 的 Vite dev server 仍返回旧 transformed module。宿主和容器 `/app` 源码均已是新代码，但 `http://127.0.0.1:5174/src/graph/ExecutionMap.tsx` 一度不含 `onToggleTaskGroupLock` / `lockedTaskGroupNodeIdSet` / `data-task-group-locked`；执行 `docker compose restart ugk-pi-team-console` 后这些标记已返回，页面加载正常。
 
 ## 验证证据
 
@@ -114,7 +117,7 @@ git log --oneline origin/main..HEAD
 ## 已知运行口径
 
 - Browser revalidation 对纯 Step 06 文档收口不是必需项；若以后声称新的浏览器证据，必须来自 `http://127.0.0.1:5174/` 且使用自动化。
-- 如果 `5174/src/app/App.tsx` 已是新源码但页面 DOM 仍像旧版，只重启 `ugk-pi-team-console` 容器并硬刷新；不要重启主 `ugk-pi` 或乱开临时后端端口。
+- 如果 `5174` 页面仍像旧版，先直接请求 `http://127.0.0.1:5174/src/graph/ExecutionMap.tsx` 和 `http://127.0.0.1:5174/src/app/App.tsx` 查是否包含新标记；若宿主/容器 `/app` 是新源码但 `5174` 返回旧 transformed module，只重启 `ugk-pi-team-console` 并硬刷新浏览器。不要重启主 `ugk-pi` 或乱开临时后端端口。
 - Team Console Vite build 的 chunk size warning 是既有非阻塞 warning，不等于本轮失败。
 - Team Console lasso selection / UI-only Group 交互优化：
   - PR review 时新增锁定 Group 混合多选拖拽回归测试，先红后绿：锁定 Group 内部 Task 不会被已选未锁 Agent 拖拽带走。
@@ -137,7 +140,7 @@ git log --oneline origin/main..HEAD
 ## 未完成 / 下一步候选
 
 - 本轮 typed artifact handoff 代码级测试、真实链路和用户正常路径均已验证；后续若用户继续跑真实数据，可直接基于 `task_e1846fa41c83` 的成功 run `run_221b63509573` 检查报告质量或继续迭代下游 Task。
-- 若用户要求发布，才 push `main` 到 `origin` / `gitee`；当前不要提交运行产物、`.data`、public 报告或 `.codex/plans/**`。
+- `origin/main` 已推送到 PR #6 合并版本；Gitee 未同步。当前不要提交运行产物、`.data`、public 报告或 `.codex/plans/**`。
 
 ## 禁止事项
 
