@@ -41,13 +41,21 @@ function jsonResponse(status: number, body: unknown): Response {
 
 test("TeamGroupConnRunner posts a GroupRun, polls detail, records events, and completes the ConnRun", async () => {
 	const { database, connStore, runStore } = await createStores();
-	const calls: Array<{ method: string; url: string }> = [];
+	const calls: Array<{ method: string; url: string; body?: RequestInit["body"]; contentType?: string }> = [];
 	const runner = new TeamGroupConnRunner({
 		runStore,
 		apiBaseUrl: "http://team-api.test",
 		pollIntervalMs: 1,
 		fetchFn: async (url, init) => {
-			calls.push({ method: init?.method ?? "GET", url: String(url) });
+			const headers = init?.headers && !(init.headers instanceof Headers) && !Array.isArray(init.headers)
+				? init.headers as Record<string, string>
+				: {};
+			calls.push({
+				method: init?.method ?? "GET",
+				url: String(url),
+				body: init?.body,
+				contentType: headers["content-type"],
+			});
 			if (String(url).endsWith("/v1/team/task-groups/group-1/runs")) {
 				return jsonResponse(201, {
 					groupRun: {
@@ -84,8 +92,8 @@ test("TeamGroupConnRunner posts a GroupRun, polls detail, records events, and co
 
 	assert.equal(completed?.status, "succeeded");
 	assert.deepEqual(calls, [
-		{ method: "POST", url: "http://team-api.test/v1/team/task-groups/group-1/runs" },
-		{ method: "GET", url: "http://team-api.test/v1/team/task-group-runs/group-run-1" },
+		{ method: "POST", url: "http://team-api.test/v1/team/task-groups/group-1/runs", body: undefined, contentType: undefined },
+		{ method: "GET", url: "http://team-api.test/v1/team/task-group-runs/group-run-1", body: undefined, contentType: undefined },
 	]);
 	const stored = await runStore.getRun(run.runId);
 	assert.equal(stored?.resultSummary, "Team GroupRun completed: group-run-1");

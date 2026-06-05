@@ -227,10 +227,11 @@ export class TeamGroupConnRunner implements ConnWorkerRunner {
 	}
 
 	private async fetchJson(path: string, init: RequestInit): Promise<{ status: number; body: unknown }> {
+		const hasBody = init.body !== undefined && init.body !== null;
 		const response = await this.fetchFn(`${this.apiBaseUrl}${path}`, {
 			...init,
 			headers: {
-				"content-type": "application/json",
+				...(hasBody ? { "content-type": "application/json" } : {}),
 				...(init.headers ?? {}),
 			},
 		});

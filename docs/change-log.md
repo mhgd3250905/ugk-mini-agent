@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-05 — Conn Team Group safe E2E and empty POST fix
+
+- **主题**: 完成 `team_group` Conn 的安全真实 E2E，并修复 Conn worker 启动 GroupRun 时空体 `POST` 携带 `content-type: application/json` 导致 Fastify 直接返回 `400 Bad Request` 的问题。`TeamGroupConnRunner` 现在只有请求体存在时才设置 JSON content-type，避免空 body 被主服务 JSON parser 拦截。
+- **影响范围**: `src/workers/team-group-conn-runner.ts`、focused runner test、本地 `ugk-pi-conn-worker` 镜像运行口径。真实入口验证覆盖 `/playground/conn` UI 创建 `team_group` Conn、UI 立即执行、ConnRun 记录 `resolvedSnapshot.executionType="team_group"`、GroupRun 启动内部 TaskRun、5174 Live Team Console 显示 Group `Running` / `内部运行中`，以及画布 Group 终止后 GroupRun、TaskRun、ConnRun 同步取消。测试 Conn 已删除，测试 Group 已归档。
+- **对应入口**: `src/workers/team-group-conn-runner.ts`、`test/conn-team-group-runner.test.ts`、`docs/runtime-assets-conn-feishu.md`、`docs/handoff-current.md`。
+
 ## 2026-06-05 — Conn Team Group real entry validation
 
 - **主题**: 完成 Team Group + Conn Scheduler Step 07 真实入口验收与最终文档收口。`/playground` 后台任务入口可跳转到 `/playground/conn`；`/playground/conn` 会读取 `GET /v1/team/task-groups`，无 Group 时显示空态并禁用 `team_group` 保存；`5174` Live API 正常读取 root summary 和 task groups，Vite 源模块包含 Group 锁定标记。

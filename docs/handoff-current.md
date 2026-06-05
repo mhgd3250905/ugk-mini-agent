@@ -90,6 +90,8 @@ git log --oneline origin/main..HEAD
 - `ugk-pi-conn-worker` 对 `team_group` Conn run 不启动 BackgroundAgentRunner，而是调用主服务 GroupRun API 启动/轮询/取消；409 active guard 会作为 succeeded skipped 记录，summary 以 `Skipped:` 开头。
 - Conn 管理 UI 已接入 Team Group 执行对象：`/playground` 的 Conn manager 和 `/playground/conn` 独立页都可在 `agent_prompt` 与 `team_group` 间选择。选择 `team_group` 时只从后端 `GET /v1/team/task-groups` 读取 Group，不允许选择单 Task；保存 payload 使用 `execution: { type: "team_group", groupId }`，`target` 仍只表示结果投递目标。
 - Conn run detail 的 Team Group `Skipped` 展示只以 `resolvedSnapshot.skipped === true` 为准；failed GroupRun 不应显示 Skipped，而应保留普通 `groupRunStatus`、`errorText/resultText/resultSummary` 展示链路。
+- 2026-06-05 Step 08 安全 E2E 已完成：用安全 GitHub demo Task 创建临时测试 Group `group_df78e57a13cd`，通过 `/playground/conn` UI 创建 `team_group` Conn 并点击“立即执行”。修复 `TeamGroupConnRunner` 空体 POST 携带 JSON content-type 导致的 Fastify `400 Bad Request` 后，ConnRun `16019f0c-162c-48d4-a75f-df16c7d2b896` 正确记录 `resolvedSnapshot.executionType="team_group"`、`groupRunId="group_run_a5da9dbce32a"`；对应 GroupRun 启动内部 TaskRun `run_64e0d34a5ca6`。5174 Live Team Console 显示 Group `Running` / `内部运行中`，Group 运行按钮禁用，终止按钮可用。点击画布 Group 终止后，GroupRun、TaskRun、ConnRun 均进入 `cancelled`，ConnRun summary 为 `Team GroupRun cancelled: group_run_a5da9dbce32a`。测试 Conn 已删除，测试 Group 已归档。
+- `ugk-pi-conn-worker` 镜像不是纯源码热加载；改 `src/workers/team-group-conn-runner.ts` 后只 `docker compose restart ugk-pi-conn-worker` 不够，真实验证前需要 `docker compose up -d --build ugk-pi-conn-worker`，否则容器仍可能跑旧 fetch 逻辑。
 
 ## 验证证据
 
@@ -154,6 +156,11 @@ git log --oneline origin/main..HEAD
   - `/playground/conn` 新建任务默认 `agent_prompt` 模式，Prompt、Agent、浏览器、模型控件可见；切到 `team_group` 后读取 `GET /v1/team/task-groups`，本地返回 `{"groups":[]}`，Team Group 选择器显示空态并禁用保存，Prompt 不再 required，Agent/浏览器/模型控件隐藏。
   - `5174` Team Console 可切到 Live API，网络请求包含 `GET /v1/team/console/root-summary` 和 `GET /v1/team/task-groups`；`ExecutionMap.tsx` 返回 `onToggleTaskGroupLock`、`lockedTaskGroupNodeIdSet`、`data-task-group-locked`，不是旧 Vite module。
   - 本地没有安全测试 Group，因此未触发真实 `team_group` Conn run；不要拿现有知乎/Medtrum 用户任务链路硬跑。
+- Conn Scheduler Step 08 安全 E2E 验证：
+  - `/playground/conn` UI 创建 `team_group` Conn 并保存 `execution: { type: "team_group", groupId: "group_df78e57a13cd" }`，没有提供单 Task selector。
+  - UI “立即执行”后 ConnRun 进入 `running`，`resolvedSnapshot` 指向 `group_run_a5da9dbce32a`；GroupRun entry TaskRun 为 `run_64e0d34a5ca6`。
+  - `5174` Live Team Console 显示测试 Group `Running` / `内部运行中`，内部 GitHub Task 显示运行中；点击 Group “终止”后 GroupRun、TaskRun、ConnRun 都变为 `cancelled`。
+  - 真实验证过程中发现并修复 Conn worker 空体 POST 的 `400 Bad Request` 问题；focused test 已覆盖空体请求不带 JSON content-type。
 
 ## 受保护不变式
 
@@ -170,7 +177,7 @@ git log --oneline origin/main..HEAD
 ## 未完成 / 下一步候选
 
 - 本轮 typed artifact handoff 代码级测试、真实链路和用户正常路径均已验证；后续若用户继续跑真实数据，可直接基于 `task_e1846fa41c83` 的成功 run `run_221b63509573` 检查报告质量或继续迭代下游 Task。
-- Conn scheduler 后端和 Conn UI 已接入 Team Group。真实入口验收已覆盖 `/playground`、`/playground/conn` 和 `5174`；当前 blocker 是本地没有安全测试 Group。下一步若要做真实 Conn GroupRun E2E，先创建或确认一个闭合的测试 Group，再通过 UI 创建 `team_group` Conn 并触发运行；不要用现有知乎/Medtrum 这类真实用户任务链路。
+- Conn scheduler 后端、Conn UI 和安全真实 E2E 已接入并验证。下一阶段更像产品化收尾：补正式 Group 来源/筛选体验、减少测试 fixture 依赖、决定 Conn 详情页是否展示关联 GroupRun 深链或 Team Console 跳转；不要再拿现有知乎/Medtrum 这类真实用户任务链路做冒烟。
 - `origin/main` 已推送到 PR #6 合并版本；Gitee 未同步。当前不要提交运行产物、`.data`、public 报告或 `.codex/plans/**`。
 
 ## 禁止事项
