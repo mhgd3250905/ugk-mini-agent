@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunAnnotation, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort, TeamTaskConnection, TeamManualUpstreamRunSelection, TeamTaskRunCreateRequest, TeamManualUpstreamRunSelectionRecord } from "../api/team-types";
+import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunAnnotation, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort, TeamTaskConnection, TeamManualUpstreamRunSelection, TeamTaskRunCreateRequest, TeamManualUpstreamRunSelectionRecord, TeamTaskGroupRun } from "../api/team-types";
 import { MockTeamApi } from "../fixtures/team-fixtures";
 import { useTeamConsoleLiveData, type DataSource, type TeamConsoleUiResetReason, type TeamDiscoveryStage, type TeamDiscoverySummary, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
 import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchGeneratedObserverState, type TaskBranchState } from "./use-task-branch-stack";
@@ -91,6 +91,11 @@ type StoredTaskPosition = {
 type StoredLoadedTaskRunSelection = {
   taskId: string;
   runId: string;
+};
+
+type TaskGroupRunUiState = {
+  latestByGroupId: Record<string, TeamTaskGroupRun>;
+  savingByGroupId: Record<string, boolean>;
 };
 
 type StoredTaskGroupDisplayState = {
@@ -611,6 +616,33 @@ function selectLatestRun(runs: TeamRunState[]): TeamRunState | null {
     if (!Number.isFinite(latestTime)) return run;
     return runTime >= latestTime ? run : latest;
   }, runs[0]);
+}
+
+function isActiveTaskGroupRun(groupRun: TeamTaskGroupRun | null | undefined): boolean {
+  return groupRun?.status === "queued" || groupRun?.status === "running";
+}
+
+function hasSameTaskGroupRunPollingSignature(a: TeamTaskGroupRun | null | undefined, b: TeamTaskGroupRun): boolean {
+  return Boolean(a)
+    && a!.groupRunId === b.groupRunId
+    && a!.status === b.status
+    && a!.updatedAt === b.updatedAt
+    && a!.finishedAt === b.finishedAt
+    && a!.observedRuns.length === b.observedRuns.length
+    && a!.entryRuns.length === b.entryRuns.length;
+}
+
+function selectLatestTaskGroupRun(groupRuns: TeamTaskGroupRun[]): TeamTaskGroupRun | null {
+  if (!groupRuns.length) return null;
+  return groupRuns.reduce((latest, groupRun) => {
+    if (isActiveTaskGroupRun(groupRun) && !isActiveTaskGroupRun(latest)) return groupRun;
+    if (!isActiveTaskGroupRun(groupRun) && isActiveTaskGroupRun(latest)) return latest;
+    const latestTime = Date.parse(latest.createdAt);
+    const runTime = Date.parse(groupRun.createdAt);
+    if (!Number.isFinite(runTime)) return latest;
+    if (!Number.isFinite(latestTime)) return groupRun;
+    return runTime >= latestTime ? groupRun : latest;
+  }, groupRuns[0]);
 }
 
 function runTimeForOrdering(run: TeamRunState | null | undefined): number {
@@ -1615,6 +1647,10 @@ export function App() {
   const [taskNodes, setTaskNodes] = useState<AtlasTaskNode[]>([]);
   const [mockTaskGroups, setMockTaskGroups] = useState<AtlasTaskGroup[]>([]);
   const [taskGroupDisplayStates, setTaskGroupDisplayStates] = useState<StoredTaskGroupDisplayState[]>([]);
+  const [taskGroupRunUiState, setTaskGroupRunUiState] = useState<TaskGroupRunUiState>({
+    latestByGroupId: {},
+    savingByGroupId: {},
+  });
   const [selectedAtlasEntries, setSelectedAtlasEntries] = useState<AtlasSelectedNodeEntry[]>([]);
   const [taskCloneDraftByTaskId, setTaskCloneDraftByTaskId] = useState<Record<string, TaskCloneDraft>>({});
   const [taskCloneSavingByTaskId, setTaskCloneSavingByTaskId] = useState<Record<string, boolean>>({});
@@ -1840,6 +1876,7 @@ export function App() {
     setSourceConnectionDraft(null);
     setMockTaskGroups([]);
     setTaskGroupDisplayStates([]);
+    setTaskGroupRunUiState({ latestByGroupId: {}, savingByGroupId: {} });
     setSelectedAtlasEntries([]);
     setTaskRunSavingByTaskId({});
     setTaskCloneDraftByTaskId({});
@@ -1961,15 +1998,27 @@ export function App() {
       });
       if (taskNodeIds.length === 0) return [];
       const displayState = displayStateByGroupId.get(group.groupId);
+      const latestGroupRun = taskGroupRunUiState.latestByGroupId[group.groupId];
+      const blockedByActiveTask = group.taskIds.some((taskId) => (
+        (taskRunsByTaskId[taskId] ?? []).some((taskRun) => isActiveRun(taskRun.status))
+      ));
       return [{
         groupId: group.groupId,
         title: group.title,
         taskNodeIds,
         collapsed: displayState?.collapsed ?? false,
         locked: displayState?.locked ?? false,
+        groupRun: {
+          status: latestGroupRun?.status ?? "idle",
+          groupRunId: latestGroupRun?.groupRunId,
+          entryCount: latestGroupRun?.entryRuns.length ?? 0,
+          observedCount: latestGroupRun?.observedRuns.length ?? 0,
+          saving: Boolean(taskGroupRunUiState.savingByGroupId[group.groupId]),
+          blockedByActiveTask,
+        },
       }];
     });
-  }, [dataSource, mockTaskGroups, taskGroupDisplayStates, taskNodes, teamTaskGroups]);
+  }, [dataSource, mockTaskGroups, taskGroupDisplayStates, taskGroupRunUiState, taskNodes, taskRunsByTaskId, teamTaskGroups]);
   const activeRunHistoryTaskId = useMemo(() => {
     const branch = [...expandedTaskBranches].reverse().find((item) => (
       item.detailMode === "run-history" || Boolean(item.discoveryGeneratedRunHistoryTaskId)
@@ -2508,7 +2557,68 @@ export function App() {
       }
       return changed ? next : current;
     });
+    setTaskGroupRunUiState((current) => {
+      let changed = false;
+      const latestByGroupId: Record<string, TeamTaskGroupRun> = {};
+      for (const [groupId, groupRun] of Object.entries(current.latestByGroupId)) {
+        if (!activeGroupIds.has(groupId)) {
+          changed = true;
+          continue;
+        }
+        latestByGroupId[groupId] = groupRun;
+      }
+      const savingByGroupId: Record<string, boolean> = {};
+      for (const [groupId, saving] of Object.entries(current.savingByGroupId)) {
+        if (!activeGroupIds.has(groupId)) {
+          changed = true;
+          continue;
+        }
+        savingByGroupId[groupId] = saving;
+      }
+      return changed ? { latestByGroupId, savingByGroupId } : current;
+    });
   }, [canvasUiStateHydrated, dataSource, teamTaskGroups]);
+
+  useEffect(() => {
+    if (dataSource !== "live" || teamTaskGroups.length === 0) return;
+    let cancelled = false;
+    const api = new LiveTeamApi();
+    const activeGroups = teamTaskGroups.filter((group) => !group.archived);
+
+    async function loadTaskGroupRuns() {
+      const entries = await Promise.all(activeGroups.map(async (group) => {
+        try {
+          const groupRuns = await api.listTaskGroupRuns(group.groupId);
+          return [group.groupId, selectLatestTaskGroupRun(groupRuns)] as const;
+        } catch {
+          return [group.groupId, null] as const;
+        }
+      }));
+      if (cancelled) return;
+      setTaskGroupRunUiState((current) => {
+        const latestByGroupId = { ...current.latestByGroupId };
+        let changed = false;
+        for (const [groupId, groupRun] of entries) {
+          if (groupRun) {
+            if (!hasSameTaskGroupRunPollingSignature(latestByGroupId[groupId], groupRun)) {
+              latestByGroupId[groupId] = groupRun;
+              changed = true;
+            }
+          } else if (latestByGroupId[groupId]) {
+            delete latestByGroupId[groupId];
+            changed = true;
+          }
+        }
+        return changed ? { ...current, latestByGroupId } : current;
+      });
+    }
+
+    void loadTaskGroupRuns();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dataSource, teamTaskGroups]);
 
   useEffect(() => {
     if (!canvasUiStateHydrated) return;
@@ -3366,6 +3476,110 @@ export function App() {
       setTaskRunSavingByTaskId((current) => ({ ...current, [taskId]: false }));
     }
   }, [dataSource]);
+
+  const runTaskGroup = useCallback(async (groupId: string) => {
+    if (dataSource !== "live") return;
+    const group = teamTaskGroups.find((candidate) => candidate.groupId === groupId && !candidate.archived);
+    if (!group) return;
+    const currentGroupRun = taskGroupRunUiState.latestByGroupId[groupId];
+    if (isActiveTaskGroupRun(currentGroupRun)) return;
+    const blockedByActiveTask = group.taskIds.some((taskId) => (
+      (taskRunsByTaskIdRef.current[taskId] ?? []).some((taskRun) => isActiveRun(taskRun.status))
+    ));
+    if (blockedByActiveTask) return;
+    setTaskGroupRunUiState((current) => ({
+      ...current,
+      savingByGroupId: { ...current.savingByGroupId, [groupId]: true },
+    }));
+    try {
+      const api = new LiveTeamApi();
+      const groupRun = await api.startTaskGroupRun(groupId);
+      setTaskGroupRunUiState((current) => ({
+        latestByGroupId: { ...current.latestByGroupId, [groupId]: groupRun },
+        savingByGroupId: { ...current.savingByGroupId, [groupId]: false },
+      }));
+      await refreshLiveTasks({ silent: true });
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setTaskGroupRunUiState((current) => ({
+        ...current,
+        savingByGroupId: { ...current.savingByGroupId, [groupId]: false },
+      }));
+    }
+  }, [dataSource, refreshLiveTasks, setError, taskGroupRunUiState.latestByGroupId, teamTaskGroups]);
+
+  const cancelTaskGroupRun = useCallback(async (groupId: string, groupRunId: string) => {
+    if (dataSource !== "live") return;
+    setTaskGroupRunUiState((current) => ({
+      ...current,
+      savingByGroupId: { ...current.savingByGroupId, [groupId]: true },
+    }));
+    try {
+      const api = new LiveTeamApi();
+      const groupRun = await api.cancelTaskGroupRun(groupRunId);
+      setTaskGroupRunUiState((current) => ({
+        latestByGroupId: { ...current.latestByGroupId, [groupId]: groupRun },
+        savingByGroupId: { ...current.savingByGroupId, [groupId]: false },
+      }));
+      await refreshLiveTasks({ silent: true });
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setTaskGroupRunUiState((current) => ({
+        ...current,
+        savingByGroupId: { ...current.savingByGroupId, [groupId]: false },
+      }));
+    }
+  }, [dataSource, refreshLiveTasks, setError]);
+
+  useEffect(() => {
+    if (dataSource !== "live") return;
+    const groupIds = new Set(teamTaskGroups.filter((group) => !group.archived).map((group) => group.groupId));
+    const activeEntries = Object.entries(taskGroupRunUiState.latestByGroupId)
+      .filter(([groupId, groupRun]) => groupIds.has(groupId) && isActiveTaskGroupRun(groupRun));
+    if (activeEntries.length === 0) return;
+
+    let cancelled = false;
+    const api = new LiveTeamApi();
+
+    async function refreshActiveTaskGroupRuns() {
+      for (const [groupId, groupRun] of activeEntries) {
+        try {
+          const fresh = await api.getTaskGroupRun(groupRun.groupRunId);
+          if (cancelled) continue;
+          setTaskGroupRunUiState((current) => {
+            if (hasSameTaskGroupRunPollingSignature(current.latestByGroupId[groupId], fresh)) {
+              return current;
+            }
+            return {
+              ...current,
+              latestByGroupId: { ...current.latestByGroupId, [groupId]: fresh },
+            };
+          });
+          if (!isActiveTaskGroupRun(fresh)) {
+            void refreshLiveTasks({ silent: true }).catch((e) => {
+              if (!cancelled) setError(errorMessage(e));
+            });
+          }
+        } catch {
+          // Keep the last visible GroupRun state on transient polling failures.
+        }
+      }
+    }
+
+    const timer = globalThis.setInterval(() => {
+      void refreshActiveTaskGroupRuns();
+    }, 2000);
+    void refreshActiveTaskGroupRuns();
+
+    return () => {
+      cancelled = true;
+      globalThis.clearInterval(timer);
+    };
+  }, [dataSource, refreshLiveTasks, setError, taskGroupRunUiState.latestByGroupId, teamTaskGroups]);
 
   useEffect(() => {
     if (runObserverTargets.length === 0) return;
@@ -5769,6 +5983,8 @@ export function App() {
                 onToggleTaskGroup={toggleTaskGroup}
                 onToggleTaskGroupLock={toggleTaskGroupLock}
                 onDeleteTaskGroup={deleteTaskGroup}
+                onRunTaskGroup={runTaskGroup}
+                onCancelTaskGroupRun={cancelTaskGroupRun}
                 onAtlasSelectionChange={setSelectedAtlasEntries}
                 onMoveSourceNode={moveSourceNode}
                 minimizedSourceNodeIds={minimizedSourceNodeIds}

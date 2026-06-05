@@ -1918,6 +1918,128 @@ describe("LiveTeamApi", () => {
     });
   });
 
+  it("starts live Task Group runs with URL-encoded group ids", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const groupRun = {
+      schemaVersion: "team/task-group-run-1",
+      groupRunId: "group_run_1",
+      groupId: "group/a b",
+      status: "running",
+      source: { type: "manual" },
+      entryRuns: [{ taskId: "task_a", runId: "run_a" }],
+      observedRuns: [{ taskId: "task_a", runId: "run_a", role: "entry" }],
+      startedAt: "2026-06-05T00:00:00.000Z",
+      finishedAt: null,
+      lastError: null,
+      createdAt: "2026-06-05T00:00:00.000Z",
+      updatedAt: "2026-06-05T00:00:00.000Z",
+    } as const;
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ groupRun }), { status: 201 }));
+
+    const started = await api.startTaskGroupRun("group/a b");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/task-groups/group%2Fa%20b/runs", {
+      method: "POST",
+      headers: { accept: "application/json" },
+    });
+    expect(started).toEqual(groupRun);
+  });
+
+  it("lists live Task Group runs with URL-encoded group ids", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const groupRun = {
+      schemaVersion: "team/task-group-run-1",
+      groupRunId: "group_run_1",
+      groupId: "group/a b",
+      status: "completed",
+      source: { type: "manual" },
+      entryRuns: [],
+      observedRuns: [],
+      startedAt: "2026-06-05T00:00:00.000Z",
+      finishedAt: "2026-06-05T00:01:00.000Z",
+      lastError: null,
+      createdAt: "2026-06-05T00:00:00.000Z",
+      updatedAt: "2026-06-05T00:01:00.000Z",
+    } as const;
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ groupRuns: [groupRun] }), { status: 200 }));
+
+    const groupRuns = await api.listTaskGroupRuns("group/a b");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/task-groups/group%2Fa%20b/runs");
+    expect(groupRuns).toEqual([groupRun]);
+  });
+
+  it("gets live Task Group runs by URL-encoded run id", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const groupRun = {
+      schemaVersion: "team/task-group-run-1",
+      groupRunId: "group_run/a b",
+      groupId: "group_1",
+      status: "running",
+      source: { type: "manual" },
+      entryRuns: [],
+      observedRuns: [],
+      startedAt: "2026-06-05T00:00:00.000Z",
+      finishedAt: null,
+      lastError: null,
+      createdAt: "2026-06-05T00:00:00.000Z",
+      updatedAt: "2026-06-05T00:00:00.000Z",
+    } as const;
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ groupRun }), { status: 200 }));
+
+    const fresh = await api.getTaskGroupRun("group_run/a b");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/task-group-runs/group_run%2Fa%20b");
+    expect(fresh).toEqual(groupRun);
+  });
+
+  it("cancels live Task Group runs with URL-encoded run ids", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const groupRun = {
+      schemaVersion: "team/task-group-run-1",
+      groupRunId: "group_run/a b",
+      groupId: "group_1",
+      status: "cancelled",
+      source: { type: "manual" },
+      entryRuns: [],
+      observedRuns: [],
+      startedAt: "2026-06-05T00:00:00.000Z",
+      finishedAt: "2026-06-05T00:01:00.000Z",
+      lastError: "cancelled by user",
+      createdAt: "2026-06-05T00:00:00.000Z",
+      updatedAt: "2026-06-05T00:01:00.000Z",
+    } as const;
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ groupRun }), { status: 200 }));
+
+    const cancelled = await api.cancelTaskGroupRun("group_run/a b");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/task-group-runs/group_run%2Fa%20b/cancel", {
+      method: "POST",
+      headers: { accept: "application/json" },
+    });
+    expect(cancelled).toEqual(groupRun);
+  });
+
+  it("preserves backend Task Group run messages on start and cancel failures", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error: { message: "active task group run already exists" },
+      }), { status: 409 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error: { message: "task group run is already terminal" },
+      }), { status: 409 }));
+
+    await expect(api.startTaskGroupRun("group_1")).rejects.toEqual({
+      message: "active task group run already exists",
+      status: 409,
+    });
+    await expect(api.cancelTaskGroupRun("group_run_1")).rejects.toEqual({
+      message: "task group run is already terminal",
+      status: 409,
+    });
+  });
+
 });
 
 describe("Fixtures coverage", () => {

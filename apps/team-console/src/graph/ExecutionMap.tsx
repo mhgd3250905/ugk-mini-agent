@@ -1,6 +1,6 @@
 import { useMemo, useLayoutEffect, useEffect, useRef, useState, useCallback, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import type { AgentRunStatus, AgentSummary, RunDetail, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasTask, TeamPlan, TaskStatus, TeamAttemptMetadata, TeamTaskState, TeamRunState, TeamTaskConnection, TeamTaskDependency, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
+import type { AgentRunStatus, AgentSummary, RunDetail, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasTask, TeamPlan, TaskStatus, TeamAttemptMetadata, TeamTaskState, TeamRunState, TeamTaskConnection, TeamTaskDependency, TeamTaskGroupRunStatus, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
 import type { ExecutionNode, NodeKind } from "./execution-map-model";
 import { buildExecutionMapModel, CHILD_COLLAPSE_THRESHOLD } from "./execution-map-model";
 import { layoutExecutionMap, ROOT_ID, NODE_WIDTH, straightPath, type ExecutionMapLayout } from "./execution-map-layout";
@@ -38,6 +38,20 @@ const KIND_LABELS: Record<NodeKind | "collapsed" | "orphan_group", string> = {
   collapsed: "折叠",
   orphan_group: "未归属子任务",
 };
+
+const TASK_GROUP_RUN_STATUS_LABELS: Record<"idle" | TeamTaskGroupRunStatus, string> = {
+  idle: "Idle",
+  queued: "Queued",
+  running: "Running",
+  completed: "Completed",
+  completed_with_failures: "Partial",
+  failed: "Failed",
+  cancelled: "Cancelled",
+};
+
+function isActiveTaskGroupRunView(groupRun: AtlasTaskGroupRunView | undefined): boolean {
+  return groupRun?.status === "queued" || groupRun?.status === "running";
+}
 
 interface ExecutionMapProps {
   theme?: "light" | "dark";
@@ -81,6 +95,8 @@ interface ExecutionMapProps {
   onToggleTaskGroup?: (groupId: string) => void;
   onToggleTaskGroupLock?: (groupId: string) => void;
   onDeleteTaskGroup?: (groupId: string) => void;
+  onRunTaskGroup?: (groupId: string) => void;
+  onCancelTaskGroupRun?: (groupId: string, groupRunId: string) => void;
   onAtlasSelectionChange?: (entries: AtlasSelectedNodeEntry[]) => void;
   onTaskOutputPortSelect?: (taskId: string, port: TeamTaskOutputPort) => void;
   onTaskInputPortSelect?: (taskId: string, port: TeamTaskInputPort) => void;
@@ -168,6 +184,16 @@ export type AtlasTaskGroup = {
   taskNodeIds: string[];
   collapsed: boolean;
   locked?: boolean;
+  groupRun?: AtlasTaskGroupRunView;
+};
+
+export type AtlasTaskGroupRunView = {
+  status: "idle" | TeamTaskGroupRunStatus;
+  groupRunId?: string;
+  entryCount?: number;
+  observedCount?: number;
+  saving?: boolean;
+  blockedByActiveTask?: boolean;
 };
 
 export type AtlasSelectedNodeEntry =
@@ -869,6 +895,8 @@ export function ExecutionMap({
   onToggleTaskGroup,
   onToggleTaskGroupLock,
   onDeleteTaskGroup,
+  onRunTaskGroup,
+  onCancelTaskGroupRun,
   onAtlasSelectionChange,
   onTaskOutputPortSelect,
   onTaskInputPortSelect,
@@ -3496,6 +3524,7 @@ export function ExecutionMap({
                 aria-label={`展开 ${group.title} ${taskCount} Tasks`}
                 data-task-group-id={group.groupId}
                 data-task-group-locked={group.locked ? "true" : "false"}
+                data-task-group-run-status={group.groupRun?.status ?? "mock"}
                 onPointerDown={(event) => beginTaskGroupDrag(group, event)}
                 onPointerMove={handleAgentPointerMove}
                 onPointerUp={endTaskGroupPointer}
@@ -3506,6 +3535,11 @@ export function ExecutionMap({
                   <span className="emap-task-group-kicker">{group.locked ? "Locked Group" : "Group"}</span>
                   <strong>{group.title}</strong>
                 </span>
+                {group.groupRun && (
+                  <span className={`emap-task-group-run-badge is-${group.groupRun.status}`}>
+                    {TASK_GROUP_RUN_STATUS_LABELS[group.groupRun.status]}
+                  </span>
+                )}
                 <span className="emap-task-group-count"><strong>{taskCount}</strong><span>Tasks</span></span>
               </button>
             ) : (
@@ -3517,6 +3551,7 @@ export function ExecutionMap({
                 style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
                 data-task-group-id={group.groupId}
                 data-task-group-locked={group.locked ? "true" : "false"}
+                data-task-group-run-status={group.groupRun?.status ?? "mock"}
                 onPointerDown={(event) => beginTaskGroupDrag(group, event)}
                 onPointerMove={handleAgentPointerMove}
                 onPointerUp={endTaskGroupPointer}
@@ -3526,6 +3561,49 @@ export function ExecutionMap({
                   <span className="emap-task-group-kicker">{group.locked ? "Locked Group" : "Group"}</span>
                   <strong>{group.title}</strong>
                   <span>{taskCount} Tasks</span>
+                  {group.groupRun && (
+                    <>
+                      <span className={`emap-task-group-run-badge is-${group.groupRun.status}`}>
+                        {TASK_GROUP_RUN_STATUS_LABELS[group.groupRun.status]}
+                      </span>
+                      <span className="emap-task-group-run-count">
+                        {group.groupRun.blockedByActiveTask ? "内部运行中" : `${group.groupRun.observedCount ?? 0} runs`}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`运行 ${group.title}`}
+                        className="emap-task-group-run-button"
+                        disabled={
+                          group.groupRun.saving
+                          || isActiveTaskGroupRunView(group.groupRun)
+                          || Boolean(group.groupRun.blockedByActiveTask)
+                        }
+                        title={group.groupRun.blockedByActiveTask ? "Group 内部已有 Task run 运行中" : "启动 GroupRun"}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onRunTaskGroup?.(group.groupId);
+                        }}
+                      >
+                        {group.groupRun.saving ? "处理中" : "运行"}
+                      </button>
+                      {isActiveTaskGroupRunView(group.groupRun) && group.groupRun.groupRunId && (
+                        <button
+                          type="button"
+                          aria-label={`终止 ${group.title}`}
+                          className="emap-task-group-cancel-button"
+                          disabled={group.groupRun.saving}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onCancelTaskGroupRun?.(group.groupId, group.groupRun!.groupRunId!);
+                          }}
+                        >
+                          终止
+                        </button>
+                      )}
+                    </>
+                  )}
                   <button
                     type="button"
                     aria-label={`${group.locked ? "解锁" : "上锁"} ${group.title}`}

@@ -45,6 +45,9 @@ import type {
   TeamTaskGroupListResponse,
   TeamTaskGroupMutationResponse,
   TeamTaskGroupPatchRequest,
+  TeamTaskGroupRun,
+  TeamTaskGroupRunListResponse,
+  TeamTaskGroupRunMutationResponse,
   TeamTaskCloneRequest,
   TeamTaskMutationResponse,
   TeamTaskRunCreateRequest,
@@ -102,6 +105,10 @@ export interface CanvasTaskGateway {
   createTaskGroup(input: TeamTaskGroupCreateRequest): Promise<ResolvedTeamTaskGroup>;
   patchTaskGroup(groupId: string, patch: TeamTaskGroupPatchRequest): Promise<ResolvedTeamTaskGroup>;
   archiveTaskGroup(groupId: string): Promise<ResolvedTeamTaskGroup>;
+  startTaskGroupRun(groupId: string): Promise<TeamTaskGroupRun>;
+  listTaskGroupRuns(groupId: string): Promise<TeamTaskGroupRun[]>;
+  getTaskGroupRun(groupRunId: string): Promise<TeamTaskGroupRun>;
+  cancelTaskGroupRun(groupRunId: string): Promise<TeamTaskGroupRun>;
   listSourceNodes(): Promise<TeamCanvasSourceNode[]>;
   createSourceNode(input: TeamCanvasSourceNodeCreateRequest): Promise<TeamCanvasSourceNode>;
   updateSourceNode(sourceNodeId: string, patch: TeamCanvasSourceNodeUpdateRequest): Promise<TeamCanvasSourceNode>;
@@ -564,6 +571,61 @@ export class LiveTeamApi implements TeamApiProvider {
       const taskGroup = body.taskGroup ?? body.group;
       if (!taskGroup) throw { message: "malformed task group response", status: res.status };
       return taskGroup;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async startTaskGroupRun(groupId: string): Promise<TeamTaskGroupRun> {
+    try {
+      const res = await fetch(`${this.baseUrl}/task-groups/${encodeURIComponent(groupId)}/runs`, {
+        method: "POST",
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      const body = (await res.json()) as TeamTaskGroupRunMutationResponse;
+      if (!body.groupRun) throw { message: "malformed task group run response", status: res.status };
+      return body.groupRun;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async listTaskGroupRuns(groupId: string): Promise<TeamTaskGroupRun[]> {
+    try {
+      const res = await fetchJsonGet<TeamTaskGroupRunListResponse>(`${this.baseUrl}/task-groups/${encodeURIComponent(groupId)}/runs`);
+      if (!res.ok) throwJsonGetError(res);
+      return Array.isArray(res.body?.groupRuns) ? res.body.groupRuns : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async getTaskGroupRun(groupRunId: string): Promise<TeamTaskGroupRun> {
+    try {
+      const res = await fetchJsonGet<TeamTaskGroupRunMutationResponse>(`${this.baseUrl}/task-group-runs/${encodeURIComponent(groupRunId)}`);
+      if (!res.ok) throwJsonGetError(res);
+      if (!res.body?.groupRun) throw { message: `请求失败 (${res.status})`, status: res.status };
+      return res.body.groupRun;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async cancelTaskGroupRun(groupRunId: string): Promise<TeamTaskGroupRun> {
+    try {
+      const res = await fetch(`${this.baseUrl}/task-group-runs/${encodeURIComponent(groupRunId)}/cancel`, {
+        method: "POST",
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      const body = (await res.json()) as TeamTaskGroupRunMutationResponse;
+      if (!body.groupRun) throw { message: "malformed task group run response", status: res.status };
+      return body.groupRun;
     } catch (e) {
       throw toApiError(e);
     }

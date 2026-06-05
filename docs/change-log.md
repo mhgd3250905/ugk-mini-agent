@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-05 — Team Console manual GroupRun UI
+
+- **主题**: Team Console Live API 模式接入手动 GroupRun UI。Live backend Group 展开 frame 会读取最新 GroupRun，显示状态和 observed run 数；“运行”调用 `POST /v1/team/task-groups/:groupId/runs`，“终止”调用 `POST /v1/team/task-group-runs/:groupRunId/cancel`。active GroupRun 会轻量轮询详情，并在启动、终止或进入终态后 silent refresh 内部 Task run summary；Group 内已有 active Task run 时禁用 Group 运行并显示“内部运行中”。
+- **影响范围**: `apps/team-console` API adapter、ExecutionMap Group frame、Live App 状态/轮询、focused tests 和文档；不改 `src/team/**` 后端 GroupRun contract，不接 Conn，不改主 `/playground`，不把 GroupRun 合进 `GET /v1/team/console/root-summary`。
+- **对应入口**: `apps/team-console/src/api/team-types.ts`、`apps/team-console/src/api/team-api.ts`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/tests/team-api.test.ts`、`apps/team-console/src/tests/app-connections.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`。
+
 ## 2026-06-05 — Team Console backend Task Group integration
 
 - **主题**: Team Console Live API 模式接入后端 `TeamTaskGroup` definition。初始加载和“刷新 Task”会读取 `/v1/team/task-groups`；画布 Group 由后端 `taskIds[]` 映射为 `AtlasTaskGroup.taskNodeIds[]`；创建 Group 调 `POST /v1/team/task-groups`，移除 Group 调 `POST /v1/team/task-groups/:groupId/archive`。Live `canvas-ui-state` 只保存 `taskGroupDisplayStates[{ groupId, collapsed, locked }]`，旧 live `taskGroups[].taskNodeIds` 只作为展示态迁移来源。

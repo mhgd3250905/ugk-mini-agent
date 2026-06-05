@@ -2,6 +2,8 @@
 
 更新时间：2026-06-05
 
+> 2026-06-05 补充：Team Console Live API 已接入手动 GroupRun UI。Live backend Group 的展开 frame 会读取 `GET /v1/team/task-groups/:groupId/runs` 的最新 run，显示 `queued/running/completed/completed_with_failures/failed/cancelled` 状态、observed run 数和操作按钮；“运行”调用 `POST /v1/team/task-groups/:groupId/runs`，“终止”调用 `POST /v1/team/task-group-runs/:groupRunId/cancel`。active GroupRun 会轻量轮询 `GET /v1/team/task-group-runs/:groupRunId`，并在启动、终止或进入终态后 silent refresh 内部 Canvas Task run summary；Group 内已有 active Task run 时禁用 Group 运行按钮并显示“内部运行中”。此步仍不接 Conn schema/worker/UI，不改 `src/team/**` 后端 GroupRun contract，不把 GroupRun 合进 `GET /v1/team/console/root-summary`。
+
 > 2026-06-05 补充：Team Task GroupRun 后端 contract 已建立。`TeamTaskGroupRun` 保存到 `.data/team/task-group-runs.json`，schema 为 `team/task-group-run-1`，记录 `groupRunId/groupId/status/source/entryRuns/observedRuns/startedAt/finishedAt/lastError`。新增 `POST /v1/team/task-groups/:groupId/runs`、`GET /v1/team/task-groups/:groupId/runs`、`GET /v1/team/task-group-runs/:groupRunId`、`POST /v1/team/task-group-runs/:groupRunId/cancel`。启动 GroupRun 会先拒绝 active GroupRun 和 Group 内 active Canvas Task run，再同轮启动所有 `headTaskIds`；如果部分 entry 启动失败，会取消已启动 entry run，并把 GroupRun 标记为 `failed`。读取 GroupRun 会递归观察本次 entry 触发的 Group 内 downstream run 和 discovery-generated run；entry 已 completed 但 Group 内 active outgoing typed/control edge 尚无 downstream run 或 attempt delivery outcome 证据时，GroupRun 仍是 `running`，避免 `markRunSucceeded()` 早于 `triggerDownstreamRuns()` 的窗口提前完成。取消 GroupRun 会取消 Group 内所有 active Canvas Task run，不只取消 entry runs。此步不接 Conn schema/worker，不改 Team Console UI，不把 GroupRun 合进 `GET /v1/team/console/root-summary`。
 
 > 2026-06-05 补充：Team Console Live API 已接入后端 Group definition。Live 模式初始加载和“刷新 Task”会读取 `GET /v1/team/task-groups`，画布 Group 由 `ResolvedTeamTaskGroup.taskIds[]` 映射到当前 root Task node 渲染；创建 Group 调 `POST /v1/team/task-groups` 并发送真实 `taskIds`，移除 Group 调 `POST /v1/team/task-groups/:groupId/archive`，不删除 Task、connections 或 Task runs。浏览器 `canvas-ui-state` 在 Live 模式只保存 `taskGroupDisplayStates: Array<{ groupId, collapsed, locked }>`；旧 live `taskGroups[].taskNodeIds` 只用于迁移展示态，不再作为 Group membership 权威数据。Mock 模式仍保留 UI-only Group。此步不做 GroupRun UI/运行按钮/终止按钮，不接 Conn。
@@ -308,7 +310,18 @@ interface ResolvedTeamTaskGroup extends TeamTaskGroup {
 }
 ```
 
-当前非目标：不实现 `TeamTaskGroupRun`，不新增 Group run/cancel API，不把 Group 合进 `GET /v1/team/console/root-summary`，不改 Team Console UI，不改 Conn worker 或 Conn SQLite schema。
+Group definition 阶段的非目标是：不把 Group 合进 `GET /v1/team/console/root-summary`，不改 Conn worker 或 Conn SQLite schema；GroupRun 后端 contract 和 Team Console 手动运行 UI 已在后续步骤补上。
+
+### Team Task GroupRun
+
+Team Task GroupRun 是 Group 的运行聚合视图，持久化在 `.data/team/task-group-runs.json`。它只聚合 Group 内 Canvas Task runs，不进入 Plan run API，也不写入 `GET /v1/team/console/root-summary`。
+
+- `POST /v1/team/task-groups/:groupId/runs` 启动 GroupRun；后端会拒绝 active GroupRun 和 Group 内 active Task run。
+- `GET /v1/team/task-groups/:groupId/runs` 列出某 Group 的 GroupRuns；Team Console 只用它选取最新 active 或最新 created run 做 frame 展示。
+- `GET /v1/team/task-group-runs/:groupRunId` 读取并刷新单个 GroupRun 的聚合状态；Team Console 只在 `queued/running` 时轻量轮询。
+- `POST /v1/team/task-group-runs/:groupRunId/cancel` 取消 active GroupRun，并级联取消 Group 内 active Canvas Task runs。
+- Team Console 的 GroupRun 状态只是运行视图，不保存进 `canvas-ui-state`；本地只保存 Group 折叠/锁定展示态。
+- Conn scheduler 尚未接入本 UI；不要从 GroupRun UI 倒推 Conn schema、worker 或绑定规则。
 
 ### Canvas Task Run
 
@@ -798,6 +811,10 @@ run 内相对路径，指向 accepted 或 failed 结果文件。格式如 `tasks
 | GET | `/v1/team/task-groups/:groupId` | 读取单个 Group 的 resolved view，找不到返回 404 |
 | PATCH | `/v1/team/task-groups/:groupId` | 更新 Group 的 `title` 和/或 `taskIds`，重新执行边界闭合和头节点校验 |
 | POST | `/v1/team/task-groups/:groupId/archive` | 软归档 Group；不删除 Task、connection、dependency 或 run history |
+| POST | `/v1/team/task-groups/:groupId/runs` | 启动 GroupRun；同轮启动 Group head tasks，拒绝 active GroupRun 或 Group 内 active Task run |
+| GET | `/v1/team/task-groups/:groupId/runs` | 列出某 Group 的 GroupRuns |
+| GET | `/v1/team/task-group-runs/:groupRunId` | 读取并刷新单个 GroupRun 聚合状态 |
+| POST | `/v1/team/task-group-runs/:groupRunId/cancel` | 取消 active GroupRun，并取消 Group 内 active Canvas Task runs |
 | GET | `/v1/team/task-runs/:runId/tasks/:taskId/attempts` | 读取 Task run 的 attempt metadata，包含可选 `roleProcesses.worker` / `roleProcesses.checker` |
 | GET | `/v1/team/task-runs/:runId/tasks/:taskId/attempts/:attemptId/files/:fileName` | 读取 Task run 的 attempt 文件 |
 | GET | `/v1/team/task-runs/:runId/artifacts/:roleKey/:role/*` | 读取 role public output 目录中的交付文件；默认文件为 `index.html`，路径限制在该 role 的 `output` 目录内 |

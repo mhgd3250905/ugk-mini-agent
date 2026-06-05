@@ -827,6 +827,53 @@
   font-size: 10px;
 }
 
+.emap-task-group-run-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  max-width: 72px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid rgba(22, 124, 128, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 820;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.emap-task-group-run-badge.is-queued,
+.emap-task-group-run-badge.is-running {
+  border-color: rgba(37, 99, 235, 0.34);
+  background: rgba(219, 234, 254, 0.82);
+  color: rgb(29, 78, 216);
+}
+
+.emap-task-group-run-badge.is-completed {
+  border-color: rgba(22, 163, 74, 0.34);
+  background: rgba(220, 252, 231, 0.84);
+  color: rgb(21, 128, 61);
+}
+
+.emap-task-group-run-badge.is-completed_with_failures,
+.emap-task-group-run-badge.is-failed,
+.emap-task-group-run-badge.is-cancelled {
+  border-color: rgba(220, 38, 38, 0.28);
+  background: rgba(254, 226, 226, 0.78);
+  color: rgb(185, 28, 28);
+}
+
+.emap-task-group-run-count {
+  flex: 0 0 auto;
+  color: var(--secondary);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
 .emap-task-group-head button {
   flex: 0 0 auto;
   height: 24px;
@@ -4332,6 +4379,33 @@
   border-color: rgba(121, 216, 208, 0.32);
   background: rgba(16, 20, 31, 0.72);
   color: rgb(182, 246, 240);
+}
+
+[data-theme="dark"] .emap-task-group-run-badge {
+  border-color: rgba(121, 216, 208, 0.32);
+  background: rgba(16, 20, 31, 0.72);
+  color: rgb(182, 246, 240);
+}
+
+[data-theme="dark"] .emap-task-group-run-badge.is-queued,
+[data-theme="dark"] .emap-task-group-run-badge.is-running {
+  border-color: rgba(96, 165, 250, 0.42);
+  background: rgba(30, 58, 138, 0.48);
+  color: rgb(191, 219, 254);
+}
+
+[data-theme="dark"] .emap-task-group-run-badge.is-completed {
+  border-color: rgba(74, 222, 128, 0.36);
+  background: rgba(20, 83, 45, 0.42);
+  color: rgb(187, 247, 208);
+}
+
+[data-theme="dark"] .emap-task-group-run-badge.is-completed_with_failures,
+[data-theme="dark"] .emap-task-group-run-badge.is-failed,
+[data-theme="dark"] .emap-task-group-run-badge.is-cancelled {
+  border-color: rgba(248, 113, 113, 0.36);
+  background: rgba(127, 29, 29, 0.42);
+  color: rgb(254, 202, 202);
 }
 
 [data-theme="dark"] .emap-task-group-card:hover,

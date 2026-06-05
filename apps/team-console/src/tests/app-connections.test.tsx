@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
 import { MOCK_AGENTS, mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
-import type { ResolvedTeamTaskGroup, TeamCanvasTask, TeamTaskConnection, TeamTaskDependency } from "../api/team-types";
+import type { ResolvedTeamTaskGroup, TeamCanvasTask, TeamRunState, TeamTaskConnection, TeamTaskDependency, TeamTaskGroupRun } from "../api/team-types";
 import { getAtlas, getAtlasNodes, firePointer } from "./app-dom-test-utils";
 import { cloneTaskFixture, makeTypedTaskChainFixtures } from "./team-task-test-fixtures";
 
@@ -60,12 +60,85 @@ describe("App", () => {
     };
   }
 
+  function makeTaskRun(task: TeamCanvasTask, runId: string, status: TeamRunState["status"] = "running"): TeamRunState {
+    return {
+      schemaVersion: "team/state-1",
+      runId,
+      planId: `plan_${runId}`,
+      source: { type: "canvas-task", taskId: task.taskId },
+      teamUnitId: "team_console_test",
+      status,
+      createdAt: "2026-06-05T00:00:00.000Z",
+      startedAt: status === "queued" ? null : "2026-06-05T00:00:00.000Z",
+      finishedAt: ["completed", "failed", "cancelled"].includes(status) ? "2026-06-05T00:02:00.000Z" : null,
+      currentTaskId: task.taskId,
+      taskStates: {},
+      summary: {
+        totalTasks: 1,
+        succeededTasks: status === "completed" ? 1 : 0,
+        failedTasks: status === "failed" ? 1 : 0,
+        cancelledTasks: status === "cancelled" ? 1 : 0,
+        skippedTasks: 0,
+      },
+      updatedAt: "2026-06-05T00:00:00.000Z",
+    };
+  }
+
+  function makeTaskGroupRun(input: {
+    groupId: string;
+    groupRunId: string;
+    status: TeamTaskGroupRun["status"];
+    entryRuns?: Array<{ taskId: string; runId: string }>;
+    observedRuns?: TeamTaskGroupRun["observedRuns"];
+    createdAt?: string;
+  }): TeamTaskGroupRun {
+    const entryRuns = input.entryRuns ?? [];
+    return {
+      schemaVersion: "team/task-group-run-1",
+      groupRunId: input.groupRunId,
+      groupId: input.groupId,
+      status: input.status,
+      source: { type: "manual" },
+      entryRuns,
+      observedRuns: input.observedRuns ?? entryRuns.map((run) => ({ ...run, role: "entry" })),
+      startedAt: input.status === "queued" ? null : "2026-06-05T00:00:00.000Z",
+      finishedAt: ["completed", "completed_with_failures", "failed", "cancelled"].includes(input.status)
+        ? "2026-06-05T00:02:00.000Z"
+        : null,
+      lastError: null,
+      createdAt: input.createdAt ?? "2026-06-05T00:00:00.000Z",
+      updatedAt: "2026-06-05T00:00:00.000Z",
+    };
+  }
+
   function setupLiveGroupApi(options: {
     tasks: TeamCanvasTask[];
     groups?: ResolvedTeamTaskGroup[];
     createErrorMessage?: string;
+    taskRunsByTaskId?: Record<string, TeamRunState[]>;
+    groupRunsByGroupId?: Record<string, TeamTaskGroupRun[]>;
+    onStartGroupRun?: (group: ResolvedTeamTaskGroup) => TeamTaskGroupRun;
+    onGetGroupRun?: (groupRun: TeamTaskGroupRun) => TeamTaskGroupRun;
+    onCancelGroupRun?: (groupRun: TeamTaskGroupRun) => TeamTaskGroupRun;
   }) {
     let groups = [...(options.groups ?? [])];
+    const taskRunsByTaskId: Record<string, TeamRunState[]> = {
+      ...Object.fromEntries(options.tasks.map((task) => [task.taskId, []])),
+      ...(options.taskRunsByTaskId ?? {}),
+    };
+    const groupRunsByGroupId: Record<string, TeamTaskGroupRun[]> = { ...(options.groupRunsByGroupId ?? {}) };
+    const findGroupRun = (groupRunId: string): TeamTaskGroupRun | null => {
+      for (const groupRuns of Object.values(groupRunsByGroupId)) {
+        const groupRun = groupRuns.find((candidate) => candidate.groupRunId === groupRunId);
+        if (groupRun) return groupRun;
+      }
+      return null;
+    };
+    const replaceGroupRun = (next: TeamTaskGroupRun) => {
+      groupRunsByGroupId[next.groupId] = (groupRunsByGroupId[next.groupId] ?? []).map((groupRun) => (
+        groupRun.groupRunId === next.groupRunId ? next : groupRun
+      ));
+    };
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = String(input);
       const method = init?.method ?? "GET";
@@ -85,7 +158,7 @@ describe("App", () => {
         return new Response(JSON.stringify({
           tasks: options.tasks,
           deletedTaskIds: [],
-          taskRunsByTaskId: Object.fromEntries(options.tasks.map((task) => [task.taskId, []])),
+          taskRunsByTaskId,
           deletedRunIdsByTaskId: {},
           sourceNodes: [],
           sourceConnections: [],
@@ -120,12 +193,57 @@ describe("App", () => {
         groups = groups.filter((group) => group.groupId !== groupId);
         return new Response(JSON.stringify({ taskGroup: { ...archived, archived: true } }), { status: 200 });
       }
+      if (url.startsWith("/v1/team/task-groups/") && url.endsWith("/runs") && method === "GET") {
+        const groupId = decodeURIComponent(url.slice("/v1/team/task-groups/".length, -"/runs".length));
+        return new Response(JSON.stringify({ groupRuns: groupRunsByGroupId[groupId] ?? [] }), { status: 200 });
+      }
+      if (url.startsWith("/v1/team/task-groups/") && url.endsWith("/runs") && method === "POST") {
+        const groupId = decodeURIComponent(url.slice("/v1/team/task-groups/".length, -"/runs".length));
+        const group = groups.find((candidate) => candidate.groupId === groupId);
+        if (!group) return new Response(JSON.stringify({ error: { message: "group not found" } }), { status: 404 });
+        const groupRun = options.onStartGroupRun?.(group) ?? makeTaskGroupRun({
+          groupId,
+          groupRunId: `group_run_${groupId}`,
+          status: "running",
+          entryRuns: group.headTaskIds.map((taskId) => ({ taskId, runId: `run_${taskId}` })),
+        });
+        groupRunsByGroupId[groupId] = [groupRun, ...(groupRunsByGroupId[groupId] ?? [])];
+        return new Response(JSON.stringify({ groupRun }), { status: 201 });
+      }
+      if (url.startsWith("/v1/team/task-group-runs/") && method === "GET") {
+        const groupRunId = decodeURIComponent(url.slice("/v1/team/task-group-runs/".length));
+        const groupRun = findGroupRun(groupRunId);
+        if (!groupRun) return new Response(JSON.stringify({ error: { message: "group run not found" } }), { status: 404 });
+        const next = options.onGetGroupRun?.(groupRun) ?? groupRun;
+        replaceGroupRun(next);
+        return new Response(JSON.stringify({ groupRun: next }), { status: 200 });
+      }
+      if (url.startsWith("/v1/team/task-group-runs/") && url.endsWith("/cancel") && method === "POST") {
+        const groupRunId = decodeURIComponent(url.slice("/v1/team/task-group-runs/".length, -"/cancel".length));
+        const groupRun = findGroupRun(groupRunId);
+        if (!groupRun) return new Response(JSON.stringify({ error: { message: "group run not found" } }), { status: 404 });
+        const next = options.onCancelGroupRun?.(groupRun) ?? {
+          ...groupRun,
+          status: "cancelled" as const,
+          finishedAt: "2026-06-05T00:02:00.000Z",
+          updatedAt: "2026-06-05T00:02:00.000Z",
+        };
+        replaceGroupRun(next);
+        return new Response(JSON.stringify({ groupRun: next }), { status: 200 });
+      }
       if (url.startsWith("/v1/team/task-runs/by-task?")) {
         return new Response(JSON.stringify({
-          runsByTaskId: Object.fromEntries(options.tasks.map((task) => [task.taskId, []])),
+          runsByTaskId: taskRunsByTaskId,
           deletedRunIdsByTaskId: {},
           serverVersion: "2026-06-05T00:00:00.000Z",
         }), { status: 200 });
+      }
+      if (url.startsWith("/v1/team/task-runs/") && method === "GET") {
+        const pathname = new URL(url, "http://team-console.test").pathname;
+        const runId = decodeURIComponent(pathname.slice("/v1/team/task-runs/".length));
+        const run = Object.values(taskRunsByTaskId).flat().find((candidate) => candidate.runId === runId);
+        if (!run) return new Response(JSON.stringify({ error: { message: "run not found" } }), { status: 404 });
+        return new Response(JSON.stringify(run), { status: 200 });
       }
       if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
       if (url === "/v1/team/task-dependencies") return new Response(JSON.stringify({ dependencies: [] }), { status: 200 });
@@ -870,6 +988,225 @@ describe("App", () => {
       ))).toBe(true);
       expect(await within(atlasNodes).findByRole("button", { name: "Live Alpha" })).toBeInTheDocument();
       expect(await within(atlasNodes).findByRole("button", { name: "Live Beta" })).toBeInTheDocument();
+    });
+
+    it("shows active backend GroupRun status and keeps the expanded Group frame controls separate", async () => {
+      const taskA = makeLiveTask("task_live_a", "Live Alpha");
+      const taskB = makeLiveTask("task_live_b", "Live Beta");
+      const group = makeResolvedTaskGroup({
+        groupId: "group_live_1",
+        title: "Backend Group",
+        taskIds: [taskA.taskId, taskB.taskId],
+      });
+      setupLiveGroupApi({
+        tasks: [taskA, taskB],
+        groups: [group],
+        groupRunsByGroupId: {
+          [group.groupId]: [makeTaskGroupRun({
+            groupId: group.groupId,
+            groupRunId: "group_run_active",
+            status: "running",
+            entryRuns: [{ taskId: taskA.taskId, runId: "run_live_alpha" }],
+          })],
+        },
+      });
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+
+      render(<App />);
+
+      const frame = await screen.findByRole("group", { name: "Backend Group" });
+      await within(frame).findByText("Running");
+      expect(within(frame).getByText("1 runs")).toBeInTheDocument();
+      expect(within(frame).getByRole("button", { name: "运行 Backend Group" })).toBeDisabled();
+      expect(within(frame).getByRole("button", { name: "终止 Backend Group" })).toBeEnabled();
+      expect(frame).toHaveAttribute("data-task-group-run-status", "running");
+
+      fireEvent.click(within(frame).getByRole("button", { name: "终止 Backend Group" }));
+
+      await within(frame).findByText("Cancelled");
+      expect(screen.getByRole("group", { name: "Backend Group" })).toHaveAttribute("data-task-group-run-status", "cancelled");
+      expect(vi.mocked(fetch).mock.calls.some(([url, init]) => (
+        String(url) === "/v1/team/task-group-runs/group_run_active/cancel" && init?.method === "POST"
+      ))).toBe(true);
+    });
+
+    it("starts a Live GroupRun and refreshes internal Task run state", async () => {
+      const taskA = makeLiveTask("task_live_a", "Live Alpha");
+      const taskB = makeLiveTask("task_live_b", "Live Beta");
+      const taskRunsByTaskId = {
+        [taskA.taskId]: [] as TeamRunState[],
+        [taskB.taskId]: [] as TeamRunState[],
+      };
+      const group = makeResolvedTaskGroup({
+        groupId: "group/live 1",
+        title: "Backend Group",
+        taskIds: [taskA.taskId, taskB.taskId],
+      });
+      setupLiveGroupApi({
+        tasks: [taskA, taskB],
+        groups: [group],
+        taskRunsByTaskId,
+        onStartGroupRun: () => {
+          taskRunsByTaskId[taskA.taskId].push(makeTaskRun(taskA, "run_live_alpha", "running"));
+          return makeTaskGroupRun({
+            groupId: group.groupId,
+            groupRunId: "group_run_started",
+            status: "running",
+            entryRuns: [{ taskId: taskA.taskId, runId: "run_live_alpha" }],
+          });
+        },
+      });
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+
+      render(<App />);
+
+      const frame = await screen.findByRole("group", { name: "Backend Group" });
+      fireEvent.click(within(frame).getByRole("button", { name: "运行 Backend Group" }));
+
+      await within(frame).findByText("Running");
+      expect(screen.getByRole("group", { name: "Backend Group" })).toHaveAttribute("data-task-group-run-status", "running");
+      expect(vi.mocked(fetch).mock.calls.some(([url, init]) => (
+        String(url) === "/v1/team/task-groups/group%2Flive%201/runs" && init?.method === "POST"
+      ))).toBe(true);
+      expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).startsWith("/v1/team/task-runs/by-task?"))).toBe(true);
+    });
+
+    it("active GroupRun remains running without re-polling before the 2s interval", async () => {
+      const taskA = makeLiveTask("task_live_a", "Live Alpha");
+      const taskB = makeLiveTask("task_live_b", "Live Beta");
+      const group = makeResolvedTaskGroup({
+        groupId: "group_live_1",
+        title: "Backend Group",
+        taskIds: [taskA.taskId, taskB.taskId],
+      });
+      const stableGroupRun = makeTaskGroupRun({
+        groupId: group.groupId,
+        groupRunId: "group_run_stable",
+        status: "running",
+        entryRuns: [{ taskId: taskA.taskId, runId: "run_live_alpha" }],
+      });
+      setupLiveGroupApi({
+        tasks: [taskA, taskB],
+        groups: [group],
+        groupRunsByGroupId: { [group.groupId]: [stableGroupRun] },
+        onGetGroupRun: () => stableGroupRun,
+      });
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const groupRunDetailGetCount = () => vi.mocked(fetch).mock.calls.filter(([url, init]) => (
+        String(url) === "/v1/team/task-group-runs/group_run_stable"
+        && (init?.method ?? "GET") === "GET"
+      )).length;
+
+      vi.useFakeTimers();
+      try {
+        render(<App />);
+
+        for (let i = 0; i < 12 && groupRunDetailGetCount() === 0; i += 1) {
+          await act(async () => {
+            await Promise.resolve();
+          });
+        }
+        expect(screen.getByRole("group", { name: "Backend Group" })).toBeInTheDocument();
+        expect(groupRunDetailGetCount()).toBe(1);
+        await act(async () => {
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+        expect(groupRunDetailGetCount()).toBe(1);
+
+        await act(async () => {
+          vi.advanceTimersByTime(1999);
+          await Promise.resolve();
+        });
+        expect(groupRunDetailGetCount()).toBe(1);
+
+        await act(async () => {
+          vi.advanceTimersByTime(1);
+          await Promise.resolve();
+        });
+        expect(groupRunDetailGetCount()).toBe(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("blocks GroupRun start while an internal Task run is active", async () => {
+      const taskA = makeLiveTask("task_live_a", "Live Alpha");
+      const taskB = makeLiveTask("task_live_b", "Live Beta");
+      setupLiveGroupApi({
+        tasks: [taskA, taskB],
+        groups: [makeResolvedTaskGroup({
+          groupId: "group_live_1",
+          title: "Backend Group",
+          taskIds: [taskA.taskId, taskB.taskId],
+        })],
+        taskRunsByTaskId: {
+          [taskA.taskId]: [makeTaskRun(taskA, "run_live_alpha", "running")],
+          [taskB.taskId]: [],
+        },
+      });
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+
+      render(<App />);
+
+      const frame = await screen.findByRole("group", { name: "Backend Group" });
+      await within(frame).findByText("内部运行中");
+      expect(within(frame).getByRole("button", { name: "运行 Backend Group" })).toBeDisabled();
+      expect(vi.mocked(fetch).mock.calls.some(([url, init]) => (
+        String(url) === "/v1/team/task-groups/group_live_1/runs" && init?.method === "POST"
+      ))).toBe(false);
+    });
+
+    it("polls active GroupRun detail and refreshes Task runs after completion", async () => {
+      const taskA = makeLiveTask("task_live_a", "Live Alpha");
+      const taskB = makeLiveTask("task_live_b", "Live Beta");
+      const taskRunsByTaskId = {
+        [taskA.taskId]: [makeTaskRun(taskA, "run_live_alpha", "running")],
+        [taskB.taskId]: [] as TeamRunState[],
+      };
+      const group = makeResolvedTaskGroup({
+        groupId: "group_live_1",
+        title: "Backend Group",
+        taskIds: [taskA.taskId, taskB.taskId],
+      });
+      let detailPollCount = 0;
+      setupLiveGroupApi({
+        tasks: [taskA, taskB],
+        groups: [group],
+        taskRunsByTaskId,
+        groupRunsByGroupId: {
+          [group.groupId]: [makeTaskGroupRun({
+            groupId: group.groupId,
+            groupRunId: "group_run_polling",
+            status: "running",
+            entryRuns: [{ taskId: taskA.taskId, runId: "run_live_alpha" }],
+          })],
+        },
+        onGetGroupRun: (groupRun) => {
+          detailPollCount += 1;
+          taskRunsByTaskId[taskA.taskId].splice(0, taskRunsByTaskId[taskA.taskId].length, makeTaskRun(taskA, "run_live_alpha", "completed"));
+          return { ...groupRun, status: "completed", finishedAt: "2026-06-05T00:02:00.000Z" };
+        },
+      });
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+
+      render(<App />);
+
+      const frame = await screen.findByRole("group", { name: "Backend Group" });
+      await waitFor(() => expect(within(frame).getByText("Completed")).toBeInTheDocument(), { timeout: 4500 });
+      expect(detailPollCount).toBeGreaterThanOrEqual(1);
+      expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).startsWith("/v1/team/task-runs/by-task?"))).toBe(true);
+    });
+
+    it("does not call GroupRun endpoints for Mock UI-only Groups", async () => {
+      render(<App />);
+
+      await screen.findByRole("button", { name: "调查 Medtrum 云资产" });
+
+      expect(vi.mocked(fetch).mock.calls.some(([url]) => (
+        String(url).includes("/v1/team/task-group-runs/")
+        || String(url).includes("/v1/team/task-groups/")
+      ))).toBe(false);
     });
   });
 

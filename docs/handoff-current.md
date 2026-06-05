@@ -29,8 +29,8 @@
 
 ## 当前 Git 现场
 
-- 分支状态：`main...origin/main` 已对齐；继续前仍以 `git status --short --branch` 为准。
-- 最新已推送主线包含 `757dd3b Merge PR #6 Team Console lasso groups`；本轮文档收尾提交后最新提交以 `git log -1 --oneline` 为准。
+- 分支状态：本地 `main` 已包含 Team Group / GroupRun 系列提交；继续前仍以 `git status --short --branch` 为准。
+- 最新已推送主线包含 `757dd3b Merge PR #6 Team Console lasso groups`；Team Group / GroupRun 系列如未推送，先用 `git log --oneline origin/main..HEAD` 确认本地领先提交。
 - 当前已保存并推送的关键提交：
   - `81b7eea Support manual upstream run selection`
   - `9342b41 Pin manual upstream run read models`
@@ -41,6 +41,11 @@
   - `4d4adc0 Fix Team Task typed artifact handoff`
   - `119b99c Document Team Task user validation`
   - `757dd3b Merge PR #6 Team Console lasso groups`
+- 当前 Team Group / GroupRun 本地关键提交：
+  - `40f7eb5 Add Team Task Group definition contract`
+  - `28aabb5 Add Team Task GroupRun backend contract`
+  - `0f67e81 Connect Team Console to backend Task Groups`
+  - Team Console manual GroupRun UI 已完成并保存；准确 hash 以 `git log -1 --oneline` 为准。
 - 不要提交这些本地未跟踪物件：`.codex/config.toml`、既有 `.codex/plans/**`、`.omo/`、`github-trending.txt`、`public/developer-forum-sources-report.html`、`public/forum-sources-report.html`、`public/medtrum-view/`。
 
 继续工作前先执行：
@@ -77,6 +82,10 @@ git log --oneline origin/main..HEAD
 - 2026-06-05 用户侧正常路径验证通过：用户从 Team Console 启动 `task_e1846fa41c83` 后，过程界面显示“手动上游输入”。后端 run `run_221b63509573` 已 `completed`，`taskState.status="succeeded"`，`source.boundInputs[0].artifact.fileRef="agent-workspaces/attempt_b541b6717710/worker/output/structured-report.json"`，下游报告 `diabetes-industry-report.html` URL `http://127.0.0.1:3000/v1/team/task-runs/run_221b63509573/artifacts/attempt_1033900d9857/worker/diabetes-industry-report.html` 返回 HTTP 200。用户确认测试通过。
 - Team Console Execution Atlas 框选和 UI-only Group 交互已优化：框选节点高亮增强，点击已选集合外的空白或其他节点会清空框选；折叠 Group 可拖动，展开 Group 可上锁/解锁/移除；锁定 Group 不能移动/删除，内部 Task 单独拖动或混合多选拖动时都不会被移动。
 - 2026-06-05 PR #6 合并后用户看到旧 UI，根因确认是 `ugk-pi-team-console` 的 Vite dev server 仍返回旧 transformed module。宿主和容器 `/app` 源码均已是新代码，但 `http://127.0.0.1:5174/src/graph/ExecutionMap.tsx` 一度不含 `onToggleTaskGroupLock` / `lockedTaskGroupNodeIdSet` / `data-task-group-locked`；执行 `docker compose restart ugk-pi-team-console` 后这些标记已返回，页面加载正常。
+- Team Task Group definition 已成为后端持久结构单位。Live Team Console Group membership 以后端 `TeamTaskGroup.taskIds[]` 为准；`canvas-ui-state` 只保存 `{ groupId, collapsed, locked }` 展示态。Mock 模式仍保留 UI-only Group。
+- Team Task GroupRun 后端 contract 已建立。启动 GroupRun 会并行启动 Group 内所有 head tasks，拒绝 active GroupRun 和 Group 内 active Canvas Task run；取消 GroupRun 会取消 Group 内 active Canvas Task runs。
+- Team Console Live backend Group 展开 frame 已接入手动 GroupRun UI。“运行”调用 `POST /v1/team/task-groups/:groupId/runs`，“终止”调用 `POST /v1/team/task-group-runs/:groupRunId/cancel`；active GroupRun 约 2 秒轮询详情，并在启动、终止或进入终态后 silent refresh 内部 Task run summary。
+- GroupRun active polling 已补紧循环回归保护：相同 `groupRunId/status/updatedAt/finishedAt/observedRuns.length/entryRuns.length` 不写 React state，避免 `setState -> effect 重建 -> 立即 GET`。
 
 ## 验证证据
 
@@ -124,6 +133,14 @@ git log --oneline origin/main..HEAD
   - `npm --prefix apps/team-console run test -- --run src/tests/app-connections.test.tsx -t "locks a Group"`：1 passed。
   - PR 作者已验证：`app-connections.test.tsx`、`app-static-contracts.test.ts`、`execution-map-ui.test.tsx` Discovery root、`atlas-geometry.test.ts`、Team Console build、`git diff --check` 和本地浏览器 reload console error count 0。
   - `npm --prefix apps/team-console run build`：passed；仍有既有 Vite chunk size warning。
+- Team Group / GroupRun 系列验证通过：
+  - `node --test --import tsx test\team-task-group-routes.test.ts`：12/12 pass。
+  - `node --test --import tsx test\team-task-group-run-routes.test.ts`：11/11 pass。
+  - `node --test --import tsx test\team-task-run-routes.test.ts`：42/42 pass。
+  - `npm --prefix apps/team-console run test -- --run src/tests/team-api.test.ts src/tests/app-connections.test.tsx src/tests/app-run-observer.test.tsx`：178 pass。
+  - `npm --prefix apps/team-console run test -- --run src/tests/app-static-contracts.test.ts`：27 pass。
+  - `npm --prefix apps/team-console run build`：passed；仍有既有 Vite chunk size warning。
+  - `npx tsc --noEmit`、`git diff --check`：pass。
 
 ## 受保护不变式
 
@@ -140,6 +157,7 @@ git log --oneline origin/main..HEAD
 ## 未完成 / 下一步候选
 
 - 本轮 typed artifact handoff 代码级测试、真实链路和用户正常路径均已验证；后续若用户继续跑真实数据，可直接基于 `task_e1846fa41c83` 的成功 run `run_221b63509573` 检查报告质量或继续迭代下游 Task。
+- Conn scheduler 仍未接入 Team Group。下一步建议只做 Conn 后端 contract/schema/worker 小步：Conn 选择 Group 而不是单 Task 或旧 prompt task，定时触发已存在的 `POST /v1/team/task-groups/:groupId/runs`，active guard 交给 GroupRun 后端 contract；暂不做 Conn UI 大改。
 - `origin/main` 已推送到 PR #6 合并版本；Gitee 未同步。当前不要提交运行产物、`.data`、public 报告或 `.codex/plans/**`。
 
 ## 禁止事项
