@@ -15,6 +15,8 @@ import type { UpdateTeamCanvasTaskInput } from "./task-validation.js";
 import { TaskConnectionStore } from "./task-connection-store.js";
 import { TaskDependencyStore } from "./task-dependency-store.js";
 import { TaskGroupStore } from "./task-group-store.js";
+import { TaskGroupRunStore } from "./task-group-run-store.js";
+import { TaskGroupRunService } from "./task-group-run-service.js";
 import { SourceConnectionStore } from "./source-connection-store.js";
 import { SourceNodeStore, type UpdateSourceNodeInput } from "./source-node-store.js";
 import { MockRoleRunner } from "./role-runner.js";
@@ -214,6 +216,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	taskConnectionStore.setExistingDependencies(() => taskDependencyStore.list());
 	taskDependencyStore.setExistingConnections(() => taskConnectionStore.list());
 	const taskGroupStore = new TaskGroupStore(options.teamDataDir, taskStore, taskConnectionStore, taskDependencyStore);
+	const taskGroupRunStore = new TaskGroupRunStore(options.teamDataDir);
 	const sourceConnectionStore = new SourceConnectionStore(options.teamDataDir, sourceNodeStore, taskStore);
 	const workspace = new RunWorkspace(options.teamDataDir);
 	const taskRunDataDir = join(options.teamDataDir, "task-runs");
@@ -231,6 +234,14 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		maxCheckerRevisions: 3,
 		maxRunDurationMinutes: options.maxRunDurationMinutes,
 	});
+	const taskGroupRunService = new TaskGroupRunService(
+		taskGroupStore,
+		taskGroupRunStore,
+		taskRunService,
+		taskConnectionStore,
+		taskDependencyStore,
+		taskRunWorkspace,
+	);
 	void taskRunService.recoverDetachedRuns().catch((error) => {
 		app.log.warn({ error }, "failed to recover detached Canvas Task runs");
 	});
@@ -484,6 +495,65 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			reply.send({ group });
 		} catch (err) {
 			sendMappedError(reply, err, [["lock busy", 409], ["task group store", 500], ["not found", 404]]);
+		}
+	});
+
+	app.post("/v1/team/task-groups/:groupId/runs", async (request, reply) => {
+		const groupId = idParam(request, "groupId");
+		try {
+			const groupRun = await taskGroupRunService.startGroupRun(groupId, {
+				publicBaseUrl: requestPublicBaseUrl(request, options.publicBaseUrl),
+			});
+			reply.code(201).send({ groupRun });
+		} catch (err) {
+			sendMappedError(reply, err, [
+				["task group not found", 404],
+				["invalid task group", 400],
+				["archived", 409],
+				["active task group run", 409],
+				["active task run", 409],
+				["ready", 409],
+				["lock busy", 409],
+				["task group run store", 500],
+			], 500);
+		}
+	});
+
+	app.get("/v1/team/task-groups/:groupId/runs", async (request, reply) => {
+		const groupId = idParam(request, "groupId");
+		try {
+			const group = await taskGroupStore.get(groupId);
+			if (!group) { sendNotFound(reply, "task group"); return; }
+			const groupRuns = await taskGroupRunService.listGroupRuns(groupId);
+			reply.send({ groupRuns });
+		} catch (err) {
+			sendMappedError(reply, err, [["lock busy", 409], ["task group run store", 500]], 500);
+		}
+	});
+
+	app.get("/v1/team/task-group-runs/:groupRunId", async (request, reply) => {
+		const groupRunId = idParam(request, "groupRunId");
+		try {
+			const groupRun = await taskGroupRunService.getGroupRun(groupRunId);
+			if (!groupRun) { sendNotFound(reply, "task group run"); return; }
+			reply.send({ groupRun });
+		} catch (err) {
+			sendMappedError(reply, err, [["task group run not found", 404], ["lock busy", 409], ["task group run store", 500]], 500);
+		}
+	});
+
+	app.post("/v1/team/task-group-runs/:groupRunId/cancel", async (request, reply) => {
+		const groupRunId = idParam(request, "groupRunId");
+		try {
+			const groupRun = await taskGroupRunService.cancelGroupRun(groupRunId, "user cancel");
+			reply.send({ groupRun });
+		} catch (err) {
+			sendMappedError(reply, err, [
+				["task group run not found", 404],
+				["terminal", 409],
+				["lock busy", 409],
+				["task group run store", 500],
+			], 500);
 		}
 	});
 

@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-05 — Team Task GroupRun backend contract
+
+- **主题**: 新增 Team Task GroupRun 后端运行聚合 contract。`TeamTaskGroupRun` 保存到 `.data/team/task-group-runs.json`，支持启动 Group、列出某 Group 的 runs、读取/刷新单个 GroupRun、取消 GroupRun。启动前会拒绝 active GroupRun 和 Group 内 active Task run，并同轮启动所有 Group head tasks；部分 entry 启动失败会取消已启动 entry run 并把 GroupRun 标记为 failed。读取会递归观察 entry 触发的 Group 内 downstream run 和 discovery-generated run，并在 completed observed run 的 Group 内 active outgoing typed/control edge 尚无 downstream run 或 attempt delivery outcome 证据时保持 running，避免 entry completed 但下游尚未落盘时提前完成；取消会取消 Group 内所有 active Canvas Task run。
+- **影响范围**: `src/team` 后端类型、GroupRun store/service/routes 与 route tests；不改 Team Console UI，不改 Conn worker/SQLite/schema，不改 Playground UI 或 `.pi/skills/**`，不把 GroupRun 合进 `GET /v1/team/console/root-summary`。
+- **对应入口**: `src/team/types.ts`、`src/team/task-group-run-store.ts`、`src/team/task-group-run-service.ts`、`src/team/routes.ts`、`test/team-task-group-run-routes.test.ts`、`docs/team-runtime.md`。
+
 ## 2026-06-05 — Team Task Group backend definition contract
 
 - **主题**: 新增 Team Task Group 后端持久 definition contract。`TeamTaskGroup` 保存到 `.data/team/task-groups.json`，支持 list/create/get/patch/archive routes，create/update 会校验 Group 边界闭合并计算 `headTaskIds`；active typed task connection 与 active control dependency 只要一端在 Group 内，另一端也必须在 Group 内。stale 边不参与闭合和头节点计算，generated child Task 和 archived Task 第一版不能加入 Group。

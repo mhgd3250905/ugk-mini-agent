@@ -443,6 +443,39 @@ export interface ResolvedTeamTaskGroup extends TeamTaskGroup {
 	validation: { errors: TeamTaskGroupValidationIssue[] };
 }
 
+export type TeamTaskGroupRunStatus =
+	| "queued"
+	| "running"
+	| "completed"
+	| "completed_with_failures"
+	| "failed"
+	| "cancelled";
+
+export type TeamTaskGroupRunSource =
+	| { type: "manual" }
+	| { type: "conn"; connId: string; connRunId: string };
+
+export interface TeamTaskGroupRunObservedRun {
+	taskId: string;
+	runId: string;
+	role: "entry" | "downstream" | "discovery-generated";
+}
+
+export interface TeamTaskGroupRun {
+	schemaVersion: "team/task-group-run-1";
+	groupRunId: string;
+	groupId: string;
+	status: TeamTaskGroupRunStatus;
+	source: TeamTaskGroupRunSource;
+	entryRuns: Array<{ taskId: string; runId: string }>;
+	observedRuns: TeamTaskGroupRunObservedRun[];
+	startedAt: string | null;
+	finishedAt: string | null;
+	lastError: string | null;
+	createdAt: string;
+	updatedAt: string;
+}
+
 export type TeamCanvasSourceNodeType = "text" | "file";
 export type TeamCanvasSourcePortType = "string" | "md" | "json" | "html" | "file";
 
