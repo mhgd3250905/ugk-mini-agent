@@ -149,6 +149,11 @@ git log --oneline origin/main..HEAD
   - `node --test --import tsx test\server.test.ts`：168/168 pass。
   - `npx tsc --noEmit`：pass。
   - `git diff --check`：pass。
+- Conn Scheduler Step 07 真实入口验收：
+  - `/playground` 后台任务入口可点击，真实入口跳转到 `/playground/conn`。
+  - `/playground/conn` 新建任务默认 `agent_prompt` 模式，Prompt、Agent、浏览器、模型控件可见；切到 `team_group` 后读取 `GET /v1/team/task-groups`，本地返回 `{"groups":[]}`，Team Group 选择器显示空态并禁用保存，Prompt 不再 required，Agent/浏览器/模型控件隐藏。
+  - `5174` Team Console 可切到 Live API，网络请求包含 `GET /v1/team/console/root-summary` 和 `GET /v1/team/task-groups`；`ExecutionMap.tsx` 返回 `onToggleTaskGroupLock`、`lockedTaskGroupNodeIdSet`、`data-task-group-locked`，不是旧 Vite module。
+  - 本地没有安全测试 Group，因此未触发真实 `team_group` Conn run；不要拿现有知乎/Medtrum 用户任务链路硬跑。
 
 ## 受保护不变式
 
@@ -165,7 +170,7 @@ git log --oneline origin/main..HEAD
 ## 未完成 / 下一步候选
 
 - 本轮 typed artifact handoff 代码级测试、真实链路和用户正常路径均已验证；后续若用户继续跑真实数据，可直接基于 `task_e1846fa41c83` 的成功 run `run_221b63509573` 检查报告质量或继续迭代下游 Task。
-- Conn scheduler 后端和 Conn UI 已接入 Team Group。下一步建议做真实入口端到端验收：用后端闭合 Group 创建一个 `team_group` Conn，手动触发或定时触发后确认 ConnRun 启动同一个 GroupRun，Team Console 画布体现 Group 内 Task run 状态；同时验证 already-running guard 只产生 succeeded skipped，不把 failed GroupRun 伪装成 Skipped。
+- Conn scheduler 后端和 Conn UI 已接入 Team Group。真实入口验收已覆盖 `/playground`、`/playground/conn` 和 `5174`；当前 blocker 是本地没有安全测试 Group。下一步若要做真实 Conn GroupRun E2E，先创建或确认一个闭合的测试 Group，再通过 UI 创建 `team_group` Conn 并触发运行；不要用现有知乎/Medtrum 这类真实用户任务链路。
 - `origin/main` 已推送到 PR #6 合并版本；Gitee 未同步。当前不要提交运行产物、`.data`、public 报告或 `.codex/plans/**`。
 
 ## 禁止事项

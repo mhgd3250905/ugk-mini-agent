@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-05 — Conn Team Group real entry validation
+
+- **主题**: 完成 Team Group + Conn Scheduler Step 07 真实入口验收与最终文档收口。`/playground` 后台任务入口可跳转到 `/playground/conn`；`/playground/conn` 会读取 `GET /v1/team/task-groups`，无 Group 时显示空态并禁用 `team_group` 保存；`5174` Live API 正常读取 root summary 和 task groups，Vite 源模块包含 Group 锁定标记。
+- **影响范围**: 仅文档事实更新；本地没有安全测试 Group，未触发真实 `team_group` Conn run，后续 E2E 需要先准备闭合测试 Group。
+- **对应入口**: `docs/handoff-current.md`、`docs/team-runtime.md`、`apps/team-console/README.md`。
+
 ## 2026-06-05 — Conn UI selects Team Group execution
 
 - **主题**: Playground Conn manager 和 `/playground/conn` 独立页接入 `execution.type` 选择。旧 `agent_prompt` Conn 保持 prompt、Agent、browser、model、assets、binding confirmation 旧流程；新 `team_group` Conn 通过 `GET /v1/team/task-groups` 选择后端已有 Group，只保存 `execution: { type: "team_group", groupId }`，不把 Group 写进 `target.type`。本地无可用 Group 时显示空态并禁用保存。
