@@ -931,6 +931,7 @@ function readStoredTaskBranches(value: unknown): TaskBranchState[] {
       ? record.discoveryGeneratedRunHistoryTaskId.trim()
       : undefined;
     const discoveryQueueExpanded = record.discoveryQueueExpanded === true;
+    const discoveryStaleExpanded = record.discoveryStaleExpanded === true;
     result.push({
       nodeId,
       taskId,
@@ -942,6 +943,7 @@ function readStoredTaskBranches(value: unknown): TaskBranchState[] {
       ...(discoveryGeneratedEditTaskId ? { discoveryGeneratedEditTaskId } : {}),
       ...(discoveryGeneratedRunHistoryTaskId ? { discoveryGeneratedRunHistoryTaskId } : {}),
       ...(discoveryQueueExpanded ? { discoveryQueueExpanded } : {}),
+      ...(discoveryStaleExpanded ? { discoveryStaleExpanded } : {}),
     });
   }
   return result;
@@ -4300,6 +4302,7 @@ export function App() {
                             discoveryGeneratedEditTaskId: undefined,
                             discoveryGeneratedRunHistoryTaskId: undefined,
                             discoveryQueueExpanded: false,
+                            discoveryStaleExpanded: false,
                           }
                         : item
                     )
@@ -4446,8 +4449,9 @@ export function App() {
                   return (
                     <article
                       key={run.runId}
-                      className={`emap-run-history-item ${selected ? "selected" : ""} ${item.annotation.best ? "best" : ""} ${item.annotation.archived ? "archived" : ""} ${loaded ? "loaded" : ""}`}
+                      className={`emap-run-history-item status-${run.status} ${selected ? "selected" : ""} ${item.annotation.best ? "best" : ""} ${item.annotation.archived ? "archived" : ""} ${loaded ? "loaded" : ""}`}
                       data-run-id={run.runId}
+                      data-run-status={run.status}
                       data-loaded-run={loaded ? "true" : "false"}
                       data-loaded-run-state={loadedState}
                     >
@@ -4455,6 +4459,7 @@ export function App() {
                         type="button"
                         className="emap-run-history-row"
                         aria-label={`${run.runId} ${RUN_STATUS_LABELS[run.status]} 运行详情`}
+                        aria-current={selected ? "true" : undefined}
                         onClick={() => {
                           selectRunHistoryItem(item);
                           setRunHistoryAnalysisCopyState("idle");
@@ -4618,16 +4623,21 @@ export function App() {
           branch.discoveryGeneratedEditTaskId,
           generatedArchiveConfirmTaskId,
         ].filter((taskId): taskId is string => typeof taskId === "string" && taskId.length > 0));
+        const activeGeneratedTaskCards = generatedTaskCards.filter((card) => card.itemStatus !== "stale");
+        const staleGeneratedTaskCards = generatedTaskCards.filter((card) => card.itemStatus === "stale");
+        const forceVisibleStaleTaskCards = staleGeneratedTaskCards.filter((card) => forceVisibleQueuedTaskIds.has(card.generatedTask.taskId));
+        const staleGeneratedTaskCardsVisible = branch.discoveryStaleExpanded || forceVisibleStaleTaskCards.length > 0;
         const generatedPreviewCards = branch.discoveryQueueExpanded
-          ? generatedTaskCards
-          : generatedTaskCards.filter((card, index) => (
+          ? activeGeneratedTaskCards
+          : activeGeneratedTaskCards.filter((card, index) => (
               index < DISCOVERY_QUEUE_INITIAL_CARD_LIMIT || forceVisibleQueuedTaskIds.has(card.generatedTask.taskId)
             ));
-        const hiddenGeneratedTaskCount = generatedTaskCards.length - generatedPreviewCards.length;
-        const runningGeneratedTaskCount = generatedTaskCards.filter((card) => card.visualState === "running").length;
-        const doneGeneratedTaskCount = generatedTaskCards.filter((card) => card.visualState === "done").length;
-        const failedGeneratedTaskCount = generatedTaskCards.filter((card) => card.visualState === "failed").length;
-        const waitingGeneratedTaskCount = generatedTaskCards.length - runningGeneratedTaskCount - doneGeneratedTaskCount - failedGeneratedTaskCount;
+        const stalePreviewCards = staleGeneratedTaskCardsVisible ? staleGeneratedTaskCards : [];
+        const hiddenGeneratedTaskCount = activeGeneratedTaskCards.length - generatedPreviewCards.length;
+        const runningGeneratedTaskCount = activeGeneratedTaskCards.filter((card) => card.visualState === "running").length;
+        const doneGeneratedTaskCount = activeGeneratedTaskCards.filter((card) => card.visualState === "done").length;
+        const failedGeneratedTaskCount = activeGeneratedTaskCards.filter((card) => card.visualState === "failed").length;
+        const waitingGeneratedTaskCount = activeGeneratedTaskCards.length - runningGeneratedTaskCount - doneGeneratedTaskCount - failedGeneratedTaskCount;
         const renderGeneratedCard = (card: (typeof generatedTaskCards)[number]) => {
           const {
             activeGeneratedRun,
@@ -4921,6 +4931,7 @@ export function App() {
                             discoveryGeneratedEditTaskId: undefined,
                             discoveryGeneratedRunHistoryTaskId: undefined,
                             discoveryQueueExpanded: false,
+                            discoveryStaleExpanded: false,
                           }
                         : item
                       )
@@ -4982,15 +4993,20 @@ export function App() {
                       <strong>
                         {runningGeneratedTaskCount} running · {waitingGeneratedTaskCount} queued · {doneGeneratedTaskCount} done
                         {failedGeneratedTaskCount > 0 ? ` · ${failedGeneratedTaskCount} failed` : ""}
+                        {staleGeneratedTaskCards.length > 0 ? ` · ${staleGeneratedTaskCards.length} stale hidden` : ""}
                       </strong>
                     </div>
-                    <div
-                      className="discovery-subcanvas-queue-grid"
-                      data-generated-queue-visible-count={generatedPreviewCards.length}
-                      data-generated-queue-total-count={generatedTaskCards.length}
-                    >
-                      {generatedPreviewCards.map(renderGeneratedCard)}
-                    </div>
+                    {activeGeneratedTaskCards.length === 0 ? (
+                      <div className="discovery-subcanvas-empty compact">本轮没有 active generated Task。</div>
+                    ) : (
+                      <div
+                        className="discovery-subcanvas-queue-grid"
+                        data-generated-queue-visible-count={generatedPreviewCards.length}
+                        data-generated-queue-total-count={activeGeneratedTaskCards.length}
+                      >
+                        {generatedPreviewCards.map(renderGeneratedCard)}
+                      </div>
+                    )}
                     {hiddenGeneratedTaskCount > 0 && (
                       <button
                         type="button"
@@ -5004,8 +5020,42 @@ export function App() {
                           ));
                         }}
                       >
-                        显示全部 {generatedTaskCards.length} 个 generated Task
+                        显示全部 {activeGeneratedTaskCards.length} 个 generated Task
                       </button>
+                    )}
+                    {staleGeneratedTaskCards.length > 0 && !staleGeneratedTaskCardsVisible && (
+                      <button
+                        type="button"
+                        className="discovery-subcanvas-show-all stale"
+                        data-generated-action="show-stale-generated"
+                        onClick={() => {
+                          setExpandedTaskBranches((current) => current.map((item) =>
+                            item.nodeId === branch.nodeId
+                              ? { ...item, discoveryStaleExpanded: true }
+                              : item
+                          ));
+                        }}
+                      >
+                        显示 {staleGeneratedTaskCards.length} 个旧项
+                      </button>
+                    )}
+                    {stalePreviewCards.length > 0 && (
+                      <section
+                        className="discovery-subcanvas-lane discovery-subcanvas-lane-stale"
+                        aria-label={`${task.title} stale generated Task 旧项`}
+                      >
+                        <div className="discovery-subcanvas-lane-head">
+                          <span>旧项</span>
+                          <strong>{staleGeneratedTaskCards.length} stale</strong>
+                        </div>
+                        <div
+                          className="discovery-subcanvas-queue-grid stale"
+                          data-generated-stale-visible-count={stalePreviewCards.length}
+                          data-generated-stale-total-count={staleGeneratedTaskCards.length}
+                        >
+                          {stalePreviewCards.map(renderGeneratedCard)}
+                        </div>
+                      </section>
                     )}
                   </section>
                 )}

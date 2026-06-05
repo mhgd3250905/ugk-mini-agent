@@ -91,7 +91,7 @@ describe("Team Console static contracts", () => {
     expect(canvasRule).toContain("rgba(101, 119, 145, 0.16) 1px");
     expect(nodeRule).toContain("0 10px 24px rgba(15, 23, 42, 0.1)");
     expect(branchRule).toContain("background: var(--surface)");
-    expect(mapCss).toContain("rgba(255, 104, 64");
+    expect(mapCss).toContain("rgba(14, 165, 233");
     expect(mapCss).toContain("rgba(255, 190, 96");
   });
 
@@ -318,22 +318,23 @@ describe("Team Console static contracts", () => {
     expect(runIdRule).not.toContain("text-overflow: ellipsis");
   });
 
-  it("uses a warm accent for busy Agent cards", () => {
+  it("uses an active accent for busy Agent cards", () => {
     const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
     const busyRule = mapCss.match(/\.emap-agent-node\[data-agent-run-state="busy"\]\s*{[^}]*}/)?.[0];
     const busyBarRule = mapCss.match(/\.emap-agent-node\[data-agent-run-state="busy"\]\s+\.emap-node-status-bar\s*{[^}]*}/)?.[0];
     const busyPillRule = mapCss.match(/\.emap-agent-node\[data-agent-run-state="busy"\]\s+\.emap-node-state-pill\.running\s*{[^}]*}/)?.[0];
 
-    expect(busyRule).toContain("rgba(255, 104, 64");
-    expect(busyRule).not.toContain("rgba(121, 216, 208");
-    expect(busyBarRule).toContain("rgb(255, 104, 64)");
-    expect(busyPillRule).toContain("rgba(255, 104, 64");
-    expect(busyPillRule).toContain("color: #8f2a13");
+    expect(busyRule).toContain("rgba(14, 165, 233");
+    expect(busyRule).not.toContain("rgba(255, 104, 64");
+    expect(busyBarRule).toContain("rgb(14, 165, 233)");
+    expect(busyBarRule).toContain("rgb(20, 184, 166)");
+    expect(busyPillRule).toContain("rgba(14, 165, 233");
+    expect(busyPillRule).toContain("color: rgb(2, 132, 199)");
     expect(busyPillRule).not.toContain("rgb(255, 190, 165)");
     expect(mapCss).toContain('[data-theme="dark"] .emap-agent-node[data-agent-run-state="busy"] .emap-node-state-pill.running');
   });
 
-  it("uses a stronger warm accent for running Task cards", () => {
+  it("uses an active accent for running Task cards", () => {
     const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
     const runningRule = mapCss.match(/\.emap-canvas-task-node\.status-running\s*{[^}]*}/)?.[0] ?? "";
     const runningBarRule = mapCss.match(/\.emap-canvas-task-node\.status-running\s+\.emap-node-status-bar\s*{[^}]*}/)?.[0] ?? "";
@@ -350,10 +351,13 @@ describe("Team Console static contracts", () => {
     const portHoverRule = mapCss.match(/\.emap-task-port-chip:hover,\n\.emap-task-port-chip:focus-visible\s*{[^}]*}/)?.[0] ?? "";
     const portSelectedRule = mapCss.match(/\.emap-task-port-output\.is-selected\s*{[^}]*}/)?.[0] ?? "";
 
-    expect(runningRule).toContain("rgba(255, 104, 64");
-    expect(runningBarRule).toContain("rgb(255, 104, 64)");
+    expect(runningRule).toContain("rgba(14, 165, 233");
+    expect(runningRule).not.toContain("rgba(255, 104, 64");
+    expect(runningBarRule).toContain("rgb(14, 165, 233)");
+    expect(runningBarRule).toContain("rgb(20, 184, 166)");
     expect(runningBarRule).toContain("animation: pulse-bar");
     expect(runningPillRule).toContain("display: inline-flex");
+    expect(runningPillRule).toContain("rgba(14, 165, 233");
     expect(atlasCardRule).not.toContain("--emap-card-action-rail");
     expect(mapCss).not.toContain(".emap-atlas-card::before");
     expect(mapCss).not.toContain(".emap-node-minimize-button");

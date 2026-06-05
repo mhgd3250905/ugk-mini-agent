@@ -14,6 +14,18 @@
 
 ---
 
+## 2026-06-05 — Team Console run history visual polish
+
+- **主题**: Team Console 运行记录抽屉改为状态化历史卡片，选中 run 使用更明确的高亮和 `aria-current`；Discovery 子画布点击 generated child 展开运行记录时，来源卡片保留蓝青高亮边框和顶部标记；running / busy 执行态统一改为蓝青色，不再使用类似危险态的橙红色。
+- **影响范围**: 仅 5174 Team Console 运行记录和 Execution Atlas 前端展示、样式合同测试与文档。后端 run history、TaskRun、GroupRun、Discovery catalog 合同不变。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/app.css`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/src/tests/app-static-contracts.test.ts`、`apps/team-console/README.md`、`docs/team-runtime.md`。
+
+## 2026-06-05 — Team Console hides stale Discovery generated items by default
+
+- **主题**: Team Console Discovery 子画布默认只在主 generated grid 显示 active generated child，`stale` child 折叠为“显示旧项”诊断入口；展开后进入单独 stale lane，可继续 reset-to-managed 或归档。
+- **影响范围**: 仅 5174 Team Console Discovery 子画布展示口径、样式、测试和文档。后端 generated catalog / stale marking / upsert 合同不变，root Discovery 卡片仍显示 stale 计数，generated child 仍不进入 root canvas。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`。
+
 ## 2026-06-05 — Conn Team Group run detail diagnostics
 
 - **主题**: `/playground/conn` 和 `/playground` Conn manager 的 Team Group run detail 增加轻量 JSON 诊断链接。存在 `groupId` 时显示同源 `/v1/team/task-groups/<encoded groupId>`，存在 `groupRunId` 时显示同源 `/v1/team/task-group-runs/<encoded groupRunId>`，链接新窗口打开并使用 `noreferrer`。

@@ -2109,6 +2109,15 @@
   font-size: 11px;
 }
 
+.discovery-subcanvas-lane-stale {
+  padding-top: 2px;
+  opacity: 0.86;
+}
+
+.discovery-subcanvas-lane-stale .discovery-subcanvas-lane-head strong {
+  color: rgba(100, 116, 139, 0.92);
+}
+
 .discovery-subcanvas-queue-grid {
   display: grid;
   gap: 8px;
@@ -2153,6 +2162,17 @@
   border-color: rgba(22, 124, 128, 0.36);
 }
 
+.discovery-subcanvas-show-all.stale {
+  color: rgba(71, 85, 105, 0.9);
+  background: rgba(100, 116, 139, 0.07);
+  border-color: rgba(100, 116, 139, 0.22);
+}
+
+.discovery-subcanvas-show-all.stale:hover {
+  background: rgba(100, 116, 139, 0.12);
+  border-color: rgba(100, 116, 139, 0.34);
+}
+
 .discovery-generated-card {
   position: relative;
   display: flex;
@@ -2190,13 +2210,13 @@
 
 .discovery-generated-card.state-running {
   background:
-    linear-gradient(145deg, rgba(255, 235, 222, 0.96), rgba(255, 196, 166, 0.74)),
-    rgba(255, 245, 238, 0.96);
-  border-color: rgba(255, 104, 64, 0.5);
+    linear-gradient(145deg, rgba(235, 250, 255, 0.97), rgba(186, 230, 253, 0.78)),
+    rgba(240, 249, 255, 0.96);
+  border-color: rgba(14, 165, 233, 0.5);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.66),
-    0 0 0 1px rgba(255, 104, 64, 0.16),
-    0 10px 24px rgba(255, 104, 64, 0.16);
+    0 0 0 1px rgba(14, 165, 233, 0.16),
+    0 10px 24px rgba(14, 165, 233, 0.16);
 }
 
 .discovery-subcanvas-queue-grid .discovery-generated-card {
@@ -2212,7 +2232,7 @@
   overflow: hidden;
   border-radius: 999px;
   background:
-    linear-gradient(90deg, transparent 0%, rgba(255, 104, 64, 0.14) 28%, rgba(255, 104, 64, 0.88) 50%, rgba(255, 104, 64, 0.14) 72%, transparent 100%);
+    linear-gradient(90deg, transparent 0%, rgba(14, 165, 233, 0.14) 28%, rgba(20, 184, 166, 0.9) 50%, rgba(14, 165, 233, 0.14) 72%, transparent 100%);
   background-size: 180% 100%;
   animation: discovery-generated-card-progress 1.45s linear infinite;
 }
@@ -2291,21 +2311,31 @@
 }
 
 .discovery-generated-card.is-history-open {
-  border-color: rgba(22, 124, 128, 0.54);
+  border-color: rgba(14, 165, 233, 0.72);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.68),
-    0 0 0 1px rgba(22, 124, 128, 0.18),
-    0 14px 26px rgba(15, 118, 110, 0.14);
+    0 0 0 2px rgba(14, 165, 233, 0.22),
+    0 16px 30px rgba(14, 165, 233, 0.16);
+}
+
+.discovery-generated-card.is-history-open::before {
+  content: "";
+  position: absolute;
+  inset: 7px 7px auto 7px;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgb(14, 165, 233), rgb(20, 184, 166));
+  box-shadow: 0 0 14px rgba(14, 165, 233, 0.34);
 }
 
 .discovery-generated-card.state-running:hover,
 .discovery-generated-card.state-running:focus-visible,
 .discovery-generated-card.state-running.is-history-open {
-  border-color: rgba(255, 104, 64, 0.64);
+  border-color: rgba(14, 165, 233, 0.72);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.68),
-    0 0 0 1px rgba(255, 104, 64, 0.22),
-    0 14px 26px rgba(255, 104, 64, 0.18);
+    0 0 0 2px rgba(14, 165, 233, 0.22),
+    0 14px 26px rgba(14, 165, 233, 0.18);
 }
 
 .discovery-generated-card-watermark {
@@ -3734,22 +3764,22 @@
 }
 
 .emap-canvas-task-node.status-running {
-  border-color: rgba(255, 104, 64, 0.76);
+  border-color: rgba(14, 165, 233, 0.72);
   background:
-    linear-gradient(90deg, rgba(255, 104, 64, 0.16), transparent 60%),
-    linear-gradient(180deg, rgba(255, 190, 96, 0.15), transparent 42%),
+    linear-gradient(90deg, rgba(14, 165, 233, 0.16), transparent 60%),
+    linear-gradient(180deg, rgba(20, 184, 166, 0.12), transparent 42%),
     var(--surface-raised);
   box-shadow:
-    0 0 0 1px rgba(255, 104, 64, 0.22),
-    0 0 24px rgba(255, 104, 64, 0.16),
+    0 0 0 1px rgba(14, 165, 233, 0.22),
+    0 0 24px rgba(14, 165, 233, 0.16),
     0 14px 30px rgba(15, 23, 42, 0.14),
     inset 0 1px 0 rgba(255, 255, 255, 0.84);
 }
 
 .emap-canvas-task-node.status-running .emap-node-status-bar {
-  color: rgb(255, 104, 64);
-  background: rgb(255, 104, 64);
-  box-shadow: 0 0 18px rgba(255, 104, 64, 0.6);
+  color: rgb(14, 165, 233);
+  background: linear-gradient(180deg, rgb(14, 165, 233), rgb(20, 184, 166));
+  box-shadow: 0 0 18px rgba(14, 165, 233, 0.56);
   animation: pulse-bar 1.35s ease-in-out infinite;
 }
 
@@ -3758,10 +3788,10 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: rgb(255, 190, 165);
-  border-color: rgba(255, 104, 64, 0.45);
-  background: rgba(255, 104, 64, 0.15);
-  box-shadow: 0 0 12px rgba(255, 104, 64, 0.1);
+  color: rgb(2, 132, 199);
+  border-color: rgba(14, 165, 233, 0.36);
+  background: rgba(14, 165, 233, 0.12);
+  box-shadow: 0 0 12px rgba(14, 165, 233, 0.1);
 }
 
 .emap-canvas-task-node.status-running .emap-node-state-pill.running::before,
@@ -4082,33 +4112,33 @@
 }
 
 .emap-agent-node[data-agent-run-state="busy"] {
-  border-color: rgba(255, 104, 64, 0.68);
+  border-color: rgba(14, 165, 233, 0.62);
   background:
-    linear-gradient(90deg, rgba(255, 104, 64, 0.12), transparent 58%),
-    linear-gradient(180deg, rgba(255, 104, 64, 0.15), transparent 42%),
+    linear-gradient(90deg, rgba(14, 165, 233, 0.12), transparent 58%),
+    linear-gradient(180deg, rgba(20, 184, 166, 0.12), transparent 42%),
     var(--surface-raised);
 }
 
 .emap-agent-node[data-agent-run-state="busy"]:hover,
 .emap-agent-node[data-agent-run-state="busy"].selected {
-  border-color: rgba(255, 104, 64, 0.86);
+  border-color: rgba(14, 165, 233, 0.82);
   box-shadow:
-    0 0 0 1px rgba(255, 104, 64, 0.34),
-    0 0 24px rgba(255, 104, 64, 0.16),
+    0 0 0 1px rgba(14, 165, 233, 0.3),
+    0 0 24px rgba(14, 165, 233, 0.16),
     0 16px 34px rgba(0, 0, 0, 0.38),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .emap-agent-node[data-agent-run-state="busy"] .emap-node-status-bar {
-  color: rgb(255, 104, 64);
-  background: rgb(255, 104, 64);
-  box-shadow: 0 0 18px rgba(255, 104, 64, 0.58);
+  color: rgb(14, 165, 233);
+  background: linear-gradient(180deg, rgb(14, 165, 233), rgb(20, 184, 166));
+  box-shadow: 0 0 18px rgba(14, 165, 233, 0.54);
 }
 
 .emap-agent-node[data-agent-run-state="busy"] .emap-node-state-pill.running {
-  color: #8f2a13;
-  border-color: rgba(184, 69, 35, 0.32);
-  background: rgba(255, 104, 64, 0.1);
+  color: rgb(2, 132, 199);
+  border-color: rgba(14, 165, 233, 0.32);
+  background: rgba(14, 165, 233, 0.1);
 }
 
 .emap-agent-node[data-agent-run-state="unknown"] {
@@ -4665,12 +4695,27 @@
   border-color: rgba(121, 216, 208, 0.38);
 }
 
+[data-theme="dark"] .discovery-subcanvas-show-all.stale {
+  color: rgba(148, 163, 184, 0.9);
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.24);
+}
+
+[data-theme="dark"] .discovery-subcanvas-show-all.stale:hover {
+  background: rgba(148, 163, 184, 0.16);
+  border-color: rgba(148, 163, 184, 0.38);
+}
+
 [data-theme="dark"] .discovery-subcanvas-lane-head {
   color: rgba(216, 228, 241, 0.76);
 }
 
 [data-theme="dark"] .discovery-subcanvas-lane-head strong {
   color: #79d8d0;
+}
+
+[data-theme="dark"] .discovery-subcanvas-lane-stale .discovery-subcanvas-lane-head strong {
+  color: rgba(148, 163, 184, 0.95);
 }
 
 [data-theme="dark"] .discovery-generated-card {
@@ -4684,18 +4729,18 @@
 
 [data-theme="dark"] .discovery-generated-card.state-running {
   background:
-    linear-gradient(145deg, rgba(122, 51, 35, 0.82), rgba(38, 24, 20, 0.92)),
-    rgba(35, 23, 18, 0.9);
-  border-color: rgba(255, 132, 88, 0.58);
+    linear-gradient(145deg, rgba(12, 74, 110, 0.86), rgba(8, 47, 73, 0.92)),
+    rgba(8, 42, 64, 0.9);
+  border-color: rgba(56, 189, 248, 0.58);
   box-shadow:
-    inset 0 1px 0 rgba(255, 226, 213, 0.1),
-    0 0 0 1px rgba(255, 104, 64, 0.2),
-    0 10px 24px rgba(255, 104, 64, 0.14);
+    inset 0 1px 0 rgba(216, 228, 241, 0.1),
+    0 0 0 1px rgba(56, 189, 248, 0.2),
+    0 10px 24px rgba(56, 189, 248, 0.14);
 }
 
 [data-theme="dark"] .discovery-generated-card.state-running::after {
   background:
-    linear-gradient(90deg, transparent 0%, rgba(255, 132, 88, 0.12) 28%, rgba(255, 132, 88, 0.9) 50%, rgba(255, 132, 88, 0.12) 72%, transparent 100%);
+    linear-gradient(90deg, transparent 0%, rgba(56, 189, 248, 0.12) 28%, rgba(45, 212, 191, 0.92) 50%, rgba(56, 189, 248, 0.12) 72%, transparent 100%);
   background-size: 180% 100%;
 }
 
@@ -4755,21 +4800,21 @@
 }
 
 [data-theme="dark"] .discovery-generated-card.is-history-open {
-  border-color: rgba(121, 216, 208, 0.58);
+  border-color: rgba(56, 189, 248, 0.68);
   box-shadow:
     inset 0 1px 0 rgba(216, 228, 241, 0.1),
-    0 0 0 1px rgba(121, 216, 208, 0.2),
+    0 0 0 2px rgba(56, 189, 248, 0.22),
     0 14px 26px rgba(0, 0, 0, 0.3);
 }
 
 [data-theme="dark"] .discovery-generated-card.state-running:hover,
 [data-theme="dark"] .discovery-generated-card.state-running:focus-visible,
 [data-theme="dark"] .discovery-generated-card.state-running.is-history-open {
-  border-color: rgba(255, 132, 88, 0.68);
+  border-color: rgba(56, 189, 248, 0.72);
   box-shadow:
-    inset 0 1px 0 rgba(255, 226, 213, 0.1),
-    0 0 0 1px rgba(255, 104, 64, 0.24),
-    0 14px 26px rgba(255, 104, 64, 0.18);
+    inset 0 1px 0 rgba(216, 228, 241, 0.1),
+    0 0 0 2px rgba(56, 189, 248, 0.24),
+    0 14px 26px rgba(56, 189, 248, 0.18);
 }
 
 [data-theme="dark"] .discovery-generated-card-watermark {
@@ -5159,7 +5204,7 @@
 }
 
 [data-theme="dark"] .emap-agent-node[data-agent-run-state="busy"] .emap-node-state-pill.running {
-  color: rgb(255, 190, 165);
-  border-color: rgba(255, 104, 64, 0.38);
-  background: rgba(255, 104, 64, 0.14);
+  color: rgb(125, 211, 252);
+  border-color: rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.14);
 }

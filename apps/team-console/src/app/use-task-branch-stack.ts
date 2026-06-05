@@ -19,6 +19,7 @@ export type TaskBranchState = {
   discoveryGeneratedRunHistoryTaskId?: string;
   discoveryGeneratedEditTaskId?: string;
   discoveryQueueExpanded?: boolean;
+  discoveryStaleExpanded?: boolean;
 };
 
 type TaskBranchRoot = {

@@ -2,6 +2,10 @@
 
 更新时间：2026-06-05
 
+> 2026-06-05 补充：Team Console 运行记录抽屉已收口为状态化历史卡片。每条 run history item 带 `data-run-status`，当前选中行使用 `aria-current="true"` 和更强的 selected 高亮；Discovery 子画布里点击 generated child 打开运行记录后，来源 card 会保留 `is-history-open` 高亮和顶部标记，避免右侧记录面板打开后不知道来自哪个 child。Execution Atlas 的 running / busy 执行态统一使用蓝青色，橙红色继续留给危险、失败或警告语义。
+
+> 2026-06-05 补充：Team Console Discovery 子画布默认隐藏 `stale` generated child。`GET /v1/team/tasks/:taskId/generated-tasks?view=summary` 仍返回 active/stale 非 archived catalog，root Discovery 卡片也继续显示 generated 总数、active、stale 和 blocked 诊断计数；但子画布主 generated grid 只渲染 active items，running/queued/done 和 visible/total 也只按 active 统计。`stale` item 折叠成“显示 N 个旧项”，展开后进入独立 stale lane 用于诊断、reset-to-managed 或归档，不放回 root canvas，也不改变后端 upsert / stale marking 合同。
+
 > 2026-06-05 补充：Conn scheduler Step 05/06 已接入 Team Group 后端执行合同和 Conn UI。Conn definition 新增 `execution: { type: "agent_prompt" } | { type: "team_group", groupId: string }`，旧 Conn 和旧 SQLite row 默认归一化为 `agent_prompt`；`team_group` Conn run 由独立 worker 调主服务 GroupRun API：`POST /v1/team/task-groups/:groupId/runs` 启动，`GET /v1/team/task-group-runs/:groupRunId` 轮询，取消时 best-effort 调 `POST /v1/team/task-group-runs/:groupRunId/cancel`。active guard 的 409 会记录为 succeeded skipped，summary 以 `Skipped:` 开头。Playground Conn manager 和 `/playground/conn` 独立页都能在 `agent_prompt` / `team_group` 间切换；`team_group` 只从 `GET /v1/team/task-groups` 选择后端已有 Group，保存 `execution: { type: "team_group", groupId }`，不把 Group 写进 `target.type`，也不允许选择单个 Task。
 
 > 2026-06-05 补充：Team Console Live API 已接入手动 GroupRun UI。Live backend Group 的展开 frame 会读取 `GET /v1/team/task-groups/:groupId/runs` 的最新 run，显示 `queued/running/completed/completed_with_failures/failed/cancelled` 状态、observed run 数和操作按钮；“运行”调用 `POST /v1/team/task-groups/:groupId/runs`，“终止”调用 `POST /v1/team/task-group-runs/:groupRunId/cancel`。active GroupRun 会轻量轮询 `GET /v1/team/task-group-runs/:groupRunId`，并在启动、终止或进入终态后 silent refresh 内部 Canvas Task run summary；Group 内已有 active Task run 时禁用 Group 运行按钮并显示“内部运行中”。此步仍不接 Conn schema/worker/UI，不改 `src/team/**` 后端 GroupRun contract，不把 GroupRun 合进 `GET /v1/team/console/root-summary`。

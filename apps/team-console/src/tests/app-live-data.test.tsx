@@ -363,6 +363,13 @@ function getGeneratedCard(panel: HTMLElement, taskId: string): HTMLElement {
   return card!;
 }
 
+function revealStaleGeneratedTasks(panel: HTMLElement): void {
+  const button = within(panel).queryByRole("button", { name: /显示 \d+ 个旧项/ });
+  if (button) {
+    fireEvent.click(button);
+  }
+}
+
 function resetGeneratedSnapshot(task: TeamCanvasTask): TeamCanvasTask {
   const latestManagedWorkUnit = task.generatedSource?.latestManagedWorkUnit;
   if (!task.generatedSource || !latestManagedWorkUnit) {
@@ -416,18 +423,22 @@ describe("App", () => {
 
     const panel = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
     expect(panel).toBeTruthy();
-    expect(panel!.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+    expect(panel!.querySelectorAll("[data-generated-task-id]")).toHaveLength(1);
 
     const vultrCard = panel!.querySelector('[data-generated-task-id="task_generated_vultr"]') as HTMLElement | null;
     const hetznerCard = panel!.querySelector('[data-generated-task-id="task_generated_hetzner"]') as HTMLElement | null;
     expect(vultrCard).toHaveAttribute("data-generated-item-status", "active");
     expect(vultrCard).toHaveAttribute("data-generated-workunit-mode", "managed");
     expect(vultrCard).toHaveAttribute("data-generated-run-status", "none");
-    expect(hetznerCard).toHaveAttribute("data-generated-item-status", "stale");
-    expect(hetznerCard).toHaveAttribute("data-generated-workunit-mode", "customized");
-    expect(hetznerCard).toHaveAttribute("data-generated-run-status", "none");
+    expect(hetznerCard).toBeNull();
+    expect(panel).toHaveTextContent("1 stale hidden");
+    fireEvent.click(within(panel!).getByRole("button", { name: "显示 1 个旧项" }));
+    const revealedHetznerCard = panel!.querySelector('[data-generated-task-id="task_generated_hetzner"]') as HTMLElement | null;
+    expect(revealedHetznerCard).toHaveAttribute("data-generated-item-status", "stale");
+    expect(revealedHetznerCard).toHaveAttribute("data-generated-workunit-mode", "customized");
+    expect(revealedHetznerCard).toHaveAttribute("data-generated-run-status", "none");
     expect(within(vultrCard!).getByText("核查 Vultr 公开证据")).toBeInTheDocument();
-    expect(within(hetznerCard!).getByText("核查 Hetzner 公开证据")).toBeInTheDocument();
+    expect(within(revealedHetznerCard!).getByText("核查 Hetzner 公开证据")).toBeInTheDocument();
     const vultrMenuButton = within(vultrCard!).getByRole("button", { name: "核查 Vultr 公开证据 操作菜单" });
     expect(vultrMenuButton).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(vultrMenuButton);
@@ -467,6 +478,7 @@ describe("App", () => {
     expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
     expect(getGeneratedCard(panel, "task_generated_vultr")).toBeTruthy();
     expect(vultrCard).toHaveAttribute("data-generated-run-history-open", "true");
+    expect(vultrCard).toHaveClass("is-history-open");
 
     fireEvent.click(within(vultrCard).getByRole("button", { name: "核查 Vultr 公开证据 操作菜单" }));
     expect(within(vultrCard).getByRole("button", { name: "核查 Vultr 公开证据 操作菜单" })).toHaveAttribute("aria-expanded", "true");
@@ -480,6 +492,7 @@ describe("App", () => {
       expect(screen.queryByRole("region", { name: "核查 Vultr 公开证据 运行记录" })).toBeNull();
     });
     expect(vultrCard).toHaveAttribute("data-generated-run-history-open", "false");
+    expect(vultrCard).not.toHaveClass("is-history-open");
     fireEvent.click(vultrCard);
     const reopenedHistoryPanel = await screen.findByRole("region", { name: "核查 Vultr 公开证据 运行记录" });
     await waitFor(() => {
@@ -518,6 +531,7 @@ describe("App", () => {
   it("resets a mock customized generated Task to its managed snapshot inside the Discovery subcanvas", async () => {
     const { container } = render(<App />);
     const { atlas, panel } = await openMockDiscoverySubcanvas(container);
+    revealStaleGeneratedTasks(panel);
     const hetznerCard = getGeneratedCard(panel, "task_generated_hetzner");
     expect(hetznerCard).toHaveAttribute("data-generated-item-status", "stale");
     expect(hetznerCard).toHaveAttribute("data-generated-workunit-mode", "customized");
@@ -548,7 +562,8 @@ describe("App", () => {
     expect(within(discoveryNode).getByText("1 active")).toBeInTheDocument();
     expect(within(discoveryNode).getByText("1 stale")).toBeInTheDocument();
     expect(within(discoveryNode).getByText("1 blocked")).toBeInTheDocument();
-    expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+    expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(1);
+    expect(panel).toHaveTextContent("1 stale hidden");
 
     const vultrCard = getGeneratedCard(panel, "task_generated_vultr");
     fireEvent.click(vultrCard.querySelector('[data-generated-action="archive"]')!);
@@ -562,8 +577,10 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(panel.querySelector('[data-generated-task-id="task_generated_vultr"]')).toBeNull();
-      expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(1);
+      expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(0);
     });
+    expect(panel.querySelector('[data-generated-task-id="task_generated_hetzner"]')).toBeNull();
+    revealStaleGeneratedTasks(panel);
     expect(getGeneratedCard(panel, "task_generated_hetzner")).toBeTruthy();
     expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
     expect(within(discoveryNode).getByText("1 items")).toBeInTheDocument();
@@ -967,11 +984,13 @@ describe("App", () => {
     expect(within(historyPanel).getByText("run_history_latest")).toBeInTheDocument();
     expect(within(historyPanel).getByText("run_history_older")).toBeInTheDocument();
     expect(within(historyPanel).getByText("质量最好")).toBeInTheDocument();
+    expect(historyPanel.querySelector(`[data-run-id="${latestRun.runId}"]`)).toHaveAttribute("data-run-status", "completed");
     expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).not.toContain(
       `/v1/team/task-runs/${latestRun.runId}/tasks/${liveTask.taskId}/attempts`,
     );
 
     fireEvent.click(within(historyPanel).getByRole("button", { name: /run_history_latest/ }));
+    expect(within(historyPanel).getByRole("button", { name: /run_history_latest/ })).toHaveAttribute("aria-current", "true");
     await waitFor(() => {
       expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toContain(
         `/v1/team/task-runs/${latestRun.runId}/tasks/${liveTask.taskId}/attempts`,
@@ -1007,13 +1026,16 @@ describe("App", () => {
         nodeId: `task-node-${mockDiscoveryRootTask.taskId}`,
         taskId: mockDiscoveryRootTask.taskId,
         detailMode: "discovery-subcanvas",
+        discoveryStaleExpanded: true,
       }],
     }));
 
     const { container } = render(<App />);
 
     await waitFor(() => {
-      expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
+      const panel = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+      expect(panel).toBeTruthy();
+      expect(getGeneratedCard(panel!, "task_generated_hetzner")).toHaveAttribute("data-generated-item-status", "stale");
     }, { timeout: 2500 });
   });
 
@@ -1352,7 +1374,7 @@ describe("App", () => {
           return node!;
         });
         await waitFor(() => {
-          expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+          expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(1);
         });
 
         const calledUrls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
@@ -1673,6 +1695,7 @@ describe("App", () => {
           expect(node).toBeTruthy();
           return node!;
         });
+        revealStaleGeneratedTasks(panel);
         const hetznerCard = getGeneratedCard(panel, "task_generated_hetzner");
         expect(hetznerCard.querySelector('[data-generated-action="reset-workunit"]')).toHaveTextContent("恢复 managed");
       });
@@ -1705,7 +1728,7 @@ describe("App", () => {
         });
         await waitFor(() => {
           const panel = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)!;
-          expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+          expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(1);
         });
         const openCount = generatedCatalogRequests;
         expect(openCount).toBeGreaterThanOrEqual(1);
@@ -2457,7 +2480,7 @@ describe("App", () => {
         return node!;
       });
       expect(panel.querySelector("[data-discovery-dispatch-diagnostics-for]")).toBeNull();
-      expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+      expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(1);
     });
 
     it("opens a live active generated Task observer from the Discovery subcanvas without root Task state ownership", async () => {
@@ -2573,9 +2596,10 @@ describe("App", () => {
         return node!;
       });
       await waitFor(() => {
-        expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+        expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(1);
       });
 
+      revealStaleGeneratedTasks(panel);
       const hetznerCard = getGeneratedCard(panel, "task_generated_hetzner");
       fireEvent.click(hetznerCard.querySelector('[data-generated-action="reset-workunit"]')!);
 
@@ -2648,7 +2672,7 @@ describe("App", () => {
         expect(node).toBeTruthy();
         return node!;
       });
-      expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+      expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(1);
       const rootTaskFetchCountBeforeArchive = vi.mocked(fetch).mock.calls
         .filter(([url]) => String(url) === "/v1/team/tasks").length;
 
@@ -2662,8 +2686,9 @@ describe("App", () => {
 
       await waitFor(() => {
         expect(panel.querySelector('[data-generated-task-id="task_generated_vultr"]')).toBeNull();
-        expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(1);
+        expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(0);
       });
+      revealStaleGeneratedTasks(panel);
       expect(getGeneratedCard(panel, "task_generated_hetzner")).toBeTruthy();
       expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toContain(
         "/v1/team/tasks/task_generated_vultr/archive",
@@ -2758,7 +2783,7 @@ describe("App", () => {
         return node!;
       });
       await waitFor(() => {
-        expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+        expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(1);
       });
 
       fireEvent.click(getGeneratedCard(panel, "task_generated_vultr").querySelector('[data-generated-action="archive"]')!);
@@ -2773,7 +2798,7 @@ describe("App", () => {
       fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
 
       await waitFor(() => {
-        expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(3);
+        expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
         expect(getGeneratedCard(panel, "task_generated_scaleway")).toBeTruthy();
         expect(within(discoveryNode).getByText("3 items")).toBeInTheDocument();
       });
@@ -2782,8 +2807,7 @@ describe("App", () => {
 
       await waitFor(() => {
         expect(panel.querySelector('[data-generated-task-id="task_generated_vultr"]')).toBeNull();
-        expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
-        expect(getGeneratedCard(panel, "task_generated_hetzner")).toBeTruthy();
+        expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(1);
         expect(getGeneratedCard(panel, "task_generated_scaleway")).toBeTruthy();
         expect(within(discoveryNode).getByText("2 items")).toBeInTheDocument();
         expect(within(discoveryNode).getByText("1 active")).toBeInTheDocument();
@@ -2827,7 +2851,7 @@ describe("App", () => {
         return node!;
       });
       await waitFor(() => {
-        expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+        expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(1);
       });
 
       fireEvent.click(getGeneratedCard(panel, "task_generated_vultr").querySelector('[data-generated-action="archive"]')!);
@@ -2840,7 +2864,7 @@ describe("App", () => {
 
       expect(await screen.findByText("archive failed")).toBeInTheDocument();
       expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
-      expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(2);
+      expect(panel.querySelectorAll("[data-generated-task-id]")).toHaveLength(1);
       expect(getGeneratedCard(panel, "task_generated_vultr")).toBeTruthy();
       expect(within(discoveryNode).getByText("2 items")).toBeInTheDocument();
       expect(within(discoveryNode).getByText("1 active")).toBeInTheDocument();
@@ -2879,6 +2903,7 @@ describe("App", () => {
         return node!;
       });
 
+      revealStaleGeneratedTasks(panel);
       fireEvent.click(getGeneratedCard(panel, "task_generated_hetzner").querySelector('[data-generated-action="reset-workunit"]')!);
 
       expect(await screen.findByText("reset failed")).toBeInTheDocument();

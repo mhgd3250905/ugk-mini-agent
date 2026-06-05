@@ -1980,13 +1980,16 @@ body {
 .emap-run-history-panel {
   width: 100%;
   overflow: hidden;
-  border: 1px solid rgba(22, 124, 128, 0.18);
+  border: 1px solid rgba(15, 118, 110, 0.2);
   border-radius: 8px;
   background:
-    linear-gradient(180deg, rgba(22, 124, 128, 0.06), transparent 28%),
+    linear-gradient(180deg, rgba(15, 118, 110, 0.08), transparent 34%),
+    linear-gradient(135deg, rgba(59, 130, 246, 0.08), transparent 48%),
     var(--surface);
   color: var(--primary);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88), 0 18px 44px rgba(15, 23, 42, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 20px 48px rgba(15, 23, 42, 0.1);
 }
 
 .emap-run-history-head,
@@ -2000,7 +2003,9 @@ body {
 }
 
 .emap-run-history-head {
-  background: rgba(248, 250, 252, 0.86);
+  background:
+    linear-gradient(90deg, rgba(15, 118, 110, 0.1), transparent 54%),
+    rgba(248, 250, 252, 0.9);
 }
 
 .emap-run-history-title {
@@ -2044,7 +2049,7 @@ body {
   min-height: 28px;
   padding: 0 10px;
   border: 1px solid rgba(122, 131, 151, 0.22);
-  border-radius: 5px;
+  border-radius: 6px;
   background: var(--surface);
   color: var(--primary);
   font: inherit;
@@ -2068,7 +2073,7 @@ body {
 
 .emap-run-history-toolbar {
   min-height: 40px;
-  background: rgba(255, 255, 255, 0.46);
+  background: rgba(255, 255, 255, 0.58);
 }
 
 .emap-run-history-archive-toggle {
@@ -2096,23 +2101,74 @@ body {
   display: grid;
   max-height: 520px;
   overflow: auto;
-  padding: 8px;
-  gap: 8px;
+  padding: 10px;
+  gap: 10px;
 }
 
 .emap-run-history-item {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 94px;
-  gap: 8px;
-  padding: 8px;
-  border: 1px solid rgba(122, 131, 151, 0.16);
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.62);
+  grid-template-columns: minmax(0, 1fr) 104px;
+  gap: 10px;
+  padding: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(100, 116, 139, 0.16);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(100, 116, 139, 0.08), transparent 42%),
+    rgba(255, 255, 255, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.emap-run-history-item::before {
+  content: "";
+  position: absolute;
+  inset: 9px auto 9px 0;
+  width: 3px;
+  border-radius: 0 999px 999px 0;
+  background: rgba(100, 116, 139, 0.32);
+}
+
+.emap-run-history-item:hover {
+  border-color: rgba(15, 118, 110, 0.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.76),
+    0 10px 24px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
 }
 
 .emap-run-history-item.selected {
-  border-color: rgba(22, 124, 128, 0.46);
-  background: rgba(22, 124, 128, 0.08);
+  border-color: rgba(15, 118, 110, 0.5);
+  background:
+    linear-gradient(90deg, rgba(15, 118, 110, 0.16), rgba(59, 130, 246, 0.08) 46%, transparent 82%),
+    rgba(240, 253, 250, 0.92);
+  box-shadow:
+    0 0 0 2px rgba(15, 118, 110, 0.16),
+    0 14px 30px rgba(15, 118, 110, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+.emap-run-history-item.selected::before {
+  background: linear-gradient(180deg, rgb(14, 165, 233), rgb(20, 184, 166));
+  box-shadow: 0 0 14px rgba(14, 165, 233, 0.34);
+}
+
+.emap-run-history-item.status-running,
+.emap-run-history-item.status-queued {
+  border-color: rgba(14, 165, 233, 0.28);
+  background:
+    linear-gradient(90deg, rgba(14, 165, 233, 0.12), rgba(20, 184, 166, 0.07) 48%, transparent 86%),
+    rgba(240, 249, 255, 0.9);
+}
+
+.emap-run-history-item.status-running::before,
+.emap-run-history-item.status-queued::before {
+  background: linear-gradient(180deg, rgb(14, 165, 233), rgb(20, 184, 166));
 }
 
 .emap-run-history-item.best {
@@ -2127,8 +2183,8 @@ body {
 .emap-run-history-row {
   min-width: 0;
   display: grid;
-  grid-template-columns: 42px minmax(72px, 0.58fr) minmax(88px, 0.72fr);
-  gap: 4px 10px;
+  grid-template-columns: 50px minmax(86px, 0.62fr) minmax(96px, 0.78fr);
+  gap: 5px 12px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -2145,8 +2201,8 @@ body {
 .emap-run-history-trigger,
 .emap-run-history-badge {
   width: fit-content;
-  padding: 1px 6px;
-  border-radius: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
   background: rgba(122, 131, 151, 0.12);
   color: var(--secondary);
   font-size: 9px;
@@ -2157,6 +2213,11 @@ body {
 .emap-run-history-badge.best {
   background: rgba(22, 138, 74, 0.12);
   color: var(--success);
+}
+
+.emap-run-history-badge.loaded {
+  background: rgba(15, 118, 110, 0.12);
+  color: var(--accent);
 }
 
 .emap-run-history-badge.archived {
@@ -2176,6 +2237,11 @@ body {
   font-size: 12px;
   font-weight: 820;
   line-height: 1.2;
+}
+
+.emap-run-history-item.status-running .emap-run-history-status strong,
+.emap-run-history-item.status-queued .emap-run-history-status strong {
+  color: rgb(2, 132, 199);
 }
 
 .emap-run-history-status small,
@@ -2211,7 +2277,14 @@ body {
   width: 100%;
   min-height: 26px;
   padding: 0 6px;
+  color: var(--secondary);
+  background: rgba(248, 250, 252, 0.78);
   font-size: 10px;
+}
+
+.emap-run-history-item.selected .emap-run-history-actions button {
+  border-color: rgba(15, 118, 110, 0.22);
+  background: rgba(255, 255, 255, 0.86);
 }
 
 .emap-run-history-empty,
@@ -2239,6 +2312,7 @@ body {
   border-color: rgba(127, 228, 221, 0.16);
   background:
     linear-gradient(180deg, rgba(127, 228, 221, 0.08), transparent 28%),
+    linear-gradient(135deg, rgba(96, 165, 250, 0.08), transparent 48%),
     var(--surface);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 18px 44px rgba(0, 0, 0, 0.28);
 }
@@ -2253,7 +2327,26 @@ body {
 }
 
 [data-theme="dark"] .emap-run-history-item.selected {
-  background: rgba(127, 228, 221, 0.08);
+  background:
+    linear-gradient(90deg, rgba(45, 212, 191, 0.16), rgba(96, 165, 250, 0.1) 46%, transparent 82%),
+    rgba(15, 23, 42, 0.74);
+}
+
+[data-theme="dark"] .emap-run-history-item.status-running,
+[data-theme="dark"] .emap-run-history-item.status-queued {
+  border-color: rgba(96, 165, 250, 0.34);
+  background:
+    linear-gradient(90deg, rgba(56, 189, 248, 0.16), rgba(45, 212, 191, 0.08) 52%, transparent 88%),
+    rgba(15, 23, 42, 0.7);
+}
+
+[data-theme="dark"] .emap-run-history-item.status-running .emap-run-history-status strong,
+[data-theme="dark"] .emap-run-history-item.status-queued .emap-run-history-status strong {
+  color: rgb(125, 211, 252);
+}
+
+[data-theme="dark"] .emap-run-history-actions button {
+  background: rgba(15, 23, 42, 0.72);
 }
 
 @media (max-width: 720px) {
