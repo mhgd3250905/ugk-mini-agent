@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-05 — Team Console backend Task Group integration
+
+- **主题**: Team Console Live API 模式接入后端 `TeamTaskGroup` definition。初始加载和“刷新 Task”会读取 `/v1/team/task-groups`；画布 Group 由后端 `taskIds[]` 映射为 `AtlasTaskGroup.taskNodeIds[]`；创建 Group 调 `POST /v1/team/task-groups`，移除 Group 调 `POST /v1/team/task-groups/:groupId/archive`。Live `canvas-ui-state` 只保存 `taskGroupDisplayStates[{ groupId, collapsed, locked }]`，旧 live `taskGroups[].taskNodeIds` 只作为展示态迁移来源。
+- **影响范围**: `apps/team-console` API adapter、Live data loader、App canvas state 和 focused tests；Mock UI-only Group 交互保留。本步不改 `src/team/**`、Conn、Playground、`.pi/skills/**`、`ExecutionMap.tsx` 或 CSS，不做 GroupRun UI/Conn 集成。
+- **对应入口**: `apps/team-console/src/api/team-types.ts`、`apps/team-console/src/api/team-api.ts`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/use-team-console-live-data.ts`、`apps/team-console/src/tests/team-api.test.ts`、`apps/team-console/src/tests/app-connections.test.tsx`、`apps/team-console/README.md`、`docs/team-runtime.md`。
+
 ## 2026-06-05 — Team Task GroupRun backend contract
 
 - **主题**: 新增 Team Task GroupRun 后端运行聚合 contract。`TeamTaskGroupRun` 保存到 `.data/team/task-group-runs.json`，支持启动 Group、列出某 Group 的 runs、读取/刷新单个 GroupRun、取消 GroupRun。启动前会拒绝 active GroupRun 和 Group 内 active Task run，并同轮启动所有 Group head tasks；部分 entry 启动失败会取消已启动 entry run 并把 GroupRun 标记为 failed。读取会递归观察 entry 触发的 Group 内 downstream run 和 discovery-generated run，并在 completed observed run 的 Group 内 active outgoing typed/control edge 尚无 downstream run 或 attempt delivery outcome 证据时保持 running，避免 entry completed 但下游尚未落盘时提前完成；取消会取消 Group 内所有 active Canvas Task run。

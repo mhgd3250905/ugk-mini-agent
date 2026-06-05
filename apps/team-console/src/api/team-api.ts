@@ -40,6 +40,11 @@ import type {
   TeamTaskDependencyCreateRequest,
   TeamTaskDependencyListResponse,
   TeamTaskDependencyMutationResponse,
+  ResolvedTeamTaskGroup,
+  TeamTaskGroupCreateRequest,
+  TeamTaskGroupListResponse,
+  TeamTaskGroupMutationResponse,
+  TeamTaskGroupPatchRequest,
   TeamTaskCloneRequest,
   TeamTaskMutationResponse,
   TeamTaskRunCreateRequest,
@@ -93,6 +98,10 @@ export interface CanvasTaskGateway {
   listTaskDependencies(): Promise<TeamTaskDependency[]>;
   createTaskDependency(input: TeamTaskDependencyCreateRequest): Promise<TeamTaskDependency>;
   deleteTaskDependency(dependencyId: string): Promise<void>;
+  listTaskGroups(): Promise<ResolvedTeamTaskGroup[]>;
+  createTaskGroup(input: TeamTaskGroupCreateRequest): Promise<ResolvedTeamTaskGroup>;
+  patchTaskGroup(groupId: string, patch: TeamTaskGroupPatchRequest): Promise<ResolvedTeamTaskGroup>;
+  archiveTaskGroup(groupId: string): Promise<ResolvedTeamTaskGroup>;
   listSourceNodes(): Promise<TeamCanvasSourceNode[]>;
   createSourceNode(input: TeamCanvasSourceNodeCreateRequest): Promise<TeamCanvasSourceNode>;
   updateSourceNode(sourceNodeId: string, patch: TeamCanvasSourceNodeUpdateRequest): Promise<TeamCanvasSourceNode>;
@@ -484,6 +493,77 @@ export class LiveTeamApi implements TeamApiProvider {
       if (!res.ok) {
         throw await responseToApiError(res, `请求失败 (${res.status})`);
       }
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async listTaskGroups(): Promise<ResolvedTeamTaskGroup[]> {
+    try {
+      const res = await fetchJsonGet<TeamTaskGroupListResponse>(`${this.baseUrl}/task-groups`);
+      if (res.status === 404) return [];
+      if (!res.ok) throwJsonGetError(res);
+      return Array.isArray(res.body?.taskGroups)
+        ? res.body.taskGroups
+        : Array.isArray(res.body?.groups)
+          ? res.body.groups
+          : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async createTaskGroup(input: TeamTaskGroupCreateRequest): Promise<ResolvedTeamTaskGroup> {
+    try {
+      const res = await fetch(`${this.baseUrl}/task-groups`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      const body = (await res.json()) as TeamTaskGroupMutationResponse;
+      const taskGroup = body.taskGroup ?? body.group;
+      if (!taskGroup) throw { message: "malformed task group response", status: res.status };
+      return taskGroup;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async patchTaskGroup(groupId: string, patch: TeamTaskGroupPatchRequest): Promise<ResolvedTeamTaskGroup> {
+    try {
+      const res = await fetch(`${this.baseUrl}/task-groups/${encodeURIComponent(groupId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      const body = (await res.json()) as TeamTaskGroupMutationResponse;
+      const taskGroup = body.taskGroup ?? body.group;
+      if (!taskGroup) throw { message: "malformed task group response", status: res.status };
+      return taskGroup;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async archiveTaskGroup(groupId: string): Promise<ResolvedTeamTaskGroup> {
+    try {
+      const res = await fetch(`${this.baseUrl}/task-groups/${encodeURIComponent(groupId)}/archive`, {
+        method: "POST",
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      const body = (await res.json()) as TeamTaskGroupMutationResponse;
+      const taskGroup = body.taskGroup ?? body.group;
+      if (!taskGroup) throw { message: "malformed task group response", status: res.status };
+      return taskGroup;
     } catch (e) {
       throw toApiError(e);
     }

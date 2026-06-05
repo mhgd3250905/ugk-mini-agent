@@ -398,6 +398,52 @@ export interface TeamTaskDependencyCreateRequest {
   toTaskId: string;
 }
 
+export interface TeamTaskGroupValidationIssue {
+  code: string;
+  message: string;
+  taskId?: string;
+  connectionId?: string;
+  dependencyId?: string;
+}
+
+export interface TeamTaskGroup {
+  schemaVersion: "team/task-group-1";
+  groupId: string;
+  title: string;
+  taskIds: string[];
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ResolvedTeamTaskGroup extends TeamTaskGroup {
+  status: "valid" | "invalid";
+  headTaskIds: string[];
+  validation: {
+    errors: TeamTaskGroupValidationIssue[];
+  };
+}
+
+export interface TeamTaskGroupListResponse {
+  taskGroups?: ResolvedTeamTaskGroup[];
+  groups?: ResolvedTeamTaskGroup[];
+}
+
+export interface TeamTaskGroupMutationResponse {
+  taskGroup?: ResolvedTeamTaskGroup;
+  group?: ResolvedTeamTaskGroup;
+}
+
+export interface TeamTaskGroupCreateRequest {
+  title?: string;
+  taskIds: string[];
+}
+
+export interface TeamTaskGroupPatchRequest {
+  title?: string;
+  taskIds?: string[];
+}
+
 export type TeamCanvasSourceNodeType = "text" | "file";
 export type TeamCanvasSourcePortType = "string" | "md" | "json" | "html" | "file";
 

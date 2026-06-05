@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { AgentRunStatus, AgentSummary, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskConnection, TeamTaskDependency } from "../api/team-types";
+import type { AgentRunStatus, AgentSummary, ResolvedTeamTaskGroup, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasTask, TeamPlan, RunDetail, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskConnection, TeamTaskDependency } from "../api/team-types";
 import { ALL_FIXTURES, MOCK_AGENTS, MOCK_AGENT_RUN_STATUSES, mockDiscoveryGeneratedTasks, mockDiscoveryRootTask, mockTeamTasks, MockTeamApi } from "../fixtures/team-fixtures";
 import { ROOT_ID } from "../graph/execution-map-layout";
 import { isActiveRun } from "../shared/status";
@@ -75,6 +75,7 @@ type TeamConsoleRootSummaryApi = Pick<LiveTeamApi,
   | "listTaskCatalog"
   | "listTaskConnections"
   | "listTaskDependencies"
+  | "listTaskGroups"
   | "listSourceNodes"
   | "listSourceConnections"
   | "listTaskRunsByTaskIds"
@@ -113,6 +114,7 @@ type RootSummaryLoadResult = {
   taskRuns: TaskRunLoadResult;
   taskConnections: TeamTaskConnection[];
   taskDependencies: TeamTaskDependency[];
+  teamTaskGroups: ResolvedTeamTaskGroup[];
   sourceNodes: TeamCanvasSourceNode[];
   sourceConnections: TeamCanvasSourceConnection[];
 };
@@ -145,6 +147,7 @@ export interface UseTeamConsoleLiveDataReturn {
   tasks: TeamCanvasTask[];
   taskConnections: TeamTaskConnection[];
   taskDependencies: TeamTaskDependency[];
+  teamTaskGroups: ResolvedTeamTaskGroup[];
   sourceNodes: TeamCanvasSourceNode[];
   sourceConnections: TeamCanvasSourceConnection[];
   taskRunsByTaskId: Record<string, TeamRunState[]>;
@@ -160,6 +163,7 @@ export interface UseTeamConsoleLiveDataReturn {
   setGeneratedTasksByDiscoveryTaskId: React.Dispatch<React.SetStateAction<Record<string, TeamCanvasTask[]>>>;
   setTaskConnections: React.Dispatch<React.SetStateAction<TeamTaskConnection[]>>;
   setTaskDependencies: React.Dispatch<React.SetStateAction<TeamTaskDependency[]>>;
+  setTeamTaskGroups: React.Dispatch<React.SetStateAction<ResolvedTeamTaskGroup[]>>;
   setSourceNodes: React.Dispatch<React.SetStateAction<TeamCanvasSourceNode[]>>;
   setSourceConnections: React.Dispatch<React.SetStateAction<TeamCanvasSourceConnection[]>>;
   setTasks: React.Dispatch<React.SetStateAction<TeamCanvasTask[]>>;
@@ -185,6 +189,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
   const [tasks, setTasks] = useState<TeamCanvasTask[]>([]);
   const [taskConnections, setTaskConnections] = useState<TeamTaskConnection[]>([]);
   const [taskDependencies, setTaskDependencies] = useState<TeamTaskDependency[]>([]);
+  const [teamTaskGroups, setTeamTaskGroups] = useState<ResolvedTeamTaskGroup[]>([]);
   const [sourceNodes, setSourceNodes] = useState<TeamCanvasSourceNode[]>([]);
   const [sourceConnections, setSourceConnections] = useState<TeamCanvasSourceConnection[]>([]);
   const [taskRunsByTaskId, setTaskRunsByTaskId] = useState<Record<string, TeamRunState[]>>({});
@@ -276,16 +281,29 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     }
   }, []);
 
+  const readTaskGroups = useCallback(async (
+    api: Pick<LiveTeamApi, "listTaskGroups">,
+  ): Promise<ResolvedTeamTaskGroup[]> => {
+    try {
+      return await api.listTaskGroups();
+    } catch {
+      return [];
+    }
+  }, []);
+
   const readRootSummary = useCallback(async (
     api: TeamConsoleRootSummaryApi,
     taskSince?: string | null,
     runSince?: string | null,
   ): Promise<RootSummaryLoadResult> => {
     try {
-      const summary = await api.getRootSummary({
-        ...(taskSince ? { taskSince } : {}),
-        ...(runSince ? { runSince } : {}),
-      });
+      const [summary, nextGroups] = await Promise.all([
+        api.getRootSummary({
+          ...(taskSince ? { taskSince } : {}),
+          ...(runSince ? { runSince } : {}),
+        }),
+        readTaskGroups(api),
+      ]);
       return {
         taskCatalog: {
           tasks: summary.tasks,
@@ -299,14 +317,16 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
         },
         taskConnections: summary.taskConnections,
         taskDependencies: summary.taskDependencies,
+        teamTaskGroups: nextGroups,
         sourceNodes: summary.sourceNodes,
         sourceConnections: summary.sourceConnections,
       };
     } catch {
-      const [taskCatalog, nextConnections, nextDeps, nextSourceNodes, nextSourceConns] = await Promise.all([
+      const [taskCatalog, nextConnections, nextDeps, nextGroups, nextSourceNodes, nextSourceConns] = await Promise.all([
         api.listTaskCatalog(taskSince ? { since: taskSince } : undefined),
         api.listTaskConnections(),
         api.listTaskDependencies(),
+        readTaskGroups(api),
         api.listSourceNodes(),
         api.listSourceConnections(),
       ]);
@@ -322,11 +342,12 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
         taskRuns: await readTaskRunsForTasks(api, currentTasks, runSince),
         taskConnections: nextConnections,
         taskDependencies: nextDeps,
+        teamTaskGroups: nextGroups,
         sourceNodes: nextSourceNodes,
         sourceConnections: nextSourceConns,
       };
     }
-  }, [readTaskRunsForTasks]);
+  }, [readTaskGroups, readTaskRunsForTasks]);
 
   const loadDiscoveryCatalogsForTaskIds = useCallback(async (
     api: TeamConsoleDiscoveryCatalogApi,
@@ -533,6 +554,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
         applyLiveTasks(nextTasks);
         setTaskConnections(rootSummary.taskConnections);
         setTaskDependencies(rootSummary.taskDependencies);
+        setTeamTaskGroups(rootSummary.teamTaskGroups.filter((group) => !group.archived));
         applyLiveSources(rootSummary.sourceNodes);
         setSourceConnections(rootSummary.sourceConnections);
         setError(null);
@@ -723,6 +745,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
       onApplyLiveTasks(mockRootTasks);
       setTaskConnections([]);
       setTaskDependencies([]);
+      setTeamTaskGroups([]);
       setSourceNodes([]);
       setSourceConnections([]);
       setTaskRunsByTaskId({});
@@ -757,6 +780,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     setTasks([]);
     setTaskConnections([]);
     setTaskDependencies([]);
+    setTeamTaskGroups([]);
     setSourceNodes([]);
     setSourceConnections([]);
     setTaskRunsByTaskId({});
@@ -785,6 +809,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
           applyLiveTasks(nextTasks);
           setTaskConnections(rootSummary.taskConnections);
           setTaskDependencies(rootSummary.taskDependencies);
+          setTeamTaskGroups(rootSummary.teamTaskGroups.filter((group) => !group.archived));
           applyLiveSources(rootSummary.sourceNodes);
           setSourceConnections(rootSummary.sourceConnections);
           if (rootSummary.taskRuns.serverVersion) {
@@ -973,6 +998,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     tasks,
     taskConnections,
     taskDependencies,
+    teamTaskGroups,
     sourceNodes,
     sourceConnections,
     taskRunsByTaskId,
@@ -988,6 +1014,7 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
     setGeneratedTasksByDiscoveryTaskId,
     setTaskConnections,
     setTaskDependencies,
+    setTeamTaskGroups,
     setSourceNodes,
     setSourceConnections,
     setTasks,

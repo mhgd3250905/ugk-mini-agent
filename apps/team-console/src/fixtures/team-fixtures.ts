@@ -28,6 +28,9 @@ import type {
   TeamTaskConnectionCreateRequest,
   TeamTaskDependency,
   TeamTaskDependencyCreateRequest,
+  ResolvedTeamTaskGroup,
+  TeamTaskGroupCreateRequest,
+  TeamTaskGroupPatchRequest,
   TeamTaskCloneRequest,
   TeamTaskMutationResponse,
   TeamTaskRunCreateRequest,
@@ -1260,7 +1263,9 @@ let mockTaskRunFiles = new Map<string, string>();
 let mockTaskRunAnnotations = new Map<string, TeamTaskRunAnnotation>();
 let mockTaskConnections: TeamTaskConnection[] = [];
 let mockTaskDependencies: TeamTaskDependency[] = [];
+let mockTaskGroups: ResolvedTeamTaskGroup[] = [];
 let mockTaskDependencyCounter = 0;
+let mockTaskGroupCounter = 0;
 let mockSourceNodes: TeamCanvasSourceNode[] = [];
 let mockSourceConnections: TeamCanvasSourceConnection[] = [];
 let mockSourceNodeCounter = 0;
@@ -1363,7 +1368,9 @@ export function resetMockTeamApiState() {
   mockTaskRunAnnotations = new Map();
   mockTaskConnections = [];
   mockTaskDependencies = [];
+  mockTaskGroups = [];
   mockTaskDependencyCounter = 0;
+  mockTaskGroupCounter = 0;
   mockSourceNodes = [];
   mockSourceConnections = [];
   mockTaskRunCounter = 0;
@@ -1852,6 +1859,66 @@ export class MockTeamApi {
     const next = mockTaskDependencies.filter((d) => d.dependencyId !== dependencyId);
     if (next.length === mockTaskDependencies.length) throw { message: "dependency not found" };
     mockTaskDependencies = next;
+  }
+
+  async listTaskGroups(): Promise<ResolvedTeamTaskGroup[]> {
+    return mockTaskGroups.filter((group) => !group.archived).map((group) => ({
+      ...group,
+      taskIds: [...group.taskIds],
+      headTaskIds: [...group.headTaskIds],
+      validation: { errors: group.validation.errors.map((error) => ({ ...error })) },
+    }));
+  }
+
+  async createTaskGroup(input: TeamTaskGroupCreateRequest): Promise<ResolvedTeamTaskGroup> {
+    const taskIds = [...new Set(input.taskIds.map((taskId) => taskId.trim()).filter(Boolean))];
+    if (taskIds.length === 0) throw { message: "taskIds is required" };
+    const now = ts();
+    const group: ResolvedTeamTaskGroup = {
+      schemaVersion: "team/task-group-1",
+      groupId: `mock_group_${++mockTaskGroupCounter}`,
+      title: input.title?.trim() || `Group ${mockTaskGroupCounter}`,
+      taskIds,
+      archived: false,
+      createdAt: now,
+      updatedAt: now,
+      status: "valid",
+      headTaskIds: [taskIds[0]!],
+      validation: { errors: [] },
+    };
+    mockTaskGroups = [...mockTaskGroups, group];
+    return (await this.listTaskGroups()).find((candidate) => candidate.groupId === group.groupId)!;
+  }
+
+  async patchTaskGroup(groupId: string, patch: TeamTaskGroupPatchRequest): Promise<ResolvedTeamTaskGroup> {
+    const index = mockTaskGroups.findIndex((group) => group.groupId === groupId && !group.archived);
+    if (index < 0) throw { message: "task group not found" };
+    const current = mockTaskGroups[index]!;
+    const taskIds = patch.taskIds
+      ? [...new Set(patch.taskIds.map((taskId) => taskId.trim()).filter(Boolean))]
+      : current.taskIds;
+    const next: ResolvedTeamTaskGroup = {
+      ...current,
+      ...(patch.title !== undefined ? { title: patch.title.trim() || current.title } : {}),
+      taskIds,
+      headTaskIds: taskIds.length > 0 ? [taskIds[0]!] : [],
+      updatedAt: ts(),
+    };
+    mockTaskGroups[index] = next;
+    return (await this.listTaskGroups()).find((candidate) => candidate.groupId === groupId)!;
+  }
+
+  async archiveTaskGroup(groupId: string): Promise<ResolvedTeamTaskGroup> {
+    const index = mockTaskGroups.findIndex((group) => group.groupId === groupId && !group.archived);
+    if (index < 0) throw { message: "task group not found" };
+    const next: ResolvedTeamTaskGroup = { ...mockTaskGroups[index]!, archived: true, updatedAt: ts() };
+    mockTaskGroups[index] = next;
+    return {
+      ...next,
+      taskIds: [...next.taskIds],
+      headTaskIds: [...next.headTaskIds],
+      validation: { errors: next.validation.errors.map((error) => ({ ...error })) },
+    };
   }
 
   async listSourceNodes(): Promise<TeamCanvasSourceNode[]> {

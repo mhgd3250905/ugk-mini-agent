@@ -1799,6 +1799,125 @@ describe("LiveTeamApi", () => {
     expect(dependencies[0]?.staleReason).toBe("source_task_archived");
   });
 
+  it("lists live Task Groups from the task-groups endpoint", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const taskGroup = {
+      schemaVersion: "team/task-group-1",
+      groupId: "group_1",
+      title: "Backend Group",
+      taskIds: ["task_a", "task_b"],
+      archived: false,
+      createdAt: "2026-06-05T00:00:00.000Z",
+      updatedAt: "2026-06-05T00:00:00.000Z",
+      status: "valid",
+      headTaskIds: ["task_a"],
+      validation: { errors: [] },
+    } as const;
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ taskGroups: [taskGroup] }), { status: 200 }));
+
+    const groups = await api.listTaskGroups();
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/task-groups");
+    expect(groups).toEqual([taskGroup]);
+  });
+
+  it("accepts the current backend groups response shape for live Task Groups", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const group = {
+      schemaVersion: "team/task-group-1",
+      groupId: "group_backend",
+      title: "Backend Shape",
+      taskIds: ["task_a"],
+      archived: false,
+      createdAt: "2026-06-05T00:00:00.000Z",
+      updatedAt: "2026-06-05T00:00:00.000Z",
+      status: "valid",
+      headTaskIds: ["task_a"],
+      validation: { errors: [] },
+    } as const;
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ groups: [group] }), { status: 200 }));
+
+    await expect(api.listTaskGroups()).resolves.toEqual([group]);
+  });
+
+  it("treats missing live Task Groups endpoint as an empty list", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch).mockResolvedValue(new Response("not found", { status: 404 }));
+
+    await expect(api.listTaskGroups()).resolves.toEqual([]);
+  });
+
+  it("creates live Task Groups by posting title and taskIds", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const taskGroup = {
+      schemaVersion: "team/task-group-1",
+      groupId: "group_new",
+      title: "Group 1",
+      taskIds: ["task_a", "task_b"],
+      archived: false,
+      createdAt: "2026-06-05T00:00:00.000Z",
+      updatedAt: "2026-06-05T00:00:00.000Z",
+      status: "valid",
+      headTaskIds: ["task_a"],
+      validation: { errors: [] },
+    } as const;
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ taskGroup }), { status: 201 }));
+
+    const created = await api.createTaskGroup({ title: "Group 1", taskIds: ["task_a", "task_b"] });
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/task-groups", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Group 1", taskIds: ["task_a", "task_b"] }),
+    });
+    expect(created).toEqual(taskGroup);
+  });
+
+  it("archives live Task Groups with URL-encoded group ids", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const taskGroup = {
+      schemaVersion: "team/task-group-1",
+      groupId: "group/a b",
+      title: "Group 1",
+      taskIds: ["task_a"],
+      archived: true,
+      createdAt: "2026-06-05T00:00:00.000Z",
+      updatedAt: "2026-06-05T00:00:01.000Z",
+      status: "valid",
+      headTaskIds: ["task_a"],
+      validation: { errors: [] },
+    } as const;
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ group: taskGroup }), { status: 200 }));
+
+    const archived = await api.archiveTaskGroup("group/a b");
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/task-groups/group%2Fa%20b/archive", {
+      method: "POST",
+      headers: { accept: "application/json" },
+    });
+    expect(archived.archived).toBe(true);
+  });
+
+  it("preserves backend Task Group validation messages on create and archive failures", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error: { message: "Group boundary is not closed" },
+      }), { status: 400 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error: { message: "group already archived" },
+      }), { status: 409 }));
+
+    await expect(api.createTaskGroup({ title: "Broken", taskIds: ["task_a", "task_b"] })).rejects.toEqual({
+      message: "Group boundary is not closed",
+      status: 400,
+    });
+    await expect(api.archiveTaskGroup("group_1")).rejects.toEqual({
+      message: "group already archived",
+      status: 409,
+    });
+  });
+
 });
 
 describe("Fixtures coverage", () => {

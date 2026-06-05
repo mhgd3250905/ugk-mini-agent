@@ -50,6 +50,7 @@ type StoredCanvasUiState = {
   taskNodePositions?: StoredTaskPosition[];
   sourceNodePositions?: StoredSourcePosition[];
   taskGroups?: AtlasTaskGroup[];
+  taskGroupDisplayStates?: StoredTaskGroupDisplayState[];
   expandedAgentBranch?: AgentBranchState | null;
   expandedTaskBranches?: TaskBranchState[];
   branchLayout?: AtlasBranchLayoutState;
@@ -90,6 +91,12 @@ type StoredTaskPosition = {
 type StoredLoadedTaskRunSelection = {
   taskId: string;
   runId: string;
+};
+
+type StoredTaskGroupDisplayState = {
+  groupId: string;
+  collapsed: boolean;
+  locked: boolean;
 };
 
 type StoredSourcePosition = {
@@ -970,6 +977,25 @@ function readStoredTaskGroups(value: unknown): AtlasTaskGroup[] {
   return result;
 }
 
+function readStoredTaskGroupDisplayStates(value: unknown): StoredTaskGroupDisplayState[] {
+  if (!Array.isArray(value)) return [];
+  const result: StoredTaskGroupDisplayState[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const record = readRecord(item);
+    if (!record) continue;
+    const groupId = typeof record.groupId === "string" ? record.groupId.trim() : "";
+    if (!groupId || seen.has(groupId)) continue;
+    seen.add(groupId);
+    result.push({
+      groupId,
+      collapsed: record.collapsed === true,
+      locked: record.locked === true,
+    });
+  }
+  return result;
+}
+
 function readStoredAgentNodePositions(value: unknown): StoredAgentNodePosition[] {
   if (!Array.isArray(value)) return [];
   const result: StoredAgentNodePosition[] = [];
@@ -1093,6 +1119,7 @@ function parseStoredCanvasUiState(value: unknown): StoredCanvasUiState | null {
     taskNodePositions: readStoredTaskNodePositions(parsed.taskNodePositions),
     sourceNodePositions: readStoredSourceNodePositions(parsed.sourceNodePositions),
     taskGroups: readStoredTaskGroups(parsed.taskGroups),
+    taskGroupDisplayStates: readStoredTaskGroupDisplayStates(parsed.taskGroupDisplayStates ?? parsed.taskGroups),
     expandedAgentBranch: readStoredAgentBranch(parsed.expandedAgentBranch),
     expandedTaskBranches: readStoredTaskBranches(parsed.expandedTaskBranches),
     branchLayout: readStoredBranchLayout(parsed.branchLayout),
@@ -1586,7 +1613,8 @@ export function App() {
   const [loadedTaskRunByTaskId, setLoadedTaskRunByTaskId] = useState<Record<string, string>>({});
   const [loadedTaskRunSnapshotByTaskId, setLoadedTaskRunSnapshotByTaskId] = useState<Record<string, LoadedTaskRunSnapshot>>({});
   const [taskNodes, setTaskNodes] = useState<AtlasTaskNode[]>([]);
-  const [taskGroups, setTaskGroups] = useState<AtlasTaskGroup[]>([]);
+  const [mockTaskGroups, setMockTaskGroups] = useState<AtlasTaskGroup[]>([]);
+  const [taskGroupDisplayStates, setTaskGroupDisplayStates] = useState<StoredTaskGroupDisplayState[]>([]);
   const [selectedAtlasEntries, setSelectedAtlasEntries] = useState<AtlasSelectedNodeEntry[]>([]);
   const [taskCloneDraftByTaskId, setTaskCloneDraftByTaskId] = useState<Record<string, TaskCloneDraft>>({});
   const [taskCloneSavingByTaskId, setTaskCloneSavingByTaskId] = useState<Record<string, boolean>>({});
@@ -1810,7 +1838,8 @@ export function App() {
     setTaskConnectionDraft(null);
     setTaskDependencyDraft(null);
     setSourceConnectionDraft(null);
-    setTaskGroups([]);
+    setMockTaskGroups([]);
+    setTaskGroupDisplayStates([]);
     setSelectedAtlasEntries([]);
     setTaskRunSavingByTaskId({});
     setTaskCloneDraftByTaskId({});
@@ -1885,6 +1914,7 @@ export function App() {
     agents, agentRunStatusById,
     plan, run, attemptsByTaskId,
     tasks, taskConnections, taskDependencies,
+    teamTaskGroups, setTeamTaskGroups,
     sourceNodes, sourceConnections,
     taskRunsByTaskId, generatedTasksByDiscoveryTaskId, discoverySummariesByTaskId, discoveryDispatchDiagnosticsByTaskId, setTaskRunsByTaskId, setGeneratedTasksByDiscoveryTaskId,
     refreshLiveTasks,
@@ -1919,6 +1949,27 @@ export function App() {
   const agentRunStatusesById = useMemo(() => new Map(Object.entries(agentRunStatusById)), [agentRunStatusById]);
   const addedAgentIds = useMemo(() => new Set(agentNodes.map((node) => node.agentId)), [agentNodes]);
   const canvasUiContextKey = dataSource === "mock" ? `mock:${selectedFixtureId}` : "live";
+  const taskGroups = useMemo<AtlasTaskGroup[]>(() => {
+    if (dataSource !== "live") return mockTaskGroups;
+    const nodeIdByTaskId = new Map(taskNodes.map((node) => [node.taskId, node.nodeId]));
+    const displayStateByGroupId = new Map(taskGroupDisplayStates.map((state) => [state.groupId, state]));
+    return teamTaskGroups.flatMap((group) => {
+      if (group.archived) return [];
+      const taskNodeIds = group.taskIds.flatMap((taskId) => {
+        const nodeId = nodeIdByTaskId.get(taskId);
+        return nodeId ? [nodeId] : [];
+      });
+      if (taskNodeIds.length === 0) return [];
+      const displayState = displayStateByGroupId.get(group.groupId);
+      return [{
+        groupId: group.groupId,
+        title: group.title,
+        taskNodeIds,
+        collapsed: displayState?.collapsed ?? false,
+        locked: displayState?.locked ?? false,
+      }];
+    });
+  }, [dataSource, mockTaskGroups, taskGroupDisplayStates, taskNodes, teamTaskGroups]);
   const activeRunHistoryTaskId = useMemo(() => {
     const branch = [...expandedTaskBranches].reverse().find((item) => (
       item.detailMode === "run-history" || Boolean(item.discoveryGeneratedRunHistoryTaskId)
@@ -2305,15 +2356,16 @@ export function App() {
   }, [dataSource, liveTaskNodesHydrated, taskNodes]);
 
   useEffect(() => {
+    if (dataSource !== "mock") return;
     const nodeIds = new Set(taskNodes.map((node) => node.nodeId));
-    setTaskGroups((current) => {
+    setMockTaskGroups((current) => {
       const next = current.flatMap((group) => {
         const taskNodeIds = group.taskNodeIds.filter((nodeId) => nodeIds.has(nodeId));
         return taskNodeIds.length > 0 ? [{ ...group, taskNodeIds }] : [];
       });
       return JSON.stringify(next) === JSON.stringify(current) ? current : next;
     });
-  }, [taskNodes]);
+  }, [dataSource, taskNodes]);
 
   useEffect(() => {
     if (dataSource === "live" && !liveSourceNodesHydrated) return;
@@ -2335,7 +2387,8 @@ export function App() {
     if (!stored) {
       setCanvasUiStateRestoreHasStoredState(false);
       setCanvasBranchLayout({});
-      setTaskGroups([]);
+      setMockTaskGroups([]);
+      setTaskGroupDisplayStates([]);
       setLoadedTaskRunByTaskId({});
       setLoadedTaskRunSnapshotByTaskId({});
       hydratedCanvasUiContextKeyRef.current = canvasUiContextKey;
@@ -2369,6 +2422,7 @@ export function App() {
       const taskGroupNodeIds = group.taskNodeIds.filter((nodeId) => taskNodeIds.has(nodeId));
       return taskGroupNodeIds.length > 0 ? [{ ...group, taskNodeIds: taskGroupNodeIds }] : [];
     });
+    const nextTaskGroupDisplayStates = stored.taskGroupDisplayStates ?? [];
     const nextAgentBranch = stored.expandedAgentBranch
       && agentNodeIds.has(stored.expandedAgentBranch.nodeId)
       && agentIds.has(stored.expandedAgentBranch.agentId)
@@ -2383,7 +2437,8 @@ export function App() {
     }
     setExpandedAgentBranch(nextAgentBranch);
     setExpandedTaskBranches(nextTaskBranches);
-    setTaskGroups(nextTaskGroups);
+    setMockTaskGroups(dataSource === "mock" ? nextTaskGroups : []);
+    setTaskGroupDisplayStates(dataSource === "live" ? nextTaskGroupDisplayStates : []);
     setCanvasBranchLayout(stored.branchLayout ?? {});
     setLoadedTaskRunByTaskId(Object.fromEntries(filterLoadedTaskRunSelectionsByTaskIds(
       stored.loadedTaskRunSelections ?? [],
@@ -2436,6 +2491,26 @@ export function App() {
   }, [canvasUiStateHydrated, generatedTasksById, taskNodes]);
 
   useEffect(() => {
+    if (!canvasUiStateHydrated || dataSource !== "live") return;
+    const activeGroupIds = new Set(teamTaskGroups.filter((group) => !group.archived).map((group) => group.groupId));
+    setTaskGroupDisplayStates((current) => {
+      let changed = false;
+      const next = current.filter((state) => {
+        const keep = activeGroupIds.has(state.groupId);
+        if (!keep) changed = true;
+        return keep;
+      });
+      const existingIds = new Set(next.map((state) => state.groupId));
+      for (const groupId of activeGroupIds) {
+        if (existingIds.has(groupId)) continue;
+        next.push({ groupId, collapsed: false, locked: false });
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [canvasUiStateHydrated, dataSource, teamTaskGroups]);
+
+  useEffect(() => {
     if (!canvasUiStateHydrated) return;
     if (hydratedCanvasUiContextKeyRef.current !== canvasUiContextKey) return;
     const validLoadedTaskIds = new Set(taskNodes.map((node) => node.taskId));
@@ -2457,7 +2532,11 @@ export function App() {
         sourceNodeId: node.sourceNodeId,
         position: { x: node.position.x, y: node.position.y },
       })),
-      taskGroups,
+      ...(dataSource === "mock" ? { taskGroups: mockTaskGroups } : {
+        taskGroupDisplayStates: taskGroupDisplayStates.filter((state) => (
+          teamTaskGroups.some((group) => !group.archived && group.groupId === state.groupId)
+        )),
+      }),
       expandedAgentBranch,
       expandedTaskBranches,
       branchLayout: canvasBranchLayout,
@@ -2498,7 +2577,9 @@ export function App() {
     rootNodeFilter,
     selectedFixtureId,
     sourceAtlasNodes,
-    taskGroups,
+    mockTaskGroups,
+    taskGroupDisplayStates,
+    teamTaskGroups,
     taskNodes,
   ]);
 
@@ -3469,9 +3550,29 @@ export function App() {
   const selectedTaskNodeEntries = selectedAtlasEntries.filter((entry): entry is Extract<AtlasSelectedNodeEntry, { kind: "task" }> => entry.kind === "task");
   const canCreateTaskGroup = selectedTaskNodeEntries.length >= 2;
   const createTaskGroupFromSelection = useCallback(() => {
+    if (dataSource === "live") {
+      const taskIds = Array.from(new Set(selectedTaskNodeEntries.map((entry) => entry.taskId)));
+      if (taskIds.length < 2) return;
+      const nextIndex = teamTaskGroups.filter((group) => !group.archived).length + 1;
+      void new LiveTeamApi().createTaskGroup({
+        title: `Group ${nextIndex}`,
+        taskIds,
+      }).then((createdGroup) => {
+        setTeamTaskGroups((current) => [
+          ...current.filter((group) => group.groupId !== createdGroup.groupId),
+          createdGroup,
+        ]);
+        setTaskGroupDisplayStates((current) => [
+          ...current.filter((state) => state.groupId !== createdGroup.groupId),
+          { groupId: createdGroup.groupId, collapsed: false, locked: false },
+        ]);
+      }).catch((e) => setError(errorMessage(e)));
+      return;
+    }
+
     const taskNodeIds = Array.from(new Set(selectedTaskNodeEntries.map((entry) => entry.nodeId)));
     if (taskNodeIds.length < 2) return;
-    setTaskGroups((current) => {
+    setMockTaskGroups((current) => {
       const nextIndex = current.length + 1;
       return [
         ...current,
@@ -3484,23 +3585,52 @@ export function App() {
         },
       ];
     });
-  }, [selectedTaskNodeEntries]);
+  }, [dataSource, selectedTaskNodeEntries, setError, setTeamTaskGroups, teamTaskGroups]);
 
   const toggleTaskGroup = useCallback((groupId: string) => {
-    setTaskGroups((current) => current.map((group) => (
+    if (dataSource === "live") {
+      setTaskGroupDisplayStates((current) => {
+        const existing = current.find((state) => state.groupId === groupId);
+        if (!existing) return [...current, { groupId, collapsed: true, locked: false }];
+        return current.map((state) => (
+          state.groupId === groupId ? { ...state, collapsed: !state.collapsed } : state
+        ));
+      });
+      return;
+    }
+    setMockTaskGroups((current) => current.map((group) => (
       group.groupId === groupId ? { ...group, collapsed: !group.collapsed } : group
     )));
-  }, []);
+  }, [dataSource]);
 
   const toggleTaskGroupLock = useCallback((groupId: string) => {
-    setTaskGroups((current) => current.map((group) => (
+    if (dataSource === "live") {
+      setTaskGroupDisplayStates((current) => {
+        const existing = current.find((state) => state.groupId === groupId);
+        if (!existing) return [...current, { groupId, collapsed: false, locked: true }];
+        return current.map((state) => (
+          state.groupId === groupId ? { ...state, locked: !state.locked } : state
+        ));
+      });
+      return;
+    }
+    setMockTaskGroups((current) => current.map((group) => (
       group.groupId === groupId ? { ...group, locked: !group.locked } : group
     )));
-  }, []);
+  }, [dataSource]);
 
   const deleteTaskGroup = useCallback((groupId: string) => {
-    setTaskGroups((current) => current.filter((group) => group.groupId !== groupId || group.locked));
-  }, []);
+    const currentGroup = taskGroups.find((group) => group.groupId === groupId);
+    if (currentGroup?.locked) return;
+    if (dataSource === "live") {
+      void new LiveTeamApi().archiveTaskGroup(groupId).then((archivedGroup) => {
+        setTeamTaskGroups((current) => current.filter((group) => group.groupId !== archivedGroup.groupId));
+        setTaskGroupDisplayStates((current) => current.filter((state) => state.groupId !== archivedGroup.groupId));
+      }).catch((e) => setError(errorMessage(e)));
+      return;
+    }
+    setMockTaskGroups((current) => current.filter((group) => group.groupId !== groupId || group.locked));
+  }, [dataSource, setError, setTeamTaskGroups, taskGroups]);
 
   const agentToolbar = (
     <div className="agent-atlas-actions">

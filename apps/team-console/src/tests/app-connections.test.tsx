@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
 import { MOCK_AGENTS, mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
-import type { TeamCanvasTask, TeamTaskConnection, TeamTaskDependency } from "../api/team-types";
+import type { ResolvedTeamTaskGroup, TeamCanvasTask, TeamTaskConnection, TeamTaskDependency } from "../api/team-types";
 import { getAtlas, getAtlasNodes, firePointer } from "./app-dom-test-utils";
 import { cloneTaskFixture, makeTypedTaskChainFixtures } from "./team-task-test-fixtures";
 
@@ -17,6 +17,123 @@ describe("App", () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
+
+  function makeLiveTask(taskId: string, title: string): TeamCanvasTask {
+    return {
+      taskId,
+      title,
+      leaderAgentId: "main",
+      status: "ready",
+      createdAt: "2026-06-05T00:00:00.000Z",
+      updatedAt: "2026-06-05T00:00:00.000Z",
+      archived: false,
+      workUnit: {
+        title,
+        input: { text: `${title} input` },
+        inputPorts: [{ id: "source", type: "md" }],
+        outputPorts: [{ id: "result", type: "md" }],
+        outputContract: { text: `${title} output` },
+        acceptance: { rules: [`${title} accepted`] },
+        workerAgentId: "main",
+        checkerAgentId: "main",
+      },
+    };
+  }
+
+  function makeResolvedTaskGroup(input: {
+    groupId: string;
+    title: string;
+    taskIds: string[];
+    archived?: boolean;
+  }): ResolvedTeamTaskGroup {
+    return {
+      schemaVersion: "team/task-group-1",
+      groupId: input.groupId,
+      title: input.title,
+      taskIds: input.taskIds,
+      archived: input.archived ?? false,
+      createdAt: "2026-06-05T00:00:00.000Z",
+      updatedAt: "2026-06-05T00:00:00.000Z",
+      status: "valid",
+      headTaskIds: input.taskIds.slice(0, 1),
+      validation: { errors: [] },
+    };
+  }
+
+  function setupLiveGroupApi(options: {
+    tasks: TeamCanvasTask[];
+    groups?: ResolvedTeamTaskGroup[];
+    createErrorMessage?: string;
+  }) {
+    let groups = [...(options.groups ?? [])];
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({
+          agents: [{ agentId: "main", name: "主 Agent", description: "默认" }],
+        }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/console-layout" && method === "GET") {
+        return new Response(JSON.stringify({ state: null, updatedAt: null }), { status: 200 });
+      }
+      if (url === "/v1/team/console-layout" && method === "PATCH") {
+        return new Response(JSON.stringify({ state: JSON.parse(String(init?.body ?? "{}")).state }), { status: 200 });
+      }
+      if (url === "/v1/team/console/root-summary") {
+        return new Response(JSON.stringify({
+          tasks: options.tasks,
+          deletedTaskIds: [],
+          taskRunsByTaskId: Object.fromEntries(options.tasks.map((task) => [task.taskId, []])),
+          deletedRunIdsByTaskId: {},
+          sourceNodes: [],
+          sourceConnections: [],
+          taskConnections: [],
+          taskDependencies: [],
+          serverVersion: {
+            taskCatalog: "2026-06-05T00:00:00.000Z",
+            taskRunSummary: "2026-06-05T00:00:00.000Z",
+          },
+        }), { status: 200 });
+      }
+      if (url === "/v1/team/task-groups" && method === "GET") {
+        return new Response(JSON.stringify({ taskGroups: groups.filter((group) => !group.archived) }), { status: 200 });
+      }
+      if (url === "/v1/team/task-groups" && method === "POST") {
+        if (options.createErrorMessage) {
+          return new Response(JSON.stringify({ error: { message: options.createErrorMessage } }), { status: 400 });
+        }
+        const body = JSON.parse(String(init?.body ?? "{}")) as { title?: string; taskIds: string[] };
+        const group = makeResolvedTaskGroup({
+          groupId: "group_created",
+          title: body.title ?? "Group 1",
+          taskIds: body.taskIds,
+        });
+        groups = [...groups, group];
+        return new Response(JSON.stringify({ taskGroup: group }), { status: 201 });
+      }
+      if (url.startsWith("/v1/team/task-groups/") && url.endsWith("/archive") && method === "POST") {
+        const groupId = decodeURIComponent(url.split("/").at(-2)!);
+        const archived = groups.find((group) => group.groupId === groupId);
+        if (!archived) return new Response(JSON.stringify({ error: { message: "group not found" } }), { status: 404 });
+        groups = groups.filter((group) => group.groupId !== groupId);
+        return new Response(JSON.stringify({ taskGroup: { ...archived, archived: true } }), { status: 200 });
+      }
+      if (url.startsWith("/v1/team/task-runs/by-task?")) {
+        return new Response(JSON.stringify({
+          runsByTaskId: Object.fromEntries(options.tasks.map((task) => [task.taskId, []])),
+          deletedRunIdsByTaskId: {},
+          serverVersion: "2026-06-05T00:00:00.000Z",
+        }), { status: 200 });
+      }
+      if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === "/v1/team/task-dependencies") return new Response(JSON.stringify({ dependencies: [] }), { status: 200 });
+      if (url === "/v1/team/source-nodes") return new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 });
+      if (url === "/v1/team/source-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+  }
 
   describe("task control dependency UI", () => {
     const depTaskA: TeamCanvasTask = {
@@ -635,6 +752,124 @@ describe("App", () => {
 
       expect(agentNode).not.toHaveClass("is-atlas-selected");
       expect(taskNode).not.toHaveClass("is-atlas-selected");
+    });
+  });
+
+  describe("live Task Groups", () => {
+    const SELECTION_LONG_PRESS_MS = 200;
+
+    it("renders backend Task Groups on initial Live API load and stores only display state", async () => {
+      const taskA = makeLiveTask("task_live_a", "Live Alpha");
+      const taskB = makeLiveTask("task_live_b", "Live Beta");
+      setupLiveGroupApi({
+        tasks: [taskA, taskB],
+        groups: [makeResolvedTaskGroup({
+          groupId: "group_live_1",
+          title: "Backend Group",
+          taskIds: [taskA.taskId, taskB.taskId],
+        })],
+      });
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+
+      render(<App />);
+
+      const group = await screen.findByRole("group", { name: "Backend Group" });
+      expect(within(group).getByText("2 Tasks")).toBeInTheDocument();
+      await waitFor(() => {
+        const raw = window.localStorage.getItem("ugk-team-console:canvas-ui-state:v1");
+        expect(raw).toBeTruthy();
+        const state = JSON.parse(raw!);
+        expect(state.taskGroups).toBeUndefined();
+        expect(state.taskGroupDisplayStates).toEqual([
+          { groupId: "group_live_1", collapsed: false, locked: false },
+        ]);
+        expect(JSON.stringify(state)).not.toContain("taskNodeIds");
+      });
+    });
+
+    it("creates a Live Task Group through the backend using real task ids", async () => {
+      const taskA = makeLiveTask("task_live_a", "Live Alpha");
+      const taskB = makeLiveTask("task_live_b", "Live Beta");
+      setupLiveGroupApi({ tasks: [taskA, taskB] });
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+
+      const { container } = render(<App />);
+      await screen.findByRole("button", { name: "Live Alpha" });
+      await screen.findByRole("button", { name: "Live Beta" });
+      const atlas = getAtlas(container);
+
+      vi.useFakeTimers();
+      firePointer(atlas, "pointerdown", { pointerId: 61, clientX: 240, clientY: 180 });
+      act(() => { vi.advanceTimersByTime(SELECTION_LONG_PRESS_MS + 1); });
+      firePointer(atlas, "pointermove", { pointerId: 61, clientX: 940, clientY: 430 });
+      firePointer(atlas, "pointerup", { pointerId: 61, clientX: 940, clientY: 430, buttons: 0 });
+      vi.useRealTimers();
+
+      fireEvent.click(screen.getByRole("button", { name: /创建 Group/ }));
+
+      await screen.findByRole("group", { name: "Group 1" });
+      const createCall = vi.mocked(fetch).mock.calls.find(([url, init]) => (
+        String(url) === "/v1/team/task-groups" && init?.method === "POST"
+      ));
+      expect(createCall).toBeTruthy();
+      expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
+        title: "Group 1",
+        taskIds: [taskA.taskId, taskB.taskId],
+      });
+      expect(JSON.stringify(createCall?.[1]?.body)).not.toContain("task-node-");
+    });
+
+    it("shows the backend validation message when Live Task Group creation fails", async () => {
+      const taskA = makeLiveTask("task_live_a", "Live Alpha");
+      const taskB = makeLiveTask("task_live_b", "Live Beta");
+      setupLiveGroupApi({
+        tasks: [taskA, taskB],
+        createErrorMessage: "Group boundary is not closed",
+      });
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+
+      const { container } = render(<App />);
+      await screen.findByRole("button", { name: "Live Alpha" });
+      await screen.findByRole("button", { name: "Live Beta" });
+      const atlas = getAtlas(container);
+
+      vi.useFakeTimers();
+      firePointer(atlas, "pointerdown", { pointerId: 62, clientX: 240, clientY: 180 });
+      act(() => { vi.advanceTimersByTime(SELECTION_LONG_PRESS_MS + 1); });
+      firePointer(atlas, "pointermove", { pointerId: 62, clientX: 940, clientY: 430 });
+      firePointer(atlas, "pointerup", { pointerId: 62, clientX: 940, clientY: 430, buttons: 0 });
+      vi.useRealTimers();
+
+      fireEvent.click(screen.getByRole("button", { name: /创建 Group/ }));
+
+      expect(await screen.findByText("Group boundary is not closed")).toBeInTheDocument();
+    });
+
+    it("archives an unlocked Live Task Group without removing Task nodes", async () => {
+      const taskA = makeLiveTask("task_live_a", "Live Alpha");
+      const taskB = makeLiveTask("task_live_b", "Live Beta");
+      setupLiveGroupApi({
+        tasks: [taskA, taskB],
+        groups: [makeResolvedTaskGroup({
+          groupId: "group/live 1",
+          title: "Backend Group",
+          taskIds: [taskA.taskId, taskB.taskId],
+        })],
+      });
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+
+      const { container } = render(<App />);
+      const group = await screen.findByRole("group", { name: "Backend Group" });
+      const atlasNodes = getAtlasNodes(container);
+
+      fireEvent.click(within(group).getByRole("button", { name: "移除 Backend Group" }));
+
+      await waitFor(() => expect(screen.queryByRole("group", { name: "Backend Group" })).toBeNull());
+      expect(vi.mocked(fetch).mock.calls.some(([url, init]) => (
+        String(url) === "/v1/team/task-groups/group%2Flive%201/archive" && init?.method === "POST"
+      ))).toBe(true);
+      expect(await within(atlasNodes).findByRole("button", { name: "Live Alpha" })).toBeInTheDocument();
+      expect(await within(atlasNodes).findByRole("button", { name: "Live Beta" })).toBeInTheDocument();
     });
   });
 
