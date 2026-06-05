@@ -14,6 +14,7 @@ import { validateCreatePlanInput } from "./plan-validation.js";
 import type { UpdateTeamCanvasTaskInput } from "./task-validation.js";
 import { TaskConnectionStore } from "./task-connection-store.js";
 import { TaskDependencyStore } from "./task-dependency-store.js";
+import { TaskGroupStore } from "./task-group-store.js";
 import { SourceConnectionStore } from "./source-connection-store.js";
 import { SourceNodeStore, type UpdateSourceNodeInput } from "./source-node-store.js";
 import { MockRoleRunner } from "./role-runner.js";
@@ -212,6 +213,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	const taskDependencyStore = new TaskDependencyStore(options.teamDataDir, taskStore);
 	taskConnectionStore.setExistingDependencies(() => taskDependencyStore.list());
 	taskDependencyStore.setExistingConnections(() => taskConnectionStore.list());
+	const taskGroupStore = new TaskGroupStore(options.teamDataDir, taskStore, taskConnectionStore, taskDependencyStore);
 	const sourceConnectionStore = new SourceConnectionStore(options.teamDataDir, sourceNodeStore, taskStore);
 	const workspace = new RunWorkspace(options.teamDataDir);
 	const taskRunDataDir = join(options.teamDataDir, "task-runs");
@@ -425,6 +427,63 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			sendTaskResponse(reply, task);
 		} catch (err) {
 			sendMappedError(reply, err, [["not found", 404]]);
+		}
+	});
+
+	app.get("/v1/team/task-groups", async (request, reply) => {
+		try {
+			const groups = await taskGroupStore.list({ includeArchived: parseIncludeArchived(request) });
+			reply.send({ groups: await Promise.all(groups.map(group => taskGroupStore.resolve(group))) });
+		} catch (err) {
+			sendMappedError(reply, err, [["task group store", 500]], 500);
+		}
+	});
+
+	app.post("/v1/team/task-groups", async (request, reply) => {
+		const body = jsonBody(request);
+		try {
+			const group = await taskGroupStore.create({
+				title: body.title as string,
+				taskIds: body.taskIds as string[],
+			});
+			reply.code(201).send({ group });
+		} catch (err) {
+			sendMappedError(reply, err, [["lock busy", 409], ["task group store", 500]]);
+		}
+	});
+
+	app.get("/v1/team/task-groups/:groupId", async (request, reply) => {
+		const groupId = idParam(request, "groupId");
+		try {
+			const group = await taskGroupStore.get(groupId);
+			if (!group) { sendNotFound(reply, "task group"); return; }
+			reply.send({ group: await taskGroupStore.resolve(group) });
+		} catch (err) {
+			sendMappedError(reply, err, [["task group store", 500]], 500);
+		}
+	});
+
+	app.patch("/v1/team/task-groups/:groupId", async (request, reply) => {
+		const groupId = idParam(request, "groupId");
+		const body = jsonBody(request);
+		try {
+			const group = await taskGroupStore.update(groupId, {
+				...(Object.hasOwn(body, "title") ? { title: body.title as string } : {}),
+				...(Object.hasOwn(body, "taskIds") ? { taskIds: body.taskIds as string[] } : {}),
+			});
+			reply.send({ group });
+		} catch (err) {
+			sendMappedError(reply, err, [["lock busy", 409], ["task group store", 500], ["not found", 404]]);
+		}
+	});
+
+	app.post("/v1/team/task-groups/:groupId/archive", async (request, reply) => {
+		const groupId = idParam(request, "groupId");
+		try {
+			const group = await taskGroupStore.archive(groupId);
+			reply.send({ group });
+		} catch (err) {
+			sendMappedError(reply, err, [["lock busy", 409], ["task group store", 500], ["not found", 404]]);
 		}
 	});
 

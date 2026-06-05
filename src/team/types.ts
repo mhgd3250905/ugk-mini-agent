@@ -413,6 +413,36 @@ export interface ResolvedTaskConnection extends TeamTaskConnection {
 	staleReason?: TaskConnectionStaleReason;
 }
 
+export interface TeamTaskGroup {
+	schemaVersion: "team/task-group-1";
+	groupId: string;
+	title: string;
+	taskIds: string[];
+	archived: boolean;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface TeamTaskGroupValidationIssue {
+	code:
+		| "task_not_found"
+		| "task_archived"
+		| "generated_task_not_supported"
+		| "external_incoming_task_edge"
+		| "external_outgoing_task_edge"
+		| "no_head_task";
+	message: string;
+	taskId?: string;
+	connectionId?: string;
+	dependencyId?: string;
+}
+
+export interface ResolvedTeamTaskGroup extends TeamTaskGroup {
+	status: "valid" | "invalid";
+	headTaskIds: string[];
+	validation: { errors: TeamTaskGroupValidationIssue[] };
+}
+
 export type TeamCanvasSourceNodeType = "text" | "file";
 export type TeamCanvasSourcePortType = "string" | "md" | "json" | "html" | "file";
 

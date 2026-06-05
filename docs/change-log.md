@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-05 — Team Task Group backend definition contract
+
+- **主题**: 新增 Team Task Group 后端持久 definition contract。`TeamTaskGroup` 保存到 `.data/team/task-groups.json`，支持 list/create/get/patch/archive routes，create/update 会校验 Group 边界闭合并计算 `headTaskIds`；active typed task connection 与 active control dependency 只要一端在 Group 内，另一端也必须在 Group 内。stale 边不参与闭合和头节点计算，generated child Task 和 archived Task 第一版不能加入 Group。
+- **影响范围**: `src/team` 后端类型、store、routes 与 route tests；不实现 GroupRun，不改 Team Console UI，不改 Conn worker/SQLite，不改 Playground UI 或 `.pi/skills/**`。
+- **对应入口**: `src/team/types.ts`、`src/team/task-group-store.ts`、`src/team/routes.ts`、`test/team-task-group-routes.test.ts`、`docs/team-runtime.md`。
+
 ## 2026-06-05 — Team Console PR #6 merge and Vite runtime refresh
 
 - **主题**: 合并并推送 Team Console PR #6 的框选和 UI-only Group 交互优化。审查时补充锁定 Group 混合多选拖拽边界：锁定 Group 内部 Task 不会被已选未锁 Agent 拖拽带走。合并后用户看到旧 UI，根因确认不是 Git 或浏览器缓存，而是 `ugk-pi-team-console` Vite dev server 仍返回旧 transformed module；重启 `ugk-pi-team-console` 后 `5174/src/graph/ExecutionMap.tsx` 已包含 `onToggleTaskGroupLock`、`lockedTaskGroupNodeIdSet`、`data-task-group-locked`，页面重新加载后生效。

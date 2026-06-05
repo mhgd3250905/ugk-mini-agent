@@ -2,6 +2,8 @@
 
 更新时间：2026-06-05
 
+> 2026-06-05 补充：Team Task Group 已有第一版后端持久 definition contract。`TeamTaskGroup` 保存到 `.data/team/task-groups.json`，只包含 `groupId/title/taskIds/archived/createdAt/updatedAt` 等业务字段；collapsed、locked、frame rect 和画布位置仍属于 Team Console UI state。Group 创建/更新会拒绝不存在、归档或 generated child Task，并要求 active typed task connection 与 active control dependency 的两端都在 Group 内；stale 边不参与边界闭合和头节点计算。`ResolvedTeamTaskGroup` 会返回 `status`、`headTaskIds` 和 validation errors。本步只提供 `GET/POST/PATCH/archive /v1/team/task-groups` contract，不实现 GroupRun，不接 Conn，不改 Team Console UI。
+
 > 2026-06-05 补充：真实运行排障确认，`task_e1846fa41c83` 从 Team Console 启动时前端已正确发送 `upstreamRunSelections[]`，此前新 run 仍缺 `source.boundInputs[]` 的原因是本地 `ugk-pi` 主后端和 `ugk-pi-team-worker` 仍运行旧进程；Step 01 后端代码提交后必须重启这两个非 watch 进程，不能只刷新 `5174`。重启后，直接 HTTP POST 和 UI 启动的新 run 都会写入 `source.manualUpstreamSelections[]` / `source.boundInputs[]`，验证 run `run_416bd5c5c693` 已 completed 并生成报告。
 
 > 2026-06-05 补充：typed artifact handoff 已收口为 runtime 合同。普通 Task-to-Task artifact 现在会按连接类型优先选择上游 attempt 的 worker public output 机器可消费文件；例如 `json` connection 会优先绑定 `agent-workspaces/<attemptId>/worker/output/*.json` 中可解析为 JSON object/array 的文件。Discovery 上游仍优先 `discovery-aggregation.json`，再 fallback `discovery-result.json`。没有匹配 public output 时才 fallback 到 checker `accepted-result.md`，后者继续作为人类验收摘要和兼容结果。
@@ -276,6 +278,33 @@ Control dependency 是 typed connection 之外的第二类 Task DAG 边。它只
 - 上游失败或取消不触发 dependency 下游。
 - Stale dependency 记录 `skipped` delivery outcome，不阻塞上游 accepted run。
 - Delivery outcome 类型为 `TeamTaskControlDependencyDeliveryOutcome`（`edgeKind: “control-dependency”`），与 typed connection 的 `TeamTaskTypedConnectionDeliveryOutcome`（默认 `edgeKind: “typed-connection”`）构成 union。
+
+### Team Task Group Definition
+
+Team Task Group 是 Team Runtime 的持久结构单位，不再只是浏览器 localStorage 里的 UI frame。第一版后端 contract 只定义 Group 本身，不启动 Group run，也不接 Conn：
+
+- 持久化文件：`.data/team/task-groups.json`，写入由 `.task-groups.lock` 保护。
+- 数据结构：`schemaVersion="team/task-group-1"`、`groupId`、`title`、`taskIds`、`archived`、`createdAt`、`updatedAt`。
+- `taskIds` 只允许普通 root Canvas Tasks；generated child Task 第一版不支持加入 Group。
+- `collapsed`、`locked`、frame rect、卡片位置和本地展示状态仍属于 Team Console UI state，不进入 `TeamTaskGroup` schema。
+- 创建和更新会 trim title、去重 taskIds 并保持输入顺序；title 为空、taskIds 为空、Task 不存在、Task 已归档或 Task 是 generated child 都返回 400。
+- 边界闭合校验只看 active typed task connection 与 active control dependency。只要一端在 Group 内，另一端也必须在 Group 内；外部上游连入 Group、Group 内 Task 输出到外部 Task 都会被拒绝。
+- stale typed connection / dependency 不参与边界闭合，也不参与头节点计算；`resolve()` 仍会返回 resolved view，避免旧数据诊断时崩溃。
+- 头节点定义为 Group 内没有 incoming internal active edge 的 Task；internal edge 包含 typed task connection 和 control dependency。多条独立链会返回多个 `headTaskIds`，孤立 Task 本身就是 head。
+- 如果 Group 内没有任何 head Task，Group invalid，create/update 拒绝保存。
+- 归档 Group 是软归档，不删除 Task、typed connection、control dependency 或 Task run history。
+
+Resolved view:
+
+```ts
+interface ResolvedTeamTaskGroup extends TeamTaskGroup {
+  status: "valid" | "invalid";
+  headTaskIds: string[];
+  validation: { errors: TeamTaskGroupValidationIssue[] };
+}
+```
+
+当前非目标：不实现 `TeamTaskGroupRun`，不新增 Group run/cancel API，不把 Group 合进 `GET /v1/team/console/root-summary`，不改 Team Console UI，不改 Conn worker 或 Conn SQLite schema。
 
 ### Canvas Task Run
 
@@ -760,6 +789,11 @@ run 内相对路径，指向 accepted 或 failed 结果文件。格式如 `tasks
 | GET | `/v1/team/task-runs/:runId?view=summary&taskId=:taskId` | 读取某个 Task 在该 run 内的轻量状态，用于未展开 active run polling |
 | GET | `/v1/team/task-runs/:runId?view=process-summary&taskId=:taskId` | 读取展开 Run observer 所需的 run summary 与 attempts process summary，不返回 heavy process entries |
 | POST | `/v1/team/task-runs/:runId/cancel` | 取消 active Task run |
+| GET | `/v1/team/task-groups` | 列出未归档 Team Task Groups；`?includeArchived=1|true` 时包含已归档 Group，响应为 `{ groups: ResolvedTeamTaskGroup[] }` |
+| POST | `/v1/team/task-groups` | 创建持久 Team Task Group；请求 `{ title, taskIds }`，创建前校验边界闭合并返回 `{ group }` |
+| GET | `/v1/team/task-groups/:groupId` | 读取单个 Group 的 resolved view，找不到返回 404 |
+| PATCH | `/v1/team/task-groups/:groupId` | 更新 Group 的 `title` 和/或 `taskIds`，重新执行边界闭合和头节点校验 |
+| POST | `/v1/team/task-groups/:groupId/archive` | 软归档 Group；不删除 Task、connection、dependency 或 run history |
 | GET | `/v1/team/task-runs/:runId/tasks/:taskId/attempts` | 读取 Task run 的 attempt metadata，包含可选 `roleProcesses.worker` / `roleProcesses.checker` |
 | GET | `/v1/team/task-runs/:runId/tasks/:taskId/attempts/:attemptId/files/:fileName` | 读取 Task run 的 attempt 文件 |
 | GET | `/v1/team/task-runs/:runId/artifacts/:roleKey/:role/*` | 读取 role public output 目录中的交付文件；默认文件为 `index.html`，路径限制在该 role 的 `output` 目录内 |
