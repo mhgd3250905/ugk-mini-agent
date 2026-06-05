@@ -11,10 +11,11 @@ import type {
 	ListConnRunEventsOptions,
 	ListConnRunsOptions,
 } from "../agent/conn-run-store.js";
-import type { ConnDefinition, ConnSchedule, ConnTarget } from "../agent/conn-store.js";
+import type { ConnDefinition, ConnExecution, ConnSchedule, ConnTarget } from "../agent/conn-store.js";
 import { sanitizeBackgroundPathSegment } from "../agent/background-workspace.js";
 import {
 	sortConnListBodiesByRecentRun,
+	toConnBody,
 	toConnListBody,
 	toConnRunBody,
 	toConnRunEventBody,
@@ -68,6 +69,7 @@ interface ConnStoreLike {
 		prompt: string;
 		target: ConnTarget;
 		schedule: ConnSchedule;
+		execution?: ConnExecution;
 		assetRefs?: string[];
 		maxRunMs?: number;
 		profileId?: string;
@@ -90,6 +92,7 @@ interface ConnStoreLike {
 				| "prompt"
 				| "target"
 				| "schedule"
+				| "execution"
 				| "assetRefs"
 				| "maxRunMs"
 				| "profileId"
@@ -425,7 +428,7 @@ export function registerConnRoutes(app: FastifyInstance, options: ConnRouteOptio
 		if (!conn) {
 			return reply.status(404).send();
 		}
-		return { conn };
+		return { conn: toConnBody(conn) };
 	});
 
 	app.get("/v1/conns/:connId/runs", async (request, reply): Promise<ConnRunListResponseBody | FastifyReply> => {
@@ -684,6 +687,7 @@ export function registerConnRoutes(app: FastifyInstance, options: ConnRouteOptio
 				prompt: parsed.value!.prompt!,
 				target: parsed.value!.target!,
 				schedule: parsed.value!.schedule!,
+				execution: parsed.value!.execution ?? { type: "agent_prompt" },
 				assetRefs: parsed.value!.assetRefs,
 				...(parsed.value!.maxRunMs !== undefined ? { maxRunMs: parsed.value!.maxRunMs } : {}),
 				profileId: parsed.value!.profileId,
@@ -697,7 +701,7 @@ export function registerConnRoutes(app: FastifyInstance, options: ConnRouteOptio
 				...(parsed.value!.publicSiteId !== undefined ? { publicSiteId: parsed.value!.publicSiteId } : {}),
 				...(parsed.value!.artifactDelivery !== undefined ? { artifactDelivery: parsed.value!.artifactDelivery } : {}),
 			});
-			return reply.status(201).send({ conn } satisfies ConnDetailResponseBody);
+			return reply.status(201).send({ conn: toConnBody(conn) } satisfies ConnDetailResponseBody);
 		} catch (error) {
 			const validationReply = sendConnValidationError(reply, error);
 			if (validationReply) {
@@ -792,6 +796,7 @@ export function registerConnRoutes(app: FastifyInstance, options: ConnRouteOptio
 				...(parsed.value!.prompt !== undefined ? { prompt: parsed.value!.prompt } : {}),
 				...(parsed.value!.target ? { target: parsed.value!.target } : {}),
 				...(parsed.value!.schedule ? { schedule: parsed.value!.schedule } : {}),
+				...(body.execution !== undefined ? { execution: parsed.value!.execution } : {}),
 				...(body.assetRefs !== undefined ? { assetRefs: parsed.value!.assetRefs ?? [] } : {}),
 				...(body.profileId !== undefined ? { profileId: parsed.value!.profileId } : {}),
 				...(body.browserId !== undefined ? { browserId: parsed.value!.browserId ?? null } : {}),
@@ -819,7 +824,7 @@ export function registerConnRoutes(app: FastifyInstance, options: ConnRouteOptio
 					changes: browserBindingChanges,
 				});
 			}
-			return { conn } satisfies ConnDetailResponseBody;
+			return { conn: toConnBody(conn) } satisfies ConnDetailResponseBody;
 		} catch (error) {
 			const validationReply = sendConnValidationError(reply, error);
 			if (validationReply) {
@@ -835,7 +840,7 @@ export function registerConnRoutes(app: FastifyInstance, options: ConnRouteOptio
 		if (!conn) {
 			return reply.status(404).send();
 		}
-		return { conn } satisfies ConnDetailResponseBody;
+		return { conn: toConnBody(conn) } satisfies ConnDetailResponseBody;
 	});
 
 	app.post("/v1/conns/:connId/resume", async (request, reply) => {
@@ -844,7 +849,7 @@ export function registerConnRoutes(app: FastifyInstance, options: ConnRouteOptio
 		if (!conn) {
 			return reply.status(404).send();
 		}
-		return { conn } satisfies ConnDetailResponseBody;
+		return { conn: toConnBody(conn) } satisfies ConnDetailResponseBody;
 	});
 
 	app.post("/v1/conns/:connId/run", async (request, reply) => {

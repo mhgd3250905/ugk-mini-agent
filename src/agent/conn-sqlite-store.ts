@@ -4,6 +4,7 @@ import {
 	computeNextCronOccurrence,
 	computeNextRunAt,
 	type ConnDefinition,
+	type ConnExecution,
 	type ConnSchedule,
 	type ConnStatus,
 	type ConnTarget,
@@ -20,6 +21,7 @@ export interface CreateConnInput {
 	prompt: string;
 	target: ConnTarget;
 	schedule: ConnSchedule;
+	execution?: ConnExecution;
 	assetRefs?: string[];
 	maxRunMs?: number;
 	profileId?: string;
@@ -42,6 +44,7 @@ export type UpdateConnInput = Partial<
 		| "prompt"
 		| "target"
 		| "schedule"
+		| "execution"
 		| "assetRefs"
 		| "maxRunMs"
 		| "profileId"
@@ -68,6 +71,7 @@ interface ConnRow {
 	prompt: string;
 	target_json: string;
 	schedule_json: string;
+	execution_json?: string | null;
 	asset_refs_json: string;
 	max_run_ms?: number | null;
 	profile_id: string;
@@ -94,6 +98,7 @@ const DEFAULT_AGENT_SPEC_ID = "agent.default";
 const DEFAULT_SKILL_SET_ID = "skills.default";
 const DEFAULT_MODEL_POLICY_ID = "model.default";
 const DEFAULT_UPGRADE_POLICY: ConnUpgradePolicy = "latest";
+const DEFAULT_EXECUTION: ConnExecution = { type: "agent_prompt" };
 
 export class ConnSqliteStore {
 	constructor(private readonly options: ConnSqliteStoreOptions) {}
@@ -126,6 +131,7 @@ export class ConnSqliteStore {
 			prompt: input.prompt.trim(),
 			target: input.target,
 			schedule,
+			execution: normalizeExecution(input.execution),
 			assetRefs: normalizeAssetRefs(input.assetRefs),
 			...(input.maxRunMs !== undefined ? { maxRunMs: normalizeMaxRunMs(input.maxRunMs) } : {}),
 			profileId: normalizeOptionalId(input.profileId) ?? DEFAULT_PROFILE_ID,
@@ -147,16 +153,17 @@ export class ConnSqliteStore {
 		this.options.database.run(
 			[
 				"INSERT INTO conns (",
-				"conn_id, title, prompt, target_json, schedule_json, asset_refs_json, max_run_ms,",
+				"conn_id, title, prompt, target_json, schedule_json, execution_json, asset_refs_json, max_run_ms,",
 				"profile_id, browser_id, agent_spec_id, skill_set_id, model_policy_id, model_provider, model_id, upgrade_policy, public_site_id, artifact_delivery_json,",
 				"status, created_at, updated_at, next_run_at",
-				") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+				") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			].join(" "),
 			conn.connId,
 			conn.title,
 			conn.prompt,
 			JSON.stringify(conn.target),
 			JSON.stringify(conn.schedule),
+			JSON.stringify(conn.execution),
 			JSON.stringify(conn.assetRefs),
 			conn.maxRunMs,
 			conn.profileId,
@@ -193,6 +200,7 @@ export class ConnSqliteStore {
 			...(patch.prompt !== undefined ? { prompt: patch.prompt.trim() } : {}),
 			...(patch.target !== undefined ? { target: patch.target } : {}),
 			...(patch.schedule !== undefined ? { schedule } : {}),
+			...(patch.execution !== undefined ? { execution: normalizeExecution(patch.execution) } : {}),
 			...(patch.assetRefs !== undefined ? { assetRefs: normalizeAssetRefs(patch.assetRefs) } : {}),
 			...(patch.maxRunMs !== undefined ? { maxRunMs: normalizeMaxRunMs(patch.maxRunMs) } : {}),
 			...(patch.profileId !== undefined ? { profileId: normalizeRequiredId(patch.profileId, "profileId") } : {}),
@@ -220,7 +228,7 @@ export class ConnSqliteStore {
 		this.options.database.run(
 			[
 				"UPDATE conns SET",
-				"title = ?, prompt = ?, target_json = ?, schedule_json = ?, asset_refs_json = ?, max_run_ms = ?,",
+				"title = ?, prompt = ?, target_json = ?, schedule_json = ?, execution_json = ?, asset_refs_json = ?, max_run_ms = ?,",
 				"profile_id = ?, browser_id = ?, agent_spec_id = ?, skill_set_id = ?, model_policy_id = ?, model_provider = ?, model_id = ?, upgrade_policy = ?, public_site_id = ?, artifact_delivery_json = ?,",
 				"status = ?, updated_at = ?, next_run_at = ?",
 				"WHERE conn_id = ?",
@@ -229,6 +237,7 @@ export class ConnSqliteStore {
 			updated.prompt,
 			JSON.stringify(updated.target),
 			JSON.stringify(updated.schedule),
+			JSON.stringify(updated.execution),
 			JSON.stringify(updated.assetRefs),
 			updated.maxRunMs,
 			updated.profileId,
@@ -328,6 +337,7 @@ function rowToConnDefinition(row: ConnRow): ConnDefinition {
 		prompt: row.prompt,
 		target: parseJsonField<ConnTarget>(row.target_json, "target_json"),
 		schedule: parseJsonField<ConnSchedule>(row.schedule_json, "schedule_json"),
+		execution: parseExecutionJson(row.execution_json),
 		assetRefs: parseJsonField<string[]>(row.asset_refs_json, "asset_refs_json"),
 		...(typeof row.max_run_ms === "number" ? { maxRunMs: row.max_run_ms } : {}),
 		profileId: row.profile_id,
@@ -365,6 +375,17 @@ function parseJsonField<T>(value: string, fieldName: string): T {
 		return JSON.parse(value) as T;
 	} catch {
 		throw new Error(`Invalid JSON in conn database field ${fieldName}`);
+	}
+}
+
+function parseExecutionJson(value: string | null | undefined): ConnExecution {
+	if (!value || value === "null") {
+		return DEFAULT_EXECUTION;
+	}
+	try {
+		return normalizeExecution(JSON.parse(value) as ConnExecution);
+	} catch {
+		return DEFAULT_EXECUTION;
 	}
 }
 
@@ -450,6 +471,19 @@ function parseValidDate(value: string, message: string): Date {
 
 function normalizeAssetRefs(assetRefs: readonly string[] | undefined): string[] {
 	return Array.from(new Set((assetRefs ?? []).map((value) => value.trim()).filter((value) => value.length > 0)));
+}
+
+function normalizeExecution(execution: ConnExecution | undefined): ConnExecution {
+	if (!execution) {
+		return DEFAULT_EXECUTION;
+	}
+	if (execution.type === "agent_prompt") {
+		return DEFAULT_EXECUTION;
+	}
+	if (execution.type === "team_group") {
+		return { type: "team_group", groupId: normalizeRequiredId(execution.groupId, "execution.groupId") };
+	}
+	throw new Error("Invalid conn execution: type is invalid");
 }
 
 function normalizeOptionalId(value: string | undefined): string | undefined {

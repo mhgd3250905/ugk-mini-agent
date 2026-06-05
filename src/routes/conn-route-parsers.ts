@@ -1,4 +1,4 @@
-import type { ConnSchedule, ConnTarget } from "../agent/conn-store.js";
+import type { ConnExecution, ConnSchedule, ConnTarget } from "../agent/conn-store.js";
 import { normalizeArtifactDeliveryInput } from "../agent/artifact-contract.js";
 
 export interface ParsedConnMutationBody {
@@ -6,6 +6,7 @@ export interface ParsedConnMutationBody {
 	prompt?: string;
 	target?: ConnTarget;
 	schedule?: ConnSchedule;
+	execution?: ConnExecution;
 	assetRefs?: string[];
 	profileId?: string;
 	browserId?: string | null;
@@ -65,6 +66,14 @@ export function parseConnMutationBody(
 			return { error: parsedSchedule.error };
 		}
 		parsed.schedule = parsedSchedule.schedule;
+	}
+
+	if (body.execution !== undefined) {
+		const parsedExecution = parseExecution(body.execution);
+		if (parsedExecution.error) {
+			return { error: parsedExecution.error };
+		}
+		parsed.execution = parsedExecution.execution;
 	}
 
 	const parsedAssetRefs = parseAssetRefs(body.assetRefs);
@@ -225,6 +234,25 @@ function parseSchedule(value: unknown): { schedule?: ConnSchedule; error?: strin
 	}
 
 	return { error: 'Field "schedule" is invalid' };
+}
+
+function parseExecution(value: unknown): { execution?: ConnExecution; error?: string } {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return { error: 'Field "execution" must be an object' };
+	}
+
+	const execution = value as Record<string, unknown>;
+	if (execution.type === "agent_prompt") {
+		return { execution: { type: "agent_prompt" } };
+	}
+	if (execution.type === "team_group") {
+		if (!isNonEmptyString(execution.groupId)) {
+			return { error: 'Field "execution.groupId" must be a non-empty string for team_group execution' };
+		}
+		return { execution: { type: "team_group", groupId: execution.groupId.trim() } };
+	}
+
+	return { error: 'Field "execution.type" must be one of "agent_prompt" or "team_group"' };
 }
 
 function parseAssetRefs(value: unknown): { assetRefs?: string[]; error?: string } {

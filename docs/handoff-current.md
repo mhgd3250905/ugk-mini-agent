@@ -86,6 +86,8 @@ git log --oneline origin/main..HEAD
 - Team Task GroupRun 后端 contract 已建立。启动 GroupRun 会并行启动 Group 内所有 head tasks，拒绝 active GroupRun 和 Group 内 active Canvas Task run；取消 GroupRun 会取消 Group 内 active Canvas Task runs。
 - Team Console Live backend Group 展开 frame 已接入手动 GroupRun UI。“运行”调用 `POST /v1/team/task-groups/:groupId/runs`，“终止”调用 `POST /v1/team/task-group-runs/:groupRunId/cancel`；active GroupRun 约 2 秒轮询详情，并在启动、终止或进入终态后 silent refresh 内部 Task run summary。
 - GroupRun active polling 已补紧循环回归保护：相同 `groupRunId/status/updatedAt/finishedAt/observedRuns.length/entryRuns.length` 不写 React state，避免 `setState -> effect 重建 -> 立即 GET`。
+- Conn 后端 execution contract 已接入 Team Group：`execution` 支持 `{ type: "agent_prompt" }` 和 `{ type: "team_group", groupId }`，旧 Conn 默认归一化为 `agent_prompt`。SQLite 新增 `execution_json`，`/v1/conns` create/update/list/detail 均返回 normalized execution。
+- `ugk-pi-conn-worker` 对 `team_group` Conn run 不启动 BackgroundAgentRunner，而是调用主服务 GroupRun API 启动/轮询/取消；409 active guard 会作为 succeeded skipped 记录，summary 以 `Skipped:` 开头。
 
 ## 验证证据
 
@@ -157,7 +159,7 @@ git log --oneline origin/main..HEAD
 ## 未完成 / 下一步候选
 
 - 本轮 typed artifact handoff 代码级测试、真实链路和用户正常路径均已验证；后续若用户继续跑真实数据，可直接基于 `task_e1846fa41c83` 的成功 run `run_221b63509573` 检查报告质量或继续迭代下游 Task。
-- Conn scheduler 仍未接入 Team Group。下一步建议只做 Conn 后端 contract/schema/worker 小步：Conn 选择 Group 而不是单 Task 或旧 prompt task，定时触发已存在的 `POST /v1/team/task-groups/:groupId/runs`，active guard 交给 GroupRun 后端 contract；暂不做 Conn UI 大改。
+- Conn scheduler 后端已能触发 Team GroupRun。下一步建议只做 Playground Conn UI / API 表单接线：Conn 只能选择 Team Group，不选择单 Task，不重载 `target.type`，继续复用后端 `execution.type="team_group"`。
 - `origin/main` 已推送到 PR #6 合并版本；Gitee 未同步。当前不要提交运行产物、`.data`、public 报告或 `.codex/plans/**`。
 
 ## 禁止事项

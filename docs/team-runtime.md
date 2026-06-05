@@ -2,6 +2,8 @@
 
 更新时间：2026-06-05
 
+> 2026-06-05 补充：Conn scheduler Step 05 已接入 Team Group 后端执行合同。Conn definition 新增 `execution: { type: "agent_prompt" } | { type: "team_group", groupId: string }`，旧 Conn 和旧 SQLite row 默认归一化为 `agent_prompt`；`team_group` Conn run 由独立 worker 调主服务 GroupRun API：`POST /v1/team/task-groups/:groupId/runs` 启动，`GET /v1/team/task-group-runs/:groupRunId` 轮询，取消时 best-effort 调 `POST /v1/team/task-group-runs/:groupRunId/cancel`。active guard 的 409 会记录为 succeeded skipped，summary 以 `Skipped:` 开头。此步只改 Conn 后端 contract/schema/worker，不改 `src/team/**`、Team Console、Playground Conn UI 或 `.pi/**`；Conn UI 选择 Group 仍是后续步骤。
+
 > 2026-06-05 补充：Team Console Live API 已接入手动 GroupRun UI。Live backend Group 的展开 frame 会读取 `GET /v1/team/task-groups/:groupId/runs` 的最新 run，显示 `queued/running/completed/completed_with_failures/failed/cancelled` 状态、observed run 数和操作按钮；“运行”调用 `POST /v1/team/task-groups/:groupId/runs`，“终止”调用 `POST /v1/team/task-group-runs/:groupRunId/cancel`。active GroupRun 会轻量轮询 `GET /v1/team/task-group-runs/:groupRunId`，并在启动、终止或进入终态后 silent refresh 内部 Canvas Task run summary；Group 内已有 active Task run 时禁用 Group 运行按钮并显示“内部运行中”。此步仍不接 Conn schema/worker/UI，不改 `src/team/**` 后端 GroupRun contract，不把 GroupRun 合进 `GET /v1/team/console/root-summary`。
 
 > 2026-06-05 补充：Team Task GroupRun 后端 contract 已建立。`TeamTaskGroupRun` 保存到 `.data/team/task-group-runs.json`，schema 为 `team/task-group-run-1`，记录 `groupRunId/groupId/status/source/entryRuns/observedRuns/startedAt/finishedAt/lastError`。新增 `POST /v1/team/task-groups/:groupId/runs`、`GET /v1/team/task-groups/:groupId/runs`、`GET /v1/team/task-group-runs/:groupRunId`、`POST /v1/team/task-group-runs/:groupRunId/cancel`。启动 GroupRun 会先拒绝 active GroupRun 和 Group 内 active Canvas Task run，再同轮启动所有 `headTaskIds`；如果部分 entry 启动失败，会取消已启动 entry run，并把 GroupRun 标记为 `failed`。读取 GroupRun 会递归观察本次 entry 触发的 Group 内 downstream run 和 discovery-generated run；entry 已 completed 但 Group 内 active outgoing typed/control edge 尚无 downstream run 或 attempt delivery outcome 证据时，GroupRun 仍是 `running`，避免 `markRunSucceeded()` 早于 `triggerDownstreamRuns()` 的窗口提前完成。取消 GroupRun 会取消 Group 内所有 active Canvas Task run，不只取消 entry runs。此步不接 Conn schema/worker，不改 Team Console UI，不把 GroupRun 合进 `GET /v1/team/console/root-summary`。
@@ -321,7 +323,7 @@ Team Task GroupRun 是 Group 的运行聚合视图，持久化在 `.data/team/ta
 - `GET /v1/team/task-group-runs/:groupRunId` 读取并刷新单个 GroupRun 的聚合状态；Team Console 只在 `queued/running` 时轻量轮询。
 - `POST /v1/team/task-group-runs/:groupRunId/cancel` 取消 active GroupRun，并级联取消 Group 内 active Canvas Task runs。
 - Team Console 的 GroupRun 状态只是运行视图，不保存进 `canvas-ui-state`；本地只保存 Group 折叠/锁定展示态。
-- Conn scheduler 尚未接入本 UI；不要从 GroupRun UI 倒推 Conn schema、worker 或绑定规则。
+- Conn scheduler 后端 worker 可通过 Conn `execution.type="team_group"` 定时触发既有 GroupRun API；Team Console / Playground Conn UI 的 Group 选择仍未接入，不要从 GroupRun UI 倒推 Conn 表单规则。
 
 ### Canvas Task Run
 

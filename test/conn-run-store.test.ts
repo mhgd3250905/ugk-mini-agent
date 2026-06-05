@@ -83,6 +83,56 @@ test("ConnRunStore creates due runs and leases them to one worker at a time", as
 	database.close();
 });
 
+test("ConnSqliteStore persists execution_json and normalizes legacy execution to agent_prompt", async () => {
+	const { connStore, database } = await createStores();
+	const teamConn = await connStore.create({
+		title: "group digest",
+		prompt: "legacy placeholder",
+		target: { type: "task_inbox" },
+		schedule: { kind: "interval", everyMs: 60_000 },
+		execution: { type: "team_group", groupId: "group-1" },
+		now: new Date("2026-06-05T10:00:00.000Z"),
+	});
+	const promptConn = await connStore.create({
+		title: "prompt digest",
+		prompt: "summarize",
+		target: { type: "task_inbox" },
+		schedule: { kind: "interval", everyMs: 60_000 },
+		now: new Date("2026-06-05T10:00:00.000Z"),
+	});
+
+	assert.deepEqual((await connStore.get(teamConn.connId))?.execution, { type: "team_group", groupId: "group-1" });
+	assert.deepEqual((await connStore.get(promptConn.connId))?.execution, { type: "agent_prompt" });
+	const row = database.get<{ execution_json: string | null }>(
+		"SELECT execution_json FROM conns WHERE conn_id = ?",
+		teamConn.connId,
+	);
+	assert.equal(row?.execution_json, JSON.stringify({ type: "team_group", groupId: "group-1" }));
+
+	database.run("UPDATE conns SET execution_json = NULL WHERE conn_id = ?", teamConn.connId);
+	assert.deepEqual((await connStore.get(teamConn.connId))?.execution, { type: "agent_prompt" });
+
+	database.close();
+});
+
+test("ConnSqliteStore treats malformed execution_json as legacy agent_prompt", async () => {
+	const { connStore, database } = await createStores();
+	const conn = await connStore.create({
+		title: "bad execution json",
+		prompt: "summarize",
+		target: { type: "task_inbox" },
+		schedule: { kind: "interval", everyMs: 60_000 },
+		execution: { type: "team_group", groupId: "group-1" },
+		now: new Date("2026-06-05T10:00:00.000Z"),
+	});
+	database.run("UPDATE conns SET execution_json = ? WHERE conn_id = ?", "{not-json", conn.connId);
+
+	assert.deepEqual((await connStore.get(conn.connId))?.execution, { type: "agent_prompt" });
+	assert.deepEqual((await connStore.list()).find((item) => item.connId === conn.connId)?.execution, { type: "agent_prompt" });
+
+	database.close();
+});
+
 test("ConnRunStore tolerates malformed optional JSON fields when reading runs and events", async () => {
 	const { connStore, runStore, database } = await createStores();
 	const conn = await connStore.create({

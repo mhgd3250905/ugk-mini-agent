@@ -70,6 +70,7 @@ test("container runtime files exist with the expected base configuration", () =>
 	assert.match(compose, /TEAM_DATA_DIR:\s*\/app\/\.data\/team/);
 	assert.match(compose, /TEAM_USE_MOCK_RUNNER:\s*\$\{TEAM_USE_MOCK_RUNNER:-true\}/);
 	assert.match(compose, /CONN_WORKER_MAX_CONCURRENCY:\s*\$\{CONN_WORKER_MAX_CONCURRENCY:-3\}/);
+	assert.match(compose, /CONN_TEAM_API_BASE_URL:\s*http:\/\/ugk-pi:3000/);
 	assert.match(compose, /NOTIFICATION_BROADCAST_URL:\s*http:\/\/ugk-pi:3000\/v1\/internal\/notifications\/broadcast/);
 	assert.match(compose, /WEB_ACCESS_BROWSER_PROVIDER:\s*direct_cdp/);
 	assert.match(compose, /WEB_ACCESS_CDP_HOST:\s*172\.31\.250\.10/);
@@ -158,6 +159,7 @@ test("container runtime files exist with the expected base configuration", () =>
 	assert.match(prodCompose, /TEAM_USE_MOCK_RUNNER:\s*\$\{TEAM_USE_MOCK_RUNNER:-true\}/);
 	assert.match(prodCompose, /WEB_ACCESS_BROWSER_PROVIDER:\s*direct_cdp/);
 	assert.match(prodCompose, /CONN_WORKER_MAX_CONCURRENCY:\s*\$\{CONN_WORKER_MAX_CONCURRENCY:-3\}/);
+	assert.match(prodCompose, /CONN_TEAM_API_BASE_URL:\s*http:\/\/ugk-pi:3000/);
 	assert.match(prodCompose, /NOTIFICATION_BROADCAST_URL:\s*http:\/\/ugk-pi:3000\/v1\/internal\/notifications\/broadcast/);
 	assert.match(prodCompose, /WEB_ACCESS_CDP_HOST:\s*172\.31\.250\.10/);
 	assert.match(prodCompose, /WEB_ACCESS_CDP_PORT:\s*9223/);

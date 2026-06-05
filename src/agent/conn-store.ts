@@ -3,6 +3,15 @@ export type ConnUpgradePolicy = "latest" | "pinned" | "manual";
 export type { ArtifactDeliveryConfig, ArtifactExpectedKind } from "./artifact-contract.js";
 import type { ArtifactDeliveryConfig } from "./artifact-contract.js";
 
+export type ConnExecution =
+	| {
+			type: "agent_prompt";
+	  }
+	| {
+			type: "team_group";
+			groupId: string;
+	  };
+
 export type ConnTarget =
 	| {
 			type: "task_inbox";
@@ -44,6 +53,7 @@ export interface ConnDefinition {
 	prompt: string;
 	target: ConnTarget;
 	schedule: ConnSchedule;
+	execution?: ConnExecution;
 	assetRefs: string[];
 	maxRunMs?: number;
 	profileId?: string;

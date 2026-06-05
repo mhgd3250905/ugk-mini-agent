@@ -1,6 +1,13 @@
 import type { ConnRunEventRecord, ConnRunFileRecord, ConnRunRecord } from "../agent/conn-run-store.js";
-import type { ConnDefinition } from "../agent/conn-store.js";
+import type { ConnDefinition, ConnExecution } from "../agent/conn-store.js";
 import type { ConnBody, ConnRunDetailResponseBody, ConnRunEventsResponseBody } from "../types/api.js";
+
+export function toConnBody(conn: ConnDefinition): ConnBody {
+	return {
+		...conn,
+		execution: normalizeConnExecution(conn.execution),
+	};
+}
 
 export function toConnListBody(
 	conn: ConnDefinition,
@@ -8,7 +15,7 @@ export function toConnListBody(
 ): ConnBody {
 	const latestRun = latestRunsByConnId?.[conn.connId];
 	return {
-		...conn,
+		...toConnBody(conn),
 		...(latestRunsByConnId ? { latestRun: latestRun ? toConnRunBody(latestRun) : null } : {}),
 	};
 }
@@ -57,6 +64,13 @@ function getFirstValidTimeMs(candidates: readonly unknown[]): number {
 		}
 	}
 	return 0;
+}
+
+function normalizeConnExecution(execution: ConnExecution | undefined): ConnExecution {
+	if (execution?.type === "team_group" && typeof execution.groupId === "string" && execution.groupId.trim()) {
+		return { type: "team_group", groupId: execution.groupId.trim() };
+	}
+	return { type: "agent_prompt" };
 }
 
 export function toConnRunBody(run: ConnRunRecord): ConnRunDetailResponseBody["run"] {

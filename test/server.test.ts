@@ -2390,6 +2390,7 @@ test("POST /v1/conns accepts cron timezone and runtime profile ids", async () =>
 				upgradePolicy?: "latest" | "pinned" | "manual";
 				browserId?: string;
 				maxRunMs?: number;
+				execution?: { type: "agent_prompt" } | { type: "team_group"; groupId: string };
 			}) => {
 				createdInputs.push(input);
 				return {
@@ -2408,6 +2409,7 @@ test("POST /v1/conns accepts cron timezone and runtime profile ids", async () =>
 					upgradePolicy: input.upgradePolicy,
 					browserId: input.browserId,
 					maxRunMs: input.maxRunMs,
+					execution: input.execution ?? { type: "agent_prompt" },
 					status: "active",
 					createdAt: "2026-04-21T00:00:00.000Z",
 					updatedAt: "2026-04-21T00:00:00.000Z",
@@ -2470,6 +2472,7 @@ test("POST /v1/conns accepts cron timezone and runtime profile ids", async () =>
 			upgradePolicy: "pinned",
 			browserId: "chrome-02",
 			maxRunMs: 120000,
+			execution: { type: "agent_prompt" },
 		},
 	]);
 	assert.deepEqual(response.json(), {
@@ -2489,6 +2492,7 @@ test("POST /v1/conns accepts cron timezone and runtime profile ids", async () =>
 			upgradePolicy: "pinned",
 			browserId: "chrome-02",
 			maxRunMs: 120000,
+			execution: { type: "agent_prompt" },
 			status: "active",
 			createdAt: "2026-04-21T00:00:00.000Z",
 			updatedAt: "2026-04-21T00:00:00.000Z",
@@ -2529,7 +2533,8 @@ test("POST /v1/conns defaults target to the task inbox when target is omitted", 
 				agentSpecId?: string;
 				skillSetId?: string;
 				modelPolicyId?: string;
-				upgradePolicy?: "latest" | "pinned" | "manual";
+			upgradePolicy?: "latest" | "pinned" | "manual";
+				execution?: { type: "agent_prompt" } | { type: "team_group"; groupId: string };
 			}) => {
 				createdInputs.push(input);
 				return {
@@ -2544,6 +2549,7 @@ test("POST /v1/conns defaults target to the task inbox when target is omitted", 
 					skillSetId: input.skillSetId,
 					modelPolicyId: input.modelPolicyId,
 					upgradePolicy: input.upgradePolicy,
+					execution: input.execution ?? { type: "agent_prompt" },
 					status: "active",
 					createdAt: "2026-04-21T00:00:00.000Z",
 					updatedAt: "2026-04-21T00:00:00.000Z",
@@ -2593,6 +2599,7 @@ test("POST /v1/conns defaults target to the task inbox when target is omitted", 
 			modelProvider: undefined,
 			modelId: undefined,
 			upgradePolicy: undefined,
+			execution: { type: "agent_prompt" },
 		},
 	]);
 	assert.deepEqual(response.json(), {
@@ -2603,11 +2610,205 @@ test("POST /v1/conns defaults target to the task inbox when target is omitted", 
 			target: { type: "task_inbox" },
 			schedule: { kind: "cron", expression: "0 9 * * *", timezone: "Asia/Shanghai" },
 			assetRefs: [],
+			execution: { type: "agent_prompt" },
 			status: "active",
 			createdAt: "2026-04-21T00:00:00.000Z",
 			updatedAt: "2026-04-21T00:00:00.000Z",
 		},
 	});
+	await app.close();
+});
+
+test("POST /v1/conns accepts team_group execution and returns normalized execution", async () => {
+	const createdInputs: unknown[] = [];
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+		connStore: {
+			list: async () => [],
+			get: async () => undefined,
+			create: async (input: Record<string, unknown>) => {
+				createdInputs.push(input);
+				return {
+					connId: "conn-team-group",
+					title: input.title as string,
+					prompt: input.prompt as string,
+					target: input.target as { type: "task_inbox" },
+					schedule: input.schedule as { kind: "cron"; expression: string; timezone?: string },
+					assetRefs: [],
+					execution: input.execution as { type: "team_group"; groupId: string },
+					status: "active",
+					createdAt: "2026-06-05T00:00:00.000Z",
+					updatedAt: "2026-06-05T00:00:00.000Z",
+				};
+			},
+			update: async () => undefined,
+			delete: async () => false,
+			pause: async () => undefined,
+			resume: async () => undefined,
+		} as never,
+		connRunStore: {
+			createRun: async () => {
+				throw new Error("not used");
+			},
+			listRunsForConn: async () => [],
+			getRun: async () => undefined,
+			listEvents: async () => [],
+			listFiles: async () => [],
+			getUnreadCountsByConn: async () => ({}),
+			getTotalUnreadCount: async () => 0,
+			markRunRead: async () => true,
+		} as never,
+	});
+
+	const response = await app.inject({
+		method: "POST",
+		url: "/v1/conns",
+		payload: {
+			title: " group schedule ",
+			prompt: " legacy placeholder ",
+			schedule: { kind: "cron", expression: "0 9 * * *", timezone: "Asia/Shanghai" },
+			execution: { type: "team_group", groupId: " group-1 " },
+		},
+	});
+
+	assert.equal(response.statusCode, 201);
+	assert.deepEqual(createdInputs, [
+		{
+			title: "group schedule",
+			prompt: "legacy placeholder",
+			target: { type: "task_inbox" },
+			schedule: { kind: "cron", expression: "0 9 * * *", timezone: "Asia/Shanghai" },
+			assetRefs: undefined,
+			profileId: undefined,
+			agentSpecId: undefined,
+			skillSetId: undefined,
+			modelPolicyId: undefined,
+			modelProvider: undefined,
+			modelId: undefined,
+			upgradePolicy: undefined,
+			execution: { type: "team_group", groupId: "group-1" },
+		},
+	]);
+	assert.equal(response.json().conn.execution.type, "team_group");
+	assert.equal(response.json().conn.execution.groupId, "group-1");
+	await app.close();
+});
+
+test("PATCH /v1/conns/:connId accepts team_group execution", async () => {
+	const updateCalls: unknown[] = [];
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+		connStore: {
+			list: async () => [],
+			get: async () => undefined,
+			create: async () => {
+				throw new Error("not used");
+			},
+			update: async (connId: string, patch: Record<string, unknown>) => {
+				updateCalls.push({ connId, patch });
+				return {
+					connId,
+					title: "existing",
+					prompt: "existing prompt",
+					target: { type: "task_inbox" },
+					schedule: { kind: "interval", everyMs: 60000 },
+					assetRefs: [],
+					execution: patch.execution,
+					status: "active",
+					createdAt: "2026-06-05T00:00:00.000Z",
+					updatedAt: "2026-06-05T00:00:00.000Z",
+				};
+			},
+			delete: async () => false,
+			pause: async () => undefined,
+			resume: async () => undefined,
+		} as never,
+		connRunStore: {
+			createRun: async () => {
+				throw new Error("not used");
+			},
+			listRunsForConn: async () => [],
+			getRun: async () => undefined,
+			listEvents: async () => [],
+			listFiles: async () => [],
+			getUnreadCountsByConn: async () => ({}),
+			getTotalUnreadCount: async () => 0,
+			markRunRead: async () => true,
+		} as never,
+	});
+
+	const response = await app.inject({
+		method: "PATCH",
+		url: "/v1/conns/conn-edit-1",
+		payload: {
+			execution: { type: "team_group", groupId: " group-2 " },
+		},
+	});
+
+	assert.equal(response.statusCode, 200);
+	assert.deepEqual(updateCalls, [
+		{
+			connId: "conn-edit-1",
+			patch: {
+				execution: { type: "team_group", groupId: "group-2" },
+			},
+		},
+	]);
+	assert.deepEqual(response.json().conn.execution, { type: "team_group", groupId: "group-2" });
+	await app.close();
+});
+
+test("POST /v1/conns rejects invalid execution payloads", async () => {
+	const createCalls: unknown[] = [];
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+		connStore: {
+			list: async () => [],
+			get: async () => undefined,
+			create: async (input: unknown) => {
+				createCalls.push(input);
+				throw new Error("should not create");
+			},
+			update: async () => undefined,
+			delete: async () => false,
+			pause: async () => undefined,
+			resume: async () => undefined,
+		} as never,
+		connRunStore: {
+			createRun: async () => {
+				throw new Error("not used");
+			},
+			listRunsForConn: async () => [],
+			getRun: async () => undefined,
+			listEvents: async () => [],
+			listFiles: async () => [],
+			getUnreadCountsByConn: async () => ({}),
+			getTotalUnreadCount: async () => 0,
+			markRunRead: async () => true,
+		} as never,
+	});
+	const basePayload = {
+		title: "bad execution",
+		prompt: "run",
+		schedule: { kind: "cron", expression: "0 9 * * *", timezone: "Asia/Shanghai" },
+	};
+
+	for (const execution of [
+		null,
+		"team_group",
+		{ type: "unknown" },
+		{ type: "team_group" },
+		{ type: "team_group", groupId: "   " },
+	]) {
+		const response = await app.inject({
+			method: "POST",
+			url: "/v1/conns",
+			payload: { ...basePayload, execution },
+		});
+		assert.equal(response.statusCode, 400);
+		assert.match(response.json().error.message, /execution/);
+	}
+	assert.deepEqual(createCalls, []);
 	await app.close();
 });
 
@@ -5378,6 +5579,7 @@ test("GET /v1/conns returns scheduled conn tasks", async () => {
 				prompt: "summarize",
 				target: { type: "conversation", conversationId: "manual:digest" },
 				schedule: { kind: "interval", everyMs: 60000 },
+				execution: { type: "agent_prompt" },
 				assetRefs: ["asset-1"],
 				status: "active",
 				createdAt: "2026-04-18T00:00:00.000Z",

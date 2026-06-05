@@ -90,6 +90,7 @@ services:
       VIRTUAL_ENV: /app/.runtime-deps/python-venv-linux
       PATH: /app/.runtime-deps/python-venv-linux/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       CONN_WORKER_MAX_CONCURRENCY: ${CONN_WORKER_MAX_CONCURRENCY:-3}
+      CONN_TEAM_API_BASE_URL: http://ugk-pi:3000
       NOTIFICATION_BROADCAST_URL: http://ugk-pi:3000/v1/internal/notifications/broadcast
       PUBLIC_BASE_URL: http://127.0.0.1:3000
       WEB_ACCESS_BROWSER_PUBLIC_BASE_URL: http://ugk-pi:3000

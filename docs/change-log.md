@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-05 — Conn team_group execution backend contract
+
+- **主题**: Conn definition 新增 `execution` 合同：`{ type: "agent_prompt" }` 继续走既有 BackgroundAgentRunner，`{ type: "team_group", groupId }` 由 Conn worker 调主服务 GroupRun API 执行。SQLite 新增 `execution_json`，旧 row、缺失字段和畸形 execution JSON 都归一化为 `agent_prompt`；`/v1/conns` create/update/list/detail 返回 normalized execution。
+- **影响范围**: Conn store/schema/routes/API 类型、conn worker、docker compose worker 环境和 focused tests。`team_group` run 调 `POST /v1/team/task-groups/:groupId/runs` 并轮询 `GET /v1/team/task-group-runs/:groupRunId`；409 active guard 记 succeeded skipped，summary 以 `Skipped:` 开头；abort/cancel 已创建 GroupRun 时 best-effort 调取消 API。本步不改 `src/team/**`、`apps/team-console/**`、`src/ui/**` 或 `.pi/**`，也不让 Conn 选择单 Task。
+- **对应入口**: `src/agent/conn-store.ts`、`src/agent/conn-db.ts`、`src/agent/conn-sqlite-store.ts`、`src/routes/conns.ts`、`src/routes/conn-route-parsers.ts`、`src/routes/conn-route-presenters.ts`、`src/workers/conn-worker.ts`、`src/workers/team-group-conn-runner.ts`、`test/conn-team-group-runner.test.ts`、`docs/runtime-assets-conn-feishu.md`、`docs/team-runtime.md`。
+
 ## 2026-06-05 — Team Console manual GroupRun UI
 
 - **主题**: Team Console Live API 模式接入手动 GroupRun UI。Live backend Group 展开 frame 会读取最新 GroupRun，显示状态和 observed run 数；“运行”调用 `POST /v1/team/task-groups/:groupId/runs`，“终止”调用 `POST /v1/team/task-group-runs/:groupRunId/cancel`。active GroupRun 会轻量轮询详情，并在启动、终止或进入终态后 silent refresh 内部 Task run summary；Group 内已有 active Task run 时禁用 Group 运行并显示“内部运行中”。

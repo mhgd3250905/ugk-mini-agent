@@ -1,6 +1,6 @@
 # Runtime / Assets / Conn / Feishu
 
-更新时间：`2026-05-11`
+更新时间：`2026-06-05`
 
 这份文档只讲四类运行能力：
 
@@ -151,6 +151,7 @@ playground 卡片当前规则：
 - `modelProvider` / `modelId`
 - `modelPolicyId`（旧任务和底层策略兼容）
 - `upgradePolicy`
+- `execution`：执行合同；默认 `{ "type": "agent_prompt" }`，也可为 `{ "type": "team_group", "groupId": "<team group id>" }`
 - `artifactDelivery`：可选 artifact 交付验证配置，启用后 run 完成时验证 `artifact-public/` 目录产物合规性，未通过则自动修复重试
 
 这些字段的作用是让后台 worker 在真正执行时，按 ID 解析当前 agent 规范、skill 集和任务级模型选择，而不是把整套运行时定义硬编码进 conn 本身。
@@ -236,6 +237,9 @@ Run 查询接口：
 - 删除聊天会话不应删除、暂停或破坏任何 conn 定义、pending run、历史 run、任务消息或输出文件链接。后台任务的执行身份是 `connId + runId + workspace + resolvedSnapshot`，不是前台 `conversationId`。
 - 本地 `docker compose` 会把 `conn.sqlite` 放到 named volume `ugk-pi-conn-db`，避开 Docker Desktop bind mount 上的多进程 SQLite 打开问题；如果 volume 里还是空库，而 legacy `.data/agent/conn/conn.sqlite` 已存在，初始化时会自动迁移这份旧库。
 - 后台执行由独立 `ugk-pi-conn-worker` 进程轮询 SQLite，领取 due run 后在 `.data/agent/background/runs/<runId>/` 创建独立 workspace。worker 会按 `conn.profileId` 解析 Playground agent profile，生成 run 级能力快照：使用该 Agent 的 `AGENTS.md`、允许技能目录、执行身份和模型解析结果，但 session、workspace、history 仍属于这条后台 run，不污染目标 Agent 的前台 conversation。这个快照不是工具权限沙箱；`bash`、文件写入、`conn` 等底层 runtime 工具仍是基础执行能力，不按 Agent profile 限制。
+- 当 `conn.execution.type` 是 `agent_prompt` 或旧 Conn 没有 `execution` 时，后台 worker 继续使用既有 BackgroundAgentRunner 主链路。
+- 当 `conn.execution.type` 是 `team_group` 时，后台 worker 不启动 BackgroundAgentRunner，而是通过主服务 GroupRun API 启动并轮询 Team Task GroupRun：`POST /v1/team/task-groups/:groupId/runs`、`GET /v1/team/task-group-runs/:groupRunId`。GroupRun 终态会映射到 conn run 终态；`completed` 记 succeeded，`completed_with_failures` / `failed` 记 failed，`cancelled` 记 cancelled。
+- Team Group active guard 返回 409 时，conn run 会记为 succeeded skipped，summary 以 `Skipped:` 开头。conn run abort/cancel 且已创建 GroupRun 时，worker 会 best-effort 调 `POST /v1/team/task-group-runs/:groupRunId/cancel`；取消失败只作为事件记录，不覆盖原始取消语义。
 - 后台 Agent 解析现在有一层 `AgentTemplateRegistry`：缓存的是 `AgentProfile` 构建出的 `AgentTemplate`，不是活的 session。每次 conn run 启动时会从当前模板冻结 `BackgroundAgentSnapshot` / `resolvedSnapshot`，之后本轮 run 只使用自己的 snapshot、workspace 和 session；运行中即使 Agent profile、rules、skills 或默认浏览器变化，也不会改写正在执行的任务。模板变更采用“先构建新模板，成功后原子替换”的语义；构建失败时保留旧模板，避免 conn 拿到半成品。任务级 `modelProvider` / `modelId` 和 `upgradePolicy` 属于 run snapshot 覆盖，不参与模板缓存切分；否则同一个 Agent 会因为不同任务策略生成一堆重复模板。`conn-worker` 是独立进程，所以不能依赖前台 server 的内存通知；worker 会按模板 signature 懒刷新，前台 Agent 创建、编辑、归档、技能增删和 rules 保存只是额外主动失效当前进程缓存。
 - 后台 run 的浏览器路由独立解析：优先使用 conn 自身 `browserId`，否则使用 resolved Agent snapshot 里的 `defaultBrowserId`，再否则显式使用 Browser Registry 的 `defaultBrowserId`。runner 会把最终 browserId 写入 browser scope route，并通过后台 session 的 Bash 工具注入 `CLAUDE_AGENT_ID` / `CLAUDE_HOOK_AGENT_ID` / `agent_id` 和 `WEB_ACCESS_BROWSER_ID`，同时把 `UGK_BROWSER_INSTANCES_JSON` 收缩到当前绑定的单个 Chrome 实例，所以 Agent 环境里不会暴露其他 Chrome 清单。前台 chat session 和后台 conn session 还会在 run workspace 前置一个受控 `curl` wrapper：只要命令访问 `http://127.0.0.1:3456` 或 `http://localhost:3456`，wrapper 会自动补上本轮 `metaAgentScope`。`web-access` 对带 `metaAgentScope` 的请求只按 scope route 选路，请求传入的浏览器 id 不参与选择；没有命中 scope route 时会使用系统默认浏览器。不要把“没有选择浏览器”实现成空值；空值会让旧 proxy 自己用进程环境兜底，浏览器切换后就很容易串到上一次的 Chrome。
 - 如果 `profileId` 指向的 Agent 已归档或当前不存在，后台 run 不应直接失败，而是降级到 `main` / main-like 能力继续执行；run 事件必须记录 `agent_profile_fallback`，`resolvedSnapshot` 必须带 `fallbackUsed / fallbackReason`，让用户在任务消息和 run detail 里看见这次降级。后台任务因为配置漂移直接断掉，体验上跟闹钟到点不响差不多，别这么干。
@@ -456,7 +460,7 @@ GET /v1/local-file?path=...
   - 最终把 run 标记为 `failed`
 - 超时失败也会写入全局任务消息，并通过实时广播推给在线 playground；通知标题使用 `<conn title> failed`，正文优先展示 `errorText`。
 - 这条超时约束是运行期硬约束，不只是前端显示字段；对应 run detail / events 可以直接看到超时留痕。
- 
+
 ## Conn Playground 管理入口
 
 - `playground` 现在有可视化后台任务管理面：桌面端首页右侧 `后台任务`，手机端右上角更多菜单里的 `后台任务`。

@@ -101,12 +101,22 @@ export type ConnScheduleBody =
 			timezone?: string;
 	  };
 
+export type ConnExecutionBody =
+	| {
+			type: "agent_prompt";
+	  }
+	| {
+			type: "team_group";
+			groupId: string;
+	  };
+
 export interface ConnBody {
 	connId: string;
 	title: string;
 	prompt: string;
 	target: ConnTargetBody;
 	schedule: ConnScheduleBody;
+	execution: ConnExecutionBody;
 	assetRefs: string[];
 	maxRunMs?: number;
 	profileId?: string;

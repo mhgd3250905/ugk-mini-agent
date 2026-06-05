@@ -27,6 +27,7 @@ import type { NotificationBroadcastEvent } from "../agent/notification-hub.js";
 import { FeishuClient } from "../integrations/feishu/client.js";
 import { FeishuDeliveryService } from "../integrations/feishu/delivery.js";
 import { FeishuSettingsStore } from "../integrations/feishu/settings-store.js";
+import { TeamGroupConnRunner } from "./team-group-conn-runner.js";
 
 export interface ConnWorkerRunner {
 	run(conn: ConnDefinition, run: ConnRunRecord, now: Date, signal?: AbortSignal): Promise<ConnRunRecord | undefined>;
@@ -41,6 +42,7 @@ export interface ConnWorkerOptions {
 	notificationBroadcaster?: NotificationBroadcaster;
 	activityNotifier?: ActivityNotifier;
 	runner: ConnWorkerRunner;
+	teamGroupRunner?: ConnWorkerRunner;
 	leaseMs?: number;
 	heartbeatMs?: number;
 	maxConcurrency?: number;
@@ -179,7 +181,13 @@ export class ConnWorker {
 		}
 
 		try {
-			const result = await this.options.runner.run(conn, run, now, runController.signal);
+			const runner = conn.execution?.type === "team_group"
+				? this.options.teamGroupRunner
+				: this.options.runner;
+			if (!runner) {
+				throw new Error("Team group conn runner is not configured");
+			}
+			const result = await runner.run(conn, run, now, runController.signal);
 			await heartbeat.stop();
 			if (timeoutHandle) {
 				clearTimeout(timeoutHandle);
@@ -468,6 +476,12 @@ async function main(): Promise<void> {
 		publicBaseUrl: config.publicBaseUrl,
 		publicDir: resolve(config.projectRoot, "public"),
 	});
+	const teamGroupRunner = new TeamGroupConnRunner({
+		runStore,
+		apiBaseUrl:
+			process.env.CONN_TEAM_API_BASE_URL?.trim() ||
+			`http://127.0.0.1:${config.port}`,
+	});
 	const worker = new ConnWorker({
 		workerId: process.env.CONN_WORKER_ID?.trim() || `conn-worker:${process.pid}`,
 		backgroundDataDir: config.backgroundDataDir,
@@ -477,6 +491,7 @@ async function main(): Promise<void> {
 		notificationBroadcaster,
 		activityNotifier,
 		runner,
+		teamGroupRunner,
 		leaseMs: Number(process.env.CONN_WORKER_LEASE_MS ?? 300_000),
 		maxConcurrency: Number(process.env.CONN_WORKER_MAX_CONCURRENCY ?? 1),
 	});
