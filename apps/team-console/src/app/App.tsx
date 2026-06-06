@@ -998,12 +998,14 @@ function readStoredTaskGroups(value: unknown): AtlasTaskGroup[] {
     const groupId = typeof record.groupId === "string" ? record.groupId.trim() : "";
     const title = typeof record.title === "string" ? record.title.trim() : "";
     const taskNodeIds = readStringArray(record.taskNodeIds);
+    const headTaskIds = readStringArray(record.headTaskIds);
     if (!groupId || !title || taskNodeIds.length === 0 || seen.has(groupId)) continue;
     seen.add(groupId);
     result.push({
       groupId,
       title,
       taskNodeIds,
+      ...(headTaskIds.length > 0 ? { headTaskIds } : {}),
       collapsed: record.collapsed === true,
       locked: record.locked === true,
     });
@@ -2026,6 +2028,7 @@ export function App() {
         title: group.title,
         taskNodeIds,
         taskIds: group.taskIds,
+        headTaskIds: group.headTaskIds,
         status: group.status,
         validationErrors: group.validation.errors,
         members: group.taskIds.map((taskId) => ({

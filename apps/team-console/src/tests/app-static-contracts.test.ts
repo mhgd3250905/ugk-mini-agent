@@ -73,6 +73,7 @@ describe("Team Console static contracts", () => {
   it("keeps expanded Task Group header controls out of the member chip row", () => {
     const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
     const mapSource = readFileSync("src/graph/ExecutionMap.tsx", "utf8");
+    const appSource = readFileSync("src/app/App.tsx", "utf8");
     const headRule = mapCss.match(/\.emap-task-group-head\s*{[^}]*}/)?.[0] ?? "";
     const footerRule = mapCss.match(/\.emap-task-group-footer\s*{[^}]*}/)?.[0] ?? "";
     const membersRule = mapCss.match(/\.emap-task-group-members\s*{[^}]*}/)?.[0] ?? "";
@@ -80,11 +81,13 @@ describe("Team Console static contracts", () => {
 
     expect(mapSource).toContain("const TASK_GROUP_MIN_WIDTH = 560");
     expect(mapSource).toContain("const TASK_GROUP_MEMBER_ROW_HEIGHT = 24");
-    expect(mapSource).toContain("const TASK_GROUP_MEMBER_ROW_Y_TOLERANCE = 48");
     expect(mapSource).toContain("function taskGroupHeaderBandHeight");
     expect(mapSource).toContain("function buildTaskGroupMemberRows");
-    expect(mapSource).toContain(".sort((a, b) => a.y - b.y || a.x - b.x)");
-    expect(mapSource).toContain(".sort((a, b) => a.x - b.x)");
+    expect(mapSource).toContain("group.headTaskIds");
+    expect(mapSource).toContain("connection.status !== \"stale\"");
+    expect(mapSource).toContain("connection.fromTaskId");
+    expect(mapSource).toContain("connection.toTaskId");
+    expect(appSource).toContain("headTaskIds: group.headTaskIds");
     expect(mapSource).toContain('renderNodeIdCopyButton("group", group.groupId)');
     expect(mapSource).toContain('taskCount === 1 ? "Task" : "Tasks"');
     expect(headRule).toContain("overflow: hidden");

@@ -185,6 +185,7 @@ export type AtlasTaskGroup = {
   title: string;
   taskNodeIds: string[];
   taskIds?: string[];
+  headTaskIds?: string[];
   status?: "valid" | "invalid";
   validationErrors?: Array<{ code: string; message: string }>;
   members?: Array<{ taskId: string; title: string }>;
@@ -255,7 +256,6 @@ const TASK_GROUP_BOTTOM_PADDING = 58;
 const TASK_GROUP_MEMBER_TOP = 42;
 const TASK_GROUP_MEMBER_ROW_HEIGHT = 24;
 const TASK_GROUP_MEMBER_ROW_GAP = 6;
-const TASK_GROUP_MEMBER_ROW_Y_TOLERANCE = 48;
 const TASK_GROUP_HEADER_BOTTOM_GAP = 10;
 type CopyableNodeKind = "agent" | "task" | "group";
 type EvidenceKind = "result" | "error" | "attempt" | "progress" | "worker" | "checker" | "watcher";
@@ -407,39 +407,65 @@ function taskGroupHeaderBandHeight(collapsed: boolean, memberRowCount: number): 
 function buildTaskGroupMemberRows(
   group: AtlasTaskGroup,
   nodes: AtlasTaskNode[],
+  taskConnections: TeamTaskConnection[],
   tasksById: Map<string, TeamCanvasTask> | undefined,
 ): AtlasTaskGroupMemberRow[] {
-  type PositionedMember = AtlasTaskGroupMemberChip & { x: number };
   const memberByTaskId = new Map((group.members ?? []).map((member) => [member.taskId, member]));
-  const orderedVisibleMembers = nodes
-    .map((node) => ({
-      taskId: node.taskId,
-      title: memberByTaskId.get(node.taskId)?.title ?? tasksById?.get(node.taskId)?.title ?? node.taskId,
-      x: node.position.x,
-      y: node.position.y,
-    }))
-    .sort((a, b) => a.y - b.y || a.x - b.x);
-  const rows: Array<{ y: number; members: PositionedMember[] }> = [];
-  for (const member of orderedVisibleMembers) {
-    const row = rows.at(-1);
-    if (!row || Math.abs(row.y - member.y) > TASK_GROUP_MEMBER_ROW_Y_TOLERANCE) {
-      rows.push({ y: member.y, members: [{ taskId: member.taskId, title: member.title, x: member.x }] });
-    } else {
-      row.members.push({ taskId: member.taskId, title: member.title, x: member.x });
-    }
+  const taskIds = group.taskIds?.length
+    ? group.taskIds
+    : group.members?.length
+      ? group.members.map((member) => member.taskId)
+      : nodes.map((node) => node.taskId);
+  const taskIdSet = new Set(taskIds);
+  const taskIdOrder = new Map(taskIds.map((taskId, index) => [taskId, index]));
+  const toMember = (taskId: string): AtlasTaskGroupMemberChip => ({
+    taskId,
+    title: memberByTaskId.get(taskId)?.title ?? tasksById?.get(taskId)?.title ?? taskId,
+  });
+  const internalConnections = taskConnections.filter((connection) => (
+    connection.status !== "stale"
+    && taskIdSet.has(connection.fromTaskId)
+    && taskIdSet.has(connection.toTaskId)
+  ));
+  const incomingTaskIds = new Set(internalConnections.map((connection) => connection.toTaskId));
+  const outgoingByTaskId = new Map<string, TeamTaskConnection[]>();
+  for (const connection of internalConnections) {
+    const outgoing = outgoingByTaskId.get(connection.fromTaskId) ?? [];
+    outgoing.push(connection);
+    outgoingByTaskId.set(connection.fromTaskId, outgoing);
+  }
+  for (const outgoing of outgoingByTaskId.values()) {
+    outgoing.sort((a, b) => (taskIdOrder.get(a.toTaskId) ?? Number.MAX_SAFE_INTEGER) - (taskIdOrder.get(b.toTaskId) ?? Number.MAX_SAFE_INTEGER));
   }
 
-  const visibleTaskIds = new Set(orderedVisibleMembers.map((member) => member.taskId));
-  const fallbackMembers = (group.members ?? []).filter((member) => !visibleTaskIds.has(member.taskId));
-  if (fallbackMembers.length > 0) {
-    rows.push({
-      y: Number.POSITIVE_INFINITY,
-      members: fallbackMembers.map((member, index) => ({ ...member, x: index })),
-    });
+  const validHeadTaskIds = (group.headTaskIds ?? []).filter((taskId) => taskIdSet.has(taskId));
+  const derivedHeadTaskIds = taskIds.filter((taskId) => !incomingTaskIds.has(taskId));
+  const headTaskIds = validHeadTaskIds.length > 0
+    ? validHeadTaskIds
+    : derivedHeadTaskIds.length > 0
+      ? derivedHeadTaskIds
+      : taskIds.slice(0, 1);
+  const visitedTaskIds = new Set<string>();
+  const rows: AtlasTaskGroupMemberRow[] = [];
+  for (const headTaskId of headTaskIds) {
+    const row: AtlasTaskGroupMemberRow = [];
+    const rowVisitedTaskIds = new Set<string>();
+    let currentTaskId: string | undefined = headTaskId;
+    while (currentTaskId && taskIdSet.has(currentTaskId) && !rowVisitedTaskIds.has(currentTaskId)) {
+      row.push(toMember(currentTaskId));
+      rowVisitedTaskIds.add(currentTaskId);
+      visitedTaskIds.add(currentTaskId);
+      const nextConnection: TeamTaskConnection | undefined = (outgoingByTaskId.get(currentTaskId) ?? []).find((connection) => !rowVisitedTaskIds.has(connection.toTaskId));
+      currentTaskId = nextConnection?.toTaskId;
+    }
+    if (row.length > 0) rows.push(row);
   }
-  return rows.map((row) => row.members
-    .sort((a, b) => a.x - b.x)
-    .map(({ taskId, title }) => ({ taskId, title })));
+
+  const fallbackRow = taskIds
+    .filter((taskId) => !visitedTaskIds.has(taskId))
+    .map(toMember);
+  if (fallbackRow.length > 0) rows.push(fallbackRow);
+  return rows;
 }
 
 function statusClass(status: TaskStatus | RunDetail["status"]): string {
@@ -2557,7 +2583,7 @@ export function ExecutionMap({
         .map((nodeId) => unfilteredVisibleTaskNodes.find((node) => node.nodeId === nodeId) ?? null)
         .filter((node): node is AtlasTaskNode => Boolean(node));
       const taskCount = group.taskIds?.length ?? group.members?.length ?? nodes.length;
-      const memberRows = buildTaskGroupMemberRows(group, nodes, tasksById);
+      const memberRows = buildTaskGroupMemberRows(group, nodes, taskConnections, tasksById);
       if (nodes.length === 0) {
         const index = emptyIndex;
         emptyIndex += 1;
@@ -2592,7 +2618,7 @@ export function ExecutionMap({
         },
       }];
     });
-  }, [showTasks, taskGroups, tasksById, unfilteredVisibleTaskNodes]);
+  }, [showTasks, taskConnections, taskGroups, tasksById, unfilteredVisibleTaskNodes]);
   const taskGroupRight = taskGroupRenderItems.length > 0
     ? Math.max(...taskGroupRenderItems.map((item) => item.rect.x + item.rect.width))
     : 0;
