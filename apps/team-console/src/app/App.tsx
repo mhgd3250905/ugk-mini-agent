@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunAnnotation, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort, TeamTaskConnection, TeamManualUpstreamRunSelection, TeamTaskRunCreateRequest, TeamTaskGroupRun } from "../api/team-types";
+import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunAnnotation, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort, TeamTaskConnection, TeamManualUpstreamRunSelection, TeamTaskRunCreateRequest } from "../api/team-types";
 import { MockTeamApi } from "../fixtures/team-fixtures";
 import { useTeamConsoleLiveData, type DataSource, type TeamConsoleUiResetReason, type TeamDiscoveryStage, type TeamDiscoverySummary, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
 import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchGeneratedObserverState, type TaskBranchState } from "./use-task-branch-stack";
 import { hasDirtyTaskEditConflict, useTaskEditState } from "./use-task-edit-state";
 import { useTaskLeaderCopy } from "./use-task-leader-copy";
 import { hasSameTaskGroupRunPollingSignature, isActiveTaskGroupRun, selectLatestTaskGroupRun } from "./team-console-task-group-run-state";
+import { buildLiveTaskGroups, type StoredTaskGroupDisplayState, type TaskGroupRunUiState } from "./team-console-task-group-projection";
 import { ExecutionMap, type AtlasAgentNode, type AtlasBranchLayoutState, type AtlasSelectedNodeEntry, type AtlasSourceNode, type AtlasTaskGroup, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { normalizeAtlasViewport, type AtlasViewport } from "../graph/AtlasCanvasShell";
 import { RUN_STATUS_LABELS, isActiveRun } from "../shared/status";
@@ -93,17 +94,6 @@ type StoredTaskPosition = {
 type StoredLoadedTaskRunSelection = {
   taskId: string;
   runId: string;
-};
-
-type TaskGroupRunUiState = {
-  latestByGroupId: Record<string, TeamTaskGroupRun>;
-  savingByGroupId: Record<string, boolean>;
-};
-
-type StoredTaskGroupDisplayState = {
-  groupId: string;
-  collapsed: boolean;
-  locked: boolean;
 };
 
 type StoredSourcePosition = {
@@ -1957,47 +1947,17 @@ export function App() {
   const canvasUiContextKey = dataSource === "mock" ? `mock:${selectedFixtureId}` : "live";
   const taskGroups = useMemo<AtlasTaskGroup[]>(() => {
     if (dataSource !== "live") return mockTaskGroups;
-    const nodeIdByTaskId = new Map(taskNodes.map((node) => [node.taskId, node.nodeId]));
-    const displayStateByGroupId = new Map(taskGroupDisplayStates.map((state) => [state.groupId, state]));
     const selectedTaskIds = selectedAtlasEntries
       .filter((entry): entry is Extract<AtlasSelectedNodeEntry, { kind: "task" }> => entry.kind === "task")
       .map((entry) => entry.taskId);
-    return teamTaskGroups.flatMap((group) => {
-      if (group.archived) return [];
-      const taskNodeIds = group.taskIds.flatMap((taskId) => {
-        const nodeId = nodeIdByTaskId.get(taskId);
-        return nodeId ? [nodeId] : [];
-      });
-      const displayState = displayStateByGroupId.get(group.groupId);
-      const latestGroupRun = taskGroupRunUiState.latestByGroupId[group.groupId];
-      const blockedByActiveTask = group.taskIds.some((taskId) => (
-        (taskRunsByTaskId[taskId] ?? []).some((taskRun) => isActiveRun(taskRun.status))
-      ));
-      const currentTaskIds = new Set(group.taskIds);
-      return [{
-        groupId: group.groupId,
-        title: group.title,
-        taskNodeIds,
-        taskIds: group.taskIds,
-        headTaskIds: group.headTaskIds,
-        status: group.status,
-        validationErrors: group.validation.errors,
-        members: group.taskIds.map((taskId) => ({
-          taskId,
-          title: tasksById.get(taskId)?.title ?? taskId,
-        })),
-        canAddSelectedTasks: selectedTaskIds.some((taskId) => !currentTaskIds.has(taskId)),
-        collapsed: displayState?.collapsed ?? false,
-        locked: displayState?.locked ?? false,
-        groupRun: {
-          status: latestGroupRun?.status ?? "idle",
-          groupRunId: latestGroupRun?.groupRunId,
-          entryCount: latestGroupRun?.entryRuns.length ?? 0,
-          observedCount: latestGroupRun?.observedRuns.length ?? 0,
-          saving: Boolean(taskGroupRunUiState.savingByGroupId[group.groupId]),
-          blockedByActiveTask,
-        },
-      }];
+    return buildLiveTaskGroups({
+      groups: teamTaskGroups,
+      taskNodes,
+      selectedTaskIds,
+      displayStates: taskGroupDisplayStates,
+      runUiState: taskGroupRunUiState,
+      taskRunsByTaskId,
+      tasksById,
     });
   }, [dataSource, mockTaskGroups, selectedAtlasEntries, taskGroupDisplayStates, taskGroupRunUiState, taskNodes, taskRunsByTaskId, tasksById, teamTaskGroups]);
   const activeRunHistoryTaskId = useMemo(() => {

@@ -74,6 +74,7 @@ describe("Team Console static contracts", () => {
     const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
     const mapSource = readFileSync("src/graph/ExecutionMap.tsx", "utf8");
     const memberRowsSource = readFileSync("src/graph/task-group-member-rows.ts", "utf8");
+    const groupProjectionSource = readFileSync("src/app/team-console-task-group-projection.ts", "utf8");
     const appSource = readFileSync("src/app/App.tsx", "utf8");
     const headRule = mapCss.match(/\.emap-task-group-head\s*{[^}]*}/)?.[0] ?? "";
     const footerRule = mapCss.match(/\.emap-task-group-footer\s*{[^}]*}/)?.[0] ?? "";
@@ -90,7 +91,8 @@ describe("Team Console static contracts", () => {
     expect(memberRowsSource).toContain("connection.status !== \"stale\"");
     expect(memberRowsSource).toContain("connection.fromTaskId");
     expect(memberRowsSource).toContain("connection.toTaskId");
-    expect(appSource).toContain("headTaskIds: group.headTaskIds");
+    expect(appSource).toContain("buildLiveTaskGroups");
+    expect(groupProjectionSource).toContain("headTaskIds: group.headTaskIds");
     expect(mapSource).toContain('renderNodeIdCopyButton("group", group.groupId)');
     expect(mapSource).toContain('taskCount === 1 ? "Task" : "Tasks"');
     expect(headRule).toContain("overflow: hidden");
