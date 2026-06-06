@@ -1873,6 +1873,32 @@ describe("LiveTeamApi", () => {
     expect(created).toEqual(taskGroup);
   });
 
+  it("patches live Task Groups with URL-encoded group ids and taskIds", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const taskGroup = {
+      schemaVersion: "team/task-group-1",
+      groupId: "group/a b",
+      title: "Group 1",
+      taskIds: [],
+      archived: false,
+      createdAt: "2026-06-05T00:00:00.000Z",
+      updatedAt: "2026-06-06T00:00:00.000Z",
+      status: "invalid",
+      headTaskIds: [],
+      validation: { errors: [{ code: "no_head_task", message: "Group has no head task" }] },
+    } as const;
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ taskGroup }), { status: 200 }));
+
+    const updated = await api.patchTaskGroup("group/a b", { taskIds: [] });
+
+    expect(fetch).toHaveBeenCalledWith("/v1/team/task-groups/group%2Fa%20b", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskIds: [] }),
+    });
+    expect(updated).toEqual(taskGroup);
+  });
+
   it("archives live Task Groups with URL-encoded group ids", async () => {
     const api = new LiveTeamApi("/v1/team");
     const taskGroup = {

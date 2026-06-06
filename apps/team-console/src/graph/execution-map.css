@@ -792,6 +792,12 @@
   border-style: dashed;
 }
 
+.emap-task-group-frame[data-task-group-empty="true"] {
+  z-index: 2;
+  border-style: solid;
+  background: rgba(248, 250, 252, 0.9);
+}
+
 .emap-task-group-head {
   position: absolute;
   top: 8px;
@@ -804,6 +810,7 @@
   color: var(--primary);
   font-size: 11px;
   font-weight: 760;
+  flex-wrap: wrap;
 }
 
 .emap-task-group-kicker {
@@ -895,6 +902,80 @@
 .emap-task-group-head button:disabled {
   cursor: not-allowed;
   opacity: 0.46;
+}
+
+.emap-task-group-members {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 42px;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  max-height: 28px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.emap-task-group-members::-webkit-scrollbar {
+  display: none;
+}
+
+.emap-task-group-member-chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 150px;
+  height: 24px;
+  border: 1px solid rgba(22, 124, 128, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 720;
+  overflow: hidden;
+}
+
+.emap-task-group-member-chip > span {
+  min-width: 0;
+  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emap-task-group-member-chip button {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid rgba(22, 124, 128, 0.18);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 820;
+}
+
+.emap-task-group-member-chip button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.emap-task-group-validation {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 8px;
+  color: var(--secondary);
+  font-size: 10px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .emap-task-group-card {
@@ -4405,10 +4486,29 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
+[data-theme="dark"] .emap-task-group-frame[data-task-group-empty="true"] {
+  background: rgba(8, 18, 28, 0.86);
+}
+
 [data-theme="dark"] .emap-task-group-head button {
   border-color: rgba(121, 216, 208, 0.32);
   background: rgba(16, 20, 31, 0.72);
   color: rgb(182, 246, 240);
+}
+
+[data-theme="dark"] .emap-task-group-member-chip {
+  border-color: rgba(121, 216, 208, 0.24);
+  background: rgba(16, 20, 31, 0.72);
+  color: rgb(225, 255, 252);
+}
+
+[data-theme="dark"] .emap-task-group-member-chip button {
+  border-left-color: rgba(121, 216, 208, 0.22);
+  color: rgb(182, 246, 240);
+}
+
+[data-theme="dark"] .emap-task-group-validation {
+  color: rgba(216, 228, 241, 0.58);
 }
 
 [data-theme="dark"] .emap-task-group-run-badge {

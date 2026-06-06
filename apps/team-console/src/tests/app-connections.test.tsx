@@ -45,7 +45,14 @@ describe("App", () => {
     title: string;
     taskIds: string[];
     archived?: boolean;
+    status?: ResolvedTeamTaskGroup["status"];
+    headTaskIds?: string[];
+    validationErrors?: ResolvedTeamTaskGroup["validation"]["errors"];
   }): ResolvedTeamTaskGroup {
+    const status = input.status ?? (input.taskIds.length > 0 ? "valid" : "invalid");
+    const validationErrors = input.validationErrors ?? (status === "invalid"
+      ? [{ code: "no_head_task", message: "Group has no head task" }]
+      : []);
     return {
       schemaVersion: "team/task-group-1",
       groupId: input.groupId,
@@ -54,9 +61,9 @@ describe("App", () => {
       archived: input.archived ?? false,
       createdAt: "2026-06-05T00:00:00.000Z",
       updatedAt: "2026-06-05T00:00:00.000Z",
-      status: "valid",
-      headTaskIds: input.taskIds.slice(0, 1),
-      validation: { errors: [] },
+      status,
+      headTaskIds: input.headTaskIds ?? (status === "valid" ? input.taskIds.slice(0, 1) : []),
+      validation: { errors: validationErrors },
     };
   }
 
@@ -185,6 +192,24 @@ describe("App", () => {
         });
         groups = [...groups, group];
         return new Response(JSON.stringify({ taskGroup: group }), { status: 201 });
+      }
+      if (url.startsWith("/v1/team/task-groups/") && method === "PATCH") {
+        const groupId = decodeURIComponent(url.slice("/v1/team/task-groups/".length));
+        const existing = groups.find((group) => group.groupId === groupId);
+        if (!existing) return new Response(JSON.stringify({ error: { message: "group not found" } }), { status: 404 });
+        const body = JSON.parse(String(init?.body ?? "{}")) as { title?: string; taskIds?: string[] };
+        const taskIds = Array.isArray(body.taskIds) ? body.taskIds : existing.taskIds;
+        const group = makeResolvedTaskGroup({
+          groupId: existing.groupId,
+          title: body.title ?? existing.title,
+          taskIds,
+          archived: existing.archived,
+          status: taskIds.length > 0 ? "valid" : "invalid",
+          headTaskIds: taskIds.length > 0 ? taskIds.slice(0, 1) : [],
+          validationErrors: taskIds.length > 0 ? [] : [{ code: "no_head_task", message: "Group has no head task" }],
+        });
+        groups = groups.map((candidate) => candidate.groupId === group.groupId ? group : candidate);
+        return new Response(JSON.stringify({ taskGroup: group }), { status: 200 });
       }
       if (url.startsWith("/v1/team/task-groups/") && url.endsWith("/archive") && method === "POST") {
         const groupId = decodeURIComponent(url.split("/").at(-2)!);
@@ -902,7 +927,107 @@ describe("App", () => {
           { groupId: "group_live_1", collapsed: false, locked: false },
         ]);
         expect(JSON.stringify(state)).not.toContain("taskNodeIds");
+        expect(JSON.stringify(state)).not.toContain("taskIds");
       });
+    });
+
+    it("keeps an empty invalid Live Task Group visible and disables running it", async () => {
+      const taskA = makeLiveTask("task_live_a", "Live Alpha");
+      setupLiveGroupApi({
+        tasks: [taskA],
+        groups: [makeResolvedTaskGroup({
+          groupId: "group_empty",
+          title: "Empty Backend Group",
+          taskIds: [],
+          status: "invalid",
+          headTaskIds: [],
+          validationErrors: [{ code: "no_head_task", message: "Group has no head task" }],
+        })],
+      });
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+
+      render(<App />);
+
+      const group = await screen.findByRole("group", { name: "Empty Backend Group" });
+      expect(group).toHaveAttribute("data-task-group-empty", "true");
+      expect(within(group).getByText("0 Tasks")).toBeInTheDocument();
+      expect(within(group).getByText("Group 当前不可运行")).toBeInTheDocument();
+      expect(within(group).getByRole("button", { name: "运行 Empty Backend Group" })).toBeDisabled();
+      await waitFor(() => {
+        const raw = window.localStorage.getItem("ugk-team-console:canvas-ui-state:v1");
+        expect(raw).toBeTruthy();
+        const stateText = JSON.stringify(JSON.parse(raw!));
+        expect(stateText).not.toContain("taskNodeIds");
+        expect(stateText).not.toContain("taskIds");
+      });
+    });
+
+    it("adds selected Tasks to an empty Live Task Group through PATCH", async () => {
+      const taskA = makeLiveTask("task_live_a", "Live Alpha");
+      const taskB = makeLiveTask("task_live_b", "Live Beta");
+      setupLiveGroupApi({
+        tasks: [taskA, taskB],
+        groups: [makeResolvedTaskGroup({
+          groupId: "group/live empty",
+          title: "Editable Group",
+          taskIds: [],
+          status: "invalid",
+          headTaskIds: [],
+          validationErrors: [{ code: "no_head_task", message: "Group has no head task" }],
+        })],
+      });
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+
+      const { container } = render(<App />);
+      await screen.findByRole("button", { name: "Live Alpha" });
+      await screen.findByRole("button", { name: "Live Beta" });
+      const atlas = getAtlas(container);
+
+      vi.useFakeTimers();
+      firePointer(atlas, "pointerdown", { pointerId: 63, clientX: 240, clientY: 180 });
+      act(() => { vi.advanceTimersByTime(SELECTION_LONG_PRESS_MS + 1); });
+      firePointer(atlas, "pointermove", { pointerId: 63, clientX: 940, clientY: 430 });
+      firePointer(atlas, "pointerup", { pointerId: 63, clientX: 940, clientY: 430, buttons: 0 });
+      vi.useRealTimers();
+
+      const group = await screen.findByRole("group", { name: "Editable Group" });
+      fireEvent.click(within(group).getByRole("button", { name: "添加选中 Editable Group" }));
+
+      await within(group).findByText("2 Tasks");
+      const patchCall = vi.mocked(fetch).mock.calls.find(([url, init]) => (
+        String(url) === "/v1/team/task-groups/group%2Flive%20empty" && init?.method === "PATCH"
+      ));
+      expect(patchCall).toBeTruthy();
+      expect(JSON.parse(String(patchCall?.[1]?.body))).toEqual({
+        taskIds: [taskA.taskId, taskB.taskId],
+      });
+    });
+
+    it("removes the final Live Group member and keeps the empty Group visible", async () => {
+      const taskA = makeLiveTask("task_live_a", "Live Alpha");
+      setupLiveGroupApi({
+        tasks: [taskA],
+        groups: [makeResolvedTaskGroup({
+          groupId: "group_live_single",
+          title: "Single Group",
+          taskIds: [taskA.taskId],
+        })],
+      });
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+
+      render(<App />);
+
+      const group = await screen.findByRole("group", { name: "Single Group" });
+      fireEvent.click(within(group).getByRole("button", { name: "移除成员 Live Alpha" }));
+
+      await within(group).findByText("0 Tasks");
+      expect(screen.getByRole("group", { name: "Single Group" })).toHaveAttribute("data-task-group-empty", "true");
+      expect(within(group).getByRole("button", { name: "运行 Single Group" })).toBeDisabled();
+      const patchCall = vi.mocked(fetch).mock.calls.find(([url, init]) => (
+        String(url) === "/v1/team/task-groups/group_live_single" && init?.method === "PATCH"
+      ));
+      expect(patchCall).toBeTruthy();
+      expect(JSON.parse(String(patchCall?.[1]?.body))).toEqual({ taskIds: [] });
     });
 
     it("creates a Live Task Group through the backend using real task ids", async () => {

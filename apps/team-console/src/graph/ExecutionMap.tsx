@@ -97,6 +97,8 @@ interface ExecutionMapProps {
   onDeleteTaskGroup?: (groupId: string) => void;
   onRunTaskGroup?: (groupId: string) => void;
   onCancelTaskGroupRun?: (groupId: string, groupRunId: string) => void;
+  onAddSelectedTasksToTaskGroup?: (groupId: string) => void;
+  onRemoveTaskFromTaskGroup?: (groupId: string, taskId: string) => void;
   onAtlasSelectionChange?: (entries: AtlasSelectedNodeEntry[]) => void;
   onTaskOutputPortSelect?: (taskId: string, port: TeamTaskOutputPort) => void;
   onTaskInputPortSelect?: (taskId: string, port: TeamTaskInputPort) => void;
@@ -182,6 +184,11 @@ export type AtlasTaskGroup = {
   groupId: string;
   title: string;
   taskNodeIds: string[];
+  taskIds?: string[];
+  status?: "valid" | "invalid";
+  validationErrors?: Array<{ code: string; message: string }>;
+  members?: Array<{ taskId: string; title: string }>;
+  canAddSelectedTasks?: boolean;
   collapsed: boolean;
   locked?: boolean;
   groupRun?: AtlasTaskGroupRunView;
@@ -238,6 +245,9 @@ const TASK_CHILD_BRANCH_WIDTH = 820;
 const TASK_CHILD_BRANCH_HEIGHT = 620;
 const TASK_BRANCH_GAP = 48;
 const TASK_CHILD_BRANCH_GAP = 32;
+const TASK_GROUP_HEADER_BAND_HEIGHT = 76;
+const TASK_GROUP_COLLAPSED_HEADER_BAND_HEIGHT = 42;
+const TASK_GROUP_BOTTOM_PADDING = 22;
 type EvidenceKind = "result" | "error" | "attempt" | "progress" | "worker" | "checker" | "watcher";
 
 interface EvidenceEntry {
@@ -897,6 +907,8 @@ export function ExecutionMap({
   onDeleteTaskGroup,
   onRunTaskGroup,
   onCancelTaskGroupRun,
+  onAddSelectedTasksToTaskGroup,
+  onRemoveTaskFromTaskGroup,
   onAtlasSelectionChange,
   onTaskOutputPortSelect,
   onTaskInputPortSelect,
@@ -2476,23 +2488,41 @@ export function ExecutionMap({
   };
   const taskGroupRenderItems = useMemo(() => {
     if (!showTasks) return [];
+    let emptyIndex = 0;
     return taskGroups.flatMap((group) => {
       const nodes = group.taskNodeIds
         .map((nodeId) => unfilteredVisibleTaskNodes.find((node) => node.nodeId === nodeId) ?? null)
         .filter((node): node is AtlasTaskNode => Boolean(node));
-      if (nodes.length === 0) return [];
+      const taskCount = group.taskIds?.length ?? group.members?.length ?? nodes.length;
+      if (nodes.length === 0) {
+        const index = emptyIndex;
+        emptyIndex += 1;
+        return [{
+          group,
+          taskCount,
+          isEmpty: true,
+          rect: {
+            x: 24,
+            y: 24 + index * 96,
+            width: 280,
+            height: group.collapsed ? 78 : 92,
+          },
+        }];
+      }
       const minX = Math.min(...nodes.map((node) => node.position.x));
       const minY = Math.min(...nodes.map((node) => node.position.y));
       const maxX = Math.max(...nodes.map((node) => node.position.x + NODE_WIDTH));
       const maxY = Math.max(...nodes.map((node) => node.position.y + canvasTaskNodeHeight(tasksById?.get(node.taskId))));
+      const headerBandHeight = group.collapsed ? TASK_GROUP_COLLAPSED_HEADER_BAND_HEIGHT : TASK_GROUP_HEADER_BAND_HEIGHT;
       return [{
         group,
-        taskCount: nodes.length,
+        taskCount,
+        isEmpty: false,
         rect: {
           x: minX - 18,
-          y: minY - 42,
+          y: minY - headerBandHeight,
           width: Math.max(220, maxX - minX + 36),
-          height: group.collapsed ? 78 : maxY - minY + 64,
+          height: group.collapsed ? 78 : maxY - minY + headerBandHeight + TASK_GROUP_BOTTOM_PADDING,
         },
       }];
     });
@@ -3514,8 +3544,22 @@ export function ExecutionMap({
         </svg>
 
         <div className="execution-map-nodes" ref={evidenceContainerRef} style={{ width: svgWidth, minHeight: maxY + 40 }}>
-          {taskGroupRenderItems.map(({ group, rect, taskCount }) => (
-            group.collapsed ? (
+          {taskGroupRenderItems.map(({ group, rect, taskCount, isEmpty }) => {
+            const validationMessage = group.taskIds?.length === 0
+              ? "Group 当前不可运行"
+              : group.status === "invalid"
+                ? group.validationErrors?.[0]?.message ?? "Group 当前不可运行"
+                : "";
+            const groupRunDisabled = group.groupRun
+              ? group.groupRun.saving
+                || isActiveTaskGroupRunView(group.groupRun)
+                || Boolean(group.groupRun.blockedByActiveTask)
+                || Boolean(validationMessage)
+              : false;
+            const runTitle = group.groupRun?.blockedByActiveTask
+              ? "Group 内部已有 Task run 运行中"
+              : validationMessage || "启动 GroupRun";
+            return group.collapsed ? (
               <button
                 key={group.groupId}
                 type="button"
@@ -3523,6 +3567,7 @@ export function ExecutionMap({
                 style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
                 aria-label={`展开 ${group.title} ${taskCount} Tasks`}
                 data-task-group-id={group.groupId}
+                data-task-group-empty={isEmpty ? "true" : "false"}
                 data-task-group-locked={group.locked ? "true" : "false"}
                 data-task-group-run-status={group.groupRun?.status ?? "mock"}
                 onPointerDown={(event) => beginTaskGroupDrag(group, event)}
@@ -3550,6 +3595,7 @@ export function ExecutionMap({
                 aria-label={group.title}
                 style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
                 data-task-group-id={group.groupId}
+                data-task-group-empty={isEmpty ? "true" : "false"}
                 data-task-group-locked={group.locked ? "true" : "false"}
                 data-task-group-run-status={group.groupRun?.status ?? "mock"}
                 onPointerDown={(event) => beginTaskGroupDrag(group, event)}
@@ -3573,16 +3619,12 @@ export function ExecutionMap({
                         type="button"
                         aria-label={`运行 ${group.title}`}
                         className="emap-task-group-run-button"
-                        disabled={
-                          group.groupRun.saving
-                          || isActiveTaskGroupRunView(group.groupRun)
-                          || Boolean(group.groupRun.blockedByActiveTask)
-                        }
-                        title={group.groupRun.blockedByActiveTask ? "Group 内部已有 Task run 运行中" : "启动 GroupRun"}
+                        disabled={groupRunDisabled}
+                        title={runTitle}
                         onPointerDown={(event) => event.stopPropagation()}
                         onClick={(event) => {
                           event.stopPropagation();
-                          onRunTaskGroup?.(group.groupId);
+                          if (!groupRunDisabled) onRunTaskGroup?.(group.groupId);
                         }}
                       >
                         {group.groupRun.saving ? "处理中" : "运行"}
@@ -3603,6 +3645,22 @@ export function ExecutionMap({
                         </button>
                       )}
                     </>
+                  )}
+                  {onAddSelectedTasksToTaskGroup && (
+                    <button
+                      type="button"
+                      aria-label={`添加选中 ${group.title}`}
+                      className="emap-task-group-add-selected-button"
+                      disabled={group.locked || !group.canAddSelectedTasks}
+                      title={group.locked ? "Group 已上锁" : "添加当前选中的 Task"}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (!group.locked && group.canAddSelectedTasks) onAddSelectedTasksToTaskGroup(group.groupId);
+                      }}
+                    >
+                      添加选中
+                    </button>
                   )}
                   <button
                     type="button"
@@ -3642,9 +3700,35 @@ export function ExecutionMap({
                     折叠
                   </button>
                 </div>
+                {group.members && group.members.length > 0 && (
+                  <div className="emap-task-group-members" aria-label={`${group.title} members`}>
+                    {group.members.map((member) => (
+                      <span key={member.taskId} className="emap-task-group-member-chip">
+                        <span>{member.title}</span>
+                        {onRemoveTaskFromTaskGroup && (
+                          <button
+                            type="button"
+                            aria-label={`移除成员 ${member.title}`}
+                            disabled={group.locked}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              if (!group.locked) onRemoveTaskFromTaskGroup(group.groupId, member.taskId);
+                            }}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {validationMessage && (
+                  <div className="emap-task-group-validation" role="status">{validationMessage}</div>
+                )}
               </div>
             )
-          ))}
+          })}
           {model && run && (
             <button
               type="button"

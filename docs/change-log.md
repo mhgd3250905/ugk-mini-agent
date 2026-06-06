@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-06 — Team Console mutable Group membership UI
+
+- **主题**: 5174 Team Console Live API 模式接入 mutable Group membership 编辑。empty/invalid backend Group 不再因没有可见成员 Task 从 Execution Atlas 消失；空 Group 会显示稳定 carrier、`0 Tasks` 和 `data-task-group-empty="true"`，并禁用 `运行 <Group>`。
+- **影响范围**: Live Group 可通过 `PATCH /v1/team/task-groups/:groupId` 添加当前选中 Task 或移除单个成员；移除最后成员后保留 empty invalid Group 可见。Live `canvas-ui-state` 仍只保存 `taskGroupDisplayStates`，不保存 backend `taskIds` 或 `taskNodeIds`。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app-connections.test.tsx`、`apps/team-console/src/tests/team-api.test.ts`。
+
 ## 2026-06-06 — Team Group mutable membership backend contract
 
 - **主题**: Team Task Group definition 保存阶段与运行阶段语义拆分。`POST/PATCH /v1/team/task-groups` 现在允许 empty/invalid membership 持久化，并通过 `ResolvedTeamTaskGroup.status/headTaskIds/validation.errors` 表达 read model；`POST /v1/team/task-groups/:groupId/runs` 才硬拒绝 empty/invalid Group，返回 400 `invalid task group`，不使用 409。
