@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-06 — Team Console Group member chain rows
+
+- **主题**: 5174 Team Console 展开 backend Group 时，顶部成员 chip 不再按视觉坐标或原始 `taskIds` 平铺，而是按 Group 的头结点流水线分行展示：一个 `headTaskId` 一行，沿 active internal `TeamTaskConnection` 顺着下游 Task 排列。
+- **影响范围**: Group 成员展示顺序现在以后端 `ResolvedTeamTaskGroup.headTaskIds` 和当前 active 内部连接为准；旧 mock / 缺 head 数据只作为 fallback。展开 Group 同步补齐最小宽度、完整操作按钮、`1 Task` 单复数、底部可复制 `groupId` chip 和 validation message 的间距展示。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app-static-contracts.test.ts`、`docs/handoff-current.md`。
+
 ## 2026-06-06 — Conn invalid Team Group start diagnostics
 
 - **主题**: 已保存的 `team_group` Conn 指向后来变成 empty/invalid 的 Team Group 时，GroupRun start 返回 400 会把 ConnRun 明确标记为 `failed`，并写入 Team Group start failure 诊断 snapshot。
