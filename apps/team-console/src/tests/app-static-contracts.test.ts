@@ -70,6 +70,18 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toMatch(/\.execution-map-container\s*{[^}]*min-width:\s*0;[^}]*max-width:\s*100%;/s);
   });
 
+  it("keeps expanded Task Group header controls out of the member chip row", () => {
+    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const headRule = mapCss.match(/\.emap-task-group-head\s*{[^}]*}/)?.[0] ?? "";
+    const membersRule = mapCss.match(/\.emap-task-group-members\s*{[^}]*}/)?.[0] ?? "";
+
+    expect(headRule).toContain("overflow: hidden");
+    expect(headRule).toContain("flex-wrap: nowrap");
+    expect(headRule).not.toContain("flex-wrap: wrap");
+    expect(membersRule).toContain("top: 42px");
+    expect(membersRule).toContain("flex-wrap: nowrap");
+  });
+
   it("uses a light default theme for the Team Console app chrome", () => {
     const appCss = readFileSync("src/app/app.css", "utf8");
 
