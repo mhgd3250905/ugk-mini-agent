@@ -169,7 +169,27 @@ test("POST /v1/team/task-groups rejects non-string taskIds entries", async () =>
 	}
 });
 
-test("POST /v1/team/task-groups rejects external incoming typed task connection", async () => {
+test("POST /v1/team/task-groups persists an empty Group as invalid", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const res = await app.inject({
+			method: "POST",
+			url: "/v1/team/task-groups",
+			payload: { title: "Empty group", taskIds: [] },
+		});
+
+		assert.equal(res.statusCode, 201);
+		assert.equal(res.json().group.status, "invalid");
+		assert.deepEqual(res.json().group.taskIds, []);
+		assert.deepEqual(res.json().group.headTaskIds, []);
+		assert.deepEqual(res.json().group.validation.errors.map((error: { code: string }) => error.code), ["no_head_task"]);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("POST /v1/team/task-groups persists external incoming typed task connection as invalid", async () => {
 	const { app, root } = await buildTestServer();
 	try {
 		const [external, inside] = await createTaskChain(app, ["External", "Inside"]);
@@ -180,16 +200,20 @@ test("POST /v1/team/task-groups rejects external incoming typed task connection"
 			payload: { title: "Incoming boundary leak", taskIds: [inside.taskId] },
 		});
 
-		assert.equal(res.statusCode, 400);
-		assert.match(res.json().error, /external_incoming_task_edge|Group outside task/);
-		assert.ok(res.json().error.includes(external.taskId) || res.json().error.includes(inside.taskId));
+		assert.equal(res.statusCode, 201);
+		assert.equal(res.json().group.status, "invalid");
+		assert.deepEqual(res.json().group.taskIds, [inside.taskId]);
+		assert.ok(res.json().group.validation.errors.some((error: { code: string; connectionId?: string }) =>
+			error.code === "external_incoming_task_edge" && error.connectionId,
+		));
+		assert.ok(JSON.stringify(res.json().group.validation.errors).includes(external.taskId));
 	} finally {
 		await app.close();
 		await rm(root, { recursive: true, force: true });
 	}
 });
 
-test("POST /v1/team/task-groups rejects external outgoing typed task connection", async () => {
+test("POST /v1/team/task-groups persists external outgoing typed task connection as invalid", async () => {
 	const { app, root } = await buildTestServer();
 	try {
 		const [inside, external] = await createTaskChain(app, ["Inside", "External"]);
@@ -200,16 +224,20 @@ test("POST /v1/team/task-groups rejects external outgoing typed task connection"
 			payload: { title: "Outgoing boundary leak", taskIds: [inside.taskId] },
 		});
 
-		assert.equal(res.statusCode, 400);
-		assert.match(res.json().error, /external_outgoing_task_edge|Group task/);
-		assert.ok(res.json().error.includes(inside.taskId) || res.json().error.includes(external.taskId));
+		assert.equal(res.statusCode, 201);
+		assert.equal(res.json().group.status, "invalid");
+		assert.deepEqual(res.json().group.taskIds, [inside.taskId]);
+		assert.ok(res.json().group.validation.errors.some((error: { code: string; connectionId?: string }) =>
+			error.code === "external_outgoing_task_edge" && error.connectionId,
+		));
+		assert.ok(JSON.stringify(res.json().group.validation.errors).includes(external.taskId));
 	} finally {
 		await app.close();
 		await rm(root, { recursive: true, force: true });
 	}
 });
 
-test("POST /v1/team/task-groups rejects cross-boundary control dependency", async () => {
+test("POST /v1/team/task-groups persists cross-boundary control dependency as invalid", async () => {
 	const { app, root } = await buildTestServer();
 	try {
 		const inside = await createTask(app, "Inside");
@@ -227,15 +255,18 @@ test("POST /v1/team/task-groups rejects cross-boundary control dependency", asyn
 			payload: { title: "Dependency boundary leak", taskIds: [inside.taskId] },
 		});
 
-		assert.equal(res.statusCode, 400);
-		assert.match(res.json().error, /external_incoming_task_edge|control dependency/);
+		assert.equal(res.statusCode, 201);
+		assert.equal(res.json().group.status, "invalid");
+		assert.ok(res.json().group.validation.errors.some((error: { code: string; dependencyId?: string }) =>
+			error.code === "external_incoming_task_edge" && error.dependencyId === depRes.json().dependency.dependencyId,
+		));
 	} finally {
 		await app.close();
 		await rm(root, { recursive: true, force: true });
 	}
 });
 
-test("POST /v1/team/task-groups rejects generated child Tasks", async () => {
+test("POST /v1/team/task-groups persists generated child Tasks as invalid", async () => {
 	const { app, root, teamDir } = await buildTestServer();
 	try {
 		const discovery = await createTask(app, "Discovery");
@@ -259,15 +290,18 @@ test("POST /v1/team/task-groups rejects generated child Tasks", async () => {
 			payload: { title: "Generated child group", taskIds: [generated.taskId] },
 		});
 
-		assert.equal(res.statusCode, 400);
-		assert.match(res.json().error, /generated_task_not_supported/);
+		assert.equal(res.statusCode, 201);
+		assert.equal(res.json().group.status, "invalid");
+		assert.ok(res.json().group.validation.errors.some((error: { code: string; taskId?: string }) =>
+			error.code === "generated_task_not_supported" && error.taskId === generated.taskId,
+		));
 	} finally {
 		await app.close();
 		await rm(root, { recursive: true, force: true });
 	}
 });
 
-test("POST /v1/team/task-groups rejects archived Tasks", async () => {
+test("POST /v1/team/task-groups persists archived Tasks as invalid", async () => {
 	const { app, root } = await buildTestServer();
 	try {
 		const task = await createTask(app, "Archived");
@@ -279,8 +313,11 @@ test("POST /v1/team/task-groups rejects archived Tasks", async () => {
 			payload: { title: "Archived task group", taskIds: [task.taskId] },
 		});
 
-		assert.equal(res.statusCode, 400);
-		assert.match(res.json().error, /task_archived/);
+		assert.equal(res.statusCode, 201);
+		assert.equal(res.json().group.status, "invalid");
+		assert.ok(res.json().group.validation.errors.some((error: { code: string; taskId?: string }) =>
+			error.code === "task_archived" && error.taskId === task.taskId,
+		));
 	} finally {
 		await app.close();
 		await rm(root, { recursive: true, force: true });
@@ -308,6 +345,34 @@ test("PATCH /v1/team/task-groups/:groupId revalidates taskIds and updates headTa
 		assert.equal(patchRes.statusCode, 200);
 		assert.deepEqual(patchRes.json().group.taskIds, [b1.taskId, b2.taskId]);
 		assert.deepEqual(patchRes.json().group.headTaskIds, [b1.taskId]);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("PATCH /v1/team/task-groups/:groupId allows an empty Group and reports no_head_task", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const task = await createTask(app, "Initial");
+		const createRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/task-groups",
+			payload: { title: "Initial group", taskIds: [task.taskId] },
+		});
+		assert.equal(createRes.statusCode, 201);
+
+		const patchRes = await app.inject({
+			method: "PATCH",
+			url: `/v1/team/task-groups/${createRes.json().group.groupId}`,
+			payload: { taskIds: [] },
+		});
+
+		assert.equal(patchRes.statusCode, 200);
+		assert.equal(patchRes.json().group.status, "invalid");
+		assert.deepEqual(patchRes.json().group.taskIds, []);
+		assert.deepEqual(patchRes.json().group.headTaskIds, []);
+		assert.deepEqual(patchRes.json().group.validation.errors.map((error: { code: string }) => error.code), ["no_head_task"]);
 	} finally {
 		await app.close();
 		await rm(root, { recursive: true, force: true });

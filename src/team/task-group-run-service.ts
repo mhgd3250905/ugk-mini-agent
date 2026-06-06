@@ -7,6 +7,7 @@ import type {
 	TeamAttemptMetadata,
 	TeamTaskDeliveryOutcome,
 	TeamRunState,
+	TeamTaskGroup,
 	TeamTaskGroupRun,
 	TeamTaskGroupRunObservedRun,
 	TeamTaskGroupRunSource,
@@ -48,14 +49,14 @@ export class TaskGroupRunService {
 		if (!group) throw new Error(`task group not found: ${groupId}`);
 		if (group.archived) throw new Error(`task group archived: ${groupId}`);
 
-		const resolved = await this.groupStore.resolve(group);
-		if (resolved.status !== "valid") {
-			throw new Error(`invalid task group: ${resolved.validation.errors.map(error => error.code).join(", ")}`);
-		}
-
 		const activeGroupRun = await this.groupRunStore.findActiveForGroup(groupId);
 		if (activeGroupRun) {
 			throw new Error(`active task group run already exists: ${activeGroupRun.groupRunId}`);
+		}
+
+		const resolved = await this.groupStore.resolve(group);
+		if (resolved.status !== "valid" || resolved.headTaskIds.length === 0) {
+			throw new Error(`invalid task group: ${resolved.validation.errors.map(error => error.code).join(", ")}`);
 		}
 
 		const activeTaskRun = await this.findActiveTaskRunInGroup(resolved.taskIds);
@@ -66,6 +67,10 @@ export class TaskGroupRunService {
 		const groupRun = await this.groupRunStore.create({
 			groupId,
 			source: input.source ?? { type: "manual" },
+			definitionSnapshot: {
+				taskIds: resolved.taskIds,
+				headTaskIds: resolved.headTaskIds,
+			},
 		});
 		const entryRuns: TeamTaskGroupRun["entryRuns"] = [];
 		try {
@@ -121,7 +126,8 @@ export class TaskGroupRunService {
 		if (isTerminalTaskGroupRunStatus(groupRun.status)) return groupRun;
 
 		const group = await this.groupStore.get(groupRun.groupId);
-		if (!group) {
+		const groupTaskIds = getGroupRunTaskIds(groupRun, group);
+		if (!group && !groupRun.definitionSnapshot) {
 			return this.groupRunStore.patch(groupRunId, {
 				status: "failed",
 				finishedAt: now(),
@@ -130,8 +136,8 @@ export class TaskGroupRunService {
 		}
 
 		const allRuns = await this.taskRunService.listRuns();
-		const observedRuns = this.collectObservedRuns(group.taskIds, groupRun.entryRuns, allRuns);
-		const groupTaskIdSet = new Set(group.taskIds);
+		const observedRuns = this.collectObservedRuns(groupTaskIds, groupRun.entryRuns, allRuns);
+		const groupTaskIdSet = new Set(groupTaskIds);
 		const observedStates = observedRuns
 			.map(observed => allRuns.find(run => run.runId === observed.runId) ?? null)
 			.filter((run): run is TeamRunState => run !== null);
@@ -151,7 +157,7 @@ export class TaskGroupRunService {
 			return this.groupRunStore.patch(groupRunId, { observedRuns, status: "running" });
 		}
 
-		const deliveryState = await this.inspectPendingInternalDeliveries(group.taskIds, groupPipelineStates, allRuns);
+		const deliveryState = await this.inspectPendingInternalDeliveries(groupTaskIds, groupPipelineStates, allRuns);
 		if (deliveryState.hasPendingDelivery) {
 			return this.groupRunStore.patch(groupRunId, { observedRuns, status: "running" });
 		}
@@ -178,7 +184,7 @@ export class TaskGroupRunService {
 		}
 
 		const group = await this.groupStore.get(refreshed.groupId);
-		const groupTaskIds = new Set(group?.taskIds ?? []);
+		const groupTaskIds = new Set(getGroupRunTaskIds(refreshed, group));
 		const observedRunIds = new Set(refreshed.observedRuns.map(run => run.runId));
 		const activeRuns = (await this.taskRunService.listRuns()).filter(run => {
 			if (!ACTIVE_TASK_RUN_STATUSES.has(run.status)) return false;
@@ -192,7 +198,7 @@ export class TaskGroupRunService {
 
 		return this.groupRunStore.patch(groupRunId, {
 			status: "cancelled",
-			observedRuns: this.collectObservedRuns(group?.taskIds ?? [], refreshed.entryRuns, await this.taskRunService.listRuns()),
+			observedRuns: this.collectObservedRuns([...groupTaskIds], refreshed.entryRuns, await this.taskRunService.listRuns()),
 			finishedAt: now(),
 			lastError: reason,
 		});
@@ -322,6 +328,10 @@ export class TaskGroupRunService {
 		const attempt = attempts.find(item => item.attemptId === attemptId);
 		return attempt ? getAttemptDeliveryOutcomes(attempt) : null;
 	}
+}
+
+function getGroupRunTaskIds(groupRun: TeamTaskGroupRun, group: TeamTaskGroup | null): string[] {
+	return groupRun.definitionSnapshot?.taskIds ?? group?.taskIds ?? [];
 }
 
 function aggregateTerminalStatus(runs: TeamRunState[], hasFailedDelivery: boolean): TeamTaskGroupRunStatus {

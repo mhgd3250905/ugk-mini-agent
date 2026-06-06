@@ -462,12 +462,18 @@ export interface TeamTaskGroupRunObservedRun {
   role: "entry" | "downstream" | "discovery-generated";
 }
 
+export interface TeamTaskGroupRunDefinitionSnapshot {
+  taskIds: string[];
+  headTaskIds: string[];
+}
+
 export interface TeamTaskGroupRun {
   schemaVersion: "team/task-group-run-1";
   groupRunId: string;
   groupId: string;
   status: TeamTaskGroupRunStatus;
   source: TeamTaskGroupRunSource;
+  definitionSnapshot?: TeamTaskGroupRunDefinitionSnapshot | null;
   entryRuns: Array<{ taskId: string; runId: string }>;
   observedRuns: TeamTaskGroupRunObservedRun[];
   startedAt: string | null;

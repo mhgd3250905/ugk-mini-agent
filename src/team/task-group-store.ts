@@ -26,13 +26,6 @@ type TaskGroupStoreDependencyReader = Pick<TaskDependencyStore, "listResolved">;
 const now = () => new Date().toISOString();
 const generateTaskGroupId = () => `group_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
 
-export class TaskGroupValidationError extends Error {
-	constructor(readonly group: ResolvedTeamTaskGroup) {
-		super(`invalid Team Task Group: ${formatIssues(group.validation.errors)}`);
-		this.name = "TaskGroupValidationError";
-	}
-}
-
 export class TaskGroupStore {
 	private readonly collection: JsonCollectionStore<TeamTaskGroup>;
 
@@ -78,7 +71,6 @@ export class TaskGroupStore {
 			updatedAt: timestamp,
 		};
 		const resolved = await this.resolve(group);
-		assertValidGroup(resolved);
 		return this.collection.withMutationLock(async () => {
 			const groups = await this.collection.readAll();
 			await this.collection.writeAll([...groups.map(existing => normalizeStoredGroup(existing)), group]);
@@ -99,7 +91,6 @@ export class TaskGroupStore {
 				updatedAt: now(),
 			};
 			const resolved = await this.resolve(updated);
-			assertValidGroup(resolved);
 			groups[index] = updated;
 			await this.collection.writeAll(groups);
 			return resolved;
@@ -241,7 +232,7 @@ function normalizeTitle(value: unknown): string {
 
 function normalizeTaskIds(value: unknown): string[] {
 	if (!Array.isArray(value)) {
-		throw new Error("taskIds must be a non-empty array");
+		throw new Error("taskIds must be an array");
 	}
 	const taskIds: string[] = [];
 	const seen = new Set<string>();
@@ -256,9 +247,6 @@ function normalizeTaskIds(value: unknown): string[] {
 		if (seen.has(taskId)) continue;
 		seen.add(taskId);
 		taskIds.push(taskId);
-	}
-	if (taskIds.length === 0) {
-		throw new Error("taskIds must include at least one task");
 	}
 	return taskIds;
 }
@@ -275,17 +263,4 @@ function normalizeStoredTaskIds(value: unknown): string[] {
 		taskIds.push(taskId);
 	}
 	return taskIds;
-}
-
-function assertValidGroup(group: ResolvedTeamTaskGroup): void {
-	if (group.status === "invalid") {
-		throw new TaskGroupValidationError(group);
-	}
-}
-
-function formatIssues(errors: TeamTaskGroupValidationIssue[]): string {
-	return errors.map(issue => {
-		const id = issue.connectionId ?? issue.dependencyId ?? issue.taskId;
-		return id ? `${issue.code}(${id}): ${issue.message}` : `${issue.code}: ${issue.message}`;
-	}).join("; ");
 }

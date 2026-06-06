@@ -1,6 +1,8 @@
 # Team Runtime v2
 
-更新时间：2026-06-05
+更新时间：2026-06-06
+
+> 2026-06-06 补充：Team Task Group definition 现在允许持久化空 Group 或语义 invalid membership。`POST/PATCH /v1/team/task-groups` 只做 title 和 `taskIds` shape 校验，`ResolvedTeamTaskGroup.status/headTaskIds/validation.errors` 是 definition read model；空 Group 会返回 `status="invalid"`、`headTaskIds=[]` 和 `no_head_task`。硬运行闸门移到 `POST /v1/team/task-groups/:groupId/runs`：empty/invalid Group start 返回 400 `invalid task group`，不使用 409。新建 `TeamTaskGroupRun` 会保存 `definitionSnapshot: { taskIds, headTaskIds }`，`refreshGroupRun()` / `cancelGroupRun()` 优先使用该 snapshot membership，旧 run 缺 snapshot 时才 fallback 当前 Group membership。此步不做 typed/control edge 版本化 snapshot，active edge 仍读取当前 store。
 
 > 2026-06-05 补充：Team Task GroupRun 的完成态按 Group 内真实 Task 流水线聚合，而不是按所有诊断 run 一票否决。`entry` / `downstream` Group 成员 run 和内部 typed/control delivery 仍决定 GroupRun 终态；Discovery root 触发的 `discovery-generated` child run 会继续保留在 `observedRuns` 里用于诊断、展示和取消 active run，但 generated child 的 `failed` / `completed_with_failures` 不再把已完成的 Group 主流水线标记为 `completed_with_failures`。既有已落盘终态 GroupRun 不自动回算。
 
@@ -295,17 +297,17 @@ Control dependency 是 typed connection 之外的第二类 Task DAG 边。它只
 
 ### Team Task Group Definition
 
-Team Task Group 是 Team Runtime 的持久结构单位，不再只是浏览器 localStorage 里的 UI frame。第一版后端 contract 只定义 Group 本身，不启动 Group run，也不接 Conn：
+Team Task Group 是 Team Runtime 的持久结构单位，不再只是浏览器 localStorage 里的 UI frame。Group definition 可独立持久化，运行可用性通过 resolved view 表达：
 
 - 持久化文件：`.data/team/task-groups.json`，写入由 `.task-groups.lock` 保护。
 - 数据结构：`schemaVersion="team/task-group-1"`、`groupId`、`title`、`taskIds`、`archived`、`createdAt`、`updatedAt`。
-- `taskIds` 只允许普通 root Canvas Tasks；generated child Task 第一版不支持加入 Group。
+- `taskIds` 会 trim、去重并保持输入顺序；允许空数组。请求里 `taskIds` 必须是数组，entries 必须是非空字符串。
 - `collapsed`、`locked`、frame rect、卡片位置和本地展示状态仍属于 Team Console UI state，不进入 `TeamTaskGroup` schema。
-- 创建和更新会 trim title、去重 taskIds 并保持输入顺序；title 为空、taskIds 为空、Task 不存在、Task 已归档或 Task 是 generated child 都返回 400。
-- 边界闭合校验只看 active typed task connection 与 active control dependency。只要一端在 Group 内，另一端也必须在 Group 内；外部上游连入 Group、Group 内 Task 输出到外部 Task 都会被拒绝。
+- 创建和更新只硬校验 title 与 `taskIds` shape；Task 不存在、Task 已归档、Task 是 generated child、空 Group 或边界泄漏都会保存为 `status="invalid"`。
+- 边界闭合校验只看 active typed task connection 与 active control dependency。只要一端在 Group 内，另一端也应在 Group 内；外部上游连入 Group、Group 内 Task 输出到外部 Task 都会作为 `validation.errors` 暴露。
 - stale typed connection / dependency 不参与边界闭合，也不参与头节点计算；`resolve()` 仍会返回 resolved view，避免旧数据诊断时崩溃。
 - 头节点定义为 Group 内没有 incoming internal active edge 的 Task；internal edge 包含 typed task connection 和 control dependency。多条独立链会返回多个 `headTaskIds`，孤立 Task 本身就是 head。
-- 如果 Group 内没有任何 head Task，Group invalid，create/update 拒绝保存。
+- 如果 Group 内没有任何 head Task，Group invalid；空 Group 会持久化并返回 `no_head_task`。
 - 归档 Group 是软归档，不删除 Task、typed connection、control dependency 或 Task run history。
 
 Resolved view:
@@ -318,16 +320,18 @@ interface ResolvedTeamTaskGroup extends TeamTaskGroup {
 }
 ```
 
-Group definition 阶段的非目标是：不把 Group 合进 `GET /v1/team/console/root-summary`，不改 Conn worker 或 Conn SQLite schema；GroupRun 后端 contract 和 Team Console 手动运行 UI 已在后续步骤补上。
+Group definition 阶段的非目标是：不把 Group 合进 `GET /v1/team/console/root-summary`，不把 generated child 放进 root canvas，不新增绕过 typed connection / run-context / GroupRun 合同的 endpoint。
 
 ### Team Task GroupRun
 
 Team Task GroupRun 是 Group 的运行聚合视图，持久化在 `.data/team/task-group-runs.json`。它只聚合 Group 内 Canvas Task runs，不进入 Plan run API，也不写入 `GET /v1/team/console/root-summary`。
 
-- `POST /v1/team/task-groups/:groupId/runs` 启动 GroupRun；后端会拒绝 active GroupRun 和 Group 内 active Task run。
+- `POST /v1/team/task-groups/:groupId/runs` 启动 GroupRun；后端会拒绝 invalid/empty Group（400）、active GroupRun（409）和 Group 内 active Task run（409）。
 - `GET /v1/team/task-groups/:groupId/runs` 列出某 Group 的 GroupRuns；Team Console 只用它选取最新 active 或最新 created run 做 frame 展示。
 - `GET /v1/team/task-group-runs/:groupRunId` 读取并刷新单个 GroupRun 的聚合状态；Team Console 只在 `queued/running` 时轻量轮询。
 - `POST /v1/team/task-group-runs/:groupRunId/cancel` 取消 active GroupRun，并级联取消 Group 内 active Canvas Task runs。
+- 新建 `TeamTaskGroupRun.definitionSnapshot` 固定本次运行启动时的 `{ taskIds, headTaskIds }`。刷新、聚合和取消优先使用 snapshot membership；旧 run 没有 snapshot 时 fallback 当前 Group membership，避免旧数据 500。
+- 当前不冻结 typed/control edge 版本；内部 downstream dispatch 和 pending delivery 检查仍读取当前 active edge store。
 - Team Console 的 GroupRun 状态只是运行视图，不保存进 `canvas-ui-state`；本地只保存 Group 折叠/锁定展示态。
 - Conn scheduler 后端 worker 可通过 Conn `execution.type="team_group"` 定时触发既有 GroupRun API；Playground Conn manager 和 `/playground/conn` 独立页已经接入后端 Group 选择。Conn 表单仍必须把 Group 写入 `execution`，`target` 只表示结果投递目标；不能让 Conn 选择单个 Task。
 
@@ -815,11 +819,11 @@ run 内相对路径，指向 accepted 或 failed 结果文件。格式如 `tasks
 | GET | `/v1/team/task-runs/:runId?view=process-summary&taskId=:taskId` | 读取展开 Run observer 所需的 run summary 与 attempts process summary，不返回 heavy process entries |
 | POST | `/v1/team/task-runs/:runId/cancel` | 取消 active Task run |
 | GET | `/v1/team/task-groups` | 列出未归档 Team Task Groups；`?includeArchived=1|true` 时包含已归档 Group，响应为 `{ groups: ResolvedTeamTaskGroup[] }` |
-| POST | `/v1/team/task-groups` | 创建持久 Team Task Group；请求 `{ title, taskIds }`，创建前校验边界闭合并返回 `{ group }` |
+| POST | `/v1/team/task-groups` | 创建持久 Team Task Group；请求 `{ title, taskIds }`，只校验 title 与 taskIds shape，empty/invalid membership 会保存并通过 `{ group.status, group.headTaskIds, group.validation.errors }` 暴露 |
 | GET | `/v1/team/task-groups/:groupId` | 读取单个 Group 的 resolved view，找不到返回 404 |
-| PATCH | `/v1/team/task-groups/:groupId` | 更新 Group 的 `title` 和/或 `taskIds`，重新执行边界闭合和头节点校验 |
+| PATCH | `/v1/team/task-groups/:groupId` | 更新 Group 的 `title` 和/或 `taskIds`，保存后返回 resolved view；non-array 或非空字符串以外的 `taskIds` entries 返回 400 |
 | POST | `/v1/team/task-groups/:groupId/archive` | 软归档 Group；不删除 Task、connection、dependency 或 run history |
-| POST | `/v1/team/task-groups/:groupId/runs` | 启动 GroupRun；同轮启动 Group head tasks，拒绝 active GroupRun 或 Group 内 active Task run |
+| POST | `/v1/team/task-groups/:groupId/runs` | 启动 GroupRun；同轮启动 Group head tasks，invalid/empty Group 返回 400，active GroupRun 或 Group 内 active Task run 返回 409 |
 | GET | `/v1/team/task-groups/:groupId/runs` | 列出某 Group 的 GroupRuns |
 | GET | `/v1/team/task-group-runs/:groupRunId` | 读取并刷新单个 GroupRun 聚合状态 |
 | POST | `/v1/team/task-group-runs/:groupRunId/cancel` | 取消 active GroupRun，并取消 Group 内 active Canvas Task runs |

@@ -7,6 +7,7 @@ import { buildServer } from "../src/server.js";
 import type { AgentService } from "../src/agent/agent-service.js";
 import { RunWorkspace } from "../src/team/run-workspace.js";
 import { TaskGroupRunStore } from "../src/team/task-group-run-store.js";
+import { TaskStore } from "../src/team/task-store.js";
 import type { TeamPlan, TeamRunState, TeamTaskGroupRun } from "../src/team/types.js";
 
 function createAgentServiceStub() {
@@ -214,6 +215,77 @@ test("POST /v1/team/task-groups/:groupId/runs starts all independent heads as en
 		assert.equal(groupRun.entryRuns.length, 2);
 		assert.deepEqual(new Set(groupRun.entryRuns.map(run => run.taskId)), new Set([first.taskId, second.taskId]));
 		assert.deepEqual(new Set(groupRun.observedRuns.map(run => `${run.role}:${run.taskId}`)), new Set([`entry:${first.taskId}`, `entry:${second.taskId}`]));
+		assert.deepEqual(groupRun.definitionSnapshot, {
+			taskIds: [first.taskId, second.taskId],
+			headTaskIds: [first.taskId, second.taskId],
+		});
+	} finally {
+		await app.close();
+		await removeTempRoot(root);
+	}
+});
+
+test("POST /v1/team/task-groups/:groupId/runs rejects an empty Group with 400 and no entry runs", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const group = await createGroup(app, "Empty group", []);
+
+		const res = await app.inject({ method: "POST", url: `/v1/team/task-groups/${group.groupId}/runs` });
+
+		assert.equal(res.statusCode, 400);
+		assert.match(res.json().error, /invalid task group/);
+		const list = await app.inject({ method: "GET", url: `/v1/team/task-groups/${group.groupId}/runs` });
+		assert.equal(list.statusCode, 200);
+		assert.deepEqual(list.json().groupRuns, []);
+	} finally {
+		await app.close();
+		await removeTempRoot(root);
+	}
+});
+
+test("POST /v1/team/task-groups/:groupId/runs rejects a boundary-invalid Group with 400", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const inside = await createTask(app, "Inside", { outputPorts: [{ id: "out_md", label: "Out", type: "md" }] });
+		const external = await createTask(app, "External", { inputPorts: [{ id: "in_md", label: "In", type: "md" }] });
+		await connectTasks(app, inside.taskId, external.taskId);
+		const group = await createGroup(app, "Boundary invalid", [inside.taskId]);
+		assert.equal(group.status, "invalid");
+
+		const res = await app.inject({ method: "POST", url: `/v1/team/task-groups/${group.groupId}/runs` });
+
+		assert.equal(res.statusCode, 400);
+		assert.match(res.json().error, /invalid task group/);
+	} finally {
+		await app.close();
+		await removeTempRoot(root);
+	}
+});
+
+test("POST /v1/team/task-groups/:groupId/runs rejects a generated child Group with 400", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const discovery = await createTask(app, "Discovery root");
+		const store = new TaskStore(teamDir, { getAgentIds: () => ["main", "search"] });
+		const generated = await store.create({
+			...taskPayload,
+			title: "Generated child",
+			generatedSource: {
+				schemaVersion: "team/generated-task-source-1",
+				sourceDiscoveryTaskId: discovery.taskId,
+				sourceItemId: "item_1",
+				itemStatus: "active",
+				itemPayload: { id: "item_1" },
+				workUnitMode: "managed",
+			},
+		});
+		const group = await createGroup(app, "Generated child group", [generated.taskId]);
+		assert.equal(group.status, "invalid");
+
+		const res = await app.inject({ method: "POST", url: `/v1/team/task-groups/${group.groupId}/runs` });
+
+		assert.equal(res.statusCode, 400);
+		assert.match(res.json().error, /invalid task group/);
 	} finally {
 		await app.close();
 		await removeTempRoot(root);
@@ -253,6 +325,43 @@ test("POST /v1/team/task-groups/:groupId/runs rejects when the Group already has
 
 		assert.equal(second.statusCode, 409);
 		assert.match(second.json().error, /active task group run/);
+	} finally {
+		await app.close();
+		await removeTempRoot(root);
+	}
+});
+
+test("POST /v1/team/task-groups/:groupId/runs returns active guard when live Group became invalid", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const task = await createTask(app, "Mutable active guard");
+		const group = await createGroup(app, "Mutable guard group", [task.taskId]);
+		const store = new TaskGroupRunStore(teamDir);
+		const activeRun = await store.create({
+			groupId: group.groupId,
+			definitionSnapshot: {
+				taskIds: [task.taskId],
+				headTaskIds: [task.taskId],
+			},
+		});
+		await store.patch(activeRun.groupRunId, {
+			status: "running",
+			startedAt: new Date().toISOString(),
+			entryRuns: [{ taskId: task.taskId, runId: "run_existing_entry" }],
+			observedRuns: [{ taskId: task.taskId, runId: "run_existing_entry", role: "entry" }],
+		});
+		const patch = await app.inject({
+			method: "PATCH",
+			url: `/v1/team/task-groups/${group.groupId}`,
+			payload: { taskIds: [] },
+		});
+		assert.equal(patch.statusCode, 200);
+		assert.equal(patch.json().group.status, "invalid");
+
+		const res = await app.inject({ method: "POST", url: `/v1/team/task-groups/${group.groupId}/runs` });
+
+		assert.equal(res.statusCode, 409);
+		assert.match(res.json().error, /active task group run/);
 	} finally {
 		await app.close();
 		await removeTempRoot(root);
@@ -352,6 +461,70 @@ test("GET /v1/team/task-group-runs/:groupRunId completes when Group pipeline com
 		assert.equal(completedGroupRun.lastError, null);
 		assert.ok(completedGroupRun.observedRuns.some(run => run.runId === downstream.runId && run.role === "downstream"));
 		assert.ok(completedGroupRun.observedRuns.some(run => run.runId === failedGenerated.runId && run.role === "discovery-generated"));
+	} finally {
+		await app.close();
+		await removeTempRoot(root);
+	}
+});
+
+test("GET /v1/team/task-group-runs/:groupRunId uses definitionSnapshot after Group membership changes", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const a = await createTask(app, "Snapshot A", { outputPorts: [{ id: "out_md", label: "Out", type: "md" }] });
+		const b = await createTask(app, "Snapshot B", { inputPorts: [{ id: "in_md", label: "In", type: "md" }] });
+		const replacement = await createTask(app, "Replacement");
+		const connection = await connectTasks(app, a.taskId, b.taskId);
+		const group = await createGroup(app, "Snapshot group", [a.taskId, b.taskId]);
+		const workspace = new RunWorkspace(join(teamDir, "task-runs"));
+		const entry = await createCanvasRun(workspace, a.taskId, { status: "completed" });
+		const downstream = await createCanvasRun(workspace, b.taskId, {
+			status: "running",
+			triggeredBy: {
+				type: "task-connection",
+				connectionId: connection.connectionId,
+				fromTaskId: a.taskId,
+				fromRunId: entry.runId,
+				fromAttemptId: "attempt_entry",
+			},
+		});
+		const store = new TaskGroupRunStore(teamDir);
+		const groupRun = await store.create({
+			groupId: group.groupId,
+			definitionSnapshot: {
+				taskIds: [a.taskId, b.taskId],
+				headTaskIds: [a.taskId],
+			},
+		});
+		await store.patch(groupRun.groupRunId, {
+			status: "running",
+			startedAt: new Date().toISOString(),
+			entryRuns: [{ taskId: a.taskId, runId: entry.runId }],
+			observedRuns: [{ taskId: a.taskId, runId: entry.runId, role: "entry" }],
+		});
+		const patch = await app.inject({
+			method: "PATCH",
+			url: `/v1/team/task-groups/${group.groupId}`,
+			payload: { taskIds: [replacement.taskId] },
+		});
+		assert.equal(patch.statusCode, 200);
+
+		const running = await app.inject({ method: "GET", url: `/v1/team/task-group-runs/${groupRun.groupRunId}` });
+		assert.equal(running.statusCode, 200);
+		assert.equal(running.json().groupRun.status, "running");
+		assert.ok((running.json().groupRun.observedRuns as TeamTaskGroupRun["observedRuns"]).some(run => run.runId === downstream.runId && run.role === "downstream"));
+
+		await workspace.patchState(downstream.runId, (state) => {
+			state.status = "completed";
+			state.finishedAt = new Date().toISOString();
+			state.updatedAt = new Date().toISOString();
+		});
+		const completed = await app.inject({ method: "GET", url: `/v1/team/task-group-runs/${groupRun.groupRunId}` });
+		assert.equal(completed.statusCode, 200);
+		assert.equal(completed.json().groupRun.status, "completed");
+		assert.deepEqual(completed.json().groupRun.definitionSnapshot, {
+			taskIds: [a.taskId, b.taskId],
+			headTaskIds: [a.taskId],
+		});
 	} finally {
 		await app.close();
 		await removeTempRoot(root);

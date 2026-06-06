@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-06 — Team Group mutable membership backend contract
+
+- **主题**: Team Task Group definition 保存阶段与运行阶段语义拆分。`POST/PATCH /v1/team/task-groups` 现在允许 empty/invalid membership 持久化，并通过 `ResolvedTeamTaskGroup.status/headTaskIds/validation.errors` 表达 read model；`POST /v1/team/task-groups/:groupId/runs` 才硬拒绝 empty/invalid Group，返回 400 `invalid task group`，不使用 409。
+- **影响范围**: 新建 `TeamTaskGroupRun` 增加 `definitionSnapshot: { taskIds, headTaskIds }`；GroupRun refresh/cancel 优先使用 snapshot membership，旧 run 缺 snapshot 时 fallback 当前 Group。Conn `team_group` active guard 的 409 skipped 语义保持不变，invalid/empty Group start 会作为 failed ConnRun 处理。
+- **对应入口**: `src/team/types.ts`、`src/team/task-group-store.ts`、`src/team/task-group-run-store.ts`、`src/team/task-group-run-service.ts`、`test/team-task-group-routes.test.ts`、`test/team-task-group-run-routes.test.ts`、`docs/team-runtime.md`、`docs/runtime-assets-conn-feishu.md`。
+
 ## 2026-06-05 — Team GroupRun completion follows Group pipeline
 
 - **主题**: Team Task GroupRun 终态聚合改为按 Group 内真实 Task 流水线判断。`entry` / `downstream` Group 成员 run 和内部 typed/control delivery 仍决定 GroupRun 是否 `completed`、`completed_with_failures`、`cancelled`；由 Discovery root 触发的 `discovery-generated` child run 继续进入 `observedRuns` 作为诊断，但其失败不再把已完成的 Group 主流水线拖成 `completed_with_failures`。

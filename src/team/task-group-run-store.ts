@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { JsonCollectionStore } from "./json-collection-store.js";
-import type { TeamTaskGroupRun, TeamTaskGroupRunSource, TeamTaskGroupRunStatus } from "./types.js";
+import type {
+	TeamTaskGroupRun,
+	TeamTaskGroupRunDefinitionSnapshot,
+	TeamTaskGroupRunSource,
+	TeamTaskGroupRunStatus,
+} from "./types.js";
 
 export interface TaskGroupRunStoreListOptions {
 	groupId?: string;
@@ -10,10 +15,12 @@ export interface TaskGroupRunStoreListOptions {
 export interface CreateTeamTaskGroupRunInput {
 	groupId: string;
 	source?: TeamTaskGroupRunSource;
+	definitionSnapshot?: TeamTaskGroupRunDefinitionSnapshot | null;
 }
 
 export interface UpdateTeamTaskGroupRunInput {
 	status?: TeamTaskGroupRunStatus;
+	definitionSnapshot?: TeamTaskGroupRunDefinitionSnapshot | null;
 	entryRuns?: TeamTaskGroupRun["entryRuns"];
 	observedRuns?: TeamTaskGroupRun["observedRuns"];
 	startedAt?: string | null;
@@ -70,6 +77,7 @@ export class TaskGroupRunStore {
 				groupId: input.groupId,
 				status: "queued",
 				source: input.source ?? { type: "manual" },
+				definitionSnapshot: normalizeDefinitionSnapshot(input.definitionSnapshot),
 				entryRuns: [],
 				observedRuns: [],
 				startedAt: null,
@@ -100,6 +108,7 @@ export class TaskGroupRunStore {
 	async patch(groupRunId: string, patch: UpdateTeamTaskGroupRunInput): Promise<TeamTaskGroupRun> {
 		return this.update(groupRunId, (run) => {
 			if (patch.status !== undefined) run.status = patch.status;
+			if (patch.definitionSnapshot !== undefined) run.definitionSnapshot = normalizeDefinitionSnapshot(patch.definitionSnapshot);
 			if (patch.entryRuns !== undefined) run.entryRuns = normalizeEntryRuns(patch.entryRuns);
 			if (patch.observedRuns !== undefined) run.observedRuns = normalizeObservedRuns(patch.observedRuns);
 			if (patch.startedAt !== undefined) run.startedAt = patch.startedAt;
@@ -118,12 +127,35 @@ function normalizeStoredRun(run: TeamTaskGroupRun): TeamTaskGroupRun {
 	return {
 		...run,
 		source: normalizeSource(run.source),
+		definitionSnapshot: normalizeDefinitionSnapshot((run as { definitionSnapshot?: unknown }).definitionSnapshot),
 		entryRuns: normalizeEntryRuns(run.entryRuns),
 		observedRuns: normalizeObservedRuns(run.observedRuns),
 		startedAt: run.startedAt ?? null,
 		finishedAt: run.finishedAt ?? null,
 		lastError: typeof run.lastError === "string" ? run.lastError : null,
 	};
+}
+
+function normalizeDefinitionSnapshot(value: unknown): TeamTaskGroupRunDefinitionSnapshot | null {
+	if (!value || typeof value !== "object") return null;
+	return {
+		taskIds: normalizeStringIds((value as { taskIds?: unknown }).taskIds),
+		headTaskIds: normalizeStringIds((value as { headTaskIds?: unknown }).headTaskIds),
+	};
+}
+
+function normalizeStringIds(value: unknown): string[] {
+	if (!Array.isArray(value)) return [];
+	const ids: string[] = [];
+	const seen = new Set<string>();
+	for (const raw of value) {
+		if (typeof raw !== "string") continue;
+		const id = raw.trim();
+		if (!id || seen.has(id)) continue;
+		seen.add(id);
+		ids.push(id);
+	}
+	return ids;
 }
 
 function normalizeSource(value: unknown): TeamTaskGroupRunSource {
