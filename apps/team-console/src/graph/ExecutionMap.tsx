@@ -24,6 +24,7 @@ import {
   type AtlasRect,
 } from "./atlas-geometry";
 import { linkMidpoint } from "./link-layout";
+import { buildTaskGroupMemberRows, taskGroupHeaderBandHeight } from "./task-group-member-rows";
 import "./execution-map.css";
 
 const KIND_LABELS: Record<NodeKind | "collapsed" | "orphan_group", string> = {
@@ -198,9 +199,6 @@ export type AtlasTaskGroup = {
   groupRun?: AtlasTaskGroupRunView;
 };
 
-type AtlasTaskGroupMemberChip = { taskId: string; title: string };
-type AtlasTaskGroupMemberRow = AtlasTaskGroupMemberChip[];
-
 export type AtlasTaskGroupRunView = {
   status: "idle" | TeamTaskGroupRunStatus;
   groupRunId?: string;
@@ -252,14 +250,8 @@ const TASK_CHILD_BRANCH_WIDTH = 820;
 const TASK_CHILD_BRANCH_HEIGHT = 620;
 const TASK_BRANCH_GAP = 48;
 const TASK_CHILD_BRANCH_GAP = 32;
-const TASK_GROUP_HEADER_BAND_HEIGHT = 76;
-const TASK_GROUP_COLLAPSED_HEADER_BAND_HEIGHT = 42;
 const TASK_GROUP_MIN_WIDTH = 560;
 const TASK_GROUP_BOTTOM_PADDING = 58;
-const TASK_GROUP_MEMBER_TOP = 42;
-const TASK_GROUP_MEMBER_ROW_HEIGHT = 24;
-const TASK_GROUP_MEMBER_ROW_GAP = 6;
-const TASK_GROUP_HEADER_BOTTOM_GAP = 10;
 type CopyableNodeKind = "agent" | "task" | "group";
 type EvidenceKind = "result" | "error" | "attempt" | "progress" | "worker" | "checker" | "watcher";
 
@@ -394,81 +386,6 @@ interface AttemptFileRef {
   taskId: string;
   attemptId: string;
   fileName: string;
-}
-
-function taskGroupHeaderBandHeight(collapsed: boolean, memberRowCount: number): number {
-  if (collapsed) return TASK_GROUP_COLLAPSED_HEADER_BAND_HEIGHT;
-  const memberBandHeight = memberRowCount > 0
-    ? TASK_GROUP_MEMBER_TOP
-      + memberRowCount * TASK_GROUP_MEMBER_ROW_HEIGHT
-      + Math.max(0, memberRowCount - 1) * TASK_GROUP_MEMBER_ROW_GAP
-      + TASK_GROUP_HEADER_BOTTOM_GAP
-    : TASK_GROUP_HEADER_BAND_HEIGHT;
-  return Math.max(TASK_GROUP_HEADER_BAND_HEIGHT, memberBandHeight);
-}
-
-function buildTaskGroupMemberRows(
-  group: AtlasTaskGroup,
-  nodes: AtlasTaskNode[],
-  taskConnections: TeamTaskConnection[],
-  tasksById: Map<string, TeamCanvasTask> | undefined,
-): AtlasTaskGroupMemberRow[] {
-  const memberByTaskId = new Map((group.members ?? []).map((member) => [member.taskId, member]));
-  const taskIds = group.taskIds?.length
-    ? group.taskIds
-    : group.members?.length
-      ? group.members.map((member) => member.taskId)
-      : nodes.map((node) => node.taskId);
-  const taskIdSet = new Set(taskIds);
-  const taskIdOrder = new Map(taskIds.map((taskId, index) => [taskId, index]));
-  const toMember = (taskId: string): AtlasTaskGroupMemberChip => ({
-    taskId,
-    title: memberByTaskId.get(taskId)?.title ?? tasksById?.get(taskId)?.title ?? taskId,
-  });
-  const internalConnections = taskConnections.filter((connection) => (
-    connection.status !== "stale"
-    && taskIdSet.has(connection.fromTaskId)
-    && taskIdSet.has(connection.toTaskId)
-  ));
-  const incomingTaskIds = new Set(internalConnections.map((connection) => connection.toTaskId));
-  const outgoingByTaskId = new Map<string, TeamTaskConnection[]>();
-  for (const connection of internalConnections) {
-    const outgoing = outgoingByTaskId.get(connection.fromTaskId) ?? [];
-    outgoing.push(connection);
-    outgoingByTaskId.set(connection.fromTaskId, outgoing);
-  }
-  for (const outgoing of outgoingByTaskId.values()) {
-    outgoing.sort((a, b) => (taskIdOrder.get(a.toTaskId) ?? Number.MAX_SAFE_INTEGER) - (taskIdOrder.get(b.toTaskId) ?? Number.MAX_SAFE_INTEGER));
-  }
-
-  const validHeadTaskIds = (group.headTaskIds ?? []).filter((taskId) => taskIdSet.has(taskId));
-  const derivedHeadTaskIds = taskIds.filter((taskId) => !incomingTaskIds.has(taskId));
-  const headTaskIds = validHeadTaskIds.length > 0
-    ? validHeadTaskIds
-    : derivedHeadTaskIds.length > 0
-      ? derivedHeadTaskIds
-      : taskIds.slice(0, 1);
-  const visitedTaskIds = new Set<string>();
-  const rows: AtlasTaskGroupMemberRow[] = [];
-  for (const headTaskId of headTaskIds) {
-    const row: AtlasTaskGroupMemberRow = [];
-    const rowVisitedTaskIds = new Set<string>();
-    let currentTaskId: string | undefined = headTaskId;
-    while (currentTaskId && taskIdSet.has(currentTaskId) && !rowVisitedTaskIds.has(currentTaskId)) {
-      row.push(toMember(currentTaskId));
-      rowVisitedTaskIds.add(currentTaskId);
-      visitedTaskIds.add(currentTaskId);
-      const nextConnection: TeamTaskConnection | undefined = (outgoingByTaskId.get(currentTaskId) ?? []).find((connection) => !rowVisitedTaskIds.has(connection.toTaskId));
-      currentTaskId = nextConnection?.toTaskId;
-    }
-    if (row.length > 0) rows.push(row);
-  }
-
-  const fallbackRow = taskIds
-    .filter((taskId) => !visitedTaskIds.has(taskId))
-    .map(toMember);
-  if (fallbackRow.length > 0) rows.push(fallbackRow);
-  return rows;
 }
 
 function statusClass(status: TaskStatus | RunDetail["status"]): string {

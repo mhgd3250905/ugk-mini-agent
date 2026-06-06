@@ -73,6 +73,7 @@ describe("Team Console static contracts", () => {
   it("keeps expanded Task Group header controls out of the member chip row", () => {
     const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
     const mapSource = readFileSync("src/graph/ExecutionMap.tsx", "utf8");
+    const memberRowsSource = readFileSync("src/graph/task-group-member-rows.ts", "utf8");
     const appSource = readFileSync("src/app/App.tsx", "utf8");
     const headRule = mapCss.match(/\.emap-task-group-head\s*{[^}]*}/)?.[0] ?? "";
     const footerRule = mapCss.match(/\.emap-task-group-footer\s*{[^}]*}/)?.[0] ?? "";
@@ -80,13 +81,15 @@ describe("Team Console static contracts", () => {
     const memberRowRule = mapCss.match(/\.emap-task-group-member-row\s*{[^}]*}/)?.[0] ?? "";
 
     expect(mapSource).toContain("const TASK_GROUP_MIN_WIDTH = 560");
-    expect(mapSource).toContain("const TASK_GROUP_MEMBER_ROW_HEIGHT = 24");
-    expect(mapSource).toContain("function taskGroupHeaderBandHeight");
-    expect(mapSource).toContain("function buildTaskGroupMemberRows");
-    expect(mapSource).toContain("group.headTaskIds");
-    expect(mapSource).toContain("connection.status !== \"stale\"");
-    expect(mapSource).toContain("connection.fromTaskId");
-    expect(mapSource).toContain("connection.toTaskId");
+    expect(mapSource).toContain("taskGroupHeaderBandHeight");
+    expect(mapSource).toContain("buildTaskGroupMemberRows");
+    expect(memberRowsSource).toContain("const TASK_GROUP_MEMBER_ROW_HEIGHT = 24");
+    expect(memberRowsSource).toContain("function taskGroupHeaderBandHeight");
+    expect(memberRowsSource).toContain("function buildTaskGroupMemberRows");
+    expect(memberRowsSource).toContain("group.headTaskIds");
+    expect(memberRowsSource).toContain("connection.status !== \"stale\"");
+    expect(memberRowsSource).toContain("connection.fromTaskId");
+    expect(memberRowsSource).toContain("connection.toTaskId");
     expect(appSource).toContain("headTaskIds: group.headTaskIds");
     expect(mapSource).toContain('renderNodeIdCopyButton("group", group.groupId)');
     expect(mapSource).toContain('taskCount === 1 ? "Task" : "Tasks"');
