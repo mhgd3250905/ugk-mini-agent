@@ -24,17 +24,17 @@
 
 ## 当前 Git 现场
 
-- 本轮功能提交已保存到本地 `main`；继续前以 `git status --short --branch` 和 `git log -5 --oneline` 为准。
-- 当前关键提交：
-  - `fdf853a Update Team Group chain handoff`
-  - `3453215 Group member chips by task chains`
-  - `cb46d43 Align Team Group member chips with node rows`
-  - `0e77122 Polish Team Group frame layout`
-  - `ef4356d Fix Team Group member chip overlap`
+- 本轮功能和文档提交已保存到本地 `main`；继续前以 `git status --short --branch` 和 `git log -5 --oneline` 为准。
+- 当前近期关键提交包括：
+  - `61c1484 Allow run observer panels above atlas origin`
+  - `0070e72 Improve Team Console load smoothness`
+  - `942c9fe Fix Team Console build fixture types`
+  - `9d33c42 Extract Team Group projection`
+  - `00ff6a9 Extract Team Group member row layout`
 - `origin`：GitHub `https://github.com/mhgd3250905/ugk-claw-personal.git`。
 - `gitee`：`https://gitee.com/ksheng3250905/ugk-pi-claw.git`，本轮未同步。
-- 截至本快照，`main...origin/main` 已对齐，`git log --oneline origin/main..HEAD` 为空；staged 为空。
-- 本轮 Team Console UI/连线/Dock 改动已验收但尚未提交。当前 tracked dirty 文件是：`apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/app.css`、`apps/team-console/src/app/use-team-console-live-data.ts`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app-connections.test.tsx`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/src/tests/app-root-dock.test.tsx`、`apps/team-console/src/tests/app-run-observer.test.tsx`、`apps/team-console/src/tests/app-static-contracts.test.ts`、`apps/team-console/src/tests/app.test.tsx`、`docs/change-log.md`、`docs/handoff-current.md`。
+- 截至本快照完成并提交文档后，`main...origin/main` 预期为 `[ahead 8]`；staged 为空，tracked 工作区干净。若当前输出不同，以实际 `git status --short --branch` 为准。
+- 本轮未同步 `origin` 或 `gitee`；不要把本地 ahead 状态误认为远端已更新。
 - 不要提交这些本地未跟踪物件：`.codex/config.toml`、既有 `.codex/plans/**`、`.omo/`、`github-trending.txt`、`public/**`、`eoflow*.html`、`cupid.js`、`solve_cupid.mjs`、runtime 数据、截图、报告、临时文件。
 
 继续工作前先执行：
@@ -59,9 +59,11 @@ git log --oneline origin/main..HEAD
 - Team Console 运行记录已改成时间线列表：仅保留开始时间、状态、执行时间，以及 `装载记录` / `标为最佳` / `归档记录` 三个操作。`runId`、结果产物、触发来源、已装载/最佳/归档徽标与 note 不再作为可见内容展示，只保留必要 `data-*` 状态给交互和测试。
 - Team Console 运行观察右上角只显示输入来源标记：`手动上游输入` 或 `自然运行流入`。不再展示 `connectionId`、upstream run、artifact、fileRef 等内部账本字段。
 - Discovery 子画布 generated Task 打开的运行历史面板已重新锚定到对应子画布 panel，不再从上一级 root Task 菜单引线；`ExecutionMap` panel DOM 暴露 `data-panel-source-id` 用于回归验证。
+- Team Console Task 最近运行 / 运行观察子面板已允许向画布原点上方拖动。Task child panel 布局不再把用户拖拽产生的负 `y` override 钳到 `0`；`x` 轴现有非负限制保持不变。
 - Team Console 根节点筛选已整合数量统计：`ALL`、`Agent`、`Task`、`Source` 四个筛选项直接显示数量，独立统计块已移除；`Task` 筛选只显示 Task，Source 走独立筛选。
 - Team Console Dock 已区分 Group 成员 Task 和根级 Task。Group 内 Task 拖到底部 Dock 区域不会触发收纳；展开 Group 可点击“收纳”把整个 Group 收入 Dock，Dock 中以 Group 对象展示并可恢复，不会把 Group 成员拆成独立 Dock Task。
 - Mock 工作区初始化会合并 Discovery catalog 返回的 root/generated run summary，Dock 和画布状态能显示最新 run status，不再退回静态 Task `ready`。
+- Team Console 初始加载流畅性已优化：Live hydration 不再触发无意义首次 layout PATCH，restore loading 最短显示时间收敛到 160ms，loading skeleton 切换到 workspace 时不再产生明显 layout shift。
 - Conn 后端 `execution.type = "team_group"` 已完成。`team_group` Conn 保存为 `execution: { type: "team_group", groupId }`，不写进 `target.type`，也不要求 prompt。
 - Conn worker 可调度 Team GroupRun。空 body POST 不携带 `content-type: application/json`，避免 Fastify 在 route 前返回 `400 Bad Request`。
 - Conn worker 对 `team_group` start failure 已补齐诊断：non-2xx/non-409 GroupRun start 会让 ConnRun `failed`，并写入 `resolvedSnapshot.executionType="team_group"`、`groupId`、`groupRunStartStatus`、`groupRunStartError`。409 active guard 仍是 `succeeded` skipped。
@@ -99,6 +101,20 @@ git log --oneline origin/main..HEAD
   - `npm --prefix apps/team-console run build`：pass；仅既有 Vite chunk size warning。
   - `npx tsc --noEmit`：pass。
   - Browser `http://127.0.0.1:5174/`：重启 `ugk-pi-team-console` 后确认根筛选为 `ALL17` / `Agent2` / `Task15` / `Source0`，独立 `.agent-atlas-stats` 已消失；展开 Group 有“收纳”按钮，`Group 1` 收纳后以 Group 对象进入 Dock，恢复后 Group frame 和成员 Task 回到画布。
+- 本轮 Team Console 加载流畅性验证：
+  - `npm --prefix apps/team-console test -- --run src/tests/app.test.tsx src/tests/app-live-data.test.tsx src/tests/app-run-observer.test.tsx src/tests/app-root-dock.test.tsx src/tests/app-connections.test.tsx src/tests/app-canvas-state.test.tsx src/tests/app-static-contracts.test.ts src/tests/task-group-projection.test.ts src/tests/task-group-member-rows.test.ts`：230/230 pass。
+  - `npm --prefix apps/team-console run build`：pass；仅既有 Vite chunk size warning。
+  - `npx tsc --noEmit`：pass。
+  - `git diff --check`：pass。
+  - Browser `http://127.0.0.1:5174/`：PerformanceObserver 确认初始加载 CLS 为 `0.00`，初始网络只有 GET，无首次 layout PATCH。
+- 本轮 run observer 上拖修复验证：
+  - `npm --prefix apps/team-console test -- --run src/tests/app-run-observer-interactions.test.tsx -t "drags an observer process panel and updates connector"`：pass；回归断言覆盖 `top < 0`。
+  - `npm --prefix apps/team-console test -- --run src/tests/app-run-observer-interactions.test.tsx src/tests/app-run-observer.test.tsx src/tests/execution-map-ui.test.tsx`：179/179 pass。
+  - `npm --prefix apps/team-console run build`：pass；仅既有 Vite chunk size warning。
+  - `npx tsc --noEmit`：pass。
+  - `git diff --check`：pass。
+  - 用户真实页面测试确认通过。
+  - 备注：`npm --prefix apps/team-console test -- --run src/tests/app-task-branches.test.tsx` 当前有 6 个旧失败，失败点为等待 Task 节点 `data-task-run-status="completed"` 但实际仍是 `none`；本轮未改该文件，也未把这类测试债并入上拖修复。
 - Browser `/playground/conn`：新界面 invalid Group option 显示 `不可运行` 且 disabled，未保存、未 POST/PATCH。
 - Browser `http://127.0.0.1:5174/`：展开 `group_68c7cb331d7b` 后成员 chip 为 2 行，顺序按两个 `headTaskIds` 的 downstream 链路排列；未点击按钮、未 PATCH membership。
 

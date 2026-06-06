@@ -14,6 +14,20 @@
 
 ---
 
+## 2026-06-06 — Team Console run observer upward drag fix
+
+- **主题**: 修复 Team Console Task 最近运行/运行观察子面板无法向画布原点上方拖动的问题。Task child panel 现在保留用户拖拽产生的负 `y` override，不再在布局阶段把 `top` 钳到 `0`。
+- **影响范围**: 仅 5174 Team Console Execution Atlas 的 Task 子面板拖拽行为，覆盖运行观察中的 Worker/Checker 过程节点和同一布局链路下的 Task child panel。`x` 轴非负限制、后端 TaskRun/GroupRun/Conn contract 均不变。
+- **验证**: 用户真实页面测试确认通过；新增回归断言要求 observer process panel 能拖到 `top < 0`。相关 observer/UI 测试、build、typecheck 和 `git diff --check` 已通过。
+- **对应入口**: `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/tests/app-run-observer-interactions.test.tsx`。
+
+## 2026-06-06 — Team Console load smoothness
+
+- **主题**: 优化 Team Console 初始加载流畅性。Live hydration 不再触发无意义的首次 `PATCH /v1/team/console-layout`，恢复加载最短显示时间从 1000ms 收敛到 160ms，并修正 loading -> workspace 切换时的布局抖动。
+- **影响范围**: 仅 5174 Team Console 初始加载、canvas restore/hydration 和 loading skeleton。后端 API、Conn、GroupRun、Discovery contract 不变。
+- **验证**: 真实浏览器 PerformanceObserver 显示初始加载 CLS 从约 0.48 降为 0.00，初始网络只剩 GET，无 layout PATCH；Team Console 相关测试、build、typecheck 和 `git diff --check` 已通过。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/app.css`、`apps/team-console/src/tests/app-canvas-state.test.tsx`。
+
 ## 2026-06-06 — Team Console Group dock and toolbar consolidation
 
 - **主题**: Team Console 根节点筛选与数量统计合并为一个高密度 segmented control：`ALL`、`Agent`、`Task`、`Source` 四个筛选项直接显示数量，独立 Agent/Task/Source 统计块移除。`Task` 筛选不再顺带显示 Source，Source 有独立筛选入口。
