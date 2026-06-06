@@ -104,6 +104,21 @@ describe("Team Console static contracts", () => {
     expect(memberRowRule).toContain("overflow-x: auto");
   });
 
+  it("keeps root filter counts inline and removes the separate atlas stats block", () => {
+    const appSource = readFileSync("src/app/App.tsx", "utf8");
+    const appCss = readFileSync("src/app/app.css", "utf8");
+    const mapSource = readFileSync("src/graph/ExecutionMap.tsx", "utf8");
+
+    expect(appSource).toContain('type RootNodeFilter = "all" | "agent" | "task" | "source"');
+    expect(appSource).toContain('setRootNodeFilter("source")');
+    expect(appSource).toContain('className="root-filter-count"');
+    expect(appSource).not.toContain('className="agent-atlas-stats"');
+    expect(appCss).toContain('.root-filter-segment[data-active-filter="source"]::before');
+    expect(appCss).not.toContain(".agent-atlas-stats");
+    expect(appCss).not.toContain(".agent-atlas-count");
+    expect(mapSource).toContain('const showSources = rootNodeFilter === "all" || rootNodeFilter === "source";');
+  });
+
   it("uses a light default theme for the Team Console app chrome", () => {
     const appCss = readFileSync("src/app/app.css", "utf8");
 

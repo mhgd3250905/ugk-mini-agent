@@ -14,6 +14,11 @@ import { getAtlasNodes, firePointer, deferred } from "./app-dom-test-utils";
 
 function noop() {}
 
+function expectRootFilterCount(label: "ALL" | "Agent" | "Task" | "Source", count: number) {
+  const tab = screen.getByRole("tab", { name: new RegExp(`^${label}\\b`) });
+  expect(within(tab).getByText(String(count))).toBeInTheDocument();
+}
+
 function canvasTaskRun(taskId: string, runId: string, status: TeamRunState["status"] = "completed"): TeamRunState {
   return {
     runId,
@@ -477,6 +482,11 @@ describe("App", () => {
     expect(within(historyPanel).getByText("task_generated_vultr")).toBeInTheDocument();
     expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeTruthy();
     expect(getGeneratedCard(panel, "task_generated_vultr")).toBeTruthy();
+    const subcanvasShell = panel.closest(".emap-task-child-branch-shell") as HTMLElement | null;
+    const historyShell = historyPanel.closest(".emap-task-child-branch-shell") as HTMLElement | null;
+    expect(subcanvasShell).toBeTruthy();
+    expect(historyShell).toBeTruthy();
+    expect(historyShell).toHaveAttribute("data-panel-source-id", subcanvasShell!.dataset.panelId);
     expect(vultrCard).toHaveAttribute("data-generated-run-history-open", "true");
     expect(vultrCard).toHaveClass("is-history-open");
 
@@ -736,23 +746,17 @@ describe("App", () => {
 
     fireEvent.click(vultrCard!);
     const historyPanel = await screen.findByRole("region", { name: "核查 Vultr 公开证据 运行记录" });
-    expect(await within(historyPanel).findByText(generatedRunId)).toBeInTheDocument();
-
-    fireEvent.click(within(historyPanel).getByRole("button", { name: new RegExp(generatedRunId) }));
-    const historyObserverPanel = await waitFor(() => {
-      const panelNode = container.querySelector(".emap-run-observer-panel") as HTMLElement | null;
-      expect(panelNode).toBeTruthy();
-      return panelNode!;
+    const historyRow = await waitFor(() => {
+      const row = historyPanel.querySelector(`[data-run-id="${generatedRunId}"]`) as HTMLElement | null;
+      expect(row).toBeTruthy();
+      return row!;
     });
-    expect(within(historyObserverPanel).getByText("开始时间")).toBeInTheDocument();
-    expect(within(historyObserverPanel).getByText("结束时间")).toBeInTheDocument();
-    const copyAnalysisButton = within(historyObserverPanel).getByRole("button", { name: "复制给 Agent 分析" });
-    fireEvent.click(copyAnalysisButton);
-    await waitFor(() => {
-      expect(writeText).toHaveBeenCalledWith(expect.stringContaining(generatedRunId));
-    });
-    expect(within(historyObserverPanel).getByRole("status")).toHaveTextContent("已复制");
-    expect(await within(historyObserverPanel).findByText("accepted-result.md")).toBeInTheDocument();
+    expect(historyRow).toHaveTextContent("状态");
+    expect(historyRow).toHaveTextContent("开始时间");
+    expect(historyRow).toHaveTextContent("执行时间");
+    expect(historyRow).not.toHaveTextContent(generatedRunId);
+    expect(within(historyRow).getAllByRole("button")).toHaveLength(3);
+    expect(within(historyRow).queryByRole("button", { name: new RegExp(generatedRunId) })).toBeNull();
   });
 
   it("does not show the Discovery subcanvas toggle for normal root Tasks", async () => {
@@ -912,7 +916,7 @@ describe("App", () => {
     expect(screen.queryByLabelText(`${templateTask.title} Task 参数`)).toBeNull();
   });
 
-  it("opens a per-Task run history branch card and lazily loads run details", async () => {
+  it("opens a compact per-Task run history branch card with summary actions", async () => {
     const liveTask = mockTeamTasks[0]!;
     const latestRun = canvasTaskRun(liveTask.taskId, "run_history_latest");
     latestRun.createdAt = "2026-06-02T01:00:00.000Z";
@@ -981,39 +985,33 @@ describe("App", () => {
     const historyPanel = await screen.findByRole("region", { name: `${liveTask.title} 运行记录` });
     expect(screen.queryByRole("complementary", { name: `${liveTask.title} 运行记录` })).toBeNull();
 
-    expect(within(historyPanel).getByText("run_history_latest")).toBeInTheDocument();
-    expect(within(historyPanel).getByText("run_history_older")).toBeInTheDocument();
-    expect(within(historyPanel).getByText("质量最好")).toBeInTheDocument();
-    expect(historyPanel.querySelector(`[data-run-id="${latestRun.runId}"]`)).toHaveAttribute("data-run-status", "completed");
+    const latestRow = historyPanel.querySelector(`[data-run-id="${latestRun.runId}"]`) as HTMLElement | null;
+    const olderRow = historyPanel.querySelector(`[data-run-id="${olderRun.runId}"]`) as HTMLElement | null;
+    expect(latestRow).toBeTruthy();
+    expect(olderRow).toBeTruthy();
+    expect(latestRow).toHaveAttribute("data-run-status", "completed");
+    expect(latestRow).toHaveTextContent("状态");
+    expect(latestRow).toHaveTextContent("开始时间");
+    expect(latestRow).toHaveTextContent("执行时间");
+    expect(latestRow).not.toHaveTextContent("run_history_latest");
+    expect(olderRow).not.toHaveTextContent("run_history_older");
+    expect(historyPanel).not.toHaveTextContent("质量最好");
+    expect(within(latestRow!).getAllByRole("button")).toHaveLength(3);
+    expect(within(latestRow!).getByRole("button", { name: "装载记录" })).toBeInTheDocument();
+    expect(within(latestRow!).getByRole("button", { name: "标为最佳" })).toBeInTheDocument();
+    expect(within(latestRow!).getByRole("button", { name: "归档记录" })).toBeInTheDocument();
     expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).not.toContain(
       `/v1/team/task-runs/${latestRun.runId}/tasks/${liveTask.taskId}/attempts`,
     );
 
-    fireEvent.click(within(historyPanel).getByRole("button", { name: /run_history_latest/ }));
-    expect(within(historyPanel).getByRole("button", { name: /run_history_latest/ })).toHaveAttribute("aria-current", "true");
+    fireEvent.click(within(latestRow!).getByRole("button", { name: "标为最佳" }));
     await waitFor(() => {
-      expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toContain(
-        `/v1/team/task-runs/${latestRun.runId}/tasks/${liveTask.taskId}/attempts`,
-      );
-    });
-    const observerPanel = await waitFor(() => {
-      const panelNode = container.querySelector(".emap-run-observer-panel") as HTMLElement | null;
-      expect(panelNode).toBeTruthy();
-      return panelNode!;
-    });
-    expect(within(observerPanel).getByText("开始时间")).toBeInTheDocument();
-    expect(await within(observerPanel).findByText("accepted-result.md")).toBeInTheDocument();
-    fireEvent.click(within(observerPanel).getByRole("button", { name: /accepted-result.md/ }));
-    expect(await screen.findByText("accepted history result")).toBeInTheDocument();
-
-    fireEvent.click(within(historyPanel).getByRole("button", { name: "标为最佳" }));
-    await waitFor(() => {
-      expect(within(historyPanel).getByText("最佳")).toBeInTheDocument();
+      expect(historyPanel.querySelector(`[data-run-id="${latestRun.runId}"]`)).toHaveAttribute("data-run-best", "true");
     });
 
-    fireEvent.click(within(historyPanel).getAllByRole("button", { name: "归档记录" })[1]!);
+    fireEvent.click(within(olderRow!).getByRole("button", { name: "归档记录" }));
     await waitFor(() => {
-      expect(within(historyPanel).queryByText("run_history_older")).toBeNull();
+      expect(historyPanel.querySelector(`[data-run-id="${olderRun.runId}"]`)).toBeNull();
     });
   });
 
@@ -3123,13 +3121,13 @@ describe("App", () => {
       const { container } = render(<App />);
       fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
       await waitFor(() => expect(taskRequests).toBe(1));
-      expect(screen.getByLabelText("当前 Task 数量")).toHaveTextContent("0 个 Task");
+      expectRootFilterCount("Task", 0);
 
       fireEvent.click(screen.getByRole("button", { name: "刷新 Task" }));
 
       await waitFor(() => expect(taskRequests).toBe(2));
       expect(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" })).toBeInTheDocument();
-      expect(screen.getByLabelText("当前 Task 数量")).toHaveTextContent("1 个 Task");
+      expectRootFilterCount("Task", 1);
     });
 
     it("keeps existing live Task cards and shows an error when Task refresh fails", async () => {
@@ -3161,7 +3159,7 @@ describe("App", () => {
 
       expect(await screen.findByText("请求失败 (500)")).toBeInTheDocument();
       expect(within(getAtlasNodes(container)).getByRole("button", { name: "调查 Medtrum 云资产" })).toBeInTheDocument();
-      expect(screen.getByLabelText("当前 Task 数量")).toHaveTextContent("1 个 Task");
+      expectRootFilterCount("Task", 1);
     });
 
     it("clears a stale Task refresh error after a later successful refresh", async () => {
@@ -3260,7 +3258,7 @@ describe("App", () => {
 
       expect(await within(getAtlasNodes(container)).findByRole("button", { name: "刷新防重后的 Task" })).toBeInTheDocument();
       await waitFor(() => expect(screen.getByRole("button", { name: "刷新 Task" })).toBeEnabled());
-      expect(screen.getByLabelText("当前 Task 数量")).toHaveTextContent("2 个 Task");
+      expectRootFilterCount("Task", 2);
     });
 
     it("refreshes live Task cards after closing a Task creation branch", async () => {

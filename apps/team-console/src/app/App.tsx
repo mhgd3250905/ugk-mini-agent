@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunAnnotation, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort, TeamTaskConnection, TeamManualUpstreamRunSelection, TeamTaskRunCreateRequest, TeamManualUpstreamRunSelectionRecord, TeamTaskGroupRun } from "../api/team-types";
+import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunAnnotation, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort, TeamTaskConnection, TeamManualUpstreamRunSelection, TeamTaskRunCreateRequest, TeamTaskGroupRun } from "../api/team-types";
 import { MockTeamApi } from "../fixtures/team-fixtures";
 import { useTeamConsoleLiveData, type DataSource, type TeamConsoleUiResetReason, type TeamDiscoveryStage, type TeamDiscoverySummary, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
 import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchGeneratedObserverState, type TaskBranchState } from "./use-task-branch-stack";
@@ -33,7 +33,7 @@ const CANVAS_LOADING_MIN_VISIBLE_MS = 1000;
 type AgentBranchMode = "chat" | "task-create";
 type TeamConsoleTheme = "light" | "dark";
 type DiscoveryGeneratedVisualState = "running" | "queued" | "done" | "failed" | "stale" | "idle";
-type RootNodeFilter = "all" | "agent" | "task";
+type RootNodeFilter = "all" | "agent" | "task" | "source";
 
 type AgentBranchState = {
   nodeId: string;
@@ -57,6 +57,7 @@ type StoredCanvasUiState = {
   minimizedAgentNodeIds?: string[];
   minimizedTaskNodeIds?: string[];
   minimizedSourceNodeIds?: string[];
+  minimizedTaskGroupIds?: string[];
   rootNodeFilter?: RootNodeFilter;
   loadedTaskRunSelections?: StoredLoadedTaskRunSelection[];
 };
@@ -229,31 +230,6 @@ function formatRunTimestamp(value: string | null | undefined, fallback = "未记
     second: "2-digit",
     hour12: false,
   });
-}
-
-function taskRunTriggerLabel(run: TeamRunState): string {
-  const triggeredBy = run.source?.triggeredBy;
-  if (!triggeredBy) return "手动";
-  switch (triggeredBy.type) {
-    case "task-connection": return "连接触发";
-    case "task-dependency": return "依赖触发";
-    case "discovery-generated-task": return "Discovery 生成";
-    default: return "自动触发";
-  }
-}
-
-function manualUpstreamSelectionKey(selection: Pick<
-  TeamManualUpstreamRunSelectionRecord,
-  "connectionId" | "fromRunId" | "fromAttemptId" | "fromOutputPortId" | "toInputPortId" | "artifactId"
->): string {
-  return [
-    selection.connectionId,
-    selection.fromRunId,
-    selection.fromAttemptId,
-    selection.fromOutputPortId,
-    selection.toInputPortId,
-    selection.artifactId,
-  ].join("\u0000");
 }
 
 function manualUpstreamBoundInputKey(input: ManualUpstreamInputMetadata): string {
@@ -1162,7 +1138,8 @@ function parseStoredCanvasUiState(value: unknown): StoredCanvasUiState | null {
     minimizedAgentNodeIds: readStringArray(parsed.minimizedAgentNodeIds),
     minimizedTaskNodeIds: readStringArray(parsed.minimizedTaskNodeIds),
     minimizedSourceNodeIds: readStringArray(parsed.minimizedSourceNodeIds),
-    rootNodeFilter: parsed.rootNodeFilter === "agent" || parsed.rootNodeFilter === "task" ? parsed.rootNodeFilter : undefined,
+    minimizedTaskGroupIds: readStringArray(parsed.minimizedTaskGroupIds),
+    rootNodeFilter: parsed.rootNodeFilter === "agent" || parsed.rootNodeFilter === "task" || parsed.rootNodeFilter === "source" ? parsed.rootNodeFilter : undefined,
     loadedTaskRunSelections: readStoredLoadedTaskRunSelections(parsed.loadedTaskRunSelections),
   };
 }
@@ -1642,7 +1619,6 @@ export function App() {
   const [runHistoryIncludeArchived, setRunHistoryIncludeArchived] = useState(false);
   const [runHistoryLoading, setRunHistoryLoading] = useState(false);
   const [runHistoryError, setRunHistoryError] = useState<string | null>(null);
-  const [selectedRunHistoryRunId, setSelectedRunHistoryRunId] = useState<string | null>(null);
   const [runHistorySavingRunId, setRunHistorySavingRunId] = useState<string | null>(null);
   const [runHistoryAnalysisCopyState, setRunHistoryAnalysisCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [runHistoryAnalysisManualText, setRunHistoryAnalysisManualText] = useState<string | null>(null);
@@ -1692,6 +1668,7 @@ export function App() {
   const [minimizedAgentNodeIds, setMinimizedAgentNodeIds] = useState<string[]>([]);
   const [minimizedTaskNodeIds, setMinimizedTaskNodeIds] = useState<string[]>([]);
   const [minimizedSourceNodeIds, setMinimizedSourceNodeIds] = useState<string[]>([]);
+  const [minimizedTaskGroupIds, setMinimizedTaskGroupIds] = useState<string[]>([]);
 
   useEffect(() => {
     taskRunObserverByRunIdRef.current = taskRunObserverByRunId;
@@ -1893,6 +1870,7 @@ export function App() {
     setTaskDependencyDraft(null);
     setSourceConnectionDraft(null);
     setMockTaskGroups([]);
+    setMinimizedTaskGroupIds([]);
     setTaskGroupDisplayStates([]);
     setTaskGroupRunUiState({ latestByGroupId: {}, savingByGroupId: {} });
     setSelectedAtlasEntries([]);
@@ -1911,7 +1889,6 @@ export function App() {
     setRunHistoryIncludeArchived(false);
     setRunHistoryLoading(false);
     setRunHistoryError(null);
-    setSelectedRunHistoryRunId(null);
     setRunHistorySavingRunId(null);
     setRunHistoryAnalysisCopyState("idle");
     setRunHistoryAnalysisManualText(null);
@@ -2125,7 +2102,6 @@ export function App() {
     setRunHistoryIncludeArchived(false);
     setRunHistoryItems(initialItems);
     setRunHistoryTotal(initialItems.length);
-    setSelectedRunHistoryRunId(null);
     setRunHistoryError(null);
     setRunHistoryLoading(false);
     setRunHistoryAnalysisCopyState("idle");
@@ -2170,7 +2146,6 @@ export function App() {
     setRunHistoryTaskId(null);
     setRunHistoryItems([]);
     setRunHistoryTotal(0);
-    setSelectedRunHistoryRunId(null);
     setRunHistoryError(null);
     setRunHistorySavingRunId(null);
     setRunHistoryAnalysisCopyState("idle");
@@ -2225,7 +2200,6 @@ export function App() {
     const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
     setRunHistoryLoading(false);
     setRunHistoryError(null);
-    setSelectedRunHistoryRunId(null);
 
     void Promise.resolve().then(() => api.listTaskRunHistory(activeRunHistoryTaskId, {
       limit: 50,
@@ -2279,10 +2253,6 @@ export function App() {
       setRunHistoryLoading(false);
     }
   }, [activeRunHistoryTaskId, dataSource, runHistoryIncludeArchived, runHistoryItems.length, runHistoryLoading, runHistoryTotal]);
-
-  const selectRunHistoryItem = useCallback((item: TeamTaskRunHistoryItem) => {
-    setSelectedRunHistoryRunId(item.run.runId);
-  }, []);
 
   const loadRunHistoryItem = useCallback((item: TeamTaskRunHistoryItem) => {
     setLoadedTaskRunByTaskId((current) => ({
@@ -2339,7 +2309,6 @@ export function App() {
       });
       if (!runHistoryIncludeArchived && response.annotation.archived) {
         setRunHistoryTotal((current) => Math.max(0, current - 1));
-        setSelectedRunHistoryRunId((current) => current === response.annotation.runId ? null : current);
       }
     } catch (e) {
       setRunHistoryError(errorMessage(e));
@@ -2502,6 +2471,11 @@ export function App() {
       return taskGroupNodeIds.length > 0 ? [{ ...group, taskNodeIds: taskGroupNodeIds }] : [];
     });
     const nextTaskGroupDisplayStates = stored.taskGroupDisplayStates ?? [];
+    const activeTaskGroupIds = new Set(
+      dataSource === "mock"
+        ? nextTaskGroups.map((group) => group.groupId)
+        : teamTaskGroups.filter((group) => !group.archived).map((group) => group.groupId),
+    );
     const nextAgentBranch = stored.expandedAgentBranch
       && agentNodeIds.has(stored.expandedAgentBranch.nodeId)
       && agentIds.has(stored.expandedAgentBranch.agentId)
@@ -2530,6 +2504,7 @@ export function App() {
     setMinimizedAgentNodeIds((stored.minimizedAgentNodeIds ?? []).filter((nodeId) => agentNodeIds.has(nodeId)));
     setMinimizedTaskNodeIds((stored.minimizedTaskNodeIds ?? []).filter((nodeId) => taskNodeIds.has(nodeId)));
     setMinimizedSourceNodeIds((stored.minimizedSourceNodeIds ?? []).filter((nodeId) => sourceNodeIds.has(nodeId)));
+    setMinimizedTaskGroupIds((stored.minimizedTaskGroupIds ?? []).filter((groupId) => activeTaskGroupIds.has(groupId)));
     if (stored.rootNodeFilter) setRootNodeFilter(stored.rootNodeFilter);
     hydratedCanvasUiContextKeyRef.current = canvasUiContextKey;
     setCanvasUiStateHydrated(true);
@@ -2547,6 +2522,7 @@ export function App() {
     sharedCanvasUiState,
     sharedCanvasUiStateLoaded,
     sourceAtlasNodes,
+    teamTaskGroups,
     taskNodes,
   ]);
 
@@ -2586,6 +2562,10 @@ export function App() {
         changed = true;
       }
       return changed ? next : current;
+    });
+    setMinimizedTaskGroupIds((current) => {
+      const next = current.filter((groupId) => activeGroupIds.has(groupId));
+      return next.length === current.length ? current : next;
     });
     setTaskGroupRunUiState((current) => {
       let changed = false;
@@ -2683,6 +2663,7 @@ export function App() {
       minimizedAgentNodeIds,
       minimizedTaskNodeIds,
       minimizedSourceNodeIds,
+      minimizedTaskGroupIds,
       rootNodeFilter,
       loadedTaskRunSelections: filterLoadedTaskRunSelectionsByTaskIds(
         Object.entries(loadedTaskRunByTaskId).map(([taskId, runId]) => ({ taskId, runId })),
@@ -2712,6 +2693,7 @@ export function App() {
     generatedTasksById,
     loadedTaskRunByTaskId,
     minimizedAgentNodeIds,
+    minimizedTaskGroupIds,
     minimizedSourceNodeIds,
     minimizedTaskNodeIds,
     rootNodeFilter,
@@ -2853,6 +2835,27 @@ export function App() {
   const restoreSourceNode = useCallback((node: AtlasSourceNode) => {
     setMinimizedSourceNodeIds((current) => current.filter((nodeId) => nodeId !== node.nodeId));
   }, []);
+
+  const minimizeTaskGroup = useCallback((group: AtlasTaskGroup) => {
+    setMinimizedTaskGroupIds((current) => (
+      current.includes(group.groupId) ? current : [...current, group.groupId]
+    ));
+  }, []);
+
+  const restoreTaskGroup = useCallback((group: AtlasTaskGroup) => {
+    setMinimizedTaskGroupIds((current) => current.filter((groupId) => groupId !== group.groupId));
+    if (dataSource === "live") {
+      setTaskGroupDisplayStates((current) => (
+        current.some((state) => state.groupId === group.groupId)
+          ? current.map((state) => state.groupId === group.groupId ? { ...state, collapsed: false } : state)
+          : [...current, { groupId: group.groupId, collapsed: false, locked: group.locked ?? false }]
+      ));
+      return;
+    }
+    setMockTaskGroups((current) => current.map((candidate) => (
+      candidate.groupId === group.groupId ? { ...candidate, collapsed: false } : candidate
+    )));
+  }, [dataSource]);
 
   const toggleAgentBranch = useCallback((node: AtlasAgentNode) => {
     setAgentPickerOpen(false);
@@ -3913,18 +3916,33 @@ export function App() {
       void new LiveTeamApi().archiveTaskGroup(groupId).then((archivedGroup) => {
         setTeamTaskGroups((current) => current.filter((group) => group.groupId !== archivedGroup.groupId));
         setTaskGroupDisplayStates((current) => current.filter((state) => state.groupId !== archivedGroup.groupId));
+        setMinimizedTaskGroupIds((current) => current.filter((id) => id !== archivedGroup.groupId));
       }).catch((e) => setError(errorMessage(e)));
       return;
     }
     setMockTaskGroups((current) => current.filter((group) => group.groupId !== groupId || group.locked));
+    setMinimizedTaskGroupIds((current) => current.filter((id) => id !== groupId));
   }, [dataSource, setError, setTeamTaskGroups, taskGroups]);
 
   const agentToolbar = (
     <div className="agent-atlas-actions">
       <div className="root-filter-segment" data-active-filter={rootNodeFilter} role="tablist" aria-label="根节点显示">
-        <button type="button" role="tab" aria-pressed={rootNodeFilter === "all"} className={`root-filter-btn${rootNodeFilter === "all" ? " is-active" : ""}`} onClick={() => setRootNodeFilter("all")}>ALL</button>
-        <button type="button" role="tab" aria-pressed={rootNodeFilter === "agent"} className={`root-filter-btn${rootNodeFilter === "agent" ? " is-active" : ""}`} onClick={() => setRootNodeFilter("agent")}>Agent</button>
-        <button type="button" role="tab" aria-pressed={rootNodeFilter === "task"} className={`root-filter-btn${rootNodeFilter === "task" ? " is-active" : ""}`} onClick={() => setRootNodeFilter("task")}>Task</button>
+        <button type="button" role="tab" aria-pressed={rootNodeFilter === "all"} className={`root-filter-btn${rootNodeFilter === "all" ? " is-active" : ""}`} onClick={() => setRootNodeFilter("all")}>
+          <span className="root-filter-label">ALL</span>
+          <span className="root-filter-count">{agentNodes.length + tasks.length + sourceNodes.length}</span>
+        </button>
+        <button type="button" role="tab" aria-pressed={rootNodeFilter === "agent"} className={`root-filter-btn${rootNodeFilter === "agent" ? " is-active" : ""}`} onClick={() => setRootNodeFilter("agent")}>
+          <span className="root-filter-label">Agent</span>
+          <span className="root-filter-count">{agentNodes.length}</span>
+        </button>
+        <button type="button" role="tab" aria-pressed={rootNodeFilter === "task"} className={`root-filter-btn${rootNodeFilter === "task" ? " is-active" : ""}`} onClick={() => setRootNodeFilter("task")}>
+          <span className="root-filter-label">Task</span>
+          <span className="root-filter-count">{tasks.length}</span>
+        </button>
+        <button type="button" role="tab" aria-pressed={rootNodeFilter === "source"} className={`root-filter-btn${rootNodeFilter === "source" ? " is-active" : ""}`} onClick={() => setRootNodeFilter("source")}>
+          <span className="root-filter-label">Source</span>
+          <span className="root-filter-count">{sourceNodes.length}</span>
+        </button>
       </div>
       <div className="agent-toolbar-group agent-toolbar-agent-group">
         <button
@@ -3958,20 +3976,6 @@ export function App() {
             })}
           </div>
         )}
-      </div>
-      <div className="agent-atlas-stats" aria-label="画布统计">
-        <span className="agent-atlas-count" aria-label="Agent 数量">
-          <strong>{agentNodes.length}</strong>
-          <span> Agent</span>
-        </span>
-        <span className="agent-atlas-count task-atlas-count" aria-label="当前 Task 数量">
-          <strong>{tasks.length}</strong>
-          <span> 个 Task</span>
-        </span>
-        <span className="agent-atlas-count source-atlas-count" aria-label="输出节点数量">
-          <strong>{sourceNodes.length}</strong>
-          <span> Source</span>
-        </span>
       </div>
       <div className="agent-toolbar-group task-toolbar-group" aria-label="Task 操作">
         <button
@@ -4458,7 +4462,7 @@ export function App() {
           : task;
         panels.push({
           id: runHistoryPanelId,
-          width: 520,
+          width: 620,
           autoHeight: true,
           sourceId: discoveryRunHistoryTaskId ? `discovery-subcanvas-${branch.nodeId}` : menuPanelId,
           panel: (
@@ -4509,10 +4513,8 @@ export function App() {
               <div className="emap-run-history-list" aria-label={`${historyTask.title} run history list`}>
                 {runHistoryItems.map((item) => {
                   const run = item.run;
-                  const taskState = run.taskStates?.[item.annotation.taskId] ?? null;
-                  const selected = branch.observedRunId === run.runId || selectedRunHistoryRunId === run.runId;
+                  const selected = branch.observedRunId === run.runId;
                   const saving = runHistorySavingRunId === run.runId;
-                  const errorSummary = taskRunErrorSummary(run, item.annotation.taskId);
                   const loadedRunId = loadedTaskRunByTaskId[item.annotation.taskId];
                   const loaded = loadedRunId === run.runId;
                   const loadedSuppressedByActiveRun = loaded && (taskRunsByTaskId[item.annotation.taskId] ?? []).some((candidate) => isActiveRun(candidate.status));
@@ -4525,45 +4527,28 @@ export function App() {
                       data-run-status={run.status}
                       data-loaded-run={loaded ? "true" : "false"}
                       data-loaded-run-state={loadedState}
+                      data-run-best={item.annotation.best ? "true" : "false"}
+                      data-run-archived={item.annotation.archived ? "true" : "false"}
                     >
-                      <button
-                        type="button"
+                      <div
                         className="emap-run-history-row"
-                        aria-label={`${run.runId} ${RUN_STATUS_LABELS[run.status]} 运行详情`}
                         aria-current={selected ? "true" : undefined}
-                        onClick={() => {
-                          selectRunHistoryItem(item);
-                          setRunHistoryAnalysisCopyState("idle");
-                          setRunHistoryAnalysisManualText(null);
-                          setExpandedTaskBranches((current) => current.map((candidate) => (
-                            candidate.nodeId === branch.nodeId
-                              ? discoveryRunHistoryTaskId
-                                ? { ...candidate, discoveryGeneratedRunHistoryTaskId: historyTask.taskId, observedRunId: run.runId, selectedFileKeys: [] }
-                                : { ...candidate, detailMode: "run-history", runHistoryTaskId: historyTask.taskId, observedRunId: run.runId, selectedFileKeys: [] }
-                              : candidate
-                          )));
-                        }}
                       >
-                        <span className="emap-run-history-trigger">{taskRunTriggerLabel(run)}</span>
+                        <span className="emap-run-history-started">
+                          <small>开始时间</small>
+                          <time dateTime={run.startedAt ?? run.createdAt}>
+                            {formatRunTimestamp(run.startedAt ?? run.createdAt)}
+                          </time>
+                        </span>
                         <span className="emap-run-history-status">
+                          <small>状态</small>
                           <strong>{RUN_STATUS_LABELS[run.status]}</strong>
-                          <small>{taskState?.status ?? "unknown"}</small>
                         </span>
                         <span className="emap-run-history-duration">
+                          <small>执行时间</small>
                           <strong>{taskRunElapsed(run)}</strong>
-                          <small>{taskRunResultRef(run, item.annotation.taskId)}</small>
                         </span>
-                        <code>{run.runId}</code>
-                        {loaded && (
-                          <span className="emap-run-history-badge loaded" data-loaded-run-marker={loadedState}>
-                            {loadedSuppressedByActiveRun ? "已装载（活跃 run 优先）" : "已装载"}
-                          </span>
-                        )}
-                        {item.annotation.best && <span className="emap-run-history-badge best">最佳</span>}
-                        {item.annotation.archived && <span className="emap-run-history-badge archived">已归档</span>}
-                        {item.annotation.note && <small className="emap-run-history-note">{item.annotation.note}</small>}
-                        {errorSummary !== "无" && <span className="emap-run-history-row-error">{errorSummary}</span>}
-                      </button>
+                      </div>
                       <div className="emap-run-history-actions">
                         {loaded ? (
                           <button
@@ -4577,11 +4562,11 @@ export function App() {
                           <button
                             type="button"
                             data-run-load-action="load"
-                            disabled={isActiveRun(run.status)}
-                            onClick={() => { loadRunHistoryItem(item); }}
-                          >
-                            装载此记录
-                          </button>
+                          disabled={isActiveRun(run.status)}
+                          onClick={() => { loadRunHistoryItem(item); }}
+                        >
+                          装载记录
+                        </button>
                         )}
                         <button
                           type="button"
@@ -5684,7 +5669,8 @@ export function App() {
         .filter((descriptor): descriptor is TaskRunObserverFileDescriptor => Boolean(descriptor));
       const observedTaskRunIsActive = isActiveRun(observedTaskRun.status);
       const manualUpstreamSelections = observedTaskRun.source?.manualUpstreamSelections ?? [];
-      const manualUpstreamInputMetadataByKey = observerState?.manualUpstreamInputMetadataByKey ?? {};
+      const inputSourceLabel = manualUpstreamSelections.length > 0 ? "手动上游输入" : "自然运行流入";
+      const inputSourceKind = manualUpstreamSelections.length > 0 ? "manual" : "natural";
 
       const renderFileRow = (descriptor: TaskRunObserverFileDescriptor) => {
         const isSelected = selectedFileKeySet.has(descriptor.key);
@@ -5705,47 +5691,6 @@ export function App() {
             <code className="emap-observer-file-row-name">{descriptor.fileName}</code>
             <span className="emap-observer-file-row-path">{descriptor.path}</span>
           </button>
-        );
-      };
-
-      const renderDiagnosticField = (label: string, value: string | null | undefined) => {
-        if (!value) return null;
-        return (
-          <span className="emap-run-observer-input-field">
-            <small>{label}</small>
-            <code>{value}</code>
-          </span>
-        );
-      };
-
-      const renderInputDiagnostics = () => {
-        if (manualUpstreamSelections.length === 0) return null;
-        return (
-          <section className="emap-run-observer-input-diagnostics" data-observer-section="input-diagnostics">
-            <span className="emap-run-observer-input-title">输入来源</span>
-            {manualUpstreamSelections.map((selection) => {
-              const metadata = manualUpstreamInputMetadataByKey[manualUpstreamSelectionKey(selection)];
-              return (
-                <div
-                  key={`${selection.connectionId}-${selection.fromRunId}-${selection.artifactId}`}
-                  className="emap-run-observer-input-row"
-                  data-input-diagnostic-kind="manual-upstream"
-                >
-                  <span className="emap-run-observer-input-badge">手动上游输入</span>
-                  <div className="emap-run-observer-input-fields">
-                    {renderDiagnosticField("connectionId", selection.connectionId)}
-                    {renderDiagnosticField("fromTaskId", selection.fromTaskId)}
-                    {renderDiagnosticField("fromRunId", selection.fromRunId)}
-                    {renderDiagnosticField("fromAttemptId", selection.fromAttemptId)}
-                    {renderDiagnosticField("ports", `${selection.fromOutputPortId} -> ${selection.toInputPortId}`)}
-                    {renderDiagnosticField("artifactId", selection.artifactId)}
-                    {renderDiagnosticField("type", metadata?.type)}
-                    {renderDiagnosticField("fileRef", metadata?.fileRef)}
-                  </div>
-                </div>
-              );
-            })}
-          </section>
         );
       };
 
@@ -5773,7 +5718,7 @@ export function App() {
 
       panels.push({
         id: runObserverPanelId,
-        width: 420,
+        width: 480,
         autoHeight: true,
         sourceId,
         panel: (
@@ -5784,7 +5729,15 @@ export function App() {
           >
             <header className="emap-run-observer-head">
               <span>{"\u8fd0\u884c\u89c2\u5bdf"}</span>
-              <strong>{RUN_STATUS_LABELS[observedTaskRun.status]}</strong>
+              <span className="emap-run-observer-head-meta">
+                <span
+                  className={`emap-run-observer-input-source ${inputSourceKind}`}
+                  data-input-source-kind={inputSourceKind}
+                >
+                  {inputSourceLabel}
+                </span>
+                <strong>{RUN_STATUS_LABELS[observedTaskRun.status]}</strong>
+              </span>
             </header>
             {historyTask && (
               <section className="emap-run-observer-history-summary" aria-label="历史运行摘要">
@@ -5828,7 +5781,6 @@ export function App() {
                 )}
               </section>
             )}
-            {renderInputDiagnostics()}
             <div className="emap-run-observer-stage worker" data-observer-section="worker-process">
               {renderRoleProcessNode("worker", latestAttempt?.roleProcesses?.worker)}
             </div>
@@ -5981,7 +5933,7 @@ export function App() {
     }
 
     return panels;
-  }, [activeRunHistoryTaskId, agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskCloneState, clearTaskEditState, clearTaskEditWarning, clearTaskParameterState, cloneTask, closeTaskRunHistory, copyRunHistoryAnalysisContext, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, loadMoreRunHistory, loadRunHistoryItem, loadedTaskRunByTaskId, openTaskEditDraft, openTaskParameterDraft, openTaskRunHistory, patchRunHistoryAnnotation, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runHistoryAnalysisCopyState, runHistoryAnalysisManualText, runHistoryError, runHistoryIncludeArchived, runHistoryItems, runHistoryLoading, runHistorySavingRunId, runHistoryTotal, runTask, saveTaskEdit, saveTaskParameters, scheduleLiveTaskDiscoveryRefresh, selectRunHistoryItem, selectedRunHistoryRunId, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskCloneDraftByTaskId, taskCloneSavingByTaskId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskParameterDraftByTaskId, taskParameterSavingByTaskId, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, unloadRunHistoryItem, updateTaskCloneBinding, updateTaskCloneTitle, updateTaskEditDraft, updateTaskParameterBinding]);
+  }, [activeRunHistoryTaskId, agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskCloneState, clearTaskEditState, clearTaskEditWarning, clearTaskParameterState, cloneTask, closeTaskRunHistory, copyRunHistoryAnalysisContext, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, loadMoreRunHistory, loadRunHistoryItem, loadedTaskRunByTaskId, openTaskEditDraft, openTaskParameterDraft, openTaskRunHistory, patchRunHistoryAnnotation, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runHistoryAnalysisCopyState, runHistoryAnalysisManualText, runHistoryError, runHistoryIncludeArchived, runHistoryItems, runHistoryLoading, runHistorySavingRunId, runHistoryTotal, runTask, saveTaskEdit, saveTaskParameters, scheduleLiveTaskDiscoveryRefresh, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskCloneDraftByTaskId, taskCloneSavingByTaskId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskParameterDraftByTaskId, taskParameterSavingByTaskId, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, unloadRunHistoryItem, updateTaskCloneBinding, updateTaskCloneTitle, updateTaskEditDraft, updateTaskParameterBinding]);
   const canvasStateRestorePending = !loading && !canvasUiStateHydrated;
   const canvasLoadingMinimumMs = loading || canvasUiStateRestoreHasStoredState
     ? CANVAS_LOADING_MIN_VISIBLE_MS
@@ -6101,6 +6053,9 @@ export function App() {
                 onMinimizeCanvasTask={minimizeTaskNode}
                 onRestoreCanvasTask={restoreTaskNode}
                 taskGroups={taskGroups}
+                minimizedTaskGroupIds={minimizedTaskGroupIds}
+                onMinimizeTaskGroup={minimizeTaskGroup}
+                onRestoreTaskGroup={restoreTaskGroup}
                 onToggleTaskGroup={toggleTaskGroup}
                 onToggleTaskGroupLock={toggleTaskGroupLock}
                 onDeleteTaskGroup={deleteTaskGroup}

@@ -338,13 +338,13 @@ describe("App", () => {
       dragRootNodeToDock(container, agentNode!, 26);
       dragRootNodeToDock(container, taskNode, 27);
 
-      fireEvent.click(screen.getByRole("tab", { name: "Task" }));
+      fireEvent.click(screen.getByRole("tab", { name: /^Task\b/ }));
       const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
       expect(dock).toBeTruthy();
       expect(within(dock!).getByRole("button", { name: /复原 Agent 主 Agent/ })).toBeInTheDocument();
       expect(within(dock!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ })).toBeInTheDocument();
 
-      fireEvent.click(screen.getByRole("tab", { name: "Agent" }));
+      fireEvent.click(screen.getByRole("tab", { name: /^Agent\b/ }));
       expect(within(dock!).getByRole("button", { name: /复原 Agent 主 Agent/ })).toBeInTheDocument();
       expect(within(dock!).getByRole("button", { name: /复原 Task 调查 Medtrum 云资产/ })).toBeInTheDocument();
     });
@@ -361,7 +361,11 @@ describe("App", () => {
 
       const dock = container.querySelector(".emap-root-dock") as HTMLElement | null;
       expect(dock).toBeTruthy();
-      const dockTask = dock!.querySelector(`.emap-root-dock-item-task[data-task-run-status="completed"]`);
+      const dockTask = await waitFor(() => {
+        const item = dock!.querySelector(`.emap-root-dock-item-task[data-task-run-status="completed"]`);
+        expect(item).toBeTruthy();
+        return item!;
+      });
       expect(dockTask).toBeTruthy();
       expect(within(dockTask as HTMLElement).getByText("已完成")).toBeInTheDocument();
     });

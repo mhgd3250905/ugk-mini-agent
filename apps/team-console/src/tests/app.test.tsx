@@ -4,6 +4,11 @@ import { App } from "../app/App";
 import { mockDiscoveryRootTask, mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
 import { getAtlasNodes, firePointer } from "./app-dom-test-utils";
 
+function expectRootFilterCount(container: HTMLElement, label: "ALL" | "Agent" | "Task" | "Source", count: number) {
+  const tab = within(container).getByRole("tab", { name: new RegExp(`^${label}\\b`) });
+  expect(within(tab).getByText(String(count))).toBeInTheDocument();
+}
+
 describe("App", () => {
   beforeEach(() => {
     resetMockTeamApiState();
@@ -43,7 +48,7 @@ describe("App", () => {
     expect(container.querySelector(".agent-canvas-board")).toBeNull();
   });
 
-  it("groups atlas toolbar stats and Task actions", () => {
+  it("groups atlas toolbar filters and Task actions", () => {
     const { container } = render(<App />);
 
     expect(container.querySelector(".execution-map-toolbar-main")).toBeTruthy();
@@ -53,10 +58,11 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "重置视图" })).toBeNull();
     const toolbar = container.querySelector(".agent-atlas-actions") as HTMLElement | null;
     expect(toolbar).toBeTruthy();
-    expect(toolbar!.querySelector(".agent-atlas-stats")).toBeTruthy();
+    expect(toolbar!.querySelector(".agent-atlas-stats")).toBeNull();
+    expectRootFilterCount(toolbar!, "Agent", 0);
+    expectRootFilterCount(toolbar!, "Task", [...mockTeamTasks, mockDiscoveryRootTask].length);
+    expectRootFilterCount(toolbar!, "Source", 0);
     expect(toolbar!.querySelector(".task-toolbar-group")).toBeTruthy();
-    expect(within(toolbar!).getByLabelText("Agent 数量")).toHaveTextContent("0");
-    expect(within(toolbar!).getByLabelText("当前 Task 数量")).toHaveTextContent(`${[...mockTeamTasks, mockDiscoveryRootTask].length} 个 Task`);
     expect(within(toolbar!.querySelector(".task-toolbar-group") as HTMLElement).getByRole("button", { name: "创建 Task" })).toBeInTheDocument();
     expect(within(toolbar!.querySelector(".task-toolbar-group") as HTMLElement).getByRole("button", { name: "刷新 Task" })).toBeInTheDocument();
   });

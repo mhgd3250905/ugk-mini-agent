@@ -92,6 +92,9 @@ interface ExecutionMapProps {
   onMinimizeCanvasTask?: (node: AtlasTaskNode) => void;
   onRestoreCanvasTask?: (node: AtlasTaskNode) => void;
   taskGroups?: AtlasTaskGroup[];
+  minimizedTaskGroupIds?: string[];
+  onMinimizeTaskGroup?: (group: AtlasTaskGroup) => void;
+  onRestoreTaskGroup?: (group: AtlasTaskGroup) => void;
   onToggleTaskGroup?: (groupId: string) => void;
   onToggleTaskGroupLock?: (groupId: string) => void;
   onDeleteTaskGroup?: (groupId: string) => void;
@@ -136,7 +139,7 @@ interface ExecutionMapProps {
   toolbarEnd?: ReactNode;
   interactionMode?: AtlasInteractionMode;
   onRootTrashDrop?: (entries: AtlasNodeDragEntry[]) => void;
-  rootNodeFilter?: "all" | "agent" | "task";
+  rootNodeFilter?: "all" | "agent" | "task" | "source";
   onDeleteTaskConnection?: (connectionId: string) => void;
   onDeleteSourceConnection?: (connectionId: string) => void;
   onDeleteTaskDependency?: (dependencyId: string) => void;
@@ -987,6 +990,9 @@ export function ExecutionMap({
   onMinimizeCanvasTask,
   onRestoreCanvasTask,
   taskGroups = [],
+  minimizedTaskGroupIds = [],
+  onMinimizeTaskGroup,
+  onRestoreTaskGroup,
   onToggleTaskGroup,
   onToggleTaskGroupLock,
   onDeleteTaskGroup,
@@ -1073,6 +1079,22 @@ export function ExecutionMap({
   const minimizedAgentNodeIdSet = useMemo(() => new Set(minimizedAgentNodeIds), [minimizedAgentNodeIds]);
   const minimizedTaskNodeIdSet = useMemo(() => new Set(minimizedTaskNodeIds), [minimizedTaskNodeIds]);
   const minimizedSourceNodeIdSet = useMemo(() => new Set(minimizedSourceNodeIds), [minimizedSourceNodeIds]);
+  const minimizedTaskGroupIdSet = useMemo(() => new Set(minimizedTaskGroupIds), [minimizedTaskGroupIds]);
+  const activeTaskGroups = useMemo(
+    () => taskGroups.filter((group) => !minimizedTaskGroupIdSet.has(group.groupId)),
+    [minimizedTaskGroupIdSet, taskGroups],
+  );
+  const hubTaskGroups = useMemo(
+    () => taskGroups.filter((group) => minimizedTaskGroupIdSet.has(group.groupId)),
+    [minimizedTaskGroupIdSet, taskGroups],
+  );
+  const groupedTaskNodeIdSet = useMemo(() => {
+    const nodeIds = new Set<string>();
+    for (const group of activeTaskGroups) {
+      for (const nodeId of group.taskNodeIds) nodeIds.add(nodeId);
+    }
+    return nodeIds;
+  }, [activeTaskGroups]);
   const unfilteredVisibleAgentNodes = useMemo(
     () => agentNodes.filter((node) => !minimizedAgentNodeIdSet.has(node.nodeId)),
     [agentNodes, minimizedAgentNodeIdSet],
@@ -1087,17 +1109,17 @@ export function ExecutionMap({
   );
   const showAgents = rootNodeFilter === "all" || rootNodeFilter === "agent";
   const showTasks = rootNodeFilter === "all" || rootNodeFilter === "task";
-  const showSources = rootNodeFilter === "all" || rootNodeFilter === "task";
+  const showSources = rootNodeFilter === "all" || rootNodeFilter === "source";
   const collapsedTaskGroupNodeIdSet = useMemo(() => {
     const nodeIds = new Set<string>();
     for (const group of taskGroups) {
-      if (!group.collapsed) continue;
+      if (!group.collapsed && !minimizedTaskGroupIdSet.has(group.groupId)) continue;
       for (const nodeId of group.taskNodeIds) {
         nodeIds.add(nodeId);
       }
     }
     return nodeIds;
-  }, [taskGroups]);
+  }, [minimizedTaskGroupIdSet, taskGroups]);
   const lockedTaskGroupNodeIdSet = useMemo(() => {
     const nodeIds = new Set<string>();
     for (const group of taskGroups) {
@@ -1132,7 +1154,7 @@ export function ExecutionMap({
     () => sourceNodes.filter((node) => minimizedSourceNodeIdSet.has(node.nodeId)),
     [minimizedSourceNodeIdSet, sourceNodes],
   );
-  const dockNodeCount = hubAgentNodes.length + hubTaskNodes.length + hubSourceNodes.length;
+  const dockNodeCount = hubAgentNodes.length + hubTaskNodes.length + hubSourceNodes.length + hubTaskGroups.length;
   const [dockPageState, setDockPageState] = useState({ canPageLeft: false, canPageRight: false });
 
   const updateDockPageState = useCallback(() => {
@@ -1923,6 +1945,11 @@ export function ExecutionMap({
     return hit ? { dockRect } : null;
   }, [getAtlasDragHitTestRects, viewport]);
 
+  const canDockDrag = useCallback((drag: AtlasNodeDragState): boolean => {
+    if (drag.primaryKind === "task-group") return false;
+    return !drag.entries.some((entry) => entry.kind === "task" && groupedTaskNodeIdSet.has(entry.nodeId));
+  }, [groupedTaskNodeIdSet]);
+
   const isPointerOverTrash = useCallback((drag: AtlasNodeDragState, event: ReactPointerEvent<HTMLElement>): boolean => {
     const { trash } = getAtlasDragHitTestRects(drag);
     return trash ? pointInDomRect(event.clientX, event.clientY, trash) : false;
@@ -1938,7 +1965,7 @@ export function ExecutionMap({
     if (!hasMoved) return;
 
     const overTrash = isPointerOverTrash(drag, event);
-    const dockHit = overTrash || drag.primaryKind === "task-group" ? null : getDockHitForDrag(drag, event);
+    const dockHit = overTrash || !canDockDrag(drag) ? null : getDockHitForDrag(drag, event);
     dockDragHitRef.current = Boolean(dockHit);
     if (dockHit) {
       wakeDock();
@@ -1976,7 +2003,7 @@ export function ExecutionMap({
         atlasNodeDragRef.current = { ...atlasNodeDragRef.current!, lastTreeDx: dx / scale, lastTreeDy: dy / scale };
       }
     }
-  }, [getDockHitForDrag, hasTaskBranchTree, isPointerOverTrash, onMoveAgent, onMoveCanvasTask, onMoveSourceNode, rootDropTarget, scheduleDockCollapse, viewport, wakeDock]);
+  }, [canDockDrag, getDockHitForDrag, hasTaskBranchTree, isPointerOverTrash, onMoveAgent, onMoveCanvasTask, onMoveSourceNode, rootDropTarget, scheduleDockCollapse, viewport, wakeDock]);
 
   const suppressNextAgentClick = useCallback((nodeId: string) => {
     suppressAgentClickRef.current = nodeId;
@@ -2041,6 +2068,7 @@ export function ExecutionMap({
 
   const checkDockDrop = useCallback((drag: AtlasNodeDragState, event: ReactPointerEvent<HTMLElement>): boolean => {
     if (!drag.hasMoved) return false;
+    if (!canDockDrag(drag)) return false;
     const dockHit = getDockHitForDrag(drag, event);
     if (!dockHit) return false;
     const { dockRect } = dockHit;
@@ -2098,7 +2126,7 @@ export function ExecutionMap({
     }
 
     return true;
-  }, [getDockHitForDrag, onMinimizeAgent, onMinimizeCanvasTask, onMinimizeSourceNode, rollbackAtlasDragPositions, startDockFlight, agentsById, tasksById, sourceNodesById, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes, viewport]);
+  }, [canDockDrag, getDockHitForDrag, onMinimizeAgent, onMinimizeCanvasTask, onMinimizeSourceNode, rollbackAtlasDragPositions, startDockFlight, agentsById, tasksById, sourceNodesById, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes, viewport]);
 
   const endAgentPointer = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const drag = atlasNodeDragRef.current;
@@ -2427,7 +2455,12 @@ export function ExecutionMap({
         const y = prevBottom === sourceRect.y ? sourceRect.y : prevBottom + panelGap;
         const baseRect: AtlasRect = { x, y, width: w, height: h };
         const posOverride = activePanelIds.has(p.id) ? panelPositionOverrides[p.id] : undefined;
-        const rect = posOverride ? { ...baseRect, x: posOverride.x, y: posOverride.y } : baseRect;
+        const rectWithOverride = posOverride ? { ...baseRect, x: posOverride.x, y: posOverride.y } : baseRect;
+        const rect = {
+          ...rectWithOverride,
+          x: Math.max(0, rectWithOverride.x),
+          y: Math.max(0, rectWithOverride.y),
+        };
         entries.push({ panel: p, rect, sourceRect, parentKey });
         finalRectByPanelId.set(p.id, rect);
         bottomByParent.set(parentKey, y + h);
@@ -2578,7 +2611,7 @@ export function ExecutionMap({
   const taskGroupRenderItems = useMemo(() => {
     if (!showTasks) return [];
     let emptyIndex = 0;
-    return taskGroups.flatMap((group) => {
+    return activeTaskGroups.flatMap((group) => {
       const nodes = group.taskNodeIds
         .map((nodeId) => unfilteredVisibleTaskNodes.find((node) => node.nodeId === nodeId) ?? null)
         .filter((node): node is AtlasTaskNode => Boolean(node));
@@ -2618,7 +2651,7 @@ export function ExecutionMap({
         },
       }];
     });
-  }, [showTasks, taskConnections, taskGroups, tasksById, unfilteredVisibleTaskNodes]);
+  }, [activeTaskGroups, showTasks, taskConnections, tasksById, unfilteredVisibleTaskNodes]);
   const taskGroupRight = taskGroupRenderItems.length > 0
     ? Math.max(...taskGroupRenderItems.map((item) => item.rect.x + item.rect.width))
     : 0;
@@ -2813,6 +2846,32 @@ export function ExecutionMap({
               <span className="emap-root-dock-kind">Source</span>
               <span className="emap-root-dock-title">{label}</span>
               <span className="emap-root-dock-meta">{sourceNode?.outputPort.type ?? node.sourceNodeId}</span>
+            </span>
+          </button>
+        );
+        })}
+        {hubTaskGroups.map((group) => {
+        const taskCount = group.taskIds?.length ?? group.members?.length ?? group.taskNodeIds.length;
+        return (
+          <button
+            key={`dock-group-${group.groupId}`}
+            type="button"
+            className="emap-root-dock-item emap-root-dock-item-group"
+            data-kind="task-group"
+            aria-label={`复原 Group ${group.title}`}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              wakeDock();
+              onRestoreTaskGroup?.(group);
+            }}
+          >
+            <span className="emap-root-dock-icon" aria-hidden="true">G</span>
+            <span className="emap-root-dock-copy">
+              <span className="emap-root-dock-kind">Group</span>
+              <span className="emap-root-dock-title">{group.title}</span>
+              <span className="emap-root-dock-meta">{taskCount} {taskCount === 1 ? "Task" : "Tasks"}</span>
+              <span className={`emap-root-dock-state ${group.status}`}>{group.status}</span>
             </span>
           </button>
         );
@@ -3788,6 +3847,20 @@ export function ExecutionMap({
                   >
                     移除
                   </button>
+                  {onMinimizeTaskGroup && (
+                    <button
+                      type="button"
+                      aria-label={`收纳 ${group.title}`}
+                      className="emap-task-group-dock-button"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onMinimizeTaskGroup(group);
+                      }}
+                    >
+                      收纳
+                    </button>
+                  )}
                   <button
                     type="button"
                     aria-label={`折叠 ${group.title}`}
@@ -4389,6 +4462,7 @@ export function ExecutionMap({
             <div
               key={`task-child-panel-${p.id}`}
               data-panel-id={p.id}
+              data-panel-source-id={p.sourceId ?? ""}
               className={`emap-task-child-branch-shell${p.resizable ? " emap-panel-resizable" : ""}`}
               onPointerDownCapture={(e) => beginPanelDrag(p.id, e)}
               onPointerMove={(e) => { movePanelDrag(e); if (p.resizable) movePanelResize(e); }}

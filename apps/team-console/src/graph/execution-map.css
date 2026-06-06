@@ -369,6 +369,11 @@
   color: rgba(100, 200, 220, 0.85);
 }
 
+.emap-root-dock-item-group .emap-root-dock-icon {
+  background: rgba(121, 216, 208, 0.18);
+  color: rgba(22, 124, 128, 0.92);
+}
+
 .emap-root-dock-copy {
   flex: 1;
   min-width: 0;
@@ -913,6 +918,12 @@
 .emap-task-group-head button:disabled {
   cursor: not-allowed;
   opacity: 0.46;
+}
+
+.emap-task-group-dock-button {
+  border-color: rgba(101, 119, 145, 0.28);
+  color: var(--primary);
+  background: rgba(248, 250, 252, 0.86);
 }
 
 .emap-task-group-members {
@@ -4536,6 +4547,12 @@
   border-color: rgba(121, 216, 208, 0.32);
   background: rgba(16, 20, 31, 0.72);
   color: rgb(182, 246, 240);
+}
+
+[data-theme="dark"] .emap-task-group-dock-button {
+  border-color: rgba(151, 163, 188, 0.28);
+  background: rgba(15, 23, 42, 0.72);
+  color: rgba(232, 239, 247, 0.88);
 }
 
 [data-theme="dark"] .emap-task-group-member-chip {

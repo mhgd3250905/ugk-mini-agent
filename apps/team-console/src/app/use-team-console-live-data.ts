@@ -754,6 +754,11 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
       setDiscoveryDispatchProgressByTaskId({});
       void loadAllDiscoveryCatalogs(mockApi, mockRootTasks).then((discoveryCatalogResult) => {
         if (cancelled) return;
+        setTaskRunsByTaskId((current) => mergeTaskRunMapIncremental(
+          current,
+          discoveryCatalogResult.taskRunsByTaskId,
+          discoveryCatalogResult.deletedRunIdsByTaskId,
+        ));
         if (Object.keys(discoveryCatalogResult.discoveryDispatchDiagnosticsByTaskId).length > 0) {
           setDiscoveryDispatchDiagnosticsByTaskId(discoveryCatalogResult.discoveryDispatchDiagnosticsByTaskId);
         }

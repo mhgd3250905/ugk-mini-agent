@@ -1482,24 +1482,20 @@ describe("App", () => {
         container,
       });
 
-      const diagnostics = await waitFor(() => {
-        const section = observer.querySelector('[data-observer-section="input-diagnostics"]') as HTMLElement | null;
-        expect(section).toBeTruthy();
-        return section!;
+      const inputSource = await waitFor(() => {
+        const source = observer.querySelector(".emap-run-observer-input-source") as HTMLElement | null;
+        expect(source).toBeTruthy();
+        return source!;
       });
-      const manualRow = diagnostics.querySelector('[data-input-diagnostic-kind="manual-upstream"]') as HTMLElement | null;
-      expect(manualRow).toBeTruthy();
-      expect(manualRow).toHaveTextContent("手动上游输入");
-      expect(manualRow).toHaveTextContent("conn_collect_to_html");
-      expect(manualRow).toHaveTextContent(collectTask.taskId);
-      expect(manualRow).toHaveTextContent("run_collect_loaded_old");
-      expect(manualRow).toHaveTextContent("attempt_collect_old");
-      expect(manualRow).toHaveTextContent("draft_md -> source_md");
-      expect(manualRow).toHaveTextContent("artifact_collect_old");
-      expect(manualRow).toHaveTextContent("md");
-      expect(manualRow).toHaveTextContent("tasks/task_collect/attempts/attempt_collect_old/accepted-result.md");
-      expect(manualRow).not.toHaveTextContent("heavy content must not render");
-      expect(manualRow).not.toHaveTextContent("不要把这段 preview");
+      expect(inputSource).toHaveTextContent("手动上游输入");
+      expect(inputSource).toHaveAttribute("data-input-source-kind", "manual");
+      expect(observer.querySelector('[data-observer-section="input-diagnostics"]')).toBeNull();
+      expect(observer).not.toHaveTextContent("conn_collect_to_html");
+      expect(observer).not.toHaveTextContent("run_collect_loaded_old");
+      expect(observer).not.toHaveTextContent("attempt_collect_old");
+      expect(observer).not.toHaveTextContent("tasks/task_collect/attempts/attempt_collect_old/accepted-result.md");
+      expect(observer).not.toHaveTextContent("heavy content must not render");
+      expect(observer).not.toHaveTextContent("不要把这段 preview");
     });
 
     it("enriches an active manual upstream run only once across observer polls", async () => {
@@ -1579,7 +1575,12 @@ describe("App", () => {
         runId: activeManualRun.runId,
         container,
       });
-      await waitFor(() => expect(observer.querySelector('[data-observer-section="input-diagnostics"]')).toBeTruthy());
+      await waitFor(() => {
+        const inputSource = observer.querySelector(".emap-run-observer-input-source") as HTMLElement | null;
+        expect(inputSource).toBeTruthy();
+        expect(inputSource).toHaveTextContent("手动上游输入");
+      });
+      expect(observer.querySelector('[data-observer-section="input-diagnostics"]')).toBeNull();
       expect(processSummaryRequests).toBe(1);
       expect(fullDetailRequests).toBe(1);
 
@@ -1597,7 +1598,7 @@ describe("App", () => {
       unmount();
     });
 
-    it("keeps manual downstream run trigger label as manual while showing upstream diagnostics", async () => {
+    it("renders compact manual downstream run history without source internals", async () => {
       window.localStorage.setItem("ugk-team-console:data-source", "live");
       const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
       const manualRun: TeamRunState = {
@@ -1618,6 +1619,8 @@ describe("App", () => {
         },
       };
 
+      let processSummaryRequests = 0;
+
       vi.mocked(fetch).mockImplementation(async (input) => {
         const url = String(input);
         if (url === "/v1/team/console-layout") return new Response(JSON.stringify({ state: null, updatedAt: null }), { status: 200 });
@@ -1628,6 +1631,7 @@ describe("App", () => {
           return runHistoryResponse(htmlTask.taskId, [manualRun]);
         }
         if (url === `/v1/team/task-runs/${manualRun.runId}?view=process-summary&taskId=${htmlTask.taskId}`) {
+          processSummaryRequests += 1;
           return processSummaryResponse(manualRun, [makeLegacyAttemptFixture(htmlTask)]);
         }
         if (url === `/v1/team/task-runs/${manualRun.runId}`) return new Response(JSON.stringify(manualRun), { status: 200 });
@@ -1645,16 +1649,21 @@ describe("App", () => {
         expect(row).toBeTruthy();
         return row!;
       });
-      expect(historyRow.querySelector(".emap-run-history-trigger")).toHaveTextContent("手动");
-      fireEvent.click(within(historyRow).getByRole("button", { name: /运行详情/ }));
-
-      const diagnostics = await waitFor(() => {
-        const section = container.querySelector('[data-observer-section="input-diagnostics"]') as HTMLElement | null;
-        expect(section).toBeTruthy();
-        return section!;
-      });
-      expect(diagnostics).toHaveTextContent("手动上游输入");
-      expect(historyRow.querySelector(".emap-run-history-trigger")).toHaveTextContent("手动");
+      expect(historyRow).toHaveTextContent("状态");
+      expect(historyRow).toHaveTextContent("开始时间");
+      expect(historyRow).toHaveTextContent("执行时间");
+      expect(historyRow).not.toHaveTextContent("手动");
+      expect(historyRow).not.toHaveTextContent("Discovery 生成");
+      expect(historyRow).not.toHaveTextContent(manualRun.runId);
+      expect(historyRow).not.toHaveTextContent("结果产物");
+      expect(historyRow).not.toHaveTextContent("conn_collect_to_html");
+      expect(within(historyRow).queryByRole("button", { name: /运行详情/ })).toBeNull();
+      expect(within(historyRow).getAllByRole("button")).toHaveLength(3);
+      expect(within(historyRow).getByRole("button", { name: "装载记录" })).toBeInTheDocument();
+      expect(within(historyRow).getByRole("button", { name: "标为最佳" })).toBeInTheDocument();
+      expect(within(historyRow).getByRole("button", { name: "归档记录" })).toBeInTheDocument();
+      expect(container.querySelector('[data-observer-section="input-diagnostics"]')).toBeNull();
+      expect(processSummaryRequests).toBe(0);
     });
 
     it("does not render input diagnostics or request full detail for an ordinary run", async () => {
@@ -1738,18 +1747,19 @@ describe("App", () => {
         container,
       });
 
-      const diagnostics = await waitFor(() => {
-        const section = observer.querySelector('[data-observer-section="input-diagnostics"]') as HTMLElement | null;
-        expect(section).toBeTruthy();
-        return section!;
+      const inputSource = await waitFor(() => {
+        const source = observer.querySelector(".emap-run-observer-input-source") as HTMLElement | null;
+        expect(source).toBeTruthy();
+        return source!;
       });
-      expect(diagnostics).toHaveTextContent("手动上游输入");
-      expect(diagnostics).toHaveTextContent("conn_collect_to_html");
-      expect(diagnostics).toHaveTextContent("run_collect_loaded_old");
-      expect(diagnostics).toHaveTextContent("attempt_collect_old");
-      expect(diagnostics).toHaveTextContent("draft_md -> source_md");
-      expect(diagnostics).toHaveTextContent("artifact_collect_old");
-      expect(diagnostics).not.toHaveTextContent("请求失败");
+      expect(inputSource).toHaveTextContent("手动上游输入");
+      expect(inputSource).toHaveAttribute("data-input-source-kind", "manual");
+      expect(observer.querySelector('[data-observer-section="input-diagnostics"]')).toBeNull();
+      expect(observer).not.toHaveTextContent("conn_collect_to_html");
+      expect(observer).not.toHaveTextContent("run_collect_loaded_old");
+      expect(observer).not.toHaveTextContent("attempt_collect_old");
+      expect(observer).not.toHaveTextContent("artifact_collect_old");
+      expect(observer).not.toHaveTextContent("请求失败");
       expect(observer).not.toHaveTextContent("full detail failed");
     });
 
@@ -1806,14 +1816,16 @@ describe("App", () => {
         runId: activeManualRun.runId,
         container,
       });
-      const diagnostics = await waitFor(() => {
-        const section = observer.querySelector('[data-observer-section="input-diagnostics"]') as HTMLElement | null;
-        expect(section).toBeTruthy();
-        return section!;
+      const inputSource = await waitFor(() => {
+        const source = observer.querySelector(".emap-run-observer-input-source") as HTMLElement | null;
+        expect(source).toBeTruthy();
+        return source!;
       });
-      expect(diagnostics).toHaveTextContent("手动上游输入");
-      expect(diagnostics).toHaveTextContent("conn_collect_to_html");
-      expect(diagnostics).toHaveTextContent("run_collect_loaded_old");
+      expect(inputSource).toHaveTextContent("手动上游输入");
+      expect(inputSource).toHaveAttribute("data-input-source-kind", "manual");
+      expect(observer.querySelector('[data-observer-section="input-diagnostics"]')).toBeNull();
+      expect(observer).not.toHaveTextContent("conn_collect_to_html");
+      expect(observer).not.toHaveTextContent("run_collect_loaded_old");
       expect(fullDetailRequests).toBe(1);
 
       await act(async () => {
@@ -1936,7 +1948,7 @@ describe("App", () => {
         expect(row).toBeTruthy();
         return row!;
       });
-      fireEvent.click(within(historicalRow).getByRole("button", { name: "装载此记录" }));
+      fireEvent.click(within(historicalRow).getByRole("button", { name: "装载记录" }));
 
       const loadedRow = await waitFor(() => {
         const row = historyPanel.querySelector(`[data-run-id="${historicalRun.runId}"]`) as HTMLElement | null;
@@ -1945,7 +1957,7 @@ describe("App", () => {
         expect(row).toHaveAttribute("data-loaded-run-state", "loaded");
         return row!;
       });
-      expect(within(loadedRow).getByText("已装载")).toBeInTheDocument();
+      expect(within(loadedRow).queryByText("已装载")).toBeNull();
       expect(screen.getByRole("region", { name: `${task.title} 运行记录` })).toBeInTheDocument();
       expect(runPostBodies).toHaveLength(0);
 
@@ -1957,7 +1969,7 @@ describe("App", () => {
       expect(screen.getByRole("region", { name: `${task.title} 运行记录` })).toBeInTheDocument();
       expect(runPostBodies).toHaveLength(0);
 
-      fireEvent.click(within(historyPanel).getByRole("button", { name: "装载此记录" }));
+      fireEvent.click(within(historyPanel).getByRole("button", { name: "装载记录" }));
       fireEvent.click(within(menu).getByRole("button", { name: "运行" }));
       await waitFor(() => expect(runPostBodies).toHaveLength(1));
       expect(runPostBodies[0]).toBeUndefined();
@@ -2033,7 +2045,7 @@ describe("App", () => {
           expect(row).toBeTruthy();
           return row!;
         });
-        fireEvent.click(within(historicalRow).getByRole("button", { name: "装载此记录" }));
+        fireEvent.click(within(historicalRow).getByRole("button", { name: "装载记录" }));
         await waitFor(() => expect(historicalRow).toHaveAttribute("data-loaded-run", "true"));
       }
 
@@ -2171,7 +2183,7 @@ describe("App", () => {
         expect(row).toBeTruthy();
         return row!;
       });
-      fireEvent.click(within(historicalRow).getByRole("button", { name: "装载此记录" }));
+      fireEvent.click(within(historicalRow).getByRole("button", { name: "装载记录" }));
 
       const loadedRow = await waitFor(() => {
         const row = historyPanel.querySelector(`[data-run-id="${historicalRun.runId}"]`) as HTMLElement | null;
@@ -2180,8 +2192,8 @@ describe("App", () => {
         expect(row).toHaveAttribute("data-loaded-run-state", "suppressed");
         return row!;
       });
-      expect(within(loadedRow).getByText("已装载（活跃 run 优先）")).toBeInTheDocument();
-      expect(loadedRow.querySelector("[data-loaded-run-marker]")).toHaveAttribute("data-loaded-run-marker", "suppressed");
+      expect(within(loadedRow).queryByText("已装载（活跃 run 优先）")).toBeNull();
+      expect(loadedRow.querySelector("[data-loaded-run-marker]")).toBeNull();
     });
 
     it("restores valid loaded run selection and prunes stale selections from canvas UI state", async () => {
@@ -2235,7 +2247,7 @@ describe("App", () => {
         expect(row).toHaveAttribute("data-loaded-run-state", "loaded");
         return row!;
       });
-      expect(within(loadedRow).getByText("已装载")).toBeInTheDocument();
+      expect(within(loadedRow).queryByText("已装载")).toBeNull();
 
       await waitFor(() => {
         const raw = window.localStorage.getItem("ugk-team-console:canvas-ui-state:v1");

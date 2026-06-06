@@ -14,6 +14,21 @@
 
 ---
 
+## 2026-06-06 — Team Console Group dock and toolbar consolidation
+
+- **主题**: Team Console 根节点筛选与数量统计合并为一个高密度 segmented control：`ALL`、`Agent`、`Task`、`Source` 四个筛选项直接显示数量，独立 Agent/Task/Source 统计块移除。`Task` 筛选不再顺带显示 Source，Source 有独立筛选入口。
+- **影响范围**: 仅 5174 Team Console Execution Atlas 前端交互、Dock 和测试合同。Group 内 Task 拖到画布底部 Dock 区域时不再触发 Task 收纳，避免 Group 成员被误收起导致 Group 看起来缺成员；展开 Group 新增“收纳”操作，收纳的是整个 Group，Dock 中显示为 Group 对象，点击后恢复 Group 和成员 Task。
+- **跟进**: mock 工作区初始化会把 Discovery catalog 返回的 root/generated run summary 合回 `taskRunsByTaskId`，让 Dock 和画布状态能够按最新 run status 显示，而不是退回静态 Task status。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/use-team-console-live-data.ts`、`apps/team-console/src/app/app.css`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`。
+
+## 2026-06-06 — Team Console run history audit-card redesign
+
+- **主题**: Team Console 运行记录从字段堆叠式卡片改为运行审计卡片。运行记录主视觉现在优先展示开始时间和执行时间，状态作为紧凑 badge，结果产物降级为证据路径，操作按钮收口到卡片底部工具条。
+- **影响范围**: 仅 5174 Team Console run history / run observer 前端展示与 canvas child panel 布局兜底；后端 RunHistory、TaskRun、GroupRun、Conn contract 不变。运行观察不再展示 `connectionId` / upstream run / artifact / fileRef 这类内部账本，输入来源只在右上角标记为“手动上游输入”或“自然运行流入”。子面板会 clamp 负坐标，运行观察长内容使用内部滚动，避免打开后标题或底部内容被视口裁掉。
+- **跟进**: 运行记录卡片进一步精简为时间线列表，仅展示开始时间、状态、执行时间和装载记录 / 标为最佳 / 归档记录三个操作；runId、结果产物、触发来源、已装载/最佳/归档徽标与 note 不再作为可见内容展示，只保留必要 `data-*` 状态给交互和测试使用。
+- **跟进**: Discovery 子画布 generated Task 打开的运行历史面板重新锚定到对应子画布 panel，不再从上一级 root Task 菜单引线；地图 panel DOM 增加 `data-panel-source-id` 便于回归验证 child panel 链路。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/app.css`、`apps/team-console/src/graph/ExecutionMap.tsx`。
+
 ## 2026-06-06 — Team Console Group member chain rows
 
 - **主题**: 5174 Team Console 展开 backend Group 时，顶部成员 chip 不再按视觉坐标或原始 `taskIds` 平铺，而是按 Group 的头结点流水线分行展示：一个 `headTaskId` 一行，沿 active internal `TeamTaskConnection` 顺着下游 Task 排列。
