@@ -247,7 +247,9 @@ const TASK_BRANCH_GAP = 48;
 const TASK_CHILD_BRANCH_GAP = 32;
 const TASK_GROUP_HEADER_BAND_HEIGHT = 76;
 const TASK_GROUP_COLLAPSED_HEADER_BAND_HEIGHT = 42;
-const TASK_GROUP_BOTTOM_PADDING = 22;
+const TASK_GROUP_MIN_WIDTH = 560;
+const TASK_GROUP_BOTTOM_PADDING = 58;
+type CopyableNodeKind = "agent" | "task" | "group";
 type EvidenceKind = "result" | "error" | "attempt" | "progress" | "worker" | "checker" | "watcher";
 
 interface EvidenceEntry {
@@ -1149,7 +1151,7 @@ export function ExecutionMap({
     }
   }, []);
 
-  const copyCanvasNodeId = useCallback(async (kind: "agent" | "task", id: string) => {
+  const copyCanvasNodeId = useCallback(async (kind: CopyableNodeKind, id: string) => {
     const key = `${kind}:${id}`;
     const copied = await copyPlainText(id);
     clearNodeIdCopyTimer();
@@ -1160,10 +1162,10 @@ export function ExecutionMap({
     }, 1400);
   }, [clearNodeIdCopyTimer]);
 
-  const renderNodeIdCopyButton = (kind: "agent" | "task", id: string): ReactNode => {
+  const renderNodeIdCopyButton = (kind: CopyableNodeKind, id: string): ReactNode => {
     const key = `${kind}:${id}`;
     const state = nodeIdCopyState?.key === key ? nodeIdCopyState.status : null;
-    const label = kind === "agent" ? "Agent ID" : "Task ID";
+    const label = kind === "agent" ? "Agent ID" : kind === "task" ? "Task ID" : "Group ID";
     return (
       <button
         type="button"
@@ -1171,6 +1173,10 @@ export function ExecutionMap({
         aria-label={`复制 ${label} ${id}`}
         title={`复制 ${id}`}
         onPointerDownCapture={(event) => {
+          if (kind === "group") {
+            event.stopPropagation();
+            return;
+          }
           pendingNodeIdCopyPointerRef.current = { pointerId: event.pointerId, kind, id };
         }}
         onKeyDown={(event) => event.stopPropagation()}
@@ -2361,8 +2367,8 @@ export function ExecutionMap({
     ...taskBranchEntries.map((entry) => entry.rect.x + entry.rect.width),
     ...taskChildBranchPanelsLayout.map((p) => p.rect.x + p.rect.width),
   );
-  const svgWidth = Math.max(700, evidenceRight + 28, previewRight + 28, agentRight + 28, taskRight + 28, sourceRight + 28, agentBranchRight + 28, taskBranchRight + 28);
-  const maxY = Math.max(
+  const baseSvgWidth = Math.max(700, evidenceRight + 28, previewRight + 28, agentRight + 28, taskRight + 28, sourceRight + 28, agentBranchRight + 28, taskBranchRight + 28);
+  const baseMaxY = Math.max(
     ...Array.from(layout.nodePositions.values()).map((n) => n.y + n.height),
     ...evidenceLayout.positions.map((p) => p.y + p.height),
     evidenceLayout.preview ? evidenceLayout.preview.y + evidenceLayout.preview.height : 0,
@@ -2504,7 +2510,7 @@ export function ExecutionMap({
           rect: {
             x: 24,
             y: 24 + index * 96,
-            width: 280,
+            width: group.collapsed ? 280 : TASK_GROUP_MIN_WIDTH,
             height: group.collapsed ? 78 : 92,
           },
         }];
@@ -2521,12 +2527,20 @@ export function ExecutionMap({
         rect: {
           x: minX - 18,
           y: minY - headerBandHeight,
-          width: Math.max(220, maxX - minX + 36),
+          width: Math.max(group.collapsed ? 220 : TASK_GROUP_MIN_WIDTH, maxX - minX + 36),
           height: group.collapsed ? 78 : maxY - minY + headerBandHeight + TASK_GROUP_BOTTOM_PADDING,
         },
       }];
     });
   }, [showTasks, taskGroups, tasksById, unfilteredVisibleTaskNodes]);
+  const taskGroupRight = taskGroupRenderItems.length > 0
+    ? Math.max(...taskGroupRenderItems.map((item) => item.rect.x + item.rect.width))
+    : 0;
+  const taskGroupBottom = taskGroupRenderItems.length > 0
+    ? Math.max(...taskGroupRenderItems.map((item) => item.rect.y + item.rect.height))
+    : 0;
+  const svgWidth = Math.max(baseSvgWidth, taskGroupRight + 28);
+  const maxY = Math.max(baseMaxY, taskGroupBottom + 28);
   const nodeHub = (
     <aside
       ref={dockRef}
@@ -3545,6 +3559,7 @@ export function ExecutionMap({
 
         <div className="execution-map-nodes" ref={evidenceContainerRef} style={{ width: svgWidth, minHeight: maxY + 40 }}>
           {taskGroupRenderItems.map(({ group, rect, taskCount, isEmpty }) => {
+            const taskCountLabel = `${taskCount} ${taskCount === 1 ? "Task" : "Tasks"}`;
             const validationMessage = group.taskIds?.length === 0
               ? "Group 当前不可运行"
               : group.status === "invalid"
@@ -3565,7 +3580,7 @@ export function ExecutionMap({
                 type="button"
                 className={`emap-task-group-card is-collapsed ${group.locked ? "is-locked" : ""}`}
                 style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
-                aria-label={`展开 ${group.title} ${taskCount} Tasks`}
+                aria-label={`展开 ${group.title} ${taskCountLabel}`}
                 data-task-group-id={group.groupId}
                 data-task-group-empty={isEmpty ? "true" : "false"}
                 data-task-group-locked={group.locked ? "true" : "false"}
@@ -3585,7 +3600,7 @@ export function ExecutionMap({
                     {TASK_GROUP_RUN_STATUS_LABELS[group.groupRun.status]}
                   </span>
                 )}
-                <span className="emap-task-group-count"><strong>{taskCount}</strong><span>Tasks</span></span>
+                <span className="emap-task-group-count"><strong>{taskCount}</strong><span>{taskCount === 1 ? "Task" : "Tasks"}</span></span>
               </button>
             ) : (
               <div
@@ -3606,7 +3621,7 @@ export function ExecutionMap({
                 <div className="emap-task-group-head">
                   <span className="emap-task-group-kicker">{group.locked ? "Locked Group" : "Group"}</span>
                   <strong>{group.title}</strong>
-                  <span>{taskCount} Tasks</span>
+                  <span className="emap-task-group-task-count">{taskCountLabel}</span>
                   {group.groupRun && (
                     <>
                       <span className={`emap-task-group-run-badge is-${group.groupRun.status}`}>
@@ -3723,9 +3738,12 @@ export function ExecutionMap({
                     ))}
                   </div>
                 )}
-                {validationMessage && (
-                  <div className="emap-task-group-validation" role="status">{validationMessage}</div>
-                )}
+                <div className="emap-task-group-footer">
+                  {renderNodeIdCopyButton("group", group.groupId)}
+                  {validationMessage && (
+                    <span className="emap-task-group-validation" role="status">{validationMessage}</span>
+                  )}
+                </div>
               </div>
             )
           })}

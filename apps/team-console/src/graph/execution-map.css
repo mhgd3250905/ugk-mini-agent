@@ -815,13 +815,21 @@
 }
 
 .emap-task-group-kicker {
+  flex: 0 0 auto;
   color: var(--accent);
   font-size: 10px;
   font-weight: 820;
   text-transform: uppercase;
 }
 
-.emap-task-group-head strong,
+.emap-task-group-head strong {
+  flex: 1 1 88px;
+  min-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .emap-task-group-card strong {
   min-width: 0;
   overflow: hidden;
@@ -829,10 +837,12 @@
   white-space: nowrap;
 }
 
-.emap-task-group-head > span:last-of-type,
+.emap-task-group-task-count,
 .emap-task-group-card > span:last-child {
+  flex: 0 0 auto;
   color: var(--secondary);
   font-size: 10px;
+  white-space: nowrap;
 }
 
 .emap-task-group-run-badge {
@@ -967,16 +977,27 @@
 }
 
 .emap-task-group-validation {
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--secondary);
   font-size: 10px;
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.emap-task-group-footer {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 8px;
+  border-top: 1px solid rgba(22, 124, 128, 0.12);
 }
 
 .emap-task-group-card {
@@ -1378,6 +1399,13 @@
   color: var(--secondary);
   font: inherit;
   cursor: copy;
+}
+
+.emap-task-group-footer .emap-node-id-copy {
+  flex: 0 0 auto;
+  max-width: 196px;
+  height: 24px;
+  padding: 0 8px;
 }
 
 .emap-node-id-copy:hover,
