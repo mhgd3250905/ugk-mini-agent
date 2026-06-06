@@ -6,6 +6,7 @@ import { useTeamConsoleLiveData, type DataSource, type TeamConsoleUiResetReason,
 import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchGeneratedObserverState, type TaskBranchState } from "./use-task-branch-stack";
 import { hasDirtyTaskEditConflict, useTaskEditState } from "./use-task-edit-state";
 import { useTaskLeaderCopy } from "./use-task-leader-copy";
+import { hasSameTaskGroupRunPollingSignature, isActiveTaskGroupRun, selectLatestTaskGroupRun } from "./team-console-task-group-run-state";
 import { ExecutionMap, type AtlasAgentNode, type AtlasBranchLayoutState, type AtlasSelectedNodeEntry, type AtlasSourceNode, type AtlasTaskGroup, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { normalizeAtlasViewport, type AtlasViewport } from "../graph/AtlasCanvasShell";
 import { RUN_STATUS_LABELS, isActiveRun } from "../shared/status";
@@ -592,33 +593,6 @@ function selectLatestRun(runs: TeamRunState[]): TeamRunState | null {
     if (!Number.isFinite(latestTime)) return run;
     return runTime >= latestTime ? run : latest;
   }, runs[0]);
-}
-
-function isActiveTaskGroupRun(groupRun: TeamTaskGroupRun | null | undefined): boolean {
-  return groupRun?.status === "queued" || groupRun?.status === "running";
-}
-
-function hasSameTaskGroupRunPollingSignature(a: TeamTaskGroupRun | null | undefined, b: TeamTaskGroupRun): boolean {
-  return Boolean(a)
-    && a!.groupRunId === b.groupRunId
-    && a!.status === b.status
-    && a!.updatedAt === b.updatedAt
-    && a!.finishedAt === b.finishedAt
-    && a!.observedRuns.length === b.observedRuns.length
-    && a!.entryRuns.length === b.entryRuns.length;
-}
-
-function selectLatestTaskGroupRun(groupRuns: TeamTaskGroupRun[]): TeamTaskGroupRun | null {
-  if (!groupRuns.length) return null;
-  return groupRuns.reduce((latest, groupRun) => {
-    if (isActiveTaskGroupRun(groupRun) && !isActiveTaskGroupRun(latest)) return groupRun;
-    if (!isActiveTaskGroupRun(groupRun) && isActiveTaskGroupRun(latest)) return latest;
-    const latestTime = Date.parse(latest.createdAt);
-    const runTime = Date.parse(groupRun.createdAt);
-    if (!Number.isFinite(runTime)) return latest;
-    if (!Number.isFinite(latestTime)) return groupRun;
-    return runTime >= latestTime ? groupRun : latest;
-  }, groupRuns[0]);
 }
 
 function runTimeForOrdering(run: TeamRunState | null | undefined): number {
