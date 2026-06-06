@@ -30,7 +30,7 @@ const PROCESS_NARRATION_MAX_CHARS = 220;
 const PROCESS_ASSISTANT_TEXT_MAX_LINES = 5;
 const PROCESS_ASSISTANT_TEXT_MAX_LINE_CHARS = 200;
 const DISCOVERY_QUEUE_INITIAL_CARD_LIMIT = 18;
-const CANVAS_LOADING_MIN_VISIBLE_MS = 1000;
+const CANVAS_LOADING_MIN_VISIBLE_MS = 160;
 
 type AgentBranchMode = "chat" | "task-create";
 type TeamConsoleTheme = "light" | "dark";
@@ -1650,6 +1650,8 @@ export function App() {
   const [sharedCanvasUiState, setSharedCanvasUiState] = useState<StoredCanvasUiStateByContext | null>(null);
   const [sharedCanvasUiStateLoaded, setSharedCanvasUiStateLoaded] = useState(false);
   const sharedCanvasUiStateSaveTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
+  const sharedCanvasUiStatePersistedJsonRef = useRef<string | null>(null);
+  const liveCanvasUiStateHydratingRef = useRef(false);
   const {
     taskEditDraftByTaskId,
     taskEditSavingByTaskId,
@@ -2293,10 +2295,15 @@ export function App() {
     void new LiveTeamApi().getConsoleLayout()
       .then((response) => {
         if (cancelled) return;
-        setSharedCanvasUiState(response.state ? parseStoredCanvasUiStateByContext(response.state) : null);
+        const parsed = response.state ? parseStoredCanvasUiStateByContext(response.state) : null;
+        sharedCanvasUiStatePersistedJsonRef.current = JSON.stringify(parsed);
+        setSharedCanvasUiState(parsed);
       })
       .catch(() => {
-        if (!cancelled) setSharedCanvasUiState(null);
+        if (!cancelled) {
+          sharedCanvasUiStatePersistedJsonRef.current = JSON.stringify(null);
+          setSharedCanvasUiState(null);
+        }
       })
       .finally(() => {
         if (!cancelled) setSharedCanvasUiStateLoaded(true);
@@ -2374,6 +2381,7 @@ export function App() {
       setLoadedTaskRunByTaskId({});
       setLoadedTaskRunSnapshotByTaskId({});
       hydratedCanvasUiContextKeyRef.current = canvasUiContextKey;
+      liveCanvasUiStateHydratingRef.current = dataSource === "live";
       setCanvasUiStateHydrated(true);
       return;
     }
@@ -2441,6 +2449,7 @@ export function App() {
     setMinimizedTaskGroupIds((stored.minimizedTaskGroupIds ?? []).filter((groupId) => activeTaskGroupIds.has(groupId)));
     if (stored.rootNodeFilter) setRootNodeFilter(stored.rootNodeFilter);
     hydratedCanvasUiContextKeyRef.current = canvasUiContextKey;
+    liveCanvasUiStateHydratingRef.current = dataSource === "live";
     setCanvasUiStateHydrated(true);
   }, [
     agentNodes,
@@ -2459,6 +2468,16 @@ export function App() {
     teamTaskGroups,
     taskNodes,
   ]);
+
+  useEffect(() => {
+    if (!canvasUiStateHydrated || dataSource !== "live") return;
+    const timer = globalThis.setTimeout(() => {
+      liveCanvasUiStateHydratingRef.current = false;
+    }, 0);
+    return () => {
+      globalThis.clearTimeout(timer);
+    };
+  }, [canvasUiContextKey, canvasUiStateHydrated, dataSource]);
 
   useEffect(() => {
     if (!canvasUiStateHydrated) return;
@@ -2489,12 +2508,6 @@ export function App() {
         if (!keep) changed = true;
         return keep;
       });
-      const existingIds = new Set(next.map((state) => state.groupId));
-      for (const groupId of activeGroupIds) {
-        if (existingIds.has(groupId)) continue;
-        next.push({ groupId, collapsed: false, locked: false });
-        changed = true;
-      }
       return changed ? next : current;
     });
     setMinimizedTaskGroupIds((current) => {
@@ -2606,13 +2619,24 @@ export function App() {
     };
     const nextByContext = writeStoredCanvasUiState(nextState);
     if (dataSource === "live" && nextByContext) {
+      const nextJson = JSON.stringify(parseStoredCanvasUiStateByContext(nextByContext));
+      if (liveCanvasUiStateHydratingRef.current) {
+        sharedCanvasUiStatePersistedJsonRef.current = nextJson;
+        setSharedCanvasUiState(nextByContext);
+        return;
+      }
+      if (nextJson === sharedCanvasUiStatePersistedJsonRef.current) return;
       setSharedCanvasUiState(nextByContext);
       if (sharedCanvasUiStateSaveTimerRef.current) {
         globalThis.clearTimeout(sharedCanvasUiStateSaveTimerRef.current);
       }
       sharedCanvasUiStateSaveTimerRef.current = globalThis.setTimeout(() => {
         sharedCanvasUiStateSaveTimerRef.current = null;
-        void new LiveTeamApi().saveConsoleLayout(nextByContext).catch(() => {});
+        void new LiveTeamApi().saveConsoleLayout(nextByContext)
+          .then(() => {
+            sharedCanvasUiStatePersistedJsonRef.current = nextJson;
+          })
+          .catch(() => {});
       }, 250);
     }
   }, [
@@ -5930,7 +5954,7 @@ export function App() {
 
       <main className="app-main">
         {canvasLoadingVisible ? (
-          <div className="empty-state canvas-loading-state" role="status" aria-live="polite">
+          <div key="canvas-loading" className="empty-state canvas-loading-state" role="status" aria-live="polite">
             <div className="canvas-loading-mark" aria-hidden="true">
               <span />
               <span />
@@ -5940,7 +5964,7 @@ export function App() {
             <div className="canvas-loading-bar" aria-hidden="true" />
           </div>
         ) : (
-          <div className="workspace">
+          <div key="workspace" className="workspace">
             <div className="workspace-map">
               <ExecutionMap
                 theme={theme}

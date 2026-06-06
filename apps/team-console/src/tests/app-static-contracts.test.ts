@@ -70,6 +70,25 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toMatch(/\.execution-map-container\s*{[^}]*min-width:\s*0;[^}]*max-width:\s*100%;/s);
   });
 
+  it("keeps the canvas restore loading animation from changing layout", () => {
+    const appCss = readFileSync("src/app/app.css", "utf8");
+    const appSource = readFileSync("src/app/App.tsx", "utf8");
+    const loadingStateRule = appCss.match(/\.canvas-loading-state\s*{[^}]*}/)?.[0] ?? "";
+    const pulseKeyframes = appCss.match(/@keyframes canvas-loading-pulse\s*{[\s\S]*?\n}/)?.[0] ?? "";
+    const loadingMarkRule = appCss.match(/\.canvas-loading-mark span\s*{[^}]*}/)?.[0] ?? "";
+
+    expect(appSource).toContain('key="canvas-loading"');
+    expect(appSource).toContain('key="workspace"');
+    expect(loadingStateRule).toContain("height: 100%");
+    expect(loadingStateRule).toContain("min-height: 0");
+    expect(loadingStateRule).not.toContain("min-height: 280px");
+    expect(pulseKeyframes).not.toMatch(/\bheight\s*:/);
+    expect(pulseKeyframes).toContain("transform:");
+    expect(pulseKeyframes).toContain("scaleY");
+    expect(loadingMarkRule).toContain("transform-origin: bottom center");
+    expect(loadingMarkRule).toContain("will-change: transform, opacity");
+  });
+
   it("keeps expanded Task Group header controls out of the member chip row", () => {
     const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
     const mapSource = readFileSync("src/graph/ExecutionMap.tsx", "utf8");

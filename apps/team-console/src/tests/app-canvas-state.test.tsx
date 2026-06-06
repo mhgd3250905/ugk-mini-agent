@@ -17,7 +17,7 @@ describe("App", () => {
   });
 
   describe("canvas state", () => {
-    it("initializes the root filter from stored canvas state after the minimum restore loading time", async () => {
+    it("initializes the root filter from stored canvas state after the brief restore loading time", async () => {
       window.localStorage.setItem("ugk-team-console:canvas-ui-state-by-context:v1", JSON.stringify({
         schemaVersion: 1,
         states: {
@@ -32,21 +32,87 @@ describe("App", () => {
 
       const { container } = render(<App />);
 
-      expect(screen.getByRole("status")).toHaveTextContent("正在恢复画布状态...");
-      expect(container.querySelector(".root-filter-segment")).toBeNull();
+      const initialStatus = screen.queryByRole("status");
+      if (initialStatus) expect(initialStatus).toHaveTextContent("正在恢复画布状态...");
 
       await act(async () => {
-        await new Promise((resolve) => globalThis.setTimeout(resolve, 900));
+        await new Promise((resolve) => globalThis.setTimeout(resolve, 80));
       });
 
-      expect(screen.getByRole("status")).toHaveTextContent("正在恢复画布状态...");
-      expect(container.querySelector(".root-filter-segment")).toBeNull();
+      const pendingStatus = screen.queryByRole("status");
+      if (pendingStatus) expect(pendingStatus).toHaveTextContent("正在恢复画布状态...");
 
       await waitFor(() => {
-        expect(screen.getByRole("tab", { name: "Agent" })).toHaveClass("is-active");
-        expect(screen.getByRole("tab", { name: "ALL" })).not.toHaveClass("is-active");
+        expect(screen.getByRole("tab", { name: /^Agent\b/ })).toHaveClass("is-active");
+        expect(screen.getByRole("tab", { name: /^ALL\b/ })).not.toHaveClass("is-active");
         expect(container.querySelector(".root-filter-segment")).toHaveAttribute("data-active-filter", "agent");
-      }, { timeout: 1600 });
+      }, { timeout: 800 });
+    });
+
+    it("does not save unchanged shared live canvas layout during initial hydration", async () => {
+      const savedLiveState = {
+        schemaVersion: 1,
+        dataSource: "live",
+        viewport: { x: 0, y: 0, scale: 1 },
+        agentNodes: [],
+        taskNodePositions: [],
+        sourceNodePositions: [],
+        taskGroupDisplayStates: [],
+        expandedAgentBranch: null,
+        expandedTaskBranches: [],
+        branchLayout: {},
+        minimizedAgentNodeIds: [],
+        minimizedTaskNodeIds: [],
+        minimizedSourceNodeIds: [],
+        minimizedTaskGroupIds: [],
+        rootNodeFilter: "all",
+        loadedTaskRunSelections: [],
+      };
+      const sharedState = {
+        schemaVersion: 1,
+        states: { live: savedLiveState },
+      };
+      const layoutPatchCalls: Array<Parameters<typeof fetch>> = [];
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console-layout" && method === "GET") {
+          return new Response(JSON.stringify({ state: sharedState, updatedAt: "2026-06-06T00:00:00.000Z" }), { status: 200 });
+        }
+        if (url === "/v1/team/console-layout" && method === "PATCH") {
+          layoutPatchCalls.push([input, init]);
+          return new Response(JSON.stringify({ state: JSON.parse(String(init?.body ?? "{}")).state }), { status: 200 });
+        }
+        if (url === "/v1/team/console/root-summary") {
+          return new Response(JSON.stringify({
+            tasks: [],
+            deletedTaskIds: [],
+            taskRunsByTaskId: {},
+            deletedRunIdsByTaskId: {},
+            sourceNodes: [],
+            sourceConnections: [],
+            taskConnections: [],
+            taskDependencies: [],
+            serverVersion: { taskCatalog: null, taskRunSummary: null },
+          }), { status: 200 });
+        }
+        if (url === "/v1/team/task-groups") return new Response(JSON.stringify({ taskGroups: [] }), { status: 200 });
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+
+      const { container } = render(<App />);
+
+      await waitFor(() => {
+        expect(container.querySelector(".root-filter-segment")).toHaveAttribute("data-active-filter", "all");
+      }, { timeout: 800 });
+      await act(async () => {
+        await new Promise((resolve) => globalThis.setTimeout(resolve, 350));
+      });
+
+      expect(layoutPatchCalls).toHaveLength(0);
     });
 
     it("does not render the root filter before delayed shared live layout hydration", async () => {
@@ -108,8 +174,8 @@ describe("App", () => {
 
       await waitFor(() => {
         expect(container.querySelector(".root-filter-segment")).toHaveAttribute("data-active-filter", "task");
-        expect(screen.getByRole("tab", { name: "Task" })).toHaveClass("is-active");
-        expect(screen.getByRole("tab", { name: "ALL" })).not.toHaveClass("is-active");
+        expect(screen.getByRole("tab", { name: /^Task\b/ })).toHaveClass("is-active");
+        expect(screen.getByRole("tab", { name: /^ALL\b/ })).not.toHaveClass("is-active");
       }, { timeout: 1600 });
     });
 

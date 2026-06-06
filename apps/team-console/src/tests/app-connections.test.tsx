@@ -949,7 +949,7 @@ describe("App", () => {
   describe("live Task Groups", () => {
     const SELECTION_LONG_PRESS_MS = 200;
 
-    it("renders backend Task Groups on initial Live API load and stores only display state", async () => {
+    it("renders backend Task Groups on initial Live API load without storing default Group state", async () => {
       const taskA = makeLiveTask("task_live_a", "Live Alpha");
       const taskB = makeLiveTask("task_live_b", "Live Beta");
       setupLiveGroupApi({
@@ -971,9 +971,7 @@ describe("App", () => {
         expect(raw).toBeTruthy();
         const state = JSON.parse(raw!);
         expect(state.taskGroups).toBeUndefined();
-        expect(state.taskGroupDisplayStates).toEqual([
-          { groupId: "group_live_1", collapsed: false, locked: false },
-        ]);
+        expect(state.taskGroupDisplayStates).toEqual([]);
         expect(JSON.stringify(state)).not.toContain("taskNodeIds");
         expect(JSON.stringify(state)).not.toContain("taskIds");
       });
