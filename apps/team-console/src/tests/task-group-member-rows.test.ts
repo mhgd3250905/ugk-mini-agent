@@ -4,6 +4,7 @@ import { buildTaskGroupMemberRows, taskGroupHeaderBandHeight } from "../graph/ta
 
 function connection(fromTaskId: string, toTaskId: string, status: TeamTaskConnection["status"] = "active"): TeamTaskConnection {
   return {
+    schemaVersion: "team/task-connection-1",
     connectionId: `conn_${fromTaskId}_${toTaskId}`,
     fromTaskId,
     fromOutputPortId: "out",

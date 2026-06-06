@@ -40,7 +40,7 @@ function groupRun(overrides: Partial<TeamTaskGroupRun>): TeamTaskGroupRun {
     groupId: "group_a",
     status: "running",
     source: { type: "manual" },
-    definition: { taskIds: ["task_a"], headTaskIds: ["task_a"] },
+    definitionSnapshot: { taskIds: ["task_a"], headTaskIds: ["task_a"] },
     entryRuns: [{ taskId: "task_a", runId: "run_a" }],
     observedRuns: [
       { taskId: "task_a", runId: "run_a", role: "entry" },

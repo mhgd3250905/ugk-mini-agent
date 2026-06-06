@@ -2503,7 +2503,7 @@ export function App() {
     });
     setTaskGroupRunUiState((current) => {
       let changed = false;
-      const latestByGroupId: Record<string, TeamTaskGroupRun> = {};
+      const latestByGroupId: TaskGroupRunUiState["latestByGroupId"] = {};
       for (const [groupId, groupRun] of Object.entries(current.latestByGroupId)) {
         if (!activeGroupIds.has(groupId)) {
           changed = true;
