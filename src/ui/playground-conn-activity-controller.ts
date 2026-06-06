@@ -2439,9 +2439,13 @@ export function getConnActivityRendererScript(): string {
 					const groupId = String(snapshotExecution?.groupId || snapshot.groupId || "");
 					const groupRunId = String(snapshot.groupRunId || "");
 					const groupRunStatus = String(snapshot.groupRunStatus || "");
+					const groupRunStartStatus = String(snapshot.groupRunStartStatus || "");
+					const groupRunStartError = String(snapshot.groupRunStartError || "");
 					appendConnRunDetailRow(group, "groupId", groupId, { asCode: true });
 					appendConnRunDetailRow(group, "groupRunId", groupRunId, { asCode: true });
 					appendConnRunDetailRow(group, "groupRunStatus", groupRunStatus, { asCode: true });
+					appendConnRunDetailRow(group, "groupRunStartStatus", groupRunStartStatus, { asCode: true });
+					appendConnRunDetailRow(group, "groupRunStartError", groupRunStartError, { asCode: true });
 					appendConnRunDetailLinkRow(group, "Group JSON", groupId ? "/v1/team/task-groups/" + encodeURIComponent(groupId) : "");
 					appendConnRunDetailLinkRow(group, "GroupRun JSON", groupRunId ? "/v1/team/task-group-runs/" + encodeURIComponent(groupRunId) : "");
 					const isSkippedTeamGroupRun = snapshot.skipped === true;

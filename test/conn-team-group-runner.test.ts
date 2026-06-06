@@ -188,6 +188,50 @@ test("TeamGroupConnRunner treats active guard 409 as succeeded skipped", async (
 	database.close();
 });
 
+test("TeamGroupConnRunner fails invalid GroupRun start with Team Group diagnostics", async () => {
+	const { database, connStore, runStore } = await createStores();
+	const runner = new TeamGroupConnRunner({
+		runStore,
+		apiBaseUrl: "http://team-api.test",
+		pollIntervalMs: 1,
+		fetchFn: async () =>
+			jsonResponse(400, {
+				error: {
+					message: "invalid task group: Group has no head task",
+				},
+			}),
+	});
+	const conn = await createTeamGroupConn(connStore);
+	const run = await runStore.createRun({
+		connId: conn.connId,
+		scheduledAt: "2026-06-05T10:01:00.000Z",
+		workspacePath: join("tmp", "run-invalid-group"),
+		now: new Date("2026-06-05T10:01:00.000Z"),
+	});
+	const claimed = await runStore.claimNextDue({
+		workerId: "worker-a",
+		now: new Date("2026-06-05T10:01:00.000Z"),
+		leaseMs: 30_000,
+	});
+
+	const failed = await runner.run(conn, claimed!, new Date("2026-06-05T10:01:00.000Z"));
+
+	assert.equal(failed?.status, "failed");
+	assert.equal(failed?.resultSummary, "Team GroupRun start failed with 400");
+	assert.doesNotMatch(failed?.resultSummary ?? "", /^Skipped:/);
+	assert.match(failed?.errorText ?? "", /invalid task group/);
+	assert.match(failed?.errorText ?? "", /Group has no head task/);
+	const stored = await runStore.getRun(run.runId);
+	assert.deepEqual(stored?.resolvedSnapshot, {
+		executionType: "team_group",
+		groupId: "group-1",
+		groupRunStartStatus: 400,
+		groupRunStartError: "invalid task group: Group has no head task",
+	});
+	assert.deepEqual((await runStore.listEvents(run.runId)).map((event) => event.eventType), ["team_group_run_starting"]);
+	database.close();
+});
+
 test("TeamGroupConnRunner maps failed GroupRun statuses to failed ConnRun", async () => {
 	const { database, connStore, runStore } = await createStores();
 	const runner = new TeamGroupConnRunner({

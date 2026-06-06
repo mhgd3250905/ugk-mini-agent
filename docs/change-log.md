@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-06 — Conn invalid Team Group start diagnostics
+
+- **主题**: 已保存的 `team_group` Conn 指向后来变成 empty/invalid 的 Team Group 时，GroupRun start 返回 400 会把 ConnRun 明确标记为 `failed`，并写入 Team Group start failure 诊断 snapshot。
+- **影响范围**: 非 2xx/non-409 GroupRun start failure 会保存 `resolvedSnapshot.executionType="team_group"`、`groupId`、`groupRunStartStatus` 和 `groupRunStartError`；`/playground/conn` 与 `/playground` Conn manager 的 run detail 在没有 `groupRunId` 时仍显示 Team Group、start status/error 和 Group JSON。409 active guard 仍是 succeeded skipped，Conn editor 继续禁用 invalid Group 并要求选择可运行 Group。
+- **对应入口**: `src/workers/team-group-conn-runner.ts`、`test/conn-team-group-runner.test.ts`、`src/ui/conn-page-js.ts`、`src/ui/playground-conn-activity-controller.ts`、`test/server.test.ts`、`docs/runtime-assets-conn-feishu.md`、`docs/team-runtime.md`。
+
 ## 2026-06-06 — Team Console mutable Group membership UI
 
 - **主题**: 5174 Team Console Live API 模式接入 mutable Group membership 编辑。empty/invalid backend Group 不再因没有可见成员 Task 从 Execution Atlas 消失；空 Group 会显示稳定 carrier、`0 Tasks` 和 `data-task-group-empty="true"`，并禁用 `运行 <Group>`。

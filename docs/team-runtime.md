@@ -2,6 +2,8 @@
 
 更新时间：2026-06-06
 
+> 2026-06-06 补充：`team_group` Conn 对 mutable Group 的 start failure 诊断已补齐。已保存 Conn 指向的 Group 如果后来变成 empty/invalid，`POST /v1/team/task-groups/:groupId/runs` 返回 400 时 ConnRun 会保持 `failed`，并写入 `resolvedSnapshot.executionType="team_group"`、`groupId`、`groupRunStartStatus` 和 `groupRunStartError`。`/playground/conn` 与 `/playground` Conn manager 的 run detail 会在没有 `groupRunId` 时仍显示 Team Group block、start status/error 和 Group JSON；409 active guard 仍是 succeeded skipped。
+
 > 2026-06-06 补充：Team Task Group definition 现在允许持久化空 Group 或语义 invalid membership。`POST/PATCH /v1/team/task-groups` 只做 title 和 `taskIds` shape 校验，`ResolvedTeamTaskGroup.status/headTaskIds/validation.errors` 是 definition read model；空 Group 会返回 `status="invalid"`、`headTaskIds=[]` 和 `no_head_task`。硬运行闸门移到 `POST /v1/team/task-groups/:groupId/runs`：empty/invalid Group start 返回 400 `invalid task group`，不使用 409。新建 `TeamTaskGroupRun` 会保存 `definitionSnapshot: { taskIds, headTaskIds }`，`refreshGroupRun()` / `cancelGroupRun()` 优先使用该 snapshot membership，旧 run 缺 snapshot 时才 fallback 当前 Group membership。此步不做 typed/control edge 版本化 snapshot，active edge 仍读取当前 store。
 
 > 2026-06-05 补充：Team Task GroupRun 的完成态按 Group 内真实 Task 流水线聚合，而不是按所有诊断 run 一票否决。`entry` / `downstream` Group 成员 run 和内部 typed/control delivery 仍决定 GroupRun 终态；Discovery root 触发的 `discovery-generated` child run 会继续保留在 `observedRuns` 里用于诊断、展示和取消 active run，但 generated child 的 `failed` / `completed_with_failures` 不再把已完成的 Group 主流水线标记为 `completed_with_failures`。既有已落盘终态 GroupRun 不自动回算。

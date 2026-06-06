@@ -1139,10 +1139,14 @@ function renderRunDetail(container, run, files, events) {
     const groupId = String(snapshotExecution?.groupId || snapshot.groupId || "");
     const groupRunId = String(snapshot.groupRunId || "");
     const groupRunStatus = String(snapshot.groupRunStatus || "");
+    const groupRunStartStatus = String(snapshot.groupRunStartStatus || "");
+    const groupRunStartError = String(snapshot.groupRunStartError || "");
     const fields = [
       ["groupId", groupId],
       ["groupRunId", groupRunId],
       ["groupRunStatus", groupRunStatus],
+      ["groupRunStartStatus", groupRunStartStatus],
+      ["groupRunStartError", groupRunStartError],
     ];
     for (const [label, value] of fields) {
       if (!value) continue;

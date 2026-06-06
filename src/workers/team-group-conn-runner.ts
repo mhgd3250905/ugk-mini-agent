@@ -90,11 +90,22 @@ export class TeamGroupConnRunner implements ConnWorkerRunner {
 
 			if (!isSuccessStatus(startResponse.status)) {
 				const summary = `Team GroupRun start failed with ${startResponse.status}`;
+				const startError = readErrorMessage(startResponse.body);
+				await this.options.runStore.updateRuntimeInfo({
+					runId: run.runId,
+					leaseOwner: run.leaseOwner,
+					resolvedSnapshot: {
+						executionType: "team_group",
+						groupId,
+						groupRunStartStatus: startResponse.status,
+						groupRunStartError: startError,
+					},
+				});
 				return await this.options.runStore.failRun({
 					runId: run.runId,
 					leaseOwner: run.leaseOwner,
 					summary,
-					errorText: `${summary}: ${readErrorMessage(startResponse.body)}`,
+					errorText: `${summary}: ${startError}`,
 					finishedAt: new Date(),
 				});
 			}

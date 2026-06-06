@@ -907,7 +907,11 @@ test("GET /playground returns the test UI html", async () => {
 	assert.match(response.body, /conn-editor-team-group-id/);
 	assert.match(response.body, /function fetchTeamTaskGroups\(/);
 	assert.match(response.body, /\/v1\/team\/task-groups/);
+	assert.match(response.body, /function getTeamTaskGroupValidationMessage\(group\)/);
+	assert.match(response.body, /option\.textContent \+= "（不可运行）";/);
+	assert.match(response.body, /option\.disabled = true;/);
 	assert.match(response.body, /function buildConnExecutionPayload\(/);
+	assert.match(response.body, /throw new Error\("请先选择可运行的 Team Group"\)/);
 	assert.match(response.body, /const execution = buildConnExecutionPayload\(\);/);
 	assert.match(response.body, /execution,/);
 	assert.match(response.body, /type: "team_group"/);
@@ -921,6 +925,10 @@ test("GET /playground returns the test UI html", async () => {
 		response.body,
 		/appendConnRunDetailLinkRow\(group, "GroupRun JSON", groupRunId \? "\/v1\/team\/task-group-runs\/" \+ encodeURIComponent\(groupRunId\) : ""\)/,
 	);
+	assert.match(response.body, /const groupRunStartStatus = String\(snapshot\.groupRunStartStatus \|\| ""\);/);
+	assert.match(response.body, /const groupRunStartError = String\(snapshot\.groupRunStartError \|\| ""\);/);
+	assert.match(response.body, /appendConnRunDetailRow\(group, "groupRunStartStatus", groupRunStartStatus, \{ asCode: true \}\);/);
+	assert.match(response.body, /appendConnRunDetailRow\(group, "groupRunStartError", groupRunStartError, \{ asCode: true \}\);/);
 	assert.match(response.body, /link\.target = "_blank";/);
 	assert.match(response.body, /link\.rel = "noreferrer";/);
 	assert.match(
@@ -2027,7 +2035,11 @@ test("standalone conn page can create team group conn executions", () => {
 	assert.match(response, /editor-team-group-id/);
 	assert.match(response, /async function apiFetchTeamTaskGroups\(/);
 	assert.match(response, /\/v1\/team\/task-groups/);
+	assert.match(response, /function getTeamTaskGroupValidationMessage\(group\)/);
+	assert.match(response, /opt\.textContent \+= "（不可运行）";/);
+	assert.match(response, /opt\.disabled = true;/);
 	assert.match(response, /function buildEditorExecutionPayload\(/);
+	assert.match(response, /showEditorError\("请先选择可运行的 Team Group", "editor-team-group-id"\)/);
 	assert.match(response, /execution,/);
 	assert.match(response, /type: "team_group"/);
 	assert.match(response, /execution\.type === "team_group"/);
@@ -2039,6 +2051,10 @@ test("standalone conn page can create team group conn executions", () => {
 		response,
 		/\["GroupRun JSON", groupRunId \? "\/v1\/team\/task-group-runs\/" \+ encodeURIComponent\(groupRunId\) : ""\]/,
 	);
+	assert.match(response, /const groupRunStartStatus = String\(snapshot\.groupRunStartStatus \|\| ""\);/);
+	assert.match(response, /const groupRunStartError = String\(snapshot\.groupRunStartError \|\| ""\);/);
+	assert.match(response, /\["groupRunStartStatus", groupRunStartStatus\]/);
+	assert.match(response, /\["groupRunStartError", groupRunStartError\]/);
 	assert.match(response, /link\.target = "_blank";/);
 	assert.match(response, /link\.rel = "noreferrer";/);
 	assert.match(
