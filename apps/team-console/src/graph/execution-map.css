@@ -921,15 +921,28 @@
   right: 10px;
   top: 42px;
   display: flex;
+  flex-direction: column;
   flex-wrap: nowrap;
   gap: 6px;
-  max-height: 28px;
+  overflow: visible;
+  scrollbar-width: none;
+}
+
+.emap-task-group-members::-webkit-scrollbar {
+  display: none;
+}
+
+.emap-task-group-member-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
 }
 
-.emap-task-group-members::-webkit-scrollbar {
+.emap-task-group-member-row::-webkit-scrollbar {
   display: none;
 }
 

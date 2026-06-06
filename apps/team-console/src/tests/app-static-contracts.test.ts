@@ -76,8 +76,15 @@ describe("Team Console static contracts", () => {
     const headRule = mapCss.match(/\.emap-task-group-head\s*{[^}]*}/)?.[0] ?? "";
     const footerRule = mapCss.match(/\.emap-task-group-footer\s*{[^}]*}/)?.[0] ?? "";
     const membersRule = mapCss.match(/\.emap-task-group-members\s*{[^}]*}/)?.[0] ?? "";
+    const memberRowRule = mapCss.match(/\.emap-task-group-member-row\s*{[^}]*}/)?.[0] ?? "";
 
     expect(mapSource).toContain("const TASK_GROUP_MIN_WIDTH = 560");
+    expect(mapSource).toContain("const TASK_GROUP_MEMBER_ROW_HEIGHT = 24");
+    expect(mapSource).toContain("const TASK_GROUP_MEMBER_ROW_Y_TOLERANCE = 48");
+    expect(mapSource).toContain("function taskGroupHeaderBandHeight");
+    expect(mapSource).toContain("function buildTaskGroupMemberRows");
+    expect(mapSource).toContain(".sort((a, b) => a.y - b.y || a.x - b.x)");
+    expect(mapSource).toContain(".sort((a, b) => a.x - b.x)");
     expect(mapSource).toContain('renderNodeIdCopyButton("group", group.groupId)');
     expect(mapSource).toContain('taskCount === 1 ? "Task" : "Tasks"');
     expect(headRule).toContain("overflow: hidden");
@@ -87,7 +94,11 @@ describe("Team Console static contracts", () => {
     expect(footerRule).toContain("padding-top: 8px");
     expect(footerRule).toContain("border-top:");
     expect(membersRule).toContain("top: 42px");
+    expect(membersRule).toContain("flex-direction: column");
     expect(membersRule).toContain("flex-wrap: nowrap");
+    expect(membersRule).not.toContain("max-height: 28px");
+    expect(memberRowRule).toContain("flex-wrap: nowrap");
+    expect(memberRowRule).toContain("overflow-x: auto");
   });
 
   it("uses a light default theme for the Team Console app chrome", () => {

@@ -194,6 +194,9 @@ export type AtlasTaskGroup = {
   groupRun?: AtlasTaskGroupRunView;
 };
 
+type AtlasTaskGroupMemberChip = { taskId: string; title: string };
+type AtlasTaskGroupMemberRow = AtlasTaskGroupMemberChip[];
+
 export type AtlasTaskGroupRunView = {
   status: "idle" | TeamTaskGroupRunStatus;
   groupRunId?: string;
@@ -249,6 +252,11 @@ const TASK_GROUP_HEADER_BAND_HEIGHT = 76;
 const TASK_GROUP_COLLAPSED_HEADER_BAND_HEIGHT = 42;
 const TASK_GROUP_MIN_WIDTH = 560;
 const TASK_GROUP_BOTTOM_PADDING = 58;
+const TASK_GROUP_MEMBER_TOP = 42;
+const TASK_GROUP_MEMBER_ROW_HEIGHT = 24;
+const TASK_GROUP_MEMBER_ROW_GAP = 6;
+const TASK_GROUP_MEMBER_ROW_Y_TOLERANCE = 48;
+const TASK_GROUP_HEADER_BOTTOM_GAP = 10;
 type CopyableNodeKind = "agent" | "task" | "group";
 type EvidenceKind = "result" | "error" | "attempt" | "progress" | "worker" | "checker" | "watcher";
 
@@ -383,6 +391,55 @@ interface AttemptFileRef {
   taskId: string;
   attemptId: string;
   fileName: string;
+}
+
+function taskGroupHeaderBandHeight(collapsed: boolean, memberRowCount: number): number {
+  if (collapsed) return TASK_GROUP_COLLAPSED_HEADER_BAND_HEIGHT;
+  const memberBandHeight = memberRowCount > 0
+    ? TASK_GROUP_MEMBER_TOP
+      + memberRowCount * TASK_GROUP_MEMBER_ROW_HEIGHT
+      + Math.max(0, memberRowCount - 1) * TASK_GROUP_MEMBER_ROW_GAP
+      + TASK_GROUP_HEADER_BOTTOM_GAP
+    : TASK_GROUP_HEADER_BAND_HEIGHT;
+  return Math.max(TASK_GROUP_HEADER_BAND_HEIGHT, memberBandHeight);
+}
+
+function buildTaskGroupMemberRows(
+  group: AtlasTaskGroup,
+  nodes: AtlasTaskNode[],
+  tasksById: Map<string, TeamCanvasTask> | undefined,
+): AtlasTaskGroupMemberRow[] {
+  type PositionedMember = AtlasTaskGroupMemberChip & { x: number };
+  const memberByTaskId = new Map((group.members ?? []).map((member) => [member.taskId, member]));
+  const orderedVisibleMembers = nodes
+    .map((node) => ({
+      taskId: node.taskId,
+      title: memberByTaskId.get(node.taskId)?.title ?? tasksById?.get(node.taskId)?.title ?? node.taskId,
+      x: node.position.x,
+      y: node.position.y,
+    }))
+    .sort((a, b) => a.y - b.y || a.x - b.x);
+  const rows: Array<{ y: number; members: PositionedMember[] }> = [];
+  for (const member of orderedVisibleMembers) {
+    const row = rows.at(-1);
+    if (!row || Math.abs(row.y - member.y) > TASK_GROUP_MEMBER_ROW_Y_TOLERANCE) {
+      rows.push({ y: member.y, members: [{ taskId: member.taskId, title: member.title, x: member.x }] });
+    } else {
+      row.members.push({ taskId: member.taskId, title: member.title, x: member.x });
+    }
+  }
+
+  const visibleTaskIds = new Set(orderedVisibleMembers.map((member) => member.taskId));
+  const fallbackMembers = (group.members ?? []).filter((member) => !visibleTaskIds.has(member.taskId));
+  if (fallbackMembers.length > 0) {
+    rows.push({
+      y: Number.POSITIVE_INFINITY,
+      members: fallbackMembers.map((member, index) => ({ ...member, x: index })),
+    });
+  }
+  return rows.map((row) => row.members
+    .sort((a, b) => a.x - b.x)
+    .map(({ taskId, title }) => ({ taskId, title })));
 }
 
 function statusClass(status: TaskStatus | RunDetail["status"]): string {
@@ -2500,12 +2557,14 @@ export function ExecutionMap({
         .map((nodeId) => unfilteredVisibleTaskNodes.find((node) => node.nodeId === nodeId) ?? null)
         .filter((node): node is AtlasTaskNode => Boolean(node));
       const taskCount = group.taskIds?.length ?? group.members?.length ?? nodes.length;
+      const memberRows = buildTaskGroupMemberRows(group, nodes, tasksById);
       if (nodes.length === 0) {
         const index = emptyIndex;
         emptyIndex += 1;
         return [{
           group,
           taskCount,
+          memberRows,
           isEmpty: true,
           rect: {
             x: 24,
@@ -2519,10 +2578,11 @@ export function ExecutionMap({
       const minY = Math.min(...nodes.map((node) => node.position.y));
       const maxX = Math.max(...nodes.map((node) => node.position.x + NODE_WIDTH));
       const maxY = Math.max(...nodes.map((node) => node.position.y + canvasTaskNodeHeight(tasksById?.get(node.taskId))));
-      const headerBandHeight = group.collapsed ? TASK_GROUP_COLLAPSED_HEADER_BAND_HEIGHT : TASK_GROUP_HEADER_BAND_HEIGHT;
+      const headerBandHeight = taskGroupHeaderBandHeight(group.collapsed, memberRows.length);
       return [{
         group,
         taskCount,
+        memberRows,
         isEmpty: false,
         rect: {
           x: minX - 18,
@@ -3558,7 +3618,7 @@ export function ExecutionMap({
         </svg>
 
         <div className="execution-map-nodes" ref={evidenceContainerRef} style={{ width: svgWidth, minHeight: maxY + 40 }}>
-          {taskGroupRenderItems.map(({ group, rect, taskCount, isEmpty }) => {
+          {taskGroupRenderItems.map(({ group, rect, taskCount, memberRows, isEmpty }) => {
             const taskCountLabel = `${taskCount} ${taskCount === 1 ? "Task" : "Tasks"}`;
             const validationMessage = group.taskIds?.length === 0
               ? "Group 当前不可运行"
@@ -3715,26 +3775,30 @@ export function ExecutionMap({
                     折叠
                   </button>
                 </div>
-                {group.members && group.members.length > 0 && (
+                {memberRows.length > 0 && (
                   <div className="emap-task-group-members" aria-label={`${group.title} members`}>
-                    {group.members.map((member) => (
-                      <span key={member.taskId} className="emap-task-group-member-chip">
-                        <span>{member.title}</span>
-                        {onRemoveTaskFromTaskGroup && (
-                          <button
-                            type="button"
-                            aria-label={`移除成员 ${member.title}`}
-                            disabled={group.locked}
-                            onPointerDown={(event) => event.stopPropagation()}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              if (!group.locked) onRemoveTaskFromTaskGroup(group.groupId, member.taskId);
-                            }}
-                          >
-                            ×
-                          </button>
-                        )}
-                      </span>
+                    {memberRows.map((row, rowIndex) => (
+                      <div key={`${group.groupId}-member-row-${rowIndex}`} className="emap-task-group-member-row">
+                        {row.map((member) => (
+                          <span key={member.taskId} className="emap-task-group-member-chip">
+                            <span>{member.title}</span>
+                            {onRemoveTaskFromTaskGroup && (
+                              <button
+                                type="button"
+                                aria-label={`移除成员 ${member.title}`}
+                                disabled={group.locked}
+                                onPointerDown={(event) => event.stopPropagation()}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  if (!group.locked) onRemoveTaskFromTaskGroup(group.groupId, member.taskId);
+                                }}
+                              >
+                                ×
+                              </button>
+                            )}
+                          </span>
+                        ))}
+                      </div>
                     ))}
                   </div>
                 )}
