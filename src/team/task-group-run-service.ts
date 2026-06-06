@@ -131,33 +131,37 @@ export class TaskGroupRunService {
 
 		const allRuns = await this.taskRunService.listRuns();
 		const observedRuns = this.collectObservedRuns(group.taskIds, groupRun.entryRuns, allRuns);
+		const groupTaskIdSet = new Set(group.taskIds);
 		const observedStates = observedRuns
 			.map(observed => allRuns.find(run => run.runId === observed.runId) ?? null)
 			.filter((run): run is TeamRunState => run !== null);
+		const groupPipelineStates = observedStates.filter(run => (
+			run.source?.type === "canvas-task" && groupTaskIdSet.has(run.source.taskId)
+		));
 
-		if (observedStates.length === 0) {
+		if (groupPipelineStates.length === 0) {
 			return this.groupRunStore.patch(groupRunId, { observedRuns, status: "running" });
 		}
 
-		if (observedStates.some(run => ACTIVE_TASK_RUN_STATUSES.has(run.status))) {
+		if (groupPipelineStates.some(run => ACTIVE_TASK_RUN_STATUSES.has(run.status))) {
 			return this.groupRunStore.patch(groupRunId, { observedRuns, status: "running" });
 		}
 
-		if (!observedStates.every(run => TERMINAL_TASK_RUN_STATUSES.has(run.status))) {
+		if (!groupPipelineStates.every(run => TERMINAL_TASK_RUN_STATUSES.has(run.status))) {
 			return this.groupRunStore.patch(groupRunId, { observedRuns, status: "running" });
 		}
 
-		const deliveryState = await this.inspectPendingInternalDeliveries(group.taskIds, observedStates, allRuns);
+		const deliveryState = await this.inspectPendingInternalDeliveries(group.taskIds, groupPipelineStates, allRuns);
 		if (deliveryState.hasPendingDelivery) {
 			return this.groupRunStore.patch(groupRunId, { observedRuns, status: "running" });
 		}
 
-		const status = aggregateTerminalStatus(observedStates, deliveryState.hasFailedDelivery);
+		const status = aggregateTerminalStatus(groupPipelineStates, deliveryState.hasFailedDelivery);
 		return this.groupRunStore.patch(groupRunId, {
 			observedRuns,
 			status,
 			finishedAt: now(),
-			lastError: status === "completed" ? null : firstRunError(observedStates) ?? deliveryState.firstDeliveryError,
+			lastError: status === "completed" ? null : firstRunError(groupPipelineStates) ?? deliveryState.firstDeliveryError,
 		});
 	}
 

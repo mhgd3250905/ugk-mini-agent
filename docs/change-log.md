@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-05 — Team GroupRun completion follows Group pipeline
+
+- **主题**: Team Task GroupRun 终态聚合改为按 Group 内真实 Task 流水线判断。`entry` / `downstream` Group 成员 run 和内部 typed/control delivery 仍决定 GroupRun 是否 `completed`、`completed_with_failures`、`cancelled`；由 Discovery root 触发的 `discovery-generated` child run 继续进入 `observedRuns` 作为诊断，但其失败不再把已完成的 Group 主流水线拖成 `completed_with_failures`。
+- **影响范围**: `team_group` Conn scheduler 的结果语义随之收窄：当 Group 主流水线完成时，generated child 的 checker 格式错误或模型内容安全拒绝不会让 ConnRun 失败；真正的 Group 成员 Task 失败、取消或内部边交付失败仍会传播为非成功终态。既有已落盘终态 GroupRun 不自动回算。
+- **对应入口**: `src/team/task-group-run-service.ts`、`test/team-task-group-run-routes.test.ts`、`docs/team-runtime.md`、`docs/runtime-assets-conn-feishu.md`。
+
 ## 2026-06-05 — Team Console run history visual polish
 
 - **主题**: Team Console 运行记录抽屉改为状态化历史卡片，选中 run 使用更明确的高亮和 `aria-current`；Discovery 子画布点击 generated child 展开运行记录时，来源卡片保留蓝青高亮边框和顶部标记；running / busy 执行态统一改为蓝青色，不再使用类似危险态的橙红色。

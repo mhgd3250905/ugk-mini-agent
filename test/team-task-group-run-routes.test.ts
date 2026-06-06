@@ -307,6 +307,57 @@ test("GET /v1/team/task-group-runs/:groupRunId keeps running while downstream is
 	}
 });
 
+test("GET /v1/team/task-group-runs/:groupRunId completes when Group pipeline completes even if a Discovery generated child failed", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const discovery = await createTask(app, "Discovery", { outputPorts: [{ id: "out_md", label: "Out", type: "md" }] });
+		const downstreamTask = await createTask(app, "Downstream", { inputPorts: [{ id: "in_md", label: "In", type: "md" }] });
+		const connection = await connectTasks(app, discovery.taskId, downstreamTask.taskId);
+		const group = await createGroup(app, "Discovery pipeline", [discovery.taskId, downstreamTask.taskId]);
+		const workspace = new RunWorkspace(join(teamDir, "task-runs"));
+		const entry = await createCanvasRun(workspace, discovery.taskId, { status: "completed" });
+		const failedGenerated = await createCanvasRun(workspace, "task_generated_failed", {
+			status: "failed",
+			triggeredBy: {
+				type: "discovery-generated-task",
+				discoveryTaskId: discovery.taskId,
+				discoveryRunId: entry.runId,
+				discoveryAttemptId: "attempt_discovery",
+				sourceItemId: "generated-item",
+			},
+		});
+		const downstream = await createCanvasRun(workspace, downstreamTask.taskId, {
+			status: "completed",
+			triggeredBy: {
+				type: "task-connection",
+				connectionId: connection.connectionId,
+				fromTaskId: discovery.taskId,
+				fromRunId: entry.runId,
+				fromAttemptId: "attempt_entry",
+			},
+		});
+		const store = new TaskGroupRunStore(teamDir);
+		const groupRun = await store.create({ groupId: group.groupId });
+		await store.patch(groupRun.groupRunId, {
+			status: "running",
+			startedAt: new Date().toISOString(),
+			entryRuns: [{ taskId: discovery.taskId, runId: entry.runId }],
+			observedRuns: [{ taskId: discovery.taskId, runId: entry.runId, role: "entry" }],
+		});
+
+		const completed = await app.inject({ method: "GET", url: `/v1/team/task-group-runs/${groupRun.groupRunId}` });
+		assert.equal(completed.statusCode, 200);
+		const completedGroupRun = completed.json().groupRun as TeamTaskGroupRun;
+		assert.equal(completedGroupRun.status, "completed");
+		assert.equal(completedGroupRun.lastError, null);
+		assert.ok(completedGroupRun.observedRuns.some(run => run.runId === downstream.runId && run.role === "downstream"));
+		assert.ok(completedGroupRun.observedRuns.some(run => run.runId === failedGenerated.runId && run.role === "discovery-generated"));
+	} finally {
+		await app.close();
+		await removeTempRoot(root);
+	}
+});
+
 test("GET /v1/team/task-group-runs/:groupRunId stays running when entry completed before downstream delivery evidence", async () => {
 	const { app, root, teamDir } = await buildTestServer();
 	try {

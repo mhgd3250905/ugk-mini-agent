@@ -2,6 +2,8 @@
 
 更新时间：2026-06-05
 
+> 2026-06-05 补充：Team Task GroupRun 的完成态按 Group 内真实 Task 流水线聚合，而不是按所有诊断 run 一票否决。`entry` / `downstream` Group 成员 run 和内部 typed/control delivery 仍决定 GroupRun 终态；Discovery root 触发的 `discovery-generated` child run 会继续保留在 `observedRuns` 里用于诊断、展示和取消 active run，但 generated child 的 `failed` / `completed_with_failures` 不再把已完成的 Group 主流水线标记为 `completed_with_failures`。既有已落盘终态 GroupRun 不自动回算。
+
 > 2026-06-05 补充：Team Console 运行记录抽屉已收口为状态化历史卡片。每条 run history item 带 `data-run-status`，当前选中行使用 `aria-current="true"` 和更强的 selected 高亮；Discovery 子画布里点击 generated child 打开运行记录后，来源 card 会保留 `is-history-open` 高亮和顶部标记，避免右侧记录面板打开后不知道来自哪个 child。Execution Atlas 的 running / busy 执行态统一使用蓝青色，橙红色继续留给危险、失败或警告语义。
 
 > 2026-06-05 补充：Team Console Discovery 子画布默认隐藏 `stale` generated child。`GET /v1/team/tasks/:taskId/generated-tasks?view=summary` 仍返回 active/stale 非 archived catalog，root Discovery 卡片也继续显示 generated 总数、active、stale 和 blocked 诊断计数；但子画布主 generated grid 只渲染 active items，running/queued/done 和 visible/total 也只按 active 统计。`stale` item 折叠成“显示 N 个旧项”，展开后进入独立 stale lane 用于诊断、reset-to-managed 或归档，不放回 root canvas，也不改变后端 upsert / stale marking 合同。
