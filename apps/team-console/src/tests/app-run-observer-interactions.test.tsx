@@ -42,12 +42,14 @@ describe("App", () => {
       const initialLeft = Number.parseFloat(processShell!.style.left);
       const initialTop = Number.parseFloat(processShell!.style.top);
 
-      firePointer(processShell!, "pointerdown", { pointerId: 71, clientX: 600, clientY: 300 });
-      firePointer(processShell!, "pointermove", { pointerId: 71, clientX: 660, clientY: 340 });
-      firePointer(processShell!, "pointerup", { pointerId: 71, clientX: 660, clientY: 340, buttons: 0 });
+      const upwardDelta = initialTop + 80;
+      firePointer(processShell!, "pointerdown", { pointerId: 71, clientX: 600, clientY: 500 });
+      firePointer(processShell!, "pointermove", { pointerId: 71, clientX: 660, clientY: 500 - upwardDelta });
+      firePointer(processShell!, "pointerup", { pointerId: 71, clientX: 660, clientY: 500 - upwardDelta, buttons: 0 });
 
       expect(Number.parseFloat(processShell!.style.left)).toBeCloseTo(initialLeft + 60, 4);
-      expect(Number.parseFloat(processShell!.style.top)).toBeCloseTo(initialTop + 40, 4);
+      expect(Number.parseFloat(processShell!.style.top)).toBeLessThan(0);
+      expect(Number.parseFloat(processShell!.style.top)).toBeCloseTo(initialTop - upwardDelta, 4);
 
       const connectorPaths = container.querySelectorAll(".emap-link-task-child-branch");
       expect(connectorPaths.length).toBeGreaterThanOrEqual(1);

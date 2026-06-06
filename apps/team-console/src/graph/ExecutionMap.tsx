@@ -2376,7 +2376,6 @@ export function ExecutionMap({
         const rect = {
           ...rectWithOverride,
           x: Math.max(0, rectWithOverride.x),
-          y: Math.max(0, rectWithOverride.y),
         };
         entries.push({ panel: p, rect, sourceRect, parentKey });
         finalRectByPanelId.set(p.id, rect);
