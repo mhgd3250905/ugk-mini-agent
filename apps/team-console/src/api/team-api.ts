@@ -32,6 +32,10 @@ import type {
   TeamCanvasSourceNodeUpdateRequest,
   TeamDiscoveryGeneratedTaskSummaryCatalogResponse,
   TeamDiscoveryGeneratedTaskSummary,
+  TeamDiscoveryChannelSet,
+  TeamDiscoveryChannelSetCreateRequest,
+  TeamDiscoveryChannelSetListResponse,
+  TeamDiscoveryChannelSetMutationResponse,
   TeamTaskConnection,
   TeamTaskConnectionCreateRequest,
   TeamTaskConnectionListResponse,
@@ -90,6 +94,9 @@ export interface CanvasTaskGateway {
     discoveryTaskId: string,
     options?: { includeArchived?: boolean; since?: string },
   ): Promise<TeamDiscoveryGeneratedTaskSummaryCatalogResponse>;
+  listDiscoveryChannelSets(discoveryTaskId: string, options?: { includeArchived?: boolean }): Promise<TeamDiscoveryChannelSet[]>;
+  createDiscoveryChannelSet(discoveryTaskId: string, input: TeamDiscoveryChannelSetCreateRequest): Promise<TeamDiscoveryChannelSet>;
+  archiveDiscoveryChannelSet(discoveryTaskId: string, channelSetId: string): Promise<TeamDiscoveryChannelSet>;
   getTask(taskId: string): Promise<TeamCanvasTask | null>;
   updateTask(taskId: string, patch: TeamTaskUpdateRequest): Promise<TeamTaskMutationResponse>;
   cloneTask(taskId: string, input: TeamTaskCloneRequest): Promise<TeamTaskMutationResponse>;
@@ -403,6 +410,58 @@ export class LiveTeamApi implements TeamApiProvider {
           ? (body as TeamDiscoveryGeneratedTaskSummaryCatalogResponse).serverVersion
           : null,
       };
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async listDiscoveryChannelSets(discoveryTaskId: string, options?: { includeArchived?: boolean }): Promise<TeamDiscoveryChannelSet[]> {
+    try {
+      const params = new URLSearchParams();
+      if (options?.includeArchived) params.set("includeArchived", "1");
+      const query = params.toString();
+      const res = await fetchJsonGet<TeamDiscoveryChannelSetListResponse>(
+        `${this.baseUrl}/tasks/${encodeURIComponent(discoveryTaskId)}/discovery-channel-sets${query ? `?${query}` : ""}`,
+      );
+      if (res.status === 404) return [];
+      if (!res.ok) throwJsonGetError(res);
+      return Array.isArray(res.body?.channelSets) ? res.body.channelSets : [];
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async createDiscoveryChannelSet(discoveryTaskId: string, input: TeamDiscoveryChannelSetCreateRequest): Promise<TeamDiscoveryChannelSet> {
+    try {
+      const res = await fetch(`${this.baseUrl}/tasks/${encodeURIComponent(discoveryTaskId)}/discovery-channel-sets`, {
+        method: "POST",
+        headers: { accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      const body = await res.json() as TeamDiscoveryChannelSetMutationResponse;
+      return body.channelSet;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async archiveDiscoveryChannelSet(discoveryTaskId: string, channelSetId: string): Promise<TeamDiscoveryChannelSet> {
+    try {
+      const res = await fetch(
+        `${this.baseUrl}/tasks/${encodeURIComponent(discoveryTaskId)}/discovery-channel-sets/${encodeURIComponent(channelSetId)}/archive`,
+        {
+          method: "POST",
+          headers: { accept: "application/json" },
+        },
+      );
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      const body = await res.json() as TeamDiscoveryChannelSetMutationResponse;
+      return body.channelSet;
     } catch (e) {
       throw toApiError(e);
     }

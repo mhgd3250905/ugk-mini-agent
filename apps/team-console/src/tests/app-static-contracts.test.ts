@@ -555,7 +555,10 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toContain(".discovery-generated-card:hover");
     expect(mapCss).toContain(".discovery-generated-card:active");
     expect(mapCss).toContain(".discovery-generated-card.is-history-open");
+    expect(mapCss).toContain(".discovery-generated-card.is-channel-selected");
     expect(mapCss).toContain(".discovery-generated-card-watermark");
+    expect(mapCss).toContain(".discovery-generated-channel-checkbox");
+    expect(mapCss).toContain(".discovery-channel-set-panel");
     expect(mapCss).toContain(".discovery-generated-card.state-running::after");
     expect(mapCss).toContain("@keyframes discovery-generated-card-progress");
     expect(mapCss).not.toContain(".discovery-subcanvas-running-grid");
@@ -565,11 +568,16 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toContain(".discovery-generated-card.state-idle");
     expect(mapCss).toContain('[data-theme="dark"] .discovery-subcanvas-panel');
     expect(mapCss).toContain('[data-theme="dark"] .discovery-generated-card');
+    expect(mapCss).toContain('[data-theme="dark"] .discovery-generated-card.is-channel-selected');
+    expect(mapCss).toContain('[data-theme="dark"] .discovery-channel-set-panel');
     expect(mapCss).toContain('[data-theme="dark"] .discovery-generated-card.state-running');
     expect(mapCss).toContain('[data-theme="dark"] .discovery-generated-card.state-failed');
     expect(mapCss).toContain("rgba(7, 12, 22, 0.98)");
     expect(mapCss).toContain("color: #d8e4f1");
     expect(appTsx).toContain("discovery-generated-card-watermark");
+    expect(appTsx).toContain("discovery-channel-set-panel");
+    expect(appTsx).toContain("data-generated-channel-selected");
+    expect(appTsx).toContain("discoveryChannelSetId");
     expect(appTsx).not.toContain("discovery-generated-card-meta");
     expect(appTsx).not.toContain("generatedSource?.sourceItemId");
   });

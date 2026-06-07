@@ -41,6 +41,8 @@ import type {
   TeamTask,
   TeamTaskState,
   TeamCanvasTaskRunByTaskListResponse,
+  TeamDiscoveryChannelSet,
+  TeamDiscoveryChannelSetCreateRequest,
   TeamDiscoveryGeneratedTaskSummaryCatalogResponse,
   TeamDiscoveryGeneratedTaskSummary,
   TeamTaskRunAnnotation,
@@ -1248,6 +1250,17 @@ function cloneMockTeamTask(task: TeamCanvasTask): TeamCanvasTask {
   };
 }
 
+function cloneMockDiscoveryChannelSet(channelSet: TeamDiscoveryChannelSet): TeamDiscoveryChannelSet {
+  return {
+    ...channelSet,
+    items: channelSet.items.map((item) => ({
+      ...item,
+      itemPayload: { ...item.itemPayload },
+      workUnitSnapshot: cloneMockWorkUnit(item.workUnitSnapshot),
+    })),
+  };
+}
+
 const mockCanvasTaskSeed: TeamCanvasTask[] = [
   ...mockTeamTasks,
   mockDiscoveryRootTask,
@@ -1270,6 +1283,8 @@ let mockSourceNodes: TeamCanvasSourceNode[] = [];
 let mockSourceConnections: TeamCanvasSourceConnection[] = [];
 let mockSourceNodeCounter = 0;
 let mockSourceConnectionCounter = 0;
+let mockDiscoveryChannelSetCounter = 0;
+let mockDiscoveryChannelSets: TeamDiscoveryChannelSet[] = [];
 
 function seedMockDiscoveryDispatchState() {
   mockTaskRunsByTaskId.set(mockDiscoveryRootTask.taskId, [cloneTeamRunState(mockDiscoveryRootRunState)]);
@@ -1377,6 +1392,8 @@ export function resetMockTeamApiState() {
   mockTaskConnectionCounter = 0;
   mockSourceNodeCounter = 0;
   mockSourceConnectionCounter = 0;
+  mockDiscoveryChannelSetCounter = 0;
+  mockDiscoveryChannelSets = [];
   mockConversationCounter = 0;
   mockRunCounter = 0;
   mockMessageCounter = 0;
@@ -1791,6 +1808,74 @@ export class MockTeamApi {
       deletedTaskIds,
       serverVersion,
     };
+  }
+
+  async listDiscoveryChannelSets(discoveryTaskId: string, options?: { includeArchived?: boolean }): Promise<TeamDiscoveryChannelSet[]> {
+    return mockDiscoveryChannelSets
+      .filter((channelSet) => (
+        channelSet.sourceDiscoveryTaskId === discoveryTaskId
+        && (options?.includeArchived || !channelSet.archived)
+      ))
+      .map(cloneMockDiscoveryChannelSet);
+  }
+
+  async createDiscoveryChannelSet(
+    discoveryTaskId: string,
+    input: TeamDiscoveryChannelSetCreateRequest,
+  ): Promise<TeamDiscoveryChannelSet> {
+    const discoveryTask = mockCanvasTasks.find((task) => task.taskId === discoveryTaskId && !task.archived);
+    if (!discoveryTask || discoveryTask.canvasKind !== "discovery" || discoveryTask.generatedSource) {
+      throw { message: `Discovery task not found: ${discoveryTaskId}` };
+    }
+    const generatedTaskIds = [...new Set(input.generatedTaskIds.map((taskId) => taskId.trim()).filter(Boolean))];
+    if (generatedTaskIds.length === 0) throw { message: "generatedTaskIds is required" };
+    const items = generatedTaskIds.map((generatedTaskId) => {
+      const generatedTask = mockCanvasTasks.find((task) => (
+        task.taskId === generatedTaskId
+        && !task.archived
+        && task.generatedSource?.sourceDiscoveryTaskId === discoveryTaskId
+      ));
+      if (!generatedTask?.generatedSource) throw { message: `generated task not found: ${generatedTaskId}` };
+      const source = generatedTask.generatedSource;
+      return {
+        generatedTaskId: generatedTask.taskId,
+        sourceItemId: source.sourceItemId,
+        title: generatedTask.title,
+        itemPayload: { ...source.itemPayload },
+        workUnitSnapshot: cloneMockWorkUnit(source.workUnitMode === "managed" && source.latestManagedWorkUnit
+          ? source.latestManagedWorkUnit
+          : generatedTask.workUnit),
+        workUnitMode: source.workUnitMode,
+        latestDiscoveryRunId: source.latestDiscoveryRunId,
+        latestDiscoveryAttemptId: source.latestDiscoveryAttemptId,
+        latestDiscoveredAt: source.latestDiscoveredAt,
+      };
+    });
+    const now = ts();
+    const channelSet: TeamDiscoveryChannelSet = {
+      schemaVersion: "team/discovery-channel-set-1",
+      channelSetId: `mock_discovery_channel_set_${++mockDiscoveryChannelSetCounter}`,
+      sourceDiscoveryTaskId: discoveryTaskId,
+      title: input.title.trim() || `${discoveryTask.title} 渠道集`,
+      items,
+      archived: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    mockDiscoveryChannelSets = [channelSet, ...mockDiscoveryChannelSets];
+    return cloneMockDiscoveryChannelSet(channelSet);
+  }
+
+  async archiveDiscoveryChannelSet(discoveryTaskId: string, channelSetId: string): Promise<TeamDiscoveryChannelSet> {
+    const index = mockDiscoveryChannelSets.findIndex((channelSet) => (
+      channelSet.sourceDiscoveryTaskId === discoveryTaskId
+      && channelSet.channelSetId === channelSetId
+      && !channelSet.archived
+    ));
+    if (index < 0) throw { message: `Discovery channel set not found: ${channelSetId}` };
+    const archived = { ...mockDiscoveryChannelSets[index]!, archived: true, updatedAt: ts() };
+    mockDiscoveryChannelSets[index] = archived;
+    return cloneMockDiscoveryChannelSet(archived);
   }
 
   async getTask(taskId: string): Promise<TeamCanvasTask | null> {

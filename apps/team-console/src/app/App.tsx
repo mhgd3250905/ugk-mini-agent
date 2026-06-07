@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunAnnotation, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort, TeamTaskConnection, TeamManualUpstreamRunSelection, TeamTaskRunCreateRequest } from "../api/team-types";
+import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunAnnotation, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort, TeamTaskConnection, TeamManualUpstreamRunSelection, TeamTaskRunCreateRequest, TeamDiscoveryChannelSet } from "../api/team-types";
 import { MockTeamApi } from "../fixtures/team-fixtures";
 import { useTeamConsoleLiveData, type DataSource, type TeamConsoleUiResetReason, type TeamDiscoveryStage, type TeamDiscoverySummary, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
 import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchGeneratedObserverState, type TaskBranchState } from "./use-task-branch-stack";
@@ -37,6 +37,9 @@ type AgentBranchMode = "chat" | "task-create";
 type TeamConsoleTheme = "light" | "dark";
 type DiscoveryGeneratedVisualState = "running" | "queued" | "done" | "failed" | "stale" | "idle";
 type RootNodeFilter = "all" | "agent" | "task" | "source";
+type DiscoveryChannelSetRunOptions = {
+  discoveryChannelSetId?: string;
+};
 
 type AgentBranchState = {
   nodeId: string;
@@ -1595,6 +1598,13 @@ export function App() {
   const [generatedArchiveConfirmTaskId, setGeneratedArchiveConfirmTaskId] = useState<string | null>(null);
   const [generatedArchiveSavingByTaskId, setGeneratedArchiveSavingByTaskId] = useState<Record<string, boolean>>({});
   const [generatedActionMenuTaskId, setGeneratedActionMenuTaskId] = useState<string | null>(null);
+  const [selectedDiscoveryChannelTaskIdsByTaskId, setSelectedDiscoveryChannelTaskIdsByTaskId] = useState<Record<string, string[]>>({});
+  const [discoveryChannelSetTitleByTaskId, setDiscoveryChannelSetTitleByTaskId] = useState<Record<string, string>>({});
+  const [discoveryChannelSetsByTaskId, setDiscoveryChannelSetsByTaskId] = useState<Record<string, TeamDiscoveryChannelSet[]>>({});
+  const [discoveryChannelSetLoadingByTaskId, setDiscoveryChannelSetLoadingByTaskId] = useState<Record<string, boolean>>({});
+  const [discoveryChannelSetSavingByTaskId, setDiscoveryChannelSetSavingByTaskId] = useState<Record<string, boolean>>({});
+  const [discoveryChannelSetArchivingById, setDiscoveryChannelSetArchivingById] = useState<Record<string, boolean>>({});
+  const discoveryChannelSetLoadKeysRef = useRef<Set<string>>(new Set());
   const [taskRunObserverByRunId, setTaskRunObserverByRunId] = useState<Record<string, TaskRunObserverState>>({});
   const taskRunObserverByRunIdRef = useRef(taskRunObserverByRunId);
   const [runHistoryTaskId, setRunHistoryTaskId] = useState<string | null>(null);
@@ -1873,6 +1883,13 @@ export function App() {
     setGeneratedResetSavingByTaskId({});
     setGeneratedArchiveConfirmTaskId(null);
     setGeneratedArchiveSavingByTaskId({});
+    setSelectedDiscoveryChannelTaskIdsByTaskId({});
+    setDiscoveryChannelSetTitleByTaskId({});
+    setDiscoveryChannelSetsByTaskId({});
+    setDiscoveryChannelSetLoadingByTaskId({});
+    setDiscoveryChannelSetSavingByTaskId({});
+    setDiscoveryChannelSetArchivingById({});
+    discoveryChannelSetLoadKeysRef.current.clear();
     setTaskRunObserverByRunId({});
     setRunHistoryTaskId(null);
     setRunHistoryItems([]);
@@ -1957,6 +1974,27 @@ export function App() {
   const generatedTasksById = useMemo(() => new Map(
     Object.values(generatedTasksByDiscoveryTaskId).flat().map((task) => [task.taskId, task]),
   ), [generatedTasksByDiscoveryTaskId]);
+  useEffect(() => {
+    for (const taskId of openDiscoveryTaskIds) {
+      const loadKey = `${dataSource}:${taskId}`;
+      if (discoveryChannelSetLoadKeysRef.current.has(loadKey)) continue;
+      discoveryChannelSetLoadKeysRef.current.add(loadKey);
+      setDiscoveryChannelSetLoadingByTaskId((current) => ({ ...current, [taskId]: true }));
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      void api.listDiscoveryChannelSets(taskId)
+        .then((channelSets) => {
+          setDiscoveryChannelSetsByTaskId((current) => ({ ...current, [taskId]: channelSets }));
+          setError(null);
+        })
+        .catch((e) => {
+          discoveryChannelSetLoadKeysRef.current.delete(loadKey);
+          setError(errorMessage(e));
+        })
+        .finally(() => {
+          setDiscoveryChannelSetLoadingByTaskId((current) => ({ ...current, [taskId]: false }));
+        });
+    }
+  }, [dataSource, openDiscoveryTaskIds, setError]);
   const taskRunsByTaskIdRef = useRef(taskRunsByTaskId);
   taskRunsByTaskIdRef.current = taskRunsByTaskId;
   const taskConnectionsRef = useRef(taskConnections);
@@ -3109,6 +3147,10 @@ export function App() {
           ...current,
           [sourceDiscoveryTaskId]: (current[sourceDiscoveryTaskId] ?? []).filter((generatedTask) => generatedTask.taskId !== taskId),
         }));
+        setSelectedDiscoveryChannelTaskIdsByTaskId((current) => ({
+          ...current,
+          [sourceDiscoveryTaskId]: (current[sourceDiscoveryTaskId] ?? []).filter((selectedTaskId) => selectedTaskId !== taskId),
+        }));
         clearGeneratedTaskPanelState(taskId);
         markGeneratedTaskArchived(taskId);
       }
@@ -3185,7 +3227,69 @@ export function App() {
     return () => document.removeEventListener("keydown", handler);
   }, [rootArchiveConfirm, rootArchiveSaving]);
 
-  const runTask = useCallback(async (task: TeamCanvasTask, nodeId?: string, overrideBindings?: Record<string, string>) => {
+  const toggleDiscoveryChannelTaskSelection = useCallback((discoveryTaskId: string, generatedTaskId: string) => {
+    setSelectedDiscoveryChannelTaskIdsByTaskId((current) => {
+      const selected = current[discoveryTaskId] ?? [];
+      const next = selected.includes(generatedTaskId)
+        ? selected.filter((taskId) => taskId !== generatedTaskId)
+        : [...selected, generatedTaskId];
+      return { ...current, [discoveryTaskId]: next };
+    });
+  }, []);
+
+  const clearDiscoveryChannelTaskSelection = useCallback((discoveryTaskId: string) => {
+    setSelectedDiscoveryChannelTaskIdsByTaskId((current) => ({ ...current, [discoveryTaskId]: [] }));
+  }, []);
+
+  const saveDiscoveryChannelSet = useCallback(async (task: TeamCanvasTask) => {
+    const taskId = task.taskId;
+    const generatedTaskIds = selectedDiscoveryChannelTaskIdsByTaskId[taskId] ?? [];
+    if (generatedTaskIds.length === 0) {
+      setError("请先选择至少一个 generated Task 作为渠道");
+      return;
+    }
+    const title = (discoveryChannelSetTitleByTaskId[taskId] ?? "").trim() || `${task.title} 渠道集`;
+    setDiscoveryChannelSetSavingByTaskId((current) => ({ ...current, [taskId]: true }));
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      const channelSet = await api.createDiscoveryChannelSet(taskId, { title, generatedTaskIds });
+      setDiscoveryChannelSetsByTaskId((current) => ({
+        ...current,
+        [taskId]: [channelSet, ...(current[taskId] ?? []).filter((item) => item.channelSetId !== channelSet.channelSetId)],
+      }));
+      setSelectedDiscoveryChannelTaskIdsByTaskId((current) => ({ ...current, [taskId]: [] }));
+      setDiscoveryChannelSetTitleByTaskId((current) => ({ ...current, [taskId]: "" }));
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setDiscoveryChannelSetSavingByTaskId((current) => ({ ...current, [taskId]: false }));
+    }
+  }, [dataSource, discoveryChannelSetTitleByTaskId, selectedDiscoveryChannelTaskIdsByTaskId, setError]);
+
+  const archiveDiscoveryChannelSet = useCallback(async (taskId: string, channelSetId: string) => {
+    setDiscoveryChannelSetArchivingById((current) => ({ ...current, [channelSetId]: true }));
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      const archived = await api.archiveDiscoveryChannelSet(taskId, channelSetId);
+      setDiscoveryChannelSetsByTaskId((current) => ({
+        ...current,
+        [taskId]: (current[taskId] ?? []).filter((item) => item.channelSetId !== archived.channelSetId),
+      }));
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setDiscoveryChannelSetArchivingById((current) => ({ ...current, [channelSetId]: false }));
+    }
+  }, [dataSource, setError]);
+
+  const runTask = useCallback(async (
+    task: TeamCanvasTask,
+    nodeId?: string,
+    overrideBindings?: Record<string, string>,
+    runOptions?: DiscoveryChannelSetRunOptions,
+  ) => {
     const taskId = task.taskId;
     if (task.templateConfig && !overrideBindings && hasMissingRequiredTemplateBindings(task)) {
       openTaskParameterDraft(task);
@@ -3219,10 +3323,11 @@ export function App() {
         loadedTaskRunSnapshotByTaskIdRef.current,
         selectionTaskRunsByTaskId,
       );
-      const createRequest: TeamTaskRunCreateRequest | undefined = overrideBindings || upstreamRunSelections.length > 0
+      const createRequest: TeamTaskRunCreateRequest | undefined = overrideBindings || upstreamRunSelections.length > 0 || runOptions?.discoveryChannelSetId
         ? {
             ...(overrideBindings ? { templateBindings: overrideBindings } : {}),
             ...(upstreamRunSelections.length > 0 ? { upstreamRunSelections } : {}),
+            ...(runOptions?.discoveryChannelSetId ? { discoveryChannelSetId: runOptions.discoveryChannelSetId } : {}),
           }
         : undefined;
       const taskRun = await api.createTaskRun(taskId, createRequest);
@@ -4708,6 +4813,12 @@ export function App() {
         const doneGeneratedTaskCount = activeGeneratedTaskCards.filter((card) => card.visualState === "done").length;
         const failedGeneratedTaskCount = activeGeneratedTaskCards.filter((card) => card.visualState === "failed").length;
         const waitingGeneratedTaskCount = activeGeneratedTaskCards.length - runningGeneratedTaskCount - doneGeneratedTaskCount - failedGeneratedTaskCount;
+        const selectedDiscoveryChannelTaskIds = selectedDiscoveryChannelTaskIdsByTaskId[task.taskId] ?? [];
+        const selectedDiscoveryChannelTaskIdSet = new Set(selectedDiscoveryChannelTaskIds);
+        const discoveryChannelSets = discoveryChannelSetsByTaskId[task.taskId] ?? [];
+        const discoveryChannelSetTitle = discoveryChannelSetTitleByTaskId[task.taskId] ?? "";
+        const discoveryChannelSetsLoading = Boolean(discoveryChannelSetLoadingByTaskId[task.taskId]);
+        const discoveryChannelSetSaving = Boolean(discoveryChannelSetSavingByTaskId[task.taskId]);
         const renderGeneratedCard = (card: (typeof generatedTaskCards)[number]) => {
           const {
             activeGeneratedRun,
@@ -4730,6 +4841,7 @@ export function App() {
           } = card;
           const generatedActionMenuOpen = generatedActionMenuTaskId === generatedTask.taskId;
           const generatedRunHistoryOpen = branch.discoveryGeneratedRunHistoryTaskId === generatedTask.taskId;
+          const generatedChannelSelected = selectedDiscoveryChannelTaskIdSet.has(generatedTask.taskId);
           const generatedActionMenuId = `generated-action-menu-${branch.nodeId}-${generatedTask.taskId}`;
           const toggleGeneratedRunHistory = () => {
             setGeneratedActionMenuTaskId(null);
@@ -4754,7 +4866,7 @@ export function App() {
           return (
             <article
               key={generatedTask.taskId}
-              className={`discovery-generated-card state-${visualState} is-${itemStatus} ${generatedRunIsObserved ? "is-observed" : ""} ${generatedIsEditing ? "is-editing" : ""} ${generatedActionMenuOpen ? "is-action-menu-open" : ""} ${generatedRunHistoryOpen ? "is-history-open" : ""}`}
+              className={`discovery-generated-card state-${visualState} is-${itemStatus} ${generatedRunIsObserved ? "is-observed" : ""} ${generatedIsEditing ? "is-editing" : ""} ${generatedActionMenuOpen ? "is-action-menu-open" : ""} ${generatedRunHistoryOpen ? "is-history-open" : ""} ${generatedChannelSelected ? "is-channel-selected" : ""}`}
               data-generated-task-id={generatedTask.taskId}
               data-generated-item-status={itemStatus}
               data-generated-workunit-mode={workUnitMode}
@@ -4766,7 +4878,12 @@ export function App() {
               data-generated-reset-saving={resetSaving ? "true" : "false"}
               data-generated-archive-saving={archiveSaving ? "true" : "false"}
               data-generated-run-history-open={generatedRunHistoryOpen ? "true" : "false"}
-              onClick={toggleGeneratedRunHistory}
+              data-generated-channel-selected={generatedChannelSelected ? "true" : "false"}
+              onClick={(event) => {
+                const target = event.target;
+                if (target instanceof HTMLElement && target.closest(".discovery-generated-channel-checkbox")) return;
+                toggleGeneratedRunHistory();
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
                   setGeneratedActionMenuTaskId((current) => current === generatedTask.taskId ? null : current);
@@ -4778,6 +4895,19 @@ export function App() {
               }}
             >
               <span className="discovery-generated-card-watermark" aria-hidden="true">{generatedOrdinal}</span>
+              <button
+                type="button"
+                role="checkbox"
+                className="discovery-generated-channel-checkbox"
+                aria-label={`选择 ${generatedTask.title} 作为 Discovery 渠道`}
+                aria-checked={generatedChannelSelected}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  toggleDiscoveryChannelTaskSelection(task.taskId, generatedTask.taskId);
+                }}
+              >
+                <span aria-hidden="true" />
+              </button>
               <div className="discovery-generated-card-head">
                 <strong>{generatedTask.title}</strong>
               </div>
@@ -5027,6 +5157,100 @@ export function App() {
                 {discoveryStage.generated > 0 && <span>{discoveryStage.generated} generated</span>}
                 {discoveryStage.blocked > 0 && <span className="danger">{discoveryStage.blocked} blocked</span>}
               </div>
+              <section
+                className="discovery-channel-set-panel"
+                data-discovery-channel-sets-for={task.taskId}
+                aria-label={`${task.title} Discovery 渠道集`}
+              >
+                <div className="discovery-channel-set-head">
+                  <span>渠道集</span>
+                  <strong>{selectedDiscoveryChannelTaskIds.length} selected</strong>
+                </div>
+                <div className="discovery-channel-set-composer">
+                  <label className="discovery-channel-set-title-field">
+                    <span>名称</span>
+                    <input
+                      aria-label={`${task.title} 渠道集名称`}
+                      value={discoveryChannelSetTitle}
+                      placeholder={`${task.title} 渠道集`}
+                      onChange={(event) => {
+                        const value = event.currentTarget.value;
+                        setDiscoveryChannelSetTitleByTaskId((current) => ({
+                          ...current,
+                          [task.taskId]: value,
+                        }));
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="discovery-channel-set-action primary"
+                    disabled={selectedDiscoveryChannelTaskIds.length === 0 || discoveryChannelSetSaving}
+                    onClick={() => {
+                      void saveDiscoveryChannelSet(task);
+                    }}
+                  >
+                    {discoveryChannelSetSaving ? "保存中..." : "保存渠道集"}
+                  </button>
+                  <button
+                    type="button"
+                    className="discovery-channel-set-action"
+                    disabled={selectedDiscoveryChannelTaskIds.length === 0 || discoveryChannelSetSaving}
+                    onClick={() => clearDiscoveryChannelTaskSelection(task.taskId)}
+                  >
+                    清空选择
+                  </button>
+                </div>
+                {discoveryChannelSetsLoading ? (
+                  <div className="discovery-channel-set-empty">正在加载渠道集...</div>
+                ) : discoveryChannelSets.length > 0 ? (
+                  <div className="discovery-channel-set-list" aria-label={`${task.title} 已保存渠道集`}>
+                    {discoveryChannelSets.map((channelSet) => {
+                      const archiving = Boolean(discoveryChannelSetArchivingById[channelSet.channelSetId]);
+                      const runningFromSet = Boolean(taskRunSavingByTaskId[task.taskId]);
+                      return (
+                        <div
+                          key={channelSet.channelSetId}
+                          className="discovery-channel-set-row"
+                          data-discovery-channel-set-id={channelSet.channelSetId}
+                          data-discovery-channel-set-items={channelSet.items.length}
+                        >
+                          <div className="discovery-channel-set-row-main">
+                            <strong>{channelSet.title}</strong>
+                            <span>{channelSet.items.length} channels</span>
+                          </div>
+                          <div className="discovery-channel-set-row-actions">
+                            <button
+                              type="button"
+                              className="discovery-channel-set-action primary"
+                              aria-label={`使用渠道集 ${channelSet.title}`}
+                              disabled={runningFromSet || archiving || channelSet.items.length === 0}
+                              onClick={() => {
+                                void runTask(task, branch.nodeId, undefined, { discoveryChannelSetId: channelSet.channelSetId });
+                              }}
+                            >
+                              使用渠道集
+                            </button>
+                            <button
+                              type="button"
+                              className="discovery-channel-set-action danger"
+                              aria-label={`归档渠道集 ${channelSet.title}`}
+                              disabled={archiving || runningFromSet}
+                              onClick={() => {
+                                void archiveDiscoveryChannelSet(task.taskId, channelSet.channelSetId);
+                              }}
+                            >
+                              {archiving ? "归档中..." : "归档"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="discovery-channel-set-empty">暂无保存的渠道集。</div>
+                )}
+              </section>
               {dispatchDiagnostics.length > 0 && (
                 <section
                   className="discovery-dispatch-diagnostics"
@@ -5957,7 +6181,7 @@ export function App() {
     }
 
     return panels;
-  }, [activeRunHistoryTaskId, agents, agentsById, archiveGeneratedTask, archiveTask, cancelTaskRun, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskCloneState, clearTaskEditState, clearTaskEditWarning, clearTaskParameterState, cloneTask, closeTaskRunHistory, copyRunHistoryAnalysisContext, copyTaskLeaderContext, dataSource, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, loadMoreRunHistory, loadRunHistoryItem, loadedTaskRunByTaskId, openTaskEditDraft, openTaskParameterDraft, openTaskRunHistory, patchRunHistoryAnnotation, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runHistoryAnalysisCopyState, runHistoryAnalysisManualText, runHistoryError, runHistoryIncludeArchived, runHistoryItems, runHistoryLoading, runHistorySavingRunId, runHistoryTotal, runTask, saveTaskEdit, saveTaskParameters, scheduleLiveTaskDiscoveryRefresh, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskCloneDraftByTaskId, taskCloneSavingByTaskId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskParameterDraftByTaskId, taskParameterSavingByTaskId, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, unloadRunHistoryItem, updateTaskCloneBinding, updateTaskCloneTitle, updateTaskEditDraft, updateTaskParameterBinding]);
+  }, [activeRunHistoryTaskId, agents, agentsById, archiveDiscoveryChannelSet, archiveGeneratedTask, archiveTask, cancelTaskRun, clearDiscoveryChannelTaskSelection, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskCloneState, clearTaskEditState, clearTaskEditWarning, clearTaskParameterState, cloneTask, closeTaskRunHistory, copyRunHistoryAnalysisContext, copyTaskLeaderContext, dataSource, discoveryChannelSetArchivingById, discoveryChannelSetLoadingByTaskId, discoveryChannelSetSavingByTaskId, discoveryChannelSetTitleByTaskId, discoveryChannelSetsByTaskId, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, loadMoreRunHistory, loadRunHistoryItem, loadedTaskRunByTaskId, openTaskEditDraft, openTaskParameterDraft, openTaskRunHistory, patchRunHistoryAnnotation, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runHistoryAnalysisCopyState, runHistoryAnalysisManualText, runHistoryError, runHistoryIncludeArchived, runHistoryItems, runHistoryLoading, runHistorySavingRunId, runHistoryTotal, runTask, saveDiscoveryChannelSet, saveTaskEdit, saveTaskParameters, scheduleLiveTaskDiscoveryRefresh, selectedDiscoveryChannelTaskIdsByTaskId, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskCloneDraftByTaskId, taskCloneSavingByTaskId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskParameterDraftByTaskId, taskParameterSavingByTaskId, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, toggleDiscoveryChannelTaskSelection, unloadRunHistoryItem, updateTaskCloneBinding, updateTaskCloneTitle, updateTaskEditDraft, updateTaskParameterBinding]);
   const canvasStateRestorePending = !loading && !canvasUiStateHydrated;
   const canvasLoadingMinimumMs = loading || canvasUiStateRestoreHasStoredState
     ? CANVAS_LOADING_MIN_VISIBLE_MS

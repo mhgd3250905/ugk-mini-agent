@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../app/App";
 import { CLEAN_AGENT_WORKSPACE_ID, useTeamConsoleLiveData } from "../app/use-team-console-live-data";
-import type { TeamAttemptMetadata, TeamCanvasTask, TeamDiscoveryGeneratedTaskSummary, TeamRunState } from "../api/team-types";
+import type { TeamAttemptMetadata, TeamCanvasTask, TeamDiscoveryChannelSet, TeamDiscoveryGeneratedTaskSummary, TeamRunState } from "../api/team-types";
 import {
   MOCK_AGENTS,
   mockDiscoveryGeneratedTasks,
@@ -508,6 +508,87 @@ describe("App", () => {
     const reopenedHistoryPanel = await screen.findByRole("region", { name: "核查 Vultr 公开证据 运行记录" });
     await waitFor(() => {
       expect(within(reopenedHistoryPanel).getByText("暂无可见运行记录。")).toBeInTheDocument();
+    });
+  });
+
+  it("saves selected live Discovery generated Tasks as a channel set and runs the root from it", async () => {
+    const selectedGeneratedTask = mockDiscoveryGeneratedTasks[0]!;
+    const channelSet: TeamDiscoveryChannelSet = {
+      schemaVersion: "team/discovery-channel-set-1",
+      channelSetId: "dcs_cloud_shortlist",
+      sourceDiscoveryTaskId: mockDiscoveryRootTask.taskId,
+      title: "云厂商常用渠道",
+      items: [{
+        generatedTaskId: selectedGeneratedTask.taskId,
+        sourceItemId: selectedGeneratedTask.generatedSource!.sourceItemId,
+        title: selectedGeneratedTask.title,
+        itemPayload: { ...selectedGeneratedTask.generatedSource!.itemPayload },
+        workUnitSnapshot: selectedGeneratedTask.workUnit,
+        workUnitMode: selectedGeneratedTask.generatedSource!.workUnitMode,
+        latestDiscoveryRunId: selectedGeneratedTask.generatedSource!.latestDiscoveryRunId,
+        latestDiscoveryAttemptId: selectedGeneratedTask.generatedSource!.latestDiscoveryAttemptId,
+        latestDiscoveredAt: selectedGeneratedTask.generatedSource!.latestDiscoveredAt,
+      }],
+      archived: false,
+      createdAt: "2026-06-07T00:00:00.000Z",
+      updatedAt: "2026-06-07T00:00:00.000Z",
+    };
+    const rootRun = canvasTaskRun(mockDiscoveryRootTask.taskId, "run_from_channel_set");
+    rootRun.source = {
+      type: "canvas-task",
+      taskId: mockDiscoveryRootTask.taskId,
+      discoveryChannelSetId: channelSet.channelSetId,
+    };
+    let savedChannelSets: TeamDiscoveryChannelSet[] = [];
+    window.localStorage.setItem("ugk-team-console:data-source", "live");
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/console/root-summary") return rootSummaryResponse({ tasks: [mockDiscoveryRootTask] });
+      if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse({});
+      if (url.startsWith(`/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`)) {
+        return new Response(JSON.stringify({ tasks: [generatedSummary(selectedGeneratedTask)] }), { status: 200 });
+      }
+      if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/discovery-channel-sets` && init?.method !== "POST") {
+        return new Response(JSON.stringify({ channelSets: savedChannelSets }), { status: 200 });
+      }
+      if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/discovery-channel-sets` && init?.method === "POST") {
+        expect(String(init.body)).toContain(selectedGeneratedTask.taskId);
+        savedChannelSets = [channelSet];
+        return new Response(JSON.stringify({ channelSet }), { status: 201 });
+      }
+      if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs` && init?.method === "POST") {
+        expect(String(init.body)).toContain(`"discoveryChannelSetId":"${channelSet.channelSetId}"`);
+        return new Response(JSON.stringify(rootRun), { status: 201 });
+      }
+      return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 500 });
+    });
+
+    const { container } = render(<App />);
+    const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
+    fireEvent.click(await within(atlas).findByRole("button", { name: mockDiscoveryRootTask.title }));
+    fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+    const currentPanel = () => container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+    await waitFor(() => {
+      const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+      expect(node).toBeTruthy();
+    });
+
+    fireEvent.click(within(currentPanel()!).getByRole("checkbox", { name: `选择 ${selectedGeneratedTask.title} 作为 Discovery 渠道` }));
+    fireEvent.change(within(currentPanel()!).getByLabelText(`${mockDiscoveryRootTask.title} 渠道集名称`), {
+      target: { value: channelSet.title },
+    });
+    fireEvent.click(within(currentPanel()!).getByRole("button", { name: "保存渠道集" }));
+    const useSavedSet = await within(currentPanel()!).findByRole("button", { name: `使用渠道集 ${channelSet.title}` });
+    fireEvent.click(useSavedSet);
+
+    await waitFor(() => {
+      expect(vi.mocked(fetch).mock.calls.some(([url, init]) =>
+        String(url) === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/runs`
+        && init?.method === "POST"
+        && String(init.body).includes(channelSet.channelSetId)
+      )).toBe(true);
     });
   });
 

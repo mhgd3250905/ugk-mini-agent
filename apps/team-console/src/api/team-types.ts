@@ -167,6 +167,42 @@ export interface TeamDiscoveryGeneratedRunOutcome {
   createdAt: string;
 }
 
+export interface TeamDiscoveryChannelSetItem {
+  generatedTaskId: string;
+  sourceItemId: string;
+  title: string;
+  itemPayload: Record<string, unknown>;
+  workUnitSnapshot: TeamWorkUnitDefinition;
+  workUnitMode: TeamGeneratedTaskWorkUnitMode;
+  latestDiscoveryRunId?: string;
+  latestDiscoveryAttemptId?: string;
+  latestDiscoveredAt?: string;
+}
+
+export interface TeamDiscoveryChannelSet {
+  schemaVersion: "team/discovery-channel-set-1";
+  channelSetId: string;
+  sourceDiscoveryTaskId: string;
+  title: string;
+  items: TeamDiscoveryChannelSetItem[];
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TeamDiscoveryChannelSetListResponse {
+  channelSets: TeamDiscoveryChannelSet[];
+}
+
+export interface TeamDiscoveryChannelSetCreateRequest {
+  title: string;
+  generatedTaskIds: string[];
+}
+
+export interface TeamDiscoveryChannelSetMutationResponse {
+  channelSet: TeamDiscoveryChannelSet;
+}
+
 export interface TeamAttemptMetadata {
   attemptId: string;
   taskId: string;
@@ -735,6 +771,7 @@ export interface TeamManualUpstreamRunSelectionRecord {
 export interface TeamTaskRunCreateRequest {
   templateBindings?: Record<string, string>;
   upstreamRunSelections?: TeamManualUpstreamRunSelection[];
+  discoveryChannelSetId?: string;
 }
 
 export interface TeamTaskState {
@@ -783,6 +820,7 @@ export interface TeamRunState {
     boundInputs?: TeamTaskBoundInput[];
     manualUpstreamSelections?: TeamManualUpstreamRunSelectionRecord[];
     templateBindings?: Record<string, string>;
+    discoveryChannelSetId?: string;
   };
   teamUnitId: string;
   status: RunStatus;

@@ -1944,6 +1944,52 @@ describe("LiveTeamApi", () => {
     });
   });
 
+  it("lists and mutates Discovery channel sets with URL-encoded ids", async () => {
+    const api = new LiveTeamApi("/v1/team");
+    const channelSet = {
+      schemaVersion: "team/discovery-channel-set-1",
+      channelSetId: "channel/set 1",
+      sourceDiscoveryTaskId: "task/discovery 1",
+      title: "常用渠道",
+      items: [{
+        generatedTaskId: "task_generated_a",
+        sourceItemId: "a",
+        title: "Channel A",
+        itemPayload: { id: "a", title: "Channel A" },
+        workUnitSnapshot: mockDiscoveryGeneratedTasks[0]!.workUnit,
+        workUnitMode: "managed",
+      }],
+      archived: false,
+      createdAt: "2026-06-07T00:00:00.000Z",
+      updatedAt: "2026-06-07T00:00:00.000Z",
+    } as const;
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ channelSets: [channelSet] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ channelSet }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ channelSet: { ...channelSet, archived: true } }), { status: 200 }));
+
+    const listed = await api.listDiscoveryChannelSets("task/discovery 1");
+    const created = await api.createDiscoveryChannelSet("task/discovery 1", {
+      title: "常用渠道",
+      generatedTaskIds: ["task_generated_a"],
+    });
+    const archived = await api.archiveDiscoveryChannelSet("task/discovery 1", "channel/set 1");
+
+    expect(fetch).toHaveBeenNthCalledWith(1, "/v1/team/tasks/task%2Fdiscovery%201/discovery-channel-sets");
+    expect(fetch).toHaveBeenNthCalledWith(2, "/v1/team/tasks/task%2Fdiscovery%201/discovery-channel-sets", {
+      method: "POST",
+      headers: { accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "常用渠道", generatedTaskIds: ["task_generated_a"] }),
+    });
+    expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/tasks/task%2Fdiscovery%201/discovery-channel-sets/channel%2Fset%201/archive", {
+      method: "POST",
+      headers: { accept: "application/json" },
+    });
+    expect(listed).toEqual([channelSet]);
+    expect(created).toEqual(channelSet);
+    expect(archived.archived).toBe(true);
+  });
+
   it("starts live Task Group runs with URL-encoded group ids", async () => {
     const api = new LiveTeamApi("/v1/team");
     const groupRun = {
