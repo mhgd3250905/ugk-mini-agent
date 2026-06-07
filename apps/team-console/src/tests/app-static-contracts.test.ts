@@ -301,7 +301,9 @@ describe("Team Console static contracts", () => {
 
   it("keeps the merged run observer outer panel auto-height while process sections use themed internal scrollbars", () => {
     const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const appCss = readFileSync("src/app/app.css", "utf8");
     const panelRule = mapCss.match(/\.emap-run-observer-panel\s*{[^}]*}/)?.[0] ?? "";
+    const appPanelRule = appCss.match(/\.emap-run-observer-panel\s*{[^}]*}/)?.[0] ?? "";
     const stageRule = mapCss.match(/\.emap-run-observer-stage\s*{[^}]*}/)?.[0] ?? "";
     const processTopRule = mapCss.match(/\.emap-run-observer-panel\s+\.emap-observer-process-top\s*{[^}]*}/)?.[0] ?? "";
     const scrollbarRule = mapCss.match(/\.emap-run-observer-panel\s+\.emap-observer-process-top::-webkit-scrollbar\s*{[^}]*}/)?.[0] ?? "";
@@ -325,6 +327,10 @@ describe("Team Console static contracts", () => {
 
     expect(panelRule).toContain("overflow: visible");
     expect(panelRule).not.toContain("overflow: auto");
+    expect(appPanelRule).toContain("max-height: none");
+    expect(appPanelRule).toContain("overflow: visible");
+    expect(appPanelRule).not.toContain("overflow-y: auto");
+    expect(appPanelRule).not.toContain("overscroll-behavior: contain");
     expect(stageRule).toContain("height: 204px");
     expect(processTopRule).toContain("overflow-y: auto");
     expect(processTopRule).toContain("scrollbar-width: thin");
@@ -365,6 +371,19 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toContain('[data-theme="dark"] .emap-artifact-preview');
     expect(mapCss).not.toContain(".emap-connector-anchor-ring");
     expect(mapCss).not.toContain(".emap-connector-anchor-dot");
+  });
+
+  it("keeps dark selected run history actions on a dark surface", () => {
+    const appCss = readFileSync("src/app/app.css", "utf8");
+    const darkSelectedRule = appCss.match(/\[data-theme="dark"\] \.emap-run-history-item\.selected\s*{[^}]*}/)?.[0] ?? "";
+    const darkSelectedActionRule = appCss.match(/\[data-theme="dark"\] \.emap-run-history-item\.selected \.emap-run-history-actions button\s*{[^}]*}/)?.[0] ?? "";
+    const darkSelectedDisabledActionRule = appCss.match(/\[data-theme="dark"\] \.emap-run-history-item\.selected \.emap-run-history-actions button:disabled\s*{[^}]*}/)?.[0] ?? "";
+
+    expect(darkSelectedRule).toContain("rgba(8, 14, 24, 0.92)");
+    expect(darkSelectedActionRule).toContain("background: rgba(8, 14, 24, 0.78)");
+    expect(darkSelectedActionRule).not.toContain("rgba(255, 255, 255");
+    expect(darkSelectedDisabledActionRule).toContain("background: rgba(8, 14, 24, 0.46)");
+    expect(darkSelectedDisabledActionRule).toContain("opacity: 1");
   });
 
   it("keeps Task action run summaries readable instead of clipping runtime text", () => {

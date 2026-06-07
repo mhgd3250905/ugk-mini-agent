@@ -24,8 +24,10 @@
 ## 2026-06-07 — Team Console Discovery root run history placement
 
 - **主题**: 修复 Discovery 子画布打开时，点击 root Task 菜单“运行记录”会把 Discovery root 运行记录挂到子画布下一级的问题。现在 root 运行记录会关闭子画布，并作为与 Discovery 子画布同级的 Task child panel 展开；点击 generated card 打开 generated Task 运行记录仍保留在子画布下一级，且 generated history 使用独立布局 id，不再和 root history 混用拖拽位置。
-- **影响范围**: 仅 5174 Team Console 的 Discovery root Task / generated Task 运行记录 panel 层级与互斥行为；后端 run history、Discovery generated catalog、GroupRun 和 Conn contract 不变。
-- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/tests/app-live-data.test.tsx`。
+- **跟进**: run history 条目恢复“查看运行过程”主动作，整张运行记录卡片都可点击选中/展开 observer，操作按钮会阻止冒泡避免误展开；Discovery root 最近运行 observer、root history observer 和 generated history observer 使用不同 panel id，避免拖拽位置串用。
+- **视觉收口**: 深色模式 selected run history action 不再被浅色按钮样式覆盖；run observer 外层取消大滚动，保持内容自适应高度，Worker / Checker 过程区继续使用固定高度与内部滚动。
+- **影响范围**: 仅 5174 Team Console 的 Discovery root Task / generated Task 运行记录 panel 层级、run history 卡片交互、observer panel 布局 id 和局部样式；后端 run history、Discovery generated catalog、GroupRun 和 Conn contract 不变。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/app.css`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/src/tests/app-run-observer.test.tsx`、`apps/team-console/src/tests/app-static-contracts.test.ts`。
 
 ## 2026-06-06 — Team Console run observer upward drag fix
 

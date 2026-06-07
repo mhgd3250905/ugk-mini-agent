@@ -711,6 +711,23 @@ describe("App", () => {
     const discoveryNode = await within(atlas).findByRole("button", { name: "发现云服务候选" });
 
     fireEvent.click(discoveryNode);
+    const rootMenu = await screen.findByLabelText(`${mockDiscoveryRootTask.title} 操作菜单`);
+    const rootRecentRunButton = within(rootMenu).getByRole("button", { name: /最近运行/ });
+    fireEvent.click(rootRecentRunButton);
+    const rootRecentObserverShell = await waitFor(() => {
+      const panelNode = container.querySelector('.emap-run-observer-panel[data-observer-run-id]:not([data-generated-observer-task-id])') as HTMLElement | null;
+      expect(panelNode).toBeTruthy();
+      const shell = panelNode!.closest(".emap-task-child-branch-shell") as HTMLElement | null;
+      expect(shell).toBeTruthy();
+      return shell!;
+    });
+    expect(rootRecentObserverShell.dataset.panelId).toMatch(/^run-observer-/);
+    expect(rootRecentObserverShell.dataset.panelId).not.toMatch(/^run-observer-generated-run-history-/);
+    const rootRecentObserverPanelId = rootRecentObserverShell.dataset.panelId;
+    fireEvent.click(rootRecentRunButton);
+    await waitFor(() => {
+      expect(container.querySelector(`[data-panel-id="${rootRecentObserverPanelId}"]`)).toBeNull();
+    });
     fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
 
     const panel = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
@@ -778,8 +795,27 @@ describe("App", () => {
     expect(historyRow).toHaveTextContent("开始时间");
     expect(historyRow).toHaveTextContent("执行时间");
     expect(historyRow).not.toHaveTextContent(generatedRunId);
-    expect(within(historyRow).getAllByRole("button")).toHaveLength(3);
+    expect(within(historyRow).getAllByRole("button")).toHaveLength(4);
     expect(within(historyRow).queryByRole("button", { name: new RegExp(generatedRunId) })).toBeNull();
+
+    fireEvent.click(within(historyRow).getByRole("button", { name: "标为最佳" }));
+    await waitFor(() => {
+      expect(historyRow).toHaveAttribute("data-run-best", "true");
+    });
+    expect(container.querySelector(`[data-observer-run-id="${generatedRunId}"]`)).toBeNull();
+
+    fireEvent.click(historyRow);
+    const historyObserver = await waitFor(() => {
+      const panelNode = container.querySelector(`[data-observer-run-id="${generatedRunId}"]`) as HTMLElement | null;
+      expect(panelNode).toBeTruthy();
+      return panelNode!;
+    });
+    expect(historyObserver).toHaveAttribute("data-observer-run-id", generatedRunId);
+    const historyObserverShell = historyObserver.closest(".emap-task-child-branch-shell") as HTMLElement | null;
+    expect(historyObserverShell).toBeTruthy();
+    expect(historyObserverShell!.dataset.panelId).toMatch(/^run-observer-generated-run-history-/);
+    expect(historyObserverShell!.dataset.panelId).not.toBe(rootRecentObserverPanelId);
+    expect(historyObserverShell).toHaveAttribute("data-panel-source-id", expect.stringMatching(/^generated-run-history-/));
   });
 
   it("does not show the Discovery subcanvas toggle for normal root Tasks", async () => {
@@ -1019,7 +1055,8 @@ describe("App", () => {
     expect(latestRow).not.toHaveTextContent("run_history_latest");
     expect(olderRow).not.toHaveTextContent("run_history_older");
     expect(historyPanel).not.toHaveTextContent("质量最好");
-    expect(within(latestRow!).getAllByRole("button")).toHaveLength(3);
+    expect(within(latestRow!).getAllByRole("button")).toHaveLength(4);
+    expect(within(latestRow!).getByRole("button", { name: "查看运行过程" })).toBeInTheDocument();
     expect(within(latestRow!).getByRole("button", { name: "装载记录" })).toBeInTheDocument();
     expect(within(latestRow!).getByRole("button", { name: "标为最佳" })).toBeInTheDocument();
     expect(within(latestRow!).getByRole("button", { name: "归档记录" })).toBeInTheDocument();

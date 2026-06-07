@@ -791,6 +791,16 @@ function taskRunHistoryPanelId(nodeId: string, generated: boolean): string {
   return `${generated ? "generated-run-history" : "run-history"}-${nodeId}`;
 }
 
+type TaskRunObserverPanelKind = "task" | "run-history" | "generated-run-history";
+
+function taskRunObserverPanelId(nodeId: string, kind: TaskRunObserverPanelKind): string {
+  return kind === "task" ? `run-observer-${nodeId}` : `run-observer-${kind}-${nodeId}`;
+}
+
+function taskRunObserverFileDetailPanelIdPrefix(nodeId: string, kind: TaskRunObserverPanelKind): string {
+  return kind === "task" ? `file-detail-${nodeId}` : `file-detail-${kind}-${nodeId}`;
+}
+
 function readRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? value as Record<string, unknown> : null;
 }
@@ -4497,6 +4507,13 @@ export function App() {
                   const loaded = loadedRunId === run.runId;
                   const loadedSuppressedByActiveRun = loaded && (taskRunsByTaskId[item.annotation.taskId] ?? []).some((candidate) => isActiveRun(candidate.status));
                   const loadedState = loaded ? loadedSuppressedByActiveRun ? "suppressed" : "loaded" : "none";
+                  const toggleRunHistoryObserver = () => {
+                    setExpandedTaskBranches((current) => current.map((item) => (
+                      item.nodeId === branch.nodeId
+                        ? { ...item, observedRunId: selected ? undefined : run.runId, selectedFileKeys: [] }
+                        : item
+                    )));
+                  };
                   return (
                     <article
                       key={run.runId}
@@ -4507,10 +4524,20 @@ export function App() {
                       data-loaded-run-state={loadedState}
                       data-run-best={item.annotation.best ? "true" : "false"}
                       data-run-archived={item.annotation.archived ? "true" : "false"}
+                      data-run-observer-card-action="toggle"
+                      onClick={toggleRunHistoryObserver}
                     >
-                      <div
+                      <button
+                        type="button"
                         className="emap-run-history-row"
+                        aria-label={selected ? "收起运行过程" : "查看运行过程"}
                         aria-current={selected ? "true" : undefined}
+                        aria-pressed={selected}
+                        data-run-observer-action="toggle"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          toggleRunHistoryObserver();
+                        }}
                       >
                         <span className="emap-run-history-started">
                           <small>开始时间</small>
@@ -4526,13 +4553,16 @@ export function App() {
                           <small>执行时间</small>
                           <strong>{taskRunElapsed(run)}</strong>
                         </span>
-                      </div>
+                      </button>
                       <div className="emap-run-history-actions">
                         {loaded ? (
                           <button
                             type="button"
                             data-run-load-action="unload"
-                            onClick={() => { unloadRunHistoryItem(item); }}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              unloadRunHistoryItem(item);
+                            }}
                           >
                             取消装载
                           </button>
@@ -4541,7 +4571,10 @@ export function App() {
                             type="button"
                             data-run-load-action="load"
                           disabled={isActiveRun(run.status)}
-                          onClick={() => { loadRunHistoryItem(item); }}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            loadRunHistoryItem(item);
+                          }}
                         >
                           装载记录
                         </button>
@@ -4549,14 +4582,20 @@ export function App() {
                         <button
                           type="button"
                           disabled={saving}
-                          onClick={() => { void patchRunHistoryAnnotation(item, { best: !item.annotation.best }); }}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void patchRunHistoryAnnotation(item, { best: !item.annotation.best });
+                          }}
                         >
                           {item.annotation.best ? "取消最佳" : "标为最佳"}
                         </button>
                         <button
                           type="button"
                           disabled={saving}
-                          onClick={() => { void patchRunHistoryAnnotation(item, { archived: !item.annotation.archived }); }}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void patchRunHistoryAnnotation(item, { archived: !item.annotation.archived });
+                          }}
                         >
                           {item.annotation.archived ? "恢复记录" : "归档记录"}
                         </button>
@@ -5704,6 +5743,7 @@ export function App() {
         panel: (
           <div
             className={`emap-run-observer-panel ${observedTaskRunIsActive ? "active" : "terminal"}`}
+            data-observer-run-id={observedTaskRun.runId}
             data-generated-observer-task-id={generatedTaskId}
             data-generated-observer-run-id={generatedTaskId ? observedTaskRun.runId : undefined}
           >
@@ -5843,6 +5883,11 @@ export function App() {
         ? tasksById.get(targetTaskId) ?? generatedTasksById.get(targetTaskId) ?? task
         : undefined;
       const runHistoryPanelId = taskRunHistoryPanelId(branch.nodeId, Boolean(discoveryRunHistoryTaskId));
+      const observerPanelKind: TaskRunObserverPanelKind = discoveryRunHistoryTaskId
+        ? "generated-run-history"
+        : branch.detailMode === "run-history"
+          ? "run-history"
+          : "task";
 
       const toggleFile = (key: string) => {
         setExpandedTaskBranches((current) => current.map((item) => {
@@ -5861,8 +5906,8 @@ export function App() {
         observedTaskRun,
         selectedFileKeys: branch.selectedFileKeys ?? [],
         sourceId: isRunHistoryMode ? runHistoryPanelId : taskMenuPanelId(branch.nodeId),
-        runObserverPanelId: `run-observer-${branch.nodeId}`,
-        fileDetailPanelIdPrefix: `file-detail-${branch.nodeId}`,
+        runObserverPanelId: taskRunObserverPanelId(branch.nodeId, observerPanelKind),
+        fileDetailPanelIdPrefix: taskRunObserverFileDetailPanelIdPrefix(branch.nodeId, observerPanelKind),
         toggleFile,
         historyTask,
       });

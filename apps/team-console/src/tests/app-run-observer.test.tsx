@@ -1658,7 +1658,8 @@ describe("App", () => {
       expect(historyRow).not.toHaveTextContent("结果产物");
       expect(historyRow).not.toHaveTextContent("conn_collect_to_html");
       expect(within(historyRow).queryByRole("button", { name: /运行详情/ })).toBeNull();
-      expect(within(historyRow).getAllByRole("button")).toHaveLength(3);
+      expect(within(historyRow).getAllByRole("button")).toHaveLength(4);
+      expect(within(historyRow).getByRole("button", { name: "查看运行过程" })).toBeInTheDocument();
       expect(within(historyRow).getByRole("button", { name: "装载记录" })).toBeInTheDocument();
       expect(within(historyRow).getByRole("button", { name: "标为最佳" })).toBeInTheDocument();
       expect(within(historyRow).getByRole("button", { name: "归档记录" })).toBeInTheDocument();

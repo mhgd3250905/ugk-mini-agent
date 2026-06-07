@@ -24,13 +24,13 @@
 
 ## 当前 Git 现场
 
-- 当前分支：`main...origin/main [ahead 8]`。继续前以 `git status --short --branch` 和 `git log -5 --oneline` 为准。
-- 当前有未提交修改，不是干净工作区：
-  - 已暂存：`docs/windows-native-runtime-feasibility.md`（上一轮文档备份，非本次 typed artifact 修复源码）。
-  - 未暂存：`docs/change-log.md`、`src/team/canvas-task-attempt-runner.ts`、`src/team/task-artifact-handoff.ts`、`src/team/types.ts`、`test/team-task-artifact-handoff.test.ts`、`test/team-task-run-process.test.ts`。
-  - 未跟踪：`src/team/task-bound-input-materialization.ts`。
-- 本次 typed artifact file-first handoff 修复建议提交范围：上述 6 个未暂存文件 + 新增 `src/team/task-bound-input-materialization.ts`；`docs/windows-native-runtime-feasibility.md` 是否同批提交由用户决定。
+- 当前分支：`main...origin/main [ahead 10]`（本轮 Team Console Discovery run history / observer UI 修复提交后）。继续前以 `git status --short --branch` 和 `git log -5 --oneline` 为准。
+- 当前没有待提交的 tracked 源码改动；仍有无关未跟踪 `docs/windows-native-runtime-feasibility.md`，不要误提交。
+- 最近新增本地提交包括：
+  - `Fix Team artifact handoff and Discovery history panels`
+  - `Fix Team Console Discovery run history interactions`
 - 当前近期关键提交包括：
+  - `0586777 Fix Team artifact handoff and Discovery history panels`
   - `3ec2ddb Update Team Console run observer handoff`
   - `61c1484 Allow run observer panels above atlas origin`
   - `0070e72 Improve Team Console load smoothness`
@@ -39,7 +39,7 @@
   - `00ff6a9 Extract Team Group member row layout`
 - `origin`：GitHub `https://github.com/mhgd3250905/ugk-claw-personal.git`。
 - `gitee`：`https://gitee.com/ksheng3250905/ugk-pi-claw.git`，本轮未同步。
-- 不要把当前 dirty 状态误判成异常：这是刚完成的 typed artifact 机制修复，尚未 commit。
+- 不要把 `docs/windows-native-runtime-feasibility.md` 误判成本轮 Team Console 修复的一部分；它是无关未跟踪文档。
 - 本轮未同步 `origin` 或 `gitee`；不要把本地 ahead 状态误认为远端已更新。
 - 不要提交这些本地未跟踪物件：`.codex/config.toml`、既有 `.codex/plans/**`、`.omo/`、`github-trending.txt`、`public/**`、`eoflow*.html`、`cupid.js`、`solve_cupid.mjs`、runtime 数据、截图、报告、临时文件。
 
@@ -66,6 +66,8 @@ git log --oneline origin/main..HEAD
 - Team Console 运行观察右上角只显示输入来源标记：`手动上游输入` 或 `自然运行流入`。不再展示 `connectionId`、upstream run、artifact、fileRef 等内部账本字段。
 - Discovery 子画布 generated Task 打开的运行历史面板已重新锚定到对应子画布 panel，不再从上一级 root Task 菜单引线；`ExecutionMap` panel DOM 暴露 `data-panel-source-id` 用于回归验证。
 - Discovery 子画布打开时，root Task 菜单里的“运行记录”不再挂到子画布下一级；点击后会关闭 Discovery 子画布，并把 Discovery root Task 运行记录作为同级 Task child panel 展开。generated card 点击运行记录仍保留在子画布下一级，并使用 `generated-run-history-*` 布局 id，避免和 root `run-history-*` 混用拖拽位置。
+- Team Console run history 条目已恢复运行观察展开：运行记录卡片整卡可点击选中/展开 observer，行内 `装载记录` / `标为最佳` / `归档记录` 会阻止冒泡，不会误打开 observer。Discovery root 最近运行 observer、root run history observer、generated run history observer 使用不同 panel id，避免拖拽位置串用。
+- Team Console run history 深色 selected 行已收口：操作按钮保持暗色表面，不再被浅色 selected button 样式覆盖。run observer 外层 `.emap-run-observer-panel` 不再做大滚动，保持 `max-height: none` / `overflow: visible`；Worker / Checker 过程区仍保持固定高度与内部滚动。
 - Team Console Task 最近运行 / 运行观察子面板已允许向画布原点上方拖动。Task child panel 布局不再把用户拖拽产生的负 `y` override 钳到 `0`；`x` 轴现有非负限制保持不变。
 - Team Console 根节点筛选已整合数量统计：`ALL`、`Agent`、`Task`、`Source` 四个筛选项直接显示数量，独立统计块已移除；`Task` 筛选只显示 Task，Source 走独立筛选。
 - Team Console Dock 已区分 Group 成员 Task 和根级 Task。Group 内 Task 拖到底部 Dock 区域不会触发收纳；展开 Group 可点击“收纳”把整个 Group 收入 Dock，Dock 中以 Group 对象展示并可恢复，不会把 Group 成员拆成独立 Dock Task。
@@ -101,11 +103,12 @@ git log --oneline origin/main..HEAD
   - 真实 run `run_403121ab8f10`：确认 plan 使用 `BEGIN_TYPED_ARTIFACT_PREVIEW`，不含旧 `BEGIN_TYPED_ARTIFACT_CONTENT` 和“唯一上游数据来源”；物化文件为完整 48 渠道，最终 task succeeded。
 - Discovery root 运行记录 panel 层级修复验证：
   - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx -t "opens Discovery root run history as a sibling panel|opens and closes generated Task run history"`：2/2 pass。
-  - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx src/tests/app-run-observer.test.tsx src/tests/app-static-contracts.test.ts`：152/152 pass。
+  - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx -t "runs a mock generated Task and opens its observer and file detail"`：pass；覆盖 generated history 整卡点击展开 observer，且行内操作按钮不会误触发 observer。
+  - `npm --prefix apps/team-console test -- --run src/tests/app-static-contracts.test.ts src/tests/app-live-data.test.tsx src/tests/app-run-observer.test.tsx`：153/153 pass。
   - `npm --prefix apps/team-console run build`：pass；仅既有 Vite chunk size warning。
   - `npx tsc --noEmit`：pass。
   - `git diff --check`：pass。
-  - Browser `http://127.0.0.1:5174/`：确认 `ugk-pi-team-console` 重启后 `/src/app/App.tsx` 已包含 `keepDiscoverySubcanvas` 新模块标记；当前浏览器本地画布状态未完成干净点击复现，目标交互以 DOM 回归测试覆盖。
+  - Browser `http://127.0.0.1:5174/`：确认 `ugk-pi-team-console` 重启后 `/src/app/App.tsx` 包含 `data-run-observer-card-action`、`stopPropagation`、`toggleRunHistoryObserver`；`/src/app/app.css` 包含 `max-height: none`、`overflow: visible`、暗色 selected action 背景标记。深色模式 computed style 确认 observer 外层 `max-height: none` / `overflow-y: visible` 且 `scrollHeight === clientHeight`，selected action 背景为 `rgba(8, 14, 24, 0.78)`。
 - `npx tsx --test test/team-task-group-routes.test.ts test/team-task-group-run-routes.test.ts`：31/31 pass。
 - `npx tsx --test test/conn-team-group-runner.test.ts test/server.test.ts`：174/174 pass。
 - `npm --prefix apps/team-console test -- --run src/tests/app-connections.test.tsx src/tests/team-api.test.ts`：143/143 pass。
