@@ -2458,7 +2458,7 @@ test("downstream worker receives bound input prompt and payload from upstream ty
 		assert.match(inputText, new RegExp("connectionId: " + connection.connectionId));
 		assert.match(inputText, /inputPortId: source_md/);
 
-		const boundInputPayload = capturedWorkerInput!.task.input.payload as { boundInputs?: Array<{ artifact: { artifactId: string } }> } | undefined;
+		const boundInputPayload = capturedWorkerInput!.task.input.payload as { boundInputs?: Array<{ artifact: { artifactId: string; workspaceFileRef?: string } }> } | undefined;
 		const artifactId = boundInputPayload!.boundInputs![0]!.artifact.artifactId;
 		assert.match(inputText, new RegExp("artifactId: " + artifactId));
 		assert.match(inputText, new RegExp("sourceTaskId: " + sourceTask.taskId));
@@ -2466,9 +2466,13 @@ test("downstream worker receives bound input prompt and payload from upstream ty
 		assert.match(inputText, new RegExp("sourceAttemptId: " + upstreamAttemptId));
 		assert.match(inputText, /sourceOutputPortId: draft_md/);
 		assert.match(inputText, /fileRef:/);
-		assert.match(inputText, new RegExp("BEGIN_TYPED_ARTIFACT_CONTENT " + artifactId));
-		assert.match(inputText, new RegExp("END_TYPED_ARTIFACT_CONTENT " + artifactId));
+		assert.match(inputText, new RegExp("BEGIN_TYPED_ARTIFACT_PREVIEW " + artifactId));
+		assert.match(inputText, new RegExp("END_TYPED_ARTIFACT_PREVIEW " + artifactId));
+		assert.match(inputText, /workspaceFileRef:/);
 		assert.match(inputText, /accepted result/);
+		const workspaceFileRef = boundInputPayload!.boundInputs![0]!.artifact.workspaceFileRef;
+		assert.ok(workspaceFileRef, "workspaceFileRef should be materialized before worker runs");
+		assert.equal(await readFile(join(capturedWorkerInput!.workDir, workspaceFileRef), "utf8"), "accepted result");
 
 		const payload = capturedWorkerInput!.task.input.payload as { boundInputs?: Array<{ inputPortId: string }> } | undefined;
 		assert.ok(payload?.boundInputs, "payload should contain boundInputs");
@@ -2575,13 +2579,136 @@ test("downstream worker receives public worker JSON for typed artifact instead o
 		assert.doesNotMatch(artifact.content ?? artifact.preview, /验收通过/);
 
 		assert.ok(capturedDownstreamInput, "downstream worker input should be captured");
-		const payload = capturedDownstreamInput!.task.input.payload as { boundInputs?: Array<{ artifact: { fileRef: string; content?: string; preview: string } }> } | undefined;
+		const payload = capturedDownstreamInput!.task.input.payload as { boundInputs?: Array<{ artifact: { fileRef: string; content?: string; preview: string; workspaceFileRef?: string; workspaceFilePath?: string } }> } | undefined;
 		const payloadArtifact = payload?.boundInputs?.[0]?.artifact;
 		assert.ok(payloadArtifact, "downstream payload must include typed artifact");
 		assert.equal(payloadArtifact.fileRef, artifact.fileRef);
 		assert.equal(JSON.parse(payloadArtifact.content ?? payloadArtifact.preview).reportId, "real-json");
+		assert.ok(payloadArtifact.workspaceFileRef, "workspaceFileRef should point to the complete input file");
+		assert.ok(payloadArtifact.workspaceFilePath, "workspaceFilePath should point to the complete input file");
+		const materializedContent = await readFile(join(capturedDownstreamInput!.workDir, payloadArtifact.workspaceFileRef), "utf8");
+		assert.equal(JSON.parse(materializedContent).reportId, "real-json");
 		assert.match(capturedDownstreamInput!.task.input.text, /真实结构化数据/);
 		assert.doesNotMatch(capturedDownstreamInput!.task.input.text, /验收通过/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("downstream worker receives oversized typed artifact as materialized workspace file", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-handoff-large-json-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const sourceTask = await taskStore.create({
+			...validTaskInput,
+			title: "大体量结构化数据采集",
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "大体量结构化数据采集",
+				outputPorts: [{ id: "structured_json", label: "Structured JSON", type: "json" }],
+				outputContract: { text: "输出 JSON object。" },
+				acceptance: { rules: ["必须是合法 JSON"] },
+			},
+		});
+		const targetTask = await taskStore.create({
+			title: "大体量 HTML 制作",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "大体量 HTML 制作",
+				input: { text: "根据上游完整 JSON 制作 HTML 页面。" },
+				inputPorts: [{ id: "source_json", label: "Source JSON", type: "json" }],
+				outputContract: { text: "输出 HTML 页面。" },
+				acceptance: { rules: ["必须使用上游完整 JSON"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+
+		await mkdir(join(root, "team"), { recursive: true });
+		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
+		await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "structured_json",
+			toTaskId: targetTask.taskId,
+			toInputPortId: "source_json",
+		});
+
+		const oversizedJson = JSON.stringify({
+			reportId: "large-json",
+			rows: Array.from({ length: 80 }, (_, index) => ({
+				id: `row-${index + 1}`,
+				title: `真实结构化数据 ${index + 1}`,
+				body: "x".repeat(800),
+			})),
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		let capturedDownstreamInput: WorkerInput | undefined;
+
+		class LargeJsonRunner extends ProcessEventRoleRunner {
+			async runWorker(input: WorkerInput): Promise<WorkerOutput> {
+				if (input.task.id === sourceTask.taskId) {
+					assert.ok(input.artifactPublicDir);
+					await writeFile(join(input.artifactPublicDir, "structured-report.json"), oversizedJson, "utf8");
+					return { content: "worker wrote large structured-report.json", artifactRefs: [] };
+				}
+				if (input.task.id === targetTask.taskId) {
+					capturedDownstreamInput = input;
+					return { content: "downstream worker result", artifactRefs: [] };
+				}
+				return super.runWorker(input as ProcessAwareWorkerInput);
+			}
+
+			async runChecker(input: CheckerInput): Promise<CheckerOutput> {
+				if (input.task.id === sourceTask.taskId) {
+					return { verdict: "pass", reason: "ok", resultContent: "合法大 JSON，验收通过。" };
+				}
+				return { verdict: "pass", reason: "ok", resultContent: "accepted downstream" };
+			}
+		}
+
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new LargeJsonRunner(),
+			connectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const upstreamRun = await service.createRun(sourceTask.taskId);
+		const upstreamFinished = await waitForTerminalRun(service, upstreamRun.runId);
+		assert.equal(upstreamFinished.status, "completed");
+		const downstreamRuns = await waitForTaskRuns(service, targetTask.taskId, 1);
+		const downstreamFinished = await waitForTerminalRun(service, downstreamRuns[0]!.runId);
+		assert.equal(downstreamFinished.status, "completed");
+
+		assert.ok(capturedDownstreamInput, "downstream worker input should be captured");
+		const payload = capturedDownstreamInput!.task.input.payload as {
+			boundInputs?: Array<{
+				artifact: {
+					content?: string;
+					contentTruncated?: boolean;
+					originalContentLength?: number;
+					workspaceFileRef?: string;
+					workspaceFilePath?: string;
+				};
+			}>;
+		} | undefined;
+		const payloadArtifact = payload?.boundInputs?.[0]?.artifact;
+		assert.ok(payloadArtifact, "downstream payload must include typed artifact");
+		assert.equal(payloadArtifact.contentTruncated, true);
+		assert.equal(payloadArtifact.originalContentLength, oversizedJson.length);
+		assert.ok(payloadArtifact.content, "truncated preview content should remain available");
+		assert.ok(payloadArtifact.content.length < oversizedJson.length);
+		assert.ok(payloadArtifact.workspaceFileRef, "workspaceFileRef should point to the complete materialized input");
+		assert.ok(payloadArtifact.workspaceFilePath, "workspaceFilePath should point to the complete materialized input");
+		const materializedContent = await readFile(join(capturedDownstreamInput!.workDir, payloadArtifact.workspaceFileRef), "utf8");
+		const materializedJson = JSON.parse(materializedContent);
+		assert.equal(materializedJson.reportId, "large-json");
+		assert.equal(materializedJson.rows.length, 80);
+		assert.match(capturedDownstreamInput!.task.input.text, /完整绑定输入文件/);
+		assert.match(capturedDownstreamInput!.task.input.text, /workspaceFileRef:/);
+		assert.match(capturedDownstreamInput!.task.input.text, /不得从预览片段重建/);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -2807,7 +2934,7 @@ test("Discovery downstream receives aggregation when accepted result is a worker
 		assert.equal(downstreamFinished.status, "completed");
 
 		assert.ok(capturedDownstreamInput, "downstream worker input should have been captured");
-		const boundInputPayload = capturedDownstreamInput!.task.input.payload as { boundInputs?: Array<{ artifact: { fileRef: string; content?: string; preview: string } }> } | undefined;
+		const boundInputPayload = capturedDownstreamInput!.task.input.payload as { boundInputs?: Array<{ artifact: { fileRef: string; content?: string; preview: string; workspaceFileRef?: string } }> } | undefined;
 		const artifact = boundInputPayload!.boundInputs![0]!.artifact;
 		assert.equal(artifact.fileRef, `tasks/${sourceTask.taskId}/attempts/${upstreamAttempt.attemptId}/discovery-aggregation.json`);
 		assert.notEqual(artifact.content, "worker/forum-sources.json");
@@ -2817,7 +2944,11 @@ test("Discovery downstream receives aggregation when accepted result is a worker
 		assert.equal(aggregation.items[0]?.itemId, "vultr");
 		assert.equal(aggregation.items[0]?.result?.status, "succeeded");
 		assert.doesNotMatch(artifact.content ?? "", /worker\/forum-sources\.json/);
-		assert.match(capturedDownstreamInput!.task.input.text, /BEGIN_TYPED_ARTIFACT_CONTENT/);
+		assert.ok(artifact.workspaceFileRef, "workspaceFileRef should point to materialized aggregation");
+		const materializedAggregation = JSON.parse(await readFile(join(capturedDownstreamInput!.workDir, artifact.workspaceFileRef), "utf8"));
+		assert.equal(materializedAggregation.items[0]?.itemId, "vultr");
+		assert.match(capturedDownstreamInput!.task.input.text, /BEGIN_TYPED_ARTIFACT_PREVIEW/);
+		assert.match(capturedDownstreamInput!.task.input.text, /workspaceFileRef:/);
 		assert.match(capturedDownstreamInput!.task.input.text, /discovery-aggregation\.json/);
 	} finally {
 		await rm(root, { recursive: true, force: true });
@@ -3964,7 +4095,7 @@ test("upstream run selection: old asset name does not appear in bound input", as
 		const planFile = await workspace.readRunScopedFile(runB.runId, "plan.json");
 		assert.ok(planFile);
 		assert.match(planFile, /正确的上游结果数据/);
-		assert.match(planFile, /BEGIN_TYPED_ARTIFACT_CONTENT/);
+		assert.match(planFile, /BEGIN_TYPED_ARTIFACT_PREVIEW/);
 		assert.match(planFile, /不要从旧资产/);
 	} finally {
 		await removeTempRoot(root);

@@ -487,6 +487,7 @@ describe("App", () => {
     expect(subcanvasShell).toBeTruthy();
     expect(historyShell).toBeTruthy();
     expect(historyShell).toHaveAttribute("data-panel-source-id", subcanvasShell!.dataset.panelId);
+    expect(historyShell!.dataset.panelId).toMatch(/^generated-run-history-/);
     expect(vultrCard).toHaveAttribute("data-generated-run-history-open", "true");
     expect(vultrCard).toHaveClass("is-history-open");
 
@@ -508,6 +509,28 @@ describe("App", () => {
     await waitFor(() => {
       expect(within(reopenedHistoryPanel).getByText("暂无可见运行记录。")).toBeInTheDocument();
     });
+  });
+
+  it("opens Discovery root run history as a sibling panel when the subcanvas is open", async () => {
+    const { container } = render(<App />);
+    const { panel } = await openMockDiscoverySubcanvas(container);
+    const subcanvasShell = panel.closest(".emap-task-child-branch-shell") as HTMLElement | null;
+    expect(subcanvasShell).toBeTruthy();
+    const subcanvasPanelId = subcanvasShell!.dataset.panelId;
+
+    const menu = await screen.findByLabelText(`${mockDiscoveryRootTask.title} 操作菜单`);
+    fireEvent.click(within(menu).getByRole("button", { name: "运行记录" }));
+
+    const historyPanel = await screen.findByRole("region", { name: `${mockDiscoveryRootTask.title} 运行记录` });
+    await waitFor(() => {
+      expect(container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`)).toBeNull();
+    });
+    expect(within(historyPanel).getByText(mockDiscoveryRootTask.taskId)).toBeInTheDocument();
+    const historyShell = historyPanel.closest(".emap-task-child-branch-shell") as HTMLElement | null;
+    expect(historyShell).toBeTruthy();
+    expect(historyShell!.dataset.panelId).toMatch(/^run-history-/);
+    expect(historyShell).not.toHaveAttribute("data-panel-source-id", subcanvasPanelId);
+    expect(historyShell!.dataset.panelSourceId).not.toContain("discovery-subcanvas");
   });
 
   it("light-edits a mock generated Task inside the Discovery subcanvas without creating a root card", async () => {

@@ -1,6 +1,6 @@
 # 当前交接快照
 
-更新时间：`2026-06-06`
+更新时间：`2026-06-07`
 
 这份文档只记录当前接手所需事实。历史流水账不要塞回来；需要追溯旧阶段时用 Git 历史、专题文档和 `docs/change-log.md`。若本文件与当前用户提示、`git status` 或真实运行结果冲突，以后者为准。
 
@@ -24,8 +24,14 @@
 
 ## 当前 Git 现场
 
-- 本轮功能和文档提交已保存到本地 `main`；继续前以 `git status --short --branch` 和 `git log -5 --oneline` 为准。
+- 当前分支：`main...origin/main [ahead 8]`。继续前以 `git status --short --branch` 和 `git log -5 --oneline` 为准。
+- 当前有未提交修改，不是干净工作区：
+  - 已暂存：`docs/windows-native-runtime-feasibility.md`（上一轮文档备份，非本次 typed artifact 修复源码）。
+  - 未暂存：`docs/change-log.md`、`src/team/canvas-task-attempt-runner.ts`、`src/team/task-artifact-handoff.ts`、`src/team/types.ts`、`test/team-task-artifact-handoff.test.ts`、`test/team-task-run-process.test.ts`。
+  - 未跟踪：`src/team/task-bound-input-materialization.ts`。
+- 本次 typed artifact file-first handoff 修复建议提交范围：上述 6 个未暂存文件 + 新增 `src/team/task-bound-input-materialization.ts`；`docs/windows-native-runtime-feasibility.md` 是否同批提交由用户决定。
 - 当前近期关键提交包括：
+  - `3ec2ddb Update Team Console run observer handoff`
   - `61c1484 Allow run observer panels above atlas origin`
   - `0070e72 Improve Team Console load smoothness`
   - `942c9fe Fix Team Console build fixture types`
@@ -33,7 +39,7 @@
   - `00ff6a9 Extract Team Group member row layout`
 - `origin`：GitHub `https://github.com/mhgd3250905/ugk-claw-personal.git`。
 - `gitee`：`https://gitee.com/ksheng3250905/ugk-pi-claw.git`，本轮未同步。
-- 截至本快照完成并提交文档后，`main...origin/main` 预期为 `[ahead 8]`；staged 为空，tracked 工作区干净。若当前输出不同，以实际 `git status --short --branch` 为准。
+- 不要把当前 dirty 状态误判成异常：这是刚完成的 typed artifact 机制修复，尚未 commit。
 - 本轮未同步 `origin` 或 `gitee`；不要把本地 ahead 状态误认为远端已更新。
 - 不要提交这些本地未跟踪物件：`.codex/config.toml`、既有 `.codex/plans/**`、`.omo/`、`github-trending.txt`、`public/**`、`eoflow*.html`、`cupid.js`、`solve_cupid.mjs`、runtime 数据、截图、报告、临时文件。
 
@@ -59,11 +65,13 @@ git log --oneline origin/main..HEAD
 - Team Console 运行记录已改成时间线列表：仅保留开始时间、状态、执行时间，以及 `装载记录` / `标为最佳` / `归档记录` 三个操作。`runId`、结果产物、触发来源、已装载/最佳/归档徽标与 note 不再作为可见内容展示，只保留必要 `data-*` 状态给交互和测试。
 - Team Console 运行观察右上角只显示输入来源标记：`手动上游输入` 或 `自然运行流入`。不再展示 `connectionId`、upstream run、artifact、fileRef 等内部账本字段。
 - Discovery 子画布 generated Task 打开的运行历史面板已重新锚定到对应子画布 panel，不再从上一级 root Task 菜单引线；`ExecutionMap` panel DOM 暴露 `data-panel-source-id` 用于回归验证。
+- Discovery 子画布打开时，root Task 菜单里的“运行记录”不再挂到子画布下一级；点击后会关闭 Discovery 子画布，并把 Discovery root Task 运行记录作为同级 Task child panel 展开。generated card 点击运行记录仍保留在子画布下一级，并使用 `generated-run-history-*` 布局 id，避免和 root `run-history-*` 混用拖拽位置。
 - Team Console Task 最近运行 / 运行观察子面板已允许向画布原点上方拖动。Task child panel 布局不再把用户拖拽产生的负 `y` override 钳到 `0`；`x` 轴现有非负限制保持不变。
 - Team Console 根节点筛选已整合数量统计：`ALL`、`Agent`、`Task`、`Source` 四个筛选项直接显示数量，独立统计块已移除；`Task` 筛选只显示 Task，Source 走独立筛选。
 - Team Console Dock 已区分 Group 成员 Task 和根级 Task。Group 内 Task 拖到底部 Dock 区域不会触发收纳；展开 Group 可点击“收纳”把整个 Group 收入 Dock，Dock 中以 Group 对象展示并可恢复，不会把 Group 成员拆成独立 Dock Task。
 - Mock 工作区初始化会合并 Discovery catalog 返回的 root/generated run summary，Dock 和画布状态能显示最新 run status，不再退回静态 Task `ready`。
 - Team Console 初始加载流畅性已优化：Live hydration 不再触发无意义首次 layout PATCH，restore loading 最短显示时间收敛到 160ms，loading skeleton 切换到 workspace 时不再产生明显 layout shift。
+- Team typed artifact 下游交付已改为 file-first：typed connection 触发 worker 前，runtime 会把每个上游 typed artifact 的完整文件复制到当前 worker attempt `work/bound-inputs/`，prompt 只保留预览和追溯信息，不再把 30KB 截断内容当“唯一上游数据来源”。超限 artifact 会标记 `contentTruncated` 和 `originalContentLength`。
 - Conn 后端 `execution.type = "team_group"` 已完成。`team_group` Conn 保存为 `execution: { type: "team_group", groupId }`，不写进 `target.type`，也不要求 prompt。
 - Conn worker 可调度 Team GroupRun。空 body POST 不携带 `content-type: application/json`，避免 Fastify 在 route 前返回 `400 Bad Request`。
 - Conn worker 对 `team_group` start failure 已补齐诊断：non-2xx/non-409 GroupRun start 会让 ConnRun `failed`，并写入 `resolvedSnapshot.executionType="team_group"`、`groupId`、`groupRunStartStatus`、`groupRunStartError`。409 active guard 仍是 `succeeded` skipped。
@@ -80,9 +88,24 @@ git log --oneline origin/main..HEAD
   - `task_99e064aea8e3` -> `task_d4b860b66d3c` -> `task_2191fd7de5de`
 - `/playground/conn` 新界面此前只读验证确认 invalid Group option 会显示 `不可运行` 且 disabled；当前 Group 已被用户调整为 valid，后续 Conn 新建/选择以实时 API 为准。
 - 不要手工 POST API 干预这条真实用户链路，除非用户明确要求取消/重跑。
+- 2026-06-07 真实回归验证：用户手动对 `task_977d44da2fb9` 装载上游 Discovery run `run_fad1b2520fac` 后启动下游，得到 `run_403121ab8f10`。该 run 已 `completed/succeeded`，worker 读取了 `tasks/task_977d44da2fb9/attempts/attempt_0472a49317ac/work/bound-inputs/01-artifact_e450cf2b3925-discovery-aggregation.json`，完整输入 `itemsLength=48`、`succeeded=46`、`failed=2`，输出 `agent-workspaces/attempt_0472a49317ac/worker/output/structured-report.json`。
 
 ## 本轮最终验证
 
+- Typed artifact file-first handoff 修复验证：
+  - `npx tsx --test test/team-task-artifact-handoff.test.ts`：15/15 pass。
+  - `npx tsx --test test/team-task-run-process.test.ts`：52/52 pass。
+  - `npm run test:team`：1255 pass，2 skip，0 fail。
+  - `npx tsc --noEmit`：pass。
+  - `git diff --check`：pass。
+  - 真实 run `run_403121ab8f10`：确认 plan 使用 `BEGIN_TYPED_ARTIFACT_PREVIEW`，不含旧 `BEGIN_TYPED_ARTIFACT_CONTENT` 和“唯一上游数据来源”；物化文件为完整 48 渠道，最终 task succeeded。
+- Discovery root 运行记录 panel 层级修复验证：
+  - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx -t "opens Discovery root run history as a sibling panel|opens and closes generated Task run history"`：2/2 pass。
+  - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx src/tests/app-run-observer.test.tsx src/tests/app-static-contracts.test.ts`：152/152 pass。
+  - `npm --prefix apps/team-console run build`：pass；仅既有 Vite chunk size warning。
+  - `npx tsc --noEmit`：pass。
+  - `git diff --check`：pass。
+  - Browser `http://127.0.0.1:5174/`：确认 `ugk-pi-team-console` 重启后 `/src/app/App.tsx` 已包含 `keepDiscoverySubcanvas` 新模块标记；当前浏览器本地画布状态未完成干净点击复现，目标交互以 DOM 回归测试覆盖。
 - `npx tsx --test test/team-task-group-routes.test.ts test/team-task-group-run-routes.test.ts`：31/31 pass。
 - `npx tsx --test test/conn-team-group-runner.test.ts test/server.test.ts`：174/174 pass。
 - `npm --prefix apps/team-console test -- --run src/tests/app-connections.test.tsx src/tests/team-api.test.ts`：143/143 pass。

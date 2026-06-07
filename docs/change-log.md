@@ -14,6 +14,19 @@
 
 ---
 
+## 2026-06-07 — Team typed artifact file-first handoff
+
+- **主题**: Team typed artifact 下游交付改为 file-first。typed connection 触发 worker 前，runtime 会把每个上游 typed artifact 的完整文件复制到当前 worker `workDir/bound-inputs/`，并在 payload/prompt 中提供 `workspaceFileRef` / `workspaceFilePath`；prompt 中的 artifact 内容只作为预览和追溯，不再作为唯一数据来源。
+- **影响范围**: 修复大 JSON / Discovery aggregation 因 `TEAM_TASK_ARTIFACT_CONTENT_LIMIT` 截断导致下游只处理部分数据的问题。状态 payload 仍保留有限 `content` 和 `preview` 防止 prompt/state 膨胀；超限 artifact 会标记 `contentTruncated` 与 `originalContentLength`。
+- **验证**: 新增普通 typed artifact、public worker JSON、超大 JSON、Discovery aggregation 和历史 run selection 回归；`npx tsc --noEmit`、`npx tsx --test test/team-task-artifact-handoff.test.ts`、`npx tsx --test test/team-task-run-process.test.ts`、`npm run test:team` 通过。
+- **对应入口**: `src/team/task-bound-input-materialization.ts`、`src/team/canvas-task-attempt-runner.ts`、`src/team/task-artifact-handoff.ts`、`src/team/types.ts`、`test/team-task-artifact-handoff.test.ts`、`test/team-task-run-process.test.ts`。
+
+## 2026-06-07 — Team Console Discovery root run history placement
+
+- **主题**: 修复 Discovery 子画布打开时，点击 root Task 菜单“运行记录”会把 Discovery root 运行记录挂到子画布下一级的问题。现在 root 运行记录会关闭子画布，并作为与 Discovery 子画布同级的 Task child panel 展开；点击 generated card 打开 generated Task 运行记录仍保留在子画布下一级，且 generated history 使用独立布局 id，不再和 root history 混用拖拽位置。
+- **影响范围**: 仅 5174 Team Console 的 Discovery root Task / generated Task 运行记录 panel 层级与互斥行为；后端 run history、Discovery generated catalog、GroupRun 和 Conn contract 不变。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/tests/app-live-data.test.tsx`。
+
 ## 2026-06-06 — Team Console run observer upward drag fix
 
 - **主题**: 修复 Team Console Task 最近运行/运行观察子面板无法向画布原点上方拖动的问题。Task child panel 现在保留用户拖拽产生的负 `y` override，不再在布局阶段把 `top` 钳到 `0`。

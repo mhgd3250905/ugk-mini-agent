@@ -787,6 +787,10 @@ function taskMenuPanelId(nodeId: string): string {
   return `task-menu-${nodeId}`;
 }
 
+function taskRunHistoryPanelId(nodeId: string, generated: boolean): string {
+  return `${generated ? "generated-run-history" : "run-history"}-${nodeId}`;
+}
+
 function readRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? value as Record<string, unknown> : null;
 }
@@ -2031,7 +2035,12 @@ export function App() {
     setSelectedTaskId((current) => current === taskId ? null : taskId);
   }, []);
 
-  const openTaskRunHistory = useCallback((taskId: string, nodeId?: string, seedRuns: TeamRunState[] = []) => {
+  const openTaskRunHistory = useCallback((
+    taskId: string,
+    nodeId?: string,
+    seedRuns: TeamRunState[] = [],
+    options: { keepDiscoverySubcanvas?: boolean } = {},
+  ) => {
     const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
     const initialItems = mergeRunHistoryItems([], seedRuns, taskId, false);
     setRunHistoryTaskId(taskId);
@@ -2065,14 +2074,25 @@ export function App() {
     if (nodeId) {
       setExpandedTaskBranches((current) => current.map((item) => (
         item.nodeId === nodeId
-          ? item.detailMode === "discovery-subcanvas"
+          ? item.detailMode === "discovery-subcanvas" && options.keepDiscoverySubcanvas
             ? {
                 ...item,
                 discoveryGeneratedRunHistoryTaskId: taskId,
                 observedRunId: undefined,
                 selectedFileKeys: [],
               }
-            : { ...item, detailMode: "run-history", runHistoryTaskId: taskId, observedRunId: undefined, selectedFileKeys: [] }
+            : {
+                ...item,
+                detailMode: "run-history",
+                runHistoryTaskId: taskId,
+                observedRunId: undefined,
+                selectedFileKeys: [],
+                discoveryGeneratedObserver: undefined,
+                discoveryGeneratedEditTaskId: undefined,
+                discoveryGeneratedRunHistoryTaskId: undefined,
+                discoveryQueueExpanded: false,
+                discoveryStaleExpanded: false,
+              }
           : item
       )));
     }
@@ -4406,12 +4426,12 @@ export function App() {
       const task = node ? tasksById.get(node.taskId) ?? null : null;
       if (!node || !task) continue;
       const menuPanelId = taskMenuPanelId(branch.nodeId);
-      const runHistoryPanelId = `run-history-${branch.nodeId}`;
 
       const discoveryRunHistoryTaskId = branch.detailMode === "discovery-subcanvas"
         ? branch.discoveryGeneratedRunHistoryTaskId
         : undefined;
       const isRunHistoryPanelOpen = branch.detailMode === "run-history" || Boolean(discoveryRunHistoryTaskId);
+      const runHistoryPanelId = taskRunHistoryPanelId(branch.nodeId, Boolean(discoveryRunHistoryTaskId));
 
       if (isRunHistoryPanelOpen) {
         const historyTaskId = discoveryRunHistoryTaskId ?? branch.runHistoryTaskId ?? activeRunHistoryTaskId ?? task.taskId;
@@ -4691,7 +4711,9 @@ export function App() {
               closeTaskRunHistory();
               return;
             }
-            openTaskRunHistory(generatedTask.taskId, branch.nodeId, latestGeneratedRun ? [latestGeneratedRun] : []);
+            openTaskRunHistory(generatedTask.taskId, branch.nodeId, latestGeneratedRun ? [latestGeneratedRun] : [], {
+              keepDiscoverySubcanvas: true,
+            });
           };
           return (
             <article
@@ -5820,6 +5842,7 @@ export function App() {
       const historyTask = isRunHistoryMode
         ? tasksById.get(targetTaskId) ?? generatedTasksById.get(targetTaskId) ?? task
         : undefined;
+      const runHistoryPanelId = taskRunHistoryPanelId(branch.nodeId, Boolean(discoveryRunHistoryTaskId));
 
       const toggleFile = (key: string) => {
         setExpandedTaskBranches((current) => current.map((item) => {
@@ -5837,7 +5860,7 @@ export function App() {
       pushTaskRunObserverPanels({
         observedTaskRun,
         selectedFileKeys: branch.selectedFileKeys ?? [],
-        sourceId: isRunHistoryMode ? `run-history-${branch.nodeId}` : taskMenuPanelId(branch.nodeId),
+        sourceId: isRunHistoryMode ? runHistoryPanelId : taskMenuPanelId(branch.nodeId),
         runObserverPanelId: `run-observer-${branch.nodeId}`,
         fileDetailPanelIdPrefix: `file-detail-${branch.nodeId}`,
         toggleFile,

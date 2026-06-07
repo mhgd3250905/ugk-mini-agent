@@ -566,6 +566,10 @@ export interface TeamTaskTypedArtifact {
 	fileRef: string;
 	preview: string;
 	content?: string;
+	contentTruncated?: boolean;
+	originalContentLength?: number;
+	workspaceFileRef?: string;
+	workspaceFilePath?: string;
 	createdAt: string;
 }
 

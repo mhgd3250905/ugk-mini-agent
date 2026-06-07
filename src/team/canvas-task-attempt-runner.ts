@@ -13,6 +13,7 @@ import { validateTeamOutput } from "./output-validator.js";
 import { writeTimingSpan } from "./timing.js";
 import { progressMessages } from "./progress.js";
 import { TeamRoleProcessRecorder } from "./task-run-process-recorder.js";
+import { materializeBoundInputFilesForWorkspace } from "./task-bound-input-materialization.js";
 import type { RawAgentSessionEventLike } from "../agent/agent-session-factory.js";
 
 export interface CanvasTaskPhaseTimeouts {
@@ -251,6 +252,12 @@ export class CanvasTaskAttemptRunner {
 			await recorder.start();
 			const artifactPublicDir = join(dataDir, "runs", runId, "agent-workspaces", attemptId, "worker", "output");
 			await mkdir(artifactPublicDir, { recursive: true });
+			const workerWorkDir = join(attemptRoot, "work");
+			const taskForWorker = await materializeBoundInputFilesForWorkspace(task, {
+				teamDataDir: dataDir,
+				runId,
+				workDir: workerWorkDir,
+			});
 			const timeout = this.resolveRoleTimeout("worker");
 			const output = await runWithAdaptivePhaseTimeout({
 				phase: "worker",
@@ -260,13 +267,13 @@ export class CanvasTaskAttemptRunner {
 				activityDirs: [artifactPublicDir],
 			}, async (localSignal, markStructuralActivity) => roleRunner.runWorker({
 				runId,
-				task,
+				task: taskForWorker,
 				attemptId,
-				workDir: join(attemptRoot, "work"),
+				workDir: workerWorkDir,
 				outputDir: artifactPublicDir,
 				artifactPublicDir,
 				artifactPublicBaseUrl: buildTeamRoleArtifactBaseUrl(publicBaseUrl, runId, attemptId, "worker"),
-				acceptanceRules: task.acceptance.rules,
+				acceptanceRules: taskForWorker.acceptance.rules,
 				feedback,
 				signal: localSignal,
 				onSessionEvent: (event) => this.handleRoleSessionEvent(recorder, markStructuralActivity, event),

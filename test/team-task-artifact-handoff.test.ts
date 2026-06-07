@@ -52,6 +52,8 @@ test("buildTeamTaskTypedArtifact caps content at the content limit", () => {
 	const artifact = makeArtifact({ content: longContent });
 	assert.equal(artifact.content?.length, TEAM_TASK_ARTIFACT_CONTENT_LIMIT);
 	assert.equal(artifact.preview.length, TEAM_TASK_ARTIFACT_PREVIEW_LIMIT);
+	assert.equal(artifact.contentTruncated, true);
+	assert.equal(artifact.originalContentLength, longContent.length);
 });
 
 test("buildTeamTaskTypedArtifact caps preview at the preview limit", () => {
@@ -110,12 +112,12 @@ test("formatBoundInputsForPrompt formats one bound input with full trace metadat
 	assert.match(result, /sourceAttemptId: attempt_src/);
 	assert.match(result, /sourceOutputPortId: draft_md/);
 	assert.match(result, /fileRef: result\/accepted\.md/);
-	assert.match(result, /BEGIN_TYPED_ARTIFACT_CONTENT artifact_/);
-	assert.match(result, /END_TYPED_ARTIFACT_CONTENT artifact_/);
+	assert.match(result, /BEGIN_TYPED_ARTIFACT_PREVIEW artifact_/);
+	assert.match(result, /END_TYPED_ARTIFACT_PREVIEW artifact_/);
 	assert.match(result, /accepted result/);
 });
 
-test("formatBoundInputsForPrompt keeps legacy task artifact prompt output unchanged", () => {
+test("formatBoundInputsForPrompt treats typed artifact content as preview with file handoff guidance", () => {
 	const artifact = {
 		schemaVersion: "team/task-artifact-1" as const,
 		artifactId: "artifact_fixed",
@@ -137,7 +139,7 @@ test("formatBoundInputsForPrompt keeps legacy task artifact prompt output unchan
 
 	assert.equal(formatBoundInputsForPrompt([legacyInput]), [
 		"## 已绑定上游 typed artifact 输入",
-			"**重要**：你必须使用下方 BEGIN/END 包裹的上游输入内容作为本任务的唯一上游数据来源。不要从旧资产、文件库、workspace 残留或历史 run 中推断或搜索上游数据。",
+		"**重要**：typed artifact 的完整内容由 runtime 物化为当前 worker 工作目录下的文件。下方 BEGIN/END 只提供预览和追溯信息；执行任务时必须优先读取 workspaceFileRef / workspaceFilePath 指向的完整文件，不要从旧资产、文件库、workspace 残留或历史 run 中推断上游数据。",
 		"### 输入 1: md",
 		"- connectionId: conn_1",
 		"- inputPortId: source_md",
@@ -148,9 +150,9 @@ test("formatBoundInputsForPrompt keeps legacy task artifact prompt output unchan
 		"- sourceOutputPortId: draft_md",
 		"- fileRef: result/accepted.md",
 		"",
-		"BEGIN_TYPED_ARTIFACT_CONTENT artifact_fixed",
+		"BEGIN_TYPED_ARTIFACT_PREVIEW artifact_fixed",
 		"accepted result",
-		"END_TYPED_ARTIFACT_CONTENT artifact_fixed",
+		"END_TYPED_ARTIFACT_PREVIEW artifact_fixed",
 	].join("\n"));
 });
 
@@ -171,12 +173,12 @@ test("formatBoundInputsForPrompt wraps markdown-like content in stable delimiter
 	assert.match(result, /### Nested Heading/);
 	assert.match(result, /```typescript/);
 	assert.match(result, /const x = 1;/);
-	const beginIdx = result.indexOf("BEGIN_TYPED_ARTIFACT_CONTENT");
-	const endIdx = result.indexOf("END_TYPED_ARTIFACT_CONTENT");
+	const beginIdx = result.indexOf("BEGIN_TYPED_ARTIFACT_PREVIEW");
+	const endIdx = result.indexOf("END_TYPED_ARTIFACT_PREVIEW");
 	assert.ok(beginIdx > 0, "BEGIN marker should exist");
 	assert.ok(endIdx > beginIdx, "END marker should appear after BEGIN");
-	const beginCount = (result.match(/BEGIN_TYPED_ARTIFACT_CONTENT/g) ?? []).length;
-	const endCount = (result.match(/END_TYPED_ARTIFACT_CONTENT/g) ?? []).length;
+	const beginCount = (result.match(/BEGIN_TYPED_ARTIFACT_PREVIEW/g) ?? []).length;
+	const endCount = (result.match(/END_TYPED_ARTIFACT_PREVIEW/g) ?? []).length;
 	assert.equal(beginCount, 1, "exactly one BEGIN marker for one input");
 	assert.equal(endCount, 1, "exactly one END marker for one input");
 });
@@ -203,6 +205,20 @@ test("formatBoundInputsForPrompt falls back to preview when content is absent", 
 	});
 	const result = formatBoundInputsForPrompt([input]);
 	assert.match(result, /preview fallback text/);
+});
+
+test("formatBoundInputsForPrompt marks truncated typed artifact content as preview only", () => {
+	const artifact = makeArtifact({
+		content: "x".repeat(TEAM_TASK_ARTIFACT_CONTENT_LIMIT + 100),
+	});
+	const result = formatBoundInputsForPrompt([makeBoundInput({ artifact })]);
+
+	assert.match(result, /contentTruncated: true/);
+	assert.match(result, /originalContentLength: 30100/);
+	assert.match(result, /BEGIN_TYPED_ARTIFACT_PREVIEW artifact_/);
+	assert.match(result, /END_TYPED_ARTIFACT_PREVIEW artifact_/);
+	assert.doesNotMatch(result, /BEGIN_TYPED_ARTIFACT_CONTENT/);
+	assert.doesNotMatch(result, /唯一上游数据来源/);
 });
 
 test("formatBoundInputsForPrompt keeps multiple inputs ordered", () => {
