@@ -17,6 +17,7 @@ import { TaskDependencyStore } from "./task-dependency-store.js";
 import { TaskGroupStore } from "./task-group-store.js";
 import { TaskGroupRunStore } from "./task-group-run-store.js";
 import { TaskGroupRunService } from "./task-group-run-service.js";
+import { DiscoveryChannelSetStore } from "./discovery-channel-set-store.js";
 import { SourceConnectionStore } from "./source-connection-store.js";
 import { SourceNodeStore, type UpdateSourceNodeInput } from "./source-node-store.js";
 import { MockRoleRunner } from "./role-runner.js";
@@ -217,6 +218,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 	taskDependencyStore.setExistingConnections(() => taskConnectionStore.list());
 	const taskGroupStore = new TaskGroupStore(options.teamDataDir, taskStore, taskConnectionStore, taskDependencyStore);
 	const taskGroupRunStore = new TaskGroupRunStore(options.teamDataDir);
+	const discoveryChannelSetStore = new DiscoveryChannelSetStore(options.teamDataDir, taskStore);
 	const sourceConnectionStore = new SourceConnectionStore(options.teamDataDir, sourceNodeStore, taskStore);
 	const workspace = new RunWorkspace(options.teamDataDir);
 	const taskRunDataDir = join(options.teamDataDir, "task-runs");
@@ -392,6 +394,86 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 			includeArchived,
 			view: view === "summary" ? "summary" : "full",
 		}));
+	});
+
+	app.get("/v1/team/tasks/:taskId/discovery-channel-sets", async (request, reply) => {
+		const taskId = idParam(request, "taskId");
+		const task = await taskStore.get(taskId);
+		if (!task) { sendNotFound(reply, "task"); return; }
+		if (task.canvasKind !== "discovery" || task.generatedSource) {
+			reply.code(400).send({ error: "Discovery channel sets can only be listed for Discovery root tasks" });
+			return;
+		}
+		try {
+			const channelSets = await discoveryChannelSetStore.listForDiscoveryTask(taskId, {
+				includeArchived: parseIncludeArchived(request),
+			});
+			reply.send({ channelSets });
+		} catch (err) {
+			sendMappedError(reply, err, [["discovery channel set store", 500], ["lock busy", 409]], 500);
+		}
+	});
+
+	app.post("/v1/team/tasks/:taskId/discovery-channel-sets", async (request, reply) => {
+		const taskId = idParam(request, "taskId");
+		const body = jsonBody(request);
+		try {
+			const channelSet = await discoveryChannelSetStore.create(taskId, {
+				title: body.title as string,
+				generatedTaskIds: body.generatedTaskIds as string[],
+			});
+			reply.code(201).send({ channelSet });
+		} catch (err) {
+			sendMappedError(reply, err, [
+				["task not found", 404],
+				["requires a Discovery root task", 400],
+				["title", 400],
+				["generatedTaskIds", 400],
+				["does not belong", 400],
+				["not a generated", 400],
+				["source item id", 400],
+				["archived generated task", 409],
+				["archived Discovery task", 409],
+				["lock busy", 409],
+			]);
+		}
+	});
+
+	app.patch("/v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId", async (request, reply) => {
+		const taskId = idParam(request, "taskId");
+		const channelSetId = idParam(request, "channelSetId");
+		const body = jsonBody(request);
+		try {
+			const channelSet = await discoveryChannelSetStore.update(taskId, channelSetId, {
+				...(Object.hasOwn(body, "title") ? { title: body.title as string } : {}),
+				...(Object.hasOwn(body, "generatedTaskIds") ? { generatedTaskIds: body.generatedTaskIds as string[] } : {}),
+			});
+			reply.send({ channelSet });
+		} catch (err) {
+			sendMappedError(reply, err, [
+				["not found", 404],
+				["requires a Discovery root task", 400],
+				["title", 400],
+				["generatedTaskIds", 400],
+				["does not belong", 400],
+				["not a generated", 400],
+				["source item id", 400],
+				["archived generated task", 409],
+				["archived Discovery task", 409],
+				["lock busy", 409],
+			]);
+		}
+	});
+
+	app.post("/v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId/archive", async (request, reply) => {
+		const taskId = idParam(request, "taskId");
+		const channelSetId = idParam(request, "channelSetId");
+		try {
+			const channelSet = await discoveryChannelSetStore.archive(taskId, channelSetId);
+			reply.send({ channelSet });
+		} catch (err) {
+			sendMappedError(reply, err, [["not found", 404], ["lock busy", 409]], 500);
+		}
 	});
 
 	app.patch("/v1/team/tasks/:taskId", async (request, reply) => {

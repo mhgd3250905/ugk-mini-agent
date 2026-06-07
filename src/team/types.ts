@@ -126,6 +126,29 @@ export interface TeamDiscoveryGeneratedRunOutcome {
 	createdAt: string;
 }
 
+export interface TeamDiscoveryChannelSetItem {
+	generatedTaskId: string;
+	sourceItemId: string;
+	title: string;
+	itemPayload: Record<string, unknown>;
+	workUnitSnapshot: TeamWorkUnitDefinition;
+	workUnitMode: TeamGeneratedTaskWorkUnitMode;
+	latestDiscoveryRunId?: string;
+	latestDiscoveryAttemptId?: string;
+	latestDiscoveredAt?: string;
+}
+
+export interface TeamDiscoveryChannelSet {
+	schemaVersion: "team/discovery-channel-set-1";
+	channelSetId: string;
+	sourceDiscoveryTaskId: string;
+	title: string;
+	items: TeamDiscoveryChannelSetItem[];
+	archived: boolean;
+	createdAt: string;
+	updatedAt: string;
+}
+
 export type TeamDiscoveryAggregationResultStatus = "succeeded" | "failed" | "cancelled" | "skipped" | "missing";
 
 export interface TeamDiscoveryAggregationRecord {
