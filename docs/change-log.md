@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-07 — Team Console Discovery channel set run visibility
+
+- **主题**: 修复 Discovery root 从保存渠道集运行后，子画布 generated Task 网格看不出本轮 child run 状态的问题。渠道集 root run 会复用旧 generated catalog，因此 generated child 的 `latestDiscoveryRunId` 仍可能指向历史 rediscovery run；Team Console 现在对 `source.discoveryChannelSetId` 的 root run 改按 child run 的 `triggeredBy.discoveryRunId` 投影状态。
+- **影响范围**: 仅 5174 Team Console Discovery 子画布的 generated child card 状态、排序和网格计数。普通新 Discovery root run 仍会隐藏旧 run 的 generated child 状态，避免把历史结果误当本轮运行。`queued` 计数改为只统计 `visualState="queued"`，不再把未参与本轮渠道集 run 的 idle active channels 全算作 queued。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/tests/app-live-data.test.tsx`。
+
 ## 2026-06-07 — Discovery channel set reuse
 
 - **主题**: Discovery root Task 支持把历史 generated child Tasks 保存为可复用渠道集。Team Console 子画布可选择 active generated child、保存渠道集、归档渠道集，并在下次运行 root Discovery 时传入 `discoveryChannelSetId` 跳过 rediscovery/dispatcher，直接使用保存的渠道 snapshot 启动对应 generated child runs。

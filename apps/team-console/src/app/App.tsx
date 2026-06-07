@@ -612,6 +612,10 @@ function isGeneratedRunFromDiscoveryRun(run: TeamRunState, discoveryTaskId: stri
     && run.source.triggeredBy.discoveryRunId === discoveryRunId;
 }
 
+function isDiscoveryChannelSetRootRun(run: TeamRunState | null): boolean {
+  return typeof run?.source?.discoveryChannelSetId === "string" && run.source.discoveryChannelSetId.length > 0;
+}
+
 function visibleDiscoveryGeneratedRuns(
   generatedTask: TeamCanvasTask,
   discoveryTaskId: string,
@@ -620,6 +624,9 @@ function visibleDiscoveryGeneratedRuns(
 ): TeamRunState[] {
   const runs = taskRunsByTaskId[generatedTask.taskId] ?? [];
   if (!activeDiscoveryRun) return runs;
+  if (isDiscoveryChannelSetRootRun(activeDiscoveryRun)) {
+    return runs.filter((run) => isGeneratedRunFromDiscoveryRun(run, discoveryTaskId, activeDiscoveryRun.runId));
+  }
   const generatedSourceRunId = generatedTask.generatedSource?.latestDiscoveryRunId;
   if (generatedSourceRunId !== activeDiscoveryRun.runId) return [];
   return runs.filter((run) => isGeneratedRunFromDiscoveryRun(run, discoveryTaskId, activeDiscoveryRun.runId));
@@ -4742,6 +4749,17 @@ export function App() {
         const discoverySubcanvasStyle = {
           "--discovery-queue-columns": String(discoveryConcurrency * 2),
         } as CSSProperties;
+        const selectedDiscoveryChannelTaskIds = selectedDiscoveryChannelTaskIdsByTaskId[task.taskId] ?? [];
+        const selectedDiscoveryChannelTaskIdSet = new Set(selectedDiscoveryChannelTaskIds);
+        const discoveryChannelSets = discoveryChannelSetsByTaskId[task.taskId] ?? [];
+        const activeDiscoveryChannelSetId = activeDiscoveryRun?.source?.discoveryChannelSetId ?? null;
+        const activeDiscoveryChannelSet = activeDiscoveryChannelSetId
+          ? discoveryChannelSets.find((channelSet) => channelSet.channelSetId === activeDiscoveryChannelSetId) ?? null
+          : null;
+        const activeDiscoveryChannelTaskIdSet = new Set(
+          activeDiscoveryChannelSet?.items.map((item) => item.generatedTaskId) ?? [],
+        );
+        const activeDiscoveryRunUsesChannelSet = Boolean(activeDiscoveryChannelSetId);
         const generatedTaskCards = generatedTasks.map((generatedTask, generatedTaskIndex) => {
           const generatedSource = generatedTask.generatedSource;
           const itemStatus = generatedSource?.itemStatus ?? "active";
@@ -4758,7 +4776,13 @@ export function App() {
           const summaryResetAvailable = (generatedSource as { canResetToManaged?: boolean } | undefined)?.canResetToManaged === true;
           const canResetToManaged = workUnitMode === "customized"
             && (Boolean(generatedSource?.latestManagedWorkUnit) || summaryResetAvailable);
-          const waitingForCurrentDiscoveryRun = Boolean(activeDiscoveryRun) && generatedSource?.latestDiscoveryRunId !== activeDiscoveryRun?.runId;
+          const waitingForCurrentDiscoveryRun = Boolean(activeDiscoveryRun) && (
+            activeDiscoveryRunUsesChannelSet
+              ? Boolean(activeDiscoveryChannelSet)
+                && activeDiscoveryChannelTaskIdSet.has(generatedTask.taskId)
+                && !latestGeneratedRun
+              : generatedSource?.latestDiscoveryRunId !== activeDiscoveryRun?.runId
+          );
           const visualState = discoveryGeneratedVisualState(itemStatus, latestGeneratedRun, activeGeneratedRun, waitingForCurrentDiscoveryRun);
           const generatedOrdinal = String(generatedTaskIndex + 1).padStart(2, "0");
           const generatedRunIsObserved = Boolean(
@@ -4812,10 +4836,7 @@ export function App() {
         const runningGeneratedTaskCount = activeGeneratedTaskCards.filter((card) => card.visualState === "running").length;
         const doneGeneratedTaskCount = activeGeneratedTaskCards.filter((card) => card.visualState === "done").length;
         const failedGeneratedTaskCount = activeGeneratedTaskCards.filter((card) => card.visualState === "failed").length;
-        const waitingGeneratedTaskCount = activeGeneratedTaskCards.length - runningGeneratedTaskCount - doneGeneratedTaskCount - failedGeneratedTaskCount;
-        const selectedDiscoveryChannelTaskIds = selectedDiscoveryChannelTaskIdsByTaskId[task.taskId] ?? [];
-        const selectedDiscoveryChannelTaskIdSet = new Set(selectedDiscoveryChannelTaskIds);
-        const discoveryChannelSets = discoveryChannelSetsByTaskId[task.taskId] ?? [];
+        const waitingGeneratedTaskCount = activeGeneratedTaskCards.filter((card) => card.visualState === "queued").length;
         const discoveryChannelSetTitle = discoveryChannelSetTitleByTaskId[task.taskId] ?? "";
         const discoveryChannelSetsLoading = Boolean(discoveryChannelSetLoadingByTaskId[task.taskId]);
         const discoveryChannelSetSaving = Boolean(discoveryChannelSetSavingByTaskId[task.taskId]);

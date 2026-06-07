@@ -26,10 +26,12 @@
 
 - 当前分支：`codex/discovery-channel-set`。
 - 相对 `origin/main` 本地 ahead 提交包括：
+  - `9e1fe855 Document Discovery channel set workflow`
   - `63a739f7 Add Team Console Discovery channel set controls`
   - `5fd0883f Run Discovery roots from saved channel sets`
   - `cd3b5a5a Add Discovery channel set backend contract`
-- 本轮 Git 保存范围：Discovery channel set 后端合同、从保存渠道集跳过 rediscovery/dispatcher 的 root run 路径、Team Console 子画布渠道集选择/保存/归档/使用 UI、相关测试和文档。
+- 本轮最新修复提交主题：`Fix Discovery channel set run visibility in Team Console`。
+- 本轮 Git 保存范围：Discovery channel set 后端合同、从保存渠道集跳过 rediscovery/dispatcher 的 root run 路径、Team Console 子画布渠道集选择/保存/归档/使用 UI、渠道集 run 状态可视化修复、相关测试和文档。
 - 仍有无关未跟踪 `docs/windows-native-runtime-feasibility.md`，不要误提交。
 - 仍有本轮计划草稿 `.codex/plans/2026-06-07-discovery-channel-set.md` 未跟踪，不要提交。
 - `origin`：GitHub `https://github.com/mhgd3250905/ugk-claw-personal.git`。
@@ -54,6 +56,7 @@ git log --oneline origin/main..HEAD
 - 新增 `GET /v1/team/tasks/:taskId/discovery-channel-sets`、`POST /v1/team/tasks/:taskId/discovery-channel-sets`、`PATCH /v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId` 和 `POST /v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId/archive`。持久文件为 `.data/team/discovery-channel-sets.json`。
 - `POST /v1/team/tasks/:taskId/runs` 新增可选 `discoveryChannelSetId`。Discovery root 使用同源未归档渠道集运行时，会跳过 root rediscovery/dispatcher，写出标准 `discovery-result.json` / `discovery-aggregation.json`，并按既有 auto-run 语义启动保存的 generated child runs。
 - Team Console 子画布新增“渠道集”面板：显示选择数量、名称输入、保存/清空、已保存渠道集列表、使用渠道集和归档操作。generated child card 左上角有渠道选择 checkbox，选中态使用 `is-channel-selected` / `data-generated-channel-selected`。
+- Team Console Discovery 子画布已修复渠道集 run 状态投影：当 Discovery root run 带 `source.discoveryChannelSetId` 时，generated child card 按 child run 的 `triggeredBy.discoveryRunId` 显示本轮状态，不再被旧 `generatedSource.latestDiscoveryRunId` 过滤掉；网格 `queued` 计数只统计真正 queued 的卡片，不再把未参与本轮渠道集 run 的 idle channels 全部算作 queued。
 - Team Task Group 后端持久 contract 已完成。Group definition 允许保存 empty/invalid membership；read model 通过 `ResolvedTeamTaskGroup.status/headTaskIds/validation.errors` 表达语义状态。
 - Team Task GroupRun 后端 contract 已完成。GroupRun start 才硬拒绝 empty/invalid Group，返回 400 `invalid task group`；active guard 仍返回 409。GroupRun 保存 `definitionSnapshot`，刷新/取消优先使用 snapshot membership。
 - GroupRun 完成态已按 Group 内真实 Task 流水线聚合。Discovery generated child run 保留诊断和取消用途，但不再一票否决主 GroupRun 终态。
@@ -93,10 +96,18 @@ git log --oneline origin/main..HEAD
 - `/playground/conn` 新界面此前只读验证确认 invalid Group option 会显示 `不可运行` 且 disabled；当前 Group 已被用户调整为 valid，后续 Conn 新建/选择以实时 API 为准。
 - 不要手工 POST API 干预这条真实用户链路，除非用户明确要求取消/重跑。
 - 2026-06-07 真实回归验证：用户手动对 `task_977d44da2fb9` 装载上游 Discovery run `run_fad1b2520fac` 后启动下游，得到 `run_403121ab8f10`。该 run 已 `completed/succeeded`，worker 读取了 `tasks/task_977d44da2fb9/attempts/attempt_0472a49317ac/work/bound-inputs/01-artifact_e450cf2b3925-discovery-aggregation.json`，完整输入 `itemsLength=48`、`succeeded=46`、`failed=2`，输出 `agent-workspaces/attempt_0472a49317ac/worker/output/structured-report.json`。
+- 2026-06-07 渠道集真实运行验证：用户保存的 `测试集合1` 为 `channel_set_e8a707c669e2`，包含 `task_2210950f4d83` 和 `task_86481d61ebe4` 两个 generated channels。用户点击“使用渠道集”后启动 root run `run_09b7bf5a1644`，该 run 已 `completed` 且 `source.discoveryChannelSetId="channel_set_e8a707c669e2"`；对应 child run 为 `run_94ee1ed1b857`（failed，模型返回 `InvalidParameter` content filter）和 `run_73e5f5a33646`（completed）。
 
 ## 本轮最终验证
 
 - Discovery channel set 本轮验证：
+  - 渠道集 run visibility 修复验证：新增回归先红后绿覆盖 `source.discoveryChannelSetId` 的 root run 复用旧 generated catalog 时，子画布仍能按 `triggeredBy.discoveryRunId` 显示本轮 generated child run；普通新 Discovery root run 隐藏旧 child run 的保护用例仍通过。
+  - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx -t "channel-set generated child runs|clears stale generated child run status"`：2/2 pass。
+  - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx src/tests/app-static-contracts.test.ts`：118/118 pass。
+  - `npx tsc --noEmit`：pass。
+  - `npm --prefix apps/team-console run build`：pass；仅既有 Vite chunk size warning。
+  - `git diff --check`：pass。
+  - Browser `http://127.0.0.1:5174/` Live API：重启 `ugk-pi-team-console` 后打开 `task_ec690cdc8bd4` Discovery 子画布，真实页面网格显示 `0 running · 0 queued · 45 done · 3 failed · 70 stale hidden`；前两张卡为渠道集里的 JAMA/BMJ channels，分别 `data-generated-visual-state="done"` / `"failed"` 且 `data-generated-run-scope="current"`。
   - `node --test --test-concurrency=1 --import tsx test/team-discovery-channel-set-routes.test.ts test/team-task-run-process.test.ts test/team-task-run-routes.test.ts`：组合运行 97/98 pass，唯一失败为 Windows 临时目录清理 `ENOTEMPTY ...\task-runs\runs`；随后单独重跑 `node --test --test-concurrency=1 --import tsx test/team-task-run-process.test.ts`：53/53 pass，确认不是行为断言失败。
   - `npm --prefix apps/team-console test -- --run src/tests/team-api.test.ts src/tests/app-live-data.test.tsx src/tests/app-static-contracts.test.ts src/tests/app-run-observer.test.tsx`：264/264 pass。
   - `npx tsc --noEmit`：pass。

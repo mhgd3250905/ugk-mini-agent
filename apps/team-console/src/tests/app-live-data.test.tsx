@@ -2395,6 +2395,101 @@ describe("App", () => {
       expect(vultrCard.querySelector('[data-generated-action="observe-run"]')).toBeNull();
     });
 
+    it("shows channel-set generated child runs even when generated catalog came from an older Discovery run", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const activeDiscoveryRun = canvasTaskRun(mockDiscoveryRootTask.taskId, "run_from_channel_set", "running");
+      activeDiscoveryRun.source = {
+        type: "canvas-task",
+        taskId: mockDiscoveryRootTask.taskId,
+        discoveryChannelSetId: "dcs_selected_channels",
+      };
+      const generatedTasks = mockDiscoveryGeneratedTasks
+        .filter((task) => !task.archived)
+        .map((task) => ({
+          ...task,
+          generatedSource: task.generatedSource
+            ? { ...task.generatedSource, itemStatus: "active", latestDiscoveryRunId: "run_previous_discovery" }
+            : task.generatedSource,
+        }));
+      const selectedGeneratedTask = generatedTasks[0]!;
+      const unselectedGeneratedTask = generatedTasks[1]!;
+      const channelSet: TeamDiscoveryChannelSet = {
+        schemaVersion: "team/discovery-channel-set-1",
+        channelSetId: "dcs_selected_channels",
+        sourceDiscoveryTaskId: mockDiscoveryRootTask.taskId,
+        title: "精选渠道",
+        items: [{
+          generatedTaskId: selectedGeneratedTask.taskId,
+          sourceItemId: selectedGeneratedTask.generatedSource!.sourceItemId,
+          title: selectedGeneratedTask.title,
+          itemPayload: { ...selectedGeneratedTask.generatedSource!.itemPayload },
+          workUnitSnapshot: selectedGeneratedTask.workUnit,
+          workUnitMode: selectedGeneratedTask.generatedSource!.workUnitMode,
+          latestDiscoveryRunId: selectedGeneratedTask.generatedSource!.latestDiscoveryRunId,
+          latestDiscoveryAttemptId: selectedGeneratedTask.generatedSource!.latestDiscoveryAttemptId,
+          latestDiscoveredAt: selectedGeneratedTask.generatedSource!.latestDiscoveredAt,
+        }],
+        archived: false,
+        createdAt: "2026-06-07T00:00:00.000Z",
+        updatedAt: "2026-06-07T00:00:00.000Z",
+      };
+      const selectedGeneratedRun = generatedCanvasTaskRun(selectedGeneratedTask.taskId, "run_selected_channel_child", {
+        status: "running",
+        discoveryTaskId: mockDiscoveryRootTask.taskId,
+        discoveryRunId: activeDiscoveryRun.runId,
+        sourceItemId: selectedGeneratedTask.generatedSource!.sourceItemId,
+      });
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [mockDiscoveryRootTask] }), { status: 200 });
+        if (url.startsWith(`/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`)) {
+          return new Response(JSON.stringify({ tasks: generatedTasks }), { status: 200 });
+        }
+        if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/discovery-channel-sets`) {
+          return new Response(JSON.stringify({ channelSets: [channelSet] }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse({
+            [mockDiscoveryRootTask.taskId]: [activeDiscoveryRun],
+            [selectedGeneratedTask.taskId]: [selectedGeneratedRun],
+          });
+        }
+        if (url === `/v1/team/task-runs/${activeDiscoveryRun.runId}`) {
+          return new Response(JSON.stringify(activeDiscoveryRun), { status: 200 });
+        }
+        if (url === `/v1/team/task-runs/${selectedGeneratedRun.runId}`) {
+          return new Response(JSON.stringify(selectedGeneratedRun), { status: 200 });
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
+      const discoveryNode = await within(atlas).findByRole("button", { name: mockDiscoveryRootTask.title });
+      fireEvent.click(discoveryNode);
+      fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+
+      const panel = await waitFor(() => {
+        const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+        expect(node).toBeTruthy();
+        return node!;
+      });
+      await waitFor(() => {
+        expect(within(panel).getByText("1 running · 0 queued · 0 done")).toBeInTheDocument();
+      });
+      const selectedCard = getGeneratedCard(panel, selectedGeneratedTask.taskId);
+      expect(selectedCard).toHaveAttribute("data-generated-run-status", "running");
+      expect(selectedCard).toHaveAttribute("data-generated-run-scope", "current");
+      expect(selectedCard).toHaveAttribute("data-generated-visual-state", "running");
+      const unselectedCard = getGeneratedCard(panel, unselectedGeneratedTask.taskId);
+      expect(unselectedCard).toHaveAttribute("data-generated-run-status", "none");
+      expect(unselectedCard).toHaveAttribute("data-generated-run-scope", "current");
+      expect(unselectedCard).toHaveAttribute("data-generated-visual-state", "idle");
+    });
+
     it("keeps Discovery subcanvas order stable: running first, then completed by finished time descending", async () => {
       window.localStorage.setItem("ugk-team-console:data-source", "live");
       const baseGenerated = mockDiscoveryGeneratedTasks.filter((task) => !task.archived)[0]!;
