@@ -37,6 +37,16 @@ async function buildTestServer() {
 	return { app, root, teamDir };
 }
 
+async function waitForTerminalRun(app: Awaited<ReturnType<typeof buildTestServer>>["app"], runId: string): Promise<void> {
+	const terminal = new Set(["completed", "completed_with_failures", "failed", "cancelled"]);
+	for (let i = 0; i < 40; i++) {
+		const res = await app.inject({ method: "GET", url: `/v1/team/task-runs/${runId}` });
+		if (res.statusCode === 200 && terminal.has(res.json().status)) return;
+		await new Promise(resolve => setTimeout(resolve, 25));
+	}
+	throw new Error(`task run did not reach terminal state: ${runId}`);
+}
+
 const taskPayload = {
 	title: "调查 Medtrum 相关云服务器资产",
 	leaderAgentId: "main",
@@ -196,6 +206,57 @@ test("POST /v1/team/tasks/:taskId/runs accepts discoveryChannelSetId", async () 
 
 		assert.equal(run.statusCode, 201);
 		assert.equal(run.json().source.discoveryChannelSetId, channelSet.channelSetId);
+		await waitForTerminalRun(app, run.json().runId);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("PATCH /v1/team/tasks/:taskId stores the default Discovery channel-set run policy", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const discovery = await createDiscoveryTask(app);
+		const generated = await seedGeneratedTask(teamDir, discovery.taskId, "selected");
+		const create = await app.inject({
+			method: "POST",
+			url: `/v1/team/tasks/${discovery.taskId}/discovery-channel-sets`,
+			payload: { title: "默认渠道", generatedTaskIds: [generated.taskId] },
+		});
+		assert.equal(create.statusCode, 201);
+		const channelSet = create.json().channelSet;
+
+		const patch = await app.inject({
+			method: "PATCH",
+			url: `/v1/team/tasks/${discovery.taskId}`,
+			payload: {
+				discoveryRunPolicy: {
+					mode: "channel_set",
+					channelSetId: channelSet.channelSetId,
+				},
+			},
+		});
+		assert.equal(patch.statusCode, 200);
+		assert.deepEqual(patch.json().task.discoveryRunPolicy, {
+			mode: "channel_set",
+			channelSetId: channelSet.channelSetId,
+		});
+
+		const run = await app.inject({
+			method: "POST",
+			url: `/v1/team/tasks/${discovery.taskId}/runs`,
+		});
+		assert.equal(run.statusCode, 201);
+		assert.equal(run.json().source.discoveryChannelSetId, channelSet.channelSetId);
+		await waitForTerminalRun(app, run.json().runId);
+
+		const reset = await app.inject({
+			method: "PATCH",
+			url: `/v1/team/tasks/${discovery.taskId}`,
+			payload: { discoveryRunPolicy: { mode: "rediscover" } },
+		});
+		assert.equal(reset.statusCode, 200);
+		assert.deepEqual(reset.json().task.discoveryRunPolicy, { mode: "rediscover" });
 	} finally {
 		await app.close();
 		await rm(root, { recursive: true, force: true });

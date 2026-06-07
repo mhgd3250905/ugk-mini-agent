@@ -871,6 +871,99 @@ describe("App", () => {
     expect(within(panel).getByRole("button", { name: "保存渠道集" })).toBeDisabled();
   });
 
+  it("sets and clears the live Discovery default channel-set run policy", async () => {
+    const generatedTasks = mockDiscoveryGeneratedTasks
+      .filter((task) => !task.archived)
+      .map((task) => ({
+        ...task,
+        generatedSource: task.generatedSource
+          ? { ...task.generatedSource, itemStatus: "active" as const }
+          : task.generatedSource,
+      }));
+    const firstGeneratedTask = generatedTasks[0]!;
+    const makeChannelSetItem = (itemTask: TeamCanvasTask): TeamDiscoveryChannelSet["items"][number] => ({
+      generatedTaskId: itemTask.taskId,
+      sourceItemId: itemTask.generatedSource!.sourceItemId,
+      title: itemTask.title,
+      itemPayload: { ...itemTask.generatedSource!.itemPayload },
+      workUnitSnapshot: itemTask.workUnit,
+      workUnitMode: itemTask.generatedSource!.workUnitMode,
+      latestDiscoveryRunId: itemTask.generatedSource!.latestDiscoveryRunId,
+      latestDiscoveryAttemptId: itemTask.generatedSource!.latestDiscoveryAttemptId,
+      latestDiscoveredAt: itemTask.generatedSource!.latestDiscoveredAt,
+    });
+    const channelSet: TeamDiscoveryChannelSet = {
+      schemaVersion: "team/discovery-channel-set-1",
+      channelSetId: "dcs_default",
+      sourceDiscoveryTaskId: mockDiscoveryRootTask.taskId,
+      title: "第一组渠道",
+      items: [makeChannelSetItem(firstGeneratedTask)],
+      archived: false,
+      createdAt: "2026-06-07T00:00:00.000Z",
+      updatedAt: "2026-06-07T00:00:00.000Z",
+    };
+    let rootTask: TeamCanvasTask = { ...mockDiscoveryRootTask };
+    const patchedBodies: unknown[] = [];
+    window.localStorage.setItem("ugk-team-console:data-source", "live");
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/console/root-summary") return rootSummaryResponse({ tasks: [rootTask] });
+      if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse({});
+      if (url.startsWith(`/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`)) {
+        return new Response(JSON.stringify({ tasks: generatedTasks.map(generatedSummary) }), { status: 200 });
+      }
+      if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/discovery-channel-sets`) {
+        return new Response(JSON.stringify({ channelSets: [channelSet] }), { status: 200 });
+      }
+      if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}` && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body));
+        patchedBodies.push(body);
+        rootTask = {
+          ...rootTask,
+          discoveryRunPolicy: body.discoveryRunPolicy,
+          updatedAt: "2026-06-07T02:00:00.000Z",
+        };
+        return new Response(JSON.stringify({ task: rootTask, warnings: [] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 500 });
+    });
+
+    const { container } = render(<App />);
+    const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
+    fireEvent.click(await within(atlas).findByRole("button", { name: mockDiscoveryRootTask.title }));
+    fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+    const panel = await waitFor(() => {
+      const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+
+    expect(within(panel).getByText("正常重新发现")).toBeInTheDocument();
+    fireEvent.click(await within(panel).findByRole("button", { name: "设为默认运行 第一组渠道" }));
+
+    await waitFor(() => {
+      expect(patchedBodies[0]).toEqual({
+        discoveryRunPolicy: {
+          mode: "channel_set",
+          channelSetId: channelSet.channelSetId,
+        },
+      });
+    });
+    expect(await within(panel).findByRole("button", { name: "默认运行渠道集 第一组渠道" })).toBeDisabled();
+    expect(within(panel).getByRole("button", { name: "恢复正常运行" })).toBeInTheDocument();
+
+    fireEvent.click(within(panel).getByRole("button", { name: "恢复正常运行" }));
+
+    await waitFor(() => {
+      expect(patchedBodies[1]).toEqual({
+        discoveryRunPolicy: { mode: "rediscover" },
+      });
+    });
+    expect(await within(panel).findByText("正常重新发现")).toBeInTheDocument();
+  });
+
   it("opens Discovery root run history as a sibling panel when the subcanvas is open", async () => {
     const { container } = render(<App />);
     const { panel } = await openMockDiscoverySubcanvas(container);

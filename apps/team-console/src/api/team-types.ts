@@ -678,6 +678,7 @@ export interface TeamCanvasTask {
   leaderAgentId: string;
   workUnit: TeamWorkUnitDefinition;
   discoverySpec?: TeamDiscoverySpec;
+  discoveryRunPolicy?: TeamDiscoveryRunPolicy;
   generatedSource?: TeamGeneratedTaskSource;
   templateConfig?: TeamTaskTemplateConfig;
   templateState?: TeamTaskTemplateState;
@@ -688,6 +689,10 @@ export interface TeamCanvasTask {
   createdByAgentId?: string;
   archived: boolean;
 }
+
+export type TeamDiscoveryRunPolicy =
+  | { mode: "rediscover"; channelSetId?: never }
+  | { mode: "channel_set"; channelSetId: string };
 
 export interface TeamCanvasTaskListResponse {
   tasks: TeamCanvasTask[];
@@ -747,6 +752,7 @@ export interface TeamTaskUpdateRequest {
   title?: string;
   leaderAgentId?: string;
   workUnit?: TeamWorkUnitDefinition;
+  discoveryRunPolicy?: TeamDiscoveryRunPolicy;
   templateConfig?: TeamTaskTemplateConfig;
   templateState?: TeamTaskTemplateState;
   status?: TeamCanvasTaskStatus;

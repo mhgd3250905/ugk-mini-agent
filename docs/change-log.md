@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-07 — Discovery root default channel-set run policy
+
+- **主题**: Discovery root Task 新增持久运行策略 `discoveryRunPolicy`。默认缺省或 `{ mode: "rediscover" }` 仍按原 Discovery 流程重新发现；设置为 `{ mode: "channel_set", channelSetId }` 后，后续直接运行 root、GroupRun 或 Conn 定时触发的 GroupRun 都会跳过 rediscovery/dispatcher，使用该根任务选定的渠道集运行。
+- **影响范围**: `PATCH /v1/team/tasks/:taskId` 支持保存 Discovery 根节点运行策略；`POST /v1/team/tasks/:taskId/runs` 显式传入 `discoveryChannelSetId` 仍优先于根节点默认策略。Team Console Discovery 子画布渠道集面板新增“默认运行”状态、`设为默认` 和 `恢复正常运行` 操作；`使用渠道集` 仍只是立即运行一次。
+- **对应入口**: `src/team/types.ts`、`src/team/task-validation.ts`、`src/team/task-run-service.ts`、`src/team/routes.ts`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/execution-map.css`、`test/team-discovery-channel-set-routes.test.ts`、`test/team-task-group-run-routes.test.ts`、`apps/team-console/src/tests/app-live-data.test.tsx`。
+
 ## 2026-06-07 — Team Console Discovery channel set editing
 
 - **主题**: Discovery 子画布里选中的已保存渠道集现在可直接编辑。点击渠道集后，名称输入和 generated Task checkbox 进入该集合的编辑态；修改标题或勾选项不会取消 selected，高亮集合的主按钮从“保存渠道集”切换为“更新渠道集”，提交时走 `PATCH /v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId`，不会误创建重复集合。

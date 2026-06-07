@@ -350,6 +350,12 @@ export interface TeamDiscoverySpec {
 	};
 }
 
+export type TeamDiscoveryRunPolicyMode = "rediscover" | "channel_set";
+
+export type TeamDiscoveryRunPolicy =
+	| { mode: "rediscover"; channelSetId?: never }
+	| { mode: "channel_set"; channelSetId: string };
+
 export interface TeamGeneratedTaskSource {
 	schemaVersion: "team/generated-task-source-1";
 	sourceDiscoveryTaskId: string;
@@ -652,6 +658,7 @@ export interface TeamCanvasTask {
 	leaderAgentId: string;
 	workUnit: TeamWorkUnitDefinition;
 	discoverySpec?: TeamDiscoverySpec;
+	discoveryRunPolicy?: TeamDiscoveryRunPolicy;
 	generatedSource?: TeamGeneratedTaskSource;
 	templateConfig?: TeamTaskTemplateConfig;
 	templateState?: TeamTaskTemplateState;

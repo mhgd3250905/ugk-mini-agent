@@ -23,7 +23,7 @@ import { SourceNodeStore, type UpdateSourceNodeInput } from "./source-node-store
 import { MockRoleRunner } from "./role-runner.js";
 import type { TeamRoleRunner } from "./role-runner.js";
 import { buildRunDetailResponse } from "./run-presenter.js";
-import type { TeamRunState, TeamTaskRunHistoryResponse } from "./types.js";
+import type { TeamDiscoveryRunPolicy, TeamRunState, TeamTaskRunHistoryResponse } from "./types.js";
 import type { TeamManualUpstreamRunSelection } from "./types.js";
 import { AgentProfileRoleRunner } from "./agent-profile-role-runner.js";
 import { closeBrowserTargetsForScope } from "../agent/browser-cleanup.js";
@@ -76,6 +76,26 @@ function readSinceCursor(value: unknown): string | undefined {
 
 function readRouteRecord(value: unknown): Record<string, unknown> | null {
 	return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+async function assertDiscoveryRunPolicyTarget(input: {
+	taskStore: TaskStore;
+	discoveryChannelSetStore: DiscoveryChannelSetStore;
+	taskId: string;
+	policy: TeamDiscoveryRunPolicy | undefined;
+}): Promise<void> {
+	if (input.policy?.mode !== "channel_set") return;
+	const task = await input.taskStore.get(input.taskId);
+	if (!task) throw new Error(`task not found: ${input.taskId}`);
+	const channelSet = await input.discoveryChannelSetStore.get(input.policy.channelSetId);
+	if (!channelSet) throw new Error(`discovery channel set not found: ${input.policy.channelSetId}`);
+	if (channelSet.archived) throw new Error(`archived discovery channel set cannot be used: ${input.policy.channelSetId}`);
+	if (channelSet.sourceDiscoveryTaskId !== task.taskId) {
+		throw new Error(`discovery channel set ${input.policy.channelSetId} does not belong to task ${task.taskId}`);
+	}
+	if (channelSet.items.length === 0) {
+		throw new Error(`discovery channel set has no items: ${input.policy.channelSetId}`);
+	}
 }
 
 function readOptionalStringRecord(value: unknown, label: string): Record<string, string> | undefined {
@@ -493,14 +513,21 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		if (Object.hasOwn(body, "leaderAgentId")) patch.leaderAgentId = body.leaderAgentId as string;
 		if (Object.hasOwn(body, "workUnit")) patch.workUnit = body.workUnit as any;
 		if (Object.hasOwn(body, "discoverySpec")) patch.discoverySpec = body.discoverySpec as any;
+		if (Object.hasOwn(body, "discoveryRunPolicy")) patch.discoveryRunPolicy = body.discoveryRunPolicy as any;
 		if (Object.hasOwn(body, "templateConfig")) patch.templateConfig = body.templateConfig as any;
 		if (Object.hasOwn(body, "templateState")) patch.templateState = body.templateState as any;
 		if (Object.hasOwn(body, "status")) patch.status = body.status as any;
 		try {
+			await assertDiscoveryRunPolicyTarget({
+				taskStore,
+				discoveryChannelSetStore,
+				taskId,
+				policy: patch.discoveryRunPolicy,
+			});
 			const task = await taskStore.update(taskId, patch);
 			sendTaskResponse(reply, task);
 		} catch (err) {
-			sendMappedError(reply, err, [["not found", 404], ["locked", 409]]);
+			sendMappedError(reply, err, [["discovery channel set not found", 404], ["not found", 404], ["archived discovery channel set", 409], ["locked", 409], ["does not belong", 400], ["no items", 400], ["discoveryRunPolicy", 400]]);
 		}
 	});
 

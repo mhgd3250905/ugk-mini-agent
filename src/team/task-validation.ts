@@ -2,6 +2,7 @@ import type {
 	TeamCanvasTask,
 	TeamCanvasTaskKind,
 	TeamCanvasTaskStatus,
+	TeamDiscoveryRunPolicy,
 	TeamDiscoverySpec,
 	TeamGeneratedTaskSource,
 	TeamTaskOutputCheck,
@@ -25,6 +26,7 @@ export interface CreateTeamCanvasTaskInput {
 	leaderAgentId: string;
 	workUnit: TeamWorkUnitDefinition;
 	discoverySpec?: TeamDiscoverySpec;
+	discoveryRunPolicy?: TeamDiscoveryRunPolicy;
 	generatedSource?: TeamGeneratedTaskSource;
 	templateConfig?: TeamTaskTemplateConfig;
 	templateState?: TeamTaskTemplateState;
@@ -38,6 +40,7 @@ export interface UpdateTeamCanvasTaskInput {
 	leaderAgentId?: string;
 	workUnit?: TeamWorkUnitDefinition;
 	discoverySpec?: TeamDiscoverySpec;
+	discoveryRunPolicy?: TeamDiscoveryRunPolicy;
 	templateConfig?: TeamTaskTemplateConfig;
 	templateState?: TeamTaskTemplateState;
 	status?: TeamCanvasTaskStatus;
@@ -186,6 +189,24 @@ function validateDiscoverySpec(discoverySpec: TeamDiscoverySpec | undefined, con
 	}
 }
 
+function validateDiscoveryRunPolicy(discoveryRunPolicy: TeamDiscoveryRunPolicy | undefined): void {
+	if (discoveryRunPolicy === undefined) return;
+	if (!discoveryRunPolicy || typeof discoveryRunPolicy !== "object" || Array.isArray(discoveryRunPolicy)) {
+		throw new Error("discoveryRunPolicy must be an object");
+	}
+	if (discoveryRunPolicy.mode === "rediscover") {
+		if ("channelSetId" in discoveryRunPolicy && discoveryRunPolicy.channelSetId !== undefined) {
+			throw new Error("discoveryRunPolicy.channelSetId is only valid for channel_set mode");
+		}
+		return;
+	}
+	if (discoveryRunPolicy.mode === "channel_set") {
+		assertNonEmptyString(discoveryRunPolicy.channelSetId, "discoveryRunPolicy.channelSetId is required");
+		return;
+	}
+	throw new Error("discoveryRunPolicy.mode is invalid");
+}
+
 function validateGeneratedSource(generatedSource: TeamGeneratedTaskSource | undefined, context: TaskValidationContext): void {
 	if (!generatedSource || typeof generatedSource !== "object" || Array.isArray(generatedSource)) {
 		throw new Error("generatedSource is required for generated tasks");
@@ -312,13 +333,19 @@ export function validateCreateTaskInput(input: CreateTeamCanvasTaskInput, contex
 			throw new Error("discovery root task cannot carry generatedSource");
 		}
 		validateDiscoverySpec(input.discoverySpec, context);
+		validateDiscoveryRunPolicy(input.discoveryRunPolicy);
 	} else if (input.generatedSource !== undefined) {
 		if (input.discoverySpec !== undefined) {
 			throw new Error("generated task cannot carry discoverySpec");
 		}
+		if (input.discoveryRunPolicy !== undefined) {
+			throw new Error("generated task cannot carry discoveryRunPolicy");
+		}
 		validateGeneratedSource(input.generatedSource, context);
 	} else if (input.discoverySpec !== undefined) {
 		throw new Error("normal root task cannot carry discoverySpec");
+	} else if (input.discoveryRunPolicy !== undefined) {
+		throw new Error("normal root task cannot carry discoveryRunPolicy");
 	}
 	assertNonEmptyString(input.title, "task title is required");
 	const leaderAgentId = assertNonEmptyString(input.leaderAgentId, "leaderAgentId is required");
@@ -374,6 +401,15 @@ export function validateTaskUpdateInput(existing: TeamCanvasTask, patch: UpdateT
 			throw new Error("normal root task cannot carry discoverySpec");
 		}
 		validateDiscoverySpec(patch.discoverySpec, context);
+	}
+	if (patch.discoveryRunPolicy !== undefined) {
+		if (existing.generatedSource) {
+			throw new Error("generated task cannot carry discoveryRunPolicy");
+		}
+		if (existing.canvasKind !== "discovery") {
+			throw new Error("normal root task cannot carry discoveryRunPolicy");
+		}
+		validateDiscoveryRunPolicy(patch.discoveryRunPolicy);
 	}
 	if (patch.status !== undefined && !PATCH_STATUSES.has(patch.status)) {
 		throw new Error("task status must be drafting or ready");

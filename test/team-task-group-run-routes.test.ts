@@ -58,6 +58,20 @@ const taskPayload = {
 	},
 };
 
+const discoverySpec = {
+	schemaVersion: "team/discovery-spec-1" as const,
+	discoveryGoal: "发现 Medtrum 相关公开渠道。",
+	outputKey: "items",
+	itemIdField: "id" as const,
+	requiredItemFields: ["id"],
+	recommendedItemFields: ["title", "url"],
+	dispatchGoal: "逐项核查渠道公开证据。",
+	dispatcherAgentId: "main",
+	generatedWorkerAgentId: "search",
+	generatedCheckerAgentId: "main",
+	autoRun: { enabled: true as const, concurrency: 3 as const },
+};
+
 function withPorts(
 	payload: typeof taskPayload,
 	ports: {
@@ -105,6 +119,51 @@ async function createTask(app: Awaited<ReturnType<typeof buildTestServer>>["app"
 	});
 	assert.equal(res.statusCode, 201);
 	return res.json().task;
+}
+
+async function createDiscoveryTask(app: Awaited<ReturnType<typeof buildTestServer>>["app"], title: string) {
+	const res = await app.inject({
+		method: "POST",
+		url: "/v1/team/tasks",
+		payload: {
+			...taskPayload,
+			title,
+			canvasKind: "discovery",
+			discoverySpec,
+		},
+	});
+	assert.equal(res.statusCode, 201);
+	return res.json().task;
+}
+
+async function seedGeneratedTask(teamDir: string, sourceDiscoveryTaskId: string, sourceItemId: string) {
+	const store = new TaskStore(teamDir, { getAgentIds: () => ["main", "search"] });
+	return await store.create({
+		...taskPayload,
+		title: `Generated ${sourceItemId}`,
+		workUnit: {
+			...taskPayload.workUnit,
+			title: `核查渠道 ${sourceItemId}`,
+			input: { text: `重新核查渠道 ${sourceItemId}。` },
+		},
+		generatedSource: {
+			schemaVersion: "team/generated-task-source-1",
+			sourceDiscoveryTaskId,
+			sourceItemId,
+			itemStatus: "active",
+			itemPayload: { id: sourceItemId, title: `Channel ${sourceItemId}`, url: `https://${sourceItemId}.example.test` },
+			latestDiscoveryRunId: `run_${sourceItemId}`,
+			latestDiscoveryAttemptId: `attempt_${sourceItemId}`,
+			latestDiscoveredAt: "2026-06-07T00:00:00.000Z",
+			workUnitMode: "managed",
+			latestManagedWorkUnit: {
+				...taskPayload.workUnit,
+				title: `核查渠道 ${sourceItemId}`,
+				input: { text: `重新核查渠道 ${sourceItemId}。` },
+			},
+		},
+		status: "ready",
+	});
 }
 
 async function connectTasks(app: Awaited<ReturnType<typeof buildTestServer>>["app"], fromTaskId: string, toTaskId: string) {
@@ -219,6 +278,46 @@ test("POST /v1/team/task-groups/:groupId/runs starts all independent heads as en
 			taskIds: [first.taskId, second.taskId],
 			headTaskIds: [first.taskId, second.taskId],
 		});
+	} finally {
+		await app.close();
+		await removeTempRoot(root);
+	}
+});
+
+test("POST /v1/team/task-groups/:groupId/runs uses the Discovery root default channel-set policy", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const discovery = await createDiscoveryTask(app, "Discovery head");
+		const generated = await seedGeneratedTask(teamDir, discovery.taskId, "selected");
+		const channelSetRes = await app.inject({
+			method: "POST",
+			url: `/v1/team/tasks/${discovery.taskId}/discovery-channel-sets`,
+			payload: { title: "默认渠道", generatedTaskIds: [generated.taskId] },
+		});
+		assert.equal(channelSetRes.statusCode, 201);
+		const channelSet = channelSetRes.json().channelSet;
+		const patch = await app.inject({
+			method: "PATCH",
+			url: `/v1/team/tasks/${discovery.taskId}`,
+			payload: {
+				discoveryRunPolicy: {
+					mode: "channel_set",
+					channelSetId: channelSet.channelSetId,
+				},
+			},
+		});
+		assert.equal(patch.statusCode, 200);
+		const group = await createGroup(app, "Discovery group", [discovery.taskId]);
+
+		const res = await app.inject({ method: "POST", url: `/v1/team/task-groups/${group.groupId}/runs` });
+
+		assert.equal(res.statusCode, 201);
+		const groupRun = res.json().groupRun as TeamTaskGroupRun;
+		assert.equal(groupRun.entryRuns.length, 1);
+		const entryRunId = groupRun.entryRuns[0]!.runId;
+		const entryRun = await app.inject({ method: "GET", url: `/v1/team/task-runs/${entryRunId}` });
+		assert.equal(entryRun.statusCode, 200);
+		assert.equal((entryRun.json() as TeamRunState).source?.discoveryChannelSetId, channelSet.channelSetId);
 	} finally {
 		await app.close();
 		await removeTempRoot(root);

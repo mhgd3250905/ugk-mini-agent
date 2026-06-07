@@ -241,8 +241,10 @@ export class CanvasTaskRunService {
 			? await this.options.taskStore.updateTemplateCurrentBindings(task.taskId, templateBindings)
 			: task;
 		const runnableTask = templateBindings ? applyTemplateBindingsToTask(storedTask, templateBindings) : storedTask;
-		const discoveryChannelSet = runOptions.discoveryChannelSetId
-			? await this.resolveDiscoveryChannelSetForRun(runnableTask, runOptions.discoveryChannelSetId)
+		const discoveryChannelSetId = runOptions.discoveryChannelSetId
+			?? (runnableTask.discoveryRunPolicy?.mode === "channel_set" ? runnableTask.discoveryRunPolicy.channelSetId : undefined);
+		const discoveryChannelSet = discoveryChannelSetId
+			? await this.resolveDiscoveryChannelSetForRun(runnableTask, discoveryChannelSetId)
 			: null;
 		const resolvedUpstream = runOptions.upstreamRunSelections?.length
 			? await this.resolveUpstreamRunSelections(runnableTask, runOptions.upstreamRunSelections)

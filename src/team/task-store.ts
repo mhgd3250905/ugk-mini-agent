@@ -2,7 +2,7 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { renameWithTransientRetry } from "../file-system.js";
 import { generateTaskId } from "./ids.js";
-import type { TeamCanvasTask, TeamCanvasTaskStatus, TeamDiscoverySpec, TeamTaskTemplateConfig, TeamTaskTemplateState, TeamWorkUnitDefinition } from "./types.js";
+import type { TeamCanvasTask, TeamCanvasTaskStatus, TeamDiscoveryRunPolicy, TeamDiscoverySpec, TeamTaskTemplateConfig, TeamTaskTemplateState, TeamWorkUnitDefinition } from "./types.js";
 import {
 	type CreateTeamCanvasTaskInput,
 	type TaskValidationContext,
@@ -44,6 +44,10 @@ function cloneWorkUnit(workUnit: TeamWorkUnitDefinition): TeamWorkUnitDefinition
 
 function cloneDiscoverySpec(discoverySpec: TeamDiscoverySpec | undefined): TeamDiscoverySpec | undefined {
 	return discoverySpec ? JSON.parse(JSON.stringify(discoverySpec)) as TeamDiscoverySpec : undefined;
+}
+
+function cloneDiscoveryRunPolicy(discoveryRunPolicy: TeamDiscoveryRunPolicy | undefined): TeamDiscoveryRunPolicy | undefined {
+	return discoveryRunPolicy ? JSON.parse(JSON.stringify(discoveryRunPolicy)) as TeamDiscoveryRunPolicy : undefined;
 }
 
 function cloneTemplateConfig(templateConfig: TeamTaskTemplateConfig | undefined): TeamTaskTemplateConfig | undefined {
@@ -127,6 +131,7 @@ export class TaskStore {
 			workUnit: input.workUnit,
 			...(input.canvasKind ? { canvasKind: input.canvasKind } : {}),
 			...(input.discoverySpec ? { discoverySpec: input.discoverySpec } : {}),
+			...(input.discoveryRunPolicy ? { discoveryRunPolicy: input.discoveryRunPolicy } : {}),
 			...(input.generatedSource ? { generatedSource: input.generatedSource } : {}),
 			...(input.templateConfig ? { templateConfig: input.templateConfig } : {}),
 			...(input.templateState ? { templateState: input.templateState } : {}),
@@ -372,6 +377,7 @@ export class TaskStore {
 			...task,
 			status,
 			archived: task.archived ?? false,
+			...(task.discoveryRunPolicy ? { discoveryRunPolicy: cloneDiscoveryRunPolicy(task.discoveryRunPolicy) } : {}),
 			...(task.templateState ? { templateState: cloneTemplateState(task.templateState) } : {}),
 		};
 	}

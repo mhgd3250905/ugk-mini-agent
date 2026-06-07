@@ -1616,6 +1616,7 @@ export function App() {
   const [discoveryChannelSetLoadingByTaskId, setDiscoveryChannelSetLoadingByTaskId] = useState<Record<string, boolean>>({});
   const [discoveryChannelSetSavingByTaskId, setDiscoveryChannelSetSavingByTaskId] = useState<Record<string, boolean>>({});
   const [discoveryChannelSetArchivingById, setDiscoveryChannelSetArchivingById] = useState<Record<string, boolean>>({});
+  const [discoveryRunPolicySavingByTaskId, setDiscoveryRunPolicySavingByTaskId] = useState<Record<string, boolean>>({});
   const discoveryChannelSetLoadKeysRef = useRef<Set<string>>(new Set());
   const [taskRunObserverByRunId, setTaskRunObserverByRunId] = useState<Record<string, TaskRunObserverState>>({});
   const taskRunObserverByRunIdRef = useRef(taskRunObserverByRunId);
@@ -3339,6 +3340,32 @@ export function App() {
     }
   }, [dataSource, selectedDiscoveryChannelSetIdByTaskId, setError]);
 
+  const updateDiscoveryRunPolicy = useCallback(async (task: TeamCanvasTask, channelSetId: string | null) => {
+    const taskId = task.taskId;
+    setDiscoveryRunPolicySavingByTaskId((current) => ({ ...current, [taskId]: true }));
+    try {
+      const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
+      const response = await api.updateTask(taskId, {
+        discoveryRunPolicy: channelSetId
+          ? { mode: "channel_set", channelSetId }
+          : { mode: "rediscover" },
+      });
+      setTasks((current) => current.map((item) => item.taskId === taskId ? response.task : item));
+      setTaskNodes((current) => current.map((node) => (
+        node.taskId === taskId ? { ...node, title: response.task.title, status: response.task.status } : node
+      )));
+      if (dataSource === "live") {
+        await refreshLiveTasks();
+        setTasks((current) => current.map((item) => item.taskId === taskId ? response.task : item));
+      }
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setDiscoveryRunPolicySavingByTaskId((current) => ({ ...current, [taskId]: false }));
+    }
+  }, [dataSource, refreshLiveTasks, setTaskNodes, setTasks, setError]);
+
   const runTask = useCallback(async (
     task: TeamCanvasTask,
     nodeId?: string,
@@ -4808,6 +4835,13 @@ export function App() {
         const activeDiscoveryChannelSet = activeDiscoveryChannelSetId
           ? discoveryChannelSets.find((channelSet) => channelSet.channelSetId === activeDiscoveryChannelSetId) ?? null
           : null;
+        const defaultDiscoveryChannelSetId = task.discoveryRunPolicy?.mode === "channel_set"
+          ? task.discoveryRunPolicy.channelSetId
+          : null;
+        const defaultDiscoveryChannelSet = defaultDiscoveryChannelSetId
+          ? discoveryChannelSets.find((channelSet) => channelSet.channelSetId === defaultDiscoveryChannelSetId) ?? null
+          : null;
+        const discoveryRunPolicySaving = Boolean(discoveryRunPolicySavingByTaskId[task.taskId]);
         const activeDiscoveryChannelTaskIdSet = new Set(
           activeDiscoveryChannelSet?.items.map((item) => item.generatedTaskId) ?? [],
         );
@@ -5239,6 +5273,27 @@ export function App() {
                   <span>渠道集</span>
                   <strong>{selectedDiscoveryChannelTaskIds.length} selected</strong>
                 </div>
+                <div
+                  className="discovery-run-policy-row"
+                  data-discovery-run-policy={defaultDiscoveryChannelSetId ? "channel_set" : "rediscover"}
+                >
+                  <span>
+                    默认运行：
+                    <strong>{defaultDiscoveryChannelSet?.title ?? (defaultDiscoveryChannelSetId ? "渠道集缺失" : "正常重新发现")}</strong>
+                  </span>
+                  {defaultDiscoveryChannelSetId ? (
+                    <button
+                      type="button"
+                      className="discovery-channel-set-action"
+                      disabled={discoveryRunPolicySaving}
+                      onClick={() => {
+                        void updateDiscoveryRunPolicy(task, null);
+                      }}
+                    >
+                      {discoveryRunPolicySaving ? "保存中..." : "恢复正常运行"}
+                    </button>
+                  ) : null}
+                </div>
                 <div className="discovery-channel-set-composer">
                   <label className="discovery-channel-set-title-field">
                     <span>名称</span>
@@ -5296,13 +5351,15 @@ export function App() {
                       const archiving = Boolean(discoveryChannelSetArchivingById[channelSet.channelSetId]);
                       const runningFromSet = Boolean(taskRunSavingByTaskId[task.taskId]);
                       const channelSetSelected = selectedDiscoveryChannelSetId === channelSet.channelSetId;
+                      const defaultForRun = defaultDiscoveryChannelSetId === channelSet.channelSetId;
                       return (
                         <div
                           key={channelSet.channelSetId}
-                          className={`discovery-channel-set-row ${channelSetSelected ? "is-selected" : ""}`}
+                          className={`discovery-channel-set-row ${channelSetSelected ? "is-selected" : ""} ${defaultForRun ? "is-default-run" : ""}`}
                           data-discovery-channel-set-id={channelSet.channelSetId}
                           data-discovery-channel-set-items={channelSet.items.length}
                           data-discovery-channel-set-selected={channelSetSelected ? "true" : "false"}
+                          data-discovery-channel-set-default-run={defaultForRun ? "true" : "false"}
                         >
                           <button
                             type="button"
@@ -5315,6 +5372,17 @@ export function App() {
                             <span>{channelSet.items.length} channels</span>
                           </button>
                           <div className="discovery-channel-set-row-actions">
+                            <button
+                              type="button"
+                              className="discovery-channel-set-action"
+                              aria-label={`${defaultForRun ? "默认运行渠道集" : "设为默认运行"} ${channelSet.title}`}
+                              disabled={defaultForRun || discoveryRunPolicySaving || archiving || channelSet.items.length === 0}
+                              onClick={() => {
+                                void updateDiscoveryRunPolicy(task, channelSet.channelSetId);
+                              }}
+                            >
+                              {defaultForRun ? "默认运行" : (discoveryRunPolicySaving ? "保存中..." : "设为默认")}
+                            </button>
                             <button
                               type="button"
                               className="discovery-channel-set-action primary"
@@ -6276,7 +6344,7 @@ export function App() {
     }
 
     return panels;
-  }, [activeRunHistoryTaskId, agents, agentsById, archiveDiscoveryChannelSet, archiveGeneratedTask, archiveTask, cancelTaskRun, clearDiscoveryChannelTaskSelection, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskCloneState, clearTaskEditState, clearTaskEditWarning, clearTaskParameterState, cloneTask, closeTaskRunHistory, copyRunHistoryAnalysisContext, copyTaskLeaderContext, dataSource, discoveryChannelSetArchivingById, discoveryChannelSetLoadingByTaskId, discoveryChannelSetSavingByTaskId, discoveryChannelSetTitleByTaskId, discoveryChannelSetsByTaskId, discoveryDispatchDiagnosticsByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, loadMoreRunHistory, loadRunHistoryItem, loadedTaskRunByTaskId, openTaskEditDraft, openTaskParameterDraft, openTaskRunHistory, patchRunHistoryAnnotation, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runHistoryAnalysisCopyState, runHistoryAnalysisManualText, runHistoryError, runHistoryIncludeArchived, runHistoryItems, runHistoryLoading, runHistorySavingRunId, runHistoryTotal, runTask, saveDiscoveryChannelSet, saveTaskEdit, saveTaskParameters, scheduleLiveTaskDiscoveryRefresh, selectDiscoveryChannelSet, selectedDiscoveryChannelSetIdByTaskId, selectedDiscoveryChannelTaskIdsByTaskId, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskCloneDraftByTaskId, taskCloneSavingByTaskId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskParameterDraftByTaskId, taskParameterSavingByTaskId, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, toggleDiscoveryChannelTaskSelection, unloadRunHistoryItem, updateTaskCloneBinding, updateTaskCloneTitle, updateTaskEditDraft, updateTaskParameterBinding]);
+  }, [activeRunHistoryTaskId, agents, agentsById, archiveDiscoveryChannelSet, archiveGeneratedTask, archiveTask, cancelTaskRun, clearDiscoveryChannelTaskSelection, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskCloneState, clearTaskEditState, clearTaskEditWarning, clearTaskParameterState, cloneTask, closeTaskRunHistory, copyRunHistoryAnalysisContext, copyTaskLeaderContext, dataSource, discoveryChannelSetArchivingById, discoveryChannelSetLoadingByTaskId, discoveryChannelSetSavingByTaskId, discoveryChannelSetTitleByTaskId, discoveryChannelSetsByTaskId, discoveryDispatchDiagnosticsByTaskId, discoveryRunPolicySavingByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, loadMoreRunHistory, loadRunHistoryItem, loadedTaskRunByTaskId, openTaskEditDraft, openTaskParameterDraft, openTaskRunHistory, patchRunHistoryAnnotation, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runHistoryAnalysisCopyState, runHistoryAnalysisManualText, runHistoryError, runHistoryIncludeArchived, runHistoryItems, runHistoryLoading, runHistorySavingRunId, runHistoryTotal, runTask, saveDiscoveryChannelSet, saveTaskEdit, saveTaskParameters, scheduleLiveTaskDiscoveryRefresh, selectDiscoveryChannelSet, selectedDiscoveryChannelSetIdByTaskId, selectedDiscoveryChannelTaskIdsByTaskId, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskCloneDraftByTaskId, taskCloneSavingByTaskId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskParameterDraftByTaskId, taskParameterSavingByTaskId, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, toggleDiscoveryChannelTaskSelection, unloadRunHistoryItem, updateDiscoveryRunPolicy, updateTaskCloneBinding, updateTaskCloneTitle, updateTaskEditDraft, updateTaskParameterBinding]);
   const canvasStateRestorePending = !loading && !canvasUiStateHydrated;
   const canvasLoadingMinimumMs = loading || canvasUiStateRestoreHasStoredState
     ? CANVAS_LOADING_MIN_VISIBLE_MS
