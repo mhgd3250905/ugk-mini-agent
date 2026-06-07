@@ -1,6 +1,8 @@
 # Team Runtime v2
 
-更新时间：2026-06-06
+更新时间：2026-06-07
+
+> 2026-06-07 补充：Discovery root Task 已支持渠道集复用。`GET/POST/PATCH/archive /v1/team/tasks/:taskId/discovery-channel-sets` 用于保存某个 Discovery root 下选中的 generated child Tasks；记录持久化在 `.data/team/discovery-channel-sets.json`，只保存 child 的 `itemPayload`、WorkUnit snapshot 和来源 trace，不保存 run output。`POST /v1/team/tasks/:taskId/runs` 可传 `discoveryChannelSetId`，仅允许未归档 Discovery root 使用同源、未归档且至少 1 item 的渠道集；运行时会跳过 root rediscovery/dispatcher，用渠道集 items 写出本轮标准 `discovery-result.json` / `discovery-aggregation.json`，再按既有 generated child auto-run 语义启动对应 child runs。原 generated Task 被归档后不会自动删除已保存渠道集；渠道集 run 使用保存时的 snapshot。
 
 > 2026-06-06 补充：`team_group` Conn 对 mutable Group 的 start failure 诊断已补齐。已保存 Conn 指向的 Group 如果后来变成 empty/invalid，`POST /v1/team/task-groups/:groupId/runs` 返回 400 时 ConnRun 会保持 `failed`，并写入 `resolvedSnapshot.executionType="team_group"`、`groupId`、`groupRunStartStatus` 和 `groupRunStartError`。`/playground/conn` 与 `/playground` Conn manager 的 run detail 会在没有 `groupRunId` 时仍显示 Team Group block、start status/error 和 Group JSON；409 active guard 仍是 succeeded skipped。
 
@@ -1227,6 +1229,7 @@ docker compose up -d --scale ugk-pi-team-worker=2  # 多 worker 验证
 | `src/team/run-state-events.ts` | 进程内 run state 变更通知（subscribe/notify） |
 | `src/team/team-unit-store.ts` | TeamUnit 存储 |
 | `src/team/task-store.ts` | Team Canvas Task 持久化：`.data/team/tasks/<taskId>.json`、旧字段兼容、归档过滤 |
+| `src/team/discovery-channel-set-store.ts` | Discovery 渠道集持久化：`.data/team/discovery-channel-sets.json`、从 generated child snapshot 创建可复用渠道集合 |
 | `src/team/task-port-contract.ts` | Typed Task port contract：port id/type 校验、input/output port 查找和展示标签 |
 | `src/team/task-connection-store.ts` | Typed Task connection store：`.data/team/task-connections.json`、类型匹配、重复连接和 DAG cycle 防护 |
 | `src/team/task-validation.ts` | Task create/update schema policy：leader / worker / checker Agent、WorkUnit 输入 / 输出契约 / typed ports / 验收规则校验 |

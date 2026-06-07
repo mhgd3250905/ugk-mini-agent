@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-07 — Discovery channel set reuse
+
+- **主题**: Discovery root Task 支持把历史 generated child Tasks 保存为可复用渠道集。Team Console 子画布可选择 active generated child、保存渠道集、归档渠道集，并在下次运行 root Discovery 时传入 `discoveryChannelSetId` 跳过 rediscovery/dispatcher，直接使用保存的渠道 snapshot 启动对应 generated child runs。
+- **接口跟进**: 新增 `GET/POST/PATCH/archive /v1/team/tasks/:taskId/discovery-channel-sets`；`POST /v1/team/tasks/:taskId/runs` 新增可选 `discoveryChannelSetId`。渠道集持久化在 `.data/team/discovery-channel-sets.json`，保存 child item payload 和 WorkUnit snapshot，不保存运行产物。
+- **对应入口**: `src/team/discovery-channel-set-store.ts`、`src/team/task-run-service.ts`、`src/team/discovery-run-lifecycle.ts`、`src/team/routes.ts`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/api/team-api.ts`、`apps/team-console/src/graph/execution-map.css`、`test/team-discovery-channel-set-routes.test.ts`、`test/team-task-run-process.test.ts`、`apps/team-console/src/tests/app-live-data.test.tsx`。
+
 ## 2026-06-07 — Team Console Task node visual focus
 
 - **主题**: Team Console 根 Task 节点选中阴影改为跟随“最后点击的 Task”，不再跟随 Task branch stack 的最后展开项。A/B/A 场景中，第三次点击 A 会收起 A 的 Task 操作面板，但 A 仍保持选中视觉；B 的面板仍可保持展开，视觉焦点不会错误落回 B。

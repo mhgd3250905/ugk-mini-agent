@@ -24,24 +24,18 @@
 
 ## 当前 Git 现场
 
-- 当前分支：`main...origin/main`（本轮 Team Console run history 轻量分页与 Task 节点视觉焦点修复已提交到本地，提交标题为 `Improve Team Console run history and task focus`；是否推送以用户后续指令为准）。继续前以 `git status --short --branch` 和 `git log -5 --oneline` 为准。
-- 本轮 Git 保存范围：Team Console run history 轻量分页、`hasMore` 响应字段、history summary 读取路径、运行记录列表主题 scrollbar、Task 节点 selected 视觉焦点解耦、相关测试和本交接文档。
+- 当前分支：`codex/discovery-channel-set`。
+- 相对 `origin/main` 本地 ahead 提交包括：
+  - `63a739f7 Add Team Console Discovery channel set controls`
+  - `5fd0883f Run Discovery roots from saved channel sets`
+  - `cd3b5a5a Add Discovery channel set backend contract`
+- 本轮 Git 保存范围：Discovery channel set 后端合同、从保存渠道集跳过 rediscovery/dispatcher 的 root run 路径、Team Console 子画布渠道集选择/保存/归档/使用 UI、相关测试和文档。
 - 仍有无关未跟踪 `docs/windows-native-runtime-feasibility.md`，不要误提交。
-- 最近新增本地提交包括：
-  - `Fix Team artifact handoff and Discovery history panels`
-  - `Fix Team Console Discovery run history interactions`
-- 当前近期关键提交包括：
-  - `0586777 Fix Team artifact handoff and Discovery history panels`
-  - `3ec2ddb Update Team Console run observer handoff`
-  - `61c1484 Allow run observer panels above atlas origin`
-  - `0070e72 Improve Team Console load smoothness`
-  - `942c9fe Fix Team Console build fixture types`
-  - `9d33c42 Extract Team Group projection`
-  - `00ff6a9 Extract Team Group member row layout`
+- 仍有本轮计划草稿 `.codex/plans/2026-06-07-discovery-channel-set.md` 未跟踪，不要提交。
 - `origin`：GitHub `https://github.com/mhgd3250905/ugk-claw-personal.git`。
 - `gitee`：`https://gitee.com/ksheng3250905/ugk-pi-claw.git`，本轮未同步。
 - 不要把 `docs/windows-native-runtime-feasibility.md` 误判成本轮 Team Console 修复的一部分；它是无关未跟踪文档。
-- 本轮已同步 GitHub `origin/main`；`gitee` 未同步。
+- 本轮 feature branch 尚未推送 `origin` 或 `gitee`；是否推送以用户后续指令为准。
 - 不要提交这些本地未跟踪物件：`.codex/config.toml`、既有 `.codex/plans/**`、`.omo/`、`github-trending.txt`、`public/**`、`eoflow*.html`、`cupid.js`、`solve_cupid.mjs`、runtime 数据、截图、报告、临时文件。
 
 继续工作前先执行：
@@ -56,6 +50,10 @@ git log --oneline origin/main..HEAD
 
 ## 当前已完成事实
 
+- Discovery root Task 已支持渠道集复用。用户可在 Team Console Discovery 子画布勾选 active generated child Tasks，保存为渠道集；渠道集保存 generated child 的 discovery item payload、WorkUnit snapshot 和来源 trace，不保存 run output。
+- 新增 `GET /v1/team/tasks/:taskId/discovery-channel-sets`、`POST /v1/team/tasks/:taskId/discovery-channel-sets`、`PATCH /v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId` 和 `POST /v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId/archive`。持久文件为 `.data/team/discovery-channel-sets.json`。
+- `POST /v1/team/tasks/:taskId/runs` 新增可选 `discoveryChannelSetId`。Discovery root 使用同源未归档渠道集运行时，会跳过 root rediscovery/dispatcher，写出标准 `discovery-result.json` / `discovery-aggregation.json`，并按既有 auto-run 语义启动保存的 generated child runs。
+- Team Console 子画布新增“渠道集”面板：显示选择数量、名称输入、保存/清空、已保存渠道集列表、使用渠道集和归档操作。generated child card 左上角有渠道选择 checkbox，选中态使用 `is-channel-selected` / `data-generated-channel-selected`。
 - Team Task Group 后端持久 contract 已完成。Group definition 允许保存 empty/invalid membership；read model 通过 `ResolvedTeamTaskGroup.status/headTaskIds/validation.errors` 表达语义状态。
 - Team Task GroupRun 后端 contract 已完成。GroupRun start 才硬拒绝 empty/invalid Group，返回 400 `invalid task group`；active guard 仍返回 409。GroupRun 保存 `definitionSnapshot`，刷新/取消优先使用 snapshot membership。
 - GroupRun 完成态已按 Group 内真实 Task 流水线聚合。Discovery generated child run 保留诊断和取消用途，但不再一票否决主 GroupRun 终态。
@@ -98,6 +96,13 @@ git log --oneline origin/main..HEAD
 
 ## 本轮最终验证
 
+- Discovery channel set 本轮验证：
+  - `node --test --test-concurrency=1 --import tsx test/team-discovery-channel-set-routes.test.ts test/team-task-run-process.test.ts test/team-task-run-routes.test.ts`：组合运行 97/98 pass，唯一失败为 Windows 临时目录清理 `ENOTEMPTY ...\task-runs\runs`；随后单独重跑 `node --test --test-concurrency=1 --import tsx test/team-task-run-process.test.ts`：53/53 pass，确认不是行为断言失败。
+  - `npm --prefix apps/team-console test -- --run src/tests/team-api.test.ts src/tests/app-live-data.test.tsx src/tests/app-static-contracts.test.ts src/tests/app-run-observer.test.tsx`：264/264 pass。
+  - `npx tsc --noEmit`：pass。
+  - `npm --prefix apps/team-console run build`：pass；仅既有 Vite chunk size warning。
+  - `git diff --check`：pass。
+  - Browser `http://127.0.0.1:5174/`：重启 `ugk-pi-team-console` 后在 mock Discovery 子画布确认渠道集面板、名称输入、保存/清空按钮和 generated child 选择 checkbox 渲染；勾选 `核查 Vultr 公开证据` 后面板从 `0 selected` 变为 `1 selected`，保存/清空按钮解除禁用。未切到 Live API，未改真实用户链路。
 - Typed artifact file-first handoff 修复验证：
   - `npx tsx --test test/team-task-artifact-handoff.test.ts`：15/15 pass。
   - `npx tsx --test test/team-task-run-process.test.ts`：52/52 pass。
