@@ -175,6 +175,33 @@ test("Discovery channel sets persist selected generated item snapshots", async (
 	}
 });
 
+test("POST /v1/team/tasks/:taskId/runs accepts discoveryChannelSetId", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const discovery = await createDiscoveryTask(app);
+		const generated = await seedGeneratedTask(teamDir, discovery.taskId, "selected");
+		const create = await app.inject({
+			method: "POST",
+			url: `/v1/team/tasks/${discovery.taskId}/discovery-channel-sets`,
+			payload: { title: "选定渠道", generatedTaskIds: [generated.taskId] },
+		});
+		assert.equal(create.statusCode, 201);
+		const channelSet = create.json().channelSet;
+
+		const run = await app.inject({
+			method: "POST",
+			url: `/v1/team/tasks/${discovery.taskId}/runs`,
+			payload: { discoveryChannelSetId: channelSet.channelSetId },
+		});
+
+		assert.equal(run.statusCode, 201);
+		assert.equal(run.json().source.discoveryChannelSetId, channelSet.channelSetId);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("Discovery channel sets reject invalid generated selections", async () => {
 	const { app, root, teamDir } = await buildTestServer();
 	try {

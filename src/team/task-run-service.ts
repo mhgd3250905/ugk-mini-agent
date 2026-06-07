@@ -10,8 +10,9 @@ import type { TaskDependencyStore } from "./task-dependency-store.js";
 import { resolveSourceConnectionStaleReason, type SourceConnectionStore } from "./source-connection-store.js";
 import type { SourceNodeStore } from "./source-node-store.js";
 import type { ProfileAwareTeamRoleRunner, TeamRoleRunner } from "./role-runner.js";
-import type { TeamCanvasTask, TeamManualUpstreamRunSelection, TeamManualUpstreamRunSelectionRecord, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskDeliveryOutcome } from "./types.js";
+import type { TeamCanvasTask, TeamDiscoveryChannelSet, TeamManualUpstreamRunSelection, TeamManualUpstreamRunSelectionRecord, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskDeliveryOutcome } from "./types.js";
 import { DiscoveryRunLifecycle } from "./discovery-run-lifecycle.js";
+import type { DiscoveryChannelSetStore } from "./discovery-channel-set-store.js";
 import { planDownstreamDelivery } from "./downstream-delivery.js";
 import { CanvasTaskAttemptRunner, type CanvasTaskAttemptWorkspace, type CanvasTaskPhaseTimeouts } from "./canvas-task-attempt-runner.js";
 import { resolveConnectionStaleReason } from "./task-chain-contract.js";
@@ -44,6 +45,8 @@ export type CanvasTaskRunTaskStore = Pick<TaskStore,
 	| "listGeneratedForDiscoveryTask"
 >;
 
+export type CanvasTaskRunDiscoveryChannelSetStore = Pick<DiscoveryChannelSetStore, "get">;
+
 export interface CanvasTaskRunServiceOptions {
 	taskStore: CanvasTaskRunTaskStore;
 	workspace: CanvasTaskRunWorkspace;
@@ -52,6 +55,7 @@ export interface CanvasTaskRunServiceOptions {
 	dependencyStore?: TaskDependencyStore;
 	sourceNodeStore?: SourceNodeStore;
 	sourceConnectionStore?: SourceConnectionStore;
+	discoveryChannelSetStore?: CanvasTaskRunDiscoveryChannelSetStore;
 	dataDir: string;
 	maxCheckerRevisions?: number;
 	phaseTimeouts?: CanvasTaskPhaseTimeouts;
@@ -116,6 +120,7 @@ export interface CanvasTaskRunOptions {
 	includeSourceBindings?: boolean;
 	publicBaseUrl?: string;
 	upstreamRunSelections?: TeamManualUpstreamRunSelection[];
+	discoveryChannelSetId?: string;
 }
 
 export interface CanvasTaskDetachedRunRecoveryResult {
@@ -236,6 +241,9 @@ export class CanvasTaskRunService {
 			? await this.options.taskStore.updateTemplateCurrentBindings(task.taskId, templateBindings)
 			: task;
 		const runnableTask = templateBindings ? applyTemplateBindingsToTask(storedTask, templateBindings) : storedTask;
+		const discoveryChannelSet = runOptions.discoveryChannelSetId
+			? await this.resolveDiscoveryChannelSetForRun(runnableTask, runOptions.discoveryChannelSetId)
+			: null;
 		const resolvedUpstream = runOptions.upstreamRunSelections?.length
 			? await this.resolveUpstreamRunSelections(runnableTask, runOptions.upstreamRunSelections)
 			: { boundInputs: [] as TeamTaskBoundInput[], manualSelections: [] as TeamManualUpstreamRunSelectionRecord[] };
@@ -259,6 +267,7 @@ export class CanvasTaskRunService {
 			...(boundInputs.length > 0 ? { boundInputs } : {}),
 			...(resolvedUpstream.manualSelections.length > 0 ? { manualUpstreamSelections: resolvedUpstream.manualSelections } : {}),
 			...(templateBindings ? { templateBindings } : {}),
+			...(discoveryChannelSet ? { discoveryChannelSetId: discoveryChannelSet.channelSetId } : {}),
 		};
 		await this.options.workspace.saveState(state);
 
@@ -304,6 +313,25 @@ export class CanvasTaskRunService {
 	async getRun(runId: string): Promise<TeamRunState | null> {
 		const state = await this.options.workspace.getState(runId);
 		return state?.source?.type === "canvas-task" ? state : null;
+	}
+
+	private async resolveDiscoveryChannelSetForRun(task: TeamCanvasTask, channelSetId: string): Promise<TeamDiscoveryChannelSet> {
+		if (task.canvasKind !== "discovery" || task.generatedSource) {
+			throw new Error("discoveryChannelSetId can only be used with a Discovery root task");
+		}
+		if (!this.options.discoveryChannelSetStore) {
+			throw new Error("discovery channel set store is not configured");
+		}
+		const channelSet = await this.options.discoveryChannelSetStore.get(channelSetId);
+		if (!channelSet) throw new Error(`discovery channel set not found: ${channelSetId}`);
+		if (channelSet.archived) throw new Error(`archived discovery channel set cannot be used: ${channelSetId}`);
+		if (channelSet.sourceDiscoveryTaskId !== task.taskId) {
+			throw new Error(`discovery channel set ${channelSetId} does not belong to task ${task.taskId}`);
+		}
+		if (channelSet.items.length === 0) {
+			throw new Error(`discovery channel set has no items: ${channelSetId}`);
+		}
+		return channelSet;
 	}
 
 	private async buildSourceBoundInputs(task: TeamCanvasTask): Promise<TeamTaskBoundInput[]> {
@@ -632,6 +660,23 @@ export class CanvasTaskRunService {
 				latest.summary = computeTeamRunSummary(latest.taskStates);
 			});
 
+			if (canvasTask.canvasKind === "discovery" && initialState.source?.discoveryChannelSetId) {
+				const resultRef = await this.runDiscoveryChannelSetAttempt({
+					runId,
+					discoveryTask: canvasTask,
+					attemptId,
+					channelSetId: initialState.source.discoveryChannelSetId,
+					signal,
+				});
+				await this.markRunSucceeded(runId, task.id, resultRef);
+				try {
+					await this.triggerDownstreamRuns(runId, task.id, attemptId, resultRef);
+				} catch {
+					// Downstream delivery setup/diagnostics must not fail an accepted upstream run.
+				}
+				return;
+			}
+
 			const outcome = await this.attemptRunner.runAttempt({
 				runId,
 				task,
@@ -654,6 +699,53 @@ export class CanvasTaskRunService {
 			if (this.cancellingRunIds.has(runId) || (current && current.status === "cancelled")) return;
 			await this.failRun(runId, isAbortLike(error) ? "run cancelled" : error instanceof Error ? error.message : String(error));
 		}
+	}
+
+	private async runDiscoveryChannelSetAttempt(input: {
+		runId: string;
+		discoveryTask: TeamCanvasTask;
+		attemptId: string;
+		channelSetId: string;
+		signal: AbortSignal;
+	}): Promise<string> {
+		const { runId, discoveryTask, attemptId, channelSetId, signal } = input;
+		const channelSet = await this.resolveDiscoveryChannelSetForRun(discoveryTask, channelSetId);
+		const resultRef = await this.options.workspace.writeAcceptedResult(
+			runId,
+			discoveryTask.taskId,
+			attemptId,
+			`Discovery channel set: ${channelSet.title}`,
+		);
+		await this.options.workspace.writeDiscoveryResult(runId, discoveryTask.taskId, attemptId, {
+			schemaVersion: "team/discovery-result-1",
+			taskId: discoveryTask.taskId,
+			attemptId,
+			outputKey: discoveryTask.discoverySpec?.outputKey ?? "items",
+			items: channelSet.items.map(item => ({
+				...item.itemPayload,
+				id: item.sourceItemId,
+			})),
+			sourceRef: null,
+			createdAt: now(),
+		});
+
+		const lifecycleResult = await this.discoveryLifecycle.runAcceptedDiscoveryRootFromChannelSet({
+			runId,
+			discoveryTask,
+			attemptId,
+			channelSet,
+			signal,
+		});
+		if (lifecycleResult.status === "cancelled-or-missing") {
+			throw new Error("run cancelled");
+		}
+		await this.options.workspace.finishAttempt(runId, discoveryTask.taskId, attemptId, {
+			status: "succeeded",
+			phase: "succeeded",
+			resultRef,
+			errorSummary: null,
+		});
+		return resultRef;
 	}
 
 	private async transitionToRunning(runId: string, taskId: string): Promise<TeamRunState> {

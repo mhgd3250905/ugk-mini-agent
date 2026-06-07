@@ -232,6 +232,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		dependencyStore: taskDependencyStore,
 		sourceNodeStore,
 		sourceConnectionStore,
+		discoveryChannelSetStore,
 		dataDir: taskRunDataDir,
 		maxCheckerRevisions: 3,
 		maxRunDurationMinutes: options.maxRunDurationMinutes,
@@ -899,6 +900,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 				includeSourceBindings: true,
 				publicBaseUrl: requestPublicBaseUrl(request, options.publicBaseUrl),
 				upstreamRunSelections,
+				discoveryChannelSetId: typeof body?.discoveryChannelSetId === "string" ? body.discoveryChannelSetId : undefined,
 			});
 			reply.code(201).send(state);
 		} catch (err) {
@@ -907,7 +909,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 				reply.code(404).send({ error: "task not found" });
 				return;
 			}
-			sendMappedError(reply, err, [["templateBindings", 400], ["template binding", 400], ["template bindings require", 400], ["ready", 409], ["archived", 409], ["active", 409], ["connection not found", 400], ["duplicate upstreamRunSelections connectionId", 400], ["does not target task", 400], ["stale", 400], ["upstream", 400], ["not terminal", 400], ["did not complete", 400], ["no accepted artifact", 400], ["does not belong", 400]]);
+			sendMappedError(reply, err, [["templateBindings", 400], ["template binding", 400], ["template bindings require", 400], ["ready", 409], ["archived discovery channel set", 409], ["archived", 409], ["active", 409], ["connection not found", 400], ["duplicate upstreamRunSelections connectionId", 400], ["does not target task", 400], ["stale", 400], ["upstream", 400], ["not terminal", 400], ["did not complete", 400], ["no accepted artifact", 400], ["discoveryChannelSetId", 400], ["discovery channel set not found", 404], ["does not belong", 400], ["no items", 400]]);
 		}
 	});
 

@@ -10,6 +10,7 @@ import { SourceConnectionStore } from "../src/team/source-connection-store.js";
 import { SourceNodeStore } from "../src/team/source-node-store.js";
 import { RunWorkspace } from "../src/team/run-workspace.js";
 import { CanvasTaskRunService } from "../src/team/task-run-service.js";
+import { DiscoveryChannelSetStore } from "../src/team/discovery-channel-set-store.js";
 import type {
 	CheckerInput,
 	CheckerOutput,
@@ -1022,6 +1023,108 @@ test("Step07: successful Discovery dispatch auto-runs active generated Tasks", a
 				assert.equal(generatedRun.source.triggeredBy.sourceItemId, outcome.itemId);
 			}
 		}
+	} finally {
+		await removeTempRoot(root);
+	}
+});
+
+test("Discovery channel set run skips rediscovery and reruns selected generated Tasks", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-discovery-channel-set-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const channelSetStore = new DiscoveryChannelSetStore(root, taskStore);
+		const discovery = await taskStore.create({
+			...validTaskInput,
+			title: "发现常用论坛渠道",
+			canvasKind: "discovery",
+			discoverySpec: validDiscoverySpec,
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "发现常用论坛渠道",
+				input: { text: "搜索并输出论坛渠道 JSON。" },
+				outputContract: { text: "输出 JSON object，vendors 为数组，每项包含稳定 id。" },
+				acceptance: { rules: ["vendors 必须是数组", "每项必须有 id"] },
+			},
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const initialRunner = new DiscoveryDispatchingRunner([
+			{ id: "reddit", name: "Reddit", type: "forum" },
+			{ id: "github", name: "GitHub", type: "repo" },
+		]);
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => initialRunner,
+			discoveryChannelSetStore: channelSetStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const firstRun = await service.createRun(discovery.taskId);
+		await waitForTerminalRun(service, firstRun.runId);
+		const generated = await taskStore.listGeneratedForDiscoveryTask(discovery.taskId);
+		const redditTask = generated.find(task => task.generatedSource?.sourceItemId === "reddit")!;
+		const githubTask = generated.find(task => task.generatedSource?.sourceItemId === "github")!;
+		assert.ok(redditTask);
+		assert.ok(githubTask);
+
+		const channelSet = await channelSetStore.create(discovery.taskId, {
+			title: "常用论坛渠道",
+			generatedTaskIds: [redditTask.taskId],
+		});
+		const channelRunner = new DiscoveryDispatchingRunner([
+			{ id: "should-not-be-used", name: "Should not be used" },
+		]);
+		const channelService = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => channelRunner,
+			discoveryChannelSetStore: channelSetStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const channelRun = await channelService.createRun(discovery.taskId, { discoveryChannelSetId: channelSet.channelSetId });
+		const finished = await waitForTerminalRun(channelService, channelRun.runId);
+		assert.equal(finished.status, "completed");
+		assert.equal(finished.source?.taskId, discovery.taskId);
+		assert.equal(finished.source?.discoveryChannelSetId, channelSet.channelSetId);
+		assert.deepEqual(channelRunner.dispatchInputs, [], "channel-set run must not call the Discovery dispatcher");
+
+		const attempts = await workspace.listAttempts(channelRun.runId, discovery.taskId);
+		const attempt = attempts[0]!;
+		const discoveryResult = await workspace.readDiscoveryResult(channelRun.runId, discovery.taskId, attempt.attemptId);
+		assert.ok(discoveryResult);
+		assert.equal(discoveryResult.sourceRef, null);
+		assert.deepEqual(discoveryResult.items.map(item => item.id), ["reddit"]);
+
+		const dispatch = await waitForAttemptDiscoveryDispatch(workspace, channelRun.runId, discovery.taskId, 1);
+		assert.deepEqual(dispatch.map(outcome => outcome.itemId), ["reddit"]);
+		assert.deepEqual(dispatch.map(outcome => outcome.generatedTaskId), [redditTask.taskId]);
+
+		const generatedLaunches = await waitForAttemptDiscoveryGeneratedRuns(workspace, channelRun.runId, discovery.taskId, 1);
+		assert.equal(generatedLaunches.length, 1);
+		assert.equal(generatedLaunches[0]?.itemId, "reddit");
+		assert.equal(generatedLaunches[0]?.generatedTaskId, redditTask.taskId);
+		assert.equal(generatedLaunches[0]?.status, "started");
+
+		const redditRuns = await channelService.listRuns(redditTask.taskId);
+		const githubRuns = await channelService.listRuns(githubTask.taskId);
+		assert.equal(redditRuns.length, 2, "selected generated Task should be rerun");
+		assert.equal(githubRuns.length, 1, "unselected generated Task should not be rerun");
+
+		const aggregation = await workspace.readDiscoveryAggregation(channelRun.runId, discovery.taskId, attempt.attemptId);
+		assert.ok(aggregation);
+		assert.deepEqual(aggregation.summary, {
+			totalItems: 1,
+			generatedTasks: 1,
+			succeeded: 1,
+			failed: 0,
+			cancelled: 0,
+			skipped: 0,
+			missingResult: 0,
+		});
+		assert.deepEqual(aggregation.items.map(item => item.itemId), ["reddit"]);
+		assert.equal(aggregation.items[0]?.generatedTaskId, redditTask.taskId);
+		assert.equal(aggregation.items[0]?.result.status, "succeeded");
 	} finally {
 		await removeTempRoot(root);
 	}

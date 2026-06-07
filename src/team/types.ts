@@ -727,6 +727,7 @@ export interface TeamRunState {
 		boundInputs?: TeamTaskBoundInput[];
 		manualUpstreamSelections?: TeamManualUpstreamRunSelectionRecord[];
 		templateBindings?: Record<string, string>;
+		discoveryChannelSetId?: string;
 	};
 	teamUnitId: string;
 	status: RunStatus;

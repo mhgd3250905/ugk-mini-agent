@@ -4,6 +4,7 @@ import type { TeamRoleRunner } from "./role-runner.js";
 import type {
 	TeamCanvasTask,
 	TeamDiscoveryAggregationRecord,
+	TeamDiscoveryChannelSet,
 	TeamDiscoveryDispatchOutcome,
 	TeamDiscoveryResultRecord,
 	TeamDiscoveryGeneratedRunOutcome,
@@ -19,7 +20,7 @@ const DELIVERY_ERROR_LIMIT = 500;
 const GENERATED_TASK_AUTORUN_CONCURRENCY = 3;
 const GENERATED_TASK_AUTORUN_POLL_MS = 25;
 
-type DiscoveryGeneratedTaskCandidate = { itemId: string; task: TeamCanvasTask };
+type DiscoveryGeneratedTaskCandidate = { itemId: string; task: TeamCanvasTask; allowInactiveItemStatus?: boolean };
 type DiscoveryGeneratedRunQueue = { enqueue: (candidate: DiscoveryGeneratedTaskCandidate) => void; drain: () => Promise<void> };
 type DiscoveryGeneratedTaskDispatchResult = {
 	outcomes: TeamDiscoveryDispatchOutcome[];
@@ -138,6 +139,85 @@ export class DiscoveryRunLifecycle {
 			// Aggregation write failure must not fail an accepted Discovery run.
 		}
 
+		return { status: "ready-to-complete", aggregationRef };
+	}
+
+	async runAcceptedDiscoveryRootFromChannelSet(input: {
+		runId: string;
+		discoveryTask: TeamCanvasTask;
+		attemptId: string;
+		channelSet: TeamDiscoveryChannelSet;
+		signal: AbortSignal;
+	}): Promise<{ status: "ready-to-complete" | "cancelled-or-missing"; aggregationRef: string | null }> {
+		const { runId, discoveryTask, attemptId, channelSet, signal } = input;
+		await this.markDiscoveryRunWaitingForGeneratedTasks(runId, discoveryTask.taskId, `channel-set:${channelSet.channelSetId}`);
+		const discoverySpec = discoveryTask.discoverySpec;
+		if (!discoverySpec) return { status: "ready-to-complete", aggregationRef: null };
+
+		const dispatchStartedAt = now();
+		const outcomes: TeamDiscoveryDispatchOutcome[] = channelSet.items.map(item => ({
+			itemId: item.sourceItemId,
+			status: "updated",
+			generatedTaskId: item.generatedTaskId,
+			workUnitMode: item.workUnitMode,
+			createdAt: dispatchStartedAt,
+		}));
+		await this.workspace.recordAttemptDiscoveryDispatchOutcomes(runId, discoveryTask.taskId, attemptId, outcomes);
+		const generatedRunOutcomes: TeamDiscoveryGeneratedRunOutcome[] = [];
+		const recordGeneratedRunProgress = async (): Promise<void> => {
+			await this.workspace.recordAttemptDiscoveryGeneratedRunOutcomes(
+				runId,
+				discoveryTask.taskId,
+				attemptId,
+				generatedRunOutcomes,
+			).catch(() => {});
+		};
+		const generatedRunQueue = this.createDiscoveryGeneratedAutoRunQueue({
+			discoveryRunId: runId,
+			discoveryTaskId: discoveryTask.taskId,
+			discoveryAttemptId: attemptId,
+			enabled: discoverySpec.autoRun?.enabled === true,
+			signal,
+			onOutcome: async (outcome) => {
+				generatedRunOutcomes.push(outcome);
+				await recordGeneratedRunProgress();
+			},
+		});
+
+		for (const item of channelSet.items) {
+			if (signal.aborted || await this.isRunCancelledOrMissing(runId)) break;
+			const task = await this.taskStore.get(item.generatedTaskId);
+			if (!task) {
+				generatedRunOutcomes.push({
+					itemId: item.sourceItemId,
+					generatedTaskId: item.generatedTaskId,
+					status: "skipped_not_runnable",
+					error: "generated task is missing",
+					createdAt: now(),
+				});
+				await recordGeneratedRunProgress();
+				continue;
+			}
+			generatedRunQueue.enqueue({ itemId: item.sourceItemId, task, allowInactiveItemStatus: true });
+		}
+		await generatedRunQueue.drain();
+
+		if (signal.aborted || await this.isRunCancelledOrMissing(runId)) {
+			return { status: "cancelled-or-missing", aggregationRef: null };
+		}
+
+		let aggregationRef: string | null = null;
+		try {
+			aggregationRef = await this.writeDiscoveryAggregation(
+				runId,
+				discoveryTask,
+				attemptId,
+				outcomes,
+				generatedRunOutcomes,
+			);
+		} catch {
+			// Aggregation write failure must not fail an accepted Discovery run.
+		}
 		return { status: "ready-to-complete", aggregationRef };
 	}
 
@@ -502,7 +582,7 @@ export class DiscoveryRunLifecycle {
 		const createdAt = now();
 		const latestTask = await this.taskStore.get(candidate.task.taskId);
 		const discoveryRun = await this.runs.getRun(discoveryRunId);
-		if (!latestTask || latestTask.archived || latestTask.generatedSource?.itemStatus !== "active") {
+		if (!latestTask || latestTask.archived || (!candidate.allowInactiveItemStatus && latestTask.generatedSource?.itemStatus !== "active")) {
 			return {
 				itemId: candidate.itemId,
 				generatedTaskId: candidate.task.taskId,
