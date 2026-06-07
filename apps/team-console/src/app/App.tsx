@@ -41,6 +41,10 @@ type DiscoveryChannelSetRunOptions = {
   discoveryChannelSetId?: string;
 };
 
+type DiscoveryChannelSetSaveOptions = {
+  forceCreate?: boolean;
+};
+
 type AgentBranchState = {
   nodeId: string;
   agentId: string;
@@ -3266,7 +3270,7 @@ export function App() {
     }));
   }, []);
 
-  const saveDiscoveryChannelSet = useCallback(async (task: TeamCanvasTask) => {
+  const saveDiscoveryChannelSet = useCallback(async (task: TeamCanvasTask, options?: DiscoveryChannelSetSaveOptions) => {
     const taskId = task.taskId;
     const generatedTaskIds = selectedDiscoveryChannelTaskIdsByTaskId[taskId] ?? [];
     if (generatedTaskIds.length === 0) {
@@ -3277,7 +3281,7 @@ export function App() {
     setDiscoveryChannelSetSavingByTaskId((current) => ({ ...current, [taskId]: true }));
     try {
       const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-      const selectedChannelSetId = selectedDiscoveryChannelSetIdByTaskId[taskId] ?? null;
+      const selectedChannelSetId = options?.forceCreate ? null : selectedDiscoveryChannelSetIdByTaskId[taskId] ?? null;
       if (selectedChannelSetId) {
         const channelSet = await api.updateDiscoveryChannelSet(taskId, selectedChannelSetId, { title, generatedTaskIds });
         setDiscoveryChannelSetsByTaskId((current) => ({
@@ -5263,6 +5267,18 @@ export function App() {
                       ? (selectedDiscoveryChannelSet ? "更新中..." : "保存中...")
                       : (selectedDiscoveryChannelSet ? "更新渠道集" : "保存渠道集")}
                   </button>
+                  {selectedDiscoveryChannelSet ? (
+                    <button
+                      type="button"
+                      className="discovery-channel-set-action"
+                      disabled={selectedDiscoveryChannelTaskIds.length === 0 || discoveryChannelSetSaving}
+                      onClick={() => {
+                        void saveDiscoveryChannelSet(task, { forceCreate: true });
+                      }}
+                    >
+                      {discoveryChannelSetSaving ? "保存中..." : "另存为新集合"}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="discovery-channel-set-action"

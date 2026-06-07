@@ -17,7 +17,8 @@
 ## 2026-06-07 — Team Console Discovery channel set editing
 
 - **主题**: Discovery 子画布里选中的已保存渠道集现在可直接编辑。点击渠道集后，名称输入和 generated Task checkbox 进入该集合的编辑态；修改标题或勾选项不会取消 selected，高亮集合的主按钮从“保存渠道集”切换为“更新渠道集”，提交时走 `PATCH /v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId`，不会误创建重复集合。
-- **影响范围**: 仅 5174 Team Console Discovery 子画布渠道集面板、Team Console API gateway 和 mock fixture。未选中已有集合时仍按原逻辑 `POST` 新建渠道集；`使用渠道集` 仍是独立运行动作。
+- **补充**: 选中已有集合时新增“另存为新集合”按钮，可用当前名称和勾选项 `POST` 新建一套渠道集；“更新渠道集”只更新原集合。未选中已有集合时仍按原逻辑显示“保存渠道集”。
+- **影响范围**: 仅 5174 Team Console Discovery 子画布渠道集面板、Team Console API gateway 和 mock fixture。`使用渠道集` 仍是独立运行动作。
 - **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/api/team-api.ts`、`apps/team-console/src/api/team-types.ts`、`apps/team-console/src/fixtures/team-fixtures.ts`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/src/tests/team-api.test.ts`。
 
 ## 2026-06-07 — Team Console Discovery channel set selection

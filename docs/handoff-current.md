@@ -33,7 +33,7 @@
   - `63a739f7 Add Team Console Discovery channel set controls`
   - `5fd0883f Run Discovery roots from saved channel sets`
   - `cd3b5a5a Add Discovery channel set backend contract`
-- 本轮最新修复提交主题：`Update saved Discovery channel sets in Team Console`。
+- 本轮最新修复提交主题：`Add save-as for selected Discovery channel sets`。
 - 本轮 Git 保存范围：Discovery channel set 后端合同、从保存渠道集跳过 rediscovery/dispatcher 的 root run 路径、Team Console 子画布渠道集选择/保存/归档/使用 UI、渠道集 run 状态可视化修复、保存渠道集选中查看/自动勾选 items、相关测试和文档。
 - 仍有无关未跟踪 `docs/windows-native-runtime-feasibility.md`，不要误提交。
 - 仍有本轮计划草稿 `.codex/plans/2026-06-07-discovery-channel-set.md` 未跟踪，不要提交。
@@ -60,7 +60,7 @@ git log --oneline origin/main..HEAD
 - `POST /v1/team/tasks/:taskId/runs` 新增可选 `discoveryChannelSetId`。Discovery root 使用同源未归档渠道集运行时，会跳过 root rediscovery/dispatcher，写出标准 `discovery-result.json` / `discovery-aggregation.json`，并按既有 auto-run 语义启动保存的 generated child runs。
 - Team Console 子画布新增“渠道集”面板：显示选择数量、名称输入、保存/清空、已保存渠道集列表、使用渠道集和归档操作。generated child card 左上角有渠道选择 checkbox，选中态使用 `is-channel-selected` / `data-generated-channel-selected`。
 - Team Console 已保存渠道集支持选中查看：点击渠道集名称区域会把该集合标为 selected，名称输入切到集合标题，并自动勾选下方 generated Task 网格中属于该集合的 items；`使用渠道集` 仍是独立运行动作。
-- Team Console 已保存渠道集支持原地编辑：选中集合后，修改名称或 generated Task checkbox 不会取消 selected；主按钮切为“更新渠道集”，提交走 `PATCH /v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId` 更新原集合，不会误 `POST` 复制一份。未选中已有集合时仍按原逻辑“保存渠道集”新建；“清空选择”会退出编辑态。
+- Team Console 已保存渠道集支持原地编辑和另存：选中集合后，修改名称或 generated Task checkbox 不会取消 selected；主按钮切为“更新渠道集”，提交走 `PATCH /v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId` 更新原集合。选中集合时还会显示“另存为新集合”，用当前名称和勾选项走 `POST` 新建一套渠道集，避免想新建时只能更新原集合。未选中已有集合时仍按原逻辑“保存渠道集”新建；“清空选择”会退出编辑态。
 - Team Console Discovery 子画布已修复渠道集 run 状态投影：当 Discovery root run 带 `source.discoveryChannelSetId` 时，generated child card 按 child run 的 `triggeredBy.discoveryRunId` 显示本轮状态，不再被旧 `generatedSource.latestDiscoveryRunId` 过滤掉；网格 `queued` 计数只统计真正 queued 的卡片，不再把未参与本轮渠道集 run 的 idle channels 全部算作 queued。
 - Team Task Group 后端持久 contract 已完成。Group definition 允许保存 empty/invalid membership；read model 通过 `ResolvedTeamTaskGroup.status/headTaskIds/validation.errors` 表达语义状态。
 - Team Task GroupRun 后端 contract 已完成。GroupRun start 才硬拒绝 empty/invalid Group，返回 400 `invalid task group`；active guard 仍返回 409。GroupRun 保存 `definitionSnapshot`，刷新/取消优先使用 snapshot membership。
@@ -107,11 +107,13 @@ git log --oneline origin/main..HEAD
 
 - Discovery channel set 本轮验证：
   - 渠道集编辑修复验证：新增回归覆盖点击已保存渠道集后，继续修改 checkbox 和名称时 selected row 不被清掉，主按钮显示“更新渠道集”，提交发 `PATCH /v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId`，且不会发重复 `POST`。
+  - 渠道集另存修复验证：新增回归覆盖选中已有集合后，修改名称和 checkbox，再点击“另存为新集合”会发 `POST /v1/team/tasks/:taskId/discovery-channel-sets`，不会发 `PATCH` 更新原集合；新集合会加入列表。
   - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx -t "updates the selected live Discovery channel set"`：1/1 pass。
-  - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx src/tests/team-api.test.ts src/tests/app-static-contracts.test.ts`：228/228 pass。
+  - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx -t "saves the selected live Discovery channel set edits as a new set"`：1/1 pass。
+  - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx src/tests/team-api.test.ts src/tests/app-static-contracts.test.ts`：229/229 pass。
   - `npx tsc --noEmit`：pass。
   - `npm --prefix apps/team-console run build`：pass；仅既有 Vite chunk size warning。
-  - Browser `http://127.0.0.1:5174/` Live API：重启 `ugk-pi-team-console` 后点击真实 `测试集合1` 的“选中渠道集”，确认面板显示 `2 selected`、名称输入为 `测试集合1`、主按钮为 `更新渠道集`；临时勾选第三个 generated channel 后 row 仍 `data-discovery-channel-set-selected="true"` / `is-selected`、按钮仍为 `更新渠道集`、计数变 `3 selected`。随后重新点击 `测试集合1` 恢复为 `2 selected`。未点击“更新渠道集”，未修改真实渠道集持久数据。
+  - Browser `http://127.0.0.1:5174/` Live API：重启 `ugk-pi-team-console` 后点击真实 `测试集合1` 的“选中渠道集”，确认面板显示名称输入为 `测试集合1`、主按钮为 `更新渠道集`，并额外显示 `另存为新集合`；未点击“更新渠道集”或“另存为新集合”，未修改真实渠道集持久数据。上一轮验证也确认临时增删 checkbox 后 row 仍 `data-discovery-channel-set-selected="true"` / `is-selected`。
   - 渠道集选中查看修复验证：新增回归覆盖点击已保存渠道集后，row 暴露 `data-discovery-channel-set-selected="true"`，名称输入切到集合标题，下方 generated card checkbox 自动切换为该集合 items；切换另一个集合会同步切换勾选。
   - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx -t "selects a saved Discovery channel set"`：1/1 pass。
   - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx src/tests/app-static-contracts.test.ts`：119/119 pass。
