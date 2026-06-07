@@ -24,8 +24,8 @@
 
 ## 当前 Git 现场
 
-- 当前分支：`main...origin/main [ahead 10]`（本轮 Team Console Discovery run history / observer UI 修复提交后；Agent branch mini/full embed 仍待提交）。继续前以 `git status --short --branch` 和 `git log -5 --oneline` 为准。
-- 当前待提交 tracked 改动为本轮 Agent branch mini/full chat embed：`apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、相关 Team Console 测试、`src/ui/playground.ts`、`src/ui/playground-styles.ts`、`test/playground-agent-switch.test.ts`、`docs/change-log.md`、`docs/handoff-current.md`。
+- 当前分支：`main...origin/main`（已推送到 GitHub `origin/main`，最新提交 `3e480bd Add Team Console mini agent chat embed`）。继续前以 `git status --short --branch` 和 `git log -5 --oneline` 为准。
+- 当前没有待提交 tracked 源码改动。
 - 仍有无关未跟踪 `docs/windows-native-runtime-feasibility.md`，不要误提交。
 - 最近新增本地提交包括：
   - `Fix Team artifact handoff and Discovery history panels`
@@ -41,7 +41,7 @@
 - `origin`：GitHub `https://github.com/mhgd3250905/ugk-claw-personal.git`。
 - `gitee`：`https://gitee.com/ksheng3250905/ugk-pi-claw.git`，本轮未同步。
 - 不要把 `docs/windows-native-runtime-feasibility.md` 误判成本轮 Team Console 修复的一部分；它是无关未跟踪文档。
-- 本轮未同步 `origin` 或 `gitee`；不要把本地 ahead 状态误认为远端已更新。
+- 本轮已同步 GitHub `origin/main`；`gitee` 未同步。
 - 不要提交这些本地未跟踪物件：`.codex/config.toml`、既有 `.codex/plans/**`、`.omo/`、`github-trending.txt`、`public/**`、`eoflow*.html`、`cupid.js`、`solve_cupid.mjs`、runtime 数据、截图、报告、临时文件。
 
 继续工作前先执行：
