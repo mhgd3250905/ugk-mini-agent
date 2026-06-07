@@ -202,6 +202,7 @@ export interface TeamTaskRunHistoryResponse {
 	total: number;
 	limit: number;
 	offset: number;
+	hasMore: boolean;
 	runs: TeamTaskRunHistoryItem[];
 }
 export type CheckerVerdict = "pass" | "revise" | "fail";

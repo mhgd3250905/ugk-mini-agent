@@ -761,7 +761,7 @@ export class LiveTeamApi implements TeamApiProvider {
         `${this.baseUrl}/tasks/${encodeURIComponent(taskId)}/run-history${query ? `?${query}` : ""}`,
       );
       if (!res.ok) throwJsonGetError(res);
-      return res.body ?? { taskId, total: 0, limit: options?.limit ?? 50, offset: options?.offset ?? 0, runs: [] };
+      return res.body ?? { taskId, total: 0, limit: options?.limit ?? 50, offset: options?.offset ?? 0, hasMore: false, runs: [] };
     } catch (e) {
       throw toApiError(e);
     }

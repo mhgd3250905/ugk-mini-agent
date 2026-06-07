@@ -533,6 +533,31 @@ describe("App", () => {
     expect(historyShell!.dataset.panelSourceId).not.toContain("discovery-subcanvas");
   });
 
+  it("keeps the last clicked Task visually selected even when that click closes its branch", async () => {
+    const { container } = render(<App />);
+    const atlas = await waitFor(() => getAtlasNodes(container));
+    const taskATitle = mockTeamTasks[0]!.title;
+    const taskBTitle = mockDiscoveryRootTask.title;
+    const taskA = await within(atlas).findByRole("button", { name: taskATitle });
+    const taskB = await within(atlas).findByRole("button", { name: taskBTitle });
+
+    fireEvent.click(taskA);
+    expect(taskA).toHaveClass("selected");
+    expect(taskB).not.toHaveClass("selected");
+
+    fireEvent.click(taskB);
+    expect(taskB).toHaveClass("selected");
+    expect(taskA).not.toHaveClass("selected");
+
+    fireEvent.click(taskA);
+    expect(taskA).toHaveClass("selected");
+    expect(taskB).not.toHaveClass("selected");
+    await waitFor(() => {
+      expect(screen.queryByLabelText(`${taskATitle} Task 操作`)).toBeNull();
+    });
+    expect(screen.getByLabelText(`${taskBTitle} Task 操作`)).toBeInTheDocument();
+  });
+
   it("light-edits a mock generated Task inside the Discovery subcanvas without creating a root card", async () => {
     const { container } = render(<App />);
     const { atlas, panel } = await openMockDiscoverySubcanvas(container);
@@ -985,6 +1010,14 @@ describe("App", () => {
     olderRun.createdAt = "2026-06-01T01:00:00.000Z";
     olderRun.startedAt = "2026-06-01T01:00:01.000Z";
     olderRun.finishedAt = "2026-06-01T01:00:05.000Z";
+    const thirdRun = canvasTaskRun(liveTask.taskId, "run_history_third");
+    thirdRun.createdAt = "2026-05-31T01:00:00.000Z";
+    thirdRun.startedAt = "2026-05-31T01:00:01.000Z";
+    thirdRun.finishedAt = "2026-05-31T01:00:05.000Z";
+    const pagedRun = canvasTaskRun(liveTask.taskId, "run_history_paged");
+    pagedRun.createdAt = "2026-05-30T01:00:00.000Z";
+    pagedRun.startedAt = "2026-05-30T01:00:01.000Z";
+    pagedRun.finishedAt = "2026-05-30T01:00:05.000Z";
     const attempt = generatedAttempt(liveTask.taskId, "attempt_history_latest");
 
     window.localStorage.setItem("ugk-team-console:data-source", "live");
@@ -1003,15 +1036,29 @@ describe("App", () => {
       if (url === "/v1/team/task-dependencies") return new Response(JSON.stringify({ dependencies: [] }), { status: 200 });
       if (url === "/v1/team/source-nodes") return new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 });
       if (url === "/v1/team/source-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
-      if (url === `/v1/team/tasks/${liveTask.taskId}/run-history?limit=50&offset=0`) {
+      if (url === `/v1/team/tasks/${liveTask.taskId}/run-history?limit=3&offset=0`) {
         return new Response(JSON.stringify({
           taskId: liveTask.taskId,
-          total: 2,
-          limit: 50,
+          total: 4,
+          limit: 3,
           offset: 0,
+          hasMore: true,
           runs: [
             { run: latestRun, annotation: { runId: latestRun.runId, taskId: liveTask.taskId, best: false, archived: false, updatedAt: "2026-06-02T01:00:05.000Z" } },
             { run: olderRun, annotation: { runId: olderRun.runId, taskId: liveTask.taskId, best: true, archived: false, note: "质量最好", updatedAt: "2026-06-01T01:00:05.000Z" } },
+            { run: thirdRun, annotation: { runId: thirdRun.runId, taskId: liveTask.taskId, best: false, archived: false, updatedAt: "2026-05-31T01:00:05.000Z" } },
+          ],
+        }), { status: 200 });
+      }
+      if (url === `/v1/team/tasks/${liveTask.taskId}/run-history?limit=3&offset=3`) {
+        return new Response(JSON.stringify({
+          taskId: liveTask.taskId,
+          total: 4,
+          limit: 3,
+          offset: 3,
+          hasMore: false,
+          runs: [
+            { run: pagedRun, annotation: { runId: pagedRun.runId, taskId: liveTask.taskId, best: false, archived: false, updatedAt: "2026-05-30T01:00:05.000Z" } },
           ],
         }), { status: 200 });
       }
@@ -1048,6 +1095,9 @@ describe("App", () => {
     const olderRow = historyPanel.querySelector(`[data-run-id="${olderRun.runId}"]`) as HTMLElement | null;
     expect(latestRow).toBeTruthy();
     expect(olderRow).toBeTruthy();
+    expect(historyPanel.querySelector(`[data-run-id="${thirdRun.runId}"]`)).toBeTruthy();
+    expect(historyPanel.querySelector(`[data-run-id="${pagedRun.runId}"]`)).toBeNull();
+    expect(within(historyPanel).getByText("3 / 4")).toBeInTheDocument();
     expect(latestRow).toHaveAttribute("data-run-status", "completed");
     expect(latestRow).toHaveTextContent("状态");
     expect(latestRow).toHaveTextContent("开始时间");
@@ -1063,6 +1113,15 @@ describe("App", () => {
     expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).not.toContain(
       `/v1/team/task-runs/${latestRun.runId}/tasks/${liveTask.taskId}/attempts`,
     );
+
+    fireEvent.click(within(historyPanel).getByRole("button", { name: "加载更多" }));
+    await waitFor(() => {
+      expect(historyPanel.querySelector(`[data-run-id="${pagedRun.runId}"]`)).toBeTruthy();
+      expect(within(historyPanel).getByText("4 / 4")).toBeInTheDocument();
+    });
+    expect(vi.mocked(fetch).mock.calls.some(([url]) =>
+      String(url) === `/v1/team/tasks/${liveTask.taskId}/run-history?limit=3&offset=3`
+    )).toBe(true);
 
     fireEvent.click(within(latestRow!).getByRole("button", { name: "标为最佳" }));
     await waitFor(() => {

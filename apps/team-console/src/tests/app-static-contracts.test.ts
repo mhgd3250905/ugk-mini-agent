@@ -29,7 +29,10 @@ describe("Team Console static contracts", () => {
     expect(hookSource).not.toContain("expandedTaskBranch: TaskBranchState | null");
     expect(hookSource).not.toMatch(/\bsetExpandedTaskBranch\b/);
     expect(hookSource).not.toContain("type TaskBranchUpdater");
-    expect(appSource).toContain("focusedTaskNodeId={focusedTaskBranch?.nodeId ?? null}");
+    expect(appSource).toContain("const [focusedTaskNodeId, setFocusedTaskNodeId] = useState<string | null>(null);");
+    expect(appSource).toContain("setFocusedTaskNodeId(node.nodeId);");
+    expect(appSource).toContain("focusedTaskNodeId={focusedTaskNodeId}");
+    expect(appSource).not.toContain("focusedTaskNodeId={focusedTaskBranch?.nodeId ?? null}");
     expect(appSource).not.toContain("focusedTaskNodeId={expandedTaskBranch?.nodeId ?? null}");
   });
 
@@ -384,6 +387,25 @@ describe("Team Console static contracts", () => {
     expect(darkSelectedActionRule).not.toContain("rgba(255, 255, 255");
     expect(darkSelectedDisabledActionRule).toContain("background: rgba(8, 14, 24, 0.46)");
     expect(darkSelectedDisabledActionRule).toContain("opacity: 1");
+  });
+
+  it("uses themed scrollbars for the run history list", () => {
+    const appCss = readFileSync("src/app/app.css", "utf8");
+    const lastMatch = (pattern: RegExp): string => Array.from(appCss.matchAll(pattern)).at(-1)?.[0] ?? "";
+    const listRule = lastMatch(/(?:^|\n)\.emap-run-history-list\s*{[^}]*}/g);
+    const scrollbarRule = lastMatch(/(?:^|\n)\.emap-run-history-list::-webkit-scrollbar\s*{[^}]*}/g);
+    const thumbRule = lastMatch(/(?:^|\n)\.emap-run-history-list::-webkit-scrollbar-thumb\s*{[^}]*}/g);
+    const darkListRule = lastMatch(/\[data-theme="dark"\] \.emap-run-history-list\s*{[^}]*}/g);
+    const darkThumbRule = lastMatch(/\[data-theme="dark"\] \.emap-run-history-list::-webkit-scrollbar-thumb\s*{[^}]*}/g);
+
+    expect(listRule).toContain("scrollbar-width: thin");
+    expect(listRule).toContain("scrollbar-color: rgba(22, 124, 128, 0.58) rgba(226, 232, 240, 0.78)");
+    expect(scrollbarRule).toContain("width: 8px");
+    expect(scrollbarRule).not.toContain("display: none");
+    expect(thumbRule).toContain("border: 2px solid rgba(226, 232, 240, 0.78)");
+    expect(thumbRule).toContain("background: rgba(22, 124, 128, 0.58)");
+    expect(darkListRule).toContain("scrollbar-color: rgba(121, 216, 208, 0.62) rgba(8, 14, 24, 0.78)");
+    expect(darkThumbRule).toContain("border-color: rgba(8, 14, 24, 0.78)");
   });
 
   it("keeps Task action run summaries readable instead of clipping runtime text", () => {

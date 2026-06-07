@@ -2028,6 +2028,7 @@ export class MockTeamApi {
       total: runs.length,
       limit,
       offset,
+      hasMore: offset + limit < runs.length,
       runs: runs.slice(offset, offset + limit),
     };
   }

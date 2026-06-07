@@ -2126,6 +2126,28 @@ body {
   overflow: auto;
   padding: 10px;
   gap: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(22, 124, 128, 0.58) rgba(226, 232, 240, 0.78);
+}
+
+.emap-run-history-list::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.emap-run-history-list::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(226, 232, 240, 0.78);
+}
+
+.emap-run-history-list::-webkit-scrollbar-thumb {
+  border: 2px solid rgba(226, 232, 240, 0.78);
+  border-radius: 999px;
+  background: rgba(22, 124, 128, 0.58);
+}
+
+.emap-run-history-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(22, 124, 128, 0.76);
 }
 
 .emap-run-history-item {
@@ -2359,6 +2381,23 @@ body {
     0 0 0 1px rgba(121, 216, 208, 0.12),
     0 16px 32px rgba(0, 0, 0, 0.24),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+[data-theme="dark"] .emap-run-history-list {
+  scrollbar-color: rgba(121, 216, 208, 0.62) rgba(8, 14, 24, 0.78);
+}
+
+[data-theme="dark"] .emap-run-history-list::-webkit-scrollbar-track {
+  background: rgba(8, 14, 24, 0.78);
+}
+
+[data-theme="dark"] .emap-run-history-list::-webkit-scrollbar-thumb {
+  border-color: rgba(8, 14, 24, 0.78);
+  background: rgba(121, 216, 208, 0.62);
+}
+
+[data-theme="dark"] .emap-run-history-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(121, 216, 208, 0.78);
 }
 
 [data-theme="dark"] .emap-run-history-item.status-running,
@@ -2893,6 +2932,48 @@ body {
     0 0 0 1px rgba(121, 216, 208, 0.12),
     0 16px 32px rgba(0, 0, 0, 0.24),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.emap-run-history-list {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(22, 124, 128, 0.58) rgba(226, 232, 240, 0.78);
+}
+
+.emap-run-history-list::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.emap-run-history-list::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(226, 232, 240, 0.78);
+}
+
+.emap-run-history-list::-webkit-scrollbar-thumb {
+  border: 2px solid rgba(226, 232, 240, 0.78);
+  border-radius: 999px;
+  background: rgba(22, 124, 128, 0.58);
+}
+
+.emap-run-history-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(22, 124, 128, 0.76);
+}
+
+[data-theme="dark"] .emap-run-history-list {
+  scrollbar-color: rgba(121, 216, 208, 0.62) rgba(8, 14, 24, 0.78);
+}
+
+[data-theme="dark"] .emap-run-history-list::-webkit-scrollbar-track {
+  background: rgba(8, 14, 24, 0.78);
+}
+
+[data-theme="dark"] .emap-run-history-list::-webkit-scrollbar-thumb {
+  border-color: rgba(8, 14, 24, 0.78);
+  background: rgba(121, 216, 208, 0.62);
+}
+
+[data-theme="dark"] .emap-run-history-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(121, 216, 208, 0.78);
 }
 
 @container (min-width: 680px) {

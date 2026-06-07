@@ -52,8 +52,9 @@ describe("App", () => {
     return new Response(JSON.stringify({
       taskId,
       total: runs.length,
-      limit: 50,
+      limit: 3,
       offset: 0,
+      hasMore: runs.length > 3,
       runs: runs.map((run) => ({
         run,
         annotation: {
@@ -1627,7 +1628,7 @@ describe("App", () => {
         if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
         if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
         if (url === "/v1/team/console/root-summary") return rootSummaryResponse([collectTask, htmlTask], { [htmlTask.taskId]: [] });
-        if (url === `/v1/team/tasks/${htmlTask.taskId}/run-history?limit=50&offset=0`) {
+        if (url === `/v1/team/tasks/${htmlTask.taskId}/run-history?limit=3&offset=0`) {
           return runHistoryResponse(htmlTask.taskId, [manualRun]);
         }
         if (url === `/v1/team/task-runs/${manualRun.runId}?view=process-summary&taskId=${htmlTask.taskId}`) {
@@ -1926,7 +1927,7 @@ describe("App", () => {
         if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
         if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
         if (url === "/v1/team/console/root-summary") return rootSummaryResponse([task], { [task.taskId]: [] });
-        if (url === `/v1/team/tasks/${task.taskId}/run-history?limit=50&offset=0`) {
+        if (url === `/v1/team/tasks/${task.taskId}/run-history?limit=3&offset=0`) {
           return runHistoryResponse(task.taskId, [historicalRun]);
         }
         if (url === `/v1/team/tasks/${task.taskId}/runs` && method === "POST") {
@@ -2023,7 +2024,7 @@ describe("App", () => {
             ? new Response(JSON.stringify(run), { status: 200 })
             : new Response(JSON.stringify({ error: "missing run" }), { status: 404 });
         }
-        if (url === `/v1/team/tasks/${collectTask.taskId}/run-history?limit=50&offset=0`) {
+        if (url === `/v1/team/tasks/${collectTask.taskId}/run-history?limit=3&offset=0`) {
           return runHistoryResponse(collectTask.taskId, [upstreamRun]);
         }
         if (url === `/v1/team/tasks/${htmlTask.taskId}/runs` && method === "POST") {
@@ -2162,7 +2163,7 @@ describe("App", () => {
         if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
         if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
         if (url === "/v1/team/console/root-summary") return rootSummaryResponse([task], { [task.taskId]: [runningRun] });
-        if (url === `/v1/team/tasks/${task.taskId}/run-history?limit=50&offset=0`) {
+        if (url === `/v1/team/tasks/${task.taskId}/run-history?limit=3&offset=0`) {
           return runHistoryResponse(task.taskId, [historicalRun]);
         }
         if (url === `/v1/team/task-runs/${runningRun.runId}?view=summary&taskId=${task.taskId}`) {
@@ -2227,7 +2228,7 @@ describe("App", () => {
         if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
         if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
         if (url === "/v1/team/console/root-summary") return rootSummaryResponse([task], { [task.taskId]: [] });
-        if (url === `/v1/team/tasks/${task.taskId}/run-history?limit=50&offset=0`) {
+        if (url === `/v1/team/tasks/${task.taskId}/run-history?limit=3&offset=0`) {
           return runHistoryResponse(task.taskId, [historicalRun]);
         }
         return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });

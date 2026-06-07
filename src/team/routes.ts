@@ -748,17 +748,20 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		const limit = Math.min(100, Math.floor(rawLimit));
 		const offset = Math.floor(rawOffset);
 		const includeArchived = parseIncludeArchived(request);
-		const runs = await taskRunService.listRuns(taskId);
+		const runsByTaskId = await taskRunService.listRunSummariesByTaskIds([taskId]);
+		const runs = runsByTaskId[taskId] ?? [];
 		const annotations = await taskRunAnnotationStore.listForTask(runs.map(run => run.runId), taskId);
 		const visibleRuns = runs
 			.map(run => ({ run: summarizeRunState(run), annotation: annotations[run.runId]! }))
 			.filter(item => includeArchived || !item.annotation.archived);
+		const pageRuns = visibleRuns.slice(offset, offset + limit);
 		const response: TeamTaskRunHistoryResponse = {
 			taskId,
 			total: visibleRuns.length,
 			limit,
 			offset,
-			runs: visibleRuns.slice(offset, offset + limit),
+			hasMore: offset + pageRuns.length < visibleRuns.length,
+			runs: pageRuns,
 		};
 		reply.send(response);
 	});

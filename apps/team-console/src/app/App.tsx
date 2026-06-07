@@ -30,6 +30,7 @@ const PROCESS_NARRATION_MAX_CHARS = 220;
 const PROCESS_ASSISTANT_TEXT_MAX_LINES = 5;
 const PROCESS_ASSISTANT_TEXT_MAX_LINE_CHARS = 200;
 const DISCOVERY_QUEUE_INITIAL_CARD_LIMIT = 18;
+const RUN_HISTORY_PAGE_SIZE = 3;
 const CANVAS_LOADING_MIN_VISIBLE_MS = 160;
 
 type AgentBranchMode = "chat" | "task-create";
@@ -1583,6 +1584,7 @@ export function App() {
   const initialDataSourceRef = useRef<DataSource>(readStoredInitialDataSource());
   const [theme, setTheme] = useState<TeamConsoleTheme>(() => readStoredTheme());
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [focusedTaskNodeId, setFocusedTaskNodeId] = useState<string | null>(null);
   const [agentNodes, setAgentNodes] = useState<AtlasAgentNode[]>([]);
   const [liveAgentNodesHydrated, setLiveAgentNodesHydrated] = useState(false);
   const [taskConnectionDraft, setTaskConnectionDraft] = useState<TaskConnectionDraft | null>(null);
@@ -1655,6 +1657,12 @@ export function App() {
   useEffect(() => {
     taskRunObserverByRunIdRef.current = taskRunObserverByRunId;
   }, [taskRunObserverByRunId]);
+
+  useEffect(() => {
+    if (!focusedTaskNodeId) return;
+    if (taskNodes.some((node) => node.nodeId === focusedTaskNodeId)) return;
+    setFocusedTaskNodeId(null);
+  }, [focusedTaskNodeId, taskNodes]);
 
   useEffect(() => {
     if (runHistoryAnalysisCopyState !== "failed" || !runHistoryAnalysisManualText) return;
@@ -1838,7 +1846,6 @@ export function App() {
 
   const {
     expandedTaskBranches,
-    focusedTaskBranch,
     setExpandedTaskBranches,
     closeTaskBranch,
     openOrToggleTaskBranch,
@@ -2055,36 +2062,15 @@ export function App() {
     seedRuns: TeamRunState[] = [],
     options: { keepDiscoverySubcanvas?: boolean } = {},
   ) => {
-    const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
     const initialItems = mergeRunHistoryItems([], seedRuns, taskId, false);
     setRunHistoryTaskId(taskId);
     setRunHistoryIncludeArchived(false);
     setRunHistoryItems(initialItems);
     setRunHistoryTotal(initialItems.length);
     setRunHistoryError(null);
-    setRunHistoryLoading(false);
+    setRunHistoryLoading(true);
     setRunHistoryAnalysisCopyState("idle");
     setRunHistoryAnalysisManualText(null);
-    void Promise.resolve().then(() => api.listTaskRunHistory(taskId, {
-      limit: 50,
-      offset: 0,
-      includeArchived: false,
-    })).then((response) => {
-      const merged = mergeRunHistoryItems(
-        response.runs,
-        [...seedRuns, ...(taskRunsByTaskIdRef.current[taskId] ?? [])],
-        taskId,
-        false,
-      );
-      setRunHistoryItems(merged);
-      setRunHistoryTotal(Math.max(response.total, merged.length));
-      setRunHistoryLoading(false);
-    }).catch((e) => {
-      setRunHistoryItems([]);
-      setRunHistoryTotal(0);
-      setRunHistoryLoading(false);
-      setRunHistoryError(errorMessage(e));
-    });
     if (nodeId) {
       setExpandedTaskBranches((current) => current.map((item) => (
         item.nodeId === nodeId
@@ -2110,12 +2096,13 @@ export function App() {
           : item
       )));
     }
-  }, [dataSource, setExpandedTaskBranches]);
+  }, [setExpandedTaskBranches]);
 
   const closeTaskRunHistory = useCallback(() => {
     setRunHistoryTaskId(null);
     setRunHistoryItems([]);
     setRunHistoryTotal(0);
+    setRunHistoryLoading(false);
     setRunHistoryError(null);
     setRunHistorySavingRunId(null);
     setRunHistoryAnalysisCopyState("idle");
@@ -2168,11 +2155,11 @@ export function App() {
     if (!activeRunHistoryTaskId) return;
     let cancelled = false;
     const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-    setRunHistoryLoading(false);
+    setRunHistoryLoading(true);
     setRunHistoryError(null);
 
     void Promise.resolve().then(() => api.listTaskRunHistory(activeRunHistoryTaskId, {
-      limit: 50,
+      limit: RUN_HISTORY_PAGE_SIZE,
       offset: 0,
       includeArchived: runHistoryIncludeArchived,
     })).then((response) => {
@@ -2206,7 +2193,7 @@ export function App() {
     setRunHistoryError(null);
     try {
       const response = await api.listTaskRunHistory(activeRunHistoryTaskId, {
-        limit: 50,
+        limit: RUN_HISTORY_PAGE_SIZE,
         offset: runHistoryItems.length,
         includeArchived: runHistoryIncludeArchived,
       });
@@ -2216,7 +2203,7 @@ export function App() {
         activeRunHistoryTaskId,
         runHistoryIncludeArchived,
       ));
-      setRunHistoryTotal(Math.max(response.total, runHistoryItems.length));
+      setRunHistoryTotal(Math.max(response.total, response.offset + response.runs.length));
     } catch (e) {
       setRunHistoryError(errorMessage(e));
     } finally {
@@ -2861,6 +2848,7 @@ export function App() {
   }, [expandedAgentBranch, refreshLiveTasksAfterLeavingTaskCreateBranch]);
 
   const toggleTaskBranch = useCallback((node: AtlasTaskNode) => {
+    setFocusedTaskNodeId(node.nodeId);
     openOrToggleTaskBranch(node);
   }, [openOrToggleTaskBranch]);
 
@@ -6083,7 +6071,7 @@ export function App() {
                 sourceConnectionDraft={sourceConnectionDraft}
                 taskRunsByTaskId={taskRunsByTaskId}
                 discoverySummariesByTaskId={discoverySummariesByTaskId}
-                focusedTaskNodeId={focusedTaskBranch?.nodeId ?? null}
+                focusedTaskNodeId={focusedTaskNodeId}
                 onSelectCanvasTask={toggleTaskBranch}
                 onMoveCanvasTask={moveTaskNode}
                 minimizedTaskNodeIds={minimizedTaskNodeIds}

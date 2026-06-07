@@ -24,8 +24,8 @@
 
 ## 当前 Git 现场
 
-- 当前分支：`main...origin/main`（已推送到 GitHub `origin/main`，最新提交 `3e480bd Add Team Console mini agent chat embed`）。继续前以 `git status --short --branch` 和 `git log -5 --oneline` 为准。
-- 当前没有待提交 tracked 源码改动。
+- 当前分支：`main...origin/main`（本轮 Team Console run history 轻量分页与 Task 节点视觉焦点修复已提交到本地，提交标题为 `Improve Team Console run history and task focus`；是否推送以用户后续指令为准）。继续前以 `git status --short --branch` 和 `git log -5 --oneline` 为准。
+- 本轮 Git 保存范围：Team Console run history 轻量分页、`hasMore` 响应字段、history summary 读取路径、运行记录列表主题 scrollbar、Task 节点 selected 视觉焦点解耦、相关测试和本交接文档。
 - 仍有无关未跟踪 `docs/windows-native-runtime-feasibility.md`，不要误提交。
 - 最近新增本地提交包括：
   - `Fix Team artifact handoff and Discovery history panels`
@@ -70,6 +70,8 @@ git log --oneline origin/main..HEAD
 - Team Console run history 条目已恢复运行观察展开：运行记录卡片整卡可点击选中/展开 observer，行内 `装载记录` / `标为最佳` / `归档记录` 会阻止冒泡，不会误打开 observer。Discovery root 最近运行 observer、root run history observer、generated run history observer 使用不同 panel id，避免拖拽位置串用。
 - Team Console run history 深色 selected 行已收口：操作按钮保持暗色表面，不再被浅色 selected button 样式覆盖。run observer 外层 `.emap-run-observer-panel` 不再做大滚动，保持 `max-height: none` / `overflow: visible`；Worker / Checker 过程区仍保持固定高度与内部滚动。
 - Team Console Agent 卡片展开已改成 mini/full 两阶段对话。普通画布分支 iframe 使用 `embedMode=mini`，只展示新会话、上下文用量、消息区和输入框；新会话固定左侧，上下文用量固定右侧，API 源不再单独占位；新会话 tooltip 在 mini 内左对齐弹出，不被 iframe 左边缘裁切。最大化 overlay 使用 `embedMode=full`，恢复完整 Playground。Agent/Leader iframe 已加 `clipboard-write; clipboard-read` 权限，嵌入气泡“复制正文”按钮会调用 `navigator.clipboard.writeText(...)`。
+- Team Console Task 运行记录面板已改为轻量分页：首屏只请求 3 条 summary + total，点击“加载更多”再按 3 条追加；`/v1/team/tasks/:taskId/run-history` 新增 `hasMore`，并改用 run state index summary 路径，避免 history 列表读取完整 run state 后再截断。运行记录列表浅色/深色 scrollbar 已使用主题样式，不再退回系统白色滚动条。
+- Team Console 根 Task 节点 selected 视觉焦点已与 Task branch stack 解耦。节点阴影现在跟随“最后点击的 Task”，不再跟随“最后仍展开的 Task 分支”；A/B/A 场景中第三次点击 A 会收起 A 的 Task 操作面板，但 A 仍保持 selected，B 的展开面板可继续存在。
 - Team Console Task 最近运行 / 运行观察子面板已允许向画布原点上方拖动。Task child panel 布局不再把用户拖拽产生的负 `y` override 钳到 `0`；`x` 轴现有非负限制保持不变。
 - Team Console 根节点筛选已整合数量统计：`ALL`、`Agent`、`Task`、`Source` 四个筛选项直接显示数量，独立统计块已移除；`Task` 筛选只显示 Task，Source 走独立筛选。
 - Team Console Dock 已区分 Group 成员 Task 和根级 Task。Group 内 Task 拖到底部 Dock 区域不会触发收纳；展开 Group 可点击“收纳”把整个 Group 收入 Dock，Dock 中以 Group 对象展示并可恢复，不会把 Group 成员拆成独立 Dock Task。
@@ -118,6 +120,22 @@ git log --oneline origin/main..HEAD
   - `npx tsc --noEmit`：pass。
   - `git diff --check`：pass。
   - Browser `http://127.0.0.1:5174/`：普通 Agent 分支 iframe 为 `embedMode=mini`、`allow="clipboard-write; clipboard-read"`、`#shell[data-team-console-embed="mini"]`；mini 中历史列表/API 源 rail 隐藏，新会话左置、上下文右置且不重叠，消息区/输入框可见。新会话 tooltip hover 后 `::after left=0px`、`opacity=1`、`transform` 归零，不再被左边缘裁切。最大化 overlay iframe 为 `embedMode=full` 且完整 Playground 入口恢复。嵌入气泡“复制正文”按钮实测调用 `navigator.clipboard.writeText(...)`；iframe focus 后原生 `navigator.clipboard.writeText(...)` 返回 ok。
+- Team Console run history 轻量分页验证：
+  - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx src/tests/app-run-observer.test.tsx src/tests/app-static-contracts.test.ts`：154/154 pass。
+  - `node --test --test-concurrency=1 --import tsx test/team-task-run-routes.test.ts`：42/42 pass。
+  - `npx tsc --noEmit`：pass。
+  - `npm --prefix apps/team-console run build`：pass；仅既有 Vite chunk size warning。
+  - `git diff --check`：pass。
+  - Browser `http://127.0.0.1:5174/`：重启 `ugk-pi-team-console` 后确认运行记录面板可打开，`.emap-run-history-list` 已加载浅色/深色主题 scrollbar 规则。
+  - 本地 runtime：已重启 `ugk-pi` 让 `/v1/team/tasks/:taskId/run-history` 的 summary 读取与 `hasMore` 生效；`/healthz` 返回 `{"ok":true}`。真实 API 抽查 `task_ec690cdc8bd4` 的 `run-history?limit=3&offset=0` 返回 `total=6`、`limit=3`、`hasMore=true`、`runs=3`。
+- Team Console Task 节点 selected 视觉焦点验证：
+  - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx -t "last clicked Task"`：1/1 pass；先红后绿覆盖 A/B/A 第三次点击 A 收起分支但 A 仍 selected。
+  - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx src/tests/app-static-contracts.test.ts`：116/116 pass。
+  - `npm --prefix apps/team-console test -- --run src/tests/app-static-contracts.test.ts`：32/32 pass。
+  - `npx tsc --noEmit`：pass。
+  - `npm --prefix apps/team-console run build`：pass；仅既有 Vite chunk size warning。
+  - `git diff --check`：pass。
+  - Browser `http://127.0.0.1:5174/`：重启 `ugk-pi-team-console` 并硬刷新后，干净状态 A/B/A 实测确认：A 首次点击 selected 且打开 A panel；点击 B 后 B selected、A 取消且两个 panel 可同时存在；再次点击 A 后 A panel 收起但 A 保持 selected，B 取消 selected 且 B panel 保持展开。
 - `npx tsx --test test/team-task-group-routes.test.ts test/team-task-group-run-routes.test.ts`：31/31 pass。
 - `npx tsx --test test/conn-team-group-runner.test.ts test/server.test.ts`：174/174 pass。
 - `npm --prefix apps/team-console test -- --run src/tests/app-connections.test.tsx src/tests/team-api.test.ts`：143/143 pass。

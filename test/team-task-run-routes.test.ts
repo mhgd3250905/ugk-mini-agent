@@ -1595,11 +1595,13 @@ test("GET /v1/team/tasks/:taskId/run-history returns paged task run summaries wi
 			total: number;
 			limit: number;
 			offset: number;
+			hasMore: boolean;
 			runs: Array<{ run: TeamRunState; annotation: { best: boolean; archived: boolean; note?: string } }>;
 		};
 		assert.equal(body.total, 3);
 		assert.equal(body.limit, 2);
 		assert.equal(body.offset, 0);
+		assert.equal(body.hasMore, true);
 		assert.equal(body.runs.length, 2);
 		assert.deepEqual(body.runs.map(item => item.run.runId), [runIds[2], runIds[1]]);
 		assert.equal(body.runs[1]!.annotation.best, true);

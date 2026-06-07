@@ -14,6 +14,19 @@
 
 ---
 
+## 2026-06-07 — Team Console Task node visual focus
+
+- **主题**: Team Console 根 Task 节点选中阴影改为跟随“最后点击的 Task”，不再跟随 Task branch stack 的最后展开项。A/B/A 场景中，第三次点击 A 会收起 A 的 Task 操作面板，但 A 仍保持选中视觉；B 的面板仍可保持展开，视觉焦点不会错误落回 B。
+- **影响范围**: 仅 5174 Team Console Execution Atlas 根 Task 节点的 selected class 计算。Task branch 多面板栈、Discovery 子画布、run history/observer 子面板布局 id 和拖拽位置不变。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/src/tests/app-static-contracts.test.ts`。
+
+## 2026-06-07 — Team Console run history lightweight paging
+
+- **主题**: Team Console Task 运行记录面板首屏改为轻量分页。打开运行记录时只请求 `limit=3&offset=0`，面板显示已加载数量和总数，点击“加载更多”再按 3 条分页追加，避免以后 Task run 历史很多时首屏请求直接搬 50 条。
+- **接口跟进**: `/v1/team/tasks/:taskId/run-history` 继续返回 `total/limit/offset/runs`，新增 `hasMore`；后端改用 `listRunSummariesByTaskIds()` 的 run state index summary 读取路径，不再为 history 列表读取完整 run state 后再截断。history summary 仍省略 heavy `boundInputs`。
+- **视觉收口**: `.emap-run-history-list` 补齐浅色/深色主题 scrollbar 样式，避免运行记录列表退回系统白色滚动条。
+- **对应入口**: `src/team/routes.ts`、`src/team/types.ts`、`apps/team-console/src/app/App.tsx`、`apps/team-console/src/app/app.css`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/src/tests/app-static-contracts.test.ts`、`test/team-task-run-routes.test.ts`。
+
 ## 2026-06-07 — Team Console Agent branch mini/full chat embed
 
 - **主题**: Team Console Agent 卡片展开改为两阶段对话。普通画布分支打开 `/playground?embed=team-console&embedMode=mini`，只保留新会话、上下文用量、消息区和输入框；点击最大化或双击分支头后切到 `/playground?embed=team-console&embedMode=full`，恢复完整 Playground 历史列表、文件库、后台任务和 Team Runtime 入口。mini 顶栏中“新会话”固定左侧，上下文用量固定右侧，API 源不再单独占位，避免和上下文悬浮详情重复；新会话 tooltip 在 mini 内左对齐弹出，不再被 iframe 左边缘裁切。
