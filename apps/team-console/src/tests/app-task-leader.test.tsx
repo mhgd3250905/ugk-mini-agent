@@ -38,8 +38,10 @@ describe("App", () => {
       const iframe = branch!.querySelector("iframe") as HTMLIFrameElement | null;
       expect(iframe).toHaveClass("agent-playground-iframe");
       expect(iframe).toHaveAttribute("title", "调查 Medtrum 云资产 leader 对话");
+      expect(iframe).toHaveAttribute("allow", "clipboard-write; clipboard-read");
       expect(iframe?.getAttribute("src")).toContain("/playground?view=chat&agentId=main");
       expect(iframe?.getAttribute("src")).toContain("embed=team-console");
+      expect(iframe?.getAttribute("src")).toContain("embedMode=full");
       expect(iframe?.getAttribute("src")).toContain("teamTaskId=task_research_medtrum");
       expect(iframe?.getAttribute("src")).toContain("teamTaskMode=edit");
     });

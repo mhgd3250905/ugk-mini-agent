@@ -19,6 +19,9 @@ test("playground renders an agent selector for switching operation windows", () 
 	assert.match(html, /params\.get\("agentId"\)/);
 	assert.match(html, /function isTeamConsoleEmbed\(\)/);
 	assert.match(html, /params\.get\("embed"\) === "team-console"/);
+	assert.match(html, /function readTeamConsoleEmbedMode\(\)/);
+	assert.match(html, /params\.get\("embedMode"\) === "mini" \? "mini" : "full"/);
+	assert.match(html, /shell\.dataset\.teamConsoleEmbed = teamConsoleEmbedMode/);
 	assert.match(html, /function readInitialAgentId\(\)/);
 	assert.match(html, /const hinted = readUrlAgentIdHint\(\)/);
 	assert.match(html, /return isTeamConsoleEmbed\(\) \? hinted : writeStoredAgentId\(hinted\)/);
@@ -47,6 +50,18 @@ test("team console embed locks the playground agent switcher to the hinted agent
 	assert.match(html, /if \(isAgentSwitcherLocked\(\)\) \{\s*closeAgentSwitcher\(\);\s*return;/);
 	assert.match(html, /\.topbar-agent-label\[data-switcher-locked="true"\] \.agent-switcher-meta/);
 	assert.match(agentManagerScript, /if \(typeof isTeamConsoleEmbed === "function" && isTeamConsoleEmbed\(\)\) \{/);
+});
+
+test("team console mini embed has a scoped compact playground layout", () => {
+	const html = renderPlaygroundPage();
+
+	assert.match(html, /\.shell\[data-team-console-embed="mini"\]\s*\{/);
+	assert.match(html, /\.shell\[data-team-console-embed="mini"\] #new-conversation-button/);
+	assert.match(html, /\.shell\[data-team-console-embed="mini"\] #new-conversation-button\[data-tooltip-title\]::after\s*\{[\s\S]*left:\s*0;/);
+	assert.match(html, /\.shell\[data-team-console-embed="mini"\] > \.desktop-conversation-rail/);
+	assert.match(html, /\.shell\[data-team-console-embed="mini"\] \.topbar-context-slot/);
+	assert.match(html, /\.shell\[data-team-console-embed="mini"\] \.stream-layout/);
+	assert.doesNotMatch(html, /body\[data-team-console-embed="mini"\]/);
 });
 
 test("playground renders agent management entry points and workspace", () => {

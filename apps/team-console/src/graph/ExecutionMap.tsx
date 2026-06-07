@@ -73,6 +73,7 @@ interface ExecutionMapProps {
   onRestoreAgent?: (node: AtlasAgentNode) => void;
   canMoveAgents?: boolean;
   agentBranchPanel?: ReactNode;
+  maximizedAgentBranchPanel?: ReactNode;
   taskNodes?: AtlasTaskNode[];
   tasksById?: Map<string, TeamCanvasTask>;
   taskConnections?: TeamTaskConnection[];
@@ -887,6 +888,7 @@ export function ExecutionMap({
   onRestoreAgent,
   canMoveAgents = true,
   agentBranchPanel,
+  maximizedAgentBranchPanel,
   taskNodes = [],
   tasksById,
   taskConnections = [],
@@ -2431,8 +2433,9 @@ export function ExecutionMap({
   const maximizedTaskPanel = maximizedBranch?.kind === "task-panel"
     ? taskChildBranchPanelsLayout.find((p) => p.id === maximizedBranch.panelId)?.panel ?? null
     : null;
-  const maximizedBranchPanel = maximizedBranch?.kind === "agent" && agentBranchPanel
-    ? agentBranchPanel
+  const activeMaximizedAgentBranchPanel = maximizedAgentBranchPanel ?? agentBranchPanel;
+  const maximizedBranchPanel = maximizedBranch?.kind === "agent" && activeMaximizedAgentBranchPanel
+    ? activeMaximizedAgentBranchPanel
     : maximizedTaskPanel;
   const maximizedOverlay = maximizedBranchPanel ? createPortal(
     <div
@@ -2944,12 +2947,12 @@ export function ExecutionMap({
 
   useLayoutEffect(() => {
     if (
-      (maximizedBranch?.kind === "agent" && !agentBranchPanel)
+      (maximizedBranch?.kind === "agent" && !activeMaximizedAgentBranchPanel)
       || (maximizedBranch?.kind === "task-panel" && !taskChildBranchPanelsLayout.some((p) => p.id === maximizedBranch.panelId))
     ) {
       setMaximizedBranch(null);
     }
-  }, [agentBranchPanel, maximizedBranch, taskChildBranchPanelsLayout]);
+  }, [activeMaximizedAgentBranchPanel, maximizedBranch, taskChildBranchPanelsLayout]);
 
   useEffect(() => {
     if (hasActiveTaskLayoutInteraction()) return;

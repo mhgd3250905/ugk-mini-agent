@@ -24,8 +24,9 @@
 
 ## 当前 Git 现场
 
-- 当前分支：`main...origin/main [ahead 10]`（本轮 Team Console Discovery run history / observer UI 修复提交后）。继续前以 `git status --short --branch` 和 `git log -5 --oneline` 为准。
-- 当前没有待提交的 tracked 源码改动；仍有无关未跟踪 `docs/windows-native-runtime-feasibility.md`，不要误提交。
+- 当前分支：`main...origin/main [ahead 10]`（本轮 Team Console Discovery run history / observer UI 修复提交后；Agent branch mini/full embed 仍待提交）。继续前以 `git status --short --branch` 和 `git log -5 --oneline` 为准。
+- 当前待提交 tracked 改动为本轮 Agent branch mini/full chat embed：`apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、相关 Team Console 测试、`src/ui/playground.ts`、`src/ui/playground-styles.ts`、`test/playground-agent-switch.test.ts`、`docs/change-log.md`、`docs/handoff-current.md`。
+- 仍有无关未跟踪 `docs/windows-native-runtime-feasibility.md`，不要误提交。
 - 最近新增本地提交包括：
   - `Fix Team artifact handoff and Discovery history panels`
   - `Fix Team Console Discovery run history interactions`
@@ -68,6 +69,7 @@ git log --oneline origin/main..HEAD
 - Discovery 子画布打开时，root Task 菜单里的“运行记录”不再挂到子画布下一级；点击后会关闭 Discovery 子画布，并把 Discovery root Task 运行记录作为同级 Task child panel 展开。generated card 点击运行记录仍保留在子画布下一级，并使用 `generated-run-history-*` 布局 id，避免和 root `run-history-*` 混用拖拽位置。
 - Team Console run history 条目已恢复运行观察展开：运行记录卡片整卡可点击选中/展开 observer，行内 `装载记录` / `标为最佳` / `归档记录` 会阻止冒泡，不会误打开 observer。Discovery root 最近运行 observer、root run history observer、generated run history observer 使用不同 panel id，避免拖拽位置串用。
 - Team Console run history 深色 selected 行已收口：操作按钮保持暗色表面，不再被浅色 selected button 样式覆盖。run observer 外层 `.emap-run-observer-panel` 不再做大滚动，保持 `max-height: none` / `overflow: visible`；Worker / Checker 过程区仍保持固定高度与内部滚动。
+- Team Console Agent 卡片展开已改成 mini/full 两阶段对话。普通画布分支 iframe 使用 `embedMode=mini`，只展示新会话、上下文用量、消息区和输入框；新会话固定左侧，上下文用量固定右侧，API 源不再单独占位；新会话 tooltip 在 mini 内左对齐弹出，不被 iframe 左边缘裁切。最大化 overlay 使用 `embedMode=full`，恢复完整 Playground。Agent/Leader iframe 已加 `clipboard-write; clipboard-read` 权限，嵌入气泡“复制正文”按钮会调用 `navigator.clipboard.writeText(...)`。
 - Team Console Task 最近运行 / 运行观察子面板已允许向画布原点上方拖动。Task child panel 布局不再把用户拖拽产生的负 `y` override 钳到 `0`；`x` 轴现有非负限制保持不变。
 - Team Console 根节点筛选已整合数量统计：`ALL`、`Agent`、`Task`、`Source` 四个筛选项直接显示数量，独立统计块已移除；`Task` 筛选只显示 Task，Source 走独立筛选。
 - Team Console Dock 已区分 Group 成员 Task 和根级 Task。Group 内 Task 拖到底部 Dock 区域不会触发收纳；展开 Group 可点击“收纳”把整个 Group 收入 Dock，Dock 中以 Group 对象展示并可恢复，不会把 Group 成员拆成独立 Dock Task。
@@ -109,6 +111,13 @@ git log --oneline origin/main..HEAD
   - `npx tsc --noEmit`：pass。
   - `git diff --check`：pass。
   - Browser `http://127.0.0.1:5174/`：确认 `ugk-pi-team-console` 重启后 `/src/app/App.tsx` 包含 `data-run-observer-card-action`、`stopPropagation`、`toggleRunHistoryObserver`；`/src/app/app.css` 包含 `max-height: none`、`overflow: visible`、暗色 selected action 背景标记。深色模式 computed style 确认 observer 外层 `max-height: none` / `overflow-y: visible` 且 `scrollHeight === clientHeight`，selected action 背景为 `rgba(8, 14, 24, 0.78)`。
+- Agent branch mini/full chat embed 验证：
+  - `npm --prefix apps/team-console test -- --run src/tests/app-mock-branches.test.tsx src/tests/app-branch-windowing.test.tsx src/tests/app-task-leader.test.tsx src/tests/app-live-data.test.tsx`：116/116 pass。
+  - `node --test --test-concurrency=1 --import tsx test/playground-agent-switch.test.ts`：6/6 pass。
+  - `npm --prefix apps/team-console run build`：pass；仅既有 Vite chunk size warning。
+  - `npx tsc --noEmit`：pass。
+  - `git diff --check`：pass。
+  - Browser `http://127.0.0.1:5174/`：普通 Agent 分支 iframe 为 `embedMode=mini`、`allow="clipboard-write; clipboard-read"`、`#shell[data-team-console-embed="mini"]`；mini 中历史列表/API 源 rail 隐藏，新会话左置、上下文右置且不重叠，消息区/输入框可见。新会话 tooltip hover 后 `::after left=0px`、`opacity=1`、`transform` 归零，不再被左边缘裁切。最大化 overlay iframe 为 `embedMode=full` 且完整 Playground 入口恢复。嵌入气泡“复制正文”按钮实测调用 `navigator.clipboard.writeText(...)`；iframe focus 后原生 `navigator.clipboard.writeText(...)` 返回 ok。
 - `npx tsx --test test/team-task-group-routes.test.ts test/team-task-group-run-routes.test.ts`：31/31 pass。
 - `npx tsx --test test/conn-team-group-runner.test.ts test/server.test.ts`：174/174 pass。
 - `npm --prefix apps/team-console test -- --run src/tests/app-connections.test.tsx src/tests/team-api.test.ts`：143/143 pass。

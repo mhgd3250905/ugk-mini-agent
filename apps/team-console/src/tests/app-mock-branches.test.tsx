@@ -113,8 +113,10 @@ describe("App", () => {
       const iframe = branch!.querySelector("iframe") as HTMLIFrameElement | null;
       expect(iframe).toBeTruthy();
       expect(iframe).toHaveAttribute("title", "主 Agent 主项目对话");
+      expect(iframe).toHaveAttribute("allow", "clipboard-write; clipboard-read");
       expect(iframe?.getAttribute("src")).toContain("/playground?view=chat&agentId=main");
       expect(iframe?.getAttribute("src")).toContain("embed=team-console");
+      expect(iframe?.getAttribute("src")).toContain("embedMode=mini");
       expect(iframe?.getAttribute("src")).not.toContain("teamTaskMode=create");
       expect(iframe?.getAttribute("src")).not.toContain("127.0.0.1");
     });

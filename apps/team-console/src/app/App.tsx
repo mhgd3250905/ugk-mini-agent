@@ -720,11 +720,14 @@ function playgroundBaseUrlPrefix(): string {
     : "";
 }
 
-function buildAgentPlaygroundUrl(agentId: string, mode: AgentBranchMode = "chat"): string {
+type AgentPlaygroundEmbedMode = "mini" | "full";
+
+function buildAgentPlaygroundUrl(agentId: string, mode: AgentBranchMode = "chat", embedMode: AgentPlaygroundEmbedMode = "full"): string {
   const params = new URLSearchParams({
     view: "chat",
     agentId,
     embed: "team-console",
+    embedMode,
   });
   if (mode === "task-create") {
     params.set("teamTaskMode", "create");
@@ -777,6 +780,7 @@ function buildTaskLeaderPlaygroundUrl(task: TeamCanvasTask): string {
     view: "chat",
     agentId: task.leaderAgentId,
     embed: "team-console",
+    embedMode: "full",
     teamTaskId: task.taskId,
     teamTaskMode: "edit",
   });
@@ -4084,7 +4088,7 @@ export function App() {
     ? `${expandedAgent?.name ?? ""} Task 创建`
     : `${expandedAgent?.name ?? ""} 主项目对话`;
 
-  const expandedAgentBranchPanel = expandedAgentNode && expandedAgent ? (
+  const renderExpandedAgentBranchPanel = (embedMode: AgentPlaygroundEmbedMode) => expandedAgentNode && expandedAgent ? (
     <section className="agent-playground-branch emap-dialog-branch" aria-label={`${expandedAgent.name} ${expandedAgentBranchLabel}`}>
       <header className="agent-playground-branch-head">
         <div className="agent-playground-branch-title">
@@ -4112,11 +4116,16 @@ export function App() {
       <iframe
         className="agent-playground-iframe"
         title={expandedAgentIframeTitle}
-        src={buildAgentPlaygroundUrl(expandedAgent.agentId, expandedAgentBranchMode)}
+        src={buildAgentPlaygroundUrl(expandedAgent.agentId, expandedAgentBranchMode, embedMode)}
         referrerPolicy="no-referrer"
+        allow="clipboard-write; clipboard-read"
       />
     </section>
   ) : null;
+  const expandedAgentBranchPanel = renderExpandedAgentBranchPanel(
+    expandedAgentBranchMode === "chat" ? "mini" : "full",
+  );
+  const maximizedAgentBranchPanel = renderExpandedAgentBranchPanel("full");
 
   const taskBranchPanelItems = expandedTaskBranches.flatMap((branch) => {
     const node = taskNodes.find((candidate) => candidate.nodeId === branch.nodeId) ?? null;
@@ -5651,6 +5660,7 @@ export function App() {
                 title={`${task.title} leader 对话`}
                 src={buildTaskLeaderPlaygroundUrl(task)}
                 referrerPolicy="no-referrer"
+                allow="clipboard-write; clipboard-read"
               />
             </section>
           ),
@@ -6052,6 +6062,7 @@ export function App() {
                 onMinimizeAgent={minimizeAgentNode}
                 onRestoreAgent={restoreAgentNode}
                 agentBranchPanel={expandedAgentBranchPanel}
+                maximizedAgentBranchPanel={maximizedAgentBranchPanel}
                 taskNodes={taskNodes}
                 tasksById={tasksById}
                 taskConnections={taskConnections}

@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-07 — Team Console Agent branch mini/full chat embed
+
+- **主题**: Team Console Agent 卡片展开改为两阶段对话。普通画布分支打开 `/playground?embed=team-console&embedMode=mini`，只保留新会话、上下文用量、消息区和输入框；点击最大化或双击分支头后切到 `/playground?embed=team-console&embedMode=full`，恢复完整 Playground 历史列表、文件库、后台任务和 Team Runtime 入口。mini 顶栏中“新会话”固定左侧，上下文用量固定右侧，API 源不再单独占位，避免和上下文悬浮详情重复；新会话 tooltip 在 mini 内左对齐弹出，不再被 iframe 左边缘裁切。
+- **跟进**: Agent/Leader iframe 增加 `allow="clipboard-write; clipboard-read"`，修复嵌入对话气泡右下角“复制正文”按钮在 iframe 权限层没有作用的问题。
+- **影响范围**: 仅 Team Console 嵌入式 `/playground` iframe 和 `embed=team-console&embedMode=mini` 的 scoped CSS；主 `/playground` 普通入口不进入 mini 样式。Task 创建和 Task Leader 对话仍使用 full embed。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`src/ui/playground.ts`、`src/ui/playground-styles.ts`、`apps/team-console/src/tests/app-branch-windowing.test.tsx`、`test/playground-agent-switch.test.ts`。
+
 ## 2026-06-07 — Team typed artifact file-first handoff
 
 - **主题**: Team typed artifact 下游交付改为 file-first。typed connection 触发 worker 前，runtime 会把每个上游 typed artifact 的完整文件复制到当前 worker `workDir/bound-inputs/`，并在 payload/prompt 中提供 `workspaceFileRef` / `workspaceFilePath`；prompt 中的 artifact 内容只作为预览和追溯，不再作为唯一数据来源。

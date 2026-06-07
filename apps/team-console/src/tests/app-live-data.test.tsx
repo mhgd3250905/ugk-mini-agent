@@ -3154,8 +3154,10 @@ describe("App", () => {
       expect(within(branch!).getByText("主 Agent")).toBeInTheDocument();
       const iframe = branch!.querySelector("iframe") as HTMLIFrameElement | null;
       expect(iframe).toHaveAttribute("title", "主 Agent Task 创建");
+      expect(iframe).toHaveAttribute("allow", "clipboard-write; clipboard-read");
       expect(iframe?.getAttribute("src")).toContain("/playground?view=chat&agentId=main");
       expect(iframe?.getAttribute("src")).toContain("embed=team-console");
+      expect(iframe?.getAttribute("src")).toContain("embedMode=full");
       expect(iframe?.getAttribute("src")).toContain("teamTaskMode=create");
       expect(iframe?.getAttribute("src")).not.toContain("teamTaskId=");
     });

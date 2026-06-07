@@ -165,6 +165,16 @@ function getPlaygroundScript(): string {
 			}
 		}
 
+		function readTeamConsoleEmbedMode() {
+			if (!isTeamConsoleEmbed()) return "";
+			try {
+				const params = new URLSearchParams(window.location.search || "");
+				return params.get("embedMode") === "mini" ? "mini" : "full";
+			} catch {
+				return "full";
+			}
+		}
+
 		function isAgentSwitcherLocked() {
 			return isTeamConsoleEmbed();
 		}
@@ -414,6 +424,10 @@ function getPlaygroundScript(): string {
 		const pageRoot = document.documentElement;
 		const pageBody = document.body;
 		const shell = document.getElementById("shell");
+		const teamConsoleEmbedMode = readTeamConsoleEmbedMode();
+		if (shell && teamConsoleEmbedMode) {
+			shell.dataset.teamConsoleEmbed = teamConsoleEmbedMode;
+		}
 		const landingScreen = document.getElementById("landing-screen");
 		const sessionFile = document.getElementById("session-file");
 		const chatStage = document.getElementById("chat-stage");

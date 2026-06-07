@@ -39,6 +39,7 @@ describe("App", () => {
       expect(within(branch!).getByText("搜索 Agent")).toBeInTheDocument();
       expect(branch!.querySelector("iframe")?.getAttribute("src")).toContain("/playground?view=chat&agentId=search");
       expect(branch!.querySelector("iframe")?.getAttribute("src")).toContain("embed=team-console");
+      expect(branch!.querySelector("iframe")?.getAttribute("src")).toContain("embedMode=mini");
     });
 
     it("drags the embedded playground branch by its title bar", async () => {
@@ -137,6 +138,10 @@ describe("App", () => {
       fireEvent.click(await screen.findByRole("button", { name: /主 Agent[\s\S]*main/ }));
       fireEvent.click(within(getAtlasNodes(container)).getByRole("button", { name: "主 Agent" }));
 
+      const inlineIframe = container.querySelector(".execution-map-scroll .agent-playground-iframe") as HTMLIFrameElement | null;
+      expect(inlineIframe?.getAttribute("src")).toContain("embedMode=mini");
+      expect(inlineIframe).toHaveAttribute("allow", "clipboard-write; clipboard-read");
+
       fireEvent.click(screen.getByRole("button", { name: "最大化对话分支" }));
 
       const overlay = document.querySelector(".emap-maximized-branch-shell") as HTMLElement | null;
@@ -144,6 +149,7 @@ describe("App", () => {
       expect(overlay!.parentElement).toBe(document.body);
       expect(container.querySelector(".execution-map-scroll .emap-agent-branch-shell")).toBeNull();
       expect(overlay!.querySelector(".agent-playground-iframe")).toBeTruthy();
+      expect((overlay!.querySelector(".agent-playground-iframe") as HTMLIFrameElement | null)?.getAttribute("src")).toContain("embedMode=full");
 
       // Restore via double-click on overlay header (no dedicated restore button)
       const overlayHeader = overlay!.querySelector(".agent-playground-branch-head") as HTMLElement | null;
@@ -184,6 +190,7 @@ describe("App", () => {
       const overlay = document.querySelector(".emap-maximized-branch-shell") as HTMLElement | null;
       expect(overlay).toBeTruthy();
       expect(container.querySelector(".execution-map-scroll .emap-agent-branch-shell")).toBeNull();
+      expect((overlay!.querySelector(".agent-playground-iframe") as HTMLIFrameElement | null)?.getAttribute("src")).toContain("embedMode=full");
 
       const overlayHeader = overlay!.querySelector(".agent-playground-branch-head") as HTMLElement | null;
       expect(overlayHeader).toBeTruthy();
@@ -255,6 +262,7 @@ describe("App", () => {
       // Verify iframe has teamTaskMode=create
       const iframe = container.querySelector(".agent-playground-branch iframe") as HTMLIFrameElement | null;
       expect(iframe?.getAttribute("src")).toContain("teamTaskMode=create");
+      expect(iframe?.getAttribute("src")).toContain("embedMode=full");
       expect(iframe?.getAttribute("src")).not.toContain("teamTaskId=");
 
       // Double-click header to maximize
