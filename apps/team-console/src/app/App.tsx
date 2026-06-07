@@ -3237,7 +3237,6 @@ export function App() {
   }, [rootArchiveConfirm, rootArchiveSaving]);
 
   const toggleDiscoveryChannelTaskSelection = useCallback((discoveryTaskId: string, generatedTaskId: string) => {
-    setSelectedDiscoveryChannelSetIdByTaskId((current) => ({ ...current, [discoveryTaskId]: null }));
     setSelectedDiscoveryChannelTaskIdsByTaskId((current) => {
       const selected = current[discoveryTaskId] ?? [];
       const next = selected.includes(generatedTaskId)
@@ -3278,21 +3277,37 @@ export function App() {
     setDiscoveryChannelSetSavingByTaskId((current) => ({ ...current, [taskId]: true }));
     try {
       const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-      const channelSet = await api.createDiscoveryChannelSet(taskId, { title, generatedTaskIds });
-      setDiscoveryChannelSetsByTaskId((current) => ({
-        ...current,
-        [taskId]: [channelSet, ...(current[taskId] ?? []).filter((item) => item.channelSetId !== channelSet.channelSetId)],
-      }));
-      setSelectedDiscoveryChannelTaskIdsByTaskId((current) => ({ ...current, [taskId]: [] }));
-      setSelectedDiscoveryChannelSetIdByTaskId((current) => ({ ...current, [taskId]: null }));
-      setDiscoveryChannelSetTitleByTaskId((current) => ({ ...current, [taskId]: "" }));
+      const selectedChannelSetId = selectedDiscoveryChannelSetIdByTaskId[taskId] ?? null;
+      if (selectedChannelSetId) {
+        const channelSet = await api.updateDiscoveryChannelSet(taskId, selectedChannelSetId, { title, generatedTaskIds });
+        setDiscoveryChannelSetsByTaskId((current) => ({
+          ...current,
+          [taskId]: (current[taskId] ?? []).map((item) => (
+            item.channelSetId === channelSet.channelSetId ? channelSet : item
+          )),
+        }));
+        setSelectedDiscoveryChannelTaskIdsByTaskId((current) => ({
+          ...current,
+          [taskId]: channelSet.items.map((item) => item.generatedTaskId),
+        }));
+        setDiscoveryChannelSetTitleByTaskId((current) => ({ ...current, [taskId]: channelSet.title }));
+      } else {
+        const channelSet = await api.createDiscoveryChannelSet(taskId, { title, generatedTaskIds });
+        setDiscoveryChannelSetsByTaskId((current) => ({
+          ...current,
+          [taskId]: [channelSet, ...(current[taskId] ?? []).filter((item) => item.channelSetId !== channelSet.channelSetId)],
+        }));
+        setSelectedDiscoveryChannelTaskIdsByTaskId((current) => ({ ...current, [taskId]: [] }));
+        setSelectedDiscoveryChannelSetIdByTaskId((current) => ({ ...current, [taskId]: null }));
+        setDiscoveryChannelSetTitleByTaskId((current) => ({ ...current, [taskId]: "" }));
+      }
       setError(null);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
       setDiscoveryChannelSetSavingByTaskId((current) => ({ ...current, [taskId]: false }));
     }
-  }, [dataSource, discoveryChannelSetTitleByTaskId, selectedDiscoveryChannelTaskIdsByTaskId, setError]);
+  }, [dataSource, discoveryChannelSetTitleByTaskId, selectedDiscoveryChannelSetIdByTaskId, selectedDiscoveryChannelTaskIdsByTaskId, setError]);
 
   const archiveDiscoveryChannelSet = useCallback(async (taskId: string, channelSetId: string) => {
     setDiscoveryChannelSetArchivingById((current) => ({ ...current, [channelSetId]: true }));
@@ -3306,13 +3321,19 @@ export function App() {
       setSelectedDiscoveryChannelSetIdByTaskId((current) => (
         current[taskId] === archived.channelSetId ? { ...current, [taskId]: null } : current
       ));
+      setSelectedDiscoveryChannelTaskIdsByTaskId((current) => (
+        selectedDiscoveryChannelSetIdByTaskId[taskId] === archived.channelSetId ? { ...current, [taskId]: [] } : current
+      ));
+      setDiscoveryChannelSetTitleByTaskId((current) => (
+        selectedDiscoveryChannelSetIdByTaskId[taskId] === archived.channelSetId ? { ...current, [taskId]: "" } : current
+      ));
       setError(null);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
       setDiscoveryChannelSetArchivingById((current) => ({ ...current, [channelSetId]: false }));
     }
-  }, [dataSource, setError]);
+  }, [dataSource, selectedDiscoveryChannelSetIdByTaskId, setError]);
 
   const runTask = useCallback(async (
     task: TeamCanvasTask,
@@ -4776,6 +4797,9 @@ export function App() {
         const selectedDiscoveryChannelTaskIdSet = new Set(selectedDiscoveryChannelTaskIds);
         const selectedDiscoveryChannelSetId = selectedDiscoveryChannelSetIdByTaskId[task.taskId] ?? null;
         const discoveryChannelSets = discoveryChannelSetsByTaskId[task.taskId] ?? [];
+        const selectedDiscoveryChannelSet = selectedDiscoveryChannelSetId
+          ? discoveryChannelSets.find((channelSet) => channelSet.channelSetId === selectedDiscoveryChannelSetId) ?? null
+          : null;
         const activeDiscoveryChannelSetId = activeDiscoveryRun?.source?.discoveryChannelSetId ?? null;
         const activeDiscoveryChannelSet = activeDiscoveryChannelSetId
           ? discoveryChannelSets.find((channelSet) => channelSet.channelSetId === activeDiscoveryChannelSetId) ?? null
@@ -5220,10 +5244,6 @@ export function App() {
                       placeholder={`${task.title} 渠道集`}
                       onChange={(event) => {
                         const value = event.currentTarget.value;
-                        setSelectedDiscoveryChannelSetIdByTaskId((current) => ({
-                          ...current,
-                          [task.taskId]: null,
-                        }));
                         setDiscoveryChannelSetTitleByTaskId((current) => ({
                           ...current,
                           [task.taskId]: value,
@@ -5239,7 +5259,9 @@ export function App() {
                       void saveDiscoveryChannelSet(task);
                     }}
                   >
-                    {discoveryChannelSetSaving ? "保存中..." : "保存渠道集"}
+                    {discoveryChannelSetSaving
+                      ? (selectedDiscoveryChannelSet ? "更新中..." : "保存中...")
+                      : (selectedDiscoveryChannelSet ? "更新渠道集" : "保存渠道集")}
                   </button>
                   <button
                     type="button"

@@ -14,10 +14,16 @@
 
 ---
 
+## 2026-06-07 — Team Console Discovery channel set editing
+
+- **主题**: Discovery 子画布里选中的已保存渠道集现在可直接编辑。点击渠道集后，名称输入和 generated Task checkbox 进入该集合的编辑态；修改标题或勾选项不会取消 selected，高亮集合的主按钮从“保存渠道集”切换为“更新渠道集”，提交时走 `PATCH /v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId`，不会误创建重复集合。
+- **影响范围**: 仅 5174 Team Console Discovery 子画布渠道集面板、Team Console API gateway 和 mock fixture。未选中已有集合时仍按原逻辑 `POST` 新建渠道集；`使用渠道集` 仍是独立运行动作。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/api/team-api.ts`、`apps/team-console/src/api/team-types.ts`、`apps/team-console/src/fixtures/team-fixtures.ts`、`apps/team-console/src/tests/app-live-data.test.tsx`、`apps/team-console/src/tests/team-api.test.ts`。
+
 ## 2026-06-07 — Team Console Discovery channel set selection
 
 - **主题**: Discovery 子画布里的已保存渠道集现在可选中查看。点击渠道集名称区域会把该集合标为 selected，并同步勾选下方 generated Task 网格中属于该集合的 items，同时把名称输入切到集合标题，方便集合变多后切换查看。
-- **影响范围**: 仅 5174 Team Console Discovery 子画布渠道集面板和 generated card checkbox 选择态。`使用渠道集` 仍是单独运行动作；手动改 checkbox、清空选择、编辑名称或保存新集合会解除当前集合高亮，避免把已修改选择误显示为某个已保存集合。
+- **影响范围**: 仅 5174 Team Console Discovery 子画布渠道集面板和 generated card checkbox 选择态。`使用渠道集` 仍是单独运行动作；后续已扩展为可编辑 selected 集合，见同日 “Team Console Discovery channel set editing”。
 - **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app-live-data.test.tsx`。
 
 ## 2026-06-07 — Team Console Discovery channel set run visibility

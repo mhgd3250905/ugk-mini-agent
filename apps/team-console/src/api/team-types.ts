@@ -199,6 +199,11 @@ export interface TeamDiscoveryChannelSetCreateRequest {
   generatedTaskIds: string[];
 }
 
+export interface TeamDiscoveryChannelSetPatchRequest {
+  title?: string;
+  generatedTaskIds?: string[];
+}
+
 export interface TeamDiscoveryChannelSetMutationResponse {
   channelSet: TeamDiscoveryChannelSet;
 }

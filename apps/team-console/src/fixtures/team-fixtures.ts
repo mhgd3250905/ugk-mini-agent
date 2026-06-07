@@ -43,6 +43,7 @@ import type {
   TeamCanvasTaskRunByTaskListResponse,
   TeamDiscoveryChannelSet,
   TeamDiscoveryChannelSetCreateRequest,
+  TeamDiscoveryChannelSetPatchRequest,
   TeamDiscoveryGeneratedTaskSummaryCatalogResponse,
   TeamDiscoveryGeneratedTaskSummary,
   TeamTaskRunAnnotation,
@@ -1864,6 +1865,54 @@ export class MockTeamApi {
     };
     mockDiscoveryChannelSets = [channelSet, ...mockDiscoveryChannelSets];
     return cloneMockDiscoveryChannelSet(channelSet);
+  }
+
+  async updateDiscoveryChannelSet(
+    discoveryTaskId: string,
+    channelSetId: string,
+    patch: TeamDiscoveryChannelSetPatchRequest,
+  ): Promise<TeamDiscoveryChannelSet> {
+    const index = mockDiscoveryChannelSets.findIndex((channelSet) => (
+      channelSet.sourceDiscoveryTaskId === discoveryTaskId
+      && channelSet.channelSetId === channelSetId
+      && !channelSet.archived
+    ));
+    if (index < 0) throw { message: `Discovery channel set not found: ${channelSetId}` };
+    const existing = mockDiscoveryChannelSets[index]!;
+    const generatedTaskIds = patch.generatedTaskIds === undefined
+      ? existing.items.map((item) => item.generatedTaskId)
+      : [...new Set(patch.generatedTaskIds.map((taskId) => taskId.trim()).filter(Boolean))];
+    if (generatedTaskIds.length === 0) throw { message: "generatedTaskIds is required" };
+    const items = generatedTaskIds.map((generatedTaskId) => {
+      const generatedTask = mockCanvasTasks.find((task) => (
+        task.taskId === generatedTaskId
+        && !task.archived
+        && task.generatedSource?.sourceDiscoveryTaskId === discoveryTaskId
+      ));
+      if (!generatedTask?.generatedSource) throw { message: `generated task not found: ${generatedTaskId}` };
+      const source = generatedTask.generatedSource;
+      return {
+        generatedTaskId: generatedTask.taskId,
+        sourceItemId: source.sourceItemId,
+        title: generatedTask.title,
+        itemPayload: { ...source.itemPayload },
+        workUnitSnapshot: cloneMockWorkUnit(source.workUnitMode === "managed" && source.latestManagedWorkUnit
+          ? source.latestManagedWorkUnit
+          : generatedTask.workUnit),
+        workUnitMode: source.workUnitMode,
+        latestDiscoveryRunId: source.latestDiscoveryRunId,
+        latestDiscoveryAttemptId: source.latestDiscoveryAttemptId,
+        latestDiscoveredAt: source.latestDiscoveredAt,
+      };
+    });
+    const updated: TeamDiscoveryChannelSet = {
+      ...existing,
+      title: patch.title === undefined ? existing.title : patch.title.trim() || existing.title,
+      items,
+      updatedAt: ts(),
+    };
+    mockDiscoveryChannelSets[index] = updated;
+    return cloneMockDiscoveryChannelSet(updated);
   }
 
   async archiveDiscoveryChannelSet(discoveryTaskId: string, channelSetId: string): Promise<TeamDiscoveryChannelSet> {

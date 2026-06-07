@@ -34,6 +34,7 @@ import type {
   TeamDiscoveryGeneratedTaskSummary,
   TeamDiscoveryChannelSet,
   TeamDiscoveryChannelSetCreateRequest,
+  TeamDiscoveryChannelSetPatchRequest,
   TeamDiscoveryChannelSetListResponse,
   TeamDiscoveryChannelSetMutationResponse,
   TeamTaskConnection,
@@ -96,6 +97,7 @@ export interface CanvasTaskGateway {
   ): Promise<TeamDiscoveryGeneratedTaskSummaryCatalogResponse>;
   listDiscoveryChannelSets(discoveryTaskId: string, options?: { includeArchived?: boolean }): Promise<TeamDiscoveryChannelSet[]>;
   createDiscoveryChannelSet(discoveryTaskId: string, input: TeamDiscoveryChannelSetCreateRequest): Promise<TeamDiscoveryChannelSet>;
+  updateDiscoveryChannelSet(discoveryTaskId: string, channelSetId: string, patch: TeamDiscoveryChannelSetPatchRequest): Promise<TeamDiscoveryChannelSet>;
   archiveDiscoveryChannelSet(discoveryTaskId: string, channelSetId: string): Promise<TeamDiscoveryChannelSet>;
   getTask(taskId: string): Promise<TeamCanvasTask | null>;
   updateTask(taskId: string, patch: TeamTaskUpdateRequest): Promise<TeamTaskMutationResponse>;
@@ -438,6 +440,30 @@ export class LiveTeamApi implements TeamApiProvider {
         headers: { accept: "application/json", "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
+      if (!res.ok) {
+        throw await responseToApiError(res, `请求失败 (${res.status})`);
+      }
+      const body = await res.json() as TeamDiscoveryChannelSetMutationResponse;
+      return body.channelSet;
+    } catch (e) {
+      throw toApiError(e);
+    }
+  }
+
+  async updateDiscoveryChannelSet(
+    discoveryTaskId: string,
+    channelSetId: string,
+    patch: TeamDiscoveryChannelSetPatchRequest,
+  ): Promise<TeamDiscoveryChannelSet> {
+    try {
+      const res = await fetch(
+        `${this.baseUrl}/tasks/${encodeURIComponent(discoveryTaskId)}/discovery-channel-sets/${encodeURIComponent(channelSetId)}`,
+        {
+          method: "PATCH",
+          headers: { accept: "application/json", "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        },
+      );
       if (!res.ok) {
         throw await responseToApiError(res, `请求失败 (${res.status})`);
       }

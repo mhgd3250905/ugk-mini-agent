@@ -1966,12 +1966,17 @@ describe("LiveTeamApi", () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(new Response(JSON.stringify({ channelSets: [channelSet] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ channelSet }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ channelSet: { ...channelSet, title: "更新渠道" } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ channelSet: { ...channelSet, archived: true } }), { status: 200 }));
 
     const listed = await api.listDiscoveryChannelSets("task/discovery 1");
     const created = await api.createDiscoveryChannelSet("task/discovery 1", {
       title: "常用渠道",
       generatedTaskIds: ["task_generated_a"],
+    });
+    const updated = await api.updateDiscoveryChannelSet("task/discovery 1", "channel/set 1", {
+      title: "更新渠道",
+      generatedTaskIds: ["task_generated_a", "task_generated_b"],
     });
     const archived = await api.archiveDiscoveryChannelSet("task/discovery 1", "channel/set 1");
 
@@ -1981,12 +1986,18 @@ describe("LiveTeamApi", () => {
       headers: { accept: "application/json", "Content-Type": "application/json" },
       body: JSON.stringify({ title: "常用渠道", generatedTaskIds: ["task_generated_a"] }),
     });
-    expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/tasks/task%2Fdiscovery%201/discovery-channel-sets/channel%2Fset%201/archive", {
+    expect(fetch).toHaveBeenNthCalledWith(3, "/v1/team/tasks/task%2Fdiscovery%201/discovery-channel-sets/channel%2Fset%201", {
+      method: "PATCH",
+      headers: { accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "更新渠道", generatedTaskIds: ["task_generated_a", "task_generated_b"] }),
+    });
+    expect(fetch).toHaveBeenNthCalledWith(4, "/v1/team/tasks/task%2Fdiscovery%201/discovery-channel-sets/channel%2Fset%201/archive", {
       method: "POST",
       headers: { accept: "application/json" },
     });
     expect(listed).toEqual([channelSet]);
     expect(created).toEqual(channelSet);
+    expect(updated.title).toBe("更新渠道");
     expect(archived.archived).toBe(true);
   });
 
