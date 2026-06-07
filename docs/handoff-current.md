@@ -26,12 +26,13 @@
 
 - 当前分支：`codex/discovery-channel-set`。
 - 相对 `origin/main` 本地 ahead 提交包括：
+  - `b5fdfa7b Fix Discovery channel set run visibility in Team Console`
   - `9e1fe855 Document Discovery channel set workflow`
   - `63a739f7 Add Team Console Discovery channel set controls`
   - `5fd0883f Run Discovery roots from saved channel sets`
   - `cd3b5a5a Add Discovery channel set backend contract`
-- 本轮最新修复提交主题：`Fix Discovery channel set run visibility in Team Console`。
-- 本轮 Git 保存范围：Discovery channel set 后端合同、从保存渠道集跳过 rediscovery/dispatcher 的 root run 路径、Team Console 子画布渠道集选择/保存/归档/使用 UI、渠道集 run 状态可视化修复、相关测试和文档。
+- 本轮最新修复提交主题：`Select saved Discovery channel sets in Team Console`。
+- 本轮 Git 保存范围：Discovery channel set 后端合同、从保存渠道集跳过 rediscovery/dispatcher 的 root run 路径、Team Console 子画布渠道集选择/保存/归档/使用 UI、渠道集 run 状态可视化修复、保存渠道集选中查看/自动勾选 items、相关测试和文档。
 - 仍有无关未跟踪 `docs/windows-native-runtime-feasibility.md`，不要误提交。
 - 仍有本轮计划草稿 `.codex/plans/2026-06-07-discovery-channel-set.md` 未跟踪，不要提交。
 - `origin`：GitHub `https://github.com/mhgd3250905/ugk-claw-personal.git`。
@@ -56,6 +57,7 @@ git log --oneline origin/main..HEAD
 - 新增 `GET /v1/team/tasks/:taskId/discovery-channel-sets`、`POST /v1/team/tasks/:taskId/discovery-channel-sets`、`PATCH /v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId` 和 `POST /v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId/archive`。持久文件为 `.data/team/discovery-channel-sets.json`。
 - `POST /v1/team/tasks/:taskId/runs` 新增可选 `discoveryChannelSetId`。Discovery root 使用同源未归档渠道集运行时，会跳过 root rediscovery/dispatcher，写出标准 `discovery-result.json` / `discovery-aggregation.json`，并按既有 auto-run 语义启动保存的 generated child runs。
 - Team Console 子画布新增“渠道集”面板：显示选择数量、名称输入、保存/清空、已保存渠道集列表、使用渠道集和归档操作。generated child card 左上角有渠道选择 checkbox，选中态使用 `is-channel-selected` / `data-generated-channel-selected`。
+- Team Console 已保存渠道集支持选中查看：点击渠道集名称区域会把该集合标为 selected，名称输入切到集合标题，并自动勾选下方 generated Task 网格中属于该集合的 items；`使用渠道集` 仍是独立运行动作。
 - Team Console Discovery 子画布已修复渠道集 run 状态投影：当 Discovery root run 带 `source.discoveryChannelSetId` 时，generated child card 按 child run 的 `triggeredBy.discoveryRunId` 显示本轮状态，不再被旧 `generatedSource.latestDiscoveryRunId` 过滤掉；网格 `queued` 计数只统计真正 queued 的卡片，不再把未参与本轮渠道集 run 的 idle channels 全部算作 queued。
 - Team Task Group 后端持久 contract 已完成。Group definition 允许保存 empty/invalid membership；read model 通过 `ResolvedTeamTaskGroup.status/headTaskIds/validation.errors` 表达语义状态。
 - Team Task GroupRun 后端 contract 已完成。GroupRun start 才硬拒绝 empty/invalid Group，返回 400 `invalid task group`；active guard 仍返回 409。GroupRun 保存 `definitionSnapshot`，刷新/取消优先使用 snapshot membership。
@@ -101,6 +103,13 @@ git log --oneline origin/main..HEAD
 ## 本轮最终验证
 
 - Discovery channel set 本轮验证：
+  - 渠道集选中查看修复验证：新增回归覆盖点击已保存渠道集后，row 暴露 `data-discovery-channel-set-selected="true"`，名称输入切到集合标题，下方 generated card checkbox 自动切换为该集合 items；切换另一个集合会同步切换勾选。
+  - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx -t "selects a saved Discovery channel set"`：1/1 pass。
+  - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx src/tests/app-static-contracts.test.ts`：119/119 pass。
+  - `npx tsc --noEmit`：pass。
+  - `npm --prefix apps/team-console run build`：pass；仅既有 Vite chunk size warning。
+  - `git diff --check`：pass。
+  - Browser `http://127.0.0.1:5174/` Live API：重启 `ugk-pi-team-console` 后点击真实 `测试集合1` 的“选中渠道集”按钮，确认 row class 为 `is-selected`，`data-discovery-channel-set-selected="true"`，名称输入为 `测试集合1`，`task_86481d61ebe4` 和 `task_2210950f4d83` 两张 generated card 均 `data-generated-channel-selected="true"` / checkbox `aria-checked="true"`；未点击“使用渠道集”，未启动新 run。
   - 渠道集 run visibility 修复验证：新增回归先红后绿覆盖 `source.discoveryChannelSetId` 的 root run 复用旧 generated catalog 时，子画布仍能按 `triggeredBy.discoveryRunId` 显示本轮 generated child run；普通新 Discovery root run 隐藏旧 child run 的保护用例仍通过。
   - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx -t "channel-set generated child runs|clears stale generated child run status"`：2/2 pass。
   - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx src/tests/app-static-contracts.test.ts`：118/118 pass。

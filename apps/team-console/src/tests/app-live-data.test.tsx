@@ -592,6 +592,88 @@ describe("App", () => {
     });
   });
 
+  it("selects a saved Discovery channel set and mirrors its items into generated card checkboxes", async () => {
+    const generatedTasks = mockDiscoveryGeneratedTasks
+      .filter((task) => !task.archived)
+      .map((task) => ({
+        ...task,
+        generatedSource: task.generatedSource
+          ? { ...task.generatedSource, itemStatus: "active" as const }
+          : task.generatedSource,
+      }));
+    const firstGeneratedTask = generatedTasks[0]!;
+    const secondGeneratedTask = generatedTasks[1]!;
+    const makeChannelSet = (
+      channelSetId: string,
+      title: string,
+      itemTask: TeamCanvasTask,
+    ): TeamDiscoveryChannelSet => ({
+      schemaVersion: "team/discovery-channel-set-1",
+      channelSetId,
+      sourceDiscoveryTaskId: mockDiscoveryRootTask.taskId,
+      title,
+      items: [{
+        generatedTaskId: itemTask.taskId,
+        sourceItemId: itemTask.generatedSource!.sourceItemId,
+        title: itemTask.title,
+        itemPayload: { ...itemTask.generatedSource!.itemPayload },
+        workUnitSnapshot: itemTask.workUnit,
+        workUnitMode: itemTask.generatedSource!.workUnitMode,
+        latestDiscoveryRunId: itemTask.generatedSource!.latestDiscoveryRunId,
+        latestDiscoveryAttemptId: itemTask.generatedSource!.latestDiscoveryAttemptId,
+        latestDiscoveredAt: itemTask.generatedSource!.latestDiscoveredAt,
+      }],
+      archived: false,
+      createdAt: "2026-06-07T00:00:00.000Z",
+      updatedAt: "2026-06-07T00:00:00.000Z",
+    });
+    const firstSet = makeChannelSet("dcs_first", "第一组渠道", firstGeneratedTask);
+    const secondSet = makeChannelSet("dcs_second", "第二组渠道", secondGeneratedTask);
+    window.localStorage.setItem("ugk-team-console:data-source", "live");
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/console/root-summary") return rootSummaryResponse({ tasks: [mockDiscoveryRootTask] });
+      if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse({});
+      if (url.startsWith(`/v1/team/tasks/${mockDiscoveryRootTask.taskId}/generated-tasks`)) {
+        return new Response(JSON.stringify({ tasks: generatedTasks.map(generatedSummary) }), { status: 200 });
+      }
+      if (url === `/v1/team/tasks/${mockDiscoveryRootTask.taskId}/discovery-channel-sets`) {
+        return new Response(JSON.stringify({ channelSets: [firstSet, secondSet] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 500 });
+    });
+
+    const { container } = render(<App />);
+    const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
+    fireEvent.click(await within(atlas).findByRole("button", { name: mockDiscoveryRootTask.title }));
+    fireEvent.click(await screen.findByRole("button", { name: "Discovery 子画布" }));
+    const panel = await waitFor(() => {
+      const node = container.querySelector(`[data-discovery-subcanvas-for="${mockDiscoveryRootTask.taskId}"]`) as HTMLElement | null;
+      expect(node).toBeTruthy();
+      return node!;
+    });
+    const firstRow = await within(panel).findByRole("button", { name: "选中渠道集 第一组渠道" });
+    const secondRow = await within(panel).findByRole("button", { name: "选中渠道集 第二组渠道" });
+
+    fireEvent.click(firstRow);
+
+    expect(firstRow.closest("[data-discovery-channel-set-id]")).toHaveAttribute("data-discovery-channel-set-selected", "true");
+    expect(secondRow.closest("[data-discovery-channel-set-id]")).toHaveAttribute("data-discovery-channel-set-selected", "false");
+    expect(within(panel).getByLabelText(`${mockDiscoveryRootTask.title} 渠道集名称`)).toHaveValue(firstSet.title);
+    expect(within(getGeneratedCard(panel, firstGeneratedTask.taskId)).getByRole("checkbox")).toHaveAttribute("aria-checked", "true");
+    expect(within(getGeneratedCard(panel, secondGeneratedTask.taskId)).getByRole("checkbox")).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(secondRow);
+
+    expect(firstRow.closest("[data-discovery-channel-set-id]")).toHaveAttribute("data-discovery-channel-set-selected", "false");
+    expect(secondRow.closest("[data-discovery-channel-set-id]")).toHaveAttribute("data-discovery-channel-set-selected", "true");
+    expect(within(panel).getByLabelText(`${mockDiscoveryRootTask.title} 渠道集名称`)).toHaveValue(secondSet.title);
+    expect(within(getGeneratedCard(panel, firstGeneratedTask.taskId)).getByRole("checkbox")).toHaveAttribute("aria-checked", "false");
+    expect(within(getGeneratedCard(panel, secondGeneratedTask.taskId)).getByRole("checkbox")).toHaveAttribute("aria-checked", "true");
+  });
+
   it("opens Discovery root run history as a sibling panel when the subcanvas is open", async () => {
     const { container } = render(<App />);
     const { panel } = await openMockDiscoverySubcanvas(container);

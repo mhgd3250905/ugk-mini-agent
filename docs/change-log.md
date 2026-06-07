@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-07 — Team Console Discovery channel set selection
+
+- **主题**: Discovery 子画布里的已保存渠道集现在可选中查看。点击渠道集名称区域会把该集合标为 selected，并同步勾选下方 generated Task 网格中属于该集合的 items，同时把名称输入切到集合标题，方便集合变多后切换查看。
+- **影响范围**: 仅 5174 Team Console Discovery 子画布渠道集面板和 generated card checkbox 选择态。`使用渠道集` 仍是单独运行动作；手动改 checkbox、清空选择、编辑名称或保存新集合会解除当前集合高亮，避免把已修改选择误显示为某个已保存集合。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app-live-data.test.tsx`。
+
 ## 2026-06-07 — Team Console Discovery channel set run visibility
 
 - **主题**: 修复 Discovery root 从保存渠道集运行后，子画布 generated Task 网格看不出本轮 child run 状态的问题。渠道集 root run 会复用旧 generated catalog，因此 generated child 的 `latestDiscoveryRunId` 仍可能指向历史 rediscovery run；Team Console 现在对 `source.discoveryChannelSetId` 的 root run 改按 child run 的 `triggeredBy.discoveryRunId` 投影状态。
