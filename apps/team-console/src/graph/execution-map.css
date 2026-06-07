@@ -4136,15 +4136,15 @@
 }
 
 .emap-discovery-task-node {
-  border-color: rgba(132, 190, 255, 0.42);
+  border-color: rgba(14, 116, 144, 0.44);
   background:
-    linear-gradient(180deg, rgba(132, 190, 255, 0.12), transparent 43%),
-    linear-gradient(90deg, rgba(255, 190, 96, 0.08), transparent 62%),
+    linear-gradient(180deg, rgba(14, 165, 233, 0.12), transparent 43%),
+    linear-gradient(90deg, rgba(245, 158, 11, 0.08), transparent 62%),
     var(--surface-raised);
 }
 
 .emap-discovery-task-node .emap-node-status-bar {
-  background: rgb(132, 190, 255);
+  background: rgb(14, 116, 144);
 }
 
 .emap-canvas-task-node.status-running {
@@ -4214,10 +4214,10 @@
   display: inline-flex;
   align-items: center;
   padding: 0 6px;
-  border: 1px solid rgba(132, 190, 255, 0.22);
+  border: 1px solid rgba(2, 132, 199, 0.22);
   border-radius: 5px;
-  background: rgba(132, 190, 255, 0.08);
-  color: rgba(215, 232, 255, 0.86);
+  background: rgba(224, 242, 254, 0.9);
+  color: rgb(7, 89, 133);
   font-size: 9px;
   font-weight: 760;
   line-height: 1;
@@ -4227,29 +4227,29 @@
 }
 
 .emap-discovery-summary-row .emap-discovery-summary-failed {
-  color: #ffd6d6;
-  border-color: rgba(255, 122, 122, 0.3);
-  background: rgba(255, 122, 122, 0.1);
+  color: rgb(153, 27, 27);
+  border-color: rgba(220, 38, 38, 0.24);
+  background: rgba(254, 226, 226, 0.9);
 }
 
 .emap-discovery-summary-row .emap-discovery-stage-pill {
   max-width: 82px;
-  color: #d7fff6;
-  border-color: rgba(67, 217, 190, 0.34);
-  background: rgba(67, 217, 190, 0.13);
+  color: rgb(15, 118, 110);
+  border-color: rgba(13, 148, 136, 0.28);
+  background: rgba(204, 251, 241, 0.92);
 }
 
 .emap-discovery-summary-row .emap-discovery-stage-pill.stage-auto-running,
 .emap-discovery-summary-row .emap-discovery-stage-pill.stage-aggregating {
-  color: #ffe6bd;
-  border-color: rgba(246, 174, 77, 0.34);
-  background: rgba(246, 174, 77, 0.13);
+  color: rgb(146, 64, 14);
+  border-color: rgba(217, 119, 6, 0.28);
+  background: rgba(254, 243, 199, 0.92);
 }
 
 .emap-discovery-summary-row .emap-discovery-stage-pill.stage-cancelled {
-  color: #ffd6d6;
-  border-color: rgba(255, 122, 122, 0.3);
-  background: rgba(255, 122, 122, 0.1);
+  color: rgb(153, 27, 27);
+  border-color: rgba(220, 38, 38, 0.24);
+  background: rgba(254, 226, 226, 0.9);
 }
 
 .emap-task-agent-grid {
@@ -4381,7 +4381,7 @@
 
 .emap-task-port-chip strong {
   margin-left: 5px;
-  color: rgb(120, 218, 180);
+  color: rgb(5, 150, 105);
   font-size: 10px;
   font-weight: 800;
   text-transform: uppercase;
@@ -4406,9 +4406,9 @@
 }
 
 .emap-canvas-task-node.status-ready .emap-node-state-pill {
-  color: rgb(96, 255, 190);
-  border-color: rgba(96, 255, 190, 0.24);
-  background: rgba(96, 255, 190, 0.08);
+  color: rgb(4, 120, 87);
+  border-color: rgba(5, 150, 105, 0.26);
+  background: rgba(209, 250, 229, 0.9);
 }
 
 .emap-canvas-task-node.status-drafting .emap-node-state-pill {
@@ -4966,6 +4966,49 @@
 [data-theme="dark"] .emap-node-state-pill.running {
   border-color: rgba(121, 216, 208, 0.3);
   background: rgba(121, 216, 208, 0.1);
+}
+
+[data-theme="dark"] .emap-discovery-task-node {
+  border-color: rgba(132, 190, 255, 0.42);
+  background:
+    linear-gradient(180deg, rgba(132, 190, 255, 0.12), transparent 43%),
+    linear-gradient(90deg, rgba(255, 190, 96, 0.08), transparent 62%),
+    var(--surface-raised);
+}
+
+[data-theme="dark"] .emap-discovery-task-node .emap-node-status-bar {
+  background: rgb(132, 190, 255);
+}
+
+[data-theme="dark"] .emap-discovery-summary-row span {
+  color: rgba(215, 232, 255, 0.86);
+  border-color: rgba(132, 190, 255, 0.22);
+  background: rgba(132, 190, 255, 0.08);
+}
+
+[data-theme="dark"] .emap-discovery-summary-row .emap-discovery-summary-failed {
+  color: #ffd6d6;
+  border-color: rgba(255, 122, 122, 0.3);
+  background: rgba(255, 122, 122, 0.1);
+}
+
+[data-theme="dark"] .emap-discovery-summary-row .emap-discovery-stage-pill {
+  color: #d7fff6;
+  border-color: rgba(67, 217, 190, 0.34);
+  background: rgba(67, 217, 190, 0.13);
+}
+
+[data-theme="dark"] .emap-discovery-summary-row .emap-discovery-stage-pill.stage-auto-running,
+[data-theme="dark"] .emap-discovery-summary-row .emap-discovery-stage-pill.stage-aggregating {
+  color: #ffe6bd;
+  border-color: rgba(246, 174, 77, 0.34);
+  background: rgba(246, 174, 77, 0.13);
+}
+
+[data-theme="dark"] .emap-discovery-summary-row .emap-discovery-stage-pill.stage-cancelled {
+  color: #ffd6d6;
+  border-color: rgba(255, 122, 122, 0.3);
+  background: rgba(255, 122, 122, 0.1);
 }
 
 [data-theme="dark"] .emap-node-id-copy {
