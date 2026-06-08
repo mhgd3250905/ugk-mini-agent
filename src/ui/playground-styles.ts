@@ -78,7 +78,7 @@ export function getPlaygroundStyles(): string {
 		body {
 			margin: 0;
 			height: 100%;
-			background: linear-gradient(180deg, #02050b 0%, #040812 46%, #060a11 100%);
+			background: #070a12;
 			background-size: auto;
 			color: var(--fg);
 			font-family: var(--font-sans);
@@ -695,9 +695,9 @@ export function getPlaygroundStyles(): string {
 			width: min(840px, calc(100% - 40px));
 			min-height: 0;
 			margin: 0 auto;
-			background: transparent;
-			border-left: 0;
-			border-right: 0;
+			border: 0;
+			border-radius: 4px;
+			background: rgba(8, 13, 22, 0.62);
 			overflow: hidden;
 		}
 
@@ -713,7 +713,7 @@ export function getPlaygroundStyles(): string {
 			max-width: min(56%, 280px);
 			height: auto;
 			transform: translate(-50%, -50%);
-			opacity: 0.12;
+			opacity: 0.075;
 			overflow: visible;
 			pointer-events: none;
 		}
@@ -3408,13 +3408,13 @@ export function getPlaygroundStyles(): string {
 			inset: 0;
 			z-index: 0;
 			pointer-events: none;
-			opacity: 0.56;
+			opacity: 0.36;
 			background-image:
-				linear-gradient(rgba(116, 176, 255, 0.032) 1px, transparent 1px),
-				linear-gradient(90deg, rgba(116, 176, 255, 0.025) 1px, transparent 1px),
-				linear-gradient(rgba(116, 176, 255, 0.052) 1px, transparent 1px),
-				linear-gradient(90deg, rgba(116, 176, 255, 0.038) 1px, transparent 1px);
-			background-size: 40px 40px, 40px 40px, 160px 160px, 160px 160px;
+				linear-gradient(rgba(184, 202, 232, 0.018) 1px, transparent 1px),
+				linear-gradient(90deg, rgba(184, 202, 232, 0.014) 1px, transparent 1px),
+				linear-gradient(rgba(184, 202, 232, 0.032) 1px, transparent 1px),
+				linear-gradient(90deg, rgba(184, 202, 232, 0.024) 1px, transparent 1px);
+			background-size: 42px 42px, 42px 42px, 168px 168px, 168px 168px;
 		}
 
 		body::after {
@@ -3424,9 +3424,9 @@ export function getPlaygroundStyles(): string {
 			z-index: 0;
 			pointer-events: none;
 			background:
-				linear-gradient(180deg, rgba(201, 210, 255, 0.035), transparent 180px),
-				linear-gradient(90deg, rgba(101, 209, 255, 0.035), transparent 22%, transparent 78%, rgba(141, 255, 178, 0.025));
-			opacity: 0.86;
+				linear-gradient(180deg, rgba(255, 255, 255, 0.024), transparent 170px),
+				linear-gradient(90deg, rgba(141, 255, 178, 0.014), transparent 24%, transparent 76%, rgba(225, 185, 96, 0.012));
+			opacity: 0.64;
 		}
 
 		.shell {
@@ -3486,7 +3486,7 @@ export function getPlaygroundStyles(): string {
 			padding: 0;
 			border: 0;
 			border-radius: 4px;
-			background: transparent;
+			background: rgba(8, 13, 22, 0.62);
 			box-shadow: none;
 			overflow: hidden;
 		}
@@ -3647,32 +3647,30 @@ export function getPlaygroundStyles(): string {
 
 		/* === UGK CLAW Clean Hacker Surface === */
 		:root[data-theme="dark"] {
-			--ugk-bg-base: #02050b;
-			--ugk-bg-base-2: #060a11;
-			--ugk-bg-glow: rgba(201, 210, 255, 0.035);
-			--ugk-bg-corner-glow: rgba(141, 255, 178, 0.025);
-			--ugk-grid-line: rgba(116, 176, 255, 0.032);
-			--ugk-grid-line-strong: rgba(116, 176, 255, 0.052);
-			--ugk-scan-glow: rgba(96, 194, 255, 0.055);
-			--ugk-bg-opacity: 0.62;
+			--ugk-bg-base: #070a12;
+			--ugk-bg-base-2: #090d15;
+			--ugk-bg-glow: rgba(215, 224, 244, 0.026);
+			--ugk-bg-corner-glow: rgba(141, 255, 178, 0.016);
+			--ugk-grid-line: rgba(184, 202, 232, 0.018);
+			--ugk-grid-line-strong: rgba(184, 202, 232, 0.032);
+			--ugk-bg-opacity: 0.36;
 		}
 
 		:root[data-theme="light"] {
-			--ugk-bg-base: #f7f9fd;
-			--ugk-bg-base-2: #eef3f9;
-			--ugk-bg-glow: rgba(31, 95, 200, 0.055);
-			--ugk-bg-corner-glow: rgba(8, 120, 75, 0.025);
-			--ugk-grid-line: rgba(24, 69, 119, 0.026);
-			--ugk-grid-line-strong: rgba(24, 69, 119, 0.046);
-			--ugk-scan-glow: rgba(0, 91, 255, 0.045);
-			--ugk-bg-opacity: 0.56;
+			--ugk-bg-base: #e9eef6;
+			--ugk-bg-base-2: #dfe7f1;
+			--ugk-bg-glow: rgba(31, 95, 200, 0.032);
+			--ugk-bg-corner-glow: rgba(8, 120, 75, 0.018);
+			--ugk-grid-line: rgba(30, 65, 108, 0.024);
+			--ugk-grid-line-strong: rgba(30, 65, 108, 0.038);
+			--ugk-bg-opacity: 0.44;
 		}
 
 		.shell[data-home="true"] {
 			background:
-				linear-gradient(180deg, var(--ugk-bg-glow), transparent 190px),
+				linear-gradient(180deg, var(--ugk-bg-glow), transparent 170px),
 				linear-gradient(90deg, var(--ugk-bg-corner-glow), transparent 28%, transparent 72%, var(--ugk-bg-corner-glow)),
-				linear-gradient(180deg, var(--ugk-bg-base) 0%, var(--ugk-bg-base-2) 100%);
+				var(--ugk-bg-base);
 			isolation: isolate;
 		}
 
@@ -3698,21 +3696,11 @@ export function getPlaygroundStyles(): string {
 		.shell[data-home="true"]::after {
 			content: "";
 			position: fixed;
-			top: -20%;
-			left: 0;
+			inset: 0;
 			z-index: 0;
-			width: 28vw;
-			height: 140%;
 			pointer-events: none;
-			background:
-				linear-gradient(
-					90deg,
-					transparent 0%,
-					var(--ugk-scan-glow) 48%,
-					transparent 100%
-				);
-			opacity: 0.42;
-			transform: translate3d(-40vw, 0, 0) skewX(-18deg);
+			background: linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 210px);
+			opacity: 0.72;
 		}
 
 		.shell[data-home="true"] > * {

@@ -23,6 +23,7 @@
 - **微调**: 用户消息 meta 的视觉顺序调整为时间在左、`YOU` 标签在右，让用户气泡右对齐时身份锚点贴近气泡。
 - **微调**: 消息操作栏的复制正文和保存图片按钮改为同规格 `16x16` inline SVG，替换旧 CSS 伪元素复制图标，避免两个图标大小和风格不一致。
 - **修正**: 对话画布 UGK 水印只保留 SVG logo，并把深色 / 浅色 SVG 互斥显示规则提升到桌面全局，避免两张主题 logo 或旧 ASCII 水印在聊天背景中重复叠显。
+- **背景**: 主 Chat 背景落到 A 方向“静态工作台”：深色主题改为哑光 `#070a12` 底 + 极淡网格，`chat-stage` 增加低对比背景色块承载消息，UGK watermark 进一步压低透明度；浅色主题同步使用冷灰蓝底和淡网格。
 - **影响范围**: 仅主 `/playground` Chat 界面的气泡、Markdown 局部色块、composer、文件/资产卡、landing Agent 卡、顶部操作卡、会话栏、设置/上下文/文件库弹层和运行状态视觉。会话接口、streaming 逻辑、Team Console、Conn、Agents 独立页和运行态数据不变。
 - **对应入口**: `src/ui/playground-page-shell.ts`、`src/ui/playground-styles.ts`、`src/ui/playground-theme-controller.ts`、`src/ui/playground-assets.ts`、`test/server.test.ts`。
 

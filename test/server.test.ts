@@ -2242,7 +2242,7 @@ test("GET /playground renders immersive landing home shell", async () => {
 	assert.match(response.body, /\.shell\s*\{[\s\S]*column-gap:\s*16px;/);
 	assert.match(response.body, /\.desktop-conversation-rail\s*\{[\s\S]*grid-row:\s*1 \/ -1;/);
 	assert.match(response.body, /\.topbar\s*\{[\s\S]*grid-column:\s*2;[\s\S]*grid-row:\s*1;[\s\S]*margin:\s*0;[\s\S]*padding:\s*0 0 10px 0;/);
-	assert.match(response.body, /\.chat-stage\s*\{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\) auto;[\s\S]*padding:\s*0;/);
+	assert.match(response.body, /\.chat-stage\s*\{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\) auto;[\s\S]*padding:\s*0;[\s\S]*background:\s*rgba\(8, 13, 22, 0\.62\);/);
 	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.command-deck\s*\{[\s\S]*width:\s*100%;[\s\S]*margin:\s*0;[\s\S]*border-radius:\s*4px;[\s\S]*overflow:\s*hidden;/);
 	assert.match(response.body, /id="new-conversation-button"/);
 	assert.doesNotMatch(response.body, /id="view-skills-button"/);
@@ -3646,9 +3646,9 @@ test("GET /playground supports persistent dark and light themes", async () => {
 	assert.match(response.body, /--bg:\s*#e8edf6;/);
 	assert.match(response.body, /--fg:\s*#142033;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+body\s*\{/);
-	assert.match(response.body, /body::after\s*\{[\s\S]*linear-gradient\(180deg, rgba\(201, 210, 255, 0\.035\), transparent 180px\),[\s\S]*opacity:\s*0\.86;/);
-	assert.match(response.body, /:root\[data-theme="light"\] body::before\s*\{[\s\S]*opacity:\s*0\.58;/);
-	assert.match(response.body, /:root\[data-theme="light"\] body::after\s*\{[\s\S]*linear-gradient\(180deg, rgba\(31, 95, 200, 0\.045\), transparent 180px\),[\s\S]*opacity:\s*0\.88;/);
+	assert.match(response.body, /body::after\s*\{[\s\S]*linear-gradient\(180deg, rgba\(255, 255, 255, 0\.024\), transparent 170px\),[\s\S]*opacity:\s*0\.64;/);
+	assert.match(response.body, /:root\[data-theme="light"\] body::before\s*\{[\s\S]*opacity:\s*0\.44;/);
+	assert.match(response.body, /:root\[data-theme="light"\] body::after\s*\{[\s\S]*linear-gradient\(180deg, rgba\(255, 255, 255, 0\.34\), transparent 170px\),[\s\S]*opacity:\s*0\.58;/);
 	assert.doesNotMatch(response.body, /rgba\(221, 229, 240, 0\.36\) 0%, transparent 12%, transparent 88%, rgba\(221, 229, 240, 0\.32\) 100%/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.shell\[data-stage-mode="landing"\] \.composer\s*\{[\s\S]*border-color:\s*transparent;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+#composer-drop-target\.composer\s*\{[\s\S]*border-color:\s*transparent;[\s\S]*background:\s*var\(--chat-composer-bg\);[\s\S]*box-shadow:\s*none;/);
@@ -4058,7 +4058,7 @@ test("GET /playground uses a desktop geek cockpit layout", async () => {
 	);
 	assert.match(response.body, /\.ugk-ascii-logo\s*\{[\s\S]*font-family:\s*"Courier New", Consolas, "Cascadia Mono", monospace;/);
 	assert.match(response.body, /:root\[data-theme="dark"\]\s+\.ugk-svg-logo-light,\s*:root\[data-theme="light"\]\s+\.ugk-svg-logo-dark\s*\{\s*display:\s*none;/);
-	assert.match(response.body, /\.chat-stage-watermark\s*\{[\s\S]*width:\s*clamp\(150px, 18vw, 280px\);[\s\S]*opacity:\s*0\.12;/);
+	assert.match(response.body, /\.chat-stage-watermark\s*\{[\s\S]*width:\s*clamp\(150px, 18vw, 280px\);[\s\S]*opacity:\s*0\.075;/);
 	assert.match(response.body, /\.chat-stage-watermark \.ugk-svg-logo-watermark\s*\{[\s\S]*display:\s*block;[\s\S]*width:\s*100%;[\s\S]*opacity:\s*1;/);
 	assert.doesNotMatch(response.body, /\.chat-stage-watermark\s*\{[^}]*width:\s*max-content;/);
 	assert.match(response.body, /\.chat-stage > :not\(\.chat-stage-watermark\)\s*\{[\s\S]*z-index:\s*1;/);
@@ -4072,15 +4072,15 @@ test("GET /playground uses a desktop geek cockpit layout", async () => {
 	assert.doesNotMatch(response.body, /\.desktop-conversation-rail\s*\{[\s\S]*border-left:\s*2px solid rgba\(101, 209, 255, 0\.48\);/);
 	assert.match(response.body, /\.desktop-conversation-list\s*\{[\s\S]*scrollbar-width:\s*none;/);
 	assert.match(response.body, /\.desktop-conversation-list::-webkit-scrollbar\s*\{[\s\S]*display:\s*none;/);
-	assert.match(response.body, /\.chat-stage\s*\{[^}]*border:\s*0;[^}]*border-radius:\s*4px;[^}]*background:\s*transparent;[^}]*overflow:\s*hidden;/);
+	assert.match(response.body, /\.chat-stage\s*\{[^}]*border:\s*0;[^}]*border-radius:\s*4px;[^}]*background:\s*rgba\(8, 13, 22, 0\.62\);[^}]*overflow:\s*hidden;/);
 	assert.doesNotMatch(response.body, /\.chat-stage\s*\{[^}]*border:\s*1px solid rgba\(201, 210, 255, 0\.08\);/);
 	assert.doesNotMatch(response.body, /\.chat-stage\s*\{[^}]*linear-gradient\(180deg, rgba\(11, 15, 25, 0\.72\), rgba\(5, 8, 15, 0\.86\)\)/);
 	assert.match(response.body, /\.command-deck\s*\{[\s\S]*width:\s*100%;[\s\S]*border-radius:\s*4px;[\s\S]*overflow:\s*hidden;/);
 	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.command-deck\s*\{[\s\S]*width:\s*100%;[\s\S]*border-radius:\s*4px;[\s\S]*overflow:\s*hidden;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.topbar::before\s*\{[\s\S]*display:\s*none;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.desktop-conversation-rail\s*\{[\s\S]*background:\s*#eaf1fa;/);
-	assert.match(response.body, /:root\[data-theme="light"\]\s+\.chat-stage\s*\{[\s\S]*border-color:\s*transparent;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/);
-	assert.match(response.body, /:root\[data-theme="light"\]\s+\.chat-stage-watermark\s*\{[\s\S]*opacity:\s*0\.08;/);
+	assert.match(response.body, /:root\[data-theme="light"\]\s+\.chat-stage\s*\{[\s\S]*border-color:\s*transparent;[\s\S]*background:\s*rgba\(232, 239, 248, 0\.72\);[\s\S]*box-shadow:\s*none;/);
+	assert.match(response.body, /:root\[data-theme="light"\]\s+\.chat-stage-watermark\s*\{[\s\S]*opacity:\s*0\.055;/);
 	assert.doesNotMatch(response.body, /:root\[data-theme="light"\]\s+\.chat-stage\s*\{[\s\S]*rgba\(255, 255, 255, 0\.78\);/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.landing-agent-card\s*\{[\s\S]*background:\s*#f6f9fe;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.message\.user \.file-chip\s*\{[\s\S]*background:\s*#c7ead8;/);
@@ -4111,7 +4111,7 @@ test("GET /playground highlights the composer shell instead of the textarea on f
 	await app.close();
 });
 
-test("GET /playground uses the deeper cosmic palette instead of bright blue neon", async () => {
+test("GET /playground uses a static workstation background instead of bright blue neon", async () => {
 	const app = await buildServer({
 		agentService: createAgentServiceStub(),
 	});
@@ -4125,12 +4125,16 @@ test("GET /playground uses the deeper cosmic palette instead of bright blue neon
 	assert.match(response.body, /--bg:\s*#01030a;/);
 	assert.match(response.body, /--bg-panel:\s*#060711;/);
 	assert.match(response.body, /--accent:\s*#c9d2ff;/);
-	assert.match(response.body, /linear-gradient\(180deg, #02050b 0%, #040812 46%, #060a11 100%\)/);
-	assert.match(response.body, /body::before\s*\{[\s\S]*opacity:\s*0\.56;[\s\S]*background-size:\s*40px 40px, 40px 40px, 160px 160px, 160px 160px;/);
+	assert.match(response.body, /background:\s*#070a12;/);
+	assert.match(response.body, /body::before\s*\{[\s\S]*opacity:\s*0\.36;[\s\S]*background-size:\s*42px 42px, 42px 42px, 168px 168px, 168px 168px;/);
+	assert.match(response.body, /--ugk-bg-base:\s*#070a12;/);
+	assert.match(response.body, /--ugk-bg-opacity:\s*0\.36;/);
 	assert.match(response.body, /\.shell:not\(\[data-home="true"\]\)\s*\{[\s\S]*background-image:\s*none;/);
 	assert.match(response.body, /background-size:\s*auto;/);
+	assert.match(response.body, /\.shell\[data-home="true"\]::after\s*\{[\s\S]*inset:\s*0;[\s\S]*linear-gradient\(180deg, rgba\(255, 255, 255, 0\.018\), transparent 210px\);/);
 	assert.doesNotMatch(response.body, /radial-gradient\(circle at 1px 1px/);
 	assert.doesNotMatch(response.body, /ugk-chat-bg-drift/);
+	assert.doesNotMatch(response.body, /ugk-scan-glow/);
 	assert.doesNotMatch(response.body, /backdrop-filter:\s*blur/);
 	assert.doesNotMatch(response.body, /--accent:\s*#5fd1ff;/);
 	assert.doesNotMatch(response.body, /radial-gradient\(circle at 18% 16%, rgba\(123, 178, 255, 0\.14\), transparent 0 18%\)/);

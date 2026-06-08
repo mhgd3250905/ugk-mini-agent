@@ -31,26 +31,26 @@ export function getPlaygroundThemeStyles(): string {
 
 		:root[data-theme="light"],
 		:root[data-theme="light"] body {
-			background: linear-gradient(180deg, #f7f9fd 0%, #eef3f9 48%, #e3eaf4 100%);
+			background: #e9eef6;
 			background-size: auto;
 			color: var(--fg);
 		}
 
 		:root[data-theme="light"] body::before {
 			background-image:
-				linear-gradient(rgba(24, 69, 119, 0.026) 1px, transparent 1px),
-				linear-gradient(90deg, rgba(24, 69, 119, 0.020) 1px, transparent 1px),
-				linear-gradient(rgba(24, 69, 119, 0.045) 1px, transparent 1px),
-				linear-gradient(90deg, rgba(24, 69, 119, 0.034) 1px, transparent 1px);
-			background-size: 40px 40px, 40px 40px, 160px 160px, 160px 160px;
-			opacity: 0.58;
+				linear-gradient(rgba(30, 65, 108, 0.024) 1px, transparent 1px),
+				linear-gradient(90deg, rgba(30, 65, 108, 0.018) 1px, transparent 1px),
+				linear-gradient(rgba(30, 65, 108, 0.038) 1px, transparent 1px),
+				linear-gradient(90deg, rgba(30, 65, 108, 0.028) 1px, transparent 1px);
+			background-size: 42px 42px, 42px 42px, 168px 168px, 168px 168px;
+			opacity: 0.44;
 		}
 
 		:root[data-theme="light"] body::after {
 			background:
-				linear-gradient(180deg, rgba(31, 95, 200, 0.045), transparent 180px),
-				linear-gradient(90deg, rgba(31, 95, 200, 0.035), transparent 22%, transparent 78%, rgba(8, 120, 75, 0.025));
-			opacity: 0.88;
+				linear-gradient(180deg, rgba(255, 255, 255, 0.34), transparent 170px),
+				linear-gradient(90deg, rgba(31, 95, 200, 0.018), transparent 24%, transparent 76%, rgba(8, 120, 75, 0.014));
+			opacity: 0.58;
 		}
 
 		:root[data-theme="light"] .theme-mode-toggle {
@@ -205,12 +205,12 @@ export function getPlaygroundThemeStyles(): string {
 
 		:root[data-theme="light"] .chat-stage {
 			border-color: transparent;
-			background: transparent;
+			background: rgba(232, 239, 248, 0.72);
 			box-shadow: none;
 		}
 
 		:root[data-theme="light"] .chat-stage-watermark {
-			opacity: 0.08;
+			opacity: 0.055;
 		}
 
 		:root[data-theme="light"] .ugk-ascii-logo-watermark {
