@@ -20,6 +20,12 @@
 - **影响范围**: 仅 `/playground` 删除会话等自定义 `confirm-dialog` 的视觉样式。确认弹窗控制器、删除接口、会话 catalog 和焦点恢复逻辑不变。
 - **对应入口**: `src/ui/playground-styles.ts`、`src/ui/playground-theme-controller.ts`、`test/server.test.ts`。
 
+## 2026-06-09 — Playground chat stage background cleanup
+
+- **主题**: 主 `/playground` 深色 Chat 画布去掉 `.chat-stage` 的半透明深色背景层，避免输入框上方出现额外的 `#080c15 / #090d16` 近似色块。`chat-stage` 只保留布局裁切、水印承载和 overflow 收口，背景回到页面哑光工作台底色。
+- **影响范围**: 仅深色主题主 Chat 画布背景层。composer、消息气泡、浅色主题 `chat-stage` 承载色、workspace 页面和运行逻辑不变。
+- **对应入口**: `src/ui/playground-styles.ts`、`test/server.test.ts`。
+
 ## 2026-06-08 — Chat color-block light refresh
 
 - **主题**: 主 `/playground` Chat 采用 C 方向的色块层级轻刷新。对话气泡、composer、附件 chip 和资产卡选中态改为用背景色块与文字颜色区分层级，正常态不再依赖边框；focus 仍保留 outline 作为键盘可访问反馈。

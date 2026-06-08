@@ -2245,7 +2245,7 @@ test("GET /playground renders immersive landing home shell", async () => {
 	assert.match(response.body, /\.shell\s*\{[\s\S]*column-gap:\s*16px;/);
 	assert.match(response.body, /\.desktop-conversation-rail\s*\{[\s\S]*grid-row:\s*1 \/ -1;/);
 	assert.match(response.body, /\.topbar\s*\{[\s\S]*grid-column:\s*2;[\s\S]*grid-row:\s*1;[\s\S]*margin:\s*0;[\s\S]*padding:\s*0 0 10px 0;/);
-	assert.match(response.body, /\.chat-stage\s*\{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\) auto;[\s\S]*padding:\s*0;[\s\S]*background:\s*rgba\(8, 13, 22, 0\.62\);/);
+	assert.match(response.body, /\.chat-stage\s*\{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\) auto;[\s\S]*padding:\s*0;[\s\S]*background:\s*transparent;/);
 	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.command-deck\s*\{[\s\S]*width:\s*100%;[\s\S]*margin:\s*0;[\s\S]*border-radius:\s*4px;[\s\S]*overflow:\s*hidden;/);
 	assert.match(response.body, /id="new-conversation-button"/);
 	assert.doesNotMatch(response.body, /id="view-skills-button"/);
@@ -4083,7 +4083,8 @@ test("GET /playground uses a desktop geek cockpit layout", async () => {
 	assert.doesNotMatch(response.body, /\.desktop-conversation-rail\s*\{[\s\S]*border-left:\s*2px solid rgba\(101, 209, 255, 0\.48\);/);
 	assert.match(response.body, /\.desktop-conversation-list\s*\{[\s\S]*scrollbar-width:\s*none;/);
 	assert.match(response.body, /\.desktop-conversation-list::-webkit-scrollbar\s*\{[\s\S]*display:\s*none;/);
-	assert.match(response.body, /\.chat-stage\s*\{[^}]*border:\s*0;[^}]*border-radius:\s*4px;[^}]*background:\s*rgba\(8, 13, 22, 0\.62\);[^}]*overflow:\s*hidden;/);
+	assert.match(response.body, /\.chat-stage\s*\{[^}]*border:\s*0;[^}]*border-radius:\s*4px;[^}]*background:\s*transparent;[^}]*overflow:\s*hidden;/);
+	assert.doesNotMatch(response.body, /\.chat-stage\s*\{[^}]*background:\s*rgba\(8, 13, 22, 0\.62\);/);
 	assert.doesNotMatch(response.body, /\.chat-stage\s*\{[^}]*border:\s*1px solid rgba\(201, 210, 255, 0\.08\);/);
 	assert.doesNotMatch(response.body, /\.chat-stage\s*\{[^}]*linear-gradient\(180deg, rgba\(11, 15, 25, 0\.72\), rgba\(5, 8, 15, 0\.86\)\)/);
 	assert.match(response.body, /\.command-deck\s*\{[\s\S]*width:\s*100%;[\s\S]*border-radius:\s*4px;[\s\S]*overflow:\s*hidden;/);

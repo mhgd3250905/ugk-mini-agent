@@ -697,7 +697,7 @@ export function getPlaygroundStyles(): string {
 			margin: 0 auto;
 			border: 0;
 			border-radius: 4px;
-			background: rgba(8, 13, 22, 0.62);
+			background: transparent;
 			overflow: hidden;
 		}
 
@@ -3522,7 +3522,7 @@ export function getPlaygroundStyles(): string {
 			padding: 0;
 			border: 0;
 			border-radius: 4px;
-			background: rgba(8, 13, 22, 0.62);
+			background: transparent;
 			box-shadow: none;
 			overflow: hidden;
 		}
