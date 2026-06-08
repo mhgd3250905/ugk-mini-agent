@@ -5799,6 +5799,12 @@
 [data-theme="dark"] .task-edit-field select {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(122, 131, 151, 0.22);
+  color-scheme: dark;
+}
+
+[data-theme="dark"] .task-edit-field select option {
+  background: rgb(15, 23, 42);
+  color: rgb(232, 239, 247);
 }
 
 [data-theme="dark"] .emap-task-agent-row {

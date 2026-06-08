@@ -631,6 +631,8 @@ describe("Team Console static contracts", () => {
     const editFormRule = mapCss.match(/(?:^|\n)\.task-edit-form\s*{[^}]*}/)?.[0] ?? "";
     const editNoteRule = mapCss.match(/\.task-edit-note,\n\.task-edit-warning\s*{[^}]*}/)?.[0] ?? "";
     const editFieldRule = mapCss.match(/\.task-edit-field\s+input,\n\.task-edit-field\s+select\s*{[^}]*}/)?.[0] ?? "";
+    const darkEditFieldRule = mapCss.match(/\[data-theme="dark"\] \.task-edit-field input,\n\[data-theme="dark"\] \.task-edit-field select\s*{[^}]*}/)?.[0] ?? "";
+    const darkEditOptionRule = mapCss.match(/\[data-theme="dark"\] \.task-edit-field select option\s*{[^}]*}/)?.[0] ?? "";
 
     expect(summaryRule).toContain("rgba(255, 255, 255, 0.88)");
     expect(summaryRule).toContain("color: var(--primary)");
@@ -644,6 +646,9 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toContain('[data-theme="dark"] .task-run-summary');
     expect(mapCss).toContain('[data-theme="dark"] .emap-run-observer-head');
     expect(mapCss).toContain('[data-theme="dark"] .task-edit-form');
+    expect(darkEditFieldRule).toContain("color-scheme: dark");
+    expect(darkEditOptionRule).toContain("background: rgb(15, 23, 42)");
+    expect(darkEditOptionRule).toContain("color: rgb(232, 239, 247)");
   });
 
   it("uses a light amber surface for the Task dependency connector button", () => {

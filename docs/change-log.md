@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-08 — Task edit Agent select dark popup contrast
+
+- **主题**: 修复 Team Console Task 编辑面板在深色模式下选择 Agent 时，原生下拉 option 白底浅字导致不可读的问题。深色主题现在显式覆盖 Task edit select option 的背景和文字色，并启用 `color-scheme: dark`。
+- **影响范围**: 仅 5174 Team Console Task 编辑面板里的 Agent select 控件视觉。Task 编辑 API、Agent catalog、Task definition 和运行态数据不变。
+- **对应入口**: `apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app-static-contracts.test.ts`。
+
 ## 2026-06-08 — Discovery generated active select-all
 
 - **主题**: Team Console Discovery 子画布的 `generated Task 网格` 新增“全选有效项 / 取消全选”操作，并显示 `selected X/Y`。批量选择只覆盖当前 active generated Tasks，不会选中 `stale hidden` 旧项。
