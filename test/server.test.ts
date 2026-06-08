@@ -1135,7 +1135,10 @@ test("GET /playground returns the test UI html", async () => {
 	assert.match(response.body, /\.chat-run-log-panel\s*\{[\s\S]*border:\s*0;[\s\S]*border-radius:\s*8px;[\s\S]*#060711;/);
 	assert.match(response.body, /\.chat-run-log-head\s*\{[\s\S]*border-bottom:\s*0;[\s\S]*background:\s*#101421;/);
 	assert.match(response.body, /\.chat-run-log-item\s*\{[\s\S]*border:\s*0;[\s\S]*border-radius:\s*4px;[\s\S]*background:\s*#0b0e19;/);
-	assert.match(response.body, /\.confirm-dialog-panel\s*\{[\s\S]*border:\s*0;[\s\S]*border-radius:\s*8px;[\s\S]*#060711;/);
+	assert.match(response.body, /\.confirm-dialog-panel\s*\{[\s\S]*border:\s*0;[\s\S]*border-radius:\s*8px;[\s\S]*background:\s*#0f1624;/);
+	assert.match(response.body, /\.confirm-dialog-body\s*\{[\s\S]*border-radius:\s*6px;[\s\S]*background:\s*#151d2e;/);
+	assert.match(response.body, /\.confirm-dialog-actions button\s*\{[\s\S]*border:\s*0;[\s\S]*background:\s*#1b2638;/);
+	assert.match(response.body, /\.confirm-dialog-actions \.danger-action\s*\{[\s\S]*background:\s*#8d2437;/);
 	assert.match(response.body, /\.conn-run-details-panel\s*\{[\s\S]*border:\s*0;[\s\S]*background:[\s\S]*#060711;/);
 	assert.match(response.body, /\.conn-run-section\s*\{[\s\S]*border:\s*0;[\s\S]*background:\s*#0b0e19;/);
 	assert.match(response.body, /function renderContextUsageDialog\(projectedUsage, statusLabel, modeLabel\)/);
@@ -3703,6 +3706,9 @@ test("GET /playground supports persistent dark and light themes", async () => {
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.task-inbox-pane/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.task-inbox-item-title-row strong/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.context-usage-dialog\s*\{[\s\S]*background:\s*rgba\(232, 238, 248, 0\.72\);/);
+	assert.match(response.body, /:root\[data-theme="light"\]\s+\.confirm-dialog\s*\{[\s\S]*background:\s*rgba\(14, 25, 42, 0\.34\);/);
+	assert.match(response.body, /:root\[data-theme="light"\]\s+\.confirm-dialog-actions button\s*\{[\s\S]*background:\s*#e5ecf6;[\s\S]*color:\s*#33435f;/);
+	assert.match(response.body, /:root\[data-theme="light"\]\s+\.confirm-dialog-actions \.danger-action\s*\{[\s\S]*background:\s*#c52945;[\s\S]*color:\s*#ffffff;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.context-usage-dialog-meter span\s*\{[\s\S]*background:\s*linear-gradient\(90deg, #08784b, #1f5fc8\);/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.context-usage-dialog-model span\s*\{[\s\S]*background:\s*transparent;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.context-usage-meta\s*\{[\s\S]*#ffffff;/);

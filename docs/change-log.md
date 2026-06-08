@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-09 — Playground confirm dialog polish
+
+- **主题**: 主 `/playground` 自定义二次确认弹窗改为和 Chat 工作台一致的实色块层级。标题取消 uppercase 贴片感，正文进入独立承载色块，取消 / 危险确认按钮使用明确背景色和文字色；浅色主题同步覆盖遮罩与按钮状态，避免危险按钮 hover 成普通按钮。
+- **影响范围**: 仅 `/playground` 删除会话等自定义 `confirm-dialog` 的视觉样式。确认弹窗控制器、删除接口、会话 catalog 和焦点恢复逻辑不变。
+- **对应入口**: `src/ui/playground-styles.ts`、`src/ui/playground-theme-controller.ts`、`test/server.test.ts`。
+
 ## 2026-06-08 — Chat color-block light refresh
 
 - **主题**: 主 `/playground` Chat 采用 C 方向的色块层级轻刷新。对话气泡、composer、附件 chip 和资产卡选中态改为用背景色块与文字颜色区分层级，正常态不再依赖边框；focus 仍保留 outline 作为键盘可访问反馈。

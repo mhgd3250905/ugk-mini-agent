@@ -856,6 +856,41 @@ export function getPlaygroundThemeStyles(): string {
 			background: rgba(232, 238, 248, 0.72);
 		}
 
+		:root[data-theme="light"] .confirm-dialog {
+			background: rgba(14, 25, 42, 0.34);
+		}
+
+		:root[data-theme="light"] .confirm-dialog-head strong {
+			color: #172033;
+		}
+
+		:root[data-theme="light"] .confirm-dialog-actions button {
+			border: 0;
+			background: #e5ecf6;
+			color: #33435f;
+			box-shadow: none;
+		}
+
+		:root[data-theme="light"] .confirm-dialog-actions button:hover:not(:disabled),
+		:root[data-theme="light"] .confirm-dialog-actions button:focus-visible {
+			outline: 0;
+			background: #d7e2f1;
+			color: #172033;
+			transform: none;
+			box-shadow: none;
+		}
+
+		:root[data-theme="light"] .confirm-dialog-actions .danger-action {
+			background: #c52945;
+			color: #ffffff;
+		}
+
+		:root[data-theme="light"] .confirm-dialog-actions .danger-action:hover:not(:disabled),
+		:root[data-theme="light"] .confirm-dialog-actions .danger-action:focus-visible {
+			background: #a91f38;
+			color: #ffffff;
+		}
+
 		:root[data-theme="light"] .context-usage-dialog-meter {
 			background: #dce6f4;
 			box-shadow: none;
