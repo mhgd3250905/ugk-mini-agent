@@ -20,6 +20,7 @@
 - **补充**: 第二轮精修弱化角色标签贴片感，细分气泡内的引用、inline code、code block toolbar、composer textarea 和文件/资产卡色块，让主 Chat 更干净、可扫读，并保留无正常态边框口径。
 - **扩展**: 主 Chat 周边的 landing Agent 卡、顶部 telemetry 操作卡、桌面会话栏、会话列表项、左栏设置菜单、assistant 运行状态气泡和回到底部按钮同步改为实色块层级；浅色主题也同步去掉左栏渐变和半透明白浮层。
 - **跟进**: 桌面主题切换移到 topbar 右侧，采用和 Team/Canvas 接近的图标滑块按钮；左栏设置菜单只保留设置项。设置菜单、会话菜单、上下文详情、移动更多菜单和文件库继续统一为实底色弹层，深色主题下通过 `#111827 / #172238` 和文字颜色拉开层级，不再靠半透明边框硬撑。
+- **微调**: 用户消息 meta 的视觉顺序调整为时间在左、`YOU` 标签在右，让用户气泡右对齐时身份锚点贴近气泡。
 - **影响范围**: 仅主 `/playground` Chat 界面的气泡、Markdown 局部色块、composer、文件/资产卡、landing Agent 卡、顶部操作卡、会话栏、设置/上下文/文件库弹层和运行状态视觉。会话接口、streaming 逻辑、Team Console、Conn、Agents 独立页和运行态数据不变。
 - **对应入口**: `src/ui/playground-page-shell.ts`、`src/ui/playground-styles.ts`、`src/ui/playground-theme-controller.ts`、`src/ui/playground-assets.ts`、`test/server.test.ts`。
 

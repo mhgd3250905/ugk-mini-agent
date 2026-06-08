@@ -1777,6 +1777,7 @@ export function getPlaygroundStyles(): string {
 
 		.message.user .message-meta {
 			width: fit-content;
+			flex-direction: row-reverse;
 			justify-self: end;
 			justify-content: flex-end;
 		}

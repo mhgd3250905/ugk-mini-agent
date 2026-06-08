@@ -807,7 +807,7 @@ export function getPlaygroundTranscriptRendererScript(): string {
 			meta.className = "message-meta";
 			const metaTime = new Date(entry.createdAt || Date.now()).toLocaleTimeString();
 			if (kind === "user") {
-				meta.innerHTML = "<span>" + metaTime + "</span>";
+				meta.innerHTML = "<strong>YOU</strong><span>" + metaTime + "</span>";
 			} else {
 				meta.innerHTML = "<strong>" + entry.title + "</strong><span>" + metaTime + "</span>";
 			}

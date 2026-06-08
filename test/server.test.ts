@@ -810,6 +810,8 @@ test("GET /playground returns the test UI html", async () => {
 	assert.match(response.body, /\.message-body\s*\{[\s\S]*box-shadow: none;/);
 	assert.match(response.body, /\.message-body\s*\{[\s\S]*backdrop-filter: none;/);
 	assert.match(response.body, /\.message\.user \.message-body\s*\{[\s\S]*background:\s*var\(--chat-user-bg\);/);
+	assert.match(response.body, /\.message\.user \.message-meta\s*\{[\s\S]*flex-direction:\s*row-reverse;/);
+	assert.match(response.body, /meta\.innerHTML = "<strong>YOU<\/strong><span>" \+ metaTime \+ "<\/span>";/);
 	assert.doesNotMatch(response.body, /:root\[data-theme="light"\] \.message\.user \.message-body::after/);
 	assert.match(response.body, /:root\[data-theme="light"\] \.message\.user \.message-content\s*\{[\s\S]*color:\s*var\(--chat-user-fg\);/);
 	assert.match(response.body, /\.chat-stage\s*\{[\s\S]*position:\s*relative;/);
