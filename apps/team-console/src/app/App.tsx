@@ -3784,6 +3784,27 @@ export function App() {
     }
   }, [dataSource, setError, setTeamTaskGroups, taskGroups]);
 
+  const renameTaskGroup = useCallback((groupId: string, title: string) => {
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) return;
+    const currentGroup = taskGroups.find((group) => group.groupId === groupId);
+    if (currentGroup?.locked || currentGroup?.title === trimmedTitle) return;
+
+    if (dataSource === "live") {
+      void new LiveTeamApi().patchTaskGroup(groupId, { title: trimmedTitle }).then((nextGroup) => {
+        setTeamTaskGroups((current) => current.map((group) => (
+          group.groupId === nextGroup.groupId ? nextGroup : group
+        )));
+        setError(null);
+      }).catch((e) => setError(errorMessage(e)));
+      return;
+    }
+
+    setMockTaskGroups((current) => current.map((group) => (
+      group.groupId === groupId ? { ...group, title: trimmedTitle } : group
+    )));
+  }, [dataSource, setError, setTeamTaskGroups, taskGroups]);
+
   const addSelectedTasksToTaskGroup = useCallback((groupId: string) => {
     if (dataSource !== "live") return;
     const group = teamTaskGroups.find((candidate) => candidate.groupId === groupId && !candidate.archived);
@@ -6526,6 +6547,7 @@ export function App() {
                 onRestoreTaskGroup={restoreTaskGroup}
                 onToggleTaskGroup={toggleTaskGroup}
                 onToggleTaskGroupLock={toggleTaskGroupLock}
+                onRenameTaskGroup={renameTaskGroup}
                 onDeleteTaskGroup={deleteTaskGroup}
                 onRunTaskGroup={runTaskGroup}
                 onCancelTaskGroupRun={cancelTaskGroupRun}

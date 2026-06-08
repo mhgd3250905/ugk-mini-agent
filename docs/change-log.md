@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-08 — Team Group definition naming
+
+- **主题**: Team Console 展开的 Live backend Group frame 新增“命名”入口，可直接重命名固定 Group definition。该能力复用既有 `PATCH /v1/team/task-groups/:groupId` 的 `title` 字段，不新增 GroupRun 别名；已上锁 Group 不允许改名。
+- **影响范围**: 仅 5174 Team Console Group definition 展示/编辑交互。GroupRun contract、Conn `execution.type="team_group"`、运行态数据结构和 `/playground/conn` 选择器接口不变；下游继续通过 `GET /v1/team/task-groups` 读取同一个后端名称。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app-connections.test.tsx`。
+
 ## 2026-06-08 — Team Task Leader mini chat alignment
 
 - **主题**: Team Console Task 操作菜单里的“对话 Leader”改为和普通 Agent 对话分支一致的小窗/最大化两阶段展示。普通 Task Leader 子面板使用 `embedMode=mini`，只保留紧凑聊天核心；最大化 overlay 使用 `embedMode=full`，恢复完整 Playground。

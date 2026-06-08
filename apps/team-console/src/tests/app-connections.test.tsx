@@ -1134,6 +1134,38 @@ describe("App", () => {
       expect(await screen.findByText("Group boundary is not closed")).toBeInTheDocument();
     });
 
+    it("renames an unlocked Live Task Group through the backend", async () => {
+      const taskA = makeLiveTask("task_live_a", "Live Alpha");
+      const taskB = makeLiveTask("task_live_b", "Live Beta");
+      setupLiveGroupApi({
+        tasks: [taskA, taskB],
+        groups: [
+          makeResolvedTaskGroup({
+            groupId: "group_live_1",
+            title: "Group 1",
+            taskIds: [taskA.taskId, taskB.taskId],
+          }),
+        ],
+      });
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+
+      render(<App />);
+
+      const group = await screen.findByRole("group", { name: "Group 1" });
+      fireEvent.click(within(group).getByRole("button", { name: "命名 Group 1" }));
+      fireEvent.change(within(group).getByRole("textbox", { name: "Group 名称 Group 1" }), {
+        target: { value: "糖尿病周报链路" },
+      });
+      fireEvent.click(within(group).getByRole("button", { name: "保存 Group 1 名称" }));
+
+      expect(await screen.findByRole("group", { name: "糖尿病周报链路" })).toBeInTheDocument();
+      const patchCall = vi.mocked(fetch).mock.calls.find(([url, init]) => (
+        String(url) === "/v1/team/task-groups/group_live_1" && init?.method === "PATCH"
+      ));
+      expect(patchCall).toBeTruthy();
+      expect(JSON.parse(String(patchCall?.[1]?.body))).toEqual({ title: "糖尿病周报链路" });
+    });
+
     it("archives an unlocked Live Task Group without removing Task nodes", async () => {
       const taskA = makeLiveTask("task_live_a", "Live Alpha");
       const taskB = makeLiveTask("task_live_b", "Live Beta");

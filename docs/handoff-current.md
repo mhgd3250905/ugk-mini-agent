@@ -67,6 +67,7 @@ git log --oneline origin/main..HEAD
 - Team Task GroupRun 后端 contract 已完成。GroupRun start 才硬拒绝 empty/invalid Group，返回 400 `invalid task group`；active guard 仍返回 409。GroupRun 保存 `definitionSnapshot`，刷新/取消优先使用 snapshot membership。
 - GroupRun 完成态已按 Group 内真实 Task 流水线聚合。Discovery generated child run 保留诊断和取消用途，但不再一票否决主 GroupRun 终态。
 - Team Console Live backend Group 创建、归档、展示态和 membership 编辑已完成。Live Group 不会因 `taskIds=[]` 或成员节点不可见而消失；支持添加当前选中 Task、移除成员、显示 `0 Tasks`；empty/invalid Group 的运行按钮禁用并展示后端 validation message。
+- Team Console 展开的 Live backend Group frame 已支持“命名”固定 Group definition。改名复用 `PATCH /v1/team/task-groups/:groupId` 的 `title` 字段，不新增 GroupRun 级别别名；已上锁 Group 不允许改名，Conn editor 和 `/playground/conn` 继续读取同一个后端 Group title。
 - Team Console Group 顶部成员控制带已返修：非空展开 Group 的控制带不再覆盖 Task card，未提升 Group frame z-index，也未改 Task node pointer-events。
 - Team Console 展开 backend Group 的成员 chip 已改为按 Group 内任务链分行：优先用 `ResolvedTeamTaskGroup.headTaskIds`，每个 head 一行，并沿 active internal `TeamTaskConnection` 顺着 downstream Task 展示；不要再按视觉 y 坐标、x 坐标或原始 `taskIds` 顺序理解。
 - Team Console 展开 Group frame 已完成窄屏 polish：最小宽度优先保证操作按钮显示，`1 Task` 使用单数，底部参数区域有上方留白，`groupId` 使用类似 Task id 的可点击复制 chip。
@@ -106,6 +107,12 @@ git log --oneline origin/main..HEAD
 
 ## 本轮最终验证
 
+- Team Group definition naming 验证：
+  - `npm --prefix apps/team-console test -- --run src/tests/app-connections.test.tsx src/tests/app-static-contracts.test.ts src/tests/team-api.test.ts`：178/178 pass。
+  - `npx tsc --noEmit`：pass。
+  - `git diff --check`：pass。
+  - `npm --prefix apps/team-console run build`：pass；仅既有 Vite chunk size warning。
+  - 本地服务已重启：`ugk-pi-team-console` healthy，`http://127.0.0.1:5174/` 返回 200。Browser 刷新 `http://127.0.0.1:5174/` 后，展开 Group frame 显示 `命名 Group 1`；点击后出现 `Group 名称 Group 1` 输入框、`保存` 和 `取消`，取消后编辑态收起。
 - Team Task Leader mini chat 验证：
   - `npm --prefix apps/team-console test -- --run src/tests/app-task-leader.test.tsx src/tests/app-branch-windowing.test.tsx`：23/23 pass。
   - `npx tsc --noEmit`：pass。

@@ -1,4 +1,4 @@
-import { useMemo, useLayoutEffect, useEffect, useRef, useState, useCallback, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useMemo, useLayoutEffect, useEffect, useRef, useState, useCallback, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { AgentRunStatus, AgentSummary, RunDetail, TeamCanvasSourceConnection, TeamCanvasSourceNode, TeamCanvasTask, TeamPlan, TaskStatus, TeamAttemptMetadata, TeamTaskState, TeamRunState, TeamTaskConnection, TeamTaskDependency, TeamTaskGroupRunStatus, TeamTaskInputPort, TeamTaskOutputPort } from "../api/team-types";
 import type { ExecutionNode, NodeKind } from "./execution-map-model";
@@ -99,6 +99,7 @@ interface ExecutionMapProps {
   onRestoreTaskGroup?: (group: AtlasTaskGroup) => void;
   onToggleTaskGroup?: (groupId: string) => void;
   onToggleTaskGroupLock?: (groupId: string) => void;
+  onRenameTaskGroup?: (groupId: string, title: string) => void;
   onDeleteTaskGroup?: (groupId: string) => void;
   onRunTaskGroup?: (groupId: string) => void;
   onCancelTaskGroupRun?: (groupId: string, groupRunId: string) => void;
@@ -915,6 +916,7 @@ export function ExecutionMap({
   onRestoreTaskGroup,
   onToggleTaskGroup,
   onToggleTaskGroupLock,
+  onRenameTaskGroup,
   onDeleteTaskGroup,
   onRunTaskGroup,
   onCancelTaskGroupRun,
@@ -953,6 +955,7 @@ export function ExecutionMap({
   const evidenceContainerRef = useRef<HTMLDivElement | null>(null);
   const [measuredHeights, setMeasuredHeights] = useState<MeasuredHeights>({});
   const [previewHeights, setPreviewHeights] = useState<MeasuredHeights>({});
+  const [taskGroupTitleDraft, setTaskGroupTitleDraft] = useState<{ groupId: string; title: string } | null>(null);
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
   const [artifactPreviewState, setArtifactPreviewState] = useState<Record<string, ArtifactPreviewState>>({});
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
@@ -2221,6 +2224,28 @@ export function ExecutionMap({
     }
     onToggleTaskGroup?.(groupId);
   }, [onToggleTaskGroup]);
+
+  const beginTaskGroupRename = useCallback((group: AtlasTaskGroup) => {
+    if (group.locked || !onRenameTaskGroup) return;
+    setTaskGroupTitleDraft({ groupId: group.groupId, title: group.title });
+  }, [onRenameTaskGroup]);
+
+  const cancelTaskGroupRename = useCallback(() => {
+    setTaskGroupTitleDraft(null);
+  }, []);
+
+  const submitTaskGroupRename = useCallback((event: FormEvent<HTMLFormElement>, group: AtlasTaskGroup) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (group.locked || !onRenameTaskGroup) return;
+    const nextTitle = taskGroupTitleDraft?.groupId === group.groupId ? taskGroupTitleDraft.title.trim() : "";
+    if (!nextTitle || nextTitle === group.title) {
+      setTaskGroupTitleDraft(null);
+      return;
+    }
+    onRenameTaskGroup(group.groupId, nextTitle);
+    setTaskGroupTitleDraft(null);
+  }, [onRenameTaskGroup, taskGroupTitleDraft]);
 
   const handleTaskClick = useCallback((node: AtlasTaskNode) => {
     if (suppressTaskClickRef.current === node.nodeId) {
@@ -3642,6 +3667,7 @@ export function ExecutionMap({
             const runTitle = group.groupRun?.blockedByActiveTask
               ? "Group 内部已有 Task run 运行中"
               : validationMessage || "启动 GroupRun";
+            const isRenamingGroup = taskGroupTitleDraft?.groupId === group.groupId;
             return group.collapsed ? (
               <button
                 key={group.groupId}
@@ -3688,8 +3714,57 @@ export function ExecutionMap({
               >
                 <div className="emap-task-group-head">
                   <span className="emap-task-group-kicker">{group.locked ? "Locked Group" : "Group"}</span>
-                  <strong>{group.title}</strong>
+                  {isRenamingGroup ? (
+                    <form
+                      className="emap-task-group-title-form"
+                      onSubmit={(event) => submitTaskGroupRename(event, group)}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <input
+                        aria-label={`Group 名称 ${group.title}`}
+                        value={taskGroupTitleDraft.title}
+                        autoFocus
+                        onChange={(event) => setTaskGroupTitleDraft({ groupId: group.groupId, title: event.currentTarget.value })}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            cancelTaskGroupRename();
+                          }
+                        }}
+                      />
+                      <button type="submit" aria-label={`保存 ${group.title} 名称`}>保存</button>
+                      <button
+                        type="button"
+                        aria-label={`取消 ${group.title} 名称`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          cancelTaskGroupRename();
+                        }}
+                      >
+                        取消
+                      </button>
+                    </form>
+                  ) : (
+                    <strong title={group.title}>{group.title}</strong>
+                  )}
                   <span className="emap-task-group-task-count">{taskCountLabel}</span>
+                  {!isRenamingGroup && onRenameTaskGroup && (
+                    <button
+                      type="button"
+                      aria-label={`命名 ${group.title}`}
+                      className="emap-task-group-rename-button"
+                      disabled={group.locked}
+                      title={group.locked ? "Group 已上锁" : "重命名 Group"}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        beginTaskGroupRename(group);
+                      }}
+                    >
+                      命名
+                    </button>
+                  )}
                   {group.groupRun && (
                     <>
                       <span className={`emap-task-group-run-badge is-${group.groupRun.status}`}>

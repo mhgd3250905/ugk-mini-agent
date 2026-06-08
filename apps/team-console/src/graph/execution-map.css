@@ -835,6 +835,33 @@
   white-space: nowrap;
 }
 
+.emap-task-group-title-form {
+  flex: 1 1 164px;
+  min-width: 132px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.emap-task-group-title-form input {
+  flex: 1 1 auto;
+  min-width: 72px;
+  height: 24px;
+  border: 1px solid rgba(22, 124, 128, 0.38);
+  border-radius: 6px;
+  padding: 0 8px;
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--primary);
+  font: inherit;
+  font-size: 11px;
+  outline: none;
+}
+
+.emap-task-group-title-form input:focus {
+  border-color: rgba(22, 124, 128, 0.72);
+  box-shadow: 0 0 0 2px rgba(22, 124, 128, 0.14);
+}
+
 .emap-task-group-card strong {
   min-width: 0;
   overflow: hidden;
@@ -913,6 +940,10 @@
 
 .emap-task-group-head button:first-of-type {
   margin-left: auto;
+}
+
+.emap-task-group-title-form button:first-of-type {
+  margin-left: 0;
 }
 
 .emap-task-group-head button:disabled {
@@ -4797,6 +4828,17 @@
   border-color: rgba(121, 216, 208, 0.32);
   background: rgba(16, 20, 31, 0.72);
   color: rgb(182, 246, 240);
+}
+
+[data-theme="dark"] .emap-task-group-title-form input {
+  border-color: rgba(121, 216, 208, 0.34);
+  background: rgba(16, 20, 31, 0.78);
+  color: rgb(225, 255, 252);
+}
+
+[data-theme="dark"] .emap-task-group-title-form input:focus {
+  border-color: rgba(121, 216, 208, 0.72);
+  box-shadow: 0 0 0 2px rgba(121, 216, 208, 0.16);
 }
 
 [data-theme="dark"] .emap-task-group-dock-button {
