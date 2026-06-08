@@ -3327,8 +3327,10 @@ test("GET /playground embeds conversation history restore and message copy contr
 	assert.doesNotMatch(messageActionButtonBlock[1], /border-color:\s*rgba\(201,\s*210,\s*255,\s*0\.2\);/);
 	assert.doesNotMatch(messageActionButtonBlock[1], /background:\s*rgba\(201,\s*210,\s*255,\s*0\.05\);/);
 	assert.match(response.body, /\.message-copy-button:hover:not\(:disabled\),[\s\S]*\.message-image-export-button:focus-visible\s*\{[\s\S]*background:\s*transparent;/);
-	assert.match(response.body, /\.message-copy-button::before,[\s\S]*\.message-copy-button::after\s*\{[\s\S]*content:\s*"";/);
-	assert.match(response.body, /\.message-image-export-button svg\s*\{[\s\S]*stroke:\s*currentColor;/);
+	assert.doesNotMatch(response.body, /\.message-copy-button::before/);
+	assert.match(response.body, /copyButton\.innerHTML =[\s\S]*message-action-icon[\s\S]*viewBox="0 0 16 16"/);
+	assert.match(response.body, /imageButton\.innerHTML =[\s\S]*message-action-icon[\s\S]*viewBox="0 0 16 16"/);
+	assert.match(response.body, /\.message-action-icon\s*\{[\s\S]*width:\s*16px;[\s\S]*height:\s*16px;[\s\S]*stroke:\s*currentColor;/);
 	assert.match(response.body, /copyButton\.setAttribute\("aria-label", /);
 	assert.match(response.body, /copyLabel\.className = "visually-hidden"/);
 	assert.match(response.body, /copyButton\.setAttribute\("aria-label", original\)/);

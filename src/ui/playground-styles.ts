@@ -2265,37 +2265,20 @@ export function getPlaygroundStyles(): string {
 			transform: none;
 		}
 
-		.message-copy-button::before,
-		.message-copy-button::after {
-			content: "";
-			position: absolute;
-			width: 9px;
-			height: 11px;
-			border: 1px solid currentColor;
-			border-radius: 2px;
-		}
-
-		.message-copy-button::before {
-			top: 6px;
-			left: 7px;
-			opacity: 0.46;
-		}
-
-		.message-copy-button::after {
-			top: 9px;
-			left: 10px;
-			background: transparent;
-		}
-
 		.message-copy-button:disabled {
 			cursor: default;
 			opacity: 0.45;
 		}
 
-		.message-image-export-button svg {
-			width: 14px;
-			height: 14px;
+		.message-action-icon {
+			width: 16px;
+			height: 16px;
+			display: block;
 			stroke: currentColor;
+			stroke-width: 1.55;
+			stroke-linecap: round;
+			stroke-linejoin: round;
+			vector-effect: non-scaling-stroke;
 		}
 
 		.message-context-menu {

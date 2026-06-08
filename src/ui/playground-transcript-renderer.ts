@@ -686,10 +686,10 @@ export function getPlaygroundTranscriptRendererScript(): string {
 			imageButton.setAttribute("aria-label", "保存为图片");
 			imageButton.title = "保存为图片";
 			imageButton.innerHTML =
-				'<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
-				'<path d="M5 5h14v14H5V5Z" stroke-width="1.8" stroke-linejoin="round"/>' +
-				'<path d="M8 15l3-3 2 2 2-3 2 4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>' +
-				'<circle cx="9" cy="9" r="1.2" fill="currentColor"/>' +
+				'<svg class="message-action-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
+				'<rect x="2.5" y="3" width="11" height="10" rx="2"/>' +
+				'<path d="M4.5 11l2.4-2.5 2 1.9 1.6-1.7 1.8 2.3"/>' +
+				'<circle cx="5.8" cy="6.1" r="0.9" fill="currentColor" stroke="none"/>' +
 				"</svg>" +
 				'<span class="visually-hidden">保存为图片</span>';
 			imageButton.addEventListener("click", () => {
@@ -708,6 +708,11 @@ export function getPlaygroundTranscriptRendererScript(): string {
 			copyButton.className = "message-copy-button";
 			copyButton.setAttribute("aria-label", "复制正文");
 			copyButton.title = "复制正文";
+			copyButton.innerHTML =
+				'<svg class="message-action-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
+				'<rect x="6" y="5.5" width="7" height="8" rx="1.6"/>' +
+				'<path d="M3 10.5V3.8C3 2.8 3.8 2 4.8 2h6.7"/>' +
+				"</svg>";
 			const copyLabel = document.createElement("span");
 			copyLabel.className = "visually-hidden";
 			copyLabel.textContent = "复制正文";

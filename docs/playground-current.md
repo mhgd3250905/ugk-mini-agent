@@ -587,7 +587,7 @@
 - 浅色主题下用户消息必须有自己的轻量回显样式：右侧白色承载面、浅绿色来源边框、深色正文；不要再加右侧竖线，不要继承助手消息的整块白色阅读面，也不要继续使用深色主题留下来的灰黑气泡。
 - 历史消息时间优先使用 session message 自带的 `timestamp` 透传成 `createdAt`；不要再把所有恢复消息默认写成 Unix epoch，否则前端会整排显示 `08:00:00`
 - 每个消息气泡的操作栏固定放在 `.message-body` 内部底部，不再挂在气泡外层；操作栏只保留紧凑 icon-only 控件，贴近正文但不挤压 meta。
-- 消息操作栏当前包含复制正文和保存图片两个按钮：复制只复制当前消息正文，不复制时间、角色标签和文件按钮；保存图片会把 `.message-body` 的渲染效果导出为 PNG，导出图排除操作栏自身，并在图片外层加 `UGK Claw 导出` 签名 label。导出副本必须是自包含内容：外部 `@import`、`@font-face`、非片段 `url(...)` 和消息内媒体节点都不能进入 canvas 绘制路径，媒体内容使用紧凑占位块替代；包含 `foreignObject` 的 SVG 中间图必须使用 `data:image/svg+xml`，不要回退成 `blob:` URL，避免 `toBlob()` 因 tainted canvas 失败。
+- 消息操作栏当前包含复制正文和保存图片两个按钮：两个按钮都使用同规格 `16x16` inline SVG，按钮本体保持 `26x26`，不要再用 CSS 伪元素单独硬画复制图标。复制只复制当前消息正文，不复制时间、角色标签和文件按钮；保存图片会把 `.message-body` 的渲染效果导出为 PNG，导出图排除操作栏自身，并在图片外层加 `UGK Claw 导出` 签名 label。导出副本必须是自包含内容：外部 `@import`、`@font-face`、非片段 `url(...)` 和消息内媒体节点都不能进入 canvas 绘制路径，媒体内容使用紧凑占位块替代；包含 `foreignObject` 的 SVG 中间图必须使用 `data:image/svg+xml`，不要回退成 `blob:` URL，避免 `toBlob()` 因 tainted canvas 失败。
 - 消息操作栏按钮统一使用透明背景、无边框、无阴影，文字只保留在 `aria-label` / 隐藏文本里，不再占用纵向空间。
 - composer textarea 默认使用 `rows="1"`，不要让浏览器按 textarea 默认 2 行去算空内容高度；默认最小高度已收口到 `52px`，桌面端使用 `14px` 上下内边距；自适应高度脚本在空内容和单行内容时必须保留 CSS `min-height`，让 placeholder 与正文按同一行高纵向居中，多行内容才按 `scrollHeight` 扩展。不要再让浏览器 `scrollHeight` 把单行输入框算歪。
 - markdown 正文渲染使用 `marked`，不是项目内手写解析器；服务器端 `renderPlaygroundMarkdown()` 在 `src/ui/playground-markdown.ts`，`src/ui/playground.ts` 只负责 re-export 给测试和页面入口兼容；浏览器端 transcript hydration 仍在 `src/ui/playground-transcript-renderer.ts`。后续补 Markdown 能力时优先配置/升级渲染库，不要继续追加临时正则
