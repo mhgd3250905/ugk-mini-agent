@@ -10,6 +10,7 @@ import {
 	validateCreateTaskInput,
 	validateTaskUpdateInput,
 } from "./task-validation.js";
+import { buildTemplateBindings } from "./task-template.js";
 
 export interface TaskStoreListOptions {
 	includeArchived?: boolean;
@@ -81,36 +82,6 @@ export function applyBindingsToDiscoverySpec(discoverySpec: TeamDiscoverySpec | 
 		discoveryGoal: replaceTemplatePlaceholders(discoverySpec.discoveryGoal, bindings),
 		dispatchGoal: replaceTemplatePlaceholders(discoverySpec.dispatchGoal, bindings),
 	};
-}
-
-export function buildTemplateBindings(
-	templateConfig: TeamTaskTemplateConfig,
-	inputBindings: Record<string, string> | undefined,
-): Record<string, string> {
-	const raw = inputBindings ?? {};
-	const bindings: Record<string, string> = {};
-	for (const parameter of templateConfig.parameters) {
-		const rawValue = raw[parameter.id] ?? parameter.defaultValue;
-		if (typeof rawValue !== "string" || !rawValue.trim()) {
-			if (parameter.required !== false) {
-				throw new Error(`template binding is required: ${parameter.id}`);
-			}
-			continue;
-		}
-		bindings[parameter.id] = rawValue.trim();
-	}
-	return bindings;
-}
-
-export function buildTemplateRunBindings(
-	templateConfig: TeamTaskTemplateConfig,
-	templateState: TeamTaskTemplateState | undefined,
-	inputBindings: Record<string, string> | undefined,
-): Record<string, string> {
-	return buildTemplateBindings(templateConfig, {
-		...(templateState?.currentBindings ?? {}),
-		...(inputBindings ?? {}),
-	});
 }
 
 export class TaskStore {

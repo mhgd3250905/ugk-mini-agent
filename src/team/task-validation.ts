@@ -11,6 +11,7 @@ import type {
 	TeamTaskTemplateState,
 	TeamWorkUnitDefinition,
 } from "./types.js";
+import { normalizeTemplateBinding, TEAM_TASK_TEMPLATE_INPUT_TYPES } from "./task-template.js";
 import { validateTaskPorts } from "./task-port-contract.js";
 
 const CREATE_STATUSES = new Set<TeamCanvasTaskStatus>(["drafting", "ready"]);
@@ -275,6 +276,42 @@ function validateTemplateConfig(templateConfig: TeamTaskTemplateConfig | undefin
 		);
 		if (parameter.required !== undefined && typeof parameter.required !== "boolean") {
 			throw new Error(`templateConfig.parameters[${index}].required must be a boolean`);
+		}
+		const inputType = parameter.inputType ?? "text";
+		if (!TEAM_TASK_TEMPLATE_INPUT_TYPES.includes(inputType as any)) {
+			throw new Error(`templateConfig.parameters[${index}].inputType is invalid`);
+		}
+		assertOptionalNonEmptyString(
+			parameter.placeholder,
+			`templateConfig.parameters[${index}].placeholder must be a non-empty string`,
+		);
+		if (inputType === "select") {
+			if (!Array.isArray(parameter.options) || parameter.options.length === 0) {
+				throw new Error(`templateConfig.parameters[${index}].options must contain at least one option`);
+			}
+			const optionValues = new Set<string>();
+			for (const [optionIndex, option] of parameter.options.entries()) {
+				if (!option || typeof option !== "object" || Array.isArray(option)) {
+					throw new Error(`templateConfig.parameters[${index}].options[${optionIndex}] must be an object`);
+				}
+				assertNonEmptyString(
+					option.value,
+					`templateConfig.parameters[${index}].options[${optionIndex}].value is required`,
+				);
+				assertNonEmptyString(
+					option.label,
+					`templateConfig.parameters[${index}].options[${optionIndex}].label is required`,
+				);
+				if (optionValues.has(option.value)) {
+					throw new Error(`templateConfig.parameters[${index}].options contains duplicate value: ${option.value}`);
+				}
+				optionValues.add(option.value);
+			}
+		} else if (parameter.options !== undefined) {
+			throw new Error(`templateConfig.parameters[${index}].options is only allowed for select parameters`);
+		}
+		if (parameter.defaultValue !== undefined) {
+			normalizeTemplateBinding(parameter, parameter.defaultValue);
 		}
 	}
 }

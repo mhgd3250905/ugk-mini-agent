@@ -117,7 +117,7 @@ Task 操作菜单里的“运行记录”打开右侧抽屉，只按当前 Task 
 
 Discovery 子画布支持把历史 generated child Tasks 固化为渠道集。用户在子画布中勾选 active generated child，填写名称后调用 `POST /v1/team/tasks/:taskId/discovery-channel-sets` 保存；渠道集只保存 child 的 discovery item payload 和 WorkUnit snapshot，不保存运行产物或浏览器 UI 状态。已保存渠道集显示在同一子画布面板内，“使用渠道集”会向 `POST /v1/team/tasks/:taskId/runs` 发送 `discoveryChannelSetId`，后端跳过 root rediscovery/dispatcher，直接按渠道集生成本轮 `discovery-result.json`、`discovery-aggregation.json` 并自动运行对应 generated child Tasks。归档渠道集走 `POST /v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId/archive`，只软归档该复用集合，不归档原 generated Task。
 
-模板 Task 本体可以直接从操作菜单运行，不再要求先复制实例。模板参数 schema/default/required 留在 `templateConfig`，当前/最近参数保存在 `templateState.currentBindings`；首次运行缺 required 参数时，Team Console 会打开“参数”面板并阻止 run，用户保存一次后再次运行默认复用。参数面板的“保存并运行”会向 `POST /v1/team/tasks/:taskId/runs` 发送本次 `templateBindings` override，后端把 override 写回当前参数，同时每个 run 都在 `source.templateBindings` 记录当次快照。复制模板 Task 的能力仍保留，但只是生成独立 clone，不再是参数化运行的主路径。
+模板 Task 本体可以直接从操作菜单运行，不再要求先复制实例。模板参数 schema/default/required/inputType 留在 `templateConfig`，当前/最近参数保存在 `templateState.currentBindings`；首次运行缺 required 参数时，Team Console 会打开“参数”面板并阻止 run，用户保存一次后再次运行默认复用。参数面板会按 `inputType` 渲染控件：`text` / `email` / `email_list` / `number` 使用单行输入，`textarea` 使用多行输入，`select` 使用下拉选项。参数面板的“保存并运行”会向 `POST /v1/team/tasks/:taskId/runs` 发送本次 `templateBindings` override，后端把 override 写回当前参数，同时每个 run 都在 `source.templateBindings` 记录当次快照。复制模板 Task 的能力仍保留，但只是生成独立 clone，不再是参数化运行的主路径。
 
 Canvas Task role session 会收到 `ARTIFACT_PUBLIC_DIR` 和 `ARTIFACT_PUBLIC_BASE_URL`。需要交付给用户或 checker 访问的 HTML/报告文件应写入该 public output 目录，并输出基于 `/v1/team/task-runs/:runId/artifacts/:roleKey/:role/...` 的稳定链接；不要在 worker 输出里混入临时 `localhost` 端口链接。
 

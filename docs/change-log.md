@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-08 — Team Task typed template parameters
+
+- **主题**: Team Task 模板参数新增 `inputType` 合同。旧模板参数继续按默认 `text` 读取；新参数可声明 `text`、`textarea`、`email`、`email_list`、`number` 或 `select`。绑定快照仍保持 `Record<string,string>`，但后端会在保存/运行前校验邮箱、邮箱列表、数字和下拉选项，Team Console 参数面板与复制面板按类型渲染控件。
+- **影响范围**: 模板 Task 创建、复制、参数保存和 `POST /v1/team/tasks/:taskId/runs` 的绑定校验。`run.source.templateBindings`、`templateState.currentBindings`、历史 run 和旧无类型模板保持兼容。`/team-task` 创建向导已补充 repeated delivery/email 场景应优先把收件人、主题等做成模板参数，而不是硬编码进 WorkUnit；同时明确用户不需要知道 `templateConfig`、`inputType`、`inputPorts` 等专业字段，skill 必须用业务语言询问收件人、邮件标题、正文来源，再自行映射为内部 JSON。
+- **对应入口**: `src/team/task-template.ts`、`src/team/types.ts`、`src/team/task-validation.ts`、`src/team/task-store.ts`、`src/team/task-run-service.ts`、`apps/team-console/src/app/App.tsx`、`.pi/skills/team-task-creator/SKILL.md`、`test/team-task-store.test.ts`、`test/team-task-routes.test.ts`、`apps/team-console/src/tests/app-live-data.test.tsx`。
+
 ## 2026-06-08 — Agents / Conn ops workbench refresh
 
 - **主题**: `/playground/agents` 与 `/playground/conn` 切换到共享 `ops-workbench` 视觉系统，和 `/playground/model-sources` 保持同一套管理工作台密度、色彩 token、卡片/列表/详情布局和轻量背景，不再使用旧 cockpit 动画背景。

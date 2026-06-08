@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
-import { applyBindingsToDiscoverySpec, applyBindingsToWorkUnit, buildTemplateRunBindings, replaceTemplatePlaceholders } from "./task-store.js";
+import { applyBindingsToDiscoverySpec, applyBindingsToWorkUnit, replaceTemplatePlaceholders } from "./task-store.js";
 import type { TaskStore } from "./task-store.js";
+import { buildTemplateRunBindings } from "./task-template.js";
 import type { RunWorkspace } from "./run-workspace.js";
 import { computeTeamRunSummary } from "./team-summary.js";
 import { progressMessages } from "./progress.js";

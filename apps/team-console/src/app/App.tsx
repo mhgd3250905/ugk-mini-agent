@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunAnnotation, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort, TeamTaskConnection, TeamManualUpstreamRunSelection, TeamTaskRunCreateRequest, TeamDiscoveryChannelSet } from "../api/team-types";
+import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunAnnotation, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamRoleRuntimeContext, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort, TeamTaskConnection, TeamManualUpstreamRunSelection, TeamTaskRunCreateRequest, TeamDiscoveryChannelSet, TeamTaskTemplateParameter } from "../api/team-types";
 import { MockTeamApi } from "../fixtures/team-fixtures";
 import { useTeamConsoleLiveData, type DataSource, type TeamConsoleUiResetReason, type TeamDiscoveryStage, type TeamDiscoverySummary, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
 import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchGeneratedObserverState, type TaskBranchState } from "./use-task-branch-stack";
@@ -1550,6 +1550,18 @@ function templateBindingsForTask(task: TeamCanvasTask): Record<string, string> {
   );
 }
 
+function normalizeTemplateParameterValue(parameter: TeamTaskTemplateParameter, rawValue: string): string {
+  const value = rawValue.trim();
+  if (parameter.inputType === "email_list") {
+    return value
+      .split(/[,;\n]+/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .join(",");
+  }
+  return value;
+}
+
 function hasMissingRequiredTemplateBindings(task: TeamCanvasTask, bindings = templateBindingsForTask(task)): boolean {
   return (task.templateConfig?.parameters ?? []).some((parameter) =>
     parameter.required !== false && !(bindings[parameter.id] ?? "").trim()
@@ -1559,9 +1571,50 @@ function hasMissingRequiredTemplateBindings(task: TeamCanvasTask, bindings = tem
 function normalizedTemplateBindings(task: TeamCanvasTask, bindings: Record<string, string>): Record<string, string> {
   return Object.fromEntries(
     (task.templateConfig?.parameters ?? []).flatMap((parameter) => {
-      const value = (bindings[parameter.id] ?? "").trim();
+      const value = normalizeTemplateParameterValue(parameter, bindings[parameter.id] ?? "");
       return value ? [[parameter.id, value]] : [];
     }),
+  );
+}
+
+function templateParameterPlaceholder(parameter: TeamTaskTemplateParameter): string {
+  return parameter.placeholder ?? parameter.description ?? parameter.id;
+}
+
+function renderTemplateParameterControl(
+  parameter: TeamTaskTemplateParameter,
+  value: string,
+  onChange: (value: string) => void,
+): ReactNode {
+  const placeholder = templateParameterPlaceholder(parameter);
+  if (parameter.inputType === "textarea") {
+    return (
+      <textarea
+        value={value}
+        placeholder={placeholder}
+        rows={4}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    );
+  }
+  if (parameter.inputType === "select") {
+    return (
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        {(parameter.required === false || !value) && <option value="">未选择</option>}
+        {(parameter.options ?? []).map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    );
+  }
+  return (
+    <input
+      type={parameter.inputType === "email" ? "email" : parameter.inputType === "number" ? "number" : "text"}
+      inputMode={parameter.inputType === "email_list" ? "email" : undefined}
+      value={value}
+      placeholder={placeholder}
+      onChange={(event) => onChange(event.target.value)}
+    />
   );
 }
 
@@ -5714,11 +5767,11 @@ export function App() {
                     {templateParameters.map((parameter) => (
                       <label key={parameter.id} className="task-edit-field">
                         <span>{parameter.label}{parameter.required ? " *" : ""}</span>
-                        <input
-                          value={draft.templateBindings[parameter.id] ?? ""}
-                          placeholder={parameter.description ?? parameter.id}
-                          onChange={(event) => updateTaskCloneBinding(task.taskId, parameter.id, event.target.value)}
-                        />
+                        {renderTemplateParameterControl(
+                          parameter,
+                          draft.templateBindings[parameter.id] ?? "",
+                          (value) => updateTaskCloneBinding(task.taskId, parameter.id, value),
+                        )}
                       </label>
                     ))}
                   </div>
@@ -5800,11 +5853,11 @@ export function App() {
                     {templateParameters.map((parameter) => (
                       <label key={parameter.id} className="task-edit-field">
                         <span>{parameter.label}{parameter.required !== false ? " *" : ""}</span>
-                        <input
-                          value={draft.templateBindings[parameter.id] ?? ""}
-                          placeholder={parameter.description ?? parameter.id}
-                          onChange={(event) => updateTaskParameterBinding(task.taskId, parameter.id, event.target.value)}
-                        />
+                        {renderTemplateParameterControl(
+                          parameter,
+                          draft.templateBindings[parameter.id] ?? "",
+                          (value) => updateTaskParameterBinding(task.taskId, parameter.id, value),
+                        )}
                       </label>
                     ))}
                   </div>

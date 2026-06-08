@@ -1164,6 +1164,17 @@ function applyMockTemplateBindings(value: string, bindings: Record<string, strin
   return value.replace(/\{\{([A-Za-z][A-Za-z0-9_-]{0,63})\}\}/g, (match, key: string) => bindings[key] ?? match);
 }
 
+function normalizeMockTemplateBinding(parameter: NonNullable<TeamCanvasTask["templateConfig"]>["parameters"][number], value: string): string {
+  if (parameter.inputType === "email_list") {
+    return value
+      .split(/[,;\n]+/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .join(",");
+  }
+  return value.trim();
+}
+
 function buildMockTemplateBindings(task: TeamCanvasTask, input?: TeamTaskCloneRequest | TeamTaskRunCreateRequest): Record<string, string> {
   const templateConfig = task.templateConfig;
   if (!templateConfig) return {};
@@ -1180,7 +1191,7 @@ function buildMockTemplateBindings(task: TeamCanvasTask, input?: TeamTaskCloneRe
       }
       continue;
     }
-    bindings[parameter.id] = rawValue.trim();
+    bindings[parameter.id] = normalizeMockTemplateBinding(parameter, rawValue);
   }
   return bindings;
 }

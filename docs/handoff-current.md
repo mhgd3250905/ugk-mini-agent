@@ -25,26 +25,12 @@
 
 ## 当前 Git 现场
 
-- 当前分支：`codex/discovery-channel-set`。
-- 相对 `origin/main` 本地 ahead 提交包括：
-  - `Add Discovery default channel-set run policy`
-  - `Add save-as for selected Discovery channel sets`
-  - `Update saved Discovery channel sets in Team Console`
-  - `1dd45aa6 Select saved Discovery channel sets in Team Console`
-  - `b5fdfa7b Fix Discovery channel set run visibility in Team Console`
-  - `9e1fe855 Document Discovery channel set workflow`
-  - `63a739f7 Add Team Console Discovery channel set controls`
-  - `5fd0883f Run Discovery roots from saved channel sets`
-  - `cd3b5a5a Add Discovery channel set backend contract`
-- 本轮最新提交主题：`Add Discovery default channel-set run policy`。
-- 本轮 Git 保存范围：Discovery channel set 后端合同、从保存渠道集跳过 rediscovery/dispatcher 的 root run 路径、Team Console 子画布渠道集选择/保存/归档/使用 UI、渠道集 run 状态可视化修复、保存渠道集选中查看/自动勾选 items、相关测试和文档。
-- 仍有无关未跟踪 `docs/windows-native-runtime-feasibility.md`，不要误提交。
-- 仍有本轮计划草稿 `.codex/plans/2026-06-07-discovery-channel-set.md` 未跟踪，不要提交。
+- 当前分支：`main`。
+- `origin/main` 与 `gitee/main` 此前均已同步到 `325ed4ec61225622f146ddd9f8581070301854a4`（`Add API source management workbench`）。本轮 Team Task typed template parameters 提交后，本地 `main` 会领先远端 1 个提交；是否推送以用户后续指令为准。
+- 本轮 Git 保存范围：Team Task 模板参数 `inputType` 合同、后端绑定归一化/校验、Team Console 参数控件渲染、`/team-task` skill 自然语言引导、相关测试和文档。
 - `origin`：GitHub `https://github.com/mhgd3250905/ugk-claw-personal.git`。
-- `gitee`：`https://gitee.com/ksheng3250905/ugk-pi-claw.git`，本轮未同步。
-- 不要把 `docs/windows-native-runtime-feasibility.md` 误判成本轮 Team Console 修复的一部分；它是无关未跟踪文档。
-- 本轮 feature branch 尚未推送 `origin` 或 `gitee`；是否推送以用户后续指令为准。
-- 不要提交这些本地未跟踪物件：`.codex/config.toml`、既有 `.codex/plans/**`、`.omo/`、`github-trending.txt`、`public/**`、`eoflow*.html`、`cupid.js`、`solve_cupid.mjs`、runtime 数据、截图、报告、临时文件。
+- `gitee`：`https://gitee.com/ksheng3250905/ugk-pi-claw.git`。
+- 不要提交这些本地未跟踪物件：`.codex/plans/2026-06-07-discovery-channel-set.md`、`.codex/plans/2026-06-08-api-source-management.md`、`docs/windows-native-runtime-feasibility.md`、`Find_Old_Google_Root_Key_Source.md`、`Google_Root_Cert_Update_Report.md`、`public/rsa-root-cert-report.html`、runtime 数据、截图、报告、临时文件。
 
 继续工作前先执行：
 
@@ -58,6 +44,9 @@ git log --oneline origin/main..HEAD
 
 ## 当前已完成事实
 
+- Team Task 模板参数已支持 typed input contract。`templateConfig.parameters[].inputType` 支持 `text`、`textarea`、`email`、`email_list`、`number`、`select`；旧模板缺字段按 `text` 兼容读取。运行和保存时绑定快照仍保持 `Record<string,string>`，但后端会校验邮箱、邮箱列表、数字和下拉选项，`email_list` 支持逗号、分号和换行分隔后归一化。
+- Team Console 模板参数面板和复制面板会按 `inputType` 渲染控件：`textarea` 用多行输入，`select` 用下拉，`email` / `number` 使用对应 HTML input 类型，`email_list` 提交前归一化。`task_8dc366711f37` 这类可填写参数 Task 可直接通过 UI 测试。
+- `/team-task` skill 已补充自然语言设计引导：用户不需要知道 `templateConfig`、`inputType`、`inputPorts` 等内部字段；skill 必须用业务语言询问收件人、邮件标题、邮件正文来源等，再自行映射为模板参数和 typed ports。
 - API 源管理工作台已实现：`/playground/model-sources` 可查看 bundled/custom provider、查看全局默认 / Agent profile / Conn 的有效使用绑定，并在同页修改可编辑对象绑定的 provider/model。
 - `/playground/agents` 与 `/playground/conn` 已切换到共享 `ops-workbench` 视觉系统，和 `/playground/model-sources` 保持同一套管理工作台密度、色彩 token、卡片/列表/详情布局和轻量背景。旧 cockpit 动画背景不再作为这两个管理页的主题入口。
 - `/playground/conn` 移动端列表/详情切换已修复：选择任务时显式隐藏列表并显示详情，点击详情返回按钮时恢复列表，不再出现列表和详情同时隐藏。
@@ -116,6 +105,12 @@ git log --oneline origin/main..HEAD
 
 ## 本轮最终验证
 
+- Team Task typed template parameters 验证：
+  - `node --test --test-concurrency=1 --import tsx test/team-task-store.test.ts test/team-task-routes.test.ts test/team-task-run-process.test.ts test/team-task-creator-skill.test.ts`：157/157 pass。
+  - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx src/tests/team-api.test.ts src/tests/app-static-contracts.test.ts`：231/231 pass。
+  - `npx tsc --noEmit`：pass。
+  - `git diff --check`：pass。
+  - 本地服务已重启：`ugk-pi` healthy，`ugk-pi-team-console` healthy，`ugk-pi-team-worker` 已重启；`http://127.0.0.1:3000/healthz` 返回 `{"ok":true}`，`http://127.0.0.1:5174/` 返回 200，`GET /v1/team/tasks` 返回 200。
 - Agents / Conn workbench refresh 验证：
   - `node --test --import tsx --test-name-pattern "standalone conn page follows the ops workbench visual system|standalone conn page keeps mobile list-detail navigation visible|standalone agents page follows the ops workbench visual system|GET /playground/agents|GET /playground/conn" test/server.test.ts`：24/24 pass。
   - `npx tsc --noEmit`：pass。

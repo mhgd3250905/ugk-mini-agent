@@ -1401,6 +1401,119 @@ describe("App", () => {
     });
   });
 
+  it("renders typed template parameter controls and submits normalized string bindings", async () => {
+    const templateTask: TeamCanvasTask = {
+      ...mockTeamTasks[0]!,
+      taskId: "task_template_email",
+      title: "发送邮件 {{subject}}",
+      workUnit: {
+        ...mockTeamTasks[0]!.workUnit,
+        title: "发送邮件 {{subject}}",
+        input: { text: "发送给 {{recipients}}：{{body}}" },
+      },
+      templateConfig: {
+        schemaVersion: "team/task-template-1",
+        parameters: [
+          { id: "recipients", label: "收件人", inputType: "email_list", required: true },
+          { id: "subject", label: "主题", inputType: "text", required: true },
+          { id: "body", label: "正文", inputType: "textarea", required: true },
+          {
+            id: "priority",
+            label: "优先级",
+            inputType: "select",
+            required: false,
+            defaultValue: "normal",
+            options: [
+              { value: "normal", label: "普通" },
+              { value: "high", label: "高" },
+            ],
+          },
+        ],
+      },
+      templateState: undefined,
+    };
+    const updatedTemplateTask: TeamCanvasTask = {
+      ...templateTask,
+      templateState: {
+        schemaVersion: "team/task-template-state-1",
+        currentBindings: {
+          recipients: "first@example.com,second@example.com",
+          subject: "每日简报",
+          body: "<p>完成</p>",
+          priority: "high",
+        },
+        updatedAt: "2026-06-03T00:00:00.000Z",
+      },
+    };
+    const run = canvasTaskRun(templateTask.taskId, "run_template_email");
+    run.source = {
+      type: "canvas-task",
+      taskId: templateTask.taskId,
+      templateBindings: updatedTemplateTask.templateState!.currentBindings,
+    };
+
+    window.localStorage.setItem("ugk-team-console:data-source", "live");
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/v1/team/console-layout") return new Response(JSON.stringify({ state: null, updatedAt: null }), { status: 200 });
+      if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [templateTask] }), { status: 200 });
+      if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse({});
+      if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === "/v1/team/task-dependencies") return new Response(JSON.stringify({ dependencies: [] }), { status: 200 });
+      if (url === "/v1/team/source-nodes") return new Response(JSON.stringify({ sourceNodes: [] }), { status: 200 });
+      if (url === "/v1/team/source-connections") return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+      if (url === `/v1/team/tasks/${templateTask.taskId}` && init?.method === "PATCH") {
+        return new Response(JSON.stringify({ task: updatedTemplateTask }), { status: 200 });
+      }
+      if (url === `/v1/team/tasks/${templateTask.taskId}/runs` && init?.method === "POST") {
+        return new Response(JSON.stringify(run), { status: 201 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+
+    const { container } = render(<App />);
+    const atlas = await waitFor(() => getAtlasNodes(container));
+    fireEvent.click(await within(atlas).findByRole("button", { name: templateTask.title }));
+    const menu = await screen.findByLabelText(`${templateTask.title} 操作菜单`);
+
+    fireEvent.click(within(menu).getByRole("button", { name: "运行" }));
+
+    const parameterPanel = await screen.findByLabelText(`${templateTask.title} Task 参数`);
+    expect(within(parameterPanel).getByLabelText(/正文/).tagName).toBe("TEXTAREA");
+    expect(within(parameterPanel).getByRole("combobox", { name: /优先级/ })).toBeInTheDocument();
+
+    fireEvent.change(within(parameterPanel).getByLabelText(/收件人/), {
+      target: { value: " first@example.com ; second@example.com " },
+    });
+    fireEvent.change(within(parameterPanel).getByLabelText(/主题/), {
+      target: { value: "每日简报" },
+    });
+    fireEvent.change(within(parameterPanel).getByLabelText(/正文/), {
+      target: { value: "<p>完成</p>" },
+    });
+    fireEvent.change(within(parameterPanel).getByRole("combobox", { name: /优先级/ }), {
+      target: { value: "high" },
+    });
+    fireEvent.click(within(parameterPanel).getByRole("button", { name: "保存并运行" }));
+
+    await waitFor(() => {
+      const runCall = vi.mocked(fetch).mock.calls.find(([url, init]) =>
+        String(url) === `/v1/team/tasks/${templateTask.taskId}/runs` && init?.method === "POST"
+      );
+      expect(runCall).toBeTruthy();
+      expect(JSON.parse(String(runCall![1]?.body))).toEqual({
+        templateBindings: {
+          recipients: "first@example.com,second@example.com",
+          subject: "每日简报",
+          body: "<p>完成</p>",
+          priority: "high",
+        },
+      });
+    });
+  });
+
   it("runs a live template Task directly when current bindings already exist", async () => {
     const templateTask: TeamCanvasTask = {
       ...mockTeamTasks[0]!,

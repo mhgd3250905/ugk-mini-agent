@@ -335,6 +335,51 @@ test("POST /v1/team/tasks/:taskId/runs saves template bindings and snapshots the
 	}
 });
 
+test("POST /v1/team/tasks/:taskId/runs rejects invalid typed template bindings", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const createRes = await app.inject({
+			method: "POST",
+			url: "/v1/team/tasks",
+			payload: {
+				...taskPayload,
+				title: "发送邮件 {{subject}}",
+				workUnit: {
+					...taskPayload.workUnit,
+					title: "发送邮件 {{subject}}",
+					input: { text: "发送给 {{recipients}}：{{subject}}" },
+				},
+				templateConfig: {
+					schemaVersion: "team/task-template-1",
+					parameters: [
+						{ id: "recipients", label: "收件人", inputType: "email_list", required: true },
+						{ id: "subject", label: "主题", inputType: "text", required: true },
+					],
+				},
+			},
+		});
+		assert.equal(createRes.statusCode, 201);
+		const template = createRes.json().task;
+
+		const invalidRun = await app.inject({
+			method: "POST",
+			url: `/v1/team/tasks/${template.taskId}/runs`,
+			payload: {
+				templateBindings: {
+					recipients: "first@example.com,not-an-email",
+					subject: "每日简报",
+				},
+			},
+		});
+
+		assert.equal(invalidRun.statusCode, 400);
+		assert.match(invalidRun.json().error, /template binding recipients must contain valid email addresses/);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("POST /v1/team/tasks creates a Discovery root Task resource", async () => {
 	const { app, root } = await buildTestServer();
 	try {

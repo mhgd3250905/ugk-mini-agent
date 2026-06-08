@@ -214,6 +214,75 @@ test("TaskStore stores current bindings separately from template config", async 
 	}
 });
 
+test("TaskStore validates typed template parameter bindings while keeping string snapshots", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-store-"));
+	try {
+		const store = createStore(root);
+		const template = await store.create({
+			...validTaskInput,
+			title: "发送邮件 {{subject}}",
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "发送邮件 {{subject}}",
+				input: { text: "发送给 {{recipients}}：{{body}}" },
+			},
+			templateConfig: {
+				schemaVersion: "team/task-template-1",
+				parameters: [
+					{ id: "recipients", label: "收件人", inputType: "email_list", required: true },
+					{ id: "subject", label: "主题", inputType: "text", required: true },
+					{ id: "body", label: "正文", inputType: "textarea", required: true },
+					{
+						id: "priority",
+						label: "优先级",
+						inputType: "select",
+						required: false,
+						defaultValue: "normal",
+						options: [
+							{ value: "normal", label: "普通" },
+							{ value: "high", label: "高" },
+						],
+					},
+				],
+			},
+		} as never);
+
+		const updated = await store.updateTemplateCurrentBindings(template.taskId, {
+			recipients: " first@example.com, second@example.com ",
+			subject: " 每日报告 ",
+			body: " <p>完成</p> ",
+		});
+
+		assert.deepEqual(updated.templateState?.currentBindings, {
+			recipients: "first@example.com,second@example.com",
+			subject: "每日报告",
+			body: "<p>完成</p>",
+			priority: "normal",
+		});
+
+		await assert.rejects(
+			() => store.updateTemplateCurrentBindings(template.taskId, {
+				recipients: "first@example.com,not-an-email",
+				subject: "每日报告",
+				body: "<p>完成</p>",
+			}),
+			{ message: "template binding recipients must contain valid email addresses" },
+		);
+
+		await assert.rejects(
+			() => store.updateTemplateCurrentBindings(template.taskId, {
+				recipients: "first@example.com",
+				subject: "每日报告",
+				body: "<p>完成</p>",
+				priority: "urgent",
+			}),
+			{ message: "template binding priority must be one of: normal, high" },
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("TaskStore clones a normal task without copying generated identity or run history", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-task-store-"));
 	try {

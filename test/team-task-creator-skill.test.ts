@@ -95,6 +95,24 @@ test("team-task-creator skill supports template Task creation with fillable para
 	assert.match(skill, /POST\s+\/v1\/team\/tasks/);
 });
 
+test("team-task-creator skill documents typed template parameters for repeated delivery tasks", async () => {
+	const skill = await readSkill();
+	assert.match(skill, /inputType/);
+	assert.match(skill, /email_list/);
+	assert.match(skill, /select[\s\S]*options|options[\s\S]*select/);
+	assert.match(skill, /recipients[\s\S]*\{\{recipients\}\}/);
+	assert.match(skill, /subject[\s\S]*\{\{subject\}\}/);
+});
+
+test("team-task-creator skill shields non-expert users from template and port jargon", async () => {
+	const skill = await readSkill();
+	assert.match(skill, /non-expert|外行|不会.*专业词|业务语言/i);
+	assert.match(skill, /do not ask.*templateConfig|不要.*templateConfig|不要.*inputType/i);
+	assert.match(skill, /收件人|邮件标题|邮件正文/);
+	assert.match(skill, /infer.*recipients|自动.*recipients|映射.*recipients/i);
+	assert.match(skill, /plain-language|自然语言|人话/i);
+});
+
 test("team-task-creator skill distinguishes template creation from cloning or running", async () => {
 	const skill = await readSkill();
 	assert.match(skill, /POST\s+\/v1\/team\/tasks\/:taskId\/clone/);

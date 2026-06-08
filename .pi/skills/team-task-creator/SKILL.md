@@ -29,6 +29,23 @@ This skill has two activation paths:
 - `checkerAgentId` is required. It is the Agent that will accept or reject the WorkUnit result in a future run.
 - A Task is not `Plan tasks.length === 1`, not a single-task Plan, and not a TeamUnit.
 
+## Plain-Language User Guidance Contract
+
+The user is often a non-expert / 外行 and may not know professional terms. Talk to the user in business language / 业务语言 and plain-language / 人话 first, then translate their answers into the internal Task JSON yourself. Do not ask the user to provide `templateConfig`, `inputType`, `inputPorts`, `outputPorts`, `canvasKind`, `discoverySpec`, Agent ids, or other schema fields. Those are implementation details for the preview, not vocabulary the user must learn.
+
+When the user describes a reusable task in natural language / 自然语言, infer the stable parts and the fill-in-later parts yourself. Explain the recommendation in user-facing terms, for example:
+
+> 这个任务以后可能会换收件人和邮件标题，我会把“收件人”和“邮件标题”做成运行前可填写的项；邮件正文来自上游 HTML，不需要每次手填。
+
+For email or notification tasks, ask about business choices, not schema:
+
+- "这封邮件通常发给谁？可以给一个或多个邮箱。"
+- "邮件标题是固定的，还是每次运行前填写？"
+- "邮件正文是从上游页面/HTML 任务接收，还是由这个任务自己生成？"
+- "是否需要抄送、密送或回复地址？没有就不加。"
+
+Internally map these answers to template parameters and ports. 自动把“收件人”映射到 `recipients` with `inputType: "email_list"`, "邮件标题" maps to `subject` with `inputType: "text"`, and "邮件正文来自上游 HTML" maps to an HTML input port. The preview may show the final JSON after the user confirms the human-readable design, but the conversation must not require the user to say `recipients`, `{{recipients}}`, `email_list`, or `inputPorts`.
+
 ## Template Task Contract
 
 Use a template Task / 模板 Task when the user wants a reusable Task shape where only a keyword or small variable changes later, such as "域名查询模板，关键词先空出来", "后续填写关键词", "各大论坛搜索 {{keyword}} 讨论", or a reusable md-to-html utility. A template Task is still created through `POST /v1/team/tasks`; it is not a run and must not start execution.
@@ -46,12 +63,40 @@ Template preview payloads must include `templateConfig`:
         "id": "keyword",
         "label": "关键词",
         "description": "后续运行、复制或实例化时填写的查询关键词。",
-        "required": true
+        "required": true,
+        "inputType": "text"
       }
     ]
   }
 }
 ```
+
+Template parameters may define an optional `inputType` so Team Console can render the right control and the backend can validate obvious mistakes before a run starts. Supported values are:
+
+- `text`: short single-line text. This is the default for old templates.
+- `textarea`: longer free-form text.
+- `email`: one email address.
+- `email_list`: one or more email addresses separated by comma, semicolon, or newline.
+- `number`: numeric text.
+- `select`: one value from `options`.
+
+For `select`, include non-empty `options`:
+
+```json
+{
+  "id": "priority",
+  "label": "优先级",
+  "inputType": "select",
+  "required": false,
+  "defaultValue": "normal",
+  "options": [
+    { "value": "normal", "label": "普通" },
+    { "value": "high", "label": "高" }
+  ]
+}
+```
+
+When a Task sends email, reminders, notifications, or other repeated delivery actions, do not hard-code addresses or titles into the WorkUnit unless the user explicitly says they must never change. Prefer template parameters such as `recipients` with `inputType: "email_list"` and `subject` with `inputType: "text"`, then use `{{recipients}}` and `{{subject}}` in the command instructions and acceptance rules.
 
 When the user wants to run an existing template Task, do not clone it as the main path. Team Console and the run API will store current/recent bindings on the template Task and snapshot each run in `run.source.templateBindings`; missing required parameters are collected before `POST /v1/team/tasks/:taskId/runs`.
 

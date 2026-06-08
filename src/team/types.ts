@@ -375,6 +375,16 @@ export interface TeamTaskTemplateParameter {
 	description?: string;
 	required?: boolean;
 	defaultValue?: string;
+	inputType?: TeamTaskTemplateParameterInputType;
+	options?: TeamTaskTemplateParameterOption[];
+	placeholder?: string;
+}
+
+export type TeamTaskTemplateParameterInputType = "text" | "textarea" | "email" | "email_list" | "number" | "select";
+
+export interface TeamTaskTemplateParameterOption {
+	value: string;
+	label: string;
 }
 
 export interface TeamTaskTemplateConfig {
