@@ -161,6 +161,11 @@ export function getPlaygroundStyles(): string {
 			flex: 0 0 auto;
 		}
 
+		:root[data-theme="dark"] .ugk-svg-logo-light,
+		:root[data-theme="light"] .ugk-svg-logo-dark {
+			display: none;
+		}
+
 		.desktop-brand {
 			display: inline-flex;
 			align-items: center;
@@ -719,10 +724,6 @@ export function getPlaygroundStyles(): string {
 			height: auto;
 			opacity: 1;
 			filter: saturate(0.92);
-		}
-
-		.chat-stage-watermark .ugk-ascii-logo-watermark {
-			display: none;
 		}
 
 		.ugk-ascii-logo-watermark {
@@ -4937,11 +4938,6 @@ export function getPlaygroundStyles(): string {
 				opacity: 0.15;
 			}
 
-			:root[data-theme="dark"] .ugk-svg-logo-light,
-			:root[data-theme="light"] .ugk-svg-logo-dark {
-				display: none;
-			}
-
 			:root[data-theme="light"] .ugk-svg-logo-watermark {
 				opacity: 0.25;
 			}
@@ -4991,10 +4987,6 @@ export function getPlaygroundStyles(): string {
 				width: min(180px, 48vw);
 				max-width: 48vw;
 				opacity: 0.11;
-			}
-
-			.chat-stage-watermark .ugk-ascii-logo-watermark {
-				display: none;
 			}
 
 			.scroll-to-bottom-button {

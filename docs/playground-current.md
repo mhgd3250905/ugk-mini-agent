@@ -505,8 +505,8 @@
 
 - 当前品牌文案为 `UGK CLAW`
 - 桌面端首页重构为极客 cockpit 布局：`shell` 是 `250px-280px` 左侧历史会话栏 + 右侧工作台的两列网格，左侧历史会话栏头部由真实 DOM 的彩色 ASCII `desktop-brand` 组成唯一品牌信号，`topbar` 只承载右侧紧凑命令条，`chat-stage` 是真正的主工作画布。
-- `chat-stage` 中心使用项目 ASCII 字标作为真实 DOM 水印：暗色主题为低透明冷白 / 青蓝，浅色主题为更低透明蓝灰；它必须在消息、composer 和弹层之下，不参与交互，也不能影响正文阅读。旧的 landing `hero-wordmark / hero-version` 空态 logo、旧 topbar 图片 logo 和旧 `UGK CLAW` 伪元素文字不再渲染，避免两套品牌层叠在聊天背景上。
-- ASCII 标识必须使用支持 box drawing 的系统等宽字体链 `"Courier New", Consolas, "Cascadia Mono", monospace`，不要套项目默认 `Agave` mono，也不要再用 `.chat-stage::before { content: ... }` 承载整段字标；`Agave` 和 CSS 伪元素缩放都会把 `██╗╚═` 这类字符排成错位鬼影。
+- `chat-stage` 中心使用 UGK Claw SVG 作为真实 DOM 水印：暗色主题显示 `public/ugk-claw-logo.svg`，浅色主题显示 `public/ugk-claw-logo-light.svg`，两张 SVG 必须通过全局 theme selector 互斥显示，不能同时铺在背景上。它必须在消息、composer 和弹层之下，不参与交互，也不能影响正文阅读。旧的 landing `hero-wordmark / hero-version` 空态 logo、旧 topbar 图片 logo、旧 ASCII 画布水印和旧 `UGK CLAW` 伪元素文字不再渲染，避免两套品牌层叠在聊天背景上。
+- ASCII 标识仍用于桌面历史栏品牌等文本标识，必须使用支持 box drawing 的系统等宽字体链 `"Courier New", Consolas, "Cascadia Mono", monospace`，不要套项目默认 `Agave` mono，也不要再用 `.chat-stage::before { content: ... }` 承载整段字标；`Agave` 和 CSS 伪元素缩放都会把 `██╗╚═` 这类字符排成错位鬼影。
 - 旧的 `.shell[data-transcript-state="idle"] .transcript-current:empty::before` 空态伪元素 logo 已下线；空 transcript 不再自己生成第二套品牌标识。
 - 桌面端 landing 输入区是底部居中的 `760px` command deck，不再把整个页面做成居中表单。
 - 手机端顶部状态栏左侧复用桌面 `desktop-brand` 的彩色 ASCII 图案，只做容器尺寸适配；不再渲染 `/ugk-claw-mobile-logo.png` 图片、右侧 `UGK Claw` 文字字标或单独缩水版 `ugk-ascii-logo-mobile`。

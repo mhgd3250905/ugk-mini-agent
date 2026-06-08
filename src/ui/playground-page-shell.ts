@@ -337,7 +337,6 @@ ${input.playgroundScript ?? ""}</script>`;
 			<main id="chat-stage" class="chat-stage" data-workspace-mode="chat">
 				<div class="chat-stage-watermark" aria-hidden="true">
 					${renderMobileSvgLogo("ugk-svg-logo-watermark", 240, 60, "")}
-					${renderAsciiLogo("ugk-ascii-logo-watermark")}
 				</div>
 				<div hidden>
 					<div class="meta-chip">
