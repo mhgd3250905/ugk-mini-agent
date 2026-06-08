@@ -123,6 +123,7 @@ interface ExecutionMapProps {
   taskChildBranchPanels?: Array<{
     id: string;
     panel: ReactNode;
+    maximizedPanel?: ReactNode;
     width?: number;
     height?: number;
     sourceId?: string;
@@ -2431,7 +2432,10 @@ export function ExecutionMap({
     anchors: connectorAnchors(taskNodeRect(entry.node, tasksById?.get(entry.node.taskId)), entry.rect),
   }));
   const maximizedTaskPanel = maximizedBranch?.kind === "task-panel"
-    ? taskChildBranchPanelsLayout.find((p) => p.id === maximizedBranch.panelId)?.panel ?? null
+    ? (() => {
+      const panel = taskChildBranchPanelsLayout.find((p) => p.id === maximizedBranch.panelId);
+      return panel?.maximizedPanel ?? panel?.panel ?? null;
+    })()
     : null;
   const activeMaximizedAgentBranchPanel = maximizedAgentBranchPanel ?? agentBranchPanel;
   const maximizedBranchPanel = maximizedBranch?.kind === "agent" && activeMaximizedAgentBranchPanel

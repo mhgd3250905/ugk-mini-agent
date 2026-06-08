@@ -26,8 +26,8 @@
 ## 当前 Git 现场
 
 - 当前分支：`main`。
-- `origin/main` 与 `gitee/main` 此前均已同步到 `325ed4ec61225622f146ddd9f8581070301854a4`（`Add API source management workbench`）。本轮 Team Task typed template parameters 提交后，本地 `main` 会领先远端 1 个提交；是否推送以用户后续指令为准。
-- 本轮 Git 保存范围：Team Task 模板参数 `inputType` 合同、后端绑定归一化/校验、Team Console 参数控件渲染、`/team-task` skill 自然语言引导、相关测试和文档。
+- `origin/main` 与 `gitee/main` 此前均已同步到 `325ed4ec61225622f146ddd9f8581070301854a4`（`Add API source management workbench`）。本轮 Team Task typed template parameters 与 Task Leader mini chat 提交后，本地 `main` 会领先远端 2 个提交；是否推送以用户后续指令为准。
+- 本轮 Git 保存范围：Team Task 模板参数 `inputType` 合同、后端绑定归一化/校验、Team Console 参数控件渲染、`/team-task` skill 自然语言引导、Task 操作菜单“对话 Leader”mini/full iframe 对齐、相关测试和文档。
 - `origin`：GitHub `https://github.com/mhgd3250905/ugk-claw-personal.git`。
 - `gitee`：`https://gitee.com/ksheng3250905/ugk-pi-claw.git`。
 - 不要提交这些本地未跟踪物件：`.codex/plans/2026-06-07-discovery-channel-set.md`、`.codex/plans/2026-06-08-api-source-management.md`、`docs/windows-native-runtime-feasibility.md`、`Find_Old_Google_Root_Key_Source.md`、`Google_Root_Cert_Update_Report.md`、`public/rsa-root-cert-report.html`、runtime 数据、截图、报告、临时文件。
@@ -46,6 +46,7 @@ git log --oneline origin/main..HEAD
 
 - Team Task 模板参数已支持 typed input contract。`templateConfig.parameters[].inputType` 支持 `text`、`textarea`、`email`、`email_list`、`number`、`select`；旧模板缺字段按 `text` 兼容读取。运行和保存时绑定快照仍保持 `Record<string,string>`，但后端会校验邮箱、邮箱列表、数字和下拉选项，`email_list` 支持逗号、分号和换行分隔后归一化。
 - Team Console 模板参数面板和复制面板会按 `inputType` 渲染控件：`textarea` 用多行输入，`select` 用下拉，`email` / `number` 使用对应 HTML input 类型，`email_list` 提交前归一化。`task_8dc366711f37` 这类可填写参数 Task 可直接通过 UI 测试。
+- Team Console Task 操作菜单里的“对话 Leader”已和普通 Agent 对话分支对齐：普通 Task Leader 子面板 iframe 使用 `embedMode=mini`，最大化 overlay 使用 `embedMode=full`。Task child panel 支持 `maximizedPanel`，避免小窗和最大化共用同一份 iframe URL。
 - `/team-task` skill 已补充自然语言设计引导：用户不需要知道 `templateConfig`、`inputType`、`inputPorts` 等内部字段；skill 必须用业务语言询问收件人、邮件标题、邮件正文来源等，再自行映射为模板参数和 typed ports。
 - API 源管理工作台已实现：`/playground/model-sources` 可查看 bundled/custom provider、查看全局默认 / Agent profile / Conn 的有效使用绑定，并在同页修改可编辑对象绑定的 provider/model。
 - `/playground/agents` 与 `/playground/conn` 已切换到共享 `ops-workbench` 视觉系统，和 `/playground/model-sources` 保持同一套管理工作台密度、色彩 token、卡片/列表/详情布局和轻量背景。旧 cockpit 动画背景不再作为这两个管理页的主题入口。
@@ -105,6 +106,12 @@ git log --oneline origin/main..HEAD
 
 ## 本轮最终验证
 
+- Team Task Leader mini chat 验证：
+  - `npm --prefix apps/team-console test -- --run src/tests/app-task-leader.test.tsx src/tests/app-branch-windowing.test.tsx`：23/23 pass。
+  - `npx tsc --noEmit`：pass。
+  - `git diff --check`：pass。
+  - `npm --prefix apps/team-console run build`：pass；仅既有 Vite chunk size warning。
+  - Browser `http://127.0.0.1:5174/`：重启 `ugk-pi-team-console` 并硬刷新后，Task 操作菜单“对话 Leader”小窗 iframe URL 为 `embedMode=mini`；点击“最大化对话分支”后 overlay iframe URL 为 `embedMode=full`。
 - Team Task typed template parameters 验证：
   - `node --test --test-concurrency=1 --import tsx test/team-task-store.test.ts test/team-task-routes.test.ts test/team-task-run-process.test.ts test/team-task-creator-skill.test.ts`：157/157 pass。
   - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx src/tests/team-api.test.ts src/tests/app-static-contracts.test.ts`：231/231 pass。

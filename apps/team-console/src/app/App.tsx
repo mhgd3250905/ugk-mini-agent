@@ -790,12 +790,12 @@ function formatTaskLeaderContext(task: TeamCanvasTask): string {
   ].join("\n");
 }
 
-function buildTaskLeaderPlaygroundUrl(task: TeamCanvasTask): string {
+function buildTaskLeaderPlaygroundUrl(task: TeamCanvasTask, embedMode: AgentPlaygroundEmbedMode = "full"): string {
   const params = new URLSearchParams({
     view: "chat",
     agentId: task.leaderAgentId,
     embed: "team-console",
-    embedMode: "full",
+    embedMode,
     teamTaskId: task.taskId,
     teamTaskMode: "edit",
   });
@@ -4663,6 +4663,7 @@ export function App() {
       autoHeight?: boolean;
       resizable?: boolean;
       maximizable?: boolean;
+      maximizedPanel?: ReactNode;
       interactive?: boolean;
       minWidth?: number;
       minHeight?: number;
@@ -6024,6 +6025,66 @@ export function App() {
         const copyEntry = taskLeaderCopyByTaskId[task.taskId] ?? null;
         const copyState = copyEntry?.state ?? "idle";
         const manualCopyText = copyEntry?.manualCopyText ?? null;
+        const renderTaskLeaderChatPanel = (embedMode: AgentPlaygroundEmbedMode) => (
+          <section className="agent-playground-branch emap-dialog-branch task-leader-chat-branch" aria-label={`${task.title} leader 对话`}>
+            <header className="agent-playground-branch-head">
+              <div className="agent-playground-branch-title">
+                <span>Leader 对话</span>
+                <strong>{task.title}</strong>
+                <code>{task.taskId}</code>
+              </div>
+              <div className="agent-playground-branch-actions">
+                <button
+                  type="button"
+                  className="task-action-menu-button"
+                  onClick={() => { void copyTaskLeaderContext(task.taskId, formatTaskLeaderContext(task)); }}
+                  aria-label="复制 Task 上下文"
+                >
+                  复制 Task 上下文
+                </button>
+                {copyState !== "idle" && (
+                  <span role="status" className="task-leader-copy-status">
+                    {copyState === "copied" ? "已复制" : "复制失败"}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="agent-playground-branch-collapse"
+                  onClick={() => setExpandedTaskBranches((current) =>
+                    current.map((item) =>
+                      item.nodeId === branch.nodeId ? { ...item, detailMode: null } : item
+                    )
+                  )}
+                  aria-label={`收起 ${task.title} leader 对话`}
+                >
+                  收起
+                </button>
+              </div>
+            </header>
+            <div className="task-leader-branch-hint">
+              在对话中使用 <code>/team-task</code> 创建或更新这个 Task。Task 数据必须通过后端 API 写入。
+            </div>
+            {copyState === "failed" && manualCopyText && (
+              <div className="task-leader-copy-fallback" role="group" aria-label="Task 上下文手动复制">
+                <p>自动复制失败。下面文本已选中，按 Ctrl+C 后再粘贴到 Leader 对话。</p>
+                <textarea
+                  ref={(node) => registerTaskLeaderManualCopyRef(task.taskId, node)}
+                  aria-label="手动复制 Task 上下文"
+                  readOnly
+                  value={manualCopyText}
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+              </div>
+            )}
+            <iframe
+              className="agent-playground-iframe"
+              title={`${task.title} leader 对话`}
+              src={buildTaskLeaderPlaygroundUrl(task, embedMode)}
+              referrerPolicy="no-referrer"
+              allow="clipboard-write; clipboard-read"
+            />
+          </section>
+        );
         panels.push({
           id: `task-leader-chat-${branch.nodeId}`,
           width: 820,
@@ -6032,66 +6093,8 @@ export function App() {
           resizable: true,
           maximizable: true,
           interactive: true,
-          panel: (
-            <section className="agent-playground-branch emap-dialog-branch task-leader-chat-branch" aria-label={`${task.title} leader 对话`}>
-              <header className="agent-playground-branch-head">
-                <div className="agent-playground-branch-title">
-                  <span>Leader 对话</span>
-                  <strong>{task.title}</strong>
-                  <code>{task.taskId}</code>
-                </div>
-                <div className="agent-playground-branch-actions">
-                  <button
-                    type="button"
-                    className="task-action-menu-button"
-                    onClick={() => { void copyTaskLeaderContext(task.taskId, formatTaskLeaderContext(task)); }}
-                    aria-label="复制 Task 上下文"
-                  >
-                    复制 Task 上下文
-                  </button>
-                  {copyState !== "idle" && (
-                    <span role="status" className="task-leader-copy-status">
-                      {copyState === "copied" ? "已复制" : "复制失败"}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    className="agent-playground-branch-collapse"
-                    onClick={() => setExpandedTaskBranches((current) =>
-                      current.map((item) =>
-                        item.nodeId === branch.nodeId ? { ...item, detailMode: null } : item
-                      )
-                    )}
-                    aria-label={`收起 ${task.title} leader 对话`}
-                  >
-                    收起
-                  </button>
-                </div>
-              </header>
-              <div className="task-leader-branch-hint">
-                在对话中使用 <code>/team-task</code> 创建或更新这个 Task。Task 数据必须通过后端 API 写入。
-              </div>
-              {copyState === "failed" && manualCopyText && (
-                <div className="task-leader-copy-fallback" role="group" aria-label="Task 上下文手动复制">
-                  <p>自动复制失败。下面文本已选中，按 Ctrl+C 后再粘贴到 Leader 对话。</p>
-                  <textarea
-                    ref={(node) => registerTaskLeaderManualCopyRef(task.taskId, node)}
-                    aria-label="手动复制 Task 上下文"
-                    readOnly
-                    value={manualCopyText}
-                    onFocus={(event) => event.currentTarget.select()}
-                  />
-                </div>
-              )}
-              <iframe
-                className="agent-playground-iframe"
-                title={`${task.title} leader 对话`}
-                src={buildTaskLeaderPlaygroundUrl(task)}
-                referrerPolicy="no-referrer"
-                allow="clipboard-write; clipboard-read"
-              />
-            </section>
-          ),
+          panel: renderTaskLeaderChatPanel("mini"),
+          maximizedPanel: renderTaskLeaderChatPanel("full"),
         });
         continue;
       }

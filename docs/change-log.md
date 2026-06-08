@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-08 — Team Task Leader mini chat alignment
+
+- **主题**: Team Console Task 操作菜单里的“对话 Leader”改为和普通 Agent 对话分支一致的小窗/最大化两阶段展示。普通 Task Leader 子面板使用 `embedMode=mini`，只保留紧凑聊天核心；最大化 overlay 使用 `embedMode=full`，恢复完整 Playground。
+- **影响范围**: 仅 5174 Team Console 的 Task Leader iframe 子面板和 Task child panel 最大化渲染。主 `/playground` 产品页、Task 定义、`/team-task` skill、运行态数据均不变。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/tests/app-task-leader.test.tsx`。
+
 ## 2026-06-08 — Team Task typed template parameters
 
 - **主题**: Team Task 模板参数新增 `inputType` 合同。旧模板参数继续按默认 `text` 读取；新参数可声明 `text`、`textarea`、`email`、`email_list`、`number` 或 `select`。绑定快照仍保持 `Record<string,string>`，但后端会在保存/运行前校验邮箱、邮箱列表、数字和下拉选项，Team Console 参数面板与复制面板按类型渲染控件。

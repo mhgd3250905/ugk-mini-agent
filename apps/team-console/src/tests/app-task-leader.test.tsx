@@ -41,7 +41,7 @@ describe("App", () => {
       expect(iframe).toHaveAttribute("allow", "clipboard-write; clipboard-read");
       expect(iframe?.getAttribute("src")).toContain("/playground?view=chat&agentId=main");
       expect(iframe?.getAttribute("src")).toContain("embed=team-console");
-      expect(iframe?.getAttribute("src")).toContain("embedMode=full");
+      expect(iframe?.getAttribute("src")).toContain("embedMode=mini");
       expect(iframe?.getAttribute("src")).toContain("teamTaskId=task_research_medtrum");
       expect(iframe?.getAttribute("src")).toContain("teamTaskMode=edit");
     });
@@ -73,6 +73,27 @@ describe("App", () => {
       expect(iframe?.getAttribute("src")).toContain("embed=team-console");
       expect(iframe?.getAttribute("src")).toContain("teamTaskId=task_research_medtrum");
       expect(iframe?.getAttribute("src")).toContain("teamTaskMode=edit");
+    });
+
+    it("uses the full playground layout only when the Task leader chat is maximized", async () => {
+      const { container } = render(<App />);
+
+      fireEvent.click(await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
+      fireEvent.click(screen.getByRole("button", { name: "对话 Leader" }));
+
+      const inlineIframe = container.querySelector(".execution-map-scroll .task-leader-chat-branch iframe") as HTMLIFrameElement | null;
+      expect(inlineIframe?.getAttribute("src")).toContain("embedMode=mini");
+
+      fireEvent.click(screen.getByRole("button", { name: "最大化对话分支" }));
+
+      const overlay = document.querySelector(".emap-maximized-branch-shell") as HTMLElement | null;
+      expect(overlay).toBeTruthy();
+      expect(container.querySelector(".execution-map-scroll .task-leader-chat-branch")).toBeNull();
+      const overlayIframe = overlay!.querySelector(".task-leader-chat-branch iframe") as HTMLIFrameElement | null;
+      expect(overlayIframe).toBeTruthy();
+      expect(overlayIframe?.getAttribute("src")).toContain("embedMode=full");
+      expect(overlayIframe?.getAttribute("src")).toContain("teamTaskId=task_research_medtrum");
+      expect(overlayIframe?.getAttribute("src")).toContain("teamTaskMode=edit");
     });
 
     it("copies current Task context from the Leader chat branch header", async () => {
