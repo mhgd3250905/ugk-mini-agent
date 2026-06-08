@@ -3851,7 +3851,12 @@ test("GET /playground uses touch-first mobile panels for library, tasks, conn, a
 	assert.doesNotMatch(response.body, /mobile-conversation-preview/);
 	assert.doesNotMatch(response.body, /metaCount/);
 	assert.match(response.body, /\.desktop-conversation-list \.conversation-item-menu-trigger\s*\{[\s\S]*opacity:\s*0;/);
-	assert.match(response.body, /\.desktop-conversation-list \.conversation-item-shell\[class\*="conversation-bg-"\] \.mobile-conversation-item\s*\{[\s\S]*background:\s*transparent;/);
+	assert.match(response.body, /\.desktop-conversation-list \.conversation-item-shell\[class\*="conversation-bg-"\] \.mobile-conversation-item\s*\{[\s\S]*background:\s*var\(--conversation-card-bg\);[\s\S]*opacity:\s*1;/);
+	assert.match(response.body, /\.desktop-conversation-list \.conversation-item-shell\[class\*="conversation-bg-"\] \.mobile-conversation-item:hover:not\(:disabled\),[\s\S]*background:\s*var\(--conversation-card-hover-bg\);/);
+	assert.match(response.body, /\.desktop-conversation-list \.conversation-item-shell\[class\*="conversation-bg-"\] \.mobile-conversation-title\s*\{[\s\S]*color:\s*#172033;/);
+	assert.match(response.body, /\.desktop-conversation-list \.conversation-item-shell\[class\*="conversation-bg-"\] \.conversation-item-menu-trigger\s*\{[\s\S]*color:\s*rgba\(23, 32, 51, 0\.68\);/);
+	assert.match(response.body, /\.desktop-conversation-list \.conversation-item-shell\[class\*="conversation-bg-"\]:hover \.conversation-item-menu-trigger,[\s\S]*opacity:\s*1;/);
+	assert.match(response.body, /:root\[data-theme="light"\] \.desktop-conversation-list \.conversation-item-shell\[class\*="conversation-bg-"\] \.mobile-conversation-item\s*\{[\s\S]*background:\s*var\(--conversation-card-bg\);/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\s*\{[\s\S]*min-height:\s*72px;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\s*\{[\s\S]*padding:\s*12px 46px 12px 14px;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-item\s*\{[\s\S]*border:\s*0;/);

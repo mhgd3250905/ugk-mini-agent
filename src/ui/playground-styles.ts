@@ -4359,24 +4359,36 @@ export function getPlaygroundStyles(): string {
 		}
 
 		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item {
-			background: #101827;
+			background: var(--conversation-card-bg);
+			opacity: 1;
 		}
 
 		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item:hover:not(:disabled),
 		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item:focus-visible {
-			background: #142033;
+			background: var(--conversation-card-hover-bg);
 		}
 
 		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item.is-active {
-			background: #14243a;
+			background: var(--conversation-card-active-bg);
 		}
 
 		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-title {
-			color: rgba(246, 249, 255, 0.82);
+			color: #172033;
 		}
 
 		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-meta span {
-			color: rgba(226, 234, 255, 0.34);
+			color: rgba(23, 32, 51, 0.58);
+		}
+
+		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .conversation-item-menu-trigger {
+			color: rgba(23, 32, 51, 0.68);
+		}
+
+		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"]:hover .conversation-item-menu-trigger,
+		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"]:focus-within .conversation-item-menu-trigger,
+		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .conversation-item-menu-trigger[aria-expanded="true"] {
+			color: #111827;
+			opacity: 1;
 		}
 
 		.desktop-conversation-list .conversation-item-shell.is-pinned .mobile-conversation-item::after {

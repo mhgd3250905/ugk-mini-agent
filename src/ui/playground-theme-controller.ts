@@ -137,16 +137,16 @@ export function getPlaygroundThemeStyles(): string {
 		}
 
 		:root[data-theme="light"] .desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item {
-			background: #f6f9fe;
+			background: var(--conversation-card-bg);
 		}
 
 		:root[data-theme="light"] .desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item:hover:not(:disabled),
 		:root[data-theme="light"] .desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item:focus-visible {
-			background: #edf3fb;
+			background: var(--conversation-card-hover-bg);
 		}
 
 		:root[data-theme="light"] .desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item.is-active {
-			background: #dfeaf7;
+			background: var(--conversation-card-active-bg);
 		}
 
 		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-title,
