@@ -2154,6 +2154,7 @@ test("standalone conn page follows the ops workbench visual system", () => {
 	assert.match(response, /id="confirm-overlay" class="sp-overlay"/);
 	assert.match(response, /class="sp-panel sp-confirm-panel"/);
 	assert.match(response, /id="confirm-body" class="sp-confirm-message"/);
+	assert.match(response, /body\.textContent = String\(opts\.message \?\? opts\.description \?\? ""\)/);
 	assert.match(response, /\.sp-confirm-panel\s*\{[\s\S]*width:\s*min\(520px, calc\(100vw - 36px\)\);[\s\S]*border:\s*0;[\s\S]*background:\s*var\(--confirm-panel\);/);
 	assert.match(response, /\.sp-confirm-panel \.sp-panel-body\s*\{[\s\S]*border-radius:\s*6px;[\s\S]*background:\s*var\(--confirm-body\);/);
 	assert.match(response, /\.sp-confirm-panel \.sp-btn-danger\s*\{[\s\S]*background:\s*var\(--confirm-danger\);/);
@@ -2183,6 +2184,7 @@ test("standalone agents page follows the ops workbench visual system", () => {
 	assert.match(response, /id="confirm-overlay" class="sp-overlay"/);
 	assert.match(response, /class="sp-panel sp-confirm-panel"/);
 	assert.match(response, /id="confirm-body" class="sp-confirm-message"/);
+	assert.match(response, /body\.textContent = String\(opts\.message \?\? opts\.description \?\? ""\)/);
 	assert.match(response, /\.sp-confirm-panel \.sp-panel-foot\s*\{[\s\S]*border-top:\s*0;/);
 	assert.doesNotMatch(response, /body data-standalone-theme="cockpit"/);
 });

@@ -708,7 +708,7 @@ export function getStandaloneBaseJs(): string {
 				const cancelBtn = document.getElementById("confirm-cancel");
 				const okBtn = document.getElementById("confirm-ok");
 				if (title) title.textContent = opts.title || "请确认";
-				if (body) body.textContent = opts.message || "";
+				if (body) body.textContent = String(opts.message ?? opts.description ?? "");
 				if (okBtn) {
 					okBtn.textContent = opts.confirmLabel || "确认";
 					okBtn.className = "sp-btn" + (opts.tone === "danger" ? " sp-btn-danger" : "");
