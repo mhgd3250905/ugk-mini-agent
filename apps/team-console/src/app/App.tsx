@@ -3304,6 +3304,17 @@ export function App() {
     });
   }, []);
 
+  const setAllActiveDiscoveryChannelTaskSelection = useCallback((
+    discoveryTaskId: string,
+    activeGeneratedTaskIds: string[],
+    selected: boolean,
+  ) => {
+    setSelectedDiscoveryChannelTaskIdsByTaskId((current) => ({
+      ...current,
+      [discoveryTaskId]: selected ? activeGeneratedTaskIds : [],
+    }));
+  }, []);
+
   const clearDiscoveryChannelTaskSelection = useCallback((discoveryTaskId: string) => {
     setSelectedDiscoveryChannelTaskIdsByTaskId((current) => ({ ...current, [discoveryTaskId]: [] }));
     setSelectedDiscoveryChannelSetIdByTaskId((current) => ({ ...current, [discoveryTaskId]: null }));
@@ -4985,6 +4996,10 @@ export function App() {
         ].filter((taskId): taskId is string => typeof taskId === "string" && taskId.length > 0));
         const activeGeneratedTaskCards = generatedTaskCards.filter((card) => card.itemStatus !== "stale");
         const staleGeneratedTaskCards = generatedTaskCards.filter((card) => card.itemStatus === "stale");
+        const activeGeneratedTaskIds = activeGeneratedTaskCards.map((card) => card.generatedTask.taskId);
+        const selectedActiveGeneratedTaskCount = activeGeneratedTaskIds.filter((taskId) => selectedDiscoveryChannelTaskIdSet.has(taskId)).length;
+        const allActiveGeneratedTasksSelected = activeGeneratedTaskIds.length > 0
+          && selectedActiveGeneratedTaskCount === activeGeneratedTaskIds.length;
         const forceVisibleStaleTaskCards = staleGeneratedTaskCards.filter((card) => forceVisibleQueuedTaskIds.has(card.generatedTask.taskId));
         const staleGeneratedTaskCardsVisible = branch.discoveryStaleExpanded || forceVisibleStaleTaskCards.length > 0;
         const generatedPreviewCards = branch.discoveryQueueExpanded
@@ -5524,11 +5539,36 @@ export function App() {
                   >
                     <div className="discovery-subcanvas-lane-head">
                       <span>generated Task 网格</span>
-                      <strong>
-                        {runningGeneratedTaskCount} running · {waitingGeneratedTaskCount} queued · {doneGeneratedTaskCount} done
-                        {failedGeneratedTaskCount > 0 ? ` · ${failedGeneratedTaskCount} failed` : ""}
-                        {staleGeneratedTaskCards.length > 0 ? ` · ${staleGeneratedTaskCards.length} stale hidden` : ""}
-                      </strong>
+                      <div className="discovery-subcanvas-lane-head-actions">
+                        <strong>
+                          {runningGeneratedTaskCount} running · {waitingGeneratedTaskCount} queued · {doneGeneratedTaskCount} done
+                          {failedGeneratedTaskCount > 0 ? ` · ${failedGeneratedTaskCount} failed` : ""}
+                          {staleGeneratedTaskCards.length > 0 ? ` · ${staleGeneratedTaskCards.length} stale hidden` : ""}
+                        </strong>
+                        {activeGeneratedTaskIds.length > 0 ? (
+                          <span className="discovery-subcanvas-selection-count">
+                            selected {selectedActiveGeneratedTaskCount}/{activeGeneratedTaskIds.length}
+                          </span>
+                        ) : null}
+                        {activeGeneratedTaskIds.length > 0 ? (
+                          <button
+                            type="button"
+                            className="discovery-subcanvas-select-all"
+                            aria-label={`${allActiveGeneratedTasksSelected ? "取消全选" : "全选"} ${task.title} 有效 generated Task`}
+                            aria-pressed={allActiveGeneratedTasksSelected}
+                            data-generated-action={allActiveGeneratedTasksSelected ? "clear-active-selection" : "select-active-all"}
+                            onClick={() => {
+                              setAllActiveDiscoveryChannelTaskSelection(
+                                task.taskId,
+                                activeGeneratedTaskIds,
+                                !allActiveGeneratedTasksSelected,
+                              );
+                            }}
+                          >
+                            {allActiveGeneratedTasksSelected ? "取消全选" : "全选有效项"}
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
                     {activeGeneratedTaskCards.length === 0 ? (
                       <div className="discovery-subcanvas-empty compact">本轮没有 active generated Task。</div>

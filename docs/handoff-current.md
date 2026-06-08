@@ -58,6 +58,7 @@ git log --oneline origin/main..HEAD
 - 新增 `GET /v1/team/tasks/:taskId/discovery-channel-sets`、`POST /v1/team/tasks/:taskId/discovery-channel-sets`、`PATCH /v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId` 和 `POST /v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId/archive`。持久文件为 `.data/team/discovery-channel-sets.json`。
 - `POST /v1/team/tasks/:taskId/runs` 新增可选 `discoveryChannelSetId`。Discovery root 使用同源未归档渠道集运行时，会跳过 root rediscovery/dispatcher，写出标准 `discovery-result.json` / `discovery-aggregation.json`，并按既有 auto-run 语义启动保存的 generated child runs。
 - Team Console 子画布新增“渠道集”面板：显示选择数量、名称输入、保存/清空、已保存渠道集列表、使用渠道集和归档操作。generated child card 左上角有渠道选择 checkbox，选中态使用 `is-channel-selected` / `data-generated-channel-selected`。
+- Team Console Discovery 子画布 `generated Task 网格` 已新增“全选有效项 / 取消全选”。该操作只选择 active generated Tasks，不会把 `stale hidden` 旧项带入渠道集；标题栏另显示 `selected X/Y`。
 - Team Console 已保存渠道集支持选中查看：点击渠道集名称区域会把该集合标为 selected，名称输入切到集合标题，并自动勾选下方 generated Task 网格中属于该集合的 items；`使用渠道集` 仍是独立运行动作。
 - Team Console 已保存渠道集支持原地编辑和另存：选中集合后，修改名称或 generated Task checkbox 不会取消 selected；主按钮切为“更新渠道集”，提交走 `PATCH /v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId` 更新原集合。选中集合时还会显示“另存为新集合”，用当前名称和勾选项走 `POST` 新建一套渠道集，避免想新建时只能更新原集合。未选中已有集合时仍按原逻辑“保存渠道集”新建；“清空选择”会退出编辑态。
 - Discovery root Task 已支持持久默认运行策略 `discoveryRunPolicy`。缺省或 `{ mode: "rediscover" }` 表示正常重新发现；`{ mode: "channel_set", channelSetId }` 表示后续 root run 默认使用该渠道集。策略保存在 Discovery 根任务上，因此直接运行、GroupRun 和 Conn 定时触发的 GroupRun 都会继承；`POST /v1/team/tasks/:taskId/runs` 显式传入 `discoveryChannelSetId` 仍优先。
@@ -107,6 +108,12 @@ git log --oneline origin/main..HEAD
 
 ## 本轮最终验证
 
+- Discovery active generated select-all 验证：
+  - `npm --prefix apps/team-console test -- --run src/tests/app-live-data.test.tsx src/tests/app-static-contracts.test.ts`：123/123 pass。
+  - `npx tsc --noEmit`：pass。
+  - `git diff --check`：pass。
+  - `npm --prefix apps/team-console run build`：pass；仅既有 Vite chunk size warning。
+  - 本地服务已重启：`ugk-pi-team-console` healthy，`http://127.0.0.1:5174/` 返回 200。Browser 在示例 Discovery 子画布验证：`generated Task 网格` 显示 `全选有效项` 和 `selected 0/1`；点击后变为 `取消全选`、`selected 1/1`，只选中 active generated card；再次点击恢复 `selected 0/1`。
 - Team Group definition naming 验证：
   - `npm --prefix apps/team-console test -- --run src/tests/app-connections.test.tsx src/tests/app-static-contracts.test.ts src/tests/team-api.test.ts`：178/178 pass。
   - `npx tsc --noEmit`：pass。

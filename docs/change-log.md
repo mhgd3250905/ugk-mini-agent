@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-08 — Discovery generated active select-all
+
+- **主题**: Team Console Discovery 子画布的 `generated Task 网格` 新增“全选有效项 / 取消全选”操作，并显示 `selected X/Y`。批量选择只覆盖当前 active generated Tasks，不会选中 `stale hidden` 旧项。
+- **影响范围**: 仅 5174 Team Console Discovery 子画布渠道集选择体验。Discovery channel set API、运行策略、generated Task store 和 stale item 展示合同不变。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/execution-map.css`、`apps/team-console/src/tests/app-live-data.test.tsx`。
+
 ## 2026-06-08 — Team Group definition naming
 
 - **主题**: Team Console 展开的 Live backend Group frame 新增“命名”入口，可直接重命名固定 Group definition。该能力复用既有 `PATCH /v1/team/task-groups/:groupId` 的 `title` 字段，不新增 GroupRun 别名；已上锁 Group 不允许改名。

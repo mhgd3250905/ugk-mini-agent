@@ -4,6 +4,8 @@
 
 > 2026-06-08 补充：Team Console 展开的 Live backend Group frame 支持直接重命名固定 Group definition。该操作复用既有 `PATCH /v1/team/task-groups/:groupId` 的 `title` 字段，不新增 run-level 别名；已上锁 Group 不允许改名。Conn editor、`/playground/conn` 和 GroupRun 相关展示继续从 `GET /v1/team/task-groups` 读取同一个后端 `title`，因此重命名后下游选择器自然显示新名称。
 
+> 2026-06-08 补充：Team Console Discovery 子画布 `generated Task 网格` 支持“全选有效项 / 取消全选”。该批量操作只写入当前 active generated Task ids，用于快速组成或更新 Discovery 渠道集；`stale hidden` 旧项不会被全选带入。已选数量以 `selected X/Y` 单独展示，不改变原 running/queued/done/stale 统计文案。
+
 > 2026-06-07 补充：Discovery root Task 已支持渠道集复用。`GET/POST/PATCH/archive /v1/team/tasks/:taskId/discovery-channel-sets` 用于保存某个 Discovery root 下选中的 generated child Tasks；记录持久化在 `.data/team/discovery-channel-sets.json`，只保存 child 的 `itemPayload`、WorkUnit snapshot 和来源 trace，不保存 run output。`POST /v1/team/tasks/:taskId/runs` 可传 `discoveryChannelSetId`，仅允许未归档 Discovery root 使用同源、未归档且至少 1 item 的渠道集；运行时会跳过 root rediscovery/dispatcher，用渠道集 items 写出本轮标准 `discovery-result.json` / `discovery-aggregation.json`，再按既有 generated child auto-run 语义启动对应 child runs。原 generated Task 被归档后不会自动删除已保存渠道集；渠道集 run 使用保存时的 snapshot。
 
 > 2026-06-06 补充：`team_group` Conn 对 mutable Group 的 start failure 诊断已补齐。已保存 Conn 指向的 Group 如果后来变成 empty/invalid，`POST /v1/team/task-groups/:groupId/runs` 返回 400 时 ConnRun 会保持 `failed`，并写入 `resolvedSnapshot.executionType="team_group"`、`groupId`、`groupRunStartStatus` 和 `groupRunStartError`。`/playground/conn` 与 `/playground` Conn manager 的 run detail 会在没有 `groupRunId` 时仍显示 Team Group block、start status/error 和 Group JSON；409 active guard 仍是 succeeded skipped。
