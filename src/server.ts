@@ -26,6 +26,7 @@ import { ConnRunStore } from "./agent/conn-run-store.js";
 import { ConnSqliteStore } from "./agent/conn-sqlite-store.js";
 import type { ModelConfigStore, ModelSelectionValidator } from "./agent/model-config.js";
 import { createFileModelConfigStore, createLiveModelSelectionValidator } from "./agent/model-config.js";
+import { createFileModelProviderStore, type ModelProviderStore } from "./agent/model-provider-store.js";
 import { NotificationHub } from "./agent/notification-hub.js";
 import { registerAssetRoutes } from "./routes/assets.js";
 import { registerActivityRoutes } from "./routes/activity.js";
@@ -36,6 +37,7 @@ import { registerConnRoutes } from "./routes/conns.js";
 import { registerFileRoutes } from "./routes/files.js";
 import { registerFeishuSettingsRoutes } from "./routes/feishu-settings.js";
 import { registerModelConfigRoutes } from "./routes/model-config.js";
+import { registerModelSourceRoutes } from "./routes/model-sources.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
 import { registerPlaygroundRoute } from "./routes/playground.js";
 import { registerPublicSiteRoutes } from "./routes/public-site.js";
@@ -60,6 +62,7 @@ export interface BuildServerOptions {
 	backgroundDataDir?: string;
 	modelConfigStore?: ModelConfigStore;
 	modelSelectionValidator?: ModelSelectionValidator;
+	modelProviderStore?: ModelProviderStore;
 	feishuSettingsStore?: FeishuSettingsStore;
 }
 
@@ -158,6 +161,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
 	const agentTemplateRegistry = options.agentTemplateRegistry ?? new AgentTemplateRegistry({ projectRoot: agentProfileProjectRoot });
 	const modelConfigStore = options.modelConfigStore ?? createFileModelConfigStore(config.projectRoot);
 	const modelSelectionValidator = options.modelSelectionValidator ?? createLiveModelSelectionValidator(config.projectRoot);
+	const modelProviderStore = options.modelProviderStore ?? createFileModelProviderStore(config.projectRoot);
 	const agentService = options.agentService ?? agentServiceRegistry.get(DEFAULT_AGENT_ID) ?? createDefaultAgentService(assetStore);
 
 	app.get("/healthz", async () => {
@@ -194,6 +198,15 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
 		projectRoot: config.projectRoot,
 		store: modelConfigStore,
 		validator: modelSelectionValidator,
+	});
+	registerModelSourceRoutes(app, {
+		projectRoot: config.projectRoot,
+		modelConfigStore,
+		modelSelectionValidator,
+		modelProviderStore,
+		agentServiceRegistry,
+		agentTemplateRegistry,
+		connStore,
 	});
 	registerNotificationRoutes(app, { notificationHub });
 	registerFeishuSettingsRoutes(app, {

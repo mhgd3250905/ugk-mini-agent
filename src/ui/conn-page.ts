@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { getStandaloneBaseCss, getStandaloneBaseJs, STANDALONE_FAVICON, STANDALONE_THEME_INLINE_SCRIPT, renderStandaloneConfirmDialog, renderStandaloneToastContainer, renderStandaloneTopbar } from "./standalone-page-shared.js";
 import { getConnPageCss } from "./conn-page-css.js";
 import { getConnPageJs } from "./conn-page-js.js";
+import { getOpsConnPageCss, getOpsWorkbenchThemeCss } from "./ops-workbench-theme.js";
 import { getBrowserMarkdownRendererScript } from "./playground-transcript-renderer.js";
 
 export { getConnPageCss } from "./conn-page-css.js";
@@ -20,7 +21,7 @@ function getMarkedBrowserScript(): string {
 }
 
 export function renderConnPage(): string {
-	const css = getStandaloneBaseCss() + getConnPageCss();
+	const css = getStandaloneBaseCss() + getConnPageCss() + getOpsWorkbenchThemeCss() + getOpsConnPageCss();
 	const js = getStandaloneBaseJs() + getConnPageJs();
 
 	return `<!doctype html>
@@ -34,7 +35,7 @@ export function renderConnPage(): string {
 	<link rel="stylesheet" href="/vendor/flatpickr/flatpickr.min.css" />
 	<style>${css}</style>
 </head>
-<body data-standalone-theme="cockpit">
+<body data-standalone-theme="ops-workbench">
 	<div id="app">
 			<header class="sp-topbar">
 				<a class="sp-topbar-back" href="/playground?view=chat" title="返回">

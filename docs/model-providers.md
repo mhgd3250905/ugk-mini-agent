@@ -1,10 +1,19 @@
 # 模型源管理
 
-更新时间：`2026-05-23`
+更新时间：`2026-06-08`
 
-模型源只在 `runtime/pi-agent/models.json` 登记。用户在 Web 里选择的默认 API 源 / 模型属于运行态偏好：生产通过 `UGK_MODEL_SETTINGS_PATH=/app/.data/agent/model-settings.json` 保存到 shared 数据目录；仓库里的 `.pi/settings.json` 只作为首次启动或运行态文件缺失时的 bundled 默认值。不要把 provider、model、API key 和运行时策略混在一个地方，否则后面加模型会变成猜谜。
+模型源分两层登记：仓库 bundled 源在 `runtime/pi-agent/models.json`，用户新增的自定义 API 源在运行态 overlay，默认路径为 `.data/agent/model-providers.json`，也可通过 `UGK_MODEL_PROVIDERS_PATH` 指定。用户在 Web 里选择的默认 API 源 / 模型属于运行态偏好：生产通过 `UGK_MODEL_SETTINGS_PATH=/app/.data/agent/model-settings.json` 保存到 shared 数据目录；仓库里的 `.pi/settings.json` 只作为首次启动或运行态文件缺失时的 bundled 默认值。不要把 provider、model、API key 和运行时策略混在一个地方，否则后面加模型会变成猜谜。
 
 当前有效口径以本文件、`runtime/pi-agent/models.json` 和运行时 `/v1/model-config` 为准。`docs/change-log.md` 里的旧发布记录只用于追溯，当它们提到 `deepseek-anthropic`、DeepSeek `openai-completions`、`ANTHROPIC_AUTH_TOKEN` 作为智谱 key、或从 `*-api.txt` 注入 key 时，均视为历史事实，不是当前配置依据。
+
+## 运行态自定义源
+
+- 管理入口：`/playground/model-sources`。
+- Inventory API：`GET /v1/model-sources` 返回 bundled + custom provider，以及全局默认、Agent profile、后台 Conn 使用对象的有效模型绑定。
+- 新增 API：`POST /v1/model-sources/providers` 只接受 `apiKeyEnvVar`，拒绝明文 `apiKey`。真实 key 必须由进程环境或生产 shared env 注入，不能写入仓库、`.data` JSON 或前端表单。
+- 绑定修改 API：`PATCH /v1/model-sources/usages/:usageKind/:usageId`，其中 `usageKind` 支持 `global`、`agent`、`conn`。`main` 主 Agent 跟随全局默认，不作为独立 Agent 绑定修改；自定义 Agent 有运行中会话时拒绝切换默认模型。
+- 运行时会把 bundled models 与 custom providers 合并为有效 registry。`.data/agent/effective-models.json` 是派生文件，不要提交，也不要手工当源数据改。
+- 自定义 provider 当前只开放 `anthropic-messages` 协议。后续若支持 OpenAI-compatible 或其他协议，先扩展 provider schema 和验证，再开放 UI 选项；别靠随手填字符串撞大运。
 
 ## 当前来源
 
@@ -41,6 +50,7 @@
 - API key 的正式来源是环境变量。仓库根目录的 `zhipu-api.txt`、`deepseek-api.txt`、`小米api.txt` 这类本地文件只允许作为开发者临时说明；只有显式设置 `UGK_ALLOW_LOCAL_API_TXT_BOOTSTRAP=true` 时，`getAppConfig()` 才会把它们作为本地开发 bootstrap 辅助读取。正常 Docker / 生产运行不要打开这个开关，更不能把这些文件作为 provider/model/api 的正式数据源。
 - `ANTHROPIC_AUTH_TOKEN` 只允许作为 Anthropic SDK / Anthropic 官方源自己的认证变量，不是项目级多 provider 公共 token。智谱、DeepSeek、小米这些 Anthropic-compatible provider 都必须使用自己的 env var，避免同进程 worker 被旧全局 token 污染。
 - `GET /v1/model-config` 和后台 conn worker 的默认模型解析都读取同一个有效 settings：优先 `UGK_MODEL_SETTINGS_PATH`，缺失时回退 `.pi/settings.json`。保存默认选择时只写有效 settings 路径，不改仓库默认文件。
+- `GET /v1/model-config`、Agent session factory、background agent session factory 和 Team Runtime 模型解析都读取 bundled + runtime custom 合并后的有效模型 registry；不要只改 `runtime/pi-agent/models.json` 后假设 Web 管理页会覆盖运行态自定义源。
 - Team Runtime 的 LLM 调用也必须读取同一套 registry/settings：项目默认 provider/model/api 是什么，Team 就用什么。Team 不读取任何 `*-api.txt` 作为配置源。
 
 ## 防误判清单
@@ -54,8 +64,12 @@
 ## 修改入口
 
 - 模型注册：`runtime/pi-agent/models.json`
+- 运行态自定义源：`.data/agent/model-providers.json` 或 `UGK_MODEL_PROVIDERS_PATH`
+- 合并后派生 registry：`.data/agent/effective-models.json`
 - 生产默认选择运行态：`/app/.data/agent/model-settings.json`
 - 仓库 bundled 默认：`.pi/settings.json`
 - key 兜底加载：`src/config.ts`
 - Web API：`GET /v1/model-config`
+- API 源管理 API：`GET /v1/model-sources`、`POST /v1/model-sources/providers`、`PATCH /v1/model-sources/usages/:usageKind/:usageId`
 - Web 设置入口：playground 的“模型源设置”
+- API 源管理入口：`/playground/model-sources`

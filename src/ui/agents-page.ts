@@ -7,6 +7,7 @@ import {
 	STANDALONE_FAVICON,
 	STANDALONE_THEME_INLINE_SCRIPT,
 } from "./standalone-page-shared.js";
+import { getOpsAgentsPageCss, getOpsWorkbenchThemeCss } from "./ops-workbench-theme.js";
 
 function getAgentsPageCss(): string {
 	return `
@@ -2011,7 +2012,7 @@ function getAgentsPageJs(): string {
 }
 
 export function renderAgentsPage(): string {
-	const css = getStandaloneBaseCss() + getAgentsPageCss();
+	const css = getStandaloneBaseCss() + getAgentsPageCss() + getOpsWorkbenchThemeCss() + getOpsAgentsPageCss();
 	const js = getStandaloneBaseJs() + getAgentsPageJs();
 
 	return `<!doctype html>
@@ -2024,7 +2025,7 @@ export function renderAgentsPage(): string {
 	<link rel="icon" href="${STANDALONE_FAVICON}" />
 	<style>${css}</style>
 </head>
-<body data-standalone-theme="cockpit">
+<body data-standalone-theme="ops-workbench">
 	<div id="app">
 		<header class="sp-topbar">
 			<a class="sp-topbar-back" href="/playground?view=chat" title="返回">

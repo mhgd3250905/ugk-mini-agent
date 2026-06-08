@@ -9,10 +9,10 @@ import {
 import {
 	createSkillRestrictedResourceLoader,
 	getProjectAgentDirPath,
-	getProjectModelsPath,
 	getProjectSettingsPath,
 	readProjectSettingsContent,
 } from "./agent-session-factory.js";
+import { getEffectiveProjectModelsPath, readMergedProjectModelsContent } from "./model-provider-store.js";
 import {
 	readJsonScalarSetting,
 	replaceOrInsertJsonStringSetting,
@@ -106,7 +106,7 @@ export function createFileModelConfigStore(projectRoot: string): ModelConfigStor
 		async getConfig(): Promise<ModelConfigBody> {
 			const [settingsContent, modelsContent] = await Promise.all([
 				Promise.resolve(readProjectSettingsContent(projectRoot) ?? ""),
-				readOptionalText(getProjectModelsPath(projectRoot)),
+				readMergedProjectModelsContent(projectRoot),
 			]);
 			return {
 				current: readDefaultSelection(settingsContent),
@@ -161,7 +161,7 @@ export async function saveDefaultModelConfig(
 export function createLiveModelSelectionValidator(projectRoot: string): ModelSelectionValidator {
 	return async (selection) => {
 		const authStorage = AuthStorage.create();
-		const modelRegistry = ModelRegistry.create(authStorage, getProjectModelsPath(projectRoot));
+		const modelRegistry = ModelRegistry.create(authStorage, getEffectiveProjectModelsPath(projectRoot));
 		const model = modelRegistry.find(selection.provider, selection.model);
 		if (!model) {
 			return {

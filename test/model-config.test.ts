@@ -187,6 +187,48 @@ test("model config store lists providers and current default selection", async (
 	assert.equal(config.providers.find((provider) => provider.id === "ali-codeplan")?.auth.envVar, "ALI_CODEPLAN_API_KEY");
 });
 
+test("model config store includes runtime custom providers", async () => {
+	const projectRoot = await createProjectRoot();
+	const customProvidersPath = join(projectRoot, ".data", "agent", "model-providers.json");
+	const previousProvidersPath = process.env.UGK_MODEL_PROVIDERS_PATH;
+	process.env.UGK_MODEL_PROVIDERS_PATH = customProvidersPath;
+	await mkdir(join(projectRoot, ".data", "agent"), { recursive: true });
+	await writeFile(
+		customProvidersPath,
+		JSON.stringify({
+			providers: {
+				"custom-provider": {
+					name: "Custom Provider",
+					vendor: "custom",
+					region: "global",
+					priority: 99,
+					baseUrl: "https://custom.example/anthropic",
+					api: "anthropic-messages",
+					apiKey: "CUSTOM_PROVIDER_API_KEY",
+					models: [{ id: "custom-model", name: "Custom Model", contextWindow: 200000 }],
+				},
+			},
+		}),
+		"utf8",
+	);
+	try {
+		const store = createFileModelConfigStore(projectRoot);
+		const config = await store.getConfig();
+
+		const customProvider = config.providers.find((provider) => provider.id === "custom-provider");
+		assert.equal(customProvider?.name, "Custom Provider");
+		assert.equal(customProvider?.models[0]?.id, "custom-model");
+		assert.equal(customProvider?.auth.envVar, "CUSTOM_PROVIDER_API_KEY");
+		assert.equal(await store.hasModel({ provider: "custom-provider", model: "custom-model" }), true);
+	} finally {
+		if (previousProvidersPath === undefined) {
+			delete process.env.UGK_MODEL_PROVIDERS_PATH;
+		} else {
+			process.env.UGK_MODEL_PROVIDERS_PATH = previousProvidersPath;
+		}
+	}
+});
+
 test("model config store ignores default selection inside line comments", async () => {
 	const projectRoot = await createProjectRoot();
 	await writeFile(

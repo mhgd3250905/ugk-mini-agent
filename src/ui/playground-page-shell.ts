@@ -212,6 +212,15 @@ ${input.playgroundScript ?? ""}</script>`;
 							</span>
 							<span>模型源</span>
 						</button>
+						<a id="mobile-menu-model-sources-link" class="mobile-overflow-menu-item" href="/playground/model-sources" role="menuitem">
+							<span class="mobile-overflow-menu-item-icon" aria-hidden="true">
+								<svg viewBox="0 0 24 24" fill="none">
+									<path d="M5 6h14M5 12h14M5 18h14" stroke-width="1.8" stroke-linecap="round" />
+									<path d="M8 6v12M16 6v12" stroke-width="1.8" stroke-linecap="round" />
+								</svg>
+							</span>
+							<span>API 源管理</span>
+						</a>
 						<button id="mobile-menu-feishu-settings-button" class="mobile-overflow-menu-item" type="button" role="menuitem">
 							<span class="mobile-overflow-menu-item-icon" aria-hidden="true">
 								<svg viewBox="0 0 24 24" fill="none">
@@ -292,6 +301,10 @@ ${input.playgroundScript ?? ""}</script>`;
 							<span>换源前先验货</span>
 							<strong>模型源</strong>
 						</button>
+						<a id="open-model-sources-page-link" class="telemetry-card telemetry-action" href="/playground/model-sources" role="menuitem">
+							<span>查清谁在用哪个源</span>
+							<strong>API 源管理</strong>
+						</a>
 						<button id="open-feishu-settings-button" class="telemetry-card telemetry-action" type="button" role="menuitem">
 							<span>别再 SSH 改机器人配置</span>
 							<strong>飞书设置</strong>

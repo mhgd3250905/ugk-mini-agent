@@ -14,6 +14,18 @@
 
 ---
 
+## 2026-06-08 — Agents / Conn ops workbench refresh
+
+- **主题**: `/playground/agents` 与 `/playground/conn` 切换到共享 `ops-workbench` 视觉系统，和 `/playground/model-sources` 保持同一套管理工作台密度、色彩 token、卡片/列表/详情布局和轻量背景，不再使用旧 cockpit 动画背景。
+- **影响范围**: 仅独立 Agent 管理台和后台任务工作台前端渲染层。业务 API、Agent profile、Conn 调度、Team GroupRun 和模型绑定合同不变。顺手修复 `/playground/conn` 移动端列表进入详情后未显式恢复详情面板可见的问题。
+- **对应入口**: `src/ui/ops-workbench-theme.ts`、`src/ui/agents-page.ts`、`src/ui/conn-page.ts`、`src/ui/conn-page-js.ts`、`test/server.test.ts`。
+
+## 2026-06-08 — API source management workbench
+
+- **主题**: 新增 API 源管理界面和运行态自定义 provider 合同。`/playground/model-sources` 可查看 bundled/custom API 源、查看全局默认 / Agent profile / 后台 Conn 的有效使用绑定，并在同页修改可编辑对象的 provider/model。新增自定义源只保存 `apiKeyEnvVar`，拒绝明文 `apiKey`。
+- **影响范围**: `GET /v1/model-sources` 返回 provider inventory 与 usage inventory；`POST /v1/model-sources/providers` 写入运行态 `.data/agent/model-providers.json` 或 `UGK_MODEL_PROVIDERS_PATH`；`PATCH /v1/model-sources/usages/:usageKind/:usageId` 支持修改全局默认、自定义 Agent 默认模型和 Conn 显式模型绑定。模型配置、Agent session factory 和后台 session factory 现在读取 bundled + runtime custom 合并后的有效 registry。
+- **对应入口**: `src/agent/model-provider-store.ts`、`src/agent/model-config.ts`、`src/agent/agent-session-factory.ts`、`src/agent/background-agent-session-factory.ts`、`src/routes/model-sources.ts`、`src/ui/model-sources-page.ts`、`docs/model-providers.md`、`test/model-provider-store.test.ts`、`test/model-sources-routes.test.ts`、`test/model-sources-page.test.ts`。
+
 ## 2026-06-07 — Discovery root default channel-set run policy
 
 - **主题**: Discovery root Task 新增持久运行策略 `discoveryRunPolicy`。默认缺省或 `{ mode: "rediscover" }` 仍按原 Discovery 流程重新发现；设置为 `{ mode: "channel_set", channelSetId }` 后，后续直接运行 root、GroupRun 或 Conn 定时触发的 GroupRun 都会跳过 rediscovery/dispatcher，使用该根任务选定的渠道集运行。

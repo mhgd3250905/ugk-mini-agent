@@ -2515,6 +2515,8 @@ async function handleConnSelect(connId) {
   const detailPanel = document.querySelector(".conn-detail");
   if (listPanel && detailPanel && window.innerWidth < 768) {
     listPanel.classList.add("is-hidden-mobile");
+    listPanel.classList.remove("mobile-visible");
+    detailPanel.classList.add("mobile-visible");
     detailPanel.classList.remove("is-hidden-mobile");
   }
 }
@@ -2791,8 +2793,14 @@ async function handleLoadMoreEvents(connId, runId) {
 function handleMobileBack() {
   const listPanel = document.querySelector(".conn-list");
   const detailPanel = document.querySelector(".conn-detail");
-  if (listPanel) listPanel.classList.remove("is-hidden-mobile");
-  if (detailPanel) detailPanel.classList.add("is-hidden-mobile");
+  if (listPanel) {
+    listPanel.classList.add("mobile-visible");
+    listPanel.classList.remove("is-hidden-mobile");
+  }
+  if (detailPanel) {
+    detailPanel.classList.add("is-hidden-mobile");
+    detailPanel.classList.remove("mobile-visible");
+  }
 }
 
 function updateConnInState(updated) {

@@ -12,9 +12,9 @@ import {
 	createProjectSettingsManager,
 	createSkillRestrictedResourceLoader,
 	getProjectAgentDirPath,
-	getProjectModelsPath,
 	type AgentSessionLike,
 } from "./agent-session-factory.js";
+import { getEffectiveProjectModelsPath } from "./model-provider-store.js";
 import { getCurrentBackgroundWorkspaceEnvironment } from "./background-workspace-context.js";
 import type { BackgroundAgentSessionFactory } from "./background-agent-runner.js";
 import type { RunWorkspace } from "./background-workspace.js";
@@ -37,7 +37,7 @@ export class ProjectBackgroundSessionFactory implements BackgroundAgentSessionFa
 			? SessionManager.open(input.sessionFile, input.workspace.sessionDir)
 			: SessionManager.create(input.workspace.rootPath, input.workspace.sessionDir);
 		const authStorage = AuthStorage.create();
-		const modelRegistry = ModelRegistry.create(authStorage, getProjectModelsPath(this.projectRoot));
+		const modelRegistry = ModelRegistry.create(authStorage, getEffectiveProjectModelsPath(this.projectRoot));
 		const model = resolveBackgroundSessionModel(modelRegistry, input.snapshot);
 		const skillPaths = input.snapshot.skillPaths?.length
 			? input.snapshot.skillPaths

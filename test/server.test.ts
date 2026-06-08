@@ -10,6 +10,7 @@ import type { AgentService } from "../src/agent/agent-service.js";
 import { AgentBusyError } from "../src/agent/agent-errors.js";
 import { renderPlaygroundMarkdown } from "../src/ui/playground.js";
 import { renderConnPage } from "../src/ui/conn-page.js";
+import { renderAgentsPage } from "../src/ui/agents-page.js";
 import { createBrowserRegistry } from "../src/browser/browser-registry.js";
 import type {
 	ModelConfigBody,
@@ -624,6 +625,9 @@ test("GET /playground returns the test UI html", async () => {
 	assert.match(response.body, /selected-asset-list/);
 	assert.match(response.body, /open-asset-library-button/);
 	assert.match(response.body, /open-model-config-button/);
+	assert.match(response.body, /open-model-sources-page-link/);
+	assert.match(response.body, /href="\/playground\/model-sources"/);
+	assert.match(response.body, /API 源管理/);
 	assert.match(response.body, /model-config-dialog/);
 	assert.match(response.body, /model-config-provider/);
 	assert.match(response.body, /model-config-model/);
@@ -2132,13 +2136,37 @@ test("standalone conn page uses bundled vendor assets instead of CDN resources",
 	assert.doesNotMatch(response, /cdn\.jsdelivr\.net/);
 });
 
-test("standalone conn page follows the home cockpit visual system", () => {
+test("standalone conn page follows the ops workbench visual system", () => {
 	const response = renderConnPage();
 
-	assert.match(response, /data-standalone-theme="cockpit"/);
+	assert.match(response, /data-standalone-theme="ops-workbench"/);
 	assert.match(response, /class="sp-topbar-back" href="\/playground\?view=chat"/);
-	assert.match(response, /sp-cockpit-drift/);
-	assert.match(response, /body\[data-standalone-theme="cockpit"\] \.conn-stat-card/);
+	assert.match(response, /body\[data-standalone-theme="ops-workbench"\] \.conn-stat-card/);
+	assert.match(response, /--ops-bg: #081019/);
+	assert.doesNotMatch(response, /body data-standalone-theme="cockpit"/);
+});
+
+test("standalone conn page keeps mobile list-detail navigation visible", () => {
+	const response = renderConnPage();
+
+	assert.match(
+		response,
+		/listPanel\.classList\.add\("is-hidden-mobile"\);[\s\S]*listPanel\.classList\.remove\("mobile-visible"\);[\s\S]*detailPanel\.classList\.add\("mobile-visible"\);[\s\S]*detailPanel\.classList\.remove\("is-hidden-mobile"\);/,
+	);
+	assert.match(
+		response,
+		/listPanel\.classList\.add\("mobile-visible"\);[\s\S]*listPanel\.classList\.remove\("is-hidden-mobile"\);[\s\S]*detailPanel\.classList\.add\("is-hidden-mobile"\);[\s\S]*detailPanel\.classList\.remove\("mobile-visible"\);/,
+	);
+});
+
+test("standalone agents page follows the ops workbench visual system", () => {
+	const response = renderAgentsPage();
+
+	assert.match(response, /data-standalone-theme="ops-workbench"/);
+	assert.match(response, /class="sp-topbar-back" href="\/playground\?view=chat"/);
+	assert.match(response, /body\[data-standalone-theme="ops-workbench"\] \.ag-stat-card/);
+	assert.match(response, /--ops-bg: #081019/);
+	assert.doesNotMatch(response, /body data-standalone-theme="cockpit"/);
 });
 
 test("standalone conn page sorts the left task list by unread recency then lifecycle status", () => {
@@ -3502,6 +3530,7 @@ test("GET /playground uses a compact mobile topbar with overflow actions", async
 	assert.match(response.body, /id="mobile-menu-library-button"/);
 	assert.match(response.body, /id="mobile-menu-task-inbox-button"/);
 	assert.match(response.body, /id="mobile-menu-model-config-button"/);
+	assert.match(response.body, /id="mobile-menu-model-sources-link"/);
 	assert.match(response.body, /id="mobile-menu-browser-workbench-button"/);
 	assert.match(response.body, /id="mobile-task-inbox-unread-badge"/);
 	assert.match(response.body, /\.mobile-topbar\s*\{[\s\S]*display:\s*none;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/);

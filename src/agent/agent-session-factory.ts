@@ -18,6 +18,7 @@ import {
 	readJsonScalarSetting,
 	readNestedJsonScalarSetting,
 } from "./settings-json.js";
+import { getEffectiveProjectModelsPath } from "./model-provider-store.js";
 
 export interface TextDeltaAssistantEventLike {
 	type: "text_delta";
@@ -343,7 +344,7 @@ export function resolveProjectDefaultModelContext(projectRoot: string): ProjectD
 	const model = readJsonScalarSetting(settingsContent, "defaultModel") ?? fallback.model;
 	const reserveTokens = Number(readNestedJsonScalarSetting(settingsContent, "reserveTokens") ?? fallback.reserveTokens);
 
-	const registry = ModelRegistry.create(AuthStorage.create(), getProjectModelsPath(projectRoot));
+	const registry = ModelRegistry.create(AuthStorage.create(), getEffectiveProjectModelsPath(projectRoot));
 	const resolvedModel = registry.find(provider, model);
 	if (!resolvedModel) {
 		return {
@@ -400,7 +401,7 @@ export function resolveAgentDefaultModelContext(
 	}
 
 	const projectFallback = resolveProjectDefaultModelContext(projectRoot);
-	const registry = ModelRegistry.create(AuthStorage.create(), getProjectModelsPath(projectRoot));
+	const registry = ModelRegistry.create(AuthStorage.create(), getEffectiveProjectModelsPath(projectRoot));
 	const resolvedModel = registry.find(input.provider, input.model);
 	if (!resolvedModel) {
 		return projectFallback;
@@ -684,7 +685,7 @@ export function createDefaultAgentSessionFactory(
 				? SessionManager.open(input.sessionFile, options.sessionDir)
 				: SessionManager.create(options.projectRoot, options.sessionDir);
 			const authStorage = AuthStorage.create();
-			const modelRegistry = ModelRegistry.create(authStorage, getProjectModelsPath(options.projectRoot));
+			const modelRegistry = ModelRegistry.create(authStorage, getEffectiveProjectModelsPath(options.projectRoot));
 			const resourceLoader = createSkillFilteredResourceLoader({
 				projectRoot: options.projectRoot,
 				agentDir: options.agentDir,
