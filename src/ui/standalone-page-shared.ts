@@ -13,6 +13,13 @@ const SHARED_CSS_VARIABLES = `
 		--ok: #8dffb2;
 		--danger: #ff7188;
 		--warn: #ffd166;
+		--confirm-overlay: rgba(1, 3, 10, 0.74);
+		--confirm-panel: #0f1624;
+		--confirm-body: #151d2e;
+		--confirm-action: #1b2638;
+		--confirm-action-hover: #25344b;
+		--confirm-danger: #8d2437;
+		--confirm-danger-hover: #a92f47;
 		--font-sans: "OpenAI Sans", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
 		--font-mono: "Agave", "SFMono-Regular", "Cascadia Mono", Consolas, "Lucida Console", monospace;
 	}
@@ -31,6 +38,13 @@ const SHARED_CSS_VARIABLES = `
 		--ok: #0e7a3a;
 		--danger: #b52e3d;
 		--warn: #8a6d00;
+		--confirm-overlay: rgba(14, 25, 42, 0.34);
+		--confirm-panel: #ffffff;
+		--confirm-body: #eef4fb;
+		--confirm-action: #e5ecf6;
+		--confirm-action-hover: #d7e2f1;
+		--confirm-danger: #c52945;
+		--confirm-danger-hover: #a91f38;
 	}
 
 	* { box-sizing: border-box; margin: 0; padding: 0; }
@@ -289,6 +303,86 @@ const SHARED_OVERLAY_CSS = `
 		gap: 8px;
 		padding: 12px 18px;
 		border-top: 1px solid var(--line);
+	}
+
+	#confirm-overlay.sp-overlay {
+		background: var(--confirm-overlay);
+		padding: 18px;
+	}
+
+	.sp-confirm-panel {
+		width: min(520px, calc(100vw - 36px));
+		max-height: min(84vh, 520px);
+		gap: 12px;
+		padding: 18px;
+		border: 0;
+		background: var(--confirm-panel);
+		box-shadow: none;
+	}
+
+	.sp-confirm-panel .sp-panel-head {
+		padding: 0;
+		border-bottom: 0;
+		background: transparent;
+	}
+
+	.sp-confirm-panel .sp-panel-head strong {
+		color: var(--fg);
+		font-size: 18px;
+		font-weight: 780;
+		letter-spacing: 0;
+		line-height: 1.35;
+	}
+
+	.sp-confirm-panel .sp-panel-body {
+		padding: 14px 16px;
+		border-radius: 6px;
+		background: var(--confirm-body);
+		color: var(--fg);
+		overflow: auto;
+	}
+
+	.sp-confirm-message {
+		color: var(--fg);
+		font-size: 14px;
+		line-height: 1.75;
+		white-space: pre-line;
+	}
+
+	.sp-confirm-panel .sp-panel-foot {
+		gap: 10px;
+		padding: 4px 0 0;
+		border-top: 0;
+	}
+
+	.sp-confirm-panel .sp-btn {
+		min-width: 92px;
+		height: 40px;
+		border: 0;
+		border-radius: 4px;
+		background: var(--confirm-action);
+		color: var(--fg);
+		font-size: 13px;
+		font-weight: 760;
+		letter-spacing: 0;
+		box-shadow: none;
+	}
+
+	.sp-confirm-panel .sp-btn:hover {
+		background: var(--confirm-action-hover);
+		border-color: transparent;
+		color: var(--fg);
+	}
+
+	.sp-confirm-panel .sp-btn-danger {
+		background: var(--confirm-danger);
+		color: #fff5f7;
+		border-color: transparent;
+	}
+
+	.sp-confirm-panel .sp-btn-danger:hover {
+		background: var(--confirm-danger-hover);
+		color: #ffffff;
 	}
 `;
 
@@ -664,12 +758,12 @@ export function renderStandaloneTopbar(title: string, backHref: string): string 
 export function renderStandaloneConfirmDialog(): string {
 	return `
 		<div id="confirm-overlay" class="sp-overlay" hidden>
-			<div class="sp-panel" style="width:min(420px, 90vw)">
+			<div class="sp-panel sp-confirm-panel">
 				<div class="sp-panel-head">
 					<strong id="confirm-title">请确认</strong>
 				</div>
 				<div class="sp-panel-body">
-					<p id="confirm-body" style="font-size:12px;line-height:1.6"></p>
+					<p id="confirm-body" class="sp-confirm-message"></p>
 				</div>
 				<div class="sp-panel-foot">
 					<button class="sp-btn" type="button" id="confirm-cancel">取消</button>

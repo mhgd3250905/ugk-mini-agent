@@ -451,6 +451,7 @@
 - 深色主题下桌面端 `chat-stage` 不再使用边框或深色渐变背景；它只是负责布局裁切，保持 `border: 0`、`border-radius: 4px`、`background: transparent` 和 `overflow: hidden`。贴底的 `command-deck` / composer 同样用 `4px` 圆角和 `overflow: hidden` 收口，避免输入区背景把 `chat-stage` 底部圆角盖成直角。
 - 桌面端 active 对话态的 `.stream-layout` 顶部 inset 为 `0`，对话消息列必须从 `chat-stage` 顶部开始占满背景框；`#transcript` 自身底部保留 `4px` 圆角，消息正文内部的 `message-body` padding 只作为内容排版留白，不再承担外层布局留白。
 - 桌面端 `topbar` 内的 `landing-side-right` 工具条使用和会话栏一致的扁平承载面：深色主题纯 `#080c14`，浅色主题纯 `#ffffff`，不要再叠 `linear-gradient` 做浮层效果。
+- 桌面端 topbar `telemetry-action` 的 hover tooltip 采用无边框实色块弹层；不要再用线框 + 深色渐变框，它会和当前 Chat 工作台的色块层级打架。
 - 桌面端 `topbar` 的文件菜单不再靠纯 CSS `:hover` / `:focus-within` 控制；`desktop-file-menu` 使用 `data-open`、`aria-expanded`、外部点击和 `Escape` 统一管理打开状态，避免鼠标移向菜单时穿过空隙就关闭，或点击按钮后菜单被焦点状态锁死。
 - 桌面端 `chat-stage` 现在有统一 `data-workspace-mode="chat|assets|conn|agents|task"`，由 `src/ui/playground-workspace-controller.ts` 负责切换、按钮激活态、桌面 / 移动断点分流和面板 DOM 放置；不要在资产库、后台任务、Agent 管理或任务消息控制器里散写 `chatStage.dataset.workspaceMode`。
 - 桌面端点击 `项目文件`、`后台任务`、当前 Agent 标签或 `任务消息` 时，主工作画布会切到对应 workspace，并临时把既有面板作为 `.workspace-contained` 放进 `chat-stage`；返回或再次点击当前入口会回到对话。对话流式运行不会因为 workspace 切换暂停。
@@ -661,6 +662,7 @@
 - 普通状态下不要用浅灰边框划分结构，也不要用阴影制造层级；优先用 `#01030a` 页面背景、`#101421` header、`#0b0e19` 内容卡片、`#080a13` 次级条目、字号、留白和状态色制造层次。
 - 圆角保持克制：页面外壳为 `0`，常规卡片和按钮以 `4px` 为主，独立信息面板最多 `8px`。别再把工作页做成一堆大圆角卡片，后台味和玩具味都会冒出来。
 - `confirm-dialog` 是 Chat 内的二级确认层，不再使用大面积描边按钮或 uppercase 标题；正文、取消按钮和危险确认按钮都用实色块与文字颜色区分层级，删除类确认按钮必须保留明显危险色。
+- `/playground/conn` 和 `/playground/agents` 这类 standalone ops workbench 的删除 / 归档确认走共用 `sp-confirm-panel`，视觉口径同样是实色块标题、正文承载区和危险实底按钮；不要再退回 `sp-panel` 默认三段线框弹窗。
 - 浅色模式不是把这些工作页反相成一堆灰卡片；对应口径是冷白页面、透明结构容器、白色输入 / 条目 / 结果承载面、蓝灰 metadata 和少量蓝色 focus / active 状态。任何白字、黑块、浅灰块叠浅灰块导致层级糊掉，都按主题缺陷处理。
 - 浅色主题下运行日志弹窗和后台任务过程弹窗必须使用浅色面板 + 深色正文；不要把暗色主题的白字直接套到浅色背景上。
 

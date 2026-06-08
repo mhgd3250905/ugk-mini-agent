@@ -301,7 +301,7 @@ export function getPlaygroundThemeStyles(): string {
 		}
 
 		:root[data-theme="light"] .telemetry-action[data-tooltip-title]::after {
-			border-color: rgba(31, 95, 200, 0.14);
+			border: 0;
 			background: #ffffff;
 			color: #34435f;
 			box-shadow: none;

@@ -4117,17 +4117,16 @@ export function getPlaygroundStyles(): string {
 			top: calc(100% + 10px);
 			left: 50%;
 			z-index: 120;
-			min-width: 190px;
-			max-width: min(280px, calc(100vw - 32px));
-			padding: 10px 12px;
-			border: 1px solid rgba(201, 210, 255, 0.14);
-			border-radius: 4px;
-			background:
-				linear-gradient(180deg, rgba(15, 20, 34, 0.96), rgba(7, 10, 18, 0.96)),
-				#080b12;
-			color: rgba(238, 244, 255, 0.78);
-			font-size: 11px;
-			line-height: 1.45;
+			min-width: 206px;
+			max-width: min(300px, calc(100vw - 32px));
+			padding: 12px 14px;
+			border: 0;
+			border-radius: 6px;
+			background: #111827;
+			color: rgba(238, 244, 255, 0.84);
+			font-size: 12px;
+			font-weight: 650;
+			line-height: 1.55;
 			text-align: left;
 			white-space: pre-line;
 			box-shadow: none;

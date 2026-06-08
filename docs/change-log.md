@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-09 — Playground popover and standalone confirm polish
+
+- **主题**: 主 `/playground` topbar hover tooltip 改成无边框实色块弹层，减少旧线框 tooltip 的廉价感；`/playground/conn` 后台任务删除确认和 `/playground/agents` Agent 归档确认统一使用 `sp-confirm-panel`，标题、正文和动作按钮都按实色块层级展示，危险确认按钮使用红色实底。
+- **影响范围**: 仅 topbar tooltip 和 standalone ops workbench 共用确认弹窗视觉。后台任务删除接口、Agent 归档接口、确认流程和焦点恢复逻辑不变。
+- **对应入口**: `src/ui/playground-styles.ts`、`src/ui/playground-theme-controller.ts`、`src/ui/standalone-page-shared.ts`、`test/server.test.ts`。
+
 ## 2026-06-09 — Playground confirm dialog polish
 
 - **主题**: 主 `/playground` 自定义二次确认弹窗改为和 Chat 工作台一致的实色块层级。标题取消 uppercase 贴片感，正文进入独立承载色块，取消 / 危险确认按钮使用明确背景色和文字色；浅色主题同步覆盖遮罩与按钮状态，避免危险按钮 hover 成普通按钮。

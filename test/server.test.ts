@@ -1139,6 +1139,7 @@ test("GET /playground returns the test UI html", async () => {
 	assert.match(response.body, /\.confirm-dialog-body\s*\{[\s\S]*border-radius:\s*6px;[\s\S]*background:\s*#151d2e;/);
 	assert.match(response.body, /\.confirm-dialog-actions button\s*\{[\s\S]*border:\s*0;[\s\S]*background:\s*#1b2638;/);
 	assert.match(response.body, /\.confirm-dialog-actions \.danger-action\s*\{[\s\S]*background:\s*#8d2437;/);
+	assert.match(response.body, /\.telemetry-action\[data-tooltip-title\]::after\s*\{[\s\S]*border:\s*0;[\s\S]*border-radius:\s*6px;[\s\S]*background:\s*#111827;/);
 	assert.match(response.body, /\.conn-run-details-panel\s*\{[\s\S]*border:\s*0;[\s\S]*background:[\s\S]*#060711;/);
 	assert.match(response.body, /\.conn-run-section\s*\{[\s\S]*border:\s*0;[\s\S]*background:\s*#0b0e19;/);
 	assert.match(response.body, /function renderContextUsageDialog\(projectedUsage, statusLabel, modeLabel\)/);
@@ -2150,6 +2151,12 @@ test("standalone conn page follows the ops workbench visual system", () => {
 	assert.match(response, /class="sp-topbar-back" href="\/playground\?view=chat"/);
 	assert.match(response, /body\[data-standalone-theme="ops-workbench"\] \.conn-stat-card/);
 	assert.match(response, /--ops-bg: #081019/);
+	assert.match(response, /id="confirm-overlay" class="sp-overlay"/);
+	assert.match(response, /class="sp-panel sp-confirm-panel"/);
+	assert.match(response, /id="confirm-body" class="sp-confirm-message"/);
+	assert.match(response, /\.sp-confirm-panel\s*\{[\s\S]*width:\s*min\(520px, calc\(100vw - 36px\)\);[\s\S]*border:\s*0;[\s\S]*background:\s*var\(--confirm-panel\);/);
+	assert.match(response, /\.sp-confirm-panel \.sp-panel-body\s*\{[\s\S]*border-radius:\s*6px;[\s\S]*background:\s*var\(--confirm-body\);/);
+	assert.match(response, /\.sp-confirm-panel \.sp-btn-danger\s*\{[\s\S]*background:\s*var\(--confirm-danger\);/);
 	assert.doesNotMatch(response, /body data-standalone-theme="cockpit"/);
 });
 
@@ -2173,6 +2180,10 @@ test("standalone agents page follows the ops workbench visual system", () => {
 	assert.match(response, /class="sp-topbar-back" href="\/playground\?view=chat"/);
 	assert.match(response, /body\[data-standalone-theme="ops-workbench"\] \.ag-stat-card/);
 	assert.match(response, /--ops-bg: #081019/);
+	assert.match(response, /id="confirm-overlay" class="sp-overlay"/);
+	assert.match(response, /class="sp-panel sp-confirm-panel"/);
+	assert.match(response, /id="confirm-body" class="sp-confirm-message"/);
+	assert.match(response, /\.sp-confirm-panel \.sp-panel-foot\s*\{[\s\S]*border-top:\s*0;/);
 	assert.doesNotMatch(response, /body data-standalone-theme="cockpit"/);
 });
 
@@ -3709,6 +3720,7 @@ test("GET /playground supports persistent dark and light themes", async () => {
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.confirm-dialog\s*\{[\s\S]*background:\s*rgba\(14, 25, 42, 0\.34\);/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.confirm-dialog-actions button\s*\{[\s\S]*background:\s*#e5ecf6;[\s\S]*color:\s*#33435f;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.confirm-dialog-actions \.danger-action\s*\{[\s\S]*background:\s*#c52945;[\s\S]*color:\s*#ffffff;/);
+	assert.match(response.body, /:root\[data-theme="light"\]\s+\.telemetry-action\[data-tooltip-title\]::after\s*\{[\s\S]*border:\s*0;[\s\S]*background:\s*#ffffff;[\s\S]*color:\s*#34435f;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.context-usage-dialog-meter span\s*\{[\s\S]*background:\s*linear-gradient\(90deg, #08784b, #1f5fc8\);/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.context-usage-dialog-model span\s*\{[\s\S]*background:\s*transparent;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.context-usage-meta\s*\{[\s\S]*#ffffff;/);
