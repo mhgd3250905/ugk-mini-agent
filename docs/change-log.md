@@ -14,6 +14,15 @@
 
 ---
 
+## 2026-06-08 — Chat color-block light refresh
+
+- **主题**: 主 `/playground` Chat 采用 C 方向的色块层级轻刷新。对话气泡、composer、附件 chip 和资产卡选中态改为用背景色块与文字颜色区分层级，正常态不再依赖边框；focus 仍保留 outline 作为键盘可访问反馈。
+- **补充**: 第二轮精修弱化角色标签贴片感，细分气泡内的引用、inline code、code block toolbar、composer textarea 和文件/资产卡色块，让主 Chat 更干净、可扫读，并保留无正常态边框口径。
+- **扩展**: 主 Chat 周边的 landing Agent 卡、顶部 telemetry 操作卡、桌面会话栏、会话列表项、左栏设置菜单、assistant 运行状态气泡和回到底部按钮同步改为实色块层级；浅色主题也同步去掉左栏渐变和半透明白浮层。
+- **跟进**: 桌面主题切换移到 topbar 右侧，采用和 Team/Canvas 接近的图标滑块按钮；左栏设置菜单只保留设置项。设置菜单、会话菜单、上下文详情、移动更多菜单和文件库继续统一为实底色弹层，深色主题下通过 `#111827 / #172238` 和文字颜色拉开层级，不再靠半透明边框硬撑。
+- **影响范围**: 仅主 `/playground` Chat 界面的气泡、Markdown 局部色块、composer、文件/资产卡、landing Agent 卡、顶部操作卡、会话栏、设置/上下文/文件库弹层和运行状态视觉。会话接口、streaming 逻辑、Team Console、Conn、Agents 独立页和运行态数据不变。
+- **对应入口**: `src/ui/playground-page-shell.ts`、`src/ui/playground-styles.ts`、`src/ui/playground-theme-controller.ts`、`src/ui/playground-assets.ts`、`test/server.test.ts`。
+
 ## 2026-06-08 — Task edit Agent select dark popup contrast
 
 - **主题**: 修复 Team Console Task 编辑面板在深色模式下选择 Agent 时，原生下拉 option 白底浅字导致不可读的问题。深色主题现在显式覆盖 Task edit select option 的背景和文字色，并启用 `color-scheme: dark`。

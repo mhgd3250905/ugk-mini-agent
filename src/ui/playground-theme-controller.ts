@@ -14,16 +14,16 @@ export function getPlaygroundThemeStyles(): string {
 			--ok: #08784b;
 			--danger: #c52945;
 			--warn: #8a5a00;
-			--chat-assistant-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 250, 255, 0.92));
-			--chat-assistant-border: rgba(31, 95, 200, 0.12);
-			--chat-user-bg: linear-gradient(180deg, rgba(236, 253, 245, 0.96), rgba(220, 248, 232, 0.94));
-			--chat-user-border: rgba(8, 120, 75, 0.20);
+			--chat-assistant-bg: #f6f9fe;
+			--chat-assistant-border: transparent;
+			--chat-user-bg: #d8f4e5;
+			--chat-user-border: transparent;
 			--chat-user-fg: #153226;
-			--chat-code-bg: #eef3fb;
-			--chat-code-toolbar-bg: #e1eaf6;
-			--chat-table-bg: #f8fbff;
-			--chat-composer-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 250, 255, 0.9));
-			--chat-composer-focus-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 255, 0.96));
+			--chat-code-bg: #e7eef8;
+			--chat-code-toolbar-bg: #dce7f5;
+			--chat-table-bg: #edf5ff;
+			--chat-composer-bg: #eaf1fa;
+			--chat-composer-focus-bg: #dfeaf7;
 			--chat-floating-bg: rgba(255, 255, 255, 0.94);
 			--chat-focus-ring: rgba(31, 95, 200, 0.30);
 			color-scheme: light;
@@ -53,29 +53,35 @@ export function getPlaygroundThemeStyles(): string {
 			opacity: 0.88;
 		}
 
-		.theme-toggle-button {
-			position: relative;
+		:root[data-theme="light"] .theme-mode-toggle {
+			border-color: rgba(31, 95, 200, 0.14);
+			background: #f6f9fe;
+			color: #5d687a;
 		}
 
-		.theme-toggle-icon {
-			position: absolute;
-			top: 10px;
-			right: 12px;
-			display: inline-flex;
-			width: 16px;
-			height: 16px;
-			color: currentColor;
+		:root[data-theme="light"] .theme-mode-toggle:hover:not(:disabled),
+		:root[data-theme="light"] .theme-mode-toggle:focus-visible {
+			border-color: rgba(31, 95, 200, 0.26);
+			background: #edf3fb;
+			color: #142033;
 		}
 
-		.theme-toggle-icon svg {
-			width: 16px;
-			height: 16px;
-			stroke: currentColor;
+		:root[data-theme="light"] .theme-mode-toggle-track {
+			background: #dde7f4;
 		}
 
-		:root[data-theme="dark"] .theme-toggle-icon-sun,
-		:root[data-theme="light"] .theme-toggle-icon-moon {
-			display: none;
+		:root[data-theme="light"] .theme-mode-toggle-sun {
+			color: #9a5f00;
+		}
+
+		:root[data-theme="light"] .theme-mode-toggle-moon {
+			color: rgba(74, 92, 122, 0.56);
+		}
+
+		:root[data-theme="light"] .theme-mode-toggle-thumb {
+			background:
+				radial-gradient(circle at 34% 30%, rgba(255, 255, 255, 0.96), rgba(255, 242, 206, 0.92) 54%, rgba(255, 190, 96, 0.78));
+			transform: translateX(0);
 		}
 
 		:root[data-theme="light"] .topbar {
@@ -100,32 +106,30 @@ export function getPlaygroundThemeStyles(): string {
 		}
 
 		:root[data-theme="light"] .desktop-conversation-rail {
-			border-left-color: rgba(31, 95, 200, 0.48);
-			background:
-				linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(238, 244, 252, 0.9)),
-				#ffffff;
+			border-left-color: transparent;
+			background: #eaf1fa;
 			color: var(--fg);
 			box-shadow: none;
 		}
 
 		:root[data-theme="light"] .desktop-conversation-rail-head {
-			border-bottom-color: rgba(31, 95, 200, 0.1);
+			border-bottom-color: transparent;
 		}
 
 		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-item {
-			background: transparent;
+			background: #f6f9fe;
 			color: #24324a;
 		}
 
 		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-item:hover:not(:disabled),
 		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-item:focus-visible {
-			background: rgba(31, 95, 200, 0.045);
+			background: #edf3fb;
 			color: #172033;
 		}
 
 		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-item.is-active {
 			border-color: transparent;
-			background: rgba(31, 95, 200, 0.075);
+			background: #dfeaf7;
 		}
 
 		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-item.is-active::before {
@@ -133,16 +137,16 @@ export function getPlaygroundThemeStyles(): string {
 		}
 
 		:root[data-theme="light"] .desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item {
-			background: transparent;
+			background: #f6f9fe;
 		}
 
 		:root[data-theme="light"] .desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item:hover:not(:disabled),
 		:root[data-theme="light"] .desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item:focus-visible {
-			background: rgba(31, 95, 200, 0.045);
+			background: #edf3fb;
 		}
 
 		:root[data-theme="light"] .desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item.is-active {
-			background: rgba(31, 95, 200, 0.075);
+			background: #dfeaf7;
 		}
 
 		:root[data-theme="light"] .desktop-conversation-list .mobile-conversation-title,
@@ -160,21 +164,30 @@ export function getPlaygroundThemeStyles(): string {
 		}
 
 		:root[data-theme="light"] .desktop-rail-settings-menu {
-			border-color: rgba(31, 95, 200, 0.12);
-			background:
-				linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(238, 244, 252, 0.96)),
-				#ffffff;
+			border-color: rgba(31, 95, 200, 0.14);
+			background: #ffffff;
 			color: var(--fg);
 			box-shadow: none;
 		}
 
+		:root[data-theme="light"] .desktop-rail-settings-menu .telemetry-action {
+			background: #edf3fb;
+			color: #34435f;
+		}
+
+		:root[data-theme="light"] .desktop-rail-settings-menu .telemetry-action:hover:not(:disabled),
+		:root[data-theme="light"] .desktop-rail-settings-menu .telemetry-action:focus-visible {
+			background: #dfeaf7;
+			color: #172033;
+		}
+
 		:root[data-theme="light"] .desktop-rail-settings {
-			border-top-color: rgba(31, 95, 200, 0.1);
+			border-top-color: transparent;
 		}
 
 		:root[data-theme="light"] .desktop-rail-settings-trigger {
-			border-color: rgba(31, 95, 200, 0.12);
-			background: rgba(255, 255, 255, 0.82);
+			border-color: transparent;
+			background: #f6f9fe;
 			color: #34435f;
 		}
 
@@ -264,24 +277,90 @@ export function getPlaygroundThemeStyles(): string {
 			box-shadow: none;
 		}
 
+		:root[data-theme="light"] .telemetry-card {
+			background: #f6f9fe;
+			color: #24324a;
+		}
+
+		:root[data-theme="light"] .telemetry-action:hover:not(:disabled),
+		:root[data-theme="light"] .telemetry-action:focus-visible {
+			background: #edf3fb;
+			color: #172033;
+		}
+
+		:root[data-theme="light"] .landing-agent-card {
+			border-color: transparent;
+			background: #f6f9fe;
+			color: #24324a;
+		}
+
+		:root[data-theme="light"] .landing-agent-card:hover,
+		:root[data-theme="light"] .landing-agent-card:focus-visible {
+			border-color: transparent;
+			background: #edf3fb;
+		}
+
 		:root[data-theme="light"] .telemetry-action[data-tooltip-title]::after {
-			border-color: rgba(31, 95, 200, 0.12);
+			border-color: rgba(31, 95, 200, 0.14);
+			background: #ffffff;
+			color: #34435f;
+			box-shadow: none;
+		}
+
+		:root[data-theme="light"] .mobile-overflow-menu,
+		:root[data-theme="light"] .conversation-item-menu,
+		:root[data-theme="light"] .context-usage-meta {
+			border-color: rgba(31, 95, 200, 0.14);
 			background:
-				linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(238, 244, 252, 0.96)),
+				linear-gradient(180deg, #ffffff, #f6f9fe),
 				#ffffff;
 			color: #34435f;
 			box-shadow: none;
 		}
 
+		:root[data-theme="light"] .mobile-overflow-menu-item {
+			color: #24324a;
+		}
+
+		:root[data-theme="light"] .mobile-overflow-menu-item-icon {
+			color: #536176;
+		}
+
+		:root[data-theme="light"] .mobile-overflow-menu-item:hover:not(:disabled),
+		:root[data-theme="light"] .mobile-overflow-menu-item:focus-visible,
+		:root[data-theme="light"] .conversation-menu-item:hover:not(:disabled),
+		:root[data-theme="light"] .conversation-menu-item:focus-visible {
+			background: #edf3fb;
+			color: #172033;
+		}
+
+		:root[data-theme="light"] .conversation-menu-item {
+			color: #24324a;
+		}
+
+		:root[data-theme="light"] .conversation-menu-color-group,
+		:root[data-theme="light"] .context-usage-meta-item,
+		:root[data-theme="light"] .context-usage-meta-model span {
+			background: #edf3fb;
+			color: #536176;
+		}
+
+		:root[data-theme="light"] .conversation-menu-color-group > span,
+		:root[data-theme="light"] .context-usage-meta-kicker,
+		:root[data-theme="light"] .context-usage-meta-main em,
+		:root[data-theme="light"] .context-usage-meta-item span {
+			color: #66758d;
+		}
+
 		:root[data-theme="light"] #composer-drop-target.composer {
-			border-color: rgba(31, 95, 200, 0.10);
+			border-color: transparent;
 			background: var(--chat-composer-bg);
 			color: var(--fg);
 			box-shadow: none;
 		}
 
 		:root[data-theme="light"] #composer-drop-target.composer:focus-within {
-			border-color: var(--chat-focus-ring);
+			border-color: transparent;
 			background: var(--chat-composer-focus-bg);
 			outline-color: rgba(31, 95, 200, 0.16);
 			box-shadow: none;
@@ -312,14 +391,14 @@ export function getPlaygroundThemeStyles(): string {
 		:root[data-theme="light"] .archived-conversation-head strong,
 		:root[data-theme="light"] .message-role,
 		:root[data-theme="light"] .message.assistant .message-meta strong {
-			border-color: rgba(31, 95, 200, 0.14);
-			background: rgba(255, 255, 255, 0.72);
+			border-color: transparent;
+			background: #edf3fb;
 			color: #4d5a70;
 		}
 
 		:root[data-theme="light"] .message.user .message-meta strong {
 			border-color: var(--chat-user-border);
-			background: rgba(232, 246, 239, 0.78);
+			background: #d8f4e5;
 			color: #35644e;
 		}
 
@@ -410,7 +489,7 @@ export function getPlaygroundThemeStyles(): string {
 		}
 
 		:root[data-theme="light"] #message {
-			background: rgba(255, 255, 255, 0.92);
+			background: #ffffff;
 			color: #172033;
 			box-shadow: none;
 		}
@@ -421,7 +500,13 @@ export function getPlaygroundThemeStyles(): string {
 			color: rgba(102, 112, 133, 0.72);
 		}
 
-		:root[data-theme="light"] .message.assistant .message-body,
+		:root[data-theme="light"] .message.assistant .message-body {
+			background: var(--chat-assistant-bg);
+			border: 0;
+			color: #172033;
+			box-shadow: none;
+		}
+
 		:root[data-theme="light"] :is(.task-inbox-result-bubble) {
 			background: var(--chat-assistant-bg);
 			border: 1px solid var(--chat-assistant-border);
@@ -432,7 +517,7 @@ export function getPlaygroundThemeStyles(): string {
 		:root[data-theme="light"] .message.user .message-body {
 			position: relative;
 			overflow: hidden;
-			border: 1px solid var(--chat-user-border);
+			border: 0;
 			background: var(--chat-user-bg);
 			color: var(--chat-user-fg);
 			box-shadow: none;
@@ -529,8 +614,8 @@ export function getPlaygroundThemeStyles(): string {
 		:root[data-theme="light"] .message-content blockquote,
 		:root[data-theme="light"] .task-inbox-result-bubble .message-content blockquote,
 		:root[data-theme="light"] .conn-run-result-bubble .message-content blockquote {
-			border-left-color: rgba(31, 95, 200, 0.34);
-			background: #eaf2ff;
+			border-left-color: transparent;
+			background: #e7f0fb;
 			color: #2d405e;
 		}
 
@@ -652,15 +737,33 @@ export function getPlaygroundThemeStyles(): string {
 		:root[data-theme="light"] .history-auto-load-status,
 		:root[data-theme="light"] .scroll-to-bottom-button {
 			border-color: transparent;
-			background: rgba(255, 255, 255, 0.86);
+			background: #f6f9fe;
 			color: #26344f;
 			box-shadow: none;
 		}
 
 		:root[data-theme="light"] .assistant-run-log-trigger.ok {
-			border-color: rgba(8, 120, 75, 0.2);
-			background: #e7f6ef;
+			border-color: transparent;
+			background: #d8f4e5;
 			color: #08784b;
+		}
+
+		:root[data-theme="light"] .assistant-loading-bubble.ok {
+			border-color: transparent;
+			background: #d8f4e5;
+			color: #08784b;
+		}
+
+		:root[data-theme="light"] .assistant-loading-bubble.warn {
+			border-color: transparent;
+			background: #fff1cc;
+			color: #7c5300;
+		}
+
+		:root[data-theme="light"] .assistant-loading-bubble.error {
+			border-color: transparent;
+			background: #ffe3e8;
+			color: #9c1f37;
 		}
 
 		:root[data-theme="light"] .assistant-run-log-trigger.ok .assistant-run-log-hint,
@@ -681,8 +784,8 @@ export function getPlaygroundThemeStyles(): string {
 		}
 
 		:root[data-theme="light"] .scroll-to-bottom-button {
-			border-color: rgba(8, 120, 75, 0.24);
-			background: var(--chat-floating-bg);
+			border-color: transparent;
+			background: #d8f4e5;
 			color: #08784b;
 			box-shadow: none;
 		}
@@ -1042,9 +1145,7 @@ export function getPlaygroundThemeStyles(): string {
 		}
 
 		:root[data-theme="light"] :is(.asset-pill) {
-			background:
-				linear-gradient(90deg, rgba(31, 95, 200, 0.035), transparent 46%),
-				rgba(255, 255, 255, 0.92);
+			background: #f6f9fe;
 		}
 
 		:root[data-theme="light"] :is(.conn-manager-item) {
@@ -1130,9 +1231,7 @@ export function getPlaygroundThemeStyles(): string {
 		}
 
 		:root[data-theme="light"] :is(.asset-pill.active) {
-			background:
-				linear-gradient(90deg, rgba(34, 168, 106, 0.11), transparent 48%),
-				#e8f6ef;
+			background: #d8f4e5;
 			color: #172033;
 			box-shadow: none;
 		}
@@ -1229,9 +1328,7 @@ export function getPlaygroundThemeStyles(): string {
 
 		:root[data-theme="light"] .chat-stage > .workspace-contained .asset-pill {
 			border-color: rgba(31, 95, 200, 0.08);
-			background:
-				linear-gradient(90deg, rgba(31, 95, 200, 0.035), transparent 46%),
-				#ffffff;
+			background: #f6f9fe;
 		}
 
 		:root[data-theme="light"] .chat-stage > .workspace-contained .asset-pill strong {
@@ -1269,16 +1366,31 @@ export function getPlaygroundThemeStyles(): string {
 		}
 
 		:root[data-theme="light"] .chat-stage > .workspace-contained .asset-pill.active {
-			border-color: rgba(34, 168, 106, 0.18);
-			background:
-				linear-gradient(90deg, rgba(34, 168, 106, 0.12), transparent 48%),
-				#eaf8f0;
+			border-color: transparent;
+			background: #d8f4e5;
 		}
 
 
 		:root[data-theme="light"] .file-chip-badge {
 			background: transparent;
 			color: #1d4f9a;
+		}
+
+		:root[data-theme="light"] .message.user .file-chip {
+			background: #c7ead8;
+		}
+
+		:root[data-theme="light"] .message.user .file-chip-badge {
+			background: transparent;
+			color: #35644e;
+		}
+
+		:root[data-theme="light"] .message.user .file-chip-label {
+			color: #153226;
+		}
+
+		:root[data-theme="light"] .message.user .file-chip-remove {
+			color: #35644e;
 		}
 
 		:root[data-theme="light"] .file-chip-remove {
@@ -1446,7 +1558,7 @@ export function getPlaygroundThemeStyles(): string {
 		}
 
 		:root[data-theme="light"] .mobile-conversation-item.is-active {
-			border-color: rgba(36, 84, 214, 0.28);
+			border-color: transparent;
 			background: var(--conversation-card-active-bg, #e7eeff);
 		}
 
@@ -1540,7 +1652,7 @@ export function getPlaygroundThemeStyles(): string {
 			}
 
 			:root[data-theme="light"] .message-body {
-				background: rgba(255, 255, 255, 0.92);
+				background: var(--chat-assistant-bg);
 			}
 		}
 	`;

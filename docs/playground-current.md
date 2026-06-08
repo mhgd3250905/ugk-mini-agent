@@ -1,6 +1,16 @@
 # Playground 当前状态
 
-更新时间：`2026-05-26`
+更新时间：`2026-06-08`
+
+## 2026-06-08 Chat 色块层级轻刷新
+
+- 主 `/playground` Chat 当前采用“色块层级轻刷新”方向：对话气泡、composer、附件 chip 和资产卡选中态主要通过背景色块与文字颜色区分层级，不再把正常态边框作为主要视觉层级。
+- focus 仍保留 outline，用于键盘可访问反馈；这不是日常层级边框。不要为了“无边框”把 focus 可见性删掉。
+- 深色主题的核心 token：assistant `#101827`、user `#173b29`、composer `#0f1726`；浅色主题映射为 assistant `#f6f9fe`、user `#d8f4e5`、composer `#eaf1fa`。气泡内的引用、inline code、code block toolbar、composer textarea 和文件/资产卡使用二级色块拆分层级。
+- 主 Chat 周边也按同一设计语言收口：landing Agent 卡、顶部 telemetry 操作卡、桌面会话栏、会话列表项、左栏设置菜单、assistant 运行状态气泡和回到底部按钮都使用实色块表达层级；浅色主题不再用左栏渐变和半透明白浮层。
+- 桌面主题切换现在位于 topbar 右侧，跟随当前 Agent 和上下文用量展示，使用图标滑块形态；左栏设置菜单不再承担主题切换，只保留模型源、API 源管理、飞书设置和 Chrome 工作台。
+- 设置菜单、会话菜单、上下文详情、移动更多菜单和文件库统一为实底色弹层。文件库在工作区内继续按日期分组展示资产，卡片、下载按钮和 active 选中态使用色块区分层级，深色主题下不再和背景糊成一块。
+- 本轮只改主 `/playground` Chat 及其周边壳层视觉，不改 Team Console、Conn、Agents 独立页，不改 streaming、会话接口或运行态数据。
 
 ## 2026-05-25 Team Console Typed Task Chain V1
 

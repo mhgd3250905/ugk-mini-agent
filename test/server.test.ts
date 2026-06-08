@@ -806,7 +806,7 @@ test("GET /playground returns the test UI html", async () => {
 	assert.match(response.body, /\.message-meta,\s*\.message-body\s*\{[\s\S]*width: 100%;/);
 	assert.match(response.body, /\.message-body\s*\{[\s\S]*border-radius: 4px;/);
 	assert.match(response.body, /\.message-body\s*\{[\s\S]*background: var\(--chat-assistant-bg\);/);
-	assert.match(response.body, /\.message-body\s*\{[\s\S]*border: 1px solid var\(--chat-assistant-border\);/);
+	assert.match(response.body, /\.message-body\s*\{[\s\S]*border: 0;/);
 	assert.match(response.body, /\.message-body\s*\{[\s\S]*box-shadow: none;/);
 	assert.match(response.body, /\.message-body\s*\{[\s\S]*backdrop-filter: none;/);
 	assert.match(response.body, /\.message\.user \.message-body\s*\{[\s\S]*background:\s*var\(--chat-user-bg\);/);
@@ -1038,9 +1038,11 @@ test("GET /playground returns the test UI html", async () => {
 	assert.match(response.body, /\.message\.assistant \.message-content h3\s*\{[\s\S]*font-size:\s*14px;/);
 	assert.match(response.body, /\.message\.assistant \.message-content a\s*\{[\s\S]*color:\s*#8fd6ff;/);
 	assert.match(response.body, /\.message\.user \.message-content a\s*\{[\s\S]*color:\s*#bfffd4;/);
-	assert.match(response.body, /\.message\.user \.file-chip-label\s*\{[\s\S]*color:\s*#17320f;/);
+	assert.match(response.body, /\.message\.user \.file-chip\s*\{[\s\S]*background:\s*#21543a;/);
+	assert.match(response.body, /\.message\.user \.file-chip-badge\s*\{[\s\S]*color:\s*#b9f7d2;/);
+	assert.match(response.body, /\.message\.user \.file-chip-label\s*\{[\s\S]*color:\s*#e9fff2;/);
 	assert.match(response.body, /\.message\.assistant \.message-content code\s*\{[\s\S]*color:\s*#ffe6ad;/);
-	assert.match(response.body, /\.message\.assistant \.message-content blockquote\s*\{[\s\S]*border-left-color:\s*rgba\(128, 232, 198, 0\.46\);/);
+	assert.match(response.body, /\.message\.assistant \.message-content blockquote\s*\{[\s\S]*background:\s*#123329;/);
 	assert.match(response.body, /\.message\.assistant \.message-content th\s*\{[\s\S]*background:\s*rgba\(143, 214, 255, 0\.1\);/);
 	assert.doesNotMatch(response.body, /\.message\.user \.message-content h1\s*\{[\s\S]*font-size:\s*18px;/);
 	assert.match(response.body, /open-task-inbox-button/);
@@ -2244,6 +2246,7 @@ test("GET /playground renders immersive landing home shell", async () => {
 	assert.doesNotMatch(response.body, /id="view-skills-button"/);
 	assert.match(response.body, /id="file-picker-action"/);
 	assert.match(response.body, /id="open-asset-library-button" class="telemetry-card telemetry-action"/);
+	assert.match(response.body, /\.telemetry-card\.telemetry-action\s*\{[\s\S]*background:\s*#101827;/);
 	assert.match(response.body, /<strong>文件库<\/strong>/);
 	assert.match(response.body, /<strong>消息<\/strong>/);
 	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.composer\s*\{[\s\S]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto;/);
@@ -2260,7 +2263,7 @@ test("GET /playground renders immersive landing home shell", async () => {
 	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.transcript-pane\s*\{[\s\S]*height:\s*100%;/);
 	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.transcript-pane\s*\{[\s\S]*max-height:\s*100%;/);
 	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.transcript\s*\{[\s\S]*border-bottom-right-radius:\s*4px;[\s\S]*border-bottom-left-radius:\s*4px;/);
-	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.composer\s*\{[\s\S]*border: 1px solid rgba\(201, 210, 255, 0\.08\);/);
+	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.composer\s*\{[\s\S]*border: 0;/);
 	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.composer\s*\{[\s\S]*border-radius: 4px;/);
 	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.composer\s*\{[\s\S]*background:\s*var\(--chat-composer-bg\);/);
 	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.composer\s*\{[\s\S]*padding:\s*8px 10px 8px 12px;/);
@@ -2414,7 +2417,7 @@ test("GET /playground renders immersive landing home shell", async () => {
 	assert.match(response.body, /\.asset-pill-type--archive\s*\{[\s\S]*--asset-type-bg:\s*rgba\(141, 255, 178, 0\.09\);/);
 	assert.match(response.body, /\.asset-pill-type--code\s*\{[\s\S]*--asset-type-bg:\s*rgba\(101, 209, 255, 0\.1\);/);
 	assert.match(response.body, /\.asset-pill-type--web\s*\{[\s\S]*--asset-type-bg:\s*rgba\(255, 202, 126, 0\.1\);/);
-	assert.match(response.body, /\.asset-pill-download-button\s*\{[\s\S]*background:\s*rgba\(141, 255, 178, 0\.08\);/);
+	assert.match(response.body, /\.asset-pill-download-button\s*\{[\s\S]*background:\s*#173b29;/);
 	assert.match(response.body, /\.file-chip-label\s*\{[\s\S]*-webkit-line-clamp:\s*2;/);
 	assert.match(response.body, /\.file-chip-badge\s*\{[\s\S]*font-family:\s*var\(--font-mono\);/);
 	assert.match(response.body, /\.file-chip-remove\s*\{[\s\S]*border-radius:\s*4px;/);
@@ -3594,7 +3597,7 @@ test("GET /playground does not ship visible shadow effects", async () => {
 	assert.equal(response.statusCode, 200);
 	const visibleBoxShadowValues = [...response.body.matchAll(/box-shadow\s*:\s*([\s\S]*?);/g)]
 		.map((match) => match[1]?.trim() ?? "")
-		.filter((value) => value !== "none" && !value.startsWith("inset "));
+		.filter((value) => value !== "none" && value !== "none !important" && !value.startsWith("inset "));
 	assert.ok(
 		visibleBoxShadowValues.every(
 			(value) =>
@@ -3644,9 +3647,9 @@ test("GET /playground supports persistent dark and light themes", async () => {
 	assert.match(response.body, /:root\[data-theme="light"\] body::after\s*\{[\s\S]*linear-gradient\(180deg, rgba\(31, 95, 200, 0\.045\), transparent 180px\),[\s\S]*opacity:\s*0\.88;/);
 	assert.doesNotMatch(response.body, /rgba\(221, 229, 240, 0\.36\) 0%, transparent 12%, transparent 88%, rgba\(221, 229, 240, 0\.32\) 100%/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.shell\[data-stage-mode="landing"\] \.composer\s*\{[\s\S]*border-color:\s*transparent;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/);
-	assert.match(response.body, /:root\[data-theme="light"\]\s+#composer-drop-target\.composer\s*\{[\s\S]*border-color:\s*rgba\(31, 95, 200, 0\.10\);[\s\S]*background:\s*var\(--chat-composer-bg\);[\s\S]*box-shadow:\s*none;/);
+	assert.match(response.body, /:root\[data-theme="light"\]\s+#composer-drop-target\.composer\s*\{[\s\S]*border-color:\s*transparent;[\s\S]*background:\s*var\(--chat-composer-bg\);[\s\S]*box-shadow:\s*none;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.file-strip\s*\{[\s\S]*border-color:\s*transparent;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/);
-	assert.match(response.body, /:root\[data-theme="light"\]\s+#message\s*\{[\s\S]*background:\s*rgba\(255, 255, 255, 0\.92\);[\s\S]*color:\s*#172033;/);
+	assert.match(response.body, /:root\[data-theme="light"\]\s+#message\s*\{[\s\S]*background:\s*#ffffff;[\s\S]*color:\s*#172033;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.telemetry-card,[\s\S]*:root\[data-theme="light"\]\s+\.drop-zone-top\s*\{[\s\S]*border-color:\s*transparent;[\s\S]*background:\s*transparent;[\s\S]*color:\s*var\(--fg\);[\s\S]*box-shadow:\s*none;/);
 	assert.doesNotMatch(response.body, /:root\[data-theme="light"\]\s+\.telemetry-card,[^}]*background:\s*rgba\(255, 255, 255, 0\.86\);/);
 	assert.doesNotMatch(response.body, /:root\[data-theme="light"\]\s+\.shell\[data-stage-mode="landing"\] \.composer\s*\{[^}]*rgba\(255, 255, 255, 0\.92\);/);
@@ -3716,8 +3719,9 @@ test("GET /playground supports persistent dark and light themes", async () => {
 	assert.match(response.body, /localStorage\.setItem\(PLAYGROUND_THEME_STORAGE_KEY, normalized\)/);
 	assert.match(response.body, /themeToggleButton\.addEventListener\("click"/);
 	assert.match(response.body, /mobileMenuThemeButton\.addEventListener\("click"/);
-	assert.match(response.body, /theme-toggle-icon-sun/);
-	assert.match(response.body, /theme-toggle-icon-moon/);
+	assert.match(response.body, /theme-mode-toggle-track/);
+	assert.match(response.body, /theme-mode-toggle-sun/);
+	assert.match(response.body, /theme-mode-toggle-moon/);
 	await app.close();
 });
 
@@ -3839,7 +3843,7 @@ test("GET /playground uses touch-first mobile panels for library, tasks, conn, a
 	assert.doesNotMatch(response.body, /background:\s*linear-gradient\(135deg, #f4f7fb 0 50%, #111722 50% 100%\) !important;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.conversation-color-swatch\.color-default\s*\{[\s\S]*background:\s*#f4f7fb !important;/);
 	assert.match(response.body, /\.conversation-color-swatch\.color-sky\s*\{[\s\S]*background:\s*#dbeafe !important;/);
-	assert.match(response.body, /\.desktop-conversation-list \.mobile-conversation-item\s*\{[\s\S]*height:\s*58px;[\s\S]*background:\s*transparent;[\s\S]*opacity:\s*0\.74;/);
+	assert.match(response.body, /\.desktop-conversation-list \.mobile-conversation-item\s*\{[\s\S]*height:\s*58px;[\s\S]*background:\s*#101827;[\s\S]*opacity:\s*0\.86;/);
 	assert.doesNotMatch(response.body, /mobile-conversation-preview/);
 	assert.doesNotMatch(response.body, /metaCount/);
 	assert.match(response.body, /\.desktop-conversation-list \.conversation-item-menu-trigger\s*\{[\s\S]*opacity:\s*0;/);
@@ -3970,15 +3974,15 @@ test("GET /playground keeps the mobile active composer compact", async () => {
 
 	assert.equal(response.statusCode, 200);
 	const mobileComposerBlock = [...response.body.matchAll(/\n\s*\.composer\s*\{([\s\S]*?)\n\s*\}/g)].find((match) =>
-		match[1].includes("background: rgba(8, 10, 19, 0.98);"),
+		match[1].includes("background: var(--chat-composer-bg);"),
 	);
 	const mobileLandingComposerBlock = [
 		...response.body.matchAll(/\.shell\[data-stage-mode="landing"\] \.composer\s*\{([\s\S]*?)\n\s*\}/g),
-	].find((match) => match[1].includes("background: rgba(8, 10, 19, 0.98);"));
+	].find((match) => match[1].includes("background: var(--chat-composer-bg);"));
 	assert.ok(mobileComposerBlock);
 	assert.ok(mobileLandingComposerBlock);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\n\s*\.composer\s*\{[\s\S]*padding:\s*8px 8px 8px 10px;/);
-	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\n\s*\.composer\s*\{[\s\S]*background:\s*rgba\(8, 10, 19, 0\.98\);/);
+	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\n\s*\.composer\s*\{[\s\S]*background:\s*var\(--chat-composer-bg\);/);
 	assert.doesNotMatch(mobileComposerBlock[1], /linear-gradient/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\n\s*\.composer-main\s*\{[\s\S]*gap:\s*4px;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\n\s*\.composer-header\s*\{[\s\S]*display:\s*none;/);
@@ -3987,7 +3991,7 @@ test("GET /playground keeps the mobile active composer compact", async () => {
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\n\s*\.composer textarea\s*\{[\s\S]*padding:\s*12px 0;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\n\s*\.composer textarea\s*\{[\s\S]*resize:\s*none;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.shell\[data-stage-mode="landing"\] \.composer\s*\{[\s\S]*height:\s*fit-content;/);
-	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.shell\[data-stage-mode="landing"\] \.composer\s*\{[\s\S]*background:\s*rgba\(8, 10, 19, 0\.98\);/);
+	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.shell\[data-stage-mode="landing"\] \.composer\s*\{[\s\S]*background:\s*var\(--chat-composer-bg\);/);
 	assert.doesNotMatch(mobileLandingComposerBlock[1], /linear-gradient/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.shell\[data-stage-mode="landing"\] \.composer textarea\s*\{[\s\S]*max-height:\s*calc\(var\(--composer-line-height\) \* var\(--composer-textarea-max-lines\) \+ 20px\);/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.shell\[data-stage-mode="landing"\] \.composer textarea\s*\{[\s\S]*padding:\s*10px 0;/);
@@ -4005,14 +4009,14 @@ test("GET /playground keeps the default active composer compact before mobile ov
 	});
 
 	assert.equal(response.statusCode, 200);
-	assert.match(response.body, /\.composer\s*\{[\s\S]*padding:\s*10px 10px 10px 12px;/);
+	assert.match(response.body, /\.composer\s*\{[\s\S]*padding:\s*10px 10px 10px 11px;/);
 	assert.match(response.body, /\.composer-main\s*\{[\s\S]*gap:\s*8px;/);
 	assert.match(response.body, /\.composer textarea\s*\{[\s\S]*min-height:\s*52px;/);
 	assert.match(response.body, /\.composer textarea\s*\{[\s\S]*--composer-textarea-max-lines:\s*10;/);
 	assert.match(response.body, /\.composer textarea\s*\{[\s\S]*max-height:\s*calc\(var\(--composer-line-height\) \* var\(--composer-textarea-max-lines\) \+ 30px\);/);
 	assert.match(response.body, /\.composer textarea\s*\{[\s\S]*padding-top:\s*14px;/);
 	assert.match(response.body, /\.composer textarea\s*\{[\s\S]*padding-bottom:\s*14px;/);
-	assert.match(response.body, /\.composer textarea\s*\{[\s\S]*background:\s*transparent;/);
+	assert.match(response.body, /\.composer textarea\s*\{[\s\S]*background:\s*#172238;/);
 	assert.match(response.body, /\.composer textarea\s*\{[\s\S]*resize:\s*none;/);
 	assert.match(response.body, /\.composer textarea\s*\{[\s\S]*overflow-y:\s*auto;/);
 	assert.match(response.body, /@media \(max-width: 960px\) \{[\s\S]*\.composer-side\s*\{[\s\S]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/);
@@ -4056,8 +4060,8 @@ test("GET /playground uses a desktop geek cockpit layout", async () => {
 	assert.match(response.body, /\.landing-side-right\s*\{[\s\S]*width:\s*auto;/);
 	assert.match(response.body, /\.landing-side-right\s*\{[\s\S]*background:\s*#080c14;/);
 	assert.doesNotMatch(response.body, /\.landing-side-right\s*\{[\s\S]*linear-gradient\(180deg, rgba\(12, 17, 28, 0\.92\)/);
-	assert.match(response.body, /\.desktop-conversation-rail\s*\{[\s\S]*background:[\s\S]*#080c14;/);
-	assert.match(response.body, /\.desktop-rail-settings\s*\{[\s\S]*border-top:\s*1px solid rgba\(201, 210, 255, 0\.08\);/);
+	assert.match(response.body, /\.desktop-conversation-rail\s*\{[\s\S]*background:\s*#0b1220;/);
+	assert.match(response.body, /\.desktop-rail-settings\s*\{[\s\S]*border-top:\s*0;/);
 	assert.doesNotMatch(response.body, /\.desktop-conversation-rail\s*\{[\s\S]*border-left:\s*2px solid rgba\(101, 209, 255, 0\.48\);/);
 	assert.match(response.body, /\.desktop-conversation-list\s*\{[\s\S]*scrollbar-width:\s*none;/);
 	assert.match(response.body, /\.desktop-conversation-list::-webkit-scrollbar\s*\{[\s\S]*display:\s*none;/);
@@ -4067,10 +4071,13 @@ test("GET /playground uses a desktop geek cockpit layout", async () => {
 	assert.match(response.body, /\.command-deck\s*\{[\s\S]*width:\s*100%;[\s\S]*border-radius:\s*4px;[\s\S]*overflow:\s*hidden;/);
 	assert.match(response.body, /\.shell\[data-stage-mode="landing"\] \.command-deck\s*\{[\s\S]*width:\s*100%;[\s\S]*border-radius:\s*4px;[\s\S]*overflow:\s*hidden;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.topbar::before\s*\{[\s\S]*display:\s*none;/);
-	assert.match(response.body, /:root\[data-theme="light"\]\s+\.desktop-conversation-rail\s*\{[\s\S]*background:[\s\S]*#ffffff;/);
+	assert.match(response.body, /:root\[data-theme="light"\]\s+\.desktop-conversation-rail\s*\{[\s\S]*background:\s*#eaf1fa;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.chat-stage\s*\{[\s\S]*border-color:\s*transparent;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/);
 	assert.match(response.body, /:root\[data-theme="light"\]\s+\.chat-stage-watermark\s*\{[\s\S]*opacity:\s*0\.08;/);
 	assert.doesNotMatch(response.body, /:root\[data-theme="light"\]\s+\.chat-stage\s*\{[\s\S]*rgba\(255, 255, 255, 0\.78\);/);
+	assert.match(response.body, /:root\[data-theme="light"\]\s+\.landing-agent-card\s*\{[\s\S]*background:\s*#f6f9fe;/);
+	assert.match(response.body, /:root\[data-theme="light"\]\s+\.message\.user \.file-chip\s*\{[\s\S]*background:\s*#c7ead8;/);
+	assert.match(response.body, /:root\[data-theme="light"\]\s+\.message\.user \.file-chip-label\s*\{[\s\S]*color:\s*#153226;/);
 	await app.close();
 });
 
@@ -4085,7 +4092,7 @@ test("GET /playground highlights the composer shell instead of the textarea on f
 	});
 
 	assert.equal(response.statusCode, 200);
-	assert.match(response.body, /\.composer:focus-within\s*\{[\s\S]*border-color:\s*var\(--chat-focus-ring\);[\s\S]*background:\s*var\(--chat-composer-focus-bg\);[\s\S]*box-shadow:\s*none;/);
+	assert.match(response.body, /\.composer:focus-within\s*\{[\s\S]*background:\s*var\(--chat-composer-focus-bg\);[\s\S]*outline-color:\s*rgba\(201, 210, 255, 0\.22\);[\s\S]*box-shadow:\s*none;/);
 	const composerFieldFocusBlock = response.body.match(
 		/\.composer textarea:focus,\s*\n\s*\.composer input:focus,\s*\n\s*\.composer select:focus\s*\{([\s\S]*?)\n\s*\}/,
 	);
@@ -4093,7 +4100,7 @@ test("GET /playground highlights the composer shell instead of the textarea on f
 	assert.match(composerFieldFocusBlock[1], /outline:\s*none;/);
 	assert.doesNotMatch(composerFieldFocusBlock[1], /outline:\s*1px solid var\(--accent\);/);
 	assert.doesNotMatch(composerFieldFocusBlock[1], /border-color:\s*var\(--accent\);/);
-	assert.match(response.body, /\.composer textarea:focus\s*\{[\s\S]*background:\s*transparent;/);
+	assert.match(response.body, /\.composer textarea:focus\s*\{[\s\S]*background:\s*#1d3049;/);
 	await app.close();
 });
 
@@ -4169,9 +4176,9 @@ test("GET /playground does not force-scroll when the user is reading history", a
 	assert.match(response.body, /id="scroll-to-bottom-button"/);
 	assert.match(response.body, /\.scroll-to-bottom-button\s*\{[\s\S]*position:\s*absolute;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.scroll-to-bottom-button\s*\{[\s\S]*position:\s*fixed;[\s\S]*bottom:\s*calc\(80px \+ env\(safe-area-inset-bottom\)\);/);
-	assert.match(response.body, /\.scroll-to-bottom-button\s*\{[\s\S]*border:\s*1px solid rgba\(101, 209, 255, 0\.34\);/);
-	assert.match(response.body, /\.scroll-to-bottom-button\s*\{[\s\S]*background:\s*var\(--chat-floating-bg\);[\s\S]*box-shadow:\s*none;/);
-	assert.match(response.body, /:root\[data-theme="light"\] \.scroll-to-bottom-button\s*\{[\s\S]*border-color:\s*rgba\(8, 120, 75, 0\.24\);/);
+	assert.match(response.body, /\.scroll-to-bottom-button\s*\{[\s\S]*border:\s*0;/);
+	assert.match(response.body, /\.scroll-to-bottom-button\s*\{[\s\S]*background:\s*#182336;[\s\S]*box-shadow:\s*none;/);
+	assert.match(response.body, /:root\[data-theme="light"\] \.scroll-to-bottom-button\s*\{[\s\S]*border-color:\s*transparent;[\s\S]*background:\s*#d8f4e5;/);
 	assert.match(response.body, /\.scroll-to-bottom-button\.visible\s*\{[\s\S]*display:\s*inline-flex;/);
 	assert.match(response.body, /const TRANSCRIPT_FOLLOW_THRESHOLD_PX = 120;/);
 	assert.match(response.body, /autoFollowTranscript: true,/);

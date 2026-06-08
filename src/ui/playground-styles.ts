@@ -40,16 +40,16 @@ export function getPlaygroundStyles(): string {
 			--ok: #8dffb2;
 			--danger: #ff7188;
 			--warn: #ffd166;
-			--chat-assistant-bg: linear-gradient(180deg, rgba(18, 22, 35, 0.96), rgba(10, 13, 24, 0.96));
-			--chat-assistant-border: rgba(201, 210, 255, 0.10);
-			--chat-user-bg: linear-gradient(180deg, rgba(141, 255, 178, 0.18), rgba(72, 184, 127, 0.14));
-			--chat-user-border: rgba(141, 255, 178, 0.26);
-			--chat-user-fg: #eafff1;
-			--chat-code-bg: #050815;
-			--chat-code-toolbar-bg: #0f1728;
-			--chat-table-bg: rgba(6, 9, 19, 0.72);
-			--chat-composer-bg: linear-gradient(180deg, rgba(14, 18, 31, 0.98), rgba(8, 11, 21, 0.98));
-			--chat-composer-focus-bg: linear-gradient(180deg, rgba(18, 23, 38, 0.98), rgba(10, 14, 26, 0.98));
+			--chat-assistant-bg: #101827;
+			--chat-assistant-border: transparent;
+			--chat-user-bg: #173b29;
+			--chat-user-border: transparent;
+			--chat-user-fg: #e9fff2;
+			--chat-code-bg: #141f31;
+			--chat-code-toolbar-bg: #19263a;
+			--chat-table-bg: #121c2b;
+			--chat-composer-bg: #0f1726;
+			--chat-composer-focus-bg: #14243a;
 			--chat-floating-bg: rgba(9, 13, 22, 0.96);
 			--chat-focus-ring: rgba(201, 210, 255, 0.42);
 			--conversation-width: 640px;
@@ -259,11 +259,11 @@ export function getPlaygroundStyles(): string {
 			gap: 4px;
 			min-width: 156px;
 			padding: 8px;
-			border: 1px solid rgba(201, 210, 255, 0.14);
-			border-radius: 12px;
+			border: 1px solid rgba(143, 214, 255, 0.16);
+			border-radius: 8px;
 			background:
-				linear-gradient(180deg, rgba(12, 16, 28, 0.98), rgba(7, 10, 18, 0.98)),
-				rgba(7, 10, 18, 0.98);
+				linear-gradient(180deg, rgba(18, 27, 44, 0.99), rgba(9, 14, 24, 0.99)),
+				#0b1220;
 			box-shadow: none;
 			backdrop-filter: none;
 		}
@@ -294,7 +294,7 @@ export function getPlaygroundStyles(): string {
 
 		.mobile-overflow-menu-item:hover:not(:disabled),
 		.mobile-overflow-menu-item:focus-visible {
-			background: rgba(201, 210, 255, 0.08);
+			background: #172238;
 			border-color: transparent;
 			box-shadow: none;
 			transform: none;
@@ -412,9 +412,9 @@ export function getPlaygroundStyles(): string {
 			width: 100%;
 			height: 72px;
 			padding: 11px 46px 11px 12px;
-			border: 1px solid var(--conversation-card-border, rgba(201, 210, 255, 0.1));
+			border: 0;
 			border-radius: 4px;
-			background: var(--conversation-card-bg, rgba(255, 255, 255, 0.035));
+			background: var(--conversation-card-bg, #101827);
 			box-shadow: none;
 			text-align: left;
 			align-content: center;
@@ -539,9 +539,9 @@ export function getPlaygroundStyles(): string {
 			gap: 4px;
 			width: 168px;
 			padding: 7px;
-			border: 1px solid rgba(201, 210, 255, 0.12);
+			border: 1px solid rgba(143, 214, 255, 0.16);
 			border-radius: 8px;
-			background: #252832;
+			background: #111827;
 			box-shadow: none;
 		}
 
@@ -563,7 +563,7 @@ export function getPlaygroundStyles(): string {
 
 		.conversation-menu-item:hover:not(:disabled),
 		.conversation-menu-item:focus-visible {
-			background: rgba(255, 255, 255, 0.08);
+			background: #172238;
 			transform: none;
 		}
 
@@ -582,7 +582,7 @@ export function getPlaygroundStyles(): string {
 			gap: 8px;
 			padding: 8px;
 			border-radius: 6px;
-			background: rgba(255, 255, 255, 0.04);
+			background: #172238;
 		}
 
 		.conversation-menu-color-group > span {
@@ -638,14 +638,14 @@ export function getPlaygroundStyles(): string {
 
 		.mobile-conversation-item:hover:not(:disabled),
 		.mobile-conversation-item:focus-visible {
-			border-color: rgba(201, 210, 255, 0.2);
-			background: var(--conversation-card-hover-bg, rgba(255, 255, 255, 0.07));
+			border-color: transparent;
+			background: var(--conversation-card-hover-bg, #142033);
 			transform: none;
 		}
 
 		.mobile-conversation-item.is-active {
-			border-color: rgba(101, 209, 255, 0.36);
-			background: var(--conversation-card-active-bg, rgba(101, 209, 255, 0.1));
+			border-color: transparent;
+			background: var(--conversation-card-active-bg, #14243a);
 		}
 
 		.mobile-conversation-item:disabled {
@@ -906,11 +906,11 @@ export function getPlaygroundStyles(): string {
 		}
 
 		.chat-stage > .workspace-contained .asset-pill {
-			gap: 8px;
-			padding: 10px 12px;
-			border: 1px solid rgba(201, 210, 255, 0.08);
+			gap: 12px;
+			padding: 12px 14px;
+			border: 0;
 			border-radius: 4px;
-			background: #0b0c18;
+			background: #101827;
 		}
 
 		.chat-stage > .workspace-contained .asset-pill strong {
@@ -1393,9 +1393,9 @@ export function getPlaygroundStyles(): string {
 			justify-content: center;
 			min-height: 34px;
 			padding: 8px 12px;
-			border: 1px solid rgba(101, 209, 255, 0.34);
+			border: 0;
 			border-radius: 4px;
-			background: var(--chat-floating-bg);
+			background: #182336;
 			color: rgba(238, 244, 255, 0.92);
 			font-size: 11px;
 			line-height: 1;
@@ -1411,8 +1411,8 @@ export function getPlaygroundStyles(): string {
 
 		.scroll-to-bottom-button:hover:not(:disabled),
 		.scroll-to-bottom-button:focus-visible {
-			border-color: rgba(201, 210, 255, 0.36);
-			background: rgba(14, 18, 31, 0.98);
+			border-color: transparent;
+			background: #20324a;
 			color: #f3fbff;
 			transform: none;
 			box-shadow: none;
@@ -1511,7 +1511,7 @@ export function getPlaygroundStyles(): string {
 			background: transparent;
 			font-size: 10px;
 			line-height: 1.6;
-			letter-spacing: 0.08em;
+			letter-spacing: 0.06em;
 			text-transform: uppercase;
 			color: rgba(238, 244, 255, 0.42);
 		}
@@ -1520,18 +1520,28 @@ export function getPlaygroundStyles(): string {
 			display: inline-flex;
 			align-items: center;
 			justify-content: center;
+			gap: 6px;
 			margin-bottom: 0;
-			padding: 4px 8px;
+			padding: 3px 7px 3px 6px;
 			font-size: 10px;
-			border: 1px solid rgba(255, 255, 255, 0.08);
+			border: 0;
 			border-radius: 4px;
-			background: rgba(255, 255, 255, 0.045);
+			background: #182336;
 			color: var(--fg);
 		}
 
+		.message-meta strong::before {
+			content: "";
+			width: 5px;
+			height: 5px;
+			border-radius: 2px;
+			background: currentColor;
+			opacity: 0.62;
+		}
+
 		.message-body {
-			padding: 17px 18px;
-			border: 1px solid var(--chat-assistant-border);
+			padding: 18px 19px;
+			border: 0;
 			border-radius: 4px;
 			background: var(--chat-assistant-bg);
 			box-shadow: none;
@@ -1653,10 +1663,11 @@ export function getPlaygroundStyles(): string {
 
 		.message-content blockquote {
 			margin-left: 0;
-			padding: 12px 14px;
-			border-left: 3px solid var(--accent);
-			background: rgba(201, 210, 255, 0.06);
-			color: #e6e9ff;
+			padding: 13px 14px;
+			border-left: 0;
+			border-radius: 4px;
+			background: #182336;
+			color: #d7e5ff;
 		}
 
 		.message-content pre {
@@ -1664,8 +1675,9 @@ export function getPlaygroundStyles(): string {
 			width: 100%;
 			max-width: 100%;
 			box-sizing: border-box;
-			padding: 14px;
+			padding: 15px;
 			border: 0;
+			border-radius: 4px;
 			background: var(--chat-code-bg);
 			overflow-x: auto;
 		}
@@ -1678,6 +1690,7 @@ export function getPlaygroundStyles(): string {
 			box-sizing: border-box;
 			overflow: hidden;
 			border: 0;
+			border-radius: 4px;
 			background: var(--chat-code-bg);
 		}
 
@@ -1686,9 +1699,9 @@ export function getPlaygroundStyles(): string {
 			justify-content: space-between;
 			align-items: center;
 			gap: 12px;
-			padding: 8px 10px;
+			padding: 8px 11px;
 			border-bottom: 0;
-			background: transparent;
+			background: var(--chat-code-toolbar-bg);
 		}
 
 		.message-content .code-block-language {
@@ -1723,9 +1736,10 @@ export function getPlaygroundStyles(): string {
 
 		.message-content code {
 			display: inline-block;
-			padding: 1px 6px;
-			border: 1px solid rgba(201, 210, 255, 0.18);
-			background: rgba(201, 210, 255, 0.08);
+			padding: 1px 6px 2px;
+			border: 0;
+			border-radius: 4px;
+			background: #1e2b40;
 			font-size: 13px;
 		}
 
@@ -1748,14 +1762,12 @@ export function getPlaygroundStyles(): string {
 		}
 
 		.message.user .message-meta strong {
-			border-color: var(--chat-user-border);
-			background: rgba(141, 255, 178, 0.08);
-			color: rgba(234, 255, 241, 0.84);
+			background: #173b29;
+			color: rgba(233, 255, 242, 0.86);
 		}
 
 		.message.assistant .message-meta strong {
-			border-color: rgba(201, 210, 255, 0.12);
-			background: rgba(201, 210, 255, 0.055);
+			background: #182336;
 			color: rgba(243, 251, 255, 0.9);
 		}
 
@@ -1773,7 +1785,6 @@ export function getPlaygroundStyles(): string {
 			width: fit-content;
 			max-width: min(100%, 75%);
 			justify-self: end;
-			border-color: var(--chat-user-border);
 			background: var(--chat-user-bg);
 			color: var(--chat-user-fg);
 		}
@@ -1860,8 +1871,7 @@ export function getPlaygroundStyles(): string {
 
 		.message.assistant .message-content code {
 			color: #ffe6ad;
-			border-color: rgba(255, 255, 255, 0.12);
-			background: rgba(255, 220, 168, 0.12);
+			background: #2a2835;
 		}
 
 		.message.assistant .message-content pre code {
@@ -1869,8 +1879,8 @@ export function getPlaygroundStyles(): string {
 		}
 
 		.message.assistant .message-content blockquote {
-			border-left-color: rgba(128, 232, 198, 0.46);
-			background: rgba(128, 232, 198, 0.08);
+			border-left-color: transparent;
+			background: #123329;
 			color: rgba(223, 255, 244, 0.9);
 		}
 
@@ -1935,9 +1945,9 @@ export function getPlaygroundStyles(): string {
 			width: fit-content;
 			max-width: fit-content;
 			padding: 8px 12px;
-			border: 1px solid rgba(201, 210, 255, 0.14);
-			border-radius: 999px;
-			background: rgba(201, 210, 255, 0.06);
+			border: 0;
+			border-radius: 4px;
+			background: #182336;
 			color: rgba(233, 238, 255, 0.88);
 			font-size: 11px;
 			letter-spacing: 0.04em;
@@ -1990,28 +2000,28 @@ export function getPlaygroundStyles(): string {
 
 		.assistant-status-shell.tool .assistant-loading-bubble,
 		.assistant-loading-bubble.tool {
-			border-color: rgba(201, 210, 255, 0.2);
-			background: rgba(201, 210, 255, 0.08);
+			border-color: transparent;
+			background: #182336;
 		}
 
 		.assistant-status-shell.ok .assistant-loading-bubble,
 		.assistant-loading-bubble.ok {
-			border-color: rgba(141, 255, 178, 0.22);
-			background: rgba(141, 255, 178, 0.07);
+			border-color: transparent;
+			background: #173b29;
 			color: rgba(201, 255, 220, 0.92);
 		}
 
 		.assistant-status-shell.warn .assistant-loading-bubble,
 		.assistant-loading-bubble.warn {
-			border-color: rgba(255, 209, 102, 0.2);
-			background: rgba(255, 209, 102, 0.07);
+			border-color: transparent;
+			background: #3b3120;
 			color: rgba(255, 230, 178, 0.94);
 		}
 
 		.assistant-status-shell.error .assistant-loading-bubble,
 		.assistant-loading-bubble.error {
-			border-color: rgba(255, 113, 136, 0.2);
-			background: rgba(255, 113, 136, 0.08);
+			border-color: transparent;
+			background: #3b2028;
 			color: rgba(255, 210, 220, 0.94);
 		}
 
@@ -2404,8 +2414,8 @@ export function getPlaygroundStyles(): string {
 			display: grid;
 			grid-template-columns: auto minmax(0, 1fr) 168px;
 			gap: 10px;
-			padding: 10px 10px 10px 12px;
-			border: 1px solid rgba(201, 210, 255, 0.10);
+			padding: 10px 10px 10px 11px;
+			border: 0;
 			border-radius: 4px;
 			background: var(--chat-composer-bg);
 			outline: 1px solid transparent;
@@ -2420,7 +2430,6 @@ export function getPlaygroundStyles(): string {
 		}
 
 		.composer:focus-within {
-			border-color: var(--chat-focus-ring);
 			background: var(--chat-composer-focus-bg);
 			outline-color: rgba(201, 210, 255, 0.22);
 			box-shadow: none;
@@ -2437,8 +2446,8 @@ export function getPlaygroundStyles(): string {
 			gap: 12px;
 			font-size: 11px;
 			text-transform: uppercase;
-			letter-spacing: 0.08em;
-			color: var(--muted);
+			letter-spacing: 0.06em;
+			color: rgba(226, 234, 255, 0.46);
 		}
 
 		.composer-file-action {
@@ -2451,8 +2460,8 @@ export function getPlaygroundStyles(): string {
 			padding: 0;
 			border: 0;
 			border-radius: 4px;
-			background: transparent;
-			color: rgba(238, 244, 255, 0.72);
+			background: #1b2638;
+			color: rgba(213, 236, 255, 0.82);
 			font: inherit;
 			cursor: pointer;
 			box-shadow: none;
@@ -2478,7 +2487,7 @@ export function getPlaygroundStyles(): string {
 
 		.composer-file-action:hover:not(:disabled),
 		.composer-file-action:focus-visible {
-			background: rgba(201, 210, 255, 0.08);
+			background: #20324a;
 			color: rgba(246, 249, 255, 0.96);
 			outline: 1px solid rgba(101, 209, 255, 0.42);
 			outline-offset: 2px;
@@ -2493,8 +2502,8 @@ export function getPlaygroundStyles(): string {
 		.composer input,
 		.composer select {
 			width: 100%;
-			border: 1px solid rgba(255, 255, 255, 0.12);
-			background: rgba(255, 255, 255, 0.035);
+			border: 0;
+			background: #172238;
 			color: var(--fg);
 			padding: 12px 14px;
 			outline: none;
@@ -2506,7 +2515,7 @@ export function getPlaygroundStyles(): string {
 		.composer textarea {
 			--composer-line-height: 22px;
 			--composer-textarea-max-lines: 10;
-			background: transparent;
+			background: #172238;
 			min-height: 52px;
 			max-height: calc(var(--composer-line-height) * var(--composer-textarea-max-lines) + 30px);
 			resize: none;
@@ -2519,19 +2528,19 @@ export function getPlaygroundStyles(): string {
 
 		.composer textarea::placeholder {
 			line-height: var(--composer-line-height);
+			color: rgba(226, 234, 255, 0.34);
 		}
 
 		.composer textarea:focus,
 		.composer input:focus,
 		.composer select:focus {
 			outline: none;
-			border-color: rgba(255, 255, 255, 0.12);
-			background: rgba(255, 255, 255, 0.04);
+			background: #1d3049;
 			box-shadow: none;
 		}
 
 		.composer textarea:focus {
-			background: transparent;
+			background: #1d3049;
 		}
 
 		.composer-side {
@@ -2650,11 +2659,11 @@ export function getPlaygroundStyles(): string {
 			gap: 9px;
 			width: min(318px, calc(100vw - 24px));
 			padding: 12px;
-			border: 0;
+			border: 1px solid rgba(143, 214, 255, 0.16);
 			border-radius: 6px;
 			background:
-				linear-gradient(180deg, rgba(16, 21, 35, 0.98), rgba(7, 10, 18, 0.98)),
-				#070a12;
+				linear-gradient(180deg, rgba(18, 27, 44, 0.99), rgba(9, 14, 24, 0.99)),
+				#0b1220;
 			box-shadow: none;
 			color: rgba(225, 232, 247, 0.82);
 			font-size: 11px;
@@ -2730,7 +2739,7 @@ export function getPlaygroundStyles(): string {
 			min-width: 0;
 			padding: 7px 8px;
 			border-radius: 4px;
-			background: rgba(255, 255, 255, 0.045);
+			background: #172238;
 		}
 
 		.context-usage-meta-item span {
@@ -2759,7 +2768,7 @@ export function getPlaygroundStyles(): string {
 			overflow: hidden;
 			padding: 3px 6px;
 			border-radius: 4px;
-			background: rgba(201, 210, 255, 0.06);
+			background: #172238;
 			color: rgba(225, 232, 247, 0.58);
 			text-overflow: ellipsis;
 			white-space: nowrap;
@@ -3731,9 +3740,9 @@ export function getPlaygroundStyles(): string {
 			flex-direction: column;
 			gap: 6px;
 			padding: 16px;
-			border: 1px solid var(--line);
-			border-radius: 6px;
-			background: rgba(16, 24, 44, 0.5);
+			border: 0;
+			border-radius: 4px;
+			background: #101827;
 			cursor: pointer;
 			text-align: left;
 			color: inherit;
@@ -3741,13 +3750,13 @@ export function getPlaygroundStyles(): string {
 			font-size: inherit;
 			line-height: inherit;
 			box-shadow: none;
-			transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+			transition: background 0.15s ease, color 0.15s ease;
 		}
 
 		.landing-agent-card:hover,
 		.landing-agent-card:focus-visible {
-			border-color: rgba(201, 210, 255, 0.24);
-			background: rgba(201, 210, 255, 0.07);
+			border-color: transparent;
+			background: #142033;
 		}
 
 
@@ -3757,14 +3766,14 @@ export function getPlaygroundStyles(): string {
 
 
 		:root[data-theme="light"] .landing-agent-card {
-			background: rgba(16, 24, 44, 0.08);
-			border-color: rgba(31, 95, 200, 0.10);
+			background: #f6f9fe;
+			border-color: transparent;
 		}
 
 		:root[data-theme="light"] button.landing-agent-card:hover,
 		:root[data-theme="light"] button.landing-agent-card:focus-visible {
-			border-color: rgba(201, 210, 255, 0.24);
-			background: rgba(201, 210, 255, 0.07) !important;
+			border-color: transparent;
+			background: #edf3fb !important;
 		}
 
 .landing-agent-card.is-busy {
@@ -3822,8 +3831,13 @@ export function getPlaygroundStyles(): string {
 			justify-content: center;
 			min-width: 72px;
 			min-height: 32px;
+			padding: 0 10px;
+			border: 0;
+			border-radius: 4px;
+			background: #101827;
 			text-align: center;
-			opacity: 0.86;
+			opacity: 1;
+			box-shadow: none;
 		}
 
 		.telemetry-card span {
@@ -3836,7 +3850,7 @@ export function getPlaygroundStyles(): string {
 		}
 
 		.telemetry-card strong {
-			color: rgba(228, 235, 255, 0.78);
+			color: rgba(228, 235, 255, 0.84);
 			font-size: 11px;
 			letter-spacing: 0.02em;
 			font-weight: 600;
@@ -4064,10 +4078,15 @@ export function getPlaygroundStyles(): string {
 			text-decoration: none;
 		}
 
+		.telemetry-card.telemetry-action {
+			border: 0;
+			background: #101827;
+		}
+
 		.telemetry-action:hover:not(:disabled),
 		.telemetry-action:focus-visible {
-			border-color: rgba(201, 210, 255, 0.2);
-			background: rgba(201, 210, 255, 0.08);
+			border-color: transparent;
+			background: #142033;
 			box-shadow: none;
 			transform: translateY(0);
 		}
@@ -4136,11 +4155,90 @@ export function getPlaygroundStyles(): string {
 			display: flex;
 			align-items: center;
 			justify-content: flex-end;
+			gap: 6px;
 			flex: 0 0 auto;
 			margin-left: 4px;
 			transform: translateY(-50%);
 			background: transparent;
 			box-shadow: none;
+		}
+
+		.theme-mode-toggle {
+			position: relative;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 58px;
+			height: 34px;
+			flex: 0 0 auto;
+			padding: 3px;
+			border: 1px solid rgba(143, 214, 255, 0.16);
+			border-radius: 999px;
+			background: #101827;
+			color: rgba(226, 234, 255, 0.76);
+			box-shadow: none;
+			cursor: pointer;
+		}
+
+		.theme-mode-toggle:hover:not(:disabled),
+		.theme-mode-toggle:focus-visible {
+			border-color: rgba(143, 214, 255, 0.32);
+			background: #142033;
+			color: rgba(247, 250, 255, 0.96);
+			box-shadow: none;
+			transform: none;
+		}
+
+		.theme-mode-toggle-track {
+			position: relative;
+			display: grid;
+			grid-template-columns: repeat(2, 22px);
+			align-items: center;
+			width: 50px;
+			height: 26px;
+			padding: 2px;
+			border-radius: 999px;
+			background: #070c14;
+		}
+
+		.theme-mode-toggle-icon {
+			position: relative;
+			z-index: 1;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 22px;
+			height: 22px;
+			color: rgba(226, 234, 255, 0.5);
+		}
+
+		.theme-mode-toggle-icon svg {
+			width: 15px;
+			height: 15px;
+			stroke: currentColor;
+		}
+
+		.theme-mode-toggle-sun {
+			color: rgba(255, 214, 125, 0.52);
+		}
+
+		.theme-mode-toggle-moon {
+			color: rgba(185, 247, 255, 0.94);
+		}
+
+		.theme-mode-toggle-thumb {
+			position: absolute;
+			top: 3px;
+			left: 3px;
+			z-index: 0;
+			width: 20px;
+			height: 20px;
+			border-radius: 999px;
+			background:
+				radial-gradient(circle at 66% 28%, rgba(255, 255, 255, 0.86), transparent 20%),
+				linear-gradient(145deg, #b9f7ff, #4ea1ba);
+			transform: translateX(22px);
+			transition: transform 160ms ease, background 160ms ease;
 		}
 
 		.desktop-conversation-rail {
@@ -4152,10 +4250,8 @@ export function getPlaygroundStyles(): string {
 			margin: 0;
 			padding: 14px;
 			border: 0;
-			border-radius: 6px;
-			background:
-				linear-gradient(180deg, rgba(11, 16, 27, 0.88), rgba(5, 8, 15, 0.88)),
-				#080c14;
+			border-radius: 4px;
+			background: #0b1220;
 			box-shadow: none;
 			overflow: hidden;
 		}
@@ -4166,7 +4262,7 @@ export function getPlaygroundStyles(): string {
 			justify-content: flex-start;
 			min-width: 0;
 			padding: 0 2px 12px;
-			border-bottom: 1px solid rgba(201, 210, 255, 0.08);
+			border-bottom: 0;
 		}
 
 		.desktop-conversation-list {
@@ -4186,7 +4282,7 @@ export function getPlaygroundStyles(): string {
 			display: grid;
 			gap: 6px;
 			padding-top: 12px;
-			border-top: 1px solid rgba(201, 210, 255, 0.08);
+			border-top: 0;
 		}
 
 		.desktop-rail-settings-trigger {
@@ -4196,9 +4292,9 @@ export function getPlaygroundStyles(): string {
 			width: 100%;
 			height: 34px;
 			padding: 0 10px;
-			border: 1px solid rgba(201, 210, 255, 0.1);
+			border: 0;
 			border-radius: 4px;
-			background: rgba(14, 19, 31, 0.84);
+			background: #101827;
 			color: rgba(228, 235, 255, 0.76);
 			font: inherit;
 			font-size: 11px;
@@ -4212,13 +4308,11 @@ export function getPlaygroundStyles(): string {
 			bottom: calc(100% - 6px);
 			z-index: 125;
 			display: grid;
-			gap: 5px;
-			padding: 6px;
-			border: 1px solid rgba(201, 210, 255, 0.14);
+			gap: 6px;
+			padding: 8px;
+			border: 1px solid rgba(143, 214, 255, 0.16);
 			border-radius: 4px;
-			background:
-				linear-gradient(180deg, rgba(12, 17, 28, 0.96), rgba(7, 10, 18, 0.96)),
-				#080b12;
+			background: #111827;
 			box-shadow: none;
 			opacity: 0;
 			pointer-events: none;
@@ -4236,7 +4330,14 @@ export function getPlaygroundStyles(): string {
 		.desktop-rail-settings-menu .telemetry-action {
 			justify-content: flex-start;
 			width: 100%;
-			min-height: 34px;
+			min-height: 42px;
+			background: #172238;
+			text-align: left;
+		}
+
+		.desktop-rail-settings-menu .telemetry-action:hover:not(:disabled),
+		.desktop-rail-settings-menu .telemetry-action:focus-visible {
+			background: #1d3049;
 		}
 
 
@@ -4256,20 +4357,20 @@ export function getPlaygroundStyles(): string {
 			gap: 3px;
 			padding: 8px 34px 8px 12px;
 			border-color: transparent;
-			background: transparent;
-			opacity: 0.74;
+			background: #101827;
+			opacity: 0.86;
 		}
 
 		.desktop-conversation-list .mobile-conversation-item:hover:not(:disabled),
 		.desktop-conversation-list .mobile-conversation-item:focus-visible {
 			border-color: transparent;
-			background: rgba(201, 210, 255, 0.045);
-			opacity: 0.96;
+			background: #142033;
+			opacity: 1;
 		}
 
 		.desktop-conversation-list .mobile-conversation-item.is-active {
 			border-color: transparent;
-			background: rgba(201, 210, 255, 0.075);
+			background: #14243a;
 			opacity: 1;
 		}
 
@@ -4285,16 +4386,16 @@ export function getPlaygroundStyles(): string {
 		}
 
 		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item {
-			background: transparent;
+			background: #101827;
 		}
 
 		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item:hover:not(:disabled),
 		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item:focus-visible {
-			background: rgba(201, 210, 255, 0.045);
+			background: #142033;
 		}
 
 		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-item.is-active {
-			background: rgba(201, 210, 255, 0.075);
+			background: #14243a;
 		}
 
 		.desktop-conversation-list .conversation-item-shell[class*="conversation-bg-"] .mobile-conversation-title {
@@ -4416,7 +4517,7 @@ export function getPlaygroundStyles(): string {
 			max-height: none;
 			gap: 8px;
 			padding: 8px 10px 8px 12px;
-			border: 1px solid rgba(201, 210, 255, 0.08);
+			border: 0;
 			border-radius: 4px;
 			background: var(--chat-composer-bg);
 			box-shadow: none;
@@ -4487,6 +4588,7 @@ export function getPlaygroundStyles(): string {
 		.shell[data-team-console-embed="mini"] #open-asset-library-button,
 		.shell[data-team-console-embed="mini"] #open-conn-manager-button,
 		.shell[data-team-console-embed="mini"] #open-task-inbox-button,
+		.shell[data-team-console-embed="mini"] .theme-mode-toggle,
 		.shell[data-team-console-embed="mini"] .landing-side-right > a.telemetry-action,
 		.shell[data-team-console-embed="mini"] .topbar-agent-label,
 		.shell[data-team-console-embed="mini"] .mobile-topbar,
@@ -4794,6 +4896,10 @@ export function getPlaygroundStyles(): string {
 				transform: none;
 			}
 
+			.theme-mode-toggle {
+				display: none;
+			}
+
 			.topbar-agent-label {
 				display: inline-flex;
 				min-width: 0;
@@ -5055,9 +5161,9 @@ export function getPlaygroundStyles(): string {
 				grid-template-columns: auto minmax(0, 1fr) auto;
 				gap: 8px;
 				padding: 8px 8px 8px 10px;
-				border: 1px solid rgba(201, 210, 255, 0.08);
+				border: 0;
 				border-radius: 4px;
-				background: rgba(8, 10, 19, 0.98);
+				background: var(--chat-composer-bg);
 				box-shadow: none;
 			}
 
@@ -5108,9 +5214,9 @@ export function getPlaygroundStyles(): string {
 				max-height: none;
 				gap: 8px;
 				padding: 6px 8px 6px 10px;
-				border: 1px solid rgba(201, 210, 255, 0.08);
+				border: 0;
 				border-radius: 4px;
-				background: rgba(8, 10, 19, 0.98);
+				background: var(--chat-composer-bg);
 				box-shadow: none;
 			}
 
@@ -5205,8 +5311,8 @@ export function getPlaygroundStyles(): string {
 
 			.message-body {
 				padding: 14px 14px 15px;
-				border-radius: 14px;
-				background: rgba(24, 28, 39, 0.82);
+				border-radius: 4px;
+				background: var(--chat-assistant-bg);
 			}
 
 			.message-content {

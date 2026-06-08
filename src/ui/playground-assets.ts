@@ -49,7 +49,7 @@ export function getPlaygroundAssetBaseStyles(): string {
 		.file-downloads,
 		.asset-modal-list {
 			display: grid;
-			gap: 6px;
+			gap: 8px;
 		}
 
 		.asset-date-group-header {
@@ -93,8 +93,8 @@ export function getPlaygroundAssetBaseStyles(): string {
 			align-items: center;
 			border: 0;
 			border-radius: 4px;
-			background: rgba(201, 210, 255, 0.045);
-			padding: 10px 12px;
+			background: #101827;
+			padding: 12px 14px;
 			font-size: 11px;
 			line-height: 1.5;
 			color: var(--muted);
@@ -111,16 +111,12 @@ export function getPlaygroundAssetBaseStyles(): string {
 		}
 
 		.asset-pill {
-			min-height: 66px;
-			background:
-				linear-gradient(90deg, rgba(141, 255, 178, 0.055), transparent 44%),
-				rgba(201, 210, 255, 0.045);
+			min-height: 74px;
+			background: #101827;
 		}
 
 		.asset-pill:hover {
-			background:
-				linear-gradient(90deg, rgba(141, 255, 178, 0.075), transparent 48%),
-				rgba(201, 210, 255, 0.07);
+			background: #14243a;
 		}
 
 		.asset-pill-main {
@@ -133,7 +129,7 @@ export function getPlaygroundAssetBaseStyles(): string {
 
 		.asset-pill-type {
 			--asset-type-border: rgba(201, 210, 255, 0.12);
-			--asset-type-bg: rgba(8, 12, 20, 0.64);
+			--asset-type-bg: #101827;
 			--asset-type-main: rgba(226, 231, 255, 0.82);
 			--asset-type-sub: rgba(226, 234, 255, 0.38);
 			display: inline-grid;
@@ -302,7 +298,7 @@ export function getPlaygroundAssetBaseStyles(): string {
 			padding: 6px 10px 6px 8px;
 			border: 0;
 			border-radius: 4px;
-			background: rgba(255, 255, 255, 0.045);
+			background: #182336;
 			box-shadow: none;
 		}
 
@@ -362,16 +358,16 @@ export function getPlaygroundAssetBaseStyles(): string {
 		}
 
 		.file-chip.pending {
-			background: rgba(255, 255, 255, 0.045);
+			background: #2a2231;
 		}
 
 		.file-chip.asset {
-			background: rgba(201, 210, 255, 0.05);
+			background: #123329;
 		}
 
 		.file-chip.asset .file-chip-badge {
 			background: transparent;
-			color: rgba(226, 231, 255, 0.82);
+			color: #b9f7d2;
 		}
 
 		.message-file-strip {
@@ -391,17 +387,21 @@ export function getPlaygroundAssetBaseStyles(): string {
 
 		.message.user .file-chip {
 			border-color: transparent;
-			background: rgba(0, 0, 0, 0.06);
+			background: #21543a;
 		}
 
 		.message.user .file-chip-badge {
 			border-color: transparent;
 			background: transparent;
-			color: #17320f;
+			color: #b9f7d2;
 		}
 
 		.message.user .file-chip-label {
-			color: #17320f;
+			color: #e9fff2;
+		}
+
+		.message.user .file-chip-remove {
+			color: rgba(233, 255, 242, 0.7);
 		}
 
 		.file-download-actions {
@@ -412,7 +412,7 @@ export function getPlaygroundAssetBaseStyles(): string {
 
 		.file-download a {
 			border: 0;
-			background: rgba(201, 210, 255, 0.08);
+			background: #1b2638;
 			color: var(--accent);
 			padding: 6px 9px;
 			text-decoration: none;
@@ -497,8 +497,8 @@ export function getPlaygroundAssetBaseStyles(): string {
 			min-height: 29px;
 			border: 0;
 			border-radius: 4px;
-			background: rgba(141, 255, 178, 0.08);
-			color: rgba(209, 255, 224, 0.9);
+			background: #17452f;
+			color: #d1ffe0;
 			font-weight: 650;
 			line-height: 1;
 			text-decoration: none;
@@ -507,7 +507,7 @@ export function getPlaygroundAssetBaseStyles(): string {
 
 		.asset-pill-download-button:hover,
 		.asset-pill-download-button:focus-visible {
-			background: rgba(141, 255, 178, 0.14);
+			background: #1f5a3a;
 			color: rgba(237, 255, 244, 0.98);
 		}
 
@@ -516,10 +516,8 @@ export function getPlaygroundAssetBaseStyles(): string {
 		}
 
 		.asset-pill.active {
-			border-color: rgba(201, 210, 255, 0.18);
-			background:
-				linear-gradient(90deg, rgba(141, 255, 178, 0.11), transparent 48%),
-				rgba(255, 255, 255, 0.08);
+			border-color: transparent;
+			background: #173b29;
 			box-shadow: none;
 		}
 
@@ -534,8 +532,8 @@ export function getPlaygroundAssetModalStyles(): string {
 
 		.asset-empty {
 			padding: 10px;
-			border: 1px solid rgba(255, 255, 255, 0.08);
-			background: rgba(255, 255, 255, 0.04);
+			border: 1px solid rgba(143, 214, 255, 0.12);
+			background: #101827;
 			color: rgba(238, 244, 255, 0.56);
 			font-size: 11px;
 			line-height: 1.6;
@@ -549,7 +547,7 @@ export function getPlaygroundAssetModalStyles(): string {
 			align-items: center;
 			justify-content: center;
 			padding: 24px;
-			background: rgba(4, 8, 14, 0.54);
+			background: rgba(1, 3, 10, 0.74);
 			backdrop-filter: none;
 		}
 
@@ -562,9 +560,10 @@ export function getPlaygroundAssetModalStyles(): string {
 			max-height: min(72vh, 720px);
 			display: grid;
 			grid-template-rows: auto minmax(0, 1fr);
-			border: 1px solid rgba(255, 255, 255, 0.08);
+			border: 1px solid rgba(143, 214, 255, 0.16);
 			background:
-				linear-gradient(180deg, rgba(19, 26, 38, 0.86), rgba(13, 18, 28, 0.88));
+				linear-gradient(180deg, rgba(17, 24, 39, 0.98), rgba(7, 10, 18, 0.98)),
+				#0b1220;
 			box-shadow: none;
 			backdrop-filter: none;
 		}
@@ -594,7 +593,7 @@ export function getPlaygroundAssetModalStyles(): string {
 			min-height: 0;
 			padding: 14px;
 			overflow-y: auto;
-			border-top: 1px solid var(--line);
+			border-top: 0;
 			scrollbar-width: none;
 			-ms-overflow-style: none;
 		}
@@ -615,8 +614,8 @@ export function getPlaygroundAssetModalStyles(): string {
 			padding: 10px 14px;
 			border: 0;
 			background:
-				linear-gradient(90deg, rgba(13, 18, 30, 0.98), rgba(8, 11, 20, 0.94)),
-				#080c14;
+				linear-gradient(90deg, rgba(18, 27, 44, 0.99), rgba(9, 14, 24, 0.98)),
+				#0b1220;
 			color: rgba(232, 238, 255, 0.62);
 			text-transform: none;
 			letter-spacing: 0;
@@ -675,7 +674,7 @@ export function getPlaygroundAssetModalStyles(): string {
 			overflow-x: auto;
 			overflow-y: hidden;
 			border-radius: 4px;
-			background: rgba(255, 255, 255, 0.035);
+			background: #101827;
 			scrollbar-width: none;
 		}
 
@@ -699,9 +698,33 @@ export function getPlaygroundAssetModalStyles(): string {
 
 		.chat-stage > .workspace-contained :is(.asset-modal-actions button, .task-inbox-head-button):hover:not(:disabled),
 		.chat-stage > .workspace-contained :is(.asset-modal-actions button, .task-inbox-head-button):focus-visible {
-			background: rgba(201, 210, 255, 0.11);
+			background: #172238;
 			color: rgba(248, 251, 255, 0.96);
 			transform: none;
+		}
+
+		.chat-stage > .workspace-contained .asset-modal-body {
+			padding: 14px;
+			background:
+				linear-gradient(180deg, rgba(7, 10, 18, 0.58), rgba(7, 10, 18, 0.8)),
+				#070a12;
+		}
+
+		.chat-stage > .workspace-contained .asset-modal-list {
+			gap: 10px;
+		}
+
+		.chat-stage > .workspace-contained .asset-pill {
+			min-height: 78px;
+			background: #101827;
+		}
+
+		.chat-stage > .workspace-contained .asset-pill:hover {
+			background: #14243a;
+		}
+
+		.chat-stage > .workspace-contained .asset-pill.active {
+			background: #173b29;
 		}
 
 		.chat-stage > .workspace-contained .mobile-work-back-button {
@@ -710,9 +733,15 @@ export function getPlaygroundAssetModalStyles(): string {
 
 		:root[data-theme="light"] .chat-stage > .workspace-contained :is(.asset-modal-head, .task-inbox-head) {
 			background:
-				linear-gradient(90deg, rgba(255, 255, 255, 0.98), rgba(244, 247, 252, 0.96)),
+				linear-gradient(90deg, #ffffff, #f6f9fe),
 				#ffffff;
 			color: #5d687a;
+		}
+
+		:root[data-theme="light"] .chat-stage > .workspace-contained .asset-modal-body {
+			background:
+				linear-gradient(180deg, rgba(240, 245, 252, 0.72), rgba(232, 239, 249, 0.88)),
+				#edf3fb;
 		}
 
 		:root[data-theme="light"] .chat-stage > .workspace-contained :is(.asset-modal-copy strong, .task-inbox-head-copy strong) {

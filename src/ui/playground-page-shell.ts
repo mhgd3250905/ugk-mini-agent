@@ -111,6 +111,23 @@ ${input.playgroundScript ?? ""}</script>`;
 							<span id="context-usage-toggle" class="context-usage-toggle">&#19978;&#19979;&#25991;&#35814;&#24773;</span>
 							<span id="context-usage-meta" class="context-usage-meta" role="tooltip">&#24403;&#21069;&#19978;&#19979;&#25991; 0 / 128,000 tokens (0%)</span>
 						</button>
+						<button id="theme-toggle-button" class="theme-mode-toggle" type="button" aria-pressed="false" aria-label="切换浅色主题" title="切换浅色主题">
+							<span id="theme-toggle-label" class="visually-hidden">深色模式</span>
+							<span class="theme-mode-toggle-track" aria-hidden="true">
+								<span class="theme-mode-toggle-icon theme-mode-toggle-sun">
+									<svg viewBox="0 0 24 24" fill="none">
+										<circle cx="12" cy="12" r="4" stroke-width="1.8" />
+										<path d="M12 2.8v2.4M12 18.8v2.4M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2.8 12h2.4M18.8 12h2.4M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7" stroke-width="1.8" stroke-linecap="round" />
+									</svg>
+								</span>
+								<span class="theme-mode-toggle-icon theme-mode-toggle-moon">
+									<svg viewBox="0 0 24 24" fill="none">
+										<path d="M20 14.2A7.3 7.3 0 0 1 9.8 4a8.1 8.1 0 1 0 10.2 10.2Z" stroke-width="1.8" stroke-linejoin="round" />
+									</svg>
+								</span>
+								<span class="theme-mode-toggle-thumb"></span>
+							</span>
+						</button>
 					</div>
 				</aside>
 				<section id="mobile-topbar" class="mobile-topbar" aria-label="手机状态栏">
@@ -312,21 +329,6 @@ ${input.playgroundScript ?? ""}</script>`;
 						<button id="open-browser-workbench-button" class="telemetry-card telemetry-action" type="button" role="menuitem">
 							<span>别再 SSH 开浏览器面板</span>
 							<strong>Chrome 工作台</strong>
-						</button>
-						<button id="theme-toggle-button" class="telemetry-card telemetry-action theme-toggle-button" type="button" role="menuitem" aria-pressed="false" aria-label="切换浅色主题" title="切换浅色主题">
-							<span>界面别太死板</span>
-							<strong id="theme-toggle-label">深色模式</strong>
-							<span class="theme-toggle-icon theme-toggle-icon-sun" aria-hidden="true">
-								<svg viewBox="0 0 24 24" fill="none">
-									<circle cx="12" cy="12" r="4" stroke-width="1.8" />
-									<path d="M12 2.8v2.4M12 18.8v2.4M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2.8 12h2.4M18.8 12h2.4M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7" stroke-width="1.8" stroke-linecap="round" />
-								</svg>
-							</span>
-							<span class="theme-toggle-icon theme-toggle-icon-moon" aria-hidden="true">
-								<svg viewBox="0 0 24 24" fill="none">
-									<path d="M20 14.2A7.3 7.3 0 0 1 9.8 4a8.1 8.1 0 1 0 10.2 10.2Z" stroke-width="1.8" stroke-linejoin="round" />
-								</svg>
-							</span>
 						</button>
 					</div>
 				</div>
