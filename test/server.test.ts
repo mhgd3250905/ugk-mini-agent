@@ -3830,7 +3830,12 @@ test("GET /playground uses touch-first mobile panels for library, tasks, conn, a
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.context-usage-dialog-panel\s*\{[\s\S]*border:\s*0;[\s\S]*border-radius:\s*8px;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.context-usage-dialog-head\s*\{[\s\S]*border-bottom:\s*0;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.context-usage-dialog-body\s*\{[\s\S]*border:\s*0;[\s\S]*background:\s*transparent;/);
+	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-drawer-backdrop\s*\{[\s\S]*z-index:\s*130;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-drawer-backdrop\s*\{[\s\S]*background:\s*rgba\(1, 3, 10, 0\.42\);/);
+	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-drawer\s*\{[\s\S]*z-index:\s*131;/);
+	assert.match(response.body, /\.shell\[data-home="true"\] > \.mobile-drawer-backdrop,[\s\S]*\.shell\[data-home="true"\] > \.mobile-conversation-drawer\s*\{[\s\S]*position:\s*fixed;/);
+	assert.match(response.body, /\.shell\[data-home="true"\] > \.mobile-drawer-backdrop\s*\{[\s\S]*z-index:\s*130;/);
+	assert.match(response.body, /\.shell\[data-home="true"\] > \.mobile-conversation-drawer\s*\{[\s\S]*z-index:\s*131;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-drawer\s*\{[\s\S]*width:\s*min\(88vw, 360px\);/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-drawer\s*\{[\s\S]*border-right:\s*0;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-conversation-drawer\s*\{[\s\S]*background:[\s\S]*#060711;/);

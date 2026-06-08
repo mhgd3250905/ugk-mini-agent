@@ -1202,10 +1202,12 @@ export function getPlaygroundAssetMobileStyles(): string {
 			}
 
 			.mobile-drawer-backdrop {
+				z-index: 130;
 				background: rgba(1, 3, 10, 0.42);
 			}
 
 			.mobile-conversation-drawer {
+				z-index: 131;
 				width: min(88vw, 360px);
 				max-width: calc(100vw - 8px);
 				padding: calc(12px + env(safe-area-inset-top)) 10px calc(12px + env(safe-area-inset-bottom));
@@ -1215,6 +1217,19 @@ export function getPlaygroundAssetMobileStyles(): string {
 					linear-gradient(180deg, #121522 0%, #070914 34%, #04050d 100%),
 					#060711;
 				box-shadow: none;
+			}
+
+			.shell[data-home="true"] > .mobile-drawer-backdrop,
+			.shell[data-home="true"] > .mobile-conversation-drawer {
+				position: fixed;
+			}
+
+			.shell[data-home="true"] > .mobile-drawer-backdrop {
+				z-index: 130;
+			}
+
+			.shell[data-home="true"] > .mobile-conversation-drawer {
+				z-index: 131;
 			}
 
 			.mobile-drawer-head {
