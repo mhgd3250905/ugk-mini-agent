@@ -6,6 +6,7 @@ import { getPlaygroundContextUsageStyles } from "../src/ui/playground-context-us
 import { getPlaygroundConfirmDialogStyles } from "../src/ui/playground-confirm-dialog-styles.js";
 import { getPlaygroundNotificationStyles } from "../src/ui/playground-notification-styles.js";
 import { getPlaygroundErrorBannerStyles } from "../src/ui/playground-error-banner-styles.js";
+import { getPlaygroundScrollToBottomStyles } from "../src/ui/playground-scroll-to-bottom-styles.js";
 
 test("playground styles expose the mobile active transcript rail reset", () => {
 	const styles = getPlaygroundStyles();
@@ -295,5 +296,45 @@ test("playground styles compose error banner styles from dedicated fragment", ()
 	assert.ok(
 		styles.includes(errorBannerStyles),
 		"getPlaygroundStyles() must include error banner styles",
+	);
+});
+
+test("playground styles compose scroll-to-bottom styles from dedicated fragment", () => {
+	const styles = getPlaygroundStyles();
+	const scrollToBottomStyles = getPlaygroundScrollToBottomStyles();
+
+	assert.match(scrollToBottomStyles, /\.scroll-to-bottom-button\s*\{/);
+	assert.match(scrollToBottomStyles, /\.scroll-to-bottom-button\.visible\s*\{/);
+	assert.match(scrollToBottomStyles, /\.scroll-to-bottom-button:hover:not\(:disabled\)/);
+	assert.match(scrollToBottomStyles, /\.scroll-to-bottom-button:focus-visible/);
+
+	assert.match(scrollToBottomStyles, /\.scroll-to-bottom-button\s*\{[\s\S]*display:\s*none;/);
+	assert.match(scrollToBottomStyles, /\.scroll-to-bottom-button\s*\{[\s\S]*position:\s*absolute;/);
+	assert.match(scrollToBottomStyles, /\.scroll-to-bottom-button\s*\{[\s\S]*right:\s*14px;/);
+	assert.match(scrollToBottomStyles, /\.scroll-to-bottom-button\s*\{[\s\S]*bottom:\s*20px;/);
+	assert.match(scrollToBottomStyles, /\.scroll-to-bottom-button\s*\{[\s\S]*z-index:\s*5;/);
+	assert.match(scrollToBottomStyles, /\.scroll-to-bottom-button\s*\{[\s\S]*border:\s*0;/);
+	assert.match(scrollToBottomStyles, /\.scroll-to-bottom-button\s*\{[\s\S]*border-radius:\s*4px;/);
+	assert.match(scrollToBottomStyles, /\.scroll-to-bottom-button\s*\{[\s\S]*background:\s*#182336;/);
+	assert.match(scrollToBottomStyles, /\.scroll-to-bottom-button\s*\{[\s\S]*box-shadow:\s*none;/);
+	assert.match(scrollToBottomStyles, /\.scroll-to-bottom-button\.visible\s*\{[\s\S]*display:\s*inline-flex;/);
+	assert.match(
+		scrollToBottomStyles,
+		/\.scroll-to-bottom-button:hover:not\(:disabled\),\s*\.scroll-to-bottom-button:focus-visible\s*\{[\s\S]*border-color:\s*transparent;/,
+	);
+	assert.match(
+		scrollToBottomStyles,
+		/\.scroll-to-bottom-button:hover:not\(:disabled\),\s*\.scroll-to-bottom-button:focus-visible\s*\{[\s\S]*background:\s*#20324a;/,
+	);
+
+	assert.doesNotMatch(scrollToBottomStyles, /\.transcript-archive/);
+	assert.doesNotMatch(scrollToBottomStyles, /\.transcript-current/);
+	assert.doesNotMatch(scrollToBottomStyles, /@media\s*\(max-width:\s*640px\)/);
+	assert.doesNotMatch(scrollToBottomStyles, /:root\[data-theme="light"\]/);
+	assert.doesNotMatch(scrollToBottomStyles, /\.scroll-to-bottom-button\s*\{[\s\S]*position:\s*fixed/);
+
+	assert.ok(
+		styles.includes(scrollToBottomStyles),
+		"getPlaygroundStyles() must include scroll-to-bottom styles",
 	);
 });

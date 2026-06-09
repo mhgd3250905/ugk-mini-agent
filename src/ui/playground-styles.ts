@@ -11,6 +11,7 @@ import { getPlaygroundConversationStyles } from "./playground-conversation-style
 import { getPlaygroundContextUsageStyles } from "./playground-context-usage-styles.js";
 import { getPlaygroundConfirmDialogStyles } from "./playground-confirm-dialog-styles.js";
 import { getPlaygroundErrorBannerStyles } from "./playground-error-banner-styles.js";
+import { getPlaygroundScrollToBottomStyles } from "./playground-scroll-to-bottom-styles.js";
 import { getPlaygroundNotificationStyles } from "./playground-notification-styles.js";
 
 export function getPlaygroundStyles(): string {
@@ -891,40 +892,7 @@ export function getPlaygroundStyles(): string {
 			display: none;
 		}
 
-		.scroll-to-bottom-button {
-			display: none;
-			position: absolute;
-			right: 14px;
-			bottom: 20px;
-			z-index: 5;
-			align-items: center;
-			justify-content: center;
-			min-height: 34px;
-			padding: 8px 12px;
-			border: 0;
-			border-radius: 4px;
-			background: #182336;
-			color: rgba(238, 244, 255, 0.92);
-			font-size: 11px;
-			line-height: 1;
-			letter-spacing: 0.08em;
-			text-transform: uppercase;
-			box-shadow: none;
-			backdrop-filter: none;
-		}
-
-		.scroll-to-bottom-button.visible {
-			display: inline-flex;
-		}
-
-		.scroll-to-bottom-button:hover:not(:disabled),
-		.scroll-to-bottom-button:focus-visible {
-			border-color: transparent;
-			background: #20324a;
-			color: #f3fbff;
-			transform: none;
-			box-shadow: none;
-		}
+		${getPlaygroundScrollToBottomStyles()}
 
 		.transcript-archive,
 		.transcript-current {
