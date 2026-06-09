@@ -7,6 +7,7 @@ import { getPlaygroundConfirmDialogStyles } from "../src/ui/playground-confirm-d
 import { getPlaygroundNotificationStyles } from "../src/ui/playground-notification-styles.js";
 import { getPlaygroundErrorBannerStyles } from "../src/ui/playground-error-banner-styles.js";
 import { getPlaygroundScrollToBottomStyles } from "../src/ui/playground-scroll-to-bottom-styles.js";
+import { getPlaygroundMessageContextStyles } from "../src/ui/playground-message-context-styles.js";
 
 test("playground styles expose the mobile active transcript rail reset", () => {
 	const styles = getPlaygroundStyles();
@@ -336,5 +337,48 @@ test("playground styles compose scroll-to-bottom styles from dedicated fragment"
 	assert.ok(
 		styles.includes(scrollToBottomStyles),
 		"getPlaygroundStyles() must include scroll-to-bottom styles",
+	);
+});
+
+test("playground styles compose message context styles from dedicated fragment", () => {
+	const styles = getPlaygroundStyles();
+	const messageContextStyles = getPlaygroundMessageContextStyles();
+
+	assert.match(messageContextStyles, /\.message-context-menu\s*\{/);
+	assert.match(messageContextStyles, /\.message-context-menu button\s*\{/);
+	assert.match(messageContextStyles, /\.message-context-menu button:hover/);
+	assert.match(messageContextStyles, /\.message-context-menu button:focus-visible/);
+	assert.match(messageContextStyles, /\.message-context-toast\s*\{/);
+
+	assert.match(messageContextStyles, /\.message-context-menu\s*\{[\s\S]*position:\s*fixed;/);
+	assert.match(messageContextStyles, /\.message-context-menu\s*\{[\s\S]*z-index:\s*40;/);
+	assert.match(messageContextStyles, /\.message-context-menu\s*\{[\s\S]*min-width:\s*128px;/);
+	assert.match(messageContextStyles, /\.message-context-menu\s*\{[\s\S]*border-radius:\s*4px;/);
+	assert.match(messageContextStyles, /\.message-context-menu\s*\{[\s\S]*box-shadow:\s*none;/);
+	assert.match(messageContextStyles, /\.message-context-menu button\s*\{[\s\S]*min-height:\s*34px;/);
+	assert.match(messageContextStyles, /\.message-context-menu button\s*\{[\s\S]*border:\s*0;/);
+	assert.match(messageContextStyles, /\.message-context-menu button\s*\{[\s\S]*background:\s*transparent;/);
+	assert.match(messageContextStyles, /\.message-context-menu button\s*\{[\s\S]*text-align:\s*left;/);
+	assert.match(
+		messageContextStyles,
+		/\.message-context-menu button:hover,\s*\.message-context-menu button:focus-visible\s*\{[\s\S]*background:\s*rgba\(201, 210, 255, 0\.1\);/,
+	);
+	assert.match(messageContextStyles, /\.message-context-toast\s*\{[\s\S]*position:\s*fixed;/);
+	assert.match(messageContextStyles, /\.message-context-toast\s*\{[\s\S]*z-index:\s*41;/);
+	assert.match(
+		messageContextStyles,
+		/\.message-context-toast\s*\{[\s\S]*bottom:\s*calc\(88px \+ env\(safe-area-inset-bottom\)\);/,
+	);
+	assert.match(messageContextStyles, /\.message-context-toast\s*\{[\s\S]*pointer-events:\s*none;/);
+
+	assert.doesNotMatch(messageContextStyles, /\.message-export-scratch/);
+	assert.doesNotMatch(messageContextStyles, /\.message-export-frame/);
+	assert.doesNotMatch(messageContextStyles, /\.export-signature/);
+	assert.doesNotMatch(messageContextStyles, /\.message-export-media-placeholder/);
+	assert.doesNotMatch(messageContextStyles, /:root\[data-theme="light"\]/);
+
+	assert.ok(
+		styles.includes(messageContextStyles),
+		"getPlaygroundStyles() must include message context styles",
 	);
 });
