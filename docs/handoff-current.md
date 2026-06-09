@@ -1,14 +1,14 @@
 # 当前交接快照
 
-更新时间：`2026-06-08`
+更新时间：`2026-06-09`
 
 这份文档只记录当前接手所需事实。历史流水账不要塞回来；需要追溯旧阶段时用 Git 历史、专题文档和 `docs/change-log.md`。若本文件与当前用户提示、`git status` 或真实运行结果冲突，以后者为准。
 
 ## 当前维护边界
 
-- 当前维护对象：Team Console / Canvas Task / Conn `team_group` / Discovery。
-- 本轮新增维护对象：API 源管理入口 `/playground/model-sources` 与模型 provider runtime overlay。该入口是独立管理页，不是主 `/playground` 聊天 UI 重做。
-- 不维护：主 `/playground` 产品 UI 重做、无关 `.pi/skills/**` runtime skill、运行时 public 产物、`.data`。
+- 当前维护对象：Team Console / Canvas Task / Conn `team_group` / Discovery，以及本轮已收口的主 `/playground` Chat UI polish。
+- 本轮新增维护对象：API 源管理入口 `/playground/model-sources` 与模型 provider runtime overlay；主 `/playground` Chat 已完成视觉收口，后续没有明确用户要求时不要继续扩展重做。
+- 不维护：无关 `.pi/skills/**` runtime skill、运行时 public 产物、`.data`。
 - 固定 Team Console 本地入口：`http://127.0.0.1:5174/`。
 - 固定主后端入口：`http://127.0.0.1:3000`。
 - Team Console Live API 通过 `5174` 同源代理访问 `/v1`、`/playground`、`/assets`、`/runtime`、`/vendor`。
@@ -26,11 +26,10 @@
 ## 当前 Git 现场
 
 - 当前分支：`main`。
-- `origin/main` 与 `gitee/main` 此前均已同步到 `325ed4ec61225622f146ddd9f8581070301854a4`（`Add API source management workbench`）。本轮 Team Task typed template parameters 与 Task Leader mini chat 提交后，本地 `main` 会领先远端 2 个提交；是否推送以用户后续指令为准。
-- 本轮 Git 保存范围：Team Task 模板参数 `inputType` 合同、后端绑定归一化/校验、Team Console 参数控件渲染、`/team-task` skill 自然语言引导、Task 操作菜单“对话 Leader”mini/full iframe 对齐、相关测试和文档。
+- 本轮 Git 保存范围：Team Task 模板参数 `inputType` 合同、Team Console / Discovery / Group 命名链路、Task Leader mini/full iframe 对齐、主 `/playground` Chat 视觉 polish、相关测试和文档。远端同步状态以实时 `git status --short --branch` 和 `git log --oneline origin/main..HEAD` 为准。
 - `origin`：GitHub `https://github.com/mhgd3250905/ugk-claw-personal.git`。
 - `gitee`：`https://gitee.com/ksheng3250905/ugk-pi-claw.git`。
-- 不要提交这些本地未跟踪物件：`.codex/plans/2026-06-07-discovery-channel-set.md`、`.codex/plans/2026-06-08-api-source-management.md`、`docs/windows-native-runtime-feasibility.md`、`Find_Old_Google_Root_Key_Source.md`、`Google_Root_Cert_Update_Report.md`、`public/rsa-root-cert-report.html`、runtime 数据、截图、报告、临时文件。
+- 不要提交这些本地未跟踪物件：`.codex/plans/2026-06-07-discovery-channel-set.md`、`.codex/plans/2026-06-08-api-source-management.md`、`docs/windows-native-runtime-feasibility.md`、`Find_Old_Google_Root_Key_Source.md`、`Google_Root_Cert_Update_Report.md`、`public/chat-background-reference.html`、`public/rsa-root-cert-report.html`、runtime 数据、截图、报告、临时文件。
 
 继续工作前先执行：
 

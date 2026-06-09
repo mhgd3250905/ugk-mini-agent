@@ -1,6 +1,14 @@
 # Playground 当前状态
 
-更新时间：`2026-06-08`
+更新时间：`2026-06-09`
+
+## 2026-06-09 主 Chat UI 收口补充
+
+- 主 `/playground` Chat 这轮视觉收口保持“干净、有质感、精致但不花”的静态工作台方向：深色背景是哑光近黑底 + 极淡网格，`chat-stage` 不再叠额外半透明深色块；UGK watermark 只做低对比品牌背景，不抢消息阅读。
+- 对话气泡、引用文件、代码块、消息动作、设置菜单、topbar tooltip、删除确认弹窗和 standalone 确认弹窗都按实色块与文字颜色区分层级，正常态不靠边框撑质感。危险确认按钮使用红色实底，普通取消按钮使用深色实底。
+- 用户消息 meta 继续保持右对齐，视觉顺序必须是时间在左、`YOU` 标签在右；消息动作按钮是统一尺寸的 icon-only 控件，避免旧的复制 / 图片图案大小不一致。
+- 手机端点击左上 UGK logo 打开历史会话抽屉时，抽屉和遮罩必须作为真正 overlay 固定在视口上方；首页态不能被 `.shell[data-home="true"] > *` 这类通配布局规则压成普通内容层。当前移动断点下遮罩 `z-index: 130`，抽屉 `z-index: 131`，应高于 topbar、Agent 标签和上下文电池。
+- `src/ui/playground-assets.ts` 承载移动历史抽屉样式；`src/ui/playground-styles.ts` 承载主 Chat、topbar、气泡、弹窗和背景样式；相关合同测试在 `test/server.test.ts`。
 
 ## 2026-06-08 Chat 色块层级轻刷新
 
@@ -710,7 +718,7 @@
 - 服务端 `ConversationStore` 维护 `currentConversationId` 和会话目录；所有平台打开页面后都以服务端当前会话为准，不再固定写死 `agent:global`
 - 浏览器端会话目录、新建会话、切换当前会话、运行中禁切、以及手机历史抽屉列表渲染集中在 `src/ui/playground-conversations-controller.ts`；`src/ui/playground.ts` 仍持有主 state，布局滚动与恢复入口已交给 `src/ui/playground-layout-controller.ts`，transcript 渲染入口已交给 `src/ui/playground-transcript-renderer.ts`，stream lifecycle 已交给 `src/ui/playground-stream-controller.ts`
 - 桌面 Web 现在常驻左侧历史会话栏，和手机历史抽屉共用同一份 conversation catalog 渲染与切换逻辑；左栏是 cockpit 索引面板，不是后台列表卡片堆：宽度稳定在 `250px-280px`，用左侧冷色状态线、背景层级和紧凑条目区分状态，深浅主题都不能靠阴影撑层级。移动端仍走左侧抽屉，避免小屏再塞一条常驻侧栏。
-- 手机端历史会话抽屉按“会话索引”而不是“大卡片列表”设计：抽屉沿用上下文详情的无边框仪表盘语言，外层是深色渐变面板，头部是 `#101421` raised surface，列表项用 `#0b0e19` 背景层和约 `92px` 稳定高度，当前会话用 `#151a2b` 高亮与左侧冷白蓝亮条，时间 / 条数做成小型信息胶囊，删除入口退成条目内部右上角的 icon-only 小按钮。
+- 手机端历史会话抽屉按“会话索引”而不是“大卡片列表”设计：抽屉沿用上下文详情的无边框仪表盘语言，外层是深色渐变面板，头部透明裸放，列表项用 `#0b0e19` 背景层和约 `72px` 稳定高度，当前会话用 `#151a2b` 高亮与左侧冷白蓝亮条。每条只展示标题和时间 / 运行状态，不再渲染两行摘要或消息条数；删除入口退成条目内部右上角的 icon-only 小按钮。
 - 点击 `新会话` 会调用 `POST /v1/chat/conversations` 创建新的 `conversationId`，并把它设置成全局当前会话；旧会话不会被 reset 或删除
 - 点击 `新会话` 时，前端用 `conversationCreatePending` 防止请求飞行中的重复创建；如果当前会话已经是无正文、无附件、无 active run 的空白会话，则再次点击直接 no-op，不再继续创建一串空白会话。创建成功后先本地插入会话目录并进入新会话，再让新会话的一次 canonical `GET /v1/chat/state` 在后台收口 UI，不再把用户挡在 hydrate 前面，也不再先额外 round-trip 一轮 `GET /v1/chat/conversations`。
 - 手机端点击左侧品牌区会打开历史会话抽屉；点击历史项时前端应先立即关闭抽屉，再调用 `POST /v1/chat/current`，不能傻等服务端回包后才把侧边栏收起来
@@ -782,7 +790,7 @@
 - 顶部只保留紧凑品牌状态栏：左侧是可点击的彩色 ASCII logo 历史会话入口，右侧保留上下文电池条、`新会话` icon 与 `更多` icon；`技能 / 文件 / 文件库 / 后台任务 / 任务消息 / 主题切换` 收进右上角溢出菜单，每项统一是 `icon + 标题` 风格
 - 主题切换不会触发会话同步、transcript 重绘或 agent 请求，只更新 `<html data-theme>`、按钮状态和 `localStorage` 持久化值；桌面端对应入口是 `theme-toggle-button`，手机端对应入口是 `mobile-menu-theme-button`。
 - 手机端 topbar、更多菜单、历史抽屉开关、遮罩关闭、外部点击关闭和移动端入口绑定集中在 `src/ui/playground-mobile-shell-controller.ts`；历史列表渲染和会话切换由 `src/ui/playground-conversations-controller.ts` 负责，移动外壳控制器不反向持有 conversation catalog 逻辑
-- 手机端品牌区点击后展开左侧历史会话抽屉，宽度收口为 `min(88vw, 360px)`，右侧保留透明点击遮罩用于关闭；抽屉头部 sticky，列表项展示标题、两行摘要、更新时间和消息数，最小触摸高度 `92px`，标题 / 摘要 / meta 必须显式设置移动端行高，不能继续继承全局 button 的紧缩排版；当前会话只用左侧冷白蓝亮条和深色层级标记，不再铺大面积蓝色块，也不再靠细边框分区；删除按钮位于条目内部右上角，不再作为条目外侧独立列挤压内容；侧边栏内关闭按钮、空态和会话项使用 `6px` / `8px` 的小圆角并保持无边框；历史列表保留纵向滚动但隐藏侧边滚动条；运行中禁止切换，避免一个 agent 工人被硬拽到另一条产线
+- 手机端品牌区点击后展开左侧历史会话抽屉，宽度收口为 `min(88vw, 360px)`，右侧保留透明点击遮罩用于关闭；抽屉头部 sticky 且透明裸放，列表项只展示标题、更新时间或运行状态，稳定高度约 `72px`。标题 / meta 必须显式设置移动端行高，不能继续继承全局 button 的紧缩排版；当前会话只用左侧冷白蓝亮条和深色层级标记，不再铺大面积蓝色块，也不再靠细边框分区；删除按钮位于条目内部右上角，不再作为条目外侧独立列挤压内容；侧边栏内关闭按钮、空态和会话项使用 `6px` / `8px` 的小圆角并保持无边框；历史列表保留纵向滚动但隐藏侧边滚动条；运行中禁止切换，避免一个 agent 工人被硬拽到另一条产线；抽屉 overlay 层级必须高于 topbar 和上下文电池。
 - 手机端历史抽屉头部保持透明裸放，不再做 raised surface；信息分组交给抽屉外壳、列表项背景深浅、左侧状态色和留白。
 - `新会话` 按钮现在走 `POST /v1/chat/conversations` 创建新的服务端会话并激活为 `currentConversationId`；不再 reset 旧会话，也不再只清本地 transcript
 - 手机端 `文件库`、`后台任务`、`新建后台任务`、`任务消息` 和后台 run 详情统一走全屏工作页：点击入口后先立刻打开对应页面，页面内部再刷新数据；用户点按钮切界面不能等接口回完才出现反馈，这种体验慢得像在拨号上网。
