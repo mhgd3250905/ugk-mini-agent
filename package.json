@@ -32,7 +32,8 @@
     "team:browser-smoke": "node scripts/team-browser-binding-smoke.mjs",
     "team-console:dev": "npm --prefix apps/team-console run dev",
     "team-console:build": "npm --prefix apps/team-console run build",
-    "team-console:test": "npm --prefix apps/team-console run test"
+    "team-console:test": "npm --prefix apps/team-console run test",
+    "code:size": "node scripts/code-size-baseline.mjs"
   },
   "dependencies": {
     "@fastify/multipart": "^10.0.0",
