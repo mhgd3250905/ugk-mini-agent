@@ -5,6 +5,7 @@ import { getPlaygroundConversationStyles } from "../src/ui/playground-conversati
 import { getPlaygroundContextUsageStyles } from "../src/ui/playground-context-usage-styles.js";
 import { getPlaygroundConfirmDialogStyles } from "../src/ui/playground-confirm-dialog-styles.js";
 import { getPlaygroundNotificationStyles } from "../src/ui/playground-notification-styles.js";
+import { getPlaygroundErrorBannerStyles } from "../src/ui/playground-error-banner-styles.js";
 
 test("playground styles expose the mobile active transcript rail reset", () => {
 	const styles = getPlaygroundStyles();
@@ -255,5 +256,44 @@ test("playground styles compose notification toast styles from dedicated fragmen
 	assert.ok(
 		styles.includes(notificationStyles),
 		"getPlaygroundStyles() must include notification toast styles",
+	);
+});
+
+test("playground styles compose error banner styles from dedicated fragment", () => {
+	const styles = getPlaygroundStyles();
+	const errorBannerStyles = getPlaygroundErrorBannerStyles();
+
+	assert.match(errorBannerStyles, /\.error-banner\s*\{/);
+	assert.match(errorBannerStyles, /\.error-banner\.visible\s*\{/);
+	assert.match(errorBannerStyles, /\.error-banner\[hidden\]\s*\{/);
+	assert.match(errorBannerStyles, /\.error-banner-message\s*\{/);
+	assert.match(errorBannerStyles, /\.error-banner-close\s*\{/);
+
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*display:\s*none;/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*position:\s*absolute;/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto;/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*top:\s*0;/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*left:\s*50%;/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*transform:\s*translateX\(-50%\);/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*border:\s*0;/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*border-radius:\s*4px;/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*background:\s*#2f1119/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*z-index:\s*6;/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*pointer-events:\s*auto;/);
+	assert.match(errorBannerStyles, /\.error-banner\.visible\s*\{[\s\S]*display:\s*grid;/);
+	assert.match(errorBannerStyles, /\.error-banner\[hidden\]\s*\{[\s\S]*display:\s*none !important;/);
+	assert.match(errorBannerStyles, /\.error-banner-close\s*\{[\s\S]*width:\s*24px;/);
+	assert.match(errorBannerStyles, /\.error-banner-close\s*\{[\s\S]*height:\s*24px;/);
+	assert.match(errorBannerStyles, /\.error-banner-close\s*\{[\s\S]*background:\s*#421823/);
+
+	assert.doesNotMatch(errorBannerStyles, /\.chat-stage > .error-banner/);
+	assert.doesNotMatch(errorBannerStyles, /\.notification-/);
+	assert.doesNotMatch(errorBannerStyles, /\.stream-layout/);
+	assert.doesNotMatch(errorBannerStyles, /@media\s*\(max-width:\s*640px\)/);
+	assert.doesNotMatch(errorBannerStyles, /:root\[data-theme="light"\]/);
+
+	assert.ok(
+		styles.includes(errorBannerStyles),
+		"getPlaygroundStyles() must include error banner styles",
 	);
 });
