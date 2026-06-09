@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { getPlaygroundStyles } from "../src/ui/playground-styles.js";
 import { getPlaygroundConversationStyles } from "../src/ui/playground-conversation-styles.js";
 import { getPlaygroundContextUsageStyles } from "../src/ui/playground-context-usage-styles.js";
+import { getPlaygroundConfirmDialogStyles } from "../src/ui/playground-confirm-dialog-styles.js";
 
 test("playground styles expose the mobile active transcript rail reset", () => {
 	const styles = getPlaygroundStyles();
@@ -159,5 +160,33 @@ test("playground styles compose context usage styles from dedicated fragment", (
 	assert.ok(
 		styles.includes(contextUsageStyles),
 		"getPlaygroundStyles() must include context usage styles",
+	);
+});
+
+test("playground styles compose confirm dialog styles from dedicated fragment", () => {
+	const styles = getPlaygroundStyles();
+	const confirmDialogStyles = getPlaygroundConfirmDialogStyles();
+
+	assert.match(confirmDialogStyles, /\.confirm-dialog\[hidden\]\s*\{/);
+	assert.match(confirmDialogStyles, /\.confirm-dialog\s*\{[\s\S]*z-index:\s*88;/);
+	assert.match(confirmDialogStyles, /\.confirm-dialog\s*\{[\s\S]*background:\s*rgba\(1, 3, 10, 0\.74\)/);
+	assert.match(confirmDialogStyles, /\.confirm-dialog-panel\s*\{[\s\S]*border:\s*0;/);
+	assert.match(confirmDialogStyles, /\.confirm-dialog-panel\s*\{[\s\S]*border-radius:\s*8px;/);
+	assert.match(confirmDialogStyles, /\.confirm-dialog-panel\s*\{[\s\S]*background:\s*#0f1624/);
+	assert.match(confirmDialogStyles, /\.confirm-dialog-body\s*\{[\s\S]*border-radius:\s*6px;/);
+	assert.match(confirmDialogStyles, /\.confirm-dialog-body\s*\{[\s\S]*background:\s*#151d2e/);
+	assert.match(confirmDialogStyles, /\.confirm-dialog-actions\s*\{/);
+	assert.match(confirmDialogStyles, /\.confirm-dialog-actions\s+button\s*\{[\s\S]*background:\s*#1b2638/);
+	assert.match(confirmDialogStyles, /\.confirm-dialog-actions\s+\.danger-action\s*\{[\s\S]*background:\s*#8d2437/);
+
+	assert.doesNotMatch(confirmDialogStyles, /\.model-config-dialog/);
+	assert.doesNotMatch(confirmDialogStyles, /\.context-usage-/);
+	assert.doesNotMatch(confirmDialogStyles, /\.chat-run-log-/);
+	assert.doesNotMatch(confirmDialogStyles, /@media\s*\(max-width:\s*640px\)/);
+	assert.doesNotMatch(confirmDialogStyles, /:root\[data-theme="light"\]/);
+
+	assert.ok(
+		styles.includes(confirmDialogStyles),
+		"getPlaygroundStyles() must include confirm dialog styles",
 	);
 });
