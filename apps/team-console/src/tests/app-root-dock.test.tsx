@@ -5,6 +5,12 @@ import { App } from "../app/App";
 import { mockDiscoveryRootTask, mockTeamTasks, resetMockTeamApiState } from "../fixtures/team-fixtures";
 import { getAtlasNodes, firePointer, dragRootNodeToDock } from "./app-dom-test-utils";
 
+function readExecutionMapCss(): string {
+  const executionMapCss = readFileSync("src/graph/execution-map.css", "utf8");
+  const rootDockCss = readFileSync("src/graph/execution-map-root-dock.css", "utf8");
+  return executionMapCss.replace('@import "./execution-map-root-dock.css";', rootDockCss);
+}
+
 describe("App", () => {
   beforeEach(() => {
     resetMockTeamApiState();
@@ -185,8 +191,15 @@ describe("App", () => {
       }
     });
 
+    it("imports root dock CSS from dedicated file exactly once as first line", () => {
+      const css = readFileSync("src/graph/execution-map.css", "utf8");
+      expect(css.startsWith('@import "./execution-map-root-dock.css";\n')).toBe(true);
+      const count = (css.match(/@import "\.\/execution-map-root-dock\.css";/g) ?? []).length;
+      expect(count).toBe(1);
+    });
+
     it("keeps the Dock shell flat glass with one-root minimum width and even padding", () => {
-      const executionMapCss = readFileSync("src/graph/execution-map.css", "utf8");
+      const executionMapCss = readExecutionMapCss();
       const dockBlock = executionMapCss.match(/\.emap-root-dock \{(?<block>[\s\S]*?)\n\}/)?.groups?.block ?? "";
 
       expect(dockBlock).toContain("min-width: min(72vw, var(--emap-root-dock-min-width, 280px))");
@@ -399,7 +412,7 @@ describe("App", () => {
     });
 
     it("hides the native Dock scrollbar and reserves side controls for paging", () => {
-      const executionMapCss = readFileSync("src/graph/execution-map.css", "utf8");
+      const executionMapCss = readExecutionMapCss();
       const dockBlock = executionMapCss.match(/\.emap-root-dock \{(?<block>[\s\S]*?)\n\}/)?.groups?.block ?? "";
       const itemsBlock = executionMapCss.match(/\.emap-root-dock-items \{(?<block>[\s\S]*?)\n\}/)?.groups?.block ?? "";
       const pageButtonBlock = executionMapCss.match(/\.emap-root-dock-page-btn \{(?<block>[\s\S]*?)\n\}/)?.groups?.block ?? "";
@@ -631,7 +644,7 @@ describe("App", () => {
     });
 
     it("keeps Dock restore flight transition active under reduced-motion", () => {
-      const executionMapCss = readFileSync("src/graph/execution-map.css", "utf8");
+      const executionMapCss = readExecutionMapCss();
       const reducedMotionFlightBlock = executionMapCss.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.emap-root-dock-flight \{(?<block>[\s\S]*?)\n  \}/)?.groups?.block ?? "";
 
       expect(reducedMotionFlightBlock).toContain("transform 0.18s ease-out");
@@ -640,7 +653,7 @@ describe("App", () => {
     });
 
     it("keeps Dock flight node face layout scaled after base node CSS", () => {
-      const executionMapCss = readFileSync("src/graph/execution-map.css", "utf8");
+      const executionMapCss = readExecutionMapCss();
       const flightNodeFaceBlock = executionMapCss.match(/\.emap-root-dock-flight \.emap-root-dock-flight-node-face \{(?<block>[\s\S]*?)\n\}/)?.groups?.block ?? "";
 
       expect(flightNodeFaceBlock).toContain("width: calc(100% / var(--emap-flight-content-scale, 1))");
@@ -651,7 +664,7 @@ describe("App", () => {
     });
 
     it("hides Dock item content while its restore flight is active", () => {
-      const executionMapCss = readFileSync("src/graph/execution-map.css", "utf8");
+      const executionMapCss = readExecutionMapCss();
       const restoringItemBlock = executionMapCss.match(/\.emap-root-dock-item\[data-restoring="true"\] \{(?<block>[\s\S]*?)\n\}/)?.groups?.block ?? "";
       const restoringContentBlock = executionMapCss.match(/\.emap-root-dock-item\[data-restoring="true"\] \.emap-root-dock-icon,\n\.emap-root-dock-item\[data-restoring="true"\] \.emap-root-dock-copy \{(?<block>[\s\S]*?)\n\}/)?.groups?.block ?? "";
       const restoringAfterBlock = executionMapCss.match(/\.emap-root-dock-item\[data-restoring="true"\]::after \{(?<block>[\s\S]*?)\n\}/)?.groups?.block ?? "";
