@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { getPlaygroundStyles } from "../src/ui/playground-styles.js";
+import { getPlaygroundConversationStyles } from "../src/ui/playground-conversation-styles.js";
 
 test("playground styles expose the mobile active transcript rail reset", () => {
 	const styles = getPlaygroundStyles();
@@ -61,4 +62,19 @@ test("playground styles give desktop workspace headers a polished command-bar la
 	assert.doesNotMatch(styles, /asset-head-breadcrumb/);
 	assert.doesNotMatch(styles, /task-inbox-head-breadcrumb/);
 	assert.match(styles, /\.chat-stage > \.workspace-contained \.mobile-work-back-button\s*\{[\s\S]*display:\s*none;/);
+});
+
+test("playground styles compose conversation drawer styles from dedicated fragment", () => {
+	const styles = getPlaygroundStyles();
+	const conversationStyles = getPlaygroundConversationStyles();
+
+	assert.match(conversationStyles, /\.mobile-drawer-backdrop\s*\{/);
+	assert.match(conversationStyles, /\.mobile-conversation-drawer\s*\{/);
+	assert.match(conversationStyles, /\.mobile-conversation-list\s*\{[\s\S]*gap:\s*8px;/);
+	assert.match(
+		conversationStyles,
+		/\.conversation-item-shell\.is-pinned \.mobile-conversation-item::after\s*\{[\s\S]*background:\s*#ff304f;/,
+	);
+	assert.doesNotMatch(conversationStyles, /\.chat-stage\s*\{/);
+	assert.ok(styles.includes(conversationStyles));
 });
