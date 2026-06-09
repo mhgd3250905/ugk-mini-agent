@@ -4,6 +4,7 @@ import { getPlaygroundStyles } from "../src/ui/playground-styles.js";
 import { getPlaygroundConversationStyles } from "../src/ui/playground-conversation-styles.js";
 import { getPlaygroundContextUsageStyles } from "../src/ui/playground-context-usage-styles.js";
 import { getPlaygroundConfirmDialogStyles } from "../src/ui/playground-confirm-dialog-styles.js";
+import { getPlaygroundNotificationStyles } from "../src/ui/playground-notification-styles.js";
 
 test("playground styles expose the mobile active transcript rail reset", () => {
 	const styles = getPlaygroundStyles();
@@ -188,5 +189,71 @@ test("playground styles compose confirm dialog styles from dedicated fragment", 
 	assert.ok(
 		styles.includes(confirmDialogStyles),
 		"getPlaygroundStyles() must include confirm dialog styles",
+	);
+});
+
+test("playground styles compose notification toast styles from dedicated fragment", () => {
+	const styles = getPlaygroundStyles();
+	const notificationStyles = getPlaygroundNotificationStyles();
+
+	assert.match(notificationStyles, /\.notification-live-region\s*\{/);
+	assert.match(notificationStyles, /\.notification-live-region\[hidden\]\s*\{/);
+	assert.match(notificationStyles, /\.notification-toast-stack\s*\{/);
+	assert.match(notificationStyles, /\.notification-toast\s*\{/);
+	assert.match(notificationStyles, /\.notification-toast-copy\s*\{/);
+	assert.match(notificationStyles, /\.notification-toast-title\s*\{/);
+	assert.match(notificationStyles, /\.notification-toast-meta\s*\{/);
+	assert.match(notificationStyles, /\.notification-toast-dismiss\s*\{/);
+
+	assert.match(
+		notificationStyles,
+		/\.notification-live-region\s*\{[\s\S]*position:\s*fixed;/,
+	);
+	assert.match(
+		notificationStyles,
+		/\.notification-live-region\s*\{[\s\S]*top:\s*18px;/,
+	);
+	assert.match(
+		notificationStyles,
+		/\.notification-live-region\s*\{[\s\S]*right:\s*18px;/,
+	);
+	assert.match(
+		notificationStyles,
+		/\.notification-live-region\s*\{[\s\S]*z-index:\s*90;/,
+	);
+	assert.match(
+		notificationStyles,
+		/\.notification-live-region\s*\{[\s\S]*pointer-events:\s*none;/,
+	);
+	assert.match(
+		notificationStyles,
+		/\.notification-toast\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto;/,
+	);
+	assert.match(
+		notificationStyles,
+		/\.notification-toast\s*\{[\s\S]*border-radius:\s*4px;/,
+	);
+	assert.match(
+		notificationStyles,
+		/\.notification-toast\s*\{[\s\S]*pointer-events:\s*auto;/,
+	);
+	assert.match(
+		notificationStyles,
+		/\.notification-toast-dismiss\s*\{[\s\S]*width:\s*24px;/,
+	);
+	assert.match(
+		notificationStyles,
+		/\.notification-toast-dismiss\s*\{[\s\S]*height:\s*24px;/,
+	);
+
+	assert.doesNotMatch(notificationStyles, /\.error-banner/);
+	assert.doesNotMatch(notificationStyles, /\.stream-layout/);
+	assert.doesNotMatch(notificationStyles, /\.chat-stage > .notification-live-region/);
+	assert.doesNotMatch(notificationStyles, /@media\s*\(max-width:\s*640px\)/);
+	assert.doesNotMatch(notificationStyles, /:root\[data-theme="light"\]/);
+
+	assert.ok(
+		styles.includes(notificationStyles),
+		"getPlaygroundStyles() must include notification toast styles",
 	);
 });
