@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { getPlaygroundStyles } from "../src/ui/playground-styles.js";
 import { getPlaygroundConversationStyles } from "../src/ui/playground-conversation-styles.js";
+import { getPlaygroundContextUsageStyles } from "../src/ui/playground-context-usage-styles.js";
 
 test("playground styles expose the mobile active transcript rail reset", () => {
 	const styles = getPlaygroundStyles();
@@ -77,4 +78,86 @@ test("playground styles compose conversation drawer styles from dedicated fragme
 	);
 	assert.doesNotMatch(conversationStyles, /\.chat-stage\s*\{/);
 	assert.ok(styles.includes(conversationStyles));
+});
+
+test("playground styles compose context usage styles from dedicated fragment", () => {
+	const styles = getPlaygroundStyles();
+	const contextUsageStyles = getPlaygroundContextUsageStyles();
+
+	assert.match(contextUsageStyles, /\.context-usage-shell\s*\{/);
+	assert.match(contextUsageStyles, /\.context-usage-meta\s*\{/);
+	assert.match(contextUsageStyles, /\.context-usage-dialog-panel\s*\{/);
+	assert.match(contextUsageStyles, /\.context-usage-dialog-meter\s*\{/);
+	assert.match(contextUsageStyles, /\.context-usage-dialog-model\s*\{/);
+
+	assert.match(
+		contextUsageStyles,
+		/\.context-usage-shell\s*\{[\s\S]*grid-template-columns:\s*48px auto;/,
+	);
+	assert.match(
+		contextUsageStyles,
+		/\.context-usage-shell\s*\{[\s\S]*width:\s*88px;/,
+	);
+	assert.match(
+		contextUsageStyles,
+		/\.context-usage-shell\s*\{[\s\S]*padding:\s*5px 10px 5px 7px;/,
+	);
+	assert.match(
+		contextUsageStyles,
+		/\.context-usage-shell\s*\{[\s\S]*z-index:\s*50;/,
+	);
+	assert.match(
+		contextUsageStyles,
+		/\.context-usage-meta\s*\{[\s\S]*top:\s*calc\(100% \+ 10px\)/,
+	);
+	assert.match(
+		contextUsageStyles,
+		/\.context-usage-meta\s*\{[\s\S]*bottom:\s*auto;/,
+	);
+	assert.match(
+		contextUsageStyles,
+		/\.context-usage-meta\s*\{[\s\S]*z-index:\s*90;/,
+	);
+	assert.match(
+		contextUsageStyles,
+		/\.context-usage-meta\s*\{[\s\S]*display:\s*grid;/,
+	);
+	assert.match(
+		contextUsageStyles,
+		/\.context-usage-meta\s*\{[\s\S]*gap:\s*9px;/,
+	);
+	assert.match(
+		contextUsageStyles,
+		/\.context-usage-meta\s*\{[\s\S]*width:\s*min\(318px, calc\(100vw - 24px\)\)/,
+	);
+	assert.match(
+		contextUsageStyles,
+		/\.context-usage-meta\s*\{[\s\S]*transform:\s*translateY\(-4px\)/,
+	);
+	assert.match(
+		contextUsageStyles,
+		/\.context-usage-progress\s*\{[\s\S]*repeating-linear-gradient/,
+	);
+	assert.match(
+		contextUsageStyles,
+		/\.context-usage-meta-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/,
+	);
+	assert.match(
+		contextUsageStyles,
+		/\.context-usage-meta-model\s*\{[\s\S]*display:\s*flex;/,
+	);
+	assert.match(
+		contextUsageStyles,
+		/\.context-usage-meta-model\s*\{[\s\S]*flex-wrap:\s*wrap;/,
+	);
+
+	assert.doesNotMatch(contextUsageStyles, /@media\s*\(max-width:\s*640px\)/);
+	assert.doesNotMatch(contextUsageStyles, /\.chat-stage\s*\{/);
+	assert.doesNotMatch(contextUsageStyles, /\.message\s*\{/);
+	assert.doesNotMatch(contextUsageStyles, /\.chat-run-log-dialog\s*\{/);
+
+	assert.ok(
+		styles.includes(contextUsageStyles),
+		"getPlaygroundStyles() must include context usage styles",
+	);
 });
