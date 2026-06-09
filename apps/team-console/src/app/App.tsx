@@ -4,6 +4,7 @@ import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, Te
 import { MockTeamApi } from "../fixtures/team-fixtures";
 import { useTeamConsoleLiveData, type DataSource, type TeamConsoleUiResetReason, type TeamDiscoveryStage, type TeamDiscoverySummary, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
 import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchGeneratedObserverState, type TaskBranchState } from "./use-task-branch-stack";
+import { buildDiscoveryChannelSetLookup, buildDiscoveryChannelSetSelectionSummary } from "./discovery-channel-set-view-model";
 import { hasDirtyTaskEditConflict, useTaskEditState } from "./use-task-edit-state";
 import { useTaskLeaderCopy } from "./use-task-leader-copy";
 import { hasSameTaskGroupRunPollingSignature, isActiveTaskGroupRun, selectLatestTaskGroupRun } from "./team-console-task-group-run-state";
@@ -4912,26 +4913,25 @@ export function App() {
         } as CSSProperties;
         const selectedDiscoveryChannelTaskIds = selectedDiscoveryChannelTaskIdsByTaskId[task.taskId] ?? [];
         const selectedDiscoveryChannelTaskIdSet = new Set(selectedDiscoveryChannelTaskIds);
-        const selectedDiscoveryChannelSetId = selectedDiscoveryChannelSetIdByTaskId[task.taskId] ?? null;
+        const channelSetLookup = buildDiscoveryChannelSetLookup({
+          task,
+          activeDiscoveryRun,
+          selectedChannelSetId: selectedDiscoveryChannelSetIdByTaskId[task.taskId] ?? null,
+          channelSets: discoveryChannelSetsByTaskId[task.taskId] ?? [],
+          channelSetTitle: discoveryChannelSetTitleByTaskId[task.taskId] ?? "",
+          channelSetLoading: Boolean(discoveryChannelSetLoadingByTaskId[task.taskId]),
+          channelSetSaving: Boolean(discoveryChannelSetSavingByTaskId[task.taskId]),
+          runPolicySaving: Boolean(discoveryRunPolicySavingByTaskId[task.taskId]),
+        });
         const discoveryChannelSets = discoveryChannelSetsByTaskId[task.taskId] ?? [];
-        const selectedDiscoveryChannelSet = selectedDiscoveryChannelSetId
-          ? discoveryChannelSets.find((channelSet) => channelSet.channelSetId === selectedDiscoveryChannelSetId) ?? null
-          : null;
-        const activeDiscoveryChannelSetId = activeDiscoveryRun?.source?.discoveryChannelSetId ?? null;
-        const activeDiscoveryChannelSet = activeDiscoveryChannelSetId
-          ? discoveryChannelSets.find((channelSet) => channelSet.channelSetId === activeDiscoveryChannelSetId) ?? null
-          : null;
-        const defaultDiscoveryChannelSetId = task.discoveryRunPolicy?.mode === "channel_set"
-          ? task.discoveryRunPolicy.channelSetId
-          : null;
-        const defaultDiscoveryChannelSet = defaultDiscoveryChannelSetId
-          ? discoveryChannelSets.find((channelSet) => channelSet.channelSetId === defaultDiscoveryChannelSetId) ?? null
-          : null;
-        const discoveryRunPolicySaving = Boolean(discoveryRunPolicySavingByTaskId[task.taskId]);
-        const activeDiscoveryChannelTaskIdSet = new Set(
-          activeDiscoveryChannelSet?.items.map((item) => item.generatedTaskId) ?? [],
-        );
-        const activeDiscoveryRunUsesChannelSet = Boolean(activeDiscoveryChannelSetId);
+        const selectedDiscoveryChannelSetId = channelSetLookup.selectedChannelSetId;
+        const selectedDiscoveryChannelSet = channelSetLookup.selectedChannelSet;
+        const activeDiscoveryChannelSet = channelSetLookup.activeChannelSet;
+        const defaultDiscoveryChannelSetId = channelSetLookup.defaultChannelSetId;
+        const defaultDiscoveryChannelSet = channelSetLookup.defaultChannelSet;
+        const discoveryRunPolicySaving = channelSetLookup.runPolicySaving;
+        const activeDiscoveryChannelTaskIdSet = channelSetLookup.activeChannelTaskIdSet;
+        const activeDiscoveryRunUsesChannelSet = channelSetLookup.activeRunUsesChannelSet;
         const generatedTaskCards = generatedTasks.map((generatedTask, generatedTaskIndex) => {
           const generatedSource = generatedTask.generatedSource;
           const itemStatus = generatedSource?.itemStatus ?? "active";
@@ -4997,9 +4997,9 @@ export function App() {
         const activeGeneratedTaskCards = generatedTaskCards.filter((card) => card.itemStatus !== "stale");
         const staleGeneratedTaskCards = generatedTaskCards.filter((card) => card.itemStatus === "stale");
         const activeGeneratedTaskIds = activeGeneratedTaskCards.map((card) => card.generatedTask.taskId);
-        const selectedActiveGeneratedTaskCount = activeGeneratedTaskIds.filter((taskId) => selectedDiscoveryChannelTaskIdSet.has(taskId)).length;
-        const allActiveGeneratedTasksSelected = activeGeneratedTaskIds.length > 0
-          && selectedActiveGeneratedTaskCount === activeGeneratedTaskIds.length;
+        const selectionSummary = buildDiscoveryChannelSetSelectionSummary(activeGeneratedTaskIds, selectedDiscoveryChannelTaskIdSet);
+        const selectedActiveGeneratedTaskCount = selectionSummary.selectedActiveGeneratedTaskCount;
+        const allActiveGeneratedTasksSelected = selectionSummary.allActiveGeneratedTasksSelected;
         const forceVisibleStaleTaskCards = staleGeneratedTaskCards.filter((card) => forceVisibleQueuedTaskIds.has(card.generatedTask.taskId));
         const staleGeneratedTaskCardsVisible = branch.discoveryStaleExpanded || forceVisibleStaleTaskCards.length > 0;
         const generatedPreviewCards = branch.discoveryQueueExpanded
@@ -5013,9 +5013,9 @@ export function App() {
         const doneGeneratedTaskCount = activeGeneratedTaskCards.filter((card) => card.visualState === "done").length;
         const failedGeneratedTaskCount = activeGeneratedTaskCards.filter((card) => card.visualState === "failed").length;
         const waitingGeneratedTaskCount = activeGeneratedTaskCards.filter((card) => card.visualState === "queued").length;
-        const discoveryChannelSetTitle = discoveryChannelSetTitleByTaskId[task.taskId] ?? "";
-        const discoveryChannelSetsLoading = Boolean(discoveryChannelSetLoadingByTaskId[task.taskId]);
-        const discoveryChannelSetSaving = Boolean(discoveryChannelSetSavingByTaskId[task.taskId]);
+        const discoveryChannelSetTitle = channelSetLookup.title;
+        const discoveryChannelSetsLoading = channelSetLookup.loading;
+        const discoveryChannelSetSaving = channelSetLookup.saving;
         const renderGeneratedCard = (card: (typeof generatedTaskCards)[number]) => {
           const {
             activeGeneratedRun,
