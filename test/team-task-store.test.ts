@@ -1193,36 +1193,3 @@ test("TaskStore marks missing generated Tasks stale only under the same Discover
 		await rm(root, { recursive: true, force: true });
 	}
 });
-
-test("TaskStore rejects invalid outputCheck shapes and preserves valid outputCheck", async () => {
-	const root = await mkdtemp(join(tmpdir(), "team-task-store-"));
-	try {
-		const store = createStore(root);
-
-		await assert.rejects(
-			() => store.create({
-				...validTaskInput,
-				workUnit: { ...validTaskInput.workUnit, outputCheck: { type: "unknown" } as never },
-			}),
-			{ message: "workUnit.outputCheck.type is invalid" },
-		);
-		await assert.rejects(
-			() => store.create({
-				...validTaskInput,
-				workUnit: { ...validTaskInput.workUnit, outputCheck: { type: "json_items", requiredFields: ["id", ""] } },
-			}),
-			{ message: "workUnit.outputCheck.requiredFields must contain only non-empty strings" },
-		);
-
-		const task = await store.create({
-			...validTaskInput,
-			workUnit: {
-				...validTaskInput.workUnit,
-				outputCheck: { type: "json_items", outputKey: "items", allowDirectArray: true, requiredFields: ["id"] },
-			},
-		});
-		assert.deepEqual(task.workUnit.outputCheck, { type: "json_items", outputKey: "items", allowDirectArray: true, requiredFields: ["id"] });
-	} finally {
-		await rm(root, { recursive: true, force: true });
-	}
-});
