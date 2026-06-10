@@ -8,7 +8,7 @@
 
 - 当前维护对象：Team Console / Canvas Task / Conn `team_group` / Discovery，以及本轮已收口的主 `/playground` Chat UI polish。
 - 本轮新增维护对象：API 源管理入口 `/playground/model-sources` 与模型 provider runtime overlay；主 `/playground` Chat 已完成视觉收口，后续没有明确用户要求时不要继续扩展重做。
-- 当前新增治理对象：代码库大文件风险治理 / 模块化优化。当前优先阶段是先拆最危险的超级测试文件；测试拆分阶段约 90%+，整体大文件治理约 50%-55%。后续仍需继续治理剩余 1000+ 行测试文件、Team Console/CSS 超大文件、`App.tsx`、`ExecutionMap.tsx` 和 `playground-styles.ts` 等。
+- 当前新增治理对象：代码库大文件风险治理 / 模块化优化。当前优先阶段是先拆最危险的超级测试文件；测试拆分阶段约 93%，整体大文件治理约 55%。后续仍需继续治理剩余 1000+ 行测试文件、Team Console/CSS 超大文件、`App.tsx`、`ExecutionMap.tsx` 和 `playground-styles.ts` 等。
 - 当前执行方式：每个拆分小步由 subagent 负责实施，主会话只做独立审核、验证、精确 stage/commit 和文档落地。subagent 不允许 stage/commit。
 - 不维护：无关 `.pi/skills/**` runtime skill、运行时 public 产物、`.data`。
 - 固定 Team Console 本地入口：`http://127.0.0.1:5174/`。
@@ -29,7 +29,7 @@
 
 - 当前分支：`main`。
 - 本轮 Git 保存范围：Team Task 模板参数 `inputType` 合同、Team Console / Discovery / Group 命名链路、Task Leader mini/full iframe 对齐、主 `/playground` Chat 视觉 polish、相关测试和文档；以及正在推进的代码库大文件治理测试拆分提交。
-- 截至本快照，最新代码拆分提交为 `82953835 Split Discovery invalid item test`。本地 ahead 数会随文档提交继续增加，远端同步状态仍以实时 `git status --short --branch` 和 `git log --oneline origin/main..HEAD` 为准。
+- 截至本快照，最新代码拆分提交为 `e61e8e19 Split playground conversation history route test`。本地 ahead 数会随文档提交继续增加，远端同步状态仍以实时 `git status --short --branch` 和 `git log --oneline origin/main..HEAD` 为准。
 - `origin`：GitHub `https://github.com/mhgd3250905/ugk-claw-personal.git`。
 - `gitee`：`https://gitee.com/ksheng3250905/ugk-pi-claw.git`。
 - 不要提交这些本地未跟踪物件：`.codex/plans/2026-06-07-discovery-channel-set.md`、`.codex/plans/2026-06-08-api-source-management.md`、`docs/windows-native-runtime-feasibility.md`、`Find_Old_Google_Root_Key_Source.md`、`Google_Root_Cert_Update_Report.md`、`public/chat-background-reference.html`、`public/rsa-root-cert-report.html`、runtime 数据、截图、报告、临时文件。
@@ -46,7 +46,7 @@ git log --oneline origin/main..HEAD
 
 ## 当前已完成事实
 
-- 大文件治理测试拆分当前批次已完成并本地提交到 Step83。近期提交包括 `764a2c7c Split Team API fixture coverage tests` 到 `82953835 Split Discovery invalid item test`，覆盖 Team Console、Team API、Conn routes、Team task run/orchestrator/store/routes 等测试拆分。每步均按 focused tests、combined tests、`npx tsc --noEmit`、`npm run code:size -- --limit 45`、`git diff --check` 验证；涉及 Team Console 的步骤另跑对应 Vitest/build。
+- 大文件治理测试拆分当前批次已完成并本地提交到 Step89。近期提交包括 `764a2c7c Split Team API fixture coverage tests` 到 `e61e8e19 Split playground conversation history route test`，覆盖 Team Console、Team API、Conn routes、Team task run/orchestrator/store/routes、server chat routes 和 playground route shell 等测试拆分。每步均按 focused tests、combined tests、`npx tsc --noEmit`、`npm run code:size -- --limit 45`、`git diff --check` 验证；涉及 Team Console 的步骤另跑对应 Vitest/build。
 - 后续继续拆分时，先用 `npm run code:size -- --limit 45` 和当前 diff 判断下一块，保持“只移动一个明确测试块/describe block”的粒度。不要把 `.codex/plans/**`、报告 Markdown/HTML、runtime 产物或 public 报告文件纳入提交。
 - Team Task 模板参数已支持 typed input contract。`templateConfig.parameters[].inputType` 支持 `text`、`textarea`、`email`、`email_list`、`number`、`select`；旧模板缺字段按 `text` 兼容读取。运行和保存时绑定快照仍保持 `Record<string,string>`，但后端会校验邮箱、邮箱列表、数字和下拉选项，`email_list` 支持逗号、分号和换行分隔后归一化。
 - Team Console 模板参数面板和复制面板会按 `inputType` 渲染控件：`textarea` 用多行输入，`select` 用下拉，`email` / `number` 使用对应 HTML input 类型，`email_list` 提交前归一化。`task_8dc366711f37` 这类可填写参数 Task 可直接通过 UI 测试。
