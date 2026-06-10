@@ -16,11 +16,11 @@
 
 ## 2026-06-11 — Codebase modularization test-file split progress
 
-- **主题**: 大文件治理继续推进测试超级文件拆分阶段，按同文件、同主题、低耦合连续块放大粒度拆分，由 subagent 实施、主会话独立审核并精确提交。当前本地最新拆分提交为 `3681dae4 Split Team run workspace discovery dispatch tests`，已继续拆出 Team orchestrator discovery-result、decomposed discovery、ConnWorker lifecycle、Discovery dispatcher rerun、Conn run route、Discovery downstream aggregation、ConnRunStore schedule state、Team task connection route、playground route shell behavior、Team dynamic plan route 和 Team run workspace discovery dispatch 等测试文件。
+- **主题**: 大文件治理继续推进测试超级文件拆分阶段，按同文件、同主题、低耦合连续块放大粒度拆分，由 subagent 实施、主会话独立审核并精确提交。当前本地最新拆分提交为 `e1a73317 Split Team task run upstream selection tests`，已继续拆出 Team orchestrator discovery-result、decomposed discovery、ConnWorker lifecycle、Discovery dispatcher rerun、Conn run route、Discovery downstream aggregation、ConnRunStore schedule state、Team task connection route、playground route shell behavior、Team dynamic plan route、Team run workspace discovery dispatch 和 Team task run upstream selection 等测试文件。
 - **协作方式**: 后续拆分默认由 subagent 执行文件移动，主会话负责独立审核 moved block 等价、测试名顺序、中文字符串编码、保护文件 diff、验证命令和精确 stage/commit，避免同一 agent 自改自验。
 - **影响范围**: 仅测试文件模块化拆分和接手文档更新，不改变生产逻辑、运行态数据、Team Console UI 或 `/playground` 行为。`.codex/plans/**` 仍作为本地计划草稿，不纳入提交。
 - **验证口径**: 每步至少跑对应 focused tests、原文件 + 新文件 combined tests、`npx tsc --noEmit`、`npm run code:size -- --limit 45` 和 `git diff --check`；涉及 Team Console 时继续补 Team Console build / Vitest focused commands。
-- **后续范围**: 测试超级文件拆分阶段约 97%，整体大文件治理约 59%。后续仍需继续治理剩余 1000+ 行测试文件，以及 `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`src/ui/playground-styles.ts` 等生产/CSS 大文件。
+- **后续范围**: 测试超级文件拆分阶段约 98%，整体大文件治理约 60%。后续仍需继续治理剩余 1000+ 行测试文件，以及 `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`src/ui/playground-styles.ts` 等生产/CSS 大文件。
 
 ## 2026-06-09 — Playground popover and standalone confirm polish
 
