@@ -19,6 +19,34 @@ describe("App", () => {
     vi.unstubAllGlobals();
   });
 
+  function byTaskRunsResponse(runsByTaskId: Record<string, TeamRunState[]>): Response {
+    return new Response(JSON.stringify({ runsByTaskId }), { status: 200 });
+  }
+
+  function processSummaryResponse(run: TeamRunState, attempts: TeamAttemptMetadata[]): Response {
+    return new Response(JSON.stringify({ run, attempts }), { status: 200 });
+  }
+
+  function rootSummaryResponse(
+    tasks: TeamCanvasTask[],
+    taskRunsByTaskId: Record<string, TeamRunState[]> = {},
+  ): Response {
+    return new Response(JSON.stringify({
+      tasks,
+      deletedTaskIds: [],
+      taskRunsByTaskId,
+      deletedRunIdsByTaskId: {},
+      sourceNodes: [],
+      sourceConnections: [],
+      taskConnections: [],
+      taskDependencies: [],
+      serverVersion: {
+        taskCatalog: null,
+        taskRunSummary: null,
+      },
+    }), { status: 200 });
+  }
+
   describe("assistantText priority in process nodes", () => {
     function makeLiveRunWithAssistantText(
       task: TeamCanvasTask,
@@ -71,7 +99,12 @@ describe("App", () => {
           }), { status: 200 });
         }
         if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") return rootSummaryResponse([task], { [task.taskId]: [taskRun] });
         if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [task] }), { status: 200 });
+        if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse({ [task.taskId]: [taskRun] });
+        if (url === `/v1/team/task-runs/${taskRun.runId}?view=process-summary&taskId=${task.taskId}`) {
+          return processSummaryResponse(taskRun, [attempt]);
+        }
         if (url === `/v1/team/tasks/${task.taskId}/runs`) {
           return new Response(JSON.stringify({ runs: [taskRun] }), { status: 200 });
         }
@@ -308,7 +341,10 @@ describe("App", () => {
         const url = String(input);
         if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [{ agentId: "main", name: "主 Agent", description: "默认" }, { agentId: "search", name: "搜索", description: "搜索" }] }), { status: 200 });
         if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") return rootSummaryResponse([task], { [task.taskId]: [taskRun] });
         if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [task] }), { status: 200 });
+        if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse({ [task.taskId]: [taskRun] });
+        if (url === `/v1/team/task-runs/${taskRun.runId}?view=process-summary&taskId=${task.taskId}`) return processSummaryResponse(taskRun, [attempt]);
         if (url === `/v1/team/tasks/${task.taskId}/runs`) return new Response(JSON.stringify({ runs: [taskRun] }), { status: 200 });
         if (url === `/v1/team/task-runs/${taskRun.runId}`) return new Response(JSON.stringify(taskRun), { status: 200 });
         if (url === `/v1/team/task-runs/${taskRun.runId}/tasks/${task.taskId}/attempts`) return new Response(JSON.stringify({ attempts: [attempt] }), { status: 200 });
@@ -414,8 +450,14 @@ describe("App", () => {
           }), { status: 200 });
         }
         if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") {
+          return rootSummaryResponse([taskA, taskB], { [taskA.taskId]: [runA], [taskB.taskId]: [] });
+        }
         if (url === "/v1/team/tasks" && method === "GET") {
           return new Response(JSON.stringify({ tasks: [taskA, taskB] }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse({ [taskA.taskId]: [runA], [taskB.taskId]: [] });
         }
         if (url === `/v1/team/tasks/${taskA.taskId}/runs` && method === "GET") {
           return new Response(JSON.stringify({ runs: [runA] }), { status: 200 });
@@ -500,9 +542,11 @@ describe("App", () => {
           }), { status: 200 });
         }
         if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") return rootSummaryResponse([taskA], { [taskA.taskId]: [runA] });
         if (url === "/v1/team/tasks" && method === "GET") {
           return new Response(JSON.stringify({ tasks: [taskA] }), { status: 200 });
         }
+        if (url.startsWith("/v1/team/task-runs/by-task?")) return byTaskRunsResponse({ [taskA.taskId]: [runA] });
         if (url === `/v1/team/tasks/${taskA.taskId}/runs` && method === "GET") {
           return new Response(JSON.stringify({ runs: [runA] }), { status: 200 });
         }
@@ -556,8 +600,14 @@ describe("App", () => {
           }), { status: 200 });
         }
         if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") {
+          return rootSummaryResponse([taskA, taskB], { [taskA.taskId]: [runA], [taskB.taskId]: [runB] });
+        }
         if (url === "/v1/team/tasks") {
           return new Response(JSON.stringify({ tasks: [taskA, taskB] }), { status: 200 });
+        }
+        if (url.startsWith("/v1/team/task-runs/by-task?")) {
+          return byTaskRunsResponse({ [taskA.taskId]: [runA], [taskB.taskId]: [runB] });
         }
         if (url === `/v1/team/tasks/${taskA.taskId}/runs`) {
           return new Response(JSON.stringify({ runs: [runA] }), { status: 200 });
@@ -566,7 +616,7 @@ describe("App", () => {
           return new Response(JSON.stringify({ runs: [runB] }), { status: 200 });
         }
         if (url.startsWith("/v1/team/task-runs/")) {
-          const runId = url.replace("/v1/team/task-runs/", "").split("/")[0]!;
+          const runId = url.replace("/v1/team/task-runs/", "").split(/[/?]/)[0]!;
           polledRunIds.push(runId);
           if (runId === runA.runId) return new Response(JSON.stringify(runA), { status: 200 });
           if (runId === runB.runId) return new Response(JSON.stringify(runB), { status: 200 });
