@@ -9,6 +9,121 @@ import { TeamUnitStore } from "../src/team/team-unit-store.js";
 import { RunWorkspace } from "../src/team/run-workspace.js";
 import { MockRoleRunner } from "../src/team/role-runner.js";
 
+class DiscoveryMockRunner extends MockRoleRunner {
+	private callIndex = 0;
+	private readonly discoveryOutput: string;
+	private readonly discoveryAcceptedResult: string;
+
+	constructor(discoveryOutput: string, discoveryAcceptedResult = discoveryOutput) {
+		super();
+		this.discoveryOutput = discoveryOutput;
+		this.discoveryAcceptedResult = discoveryAcceptedResult;
+	}
+
+	async runWorker(input: import("../src/team/role-runner.js").WorkerInput): Promise<import("../src/team/role-runner.js").WorkerOutput> {
+		this.callIndex++;
+		if (input.task.type === "discovery") {
+			return { content: this.discoveryOutput, artifactRefs: [] };
+		}
+		return { content: `任务 ${input.task.id} 完成`, artifactRefs: [] };
+	}
+
+	async runChecker(input: import("../src/team/role-runner.js").CheckerInput): Promise<import("../src/team/role-runner.js").CheckerOutput> {
+		if (input.task.type === "discovery") {
+			return { verdict: "pass", reason: "ok", resultContent: this.discoveryAcceptedResult };
+		}
+		return { verdict: "pass", reason: "ok", resultContent: "accepted result" };
+	}
+}
+
+async function setupDiscoveryPlan(discoveryOutput: string, discoveryAcceptedResult?: string) {
+	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
+	const planStore = new PlanStore(root);
+	const unitStore = new TeamUnitStore(root);
+	const workspace = new RunWorkspace(root);
+	const runner = new DiscoveryMockRunner(discoveryOutput, discoveryAcceptedResult);
+	const unit = await unitStore.create({
+		title: "t", description: "d",
+		watcherProfileId: "w", workerProfileId: "wo",
+		checkerProfileId: "c", finalizerProfileId: "f",
+	});
+	const plan = await planStore.create({
+		title: "discovery + for_each",
+		defaultTeamUnitId: unit.teamUnitId,
+		goal: { text: "discover and process" },
+		tasks: [
+			{
+				id: "discover",
+				type: "discovery",
+				title: "Discover items",
+				input: { text: "Find all items" },
+				acceptance: { rules: ["output contains items"] },
+				discovery: { outputKey: "items" },
+			},
+			{
+				id: "process_each",
+				type: "for_each",
+				title: "Process each item",
+				input: { text: "Placeholder" },
+				acceptance: { rules: ["ok"] },
+				forEach: {
+					itemsFrom: "discover.items",
+					mode: "sequential",
+					taskTemplate: {
+						title: "Process {{item.title}}",
+						input: { text: "Process item {{item.id}}" },
+						acceptance: { rules: ["output is valid"] },
+					},
+				},
+			},
+		],
+		outputContract: { text: "summary report" },
+	});
+	const orchestrator = new TeamOrchestrator({
+		planStore, teamUnitStore: unitStore, workspace,
+		roleRunner: runner, dataDir: root,
+		maxCheckerRevisions: 3, maxWatcherRevisions: 1,
+		maxRunDurationMinutes: 60,
+	});
+	return { root, plan, orchestrator, workspace, planStore };
+}
+
+// ── P23 Task 1: orchestrator persists sourceItem in expansion records ──
+
+test("for_each expansion persists sourceItem snapshot for each child", async () => {
+	const { root, plan, orchestrator, workspace } = await setupDiscoveryPlan(
+		JSON.stringify({
+			items: [
+				{ id: "battle_08", title: "藏经阁大战", chapter: "第8章" },
+				{ id: "battle_09", title: "雁门关外自尽", chapter: "第9章" },
+			],
+		}),
+	);
+	try {
+		const state = await orchestrator.createRun(plan.planId);
+		const final = await orchestrator.runToCompletion(state.runId);
+
+		assert.equal(final.status, "completed");
+		const expansion = await workspace.readExpansion(state.runId, "process_each");
+		assert.ok(expansion);
+
+		const child08 = expansion.children.find(c => c.sourceItemId === "battle_08")!;
+		assert.ok(child08, "battle_08 child must exist");
+		assert.ok(child08.sourceItem, "child entry must have sourceItem");
+		assert.equal(child08.sourceItem!.id, "battle_08");
+		assert.equal(child08.sourceItem!.data.title, "藏经阁大战");
+		assert.equal(child08.sourceItem!.data.chapter, "第8章");
+
+		const child09 = expansion.children.find(c => c.sourceItemId === "battle_09")!;
+		assert.ok(child09, "battle_09 child must exist");
+		assert.ok(child09.sourceItem);
+		assert.equal(child09.sourceItem!.data.title, "雁门关外自尽");
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
+
 test("resume from old expansion without sourceItem uses stored task without crashing", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-dyn-"));
 	try {

@@ -1208,39 +1208,3 @@ test("discovery validation error includes actual outputKey not hardcoded 'items'
 		await rm(root, { recursive: true });
 	}
 });
-
-
-// ── P23 Task 1: orchestrator persists sourceItem in expansion records ──
-
-test("for_each expansion persists sourceItem snapshot for each child", async () => {
-	const { root, plan, orchestrator, workspace } = await setupDiscoveryPlan(
-		JSON.stringify({
-			items: [
-				{ id: "battle_08", title: "藏经阁大战", chapter: "第8章" },
-				{ id: "battle_09", title: "雁门关外自尽", chapter: "第9章" },
-			],
-		}),
-	);
-	try {
-		const state = await orchestrator.createRun(plan.planId);
-		const final = await orchestrator.runToCompletion(state.runId);
-
-		assert.equal(final.status, "completed");
-		const expansion = await workspace.readExpansion(state.runId, "process_each");
-		assert.ok(expansion);
-
-		const child08 = expansion.children.find(c => c.sourceItemId === "battle_08")!;
-		assert.ok(child08, "battle_08 child must exist");
-		assert.ok(child08.sourceItem, "child entry must have sourceItem");
-		assert.equal(child08.sourceItem!.id, "battle_08");
-		assert.equal(child08.sourceItem!.data.title, "藏经阁大战");
-		assert.equal(child08.sourceItem!.data.chapter, "第8章");
-
-		const child09 = expansion.children.find(c => c.sourceItemId === "battle_09")!;
-		assert.ok(child09, "battle_09 child must exist");
-		assert.ok(child09.sourceItem);
-		assert.equal(child09.sourceItem!.data.title, "雁门关外自尽");
-	} finally {
-		await rm(root, { recursive: true });
-	}
-});
