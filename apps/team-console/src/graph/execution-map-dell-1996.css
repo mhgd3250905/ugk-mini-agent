@@ -240,9 +240,6 @@
 [data-visual-theme="dell-1996"] .emap-node-state-pill,
 [data-visual-theme="dell-1996"] .emap-task-port,
 [data-visual-theme="dell-1996"] .emap-task-port-chip,
-[data-visual-theme="dell-1996"] .emap-task-agent-row,
-[data-visual-theme="dell-1996"] .emap-task-port-direction,
-[data-visual-theme="dell-1996"] .emap-discovery-summary-row span,
 [data-visual-theme="dell-1996"] .emap-node-id-copy,
 [data-visual-theme="dell-1996"] .task-action-menu-button,
 [data-visual-theme="dell-1996"] .agent-playground-branch-collapse,
@@ -255,33 +252,15 @@
   color: var(--dell-link);
   box-shadow: none;
   font-family: Helvetica, Arial, sans-serif;
-  position: relative;
   transition: transform 90ms steps(2, end), box-shadow 90ms steps(2, end), background 90ms steps(2, end);
 }
 
 [data-visual-theme="dell-1996"] .task-action-menu-button:hover,
 [data-visual-theme="dell-1996"] .task-action-menu-button:focus-visible,
 [data-visual-theme="dell-1996"] .emap-node-id-copy:hover,
-[data-visual-theme="dell-1996"] .emap-link-cut-button:hover,
-[data-visual-theme="dell-1996"] .emap-task-port-chip:hover,
-[data-visual-theme="dell-1996"] .emap-task-dep-handle:hover,
-[data-visual-theme="dell-1996"] .emap-task-agent-row:hover,
-[data-visual-theme="dell-1996"] .emap-task-port-direction:hover,
-[data-visual-theme="dell-1996"] .emap-discovery-summary-row span:hover {
+[data-visual-theme="dell-1996"] .emap-link-cut-button:hover {
   background: var(--dell-hover);
   color: var(--dell-link);
-  box-shadow: 2px 2px 0 var(--dell-shadow);
-}
-
-[data-visual-theme="dell-1996"] .emap-task-port-chip:hover,
-[data-visual-theme="dell-1996"] .emap-task-dep-handle:hover,
-[data-visual-theme="dell-1996"] .emap-task-agent-row:hover,
-[data-visual-theme="dell-1996"] .emap-task-port-direction:hover,
-[data-visual-theme="dell-1996"] .emap-discovery-summary-row span:hover {
-  background: var(--dell-paper);
-  box-shadow: 3px 3px 0 var(--dell-shadow);
-  transform: translate(-1px, -1px);
-  z-index: 2;
 }
 
 [data-visual-theme="dell-1996"] .task-action-menu-button.primary,
@@ -315,6 +294,16 @@
 [data-visual-theme="dell-1996"] .emap-run-history-panel {
   background: var(--dell-panel);
   font-family: "Times New Roman", Times, serif;
+}
+
+[data-visual-theme="dell-1996"] .agent-playground-branch:hover,
+[data-visual-theme="dell-1996"] .task-leader-branch:hover,
+[data-visual-theme="dell-1996"] .task-action-branch:hover,
+[data-visual-theme="dell-1996"] .discovery-subcanvas-panel:hover,
+[data-visual-theme="dell-1996"] .emap-run-observer-panel:hover {
+  border-color: var(--dell-border);
+  box-shadow: 4px 4px 0 var(--dell-shadow);
+  transform: translate(-2px, -2px);
 }
 
 [data-visual-theme="dell-1996"] .task-run-summary:hover,
