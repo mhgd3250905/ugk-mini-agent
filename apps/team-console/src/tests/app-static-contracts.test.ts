@@ -285,6 +285,8 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toContain("--dell-task: #16333a");
     expect(mapCss).toContain('[data-visual-theme="dell-1996"][data-theme="dark"] .emap-canvas-task-node');
     expect(mapCss).toContain("border: 2px solid var(--dell-border)");
+    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node\s*{[^}]*box-shadow:\s*none;/s);
+    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node:hover\s*{[^}]*box-shadow:\s*4px 4px 0 var\(--dell-shadow\);/s);
     expect(mapCss).toContain(".emap-evidence-card");
     expect(mapCss).toContain(".emap-evidence-node");
     expect(mapCss).toContain(".emap-run-history-panel");

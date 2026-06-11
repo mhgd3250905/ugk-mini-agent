@@ -73,7 +73,6 @@
 }
 
 [data-visual-theme="dell-1996"] .execution-map-toolbar,
-[data-visual-theme="dell-1996"] .emap-node,
 [data-visual-theme="dell-1996"] .emap-dialog-branch,
 [data-visual-theme="dell-1996"] .agent-playground-branch,
 [data-visual-theme="dell-1996"] .task-leader-branch,
@@ -138,7 +137,10 @@
 }
 
 [data-visual-theme="dell-1996"] .emap-node {
+  border: 2px solid var(--dell-border);
   background: var(--dell-task);
+  color: var(--dell-ink);
+  box-shadow: none;
   transition: none;
 }
 
@@ -151,7 +153,7 @@
 
 [data-visual-theme="dell-1996"] .emap-node.selected,
 [data-visual-theme="dell-1996"] .emap-node.is-atlas-selected {
-  border-color: var(--dell-border);
+  border-color: var(--dell-frame);
   background: var(--dell-selected);
   color: var(--dell-selected-ink);
   box-shadow: 4px 4px 0 var(--dell-shadow);
