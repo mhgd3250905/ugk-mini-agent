@@ -13,6 +13,8 @@
   --dell-red: #a64f55;
   --dell-yellow: #c49a46;
   --dell-link: #1f4e79;
+  --dell-task-accent: #b23a48;
+  --dell-discovery-accent: #007f9e;
   --dell-agent: #dce8ee;
   --dell-task: #f0ead2;
   --dell-source: #e2ead9;
@@ -37,6 +39,8 @@
   --dell-red: #d16b74;
   --dell-yellow: #8f7a3d;
   --dell-link: #7fd7d0;
+  --dell-task-accent: #e06470;
+  --dell-discovery-accent: #31c7d5;
   --dell-agent: #123844;
   --dell-task: #16333a;
   --dell-source: #1b3a2d;
@@ -188,6 +192,14 @@
 
 [data-visual-theme="dell-1996"] .status-failed .emap-node-status-bar {
   background: var(--dell-red);
+}
+
+[data-visual-theme="dell-1996"] .emap-canvas-task-node .emap-node-status-bar {
+  background: var(--dell-task-accent);
+}
+
+[data-visual-theme="dell-1996"] .emap-discovery-task-node .emap-node-status-bar {
+  background: var(--dell-discovery-accent);
 }
 
 [data-visual-theme="dell-1996"] .emap-canvas-task-node {
