@@ -994,9 +994,12 @@
   border-left: 6px solid var(--dell-yellow);
 }
 
-[data-visual-theme="dell-1996"] .emap-observer-file-row.result,
+[data-visual-theme="dell-1996"] .emap-observer-file-row.result {
+  border: 2px solid var(--dell-border);
+}
+
 [data-visual-theme="dell-1996"] .emap-run-observer-stage-files.result {
-  border-left: 6px solid var(--dell-source);
+  border-left: 0;
 }
 
 [data-visual-theme="dell-1996"] .emap-observer-file-row-name,
@@ -1010,6 +1013,7 @@
 [data-visual-theme="dell-1996"] .emap-run-observer-stage {
   border-top: 2px solid var(--dell-border);
   background: var(--dell-paper);
+  padding-left: 12px;
 }
 
 [data-visual-theme="dell-1996"] .emap-run-observer-panel .emap-observer-process-node {
@@ -1018,9 +1022,7 @@
 }
 
 [data-visual-theme="dell-1996"] .emap-run-observer-stage::before {
-  display: block;
-  width: 2px;
-  background: var(--dell-border);
+  display: none;
 }
 
 [data-visual-theme="dell-1996"] .emap-run-observer-stage::after {
@@ -1029,6 +1031,7 @@
 
 [data-visual-theme="dell-1996"] .emap-run-observer-stage-files {
   background: var(--dell-paper);
+  padding-left: 12px;
 }
 
 [data-visual-theme="dell-1996"] .emap-run-observer-panel .emap-observer-process-top,
