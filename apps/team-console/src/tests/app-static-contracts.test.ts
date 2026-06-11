@@ -1,11 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-
-const readExecutionMapCss = (): string => {
-  const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
-  const runObserverCss = readFileSync("src/graph/execution-map-run-observer.css", "utf8");
-  return mapCss.replace('@import "./execution-map-run-observer.css";', runObserverCss.trimEnd());
-};
+import { readExecutionMapCss } from "./execution-map-css-test-utils";
 
 describe("Team Console static contracts", () => {
   it("keeps App task branches on the multi-branch panel path", () => {
@@ -319,7 +314,7 @@ describe("Team Console static contracts", () => {
     const thumbRule = mapCss.match(/\.emap-run-observer-panel\s+\.emap-observer-process-top::-webkit-scrollbar-thumb\s*{[^}]*}/)?.[0] ?? "";
     const checkerThumbRule = mapCss.match(/\.emap-run-observer-stage\.checker\s+\.emap-observer-process-top::-webkit-scrollbar-thumb\s*{[^}]*}/)?.[0] ?? "";
     const connectorSocketRule = mapCss.match(/\.emap-connector-sockets\s*{[^}]*}/)?.[0] ?? "";
-    const sourceSocketRule = mapCss.match(/\.emap-connector-source-socket\s*{[^}]*}/)?.[0] ?? "";
+    const sourceSocketRule = mapCss.match(/^\.emap-connector-source-socket\s*{[^}]*}/m)?.[0] ?? "";
     const taskConnectionSocketRule = mapCss.match(/\.emap-connector-socket-task-connection\s+\.emap-connector-source-socket\s*{[^}]*}/)?.[0] ?? "";
     const agentSocketRule = mapCss.match(/\.emap-connector-socket-agent-branch\s+\.emap-connector-source-socket\s*{[^}]*}/)?.[0] ?? "";
     const evidenceSocketRule = mapCss.match(/\.emap-connector-socket-evidence\s+\.emap-connector-source-socket\s*{[^}]*}/)?.[0] ?? "";

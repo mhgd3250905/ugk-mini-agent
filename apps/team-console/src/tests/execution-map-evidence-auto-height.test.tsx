@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
-import { readFileSync } from "node:fs";
 import { render } from "@testing-library/react";
 import { ExecutionMap } from "../graph/ExecutionMap";
+import { readExecutionMapCss } from "./execution-map-css-test-utils";
 import {
   makeSequentialPlan,
   makeSequentialRun,
@@ -24,7 +24,7 @@ describe("Evidence auto-height", () => {
   });
 
   it("CSS does not clip evidence content with overflow hidden or line-clamp", () => {
-    const css = readFileSync("src/graph/execution-map.css", "utf8");
+    const css = readExecutionMapCss();
 
     const evidenceNodeRule = css.match(/\.emap-evidence-node\s*\{[^}]*\}/)?.[0];
     expect(evidenceNodeRule).toBeTruthy();

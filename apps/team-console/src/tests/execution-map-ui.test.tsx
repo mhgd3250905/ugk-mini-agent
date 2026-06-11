@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { ExecutionMap, type AtlasTaskNode } from "../graph/ExecutionMap";
 import { App } from "../app/App";
+import { readExecutionMapCss } from "./execution-map-css-test-utils";
 import {
   MockTeamApi,
   mockDiscoveryRootTask,
@@ -528,7 +528,7 @@ describe("ExecutionMap UI", () => {
   });
 
   it("mobile CSS prevents evidence elements from widening viewport", () => {
-    const css = readFileSync("src/graph/execution-map.css", "utf8");
+    const css = readExecutionMapCss();
     const mobileBlock = css.match(/@media \(max-width: 720px\) \{[\s\S]*\n\}/)?.[0] ?? "";
     expect(mobileBlock).toContain("overflow-x: hidden");
     expect(mobileBlock).toContain("max-width: 100%");
@@ -536,7 +536,7 @@ describe("ExecutionMap UI", () => {
   });
 
   it("execution node buttons keep atlas focus-visible styling", () => {
-    const css = readFileSync("src/graph/execution-map.css", "utf8");
+    const css = readExecutionMapCss();
 
     expect(css).toContain(".emap-node:focus-visible");
     expect(css).toContain("outline:");
@@ -841,7 +841,7 @@ describe("Evidence branch cards", () => {
   });
 
   it("CSS keeps evidence and preview connectors at the same accent intensity", () => {
-    const css = readFileSync("src/graph/execution-map.css", "utf8");
+    const css = readExecutionMapCss();
 
     const evidenceRule = css.match(/\.emap-link-evidence\s*\{[^}]*\}/)?.[0];
     const previewRule = css.match(/\.emap-link-artifact-preview\s*\{[^}]*\}/)?.[0];
