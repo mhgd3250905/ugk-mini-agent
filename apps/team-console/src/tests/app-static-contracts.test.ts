@@ -327,6 +327,10 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toContain(".emap-run-observer-stage");
     expect(mapCss).toContain(".emap-observer-file-row");
     expect(mapCss).toContain(".emap-observer-file-detail-node");
+    expect(mapCss).not.toMatch(/\[data-visual-theme="dell-1996"\] \.emap-observer-process-node\.(worker|checker)\s*{[^}]*border-left:/s);
+    expect(mapCss).not.toMatch(/\[data-visual-theme="dell-1996"\] \.emap-run-observer-stage\.(worker|checker)\s*{[^}]*border-left:/s);
+    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-run-observer-stage::before\s*{[^}]*display:\s*none;/s);
+    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-run-observer-stage::after\s*{[^}]*display:\s*none;/s);
     expect(mapCss).toContain(".task-run-detail-pre");
     expect(mapCss).toContain(".team-md-content pre");
     expect(mapCss).toContain(".emap-observer-process-status");
