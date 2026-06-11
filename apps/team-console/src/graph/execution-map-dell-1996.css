@@ -13,6 +13,7 @@
   --dell-red: #a64f55;
   --dell-yellow: #c49a46;
   --dell-link: #1f4e79;
+  --dell-agent-accent: #356f9f;
   --dell-task-accent: #b23a48;
   --dell-discovery-accent: #007f9e;
   --dell-agent: #dce8ee;
@@ -166,6 +167,10 @@
 
 [data-visual-theme="dell-1996"] .status-failed .emap-node-status-bar {
   background: var(--dell-red);
+}
+
+[data-visual-theme="dell-1996"] .emap-agent-node .emap-node-status-bar {
+  background: var(--dell-agent-accent);
 }
 
 [data-visual-theme="dell-1996"] .emap-canvas-task-node .emap-node-status-bar {

@@ -320,6 +320,8 @@ describe("Team Console static contracts", () => {
     expect(mapCss).not.toContain(".emap-node.is-atlas-selected::before");
     expect(mapCss).not.toContain(".emap-node.selected *");
     expect(mapCss).not.toContain(".emap-node.is-atlas-selected *");
+    expect(mapCss).toContain("--dell-agent-accent: #356f9f");
+    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-agent-node \.emap-node-status-bar\s*{[^}]*background:\s*var\(--dell-agent-accent\);/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-canvas-task-node \.emap-node-status-bar\s*{[^}]*background:\s*var\(--dell-task-accent\);/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-discovery-task-node \.emap-node-status-bar\s*{[^}]*background:\s*var\(--dell-discovery-accent\);/s);
     expect(mapCss).toContain(".emap-evidence-card");
