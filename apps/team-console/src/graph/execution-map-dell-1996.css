@@ -35,10 +35,10 @@
   --dell-selected: #00a49a;
   --dell-selected-ink: #021112;
   --dell-red: #d16b74;
-  --dell-yellow: #d0a84e;
+  --dell-yellow: #8f7a3d;
   --dell-link: #7fd7d0;
   --dell-agent: #123844;
-  --dell-task: #333824;
+  --dell-task: #16333a;
   --dell-source: #1b3a2d;
   --dell-menu: #33283d;
   --dell-header: #152f4a;
@@ -562,7 +562,15 @@
 
 [data-visual-theme="dell-1996"][data-theme="dark"] .status-running .emap-node-status-bar,
 [data-visual-theme="dell-1996"][data-theme="dark"] .emap-agent-node[data-agent-run-state="busy"] .emap-node-status-bar {
-  background: #8f7134;
+  background: #6aa6a0;
+}
+
+[data-visual-theme="dell-1996"][data-theme="dark"] .emap-canvas-task-node {
+  background: #16333a;
+}
+
+[data-visual-theme="dell-1996"][data-theme="dark"] .emap-canvas-task-node.status-running {
+  background: #1a3c43;
 }
 
 [data-visual-theme="dell-1996"][data-theme="dark"] .emap-evidence-error,
