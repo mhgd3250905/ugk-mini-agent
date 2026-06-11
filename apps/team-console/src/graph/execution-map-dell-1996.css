@@ -105,6 +105,7 @@
   box-shadow: none;
   background: var(--dell-paper);
   color: var(--dell-ink);
+  transition: transform 90ms steps(2, end), box-shadow 90ms steps(2, end), background 90ms steps(2, end);
 }
 
 [data-visual-theme="dell-1996"] .execution-map-toolbar {
@@ -155,6 +156,14 @@
   color: var(--dell-ink);
   box-shadow: none;
   transform: none;
+  transition: transform 90ms steps(2, end), box-shadow 90ms steps(2, end), background 90ms steps(2, end);
+}
+
+[data-visual-theme="dell-1996"] .emap-node.selected:hover,
+[data-visual-theme="dell-1996"] .emap-node.is-atlas-selected:hover {
+  border-color: var(--dell-frame);
+  box-shadow: 4px 4px 0 var(--dell-shadow);
+  transform: translate(-2px, -2px);
 }
 
 [data-visual-theme="dell-1996"] .emap-node::after {
@@ -339,6 +348,7 @@
   background: var(--dell-panel);
   color: var(--dell-ink);
   box-shadow: none;
+  transition: transform 90ms steps(2, end), box-shadow 90ms steps(2, end), background 90ms steps(2, end);
 }
 
 [data-visual-theme="dell-1996"] .emap-evidence-node {
@@ -451,9 +461,18 @@
   border-left: 6px solid var(--dell-source);
 }
 
+[data-visual-theme="dell-1996"] .emap-evidence-node:hover,
+[data-visual-theme="dell-1996"] .emap-observer-node:hover,
 [data-visual-theme="dell-1996"] .emap-observer-file-node:hover,
+[data-visual-theme="dell-1996"] .emap-observer-process-node:hover,
+[data-visual-theme="dell-1996"] .emap-observer-file-detail:hover,
 [data-visual-theme="dell-1996"] .emap-task-group-card:hover,
-[data-visual-theme="dell-1996"] .emap-task-group-head button:hover {
+[data-visual-theme="dell-1996"] .emap-task-group-head button:hover,
+[data-visual-theme="dell-1996"] .discovery-stage-strip:hover,
+[data-visual-theme="dell-1996"] .discovery-run-policy-row:hover,
+[data-visual-theme="dell-1996"] .discovery-channel-set-row:hover,
+[data-visual-theme="dell-1996"] .discovery-dispatch-diagnostic-item:hover,
+[data-visual-theme="dell-1996"] .discovery-subcanvas-show-all:hover {
   border-color: var(--dell-border);
   background: var(--dell-hover);
   color: var(--dell-ink);
@@ -471,6 +490,19 @@
   background: var(--dell-hover);
   color: var(--dell-ink);
   box-shadow: none;
+}
+
+[data-visual-theme="dell-1996"] .emap-observer-file-node.selected:hover,
+[data-visual-theme="dell-1996"] .discovery-channel-set-row.is-selected:hover,
+[data-visual-theme="dell-1996"] .discovery-channel-set-row.is-default-run:hover,
+[data-visual-theme="dell-1996"] .discovery-subcanvas-select-all[aria-pressed="true"]:hover,
+[data-visual-theme="dell-1996"] .discovery-generated-action.summary.selected:hover,
+[data-visual-theme="dell-1996"] .discovery-generated-action.selected:hover,
+[data-visual-theme="dell-1996"] .discovery-generated-action.reset:hover {
+  border-color: var(--dell-border);
+  background: var(--dell-hover);
+  color: var(--dell-ink);
+  box-shadow: 3px 3px 0 var(--dell-shadow);
 }
 
 [data-visual-theme="dell-1996"] .discovery-generated-card.state-running,
@@ -496,6 +528,14 @@
   border-color: var(--dell-border);
   background: var(--dell-hover);
   box-shadow: none;
+  transform: none;
+}
+
+[data-visual-theme="dell-1996"] .discovery-generated-card.is-history-open:hover,
+[data-visual-theme="dell-1996"] .discovery-generated-card.state-running.is-history-open:hover {
+  border-color: var(--dell-border);
+  background: var(--dell-hover);
+  box-shadow: 4px 4px 0 var(--dell-shadow);
   transform: none;
 }
 
@@ -661,6 +701,16 @@
   background: var(--dell-hover);
   color: var(--dell-ink);
   box-shadow: none;
+  transform: none;
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-item.selected:hover,
+[data-visual-theme="dell-1996"] .run-history-row-shell.selected:hover,
+[data-visual-theme="dell-1996"] .run-history-file-row.selected:hover {
+  border-color: var(--dell-border);
+  background: var(--dell-hover);
+  color: var(--dell-ink);
+  box-shadow: 3px 3px 0 var(--dell-shadow);
   transform: none;
 }
 
@@ -900,6 +950,13 @@
   background: var(--dell-hover);
   color: var(--dell-ink);
   box-shadow: none;
+}
+
+[data-visual-theme="dell-1996"] .emap-observer-file-row.selected:hover {
+  border-color: var(--dell-border);
+  background: var(--dell-hover);
+  color: var(--dell-ink);
+  box-shadow: 3px 3px 0 var(--dell-shadow);
 }
 
 [data-visual-theme="dell-1996"] .emap-observer-file-row.worker,
