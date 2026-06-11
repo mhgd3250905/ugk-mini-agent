@@ -278,10 +278,10 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toContain('[data-visual-theme="dell-1996"] .emap-run-observer-panel');
     expect(mapCss).toContain('[data-visual-theme="dell-1996"] .emap-artifact-preview');
     expect(mapCss).toContain('[data-visual-theme="dell-1996"][data-theme="dark"]');
-    expect(mapCss).toContain("--dell-selected: #526c78");
-    expect(mapCss).toContain("--dell-hover: #ded0ba");
-    expect(mapCss).toContain("--dell-border: #594c3e");
-    expect(mapCss).toContain("--dell-selected: #465d66");
+    expect(mapCss).toContain("--dell-selected: #1f5e73");
+    expect(mapCss).toContain("--dell-hover: #dfe9ec");
+    expect(mapCss).toContain("--dell-border: #4c6677");
+    expect(mapCss).toContain("--dell-selected: #2d7182");
     expect(mapCss).toContain("border: 2px solid var(--dell-border)");
     expect(mapCss).toContain(".emap-evidence-card");
     expect(mapCss).toContain(".emap-evidence-node");
