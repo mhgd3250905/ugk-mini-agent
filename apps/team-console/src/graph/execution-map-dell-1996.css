@@ -488,11 +488,6 @@
   border-left: 6px solid var(--dell-source);
 }
 
-[data-visual-theme="dell-1996"] .emap-evidence-node:hover,
-[data-visual-theme="dell-1996"] .emap-observer-node:hover,
-[data-visual-theme="dell-1996"] .emap-observer-file-node:hover,
-[data-visual-theme="dell-1996"] .emap-observer-process-node:hover,
-[data-visual-theme="dell-1996"] .emap-observer-file-detail:hover,
 [data-visual-theme="dell-1996"] .emap-task-group-card:hover,
 [data-visual-theme="dell-1996"] .emap-task-group-head button:hover,
 [data-visual-theme="dell-1996"] .discovery-stage-strip:hover,
