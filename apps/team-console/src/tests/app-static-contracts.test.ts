@@ -288,7 +288,10 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node\s*{[^}]*box-shadow:\s*none;/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node:hover\s*{[^}]*box-shadow:\s*4px 4px 0 var\(--dell-shadow\);/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node:hover\s*{[^}]*transform:\s*translate\(-2px,\s*-2px\);/s);
+    expect(mapCss).not.toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node:hover\s*{[^}]*background:/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node\.selected,\n\[data-visual-theme="dell-1996"\] \.emap-node\.is-atlas-selected\s*{[^}]*color:\s*var\(--dell-ink\);/s);
+    expect(mapCss).not.toContain(".emap-node.selected::before");
+    expect(mapCss).not.toContain(".emap-node.is-atlas-selected::before");
     expect(mapCss).not.toContain(".emap-node.selected *");
     expect(mapCss).not.toContain(".emap-node.is-atlas-selected *");
     expect(mapCss).toContain(".emap-evidence-card");

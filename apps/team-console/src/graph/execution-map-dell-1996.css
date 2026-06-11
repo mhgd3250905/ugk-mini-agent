@@ -146,7 +146,6 @@
 
 [data-visual-theme="dell-1996"] .emap-node:hover {
   border-color: var(--dell-border);
-  background: var(--dell-hover);
   box-shadow: 4px 4px 0 var(--dell-shadow);
   transform: translate(-2px, -2px);
 }
@@ -157,15 +156,6 @@
   color: var(--dell-ink);
   box-shadow: 4px 4px 0 var(--dell-shadow);
   transform: translate(-2px, -2px);
-}
-
-[data-visual-theme="dell-1996"] .emap-node.selected::before,
-[data-visual-theme="dell-1996"] .emap-node.is-atlas-selected::before {
-  content: "";
-  position: absolute;
-  inset: 3px;
-  border: 2px dashed var(--dell-selected);
-  pointer-events: none;
 }
 
 [data-visual-theme="dell-1996"] .emap-node::after {
