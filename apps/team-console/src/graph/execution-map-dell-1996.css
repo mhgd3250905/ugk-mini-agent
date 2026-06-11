@@ -574,3 +574,211 @@
   background: #302018;
   color: #e6a19a;
 }
+
+[data-visual-theme="dell-1996"] .emap-run-history-panel,
+[data-visual-theme="dell-1996"] .run-history-drawer {
+  border: 2px solid var(--dell-border);
+  background: var(--dell-paper);
+  color: var(--dell-ink);
+  box-shadow: 4px 4px 0 var(--dell-shadow);
+  font-family: "Times New Roman", Times, serif;
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-head,
+[data-visual-theme="dell-1996"] .emap-run-history-toolbar,
+[data-visual-theme="dell-1996"] .run-history-head,
+[data-visual-theme="dell-1996"] .run-history-toolbar,
+[data-visual-theme="dell-1996"] .run-history-table-head {
+  border-bottom: 2px solid var(--dell-border);
+  background: var(--dell-header);
+  color: var(--dell-ink);
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-toolbar,
+[data-visual-theme="dell-1996"] .run-history-toolbar,
+[data-visual-theme="dell-1996"] .run-history-table-head {
+  background: var(--dell-panel);
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-list,
+[data-visual-theme="dell-1996"] .run-history-list,
+[data-visual-theme="dell-1996"] .run-history-detail {
+  background: var(--dell-paper);
+  scrollbar-color: var(--dell-border) var(--dell-panel);
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-list::-webkit-scrollbar-track {
+  background: var(--dell-panel);
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-list::-webkit-scrollbar-thumb {
+  border-color: var(--dell-panel);
+  background: var(--dell-border);
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-item,
+[data-visual-theme="dell-1996"] .run-history-row-shell,
+[data-visual-theme="dell-1996"] .run-history-detail-meta span,
+[data-visual-theme="dell-1996"] .run-history-file-row,
+[data-visual-theme="dell-1996"] .run-history-file-preview,
+[data-visual-theme="dell-1996"] .run-history-empty,
+[data-visual-theme="dell-1996"] .run-history-error,
+[data-visual-theme="dell-1996"] .run-history-copy-status,
+[data-visual-theme="dell-1996"] .emap-run-history-empty,
+[data-visual-theme="dell-1996"] .emap-run-history-error {
+  border: 2px solid var(--dell-border);
+  background: var(--dell-panel);
+  color: var(--dell-ink);
+  box-shadow: 3px 3px 0 var(--dell-shadow);
+  transform: none;
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-item::before {
+  border-radius: 0 !important;
+  background: var(--dell-border);
+  box-shadow: none;
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-item:hover,
+[data-visual-theme="dell-1996"] .emap-run-history-item.selected,
+[data-visual-theme="dell-1996"] .run-history-row-shell:hover,
+[data-visual-theme="dell-1996"] .run-history-row-shell.selected,
+[data-visual-theme="dell-1996"] .run-history-file-row.selected,
+[data-visual-theme="dell-1996"] .run-history-file-row:hover,
+[data-visual-theme="dell-1996"] .run-history-file-row:focus-visible {
+  border-color: var(--dell-border);
+  background: var(--dell-hover);
+  color: var(--dell-ink);
+  box-shadow: 3px 3px 0 var(--dell-shadow);
+  transform: none;
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-item.selected::before,
+[data-visual-theme="dell-1996"] .emap-run-history-item.status-running::before,
+[data-visual-theme="dell-1996"] .emap-run-history-item.status-queued::before {
+  background: var(--dell-selected);
+  box-shadow: none;
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-item.status-running,
+[data-visual-theme="dell-1996"] .emap-run-history-item.status-queued {
+  background: color-mix(in srgb, var(--dell-yellow) 16%, var(--dell-panel));
+  border-color: var(--dell-border);
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-item.best,
+[data-visual-theme="dell-1996"] .run-history-row-shell.best {
+  border-left: 6px solid var(--dell-source);
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-item.archived,
+[data-visual-theme="dell-1996"] .run-history-row-shell.archived {
+  opacity: 0.78;
+  background: color-mix(in srgb, var(--dell-muted) 14%, var(--dell-panel));
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-title span,
+[data-visual-theme="dell-1996"] .emap-run-history-status small,
+[data-visual-theme="dell-1996"] .emap-run-history-duration small,
+[data-visual-theme="dell-1996"] .emap-run-history-note,
+[data-visual-theme="dell-1996"] .emap-run-history-count,
+[data-visual-theme="dell-1996"] .emap-run-history-archive-toggle,
+[data-visual-theme="dell-1996"] .run-history-title span,
+[data-visual-theme="dell-1996"] .run-history-row-main small,
+[data-visual-theme="dell-1996"] .run-history-row-status small,
+[data-visual-theme="dell-1996"] .run-history-row-result small,
+[data-visual-theme="dell-1996"] .run-history-row-time small,
+[data-visual-theme="dell-1996"] .run-history-count,
+[data-visual-theme="dell-1996"] .run-history-archive-toggle,
+[data-visual-theme="dell-1996"] .run-history-detail-head span,
+[data-visual-theme="dell-1996"] .run-history-section-kicker,
+[data-visual-theme="dell-1996"] .run-history-file-preview header span {
+  color: var(--dell-muted);
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-title strong,
+[data-visual-theme="dell-1996"] .emap-run-history-status strong,
+[data-visual-theme="dell-1996"] .emap-run-history-duration strong,
+[data-visual-theme="dell-1996"] .run-history-title strong,
+[data-visual-theme="dell-1996"] .run-history-row-status strong,
+[data-visual-theme="dell-1996"] .run-history-row-result strong,
+[data-visual-theme="dell-1996"] .run-history-detail-head strong,
+[data-visual-theme="dell-1996"] .run-history-detail-meta b {
+  color: var(--dell-ink);
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-title code,
+[data-visual-theme="dell-1996"] .emap-run-history-row code,
+[data-visual-theme="dell-1996"] .run-history-title code,
+[data-visual-theme="dell-1996"] .run-history-row code,
+[data-visual-theme="dell-1996"] .run-history-file-row code,
+[data-visual-theme="dell-1996"] .run-history-file-preview code {
+  border: 1px solid var(--dell-border);
+  background: color-mix(in srgb, var(--dell-paper) 82%, var(--dell-hover));
+  color: var(--dell-ink);
+  font-family: "Courier New", Courier, monospace;
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-trigger,
+[data-visual-theme="dell-1996"] .emap-run-history-badge,
+[data-visual-theme="dell-1996"] .run-history-row-badges em,
+[data-visual-theme="dell-1996"] .run-history-best-badge,
+[data-visual-theme="dell-1996"] .run-history-archived-badge {
+  border: 1px solid var(--dell-border);
+  background: var(--dell-paper);
+  color: var(--dell-link);
+  font-family: Helvetica, Arial, sans-serif;
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-badge.best,
+[data-visual-theme="dell-1996"] .run-history-best-badge {
+  color: var(--dell-source);
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-badge.loaded {
+  color: var(--dell-selected);
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-close,
+[data-visual-theme="dell-1996"] .emap-run-history-actions button,
+[data-visual-theme="dell-1996"] .emap-run-history-load-more,
+[data-visual-theme="dell-1996"] .run-history-close,
+[data-visual-theme="dell-1996"] .run-history-copy,
+[data-visual-theme="dell-1996"] .run-history-row-actions button,
+[data-visual-theme="dell-1996"] .run-history-load-more {
+  border: 1px solid var(--dell-border);
+  background: var(--dell-paper);
+  color: var(--dell-link);
+  box-shadow: 2px 2px 0 var(--dell-shadow);
+  font-family: Helvetica, Arial, sans-serif;
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-close:hover,
+[data-visual-theme="dell-1996"] .emap-run-history-actions button:hover:not(:disabled),
+[data-visual-theme="dell-1996"] .emap-run-history-load-more:hover:not(:disabled),
+[data-visual-theme="dell-1996"] .run-history-close:hover,
+[data-visual-theme="dell-1996"] .run-history-copy:hover,
+[data-visual-theme="dell-1996"] .run-history-row-actions button:hover:not(:disabled),
+[data-visual-theme="dell-1996"] .run-history-load-more:hover:not(:disabled) {
+  background: var(--dell-hover);
+  color: var(--dell-ink);
+}
+
+[data-visual-theme="dell-1996"] .emap-run-history-row-error,
+[data-visual-theme="dell-1996"] .emap-run-history-error,
+[data-visual-theme="dell-1996"] .run-history-row-error,
+[data-visual-theme="dell-1996"] .run-history-error {
+  border-color: var(--dell-red);
+  background: color-mix(in srgb, var(--dell-red) 12%, var(--dell-panel));
+  color: var(--dell-red);
+}
+
+[data-visual-theme="dell-1996"][data-theme="dark"] .emap-run-history-title code,
+[data-visual-theme="dell-1996"][data-theme="dark"] .emap-run-history-row code,
+[data-visual-theme="dell-1996"][data-theme="dark"] .run-history-title code,
+[data-visual-theme="dell-1996"][data-theme="dark"] .run-history-row code,
+[data-visual-theme="dell-1996"][data-theme="dark"] .run-history-file-row code,
+[data-visual-theme="dell-1996"][data-theme="dark"] .run-history-file-preview code {
+  background: #17130e;
+  color: #ead8b6;
+}
