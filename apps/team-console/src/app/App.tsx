@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamTaskInputPort, TeamTaskOutputPort, TeamTaskConnection, TeamManualUpstreamRunSelection, TeamTaskRunCreateRequest, TeamDiscoveryChannelSet, TeamTaskTemplateParameter } from "../api/team-types";
+import type { TeamCanvasSourceNode, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamTaskInputPort, TeamTaskOutputPort, TeamTaskConnection, TeamManualUpstreamRunSelection, TeamTaskRunCreateRequest, TeamDiscoveryChannelSet, TeamTaskTemplateParameter } from "../api/team-types";
 import { MockTeamApi } from "../fixtures/team-fixtures";
 import { useTeamConsoleLiveData, type DataSource, type TeamConsoleUiResetReason, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
 import { useTaskBranchStack } from "./use-task-branch-stack";
@@ -28,12 +28,10 @@ import {
   writeStoredLiveTaskNodes,
   type AgentBranchMode,
   type AgentBranchState,
-  type StoredAgentNodePosition,
   type StoredCanvasUiState,
   type StoredCanvasUiStateByContext,
-  type StoredSourcePosition,
-  type StoredTaskPosition,
 } from "./canvas-ui-state-storage";
+import { inferSourceFileType, makeAgentNode, makeSourceNodes, makeTaskNodes, mergeStoredAgentNodes, mergeStoredSourceNodePositions, mergeStoredTaskNodePositions, sameAgentNodes, sameSourceNodes, sameTaskNodes } from "./team-console-canvas-node-projection";
 import { ExecutionMap, type AtlasAgentNode, type AtlasBranchLayoutState, type AtlasSelectedNodeEntry, type AtlasSourceNode, type AtlasTaskGroup, type AtlasTaskNode } from "../graph/ExecutionMap";
 import type { AtlasViewport } from "../graph/AtlasCanvasShell";
 import { RUN_STATUS_LABELS, isActiveRun } from "../shared/status";
@@ -199,64 +197,6 @@ function useMinimumVisibleFlag(active: boolean, minVisibleMs: number): boolean {
   return visible;
 }
 
-function makeTaskNode(
-  task: TeamCanvasTask,
-  index: number,
-  storedPosition?: { x: number; y: number },
-): AtlasTaskNode {
-  return {
-    nodeId: `task-node-${task.taskId}`,
-    kind: "canvas-task",
-    taskId: task.taskId,
-    position: storedPosition ?? {
-      x: 280 + (index % 3) * 320,
-      y: 220 + Math.floor(index / 3) * 180,
-    },
-  };
-}
-
-function makeTaskNodes(tasks: TeamCanvasTask[], storedPositions = new Map<string, { x: number; y: number }>()): AtlasTaskNode[] {
-  return tasks.map((task, index) => makeTaskNode(task, index, storedPositions.get(task.taskId)));
-}
-
-function makeSourceNode(
-  sourceNode: TeamCanvasSourceNode,
-  index: number,
-  storedPosition?: { x: number; y: number },
-): AtlasSourceNode {
-  return {
-    nodeId: `source-node-${sourceNode.sourceNodeId}`,
-    kind: "canvas-source",
-    sourceNodeId: sourceNode.sourceNodeId,
-    position: storedPosition ?? {
-      x: 280 + (index % 3) * 320,
-      y: 34 + Math.floor(index / 3) * 180,
-    },
-  };
-}
-
-function makeSourceNodes(sources: TeamCanvasSourceNode[], storedPositions = new Map<string, { x: number; y: number }>()): AtlasSourceNode[] {
-  return sources.map((source, index) => makeSourceNode(source, index, storedPositions.get(source.sourceNodeId)));
-}
-
-function inferSourceFileType(file: File): TeamCanvasSourcePortType {
-  const name = file.name.toLowerCase();
-  if (name.endsWith(".md") || name.endsWith(".markdown")) return "md";
-  if (name.endsWith(".json")) return "json";
-  if (name.endsWith(".html") || name.endsWith(".htm")) return "html";
-  if (name.endsWith(".txt") || file.type.startsWith("text/")) return "string";
-  return "file";
-}
-
-function makeAgentNode(agentId: string, index: number): AtlasAgentNode {
-  return {
-    nodeId: `agent-${agentId}`,
-    kind: "agent",
-    agentId,
-    position: { x: 360 + index * 320, y: 0 },
-  };
-}
-
 function readStoredTheme(): TeamConsoleTheme {
   try {
     const value = globalThis.localStorage?.getItem(TEAM_CONSOLE_THEME_STORAGE_KEY);
@@ -272,83 +212,6 @@ function storeTheme(theme: TeamConsoleTheme): void {
   } catch {
     // Theme persistence is best-effort; the UI state still updates in memory.
   }
-}
-
-function sameAgentNodes(left: AtlasAgentNode[], right: AtlasAgentNode[]): boolean {
-  return left.length === right.length
-    && left.every((node, index) => {
-      const other = right[index];
-      return other
-        && node.nodeId === other.nodeId
-        && node.agentId === other.agentId
-        && node.position.x === other.position.x
-        && node.position.y === other.position.y;
-    });
-}
-
-function sameTaskNodes(left: AtlasTaskNode[], right: AtlasTaskNode[]): boolean {
-  return left.length === right.length
-    && left.every((node, index) => {
-      const other = right[index];
-      return other
-        && node.nodeId === other.nodeId
-        && node.taskId === other.taskId
-        && node.position.x === other.position.x
-        && node.position.y === other.position.y;
-    });
-}
-
-function sameSourceNodes(left: AtlasSourceNode[], right: AtlasSourceNode[]): boolean {
-  return left.length === right.length
-    && left.every((node, index) => {
-      const other = right[index];
-      return other
-        && node.nodeId === other.nodeId
-        && node.sourceNodeId === other.sourceNodeId
-        && node.position.x === other.position.x
-        && node.position.y === other.position.y;
-    });
-}
-
-function mergeStoredAgentNodes(agentNodes: AtlasAgentNode[], storedNodes: StoredAgentNodePosition[] | undefined, agentsById: Map<string, unknown>): AtlasAgentNode[] {
-  if (!storedNodes?.length) return agentNodes;
-  const byAgentId = new Map(agentNodes.map((node) => [node.agentId, node]));
-  const nextNodes = [...agentNodes];
-  for (const stored of storedNodes) {
-    if (!agentsById.has(stored.agentId)) continue;
-    const existingIndex = nextNodes.findIndex((node) => node.agentId === stored.agentId);
-    if (existingIndex >= 0) {
-      nextNodes[existingIndex] = { ...nextNodes[existingIndex]!, position: stored.position };
-      continue;
-    }
-    if (!byAgentId.has(stored.agentId)) {
-      nextNodes.push({
-        nodeId: `agent-${stored.agentId}`,
-        kind: "agent",
-        agentId: stored.agentId,
-        position: stored.position,
-      });
-    }
-  }
-  return nextNodes;
-}
-
-function mergeStoredTaskNodePositions(taskNodes: AtlasTaskNode[], storedPositions: StoredTaskPosition[] | undefined): AtlasTaskNode[] {
-  if (!storedPositions?.length) return taskNodes;
-  const positions = new Map(storedPositions.map((item) => [item.taskId, item.position]));
-  return taskNodes.map((node) => {
-    const position = positions.get(node.taskId);
-    return position ? { ...node, position } : node;
-  });
-}
-
-function mergeStoredSourceNodePositions(sourceNodes: AtlasSourceNode[], storedPositions: StoredSourcePosition[] | undefined): AtlasSourceNode[] {
-  if (!storedPositions?.length) return sourceNodes;
-  const positions = new Map(storedPositions.map((item) => [item.sourceNodeId, item.position]));
-  return sourceNodes.map((node) => {
-    const position = positions.get(node.sourceNodeId);
-    return position ? { ...node, position } : node;
-  });
 }
 
 function templateBindingsForTask(task: TeamCanvasTask): Record<string, string> {
