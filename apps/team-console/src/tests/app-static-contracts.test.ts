@@ -290,6 +290,11 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node:hover\s*{[^}]*transform:\s*translate\(-2px,\s*-2px\);/s);
     expect(mapCss).not.toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node:hover\s*{[^}]*background:/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node\.selected,\n\[data-visual-theme="dell-1996"\] \.emap-node\.is-atlas-selected\s*{[^}]*color:\s*var\(--dell-ink\);/s);
+    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node\.selected,\n\[data-visual-theme="dell-1996"\] \.emap-node\.is-atlas-selected\s*{[^}]*box-shadow:\s*none;/s);
+    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.execution-map-toolbar,[\s\S]*?\.emap-root-trash\s*{[^}]*box-shadow:\s*none;/s);
+    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-run-observer-panel\s*{[^}]*box-shadow:\s*none;/s);
+    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-run-history-item\.selected,[\s\S]*?\.run-history-file-row\.selected\s*{[^}]*box-shadow:\s*none;/s);
+    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-observer-file-row\.selected\s*{[^}]*box-shadow:\s*none;/s);
     expect(mapCss).not.toContain(".emap-node.selected::before");
     expect(mapCss).not.toContain(".emap-node.is-atlas-selected::before");
     expect(mapCss).not.toContain(".emap-node.selected *");
