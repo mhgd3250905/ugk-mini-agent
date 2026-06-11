@@ -277,6 +277,13 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toContain('[data-visual-theme="dell-1996"] .task-action-branch');
     expect(mapCss).toContain('[data-visual-theme="dell-1996"] .emap-run-observer-panel');
     expect(mapCss).toContain('[data-visual-theme="dell-1996"] .emap-artifact-preview');
+    expect(mapCss).toContain('[data-visual-theme="dell-1996"][data-theme="dark"]');
+    expect(mapCss).toContain("--dell-selected: #5f7391");
+    expect(mapCss).toContain("--dell-hover: #e8dcc6");
+    expect(mapCss).toContain(".emap-evidence-card");
+    expect(mapCss).toContain(".emap-run-history-panel");
+    expect(mapCss).toContain("border-radius: 0 !important");
+    expect(mapCss).not.toContain("background: var(--dell-yellow);");
   });
 
   it("does not render the obsolete live run switcher bar", () => {
