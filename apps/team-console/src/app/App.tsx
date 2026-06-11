@@ -3,25 +3,42 @@ import { LiveTeamApi } from "../api/team-api";
 import type { TeamCanvasSourceNode, TeamCanvasSourcePortType, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamAttemptRoleProcess, TeamAttemptRoleProcessRole, TeamAttemptRoleProcessStatus, TeamTaskInputPort, TeamTaskOutputPort, TeamTaskConnection, TeamManualUpstreamRunSelection, TeamTaskRunCreateRequest, TeamDiscoveryChannelSet, TeamTaskTemplateParameter } from "../api/team-types";
 import { MockTeamApi } from "../fixtures/team-fixtures";
 import { useTeamConsoleLiveData, type DataSource, type TeamConsoleUiResetReason, type TeamDiscoveryStage, type TeamDiscoverySummary, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
-import { useTaskBranchStack, type TaskBranchDetailMode, type TaskBranchGeneratedObserverState, type TaskBranchState } from "./use-task-branch-stack";
+import { useTaskBranchStack } from "./use-task-branch-stack";
 import { buildDiscoveryChannelSetLookup, buildDiscoveryChannelSetSelectionSummary } from "./discovery-channel-set-view-model";
 import { mergeRunHistoryItems, buildRunHistoryAnalysisContext, buildTaskRunFileDescriptors, selectLatestAttempt, type TaskRunObserverFileDescriptor, type RunHistoryAnalysisTask } from "./run-history-observer-model";
 import { hasDirtyTaskEditConflict, useTaskEditState } from "./use-task-edit-state";
 import { useTaskLeaderCopy } from "./use-task-leader-copy";
 import { hasSameTaskGroupRunPollingSignature, isActiveTaskGroupRun, selectLatestTaskGroupRun } from "./team-console-task-group-run-state";
 import { buildLiveTaskGroups, type StoredTaskGroupDisplayState, type TaskGroupRunUiState } from "./team-console-task-group-projection";
+import {
+  filterLoadedTaskRunByTaskId,
+  filterLoadedTaskRunSelectionsByTaskIds,
+  liveSourceRefreshPositions,
+  liveTaskRefreshPositions,
+  parseStoredCanvasUiStateByContext,
+  readInitialRootNodeFilter,
+  readStoredCanvasUiState,
+  readStoredInitialDataSource,
+  readStoredLiveAgentNodes,
+  writeStoredCanvasUiState,
+  writeStoredLiveAgentNodes,
+  writeStoredLiveSourceNodes,
+  writeStoredLiveTaskNodes,
+  type AgentBranchMode,
+  type AgentBranchState,
+  type RootNodeFilter,
+  type StoredAgentNodePosition,
+  type StoredCanvasUiState,
+  type StoredCanvasUiStateByContext,
+  type StoredSourcePosition,
+  type StoredTaskPosition,
+} from "./canvas-ui-state-storage";
 import { ExecutionMap, type AtlasAgentNode, type AtlasBranchLayoutState, type AtlasSelectedNodeEntry, type AtlasSourceNode, type AtlasTaskGroup, type AtlasTaskNode } from "../graph/ExecutionMap";
-import { normalizeAtlasViewport, type AtlasViewport } from "../graph/AtlasCanvasShell";
+import type { AtlasViewport } from "../graph/AtlasCanvasShell";
 import { RUN_STATUS_LABELS, isActiveRun } from "../shared/status";
 import { renderTeamMarkdown } from "../shared/markdown";
 import "./app.css";
 
-const LIVE_AGENT_LAYOUT_STORAGE_KEY = "ugk-team-console:live-agent-layout:v1";
-const LIVE_TASK_LAYOUT_STORAGE_KEY = "ugk-team-console:live-task-layout:v1";
-const LIVE_SOURCE_LAYOUT_STORAGE_KEY = "ugk-team-console:live-source-layout:v1";
-const CANVAS_UI_STATE_STORAGE_KEY = "ugk-team-console:canvas-ui-state:v1";
-const CANVAS_UI_STATE_BY_CONTEXT_STORAGE_KEY = "ugk-team-console:canvas-ui-state-by-context:v1";
-const DATA_SOURCE_STORAGE_KEY = "ugk-team-console:data-source";
 const TEAM_CONSOLE_THEME_STORAGE_KEY = "ugk-team-console:theme:v1";
 const TASK_RUN_PROCESS_LABELS: Record<TeamAttemptRoleProcessRole, string> = {
   worker: "Worker 过程",
@@ -35,53 +52,14 @@ const DISCOVERY_QUEUE_INITIAL_CARD_LIMIT = 18;
 const RUN_HISTORY_PAGE_SIZE = 3;
 const CANVAS_LOADING_MIN_VISIBLE_MS = 160;
 
-type AgentBranchMode = "chat" | "task-create";
 type TeamConsoleTheme = "light" | "dark";
 type DiscoveryGeneratedVisualState = "running" | "queued" | "done" | "failed" | "stale" | "idle";
-type RootNodeFilter = "all" | "agent" | "task" | "source";
 type DiscoveryChannelSetRunOptions = {
   discoveryChannelSetId?: string;
 };
 
 type DiscoveryChannelSetSaveOptions = {
   forceCreate?: boolean;
-};
-
-type AgentBranchState = {
-  nodeId: string;
-  agentId: string;
-  mode: AgentBranchMode;
-};
-
-type StoredCanvasUiState = {
-  schemaVersion: 1;
-  dataSource: DataSource;
-  selectedFixtureId?: string;
-  viewport?: AtlasViewport;
-  agentNodes?: StoredAgentNodePosition[];
-  taskNodePositions?: StoredTaskPosition[];
-  sourceNodePositions?: StoredSourcePosition[];
-  taskGroups?: AtlasTaskGroup[];
-  taskGroupDisplayStates?: StoredTaskGroupDisplayState[];
-  expandedAgentBranch?: AgentBranchState | null;
-  expandedTaskBranches?: TaskBranchState[];
-  branchLayout?: AtlasBranchLayoutState;
-  minimizedAgentNodeIds?: string[];
-  minimizedTaskNodeIds?: string[];
-  minimizedSourceNodeIds?: string[];
-  minimizedTaskGroupIds?: string[];
-  rootNodeFilter?: RootNodeFilter;
-  loadedTaskRunSelections?: StoredLoadedTaskRunSelection[];
-};
-
-type StoredCanvasUiStateByContext = {
-  schemaVersion: 1;
-  states: Record<string, StoredCanvasUiState>;
-};
-
-type StoredAgentNodePosition = {
-  agentId: string;
-  position: { x: number; y: number };
 };
 
 type TaskConnectionDraft = {
@@ -94,21 +72,6 @@ type SourceConnectionDraft = {
   fromSourceNodeId: string;
   fromOutputPortId: string;
   type: string;
-};
-
-type StoredTaskPosition = {
-  taskId: string;
-  position: { x: number; y: number };
-};
-
-type StoredLoadedTaskRunSelection = {
-  taskId: string;
-  runId: string;
-};
-
-type StoredSourcePosition = {
-  sourceNodeId: string;
-  position: { x: number; y: number };
 };
 
 type TaskRunObserverFileState = {
@@ -649,403 +612,6 @@ function taskRunObserverFileDetailPanelIdPrefix(nodeId: string, kind: TaskRunObs
   return kind === "task" ? `file-detail-${nodeId}` : `file-detail-${kind}-${nodeId}`;
 }
 
-function readRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" ? value as Record<string, unknown> : null;
-}
-
-function readStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const item of value) {
-    const text = typeof item === "string" ? item.trim() : "";
-    if (!text || seen.has(text)) continue;
-    seen.add(text);
-    result.push(text);
-  }
-  return result;
-}
-
-function readStoredGeneratedObserver(value: unknown): TaskBranchGeneratedObserverState | undefined {
-  const record = readRecord(value);
-  if (!record) return undefined;
-  const taskId = typeof record.taskId === "string" ? record.taskId.trim() : "";
-  const runId = typeof record.runId === "string" ? record.runId.trim() : "";
-  if (!taskId || !runId) return undefined;
-  const selectedFileKeys = readStringArray(record.selectedFileKeys);
-  return {
-    taskId,
-    runId,
-    ...(selectedFileKeys.length > 0 ? { selectedFileKeys } : {}),
-  };
-}
-
-function readStoredViewport(value: unknown): AtlasViewport | undefined {
-  const record = readRecord(value);
-  if (!record) return undefined;
-  const x = Number(record.x);
-  const y = Number(record.y);
-  const scale = Number(record.scale);
-  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(scale) || scale <= 0) {
-    return undefined;
-  }
-  return normalizeAtlasViewport({ x, y, scale });
-}
-
-function readStoredAgentBranch(value: unknown): AgentBranchState | null {
-  const record = readRecord(value);
-  if (!record) return null;
-  const nodeId = typeof record.nodeId === "string" ? record.nodeId.trim() : "";
-  const agentId = typeof record.agentId === "string" ? record.agentId.trim() : "";
-  const mode = record.mode === "task-create" ? "task-create" : record.mode === "chat" ? "chat" : null;
-  if (!nodeId || !agentId || !mode) return null;
-  return { nodeId, agentId, mode };
-}
-
-function readStoredTaskBranches(value: unknown): TaskBranchState[] {
-  if (!Array.isArray(value)) return [];
-  const result: TaskBranchState[] = [];
-  const seen = new Set<string>();
-  for (const item of value) {
-    const record = readRecord(item);
-    if (!record) continue;
-    const nodeId = typeof record.nodeId === "string" ? record.nodeId.trim() : "";
-    const taskId = typeof record.taskId === "string" ? record.taskId.trim() : "";
-    if (!nodeId || !taskId || seen.has(nodeId)) continue;
-    seen.add(nodeId);
-    const rawDetailMode = record.detailMode;
-    const detailMode: TaskBranchDetailMode | null =
-      rawDetailMode === "leader-chat" || rawDetailMode === "edit" || rawDetailMode === "clone" || rawDetailMode === "parameters" || rawDetailMode === "run-history" || rawDetailMode === "run-observer" || rawDetailMode === "discovery-subcanvas"
-        ? rawDetailMode
-        : null;
-    const observedRunId = typeof record.observedRunId === "string" && record.observedRunId.trim()
-      ? record.observedRunId.trim()
-      : undefined;
-    const runHistoryTaskId = typeof record.runHistoryTaskId === "string" && record.runHistoryTaskId.trim()
-      ? record.runHistoryTaskId.trim()
-      : undefined;
-    const selectedFileKeys = readStringArray(record.selectedFileKeys);
-    const discoveryGeneratedObserver = readStoredGeneratedObserver(record.discoveryGeneratedObserver);
-    const discoveryGeneratedEditTaskId = typeof record.discoveryGeneratedEditTaskId === "string" && record.discoveryGeneratedEditTaskId.trim()
-      ? record.discoveryGeneratedEditTaskId.trim()
-      : undefined;
-    const discoveryGeneratedRunHistoryTaskId = typeof record.discoveryGeneratedRunHistoryTaskId === "string" && record.discoveryGeneratedRunHistoryTaskId.trim()
-      ? record.discoveryGeneratedRunHistoryTaskId.trim()
-      : undefined;
-    const discoveryQueueExpanded = record.discoveryQueueExpanded === true;
-    const discoveryStaleExpanded = record.discoveryStaleExpanded === true;
-    result.push({
-      nodeId,
-      taskId,
-      detailMode,
-      ...(observedRunId ? { observedRunId } : {}),
-      ...(runHistoryTaskId ? { runHistoryTaskId } : {}),
-      ...(selectedFileKeys.length > 0 ? { selectedFileKeys } : {}),
-      ...(discoveryGeneratedObserver ? { discoveryGeneratedObserver } : {}),
-      ...(discoveryGeneratedEditTaskId ? { discoveryGeneratedEditTaskId } : {}),
-      ...(discoveryGeneratedRunHistoryTaskId ? { discoveryGeneratedRunHistoryTaskId } : {}),
-      ...(discoveryQueueExpanded ? { discoveryQueueExpanded } : {}),
-      ...(discoveryStaleExpanded ? { discoveryStaleExpanded } : {}),
-    });
-  }
-  return result;
-}
-
-function readStoredLoadedTaskRunSelections(value: unknown): StoredLoadedTaskRunSelection[] {
-  if (!Array.isArray(value)) return [];
-  const result: StoredLoadedTaskRunSelection[] = [];
-  const seenTaskIds = new Set<string>();
-  for (const item of value) {
-    const record = readRecord(item);
-    if (!record) continue;
-    const taskId = typeof record.taskId === "string" ? record.taskId.trim() : "";
-    const runId = typeof record.runId === "string" ? record.runId.trim() : "";
-    if (!taskId || !runId || seenTaskIds.has(taskId)) continue;
-    seenTaskIds.add(taskId);
-    result.push({ taskId, runId });
-  }
-  return result;
-}
-
-function filterLoadedTaskRunSelectionsByTaskIds(
-  selections: StoredLoadedTaskRunSelection[],
-  taskIds: ReadonlySet<string>,
-): StoredLoadedTaskRunSelection[] {
-  return selections.filter((selection) => taskIds.has(selection.taskId));
-}
-
-function filterLoadedTaskRunByTaskId(
-  selectionsByTaskId: Record<string, string>,
-  taskIds: ReadonlySet<string>,
-): Record<string, string> {
-  let changed = false;
-  const result: Record<string, string> = {};
-  for (const [taskId, runId] of Object.entries(selectionsByTaskId)) {
-    if (!taskIds.has(taskId)) {
-      changed = true;
-      continue;
-    }
-    result[taskId] = runId;
-  }
-  return changed ? result : selectionsByTaskId;
-}
-
-function readStoredTaskGroups(value: unknown): AtlasTaskGroup[] {
-  if (!Array.isArray(value)) return [];
-  const result: AtlasTaskGroup[] = [];
-  const seen = new Set<string>();
-  for (const item of value) {
-    const record = readRecord(item);
-    if (!record) continue;
-    const groupId = typeof record.groupId === "string" ? record.groupId.trim() : "";
-    const title = typeof record.title === "string" ? record.title.trim() : "";
-    const taskNodeIds = readStringArray(record.taskNodeIds);
-    const headTaskIds = readStringArray(record.headTaskIds);
-    if (!groupId || !title || taskNodeIds.length === 0 || seen.has(groupId)) continue;
-    seen.add(groupId);
-    result.push({
-      groupId,
-      title,
-      taskNodeIds,
-      ...(headTaskIds.length > 0 ? { headTaskIds } : {}),
-      collapsed: record.collapsed === true,
-      locked: record.locked === true,
-    });
-  }
-  return result;
-}
-
-function readStoredTaskGroupDisplayStates(value: unknown): StoredTaskGroupDisplayState[] {
-  if (!Array.isArray(value)) return [];
-  const result: StoredTaskGroupDisplayState[] = [];
-  const seen = new Set<string>();
-  for (const item of value) {
-    const record = readRecord(item);
-    if (!record) continue;
-    const groupId = typeof record.groupId === "string" ? record.groupId.trim() : "";
-    if (!groupId || seen.has(groupId)) continue;
-    seen.add(groupId);
-    result.push({
-      groupId,
-      collapsed: record.collapsed === true,
-      locked: record.locked === true,
-    });
-  }
-  return result;
-}
-
-function readStoredAgentNodePositions(value: unknown): StoredAgentNodePosition[] {
-  if (!Array.isArray(value)) return [];
-  const result: StoredAgentNodePosition[] = [];
-  const seen = new Set<string>();
-  for (const item of value) {
-    const record = item as { agentId?: unknown; position?: { x?: unknown; y?: unknown } };
-    const agentId = typeof record.agentId === "string" ? record.agentId.trim() : "";
-    const x = Number(record.position?.x);
-    const y = Number(record.position?.y);
-    if (!agentId || seen.has(agentId) || !Number.isFinite(x) || !Number.isFinite(y)) continue;
-    seen.add(agentId);
-    result.push({ agentId, position: { x, y } });
-  }
-  return result;
-}
-
-function readStoredTaskNodePositions(value: unknown): StoredTaskPosition[] {
-  if (!Array.isArray(value)) return [];
-  const result: StoredTaskPosition[] = [];
-  const seen = new Set<string>();
-  for (const item of value) {
-    const record = item as { taskId?: unknown; position?: { x?: unknown; y?: unknown } };
-    const taskId = typeof record.taskId === "string" ? record.taskId.trim() : "";
-    const x = Number(record.position?.x);
-    const y = Number(record.position?.y);
-    if (!taskId || seen.has(taskId) || !Number.isFinite(x) || !Number.isFinite(y)) continue;
-    seen.add(taskId);
-    result.push({ taskId, position: { x, y } });
-  }
-  return result;
-}
-
-function readStoredSourceNodePositions(value: unknown): StoredSourcePosition[] {
-  if (!Array.isArray(value)) return [];
-  const result: StoredSourcePosition[] = [];
-  const seen = new Set<string>();
-  for (const item of value) {
-    const record = item as { sourceNodeId?: unknown; position?: { x?: unknown; y?: unknown } };
-    const sourceNodeId = typeof record.sourceNodeId === "string" ? record.sourceNodeId.trim() : "";
-    const x = Number(record.position?.x);
-    const y = Number(record.position?.y);
-    if (!sourceNodeId || seen.has(sourceNodeId) || !Number.isFinite(x) || !Number.isFinite(y)) continue;
-    seen.add(sourceNodeId);
-    result.push({ sourceNodeId, position: { x, y } });
-  }
-  return result;
-}
-
-function readStoredPositionMap(value: unknown): Record<string, { x: number; y: number }> {
-  const record = readRecord(value);
-  if (!record) return {};
-  const result: Record<string, { x: number; y: number }> = {};
-  for (const [key, raw] of Object.entries(record)) {
-    const item = readRecord(raw);
-    const x = Number(item?.x);
-    const y = Number(item?.y);
-    if (!key || !Number.isFinite(x) || !Number.isFinite(y)) continue;
-    result[key] = { x, y };
-  }
-  return result;
-}
-
-function readStoredSizeMap(value: unknown): Record<string, { width: number; height: number }> {
-  const record = readRecord(value);
-  if (!record) return {};
-  const result: Record<string, { width: number; height: number }> = {};
-  for (const [key, raw] of Object.entries(record)) {
-    const item = readRecord(raw);
-    const width = Number(item?.width);
-    const height = Number(item?.height);
-    if (!key || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) continue;
-    result[key] = { width, height };
-  }
-  return result;
-}
-
-function readStoredRectMap(value: unknown): NonNullable<AtlasBranchLayoutState["agentBranchRects"]> {
-  const record = readRecord(value);
-  if (!record) return {};
-  const result: NonNullable<AtlasBranchLayoutState["agentBranchRects"]> = {};
-  for (const [key, raw] of Object.entries(record)) {
-    const item = readRecord(raw);
-    const x = Number(item?.x);
-    const y = Number(item?.y);
-    const width = Number(item?.width);
-    const height = Number(item?.height);
-    if (!key || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) continue;
-    result[key] = { x, y, width, height };
-  }
-  return result;
-}
-
-function readStoredBranchLayout(value: unknown): AtlasBranchLayoutState {
-  const record = readRecord(value);
-  if (!record) return {};
-  return {
-    agentBranchRects: readStoredRectMap(record.agentBranchRects),
-    taskBranchPositions: readStoredPositionMap(record.taskBranchPositions),
-    taskChildPanelPositions: readStoredPositionMap(record.taskChildPanelPositions),
-    taskChildPanelSizes: readStoredSizeMap(record.taskChildPanelSizes),
-  };
-}
-
-function canvasUiContextKeyFor(dataSource: DataSource, selectedFixtureId: string): string {
-  return dataSource === "mock" ? `mock:${selectedFixtureId}` : "live";
-}
-
-function parseStoredCanvasUiState(value: unknown): StoredCanvasUiState | null {
-  const parsed = readRecord(value);
-  if (!parsed || parsed.schemaVersion !== 1) return null;
-  const dataSource = parsed.dataSource === "live" ? "live" : parsed.dataSource === "mock" ? "mock" : null;
-  if (!dataSource) return null;
-  const selectedFixtureId = typeof parsed.selectedFixtureId === "string" ? parsed.selectedFixtureId : undefined;
-  const viewport = readStoredViewport(parsed.viewport);
-  return {
-    schemaVersion: 1,
-    dataSource,
-    ...(selectedFixtureId ? { selectedFixtureId } : {}),
-    ...(viewport ? { viewport } : {}),
-    agentNodes: readStoredAgentNodePositions(parsed.agentNodes),
-    taskNodePositions: readStoredTaskNodePositions(parsed.taskNodePositions),
-    sourceNodePositions: readStoredSourceNodePositions(parsed.sourceNodePositions),
-    taskGroups: readStoredTaskGroups(parsed.taskGroups),
-    taskGroupDisplayStates: readStoredTaskGroupDisplayStates(parsed.taskGroupDisplayStates ?? parsed.taskGroups),
-    expandedAgentBranch: readStoredAgentBranch(parsed.expandedAgentBranch),
-    expandedTaskBranches: readStoredTaskBranches(parsed.expandedTaskBranches),
-    branchLayout: readStoredBranchLayout(parsed.branchLayout),
-    minimizedAgentNodeIds: readStringArray(parsed.minimizedAgentNodeIds),
-    minimizedTaskNodeIds: readStringArray(parsed.minimizedTaskNodeIds),
-    minimizedSourceNodeIds: readStringArray(parsed.minimizedSourceNodeIds),
-    minimizedTaskGroupIds: readStringArray(parsed.minimizedTaskGroupIds),
-    rootNodeFilter: parsed.rootNodeFilter === "agent" || parsed.rootNodeFilter === "task" || parsed.rootNodeFilter === "source" ? parsed.rootNodeFilter : undefined,
-    loadedTaskRunSelections: readStoredLoadedTaskRunSelections(parsed.loadedTaskRunSelections),
-  };
-}
-
-function parseStoredCanvasUiStateByContext(value: unknown): StoredCanvasUiStateByContext {
-  const parsed = readRecord(value);
-  if (!parsed || parsed.schemaVersion !== 1) return { schemaVersion: 1, states: {} };
-  const rawStates = readRecord(parsed.states);
-  if (!rawStates) return { schemaVersion: 1, states: {} };
-  const states: Record<string, StoredCanvasUiState> = {};
-  for (const [key, value] of Object.entries(rawStates)) {
-    const state = parseStoredCanvasUiState(value);
-    if (state && canvasUiContextMatches(state, state.dataSource, state.selectedFixtureId ?? CLEAN_AGENT_WORKSPACE_ID)) {
-      states[key] = state;
-    }
-  }
-  return { schemaVersion: 1, states };
-}
-
-function readStoredCanvasUiStateByContext(): StoredCanvasUiStateByContext {
-  try {
-    const raw = globalThis.localStorage?.getItem(CANVAS_UI_STATE_BY_CONTEXT_STORAGE_KEY);
-    if (!raw) return { schemaVersion: 1, states: {} };
-    return parseStoredCanvasUiStateByContext(JSON.parse(raw));
-  } catch {
-    return { schemaVersion: 1, states: {} };
-  }
-}
-
-function mergeCanvasUiStateByContext(
-  localState: StoredCanvasUiStateByContext,
-  sharedState: StoredCanvasUiStateByContext | null,
-): StoredCanvasUiStateByContext {
-  if (!sharedState) return localState;
-  return {
-    schemaVersion: 1,
-    states: {
-      ...localState.states,
-      ...sharedState.states,
-    },
-  };
-}
-
-function readStoredCanvasUiState(
-  dataSource: DataSource,
-  selectedFixtureId: string,
-  sharedState: StoredCanvasUiStateByContext | null = null,
-): StoredCanvasUiState | null {
-  const contextKey = canvasUiContextKeyFor(dataSource, selectedFixtureId);
-  const byContext = mergeCanvasUiStateByContext(readStoredCanvasUiStateByContext(), sharedState);
-  const scopedState = byContext.states[contextKey];
-  if (scopedState && canvasUiContextMatches(scopedState, dataSource, selectedFixtureId)) {
-    return scopedState;
-  }
-
-  try {
-    const raw = globalThis.localStorage?.getItem(CANVAS_UI_STATE_STORAGE_KEY);
-    if (!raw) return null;
-    const legacyState = parseStoredCanvasUiState(JSON.parse(raw));
-    if (!legacyState || !canvasUiContextMatches(legacyState, dataSource, selectedFixtureId)) return null;
-    return legacyState;
-  } catch {
-    return null;
-  }
-}
-
-function readStoredInitialDataSource(): DataSource {
-  try {
-    return globalThis.localStorage?.getItem(DATA_SOURCE_STORAGE_KEY) === "live" ? "live" : "mock";
-  } catch {
-    return "mock";
-  }
-}
-
-function readInitialRootNodeFilter(): RootNodeFilter {
-  const dataSource = readStoredInitialDataSource();
-  const state = readStoredCanvasUiState(dataSource, CLEAN_AGENT_WORKSPACE_ID);
-  return state?.rootNodeFilter ?? "all";
-}
-
 function useMinimumVisibleFlag(active: boolean, minVisibleMs: number): boolean {
   const [visible, setVisible] = useState(active && minVisibleMs > 0);
   const visibleSinceRef = useRef<number | null>(active && minVisibleMs > 0 ? Date.now() : null);
@@ -1072,150 +638,6 @@ function useMinimumVisibleFlag(active: boolean, minVisibleMs: number): boolean {
   }, [active, minVisibleMs, visible]);
 
   return visible;
-}
-
-function writeStoredCanvasUiState(state: StoredCanvasUiState): StoredCanvasUiStateByContext | null {
-  try {
-    globalThis.localStorage?.setItem(CANVAS_UI_STATE_STORAGE_KEY, JSON.stringify(state));
-    const contextKey = canvasUiContextKeyFor(state.dataSource, state.selectedFixtureId ?? CLEAN_AGENT_WORKSPACE_ID);
-    const byContext = readStoredCanvasUiStateByContext();
-    byContext.states[contextKey] = state;
-    globalThis.localStorage?.setItem(CANVAS_UI_STATE_BY_CONTEXT_STORAGE_KEY, JSON.stringify(byContext));
-    return byContext;
-  } catch {
-    return null;
-  }
-}
-
-function canvasUiContextMatches(state: StoredCanvasUiState, dataSource: DataSource, selectedFixtureId: string): boolean {
-  if (state.dataSource !== dataSource) return false;
-  if (dataSource === "mock") {
-    return (state.selectedFixtureId ?? CLEAN_AGENT_WORKSPACE_ID) === selectedFixtureId;
-  }
-  return true;
-}
-
-function readStoredLiveAgentNodes(): AtlasAgentNode[] {
-  try {
-    const raw = globalThis.localStorage?.getItem(LIVE_AGENT_LAYOUT_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    const rawNodes = Array.isArray((parsed as { nodes?: unknown }).nodes)
-      ? (parsed as { nodes: unknown[] }).nodes
-      : [];
-    const seen = new Set<string>();
-    const nodes: AtlasAgentNode[] = [];
-    for (const item of rawNodes) {
-      const record = item as { agentId?: unknown; x?: unknown; y?: unknown };
-      const agentId = typeof record.agentId === "string" ? record.agentId.trim() : "";
-      const x = Number(record.x);
-      const y = Number(record.y);
-      if (!agentId || seen.has(agentId) || !Number.isFinite(x) || !Number.isFinite(y)) continue;
-      seen.add(agentId);
-      nodes.push({
-        nodeId: `agent-${agentId}`,
-        kind: "agent",
-        agentId,
-        position: { x, y },
-      });
-    }
-    return nodes;
-  } catch {
-    return [];
-  }
-}
-
-function writeStoredLiveAgentNodes(nodes: AtlasAgentNode[]) {
-  try {
-    globalThis.localStorage?.setItem(LIVE_AGENT_LAYOUT_STORAGE_KEY, JSON.stringify({
-      version: 1,
-      nodes: nodes.map((node) => ({
-        agentId: node.agentId,
-        x: node.position.x,
-        y: node.position.y,
-      })),
-    }));
-  } catch {}
-}
-
-function readStoredLiveTaskPositions(): Map<string, { x: number; y: number }> {
-  const positions = new Map<string, { x: number; y: number }>();
-  try {
-    const raw = globalThis.localStorage?.getItem(LIVE_TASK_LAYOUT_STORAGE_KEY);
-    if (!raw) return positions;
-    const parsed = JSON.parse(raw) as { schemaVersion?: unknown; tasks?: unknown };
-    if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.tasks)) return positions;
-    for (const item of parsed.tasks) {
-      const record = item as { taskId?: unknown; position?: { x?: unknown; y?: unknown } };
-      const taskId = typeof record.taskId === "string" ? record.taskId.trim() : "";
-      const x = Number(record.position?.x);
-      const y = Number(record.position?.y);
-      if (!taskId || !Number.isFinite(x) || !Number.isFinite(y)) continue;
-      positions.set(taskId, { x, y });
-    }
-  } catch {}
-  return positions;
-}
-
-function writeStoredLiveTaskNodes(nodes: AtlasTaskNode[]) {
-  try {
-    const tasks: StoredTaskPosition[] = nodes.map((node) => ({
-      taskId: node.taskId,
-      position: { x: node.position.x, y: node.position.y },
-    }));
-    globalThis.localStorage?.setItem(LIVE_TASK_LAYOUT_STORAGE_KEY, JSON.stringify({
-      schemaVersion: 1,
-      tasks,
-    }));
-  } catch {}
-}
-
-function liveTaskRefreshPositions(currentNodes: AtlasTaskNode[]): Map<string, { x: number; y: number }> {
-  const positions = readStoredLiveTaskPositions();
-  for (const node of currentNodes) {
-    positions.set(node.taskId, { x: node.position.x, y: node.position.y });
-  }
-  return positions;
-}
-
-function readStoredLiveSourcePositions(): Map<string, { x: number; y: number }> {
-  const positions = new Map<string, { x: number; y: number }>();
-  try {
-    const raw = globalThis.localStorage?.getItem(LIVE_SOURCE_LAYOUT_STORAGE_KEY);
-    if (!raw) return positions;
-    const parsed = JSON.parse(raw) as { schemaVersion?: unknown; sources?: unknown };
-    if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.sources)) return positions;
-    for (const item of parsed.sources) {
-      const record = item as { sourceNodeId?: unknown; position?: { x?: unknown; y?: unknown } };
-      const sourceNodeId = typeof record.sourceNodeId === "string" ? record.sourceNodeId.trim() : "";
-      const x = Number(record.position?.x);
-      const y = Number(record.position?.y);
-      if (!sourceNodeId || !Number.isFinite(x) || !Number.isFinite(y)) continue;
-      positions.set(sourceNodeId, { x, y });
-    }
-  } catch {}
-  return positions;
-}
-
-function writeStoredLiveSourceNodes(nodes: AtlasSourceNode[]) {
-  try {
-    const sources: StoredSourcePosition[] = nodes.map((node) => ({
-      sourceNodeId: node.sourceNodeId,
-      position: { x: node.position.x, y: node.position.y },
-    }));
-    globalThis.localStorage?.setItem(LIVE_SOURCE_LAYOUT_STORAGE_KEY, JSON.stringify({
-      schemaVersion: 1,
-      sources,
-    }));
-  } catch {}
-}
-
-function liveSourceRefreshPositions(currentNodes: AtlasSourceNode[]): Map<string, { x: number; y: number }> {
-  const positions = readStoredLiveSourcePositions();
-  for (const node of currentNodes) {
-    positions.set(node.sourceNodeId, { x: node.position.x, y: node.position.y });
-  }
-  return positions;
 }
 
 function makeTaskNode(
