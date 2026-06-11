@@ -16,11 +16,11 @@
 
 ## 2026-06-11 — Codebase modularization progress
 
-- **主题**: 大文件治理继续推进，测试超级文件拆分阶段已基本收口，并开始进入生产文件模块化阶段。当前本地最新拆分提交为 `2f4e9ad4 Extract Team Console discovery run state helpers`；本轮已从 `App.tsx` 抽出 canvas UI state / localStorage storage helper，以及 Discovery generated run selection / visual state helper，保持 JSX、CSS、graph、fixtures 和 DOM `data-*` contract 不变。
+- **主题**: 大文件治理继续推进，测试超级文件拆分阶段已基本收口，并开始进入生产文件模块化阶段。当前本地最新拆分提交为 `6c49b661 Split Execution Map run observer styles`；本轮已从 `App.tsx` 抽出 canvas UI state、Discovery generated run state、run observer rendering helpers，并从 `execution-map.css` 抽出 run observer 样式主题，保持运行行为、graph 逻辑、fixtures 和 DOM `data-*` contract 不变。
 - **协作方式**: 后续拆分默认由 subagent 执行文件移动，主会话负责独立审核 moved block / moved declarations 等价、测试名顺序、中文字符串编码、保护文件 diff、验证命令和精确 stage/commit，避免同一 agent 自改自验。现在不再沿用 GLM 时代的极细步幅，优先按一个稳定主题模块拆分。
-- **影响范围**: 仅测试和生产 helper/model 层的模块化重排，不改变运行态数据、Team Console UI 或 `/playground` 行为。`.codex/plans/**` 仍作为本地计划草稿，不纳入提交。
+- **影响范围**: 仅测试、生产 helper/model/render 层和 CSS 主题文件的模块化重排，不改变运行态数据、Team Console UI 或 `/playground` 行为。`.codex/plans/**` 仍作为本地计划草稿，不纳入提交。
 - **验证口径**: 测试拆分至少跑对应 focused tests、原文件 + 新文件 combined tests、`npx tsc --noEmit`、`npm run code:size -- --limit 45` 和 `git diff --check`；生产文件切片需补相关 Team Console focused tests、Team Console build、类型检查、size 和 whitespace 检查。
-- **后续范围**: 测试超级文件拆分阶段已基本收口，tracked 测试文件已降到 1000 行以下；`App.tsx` 当前约 5748 行，整体大文件治理约 66%。后续重点继续治理 `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`src/ui/playground-styles.ts` 等生产/CSS 大文件。
+- **后续范围**: 测试超级文件拆分阶段已基本收口，tracked 测试文件已降到 1000 行以下；`App.tsx` 当前约 5453 行，`execution-map.css` 当前约 4468 行，整体大文件治理约 67%。后续重点继续治理 `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map.css`、`src/ui/playground-styles.ts` 等生产/CSS 大文件。
 
 ## 2026-06-09 — Playground popover and standalone confirm polish
 
