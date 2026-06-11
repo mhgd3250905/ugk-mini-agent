@@ -281,7 +281,15 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toContain("--dell-selected: #5f7391");
     expect(mapCss).toContain("--dell-hover: #e8dcc6");
     expect(mapCss).toContain(".emap-evidence-card");
+    expect(mapCss).toContain(".emap-evidence-node");
     expect(mapCss).toContain(".emap-run-history-panel");
+    expect(mapCss).toContain(".emap-observer-process-status");
+    expect(mapCss).toContain(".emap-task-group-member-chip");
+    expect(mapCss).toContain(".discovery-stage-strip");
+    expect(mapCss).toContain(".discovery-channel-set-row");
+    expect(mapCss).toContain(".discovery-dispatch-diagnostic-item");
+    expect(mapCss).toContain(".discovery-generated-card-actions");
+    expect(mapCss).toContain(".task-edit-field input");
     expect(mapCss).toContain("border-radius: 0 !important");
     expect(mapCss).not.toContain("background: var(--dell-yellow);");
   });
