@@ -950,7 +950,14 @@
   border: 1px solid var(--dell-border);
   background: color-mix(in srgb, var(--dell-paper) 82%, var(--dell-hover));
   color: var(--dell-ink);
+  box-shadow: none;
   font-family: "Courier New", Courier, monospace;
+}
+
+[data-visual-theme="dell-1996"] .emap-observer-file-detail-node:hover {
+  border-color: var(--dell-border);
+  background: color-mix(in srgb, var(--dell-paper) 82%, var(--dell-hover));
+  box-shadow: 4px 4px 0 var(--dell-shadow);
 }
 
 [data-visual-theme="dell-1996"] .emap-observer-file-row {

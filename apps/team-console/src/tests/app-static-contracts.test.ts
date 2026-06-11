@@ -302,6 +302,7 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.execution-map-toolbar,[\s\S]*?\.emap-root-trash\s*{[^}]*box-shadow:\s*none;/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-run-observer-panel\s*{[^}]*box-shadow:\s*none;/s);
     expect(mapCss).not.toMatch(/\[data-visual-theme="dell-1996"\] \.emap-observer-process-node:hover\s*{[^}]*box-shadow:/s);
+    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-observer-file-detail-node:hover\s*{[^}]*box-shadow:\s*4px 4px 0 var\(--dell-shadow\);/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-task-group-card:hover,[\s\S]*?\.discovery-channel-set-row:hover[\s\S]*?{[^}]*box-shadow:\s*3px 3px 0 var\(--dell-shadow\);/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-run-history-item\.selected,[\s\S]*?\.run-history-file-row\.selected\s*{[^}]*box-shadow:\s*none;/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-run-history-item\.selected:hover,[\s\S]*?\.run-history-file-row\.selected:hover\s*{[^}]*box-shadow:\s*3px 3px 0 var\(--dell-shadow\);/s);
