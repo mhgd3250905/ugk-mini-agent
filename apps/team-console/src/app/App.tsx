@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { LiveTeamApi } from "../api/team-api";
-import type { TeamCanvasSourceNode, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamTaskInputPort, TeamTaskOutputPort, TeamTaskConnection, TeamManualUpstreamRunSelection, TeamTaskRunCreateRequest, TeamDiscoveryChannelSet, TeamTaskTemplateParameter } from "../api/team-types";
+import type { TeamCanvasSourceNode, TeamCanvasTask, TeamApiError, TeamRunState, TeamAttemptMetadata, TeamTaskRunHistoryItem, TeamTaskUpdateRequest, TeamTaskInputPort, TeamTaskOutputPort, TeamTaskConnection, TeamManualUpstreamRunSelection, TeamTaskRunCreateRequest, TeamDiscoveryChannelSet } from "../api/team-types";
 import { MockTeamApi } from "../fixtures/team-fixtures";
 import { useTeamConsoleLiveData, type DataSource, type TeamConsoleUiResetReason, CLEAN_AGENT_WORKSPACE_ID, mergeTaskRun } from "./use-team-console-live-data";
 import { useTaskBranchStack } from "./use-task-branch-stack";
@@ -9,6 +9,7 @@ import { mergeRunHistoryItems, buildRunHistoryAnalysisContext, buildTaskRunFileD
 import { deriveManualUpstreamInputMetadata, formatRunTimestamp, renderFileDetailContent, renderRoleProcessNode, taskRunAttempts, taskRunElapsed, taskRunMessage, taskRunObserverFileDetailPanelIdPrefix, taskRunObserverPanelId, taskRunPhase, type TaskRunObserverPanelKind, type TaskRunObserverState } from "./team-console-run-observer-rendering";
 import { hasDirtyTaskEditConflict, useTaskEditState } from "./use-task-edit-state";
 import { useTaskLeaderCopy } from "./use-task-leader-copy";
+import { hasMissingRequiredTemplateBindings, normalizedTemplateBindings, renderTemplateParameterControl, templateBindingsForTask, type TaskCloneDraft, type TaskParameterDraft } from "./team-console-task-template-parameters";
 import { discoveryGeneratedVisualState, discoveryStageMeta, selectActiveDiscoveryRootRun, selectLatestRun, sortDiscoveryGeneratedTasksForSubcanvas, visibleDiscoveryGeneratedRuns } from "./team-console-discovery-run-state";
 import { hasSameTaskGroupRunPollingSignature, isActiveTaskGroupRun, selectLatestTaskGroupRun } from "./team-console-task-group-run-state";
 import { buildLiveTaskGroups, type StoredTaskGroupDisplayState, type TaskGroupRunUiState } from "./team-console-task-group-projection";
@@ -62,15 +63,6 @@ type SourceConnectionDraft = {
   fromSourceNodeId: string;
   fromOutputPortId: string;
   type: string;
-};
-
-type TaskCloneDraft = {
-  title: string;
-  templateBindings: Record<string, string>;
-};
-
-type TaskParameterDraft = {
-  templateBindings: Record<string, string>;
 };
 
 type RootArchiveConfirm =
@@ -212,83 +204,6 @@ function storeTheme(theme: TeamConsoleTheme): void {
   } catch {
     // Theme persistence is best-effort; the UI state still updates in memory.
   }
-}
-
-function templateBindingsForTask(task: TeamCanvasTask): Record<string, string> {
-  return Object.fromEntries(
-    (task.templateConfig?.parameters ?? []).map((parameter) => [
-      parameter.id,
-      task.templateState?.currentBindings?.[parameter.id] ?? parameter.defaultValue ?? "",
-    ]),
-  );
-}
-
-function normalizeTemplateParameterValue(parameter: TeamTaskTemplateParameter, rawValue: string): string {
-  const value = rawValue.trim();
-  if (parameter.inputType === "email_list") {
-    return value
-      .split(/[,;\n]+/)
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .join(",");
-  }
-  return value;
-}
-
-function hasMissingRequiredTemplateBindings(task: TeamCanvasTask, bindings = templateBindingsForTask(task)): boolean {
-  return (task.templateConfig?.parameters ?? []).some((parameter) =>
-    parameter.required !== false && !(bindings[parameter.id] ?? "").trim()
-  );
-}
-
-function normalizedTemplateBindings(task: TeamCanvasTask, bindings: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(
-    (task.templateConfig?.parameters ?? []).flatMap((parameter) => {
-      const value = normalizeTemplateParameterValue(parameter, bindings[parameter.id] ?? "");
-      return value ? [[parameter.id, value]] : [];
-    }),
-  );
-}
-
-function templateParameterPlaceholder(parameter: TeamTaskTemplateParameter): string {
-  return parameter.placeholder ?? parameter.description ?? parameter.id;
-}
-
-function renderTemplateParameterControl(
-  parameter: TeamTaskTemplateParameter,
-  value: string,
-  onChange: (value: string) => void,
-): ReactNode {
-  const placeholder = templateParameterPlaceholder(parameter);
-  if (parameter.inputType === "textarea") {
-    return (
-      <textarea
-        value={value}
-        placeholder={placeholder}
-        rows={4}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    );
-  }
-  if (parameter.inputType === "select") {
-    return (
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
-        {(parameter.required === false || !value) && <option value="">未选择</option>}
-        {(parameter.options ?? []).map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
-    );
-  }
-  return (
-    <input
-      type={parameter.inputType === "email" ? "email" : parameter.inputType === "number" ? "number" : "text"}
-      inputMode={parameter.inputType === "email_list" ? "email" : undefined}
-      value={value}
-      placeholder={placeholder}
-      onChange={(event) => onChange(event.target.value)}
-    />
-  );
 }
 
 type LoadedTaskRunSnapshot = {
