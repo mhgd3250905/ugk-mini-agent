@@ -4,7 +4,7 @@
 
 - 开发分支：`local/dell-1996-team-console-theme`
 - 当前实现基线：以该开发分支最新本地提交为准
-- 集成状态：已完成本地开发与验证，已获准提交 PR
+- 集成状态：已完成本地开发与验证，Draft PR [#8](https://github.com/mhgd3250905/ugk-claw-personal/pull/8) 已创建
 - 作用范围：`apps/team-console`
 - 默认主题影响：无。Dell 1996 通过独立视觉主题开关启用
 
