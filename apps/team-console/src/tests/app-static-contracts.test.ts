@@ -291,9 +291,11 @@ describe("Team Console static contracts", () => {
     expect(mapCss).not.toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node:hover\s*{[^}]*background:/s);
     expect(mapCss).not.toMatch(/\[data-visual-theme="dell-1996"\] \.emap-task-agent-row:hover\s*{[^}]*box-shadow:/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.agent-playground-branch:hover,[\s\S]*?\.emap-run-observer-panel:hover\s*{[^}]*box-shadow:\s*4px 4px 0 var\(--dell-shadow\);/s);
-    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.agent-playground-branch:hover,[\s\S]*?\.emap-run-observer-panel:hover\s*{[^}]*transform:\s*translate\(-2px,\s*-2px\);/s);
+    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.agent-playground-branch:hover,[\s\S]*?\.emap-run-observer-panel:hover\s*{[^}]*transform:\s*none;/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.agent-playground-branch:hover,[\s\S]*?\.emap-run-observer-panel:hover\s*{[^}]*outline:\s*2px solid var\(--dell-border\);/s);
+    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-agent-branch-shell,[\s\S]*?\.emap-task-child-branch-shell\s*{[^}]*contain:\s*layout style;/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-agent-branch-shell:hover,[\s\S]*?\.emap-task-child-branch-shell:hover\s*{[^}]*z-index:\s*30;/s);
+    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-agent-branch-shell:hover,[\s\S]*?\.emap-task-child-branch-shell:hover\s*{[^}]*transform:\s*translate\(-2px,\s*-2px\) translateZ\(0\);/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node\.selected,\n\[data-visual-theme="dell-1996"\] \.emap-node\.is-atlas-selected\s*{[^}]*color:\s*var\(--dell-ink\);/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node\.selected,\n\[data-visual-theme="dell-1996"\] \.emap-node\.is-atlas-selected\s*{[^}]*box-shadow:\s*none;/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node\.selected:hover,[\s\S]*?\.emap-node\.is-atlas-selected:hover\s*{[^}]*box-shadow:\s*4px 4px 0 var\(--dell-shadow\);/s);
