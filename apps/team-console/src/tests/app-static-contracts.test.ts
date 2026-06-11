@@ -256,6 +256,29 @@ describe("Team Console static contracts", () => {
     expect(appCss).toContain("cubic-bezier(0.2, 0.8, 0.2, 1)");
   });
 
+  it("exposes Dell 1996 as an independent persisted visual theme", () => {
+    const appSource = readFileSync("src/app/App.tsx", "utf8");
+    const mapSource = readFileSync("src/graph/ExecutionMap.tsx", "utf8");
+    const appCss = readAppCss();
+    const mapCss = readExecutionMapCss();
+
+    expect(appSource).toContain('TEAM_CONSOLE_VISUAL_THEME_STORAGE_KEY = "ugk-team-console:visual-theme:v1"');
+    expect(appSource).toContain('type TeamConsoleVisualTheme = "default" | "dell-1996"');
+    expect(appSource).toContain("data-visual-theme={visualTheme}");
+    expect(appSource).toContain('aria-label="切换视觉主题"');
+    expect(appSource).toContain('className="visual-theme-toggle-btn"');
+    expect(appSource).toContain('current === "default" ? "dell-1996" : "default"');
+    expect(mapSource).toContain('import "./execution-map-dell-1996.css";');
+    expect(appCss).toContain(".visual-theme-toggle-btn");
+    expect(mapCss).toContain('[data-visual-theme="dell-1996"] .execution-map-container');
+    expect(mapCss).toContain('[data-visual-theme="dell-1996"] .emap-canvas-task-node');
+    expect(mapCss).toContain('[data-visual-theme="dell-1996"] .emap-agent-node');
+    expect(mapCss).toContain('[data-visual-theme="dell-1996"] .emap-source-node');
+    expect(mapCss).toContain('[data-visual-theme="dell-1996"] .task-action-branch');
+    expect(mapCss).toContain('[data-visual-theme="dell-1996"] .emap-run-observer-panel');
+    expect(mapCss).toContain('[data-visual-theme="dell-1996"] .emap-artifact-preview');
+  });
+
   it("does not render the obsolete live run switcher bar", () => {
     const appSource = readFileSync("src/app/App.tsx", "utf8");
 

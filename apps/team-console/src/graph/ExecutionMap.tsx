@@ -35,6 +35,7 @@ import {
   type EvidenceEntry,
 } from "./execution-map-evidence";
 import "./execution-map.css";
+import "./execution-map-dell-1996.css";
 
 export { buildArtifactBranches } from "./execution-map-evidence";
 export type { ArtifactPreviewState, AttemptFileRef, EvidenceEntry, EvidenceKind } from "./execution-map-evidence";

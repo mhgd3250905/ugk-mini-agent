@@ -6,10 +6,13 @@ export const readExecutionMapCss = (): string => {
   const runObserverCss = readFileSync("src/graph/execution-map-run-observer.css", "utf8");
   const evidencePreviewCss = readFileSync("src/graph/execution-map-evidence-preview.css", "utf8");
   const taskGroupCss = readFileSync("src/graph/execution-map-task-group.css", "utf8");
+  const dell1996Css = readFileSync("src/graph/execution-map-dell-1996.css", "utf8");
 
-  return mapCss
+  const expandedMapCss = mapCss
     .replace('@import "./execution-map-root-dock.css";', rootDockCss.trimEnd())
     .replace('@import "./execution-map-run-observer.css";', runObserverCss.trimEnd())
     .replace('@import "./execution-map-evidence-preview.css";', evidencePreviewCss.trimEnd())
     .replace('@import "./execution-map-task-group.css";', taskGroupCss.trimEnd());
+
+  return `${expandedMapCss}\n${dell1996Css}`;
 };

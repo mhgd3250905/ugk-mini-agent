@@ -30,9 +30,24 @@ describe("App", () => {
 
   it("renders datasource selector", () => {
     render(<App />);
-    const select = screen.getByRole("combobox");
+    const select = screen.getByRole("combobox", { name: "数据来源" });
     expect(select).toBeInTheDocument();
     expect(select).toHaveValue("mock");
+  });
+
+  it("switches the independent visual theme without changing the light/dark theme", () => {
+    const { container } = render(<App />);
+    const shell = container.querySelector(".app-shell") as HTMLElement | null;
+    expect(shell).toBeTruthy();
+    expect(shell).toHaveAttribute("data-theme", "light");
+    expect(shell).toHaveAttribute("data-visual-theme", "default");
+
+    const visualThemeButton = screen.getByRole("button", { name: "切换视觉主题" });
+    fireEvent.click(visualThemeButton);
+
+    expect(shell).toHaveAttribute("data-theme", "light");
+    expect(shell).toHaveAttribute("data-visual-theme", "dell-1996");
+    expect(window.localStorage.getItem("ugk-team-console:visual-theme:v1")).toBe("dell-1996");
   });
 
   it("renders a clean agent atlas workspace by default", () => {
