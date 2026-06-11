@@ -192,6 +192,36 @@ test("AgentProfileRoleRunner runChecker handles invalid JSON gracefully", async 
 	}
 });
 
+test("AgentProfileRoleRunner runChecker retries checker protocol output", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-ap-runner-"));
+	try {
+		const passJson = JSON.stringify({ verdict: "pass", reason: "second output is valid", resultContent: "accepted" });
+		const runner: TeamRoleRunner = new AgentProfileRoleRunner({
+			projectRoot: root,
+			teamDataDir: root,
+			watcherProfileId: "w",
+			workerProfileId: "wo",
+			checkerProfileId: "c",
+			finalizerProfileId: "f",
+			profileResolver: fakeProfileResolver as never,
+			sessionFactory: makeFakeSessionFactory(["核查完毕。以上已输出 JSON 裁决结果。", passJson]),
+		});
+
+		const out = await runner.runChecker({
+			runId: "run_test_checker_retry",
+			task: { id: "task_1", title: "测试", input: { text: "do" }, acceptance: { rules: ["r1"] } },
+			attemptId: "att_1",
+			workerOutputRef: "output/worker-1.md",
+			acceptanceRules: ["r1"],
+		});
+
+		assert.equal(out.verdict, "pass");
+		assert.equal(out.reason, "second output is valid");
+	} finally {
+		await rm(root, { recursive: true }).catch(() => {});
+	}
+});
+
 test("AgentProfileRoleRunner runWatcher parses accept_task JSON", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-ap-runner-"));
 	try {

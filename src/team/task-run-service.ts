@@ -13,10 +13,12 @@ import type { SourceNodeStore } from "./source-node-store.js";
 import type { ProfileAwareTeamRoleRunner, TeamRoleRunner } from "./role-runner.js";
 import type { TeamCanvasTask, TeamDiscoveryChannelSet, TeamManualUpstreamRunSelection, TeamManualUpstreamRunSelectionRecord, TeamPlan, TeamRunState, TeamTask, TeamTaskBoundInput, TeamTaskDeliveryOutcome } from "./types.js";
 import { DiscoveryRunLifecycle } from "./discovery-run-lifecycle.js";
+import { SplitTaskLifecycle } from "./split-task-lifecycle.js";
 import type { DiscoveryChannelSetStore } from "./discovery-channel-set-store.js";
 import { planDownstreamDelivery } from "./downstream-delivery.js";
 import { CanvasTaskAttemptRunner, type CanvasTaskAttemptWorkspace, type CanvasTaskPhaseTimeouts } from "./canvas-task-attempt-runner.js";
 import { resolveConnectionStaleReason } from "./task-chain-contract.js";
+import { parseTeamWorklistContent, parseTeamWorklistResultsContent } from "./worklist-contract.js";
 
 export type CanvasTaskRunWorkspace = CanvasTaskAttemptWorkspace & Pick<RunWorkspace,
 	| "createRun"
@@ -36,14 +38,18 @@ export type CanvasTaskRunWorkspace = CanvasTaskAttemptWorkspace & Pick<RunWorksp
 	| "recordAttemptDiscoveryDispatchOutcomes"
 	| "recordAttemptDiscoveryGeneratedRunOutcomes"
 	| "writeDiscoveryAggregation"
+	| "writeWorklistResults"
 >;
 
 export type CanvasTaskRunTaskStore = Pick<TaskStore,
 	| "get"
 	| "updateTemplateCurrentBindings"
 	| "upsertGeneratedTaskFromDiscovery"
+	| "upsertGeneratedTaskFromSource"
 	| "markGeneratedTasksStaleForDiscovery"
+	| "markGeneratedTasksStaleForSource"
 	| "listGeneratedForDiscoveryTask"
+	| "listGeneratedForSourceTask"
 >;
 
 export type CanvasTaskRunDiscoveryChannelSetStore = Pick<DiscoveryChannelSetStore, "get">;
@@ -160,6 +166,9 @@ function canvasTaskToTeamTask(task: TeamCanvasTask, boundInputs: TeamTaskBoundIn
 			...(boundInputs.length > 0 ? { payload: { boundInputs } } : {}),
 		},
 		acceptance: { rules: task.workUnit.acceptance.rules },
+		...(task.workUnit.inputPorts ? { inputPorts: task.workUnit.inputPorts } : {}),
+		...(task.workUnit.outputPorts ? { outputPorts: task.workUnit.outputPorts } : {}),
+		outputContract: { text: task.workUnit.outputContract.text },
 		...(task.workUnit.outputCheck ? { outputCheck: task.workUnit.outputCheck } : {}),
 		...(isDiscovery && task.discoverySpec ? { discovery: { outputKey: task.discoverySpec.outputKey } } : {}),
 	};
@@ -183,6 +192,16 @@ function canvasTaskToPlan(task: TeamCanvasTask, boundInputs: TeamTaskBoundInput[
 	};
 }
 
+function assertInputPortsSatisfied(task: TeamCanvasTask, boundInputs: TeamTaskBoundInput[]): void {
+	const inputPorts = task.workUnit.inputPorts ?? [];
+	if (inputPorts.length === 0) return;
+	const boundPortIds = new Set(boundInputs.map(input => input.inputPortId));
+	const missingPorts = inputPorts.filter(port => !boundPortIds.has(port.id));
+	if (missingPorts.length === 0) return;
+	const labels = missingPorts.map(port => `${port.id}${port.type ? `:${port.type}` : ""}`).join(", ");
+	throw new Error(`task input ports require bound upstream input before run: ${labels}`);
+}
+
 function isAbortLike(error: unknown): boolean {
 	return error instanceof Error && /abort|cancel/i.test(error.message);
 }
@@ -200,6 +219,7 @@ export class CanvasTaskRunService {
 	private readonly cancellingRunIds = new Set<string>();
 	private readonly attemptRunner: CanvasTaskAttemptRunner;
 	private _discoveryLifecycle: DiscoveryRunLifecycle | null = null;
+	private _splitTaskLifecycle: SplitTaskLifecycle | null = null;
 
 	constructor(private readonly options: CanvasTaskRunServiceOptions) {
 		const maxCheckerRevisions = Math.max(1, Math.floor(options.maxCheckerRevisions ?? 3));
@@ -226,6 +246,20 @@ export class CanvasTaskRunService {
 			});
 		}
 		return this._discoveryLifecycle;
+	}
+
+	private get splitTaskLifecycle(): SplitTaskLifecycle {
+		if (!this._splitTaskLifecycle) {
+			this._splitTaskLifecycle = new SplitTaskLifecycle({
+				taskStore: this.options.taskStore,
+				workspace: this.options.workspace,
+				runs: {
+					getRun: (runId) => this.getRun(runId),
+					createRun: (taskId, options) => this.createRun(taskId, options),
+				},
+			});
+		}
+		return this._splitTaskLifecycle;
 	}
 
 	async createRun(taskId: string, runOptions: CanvasTaskRunOptions = {}): Promise<TeamRunState> {
@@ -255,6 +289,7 @@ export class CanvasTaskRunService {
 			...resolvedUpstream.boundInputs,
 			...(runOptions.includeSourceBindings ? await this.buildSourceBoundInputs(runnableTask) : []),
 		];
+		assertInputPortsSatisfied(runnableTask, boundInputs);
 		const plan = canvasTaskToPlan(runnableTask, boundInputs);
 		const createOptions = runOptions.maxRunDurationMinutes != null
 			? { maxRunDurationMinutes: runOptions.maxRunDurationMinutes }
@@ -481,11 +516,15 @@ export class CanvasTaskRunService {
 				}
 			}
 		}
+		const resultContent = await this.options.workspace.readRunScopedFile(runId, resultRef) ?? "";
+		if (resultContent && this.contentMatchesArtifactType(resultContent, artifactType)) {
+			return { resultRef, content: resultContent };
+		}
 		const publicOutput = await this.resolveTypedWorkerPublicOutput(runId, attemptId, artifactType);
 		if (publicOutput) return publicOutput;
 		return {
 			resultRef,
-			content: await this.options.workspace.readRunScopedFile(runId, resultRef) ?? "",
+			content: resultContent,
 		};
 	}
 
@@ -520,6 +559,10 @@ export class CanvasTaskRunService {
 		switch (artifactType.trim().toLowerCase()) {
 			case "json":
 				return [".json"];
+			case "worklist":
+			case "worklist-results":
+			case "worklist_results":
+				return [".json"];
 			case "html":
 				return [".html", ".htm"];
 			case "md":
@@ -548,6 +591,21 @@ export class CanvasTaskRunService {
 				try {
 					const parsed = JSON.parse(content);
 					return parsed !== null && typeof parsed === "object";
+				} catch {
+					return false;
+				}
+			case "worklist":
+				try {
+					parseTeamWorklistContent(content);
+					return true;
+				} catch {
+					return false;
+				}
+			case "worklist-results":
+			case "worklist_results":
+				try {
+					parseTeamWorklistResultsContent(content);
+					return true;
 				} catch {
 					return false;
 				}
@@ -662,6 +720,41 @@ export class CanvasTaskRunService {
 				taskState.activeAttemptId = attemptId;
 				latest.summary = computeTeamRunSummary(latest.taskStates);
 			});
+
+			if (canvasTask.canvasKind === "split-task") {
+				const lifecycleResult = await this.splitTaskLifecycle.run({
+					runId,
+					splitTask: canvasTask,
+					attemptId,
+					boundInputs: initialState.source?.boundInputs ?? [],
+					publicBaseUrl: initialState.source?.publicBaseUrl,
+					signal,
+				});
+				if (lifecycleResult.status === "cancelled-or-missing") return;
+				if (lifecycleResult.status === "succeeded") {
+					await this.options.workspace.finishAttempt(runId, task.id, attemptId, {
+						status: "succeeded",
+						phase: "succeeded",
+						resultRef: lifecycleResult.resultRef,
+						errorSummary: null,
+					});
+					await this.markRunSucceeded(runId, task.id, lifecycleResult.resultRef!);
+					try {
+						await this.triggerDownstreamRuns(runId, task.id, attemptId, lifecycleResult.resultRef!);
+					} catch {
+						// Downstream delivery setup/diagnostics must not fail an accepted upstream run.
+					}
+				} else {
+					await this.options.workspace.finishAttempt(runId, task.id, attemptId, {
+						status: "failed",
+						phase: "failed",
+						resultRef: lifecycleResult.resultRef,
+						errorSummary: lifecycleResult.errorSummary ?? "split-task failed",
+					});
+					await this.completeRunFailed(runId, task.id, lifecycleResult.errorSummary ?? "split-task failed", lifecycleResult.resultRef ?? undefined);
+				}
+				return;
+			}
 
 			if (canvasTask.canvasKind === "discovery" && initialState.source?.discoveryChannelSetId) {
 				const resultRef = await this.runDiscoveryChannelSetAttempt({

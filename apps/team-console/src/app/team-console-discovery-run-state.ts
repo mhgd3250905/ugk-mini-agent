@@ -1,5 +1,6 @@
 import type { TeamCanvasTask, TeamRunState } from "../api/team-types";
 import { isActiveRun } from "../shared/status";
+import { generatedSourceLatestAt, generatedSourceLatestRunId } from "./team-console-generated-source";
 import type { TeamDiscoveryStage, TeamDiscoverySummary } from "./use-team-console-live-data";
 
 export type DiscoveryGeneratedVisualState = "running" | "queued" | "done" | "failed" | "stale" | "idle";
@@ -33,9 +34,14 @@ export function selectActiveDiscoveryRootRun(
 }
 
 export function isGeneratedRunFromDiscoveryRun(run: TeamRunState, discoveryTaskId: string, discoveryRunId: string): boolean {
-  return run.source?.triggeredBy?.type === "discovery-generated-task"
-    && run.source.triggeredBy.discoveryTaskId === discoveryTaskId
-    && run.source.triggeredBy.discoveryRunId === discoveryRunId;
+  const trigger = run.source?.triggeredBy;
+  if (trigger?.type === "discovery-generated-task") {
+    return trigger.discoveryTaskId === discoveryTaskId && trigger.discoveryRunId === discoveryRunId;
+  }
+  if (trigger?.type === "split-generated-task") {
+    return trigger.splitTaskId === discoveryTaskId && trigger.splitRunId === discoveryRunId;
+  }
+  return false;
 }
 
 export function isDiscoveryChannelSetRootRun(run: TeamRunState | null): boolean {
@@ -53,7 +59,7 @@ export function visibleDiscoveryGeneratedRuns(
   if (isDiscoveryChannelSetRootRun(activeDiscoveryRun)) {
     return runs.filter((run) => isGeneratedRunFromDiscoveryRun(run, discoveryTaskId, activeDiscoveryRun.runId));
   }
-  const generatedSourceRunId = generatedTask.generatedSource?.latestDiscoveryRunId;
+  const generatedSourceRunId = generatedSourceLatestRunId(generatedTask.generatedSource);
   if (generatedSourceRunId !== activeDiscoveryRun.runId) return [];
   return runs.filter((run) => isGeneratedRunFromDiscoveryRun(run, discoveryTaskId, activeDiscoveryRun.runId));
 }
@@ -84,8 +90,8 @@ export function sortDiscoveryGeneratedTasksForSubcanvas(
       const diff = runTimeForOrdering(bLatest) - runTimeForOrdering(aLatest);
       if (diff !== 0) return diff;
     }
-    const aDiscoveredAt = Date.parse(a.generatedSource?.latestDiscoveredAt ?? "");
-    const bDiscoveredAt = Date.parse(b.generatedSource?.latestDiscoveredAt ?? "");
+    const aDiscoveredAt = Date.parse(generatedSourceLatestAt(a.generatedSource) ?? "");
+    const bDiscoveredAt = Date.parse(generatedSourceLatestAt(b.generatedSource) ?? "");
     if (Number.isFinite(aDiscoveredAt) || Number.isFinite(bDiscoveredAt)) {
       return (Number.isFinite(aDiscoveredAt) ? aDiscoveredAt : Number.NEGATIVE_INFINITY)
         - (Number.isFinite(bDiscoveredAt) ? bDiscoveredAt : Number.NEGATIVE_INFINITY);

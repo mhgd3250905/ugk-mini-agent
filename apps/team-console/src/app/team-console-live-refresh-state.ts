@@ -1,4 +1,5 @@
 import type { TeamCanvasTask, TeamRunState, TeamTaskState } from "../api/team-types";
+import { generatedSourceLatestAt, generatedSourceLatestRunId, generatedSourceParentTaskId } from "./team-console-generated-source";
 
 function sameReferenceArray<T>(a: T[], b: T[]): boolean {
   return a.length === b.length && a.every((item, index) => item === b[index]);
@@ -11,12 +12,13 @@ function generatedSourceIdentityKey(task: TeamCanvasTask): string {
     source.latestManagedWorkUnit || (source as { canResetToManaged?: boolean }).canResetToManaged,
   );
   return [
-    source.sourceDiscoveryTaskId,
+    source.schemaVersion,
+    generatedSourceParentTaskId(source) ?? "",
     source.sourceItemId,
     source.itemStatus,
-    source.latestDiscoveryRunId ?? "",
-    source.latestDiscoveryAttemptId ?? "",
-    source.latestDiscoveredAt ?? "",
+    generatedSourceLatestRunId(source) ?? "",
+    source.schemaVersion === "team/generated-task-source-2" ? source.latestSourceAttemptId ?? "" : source.latestDiscoveryAttemptId ?? "",
+    generatedSourceLatestAt(source) ?? "",
     source.workUnitMode,
     canResetToManaged,
   ].join("|");

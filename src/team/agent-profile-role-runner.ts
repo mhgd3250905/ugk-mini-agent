@@ -64,6 +64,8 @@ function buildDiscoveryDispatcherRoleKey(discoveryTaskId: string, itemId: string
 }
 
 const DISCOVERY_DISPATCH_REPAIR_RAW_CONTENT_MAX_CHARS = 8_000;
+const CHECKER_OUTPUT_REPAIR_RAW_CONTENT_MAX_CHARS = 4_000;
+const CHECKER_OUTPUT_REPAIR_ATTEMPTS = 1;
 
 function buildDiscoveryDispatchRepairPrompt(input: DiscoveryDispatchInput, error: string, rawContent: string | undefined): string {
 	const clippedRaw = (rawContent ?? "").slice(0, DISCOVERY_DISPATCH_REPAIR_RAW_CONTENT_MAX_CHARS);
@@ -83,6 +85,36 @@ Rules for this repair attempt:
 - Do not output workUnit, outputContract, acceptance, worker/checker/leader/source identity, outputPorts, or outputCheck.
 
 Previous output:
+<previous_output>
+${clippedRaw}
+</previous_output>`;
+}
+
+function isCheckerOutputProtocolError(output: Omit<CheckerOutput, "runtimeContext">): boolean {
+	return output.verdict === "fail" && output.reason.startsWith("checker output parse error");
+}
+
+function buildCheckerOutputRepairPrompt(originalPrompt: string, error: string, rawContent: string): string {
+	const clippedRaw = rawContent.slice(0, CHECKER_OUTPUT_REPAIR_RAW_CONTENT_MAX_CHARS);
+	return `${originalPrompt}
+
+## Previous checker output was rejected
+error: ${error}
+
+Your previous checker output was not accepted by the deterministic JSON parser.
+Rewrite only the final checker verdict.
+
+Rules for this repair attempt:
+- Output only one JSON object.
+- The first non-whitespace character must be "{".
+- The last non-whitespace character must be "}".
+- Do not output markdown, code fences, explanations, headings, or any text outside the JSON object.
+- Use exactly one of these shapes:
+  - {"verdict":"pass","reason":"通过原因","resultContent":"最终验收内容"}
+  - {"verdict":"revise","reason":"需要修改的原因","feedback":"具体修改建议"}
+  - {"verdict":"fail","reason":"失败原因","resultContent":"失败说明"}
+
+Previous rejected output:
 <previous_output>
 ${clippedRaw}
 </previous_output>`;
@@ -160,9 +192,19 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 		const prompt = buildCheckerPrompt(input.task, input.acceptanceRules, workerOutput, input.outputValidation);
 
 		const sessionResult = await this.runSession(snapshot, this.options.checkerProfileId, input.runId, workspace, prompt, input.signal, { role: "checker", roleKey: input.attemptId, artifactPublicBaseUrl: input.artifactPublicBaseUrl }, input.onSessionEvent);
-		const content = sessionResult.content;
+		let content = sessionResult.content;
+		let parsed = parseCheckerRoleOutput(content);
+		let runtimeContext = sessionResult.runtimeContext;
 
-		return { ...parseCheckerRoleOutput(content), runtimeContext: sessionResult.runtimeContext };
+		for (let repairAttempt = 1; repairAttempt <= CHECKER_OUTPUT_REPAIR_ATTEMPTS && isCheckerOutputProtocolError(parsed); repairAttempt++) {
+			const repairPrompt = buildCheckerOutputRepairPrompt(prompt, parsed.reason, content);
+			const repairSessionResult = await this.runSession(snapshot, this.options.checkerProfileId, input.runId, workspace, repairPrompt, input.signal, { role: "checker", roleKey: `${input.attemptId}_protocol_repair_${repairAttempt}`, artifactPublicBaseUrl: input.artifactPublicBaseUrl }, input.onSessionEvent);
+			content = repairSessionResult.content;
+			parsed = parseCheckerRoleOutput(content);
+			runtimeContext = repairSessionResult.runtimeContext;
+		}
+
+		return { ...parsed, runtimeContext };
 	}
 
 	async runWatcher(input: WatcherInput): Promise<WatcherOutput> {

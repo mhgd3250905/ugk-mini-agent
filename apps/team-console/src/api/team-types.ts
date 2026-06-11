@@ -25,6 +25,8 @@ export type GeneratedSource = "for_each" | "decomposition";
 export type TeamTaskOutputCheck =
   | { type: "json_items"; outputKey?: string; allowDirectArray?: boolean; requiredFields?: string[] }
   | { type: "json_object"; requiredFields?: string[] }
+  | { type: "worklist"; allowEmpty?: boolean }
+  | { type: "worklist_results"; requireFullCoverage?: boolean }
   | {
       type: "html_fragment";
       requiredSubstrings?: string[];
@@ -68,6 +70,47 @@ export interface TeamAttemptWorkerSummary {
   outputRef: string | null;
   outputIndex: number;
   runtimeContext?: TeamRoleRuntimeContext;
+}
+
+export interface TeamWorklistItem {
+  id: string;
+  title: string;
+  input: unknown;
+  acceptanceHints?: string[];
+}
+
+export interface TeamWorklistRecord {
+  schemaVersion: "team/worklist-1";
+  worklistId: string;
+  title: string;
+  items: TeamWorklistItem[];
+  metadata?: Record<string, unknown>;
+}
+
+export type TeamWorklistResultStatus = "succeeded" | "failed" | "cancelled" | "missing";
+
+export interface TeamWorklistItemResult {
+  itemId: string;
+  status: TeamWorklistResultStatus;
+  generatedTaskId?: string;
+  generatedRunId?: string;
+  resultRef?: string | null;
+  content?: string;
+  errorSummary?: string | null;
+}
+
+export interface TeamWorklistResultsRecord {
+  schemaVersion: "team/worklist-results-1";
+  sourceWorklist: TeamWorklistRecord;
+  summary: {
+    totalItems: number;
+    succeeded: number;
+    failed: number;
+    cancelled: number;
+    missing: number;
+  };
+  results: TeamWorklistItemResult[];
+  createdAt: string;
 }
 
 export interface TeamAttemptCheckerSummary {
@@ -265,10 +308,12 @@ export interface TeamTask {
   id: string;
   type?: TaskType;
   title: string;
-  input: { text: string };
+  input: { text: string; payload?: Record<string, unknown> };
   acceptance: { rules: string[] };
+  outputCheck?: TeamTaskOutputCheck;
   parentTaskId?: string;
   sourceItemId?: string;
+  sourceItem?: TeamTaskSourceItem;
   generated?: boolean;
   decomposer?: { mode: "none" | "leaf" | "propagate"; maxChildren?: number };
   discovery?: { outputKey: string };
@@ -277,10 +322,17 @@ export interface TeamTask {
     mode: "sequential" | "parallel";
     taskTemplate: {
       title: string;
-      input: { text: string };
+      input: { text: string; payload?: Record<string, unknown> };
       acceptance: { rules: string[] };
+      decomposer?: { mode: "none" | "leaf" | "propagate"; maxChildren?: number };
+      outputCheck?: TeamTaskOutputCheck;
     };
   };
+}
+
+export interface TeamTaskSourceItem {
+  id: string;
+  data: unknown;
 }
 
 export interface TeamPlan {
@@ -295,9 +347,10 @@ export interface TeamPlan {
 }
 
 export type TeamCanvasTaskStatus = "drafting" | "ready" | "locked" | "archived";
-export type TeamCanvasTaskKind = "task" | "discovery";
+export type TeamCanvasTaskKind = "task" | "discovery" | "split-task";
 export type TeamGeneratedTaskItemStatus = "active" | "stale";
 export type TeamGeneratedTaskWorkUnitMode = "managed" | "customized";
+export type TeamGeneratedTaskSourceKind = "discovery" | "split-task";
 
 export interface TeamDiscoverySpec {
   schemaVersion: "team/discovery-spec-1";
@@ -316,12 +369,34 @@ export interface TeamDiscoverySpec {
   };
 }
 
+export interface TeamSplitTaskSpec {
+  schemaVersion: "team/split-task-spec-1";
+  inputPortId: string;
+  outputPortId: string;
+  dispatchGoal: string;
+  generatedWorkerAgentId: string;
+  generatedCheckerAgentId: string;
+  autoRun: {
+    enabled: true;
+    concurrency: number;
+  };
+  collectPolicy: {
+    requireAllItemsSucceeded: boolean;
+    requireFullCoverage: boolean;
+  };
+}
+
 export interface TeamGeneratedTaskSource {
-  schemaVersion: "team/generated-task-source-1";
-  sourceDiscoveryTaskId: string;
+  schemaVersion: "team/generated-task-source-1" | "team/generated-task-source-2";
+  sourceKind?: TeamGeneratedTaskSourceKind;
+  sourceTaskId?: string;
+  sourceDiscoveryTaskId?: string;
   sourceItemId: string;
   itemStatus: TeamGeneratedTaskItemStatus;
   itemPayload: Record<string, unknown>;
+  latestSourceRunId?: string;
+  latestSourceAttemptId?: string;
+  latestSourceAt?: string;
   latestDiscoveryRunId?: string;
   latestDiscoveryAttemptId?: string;
   latestDiscoveredAt?: string;
@@ -688,6 +763,7 @@ export interface TeamCanvasTask {
   leaderAgentId: string;
   workUnit: TeamWorkUnitDefinition;
   discoverySpec?: TeamDiscoverySpec;
+  splitTaskSpec?: TeamSplitTaskSpec;
   discoveryRunPolicy?: TeamDiscoveryRunPolicy;
   generatedSource?: TeamGeneratedTaskSource;
   templateConfig?: TeamTaskTemplateConfig;
@@ -720,10 +796,15 @@ export interface TeamDiscoveryGeneratedTaskSummary {
   updatedAt: string;
   archived: boolean;
   generatedSource: {
-    schemaVersion: "team/generated-task-source-1";
-    sourceDiscoveryTaskId: string;
+    schemaVersion: "team/generated-task-source-1" | "team/generated-task-source-2";
+    sourceKind?: TeamGeneratedTaskSourceKind;
+    sourceTaskId?: string;
+    sourceDiscoveryTaskId?: string;
     sourceItemId: string;
     itemStatus: TeamGeneratedTaskItemStatus;
+    latestSourceRunId?: string;
+    latestSourceAttemptId?: string;
+    latestSourceAt?: string;
     latestDiscoveryRunId?: string;
     latestDiscoveryAttemptId?: string;
     latestDiscoveredAt?: string;
@@ -833,6 +914,16 @@ export interface TeamRunState {
           discoveryTaskId: string;
           discoveryRunId: string;
           discoveryAttemptId: string;
+          sourceItemId: string;
+          fromTaskId?: never;
+          fromRunId?: never;
+          fromAttemptId?: never;
+        }
+      | {
+          type: "split-generated-task";
+          splitTaskId: string;
+          splitRunId: string;
+          splitAttemptId: string;
           sourceItemId: string;
           fromTaskId?: never;
           fromRunId?: never;

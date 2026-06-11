@@ -188,6 +188,11 @@ export class RunAttemptStore {
 		return `tasks/${taskId}/attempts/${attemptId}/discovery-aggregation.json`;
 	}
 
+	async writeWorklistResults(runId: string, taskId: string, attemptId: string, record: unknown): Promise<string> {
+		await this.writeAttemptFile(runId, taskId, attemptId, "worklist-results.json", JSON.stringify(record, null, 2));
+		return `tasks/${taskId}/attempts/${attemptId}/worklist-results.json`;
+	}
+
 	async readDiscoveryResult(runId: string, taskId: string, attemptId: string): Promise<TeamDiscoveryResultRecord | null> {
 		const content = await this.readAttemptFile(runId, taskId, attemptId, "discovery-result.json");
 		if (!content) return null;

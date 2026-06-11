@@ -933,4 +933,77 @@ describe("App Discovery subcanvas live data", () => {
     expect(within(menu).queryByRole("button", { name: "Discovery 子画布" })).toBeNull();
   });
 
+  it("does not request Discovery channel sets when opening a split-task generated subcanvas", async () => {
+    window.localStorage.setItem("ugk-team-console:data-source", "live");
+    const splitTask: TeamCanvasTask = {
+      taskId: "task_split_news",
+      canvasKind: "split-task",
+      title: "新闻分片处理",
+      leaderAgentId: "main",
+      status: "ready",
+      createdAt: "2026-06-11T00:00:00.000Z",
+      updatedAt: "2026-06-11T00:00:00.000Z",
+      archived: false,
+      splitTaskSpec: {
+        schemaVersion: "team/split-task-spec-1",
+        inputPortId: "input-worklist",
+        outputPortId: "output-results",
+        dispatchGoal: "按 worklist 分发子任务。",
+        generatedWorkerAgentId: "search",
+        generatedCheckerAgentId: "reviewer",
+        autoRun: { enabled: true, concurrency: 2 },
+        collectPolicy: { requireAllItemsSucceeded: true, requireFullCoverage: true },
+      },
+      workUnit: {
+        title: "新闻分片处理",
+        input: { text: "处理上游 worklist。" },
+        inputPorts: [{ id: "input-worklist", label: "分片清单", type: "worklist" }],
+        outputPorts: [{ id: "output-results", label: "处理结果", type: "worklist-results" }],
+        outputContract: { text: "输出 worklist-results。" },
+        acceptance: { rules: ["输出必须覆盖全部 worklist item。"] },
+        workerAgentId: "search",
+        checkerAgentId: "reviewer",
+      },
+    };
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/v1/agents") {
+        return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+      }
+      if (url === "/v1/agents/status") {
+        return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+      }
+      if (url === "/v1/team/console/root-summary") {
+        return rootSummaryResponse({ tasks: [splitTask], taskRunsByTaskId: { [splitTask.taskId]: [] } });
+      }
+      if (url === "/v1/team/task-groups") {
+        return new Response(JSON.stringify({ taskGroups: [] }), { status: 200 });
+      }
+      if (url === `/v1/team/tasks/${splitTask.taskId}/generated-tasks?view=summary`) {
+        return new Response(JSON.stringify({ tasks: [], deletedTaskIds: [], serverVersion: null }), { status: 200 });
+      }
+      if (url.startsWith("/v1/team/task-runs/by-task?")) {
+        return byTaskRunsResponse({ [splitTask.taskId]: [] });
+      }
+      if (url.includes("/discovery-channel-sets")) {
+        return new Response(JSON.stringify({ error: "split tasks do not have Discovery channel sets" }), { status: 400 });
+      }
+      return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 500 });
+    });
+
+    const { container } = render(<App />);
+    const atlas = await waitFor(() => getAtlasNodes(container), { timeout: 2000 });
+    fireEvent.click(await within(atlas).findByRole("button", { name: splitTask.title }));
+    fireEvent.click(await screen.findByRole("button", { name: "生成子画布" }));
+
+    await waitFor(() => {
+      expect(container.querySelector(`[data-discovery-subcanvas-for="${splitTask.taskId}"]`)).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([input]) => String(input) === `/v1/team/tasks/${splitTask.taskId}/generated-tasks?view=summary`)).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/discovery-channel-sets"))).toBe(false);
+  });
+
 });

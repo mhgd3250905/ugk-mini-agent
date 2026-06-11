@@ -54,7 +54,7 @@ function selectLatestRun(runs: TeamRunState[]): TeamRunState | null {
 }
 
 export function discoveryRootTasks(tasks: TeamCanvasTask[]): TeamCanvasTask[] {
-  return tasks.filter((task) => task.canvasKind === "discovery" && !task.generatedSource);
+  return tasks.filter((task) => (task.canvasKind === "discovery" || task.canvasKind === "split-task") && !task.generatedSource);
 }
 
 export function flattenGeneratedTasks(generatedTasksByDiscoveryTaskId: Record<string, TeamCanvasTask[]>): TeamCanvasTask[] {
@@ -180,7 +180,7 @@ export async function readDiscoveryDispatchForTasks(
   diagnosticsByTaskId: Record<string, TeamDiscoveryDispatchDiagnostic[]>;
   progressByTaskId: Record<string, TeamDiscoveryDispatchProgress>;
 }> {
-  const entries = await Promise.all(discoveryTasks.map(async (task) => {
+  const entries = await Promise.all(discoveryTasks.filter((task) => task.canvasKind === "discovery").map(async (task) => {
     const latestRun = selectLatestRun(taskRunsByTaskId[task.taskId] ?? []);
     if (!latestRun) {
       return [task.taskId, { diagnostics: [] as TeamDiscoveryDispatchDiagnostic[], progress: { processedCount: 0, blockedCount: 0 } }] as const;

@@ -290,3 +290,131 @@ test("TaskStore marks missing generated Tasks stale only under the same Discover
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+test("TaskStore manages generated Tasks for generic split-task sources", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-store-"));
+	try {
+		const store = createStore(root);
+		const created = await store.upsertGeneratedTaskFromSource({
+			sourceKind: "split-task",
+			sourceTaskId: "task_split1",
+			sourceItemId: "chunk-001",
+			itemPayload: { id: "chunk-001", title: "Chunk 1", input: { rows: [1] } },
+			latestSourceRunId: "run_split1",
+			latestSourceAttemptId: "attempt_split1",
+			latestSourceAt: "2026-06-11T00:00:00.000Z",
+			leaderAgentId: "main",
+			generatedWorkerAgentId: "search",
+			generatedCheckerAgentId: "checker",
+			workUnit: {
+				title: "处理 Chunk 1",
+				input: { text: "处理 chunk-001" },
+				outputContract: { text: "输出 chunk 结果" },
+				acceptance: { rules: ["只处理 chunk-001"] },
+			},
+		});
+
+		assert.equal(created.created, true);
+		assert.equal(created.task.generatedSource?.schemaVersion, "team/generated-task-source-2");
+		assert.equal(created.task.generatedSource?.sourceKind, "split-task");
+		assert.equal(created.task.generatedSource?.sourceTaskId, "task_split1");
+		assert.equal(created.task.generatedSource?.sourceItemId, "chunk-001");
+		assert.equal(created.task.generatedSource?.latestSourceRunId, "run_split1");
+		assert.equal(created.task.generatedSource?.latestSourceAttemptId, "attempt_split1");
+		assert.equal(created.task.generatedSource?.latestSourceAt, "2026-06-11T00:00:00.000Z");
+
+		const reused = await store.upsertGeneratedTaskFromSource({
+			sourceKind: "split-task",
+			sourceTaskId: "task_split1",
+			sourceItemId: "chunk-001",
+			itemPayload: { id: "chunk-001", title: "Chunk 1 changed", input: { rows: [1, 2] } },
+			latestSourceRunId: "run_split2",
+			latestSourceAttemptId: "attempt_split2",
+			latestSourceAt: "2026-06-11T01:00:00.000Z",
+			leaderAgentId: "main",
+			generatedWorkerAgentId: "search",
+			generatedCheckerAgentId: "checker",
+			workUnit: {
+				title: "处理 Chunk 1 更新",
+				input: { text: "处理 chunk-001 更新" },
+				outputContract: { text: "输出 chunk 结果" },
+				acceptance: { rules: ["只处理 chunk-001"] },
+			},
+		});
+
+		assert.equal(reused.created, false);
+		assert.equal(reused.task.taskId, created.task.taskId);
+		assert.deepEqual(reused.task.generatedSource?.itemPayload, { id: "chunk-001", title: "Chunk 1 changed", input: { rows: [1, 2] } });
+		assert.equal(reused.task.generatedSource?.latestSourceRunId, "run_split2");
+
+		const listed = await store.listGeneratedForSourceTask("split-task", "task_split1");
+		assert.deepEqual(listed.map(task => task.taskId), [created.task.taskId]);
+		assert.deepEqual(await store.listGeneratedForSourceTask("discovery", "task_split1"), []);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("TaskStore marks generic generated Tasks stale only under the same source", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-store-"));
+	try {
+		const store = createStore(root);
+		const first = await store.upsertGeneratedTaskFromSource({
+			sourceKind: "split-task",
+			sourceTaskId: "task_split1",
+			sourceItemId: "chunk-001",
+			itemPayload: { id: "chunk-001", title: "Chunk 1", input: {} },
+			latestSourceRunId: "run_1",
+			latestSourceAttemptId: "attempt_1",
+			latestSourceAt: "2026-06-11T00:00:00.000Z",
+			leaderAgentId: "main",
+			generatedWorkerAgentId: "search",
+			generatedCheckerAgentId: "checker",
+			workUnit: {
+				title: "处理 Chunk 1",
+				input: { text: "处理 chunk-001" },
+				outputContract: { text: "输出 chunk 结果" },
+				acceptance: { rules: ["只处理 chunk-001"] },
+			},
+		});
+		const second = await store.upsertGeneratedTaskFromSource({
+			sourceKind: "split-task",
+			sourceTaskId: "task_split1",
+			sourceItemId: "chunk-002",
+			itemPayload: { id: "chunk-002", title: "Chunk 2", input: {} },
+			latestSourceRunId: "run_1",
+			latestSourceAttemptId: "attempt_1",
+			latestSourceAt: "2026-06-11T00:00:00.000Z",
+			leaderAgentId: "main",
+			generatedWorkerAgentId: "search",
+			generatedCheckerAgentId: "checker",
+			workUnit: {
+				title: "处理 Chunk 2",
+				input: { text: "处理 chunk-002" },
+				outputContract: { text: "输出 chunk 结果" },
+				acceptance: { rules: ["只处理 chunk-002"] },
+			},
+		});
+
+		const stale = await store.markGeneratedTasksStaleForSource(
+			"split-task",
+			"task_split1",
+			new Set(["chunk-001"]),
+			{
+				latestSourceRunId: "run_2",
+				latestSourceAttemptId: "attempt_2",
+				latestSourceAt: "2026-06-11T01:00:00.000Z",
+			},
+		);
+
+		assert.deepEqual(stale.map(task => task.taskId), [second.task.taskId]);
+		assert.equal((await store.get(first.task.taskId))?.generatedSource?.itemStatus, "active");
+		const gotSecond = await store.get(second.task.taskId);
+		assert.equal(gotSecond?.generatedSource?.itemStatus, "stale");
+		assert.equal(gotSecond?.generatedSource?.latestSourceRunId, "run_2");
+		assert.equal(gotSecond?.generatedSource?.latestSourceAttemptId, "attempt_2");
+		assert.equal(gotSecond?.generatedSource?.latestSourceAt, "2026-06-11T01:00:00.000Z");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});

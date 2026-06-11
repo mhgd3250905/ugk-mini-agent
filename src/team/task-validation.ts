@@ -5,6 +5,7 @@ import type {
 	TeamDiscoveryRunPolicy,
 	TeamDiscoverySpec,
 	TeamGeneratedTaskSource,
+	TeamSplitTaskSpec,
 	TeamTaskOutputCheck,
 	TeamTaskTemplateConfig,
 	TeamTaskTemplateInstance,
@@ -27,6 +28,7 @@ export interface CreateTeamCanvasTaskInput {
 	leaderAgentId: string;
 	workUnit: TeamWorkUnitDefinition;
 	discoverySpec?: TeamDiscoverySpec;
+	splitTaskSpec?: TeamSplitTaskSpec;
 	discoveryRunPolicy?: TeamDiscoveryRunPolicy;
 	generatedSource?: TeamGeneratedTaskSource;
 	templateConfig?: TeamTaskTemplateConfig;
@@ -41,6 +43,7 @@ export interface UpdateTeamCanvasTaskInput {
 	leaderAgentId?: string;
 	workUnit?: TeamWorkUnitDefinition;
 	discoverySpec?: TeamDiscoverySpec;
+	splitTaskSpec?: TeamSplitTaskSpec;
 	discoveryRunPolicy?: TeamDiscoveryRunPolicy;
 	templateConfig?: TeamTaskTemplateConfig;
 	templateState?: TeamTaskTemplateState;
@@ -97,7 +100,7 @@ function validateOutputCheck(outputCheck: TeamTaskOutputCheck | undefined): void
 		throw new Error("workUnit.outputCheck must be an object");
 	}
 	const type = outputCheck.type;
-	if (type !== "json_items" && type !== "json_object" && type !== "html_fragment" && type !== "file_exists") {
+	if (type !== "json_items" && type !== "json_object" && type !== "worklist" && type !== "worklist_results" && type !== "html_fragment" && type !== "file_exists") {
 		throw new Error("workUnit.outputCheck.type is invalid");
 	}
 	switch (type) {
@@ -108,6 +111,12 @@ function validateOutputCheck(outputCheck: TeamTaskOutputCheck | undefined): void
 			break;
 		case "json_object":
 			assertOptionalStringArray(outputCheck.requiredFields, "workUnit.outputCheck.requiredFields must contain only non-empty strings");
+			break;
+		case "worklist":
+			assertOptionalBoolean(outputCheck.allowEmpty, "workUnit.outputCheck.allowEmpty must be a boolean");
+			break;
+		case "worklist_results":
+			assertOptionalBoolean(outputCheck.requireFullCoverage, "workUnit.outputCheck.requireFullCoverage must be a boolean");
 			break;
 		case "html_fragment":
 			assertOptionalStringArray(outputCheck.requiredSubstrings, "workUnit.outputCheck.requiredSubstrings must contain only non-empty strings");
@@ -208,14 +217,70 @@ function validateDiscoveryRunPolicy(discoveryRunPolicy: TeamDiscoveryRunPolicy |
 	throw new Error("discoveryRunPolicy.mode is invalid");
 }
 
+function validateSplitTaskSpec(splitTaskSpec: TeamSplitTaskSpec | undefined, workUnit: TeamWorkUnitDefinition, context: TaskValidationContext): void {
+	if (!splitTaskSpec || typeof splitTaskSpec !== "object" || Array.isArray(splitTaskSpec)) {
+		throw new Error("splitTaskSpec is required for split-task tasks");
+	}
+	if (splitTaskSpec.schemaVersion !== "team/split-task-spec-1") {
+		throw new Error("splitTaskSpec.schemaVersion is invalid");
+	}
+	const inputPortId = assertNonEmptyString(splitTaskSpec.inputPortId, "splitTaskSpec.inputPortId is required");
+	const outputPortId = assertNonEmptyString(splitTaskSpec.outputPortId, "splitTaskSpec.outputPortId is required");
+	const inputPort = workUnit.inputPorts?.find(port => port.id === inputPortId);
+	if (!inputPort) throw new Error("splitTaskSpec.inputPortId must reference an input port");
+	if (inputPort.type !== "worklist") throw new Error("splitTaskSpec input port type must be worklist");
+	const outputPort = workUnit.outputPorts?.find(port => port.id === outputPortId);
+	if (!outputPort) throw new Error("splitTaskSpec.outputPortId must reference an output port");
+	if (outputPort.type !== "worklist-results") throw new Error("splitTaskSpec output port type must be worklist-results");
+	assertNonEmptyString(splitTaskSpec.dispatchGoal, "splitTaskSpec.dispatchGoal is required");
+	const generatedWorkerAgentId = assertNonEmptyString(
+		splitTaskSpec.generatedWorkerAgentId,
+		"splitTaskSpec.generatedWorkerAgentId is required",
+	);
+	const generatedCheckerAgentId = assertNonEmptyString(
+		splitTaskSpec.generatedCheckerAgentId,
+		"splitTaskSpec.generatedCheckerAgentId is required",
+	);
+	assertKnownAgent(generatedWorkerAgentId, context);
+	assertKnownAgent(generatedCheckerAgentId, context);
+	if (splitTaskSpec.autoRun?.enabled !== true) {
+		throw new Error("splitTaskSpec.autoRun.enabled must be true");
+	}
+	if (!Number.isInteger(splitTaskSpec.autoRun.concurrency) || splitTaskSpec.autoRun.concurrency < 1 || splitTaskSpec.autoRun.concurrency > 10) {
+		throw new Error("splitTaskSpec.autoRun.concurrency must be an integer between 1 and 10");
+	}
+	if (!splitTaskSpec.collectPolicy || typeof splitTaskSpec.collectPolicy !== "object" || Array.isArray(splitTaskSpec.collectPolicy)) {
+		throw new Error("splitTaskSpec.collectPolicy is required");
+	}
+	if (typeof splitTaskSpec.collectPolicy.requireAllItemsSucceeded !== "boolean") {
+		throw new Error("splitTaskSpec.collectPolicy.requireAllItemsSucceeded must be a boolean");
+	}
+	if (typeof splitTaskSpec.collectPolicy.requireFullCoverage !== "boolean") {
+		throw new Error("splitTaskSpec.collectPolicy.requireFullCoverage must be a boolean");
+	}
+}
+
 function validateGeneratedSource(generatedSource: TeamGeneratedTaskSource | undefined, context: TaskValidationContext): void {
 	if (!generatedSource || typeof generatedSource !== "object" || Array.isArray(generatedSource)) {
 		throw new Error("generatedSource is required for generated tasks");
 	}
-	if (generatedSource.schemaVersion !== "team/generated-task-source-1") {
+	if (generatedSource.schemaVersion !== "team/generated-task-source-1" && generatedSource.schemaVersion !== "team/generated-task-source-2") {
 		throw new Error("generatedSource.schemaVersion is invalid");
 	}
-	assertNonEmptyString(generatedSource.sourceDiscoveryTaskId, "generatedSource.sourceDiscoveryTaskId is required");
+	if (generatedSource.schemaVersion === "team/generated-task-source-1") {
+		assertNonEmptyString(generatedSource.sourceDiscoveryTaskId, "generatedSource.sourceDiscoveryTaskId is required");
+		assertOptionalNonEmptyString(generatedSource.latestDiscoveryRunId, "generatedSource.latestDiscoveryRunId must be a non-empty string");
+		assertOptionalNonEmptyString(generatedSource.latestDiscoveryAttemptId, "generatedSource.latestDiscoveryAttemptId must be a non-empty string");
+		assertOptionalNonEmptyString(generatedSource.latestDiscoveredAt, "generatedSource.latestDiscoveredAt must be a non-empty string");
+	} else {
+		if (generatedSource.sourceKind !== "discovery" && generatedSource.sourceKind !== "split-task") {
+			throw new Error("generatedSource.sourceKind is invalid");
+		}
+		assertNonEmptyString(generatedSource.sourceTaskId, "generatedSource.sourceTaskId is required");
+		assertOptionalNonEmptyString(generatedSource.latestSourceRunId, "generatedSource.latestSourceRunId must be a non-empty string");
+		assertOptionalNonEmptyString(generatedSource.latestSourceAttemptId, "generatedSource.latestSourceAttemptId must be a non-empty string");
+		assertOptionalNonEmptyString(generatedSource.latestSourceAt, "generatedSource.latestSourceAt must be a non-empty string");
+	}
 	assertNonEmptyString(generatedSource.sourceItemId, "generatedSource.sourceItemId is required");
 	if (generatedSource.itemStatus !== "active" && generatedSource.itemStatus !== "stale") {
 		throw new Error("generatedSource.itemStatus is invalid");
@@ -223,9 +288,6 @@ function validateGeneratedSource(generatedSource: TeamGeneratedTaskSource | unde
 	if (!isPlainRecord(generatedSource.itemPayload)) {
 		throw new Error("generatedSource.itemPayload must be a plain object");
 	}
-	assertOptionalNonEmptyString(generatedSource.latestDiscoveryRunId, "generatedSource.latestDiscoveryRunId must be a non-empty string");
-	assertOptionalNonEmptyString(generatedSource.latestDiscoveryAttemptId, "generatedSource.latestDiscoveryAttemptId must be a non-empty string");
-	assertOptionalNonEmptyString(generatedSource.latestDiscoveredAt, "generatedSource.latestDiscoveredAt must be a non-empty string");
 	if (generatedSource.workUnitMode !== "managed" && generatedSource.workUnitMode !== "customized") {
 		throw new Error("generatedSource.workUnitMode is invalid");
 	}
@@ -362,18 +424,36 @@ function validateTemplateState(templateState: TeamTaskTemplateState | undefined)
 
 export function validateCreateTaskInput(input: CreateTeamCanvasTaskInput, context: TaskValidationContext = {}): void {
 	const rawCanvasKind = (input as { canvasKind?: unknown }).canvasKind;
-	if (rawCanvasKind !== undefined && rawCanvasKind !== "task" && rawCanvasKind !== "discovery") {
+	if (rawCanvasKind !== undefined && rawCanvasKind !== "task" && rawCanvasKind !== "discovery" && rawCanvasKind !== "split-task") {
 		throw new Error("canvasKind is invalid");
 	}
+	const workUnit = validateWorkUnit(input.workUnit, context);
 	if (input.canvasKind === "discovery") {
 		if (input.generatedSource !== undefined) {
 			throw new Error("discovery root task cannot carry generatedSource");
 		}
+		if (input.splitTaskSpec !== undefined) {
+			throw new Error("discovery root task cannot carry splitTaskSpec");
+		}
 		validateDiscoverySpec(input.discoverySpec, context);
 		validateDiscoveryRunPolicy(input.discoveryRunPolicy);
+	} else if (input.canvasKind === "split-task") {
+		if (input.generatedSource !== undefined) {
+			throw new Error("split-task root task cannot carry generatedSource");
+		}
+		if (input.discoverySpec !== undefined) {
+			throw new Error("split-task root task cannot carry discoverySpec");
+		}
+		if (input.discoveryRunPolicy !== undefined) {
+			throw new Error("split-task root task cannot carry discoveryRunPolicy");
+		}
+		validateSplitTaskSpec(input.splitTaskSpec, workUnit, context);
 	} else if (input.generatedSource !== undefined) {
 		if (input.discoverySpec !== undefined) {
 			throw new Error("generated task cannot carry discoverySpec");
+		}
+		if (input.splitTaskSpec !== undefined) {
+			throw new Error("generated task cannot carry splitTaskSpec");
 		}
 		if (input.discoveryRunPolicy !== undefined) {
 			throw new Error("generated task cannot carry discoveryRunPolicy");
@@ -383,11 +463,12 @@ export function validateCreateTaskInput(input: CreateTeamCanvasTaskInput, contex
 		throw new Error("normal root task cannot carry discoverySpec");
 	} else if (input.discoveryRunPolicy !== undefined) {
 		throw new Error("normal root task cannot carry discoveryRunPolicy");
+	} else if (input.splitTaskSpec !== undefined) {
+		throw new Error("normal root task cannot carry splitTaskSpec");
 	}
 	assertNonEmptyString(input.title, "task title is required");
 	const leaderAgentId = assertNonEmptyString(input.leaderAgentId, "leaderAgentId is required");
 	assertKnownAgent(leaderAgentId, context);
-	validateWorkUnit(input.workUnit, context);
 	if (input.status !== undefined && !CREATE_STATUSES.has(input.status)) {
 		throw new Error("task status must be drafting or ready");
 	}
@@ -447,6 +528,16 @@ export function validateTaskUpdateInput(existing: TeamCanvasTask, patch: UpdateT
 			throw new Error("normal root task cannot carry discoveryRunPolicy");
 		}
 		validateDiscoveryRunPolicy(patch.discoveryRunPolicy);
+	}
+	if (patch.splitTaskSpec !== undefined) {
+		if (existing.generatedSource) {
+			throw new Error("generated task cannot carry splitTaskSpec");
+		}
+		if (existing.canvasKind !== "split-task") {
+			throw new Error("normal root task cannot carry splitTaskSpec");
+		}
+		const nextWorkUnit = patch.workUnit !== undefined ? patch.workUnit : existing.workUnit;
+		validateSplitTaskSpec(patch.splitTaskSpec, nextWorkUnit, context);
 	}
 	if (patch.status !== undefined && !PATCH_STATUSES.has(patch.status)) {
 		throw new Error("task status must be drafting or ready");

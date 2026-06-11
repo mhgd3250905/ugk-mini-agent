@@ -1,12 +1,13 @@
 # 当前交接快照
 
-更新时间：`2026-06-11`
+更新时间：`2026-06-12`
 
 这份文档只记录当前接手所需事实。历史流水账不要塞回来；需要追溯旧阶段时用 Git 历史、专题文档和 `docs/change-log.md`。若本文件与当前用户提示、`git status` 或真实运行结果冲突，以后者为准。
 
 ## 当前维护边界
 
 - 当前维护对象：Team Console / Canvas Task / Conn `team_group` / Discovery，以及本轮已收口的主 `/playground` Chat UI polish。
+- 当前新增维护对象：`split-task` / `worklist` / `worklist-results` 标准端口链路。目标是让大体量上游结果先标准化成清单，再由 split-task 确定性分发、并发执行、完整回收，最终给下游普通 Task 消费。
 - 本轮新增维护对象：API 源管理入口 `/playground/model-sources` 与模型 provider runtime overlay；主 `/playground` Chat 已完成视觉收口，后续没有明确用户要求时不要继续扩展重做。
 - 当前新增治理对象：代码库大文件风险治理 / 模块化优化。当前最危险的超级测试文件拆分阶段已基本收口，tracked 测试文件已降到 1000 行以下；生产文件治理已进入 CSS / presenter / helper 批次阶段。当前 `App.tsx` 约 5231 行，`ExecutionMap.tsx` 约 4414 行，`execution-map.css` 已降到约 3879 行，`playground-styles.ts` 已降到约 3390 行，`app.css` 已降到约 2439 行；整体大文件治理约 75%。本轮按用户要求暂停在 CSS 搬迁批次结束点，后续重点继续治理 `App.tsx`、`ExecutionMap.tsx`、剩余 `execution-map.css`、`playground-styles.ts`、`app.css` 和其他 2000+ 行文件。
 - 当前执行方式：后续按“可独立审核的主题批次”由 subagent 负责实施，主会话只做独立审核、验证、精确 stage/commit 和文档落地。subagent 不允许 stage/commit；粒度可以比 GLM 时代更大。纯 CSS / 纯展示层可并行成批，涉及 `App.tsx` 状态闭包、`ExecutionMap.tsx` 拖拽/缩放/命中测试等行为逻辑时仍单 worker、强验证、单独提交。
@@ -27,12 +28,12 @@
 
 ## 当前 Git 现场
 
-- 当前分支：`main`。
+- 当前分支：`codex/split-task`。
 - 本轮 Git 保存范围：Team Task 模板参数 `inputType` 合同、Team Console / Discovery / Group 命名链路、Task Leader mini/full iframe 对齐、主 `/playground` Chat 视觉 polish、相关测试和文档；以及正在推进的代码库大文件治理测试/生产模块化提交。
 - 截至本快照，最新代码拆分提交为 `5d1f0f1d Extract large CSS style modules`。本地 ahead 数会随文档提交继续增加，远端同步状态仍以实时 `git status --short --branch` 和 `git log --oneline origin/main..HEAD` 为准。
 - `origin`：GitHub `https://github.com/mhgd3250905/ugk-claw-personal.git`。
 - `gitee`：`https://gitee.com/ksheng3250905/ugk-pi-claw.git`。
-- 不要提交这些本地未跟踪物件：`.codex/plans/2026-06-07-discovery-channel-set.md`、`.codex/plans/2026-06-08-api-source-management.md`、`docs/windows-native-runtime-feasibility.md`、`Find_Old_Google_Root_Key_Source.md`、`Google_Root_Cert_Update_Report.md`、`public/chat-background-reference.html`、`public/rsa-root-cert-report.html`、runtime 数据、截图、报告、临时文件。
+- 不要提交这些既有本地未跟踪物件：`.codex/plans/2026-06-07-discovery-channel-set.md`、`.codex/plans/2026-06-08-api-source-management.md`、大量 `2026-06-09/10-codebase-modularization-*` 计划草稿、`docs/windows-native-runtime-feasibility.md`、`Find_Old_Google_Root_Key_Source.md`、`Google_Root_Cert_Update_Report.md`、`public/chat-background-reference.html`、`public/rsa-root-cert-report.html`、`ugk-claw-personal/`、runtime 数据、截图、报告、临时文件。本轮新增并可纳入 split-task 提交的是 `docs/plans/2026-06-11-split-task.md`、`src/team/generated-source.ts`、`src/team/split-task-lifecycle.ts`、`src/team/split-task-workunit-compiler.ts`、`src/team/worklist-contract.ts`、相关 tests 和文档。
 
 继续工作前先执行：
 
@@ -46,6 +47,9 @@ git log --oneline origin/main..HEAD
 
 ## 当前已完成事实
 
+- `split-task` 完整链路已实现。普通 Task 可输出 `worklist` typed artifact；split-task 读取 `worklist`，按 item 复用/更新 `generatedSource.schemaVersion="team/generated-task-source-2"` 的 child Tasks，并用 `triggeredBy.type="split-generated-task"` 启动 child runs；父 split-task 等待全部 child 终态后写出 `worklist-results.json`，再按 `worklist-results` typed artifact 触发下游普通 Task。
+- 新增标准合同：`team/worklist-1`、`team/worklist-results-1`、`TeamSplitTaskSpec`、`TeamGeneratedTaskSourceV2`。`workUnit.outputCheck` 支持 `worklist` 和 `worklist_results`；typed artifact resolver 对 `worklist` / `worklist-results` 会优先选择 worker public output 中合法 JSON，失败才 fallback accepted result。`worklist-results.results[]` 会保留可选 `generatedTaskId` / `generatedRunId` 追踪字段。
+- Team Console 公共 DTO、漂移测试和 generated 子画布已兼容 split-task。split-task 节点显示为 `Split`，可打开“生成子画布”查看/运行/观察/浅编辑 child Tasks；Discovery 渠道集和 channel checkbox 仍只在 Discovery root 下显示。
 - 大文件治理测试拆分当前批次已完成并本地提交到 Step109。近期提交覆盖 Conn run route、Discovery downstream aggregation、ConnRunStore schedule state、Team task connection route、playground route shell behavior、Team dynamic plan route、Team run workspace discovery dispatch、Team task run upstream selection、Team agent profile browser context、ExecutionMap evidence auto-height、run observer panel drag、AgentService run events、Conn page support catalog、run observer process tool detail、Team orchestrator summary derivation 和 background agent runner helper 抽取等测试拆分。每步均按 focused tests、combined tests 或等价测试名/测试主体审计、`npx tsc --noEmit`、`npm run code:size -- --limit 45`、`git diff --check` 验证；涉及 Team Console 的步骤另跑对应 Vitest/build。
 - 生产文件治理第一刀已提交 `852783be`：从 `apps/team-console/src/app/App.tsx` 抽出 `apps/team-console/src/app/canvas-ui-state-storage.ts`，只搬迁 canvas UI state / localStorage 解析与写入 helper，不改 JSX、CSS、graph、fixtures 或 DOM `data-*` contract。验证通过 5 个 Team Console focused test 文件 77 个用例、Team Console build、`npx tsc --noEmit`、`npm run code:size -- --limit 45` 和 `git diff --check`。
 - 生产文件治理第二刀已提交 `2f4e9ad4`：从 `apps/team-console/src/app/App.tsx` 抽出 `apps/team-console/src/app/team-console-discovery-run-state.ts`，只搬迁 Discovery generated run selection / visual state / stage meta helper。主会话已复核 12 个 moved declarations 与 `HEAD:App.tsx` 等价、UTF-8 replacement chars 为 0、保护文件 diff 为空；验证通过 4 个 Team Console focused test 文件 91 个用例、Team Console build、`npx tsc --noEmit`、`npm run code:size -- --limit 45` 和 `git diff --check`。
@@ -61,7 +65,8 @@ git log --oneline origin/main..HEAD
 - Team Task 模板参数已支持 typed input contract。`templateConfig.parameters[].inputType` 支持 `text`、`textarea`、`email`、`email_list`、`number`、`select`；旧模板缺字段按 `text` 兼容读取。运行和保存时绑定快照仍保持 `Record<string,string>`，但后端会校验邮箱、邮箱列表、数字和下拉选项，`email_list` 支持逗号、分号和换行分隔后归一化。
 - Team Console 模板参数面板和复制面板会按 `inputType` 渲染控件：`textarea` 用多行输入，`select` 用下拉，`email` / `number` 使用对应 HTML input 类型，`email_list` 提交前归一化。`task_8dc366711f37` 这类可填写参数 Task 可直接通过 UI 测试。
 - Team Console Task 操作菜单里的“对话 Leader”已和普通 Agent 对话分支对齐：普通 Task Leader 子面板 iframe 使用 `embedMode=mini`，最大化 overlay 使用 `embedMode=full`。Task child panel 支持 `maximizedPanel`，避免小窗和最大化共用同一份 iframe URL。
-- `/team-task` skill 已补充自然语言设计引导：用户不需要知道 `templateConfig`、`inputType`、`inputPorts` 等内部字段；skill 必须用业务语言询问收件人、邮件标题、邮件正文来源等，再自行映射为模板参数和 typed ports。
+- `/team-task` skill 已按渐进式披露重构：主 `SKILL.md` 只负责非专家自然语言引导、Task 形态推荐、确认流程和写 API 禁区；用户不需要知道 `templateConfig`、`inputPorts`、`worklist`、`splitTaskSpec` 等内部字段。普通 Task、worklist producer 和 split-task root 创建优先通过 `npm run team:task-factory -- --spec <file>` 由少量参数生成并校验完整 payload；Discovery、模板和更新场景再加载 `.pi/skills/team-task-creator/references/task-contracts.md` 手工预览。禁止直接写 `.data/team`。
+- `POST /v1/team/tasks` 与 `PATCH /v1/team/tasks/:taskId` 已补齐 `splitTaskSpec` 透传，正规 API 创建 split-task 不再丢失 `splitTaskSpec`。`src/team/task-factory.ts` 复用 `validateCreateTaskInput` 校验，CLI 会剥离 Windows UTF-8 BOM。
 - API 源管理工作台已实现：`/playground/model-sources` 可查看 bundled/custom provider、查看全局默认 / Agent profile / Conn 的有效使用绑定，并在同页修改可编辑对象绑定的 provider/model。
 - `/playground/agents` 与 `/playground/conn` 已切换到共享 `ops-workbench` 视觉系统，和 `/playground/model-sources` 保持同一套管理工作台密度、色彩 token、卡片/列表/详情布局和轻量背景。旧 cockpit 动画背景不再作为这两个管理页的主题入口。
 - `/playground/conn` 移动端列表/详情切换已修复：选择任务时显式隐藏列表并显示详情，点击详情返回按钮时恢复列表，不再出现列表和详情同时隐藏。
@@ -124,6 +129,21 @@ git log --oneline origin/main..HEAD
 
 ## 本轮最终验证
 
+- split-task / worklist 本轮验证：
+  - 真实链路验证：`task_db2e38fb1878` 产出 worklist 后，`task_b71c140126bd` 的 split run `run_676d1de15cab` 汇总 26 个 succeeded 分片，`task_a0dd8d8b7a79` 的下游清洗 run `run_75f720a11582` 已 `completed/succeeded`。本地复核 `worklist-results.json` 展开后为 183 条，`worker/output/cleaned-news.json` 也是 183 条，唯一链接集合完全一致；checker 第一轮因中文摘要质量给 `revise`，第二轮 `pass`。注意：`accepted-result.md` 当前仍是 `[183条完整内容，共137KB]` 这类人类摘要/占位，机器可消费 JSON 在 `agent-workspaces/attempt_b20e43eda64a/worker/output/cleaned-news.json`，typed downstream 会优先选择 worker public output。
+  - worker/checker 合同验证：普通 Task 消费 `worklist-results` 时，worker prompt 已明确 `results[]` 是权威业务结果；返工时要求只按反馈局部修改并保持上一版字段/文件/范围/顺序；checker prompt 已纳入 `outputContract`，不得追加未声明验收标准。后续仍可继续优化：返工阶段最好显式提供上一版 output 文件路径，让 worker 更容易做真正局部 patch。
+  - `node --test --test-concurrency=1 --import tsx test/team-task-run-split-process.test.ts test/team-worklist-contract.test.ts`：10/10 pass。
+  - `node --test --test-concurrency=1 --import tsx test/team-task-run-split-process.test.ts test/team-task-run-downstream-process.test.ts test/team-task-routes.test.ts test/team-task-run-routes.test.ts test/team-task-store.test.ts test/team-task-store-generated-workunit.test.ts test/team-worklist-contract.test.ts test/team-output-validator-worklist.test.ts test/team-task-store-output-check.test.ts`：97/97 pass。
+  - `npm --prefix apps/team-console run test -- team-contract-drift app-live-data-discovery-subcanvas app-live-data-generated-task-actions app-canvas-connections`：49/49 pass。
+  - `npm --prefix apps/team-console run test -- app-canvas-connections app-run-observer`：93/93 pass。
+  - `npm --prefix apps/team-console run test`：734/734 pass。
+  - `npm run test:team`：1283/1285 pass，2 skipped，0 fail。
+  - `npx tsc --noEmit`：pass。
+  - `npm --prefix apps/team-console run build`：pass；仅既有 Vite chunk size warning。
+  - `git diff --check`：pass。
+  - `/team-task` skill 渐进式披露、Task factory 创建路径和对话创建能力补充后，`node --test --test-concurrency=1 --import tsx test/team-task-creator-skill.test.ts test/team-task-factory.test.ts test/team-task-routes.test.ts`：44/44 pass；覆盖非专家引导、reference 合同、factory spec、worklist producer、split-task root 创建规则和 API `splitTaskSpec` 透传。
+  - `npm run team:task-factory -- --spec <temp split-task spec>`：pass，使用真实 agent catalog 生成 split-task preview，未执行 `--apply`，未写入真实 Team 数据。
+  - `$env:PYTHONUTF8='1'; python C:\Users\29485\.codex\skills\.system\skill-creator\scripts\quick_validate.py .pi\skills\team-task-creator`：pass。未设置 `PYTHONUTF8=1` 时 Windows GBK 会因中文触发 `UnicodeDecodeError`。
 - Team Console run history panel state isolation 验证：
   - `npm --prefix apps/team-console run test -- src/tests/app-run-observer.test.tsx`：22/22 pass。
   - `npm run team-console:build`：pass；仅既有 Vite chunk size warning。

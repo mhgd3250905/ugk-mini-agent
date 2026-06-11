@@ -2,7 +2,7 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { renameWithTransientRetry } from "../file-system.js";
 import { generateTaskId } from "./ids.js";
-import type { TeamCanvasTask, TeamCanvasTaskStatus, TeamDiscoveryRunPolicy, TeamDiscoverySpec, TeamTaskTemplateConfig, TeamTaskTemplateState, TeamWorkUnitDefinition } from "./types.js";
+import type { TeamCanvasTask, TeamCanvasTaskStatus, TeamDiscoveryRunPolicy, TeamDiscoverySpec, TeamGeneratedTaskSource, TeamGeneratedTaskSourceKind, TeamSplitTaskSpec, TeamTaskTemplateConfig, TeamTaskTemplateState, TeamWorkUnitDefinition } from "./types.js";
 import {
 	type CreateTeamCanvasTaskInput,
 	type TaskValidationContext,
@@ -11,6 +11,13 @@ import {
 	validateTaskUpdateInput,
 } from "./task-validation.js";
 import { buildTemplateBindings } from "./task-template.js";
+import {
+	createGeneratedTaskSourceV2,
+	getGeneratedSourceItemId,
+	getGeneratedSourceKind,
+	getGeneratedSourceParentTaskId,
+	patchGeneratedSourceLatest,
+} from "./generated-source.js";
 
 export interface TaskStoreListOptions {
 	includeArchived?: boolean;
@@ -34,6 +41,35 @@ export interface UpsertGeneratedTaskFromDiscoveryInput {
 	workUnit: Omit<TeamWorkUnitDefinition, "workerAgentId" | "checkerAgentId">;
 }
 
+export interface UpsertGeneratedTaskFromSourceInput {
+	sourceKind: TeamGeneratedTaskSourceKind;
+	sourceTaskId: string;
+	sourceItemId: string;
+	itemPayload: Record<string, unknown>;
+	latestSourceRunId: string;
+	latestSourceAttemptId: string;
+	latestSourceAt: string;
+	leaderAgentId: string;
+	generatedWorkerAgentId: string;
+	generatedCheckerAgentId: string;
+	workUnit: Omit<TeamWorkUnitDefinition, "workerAgentId" | "checkerAgentId">;
+}
+
+interface UpsertGeneratedTaskInternalInput {
+	sourceKind: TeamGeneratedTaskSourceKind;
+	sourceTaskId: string;
+	sourceItemId: string;
+	itemPayload: Record<string, unknown>;
+	latestSourceRunId: string;
+	latestSourceAttemptId: string;
+	latestSourceAt: string;
+	leaderAgentId: string;
+	generatedWorkerAgentId: string;
+	generatedCheckerAgentId: string;
+	workUnit: Omit<TeamWorkUnitDefinition, "workerAgentId" | "checkerAgentId">;
+	generatedSource: TeamGeneratedTaskSource;
+}
+
 export interface CloneTeamCanvasTaskInput {
 	title?: string;
 	templateBindings?: Record<string, string>;
@@ -49,6 +85,10 @@ function cloneDiscoverySpec(discoverySpec: TeamDiscoverySpec | undefined): TeamD
 
 function cloneDiscoveryRunPolicy(discoveryRunPolicy: TeamDiscoveryRunPolicy | undefined): TeamDiscoveryRunPolicy | undefined {
 	return discoveryRunPolicy ? JSON.parse(JSON.stringify(discoveryRunPolicy)) as TeamDiscoveryRunPolicy : undefined;
+}
+
+function cloneSplitTaskSpec(splitTaskSpec: TeamSplitTaskSpec | undefined): TeamSplitTaskSpec | undefined {
+	return splitTaskSpec ? JSON.parse(JSON.stringify(splitTaskSpec)) as TeamSplitTaskSpec : undefined;
 }
 
 function cloneTemplateConfig(templateConfig: TeamTaskTemplateConfig | undefined): TeamTaskTemplateConfig | undefined {
@@ -102,6 +142,7 @@ export class TaskStore {
 			workUnit: input.workUnit,
 			...(input.canvasKind ? { canvasKind: input.canvasKind } : {}),
 			...(input.discoverySpec ? { discoverySpec: input.discoverySpec } : {}),
+			...(input.splitTaskSpec ? { splitTaskSpec: input.splitTaskSpec } : {}),
 			...(input.discoveryRunPolicy ? { discoveryRunPolicy: input.discoveryRunPolicy } : {}),
 			...(input.generatedSource ? { generatedSource: input.generatedSource } : {}),
 			...(input.templateConfig ? { templateConfig: input.templateConfig } : {}),
@@ -159,6 +200,7 @@ export class TaskStore {
 		const bindings = templateConfig ? buildTemplateBindings(templateConfig, input.templateBindings) : {};
 		const workUnit = applyBindingsToWorkUnit(cloneWorkUnit(source.workUnit), bindings);
 		const discoverySpec = applyBindingsToDiscoverySpec(cloneDiscoverySpec(source.discoverySpec), bindings);
+		const splitTaskSpec = cloneSplitTaskSpec(source.splitTaskSpec);
 		const rawTitle = input.title?.trim();
 		const title = rawTitle
 			? replaceTemplatePlaceholders(rawTitle, bindings)
@@ -169,6 +211,7 @@ export class TaskStore {
 			workUnit,
 			...(source.canvasKind ? { canvasKind: source.canvasKind } : {}),
 			...(discoverySpec ? { discoverySpec } : {}),
+			...(splitTaskSpec ? { splitTaskSpec } : {}),
 			...(templateConfig
 				? {
 					templateInstance: {
@@ -184,8 +227,15 @@ export class TaskStore {
 	}
 
 	async listGeneratedForDiscoveryTask(discoveryTaskId: string, options: TaskStoreListOptions = {}): Promise<TeamCanvasTask[]> {
+		return this.listGeneratedForSourceTask("discovery", discoveryTaskId, options);
+	}
+
+	async listGeneratedForSourceTask(sourceKind: TeamGeneratedTaskSourceKind, sourceTaskId: string, options: TaskStoreListOptions = {}): Promise<TeamCanvasTask[]> {
 		const tasks = await this.list({ ...options, includeGenerated: true });
-		return tasks.filter(task => task.generatedSource?.sourceDiscoveryTaskId === discoveryTaskId);
+		return tasks.filter(task => {
+			const source = task.generatedSource;
+			return source && getGeneratedSourceKind(source) === sourceKind && getGeneratedSourceParentTaskId(source) === sourceTaskId;
+		});
 	}
 
 	async upsertGeneratedTaskFromDiscovery(input: UpsertGeneratedTaskFromDiscoveryInput): Promise<{ task: TeamCanvasTask; created: boolean; workUnitUpdated: boolean }> {
@@ -209,34 +259,95 @@ export class TaskStore {
 			workUnitMode: "managed" as const,
 			latestManagedWorkUnit,
 		};
+		return this.upsertGeneratedTask({
+			sourceKind: "discovery",
+			sourceTaskId: input.sourceDiscoveryTaskId,
+			sourceItemId: input.sourceItemId,
+			itemPayload: input.itemPayload,
+			leaderAgentId: input.leaderAgentId,
+			workUnit: input.workUnit,
+			generatedWorkerAgentId: input.generatedWorkerAgentId,
+			generatedCheckerAgentId: input.generatedCheckerAgentId,
+			latestSourceRunId: input.latestDiscoveryRunId,
+			latestSourceAttemptId: input.latestDiscoveryAttemptId,
+			latestSourceAt: input.latestDiscoveredAt,
+			generatedSource,
+		});
+	}
+
+	async upsertGeneratedTaskFromSource(input: UpsertGeneratedTaskFromSourceInput): Promise<{ task: TeamCanvasTask; created: boolean; workUnitUpdated: boolean }> {
+		if (typeof input.workUnit?.title !== "string" || !input.workUnit.title.trim()) {
+			throw new Error("task title is required");
+		}
+		const latestManagedWorkUnit = cloneWorkUnit({
+			...input.workUnit,
+			workerAgentId: input.generatedWorkerAgentId,
+			checkerAgentId: input.generatedCheckerAgentId,
+		});
+		const generatedSource = createGeneratedTaskSourceV2({
+			sourceKind: input.sourceKind,
+			sourceTaskId: input.sourceTaskId,
+			sourceItemId: input.sourceItemId,
+			itemPayload: input.itemPayload,
+			latestSourceRunId: input.latestSourceRunId,
+			latestSourceAttemptId: input.latestSourceAttemptId,
+			latestSourceAt: input.latestSourceAt,
+			latestManagedWorkUnit,
+		});
+		return this.upsertGeneratedTask({
+			sourceKind: input.sourceKind,
+			sourceTaskId: input.sourceTaskId,
+			sourceItemId: input.sourceItemId,
+			itemPayload: input.itemPayload,
+			leaderAgentId: input.leaderAgentId,
+			workUnit: input.workUnit,
+			generatedWorkerAgentId: input.generatedWorkerAgentId,
+			generatedCheckerAgentId: input.generatedCheckerAgentId,
+			latestSourceRunId: input.latestSourceRunId,
+			latestSourceAttemptId: input.latestSourceAttemptId,
+			latestSourceAt: input.latestSourceAt,
+			generatedSource,
+		});
+	}
+
+	private async upsertGeneratedTask(input: UpsertGeneratedTaskInternalInput): Promise<{ task: TeamCanvasTask; created: boolean; workUnitUpdated: boolean }> {
+		const latestManagedWorkUnit = input.generatedSource.latestManagedWorkUnit
+			? cloneWorkUnit(input.generatedSource.latestManagedWorkUnit)
+			: cloneWorkUnit({
+				...input.workUnit,
+				workerAgentId: input.generatedWorkerAgentId,
+				checkerAgentId: input.generatedCheckerAgentId,
+			});
 		const workUnit = cloneWorkUnit(latestManagedWorkUnit);
-		const existing = (await this.listGeneratedForDiscoveryTask(input.sourceDiscoveryTaskId, { includeArchived: true }))
-			.find(task => task.generatedSource?.sourceItemId === input.sourceItemId);
+		const existing = (await this.listGeneratedForSourceTask(input.sourceKind, input.sourceTaskId, { includeArchived: true }))
+			.find(task => task.generatedSource && getGeneratedSourceItemId(task.generatedSource) === input.sourceItemId);
 		if (existing?.archived) {
-			throw new Error(`archived generated task conflict for discovery item: ${input.sourceDiscoveryTaskId}/${input.sourceItemId}`);
+			throw new Error(`archived generated task conflict for source item: ${input.sourceKind}/${input.sourceTaskId}/${input.sourceItemId}`);
 		}
 		if (!existing) {
 			const task = await this.create({
 				title: input.workUnit.title,
 				leaderAgentId: input.leaderAgentId,
 				workUnit,
-				generatedSource,
+				generatedSource: input.generatedSource,
 				status: "ready",
 			});
 			return { task, created: true, workUnitUpdated: true };
 		}
 
 		const workUnitUpdated = existing.generatedSource?.workUnitMode === "managed";
+		const latestSource = patchGeneratedSourceLatest(existing.generatedSource!, {
+			latestSourceRunId: input.latestSourceRunId,
+			latestSourceAttemptId: input.latestSourceAttemptId,
+			latestSourceAt: input.latestSourceAt,
+		});
 		const updated: TeamCanvasTask = {
 			...existing,
 			...(workUnitUpdated ? { title: input.workUnit.title, workUnit } : {}),
 			generatedSource: {
-				...existing.generatedSource!,
+				...latestSource,
 				itemStatus: "active",
 				itemPayload: input.itemPayload,
-				latestDiscoveryRunId: input.latestDiscoveryRunId,
-				latestDiscoveryAttemptId: input.latestDiscoveryAttemptId,
-				latestDiscoveredAt: input.latestDiscoveredAt,
 				latestManagedWorkUnit,
 			},
 			updatedAt: new Date().toISOString(),
@@ -301,19 +412,30 @@ export class TaskStore {
 		activeSourceItemIds: ReadonlySet<string>,
 		input: { latestDiscoveryRunId: string; latestDiscoveryAttemptId: string; latestDiscoveredAt: string },
 	): Promise<TeamCanvasTask[]> {
-		const generated = await this.listGeneratedForDiscoveryTask(discoveryTaskId);
+		return this.markGeneratedTasksStaleForSource("discovery", discoveryTaskId, activeSourceItemIds, {
+			latestSourceRunId: input.latestDiscoveryRunId,
+			latestSourceAttemptId: input.latestDiscoveryAttemptId,
+			latestSourceAt: input.latestDiscoveredAt,
+		});
+	}
+
+	async markGeneratedTasksStaleForSource(
+		sourceKind: TeamGeneratedTaskSourceKind,
+		sourceTaskId: string,
+		activeSourceItemIds: ReadonlySet<string>,
+		input: { latestSourceRunId: string; latestSourceAttemptId: string; latestSourceAt: string },
+	): Promise<TeamCanvasTask[]> {
+		const generated = await this.listGeneratedForSourceTask(sourceKind, sourceTaskId);
 		const staleTasks: TeamCanvasTask[] = [];
 		for (const task of generated) {
 			const source = task.generatedSource;
-			if (!source || activeSourceItemIds.has(source.sourceItemId)) continue;
+			if (!source || activeSourceItemIds.has(getGeneratedSourceItemId(source))) continue;
+			const latestSource = patchGeneratedSourceLatest(source, input);
 			const updated: TeamCanvasTask = {
 				...task,
 				generatedSource: {
-					...source,
+					...latestSource,
 					itemStatus: "stale",
-					latestDiscoveryRunId: input.latestDiscoveryRunId,
-					latestDiscoveryAttemptId: input.latestDiscoveryAttemptId,
-					latestDiscoveredAt: input.latestDiscoveredAt,
 				},
 				updatedAt: new Date().toISOString(),
 			};

@@ -14,6 +14,20 @@
 
 ---
 
+## 2026-06-12 — Team checker / worklist-results handoff hardening
+
+- **主题**: Team Runtime 收紧普通 Task 消费 `worklist-results` 的 worker/checker 边界。worker prompt 会明确 `results[]` 是 `team/worklist-results-1` 的权威业务结果，`sourceWorklist.items` 只用于清点覆盖率；返工时必须只修改 checker 明确反馈的问题，保持上一版字段名、文件名、数据范围和条目顺序。checker prompt 同步纳入 `outputContract`，只能依据任务描述、输出契约、验收标准和 deterministic output validation 判定，不得追加去重、来源命名、排序等未声明标准。
+- **补充**: checker 输出解析允许前置 runtime evidence 后接 JSON verdict，减少合法 verdict 被解析失败误杀的情况。真实链路 `task_db2e38fb1878 -> task_b71c140126bd -> task_a0dd8d8b7a79` 已验证：下游清洗 Task `run_75f720a11582` 成功消费上游 `worklist-results`，展开 26 个 succeeded 分片后输入 183 条，输出 `worker/output/cleaned-news.json` 183 条，链接集合与上游完全一致，第二轮 checker `pass`。
+- **已知后续**: `accepted-result.md` 仍可能只是人类摘要或占位，机器可消费 JSON 依赖 typed artifact resolver 优先选择 `agent-workspaces/<attemptId>/worker/output/*.json`。后续应继续把最终机器产物引用展示和 resultRef 语义收口得更清楚。
+- **对应入口**: `src/team/role-prompt-contract.ts`、`src/team/task-run-service.ts`、`src/team/output-validator.ts`、`test/team-role-prompt-contract.test.ts`、`test/team-task-run-downstream-process.test.ts`、`docs/team-runtime.md`、`docs/handoff-current.md`。
+
+## 2026-06-11 — Team split-task and worklist contracts
+
+- **主题**: 新增 `split-task` 画布节点类型和标准化 `worklist` / `worklist-results` 端口合同。上游普通 Task 可产出 `team/worklist-1`，split-task 负责确定性分发 generated child Tasks、并发执行和完整回收，最终输出 `team/worklist-results-1` 给下游普通 Task。
+- **影响范围**: Team Canvas Task catalog、run service、generated task source schema、typed artifact resolver、输出校验、Team Console generated 子画布、公共 DTO 和 `/team-task` 创建向导。Discovery 渠道集能力保持 Discovery 专用，split-task 只复用 generated child catalog / 运行 / 观察 / 浅编辑能力；skill 对话已能把大体量上游数据场景推荐为 worklist producer + split-task 链路，并按渐进式披露把精确 JSON 合同放入 reference。
+- **补充**: 新增 `team:task-factory` 参数化创建入口。普通 Task、worklist producer 和 split-task 创建优先由 factory 接收少量参数、生成完整 `POST /v1/team/tasks` payload 并复用后端校验；agent 不再手写完整 JSON 或直接写 `.data/team`。`POST/PATCH /v1/team/tasks` 已补齐 `splitTaskSpec` 透传，避免正规 API 创建 split-task 时丢字段。
+- **对应入口**: `src/team/worklist-contract.ts`、`src/team/split-task-lifecycle.ts`、`src/team/split-task-workunit-compiler.ts`、`src/team/generated-source.ts`、`src/team/task-run-service.ts`、`src/team/task-store.ts`、`src/team/task-factory.ts`、`src/team/task-factory-cli.ts`、`src/team/routes.ts`、`apps/team-console/src/app/App.tsx`、`.pi/skills/team-task-creator/SKILL.md`、`.pi/skills/team-task-creator/references/task-contracts.md`、`test/team-task-creator-skill.test.ts`、`test/team-task-factory.test.ts`、`test/team-task-routes.test.ts`、`docs/team-runtime.md`、`docs/plans/2026-06-11-split-task.md`。
+
 ## 2026-06-11 — Team Console run history panel state isolation
 
 - **主题**: Team Console 画布中多个 Task 运行记录 panel 改为按 `taskId` 隔离历史列表、loading、error 和保存状态。先打开的运行记录不再被后打开节点的请求结果覆盖；继续打开第三个运行记录时，前两个已加载 panel 不再重复请求或闪现“正在加载运行记录...”。

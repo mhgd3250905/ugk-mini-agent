@@ -113,7 +113,7 @@ test("GET /v1/team/tasks/:taskId/generated-tasks returns one Discovery root chil
 	}
 });
 
-test("GET /v1/team/tasks/:taskId/generated-tasks rejects missing or non-Discovery parents", async () => {
+test("GET /v1/team/tasks/:taskId/generated-tasks rejects missing or parents without generated children", async () => {
 	const { app, root } = await buildTestServer();
 	try {
 		const missing = await app.inject({ method: "GET", url: "/v1/team/tasks/task_missing/generated-tasks" });
@@ -122,7 +122,7 @@ test("GET /v1/team/tasks/:taskId/generated-tasks rejects missing or non-Discover
 		const normal = (await app.inject({ method: "POST", url: "/v1/team/tasks", payload: taskPayload })).json().task;
 		const normalParent = await app.inject({ method: "GET", url: `/v1/team/tasks/${normal.taskId}/generated-tasks` });
 		assert.equal(normalParent.statusCode, 400);
-		assert.match(normalParent.json().error, /generated tasks can only be listed for Discovery root tasks/);
+		assert.match(normalParent.json().error, /generated tasks can only be listed for tasks with generated children/);
 	} finally {
 		await app.close();
 		await rm(root, { recursive: true, force: true });
@@ -220,6 +220,46 @@ test("GET /v1/team/tasks/:taskId/generated-tasks view=summary supports includeAr
 
 		const withArchived = await app.inject({ method: "GET", url: `/v1/team/tasks/${discovery.taskId}/generated-tasks?view=summary&includeArchived=true` });
 		assert.equal(withArchived.json().tasks.length, 2);
+	} finally {
+		await app.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("POST /v1/team/tasks preserves splitTaskSpec for split-task roots", async () => {
+	const { app, root } = await buildTestServer();
+	try {
+		const payload = {
+			...taskPayload,
+			title: "分片处理清单",
+			canvasKind: "split-task",
+			workUnit: {
+				...taskPayload.workUnit,
+				title: "分片处理清单",
+				inputPorts: [{ id: "worklist", label: "Worklist", type: "worklist" }],
+				outputPorts: [{ id: "results", label: "Results", type: "worklist-results" }],
+				outputCheck: { type: "worklist_results", requireFullCoverage: true },
+			},
+			splitTaskSpec: {
+				schemaVersion: "team/split-task-spec-1",
+				inputPortId: "worklist",
+				outputPortId: "results",
+				dispatchGoal: "逐项处理 worklist item。",
+				generatedWorkerAgentId: "search",
+				generatedCheckerAgentId: "main",
+				autoRun: { enabled: true, concurrency: 3 },
+				collectPolicy: { requireAllItemsSucceeded: true, requireFullCoverage: true },
+			},
+		};
+
+		const created = await app.inject({ method: "POST", url: "/v1/team/tasks", payload });
+		assert.equal(created.statusCode, 201);
+		assert.equal(created.json().task.canvasKind, "split-task");
+		assert.deepEqual(created.json().task.splitTaskSpec, payload.splitTaskSpec);
+
+		const fetched = await app.inject({ method: "GET", url: `/v1/team/tasks/${created.json().task.taskId}` });
+		assert.equal(fetched.statusCode, 200);
+		assert.deepEqual(fetched.json().task.splitTaskSpec, payload.splitTaskSpec);
 	} finally {
 		await app.close();
 		await rm(root, { recursive: true, force: true });

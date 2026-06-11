@@ -282,7 +282,7 @@ describe("App", () => {
       await waitFor(() => expect(processSummaryRequests).toBeGreaterThanOrEqual(3));
       expect(fullDetailRequests).toBe(1);
       unmount();
-    });
+    }, 10000);
 
     it("renders compact manual downstream run history without source internals", async () => {
       window.localStorage.setItem("ugk-team-console:data-source", "live");

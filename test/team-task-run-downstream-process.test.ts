@@ -29,6 +29,43 @@ import {
 	waitForTerminalRun,
 } from "./team-task-run-process-helpers.js";
 
+test("canvas task with input ports cannot run without bound upstream input", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-missing-input-port-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const task = await taskStore.create({
+			title: "消费分片结果",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "消费分片结果",
+				input: { text: "读取上游 worklist-results。" },
+				inputPorts: [{ id: "source_results", label: "分片结果", type: "worklist-results" }],
+				outputPorts: [{ id: "cleaned_json", label: "清洗 JSON", type: "json" }],
+				outputContract: { text: "输出 JSON。" },
+				acceptance: { rules: ["必须使用上游输入"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new ProcessEventRoleRunner(),
+			dataDir: join(root, "task-runs"),
+		});
+
+		await assert.rejects(
+			() => service.createRun(task.taskId),
+			/task input ports require bound upstream input before run: source_results:worklist-results/,
+		);
+		assert.equal((await service.listRuns(task.taskId)).length, 0);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("archived source task mid-run blocks downstream triggering", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-task-run-mid-archive-"));
 	try {
@@ -159,6 +196,9 @@ test("failed downstream delivery records error without failing upstream", async 
 		});
 
 		const workspace = new RunWorkspace(join(root, "task-runs"));
+		const fixtureFileRef = "tasks/source/attempts/attempt_fixture_source/accepted-result.md";
+		await mkdir(join(root, "task-runs", "runs", "run_fixture_source", "tasks/source/attempts/attempt_fixture_source"), { recursive: true });
+		await writeFile(join(root, "task-runs", "runs", "run_fixture_source", fixtureFileRef), "fixture markdown");
 
 		let gatedWorkerStarted!: () => void;
 		const gatedWorkerStartedPromise = new Promise<void>((resolve) => { gatedWorkerStarted = resolve; });
@@ -198,8 +238,27 @@ test("failed downstream delivery records error without failing upstream", async 
 			dataDir: join(root, "task-runs"),
 		});
 
-		// Pre-create an active downstream run that stays active (gated worker)
-		const preCreatedRun = await service.createRun(targetTask.taskId);
+		// Pre-create an active downstream run that stays active (gated worker).
+		// Input-port tasks must still receive a bound input, even in this fixture.
+		const preCreatedRun = await service.createRun(targetTask.taskId, {
+			boundInputs: [{
+				connectionId: connection.connectionId,
+				inputPortId: "source_md",
+				artifact: {
+					schemaVersion: "team/task-artifact-1",
+					artifactId: "artifact_fixture_source_md",
+					type: "md",
+					sourceTaskId: sourceTask.taskId,
+					sourceRunId: "run_fixture_source",
+					sourceAttemptId: "attempt_fixture_source",
+					sourceOutputPortId: "draft_md",
+					fileRef: fixtureFileRef,
+					preview: "fixture markdown",
+					content: "fixture markdown",
+					createdAt: new Date().toISOString(),
+				},
+			}],
+		});
 		await gatedWorkerStartedPromise;
 
 		// Now run the source task - downstream delivery should fail because active run exists
@@ -590,6 +649,278 @@ test("downstream worker receives public worker JSON for typed artifact instead o
 		assert.equal(JSON.parse(materializedContent).reportId, "real-json");
 		assert.match(capturedDownstreamInput!.task.input.text, /真实结构化数据/);
 		assert.doesNotMatch(capturedDownstreamInput!.task.input.text, /验收通过/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("downstream worker receives public worker worklist for worklist typed artifact", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-handoff-worklist-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const sourceTask = await taskStore.create({
+			...validTaskInput,
+			title: "清单生成",
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "清单生成",
+				outputPorts: [{ id: "worklist_out", label: "Worklist", type: "worklist" }],
+				outputContract: { text: "输出 worklist JSON。" },
+				acceptance: { rules: ["必须是合法 worklist"] },
+			},
+		});
+		const targetTask = await taskStore.create({
+			title: "分片执行",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "分片执行",
+				input: { text: "根据上游 worklist 执行。" },
+				inputPorts: [{ id: "source_worklist", label: "Worklist", type: "worklist" }],
+				outputContract: { text: "输出结果。" },
+				acceptance: { rules: ["必须使用上游 worklist"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+
+		await mkdir(join(root, "team"), { recursive: true });
+		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
+		await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "worklist_out",
+			toTaskId: targetTask.taskId,
+			toInputPortId: "source_worklist",
+		});
+
+		const validWorklist = JSON.stringify({
+			schemaVersion: "team/worklist-1",
+			worklistId: "worklist_news",
+			title: "News chunks",
+			items: [{ id: "chunk-001", title: "Chunk 1", input: { rows: [1] } }],
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+
+		class WorklistRunner extends ProcessEventRoleRunner {
+			async runWorker(input: WorkerInput): Promise<WorkerOutput> {
+				if (input.task.id === sourceTask.taskId) {
+					await writeFile(join(input.artifactPublicDir!, "worklist.json"), validWorklist, "utf8");
+					return { content: "worker wrote worklist.json", artifactRefs: [] };
+				}
+				return { content: "downstream worker result", artifactRefs: [] };
+			}
+
+			async runChecker(input: CheckerInput): Promise<CheckerOutput> {
+				if (input.task.id === sourceTask.taskId) {
+					return { verdict: "pass", reason: "ok", resultContent: "accepted summary that is not JSON" };
+				}
+				return { verdict: "pass", reason: "ok", resultContent: "accepted downstream" };
+			}
+		}
+
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new WorklistRunner(),
+			connectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const upstreamRun = await service.createRun(sourceTask.taskId);
+		const upstreamFinished = await waitForTerminalRun(service, upstreamRun.runId);
+		assert.equal(upstreamFinished.status, "completed");
+		const downstreamRuns = await waitForTaskRuns(service, targetTask.taskId, 1);
+		const downstreamFinished = await waitForTerminalRun(service, downstreamRuns[0]!.runId);
+		assert.equal(downstreamFinished.status, "completed");
+		const artifact = downstreamFinished.source?.boundInputs?.[0]?.artifact as import("../src/team/types.js").TeamTaskTypedArtifact;
+		assert.equal(artifact.type, "worklist");
+		assert.match(artifact.fileRef, /worklist\.json$/);
+		assert.equal(JSON.parse(artifact.content ?? artifact.preview).schemaVersion, "team/worklist-1");
+		assert.doesNotMatch(artifact.content ?? artifact.preview, /accepted summary/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("outputPath selects the canonical worklist artifact when multiple worker JSON files exist", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-handoff-worklist-output-path-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const sourceTask = await taskStore.create({
+			...validTaskInput,
+			title: "清单生成 outputPath",
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "清单生成 outputPath",
+				outputPorts: [{ id: "worklist_out", label: "Worklist", type: "worklist" }],
+				outputCheck: { type: "worklist" },
+				outputContract: { text: "输出 worklist JSON 文件，并在最终消息返回 outputPath。" },
+				acceptance: { rules: ["必须是合法 worklist"] },
+			},
+		});
+		const targetTask = await taskStore.create({
+			title: "分片执行 outputPath",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "分片执行 outputPath",
+				input: { text: "根据上游 worklist 执行。" },
+				inputPorts: [{ id: "source_worklist", label: "Worklist", type: "worklist" }],
+				outputContract: { text: "输出结果。" },
+				acceptance: { rules: ["必须使用上游 worklist"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+
+		await mkdir(join(root, "team"), { recursive: true });
+		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
+		await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "worklist_out",
+			toTaskId: targetTask.taskId,
+			toInputPortId: "source_worklist",
+		});
+
+		const staleWorklist = JSON.stringify({
+			schemaVersion: "team/worklist-1",
+			worklistId: "stale_worklist",
+			title: "Stale worklist",
+			items: [{ id: "stale-001", title: "Stale chunk", input: { rows: ["stale"] } }],
+		});
+		const selectedWorklist = JSON.stringify({
+			schemaVersion: "team/worklist-1",
+			worklistId: "selected_worklist",
+			title: "Selected worklist",
+			items: [{ id: "selected-001", title: "Selected chunk", input: { rows: ["selected"] } }],
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+
+		class OutputPathWorklistRunner extends ProcessEventRoleRunner {
+			async runWorker(input: WorkerInput): Promise<WorkerOutput> {
+				if (input.task.id === sourceTask.taskId) {
+					await writeFile(join(input.artifactPublicDir!, "aaa-stale-worklist.json"), staleWorklist, "utf8");
+					await writeFile(join(input.artifactPublicDir!, "selected-worklist.json"), selectedWorklist, "utf8");
+					return { content: JSON.stringify({ outputPath: "output/selected-worklist.json" }), artifactRefs: [] };
+				}
+				return { content: "downstream worker result", artifactRefs: [] };
+			}
+
+			async runChecker(input: CheckerInput): Promise<CheckerOutput> {
+				if (input.task.id === sourceTask.taskId) {
+					return { verdict: "pass", reason: "ok", resultContent: "accepted summary that is not JSON" };
+				}
+				return { verdict: "pass", reason: "ok", resultContent: "accepted downstream" };
+			}
+		}
+
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new OutputPathWorklistRunner(),
+			connectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const upstreamRun = await service.createRun(sourceTask.taskId);
+		const upstreamFinished = await waitForTerminalRun(service, upstreamRun.runId);
+		assert.equal(upstreamFinished.status, "completed");
+		const downstreamRuns = await waitForTaskRuns(service, targetTask.taskId, 1);
+		const downstreamFinished = await waitForTerminalRun(service, downstreamRuns[0]!.runId);
+		assert.equal(downstreamFinished.status, "completed");
+		const upstreamTaskState = upstreamFinished.taskStates[sourceTask.taskId]!;
+		assert.match(upstreamTaskState.resultRef ?? "", /selected-worklist\.json$/);
+		const artifact = downstreamFinished.source?.boundInputs?.[0]?.artifact as import("../src/team/types.js").TeamTaskTypedArtifact;
+		assert.equal(artifact.type, "worklist");
+		assert.match(artifact.fileRef, /selected-worklist\.json$/);
+		assert.equal(JSON.parse(artifact.content ?? artifact.preview).worklistId, "selected_worklist");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("worklist typed artifact falls back to accepted result when public JSON is invalid", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-handoff-worklist-fallback-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const sourceTask = await taskStore.create({
+			...validTaskInput,
+			title: "清单生成 fallback",
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "清单生成 fallback",
+				outputPorts: [{ id: "worklist_out", label: "Worklist", type: "worklist" }],
+				outputContract: { text: "输出 worklist JSON。" },
+				acceptance: { rules: ["必须是合法 worklist"] },
+			},
+		});
+		const targetTask = await taskStore.create({
+			title: "分片执行 fallback",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "分片执行 fallback",
+				input: { text: "根据上游 worklist 执行。" },
+				inputPorts: [{ id: "source_worklist", label: "Worklist", type: "worklist" }],
+				outputContract: { text: "输出结果。" },
+				acceptance: { rules: ["必须使用上游 worklist"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+
+		await mkdir(join(root, "team"), { recursive: true });
+		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
+		await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "worklist_out",
+			toTaskId: targetTask.taskId,
+			toInputPortId: "source_worklist",
+		});
+
+		const acceptedWorklist = JSON.stringify({
+			schemaVersion: "team/worklist-1",
+			worklistId: "worklist_accepted",
+			title: "Accepted worklist",
+			items: [{ id: "chunk-001", title: "Chunk 1", input: { rows: [1] } }],
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+
+		class WorklistFallbackRunner extends ProcessEventRoleRunner {
+			async runWorker(input: WorkerInput): Promise<WorkerOutput> {
+				if (input.task.id === sourceTask.taskId) {
+					await writeFile(join(input.artifactPublicDir!, "invalid-worklist.json"), JSON.stringify({ not: "a worklist" }), "utf8");
+					return { content: "worker wrote invalid-worklist.json", artifactRefs: [] };
+				}
+				return { content: "downstream worker result", artifactRefs: [] };
+			}
+
+			async runChecker(input: CheckerInput): Promise<CheckerOutput> {
+				if (input.task.id === sourceTask.taskId) {
+					return { verdict: "pass", reason: "ok", resultContent: acceptedWorklist };
+				}
+				return { verdict: "pass", reason: "ok", resultContent: "accepted downstream" };
+			}
+		}
+
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new WorklistFallbackRunner(),
+			connectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const upstreamRun = await service.createRun(sourceTask.taskId);
+		const upstreamFinished = await waitForTerminalRun(service, upstreamRun.runId);
+		assert.equal(upstreamFinished.status, "completed");
+		const downstreamRuns = await waitForTaskRuns(service, targetTask.taskId, 1);
+		const downstreamFinished = await waitForTerminalRun(service, downstreamRuns[0]!.runId);
+		assert.equal(downstreamFinished.status, "completed");
+		const artifact = downstreamFinished.source?.boundInputs?.[0]?.artifact as import("../src/team/types.js").TeamTaskTypedArtifact;
+		assert.equal(artifact.type, "worklist");
+		assert.match(artifact.fileRef, /accepted-result\.md$/);
+		assert.equal(JSON.parse(artifact.content ?? artifact.preview).worklistId, "worklist_accepted");
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

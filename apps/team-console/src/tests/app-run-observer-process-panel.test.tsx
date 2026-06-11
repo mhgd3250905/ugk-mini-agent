@@ -46,6 +46,11 @@ describe("App run observer process panel", () => {
     });
 
     it("opens node-based Task run observer with run status in the Task menu, file nodes, and file detail", async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(globalThis.navigator, "clipboard", {
+        configurable: true,
+        value: { writeText },
+      });
       const { container } = render(<App />);
 
       const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
@@ -89,6 +94,18 @@ describe("App run observer process panel", () => {
       // All file rows live inside the merged observer panel (not independent shells)
       const observerShell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement | null;
       expect(observerShell).toBeTruthy();
+      const runIdCopyButton = within(observerShell!).getByRole("button", { name: "复制 Run ID mock-task-run-1" });
+      expect(runIdCopyButton).toHaveClass("emap-node-id-copy");
+      expect(runIdCopyButton).toHaveTextContent("mock-task-run-1");
+      fireEvent.click(runIdCopyButton);
+      await waitFor(() => {
+        expect(writeText).toHaveBeenCalledWith("mock-task-run-1");
+      });
+      await waitFor(() => {
+        expect(runIdCopyButton).toHaveClass("is-copied");
+        expect(runIdCopyButton).toHaveTextContent("mock-task-run-1");
+        expect(runIdCopyButton).toHaveTextContent("已复制");
+      });
       const fileRows = observerShell!.querySelectorAll('.emap-observer-file-row');
       expect(fileRows.length).toBeGreaterThanOrEqual(3);
 
@@ -167,6 +184,45 @@ describe("App run observer process panel", () => {
       expect(within(checkerProcessNode!).getByText("成功")).toBeInTheDocument();
       expect(checkerProcessNode!.querySelector(".emap-observer-process-assistant-text")).toHaveTextContent("已审阅 Worker 提交的资产调查结果");
       expect(within(checkerProcessNode!).queryByText("复核输出契约")).toBeNull();
+    });
+
+    it("falls back to execCommand when copying a Task run observer Run ID and clipboard rejects", async () => {
+      const writeText = vi.fn().mockRejectedValue(new Error("not allowed"));
+      const execCopy = vi.fn().mockReturnValue(true);
+      Object.defineProperty(globalThis.navigator, "clipboard", {
+        configurable: true,
+        value: { writeText },
+      });
+      Object.defineProperty(document, "execCommand", {
+        configurable: true,
+        value: execCopy,
+      });
+      const { container } = render(<App />);
+
+      const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
+      fireEvent.click(taskNode);
+      const branch = container.querySelector(".task-action-branch") as HTMLElement | null;
+      expect(branch).toBeTruthy();
+      fireEvent.click(within(branch!).getByRole("button", { name: "运行" }));
+      const runSummary = await within(branch!).findByRole("button", { name: /最近运行[\s\S]*已完成/ });
+      fireEvent.click(runSummary);
+      const observerShell = await waitFor(() => {
+        const shell = container.querySelector('.emap-task-child-branch-shell[data-panel-id^="run-observer"]') as HTMLElement | null;
+        expect(shell).toBeTruthy();
+        return shell!;
+      });
+      const runIdCopyButton = within(observerShell).getByRole("button", { name: "复制 Run ID mock-task-run-1" });
+
+      fireEvent.click(runIdCopyButton);
+
+      await waitFor(() => {
+        expect(writeText).toHaveBeenCalledWith("mock-task-run-1");
+        expect(execCopy).toHaveBeenCalledWith("copy");
+        expect(runIdCopyButton).toHaveClass("is-copied");
+      });
+      expect(runIdCopyButton).toHaveTextContent("mock-task-run-1");
+      expect(runIdCopyButton).not.toHaveTextContent("失败");
+      expect(document.querySelector("textarea[data-copy-fallback]")).toBeNull();
     });
 
     it("loads process data for every open Task run observer branch", async () => {

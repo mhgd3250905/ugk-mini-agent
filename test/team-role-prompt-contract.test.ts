@@ -89,6 +89,57 @@ test("buildWorkerPrompt preserves discovery output contract and generated item i
 	assert.ok(prompt.includes("最高优先级"), "worker prompt must include identity priority");
 });
 
+test("buildWorkerPrompt tells worklist-results consumers to use results as authoritative input", () => {
+	const prompt = buildWorkerPrompt(
+		makeTask({
+			inputPorts: [{ id: "source_results", label: "分片结果", type: "worklist-results" }],
+			outputPorts: [{ id: "cleaned_json", label: "清洗 JSON", type: "json" }],
+			outputContract: { text: "输出扁平 JSON 数组。" },
+		}),
+		["必须处理上游分片结果"],
+	);
+
+	assert.ok(prompt.includes("端口与 typed artifact 协议"));
+	assert.ok(prompt.includes("source_results: worklist-results"));
+	assert.ok(prompt.includes("`results[]` 是唯一权威处理结果"));
+	assert.ok(prompt.includes("sourceWorklist.items"));
+	assert.ok(prompt.includes("不得作为业务输出数据源"));
+	assert.ok(prompt.includes("failed/cancelled/missing"));
+	assert.ok(prompt.includes("输出契约：输出扁平 JSON 数组。"));
+});
+
+test("buildWorkerPrompt constrains revision runs to minimal feedback-only changes", () => {
+	const prompt = buildWorkerPrompt(
+		makeTask({
+			outputContract: { text: "输出扁平 JSON 数组。" },
+		}),
+		["保留原有字段不做任何修改"],
+		"只修复 9 条中文摘要。",
+	);
+
+	assert.ok(prompt.includes("上次反馈"));
+	assert.ok(prompt.includes("只修改反馈明确指出的问题"));
+	assert.ok(prompt.includes("保持上一版输出的字段名、文件名、数据范围和条目顺序"));
+	assert.ok(prompt.includes("不得因为局部返工重写整体结构"));
+});
+
+test("buildCheckerPrompt forbids inventing acceptance criteria beyond the task contract", () => {
+	const prompt = buildCheckerPrompt(
+		makeTask({
+			input: { text: "清洗新闻，保留原有字段不做任何修改" },
+			outputContract: { text: "输出扁平 JSON 数组，新增 中文标题 和 中文摘要。" },
+			acceptance: { rules: ["输出必须是合法 JSON 数组", "中文摘要必须为中文"] },
+		}),
+		["输出必须是合法 JSON 数组", "中文摘要必须为中文"],
+		"worker output",
+	);
+
+	assert.ok(prompt.includes("只能依据任务描述、输出契约、验收标准和 Runtime deterministic output validation"));
+	assert.ok(prompt.includes("不得追加任务未写明的新验收标准"));
+	assert.ok(prompt.includes("不得把未要求的去重、来源命名、排序、风格偏好当作 revise 或 fail 的理由"));
+	assert.ok(prompt.includes("如果任务要求保留原有字段不做任何修改"));
+});
+
 test("buildDiscoveryDispatchPrompt includes discovery context, exact item payload, semantic patch shape, strict JSON-only wording, and forbidden fields", () => {
 	const input = makeDiscoveryDispatchInput();
 	const prompt = buildDiscoveryDispatchPrompt(input);
@@ -420,6 +471,10 @@ test("parseCheckerRoleOutput preserves strict, fenced, embedded, jsonish, and fa
 	assert.equal(
 		parseCheckerRoleOutput('review result: {"verdict":"fail","reason":"bad","resultContent":"failed"} end').verdict,
 		"fail",
+	);
+	assert.deepEqual(
+		parseCheckerRoleOutput('outputValidation: {"ok":true}\n\n{"verdict":"pass","reason":"ok","resultContent":"accepted"}'),
+		{ verdict: "pass", reason: "ok", resultContent: "accepted", feedback: undefined },
 	);
 
 	const jsonish = parseCheckerRoleOutput('{"verdict":"pass","reason":"符合"连续3次问好"的核心目标","resultContent":"## 验收通过\\n\\n完成。"}');
