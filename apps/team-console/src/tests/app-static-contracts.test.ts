@@ -293,6 +293,12 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toContain(".run-history-drawer");
     expect(mapCss).toContain(".run-history-row-shell.selected");
     expect(mapCss).toContain(".run-history-file-preview");
+    expect(mapCss).toContain(".emap-run-observer-history-summary");
+    expect(mapCss).toContain(".emap-run-observer-stage");
+    expect(mapCss).toContain(".emap-observer-file-row");
+    expect(mapCss).toContain(".emap-observer-file-detail-node");
+    expect(mapCss).toContain(".task-run-detail-pre");
+    expect(mapCss).toContain(".team-md-content pre");
     expect(mapCss).toContain(".emap-observer-process-status");
     expect(mapCss).toContain(".emap-task-group-member-chip");
     expect(mapCss).toContain(".discovery-stage-strip");
