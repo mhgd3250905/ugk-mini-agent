@@ -971,7 +971,7 @@
   border-color: var(--dell-border);
   background: var(--dell-hover);
   color: var(--dell-ink);
-  box-shadow: 3px 3px 0 var(--dell-shadow);
+  box-shadow: none;
 }
 
 [data-visual-theme="dell-1996"] .emap-observer-file-row.selected {
@@ -985,7 +985,7 @@
   border-color: var(--dell-border);
   background: var(--dell-hover);
   color: var(--dell-ink);
-  box-shadow: 3px 3px 0 var(--dell-shadow);
+  box-shadow: none;
 }
 
 [data-visual-theme="dell-1996"] .emap-observer-file-row.worker,
