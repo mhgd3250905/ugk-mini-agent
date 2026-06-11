@@ -154,15 +154,18 @@
 [data-visual-theme="dell-1996"] .emap-node.selected,
 [data-visual-theme="dell-1996"] .emap-node.is-atlas-selected {
   border-color: var(--dell-frame);
-  background: var(--dell-selected);
-  color: var(--dell-selected-ink);
+  color: var(--dell-ink);
   box-shadow: 4px 4px 0 var(--dell-shadow);
   transform: none;
 }
 
-[data-visual-theme="dell-1996"] .emap-node.selected *,
-[data-visual-theme="dell-1996"] .emap-node.is-atlas-selected * {
-  color: var(--dell-selected-ink);
+[data-visual-theme="dell-1996"] .emap-node.selected::before,
+[data-visual-theme="dell-1996"] .emap-node.is-atlas-selected::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 2px dashed var(--dell-selected);
+  pointer-events: none;
 }
 
 [data-visual-theme="dell-1996"] .emap-node::after {
@@ -534,19 +537,12 @@
   box-shadow: 4px 4px 0 var(--dell-shadow);
 }
 
-[data-visual-theme="dell-1996"][data-theme="dark"] .emap-node.selected,
-[data-visual-theme="dell-1996"][data-theme="dark"] .emap-node.is-atlas-selected,
 [data-visual-theme="dell-1996"][data-theme="dark"] .discovery-generated-menu-trigger:hover,
 [data-visual-theme="dell-1996"][data-theme="dark"] .discovery-generated-menu-trigger:focus-visible,
 [data-visual-theme="dell-1996"][data-theme="dark"] .discovery-generated-menu-trigger[aria-expanded="true"],
 [data-visual-theme="dell-1996"][data-theme="dark"] .discovery-channel-set-action.primary,
 [data-visual-theme="dell-1996"][data-theme="dark"] .discovery-generated-channel-checkbox[aria-checked="true"] {
   background: var(--dell-selected);
-  color: var(--dell-selected-ink);
-}
-
-[data-visual-theme="dell-1996"][data-theme="dark"] .emap-node.selected *,
-[data-visual-theme="dell-1996"][data-theme="dark"] .emap-node.is-atlas-selected * {
   color: var(--dell-selected-ink);
 }
 
