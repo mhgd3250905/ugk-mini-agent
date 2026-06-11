@@ -998,18 +998,14 @@
   box-shadow: none;
 }
 
-[data-visual-theme="dell-1996"] .emap-observer-file-row.worker {
-  border-left: 6px solid var(--dell-agent);
-}
-
-[data-visual-theme="dell-1996"] .emap-observer-file-row.checker {
-  border-left: 6px solid var(--dell-yellow);
-}
-
+[data-visual-theme="dell-1996"] .emap-observer-file-row.worker,
+[data-visual-theme="dell-1996"] .emap-observer-file-row.checker,
 [data-visual-theme="dell-1996"] .emap-observer-file-row.result {
   border: 2px solid var(--dell-border);
 }
 
+[data-visual-theme="dell-1996"] .emap-run-observer-stage-files.worker,
+[data-visual-theme="dell-1996"] .emap-run-observer-stage-files.checker,
 [data-visual-theme="dell-1996"] .emap-run-observer-stage-files.result {
   border-left: 0;
 }

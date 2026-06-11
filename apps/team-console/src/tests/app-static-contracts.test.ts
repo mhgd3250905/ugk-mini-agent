@@ -309,8 +309,8 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-observer-file-row\.selected\s*{[^}]*box-shadow:\s*none;/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-observer-file-row:hover\s*{[^}]*box-shadow:\s*none;/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-observer-file-row\.selected:hover\s*{[^}]*box-shadow:\s*none;/s);
-    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-observer-file-row\.result\s*{[^}]*border:\s*2px solid var\(--dell-border\);/s);
-    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-run-observer-stage-files\.result\s*{[^}]*border-left:\s*0;/s);
+    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-observer-file-row\.worker,[\s\S]*?\.emap-observer-file-row\.result\s*{[^}]*border:\s*2px solid var\(--dell-border\);/s);
+    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-run-observer-stage-files\.worker,[\s\S]*?\.emap-run-observer-stage-files\.result\s*{[^}]*border-left:\s*0;/s);
     expect(mapCss).not.toContain(".emap-node.selected::before");
     expect(mapCss).not.toContain(".emap-node.is-atlas-selected::before");
     expect(mapCss).not.toContain(".emap-node.selected *");
