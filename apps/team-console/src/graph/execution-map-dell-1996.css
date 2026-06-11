@@ -1012,8 +1012,15 @@
   background: var(--dell-paper);
 }
 
+[data-visual-theme="dell-1996"] .emap-run-observer-panel .emap-observer-process-node {
+  border: 2px solid var(--dell-border);
+  background: var(--dell-paper);
+}
+
 [data-visual-theme="dell-1996"] .emap-run-observer-stage::before {
-  display: none;
+  display: block;
+  width: 2px;
+  background: var(--dell-border);
 }
 
 [data-visual-theme="dell-1996"] .emap-run-observer-stage::after {
