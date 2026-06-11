@@ -8,7 +8,7 @@
 
 - 当前维护对象：Team Console / Canvas Task / Conn `team_group` / Discovery，以及本轮已收口的主 `/playground` Chat UI polish。
 - 本轮新增维护对象：API 源管理入口 `/playground/model-sources` 与模型 provider runtime overlay；主 `/playground` Chat 已完成视觉收口，后续没有明确用户要求时不要继续扩展重做。
-- 当前新增治理对象：代码库大文件风险治理 / 模块化优化。当前最危险的超级测试文件拆分阶段已基本收口，tracked 测试文件已降到 1000 行以下；生产文件治理已开始，`App.tsx` 已降到约 5316 行，`execution-map.css` 已降到约 4468 行，`ExecutionMap.tsx` 已降到约 4414 行；整体大文件治理约 69%。后续重点继续治理 `App.tsx`、`ExecutionMap.tsx`、`execution-map.css` 和 `playground-styles.ts` 等生产/CSS 大文件。
+- 当前新增治理对象：代码库大文件风险治理 / 模块化优化。当前最危险的超级测试文件拆分阶段已基本收口，tracked 测试文件已降到 1000 行以下；生产文件治理已开始，`App.tsx` 已降到约 5231 行，`execution-map.css` 已降到约 4468 行，`ExecutionMap.tsx` 已降到约 4414 行；整体大文件治理约 70%。后续重点继续治理 `App.tsx`、`ExecutionMap.tsx`、`execution-map.css` 和 `playground-styles.ts` 等生产/CSS 大文件。
 - 当前执行方式：后续按“可独立审核的主题切片”由 subagent 负责实施，主会话只做独立审核、验证、精确 stage/commit 和文档落地。subagent 不允许 stage/commit；粒度可以比 GLM 时代更大，优先按一个稳定主题模块拆分，但每步仍必须可静态等价审查、可聚焦验证、单独提交。
 - 不维护：无关 `.pi/skills/**` runtime skill、运行时 public 产物、`.data`。
 - 固定 Team Console 本地入口：`http://127.0.0.1:5174/`。
@@ -29,7 +29,7 @@
 
 - 当前分支：`main`。
 - 本轮 Git 保存范围：Team Task 模板参数 `inputType` 合同、Team Console / Discovery / Group 命名链路、Task Leader mini/full iframe 对齐、主 `/playground` Chat 视觉 polish、相关测试和文档；以及正在推进的代码库大文件治理测试/生产模块化提交。
-- 截至本快照，最新代码拆分提交为 `39cfb8c4 Extract Team Console canvas node projection helpers`。本地 ahead 数会随文档提交继续增加，远端同步状态仍以实时 `git status --short --branch` 和 `git log --oneline origin/main..HEAD` 为准。
+- 截至本快照，最新代码拆分提交为 `d7845f61 Extract Team Console template parameter helpers`。本地 ahead 数会随文档提交继续增加，远端同步状态仍以实时 `git status --short --branch` 和 `git log --oneline origin/main..HEAD` 为准。
 - `origin`：GitHub `https://github.com/mhgd3250905/ugk-claw-personal.git`。
 - `gitee`：`https://gitee.com/ksheng3250905/ugk-pi-claw.git`。
 - 不要提交这些本地未跟踪物件：`.codex/plans/2026-06-07-discovery-channel-set.md`、`.codex/plans/2026-06-08-api-source-management.md`、`docs/windows-native-runtime-feasibility.md`、`Find_Old_Google_Root_Key_Source.md`、`Google_Root_Cert_Update_Report.md`、`public/chat-background-reference.html`、`public/rsa-root-cert-report.html`、runtime 数据、截图、报告、临时文件。
@@ -53,7 +53,8 @@ git log --oneline origin/main..HEAD
 - CSS 治理第一刀已提交 `6c49b661`：从 `apps/team-console/src/graph/execution-map.css` 抽出 `apps/team-console/src/graph/execution-map-run-observer.css`，主 CSS 通过 `@import` 引入。主会话已复核主 CSS 删除内容与新 CSS 逐字一致，`app-static-contracts.test.ts` 仅增加 `readExecutionMapCss()` 以展开新 import 后继续执行原断言；验证通过 9 个 Team Console focused test 文件 118 个用例、Team Console build、`npx tsc --noEmit`、`npm run code:size -- --limit 45` 和 `git diff --check`。
 - 生产文件治理第四刀已提交 `83c07d6c`：从 `apps/team-console/src/graph/ExecutionMap.tsx` 抽出 `apps/team-console/src/graph/execution-map-evidence.tsx`，只搬迁 artifact/evidence helper、preview renderer 和 `buildArtifactBranches`，并在 `ExecutionMap.tsx` 保留 re-export 兼容入口。主会话已复核 18 个 moved declarations 与 `HEAD:ExecutionMap.tsx` 等价；验证通过 4 个 Team Console focused test 文件 107 个用例、Team Console build、`npx tsc --noEmit`、`npm run code:size -- --limit 45` 和 `git diff --check`。
 - 生产文件治理第五刀已提交 `39cfb8c4`：从 `apps/team-console/src/app/App.tsx` 抽出 `apps/team-console/src/app/team-console-canvas-node-projection.ts`，只搬迁 canvas agent/task/source node projection、source file type inference、node equality 和 stored position merge helper。主会话已复核 12 个 moved declarations 与 `HEAD:App.tsx` 等价、UTF-8 replacement chars 为 0；验证通过 4 个 Team Console focused test 文件 84 个用例、Team Console build、`npx tsc --noEmit`、`npm run code:size -- --limit 45` 和 `git diff --check`。
-- 后续继续治理时，先用 `npm run code:size -- --limit 45` 和当前 diff 判断下一块，优先按“同文件、同主题、可独立审核”的切片处理生产/CSS 大文件；可以一次抽出一个稳定 helper/model/render/CSS 主题，不再按 GLM 时代几十行级别拆分。下一候选可优先看 `App.tsx` template parameter helper/control renderer、Discovery subcanvas 面板，或 `ExecutionMap.tsx` task group / branch helper；遇到闭包状态、DOM contract 或 CSS 耦合交织时先退回纯 helper/model 层。不要把 `.codex/plans/**`、报告 Markdown/HTML、runtime 产物或 public 报告文件纳入提交。
+- 生产文件治理第六刀已提交 `d7845f61`：从 `apps/team-console/src/app/App.tsx` 抽出 `apps/team-console/src/app/team-console-task-template-parameters.tsx`，只搬迁 template parameter draft 类型、binding 默认值/归一化 helper、必填检查和控件 renderer。主会话已复核 8 个 moved declarations 与 `HEAD:App.tsx` 等价、`未选择` 字符串 UTF-8 正常、replacement chars 为 0；验证通过 3 个 Team Console focused test 文件 65 个用例、Team Console build、`npx tsc --noEmit`、`npm run code:size -- --limit 45` 和 `git diff --check`。
+- 后续继续治理时，先用 `npm run code:size -- --limit 45` 和当前 diff 判断下一块，优先按“同文件、同主题、可独立审核”的切片处理生产/CSS 大文件；可以一次抽出一个稳定 helper/model/render/CSS 主题，不再按 GLM 时代几十行级别拆分。低风险候选优先看 `execution-map.css` evidence/artifact preview 样式、`playground-styles.ts` Team Console mini embed 样式；中等风险候选再看 `App.tsx` Discovery channel set panel / run history presenter 或 `ExecutionMap.tsx` task branch interaction helper。遇到闭包状态、DOM contract 或 CSS 耦合交织时先退回纯 helper/model 层。不要把 `.codex/plans/**`、报告 Markdown/HTML、runtime 产物或 public 报告文件纳入提交。
 - Team Task 模板参数已支持 typed input contract。`templateConfig.parameters[].inputType` 支持 `text`、`textarea`、`email`、`email_list`、`number`、`select`；旧模板缺字段按 `text` 兼容读取。运行和保存时绑定快照仍保持 `Record<string,string>`，但后端会校验邮箱、邮箱列表、数字和下拉选项，`email_list` 支持逗号、分号和换行分隔后归一化。
 - Team Console 模板参数面板和复制面板会按 `inputType` 渲染控件：`textarea` 用多行输入，`select` 用下拉，`email` / `number` 使用对应 HTML input 类型，`email_list` 提交前归一化。`task_8dc366711f37` 这类可填写参数 Task 可直接通过 UI 测试。
 - Team Console Task 操作菜单里的“对话 Leader”已和普通 Agent 对话分支对齐：普通 Task Leader 子面板 iframe 使用 `embedMode=mini`，最大化 overlay 使用 `embedMode=full`。Task child panel 支持 `maximizedPanel`，避免小窗和最大化共用同一份 iframe URL。
