@@ -141,14 +141,14 @@
   background: var(--dell-task);
   color: var(--dell-ink);
   box-shadow: none;
-  transition: none;
+  transition: transform 90ms steps(2, end), box-shadow 90ms steps(2, end), background 90ms steps(2, end);
 }
 
 [data-visual-theme="dell-1996"] .emap-node:hover {
   border-color: var(--dell-border);
   background: var(--dell-hover);
   box-shadow: 4px 4px 0 var(--dell-shadow);
-  transform: none;
+  transform: translate(-2px, -2px);
 }
 
 [data-visual-theme="dell-1996"] .emap-node.selected,
@@ -156,7 +156,7 @@
   border-color: var(--dell-frame);
   color: var(--dell-ink);
   box-shadow: 4px 4px 0 var(--dell-shadow);
-  transform: none;
+  transform: translate(-2px, -2px);
 }
 
 [data-visual-theme="dell-1996"] .emap-node.selected::before,
