@@ -419,6 +419,7 @@ describe("App", () => {
 
       expect(dockBlock).toContain("overflow: hidden");
       expect(itemsBlock).toContain("overflow-x: auto");
+      expect(itemsBlock).toContain("padding-top: 4px");
       expect(itemsBlock).toContain("scrollbar-width: none");
       expect(pageButtonBlock).toContain("width: 24px");
     });
