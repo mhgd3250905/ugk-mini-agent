@@ -1,49 +1,49 @@
 [data-visual-theme="dell-1996"] {
-  --dell-ink: #17130f;
-  --dell-paper: #fff8e8;
-  --dell-canvas: #f6ecd7;
-  --dell-frame: #17130f;
-  --dell-border: #17130f;
-  --dell-shadow: #17130f;
-  --dell-grid: rgba(23, 19, 15, 0.12);
-  --dell-panel: #f3e7d0;
-  --dell-hover: #e8dcc6;
-  --dell-selected: #5f7391;
-  --dell-selected-ink: #ffffff;
-  --dell-red: #b62a2f;
-  --dell-yellow: #d7ad45;
-  --dell-link: #263c96;
-  --dell-agent: #9fb6c3;
-  --dell-task: #b9bf9b;
-  --dell-source: #b8c9a2;
-  --dell-menu: #d8a06f;
-  --dell-header: #9aa5cf;
-  --dell-leader: #c9847d;
-  --dell-muted: #6d6252;
+  --dell-ink: #211b14;
+  --dell-paper: #faf4e6;
+  --dell-canvas: #eee4d2;
+  --dell-frame: #11100d;
+  --dell-border: #3d3327;
+  --dell-shadow: #2c241b;
+  --dell-grid: rgba(61, 51, 39, 0.1);
+  --dell-panel: #e9ddc8;
+  --dell-hover: #ded0ba;
+  --dell-selected: #526c78;
+  --dell-selected-ink: #fff8ea;
+  --dell-red: #9f4f48;
+  --dell-yellow: #b58a3a;
+  --dell-link: #314f8a;
+  --dell-agent: #bec8c1;
+  --dell-task: #c8c1a4;
+  --dell-source: #c2c9b4;
+  --dell-menu: #c9b08d;
+  --dell-header: #b6b8c5;
+  --dell-leader: #c3aaa0;
+  --dell-muted: #766b5a;
 }
 
 [data-visual-theme="dell-1996"][data-theme="dark"] {
-  --dell-ink: #ead8b6;
-  --dell-paper: #1b1711;
-  --dell-canvas: #12100c;
-  --dell-frame: #070604;
-  --dell-border: #6f5a3e;
-  --dell-shadow: #050403;
-  --dell-grid: rgba(207, 174, 124, 0.08);
-  --dell-panel: #262016;
-  --dell-hover: #342b1d;
-  --dell-selected: #3f5875;
-  --dell-selected-ink: #fff1d3;
-  --dell-red: #b85b55;
-  --dell-yellow: #9f7e3a;
-  --dell-link: #9fb0d7;
-  --dell-agent: #243941;
-  --dell-task: #363c2a;
-  --dell-source: #30402b;
-  --dell-menu: #4a3422;
-  --dell-header: #303853;
-  --dell-leader: #4b2f2c;
-  --dell-muted: #b6a47f;
+  --dell-ink: #e3d2b3;
+  --dell-paper: #1c1914;
+  --dell-canvas: #14120f;
+  --dell-frame: #050505;
+  --dell-border: #594c3e;
+  --dell-shadow: #070605;
+  --dell-grid: rgba(197, 176, 138, 0.06);
+  --dell-panel: #252119;
+  --dell-hover: #302a20;
+  --dell-selected: #465d66;
+  --dell-selected-ink: #f6ead0;
+  --dell-red: #a95f58;
+  --dell-yellow: #92743e;
+  --dell-link: #9aa9c2;
+  --dell-agent: #303b3b;
+  --dell-task: #3a392d;
+  --dell-source: #343d30;
+  --dell-menu: #40362b;
+  --dell-header: #383a42;
+  --dell-leader: #443432;
+  --dell-muted: #a99a7f;
 }
 
 [data-visual-theme="dell-1996"] .execution-map-container,
@@ -179,7 +179,7 @@
 
 [data-visual-theme="dell-1996"] .status-running .emap-node-status-bar,
 [data-visual-theme="dell-1996"] .emap-agent-node[data-agent-run-state="busy"] .emap-node-status-bar {
-  background: color-mix(in srgb, var(--dell-yellow) 80%, var(--dell-paper));
+  background: color-mix(in srgb, var(--dell-yellow) 38%, var(--dell-panel));
   animation: none;
 }
 
@@ -325,7 +325,7 @@
 }
 
 [data-visual-theme="dell-1996"] .emap-connector-source-socket {
-  fill: color-mix(in srgb, var(--dell-yellow) 70%, var(--dell-paper));
+  fill: color-mix(in srgb, var(--dell-yellow) 42%, var(--dell-paper));
   stroke: var(--dell-border);
 }
 
@@ -921,7 +921,7 @@
 }
 
 [data-visual-theme="dell-1996"] .emap-run-observer-stage.checker::after {
-  background: color-mix(in srgb, var(--dell-yellow) 72%, var(--dell-panel));
+  background: color-mix(in srgb, var(--dell-yellow) 48%, var(--dell-panel));
 }
 
 [data-visual-theme="dell-1996"] .emap-run-observer-stage-files {
