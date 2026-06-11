@@ -229,7 +229,7 @@ describe("Team Console static contracts", () => {
     const appCss = readAppCss();
 
     expect(appSource).toContain('TEAM_CONSOLE_THEME_STORAGE_KEY = "ugk-team-console:theme:v1"');
-    expect(appSource).toContain('data-theme={theme}');
+    expect(appSource).toContain('data-theme={effectiveTheme}');
     expect(appSource).toContain('aria-label="切换主题"');
     expect(appSource).toContain('className="map-toolbar-controls"');
     expect(appSource).toContain("toolbarEnd={mapToolbarControls}");
@@ -268,6 +268,8 @@ describe("Team Console static contracts", () => {
     expect(appSource).toContain('aria-label="切换视觉主题"');
     expect(appSource).toContain('className="visual-theme-toggle-btn"');
     expect(appSource).toContain('current === "default" ? "dell-1996" : "default"');
+    expect(appSource).toContain('const effectiveTheme: TeamConsoleTheme = visualTheme === "dell-1996" ? "light" : theme');
+    expect(appSource).toContain('disabled={visualTheme === "dell-1996"}');
     expect(mapSource).toContain('import "./execution-map-dell-1996.css";');
     expect(appCss).toContain(".visual-theme-toggle-btn");
     expect(mapCss).toContain('[data-visual-theme="dell-1996"] .execution-map-container');
@@ -277,21 +279,16 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toContain('[data-visual-theme="dell-1996"] .task-action-branch');
     expect(mapCss).toContain('[data-visual-theme="dell-1996"] .emap-run-observer-panel');
     expect(mapCss).toContain('[data-visual-theme="dell-1996"] .emap-artifact-preview');
-    expect(mapCss).toContain('[data-visual-theme="dell-1996"][data-theme="dark"]');
+    expect(mapCss).not.toContain('[data-visual-theme="dell-1996"][data-theme="dark"]');
     expect(mapCss).toContain("--dell-selected: #1f5e73");
     expect(mapCss).toContain("--dell-hover: #dfe9ec");
-    expect(mapCss).toContain("--dell-canvas: #050807");
-    expect(mapCss).toContain("--dell-border: #315b48");
-    expect(mapCss).toContain("--dell-selected: #39ff88");
-    expect(mapCss).toContain("--dell-task: #0b1210");
-    expect(mapCss).toContain("--dell-task-accent: #39ff88");
-    expect(mapCss).toContain("--dell-discovery-accent: #9affc1");
+    expect(mapCss).not.toContain("--dell-canvas: #050807");
+    expect(mapCss).not.toContain("--dell-selected: #39ff88");
     expect(mapCss).not.toContain("#a855f7");
     expect(mapCss).not.toContain("#00e5ff");
     expect(mapCss).not.toContain("#ff3d8d");
     expect(mapCss).not.toContain("#17130e");
     expect(mapCss).not.toContain("#ead8b6");
-    expect(mapCss).toContain('[data-visual-theme="dell-1996"][data-theme="dark"] .emap-canvas-task-node');
     expect(mapCss).toContain("border: 2px solid var(--dell-border)");
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node\s*{[^}]*box-shadow:\s*none;/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node:hover\s*{[^}]*box-shadow:\s*4px 4px 0 var\(--dell-shadow\);/s);

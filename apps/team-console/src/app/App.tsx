@@ -274,6 +274,7 @@ export function App() {
   const initialDataSourceRef = useRef<DataSource>(readStoredInitialDataSource());
   const [theme, setTheme] = useState<TeamConsoleTheme>(() => readStoredTheme());
   const [visualTheme, setVisualTheme] = useState<TeamConsoleVisualTheme>(() => readStoredVisualTheme());
+  const effectiveTheme: TeamConsoleTheme = visualTheme === "dell-1996" ? "light" : theme;
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [focusedTaskNodeId, setFocusedTaskNodeId] = useState<string | null>(null);
   const [agentNodes, setAgentNodes] = useState<AtlasAgentNode[]>([]);
@@ -3001,7 +3002,9 @@ export function App() {
         type="button"
         className="theme-toggle-btn"
         aria-label="切换主题"
-        aria-pressed={theme === "dark"}
+        aria-pressed={effectiveTheme === "dark"}
+        disabled={visualTheme === "dell-1996"}
+        title={visualTheme === "dell-1996" ? "Dell 1996 仅支持浅色模式" : undefined}
         onClick={() => setTheme((current) => current === "light" ? "dark" : "light")}
       >
         <span className="theme-toggle-track" aria-hidden="true">
@@ -5175,7 +5178,7 @@ export function App() {
   const canvasLoadingText = loading ? "正在加载实时运行..." : "正在恢复画布状态...";
 
   return (
-    <div className="app-shell" data-theme={theme} data-visual-theme={visualTheme}>
+    <div className="app-shell" data-theme={effectiveTheme} data-visual-theme={visualTheme}>
       {error && (
         <div className="error-banner">{error}</div>
       )}

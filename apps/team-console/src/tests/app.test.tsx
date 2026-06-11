@@ -35,19 +35,31 @@ describe("App", () => {
     expect(select).toHaveValue("mock");
   });
 
-  it("switches the independent visual theme without changing the light/dark theme", () => {
+  it("keeps Dell 1996 light-only without overwriting the stored theme preference", () => {
+    window.localStorage.setItem("ugk-team-console:theme:v1", "dark");
     const { container } = render(<App />);
     const shell = container.querySelector(".app-shell") as HTMLElement | null;
     expect(shell).toBeTruthy();
-    expect(shell).toHaveAttribute("data-theme", "light");
+    expect(shell).toHaveAttribute("data-theme", "dark");
     expect(shell).toHaveAttribute("data-visual-theme", "default");
 
+    const themeButton = screen.getByRole("button", { name: "切换主题" });
     const visualThemeButton = screen.getByRole("button", { name: "切换视觉主题" });
     fireEvent.click(visualThemeButton);
 
     expect(shell).toHaveAttribute("data-theme", "light");
     expect(shell).toHaveAttribute("data-visual-theme", "dell-1996");
+    expect(themeButton).toBeDisabled();
+    expect(themeButton).toHaveAttribute("aria-pressed", "false");
+    expect(window.localStorage.getItem("ugk-team-console:theme:v1")).toBe("dark");
     expect(window.localStorage.getItem("ugk-team-console:visual-theme:v1")).toBe("dell-1996");
+
+    fireEvent.click(visualThemeButton);
+
+    expect(shell).toHaveAttribute("data-theme", "dark");
+    expect(shell).toHaveAttribute("data-visual-theme", "default");
+    expect(themeButton).toBeEnabled();
+    expect(themeButton).toHaveAttribute("aria-pressed", "true");
   });
 
   it("renders a clean agent atlas workspace by default", () => {
