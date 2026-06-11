@@ -302,8 +302,17 @@
 [data-visual-theme="dell-1996"] .discovery-subcanvas-panel:hover,
 [data-visual-theme="dell-1996"] .emap-run-observer-panel:hover {
   border-color: var(--dell-border);
+  outline: 2px solid var(--dell-border);
+  outline-offset: -2px;
   box-shadow: 4px 4px 0 var(--dell-shadow);
   transform: translate(-2px, -2px);
+}
+
+[data-visual-theme="dell-1996"] .emap-agent-branch-shell:hover,
+[data-visual-theme="dell-1996"] .emap-task-branch-shell:hover,
+[data-visual-theme="dell-1996"] .emap-task-child-branch-shell:hover {
+  z-index: 30;
+  overflow: visible;
 }
 
 [data-visual-theme="dell-1996"] .task-run-summary:hover,
