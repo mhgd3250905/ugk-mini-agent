@@ -2,6 +2,13 @@ import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { readExecutionMapCss } from "./execution-map-css-test-utils";
 
+function readAppCss(): string {
+  const appCss = readFileSync("src/app/app.css", "utf8");
+  return appCss.replace(/^@import "\.\/([^"]+)";\s*/gm, (_match, importPath: string) => {
+    return `${readFileSync(`src/app/${importPath}`, "utf8")}\n`;
+  });
+}
+
 describe("Team Console static contracts", () => {
   it("keeps App task branches on the multi-branch panel path", () => {
     const appSource = readFileSync("src/app/App.tsx", "utf8");
@@ -65,7 +72,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("keeps atlas content from stretching the app width during node drag", () => {
-    const appCss = readFileSync("src/app/app.css", "utf8");
+    const appCss = readAppCss();
     const mapCss = readExecutionMapCss();
 
     expect(appCss).toMatch(/\.app-main\s*{[^}]*min-width:\s*0;[^}]*overflow:\s*hidden;/s);
@@ -75,7 +82,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("keeps the canvas restore loading animation from changing layout", () => {
-    const appCss = readFileSync("src/app/app.css", "utf8");
+    const appCss = readAppCss();
     const appSource = readFileSync("src/app/App.tsx", "utf8");
     const loadingStateRule = appCss.match(/\.canvas-loading-state\s*{[^}]*}/)?.[0] ?? "";
     const pulseKeyframes = appCss.match(/@keyframes canvas-loading-pulse\s*{[\s\S]*?\n}/)?.[0] ?? "";
@@ -134,7 +141,7 @@ describe("Team Console static contracts", () => {
 
   it("keeps root filter counts inline and removes the separate atlas stats block", () => {
     const appSource = readFileSync("src/app/App.tsx", "utf8");
-    const appCss = readFileSync("src/app/app.css", "utf8");
+    const appCss = readAppCss();
     const mapSource = readFileSync("src/graph/ExecutionMap.tsx", "utf8");
 
     expect(appSource).toContain('type RootNodeFilter = "all" | "agent" | "task" | "source"');
@@ -148,7 +155,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("uses a light default theme for the Team Console app chrome", () => {
-    const appCss = readFileSync("src/app/app.css", "utf8");
+    const appCss = readAppCss();
 
     expect(appCss).toContain("--bg: #f6f8fb");
     expect(appCss).toContain("--surface: #ffffff");
@@ -182,7 +189,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("keeps the Task leader picker on the light theme surface", () => {
-    const appCss = readFileSync("src/app/app.css", "utf8");
+    const appCss = readAppCss();
     const pickerRule = appCss.match(/\.agent-picker\s*{[^}]*}/)?.[0] ?? "";
     const optionRule = appCss.match(/\.agent-picker-option\s*{[^}]*}/)?.[0] ?? "";
     const hoverRule = appCss.match(/\.agent-picker-option:hover:not\(:disabled\)\s*{[^}]*}/)?.[0] ?? "";
@@ -195,7 +202,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("keeps Agent workspace panels on the light theme surface", () => {
-    const appCss = readFileSync("src/app/app.css", "utf8");
+    const appCss = readAppCss();
     const topbarRule = appCss.match(/\.agent-focus-topbar-action\s*{[^}]*}/)?.[0] ?? "";
     const panelRule = appCss.match(/\.agent-focus-panel\s*{[^}]*}/)?.[0] ?? "";
     const messageBodyRule = appCss.match(/\.agent-focus-message-body\s*{[^}]*}/)?.[0] ?? "";
@@ -219,7 +226,7 @@ describe("Team Console static contracts", () => {
 
   it("exposes a persisted light/dark theme toggle in the app shell", () => {
     const appSource = readFileSync("src/app/App.tsx", "utf8");
-    const appCss = readFileSync("src/app/app.css", "utf8");
+    const appCss = readAppCss();
 
     expect(appSource).toContain('TEAM_CONSOLE_THEME_STORAGE_KEY = "ugk-team-console:theme:v1"');
     expect(appSource).toContain('data-theme={theme}');
@@ -259,7 +266,7 @@ describe("Team Console static contracts", () => {
 
   it("does not render the obsolete mock fixture switcher bar", () => {
     const appSource = readFileSync("src/app/App.tsx", "utf8");
-    const appCss = readFileSync("src/app/app.css", "utf8");
+    const appCss = readAppCss();
 
     expect(appSource).not.toContain('className="fixture-bar"');
     expect(appSource).not.toContain("示例：");
@@ -270,7 +277,7 @@ describe("Team Console static contracts", () => {
 
   it("uses an animated sliding segment for root node filters", () => {
     const appSource = readFileSync("src/app/App.tsx", "utf8");
-    const appCss = readFileSync("src/app/app.css", "utf8");
+    const appCss = readAppCss();
     const mapCss = readExecutionMapCss();
     const segmentRule = appCss.match(/\.root-filter-segment\s*{[^}]*}/)?.[0] ?? "";
     const sliderRule = appCss.match(/\.root-filter-segment::before\s*{[^}]*}/)?.[0] ?? "";
@@ -305,7 +312,7 @@ describe("Team Console static contracts", () => {
 
   it("keeps the merged run observer outer panel auto-height while process sections use themed internal scrollbars", () => {
     const mapCss = readExecutionMapCss();
-    const appCss = readFileSync("src/app/app.css", "utf8");
+    const appCss = readAppCss();
     const panelRule = mapCss.match(/\.emap-run-observer-panel\s*{[^}]*}/)?.[0] ?? "";
     const appPanelRule = appCss.match(/\.emap-run-observer-panel\s*{[^}]*}/)?.[0] ?? "";
     const stageRule = mapCss.match(/\.emap-run-observer-stage\s*{[^}]*}/)?.[0] ?? "";
@@ -378,7 +385,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("keeps dark selected run history actions on a dark surface", () => {
-    const appCss = readFileSync("src/app/app.css", "utf8");
+    const appCss = readAppCss();
     const darkSelectedRule = appCss.match(/\[data-theme="dark"\] \.emap-run-history-item\.selected\s*{[^}]*}/)?.[0] ?? "";
     const darkSelectedActionRule = appCss.match(/\[data-theme="dark"\] \.emap-run-history-item\.selected \.emap-run-history-actions button\s*{[^}]*}/)?.[0] ?? "";
     const darkSelectedDisabledActionRule = appCss.match(/\[data-theme="dark"\] \.emap-run-history-item\.selected \.emap-run-history-actions button:disabled\s*{[^}]*}/)?.[0] ?? "";
@@ -391,7 +398,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("uses themed scrollbars for the run history list", () => {
-    const appCss = readFileSync("src/app/app.css", "utf8");
+    const appCss = readAppCss();
     const lastMatch = (pattern: RegExp): string => Array.from(appCss.matchAll(pattern)).at(-1)?.[0] ?? "";
     const listRule = lastMatch(/(?:^|\n)\.emap-run-history-list\s*{[^}]*}/g);
     const scrollbarRule = lastMatch(/(?:^|\n)\.emap-run-history-list::-webkit-scrollbar\s*{[^}]*}/g);
@@ -596,7 +603,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("keeps zoom buttons removed and restores dark root filter tab highlights", () => {
-    const appCss = readFileSync("src/app/app.css", "utf8");
+    const appCss = readAppCss();
     const mapCss = readExecutionMapCss();
     const darkToolbarButtonRule = mapCss.match(/\[data-theme="dark"\] \.execution-map-toolbar button\s*{[^}]*}/)?.[0] ?? "";
     const darkToolbarHoverRule = mapCss.match(/\[data-theme="dark"\] \.execution-map-toolbar button:hover\s*{[^}]*}/)?.[0] ?? "";
