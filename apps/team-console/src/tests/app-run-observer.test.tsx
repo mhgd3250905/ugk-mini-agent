@@ -353,6 +353,76 @@ describe("App", () => {
       expect(processSummaryRequests).toBe(0);
     });
 
+    it("keeps previously opened Task run history panels scoped to their Task", async () => {
+      window.localStorage.setItem("ugk-team-console:data-source", "live");
+      const { collectTask, htmlTask, ttsTask } = makeTypedTaskChainFixtures();
+      const collectRun = makeLiveTaskRunFixture(collectTask, "run_collect_history_scoped");
+      const htmlRun = makeLiveTaskRunFixture(htmlTask, "run_html_history_scoped");
+      const ttsRun = makeLiveTaskRunFixture(ttsTask, "run_tts_history_scoped");
+      const historyRequests: Record<string, number> = {};
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/team/console-layout") return new Response(JSON.stringify({ state: null, updatedAt: null }), { status: 200 });
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/console/root-summary") return rootSummaryResponse([collectTask, htmlTask, ttsTask], {
+          [collectTask.taskId]: [],
+          [htmlTask.taskId]: [],
+          [ttsTask.taskId]: [],
+        });
+        if (url === `/v1/team/tasks/${collectTask.taskId}/run-history?limit=3&offset=0`) {
+          historyRequests[collectTask.taskId] = (historyRequests[collectTask.taskId] ?? 0) + 1;
+          return runHistoryResponse(collectTask.taskId, [collectRun]);
+        }
+        if (url === `/v1/team/tasks/${htmlTask.taskId}/run-history?limit=3&offset=0`) {
+          historyRequests[htmlTask.taskId] = (historyRequests[htmlTask.taskId] ?? 0) + 1;
+          return runHistoryResponse(htmlTask.taskId, [htmlRun]);
+        }
+        if (url === `/v1/team/tasks/${ttsTask.taskId}/run-history?limit=3&offset=0`) {
+          historyRequests[ttsTask.taskId] = (historyRequests[ttsTask.taskId] ?? 0) + 1;
+          return runHistoryResponse(ttsTask.taskId, [ttsRun]);
+        }
+        return new Response(JSON.stringify(url.includes("connections") ? { connections: [] } : []), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      const atlas = await waitFor(() => getAtlasNodes(container));
+
+      fireEvent.click(await within(atlas).findByRole("button", { name: collectTask.title }));
+      const collectMenu = await screen.findByLabelText(`${collectTask.title} 操作菜单`);
+      fireEvent.click(within(collectMenu).getByRole("button", { name: "运行记录" }));
+      const collectHistoryPanel = await screen.findByRole("region", { name: `${collectTask.title} 运行记录` });
+      await waitFor(() => {
+        expect(collectHistoryPanel.querySelector(`[data-run-id="${collectRun.runId}"]`)).toBeTruthy();
+      });
+
+      fireEvent.click(await within(atlas).findByRole("button", { name: htmlTask.title }));
+      const htmlMenu = await screen.findByLabelText(`${htmlTask.title} 操作菜单`);
+      fireEvent.click(within(htmlMenu).getByRole("button", { name: "运行记录" }));
+      const htmlHistoryPanel = await screen.findByRole("region", { name: `${htmlTask.title} 运行记录` });
+
+      await waitFor(() => {
+        expect(htmlHistoryPanel.querySelector(`[data-run-id="${htmlRun.runId}"]`)).toBeTruthy();
+      });
+      expect(collectHistoryPanel.querySelector(`[data-run-id="${collectRun.runId}"]`)).toBeTruthy();
+      expect(collectHistoryPanel.querySelector(`[data-run-id="${htmlRun.runId}"]`)).toBeNull();
+
+      fireEvent.click(await within(atlas).findByRole("button", { name: ttsTask.title }));
+      const ttsMenu = await screen.findByLabelText(`${ttsTask.title} 操作菜单`);
+      fireEvent.click(within(ttsMenu).getByRole("button", { name: "运行记录" }));
+      const ttsHistoryPanel = await screen.findByRole("region", { name: `${ttsTask.title} 运行记录` });
+
+      await waitFor(() => {
+        expect(ttsHistoryPanel.querySelector(`[data-run-id="${ttsRun.runId}"]`)).toBeTruthy();
+      });
+      expect(historyRequests[collectTask.taskId]).toBe(1);
+      expect(historyRequests[htmlTask.taskId]).toBe(1);
+      expect(historyRequests[ttsTask.taskId]).toBe(1);
+      expect(within(collectHistoryPanel).queryByText("正在加载运行记录...")).toBeNull();
+      expect(within(htmlHistoryPanel).queryByText("正在加载运行记录...")).toBeNull();
+    });
+
     it("does not render input diagnostics or request full detail for an ordinary run", async () => {
       window.localStorage.setItem("ugk-team-console:data-source", "live");
       const task = {

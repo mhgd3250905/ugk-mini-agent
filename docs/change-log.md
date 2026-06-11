@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-11 — Team Console run history panel state isolation
+
+- **主题**: Team Console 画布中多个 Task 运行记录 panel 改为按 `taskId` 隔离历史列表、loading、error 和保存状态。先打开的运行记录不再被后打开节点的请求结果覆盖；继续打开第三个运行记录时，前两个已加载 panel 不再重复请求或闪现“正在加载运行记录...”。
+- **影响范围**: 仅 5174 Team Console Task / Discovery generated Task 运行记录 panel 的前端状态与请求调度。`/v1/team/tasks/:taskId/run-history` 接口、run annotation 更新接口、Task run 数据和后端运行态不变。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/tests/app-run-observer.test.tsx`。
+
 ## 2026-06-11 — Codebase modularization progress
 
 - **主题**: 大文件治理继续推进，测试超级文件拆分阶段已基本收口，并进入生产文件模块化阶段。当前本地最新拆分提交为 `5d1f0f1d Extract large CSS style modules`；本轮已从 `App.tsx` 抽出 canvas UI state、Discovery generated run state、run observer rendering helpers、canvas node projection helpers 和 template parameter helpers，从 `ExecutionMap.tsx` 抽出 artifact/evidence helper，并完成多批 CSS 主题搬迁：run observer、evidence/artifact preview、ExecutionMap task group、Team Console agent focus、Playground Team Console embed 和 Playground mobile layout 样式。

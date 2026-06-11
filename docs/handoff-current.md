@@ -95,6 +95,7 @@ git log --oneline origin/main..HEAD
 - Team Console Agent 卡片展开已改成 mini/full 两阶段对话。普通画布分支 iframe 使用 `embedMode=mini`，只展示新会话、上下文用量、消息区和输入框；新会话固定左侧，上下文用量固定右侧，API 源不再单独占位；新会话 tooltip 在 mini 内左对齐弹出，不被 iframe 左边缘裁切。最大化 overlay 使用 `embedMode=full`，恢复完整 Playground。Agent/Leader iframe 已加 `clipboard-write; clipboard-read` 权限，嵌入气泡“复制正文”按钮会调用 `navigator.clipboard.writeText(...)`。
 - Team Console Task 编辑面板深色模式下 Agent select option 已显式使用暗色背景和亮色文字，避免原生下拉白底浅字。
 - Team Console Task 运行记录面板已改为轻量分页：首屏只请求 3 条 summary + total，点击“加载更多”再按 3 条追加；`/v1/team/tasks/:taskId/run-history` 新增 `hasMore`，并改用 run state index summary 路径，避免 history 列表读取完整 run state 后再截断。运行记录列表浅色/深色 scrollbar 已使用主题样式，不再退回系统白色滚动条。
+- Team Console 多个运行记录 panel 的状态已按 `taskId` 隔离。`runHistoryByTaskId` 分别保存每个 panel 的 items/total/loading/error/savingRunId；打开后续 Task 或 Discovery generated Task 的运行记录时，不会覆盖前面已打开 panel 的内容。前端同时记录每个 Task 的 run history 请求签名，只有首次打开、数据源变化或“显示已归档”变化时重新拉取；打开第三个运行记录不会让前两个已加载 panel 闪现“正在加载运行记录...”。
 - Team Console 根 Task 节点 selected 视觉焦点已与 Task branch stack 解耦。节点阴影现在跟随“最后点击的 Task”，不再跟随“最后仍展开的 Task 分支”；A/B/A 场景中第三次点击 A 会收起 A 的 Task 操作面板，但 A 仍保持 selected，B 的展开面板可继续存在。
 - Team Console Task 最近运行 / 运行观察子面板已允许向画布原点上方拖动。Task child panel 布局不再把用户拖拽产生的负 `y` override 钳到 `0`；`x` 轴现有非负限制保持不变。
 - Team Console 根节点筛选已整合数量统计：`ALL`、`Agent`、`Task`、`Source` 四个筛选项直接显示数量，独立统计块已移除；`Task` 筛选只显示 Task，Source 走独立筛选。
@@ -123,6 +124,12 @@ git log --oneline origin/main..HEAD
 
 ## 本轮最终验证
 
+- Team Console run history panel state isolation 验证：
+  - `npm --prefix apps/team-console run test -- src/tests/app-run-observer.test.tsx`：22/22 pass。
+  - `npm run team-console:build`：pass；仅既有 Vite chunk size warning。
+  - `docker compose restart ugk-pi-team-console` 后服务 healthy。
+  - `http://127.0.0.1:5174/src/app/App.tsx` 返回新逻辑标记 `runHistoryRequestKeyByTaskIdRef` 和 `openRunHistoryTaskIds`。
+  - 用户已在真实 Team 画布验证：多个运行记录节点内容不再互相刷新；打开第三个记录节点时，前两个已展开记录节点不再闪现 loading。
 - Task edit Agent select dark popup contrast 验证：
   - `npm --prefix apps/team-console test -- --run src/tests/app-static-contracts.test.ts`：32/32 pass。
   - `npx tsc --noEmit`：pass。

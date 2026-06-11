@@ -41,6 +41,22 @@ import "./app.css";
 const TEAM_CONSOLE_THEME_STORAGE_KEY = "ugk-team-console:theme:v1";
 const DISCOVERY_QUEUE_INITIAL_CARD_LIMIT = 18;
 const RUN_HISTORY_PAGE_SIZE = 3;
+
+type RunHistoryPanelState = {
+  items: TeamTaskRunHistoryItem[];
+  total: number;
+  loading: boolean;
+  error: string | null;
+  savingRunId: string | null;
+};
+
+const emptyRunHistoryPanelState: RunHistoryPanelState = {
+  items: [],
+  total: 0,
+  loading: false,
+  error: null,
+  savingRunId: null,
+};
 const CANVAS_LOADING_MIN_VISIBLE_MS = 160;
 
 type TeamConsoleTheme = "light" | "dark";
@@ -262,12 +278,9 @@ export function App() {
   const [taskRunObserverByRunId, setTaskRunObserverByRunId] = useState<Record<string, TaskRunObserverState>>({});
   const taskRunObserverByRunIdRef = useRef(taskRunObserverByRunId);
   const [runHistoryTaskId, setRunHistoryTaskId] = useState<string | null>(null);
-  const [runHistoryItems, setRunHistoryItems] = useState<TeamTaskRunHistoryItem[]>([]);
-  const [runHistoryTotal, setRunHistoryTotal] = useState(0);
+  const [runHistoryByTaskId, setRunHistoryByTaskId] = useState<Record<string, RunHistoryPanelState>>({});
+  const runHistoryRequestKeyByTaskIdRef = useRef<Record<string, string>>({});
   const [runHistoryIncludeArchived, setRunHistoryIncludeArchived] = useState(false);
-  const [runHistoryLoading, setRunHistoryLoading] = useState(false);
-  const [runHistoryError, setRunHistoryError] = useState<string | null>(null);
-  const [runHistorySavingRunId, setRunHistorySavingRunId] = useState<string | null>(null);
   const [runHistoryAnalysisCopyState, setRunHistoryAnalysisCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [runHistoryAnalysisManualText, setRunHistoryAnalysisManualText] = useState<string | null>(null);
   const [loadedTaskRunByTaskId, setLoadedTaskRunByTaskId] = useState<Record<string, string>>({});
@@ -547,12 +560,9 @@ export function App() {
     discoveryChannelSetLoadKeysRef.current.clear();
     setTaskRunObserverByRunId({});
     setRunHistoryTaskId(null);
-    setRunHistoryItems([]);
-    setRunHistoryTotal(0);
+    setRunHistoryByTaskId({});
+    runHistoryRequestKeyByTaskIdRef.current = {};
     setRunHistoryIncludeArchived(false);
-    setRunHistoryLoading(false);
-    setRunHistoryError(null);
-    setRunHistorySavingRunId(null);
     setRunHistoryAnalysisCopyState("idle");
     setRunHistoryAnalysisManualText(null);
 
@@ -686,6 +696,22 @@ export function App() {
     ));
     return branch?.discoveryGeneratedRunHistoryTaskId ?? branch?.runHistoryTaskId ?? (branch ? branch.taskId : runHistoryTaskId);
   }, [expandedTaskBranches, runHistoryTaskId]);
+  const openRunHistoryTaskIds = useMemo(() => {
+    const taskIds: string[] = [];
+    const addTaskId = (taskId: string | null | undefined) => {
+      if (taskId && !taskIds.includes(taskId)) taskIds.push(taskId);
+    };
+    for (const branch of expandedTaskBranches) {
+      if (branch.detailMode === "run-history") {
+        addTaskId(branch.runHistoryTaskId ?? branch.taskId);
+      }
+      if (branch.detailMode === "discovery-subcanvas") {
+        addTaskId(branch.discoveryGeneratedRunHistoryTaskId);
+      }
+    }
+    addTaskId(runHistoryTaskId);
+    return taskIds;
+  }, [expandedTaskBranches, runHistoryTaskId]);
   const hydratedCanvasUiContextKeyRef = useRef<string | null>(null);
   const expandedAgentNode = expandedAgentBranch
     ? agentNodes.find((node) => node.nodeId === expandedAgentBranch.nodeId) ?? null
@@ -706,7 +732,7 @@ export function App() {
         : task.taskId;
       const taskRun = (taskRunsByTaskId[targetTaskId] ?? []).find((run) => run.runId === branch.observedRunId)
         ?? (isRunHistoryMode
-          ? runHistoryItems.find((item) => item.annotation.taskId === targetTaskId && item.run.runId === branch.observedRunId)?.run ?? null
+          ? runHistoryByTaskId[targetTaskId]?.items.find((item) => item.annotation.taskId === targetTaskId && item.run.runId === branch.observedRunId)?.run ?? null
           : null);
       if (!taskRun) return [];
       return [{ taskId: targetTaskId, runId: taskRun.runId, status: taskRun.status }];
@@ -725,7 +751,7 @@ export function App() {
       ...rootTargets,
       { taskId: generatedTask.taskId, runId: taskRun.runId, status: taskRun.status },
     ];
-  }), [activeRunHistoryTaskId, expandedTaskBranches, generatedTasksById, runHistoryItems, taskNodes, taskRunsByTaskId, tasksById]);
+  }), [activeRunHistoryTaskId, expandedTaskBranches, generatedTasksById, runHistoryByTaskId, taskNodes, taskRunsByTaskId, tasksById]);
   const runObserverTargetSignature = useMemo(() => runObserverTargets
     .map((target) => `${target.taskId}\u0000${target.runId}\u0000${target.status}`)
     .join("\u0001"), [runObserverTargets]);
@@ -749,6 +775,19 @@ export function App() {
     setSelectedTaskId((current) => current === taskId ? null : taskId);
   }, []);
 
+  const setRunHistoryTaskState = useCallback((
+    taskId: string,
+    updater: (current: RunHistoryPanelState) => RunHistoryPanelState,
+  ) => {
+    setRunHistoryByTaskId((current) => {
+      const previous = current[taskId] ?? emptyRunHistoryPanelState;
+      return {
+        ...current,
+        [taskId]: updater(previous),
+      };
+    });
+  }, []);
+
   const openTaskRunHistory = useCallback((
     taskId: string,
     nodeId?: string,
@@ -758,10 +797,13 @@ export function App() {
     const initialItems = mergeRunHistoryItems([], seedRuns, taskId, false);
     setRunHistoryTaskId(taskId);
     setRunHistoryIncludeArchived(false);
-    setRunHistoryItems(initialItems);
-    setRunHistoryTotal(initialItems.length);
-    setRunHistoryError(null);
-    setRunHistoryLoading(true);
+    setRunHistoryTaskState(taskId, () => ({
+      items: initialItems,
+      total: initialItems.length,
+      loading: true,
+      error: null,
+      savingRunId: null,
+    }));
     setRunHistoryAnalysisCopyState("idle");
     setRunHistoryAnalysisManualText(null);
     if (nodeId) {
@@ -789,15 +831,23 @@ export function App() {
           : item
       )));
     }
-  }, [setExpandedTaskBranches]);
+  }, [setExpandedTaskBranches, setRunHistoryTaskState]);
 
-  const closeTaskRunHistory = useCallback(() => {
-    setRunHistoryTaskId(null);
-    setRunHistoryItems([]);
-    setRunHistoryTotal(0);
-    setRunHistoryLoading(false);
-    setRunHistoryError(null);
-    setRunHistorySavingRunId(null);
+  const closeTaskRunHistory = useCallback((taskId?: string) => {
+    if (taskId) {
+      setRunHistoryByTaskId((current) => {
+        if (!current[taskId]) return current;
+        const next = { ...current };
+        delete next[taskId];
+        return next;
+      });
+      delete runHistoryRequestKeyByTaskIdRef.current[taskId];
+      setRunHistoryTaskId((current) => current === taskId ? null : current);
+    } else {
+      setRunHistoryTaskId(null);
+      setRunHistoryByTaskId({});
+      runHistoryRequestKeyByTaskIdRef.current = {};
+    }
     setRunHistoryAnalysisCopyState("idle");
     setRunHistoryAnalysisManualText(null);
   }, []);
@@ -845,64 +895,84 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!activeRunHistoryTaskId) return;
+    if (openRunHistoryTaskIds.length === 0) return;
     let cancelled = false;
     const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-    setRunHistoryLoading(true);
-    setRunHistoryError(null);
+    const openTaskIdSet = new Set(openRunHistoryTaskIds);
+    for (const taskId of Object.keys(runHistoryRequestKeyByTaskIdRef.current)) {
+      if (!openTaskIdSet.has(taskId)) {
+        delete runHistoryRequestKeyByTaskIdRef.current[taskId];
+      }
+    }
+    for (const taskId of openRunHistoryTaskIds) {
+      const requestKey = `${dataSource}:${runHistoryIncludeArchived ? "archived" : "visible"}`;
+      if (runHistoryRequestKeyByTaskIdRef.current[taskId] === requestKey) continue;
+      runHistoryRequestKeyByTaskIdRef.current[taskId] = requestKey;
+      setRunHistoryTaskState(taskId, (current) => ({ ...current, loading: true, error: null }));
 
-    void Promise.resolve().then(() => api.listTaskRunHistory(activeRunHistoryTaskId, {
-      limit: RUN_HISTORY_PAGE_SIZE,
-      offset: 0,
-      includeArchived: runHistoryIncludeArchived,
-    })).then((response) => {
-      if (cancelled) return;
-      const merged = mergeRunHistoryItems(
-        response.runs,
-        taskRunsByTaskIdRef.current[activeRunHistoryTaskId] ?? [],
-        activeRunHistoryTaskId,
-        runHistoryIncludeArchived,
-      );
-      setRunHistoryItems(merged);
-      setRunHistoryTotal(Math.max(response.total, merged.length));
-      setRunHistoryLoading(false);
-    }).catch((e) => {
-      if (cancelled) return;
-      setRunHistoryItems([]);
-      setRunHistoryTotal(0);
-      setRunHistoryLoading(false);
-      setRunHistoryError(errorMessage(e));
-    });
+      void Promise.resolve().then(() => api.listTaskRunHistory(taskId, {
+        limit: RUN_HISTORY_PAGE_SIZE,
+        offset: 0,
+        includeArchived: runHistoryIncludeArchived,
+      })).then((response) => {
+        if (cancelled) return;
+        const merged = mergeRunHistoryItems(
+          response.runs,
+          taskRunsByTaskIdRef.current[taskId] ?? [],
+          taskId,
+          runHistoryIncludeArchived,
+        );
+        setRunHistoryTaskState(taskId, (current) => ({
+          ...current,
+          items: merged,
+          total: Math.max(response.total, merged.length),
+          loading: false,
+          error: null,
+        }));
+      }).catch((e) => {
+        if (cancelled) return;
+        setRunHistoryTaskState(taskId, (current) => ({
+          ...current,
+          items: [],
+          total: 0,
+          loading: false,
+          error: errorMessage(e),
+        }));
+      });
+    }
 
     return () => {
       cancelled = true;
     };
-  }, [activeRunHistoryTaskId, dataSource, runHistoryIncludeArchived, taskRunsByTaskId]);
+  }, [dataSource, openRunHistoryTaskIds, runHistoryIncludeArchived, setRunHistoryTaskState, taskRunsByTaskId]);
 
-  const loadMoreRunHistory = useCallback(async () => {
-    if (!activeRunHistoryTaskId || runHistoryLoading || runHistoryItems.length >= runHistoryTotal) return;
+  const loadMoreRunHistory = useCallback(async (taskId: string) => {
+    const state = runHistoryByTaskId[taskId] ?? emptyRunHistoryPanelState;
+    if (state.loading || state.items.length >= state.total) return;
     const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-    setRunHistoryLoading(true);
-    setRunHistoryError(null);
+    setRunHistoryTaskState(taskId, (current) => ({ ...current, loading: true, error: null }));
     try {
-      const response = await api.listTaskRunHistory(activeRunHistoryTaskId, {
+      const response = await api.listTaskRunHistory(taskId, {
         limit: RUN_HISTORY_PAGE_SIZE,
-        offset: runHistoryItems.length,
+        offset: state.items.length,
         includeArchived: runHistoryIncludeArchived,
       });
-      setRunHistoryItems((current) => mergeRunHistoryItems(
-        [...current, ...response.runs],
-        [],
-        activeRunHistoryTaskId,
-        runHistoryIncludeArchived,
-      ));
-      setRunHistoryTotal(Math.max(response.total, response.offset + response.runs.length));
+      setRunHistoryTaskState(taskId, (current) => ({
+        ...current,
+        items: mergeRunHistoryItems(
+          [...current.items, ...response.runs],
+          [],
+          taskId,
+          runHistoryIncludeArchived,
+        ),
+        total: Math.max(response.total, response.offset + response.runs.length),
+      }));
     } catch (e) {
-      setRunHistoryError(errorMessage(e));
+      setRunHistoryTaskState(taskId, (current) => ({ ...current, error: errorMessage(e) }));
     } finally {
-      setRunHistoryLoading(false);
+      setRunHistoryTaskState(taskId, (current) => ({ ...current, loading: false }));
     }
-  }, [activeRunHistoryTaskId, dataSource, runHistoryIncludeArchived, runHistoryItems.length, runHistoryLoading, runHistoryTotal]);
+  }, [dataSource, runHistoryByTaskId, runHistoryIncludeArchived, setRunHistoryTaskState]);
 
   const loadRunHistoryItem = useCallback((item: TeamTaskRunHistoryItem) => {
     setLoadedTaskRunByTaskId((current) => ({
@@ -939,12 +1009,15 @@ export function App() {
     patch: { best?: boolean; archived?: boolean },
   ) => {
     const api = dataSource === "mock" ? new MockTeamApi() : new LiveTeamApi();
-    setRunHistorySavingRunId(item.run.runId);
-    setRunHistoryError(null);
+    setRunHistoryTaskState(item.annotation.taskId, (current) => ({
+      ...current,
+      savingRunId: item.run.runId,
+      error: null,
+    }));
     try {
       const response = await api.updateTaskRunAnnotation(item.run.runId, patch);
-      setRunHistoryItems((current) => {
-        const next = current.map((historyItem) => {
+      setRunHistoryTaskState(response.annotation.taskId, (current) => {
+        const next = current.items.map((historyItem) => {
           if (historyItem.annotation.taskId !== response.annotation.taskId) return historyItem;
           if (historyItem.run.runId === response.annotation.runId) {
             return { ...historyItem, annotation: response.annotation };
@@ -953,19 +1026,23 @@ export function App() {
             ? { ...historyItem, annotation: { ...historyItem.annotation, best: false } }
             : historyItem;
         });
-        return runHistoryIncludeArchived || !response.annotation.archived
+        const items = runHistoryIncludeArchived || !response.annotation.archived
           ? next
           : next.filter((historyItem) => historyItem.run.runId !== response.annotation.runId);
+        return {
+          ...current,
+          items,
+          total: !runHistoryIncludeArchived && response.annotation.archived
+            ? Math.max(0, current.total - 1)
+            : current.total,
+        };
       });
-      if (!runHistoryIncludeArchived && response.annotation.archived) {
-        setRunHistoryTotal((current) => Math.max(0, current - 1));
-      }
     } catch (e) {
-      setRunHistoryError(errorMessage(e));
+      setRunHistoryTaskState(item.annotation.taskId, (current) => ({ ...current, error: errorMessage(e) }));
     } finally {
-      setRunHistorySavingRunId(null);
+      setRunHistoryTaskState(item.annotation.taskId, (current) => ({ ...current, savingRunId: null }));
     }
-  }, [dataSource, runHistoryIncludeArchived]);
+  }, [dataSource, runHistoryIncludeArchived, setRunHistoryTaskState]);
 
   useEffect(() => {
     if (generatedArchiveConfirmTaskId && !openDiscoverySubcanvasGeneratedTaskIds.has(generatedArchiveConfirmTaskId)) {
@@ -3083,7 +3160,7 @@ export function App() {
                       ? { ...item, detailMode: null, runHistoryTaskId: undefined, observedRunId: undefined, selectedFileKeys: [] }
                       : item
                   )));
-                  closeTaskRunHistory();
+                  closeTaskRunHistory(task.taskId);
                 } else {
                   openTaskRunHistory(task.taskId, branch.nodeId);
                 }
@@ -3302,10 +3379,13 @@ export function App() {
       const runHistoryPanelId = taskRunHistoryPanelId(branch.nodeId, Boolean(discoveryRunHistoryTaskId));
 
       if (isRunHistoryPanelOpen) {
-        const historyTaskId = discoveryRunHistoryTaskId ?? branch.runHistoryTaskId ?? activeRunHistoryTaskId ?? task.taskId;
+        const historyTaskId = discoveryRunHistoryTaskId ?? branch.runHistoryTaskId ?? task.taskId;
         const historyTask = historyTaskId
           ? tasksById.get(historyTaskId) ?? generatedTasksById.get(historyTaskId) ?? task
           : task;
+        const historyState = historyTaskId
+          ? runHistoryByTaskId[historyTaskId] ?? emptyRunHistoryPanelState
+          : emptyRunHistoryPanelState;
         panels.push({
           id: runHistoryPanelId,
           width: 620,
@@ -3335,7 +3415,7 @@ export function App() {
                           : { ...item, detailMode: null, runHistoryTaskId: undefined, observedRunId: undefined, selectedFileKeys: [] }
                         : item
                     )));
-                    closeTaskRunHistory();
+                    closeTaskRunHistory(historyTaskId);
                   }}
                   aria-label={`收起 ${historyTask.title} 运行记录`}
                 >
@@ -3351,16 +3431,16 @@ export function App() {
                   />
                   显示已归档
                 </label>
-                <span className="emap-run-history-count">{runHistoryItems.length} / {runHistoryTotal}</span>
+                <span className="emap-run-history-count">{historyState.items.length} / {historyState.total}</span>
               </div>
-              {runHistoryError && (
-                <div className="emap-run-history-error" role="status">{runHistoryError}</div>
+              {historyState.error && (
+                <div className="emap-run-history-error" role="status">{historyState.error}</div>
               )}
               <div className="emap-run-history-list" aria-label={`${historyTask.title} run history list`}>
-                {runHistoryItems.map((item) => {
+                {historyState.items.map((item) => {
                   const run = item.run;
                   const selected = branch.observedRunId === run.runId;
-                  const saving = runHistorySavingRunId === run.runId;
+                  const saving = historyState.savingRunId === run.runId;
                   const loadedRunId = loadedTaskRunByTaskId[item.annotation.taskId];
                   const loaded = loadedRunId === run.runId;
                   const loadedSuppressedByActiveRun = loaded && (taskRunsByTaskId[item.annotation.taskId] ?? []).some((candidate) => isActiveRun(candidate.status));
@@ -3461,18 +3541,18 @@ export function App() {
                     </article>
                   );
                 })}
-                {!runHistoryLoading && runHistoryItems.length === 0 && (
+                {!historyState.loading && historyState.items.length === 0 && (
                   <div className="emap-run-history-empty">暂无可见运行记录。</div>
                 )}
-                {runHistoryLoading && (
+                {historyState.loading && (
                   <div className="emap-run-history-empty" role="status">正在加载运行记录...</div>
                 )}
-                {runHistoryItems.length < runHistoryTotal && (
+                {historyState.items.length < historyState.total && (
                   <button
                     type="button"
                     className="emap-run-history-load-more"
-                    disabled={runHistoryLoading}
-                    onClick={() => { void loadMoreRunHistory(); }}
+                    disabled={historyState.loading}
+                    onClick={() => { if (historyTaskId) void loadMoreRunHistory(historyTaskId); }}
                   >
                     加载更多
                   </button>
@@ -3640,7 +3720,7 @@ export function App() {
                     }
                   : item
               ));
-              closeTaskRunHistory();
+              closeTaskRunHistory(generatedTask.taskId);
               return;
             }
             openTaskRunHistory(generatedTask.taskId, branch.nodeId, latestGeneratedRun ? [latestGeneratedRun] : [], {
@@ -4965,7 +5045,7 @@ export function App() {
         : task.taskId;
       const observedTaskRun = (taskRunsByTaskId[targetTaskId] ?? []).find((taskRun) => taskRun.runId === branch.observedRunId)
         ?? (isRunHistoryMode
-          ? runHistoryItems.find((item) => item.annotation.taskId === targetTaskId && item.run.runId === branch.observedRunId)?.run ?? null
+          ? runHistoryByTaskId[targetTaskId]?.items.find((item) => item.annotation.taskId === targetTaskId && item.run.runId === branch.observedRunId)?.run ?? null
           : null);
       if (!observedTaskRun) continue;
       const historyTask = isRunHistoryMode
@@ -5048,7 +5128,7 @@ export function App() {
     }
 
     return panels;
-  }, [activeRunHistoryTaskId, agents, agentsById, archiveDiscoveryChannelSet, archiveGeneratedTask, archiveTask, cancelTaskRun, clearDiscoveryChannelTaskSelection, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskCloneState, clearTaskEditState, clearTaskEditWarning, clearTaskParameterState, cloneTask, closeTaskRunHistory, copyRunHistoryAnalysisContext, copyTaskLeaderContext, dataSource, discoveryChannelSetArchivingById, discoveryChannelSetLoadingByTaskId, discoveryChannelSetSavingByTaskId, discoveryChannelSetTitleByTaskId, discoveryChannelSetsByTaskId, discoveryDispatchDiagnosticsByTaskId, discoveryRunPolicySavingByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, loadMoreRunHistory, loadRunHistoryItem, loadedTaskRunByTaskId, openTaskEditDraft, openTaskParameterDraft, openTaskRunHistory, patchRunHistoryAnnotation, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runHistoryAnalysisCopyState, runHistoryAnalysisManualText, runHistoryError, runHistoryIncludeArchived, runHistoryItems, runHistoryLoading, runHistorySavingRunId, runHistoryTotal, runTask, saveDiscoveryChannelSet, saveTaskEdit, saveTaskParameters, scheduleLiveTaskDiscoveryRefresh, selectDiscoveryChannelSet, selectedDiscoveryChannelSetIdByTaskId, selectedDiscoveryChannelTaskIdsByTaskId, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskCloneDraftByTaskId, taskCloneSavingByTaskId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskParameterDraftByTaskId, taskParameterSavingByTaskId, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, toggleDiscoveryChannelTaskSelection, unloadRunHistoryItem, updateDiscoveryRunPolicy, updateTaskCloneBinding, updateTaskCloneTitle, updateTaskEditDraft, updateTaskParameterBinding]);
+  }, [activeRunHistoryTaskId, agents, agentsById, archiveDiscoveryChannelSet, archiveGeneratedTask, archiveTask, cancelTaskRun, clearDiscoveryChannelTaskSelection, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskCloneState, clearTaskEditState, clearTaskEditWarning, clearTaskParameterState, cloneTask, closeTaskRunHistory, copyRunHistoryAnalysisContext, copyTaskLeaderContext, dataSource, discoveryChannelSetArchivingById, discoveryChannelSetLoadingByTaskId, discoveryChannelSetSavingByTaskId, discoveryChannelSetTitleByTaskId, discoveryChannelSetsByTaskId, discoveryDispatchDiagnosticsByTaskId, discoveryRunPolicySavingByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, loadMoreRunHistory, loadRunHistoryItem, loadedTaskRunByTaskId, openTaskEditDraft, openTaskParameterDraft, openTaskRunHistory, patchRunHistoryAnnotation, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runHistoryAnalysisCopyState, runHistoryAnalysisManualText, runHistoryByTaskId, runHistoryIncludeArchived, runTask, saveDiscoveryChannelSet, saveTaskEdit, saveTaskParameters, scheduleLiveTaskDiscoveryRefresh, selectDiscoveryChannelSet, selectedDiscoveryChannelSetIdByTaskId, selectedDiscoveryChannelTaskIdsByTaskId, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskCloneDraftByTaskId, taskCloneSavingByTaskId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskParameterDraftByTaskId, taskParameterSavingByTaskId, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, toggleDiscoveryChannelTaskSelection, unloadRunHistoryItem, updateDiscoveryRunPolicy, updateTaskCloneBinding, updateTaskCloneTitle, updateTaskEditDraft, updateTaskParameterBinding]);
   const canvasStateRestorePending = !loading && !canvasUiStateHydrated;
   const canvasLoadingMinimumMs = loading || canvasUiStateRestoreHasStoredState
     ? CANVAS_LOADING_MIN_VISIBLE_MS
