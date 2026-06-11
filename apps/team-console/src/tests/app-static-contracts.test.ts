@@ -1,6 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 
+const readExecutionMapCss = (): string => {
+  const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+  const runObserverCss = readFileSync("src/graph/execution-map-run-observer.css", "utf8");
+  return mapCss.replace('@import "./execution-map-run-observer.css";', runObserverCss.trimEnd());
+};
+
 describe("Team Console static contracts", () => {
   it("keeps App task branches on the multi-branch panel path", () => {
     const appSource = readFileSync("src/app/App.tsx", "utf8");
@@ -65,7 +71,7 @@ describe("Team Console static contracts", () => {
 
   it("keeps atlas content from stretching the app width during node drag", () => {
     const appCss = readFileSync("src/app/app.css", "utf8");
-    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const mapCss = readExecutionMapCss();
 
     expect(appCss).toMatch(/\.app-main\s*{[^}]*min-width:\s*0;[^}]*overflow:\s*hidden;/s);
     expect(appCss).toMatch(/\.workspace\s*{[^}]*min-width:\s*0;/s);
@@ -93,7 +99,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("keeps expanded Task Group header controls out of the member chip row", () => {
-    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const mapCss = readExecutionMapCss();
     const mapSource = readFileSync("src/graph/ExecutionMap.tsx", "utf8");
     const memberRowsSource = readFileSync("src/graph/task-group-member-rows.ts", "utf8");
     const groupProjectionSource = readFileSync("src/app/team-console-task-group-projection.ts", "utf8");
@@ -158,7 +164,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("uses a light atlas canvas while preserving task and agent state accents", () => {
-    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const mapCss = readExecutionMapCss();
     const canvasRule = mapCss.match(/\.execution-map-container\s*{[^}]*}/)?.[0] ?? "";
     const nodeRule = mapCss.match(/\.emap-node\s*{[^}]*}/)?.[0] ?? "";
     const branchRule = mapCss.match(/\.emap-dialog-branch,\n\.agent-playground-branch\s*{[^}]*}/)?.[0] ?? "";
@@ -172,7 +178,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("keeps the dark atlas canvas grid at the original tile size", () => {
-    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const mapCss = readExecutionMapCss();
     const darkCanvasRule = mapCss.match(/\[data-theme="dark"\] \.execution-map-container\s*{[^}]*}/)?.[0] ?? "";
 
     expect(darkCanvasRule).toContain("linear-gradient(180deg, #050813 0%, #02040b 100%)");
@@ -270,7 +276,7 @@ describe("Team Console static contracts", () => {
   it("uses an animated sliding segment for root node filters", () => {
     const appSource = readFileSync("src/app/App.tsx", "utf8");
     const appCss = readFileSync("src/app/app.css", "utf8");
-    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const mapCss = readExecutionMapCss();
     const segmentRule = appCss.match(/\.root-filter-segment\s*{[^}]*}/)?.[0] ?? "";
     const sliderRule = appCss.match(/\.root-filter-segment::before\s*{[^}]*}/)?.[0] ?? "";
     const agentRule = appCss.match(/\.root-filter-segment\[data-active-filter="agent"\]::before\s*{[^}]*}/)?.[0] ?? "";
@@ -303,7 +309,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("keeps the merged run observer outer panel auto-height while process sections use themed internal scrollbars", () => {
-    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const mapCss = readExecutionMapCss();
     const appCss = readFileSync("src/app/app.css", "utf8");
     const panelRule = mapCss.match(/\.emap-run-observer-panel\s*{[^}]*}/)?.[0] ?? "";
     const appPanelRule = appCss.match(/\.emap-run-observer-panel\s*{[^}]*}/)?.[0] ?? "";
@@ -409,7 +415,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("keeps Task action run summaries readable instead of clipping runtime text", () => {
-    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const mapCss = readExecutionMapCss();
     const taskActionRule = mapCss.match(/\.task-action-branch\s*{[^}]*}/)?.[0] ?? "";
     const taskTitleRule = mapCss.match(/\.task-action-branch\s+\.task-leader-branch-title\s+strong\s*{[^}]*}/)?.[0] ?? "";
     const taskMenuRule = mapCss.match(/\.task-action-menu\s*{[^}]*}/)?.[0] ?? "";
@@ -433,7 +439,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("uses an active accent for busy Agent cards", () => {
-    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const mapCss = readExecutionMapCss();
     const busyRule = mapCss.match(/\.emap-agent-node\[data-agent-run-state="busy"\]\s*{[^}]*}/)?.[0];
     const busyBarRule = mapCss.match(/\.emap-agent-node\[data-agent-run-state="busy"\]\s+\.emap-node-status-bar\s*{[^}]*}/)?.[0];
     const busyPillRule = mapCss.match(/\.emap-agent-node\[data-agent-run-state="busy"\]\s+\.emap-node-state-pill\.running\s*{[^}]*}/)?.[0];
@@ -449,7 +455,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("uses an active accent for running Task cards", () => {
-    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const mapCss = readExecutionMapCss();
     const runningRule = mapCss.match(/\.emap-canvas-task-node\.status-running\s*{[^}]*}/)?.[0] ?? "";
     const runningBarRule = mapCss.match(/\.emap-canvas-task-node\.status-running\s+\.emap-node-status-bar\s*{[^}]*}/)?.[0] ?? "";
     const runningPillRule = mapCss.match(/\.emap-canvas-task-node\.status-running\s+\.emap-node-state-pill\.running,\n\.emap-canvas-task-node\.status-running\s+\.emap-node-state-pill\.queued\s*{[^}]*}/)?.[0] ?? "";
@@ -505,7 +511,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("restores dark card internals when the Team Console theme is dark", () => {
-    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const mapCss = readExecutionMapCss();
 
     expect(mapCss).toContain('[data-theme="dark"] .emap-node-state-pill');
     expect(mapCss).toContain("background: rgba(255, 255, 255, 0.04)");
@@ -529,7 +535,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("pins atlas card status pills to the top right", () => {
-    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const mapCss = readExecutionMapCss();
 
     const headerRule = mapCss.match(/\.emap-atlas-card\s+\.emap-node-header\s*{[^}]*}/)?.[0] ?? "";
     const pillRule = mapCss.match(/\.emap-atlas-card\s+\.emap-node-state-pill\s*{[^}]*}/)?.[0] ?? "";
@@ -541,7 +547,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("keeps Discovery subcanvas light by default while preserving dark theme overrides", () => {
-    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const mapCss = readExecutionMapCss();
     const appTsx = readFileSync("src/app/App.tsx", "utf8");
     const discoverySubcanvasRule = mapCss.match(/\.discovery-subcanvas-panel\s*{[^}]*}/)?.[0] ?? "";
     const discoveryGeneratedCardRule = mapCss.match(/\.discovery-generated-card\s*{[^}]*}/)?.[0] ?? "";
@@ -583,7 +589,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("keeps dark toolbar action buttons from being flattened by generic map button styles", () => {
-    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const mapCss = readExecutionMapCss();
 
     expect(mapCss).toContain('[data-theme="dark"] .execution-map-toolbar .agent-add-btn');
     expect(mapCss).toContain("border-color: rgba(121, 216, 208, 0.42)");
@@ -596,7 +602,7 @@ describe("Team Console static contracts", () => {
 
   it("keeps zoom buttons removed and restores dark root filter tab highlights", () => {
     const appCss = readFileSync("src/app/app.css", "utf8");
-    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const mapCss = readExecutionMapCss();
     const darkToolbarButtonRule = mapCss.match(/\[data-theme="dark"\] \.execution-map-toolbar button\s*{[^}]*}/)?.[0] ?? "";
     const darkToolbarHoverRule = mapCss.match(/\[data-theme="dark"\] \.execution-map-toolbar button:hover\s*{[^}]*}/)?.[0] ?? "";
     const darkRootFilterSliderRule = appCss.match(/\[data-theme="dark"\] \.root-filter-segment::before\s*{[^}]*}/)?.[0] ?? "";
@@ -623,7 +629,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("uses light surfaces for Task menu run summaries, run observer headers, and edit panels", () => {
-    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const mapCss = readExecutionMapCss();
     const summaryRule = mapCss.match(/\.task-run-summary\s*{[^}]*}/)?.[0] ?? "";
     const summaryHeadRule = mapCss.match(/\.task-run-summary-head\s+strong\s*{[^}]*}/)?.[0] ?? "";
     const observerHeadRule = mapCss.match(/\.emap-run-observer-head\s*{[^}]*}/)?.[0] ?? "";
@@ -652,7 +658,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("uses a light amber surface for the Task dependency connector button", () => {
-    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const mapCss = readExecutionMapCss();
     const depHandleRule = mapCss.match(/(?:^|\n)\.emap-task-dep-handle\s*{[^}]*}/)?.[0] ?? "";
     const depHandleHoverRule = mapCss.match(/\.emap-task-dep-handle:hover,\n\.emap-task-dep-handle:focus-visible\s*{[^}]*}/)?.[0] ?? "";
 
@@ -667,7 +673,7 @@ describe("Team Console static contracts", () => {
   });
 
   it("centers link cut buttons on the connector point instead of using fixed offsets", () => {
-    const mapCss = readFileSync("src/graph/execution-map.css", "utf8");
+    const mapCss = readExecutionMapCss();
     const cutRule = mapCss.match(/\.emap-link-cut-button\s*{[^}]*}/)?.[0] ?? "";
     const visibleRule = mapCss.match(/\.emap-link-cut-button\.is-visible,\n\.emap-link-cut-button:hover,\n\.emap-link-cut-button:focus-visible\s*{[^}]*}/)?.[0] ?? "";
 
