@@ -280,9 +280,14 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toContain('[data-visual-theme="dell-1996"][data-theme="dark"]');
     expect(mapCss).toContain("--dell-selected: #1f5e73");
     expect(mapCss).toContain("--dell-hover: #dfe9ec");
-    expect(mapCss).toContain("--dell-border: #2b7a78");
-    expect(mapCss).toContain("--dell-selected: #00a49a");
-    expect(mapCss).toContain("--dell-task: #16333a");
+    expect(mapCss).toContain("--dell-canvas: #050816");
+    expect(mapCss).toContain("--dell-border: #5367a6");
+    expect(mapCss).toContain("--dell-selected: #00e5ff");
+    expect(mapCss).toContain("--dell-task: #10162b");
+    expect(mapCss).toContain("--dell-task-accent: #a855f7");
+    expect(mapCss).toContain("--dell-discovery-accent: #00e5ff");
+    expect(mapCss).not.toContain("#17130e");
+    expect(mapCss).not.toContain("#ead8b6");
     expect(mapCss).toContain('[data-visual-theme="dell-1996"][data-theme="dark"] .emap-canvas-task-node');
     expect(mapCss).toContain("border: 2px solid var(--dell-border)");
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node\s*{[^}]*box-shadow:\s*none;/s);
