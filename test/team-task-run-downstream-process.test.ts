@@ -839,6 +839,212 @@ test("outputPath selects the canonical worklist artifact when multiple worker JS
 	}
 });
 
+test("worklist outputCheck keeps worker canonical artifact when checker returns alternate JSON", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-handoff-worklist-checker-json-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const sourceTask = await taskStore.create({
+			...validTaskInput,
+			title: "Worklist source",
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "Worklist source",
+				outputPorts: [{ id: "worklist_out", label: "Worklist", type: "worklist" }],
+				outputCheck: { type: "worklist" },
+				outputContract: { text: "Write worklist JSON and return outputPath." },
+				acceptance: { rules: ["Must produce a valid worklist"] },
+			},
+		});
+		const targetTask = await taskStore.create({
+			title: "Worklist consumer",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "Worklist consumer",
+				input: { text: "Use upstream worklist." },
+				inputPorts: [{ id: "source_worklist", label: "Worklist", type: "worklist" }],
+				outputContract: { text: "Output result." },
+				acceptance: { rules: ["Must use upstream worklist"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+
+		await mkdir(join(root, "team"), { recursive: true });
+		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
+		await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "worklist_out",
+			toTaskId: targetTask.taskId,
+			toInputPortId: "source_worklist",
+		});
+
+		const selectedWorklist = JSON.stringify({
+			schemaVersion: "team/worklist-1",
+			worklistId: "selected_worklist",
+			title: "Selected worklist",
+			items: [{ id: "selected-001", title: "Selected chunk", input: { rows: ["selected"] } }],
+		});
+		const alternateWorklist = JSON.stringify({
+			schemaVersion: "team/worklist-1",
+			worklistId: "checker_alternate_worklist",
+			title: "Checker alternate worklist",
+			items: [{ id: "checker-001", title: "Checker chunk", input: { rows: ["checker"] } }],
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+
+		class CheckerJsonWorklistRunner extends ProcessEventRoleRunner {
+			async runWorker(input: WorkerInput): Promise<WorkerOutput> {
+				if (input.task.id === sourceTask.taskId) {
+					await writeFile(join(input.artifactPublicDir!, "selected-worklist.json"), selectedWorklist, "utf8");
+					return { content: JSON.stringify({ outputPath: "output/selected-worklist.json" }), artifactRefs: [] };
+				}
+				return { content: "downstream worker result", artifactRefs: [] };
+			}
+
+			async runChecker(input: CheckerInput): Promise<CheckerOutput> {
+				if (input.task.id === sourceTask.taskId) {
+					return { verdict: "pass", reason: "ok", resultContent: alternateWorklist };
+				}
+				return { verdict: "pass", reason: "ok", resultContent: "accepted downstream" };
+			}
+		}
+
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new CheckerJsonWorklistRunner(),
+			connectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const upstreamRun = await service.createRun(sourceTask.taskId);
+		const upstreamFinished = await waitForTerminalRun(service, upstreamRun.runId);
+		assert.equal(upstreamFinished.status, "completed");
+		const downstreamRuns = await waitForTaskRuns(service, targetTask.taskId, 1);
+		const downstreamFinished = await waitForTerminalRun(service, downstreamRuns[0]!.runId);
+		assert.equal(downstreamFinished.status, "completed");
+		const upstreamTaskState = upstreamFinished.taskStates[sourceTask.taskId]!;
+		assert.match(upstreamTaskState.resultRef ?? "", /selected-worklist\.json$/);
+		const artifact = downstreamFinished.source?.boundInputs?.[0]?.artifact as import("../src/team/types.js").TeamTaskTypedArtifact;
+		assert.equal(artifact.type, "worklist");
+		assert.match(artifact.fileRef, /selected-worklist\.json$/);
+		assert.equal(JSON.parse(artifact.content ?? artifact.preview).worklistId, "selected_worklist");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("worklist-results outputCheck keeps worker canonical artifact when checker returns alternate JSON", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-handoff-worklist-results-checker-json-"));
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search"] });
+		const sourceTask = await taskStore.create({
+			...validTaskInput,
+			title: "Worklist results source",
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "Worklist results source",
+				outputPorts: [{ id: "results_out", label: "Results", type: "worklist-results" }],
+				outputCheck: { type: "worklist_results" },
+				outputContract: { text: "Write worklist-results JSON and return outputPath." },
+				acceptance: { rules: ["Must produce valid worklist-results"] },
+			},
+		});
+		const targetTask = await taskStore.create({
+			title: "Worklist results consumer",
+			leaderAgentId: "main",
+			status: "ready",
+			workUnit: {
+				title: "Worklist results consumer",
+				input: { text: "Use upstream worklist-results." },
+				inputPorts: [{ id: "source_results", label: "Results", type: "worklist-results" }],
+				outputContract: { text: "Output result." },
+				acceptance: { rules: ["Must use upstream results"] },
+				workerAgentId: "main",
+				checkerAgentId: "main",
+			},
+		});
+
+		await mkdir(join(root, "team"), { recursive: true });
+		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
+		await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "results_out",
+			toTaskId: targetTask.taskId,
+			toInputPortId: "source_results",
+		});
+
+		const selectedSourceWorklist = {
+			schemaVersion: "team/worklist-1",
+			worklistId: "selected_worklist",
+			title: "Selected worklist",
+			items: [{ id: "selected-001", title: "Selected chunk", input: { rows: ["selected"] } }],
+		};
+		const alternateSourceWorklist = {
+			schemaVersion: "team/worklist-1",
+			worklistId: "checker_worklist",
+			title: "Checker worklist",
+			items: [{ id: "checker-001", title: "Checker chunk", input: { rows: ["checker"] } }],
+		};
+		const selectedResults = JSON.stringify({
+			schemaVersion: "team/worklist-results-1",
+			sourceWorklist: selectedSourceWorklist,
+			summary: { totalItems: 1, succeeded: 1, failed: 0, cancelled: 0, missing: 0 },
+			results: [{ itemId: "selected-001", status: "succeeded", content: "selected result" }],
+			createdAt: "2026-06-12T00:00:00.000Z",
+		});
+		const alternateResults = JSON.stringify({
+			schemaVersion: "team/worklist-results-1",
+			sourceWorklist: alternateSourceWorklist,
+			summary: { totalItems: 1, succeeded: 1, failed: 0, cancelled: 0, missing: 0 },
+			results: [{ itemId: "checker-001", status: "succeeded", content: "checker result" }],
+			createdAt: "2026-06-12T00:00:00.000Z",
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+
+		class CheckerJsonWorklistResultsRunner extends ProcessEventRoleRunner {
+			async runWorker(input: WorkerInput): Promise<WorkerOutput> {
+				if (input.task.id === sourceTask.taskId) {
+					await writeFile(join(input.artifactPublicDir!, "selected-results.json"), selectedResults, "utf8");
+					return { content: JSON.stringify({ outputPath: "output/selected-results.json" }), artifactRefs: [] };
+				}
+				return { content: "downstream worker result", artifactRefs: [] };
+			}
+
+			async runChecker(input: CheckerInput): Promise<CheckerOutput> {
+				if (input.task.id === sourceTask.taskId) {
+					return { verdict: "pass", reason: "ok", resultContent: alternateResults };
+				}
+				return { verdict: "pass", reason: "ok", resultContent: "accepted downstream" };
+			}
+		}
+
+		const service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => new CheckerJsonWorklistResultsRunner(),
+			connectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const upstreamRun = await service.createRun(sourceTask.taskId);
+		const upstreamFinished = await waitForTerminalRun(service, upstreamRun.runId);
+		assert.equal(upstreamFinished.status, "completed");
+		const downstreamRuns = await waitForTaskRuns(service, targetTask.taskId, 1);
+		const downstreamFinished = await waitForTerminalRun(service, downstreamRuns[0]!.runId);
+		assert.equal(downstreamFinished.status, "completed");
+		const upstreamTaskState = upstreamFinished.taskStates[sourceTask.taskId]!;
+		assert.match(upstreamTaskState.resultRef ?? "", /selected-results\.json$/);
+		const artifact = downstreamFinished.source?.boundInputs?.[0]?.artifact as import("../src/team/types.js").TeamTaskTypedArtifact;
+		assert.equal(artifact.type, "worklist-results");
+		assert.match(artifact.fileRef, /selected-results\.json$/);
+		assert.equal(JSON.parse(artifact.content ?? artifact.preview).results[0].content, "selected result");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("worklist typed artifact falls back to accepted result when public JSON is invalid", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-task-handoff-worklist-fallback-"));
 	try {

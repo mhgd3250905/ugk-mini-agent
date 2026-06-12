@@ -78,6 +78,13 @@ function summarizeOutputValidationFailure(result: TeamOutputValidationResult): s
 	return `output validation failed: ${failed?.message ?? failed?.name ?? "unknown validation failure"}`;
 }
 
+function canonicalWorkerMachineArtifactRef(task: TeamTask, validation: TeamOutputValidationResult): string | null {
+	if (task.type === "discovery") return null;
+	if (validation.kind !== "worklist" && validation.kind !== "worklist_results") return null;
+	if (!validation.ok || !validation.normalizedRef?.startsWith("agent-workspaces/")) return null;
+	return validation.normalizedRef;
+}
+
 function buildTeamRoleArtifactBaseUrl(
 	publicBaseUrl: string | undefined,
 	runId: string,
@@ -150,9 +157,11 @@ export class CanvasTaskAttemptRunner {
 					await workspace.finishAttempt(runId, task.id, attemptId, { status: "failed", phase: "failed", resultRef: failRef, errorSummary });
 					return { status: "failed", resultRef: failRef, errorSummary };
 				}
-				const resultRef = task.type !== "discovery" && acceptedValidation.normalizedRef?.startsWith("agent-workspaces/")
-					? acceptedValidation.normalizedRef
-					: await workspace.writeAcceptedResult(runId, task.id, attemptId, resultContent);
+				const canonicalWorkerRef = canonicalWorkerMachineArtifactRef(task, workerValidation);
+				const resultRef = canonicalWorkerRef
+					?? (task.type !== "discovery" && acceptedValidation.normalizedRef?.startsWith("agent-workspaces/")
+						? acceptedValidation.normalizedRef
+						: await workspace.writeAcceptedResult(runId, task.id, attemptId, resultContent));
 				const discoveryErrorSummary = await this.writeDiscoveryResultIfNeeded(runId, task, attemptId, acceptedValidation, resultRef);
 				if (discoveryErrorSummary) {
 					const failRef = await workspace.writeFailedResult(runId, task.id, attemptId, discoveryErrorSummary);

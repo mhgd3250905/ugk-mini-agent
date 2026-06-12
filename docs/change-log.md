@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-12 — worklist canonical machine artifact resultRef
+
+- **主题**: 收口普通 Canvas Task 在 `worklist` / `worklist-results` 输出校验通过后的最终 `resultRef` 选择。若 worker 输出已经通过 deterministic validation 并指向 `agent-workspaces/<attemptId>/worker/output/*.json` 机器文件，即使 checker 返回另一份合法 JSON，runtime 也会优先保留 worker 的 canonical 机器产物引用；只有 worker public output 无合法机器产物时才继续 fallback 到 `accepted-result.md`。
+- **影响范围**: 仅影响声明 `outputCheck.type` 为 `worklist` 或 `worklist_results` 的普通 Task 成功路径；split-task 自身写出的 `worklist-results.json`、Discovery、普通 `json/md/html` typed artifact、checker verdict 和 downstream 触发语义不变。
+- **对应入口**: `src/team/canvas-task-attempt-runner.ts`、`test/team-task-run-downstream-process.test.ts`。
+
 ## 2026-06-12 — split-task cancellation and group observation hardening
 
 - **主题**: 修复 split-task / worklist runtime 合并后的取消与观察边界。split-task root run 取消后不再被后续 lifecycle 覆盖成 succeeded / failed，不再写出取消后的 `worklist-results.json`，已启动的 `split-generated-task` child runs 会随父 run 级联取消，且取消后不会继续启动队列中的分片。
