@@ -771,6 +771,7 @@ export function ExecutionMap({
   const [rootDropTarget, setRootDropTarget] = useState<"dock" | "trash" | null>(null);
   const [isAtlasDragging, setIsAtlasDragging] = useState(false);
   const [activeAtlasLayerKey, setActiveAtlasLayerKey] = useState<string | null>(null);
+  const [hoveredAtlasLayerKey, setHoveredAtlasLayerKey] = useState<string | null>(null);
   const [atlasDragPreviewPositions, setAtlasDragPreviewPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [visualViewport, setVisualViewport] = useState<AtlasViewport | undefined>(viewport);
   const [isDockExpanded, setIsDockExpanded] = useState(false);
@@ -2299,23 +2300,30 @@ export function ExecutionMap({
       height: AGENT_NODE_HEIGHT,
     }, agentBranchNode)
     : null;
+  const isAtlasLayerKeyActive = (key: string) => activeAtlasLayerKey === key || hoveredAtlasLayerKey === key;
+  const enterAtlasLayer = (key: string) => {
+    setHoveredAtlasLayerKey(key);
+  };
+  const leaveAtlasLayer = (key: string) => {
+    setHoveredAtlasLayerKey((currentKey) => (currentKey === key ? null : currentKey));
+  };
   const isTaskLayerActive = (taskId: string) => {
     const nodeId = taskNodeByTaskId.get(taskId)?.nodeId ?? taskId;
     return focusedTaskNodeId === nodeId
-      || activeAtlasLayerKey === `task:${nodeId}`
+      || isAtlasLayerKeyActive(`task:${nodeId}`)
       || selectedAtlasNodeKeys.has(atlasSelectionKey("task", nodeId));
   };
   const isSourceLayerActive = (sourceNodeId: string) => {
     const nodeId = sourceNodeBySourceId.get(sourceNodeId)?.nodeId ?? sourceNodeId;
-    return activeAtlasLayerKey === `source:${nodeId}`
+    return isAtlasLayerKeyActive(`source:${nodeId}`)
       || selectedAtlasNodeKeys.has(atlasSelectionKey("source", nodeId));
   };
   const taskBranchConnectors = taskBranchEntries.map((entry) => ({
     id: entry.id,
     path: taskBranchConnectorPath(entry.node, entry.rect, tasksById?.get(entry.node.taskId)),
     anchors: connectorAnchors(taskNodeRect(entry.node, tasksById?.get(entry.node.taskId)), entry.rect),
-    active: activeAtlasLayerKey === `branch:${entry.id}`
-      || activeAtlasLayerKey === `task:${entry.node.nodeId}`
+    active: isAtlasLayerKeyActive(`branch:${entry.id}`)
+      || isAtlasLayerKeyActive(`task:${entry.node.nodeId}`)
       || entry.node.nodeId === focusedTaskNodeId,
   }));
   const maximizedTaskPanel = maximizedBranch?.kind === "task-panel"
@@ -3485,8 +3493,8 @@ export function ExecutionMap({
   );
   const agentBranchConnectorActive = Boolean(
     focusedAgentNode && (
-      activeAtlasLayerKey === "branch:agent"
-      || activeAtlasLayerKey === `agent:${focusedAgentNode.nodeId}`
+      isAtlasLayerKeyActive("branch:agent")
+      || isAtlasLayerKeyActive(`agent:${focusedAgentNode.nodeId}`)
       || selectedAtlasNodeKeys.has(atlasSelectionKey("agent", focusedAgentNode.nodeId))
     ),
   );
@@ -3534,7 +3542,7 @@ export function ExecutionMap({
           {agentBranchPath && !agentBranchConnectorActive ? renderAgentBranchLink() : null}
           {taskBranchConnectors.filter((connector) => !connector.active).map(renderTaskBranchLink)}
           {taskChildBranchPanelsLayout
-            .filter((p) => activeAtlasLayerKey !== `panel:${p.id}`)
+            .filter((p) => !isAtlasLayerKeyActive(`panel:${p.id}`))
             .map(renderTaskChildPanelLink)}
         </svg>
         <svg
@@ -3558,7 +3566,7 @@ export function ExecutionMap({
           {agentBranchPath && agentBranchConnectorActive ? renderAgentBranchLink() : null}
           {taskBranchConnectors.filter((connector) => connector.active).map(renderTaskBranchLink)}
           {taskChildBranchPanelsLayout
-            .filter((p) => activeAtlasLayerKey === `panel:${p.id}`)
+            .filter((p) => isAtlasLayerKeyActive(`panel:${p.id}`))
             .map(renderTaskChildPanelLink)}
           {evidenceLayout.links.map((link) => {
             const path = (
@@ -3870,8 +3878,9 @@ export function ExecutionMap({
             if (!agent) return null;
             const isFocused = node.nodeId === focusedAgentNodeId;
             const isAtlasSelected = selectedAtlasNodeKeys.has(atlasSelectionKey("agent", node.nodeId));
+            const layerKey = `agent:${node.nodeId}`;
             const layerClassName = getAtlasLayerClassName({
-              active: isFocused || isAtlasSelected || activeAtlasLayerKey === `agent:${node.nodeId}`,
+              active: isFocused || isAtlasSelected || isAtlasLayerKeyActive(layerKey),
               dragging: Boolean(atlasDragPreviewPositions[atlasDragPreviewKey("agent", node.nodeId)]),
             });
             const runStatus = formatAgentRunStatus(agentRunStatusById?.get(agent.agentId));
@@ -3887,7 +3896,11 @@ export function ExecutionMap({
                 aria-label={agent.name}
                 title={runStatus.title}
                 style={{ left: node.position.x, top: node.position.y, width: NODE_WIDTH, height: AGENT_NODE_HEIGHT }}
-                onPointerDownCapture={() => setActiveAtlasLayerKey(`agent:${node.nodeId}`)}
+                onMouseEnter={() => enterAtlasLayer(layerKey)}
+                onMouseLeave={() => leaveAtlasLayer(layerKey)}
+                onPointerEnter={() => enterAtlasLayer(layerKey)}
+                onPointerLeave={() => leaveAtlasLayer(layerKey)}
+                onPointerDownCapture={() => setActiveAtlasLayerKey(layerKey)}
                 onPointerDown={(event) => handleAgentPointerDown(node, event)}
                 onPointerMove={handleAgentPointerMove}
                 onPointerUp={endAgentPointer}
@@ -3920,8 +3933,9 @@ export function ExecutionMap({
             const sourceNode = sourceNodesById?.get(node.sourceNodeId);
             if (!sourceNode) return null;
             const isAtlasSelected = selectedAtlasNodeKeys.has(atlasSelectionKey("source", node.nodeId));
+            const layerKey = `source:${node.nodeId}`;
             const layerClassName = getAtlasLayerClassName({
-              active: isAtlasSelected || activeAtlasLayerKey === `source:${node.nodeId}`,
+              active: isAtlasSelected || isAtlasLayerKeyActive(layerKey),
               dragging: Boolean(atlasDragPreviewPositions[atlasDragPreviewKey("source", node.nodeId)]),
             });
             const outputPort = sourceNode.outputPort;
@@ -3941,7 +3955,11 @@ export function ExecutionMap({
                 data-source-node-id={sourceNode.sourceNodeId}
                 aria-label={sourceNode.title}
                 style={{ left: node.position.x, top: node.position.y, width: NODE_WIDTH, height: CANVAS_SOURCE_NODE_HEIGHT }}
-                onPointerDownCapture={() => setActiveAtlasLayerKey(`source:${node.nodeId}`)}
+                onMouseEnter={() => enterAtlasLayer(layerKey)}
+                onMouseLeave={() => leaveAtlasLayer(layerKey)}
+                onPointerEnter={() => enterAtlasLayer(layerKey)}
+                onPointerLeave={() => leaveAtlasLayer(layerKey)}
+                onPointerDownCapture={() => setActiveAtlasLayerKey(layerKey)}
                 onPointerDown={(event) => handleSourcePointerDown(node, event)}
                 onPointerMove={handleAgentPointerMove}
                 onPointerUp={endAgentPointer}
@@ -4006,8 +4024,9 @@ export function ExecutionMap({
             const checker = agentsById?.get(task.workUnit.checkerAgentId);
             const isFocused = node.nodeId === focusedTaskNodeId;
             const isAtlasSelected = selectedAtlasNodeKeys.has(atlasSelectionKey("task", node.nodeId));
+            const layerKey = `task:${node.nodeId}`;
             const layerClassName = getAtlasLayerClassName({
-              active: isFocused || isAtlasSelected || activeAtlasLayerKey === `task:${node.nodeId}`,
+              active: isFocused || isAtlasSelected || isAtlasLayerKeyActive(layerKey),
               dragging: Boolean(atlasDragPreviewPositions[atlasDragPreviewKey("task", node.nodeId)]),
             });
             const latestTaskRun = selectLatestCanvasTaskRun(taskRunsByTaskId[task.taskId]);
@@ -4053,7 +4072,11 @@ export function ExecutionMap({
                 data-task-run-status={latestTaskRun?.status ?? "none"}
                 aria-label={task.title}
                 style={{ left: node.position.x, top: node.position.y, width: NODE_WIDTH, height: nodeHeight }}
-                onPointerDownCapture={() => setActiveAtlasLayerKey(`task:${node.nodeId}`)}
+                onMouseEnter={() => enterAtlasLayer(layerKey)}
+                onMouseLeave={() => leaveAtlasLayer(layerKey)}
+                onPointerEnter={() => enterAtlasLayer(layerKey)}
+                onPointerLeave={() => leaveAtlasLayer(layerKey)}
+                onPointerDownCapture={() => setActiveAtlasLayerKey(layerKey)}
                 onPointerDown={(event) => handleTaskPointerDown(node, event)}
                 onPointerMove={handleTaskPointerMove}
                 onPointerUp={endTaskPointer}
@@ -4336,7 +4359,11 @@ export function ExecutionMap({
           })}
           {agentBranchNode && agentBranchPanel && maximizedBranch?.kind !== "agent" && (
             <div
-              className={`emap-agent-branch-shell ${getAtlasLayerClassName({ active: activeAtlasLayerKey === "branch:agent" })}`}
+              className={`emap-agent-branch-shell ${getAtlasLayerClassName({ active: isAtlasLayerKeyActive("branch:agent") })}`}
+              onMouseEnter={() => enterAtlasLayer("branch:agent")}
+              onMouseLeave={() => leaveAtlasLayer("branch:agent")}
+              onPointerEnter={() => enterAtlasLayer("branch:agent")}
+              onPointerLeave={() => leaveAtlasLayer("branch:agent")}
               onPointerDownCapture={(event) => {
                 setActiveAtlasLayerKey("branch:agent");
                 beginAgentBranchDrag(event);
@@ -4387,16 +4414,22 @@ export function ExecutionMap({
             </div>
           )}
           {taskBranchEntries.map((entry) => {
-            const isLayerActive = activeAtlasLayerKey === `branch:${entry.id}`
-              || activeAtlasLayerKey === `task:${entry.node.nodeId}`
+            const branchLayerKey = `branch:${entry.id}`;
+            const taskLayerKey = `task:${entry.node.nodeId}`;
+            const isLayerActive = isAtlasLayerKeyActive(branchLayerKey)
+              || isAtlasLayerKeyActive(taskLayerKey)
               || entry.node.nodeId === focusedTaskNodeId;
             return (
               <div
                 key={`task-branch-${entry.id}`}
                 ref={(el: HTMLDivElement | null) => { taskBranchShellRefs.current[entry.id] = el; }}
                 className={`emap-task-branch-shell ${getAtlasLayerClassName({ active: isLayerActive })}`}
+                onMouseEnter={() => enterAtlasLayer(branchLayerKey)}
+                onMouseLeave={() => leaveAtlasLayer(branchLayerKey)}
+                onPointerEnter={() => enterAtlasLayer(branchLayerKey)}
+                onPointerLeave={() => leaveAtlasLayer(branchLayerKey)}
                 onPointerDownCapture={(event) => {
-                  setActiveAtlasLayerKey(`branch:${entry.id}`);
+                  setActiveAtlasLayerKey(branchLayerKey);
                   beginTaskBranchDrag(entry, event);
                 }}
                 onPointerMove={moveTaskBranchDrag}
@@ -4421,69 +4454,76 @@ export function ExecutionMap({
               </div>
             );
           })}
-          {taskChildBranchPanelsLayout.filter((p) => !(maximizedBranch?.kind === "task-panel" && maximizedBranch.panelId === p.id)).map((p) => (
-            <div
-              key={`task-child-panel-${p.id}`}
-              data-panel-id={p.id}
-              data-panel-source-id={p.sourceId ?? ""}
-              className={`emap-task-child-branch-shell${p.resizable ? " emap-panel-resizable" : ""} ${getAtlasLayerClassName({ active: activeAtlasLayerKey === `panel:${p.id}` })}`}
-              onPointerDownCapture={(e) => {
-                setActiveAtlasLayerKey(`panel:${p.id}`);
-                beginPanelDrag(p.id, e);
-              }}
-              onPointerMove={(e) => { movePanelDrag(e); if (p.resizable) movePanelResize(e); }}
-              onPointerUp={(e) => { endPanelDrag(e); if (p.resizable) endPanelResize(e); }}
-              onPointerCancel={(e) => { endPanelDrag(e); if (p.resizable) endPanelResize(e); }}
-              onDoubleClick={(event) => {
-                if (!canTogglePanelMaximize(event.target)) return;
-                event.stopPropagation();
-                setMaximizedBranch({ kind: "task-panel", panelId: p.id });
-              }}
-              onClickCapture={(e) => {
-                if (panelDragSuppressClickRef.current) {
-                  panelDragSuppressClickRef.current = false;
-                  const target = e.target instanceof Element ? e.target : null;
-                  const allowPanelControlClick = target?.closest(
-                    ".emap-agent-branch-maximize-button, .emap-panel-resize-handle, .emap-observer-node-close, .task-leader-branch-collapse, .agent-playground-branch-collapse, .task-action-menu-button, input, textarea, select, a, iframe, summary, details",
-                  );
-                  if (!allowPanelControlClick) {
-                    e.stopPropagation();
+          {taskChildBranchPanelsLayout.filter((p) => !(maximizedBranch?.kind === "task-panel" && maximizedBranch.panelId === p.id)).map((p) => {
+            const panelLayerKey = `panel:${p.id}`;
+            return (
+              <div
+                key={`task-child-panel-${p.id}`}
+                data-panel-id={p.id}
+                data-panel-source-id={p.sourceId ?? ""}
+                className={`emap-task-child-branch-shell${p.resizable ? " emap-panel-resizable" : ""} ${getAtlasLayerClassName({ active: isAtlasLayerKeyActive(panelLayerKey) })}`}
+                onMouseEnter={() => enterAtlasLayer(panelLayerKey)}
+                onMouseLeave={() => leaveAtlasLayer(panelLayerKey)}
+                onPointerEnter={() => enterAtlasLayer(panelLayerKey)}
+                onPointerLeave={() => leaveAtlasLayer(panelLayerKey)}
+                onPointerDownCapture={(e) => {
+                  setActiveAtlasLayerKey(panelLayerKey);
+                  beginPanelDrag(p.id, e);
+                }}
+                onPointerMove={(e) => { movePanelDrag(e); if (p.resizable) movePanelResize(e); }}
+                onPointerUp={(e) => { endPanelDrag(e); if (p.resizable) endPanelResize(e); }}
+                onPointerCancel={(e) => { endPanelDrag(e); if (p.resizable) endPanelResize(e); }}
+                onDoubleClick={(event) => {
+                  if (!canTogglePanelMaximize(event.target)) return;
+                  event.stopPropagation();
+                  setMaximizedBranch({ kind: "task-panel", panelId: p.id });
+                }}
+                onClickCapture={(e) => {
+                  if (panelDragSuppressClickRef.current) {
+                    panelDragSuppressClickRef.current = false;
+                    const target = e.target instanceof Element ? e.target : null;
+                    const allowPanelControlClick = target?.closest(
+                      ".emap-agent-branch-maximize-button, .emap-panel-resize-handle, .emap-observer-node-close, .task-leader-branch-collapse, .agent-playground-branch-collapse, .task-action-menu-button, input, textarea, select, a, iframe, summary, details",
+                    );
+                    if (!allowPanelControlClick) {
+                      e.stopPropagation();
+                    }
                   }
-                }
-              }}
-              style={{
-                ...getAtlasPanelLayerStyle(p.layerDepth),
-                left: p.rect.x,
-                top: p.rect.y,
-                width: p.rect.width,
-                ...(p.autoHeight ? {} : { height: p.rect.height }),
-              }}
-            >
-              {p.panel}
-              {p.maximizable && (
-                <button
-                  type="button"
-                  className="emap-agent-branch-maximize-button"
-                  aria-label="最大化对话分支"
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setMaximizedBranch({ kind: "task-panel", panelId: p.id });
-                  }}
-                >
-                  ⛶
-                </button>
-              )}
-              {p.resizable && (
-                <button
-                  type="button"
-                  className="emap-panel-resize-handle"
-                  aria-label="调整面板大小"
-                  onPointerDown={(event) => beginPanelResize(p.id, p.minWidth ?? 360, p.minHeight ?? 240, event)}
-                />
-              )}
-            </div>
-          ))}
+                }}
+                style={{
+                  ...getAtlasPanelLayerStyle(p.layerDepth),
+                  left: p.rect.x,
+                  top: p.rect.y,
+                  width: p.rect.width,
+                  ...(p.autoHeight ? {} : { height: p.rect.height }),
+                }}
+              >
+                {p.panel}
+                {p.maximizable && (
+                  <button
+                    type="button"
+                    className="emap-agent-branch-maximize-button"
+                    aria-label="最大化对话分支"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setMaximizedBranch({ kind: "task-panel", panelId: p.id });
+                    }}
+                  >
+                    ⛶
+                  </button>
+                )}
+                {p.resizable && (
+                  <button
+                    type="button"
+                    className="emap-panel-resize-handle"
+                    aria-label="调整面板大小"
+                    onPointerDown={(event) => beginPanelResize(p.id, p.minWidth ?? 360, p.minHeight ?? 240, event)}
+                  />
+                )}
+              </div>
+            );
+          })}
           {taskConnectionLinks.map(({ connection, source, target }) => {
             const sourceTitle = tasksById?.get(connection.fromTaskId)?.title ?? connection.fromTaskId;
             const targetTitle = tasksById?.get(connection.toTaskId)?.title ?? connection.toTaskId;

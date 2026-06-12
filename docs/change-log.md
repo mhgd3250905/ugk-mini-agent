@@ -22,6 +22,7 @@
 - **视觉优化**: Dell 1996 主题下展开 Group frame 背景改为 `rgba(241, 238, 228, 0.52)`，保持 1996 纸色气质但降低遮挡感；折叠 Group card 和 menu branch 仍保持实体面板背景。
 - **第二批层级优化**: SVG connector 从单层 `.execution-map-links` 拆成 `base` / `child` / `active` 三个可排序 layer。普通业务连线仍在 `connector.base`，Agent / Task branch 与 child panel connector 进入 `connector.child`，selected chain 与 evidence connector 进入 `context.active`，避免子级线继续被父级普通节点层压住。
 - **回归修复**: 点击 Task 后，Task 卡片、Task 操作分支面板已在 active layer，但它们之间的 `.emap-link-task-branch` 仍留在 child layer，会被其他节点/面板盖住；现已让 active/focused/selected 端点的 task/source/dependency 连接线，以及 active Task / Agent / child panel 分支线一起进入 `context.active`。
+- **hover context 修正**: hover 不再只依赖 CSS 浮起卡片，而是进入同一套 layer context；Task / Agent / Source 节点、Task / Agent / child panel 和相关 connector 会按 hover/active/focus/selection 统一归入 `context.active`，避免鼠标悬浮卡片时仍被高层连接线压住。
 
 ## 2026-06-12 — Team Console canvas layering runtime pass
 
