@@ -3,6 +3,8 @@ import {
   atlasLayerKey,
   createAtlasLayerContext,
   getAtlasLayerClassName,
+  getAtlasLayerTargetClassName,
+  getAtlasLinkLayerBucket,
   getAtlasPanelLayerStyle,
   isAtlasLayerContextActive,
   isAtlasLayerContextDragging,
@@ -52,5 +54,26 @@ describe("atlas layering helpers", () => {
     expect(getAtlasLayerClassName({ active: true, dragging: true })).toBe("is-layer-active is-layer-dragging");
     expect(getAtlasPanelLayerStyle(2)).toEqual({ "--emap-panel-depth-offset": "20" });
     expect(getAtlasPanelLayerStyle(-1)).toEqual({ "--emap-panel-depth-offset": "0" });
+  });
+
+  it("projects target state into layer classes through the shared context", () => {
+    const context = createAtlasLayerContext({
+      activeLayerKey: atlasLayerKey("branch", "menu-a"),
+      draggingLayerKeys: new Set([atlasLayerKey("task", "dragged")]),
+    });
+
+    expect(getAtlasLayerTargetClassName(context, atlasLayerKey("branch", "menu-a"))).toBe("is-layer-active");
+    expect(getAtlasLayerTargetClassName(context, atlasLayerKey("task", "dragged"))).toBe("is-layer-active is-layer-dragging");
+    expect(getAtlasLayerTargetClassName(context, atlasLayerKey("task", "idle"))).toBe("");
+  });
+
+  it("assigns connector buckets from layer target activity", () => {
+    const context = createAtlasLayerContext({
+      hoveredLayerKey: atlasLayerKey("panel", "observer"),
+    });
+
+    expect(getAtlasLinkLayerBucket(context, atlasLayerKey("task", "idle"), "base")).toBe("base");
+    expect(getAtlasLinkLayerBucket(context, atlasLayerKey("panel", "idle"), "child")).toBe("child");
+    expect(getAtlasLinkLayerBucket(context, atlasLayerKey("panel", "observer"), "child")).toBe("active");
   });
 });

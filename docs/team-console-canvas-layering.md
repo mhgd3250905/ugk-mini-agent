@@ -85,7 +85,7 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `apps/team-console/src/graph/atlas-layering.ts` | 定义 `AtlasLayerKey`、`AtlasLayerContext`、active / dragging 判定、class helper 和 panel depth offset 计算 |
+| `apps/team-console/src/graph/atlas-layering.ts` | 定义 `AtlasLayerKey`、`AtlasLayerContext`、target class projection、connector layer bucket、active / dragging 判定和 panel depth offset 计算 |
 | `apps/team-console/src/graph/execution-map-layering.css` | 承载画布层级 CSS custom properties |
 | `apps/team-console/src/graph/ExecutionMap.tsx` | 只负责把元素归类到 layer context，不直接写裸 z-index |
 | `apps/team-console/src/graph/AtlasCanvasShell.tsx` | 只负责 shell 层：toolbar、selection rect、overlay slot，不管理 world depth |
@@ -100,7 +100,7 @@
 - Agent branch、Task branch、Task child panel 已使用 `panel.childBase + depth offset`；最近点击或 focused 的 branch / panel 进入 active layer。
 - SVG connector 已拆成 `base` / `child` / `active` 三个可排序 SVG layer：普通业务线进入 `connector.base`，Agent / Task branch 与 child panel connector 进入 `connector.child`，selected chain 与 evidence connector 进入 `context.active`。
 - Dell 1996 hover 不再使用 `z-index: 30`，改为 `canvas.context.active`，不会压过 maximized branch。
-- `ExecutionMap` 已统一通过 `AtlasLayerContext` 判断 active / hover / focus / selection / dragging；Task / Agent / Source 节点、run task、branch、panel 和关联 connector 不再各自手写 active/hover 字符串比较。
+- `ExecutionMap` 已统一通过 `AtlasLayerContext` 判断 active / hover / focus / selection / dragging；Task / Agent / Source 节点、branch、panel 和 branch / panel connector 通过 `atlas-layering` 的 target class / link bucket helper 投影，不再各自手写 active/hover/dragging 组合。
 - 仍保留的裸 `z-index` 只允许作为局部组件内部层级，例如卡片内部内容、局部菜单、飞行动画内部按钮；后续若跨出组件边界，必须升格为 layer token。
 
 ## 实现原则

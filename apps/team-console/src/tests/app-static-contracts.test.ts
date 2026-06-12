@@ -829,7 +829,8 @@ describe("Team Console static contracts", () => {
     expect(mapSource).toContain("activeAtlasLayerKey");
     expect(mapSource).toContain("createAtlasLayerContext");
     expect(mapSource).toContain("isAtlasLayerContextActive");
-    expect(mapSource).toContain("isAtlasLayerContextDragging");
+    expect(mapSource).toContain("getAtlasLayerTargetClassName");
+    expect(mapSource).toContain("getAtlasLinkLayerBucket");
     expect(mapSource).toContain("atlasLayerKey(");
     expect(mapSource).not.toContain("const isAtlasLayerKeyActive = (key: string) => activeAtlasLayerKey === key || hoveredAtlasLayerKey === key;");
     expect(mapSource).toContain("getAtlasPanelLayerStyle(p.layerDepth)");

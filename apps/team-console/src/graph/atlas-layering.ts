@@ -23,6 +23,7 @@ export type AtlasLayerContext = {
 };
 
 export type AtlasLayerKeyTarget = AtlasLayerKey | ReadonlyArray<AtlasLayerKey>;
+export type AtlasLinkLayerBucket = "base" | "child" | "active";
 
 export function atlasLayerKey(kind: AtlasLayerKeyKind, id: string): AtlasLayerKey {
   return `${kind}:${id}`;
@@ -66,4 +67,19 @@ export function getAtlasLayerClassName(options: { active?: boolean; dragging?: b
     options.active ? "is-layer-active" : "",
     options.dragging ? "is-layer-dragging" : "",
   ].filter(Boolean).join(" ");
+}
+
+export function getAtlasLayerTargetClassName(context: AtlasLayerContext, target: AtlasLayerKeyTarget): string {
+  return getAtlasLayerClassName({
+    active: isAtlasLayerContextActive(context, target),
+    dragging: isAtlasLayerContextDragging(context, target),
+  });
+}
+
+export function getAtlasLinkLayerBucket(
+  context: AtlasLayerContext,
+  target: AtlasLayerKeyTarget,
+  inactiveBucket: Exclude<AtlasLinkLayerBucket, "active">,
+): AtlasLinkLayerBucket {
+  return isAtlasLayerContextActive(context, target) ? "active" : inactiveBucket;
 }

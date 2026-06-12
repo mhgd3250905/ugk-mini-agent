@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-12 — Team Console atlas layer projection deepening
+
+- **主题**: 继续深化 Team Console Execution Atlas 层级 Module。`atlas-layering` 不再只提供 key/context 与裸 class helper，而是承载 target class projection 和 connector layer bucket 判定；`ExecutionMap` 的节点、branch、panel 和 branch/panel connector 分层调用点改为消费这个 Interface。
+- **影响范围**: 仅 `apps/team-console` 画布层级内部架构与测试 seam；DOM class、SVG layer、CSS token、Team Runtime、split-task / worklist 链路和主 `/playground` UI 不变。
+- **验证**: `atlas-layering` 新增语义测试；Team Console layer/static/connection focused tests 69/69 通过；`npx tsc --noEmit` 通过。
+- **对应入口**: `apps/team-console/src/graph/atlas-layering.ts`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/tests/atlas-layering.test.ts`、`apps/team-console/src/tests/app-static-contracts.test.ts`、`docs/team-console-canvas-layering.md`。
+
 ## 2026-06-12 — Team Console Group layer regression fix
 
 - **主题**: 修复 canvas layering 第一批落地后 Group frame 在 Dell 1996 主题下压住节点的问题。根因是普通 `.emap-node` 自身仍为 `z-index: auto`，而 Group frame 的 positioned `z-index: 10` 会压过 auto 节点；现已让节点自身进入 `node.base` layer。
