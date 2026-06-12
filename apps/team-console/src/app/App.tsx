@@ -11,6 +11,7 @@ import { hasDirtyTaskEditConflict, useTaskEditState } from "./use-task-edit-stat
 import { useTaskLeaderCopy } from "./use-task-leader-copy";
 import { hasMissingRequiredTemplateBindings, normalizedTemplateBindings, renderTemplateParameterControl, templateBindingsForTask, type TaskCloneDraft, type TaskParameterDraft } from "./team-console-task-template-parameters";
 import { discoveryGeneratedVisualState, discoveryStageMeta, selectActiveDiscoveryRootRun, selectLatestRun, sortDiscoveryGeneratedTasksForSubcanvas, visibleDiscoveryGeneratedRuns } from "./team-console-discovery-run-state";
+import { generatedSourceLatestRunId, generatedSourceParentTaskId } from "./team-console-generated-source";
 import { hasSameTaskGroupRunPollingSignature, isActiveTaskGroupRun, selectLatestTaskGroupRun } from "./team-console-task-group-run-state";
 import { buildLiveTaskGroups, type StoredTaskGroupDisplayState, type TaskGroupRunUiState } from "./team-console-task-group-projection";
 import {
@@ -171,6 +172,10 @@ function buildTaskLeaderPlaygroundUrl(task: TeamCanvasTask, embedMode: AgentPlay
   return `${playgroundBaseUrlPrefix()}/playground?${params.toString()}`;
 }
 
+function taskRunAttemptFileUrl(runId: string, taskId: string, attemptId: string, fileName: string): string {
+  return `/v1/team/task-runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/attempts/${encodeURIComponent(attemptId)}/files/${encodeURIComponent(fileName)}`;
+}
+
 function taskMenuPanelId(nodeId: string): string {
   return `task-menu-${nodeId}`;
 }
@@ -304,6 +309,8 @@ export function App() {
   const [runHistoryIncludeArchived, setRunHistoryIncludeArchived] = useState(false);
   const [runHistoryAnalysisCopyState, setRunHistoryAnalysisCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [runHistoryAnalysisManualText, setRunHistoryAnalysisManualText] = useState<string | null>(null);
+  const [fileReferenceCopy, setFileReferenceCopy] = useState<{ key: string; state: "copied" | "failed"; manualText?: string } | null>(null);
+  const [runIdCopy, setRunIdCopy] = useState<{ runId: string; state: "copied" | "failed" } | null>(null);
   const [loadedTaskRunByTaskId, setLoadedTaskRunByTaskId] = useState<Record<string, string>>({});
   const [loadedTaskRunSnapshotByTaskId, setLoadedTaskRunSnapshotByTaskId] = useState<Record<string, LoadedTaskRunSnapshot>>({});
   const [taskNodes, setTaskNodes] = useState<AtlasTaskNode[]>([]);
@@ -339,6 +346,7 @@ export function App() {
   const [taskLeaderPickerOpen, setTaskLeaderPickerOpen] = useState(false);
   const sourceFileInputRef = useRef<HTMLInputElement | null>(null);
   const runHistoryAnalysisManualCopyRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileReferenceManualCopyRef = useRef<HTMLTextAreaElement | null>(null);
   const [canvasViewport, setCanvasViewport] = useState<AtlasViewport>({ x: 0, y: 0, scale: 1 });
   const [expandedAgentBranch, setExpandedAgentBranch] = useState<AgentBranchState | null>(null);
   const [canvasBranchLayout, setCanvasBranchLayout] = useState<AtlasBranchLayoutState>({});
@@ -367,6 +375,12 @@ export function App() {
     runHistoryAnalysisManualCopyRef.current?.focus();
     runHistoryAnalysisManualCopyRef.current?.select();
   }, [runHistoryAnalysisCopyState, runHistoryAnalysisManualText]);
+
+  useEffect(() => {
+    if (fileReferenceCopy?.state !== "failed" || !fileReferenceCopy.manualText) return;
+    fileReferenceManualCopyRef.current?.focus();
+    fileReferenceManualCopyRef.current?.select();
+  }, [fileReferenceCopy]);
   const [canvasUiStateHydrated, setCanvasUiStateHydrated] = useState(false);
   const [canvasUiStateRestoreHasStoredState, setCanvasUiStateRestoreHasStoredState] = useState(
     () => readStoredCanvasUiState(readStoredInitialDataSource(), CLEAN_AGENT_WORKSPACE_ID) !== null,
@@ -662,6 +676,8 @@ export function App() {
   ), [generatedTasksByDiscoveryTaskId]);
   useEffect(() => {
     for (const taskId of openDiscoveryTaskIds) {
+      const task = tasksById.get(taskId);
+      if (task?.canvasKind !== "discovery") continue;
       const loadKey = `${dataSource}:${taskId}`;
       if (discoveryChannelSetLoadKeysRef.current.has(loadKey)) continue;
       discoveryChannelSetLoadKeysRef.current.add(loadKey);
@@ -680,7 +696,7 @@ export function App() {
           setDiscoveryChannelSetLoadingByTaskId((current) => ({ ...current, [taskId]: false }));
         });
     }
-  }, [dataSource, openDiscoveryTaskIds, setError]);
+  }, [dataSource, openDiscoveryTaskIds, setError, tasksById]);
   const taskRunsByTaskIdRef = useRef(taskRunsByTaskId);
   taskRunsByTaskIdRef.current = taskRunsByTaskId;
   const taskConnectionsRef = useRef(taskConnections);
@@ -912,6 +928,76 @@ export function App() {
     } catch {
       setRunHistoryAnalysisCopyState("failed");
       setRunHistoryAnalysisManualText(text);
+    }
+  }, []);
+
+  const copyFileReferencePath = useCallback(async (key: string, path: string) => {
+    setFileReferenceCopy(null);
+    try {
+      const clipboard = globalThis.navigator?.clipboard;
+      if (clipboard?.writeText) {
+        try {
+          await clipboard.writeText(path);
+          setFileReferenceCopy({ key, state: "copied" });
+          return;
+        } catch { /* fall through to textarea fallback */ }
+      }
+
+      const ta = document.createElement("textarea");
+      ta.value = path;
+      ta.setAttribute("data-copy-fallback", "");
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      const prev = document.activeElement as HTMLElement | null;
+      ta.focus();
+      ta.select();
+      try {
+        const execCopy = document.execCommand?.bind(document);
+        if (!execCopy?.("copy")) throw new Error("execCommand copy returned false");
+        setFileReferenceCopy({ key, state: "copied" });
+      } finally {
+        ta.remove();
+        prev?.focus();
+      }
+    } catch {
+      setFileReferenceCopy({ key, state: "failed", manualText: path });
+    }
+  }, []);
+
+  const copyObservedRunId = useCallback(async (runId: string) => {
+    setRunIdCopy(null);
+    try {
+      const clipboard = globalThis.navigator?.clipboard;
+      if (clipboard?.writeText) {
+        try {
+          await clipboard.writeText(runId);
+          setRunIdCopy({ runId, state: "copied" });
+          return;
+        } catch {
+          // Fall through to the textarea fallback for browser/permission edge cases.
+        }
+      }
+
+      const ta = document.createElement("textarea");
+      ta.value = runId;
+      ta.setAttribute("data-copy-fallback", "");
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      const prev = document.activeElement as HTMLElement | null;
+      ta.focus();
+      ta.select();
+      try {
+        const execCopy = document.execCommand?.bind(document);
+        if (!execCopy?.("copy")) throw new Error("execCommand copy returned false");
+        setRunIdCopy({ runId, state: "copied" });
+      } finally {
+        ta.remove();
+        prev?.focus();
+      }
+    } catch {
+      setRunIdCopy({ runId, state: "failed" });
     }
   }, []);
 
@@ -1656,15 +1742,15 @@ export function App() {
   }, []);
 
   const replaceGeneratedTaskInCatalog = useCallback((nextTask: TeamCanvasTask) => {
-    const sourceDiscoveryTaskId = nextTask.generatedSource?.sourceDiscoveryTaskId;
-    if (!sourceDiscoveryTaskId) return;
+    const sourceTaskId = generatedSourceParentTaskId(nextTask.generatedSource);
+    if (!sourceTaskId) return;
     markGeneratedTaskReplaced(nextTask.taskId);
     setGeneratedTasksByDiscoveryTaskId((current) => {
-      const currentTasks = current[sourceDiscoveryTaskId] ?? [];
+      const currentTasks = current[sourceTaskId] ?? [];
       if (!currentTasks.some((task) => task.taskId === nextTask.taskId)) return current;
       return {
         ...current,
-        [sourceDiscoveryTaskId]: currentTasks.map((task) =>
+        [sourceTaskId]: currentTasks.map((task) =>
           task.taskId === nextTask.taskId ? nextTask : task
         ),
       };
@@ -1886,9 +1972,9 @@ export function App() {
 
   const archiveGeneratedTask = useCallback(async (task: TeamCanvasTask): Promise<void> => {
     const taskId = task.taskId;
-    const sourceDiscoveryTaskId = task.generatedSource?.sourceDiscoveryTaskId;
-    if (!sourceDiscoveryTaskId) {
-      setError("generated Task archive requires a Discovery source");
+    const sourceTaskId = generatedSourceParentTaskId(task.generatedSource);
+    if (!sourceTaskId) {
+      setError("generated Task archive requires a generated source");
       return;
     }
     setGeneratedArchiveSavingByTaskId((current) => ({ ...current, [taskId]: true }));
@@ -1898,11 +1984,11 @@ export function App() {
       if (response.task.archived || response.task.status === "archived") {
         setGeneratedTasksByDiscoveryTaskId((current) => ({
           ...current,
-          [sourceDiscoveryTaskId]: (current[sourceDiscoveryTaskId] ?? []).filter((generatedTask) => generatedTask.taskId !== taskId),
+          [sourceTaskId]: (current[sourceTaskId] ?? []).filter((generatedTask) => generatedTask.taskId !== taskId),
         }));
         setSelectedDiscoveryChannelTaskIdsByTaskId((current) => ({
           ...current,
-          [sourceDiscoveryTaskId]: (current[sourceDiscoveryTaskId] ?? []).filter((selectedTaskId) => selectedTaskId !== taskId),
+          [sourceTaskId]: (current[sourceTaskId] ?? []).filter((selectedTaskId) => selectedTaskId !== taskId),
         }));
         clearGeneratedTaskPanelState(taskId);
         markGeneratedTaskArchived(taskId);
@@ -3308,7 +3394,7 @@ export function App() {
             >
               {"\u5bf9\u8bdd Leader"}
             </button>
-            {task.canvasKind === "discovery" && !task.generatedSource && (
+            {(task.canvasKind === "discovery" || task.canvasKind === "split-task") && !task.generatedSource && (
               <button
                 type="button"
                 className="task-action-menu-button"
@@ -3342,7 +3428,7 @@ export function App() {
                   );
                 }}
               >
-                Discovery 子画布
+                {task.canvasKind === "split-task" ? "生成子画布" : "Discovery 子画布"}
               </button>
             )}
             {taskDeleteConfirming ? (
@@ -3599,7 +3685,8 @@ export function App() {
         });
       }
 
-      if (branch.detailMode === "discovery-subcanvas" && task.canvasKind === "discovery" && !task.generatedSource) {
+      if (branch.detailMode === "discovery-subcanvas" && (task.canvasKind === "discovery" || task.canvasKind === "split-task") && !task.generatedSource) {
+        const isDiscoveryRoot = task.canvasKind === "discovery";
         const activeDiscoveryRun = selectActiveDiscoveryRootRun(task.taskId, taskRunsByTaskId);
         const latestDiscoveryRun = selectLatestRun(taskRunsByTaskId[task.taskId] ?? []);
         const discoveryStage = discoveryStageMeta(discoverySummariesByTaskId[task.taskId], latestDiscoveryRun);
@@ -3610,13 +3697,13 @@ export function App() {
           activeDiscoveryRun,
         );
         const dispatchDiagnostics = discoveryDispatchDiagnosticsByTaskId[task.taskId] ?? [];
-        const discoveryConcurrency = Math.max(1, task.discoverySpec?.autoRun?.concurrency ?? 3);
+        const discoveryConcurrency = Math.max(1, isDiscoveryRoot ? task.discoverySpec?.autoRun?.concurrency ?? 3 : task.splitTaskSpec?.autoRun?.concurrency ?? 3);
         const discoverySubcanvasStyle = {
           "--discovery-queue-columns": String(discoveryConcurrency * 2),
         } as CSSProperties;
         const selectedDiscoveryChannelTaskIds = selectedDiscoveryChannelTaskIdsByTaskId[task.taskId] ?? [];
         const selectedDiscoveryChannelTaskIdSet = new Set(selectedDiscoveryChannelTaskIds);
-        const channelSetLookup = buildDiscoveryChannelSetLookup({
+        const channelSetLookup = isDiscoveryRoot ? buildDiscoveryChannelSetLookup({
           task,
           activeDiscoveryRun,
           selectedChannelSetId: selectedDiscoveryChannelSetIdByTaskId[task.taskId] ?? null,
@@ -3625,16 +3712,16 @@ export function App() {
           channelSetLoading: Boolean(discoveryChannelSetLoadingByTaskId[task.taskId]),
           channelSetSaving: Boolean(discoveryChannelSetSavingByTaskId[task.taskId]),
           runPolicySaving: Boolean(discoveryRunPolicySavingByTaskId[task.taskId]),
-        });
-        const discoveryChannelSets = discoveryChannelSetsByTaskId[task.taskId] ?? [];
-        const selectedDiscoveryChannelSetId = channelSetLookup.selectedChannelSetId;
-        const selectedDiscoveryChannelSet = channelSetLookup.selectedChannelSet;
-        const activeDiscoveryChannelSet = channelSetLookup.activeChannelSet;
-        const defaultDiscoveryChannelSetId = channelSetLookup.defaultChannelSetId;
-        const defaultDiscoveryChannelSet = channelSetLookup.defaultChannelSet;
-        const discoveryRunPolicySaving = channelSetLookup.runPolicySaving;
-        const activeDiscoveryChannelTaskIdSet = channelSetLookup.activeChannelTaskIdSet;
-        const activeDiscoveryRunUsesChannelSet = channelSetLookup.activeRunUsesChannelSet;
+        }) : null;
+        const discoveryChannelSets = isDiscoveryRoot ? discoveryChannelSetsByTaskId[task.taskId] ?? [] : [];
+        const selectedDiscoveryChannelSetId = channelSetLookup?.selectedChannelSetId ?? null;
+        const selectedDiscoveryChannelSet = channelSetLookup?.selectedChannelSet ?? null;
+        const activeDiscoveryChannelSet = channelSetLookup?.activeChannelSet ?? null;
+        const defaultDiscoveryChannelSetId = channelSetLookup?.defaultChannelSetId ?? null;
+        const defaultDiscoveryChannelSet = channelSetLookup?.defaultChannelSet ?? null;
+        const discoveryRunPolicySaving = channelSetLookup?.runPolicySaving ?? false;
+        const activeDiscoveryChannelTaskIdSet = channelSetLookup?.activeChannelTaskIdSet ?? new Set<string>();
+        const activeDiscoveryRunUsesChannelSet = channelSetLookup?.activeRunUsesChannelSet ?? false;
         const generatedTaskCards = generatedTasks.map((generatedTask, generatedTaskIndex) => {
           const generatedSource = generatedTask.generatedSource;
           const itemStatus = generatedSource?.itemStatus ?? "active";
@@ -3656,7 +3743,7 @@ export function App() {
               ? Boolean(activeDiscoveryChannelSet)
                 && activeDiscoveryChannelTaskIdSet.has(generatedTask.taskId)
                 && !latestGeneratedRun
-              : generatedSource?.latestDiscoveryRunId !== activeDiscoveryRun?.runId
+              : generatedSourceLatestRunId(generatedSource) !== activeDiscoveryRun?.runId
           );
           const visualState = discoveryGeneratedVisualState(itemStatus, latestGeneratedRun, activeGeneratedRun, waitingForCurrentDiscoveryRun);
           const generatedOrdinal = String(generatedTaskIndex + 1).padStart(2, "0");
@@ -3716,9 +3803,10 @@ export function App() {
         const doneGeneratedTaskCount = activeGeneratedTaskCards.filter((card) => card.visualState === "done").length;
         const failedGeneratedTaskCount = activeGeneratedTaskCards.filter((card) => card.visualState === "failed").length;
         const waitingGeneratedTaskCount = activeGeneratedTaskCards.filter((card) => card.visualState === "queued").length;
-        const discoveryChannelSetTitle = channelSetLookup.title;
-        const discoveryChannelSetsLoading = channelSetLookup.loading;
-        const discoveryChannelSetSaving = channelSetLookup.saving;
+        const subcanvasLabel = isDiscoveryRoot ? "Discovery 子画布" : "生成子画布";
+        const discoveryChannelSetTitle = channelSetLookup?.title ?? "";
+        const discoveryChannelSetsLoading = channelSetLookup?.loading ?? false;
+        const discoveryChannelSetSaving = channelSetLookup?.saving ?? false;
         const renderGeneratedCard = (card: (typeof generatedTaskCards)[number]) => {
           const {
             activeGeneratedRun,
@@ -3795,19 +3883,21 @@ export function App() {
               }}
             >
               <span className="discovery-generated-card-watermark" aria-hidden="true">{generatedOrdinal}</span>
-              <button
-                type="button"
-                role="checkbox"
-                className="discovery-generated-channel-checkbox"
-                aria-label={`选择 ${generatedTask.title} 作为 Discovery 渠道`}
-                aria-checked={generatedChannelSelected}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  toggleDiscoveryChannelTaskSelection(task.taskId, generatedTask.taskId);
-                }}
-              >
-                <span aria-hidden="true" />
-              </button>
+              {isDiscoveryRoot ? (
+                <button
+                  type="button"
+                  role="checkbox"
+                  className="discovery-generated-channel-checkbox"
+                  aria-label={`选择 ${generatedTask.title} 作为 Discovery 渠道`}
+                  aria-checked={generatedChannelSelected}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    toggleDiscoveryChannelTaskSelection(task.taskId, generatedTask.taskId);
+                  }}
+                >
+                  <span aria-hidden="true" />
+                </button>
+              ) : null}
               <div className="discovery-generated-card-head">
                 <strong>{generatedTask.title}</strong>
               </div>
@@ -4006,12 +4096,12 @@ export function App() {
             <section
               className="task-leader-branch emap-panel-branch discovery-subcanvas-panel"
               data-discovery-subcanvas-for={task.taskId}
-              aria-label={`${task.title} Discovery 子画布`}
+              aria-label={`${task.title} ${subcanvasLabel}`}
               style={discoverySubcanvasStyle}
             >
               <header className="task-leader-branch-head">
                 <div className="task-leader-branch-title">
-                  <span>Discovery 子画布</span>
+                  <span>{subcanvasLabel}</span>
                   <strong>{task.title}</strong>
                   <code>{task.taskId}</code>
                 </div>
@@ -4039,7 +4129,7 @@ export function App() {
                       )
                     );
                   }}
-                  aria-label={`收起 ${task.title} Discovery 子画布`}
+                  aria-label={`收起 ${task.title} ${subcanvasLabel}`}
                 >
                   收起
                 </button>
@@ -4057,6 +4147,7 @@ export function App() {
                 {discoveryStage.generated > 0 && <span>{discoveryStage.generated} generated</span>}
                 {discoveryStage.blocked > 0 && <span className="danger">{discoveryStage.blocked} blocked</span>}
               </div>
+              {isDiscoveryRoot ? (
               <section
                 className="discovery-channel-set-panel"
                 data-discovery-channel-sets-for={task.taskId}
@@ -4207,7 +4298,8 @@ export function App() {
                   <div className="discovery-channel-set-empty">暂无保存的渠道集。</div>
                 )}
               </section>
-              {dispatchDiagnostics.length > 0 && (
+              ) : null}
+              {isDiscoveryRoot && dispatchDiagnostics.length > 0 && (
                 <section
                   className="discovery-dispatch-diagnostics"
                   data-discovery-dispatch-diagnostics-for={task.taskId}
@@ -4248,12 +4340,12 @@ export function App() {
                           {failedGeneratedTaskCount > 0 ? ` · ${failedGeneratedTaskCount} failed` : ""}
                           {staleGeneratedTaskCards.length > 0 ? ` · ${staleGeneratedTaskCards.length} stale hidden` : ""}
                         </strong>
-                        {activeGeneratedTaskIds.length > 0 ? (
+                        {isDiscoveryRoot && activeGeneratedTaskIds.length > 0 ? (
                           <span className="discovery-subcanvas-selection-count">
                             selected {selectedActiveGeneratedTaskCount}/{activeGeneratedTaskIds.length}
                           </span>
                         ) : null}
-                        {activeGeneratedTaskIds.length > 0 ? (
+                        {isDiscoveryRoot && activeGeneratedTaskIds.length > 0 ? (
                           <button
                             type="button"
                             className="discovery-subcanvas-select-all"
@@ -4394,7 +4486,7 @@ export function App() {
                     }}
                   >
                     <div className="task-edit-note">
-                      只允许修改名称和执行 Agent；sourceDiscoveryTaskId / sourceItemId / item payload 由 Discovery 维护。
+                      只允许修改名称和执行 Agent；source task / source item / item payload 由父任务维护。
                     </div>
                     {warning && <div className="task-edit-warning" role="status">{warning}</div>}
                     <div className="task-edit-grid">
@@ -4866,6 +4958,7 @@ export function App() {
 
     const pushTaskRunObserverPanels = ({
       observedTaskRun,
+      observedTaskId,
       selectedFileKeys,
       sourceId,
       runObserverPanelId,
@@ -4875,6 +4968,7 @@ export function App() {
       historyTask,
     }: {
       observedTaskRun: TeamRunState;
+      observedTaskId: string;
       selectedFileKeys: string[];
       sourceId: string;
       runObserverPanelId: string;
@@ -4895,6 +4989,7 @@ export function App() {
       const manualUpstreamSelections = observedTaskRun.source?.manualUpstreamSelections ?? [];
       const inputSourceLabel = manualUpstreamSelections.length > 0 ? "手动上游输入" : "自然运行流入";
       const inputSourceKind = manualUpstreamSelections.length > 0 ? "manual" : "natural";
+      const runIdCopyState = runIdCopy?.runId === observedTaskRun.runId ? runIdCopy.state : "idle";
 
       const renderFileRow = (descriptor: TaskRunObserverFileDescriptor) => {
         const isSelected = selectedFileKeySet.has(descriptor.key);
@@ -4961,6 +5056,22 @@ export function App() {
                 >
                   {inputSourceLabel}
                 </span>
+                <button
+                  type="button"
+                  className={`emap-node-id-copy emap-run-observer-run-id-copy${runIdCopyState !== "idle" ? ` is-${runIdCopyState}` : ""}`}
+                  onClick={() => { void copyObservedRunId(observedTaskRun.runId); }}
+                  aria-label={`复制 Run ID ${observedTaskRun.runId}`}
+                  title={`复制 ${observedTaskRun.runId}`}
+                >
+                  <code>
+                    {observedTaskRun.runId}
+                  </code>
+                  {runIdCopyState !== "idle" && (
+                    <span className="emap-copy-chip-state">
+                      {runIdCopyState === "copied" ? "已复制" : "失败"}
+                    </span>
+                  )}
+                </button>
                 <strong>{RUN_STATUS_LABELS[observedTaskRun.status]}</strong>
               </span>
             </header>
@@ -5030,6 +5141,9 @@ export function App() {
 
       for (const descriptor of selectedFileDescriptors) {
         const fileState = observerState?.files[descriptor.key];
+        const downloadUrl = taskRunAttemptFileUrl(observedTaskRun.runId, observedTaskId, descriptor.attemptId, descriptor.fileName);
+        const copyState = fileReferenceCopy?.key === descriptor.key ? fileReferenceCopy.state : "idle";
+        const manualCopyText = fileReferenceCopy?.key === descriptor.key ? fileReferenceCopy.manualText : undefined;
         panels.push({
           id: `${fileDetailPanelIdPrefix}-${descriptor.key}`.replace(/[^A-Za-z0-9_-]/g, "-"),
           width: 460,
@@ -5041,17 +5155,53 @@ export function App() {
           panel: (
             <section className="emap-observer-node emap-observer-file-detail-node" aria-label={descriptor.title}>
               <header className="emap-observer-node-head">
-                <span className="emap-observer-node-label">{descriptor.title}</span>
-                <code className="emap-observer-file-name">{descriptor.fileName}</code>
-                <button
-                  type="button"
-                  className="emap-observer-node-close"
-                  onClick={() => toggleFile(descriptor.key)}
-                  aria-label="\u6536\u8d77\u6587\u4ef6\u8be6\u60c5"
-                >
-                  {"\u6536\u8d77"}
-                </button>
+                <div className="emap-observer-file-title">
+                  <span className="emap-observer-node-label">{descriptor.title}</span>
+                  <code className="emap-observer-file-name">{descriptor.fileName}</code>
+                </div>
+                <div className="emap-observer-file-actions">
+                  <a
+                    className="emap-observer-file-action"
+                    href={downloadUrl}
+                    download={descriptor.fileName}
+                    aria-label={`下载文件 ${descriptor.fileName}`}
+                  >
+                    下载文件
+                  </a>
+                  <button
+                    type="button"
+                    className={`emap-node-id-copy emap-observer-file-reference-copy${copyState !== "idle" ? ` is-${copyState}` : ""}`}
+                    onClick={() => { void copyFileReferencePath(descriptor.key, descriptor.path); }}
+                    aria-label={`复制文件引用路径 ${descriptor.path}`}
+                    title={`复制 ${descriptor.path}`}
+                  >
+                    <code>{descriptor.path}</code>
+                    {copyState !== "idle" && (
+                      <span className="emap-copy-chip-state">
+                        {copyState === "copied" ? "已复制" : "失败"}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="emap-observer-node-close"
+                    onClick={() => toggleFile(descriptor.key)}
+                    aria-label="\u6536\u8d77\u6587\u4ef6\u8be6\u60c5"
+                  >
+                    {"\u6536\u8d77"}
+                  </button>
+                </div>
               </header>
+              {copyState === "failed" && manualCopyText && (
+                <textarea
+                  ref={fileReferenceManualCopyRef}
+                  className="emap-observer-file-copy-fallback"
+                  aria-label="手动复制文件引用路径"
+                  readOnly
+                  value={manualCopyText}
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+              )}
               <div className="emap-observer-file-detail-body">
                 {fileState?.error ? (
                   <div className="emap-observer-file-error">{fileState.error}</div>
@@ -5109,6 +5259,7 @@ export function App() {
 
       pushTaskRunObserverPanels({
         observedTaskRun,
+        observedTaskId: targetTaskId,
         selectedFileKeys: branch.selectedFileKeys ?? [],
         sourceId: isRunHistoryMode ? runHistoryPanelId : taskMenuPanelId(branch.nodeId),
         runObserverPanelId: taskRunObserverPanelId(branch.nodeId, observerPanelKind),
@@ -5126,7 +5277,7 @@ export function App() {
 
       const generatedObserver = branch.discoveryGeneratedObserver;
       const generatedTask = generatedTasksById.get(generatedObserver.taskId) ?? null;
-      if (!generatedTask || generatedTask.generatedSource?.sourceDiscoveryTaskId !== discoveryTask.taskId) continue;
+      if (!generatedTask || generatedSourceParentTaskId(generatedTask.generatedSource) !== discoveryTask.taskId) continue;
       const activeDiscoveryRun = selectActiveDiscoveryRootRun(discoveryTask.taskId, taskRunsByTaskId);
       const observedTaskRun = visibleDiscoveryGeneratedRuns(generatedTask, discoveryTask.taskId, activeDiscoveryRun, taskRunsByTaskId)
         .find((taskRun) => taskRun.runId === generatedObserver.runId) ?? null;
@@ -5154,6 +5305,7 @@ export function App() {
 
       pushTaskRunObserverPanels({
         observedTaskRun,
+        observedTaskId: generatedTask.taskId,
         selectedFileKeys: generatedObserver.selectedFileKeys ?? [],
         sourceId: `discovery-subcanvas-${branch.nodeId}`,
         runObserverPanelId: `generated-run-observer-${branch.nodeId}-${generatedTask.taskId}`,
@@ -5164,7 +5316,7 @@ export function App() {
     }
 
     return panels;
-  }, [activeRunHistoryTaskId, agents, agentsById, archiveDiscoveryChannelSet, archiveGeneratedTask, archiveTask, cancelTaskRun, clearDiscoveryChannelTaskSelection, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskCloneState, clearTaskEditState, clearTaskEditWarning, clearTaskParameterState, cloneTask, closeTaskRunHistory, copyRunHistoryAnalysisContext, copyTaskLeaderContext, dataSource, discoveryChannelSetArchivingById, discoveryChannelSetLoadingByTaskId, discoveryChannelSetSavingByTaskId, discoveryChannelSetTitleByTaskId, discoveryChannelSetsByTaskId, discoveryDispatchDiagnosticsByTaskId, discoveryRunPolicySavingByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, loadMoreRunHistory, loadRunHistoryItem, loadedTaskRunByTaskId, openTaskEditDraft, openTaskParameterDraft, openTaskRunHistory, patchRunHistoryAnnotation, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runHistoryAnalysisCopyState, runHistoryAnalysisManualText, runHistoryByTaskId, runHistoryIncludeArchived, runTask, saveDiscoveryChannelSet, saveTaskEdit, saveTaskParameters, scheduleLiveTaskDiscoveryRefresh, selectDiscoveryChannelSet, selectedDiscoveryChannelSetIdByTaskId, selectedDiscoveryChannelTaskIdsByTaskId, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskCloneDraftByTaskId, taskCloneSavingByTaskId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskParameterDraftByTaskId, taskParameterSavingByTaskId, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, toggleDiscoveryChannelTaskSelection, unloadRunHistoryItem, updateDiscoveryRunPolicy, updateTaskCloneBinding, updateTaskCloneTitle, updateTaskEditDraft, updateTaskParameterBinding]);
+  }, [activeRunHistoryTaskId, agents, agentsById, archiveDiscoveryChannelSet, archiveGeneratedTask, archiveTask, cancelTaskRun, clearDiscoveryChannelTaskSelection, clearGeneratedArchiveUiForTasks, clearGeneratedEditDetailFailure, clearTaskCloneState, clearTaskEditState, clearTaskEditWarning, clearTaskParameterState, cloneTask, closeTaskRunHistory, copyFileReferencePath, copyObservedRunId, copyRunHistoryAnalysisContext, copyTaskLeaderContext, dataSource, discoveryChannelSetArchivingById, discoveryChannelSetLoadingByTaskId, discoveryChannelSetSavingByTaskId, discoveryChannelSetTitleByTaskId, discoveryChannelSetsByTaskId, discoveryDispatchDiagnosticsByTaskId, discoveryRunPolicySavingByTaskId, ensureGeneratedTaskDetail, expandedTaskBranches, fileReferenceCopy, generatedActionMenuTaskId, generatedArchiveConfirmTaskId, generatedArchiveSavingByTaskId, generatedResetSavingByTaskId, generatedTasksByDiscoveryTaskId, generatedTasksById, loadMoreRunHistory, loadRunHistoryItem, loadedTaskRunByTaskId, openTaskEditDraft, openTaskParameterDraft, openTaskRunHistory, patchRunHistoryAnnotation, refreshLiveTasks, registerTaskLeaderManualCopyRef, resetGeneratedTaskWorkUnit, runHistoryAnalysisCopyState, runHistoryAnalysisManualText, runHistoryByTaskId, runHistoryIncludeArchived, runIdCopy, runTask, saveDiscoveryChannelSet, saveTaskEdit, saveTaskParameters, scheduleLiveTaskDiscoveryRefresh, selectDiscoveryChannelSet, selectedDiscoveryChannelSetIdByTaskId, selectedDiscoveryChannelTaskIdsByTaskId, setError, taskArchiveConfirmNodeId, taskArchiveSavingNodeId, taskCloneDraftByTaskId, taskCloneSavingByTaskId, taskEditDraftByTaskId, taskEditSavingByTaskId, taskEditWarningByTaskId, taskLeaderCopyByTaskId, taskNodes, taskParameterDraftByTaskId, taskParameterSavingByTaskId, taskRunObserverByRunId, taskRunSavingByTaskId, taskRunsByTaskId, tasksById, toggleDiscoveryChannelTaskSelection, unloadRunHistoryItem, updateDiscoveryRunPolicy, updateTaskCloneBinding, updateTaskCloneTitle, updateTaskEditDraft, updateTaskParameterBinding]);
   const canvasStateRestorePending = !loading && !canvasUiStateHydrated;
   const canvasLoadingMinimumMs = loading || canvasUiStateRestoreHasStoredState
     ? CANVAS_LOADING_MIN_VISIBLE_MS

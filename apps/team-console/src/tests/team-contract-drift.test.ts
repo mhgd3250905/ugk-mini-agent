@@ -24,12 +24,17 @@ import type {
 	TeamGeneratedTaskWorkUnitMode as FTeamGeneratedTaskWorkUnitMode,
 	TeamDiscoveryGeneratedRunOutcome as FTeamDiscoveryGeneratedRunOutcome,
 	TeamRunState as FTeamRunState,
+	TeamSplitTaskSpec as FTeamSplitTaskSpec,
 	TeamAttemptMetadata as FTeamAttemptMetadata,
 	TeamTaskConnection as FTeamTaskConnection,
 	TeamTaskDependency as FTeamTaskDependency,
 	TeamCanvasSourceNode as FTeamCanvasSourceNode,
 	TeamCanvasSourceConnection as FTeamCanvasSourceConnection,
 	TeamTaskOutputCheck as FTeamTaskOutputCheck,
+	TeamWorklistItem as FTeamWorklistItem,
+	TeamWorklistItemResult as FTeamWorklistItemResult,
+	TeamWorklistRecord as FTeamWorklistRecord,
+	TeamWorklistResultsRecord as FTeamWorklistResultsRecord,
 	TeamWorkUnitDefinition as FTeamWorkUnitDefinition,
 } from "@/api/team-types";
 import type {
@@ -41,11 +46,16 @@ import type {
 	TeamGeneratedTaskSource as BTeamGeneratedTaskSource,
 	TeamGeneratedTaskWorkUnitMode as BTeamGeneratedTaskWorkUnitMode,
 	TeamRunState as BTeamRunState,
+	TeamSplitTaskSpec as BTeamSplitTaskSpec,
 	TeamAttemptMetadataPublic,
 	TeamTaskConnectionPublic,
 	TeamTaskDependencyPublic,
 	TeamCanvasSourceConnectionPublic,
 	TeamTaskOutputCheck as BTeamTaskOutputCheck,
+	TeamWorklistItem as BTeamWorklistItem,
+	TeamWorklistItemResult as BTeamWorklistItemResult,
+	TeamWorklistRecord as BTeamWorklistRecord,
+	TeamWorklistResultsRecord as BTeamWorklistResultsRecord,
 	TeamWorkUnitDefinition as BTeamWorkUnitDefinition,
 } from "../../../../src/team/public-contract.js";
 
@@ -57,7 +67,8 @@ describe("Team public contract drift guard", () => {
 	it("TeamCanvasTask discovery/generated fields stay aligned", () => {
 		expectTypeOf<BTeamCanvasTask["canvasKind"]>().toEqualTypeOf<FTeamCanvasTask["canvasKind"]>();
 		expectTypeOf<BTeamCanvasTask["discoverySpec"]>().toEqualTypeOf<FTeamCanvasTask["discoverySpec"]>();
-		expectTypeOf<BTeamCanvasTask["generatedSource"]>().toEqualTypeOf<FTeamCanvasTask["generatedSource"]>();
+		expectTypeOf<BTeamCanvasTask["splitTaskSpec"]>().toEqualTypeOf<FTeamCanvasTask["splitTaskSpec"]>();
+		expectTypeOf<BTeamCanvasTask["generatedSource"]>().toMatchTypeOf<FTeamCanvasTask["generatedSource"]>();
 	});
 
 	it("Discovery contract types mirror backend public types", () => {
@@ -65,7 +76,15 @@ describe("Team public contract drift guard", () => {
 		expectTypeOf<BTeamGeneratedTaskItemStatus>().toEqualTypeOf<FTeamGeneratedTaskItemStatus>();
 		expectTypeOf<BTeamGeneratedTaskWorkUnitMode>().toEqualTypeOf<FTeamGeneratedTaskWorkUnitMode>();
 		expectTypeOf<BTeamDiscoverySpec>().toEqualTypeOf<FTeamDiscoverySpec>();
-		expectTypeOf<BTeamGeneratedTaskSource>().toEqualTypeOf<FTeamGeneratedTaskSource>();
+		expectTypeOf<BTeamSplitTaskSpec>().toEqualTypeOf<FTeamSplitTaskSpec>();
+		expectTypeOf<BTeamGeneratedTaskSource>().toMatchTypeOf<FTeamGeneratedTaskSource>();
+	});
+
+	it("Worklist contracts mirror backend public types", () => {
+		expectTypeOf<BTeamWorklistItem>().toEqualTypeOf<FTeamWorklistItem>();
+		expectTypeOf<BTeamWorklistRecord>().toEqualTypeOf<FTeamWorklistRecord>();
+		expectTypeOf<BTeamWorklistItemResult>().toEqualTypeOf<FTeamWorklistItemResult>();
+		expectTypeOf<BTeamWorklistResultsRecord>().toEqualTypeOf<FTeamWorklistResultsRecord>();
 	});
 
 	it("TeamGeneratedTaskSource latestManagedWorkUnit mirrors the WorkUnit contract and remains optional", () => {

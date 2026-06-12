@@ -16,6 +16,7 @@
   --dell-agent-accent: #356f9f;
   --dell-task-accent: #b23a48;
   --dell-discovery-accent: #007f9e;
+  --dell-split-accent: #8b3f6f;
   --dell-agent: #dce8ee;
   --dell-task: #f0ead2;
   --dell-source: #e2ead9;
@@ -179,6 +180,10 @@
 
 [data-visual-theme="dell-1996"] .emap-discovery-task-node .emap-node-status-bar {
   background: var(--dell-discovery-accent);
+}
+
+[data-visual-theme="dell-1996"] .emap-split-task-node .emap-node-status-bar {
+  background: var(--dell-split-accent);
 }
 
 [data-visual-theme="dell-1996"] .emap-canvas-task-node {

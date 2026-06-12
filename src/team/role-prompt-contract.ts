@@ -80,9 +80,57 @@ ${acceptanceRules.map((r, i) => `${i + 1}. ${r}`).join("\n")}
 - 需要交付给用户或让 checker 访问验证的文件，必须写入环境变量 ARTIFACT_PUBLIC_DIR 指向的目录
 - 如果 ARTIFACT_PUBLIC_BASE_URL 存在，对外可访问链接必须基于它拼接，不要启动临时本地 HTTP server，也不要输出 localhost 临时端口
 ${feedback ? `\n## 上次反馈（请针对反馈修改）\n${feedback}` : ""}`;
+	if (feedback) {
+		prompt += `
+
+## 返工约束（必须遵守）
+- 只修改反馈明确指出的问题。
+- 保持上一版输出的字段名、文件名、数据范围和条目顺序，除非反馈明确要求修改这些内容。
+- 不得因为局部返工重写整体结构、重新抽取数据、重命名字段或扩大/缩小处理范围。
+- 已经满足验收标准的内容保持不变。`;
+	}
+	prompt += buildPortContractBlock(task);
 	prompt += buildOutputContractBlock(task);
 	prompt += buildSourceItemIdentityBlock(task);
 	return prompt;
+}
+
+function buildPortContractBlock(task: TeamTask): string {
+	const inputPorts = task.inputPorts ?? [];
+	const outputPorts = task.outputPorts ?? [];
+	if (inputPorts.length === 0 && outputPorts.length === 0 && !task.outputContract?.text) return "";
+	const lines = [
+		"",
+		"## 端口与 typed artifact 协议（必须遵守）",
+	];
+	if (inputPorts.length > 0) {
+		lines.push("- 输入端口：");
+		for (const port of inputPorts) {
+			lines.push(`  - ${port.id}: ${port.type}${port.label ? `（${port.label}）` : ""}`);
+		}
+		lines.push("- 任务若有输入端口，必须使用运行时绑定的 typed artifact；不得在历史 run、旧文件库或全局目录里自行搜索替代输入。");
+	}
+	if (inputPorts.some(port => normalizePortType(port.type) === "worklist-results")) {
+		lines.push(
+			"- 对 worklist-results 输入，team/worklist-results-1 的 `results[]` 是唯一权威处理结果；`sourceWorklist.items` 只用于清点覆盖率，不得作为业务输出数据源。",
+			"- 必须先检查 `results[]` 中每个 item 的 status。若存在 failed/cancelled/missing 或无法解析的 result content，必须明确报告未完整回收，不得把 sourceWorklist 原始 input 当作成功结果继续加工。",
+			"- 只允许处理 status 为 succeeded 的 `results[].content`；如果业务要求全量处理，必须在所有分片均 succeeded 后再继续。",
+		);
+	}
+	if (outputPorts.length > 0) {
+		lines.push("- 输出端口：");
+		for (const port of outputPorts) {
+			lines.push(`  - ${port.id}: ${port.type}${port.label ? `（${port.label}）` : ""}`);
+		}
+	}
+	if (task.outputContract?.text) {
+		lines.push(`- 输出契约：${task.outputContract.text}`);
+	}
+	return `\n${lines.join("\n")}`;
+}
+
+function normalizePortType(type: string): string {
+	return type.trim().toLowerCase().replace(/_/g, "-");
 }
 
 function buildOutputContractBlock(task: TeamTask): string {
@@ -146,6 +194,7 @@ export function buildCheckerPrompt(task: TeamTask, acceptanceRules: string[], wo
 ## 任务
 标题：${task.title}
 描述：${task.input.text}
+${task.outputContract?.text ? `输出契约：${task.outputContract.text}\n` : ""}
 
 ## 验收标准
 ${acceptanceRules.map((r, i) => `${i + 1}. ${r}`).join("\n")}
@@ -167,7 +216,14 @@ JSON 格式：
 - reason 必须是 string
 - resultContent / feedback 如存在必须是 string
 - 字符串中的双引号必须转义为 \\"
-- 不要在 JSON 前后添加任何文字`;
+- 不要在 JSON 前后添加任何文字
+
+验收边界：
+- 只能依据任务描述、输出契约、验收标准和 Runtime deterministic output validation（如提供）判定 pass/revise/fail。
+- 不得追加任务未写明的新验收标准。
+- 不得把未要求的去重、来源命名、排序、风格偏好当作 revise 或 fail 的理由。
+- 如果任务要求保留原有字段不做任何修改，不得要求修改原有字段，除非任务描述或验收标准明确要求。
+- 对任务未要求的优化建议，可以在 pass 的 reason 中作为非阻塞备注，不得阻塞验收。`;
 	return base + buildValidationEvidenceBlock(outputValidation, "checker") + buildCheckerSourceItemBlock(task);
 }
 
@@ -703,6 +759,11 @@ export function parseCheckerRoleOutput(content: string): Omit<CheckerOutput, "ru
 		const parsed = parseJsonResponse<CheckerJsonOutput>(content);
 		const normalized = normalizeCheckerOutput(parsed);
 		if (normalized) return normalized;
+		const jsonish = parseCheckerJsonish(content);
+		if (jsonish) {
+			const normalizedJsonish = normalizeCheckerOutput(jsonish);
+			if (normalizedJsonish) return normalizedJsonish;
+		}
 		return { verdict: "fail", reason: "checker output parse error: invalid verdict", resultContent: content };
 	} catch {
 		const parsed = parseCheckerJsonish(content);

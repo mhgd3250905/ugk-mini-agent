@@ -4,9 +4,21 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const SKILL_PATH = join(import.meta.dirname, "../.pi/skills/team-task-creator/SKILL.md");
+const CONTRACT_REFERENCE_PATH = join(
+	import.meta.dirname,
+	"../.pi/skills/team-task-creator/references/task-contracts.md",
+);
 
 async function readSkill(): Promise<string> {
 	return readFile(SKILL_PATH, "utf8");
+}
+
+async function readContractReference(): Promise<string> {
+	return readFile(CONTRACT_REFERENCE_PATH, "utf8");
+}
+
+async function readSkillBundle(): Promise<string> {
+	return `${await readSkill()}\n${await readContractReference()}`;
 }
 
 function readFrontmatter(skill: string): Record<string, string> {
@@ -33,227 +45,236 @@ test("team-task-creator skill follows skill-creator frontmatter guidance", async
 	assert.match(frontmatter.description!, /design advisor|设计向导|创建向导/i);
 	assert.match(frontmatter.description!, /\/team-task/);
 	assert.match(frontmatter.description!, /natural-language|自然语言|plain-language/i);
-	assert.match(frontmatter.description!, /Discovery|multi-platform|multi-source|多平台|多来源/i);
+	assert.match(frontmatter.description!, /Discovery|multi-source|多来源/i);
+	assert.match(frontmatter.description!, /worklist|split-task|分片任务/i);
 	assert.match(frontmatter.description!, /do not use|Do not use|不要用于/i);
 });
 
-test("team-task-creator skill keeps core instructions in one concise SKILL body", async () => {
+test("team-task-creator skill uses progressive disclosure instead of stuffing contracts into SKILL.md", async () => {
 	const skill = await readSkill();
 	const lineCount = skill.split(/\r?\n/).length;
-	assert.ok(lineCount < 500, `expected skill to stay under 500 lines, got ${lineCount}`);
-	assert.doesNotMatch(skill, /README\.md|INSTALLATION_GUIDE|QUICK_REFERENCE|CHANGELOG/i);
-	assert.match(skill, /Guided Task Design Advisor/);
+	assert.ok(lineCount < 250, `expected lean SKILL body, got ${lineCount} lines`);
+	assert.match(skill, /Progressive Disclosure/);
+	assert.match(skill, /references\/task-contracts\.md/);
+	assert.match(skill, /Read `references\/task-contracts\.md`[\s\S]*before showing any full JSON preview/i);
+	assert.match(skill, /Conversation Posture/);
 	assert.match(skill, /Workflow/);
 	assert.match(skill, /Verification/);
+	assert.doesNotMatch(skill, /README\.md|INSTALLATION_GUIDE|QUICK_REFERENCE|CHANGELOG/i);
 });
 
-test("team-task-creator skill activates for explicit natural-language Task creation intent", async () => {
+test("team-task-creator contract reference is directly linked and structured for on-demand loading", async () => {
+	const skill = await readSkill();
+	const reference = await readContractReference();
+	assert.match(skill, /references\/task-contracts\.md/);
+	assert.match(reference, /# Team Task Contracts Reference/);
+	assert.match(reference, /## Contents/);
+	assert.match(reference, /Task factory/);
+	assert.match(reference, /Common Task Payload/);
+	assert.match(reference, /Template Parameters/);
+	assert.match(reference, /Typed Ports/);
+	assert.match(reference, /Discovery Root/);
+	assert.match(reference, /Worklist Producer/);
+	assert.match(reference, /Split-task Root/);
+	assert.ok(reference.split(/\r?\n/).length < 300, "reference should stay navigable");
+});
+
+test("team-task-creator routes common creation through the Task factory", async () => {
+	const skill = await readSkill();
+	const reference = await readContractReference();
+	assert.match(skill, /Task factory CLI|Task factory/i);
+	assert.match(skill, /npm run team:task-factory/);
+	assert.match(skill, /normal, worklist producer, or split-task creation/);
+	assert.match(skill, /do not bypass the factory/i);
+	assert.match(reference, /npm run team:task-factory -- --spec task-spec\.json/);
+	assert.match(reference, /Factory errors are correction signals/);
+	assert.match(reference, /worklist-producer/);
+	assert.match(reference, /split-task/);
+});
+
+test("team-task-creator activates for natural-language Task creation but not run/debug work", async () => {
 	const skill = await readSkill();
 	assert.match(skill, /\/team-task/);
-	assert.match(skill, /MUST activate[\s\S]*(create|创建|update|更新)[\s\S]*(Team Console Task|Task|WorkUnit)/i);
-	assert.match(skill, /natural-language|自然语言/i);
-	assert.match(skill, /MUST NOT activate[\s\S]*(run|运行|progress|状态|观察|debug|调试)/i);
+	assert.match(skill, /create or update|创建|更新/i);
+	assert.match(skill, /Team Console Task|WorkUnit|任务卡片/);
+	assert.match(skill, /natural-language|plain-language|自然语言/i);
+	assert.match(skill, /Do not activate[\s\S]*(run|observe|debug|运行|调试)/i);
 	assert.match(skill, /可以用 `\/team-task/);
 });
 
-test("team-task-creator skill requires typed Task ports in every preview", async () => {
+test("team-task-creator centers non-expert conversation and hides jargon until preview", async () => {
 	const skill = await readSkill();
-	assert.match(skill, /inputPorts/);
-	assert.match(skill, /outputPorts/);
-	assert.match(skill, /typed ports|类型化端口|IN\/OUT/i);
-	assert.match(skill, /empty array|\[\]|空数组/i);
-	assert.match(skill, /md|markdown/i);
-	assert.match(skill, /html/i);
+	assert.match(skill, /non-expert|外行|rough goal|模糊/i);
+	assert.match(skill, /business language|业务语言|plain-language|人话/i);
+	assert.match(skill, /Do not ask[\s\S]*canvasKind/);
+	assert.match(skill, /Do not ask[\s\S]*inputPorts/);
+	assert.match(skill, /Do not ask[\s\S]*templateConfig/);
+	assert.match(skill, /Do not ask[\s\S]*splitTaskSpec/);
+	assert.match(skill, /Own the recommendation/);
+	assert.match(skill, /1-3 targeted questions|1-3.*question|少量/i);
 });
 
-test("team-task-creator skill requires checking Agent catalog before choosing roles", async () => {
+test("team-task-creator chooses task shape before collecting fields", async () => {
+	const skill = await readSkill();
+	assert.match(skill, /Evaluate the shape before collecting fields/);
+	assert.match(skill, /Do not ask the user to choose between technical task types/);
+	assert.match(skill, /normal Task/);
+	assert.match(skill, /template Task/);
+	assert.match(skill, /Discovery/);
+	assert.match(skill, /worklist producer/);
+	assert.match(skill, /split-task/);
+	assert.match(skill, /downstream normal Task/);
+	assert.match(skill, /recommend/i);
+	assert.match(skill, /why|为什么|explain/i);
+});
+
+test("team-task-creator distinguishes unknown discovery from known large upstream data", async () => {
+	const skill = await readSkill();
+	assert.match(skill, /调研多个渠道|多个渠道|多个平台/);
+	assert.match(skill, /先找一批对象再逐个分析/);
+	assert.match(skill, /usually means Discovery/);
+	assert.match(skill, /上游已经给了大 JSON|历史结果|文件/);
+	assert.match(skill, /worklist producer \+ split-task/);
+	assert.match(skill, /整理清单 Task -> 分片处理 Task -> 汇总报告 Task/);
+});
+
+test("team-task-creator separates worklist artifact shape from runtime handoff", async () => {
+	const skill = await readSkill();
+	assert.match(skill, /artifact shape from runtime handoff/i);
+	assert.match(skill, /team\/worklist-1/);
+	assert.match(skill, /machine-readable output reference/i);
+	assert.match(skill, /not a prose summary/i);
+});
+
+test("team-task-creator asks business questions for templates and delivery tasks", async () => {
+	const skill = await readSkill();
+	assert.match(skill, /recipient|收件人/i);
+	assert.match(skill, /subject|邮件标题/i);
+	assert.match(skill, /body source|正文来源/i);
+	assert.match(skill, /Internally map[\s\S]*template parameters[\s\S]*ports/i);
+});
+
+test("team-task-creator requires active Agent catalog before choosing roles", async () => {
 	const skill = await readSkill();
 	assert.match(skill, /GET\s+\/v1\/agents/);
-	assert.match(skill, /leaderAgentId/);
-	assert.match(skill, /workerAgentId/);
-	assert.match(skill, /checkerAgentId/);
-	assert.match(skill, /current.*Agent|当前.*Agent/i);
+	assert.match(skill, /active Agent/);
+	assert.match(skill, /Do not guess Agent ids from memory/);
+	assert.match(skill, /workerAgentId === checkerAgentId|same-Agent self-checking|同 Agent 自检/);
 });
 
-test("team-task-creator skill previews full Task JSON and waits for user confirmation", async () => {
+test("team-task-creator previews full JSON and waits for confirmation before writes", async () => {
 	const skill = await readSkill();
-	assert.match(skill, /full Task JSON|完整 Task JSON|完整的 Task JSON/i);
-	assert.match(skill, /preview|预览/i);
-	assert.match(skill, /confirm|确认/i);
-	assert.match(skill, /before calling|before.*API|先.*确认/i);
-	assert.match(skill, /inputPorts[\s\S]*outputPorts|outputPorts[\s\S]*inputPorts/);
-});
-
-test("team-task-creator skill supports template Task creation with fillable parameters", async () => {
-	const skill = await readSkill();
-	assert.match(skill, /template Task|模板 Task|模板任务/i);
-	assert.match(skill, /关键词先空出来|后续填写|fillable parameter|template parameter|模板参数/i);
-	assert.match(skill, /templateConfig/);
-	assert.match(skill, /team\/task-template-1/);
-	assert.match(skill, /\{\{keyword\}\}/);
-	assert.match(skill, /parameters[\s\S]*id[\s\S]*label/);
-	assert.match(skill, /POST\s+\/v1\/team\/tasks/);
-});
-
-test("team-task-creator skill documents typed template parameters for repeated delivery tasks", async () => {
-	const skill = await readSkill();
-	assert.match(skill, /inputType/);
-	assert.match(skill, /email_list/);
-	assert.match(skill, /select[\s\S]*options|options[\s\S]*select/);
-	assert.match(skill, /recipients[\s\S]*\{\{recipients\}\}/);
-	assert.match(skill, /subject[\s\S]*\{\{subject\}\}/);
-});
-
-test("team-task-creator skill shields non-expert users from template and port jargon", async () => {
-	const skill = await readSkill();
-	assert.match(skill, /non-expert|外行|不会.*专业词|业务语言/i);
-	assert.match(skill, /do not ask.*templateConfig|不要.*templateConfig|不要.*inputType/i);
-	assert.match(skill, /收件人|邮件标题|邮件正文/);
-	assert.match(skill, /infer.*recipients|自动.*recipients|映射.*recipients/i);
-	assert.match(skill, /plain-language|自然语言|人话/i);
-});
-
-test("team-task-creator skill distinguishes template creation from cloning or running", async () => {
-	const skill = await readSkill();
-	assert.match(skill, /POST\s+\/v1\/team\/tasks\/:taskId\/clone/);
-	assert.match(skill, /templateBindings/);
-	assert.match(skill, /clone|复制|实例化/i);
-	assert.match(skill, /must not start|不得启动|不要启动/i);
-	assert.match(skill, /full Task JSON|完整 Task JSON|完整的 Task JSON/i);
-});
-
-test("team-task-creator skill documents Task create and update APIs", async () => {
-	const skill = await readSkill();
+	assert.match(skill, /full JSON preview/i);
+	assert.match(skill, /Wait for explicit confirmation/i);
 	assert.match(skill, /POST\s+\/v1\/team\/tasks/);
 	assert.match(skill, /PATCH\s+\/v1\/team\/tasks\/:taskId/);
+	assert.match(skill, /No write before user confirmation/);
+});
+
+test("team-task-creator supports safe updates without converting canvas kind by patch", async () => {
+	const skill = await readSkill();
 	assert.match(skill, /GET\s+\/v1\/team\/tasks/);
 	assert.match(skill, /GET\s+\/v1\/team\/tasks\/:taskId/);
+	assert.match(skill, /Preserve existing ports/);
+	assert.match(skill, /changing a port id or type may break downstream connections/);
+	assert.match(skill, /Preserve `canvasKind`/);
+	assert.match(skill, /cannot be converted into Discovery or split-task by PATCH/);
 });
 
-test("team-task-creator skill prohibits runs, direct .data writes, and Agent profile changes", async () => {
+test("team-task-creator prohibits runs, direct data writes, and generated child payloads", async () => {
 	const skill = await readSkill();
-	assert.match(skill, /MUST NOT|must not|禁止|不得/);
-	assert.match(skill, /POST\s+\/v1\/team\/plans\/:planId\/runs/);
-	assert.match(skill, /\.data\/team/);
-	assert.match(skill, /Agent profile|agent profile/);
-	assert.match(skill, /model|browser binding|技能安装|install/i);
+	assert.match(skill, /No direct `\.data\/team` file writes/);
+	assert.match(skill, /No Task run, Team Run, Plan run/);
+	assert.match(skill, /worker\/checker chain/);
+	assert.match(skill, /Agent profile edit/);
+	assert.match(skill, /model change|browser binding change/);
+	assert.match(skill, /No generated child Tasks in public create\/update payloads/);
+	assert.match(skill, /No `generatedSource`/);
 });
 
-test("team-task-creator skill defines Task as canvas node containing one WorkUnit", async () => {
-	const skill = await readSkill();
-	assert.match(skill, /Task[\s\S]*canvas|画布/);
-	assert.match(skill, /Task[\s\S]*WorkUnit|WorkUnit[\s\S]*Task/);
-	assert.match(skill, /Plan tasks\.length === 1|single-task Plan|单任务 Plan/);
+test("team-task-creator contract reference defines common Task and typed ports", async () => {
+	const bundle = await readSkillBundle();
+	assert.match(bundle, /Task[\s\S]*WorkUnit|WorkUnit[\s\S]*Task/);
+	assert.match(bundle, /inputPorts/);
+	assert.match(bundle, /outputPorts/);
+	assert.match(bundle, /empty|\[\]/i);
+	assert.match(bundle, /md/);
+	assert.match(bundle, /html/);
+	assert.match(bundle, /worklist-results/);
+	assert.match(bundle, /Port shape/);
 });
 
-test("team-task-creator skill warns that same worker and checker weakens independent acceptance", async () => {
-	const skill = await readSkill();
-	assert.match(skill, /workerAgentId === checkerAgentId|worker.*checker.*same|同 Agent 自检/);
-	assert.match(skill, /削弱验收独立性|weakens independent acceptance/);
+test("team-task-creator contract reference defines template parameters and clone API", async () => {
+	const reference = await readContractReference();
+	assert.match(reference, /templateConfig/);
+	assert.match(reference, /team\/task-template-1/);
+	assert.match(reference, /inputType/);
+	assert.match(reference, /email_list/);
+	assert.match(reference, /select[\s\S]*options|options[\s\S]*select/);
+	assert.match(reference, /recipients[\s\S]*\{\{recipients\}\}/);
+	assert.match(reference, /subject[\s\S]*\{\{subject\}\}/);
+	assert.match(reference, /POST\s+\/v1\/team\/tasks\/:taskId\/clone/);
+	assert.match(reference, /templateBindings/);
 });
 
-test("team-task-creator skill supports Discovery Task creation through the existing Task API", async () => {
-	const skill = await readSkill();
-	assert.match(skill, /Discovery Task|Discovery root Task|canvasKind.*discovery/i);
-	assert.match(skill, /canvasKind[\s\S]*["`]discovery["`]/);
-	assert.match(skill, /discoverySpec/);
-	assert.match(skill, /POST\s+\/v1\/team\/tasks/);
-	assert.match(skill, /do not add|不要新增|不新增[\s\S]*(backend endpoint|后端 endpoint|endpoint)/i);
-	assert.match(skill, /generatedSource[\s\S]*(must not|不得|不能|MUST NOT)/i);
+test("team-task-creator contract reference defines Discovery creation through existing Task API", async () => {
+	const reference = await readContractReference();
+	assert.match(reference, /Discovery Root/);
+	assert.match(reference, /canvasKind[\s\S]*["`]discovery["`]/);
+	assert.match(reference, /discoverySpec/);
+	assert.match(reference, /team\/discovery-spec-1/);
+	assert.match(reference, /outputKey/);
+	assert.match(reference, /requiredItemFields[\s\S]*id/);
+	assert.match(reference, /itemIdField[\s\S]*id/);
+	assert.match(reference, /autoRun[\s\S]*enabled[\s\S]*true[\s\S]*concurrency[\s\S]*3/);
+	assert.match(reference, /POST\s+\/v1\/team\/tasks/);
+	assert.match(reference, /do not add a backend endpoint/i);
+	assert.match(reference, /generatedSource[\s\S]*(must not|不得|不能)/i);
 });
 
-test("team-task-creator skill requires a complete Discovery JSON preview before API writes", async () => {
-	const skill = await readSkill();
-	assert.match(skill, /Discovery[\s\S]*(full Task JSON|完整 Task JSON|完整的 Task JSON)/i);
-	assert.match(skill, /discoverySpec[\s\S]*schemaVersion[\s\S]*team\/discovery-spec-1/);
-	assert.match(skill, /outputKey/);
-	assert.match(skill, /requiredItemFields[\s\S]*id/);
-	assert.match(skill, /itemIdField[\s\S]*id/);
-	assert.match(skill, /autoRun[\s\S]*enabled[\s\S]*true[\s\S]*concurrency[\s\S]*3/);
-	assert.match(skill, /confirm|确认/i);
+test("team-task-creator contract reference validates Discovery roles without platform hard-coding", async () => {
+	const reference = await readContractReference();
+	assert.match(reference, /dispatcherAgentId/);
+	assert.match(reference, /generatedWorkerAgentId/);
+	assert.match(reference, /generatedCheckerAgentId/);
+	assert.match(reference, /must be active Agents/);
+	assert.doesNotMatch(reference, /Vultr|Hetzner|TikTok|Qwen 3\.7 Max|Reddit|HuggingFace/i);
 });
 
-test("team-task-creator skill validates Discovery role agents from catalog without platform hard-coding", async () => {
-	const skill = await readSkill();
-	assert.match(skill, /GET\s+\/v1\/agents/);
-	assert.match(skill, /dispatcherAgentId/);
-	assert.match(skill, /generatedWorkerAgentId/);
-	assert.match(skill, /generatedCheckerAgentId/);
-	assert.match(skill, /active Agent|active.*catalog|活跃 Agent|Agent catalog/i);
-	assert.match(skill, /do not hard-code|不要写死|不得写死/i);
-	assert.doesNotMatch(skill, /Vultr|Hetzner|TikTok/i);
+test("team-task-creator contract reference defines worklist producer Task creation", async () => {
+	const reference = await readContractReference();
+	assert.match(reference, /Worklist Producer/);
+	assert.match(reference, /team\/worklist-1/);
+	assert.match(reference, /worklistId/);
+	assert.match(reference, /items/);
+	assert.match(reference, /outputPorts[\s\S]*worklist/);
+	assert.match(reference, /outputCheck[\s\S]*worklist/);
+	assert.match(reference, /no missing items|no duplicates/i);
+	assert.match(reference, /output\/worklist\.json/);
+	assert.match(reference, /\{"outputPath":"output\/worklist\.json"\}/);
+	assert.match(reference, /runtime handoff|final message|机器可解析|machine-readable/i);
 });
 
-test("team-task-creator skill guides real Team Console Discovery verification", async () => {
+test("team-task-creator contract reference defines split-task root creation", async () => {
+	const reference = await readContractReference();
+	assert.match(reference, /Split-task Root/);
+	assert.match(reference, /canvasKind[\s\S]*["`]split-task["`]/);
+	assert.match(reference, /splitTaskSpec/);
+	assert.match(reference, /team\/split-task-spec-1/);
+	assert.match(reference, /worklist-results/);
+	assert.match(reference, /worklist_results/);
+	assert.match(reference, /generatedWorkerAgentId/);
+	assert.match(reference, /generatedCheckerAgentId/);
+	assert.match(reference, /collectPolicy[\s\S]*requireFullCoverage/);
+	assert.match(reference, /POST\s+\/v1\/team\/tasks/);
+});
+
+test("team-task-creator verification path stays focused on creation/update contracts", async () => {
 	const skill = await readSkill();
 	assert.match(skill, /http:\/\/127\.0\.0\.1:5174\//);
 	assert.match(skill, /Live API/);
-	assert.match(skill, /创建 Task/);
-	assert.match(skill, /generated child|generated Task|子画布/i);
-	assert.match(skill, /archive|归档/i);
-});
-
-test("team-task-creator skill infers Discovery from multi-source research intent", async () => {
-	const skill = await readSkill();
-	assert.match(skill, /multi-platform|multi-source|多平台|多来源|多个平台/i);
-	assert.match(skill, /user feedback|用户反馈|评价/i);
-	assert.match(skill, /default to Discovery|优先按 Discovery|默认按 Discovery/i);
-	assert.match(skill, /community|社区/i);
-	assert.match(skill, /code hosting|代码托管/i);
-	assert.match(skill, /model hosting|模型托管/i);
-});
-
-test("team-task-creator skill does not require users to author Discovery schema details", async () => {
-	const skill = await readSkill();
-	assert.match(skill, /do not ask the user to write|不要要求用户编写|用户不需要/i);
-	assert.match(skill, /canvasKind|discoverySpec|outputKey/);
-	assert.match(skill, /translate|转换|补齐|derive|推导/i);
-	assert.match(skill, /one or two|最多.*2|最多.*两个|minimal questions|少量追问/i);
-});
-
-test("team-task-creator skill switches an active normal Task draft to Discovery when requested", async () => {
-	const skill = await readSkill();
-	assert.match(skill, /during normal Task drafting|普通 Task 草案|中途/i);
-	assert.match(skill, /switch to Discovery|改成 Discovery|转为 Discovery/i);
-	assert.match(skill, /do not ask.*what Discovery means|不要反问.*Discovery.*是什么|不要问.*discovery.*机制/i);
-	assert.match(skill, /generated child|子任务|子 Task/i);
-});
-
-test("team-task-creator skill acts as a guided Task design advisor for non-expert users", async () => {
-	const skill = await readSkill();
-	assert.match(skill, /design advisor|设计向导|创建向导/i);
-	assert.match(skill, /non-expert|外行|用户不知道/i);
-	assert.match(skill, /do not ask the user to choose.*normal.*Discovery|不要让用户.*选择.*普通 Task.*Discovery/i);
-	assert.match(skill, /recommend|推荐/i);
-	assert.match(skill, /rationale|reason|理由|为什么/i);
-});
-
-test("team-task-creator skill evaluates task form before collecting fields", async () => {
-	const skill = await readSkill();
-	assert.match(skill, /evaluate.*task form|判断任务形态|任务形式判断/i);
-	assert.match(skill, /normal Task|普通 Task/i);
-	assert.match(skill, /Discovery/i);
-	assert.match(skill, /before.*collecting fields|先.*字段|先.*参数/i);
-	assert.match(skill, /better option|更好的选择|更适合/i);
-});
-
-test("team-task-creator skill turns fuzzy user intent into a precise task contract", async () => {
-	const skill = await readSkill();
-	assert.match(skill, /fuzzy intent|模糊.*意图|口语化/i);
-	assert.match(skill, /precise.*goal|精确.*目标|可执行目标/i);
-	assert.match(skill, /scope|范围/i);
-	assert.match(skill, /deliverable|输出物|输出格式/i);
-	assert.match(skill, /acceptance|验收/i);
-	assert.match(skill, /targeted clarifying questions|少量.*追问|针对性追问/i);
-});
-
-test("team-task-creator skill recommends Discovery for generic multi-source feedback before confirming parameters", async () => {
-	const skill = await readSkill();
-	assert.match(skill, /generic multi-source feedback example|通用.*多来源|某个产品或模型/i);
-	assert.match(skill, /recommend.*Discovery|推荐.*Discovery|更适合.*Discovery/i);
-	assert.match(skill, /root[\s\S]*(discover|发现|规范化)[\s\S]*(platform|source|平台|来源)/i);
-	assert.match(skill, /generated child[\s\S]*(platform|平台|source|来源)/i);
-	assert.match(skill, /not present.*normal Task confirmation table|不要先给.*普通 Task.*确认表|不要.*普通 Task.*字段表/i);
-	assert.match(skill, /not a patch for any specific product|不是.*具体|specific product/i);
-	assert.doesNotMatch(skill, /Qwen 3\.7 Max|Reddit|HuggingFace/i);
+	assert.match(skill, /iframe conversation/);
+	assert.match(skill, /\/team-task/);
+	assert.match(skill, /Generated children appear after a future run/);
+	assert.match(skill, /run quality[\s\S]*outside this skill/i);
 });

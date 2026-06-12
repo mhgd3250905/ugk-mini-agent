@@ -13,7 +13,7 @@
 
 .emap-observer-node-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
   min-width: 0;
@@ -42,6 +42,59 @@
 .emap-observer-node-close:hover {
   border-color: rgba(121, 216, 208, 0.48);
   color: var(--primary);
+}
+
+.emap-observer-file-title {
+  display: grid;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.emap-observer-file-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex: 0 1 auto;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.emap-observer-file-action {
+  appearance: none;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid rgba(22, 124, 128, 0.24);
+  border-radius: 4px;
+  background: rgba(22, 124, 128, 0.06);
+  color: var(--accent);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 780;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.emap-observer-file-action:hover {
+  border-color: rgba(22, 124, 128, 0.48);
+  background: rgba(22, 124, 128, 0.12);
+}
+
+.emap-observer-file-copy-fallback {
+  width: 100%;
+  min-height: 54px;
+  resize: vertical;
+  border: 1px solid rgba(201, 53, 77, 0.22);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
 }
 
 .emap-observer-process-node {
@@ -298,6 +351,39 @@
   flex: 0 0 auto;
   color: var(--accent);
   font-size: 11px;
+}
+
+.emap-run-observer-head-meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.emap-run-observer-head-meta .emap-run-observer-run-id-copy {
+  grid-template-columns: minmax(0, auto) auto;
+  flex: 0 1 auto;
+  max-width: 150px;
+  gap: 5px;
+}
+
+.emap-observer-file-actions .emap-observer-file-reference-copy {
+  grid-template-columns: minmax(0, 1fr) auto;
+  flex: 1 1 136px;
+  max-width: 168px;
+  min-width: 78px;
+  gap: 5px;
+}
+
+.emap-copy-chip-state {
+  color: currentColor;
+  font-size: 9px;
+  font-weight: 860;
+  line-height: 1;
+  white-space: nowrap;
+  opacity: 0.88;
 }
 
 .emap-run-observer-history-summary {

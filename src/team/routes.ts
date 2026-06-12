@@ -355,7 +355,10 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 				status: body.status as any,
 				workUnit: body.workUnit as any,
 				discoverySpec: body.discoverySpec as any,
+				splitTaskSpec: body.splitTaskSpec as any,
+				discoveryRunPolicy: body.discoveryRunPolicy as any,
 				templateConfig: body.templateConfig as any,
+				templateState: body.templateState as any,
 				createdByAgentId: body.createdByAgentId as string | undefined,
 			});
 			reply.code(201);
@@ -391,8 +394,8 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		const taskId = idParam(request, "taskId");
 		const task = await taskStore.get(taskId);
 		if (!task) { sendNotFound(reply, "task"); return; }
-		if (task.canvasKind !== "discovery") {
-			reply.code(400).send({ error: "generated tasks can only be listed for Discovery root tasks" });
+		if (task.canvasKind !== "discovery" && task.canvasKind !== "split-task") {
+			reply.code(400).send({ error: "generated tasks can only be listed for tasks with generated children" });
 			return;
 		}
 		const query = request.query as { view?: string; since?: string };
@@ -410,7 +413,8 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		}
 		const includeArchived = parseIncludeArchived(request);
 		reply.send(await readModel.listGeneratedTasks({
-			discoveryTaskId: taskId,
+			sourceKind: task.canvasKind === "split-task" ? "split-task" : "discovery",
+			sourceTaskId: taskId,
 			since,
 			includeArchived,
 			view: view === "summary" ? "summary" : "full",
@@ -513,6 +517,7 @@ export function registerTeamRoutes(app: FastifyInstance, options: TeamRouteOptio
 		if (Object.hasOwn(body, "leaderAgentId")) patch.leaderAgentId = body.leaderAgentId as string;
 		if (Object.hasOwn(body, "workUnit")) patch.workUnit = body.workUnit as any;
 		if (Object.hasOwn(body, "discoverySpec")) patch.discoverySpec = body.discoverySpec as any;
+		if (Object.hasOwn(body, "splitTaskSpec")) patch.splitTaskSpec = body.splitTaskSpec as any;
 		if (Object.hasOwn(body, "discoveryRunPolicy")) patch.discoveryRunPolicy = body.discoveryRunPolicy as any;
 		if (Object.hasOwn(body, "templateConfig")) patch.templateConfig = body.templateConfig as any;
 		if (Object.hasOwn(body, "templateState")) patch.templateState = body.templateState as any;

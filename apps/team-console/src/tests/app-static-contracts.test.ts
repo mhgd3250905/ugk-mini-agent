@@ -265,6 +265,8 @@ describe("Team Console static contracts", () => {
     expect(appSource).toContain('TEAM_CONSOLE_VISUAL_THEME_STORAGE_KEY = "ugk-team-console:visual-theme:v1"');
     expect(appSource).toContain('type TeamConsoleVisualTheme = "default" | "dell-1996"');
     expect(appSource).toContain("data-visual-theme={visualTheme}");
+    expect(mapSource).toContain("emap-split-task-node");
+    expect(mapSource).toContain("data-canvas-kind={task.canvasKind}");
     expect(appSource).toContain('aria-label="切换视觉主题"');
     expect(appSource).toContain('className="visual-theme-toggle-btn"');
     expect(appSource).toContain('current === "default" ? "dell-1996" : "default"');
@@ -274,6 +276,7 @@ describe("Team Console static contracts", () => {
     expect(appCss).toContain(".visual-theme-toggle-btn");
     expect(mapCss).toContain('[data-visual-theme="dell-1996"] .execution-map-container');
     expect(mapCss).toContain('[data-visual-theme="dell-1996"] .emap-canvas-task-node');
+    expect(mapCss).toContain('[data-visual-theme="dell-1996"] .emap-split-task-node');
     expect(mapCss).toContain('[data-visual-theme="dell-1996"] .emap-agent-node');
     expect(mapCss).toContain('[data-visual-theme="dell-1996"] .emap-source-node');
     expect(mapCss).toContain('[data-visual-theme="dell-1996"] .task-action-branch');
@@ -321,9 +324,11 @@ describe("Team Console static contracts", () => {
     expect(mapCss).not.toContain(".emap-node.selected *");
     expect(mapCss).not.toContain(".emap-node.is-atlas-selected *");
     expect(mapCss).toContain("--dell-agent-accent: #356f9f");
+    expect(mapCss).toContain("--dell-split-accent: #8b3f6f");
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-agent-node \.emap-node-status-bar\s*{[^}]*background:\s*var\(--dell-agent-accent\);/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-canvas-task-node \.emap-node-status-bar\s*{[^}]*background:\s*var\(--dell-task-accent\);/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-discovery-task-node \.emap-node-status-bar\s*{[^}]*background:\s*var\(--dell-discovery-accent\);/s);
+    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-split-task-node \.emap-node-status-bar\s*{[^}]*background:\s*var\(--dell-split-accent\);/s);
     expect(mapCss).toContain(".emap-evidence-card");
     expect(mapCss).toContain(".emap-evidence-node");
     expect(mapCss).toContain(".emap-run-history-panel");

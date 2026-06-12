@@ -12,6 +12,7 @@ import {
   mergeRootTaskRunMap,
   mergeTaskRun,
 } from "./team-console-live-refresh-state";
+import { generatedSourceParentTaskId } from "./team-console-generated-source";
 import {
   hasTaskDetail,
   mergeGeneratedTaskCatalogIncremental,
@@ -68,7 +69,7 @@ function agentRunStatusRecord(statuses: AgentRunStatus[]): Record<string, AgentR
   return Object.fromEntries(statuses.map((status) => [status.agentId, status]));
 }
 
-type TeamConsoleTaskRunSummaryApi = Pick<LiveTeamApi, "listTaskRunsByTaskIds">;
+type TeamConsoleTaskRunSummaryApi = Pick<LiveTeamApi, "listTaskRunsByTaskIds" | "listTaskRuns">;
 
 type TeamConsoleRootSummaryApi = Pick<LiveTeamApi,
   | "getRootSummary"
@@ -79,11 +80,13 @@ type TeamConsoleRootSummaryApi = Pick<LiveTeamApi,
   | "listSourceNodes"
   | "listSourceConnections"
   | "listTaskRunsByTaskIds"
+  | "listTaskRuns"
 >;
 
 type TeamConsoleDiscoveryCatalogApi = Pick<LiveTeamApi,
   | "listGeneratedTaskSummaryCatalog"
   | "listTaskRunsByTaskIds"
+  | "listTaskRuns"
   | "listTaskRunAttempts"
 >;
 
@@ -273,6 +276,20 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
         serverVersion: serverVersion ?? null,
       };
     } catch {
+      try {
+        const entries = await Promise.all(taskIds.map(async (taskId) => {
+          const runs = await api.listTaskRuns(taskId);
+          const sorted = sortRunsByCreatedAt(runs);
+          return [taskId, since ? sorted.filter((run) => run.updatedAt && run.updatedAt > since) : sorted.slice(0, 1)] as const;
+        }));
+        return {
+          runsByTaskId: Object.fromEntries(entries),
+          deletedRunIdsByTaskId: {},
+          serverVersion: null,
+        };
+      } catch {
+        // Fall through to an empty summary when both run APIs are unavailable.
+      }
       return {
         runsByTaskId: since ? {} : Object.fromEntries(taskIds.map((taskId) => [taskId, [] as TeamRunState[]])),
         deletedRunIdsByTaskId: {},
@@ -642,14 +659,14 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
         const fullTask = await api.getTask(taskId);
         if (!fullTask) return null;
         generatedTaskDetailCacheRef.current.set(detailKey, fullTask);
-        const sourceDiscoveryTaskId = fullTask.generatedSource?.sourceDiscoveryTaskId;
-        if (sourceDiscoveryTaskId) {
+        const sourceTaskId = generatedSourceParentTaskId(fullTask.generatedSource);
+        if (sourceTaskId) {
           setGeneratedTasksByDiscoveryTaskId((current) => {
-            const catalog = current[sourceDiscoveryTaskId] ?? [];
+            const catalog = current[sourceTaskId] ?? [];
             if (!catalog.some((task) => task.taskId === taskId)) return current;
             const next = {
               ...current,
-              [sourceDiscoveryTaskId]: catalog.map((task) =>
+              [sourceTaskId]: catalog.map((task) =>
                 task.taskId === taskId ? fullTask : task
               ),
             };
@@ -962,9 +979,15 @@ export function useTeamConsoleLiveData(options: UseTeamConsoleLiveDataOptions): 
             setTaskRunsByTaskId((current) => mergeTaskRun(current, active.taskId, fresh));
             if (dataSource === "live" && !isActiveRun(fresh.status) && !liveTaskDiscoveryRefreshRunIdsRef.current.has(fresh.runId)) {
               liveTaskDiscoveryRefreshRunIdsRef.current.add(fresh.runId);
-              void refreshLiveTasks({ silent: true }).catch((e) => {
-                if (!cancelled) setError(errorMessage(e));
-              });
+              const refreshGeneratedRunsAfterTerminal = async () => {
+                try {
+                  await refreshLiveTasks({ silent: true });
+                  if (!cancelled) await refreshLiveTasks({ silent: true });
+                } catch (e) {
+                  if (!cancelled) setError(errorMessage(e));
+                }
+              };
+              void refreshGeneratedRunsAfterTerminal();
               scheduleLiveTaskDiscoveryRefresh();
             }
           }

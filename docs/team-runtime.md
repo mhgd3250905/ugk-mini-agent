@@ -1,6 +1,12 @@
 # Team Runtime v2
 
-更新时间：2026-06-08
+更新时间：2026-06-11
+
+> 2026-06-12 补充：普通 Task 消费 `worklist-results` 时，worker prompt 会把 `results[]` 明确为权威业务结果，`sourceWorklist.items` 只用于清点覆盖率；必须先检查每个 result 的 status，只有所有业务要求覆盖的分片均 `succeeded` 后才继续加工。返工 prompt 会要求只修 checker 明确指出的问题，并保持上一版输出的字段名、文件名、数据范围和条目顺序。checker prompt 会收到 `outputContract`，只能依据任务描述、输出契约、验收标准和 deterministic output validation 判定，不得把未声明的去重、来源命名、排序或风格偏好当作 revise/fail。真实链路验证中，`task_a0dd8d8b7a79` 的 `run_75f720a11582` 成功消费 `task_b71c140126bd` 的 `worklist-results`，展开 26 个 succeeded 分片后输入 183 条，输出 183 条，链接集合与上游完全一致，第二轮 checker pass。
+
+> 2026-06-11 补充：Team Runtime 已新增 `split-task` 画布节点类型，用于把上游标准 `worklist` 拆成 generated child Tasks 并汇总为标准 `worklist-results`。普通 Task 负责把大体量输入整理成 `team/worklist-1`；split-task 只做确定性分发、并发启动 child run、等待回收和汇总，不再让 LLM 同时承担拆分、执行和总验收。child Task 使用 `generatedSource.schemaVersion="team/generated-task-source-2"`，`sourceKind="split-task"`，并通过 `triggeredBy.type="split-generated-task"` 记录来源。`worklist-results` 会保留 `sourceWorklist`、summary、每个 item 的状态、结果内容/引用，以及可选 `generatedTaskId` / `generatedRunId` 追踪字段。Team Console 子画布已能打开 split-task 的 generated catalog，但 Discovery 渠道集仍只对 Discovery root 显示。
+
+> 2026-06-11 补充：Team Task 创建新增 `npm run team:task-factory` 参数化入口。普通 Task、worklist producer 和 split-task 创建应优先交给 factory 生成完整 `POST /v1/team/tasks` payload，并复用 `validateCreateTaskInput` 做结构校验；agent 只填写少量业务参数，factory 错误返回作为纠错信号。`POST/PATCH /v1/team/tasks` 已补齐 `splitTaskSpec` 透传，禁止用直接写 `.data/team/tasks/*.json` 来绕过 API。
 
 > 2026-06-08 补充：Team Console 展开的 Live backend Group frame 支持直接重命名固定 Group definition。该操作复用既有 `PATCH /v1/team/task-groups/:groupId` 的 `title` 字段，不新增 run-level 别名；已上锁 Group 不允许改名。Conn editor、`/playground/conn` 和 GroupRun 相关展示继续从 `GET /v1/team/task-groups` 读取同一个后端 `title`，因此重命名后下游选择器自然显示新名称。
 
@@ -152,12 +158,50 @@ Task 持久化在 `.data/team/tasks/<taskId>.json`，通过 `src/team/task-store
 
 - 显式关键词：`/team-task`
 - 先读 `GET /v1/agents`
-- 普通 Task 和 Discovery root Task 都必须先展示完整 Task JSON 预览并等用户确认
+- 普通 Task、worklist producer 和 split-task root 创建优先用 `npm run team:task-factory -- --spec <file>` 生成完整 Task JSON 预览；factory 报错时修正小 spec 后重跑，不手写完整 JSON 绕过校验
+- Discovery root Task 和模板/更新场景仍按合同手工生成完整预览，但必须等用户确认
 - 创建走 `POST /v1/team/tasks`
 - 更新走 `GET /v1/team/tasks`、`GET /v1/team/tasks/:taskId`、`PATCH /v1/team/tasks/:taskId`
 - Discovery root Task 创建必须在同一个 `POST /v1/team/tasks` payload 中携带 `canvasKind="discovery"` 和合法 `discoverySpec`；不新增后端 endpoint，不写 `generatedSource`
+- split-task root Task 创建必须在同一个 `POST /v1/team/tasks` payload 中携带 `canvasKind="split-task"` 和合法 `splitTaskSpec`
 - Discovery 角色必须从 `GET /v1/agents` 的 active Agent catalog 选择，包括 root leader/worker/checker、`dispatcherAgentId`、`generatedWorkerAgentId`、`generatedCheckerAgentId`；不要按具体平台或供应商写死 Agent
 - 不启动 run，不调用 `POST /v1/team/plans/:planId/runs`，不直接写 `.data/team`，不改 Agent profile / 模型 / browser binding / 技能安装
+
+### Worklist and split-task
+
+`worklist` 是大体量任务进入分片处理链路的标准输入，不要求原始上游天然符合规范；上游普通 Task 可以先做搜索、读取文件或整理输入，最终只需要输出合法 JSON：
+
+- `schemaVersion: "team/worklist-1"`
+- `worklistId`
+- `title`
+- `items[]`，每项包含稳定 `id`、`title`、`input`，可选 `acceptanceHints[]`
+- 可选 `metadata`
+
+`split-task` 是 Team Console 画布上的 root Task，`canvasKind="split-task"`，必须携带 `splitTaskSpec`。它的 `workUnit.inputPorts[splitTaskSpec.inputPortId].type` 必须是 `worklist`，`workUnit.outputPorts[splitTaskSpec.outputPortId].type` 必须是 `worklist-results`。
+
+`splitTaskSpec` 关键字段：
+
+- `dispatchGoal`：给每个 generated child 的通用执行目标。
+- `generatedWorkerAgentId` / `generatedCheckerAgentId`：每个 child 自己执行和校验。
+- `autoRun.enabled=true`、`autoRun.concurrency`：child run 并发，当前校验范围 1-10。
+- `collectPolicy.requireAllItemsSucceeded`：任一 child 失败时父 split-task 是否进入失败态。
+- `collectPolicy.requireFullCoverage`：汇总结果必须覆盖所有 worklist item。
+
+运行过程固定为三段：
+
+1. 读取绑定到 input port 的 `worklist` typed artifact，并用 `team/worklist-1` 校验。
+2. 对每个 item 确定性编译 generated child WorkUnit，使用 `generatedSource.schemaVersion="team/generated-task-source-2"` 复用/更新 child Task，并按并发启动 child runs。
+3. 等待全部 child run 终态，写出 `worklist-results.json`，并把该文件作为 `worklist-results` typed artifact 交给下游 Task。
+
+`worklist-results` JSON 固定为：
+
+- `schemaVersion: "team/worklist-results-1"`
+- `sourceWorklist`：原始 worklist 的完整规范化副本
+- `summary: { totalItems, succeeded, failed, cancelled, missing }`
+- `results[]`：每项包含 `itemId`、`status`，可选 `generatedTaskId`、`generatedRunId`、`resultRef`、`content`、`errorSummary`
+- `createdAt`
+
+`workUnit.outputCheck` 现在支持 `{ type: "worklist" }` 和 `{ type: "worklist_results" }`。typed artifact resolver 对 `worklist` / `worklist-results` 会优先读取 worker public output 中的合法 JSON 文件；无合法 public output 时才 fallback 到 accepted result。
 
 ### Discovery Task catalog and run validation
 

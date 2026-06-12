@@ -180,6 +180,10 @@ export class RunWorkspace {
 		return this.attempts.writeDiscoveryAggregation(runId, taskId, attemptId, record);
 	}
 
+	async writeWorklistResults(runId: string, taskId: string, attemptId: string, record: unknown): Promise<string> {
+		return this.attempts.writeWorklistResults(runId, taskId, attemptId, record);
+	}
+
 	async readDiscoveryResult(runId: string, taskId: string, attemptId: string): Promise<TeamDiscoveryResultRecord | null> {
 		return this.attempts.readDiscoveryResult(runId, taskId, attemptId);
 	}

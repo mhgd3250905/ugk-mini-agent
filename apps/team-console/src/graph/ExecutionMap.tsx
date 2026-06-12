@@ -3855,6 +3855,8 @@ export function ExecutionMap({
             const latestTaskRun = selectLatestCanvasTaskRun(taskRunsByTaskId[task.taskId]);
             const nodeStatusClass = latestTaskRun ? statusClass(latestTaskRun.status) : `status-${task.status}`;
             const isDiscoveryRoot = isDiscoveryRootTask(task);
+            const isSplitTask = task.canvasKind === "split-task";
+            const taskKindLabel = isSplitTask ? "Split" : isDiscoveryRoot ? "Discovery" : "Task";
             const discoverySummary = isDiscoveryRoot
               ? discoverySummariesByTaskId[task.taskId] ?? {
                 generatedTaskCount: 0,
@@ -3883,9 +3885,9 @@ export function ExecutionMap({
                 key={node.nodeId}
                 role="button"
                 tabIndex={0}
-                className={`emap-node emap-atlas-card emap-canvas-task-node ${isDiscoveryRoot ? "emap-discovery-task-node" : ""} ${nodeStatusClass} ${isFocused ? "selected" : ""} ${isAtlasSelected ? "is-atlas-selected" : ""}`}
+                className={`emap-node emap-atlas-card emap-canvas-task-node ${isDiscoveryRoot ? "emap-discovery-task-node" : ""} ${isSplitTask ? "emap-split-task-node" : ""} ${nodeStatusClass} ${isFocused ? "selected" : ""} ${isAtlasSelected ? "is-atlas-selected" : ""}`}
                 data-kind="canvas-task"
-                data-canvas-kind={isDiscoveryRoot ? "discovery" : undefined}
+                data-canvas-kind={task.canvasKind}
                 data-discovery-failed-dispatch-count={isDiscoveryRoot ? String(failedDispatchCount) : undefined}
                 data-discovery-stage={isDiscoveryRoot ? discoveryStage : undefined}
                 data-task-id={task.taskId}
@@ -3907,7 +3909,7 @@ export function ExecutionMap({
                 <div className="emap-node-status-bar" />
                 <div className="emap-node-content">
                   <div className="emap-node-header">
-                    <span className="emap-node-kind">{isDiscoveryRoot ? "Discovery" : "Task"}</span>
+                    <span className="emap-node-kind">{taskKindLabel}</span>
                     <span className={`emap-node-state-pill ${latestTaskRun?.status ?? task.status}`}>
                       {latestTaskRun ? RUN_STATUS_LABELS[latestTaskRun.status] : task.status}
                     </span>

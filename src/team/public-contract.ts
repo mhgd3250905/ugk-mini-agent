@@ -16,10 +16,16 @@ export type {
 	TeamCanvasSourceNode,
 	TeamDiscoverySpec,
 	TeamGeneratedTaskItemStatus,
+	TeamGeneratedTaskSourceKind,
 	TeamGeneratedTaskSource,
 	TeamGeneratedTaskWorkUnitMode,
 	TeamRunState,
+	TeamSplitTaskSpec,
 	TeamTaskOutputCheck,
+	TeamWorklistItem,
+	TeamWorklistItemResult,
+	TeamWorklistRecord,
+	TeamWorklistResultsRecord,
 	TeamWorkUnitDefinition,
 } from "./types.js";
 

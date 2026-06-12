@@ -22,7 +22,7 @@ export function canvasTaskPortRowCount(task: TeamCanvasTask | undefined): number
 }
 
 export function isDiscoveryRootTask(task: TeamCanvasTask | undefined): boolean {
-  return task?.canvasKind === "discovery" && !task.generatedSource;
+  return (task?.canvasKind === "discovery" || task?.canvasKind === "split-task") && !task.generatedSource;
 }
 
 export function canvasTaskNodeHeight(task: TeamCanvasTask | undefined): number {

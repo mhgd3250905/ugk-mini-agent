@@ -1,4 +1,5 @@
 import type { TeamOutputValidationResult, TeamTask, TeamTaskOutputCheck } from "./types.js";
+import { parseTeamWorklistContent, parseTeamWorklistResultsContent } from "./worklist-contract.js";
 
 type ValidationKind = TeamOutputValidationResult["kind"];
 type ValidationCheck = TeamOutputValidationResult["checks"][number];
@@ -152,6 +153,8 @@ async function resolveReference(workspace: TeamOutputWorkspaceReader, runId: str
 function validateContent(content: string, check: TeamTaskOutputCheck, kind: ValidationKind, sourceRef: string, normalizedRef?: string | null): TeamOutputValidationResult {
 	if (check.type === "json_items") return validateJsonItems(content, check, kind, sourceRef, normalizedRef);
 	if (check.type === "json_object") return validateJsonObject(content, check, kind, sourceRef, normalizedRef);
+	if (check.type === "worklist") return validateWorklist(content, check, kind, sourceRef, normalizedRef);
+	if (check.type === "worklist_results") return validateWorklistResults(content, check, kind, sourceRef, normalizedRef);
 	if (check.type === "html_fragment") return validateHtmlFragment(content, check, kind, sourceRef, normalizedRef);
 	return failResult(kind, sourceRef, [{ name: "unsupported_check", ok: false, message: `unsupported output check: ${check.type}` }], normalizedRef);
 }
@@ -214,6 +217,36 @@ function validateJsonObject(content: string, check: Extract<TeamTaskOutputCheck,
 	return okResult(kind, sourceRef, checks, normalizedRef);
 }
 
+function validateWorklist(content: string, check: Extract<TeamTaskOutputCheck, { type: "worklist" }>, kind: ValidationKind, sourceRef: string, normalizedRef?: string | null): TeamOutputValidationResult {
+	try {
+		const worklist = parseTeamWorklistContent(content, { allowEmpty: check.allowEmpty });
+		return okResult(kind, sourceRef, [
+			{ name: "json_parse", ok: true },
+			{ name: "worklist_schema", ok: true },
+			{ name: "worklist_item_ids", ok: true },
+		], normalizedRef, worklist.items.map(item => ({ id: item.id, title: item.title })));
+	} catch (error) {
+		return failResult(kind, sourceRef, [
+			{ name: "worklist_schema", ok: false, message: error instanceof Error ? error.message : String(error) },
+		], normalizedRef);
+	}
+}
+
+function validateWorklistResults(content: string, check: Extract<TeamTaskOutputCheck, { type: "worklist_results" }>, kind: ValidationKind, sourceRef: string, normalizedRef?: string | null): TeamOutputValidationResult {
+	try {
+		parseTeamWorklistResultsContent(content, { requireFullCoverage: check.requireFullCoverage });
+		return okResult(kind, sourceRef, [
+			{ name: "json_parse", ok: true },
+			{ name: "worklist_results_schema", ok: true },
+			{ name: "worklist_results_coverage", ok: true },
+		], normalizedRef);
+	} catch (error) {
+		return failResult(kind, sourceRef, [
+			{ name: "worklist_results_schema", ok: false, message: error instanceof Error ? error.message : String(error) },
+		], normalizedRef);
+	}
+}
+
 function validateHtmlFragment(content: string, check: Extract<TeamTaskOutputCheck, { type: "html_fragment" }>, kind: ValidationKind, sourceRef: string, normalizedRef?: string | null): TeamOutputValidationResult {
 	const fragment = extractHtmlFragment(content);
 	const checks: ValidationCheck[] = [{ name: "html_fragment_present", ok: fragment.trim().length > 0 }];
@@ -271,6 +304,16 @@ function extractReferencedPaths(content: string): string[] {
 		seen.add(clean);
 		refs.push(clean);
 	};
+	const addJsonReferenceFields = (value: unknown) => {
+		if (!value || typeof value !== "object" || Array.isArray(value)) return;
+		const obj = value as Record<string, unknown>;
+		for (const key of ["outputPath", "outputRef", "fileRef", "path"]) {
+			const ref = obj[key];
+			if (typeof ref === "string") add(ref);
+		}
+	};
+	const parsed = extractJsonFromContent(content);
+	if (parsed.value !== null) addJsonReferenceFields(parsed.value);
 	for (const match of content.matchAll(/`([^`]+)`/g)) add(match[1]!);
 	for (const match of content.matchAll(/(?:^|[\s（(：:])((?:\/app\/\.data\/team\/runs\/|runs\/|worker\/|checker\/|watcher\/|output\/|work\/)[^\s（）)\]，。；：,;]+)/g)) add(match[1]!);
 	for (const match of content.matchAll(/`(\/[^`]+)`/g)) add(match[1]!);

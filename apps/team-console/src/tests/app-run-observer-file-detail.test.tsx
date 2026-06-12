@@ -61,6 +61,11 @@ describe("App run observer file detail", () => {
         resultRef,
         files: ["worker-output-legacy.md", "checker-verdict-legacy.json", "accepted-result-legacy.md"],
       };
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(globalThis.navigator, "clipboard", {
+        configurable: true,
+        value: { writeText },
+      });
       vi.mocked(fetch).mockImplementation(async (input) => {
         const url = String(input);
         if (url === "/v1/agents") {
@@ -130,6 +135,24 @@ describe("App run observer file detail", () => {
         return detail!;
       });
       expect(detailNode).toHaveTextContent("Legacy worker output");
+      const expectedDownloadUrl = `/v1/team/task-runs/${encodeURIComponent(taskRun.runId)}/tasks/${encodeURIComponent(task.taskId)}/attempts/${encodeURIComponent(attemptId)}/files/worker-output-legacy.md`;
+      expect(within(detailNode).getByRole("link", { name: "下载文件 worker-output-legacy.md" }))
+        .toHaveAttribute("href", expectedDownloadUrl);
+      expect(within(detailNode).getByRole("link", { name: "下载文件 worker-output-legacy.md" }))
+        .toHaveAttribute("download", "worker-output-legacy.md");
+
+      const referenceCopyButton = within(detailNode).getByRole("button", { name: `复制文件引用路径 ${workerOutputRef}` });
+      expect(referenceCopyButton).toHaveClass("emap-node-id-copy");
+      expect(referenceCopyButton).toHaveTextContent(workerOutputRef);
+      fireEvent.click(referenceCopyButton);
+      await waitFor(() => {
+        expect(writeText).toHaveBeenCalledWith(workerOutputRef);
+      });
+      await waitFor(() => {
+        expect(referenceCopyButton).toHaveClass("is-copied");
+        expect(referenceCopyButton).toHaveTextContent(workerOutputRef);
+        expect(referenceCopyButton).toHaveTextContent("已复制");
+      });
     });
 
     it("pretty-prints structured JSON from markdown-named accepted result files", async () => {

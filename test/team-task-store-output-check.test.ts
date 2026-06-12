@@ -54,6 +54,28 @@ test("TaskStore rejects invalid outputCheck shapes and preserves valid outputChe
 			},
 		});
 		assert.deepEqual(task.workUnit.outputCheck, { type: "json_items", outputKey: "items", allowDirectArray: true, requiredFields: ["id"] });
+
+		const worklistTask = await store.create({
+			...validTaskInput,
+			title: "输出清单",
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "输出清单",
+				outputCheck: { type: "worklist", allowEmpty: true },
+			},
+		});
+		assert.deepEqual(worklistTask.workUnit.outputCheck, { type: "worklist", allowEmpty: true });
+
+		const resultsTask = await store.create({
+			...validTaskInput,
+			title: "输出清单结果",
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "输出清单结果",
+				outputCheck: { type: "worklist_results", requireFullCoverage: false },
+			},
+		});
+		assert.deepEqual(resultsTask.workUnit.outputCheck, { type: "worklist_results", requireFullCoverage: false });
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

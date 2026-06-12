@@ -332,6 +332,90 @@ test("TaskStore preserves typed input and output ports on a WorkUnit", async () 
 	}
 });
 
+test("TaskStore creates split-task only with worklist input and worklist-results output ports", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-store-"));
+	try {
+		const store = createStore(root);
+		const splitTask = await store.create({
+			...validTaskInput,
+			title: "分片处理",
+			canvasKind: "split-task",
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "分片处理",
+				inputPorts: [{ id: "source_worklist", label: "Worklist", type: "worklist" }],
+				outputPorts: [{ id: "results", label: "Results", type: "worklist-results" }],
+			},
+			splitTaskSpec: {
+				schemaVersion: "team/split-task-spec-1",
+				inputPortId: "source_worklist",
+				outputPortId: "results",
+				dispatchGoal: "逐项处理清单 item。",
+				generatedWorkerAgentId: "search",
+				generatedCheckerAgentId: "checker",
+				autoRun: { enabled: true, concurrency: 3 },
+				collectPolicy: { requireAllItemsSucceeded: true, requireFullCoverage: true },
+			},
+		});
+
+		assert.equal(splitTask.canvasKind, "split-task");
+		assert.equal(splitTask.splitTaskSpec?.inputPortId, "source_worklist");
+		assert.equal(splitTask.splitTaskSpec?.outputPortId, "results");
+
+		await assert.rejects(
+			() => store.create({
+				...validTaskInput,
+				title: "坏分片处理",
+				canvasKind: "split-task",
+				workUnit: {
+					...validTaskInput.workUnit,
+					title: "坏分片处理",
+					inputPorts: [{ id: "source_json", label: "JSON", type: "json" }],
+					outputPorts: [{ id: "results", label: "Results", type: "worklist-results" }],
+				},
+				splitTaskSpec: {
+					schemaVersion: "team/split-task-spec-1",
+					inputPortId: "source_json",
+					outputPortId: "results",
+					dispatchGoal: "逐项处理清单 item。",
+					generatedWorkerAgentId: "search",
+					generatedCheckerAgentId: "checker",
+					autoRun: { enabled: true, concurrency: 3 },
+					collectPolicy: { requireAllItemsSucceeded: true, requireFullCoverage: true },
+				},
+			}),
+			{ message: "splitTaskSpec input port type must be worklist" },
+		);
+
+		await assert.rejects(
+			() => store.create({
+				...validTaskInput,
+				title: "坏分片输出",
+				canvasKind: "split-task",
+				workUnit: {
+					...validTaskInput.workUnit,
+					title: "坏分片输出",
+					inputPorts: [{ id: "source_worklist", label: "Worklist", type: "worklist" }],
+					outputPorts: [{ id: "results", label: "Results", type: "json" }],
+				},
+				splitTaskSpec: {
+					schemaVersion: "team/split-task-spec-1",
+					inputPortId: "source_worklist",
+					outputPortId: "results",
+					dispatchGoal: "逐项处理清单 item。",
+					generatedWorkerAgentId: "search",
+					generatedCheckerAgentId: "checker",
+					autoRun: { enabled: true, concurrency: 3 },
+					collectPolicy: { requireAllItemsSucceeded: true, requireFullCoverage: true },
+				},
+			}),
+			{ message: "splitTaskSpec output port type must be worklist-results" },
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("TaskStore rejects invalid or duplicate WorkUnit ports", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-task-store-"));
 	try {

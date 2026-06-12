@@ -9,6 +9,7 @@ import type {
 	TeamDiscoveryGeneratedTaskSummary,
 	TeamRunState,
 } from "./types.js";
+import { getGeneratedSourceKind, getGeneratedSourceLatestAt, getGeneratedSourceLatestAttemptId, getGeneratedSourceLatestRunId, getGeneratedSourceParentTaskId } from "./generated-source.js";
 import type { CanvasTaskRunService } from "./task-run-service.js";
 import type { RunWorkspace } from "./run-workspace.js";
 import type { SourceConnectionStore } from "./source-connection-store.js";
@@ -65,12 +66,19 @@ function toGeneratedTaskSummary(task: TeamCanvasTask): TeamDiscoveryGeneratedTas
 		archived: task.archived,
 		generatedSource: {
 			schemaVersion: source.schemaVersion,
-			sourceDiscoveryTaskId: source.sourceDiscoveryTaskId,
+			sourceKind: getGeneratedSourceKind(source),
+			sourceTaskId: getGeneratedSourceParentTaskId(source),
+			...(source.schemaVersion === "team/generated-task-source-1" ? { sourceDiscoveryTaskId: source.sourceDiscoveryTaskId } : {}),
 			sourceItemId: source.sourceItemId,
 			itemStatus: source.itemStatus,
-			latestDiscoveryRunId: source.latestDiscoveryRunId,
-			latestDiscoveryAttemptId: source.latestDiscoveryAttemptId,
-			latestDiscoveredAt: source.latestDiscoveredAt,
+			latestSourceRunId: getGeneratedSourceLatestRunId(source),
+			latestSourceAttemptId: getGeneratedSourceLatestAttemptId(source),
+			latestSourceAt: getGeneratedSourceLatestAt(source),
+			...(source.schemaVersion === "team/generated-task-source-1" ? {
+				latestDiscoveryRunId: source.latestDiscoveryRunId,
+				latestDiscoveryAttemptId: source.latestDiscoveryAttemptId,
+				latestDiscoveredAt: source.latestDiscoveredAt,
+			} : {}),
 			workUnitMode: source.workUnitMode,
 			canResetToManaged: Boolean(source.latestManagedWorkUnit),
 		},
@@ -152,7 +160,7 @@ export type RunViewResult =
 	| { status: "ok"; view: "summary"; state: TeamRunState }
 	| { status: "ok"; view: "process-summary"; data: { run: TeamRunState; attempts: TeamAttemptMetadata[] } };
 
-export type TeamConsoleSummaryTaskStore = Pick<TaskStore, "list" | "listGeneratedForDiscoveryTask">;
+export type TeamConsoleSummaryTaskStore = Pick<TaskStore, "list" | "listGeneratedForSourceTask">;
 export type TeamConsoleSummaryTaskRunService = Pick<CanvasTaskRunService, "listRunSummariesByTaskIds" | "listRunsByTaskIds" | "getRun">;
 export type TeamConsoleSummaryAttemptStore = Pick<RunWorkspace, "listAttempts">;
 export type TeamConsoleSummarySourceNodeStore = Pick<SourceNodeStore, "list">;
@@ -246,14 +254,15 @@ export class TeamConsoleSummaryReadModel {
 	}
 
 	async listGeneratedTasks(input: {
-		discoveryTaskId: string;
+		sourceKind: "discovery" | "split-task";
+		sourceTaskId: string;
 		since?: string;
 		includeArchived: boolean;
 		view: "full" | "summary";
 	}): Promise<GeneratedTaskListResult> {
-		const { discoveryTaskId, since, includeArchived, view } = input;
+		const { sourceKind, sourceTaskId, since, includeArchived, view } = input;
 
-		const allGeneratedTasks = await this.deps.taskStore.listGeneratedForDiscoveryTask(discoveryTaskId, {
+		const allGeneratedTasks = await this.deps.taskStore.listGeneratedForSourceTask(sourceKind, sourceTaskId, {
 			includeArchived: true,
 		});
 		const visibleTasks = allGeneratedTasks.filter((generatedTask) => includeArchived || !generatedTask.archived);

@@ -98,6 +98,39 @@ test("Step04: json_items outputCheck returns parsed items", async () => {
 	}
 });
 
+test("validator resolves machine-readable JSON outputPath references", async () => {
+	const task: TeamTask = {
+		id: "make_worklist",
+		title: "Make worklist",
+		input: { text: "make" },
+		acceptance: { rules: ["ok"] },
+		outputCheck: { type: "worklist" },
+	};
+	const { root, workspace, runId, attemptId } = await setup(task);
+	try {
+		const worklist = {
+			schemaVersion: "team/worklist-1",
+			worklistId: "worklist_news",
+			title: "News worklist",
+			items: [{ id: "batch-001", title: "Batch 1", input: [{ title: "A" }] }],
+		};
+		await writeRoleFile(root, runId, attemptId, "worker", "output/worklist.json", JSON.stringify(worklist));
+		const result = await validateTeamOutput({
+			workspace,
+			runId,
+			task,
+			attemptId,
+			contents: [{ ref: "worker-output-001.md", content: JSON.stringify({ outputPath: "output/worklist.json" }) }],
+		});
+		assert.equal(result.ok, true);
+		assert.equal(result.kind, "worklist");
+		assert.equal(result.sourceRef, "output/worklist.json");
+		assert.match(result.normalizedRef ?? "", /agent-workspaces/);
+	} finally {
+		await rm(root, { recursive: true });
+	}
+});
+
 test("P26: validator accepts fenced discovery JSON", async () => {
 	const { root, workspace, runId, attemptId, task } = await setup();
 	try {
