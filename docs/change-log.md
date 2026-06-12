@@ -14,6 +14,11 @@
 
 ---
 
+## 2026-06-12 — Team Console Group layer regression fix
+
+- **主题**: 修复 canvas layering 第一批落地后 Group frame 在 Dell 1996 主题下压住节点的问题。根因是普通 `.emap-node` 自身仍为 `z-index: auto`，而 Group frame 的 positioned `z-index: 10` 会压过 auto 节点；现已让节点自身进入 `node.base` layer。
+- **验证**: 新增静态契约锁定 `.emap-node` 必须使用 `--emap-layer-node-base`；浏览器在 5174 同一画布容器中验证 Group `10`、node `40`、node above Group。
+
 ## 2026-06-12 — Team Console canvas layering runtime pass
 
 - **主题**: 将 Team Console Execution Atlas 第一批跨画布 z 轴合同落到代码。新增 layer CSS token 与 `atlas-layering` helper，Group 背景、节点、root dock、selection rect、maximized shell、Dell hover、active / dragging context 和 child panel depth 不再依赖散落数字。

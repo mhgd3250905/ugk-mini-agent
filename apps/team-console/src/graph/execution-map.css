@@ -362,6 +362,7 @@
 .emap-node {
   appearance: none;
   position: absolute;
+  z-index: var(--emap-layer-node-base);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 46%),
     var(--surface);
