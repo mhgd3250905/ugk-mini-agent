@@ -60,6 +60,7 @@ const emptyRunHistoryPanelState: RunHistoryPanelState = {
   savingRunId: null,
 };
 const CANVAS_LOADING_MIN_VISIBLE_MS = 160;
+const CANVAS_UI_STATE_WRITE_DELAY_MS = 160;
 
 type TeamConsoleTheme = "light" | "dark";
 type TeamConsoleVisualTheme = "default" | "dell-1996";
@@ -387,6 +388,8 @@ export function App() {
   );
   const [sharedCanvasUiState, setSharedCanvasUiState] = useState<StoredCanvasUiStateByContext | null>(null);
   const [sharedCanvasUiStateLoaded, setSharedCanvasUiStateLoaded] = useState(false);
+  const canvasUiStateWriteTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
+  const pendingCanvasUiStateWriteRef = useRef<((allowReactUpdates: boolean) => void) | null>(null);
   const sharedCanvasUiStateSaveTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const sharedCanvasUiStatePersistedJsonRef = useRef<string | null>(null);
   const liveCanvasUiStateHydratingRef = useRef(false);
@@ -1213,6 +1216,13 @@ export function App() {
 
   useEffect(() => {
     return () => {
+      if (canvasUiStateWriteTimerRef.current) {
+        globalThis.clearTimeout(canvasUiStateWriteTimerRef.current);
+        canvasUiStateWriteTimerRef.current = null;
+      }
+      const pendingWrite = pendingCanvasUiStateWriteRef.current;
+      pendingCanvasUiStateWriteRef.current = null;
+      pendingWrite?.(false);
       if (sharedCanvasUiStateSaveTimerRef.current) {
         globalThis.clearTimeout(sharedCanvasUiStateSaveTimerRef.current);
       }
@@ -1220,6 +1230,13 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (canvasUiStateWriteTimerRef.current) {
+      globalThis.clearTimeout(canvasUiStateWriteTimerRef.current);
+      canvasUiStateWriteTimerRef.current = null;
+    }
+    const pendingWrite = pendingCanvasUiStateWriteRef.current;
+    pendingCanvasUiStateWriteRef.current = null;
+    pendingWrite?.(true);
     setCanvasUiStateHydrated(false);
     setCanvasUiStateRestoreHasStoredState(readStoredCanvasUiState(dataSource, selectedFixtureId) !== null);
   }, [canvasUiContextKey, dataSource, selectedFixtureId]);
@@ -1515,28 +1532,45 @@ export function App() {
         validLoadedTaskIds,
       ),
     };
-    const nextByContext = writeStoredCanvasUiState(nextState);
-    if (dataSource === "live" && nextByContext) {
-      const nextJson = JSON.stringify(parseStoredCanvasUiStateByContext(nextByContext));
-      if (liveCanvasUiStateHydratingRef.current) {
-        sharedCanvasUiStatePersistedJsonRef.current = nextJson;
+    const commitCanvasUiState = (allowReactUpdates: boolean) => {
+      const nextByContext = writeStoredCanvasUiState(nextState);
+      if (dataSource === "live" && nextByContext) {
+        const nextJson = JSON.stringify(parseStoredCanvasUiStateByContext(nextByContext));
+        if (liveCanvasUiStateHydratingRef.current) {
+          sharedCanvasUiStatePersistedJsonRef.current = nextJson;
+          if (allowReactUpdates) setSharedCanvasUiState(nextByContext);
+          return;
+        }
+        if (nextJson === sharedCanvasUiStatePersistedJsonRef.current) return;
+        if (!allowReactUpdates) return;
         setSharedCanvasUiState(nextByContext);
-        return;
+        if (sharedCanvasUiStateSaveTimerRef.current) {
+          globalThis.clearTimeout(sharedCanvasUiStateSaveTimerRef.current);
+        }
+        sharedCanvasUiStateSaveTimerRef.current = globalThis.setTimeout(() => {
+          sharedCanvasUiStateSaveTimerRef.current = null;
+          void new LiveTeamApi().saveConsoleLayout(nextByContext)
+            .then(() => {
+              sharedCanvasUiStatePersistedJsonRef.current = nextJson;
+            })
+            .catch(() => {});
+        }, 250);
       }
-      if (nextJson === sharedCanvasUiStatePersistedJsonRef.current) return;
-      setSharedCanvasUiState(nextByContext);
-      if (sharedCanvasUiStateSaveTimerRef.current) {
-        globalThis.clearTimeout(sharedCanvasUiStateSaveTimerRef.current);
-      }
-      sharedCanvasUiStateSaveTimerRef.current = globalThis.setTimeout(() => {
-        sharedCanvasUiStateSaveTimerRef.current = null;
-        void new LiveTeamApi().saveConsoleLayout(nextByContext)
-          .then(() => {
-            sharedCanvasUiStatePersistedJsonRef.current = nextJson;
-          })
-          .catch(() => {});
-      }, 250);
+    };
+    if (dataSource === "live" && liveCanvasUiStateHydratingRef.current) {
+      commitCanvasUiState(true);
+      return;
     }
+    pendingCanvasUiStateWriteRef.current = commitCanvasUiState;
+    if (canvasUiStateWriteTimerRef.current) {
+      globalThis.clearTimeout(canvasUiStateWriteTimerRef.current);
+    }
+    canvasUiStateWriteTimerRef.current = globalThis.setTimeout(() => {
+      canvasUiStateWriteTimerRef.current = null;
+      const pendingWrite = pendingCanvasUiStateWriteRef.current;
+      pendingCanvasUiStateWriteRef.current = null;
+      pendingWrite?.(true);
+    }, CANVAS_UI_STATE_WRITE_DELAY_MS);
   }, [
     canvasUiContextKey,
     canvasUiStateHydrated,

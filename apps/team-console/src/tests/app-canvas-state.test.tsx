@@ -12,6 +12,7 @@ describe("App", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -504,6 +505,46 @@ describe("App", () => {
         expect(Number.parseFloat(restoredShell!.style.left)).toBeCloseTo(movedLeft, 4);
         expect(Number.parseFloat(restoredShell!.style.top)).toBeCloseTo(movedTop, 4);
       }, { timeout: 2000 });
+    });
+
+    it("debounces canvas state persistence while dragging a Task branch panel", async () => {
+      const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
+      const { container } = render(<App />);
+
+      const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" });
+      fireEvent.click(taskNode);
+
+      const branchShell = await waitFor(() => {
+        const shell = container.querySelector(".emap-task-branch-shell") as HTMLElement | null;
+        expect(shell).toBeTruthy();
+        return shell!;
+      });
+      const header = branchShell.querySelector(".task-leader-branch-head") as HTMLElement | null;
+      expect(header).toBeTruthy();
+
+      vi.useFakeTimers();
+      setItemSpy.mockClear();
+
+      const initialLeft = Number.parseFloat(branchShell.style.left);
+      const initialTop = Number.parseFloat(branchShell.style.top);
+      firePointer(header!, "pointerdown", { pointerId: 106, clientX: initialLeft + 20, clientY: initialTop + 20 });
+      firePointer(branchShell, "pointermove", { pointerId: 106, clientX: initialLeft + 84, clientY: initialTop + 52 });
+      firePointer(branchShell, "pointermove", { pointerId: 106, clientX: initialLeft + 124, clientY: initialTop + 68 });
+
+      expect(Number.parseFloat(branchShell.style.left)).toBeCloseTo(initialLeft + 104, 4);
+      expect(Number.parseFloat(branchShell.style.top)).toBeCloseTo(initialTop + 48, 4);
+      expect(setItemSpy.mock.calls.filter(([key]) => key === "ugk-team-console:canvas-ui-state:v1")).toHaveLength(0);
+
+      firePointer(branchShell, "pointerup", { pointerId: 106, clientX: initialLeft + 124, clientY: initialTop + 68, buttons: 0 });
+
+      await act(async () => {
+        vi.advanceTimersByTime(220);
+      });
+
+      expect(setItemSpy).toHaveBeenCalledWith(
+        "ugk-team-console:canvas-ui-state:v1",
+        expect.stringContaining('"taskBranchPositions"'),
+      );
     });
   });
 });

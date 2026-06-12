@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-12 — Team Console canvas state write coalescing
+
+- **主题**: 继续收口 Team Console 画布交互性能热路径。canvas UI state 的本地 `localStorage` 写入改为短延迟合并，Task branch / observer panel 等仍需要实时更新父层位置状态的交互，不再在每次 `pointermove` 同步写入完整 canvas state。
+- **影响范围**: 仅 Team Console 前端状态持久化节流；画布恢复、live shared layout hydration、根节点拖拽本地预览和后端 Team Runtime 均不改变。
+- **验证**: 新增 `app-canvas-state` 回归测试，先证明 Task branch panel 拖动期间会重复写 canvas state，再验证停止后合并持久化。
+
 ## 2026-06-12 — Team Console canvas drag and wheel hot path
 
 - **主题**: 修复 Team Console 画布根节点拖拽和滚轮缩放的前端热路径。Agent / Task / Source 根节点拖拽期间改为 ExecutionMap 内部本地预览位置，`pointerup` 后一次性提交父层状态；拖拽中的 `pointermove` 不再触发 canvas UI state 的 `localStorage` 持久化。滚轮缩放改为先即时更新 stage transform，停止滚动后合并提交 viewport，避免触控板连续 wheel 每级都触发父层状态和持久化。
