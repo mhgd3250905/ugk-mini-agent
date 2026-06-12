@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-12 — Team Console canvas drag and wheel hot path
+
+- **主题**: 修复 Team Console 画布根节点拖拽和滚轮缩放的前端热路径。Agent / Task / Source 根节点拖拽期间改为 ExecutionMap 内部本地预览位置，`pointerup` 后一次性提交父层状态；拖拽中的 `pointermove` 不再触发 canvas UI state 的 `localStorage` 持久化。滚轮缩放改为先即时更新 stage transform，停止滚动后合并提交 viewport，避免触控板连续 wheel 每级都触发父层状态和持久化。
+- **影响范围**: 仅 `apps/team-console` 前端交互路径；Task 定义、Team Runtime、Canvas Task run、typed artifact、后端 API 和运行态 `.data` 不变。pan 仍保持原有“移动中视觉更新、结束后提交”语义，root Dock / trash / branch panel 拖动语义保持兼容。
+- **对应入口**: `apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/AtlasCanvasShell.tsx`、`apps/team-console/src/tests/execution-map-pan-zoom.test.tsx`、`apps/team-console/src/tests/app-canvas-state.test.tsx`。
+
 ## 2026-06-12 — worklist canonical machine artifact resultRef
 
 - **主题**: 收口普通 Canvas Task 在 `worklist` / `worklist-results` 输出校验通过后的最终 `resultRef` 选择。若 worker 输出已经通过 deterministic validation 并指向 `agent-workspaces/<attemptId>/worker/output/*.json` 机器文件，即使 checker 返回另一份合法 JSON，runtime 也会优先保留 worker 的 canonical 机器产物引用；只有 worker public output 无合法机器产物时才继续 fallback 到 `accepted-result.md`。

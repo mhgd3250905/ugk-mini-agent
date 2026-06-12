@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { ExecutionMap, type AtlasTaskNode } from "../graph/ExecutionMap";
 import {
   MockTeamApi,
@@ -21,6 +21,10 @@ async function realSuccessOfficialAttempts(): Promise<TeamAttemptMetadata[]> {
 }
 
 describe("Canvas pan and zoom", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   function firePointer(
     target: Element,
     type: "pointerdown" | "pointermove" | "pointerup",
@@ -55,6 +59,39 @@ describe("Canvas pan and zoom", () => {
 
     expect(screen.queryByLabelText(/当前缩放/)).toBeNull();
     expect(stage.style.transform).toContain("scale(1.1)");
+  });
+
+  it("wheel zoom updates the stage immediately and commits viewport after the wheel burst settles", () => {
+    vi.useFakeTimers();
+    const onViewportChange = vi.fn();
+    const plan = makeSequentialPlan();
+    const run = makeSequentialRun();
+    const { container } = render(
+      <ExecutionMap
+        plan={plan}
+        run={run}
+        selectedTaskId={null}
+        onSelectTask={() => {}}
+        viewport={{ x: 0, y: 0, scale: 1 }}
+        onViewportChange={onViewportChange}
+      />,
+    );
+    const viewport = container.querySelector(".execution-map-container") as HTMLElement;
+    const stage = container.querySelector(".execution-map-scroll") as HTMLElement;
+
+    fireEvent.wheel(viewport, { deltaY: -120, clientX: 120, clientY: 120 });
+    fireEvent.wheel(viewport, { deltaY: -120, clientX: 120, clientY: 120 });
+
+    expect(stage.style.transform).toContain("scale(1.25)");
+    expect(onViewportChange).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(180);
+    });
+
+    expect(onViewportChange).toHaveBeenCalledTimes(1);
+    expect(onViewportChange).toHaveBeenLastCalledWith(expect.objectContaining({ scale: 1.25 }));
+    vi.useRealTimers();
   });
 
   it("registers wheel zoom as a non-passive native listener", () => {
@@ -229,6 +266,42 @@ describe("Canvas pan and zoom", () => {
     expect(readsAfterCache).toBeGreaterThan(0);
     expect(rectReads).toHaveLength(readsAfterCache);
     expect(onMoveCanvasTask).toHaveBeenCalled();
+  });
+
+  it("previews atlas root node dragging locally and commits the parent move on pointerup", async () => {
+    const task = mockTeamTasks[0]!;
+    const taskNode: AtlasTaskNode = {
+      nodeId: "task-node",
+      kind: "canvas-task",
+      taskId: task.taskId,
+      position: { x: 280, y: 220 },
+    };
+    const onMoveCanvasTask = vi.fn();
+
+    const { container } = render(
+      <ExecutionMap
+        plan={makeSequentialPlan()}
+        run={makeSequentialRun()}
+        selectedTaskId={null}
+        onSelectTask={() => {}}
+        taskNodes={[taskNode]}
+        tasksById={new Map([[task.taskId, task]])}
+        onMoveCanvasTask={onMoveCanvasTask}
+      />,
+    );
+    const renderedTaskNode = await within(container).findByRole("button", { name: task.title }) as HTMLElement;
+
+    firePointer(renderedTaskNode, "pointerdown", { pointerId: 73, clientX: 320, clientY: 260 });
+    firePointer(renderedTaskNode, "pointermove", { pointerId: 73, clientX: 360, clientY: 290 });
+
+    expect(Number.parseFloat(renderedTaskNode.style.left)).toBeCloseTo(320, 4);
+    expect(Number.parseFloat(renderedTaskNode.style.top)).toBeCloseTo(250, 4);
+    expect(onMoveCanvasTask).not.toHaveBeenCalled();
+
+    firePointer(renderedTaskNode, "pointerup", { pointerId: 73, clientX: 360, clientY: 290, buttons: 0 });
+
+    expect(onMoveCanvasTask).toHaveBeenCalledTimes(1);
+    expect(onMoveCanvasTask).toHaveBeenLastCalledWith("task-node", { x: 320, y: 250 });
   });
 
   it("selecting an expanded child after zoom does not enter a measurement feedback loop", async () => {

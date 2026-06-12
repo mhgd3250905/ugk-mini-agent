@@ -350,6 +350,7 @@ type AtlasNodeDragState = {
   copyOnClick?: { kind: "agent" | "task"; id: string };
   lastTreeDx?: number;
   lastTreeDy?: number;
+  lastPositions?: Record<string, { x: number; y: number }>;
 };
 
 type AgentBranchInteractionState = {
@@ -368,6 +369,19 @@ type TaskBranchMeasuredSizeMap = Record<string, { width: number; height: number 
 type TaskSubtreeScope = "root" | "menu" | { panelId: string };
 
 type MeasuredHeights = Record<string, number>;
+
+function atlasDragPreviewKey(kind: "agent" | "task" | "source", nodeId: string): string {
+  return `${kind}:${nodeId}`;
+}
+
+function atlasNodeWithPreview<T extends { nodeId: string; position: { x: number; y: number } }>(
+  node: T,
+  kind: "agent" | "task" | "source",
+  previewPositions: Record<string, { x: number; y: number }>,
+): T {
+  const previewPosition = previewPositions[atlasDragPreviewKey(kind, node.nodeId)];
+  return previewPosition ? { ...node, position: previewPosition } : node;
+}
 
 function statusClass(status: TaskStatus | RunDetail["status"]): string {
   switch (status) {
@@ -754,6 +768,8 @@ export function ExecutionMap({
   const [selectedAtlasNodeKeys, setSelectedAtlasNodeKeys] = useState<Set<string>>(new Set());
   const [rootDropTarget, setRootDropTarget] = useState<"dock" | "trash" | null>(null);
   const [isAtlasDragging, setIsAtlasDragging] = useState(false);
+  const [atlasDragPreviewPositions, setAtlasDragPreviewPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [visualViewport, setVisualViewport] = useState<AtlasViewport | undefined>(viewport);
   const [isDockExpanded, setIsDockExpanded] = useState(false);
   const [hoveredLinkCutKey, setHoveredLinkCutKey] = useState<string | null>(null);
   const [flightAnimation, setFlightAnimation] = useState<DockFlightAnimation | null>(null);
@@ -780,6 +796,12 @@ export function ExecutionMap({
   const suppressAgentClickRef = useRef<string | null>(null);
   const suppressTaskClickRef = useRef<string | null>(null);
   const suppressTaskGroupClickRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    setVisualViewport(viewport);
+  }, [viewport]);
+
+  const interactionViewport = visualViewport ?? viewport;
   const agentBranchInteractionRef = useRef<AgentBranchInteractionState | null>(null);
   const agentBranchDragSuppressClickRef = useRef(false);
   const panelResizeRef = useRef<{ panelId: string; pointerId: number; startClientX: number; startClientY: number; startWidth: number; startHeight: number; minWidth: number; minHeight: number } | null>(null);
@@ -844,16 +866,20 @@ export function ExecutionMap({
     return nodeIds;
   }, [taskGroups]);
   const visibleAgentNodes = useMemo(
-    () => showAgents ? unfilteredVisibleAgentNodes : [],
-    [showAgents, unfilteredVisibleAgentNodes],
+    () => showAgents ? unfilteredVisibleAgentNodes.map((node) => atlasNodeWithPreview(node, "agent", atlasDragPreviewPositions)) : [],
+    [atlasDragPreviewPositions, showAgents, unfilteredVisibleAgentNodes],
   );
   const visibleTaskNodes = useMemo(
-    () => showTasks ? unfilteredVisibleTaskNodes.filter((node) => !collapsedTaskGroupNodeIdSet.has(node.nodeId)) : [],
-    [collapsedTaskGroupNodeIdSet, showTasks, unfilteredVisibleTaskNodes],
+    () => showTasks
+      ? unfilteredVisibleTaskNodes
+        .filter((node) => !collapsedTaskGroupNodeIdSet.has(node.nodeId))
+        .map((node) => atlasNodeWithPreview(node, "task", atlasDragPreviewPositions))
+      : [],
+    [atlasDragPreviewPositions, collapsedTaskGroupNodeIdSet, showTasks, unfilteredVisibleTaskNodes],
   );
   const visibleSourceNodes = useMemo(
-    () => showSources ? unfilteredVisibleSourceNodes : [],
-    [showSources, unfilteredVisibleSourceNodes],
+    () => showSources ? unfilteredVisibleSourceNodes.map((node) => atlasNodeWithPreview(node, "source", atlasDragPreviewPositions)) : [],
+    [atlasDragPreviewPositions, showSources, unfilteredVisibleSourceNodes],
   );
   const hubAgentNodes = useMemo(
     () => agentNodes.filter((node) => minimizedAgentNodeIdSet.has(node.nodeId)),
@@ -1642,7 +1668,7 @@ export function ExecutionMap({
     }
 
     if (!nodesRect) return null;
-    const scale = viewportScale(viewport);
+    const scale = viewportScale(interactionViewport);
     const dx = event.clientX - drag.startClientX;
     const dy = event.clientY - drag.startClientY;
     const dockHitRect = domRectToRect(dockRect);
@@ -1656,7 +1682,7 @@ export function ExecutionMap({
       dockHitRect,
     ));
     return hit ? { dockRect } : null;
-  }, [getAtlasDragHitTestRects, viewport]);
+  }, [getAtlasDragHitTestRects, interactionViewport]);
 
   const canDockDrag = useCallback((drag: AtlasNodeDragState): boolean => {
     if (drag.primaryKind === "task-group") return false;
@@ -1693,30 +1719,27 @@ export function ExecutionMap({
       setRootDropTarget(null);
     }
 
-    const scale = viewportScale(viewport);
-    atlasNodeDragRef.current = { ...drag, hasMoved };
+    const scale = viewportScale(interactionViewport);
+    const nextPreviewPositions: Record<string, { x: number; y: number }> = {};
+    let nextDrag: AtlasNodeDragState = { ...drag, hasMoved, lastPositions: nextPreviewPositions };
     for (const entry of drag.entries) {
       const nextPosition = {
         x: entry.startPosition.x + dx / scale,
         y: entry.startPosition.y + dy / scale,
       };
-      if (entry.kind === "agent") {
-        onMoveAgent?.(entry.nodeId, nextPosition);
-      } else if (entry.kind === "task") {
-        onMoveCanvasTask?.(entry.nodeId, nextPosition);
-      } else {
-        onMoveSourceNode?.(entry.nodeId, nextPosition);
-      }
+      nextPreviewPositions[atlasDragPreviewKey(entry.kind, entry.nodeId)] = nextPosition;
       if (entry.kind === "task" && hasTaskBranchTree) {
         const treeDx = dx / scale - (drag.lastTreeDx ?? 0);
         const treeDy = dy / scale - (drag.lastTreeDy ?? 0);
         if (treeDx !== 0 || treeDy !== 0) {
           translateTaskSubtreeRef.current("root", treeDx, treeDy, entry.nodeId);
         }
-        atlasNodeDragRef.current = { ...atlasNodeDragRef.current!, lastTreeDx: dx / scale, lastTreeDy: dy / scale };
+        nextDrag = { ...nextDrag, lastTreeDx: dx / scale, lastTreeDy: dy / scale };
       }
     }
-  }, [canDockDrag, getDockHitForDrag, hasTaskBranchTree, isPointerOverTrash, onMoveAgent, onMoveCanvasTask, onMoveSourceNode, rootDropTarget, scheduleDockCollapse, viewport, wakeDock]);
+    atlasNodeDragRef.current = nextDrag;
+    setAtlasDragPreviewPositions(nextPreviewPositions);
+  }, [canDockDrag, getDockHitForDrag, hasTaskBranchTree, interactionViewport, isPointerOverTrash, rootDropTarget, scheduleDockCollapse, wakeDock]);
 
   const suppressNextAgentClick = useCallback((nodeId: string) => {
     suppressAgentClickRef.current = nodeId;
@@ -1764,20 +1787,40 @@ export function ExecutionMap({
     }, DOCK_FLIGHT_DURATION_MS);
   }, []);
 
-  const rollbackAtlasDragPositions = useCallback((drag: AtlasNodeDragState) => {
+  const clearAtlasDragPreview = useCallback(() => {
+    setAtlasDragPreviewPositions((current) => Object.keys(current).length === 0 ? current : {});
+  }, []);
+
+  const commitAtlasDragPositions = useCallback((drag: AtlasNodeDragState) => {
+    const positions = drag.lastPositions;
+    if (!positions) {
+      clearAtlasDragPreview();
+      return;
+    }
     for (const entry of drag.entries) {
+      const nextPosition = positions[atlasDragPreviewKey(entry.kind, entry.nodeId)];
+      if (!nextPosition) continue;
       if (entry.kind === "agent") {
-        onMoveAgent?.(entry.nodeId, entry.startPosition);
+        onMoveAgent?.(entry.nodeId, nextPosition);
       } else if (entry.kind === "task") {
-        onMoveCanvasTask?.(entry.nodeId, entry.startPosition);
+        onMoveCanvasTask?.(entry.nodeId, nextPosition);
+      } else {
+        onMoveSourceNode?.(entry.nodeId, nextPosition);
+      }
+    }
+    clearAtlasDragPreview();
+  }, [clearAtlasDragPreview, onMoveAgent, onMoveCanvasTask, onMoveSourceNode]);
+
+  const rollbackAtlasDragPositions = useCallback((drag: AtlasNodeDragState) => {
+    clearAtlasDragPreview();
+    for (const entry of drag.entries) {
+      if (entry.kind === "task") {
         if (drag.lastTreeDx !== undefined || drag.lastTreeDy !== undefined) {
           translateTaskSubtreeRef.current("root", -(drag.lastTreeDx ?? 0), -(drag.lastTreeDy ?? 0), entry.nodeId);
         }
-      } else {
-        onMoveSourceNode?.(entry.nodeId, entry.startPosition);
       }
     }
-  }, [onMoveAgent, onMoveCanvasTask, onMoveSourceNode]);
+  }, [clearAtlasDragPreview]);
 
   const checkDockDrop = useCallback((drag: AtlasNodeDragState, event: ReactPointerEvent<HTMLElement>): boolean => {
     if (!drag.hasMoved) return false;
@@ -1834,12 +1877,12 @@ export function ExecutionMap({
         kind: "minimize", rootKind: flightRootKind, label: flightLabel, meta: flightMeta,
         targetNodeClass: "", targetPillClass: "pending", targetPill: DOCK_FLIGHT_KIND_LABELS[flightRootKind],
         targetLines: flightMeta ? [flightMeta] : [],
-        contentScale: viewportScale(viewport),
+        contentScale: viewportScale(interactionViewport),
       });
     }
 
     return true;
-  }, [canDockDrag, getDockHitForDrag, onMinimizeAgent, onMinimizeCanvasTask, onMinimizeSourceNode, rollbackAtlasDragPositions, startDockFlight, agentsById, tasksById, sourceNodesById, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes, viewport]);
+  }, [canDockDrag, getDockHitForDrag, onMinimizeAgent, onMinimizeCanvasTask, onMinimizeSourceNode, rollbackAtlasDragPositions, startDockFlight, agentsById, tasksById, sourceNodesById, visibleAgentNodes, visibleSourceNodes, visibleTaskNodes, interactionViewport]);
 
   const endAgentPointer = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const drag = atlasNodeDragRef.current;
@@ -1866,6 +1909,7 @@ export function ExecutionMap({
         atlasDragHitTestRectsCache = null;
         return;
       }
+      commitAtlasDragPositions(drag);
       atlasDragHitTestRectsCache = null;
       return;
     }
@@ -1882,8 +1926,9 @@ export function ExecutionMap({
       suppressNextAgentClick(drag.primaryNodeId);
       onSelectAgent?.(node);
     }
+    clearAtlasDragPreview();
     atlasDragHitTestRectsCache = null;
-  }, [checkDockDrop, copyCanvasNodeId, isPointerOverTrash, onRootTrashDrop, onSelectAgent, rollbackAtlasDragPositions, suppressNextAgentClick, visibleAgentNodes]);
+  }, [checkDockDrop, clearAtlasDragPreview, commitAtlasDragPositions, copyCanvasNodeId, isPointerOverTrash, onRootTrashDrop, onSelectAgent, rollbackAtlasDragPositions, suppressNextAgentClick, visibleAgentNodes]);
 
   const handleAgentClick = useCallback((node: AtlasAgentNode) => {
     if (suppressAgentClickRef.current === node.nodeId) {
@@ -1935,6 +1980,7 @@ export function ExecutionMap({
         atlasDragHitTestRectsCache = null;
         return;
       }
+      commitAtlasDragPositions(drag);
       atlasDragHitTestRectsCache = null;
       return;
     }
@@ -1951,8 +1997,9 @@ export function ExecutionMap({
       suppressNextTaskClick(drag.primaryNodeId);
       onSelectCanvasTask?.(node);
     }
+    clearAtlasDragPreview();
     atlasDragHitTestRectsCache = null;
-  }, [checkDockDrop, copyCanvasNodeId, isPointerOverTrash, onRootTrashDrop, onSelectCanvasTask, rollbackAtlasDragPositions, suppressNextTaskClick, visibleTaskNodes]);
+  }, [checkDockDrop, clearAtlasDragPreview, commitAtlasDragPositions, copyCanvasNodeId, isPointerOverTrash, onRootTrashDrop, onSelectCanvasTask, rollbackAtlasDragPositions, suppressNextTaskClick, visibleTaskNodes]);
 
   const suppressNextTaskGroupClick = useCallback((groupId: string) => {
     suppressTaskGroupClickRef.current = groupId;
@@ -1999,13 +2046,16 @@ export function ExecutionMap({
       if (isPointerOverTrash(drag, event)) {
         rollbackAtlasDragPositions(drag);
         if (drag.groupId) onDeleteTaskGroup?.(drag.groupId);
+      } else {
+        commitAtlasDragPositions(drag);
       }
       atlasDragHitTestRectsCache = null;
       return;
     }
 
+    clearAtlasDragPreview();
     atlasDragHitTestRectsCache = null;
-  }, [isPointerOverTrash, onDeleteTaskGroup, rollbackAtlasDragPositions, suppressNextTaskGroupClick]);
+  }, [clearAtlasDragPreview, commitAtlasDragPositions, isPointerOverTrash, onDeleteTaskGroup, rollbackAtlasDragPositions, suppressNextTaskGroupClick]);
 
   const handleTaskGroupClick = useCallback((groupId: string) => {
     if (suppressTaskGroupClickRef.current === groupId) {
@@ -2274,7 +2324,7 @@ export function ExecutionMap({
   const rootNodeScreenRect = (position: { x: number; y: number }, width: number, height: number) => {
     const nodesRect = evidenceContainerRef.current?.getBoundingClientRect();
     if (!nodesRect) return null;
-    const scale = viewportScale(viewport);
+    const scale = viewportScale(interactionViewport);
     return {
       x: nodesRect.left + position.x * scale,
       y: nodesRect.top + position.y * scale,
@@ -2466,7 +2516,7 @@ export function ExecutionMap({
                 startDockFlight({
                   fromX: itemRect.left, fromY: itemRect.top, fromW: itemRect.width, fromH: itemRect.height,
                   toX: targetRect.x, toY: targetRect.y, toW: targetRect.width, toH: targetRect.height,
-                  kind: "restore", rootKind: "agent", ...flightDetails, contentScale: viewportScale(viewport),
+                  kind: "restore", rootKind: "agent", ...flightDetails, contentScale: viewportScale(interactionViewport),
                 }, { onComplete: doRestore });
               } else {
                 doRestore();
@@ -2519,7 +2569,7 @@ export function ExecutionMap({
                 startDockFlight({
                   fromX: itemRect.left, fromY: itemRect.top, fromW: itemRect.width, fromH: itemRect.height,
                   toX: targetRect.x, toY: targetRect.y, toW: targetRect.width, toH: targetRect.height,
-                  kind: "restore", rootKind: "task", ...flightDetails, contentScale: viewportScale(viewport),
+                  kind: "restore", rootKind: "task", ...flightDetails, contentScale: viewportScale(interactionViewport),
                 }, { onComplete: doRestore });
               } else {
                 doRestore();
@@ -2572,7 +2622,7 @@ export function ExecutionMap({
                 startDockFlight({
                   fromX: itemRect.left, fromY: itemRect.top, fromW: itemRect.width, fromH: itemRect.height,
                   toX: targetRect.x, toY: targetRect.y, toW: targetRect.width, toH: targetRect.height,
-                  kind: "restore", rootKind: "source", ...flightDetails, contentScale: viewportScale(viewport),
+                  kind: "restore", rootKind: "source", ...flightDetails, contentScale: viewportScale(interactionViewport),
                 }, { onComplete: doRestore });
               } else {
                 doRestore();
@@ -3000,7 +3050,7 @@ export function ExecutionMap({
   const moveTaskBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = taskBranchDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    const scale = viewportScale(viewport);
+    const scale = viewportScale(interactionViewport);
     const dx = (event.clientX - drag.startClientX) / scale;
     const dy = (event.clientY - drag.startClientY) / scale;
     if (!drag.hasMoved && Math.abs(dx) < AGENT_DRAG_THRESHOLD && Math.abs(dy) < AGENT_DRAG_THRESHOLD) return;
@@ -3020,7 +3070,7 @@ export function ExecutionMap({
     drag.lastDx = dx;
     drag.lastDy = dy;
     translateTaskSubtree("menu", incDx, incDy, drag.nodeId);
-  }, [viewport, translateTaskSubtree]);
+  }, [interactionViewport, translateTaskSubtree]);
 
   const endTaskBranchDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = taskBranchDragRef.current;
@@ -3069,7 +3119,7 @@ export function ExecutionMap({
     const interaction = agentBranchInteractionRef.current;
     if (!interaction || interaction.pointerId !== event.pointerId) return;
 
-    const scale = viewportScale(viewport);
+    const scale = viewportScale(interactionViewport);
     const dx = (event.clientX - interaction.startClientX) / scale;
     const dy = (event.clientY - interaction.startClientY) / scale;
 
@@ -3101,7 +3151,7 @@ export function ExecutionMap({
       ...current,
       [interaction.nodeId]: nextRect,
     }));
-  }, [viewport]);
+  }, [interactionViewport]);
 
   const endAgentBranchInteraction = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const interaction = agentBranchInteractionRef.current;
@@ -3144,7 +3194,7 @@ export function ExecutionMap({
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.preventDefault();
     event.stopPropagation();
-    const scale = viewportScale(viewport);
+    const scale = viewportScale(interactionViewport);
     const dx = (event.clientX - drag.startClientX) / scale;
     const dy = (event.clientY - drag.startClientY) / scale;
     setPanelSizeOverrides((current) => ({
@@ -3154,7 +3204,7 @@ export function ExecutionMap({
         height: Math.max(drag.minHeight, drag.startHeight + dy),
       },
     }));
-  }, [viewport]);
+  }, [interactionViewport]);
 
   const endPanelResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = panelResizeRef.current;
@@ -3190,7 +3240,7 @@ export function ExecutionMap({
   const movePanelDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = panelDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    const scale = viewportScale(viewport);
+    const scale = viewportScale(interactionViewport);
     const dx = (event.clientX - drag.startClientX) / scale;
     const dy = (event.clientY - drag.startClientY) / scale;
     if (!drag.hasMoved && Math.abs(dx) < AGENT_DRAG_THRESHOLD && Math.abs(dy) < AGENT_DRAG_THRESHOLD) return;
@@ -3216,7 +3266,7 @@ export function ExecutionMap({
     if (incDx !== 0 || incDy !== 0) {
       translateTaskSubtreeRef.current({ panelId: drag.panelId }, incDx, incDy);
     }
-  }, [viewport]);
+  }, [interactionViewport]);
 
   const endPanelDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = panelDragRef.current;
@@ -3240,6 +3290,7 @@ export function ExecutionMap({
     <AtlasCanvasShell
       viewport={viewport}
       onViewportChange={onViewportChange}
+      onViewportPreviewChange={setVisualViewport}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
       agentFocusId={focusedAgentNode?.agentId ?? null}

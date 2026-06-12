@@ -214,6 +214,9 @@ describe("App", () => {
       fireEvent.click(within(getAtlasNodes(first.container)).getByRole("button", { name: "主 Agent" }));
       fireEvent.click(await within(getAtlasNodes(first.container)).findByRole("button", { name: "调查 Medtrum 云资产" }));
       fireEvent.wheel(getAtlas(first.container), { deltaY: -120, clientX: 120, clientY: 120 });
+      await act(async () => {
+        await new Promise((resolve) => globalThis.setTimeout(resolve, 180));
+      });
 
       expect(first.container.querySelector(".agent-playground-branch")).toBeTruthy();
       expect(first.container.querySelector(".task-action-branch")).toBeTruthy();
@@ -369,6 +372,32 @@ describe("App", () => {
         expect(restoredTask).toBeTruthy();
         expect(Number.parseFloat(restoredTask!.style.left)).toBeCloseTo(movedTaskLeft, 4);
         expect(Number.parseFloat(restoredTask!.style.top)).toBeCloseTo(movedTaskTop, 4);
+      });
+    });
+
+    it("does not persist canvas state until a root node drag is committed", async () => {
+      const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
+      const { container } = render(<App />);
+
+      const taskNode = await within(getAtlasNodes(container)).findByRole("button", { name: "调查 Medtrum 云资产" }) as HTMLElement;
+      const taskLeft = Number.parseFloat(taskNode.style.left);
+      const taskTop = Number.parseFloat(taskNode.style.top);
+
+      setItemSpy.mockClear();
+      firePointer(taskNode, "pointerdown", { pointerId: 105, clientX: taskLeft + 20, clientY: taskTop + 20 });
+      firePointer(taskNode, "pointermove", { pointerId: 105, clientX: taskLeft + 90, clientY: taskTop + 54 });
+
+      expect(Number.parseFloat(taskNode.style.left)).toBeCloseTo(taskLeft + 70, 4);
+      expect(Number.parseFloat(taskNode.style.top)).toBeCloseTo(taskTop + 34, 4);
+      expect(setItemSpy).not.toHaveBeenCalled();
+
+      firePointer(taskNode, "pointerup", { pointerId: 105, clientX: taskLeft + 90, clientY: taskTop + 54, buttons: 0 });
+
+      await waitFor(() => {
+        expect(setItemSpy).toHaveBeenCalledWith(
+          "ugk-team-console:canvas-ui-state:v1",
+          expect.stringContaining(`"taskId":"task_research_medtrum"`),
+        );
       });
     });
 

@@ -20,6 +20,7 @@ interface AtlasCanvasShellProps {
   interactionMode?: AtlasInteractionMode;
   onSelectionComplete?: (rect: AtlasSelectionRect) => void;
   onCanvasPointerDown?: () => void;
+  onViewportPreviewChange?: (viewport: AtlasViewport) => void;
 }
 
 interface CanvasDragOrigin {
@@ -49,6 +50,7 @@ interface PendingLongPressSelection {
 
 const SELECTION_LONG_PRESS_MS = 200;
 const PAN_THRESHOLD = 4;
+const WHEEL_COMMIT_DELAY_MS = 160;
 
 type ScreenSelectionRect = { left: number; top: number; width: number; height: number };
 
@@ -104,12 +106,13 @@ function toWorldSelectionRect(screenRect: ScreenSelectionRect, viewport: AtlasVi
   };
 }
 
-export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewport, defaultViewport = DEFAULT_VIEWPORT, onViewportChange, toolbarStart, toolbarEnd, agentFocusId, interactionMode = "free", onSelectionComplete, onCanvasPointerDown }: AtlasCanvasShellProps) {
+export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewport, defaultViewport = DEFAULT_VIEWPORT, onViewportChange, toolbarStart, toolbarEnd, agentFocusId, interactionMode = "free", onSelectionComplete, onCanvasPointerDown, onViewportPreviewChange }: AtlasCanvasShellProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const dragOriginRef = useRef<CanvasDragOrigin | null>(null);
   const selectionOriginRef = useRef<CanvasSelectionOrigin | null>(null);
   const pendingLongPressRef = useRef<PendingLongPressSelection | null>(null);
+  const wheelCommitTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const [renderViewport, setRenderViewport] = useState<AtlasViewport>(() => normalizeAtlasViewport(viewport ?? defaultViewport));
   const [isPanning, setIsPanning] = useState(false);
   const [selectionRect, setSelectionRect] = useState<ScreenSelectionRect | null>(null);
@@ -122,7 +125,8 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
     if (stageRef.current) {
       stageRef.current.style.transform = formatCanvasTransform(nextViewport);
     }
-  }, []);
+    onViewportPreviewChange?.(nextViewport);
+  }, [onViewportPreviewChange]);
 
   const commitViewport = useCallback((nextViewport: AtlasViewport) => {
     const normalizedViewport = normalizeAtlasViewport(nextViewport);
@@ -133,6 +137,12 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
     onViewportChange?.(normalizedViewport);
   }, [applyViewportToStage, onViewportChange]);
 
+  const clearWheelCommitTimer = useCallback(() => {
+    if (wheelCommitTimerRef.current == null) return;
+    globalThis.clearTimeout(wheelCommitTimerRef.current);
+    wheelCommitTimerRef.current = null;
+  }, []);
+
   const updateVisualViewport = useCallback((nextViewport: AtlasViewport) => {
     const normalizedViewport = normalizeAtlasViewport(nextViewport);
     currentViewportRef.current = normalizedViewport;
@@ -141,6 +151,7 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
 
   useEffect(() => {
     if (!viewport) return;
+    clearWheelCommitTimer();
     const normalizedViewport = normalizeAtlasViewport(viewport);
     if (sameViewport(lastExternalViewportRef.current, normalizedViewport)) return;
     lastExternalViewportRef.current = normalizedViewport;
@@ -148,7 +159,7 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
     currentViewportRef.current = normalizedViewport;
     setRenderViewport((current) => (sameViewport(current, normalizedViewport) ? current : normalizedViewport));
     applyViewportToStage(normalizedViewport);
-  }, [applyViewportToStage, viewport]);
+  }, [applyViewportToStage, clearWheelCommitTimer, viewport]);
 
   const handleCanvasWheel = useCallback((event: globalThis.WheelEvent) => {
     if (isLocked) return;
@@ -165,12 +176,17 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
     const worldX = (cursorX - currentViewport.x) / currentViewport.scale;
     const worldY = (cursorY - currentViewport.y) / currentViewport.scale;
 
-    commitViewport({
+    updateVisualViewport({
       x: cursorX - worldX * nextScale,
       y: cursorY - worldY * nextScale,
       scale: nextScale,
     });
-  }, [commitViewport, isLocked]);
+    clearWheelCommitTimer();
+    wheelCommitTimerRef.current = globalThis.setTimeout(() => {
+      wheelCommitTimerRef.current = null;
+      commitViewport(currentViewportRef.current);
+    }, WHEEL_COMMIT_DELAY_MS);
+  }, [clearWheelCommitTimer, commitViewport, isLocked, updateVisualViewport]);
 
   useEffect(() => {
     const container = mapContainerRef.current;
@@ -178,12 +194,14 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
     container.addEventListener("wheel", handleCanvasWheel, { passive: false });
     return () => {
       container.removeEventListener("wheel", handleCanvasWheel);
+      clearWheelCommitTimer();
     };
-  }, [handleCanvasWheel]);
+  }, [clearWheelCommitTimer, handleCanvasWheel]);
 
   const handleCanvasPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (isLocked) return;
     if ((event.button ?? 0) !== 0 || !canStartCanvasPan(event.target)) return;
+    clearWheelCommitTimer();
     const currentViewport = currentViewportRef.current;
     if (event.shiftKey && onSelectionComplete) {
       const localPoint = pointerLocalPoint(mapContainerRef.current, event);
@@ -237,7 +255,7 @@ export function AtlasCanvasShell({ children, overlay, hideWorld = false, viewpor
     };
     setIsPanning(true);
     event.currentTarget.setPointerCapture?.(event.pointerId);
-  }, [isLocked, onCanvasPointerDown, onSelectionComplete]);
+  }, [clearWheelCommitTimer, isLocked, onCanvasPointerDown, onSelectionComplete]);
 
   const handleCanvasPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (isLocked) return;
