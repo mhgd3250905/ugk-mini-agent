@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-12 — Team Console build chunk split
+
+- **主题**: 收口 Team Console 生产构建的既有 Vite chunk size warning。通过 Rollup `manualChunks` 将 React runtime 与 `marked` Markdown 渲染依赖拆成 `vendor-react` / `vendor-markdown` chunk，主 app chunk 从约 582 kB 降到约 343 kB。
+- **影响范围**: 仅 `apps/team-console` 生产构建分包配置；运行时代码路径、Team Runtime、Canvas Task 和 API 不变。
+- **验证**: `npm --prefix apps/team-console run build` 不再输出 chunk size warning，并生成独立 vendor chunks。
+
 ## 2026-06-12 — Team Console canvas state write coalescing
 
 - **主题**: 继续收口 Team Console 画布交互性能热路径。canvas UI state 的本地 `localStorage` 写入改为短延迟合并，Task branch / observer panel 等仍需要实时更新父层位置状态的交互，不再在每次 `pointermove` 同步写入完整 canvas state。

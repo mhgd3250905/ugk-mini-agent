@@ -26,4 +26,19 @@ export default defineConfig({
       "@": path.resolve(__dirname, "src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          const normalizedId = id.replaceAll("\\", "/");
+          if (normalizedId.includes("/node_modules/react/") || normalizedId.includes("/node_modules/react-dom/") || normalizedId.includes("/node_modules/scheduler/")) {
+            return "vendor-react";
+          }
+          if (normalizedId.includes("/node_modules/marked/")) {
+            return "vendor-markdown";
+          }
+        },
+      },
+    },
+  },
 });
