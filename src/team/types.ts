@@ -587,7 +587,7 @@ export type TeamTaskGroupRunSource =
 export interface TeamTaskGroupRunObservedRun {
 	taskId: string;
 	runId: string;
-	role: "entry" | "downstream" | "discovery-generated";
+	role: "entry" | "downstream" | "discovery-generated" | "split-generated";
 }
 
 export interface TeamTaskGroupRunDefinitionSnapshot {

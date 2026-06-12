@@ -566,6 +566,44 @@ test("GET /v1/team/task-group-runs/:groupRunId completes when Group pipeline com
 	}
 });
 
+test("GET /v1/team/task-group-runs/:groupRunId observes split-generated child runs from a split root", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const splitRoot = await createTask(app, "Split root");
+		const group = await createGroup(app, "Split group", [splitRoot.taskId]);
+		const workspace = new RunWorkspace(join(teamDir, "task-runs"));
+		const entry = await createCanvasRun(workspace, splitRoot.taskId, { status: "running" });
+		const splitGenerated = await createCanvasRun(workspace, "task_split_generated", {
+			status: "running",
+			triggeredBy: {
+				type: "split-generated-task",
+				splitTaskId: splitRoot.taskId,
+				splitRunId: entry.runId,
+				splitAttemptId: "attempt_split",
+				sourceItemId: "split-item-1",
+			},
+		});
+		const store = new TaskGroupRunStore(teamDir);
+		const groupRun = await store.create({ groupId: group.groupId });
+		await store.patch(groupRun.groupRunId, {
+			status: "running",
+			startedAt: new Date().toISOString(),
+			entryRuns: [{ taskId: splitRoot.taskId, runId: entry.runId }],
+			observedRuns: [{ taskId: splitRoot.taskId, runId: entry.runId, role: "entry" }],
+		});
+
+		const refreshed = await app.inject({ method: "GET", url: `/v1/team/task-group-runs/${groupRun.groupRunId}` });
+
+		assert.equal(refreshed.statusCode, 200);
+		const refreshedGroupRun = refreshed.json().groupRun as TeamTaskGroupRun;
+		assert.equal(refreshedGroupRun.status, "running");
+		assert.ok(refreshedGroupRun.observedRuns.some(run => run.runId === splitGenerated.runId && run.role === "split-generated"));
+	} finally {
+		await app.close();
+		await removeTempRoot(root);
+	}
+});
+
 test("GET /v1/team/task-group-runs/:groupRunId uses definitionSnapshot after Group membership changes", async () => {
 	const { app, root, teamDir } = await buildTestServer();
 	try {
@@ -739,6 +777,46 @@ test("POST /v1/team/task-group-runs/:groupRunId/cancel cancels downstream active
 		const cancelledDownstream = await app.inject({ method: "GET", url: `/v1/team/task-runs/${downstream.runId}` });
 		assert.equal(cancelledDownstream.statusCode, 200);
 		assert.equal(cancelledDownstream.json().status, "cancelled");
+	} finally {
+		await app.close();
+		await removeTempRoot(root);
+	}
+});
+
+test("POST /v1/team/task-group-runs/:groupRunId/cancel cancels active split-generated Task runs", async () => {
+	const { app, root, teamDir } = await buildTestServer();
+	try {
+		const splitRoot = await createTask(app, "Cancel split root");
+		const group = await createGroup(app, "Cancel split group", [splitRoot.taskId]);
+		const workspace = new RunWorkspace(join(teamDir, "task-runs"));
+		const entry = await createCanvasRun(workspace, splitRoot.taskId, { status: "running" });
+		const splitGenerated = await createCanvasRun(workspace, "task_split_generated_cancel", {
+			status: "running",
+			triggeredBy: {
+				type: "split-generated-task",
+				splitTaskId: splitRoot.taskId,
+				splitRunId: entry.runId,
+				splitAttemptId: "attempt_split",
+				sourceItemId: "split-item-cancel",
+			},
+		});
+		const store = new TaskGroupRunStore(teamDir);
+		const groupRun = await store.create({ groupId: group.groupId });
+		await store.patch(groupRun.groupRunId, {
+			status: "running",
+			startedAt: new Date().toISOString(),
+			entryRuns: [{ taskId: splitRoot.taskId, runId: entry.runId }],
+			observedRuns: [{ taskId: splitRoot.taskId, runId: entry.runId, role: "entry" }],
+		});
+
+		const cancel = await app.inject({ method: "POST", url: `/v1/team/task-group-runs/${groupRun.groupRunId}/cancel` });
+
+		assert.equal(cancel.statusCode, 200);
+		assert.equal(cancel.json().groupRun.status, "cancelled");
+		assert.ok((cancel.json().groupRun.observedRuns as TeamTaskGroupRun["observedRuns"]).some(run => run.runId === splitGenerated.runId && run.role === "split-generated"));
+		const cancelledSplitGenerated = await app.inject({ method: "GET", url: `/v1/team/task-runs/${splitGenerated.runId}` });
+		assert.equal(cancelledSplitGenerated.statusCode, 200);
+		assert.equal(cancelledSplitGenerated.json().status, "cancelled");
 	} finally {
 		await app.close();
 		await removeTempRoot(root);
