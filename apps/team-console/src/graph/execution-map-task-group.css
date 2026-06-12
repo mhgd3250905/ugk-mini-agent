@@ -10,12 +10,12 @@
 }
 
 .emap-task-group-frame {
-  z-index: 0;
+  z-index: var(--emap-layer-group-background);
   border-style: dashed;
 }
 
 .emap-task-group-frame[data-task-group-empty="true"] {
-  z-index: 2;
+  z-index: var(--emap-layer-group-empty);
   border-style: solid;
   background: rgba(248, 250, 252, 0.9);
 }
@@ -273,7 +273,7 @@
 }
 
 .emap-task-group-card {
-  z-index: 2;
+  z-index: var(--emap-layer-node-base);
   display: flex;
   flex-direction: row;
   align-items: center;

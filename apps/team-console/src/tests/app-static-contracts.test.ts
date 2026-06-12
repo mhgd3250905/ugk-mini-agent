@@ -302,7 +302,7 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.agent-playground-branch:hover,[\s\S]*?\.emap-run-observer-panel:hover\s*{[^}]*transform:\s*none;/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.agent-playground-branch:hover,[\s\S]*?\.emap-run-observer-panel:hover\s*{[^}]*outline:\s*2px solid var\(--dell-border\);/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-agent-branch-shell,[\s\S]*?\.emap-task-child-branch-shell\s*{[^}]*contain:\s*layout style;/s);
-    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-agent-branch-shell:hover,[\s\S]*?\.emap-task-child-branch-shell:hover\s*{[^}]*z-index:\s*30;/s);
+    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-agent-branch-shell:hover,[\s\S]*?\.emap-task-child-branch-shell:hover\s*{[^}]*z-index:\s*var\(--emap-layer-context-active\);/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-agent-branch-shell:hover,[\s\S]*?\.emap-task-child-branch-shell:hover\s*{[^}]*transform:\s*translate\(-2px,\s*-2px\) translateZ\(0\);/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node\.selected,\n\[data-visual-theme="dell-1996"\] \.emap-node\.is-atlas-selected\s*{[^}]*color:\s*var\(--dell-ink\);/s);
     expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-node\.selected,\n\[data-visual-theme="dell-1996"\] \.emap-node\.is-atlas-selected\s*{[^}]*box-shadow:\s*none;/s);
@@ -813,6 +813,36 @@ describe("Team Console static contracts", () => {
     expect(cutRule).toContain("box-sizing: border-box");
     expect(cutRule).toContain("transform: translate(-50%, -50%) scale(0.78)");
     expect(visibleRule).toContain("transform: translate(-50%, -50%) scale(1)");
+  });
+
+  it("keeps Execution Atlas canvas layer z-index values on named tokens", () => {
+    const mapCss = readExecutionMapCss();
+    const mapSource = readFileSync("src/graph/ExecutionMap.tsx", "utf8");
+    const rules = (selector: string) =>
+      Array.from(mapCss.matchAll(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*{[^}]*}`, "g")), (match) => match[0]);
+    const rule = (selector: string) => rules(selector)[0] ?? "";
+    const layerRule = (selector: string) => rules(selector).find((candidate) => candidate.includes("z-index:")) ?? "";
+
+    expect(mapSource).toContain('import "./execution-map-layering.css";');
+    expect(mapSource).toContain('from "./atlas-layering";');
+    expect(mapSource).toContain("activeAtlasLayerKey");
+    expect(mapSource).toContain("getAtlasPanelLayerStyle(p.layerDepth)");
+    expect(rule(".execution-map-toolbar")).toContain("z-index: var(--emap-layer-shell-toolbar)");
+    expect(rule(".execution-map-selection-rect")).toContain("z-index: var(--emap-layer-shell-selection)");
+    expect(rule(".execution-map-nodes")).toContain("z-index: var(--emap-layer-node-base)");
+    expect(rule(".emap-link-cut-button")).toContain("z-index: var(--emap-layer-control-connector)");
+    expect(rule(".emap-task-group-frame")).toContain("z-index: var(--emap-layer-group-background)");
+    expect(rule('.emap-task-group-frame[data-task-group-empty="true"]')).toContain("z-index: var(--emap-layer-group-empty)");
+    expect(layerRule(".emap-task-group-card")).toContain("z-index: var(--emap-layer-node-base)");
+    expect(rule(".emap-root-dock")).toContain("z-index: var(--emap-layer-shell-root-dock)");
+    expect(rule(".emap-root-trash")).toContain("z-index: var(--emap-layer-shell-drag-affordance)");
+    expect(rule(".emap-root-dock-flight")).toContain("z-index: var(--emap-layer-shell-transient-flight)");
+    expect(rule(".emap-maximized-branch-shell")).toContain("z-index: var(--emap-layer-shell-maximized)");
+    expect(mapCss).toMatch(/\.emap-node\.is-layer-active\s*{[^}]*z-index:\s*var\(--emap-layer-context-active\);/s);
+    expect(mapCss).toMatch(/\.emap-node\.is-layer-dragging\s*{[^}]*z-index:\s*var\(--emap-layer-context-dragging\);/s);
+    expect(mapCss).toMatch(/\.emap-agent-branch-shell\s*{[^}]*z-index:\s*calc\(var\(--emap-layer-panel-child\) \+ var\(--emap-panel-depth-offset, 0\)\);/s);
+    expect(mapCss).toMatch(/\.emap-task-child-branch-shell\s*{[^}]*z-index:\s*calc\(var\(--emap-layer-panel-child\) \+ var\(--emap-panel-depth-offset, 0\)\);/s);
+    expect(mapCss).toContain("--emap-layer-app-modal: 1000");
   });
 
   it("documents Agent Atlas mock and live behavior", () => {

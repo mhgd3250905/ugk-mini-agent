@@ -313,7 +313,7 @@
 [data-visual-theme="dell-1996"] .emap-agent-branch-shell:hover,
 [data-visual-theme="dell-1996"] .emap-task-branch-shell:hover,
 [data-visual-theme="dell-1996"] .emap-task-child-branch-shell:hover {
-  z-index: 30;
+  z-index: var(--emap-layer-context-active);
   overflow: visible;
   transform: translate(-2px, -2px) translateZ(0);
 }

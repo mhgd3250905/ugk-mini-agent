@@ -65,7 +65,7 @@
   top: 10px;
   left: 12px;
   right: 12px;
-  z-index: 4;
+  z-index: var(--emap-layer-shell-toolbar);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -188,7 +188,7 @@
 
 .execution-map-selection-rect {
   position: absolute;
-  z-index: 18;
+  z-index: var(--emap-layer-shell-selection);
   border: 1px solid rgba(121, 216, 208, 0.82);
   border-radius: 4px;
   background: rgba(121, 216, 208, 0.12);
@@ -286,7 +286,7 @@
   transform: translate(-50%, -50%) scale(0.78);
   transform-origin: center;
   transition: opacity 0.15s, transform 0.15s, background 0.15s, border-color 0.15s;
-  z-index: 5;
+  z-index: var(--emap-layer-control-connector);
 }
 .emap-link-cut-button.is-visible,
 .emap-link-cut-button:hover,
@@ -351,7 +351,7 @@
 
 .execution-map-nodes {
   position: relative;
-  z-index: 1;
+  z-index: var(--emap-layer-node-base);
   pointer-events: none;
 }
 
@@ -458,6 +458,14 @@
   background:
     linear-gradient(180deg, rgba(20, 184, 166, 0.12), rgba(20, 184, 166, 0.04)),
     rgba(255, 255, 255, 0.86);
+}
+
+.emap-node.is-layer-active {
+  z-index: var(--emap-layer-context-active);
+}
+
+.emap-node.is-layer-dragging {
+  z-index: var(--emap-layer-context-dragging);
 }
 
 .emap-atlas-card {
@@ -798,21 +806,21 @@
 
 .emap-agent-branch-shell {
   position: absolute;
-  z-index: 12;
+  z-index: calc(var(--emap-layer-panel-child) + var(--emap-panel-depth-offset, 0));
   touch-action: none;
   contain: layout paint style;
 }
 
 .emap-task-branch-shell {
   position: absolute;
-  z-index: 11;
+  z-index: calc(var(--emap-layer-panel-child) + var(--emap-panel-depth-offset, 0));
   transform: translateZ(0);
   backface-visibility: hidden;
 }
 
 .emap-task-child-branch-shell {
   position: absolute;
-  z-index: 12;
+  z-index: calc(var(--emap-layer-panel-child) + var(--emap-panel-depth-offset, 0));
   touch-action: none;
   contain: layout paint style;
   transform: translateZ(0);
@@ -823,6 +831,18 @@
 .emap-task-child-branch-shell:has(.discovery-subcanvas-panel) {
   contain: layout style;
   overflow: visible;
+}
+
+.emap-agent-branch-shell.is-layer-active,
+.emap-task-branch-shell.is-layer-active,
+.emap-task-child-branch-shell.is-layer-active {
+  z-index: var(--emap-layer-context-active);
+}
+
+.emap-agent-branch-shell.is-layer-dragging,
+.emap-task-branch-shell.is-layer-dragging,
+.emap-task-child-branch-shell.is-layer-dragging {
+  z-index: var(--emap-layer-context-dragging);
 }
 
 .emap-dialog-branch,
@@ -2301,7 +2321,7 @@
 .emap-maximized-branch-shell {
   position: fixed;
   inset: 0;
-  z-index: 28;
+  z-index: var(--emap-layer-shell-maximized);
   display: grid;
   min-width: 0;
   min-height: 0;

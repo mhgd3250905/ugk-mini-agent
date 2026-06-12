@@ -25,6 +25,7 @@ import {
 } from "./atlas-geometry";
 import { linkMidpoint } from "./link-layout";
 import { buildTaskGroupMemberRows, taskGroupHeaderBandHeight } from "./task-group-member-rows";
+import { getAtlasLayerClassName, getAtlasPanelLayerStyle } from "./atlas-layering";
 import {
   artifactTypeLabel,
   buildArtifactBranches,
@@ -35,6 +36,7 @@ import {
   type EvidenceEntry,
 } from "./execution-map-evidence";
 import "./execution-map.css";
+import "./execution-map-layering.css";
 import "./execution-map-dell-1996.css";
 
 export { buildArtifactBranches } from "./execution-map-evidence";
@@ -768,6 +770,7 @@ export function ExecutionMap({
   const [selectedAtlasNodeKeys, setSelectedAtlasNodeKeys] = useState<Set<string>>(new Set());
   const [rootDropTarget, setRootDropTarget] = useState<"dock" | "trash" | null>(null);
   const [isAtlasDragging, setIsAtlasDragging] = useState(false);
+  const [activeAtlasLayerKey, setActiveAtlasLayerKey] = useState<string | null>(null);
   const [atlasDragPreviewPositions, setAtlasDragPreviewPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [visualViewport, setVisualViewport] = useState<AtlasViewport | undefined>(viewport);
   const [isDockExpanded, setIsDockExpanded] = useState(false);
@@ -2205,9 +2208,11 @@ export function ExecutionMap({
       rect: AtlasRect;
       sourceRect: AtlasRect;
       parentKey: string;
+      layerDepth: number;
     };
     const entries: Entry[] = [];
     const finalRectByPanelId = new Map<string, AtlasRect>();
+    const layerDepthByPanelId = new Map<string, number>();
     const bottomByParent = new Map<string, number>();
     let pendingPanels = [...taskChildBranchPanels];
     while (pendingPanels.length > 0) {
@@ -2228,6 +2233,7 @@ export function ExecutionMap({
           parentKey = "__menu__";
           sourceRect = taskBranchNode;
         }
+        const layerDepth = p.sourceId ? (layerDepthByPanelId.get(p.sourceId) ?? 0) + 1 : 1;
         const sizeOverride = activePanelIds.has(p.id) ? panelSizeOverrides[p.id] : undefined;
         const baseW = p.width ?? TASK_CHILD_BRANCH_WIDTH;
         const baseH = p.autoHeight
@@ -2245,8 +2251,9 @@ export function ExecutionMap({
           ...rectWithOverride,
           x: Math.max(0, rectWithOverride.x),
         };
-        entries.push({ panel: p, rect, sourceRect, parentKey });
+        entries.push({ panel: p, rect, sourceRect, parentKey, layerDepth });
         finalRectByPanelId.set(p.id, rect);
+        layerDepthByPanelId.set(p.id, layerDepth);
         bottomByParent.set(parentKey, y + h);
         placedCount += 1;
       }
@@ -2258,6 +2265,7 @@ export function ExecutionMap({
         ...entry.panel,
         rect: entry.rect,
         sourceRect: entry.parentKey === "__menu__" ? taskBranchNode : entry.sourceRect,
+        layerDepth: entry.layerDepth,
       };
     });
   }, [taskBranchNode, taskBranchEntries, taskChildBranchPanels, panelSizeOverrides, panelMeasuredHeights, panelPositionOverrides]);
@@ -3777,19 +3785,24 @@ export function ExecutionMap({
             if (!agent) return null;
             const isFocused = node.nodeId === focusedAgentNodeId;
             const isAtlasSelected = selectedAtlasNodeKeys.has(atlasSelectionKey("agent", node.nodeId));
+            const layerClassName = getAtlasLayerClassName({
+              active: isFocused || isAtlasSelected || activeAtlasLayerKey === `agent:${node.nodeId}`,
+              dragging: Boolean(atlasDragPreviewPositions[atlasDragPreviewKey("agent", node.nodeId)]),
+            });
             const runStatus = formatAgentRunStatus(agentRunStatusById?.get(agent.agentId));
             return (
               <div
                 key={node.nodeId}
                 role="button"
                 tabIndex={0}
-                className={`emap-node emap-atlas-card emap-agent-node ${runStatus.nodeClass} ${isFocused ? "selected" : ""} ${isAtlasSelected ? "is-atlas-selected" : ""}`}
+                className={`emap-node emap-atlas-card emap-agent-node ${runStatus.nodeClass} ${isFocused ? "selected" : ""} ${isAtlasSelected ? "is-atlas-selected" : ""} ${layerClassName}`}
                 data-kind="agent"
                 data-agent-id={agent.agentId}
                 data-agent-run-state={runStatus.state}
                 aria-label={agent.name}
                 title={runStatus.title}
                 style={{ left: node.position.x, top: node.position.y, width: NODE_WIDTH, height: AGENT_NODE_HEIGHT }}
+                onPointerDownCapture={() => setActiveAtlasLayerKey(`agent:${node.nodeId}`)}
                 onPointerDown={(event) => handleAgentPointerDown(node, event)}
                 onPointerMove={handleAgentPointerMove}
                 onPointerUp={endAgentPointer}
@@ -3822,6 +3835,10 @@ export function ExecutionMap({
             const sourceNode = sourceNodesById?.get(node.sourceNodeId);
             if (!sourceNode) return null;
             const isAtlasSelected = selectedAtlasNodeKeys.has(atlasSelectionKey("source", node.nodeId));
+            const layerClassName = getAtlasLayerClassName({
+              active: isAtlasSelected || activeAtlasLayerKey === `source:${node.nodeId}`,
+              dragging: Boolean(atlasDragPreviewPositions[atlasDragPreviewKey("source", node.nodeId)]),
+            });
             const outputPort = sourceNode.outputPort;
             const selected = Boolean(
               sourceConnectionDraft
@@ -3834,11 +3851,12 @@ export function ExecutionMap({
               <div
                 key={node.nodeId}
                 role="group"
-                className={`emap-node emap-atlas-card emap-source-node ${isAtlasSelected ? "is-atlas-selected" : ""}`}
+                className={`emap-node emap-atlas-card emap-source-node ${isAtlasSelected ? "is-atlas-selected" : ""} ${layerClassName}`}
                 data-kind="canvas-source"
                 data-source-node-id={sourceNode.sourceNodeId}
                 aria-label={sourceNode.title}
                 style={{ left: node.position.x, top: node.position.y, width: NODE_WIDTH, height: CANVAS_SOURCE_NODE_HEIGHT }}
+                onPointerDownCapture={() => setActiveAtlasLayerKey(`source:${node.nodeId}`)}
                 onPointerDown={(event) => handleSourcePointerDown(node, event)}
                 onPointerMove={handleAgentPointerMove}
                 onPointerUp={endAgentPointer}
@@ -3903,6 +3921,10 @@ export function ExecutionMap({
             const checker = agentsById?.get(task.workUnit.checkerAgentId);
             const isFocused = node.nodeId === focusedTaskNodeId;
             const isAtlasSelected = selectedAtlasNodeKeys.has(atlasSelectionKey("task", node.nodeId));
+            const layerClassName = getAtlasLayerClassName({
+              active: isFocused || isAtlasSelected || activeAtlasLayerKey === `task:${node.nodeId}`,
+              dragging: Boolean(atlasDragPreviewPositions[atlasDragPreviewKey("task", node.nodeId)]),
+            });
             const latestTaskRun = selectLatestCanvasTaskRun(taskRunsByTaskId[task.taskId]);
             const nodeStatusClass = latestTaskRun ? statusClass(latestTaskRun.status) : `status-${task.status}`;
             const isDiscoveryRoot = isDiscoveryRootTask(task);
@@ -3936,7 +3958,7 @@ export function ExecutionMap({
                 key={node.nodeId}
                 role="button"
                 tabIndex={0}
-                className={`emap-node emap-atlas-card emap-canvas-task-node ${isDiscoveryRoot ? "emap-discovery-task-node" : ""} ${isSplitTask ? "emap-split-task-node" : ""} ${nodeStatusClass} ${isFocused ? "selected" : ""} ${isAtlasSelected ? "is-atlas-selected" : ""}`}
+                className={`emap-node emap-atlas-card emap-canvas-task-node ${isDiscoveryRoot ? "emap-discovery-task-node" : ""} ${isSplitTask ? "emap-split-task-node" : ""} ${nodeStatusClass} ${isFocused ? "selected" : ""} ${isAtlasSelected ? "is-atlas-selected" : ""} ${layerClassName}`}
                 data-kind="canvas-task"
                 data-canvas-kind={task.canvasKind}
                 data-discovery-failed-dispatch-count={isDiscoveryRoot ? String(failedDispatchCount) : undefined}
@@ -3946,6 +3968,7 @@ export function ExecutionMap({
                 data-task-run-status={latestTaskRun?.status ?? "none"}
                 aria-label={task.title}
                 style={{ left: node.position.x, top: node.position.y, width: NODE_WIDTH, height: nodeHeight }}
+                onPointerDownCapture={() => setActiveAtlasLayerKey(`task:${node.nodeId}`)}
                 onPointerDown={(event) => handleTaskPointerDown(node, event)}
                 onPointerMove={handleTaskPointerMove}
                 onPointerUp={endTaskPointer}
@@ -4125,7 +4148,8 @@ export function ExecutionMap({
               </>
             );
 
-            const className = `emap-node ${statusClass(node.status)} ${isSelected ? "selected" : ""} ${chainSelected ? "chain-selected" : ""} ${collapsed ? "emap-collapsed" : ""}`;
+            const layerClassName = getAtlasLayerClassName({ active: isSelected || activeAtlasLayerKey === `run-task:${node.taskId}` });
+            const className = `emap-node ${statusClass(node.status)} ${isSelected ? "selected" : ""} ${chainSelected ? "chain-selected" : ""} ${collapsed ? "emap-collapsed" : ""} ${layerClassName}`;
             const style = { left: pos.x, top: pos.y, width: pos.width, height: pos.height };
 
             const taskElement = collapsed ? (
@@ -4135,6 +4159,7 @@ export function ExecutionMap({
                 className={className}
                 data-kind="collapsed"
                 style={style}
+                onPointerDownCapture={() => setActiveAtlasLayerKey(`run-task:${node.taskId}`)}
                 onClick={() => toggleExpand(parentOfCollapsed(node.taskId))}
                 aria-label={node.taskId.endsWith("__collapse_control") ? `收起 ${node.attemptCount} 个子任务` : `展开 ${node.attemptCount} 个子任务`}
               >
@@ -4147,6 +4172,7 @@ export function ExecutionMap({
                 className={className}
                 data-kind={node.kind}
                 style={style}
+                onPointerDownCapture={() => setActiveAtlasLayerKey(`run-task:${node.taskId}`)}
                 onClick={() => onSelectTask(node.taskId)}
               >
                 {nodeContent}
@@ -4225,8 +4251,11 @@ export function ExecutionMap({
           })}
           {agentBranchNode && agentBranchPanel && maximizedBranch?.kind !== "agent" && (
             <div
-              className="emap-agent-branch-shell"
-              onPointerDownCapture={beginAgentBranchDrag}
+              className={`emap-agent-branch-shell ${getAtlasLayerClassName({ active: activeAtlasLayerKey === "branch:agent" })}`}
+              onPointerDownCapture={(event) => {
+                setActiveAtlasLayerKey("branch:agent");
+                beginAgentBranchDrag(event);
+              }}
               onPointerMove={moveAgentBranch}
               onPointerUp={endAgentBranchInteraction}
               onPointerCancel={endAgentBranchInteraction}
@@ -4244,6 +4273,7 @@ export function ExecutionMap({
                 }
               }}
               style={{
+                ...getAtlasPanelLayerStyle(0),
                 left: agentBranchNode.x,
                 top: agentBranchNode.y,
                 width: agentBranchNode.width,
@@ -4272,12 +4302,16 @@ export function ExecutionMap({
             </div>
           )}
           {taskBranchEntries.map((entry) => {
+            const isLayerActive = activeAtlasLayerKey === `branch:${entry.id}` || entry.node.nodeId === focusedTaskNodeId;
             return (
               <div
                 key={`task-branch-${entry.id}`}
                 ref={(el: HTMLDivElement | null) => { taskBranchShellRefs.current[entry.id] = el; }}
-                className="emap-task-branch-shell"
-                onPointerDownCapture={(event) => beginTaskBranchDrag(entry, event)}
+                className={`emap-task-branch-shell ${getAtlasLayerClassName({ active: isLayerActive })}`}
+                onPointerDownCapture={(event) => {
+                  setActiveAtlasLayerKey(`branch:${entry.id}`);
+                  beginTaskBranchDrag(entry, event);
+                }}
                 onPointerMove={moveTaskBranchDrag}
                 onPointerUp={endTaskBranchDrag}
                 onPointerCancel={endTaskBranchDrag}
@@ -4288,6 +4322,7 @@ export function ExecutionMap({
                   }
                 }}
                 style={{
+                  ...getAtlasPanelLayerStyle(0),
                   left: entry.rect.x,
                   top: entry.rect.y,
                   width: "max-content",
@@ -4304,8 +4339,11 @@ export function ExecutionMap({
               key={`task-child-panel-${p.id}`}
               data-panel-id={p.id}
               data-panel-source-id={p.sourceId ?? ""}
-              className={`emap-task-child-branch-shell${p.resizable ? " emap-panel-resizable" : ""}`}
-              onPointerDownCapture={(e) => beginPanelDrag(p.id, e)}
+              className={`emap-task-child-branch-shell${p.resizable ? " emap-panel-resizable" : ""} ${getAtlasLayerClassName({ active: activeAtlasLayerKey === `panel:${p.id}` })}`}
+              onPointerDownCapture={(e) => {
+                setActiveAtlasLayerKey(`panel:${p.id}`);
+                beginPanelDrag(p.id, e);
+              }}
               onPointerMove={(e) => { movePanelDrag(e); if (p.resizable) movePanelResize(e); }}
               onPointerUp={(e) => { endPanelDrag(e); if (p.resizable) endPanelResize(e); }}
               onPointerCancel={(e) => { endPanelDrag(e); if (p.resizable) endPanelResize(e); }}
@@ -4327,6 +4365,7 @@ export function ExecutionMap({
                 }
               }}
               style={{
+                ...getAtlasPanelLayerStyle(p.layerDepth),
                 left: p.rect.x,
                 top: p.rect.y,
                 width: p.rect.width,

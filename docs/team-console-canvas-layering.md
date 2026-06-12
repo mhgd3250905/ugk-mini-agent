@@ -10,7 +10,7 @@
 - 被点击、选中、展开、拖拽或正在操作的上下文必须整体抬升，而不是只抬单个卡片。
 - 层级值必须由一个画布层级模块集中命名，不再散落魔法数字。
 
-## 当前结构审计
+## 初始结构审计
 
 | 区域 | 当前入口 | 当前层级来源 | 问题 |
 | --- | --- | --- | --- |
@@ -21,16 +21,16 @@
 | 业务连线 | `.emap-link-*` | SVG 内部 DOM 顺序 | task/source/dependency/branch/evidence 全在同一 SVG 平面，缺少按 depth/selection 分层 |
 | 连线 hit area | `.emap-link-hit-area` | SVG path，透明 stroke | 与可见线同层，交互按钮另放 HTML 层 |
 | 连线切断按钮 | `.emap-link-cut-button` | `z-index: 5`，在 `.execution-map-nodes` 内 | 数值高于普通节点但低于 branch，语义不清；应属于 focused connector control |
-| 普通节点 | `.emap-node` | absolute，未显式 z-index | 依赖 DOM 顺序；selected 只改视觉，不改变层级 |
-| Atlas 多选节点 | `.emap-node.is-atlas-selected` | 只改样式，不改 z-index | 多个 Task/branch 重叠时，选中节点不会自然浮到最上 |
+| 普通节点 | `.emap-node` | absolute，未显式 z-index | 已补 `is-layer-active` / `is-layer-dragging`；selected 不再只是视觉态 |
+| Atlas 多选节点 | `.emap-node.is-atlas-selected` | 只改样式，不改 z-index | 已接入 active layer；多选/聚焦对象会高于未选中对象 |
 | 运行证据节点 | `.emap-evidence-node` | absolute，未显式 z-index | 跟普通节点同层，靠 selected task 的 render 顺序自然后置 |
 | artifact preview | `.emap-artifact-preview` | `z-index: 2` | 局部高于证据节点，但与 Group/card/branch 数值无统一语义 |
 | Task Group 展开背景 | `.emap-task-group-frame` | `z-index: 0` | 正确方向是下层，但和 link SVG/节点层没有正式合同；空 Group 会升到 `2` |
 | Task Group 折叠卡 | `.emap-task-group-card` | `z-index: 2` | 折叠后是实体卡片，语义应接近普通节点，而不是 Group 背景 |
 | Task Group 成员 chip | `.emap-task-group-member-chip` | `z-index: 2` | 局部控件层，未和 group frame 的背景层分离 |
-| Agent branch | `.emap-agent-branch-shell` | `z-index: 12`，`contain: layout paint style` | contain 会建立独立绘制边界；hover 时 Dell override 升到 `30`，和全局 overlay 冲突 |
-| Task branch | `.emap-task-branch-shell` | `z-index: 11`，`transform: translateZ(0)` | transform 建立 stacking context；不同 task branch 没有按 active/selected 调整层级 |
-| Task child panel | `.emap-task-child-branch-shell` | `z-index: 12`，`contain: layout paint style` | 子面板与 agent branch 同层；没有 depth 递增策略 |
+| Agent branch | `.emap-agent-branch-shell` | 原为 `z-index: 12`，`contain: layout paint style` | 已改为 panel base token；最近点击的 branch 会进入 active layer |
+| Task branch | `.emap-task-branch-shell` | 原为 `z-index: 11`，`transform: translateZ(0)` | 已改为 panel base token；focused / 最近点击 branch 会进入 active layer |
+| Task child panel | `.emap-task-child-branch-shell` | 原为 `z-index: 12`，`contain: layout paint style` | 已按 child panel depth 生成 offset；最近点击 panel 会进入 active layer |
 | Discovery generated card | `.discovery-generated-card` | 内部 `is-action-menu-open` 升到 `12` | 这是 panel 内部层级，不应直接借用画布层级数值 |
 | Root dock | `.emap-root-dock` | `z-index: 5` | 属于 shell overlay，不应和 link cut / node 控件竞争同一编号 |
 | Root trash | `.emap-root-trash` | `z-index: 6` | 只在拖拽时出现，应属于 drag affordance 层 |
@@ -79,19 +79,27 @@
 | Group context | group frame、group title/header/buttons、member chips、collapsed group card | 创建/展开/折叠/拖拽 group | 展开 frame 在背景层；折叠 card 是实体节点层；locked 不改变层级 |
 | Dragging context | 正在拖拽的 root node、group、branch panel、dock flight | pointer drag | 被拖拽对象绝对最高，drop target 显示在 shell drag 层 |
 
-## 模块边界建议
+## 已落地模块边界
 
-后续实现应新增一个小模块，而不是继续把 z-index 写进多个 CSS 文件。
+后续仍按这个边界维护。跨画布层级不得继续新增裸数字；组件内部局部层级可以保留，但不能冒充全局层级。
 
 | 文件 | 职责 |
 | --- | --- |
-| `apps/team-console/src/graph/atlas-layering.ts` | 定义 layer token、depth 计算、active context 类型、DOM data attribute 生成 helper |
-| `apps/team-console/src/graph/execution-map-layering.css` | 唯一承载画布层级 CSS custom properties 和通用 `[data-layer-*]` 规则 |
+| `apps/team-console/src/graph/atlas-layering.ts` | 定义 active / dragging class helper 和 panel depth offset 计算 |
+| `apps/team-console/src/graph/execution-map-layering.css` | 承载画布层级 CSS custom properties |
 | `apps/team-console/src/graph/ExecutionMap.tsx` | 只负责把元素归类到 layer context，不直接写裸 z-index |
 | `apps/team-console/src/graph/AtlasCanvasShell.tsx` | 只负责 shell 层：toolbar、selection rect、overlay slot，不管理 world depth |
-| `apps/team-console/src/graph/execution-map-*.css` | 保留视觉样式；不得新增裸 z-index，必须引用 layer token |
-| `apps/team-console/src/tests/execution-map-layering.test.tsx` | 覆盖层级合同：Group 在下、线高于 Group、节点高于线、子级和 selected context 能抬升 |
-| `apps/team-console/src/tests/app-static-contracts.test.ts` | 静态防回归：禁止在画布 CSS 中新增未登记的裸 z-index |
+| `apps/team-console/src/graph/execution-map-*.css` | 保留视觉样式；跨画布 z-index 必须引用 layer token |
+| `apps/team-console/src/tests/app-static-contracts.test.ts` | 静态防回归：锁定 token import、关键 layer selector、active / dragging / child depth 规则 |
+
+## 已落地行为
+
+- Group frame / empty group / collapsed group card 已分别进入 `group.background`、`group.empty`、`node.base`。
+- Toolbar、selection rect、root dock、root trash、dock flight、maximized branch 已从散落数字迁移到 shell layer token。
+- 普通 Atlas node、run task node、focused node、multi-selected node、拖拽预览 node 已通过 `is-layer-active` / `is-layer-dragging` 抬升。
+- Agent branch、Task branch、Task child panel 已使用 `panel.childBase + depth offset`；最近点击或 focused 的 branch / panel 进入 active layer。
+- Dell 1996 hover 不再使用 `z-index: 30`，改为 `canvas.context.active`，不会压过 maximized branch。
+- 仍保留的裸 `z-index` 只允许作为局部组件内部层级，例如卡片内部内容、局部菜单、飞行动画内部按钮；后续若跨出组件边界，必须升格为 layer token。
 
 ## 实现原则
 

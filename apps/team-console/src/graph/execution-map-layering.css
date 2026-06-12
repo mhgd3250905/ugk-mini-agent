@@ -1,0 +1,20 @@
+:where(.execution-map-container) {
+  --emap-layer-canvas-background: 0;
+  --emap-layer-group-background: 10;
+  --emap-layer-group-empty: 20;
+  --emap-layer-connector-base: 30;
+  --emap-layer-node-base: 40;
+  --emap-layer-evidence-base: 45;
+  --emap-layer-connector-child: 50;
+  --emap-layer-panel-child: 60;
+  --emap-layer-context-active: 200;
+  --emap-layer-context-dragging: 300;
+  --emap-layer-control-connector: 350;
+  --emap-layer-shell-selection: 500;
+  --emap-layer-shell-toolbar: 600;
+  --emap-layer-shell-root-dock: 650;
+  --emap-layer-shell-drag-affordance: 700;
+  --emap-layer-shell-transient-flight: 800;
+  --emap-layer-shell-maximized: 900;
+  --emap-layer-app-modal: 1000;
+}

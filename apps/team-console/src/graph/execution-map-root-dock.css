@@ -3,7 +3,7 @@
   left: 50%;
   bottom: 0;
   transform: translate(-50%, calc(100% - 18px));
-  z-index: 5;
+  z-index: var(--emap-layer-shell-root-dock);
   display: flex;
   align-items: stretch;
   justify-content: center;
@@ -287,7 +287,7 @@
 
 .emap-root-dock-flight {
   position: fixed;
-  z-index: 100;
+  z-index: var(--emap-layer-shell-transient-flight);
   pointer-events: none;
   padding: 0;
   border: 0;
@@ -397,7 +397,7 @@
   position: absolute;
   right: 14px;
   bottom: 14px;
-  z-index: 6;
+  z-index: var(--emap-layer-shell-drag-affordance);
   width: 48px;
   height: 48px;
   display: grid;

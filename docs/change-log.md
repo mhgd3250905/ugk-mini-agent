@@ -14,6 +14,13 @@
 
 ---
 
+## 2026-06-12 — Team Console canvas layering runtime pass
+
+- **主题**: 将 Team Console Execution Atlas 第一批跨画布 z 轴合同落到代码。新增 layer CSS token 与 `atlas-layering` helper，Group 背景、节点、root dock、selection rect、maximized shell、Dell hover、active / dragging context 和 child panel depth 不再依赖散落数字。
+- **影响范围**: 仅 `apps/team-console` 画布绘制层级与静态契约；Team Runtime、Canvas Task 数据、split-task / worklist 链路和主 `/playground` UI 不变。
+- **验证**: `app-static-contracts` 全量通过；`app-run-observer` + `app-live-data` targeted tests 79/79 通过；`npx tsc --noEmit` 通过；`npm --prefix apps/team-console run build` 通过。
+- **对应入口**: `apps/team-console/src/graph/atlas-layering.ts`、`apps/team-console/src/graph/execution-map-layering.css`、`apps/team-console/src/graph/ExecutionMap.tsx`、`docs/team-console-canvas-layering.md`。
+
 ## 2026-06-12 — Team Console canvas layering specification
 
 - **主题**: 新增 Team Console Execution Atlas 画布层级规范，明确 Group、connector、Task/Agent/Source 节点、子级面板、selected/active/dragging context、root dock、maximized panel 和 app modal 的 z 轴合同。
