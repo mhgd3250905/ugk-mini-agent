@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-12 — Team Console Dell 1996 visual theme integration
+
+- **主题**: 合入 GitHub PR [#8](https://github.com/mhgd3250905/ugk-claw-personal/pull/8) 的 Team Console `Dell 1996` 独立视觉主题，并在当前 split-task 分支上补齐 `split-task` 节点的 Dell 主题类型灯带。
+- **影响范围**: 仅 `apps/team-console` 的视觉主题切换、scoped CSS、静态契约测试和主题维护文档。默认主题、Team Runtime、Canvas Task / split-task / worklist API 和运行数据不变；Dell 1996 仍固定浅色，并通过 `data-visual-theme="dell-1996"` 限定作用域。
+- **对应入口**: `apps/team-console/src/app/App.tsx`、`apps/team-console/src/graph/ExecutionMap.tsx`、`apps/team-console/src/graph/execution-map-dell-1996.css`、`apps/team-console/src/tests/app-static-contracts.test.ts`、`docs/team-console-dell-1996-theme.md`。
+
 ## 2026-06-12 — Team checker / worklist-results handoff hardening
 
 - **主题**: Team Runtime 收紧普通 Task 消费 `worklist-results` 的 worker/checker 边界。worker prompt 会明确 `results[]` 是 `team/worklist-results-1` 的权威业务结果，`sourceWorklist.items` 只用于清点覆盖率；返工时必须只修改 checker 明确反馈的问题，保持上一版字段名、文件名、数据范围和条目顺序。checker prompt 同步纳入 `outputContract`，只能依据任务描述、输出契约、验收标准和 deterministic output validation 判定，不得追加去重、来源命名、排序等未声明标准。

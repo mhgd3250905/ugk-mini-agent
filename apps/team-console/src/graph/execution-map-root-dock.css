@@ -54,6 +54,7 @@
   align-items: stretch;
   gap: 8px;
   max-width: calc(min(82vw, 860px) - 64px);
+  padding-top: 4px;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;

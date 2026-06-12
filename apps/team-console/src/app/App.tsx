@@ -40,6 +40,7 @@ import { RUN_STATUS_LABELS, isActiveRun } from "../shared/status";
 import "./app.css";
 
 const TEAM_CONSOLE_THEME_STORAGE_KEY = "ugk-team-console:theme:v1";
+const TEAM_CONSOLE_VISUAL_THEME_STORAGE_KEY = "ugk-team-console:visual-theme:v1";
 const DISCOVERY_QUEUE_INITIAL_CARD_LIMIT = 18;
 const RUN_HISTORY_PAGE_SIZE = 3;
 
@@ -61,6 +62,7 @@ const emptyRunHistoryPanelState: RunHistoryPanelState = {
 const CANVAS_LOADING_MIN_VISIBLE_MS = 160;
 
 type TeamConsoleTheme = "light" | "dark";
+type TeamConsoleVisualTheme = "default" | "dell-1996";
 type RootNodeFilter = "all" | "agent" | "task" | "source";
 type DiscoveryChannelSetRunOptions = {
   discoveryChannelSetId?: string;
@@ -227,6 +229,23 @@ function storeTheme(theme: TeamConsoleTheme): void {
   }
 }
 
+function readStoredVisualTheme(): TeamConsoleVisualTheme {
+  try {
+    const value = globalThis.localStorage?.getItem(TEAM_CONSOLE_VISUAL_THEME_STORAGE_KEY);
+    return value === "dell-1996" ? "dell-1996" : "default";
+  } catch {
+    return "default";
+  }
+}
+
+function storeVisualTheme(visualTheme: TeamConsoleVisualTheme): void {
+  try {
+    globalThis.localStorage?.setItem(TEAM_CONSOLE_VISUAL_THEME_STORAGE_KEY, visualTheme);
+  } catch {
+    // Theme persistence is best-effort; the UI state still updates in memory.
+  }
+}
+
 type LoadedTaskRunSnapshot = {
   taskId: string;
   runId: string;
@@ -259,6 +278,8 @@ function buildLoadedUpstreamRunSelections(
 export function App() {
   const initialDataSourceRef = useRef<DataSource>(readStoredInitialDataSource());
   const [theme, setTheme] = useState<TeamConsoleTheme>(() => readStoredTheme());
+  const [visualTheme, setVisualTheme] = useState<TeamConsoleVisualTheme>(() => readStoredVisualTheme());
+  const effectiveTheme: TeamConsoleTheme = visualTheme === "dell-1996" ? "light" : theme;
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [focusedTaskNodeId, setFocusedTaskNodeId] = useState<string | null>(null);
   const [agentNodes, setAgentNodes] = useState<AtlasAgentNode[]>([]);
@@ -3067,7 +3088,9 @@ export function App() {
         type="button"
         className="theme-toggle-btn"
         aria-label="切换主题"
-        aria-pressed={theme === "dark"}
+        aria-pressed={effectiveTheme === "dark"}
+        disabled={visualTheme === "dell-1996"}
+        title={visualTheme === "dell-1996" ? "Dell 1996 仅支持浅色模式" : undefined}
         onClick={() => setTheme((current) => current === "light" ? "dark" : "light")}
       >
         <span className="theme-toggle-track" aria-hidden="true">
@@ -3075,6 +3098,19 @@ export function App() {
           <span className="theme-toggle-icon theme-toggle-moon">☾</span>
           <span className="theme-toggle-thumb" />
         </span>
+      </button>
+      <button
+        type="button"
+        className="visual-theme-toggle-btn"
+        aria-label="切换视觉主题"
+        aria-pressed={visualTheme === "dell-1996"}
+        onClick={() => setVisualTheme((current) => {
+          const next = current === "default" ? "dell-1996" : "default";
+          storeVisualTheme(next);
+          return next;
+        })}
+      >
+        {visualTheme === "dell-1996" ? "Dell 1996" : "默认样式"}
       </button>
       <select
         id="team-console-data-source"
@@ -5294,7 +5330,7 @@ export function App() {
   const canvasLoadingText = loading ? "正在加载实时运行..." : "正在恢复画布状态...";
 
   return (
-    <div className="app-shell" data-theme={theme}>
+    <div className="app-shell" data-theme={effectiveTheme} data-visual-theme={visualTheme}>
       {error && (
         <div className="error-banner">{error}</div>
       )}
