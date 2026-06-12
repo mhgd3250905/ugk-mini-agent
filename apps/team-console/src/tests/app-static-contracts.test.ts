@@ -829,7 +829,8 @@ describe("Team Console static contracts", () => {
     expect(mapSource).toContain("getAtlasPanelLayerStyle(p.layerDepth)");
     expect(rule(".execution-map-toolbar")).toContain("z-index: var(--emap-layer-shell-toolbar)");
     expect(rule(".execution-map-selection-rect")).toContain("z-index: var(--emap-layer-shell-selection)");
-    expect(rule(".execution-map-nodes")).toContain("z-index: var(--emap-layer-node-base)");
+    expect(rule(".execution-map-links")).toContain("z-index: var(--emap-layer-connector-base)");
+    expect(rule(".execution-map-nodes")).not.toContain("z-index:");
     expect(rule(".emap-node")).toContain("z-index: var(--emap-layer-node-base)");
     expect(rule(".emap-link-cut-button")).toContain("z-index: var(--emap-layer-control-connector)");
     expect(rule(".emap-task-group-frame")).toContain("z-index: var(--emap-layer-group-background)");

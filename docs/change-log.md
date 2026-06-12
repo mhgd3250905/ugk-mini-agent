@@ -18,6 +18,7 @@
 
 - **主题**: 修复 canvas layering 第一批落地后 Group frame 在 Dell 1996 主题下压住节点的问题。根因是普通 `.emap-node` 自身仍为 `z-index: auto`，而 Group frame 的 positioned `z-index: 10` 会压过 auto 节点；现已让节点自身进入 `node.base` layer。
 - **验证**: 新增静态契约锁定 `.emap-node` 必须使用 `--emap-layer-node-base`；浏览器在 5174 同一画布容器中验证 Group `10`、node `40`、node above Group。
+- **补充修复**: 继续修复 Group frame 覆盖节点间 SVG 连线的问题。`.execution-map-nodes` 容器不再创建 node-level stacking context，`.execution-map-links` 明确进入 `connector.base`；实际浏览器验证 Group `10`、link `30`、node `40`。
 
 ## 2026-06-12 — Team Console canvas layering runtime pass
 

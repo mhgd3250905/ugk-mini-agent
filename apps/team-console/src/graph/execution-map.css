@@ -202,6 +202,7 @@
   position: absolute;
   top: 28px;
   left: 28px;
+  z-index: var(--emap-layer-connector-base);
   pointer-events: none;
   overflow: visible;
 }
@@ -351,7 +352,6 @@
 
 .execution-map-nodes {
   position: relative;
-  z-index: var(--emap-layer-node-base);
   pointer-events: none;
 }
 
