@@ -2299,10 +2299,24 @@ export function ExecutionMap({
       height: AGENT_NODE_HEIGHT,
     }, agentBranchNode)
     : null;
+  const isTaskLayerActive = (taskId: string) => {
+    const nodeId = taskNodeByTaskId.get(taskId)?.nodeId ?? taskId;
+    return focusedTaskNodeId === nodeId
+      || activeAtlasLayerKey === `task:${nodeId}`
+      || selectedAtlasNodeKeys.has(atlasSelectionKey("task", nodeId));
+  };
+  const isSourceLayerActive = (sourceNodeId: string) => {
+    const nodeId = sourceNodeBySourceId.get(sourceNodeId)?.nodeId ?? sourceNodeId;
+    return activeAtlasLayerKey === `source:${nodeId}`
+      || selectedAtlasNodeKeys.has(atlasSelectionKey("source", nodeId));
+  };
   const taskBranchConnectors = taskBranchEntries.map((entry) => ({
     id: entry.id,
     path: taskBranchConnectorPath(entry.node, entry.rect, tasksById?.get(entry.node.taskId)),
     anchors: connectorAnchors(taskNodeRect(entry.node, tasksById?.get(entry.node.taskId)), entry.rect),
+    active: activeAtlasLayerKey === `branch:${entry.id}`
+      || activeAtlasLayerKey === `task:${entry.node.nodeId}`
+      || entry.node.nodeId === focusedTaskNodeId,
   }));
   const maximizedTaskPanel = maximizedBranch?.kind === "task-panel"
     ? (() => {
@@ -3323,6 +3337,159 @@ export function ExecutionMap({
       </g>
     );
   };
+  const isTaskConnectionLayerActive = (connection: TeamTaskConnection) => (
+    isTaskLayerActive(connection.fromTaskId) || isTaskLayerActive(connection.toTaskId)
+  );
+  const isSourceConnectionLayerActive = (connection: TeamCanvasSourceConnection) => (
+    isSourceLayerActive(connection.fromSourceNodeId) || isTaskLayerActive(connection.toTaskId)
+  );
+  const isTaskDependencyLayerActive = (dep: TeamTaskDependency) => (
+    isTaskLayerActive(dep.fromTaskId) || isTaskLayerActive(dep.toTaskId)
+  );
+  const renderTaskConnectionLink = ({ connection, path, source }: (typeof taskConnectionLinks)[number]) => {
+    const linkCutKey = `task:${connection.connectionId}`;
+    return (
+      <g key={connection.connectionId}>
+        <path
+          d={path}
+          className="emap-link emap-link-task-connection"
+          data-task-connection-id={connection.connectionId}
+          data-port-type={connection.type}
+          fill="none"
+          strokeWidth={2}
+        />
+        <path
+          d={path}
+          className="emap-link-hit-area"
+          data-link-cut-key={linkCutKey}
+          fill="none"
+          strokeWidth={18}
+          onMouseEnter={() => revealLinkCut(linkCutKey)}
+          onMouseLeave={() => hideLinkCut(linkCutKey)}
+          onPointerEnter={() => revealLinkCut(linkCutKey)}
+          onPointerLeave={() => hideLinkCut(linkCutKey)}
+        />
+        {renderConnectorSourceSocket(
+          `${connection.connectionId}-source-socket`,
+          source,
+          "emap-connector-socket-task-connection",
+        )}
+      </g>
+    );
+  };
+  const renderTaskDependencyLink = ({ dep, path, source }: (typeof taskDependencyLinks)[number]) => {
+    const linkCutKey = `dep:${dep.dependencyId}`;
+    return (
+      <g key={dep.dependencyId}>
+        <path
+          d={path}
+          className="emap-link emap-link-task-dependency"
+          data-task-dependency-id={dep.dependencyId}
+          fill="none"
+          strokeWidth={2}
+          strokeDasharray="6 3"
+        />
+        <path
+          d={path}
+          className="emap-link-hit-area"
+          data-link-cut-key={linkCutKey}
+          fill="none"
+          strokeWidth={18}
+          onMouseEnter={() => revealLinkCut(linkCutKey)}
+          onMouseLeave={() => hideLinkCut(linkCutKey)}
+          onPointerEnter={() => revealLinkCut(linkCutKey)}
+          onPointerLeave={() => hideLinkCut(linkCutKey)}
+        />
+        {renderConnectorSourceSocket(
+          `${dep.dependencyId}-source-socket`,
+          source,
+          "emap-connector-socket-task-dependency",
+        )}
+      </g>
+    );
+  };
+  const renderSourceConnectionLink = ({ connection, path, source }: (typeof sourceConnectionLinks)[number]) => {
+    const linkCutKey = `source:${connection.connectionId}`;
+    return (
+      <g key={connection.connectionId}>
+        <path
+          d={path}
+          className="emap-link emap-link-source-connection"
+          data-source-connection-id={connection.connectionId}
+          data-port-type={connection.type}
+          fill="none"
+          strokeWidth={2}
+        />
+        <path
+          d={path}
+          className="emap-link-hit-area"
+          data-link-cut-key={linkCutKey}
+          fill="none"
+          strokeWidth={18}
+          onMouseEnter={() => revealLinkCut(linkCutKey)}
+          onMouseLeave={() => hideLinkCut(linkCutKey)}
+          onPointerEnter={() => revealLinkCut(linkCutKey)}
+          onPointerLeave={() => hideLinkCut(linkCutKey)}
+        />
+        {renderConnectorSourceSocket(
+          `${connection.connectionId}-source-socket`,
+          source,
+          "emap-connector-socket-source-connection",
+        )}
+      </g>
+    );
+  };
+  const renderAgentBranchLink = () => (
+    <>
+      {agentBranchPath && (
+        <path
+          key="agent-playground-branch"
+          d={agentBranchPath}
+          className="emap-link emap-link-agent-branch"
+          fill="none"
+          strokeWidth={2}
+        />
+      )}
+      {agentBranchAnchors && renderConnectorSourceSocket("agent-playground-branch-source-socket", agentBranchAnchors.source, "emap-connector-socket-agent-branch")}
+    </>
+  );
+  const renderTaskBranchLink = (connector: (typeof taskBranchConnectors)[number]) => (
+    <g key={`task-leader-branch-${connector.id}`}>
+      <path
+        d={connector.path}
+        className="emap-link emap-link-task-branch"
+        fill="none"
+        strokeWidth={2}
+      />
+      {renderConnectorSourceSocket(
+        `task-leader-branch-source-socket-${connector.id}`,
+        connector.anchors.source,
+        "emap-connector-socket-task-branch",
+      )}
+    </g>
+  );
+  const renderTaskChildPanelLink = (p: (typeof taskChildBranchPanelsLayout)[number]) => (
+    <g key={`task-child-panel-${p.id}`}>
+      <path
+        d={taskChildBranchConnectorPath(p.sourceRect, p.rect)}
+        className="emap-link emap-link-task-branch emap-link-task-child-branch"
+        fill="none"
+        strokeWidth={2}
+      />
+      {renderConnectorSourceSocket(
+        `task-child-panel-${p.id}-source-socket`,
+        rightMiddleAnchor(p.sourceRect),
+        "emap-connector-socket-task-child-branch",
+      )}
+    </g>
+  );
+  const agentBranchConnectorActive = Boolean(
+    focusedAgentNode && (
+      activeAtlasLayerKey === "branch:agent"
+      || activeAtlasLayerKey === `agent:${focusedAgentNode.nodeId}`
+      || selectedAtlasNodeKeys.has(atlasSelectionKey("agent", focusedAgentNode.nodeId))
+    ),
+  );
 
   return (
     <>
@@ -3348,99 +3515,15 @@ export function ExecutionMap({
           {layout.links
             .filter((link) => !(selectedChain.has(link.sourceId) && selectedChain.has(link.targetId)))
             .map(renderLayoutLink)}
-          {taskConnectionLinks.map(({ connection, path, source }) => {
-            const linkCutKey = `task:${connection.connectionId}`;
-            return (
-              <g key={connection.connectionId}>
-                <path
-                  d={path}
-                  className="emap-link emap-link-task-connection"
-                  data-task-connection-id={connection.connectionId}
-                  data-port-type={connection.type}
-                  fill="none"
-                  strokeWidth={2}
-                />
-                <path
-                  d={path}
-                  className="emap-link-hit-area"
-                  data-link-cut-key={linkCutKey}
-                  fill="none"
-                  strokeWidth={18}
-                  onMouseEnter={() => revealLinkCut(linkCutKey)}
-                  onMouseLeave={() => hideLinkCut(linkCutKey)}
-                  onPointerEnter={() => revealLinkCut(linkCutKey)}
-                  onPointerLeave={() => hideLinkCut(linkCutKey)}
-                />
-                {renderConnectorSourceSocket(
-                  `${connection.connectionId}-source-socket`,
-                  source,
-                  "emap-connector-socket-task-connection",
-                )}
-              </g>
-            );
-          })}
-          {taskDependencyLinks.map(({ dep, path, source }) => {
-            const linkCutKey = `dep:${dep.dependencyId}`;
-            return (
-              <g key={dep.dependencyId}>
-                <path
-                  d={path}
-                  className="emap-link emap-link-task-dependency"
-                  data-task-dependency-id={dep.dependencyId}
-                  fill="none"
-                  strokeWidth={2}
-                  strokeDasharray="6 3"
-                />
-                <path
-                  d={path}
-                  className="emap-link-hit-area"
-                  data-link-cut-key={linkCutKey}
-                  fill="none"
-                  strokeWidth={18}
-                  onMouseEnter={() => revealLinkCut(linkCutKey)}
-                  onMouseLeave={() => hideLinkCut(linkCutKey)}
-                  onPointerEnter={() => revealLinkCut(linkCutKey)}
-                  onPointerLeave={() => hideLinkCut(linkCutKey)}
-                />
-                {renderConnectorSourceSocket(
-                  `${dep.dependencyId}-source-socket`,
-                  source,
-                  "emap-connector-socket-task-dependency",
-                )}
-              </g>
-            );
-          })}
-          {sourceConnectionLinks.map(({ connection, path, source }) => {
-            const linkCutKey = `source:${connection.connectionId}`;
-            return (
-              <g key={connection.connectionId}>
-                <path
-                  d={path}
-                  className="emap-link emap-link-source-connection"
-                  data-source-connection-id={connection.connectionId}
-                  data-port-type={connection.type}
-                  fill="none"
-                  strokeWidth={2}
-                />
-                <path
-                  d={path}
-                  className="emap-link-hit-area"
-                  data-link-cut-key={linkCutKey}
-                  fill="none"
-                  strokeWidth={18}
-                  onMouseEnter={() => revealLinkCut(linkCutKey)}
-                  onMouseLeave={() => hideLinkCut(linkCutKey)}
-                  onPointerEnter={() => revealLinkCut(linkCutKey)}
-                  onPointerLeave={() => hideLinkCut(linkCutKey)}
-                />
-                {renderConnectorSourceSocket(
-                  `${connection.connectionId}-source-socket`,
-                  source,
-                  "emap-connector-socket-source-connection",
-                )}
-              </g>
-            );
-          })}
+          {taskConnectionLinks
+            .filter(({ connection }) => !isTaskConnectionLayerActive(connection))
+            .map(renderTaskConnectionLink)}
+          {taskDependencyLinks
+            .filter(({ dep }) => !isTaskDependencyLayerActive(dep))
+            .map(renderTaskDependencyLink)}
+          {sourceConnectionLinks
+            .filter(({ connection }) => !isSourceConnectionLayerActive(connection))
+            .map(renderSourceConnectionLink)}
         </svg>
         <svg
           className="execution-map-links execution-map-link-layer execution-map-link-layer-child"
@@ -3448,46 +3531,11 @@ export function ExecutionMap({
           height={linkSvgHeight}
           viewBox={linkSvgViewBox}
         >
-          {agentBranchPath && (
-            <path
-              key="agent-playground-branch"
-              d={agentBranchPath}
-              className="emap-link emap-link-agent-branch"
-              fill="none"
-              strokeWidth={2}
-            />
-          )}
-          {agentBranchAnchors && renderConnectorSourceSocket("agent-playground-branch-source-socket", agentBranchAnchors.source, "emap-connector-socket-agent-branch")}
-          {taskBranchConnectors.map((connector) => (
-            <g key={`task-leader-branch-${connector.id}`}>
-              <path
-                d={connector.path}
-                className="emap-link emap-link-task-branch"
-                fill="none"
-                strokeWidth={2}
-              />
-              {renderConnectorSourceSocket(
-                `task-leader-branch-source-socket-${connector.id}`,
-                connector.anchors.source,
-                "emap-connector-socket-task-branch",
-              )}
-            </g>
-          ))}
-          {taskChildBranchPanelsLayout.map((p) => (
-            <g key={`task-child-panel-${p.id}`}>
-              <path
-                d={taskChildBranchConnectorPath(p.sourceRect, p.rect)}
-                className="emap-link emap-link-task-branch emap-link-task-child-branch"
-                fill="none"
-                strokeWidth={2}
-              />
-              {renderConnectorSourceSocket(
-                `task-child-panel-${p.id}-source-socket`,
-                rightMiddleAnchor(p.sourceRect),
-                "emap-connector-socket-task-child-branch",
-              )}
-            </g>
-          ))}
+          {agentBranchPath && !agentBranchConnectorActive ? renderAgentBranchLink() : null}
+          {taskBranchConnectors.filter((connector) => !connector.active).map(renderTaskBranchLink)}
+          {taskChildBranchPanelsLayout
+            .filter((p) => activeAtlasLayerKey !== `panel:${p.id}`)
+            .map(renderTaskChildPanelLink)}
         </svg>
         <svg
           className="execution-map-links execution-map-link-layer execution-map-link-layer-active"
@@ -3498,6 +3546,20 @@ export function ExecutionMap({
           {layout.links
             .filter((link) => selectedChain.has(link.sourceId) && selectedChain.has(link.targetId))
             .map(renderLayoutLink)}
+          {taskConnectionLinks
+            .filter(({ connection }) => isTaskConnectionLayerActive(connection))
+            .map(renderTaskConnectionLink)}
+          {taskDependencyLinks
+            .filter(({ dep }) => isTaskDependencyLayerActive(dep))
+            .map(renderTaskDependencyLink)}
+          {sourceConnectionLinks
+            .filter(({ connection }) => isSourceConnectionLayerActive(connection))
+            .map(renderSourceConnectionLink)}
+          {agentBranchPath && agentBranchConnectorActive ? renderAgentBranchLink() : null}
+          {taskBranchConnectors.filter((connector) => connector.active).map(renderTaskBranchLink)}
+          {taskChildBranchPanelsLayout
+            .filter((p) => activeAtlasLayerKey === `panel:${p.id}`)
+            .map(renderTaskChildPanelLink)}
           {evidenceLayout.links.map((link) => {
             const path = (
               <path
@@ -4325,7 +4387,9 @@ export function ExecutionMap({
             </div>
           )}
           {taskBranchEntries.map((entry) => {
-            const isLayerActive = activeAtlasLayerKey === `branch:${entry.id}` || entry.node.nodeId === focusedTaskNodeId;
+            const isLayerActive = activeAtlasLayerKey === `branch:${entry.id}`
+              || activeAtlasLayerKey === `task:${entry.node.nodeId}`
+              || entry.node.nodeId === focusedTaskNodeId;
             return (
               <div
                 key={`task-branch-${entry.id}`}
