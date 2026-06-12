@@ -868,6 +868,50 @@ describe("App", () => {
       expect(container.querySelector('.execution-map-link-layer-base [data-task-connection-id="conn_hover_layer_test"]')).toBeNull();
     });
 
+    it("raises direct Task connections while dragging a connected Task", async () => {
+      const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
+      const activeConnection: TeamTaskConnection = {
+        schemaVersion: "team/task-connection-1",
+        connectionId: "conn_drag_layer_test",
+        fromTaskId: collectTask.taskId,
+        fromOutputPortId: "draft_md",
+        toTaskId: htmlTask.taskId,
+        toInputPortId: "source_md",
+        type: "md",
+        status: "active",
+        createdAt: "2026-05-26T00:00:00.000Z",
+        updatedAt: "2026-05-26T00:00:00.000Z",
+      };
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        if (url === "/v1/agents") return new Response(JSON.stringify({ agents: MOCK_AGENTS }), { status: 200 });
+        if (url === "/v1/agents/status") return new Response(JSON.stringify({ agents: [] }), { status: 200 });
+        if (url === "/v1/team/tasks") return new Response(JSON.stringify({ tasks: [collectTask, htmlTask] }), { status: 200 });
+        if (url === "/v1/team/task-connections") return new Response(JSON.stringify({ connections: [activeConnection] }), { status: 200 });
+        if (url.endsWith("/runs")) return new Response(JSON.stringify({ runs: [] }), { status: 200 });
+        return new Response(JSON.stringify([]), { status: 200 });
+      });
+
+      const { container } = render(<App />);
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "live" } });
+
+      const atlasNodes = getAtlasNodes(container);
+      const targetTask = await within(atlasNodes).findByRole("button", { name: htmlTask.title }) as HTMLElement;
+      const left = parseFloat(targetTask.style.left || "0");
+      const top = parseFloat(targetTask.style.top || "0");
+
+      firePointer(targetTask, "pointerdown", { pointerId: 22, clientX: left + 20, clientY: top + 20 });
+      firePointer(targetTask, "pointermove", { pointerId: 22, clientX: left + 90, clientY: top + 70 });
+
+      await waitFor(() => {
+        expect(targetTask.classList.contains("is-layer-dragging")).toBe(true);
+        expect(container.querySelector('.execution-map-link-layer-active [data-task-connection-id="conn_drag_layer_test"]')).toBeTruthy();
+      });
+      expect(container.querySelector('.execution-map-link-layer-base [data-task-connection-id="conn_drag_layer_test"]')).toBeNull();
+
+      firePointer(targetTask, "pointerup", { pointerId: 22, clientX: left + 90, clientY: top + 70, buttons: 0 });
+    });
+
     it("raises the active Task branch connector with its Task action panel", async () => {
       const { collectTask, htmlTask } = makeTypedTaskChainFixtures();
       vi.mocked(fetch).mockImplementation(async (input) => {

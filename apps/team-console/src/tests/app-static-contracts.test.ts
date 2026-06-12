@@ -827,6 +827,11 @@ describe("Team Console static contracts", () => {
     expect(mapSource).toContain('import "./execution-map-layering.css";');
     expect(mapSource).toContain('from "./atlas-layering";');
     expect(mapSource).toContain("activeAtlasLayerKey");
+    expect(mapSource).toContain("createAtlasLayerContext");
+    expect(mapSource).toContain("isAtlasLayerContextActive");
+    expect(mapSource).toContain("isAtlasLayerContextDragging");
+    expect(mapSource).toContain("atlasLayerKey(");
+    expect(mapSource).not.toContain("const isAtlasLayerKeyActive = (key: string) => activeAtlasLayerKey === key || hoveredAtlasLayerKey === key;");
     expect(mapSource).toContain("getAtlasPanelLayerStyle(p.layerDepth)");
     expect(rule(".execution-map-toolbar")).toContain("z-index: var(--emap-layer-shell-toolbar)");
     expect(rule(".execution-map-selection-rect")).toContain("z-index: var(--emap-layer-shell-selection)");

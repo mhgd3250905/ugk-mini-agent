@@ -23,6 +23,7 @@
 - **第二批层级优化**: SVG connector 从单层 `.execution-map-links` 拆成 `base` / `child` / `active` 三个可排序 layer。普通业务连线仍在 `connector.base`，Agent / Task branch 与 child panel connector 进入 `connector.child`，selected chain 与 evidence connector 进入 `context.active`，避免子级线继续被父级普通节点层压住。
 - **回归修复**: 点击 Task 后，Task 卡片、Task 操作分支面板已在 active layer，但它们之间的 `.emap-link-task-branch` 仍留在 child layer，会被其他节点/面板盖住；现已让 active/focused/selected 端点的 task/source/dependency 连接线，以及 active Task / Agent / child panel 分支线一起进入 `context.active`。
 - **hover context 修正**: hover 不再只依赖 CSS 浮起卡片，而是进入同一套 layer context；Task / Agent / Source 节点、Task / Agent / child panel 和相关 connector 会按 hover/active/focus/selection 统一归入 `context.active`，避免鼠标悬浮卡片时仍被高层连接线压住。
+- **第三批根部收口**: `atlas-layering` 新增 typed `AtlasLayerKey` / `AtlasLayerContext` API；`ExecutionMap` 的 active / hover / focus / selection / dragging 判定统一走 context helper，移除本地 active/hover 字符串比较，后续新增节点、面板或 connector 时必须先归入 layer context。
 
 ## 2026-06-12 — Team Console canvas layering runtime pass
 
