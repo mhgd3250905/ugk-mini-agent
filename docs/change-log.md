@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-12 — Team Console canvas layering specification
+
+- **主题**: 新增 Team Console Execution Atlas 画布层级规范，明确 Group、connector、Task/Agent/Source 节点、子级面板、selected/active/dragging context、root dock、maximized panel 和 app modal 的 z 轴合同。
+- **影响范围**: 仅新增设计文档和后续实施计划；本轮不改变运行时代码、不改变 Team Runtime、Canvas Task、split-task / worklist 链路，也不提交临时半透明 Group 预览样式。
+- **对应入口**: `docs/team-console-canvas-layering.md`、`docs/superpowers/plans/2026-06-12-team-console-canvas-layering.md`。
+
 ## 2026-06-12 — Dell 1996 connector contrast over Task Groups
 
 - **主题**: 提升 Team Console `Dell 1996` 视觉主题下节点连线在 Task Group 米色背景上的可见性。连线改用更高对比的描边、纸色外轮廓、非缩放描边，并单独加粗 task/source/dependency/branch connector。
