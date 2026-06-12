@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-12 — Dell 1996 connector contrast over Task Groups
+
+- **主题**: 提升 Team Console `Dell 1996` 视觉主题下节点连线在 Task Group 米色背景上的可见性。连线改用更高对比的描边、纸色外轮廓、非缩放描边，并单独加粗 task/source/dependency/branch connector。
+- **影响范围**: 仅 `apps/team-console` 的 Dell 1996 scoped CSS 和静态样式契约；默认主题、Canvas Task 数据、Team Runtime、split-task / worklist 链路和主 `/playground` UI 不变。
+- **验证**: 新增 `app-static-contracts` 回归测试锁定 Dell connector 对比规则，并通过 5174 Team Console 浏览器探针确认 group 背景上连线不再融入背景。
+
 ## 2026-06-12 — Team Console build chunk split
 
 - **主题**: 收口 Team Console 生产构建的既有 Vite chunk size warning。通过 Rollup `manualChunks` 将 React runtime 与 `marked` Markdown 渲染依赖拆成 `vendor-react` / `vendor-markdown` chunk，主 app chunk 从约 582 kB 降到约 343 kB。

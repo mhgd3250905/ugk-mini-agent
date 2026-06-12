@@ -363,6 +363,30 @@ describe("Team Console static contracts", () => {
     expect(mapCss).not.toContain("background: var(--dell-yellow);");
   });
 
+  it("keeps Dell 1996 connector lines legible over task group backgrounds", () => {
+    const mapCss = readExecutionMapCss();
+    const linkRule = mapCss.match(/\[data-visual-theme="dell-1996"\] \.emap-link\s*{[^}]*}/)?.[0] ?? "";
+    const branchRule = mapCss.match(/\[data-visual-theme="dell-1996"\] \.emap-link-branch\s*{[^}]*}/)?.[0] ?? "";
+    const taskConnectionRule =
+      mapCss.match(
+        /\[data-visual-theme="dell-1996"\] \.emap-link-task-connection,\n\[data-visual-theme="dell-1996"\] \.emap-link-source-connection\s*{[^}]*}/,
+      )?.[0] ?? "";
+    const dependencyRule =
+      mapCss.match(
+        /\[data-visual-theme="dell-1996"\] \.emap-link-task-dependency,\n\[data-visual-theme="dell-1996"\] \.emap-link-failed\s*{[^}]*}/,
+      )?.[0] ?? "";
+
+    expect(linkRule).toContain("stroke: var(--dell-frame)");
+    expect(linkRule).toContain("stroke-width: 2.8");
+    expect(linkRule).toContain("drop-shadow(0 1px 0 var(--dell-paper))");
+    expect(linkRule).toContain("drop-shadow(1px 0 0 var(--dell-paper))");
+    expect(linkRule).toContain("vector-effect: non-scaling-stroke");
+    expect(branchRule).toContain("stroke-width: 2.4");
+    expect(branchRule).toContain("opacity: 1");
+    expect(taskConnectionRule).toContain("stroke-width: 3");
+    expect(dependencyRule).toContain("stroke-width: 2.8");
+  });
+
   it("does not render the obsolete live run switcher bar", () => {
     const appSource = readFileSync("src/app/App.tsx", "utf8");
 

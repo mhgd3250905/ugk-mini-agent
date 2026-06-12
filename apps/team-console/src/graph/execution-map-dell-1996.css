@@ -331,23 +331,33 @@
 }
 
 [data-visual-theme="dell-1996"] .emap-link {
-  stroke: var(--dell-border);
-  filter: none;
+  stroke: var(--dell-frame);
+  stroke-width: 2.8;
+  filter:
+    drop-shadow(0 1px 0 var(--dell-paper))
+    drop-shadow(1px 0 0 var(--dell-paper))
+    drop-shadow(0 -1px 0 var(--dell-paper))
+    drop-shadow(-1px 0 0 var(--dell-paper));
   opacity: 1;
+  vector-effect: non-scaling-stroke;
 }
 
 [data-visual-theme="dell-1996"] .emap-link-branch {
-  stroke-dasharray: 4 4;
+  stroke-width: 2.4;
+  stroke-dasharray: 6 4;
+  opacity: 1;
 }
 
 [data-visual-theme="dell-1996"] .emap-link-task-connection,
 [data-visual-theme="dell-1996"] .emap-link-source-connection {
   stroke: var(--dell-link);
+  stroke-width: 3;
 }
 
 [data-visual-theme="dell-1996"] .emap-link-task-dependency,
 [data-visual-theme="dell-1996"] .emap-link-failed {
   stroke: var(--dell-red);
+  stroke-width: 2.8;
 }
 
 [data-visual-theme="dell-1996"] .emap-connector-source-socket {
