@@ -282,6 +282,7 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toContain('[data-visual-theme="dell-1996"] .task-action-branch');
     expect(mapCss).toContain('[data-visual-theme="dell-1996"] .emap-run-observer-panel');
     expect(mapCss).toContain('[data-visual-theme="dell-1996"] .emap-artifact-preview');
+    expect(mapCss).toMatch(/\[data-visual-theme="dell-1996"\] \.emap-task-group-frame\s*{[^}]*background:\s*rgba\(241,\s*238,\s*228,\s*0\.52\);/s);
     expect(mapCss).not.toContain('[data-visual-theme="dell-1996"][data-theme="dark"]');
     expect(mapCss).toContain("--dell-selected: #1f5e73");
     expect(mapCss).toContain("--dell-hover: #dfe9ec");

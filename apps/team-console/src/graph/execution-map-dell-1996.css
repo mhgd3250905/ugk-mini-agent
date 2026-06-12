@@ -198,7 +198,10 @@
   background: var(--dell-source);
 }
 
-[data-visual-theme="dell-1996"] .emap-task-group-frame,
+[data-visual-theme="dell-1996"] .emap-task-group-frame {
+  background: rgba(241, 238, 228, 0.52);
+}
+
 [data-visual-theme="dell-1996"] .emap-menu-branch {
   background: var(--dell-menu);
 }
