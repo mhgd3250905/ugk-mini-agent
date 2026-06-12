@@ -98,13 +98,14 @@
 - Toolbar、selection rect、root dock、root trash、dock flight、maximized branch 已从散落数字迁移到 shell layer token。
 - 普通 Atlas node、run task node、focused node、multi-selected node、拖拽预览 node 已通过 `is-layer-active` / `is-layer-dragging` 抬升。
 - Agent branch、Task branch、Task child panel 已使用 `panel.childBase + depth offset`；最近点击或 focused 的 branch / panel 进入 active layer。
+- SVG connector 已拆成 `base` / `child` / `active` 三个可排序 SVG layer：普通业务线进入 `connector.base`，Agent / Task branch 与 child panel connector 进入 `connector.child`，selected chain 与 evidence connector 进入 `context.active`。
 - Dell 1996 hover 不再使用 `z-index: 30`，改为 `canvas.context.active`，不会压过 maximized branch。
 - 仍保留的裸 `z-index` 只允许作为局部组件内部层级，例如卡片内部内容、局部菜单、飞行动画内部按钮；后续若跨出组件边界，必须升格为 layer token。
 
 ## 实现原则
 
 1. `z-index` 只在 positioned element 上生效；任何 `transform`、`filter`、`opacity < 1`、`contain: paint` 都可能创建新的 stacking context。新增层级规则必须同时审查这些属性。
-2. SVG 内部 path 的 z 轴只能靠 DOM 顺序或拆分 SVG layer 表达。若要支持“子级 connector 高于父级节点”，必须把 connectors 拆成多层 SVG 或把相关 link 与 context 分组渲染。
+2. SVG 内部 path 的 z 轴只能靠 DOM 顺序或拆分 SVG layer 表达。当前已拆出 base / child / active 三层；若后续要让二级、三级 child connector 继续按具体 depth 递增，应继续拆分 depth-specific SVG layer，而不是在单个 SVG 内写 z-index。
 3. `selected` / `is-atlas-selected` 不只是样式态；它们必须驱动画布上下文层级。
 4. `hover` 只能临时提升同一局部上下文，不得超过 maximized / modal / shell overlay。
 5. Group 背景可以半透明作为视觉优化，但不是层级架构的主解决方案。
@@ -117,7 +118,7 @@
 | P0 | Group frame 永远低于业务 connector 与 node | Dell/default/dark 主题下，Group 背景不会覆盖节点连线；不依赖透明背景才能看见线 |
 | P0 | selected / active context 整体抬升 | 多个展开 task/panel 重叠时，最近点击的上下文整体在上方 |
 | P1 | 子级 depth 分层 | 一级/二级/更深子面板及其连接线按 depth 递增，不会被父级 task 或父级 connector 压住 |
-| P1 | SVG link 分层重构 | base connector、selected connector、child connector 拆分为可排序 layer，不再全塞同一 SVG 平面 |
+| P1 | SVG link 分层重构 | 已落地 base / child / active 三层 SVG；后续如需更细粒度 depth，可继续拆 depth-specific layer |
 | P2 | 主题视觉微调 | 在层级合同成立后，再决定 Dell Group 是否保持实色、半透明或仅在 selected/hover 时变化 |
 
 ## 推荐落地顺序

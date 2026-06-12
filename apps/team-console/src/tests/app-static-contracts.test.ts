@@ -830,7 +830,11 @@ describe("Team Console static contracts", () => {
     expect(mapSource).toContain("getAtlasPanelLayerStyle(p.layerDepth)");
     expect(rule(".execution-map-toolbar")).toContain("z-index: var(--emap-layer-shell-toolbar)");
     expect(rule(".execution-map-selection-rect")).toContain("z-index: var(--emap-layer-shell-selection)");
-    expect(rule(".execution-map-links")).toContain("z-index: var(--emap-layer-connector-base)");
+    expect(rule(".execution-map-links")).not.toContain("z-index:");
+    expect(rule(".execution-map-link-layer")).not.toContain("z-index:");
+    expect(rule(".execution-map-link-layer-base")).toContain("z-index: var(--emap-layer-connector-base)");
+    expect(rule(".execution-map-link-layer-child")).toContain("z-index: var(--emap-layer-connector-child)");
+    expect(rule(".execution-map-link-layer-active")).toContain("z-index: var(--emap-layer-context-active)");
     expect(rule(".execution-map-nodes")).not.toContain("z-index:");
     expect(rule(".emap-node")).toContain("z-index: var(--emap-layer-node-base)");
     expect(rule(".emap-link-cut-button")).toContain("z-index: var(--emap-layer-control-connector)");
@@ -846,6 +850,9 @@ describe("Team Console static contracts", () => {
     expect(mapCss).toMatch(/\.emap-agent-branch-shell\s*{[^}]*z-index:\s*calc\(var\(--emap-layer-panel-child\) \+ var\(--emap-panel-depth-offset, 0\)\);/s);
     expect(mapCss).toMatch(/\.emap-task-child-branch-shell\s*{[^}]*z-index:\s*calc\(var\(--emap-layer-panel-child\) \+ var\(--emap-panel-depth-offset, 0\)\);/s);
     expect(mapCss).toContain("--emap-layer-app-modal: 1000");
+    expect(mapSource).toContain('className="execution-map-links execution-map-link-layer execution-map-link-layer-base"');
+    expect(mapSource).toContain('className="execution-map-links execution-map-link-layer execution-map-link-layer-child"');
+    expect(mapSource).toContain('className="execution-map-links execution-map-link-layer execution-map-link-layer-active"');
   });
 
   it("documents Agent Atlas mock and live behavior", () => {

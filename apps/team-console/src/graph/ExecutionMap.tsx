@@ -3292,6 +3292,38 @@ export function ExecutionMap({
 
   const isCollapsed = (id: string) => id.endsWith("__collapsed") || id.endsWith("__collapse_control");
   const parentOfCollapsed = (id: string) => id.replace(/__collapsed$|__collapse_control$/, "");
+  const linkSvgHeight = maxY + 40;
+  const linkSvgViewBox = `-8 0 ${svgWidth} ${linkSvgHeight}`;
+  const renderLayoutLink = (link: (typeof layout.links)[number]) => {
+    const highlighted = selectedChain.has(link.sourceId) && selectedChain.has(link.targetId);
+    const sourcePos = layout.nodePositions.get(link.sourceId);
+    const targetPos = layout.nodePositions.get(link.targetId);
+    const linkType = sourcePos && targetPos && sourcePos.x === targetPos.x ? "emap-link-main" : "emap-link-branch";
+    const sourceSocket = sourcePos && targetPos && sourcePos.x !== targetPos.x
+      ? rightMiddleAnchor(sourcePos)
+      : null;
+    const path = (
+      <path
+        key={`${link.sourceId}-${link.targetId}`}
+        d={link.path}
+        className={`emap-link ${linkType} ${highlighted ? "emap-link-highlighted" : ""}`}
+        fill="none"
+        strokeWidth={2}
+      />
+    );
+    if (!sourceSocket) return path;
+    return (
+      <g key={`${link.sourceId}-${link.targetId}`}>
+        {path}
+        {renderConnectorSourceSocket(
+          `${link.sourceId}-${link.targetId}-source-socket`,
+          sourceSocket,
+          "emap-connector-socket-task-branch",
+        )}
+      </g>
+    );
+  };
+
   return (
     <>
     {maximizedOverlay}
@@ -3308,62 +3340,14 @@ export function ExecutionMap({
       overlay={overlay}
     >
         <svg
-          className="execution-map-links"
+          className="execution-map-links execution-map-link-layer execution-map-link-layer-base"
           width={svgWidth}
-          height={maxY + 40}
-          viewBox={`-8 0 ${svgWidth} ${maxY + 40}`}
+          height={linkSvgHeight}
+          viewBox={linkSvgViewBox}
         >
-          {layout.links.map((link) => {
-            const highlighted = selectedChain.has(link.sourceId) && selectedChain.has(link.targetId);
-            const sourcePos = layout.nodePositions.get(link.sourceId);
-            const targetPos = layout.nodePositions.get(link.targetId);
-            const linkType = sourcePos && targetPos && sourcePos.x === targetPos.x ? "emap-link-main" : "emap-link-branch";
-            const sourceSocket = sourcePos && targetPos && sourcePos.x !== targetPos.x
-              ? rightMiddleAnchor(sourcePos)
-              : null;
-            const path = (
-              <path
-                key={`${link.sourceId}-${link.targetId}`}
-                d={link.path}
-                className={`emap-link ${linkType} ${highlighted ? "emap-link-highlighted" : ""}`}
-                fill="none"
-                strokeWidth={2}
-              />
-            );
-            if (!sourceSocket) return path;
-            return (
-              <g key={`${link.sourceId}-${link.targetId}`}>
-                {path}
-                {renderConnectorSourceSocket(
-                  `${link.sourceId}-${link.targetId}-source-socket`,
-                  sourceSocket,
-                  "emap-connector-socket-task-branch",
-                )}
-              </g>
-            );
-          })}
-          {evidenceLayout.links.map((link) => {
-            const path = (
-              <path
-                key={link.id}
-                d={link.path}
-                className={`emap-link ${link.preview ? "emap-link-artifact-preview" : "emap-link-evidence"}`}
-                fill="none"
-                strokeWidth={1.5}
-              />
-            );
-            if (!link.source) return path;
-            return (
-              <g key={link.id}>
-                {path}
-                {renderConnectorSourceSocket(
-                  `${link.id}-source-socket`,
-                  link.source,
-                  link.socketClassName ?? "emap-connector-socket-evidence",
-                )}
-              </g>
-            );
-          })}
+          {layout.links
+            .filter((link) => !(selectedChain.has(link.sourceId) && selectedChain.has(link.targetId)))
+            .map(renderLayoutLink)}
           {taskConnectionLinks.map(({ connection, path, source }) => {
             const linkCutKey = `task:${connection.connectionId}`;
             return (
@@ -3457,6 +3441,13 @@ export function ExecutionMap({
               </g>
             );
           })}
+        </svg>
+        <svg
+          className="execution-map-links execution-map-link-layer execution-map-link-layer-child"
+          width={svgWidth}
+          height={linkSvgHeight}
+          viewBox={linkSvgViewBox}
+        >
           {agentBranchPath && (
             <path
               key="agent-playground-branch"
@@ -3498,8 +3489,40 @@ export function ExecutionMap({
             </g>
           ))}
         </svg>
+        <svg
+          className="execution-map-links execution-map-link-layer execution-map-link-layer-active"
+          width={svgWidth}
+          height={linkSvgHeight}
+          viewBox={linkSvgViewBox}
+        >
+          {layout.links
+            .filter((link) => selectedChain.has(link.sourceId) && selectedChain.has(link.targetId))
+            .map(renderLayoutLink)}
+          {evidenceLayout.links.map((link) => {
+            const path = (
+              <path
+                key={link.id}
+                d={link.path}
+                className={`emap-link ${link.preview ? "emap-link-artifact-preview" : "emap-link-evidence"}`}
+                fill="none"
+                strokeWidth={1.5}
+              />
+            );
+            if (!link.source) return path;
+            return (
+              <g key={link.id}>
+                {path}
+                {renderConnectorSourceSocket(
+                  `${link.id}-source-socket`,
+                  link.source,
+                  link.socketClassName ?? "emap-connector-socket-evidence",
+                )}
+              </g>
+            );
+          })}
+        </svg>
 
-        <div className="execution-map-nodes" ref={evidenceContainerRef} style={{ width: svgWidth, minHeight: maxY + 40 }}>
+        <div className="execution-map-nodes" ref={evidenceContainerRef} style={{ width: svgWidth, minHeight: linkSvgHeight }}>
           {taskGroupRenderItems.map(({ group, rect, taskCount, memberRows, isEmpty }) => {
             const taskCountLabel = `${taskCount} ${taskCount === 1 ? "Task" : "Tasks"}`;
             const validationMessage = group.taskIds?.length === 0

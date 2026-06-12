@@ -20,6 +20,7 @@
 - **验证**: 新增静态契约锁定 `.emap-node` 必须使用 `--emap-layer-node-base`；浏览器在 5174 同一画布容器中验证 Group `10`、node `40`、node above Group。
 - **补充修复**: 继续修复 Group frame 覆盖节点间 SVG 连线的问题。`.execution-map-nodes` 容器不再创建 node-level stacking context，`.execution-map-links` 明确进入 `connector.base`；实际浏览器验证 Group `10`、link `30`、node `40`。
 - **视觉优化**: Dell 1996 主题下展开 Group frame 背景改为 `rgba(241, 238, 228, 0.52)`，保持 1996 纸色气质但降低遮挡感；折叠 Group card 和 menu branch 仍保持实体面板背景。
+- **第二批层级优化**: SVG connector 从单层 `.execution-map-links` 拆成 `base` / `child` / `active` 三个可排序 layer。普通业务连线仍在 `connector.base`，Agent / Task branch 与 child panel connector 进入 `connector.child`，selected chain 与 evidence connector 进入 `context.active`，避免子级线继续被父级普通节点层压住。
 
 ## 2026-06-12 — Team Console canvas layering runtime pass
 

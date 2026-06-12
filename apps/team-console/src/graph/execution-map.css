@@ -202,9 +202,24 @@
   position: absolute;
   top: 28px;
   left: 28px;
-  z-index: var(--emap-layer-connector-base);
   pointer-events: none;
   overflow: visible;
+}
+
+.execution-map-link-layer {
+  overflow: visible;
+}
+
+.execution-map-link-layer-base {
+  z-index: var(--emap-layer-connector-base);
+}
+
+.execution-map-link-layer-child {
+  z-index: var(--emap-layer-connector-child);
+}
+
+.execution-map-link-layer-active {
+  z-index: var(--emap-layer-context-active);
 }
 
 .emap-link {
