@@ -9,8 +9,11 @@ import { RunWorkspace } from "../src/team/run-workspace.js";
 import { CanvasTaskRunService } from "../src/team/task-run-service.js";
 import type { CheckerInput, CheckerOutput, WorkerInput, WorkerOutput } from "../src/team/role-runner.js";
 import {
+	createDeferred,
+	delayMs,
 	ProcessEventRoleRunner,
 	type ProcessAwareWorkerInput,
+	removeTempRoot,
 	validTaskInput,
 	waitForTaskRuns,
 	waitForTerminalRun,
@@ -25,6 +28,23 @@ function worklistJson() {
 			{ id: "chunk-001", title: "Chunk 1", input: { rows: [1] }, acceptanceHints: ["Return chunk 1"] },
 			{ id: "chunk-002", title: "Chunk 2", input: { rows: [2] }, acceptanceHints: ["Return chunk 2"] },
 		],
+	});
+}
+
+function worklistJsonWithItems(count: number) {
+	return JSON.stringify({
+		schemaVersion: "team/worklist-1",
+		worklistId: "worklist_news",
+		title: "News chunks",
+		items: Array.from({ length: count }, (_, index) => {
+			const itemNumber = index + 1;
+			return {
+				id: `chunk-${String(itemNumber).padStart(3, "0")}`,
+				title: `Chunk ${itemNumber}`,
+				input: { rows: [itemNumber] },
+				acceptanceHints: [`Return chunk ${itemNumber}`],
+			};
+		}),
 	});
 }
 
@@ -262,5 +282,130 @@ test("split-task fails parent when a required child fails", async () => {
 		assert.equal(results.summary.failed, 1);
 	} finally {
 		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("split-task cancel keeps parent cancelled, cancels active children, and stops queued items", async () => {
+	const root = await mkdtemp(join(tmpdir(), "team-task-run-split-cancel-"));
+	const releaseGeneratedWorkers: Array<() => void> = [];
+	let service: CanvasTaskRunService | undefined;
+	let splitRunId: string | undefined;
+	try {
+		const taskStore = new TaskStore(root, { getAgentIds: () => ["main", "search", "checker"] });
+		const sourceTask = await taskStore.create({
+			...validTaskInput,
+			title: "清单生成",
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "清单生成",
+				outputPorts: [{ id: "worklist_out", label: "Worklist", type: "worklist" }],
+				outputContract: { text: "输出 worklist。" },
+				acceptance: { rules: ["必须输出 worklist"] },
+			},
+		});
+		const splitTask = await taskStore.create({
+			...validTaskInput,
+			title: "分片处理",
+			canvasKind: "split-task",
+			workUnit: {
+				...validTaskInput.workUnit,
+				title: "分片处理",
+				input: { text: "按清单并发处理。" },
+				inputPorts: [{ id: "source_worklist", label: "Worklist", type: "worklist" }],
+				outputPorts: [{ id: "results", label: "Results", type: "worklist-results" }],
+				outputContract: { text: "输出 worklist-results。" },
+				acceptance: { rules: ["必须完整回收"] },
+			},
+			splitTaskSpec: {
+				schemaVersion: "team/split-task-spec-1",
+				inputPortId: "source_worklist",
+				outputPortId: "results",
+				dispatchGoal: "逐个 chunk 标准化。",
+				generatedWorkerAgentId: "search",
+				generatedCheckerAgentId: "checker",
+				autoRun: { enabled: true, concurrency: 2 },
+				collectPolicy: { requireAllItemsSucceeded: true, requireFullCoverage: true },
+			},
+		});
+
+		await mkdir(join(root, "team"), { recursive: true });
+		const connectionStore = new TaskConnectionStore(join(root, "team"), taskStore);
+		await connectionStore.create({
+			fromTaskId: sourceTask.taskId,
+			fromOutputPortId: "worklist_out",
+			toTaskId: splitTask.taskId,
+			toInputPortId: "source_worklist",
+		});
+		const workspace = new RunWorkspace(join(root, "task-runs"));
+
+		class SplitCancelRunner extends ProcessEventRoleRunner {
+			readonly generatedWorkerStarts: string[] = [];
+
+			async runWorker(input: WorkerInput): Promise<WorkerOutput> {
+				if (input.task.id === sourceTask.taskId) {
+					await writeFile(join(input.artifactPublicDir!, "worklist.json"), worklistJsonWithItems(4), "utf8");
+					return { content: "worker wrote worklist.json", artifactRefs: [] };
+				}
+				if (input.task.title.startsWith("Chunk ")) {
+					this.generatedWorkerStarts.push(input.task.title);
+					const gate = createDeferred();
+					releaseGeneratedWorkers.push(gate.resolve);
+					await gate.promise;
+					return { content: JSON.stringify({ itemTitle: input.task.title, ok: true }), artifactRefs: [] };
+				}
+				return super.runWorker(input as ProcessAwareWorkerInput);
+			}
+
+			async runChecker(input: CheckerInput): Promise<CheckerOutput> {
+				if (input.task.id === sourceTask.taskId) {
+					return { verdict: "pass", reason: "ok", resultContent: "accepted worklist summary" };
+				}
+				return { verdict: "pass", reason: "ok" };
+			}
+		}
+
+		const runner = new SplitCancelRunner();
+		service = new CanvasTaskRunService({
+			taskStore,
+			workspace,
+			createRoleRunner: () => runner,
+			connectionStore,
+			dataDir: join(root, "task-runs"),
+		});
+
+		const sourceRun = await service.createRun(sourceTask.taskId);
+		await waitForTerminalRun(service, sourceRun.runId);
+		const splitRuns = await waitForTaskRuns(service, splitTask.taskId, 1);
+		splitRunId = splitRuns[0]!.runId;
+		for (let i = 0; i < 80; i++) {
+			if (runner.generatedWorkerStarts.length >= 2) break;
+			await delayMs(25);
+		}
+		assert.equal(runner.generatedWorkerStarts.length, 2);
+		assert.deepEqual(new Set(runner.generatedWorkerStarts), new Set(["Chunk 1", "Chunk 2"]));
+
+		const cancelled = await service.cancelRun(splitRunId, "user cancel");
+		assert.equal(cancelled.status, "cancelled");
+		assert.equal(cancelled.taskStates[splitTask.taskId]?.status, "cancelled");
+
+		for (const release of releaseGeneratedWorkers.splice(0)) release();
+		await delayMs(150);
+
+		const latestParent = await service.getRun(splitRunId);
+		assert.equal(latestParent?.status, "cancelled");
+		assert.equal(latestParent?.taskStates[splitTask.taskId]?.status, "cancelled");
+		assert.equal(runner.generatedWorkerStarts.length, 2, "cancelled split-task must not launch queued worklist items");
+
+		const generated = await taskStore.listGeneratedForSourceTask("split-task", splitTask.taskId);
+		const generatedRuns = await Promise.all(generated.map(async task => [task, await service!.listRuns(task.taskId)] as const));
+		assert.equal(generated.length, 2, "cancelled split-task must not create queued generated tasks");
+		assert.deepEqual(new Set(generatedRuns.map(([, runs]) => runs[0]?.status)), new Set(["cancelled"]));
+
+		const attempts = await workspace.listAttempts(splitRunId, splitTask.taskId);
+		assert.equal(attempts[0]?.files.includes("worklist-results.json"), false);
+	} finally {
+		for (const release of releaseGeneratedWorkers.splice(0)) release();
+		if (service && splitRunId) await service.cancelRun(splitRunId, "test cleanup").catch(() => {});
+		await removeTempRoot(root);
 	}
 });

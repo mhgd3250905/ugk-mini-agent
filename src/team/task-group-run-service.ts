@@ -242,6 +242,14 @@ export class TaskGroupRunService {
 					continue;
 				}
 				if (
+					triggeredBy.type === "split-generated-task"
+					&& observedRunIds.has(triggeredBy.splitRunId)
+				) {
+					observed.set(run.runId, { taskId: run.source.taskId, runId: run.runId, role: "split-generated" });
+					changed = true;
+					continue;
+				}
+				if (
 					(triggeredBy.type === "task-connection" || triggeredBy.type === "task-dependency")
 					&& observedRunIds.has(triggeredBy.fromRunId)
 					&& groupTaskIdSet.has(run.source.taskId)

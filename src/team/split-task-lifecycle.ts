@@ -33,6 +33,7 @@ export type SplitTaskLifecycleWorkspace = Pick<RunWorkspace,
 export type SplitTaskLifecycleRuns = {
 	getRun(runId: string): Promise<TeamRunState | null>;
 	createRun(taskId: string, options?: { publicBaseUrl?: string; triggeredBy?: TriggeredBy }): Promise<TeamRunState>;
+	cancelRun(runId: string, reason?: string): Promise<TeamRunState>;
 };
 
 export interface SplitTaskLifecycleOptions {
@@ -111,6 +112,8 @@ export class SplitTaskLifecycle {
 			pump();
 		});
 
+		if (input.signal.aborted || await this.isRunCancelledOrMissing(input.runId)) return { status: "cancelled-or-missing", resultRef: null };
+
 		await this.options.taskStore.markGeneratedTasksStaleForSource("split-task", input.splitTask.taskId, activeItemIds, {
 			latestSourceRunId: input.runId,
 			latestSourceAttemptId: input.attemptId,
@@ -172,7 +175,14 @@ export class SplitTaskLifecycle {
 				sourceItemId: input.item.id,
 			},
 		});
-		await this.waitForTerminalRun(childRun.runId, input.signal);
+		try {
+			await this.waitForTerminalRun(childRun.runId, input.signal);
+		} catch (error) {
+			if (input.signal.aborted) {
+				await this.options.runs.cancelRun(childRun.runId, "split-task root run cancelled").catch(() => {});
+			}
+			throw error;
+		}
 		const latestRun = await this.options.runs.getRun(childRun.runId);
 		const taskState = latestRun?.taskStates[upsert.task.taskId];
 		const resultRef = taskState?.resultRef ?? null;

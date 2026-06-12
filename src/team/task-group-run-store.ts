@@ -195,7 +195,7 @@ function normalizeObservedRuns(value: unknown): TeamTaskGroupRun["observedRuns"]
 		const runId = (item as { runId?: unknown }).runId;
 		const role = (item as { role?: unknown }).role;
 		if (typeof taskId !== "string" || typeof runId !== "string" || !taskId || !runId || seen.has(runId)) continue;
-		if (role !== "entry" && role !== "downstream" && role !== "discovery-generated") continue;
+		if (role !== "entry" && role !== "downstream" && role !== "discovery-generated" && role !== "split-generated") continue;
 		seen.add(runId);
 		runs.push({ taskId, runId, role });
 	}

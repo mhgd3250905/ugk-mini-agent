@@ -256,6 +256,7 @@ export class CanvasTaskRunService {
 				runs: {
 					getRun: (runId) => this.getRun(runId),
 					createRun: (taskId, options) => this.createRun(taskId, options),
+					cancelRun: (runId, reason) => this.cancelRun(runId, reason),
 				},
 			});
 		}
@@ -622,6 +623,7 @@ export class CanvasTaskRunService {
 		if (TERMINAL_RUN_STATUSES.has(state.status)) throw new Error(`cannot cancel terminal run: ${state.status}`);
 		const sourceTask = state.source?.taskId ? await this.options.taskStore.get(state.source.taskId) : null;
 		const shouldCancelDiscoveryGeneratedRuns = sourceTask?.canvasKind === "discovery" && !sourceTask.generatedSource;
+		const shouldCancelSplitGeneratedRuns = sourceTask?.canvasKind === "split-task" && !sourceTask.generatedSource;
 
 		this.cancellingRunIds.add(runId);
 		this.activeControllers.get(runId)?.abort(new Error(reason));
@@ -654,6 +656,9 @@ export class CanvasTaskRunService {
 			if (shouldCancelDiscoveryGeneratedRuns) {
 				await this.cancelDiscoveryGeneratedRunsForRun(runId, reason);
 			}
+			if (shouldCancelSplitGeneratedRuns) {
+				await this.cancelSplitGeneratedRunsForRun(runId, reason);
+			}
 
 			return state;
 		} finally {
@@ -667,6 +672,18 @@ export class CanvasTaskRunService {
 			ACTIVE_RUN_STATUSES.has(run.status)
 			&& run.source?.triggeredBy?.type === "discovery-generated-task"
 			&& run.source.triggeredBy.discoveryRunId === discoveryRunId
+		);
+		for (const run of generatedRuns) {
+			await this.cancelRun(run.runId, reason).catch(() => {});
+		}
+	}
+
+	private async cancelSplitGeneratedRunsForRun(splitRunId: string, reason: string): Promise<void> {
+		const runs = await this.listRuns();
+		const generatedRuns = runs.filter(run =>
+			ACTIVE_RUN_STATUSES.has(run.status)
+			&& run.source?.triggeredBy?.type === "split-generated-task"
+			&& run.source.triggeredBy.splitRunId === splitRunId
 		);
 		for (const run of generatedRuns) {
 			await this.cancelRun(run.runId, reason).catch(() => {});
@@ -738,11 +755,12 @@ export class CanvasTaskRunService {
 						resultRef: lifecycleResult.resultRef,
 						errorSummary: null,
 					});
-					await this.markRunSucceeded(runId, task.id, lifecycleResult.resultRef!);
-					try {
-						await this.triggerDownstreamRuns(runId, task.id, attemptId, lifecycleResult.resultRef!);
-					} catch {
-						// Downstream delivery setup/diagnostics must not fail an accepted upstream run.
+					if (await this.markRunSucceeded(runId, task.id, lifecycleResult.resultRef!)) {
+						try {
+							await this.triggerDownstreamRuns(runId, task.id, attemptId, lifecycleResult.resultRef!);
+						} catch {
+							// Downstream delivery setup/diagnostics must not fail an accepted upstream run.
+						}
 					}
 				} else {
 					await this.options.workspace.finishAttempt(runId, task.id, attemptId, {
@@ -764,11 +782,12 @@ export class CanvasTaskRunService {
 					channelSetId: initialState.source.discoveryChannelSetId,
 					signal,
 				});
-				await this.markRunSucceeded(runId, task.id, resultRef);
-				try {
-					await this.triggerDownstreamRuns(runId, task.id, attemptId, resultRef);
-				} catch {
-					// Downstream delivery setup/diagnostics must not fail an accepted upstream run.
+				if (await this.markRunSucceeded(runId, task.id, resultRef)) {
+					try {
+						await this.triggerDownstreamRuns(runId, task.id, attemptId, resultRef);
+					} catch {
+						// Downstream delivery setup/diagnostics must not fail an accepted upstream run.
+					}
 				}
 				return;
 			}
@@ -880,26 +899,29 @@ export class CanvasTaskRunService {
 				signal,
 			});
 			if (lifecycleResult.status === "cancelled-or-missing") return;
-			await this.markRunSucceeded(runId, taskId, resultRef);
+			if (await this.markRunSucceeded(runId, taskId, resultRef)) {
+				try {
+					await this.triggerDownstreamRuns(runId, taskId, attemptId, resultRef);
+				} catch {
+					// Downstream delivery setup/diagnostics must not fail an accepted upstream run.
+				}
+			}
+			return;
+		}
+
+		if (await this.markRunSucceeded(runId, taskId, resultRef)) {
 			try {
 				await this.triggerDownstreamRuns(runId, taskId, attemptId, resultRef);
 			} catch {
 				// Downstream delivery setup/diagnostics must not fail an accepted upstream run.
 			}
-			return;
-		}
-
-		await this.markRunSucceeded(runId, taskId, resultRef);
-		try {
-			await this.triggerDownstreamRuns(runId, taskId, attemptId, resultRef);
-		} catch {
-			// Downstream delivery setup/diagnostics must not fail an accepted upstream run.
 		}
 	}
 
-	private async markRunSucceeded(runId: string, taskId: string, resultRef: string): Promise<void> {
+	private async markRunSucceeded(runId: string, taskId: string, resultRef: string): Promise<boolean> {
 		const timestamp = now();
-		await this.options.workspace.patchState(runId, (state) => {
+		const updated = await this.options.workspace.patchState(runId, (state) => {
+			if (state.status === "cancelled") return;
 			const taskState = state.taskStates[taskId];
 			if (taskState) {
 				taskState.status = "succeeded";
@@ -915,12 +937,16 @@ export class CanvasTaskRunService {
 			state.summary = computeTeamRunSummary(state.taskStates);
 			state.updatedAt = timestamp;
 		});
+		return updated.status === "completed";
 	}
 
 	private async completeRunFailed(runId: string, taskId: string, errorSummary: string, resultRef?: string): Promise<void> {
+		const current = await this.getRun(runId);
+		if (!current || current.status === "cancelled") return;
 		const effectiveResultRef = resultRef ?? await this.options.workspace.writeFailedResult(runId, taskId, "", errorSummary);
 		const timestamp = now();
 		await this.options.workspace.patchState(runId, (state) => {
+			if (state.status === "cancelled") return;
 			const taskState = state.taskStates[taskId];
 			if (taskState) {
 				taskState.status = "failed";

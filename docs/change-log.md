@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-06-12 — split-task cancellation and group observation hardening
+
+- **主题**: 修复 split-task / worklist runtime 合并后的取消与观察边界。split-task root run 取消后不再被后续 lifecycle 覆盖成 succeeded / failed，不再写出取消后的 `worklist-results.json`，已启动的 `split-generated-task` child runs 会随父 run 级联取消，且取消后不会继续启动队列中的分片。
+- **补充**: Team Task GroupRun 的 observed run 合同新增 `split-generated` role；GroupRun refresh 能观察 `triggeredBy.type="split-generated-task"` 的分片子 run，GroupRun cancel 也会覆盖 active split-generated runs。Team Console API DTO 同步该 role。
+- **对应入口**: `src/team/split-task-lifecycle.ts`、`src/team/task-run-service.ts`、`src/team/task-group-run-service.ts`、`src/team/task-group-run-store.ts`、`src/team/types.ts`、`apps/team-console/src/api/team-types.ts`、`test/team-task-run-split-process.test.ts`、`test/team-task-group-run-routes.test.ts`。
+
 ## 2026-06-12 — Team Console Dell 1996 visual theme integration
 
 - **主题**: 合入 GitHub PR [#8](https://github.com/mhgd3250905/ugk-claw-personal/pull/8) 的 Team Console `Dell 1996` 独立视觉主题，并在当前 split-task 分支上补齐 `split-task` 节点的 Dell 主题类型灯带。
