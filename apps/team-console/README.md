@@ -2,6 +2,11 @@
 
 独立 Team Runtime 画布前端，也是 UGK CLAW 当前对外介绍时优先展示的本地入口。它与主项目 `/playground/team` 隔离，不影响现有 3000 主服务；5174 负责画布体验，3000 负责真实后端、Playground、API 和运行时能力。
 
+## 视觉主题
+
+- 默认视觉主题：Team Console 现有样式
+- Dell 1996 独立主题：设计规则、完成范围和验证方式见 [`docs/team-console-dell-1996-theme.md`](../../docs/team-console-dell-1996-theme.md)
+
 ## 安装
 
 ```bash

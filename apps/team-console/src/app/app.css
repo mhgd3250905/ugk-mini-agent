@@ -182,7 +182,8 @@ body {
     box-shadow 0.18s ease;
 }
 
-.datasource-select {
+.datasource-select,
+.visual-theme-toggle-btn {
   height: 30px;
   background: rgba(255, 255, 255, 0.95);
   color: var(--primary);
@@ -2296,7 +2297,8 @@ body {
   cursor: not-allowed;
 }
 
-[data-theme="dark"] .datasource-select {
+[data-theme="dark"] .datasource-select,
+[data-theme="dark"] .visual-theme-toggle-btn {
   background: rgba(16, 20, 31, 0.9);
   border-color: rgba(122, 131, 151, 0.34);
   color: var(--primary);
