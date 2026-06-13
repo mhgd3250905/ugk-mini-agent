@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
 	parseLauncherArgs,
 	parsePosixListeningPids,
@@ -69,4 +70,13 @@ test("launcher parses POSIX lsof PID output", () => {
 test("launcher ignores invalid POSIX PID output", () => {
 	const output = "COMMAND PID USER\nnode abc demo\n0\n34567\n";
 	assert.deepEqual(parsePosixListeningPids(output), [34567]);
+});
+
+test("POSIX launcher scripts call native launcher from their own directory", async () => {
+	const macLauncher = await readFile("UGK-Mini-Agent-Launcher.command", "utf8");
+	const linuxLauncher = await readFile("UGK-Mini-Agent-Launcher.sh", "utf8");
+	assert.match(macLauncher, /cd "\$\(dirname "\$0"\)"/);
+	assert.match(macLauncher, /node scripts\/native-launcher\.mjs "\$@"/);
+	assert.match(linuxLauncher, /cd "\$\(dirname "\$0"\)"/);
+	assert.match(linuxLauncher, /exec node scripts\/native-launcher\.mjs "\$@"/);
 });
