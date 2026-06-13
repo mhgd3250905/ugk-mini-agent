@@ -17,6 +17,7 @@ export interface AgentProfile {
 	conversationIndexPath: string;
 	agentDir: string;
 	runtimeAgentRulesPath: string;
+	mcpCatalogPath: string;
 	workspaceDir: string;
 	allowedSkillPaths: string[];
 	disabledSkillNames?: string[];
@@ -56,6 +57,7 @@ export function createAgentProfileFromSummary(
 		conversationIndexPath: join(dataDir, "conversation-index.json"),
 		agentDir: join(dataDir, "pi-agent"),
 		runtimeAgentRulesPath: join(dataDir, "AGENTS.md"),
+		mcpCatalogPath: join(dataDir, "mcp", "servers.json"),
 		workspaceDir: join(dataDir, "workspace"),
 		allowedSkillPaths: [
 			join(dataDir, "pi", "skills"),
@@ -92,6 +94,7 @@ export function createDefaultAgentProfiles(
 			conversationIndexPath: join(mainDataDir, "conversation-index.json"),
 			agentDir: getProjectAgentDirPath(projectRoot),
 			runtimeAgentRulesPath: getDefaultRuntimeAgentRulesPath(projectRoot),
+			mcpCatalogPath: join(mainDataDir, "mcp", "servers.json"),
 			workspaceDir: join(mainDataDir, "workspace"),
 			allowedSkillPaths: getDefaultAllowedSkillPaths(projectRoot),
 		},

@@ -19,6 +19,7 @@ test("default agent profiles keep main on legacy paths and isolate search paths"
 	assert.equal(main.sessionsDir, join(projectRoot, ".data", "agent", "sessions"));
 	assert.equal(main.conversationIndexPath, join(projectRoot, ".data", "agent", "conversation-index.json"));
 	assert.equal(main.runtimeAgentRulesPath, join(projectRoot, ".data", "agent", "AGENTS.md"));
+	assert.equal(main.mcpCatalogPath, join(projectRoot, ".data", "agent", "mcp", "servers.json"));
 	assert.deepEqual(main.allowedSkillPaths, [
 		join(projectRoot, ".pi", "skills"),
 		join(projectRoot, "runtime", "skills-user"),
@@ -29,6 +30,7 @@ test("default agent profiles keep main on legacy paths and isolate search paths"
 	assert.equal(search.conversationIndexPath, join(projectRoot, ".data", "agents", "search", "conversation-index.json"));
 	assert.equal(search.agentDir, join(projectRoot, ".data", "agents", "search", "pi-agent"));
 	assert.equal(search.runtimeAgentRulesPath, join(projectRoot, ".data", "agents", "search", "AGENTS.md"));
+	assert.equal(search.mcpCatalogPath, join(projectRoot, ".data", "agents", "search", "mcp", "servers.json"));
 	assert.equal(search.workspaceDir, join(projectRoot, ".data", "agents", "search", "workspace"));
 	assert.deepEqual(search.allowedSkillPaths, [
 		join(projectRoot, ".data", "agents", "search", "pi", "skills"),
