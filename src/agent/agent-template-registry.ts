@@ -12,6 +12,7 @@ import {
 import { DEFAULT_AGENT_ID, type AgentProfile } from "./agent-profile.js";
 import { isAgentProfileArchivedSync, loadAgentProfilesSync } from "./agent-profile-catalog.js";
 import type { ConnUpgradePolicy } from "./conn-store.js";
+import { listEnabledAgentMcpServers, type AgentMcpServerConfig } from "./mcp-server-catalog.js";
 
 export interface AgentTemplateRef {
 	profileId: string;
@@ -46,6 +47,7 @@ export interface AgentTemplate {
 	agentSpecVersion: string;
 	skillSetVersion: string;
 	skills: AgentTemplateSkill[];
+	mcpServers?: AgentMcpServerConfig[];
 	modelPolicyVersion: string;
 	provider: string;
 	model: string;
@@ -206,6 +208,7 @@ export class AgentTemplateRegistry {
 			agentSpecVersion: BUILTIN_VERSION,
 			skillSetVersion,
 			skills,
+			...(context.mcpServers.length ? { mcpServers: context.mcpServers.map((server) => ({ ...server })) } : {}),
 			modelPolicyVersion: BUILTIN_VERSION,
 			provider: defaultModel.provider,
 			model: defaultModel.model,
@@ -285,7 +288,7 @@ export class AgentTemplateRegistry {
 		const agentProfiles = loadAgentProfilesSync(this.options.projectRoot);
 		const requestedAgentProfile = agentProfiles.find((profile) => profile.agentId === ref.profileId);
 		if (requestedAgentProfile) {
-			return this.resolvePlaygroundContext(ref, requestedAgentProfile, false);
+			return await this.resolvePlaygroundContext(ref, requestedAgentProfile, false);
 		}
 
 		const legacyProfile = findRegistryEntry(profileRegistry.profiles, ref.profileId);
@@ -295,7 +298,7 @@ export class AgentTemplateRegistry {
 				const fallbackReason = isAgentProfileArchivedSync(this.options.projectRoot, ref.profileId)
 					? "profile_archived"
 					: "profile_not_found";
-				return this.resolvePlaygroundContext(ref, fallbackProfile, true, fallbackReason);
+				return await this.resolvePlaygroundContext(ref, fallbackProfile, true, fallbackReason);
 			}
 		}
 
@@ -332,12 +335,12 @@ export class AgentTemplateRegistry {
 		};
 	}
 
-	private resolvePlaygroundContext(
+	private async resolvePlaygroundContext(
 		ref: AgentTemplateRef,
 		profile: AgentProfile,
 		fallbackUsed: boolean,
 		fallbackReason?: "profile_not_found" | "profile_archived" | "legacy_profile",
-	): PlaygroundTemplateContext {
+	): Promise<PlaygroundTemplateContext> {
 		const skillPaths = profile.allowedSkillPaths.length
 			? profile.allowedSkillPaths
 			: getDefaultAllowedSkillPaths(this.options.projectRoot);
@@ -347,6 +350,7 @@ export class AgentTemplateRegistry {
 				? getDefaultRuntimeAgentRulesPath(this.options.projectRoot)
 				: undefined);
 		const agentDir = profile.agentDir || getProjectAgentDirPath(this.options.projectRoot);
+		const mcpServers = await listEnabledAgentMcpServers(this.options.projectRoot, profile.agentId);
 		return {
 			kind: "playground",
 			profile,
@@ -369,9 +373,11 @@ export class AgentTemplateRegistry {
 					rulesPath,
 					skillPaths,
 				},
+				mcpServers,
 				fallbackUsed,
 				fallbackReason,
 			},
+			mcpServers,
 		};
 	}
 
@@ -399,6 +405,7 @@ interface PlaygroundTemplateContext extends TemplateContextBase {
 	agentDir: string;
 	fallbackUsed: boolean;
 	fallbackReason?: "profile_not_found" | "profile_archived" | "legacy_profile";
+	mcpServers: AgentMcpServerConfig[];
 }
 
 interface LegacyTemplateContext extends TemplateContextBase {

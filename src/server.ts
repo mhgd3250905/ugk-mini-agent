@@ -21,6 +21,7 @@ import { AgentServiceRegistry } from "./agent/agent-service-registry.js";
 import { AgentTemplateRegistry } from "./agent/agent-template-registry.js";
 import { createDefaultAgentSessionFactory } from "./agent/agent-session-factory.js";
 import { ConversationStore } from "./agent/conversation-store.js";
+import { listEnabledAgentMcpServers } from "./agent/mcp-server-catalog.js";
 import { ConnDatabase } from "./agent/conn-db.js";
 import { ConnRunStore } from "./agent/conn-run-store.js";
 import { ConnSqliteStore } from "./agent/conn-sqlite-store.js";
@@ -121,6 +122,8 @@ function createDefaultAgentService(assetStore: AssetStoreLike, profile?: AgentPr
 		...(profile?.defaultModelProvider ? { defaultModelProvider: profile.defaultModelProvider } : {}),
 		...(profile?.defaultModelId ? { defaultModelId: profile.defaultModelId } : {}),
 		...(profile?.disabledSkillNames ? { disabledSkillNames: profile.disabledSkillNames } : {}),
+		mcpAgentId: profile?.agentId ?? DEFAULT_AGENT_ID,
+		mcpServerProvider: () => listEnabledAgentMcpServers(config.projectRoot, profile?.agentId ?? DEFAULT_AGENT_ID),
 	});
 
 	return new AgentService({

@@ -20,6 +20,9 @@ import {
 	readNestedJsonScalarSetting,
 } from "./settings-json.js";
 import { getEffectiveProjectModelsPath } from "./model-provider-store.js";
+import { DEFAULT_AGENT_ID } from "./agent-profile.js";
+import { createAgentMcpProxyTool } from "./mcp-tool.js";
+import type { AgentMcpServerConfig } from "./mcp-server-catalog.js";
 
 export interface TextDeltaAssistantEventLike {
 	type: "text_delta";
@@ -152,6 +155,9 @@ export interface DefaultAgentSessionFactoryOptions {
 	defaultModelProvider?: string;
 	defaultModelId?: string;
 	disabledSkillNames?: string[];
+	mcpAgentId?: string;
+	mcpServers?: AgentMcpServerConfig[];
+	mcpServerProvider?: () => Promise<AgentMcpServerConfig[]>;
 }
 
 export interface ProjectDefaultModelContext {
@@ -704,6 +710,11 @@ export function createDefaultAgentSessionFactory(
 				browserScope: input.browserScope,
 				env: { ...process.env, ...runtimeDependencyEnv },
 			});
+			const mcpServers = options.mcpServerProvider ? await options.mcpServerProvider() : (options.mcpServers ?? []);
+			const mcpTool = createAgentMcpProxyTool({
+				agentId: options.mcpAgentId ?? DEFAULT_AGENT_ID,
+				servers: mcpServers,
+			});
 
 			const { session } = await createAgentSession({
 				cwd: options.projectRoot,
@@ -725,6 +736,7 @@ export function createDefaultAgentSessionFactory(
 							},
 						}),
 					}) as never,
+					...(mcpTool ? [mcpTool] : []),
 				],
 				modelRegistry,
 				model: resolveAgentDefaultSessionModel(options.projectRoot, modelRegistry, {

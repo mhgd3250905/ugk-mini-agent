@@ -17,6 +17,107 @@ import {
 	resolveProjectDefaultModelContext,
 	resolveProjectDefaultSessionModel,
 } from "../src/agent/agent-session-factory.js";
+import type { AgentMcpServerConfig } from "../src/agent/mcp-server-catalog.js";
+
+async function createMinimalRuntimeProjectRoot(prefix: string): Promise<string> {
+	const projectRoot = await mkdtemp(join(tmpdir(), prefix));
+	await mkdir(join(projectRoot, ".pi"), { recursive: true });
+	await mkdir(join(projectRoot, ".data", "agent"), { recursive: true });
+	await mkdir(join(projectRoot, "runtime", "pi-agent"), { recursive: true });
+	await writeFile(
+		join(projectRoot, ".pi", "settings.json"),
+		JSON.stringify({
+			defaultProvider: "test-provider",
+			defaultModel: "test-model",
+		}),
+		"utf8",
+	);
+	await writeFile(
+		join(projectRoot, "runtime", "pi-agent", "models.json"),
+		JSON.stringify({
+			providers: {},
+		}),
+		"utf8",
+	);
+	await writeFile(
+		join(projectRoot, ".data", "agent", "model-providers.json"),
+		JSON.stringify({
+			providers: {
+				"test-provider": {
+					baseUrl: "https://example.test",
+					api: "anthropic-messages",
+					apiKey: "TEST_API_KEY",
+					models: [{ id: "test-model", contextWindow: 100000, maxTokens: 12000 }],
+				},
+			},
+		}),
+		"utf8",
+	);
+	return projectRoot;
+}
+
+function mcpServer(overrides: Partial<AgentMcpServerConfig> = {}): AgentMcpServerConfig {
+	return {
+		serverId: "qr-ocr",
+		name: "QR OCR",
+		enabled: true,
+		transport: { type: "stdio", command: "python", args: ["ocr.py"] },
+		timeoutMs: 120000,
+		createdAt: "2026-06-13T00:00:00.000Z",
+		updatedAt: "2026-06-13T00:00:00.000Z",
+		...overrides,
+	};
+}
+
+function getSessionTool(session: unknown, name: string) {
+	const candidate = session as { getToolDefinition?: (toolName: string) => unknown };
+	return candidate.getToolDefinition?.(name) as
+		| {
+				name: string;
+				execute: (
+					toolCallId: string,
+					params: Record<string, unknown>,
+					signal: AbortSignal | undefined,
+					onUpdate: undefined,
+					ctx: { cwd: string },
+				) => Promise<{ content: Array<{ type: string; text?: string }> }>;
+		  }
+		| undefined;
+}
+
+test("default session factory injects MCP proxy tool when the selected agent has enabled MCP servers", async () => {
+	const projectRoot = await createMinimalRuntimeProjectRoot("ugk-pi-session-mcp-");
+	const sessionDir = join(projectRoot, ".data", "agent", "sessions");
+	const factory = createDefaultAgentSessionFactory({
+		projectRoot,
+		sessionDir,
+		mcpAgentId: "ocr",
+		mcpServers: [mcpServer()],
+	});
+
+	const session = await factory.createSession({ conversationId: "conv_1" });
+	const tool = getSessionTool(session, "mcp");
+
+	assert.ok(tool);
+	const result = await tool.execute(
+		"call-1",
+		{ action: "list_servers" },
+		undefined,
+		undefined,
+		{ cwd: projectRoot },
+	);
+	assert.deepEqual(JSON.parse(result.content[0]?.text ?? "{}"), {
+		ok: true,
+		agentId: "ocr",
+		servers: [
+			{
+				serverId: "qr-ocr",
+				name: "QR OCR",
+				transportType: "stdio",
+			},
+		],
+	});
+});
 
 test("prepareBrowserBoundBashEnvironment pins curl web-access calls to the run browser", async () => {
 	const workspaceRoot = await mkdtemp(join(tmpdir(), "ugk-pi-browser-bound-bash-"));

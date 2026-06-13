@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { AgentTemplateRegistry } from "../src/agent/agent-template-registry.js";
 import { createStoredAgentProfile } from "../src/agent/agent-profile-catalog.js";
+import { createAgentMcpServer } from "../src/agent/mcp-server-catalog.js";
 
 async function createProjectRoot(): Promise<string> {
 	const root = await mkdtemp(join(tmpdir(), "ugk-pi-agent-template-"));
@@ -129,4 +130,36 @@ test("AgentTemplateRegistry builds Playground agent templates with default brows
 	assert.equal(template.agentName, "知乎助手");
 	assert.equal(template.defaultBrowserId, "chrome-01");
 	assert.equal(template.source, "playground");
+});
+
+test("AgentTemplateRegistry refreshes Playground templates when agent MCP servers change", async () => {
+	const projectRoot = await createProjectRoot();
+	await createStoredAgentProfile(projectRoot, {
+		agentId: "ocr",
+		name: "OCR",
+		description: "OCR agent.",
+	});
+	const registry = new AgentTemplateRegistry({ projectRoot });
+	const ref = {
+		profileId: "ocr",
+		agentSpecId: "agent.default",
+		skillSetId: "skills.default",
+		modelPolicyId: "model.default",
+		upgradePolicy: "latest" as const,
+		now: new Date("2026-05-09T00:00:00.000Z"),
+	};
+
+	const first = await registry.getTemplate(ref);
+	await createAgentMcpServer(projectRoot, "ocr", {
+		serverId: "qr-ocr",
+		name: "QR OCR",
+		enabled: true,
+		transport: { type: "stdio", command: "python", args: ["ocr.py"] },
+		timeoutMs: 120000,
+	});
+	const refreshed = await registry.getTemplate(ref);
+
+	assert.notEqual(refreshed, first);
+	assert.notEqual(refreshed.version, first.version);
+	assert.deepEqual(refreshed.mcpServers?.map((server) => server.serverId), ["qr-ocr"]);
 });

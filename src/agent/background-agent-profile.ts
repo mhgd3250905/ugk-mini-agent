@@ -5,6 +5,7 @@ import {
 	type AgentTemplateRegistryOptions,
 } from "./agent-template-registry.js";
 import type { ConnUpgradePolicy } from "./conn-store.js";
+import type { AgentMcpServerConfig } from "./mcp-server-catalog.js";
 
 export interface BackgroundAgentProfileRef {
 	profileId: string;
@@ -39,6 +40,7 @@ export interface ResolvedBackgroundAgentSnapshot {
 		path: string;
 		version: string;
 	}>;
+	mcpServers?: AgentMcpServerConfig[];
 	modelPolicyId: string;
 	modelPolicyVersion: string;
 	provider: string;
@@ -92,6 +94,7 @@ function snapshotFromTemplate(
 		skillSetId: ref.skillSetId,
 		skillSetVersion: template.skillSetVersion,
 		skills: template.skills.map((skill) => ({ ...skill })),
+		...(template.mcpServers ? { mcpServers: template.mcpServers.map((server) => ({ ...server })) } : {}),
 		modelPolicyId: ref.modelPolicyId,
 		modelPolicyVersion: template.modelPolicyVersion,
 		provider,

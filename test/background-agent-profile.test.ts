@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { BackgroundAgentProfileResolver } from "../src/agent/background-agent-profile.js";
 import { createStoredAgentProfile } from "../src/agent/agent-profile-catalog.js";
+import { createAgentMcpServer } from "../src/agent/mcp-server-catalog.js";
 
 async function createProjectRoot(): Promise<string> {
 	const root = await mkdtemp(join(tmpdir(), "ugk-pi-background-profile-"));
@@ -191,6 +192,41 @@ test("BackgroundAgentProfileResolver carries the selected Playground agent defau
 
 	assert.equal(snapshot.agentId, "zhihu-helper");
 	assert.equal(snapshot.defaultBrowserId, "chrome-01");
+});
+
+test("BackgroundAgentProfileResolver carries enabled MCP servers for the selected Playground agent", async () => {
+	const projectRoot = await createProjectRoot();
+	await createStoredAgentProfile(projectRoot, {
+		agentId: "ocr",
+		name: "OCR",
+		description: "OCR agent.",
+	});
+	await createAgentMcpServer(projectRoot, "ocr", {
+		serverId: "qr-ocr",
+		name: "QR OCR",
+		enabled: true,
+		transport: { type: "stdio", command: "python", args: ["ocr.py"] },
+		timeoutMs: 120000,
+	});
+	await createAgentMcpServer(projectRoot, "ocr", {
+		serverId: "disabled-ocr",
+		name: "Disabled OCR",
+		enabled: false,
+		transport: { type: "stdio", command: "python", args: ["disabled.py"] },
+		timeoutMs: 120000,
+	});
+	const resolver = new BackgroundAgentProfileResolver({ projectRoot });
+
+	const snapshot = await resolver.resolve({
+		profileId: "ocr",
+		agentSpecId: "agent.default",
+		skillSetId: "skills.default",
+		modelPolicyId: "model.default",
+		upgradePolicy: "latest",
+		now: new Date("2026-04-21T10:00:00.000Z"),
+	});
+
+	assert.deepEqual(snapshot.mcpServers?.map((server) => server.serverId), ["qr-ocr"]);
 });
 
 test("BackgroundAgentProfileResolver falls back to the main agent when a non-default profile is missing", async () => {

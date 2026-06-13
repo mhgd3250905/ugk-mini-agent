@@ -20,6 +20,7 @@ import { getCurrentBackgroundWorkspaceEnvironment } from "./background-workspace
 import type { BackgroundAgentSessionFactory } from "./background-agent-runner.js";
 import type { RunWorkspace } from "./background-workspace.js";
 import type { ResolvedBackgroundAgentSnapshot } from "./background-agent-profile.js";
+import { createAgentMcpProxyTool } from "./mcp-tool.js";
 
 export class ProjectBackgroundSessionFactory implements BackgroundAgentSessionFactory {
 	constructor(private readonly projectRoot: string) {}
@@ -59,6 +60,10 @@ export class ProjectBackgroundSessionFactory implements BackgroundAgentSessionFa
 			browserScope: input.browserScope,
 			env: { ...process.env, ...runtimeDependencyEnv },
 		});
+		const mcpTool = createAgentMcpProxyTool({
+			agentId: input.snapshot.agentId ?? input.snapshot.profileId,
+			servers: input.snapshot.mcpServers ?? [],
+		});
 
 		const { session } = await createAgentSession({
 			cwd: input.workspace.rootPath,
@@ -81,6 +86,7 @@ export class ProjectBackgroundSessionFactory implements BackgroundAgentSessionFa
 						},
 					}),
 				}) as never,
+				...(mcpTool ? [mcpTool] : []),
 				...(input.customTools ?? []),
 			],
 			modelRegistry,

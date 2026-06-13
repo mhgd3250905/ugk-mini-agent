@@ -25,7 +25,7 @@ interface McpToolDetails {
 	toolName?: string;
 }
 
-type McpToolDefinition = ToolDefinition<typeof mcpToolParameters, McpToolDetails>;
+type McpToolDefinition = ToolDefinition<any, any>;
 
 export function createAgentMcpProxyTool(input: AgentMcpProxyToolInput): McpToolDefinition | undefined {
 	const servers = input.servers.filter((server) => server.enabled);
@@ -87,7 +87,7 @@ export function createAgentMcpProxyTool(input: AgentMcpProxyToolInput): McpToolD
 				{ action: params.action, agentId: input.agentId, serverId: server.serverId, toolName },
 			);
 		},
-	});
+	}) as McpToolDefinition;
 }
 
 function presentServer(server: AgentMcpServerConfig): {
