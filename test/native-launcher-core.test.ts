@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
 	parseLauncherArgs,
+	parsePosixListeningPids,
 	parseWindowsNetstatListeningPids,
 	upsertNativeEnvContent,
 } from "../scripts/native-launcher-core.mjs";
@@ -58,4 +59,14 @@ test("launcher keeps one-click startup non-interactive unless ask-port is set", 
 	assert.equal(parseLauncherArgs([]).askPort, false);
 	assert.equal(parseLauncherArgs(["--ask-port"]).askPort, true);
 	assert.equal(parseLauncherArgs(["--port", "7777"]).port, 7777);
+});
+
+test("launcher parses POSIX lsof PID output", () => {
+	const output = "12345\n23456\n12345\n";
+	assert.deepEqual(parsePosixListeningPids(output), [12345, 23456]);
+});
+
+test("launcher ignores invalid POSIX PID output", () => {
+	const output = "COMMAND PID USER\nnode abc demo\n0\n34567\n";
+	assert.deepEqual(parsePosixListeningPids(output), [34567]);
 });

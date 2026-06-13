@@ -21,6 +21,17 @@ export function parseWindowsNetstatListeningPids(output, port) {
 	return [...pids].sort((left, right) => left - right);
 }
 
+export function parsePosixListeningPids(output) {
+	const pids = new Set();
+	for (const line of String(output || "").split(/\r?\n/)) {
+		const pid = Number(line.trim());
+		if (Number.isInteger(pid) && pid > 0) {
+			pids.add(pid);
+		}
+	}
+	return [...pids].sort((left, right) => left - right);
+}
+
 export function upsertNativeEnvContent(content, options) {
 	const host = String(options.host || "127.0.0.1").trim() || "127.0.0.1";
 	const port = normalizePort(options.port);

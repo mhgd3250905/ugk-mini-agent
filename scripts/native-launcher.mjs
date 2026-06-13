@@ -10,6 +10,7 @@ import { loadDefaultNativeEnvSync, parseNativeEnv } from "./native-env.mjs";
 import {
 	normalizePort,
 	parseLauncherArgs,
+	parsePosixListeningPids,
 	parseWindowsNetstatListeningPids,
 	upsertNativeEnvContent,
 } from "./native-launcher-core.mjs";
@@ -97,19 +98,37 @@ async function resolveInteractivePort(defaultPort) {
 }
 
 async function findListeningPids(port) {
-	if (process.platform !== "win32") {
+	if (process.platform === "win32") {
+		const { stdout } = await execFileText("netstat", ["-ano", "-p", "tcp"]);
+		return parseWindowsNetstatListeningPids(stdout, port)
+			.filter((pid) => pid !== process.pid);
+	}
+	try {
+		const { stdout } = await execFileText("lsof", ["-ti", `tcp:${port}`, "-sTCP:LISTEN"]);
+		return parsePosixListeningPids(stdout)
+			.filter((pid) => pid !== process.pid);
+	} catch (error) {
+		if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+			console.log("lsof not found; skipping automatic port cleanup.");
+			return [];
+		}
+		if (error && typeof error === "object" && "stdout" in error) {
+			return parsePosixListeningPids(error.stdout)
+				.filter((pid) => pid !== process.pid);
+		}
 		return [];
 	}
-	const { stdout } = await execFileText("netstat", ["-ano", "-p", "tcp"]);
-	return parseWindowsNetstatListeningPids(stdout, port)
-		.filter((pid) => pid !== process.pid);
 }
 
 async function stopProcesses(pids) {
 	for (const pid of pids) {
 		console.log(`Stopping PID ${pid}...`);
 		try {
-			await execFileText("taskkill", ["/PID", String(pid), "/T", "/F"]);
+			if (process.platform === "win32") {
+				await execFileText("taskkill", ["/PID", String(pid), "/T", "/F"]);
+			} else {
+				await execFileText("kill", ["-TERM", String(pid)]);
+			}
 		} catch (error) {
 			throw new Error(`Failed to stop PID ${pid}: ${error.message}`);
 		}
