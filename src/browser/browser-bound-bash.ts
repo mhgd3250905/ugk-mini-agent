@@ -128,7 +128,10 @@ function appendMeta(raw) {
   return parsed.toString();
 }
 
-const result = spawnSync(realCurl, process.argv.slice(2).map(appendMeta), { stdio: 'inherit' });
+const result = spawnSync(realCurl, process.argv.slice(2).map(appendMeta), {
+  stdio: 'inherit',
+  ...(process.platform === 'win32' ? { windowsHide: true } : {}),
+});
 if (typeof result.status === 'number') {
   process.exit(result.status);
 }

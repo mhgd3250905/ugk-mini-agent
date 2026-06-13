@@ -8,6 +8,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { prepareBrowserBoundBashEnvironment } from "../browser/browser-bound-bash.js";
 import { buildRuntimeDependencyEnvironment } from "./runtime-dependencies.js";
+import { createWindowsNativeBashOperations } from "./windows-native-bash-operations.js";
 import {
 	createProjectSettingsManager,
 	createSkillRestrictedResourceLoader,
@@ -65,6 +66,9 @@ export class ProjectBackgroundSessionFactory implements BackgroundAgentSessionFa
 			authStorage,
 			customTools: [
 				createBashToolDefinition(input.workspace.rootPath, {
+					operations: createWindowsNativeBashOperations({
+						shellPath: settingsManager.getShellPath(),
+					}),
 					commandPrefix: settingsManager.getShellCommandPrefix(),
 					shellPath: settingsManager.getShellPath(),
 					spawnHook: (context) => ({

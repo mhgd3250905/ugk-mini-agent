@@ -13,6 +13,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { prepareBrowserBoundBashEnvironment } from "../browser/browser-bound-bash.js";
 import { buildRuntimeDependencyEnvironment } from "./runtime-dependencies.js";
+import { createWindowsNativeBashOperations } from "./windows-native-bash-operations.js";
 import {
 	parseJsonSettingsObject,
 	readJsonScalarSetting,
@@ -710,6 +711,9 @@ export function createDefaultAgentSessionFactory(
 				authStorage,
 				customTools: [
 					createBashToolDefinition(options.projectRoot, {
+						operations: createWindowsNativeBashOperations({
+							shellPath: settingsManager.getShellPath(),
+						}),
 						commandPrefix: settingsManager.getShellCommandPrefix(),
 						shellPath: settingsManager.getShellPath(),
 						spawnHook: (context) => ({

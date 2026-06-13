@@ -9,6 +9,7 @@ const venvDir = resolve(process.env.UGK_RUNTIME_PYTHON_VENV_DIR || join(rootDir,
 const binDir = join(venvDir, process.platform === "win32" ? "Scripts" : "bin");
 const pythonPath = join(binDir, process.platform === "win32" ? "python.exe" : "python");
 const lockPath = join(rootDir, "python-requirements.lock");
+const hiddenSpawn = process.platform === "win32" ? { windowsHide: true } : {};
 
 switch (action) {
 	case "init":
@@ -41,9 +42,9 @@ function ensureRuntimePython() {
 }
 
 function checkRuntimePython() {
-	const prefix = execFileSync(pythonPath, ["-c", "import sys; print(sys.prefix)"], { encoding: "utf8" }).trim();
-	const executable = execFileSync(pythonPath, ["-c", "import sys; print(sys.executable)"], { encoding: "utf8" }).trim();
-	const pipVersion = execFileSync(pythonPath, ["-m", "pip", "--version"], { encoding: "utf8" }).trim();
+	const prefix = execFileSync(pythonPath, ["-c", "import sys; print(sys.prefix)"], { encoding: "utf8", ...hiddenSpawn }).trim();
+	const executable = execFileSync(pythonPath, ["-c", "import sys; print(sys.executable)"], { encoding: "utf8", ...hiddenSpawn }).trim();
+	const pipVersion = execFileSync(pythonPath, ["-m", "pip", "--version"], { encoding: "utf8", ...hiddenSpawn }).trim();
 	const summary = {
 		ok: true,
 		rootDir,
@@ -57,7 +58,7 @@ function checkRuntimePython() {
 }
 
 function writePythonLockfile() {
-	const result = spawnSync(pythonPath, ["-m", "pip", "freeze"], { encoding: "utf8" });
+	const result = spawnSync(pythonPath, ["-m", "pip", "freeze"], { encoding: "utf8", ...hiddenSpawn });
 	if (result.status === 0) {
 		writeFileSync(lockPath, result.stdout, "utf8");
 	}
@@ -78,7 +79,7 @@ function ensurePipWrapper() {
 }
 
 function ensurePipModule() {
-	if (spawnSync(pythonPath, ["-m", "pip", "--version"], { stdio: "ignore" }).status === 0) {
+	if (spawnSync(pythonPath, ["-m", "pip", "--version"], { stdio: "ignore", ...hiddenSpawn }).status === 0) {
 		return;
 	}
 	runOrThrow(pythonPath, ["-m", "ensurepip", "--upgrade"]);
@@ -198,7 +199,7 @@ function findBootstrapPython() {
 				{ command: "python", args: [] },
 			];
 	for (const candidate of candidates) {
-		const result = spawnSync(candidate.command, [...candidate.args, "--version"], { stdio: "ignore" });
+		const result = spawnSync(candidate.command, [...candidate.args, "--version"], { stdio: "ignore", ...hiddenSpawn });
 		if (result.status === 0) {
 			return candidate;
 		}
@@ -207,7 +208,7 @@ function findBootstrapPython() {
 }
 
 function runOrThrow(command, args) {
-	const result = spawnSync(command, args, { stdio: "inherit" });
+	const result = spawnSync(command, args, { stdio: "inherit", ...hiddenSpawn });
 	if (result.status === 0) {
 		return;
 	}

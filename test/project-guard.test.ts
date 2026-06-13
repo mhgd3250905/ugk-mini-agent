@@ -78,3 +78,18 @@ test("current user-facing docs do not point new Windows Core users at legacy por
 		);
 	}
 });
+
+test("Windows native agent command execution hides child process windows", async () => {
+	const foregroundFactory = await readFile("src/agent/agent-session-factory.ts", "utf8");
+	const backgroundFactory = await readFile("src/agent/background-agent-session-factory.ts", "utf8");
+	const runtimeDeps = await readFile("scripts/runtime-deps.mjs", "utf8");
+	const browserBoundBash = await readFile("src/browser/browser-bound-bash.ts", "utf8");
+	const windowsBashOperations = await readFile("src/agent/windows-native-bash-operations.ts", "utf8");
+
+	assert.match(foregroundFactory, /operations:\s*createWindowsNativeBashOperations/);
+	assert.match(backgroundFactory, /operations:\s*createWindowsNativeBashOperations/);
+	assert.match(windowsBashOperations, /windowsHide:\s*true/);
+	assert.match(windowsBashOperations, /detached:\s*platform === "win32" \? false : true/);
+	assert.match(runtimeDeps, /windowsHide:\s*true/);
+	assert.match(browserBoundBash, /windowsHide:\s*true/);
+});
