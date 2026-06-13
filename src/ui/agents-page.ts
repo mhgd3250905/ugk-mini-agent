@@ -547,7 +547,53 @@ function getAgentsPageCss(): string {
 			.ag-skill-toggle:disabled { opacity: 0.4; cursor: not-allowed; }
 			.ag-skill-toggle--on { border-color: rgba(141, 255, 178, 0.28); color: rgba(141, 255, 178, 0.92); }
 			.ag-skill-toggle--off { border-color: rgba(255, 209, 102, 0.22); color: rgba(255, 209, 102, 0.86); }
-			.ag-skill-required { color: var(--muted); font-size: 10px; font-weight: 400; padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; margin-left: 6px; }
+		.ag-skill-required { color: var(--muted); font-size: 10px; font-weight: 400; padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; margin-left: 6px; }
+
+		.ag-mcp-list {
+			display: grid;
+			gap: 10px;
+			max-height: 360px;
+			overflow-y: auto;
+			padding-top: 4px;
+		}
+		.ag-mcp-item {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) auto;
+			gap: 12px;
+			padding: 12px 14px;
+			border: 1px solid var(--border);
+			border-radius: 8px;
+			background: var(--surface);
+		}
+		.ag-mcp-main { display: grid; gap: 6px; min-width: 0; }
+		.ag-mcp-name { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--fg); min-width: 0; }
+		.ag-mcp-name code,
+		.ag-mcp-command {
+			font-family: ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+			font-size: 11px;
+			color: var(--muted);
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+		.ag-mcp-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+		.ag-mcp-badge {
+			display: inline-flex; align-items: center; height: 20px; padding: 0 7px;
+			border: 1px solid var(--border); border-radius: 4px; font-size: 10px; color: var(--muted);
+		}
+		.ag-mcp-badge--on { color: rgba(141, 255, 178, 0.92); border-color: rgba(141, 255, 178, 0.24); }
+		.ag-mcp-badge--off { color: rgba(255, 209, 102, 0.86); border-color: rgba(255, 209, 102, 0.22); }
+		.ag-mcp-editor {
+			display: grid;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: 10px;
+			padding: 12px;
+			border: 1px solid var(--border);
+			border-radius: 8px;
+			background: var(--surface);
+			margin-bottom: 10px;
+		}
+		.ag-mcp-editor .ag-editor-field--wide { grid-column: 1 / -1; }
 
 			/* ── Empty / error ── */
 		.ag-empty {
@@ -839,6 +885,12 @@ function getAgentsPageJs(): string {
 			refreshing: false,
 			skillsExpanded: false,
 			skillsLoadedByAgentId: {},
+			mcpByAgentId: {},
+			mcpLoadedByAgentId: {},
+			mcpExpanded: false,
+			mcpEditingServerId: "",
+			mcpTestingServerId: "",
+			mcpToolsByServerId: {},
 		};
 
 		const FILTER_TABS = [
@@ -948,6 +1000,40 @@ function getAgentsPageJs(): string {
 			});
 		}
 
+		async function apiFetchAgentMcpServers(agentId) {
+			var data = await fetchJson("/v1/agents/" + agentId + "/mcp/servers");
+			state.mcpByAgentId[agentId] = Array.isArray(data.servers) ? data.servers : [];
+			state.mcpLoadedByAgentId[agentId] = true;
+		}
+
+		async function apiCreateMcpServer(agentId, payload) {
+			return await fetchJson("/v1/agents/" + agentId + "/mcp/servers", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(payload),
+			});
+		}
+
+		async function apiUpdateMcpServer(agentId, serverId, payload) {
+			return await fetchJson("/v1/agents/" + agentId + "/mcp/servers/" + encodeURIComponent(serverId), {
+				method: "PATCH",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(payload),
+			});
+		}
+
+		async function apiDeleteMcpServer(agentId, serverId) {
+			await fetchJson("/v1/agents/" + agentId + "/mcp/servers/" + encodeURIComponent(serverId), { method: "DELETE" });
+		}
+
+		async function apiTestMcpServer(agentId, serverId) {
+			return await fetchJson("/v1/agents/" + agentId + "/mcp/servers/" + encodeURIComponent(serverId) + "/test", { method: "POST" });
+		}
+
+		async function apiFetchMcpTools(agentId, serverId) {
+			return await fetchJson("/v1/agents/" + agentId + "/mcp/servers/" + encodeURIComponent(serverId) + "/tools");
+		}
+
 		/* ── Filtering ── */
 		function getFilteredAgents() {
 			var q = (state.searchQuery || "").toLowerCase();
@@ -974,6 +1060,13 @@ function getAgentsPageJs(): string {
 			var skills = state.skillsByAgentId[agentId];
 			if (!Array.isArray(skills)) return "点击查看技能列表";
 			return skills.length + " 个技能";
+		}
+
+		function getCollapsedMcpSummary(agentId) {
+			var servers = state.mcpByAgentId[agentId];
+			if (!Array.isArray(servers)) return "点击查看 MCP server";
+			var enabled = servers.filter(function(server) { return server.enabled !== false; }).length;
+			return servers.length + " 个 MCP server，" + enabled + " 个已启用";
 		}
 
 		function getStatCounts() {
@@ -1108,13 +1201,15 @@ function getAgentsPageJs(): string {
 			renderDetailMiniStats(agent, status);
 			renderDetailConfig(agent);
 			renderSkillsPanel(agent);
+			renderMcpPanel(agent);
 		}
 
 		function ensureDetailShell(body, agentId) {
 			var hasShell = document.getElementById("ag-detail-header-region")
 				&& document.getElementById("ag-detail-stats-region")
 				&& document.getElementById("ag-detail-config-region")
-				&& document.getElementById("ag-detail-skills-region");
+				&& document.getElementById("ag-detail-skills-region")
+				&& document.getElementById("ag-detail-mcp-region");
 			var sameAgent = body.dataset.agentId === agentId;
 			var scrollTop = body.scrollTop || 0;
 			if (!hasShell) {
@@ -1122,7 +1217,8 @@ function getAgentsPageJs(): string {
 					'<div id="ag-detail-header-region"></div>' +
 					'<div id="ag-detail-stats-region"></div>' +
 					'<div id="ag-detail-config-region"></div>' +
-					'<div id="ag-detail-skills-region"></div>';
+					'<div id="ag-detail-skills-region"></div>' +
+					'<div id="ag-detail-mcp-region"></div>';
 			}
 			body.dataset.agentId = agentId;
 			body.scrollTop = sameAgent ? scrollTop : 0;
@@ -1254,6 +1350,126 @@ function getAgentsPageJs(): string {
 				if (expandBtn) expandBtn.onclick = handleExpandSkills;
 			}
 			if (body) body.scrollTop = scrollTop;
+		}
+
+		function renderMcpPanel(agent) {
+			var region = document.getElementById("ag-detail-mcp-region");
+			if (!region) return;
+			var body = document.getElementById("ag-detail-body");
+			var scrollTop = body ? body.scrollTop : 0;
+			var hasExpandedShell = !!region.querySelector("#ag-mcp-list");
+			var hasCollapsedShell = !!region.querySelector("#ag-btn-expand-mcp");
+			var html = "";
+			if (state.mcpExpanded) {
+				if (!hasExpandedShell) {
+					html += '<div class="ag-card">';
+					html += '<div class="ag-card-title"><span class="ag-card-title-icon" style="background:rgba(56,189,248,0.12)">' + SVG_GRID + '</span>MCP<span style="margin-left:auto;font-size:11px;color:var(--muted)">按 Agent 隔离</span></div>';
+					html += '<div class="ag-skills-toolbar">';
+					html += '<button id="ag-btn-new-mcp" class="ag-btn ag-btn--primary" type="button">新增 MCP</button>';
+					html += '<button id="ag-btn-refresh-mcp" class="ag-btn ag-btn--outline" type="button">刷新</button>';
+					html += '</div>';
+					html += '<div id="ag-mcp-editor-region"></div>';
+					html += '<div id="ag-mcp-list" class="ag-mcp-list"></div>';
+					html += '</div>';
+					region.innerHTML = html;
+				}
+				var newBtn = document.getElementById("ag-btn-new-mcp");
+				if (newBtn) newBtn.onclick = handleCreateMcpServer;
+				var refreshBtn = document.getElementById("ag-btn-refresh-mcp");
+				if (refreshBtn) refreshBtn.onclick = handleRefreshMcpServers;
+				renderMcpEditor(agent);
+				renderMcpList(agent.agentId);
+			} else {
+				if (!hasCollapsedShell) {
+					html += '<div class="ag-card">';
+					html += '<div class="ag-card-title"><span class="ag-card-title-icon" style="background:rgba(56,189,248,0.12)">' + SVG_GRID + '</span>MCP<span style="margin-left:auto;font-size:11px;color:var(--muted)">按 Agent 隔离</span></div>';
+					html += '<div class="ag-skills-collapsed">';
+					html += '<span id="ag-mcp-collapsed-summary" style="font-size:13px;color:var(--fg-secondary)"></span>';
+					html += '<button id="ag-btn-expand-mcp" class="ag-btn ag-btn--outline" type="button">查看 MCP</button>';
+					html += '</div>';
+					html += '</div>';
+					region.innerHTML = html;
+				}
+				var summaryEl = document.getElementById("ag-mcp-collapsed-summary");
+				if (summaryEl) summaryEl.textContent = getCollapsedMcpSummary(agent.agentId);
+				var expandBtn = document.getElementById("ag-btn-expand-mcp");
+				if (expandBtn) expandBtn.onclick = handleExpandMcpServers;
+			}
+			if (body) body.scrollTop = scrollTop;
+		}
+
+		function renderMcpEditor(agent) {
+			var region = document.getElementById("ag-mcp-editor-region");
+			if (!region) return;
+			var editingId = state.mcpEditingServerId;
+			if (!editingId) {
+				region.innerHTML = "";
+				return;
+			}
+			var servers = state.mcpByAgentId[agent.agentId] || [];
+			var server = editingId === "__new__" ? null : servers.find(function(item) { return item.serverId === editingId; });
+			var argsText = server && server.transport && Array.isArray(server.transport.args) ? server.transport.args.join("\\n") : "";
+			region.innerHTML =
+				'<div class="ag-mcp-editor">' +
+				'<label class="ag-editor-field"><span>Server ID</span><input id="mcp-server-id" ' + (server ? "disabled " : "") + 'value="' + escapeHtml(server ? server.serverId : "") + '" placeholder="qr-ocr" /></label>' +
+				'<label class="ag-editor-field"><span>名称</span><input id="mcp-name" value="' + escapeHtml(server ? server.name : "") + '" placeholder="QR OCR" /></label>' +
+				'<label class="ag-editor-field ag-editor-field--wide"><span>描述</span><input id="mcp-description" value="' + escapeHtml(server ? (server.description || "") : "") + '" /></label>' +
+				'<label class="ag-editor-field"><span>Command</span><input id="mcp-command" value="' + escapeHtml(server && server.transport ? server.transport.command : "") + '" placeholder="python" /></label>' +
+				'<label class="ag-editor-field"><span>Timeout ms</span><input id="mcp-timeout" type="number" value="' + escapeHtml(String(server ? server.timeoutMs : 120000)) + '" /></label>' +
+				'<label class="ag-editor-field ag-editor-field--wide"><span>Args</span><textarea id="mcp-args" rows="3" placeholder="每行一个参数">' + escapeHtml(argsText) + '</textarea></label>' +
+				'<label class="ag-editor-field ag-editor-field--wide"><span>CWD</span><input id="mcp-cwd" value="' + escapeHtml(server && server.transport ? (server.transport.cwd || "") : "") + '" placeholder="可选，必须是绝对路径" /></label>' +
+				'<label class="ag-editor-field"><span>启用</span><select id="mcp-enabled"><option value="true"' + (!server || server.enabled !== false ? " selected" : "") + '>启用</option><option value="false"' + (server && server.enabled === false ? " selected" : "") + '>停用</option></select></label>' +
+				'<div class="ag-mcp-actions"><button id="ag-btn-save-mcp" class="ag-btn ag-btn--primary" type="button">保存 MCP</button><button id="ag-btn-cancel-mcp" class="ag-btn ag-btn--outline" type="button">取消</button></div>' +
+				'</div>';
+			document.getElementById("ag-btn-save-mcp").onclick = handleSaveMcpServer;
+			document.getElementById("ag-btn-cancel-mcp").onclick = function() {
+				state.mcpEditingServerId = "";
+				renderMcpPanel(agent);
+			};
+		}
+
+		function renderMcpList(agentId) {
+			if (!agentId || state.selectedId !== agentId) return;
+			var container = document.getElementById("ag-mcp-list");
+			if (!container) return;
+			var servers = state.mcpByAgentId[agentId];
+			if (!state.mcpLoadedByAgentId[agentId] && !Array.isArray(servers)) {
+				container.innerHTML = '<div class="ag-empty ag-empty-sm"><div class="ag-empty-icon">' + SVG_GRID + '</div><h3>MCP 加载失败</h3><p>请刷新重试。</p></div>';
+				return;
+			}
+			if (!Array.isArray(servers) || servers.length === 0) {
+				container.innerHTML = '<div class="ag-empty ag-empty-sm"><div class="ag-empty-icon">' + SVG_GRID + '</div><h3>暂无 MCP server</h3><p>点击新增 MCP 绑定当前 Agent 可用工具。</p></div>';
+				return;
+			}
+			container.innerHTML = "";
+			servers.forEach(function(server) {
+				var item = document.createElement("div");
+				item.className = "ag-mcp-item";
+				var command = server.transport ? [server.transport.command].concat(server.transport.args || []).join(" ") : "";
+				var toolsKey = agentId + "/" + server.serverId;
+				var tools = state.mcpToolsByServerId[toolsKey];
+				item.innerHTML =
+					'<div class="ag-mcp-main">' +
+					'<div class="ag-mcp-name"><span>' + escapeHtml(server.name || server.serverId) + '</span><code>' + escapeHtml(server.serverId) + '</code><span class="ag-mcp-badge ' + (server.enabled !== false ? "ag-mcp-badge--on" : "ag-mcp-badge--off") + '">' + (server.enabled !== false ? "已启用" : "已停用") + '</span></div>' +
+					'<div class="ag-mcp-command">' + escapeHtml(command || "未配置 command") + '</div>' +
+					(tools && tools.length ? '<div class="ag-skill-meta">' + tools.map(function(tool) { return '<span class="ag-mcp-badge">' + escapeHtml(tool.name) + '</span>'; }).join("") + '</div>' : '') +
+					'</div>' +
+					'<div class="ag-mcp-actions">' +
+					'<button class="ag-btn ag-btn--outline" data-action="test" type="button">' + (state.mcpTestingServerId === server.serverId ? "测试中..." : "测试连接") + '</button>' +
+					'<button class="ag-btn ag-btn--outline" data-action="tools" type="button">查看工具</button>' +
+					'<button class="ag-btn ag-btn--outline" data-action="edit" type="button">编辑</button>' +
+					'<button class="ag-btn ag-btn--danger" data-action="delete" type="button">删除</button>' +
+					'</div>';
+				item.querySelector('[data-action="test"]').addEventListener("click", function() { handleTestMcpServer(server.serverId); });
+				item.querySelector('[data-action="tools"]').addEventListener("click", function() { handleViewMcpTools(server.serverId); });
+				item.querySelector('[data-action="edit"]').addEventListener("click", function() {
+					state.mcpEditingServerId = server.serverId;
+					var agent = state.agents.find(function(a) { return a.agentId === agentId; });
+					if (agent) renderMcpPanel(agent);
+				});
+				item.querySelector('[data-action="delete"]').addEventListener("click", function() { handleDeleteMcpServer(server.serverId); });
+				container.appendChild(item);
+			});
 		}
 
 		function buildMiniCard(label, value, iconBg, iconColor, iconSvg) {
@@ -1456,6 +1672,8 @@ function getAgentsPageJs(): string {
 			state.editorMode = null;
 			state.selectedId = agentId;
 			state.skillsExpanded = false;
+			state.mcpExpanded = false;
+			state.mcpEditingServerId = "";
 			renderAgentList();
 			renderDetailBody();
 			renderStats();
@@ -1619,6 +1837,151 @@ function getAgentsPageJs(): string {
 					showToast(e.message || "技能加载失败，请重试", "danger");
 				}
 			});
+		}
+
+		function handleExpandMcpServers() {
+			if (!state.selectedId) return;
+			var agentId = state.selectedId;
+			var agent = state.agents.find(function(a) { return a.agentId === agentId; });
+			if (!agent) return;
+			state.mcpExpanded = true;
+			renderMcpPanel(agent);
+			if (state.mcpLoadedByAgentId[agentId]) {
+				renderMcpList(agentId);
+				return;
+			}
+			apiFetchAgentMcpServers(agentId).then(function() {
+				if (state.selectedId !== agentId) return;
+				renderMcpList(agentId);
+				renderMcpPanel(agent);
+			}).catch(function(e) {
+				if (state.selectedId === agentId) {
+					state.mcpLoadedByAgentId[agentId] = true;
+					state.mcpByAgentId[agentId] = [];
+					renderMcpList(agentId);
+					showToast(e.message || "MCP 加载失败，请重试", "danger");
+				}
+			});
+		}
+
+		function handleCreateMcpServer() {
+			if (!state.selectedId) return;
+			state.mcpEditingServerId = "__new__";
+			var agent = state.agents.find(function(a) { return a.agentId === state.selectedId; });
+			if (agent) renderMcpPanel(agent);
+		}
+
+		function readMcpEditorPayload() {
+			var serverId = (document.getElementById("mcp-server-id") || {}).value || "";
+			var name = (document.getElementById("mcp-name") || {}).value || "";
+			var description = (document.getElementById("mcp-description") || {}).value || "";
+			var command = (document.getElementById("mcp-command") || {}).value || "";
+			var argsText = (document.getElementById("mcp-args") || {}).value || "";
+			var cwd = (document.getElementById("mcp-cwd") || {}).value || "";
+			var timeoutMs = Number((document.getElementById("mcp-timeout") || {}).value || 120000);
+			var enabled = ((document.getElementById("mcp-enabled") || {}).value || "true") === "true";
+			var args = argsText.split(/\\r?\\n/).map(function(line) { return line.trim(); }).filter(Boolean);
+			return {
+				serverId: serverId.trim(),
+				name: name.trim(),
+				description: description.trim() || undefined,
+				enabled: enabled,
+				transport: {
+					type: "stdio",
+					command: command.trim(),
+					args: args,
+					...(cwd.trim() ? { cwd: cwd.trim() } : {}),
+				},
+				timeoutMs: timeoutMs,
+			};
+		}
+
+		async function handleSaveMcpServer() {
+			if (!state.selectedId || !state.mcpEditingServerId) return;
+			var agentId = state.selectedId;
+			var isNew = state.mcpEditingServerId === "__new__";
+			var payload = readMcpEditorPayload();
+			try {
+				if (isNew) {
+					await apiCreateMcpServer(agentId, payload);
+				} else {
+					var patch = Object.assign({}, payload);
+					delete patch.serverId;
+					await apiUpdateMcpServer(agentId, state.mcpEditingServerId, patch);
+				}
+				await apiFetchAgentMcpServers(agentId);
+				state.mcpEditingServerId = "";
+				if (state.selectedId === agentId) {
+					var agent = state.agents.find(function(a) { return a.agentId === agentId; });
+					if (agent) renderMcpPanel(agent);
+				}
+				showToast("MCP 已保存", "ok");
+			} catch (e) {
+				showToast(e.message || "MCP 保存失败", "danger");
+			}
+		}
+
+		async function handleRefreshMcpServers() {
+			if (!state.selectedId) return;
+			var agentId = state.selectedId;
+			try {
+				await apiFetchAgentMcpServers(agentId);
+				if (state.selectedId === agentId) renderMcpList(agentId);
+				showToast("MCP 已刷新", "ok");
+			} catch (e) {
+				showToast(e.message || "MCP 刷新失败", "danger");
+			}
+		}
+
+		async function handleDeleteMcpServer(serverId) {
+			if (!state.selectedId) return;
+			var agentId = state.selectedId;
+			var ok = await openConfirmDialog({
+				title: "删除 MCP",
+				message: "确定删除 MCP server " + serverId + "？",
+				confirmLabel: "删除",
+				tone: "danger",
+			});
+			if (!ok) return;
+			try {
+				await apiDeleteMcpServer(agentId, serverId);
+				await apiFetchAgentMcpServers(agentId);
+				if (state.selectedId === agentId) renderMcpList(agentId);
+				showToast("MCP 已删除", "ok");
+			} catch (e) {
+				showToast(e.message || "MCP 删除失败", "danger");
+			}
+		}
+
+		async function handleTestMcpServer(serverId) {
+			if (!state.selectedId || state.mcpTestingServerId) return;
+			var agentId = state.selectedId;
+			state.mcpTestingServerId = serverId;
+			renderMcpList(agentId);
+			try {
+				var data = await apiTestMcpServer(agentId, serverId);
+				await apiFetchAgentMcpServers(agentId);
+				state.mcpToolsByServerId[agentId + "/" + serverId] = data.result && Array.isArray(data.result.tools) ? data.result.tools : [];
+				showToast(data.result && data.result.ok ? "MCP 连接正常" : "MCP 测试失败", data.result && data.result.ok ? "ok" : "danger");
+			} catch (e) {
+				showToast(e.message || "MCP 测试失败", "danger");
+			} finally {
+				state.mcpTestingServerId = "";
+				if (state.selectedId === agentId) renderMcpList(agentId);
+			}
+		}
+
+		async function handleViewMcpTools(serverId) {
+			if (!state.selectedId) return;
+			var agentId = state.selectedId;
+			try {
+				var data = await apiFetchMcpTools(agentId, serverId);
+				state.mcpToolsByServerId[agentId + "/" + serverId] = Array.isArray(data.tools) ? data.tools : [];
+				if (state.selectedId === agentId) renderMcpList(agentId);
+				showToast("已加载 MCP 工具", "ok");
+			} catch (e) {
+				showToast(e.message || "MCP 工具加载失败", "danger");
+			}
 		}
 
 		function mobileBackToList() {
