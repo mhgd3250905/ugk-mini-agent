@@ -39,8 +39,6 @@ describe("App run observer file detail", () => {
             requestedProfileId: task.workUnit.workerAgentId,
             resolvedProfileId: task.workUnit.workerAgentId,
             fallbackUsed: false,
-            browserId: null,
-            browserScope: `team-task:${task.taskId}:worker`,
           },
         }],
         checker: [{
@@ -54,8 +52,6 @@ describe("App run observer file detail", () => {
             requestedProfileId: task.workUnit.checkerAgentId,
             resolvedProfileId: task.workUnit.checkerAgentId,
             fallbackUsed: false,
-            browserId: null,
-            browserScope: `team-task:${task.taskId}:checker`,
           },
         }],
         resultRef,

@@ -1232,7 +1232,6 @@ export class LiveTeamApi implements TeamApiProvider {
         message: request.message,
         mode: request.mode,
         ...(request.userId ? { userId: request.userId } : {}),
-        ...(request.browserId ? { browserId: request.browserId } : {}),
         ...(request.assetRefs && request.assetRefs.length > 0 ? { assetRefs: request.assetRefs } : {}),
       };
       const res = await fetch(`/v1/agents/${encodeURIComponent(agentId)}/chat/queue`, {
@@ -1257,7 +1256,6 @@ export class LiveTeamApi implements TeamApiProvider {
         message: request.message,
         ...(request.conversationId ? { conversationId: request.conversationId } : {}),
         ...(request.userId ? { userId: request.userId } : {}),
-        ...(request.browserId ? { browserId: request.browserId } : {}),
         ...(request.assetRefs && request.assetRefs.length > 0 ? { assetRefs: request.assetRefs } : {}),
       };
       const res = await fetch(`/v1/agents/${encodeURIComponent(agentId)}/chat/stream`, {

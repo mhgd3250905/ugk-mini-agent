@@ -16,6 +16,7 @@
 - 移除 Chat / Conn / Team 请求、运行态和 UI 中的 `browserId` / `browserScope`。
 - 移除 Conn SQLite schema 和 migration 中的 `browser_id`。
 - 移除 Playground browser workbench、Agent 默认浏览器编辑器、Conn 任务级浏览器选择器、Team runtime browser 展示。
+- 移除 `apps/team-console` 前端类型、请求 payload、UI 标签、fixtures/tests 中的 browser binding 字段。
 - 同步 `.pi/skills`、README、native 文档、Playground 文档、架构测试矩阵和当前 handoff。
 - 删除或改写 CDP/browser 专属测试，新增 `test/no-cdp-surface.test.ts` 防回归。
 
@@ -42,10 +43,10 @@
 
 ## 扫描结果
 
-核心生产入口精确旧关键词扫描 0 命中。命令排除本 review 报告和 change-log 这类记录文档，避免把说明文字当成运行面残留：
+核心生产入口精确旧关键词扫描 0 命中。命令排除本 review 报告、feedback 和 change-log 这类记录文档，避免把说明文字当成运行面残留：
 
 ```powershell
-rg -n "browserId|defaultBrowserId|browserScope|browser-registry|browser-scope-routes|browser-bound-bash|closeBrowserTargetsForScope|setBrowserScopeRoute|BrowserRegistry|/v1/browsers|WEB_ACCESS|CDP|x-ugk-browser|browser_changed|connEditorBrowserId|editor-browser-id|conn-editor-browser-id|playground-browser|browserWorkbench|browser automation|UGK_BROWSER_SCOPE_ROUTE_CACHE_PATH|agent-manager-list-browser" .pi src README.md docs runtime --glob '!docs/plans/**' --glob '!docs/change-log.md'
+rg -n "browserId|defaultBrowserId|browserScope|browser-registry|browser-scope-routes|browser-bound-bash|closeBrowserTargetsForScope|setBrowserScopeRoute|BrowserRegistry|/v1/browsers|WEB_ACCESS|CDP|x-ugk-browser|browser_changed|connEditorBrowserId|editor-browser-id|conn-editor-browser-id|playground-browser|browserWorkbench|browser automation|UGK_BROWSER_SCOPE_ROUTE_CACHE_PATH|agent-manager-list-browser" apps .pi src README.md docs runtime --glob '!docs/plans/**' --glob '!docs/change-log.md'
 ```
 
 剩余 `browser` 字符串属于非 CDP 语义或负向测试，例如浏览器端 Markdown 渲染、网页刷新、非 HTTPS 浏览器兼容、`Browser-safe` DTO 注释，以及测试中的 `doesNotMatch()` 防回归断言。
@@ -58,11 +59,14 @@ rg -n "browserId|defaultBrowserId|browserScope|browser-registry|browser-scope-ro
 - Agent / background / artifact focused suite：98/98 通过。
 - Conn / Playground / runtime focused suite：134/134 通过。
 - Team focused suite：242/242 通过。
+- `npm --prefix apps/team-console run build`：通过。
+- `npm --prefix apps/team-console test -- --maxWorkers=1 --minWorkers=1`：52 个文件、754/754 通过。
 
 ## Review 重点建议
 
 - 确认 `/v1/browsers` 和 CDP control surface 已不再从 `src/server.ts` 暴露。
 - 确认 Agent / Conn / Team 的运行配置不再接受或持久化 browser binding 字段。
+- 确认 `apps/team-console` 前端类型、请求 payload、UI 标签和 fixtures 不再声明 browser binding 字段。
 - 确认 Conn schema 不再恢复 `browser_id`，符合“开发中无历史包袱”的决策。
 - 确认 `test/no-cdp-surface.test.ts` 覆盖核心生产入口，避免后续误把 CDP/browser 面加回。
 

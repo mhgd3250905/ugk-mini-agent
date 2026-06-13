@@ -477,11 +477,9 @@ function createEmptyLayout(): ExecutionMapLayout {
 }
 
 function formatAgentBinding(agent: AgentSummary): string {
-  const model = agent.defaultModelProvider && agent.defaultModelId
+  return agent.defaultModelProvider && agent.defaultModelId
     ? `${agent.defaultModelProvider}/${agent.defaultModelId}`
     : "model default";
-  const browser = agent.defaultBrowserId ? `browser ${agent.defaultBrowserId}` : "browser default";
-  return `${model} · ${browser}`;
 }
 
 function formatAgentRunStatus(status: AgentRunStatus | undefined): {
