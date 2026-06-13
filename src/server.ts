@@ -31,6 +31,7 @@ import { createFileModelProviderStore, type ModelProviderStore } from "./agent/m
 import { NotificationHub } from "./agent/notification-hub.js";
 import { registerAssetRoutes } from "./routes/assets.js";
 import { registerActivityRoutes } from "./routes/activity.js";
+import { registerAgentMcpRoutes } from "./routes/agent-mcp.js";
 import { registerBrowserRoutes } from "./routes/browsers.js";
 import { registerChatRoutes } from "./routes/chat.js";
 import { registerCleanupDebugRoutes } from "./routes/cleanup-debug.js";
@@ -191,6 +192,11 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
 		projectRoot: agentProfileProjectRoot,
 		modelConfigStore,
 		modelSelectionValidator,
+	});
+	registerAgentMcpRoutes(app, {
+		projectRoot: agentProfileProjectRoot,
+		agentServiceRegistry,
+		agentTemplateRegistry,
 	});
 	registerRuntimeDebugRoutes(app, { projectRoot: config.projectRoot });
 	registerCleanupDebugRoutes(app, { database: connDatabase });

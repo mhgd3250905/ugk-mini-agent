@@ -292,6 +292,63 @@ export interface UpdateAgentSkillResponseBody {
 	enabled: boolean;
 }
 
+export interface AgentMcpToolBody {
+	name: string;
+	description?: string;
+	inputSchema?: Record<string, unknown>;
+}
+
+export interface AgentMcpServerBody {
+	serverId: string;
+	name: string;
+	description?: string;
+	enabled: boolean;
+	transport: {
+		type: "stdio";
+		command: string;
+		args: string[];
+		cwd?: string;
+		env?: Record<string, string>;
+	};
+	timeoutMs: number;
+	createdAt: string;
+	updatedAt: string;
+	lastTestedAt?: string;
+	lastError?: string;
+	cachedTools?: AgentMcpToolBody[];
+}
+
+export interface AgentMcpServerListResponseBody {
+	agentId: string;
+	servers: AgentMcpServerBody[];
+}
+
+export interface AgentMcpServerResponseBody {
+	server: AgentMcpServerBody;
+}
+
+export interface AgentMcpServerDeleteResponseBody {
+	deleted: true;
+	agentId: string;
+	serverId: string;
+}
+
+export interface AgentMcpServerTestResponseBody {
+	result: {
+		ok: boolean;
+		serverId: string;
+		tools: AgentMcpToolBody[];
+		error?: string;
+	};
+}
+
+export interface AgentMcpServerToolsResponseBody {
+	agentId: string;
+	serverId: string;
+	source: "cache" | "live";
+	tools: AgentMcpToolBody[];
+}
+
 export interface AgentRunStatusBody {
 	agentId: string;
 	name: string;

@@ -1,0 +1,247 @@
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { AgentService } from "../agent/agent-service.js";
+import type { AgentServiceRegistry } from "../agent/agent-service-registry.js";
+import { AgentMcpClientManager } from "../agent/mcp-client-manager.js";
+import {
+	createAgentMcpServer,
+	deleteAgentMcpServer,
+	listAgentMcpServers,
+	updateAgentMcpServer,
+	type AgentMcpServerConfig,
+	type CreateAgentMcpServerInput,
+	type UpdateAgentMcpServerInput,
+} from "../agent/mcp-server-catalog.js";
+import { getAppConfig } from "../config.js";
+import { getActiveTeamProfileLocks } from "../team/config-locks.js";
+import { resolveScopedAgentServiceOrSend, sendUnknownAgent } from "./agent-route-utils.js";
+import { sendBadRequest, sendConflict, sendInternalError, sendNotImplemented, sendNotFound } from "./http-errors.js";
+
+export interface AgentMcpRouteDependencies {
+	projectRoot?: string;
+	agentServiceRegistry?: AgentServiceRegistry<AgentService>;
+	agentTemplateRegistry?: { invalidate(profileId?: string): void };
+	clientManager?: Pick<AgentMcpClientManager, "testServer" | "listTools" | "callTool">;
+	teamProfileLockProvider?: () => Promise<Set<string>>;
+}
+
+interface AgentMcpRouteParams {
+	agentId?: string;
+	serverId?: string;
+}
+
+export function registerAgentMcpRoutes(app: FastifyInstance, deps: AgentMcpRouteDependencies): void {
+	const clientManager = deps.clientManager ?? new AgentMcpClientManager();
+
+	app.get(
+		"/v1/agents/:agentId/mcp/servers",
+		async (
+			request: FastifyRequest<{ Params: AgentMcpRouteParams }>,
+			reply,
+		): Promise<{ agentId: string; servers: AgentMcpServerConfig[] } | FastifyReply> => {
+			const context = resolveReadContext(deps, reply, request.params.agentId);
+			if (!context) {
+				return reply;
+			}
+			try {
+				return await listAgentMcpServers(context.projectRoot, context.agentId);
+			} catch (error) {
+				return sendRouteError(reply, error);
+			}
+		},
+	);
+
+	app.post(
+		"/v1/agents/:agentId/mcp/servers",
+		async (
+			request: FastifyRequest<{ Params: AgentMcpRouteParams; Body: CreateAgentMcpServerInput }>,
+			reply,
+		): Promise<{ server: AgentMcpServerConfig } | FastifyReply> => {
+			const context = await resolveWriteContext(deps, reply, request.params.agentId);
+			if (!context) {
+				return reply;
+			}
+			try {
+				const server = await createAgentMcpServer(context.projectRoot, context.agentId, request.body ?? {});
+				deps.agentTemplateRegistry?.invalidate(context.agentId);
+				return { server };
+			} catch (error) {
+				return sendRouteError(reply, error);
+			}
+		},
+	);
+
+	app.patch(
+		"/v1/agents/:agentId/mcp/servers/:serverId",
+		async (
+			request: FastifyRequest<{ Params: AgentMcpRouteParams; Body: UpdateAgentMcpServerInput }>,
+			reply,
+		): Promise<{ server: AgentMcpServerConfig } | FastifyReply> => {
+			const context = await resolveWriteContext(deps, reply, request.params.agentId);
+			if (!context) {
+				return reply;
+			}
+			try {
+				const server = await updateAgentMcpServer(
+					context.projectRoot,
+					context.agentId,
+					request.params.serverId ?? "",
+					request.body ?? {},
+				);
+				deps.agentTemplateRegistry?.invalidate(context.agentId);
+				return { server };
+			} catch (error) {
+				return sendRouteError(reply, error);
+			}
+		},
+	);
+
+	app.delete(
+		"/v1/agents/:agentId/mcp/servers/:serverId",
+		async (
+			request: FastifyRequest<{ Params: AgentMcpRouteParams }>,
+			reply,
+		): Promise<{ deleted: true; agentId: string; serverId: string } | FastifyReply> => {
+			const context = await resolveWriteContext(deps, reply, request.params.agentId);
+			if (!context) {
+				return reply;
+			}
+			try {
+				const result = await deleteAgentMcpServer(context.projectRoot, context.agentId, request.params.serverId ?? "");
+				deps.agentTemplateRegistry?.invalidate(context.agentId);
+				return result;
+			} catch (error) {
+				return sendRouteError(reply, error);
+			}
+		},
+	);
+
+	app.post(
+		"/v1/agents/:agentId/mcp/servers/:serverId/test",
+		async (
+			request: FastifyRequest<{ Params: AgentMcpRouteParams }>,
+			reply,
+		): Promise<{ result: Awaited<ReturnType<AgentMcpClientManager["testServer"]>> } | FastifyReply> => {
+			const context = resolveReadContext(deps, reply, request.params.agentId);
+			if (!context) {
+				return reply;
+			}
+			try {
+				const server = await findAgentMcpServer(context.projectRoot, context.agentId, request.params.serverId);
+				const result = await clientManager.testServer(server, undefined);
+				await updateAgentMcpServer(context.projectRoot, context.agentId, server.serverId, {
+					lastTestedAt: new Date().toISOString(),
+					lastError: result.ok ? undefined : result.error,
+					cachedTools: result.tools,
+				});
+				return { result };
+			} catch (error) {
+				return sendRouteError(reply, error);
+			}
+		},
+	);
+
+	app.get(
+		"/v1/agents/:agentId/mcp/servers/:serverId/tools",
+		async (
+			request: FastifyRequest<{ Params: AgentMcpRouteParams }>,
+			reply,
+		): Promise<{ agentId: string; serverId: string; tools: unknown[]; source: "cache" | "live" } | FastifyReply> => {
+			const context = resolveReadContext(deps, reply, request.params.agentId);
+			if (!context) {
+				return reply;
+			}
+			try {
+				const server = await findAgentMcpServer(context.projectRoot, context.agentId, request.params.serverId);
+				if (server.cachedTools?.length) {
+					return { agentId: context.agentId, serverId: server.serverId, tools: server.cachedTools, source: "cache" };
+				}
+				const tools = await clientManager.listTools(server, undefined);
+				await updateAgentMcpServer(context.projectRoot, context.agentId, server.serverId, {
+					lastTestedAt: new Date().toISOString(),
+					lastError: undefined,
+					cachedTools: tools,
+				});
+				return { agentId: context.agentId, serverId: server.serverId, tools, source: "live" };
+			} catch (error) {
+				return sendRouteError(reply, error);
+			}
+		},
+	);
+}
+
+function resolveReadContext(
+	deps: AgentMcpRouteDependencies,
+	reply: FastifyReply,
+	agentId: string | undefined,
+): { projectRoot: string; agentId: string } | undefined {
+	if (!deps.projectRoot || !agentId) {
+		sendUnknownAgent(reply, agentId);
+		return undefined;
+	}
+	if (deps.agentServiceRegistry && !deps.agentServiceRegistry.getProfile(agentId)) {
+		sendUnknownAgent(reply, agentId);
+		return undefined;
+	}
+	return { projectRoot: deps.projectRoot, agentId };
+}
+
+async function resolveWriteContext(
+	deps: AgentMcpRouteDependencies,
+	reply: FastifyReply,
+	agentId: string | undefined,
+): Promise<{ projectRoot: string; agentId: string } | undefined> {
+	const context = resolveReadContext(deps, reply, agentId);
+	if (!context) {
+		return undefined;
+	}
+	const lockedProfileIds = deps.teamProfileLockProvider
+		? await deps.teamProfileLockProvider()
+		: await getActiveTeamProfileLocks(getAppConfig(context.projectRoot).teamDataDir);
+	if (lockedProfileIds.has(context.agentId)) {
+		sendConflict(reply, `Agent ${context.agentId} is locked by an active Team run.`);
+		return undefined;
+	}
+	const service = resolveScopedAgentServiceOrSend(deps.agentServiceRegistry, reply, context.agentId);
+	if (!service) {
+		return undefined;
+	}
+	const catalog = await service.getConversationCatalog();
+	if (catalog.conversations.some((conversation) => conversation.running)) {
+		sendConflict(reply, `Agent ${context.agentId} has a running conversation. Stop it before changing MCP servers.`);
+		return undefined;
+	}
+	return context;
+}
+
+async function findAgentMcpServer(
+	projectRoot: string,
+	agentId: string,
+	serverId: string | undefined,
+): Promise<AgentMcpServerConfig> {
+	const { servers } = await listAgentMcpServers(projectRoot, agentId);
+	const server = servers.find((entry) => entry.serverId === serverId);
+	if (!server) {
+		throw new Error(`MCP server ${serverId ?? ""} does not exist`);
+	}
+	return server;
+}
+
+function sendRouteError(reply: FastifyReply, error: unknown): FastifyReply {
+	const message = error instanceof Error ? error.message : String(error);
+	if (/Unknown agentId:/.test(message)) {
+		return sendNotFound(reply, message);
+	}
+	if (/does not exist/.test(message)) {
+		return sendNotFound(reply, message);
+	}
+	if (/not available/.test(message)) {
+		return sendNotImplemented(reply, message);
+	}
+	if (error instanceof SyntaxError) {
+		return sendBadRequest(reply, message);
+	}
+	if (error instanceof Error) {
+		return sendBadRequest(reply, message);
+	}
+	return sendInternalError(reply, error);
+}
