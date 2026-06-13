@@ -17,16 +17,6 @@ import {
 	textDelta,
 } from "./agent-service-helpers.js";
 
-const originalBrowserScopeRouteCachePath = process.env.UGK_BROWSER_SCOPE_ROUTE_CACHE_PATH;
-process.env.UGK_BROWSER_SCOPE_ROUTE_CACHE_PATH = join(
-	await mkdtemp(join(tmpdir(), "ugk-pi-agent-service-conversation-state-browser-routes-")),
-	"routes.json",
-);
-
-test.after(() => {
-	restoreEnvValue("UGK_BROWSER_SCOPE_ROUTE_CACHE_PATH", originalBrowserScopeRouteCachePath);
-});
-
 test("idle conversation reads status, history, and state from persisted messages without opening an agent session", async () => {
 	const store = await createStore();
 	const sessionFile = "E:/sessions/historic.jsonl";
@@ -530,13 +520,13 @@ test("getConversationState deduplicates terminal turns by turn coverage instead 
 	const store = await createStore();
 	const streamedAssistantText = [
 		"我来帮你获取知乎热榜 top 3。需要使用 web-access 技能来访问知乎。",
-		"浏览器已就绪。现在访问知乎热榜并提取 top 3。",
+		"运行环境已就绪。现在访问知乎热榜并提取 top 3。",
 		"已获取到知乎热榜 top 3。关闭标签页：## 知乎热榜 Top 3（2026-04-24）",
 	].join("");
 	const persistedAssistantText = [
 		"我来帮你获取知乎热榜 top 3。需要使用 web-access 技能来访问知乎。",
 		"",
-		"浏览器已就绪。现在访问知乎热榜并提取 top 3。",
+		"运行环境已就绪。现在访问知乎热榜并提取 top 3。",
 		"",
 		"已获取到知乎热榜 top 3。关闭标签页：",
 		"",
@@ -830,4 +820,3 @@ test("getConversationHistory preserves session message timestamps when available
 	assert.equal(history.messages[0]?.createdAt, "2026-04-22T14:08:07.000Z");
 	assert.equal(history.messages[1]?.createdAt, "2026-04-22T14:08:10.000Z");
 });
-

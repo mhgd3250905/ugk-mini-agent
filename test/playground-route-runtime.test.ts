@@ -452,7 +452,7 @@ test("GET /playground uses a desktop geek cockpit layout", async () => {
 	assert.match(response.body, /\.chat-stage-watermark\s*\{[\s\S]*width:\s*clamp\(150px, 18vw, 280px\);[\s\S]*opacity:\s*0\.075;/);
 	assert.match(response.body, /\.chat-stage-watermark \.ugk-svg-logo-watermark\s*\{[\s\S]*display:\s*block;[\s\S]*width:\s*100%;[\s\S]*opacity:\s*1;/);
 	assert.doesNotMatch(response.body, /\.chat-stage-watermark\s*\{[^}]*width:\s*max-content;/);
-	assert.match(response.body, /\.chat-stage > :not\(\.chat-stage-watermark\)\s*\{[\s\S]*z-index:\s*1;/);
+	assert.match(response.body, /\.chat-stage > :not\(\.chat-stage-watermark\):not\(\.error-banner\):not\(\.notification-live-region\)\s*\{[\s\S]*z-index:\s*1;/);
 	assert.match(response.body, /\.landing-side-right\s*\{[\s\S]*justify-self:\s*end;/);
 	assert.match(response.body, /\.landing-side-right\s*\{[\s\S]*position:\s*static;/);
 	assert.match(response.body, /\.landing-side-right\s*\{[\s\S]*width:\s*auto;/);
@@ -527,7 +527,7 @@ test("GET /playground uses a static workstation background instead of bright blu
 	assert.doesNotMatch(response.body, /radial-gradient\(circle at 1px 1px/);
 	assert.doesNotMatch(response.body, /ugk-chat-bg-drift/);
 	assert.doesNotMatch(response.body, /ugk-scan-glow/);
-	assert.doesNotMatch(response.body, /backdrop-filter:\s*blur/);
+	assert.doesNotMatch(response.body, /\.shell\s*\{[^}]*backdrop-filter:\s*blur/);
 	assert.doesNotMatch(response.body, /--accent:\s*#5fd1ff;/);
 	assert.doesNotMatch(response.body, /radial-gradient\(circle at 18% 16%, rgba\(123, 178, 255, 0\.14\), transparent 0 18%\)/);
 	await app.close();
@@ -640,7 +640,7 @@ test("GET /playground injects layout and scroll runtime from a dedicated control
 	await app.close();
 });
 
-test("GET /playground grades resume sync by browser lifecycle reason", async () => {
+test("GET /playground grades resume sync by page lifecycle reason", async () => {
 	const app = await buildServer({
 		agentService: createAgentServiceStub(),
 	});

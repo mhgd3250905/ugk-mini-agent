@@ -14,7 +14,6 @@ import type { AssetRecord, ChatAttachment } from "../src/agent/asset-store.js";
 import { ConversationStore } from "../src/agent/conversation-store.js";
 import { buildPromptWithAssetContext } from "../src/agent/file-artifacts.js";
 import { getCurrentAgentScope } from "../src/agent/agent-scope-context.js";
-import { readBrowserScopeRoute } from "../src/browser/browser-scope-routes.js";
 
 export function restoreEnvValue(key: string, value: string | undefined): void {
 	if (value === undefined) {
@@ -208,25 +207,6 @@ export class EnvAwareSession extends FakeSession {
 	}
 }
 
-export class RouteObservingSession extends FakeSession {
-	public observedRoute: unknown;
-
-	constructor(
-		sessionFile: string | undefined,
-		events: RawAgentSessionEventLike[],
-		finalAssistantText: string | undefined,
-		private readonly routeCachePath: string,
-		private readonly scope: string,
-	) {
-		super(sessionFile, events, finalAssistantText);
-	}
-
-	override async prompt(message: string, options?: PromptOptionsLike): Promise<void> {
-		this.observedRoute = await readBrowserScopeRoute(this.scope, { cachePath: this.routeCachePath });
-		await super.prompt(message, options);
-	}
-}
-
 export class StrictQueueSession extends DeferredSession {
 	override async prompt(message: string, options?: PromptOptionsLike): Promise<void> {
 		if (options?.streamingBehavior) {
@@ -312,7 +292,7 @@ export class InterruptHistorySession implements AgentSessionLike {
 }
 
 export class FakeAgentSessionFactory implements AgentSessionFactory {
-	public calls: Array<{ browserId?: string; browserScope?: string; conversationId: string; sessionFile?: string }> = [];
+	public calls: Array<{ agentRunScope?: string; conversationId: string; sessionFile?: string }> = [];
 	public readCalls: string[] = [];
 	public readRecentCalls: Array<{ sessionFile: string; input: RecentSessionMessagesInput }> = [];
 	public availableSkills: Array<{ name: string; path?: string }> = [];
@@ -325,7 +305,7 @@ export class FakeAgentSessionFactory implements AgentSessionFactory {
 
 	constructor(private readonly buildSession: (callIndex: number) => AgentSessionLike) {}
 
-	async createSession(input: { browserId?: string; browserScope?: string; conversationId: string; sessionFile?: string }): Promise<AgentSessionLike> {
+	async createSession(input: { agentRunScope?: string; conversationId: string; sessionFile?: string }): Promise<AgentSessionLike> {
 		this.calls.push(input);
 		return this.buildSession(this.calls.length - 1);
 	}
@@ -527,4 +507,3 @@ export function sendFileToolFinished(file: {
 		},
 	};
 }
-

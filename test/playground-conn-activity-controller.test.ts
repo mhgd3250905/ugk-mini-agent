@@ -11,16 +11,15 @@ test("conn editor asset uploads use conn-scoped asset ownership instead of curre
 	assert.doesNotMatch(script, /conversationId: state\.conversationId/);
 });
 
-test("conn editor supports task-level browser selection independent of the execution agent", () => {
+test("conn editor no longer exposes task-level browser selection", () => {
 	const script = getConnActivityEditorScript();
 
-	assert.match(script, /connEditorBrowserId/);
-	assert.match(script, /loadConnBrowserCatalog/);
-	assert.match(script, /renderConnEditorBrowserOptions/);
-	assert.match(script, /payload\.browserId = connEditorBrowserId\.value \|\| null/);
-	assert.match(script, /跟随执行 Agent/);
+	assert.doesNotMatch(script, /connEditorBrowserId/);
+	assert.doesNotMatch(script, /loadConnBrowserCatalog/);
+	assert.doesNotMatch(script, /renderConnEditorBrowserOptions/);
+	assert.doesNotMatch(script, /payload\.browserId/);
 	assert.match(script, /confirmConnExecutionBindingChangeIfNeeded/);
-	assert.match(script, /x-ugk-browser-binding-source/);
+	assert.doesNotMatch(script, /x-ugk-browser-binding-source/);
 	assert.match(script, /只影响后续 run/);
 });
 

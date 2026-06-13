@@ -73,8 +73,6 @@ test("P8-C: attempt cards render role runtime context", () => {
 	assert.match(script, /runtime-context/);
 	assert.match(script, /requestedProfileId/);
 	assert.match(script, /resolvedProfileId/);
-	assert.match(script, /browserId/);
-	assert.match(script, /browserScope/);
 	assert.match(script, /fallbackUsed/);
 	assert.match(script, /fallbackReason/);
 	assert.match(script, /renderRuntimeContext\('worker'/);
@@ -88,8 +86,6 @@ test("P8-C: runtime context dynamic values are escaped", () => {
 	assert.match(script, /escapeHtml\(ctx\.requestedProfileId\)/);
 	assert.match(script, /escapeHtml\(ctx\.resolvedProfileId\)/);
 	assert.match(script, /escapeHtml\(ctx\.fallbackReason\)/);
-	assert.match(script, /escapeHtml\(ctx\.browserId/);
-	assert.match(script, /escapeHtml\(ctx\.browserScope\)/);
 });
 
 test("P8-C: runtime context has compact CSS and fallback badge", () => {
@@ -140,8 +136,6 @@ test("P8-E: renderRuntimeContextHelper escapes all context fields", () => {
 	const ctx = {
 		requestedProfileId: "<script>alert(1)</script>",
 		resolvedProfileId: "\" onclick=\"bad",
-		browserId: "browser<&>",
-		browserScope: "scope\" onmouseover=\"bad",
 		fallbackUsed: true,
 		fallbackReason: "'><img src=x onerror=bad>",
 	};
@@ -152,14 +146,13 @@ test("P8-E: renderRuntimeContextHelper escapes all context fields", () => {
 	assert.doesNotMatch(html, /onmouseover="bad/);
 	assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
 	assert.match(html, /&quot; onclick=&quot;bad/);
-	assert.match(html, /scope&quot; onmouseover=&quot;bad/);
 	assert.match(html, /&lt;img src=x onerror=bad&gt;/);
 	assert.match(html, /runtime-context-wrap/);
 	assert.match(html, /runtime-context-fallback/);
 });
 
 test("P8-E: parity — inline renderRuntimeContext matches helper output", () => {
-	const ctx = { requestedProfileId: "p1", resolvedProfileId: "p2", browserId: "b1", browserScope: "full", fallbackUsed: false };
+	const ctx = { requestedProfileId: "p1", resolvedProfileId: "p2", fallbackUsed: false };
 	const helperHtml = renderRuntimeContextHelper("worker", ctx);
 	const script = extractScript();
 	const start = script.indexOf("function escapeHtml");
@@ -173,8 +166,8 @@ test("P8-E: parity — inline renderRuntimeContext matches helper output", () =>
 	assert.match(inlineHtml, /p1/);
 	assert.match(helperHtml, /p2/);
 	assert.match(inlineHtml, /p2/);
-	assert.match(helperHtml, /browser: b1/);
-	assert.match(inlineHtml, /browser: b1/);
+	assert.doesNotMatch(helperHtml, /browser:/);
+	assert.doesNotMatch(inlineHtml, /browser:/);
 });
 
 // ── P12 Task 1: toast + confirmAction replaces system dialogs ──
@@ -554,4 +547,3 @@ test("P12-T5: modals use modal-header and modal-body classes", () => {
 // ── P14 Task 1: Compact Plan Card Rendering Tests ──
 
 // Helper: extract renderPlanCard from inline script and execute it
-

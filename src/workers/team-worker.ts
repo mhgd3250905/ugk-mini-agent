@@ -7,14 +7,10 @@ import { TeamOrchestrator, DEFAULT_PHASE_TIMEOUTS } from "../team/orchestrator.j
 import { MockRoleRunner } from "../team/role-runner.js";
 import type { TeamRoleRunner } from "../team/role-runner.js";
 import { AgentProfileRoleRunner } from "../team/agent-profile-role-runner.js";
-import { closeBrowserTargetsForScope } from "../agent/browser-cleanup.js";
-import { setBrowserScopeRoute } from "../browser/browser-scope-routes.js";
 import type { BackgroundAgentSessionFactory } from "../agent/background-agent-runner.js";
 import type { BackgroundAgentProfileResolver } from "../agent/background-agent-profile.js";
 
 interface TeamWorkerRoleRunnerDeps {
-	setBrowserScopeRoute?: (scope: string, browserId: string | undefined) => Promise<void>;
-	closeBrowserTargetsForScope?: (scope: string, options?: { browserId?: string }) => Promise<void>;
 	sessionFactory?: BackgroundAgentSessionFactory;
 	profileResolver?: BackgroundAgentProfileResolver;
 }
@@ -37,8 +33,6 @@ export function createTeamWorkerRoleRunner(
 		decomposerProfileId: "main",
 		...(deps.profileResolver ? { profileResolver: deps.profileResolver } : {}),
 		...(deps.sessionFactory ? { sessionFactory: deps.sessionFactory } : {}),
-		setBrowserScopeRoute: deps.setBrowserScopeRoute ?? setBrowserScopeRoute,
-		closeBrowserTargetsForScope: deps.closeBrowserTargetsForScope ?? closeBrowserTargetsForScope,
 	});
 }
 

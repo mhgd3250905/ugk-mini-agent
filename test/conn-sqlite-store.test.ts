@@ -89,44 +89,6 @@ test("ConnSqliteStore persists task-level model selection", async () => {
 	database.close();
 });
 
-test("ConnSqliteStore persists and clears task-level browser selection", async () => {
-	const { store, database } = await createConnSqliteStore();
-
-	const created = await store.create({
-		title: "browser scoped task",
-		prompt: "run with selected browser",
-		target: {
-			type: "conversation",
-			conversationId: "manual:browser",
-		},
-		schedule: {
-			kind: "interval",
-			everyMs: 60_000,
-		},
-		browserId: "chrome-02",
-		now: new Date("2026-04-21T10:00:00.000Z"),
-	});
-
-	assert.equal(created.browserId, "chrome-02");
-	assert.equal((await store.get(created.connId))?.browserId, "chrome-02");
-
-	const updated = await store.update(created.connId, {
-		browserId: "chrome-01",
-		now: new Date("2026-04-21T10:01:00.000Z"),
-	});
-	assert.equal(updated?.browserId, "chrome-01");
-	assert.equal((await store.get(created.connId))?.browserId, "chrome-01");
-
-	const cleared = await store.update(created.connId, {
-		browserId: null,
-		now: new Date("2026-04-21T10:02:00.000Z"),
-	});
-	assert.equal(cleared?.browserId, undefined);
-	assert.equal((await store.get(created.connId))?.browserId, undefined);
-
-	database.close();
-});
-
 test("ConnSqliteStore persists and validates public site ids", async () => {
 	const { store, database } = await createConnSqliteStore();
 

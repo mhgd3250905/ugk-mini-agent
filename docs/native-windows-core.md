@@ -30,7 +30,6 @@
 | `UGK_TOOLS_DIR` | `$UGK_DATA_DIR/tools` | config | 本地工具缓存 |
 | `TEAM_RUNTIME_ENABLED` | `true` | `.env.native` | Team runtime 开关 |
 | `TEAM_USE_MOCK_RUNNER` | `false` | 环境变量 | Team mock runner（仅测试） |
-| `UGK_DISABLE_BROWSER_SIDECAR_DEFAULT` | `true` | 环境变量 | 默认禁用浏览器 sidecar |
 | `UGK_MODEL_SETTINGS_PATH` | `$UGK_DATA_DIR/agent/model-settings.json` | config | 运行时模型选择文件 |
 
 配置推导核心代码：`scripts/native-runtime-config.mjs` → `buildNativeRuntimeConfig()`。

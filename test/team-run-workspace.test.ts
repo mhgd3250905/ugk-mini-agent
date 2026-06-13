@@ -734,8 +734,6 @@ test("readDecomposition returns full child task definitions and runtime context"
 				resolvedProfileId: "main",
 				fallbackUsed: true,
 				fallbackReason: "profile_not_found",
-				browserId: "browser-a",
-				browserScope: "scope-a",
 			},
 		};
 		await ws.writeDecomposition(state.runId, record);

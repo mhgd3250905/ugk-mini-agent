@@ -35,7 +35,7 @@ test("GET /playground uses a compact mobile topbar with overflow actions", async
 	assert.match(response.body, /id="mobile-menu-task-inbox-button"/);
 	assert.match(response.body, /id="mobile-menu-model-config-button"/);
 	assert.match(response.body, /id="mobile-menu-model-sources-link"/);
-	assert.match(response.body, /id="mobile-menu-browser-workbench-button"/);
+	assert.doesNotMatch(response.body, /id="mobile-menu-browser-workbench-button"/);
 	assert.match(response.body, /id="mobile-task-inbox-unread-badge"/);
 	assert.match(response.body, /\.mobile-topbar\s*\{[\s\S]*display:\s*none;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*\.mobile-topbar\s*\{[\s\S]*display:\s*grid;/);

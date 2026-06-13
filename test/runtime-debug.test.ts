@@ -16,8 +16,6 @@ test("GET /v1/debug/runtime reports runtime checks without exposing secrets", as
 	const projectRoot = await mkdtemp(join(tmpdir(), "ugk-runtime-debug-"));
 	const previousEnv = { ...process.env };
 	process.env.PUBLIC_BASE_URL = "http://127.0.0.1:3000";
-	process.env.WEB_ACCESS_BROWSER_PROVIDER = "direct_cdp";
-	process.env.WEB_ACCESS_BROWSER_PUBLIC_BASE_URL = "http://ugk-pi:3000";
 	process.env.ANTHROPIC_AUTH_TOKEN = "secret-key-that-must-not-leak";
 
 	const app = await buildRuntimeDebugApp(projectRoot);
@@ -31,8 +29,8 @@ test("GET /v1/debug/runtime reports runtime checks without exposing secrets", as
 		const payload = response.json();
 		assert.equal(typeof payload.ok, "boolean");
 		assert.equal(payload.config.publicBaseUrl, "http://127.0.0.1:3000");
-		assert.equal(payload.config.browserProvider, "direct_cdp");
-		assert.equal(payload.config.webAccessBrowserPublicBaseUrl, "http://ugk-pi:3000");
+		assert.equal(payload.config.browserProvider, undefined);
+		assert.equal(payload.config.webAccessBrowserPublicBaseUrl, undefined);
 		assert.ok(Array.isArray(payload.checks));
 		assert.ok(payload.checks.some((check: { name?: string }) => check.name === "agent data dir"));
 		assert.ok(payload.checks.some((check: { name?: string }) => check.name === "agents data dir"));

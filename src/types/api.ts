@@ -2,7 +2,6 @@ export interface ChatRequestBody {
 	conversationId?: string;
 	message: string;
 	userId?: string;
-	browserId?: string;
 	attachments?: ChatAttachmentBody[];
 	assetRefs?: string[];
 }
@@ -112,7 +111,6 @@ export interface ConnBody {
 	assetRefs: string[];
 	maxRunMs?: number;
 	profileId?: string;
-	browserId?: string;
 	agentSpecId?: string;
 	skillSetId?: string;
 	modelPolicyId?: string;
@@ -372,80 +370,7 @@ export interface RuntimeDebugResponseBody {
 	checks: RuntimeDebugCheckBody[];
 	config: {
 		publicBaseUrl?: string;
-		browserProvider?: string;
-		webAccessBrowserPublicBaseUrl?: string;
 	};
-}
-
-export interface BrowserInstanceBody {
-	browserId: string;
-	name: string;
-	cdpHost: string;
-	cdpPort: number;
-	guiUrl?: string;
-	profileLabel?: string;
-	isDefault?: boolean;
-}
-
-export interface BrowserListResponseBody {
-	defaultBrowserId: string;
-	browsers: BrowserInstanceBody[];
-}
-
-export interface BrowserDetailResponseBody {
-	browser: BrowserInstanceBody;
-}
-
-export interface BrowserTargetStatusBody {
-	targetId: string;
-	type: string;
-	title: string;
-	url: string;
-	attached?: boolean;
-	usage?: BrowserTargetUsageBody;
-}
-
-export interface BrowserTargetUsageBody {
-	jsHeapUsedBytes?: number;
-	jsHeapTotalBytes?: number;
-	domNodes?: number;
-	documents?: number;
-	eventListeners?: number;
-	available: boolean;
-}
-
-export interface BrowserRuntimeStatusBody {
-	browser: BrowserInstanceBody;
-	online: boolean;
-	cdpUrl: string;
-	version?: {
-		browser?: string;
-		protocolVersion?: string;
-		webSocketDebuggerUrl?: string;
-	};
-	targets: BrowserTargetStatusBody[];
-	capabilities: {
-		closeTarget: boolean;
-		start: boolean;
-		restart: boolean;
-		memory: boolean;
-	};
-	message?: string;
-}
-
-export interface BrowserStatusResponseBody {
-	status: BrowserRuntimeStatusBody;
-}
-
-export interface BrowserCloseTargetResponseBody {
-	closed: boolean;
-	targetId: string;
-}
-
-export interface BrowserStartResponseBody {
-	started: boolean;
-	supported: boolean;
-	message: string;
 }
 
 export interface CleanupDebugResponseBody {
@@ -656,7 +581,6 @@ export interface QueueMessageRequestBody {
 	message: string;
 	mode: QueueMessageMode;
 	userId?: string;
-	browserId?: string;
 	attachments?: ChatAttachmentBody[];
 	assetRefs?: string[];
 }
@@ -665,7 +589,7 @@ export interface QueueMessageResponseBody {
 	conversationId: string;
 	mode: QueueMessageMode;
 	queued: boolean;
-	reason?: "not_running" | "browser_changed";
+	reason?: "not_running";
 }
 
 export interface InterruptChatRequestBody {

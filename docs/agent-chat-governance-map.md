@@ -19,7 +19,7 @@
 - `src/routes/chat.ts` 同时承载 main `/v1/chat/*` 与 scoped `/v1/agents/:agentId/chat/*` 路由，存在明显 wrapper 重复。
 - 这些重复主要是 HTTP 壳层重复：解析 query/body、选择 `AgentService`、返回 bad request / unknown agent / SSE。
 - 底层关键 helper 已经拆出：`chat-route-parsers.ts` 管输入解析，`chat-sse.ts` 管 SSE，`agent-run-*` 和 `agent-conversation-*` 管运行与会话局部逻辑。
-- `AgentService.runChat()` 虽然长，但它串联的是同一轮 run 的创建、active state、session prompt、event adapter、result、terminal snapshot、browser cleanup。这里不是优先拆分点。
+- `AgentService.runChat()` 虽然长，但它串联的是同一轮 run 的创建、active state、session prompt、event adapter、result、terminal snapshot。这里不是优先拆分点。
 - scoped agent 的外部语义不能改变：未知 agent 必须 404，不得回退 main；`main` 必须继续兼容旧 `/v1/chat/*`。
 
 ## 主链路地图
@@ -39,7 +39,7 @@
 - 注册 scoped agent 路由：`/v1/agents/:agentId/chat/*`、`/v1/agents/:agentId/debug/skills`
 - 注册 agent profile 元操作：`GET /v1/agents`、创建、更新、归档、规则文件、技能安装与删除
 - 将 HTTP body / query 转成 `AgentService` 输入
-- 管理 SSE 响应生命周期和浏览器断连容错
+- 管理 SSE 响应生命周期和网络断连容错
 
 当前重复点：
 
@@ -67,7 +67,7 @@
 - `ConversationStore` 当前会话指针
 - session messages / session file
 - run event buffer
-- browser cleanup scope
+- agent run scope
 
 已拆出的 helper：
 
@@ -98,21 +98,20 @@
 4. `AgentService.runChat()`
 5. `ensureCurrentConversationId()` / `openConversationSession()`
 6. `preparePromptAssets()`
-7. `createBrowserCleanupScope(conversationId)`
+7. `createAgentRunScope(conversationId)`
 8. 写入 `activeRuns`
 9. `createAgentSessionEventAdapter()`
-10. 预清理浏览器 scope
+10. 建立 agent run scope
 11. `runWithScopedAgentEnvironment()` + `session.prompt()`
 12. `buildAgentRunResult()` + `buildDoneChatStreamEvent()`
-13. `finally` 中 unsubscribe、保存会话信息、移除 active run、写 terminal run、清理 browser targets
+13. `finally` 中 unsubscribe、保存会话信息、移除 active run、写 terminal run
 
 不能破坏：
 
 - 同一时刻全局只能有一个 active run。
 - 同一 conversation 不能重复运行。
 - `activeRuns` 与 `terminalRuns` 切换必须在 `finally` 中收口。
-- SSE sink、subscriber 和浏览器断连都不能影响 run 本体。
-- browser cleanup 失败不能覆盖原任务结果；但 cleanup 仍应 best-effort 执行。
+- SSE sink、subscriber 和网络断连都不能影响 run 本体。
 - `send_file`、`ugk-file`、本地路径改写必须进入 `done` event 和 canonical history。
 
 ## Scoped Agent 边界
@@ -136,7 +135,7 @@
 ### P0：文档与测试锚点
 
 - 保留 `chat-agent-routes.test.ts` 对 scoped agent 的关键保护：debug skills、conversation catalog、unknown agent 404、rules 文件读取、创建 / 归档行为。
-- 保留 `agent-service.test.ts` 对 active run、terminal run、queue、interrupt、history/state、browser scope 的覆盖。
+- 保留 `agent-service.test.ts` 对 active run、terminal run、queue、interrupt、history/state、agent run scope 的覆盖。
 - 涉及 SSE 时保留 `chat-sse.test.ts` 的断连容错、headers 和 terminal event 判断。
 
 ### P1：低风险代码整理候选

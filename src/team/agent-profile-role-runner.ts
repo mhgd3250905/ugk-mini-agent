@@ -10,7 +10,7 @@ import type { ResolvedBackgroundAgentSnapshot, BackgroundAgentProfileRef } from 
 import { ProjectBackgroundSessionFactory } from "../agent/background-agent-session-factory.js";
 import { findLastAssistantMessage, assertAssistantMessageSucceeded } from "../agent/agent-run-result.js";
 import { stringifyVisibleAssistantContent } from "../agent/background-agent-runner.js";
-import { createBrowserCleanupScope, runWithScopedAgentEnvironment } from "../agent/agent-run-scope.js";
+import { createAgentRunScope, runWithScopedAgentEnvironment } from "../agent/agent-run-scope.js";
 import { runWithBackgroundWorkspaceContext } from "../agent/background-workspace-context.js";
 import type { AgentSessionLike } from "../agent/agent-session-factory.js";
 import type { RawAgentSessionEventLike } from "../agent/agent-session-factory.js";
@@ -26,9 +26,6 @@ export interface AgentProfileRoleRunnerOptions {
 	dispatcherProfileId?: string;
 	profileResolver?: BackgroundAgentProfileResolver;
 	sessionFactory?: BackgroundAgentSessionFactory;
-	defaultBrowserId?: string;
-	setBrowserScopeRoute?: (scope: string, browserId: string | undefined) => Promise<void>;
-	closeBrowserTargetsForScope?: (scope: string, options?: { browserId?: string }) => Promise<void>;
 }
 
 function buildDefaultRef(profileId: string): BackgroundAgentProfileRef {
@@ -45,7 +42,7 @@ function sanitizeScopePart(value: string): string {
 	return value.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-function buildTeamBrowserScope(input: { runId: string; role: string; roleKey: string; profileId?: string }): string {
+function buildTeamRunScope(input: { runId: string; role: string; roleKey: string; profileId?: string }): string {
 	return [
 		"team",
 		sanitizeScopePart(input.runId),
@@ -309,30 +306,23 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 		roleContext: { role: string; roleKey: string; artifactPublicBaseUrl?: string },
 		onSessionEvent?: (event: RawAgentSessionEventLike) => void,
 	): Promise<{ content: string; runtimeContext: TeamRoleRuntimeContext }> {
-		const browserId = snapshot.defaultBrowserId ?? this.options.defaultBrowserId;
-		const browserScope = buildTeamBrowserScope({
+		const roleRunScope = createAgentRunScope(buildTeamRunScope({
 			runId,
 			role: roleContext.role,
 			roleKey: roleContext.roleKey,
 			profileId: snapshot.profileId,
-		});
-		const browserCleanupScope = browserId ? createBrowserCleanupScope(browserScope, browserId) : browserScope;
+		}));
 		const runtimeContext: TeamRoleRuntimeContext = {
 			requestedProfileId,
 			resolvedProfileId: snapshot.profileId,
 			fallbackUsed: snapshot.fallbackUsed === true,
 			...(snapshot.fallbackReason ? { fallbackReason: snapshot.fallbackReason } : {}),
-			browserId: browserId ?? null,
-			browserScope: browserCleanupScope,
 		};
-		const setBrowserScopeRoute = this.options.setBrowserScopeRoute;
-		const closeBrowserTargetsForScope = this.options.closeBrowserTargetsForScope;
 
 		let session: AgentSessionLike | undefined;
 		let unsubscribe: (() => void) | undefined;
 
 		try {
-			await setBrowserScopeRoute?.(browserCleanupScope, browserId);
 			session = await this.sessionFactory.createSession({
 				runId,
 				connId: `team-${runId}`,
@@ -349,8 +339,7 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 					manifestPath: join(workspace.rootPath, "manifest.json"),
 				},
 				snapshot,
-				browserId,
-				browserScope: browserCleanupScope,
+				agentRunScope: roleRunScope,
 			});
 			unsubscribe = onSessionEvent ? session.subscribe(onSessionEvent) : undefined;
 
@@ -365,16 +354,11 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 				UGK_HTTP_ACCESS_SCRIPT: join(this.options.projectRoot, ".pi", "skills", "http-access", "scripts", "http_access.mjs"),
 			};
 
-			await runWithScopedAgentEnvironment(browserCleanupScope, async () => {
+			await runWithScopedAgentEnvironment(roleRunScope, async () => {
 				await runWithBackgroundWorkspaceContext(wsEnv, () => promptWithAbort(session!, prompt, signal));
 			});
 		} finally {
 			unsubscribe?.();
-			try {
-				await closeBrowserTargetsForScope?.(browserCleanupScope, browserId ? { browserId } : undefined).catch(() => {});
-			} finally {
-				await setBrowserScopeRoute?.(browserCleanupScope, undefined).catch(() => {});
-			}
 		}
 
 		if (!session) {

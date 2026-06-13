@@ -414,10 +414,6 @@ export function getPlaygroundStyles(): string {
 		.chat-stage[data-workspace-mode="agents"] .stream-layout,
 		.chat-stage[data-workspace-mode="agents"] .command-deck,
 		.chat-stage[data-workspace-mode="agents"] .chat-stage-watermark,
-		.chat-stage[data-workspace-mode="browsers"] .landing-screen,
-		.chat-stage[data-workspace-mode="browsers"] .stream-layout,
-		.chat-stage[data-workspace-mode="browsers"] .command-deck,
-		.chat-stage[data-workspace-mode="browsers"] .chat-stage-watermark,
 		.chat-stage[data-workspace-mode="task"] .landing-screen,
 		.chat-stage[data-workspace-mode="task"] .stream-layout,
 		.chat-stage[data-workspace-mode="task"] .command-deck,
@@ -445,7 +441,6 @@ export function getPlaygroundStyles(): string {
 		.chat-stage[data-workspace-mode="assets"] > #asset-modal.workspace-contained,
 		.chat-stage[data-workspace-mode="conn"] > #conn-manager-dialog.workspace-contained,
 		.chat-stage[data-workspace-mode="agents"] > #agent-manager-dialog.workspace-contained,
-		.chat-stage[data-workspace-mode="browsers"] > #browser-workbench-dialog.workspace-contained,
 		.chat-stage[data-workspace-mode="task"] > #task-inbox-view.workspace-contained {
 			display: flex;
 		}
@@ -453,7 +448,6 @@ export function getPlaygroundStyles(): string {
 		.chat-stage > .workspace-contained .asset-modal,
 		.chat-stage > .workspace-contained .conn-manager-panel,
 		.chat-stage > .workspace-contained .agent-manager-panel,
-		.chat-stage > .workspace-contained .browser-workbench-panel,
 		.chat-stage > .workspace-contained .task-inbox-pane {
 			position: relative;
 			inset: auto;
@@ -481,7 +475,6 @@ export function getPlaygroundStyles(): string {
 
 		.chat-stage > .workspace-contained .asset-modal-body,
 		.chat-stage > .workspace-contained .agent-manager-body,
-		.chat-stage > .workspace-contained .browser-workbench-body,
 		.chat-stage > .workspace-contained .task-inbox-list {
 			min-height: 0;
 			padding: 14px 0;

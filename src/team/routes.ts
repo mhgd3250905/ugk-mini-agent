@@ -26,9 +26,7 @@ import { buildRunDetailResponse } from "./run-presenter.js";
 import type { TeamDiscoveryRunPolicy, TeamRunState, TeamTaskRunHistoryResponse } from "./types.js";
 import type { TeamManualUpstreamRunSelection } from "./types.js";
 import { AgentProfileRoleRunner } from "./agent-profile-role-runner.js";
-import { closeBrowserTargetsForScope } from "../agent/browser-cleanup.js";
 import { loadAgentProfilesSync } from "../agent/agent-profile-catalog.js";
-import { setBrowserScopeRoute } from "../browser/browser-scope-routes.js";
 import { configureSseResponse, writeSseEvent, startSseHeartbeat, endSseResponse } from "../routes/chat-sse.js";
 import { idParam, jsonBody, optionalJsonBody, parseIncludeArchived, parseIncludeGenerated } from "./route-parsers.js";
 import { TeamConsoleSummaryReadModel, summarizeRunState, summarizeAttemptDispatchDiagnostics } from "./console-summary-read-model.js";
@@ -198,8 +196,6 @@ function createRoleRunner(options: TeamRouteOptions): TeamRoleRunner {
 		watcherProfileId: "main",
 		finalizerProfileId: "main",
 		decomposerProfileId: "main",
-		setBrowserScopeRoute,
-		closeBrowserTargetsForScope,
 	});
 }
 

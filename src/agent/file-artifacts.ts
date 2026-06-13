@@ -187,7 +187,7 @@ function buildFileResponseInstruction(): string {
 		`Current user-facing base URL: ${publicBaseUrl}.`,
 		"Use this current base URL for service, playground, and local-file links unless the user explicitly asks for another deployment.",
 		"Do not mention Tencent Cloud, Aliyun, or another deployment public URL just because it exists in repository documentation.",
-		"Browser automation is not bundled in this Windows Core runtime. If browser automation is needed, rely only on explicitly installed user skills.",
+		"External web automation is not bundled in this Windows Core runtime. If it is needed, rely only on explicitly installed user skills.",
 		"Only in the final user-facing answer should you avoid raw container file paths.",
 		"If the user should open the artifact in a browser, provide a host-reachable HTTP URL.",
 		"If you generated a real file inside the project workspace and the user should receive the file itself, prefer the send_file tool.",

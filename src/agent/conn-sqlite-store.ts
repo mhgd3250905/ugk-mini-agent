@@ -25,7 +25,6 @@ export interface CreateConnInput {
 	assetRefs?: string[];
 	maxRunMs?: number;
 	profileId?: string;
-	browserId?: string;
 	agentSpecId?: string;
 	skillSetId?: string;
 	modelPolicyId?: string;
@@ -58,7 +57,7 @@ export type UpdateConnInput = Partial<
 		| "artifactDelivery"
 		| "status"
 	>
-> & { browserId?: string | null; now?: Date };
+> & { now?: Date };
 
 export interface DeleteManyConnsResult {
 	deletedConnIds: string[];
@@ -75,7 +74,6 @@ interface ConnRow {
 	asset_refs_json: string;
 	max_run_ms?: number | null;
 	profile_id: string;
-	browser_id?: string | null;
 	agent_spec_id: string;
 	skill_set_id: string;
 	model_policy_id: string;
@@ -135,7 +133,6 @@ export class ConnSqliteStore {
 			assetRefs: normalizeAssetRefs(input.assetRefs),
 			...(input.maxRunMs !== undefined ? { maxRunMs: normalizeMaxRunMs(input.maxRunMs) } : {}),
 			profileId: normalizeOptionalId(input.profileId) ?? DEFAULT_PROFILE_ID,
-			...(input.browserId !== undefined ? { browserId: normalizeRequiredId(input.browserId, "browserId") } : {}),
 			agentSpecId: normalizeOptionalId(input.agentSpecId) ?? DEFAULT_AGENT_SPEC_ID,
 			skillSetId: normalizeOptionalId(input.skillSetId) ?? DEFAULT_SKILL_SET_ID,
 			modelPolicyId: normalizeOptionalId(input.modelPolicyId) ?? DEFAULT_MODEL_POLICY_ID,
@@ -154,9 +151,9 @@ export class ConnSqliteStore {
 			[
 				"INSERT INTO conns (",
 				"conn_id, title, prompt, target_json, schedule_json, execution_json, asset_refs_json, max_run_ms,",
-				"profile_id, browser_id, agent_spec_id, skill_set_id, model_policy_id, model_provider, model_id, upgrade_policy, public_site_id, artifact_delivery_json,",
+				"profile_id, agent_spec_id, skill_set_id, model_policy_id, model_provider, model_id, upgrade_policy, public_site_id, artifact_delivery_json,",
 				"status, created_at, updated_at, next_run_at",
-				") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+				") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			].join(" "),
 			conn.connId,
 			conn.title,
@@ -167,7 +164,6 @@ export class ConnSqliteStore {
 			JSON.stringify(conn.assetRefs),
 			conn.maxRunMs,
 			conn.profileId,
-			conn.browserId,
 			conn.agentSpecId,
 			conn.skillSetId,
 			conn.modelPolicyId,
@@ -204,11 +200,6 @@ export class ConnSqliteStore {
 			...(patch.assetRefs !== undefined ? { assetRefs: normalizeAssetRefs(patch.assetRefs) } : {}),
 			...(patch.maxRunMs !== undefined ? { maxRunMs: normalizeMaxRunMs(patch.maxRunMs) } : {}),
 			...(patch.profileId !== undefined ? { profileId: normalizeRequiredId(patch.profileId, "profileId") } : {}),
-			...(patch.browserId !== undefined
-				? patch.browserId === null
-					? { browserId: undefined }
-					: { browserId: normalizeRequiredId(patch.browserId, "browserId") }
-				: {}),
 			...(patch.agentSpecId !== undefined ? { agentSpecId: normalizeRequiredId(patch.agentSpecId, "agentSpecId") } : {}),
 			...(patch.skillSetId !== undefined ? { skillSetId: normalizeRequiredId(patch.skillSetId, "skillSetId") } : {}),
 			...(patch.modelPolicyId !== undefined ? { modelPolicyId: normalizeRequiredId(patch.modelPolicyId, "modelPolicyId") } : {}),
@@ -229,7 +220,7 @@ export class ConnSqliteStore {
 			[
 				"UPDATE conns SET",
 				"title = ?, prompt = ?, target_json = ?, schedule_json = ?, execution_json = ?, asset_refs_json = ?, max_run_ms = ?,",
-				"profile_id = ?, browser_id = ?, agent_spec_id = ?, skill_set_id = ?, model_policy_id = ?, model_provider = ?, model_id = ?, upgrade_policy = ?, public_site_id = ?, artifact_delivery_json = ?,",
+				"profile_id = ?, agent_spec_id = ?, skill_set_id = ?, model_policy_id = ?, model_provider = ?, model_id = ?, upgrade_policy = ?, public_site_id = ?, artifact_delivery_json = ?,",
 				"status = ?, updated_at = ?, next_run_at = ?",
 				"WHERE conn_id = ?",
 			].join(" "),
@@ -241,7 +232,6 @@ export class ConnSqliteStore {
 			JSON.stringify(updated.assetRefs),
 			updated.maxRunMs,
 			updated.profileId,
-			updated.browserId,
 			updated.agentSpecId,
 			updated.skillSetId,
 			updated.modelPolicyId,
@@ -341,7 +331,6 @@ function rowToConnDefinition(row: ConnRow): ConnDefinition {
 		assetRefs: parseJsonField<string[]>(row.asset_refs_json, "asset_refs_json"),
 		...(typeof row.max_run_ms === "number" ? { maxRunMs: row.max_run_ms } : {}),
 		profileId: row.profile_id,
-		...(row.browser_id ? { browserId: row.browser_id } : {}),
 		agentSpecId: row.agent_spec_id,
 		skillSetId: row.skill_set_id,
 		modelPolicyId: row.model_policy_id,

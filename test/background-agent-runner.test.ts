@@ -141,7 +141,7 @@ test("BackgroundAgentRunner prompt tells background tasks to use tools and outpu
 	await runner.run(conn, run, new Date("2026-04-21T10:01:05.000Z"));
 
 	const prompt = String(session.messages[0]?.content ?? "");
-	assert.match(prompt, /If this task requires commands, file operations, or browser automation, call the available tools/);
+	assert.match(prompt, /If this task requires commands or file operations, call the available tools/);
 	assert.match(prompt, /Only files written under the final deliverables directory are indexed and durable conn outputs/);
 	assert.match(prompt, /Do not report execution success unless the required tool calls actually completed/);
 
@@ -328,18 +328,14 @@ test("BackgroundAgentRunner records fallback events when the requested agent is 
 	database.close();
 });
 
-test("BackgroundAgentRunner scopes browser cleanup around background conn runs", async () => {
-	const cleanupScopes: string[] = [];
+test("BackgroundAgentRunner scopes agent environment around background conn runs", async () => {
 	const session = new ScopeObservingSession();
 	const { database, connStore, runStore, runner } = await createRunner({
 		session,
-		closeBrowserTargetsForScope: async (scope) => {
-			cleanupScopes.push(scope);
-		},
 	});
 	const conn = await connStore.create({
-		title: "Browser Task",
-		prompt: "Use a browser",
+		title: "Scoped Task",
+		prompt: "Use available tools",
 		target: {
 			type: "conversation",
 			conversationId: "manual:conn",
@@ -351,7 +347,7 @@ test("BackgroundAgentRunner scopes browser cleanup around background conn runs",
 		now: new Date("2026-04-21T10:00:00.000Z"),
 	});
 	const run = await runStore.createRun({
-		runId: "run-browser-scope",
+		runId: "run-agent-scope",
 		connId: conn.connId,
 		scheduledAt: "2026-04-21T10:01:00.000Z",
 		workspacePath: databasePathSafeRoot(),
@@ -364,180 +360,6 @@ test("BackgroundAgentRunner scopes browser cleanup around background conn runs",
 	const expectedScope = `${conn.connId}-${run.runId}`;
 	assert.equal(session.observedScope, expectedScope);
 	assert.equal(process.env.CLAUDE_AGENT_ID, undefined);
-	assert.deepEqual(cleanupScopes, [expectedScope, expectedScope]);
-});
-
-test("BackgroundAgentRunner uses conn browserId before the selected agent default browser", async () => {
-	const cleanupCalls: Array<{ scope: string; browserId?: string }> = [];
-	const profileResolver = {
-		resolve: async () => ({
-			profileId: "zhihu-helper",
-			profileVersion: "test",
-			agentSpecId: "agent.default",
-			agentSpecVersion: "test",
-			skillSetId: "skills.default",
-			skillSetVersion: "test",
-			skills: [],
-			modelPolicyId: "model.default",
-			modelPolicyVersion: "test",
-			provider: "test-provider",
-			model: "test-model",
-			upgradePolicy: "latest" as const,
-			defaultBrowserId: "chrome-01",
-			resolvedAt: "2026-04-21T10:01:05.000Z",
-		}),
-	};
-	const { database, connStore, runStore, sessionFactory, runner } = await createRunner({
-		profileResolver,
-		closeBrowserTargetsForScope: async (scope, options) => {
-			cleanupCalls.push({ scope, browserId: options?.browserId });
-		},
-	});
-	const conn = await connStore.create({
-		title: "Browser Override",
-		prompt: "Use the conn browser",
-		target: {
-			type: "task_inbox",
-		},
-		schedule: {
-			kind: "once",
-			at: "2026-04-21T10:01:00.000Z",
-		},
-		profileId: "zhihu-helper",
-		browserId: "chrome-02",
-		now: new Date("2026-04-21T10:00:00.000Z"),
-	});
-	const run = await runStore.createRun({
-		runId: "run-browser-override",
-		connId: conn.connId,
-		scheduledAt: "2026-04-21T10:01:00.000Z",
-		workspacePath: databasePathSafeRoot(),
-		now: new Date("2026-04-21T10:00:59.000Z"),
-	});
-
-	await runner.run(conn, run, new Date("2026-04-21T10:01:05.000Z"));
-
-	const [sessionInput] = sessionFactory.createdInputs as Array<{ browserId?: string; browserScope?: string }>;
-	const expectedScope = `${conn.connId}-${run.runId}`;
-	assert.equal(sessionInput.browserId, "chrome-02");
-	assert.equal(sessionInput.browserScope, expectedScope);
-	assert.deepEqual(cleanupCalls, [
-		{ scope: expectedScope, browserId: "chrome-02" },
-		{ scope: expectedScope, browserId: "chrome-02" },
-	]);
-
-	database.close();
-});
-
-test("BackgroundAgentRunner falls back to the selected agent default browser", async () => {
-	const profileResolver = {
-		resolve: async () => ({
-			profileId: "zhihu-helper",
-			profileVersion: "test",
-			agentSpecId: "agent.default",
-			agentSpecVersion: "test",
-			skillSetId: "skills.default",
-			skillSetVersion: "test",
-			skills: [],
-			modelPolicyId: "model.default",
-			modelPolicyVersion: "test",
-			provider: "test-provider",
-			model: "test-model",
-			upgradePolicy: "latest" as const,
-			defaultBrowserId: "chrome-01",
-			resolvedAt: "2026-04-21T10:01:05.000Z",
-		}),
-	};
-	const { database, connStore, runStore, sessionFactory, runner } = await createRunner({ profileResolver });
-	const conn = await connStore.create({
-		title: "Browser Fallback",
-		prompt: "Use the agent browser",
-		target: {
-			type: "task_inbox",
-		},
-		schedule: {
-			kind: "once",
-			at: "2026-04-21T10:01:00.000Z",
-		},
-		profileId: "zhihu-helper",
-		now: new Date("2026-04-21T10:00:00.000Z"),
-	});
-	const run = await runStore.createRun({
-		runId: "run-browser-fallback",
-		connId: conn.connId,
-		scheduledAt: "2026-04-21T10:01:00.000Z",
-		workspacePath: databasePathSafeRoot(),
-		now: new Date("2026-04-21T10:00:59.000Z"),
-	});
-
-	await runner.run(conn, run, new Date("2026-04-21T10:01:05.000Z"));
-
-	const [sessionInput] = sessionFactory.createdInputs as Array<{ browserId?: string; browserScope?: string }>;
-	assert.equal(sessionInput.browserId, "chrome-01");
-	assert.equal(sessionInput.browserScope, `${conn.connId}-${run.runId}`);
-
-	database.close();
-});
-
-test("BackgroundAgentRunner pins the browser registry default when conn and agent have no browser", async () => {
-	const cleanupCalls: Array<{ scope: string; browserId?: string }> = [];
-	const profileResolver = {
-		resolve: async () => ({
-			profileId: "main",
-			profileVersion: "test",
-			agentSpecId: "agent.default",
-			agentSpecVersion: "test",
-			skillSetId: "skills.default",
-			skillSetVersion: "test",
-			skills: [],
-			modelPolicyId: "model.default",
-			modelPolicyVersion: "test",
-			provider: "test-provider",
-			model: "test-model",
-			upgradePolicy: "latest" as const,
-			resolvedAt: "2026-04-21T10:01:05.000Z",
-		}),
-	};
-	const { database, connStore, runStore, sessionFactory, runner } = await createRunner({
-		defaultBrowserId: "default",
-		profileResolver,
-		closeBrowserTargetsForScope: async (scope, options) => {
-			cleanupCalls.push({ scope, browserId: options?.browserId });
-		},
-	});
-	const conn = await connStore.create({
-		title: "Browser Default",
-		prompt: "Use the registry default browser",
-		target: {
-			type: "task_inbox",
-		},
-		schedule: {
-			kind: "once",
-			at: "2026-04-21T10:01:00.000Z",
-		},
-		profileId: "main",
-		now: new Date("2026-04-21T10:00:00.000Z"),
-	});
-	const run = await runStore.createRun({
-		runId: "run-browser-registry-default",
-		connId: conn.connId,
-		scheduledAt: "2026-04-21T10:01:00.000Z",
-		workspacePath: databasePathSafeRoot(),
-		now: new Date("2026-04-21T10:00:59.000Z"),
-	});
-
-	await runner.run(conn, run, new Date("2026-04-21T10:01:05.000Z"));
-
-	const [sessionInput] = sessionFactory.createdInputs as Array<{ browserId?: string; browserScope?: string }>;
-	const expectedScope = `${conn.connId}-${run.runId}`;
-	assert.equal(sessionInput.browserId, "default");
-	assert.equal(sessionInput.browserScope, expectedScope);
-	assert.deepEqual(cleanupCalls, [
-		{ scope: expectedScope, browserId: "default" },
-		{ scope: expectedScope, browserId: "default" },
-	]);
-
-	database.close();
 });
 
 test("BackgroundAgentRunner records failed runs without throwing into the foreground service", async () => {
@@ -636,7 +458,6 @@ test("BackgroundAgentRunner tolerates failed session event persistence", async (
 			assetStore,
 		}),
 		sessionFactory: new FakeSessionFactory(new FakeSession({ resultText: "final answer" })),
-		closeBrowserTargetsForScope: async () => undefined,
 	});
 	const conn = await connStore.create({
 		title: "Daily Digest",

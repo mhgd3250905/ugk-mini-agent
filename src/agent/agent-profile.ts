@@ -9,7 +9,6 @@ export interface AgentProfile {
 	agentId: string;
 	name: string;
 	description: string;
-	defaultBrowserId?: string;
 	defaultModelProvider?: string;
 	defaultModelId?: string;
 	dataDir: string;
@@ -30,7 +29,6 @@ export interface AgentProfileSummaryInput {
 	agentId: string;
 	name: string;
 	description: string;
-	defaultBrowserId?: string;
 	defaultModelProvider?: string;
 	defaultModelId?: string;
 }
@@ -48,7 +46,6 @@ export function createAgentProfileFromSummary(
 		agentId: input.agentId,
 		name: input.name,
 		description: input.description,
-		...(input.defaultBrowserId ? { defaultBrowserId: input.defaultBrowserId } : {}),
 		...(input.defaultModelProvider && input.defaultModelId
 			? { defaultModelProvider: input.defaultModelProvider, defaultModelId: input.defaultModelId }
 			: {}),

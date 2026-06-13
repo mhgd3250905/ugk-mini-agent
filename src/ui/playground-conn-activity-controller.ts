@@ -70,7 +70,6 @@ export function getConnActivityElementRefsScript(): string {
 		const connEditorIntervalStart = document.getElementById("conn-editor-interval-start");
 		const connEditorTimeOfDay = document.getElementById("conn-editor-time-of-day");
 		const connEditorProfileId = document.getElementById("conn-editor-profile-id");
-		const connEditorBrowserId = document.getElementById("conn-editor-browser-id");
 		const connEditorAgentSpecId = document.getElementById("conn-editor-agent-spec-id");
 		const connEditorSkillSetId = document.getElementById("conn-editor-skill-set-id");
 		const connEditorModelProvider = document.getElementById("conn-editor-model-provider");
@@ -113,7 +112,6 @@ export function getConnActivityEditorScript(): string {
 			openWorkspacePanel("conn", connManagerDialog, {
 				forceOverlay: options?.mode !== "workspace",
 			});
-			void loadConnBrowserCatalog().then(() => renderConnManager());
 			void fetchTeamTaskGroups().then(() => renderConnManager());
 			void loadConnManager({ silent: false });
 		}
@@ -140,7 +138,6 @@ export function getConnActivityEditorScript(): string {
 			fillConnEditor(buildConnEditorDraft(editing ? conn : null));
 			renderConnEditor();
 			void loadAgentCatalog().then(() => renderConnEditorAgentOptions());
-			void loadConnBrowserCatalog().then(() => renderConnEditorBrowserOptions());
 			void fetchTeamTaskGroups().then(() => renderConnEditorTeamGroupOptions());
 			void ensureConnEditorModelConfig();
 			void loadAssets(true);
@@ -291,8 +288,7 @@ export function getConnActivityEditorScript(): string {
 				intervalStart: formatConnDateTimeLocal(schedule.kind === "interval" ? schedule.startAt : undefined),
 				timeOfDay: inferConnScheduleTimeOfDay(schedule),
 				profileId: conn?.profileId || "main",
-				browserId: conn?.browserId || "",
-				agentSpecId: conn?.agentSpecId || "",
+			agentSpecId: conn?.agentSpecId || "",
 				skillSetId: conn?.skillSetId || "",
 				modelProvider: conn?.modelProvider || "",
 				modelId: conn?.modelId || "",
@@ -317,9 +313,6 @@ export function getConnActivityEditorScript(): string {
 			connEditorProfileId.value = draft.profileId;
 			connEditorProfileId.dataset.pendingValue = draft.profileId;
 			renderConnEditorAgentOptions();
-			connEditorBrowserId.value = draft.browserId;
-			connEditorBrowserId.dataset.pendingValue = draft.browserId;
-			renderConnEditorBrowserOptions();
 			connEditorAgentSpecId.value = draft.agentSpecId;
 			connEditorSkillSetId.value = draft.skillSetId;
 			connEditorModelProvider.dataset.pendingValue = draft.modelProvider;
@@ -719,72 +712,6 @@ export function getConnActivityEditorScript(): string {
 			delete connEditorProfileId.dataset.pendingValue;
 		}
 
-		function getConnBrowserCatalog() {
-			return Array.isArray(state.browserCatalog) && state.browserCatalog.length > 0
-				? state.browserCatalog
-				: [{ browserId: "default", name: "Default", isDefault: true }];
-		}
-
-		function getConnBrowserLabel(browserId) {
-			const normalized = String(browserId || "").trim();
-			if (!normalized) {
-				return "跟随执行 Agent";
-			}
-			const browser = getConnBrowserCatalog().find((entry) => String(entry?.browserId || "").trim() === normalized);
-			return browser ? (browser.name || browser.browserId) + " · " + browser.browserId : normalized;
-		}
-
-		async function loadConnBrowserCatalog() {
-			try {
-				const response = await fetch("/v1/browsers", {
-					method: "GET",
-					headers: { accept: "application/json" },
-				});
-				const payload = await response.json().catch(() => ({}));
-				if (!response.ok) {
-					throw new Error(payload?.message || "无法读取浏览器列表");
-				}
-				state.defaultBrowserId = String(payload?.defaultBrowserId || "default").trim() || "default";
-				state.browserCatalog = Array.isArray(payload?.browsers) ? payload.browsers : [];
-				state.browserCatalogReliable = true;
-			} catch {
-				state.defaultBrowserId = "default";
-				state.browserCatalog = [{ browserId: "default", name: "Default", isDefault: true }];
-				state.browserCatalogReliable = false;
-			}
-		}
-
-		function renderConnEditorBrowserOptions() {
-			if (!connEditorBrowserId) {
-				return;
-			}
-			const pendingValue = String(connEditorBrowserId.dataset.pendingValue || connEditorBrowserId.value || "").trim();
-			connEditorBrowserId.innerHTML = "";
-			const followOption = document.createElement("option");
-			followOption.value = "";
-			followOption.textContent = "跟随执行 Agent";
-			connEditorBrowserId.appendChild(followOption);
-			for (const browser of getConnBrowserCatalog()) {
-				const browserId = String(browser?.browserId || "").trim();
-				if (!browserId) {
-					continue;
-				}
-				const option = document.createElement("option");
-				option.value = browserId;
-				option.textContent = getConnBrowserLabel(browserId);
-				connEditorBrowserId.appendChild(option);
-			}
-			if (pendingValue && !getConnBrowserCatalog().some((browser) => String(browser?.browserId || "").trim() === pendingValue)) {
-				const option = document.createElement("option");
-				option.value = pendingValue;
-				option.textContent = pendingValue + "（未在当前浏览器列表中）";
-				connEditorBrowserId.appendChild(option);
-			}
-			connEditorBrowserId.value = pendingValue;
-			connEditorBrowserId.disabled = state.connEditorSaving;
-			delete connEditorBrowserId.dataset.pendingValue;
-		}
-
 		async function ensureConnEditorModelConfig() {
 			if (!state.modelConfig) {
 				await loadModelConfig();
@@ -896,7 +823,6 @@ export function getConnActivityEditorScript(): string {
 			connEditorUploadAssetsButton.disabled = state.connEditorSaving || state.connEditorUploadingAssets;
 			connEditorUploadAssetsButton.textContent = state.connEditorUploadingAssets ? "上传中" : "上传新文件";
 			renderConnEditorAgentOptions();
-			renderConnEditorBrowserOptions();
 			renderConnEditorModelOptions();
 			renderConnEditorError(state.connEditorError);
 			renderConnEditorSelectedAssets();
@@ -1014,9 +940,6 @@ export function getConnActivityEditorScript(): string {
 			payload.modelProvider = modelProvider;
 			payload.modelId = modelId;
 			payload.profileId = String(connEditorProfileId?.value || "main").trim() || "main";
-			if (state.connEditorMode === "edit" || String(connEditorBrowserId?.value || "").trim()) {
-				payload.browserId = connEditorBrowserId.value || null;
-			}
 			const assetRefs = Array.isArray(state.connEditorSelectedAssetRefs)
 				? state.connEditorSelectedAssetRefs.map((assetId) => String(assetId || "").trim()).filter(Boolean)
 				: [];
@@ -1055,12 +978,10 @@ export function getConnActivityEditorScript(): string {
 			return (state.connManagerItems || []).find((conn) => String(conn?.connId || "").trim() === connId) || null;
 		}
 
-		async function confirmConnExecutionBindingChangeIfNeeded(conn, nextProfileId, nextBrowserId) {
+		async function confirmConnExecutionBindingChangeIfNeeded(conn, nextProfileId) {
 			const currentProfileId = String(conn?.profileId || "main").trim() || "main";
 			const normalizedNextProfileId = String(nextProfileId || "main").trim() || "main";
-			const currentBrowserId = String(conn?.browserId || "").trim();
-			const normalizedNextBrowserId = String(nextBrowserId || "").trim();
-			if (currentProfileId === normalizedNextProfileId && currentBrowserId === normalizedNextBrowserId) {
+			if (currentProfileId === normalizedNextProfileId) {
 				return true;
 			}
 			return await openConfirmDialog({
@@ -1072,11 +993,7 @@ export function getConnActivityEditorScript(): string {
 					getAgentDisplayName(currentProfileId) +
 					"\\n目标执行 Agent：" +
 					getAgentDisplayName(normalizedNextProfileId) +
-					"\\n当前浏览器：" +
-					getConnBrowserLabel(currentBrowserId) +
-					"\\n目标浏览器：" +
-					(normalizedNextBrowserId ? getConnBrowserLabel(normalizedNextBrowserId) : "跟随执行 Agent") +
-					"\\n影响范围：只影响后续 run\\n不会做：不复制 cookie、不迁移 Chrome profile、不启动或关闭 Chrome、不影响正在运行中的任务",
+					"\\n影响范围：只影响后续 run\\n不会影响正在运行中的任务",
 				confirmText: "确认变更",
 				cancelText: "取消",
 				tone: "danger",
@@ -1102,7 +1019,6 @@ export function getConnActivityEditorScript(): string {
 				? await confirmConnExecutionBindingChangeIfNeeded(
 						editingConn,
 						payload.profileId,
-						Object.hasOwn(payload, "browserId") ? payload.browserId : "",
 					)
 				: true;
 			if (!confirmedExecutionBinding) {
@@ -1110,10 +1026,8 @@ export function getConnActivityEditorScript(): string {
 			}
 			const currentProfileId = String(editingConn?.profileId || "main").trim() || "main";
 			const nextProfileId = String(payload.profileId || "main").trim() || "main";
-			const currentBrowserId = String(editingConn?.browserId || "").trim();
-			const nextBrowserId = String(Object.hasOwn(payload, "browserId") ? payload.browserId || "" : "").trim();
 			const executionBindingChanged =
-				isPromptExecution && Boolean(isEditing) && (currentProfileId !== nextProfileId || currentBrowserId !== nextBrowserId);
+				isPromptExecution && Boolean(isEditing) && currentProfileId !== nextProfileId;
 
 			state.connEditorSaving = true;
 			renderConnEditor();
@@ -1121,12 +1035,6 @@ export function getConnActivityEditorScript(): string {
 				const headers = {
 					accept: "application/json",
 					"content-type": "application/json",
-					...(executionBindingChanged
-						? {
-								"x-ugk-browser-binding-confirmed": "true",
-								"x-ugk-browser-binding-source": "playground",
-							}
-						: {}),
 				};
 				const response = await fetch(
 					isEditing ? "/v1/conns/" + encodeURIComponent(state.connEditorConnId) : "/v1/conns",
@@ -2060,11 +1968,6 @@ export function getConnActivityRendererScript(): string {
 				const agentCode = document.createElement("code");
 				agentCode.textContent = getAgentDisplayName(conn.profileId || "main");
 				agentLine.appendChild(agentCode);
-				const browserLine = document.createElement("span");
-				browserLine.textContent = "浏览器：";
-				const browserCode = document.createElement("code");
-				browserCode.textContent = getConnBrowserLabel(conn.browserId || "");
-				browserLine.appendChild(browserCode);
 				const modelLine = document.createElement("span");
 				modelLine.textContent = "模型：";
 				const modelCode = document.createElement("code");
@@ -2079,7 +1982,6 @@ export function getConnActivityRendererScript(): string {
 				meta.appendChild(executionLine);
 				if (normalizeConnExecution(conn).type !== "team_group") {
 					meta.appendChild(agentLine);
-					meta.appendChild(browserLine);
 					meta.appendChild(modelLine);
 				}
 				main.appendChild(titleRow);

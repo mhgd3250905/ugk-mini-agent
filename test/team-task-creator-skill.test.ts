@@ -187,7 +187,8 @@ test("team-task-creator prohibits runs, direct data writes, and generated child 
 	assert.match(skill, /No Task run, Team Run, Plan run/);
 	assert.match(skill, /worker\/checker chain/);
 	assert.match(skill, /Agent profile edit/);
-	assert.match(skill, /model change|browser binding change/);
+	assert.match(skill, /model change/);
+	assert.doesNotMatch(skill, /browser binding change/);
 	assert.match(skill, /No generated child Tasks in public create\/update payloads/);
 	assert.match(skill, /No `generatedSource`/);
 });

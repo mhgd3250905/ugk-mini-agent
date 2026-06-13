@@ -36,7 +36,6 @@ export interface AgentTemplate {
 	requestedAgentId?: string;
 	agentId?: string;
 	agentName?: string;
-	defaultBrowserId?: string;
 	agentDir?: string;
 	rulesPath?: string;
 	skillPaths?: string[];
@@ -197,7 +196,6 @@ export class AgentTemplateRegistry {
 			requestedAgentId: ref.profileId,
 			agentId: context.profile.agentId,
 			agentName: context.profile.name,
-			...(context.profile.defaultBrowserId ? { defaultBrowserId: context.profile.defaultBrowserId } : {}),
 			agentDir: context.agentDir,
 			...(context.rulesPath ? { rulesPath: context.rulesPath } : {}),
 			skillPaths: context.skillPaths,
@@ -366,7 +364,6 @@ export class AgentTemplateRegistry {
 					agentId: profile.agentId,
 					name: profile.name,
 					description: profile.description,
-					defaultBrowserId: profile.defaultBrowserId,
 					defaultModelProvider: profile.defaultModelProvider,
 					defaultModelId: profile.defaultModelId,
 					agentDir,

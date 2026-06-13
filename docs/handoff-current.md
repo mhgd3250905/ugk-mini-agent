@@ -42,4 +42,4 @@ npx tsc --noEmit
 git diff --check
 ```
 
-涉及 Team Console、Conn、Browser 或 UI 的改动，补跑对应 focused tests。实际命令以改动范围和当前失败上下文为准。
+涉及 Team Console、Conn 或 UI 的改动，补跑对应 focused tests。实际命令以改动范围和当前失败上下文为准。

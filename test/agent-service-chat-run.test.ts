@@ -5,29 +5,16 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { AgentService } from "../src/agent/agent-service.js";
 import { buildPromptWithAssetContext } from "../src/agent/file-artifacts.js";
-import { readBrowserScopeRoute } from "../src/browser/browser-scope-routes.js";
 import {
 	DeferredSession,
 	EnvAwareSession,
 	FakeAgentSessionFactory,
 	FakeAssetStore,
 	FakeSession,
-	RouteObservingSession,
 	createStore,
-	restoreEnvValue,
 	sendFileToolFinished,
 	textDelta,
 } from "./agent-service-helpers.js";
-
-const originalBrowserScopeRouteCachePath = process.env.UGK_BROWSER_SCOPE_ROUTE_CACHE_PATH;
-process.env.UGK_BROWSER_SCOPE_ROUTE_CACHE_PATH = join(
-	await mkdtemp(join(tmpdir(), "ugk-pi-agent-service-chat-run-browser-routes-")),
-	"routes.json",
-);
-
-test.after(() => {
-	restoreEnvValue("UGK_BROWSER_SCOPE_ROUTE_CACHE_PATH", originalBrowserScopeRouteCachePath);
-});
 
 test("creates a new conversation, prompts the session, and persists the session file", async () => {
 	const store = await createStore();
@@ -45,7 +32,7 @@ test("creates a new conversation, prompts the session, and persists the session 
 	assert.equal(result.sessionFile, "E:/sessions/new.jsonl");
 	assert.deepEqual(factory.calls, [
 		{
-			browserScope: result.conversationId.replace(/[^a-zA-Z0-9_-]+/g, "-"),
+			agentRunScope: result.conversationId.replace(/[^a-zA-Z0-9_-]+/g, "-"),
 			conversationId: result.conversationId,
 			sessionFile: undefined,
 		},
@@ -58,46 +45,25 @@ test("creates a new conversation, prompts the session, and persists the session 
 	assert.equal(storedConversation?.messageCount, 0);
 });
 
-test("chat closes scoped browser targets after the run finishes", async () => {
-	const originalFetch = globalThis.fetch;
+test("chat exposes the scoped agent run id during the run", async () => {
 	const originalClaudeAgentId = process.env.CLAUDE_AGENT_ID;
 	delete process.env.CLAUDE_AGENT_ID;
-	const cleanupCalls: Array<{ url: string; init?: RequestInit }> = [];
-	globalThis.fetch = (async (url, init) => {
-		cleanupCalls.push({ url: String(url), init });
-		return new Response(JSON.stringify({ ok: true }), {
-			status: 200,
-			headers: { "content-type": "application/json" },
-		});
-	}) as typeof fetch;
 
 	try {
 		const store = await createStore();
-		const session = new EnvAwareSession("E:/sessions/browser-cleanup.jsonl", [textDelta("done")]);
+		const session = new EnvAwareSession("E:/sessions/agent-scope.jsonl", [textDelta("done")]);
 		const factory = new FakeAgentSessionFactory(() => session);
 		const service = new AgentService({ agentId: "search", conversationStore: store, sessionFactory: factory });
 
 		const result = await service.chat({
-			conversationId: "manual:browser-cleanup",
-			message: "open a browser page",
+			conversationId: "manual:agent-scope",
+			message: "run scoped task",
 		});
 
 		assert.equal(result.text, "done");
-		assert.equal(session.observedAgentScope, "search-manual-browser-cleanup");
-		assert.equal(cleanupCalls.length, 2);
-		assert.equal(
-			cleanupCalls[0]?.url,
-			"http://127.0.0.1:3456/session/close-all?metaAgentScope=search-manual-browser-cleanup",
-		);
-		assert.equal(
-			cleanupCalls[1]?.url,
-			`http://127.0.0.1:3456/session/close-all?metaAgentScope=${encodeURIComponent(session.observedAgentScope ?? "")}`,
-		);
-		assert.equal(cleanupCalls[0]?.init?.method, "POST");
-		assert.equal(cleanupCalls[1]?.init?.method, "POST");
+		assert.equal(session.observedAgentScope, "search-manual-agent-scope");
 		assert.equal(process.env.CLAUDE_AGENT_ID, undefined);
 	} finally {
-		globalThis.fetch = originalFetch;
 		if (originalClaudeAgentId === undefined) {
 			delete process.env.CLAUDE_AGENT_ID;
 		} else {
@@ -506,144 +472,19 @@ test("queueMessage steers into the active session while a run is streaming", asy
 	assert.equal(events.at(-1)?.type, "done");
 });
 
-test("queueMessage rejects browser changes during an active run", async () => {
+test("runChat passes agent run scope into the session factory", async () => {
 	const store = await createStore();
-	const activeSession = new DeferredSession("E:/sessions/active-browser.jsonl");
-	const factory = new FakeAgentSessionFactory(() => activeSession);
-	const service = new AgentService({ conversationStore: store, sessionFactory: factory });
-
-	const run = service.streamChat(
-		{
-			conversationId: "manual:active-browser",
-			message: "start",
-			browserId: "work-01",
-		},
-		() => undefined,
-	);
-	await activeSession.promptStarted;
-
-	const queued = await service.queueMessage({
-		conversationId: "manual:active-browser",
-		message: "不要换窗口",
-		mode: "steer",
-		browserId: "work-02",
-	});
-
-	assert.deepEqual(queued, {
-		conversationId: "manual:active-browser",
-		mode: "steer",
-		queued: false,
-		reason: "browser_changed",
-	});
-	assert.deepEqual(activeSession.steerCalls, []);
-
-	activeSession.finish();
-	await run;
-});
-
-test("runChat passes browser scope and browserId into the session factory", async () => {
-	const store = await createStore();
-	const session = new FakeSession("E:/sessions/browser-context.jsonl", [], "ok");
+	const session = new FakeSession("E:/sessions/agent-context.jsonl", [], "ok");
 	const factory = new FakeAgentSessionFactory(() => session);
 	const service = new AgentService({ conversationStore: store, sessionFactory: factory });
 
 	await service.chat({
-		conversationId: "manual:browser-context",
-		message: "用指定浏览器",
-		browserId: "chrome-01",
+		conversationId: "manual:agent-context",
+		message: "scope this run",
 	});
 
-	assert.equal(factory.calls[0]?.conversationId, "manual:browser-context");
-	assert.equal(factory.calls[0]?.browserScope, "manual-browser-context");
-	assert.equal(factory.calls[0]?.browserId, "chrome-01");
-});
-
-test("runChat clears the scoped browser route after the run finishes", async () => {
-	const originalFetch = globalThis.fetch;
-	const originalRouteCachePath = process.env.UGK_BROWSER_SCOPE_ROUTE_CACHE_PATH;
-	const routeCachePath = join(await mkdtemp(join(tmpdir(), "ugk-pi-chat-browser-routes-")), "routes.json");
-	globalThis.fetch = (async () =>
-		new Response(JSON.stringify({ ok: true }), {
-			status: 200,
-			headers: { "content-type": "application/json" },
-		})) as typeof fetch;
-	process.env.UGK_BROWSER_SCOPE_ROUTE_CACHE_PATH = routeCachePath;
-
-	try {
-		const store = await createStore();
-		const session = new FakeSession("E:/sessions/browser-route-clear.jsonl", [], "ok");
-		const factory = new FakeAgentSessionFactory(() => session);
-		const service = new AgentService({ conversationStore: store, sessionFactory: factory });
-
-		await service.chat({
-			conversationId: "manual:browser-route-clear",
-			message: "用指定浏览器",
-			browserId: "chrome-01",
-		});
-
-		assert.equal(await readBrowserScopeRoute("manual-browser-route-clear", { cachePath: routeCachePath }), undefined);
-	} finally {
-		globalThis.fetch = originalFetch;
-		if (originalRouteCachePath === undefined) {
-			delete process.env.UGK_BROWSER_SCOPE_ROUTE_CACHE_PATH;
-		} else {
-			process.env.UGK_BROWSER_SCOPE_ROUTE_CACHE_PATH = originalRouteCachePath;
-		}
-	}
-});
-
-test("runChat writes the scoped browser route with the resolved CDP endpoint during the run", async () => {
-	const originalFetch = globalThis.fetch;
-	const originalRouteCachePath = process.env.UGK_BROWSER_SCOPE_ROUTE_CACHE_PATH;
-	const originalInstances = process.env.UGK_BROWSER_INSTANCES_JSON;
-	const routeCachePath = join(await mkdtemp(join(tmpdir(), "ugk-pi-chat-browser-route-endpoint-")), "routes.json");
-	globalThis.fetch = (async () =>
-		new Response(JSON.stringify({ ok: true }), {
-			status: 200,
-			headers: { "content-type": "application/json" },
-		})) as typeof fetch;
-	process.env.UGK_BROWSER_SCOPE_ROUTE_CACHE_PATH = routeCachePath;
-	process.env.UGK_BROWSER_INSTANCES_JSON = JSON.stringify([
-		{ browserId: "chrome-01", cdpHost: "172.31.250.11", cdpPort: 9223 },
-		{ browserId: "chrome-02", cdpHost: "172.31.250.12", cdpPort: 9223 },
-	]);
-
-	try {
-		const store = await createStore();
-		const session = new RouteObservingSession(
-			"E:/sessions/browser-route-endpoint.jsonl",
-			[],
-			"ok",
-			routeCachePath,
-			"manual-browser-route-endpoint",
-		);
-		const factory = new FakeAgentSessionFactory(() => session);
-		const service = new AgentService({ conversationStore: store, sessionFactory: factory });
-
-		await service.chat({
-			conversationId: "manual:browser-route-endpoint",
-			message: "用指定浏览器",
-			browserId: "chrome-01",
-		});
-
-		const observedRoute = session.observedRoute as {
-			browserId?: string;
-			cdpHost?: string;
-			cdpPort?: number;
-			updatedAt?: string;
-		};
-		assert.deepEqual(observedRoute, {
-			browserId: "chrome-01",
-			cdpHost: "172.31.250.11",
-			cdpPort: 9223,
-			updatedAt: observedRoute.updatedAt,
-		});
-		assert.equal(typeof observedRoute.updatedAt, "string");
-	} finally {
-		globalThis.fetch = originalFetch;
-		restoreEnvValue("UGK_BROWSER_SCOPE_ROUTE_CACHE_PATH", originalRouteCachePath);
-		restoreEnvValue("UGK_BROWSER_INSTANCES_JSON", originalInstances);
-	}
+	assert.equal(factory.calls[0]?.conversationId, "manual:agent-context");
+	assert.equal(factory.calls[0]?.agentRunScope, "manual-agent-context");
 });
 
 test("queueMessage can enqueue a follow-up after the active turn", async () => {
@@ -736,4 +577,3 @@ test("getRunStatus reports whether a conversation is actively streaming", async 
 		},
 	});
 });
-

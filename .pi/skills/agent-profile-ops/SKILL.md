@@ -58,9 +58,9 @@ description: Use when the user asks to view, list, create, configure, switch, ve
 5. 配置技能：创建时的 `initialSystemSkillNames` 会把主 Agent 当前已有且来源明确的技能复制到该 agent 的 `.data/agents/:agentId/pi/skills`；创建后追加安装调用 `POST /v1/agents/:agentId/skills`，只允许把主 Agent 当前已有且来源明确的技能复制到该 agent 自己的 `user-skills` 目录。如果主 Agent 没有目标技能，停止、说明原因，并询问用户是否要切换到目标 agent 自己处理。每个 agent 的已安装技能支持按技能粒度启用/禁用：`GET /v1/agents/:agentId/skills` 返回技能清单及 `enabled` / `required` 状态，`PATCH /v1/agents/:agentId/skills/:skillName` 切换 `enabled`（`required` 技能不可禁用）。Playground Agent 操作台和独立 Agent 管理页均提供开关按钮。
 6. 归档 agent：先说明影响范围并询问确认；确认不是 `main`、确认没有 running conversation 后，才调用 `POST /v1/agents/:agentId/archive`。
 
-## 浏览器配置边界
+## 已移除的浏览器绑定
 
-Agent profile 的浏览器配置只允许用户在 Playground UI 中手动设置。当前技能不得查询浏览器清单、不得向用户透露可用浏览器实例、不得通过自然语言或脚本修改任何浏览器绑定字段。用户提出这类请求时，说明该配置只能在 UI 的 Agent 管理界面完成。
+Agent profile 不再支持浏览器绑定配置。当前技能不得查询旧浏览器清单、不得向用户透露浏览器实例、不得通过自然语言或脚本写入任何旧浏览器绑定字段。用户提出这类请求时，说明该能力已从当前版本移除。
 
 ## Playground 切换方法
 

@@ -41,17 +41,9 @@ test("GET /playground returns the test UI html", async () => {
 	assert.match(response.body, /\/v1\/model-config/);
 	assert.match(response.body, /\/v1\/model-config\/validate/);
 	assert.match(response.body, /\/v1\/model-config\/default/);
-	assert.match(response.body, /open-browser-workbench-button/);
-	assert.match(response.body, /browser-workbench-dialog/);
-	assert.match(response.body, /browser-workbench-list/);
-	assert.match(response.body, /browser-workbench-targets/);
-	assert.match(response.body, /function openBrowserWorkbench/);
-	assert.match(response.body, /JS 内存/);
-	assert.match(response.body, /页面元素/);
-	assert.match(response.body, /占用偏高/);
-	assert.match(response.body, /\/v1\/browsers\/" \+ encodeURIComponent\(browserId\) \+ "\/status/);
-	assert.match(response.body, /\/targets\/" \+ encodeURIComponent\(targetId\) \+ "\/close/);
-	assert.match(response.body, /\/start/);
+	assert.doesNotMatch(response.body, /open-browser-workbench-button/);
+	assert.doesNotMatch(response.body, /browser-workbench-dialog/);
+	assert.doesNotMatch(response.body, /\/v1\/browsers/);
 	assert.match(response.body, /file-picker-action/);
 	assert.match(response.body, /asset-modal-list/);
 	assert.match(response.body, /close-asset-modal-button/);
@@ -385,7 +377,7 @@ test("GET /playground returns the test UI html", async () => {
 	assert.match(response.body, /function inferConnScheduleMode\(/);
 	assert.match(response.body, /function buildConnDailyCronExpression\(/);
 	assert.match(response.body, /conn-editor-profile-id/);
-	assert.match(response.body, /conn-editor-browser-id/);
+	assert.doesNotMatch(response.body, /conn-editor-browser-id/);
 	assert.match(response.body, /conn-editor-model-provider/);
 	assert.match(response.body, /conn-editor-model-id/);
 	assert.match(response.body, /conn-editor-agent-spec-id/);
@@ -438,7 +430,7 @@ test("GET /playground returns the test UI html", async () => {
 	assert.match(response.body, /运行节奏：/);
 	assert.match(response.body, /function openConnEditor\(/);
 	assert.match(response.body, /function submitConnEditor\(/);
-	assert.match(response.body, /x-ugk-browser-binding-confirmed/);
+	assert.doesNotMatch(response.body, /x-ugk-browser-binding-confirmed/);
 	assert.match(response.body, /method:\s*isEditing \? "PATCH" : "POST"/);
 	assert.match(response.body, /isEditing \? "\/v1\/conns\/" \+ encodeURIComponent\(state\.connEditorConnId\) : "\/v1\/conns"/);
 	assert.match(response.body, /function scheduleConversationLayoutSync\(/);

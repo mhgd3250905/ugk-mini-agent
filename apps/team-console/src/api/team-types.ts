@@ -62,8 +62,6 @@ export interface TeamRoleRuntimeContext {
   resolvedProfileId: string;
   fallbackUsed: boolean;
   fallbackReason?: "profile_not_found" | "profile_archived" | "legacy_profile";
-  browserId: string | null;
-  browserScope: string;
 }
 
 export interface TeamAttemptWorkerSummary {
@@ -987,7 +985,6 @@ export interface AgentSummary {
   agentId: string;
   name: string;
   description: string;
-  defaultBrowserId?: string;
   defaultModelProvider?: string;
   defaultModelId?: string;
 }
@@ -1037,7 +1034,6 @@ export interface AgentChatStreamRequest {
   conversationId?: string;
   message: string;
   userId?: string;
-  browserId?: string;
   assetRefs?: string[];
 }
 
@@ -1052,7 +1048,6 @@ export interface AgentQueueMessageRequest {
   message: string;
   mode: "steer" | "followUp";
   userId?: string;
-  browserId?: string;
   assetRefs?: string[];
 }
 
@@ -1060,7 +1055,7 @@ export interface AgentQueueMessageResponse {
   conversationId: string;
   mode: "steer" | "followUp";
   queued: boolean;
-  reason?: "not_running" | "browser_changed";
+  reason?: "not_running";
 }
 
 export interface AgentConversationResponse {

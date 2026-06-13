@@ -107,7 +107,6 @@ function createConnPageContext(options?: {
 					return { conns: [], unreadRunCountsByConnId: {}, unreadLatestRunTimesByConnId: {}, totalUnreadRuns: 0 };
 				}
 				if (url === "/v1/agents") return { agents: [{ agentId: "main", name: "主 Agent" }] };
-				if (url === "/v1/browsers") return { browsers: [{ browserId: "default", name: "Default Chrome" }] };
 				if (url === "/v1/model-config") {
 					return {
 						current: { provider: "zhipu-glm", model: "glm-5.1" },

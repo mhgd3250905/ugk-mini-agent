@@ -115,7 +115,6 @@ function createConnPageContext(options?: {
 					return { conns: [], unreadRunCountsByConnId: {}, unreadLatestRunTimesByConnId: {}, totalUnreadRuns: 0 };
 				}
 				if (url === "/v1/agents") return { agents: [{ agentId: "main", name: "主 Agent" }] };
-				if (url === "/v1/browsers") return { browsers: [{ browserId: "default", name: "Default Chrome" }] };
 				if (url === "/v1/model-config") {
 					return {
 						current: { provider: "zhipu-glm", model: "glm-5.1" },
@@ -150,7 +149,7 @@ test("standalone conn editor loads support catalogs lazily and reuses the cache"
 		`,
 	);
 
-	assert.deepEqual(calls, ["/v1/agents", "/v1/browsers", "/v1/model-config", "/v1/team/task-groups"]);
+	assert.deepEqual(calls, ["/v1/agents", "/v1/model-config", "/v1/team/task-groups"]);
 });
 
 test("standalone conn edit keeps selected support values while lazy catalogs load", async () => {
@@ -167,7 +166,6 @@ test("standalone conn edit keeps selected support values while lazy catalogs loa
 		"editor-target-type": createConnPageSelectElement(),
 		"editor-target-id": createConnPageElement(),
 		"editor-profile-id": createConnPageSelectElement(),
-		"editor-browser-id": createConnPageSelectElement(),
 		"editor-model-provider": createConnPageSelectElement(),
 		"editor-model-id": createConnPageSelectElement(),
 		"editor-support-status": createConnPageElement(),
@@ -177,7 +175,6 @@ test("standalone conn edit keeps selected support values while lazy catalogs loa
 		fetchJson: async (url: string) => {
 			calls.push(url);
 			if (url === "/v1/agents") return { agents: [{ agentId: "agent-a", name: "Agent A" }] };
-			if (url === "/v1/browsers") return { browsers: [{ browserId: "chrome-2", name: "Chrome 2" }] };
 			if (url === "/v1/model-config") {
 				return {
 					current: { provider: "zhipu-glm", model: "glm-5.1" },
@@ -197,8 +194,8 @@ test("standalone conn edit keeps selected support values while lazy catalogs loa
 	});
 
 	const result = await runConnPageExpression<{
-		immediate: { profileId: string; browserId: string; modelProvider: string; modelId: string };
-		afterLoad: { profileId: string; browserId: string; modelProvider: string; modelId: string };
+		immediate: { profileId: string; modelProvider: string; modelId: string };
+		afterLoad: { profileId: string; modelProvider: string; modelId: string };
 	}>(
 		context,
 		`
@@ -210,21 +207,18 @@ test("standalone conn edit keeps selected support values while lazy catalogs loa
 				schedule: { kind: "once", at: "2026-05-23T04:00:00.000Z" },
 				target: { type: "task_inbox" },
 				profileId: "agent-a",
-				browserId: "chrome-2",
 				modelProvider: "ali-codeplan",
 				modelId: "qwen3.7-max",
 			}];
 			openEditor("edit", state.conns[0]);
 			const immediate = {
 				profileId: $("editor-profile-id").value,
-				browserId: $("editor-browser-id").value,
 				modelProvider: $("editor-model-provider").value,
 				modelId: $("editor-model-id").value,
 			};
 			await state.editorSupportCatalogsPromise;
 			const afterLoad = {
 				profileId: $("editor-profile-id").value,
-				browserId: $("editor-browser-id").value,
 				modelProvider: $("editor-model-provider").value,
 				modelId: $("editor-model-id").value,
 			};
@@ -232,13 +226,11 @@ test("standalone conn edit keeps selected support values while lazy catalogs loa
 		`,
 	);
 
-	assert.deepEqual(calls, ["/v1/agents", "/v1/browsers", "/v1/model-config", "/v1/team/task-groups"]);
+	assert.deepEqual(calls, ["/v1/agents", "/v1/model-config", "/v1/team/task-groups"]);
 	assert.equal(result.immediate.profileId, "agent-a");
-	assert.equal(result.immediate.browserId, "chrome-2");
 	assert.equal(result.immediate.modelProvider, "");
 	assert.equal(result.immediate.modelId, "");
 	assert.equal(result.afterLoad.profileId, "agent-a");
-	assert.equal(result.afterLoad.browserId, "chrome-2");
 	assert.equal(result.afterLoad.modelProvider, "ali-codeplan");
 	assert.equal(result.afterLoad.modelId, "qwen3.7-max");
 });
@@ -252,7 +244,6 @@ test("standalone conn editor guards save while support catalogs are unavailable"
 			"editor-once-at": createConnPageElement("2026-05-22 12:00"),
 			"editor-target-type": createConnPageElement("task_inbox"),
 			"editor-profile-id": createConnPageElement("main"),
-			"editor-browser-id": createConnPageElement(""),
 			"editor-model-provider": createConnPageElement("zhipu-glm"),
 			"editor-model-id": createConnPageElement("glm-5.1"),
 			"editor-error": createConnPageElement(""),

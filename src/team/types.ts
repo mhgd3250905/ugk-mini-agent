@@ -53,8 +53,6 @@ export interface TeamRoleRuntimeContext {
 	resolvedProfileId: string;
 	fallbackUsed: boolean;
 	fallbackReason?: "profile_not_found" | "profile_archived" | "legacy_profile";
-	browserId: string | null;
-	browserScope: string;
 }
 
 export type TeamAttemptRoleProcessStatus = "waiting" | "running" | "succeeded" | "failed" | "cancelled";

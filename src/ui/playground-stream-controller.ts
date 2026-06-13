@@ -255,7 +255,7 @@ export function getPlaygroundStreamControllerScript(): string {
 				"页面连接已恢复",
 				reason === "missing_done"
 					? "主连接结束但后端任务仍在运行，已切换到运行态事件流继续接收。"
-					: "浏览器网络连接短暂断开，已重新订阅当前运行任务。",
+					: "网络连接短暂断开，已重新订阅当前运行任务。",
 			);
 			return true;
 		}

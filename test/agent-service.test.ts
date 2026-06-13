@@ -665,7 +665,7 @@ test("reuses the stored session file for an existing conversation", async () => 
 	assert.equal(result.text, "继续对话");
 	assert.deepEqual(factory.calls, [
 		{
-			browserScope: "manual-existing",
+			agentRunScope: "manual-existing",
 			conversationId: "manual:existing",
 			sessionFile: "E:/sessions/existing.jsonl",
 		},

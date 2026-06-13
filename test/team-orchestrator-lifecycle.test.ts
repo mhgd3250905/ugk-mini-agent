@@ -447,8 +447,6 @@ test("lifecycle: records role runtime context in attempt metadata", async () => 
 					resolvedProfileId: "main",
 					fallbackUsed: true,
 					fallbackReason: "profile_not_found" as const,
-					browserId: "browser_worker",
-					browserScope: "team:run_ctx:worker:attempt_1:main",
 				},
 			};
 		}
@@ -461,8 +459,6 @@ test("lifecycle: records role runtime context in attempt metadata", async () => 
 					requestedProfileId: "checker_profile",
 					resolvedProfileId: "checker_profile",
 					fallbackUsed: false,
-					browserId: null,
-					browserScope: "team:run_ctx:checker:attempt_1:checker_profile",
 				},
 			};
 		}
@@ -475,8 +471,6 @@ test("lifecycle: records role runtime context in attempt metadata", async () => 
 					requestedProfileId: "watcher_profile",
 					resolvedProfileId: "watcher_profile",
 					fallbackUsed: false,
-					browserId: "browser_watcher",
-					browserScope: "team:run_ctx:watcher:attempt_1:watcher_profile",
 				},
 			};
 		}
@@ -500,8 +494,6 @@ test("lifecycle: records role runtime context in attempt metadata", async () => 
 		assert.equal(attempt.worker[0]!.runtimeContext?.requestedProfileId, "missing_worker");
 		assert.equal(attempt.worker[0]!.runtimeContext?.resolvedProfileId, "main");
 		assert.equal(attempt.worker[0]!.runtimeContext?.fallbackReason, "profile_not_found");
-		assert.equal(attempt.checker[0]!.runtimeContext?.browserId, null);
-		assert.equal(attempt.watcher?.runtimeContext?.browserScope, "team:run_ctx:watcher:attempt_1:watcher_profile");
 	} finally {
 		await rm(root, { recursive: true });
 	}
@@ -519,8 +511,6 @@ test("lifecycle: records finalizer runtime context in run state", async () => {
 					resolvedProfileId: "main",
 					fallbackUsed: true,
 					fallbackReason: "profile_not_found" as const,
-					browserId: "browser_finalizer",
-					browserScope: "team:run_ctx:finalizer:finalizer:main",
 				},
 			};
 		}
@@ -542,7 +532,6 @@ test("lifecycle: records finalizer runtime context in run state", async () => {
 		assert.equal(result.finalizerRuntimeContext?.requestedProfileId, "missing_finalizer");
 		assert.equal(result.finalizerRuntimeContext?.resolvedProfileId, "main");
 		assert.equal(result.finalizerRuntimeContext?.fallbackReason, "profile_not_found");
-		assert.equal(result.finalizerRuntimeContext?.browserId, "browser_finalizer");
 	} finally {
 		await rm(root, { recursive: true });
 	}
@@ -716,10 +705,10 @@ test('P17: orchestrator persists worker/checker/watcher runtime context in attem
 		});
 
 		const roleRuntimes: Record<string, import('../src/team/types.js').TeamRoleRuntimeContext> = {
-			worker: { requestedProfileId: 'rc-worker', resolvedProfileId: 'rc-worker', fallbackUsed: false, browserId: 'bw-rc', browserScope: 'scope:rc-worker' },
-			checker: { requestedProfileId: 'rc-checker', resolvedProfileId: 'rc-checker', fallbackUsed: false, browserId: 'bc-rc', browserScope: 'scope:rc-checker' },
-			watcher: { requestedProfileId: 'rc-watcher', resolvedProfileId: 'rc-watcher', fallbackUsed: false, browserId: 'bwa-rc', browserScope: 'scope:rc-watcher' },
-			finalizer: { requestedProfileId: 'rc-finalizer', resolvedProfileId: 'rc-finalizer', fallbackUsed: false, browserId: 'bf-rc', browserScope: 'scope:rc-finalizer' },
+			worker: { requestedProfileId: 'rc-worker', resolvedProfileId: 'rc-worker', fallbackUsed: false},
+			checker: { requestedProfileId: 'rc-checker', resolvedProfileId: 'rc-checker', fallbackUsed: false},
+			watcher: { requestedProfileId: 'rc-watcher', resolvedProfileId: 'rc-watcher', fallbackUsed: false},
+			finalizer: { requestedProfileId: 'rc-finalizer', resolvedProfileId: 'rc-finalizer', fallbackUsed: false},
 		};
 
 		const runner = new (class extends MockRoleRunner implements ProfileAwareTeamRoleRunner {
@@ -757,23 +746,15 @@ test('P17: orchestrator persists worker/checker/watcher runtime context in attem
 
 		// Worker runtime context persisted
 		assert.equal(attempt.worker[0]!.runtimeContext?.requestedProfileId, 'rc-worker');
-		assert.equal(attempt.worker[0]!.runtimeContext?.browserId, 'bw-rc');
-		assert.equal(attempt.worker[0]!.runtimeContext?.browserScope, 'scope:rc-worker');
 
 		// Checker runtime context persisted
 		assert.equal(attempt.checker[0]!.runtimeContext?.requestedProfileId, 'rc-checker');
-		assert.equal(attempt.checker[0]!.runtimeContext?.browserId, 'bc-rc');
-		assert.equal(attempt.checker[0]!.runtimeContext?.browserScope, 'scope:rc-checker');
 
 		// Watcher runtime context persisted
 		assert.equal(attempt.watcher?.runtimeContext?.requestedProfileId, 'rc-watcher');
-		assert.equal(attempt.watcher?.runtimeContext?.browserId, 'bwa-rc');
-		assert.equal(attempt.watcher?.runtimeContext?.browserScope, 'scope:rc-watcher');
 
 		// Finalizer runtime context persisted in run state
 		assert.equal(result.finalizerRuntimeContext?.requestedProfileId, 'rc-finalizer');
-		assert.equal(result.finalizerRuntimeContext?.browserId, 'bf-rc');
-		assert.equal(result.finalizerRuntimeContext?.browserScope, 'scope:rc-finalizer');
 	} finally {
 		await rm(root, { recursive: true });
 	}

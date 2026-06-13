@@ -107,13 +107,12 @@ test("AgentTemplateRegistry atomically keeps the old template when a rebuild fai
 	assert.equal(second, first);
 });
 
-test("AgentTemplateRegistry builds Playground agent templates with default browser", async () => {
+test("AgentTemplateRegistry builds Playground agent templates without browser bindings", async () => {
 	const projectRoot = await createProjectRoot();
 	await createStoredAgentProfile(projectRoot, {
 		agentId: "zhihu-helper",
 		name: "知乎助手",
 		description: "知乎登录态任务。",
-		defaultBrowserId: "chrome-01",
 	});
 	const registry = new AgentTemplateRegistry({ projectRoot });
 
@@ -128,7 +127,7 @@ test("AgentTemplateRegistry builds Playground agent templates with default brows
 
 	assert.equal(template.agentId, "zhihu-helper");
 	assert.equal(template.agentName, "知乎助手");
-	assert.equal(template.defaultBrowserId, "chrome-01");
+	assert.equal("defaultBrowserId" in template, false);
 	assert.equal(template.source, "playground");
 });
 

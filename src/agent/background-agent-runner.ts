@@ -9,10 +9,8 @@ import type {
 import type { BackgroundWorkspaceManager, RunWorkspace } from "./background-workspace.js";
 import type { ConnRunRecord, ConnRunStore } from "./conn-run-store.js";
 import type { ConnDefinition } from "./conn-store.js";
-import { closeBrowserTargetsForScope } from "./browser-cleanup.js";
-import { setBrowserScopeRoute } from "../browser/browser-scope-routes.js";
 import {
-	createBrowserCleanupScope,
+	createAgentRunScope,
 	runWithScopedAgentEnvironment,
 } from "./agent-run-scope.js";
 import {
@@ -31,8 +29,7 @@ export interface BackgroundAgentSessionFactory {
 		connId: string;
 		workspace: RunWorkspace;
 		snapshot: ResolvedBackgroundAgentSnapshot;
-		browserId?: string;
-		browserScope?: string;
+		agentRunScope?: string;
 		sessionFile?: string;
 		customTools?: ToolDefinition[];
 	}): Promise<AgentSessionLike>;
@@ -47,8 +44,6 @@ export interface BackgroundAgentRunnerOptions {
 	profileResolver: BackgroundAgentProfileResolverLike;
 	workspaceManager: BackgroundWorkspaceManager;
 	sessionFactory: BackgroundAgentSessionFactory;
-	closeBrowserTargetsForScope?: (scope: string, options?: { browserId?: string }) => Promise<void>;
-	defaultBrowserId?: string;
 	publicBaseUrl?: string;
 	publicDir?: string;
 }
@@ -62,9 +57,7 @@ export class BackgroundAgentRunner {
 		now: Date = new Date(),
 		signal?: AbortSignal,
 	): Promise<ConnRunRecord | undefined> {
-		const browserCleanupScope = createBrowserCleanupScope(run.runId, conn.connId);
-		const closeBrowserTargets = this.options.closeBrowserTargetsForScope ?? closeBrowserTargetsForScope;
-		let effectiveBrowserId: string | undefined;
+		const agentRunScope = createAgentRunScope(run.runId, conn.connId);
 		let unsubscribe: (() => void) | undefined;
 		try {
 			const workspace = await this.options.workspaceManager.createRunWorkspace({
@@ -127,10 +120,6 @@ export class BackgroundAgentRunner {
 					createdAt: now,
 				});
 			}
-			effectiveBrowserId = resolveBackgroundBrowserId(conn, snapshot, this.options.defaultBrowserId);
-			await setBrowserScopeRoute(browserCleanupScope, effectiveBrowserId);
-			await closeBrowserTargets(browserCleanupScope, effectiveBrowserId ? { browserId: effectiveBrowserId } : undefined);
-
 			await this.options.runStore.updateRuntimeInfo({
 				runId: run.runId,
 				leaseOwner: run.leaseOwner,
@@ -144,8 +133,7 @@ export class BackgroundAgentRunner {
 				connId: conn.connId,
 				workspace,
 				snapshot,
-				...(effectiveBrowserId ? { browserId: effectiveBrowserId } : {}),
-				browserScope: browserCleanupScope,
+				agentRunScope,
 				sessionFile: run.sessionFile,
 			});
 			unsubscribe = session.subscribe((event) => {
@@ -159,7 +147,7 @@ export class BackgroundAgentRunner {
 			const sitePublicBaseUrl = buildSitePublicBaseUrl(this.options.publicBaseUrl, conn.publicSiteId);
 			const artifactBaseUrl = buildArtifactBaseUrl(this.options.publicBaseUrl, conn.connId, run.runId);
 			const prompt = buildBackgroundPrompt(conn, workspace, outputBaseUrl, connPublicBaseUrl, sitePublicBaseUrl, artifactBaseUrl);
-			await runWithScopedAgentEnvironment(browserCleanupScope, async () => {
+			await runWithScopedAgentEnvironment(agentRunScope, async () => {
 				await runWithBackgroundWorkspaceEnvironment(buildBackgroundWorkspaceEnvironment(workspace, outputBaseUrl, connPublicBaseUrl, sitePublicBaseUrl, artifactBaseUrl), async () => {
 					await promptWithAbort(session, prompt, signal);
 				});
@@ -190,7 +178,7 @@ export class BackgroundAgentRunner {
 					initialResultText: resultText,
 					maxAttempts: conn.artifactDelivery.repairMaxAttempts,
 					promptWithAbort: (sess, promptText, sig) =>
-						runWithScopedAgentEnvironment(browserCleanupScope, async () =>
+						runWithScopedAgentEnvironment(agentRunScope, async () =>
 							runWithBackgroundWorkspaceEnvironment(
 								buildBackgroundWorkspaceEnvironment(workspace, outputBaseUrl, connPublicBaseUrl, sitePublicBaseUrl, artifactBaseUrl),
 								() => promptWithAbort(sess, promptText, sig),
@@ -263,8 +251,7 @@ export class BackgroundAgentRunner {
 				finishedAt: failedAt,
 			});
 		} finally {
-			await closeBrowserTargets(browserCleanupScope, effectiveBrowserId ? { browserId: effectiveBrowserId } : undefined);
-			await setBrowserScopeRoute(browserCleanupScope, undefined);
+			// Scoped run state is AsyncLocalStorage based; no external cleanup is needed.
 		}
 	}
 
@@ -276,14 +263,6 @@ export class BackgroundAgentRunner {
 			event: normalizeEvent(event),
 		});
 	}
-}
-
-export function resolveBackgroundBrowserId(
-	conn: Pick<ConnDefinition, "browserId">,
-	snapshot: Pick<ResolvedBackgroundAgentSnapshot, "defaultBrowserId">,
-	defaultBrowserId?: string,
-): string | undefined {
-	return conn.browserId?.trim() || snapshot.defaultBrowserId?.trim() || defaultBrowserId?.trim() || undefined;
 }
 
 async function promptWithAbort(session: AgentSessionLike, prompt: string, signal?: AbortSignal): Promise<void> {
@@ -371,7 +350,7 @@ function buildBackgroundPrompt(
 		...(outputBaseUrl ? [`CONN_OUTPUT_BASE_URL=${outputBaseUrl}`, `ZHIHU_REPORT_BASE_URL=${outputBaseUrl}`] : []),
 		...(workspace.sitePublicDir ? [`SITE_PUBLIC_DIR=${workspace.sitePublicDir}`] : []),
 		...(sitePublicBaseUrl ? [`SITE_PUBLIC_BASE_URL=${sitePublicBaseUrl}`] : []),
-		"- If this task requires commands, file operations, or browser automation, call the available tools; do not answer from intention alone.",
+		"- If this task requires commands or file operations, call the available tools; do not answer from intention alone.",
 		"- Only files written under the final deliverables directory are indexed and durable conn outputs.",
 		"- Do not report execution success unless the required tool calls actually completed.",
 		"- Final response should summarize the result and mention output files.",

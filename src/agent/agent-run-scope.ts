@@ -1,7 +1,7 @@
 import { sanitizeStateId } from "./agent-active-run-view.js";
 import { runWithAgentScope } from "./agent-scope-context.js";
 
-export function createBrowserCleanupScope(conversationId: string, ownerId?: string): string {
+export function createAgentRunScope(conversationId: string, ownerId?: string): string {
 	const scopedId = ownerId?.trim() ? `${ownerId}:${conversationId}` : conversationId;
 	return sanitizeStateId(scopedId);
 }

@@ -2,8 +2,6 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { AgentService } from "../agent/agent-service.js";
 import type { AgentServiceRegistry } from "../agent/agent-service-registry.js";
 import { AgentBusyError } from "../agent/agent-errors.js";
-import type { BrowserRegistry } from "../browser/browser-registry.js";
-import type { BrowserBindingAuditLog } from "../browser/browser-binding-audit-log.js";
 import {
 	configureSseResponse,
 	endSseResponse,
@@ -18,7 +16,7 @@ import {
 	parseQueueMessageBody,
 } from "./chat-route-parsers.js";
 import { registerAgentProfileRoutes } from "./agent-profiles.js";
-import { resolveScopedAgentServiceOrSend, sendUnknownAgent, validateBrowserId } from "./agent-route-utils.js";
+import { resolveScopedAgentServiceOrSend, sendUnknownAgent } from "./agent-route-utils.js";
 import { sendAgentBusyError, sendBadRequest, sendInternalError } from "./http-errors.js";
 import type { ModelConfigStore, ModelSelectionValidator } from "../agent/model-config.js";
 import type {
@@ -128,8 +126,6 @@ function parseUpdateConversationBody(body: Partial<UpdateConversationRequestBody
 interface ChatRouteDependencies {
 	agentService: AgentService;
 	agentServiceRegistry?: AgentServiceRegistry<AgentService>;
-	browserRegistry?: BrowserRegistry;
-	browserBindingAuditLog?: BrowserBindingAuditLog;
 	agentTemplateRegistry?: { invalidate(profileId?: string): void };
 	projectRoot?: string;
 	modelConfigStore?: ModelConfigStore;
@@ -139,8 +135,6 @@ interface ChatRouteDependencies {
 export function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDependencies): void {
 	registerAgentProfileRoutes(app, {
 		agentServiceRegistry: deps.agentServiceRegistry,
-		browserRegistry: deps.browserRegistry,
-		browserBindingAuditLog: deps.browserBindingAuditLog,
 		agentTemplateRegistry: deps.agentTemplateRegistry,
 		projectRoot: deps.projectRoot,
 		modelConfigStore: deps.modelConfigStore,
@@ -149,28 +143,6 @@ export function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDependen
 
 
 
-
-	function resolveBrowserIdForRequest(
-		reply: FastifyReply,
-		agentId: string | undefined,
-		requestedBrowserId: string | undefined,
-	): { browserId?: string; response?: FastifyReply } {
-		const browserValidation = validateBrowserId(deps.browserRegistry, reply, requestedBrowserId);
-		if (browserValidation) {
-			return { response: browserValidation };
-		}
-		if (requestedBrowserId) {
-			return { browserId: requestedBrowserId };
-		}
-		const profileBrowserId = agentId ? deps.agentServiceRegistry?.getProfile(agentId)?.defaultBrowserId : undefined;
-		const profileValidation = validateBrowserId(deps.browserRegistry, reply, profileBrowserId);
-		if (profileValidation) {
-			return { response: profileValidation };
-		}
-		return {
-			...(profileBrowserId ? { browserId: profileBrowserId } : {}),
-		};
-	}
 
 	function sendAgentBusy(reply: FastifyReply, error: AgentBusyError): FastifyReply {
 		const suggestedAgents = deps.agentServiceRegistry
@@ -507,16 +479,11 @@ export function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDependen
 				return sendBadRequest(reply, parsedBody.error);
 			}
 			const body = parsedBody.value!;
-			const resolvedBrowser = resolveBrowserIdForRequest(reply, request.params?.agentId, body.browserId);
-			if (resolvedBrowser.response) {
-				return resolvedBrowser.response;
-			}
 			try {
 				return await service.chat({
 					conversationId: body.conversationId,
 					message: body.message,
 					userId: body.userId,
-					...(resolvedBrowser.browserId ? { browserId: resolvedBrowser.browserId } : {}),
 					...(body.attachments ? { attachments: body.attachments } : {}),
 					...(body.assetRefs ? { assetRefs: body.assetRefs } : {}),
 				});
@@ -547,10 +514,6 @@ export function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDependen
 				return sendBadRequest(reply, parsedBody.error);
 			}
 			const body = parsedBody.value!;
-			const resolvedBrowser = resolveBrowserIdForRequest(reply, request.params?.agentId, body.browserId);
-			if (resolvedBrowser.response) {
-				return resolvedBrowser.response;
-			}
 			const busyResponse = sendBusyStatus(reply, service);
 			if (busyResponse) {
 				return busyResponse;
@@ -564,7 +527,6 @@ export function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDependen
 						conversationId: body.conversationId,
 						message: body.message,
 						userId: body.userId,
-						...(resolvedBrowser.browserId ? { browserId: resolvedBrowser.browserId } : {}),
 						...(body.attachments ? { attachments: body.attachments } : {}),
 						...(body.assetRefs ? { assetRefs: body.assetRefs } : {}),
 					},
@@ -613,17 +575,12 @@ export function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDependen
 				return sendBadRequest(reply, parsedBody.error);
 			}
 			const body = parsedBody.value!;
-			const resolvedBrowser = resolveBrowserIdForRequest(reply, request.params?.agentId, body.browserId);
-			if (resolvedBrowser.response) {
-				return resolvedBrowser.response;
-			}
 			try {
 				return await service.queueMessage({
 					conversationId: body.conversationId,
 					message: body.message,
 					mode: body.mode,
 					userId: body.userId,
-					...(resolvedBrowser.browserId ? { browserId: resolvedBrowser.browserId } : {}),
 					...(body.attachments ? { attachments: body.attachments } : {}),
 					...(body.assetRefs ? { assetRefs: body.assetRefs } : {}),
 				});
@@ -945,17 +902,11 @@ export function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDependen
 				return sendBadRequest(reply, parsedBody.error);
 			}
 			const body = parsedBody.value!;
-			const resolvedBrowser = resolveBrowserIdForRequest(reply, undefined, body.browserId);
-			if (resolvedBrowser.response) {
-				return resolvedBrowser.response;
-			}
-
 			try {
 				return await deps.agentService.chat({
 					conversationId: body.conversationId,
 					message: body.message,
 					userId: body.userId,
-					...(resolvedBrowser.browserId ? { browserId: resolvedBrowser.browserId } : {}),
 					...(body.attachments ? { attachments: body.attachments } : {}),
 					...(body.assetRefs ? { assetRefs: body.assetRefs } : {}),
 				});
@@ -976,10 +927,6 @@ export function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDependen
 				return sendBadRequest(reply, parsedBody.error);
 			}
 			const body = parsedBody.value!;
-			const resolvedBrowser = resolveBrowserIdForRequest(reply, undefined, body.browserId);
-			if (resolvedBrowser.response) {
-				return resolvedBrowser.response;
-			}
 			const busyResponse = sendBusyStatus(reply, deps.agentService);
 			if (busyResponse) {
 				return busyResponse;
@@ -995,7 +942,6 @@ export function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDependen
 						conversationId: body.conversationId,
 						message: body.message,
 						userId: body.userId,
-						...(resolvedBrowser.browserId ? { browserId: resolvedBrowser.browserId } : {}),
 						...(body.attachments ? { attachments: body.attachments } : {}),
 						...(body.assetRefs ? { assetRefs: body.assetRefs } : {}),
 					},
@@ -1037,18 +983,12 @@ export function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDependen
 				return sendBadRequest(reply, parsedBody.error);
 			}
 			const body = parsedBody.value!;
-			const resolvedBrowser = resolveBrowserIdForRequest(reply, undefined, body.browserId);
-			if (resolvedBrowser.response) {
-				return resolvedBrowser.response;
-			}
-
 			try {
 				return await deps.agentService.queueMessage({
 					conversationId: body.conversationId,
 					message: body.message,
 					mode: body.mode,
 					userId: body.userId,
-					...(resolvedBrowser.browserId ? { browserId: resolvedBrowser.browserId } : {}),
 					...(body.attachments ? { attachments: body.attachments } : {}),
 					...(body.assetRefs ? { assetRefs: body.assetRefs } : {}),
 				});

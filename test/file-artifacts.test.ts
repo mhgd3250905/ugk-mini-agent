@@ -31,7 +31,7 @@ test("buildPromptWithAssetContext uses Windows Core public URL defaults and arti
 	assert.match(prompt, /Do not mention Tencent Cloud, Aliyun, or another deployment public URL/i);
 	assert.doesNotMatch(prompt, /valid internal references for tools/i);
 	assert.doesNotMatch(prompt, /file:\/\/\/app\/\.\.\./);
-	assert.match(prompt, /Browser automation is not bundled/i);
+	assert.match(prompt, /External web automation is not bundled/i);
 	assert.doesNotMatch(prompt, /sidecar browser file uploads/i);
 	assert.doesNotMatch(prompt, /\/app\/\.data\/browser-upload/);
 	assert.doesNotMatch(prompt, /\/config\/upload/);

@@ -95,8 +95,6 @@ export function generatedAttempt(taskId = "task_generated_vultr", attemptId = "a
         requestedProfileId: "search",
         resolvedProfileId: "search",
         fallbackUsed: false,
-        browserId: null,
-        browserScope: `team-task:${taskId}:worker`,
       },
     }],
     checker: [{
@@ -110,8 +108,6 @@ export function generatedAttempt(taskId = "task_generated_vultr", attemptId = "a
         requestedProfileId: "reviewer",
         resolvedProfileId: "reviewer",
         fallbackUsed: false,
-        browserId: null,
-        browserScope: `team-task:${taskId}:checker`,
       },
     }],
     watcher: null,

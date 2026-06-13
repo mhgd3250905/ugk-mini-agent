@@ -1,4 +1,3 @@
-import { closeBrowserTargetsForScope } from "./browser-cleanup.js";
 import { ConversationStore } from "./conversation-store.js";
 import { AgentBusyError } from "./agent-errors.js";
 import { createActiveRunView } from "./agent-active-run-view.js";
@@ -45,7 +44,7 @@ import {
 	findLastAssistantMessage,
 } from "./agent-run-result.js";
 import {
-	createBrowserCleanupScope,
+	createAgentRunScope,
 	runWithScopedAgentEnvironment,
 } from "./agent-run-scope.js";
 import {
@@ -56,7 +55,6 @@ import {
 import { createAgentSessionEventAdapter } from "./agent-session-event-adapter.js";
 import { preparePromptAssets } from "./agent-prompt-assets.js";
 import type { AssetRecord, AssetStoreLike, ChatAttachment } from "./asset-store.js";
-import { setBrowserScopeRoute } from "../browser/browser-scope-routes.js";
 import type {
 	AgentSessionFactory,
 	AgentSessionLike,
@@ -84,7 +82,6 @@ export interface ChatInput {
 	conversationId?: string;
 	message: string;
 	userId?: string;
-	browserId?: string;
 	attachments?: ChatAttachment[];
 	assetRefs?: string[];
 }
@@ -102,7 +99,6 @@ export interface QueueMessageInput {
 	message: string;
 	mode: QueueMessageMode;
 	userId?: string;
-	browserId?: string;
 	attachments?: ChatAttachment[];
 	assetRefs?: string[];
 }
@@ -111,7 +107,7 @@ export interface QueueMessageResult {
 	conversationId: string;
 	mode: QueueMessageMode;
 	queued: boolean;
-	reason?: "not_running" | "browser_changed";
+	reason?: "not_running";
 }
 
 export interface InterruptChatInput {
@@ -240,7 +236,6 @@ interface ActiveRunState {
 	eventCursor: number;
 	subscribers: Set<ChatStreamEventSink>;
 	view: ChatActiveRunBody;
-	browserId?: string;
 	sessionMessageCountBeforeRun: number;
 	historyMessageCountBeforeRun: number;
 	persistedTurnCoverage: PersistedTurnCoverage | null;
@@ -361,15 +356,6 @@ export class AgentService {
 				reason: "not_running",
 			};
 		}
-		if (input.browserId && activeRun.browserId && input.browserId !== activeRun.browserId) {
-			return {
-				conversationId: input.conversationId,
-				mode: input.mode,
-				queued: false,
-				reason: "browser_changed",
-			};
-		}
-
 		await queueActiveMessage({
 			conversationId: input.conversationId,
 			message: input.message,
@@ -610,14 +596,14 @@ export class AgentService {
 		const conversationId = input.conversationId ?? await createEmptyConversation({
 			conversationStore: this.options.conversationStore,
 		});
-		const browserCleanupScope = createBrowserCleanupScope(conversationId, this.options.agentId);
+		const agentRunScope = createAgentRunScope(conversationId, this.options.agentId);
 		if (this.activeRuns.has(conversationId)) {
 			throw new Error(`Conversation ${conversationId} is already running`);
 		}
 		if (this.activeRuns.size > 0) {
 			throw new AgentBusyError(this.agentId, this.activeRuns.keys().next().value);
 		}
-		const { session, skillFingerprint } = await this.openSession(conversationId, browserCleanupScope, input.browserId);
+		const { session, skillFingerprint } = await this.openSession(conversationId, agentRunScope);
 		const preparedAssets = await preparePromptAssets({
 			conversationId,
 			attachments: input.attachments,
@@ -636,7 +622,6 @@ export class AgentService {
 			eventCursor: 0,
 			subscribers: new Set<ChatStreamEventSink>(),
 			view: createActiveRunView(conversationId, input.message, preparedAssets.uploadedAssets),
-			...(input.browserId ? { browserId: input.browserId } : {}),
 			sessionMessageCountBeforeRun,
 			historyMessageCountBeforeRun,
 			persistedTurnCoverage: null,
@@ -655,14 +640,7 @@ export class AgentService {
 		const unsubscribe = session.subscribe(sessionEventAdapter.handle);
 
 		try {
-			if (input.browserId) {
-				await setBrowserScopeRoute(browserCleanupScope, input.browserId);
-				await closeBrowserTargetsForScope(browserCleanupScope, { browserId: input.browserId });
-			} else {
-				await setBrowserScopeRoute(browserCleanupScope, undefined);
-				await closeBrowserTargetsForScope(browserCleanupScope);
-			}
-			await runWithScopedAgentEnvironment(browserCleanupScope, async () => {
+			await runWithScopedAgentEnvironment(agentRunScope, async () => {
 				await session.prompt(
 					buildPromptWithAssetContext(prependCurrentTimeContext(input.message), preparedAssets.promptAssets),
 				);
@@ -737,13 +715,6 @@ export class AgentService {
 				this.terminalRuns.delete(conversationId);
 			}
 			activeRun.subscribers.clear();
-			try {
-				await closeBrowserTargetsForScope(browserCleanupScope, {
-					...(activeRun.browserId ? { browserId: activeRun.browserId } : {}),
-				});
-			} finally {
-				await setBrowserScopeRoute(browserCleanupScope, undefined);
-			}
 		}
 	}
 
@@ -772,13 +743,11 @@ export class AgentService {
 
 	private async openSession(
 		conversationId: string,
-		browserScope?: string,
-		browserId?: string,
+		agentRunScope?: string,
 	): Promise<{ session: AgentSessionLike; skillFingerprint?: string }> {
 		return await openConversationSession({
 			conversationId,
-			browserScope,
-			browserId,
+			agentRunScope,
 			conversationStore: this.options.conversationStore,
 			sessionFactory: this.options.sessionFactory,
 		});

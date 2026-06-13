@@ -6,12 +6,6 @@ import { AgentService } from "./agent/agent-service.js";
 import { AgentActivityStore } from "./agent/agent-activity-store.js";
 import { AssetStore, type AssetStoreLike } from "./agent/asset-store.js";
 import {
-	createBrowserRegistryFromEnv,
-	type BrowserRegistry,
-} from "./browser/browser-registry.js";
-import { BrowserControlService } from "./browser/browser-control.js";
-import { JsonlBrowserBindingAuditLog, type BrowserBindingAuditLog } from "./browser/browser-binding-audit-log.js";
-import {
 	DEFAULT_AGENT_ID,
 	type AgentProfile,
 } from "./agent/agent-profile.js";
@@ -32,7 +26,6 @@ import { NotificationHub } from "./agent/notification-hub.js";
 import { registerAssetRoutes } from "./routes/assets.js";
 import { registerActivityRoutes } from "./routes/activity.js";
 import { registerAgentMcpRoutes } from "./routes/agent-mcp.js";
-import { registerBrowserRoutes } from "./routes/browsers.js";
 import { registerChatRoutes } from "./routes/chat.js";
 import { registerCleanupDebugRoutes } from "./routes/cleanup-debug.js";
 import { registerConnRoutes } from "./routes/conns.js";
@@ -56,9 +49,6 @@ export interface BuildServerOptions {
 	connRunStore?: ConnRunStore;
 	activityStore?: AgentActivityStore;
 	notificationHub?: NotificationHub;
-	browserRegistry?: BrowserRegistry;
-	browserControl?: BrowserControlService;
-	browserBindingAuditLog?: BrowserBindingAuditLog;
 	backgroundDataDir?: string;
 	modelConfigStore?: ModelConfigStore;
 	modelSelectionValidator?: ModelSelectionValidator;
@@ -154,9 +144,6 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
 	const config = getAppConfig();
 	const { connDatabase, connStore, connRunStore, activityStore } = resolveConnStores(options, config.connDatabasePath);
 	const notificationHub = options.notificationHub ?? new NotificationHub();
-	const browserRegistry = options.browserRegistry ?? createBrowserRegistryFromEnv();
-	const browserBindingAuditLog =
-		options.browserBindingAuditLog ?? new JsonlBrowserBindingAuditLog(join(config.dataDir, "audit", "browser-bindings.jsonl"));
 	const agentServiceRegistry = options.agentServiceRegistry ?? createDefaultAgentServiceRegistry(assetStore);
 	const agentProfileProjectRoot = options.agentProfileProjectRoot ?? config.projectRoot;
 	const agentTemplateRegistry = options.agentTemplateRegistry ?? new AgentTemplateRegistry({ projectRoot: agentProfileProjectRoot });
@@ -182,12 +169,9 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
 	registerPlaygroundRoute(app, { projectRoot: config.projectRoot });
 	registerStaticRoutes(app, { projectRoot: config.projectRoot });
 	registerActivityRoutes(app, { activityStore });
-	registerBrowserRoutes(app, { browserRegistry, browserControl: options.browserControl });
 	registerChatRoutes(app, {
 		agentService,
 		agentServiceRegistry,
-		browserRegistry,
-		browserBindingAuditLog,
 		agentTemplateRegistry,
 		projectRoot: agentProfileProjectRoot,
 		modelConfigStore,
@@ -219,8 +203,6 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
 		connStore,
 		connRunStore,
 		backgroundDataDir: options.backgroundDataDir ?? config.backgroundDataDir,
-		browserRegistry,
-		browserBindingAuditLog,
 		publicBaseUrl: config.publicBaseUrl,
 	});
 	registerArtifactRoutes(app, {

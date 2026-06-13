@@ -34,12 +34,12 @@ git diff --check
 
 按改动范围补跑对应 route focused tests。
 
-## Agent / Assets / Browser
+## Agent / Assets / Skills
 
-适用：`src/agent/*`、`src/browser/*`、`.pi/skills/*`。
+适用：`src/agent/*`、`.pi/skills/*`。
 
 ```powershell
-node --test --test-concurrency=1 --import tsx test\file-artifacts.test.ts test\browser-registry.test.ts test\agent-profile-ops-skill.test.ts test\background-agent-runner.test.ts
+node --test --test-concurrency=1 --import tsx test\file-artifacts.test.ts test\agent-profile-ops-skill.test.ts test\background-agent-runner.test.ts
 npx tsc --noEmit
 git diff --check
 ```

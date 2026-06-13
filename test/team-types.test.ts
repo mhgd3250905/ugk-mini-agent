@@ -84,8 +84,6 @@ test("Run state stores refs instead of large outputs", () => {
 			resolvedProfileId: "main",
 			fallbackUsed: true,
 			fallbackReason: "profile_not_found",
-			browserId: "browser_finalizer",
-			browserScope: "team:run_001:finalizer:finalizer:main",
 		},
 		updatedAt: "2026-05-15T00:00:02.000Z",
 	};
@@ -168,8 +166,6 @@ test("TeamAttemptMetadata worker and checker are arrays", () => {
 				resolvedProfileId: "main",
 				fallbackUsed: true,
 				fallbackReason: "profile_not_found",
-				browserId: "browser_a",
-				browserScope: "team:run_1:worker:attempt_1:main",
 			},
 		}],
 		checker: [{
@@ -182,8 +178,6 @@ test("TeamAttemptMetadata worker and checker are arrays", () => {
 				requestedProfileId: "checker_profile",
 				resolvedProfileId: "checker_profile",
 				fallbackUsed: false,
-				browserId: null,
-				browserScope: "team:run_1:checker:attempt_1:checker_profile",
 			},
 		}],
 		watcher: null, resultRef: null, errorSummary: null,
@@ -193,7 +187,6 @@ test("TeamAttemptMetadata worker and checker are arrays", () => {
 	assert.equal(meta.worker.length, 1);
 	assert.equal(meta.checker.length, 1);
 	assert.equal(meta.worker[0]!.runtimeContext?.fallbackReason, "profile_not_found");
-	assert.equal(meta.checker[0]!.runtimeContext?.browserId, null);
 });
 
 test("TeamAttemptMetadata watcher can be set to a summary object", () => {
@@ -209,15 +202,12 @@ test("TeamAttemptMetadata watcher can be set to a summary object", () => {
 				requestedProfileId: "watcher_profile",
 				resolvedProfileId: "watcher_profile",
 				fallbackUsed: false,
-				browserId: "browser_b",
-				browserScope: "team:run_1:watcher:attempt_1:watcher_profile",
 			},
 		},
 		resultRef: "accepted-result.md", errorSummary: null,
 	};
 	assert.ok(meta.watcher);
 	assert.equal(meta.watcher.decision, "accept_task");
-	assert.equal(meta.watcher.runtimeContext?.browserScope, "team:run_1:watcher:attempt_1:watcher_profile");
 	assert.equal(meta.finishedAt, "2026-05-16T01:00:00.000Z");
 });
 

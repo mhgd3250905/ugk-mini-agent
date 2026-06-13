@@ -6,7 +6,7 @@
 
 ## 当前结论
 
-- `src/ui/playground.ts` 是 Playground 浏览器脚本装配层：导入各 controller / renderer / dialog / styles，并通过 `renderPlaygroundPage()` 输出最终页面。
+- `src/ui/playground.ts` 是 Playground 页面脚本装配层：导入各 controller / renderer / dialog / styles，并通过 `renderPlaygroundPage()` 输出最终页面。
 - `src/ui/playground-page-shell.ts` 是静态 DOM shell 真源：桌面 topbar、移动 topbar、左侧会话 rail、`#chat-stage`、`#command-deck` 和各弹层挂载点都在这里。
 - `src/ui/playground-styles.ts` 是共享样式聚合层：基础 shell、chat stage、desktop workspace、mobile breakpoint 和各 feature 样式片段都从这里合成。
 - `src/ui/playground-workspace-controller.ts` 是桌面工作区切换唯一入口：`workspaceMode`、`chatStage.dataset.workspaceMode`、`.workspace-contained` 挂载和 topbar 按钮激活态都归它管。
