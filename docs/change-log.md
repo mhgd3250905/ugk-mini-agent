@@ -18,7 +18,7 @@ git show <commit>:docs/change-log.md
 
 ## 2026-06-13 - Windows Core 配置化收口
 
-- **主题**: 清理旧版部署口径，Windows 本机部署默认单端口 `8888`，Team Console / Canvas 通过主服务 `/playground/team` 同源提供。
+- **主题**: 清理旧版部署口径，Windows 本机部署默认单端口由 `.env.native` / `.env.native.example` 驱动，Team Console / Canvas 通过主服务 `/playground/team` 同源提供。
 - **影响范围**: README、native runtime 配置、doctor/supervisor、artifact 交付、Browser 默认实例、`.pi/skills` 中会影响 agent 行为的本地地址说明。
 - **配置入口**: `.env.native.example`、`UGK_DATA_DIR`、`UGK_LOG_DIR`、`UGK_TOOLS_DIR`、`PUBLIC_BASE_URL`、`HOST`、`PORT`。
-- **验证建议**: `npm run native:doctor`、`npm run native:start`、打开 `http://127.0.0.1:8888/playground/team`。
+- **验证建议**: `npm run native:doctor`、`npm run native:start`、打开 `$BASE_URL/playground/team`。

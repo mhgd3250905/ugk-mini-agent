@@ -13,8 +13,10 @@ UGK Mini Agent 是一个面向 Windows 本机部署的轻量 agent runtime。
 
 ## 默认入口
 
-- 主服务 / API / Playground：`http://127.0.0.1:8888`
-- Team Console / Canvas：`http://127.0.0.1:8888/playground/team`
+入口以 `.env.native` / `.env.native.example` 中的 `PUBLIC_BASE_URL`、`HOST`、`PORT` 为准：
+
+- 主服务 / API / Playground：`$BASE_URL`
+- Team Console / Canvas：`$BASE_URL/playground/team`
 
 ## 安装与启动
 
@@ -35,7 +37,7 @@ npm run native:start
 
 日志写入 `logs/native/`。
 
-首次启动后访问 `http://127.0.0.1:8888/playground/model-sources` 新增 API 源。初始运行态不预置任何 provider 或 API key。
+首次启动后访问 `$BASE_URL/playground/model-sources` 新增 API 源。初始运行态不预置任何 provider 或 API key。
 
 ## 用户技能
 

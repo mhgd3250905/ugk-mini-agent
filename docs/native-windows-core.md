@@ -12,8 +12,10 @@ User skills are installed under `runtime/skills-user/` or an agent profile skill
 
 ## Default URLs
 
-- Main service, API, Playground: `http://127.0.0.1:8888`
-- Team Console / Canvas: `http://127.0.0.1:8888/playground/team`
+URLs are derived from `PUBLIC_BASE_URL`, `HOST`, and `PORT` in `.env.native` / `.env.native.example`:
+
+- Main service, API, Playground: `$BASE_URL`
+- Team Console / Canvas: `$BASE_URL/playground/team`
 
 ## Setup
 
@@ -24,7 +26,7 @@ npm run native:doctor
 npm run native:start
 ```
 
-Open `http://127.0.0.1:8888/playground/model-sources` after startup and add the API source you want to use. A fresh runtime starts with no model providers.
+Open `$BASE_URL/playground/model-sources` after startup and add the API source you want to use. A fresh runtime starts with no model providers.
 
 ## Runtime Shape
 

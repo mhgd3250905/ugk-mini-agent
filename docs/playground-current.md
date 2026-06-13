@@ -1,9 +1,9 @@
 # Playground
 
-Playground 是 UGK Mini Agent 的主对话界面，默认随主服务运行在：
+Playground 是 UGK Mini Agent 的主对话界面，随主服务运行在当前 `$BASE_URL` 下：
 
 ```text
-http://127.0.0.1:8888/playground
+$BASE_URL/playground
 ```
 
 ## 当前能力
@@ -67,7 +67,7 @@ Conn 可以执行普通 agent prompt，也可以执行后端已有 Team Group：
 Team Console 固定入口：
 
 ```text
-http://127.0.0.1:8888/playground/team
+$BASE_URL/playground/team
 ```
 
 Playground 只提供入口和 Agent iframe 支撑，Canvas Task 的具体画布交互见 `apps/team-console/README.md` 和 `docs/team-runtime.md`。

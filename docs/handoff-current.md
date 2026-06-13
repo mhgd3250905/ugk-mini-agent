@@ -7,8 +7,8 @@
 ## 当前部署口径
 
 - 项目名：`ugk-mini-agent` / Windows 本机部署版 `ugk-claw-core-win`。
-- 默认入口：`http://127.0.0.1:8888`。
-- Team Console / Canvas：`http://127.0.0.1:8888/playground/team`。
+- 默认入口：`$BASE_URL`，由 `.env.native` / `.env.native.example` 的 `PUBLIC_BASE_URL`、`HOST`、`PORT` 推导。
+- Team Console / Canvas：`$BASE_URL/playground/team`。
 - 默认不依赖旧独立控制台端口、独立 Vite dev server、容器编排或容器路径。
 - 运行态目录默认在仓库内，可通过 `UGK_DATA_DIR`、`UGK_LOG_DIR`、`UGK_TOOLS_DIR` 覆盖。
 

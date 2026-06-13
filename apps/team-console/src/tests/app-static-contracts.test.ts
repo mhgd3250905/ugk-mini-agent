@@ -864,7 +864,7 @@ describe("Team Console static contracts", () => {
     expect(readme).toContain("Live API");
     expect(readme).toContain("/v1/agents");
     expect(readme).toContain("/v1/agents/status");
-    expect(readme).toContain("http://127.0.0.1:8888/playground/team");
+    expect(readme).toContain("$BASE_URL/playground/team");
     expect(readme).toContain("由主服务 `/playground/team` 同源路由提供");
     expect(readme).not.toContain("TEAM_CONSOLE_API_TARGET");
     expect(readme).toContain("/playground?view=chat&agentId=<agentId>&embed=team-console");
@@ -874,15 +874,15 @@ describe("Team Console static contracts", () => {
 
     const runtimeDoc = readFileSync("../../docs/team-runtime.md", "utf8");
     expect(runtimeDoc).toContain("Team Runtime 是 UGK Mini Agent 的 Canvas Task 执行层");
-    expect(runtimeDoc).toContain("http://127.0.0.1:8888/playground/team");
-    expect(runtimeDoc).toContain("http://127.0.0.1:8888");
+    expect(runtimeDoc).toContain("$BASE_URL/playground/team");
+    expect(runtimeDoc).toContain("$BASE_URL");
     expect(runtimeDoc).not.toContain("http://127.0.0.1:9999");
     expect(runtimeDoc).toContain("POST /v1/team/tasks/:taskId/runs");
     expect(runtimeDoc).toContain("ARTIFACT_PUBLIC_DIR");
     expect(runtimeDoc).not.toContain("docker compose");
 
     const playgroundCurrent = readFileSync("../../docs/playground-current.md", "utf8");
-    expect(playgroundCurrent).toContain("http://127.0.0.1:8888/playground");
+    expect(playgroundCurrent).toContain("$BASE_URL/playground");
     expect(playgroundCurrent).toContain("Conn 是后台定时 / 周期 / 延迟执行能力");
     expect(playgroundCurrent).toContain('{ "type": "task_inbox" }');
     expect(playgroundCurrent).not.toContain("飞书");

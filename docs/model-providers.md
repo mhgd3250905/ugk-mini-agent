@@ -7,7 +7,7 @@
 ## 用户流程
 
 1. 启动本机服务：`npm run native:start`
-2. 打开 `http://127.0.0.1:8888/playground/model-sources`
+2. 打开 `$BASE_URL/playground/model-sources`
 3. 点击“新增 API 源”
 4. 填写 Provider ID、Base URL、API Key 和模型列表
 5. 在同页把全局默认、Agent 或 Conn 绑定到新增的 provider/model

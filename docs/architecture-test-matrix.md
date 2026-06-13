@@ -70,7 +70,7 @@ git diff --check
 运行验证默认打开：
 
 ```text
-http://127.0.0.1:8888/playground/team
+$BASE_URL/playground/team
 ```
 
 ## Conn Worker
