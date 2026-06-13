@@ -1,5 +1,5 @@
 import { access } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, posix, win32, join, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { createServer } from "node:net";
 import { promisify } from "node:util";
@@ -75,6 +75,32 @@ function check(name, ok, message, required = true) {
 	return { name, ok, message, required };
 }
 
+function getPlatform(options) {
+	return options.platform ?? process.platform;
+}
+
+async function findPosixShell({ findExecutable, fileExists }) {
+	if (await fileExists("/bin/bash")) return "/bin/bash";
+	const bashPath = await findExecutable("bash");
+	if (bashPath) return bashPath;
+	if (await fileExists("/bin/sh")) return "/bin/sh";
+	const shPath = await findExecutable("sh");
+	return shPath;
+}
+
+async function findPython({ platform, findExecutable }) {
+	const candidates = platform === "win32" ? ["python", "python3"] : ["python3", "python"];
+	for (const name of candidates) {
+		const found = await findExecutable(name);
+		if (found) return found;
+	}
+	return undefined;
+}
+
+function joinForPlatform(platform, ...segments) {
+	return platform === "win32" ? win32.join(...segments) : posix.join(...segments);
+}
+
 export async function createNativeDoctorReport(options = {}) {
 	const projectRoot = options.projectRoot ?? process.cwd();
 	const env = options.env ?? process.env;
@@ -83,16 +109,34 @@ export async function createNativeDoctorReport(options = {}) {
 	const isPortAvailable = options.isPortAvailable ?? defaultIsPortAvailable;
 	const config = buildNativeRuntimeConfig({ projectRoot, env });
 	const nodeVersion = options.nodeVersion ?? process.version;
+	const platform = getPlatform(options);
 
-	const bashPath = await findGitBash({ toolsDir: config.toolsDir, findExecutable, fileExists });
-	const pythonPath = await findExecutable("python");
+	const pythonPath = await findPython({ platform, findExecutable });
+	const platformChecks = [];
+	if (platform === "win32") {
+		const bashPath = await findGitBash({ toolsDir: config.toolsDir, findExecutable, fileExists });
+		platformChecks.push(
+			check(
+				"Git Bash",
+				Boolean(bashPath && isSupportedGitBash(bashPath)),
+				bashPath && isSupportedGitBash(bashPath) ? bashPath : "Install Git for Windows and use Git\\bin\\bash.exe",
+			),
+		);
+	} else {
+		const npmPath = await findExecutable("npm");
+		const shellPath = await findPosixShell({ findExecutable, fileExists });
+		platformChecks.push(
+			check("npm", Boolean(npmPath), npmPath || "Install Node.js 22+ with npm on PATH"),
+			check("Shell", Boolean(shellPath), shellPath || "Install bash or sh"),
+		);
+	}
 	const checks = [
 		check("Node.js 22+", isNodeSupported(nodeVersion), `current ${nodeVersion}`),
-		check("Git Bash", Boolean(bashPath && isSupportedGitBash(bashPath)), bashPath && isSupportedGitBash(bashPath) ? bashPath : "Install Git for Windows and use Git\\bin\\bash.exe"),
+		...platformChecks,
 		check("Python", Boolean(pythonPath), pythonPath || "Install Python 3.11/3.12 and add it to PATH"),
-		check("root dependencies", await fileExists(join(projectRoot, "node_modules")), "run npm install"),
-		check("Team Console dependencies", await fileExists(join(projectRoot, "apps", "team-console", "node_modules")), "run npm --prefix apps/team-console install"),
-		check("user skills directory", await fileExists(join(projectRoot, "runtime", "skills-user")), "create runtime/skills-user"),
+		check("root dependencies", await fileExists(joinForPlatform(platform, projectRoot, "node_modules")), "run npm install"),
+		check("Team Console dependencies", await fileExists(joinForPlatform(platform, projectRoot, "apps", "team-console", "node_modules")), "run npm --prefix apps/team-console install"),
+		check("user skills directory", await fileExists(joinForPlatform(platform, projectRoot, "runtime", "skills-user")), "create runtime/skills-user"),
 		check(`server port ${config.server.port}`, await isPortAvailable(config.server.port), "port must be available before native:start"),
 	];
 
