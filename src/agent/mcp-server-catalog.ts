@@ -62,6 +62,7 @@ const MCP_CATALOG_SCHEMA_VERSION = "agent/mcp-servers-1";
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MIN_TIMEOUT_MS = 1_000;
 const MAX_TIMEOUT_MS = 600_000;
+const catalogWriteQueues = new Map<string, Promise<void>>();
 
 export type AgentMcpCatalogErrorKind = "conflict" | "not_found" | "validation";
 
@@ -99,13 +100,15 @@ export async function createAgentMcpServer(
 	now: Date = new Date(),
 ): Promise<AgentMcpServerConfig> {
 	const catalogPath = resolveAgentMcpCatalogPath(projectRoot, agentId);
-	const current = await readAgentMcpServers(catalogPath);
-	const created = normalizeCreateInput(input, now);
-	if (current.some((server) => server.serverId === created.serverId)) {
-		throw new AgentMcpCatalogError("conflict", `MCP server ${created.serverId} already exists`);
-	}
-	await writeAgentMcpServers(catalogPath, [...current, created]);
-	return created;
+	return await withCatalogWriteLock(catalogPath, async () => {
+		const current = await readAgentMcpServers(catalogPath);
+		const created = normalizeCreateInput(input, now);
+		if (current.some((server) => server.serverId === created.serverId)) {
+			throw new AgentMcpCatalogError("conflict", `MCP server ${created.serverId} already exists`);
+		}
+		await writeAgentMcpServers(catalogPath, [...current, created]);
+		return created;
+	});
 }
 
 export async function updateAgentMcpServer(
@@ -117,16 +120,18 @@ export async function updateAgentMcpServer(
 ): Promise<AgentMcpServerConfig> {
 	const normalizedServerId = normalizeServerId(serverId);
 	const catalogPath = resolveAgentMcpCatalogPath(projectRoot, agentId);
-	const current = await readAgentMcpServers(catalogPath);
-	const index = current.findIndex((server) => server.serverId === normalizedServerId);
-	if (index < 0) {
-		throw new AgentMcpCatalogError("not_found", `MCP server ${normalizedServerId} does not exist`);
-	}
-	const updated = normalizeUpdateInput(current[index]!, input, now);
-	const next = [...current];
-	next[index] = updated;
-	await writeAgentMcpServers(catalogPath, next);
-	return updated;
+	return await withCatalogWriteLock(catalogPath, async () => {
+		const current = await readAgentMcpServers(catalogPath);
+		const index = current.findIndex((server) => server.serverId === normalizedServerId);
+		if (index < 0) {
+			throw new AgentMcpCatalogError("not_found", `MCP server ${normalizedServerId} does not exist`);
+		}
+		const updated = normalizeUpdateInput(current[index]!, input, now);
+		const next = [...current];
+		next[index] = updated;
+		await writeAgentMcpServers(catalogPath, next);
+		return updated;
+	});
 }
 
 export async function deleteAgentMcpServer(
@@ -136,12 +141,14 @@ export async function deleteAgentMcpServer(
 ): Promise<{ deleted: true; agentId: string; serverId: string }> {
 	const normalizedServerId = normalizeServerId(serverId);
 	const catalogPath = resolveAgentMcpCatalogPath(projectRoot, agentId);
-	const current = await readAgentMcpServers(catalogPath);
-	if (!current.some((server) => server.serverId === normalizedServerId)) {
-		throw new AgentMcpCatalogError("not_found", `MCP server ${normalizedServerId} does not exist`);
-	}
-	await writeAgentMcpServers(catalogPath, current.filter((server) => server.serverId !== normalizedServerId));
-	return { deleted: true, agentId, serverId: normalizedServerId };
+	return await withCatalogWriteLock(catalogPath, async () => {
+		const current = await readAgentMcpServers(catalogPath);
+		if (!current.some((server) => server.serverId === normalizedServerId)) {
+			throw new AgentMcpCatalogError("not_found", `MCP server ${normalizedServerId} does not exist`);
+		}
+		await writeAgentMcpServers(catalogPath, current.filter((server) => server.serverId !== normalizedServerId));
+		return { deleted: true, agentId, serverId: normalizedServerId };
+	});
 }
 
 function resolveAgentMcpCatalogPath(projectRoot: string, agentId: string): string {
@@ -181,6 +188,25 @@ async function writeAgentMcpServers(catalogPath: string, servers: AgentMcpServer
 			await unlink(tempPath).catch(() => undefined);
 		}
 		throw error;
+	}
+}
+
+async function withCatalogWriteLock<T>(catalogPath: string, operation: () => Promise<T>): Promise<T> {
+	const previous = catalogWriteQueues.get(catalogPath) ?? Promise.resolve();
+	let release!: () => void;
+	const current = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const tail = previous.catch(() => undefined).then(() => current);
+	catalogWriteQueues.set(catalogPath, tail);
+	await previous.catch(() => undefined);
+	try {
+		return await operation();
+	} finally {
+		release();
+		if (catalogWriteQueues.get(catalogPath) === tail) {
+			catalogWriteQueues.delete(catalogPath);
+		}
 	}
 }
 
@@ -245,13 +271,22 @@ function normalizeUpdateInput(
 		...(description ? { description } : {}),
 		...(!description ? { description: undefined } : {}),
 		...(Object.hasOwn(input, "enabled") ? { enabled: normalizeEnabled(input.enabled) } : {}),
-		...(Object.hasOwn(input, "transport") ? { transport: normalizeStdioTransport(input.transport) } : {}),
+		...(Object.hasOwn(input, "transport") ? { transport: normalizeUpdateTransport(current, input.transport) } : {}),
 		...(Object.hasOwn(input, "timeoutMs") ? { timeoutMs: normalizeTimeoutMs(input.timeoutMs) } : {}),
 		updatedAt: now.toISOString(),
 		...(lastTestedAt ? { lastTestedAt } : {}),
 		...(lastError ? { lastError } : {}),
 		...(cachedTools ? { cachedTools } : {}),
 	};
+}
+
+function normalizeUpdateTransport(current: AgentMcpServerConfig, value: unknown): AgentMcpStdioTransport {
+	const next = normalizeStdioTransport(value);
+	const raw = value as Record<string, unknown> | undefined;
+	if (current.transport.env && raw && !Object.hasOwn(raw, "env")) {
+		return { ...next, env: current.transport.env };
+	}
+	return next;
 }
 
 function normalizeServerId(value: unknown): string {

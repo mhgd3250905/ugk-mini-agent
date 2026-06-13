@@ -13,6 +13,10 @@ export function sendConflict(reply: FastifyReply, message: string): FastifyReply
 	return sendErrorResponse(reply, 409, "CONFLICT", message);
 }
 
+export function sendForbidden(reply: FastifyReply, message: string): FastifyReply {
+	return sendErrorResponse(reply, 403, "FORBIDDEN", message);
+}
+
 export function sendNotImplemented(reply: FastifyReply, message: string): FastifyReply {
 	return sendErrorResponse(reply, 501, "NOT_IMPLEMENTED", message);
 }
@@ -22,8 +26,8 @@ export function sendPayloadTooLarge(reply: FastifyReply, message: string): Fasti
 }
 
 export function sendInternalError(reply: FastifyReply, error: unknown): FastifyReply {
-	const message = error instanceof Error ? error.message : "Unknown internal error";
-	return sendErrorResponse(reply, 500, "INTERNAL_ERROR", message);
+	reply.log.error({ err: error }, "Route handler failed");
+	return sendErrorResponse(reply, 500, "INTERNAL_ERROR", "Internal server error");
 }
 
 export function sendAgentBusyError(
@@ -48,7 +52,7 @@ export function sendAgentBusyError(
 
 function sendErrorResponse(
 	reply: FastifyReply,
-	statusCode: 400 | 404 | 409 | 413 | 500 | 501,
+	statusCode: 400 | 403 | 404 | 409 | 413 | 500 | 501,
 	code: ErrorResponseBody["error"]["code"],
 	message: string,
 ): FastifyReply {

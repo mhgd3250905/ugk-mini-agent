@@ -755,6 +755,7 @@ export interface ErrorResponseBody {
 			| "INTERNAL_ERROR"
 			| "AGENT_BUSY"
 			| "NOT_FOUND"
+			| "FORBIDDEN"
 			| "CONFLICT"
 			| "NOT_IMPLEMENTED";
 		message: string;

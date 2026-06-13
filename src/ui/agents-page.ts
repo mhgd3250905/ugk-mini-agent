@@ -889,6 +889,7 @@ function getAgentsPageJs(): string {
 			mcpLoadedByAgentId: {},
 			mcpExpanded: false,
 			mcpEditingServerId: "",
+			mcpSaving: false,
 			mcpTestingServerId: "",
 			mcpToolsByServerId: {},
 		};
@@ -1409,6 +1410,8 @@ function getAgentsPageJs(): string {
 			var servers = state.mcpByAgentId[agent.agentId] || [];
 			var server = editingId === "__new__" ? null : servers.find(function(item) { return item.serverId === editingId; });
 			var argsText = server && server.transport && Array.isArray(server.transport.args) ? server.transport.args.join("\\n") : "";
+			var envText = server && server.transport && server.transport.env ? Object.entries(server.transport.env).map(function(entry) { return entry[0] + "=" + entry[1]; }).join("\\n") : "";
+			var actionsDisabled = state.mcpSaving || state.mcpTestingServerId ? " disabled" : "";
 			region.innerHTML =
 				'<div class="ag-mcp-editor">' +
 				'<label class="ag-editor-field"><span>Server ID</span><input id="mcp-server-id" ' + (server ? "disabled " : "") + 'value="' + escapeHtml(server ? server.serverId : "") + '" placeholder="qr-ocr" /></label>' +
@@ -1417,9 +1420,10 @@ function getAgentsPageJs(): string {
 				'<label class="ag-editor-field"><span>Command</span><input id="mcp-command" value="' + escapeHtml(server && server.transport ? server.transport.command : "") + '" placeholder="python" /></label>' +
 				'<label class="ag-editor-field"><span>Timeout ms</span><input id="mcp-timeout" type="number" value="' + escapeHtml(String(server ? server.timeoutMs : 120000)) + '" /></label>' +
 				'<label class="ag-editor-field ag-editor-field--wide"><span>Args</span><textarea id="mcp-args" rows="3" placeholder="每行一个参数">' + escapeHtml(argsText) + '</textarea></label>' +
+				'<label class="ag-editor-field ag-editor-field--wide"><span>Env</span><textarea id="mcp-env" rows="3" placeholder="每行一个 KEY=VALUE">' + escapeHtml(envText) + '</textarea></label>' +
 				'<label class="ag-editor-field ag-editor-field--wide"><span>CWD</span><input id="mcp-cwd" value="' + escapeHtml(server && server.transport ? (server.transport.cwd || "") : "") + '" placeholder="可选，必须是绝对路径" /></label>' +
 				'<label class="ag-editor-field"><span>启用</span><select id="mcp-enabled"><option value="true"' + (!server || server.enabled !== false ? " selected" : "") + '>启用</option><option value="false"' + (server && server.enabled === false ? " selected" : "") + '>停用</option></select></label>' +
-				'<div class="ag-mcp-actions"><button id="ag-btn-save-mcp" class="ag-btn ag-btn--primary" type="button">保存 MCP</button><button id="ag-btn-cancel-mcp" class="ag-btn ag-btn--outline" type="button">取消</button></div>' +
+				'<div class="ag-mcp-actions"><button id="ag-btn-save-mcp" class="ag-btn ag-btn--primary" type="button"' + actionsDisabled + '>' + (state.mcpSaving ? "保存中" : "保存 MCP") + '</button><button id="ag-btn-cancel-mcp" class="ag-btn ag-btn--outline" type="button"' + actionsDisabled + '>取消</button></div>' +
 				'</div>';
 			document.getElementById("ag-btn-save-mcp").onclick = handleSaveMcpServer;
 			document.getElementById("ag-btn-cancel-mcp").onclick = function() {
@@ -1877,10 +1881,12 @@ function getAgentsPageJs(): string {
 			var description = (document.getElementById("mcp-description") || {}).value || "";
 			var command = (document.getElementById("mcp-command") || {}).value || "";
 			var argsText = (document.getElementById("mcp-args") || {}).value || "";
+			var envText = (document.getElementById("mcp-env") || {}).value || "";
 			var cwd = (document.getElementById("mcp-cwd") || {}).value || "";
 			var timeoutMs = Number((document.getElementById("mcp-timeout") || {}).value || 120000);
 			var enabled = ((document.getElementById("mcp-enabled") || {}).value || "true") === "true";
 			var args = argsText.split(/\\r?\\n/).map(function(line) { return line.trim(); }).filter(Boolean);
+			var env = parseMcpEnv(envText);
 			return {
 				serverId: serverId.trim(),
 				name: name.trim(),
@@ -1891,16 +1897,33 @@ function getAgentsPageJs(): string {
 					command: command.trim(),
 					args: args,
 					...(cwd.trim() ? { cwd: cwd.trim() } : {}),
+					...(env ? { env: env } : {}),
 				},
 				timeoutMs: timeoutMs,
 			};
 		}
 
+		function parseMcpEnv(envText) {
+			var env = {};
+			envText.split(/\\r?\\n/).map(function(line) { return line.trim(); }).filter(Boolean).forEach(function(line) {
+				var index = line.indexOf("=");
+				if (index <= 0) return;
+				var key = line.slice(0, index).trim();
+				if (!key) return;
+				env[key] = line.slice(index + 1);
+			});
+			return Object.keys(env).length ? env : undefined;
+		}
+
 		async function handleSaveMcpServer() {
 			if (!state.selectedId || !state.mcpEditingServerId) return;
+			if (state.mcpSaving || state.mcpTestingServerId) return;
 			var agentId = state.selectedId;
 			var isNew = state.mcpEditingServerId === "__new__";
 			var payload = readMcpEditorPayload();
+			state.mcpSaving = true;
+			var editingAgent = state.agents.find(function(a) { return a.agentId === agentId; });
+			if (editingAgent) renderMcpPanel(editingAgent);
 			try {
 				if (isNew) {
 					await apiCreateMcpServer(agentId, payload);
@@ -1918,6 +1941,12 @@ function getAgentsPageJs(): string {
 				showToast("MCP 已保存", "ok");
 			} catch (e) {
 				showToast(e.message || "MCP 保存失败", "danger");
+			} finally {
+				state.mcpSaving = false;
+				if (state.selectedId === agentId && state.mcpEditingServerId) {
+					var currentAgent = state.agents.find(function(a) { return a.agentId === agentId; });
+					if (currentAgent) renderMcpPanel(currentAgent);
+				}
 			}
 		}
 
@@ -1954,7 +1983,7 @@ function getAgentsPageJs(): string {
 		}
 
 		async function handleTestMcpServer(serverId) {
-			if (!state.selectedId || state.mcpTestingServerId) return;
+			if (!state.selectedId || state.mcpSaving || state.mcpTestingServerId) return;
 			var agentId = state.selectedId;
 			state.mcpTestingServerId = serverId;
 			renderMcpList(agentId);

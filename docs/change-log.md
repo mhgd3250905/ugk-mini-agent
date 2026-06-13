@@ -30,6 +30,13 @@ git show <commit>:docs/change-log.md
 - **对应入口**: `README.md`、`docs/native-windows-core.md`、`docs/plans/2026-06-13-ocr-mcp-runtime-requirements.md`。
 - **验证记录**: `AgentMcpClientManager.testServer()` 返回 `ok: true` 且列出 `ocr_recognize`；`AgentMcpClientManager.callTool()` 调用本地图像返回 `isError: false`。
 
+## 2026-06-13 - MCP review hardening
+
+- **主题**: 收口 MCP 管理面的 review 风险：MCP API 限定本机请求、5xx 错误不回显底层路径、catalog 写操作按文件串行化、UI 支持 env 编辑并避免保存/测试重入。
+- **影响范围**: `/v1/agents/:agentId/mcp/servers` API、Agent MCP catalog、Agent 管理台 MCP 面板、通用错误响应和 MCP 安全文档。
+- **对应入口**: `src/routes/agent-mcp.ts`、`src/agent/mcp-server-catalog.ts`、`src/ui/agents-page.ts`、`src/routes/http-errors.ts`、`README.md`、`docs/native-windows-core.md`。
+- **验证记录**: `node --test --test-concurrency=1 --import tsx test\agent-mcp-catalog.test.ts test\agent-mcp-client-manager.test.ts test\agent-mcp-tool.test.ts test\agent-mcp-routes.test.ts test\agent-mcp-page-ui.test.ts`、`npx tsc --noEmit`、`git diff --check`。
+
 ## 2026-06-13 - Windows Core 配置化收口
 
 - **主题**: 清理旧版部署口径，Windows 本机部署默认单端口由 `.env.native` / `.env.native.example` 驱动，Team Console / Canvas 通过主服务 `/playground/team` 同源提供。

@@ -48,7 +48,7 @@ test("GET / renders the public Agent Board first homepage", async () => {
 	assert.match(response.body, /可信 Task 怎么产生/);
 	assert.match(response.body, /亮点在可信交付/);
 	assert.match(response.body, /先看为什么可信，再看怎么上手/);
-	assert.match(response.body, /本机运行后先从根路径进入/);
+	assert.match(response.body, /本机运行后先打开根路径/);
 	assert.match(response.body, /进入 Team Console/);
 	assert.match(response.body, /进入 Chat 工作台/);
 	assert.match(response.body, /配置 API 源/);

@@ -14,6 +14,18 @@ test("Agent management page renders MCP management affordances", () => {
 	assert.match(page, /查看 MCP/);
 	assert.match(page, /测试连接/);
 	assert.match(page, /查看工具/);
+	assert.match(page, /id="mcp-env"/);
+	assert.match(page, /每行一个 KEY=VALUE/);
+	assert.match(page, /mcpSaving:\s*false/);
+	assert.match(page, /function parseMcpEnv/);
+	assert.match(page, /if \(state\.mcpSaving \|\| state\.mcpTestingServerId\) return/);
 	assert.match(page, /function renderMcpPanel\(agent\)/);
 	assert.match(page, /function handleCreateMcpServer\(\)/);
+});
+
+test("Agent management page emits runtime JavaScript that splits MCP args on real newlines", () => {
+	const page = renderAgentsPage();
+
+	assert.match(page, /argsText\.split\(\/\\r\?\\n\/\)/);
+	assert.doesNotMatch(page, /argsText\.split\(\/\\\\r\?\\\\n\/\)/);
 });

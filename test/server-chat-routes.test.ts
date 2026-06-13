@@ -201,7 +201,7 @@ test("POST /v1/chat returns 500 when agent service throws", async () => {
 	assert.deepEqual(response.json(), {
 		error: {
 			code: "INTERNAL_ERROR",
-			message: "boom",
+			message: "Internal server error",
 		},
 	});
 	await app.close();

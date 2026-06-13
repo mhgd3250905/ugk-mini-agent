@@ -282,6 +282,8 @@ MCP server 和 Skill 一样属于 Agent profile。不同 Agent 的 MCP 配置独
 
 在根页面进入“管理 Agent”，或打开 `/playground/agents`，在对应 Agent 的 MCP 面板中新增、编辑、禁用、删除、测试连接和查看工具。当前版本支持 stdio MCP server；本地命令、脚本路径、工作目录和密钥只写入运行态 `.data/`，不要提交到版本库。
 
+MCP 管理 API 只接受本机请求。stdio MCP server 可以启动本机命令；如果把服务绑定到 `HOST=0.0.0.0` 或放到反向代理后面，必须先加认证和访问控制，不能把 MCP 管理入口裸露给 LAN 或公网客户端。
+
 本地 OCR/QR 这类启动较慢的 MCP server 建议把 `timeoutMs` 设为较大的值。模型、GPU DLL、预加载等运行时细节应由 MCP 项目自己的启动入口封装；UGK 只配置该入口，例如：
 
 ```json
@@ -616,6 +618,8 @@ MCP servers belong to an Agent profile, just like Skills. Each Agent has isolate
 | Custom Agent | `.data/agents/<agentId>/mcp/servers.json` |
 
 Use the root page "Agents" entry or open `/playground/agents`, then manage MCP servers from the selected Agent's MCP panel. The first version supports stdio MCP servers. Local commands, script paths, working directories, and secrets are runtime configuration stored under `.data/`; do not commit them.
+
+The MCP management API accepts local requests only. A stdio MCP server can start local commands; if the service is bound to `HOST=0.0.0.0` or placed behind a reverse proxy, put authentication and access control in front of it before exposing MCP management to LAN or internet clients.
 
 For slow local OCR/QR MCP servers, set a larger `timeoutMs`. Model, GPU DLL, and preload details should be hidden behind the MCP project's own launcher; UGK only points at that launcher:
 

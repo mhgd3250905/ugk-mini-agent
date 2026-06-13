@@ -92,6 +92,38 @@ test("GET /v1/agents/:agentId/mcp/servers returns an empty scoped MCP catalog", 
 	assert.deepEqual(response.json(), { agentId: "search", servers: [] });
 });
 
+test("agent MCP routes reject non-local requests before reading or executing MCP configuration", async (t) => {
+	let testCalls = 0;
+	const { app } = await createApp({
+		clientManager: {
+			async testServer() {
+				testCalls += 1;
+				return { ok: true, serverId: "qr-ocr", tools: [] };
+			},
+		},
+	});
+	t.after(() => {
+		void app.close();
+	});
+
+	const response = await app.inject({
+		method: "POST",
+		url: "/v1/agents/search/mcp/servers",
+		remoteAddress: "192.168.1.50",
+		payload: serverPayload(),
+	});
+	const testResponse = await app.inject({
+		method: "POST",
+		url: "/v1/agents/search/mcp/servers/qr-ocr/test",
+		remoteAddress: "192.168.1.50",
+	});
+
+	assert.equal(response.statusCode, 403);
+	assert.match(response.json().error.message, /local requests only/);
+	assert.equal(testResponse.statusCode, 403);
+	assert.equal(testCalls, 0);
+});
+
 test("agent MCP routes close the client manager when the app closes", async () => {
 	let closeCalls = 0;
 	const { app } = await createApp({
@@ -303,6 +335,33 @@ test("GET /tools fetches live MCP tools when no cache exists", async (t) => {
 	assert.equal(response.json().source, "live");
 	assert.deepEqual(response.json().tools, tools);
 	assert.equal(listCalls, 1);
+});
+
+test("MCP route internal errors return a generic message without leaking local paths", async (t) => {
+	const { app } = await createApp({
+		clientManager: {
+			async listTools() {
+				throw new Error("ENOENT: no such file or directory, open 'E:\\AII\\ugk-claw-core-win\\.data\\agents\\search\\mcp\\servers.json'");
+			},
+		},
+	});
+	t.after(() => {
+		void app.close();
+	});
+	await app.inject({
+		method: "POST",
+		url: "/v1/agents/search/mcp/servers",
+		payload: serverPayload(),
+	});
+
+	const response = await app.inject({
+		method: "GET",
+		url: "/v1/agents/search/mcp/servers/qr-ocr/tools",
+	});
+
+	assert.equal(response.statusCode, 500);
+	assert.equal(response.json().error.message, "Internal server error");
+	assert.doesNotMatch(JSON.stringify(response.json()), /ugk-claw-core-win|E:\\\\AII|servers\.json/);
 });
 
 test("GET /tools without cache rejects locked agents before executing MCP clients", async (t) => {

@@ -98,6 +98,44 @@ test("agent MCP catalog updates deletes and filters enabled servers", async () =
 	assert.deepEqual(remaining.servers.map((server) => server.serverId), ["disabled-ocr"]);
 });
 
+test("agent MCP catalog preserves existing transport env when a patch replaces transport without env", async () => {
+	const projectRoot = await createProjectRoot();
+	await createStoredAgentProfile(projectRoot, { agentId: "ocr", name: "OCR", description: "OCR tools" });
+	await createAgentMcpServer(
+		projectRoot,
+		"ocr",
+		stdioServerInput({
+			transport: {
+				type: "stdio",
+				command: "python",
+				args: ["server.py"],
+				cwd: "E:\\AII\\ugk-qr-scan",
+				env: { MCP_OCR_DEVICE: "gpu" },
+			},
+		}),
+	);
+
+	const updated = await updateAgentMcpServer(projectRoot, "ocr", "qr-ocr", {
+		transport: { type: "stdio", command: "python", args: ["server.py", "--stdio"], cwd: "E:\\AII\\ugk-qr-scan" },
+	});
+
+	assert.deepEqual(updated.transport.env, { MCP_OCR_DEVICE: "gpu" });
+	assert.deepEqual(updated.transport.args, ["server.py", "--stdio"]);
+});
+
+test("agent MCP catalog serializes concurrent writes for one agent catalog", async () => {
+	const projectRoot = await createProjectRoot();
+	await createStoredAgentProfile(projectRoot, { agentId: "ocr", name: "OCR", description: "OCR tools" });
+	const inputs = Array.from({ length: 12 }, (_entry, index) =>
+		stdioServerInput({ serverId: `ocr-${index}`, name: `OCR ${index}` }),
+	);
+
+	await Promise.all(inputs.map((input) => createAgentMcpServer(projectRoot, "ocr", input)));
+
+	const listed = await listAgentMcpServers(projectRoot, "ocr");
+	assert.deepEqual(listed.servers.map((server) => server.serverId), inputs.map((input) => input.serverId).sort());
+});
+
 test("agent MCP catalog rejects malformed input and unknown agents", async () => {
 	const projectRoot = await createProjectRoot();
 
