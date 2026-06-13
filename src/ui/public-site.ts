@@ -924,6 +924,7 @@ export function renderPublicSitePage(): string {
 					<a href="/playground">Chat</a>
 					<a href="/playground/team">Team Console</a>
 					<a href="/playground/model-sources">API 源</a>
+					<a href="/playground/agents">Agents</a>
 					<a href="#flow">任务流程</a>
 				</div>
 			</div>
@@ -941,6 +942,7 @@ export function renderPublicSitePage(): string {
 						<a class="button button-primary" href="/playground/team">进入 Team Console</a>
 						<a class="button" href="/playground">进入 Chat 工作台</a>
 						<a class="button" href="/playground/model-sources">配置 API 源</a>
+						<a class="button" href="/playground/agents">管理 Agent</a>
 					</div>
 					<p class="cta-note">所有入口都走当前服务内的相对路由，不需要记住固定端口。</p>
 				</div>
@@ -1197,7 +1199,7 @@ export function renderPublicSitePage(): string {
 							<strong>进入 Team Console</strong>
 							<p>打开 Canvas、Task、Source、Group 和 run 观察器，管理可验收的 Agent 工作流。</p>
 						</div>
-						<em>/playground/team</em>
+						<em>打开</em>
 					</a>
 					<a class="doc-link" href="/playground">
 						<div>
@@ -1205,7 +1207,7 @@ export function renderPublicSitePage(): string {
 							<strong>进入 Chat 工作台</strong>
 							<p>和 Agent 对话、管理文件与资产、查看会话历史和后台任务消息。</p>
 						</div>
-						<em>/playground</em>
+						<em>打开</em>
 					</a>
 					<a class="doc-link" href="/playground/model-sources">
 						<div>
@@ -1213,7 +1215,7 @@ export function renderPublicSitePage(): string {
 							<strong>配置 API 源</strong>
 							<p>首次启动后先添加模型 provider 和 API key，再运行对话、Task 或后台任务。</p>
 						</div>
-						<em>/playground/model-sources</em>
+						<em>打开</em>
 					</a>
 					<a class="doc-link" href="/playground/agents">
 						<div>
@@ -1221,7 +1223,7 @@ export function renderPublicSitePage(): string {
 							<strong>管理 Agent</strong>
 							<p>查看内置 Agent profile，按需要扩展技能目录和运行配置。</p>
 						</div>
-						<em>/playground/agents</em>
+						<em>打开</em>
 					</a>
 				</div>
 			</section>
