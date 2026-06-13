@@ -5,6 +5,7 @@ import { AgentMcpClientManager } from "../agent/mcp-client-manager.js";
 import {
 	createAgentMcpServer,
 	deleteAgentMcpServer,
+	AgentMcpCatalogError,
 	listAgentMcpServers,
 	updateAgentMcpServer,
 	type AgentMcpServerConfig,
@@ -20,7 +21,7 @@ export interface AgentMcpRouteDependencies {
 	projectRoot?: string;
 	agentServiceRegistry?: AgentServiceRegistry<AgentService>;
 	agentTemplateRegistry?: { invalidate(profileId?: string): void };
-	clientManager?: Pick<AgentMcpClientManager, "testServer" | "listTools" | "callTool">;
+	clientManager?: Pick<AgentMcpClientManager, "testServer" | "listTools" | "callTool"> & { close?: () => Promise<void> };
 	teamProfileLockProvider?: () => Promise<Set<string>>;
 }
 
@@ -31,6 +32,9 @@ interface AgentMcpRouteParams {
 
 export function registerAgentMcpRoutes(app: FastifyInstance, deps: AgentMcpRouteDependencies): void {
 	const clientManager = deps.clientManager ?? new AgentMcpClientManager();
+	app.addHook("onClose", async () => {
+		await clientManager.close?.();
+	});
 
 	app.get(
 		"/v1/agents/:agentId/mcp/servers",
@@ -121,7 +125,7 @@ export function registerAgentMcpRoutes(app: FastifyInstance, deps: AgentMcpRoute
 			request: FastifyRequest<{ Params: AgentMcpRouteParams }>,
 			reply,
 		): Promise<{ result: Awaited<ReturnType<AgentMcpClientManager["testServer"]>> } | FastifyReply> => {
-			const context = resolveReadContext(deps, reply, request.params.agentId);
+			const context = await resolveWriteContext(deps, reply, request.params.agentId);
 			if (!context) {
 				return reply;
 			}
@@ -155,13 +159,18 @@ export function registerAgentMcpRoutes(app: FastifyInstance, deps: AgentMcpRoute
 				if (server.cachedTools?.length) {
 					return { agentId: context.agentId, serverId: server.serverId, tools: server.cachedTools, source: "cache" };
 				}
-				const tools = await clientManager.listTools(server, undefined);
-				await updateAgentMcpServer(context.projectRoot, context.agentId, server.serverId, {
+				const writeContext = await resolveWriteContext(deps, reply, request.params.agentId);
+				if (!writeContext) {
+					return reply;
+				}
+				const liveServer = await findAgentMcpServer(writeContext.projectRoot, writeContext.agentId, request.params.serverId);
+				const tools = await clientManager.listTools(liveServer, undefined);
+				await updateAgentMcpServer(writeContext.projectRoot, writeContext.agentId, liveServer.serverId, {
 					lastTestedAt: new Date().toISOString(),
 					lastError: undefined,
 					cachedTools: tools,
 				});
-				return { agentId: context.agentId, serverId: server.serverId, tools, source: "live" };
+				return { agentId: writeContext.agentId, serverId: liveServer.serverId, tools, source: "live" };
 			} catch (error) {
 				return sendRouteError(reply, error);
 			}
@@ -221,13 +230,22 @@ async function findAgentMcpServer(
 	const { servers } = await listAgentMcpServers(projectRoot, agentId);
 	const server = servers.find((entry) => entry.serverId === serverId);
 	if (!server) {
-		throw new Error(`MCP server ${serverId ?? ""} does not exist`);
+		throw new AgentMcpCatalogError("not_found", `MCP server ${serverId ?? ""} does not exist`);
 	}
 	return server;
 }
 
 function sendRouteError(reply: FastifyReply, error: unknown): FastifyReply {
 	const message = error instanceof Error ? error.message : String(error);
+	if (error instanceof AgentMcpCatalogError) {
+		if (error.kind === "conflict") {
+			return sendConflict(reply, message);
+		}
+		if (error.kind === "not_found") {
+			return sendNotFound(reply, message);
+		}
+		return sendBadRequest(reply, message);
+	}
 	if (/Unknown agentId:/.test(message)) {
 		return sendNotFound(reply, message);
 	}
@@ -237,11 +255,8 @@ function sendRouteError(reply: FastifyReply, error: unknown): FastifyReply {
 	if (/not available/.test(message)) {
 		return sendNotImplemented(reply, message);
 	}
-	if (error instanceof SyntaxError) {
-		return sendBadRequest(reply, message);
-	}
 	if (error instanceof Error) {
-		return sendBadRequest(reply, message);
+		return sendInternalError(reply, error);
 	}
 	return sendInternalError(reply, error);
 }

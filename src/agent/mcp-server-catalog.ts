@@ -63,6 +63,18 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 const MIN_TIMEOUT_MS = 1_000;
 const MAX_TIMEOUT_MS = 600_000;
 
+export type AgentMcpCatalogErrorKind = "conflict" | "not_found" | "validation";
+
+export class AgentMcpCatalogError extends Error {
+	constructor(
+		readonly kind: AgentMcpCatalogErrorKind,
+		message: string,
+	) {
+		super(message);
+		this.name = "AgentMcpCatalogError";
+	}
+}
+
 export async function listAgentMcpServers(
 	projectRoot: string,
 	agentId: string,
@@ -90,7 +102,7 @@ export async function createAgentMcpServer(
 	const current = await readAgentMcpServers(catalogPath);
 	const created = normalizeCreateInput(input, now);
 	if (current.some((server) => server.serverId === created.serverId)) {
-		throw new Error(`MCP server ${created.serverId} already exists`);
+		throw new AgentMcpCatalogError("conflict", `MCP server ${created.serverId} already exists`);
 	}
 	await writeAgentMcpServers(catalogPath, [...current, created]);
 	return created;
@@ -108,7 +120,7 @@ export async function updateAgentMcpServer(
 	const current = await readAgentMcpServers(catalogPath);
 	const index = current.findIndex((server) => server.serverId === normalizedServerId);
 	if (index < 0) {
-		throw new Error(`MCP server ${normalizedServerId} does not exist`);
+		throw new AgentMcpCatalogError("not_found", `MCP server ${normalizedServerId} does not exist`);
 	}
 	const updated = normalizeUpdateInput(current[index]!, input, now);
 	const next = [...current];
@@ -126,7 +138,7 @@ export async function deleteAgentMcpServer(
 	const catalogPath = resolveAgentMcpCatalogPath(projectRoot, agentId);
 	const current = await readAgentMcpServers(catalogPath);
 	if (!current.some((server) => server.serverId === normalizedServerId)) {
-		throw new Error(`MCP server ${normalizedServerId} does not exist`);
+		throw new AgentMcpCatalogError("not_found", `MCP server ${normalizedServerId} does not exist`);
 	}
 	await writeAgentMcpServers(catalogPath, current.filter((server) => server.serverId !== normalizedServerId));
 	return { deleted: true, agentId, serverId: normalizedServerId };
@@ -135,7 +147,7 @@ export async function deleteAgentMcpServer(
 function resolveAgentMcpCatalogPath(projectRoot: string, agentId: string): string {
 	const profile = resolveAgentProfile(loadAgentProfilesSync(projectRoot), agentId);
 	if (!profile) {
-		throw new Error(`Unknown agentId: ${agentId}`);
+		throw new AgentMcpCatalogError("not_found", `Unknown agentId: ${agentId}`);
 	}
 	return profile.mcpCatalogPath;
 }
@@ -245,7 +257,7 @@ function normalizeUpdateInput(
 function normalizeServerId(value: unknown): string {
 	const normalized = String(value || "").trim();
 	if (!/^[a-z][a-z0-9-]{0,62}$/.test(normalized)) {
-		throw new Error("serverId must start with a lowercase letter and contain only lowercase letters, digits, or hyphens");
+		throw new AgentMcpCatalogError("validation", "serverId must start with a lowercase letter and contain only lowercase letters, digits, or hyphens");
 	}
 	return normalized;
 }
@@ -253,10 +265,10 @@ function normalizeServerId(value: unknown): string {
 function normalizeName(value: unknown): string {
 	const normalized = String(value || "").trim();
 	if (!normalized) {
-		throw new Error("name is required");
+		throw new AgentMcpCatalogError("validation", "name is required");
 	}
 	if (normalized.length > 80) {
-		throw new Error("name must be 80 characters or less");
+		throw new AgentMcpCatalogError("validation", "name must be 80 characters or less");
 	}
 	return normalized;
 }
@@ -271,7 +283,7 @@ function normalizeOptionalString(value: unknown): string | undefined {
 
 function normalizeEnabled(value: unknown): boolean {
 	if (typeof value !== "boolean") {
-		throw new Error("enabled must be a boolean");
+		throw new AgentMcpCatalogError("validation", "enabled must be a boolean");
 	}
 	return value;
 }
@@ -281,27 +293,27 @@ function normalizeTimeoutMs(value: unknown): number {
 		? DEFAULT_TIMEOUT_MS
 		: Number(value);
 	if (!Number.isInteger(timeout) || timeout < MIN_TIMEOUT_MS || timeout > MAX_TIMEOUT_MS) {
-		throw new Error("timeoutMs must be between 1000 and 600000");
+		throw new AgentMcpCatalogError("validation", "timeoutMs must be between 1000 and 600000");
 	}
 	return timeout;
 }
 
 function normalizeStdioTransport(value: unknown): AgentMcpStdioTransport {
 	if (!value || typeof value !== "object") {
-		throw new Error("transport is required");
+		throw new AgentMcpCatalogError("validation", "transport is required");
 	}
 	const raw = value as Record<string, unknown>;
 	if (raw.type !== "stdio") {
-		throw new Error("transport.type must be stdio");
+		throw new AgentMcpCatalogError("validation", "transport.type must be stdio");
 	}
 	const command = String(raw.command || "").trim();
 	if (!command) {
-		throw new Error("transport.command is required");
+		throw new AgentMcpCatalogError("validation", "transport.command is required");
 	}
 	const args = Array.isArray(raw.args) ? raw.args.map((arg) => String(arg)) : [];
 	const cwd = normalizeOptionalString(raw.cwd);
 	if (cwd && !isAbsolute(cwd)) {
-		throw new Error("transport.cwd must be an absolute path");
+		throw new AgentMcpCatalogError("validation", "transport.cwd must be an absolute path");
 	}
 	const env = normalizeEnv(raw.env);
 	return {
@@ -318,13 +330,13 @@ function normalizeEnv(value: unknown): Record<string, string> | undefined {
 		return undefined;
 	}
 	if (typeof value !== "object" || Array.isArray(value)) {
-		throw new Error("transport.env must be an object");
+		throw new AgentMcpCatalogError("validation", "transport.env must be an object");
 	}
 	const env: Record<string, string> = {};
 	for (const [key, rawValue] of Object.entries(value as Record<string, unknown>)) {
 		const name = key.trim();
 		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
-			throw new Error(`invalid env name: ${key}`);
+			throw new AgentMcpCatalogError("validation", `invalid env name: ${key}`);
 		}
 		env[name] = String(rawValue ?? "");
 	}

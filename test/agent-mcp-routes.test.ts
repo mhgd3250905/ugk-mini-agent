@@ -8,7 +8,11 @@ import { createDefaultAgentProfiles } from "../src/agent/agent-profile.js";
 import type { AgentService } from "../src/agent/agent-service.js";
 import { AgentServiceRegistry } from "../src/agent/agent-service-registry.js";
 import type { AgentMcpCallResult } from "../src/agent/mcp-client-manager.js";
-import type { AgentMcpServerConfig, AgentMcpToolSummary } from "../src/agent/mcp-server-catalog.js";
+import {
+	createAgentMcpServer,
+	type AgentMcpServerConfig,
+	type AgentMcpToolSummary,
+} from "../src/agent/mcp-server-catalog.js";
 import { registerAgentMcpRoutes } from "../src/routes/agent-mcp.js";
 
 function createScopedAgentService(agentId: string, running = false): AgentService {
@@ -41,6 +45,7 @@ async function createApp(input: {
 		testServer?: (server: AgentMcpServerConfig, signal?: AbortSignal) => Promise<{ ok: boolean; serverId: string; tools: AgentMcpToolSummary[]; error?: string }>;
 		listTools?: (server: AgentMcpServerConfig, signal?: AbortSignal) => Promise<AgentMcpToolSummary[]>;
 		callTool?: (server: AgentMcpServerConfig, toolName: string, args: Record<string, unknown>, signal?: AbortSignal) => Promise<AgentMcpCallResult>;
+		close?: () => Promise<void>;
 	};
 	templateInvalidations?: string[];
 } = {}) {
@@ -87,6 +92,21 @@ test("GET /v1/agents/:agentId/mcp/servers returns an empty scoped MCP catalog", 
 	assert.deepEqual(response.json(), { agentId: "search", servers: [] });
 });
 
+test("agent MCP routes close the client manager when the app closes", async () => {
+	let closeCalls = 0;
+	const { app } = await createApp({
+		clientManager: {
+			async close() {
+				closeCalls += 1;
+			},
+		},
+	});
+
+	await app.close();
+
+	assert.equal(closeCalls, 1);
+});
+
 test("POST PATCH and DELETE manage MCP servers under one agent and invalidate templates", async (t) => {
 	const templateInvalidations: string[] = [];
 	const { app } = await createApp({ templateInvalidations });
@@ -116,6 +136,27 @@ test("POST PATCH and DELETE manage MCP servers under one agent and invalidate te
 	assert.equal(deleted.statusCode, 200);
 	assert.deepEqual(deleted.json(), { deleted: true, agentId: "search", serverId: "qr-ocr" });
 	assert.deepEqual(templateInvalidations, ["search", "search", "search"]);
+});
+
+test("POST duplicate MCP server returns conflict", async (t) => {
+	const { app } = await createApp();
+	t.after(() => {
+		void app.close();
+	});
+	await app.inject({
+		method: "POST",
+		url: "/v1/agents/search/mcp/servers",
+		payload: serverPayload(),
+	});
+
+	const duplicate = await app.inject({
+		method: "POST",
+		url: "/v1/agents/search/mcp/servers",
+		payload: serverPayload(),
+	});
+
+	assert.equal(duplicate.statusCode, 409);
+	assert.match(duplicate.json().error.message, /already exists/);
 });
 
 test("agent MCP routes reject unknown agents and locked or running profile writes", async (t) => {
@@ -189,6 +230,49 @@ test("POST /test uses the injected MCP client manager and caches returned tools"
 	assert.deepEqual(listed.json().tools, tools);
 });
 
+test("POST /test rejects locked or running agents before executing MCP clients", async (t) => {
+	let testCalls = 0;
+	const { app: lockedApp, projectRoot: lockedProjectRoot } = await createApp({
+		lockedProfileIds: new Set(["search"]),
+		clientManager: {
+			async testServer() {
+				testCalls += 1;
+				return { ok: true, serverId: "qr-ocr", tools: [] };
+			},
+		},
+	});
+	const { app: runningApp, projectRoot: runningProjectRoot } = await createApp({
+		runningAgents: new Set(["search"]),
+		clientManager: {
+			async testServer() {
+				testCalls += 1;
+				return { ok: true, serverId: "qr-ocr", tools: [] };
+			},
+		},
+	});
+	t.after(() => {
+		void lockedApp.close();
+		void runningApp.close();
+	});
+	await createAgentMcpServer(lockedProjectRoot, "search", serverPayload());
+	await createAgentMcpServer(runningProjectRoot, "search", serverPayload());
+
+	const locked = await lockedApp.inject({
+		method: "POST",
+		url: "/v1/agents/search/mcp/servers/qr-ocr/test",
+	});
+	const running = await runningApp.inject({
+		method: "POST",
+		url: "/v1/agents/search/mcp/servers/qr-ocr/test",
+	});
+
+	assert.equal(locked.statusCode, 409);
+	assert.match(locked.json().error.message, /locked by an active Team run/);
+	assert.equal(running.statusCode, 409);
+	assert.match(running.json().error.message, /running conversation/);
+	assert.equal(testCalls, 0);
+});
+
 test("GET /tools fetches live MCP tools when no cache exists", async (t) => {
 	const tools = [{ name: "ocr_recognize", description: "OCR" }];
 	let listCalls = 0;
@@ -219,4 +303,30 @@ test("GET /tools fetches live MCP tools when no cache exists", async (t) => {
 	assert.equal(response.json().source, "live");
 	assert.deepEqual(response.json().tools, tools);
 	assert.equal(listCalls, 1);
+});
+
+test("GET /tools without cache rejects locked agents before executing MCP clients", async (t) => {
+	let listCalls = 0;
+	const { app, projectRoot } = await createApp({
+		lockedProfileIds: new Set(["search"]),
+		clientManager: {
+			async listTools() {
+				listCalls += 1;
+				return [{ name: "ocr_recognize", description: "OCR" }];
+			},
+		},
+	});
+	t.after(() => {
+		void app.close();
+	});
+	await createAgentMcpServer(projectRoot, "search", serverPayload());
+
+	const response = await app.inject({
+		method: "GET",
+		url: "/v1/agents/search/mcp/servers/qr-ocr/tools",
+	});
+
+	assert.equal(response.statusCode, 409);
+	assert.match(response.json().error.message, /locked by an active Team run/);
+	assert.equal(listCalls, 0);
 });
