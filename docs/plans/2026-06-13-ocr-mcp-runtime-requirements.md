@@ -1,5 +1,16 @@
 # OCR MCP GPU Runtime Self-Contained Startup Requirements
 
+## 2026-06-13 交付验收记录
+
+OCR MCP 侧已交付 `run_mcp.cmd`、`mcp_runtime_bootstrap.py`，并在 `ocr_mcp_server.py` 增加 `run_with_preload()` 和 stderr logger。UGK Mini Agent 侧按本文件约定只配置 `run_mcp.cmd`、空 args、项目 cwd 和 `300000` ms timeout。
+
+UGK 侧复验记录：
+
+- `AgentMcpClientManager.testServer()` 使用 `E:\AII\ugk-qr-scan\run_mcp.cmd` 返回 `ok: true`。
+- `tools/list` 返回 `ocr_recognize`，schema 仍是 `{ params: OCRInput }`，UGK 不需要改参数包装。
+- `AgentMcpClientManager.callTool()` 调用 `ocr_recognize` 识别 `E:\AII\ugk-qr-scan\test.jpg` 返回 `isError: false`，识别出 `Hello World` 和 `PaddleOCR测试`。
+- 本机 `main` Agent 的运行态配置已写入 `.data/agent/mcp/servers.json`；该文件属于运行态数据，不提交。
+
 ## 背景
 
 UGK Mini Agent 已支持通过配置启动本地 stdio MCP 服务。当前本地 OCR MCP 可以被 Agent 平台识别，`local-ocr` 能列出 `ocr_recognize` 工具，但调用工具时 Paddle GPU 运行时失败：

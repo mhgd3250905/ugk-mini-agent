@@ -23,6 +23,13 @@ git show <commit>:docs/change-log.md
 - **配置入口**: `/playground/agents` 的 MCP 面板，运行态文件 `.data/agent/mcp/servers.json` 和 `.data/agents/<agentId>/mcp/servers.json`。
 - **验证建议**: `node --test --test-concurrency=1 --import tsx test\agent-mcp-catalog.test.ts test\agent-mcp-client-manager.test.ts test\agent-mcp-tool.test.ts test\agent-mcp-routes.test.ts test\agent-mcp-page-ui.test.ts`、`npx tsc --noEmit`、在 Agent 管理台测试本地 stdio MCP server。
 
+## 2026-06-13 - OCR MCP 自包含入口复验
+
+- **主题**: 本地 OCR MCP 改为通过项目自带 `run_mcp.cmd` 启动，UGK 侧只配置 command、cwd、空 args 和较长 timeout，不再在 UGK 配置中拼接 PaddleOCR 预加载命令。
+- **影响范围**: Agent MCP 文档示例、Windows 本机运行说明、OCR MCP runtime 需求记录；本机 `main` Agent 的 `.data/agent/mcp/servers.json` 已写入运行态配置但不提交。
+- **对应入口**: `README.md`、`docs/native-windows-core.md`、`docs/plans/2026-06-13-ocr-mcp-runtime-requirements.md`。
+- **验证记录**: `AgentMcpClientManager.testServer()` 返回 `ok: true` 且列出 `ocr_recognize`；`AgentMcpClientManager.callTool()` 调用本地图像返回 `isError: false`。
+
 ## 2026-06-13 - Windows Core 配置化收口
 
 - **主题**: 清理旧版部署口径，Windows 本机部署默认单端口由 `.env.native` / `.env.native.example` 驱动，Team Console / Canvas 通过主服务 `/playground/team` 同源提供。

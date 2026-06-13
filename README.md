@@ -282,7 +282,7 @@ MCP server 和 Skill 一样属于 Agent profile。不同 Agent 的 MCP 配置独
 
 在根页面进入“管理 Agent”，或打开 `/playground/agents`，在对应 Agent 的 MCP 面板中新增、编辑、禁用、删除、测试连接和查看工具。当前版本支持 stdio MCP server；本地命令、脚本路径、工作目录和密钥只写入运行态 `.data/`，不要提交到版本库。
 
-本地 OCR/QR 这类启动较慢的 MCP server 建议把 `timeoutMs` 设为较大的值。若工具在 FastMCP 请求内懒加载大型模型时卡住，可把 command/args 配成启动时预加载模型再进入 `mcp.run()`，例如：
+本地 OCR/QR 这类启动较慢的 MCP server 建议把 `timeoutMs` 设为较大的值。模型、GPU DLL、预加载等运行时细节应由 MCP 项目自己的启动入口封装；UGK 只配置该入口，例如：
 
 ```json
 {
@@ -291,11 +291,11 @@ MCP server 和 Skill 一样属于 Agent profile。不同 Agent 的 MCP 配置独
   "enabled": true,
   "transport": {
     "type": "stdio",
-    "command": "<path-to-python.exe>",
-    "args": ["-c", "import ocr_mcp_server as s; s.get_ocr('ch'); s.mcp.run()"],
-    "cwd": "<path-to-mcp-project>"
+    "command": "<path-to-ocr-mcp-project>\\run_mcp.cmd",
+    "args": [],
+    "cwd": "<path-to-ocr-mcp-project>"
   },
-  "timeoutMs": 120000
+  "timeoutMs": 300000
 }
 ```
 
@@ -617,7 +617,7 @@ MCP servers belong to an Agent profile, just like Skills. Each Agent has isolate
 
 Use the root page "Agents" entry or open `/playground/agents`, then manage MCP servers from the selected Agent's MCP panel. The first version supports stdio MCP servers. Local commands, script paths, working directories, and secrets are runtime configuration stored under `.data/`; do not commit them.
 
-For slow local OCR/QR MCP servers, set a larger `timeoutMs`. If a FastMCP tool lazily loads a heavy model and stalls inside the request, configure the server command to preload the model before `mcp.run()`:
+For slow local OCR/QR MCP servers, set a larger `timeoutMs`. Model, GPU DLL, and preload details should be hidden behind the MCP project's own launcher; UGK only points at that launcher:
 
 ```json
 {
@@ -626,11 +626,11 @@ For slow local OCR/QR MCP servers, set a larger `timeoutMs`. If a FastMCP tool l
   "enabled": true,
   "transport": {
     "type": "stdio",
-    "command": "<path-to-python.exe>",
-    "args": ["-c", "import ocr_mcp_server as s; s.get_ocr('ch'); s.mcp.run()"],
-    "cwd": "<path-to-mcp-project>"
+    "command": "<path-to-ocr-mcp-project>\\run_mcp.cmd",
+    "args": [],
+    "cwd": "<path-to-ocr-mcp-project>"
   },
-  "timeoutMs": 120000
+  "timeoutMs": 300000
 }
 ```
 
