@@ -62,11 +62,11 @@ npm run native:start
 
 启动主服务前会自动执行 `npm run team-console:build`，将 Canvas 前端构建为静态资源由主服务路由提供。日志写入 `logs/native/`。
 
-首次启动后，打开终端输出的服务地址进入根页面，再点击“配置 API 源”添加 API 源。初始运行态不预置任何 provider 或 API key。
+首次启动后，访问根页面的"配置 API 源"或直接打开 `/playground/model-sources` 添加 API 源。初始运行态不预置任何 provider 或 API key。
 
 ## 页面入口
 
-`npm run native:start` 会在终端打印当前服务地址。打开这个地址进入根页面，通过页面按钮跳转即可；README 只记录服务内相对路由，不要求用户填写或记忆固定端口：
+`npm run native:start` 会在终端打印当前服务地址（即 `$BASE_URL`，默认由 `.env.native` 的 `PUBLIC_BASE_URL` 决定）。通过页面按钮即可跳转，无需记忆固定端口：
 
 | 入口 | 路由 | 说明 |
 | --- | --- | --- |
@@ -247,15 +247,15 @@ Get-Content logs/native/ugk-mini-agent-conn-worker.log -Tail 50 -Wait
 
 核心配置通过 `.env.native` 管理（从 `.env.native.example` 复制）：
 
-| 变量 | 配置方式 | 说明 |
+| 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `HOST` | 可在 `.env.native` 覆盖 | 监听地址 |
-| `PORT` | 可在 `.env.native` 覆盖 | 服务端口 |
-| `PUBLIC_BASE_URL` | 可自动推导或显式覆盖 | 对外基础 URL |
-| `UGK_DATA_DIR` | 可选覆盖 | 运行数据根目录 |
-| `UGK_LOG_DIR` | 可选覆盖 | 日志目录 |
-| `UGK_TOOLS_DIR` | 可选覆盖 | 工具缓存目录 |
-| `TEAM_RUNTIME_ENABLED` | 可选覆盖 | Team runtime 开关 |
+| `HOST` | `127.0.0.1` | 监听地址 |
+| `PORT` | `8888` | 服务端口 |
+| `PUBLIC_BASE_URL` | `http://127.0.0.1:$PORT` | 对外基础 URL |
+| `UGK_DATA_DIR` | `.data` | 运行数据根目录 |
+| `UGK_LOG_DIR` | `logs/native` | 日志目录 |
+| `UGK_TOOLS_DIR` | `.data/tools` | 工具缓存目录 |
+| `TEAM_RUNTIME_ENABLED` | `true` | Team runtime 开关 |
 
 深入配置参考见 [docs/native-windows-core.md](docs/native-windows-core.md)。
 
@@ -397,11 +397,11 @@ npm run native:start
 
 Before starting the server, the supervisor runs `npm run team-console:build` to build the Canvas frontend as static assets served by the main service. Logs are written to `logs/native/`.
 
-After first startup, open the service URL printed in the terminal, then click "Configure API Sources" on the root page. A fresh runtime starts with no model providers.
+After first startup, visit the root page and click "Configure API Sources" or open `/playground/model-sources` to add your API source. A fresh runtime starts with no model providers.
 
 ## Page Entry Points
 
-`npm run native:start` prints the current service URL. Open that URL and navigate via the root page buttons; this README records only in-service relative routes, so users do not need to enter or memorize fixed ports:
+`npm run native:start` prints the service URL (`$BASE_URL`, determined by `PUBLIC_BASE_URL` in `.env.native`). Navigate via on-page buttons—no need to memorize ports:
 
 | Entry | Route | Description |
 | --- | --- | --- |
@@ -582,15 +582,15 @@ Get-Content logs/native/ugk-mini-agent-conn-worker.log -Tail 50 -Wait
 
 Core configuration is managed via `.env.native` (copy from `.env.native.example`):
 
-| Variable | Configuration | Description |
+| Variable | Default | Description |
 | --- | --- | --- |
-| `HOST` | Override in `.env.native` when needed | Listen address |
-| `PORT` | Override in `.env.native` when needed | Service port |
-| `PUBLIC_BASE_URL` | Auto-derived or explicitly overridden | External base URL |
-| `UGK_DATA_DIR` | Optional override | Runtime data root |
-| `UGK_LOG_DIR` | Optional override | Log directory |
-| `UGK_TOOLS_DIR` | Optional override | Tool cache directory |
-| `TEAM_RUNTIME_ENABLED` | Optional override | Team runtime toggle |
+| `HOST` | `127.0.0.1` | Listen address |
+| `PORT` | `8888` | Service port |
+| `PUBLIC_BASE_URL` | `http://127.0.0.1:$PORT` | External base URL |
+| `UGK_DATA_DIR` | `.data` | Runtime data root |
+| `UGK_LOG_DIR` | `logs/native` | Log directory |
+| `UGK_TOOLS_DIR` | `.data/tools` | Tool cache directory |
+| `TEAM_RUNTIME_ENABLED` | `true` | Team runtime toggle |
 
 For in-depth configuration, see [docs/native-windows-core.md](docs/native-windows-core.md).
 

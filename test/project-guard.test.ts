@@ -49,7 +49,10 @@ test("http-access skill documents Windows native script invocation before legacy
 
 test("current user-facing docs do not point new Windows Core users at legacy ports", async () => {
 	const paths = [
+		"AGENTS.md",
+		"CLAUDE.md",
 		"README.md",
+		"CONTRIBUTING.md",
 		"docs/change-log.md",
 		"docs/handoff-current.md",
 		"docs/native-windows-core.md",

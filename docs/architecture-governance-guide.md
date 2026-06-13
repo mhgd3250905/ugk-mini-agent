@@ -8,7 +8,7 @@
 
 | 任务 | 先读 |
 | --- | --- |
-| 全新接手 | `AGENTS.md`、`README.md`、`.env.native.example`、`docs/native-windows-core.md` |
+| 全新接手 | `README.md`、`AGENTS.md`、`CONTRIBUTING.md`、`.env.native.example`、`docs/native-windows-core.md` |
 | Windows 本机部署 | `docs/native-windows-core.md`、`scripts/native-runtime-config.mjs`、`scripts/native-doctor-core.mjs` |
 | Team Console / Canvas | `docs/team-runtime.md`、`apps/team-console/README.md` |
 | Playground UI | `docs/playground-current.md`、`docs/playground-ui-governance-map.md` |
