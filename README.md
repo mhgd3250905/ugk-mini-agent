@@ -1,6 +1,6 @@
 # UGK Mini Agent
 
-UGK Mini Agent 是一个面向 Windows 本机部署的轻量 Agent Runtime。基于 Fastify + Node.js 多进程架构，提供 Agent 对话、Canvas Task 编排、Conn 后台任务和可扩展技能系统。
+UGK Mini Agent 是一个面向 Windows、macOS 和 Linux 本机部署的轻量 Agent Runtime。基于 Fastify + Node.js 多进程架构，提供 Agent 对话、Canvas Task 编排、Conn 后台任务和可扩展技能系统。
 
 ---
 
@@ -13,6 +13,8 @@ UGK Mini Agent 是一个面向 Windows 本机部署的轻量 Agent Runtime。基
 | [CLAUDE.md](CLAUDE.md) | Claude Code 引导入口 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发贡献指南（分支策略、代码风格、PR 流程） |
 | [docs/native-windows-core.md](docs/native-windows-core.md) | Windows 本机运行深度参考 |
+| [docs/native-macos.md](docs/native-macos.md) | macOS 本机安装与启动 |
+| [docs/native-linux.md](docs/native-linux.md) | Linux 本机安装与启动 |
 | [docs/architecture-governance-guide.md](docs/architecture-governance-guide.md) | 架构治理接手指南 |
 | [docs/architecture-test-matrix.md](docs/architecture-test-matrix.md) | 验证矩阵（按改动范围索引） |
 | [docs/team-runtime.md](docs/team-runtime.md) | Team Runtime 技术文档 |
@@ -23,8 +25,8 @@ UGK Mini Agent 是一个面向 Windows 本机部署的轻量 Agent Runtime。基
 
 ## 目录
 
-- [环境要求](#环境要求)
-- [安装与启动](#安装与启动)
+- [平台指南](#平台指南)
+- [共同运行方式](#共同运行方式)
 - [页面入口](#页面入口)
 - [架构总览](#架构总览)
 - [API 端点索引](#api-端点索引)
@@ -36,23 +38,27 @@ UGK Mini Agent 是一个面向 Windows 本机部署的轻量 Agent Runtime。基
 
 ---
 
-## 环境要求
+## 平台指南
 
-- **OS**: Windows 10/11
-- **Node.js**: 22 或更新版本
-- **Git for Windows**: 包含 `Git\bin\bash.exe`
-- **Python**: 3.11 或 3.12
+| Platform | Guide | Launcher |
+| --- | --- | --- |
+| Windows 10/11 | [Windows native guide](docs/native-windows-core.md) | `UGK-Mini-Agent-Launcher.cmd` |
+| macOS | [macOS native guide](docs/native-macos.md) | `UGK-Mini-Agent-Launcher.command` |
+| Linux | [Linux native guide](docs/native-linux.md) | `UGK-Mini-Agent-Launcher.sh` |
 
-## 安装与启动
+Windows 是当前稳定基线。macOS 和 Linux 使用各自的 doctor、launcher 和文档入口；底层服务、Team worker、Conn worker 和运行态目录保持同一套 native runtime。
 
-```powershell
-npm install
-npm --prefix apps/team-console install
-npm run native:doctor
-npm run native:start
-```
+## 共同运行方式
 
-`npm run native:start` 会启动以下进程：
+各平台首次 clone 后按上表进入对应指南安装依赖并执行平台 doctor。默认启动命令分别是：
+
+| 平台 | Doctor | 启动 |
+| --- | --- | --- |
+| Windows | `npm run native:doctor` 或 `npm run native:doctor:win` | `npm run native:start` |
+| macOS | `npm run native:doctor:mac` | `npm run native:start:mac` |
+| Linux | `npm run native:doctor:linux` | `npm run native:start:linux` |
+
+native 启动命令会启动以下进程：
 
 | 进程 | 职责 |
 | --- | --- |
@@ -125,7 +131,7 @@ npm run native:start
 | Conn 后台 | `src/workers/conn-worker.ts` | 后台/定时任务领取与执行 |
 | Team worker | `src/workers/team-worker.ts` | Canvas Task runtime 执行 |
 | Team Console 前端 | `apps/team-console/` | Canvas SPA（React） |
-| Native 脚本 | `scripts/native-*.mjs` | Windows 运行时环境拼装、预检、进程管理 |
+| Native 脚本 | `scripts/native-*.mjs` | 本机运行时环境拼装、预检、进程管理 |
 
 ## API 端点索引
 
@@ -255,7 +261,7 @@ Get-Content logs/native/ugk-mini-agent-conn-worker.log -Tail 50 -Wait
 | `UGK_TOOLS_DIR` | `.data/tools` | 工具缓存目录 |
 | `TEAM_RUNTIME_ENABLED` | `true` | Team runtime 开关 |
 
-深入配置参考见 [docs/native-windows-core.md](docs/native-windows-core.md)。
+深入配置参考见对应平台指南：[Windows](docs/native-windows-core.md)、[macOS](docs/native-macos.md)、[Linux](docs/native-linux.md)。
 
 ## 技能扩展系统
 
@@ -302,7 +308,7 @@ MCP 管理 API 只接受本机请求。stdio MCP server 可以启动本机命令
 ## 项目结构
 
 ```
-ugk-claw-core-win/
+ugk-mini-agent/
 ├── src/
 │   ├── server.ts              # 服务入口，组合根
 │   ├── config.ts              # 运行配置
@@ -314,7 +320,7 @@ ugk-claw-core-win/
 ├── apps/
 │   └── team-console/          # Team Console React SPA
 ├── scripts/
-│   ├── native-runtime-config.mjs  # Windows 运行时配置
+│   ├── native-runtime-config.mjs  # Native runtime 配置
 │   ├── native-doctor-core.mjs     # 环境预检
 │   ├── native-supervisor.mjs      # 多进程管理
 │   └── native-env.mjs            # .env.native 加载器
@@ -343,9 +349,15 @@ ugk-claw-core-win/
 ## 常用命令速查
 
 ```powershell
-# 运行
+# 运行（Windows 稳定基线）
 npm run native:doctor          # 环境预检
 npm run native:start           # 启动全部服务
+
+# 运行（macOS / Linux）
+npm run native:doctor:mac
+npm run native:start:mac
+npm run native:doctor:linux
+npm run native:start:linux
 
 # 开发
 npm run dev                    # 热重载主服务
@@ -368,25 +380,30 @@ npm run worker:conn            # Conn worker
 
 # English
 
-UGK Mini Agent is a lightweight Agent Runtime designed for Windows-native deployment. Built on Fastify + Node.js multi-process architecture, it provides Agent chat, Canvas Task orchestration, Conn background tasks, and an extensible skills system.
+UGK Mini Agent is a lightweight Agent Runtime designed for Windows, macOS, and Linux native deployment. Built on Fastify + Node.js multi-process architecture, it provides Agent chat, Canvas Task orchestration, Conn background tasks, and an extensible skills system.
 
-## Environment Requirements
+## Platform Guides
 
-- **OS**: Windows 10/11
-- **Node.js**: 22 or newer
-- **Git for Windows**: including `Git\bin\bash.exe`
-- **Python**: 3.11 or 3.12
+| Platform | Guide | Launcher |
+| --- | --- | --- |
+| Windows 10/11 | [Windows native guide](docs/native-windows-core.md) | `UGK-Mini-Agent-Launcher.cmd` |
+| macOS | [macOS native guide](docs/native-macos.md) | `UGK-Mini-Agent-Launcher.command` |
+| Linux | [Linux native guide](docs/native-linux.md) | `UGK-Mini-Agent-Launcher.sh` |
 
-## Installation & Startup
+Windows is the current stable baseline. macOS and Linux use their own doctor commands, launchers, and setup docs while sharing the same server, Team worker, Conn worker, and native runtime layout.
+
+## Shared Runtime Startup
 
 ```powershell
-npm install
-npm --prefix apps/team-console install
-npm run native:doctor
-npm run native:start
+npm run native:doctor          # Windows
+npm run native:start           # Windows
+npm run native:doctor:mac      # macOS
+npm run native:start:mac       # macOS
+npm run native:doctor:linux    # Linux
+npm run native:start:linux     # Linux
 ```
 
-`npm run native:start` launches these processes:
+The native startup command launches these processes:
 
 | Process | Responsibility |
 | --- | --- |
@@ -459,7 +476,7 @@ After first startup, visit the root page and click "Configure API Sources" or op
 | Conn Worker | `src/workers/conn-worker.ts` | Background/scheduled task pickup and execution |
 | Team Worker | `src/workers/team-worker.ts` | Canvas Task runtime execution |
 | Team Console | `apps/team-console/` | Canvas SPA (React) |
-| Native Scripts | `scripts/native-*.mjs` | Windows runtime env assembly, doctor, supervisor |
+| Native Scripts | `scripts/native-*.mjs` | Native runtime env assembly, doctor, supervisor |
 
 ## API Endpoint Index
 
@@ -589,7 +606,7 @@ Core configuration is managed via `.env.native` (copy from `.env.native.example`
 | `UGK_TOOLS_DIR` | `.data/tools` | Tool cache directory |
 | `TEAM_RUNTIME_ENABLED` | `true` | Team runtime toggle |
 
-For in-depth configuration, see [docs/native-windows-core.md](docs/native-windows-core.md).
+For in-depth configuration, see the platform guide: [Windows](docs/native-windows-core.md), [macOS](docs/native-macos.md), or [Linux](docs/native-linux.md).
 
 ## Skills Extension System
 
@@ -636,7 +653,7 @@ For slow local OCR/QR MCP servers, set a larger `timeoutMs`. Model, GPU DLL, and
 ## Project Structure
 
 ```
-ugk-claw-core-win/
+ugk-mini-agent/
 ├── src/
 │   ├── server.ts              # Server entry, composition root
 │   ├── config.ts              # Runtime config
@@ -648,7 +665,7 @@ ugk-claw-core-win/
 ├── apps/
 │   └── team-console/          # Team Console React SPA
 ├── scripts/
-│   ├── native-runtime-config.mjs  # Windows runtime config
+│   ├── native-runtime-config.mjs  # Native runtime config
 │   ├── native-doctor-core.mjs     # Environment doctor
 │   ├── native-supervisor.mjs      # Multi-process supervisor
 │   └── native-env.mjs            # .env.native loader
@@ -677,9 +694,15 @@ Local configuration, runtime data, logs, generated reports, and model keys are *
 ## Command Reference
 
 ```powershell
-# Running
+# Running (Windows stable baseline)
 npm run native:doctor          # Environment pre-check
 npm run native:start           # Start all services
+
+# Running (macOS / Linux)
+npm run native:doctor:mac
+npm run native:start:mac
+npm run native:doctor:linux
+npm run native:start:linux
 
 # Development
 npm run dev                    # Hot-reload main service

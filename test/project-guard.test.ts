@@ -82,6 +82,24 @@ test("current user-facing docs do not point new Windows Core users at legacy por
 	}
 });
 
+test("README points clone users to platform-specific native guides", async () => {
+	const readme = await readFile("README.md", "utf8");
+
+	assert.match(readme, /Windows[\s\S]*docs\/native-windows-core\.md/);
+	assert.match(readme, /macOS[\s\S]*docs\/native-macos\.md/);
+	assert.match(readme, /Linux[\s\S]*docs\/native-linux\.md/);
+});
+
+test("macOS and Linux native docs do not require Windows-only launch prerequisites", async () => {
+	const mac = await readFile("docs/native-macos.md", "utf8");
+	const linux = await readFile("docs/native-linux.md", "utf8");
+
+	assert.doesNotMatch(mac, /Git Bash|\.cmd|taskkill|netstat -ano/);
+	assert.doesNotMatch(linux, /Git Bash|\.cmd|taskkill|netstat -ano/);
+	assert.match(mac, /python3/);
+	assert.match(linux, /python3/);
+});
+
 test("runtime code and agent skills do not hard-code native service ports", async () => {
 	const forbiddenPorts = ["88" + "88", "99" + "99"];
 	const forbiddenPattern = new RegExp(`127\\.0\\.0\\.1:(?:${forbiddenPorts.join("|")})|\\b(?:${forbiddenPorts.join("|")})\\b`);

@@ -2,9 +2,9 @@
 
 更新时间：`2026-06-13`
 
-本矩阵只保留 Windows Core 当前有效的验证入口。迁移前的容器编排、旧端口和独立 Team Console dev server 验证口径已移除。
+本矩阵只保留 native runtime 当前有效的验证入口。迁移前的容器编排、旧端口和独立 Team Console dev server 验证口径已移除。
 
-## Windows Core 基线
+## Native Runtime 基线
 
 ```powershell
 node --test --test-concurrency=1 --import tsx test\native-*.test.ts
@@ -12,9 +12,11 @@ npx tsc --noEmit
 git diff --check
 ```
 
+Windows 是当前稳定基线；macOS/Linux 入口通过平台 doctor、POSIX launcher 测试和平台文档守卫覆盖。
+
 ## 配置 / 启动脚本
 
-适用：`src/config.ts`、`scripts/native-*.mjs`、`.env.native.example`。
+适用：`src/config.ts`、`scripts/native-*.mjs`、`.env.native.example`、平台启动器。
 
 ```powershell
 node --test --test-concurrency=1 --import tsx test\native-*.test.ts test\config.test.ts
@@ -85,7 +87,7 @@ git diff --check
 
 ## 文档 / 协作口径
 
-适用：`README.md`、`docs/*`、`.env.native.example`、`.pi/skills/*`。
+适用：`README.md`、`docs/*`、`.env.native.example`、平台启动器、`.pi/skills/*`。
 
 ```powershell
 node --test --test-concurrency=1 --import tsx test\project-guard.test.ts

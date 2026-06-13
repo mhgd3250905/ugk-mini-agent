@@ -14,7 +14,14 @@ git show <commit>:docs/change-log.md
 - 只记录影响外部行为、运行方式、接口、文档结构或协作约定的变更。
 - 单条记录写清日期、主题、影响范围、对应入口和关键验证。
 - 不记录长命令输出、临时排障过程、一次性 UI 微调直播和旧环境运行笔记。
-- 当前运行事实以 `README.md`、`.env.native.example`、`docs/native-windows-core.md` 和真实代码为准。
+- 当前运行事实以 `README.md`、`.env.native.example`、平台 native 文档和真实代码为准。
+
+## 2026-06-14 - macOS/Linux native runtime 入口
+
+- **主题**: 新增 macOS/Linux 本机部署入口，README 改为平台选择器；Windows 仍是当前稳定基线。
+- **影响范围**: native doctor 平台检测、POSIX 端口清理、macOS/Linux 启动器、平台 npm scripts、macOS/Linux 独立安装文档和 native runtime 治理文档。
+- **对应入口**: `UGK-Mini-Agent-Launcher.command`、`UGK-Mini-Agent-Launcher.sh`、`UGK-Mini-Agent-Set-Port.command`、`UGK-Mini-Agent-Set-Port.sh`、`docs/native-macos.md`、`docs/native-linux.md`。
+- **验证建议**: `node --test --test-concurrency=1 --import tsx test\native-*.test.ts test\project-guard.test.ts`、`npx tsc --noEmit`、`git diff --check`；macOS/Linux 仍需真机执行对应平台 doctor 和 launcher。
 
 ## 2026-06-13 - CDP/browser 功能面清理
 

@@ -6,7 +6,7 @@
 
 ## 当前部署口径
 
-- 项目名：`ugk-mini-agent` / Windows 本机部署版 `ugk-claw-core-win`。
+- 项目名：`ugk-mini-agent` / native runtime；Windows 是当前稳定基线，macOS/Linux 有独立启动器和文档入口。
 - 默认入口：`$BASE_URL`，由 `.env.native` / `.env.native.example` 的 `PUBLIC_BASE_URL`、`HOST`、`PORT` 推导。
 - Team Console / Canvas：`$BASE_URL/playground/team`。
 - 默认不依赖旧独立控制台端口、独立 Vite dev server、容器编排或容器路径。
@@ -17,7 +17,7 @@
 1. `AGENTS.md`
 2. `README.md`
 3. `.env.native.example`
-4. `docs/native-windows-core.md`
+4. 平台 native 文档：`docs/native-windows-core.md`、`docs/native-macos.md`、`docs/native-linux.md`
 5. `docs/team-runtime.md`
 6. `docs/runtime-assets-conn-feishu.md`
 
@@ -25,16 +25,16 @@
 
 - 服务入口：`src/server.ts`
 - 配置入口：`src/config.ts`
-- Windows runtime config：`scripts/native-runtime-config.mjs`
-- Windows doctor：`scripts/native-doctor-core.mjs`
-- Windows supervisor：`scripts/native-supervisor.mjs`
+- Native runtime config：`scripts/native-runtime-config.mjs`
+- Native doctor：`scripts/native-doctor-core.mjs`
+- Native supervisor：`scripts/native-supervisor.mjs`
 - Team Console：`apps/team-console/`
 - Team runtime：`src/team/`
 - Conn worker：`src/workers/conn-worker.ts`
 
 ## 当前验证基线
 
-Windows Core 相关改动至少运行：
+Native runtime 相关改动至少运行：
 
 ```powershell
 node --test --test-concurrency=1 --import tsx test\native-*.test.ts

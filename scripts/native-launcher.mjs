@@ -32,7 +32,7 @@ async function main() {
 	const nativeEnv = parseNativeEnv(envContent);
 	const defaultEnv = loadDefaultNativeEnvSync(projectRoot);
 	const selectedHost = args.host || nativeEnv.HOST || defaultEnv.HOST || "127.0.0.1";
-	const defaultPort = normalizePort(nativeEnv.PORT || defaultEnv.PORT || 9999, 9999);
+	const defaultPort = normalizePort(nativeEnv.PORT || defaultEnv.PORT);
 	const selectedPort = args.port ?? (args.askPort ? await resolveInteractivePort(defaultPort) : defaultPort);
 	const nextEnvContent = upsertNativeEnvContent(envContent, {
 		host: selectedHost,
@@ -204,7 +204,7 @@ function printHelp() {
 	console.log(`UGK Mini Agent Launcher
 
 Usage:
-  node scripts/native-launcher.mjs [--port 9999] [--ask-port] [--host 127.0.0.1] [--no-kill] [--dry-run]
+  node scripts/native-launcher.mjs [--port <port>] [--ask-port] [--host 127.0.0.1] [--no-kill] [--dry-run]
 
 Options:
   --port <port>   Set the native server port and persist it to .env.native.

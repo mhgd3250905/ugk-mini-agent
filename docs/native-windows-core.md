@@ -2,7 +2,7 @@
 
 ← 返回 [README.md](../README.md)
 
-本文档聚焦 Windows 本机运行时的环境推导、进程拓扑和扩展点。安装、启动和页面入口见 [README.md](../README.md)。
+本文档聚焦 Windows 本机运行时的环境推导、进程拓扑和扩展点。macOS 和 Linux 分别见 [macOS guide](native-macos.md)、[Linux guide](native-linux.md)。安装、启动和页面入口见 [README.md](../README.md)。
 
 ## 进程拓扑
 

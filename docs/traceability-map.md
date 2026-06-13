@@ -1,13 +1,13 @@
 # Traceability Map
 
-这份文档用于快速定位 Windows Core 项目的主要入口。
+这份文档用于快速定位 UGK Mini Agent native runtime 的主要入口。
 
 ## 快速接手
 
 1. `README.md`
 2. `AGENTS.md`
 3. `CONTRIBUTING.md`
-4. `docs/native-windows-core.md`
+4. 平台 native 文档：`docs/native-windows-core.md`、`docs/native-macos.md`、`docs/native-linux.md`
 5. `src/server.ts`
 5. `src/config.ts`
 6. `src/agent/agent-service.ts`
@@ -98,6 +98,12 @@ The default shared user-skill directory starts empty. Deployment-specific capabi
 - Supervisor plan: `scripts/native-supervisor-core.mjs`
 - Supervisor CLI: `scripts/native-supervisor.mjs`
 - Env template: `.env.native.example`
+- Windows guide: `docs/native-windows-core.md`
+- macOS guide: `docs/native-macos.md`
+- Linux guide: `docs/native-linux.md`
+- Windows launcher: `UGK-Mini-Agent-Launcher.cmd`
+- macOS launcher: `UGK-Mini-Agent-Launcher.command`
+- Linux launcher: `UGK-Mini-Agent-Launcher.sh`
 
 Verification:
 

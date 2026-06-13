@@ -21,7 +21,9 @@
 | Runtime config | `scripts/native-runtime-config.mjs` |
 | Doctor | `scripts/native-doctor-core.mjs` |
 | Supervisor | `scripts/native-supervisor.mjs` |
-| 运行文档 | `docs/native-windows-core.md` |
+| Windows 运行文档 | `docs/native-windows-core.md` |
+| macOS 运行文档 | `docs/native-macos.md` |
+| Linux 运行文档 | `docs/native-linux.md` |
 | 验证矩阵 | `docs/architecture-test-matrix.md` |
 | 治理指南 | `docs/architecture-governance-guide.md` |
 
@@ -36,7 +38,7 @@
 
 ## 验证
 
-Windows Core 相关改动至少运行：
+Native runtime 相关改动至少运行：
 
 ```powershell
 node --test --test-concurrency=1 --import tsx test\native-*.test.ts
