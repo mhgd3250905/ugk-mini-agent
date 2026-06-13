@@ -1,5 +1,5 @@
 import { access } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { createServer } from "node:net";
 import { promisify } from "node:util";
@@ -50,8 +50,11 @@ async function findGitBash({ projectRoot, findExecutable, fileExists }) {
 	if (fromPath && isSupportedGitBash(fromPath)) {
 		return fromPath;
 	}
+	const gitPath = await findExecutable("git");
+	const fromGitPath = gitPath ? resolve(dirname(gitPath), "..", "bin", "bash.exe") : undefined;
 	const candidates = [
 		join(projectRoot, ".data", "tools", "git", "bin", "bash.exe"),
+		...(fromGitPath ? [fromGitPath] : []),
 		"C:\\Program Files\\Git\\bin\\bash.exe",
 		"C:\\Program Files (x86)\\Git\\bin\\bash.exe",
 	];

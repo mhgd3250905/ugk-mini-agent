@@ -84,6 +84,31 @@ test("native doctor accepts Git for Windows from Program Files when bash is not 
 	assert.equal(gitBash?.message, "C:\\Program Files\\Git\\bin\\bash.exe");
 });
 
+test("native doctor resolves Git Bash next to git.exe when Git is installed outside Program Files", async () => {
+	const report = await createNativeDoctorReport({
+		projectRoot,
+		nodeVersion: "v24.15.0",
+		env: {},
+		fileExists: async (path: string) =>
+			path.endsWith("node_modules") ||
+			path.endsWith("apps\\team-console\\node_modules") ||
+			path.endsWith("runtime\\skills-user") ||
+			path === "D:\\Git\\bin\\bash.exe",
+		findExecutable: async (name: string) => {
+			if (name === "bash") return "C:\\Windows\\System32\\bash.exe";
+			if (name === "git") return "D:\\Git\\cmd\\git.exe";
+			if (name === "python") return "C:\\Python312\\python.exe";
+			return undefined;
+		},
+		isPortAvailable: async () => true,
+	});
+
+	const gitBash = report.checks.find((check: NativeCheck) => check.name === "Git Bash");
+	assert.equal(report.ok, true);
+	assert.equal(gitBash?.ok, true);
+	assert.equal(gitBash?.message, "D:\\Git\\bin\\bash.exe");
+});
+
 test("native doctor accepts bundled portable Git Bash", async () => {
 	const portableBash = `${projectRoot}\\.data\\tools\\git\\bin\\bash.exe`;
 	const report = await createNativeDoctorReport({
