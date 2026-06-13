@@ -104,6 +104,8 @@ export function registerModelSourceRoutes(app: FastifyInstance, options: ModelSo
 			}
 			try {
 				const provider = await modelProviderStore.createProvider(parsed.value!);
+				await promoteProviderAsDefaultIfUnset(options.modelConfigStore, provider);
+				options.agentTemplateRegistry?.invalidate();
 				return reply.status(201).send({ provider: sanitizeCreatedProvider(provider) });
 			} catch (error) {
 				return sendBadRequest(reply, error instanceof Error ? error.message : "Unable to create model provider.");
@@ -147,6 +149,21 @@ export function registerModelSourceRoutes(app: FastifyInstance, options: ModelSo
 			}
 		},
 	);
+}
+
+async function promoteProviderAsDefaultIfUnset(
+	store: ModelConfigStore,
+	provider: ProjectModelProviderJson & { id: string },
+): Promise<void> {
+	const firstModel = provider.models?.find((model) => typeof model.id === "string" && model.id.trim());
+	if (!firstModel?.id) {
+		return;
+	}
+	const config = await store.getConfig();
+	if (config.current.provider !== "unknown" || config.current.model !== "unknown") {
+		return;
+	}
+	await store.setDefault({ provider: provider.id, model: firstModel.id });
 }
 
 function presentGlobalUsage(selection: ModelConfigSelection): ModelSourceUsageBody {

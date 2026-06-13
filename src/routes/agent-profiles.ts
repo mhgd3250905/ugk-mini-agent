@@ -594,6 +594,38 @@ export function registerAgentProfileRoutes(app: FastifyInstance, deps: AgentProf
 		},
 	);
 
+	app.get(
+		"/playground/agents/:agentId/rules",
+		async (
+			request: FastifyRequest<{ Params: { agentId?: string } }>,
+			reply,
+		): Promise<string | FastifyReply> => {
+			const agentId = request.params?.agentId;
+			if (!agentId) {
+				return sendUnknownAgent(reply, agentId);
+			}
+			if (!resolveScopedAgentServiceOrSend(deps.agentServiceRegistry, reply, agentId)) {
+				return reply;
+			}
+			const rulesPath = resolveAgentRulesPath(agentId);
+			if (!rulesPath) {
+				return sendUnknownAgent(reply, agentId);
+			}
+			try {
+				reply.type("text/markdown; charset=utf-8");
+				reply.header("cache-control", "no-store, no-cache, must-revalidate");
+				reply.header("pragma", "no-cache");
+				reply.header("expires", "0");
+				return await readFile(rulesPath, "utf8");
+			} catch (error) {
+				if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+					return sendNotFound(reply, `Agent rules file not found: ${agentId}`);
+				}
+				return sendInternalError(reply, error);
+			}
+		},
+	);
+
 	app.patch(
 		"/v1/agents/:agentId/rules",
 		async (

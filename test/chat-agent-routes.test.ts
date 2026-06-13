@@ -134,6 +134,30 @@ test("GET /v1/agents/:agentId/rules reads a custom agent AGENTS.md", async () =>
 	assert.match(response.json().content, /Use scoped skills only/);
 });
 
+test("GET /playground/agents/:agentId/rules opens the runtime AGENTS.md as Markdown", async () => {
+	const projectRoot = await mkdtemp(join(tmpdir(), "ugk-pi-agent-route-"));
+	const searchProfile = createDefaultAgentProfiles(projectRoot).find((profile) => profile.agentId === "search");
+	assert.ok(searchProfile);
+	await mkdir(dirname(searchProfile.runtimeAgentRulesPath), { recursive: true });
+	await writeFile(join(projectRoot, "AGENTS.md"), "# Project rules\n\nDo not expose through standalone rules link.\n", "utf8");
+	await writeFile(searchProfile.runtimeAgentRulesPath, "# Search rules\n\nUse scoped skills only.\n", "utf8");
+	const app = await buildServer({
+		agentService: createScopedAgentService("main"),
+		agentServiceRegistry: createTestRegistryForRoot(projectRoot),
+		agentProfileProjectRoot: projectRoot,
+	});
+
+	const response = await app.inject({
+		method: "GET",
+		url: "/playground/agents/search/rules",
+	});
+
+	assert.equal(response.statusCode, 200);
+	assert.match(response.headers["content-type"] as string, /text\/markdown/);
+	assert.match(response.body, /Use scoped skills only/);
+	assert.doesNotMatch(response.body, /Project rules/);
+});
+
 test("PATCH /v1/agents/:agentId/rules saves a custom agent AGENTS.md", async () => {
 	const projectRoot = await mkdtemp(join(tmpdir(), "ugk-pi-agent-route-"));
 	const searchProfile = createDefaultAgentProfiles(projectRoot).find((profile) => profile.agentId === "search");

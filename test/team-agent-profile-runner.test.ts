@@ -83,6 +83,8 @@ test("AgentProfileRoleRunner exposes Team artifact public directory and URL to w
 			capturedEnv.ARTIFACT_PUBLIC_BASE_URL,
 			"http://example.test/v1/team/task-runs/run_public_artifact/artifacts/attempt_public/worker",
 		);
+		assert.equal(capturedEnv.UGK_PROJECT_ROOT, root);
+		assert.equal(capturedEnv.UGK_HTTP_ACCESS_SCRIPT, join(root, ".pi", "skills", "http-access", "scripts", "http_access.mjs"));
 	} finally {
 		await rm(root, { recursive: true }).catch(() => {});
 	}

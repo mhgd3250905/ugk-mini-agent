@@ -361,6 +361,8 @@ export class AgentProfileRoleRunner implements ProfileAwareTeamRoleRunner {
 				LOGS_DIR: workspace.outputDir,
 				ARTIFACT_PUBLIC_DIR: workspace.outputDir,
 				ARTIFACT_PUBLIC_BASE_URL: roleContext.artifactPublicBaseUrl,
+				UGK_PROJECT_ROOT: this.options.projectRoot,
+				UGK_HTTP_ACCESS_SCRIPT: join(this.options.projectRoot, ".pi", "skills", "http-access", "scripts", "http_access.mjs"),
 			};
 
 			await runWithScopedAgentEnvironment(browserCleanupScope, async () => {

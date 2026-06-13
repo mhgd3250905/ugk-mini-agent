@@ -254,6 +254,34 @@ test("POST /v1/model-sources/providers creates runtime custom provider with a lo
 	assert.equal(custom.models[0].id, "gpt-custom");
 });
 
+test("POST /v1/model-sources/providers promotes the first custom provider when the default is unknown", async (t) => {
+	const projectRoot = await createProjectRoot(t);
+	await createFileModelConfigStore(projectRoot).setDefault({ provider: "unknown", model: "unknown" });
+	const app = await createApp(t, { projectRoot });
+
+	const created = await app.inject({
+		method: "POST",
+		url: "/v1/model-sources/providers",
+		payload: {
+			id: "custom-openai",
+			name: "Custom OpenAI",
+			vendor: "custom",
+			region: "global",
+			baseUrl: "https://openai.example/anthropic",
+			api: "anthropic-messages",
+			apiKey: "sk-custom-openai",
+			models: [{ id: "gpt-custom", name: "GPT Custom", contextWindow: 200000 }],
+		},
+	});
+	const listed = await app.inject({ method: "GET", url: "/v1/model-sources" });
+
+	assert.equal(created.statusCode, 201);
+	assert.deepEqual(listed.json().current, { provider: "custom-openai", model: "gpt-custom" });
+	const globalUsage = listed.json().usages.find((usage: { kind: string; id: string }) => usage.kind === "global" && usage.id === "default");
+	assert.equal(globalUsage.provider, "custom-openai");
+	assert.equal(globalUsage.model, "gpt-custom");
+});
+
 test("PATCH /v1/model-sources/usages updates global, agent, and conn bindings", async (t) => {
 	const projectRoot = await createProjectRoot(t);
 	await seedDeepseekAndZhipu(projectRoot);

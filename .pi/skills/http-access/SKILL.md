@@ -35,7 +35,13 @@ allowed-tools: Bash
 node /app/.pi/skills/http-access/scripts/http_access.mjs <command> --url <url>
 ```
 
-Windows 项目目录调试：
+Windows native / 后台任务优先使用环境变量提供的脚本路径：
+
+```bash
+node "$UGK_HTTP_ACCESS_SCRIPT" <command> --url <url>
+```
+
+如果 `UGK_HTTP_ACCESS_SCRIPT` 未设置，且当前目录是项目根，可使用：
 
 ```bash
 node .pi/skills/http-access/scripts/http_access.mjs <command> --url <url>
