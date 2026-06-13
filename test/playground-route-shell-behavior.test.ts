@@ -113,6 +113,10 @@ test("GET /playground renders immersive landing home shell", async () => {
 	assert.match(response.body, /const commandDeckRect = commandDeck\.getBoundingClientRect\(\);/);
 	assert.match(response.body, /const commandDeckOffset = Math\.ceil\(chatStageRect\.bottom - commandDeckRect\.top \|\| 0\);/);
 	assert.match(response.body, /shell\.style\.setProperty\("--command-deck-offset", commandDeckOffset \+ "px"\);/);
+	assert.match(response.body, /const commandDeckToastOffset = Math\.ceil\(window\.innerHeight - commandDeckRect\.top \|\| 0\);/);
+	assert.match(response.body, /shell\.style\.setProperty\("--command-deck-toast-offset", commandDeckToastOffset \+ "px"\);/);
+	assert.match(response.body, /const commandDeckCenterX = Math\.round\(commandDeckRect\.left \+ commandDeckRect\.width \/ 2\);/);
+	assert.match(response.body, /shell\.style\.setProperty\("--command-deck-center-x", commandDeckCenterX \+ "px"\);/);
 	assert.match(response.body, /const layoutObserver = new ResizeObserver\(\(\) => \{/);
 	assert.match(response.body, /scheduleConversationLayoutSync\(\);/);
 	assert.match(response.body, /layoutObserver\.observe\(commandDeck\);/);

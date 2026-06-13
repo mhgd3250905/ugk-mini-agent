@@ -24,9 +24,6 @@ import type { ConnSqliteStore } from "../agent/conn-sqlite-store.js";
 import { ConnSqliteStore as DefaultConnSqliteStore } from "../agent/conn-sqlite-store.js";
 import type { ConnDefinition } from "../agent/conn-store.js";
 import type { NotificationBroadcastEvent } from "../agent/notification-hub.js";
-import { FeishuClient } from "../integrations/feishu/client.js";
-import { FeishuDeliveryService } from "../integrations/feishu/delivery.js";
-import { FeishuSettingsStore } from "../integrations/feishu/settings-store.js";
 import { TeamGroupConnRunner } from "./team-group-conn-runner.js";
 
 export interface ConnWorkerRunner {
@@ -409,38 +406,6 @@ class HttpNotificationBroadcaster implements NotificationBroadcaster {
 	}
 }
 
-class FeishuActivityNotifier implements ActivityNotifier {
-	constructor(private readonly options: {
-		settingsStore: FeishuSettingsStore;
-		publicBaseUrl?: string;
-	}) {}
-
-	async notify(activity: AgentActivityItem): Promise<void> {
-		const settings = await this.options.settingsStore.getRuntimeSettings();
-		if (!settings.enabled || settings.activityTargets.length === 0) {
-			return;
-		}
-		const text = formatFeishuActivityNotification(activity);
-		const deliveryService = new FeishuDeliveryService({
-			client: new FeishuClient({
-				appId: settings.appId,
-				appSecret: settings.appSecret,
-				apiBase: settings.apiBase,
-			}),
-			publicBaseUrl: this.options.publicBaseUrl,
-		});
-		await Promise.all(
-			settings.activityTargets.map((target) =>
-				deliveryService.deliverText(
-					target,
-					text,
-					{ files: activity.files },
-				),
-			),
-		);
-	}
-}
-
 async function main(): Promise<void> {
 	const config = getAppConfig();
 	const database = new ConnDatabase({ dbPath: config.connDatabasePath });
@@ -457,10 +422,6 @@ async function main(): Promise<void> {
 		process.env.NOTIFICATION_BROADCAST_URL?.trim() ||
 			`http://127.0.0.1:${config.port}/v1/internal/notifications/broadcast`,
 	);
-	const activityNotifier = createFeishuActivityNotifier({
-		settingsPath: config.feishuSettingsPath,
-		publicBaseUrl: config.publicBaseUrl,
-	});
 	const browserRegistry = createBrowserRegistryFromEnv();
 	const runner = new BackgroundAgentRunner({
 		runStore,
@@ -489,7 +450,6 @@ async function main(): Promise<void> {
 		runStore,
 		activityStore,
 		notificationBroadcaster,
-		activityNotifier,
 		runner,
 		teamGroupRunner,
 		leaseMs: Number(process.env.CONN_WORKER_LEASE_MS ?? 300_000),
@@ -539,55 +499,6 @@ function toNotificationBroadcastEvent(activity: Awaited<ReturnType<AgentActivity
 		title: activity.title,
 		createdAt: activity.createdAt,
 	};
-}
-
-function createFeishuActivityNotifier(input: {
-	settingsPath: string;
-	publicBaseUrl?: string;
-}): ActivityNotifier | undefined {
-	return new FeishuActivityNotifier({
-		settingsStore: new FeishuSettingsStore({
-			settingsPath: input.settingsPath,
-		}),
-		publicBaseUrl: input.publicBaseUrl,
-	});
-}
-
-function formatFeishuActivityNotification(activity: AgentActivityItem): string {
-	const lines = [
-		`后台任务通知：${activity.title}`,
-		`状态：${resolveActivityStatusLabel(activity.title)}`,
-		`来源：${activity.source}/${activity.sourceId}`,
-	];
-	if (activity.runId) {
-		lines.push(`Run：${activity.runId}`);
-	}
-	lines.push(`时间：${activity.createdAt}`);
-	if (activity.text.trim()) {
-		lines.push("", truncateNotificationText(activity.text.trim()));
-	}
-	return lines.join("\n");
-}
-
-function resolveActivityStatusLabel(title: string): string {
-	if (/\bfailed$/i.test(title)) {
-		return "失败";
-	}
-	if (/\bcancelled$/i.test(title)) {
-		return "已取消";
-	}
-	if (/\bcompleted$/i.test(title)) {
-		return "已完成";
-	}
-	return "已更新";
-}
-
-function truncateNotificationText(text: string, maxLength: number = 1200): string {
-	const normalized = text.replace(/\r\n/g, "\n").trim();
-	if (normalized.length <= maxLength) {
-		return normalized;
-	}
-	return `${normalized.slice(0, maxLength - 1)}…`;
 }
 
 function toAgentActivityInput(

@@ -353,12 +353,6 @@ function getPlaygroundScript(): string {
 			modelConfigTesting: false,
 			modelConfigSelectedProvider: "",
 			modelConfigSelectedModel: "",
-			feishuSettingsOpen: false,
-			feishuSettingsRestoreFocusElement: null,
-			feishuSettingsLoading: false,
-			feishuSettingsSaving: false,
-			feishuSettingsTesting: false,
-			feishuSettings: null,
 			mobileOverflowMenuOpen: false,
 			mobileConversationDrawerOpen: false,
 			conversationCatalog: [],
@@ -470,7 +464,6 @@ function getPlaygroundScript(): string {
 		const modelConfigStatus = document.getElementById("model-config-status");
 		const modelConfigTest = document.getElementById("model-config-test");
 		const modelConfigSave = document.getElementById("model-config-save");
-		const openFeishuSettingsButton = document.getElementById("open-feishu-settings-button");
 		const openBrowserWorkbenchButton = document.getElementById("open-browser-workbench-button");
 		const runtimeModelSummary = document.getElementById("runtime-model-summary");
 		const runtimeModelValue = document.getElementById("runtime-model-value");
@@ -484,19 +477,6 @@ function getPlaygroundScript(): string {
 		const browserWorkbenchSummary = document.getElementById("browser-workbench-summary");
 		const browserWorkbenchStatus = document.getElementById("browser-workbench-status");
 		const browserWorkbenchTargets = document.getElementById("browser-workbench-targets");
-		const feishuSettingsDialog = document.getElementById("feishu-settings-dialog");
-		const feishuSettingsClose = document.getElementById("feishu-settings-close");
-		const feishuSettingsCurrent = document.getElementById("feishu-settings-current");
-		const feishuSettingsEnabled = document.getElementById("feishu-settings-enabled");
-		const feishuSettingsAppId = document.getElementById("feishu-settings-app-id");
-		const feishuSettingsAppSecret = document.getElementById("feishu-settings-app-secret");
-		const feishuSettingsApiBase = document.getElementById("feishu-settings-api-base");
-		const feishuSettingsAllowedChatIds = document.getElementById("feishu-settings-allowed-chat-ids");
-		const feishuSettingsActivityOpenIds = document.getElementById("feishu-settings-activity-open-ids");
-		const feishuSettingsActivityChatIds = document.getElementById("feishu-settings-activity-chat-ids");
-		const feishuSettingsStatus = document.getElementById("feishu-settings-status");
-		const feishuSettingsTest = document.getElementById("feishu-settings-test");
-		const feishuSettingsSave = document.getElementById("feishu-settings-save");
 		${getPlaygroundMobileShellElementRefsScript()}
 		const topbarContextSlot = document.querySelector(".topbar-context-slot");
 		if (topbarContextSlot?.parentElement === mobileTopbar) {
@@ -1259,170 +1239,6 @@ function getPlaygroundScript(): string {
 			}
 		}
 
-		function splitFeishuIds(value) {
-			return String(value || "")
-				.split(",")
-				.flatMap((item) => item.split(String.fromCharCode(10)))
-				.map((item) => item.trim())
-				.filter(Boolean);
-		}
-
-		function setFeishuSettingsStatus(message, tone = "neutral") {
-			feishuSettingsStatus.textContent = message || "";
-			feishuSettingsStatus.dataset.tone = tone;
-		}
-
-		function setFeishuSettingsBusy() {
-			const busy = state.feishuSettingsLoading || state.feishuSettingsSaving || state.feishuSettingsTesting;
-			for (const element of [
-				feishuSettingsEnabled,
-				feishuSettingsAppId,
-				feishuSettingsAppSecret,
-				feishuSettingsApiBase,
-				feishuSettingsAllowedChatIds,
-				feishuSettingsActivityOpenIds,
-				feishuSettingsActivityChatIds,
-				feishuSettingsTest,
-				feishuSettingsSave,
-			]) {
-				element.disabled = busy;
-			}
-			feishuSettingsTest.textContent = state.feishuSettingsTesting ? "发送中" : "发送测试消息";
-			feishuSettingsSave.textContent = state.feishuSettingsSaving ? "保存中" : "保存并重连";
-		}
-
-		function renderFeishuSettingsDialog() {
-			const settings = state.feishuSettings || {};
-			feishuSettingsEnabled.value = settings.enabled ? "true" : "false";
-			feishuSettingsAppId.value = settings.appId || "";
-			feishuSettingsAppSecret.value = "";
-			feishuSettingsApiBase.value = settings.apiBase || "https://open.feishu.cn/open-apis";
-			feishuSettingsAllowedChatIds.value = (settings.allowedChatIds || []).join(String.fromCharCode(10));
-			const targets = settings.activityTargets || [];
-			feishuSettingsActivityOpenIds.value = targets
-				.filter((target) => target.type === "feishu_user")
-				.map((target) => target.openId)
-				.join(String.fromCharCode(10));
-			feishuSettingsActivityChatIds.value = targets
-				.filter((target) => target.type === "feishu_chat")
-				.map((target) => target.chatId)
-				.join(String.fromCharCode(10));
-			feishuSettingsCurrent.textContent = settings.enabled
-				? (settings.hasAppSecret ? "已配置 App，保存后 worker 自动重连" : "已启用，但缺少 App Secret")
-				: "当前停用";
-		}
-
-		async function loadFeishuSettings() {
-			state.feishuSettingsLoading = true;
-			setFeishuSettingsBusy();
-			setFeishuSettingsStatus("正在读取飞书配置", "neutral");
-			try {
-				const response = await fetch("/v1/integrations/feishu/settings");
-				const payload = await response.json().catch(() => ({}));
-				if (!response.ok) {
-					throw new Error(payload?.error?.message || "读取飞书配置失败");
-				}
-				state.feishuSettings = payload;
-				renderFeishuSettingsDialog();
-				setFeishuSettingsStatus("先在飞书机器人私聊里发送 /whoami，再把 open_id 或 chat_id 填到这里。", "neutral");
-			} catch (error) {
-				setFeishuSettingsStatus(error instanceof Error ? error.message : "读取飞书配置失败", "error");
-			} finally {
-				state.feishuSettingsLoading = false;
-				setFeishuSettingsBusy();
-			}
-		}
-
-		function collectFeishuSettingsPayload() {
-			const openIds = splitFeishuIds(feishuSettingsActivityOpenIds.value);
-			const chatIds = splitFeishuIds(feishuSettingsActivityChatIds.value);
-			const activityTargets = [
-				...openIds.map((openId) => ({ type: "feishu_user", openId })),
-				...chatIds.map((chatId) => ({ type: "feishu_chat", chatId })),
-			];
-			const appSecret = String(feishuSettingsAppSecret.value || "").trim();
-			return {
-				enabled: feishuSettingsEnabled.value === "true",
-				appId: String(feishuSettingsAppId.value || "").trim(),
-				...(appSecret ? { appSecret } : {}),
-				apiBase: String(feishuSettingsApiBase.value || "").trim(),
-				allowedChatIds: splitFeishuIds(feishuSettingsAllowedChatIds.value),
-				activityTargets,
-			};
-		}
-
-		async function openFeishuSettingsDialog(returnFocusElement) {
-			state.feishuSettingsOpen = true;
-			state.feishuSettingsRestoreFocusElement = rememberPanelReturnFocus(returnFocusElement);
-			feishuSettingsDialog.hidden = false;
-			feishuSettingsDialog.inert = false;
-			feishuSettingsDialog.classList.add("open");
-			feishuSettingsDialog.setAttribute("aria-hidden", "false");
-			feishuSettingsAppId.focus();
-			await loadFeishuSettings();
-		}
-
-		function closeFeishuSettingsDialog() {
-			if (!state.feishuSettingsOpen) {
-				return;
-			}
-			state.feishuSettingsOpen = false;
-			restoreFocusAfterPanelClose(feishuSettingsDialog, state.feishuSettingsRestoreFocusElement);
-			feishuSettingsDialog.classList.remove("open");
-			feishuSettingsDialog.setAttribute("aria-hidden", "true");
-			feishuSettingsDialog.inert = true;
-			feishuSettingsDialog.hidden = true;
-			state.feishuSettingsRestoreFocusElement = null;
-		}
-
-		async function saveFeishuSettings() {
-			state.feishuSettingsSaving = true;
-			setFeishuSettingsBusy();
-			setFeishuSettingsStatus("正在保存飞书配置", "neutral");
-			try {
-				const response = await fetch("/v1/integrations/feishu/settings", {
-					method: "PUT",
-					headers: { "content-type": "application/json" },
-					body: JSON.stringify(collectFeishuSettingsPayload()),
-				});
-				const payload = await response.json().catch(() => ({}));
-				if (!response.ok) {
-					throw new Error(payload?.error?.message || "保存飞书配置失败");
-				}
-				state.feishuSettings = payload;
-				renderFeishuSettingsDialog();
-				setFeishuSettingsStatus("已保存。飞书 worker 会自动重连，不需要重启容器。", "success");
-			} catch (error) {
-				setFeishuSettingsStatus(error instanceof Error ? error.message : "保存飞书配置失败", "error");
-			} finally {
-				state.feishuSettingsSaving = false;
-				setFeishuSettingsBusy();
-			}
-		}
-
-		async function sendFeishuTestMessage() {
-			state.feishuSettingsTesting = true;
-			setFeishuSettingsBusy();
-			setFeishuSettingsStatus("正在发送测试消息", "neutral");
-			try {
-				const response = await fetch("/v1/integrations/feishu/test-message", {
-					method: "POST",
-					headers: { "content-type": "application/json" },
-					body: JSON.stringify({ text: "UGK 飞书配置测试 " + new Date().toISOString() }),
-				});
-				const payload = await response.json().catch(() => ({}));
-				if (!response.ok || payload.delivered === false) {
-					throw new Error(payload?.error?.message || "测试消息发送失败");
-				}
-				setFeishuSettingsStatus("测试消息已发送。", "success");
-			} catch (error) {
-				setFeishuSettingsStatus(error instanceof Error ? error.message : "测试消息发送失败", "error");
-			} finally {
-				state.feishuSettingsTesting = false;
-				setFeishuSettingsBusy();
-			}
-		}
-
 		${getPlaygroundLayoutControllerScript()}
 
 		${getPlaygroundMobileShellControllerScript()}
@@ -1505,9 +1321,6 @@ function getPlaygroundScript(): string {
 			openModelConfigButton.addEventListener("click", () => {
 				void openModelConfigDialog(openModelConfigButton);
 			});
-			openFeishuSettingsButton.addEventListener("click", () => {
-				void openFeishuSettingsDialog(openFeishuSettingsButton);
-			});
 			bindBrowserWorkbenchEvents();
 			modelConfigClose.addEventListener("click", closeModelConfigDialog);
 			modelConfigDialog.addEventListener("click", (event) => {
@@ -1532,19 +1345,6 @@ function getPlaygroundScript(): string {
 			modelConfigSave.addEventListener("click", () => {
 				void saveModelConfigSelection();
 			});
-			feishuSettingsClose.addEventListener("click", closeFeishuSettingsDialog);
-			feishuSettingsDialog.addEventListener("click", (event) => {
-				if (event.target === feishuSettingsDialog) {
-					closeFeishuSettingsDialog();
-				}
-			});
-			feishuSettingsSave.addEventListener("click", () => {
-				void saveFeishuSettings();
-			});
-			feishuSettingsTest.addEventListener("click", () => {
-				void sendFeishuTestMessage();
-			});
-
 			${getPlaygroundTaskInboxEventHandlersScript()}
 			bindAgentManagerEvents();
 			${getConnActivityEventHandlersScript()}
@@ -1613,9 +1413,6 @@ function getPlaygroundScript(): string {
 				}
 				if (event.key === "Escape" && state.modelConfigOpen) {
 					closeModelConfigDialog();
-				}
-				if (event.key === "Escape" && state.feishuSettingsOpen) {
-					closeFeishuSettingsDialog();
 				}
 				if (event.key === "Escape" && state.browserWorkbenchOpen) {
 					closeBrowserWorkbench();

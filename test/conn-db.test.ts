@@ -17,7 +17,7 @@ test("ConnDatabase initializes the sqlite schema and creates missing parent dire
 	await database.initialize();
 
 	assert.deepEqual(database.listTableNames(), CONN_DATABASE_TABLES);
-	assert.equal(database.getUserVersion(), 10);
+	assert.equal(database.getUserVersion(), 11);
 	assert.equal(
 		database.all<{ name: string }>("PRAGMA table_info(conns)").some((column) => column.name === "max_run_ms"),
 		true,
@@ -137,7 +137,7 @@ PRAGMA user_version = 5;
 	await database.initialize();
 
 	assert.equal(database.hasTable("conversation_notifications"), false);
-	assert.equal(database.getUserVersion(), 10);
+	assert.equal(database.getUserVersion(), 11);
 
 	database.close();
 });
@@ -184,7 +184,7 @@ PRAGMA user_version = 7;
 
 	const columns = database.all<{ name: string }>("PRAGMA table_info(conns)");
 	assert.equal(columns.some((column) => column.name === "browser_id"), true);
-	assert.equal(database.getUserVersion(), 10);
+	assert.equal(database.getUserVersion(), 11);
 	assert.deepEqual(
 		database.get<{ title: string; browser_id: string | null }>(
 			"SELECT title, browser_id FROM conns WHERE conn_id = ?",

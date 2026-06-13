@@ -885,7 +885,9 @@ test("P26: checker and watcher prompts include validation evidence and forbid pa
 			createSession: async () => ({
 				prompt: async (p: string) => { prompts.push(p); },
 				subscribe: () => () => {},
-				messages: [{ role: "assistant", content: [{ type: "text", text: prompts.length === 1 ? '{"verdict":"fail","reason":"validation failed"}' : '{"decision":"confirm_failed","reason":"validation failed"}' }], stopReason: "end_turn" }],
+				get messages() {
+					return [{ role: "assistant", content: [{ type: "text", text: prompts.length === 1 ? '{"verdict":"fail","reason":"validation failed","resultContent":"validation failed"}' : '{"decision":"confirm_failed","reason":"validation failed"}' }], stopReason: "end_turn" }];
+				},
 			}),
 		} as unknown as BackgroundAgentSessionFactory;
 		const runner = new AgentProfileRoleRunner({
@@ -927,5 +929,3 @@ test("P26: checker and watcher prompts include validation evidence and forbid pa
 		await rm(root, { recursive: true }).catch(() => {});
 	}
 });
-
-

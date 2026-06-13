@@ -17,13 +17,14 @@ import {
 	createFileModelProviderStore,
 	type CustomModelProviderInput,
 	type ModelProviderStore,
+	type ProjectModelProviderJson,
 } from "../agent/model-provider-store.js";
 import { sendBadRequest, sendConflict, sendInternalError, sendNotFound, sendNotImplemented } from "./http-errors.js";
 
 type ModelSourceUsageKind = "global" | "agent" | "conn";
 
 interface ModelSourceProviderBody extends ModelConfigProviderBody {
-	source: "bundled" | "custom";
+	source: "custom";
 }
 
 interface ModelSourceUsageBody {
@@ -70,17 +71,15 @@ export function registerModelSourceRoutes(app: FastifyInstance, options: ModelSo
 
 	app.get("/v1/model-sources", async (_request, reply): Promise<ModelSourcesResponseBody | FastifyReply> => {
 		try {
-			const [config, customProviders, conns] = await Promise.all([
+			const [config, conns] = await Promise.all([
 				options.modelConfigStore.getConfig(),
-				modelProviderStore.listCustomProviders(),
 				options.connStore?.list() ?? Promise.resolve([]),
 			]);
-			const customProviderIds = new Set(Object.keys(customProviders));
 			return {
 				current: config.current,
 				providers: config.providers.map((provider) => ({
 					...provider,
-					source: customProviderIds.has(provider.id) ? "custom" : "bundled",
+					source: "custom",
 				})),
 				usages: [
 					presentGlobalUsage(config.current),
@@ -105,7 +104,7 @@ export function registerModelSourceRoutes(app: FastifyInstance, options: ModelSo
 			}
 			try {
 				const provider = await modelProviderStore.createProvider(parsed.value!);
-				return reply.status(201).send({ provider });
+				return reply.status(201).send({ provider: sanitizeCreatedProvider(provider) });
 			} catch (error) {
 				return sendBadRequest(reply, error instanceof Error ? error.message : "Unable to create model provider.");
 			}
@@ -242,9 +241,6 @@ function parseProviderInput(body: Record<string, unknown>): { value?: CustomMode
 	if (!body || typeof body !== "object") {
 		return { error: "Request body must be an object." };
 	}
-	if (Object.hasOwn(body, "apiKey")) {
-		return { error: "Literal apiKey is not accepted. Use apiKeyEnvVar and configure the key in the runtime environment." };
-	}
 	return {
 		value: {
 			id: readStringField(body.id),
@@ -254,7 +250,7 @@ function parseProviderInput(body: Record<string, unknown>): { value?: CustomMode
 			priority: readOptionalNumberField(body.priority),
 			baseUrl: readStringField(body.baseUrl),
 			api: readStringField(body.api) as "anthropic-messages",
-			apiKeyEnvVar: readStringField(body.apiKeyEnvVar),
+			apiKey: readStringField(body.apiKey),
 			authHeader: typeof body.authHeader === "boolean" ? body.authHeader : undefined,
 			models: Array.isArray(body.models)
 				? body.models.map((model) => {
@@ -268,6 +264,25 @@ function parseProviderInput(body: Record<string, unknown>): { value?: CustomMode
 					})
 				: [],
 		},
+	};
+}
+
+function sanitizeCreatedProvider(provider: ProjectModelProviderJson & { id: string }): { id: string } & Omit<ModelSourceProviderBody, "source" | "auth"> {
+	return {
+		id: provider.id,
+		...(provider.name ? { name: provider.name } : {}),
+		...(provider.vendor ? { vendor: provider.vendor } : {}),
+		...(provider.region ? { region: provider.region } : {}),
+		...(provider.priority !== undefined ? { priority: provider.priority } : {}),
+		models: (provider.models ?? [])
+			.filter((model): model is { id: string; name?: string; contextWindow?: number; maxTokens?: number } =>
+				typeof model.id === "string" && model.id.length > 0)
+			.map((model) => ({
+				id: model.id,
+				name: model.name ?? model.id,
+				...(typeof model.contextWindow === "number" ? { contextWindow: model.contextWindow } : {}),
+				...(typeof model.maxTokens === "number" ? { maxTokens: model.maxTokens } : {}),
+			})),
 	};
 }
 

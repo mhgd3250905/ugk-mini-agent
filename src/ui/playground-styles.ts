@@ -393,13 +393,9 @@ export function getPlaygroundStyles(): string {
 				0 1px rgba(255, 205, 86, 0.05);
 		}
 
-		.chat-stage > :not(.chat-stage-watermark) {
+		.chat-stage > :not(.chat-stage-watermark):not(.error-banner):not(.notification-live-region) {
 			position: relative;
 			z-index: 1;
-		}
-
-		.chat-stage > .error-banner {
-			z-index: 95;
 		}
 
 		.chat-stage > .notification-live-region {

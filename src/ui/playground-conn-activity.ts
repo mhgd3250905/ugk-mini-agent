@@ -896,8 +896,6 @@ export function getConnActivityDialogs(): string {
 								<span>结果发到哪里</span>
 								<select id="conn-editor-target-type" name="targetType">
 									<option value="task_inbox">任务消息</option>
-									<option value="feishu_chat">飞书群</option>
-									<option value="feishu_user">飞书用户</option>
 								</select>
 							</label>
 							<label class="conn-editor-field">

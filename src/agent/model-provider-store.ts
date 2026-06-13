@@ -11,7 +11,7 @@ export interface CustomModelProviderInput {
 	priority?: number;
 	baseUrl: string;
 	api: "anthropic-messages";
-	apiKeyEnvVar: string;
+	apiKey: string;
 	authHeader?: boolean;
 	models: CustomModelInput[];
 }
@@ -67,9 +67,6 @@ export function getBundledProjectModelsPath(projectRoot: string): string {
 
 export function getEffectiveProjectModelsPath(projectRoot: string, options: ModelProviderStoreOptions = {}): string {
 	const customProvidersPath = options.customProvidersPath ?? getCustomModelProvidersPath(projectRoot);
-	if (!existsSync(customProvidersPath)) {
-		return getBundledProjectModelsPath(projectRoot);
-	}
 	const effectivePath = join(projectRoot, ".data", "agent", "effective-models.json");
 	const content = readMergedProjectModelsContentSync(projectRoot, { customProvidersPath });
 	mkdirSyncForFile(effectivePath);
@@ -84,10 +81,9 @@ export function createFileModelProviderStore(projectRoot: string, options: Model
 			return readCustomProviders(await readOptionalText(customProvidersPath));
 		},
 		async createProvider(input) {
-			const bundled = readProviders(await readRequiredText(getBundledProjectModelsPath(projectRoot)));
 			const currentCustom = readCustomProviders(await readOptionalText(customProvidersPath));
 			const provider = normalizeCustomProviderInput(input);
-			if (Object.hasOwn(bundled, provider.id) || Object.hasOwn(currentCustom, provider.id)) {
+			if (Object.hasOwn(currentCustom, provider.id)) {
 				throw new Error(`model provider already exists: ${provider.id}`);
 			}
 			const nextProviders = {
@@ -103,7 +99,7 @@ export function createFileModelProviderStore(projectRoot: string, options: Model
 export async function readMergedProjectModelsContent(projectRoot: string, options: ModelProviderStoreOptions = {}): Promise<string> {
 	const customProvidersPath = options.customProvidersPath ?? getCustomModelProvidersPath(projectRoot);
 	return mergeProjectModelsContent(
-		await readRequiredText(getBundledProjectModelsPath(projectRoot)),
+		await readOptionalText(getBundledProjectModelsPath(projectRoot)),
 		await readOptionalText(customProvidersPath),
 	);
 }
@@ -111,22 +107,15 @@ export async function readMergedProjectModelsContent(projectRoot: string, option
 export function readMergedProjectModelsContentSync(projectRoot: string, options: ModelProviderStoreOptions = {}): string {
 	const customProvidersPath = options.customProvidersPath ?? getCustomModelProvidersPath(projectRoot);
 	return mergeProjectModelsContent(
-		readFileSync(getBundledProjectModelsPath(projectRoot), "utf8"),
+		readOptionalTextSync(getBundledProjectModelsPath(projectRoot)),
 		readOptionalTextSync(customProvidersPath),
 	);
 }
 
 function mergeProjectModelsContent(bundledContent: string, customContent: string): string {
-	const bundled = readProviders(bundledContent);
+	void bundledContent;
 	const custom = readCustomProviders(customContent);
-	const merged = { providers: { ...bundled } };
-	for (const [providerId, provider] of Object.entries(custom)) {
-		if (Object.hasOwn(merged.providers, providerId)) {
-			continue;
-		}
-		merged.providers[providerId] = provider;
-	}
-	return `${JSON.stringify(merged, null, 2)}\n`;
+	return `${JSON.stringify({ providers: custom }, null, 2)}\n`;
 }
 
 function readProviders(content: string): Record<string, ProjectModelProviderJson> {
@@ -157,12 +146,12 @@ function providerJsonToInput(providerId: string, provider: ProjectModelProviderJ
 		name: provider.name,
 		vendor: provider.vendor,
 		region: provider.region,
-		priority: provider.priority,
-		baseUrl: provider.baseUrl ?? "",
-		api: provider.api as "anthropic-messages",
-		apiKeyEnvVar: provider.apiKey ?? "",
-		authHeader: provider.authHeader,
-		models: provider.models?.map((model) => ({
+			priority: provider.priority,
+			baseUrl: provider.baseUrl ?? "",
+			api: provider.api as "anthropic-messages",
+			apiKey: provider.apiKey ?? "",
+			authHeader: provider.authHeader,
+			models: provider.models?.map((model) => ({
 			id: model.id ?? "",
 			name: model.name,
 			contextWindow: model.contextWindow,
@@ -171,11 +160,11 @@ function providerJsonToInput(providerId: string, provider: ProjectModelProviderJ
 	});
 }
 
-function normalizeCustomProviderInput(input: CustomModelProviderInput): Required<Pick<CustomModelProviderInput, "id" | "baseUrl" | "api" | "apiKeyEnvVar" | "models">> & Omit<CustomModelProviderInput, "id" | "baseUrl" | "api" | "apiKeyEnvVar" | "models"> {
+function normalizeCustomProviderInput(input: CustomModelProviderInput): Required<Pick<CustomModelProviderInput, "id" | "baseUrl" | "api" | "apiKey" | "models">> & Omit<CustomModelProviderInput, "id" | "baseUrl" | "api" | "apiKey" | "models"> {
 	const id = normalizeProviderId(input.id);
 	const baseUrl = normalizeBaseUrl(input.baseUrl);
 	const api = normalizeProviderApi(input.api);
-	const apiKeyEnvVar = normalizeApiKeyEnvVar(input.apiKeyEnvVar);
+	const apiKey = normalizeApiKey(input.apiKey);
 	const models = normalizeModels(input.models);
 	return {
 		id,
@@ -185,7 +174,7 @@ function normalizeCustomProviderInput(input: CustomModelProviderInput): Required
 		...(normalizePositiveNumber(input.priority) !== undefined ? { priority: normalizePositiveNumber(input.priority) } : {}),
 		baseUrl,
 		api,
-		apiKeyEnvVar,
+		apiKey,
 		...(typeof input.authHeader === "boolean" ? { authHeader: input.authHeader } : {}),
 		models,
 	};
@@ -199,7 +188,7 @@ function providerToJson(provider: CustomModelProviderInput): ProjectModelProvide
 		...(provider.priority !== undefined ? { priority: provider.priority } : {}),
 		baseUrl: provider.baseUrl,
 		api: provider.api,
-		apiKey: provider.apiKeyEnvVar,
+		apiKey: provider.apiKey,
 		...(typeof provider.authHeader === "boolean" ? { authHeader: provider.authHeader } : {}),
 		models: provider.models.map((model) => ({
 			id: model.id,
@@ -239,12 +228,12 @@ function normalizeProviderApi(value: string): "anthropic-messages" {
 	return "anthropic-messages";
 }
 
-function normalizeApiKeyEnvVar(value: string): string {
-	const envVar = String(value ?? "").trim();
-	if (!/^[A-Z][A-Z0-9_]+$/.test(envVar)) {
-		throw new Error("apiKeyEnvVar must be an environment variable name");
+function normalizeApiKey(value: string): string {
+	const apiKey = String(value ?? "").trim();
+	if (!apiKey) {
+		throw new Error("apiKey is required");
 	}
-	return envVar;
+	return apiKey;
 }
 
 function normalizeModels(models: CustomModelInput[]): CustomModelInput[] {
@@ -290,10 +279,6 @@ async function writeCustomProvidersFile(filePath: string, providers: Record<stri
 		await unlink(tempPath).catch(() => undefined);
 		throw error;
 	}
-}
-
-async function readRequiredText(filePath: string): Promise<string> {
-	return await readFile(filePath, "utf8");
 }
 
 async function readOptionalText(filePath: string): Promise<string> {

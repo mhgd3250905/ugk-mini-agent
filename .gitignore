@@ -3,6 +3,7 @@
 .tmp/
 .ugk-browser-bin/
 .env
+.env.native
 .pi/sessions/
 .data/
 api.txt

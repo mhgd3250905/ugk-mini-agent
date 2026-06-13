@@ -14,7 +14,6 @@ export function getConnActivityConstantsScript(): string {
 		};
 		const ACTIVITY_SOURCE_LABELS = {
 			conn: "后台任务",
-			feishu: "飞书",
 			notification: "通知",
 			agent: "助手",
 		};
@@ -274,14 +273,8 @@ export function getConnActivityEditorScript(): string {
 			const target = conn?.target || {};
 			const schedule = conn?.schedule || {};
 			const execution = normalizeConnExecution(conn);
-			const targetType =
-				target.type === "feishu_chat" || target.type === "feishu_user" ? target.type : "task_inbox";
-			const targetId =
-				targetType === "feishu_chat"
-					? target.chatId || ""
-					: targetType === "feishu_user"
-						? target.openId || ""
-						: "";
+			const targetType = "task_inbox";
+			const targetId = "";
 			return {
 				title: conn?.title || "",
 				prompt: conn?.prompt || "",
@@ -501,20 +494,6 @@ export function getConnActivityEditorScript(): string {
 		}
 
 		function describeConnTargetInput(targetType) {
-			if (targetType === "feishu_chat") {
-				return {
-					label: "飞书群",
-					placeholder: "oc_xxx / chat id",
-					hint: "填写接收结果的飞书群 chat id。",
-				};
-			}
-			if (targetType === "feishu_user") {
-				return {
-					label: "飞书用户",
-					placeholder: "ou_xxx / open id",
-					hint: "填写接收结果的飞书用户 open id。",
-				};
-			}
 			return {
 				label: "投递目标",
 				placeholder: "task inbox",
@@ -682,19 +661,9 @@ export function getConnActivityEditorScript(): string {
 			const label = document.createElement("strong");
 			const detail = document.createElement("span");
 			const id = document.createElement("code");
-			if (targetType === "feishu_chat") {
-				label.textContent = "飞书群";
-				detail.textContent = "结果会投递到指定飞书群。";
-				id.textContent = targetId || "填写 chat id";
-			} else if (targetType === "feishu_user") {
-				label.textContent = "飞书用户";
-				detail.textContent = "结果会投递到指定飞书用户。";
-				id.textContent = targetId || "填写 open id";
-			} else {
-				label.textContent = "任务消息";
-				detail.textContent = "后台任务结果会投递到任务消息页";
-				id.textContent = "task_inbox";
-			}
+			label.textContent = "任务消息";
+			detail.textContent = "后台任务结果会投递到任务消息页";
+			id.textContent = "task_inbox";
 
 			connEditorTargetPreview.appendChild(label);
 			connEditorTargetPreview.appendChild(detail);
@@ -970,20 +939,6 @@ export function getConnActivityEditorScript(): string {
 		}
 
 		function buildConnTargetPayload() {
-			const targetType = String(connEditorTargetType.value || "task_inbox").trim();
-			if (targetType === "task_inbox") {
-				return { type: "task_inbox" };
-			}
-			const targetId = String(connEditorTargetId.value || "").trim();
-			if (!targetId) {
-				throw new Error("请填写目标 ID");
-			}
-			if (targetType === "feishu_chat") {
-				return { type: "feishu_chat", chatId: targetId };
-			}
-			if (targetType === "feishu_user") {
-				return { type: "feishu_user", openId: targetId };
-			}
 			return { type: "task_inbox" };
 		}
 
@@ -1571,12 +1526,6 @@ export function getConnActivityRendererScript(): string {
 			}
 			if (target.type === "task_inbox" || target.type === "conversation") {
 				return "任务消息";
-			}
-			if (target.type === "feishu_chat") {
-				return "飞书群 / " + (target.chatId || "未填写");
-			}
-			if (target.type === "feishu_user") {
-				return "飞书用户 / " + (target.openId || "未填写");
 			}
 			return String(target.type || "未知目标");
 		}

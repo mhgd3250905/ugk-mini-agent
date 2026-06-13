@@ -30,7 +30,7 @@ interface RecentRunRow {
 }
 
 const WINDOW_DAYS = 7;
-const KNOWN_CONN_TARGET_TYPES = ["task_inbox", "conversation", "feishu_chat", "feishu_user"] as const;
+const KNOWN_CONN_TARGET_TYPES = ["task_inbox", "conversation"] as const;
 
 export function registerCleanupDebugRoutes(app: FastifyInstance, deps: CleanupDebugRouteDependencies = {}): void {
 	app.get<{ Querystring: { since?: string } }>("/v1/debug/cleanup", async (request): Promise<CleanupDebugResponseBody> => {
@@ -71,8 +71,6 @@ function emptyConnTargets(): CleanupDebugResponseBody["connTargets"] {
 		byType: {
 			task_inbox: 0,
 			conversation: 0,
-			feishu_chat: 0,
-			feishu_user: 0,
 			invalid: 0,
 		},
 	};

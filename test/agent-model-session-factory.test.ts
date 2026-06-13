@@ -15,9 +15,15 @@ async function setupProjectWithModels(
 	const projectRoot = await mkdtemp(join(tmpdir(), "ugk-pi-agent-default-ctx-"));
 	await mkdir(join(projectRoot, ".pi"), { recursive: true });
 	await mkdir(join(projectRoot, "runtime", "pi-agent"), { recursive: true });
+	await mkdir(join(projectRoot, ".data", "agent"), { recursive: true });
 	await writeFile(join(projectRoot, ".pi", "settings.json"), JSON.stringify(settings), "utf8");
 	await writeFile(
 		join(projectRoot, "runtime", "pi-agent", "models.json"),
+		JSON.stringify({ providers: {} }),
+		"utf8",
+	);
+	await writeFile(
+		join(projectRoot, ".data", "agent", "model-providers.json"),
 		JSON.stringify({
 			providers: Object.fromEntries(
 				Object.entries(models).map(([providerId, provider]) => [

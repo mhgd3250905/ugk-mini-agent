@@ -484,8 +484,6 @@ function describeSchedule(schedule) {
 
 function describeTarget(target) {
   if (!target || typeof target !== "object") return "任务消息";
-  if (target.type === "feishu_chat") return "飞书群 · " + (target.chatId || "");
-  if (target.type === "feishu_user") return "飞书用户 · " + (target.openId || "");
   return "任务消息";
 }
 
@@ -1620,12 +1618,10 @@ function fillEditorForm(conn) {
 
   const tgt = conn.target || {};
   if (targetType) {
-    if (tgt.type === "feishu_chat") targetType.value = "feishu_chat";
-    else if (tgt.type === "feishu_user") targetType.value = "feishu_user";
-    else targetType.value = "task_inbox";
+    targetType.value = "task_inbox";
   }
   if (targetId) {
-    targetId.value = tgt.chatId || tgt.openId || "";
+    targetId.value = "";
   }
 
   setPendingSelectValue(profileId, conn.profileId || "main");
@@ -1776,18 +1772,7 @@ function readEditorPayload() {
   }
 
   // Target
-  const targetType = (($("editor-target-type") || {}).value || "task_inbox");
-  if (targetType === "task_inbox") {
-    payload.target = { type: "task_inbox" };
-  } else if (targetType === "feishu_chat") {
-    const chatId = (($("editor-target-id") || {}).value || "").trim();
-    if (!chatId) { showEditorError("请填写飞书群 ID", "editor-target-id"); return null; }
-    payload.target = { type: "feishu_chat", chatId };
-  } else if (targetType === "feishu_user") {
-    const openId = (($("editor-target-id") || {}).value || "").trim();
-    if (!openId) { showEditorError("请填写飞书用户 ID", "editor-target-id"); return null; }
-    payload.target = { type: "feishu_user", openId };
-  }
+  payload.target = { type: "task_inbox" };
 
   if (execution.type === "team_group") {
     clearEditorError();
@@ -1995,8 +1980,6 @@ function renderEditorForm(body, titleEl, actionsEl) {
               <span>目标类型</span>
               <select id="editor-target-type">
                 <option value="task_inbox">任务消息</option>
-                <option value="feishu_chat">飞书群</option>
-                <option value="feishu_user">飞书用户</option>
               </select>
             </label>
             <div id="editor-target-id-row" class="conn-editor-target-block" hidden>

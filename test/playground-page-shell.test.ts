@@ -36,8 +36,8 @@ test("renderPlaygroundHtml keeps desktop settings in the sidebar and primary too
 	assert.ok(railStart > topbarStart);
 	assert.ok(settingsStart > railStart);
 	assert.ok(html.indexOf('id="open-model-config-button"') > settingsStart);
-	assert.ok(html.indexOf('id="open-feishu-settings-button"') > settingsStart);
-	assert.ok(html.indexOf('id="theme-toggle-button"') > settingsStart);
+	assert.ok(html.indexOf('id="open-browser-workbench-button"') > settingsStart);
+	assert.ok(html.indexOf('id="theme-toggle-button"') > topbarStart);
 	assert.ok(html.indexOf('id="agent-selector-status"') > topbarStart);
 	assert.ok(html.indexOf('id="agent-selector-status"') < railStart);
 	assert.equal(html.indexOf('id="view-skills-button"'), -1);

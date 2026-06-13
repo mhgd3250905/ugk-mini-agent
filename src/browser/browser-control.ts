@@ -98,7 +98,7 @@ export class BrowserControlService {
 		return {
 			started: false,
 			supported: false,
-			message: "当前服务没有 Docker 管理权限；请先启动对应 Chrome sidecar，后续可接入受控 actuator。",
+			message: "当前服务没有内置浏览器启动器；请先启动对应 Chrome CDP 实例，后续可接入受控 actuator。",
 		};
 	}
 

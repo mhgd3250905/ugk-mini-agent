@@ -20,6 +20,14 @@ export function getPlaygroundLayoutControllerScript(): string {
 			if (commandDeckOffset > 0) {
 				shell.style.setProperty("--command-deck-offset", commandDeckOffset + "px");
 			}
+			const commandDeckToastOffset = Math.ceil(window.innerHeight - commandDeckRect.top || 0);
+			if (commandDeckToastOffset > 0) {
+				shell.style.setProperty("--command-deck-toast-offset", commandDeckToastOffset + "px");
+			}
+			const commandDeckCenterX = Math.round(commandDeckRect.left + commandDeckRect.width / 2);
+			if (commandDeckCenterX > 0) {
+				shell.style.setProperty("--command-deck-center-x", commandDeckCenterX + "px");
+			}
 		}
 
 		function scheduleConversationLayoutSync(options) {

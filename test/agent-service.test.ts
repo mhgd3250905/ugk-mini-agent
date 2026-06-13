@@ -316,6 +316,40 @@ test("subscribeRunEvents replays buffered events and keeps streaming live active
 	await run;
 });
 
+test("subscribeRunEvents replays terminal events after a run has just completed", async () => {
+	const store = await createStore();
+	const factory = new FakeAgentSessionFactory(
+		() =>
+			new FakeSession(
+				"E:/sessions/terminal-reattach.jsonl",
+				[textDelta("terminal answer")],
+				"terminal answer",
+			),
+	);
+	const service = new AgentService({ conversationStore: store, sessionFactory: factory });
+
+	await service.streamChat(
+		{
+			conversationId: "manual:terminal-reattach",
+			message: "start",
+		},
+		() => undefined,
+	);
+
+	const reattachedEvents: ChatStreamEvent[] = [];
+	const subscription = service.subscribeRunEvents("manual:terminal-reattach", (event) => {
+		reattachedEvents.push(event);
+	});
+
+	assert.equal(subscription.running, true);
+	assert.equal(reattachedEvents.at(-1)?.type, "done");
+	assert.equal(
+		reattachedEvents.some((event) => event.type === "done" && event.conversationId === "manual:terminal-reattach"),
+		true,
+	);
+	subscription.unsubscribe();
+});
+
 test("subscribeRunEvents can resume after a rendered active run cursor without replaying covered text", async () => {
 	const store = await createStore();
 	const activeSession = new DeferredSession("E:/sessions/reattach-cursor.jsonl");

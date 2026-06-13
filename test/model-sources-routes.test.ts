@@ -150,8 +150,33 @@ async function createApp(t: test.TestContext, input: {
 	return app;
 }
 
+async function seedDeepseekAndZhipu(projectRoot: string): Promise<void> {
+	const providerStore = createFileModelProviderStore(projectRoot);
+	await providerStore.createProvider({
+		id: "deepseek",
+		name: "DeepSeek",
+		vendor: "deepseek",
+		region: "cn",
+		baseUrl: "https://deepseek.example/anthropic",
+		api: "anthropic-messages",
+		apiKey: "sk-deepseek",
+		models: [{ id: "deepseek-v4-pro", contextWindow: 128000 }],
+	});
+	await providerStore.createProvider({
+		id: "zhipu-glm",
+		name: "Zhipu GLM",
+		vendor: "zhipu",
+		region: "cn",
+		baseUrl: "https://glm.example/anthropic",
+		api: "anthropic-messages",
+		apiKey: "sk-zhipu",
+		models: [{ id: "glm-5.1", contextWindow: 128000 }],
+	});
+}
+
 test("GET /v1/model-sources lists providers and effective usage bindings", async (t) => {
 	const projectRoot = await createProjectRoot(t);
+	await seedDeepseekAndZhipu(projectRoot);
 	const registry = createRegistry(projectRoot);
 	const profile = await createStoredAgentProfile(projectRoot, {
 		agentId: "research",
@@ -172,7 +197,8 @@ test("GET /v1/model-sources lists providers and effective usage bindings", async
 	assert.equal(response.statusCode, 200);
 	const body = response.json();
 	assert.deepEqual(body.current, { provider: "deepseek", model: "deepseek-v4-pro" });
-	assert.ok(body.providers.some((provider: { id: string; source: string }) => provider.id === "deepseek" && provider.source === "bundled"));
+	assert.ok(body.providers.every((provider: { source: string }) => provider.source === "custom"));
+	assert.ok(body.providers.some((provider: { id: string; source: string }) => provider.id === "deepseek" && provider.source === "custom"));
 	const mainUsage = body.usages.find((usage: { kind: string; id: string }) => usage.kind === "agent" && usage.id === "main");
 	assert.equal(mainUsage.inherited, true);
 	assert.equal(mainUsage.editable, false);
@@ -188,23 +214,19 @@ test("GET /v1/model-sources lists providers and effective usage bindings", async
 	assert.equal(connExplicit.provider, "zhipu-glm");
 });
 
-test("POST /v1/model-sources/providers creates runtime custom provider without accepting literal keys", async (t) => {
+test("GET /v1/model-sources starts with no providers before users add API sources", async (t) => {
 	const projectRoot = await createProjectRoot(t);
 	const app = await createApp(t, { projectRoot });
 
-	const unsafe = await app.inject({
-		method: "POST",
-		url: "/v1/model-sources/providers",
-		payload: {
-			id: "unsafe",
-			baseUrl: "https://unsafe.example/anthropic",
-			api: "anthropic-messages",
-			apiKey: "sk-plain-text",
-			models: [{ id: "unsafe-model" }],
-		},
-	});
-	assert.equal(unsafe.statusCode, 400);
-	assert.match(unsafe.json().error.message, /apiKeyEnvVar/i);
+	const response = await app.inject({ method: "GET", url: "/v1/model-sources" });
+
+	assert.equal(response.statusCode, 200);
+	assert.deepEqual(response.json().providers, []);
+});
+
+test("POST /v1/model-sources/providers creates runtime custom provider with a local API key", async (t) => {
+	const projectRoot = await createProjectRoot(t);
+	const app = await createApp(t, { projectRoot });
 
 	const created = await app.inject({
 		method: "POST",
@@ -216,7 +238,7 @@ test("POST /v1/model-sources/providers creates runtime custom provider without a
 			region: "global",
 			baseUrl: "https://openai.example/anthropic",
 			api: "anthropic-messages",
-			apiKeyEnvVar: "CUSTOM_OPENAI_API_KEY",
+			apiKey: "sk-custom-openai",
 			models: [{ id: "gpt-custom", name: "GPT Custom", contextWindow: 200000 }],
 		},
 	});
@@ -224,13 +246,17 @@ test("POST /v1/model-sources/providers creates runtime custom provider without a
 
 	assert.equal(created.statusCode, 201);
 	assert.equal(created.json().provider.id, "custom-openai");
+	assert.equal(created.json().provider.apiKey, undefined);
 	const custom = listed.json().providers.find((provider: { id: string }) => provider.id === "custom-openai");
 	assert.equal(custom.source, "custom");
+	assert.equal(custom.auth.configured, true);
+	assert.equal(custom.auth.source, "literal");
 	assert.equal(custom.models[0].id, "gpt-custom");
 });
 
 test("PATCH /v1/model-sources/usages updates global, agent, and conn bindings", async (t) => {
 	const projectRoot = await createProjectRoot(t);
+	await seedDeepseekAndZhipu(projectRoot);
 	const registry = createRegistry(projectRoot);
 	const profile = await createStoredAgentProfile(projectRoot, {
 		agentId: "research",
@@ -268,6 +294,7 @@ test("PATCH /v1/model-sources/usages updates global, agent, and conn bindings", 
 
 test("PATCH /v1/model-sources/usages rejects running agent binding changes", async (t) => {
 	const projectRoot = await createProjectRoot(t);
+	await seedDeepseekAndZhipu(projectRoot);
 	const registry = createRegistry(projectRoot, new Set(["search"]));
 	const app = await createApp(t, { projectRoot, agentServiceRegistry: registry });
 

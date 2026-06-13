@@ -271,7 +271,7 @@ test("team-task-creator contract reference defines split-task root creation", as
 
 test("team-task-creator verification path stays focused on creation/update contracts", async () => {
 	const skill = await readSkill();
-	assert.match(skill, /http:\/\/127\.0\.0\.1:5174\//);
+	assert.match(skill, /http:\/\/127\.0\.0\.1:9999\//);
 	assert.match(skill, /Live API/);
 	assert.match(skill, /iframe conversation/);
 	assert.match(skill, /\/team-task/);

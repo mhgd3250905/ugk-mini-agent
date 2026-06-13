@@ -220,6 +220,79 @@ function getModelSourcesPageCss(): string {
 			border-color: var(--ms-primary);
 			box-shadow: 0 0 0 3px var(--ms-primary-soft);
 		}
+		.ms-model-builder {
+			display: grid;
+			gap: 10px;
+		}
+		.ms-model-builder-head {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 10px;
+		}
+		.ms-model-rows {
+			display: grid;
+			gap: 8px;
+		}
+		.ms-model-entry {
+			display: grid;
+			gap: 10px;
+			padding: 10px;
+			border: 1px solid var(--ms-border);
+			border-radius: 8px;
+			background: var(--ms-surface-2);
+		}
+		.ms-model-entry-main {
+			display: grid;
+			grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+			gap: 8px;
+		}
+		.ms-model-entry-limits {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 34px;
+			gap: 8px;
+			align-items: end;
+		}
+		.ms-model-entry-field {
+			display: grid;
+			gap: 5px;
+			min-width: 0;
+		}
+		.ms-model-entry-field label {
+			color: var(--ms-muted);
+			font-size: 11px;
+			font-weight: 680;
+		}
+		.ms-preset-inputs {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr);
+			gap: 6px;
+		}
+		.ms-preset-inputs.has-custom {
+			grid-template-columns: minmax(0, 1fr) minmax(112px, 0.75fr);
+		}
+		.ms-preset-custom[hidden] {
+			display: none;
+		}
+		.ms-icon-btn {
+			width: 34px;
+			height: 34px;
+			border: 1px solid var(--ms-border);
+			border-radius: 8px;
+			background: var(--ms-surface-3);
+			color: var(--ms-muted);
+			cursor: pointer;
+			font: 700 18px var(--font-sans);
+			line-height: 1;
+		}
+		.ms-icon-btn:hover:not(:disabled) {
+			border-color: var(--ms-border-strong);
+			color: var(--ms-fg);
+		}
+		.ms-icon-btn:disabled {
+			opacity: 0.45;
+			cursor: not-allowed;
+		}
 
 		.ms-provider-list {
 			min-height: 0;
@@ -285,7 +358,6 @@ function getModelSourcesPageCss(): string {
 			white-space: nowrap;
 		}
 		.ms-pill--custom { color: var(--ms-green); background: var(--ms-green-soft); border-color: transparent; }
-		.ms-pill--bundled { color: var(--ms-primary); background: var(--ms-primary-soft); border-color: transparent; }
 		.ms-pill--warn { color: var(--ms-amber); background: var(--ms-amber-soft); border-color: transparent; }
 		.ms-pill--ok { color: var(--ms-green); background: var(--ms-green-soft); border-color: transparent; }
 		.ms-pill--danger { color: var(--ms-red); background: var(--ms-red-soft); border-color: transparent; }
@@ -504,6 +576,11 @@ function getModelSourcesPageCss(): string {
 			font-size: 11px;
 			line-height: 1.4;
 		}
+		.ms-field-hint {
+			color: var(--ms-muted);
+			font-size: 11px;
+			line-height: 1.4;
+		}
 
 		@media (max-width: 1180px) {
 			.ms-main {
@@ -535,6 +612,11 @@ function getModelSourcesPageCss(): string {
 			.ms-field-grid, .ms-usage-controls {
 				grid-template-columns: 1fr;
 			}
+			.ms-model-entry-main,
+			.ms-model-entry-limits,
+			.ms-preset-inputs.has-custom {
+				grid-template-columns: 1fr;
+			}
 			.ms-topbar-text {
 				display: none;
 			}
@@ -551,6 +633,7 @@ function getModelSourcesPageJs(): string {
 				providerQuery: "",
 				usageQuery: "",
 				usageKind: "all",
+				providerTemplateAuthHeader: undefined,
 			};
 
 			function byId(id) { return document.getElementById(id); }
@@ -575,10 +658,10 @@ function getModelSourcesPageJs(): string {
 
 			function authPill(provider) {
 				const auth = provider.auth || {};
-				if (auth.source === "literal") return '<span class="ms-pill ms-pill--danger">literal key</span>';
-				if (auth.configured) return '<span class="ms-pill ms-pill--ok">' + escapeHtml(auth.envVar || "env") + '</span>';
-				if (auth.envVar) return '<span class="ms-pill ms-pill--warn">' + escapeHtml(auth.envVar) + ' missing</span>';
-				return '<span class="ms-pill ms-pill--warn">no key</span>';
+				if (auth.source === "literal") return '<span class="ms-pill ms-pill--ok">已保存密钥</span>';
+				if (auth.configured) return '<span class="ms-pill ms-pill--ok">' + escapeHtml(auth.envVar || "已配置") + '</span>';
+				if (auth.envVar) return '<span class="ms-pill ms-pill--warn">' + escapeHtml(auth.envVar) + ' 未配置</span>';
+				return '<span class="ms-pill ms-pill--warn">缺少密钥</span>';
 			}
 
 			function usageKindLabel(kind) {
@@ -631,18 +714,17 @@ function getModelSourcesPageJs(): string {
 					return [provider.id, provider.name, provider.vendor, provider.region].filter(Boolean).join(" ").toLowerCase().includes(q);
 				});
 				if (!providers.length) {
-					byId("provider-list").innerHTML = '<div class="ms-empty">没有匹配的 API 源</div>';
+					byId("provider-list").innerHTML = '<div class="ms-empty">还没有 API 源，点击右上角新增。</div>';
 					return;
 				}
 				byId("provider-list").innerHTML = providers.map((provider) => {
 					const selected = provider.id === state.selectedProviderId ? " selected" : "";
-					const sourceTone = provider.source === "custom" ? "custom" : "bundled";
 					return '<button class="ms-provider-item' + selected + '" type="button" data-provider-id="' + escapeHtml(provider.id) + '">' +
 						'<div class="ms-provider-name-row"><div class="ms-provider-name">' + escapeHtml(providerLabel(provider)) + '</div></div>' +
 						'<div class="ms-provider-id">' + escapeHtml(provider.id) + '</div>' +
 						'<div class="ms-provider-meta">' +
-							'<span class="ms-pill ms-pill--' + sourceTone + '">' + (provider.source === "custom" ? "custom" : "bundled") + '</span>' +
-							'<span class="ms-pill">' + escapeHtml(String((provider.models || []).length)) + ' models</span>' +
+							'<span class="ms-pill ms-pill--custom">自定义</span>' +
+							'<span class="ms-pill">' + escapeHtml(String((provider.models || []).length)) + ' 个模型</span>' +
 							authPill(provider) +
 						'</div>' +
 					'</button>';
@@ -658,13 +740,13 @@ function getModelSourcesPageJs(): string {
 			function renderDetail() {
 				const provider = findProvider(state.selectedProviderId);
 				if (!provider) {
-					byId("provider-detail").innerHTML = '<div class="ms-empty">选择一个 API 源查看详情</div>';
+					byId("provider-detail").innerHTML = '<div class="ms-empty">新增 API 源后，这里会显示模型和鉴权状态。</div>';
 					return;
 				}
 				const modelRows = (provider.models || []).map((model) => {
 					const meta = [
-						model.contextWindow ? "ctx " + model.contextWindow : "",
-						model.maxTokens ? "max " + model.maxTokens : "",
+						model.contextWindow ? "上下文 " + model.contextWindow : "",
+						model.maxTokens ? "最大输出 " + model.maxTokens : "",
 					].filter(Boolean).join(" · ");
 					return '<div class="ms-model-row">' +
 						'<div><div class="ms-model-name">' + escapeHtml(model.name || model.id) + '</div><div class="ms-model-id">' + escapeHtml(model.id) + '</div></div>' +
@@ -675,7 +757,7 @@ function getModelSourcesPageJs(): string {
 					'<div class="ms-detail">' +
 						'<div>' +
 							'<div class="ms-provider-meta">' +
-								'<span class="ms-pill ms-pill--' + (provider.source === "custom" ? "custom" : "bundled") + '">' + escapeHtml(provider.source) + '</span>' +
+								'<span class="ms-pill ms-pill--custom">自定义</span>' +
 								authPill(provider) +
 								(provider.vendor ? '<span class="ms-pill">' + escapeHtml(provider.vendor) + '</span>' : '') +
 								(provider.region ? '<span class="ms-pill">' + escapeHtml(provider.region) + '</span>' : '') +
@@ -683,10 +765,10 @@ function getModelSourcesPageJs(): string {
 							'<div class="ms-detail-title" style="margin-top:10px">' + escapeHtml(providerLabel(provider)) + '</div>' +
 						'</div>' +
 						'<dl class="ms-kv">' +
-							'<dt>Provider ID</dt><dd>' + escapeHtml(provider.id) + '</dd>' +
-							'<dt>Auth</dt><dd>' + escapeHtml((provider.auth && (provider.auth.envVar || provider.auth.source)) || "-") + '</dd>' +
-							'<dt>Priority</dt><dd>' + escapeHtml(provider.priority || "-") + '</dd>' +
-							'<dt>Models</dt><dd>' + escapeHtml(String((provider.models || []).length)) + '</dd>' +
+							'<dt>源标识</dt><dd>' + escapeHtml(provider.id) + '</dd>' +
+							'<dt>密钥状态</dt><dd>' + escapeHtml(provider.auth && provider.auth.configured ? "已保存" : "缺失") + '</dd>' +
+							'<dt>排序权重</dt><dd>' + escapeHtml(provider.priority || "-") + '</dd>' +
+							'<dt>模型数量</dt><dd>' + escapeHtml(String((provider.models || []).length)) + '</dd>' +
 						'</dl>' +
 						'<div class="ms-model-list">' + (modelRows || '<div class="ms-empty">没有模型</div>') + '</div>' +
 					'</div>';
@@ -715,15 +797,16 @@ function getModelSourcesPageJs(): string {
 					const modelOptions = models.map((model) =>
 						'<option value="' + escapeHtml(model.id) + '"' + (model.id === usage.model ? " selected" : "") + '>' + escapeHtml(model.name || model.id) + '</option>'
 					).join("");
+					const hasProviders = (state.data.providers || []).length > 0;
 					return '<tr data-usage-kind="' + escapeHtml(usage.kind) + '" data-usage-id="' + escapeHtml(usage.id) + '">' +
 						'<td><div class="ms-usage-label">' + escapeHtml(usage.label) + '</div><div class="ms-usage-id">' + escapeHtml(usage.id) + '</div></td>' +
 						'<td><span class="ms-pill">' + escapeHtml(usageKindLabel(usage.kind)) + '</span></td>' +
 						'<td>' + inheritedLabel(usage) + (usage.error ? '<div class="ms-usage-id">' + escapeHtml(usage.error) + '</div>' : '') + '</td>' +
 						'<td><div class="ms-table-selects">' +
-							'<select class="ms-select js-provider-select" ' + (usage.editable ? "" : "disabled") + '>' + providerOptions + '</select>' +
-							'<select class="ms-select js-model-select" ' + (usage.editable ? "" : "disabled") + '>' + modelOptions + '</select>' +
+							'<select class="ms-select js-provider-select" ' + (usage.editable && hasProviders ? "" : "disabled") + '>' + (providerOptions || '<option value="">先新增 API 源</option>') + '</select>' +
+							'<select class="ms-select js-model-select" ' + (usage.editable && hasProviders ? "" : "disabled") + '>' + (modelOptions || '<option value="">先新增模型</option>') + '</select>' +
 						'</div></td>' +
-						'<td><div class="ms-row-actions"><button class="ms-btn js-save-usage" type="button" ' + (usage.editable ? "" : "disabled") + '>保存</button></div></td>' +
+						'<td><div class="ms-row-actions"><button class="ms-btn js-save-usage" type="button" ' + (usage.editable && hasProviders ? "" : "disabled") + '>保存</button></div></td>' +
 					'</tr>';
 				}).join("");
 				wireUsageRows();
@@ -764,7 +847,8 @@ function getModelSourcesPageJs(): string {
 			function openNewProviderModal() {
 				byId("provider-form").reset();
 				byId("provider-api").value = "anthropic-messages";
-				byId("provider-models").value = "model-id|Model name|128000|8192";
+				state.providerTemplateAuthHeader = undefined;
+				resetModelInputRows();
 				byId("new-provider-modal").hidden = false;
 				byId("provider-id").focus();
 			}
@@ -773,16 +857,190 @@ function getModelSourcesPageJs(): string {
 				byId("new-provider-modal").hidden = true;
 			}
 
-			function parseModels(value) {
-				return String(value || "").split(/\\r?\\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
-					const parts = line.split("|").map((part) => part.trim());
-					return {
-						id: parts[0] || "",
-						name: parts[1] || undefined,
-						contextWindow: parts[2] ? Number(parts[2]) : undefined,
-						maxTokens: parts[3] ? Number(parts[3]) : undefined,
-					};
+			let modalPointerDownStartedOnBackdrop = false;
+
+			function isNewProviderBackdropEvent(event) {
+				return event.target && event.target.id === "new-provider-modal";
+			}
+
+			const contextLengthOptions = [
+				{ value: "8192", label: "8192 tokens" },
+				{ value: "32768", label: "32K tokens" },
+				{ value: "65536", label: "64K tokens" },
+				{ value: "128000", label: "128K tokens" },
+				{ value: "200000", label: "200K tokens" },
+				{ value: "1000000", label: "1M tokens" },
+			];
+			const outputLengthOptions = [
+				{ value: "4096", label: "4096 tokens" },
+				{ value: "8192", label: "8192 tokens" },
+				{ value: "16384", label: "16K tokens" },
+				{ value: "32768", label: "32K tokens" },
+				{ value: "65536", label: "64K tokens" },
+				{ value: "131072", label: "128K tokens" },
+				{ value: "384000", label: "384K tokens" },
+			];
+			const providerTemplates = {
+				"deepseek": {
+					id: "deepseek",
+					name: "DeepSeek",
+					vendor: "deepseek",
+					region: "global",
+					baseUrl: "https://api.deepseek.com/anthropic",
+					api: "anthropic-messages",
+					models: [
+						{ id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", contextWindow: 1000000, maxTokens: 384000 },
+						{ id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", contextWindow: 1000000, maxTokens: 384000 },
+					],
+				},
+				"zhipu-glm": {
+					id: "zhipu-glm",
+					name: "Zhipu GLM",
+					vendor: "zhipu",
+					region: "cn",
+					baseUrl: "https://open.bigmodel.cn/api/anthropic",
+					api: "anthropic-messages",
+					authHeader: true,
+					models: [
+						{ id: "glm-5.1", name: "GLM-5.1 (Zhipu)" },
+					],
+				},
+				"xiaomi-mimo-cn": {
+					id: "xiaomi-mimo-cn",
+					name: "Xiaomi MiMo China",
+					vendor: "xiaomi",
+					region: "cn",
+					baseUrl: "https://token-plan-cn.xiaomimimo.com/anthropic",
+					api: "anthropic-messages",
+					models: [
+						{ id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro (Xiaomi CN)", contextWindow: 1048576, maxTokens: 16384 },
+					],
+				},
+				"ali-codeplan": {
+					id: "ali-codeplan",
+					name: "Ali CodePlan",
+					vendor: "aliyun",
+					region: "cn-beijing",
+					baseUrl: "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic",
+					api: "anthropic-messages",
+					models: [
+						{ id: "glm-5.1", name: "GLM-5.1 (Ali CodePlan)", contextWindow: 200000, maxTokens: 128000 },
+						{ id: "kimi-k2.6", name: "Kimi K2.6 (Ali CodePlan)", contextWindow: 256000 },
+						{ id: "deepseek-v4-pro", name: "DeepSeek V4 Pro (Ali CodePlan)", contextWindow: 1000000 },
+						{ id: "qwen3.7-max", name: "Qwen 3.7 Max (Ali CodePlan)", contextWindow: 1000000 },
+					],
+				},
+			};
+
+			function renderPresetOptions(options, value) {
+				const selectedValue = String(value || "");
+				const hasPreset = options.some((option) => option.value === selectedValue);
+				return options.map((option) =>
+					'<option value="' + escapeHtml(option.value) + '"' + (option.value === selectedValue ? " selected" : "") + '>' + escapeHtml(option.label) + '</option>'
+				).join("") + '<option value="custom"' + (selectedValue && !hasPreset ? " selected" : "") + '>自定义...</option>';
+			}
+
+			function applyProviderTemplate(templateId) {
+				const template = providerTemplates[templateId];
+				if (!template) return;
+				byId("provider-id").value = template.id;
+				byId("provider-name").value = template.name;
+				byId("provider-vendor").value = template.vendor;
+				byId("provider-region").value = template.region;
+				byId("provider-base-url").value = template.baseUrl;
+				byId("provider-api").value = template.api;
+				state.providerTemplateAuthHeader = template.authHeader;
+				byId("provider-model-rows").innerHTML = "";
+				for (const model of template.models) {
+					addModelInputRow(model);
+				}
+			}
+
+			function renderModelInputRow(input) {
+				const model = input || {};
+				const contextValue = String(model.contextWindow || "");
+				const outputValue = String(model.maxTokens || "");
+				const contextIsPreset = contextLengthOptions.some((option) => option.value === contextValue);
+				const outputIsPreset = outputLengthOptions.some((option) => option.value === outputValue);
+				const showCustomContext = Boolean(contextValue && !contextIsPreset);
+				const showCustomOutput = Boolean(outputValue && !outputIsPreset);
+				return '<div class="ms-model-entry" data-model-row>' +
+					'<div class="ms-model-entry-main">' +
+						'<div class="ms-model-entry-field">' +
+							'<label>模型 ID</label>' +
+							'<input class="ms-input js-model-id" required placeholder="模型 ID" value="' + escapeHtml(model.id || "") + '" />' +
+						'</div>' +
+						'<div class="ms-model-entry-field">' +
+							'<label>显示名称</label>' +
+							'<input class="ms-input js-model-name" placeholder="显示名称" value="' + escapeHtml(model.name || "") + '" />' +
+						'</div>' +
+					'</div>' +
+					'<div class="ms-model-entry-limits">' +
+						'<div class="ms-model-entry-field">' +
+							'<label>上下文长度</label>' +
+							'<div class="ms-preset-inputs' + (showCustomContext ? " has-custom" : "") + '">' +
+								'<select class="ms-select js-model-context-preset">' + renderPresetOptions(contextLengthOptions, contextValue) + '</select>' +
+								'<input class="ms-input ms-preset-custom js-model-context" inputmode="numeric" placeholder="上下文长度" value="' + escapeHtml(showCustomContext ? contextValue : "") + '"' + (showCustomContext ? "" : " hidden") + ' />' +
+							'</div>' +
+						'</div>' +
+						'<div class="ms-model-entry-field">' +
+							'<label>最大输出</label>' +
+							'<div class="ms-preset-inputs' + (showCustomOutput ? " has-custom" : "") + '">' +
+								'<select class="ms-select js-model-output-preset">' + renderPresetOptions(outputLengthOptions, outputValue) + '</select>' +
+								'<input class="ms-input ms-preset-custom js-model-output" inputmode="numeric" placeholder="最大输出" value="' + escapeHtml(showCustomOutput ? outputValue : "") + '"' + (showCustomOutput ? "" : " hidden") + ' />' +
+							'</div>' +
+						'</div>' +
+						'<button class="ms-icon-btn js-model-remove" type="button" title="删除模型">-</button>' +
+					'</div>' +
+				'</div>';
+			}
+
+			function syncPresetCustomInput(select) {
+				const wrapper = select.parentElement;
+				const input = wrapper.querySelector(".ms-preset-custom");
+				if (!input) return;
+				input.hidden = select.value !== "custom";
+				wrapper.classList.toggle("has-custom", !input.hidden);
+				if (input.hidden) {
+					input.value = "";
+				}
+			}
+
+			function updateModelRemoveButtons() {
+				const rows = byId("provider-model-rows").querySelectorAll("[data-model-row]");
+				for (const button of byId("provider-model-rows").querySelectorAll(".js-model-remove")) {
+					button.disabled = rows.length <= 1;
+				}
+			}
+
+			function addModelInputRow(input) {
+				byId("provider-model-rows").insertAdjacentHTML("beforeend", renderModelInputRow(input));
+				updateModelRemoveButtons();
+			}
+
+			function resetModelInputRows() {
+				byId("provider-model-rows").innerHTML = "";
+				addModelInputRow({
+					contextWindow: 128000,
+					maxTokens: 8192,
 				});
+			}
+
+			function parseModels() {
+				return Array.from(byId("provider-model-rows").querySelectorAll("[data-model-row]")).map((row) => {
+					const id = row.querySelector(".js-model-id").value.trim();
+					const name = row.querySelector(".js-model-name").value.trim();
+					const contextPreset = row.querySelector(".js-model-context-preset").value;
+					const outputPreset = row.querySelector(".js-model-output-preset").value;
+					const contextWindow = contextPreset === "custom" ? row.querySelector(".js-model-context").value.trim() : contextPreset;
+					const maxTokens = outputPreset === "custom" ? row.querySelector(".js-model-output").value.trim() : outputPreset;
+					return {
+						id,
+						name: name || undefined,
+						contextWindow: contextWindow ? Number(contextWindow) : undefined,
+						maxTokens: maxTokens ? Number(maxTokens) : undefined,
+					};
+				}).filter((model) => model.id);
 			}
 
 			async function submitProvider(event) {
@@ -795,9 +1053,12 @@ function getModelSourcesPageJs(): string {
 					region: byId("provider-region").value,
 					baseUrl: byId("provider-base-url").value,
 					api: byId("provider-api").value,
-					apiKeyEnvVar: byId("provider-api-key-env").value,
-					models: parseModels(byId("provider-models").value),
+					apiKey: byId("provider-api-key").value,
+					models: parseModels(),
 				};
+				if (typeof state.providerTemplateAuthHeader === "boolean") {
+					payload.authHeader = state.providerTemplateAuthHeader;
+				}
 				try {
 					button.disabled = true;
 					const result = await fetchJson("/v1/model-sources/providers", {
@@ -833,8 +1094,30 @@ function getModelSourcesPageJs(): string {
 				});
 				byId("provider-form").addEventListener("submit", submitProvider);
 				byId("provider-cancel").addEventListener("click", closeNewProviderModal);
-				byId("new-provider-modal").addEventListener("click", (event) => {
-					if (event.target.id === "new-provider-modal") closeNewProviderModal();
+				byId("provider-template-select").addEventListener("change", (event) => {
+					if (event.target.value) applyProviderTemplate(event.target.value);
+				});
+				byId("provider-model-add").addEventListener("click", () => addModelInputRow());
+				byId("provider-model-rows").addEventListener("click", (event) => {
+					const button = event.target.closest(".js-model-remove");
+					if (!button) return;
+					const row = button.closest("[data-model-row]");
+					if (row && byId("provider-model-rows").querySelectorAll("[data-model-row]").length > 1) {
+						row.remove();
+						updateModelRemoveButtons();
+					}
+				});
+				byId("provider-model-rows").addEventListener("change", (event) => {
+					if (event.target.matches(".js-model-context-preset, .js-model-output-preset")) {
+						syncPresetCustomInput(event.target);
+					}
+				});
+				byId("new-provider-modal").addEventListener("mousedown", (event) => {
+					modalPointerDownStartedOnBackdrop = isNewProviderBackdropEvent(event);
+				});
+				byId("new-provider-modal").addEventListener("mouseup", (event) => {
+					if (modalPointerDownStartedOnBackdrop && isNewProviderBackdropEvent(event)) closeNewProviderModal();
+					modalPointerDownStartedOnBackdrop = false;
 				});
 			}
 
@@ -880,26 +1163,26 @@ export function renderModelSourcesPage(): string {
 		</header>
 
 		<section class="ms-stats" aria-label="API 源统计">
-			<div class="ms-stat ms-stat--primary"><div><div class="ms-stat-label">API 源</div><div id="stat-providers" class="ms-stat-value">0</div><div class="ms-stat-desc">bundled 与 custom 合并视图</div></div><div class="ms-stat-icon">API</div></div>
-			<div class="ms-stat ms-stat--green"><div><div class="ms-stat-label">自定义源</div><div id="stat-custom" class="ms-stat-value">0</div><div class="ms-stat-desc">运行态 overlay 保存</div></div><div class="ms-stat-icon">+</div></div>
+			<div class="ms-stat ms-stat--primary"><div><div class="ms-stat-label">API 源</div><div id="stat-providers" class="ms-stat-value">0</div><div class="ms-stat-desc">用户添加后启用</div></div><div class="ms-stat-icon">API</div></div>
+			<div class="ms-stat ms-stat--green"><div><div class="ms-stat-label">自定义源</div><div id="stat-custom" class="ms-stat-value">0</div><div class="ms-stat-desc">保存在本机运行态</div></div><div class="ms-stat-icon">+</div></div>
 			<div class="ms-stat ms-stat--cyan"><div><div class="ms-stat-label">使用对象</div><div id="stat-usages" class="ms-stat-value">0</div><div class="ms-stat-desc">全局、Agent、后台任务</div></div><div class="ms-stat-icon">↔</div></div>
-			<div class="ms-stat ms-stat--amber"><div><div class="ms-stat-label">继承绑定</div><div id="stat-inherited" class="ms-stat-value">0</div><div class="ms-stat-desc">未显式覆盖的对象</div></div><div class="ms-stat-icon">IN</div></div>
+			<div class="ms-stat ms-stat--amber"><div><div class="ms-stat-label">继承绑定</div><div id="stat-inherited" class="ms-stat-value">0</div><div class="ms-stat-desc">未显式覆盖的对象</div></div><div class="ms-stat-icon">继</div></div>
 		</section>
 
 		<main class="ms-main">
 			<aside class="ms-pane ms-pane--providers">
 				<div class="ms-pane-head">
-					<div><div class="ms-pane-title">API 源</div><div class="ms-pane-subtitle">按 provider 管理模型入口</div></div>
+					<div><div class="ms-pane-title">API 源</div><div class="ms-pane-subtitle">管理模型服务入口</div></div>
 				</div>
 				<div class="ms-toolbar">
-					<input id="provider-search" class="ms-search" type="search" placeholder="搜索 provider、vendor、region" />
+					<input id="provider-search" class="ms-search" type="search" placeholder="搜索源标识、厂商、地区" />
 				</div>
 				<div id="provider-list" class="ms-provider-list"></div>
 			</aside>
 
 			<section class="ms-pane">
 				<div class="ms-pane-head">
-					<div><div class="ms-pane-title">源详情</div><div class="ms-pane-subtitle">鉴权环境变量与模型清单</div></div>
+					<div><div class="ms-pane-title">源详情</div><div class="ms-pane-subtitle">鉴权状态与模型清单</div></div>
 				</div>
 				<div id="provider-detail" class="ms-body"></div>
 			</section>
@@ -910,7 +1193,7 @@ export function renderModelSourcesPage(): string {
 				</div>
 				<div class="ms-toolbar">
 					<div class="ms-usage-controls">
-						<input id="usage-search" class="ms-search" type="search" placeholder="搜索对象、provider、model" />
+						<input id="usage-search" class="ms-search" type="search" placeholder="搜索对象、API 源、模型" />
 						<select id="usage-kind" class="ms-select">
 							<option value="all">全部对象</option>
 							<option value="global">全局默认</option>
@@ -934,24 +1217,70 @@ export function renderModelSourcesPage(): string {
 	<div id="new-provider-modal" class="ms-modal" hidden>
 		<form id="provider-form" class="ms-modal-panel">
 			<div class="ms-modal-head">
-				<div><div class="ms-pane-title">新增 API 源</div><div class="ms-pane-subtitle">只保存环境变量名，不保存明文 key</div></div>
+				<div><div class="ms-pane-title">新增 API 源</div><div class="ms-pane-subtitle">填写密钥后立即写入本机运行态</div></div>
 			</div>
 			<div class="ms-modal-body">
-				<div class="ms-field-grid">
-					<div class="ms-field"><label for="provider-id">Provider ID</label><input id="provider-id" class="ms-input" required placeholder="custom-openai" /></div>
-					<div class="ms-field"><label for="provider-name">显示名称</label><input id="provider-name" class="ms-input" placeholder="Custom OpenAI" /></div>
-					<div class="ms-field"><label for="provider-vendor">Vendor</label><input id="provider-vendor" class="ms-input" placeholder="custom" /></div>
-					<div class="ms-field"><label for="provider-region">Region</label><input id="provider-region" class="ms-input" placeholder="global" /></div>
+				<div class="ms-field">
+					<label for="provider-template-select">厂商模板</label>
+					<select id="provider-template-select" class="ms-select">
+						<option value="">手动填写</option>
+						<option value="deepseek">DeepSeek</option>
+						<option value="zhipu-glm">智谱 GLM</option>
+						<option value="xiaomi-mimo-cn">小米 MiMo</option>
+						<option value="ali-codeplan">阿里 CodePlan</option>
+					</select>
+					<div class="ms-field-hint">选择后会自动填好接口地址和模型列表，密钥仍由你自己填写。</div>
 				</div>
-				<div class="ms-field"><label for="provider-base-url">Base URL</label><input id="provider-base-url" class="ms-input" required placeholder="https://api.example.com/v1/messages" /></div>
 				<div class="ms-field-grid">
-					<div class="ms-field"><label for="provider-api">API 协议</label><input id="provider-api" class="ms-input" required value="anthropic-messages" /></div>
-					<div class="ms-field"><label for="provider-api-key-env">API Key Env Var</label><input id="provider-api-key-env" class="ms-input" required placeholder="CUSTOM_OPENAI_API_KEY" /></div>
+					<div class="ms-field">
+						<label for="provider-id">源标识</label>
+						<input id="provider-id" class="ms-input" required placeholder="例如：deepseek" />
+						<div class="ms-field-hint">给系统识别用，只用英文、数字、横线，保存后绑定会引用它。</div>
+					</div>
+					<div class="ms-field">
+						<label for="provider-name">显示名称</label>
+						<input id="provider-name" class="ms-input" placeholder="例如：DeepSeek" />
+						<div class="ms-field-hint">只用于页面展示，可以写中文或品牌名。</div>
+					</div>
+					<div class="ms-field">
+						<label for="provider-vendor">厂商标识</label>
+						<input id="provider-vendor" class="ms-input" placeholder="例如：deepseek" />
+						<div class="ms-field-hint">用于分类和搜索；不确定可以和源标识填一样。</div>
+					</div>
+					<div class="ms-field">
+						<label for="provider-region">地区</label>
+						<input id="provider-region" class="ms-input" placeholder="例如：global 或 cn" />
+						<div class="ms-field-hint">接口所在区域；不确定可填 global。</div>
+					</div>
 				</div>
 				<div class="ms-field">
-					<label for="provider-models">模型列表</label>
-					<textarea id="provider-models" class="ms-textarea" required spellcheck="false"></textarea>
-					<small>每行一个模型：model-id|显示名称|contextWindow|maxTokens</small>
+					<label for="provider-base-url">接口地址</label>
+					<input id="provider-base-url" class="ms-input" required placeholder="例如：https://api.example.com/v1/messages" />
+					<div class="ms-field-hint">填写模型服务商给你的调用地址。</div>
+				</div>
+				<div class="ms-field-grid">
+					<div class="ms-field">
+						<label for="provider-api">接口格式</label>
+						<input id="provider-api" class="ms-input" required value="anthropic-messages" />
+						<div class="ms-field-hint">当前支持 anthropic-messages；兼容 Claude 消息格式的接口使用它。</div>
+					</div>
+					<div class="ms-field">
+						<label for="provider-api-key">密钥</label>
+						<input id="provider-api-key" class="ms-input" type="password" required autocomplete="off" placeholder="粘贴服务商提供的 key" />
+						<div class="ms-field-hint">保存在本机运行态，不会在页面列表里明文展示。</div>
+					</div>
+				</div>
+				<div class="ms-field">
+					<div class="ms-model-builder">
+						<div class="ms-model-builder-head">
+							<div>
+								<label>模型列表</label>
+								<div class="ms-field-hint">每个模型单独一行，长度可以从候选里选，也可以直接手动输入。</div>
+							</div>
+							<button id="provider-model-add" class="ms-btn" type="button">增加模型</button>
+						</div>
+						<div id="provider-model-rows" class="ms-model-rows"></div>
+					</div>
 				</div>
 			</div>
 			<div class="ms-modal-foot">

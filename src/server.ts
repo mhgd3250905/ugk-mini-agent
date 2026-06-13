@@ -35,7 +35,6 @@ import { registerChatRoutes } from "./routes/chat.js";
 import { registerCleanupDebugRoutes } from "./routes/cleanup-debug.js";
 import { registerConnRoutes } from "./routes/conns.js";
 import { registerFileRoutes } from "./routes/files.js";
-import { registerFeishuSettingsRoutes } from "./routes/feishu-settings.js";
 import { registerModelConfigRoutes } from "./routes/model-config.js";
 import { registerModelSourceRoutes } from "./routes/model-sources.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
@@ -44,7 +43,6 @@ import { registerPublicSiteRoutes } from "./routes/public-site.js";
 import { registerRuntimeDebugRoutes } from "./routes/runtime-debug.js";
 import { registerStaticRoutes } from "./routes/static.js";
 import { registerArtifactRoutes } from "./routes/artifacts.js";
-import { FeishuSettingsStore } from "./integrations/feishu/settings-store.js";
 
 export interface BuildServerOptions {
 	agentService?: AgentService;
@@ -63,7 +61,6 @@ export interface BuildServerOptions {
 	modelConfigStore?: ModelConfigStore;
 	modelSelectionValidator?: ModelSelectionValidator;
 	modelProviderStore?: ModelProviderStore;
-	feishuSettingsStore?: FeishuSettingsStore;
 }
 
 function createDefaultAssetStore(): AssetStore {
@@ -209,9 +206,6 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
 		connStore,
 	});
 	registerNotificationRoutes(app, { notificationHub });
-	registerFeishuSettingsRoutes(app, {
-		settingsStore: options.feishuSettingsStore ?? new FeishuSettingsStore({ settingsPath: config.feishuSettingsPath }),
-	});
 	registerConnRoutes(app, {
 		connStore,
 		connRunStore,

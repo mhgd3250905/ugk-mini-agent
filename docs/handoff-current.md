@@ -67,12 +67,12 @@ git log --oneline origin/main..HEAD
 - Team Console Task 操作菜单里的“对话 Leader”已和普通 Agent 对话分支对齐：普通 Task Leader 子面板 iframe 使用 `embedMode=mini`，最大化 overlay 使用 `embedMode=full`。Task child panel 支持 `maximizedPanel`，避免小窗和最大化共用同一份 iframe URL。
 - `/team-task` skill 已按渐进式披露重构：主 `SKILL.md` 只负责非专家自然语言引导、Task 形态推荐、确认流程和写 API 禁区；用户不需要知道 `templateConfig`、`inputPorts`、`worklist`、`splitTaskSpec` 等内部字段。普通 Task、worklist producer 和 split-task root 创建优先通过 `npm run team:task-factory -- --spec <file>` 由少量参数生成并校验完整 payload；Discovery、模板和更新场景再加载 `.pi/skills/team-task-creator/references/task-contracts.md` 手工预览。禁止直接写 `.data/team`。
 - `POST /v1/team/tasks` 与 `PATCH /v1/team/tasks/:taskId` 已补齐 `splitTaskSpec` 透传，正规 API 创建 split-task 不再丢失 `splitTaskSpec`。`src/team/task-factory.ts` 复用 `validateCreateTaskInput` 校验，CLI 会剥离 Windows UTF-8 BOM。
-- API 源管理工作台已实现：`/playground/model-sources` 可查看 bundled/custom provider、查看全局默认 / Agent profile / Conn 的有效使用绑定，并在同页修改可编辑对象绑定的 provider/model。
+- API 源管理工作台已实现：`/playground/model-sources` 可查看用户添加的 provider、查看全局默认 / Agent profile / Conn 的有效使用绑定，并在同页修改可编辑对象绑定的 provider/model。全新运行态初始 provider 列表为空。
 - `/playground/agents` 与 `/playground/conn` 已切换到共享 `ops-workbench` 视觉系统，和 `/playground/model-sources` 保持同一套管理工作台密度、色彩 token、卡片/列表/详情布局和轻量背景。旧 cockpit 动画背景不再作为这两个管理页的主题入口。
 - `/playground/conn` 移动端列表/详情切换已修复：选择任务时显式隐藏列表并显示详情，点击详情返回按钮时恢复列表，不再出现列表和详情同时隐藏。
-- 自定义 API 源新增合同已实现：`POST /v1/model-sources/providers` 写入运行态 `.data/agent/model-providers.json` 或 `UGK_MODEL_PROVIDERS_PATH`，只接受 `apiKeyEnvVar`，拒绝明文 `apiKey`。`.data/agent/effective-models.json` 是合并派生 registry，不要提交。
+- 自定义 API 源新增合同已实现：`POST /v1/model-sources/providers` 写入运行态 `.data/agent/model-providers.json` 或 `UGK_MODEL_PROVIDERS_PATH`，接受 `apiKey`，响应不回显明文 key。`.data/agent/effective-models.json` 是派生 registry，不要提交。
 - 使用绑定修改合同已实现：`PATCH /v1/model-sources/usages/global/default` 修改全局默认；`agent/:agentId` 修改自定义 Agent 默认模型，`main` 主 Agent 跟随全局默认且不可作为独立 Agent 修改，运行中 Agent 会拒绝切换；`conn/:connId` 修改 Conn 显式模型绑定。
-- 模型解析链路已改为读取 bundled + runtime custom 合并 registry：`/v1/model-config`、Agent session factory 和 background agent session factory 都能识别运行态新增 provider。
+- 模型解析链路读取用户运行态 provider registry：`/v1/model-config`、Agent session factory 和 background agent session factory 都能识别运行态新增 provider。
 - Discovery root Task 已支持渠道集复用。用户可在 Team Console Discovery 子画布勾选 active generated child Tasks，保存为渠道集；渠道集保存 generated child 的 discovery item payload、WorkUnit snapshot 和来源 trace，不保存 run output。
 - 新增 `GET /v1/team/tasks/:taskId/discovery-channel-sets`、`POST /v1/team/tasks/:taskId/discovery-channel-sets`、`PATCH /v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId` 和 `POST /v1/team/tasks/:taskId/discovery-channel-sets/:channelSetId/archive`。持久文件为 `.data/team/discovery-channel-sets.json`。
 - `POST /v1/team/tasks/:taskId/runs` 新增可选 `discoveryChannelSetId`。Discovery root 使用同源未归档渠道集运行时，会跳过 root rediscovery/dispatcher，写出标准 `discovery-result.json` / `discovery-aggregation.json`，并按既有 auto-run 语义启动保存的 generated child runs。
@@ -191,7 +191,7 @@ git log --oneline origin/main..HEAD
   - `node --test --import tsx test/model-provider-store.test.ts test/model-config.test.ts test/agent-session-factory.test.ts test/model-sources-routes.test.ts test/model-sources-page.test.ts`：42/42 pass。
   - `npx tsc --noEmit`：pass。
   - `git diff --check`：pass。
-  - Browser `http://127.0.0.1:3000/playground/model-sources`：重启标准 `ugk-pi` 后页面加载正常，统计显示 6 个 provider / 22 个使用对象；控制台无 error/warn；左侧搜索框与 provider 列表无重叠；新增 API 源弹层只暴露 `API Key Env Var`，未提供明文 key 输入框。未提交表单，未修改真实运行态 provider 或对象绑定。
+  - Browser `http://127.0.0.1:8888/playground/model-sources`：页面加载正常，初始统计显示 0 个 provider；左侧为空态“还没有 API 源，点击右上角新增。”；新增 API 源弹层提供 `API Key` 输入框。
 - Discovery channel set 本轮验证：
   - Discovery root 默认运行策略验证：新增后端回归覆盖 `PATCH /v1/team/tasks/:taskId` 保存 `discoveryRunPolicy` 后，无参数 `POST /v1/team/tasks/:taskId/runs` 会自动写入 `source.discoveryChannelSetId`；新增 GroupRun 回归覆盖 `POST /v1/team/task-groups/:groupId/runs` 从 Discovery 根任务继承默认渠道集策略。
   - Team Console 默认运行策略验证：新增前端回归覆盖点击保存渠道集的 `设为默认` 会发 `PATCH /v1/team/tasks/:taskId`，payload 为 `{ discoveryRunPolicy: { mode: "channel_set", channelSetId } }`；点击 `恢复正常运行` 会保存 `{ mode: "rediscover" }` 并恢复 UI。

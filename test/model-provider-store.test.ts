@@ -34,52 +34,50 @@ async function createProjectRoot(): Promise<string> {
 	return projectRoot;
 }
 
-test("model provider store merges runtime custom providers with bundled providers", async () => {
+test("model provider store exposes only runtime custom providers", async () => {
 	const projectRoot = await createProjectRoot();
 	const customProvidersPath = join(projectRoot, ".data", "agent", "model-providers.json");
 	const store = createFileModelProviderStore(projectRoot, { customProvidersPath });
 
 	await store.createProvider({
-		id: "custom-openai",
-		name: "Custom OpenAI",
+		id: "deepseek",
+		name: "DeepSeek",
 		vendor: "custom",
 		region: "global",
 		baseUrl: "https://custom.example/anthropic",
 		api: "anthropic-messages",
-		apiKeyEnvVar: "CUSTOM_OPENAI_API_KEY",
+		apiKey: "sk-custom",
 		models: [{ id: "custom-model", name: "Custom Model", contextWindow: 200000 }],
 	});
 
 	const merged = JSON.parse(await readMergedProjectModelsContent(projectRoot, { customProvidersPath }));
 
-	assert.ok(merged.providers.bundled);
-	assert.equal(merged.providers["custom-openai"].apiKey, "CUSTOM_OPENAI_API_KEY");
-	assert.equal(merged.providers["custom-openai"].models[0].id, "custom-model");
+	assert.equal(merged.providers.bundled, undefined);
+	assert.equal(merged.providers.deepseek.apiKey, "sk-custom");
+	assert.equal(merged.providers.deepseek.models[0].id, "custom-model");
 });
 
-test("model provider store rejects custom providers that collide with bundled providers", async () => {
+test("model provider store allows users to create providers with template ids", async () => {
 	const projectRoot = await createProjectRoot();
 	const store = createFileModelProviderStore(projectRoot, {
 		customProvidersPath: join(projectRoot, ".data", "agent", "model-providers.json"),
 	});
 
-	await assert.rejects(
-		() =>
-			store.createProvider({
-				id: "bundled",
-				name: "Bundled Override",
-				vendor: "custom",
-				region: "global",
-				baseUrl: "https://override.example/anthropic",
-				api: "anthropic-messages",
-				apiKeyEnvVar: "OVERRIDE_API_KEY",
-				models: [{ id: "override-model" }],
-			}),
-		/provider already exists/,
-	);
+	const provider = await store.createProvider({
+		id: "bundled",
+		name: "Bundled Override",
+		vendor: "custom",
+		region: "global",
+		baseUrl: "https://override.example/anthropic",
+		api: "anthropic-messages",
+		apiKey: "sk-override",
+		models: [{ id: "override-model" }],
+	});
+
+	assert.equal(provider.id, "bundled");
 });
 
-test("model provider store rejects literal API keys", async () => {
+test("model provider store rejects missing API keys", async () => {
 	const projectRoot = await createProjectRoot();
 	const store = createFileModelProviderStore(projectRoot, {
 		customProvidersPath: join(projectRoot, ".data", "agent", "model-providers.json"),
@@ -94,10 +92,10 @@ test("model provider store rejects literal API keys", async () => {
 				region: "global",
 				baseUrl: "https://unsafe.example/anthropic",
 				api: "anthropic-messages",
-				apiKeyEnvVar: "sk-should-not-be-here",
+				apiKey: "",
 				models: [{ id: "unsafe-model" }],
 			}),
-		/apiKeyEnvVar must be an environment variable name/,
+		/apiKey is required/,
 	);
 });
 
@@ -114,7 +112,7 @@ test("model provider store writes custom providers outside bundled models.json",
 		region: "global",
 		baseUrl: "https://runtime.example/anthropic",
 		api: "anthropic-messages",
-		apiKeyEnvVar: "CUSTOM_RUNTIME_API_KEY",
+		apiKey: "sk-runtime",
 		models: [{ id: "runtime-model" }],
 	});
 
@@ -136,7 +134,7 @@ test("effective project models path exposes runtime custom providers to ModelReg
 		region: "global",
 		baseUrl: "https://registry.example/anthropic",
 		api: "anthropic-messages",
-		apiKeyEnvVar: "CUSTOM_REGISTRY_API_KEY",
+		apiKey: "sk-registry",
 		models: [{ id: "registry-model", contextWindow: 300000 }],
 	});
 

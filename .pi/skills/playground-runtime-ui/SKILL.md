@@ -20,7 +20,7 @@ The authoritative UI source remains in `src/ui/`:
 
 Runtime files under `runtime/playground/` are editable overrides for fast iteration. They are not the long-term source of truth and are ignored by Git.
 
-Important boundary: externalized runtime files support refresh-only iteration; TypeScript source files under `src/ui/` do not hot-reload inside an already running `tsx src/server.ts` or production Docker process.
+Important boundary: externalized runtime files support refresh-only iteration; TypeScript source files under `src/ui/` load when the local service process starts.
 
 ## Runtime Externalized Mode
 
@@ -30,10 +30,10 @@ If the user wants quick visual/frontend iteration without restarting the service
 PLAYGROUND_EXTERNALIZED=1
 ```
 
-In Docker/local deployment, this is normally set in `.env`, then the service is restarted once:
+Set this in `.env.native` or the shell, then restart the local service once:
 
 ```bash
-docker compose restart ugk-pi
+npm run native:start
 ```
 
 After that, the server generates/uses:
@@ -51,7 +51,7 @@ runtime/playground/manifest.json
 The browser entry stays:
 
 ```text
-http://127.0.0.1:3000/playground
+http://127.0.0.1:8888/playground
 ```
 
 ## Fast UI Iteration Workflow
@@ -75,7 +75,7 @@ runtime/playground/styles.css
 runtime/playground/app.js
 ```
 
-Then refresh the browser. Do not restart `ugk-pi` unless externalized mode was just enabled or disabled.
+Then refresh the browser. Restart the local service only when externalized mode was just enabled or disabled.
 
 This refresh-only workflow applies only to files under `runtime/playground/`. If you edit `src/ui/playground-styles.ts`, `src/ui/playground-page-shell.ts`, `src/ui/playground.ts`, or any other `src/ui/` module, restart `ugk-pi` or use the existing `npm run dev` watch process so Node loads the changed TypeScript modules.
 
@@ -84,7 +84,7 @@ This refresh-only workflow applies only to files under `runtime/playground/`. If
 If runtime UI files are broken, restore the generated factory copy:
 
 ```bash
-curl -X POST http://127.0.0.1:3000/playground/reset
+curl -X POST http://127.0.0.1:8888/playground/reset
 ```
 
 Then refresh `/playground`.
@@ -105,7 +105,7 @@ npx tsc --noEmit
 node --test --import tsx test/server.test.ts
 ```
 
-4. Restart `ugk-pi` or let `npm run dev` watch restart it, then verify the real `/playground` entry.
+4. Restart the local service or let `npm run dev` watch restart it, then verify the real `/playground` entry.
 
 ## Guardrails
 

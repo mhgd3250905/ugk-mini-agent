@@ -11,7 +11,7 @@ interface CliOptions {
 
 function parseArgs(argv: string[]): CliOptions {
 	const options: CliOptions = {
-		baseUrl: process.env.TEAM_TASK_FACTORY_BASE_URL ?? "http://127.0.0.1:3000",
+		baseUrl: process.env.TEAM_TASK_FACTORY_BASE_URL ?? "http://127.0.0.1:8888",
 		apply: false,
 		help: false,
 	};
@@ -40,7 +40,7 @@ function printHelp(): void {
 Options:
   --spec <file>       JSON file containing a factory spec.
   --apply             POST the generated payload to /v1/team/tasks.
-  --base-url <url>    Backend base URL. Defaults to http://127.0.0.1:3000.
+  --base-url <url>    Backend base URL. Defaults to http://127.0.0.1:8888.
   --help              Show this help.
 
 Factory kinds:

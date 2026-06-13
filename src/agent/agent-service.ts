@@ -555,6 +555,24 @@ export class AgentService {
 	): RunEventSubscription {
 		const activeRun = this.activeRuns.get(conversationId);
 		if (!activeRun) {
+			const terminalRun = this.terminalRuns.get(conversationId);
+			if (terminalRun) {
+				const replayableEvents = getReplayableRunEvents(
+					{
+						events: terminalRun.events,
+						eventCursor: terminalRun.view.eventCursor ?? terminalRun.events.length,
+					},
+					options?.afterEventCursor,
+				);
+				for (const event of replayableEvents) {
+					deliverChatStreamEvent(onEvent, event);
+				}
+				return {
+					conversationId,
+					running: replayableEvents.length > 0,
+					unsubscribe: () => undefined,
+				};
+			}
 			return {
 				conversationId,
 				running: false,

@@ -272,21 +272,27 @@ test("playground styles compose error banner styles from dedicated fragment", ()
 	assert.match(errorBannerStyles, /\.error-banner-close\s*\{/);
 
 	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*display:\s*none;/);
-	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*position:\s*absolute;/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*position:\s*fixed;/);
 	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto;/);
-	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*top:\s*0;/);
-	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*left:\s*50%;/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*top:\s*auto;/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*bottom:\s*calc\(var\(--command-deck-toast-offset, var\(--command-deck-offset, 96px\)\) \+ 12px\);/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*left:\s*var\(--command-deck-center-x, 50%\);/);
 	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*transform:\s*translateX\(-50%\);/);
-	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*border:\s*0;/);
-	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*border-radius:\s*4px;/);
-	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*background:\s*#2f1119/);
-	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*z-index:\s*6;/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*width:\s*fit-content;/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*min-width:\s*220px;/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*max-width:\s*min\(560px, calc\(100vw - 32px\)\);/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*max-height:\s*min\(160px, calc\(100vh - 32px\)\);/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*overflow:\s*auto;/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*border:\s*1px solid rgba\(255, 113, 136, 0\.28\);/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*border-radius:\s*10px;/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*background:\s*rgba\(47, 17, 25, 0\.96\)/);
+	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*z-index:\s*1000;/);
 	assert.match(errorBannerStyles, /\.error-banner\s*\{[\s\S]*pointer-events:\s*auto;/);
 	assert.match(errorBannerStyles, /\.error-banner\.visible\s*\{[\s\S]*display:\s*grid;/);
 	assert.match(errorBannerStyles, /\.error-banner\[hidden\]\s*\{[\s\S]*display:\s*none !important;/);
 	assert.match(errorBannerStyles, /\.error-banner-close\s*\{[\s\S]*width:\s*24px;/);
 	assert.match(errorBannerStyles, /\.error-banner-close\s*\{[\s\S]*height:\s*24px;/);
-	assert.match(errorBannerStyles, /\.error-banner-close\s*\{[\s\S]*background:\s*#421823/);
+	assert.match(errorBannerStyles, /\.error-banner-close\s*\{[\s\S]*background:\s*rgba\(90, 34, 48, 0\.62\)/);
 
 	assert.doesNotMatch(errorBannerStyles, /\.chat-stage > .error-banner/);
 	assert.doesNotMatch(errorBannerStyles, /\.notification-/);
@@ -298,6 +304,11 @@ test("playground styles compose error banner styles from dedicated fragment", ()
 		styles.includes(errorBannerStyles),
 		"getPlaygroundStyles() must include error banner styles",
 	);
+	assert.match(
+		styles,
+		/\.chat-stage > :not\(\.chat-stage-watermark\):not\(\.error-banner\):not\(\.notification-live-region\)\s*\{/,
+	);
+	assert.doesNotMatch(styles, /\.chat-stage > :not\(\.chat-stage-watermark\)\s*\{/);
 });
 
 test("playground styles compose scroll-to-bottom styles from dedicated fragment", () => {

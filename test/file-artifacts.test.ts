@@ -21,10 +21,11 @@ test("buildPromptWithAssetContext allows local artifact paths internally while k
 	assert.match(prompt, /host-reachable HTTP URL/i);
 	assert.match(prompt, /Current user-facing base URL: http:\/\/101\.37\.209\.54:3000\./);
 	assert.match(prompt, /Do not mention Tencent Cloud, Aliyun, or another deployment public URL/i);
-	assert.match(prompt, /valid internal references for tools and browser automation/i);
-	assert.match(prompt, /sidecar browser file uploads/i);
-	assert.match(prompt, /\/app\/\.data\/browser-upload/);
-	assert.match(prompt, /\/config\/upload/);
+	assert.match(prompt, /valid internal references for tools/i);
+	assert.match(prompt, /Browser automation is not bundled/i);
+	assert.doesNotMatch(prompt, /sidecar browser file uploads/i);
+	assert.doesNotMatch(prompt, /\/app\/\.data\/browser-upload/);
+	assert.doesNotMatch(prompt, /\/config\/upload/);
 });
 
 test("rewriteUserVisibleLocalArtifactLinks does not wrap already translated local-file urls", () => {

@@ -303,8 +303,9 @@ export function getPlaygroundMobileWorkspaceStyles(): string {
 			}
 
 			.error-banner {
-				top: 6px;
-				width: calc(100% - 16px);
+				bottom: calc(var(--command-deck-offset, 92px) + 10px + env(safe-area-inset-bottom));
+				width: fit-content;
+				max-width: calc(100% - 16px);
 				padding: 10px 12px;
 			}
 

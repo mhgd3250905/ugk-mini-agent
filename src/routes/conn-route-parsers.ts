@@ -188,13 +188,6 @@ function parseTarget(value: unknown): { target?: ConnTarget; error?: string } {
 	if (target.type === "conversation" && isNonEmptyString(target.conversationId)) {
 		return { target: { type: "conversation", conversationId: target.conversationId.trim() } };
 	}
-	if (target.type === "feishu_chat" && isNonEmptyString(target.chatId)) {
-		return { target: { type: "feishu_chat", chatId: target.chatId.trim() } };
-	}
-	if (target.type === "feishu_user" && isNonEmptyString(target.openId)) {
-		return { target: { type: "feishu_user", openId: target.openId.trim() } };
-	}
-
 	return { error: 'Field "target" is invalid' };
 }
 

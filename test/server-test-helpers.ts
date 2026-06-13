@@ -292,7 +292,7 @@ export function createAgentServiceStub(overrides?: {
 			(async () => ({
 				skills: [
 					{ name: "using-superpowers", path: "E:/AII/ugk-pi/.pi/skills/superpowers/using-superpowers/SKILL.md" },
-					{ name: "web-access", path: "E:/AII/ugk-pi/runtime/skills-user/web-access/SKILL.md" },
+					{ name: "project-planning", path: "E:/AII/ugk-pi/.pi/skills/project-planning/SKILL.md" },
 				],
 				source: "cache",
 				cachedAt: "2026-04-24T00:00:00.000Z",

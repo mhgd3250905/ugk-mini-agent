@@ -13,6 +13,7 @@ async function createProjectRoot(): Promise<string> {
 	const root = await mkdtemp(join(tmpdir(), "ugk-pi-model-config-"));
 	await mkdir(join(root, ".pi"), { recursive: true });
 	await mkdir(join(root, "runtime", "pi-agent"), { recursive: true });
+	await mkdir(join(root, ".data", "agent"), { recursive: true });
 	await writeFile(
 		join(root, ".pi", "settings.json"),
 		[
@@ -122,7 +123,7 @@ async function createProjectRoot(): Promise<string> {
 	return root;
 }
 
-test("model config store lists providers and current default selection", async () => {
+test("model config store starts without providers and keeps current default selection", async () => {
 	const projectRoot = await createProjectRoot();
 	process.env.TEST_DEEPSEEK_UNUSED = "";
 	const store = createFileModelConfigStore(projectRoot);
@@ -133,58 +134,7 @@ test("model config store lists providers and current default selection", async (
 		provider: "zhipu-glm",
 		model: "glm-5.1",
 	});
-	assert.deepEqual(
-		config.providers.map((provider) => provider.id),
-		["zhipu-glm", "deepseek", "xiaomi-mimo-cn", "xiaomi-mimo-sgp", "xiaomi-mimo-ams", "ali-codeplan"],
-	);
-	assert.deepEqual(config.providers.map((provider) => [provider.id, provider.name, provider.vendor, provider.region, provider.priority]), [
-		["zhipu-glm", "Zhipu GLM", "zhipu", "cn", 10],
-		["deepseek", "DeepSeek", "deepseek", "global", 20],
-		["xiaomi-mimo-cn", "Xiaomi MiMo China", "xiaomi", "cn", 31],
-		["xiaomi-mimo-sgp", "Xiaomi MiMo Singapore", "xiaomi", "sgp", 32],
-		["xiaomi-mimo-ams", "Xiaomi MiMo Europe", "xiaomi", "ams", 33],
-		["ali-codeplan", "Ali CodePlan", "aliyun", "cn-beijing", 40],
-	]);
-	assert.deepEqual(
-		config.providers.find((provider) => provider.id === "deepseek")?.models.map((model) => model.id),
-		["deepseek-v4-pro", "deepseek-v4-flash"],
-	);
-	assert.deepEqual(config.providers.find((provider) => provider.id === "deepseek")?.models[0], {
-		id: "deepseek-v4-pro",
-		name: "DeepSeek V4 Pro",
-		contextWindow: 1000000,
-		maxTokens: 384000,
-	});
-	assert.deepEqual(config.providers.find((provider) => provider.id === "deepseek")?.models[1], {
-		id: "deepseek-v4-flash",
-		name: "DeepSeek V4 Flash",
-		contextWindow: 1000000,
-		maxTokens: 384000,
-	});
-	assert.equal(config.providers.find((provider) => provider.id === "deepseek")?.auth.envVar, "DEEPSEEK_API_KEY");
-	assert.deepEqual(config.providers.find((provider) => provider.id === "xiaomi-mimo-cn")?.models, [
-		{
-			id: "mimo-v2.5-pro",
-			name: "MiMo V2.5 Pro (Xiaomi CN)",
-			contextWindow: 1048576,
-			maxTokens: 16384,
-		},
-	]);
-	assert.equal(config.providers.find((provider) => provider.id === "xiaomi-mimo-cn")?.auth.envVar, "XIAOMI_MIMO_API_KEY");
-	assert.deepEqual(config.providers.find((provider) => provider.id === "ali-codeplan")?.models.map((model) => model.id), [
-		"glm-5.1",
-		"kimi-k2.6",
-		"deepseek-v4-pro",
-		"qwen3.7-max",
-	]);
-	assert.deepEqual(config.providers.find((provider) => provider.id === "ali-codeplan")?.models.map((model) => model.contextWindow), [
-		200000,
-		256000,
-		1000000,
-		1000000,
-	]);
-	assert.equal(config.providers.find((provider) => provider.id === "ali-codeplan")?.models[0]?.maxTokens, 128000);
-	assert.equal(config.providers.find((provider) => provider.id === "ali-codeplan")?.auth.envVar, "ALI_CODEPLAN_API_KEY");
+	assert.deepEqual(config.providers, []);
 });
 
 test("model config store includes runtime custom providers", async () => {
@@ -204,7 +154,7 @@ test("model config store includes runtime custom providers", async () => {
 					priority: 99,
 					baseUrl: "https://custom.example/anthropic",
 					api: "anthropic-messages",
-					apiKey: "CUSTOM_PROVIDER_API_KEY",
+					apiKey: "sk-custom-provider",
 					models: [{ id: "custom-model", name: "Custom Model", contextWindow: 200000 }],
 				},
 			},
@@ -218,7 +168,8 @@ test("model config store includes runtime custom providers", async () => {
 		const customProvider = config.providers.find((provider) => provider.id === "custom-provider");
 		assert.equal(customProvider?.name, "Custom Provider");
 		assert.equal(customProvider?.models[0]?.id, "custom-model");
-		assert.equal(customProvider?.auth.envVar, "CUSTOM_PROVIDER_API_KEY");
+		assert.equal(customProvider?.auth.configured, true);
+		assert.equal(customProvider?.auth.source, "literal");
 		assert.equal(await store.hasModel({ provider: "custom-provider", model: "custom-model" }), true);
 	} finally {
 		if (previousProvidersPath === undefined) {
@@ -327,6 +278,20 @@ test("model config store preserves comment-like markers inside strings", async (
 
 test("saveDefaultModelConfig validates before writing settings", async () => {
 	const projectRoot = await createProjectRoot();
+	await writeFile(
+		join(projectRoot, ".data", "agent", "model-providers.json"),
+		JSON.stringify({
+			providers: {
+				deepseek: {
+					baseUrl: "https://deepseek.example/anthropic",
+					api: "anthropic-messages",
+					apiKey: "sk-deepseek",
+					models: [{ id: "deepseek-v4-pro" }],
+				},
+			},
+		}),
+		"utf8",
+	);
 	const store = createFileModelConfigStore(projectRoot);
 	const calls: Array<{ provider: string; model: string }> = [];
 	const validator: ModelSelectionValidator = async (selection) => {
@@ -387,6 +352,20 @@ test("model config store persists web default selection outside bundled settings
 test("saveDefaultModelConfig inserts active defaults instead of replacing commented defaults", async () => {
 	const projectRoot = await createProjectRoot();
 	await writeFile(
+		join(projectRoot, ".data", "agent", "model-providers.json"),
+		JSON.stringify({
+			providers: {
+				"zhipu-glm": {
+					baseUrl: "https://glm.example/anthropic",
+					api: "anthropic-messages",
+					apiKey: "sk-zhipu",
+					models: [{ id: "glm-5.1" }],
+				},
+			},
+		}),
+		"utf8",
+	);
+	await writeFile(
 		join(projectRoot, ".pi", "settings.json"),
 		[
 			"{",
@@ -415,6 +394,20 @@ test("saveDefaultModelConfig inserts active defaults instead of replacing commen
 
 test("saveDefaultModelConfig does not write settings when validation fails", async () => {
 	const projectRoot = await createProjectRoot();
+	await writeFile(
+		join(projectRoot, ".data", "agent", "model-providers.json"),
+		JSON.stringify({
+			providers: {
+				deepseek: {
+					baseUrl: "https://deepseek.example/anthropic",
+					api: "anthropic-messages",
+					apiKey: "sk-deepseek",
+					models: [{ id: "deepseek-v4-pro" }],
+				},
+			},
+		}),
+		"utf8",
+	);
 	const store = createFileModelConfigStore(projectRoot);
 	const validator: ModelSelectionValidator = async () => ({
 		ok: false,

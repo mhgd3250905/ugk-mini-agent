@@ -93,14 +93,6 @@ const ConnTargetSchema = Type.Union([
 		type: Type.Literal("conversation"),
 		conversationId: Type.String(),
 	}),
-	Type.Object({
-		type: Type.Literal("feishu_chat"),
-		chatId: Type.String(),
-	}),
-	Type.Object({
-		type: Type.Literal("feishu_user"),
-		openId: Type.String(),
-	}),
 ]);
 
 const ConnScheduleSchema = Type.Union([

@@ -363,7 +363,6 @@ function getInboxPageCss(): string {
 			flex-shrink: 0;
 		}
 		.ib-msg-badge--conn { background: var(--primary-soft); color: var(--primary-hover); }
-		.ib-msg-badge--feishu { background: var(--info-soft); color: var(--info); }
 		.ib-msg-badge--notification { background: var(--warning-soft); color: var(--warning); }
 		.ib-msg-badge--agent { background: var(--success-soft); color: var(--success); }
 
@@ -767,8 +766,8 @@ function getInboxPageCss(): string {
 
 function getInboxPageJs(): string {
 	return `
-		const SOURCE_LABELS = { conn: "后台任务", feishu: "飞书", notification: "通知", agent: "助手" };
-		const SOURCE_BADGE_CLS = { conn: "ib-msg-badge--conn", feishu: "ib-msg-badge--feishu", notification: "ib-msg-badge--notification", agent: "ib-msg-badge--agent" };
+		const SOURCE_LABELS = { conn: "后台任务", notification: "通知", agent: "助手" };
+		const SOURCE_BADGE_CLS = { conn: "ib-msg-badge--conn", notification: "ib-msg-badge--notification", agent: "ib-msg-badge--agent" };
 
 		const FILTER_TABS = [
 			{ id: "all", label: "全部" },
@@ -923,7 +922,7 @@ function getInboxPageJs(): string {
 				if (tab === "all") return true;
 				if (tab === "unread") return !item.readAt;
 				if (tab === "task") return item.source === "conn";
-				if (tab === "system") return item.source === "notification" || item.source === "feishu";
+				if (tab === "system") return item.source === "notification";
 				if (tab === "failed") {
 					var t = (item.title || "").toLowerCase();
 					return t.indexOf("fail") !== -1 || t.indexOf("失败") !== -1 || t.indexOf("error") !== -1;
@@ -980,7 +979,7 @@ function getInboxPageJs(): string {
 			state.items.forEach(function(i) {
 				if (!i.readAt) counts.unread++;
 				if (i.source === "conn") counts.task++;
-				if (i.source === "notification" || i.source === "feishu") counts.system++;
+				if (i.source === "notification") counts.system++;
 				var t = (i.title || "").toLowerCase();
 				if (t.indexOf("fail") !== -1 || t.indexOf("失败") !== -1 || t.indexOf("error") !== -1) counts.failed++;
 			});

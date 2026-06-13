@@ -61,8 +61,8 @@ description: 用于 ugk-pi 项目的快速上手、/init、方案收敛和实施
   - `.pi/skills`
 - 用户技能目录：
   - `runtime/skills-user`
-- 用户新装 skill 写进 `runtime/skills-user` 后，下一条消息即可生效，不需要重启 Docker
-- 开发优先使用开发容器；生产容器只用于部署验证
+- 用户新装 skill 写进 `runtime/skills-user` 后，下一条消息即可生效
+- 本机开发使用 Windows Core 运行命令
 
 ## 工作流
 

@@ -25,7 +25,7 @@ test("code size baseline filters tracked code paths deterministically", () => {
 	assert.equal(isCountableCodeFile("src/ui/playground-styles.ts"), true);
 	assert.equal(isCountableCodeFile("apps/team-console/src/app/App.tsx"), true);
 	assert.equal(isCountableCodeFile("test/server.test.ts"), true);
-	assert.equal(isCountableCodeFile("scripts/server-ops.mjs"), true);
+	assert.equal(isCountableCodeFile("scripts/native-supervisor.mjs"), true);
 
 	assert.equal(isCountableCodeFile("docs/handoff-current.md"), false);
 	assert.equal(isCountableCodeFile("public/rsa-root-cert-report.html"), false);

@@ -569,14 +569,14 @@ test("ConnWorker uses the run finishedAt timestamp when creating result activity
 	database.close();
 });
 
-test("ConnWorker mirrors global activity notifications to the optional activity notifier", async () => {
+test("ConnWorker sends global activity notifications to the optional activity notifier", async () => {
 	const runner = new FakeRunner();
 	const activityNotifications: string[] = [];
 	const { database, connStore, activityStore, worker } = await createWorkerWithOptions(runner, {
 		activityNotifications,
 	});
 	const conn = await connStore.create({
-		title: "Feishu Mirror",
+		title: "Activity Mirror",
 		prompt: "Summarize",
 		target: {
 			type: "task_inbox",
@@ -593,66 +593,8 @@ test("ConnWorker mirrors global activity notifications to the optional activity 
 	const activities = await activityStore.list();
 	assert.equal(activities.length, 1);
 	assert.deepEqual(activityNotifications, [
-		"Feishu Mirror completed\n执行模型：xiaomi-mimo-cn / mimo-v2.5-pro\n\nresult for Feishu Mirror",
+		"Activity Mirror completed\n执行模型：xiaomi-mimo-cn / mimo-v2.5-pro\n\nresult for Activity Mirror",
 	]);
-
-	database.close();
-});
-
-test("ConnWorker creates global activity for feishu targets too", async () => {
-	const runner = new FakeRunner();
-	const { database, connStore, runStore, activityStore, broadcasts, worker } = await createWorker(runner);
-	const conn = await connStore.create({
-		title: "Feishu Digest",
-		prompt: "Summarize",
-		target: {
-			type: "feishu_chat",
-			chatId: "chat-1",
-		},
-		schedule: {
-			kind: "once",
-			at: "2026-04-21T10:01:00.000Z",
-		},
-		now: new Date("2026-04-21T10:00:00.000Z"),
-	});
-
-	await worker.tick(new Date("2026-04-21T10:01:05.000Z"));
-
-	const runs = await runStore.listRunsForConn(conn.connId);
-	assert.equal(runs.length, 1);
-	assert.equal(runs[0].status, "running");
-	const activities = await activityStore.list();
-	assert.deepEqual(broadcasts, [
-		{
-			activityId: activities[0]?.activityId,
-			source: "conn",
-			sourceId: conn.connId,
-			runId: runs[0].runId,
-			kind: "conn_result",
-			title: "Feishu Digest completed",
-			createdAt: "2026-04-21T10:01:05.000Z",
-		},
-	]);
-	assert.deepEqual(
-		activities.map((activity) => ({
-			source: activity.source,
-			sourceId: activity.sourceId,
-			runId: activity.runId,
-			conversationId: activity.conversationId,
-			title: activity.title,
-			text: activity.text,
-		})),
-		[
-			{
-				source: "conn",
-				sourceId: conn.connId,
-				runId: runs[0].runId,
-				conversationId: undefined,
-				title: "Feishu Digest completed",
-				text: "执行模型：xiaomi-mimo-cn / mimo-v2.5-pro\n\nresult for Feishu Digest",
-			},
-		],
-	);
 
 	database.close();
 });

@@ -11,6 +11,7 @@ async function createProjectRootWithModelSettings(): Promise<string> {
 	await mkdir(join(root, ".pi", "skills"), { recursive: true });
 	await mkdir(join(root, ".pi"), { recursive: true });
 	await mkdir(join(root, "runtime", "pi-agent"), { recursive: true });
+	await mkdir(join(root, ".data", "agent"), { recursive: true });
 	await writeFile(
 		join(root, ".pi", "settings.json"),
 		JSON.stringify({
@@ -21,6 +22,11 @@ async function createProjectRootWithModelSettings(): Promise<string> {
 	);
 	await writeFile(
 		join(root, "runtime", "pi-agent", "models.json"),
+		JSON.stringify({ providers: {} }),
+		"utf8",
+	);
+	await writeFile(
+		join(root, ".data", "agent", "model-providers.json"),
 		JSON.stringify({
 			providers: {
 				"global-provider": {

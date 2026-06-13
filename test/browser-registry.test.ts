@@ -21,10 +21,43 @@ test("browser registry synthesizes the current default CDP instance when no expl
 			cdpHost: "172.31.250.10",
 			cdpPort: 9223,
 			guiUrl: "https://127.0.0.1:3901/",
-			profileLabel: "chrome-sidecar",
+			profileLabel: "native-chrome",
 			isDefault: true,
 		},
 	]);
+});
+
+test("browser registry is empty when the sidecar default is disabled and no CDP endpoint is configured", () => {
+	const registry = createBrowserRegistryFromEnv({
+		UGK_DISABLE_BROWSER_SIDECAR_DEFAULT: "true",
+	});
+
+	assert.equal(registry.defaultBrowserId, "");
+	assert.deepEqual(registry.list(), []);
+	assert.equal(registry.get("default"), undefined);
+	assert.deepEqual(registry.toJSON(), {
+		defaultBrowserId: "",
+		browsers: [],
+	});
+});
+
+test("browser registry keeps CDP available when Windows Core provides an explicit endpoint", () => {
+	const registry = createBrowserRegistryFromEnv({
+		UGK_DISABLE_BROWSER_SIDECAR_DEFAULT: "true",
+		WEB_ACCESS_CDP_HOST: "127.0.0.1",
+		WEB_ACCESS_CDP_PORT: "9222",
+	});
+
+	assert.equal(registry.defaultBrowserId, "default");
+	assert.deepEqual(registry.get("default"), {
+		browserId: "default",
+		name: "Default",
+		cdpHost: "127.0.0.1",
+		cdpPort: 9222,
+		guiUrl: "https://127.0.0.1:3901/",
+		profileLabel: "native-chrome",
+		isDefault: true,
+	});
 });
 
 test("browser registry accepts user-defined browser ids without assigning business meaning", () => {
@@ -84,4 +117,3 @@ test("browser registry rejects invalid and duplicate browser ids", () => {
 		/duplicate browserId: default/,
 	);
 });
-

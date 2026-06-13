@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 
-const teamApiTarget = process.env.TEAM_CONSOLE_API_TARGET ?? "http://127.0.0.1:3000";
+const teamApiTarget = process.env.TEAM_CONSOLE_API_TARGET ?? "http://127.0.0.1:8888";
 const backendProxy = () => ({
   target: teamApiTarget,
   changeOrigin: true,

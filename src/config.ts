@@ -17,9 +17,6 @@ export interface AppConfig {
 	connDataDir: string;
 	connDatabasePath: string;
 	backgroundDataDir: string;
-	feishuDataDir: string;
-	feishuConversationMapPath: string;
-	feishuSettingsPath: string;
 	teamRuntimeEnabled: boolean;
 	teamDataDir: string;
 	teamWorkerPollIntervalMs: number;
@@ -92,13 +89,9 @@ export function getAppConfig(projectRoot: string = process.cwd()): AppConfig {
 	const connDataDir = join(agentDataDir, "conn");
 	const connDatabasePath = process.env.CONN_DATABASE_PATH?.trim() || join(connDataDir, "conn.sqlite");
 	const backgroundDataDir = join(agentDataDir, "background");
-	const feishuDataDir = join(agentDataDir, "feishu");
-	const feishuConversationMapPath = join(feishuDataDir, "conversation-map.json");
-	const feishuSettingsPath = join(feishuDataDir, "settings.json");
-
 	return {
 		host: process.env.HOST ?? "127.0.0.1",
-		port: Number(process.env.PORT ?? "3000"),
+		port: Number(process.env.PORT ?? "8888"),
 		publicBaseUrl: normalizeConfiguredPublicBaseUrl(process.env.PUBLIC_BASE_URL),
 		projectRoot,
 		dataDir,
@@ -112,9 +105,6 @@ export function getAppConfig(projectRoot: string = process.cwd()): AppConfig {
 		connDataDir,
 		connDatabasePath,
 		backgroundDataDir,
-		feishuDataDir,
-		feishuConversationMapPath,
-		feishuSettingsPath,
 		teamRuntimeEnabled: process.env.TEAM_RUNTIME_ENABLED === "true",
 		teamDataDir: process.env.TEAM_DATA_DIR?.trim() || join(dataDir, "team"),
 		teamWorkerPollIntervalMs: Number(process.env.TEAM_WORKER_POLL_INTERVAL_MS ?? "3000"),

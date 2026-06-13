@@ -187,8 +187,8 @@
 
 ## 2026-06-08 — API source management workbench
 
-- **主题**: 新增 API 源管理界面和运行态自定义 provider 合同。`/playground/model-sources` 可查看 bundled/custom API 源、查看全局默认 / Agent profile / 后台 Conn 的有效使用绑定，并在同页修改可编辑对象的 provider/model。新增自定义源只保存 `apiKeyEnvVar`，拒绝明文 `apiKey`。
-- **影响范围**: `GET /v1/model-sources` 返回 provider inventory 与 usage inventory；`POST /v1/model-sources/providers` 写入运行态 `.data/agent/model-providers.json` 或 `UGK_MODEL_PROVIDERS_PATH`；`PATCH /v1/model-sources/usages/:usageKind/:usageId` 支持修改全局默认、自定义 Agent 默认模型和 Conn 显式模型绑定。模型配置、Agent session factory 和后台 session factory 现在读取 bundled + runtime custom 合并后的有效 registry。
+- **主题**: 新增 API 源管理界面和运行态 provider 合同。`/playground/model-sources` 可查看用户添加的 API 源、查看全局默认 / Agent profile / 后台 Conn 的有效使用绑定，并在同页修改可编辑对象的 provider/model。全新运行态初始没有 provider，新增 API 源时直接填写 `apiKey`，响应不回显明文 key。
+- **影响范围**: `GET /v1/model-sources` 返回用户 provider inventory 与 usage inventory；`POST /v1/model-sources/providers` 写入运行态 `.data/agent/model-providers.json` 或 `UGK_MODEL_PROVIDERS_PATH`；`PATCH /v1/model-sources/usages/:usageKind/:usageId` 支持修改全局默认、自定义 Agent 默认模型和 Conn 显式模型绑定。模型配置、Agent session factory 和后台 session factory 读取用户运行态 provider registry。
 - **对应入口**: `src/agent/model-provider-store.ts`、`src/agent/model-config.ts`、`src/agent/agent-session-factory.ts`、`src/agent/background-agent-session-factory.ts`、`src/routes/model-sources.ts`、`src/ui/model-sources-page.ts`、`docs/model-providers.md`、`test/model-provider-store.test.ts`、`test/model-sources-routes.test.ts`、`test/model-sources-page.test.ts`。
 
 ## 2026-06-07 — Discovery root default channel-set run policy

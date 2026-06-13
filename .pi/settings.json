@@ -1,6 +1,6 @@
 {
-  "defaultProvider": "deepseek",
-  "defaultModel": "deepseek-v4-pro",
+  "defaultProvider": "unknown",
+  "defaultModel": "unknown",
   "defaultThinkingLevel": "medium",
   "sessionDir": ".pi/sessions",
   "enableSkillCommands": true,

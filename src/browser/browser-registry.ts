@@ -22,17 +22,46 @@ const DEFAULT_BROWSER_ID = "default";
 const DEFAULT_CDP_HOST = "172.31.250.10";
 const DEFAULT_CDP_PORT = 9223;
 const DEFAULT_GUI_PORT = 3901;
-const DEFAULT_PROFILE_LABEL = "chrome-sidecar";
+const DEFAULT_PROFILE_LABEL = "native-chrome";
 
 export function isValidBrowserId(browserId: string): boolean {
 	return /^[a-z][a-z0-9-]{0,62}$/.test(browserId);
 }
 
 export function createBrowserRegistryFromEnv(env: BrowserRegistryEnv = process.env): BrowserRegistry {
+	if (env.WEB_ACCESS_BROWSER_PROVIDER?.trim().toLowerCase() === "disabled") {
+		return createDisabledBrowserRegistry();
+	}
 	const explicitInstances = parseBrowserInstancesJson(env.UGK_BROWSER_INSTANCES_JSON);
+	if (
+		explicitInstances.length === 0 &&
+		env.UGK_DISABLE_BROWSER_SIDECAR_DEFAULT?.trim().toLowerCase() === "true" &&
+		!env.WEB_ACCESS_CDP_HOST?.trim() &&
+		!env.WEB_ACCESS_CDP_PORT?.trim()
+	) {
+		return createDisabledBrowserRegistry();
+	}
 	const instances = explicitInstances.length > 0 ? explicitInstances : [createDefaultBrowserInstance(env)];
 	const defaultBrowserId = normalizeDefaultBrowserId(env.UGK_DEFAULT_BROWSER_ID, instances);
 	return createBrowserRegistry(instances, defaultBrowserId);
+}
+
+function createDisabledBrowserRegistry(): BrowserRegistry {
+	return {
+		defaultBrowserId: "",
+		list() {
+			return [];
+		},
+		get() {
+			return undefined;
+		},
+		toJSON() {
+			return {
+				defaultBrowserId: "",
+				browsers: [],
+			};
+		},
+	};
 }
 
 export function createBrowserRegistry(
@@ -173,4 +202,3 @@ function parsePort(value: unknown, fieldName: string): number {
 	}
 	return parsed;
 }
-

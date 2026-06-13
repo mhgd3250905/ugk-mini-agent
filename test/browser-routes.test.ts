@@ -52,6 +52,25 @@ test("GET /v1/browsers returns configured browser instances", async () => {
 	}
 });
 
+test("GET /v1/browsers returns an empty catalog when no native CDP endpoint is configured", async () => {
+	const app = await buildServer({
+		browserRegistry: createBrowserRegistryFromEnv({
+			UGK_DISABLE_BROWSER_SIDECAR_DEFAULT: "true",
+		}),
+	});
+
+	try {
+		const response = await app.inject({ method: "GET", url: "/v1/browsers" });
+		assert.equal(response.statusCode, 200);
+		assert.deepEqual(response.json(), {
+			defaultBrowserId: "",
+			browsers: [],
+		});
+	} finally {
+		await app.close();
+	}
+});
+
 test("GET /v1/browsers/:browserId/status returns CDP runtime status", async () => {
 	const requestedUrls: string[] = [];
 	const usageRequests: string[] = [];

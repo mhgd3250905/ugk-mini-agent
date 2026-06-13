@@ -19,14 +19,6 @@ export type ConnTarget =
 	| {
 			type: "conversation";
 			conversationId: string;
-	  }
-	| {
-			type: "feishu_chat";
-			chatId: string;
-	  }
-	| {
-			type: "feishu_user";
-			openId: string;
 	  };
 
 export type ConnSchedule =

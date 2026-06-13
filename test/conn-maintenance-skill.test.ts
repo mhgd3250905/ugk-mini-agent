@@ -11,7 +11,8 @@ test("conn-maintenance skill requires dry-run and confirmation before cleanup", 
 	assert.match(skill, /--dry-run/);
 	assert.match(skill, /请确认是否执行正式清理/);
 	assert.match(skill, /maintain-conn-db\.mjs/);
-	assert.match(skill, /conn-pre-maintenance-\$\(date \+%Y%m%d-%H%M%S\)/);
+	assert.match(skill, /Get-Date -Format "yyyyMMdd-HHmmss"/);
+	assert.match(skill, /conn-pre-maintenance-\$stamp/);
 	assert.match(skill, /runs `VACUUM` and `PRAGMA wal_checkpoint\(TRUNCATE\)` by default/);
 	assert.match(skill, /conn_run_events/);
 	assert.match(skill, /Never delete `conn\.sqlite`/);

@@ -43,7 +43,7 @@ description: Use when the user asks to view, list, create, configure, switch, ve
   "agentId": "research",
   "name": "研究 Agent",
   "description": "用于资料研究、查证和整理。",
-  "initialSystemSkillNames": ["web-access"]
+  "initialSystemSkillNames": ["project-planning"]
 }
 ```
 

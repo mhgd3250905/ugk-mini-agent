@@ -73,14 +73,6 @@ export type ConnTargetBody =
 	| {
 			type: "conversation";
 			conversationId: string;
-	  }
-	| {
-			type: "feishu_chat";
-			chatId: string;
-	  }
-	| {
-			type: "feishu_user";
-			openId: string;
 	  };
 
 export type ConnScheduleBody =
@@ -407,8 +399,6 @@ export interface CleanupDebugResponseBody {
 		byType: {
 			task_inbox: number;
 			conversation: number;
-			feishu_chat: number;
-			feishu_user: number;
 			invalid: number;
 		};
 	};

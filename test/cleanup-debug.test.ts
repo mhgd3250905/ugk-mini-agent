@@ -109,8 +109,6 @@ test("GET /v1/debug/cleanup reports legacy conn cleanup signals", async () => {
 				byType: {
 					task_inbox: 1,
 					conversation: 1,
-					feishu_chat: 0,
-					feishu_user: 0,
 					invalid: 1,
 				},
 			},

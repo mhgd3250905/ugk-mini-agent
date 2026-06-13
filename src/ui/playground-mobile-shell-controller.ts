@@ -9,7 +9,6 @@ export function getPlaygroundMobileShellElementRefsScript(): string {
 		const mobileMenuLibraryButton = document.getElementById("mobile-menu-library-button");
 		const mobileMenuTaskInboxButton = document.getElementById("mobile-menu-task-inbox-button");
 		const mobileMenuModelConfigButton = document.getElementById("mobile-menu-model-config-button");
-		const mobileMenuFeishuSettingsButton = document.getElementById("mobile-menu-feishu-settings-button");
 		const mobileMenuBrowserWorkbenchButton = document.getElementById("mobile-menu-browser-workbench-button");
 		const mobileTaskInboxUnreadBadge = document.getElementById("mobile-task-inbox-unread-badge");
 		const mobileMenuConnButton = document.getElementById("mobile-menu-conn-button");
@@ -86,10 +85,6 @@ export function getPlaygroundMobileShellEventHandlersScript(): string {
 		mobileMenuModelConfigButton.addEventListener("click", () => {
 			closeMobileOverflowMenu();
 			void openModelConfigDialog(mobileOverflowMenuButton);
-		});
-		mobileMenuFeishuSettingsButton.addEventListener("click", () => {
-			closeMobileOverflowMenu();
-			void openFeishuSettingsDialog(mobileOverflowMenuButton);
 		});
 		mobileMenuBrowserWorkbenchButton.addEventListener("click", () => {
 			closeMobileOverflowMenu();

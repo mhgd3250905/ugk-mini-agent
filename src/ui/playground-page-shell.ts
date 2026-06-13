@@ -238,15 +238,6 @@ ${input.playgroundScript ?? ""}</script>`;
 							</span>
 							<span>API 源管理</span>
 						</a>
-						<button id="mobile-menu-feishu-settings-button" class="mobile-overflow-menu-item" type="button" role="menuitem">
-							<span class="mobile-overflow-menu-item-icon" aria-hidden="true">
-								<svg viewBox="0 0 24 24" fill="none">
-									<path d="M5 6h14v10H8l-3 3V6Z" stroke-width="1.8" stroke-linejoin="round" />
-									<path d="M9 10h6M9 13h4" stroke-width="1.8" stroke-linecap="round" />
-								</svg>
-							</span>
-							<span>飞书设置</span>
-						</button>
 						<button id="mobile-menu-browser-workbench-button" class="mobile-overflow-menu-item" type="button" role="menuitem">
 							<span class="mobile-overflow-menu-item-icon" aria-hidden="true">
 								<svg viewBox="0 0 24 24" fill="none">
@@ -322,12 +313,8 @@ ${input.playgroundScript ?? ""}</script>`;
 							<span>查清谁在用哪个源</span>
 							<strong>API 源管理</strong>
 						</a>
-						<button id="open-feishu-settings-button" class="telemetry-card telemetry-action" type="button" role="menuitem">
-							<span>别再 SSH 改机器人配置</span>
-							<strong>飞书设置</strong>
-						</button>
 						<button id="open-browser-workbench-button" class="telemetry-card telemetry-action" type="button" role="menuitem">
-							<span>别再 SSH 开浏览器面板</span>
+							<span>查看本机浏览器连接</span>
 							<strong>Chrome 工作台</strong>
 						</button>
 					</div>
@@ -473,55 +460,6 @@ ${input.playgroundScript ?? ""}</script>`;
 				<footer class="model-config-actions">
 					<button id="model-config-test" type="button">测试连接</button>
 					<button id="model-config-save" type="button">验证并保存</button>
-				</footer>
-			</section>
-		</div>
-		<div id="feishu-settings-dialog" class="model-config-dialog" aria-hidden="true" inert hidden>
-			<section class="model-config-panel" role="dialog" aria-modal="true" aria-labelledby="feishu-settings-title">
-				<header class="model-config-head">
-					<div>
-						<strong id="feishu-settings-title">飞书设置</strong>
-						<span id="feishu-settings-current">等待配置</span>
-					</div>
-					<button id="feishu-settings-close" class="model-config-close" type="button" aria-label="关闭飞书设置">×</button>
-				</header>
-				<div class="model-config-body">
-					<label class="model-config-field" for="feishu-settings-enabled">
-						<span>启用飞书</span>
-						<select id="feishu-settings-enabled">
-							<option value="true">启用</option>
-							<option value="false">停用</option>
-						</select>
-					</label>
-					<label class="model-config-field" for="feishu-settings-app-id">
-						<span>App ID</span>
-						<input id="feishu-settings-app-id" type="text" autocomplete="off" placeholder="cli_xxx" />
-					</label>
-					<label class="model-config-field" for="feishu-settings-app-secret">
-						<span>App Secret</span>
-						<input id="feishu-settings-app-secret" type="password" autocomplete="new-password" placeholder="留空表示不修改" />
-					</label>
-					<label class="model-config-field" for="feishu-settings-api-base">
-						<span>API Base</span>
-						<input id="feishu-settings-api-base" type="text" autocomplete="off" placeholder="https://open.feishu.cn/open-apis" />
-					</label>
-					<label class="model-config-field" for="feishu-settings-allowed-chat-ids">
-						<span>允许写入的 chat_id</span>
-						<textarea id="feishu-settings-allowed-chat-ids" rows="2" placeholder="多个用逗号或换行分隔；留空表示不限制"></textarea>
-					</label>
-					<label class="model-config-field" for="feishu-settings-activity-open-ids">
-						<span>后台通知 open_id</span>
-						<textarea id="feishu-settings-activity-open-ids" rows="2" placeholder="多个用逗号或换行分隔"></textarea>
-					</label>
-					<label class="model-config-field" for="feishu-settings-activity-chat-ids">
-						<span>后台通知 chat_id</span>
-						<textarea id="feishu-settings-activity-chat-ids" rows="2" placeholder="多个用逗号或换行分隔"></textarea>
-					</label>
-					<div id="feishu-settings-status" class="model-config-status" role="status" aria-live="polite"></div>
-				</div>
-				<footer class="model-config-actions">
-					<button id="feishu-settings-test" type="button">发送测试消息</button>
-					<button id="feishu-settings-save" type="button">保存并重连</button>
 				</footer>
 			</section>
 		</div>

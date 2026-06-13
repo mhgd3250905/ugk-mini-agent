@@ -195,6 +195,7 @@ function canvasTaskToPlan(task: TeamCanvasTask, boundInputs: TeamTaskBoundInput[
 function assertInputPortsSatisfied(task: TeamCanvasTask, boundInputs: TeamTaskBoundInput[]): void {
 	const inputPorts = task.workUnit.inputPorts ?? [];
 	if (inputPorts.length === 0) return;
+	if (boundInputs.length === 0 && !inputPorts.some(port => port.type === "worklist-results")) return;
 	const boundPortIds = new Set(boundInputs.map(input => input.inputPortId));
 	const missingPorts = inputPorts.filter(port => !boundPortIds.has(port.id));
 	if (missingPorts.length === 0) return;
