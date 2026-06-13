@@ -41,6 +41,13 @@ test("browser registry is empty when the sidecar default is disabled and no CDP 
 	});
 });
 
+test("browser registry is empty by default for Windows Core native runtime", () => {
+	const registry = createBrowserRegistryFromEnv({});
+
+	assert.equal(registry.defaultBrowserId, "");
+	assert.deepEqual(registry.list(), []);
+});
+
 test("browser registry keeps CDP available when Windows Core provides an explicit endpoint", () => {
 	const registry = createBrowserRegistryFromEnv({
 		UGK_DISABLE_BROWSER_SIDECAR_DEFAULT: "true",

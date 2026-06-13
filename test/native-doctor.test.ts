@@ -109,11 +109,13 @@ test("native doctor resolves Git Bash next to git.exe when Git is installed outs
 });
 
 test("native doctor accepts bundled portable Git Bash", async () => {
-	const portableBash = `${projectRoot}\\.data\\tools\\git\\bin\\bash.exe`;
+	const portableBash = "D:\\ugk-tools\\git\\bin\\bash.exe";
 	const report = await createNativeDoctorReport({
 		projectRoot,
 		nodeVersion: "v24.15.0",
-		env: {},
+		env: {
+			UGK_TOOLS_DIR: "D:\\ugk-tools",
+		},
 		fileExists: async (path: string) =>
 			path.endsWith("node_modules") ||
 			path.endsWith("apps\\team-console\\node_modules") ||

@@ -77,7 +77,7 @@ runtime/playground/app.js
 
 Then refresh the browser. Restart the local service only when externalized mode was just enabled or disabled.
 
-This refresh-only workflow applies only to files under `runtime/playground/`. If you edit `src/ui/playground-styles.ts`, `src/ui/playground-page-shell.ts`, `src/ui/playground.ts`, or any other `src/ui/` module, restart `ugk-pi` or use the existing `npm run dev` watch process so Node loads the changed TypeScript modules.
+This refresh-only workflow applies only to files under `runtime/playground/`. If you edit `src/ui/playground-styles.ts`, `src/ui/playground-page-shell.ts`, `src/ui/playground.ts`, or any other `src/ui/` module, restart the Windows Core service with `npm run native:start` or use the existing `npm run dev` watch process so Node loads the changed TypeScript modules.
 
 ## Reset
 

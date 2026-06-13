@@ -11,6 +11,11 @@ function localBaseUrl(port) {
 	return `http://127.0.0.1:${port}`;
 }
 
+function resolveRuntimeDir(value, fallback) {
+	const trimmed = value?.trim();
+	return trimmed || fallback;
+}
+
 function npmCommand() {
 	return process.platform === "win32" ? "cmd.exe" : "npm";
 }
@@ -35,17 +40,17 @@ function getEnvKeyCaseInsensitive(env, name) {
 	return Object.keys(env).find((key) => key.toLowerCase() === name.toLowerCase());
 }
 
-function prependLocalToolPaths(env, projectRoot) {
+function prependLocalToolPaths(env, toolsDir) {
 	const pathKey = getEnvKeyCaseInsensitive(env, "PATH") ?? (process.platform === "win32" ? "Path" : "PATH");
 	const existingPath = env[pathKey] ?? "";
-	const localGitBin = join(projectRoot, ".data", "tools", "git", "bin");
+	const localGitBin = join(toolsDir, "git", "bin");
 	return {
 		...env,
 		[pathKey]: existingPath ? `${localGitBin}${delimiter}${existingPath}` : localGitBin,
 	};
 }
 
-function buildProcessEnv(env, projectRoot) {
+function buildProcessEnv(env, toolsDir) {
 	const base = pickEnvCaseInsensitive(env, [
 		"SystemRoot",
 		"ComSpec",
@@ -69,7 +74,7 @@ function buildProcessEnv(env, projectRoot) {
 			base[key] = value;
 		}
 	}
-	return prependLocalToolPaths(base, projectRoot);
+	return prependLocalToolPaths(base, toolsDir);
 }
 
 export function buildNativeRuntimeConfig(options = {}) {
@@ -78,22 +83,31 @@ export function buildNativeRuntimeConfig(options = {}) {
 	const serverPort = parsePort(env.PORT, DEFAULT_SERVER_PORT);
 	const publicBaseUrl = env.PUBLIC_BASE_URL?.trim() || localBaseUrl(serverPort);
 	const command = npmCommand();
+	const dataDir = resolveRuntimeDir(env.UGK_DATA_DIR, join(projectRoot, ".data"));
+	const logDir = resolveRuntimeDir(env.UGK_LOG_DIR, join(projectRoot, "logs", "native"));
+	const toolsDir = resolveRuntimeDir(env.UGK_TOOLS_DIR, join(dataDir, "tools"));
 
 	const nativeEnv = {
-		...buildProcessEnv(env, projectRoot),
+		...buildProcessEnv(env, toolsDir),
 		HOST: env.HOST?.trim() || "127.0.0.1",
 		PORT: String(serverPort),
 		PUBLIC_BASE_URL: publicBaseUrl,
+		UGK_DATA_DIR: dataDir,
+		UGK_LOG_DIR: logDir,
+		UGK_TOOLS_DIR: toolsDir,
 		TEAM_RUNTIME_ENABLED: env.TEAM_RUNTIME_ENABLED?.trim() || "true",
 		TEAM_USE_MOCK_RUNNER: env.TEAM_USE_MOCK_RUNNER?.trim() || "false",
 		FEISHU_ENABLED: "false",
 		UGK_DISABLE_BROWSER_SIDECAR_DEFAULT: env.UGK_DISABLE_BROWSER_SIDECAR_DEFAULT?.trim() || "true",
-		UGK_MODEL_SETTINGS_PATH: env.UGK_MODEL_SETTINGS_PATH?.trim() || join(projectRoot, ".data", "agent", "model-settings.json"),
+		UGK_MODEL_SETTINGS_PATH: env.UGK_MODEL_SETTINGS_PATH?.trim() || join(dataDir, "agent", "model-settings.json"),
 		SEARXNG_BASE_URL: env.SEARXNG_BASE_URL?.trim() || "",
 	};
 
 	return {
 		projectRoot,
+		dataDir,
+		logDir,
+		toolsDir,
 		server: {
 			port: serverPort,
 			url: publicBaseUrl,

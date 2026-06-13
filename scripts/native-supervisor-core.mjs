@@ -24,7 +24,7 @@ export function createNativeSupervisorPlan(options = {}) {
 		projectRoot,
 		env: options.env ?? process.env,
 	});
-	const logDir = join(projectRoot, "logs", "native");
+	const logDir = config.logDir;
 	const env = config.env;
 
 	return {

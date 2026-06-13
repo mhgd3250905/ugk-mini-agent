@@ -226,7 +226,7 @@ The plan must be usable by an agent that has never seen the project. Include:
 
 For UI or browser-visible work, the plan must also include:
 
-- The exact local URL or route to verify, for example `http://127.0.0.1:5174/`.
+- The exact local URL or route to verify, for example `http://127.0.0.1:8888/playground/team`.
 - The real DOM selectors, ARIA labels, or user actions that exercise the changed behavior.
 - The expected before/after observable evidence: bounding rects, computed styles, data attributes, network status, screenshots, canvas pixels, or visible state changes.
 - The protected UI evidence that must remain unchanged, including class names, data attributes, visible text that must stay absent/present, and persisted localStorage keys when relevant.

@@ -61,4 +61,6 @@ npm run team-console:test
 - `.data/agents`：自定义 agent profile
 - `.data/team`：Team / Canvas run state
 
+可通过 `UGK_DATA_DIR`、`UGK_LOG_DIR`、`UGK_TOOLS_DIR` 覆盖数据、日志和本地工具缓存目录；不设置时使用项目内默认路径。
+
 本地配置、运行数据、日志、生成报告和模型密钥不进入版本库。

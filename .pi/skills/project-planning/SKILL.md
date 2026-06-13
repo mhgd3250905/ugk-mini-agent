@@ -1,6 +1,6 @@
 ---
 name: project-planning
-description: 用于 ugk-pi 项目的快速上手、/init、方案收敛和实施前规划。适用于需要先搞清楚项目现状、边界、目录职责、运行方式和后续执行顺序的任务。
+description: 用于 ugk-mini-agent / ugk-claw-core-win Windows Core 项目的快速上手、/init、方案收敛和实施前规划。适用于需要先搞清楚项目现状、边界、目录职责、运行方式和后续执行顺序的任务。
 ---
 
 # Project Planning
@@ -41,12 +41,13 @@ description: 用于 ugk-pi 项目的快速上手、/init、方案收敛和实施
 
 在没有更新信息前，先按下面这些事实理解项目：
 
-- 这是一个基于 `pi-coding-agent` 的自定义 HTTP agent 原型，不是完整业务产品
-- 当前主线是：`自定义 agent + HTTP API + playground + 后续 IM 接入`
+- 这是 Windows 本机部署版 UGK Mini Agent / UGK CLAW Core
+- 当前主线是：`Fastify 主服务 + Playground + Team Console/Canvas + Conn/Team worker`
+- 默认单端口入口是 `http://127.0.0.1:8888`，Team Console / Canvas 是 `http://127.0.0.1:8888/playground/team`
 - 核心入口：
   - `GET /healthz`
   - `GET /playground`
-  - `GET /v1/debug/skills`
+  - `GET /playground/team`
   - `POST /v1/chat`
   - `POST /v1/chat/stream`
 - 核心代码：

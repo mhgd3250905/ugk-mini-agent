@@ -19,7 +19,7 @@ interface BrowserInstanceInput {
 }
 
 const DEFAULT_BROWSER_ID = "default";
-const DEFAULT_CDP_HOST = "172.31.250.10";
+const DEFAULT_CDP_HOST = "127.0.0.1";
 const DEFAULT_CDP_PORT = 9223;
 const DEFAULT_GUI_PORT = 3901;
 const DEFAULT_PROFILE_LABEL = "native-chrome";
@@ -35,7 +35,6 @@ export function createBrowserRegistryFromEnv(env: BrowserRegistryEnv = process.e
 	const explicitInstances = parseBrowserInstancesJson(env.UGK_BROWSER_INSTANCES_JSON);
 	if (
 		explicitInstances.length === 0 &&
-		env.UGK_DISABLE_BROWSER_SIDECAR_DEFAULT?.trim().toLowerCase() === "true" &&
 		!env.WEB_ACCESS_CDP_HOST?.trim() &&
 		!env.WEB_ACCESS_CDP_PORT?.trim()
 	) {

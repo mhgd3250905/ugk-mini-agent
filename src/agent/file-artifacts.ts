@@ -178,8 +178,11 @@ function buildFileResponseInstruction(): string {
 	const publicBaseUrl = normalizePublicBaseUrl();
 	return [
 		"<file_response_protocol>",
-		"Local workspace artifact paths such as /app/runtime/..., /app/public/..., and file:///app/... are valid internal references for tools.",
-		"When a local artifact needs to be opened by the user, the runtime will translate those supported local paths to a host-reachable HTTP URL automatically.",
+		"Use ARTIFACT_PUBLIC_DIR for final user-facing files when that environment variable is available.",
+		"Use ARTIFACT_PUBLIC_BASE_URL for final user-facing artifact links when that environment variable is available.",
+		"Use project-relative paths under runtime/ only when you are explicitly working on runtime assets, not as a general artifact delivery location.",
+		"Legacy container absolute paths may be translated for compatibility, but do not create new final answers around those paths.",
+		"When a local artifact needs to be opened by the user, provide a host-reachable HTTP URL.",
 		`Current user-facing base URL: ${publicBaseUrl}.`,
 		"Use this current base URL for service, playground, and local-file links unless the user explicitly asks for another deployment.",
 		"Do not mention Tencent Cloud, Aliyun, or another deployment public URL just because it exists in repository documentation.",
@@ -256,7 +259,7 @@ function normalizePublicBaseUrl(publicBaseUrl?: string): string {
 	const configured = String(publicBaseUrl || process.env.PUBLIC_BASE_URL || "").trim();
 	const baseUrl = configured && configured.toLowerCase() !== "auto"
 		? configured
-		: `http://127.0.0.1:${process.env.PORT || "3000"}`;
+		: `http://127.0.0.1:${process.env.PORT || "8888"}`;
 	return baseUrl.replace(
 		/\/+$/,
 		"",

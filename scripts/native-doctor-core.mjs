@@ -45,7 +45,7 @@ function isSupportedGitBash(path) {
 	return normalized.endsWith("\\git\\bin\\bash.exe") && !normalized.includes("\\windows\\system32\\") && !normalized.includes("\\windowsapps\\");
 }
 
-async function findGitBash({ projectRoot, findExecutable, fileExists }) {
+async function findGitBash({ toolsDir, findExecutable, fileExists }) {
 	const fromPath = await findExecutable("bash");
 	if (fromPath && isSupportedGitBash(fromPath)) {
 		return fromPath;
@@ -53,7 +53,7 @@ async function findGitBash({ projectRoot, findExecutable, fileExists }) {
 	const gitPath = await findExecutable("git");
 	const fromGitPath = gitPath ? resolve(dirname(gitPath), "..", "bin", "bash.exe") : undefined;
 	const candidates = [
-		join(projectRoot, ".data", "tools", "git", "bin", "bash.exe"),
+		join(toolsDir, "git", "bin", "bash.exe"),
 		...(fromGitPath ? [fromGitPath] : []),
 		"C:\\Program Files\\Git\\bin\\bash.exe",
 		"C:\\Program Files (x86)\\Git\\bin\\bash.exe",
@@ -84,7 +84,7 @@ export async function createNativeDoctorReport(options = {}) {
 	const config = buildNativeRuntimeConfig({ projectRoot, env });
 	const nodeVersion = options.nodeVersion ?? process.version;
 
-	const bashPath = await findGitBash({ projectRoot, findExecutable, fileExists });
+	const bashPath = await findGitBash({ toolsDir: config.toolsDir, findExecutable, fileExists });
 	const pythonPath = await findExecutable("python");
 	const checks = [
 		check("Node.js 22+", isNodeSupported(nodeVersion), `current ${nodeVersion}`),

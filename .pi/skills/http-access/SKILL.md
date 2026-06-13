@@ -29,12 +29,6 @@ allowed-tools: Bash
 
 ## 执行方式
 
-统一调用脚本：
-
-```bash
-node /app/.pi/skills/http-access/scripts/http_access.mjs <command> --url <url>
-```
-
 Windows native / 后台任务优先使用环境变量提供的脚本路径：
 
 ```bash
@@ -46,6 +40,8 @@ node "$UGK_HTTP_ACCESS_SCRIPT" <command> --url <url>
 ```bash
 node .pi/skills/http-access/scripts/http_access.mjs <command> --url <url>
 ```
+
+不要优先使用容器绝对路径；Windows Core 运行时不依赖容器内项目根目录。
 
 ## 子命令
 

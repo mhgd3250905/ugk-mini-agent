@@ -122,3 +122,19 @@ test("agent profile ops dispatch dry-run resolves legacy subagents explicitly", 
 	assert.equal(payload.targetId, "scout");
 	assert.equal(payload.status, "dry-run");
 });
+
+test("agent profile ops current command falls back to Windows Core port 8888", async () => {
+	const { stdout } = await execFileAsync(process.execPath, [SCRIPT_PATH, "current"], {
+		cwd: process.cwd(),
+		windowsHide: true,
+		env: {
+			...process.env,
+			PORT: "",
+			PUBLIC_BASE_URL: "",
+			UGK_INTERNAL_BASE_URL: "",
+		},
+	});
+	const payload = JSON.parse(stdout) as { baseUrl: string };
+
+	assert.equal(payload.baseUrl, "http://127.0.0.1:8888");
+});

@@ -7,7 +7,9 @@ type NativeSupervisorStep = { name: string };
 test("native supervisor plan initializes runtime deps before starting core processes", () => {
 	const plan = createNativeSupervisorPlan({
 		projectRoot: "E:\\AII\\ugk-mini-agent",
-		env: {},
+		env: {
+			UGK_LOG_DIR: "D:\\ugk-logs",
+		},
 	});
 
 	assert.deepEqual(
@@ -27,6 +29,7 @@ test("native supervisor plan initializes runtime deps before starting core proce
 	assert.equal(plan.steps[2]?.blocking, false);
 	assert.equal(plan.steps[2]?.env.PORT, "8888");
 	assert.equal("TEAM_CONSOLE_API_TARGET" in (plan.steps[2]?.env ?? {}), false);
-	assert.match(plan.steps[1]?.logFile ?? "", /logs[\\/]native[\\/]ugk-mini-agent-team-console-build\.log$/);
-	assert.match(plan.steps[2]?.logFile ?? "", /logs[\\/]native[\\/]ugk-mini-agent-server\.log$/);
+	assert.equal(plan.logDir, "D:\\ugk-logs");
+	assert.match(plan.steps[1]?.logFile ?? "", /D:\\ugk-logs[\\/]ugk-mini-agent-team-console-build\.log$/);
+	assert.match(plan.steps[2]?.logFile ?? "", /D:\\ugk-logs[\\/]ugk-mini-agent-server\.log$/);
 });

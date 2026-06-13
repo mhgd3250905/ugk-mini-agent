@@ -114,8 +114,9 @@ Conn 支持选择执行 Agent。自然语言配置时不要发明新字段，直
 不要把跨 run 状态写到：
 
 - `/tmp`
-- `/app/runtime`
-- `/app/runtime/skills-user`
+- `runtime/`
+- `runtime/skills-user/`
+- legacy container runtime paths
 - `OUTPUT_DIR`
 
 `runtime/skills-user` 只放技能代码和技能资源，不是数据库。`OUTPUT_DIR` 只放用户可见的本次结果，不要塞内部状态。

@@ -16,9 +16,10 @@ async function createLogStream(logFile) {
 }
 
 async function ensureRuntimeDirectories() {
+	const dataDir = plan.config.dataDir;
 	await Promise.all([
-		mkdir(join(plan.projectRoot, ".data", "agent"), { recursive: true }),
-		mkdir(join(plan.projectRoot, ".data", "agents"), { recursive: true }),
+		mkdir(join(dataDir, "agent"), { recursive: true }),
+		mkdir(join(dataDir, "agents"), { recursive: true }),
 		mkdir(join(plan.projectRoot, "runtime", "skills-user"), { recursive: true }),
 	]);
 }

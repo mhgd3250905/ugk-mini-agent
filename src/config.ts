@@ -78,7 +78,7 @@ export function getAppConfig(projectRoot: string = process.cwd()): AppConfig {
 		loadApiKeyFromApiTxt(projectRoot, "XIAOMI_MIMO_API_KEY", "小米api.txt");
 		loadApiKeyFromApiTxt(projectRoot, "ALI_CODEPLAN_API_KEY", "阿里codeplan-api-2026-5.txt");
 	}
-	const dataDir = join(projectRoot, ".data");
+	const dataDir = process.env.UGK_DATA_DIR?.trim() || join(projectRoot, ".data");
 	const agentDataDir = join(dataDir, "agent");
 	const agentsDataDir = join(dataDir, "agents");
 	const agentSessionsDir = join(agentDataDir, "sessions");
