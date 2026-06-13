@@ -16,6 +16,13 @@ git show <commit>:docs/change-log.md
 - 不记录长命令输出、临时排障过程、一次性 UI 微调直播和旧环境运行笔记。
 - 当前运行事实以 `README.md`、`.env.native.example`、`docs/native-windows-core.md` 和真实代码为准。
 
+## 2026-06-13 - Agent 级 MCP 管理
+
+- **主题**: 新增 Agent 作用域 MCP server 管理和运行时注入。MCP server 和 Skill 一样属于 Agent profile，Chat、Conn 和 Team Task 使用某个 Agent profile 时只获得该 profile 已启用的 MCP。
+- **影响范围**: Agent profile 运行态目录、Agent 管理台、`/v1/agents/:agentId/mcp/servers` API、前台/后台 Agent session 工厂、Team/Conn profile 执行链路。
+- **配置入口**: `/playground/agents` 的 MCP 面板，运行态文件 `.data/agent/mcp/servers.json` 和 `.data/agents/<agentId>/mcp/servers.json`。
+- **验证建议**: `node --test --test-concurrency=1 --import tsx test\agent-mcp-catalog.test.ts test\agent-mcp-client-manager.test.ts test\agent-mcp-tool.test.ts test\agent-mcp-routes.test.ts test\agent-mcp-page-ui.test.ts`、`npx tsc --noEmit`、在 Agent 管理台测试本地 stdio MCP server。
+
 ## 2026-06-13 - Windows Core 配置化收口
 
 - **主题**: 清理旧版部署口径，Windows 本机部署默认单端口由 `.env.native` / `.env.native.example` 驱动，Team Console / Canvas 通过主服务 `/playground/team` 同源提供。

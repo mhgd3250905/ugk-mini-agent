@@ -18,45 +18,45 @@
 
 ## Phase 2: Backend Foundation
 
-- [ ] Add `mcpCatalogPath` to `AgentProfile`.
-- [ ] Add agent scoped MCP catalog module.
-- [ ] Add catalog tests for CRUD, normalization, and isolation.
-- [ ] Add official MCP client dependency.
-- [ ] Add stdio MCP client manager.
-- [ ] Add client manager tests for list/call/timeout/cleanup.
-- [ ] Add `mcp` proxy tool.
-- [ ] Add proxy tool tests.
+- [x] Add `mcpCatalogPath` to `AgentProfile`.
+- [x] Add agent scoped MCP catalog module.
+- [x] Add catalog tests for CRUD, normalization, and isolation.
+- [x] Add official MCP client dependency.
+- [x] Add stdio MCP client manager.
+- [x] Add client manager tests for list/call/timeout/cleanup.
+- [x] Add `mcp` proxy tool.
+- [x] Add proxy tool tests.
 
 ## Phase 3: Runtime Integration
 
-- [ ] Add enabled MCP servers to `AgentTemplate` and `ResolvedBackgroundAgentSnapshot`.
-- [ ] Include MCP server config in snapshot signature.
-- [ ] Inject `mcp` proxy tool into foreground Chat sessions.
-- [ ] Inject `mcp` proxy tool into Conn background sessions.
-- [ ] Inject `mcp` proxy tool into Team role sessions.
-- [ ] Add tests proving different agent profiles receive isolated MCP lists.
+- [x] Add enabled MCP servers to `AgentTemplate` and `ResolvedBackgroundAgentSnapshot`.
+- [x] Include MCP server config in snapshot signature.
+- [x] Inject `mcp` proxy tool into foreground Chat sessions.
+- [x] Inject `mcp` proxy tool into Conn background sessions.
+- [x] Inject `mcp` proxy tool into Team role sessions.
+- [x] Add tests proving different agent profiles receive isolated MCP lists.
 
 ## Phase 4: API and UI
 
-- [ ] Add scoped MCP API routes under `/v1/agents/:agentId/mcp/servers`.
-- [ ] Add route tests for CRUD, unknown agent, locks, test connection, and tools list.
-- [ ] Register routes in `src/server.ts`.
-- [ ] Add MCP management panel to `/playground/agents`.
-- [ ] Add UI static tests for MCP panel and API wiring.
+- [x] Add scoped MCP API routes under `/v1/agents/:agentId/mcp/servers`.
+- [x] Add route tests for CRUD, unknown agent, locks, test connection, and tools list.
+- [x] Register routes in `src/server.ts`.
+- [x] Add MCP management panel to `/playground/agents`.
+- [x] Add UI static tests for MCP panel and API wiring.
 
 ## Phase 5: Documentation and Verification
 
-- [ ] Document MCP setup in README and Windows native docs.
-- [ ] Validate local `ugk-qr-scan` server through Agent 管理台.
-- [ ] Validate agent can call `ocr_recognize` through the `mcp` proxy tool.
-- [ ] Run targeted MCP tests.
-- [ ] Run agent/chat/conn/team regression tests.
-- [ ] Run `npx tsc --noEmit`.
-- [ ] Run `git diff --check`.
-- [ ] Confirm no local MCP path is hardcoded in runtime defaults.
+- [x] Document MCP setup in README and Windows native docs.
+- [x] Validate local `ugk-qr-scan` server through stdio MCP using the preloaded OCR startup command.
+- [x] Validate agent can call `ocr_recognize` through the `mcp` proxy tool path.
+- [x] Run targeted MCP tests.
+- [x] Run agent/chat/conn/team regression tests.
+- [x] Run `npx tsc --noEmit`.
+- [x] Run `git diff --check`.
+- [x] Confirm no local MCP path is hardcoded in runtime defaults.
 
 ## Phase 6: Release
 
-- [ ] Commit each implementation phase with focused messages.
+- [x] Commit each implementation phase with focused messages.
 - [ ] Push implementation to remote.
 - [ ] After user validation, tag stable MCP version.

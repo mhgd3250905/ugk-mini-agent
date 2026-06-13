@@ -159,6 +159,9 @@ Agent 作用域路径：将 `/v1/chat` 替换为 `/v1/agents/:agentId/chat`。
 | `PATCH` | `/v1/agents/:agentId` | 更新 Agent |
 | `POST` | `/v1/agents/:agentId/archive` | 归档 Agent |
 | `GET/POST/DELETE/PATCH` | `/v1/agents/:agentId/skills` | 技能管理 |
+| `GET/POST/PATCH/DELETE` | `/v1/agents/:agentId/mcp/servers` | MCP server 管理 |
+| `POST` | `/v1/agents/:agentId/mcp/servers/:serverId/test` | 测试 MCP 连接 |
+| `GET` | `/v1/agents/:agentId/mcp/servers/:serverId/tools` | 查看 MCP 工具 |
 | `GET/PATCH` | `/v1/agents/:agentId/rules` | 规则文件 |
 
 ### Team / Canvas
@@ -267,6 +270,34 @@ UGK Mini Agent 支持三层技能目录，优先级从高到低：
 | Project | `.pi/skills/` | 项目内置技能 |
 
 默认用户技能目录初始只有 `.gitkeep`。浏览器自动化、网页检索、企业 IM 等能力按部署场景作为扩展技能安装。
+
+## Agent 级 MCP
+
+MCP server 和 Skill 一样属于 Agent profile。不同 Agent 的 MCP 配置独立存储；Chat、Conn 和 Team Task 使用某个 Agent profile 时，只会注入该 profile 已启用的 MCP server。
+
+| Agent | MCP 配置位置 |
+| --- | --- |
+| `main` | `.data/agent/mcp/servers.json` |
+| 自定义 Agent | `.data/agents/<agentId>/mcp/servers.json` |
+
+在根页面进入“管理 Agent”，或打开 `/playground/agents`，在对应 Agent 的 MCP 面板中新增、编辑、禁用、删除、测试连接和查看工具。当前版本支持 stdio MCP server；本地命令、脚本路径、工作目录和密钥只写入运行态 `.data/`，不要提交到版本库。
+
+本地 OCR/QR 这类启动较慢的 MCP server 建议把 `timeoutMs` 设为较大的值。若工具在 FastMCP 请求内懒加载大型模型时卡住，可把 command/args 配成启动时预加载模型再进入 `mcp.run()`，例如：
+
+```json
+{
+  "serverId": "local-ocr",
+  "name": "Local OCR",
+  "enabled": true,
+  "transport": {
+    "type": "stdio",
+    "command": "<path-to-python.exe>",
+    "args": ["-c", "import ocr_mcp_server as s; s.get_ocr('ch'); s.mcp.run()"],
+    "cwd": "<path-to-mcp-project>"
+  },
+  "timeoutMs": 120000
+}
+```
 
 ## 项目结构
 
@@ -463,6 +494,9 @@ Agent-scoped path: replace `/v1/chat` with `/v1/agents/:agentId/chat`.
 | `PATCH` | `/v1/agents/:agentId` | Update agent |
 | `POST` | `/v1/agents/:agentId/archive` | Archive agent |
 | `GET/POST/DELETE/PATCH` | `/v1/agents/:agentId/skills` | Skill management |
+| `GET/POST/PATCH/DELETE` | `/v1/agents/:agentId/mcp/servers` | MCP server management |
+| `POST` | `/v1/agents/:agentId/mcp/servers/:serverId/test` | Test MCP connection |
+| `GET` | `/v1/agents/:agentId/mcp/servers/:serverId/tools` | Inspect MCP tools |
 | `GET/PATCH` | `/v1/agents/:agentId/rules` | Rules file |
 
 ### Team / Canvas
@@ -571,6 +605,34 @@ UGK Mini Agent supports a three-tier skill directory hierarchy, highest priority
 | Project | `.pi/skills/` | Built-in project skills |
 
 The default user skill directory starts with only `.gitkeep`. Browser automation, web search, and IM integrations are installed as deployment-specific skills.
+
+## Agent-Scoped MCP
+
+MCP servers belong to an Agent profile, just like Skills. Each Agent has isolated MCP configuration; Chat, Conn, and Team Task sessions that use an Agent profile receive only that profile's enabled MCP servers.
+
+| Agent | MCP config path |
+| --- | --- |
+| `main` | `.data/agent/mcp/servers.json` |
+| Custom Agent | `.data/agents/<agentId>/mcp/servers.json` |
+
+Use the root page "Agents" entry or open `/playground/agents`, then manage MCP servers from the selected Agent's MCP panel. The first version supports stdio MCP servers. Local commands, script paths, working directories, and secrets are runtime configuration stored under `.data/`; do not commit them.
+
+For slow local OCR/QR MCP servers, set a larger `timeoutMs`. If a FastMCP tool lazily loads a heavy model and stalls inside the request, configure the server command to preload the model before `mcp.run()`:
+
+```json
+{
+  "serverId": "local-ocr",
+  "name": "Local OCR",
+  "enabled": true,
+  "transport": {
+    "type": "stdio",
+    "command": "<path-to-python.exe>",
+    "args": ["-c", "import ocr_mcp_server as s; s.get_ocr('ch'); s.mcp.run()"],
+    "cwd": "<path-to-mcp-project>"
+  },
+  "timeoutMs": 120000
+}
+```
 
 ## Project Structure
 
