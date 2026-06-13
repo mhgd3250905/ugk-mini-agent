@@ -4,10 +4,11 @@
 
 ## 快速接手
 
-1. `AGENTS.md`
-2. `README.md`
-3. `docs/native-windows-core.md`
-4. `src/server.ts`
+1. `README.md`
+2. `AGENTS.md`
+3. `CONTRIBUTING.md`
+4. `docs/native-windows-core.md`
+5. `src/server.ts`
 5. `src/config.ts`
 6. `src/agent/agent-service.ts`
 7. `src/agent/agent-session-factory.ts`
