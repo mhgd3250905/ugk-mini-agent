@@ -14,11 +14,6 @@ import { ConnRunStore } from "../src/agent/conn-run-store.js";
 import { ConnSqliteStore } from "../src/agent/conn-sqlite-store.js";
 import type { AgentFileArtifact, AgentFileDraft } from "../src/agent/file-artifacts.js";
 
-process.env.UGK_BROWSER_SCOPE_ROUTE_CACHE_PATH = join(
-	tmpdir(),
-	`ugk-pi-background-runner-browser-routes-${process.pid}.json`,
-);
-
 export class FakeAssetStore implements AssetStoreLike {
 	async registerAttachments(_conversationId: string, _attachments: readonly ChatAttachment[]): Promise<AssetRecord[]> {
 		return [];
@@ -255,9 +250,7 @@ export function extractPromptPath(message: string, prefix: string): string {
 
 export async function createRunner(options?: {
 	session?: AgentSessionLike;
-	closeBrowserTargetsForScope?: (scope: string, options?: { browserId?: string }) => Promise<void>;
 	runStore?: ConnRunStore;
-	defaultBrowserId?: string;
 	publicBaseUrl?: string;
 	publicDir?: string;
 	profileResolver?: ConstructorParameters<typeof BackgroundAgentRunner>[0]["profileResolver"];
@@ -279,8 +272,6 @@ export async function createRunner(options?: {
 			assetStore,
 		}),
 		sessionFactory,
-		closeBrowserTargetsForScope: options?.closeBrowserTargetsForScope ?? (async () => undefined),
-		defaultBrowserId: options?.defaultBrowserId,
 		publicBaseUrl: options?.publicBaseUrl,
 		publicDir: options?.publicDir,
 	});

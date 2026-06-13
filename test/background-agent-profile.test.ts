@@ -171,13 +171,12 @@ test("BackgroundAgentProfileResolver lets a conn override the default or policy 
 	assert.equal(snapshot.model, "mimo-v2.5-pro");
 });
 
-test("BackgroundAgentProfileResolver carries the selected Playground agent default browser", async () => {
+test("BackgroundAgentProfileResolver omits removed browser bindings", async () => {
 	const projectRoot = await createProjectRoot();
 	await createStoredAgentProfile(projectRoot, {
 		agentId: "zhihu-helper",
 		name: "知乎助手",
 		description: "知乎登录态任务。",
-		defaultBrowserId: "chrome-01",
 	});
 	const resolver = new BackgroundAgentProfileResolver({ projectRoot });
 
@@ -191,7 +190,7 @@ test("BackgroundAgentProfileResolver carries the selected Playground agent defau
 	});
 
 	assert.equal(snapshot.agentId, "zhihu-helper");
-	assert.equal(snapshot.defaultBrowserId, "chrome-01");
+	assert.equal("defaultBrowserId" in snapshot, false);
 });
 
 test("BackgroundAgentProfileResolver carries enabled MCP servers for the selected Playground agent", async () => {

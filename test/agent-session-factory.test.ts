@@ -1,10 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
-import { prepareBrowserBoundBashEnvironment } from "../src/browser/browser-bound-bash.js";
 import {
 	createDefaultAgentSessionFactory,
 	createProjectSettingsManager,
@@ -117,45 +116,6 @@ test("default session factory injects MCP proxy tool when the selected agent has
 			},
 		],
 	});
-});
-
-test("prepareBrowserBoundBashEnvironment pins curl web-access calls to the run browser", async () => {
-	const workspaceRoot = await mkdtemp(join(tmpdir(), "ugk-pi-browser-bound-bash-"));
-
-	const env = await prepareBrowserBoundBashEnvironment({
-		workspaceRoot,
-		browserId: "chrome-02",
-		browserScope: "conn-1",
-		env: {
-			PATH: "/usr/bin",
-			UGK_BROWSER_INSTANCES_JSON: JSON.stringify([
-				{ browserId: "chrome-01", cdpHost: "172.31.250.11", cdpPort: 9223 },
-				{ browserId: "chrome-02", cdpHost: "172.31.250.12", cdpPort: 9223 },
-			]),
-		} as NodeJS.ProcessEnv,
-	});
-
-	assert.equal(env.CLAUDE_AGENT_ID, "conn-1");
-	assert.equal(env.CLAUDE_HOOK_AGENT_ID, "conn-1");
-	assert.equal(env.agent_id, "conn-1");
-	assert.equal(env.UGK_REQUIRE_SCOPED_BROWSER_PROXY, "true");
-	assert.equal(env.WEB_ACCESS_BROWSER_ID, "chrome-02");
-	assert.equal(env.UGK_DEFAULT_BROWSER_ID, "chrome-02");
-	assert.equal(env.WEB_ACCESS_CDP_HOST, "172.31.250.12");
-	assert.equal(env.WEB_ACCESS_CDP_PORT, "9223");
-	assert.deepEqual(JSON.parse(env.UGK_BROWSER_INSTANCES_JSON), [
-		{ browserId: "chrome-02", cdpHost: "172.31.250.12", cdpPort: 9223 },
-	]);
-	assert.match(env.PATH, new RegExp(`^${join(workspaceRoot, ".data", "browser-bin").replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")}`));
-
-	const wrapperScriptPath = process.platform === "win32"
-		? join(workspaceRoot, ".data", "browser-bin", "curl-browser-binding.mjs")
-		: join(workspaceRoot, ".data", "browser-bin", "curl");
-	const wrapper = await readFile(wrapperScriptPath, "utf8");
-	assert.match(wrapper, /127\\\.0\\\.0\\\.1\|localhost/);
-	assert.match(wrapper, /metaAgentScope/);
-	assert.doesNotMatch(wrapper, /metaBrowserId/);
-	assert.doesNotMatch(wrapper, /WEB_ACCESS_BROWSER_ID/);
 });
 
 test("createSkillRestrictedResourceLoader only loads skills from the allowed paths", async () => {

@@ -22,7 +22,6 @@ export interface ResolvedBackgroundAgentSnapshot {
 	requestedAgentId?: string;
 	agentId?: string;
 	agentName?: string;
-	defaultBrowserId?: string;
 	agentDir?: string;
 	rulesPath?: string;
 	skillPaths?: string[];
@@ -81,7 +80,6 @@ function snapshotFromTemplate(
 		...(template.requestedAgentId ? { requestedAgentId: template.requestedAgentId } : {}),
 		...(template.agentId ? { agentId: template.agentId } : {}),
 		...(template.agentName ? { agentName: template.agentName } : {}),
-		...(template.defaultBrowserId ? { defaultBrowserId: template.defaultBrowserId } : {}),
 		...(template.agentDir ? { agentDir: template.agentDir } : {}),
 		...(template.rulesPath ? { rulesPath: template.rulesPath } : {}),
 		...(template.skillPaths ? { skillPaths: [...template.skillPaths] } : {}),

@@ -84,7 +84,7 @@ test("reuses an existing session when the skill fingerprint changes", async () =
 	assert.equal(result.sessionFile, "E:/sessions/new-after-skill-change.jsonl");
 	assert.deepEqual(factory.calls, [
 		{
-			browserScope: "manual-existing",
+			agentRunScope: "manual-existing",
 			conversationId: "manual:existing",
 			sessionFile: "E:/sessions/existing.jsonl",
 		},

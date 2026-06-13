@@ -16,6 +16,13 @@ git show <commit>:docs/change-log.md
 - 不记录长命令输出、临时排障过程、一次性 UI 微调直播和旧环境运行笔记。
 - 当前运行事实以 `README.md`、`.env.native.example`、`docs/native-windows-core.md` 和真实代码为准。
 
+## 2026-06-13 - CDP/browser 功能面清理
+
+- **主题**: 移除开发期遗留 CDP/browser 功能面，Windows Core 当前不再内置浏览器注册表、CDP 控制路由、浏览器绑定 bash、browser scope cleanup、Agent/Conn/Team browser binding 配置。
+- **影响范围**: `/v1/browsers` API、`src/browser/*`、Playground browser workbench、Agent profile `defaultBrowserId`、Conn `browserId` / `browser_id`、Team/Background agent browser scope 注入、相关 `.pi/skills` 和运行文档。
+- **对应入口**: `src/server.ts`、`src/agent/*`、`src/routes/*`、`src/ui/*`、`src/types/api.ts`、`docs/plans/2026-06-13-cdp-browser-surface-removal-review.md`。
+- **验证记录**: 精确旧关键词扫描 0 命中；`node --test --test-concurrency=1 --import tsx test\no-cdp-surface.test.ts`、Agent/Conn/UI/Team focused suites、`npx tsc --noEmit`、`git diff --check` 均通过。
+
 ## 2026-06-13 - Agent 级 MCP 管理
 
 - **主题**: 新增 Agent 作用域 MCP server 管理和运行时注入。MCP server 和 Skill 一样属于 Agent profile，Chat、Conn 和 Team Task 使用某个 Agent profile 时只获得该 profile 已启用的 MCP。

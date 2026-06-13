@@ -124,7 +124,6 @@ npm run native:start
 | 路由层 | `src/routes/` | HTTP 参数解析、状态码、响应体 |
 | Conn 后台 | `src/workers/conn-worker.ts` | 后台/定时任务领取与执行 |
 | Team worker | `src/workers/team-worker.ts` | Canvas Task runtime 执行 |
-| 浏览器 | `src/browser/` | 浏览器注册与控制 |
 | Team Console 前端 | `apps/team-console/` | Canvas SPA（React） |
 | Native 脚本 | `scripts/native-*.mjs` | Windows 运行时环境拼装、预检、进程管理 |
 
@@ -213,7 +212,6 @@ Agent 作用域路径：将 `/v1/chat` 替换为 `/v1/agents/:agentId/chat`。
 | `PUT` | `/v1/model-config/default` | 设置默认模型 |
 | `GET` | `/v1/notifications/stream` | 通知 SSE 流 |
 | `GET` | `/v1/activity` | 活动列表 |
-| `GET` | `/v1/browsers` | 浏览器列表 |
 
 ## 开发与调试
 
@@ -269,7 +267,7 @@ UGK Mini Agent 支持三层技能目录，优先级从高到低：
 | User | `runtime/skills-user/` | 全局共享用户技能（默认空） |
 | Project | `.pi/skills/` | 项目内置技能 |
 
-默认用户技能目录初始只有 `.gitkeep`。浏览器自动化、网页检索、企业 IM 等能力按部署场景作为扩展技能安装。
+默认用户技能目录初始只有 `.gitkeep`。网页检索、企业 IM 等能力按部署场景作为扩展技能安装。
 
 ## Agent 级 MCP
 
@@ -309,7 +307,6 @@ ugk-claw-core-win/
 │   ├── server.ts              # 服务入口，组合根
 │   ├── config.ts              # 运行配置
 │   ├── agent/                 # Agent 服务层（会话/资产/模型/Conn）
-│   ├── browser/               # 浏览器自动化
 │   ├── routes/                # HTTP 路由层（25 个模块）
 │   ├── team/                  # Team/Canvas Task runtime（62 个模块）
 │   ├── ui/                    # Playground 前端 UI
@@ -461,7 +458,6 @@ After first startup, visit the root page and click "Configure API Sources" or op
 | Routes | `src/routes/` | HTTP parameter parsing, status codes, response bodies |
 | Conn Worker | `src/workers/conn-worker.ts` | Background/scheduled task pickup and execution |
 | Team Worker | `src/workers/team-worker.ts` | Canvas Task runtime execution |
-| Browser | `src/browser/` | Browser registry and control |
 | Team Console | `apps/team-console/` | Canvas SPA (React) |
 | Native Scripts | `scripts/native-*.mjs` | Windows runtime env assembly, doctor, supervisor |
 
@@ -550,7 +546,6 @@ Full Team API list: [docs/team-runtime.md](docs/team-runtime.md).
 | `PUT` | `/v1/model-config/default` | Set default model |
 | `GET` | `/v1/notifications/stream` | Notification SSE stream |
 | `GET` | `/v1/activity` | Activity list |
-| `GET` | `/v1/browsers` | Browser list |
 
 ## Development & Debugging
 
@@ -606,7 +601,7 @@ UGK Mini Agent supports a three-tier skill directory hierarchy, highest priority
 | User | `runtime/skills-user/` | Shared user skills (empty by default) |
 | Project | `.pi/skills/` | Built-in project skills |
 
-The default user skill directory starts with only `.gitkeep`. Browser automation, web search, and IM integrations are installed as deployment-specific skills.
+The default user skill directory starts with only `.gitkeep`. Web search, IM integrations, and any external automation are installed as deployment-specific skills.
 
 ## Agent-Scoped MCP
 
@@ -646,7 +641,6 @@ ugk-claw-core-win/
 │   ├── server.ts              # Server entry, composition root
 │   ├── config.ts              # Runtime config
 │   ├── agent/                 # Agent service layer (sessions/assets/models/Conn)
-│   ├── browser/               # Browser automation
 │   ├── routes/                # HTTP route layer (25 modules)
 │   ├── team/                  # Team/Canvas Task runtime (62 modules)
 │   ├── ui/                    # Playground frontend UI

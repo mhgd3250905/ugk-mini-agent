@@ -46,15 +46,13 @@ test("team worker uses mock runner unless real runner is explicitly enabled", as
 	}
 });
 
-test("team worker real runner wires browser route and cleanup lifecycle", async () => {
+test("team worker real runner wires scoped agent run lifecycle", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-worker-"));
 	try {
-		const routeCalls: Array<{ scope: string; browserId: string | undefined }> = [];
-		const cleanupCalls: Array<{ scope: string; options?: { browserId?: string } }> = [];
 		const sessionScopes: string[] = [];
 		const sessionFactory = {
-			createSession: async (input: { browserScope?: string }) => {
-				sessionScopes.push(input.browserScope ?? "");
+			createSession: async (input: { agentRunScope?: string }) => {
+				sessionScopes.push(input.agentRunScope ?? "");
 				return {
 					prompt: async () => {},
 					subscribe: () => () => {},
@@ -69,10 +67,8 @@ test("team worker real runner wires browser route and cleanup lifecycle", async 
 			makeConfig(root),
 			{ TEAM_USE_MOCK_RUNNER: "false" },
 			{
-				profileResolver: makeProfileResolver({ defaultBrowserId: "work-01" }) as never,
+				profileResolver: makeProfileResolver({}) as never,
 				sessionFactory,
-				setBrowserScopeRoute: async (scope, browserId) => { routeCalls.push({ scope, browserId }); },
-				closeBrowserTargetsForScope: async (scope, options) => { cleanupCalls.push({ scope, options }); },
 			},
 		);
 
@@ -89,15 +85,6 @@ test("team worker real runner wires browser route and cleanup lifecycle", async 
 		assert.equal(sessionScopes.length, 1);
 		const scope = sessionScopes[0]!;
 		assert.ok(scope);
-		assert.deepEqual(routeCalls, [
-			{ scope, browserId: "work-01" },
-			{ scope, browserId: undefined },
-		]);
-		assert.deepEqual(cleanupCalls, [
-			{ scope, options: { browserId: "work-01" } },
-		]);
-		assert.equal(out.runtimeContext?.browserScope, scope);
-		assert.equal(out.runtimeContext?.browserId, "work-01");
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -125,14 +112,12 @@ test('P17: worker real runner defaults to main profiles as placeholders', async 
 	const root = await mkdtemp(join(tmpdir(), 'team-p17-worker-'));
 	try {
 		const { AgentProfileRoleRunner } = await import('../src/team/agent-profile-role-runner.js');
-		const routeCalls: Array<{ scope: string; browserId: string | undefined }> = [];
-		const cleanupCalls: Array<{ scope: string; options?: { browserId?: string } }> = [];
 
 		const runner = createTeamWorkerRoleRunner(
 			makeConfig(root),
 			{ TEAM_USE_MOCK_RUNNER: 'false' },
 			{
-				profileResolver: makeProfileResolver({ defaultBrowserId: 'default-chrome' }) as never,
+				profileResolver: makeProfileResolver({}) as never,
 				sessionFactory: {
 					createSession: async () => ({
 						prompt: async () => {},
@@ -140,8 +125,6 @@ test('P17: worker real runner defaults to main profiles as placeholders', async 
 						messages: [{ role: 'assistant', content: [{ type: 'text', text: 'done' }], stopReason: 'end_turn' }],
 					}),
 				} as never,
-				setBrowserScopeRoute: async (scope, browserId) => { routeCalls.push({ scope, browserId }); },
-				closeBrowserTargetsForScope: async (scope, options) => { cleanupCalls.push({ scope, options }); },
 			},
 		);
 
@@ -153,7 +136,6 @@ test('P17: worker real runner defaults to main profiles as placeholders', async 
 
 		assert.equal(out.runtimeContext?.requestedProfileId, 'main');
 		assert.equal(out.runtimeContext?.resolvedProfileId, 'main');
-		assert.equal(out.runtimeContext?.browserId, 'default-chrome');
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -179,7 +161,6 @@ test('P17: worker real runner profile placeholders are overridden by setProfileI
 							skills: [], modelPolicyId: 'team-default', modelPolicyVersion: '1',
 							provider: 'test', model: 'test-model',
 							upgradePolicy: 'latest' as const, resolvedAt: new Date().toISOString(),
-							defaultBrowserId: 'chrome-' + ref.profileId,
 						};
 					},
 				} as never,
@@ -190,8 +171,6 @@ test('P17: worker real runner profile placeholders are overridden by setProfileI
 						messages: [{ role: 'assistant', content: [{ type: 'text', text: 'done' }], stopReason: 'end_turn' }],
 					}),
 				} as never,
-				setBrowserScopeRoute: async () => {},
-				closeBrowserTargetsForScope: async () => {},
 			},
 		) as InstanceType<typeof AgentProfileRoleRunner>;
 
@@ -210,7 +189,6 @@ test('P17: worker real runner profile placeholders are overridden by setProfileI
 		});
 
 		assert.equal(workerOut.runtimeContext?.requestedProfileId, 'actual-worker');
-		assert.equal(workerOut.runtimeContext?.browserId, 'chrome-actual-worker');
 		assert.ok(capturedProfiles.includes('actual-worker'), 'resolver should see actual-worker, not main');
 	} finally {
 		await rm(root, { recursive: true, force: true });

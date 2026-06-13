@@ -39,12 +39,6 @@ export function registerRuntimeDebugRoutes(app: FastifyInstance, deps: RuntimeDe
 			checks,
 			config: {
 				...(config.publicBaseUrl ? { publicBaseUrl: config.publicBaseUrl } : {}),
-				...(process.env.WEB_ACCESS_BROWSER_PROVIDER?.trim()
-					? { browserProvider: process.env.WEB_ACCESS_BROWSER_PROVIDER.trim() }
-					: {}),
-				...(process.env.WEB_ACCESS_BROWSER_PUBLIC_BASE_URL?.trim()
-					? { webAccessBrowserPublicBaseUrl: process.env.WEB_ACCESS_BROWSER_PUBLIC_BASE_URL.trim() }
-					: {}),
 			},
 		};
 	});

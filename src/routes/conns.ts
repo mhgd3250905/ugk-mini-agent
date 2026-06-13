@@ -29,19 +29,6 @@ import {
 	supportsInlinePreview,
 } from "./file-route-utils.js";
 import { sendBadRequest, sendConflict, sendInternalError } from "./http-errors.js";
-import type { BrowserRegistry } from "../browser/browser-registry.js";
-import {
-	normalizeBrowserBindingAuditValue,
-	recordBrowserBindingAudit,
-	type BrowserBindingAuditChange,
-	type BrowserBindingAuditLog,
-} from "../browser/browser-binding-audit-log.js";
-import {
-	compactBrowserBindingChanges,
-	createBrowserBindingChange,
-	evaluateBrowserBindingWrite,
-	readBrowserBindingRequestContext,
-} from "../browser/browser-binding-policy.js";
 import type {
 	ConnBulkDeleteRequestBody,
 	ConnBulkDeleteResponseBody,
@@ -56,8 +43,6 @@ interface ConnRouteOptions {
 	connStore: ConnStoreLike;
 	connRunStore: ConnRunStoreLike;
 	backgroundDataDir: string;
-	browserRegistry?: BrowserRegistry;
-	browserBindingAuditLog?: BrowserBindingAuditLog;
 	publicBaseUrl?: string;
 }
 
@@ -73,7 +58,6 @@ interface ConnStoreLike {
 		assetRefs?: string[];
 		maxRunMs?: number;
 		profileId?: string;
-		browserId?: string;
 		agentSpecId?: string;
 		skillSetId?: string;
 		modelPolicyId?: string;
@@ -105,7 +89,7 @@ interface ConnStoreLike {
 				| "publicSiteId"
 				| "artifactDelivery"
 			>
-		> & { browserId?: string | null },
+		>,
 	): Promise<ConnDefinition | undefined>;
 	delete(connId: string): Promise<boolean>;
 	deleteMany?(connIds: readonly string[]): Promise<ConnBulkDeleteResponseBody>;
@@ -386,20 +370,6 @@ function sendConnValidationError(reply: FastifyReply, error: unknown): FastifyRe
 	return sendBadRequest(reply, error.message);
 }
 
-function validateConnBrowserId(
-	browserRegistry: BrowserRegistry | undefined,
-	browserId: string | null | undefined,
-): string | undefined {
-	const normalized = browserId?.trim();
-	if (!normalized) {
-		return undefined;
-	}
-	if (browserRegistry && !browserRegistry.get(normalized)) {
-		return `Unknown browserId: ${normalized}`;
-	}
-	return undefined;
-}
-
 export function registerConnRoutes(app: FastifyInstance, options: ConnRouteOptions): void {
 	app.get("/v1/conns", async (): Promise<ConnListResponseBody> => {
 		const conns = await options.connStore.list();
@@ -677,11 +647,6 @@ export function registerConnRoutes(app: FastifyInstance, options: ConnRouteOptio
 			if (parsed.error) {
 				return sendBadRequest(reply, parsed.error);
 			}
-			const browserError = validateConnBrowserId(options.browserRegistry, parsed.value!.browserId);
-			if (browserError) {
-				return sendBadRequest(reply, browserError);
-			}
-
 			const conn = await options.connStore.create({
 				title: parsed.value!.title!,
 				prompt: parsed.value!.prompt!,
@@ -691,7 +656,6 @@ export function registerConnRoutes(app: FastifyInstance, options: ConnRouteOptio
 				assetRefs: parsed.value!.assetRefs,
 				...(parsed.value!.maxRunMs !== undefined ? { maxRunMs: parsed.value!.maxRunMs } : {}),
 				profileId: parsed.value!.profileId,
-				...(parsed.value!.browserId ? { browserId: parsed.value!.browserId } : {}),
 				agentSpecId: parsed.value!.agentSpecId,
 				skillSetId: parsed.value!.skillSetId,
 				modelPolicyId: parsed.value!.modelPolicyId,
@@ -741,56 +705,7 @@ export function registerConnRoutes(app: FastifyInstance, options: ConnRouteOptio
 		if (parsed.error) {
 			return sendBadRequest(reply, parsed.error);
 		}
-		const browserError = validateConnBrowserId(options.browserRegistry, parsed.value!.browserId);
-		if (browserError) {
-			return sendBadRequest(reply, browserError);
-		}
-
 		try {
-			const currentConn = body.profileId !== undefined || body.browserId !== undefined
-				? await options.connStore.get(connId)
-				: undefined;
-			const auditSource = readBrowserBindingRequestContext(request.headers);
-			let browserBindingChanges: BrowserBindingAuditChange[] = [];
-			if (currentConn) {
-				const changes: Array<BrowserBindingAuditChange | undefined> = [];
-				if (body.profileId !== undefined) {
-					const from = normalizeBrowserBindingAuditValue(currentConn.profileId);
-					const to = normalizeBrowserBindingAuditValue(parsed.value!.profileId);
-					changes.push(createBrowserBindingChange("profileId", from, to));
-				}
-				if (body.browserId !== undefined) {
-					const from = normalizeBrowserBindingAuditValue(currentConn.browserId);
-					const to = normalizeBrowserBindingAuditValue(parsed.value!.browserId);
-					changes.push(createBrowserBindingChange("browserId", from, to));
-				}
-				browserBindingChanges = compactBrowserBindingChanges(changes);
-			}
-			const bindingDecision = evaluateBrowserBindingWrite(browserBindingChanges, auditSource);
-			if (!bindingDecision.allowed && bindingDecision.status === "rejected_unconfirmed") {
-				await recordBrowserBindingAudit(options.browserBindingAuditLog, {
-					kind: browserBindingChanges.some((change) => change.field === "profileId") ? "conn_execution_binding" : "conn_browser_binding",
-					targetId: connId,
-					targetLabel: currentConn?.title ?? connId,
-					source: auditSource.source,
-					confirmedByClient: false,
-					status: bindingDecision.status,
-					changes: browserBindingChanges,
-				});
-				return sendBadRequest(reply, bindingDecision.message);
-			}
-			if (!bindingDecision.allowed && bindingDecision.status === "rejected_non_ui_source") {
-				await recordBrowserBindingAudit(options.browserBindingAuditLog, {
-					kind: browserBindingChanges.some((change) => change.field === "profileId") ? "conn_execution_binding" : "conn_browser_binding",
-					targetId: connId,
-					targetLabel: currentConn?.title ?? connId,
-					source: auditSource.source,
-					confirmedByClient: auditSource.confirmedByClient,
-					status: bindingDecision.status,
-					changes: browserBindingChanges,
-				});
-				return sendBadRequest(reply, bindingDecision.message);
-			}
 			const conn = await options.connStore.update(connId, {
 				...(parsed.value!.title !== undefined ? { title: parsed.value!.title } : {}),
 				...(parsed.value!.prompt !== undefined ? { prompt: parsed.value!.prompt } : {}),
@@ -799,7 +714,6 @@ export function registerConnRoutes(app: FastifyInstance, options: ConnRouteOptio
 				...(body.execution !== undefined ? { execution: parsed.value!.execution } : {}),
 				...(body.assetRefs !== undefined ? { assetRefs: parsed.value!.assetRefs ?? [] } : {}),
 				...(body.profileId !== undefined ? { profileId: parsed.value!.profileId } : {}),
-				...(body.browserId !== undefined ? { browserId: parsed.value!.browserId ?? null } : {}),
 				...(body.agentSpecId !== undefined ? { agentSpecId: parsed.value!.agentSpecId } : {}),
 				...(body.skillSetId !== undefined ? { skillSetId: parsed.value!.skillSetId } : {}),
 				...(body.modelPolicyId !== undefined ? { modelPolicyId: parsed.value!.modelPolicyId } : {}),
@@ -812,17 +726,6 @@ export function registerConnRoutes(app: FastifyInstance, options: ConnRouteOptio
 			});
 			if (!conn) {
 				return reply.status(404).send();
-			}
-			if (browserBindingChanges.length > 0) {
-				await recordBrowserBindingAudit(options.browserBindingAuditLog, {
-					kind: browserBindingChanges.some((change) => change.field === "profileId") ? "conn_execution_binding" : "conn_browser_binding",
-					targetId: conn.connId,
-					targetLabel: conn.title,
-					source: auditSource.source,
-					confirmedByClient: auditSource.confirmedByClient,
-					status: "succeeded",
-					changes: browserBindingChanges,
-				});
 			}
 			return { conn: toConnBody(conn) } satisfies ConnDetailResponseBody;
 		} catch (error) {

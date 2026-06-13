@@ -108,7 +108,7 @@ Do not patch archived Tasks or locked WorkUnits.
 - No direct `.data/team` file writes.
 - Do not hand-write full JSON for normal, worklist producer, or split-task creation when the Task factory can generate and validate it.
 - No new backend endpoint.
-- No Task run, Team Run, Plan run, worker/checker chain, Agent profile edit, skill install, model change, or browser binding change.
+- No Task run, Team Run, Plan run, worker/checker chain, Agent profile edit, skill install, or model change.
 - No generated child Tasks in public create/update payloads.
 - No `generatedSource` in public `POST /v1/team/tasks` or `PATCH /v1/team/tasks/:taskId` payloads.
 - Do not ask the user to hand-author technical schemas when you can infer and preview them.

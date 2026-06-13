@@ -1015,7 +1015,7 @@ export function renderPublicSitePage(): string {
 					<article class="trust-node">
 						<span>worker</span>
 						<strong>Worker 执行并留痕</strong>
-						<p>执行过程保留状态、文件、浏览器上下文、中间产物和错误信息。</p>
+						<p>执行过程保留状态、文件、中间产物和错误信息。</p>
 					</article>
 					<div class="trust-arrow" aria-hidden="true">-&gt;</div>
 					<article class="trust-node is-pass">
@@ -1052,7 +1052,7 @@ export function renderPublicSitePage(): string {
 					</article>
 					<article class="capability">
 						<div class="capability-visual">
-							<img src="/site-assets/capability-context-materials.png" alt="文件页面和浏览器上下文汇入任务资料区的视觉" loading="lazy" decoding="async" />
+							<img src="/site-assets/capability-context-materials.png" alt="文件页面汇入任务资料区的视觉" loading="lazy" decoding="async" />
 						</div>
 						<div class="capability-copy">
 							<span>02 / context</span>
@@ -1067,7 +1067,7 @@ export function renderPublicSitePage(): string {
 						<div class="capability-copy">
 							<span>03 / execute</span>
 							<strong>让 Worker 执行</strong>
-							<p>Worker 按固定 Task 或 Workflow 做具体工作，把资料、浏览器上下文和中间产物纳入可观察的运行过程。</p>
+							<p>Worker 按固定 Task 或 Workflow 做具体工作，把资料和中间产物纳入可观察的运行过程。</p>
 						</div>
 					</article>
 					<article class="capability">
@@ -1145,7 +1145,7 @@ export function renderPublicSitePage(): string {
 					<article class="flow-step">
 						<span>Step 3</span>
 						<strong>执行并保留证据</strong>
-						<p>Worker 执行任务，保留运行状态、文件、浏览器动作、中间产物和错误信息。</p>
+						<p>Worker 执行任务，保留运行状态、文件、中间产物和错误信息。</p>
 					</article>
 					<article class="flow-step">
 						<span>Step 4</span>

@@ -9,7 +9,6 @@ export interface ParsedConnMutationBody {
 	execution?: ConnExecution;
 	assetRefs?: string[];
 	profileId?: string;
-	browserId?: string | null;
 	agentSpecId?: string;
 	skillSetId?: string;
 	modelPolicyId?: string;
@@ -92,14 +91,6 @@ export function parseConnMutationBody(
 		if (body[fieldName] !== undefined) {
 			parsed[fieldName] = parsedOptionalId.value;
 		}
-	}
-
-	const parsedBrowserId = parseOptionalNullableId(body.browserId, "browserId");
-	if (parsedBrowserId.error) {
-		return { error: parsedBrowserId.error };
-	}
-	if (body.browserId !== undefined) {
-		parsed.browserId = parsedBrowserId.value;
 	}
 
 	const parsedModelProvider = parseOptionalId(body.modelProvider, "modelProvider");
@@ -272,19 +263,6 @@ function parseOptionalId(value: unknown, fieldName: string): { value?: string; e
 	}
 	if (!isNonEmptyString(value)) {
 		return { error: `Field "${fieldName}" must be a non-empty string when provided` };
-	}
-	return { value: value.trim() };
-}
-
-function parseOptionalNullableId(value: unknown, fieldName: string): { value?: string | null; error?: string } {
-	if (value === undefined) {
-		return {};
-	}
-	if (value === null || value === "") {
-		return { value: null };
-	}
-	if (!isNonEmptyString(value)) {
-		return { error: `Field "${fieldName}" must be a non-empty string or null when provided` };
 	}
 	return { value: value.trim() };
 }

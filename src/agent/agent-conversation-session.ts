@@ -18,8 +18,7 @@ export interface CreateEmptyConversationInput {
 }
 
 export interface OpenConversationSessionInput {
-	browserId?: string;
-	browserScope?: string;
+	agentRunScope?: string;
 	conversationId: string;
 	conversationStore: ConversationStore;
 	sessionFactory: AgentSessionFactory;
@@ -68,8 +67,7 @@ export async function openConversationSession(
 	const shouldReuseExistingSession = existingConversation?.sessionFile !== undefined;
 
 	const session = await input.sessionFactory.createSession({
-		...(input.browserId ? { browserId: input.browserId } : {}),
-		...(input.browserScope ? { browserScope: input.browserScope } : {}),
+		...(input.agentRunScope ? { agentRunScope: input.agentRunScope } : {}),
 		conversationId: input.conversationId,
 		sessionFile: shouldReuseExistingSession ? existingConversation?.sessionFile : undefined,
 	});

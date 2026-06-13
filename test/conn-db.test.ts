@@ -28,7 +28,7 @@ test("ConnDatabase initializes the sqlite schema and creates missing parent dire
 	);
 	assert.equal(
 		database.all<{ name: string }>("PRAGMA table_info(conns)").some((column) => column.name === "browser_id"),
-		true,
+		false,
 	);
 
 	database.close();
@@ -142,7 +142,7 @@ PRAGMA user_version = 5;
 	database.close();
 });
 
-test("ConnDatabase migrates existing conn tables to include browser ids", async () => {
+test("ConnDatabase migrates existing conn tables without restoring removed browser ids", async () => {
 	const dbPath = await createTempDbPath();
 	const database = new ConnDatabase({ dbPath });
 
@@ -176,21 +176,21 @@ INSERT INTO conns_legacy SELECT conn_id, title, prompt, target_json, schedule_js
 DROP TABLE conns;
 ALTER TABLE conns_legacy RENAME TO conns;
 INSERT INTO conns (conn_id, title, prompt, target_json, schedule_json, asset_refs_json, profile_id, agent_spec_id, skill_set_id, model_policy_id, upgrade_policy, status, created_at, updated_at)
-VALUES ('conn-legacy-browser', 'Digest', 'Summarize', '{}', '{}', '[]', 'background.default', 'agent.default', 'skills.default', 'model.default', 'latest', 'active', '2026-04-21T00:00:00.000Z', '2026-04-21T00:00:00.000Z');
+VALUES ('conn-legacy', 'Digest', 'Summarize', '{}', '{}', '[]', 'background.default', 'agent.default', 'skills.default', 'model.default', 'latest', 'active', '2026-04-21T00:00:00.000Z', '2026-04-21T00:00:00.000Z');
 PRAGMA user_version = 7;
 `);
 
 	await database.initialize();
 
 	const columns = database.all<{ name: string }>("PRAGMA table_info(conns)");
-	assert.equal(columns.some((column) => column.name === "browser_id"), true);
+	assert.equal(columns.some((column) => column.name === "browser_id"), false);
 	assert.equal(database.getUserVersion(), 11);
 	assert.deepEqual(
-		database.get<{ title: string; browser_id: string | null }>(
-			"SELECT title, browser_id FROM conns WHERE conn_id = ?",
-			"conn-legacy-browser",
+		database.get<{ title: string }>(
+			"SELECT title FROM conns WHERE conn_id = ?",
+			"conn-legacy",
 		),
-		{ title: "Digest", browser_id: null },
+		{ title: "Digest" },
 	);
 
 	database.close();

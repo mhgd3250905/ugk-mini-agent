@@ -457,8 +457,6 @@ test("GET /v1/team/runs/:runId returns finalizer runtime context", async () => {
 		state.finalizerRuntimeContext = {
 			requestedProfileId: "finalizer-profile",
 			resolvedProfileId: "main",
-			browserId: "browser-a",
-			browserScope: "team:run:finalizer",
 			fallbackUsed: true,
 			fallbackReason: "profile_not_found",
 		};

@@ -43,7 +43,6 @@ const state = {
   loadingMoreRunId: "",
   runRefreshTimers: {},
   agentCatalog: [],
-  browserCatalog: [],
   modelConfig: null,
   modelProviders: [],
   modelOptions: [],
@@ -237,11 +236,6 @@ async function apiCancelRun(connId, runId) {
 async function apiFetchAgentCatalog() {
   const data = await fetchJson("/v1/agents");
   return data.agents || [];
-}
-
-async function apiFetchBrowserCatalog() {
-  const data = await fetchJson("/v1/browsers");
-  return data.browsers || [];
 }
 
 async function apiFetchModelConfig() {
@@ -855,7 +849,6 @@ function renderDetail() {
   html += '    <div class="conn-config-item"><div class="conn-config-label">执行对象</div><div class="conn-config-value">' + escapeHtml(executionText) + '</div></div>';
   if (!isTeamGroupConn) {
     html += '    <div class="conn-config-item"><div class="conn-config-label">Agent</div><div class="conn-config-value">' + escapeHtml(conn.profileId || "main") + '</div></div>';
-    html += '    <div class="conn-config-item"><div class="conn-config-label">浏览器</div><div class="conn-config-value">' + escapeHtml(conn.browserId || "跟随 Agent") + '</div></div>';
   }
   html += '    <div class="conn-config-item"><div class="conn-config-label">投递目标</div><div class="conn-config-value">' + escapeHtml(describeTarget(conn.target)) + '</div></div>';
   html += '  </div>';
@@ -1400,7 +1393,7 @@ function isEditorSubmitDisabled() {
 function syncEditorSupportControls() {
   const disabled = isEditorSubmitDisabled();
   const isTeamGroup = getEditorExecutionType() === "team_group";
-  for (const id of ["editor-profile-id", "editor-browser-id", "editor-model-provider", "editor-model-id"]) {
+  for (const id of ["editor-profile-id", "editor-model-provider", "editor-model-id"]) {
     const el = $(id);
     if (el) el.disabled = disabled || isTeamGroup;
   }
@@ -1426,7 +1419,6 @@ function syncEditorSupportControls() {
 
 function renderEditorSupportCatalogOptions() {
   renderEditorAgentOptions();
-  renderEditorBrowserOptions();
   renderEditorTeamGroupOptions();
   renderEditorModelOptions();
 }
@@ -1449,12 +1441,6 @@ function guardEditorSupportCatalogs() {
   const profileId = (($("editor-profile-id") || {}).value || "").trim();
   if (profileId && !state.agentCatalog.some(agent => (agent.agentId || "main") === profileId)) {
     showEditorError("执行 Agent 不可用，请重新选择", "editor-profile-id");
-    return false;
-  }
-
-  const browserId = (($("editor-browser-id") || {}).value || "").trim();
-  if (browserId && !state.browserCatalog.some(browser => browser.browserId === browserId)) {
-    showEditorError("浏览器不可用，请重新选择", "editor-browser-id");
     return false;
   }
 
@@ -1527,14 +1513,12 @@ async function loadEditorSupportCatalogs() {
 
   state.editorSupportCatalogsPromise = Promise.all([
     apiFetchAgentCatalog(),
-    apiFetchBrowserCatalog(),
     apiFetchModelConfig(),
-  ]).then(([agents, browsers, modelConfig]) => {
+  ]).then(([agents, modelConfig]) => {
     if (!modelConfig?.providers?.length) {
       throw new Error("模型配置不可用，请稍后重试");
     }
     state.agentCatalog = agents;
-    state.browserCatalog = browsers;
     state.modelConfig = modelConfig;
     state.modelProviders = modelConfig.providers || [];
     state.editorSupportCatalogsLoaded = true;
@@ -1589,7 +1573,6 @@ function fillEditorForm(conn) {
   const targetType = $("editor-target-type");
   const targetId = $("editor-target-id");
   const profileId = $("editor-profile-id");
-  const browserId = $("editor-browser-id");
   const modelProvider = $("editor-model-provider");
   const modelId = $("editor-model-id");
   const maxRunSec = $("editor-max-run-seconds");
@@ -1625,7 +1608,6 @@ function fillEditorForm(conn) {
   }
 
   setPendingSelectValue(profileId, conn.profileId || "main");
-  setPendingSelectValue(browserId, conn.browserId || "");
   setPendingSelectValue(modelProvider, conn.modelProvider || "");
   setPendingSelectValue(modelId, conn.modelId || "");
   if (maxRunSec) maxRunSec.value = conn.maxRunMs ? Math.round(conn.maxRunMs / 1000) : "";
@@ -1669,8 +1651,6 @@ function clearEditorForm() {
   setPendingSelectValue(teamGroupId, "");
   const profileId = $("editor-profile-id");
   setPendingSelectValue(profileId, "main");
-  const browserId = $("editor-browser-id");
-  setPendingSelectValue(browserId, "");
   const upgradePolicy = $("editor-upgrade-policy");
   if (upgradePolicy) upgradePolicy.value = "latest";
   const modelProvider = $("editor-model-provider");
@@ -1783,9 +1763,6 @@ function readEditorPayload() {
   const profileId = (($("editor-profile-id") || {}).value || "").trim();
   if (profileId) payload.profileId = profileId;
 
-  const browserId = (($("editor-browser-id") || {}).value || "").trim();
-  if (browserId || state.editorMode === "edit") payload.browserId = browserId || null;
-
   const modelProvider = (($("editor-model-provider") || {}).value || "").trim();
   const modelId = (($("editor-model-id") || {}).value || "").trim();
   if (modelProvider) payload.modelProvider = modelProvider;
@@ -1833,26 +1810,21 @@ async function submitEditor() {
 
   const isEditing = state.editorMode === "edit" && state.editorConnId;
 
-  // Check if browser/profile binding changed
+  // Check if execution Agent binding changed
   let extraHeaders = {};
   if (isEditing && payload.execution?.type !== "team_group") {
     const orig = state.conns.find(c => c.connId === state.editorConnId);
     if (orig) {
       const profileChanged = (orig.profileId || "main") !== (payload.profileId || "main");
-      const browserChanged = (orig.browserId || "") !== (payload.browserId || "");
-      if (profileChanged || browserChanged) {
+      if (profileChanged) {
         const confirmed = await openConfirmDialog({
           title: "确认执行绑定变更",
-          description: "即将更改 Agent 或浏览器绑定，后续运行将使用新的执行环境。",
+          description: "即将更改执行 Agent，后续运行将使用新的执行环境。",
           confirmText: "确认变更",
           cancelText: "取消",
           tone: "danger",
         });
         if (!confirmed) return;
-        extraHeaders = {
-          "x-ugk-browser-binding-confirmed": "true",
-          "x-ugk-browser-binding-source": "playground",
-        };
       }
     }
   }
@@ -2007,10 +1979,6 @@ function renderEditorForm(body, titleEl, actionsEl) {
               <select id="editor-profile-id"></select>
             </label>
             <label class="conn-editor-field">
-              <span>浏览器</span>
-              <select id="editor-browser-id"></select>
-            </label>
-            <label class="conn-editor-field">
               <span>模型源</span>
               <select id="editor-model-provider"></select>
             </label>
@@ -2120,7 +2088,6 @@ function renderEditorForm(body, titleEl, actionsEl) {
   }
 
   renderEditorAgentOptions();
-  renderEditorBrowserOptions();
   renderEditorTeamGroupOptions();
   renderEditorModelOptions();
   syncScheduleVisibility();
@@ -2179,32 +2146,6 @@ function renderEditorAgentOptions() {
     const opt = document.createElement("option");
     opt.value = current;
     opt.textContent = current + "（不可用）";
-    sel.appendChild(opt);
-  }
-  sel.value = current;
-  delete sel.dataset.pendingValue;
-}
-
-function renderEditorBrowserOptions() {
-  const sel = $("editor-browser-id");
-  if (!sel) return;
-  const current = sel.dataset.pendingValue || sel.value || "";
-  sel.innerHTML = "";
-  const followOpt = document.createElement("option");
-  followOpt.value = "";
-  followOpt.textContent = "跟随执行 Agent";
-  sel.appendChild(followOpt);
-  const browsers = state.browserCatalog.length > 0 ? state.browserCatalog : [];
-  for (const b of browsers) {
-    const opt = document.createElement("option");
-    opt.value = b.browserId || "";
-    opt.textContent = (b.name || b.browserId || "") + " · " + (b.browserId || "");
-    sel.appendChild(opt);
-  }
-  if (current && !browsers.some(b => b.browserId === current)) {
-    const opt = document.createElement("option");
-    opt.value = current;
-    opt.textContent = current + "（未找到）";
     sel.appendChild(opt);
   }
   sel.value = current;

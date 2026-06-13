@@ -32,9 +32,9 @@ test("runDiscoveryDispatcher uses dispatcherProfileId and discovery-dispatcher s
 			decomposerProfileId: "p-decomposer",
 			dispatcherProfileId: "p-dispatcher",
 			profileResolver: makeFakeProfileResolver({
-				"p-dispatcher": { defaultBrowserId: "browser-dispatcher" },
-				"p-decomposer": { defaultBrowserId: "browser-decomposer" },
-				"p-worker": { defaultBrowserId: "browser-worker" },
+				"p-dispatcher": {},
+				"p-decomposer": {},
+				"p-worker": {},
 			}) as never,
 			sessionFactory: factory,
 		});
@@ -45,14 +45,10 @@ test("runDiscoveryDispatcher uses dispatcherProfileId and discovery-dispatcher s
 		}));
 
 		assert.equal(captured[0]!.snapshot.profileId, "p-dispatcher");
-		assert.equal(captured[0]!.browserId, "browser-dispatcher");
-		assert.ok(captured[0]!.browserScope?.includes("discovery-dispatcher"));
 		assert.ok(captured[0]!.workspaceRootPath?.includes("discovery-dispatcher"));
-		assert.ok(!captured[0]!.browserScope?.includes("vendor/slash"), "browser scope must not include raw path-like item id");
 		assert.ok(!captured[0]!.workspaceRootPath?.includes("vendor/slash"), "workspace path must not include raw path-like item id");
 		assert.equal(out.ok, true);
 		assert.equal(out.runtimeContext?.requestedProfileId, "p-dispatcher");
-		assert.equal(out.runtimeContext?.browserId, "browser-dispatcher");
 	} finally {
 		await rm(root, { recursive: true }).catch(() => {});
 	}
@@ -109,7 +105,7 @@ test("runDiscoveryDispatcher compiles semantic patch into full WorkUnit plus run
 			watcherProfileId: "p-watcher",
 			finalizerProfileId: "p-finalizer",
 			dispatcherProfileId: "p-dispatcher",
-			profileResolver: makeFakeProfileResolver({ "p-dispatcher": { defaultBrowserId: "browser-dispatcher" } }) as never,
+			profileResolver: makeFakeProfileResolver({ "p-dispatcher": {} }) as never,
 			sessionFactory: makeFakeSessionFactory([makeDiscoveryDispatchPatchJson()]),
 		});
 
@@ -125,7 +121,6 @@ test("runDiscoveryDispatcher compiles semantic patch into full WorkUnit plus run
 			assert.ok(out.workUnit.acceptance.rules.includes("Cites relevant sources"));
 		}
 		assert.equal(out.runtimeContext?.requestedProfileId, "p-dispatcher");
-		assert.equal(out.runtimeContext?.browserId, "browser-dispatcher");
 	} finally {
 		await rm(root, { recursive: true }).catch(() => {});
 	}
@@ -145,16 +140,12 @@ test("runDiscoveryDispatcher retries once with parser feedback and compiles repa
 			createSession: async (input: {
 				runId: string;
 				connId: string;
-				browserId?: string;
-				browserScope?: string;
 				snapshot: ResolvedBackgroundAgentSnapshot;
 				workspace?: { rootPath?: string };
 			}) => {
 				captured.push({
 					runId: input.runId,
 					connId: input.connId,
-					browserId: input.browserId,
-					browserScope: input.browserScope,
 					snapshot: input.snapshot,
 					workspaceRootPath: input.workspace?.rootPath,
 				});
@@ -175,7 +166,7 @@ test("runDiscoveryDispatcher retries once with parser feedback and compiles repa
 			watcherProfileId: "p-watcher",
 			finalizerProfileId: "p-finalizer",
 			dispatcherProfileId: "p-dispatcher",
-			profileResolver: makeFakeProfileResolver({ "p-dispatcher": { defaultBrowserId: "browser-dispatcher" } }) as never,
+			profileResolver: makeFakeProfileResolver({ "p-dispatcher": {} }) as never,
 			sessionFactory,
 		});
 
@@ -206,7 +197,7 @@ test("runDiscoveryDispatcher returns ok false with runtime context on invalid se
 			watcherProfileId: "p-watcher",
 			finalizerProfileId: "p-finalizer",
 			dispatcherProfileId: "p-dispatcher",
-			profileResolver: makeFakeProfileResolver({ "p-dispatcher": { defaultBrowserId: "browser-dispatcher" } }) as never,
+			profileResolver: makeFakeProfileResolver({ "p-dispatcher": {} }) as never,
 			sessionFactory: makeFakeSessionFactory(["not json", "still not json"]),
 		});
 
@@ -216,7 +207,6 @@ test("runDiscoveryDispatcher returns ok false with runtime context on invalid se
 		assert.equal(out.itemId, "vendor_1");
 		assert.match(out.error, /json/i);
 		assert.equal(out.runtimeContext?.requestedProfileId, "p-dispatcher");
-		assert.equal(out.runtimeContext?.browserId, "browser-dispatcher");
 	} finally {
 		await rm(root, { recursive: true }).catch(() => {});
 	}
@@ -233,7 +223,7 @@ test("runDiscoveryDispatcher rejects invalid semantic patch and preserves runtim
 			watcherProfileId: "p-watcher",
 			finalizerProfileId: "p-finalizer",
 			dispatcherProfileId: "p-dispatcher",
-			profileResolver: makeFakeProfileResolver({ "p-dispatcher": { defaultBrowserId: "browser-dispatcher" } }) as never,
+			profileResolver: makeFakeProfileResolver({ "p-dispatcher": {} }) as never,
 			sessionFactory: makeFakeSessionFactory([JSON.stringify({
 				itemId: "vendor_1",
 				title: "Assess Acme Sensors",
@@ -253,7 +243,6 @@ test("runDiscoveryDispatcher rejects invalid semantic patch and preserves runtim
 		assert.equal(out.itemId, "vendor_1");
 		assert.match(out.error, /workUnit/);
 		assert.equal(out.runtimeContext?.requestedProfileId, "p-dispatcher");
-		assert.equal(out.runtimeContext?.browserId, "browser-dispatcher");
 	} finally {
 		await rm(root, { recursive: true }).catch(() => {});
 	}
@@ -316,13 +305,13 @@ test("runDiscoveryDispatcher falls back from dispatcherProfileId to decomposerPr
 
 // ── P21-B: decomposer runner ──
 
-test("runDecomposer uses decomposerProfileId and decomposer browser scope", async () => {
+test("runDecomposer uses decomposerProfileId and decomposer agent scope", async () => {
 	const root = await mkdtemp(join(tmpdir(), "team-decomposer-"));
 	try {
 		const { factory, captured } = makeCapturingSessionFactory(['{"decision":"no_split","reason":"small enough"}']);
 		const resolver = makeFakeProfileResolver({
-			"p-worker": { defaultBrowserId: "browser-worker" },
-			"p-decomposer": { defaultBrowserId: "browser-decomposer" },
+			"p-worker": {},
+			"p-decomposer": {},
 		});
 		const runner = new AgentProfileRoleRunner({
 			projectRoot: root, teamDataDir: root,
@@ -341,10 +330,7 @@ test("runDecomposer uses decomposerProfileId and decomposer browser scope", asyn
 
 		assert.equal(captured.length, 1);
 		assert.equal(captured[0]!.snapshot.profileId, "p-decomposer");
-		assert.equal(captured[0]!.browserId, "browser-decomposer");
-		assert.ok(captured[0]!.browserScope?.includes("decomposer"));
 		assert.equal(out.runtimeContext?.requestedProfileId, "p-decomposer");
-		assert.equal(out.runtimeContext?.browserId, "browser-decomposer");
 	} finally {
 		await rm(root, { recursive: true }).catch(() => {});
 	}

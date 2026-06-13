@@ -10,7 +10,6 @@ export interface PlaygroundPageHtmlInput {
 	taskInboxView: string;
 	connActivityDialogs: string;
 	agentManagerDialogs?: string;
-	browserWorkbenchDialogs?: string;
 	assetDialogs: string;
 }
 
@@ -238,15 +237,6 @@ ${input.playgroundScript ?? ""}</script>`;
 							</span>
 							<span>API 源管理</span>
 						</a>
-						<button id="mobile-menu-browser-workbench-button" class="mobile-overflow-menu-item" type="button" role="menuitem">
-							<span class="mobile-overflow-menu-item-icon" aria-hidden="true">
-								<svg viewBox="0 0 24 24" fill="none">
-									<path d="M4 5h16v10H4V5Z" stroke-width="1.8" stroke-linejoin="round" />
-									<path d="M8 19h8M12 15v4" stroke-width="1.8" stroke-linecap="round" />
-								</svg>
-							</span>
-							<span>Chrome 工作台</span>
-						</button>
 						<button id="mobile-menu-theme-button" class="mobile-overflow-menu-item" type="button" role="menuitem" aria-pressed="false" aria-label="切换浅色主题" title="切换浅色主题">
 							<span class="mobile-overflow-menu-item-icon" aria-hidden="true">
 								<svg viewBox="0 0 24 24" fill="none">
@@ -303,10 +293,6 @@ ${input.playgroundScript ?? ""}</script>`;
 							<span>查清谁在用哪个源</span>
 							<strong>API 源管理</strong>
 						</a>
-						<button id="open-browser-workbench-button" class="telemetry-card telemetry-action" type="button" role="menuitem">
-							<span>查看本机浏览器连接</span>
-							<strong>Chrome 工作台</strong>
-						</button>
 					</div>
 				</div>
 			</aside>
@@ -395,7 +381,6 @@ ${input.playgroundScript ?? ""}</script>`;
 		</div>
 		${input.taskInboxView}
 		${input.agentManagerDialogs ?? ""}
-		${input.browserWorkbenchDialogs ?? ""}
 		<div id="context-usage-dialog" class="context-usage-dialog" aria-hidden="true" inert hidden>
 			<section class="context-usage-dialog-panel" role="dialog" aria-modal="true" aria-labelledby="context-usage-dialog-title">
 				<div class="context-usage-dialog-head">

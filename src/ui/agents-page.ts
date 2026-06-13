@@ -874,7 +874,6 @@ function getAgentsPageJs(): string {
 			switchLoading: false,
 			gallerySkills: [],
 			editorMode: null,
-			browserList: [],
 			modelConfig: null,
 			supportCatalogsLoaded: false,
 			supportCatalogsLoading: false,
@@ -970,20 +969,14 @@ function getAgentsPageJs(): string {
 			state.supportCatalogsLoading = true;
 			state.supportCatalogsError = "";
 			supportCatalogsPromise = Promise.allSettled([
-				fetchJson("/v1/browsers"),
 				fetchJson("/v1/model-config"),
 			]).then(function(results) {
-				var browserResult = results[0];
-				var modelResult = results[1];
-				var browsersOk = browserResult.status === "fulfilled";
+				var modelResult = results[0];
 				var modelOk = modelResult.status === "fulfilled" && modelResult.value;
-				if (browsersOk) {
-					state.browserList = Array.isArray(browserResult.value.browsers) ? browserResult.value.browsers : [];
-				}
 				state.modelConfig = modelOk ? modelResult.value : null;
-				state.supportCatalogsLoaded = Boolean(browsersOk && modelOk);
+				state.supportCatalogsLoaded = Boolean(modelOk);
 				if (!state.supportCatalogsLoaded) {
-					state.supportCatalogsError = "浏览器或模型配置加载失败，请重试。";
+					state.supportCatalogsError = "模型配置加载失败，请重试。";
 				}
 				return state.supportCatalogsLoaded;
 			}).finally(function() {
@@ -1074,9 +1067,7 @@ function getAgentsPageJs(): string {
 			var total = state.agents.length;
 			var active = state.agents.filter(function(a) { return isAgentActive(a); }).length;
 			var skillsCount = getSkillCountText(state.selectedId);
-			var browsers = new Set();
-			state.agents.forEach(function(a) { if (a.defaultBrowserId) browsers.add(a.defaultBrowserId); });
-			return { total: total, active: active, skills: skillsCount, browsers: browsers.size };
+			return { total: total, active: active, skills: skillsCount };
 		}
 
 		/* ── Rendering: Stats ── */
@@ -1085,7 +1076,6 @@ function getAgentsPageJs(): string {
 			document.getElementById("ag-stat-total").textContent = c.total;
 			document.getElementById("ag-stat-active").textContent = c.active;
 			document.getElementById("ag-stat-skills").textContent = c.skills;
-			document.getElementById("ag-stat-browsers").textContent = c.browsers;
 		}
 
 		/* ── Rendering: Filter tabs ── */
@@ -1154,7 +1144,7 @@ function getAgentsPageJs(): string {
 				// Meta line
 				var meta = document.createElement("div");
 				meta.className = "ag-agent-item-meta";
-				meta.textContent = agent.agentId + (agent.defaultBrowserId ? " · " + agent.defaultBrowserId : "");
+				meta.textContent = agent.agentId;
 				item.appendChild(meta);
 
 				item.addEventListener("click", function() { selectAgent(agent.agentId); });
@@ -1172,7 +1162,6 @@ function getAgentsPageJs(): string {
 		var SVG_USER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M5.5 20v-1a6.5 6.5 0 0113 0v1"/></svg>';
 		var SVG_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>';
 		var SVG_STAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
-		var SVG_MONITOR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
 		var SVG_FILE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
 		var SVG_ACTIVITY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>';
 		var SVG_GRID = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="3"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="12" y2="16"/></svg>';
@@ -1276,7 +1265,6 @@ function getAgentsPageJs(): string {
 			html += '<div class="ag-status-cards">';
 			html += buildMiniCard("Agent ID", '<code>' + escapeHtml(agent.agentId) + '</code>', "var(--primary-soft)", "#6366F1", SVG_GRID);
 			html += buildMiniCard("状态", status.text, status.cls === "ag-badge--active" ? "var(--success-soft)" : "var(--primary-soft)", status.cls === "ag-badge--active" ? "#22C55E" : "#6366F1", SVG_ACTIVITY);
-			html += buildMiniCard("浏览器", agent.defaultBrowserId || "默认", "var(--warning-soft)", "#F59E0B", SVG_MONITOR);
 			html += buildMiniCard("技能数", getSkillCountText(agent.agentId), "rgba(139,92,246,0.12)", "#8B5CF6", SVG_STAR);
 			html += '</div>';
 			region.innerHTML = html;
@@ -1292,7 +1280,6 @@ function getAgentsPageJs(): string {
 			html += '<div class="ag-config-grid">';
 			html += buildConfigItem("Agent ID", '<code>' + escapeHtml(agent.agentId) + '</code>', true);
 			html += buildConfigItem("名称", escapeHtml(agent.name || "-"), false);
-			html += buildConfigItem("默认浏览器", escapeHtml(agent.defaultBrowserId || "跟随系统默认"), false);
 			html += buildConfigItem("默认模型", escapeHtml(agent.defaultModelProvider && agent.defaultModelId ? agent.defaultModelProvider + "/" + agent.defaultModelId : "跟随全局默认"), false);
 			html += buildConfigItem("会话接口", '<code>/v1/agents/' + escapeHtml(agent.agentId) + '/chat/*</code>', true);
 			html += '</div></div>';
@@ -2093,8 +2080,8 @@ function getAgentsPageJs(): string {
 		function guardEditorSupportCatalogs() {
 			if (state.supportCatalogsLoading || !state.supportCatalogsLoaded || !state.modelConfig) {
 				showEditorError(state.supportCatalogsLoading
-					? "浏览器和模型配置仍在加载，请稍后再保存。"
-					: (state.supportCatalogsError || "浏览器或模型配置不可用，无法保存。"));
+					? "模型配置仍在加载，请稍后再保存。"
+					: (state.supportCatalogsError || "模型配置不可用，无法保存。"));
 				return false;
 			}
 			return true;
@@ -2136,29 +2123,6 @@ function getAgentsPageJs(): string {
 			return { defaultModelProvider: modelProvider, defaultModelId: modelModel };
 		}
 
-		function getBrowserLabel(browserId) {
-			var normalized = String(browserId || "").trim();
-			if (!normalized) return "跟随系统默认";
-			var browser = state.browserList.find(function(b) { return b.browserId === normalized; });
-			return browser ? ((browser.name || browser.browserId) + " · " + browser.browserId) : normalized;
-		}
-
-		async function confirmAgentBrowserChangeIfNeeded(agent, nextBrowserId) {
-			var currentBrowserId = String((agent || {}).defaultBrowserId || "").trim();
-			var normalizedNextBrowserId = String(nextBrowserId || "").trim();
-			if (currentBrowserId === normalizedNextBrowserId) return true;
-			return await openConfirmDialog({
-				title: "确认变更默认浏览器",
-				message:
-					'Agent "' + ((agent || {}).name || (agent || {}).agentId || "") + '" 的默认浏览器将从 "' +
-					getBrowserLabel(currentBrowserId) +
-					'" 改为 "' +
-					getBrowserLabel(normalizedNextBrowserId) +
-					'"。后续新 run 会使用新的浏览器登录态。',
-				confirmLabel: "确认变更",
-			});
-		}
-
 		function renderEditorForm(agent) {
 			var body = document.getElementById("ag-detail-body");
 			var titleEl = document.getElementById("ag-detail-title");
@@ -2174,13 +2138,8 @@ function getAgentsPageJs(): string {
 			var supportCatalogsLoading = state.supportCatalogsLoading && !supportCatalogsReady;
 			var supportCatalogDisabled = supportCatalogsReady ? "" : " disabled";
 			var supportCatalogHint = supportCatalogsLoading
-				? '<span class="field-hint">正在加载浏览器和模型配置...</span>'
-				: (!supportCatalogsReady ? '<span class="field-hint">' + escapeHtml(state.supportCatalogsError || "浏览器或模型配置暂不可用，无法保存。") + '</span>' : "");
-
-			var browserOptions = state.browserList.map(function(b) {
-				return '<option value="' + escapeHtml(b.browserId) + '"' + (isEdit && agent.defaultBrowserId === b.browserId ? ' selected' : '') + '>' + escapeHtml(b.browserId) + '</option>';
-			}).join("");
-
+				? '<span class="field-hint">正在加载模型配置...</span>'
+				: (!supportCatalogsReady ? '<span class="field-hint">' + escapeHtml(state.supportCatalogsError || "模型配置暂不可用，无法保存。") + '</span>' : "");
 
 			var isMainAgent = isEdit && agent.agentId === "main";
 			var modelProviderOpts = "";
@@ -2221,9 +2180,9 @@ function getAgentsPageJs(): string {
 				+ '<div class="ag-editor-section-body">'
 				+ idField + nameField
 				+ '<label class="ag-editor-field"><span>描述</span><textarea id="ed-desc" rows="3" placeholder="描述 Agent 的职责...">' + (isEdit ? escapeHtml(agent.description || "") : "") + '</textarea></label>'
-				+ '<label class="ag-editor-field"><span>默认浏览器</span><select id="ed-browser"' + supportCatalogDisabled + '><option value="">跟随系统默认</option>' + browserOptions + '</select>' + supportCatalogHint + '</label>'
 				+ '<label class="ag-editor-field"' + (isMainAgent ? ' style="display:none"' : '') + '><span>默认模型提供商</span><select id="ed-model-provider"' + supportCatalogDisabled + '>' + modelProviderOpts + '</select></label>'
 				+ '<label class="ag-editor-field"' + (isMainAgent ? ' style="display:none"' : '') + '><span>默认模型</span><select id="ed-model-model"' + supportCatalogDisabled + '>' + modelModelOpts + '</select></label>'
+				+ supportCatalogHint
 				+ '</div></div>'
 				+ '<div class="ag-editor-actions"><div><button id="ed-submit" class="ag-btn ag-btn--primary" type="button"' + supportCatalogDisabled + '>' + (isEdit ? "保存修改" : "创建 Agent") + '</button> <button id="ed-cancel" class="ag-btn ag-btn--outline" type="button">取消</button></div><div class="ag-editor-actions-right">' + (isEdit ? "agentId: " + escapeHtml(agent.agentId) : "") + '</div></div>'
 				+ '</div>';
@@ -2258,15 +2217,12 @@ function getAgentsPageJs(): string {
 			var idInput = document.getElementById("ed-id");
 			if (idInput) idInput.value = id;
 			var desc = (document.getElementById("ed-desc") || {}).value || "";
-			var browser = (document.getElementById("ed-browser") || {}).value || "";
 			var modelPatch = buildEditorModelPatch(false);
 			if (modelPatch === null) return;
 			if (!name.trim()) { showEditorError("名称不能为空"); return; }
 			var idError = validateAgentIdInput(id);
 			if (idError) { showEditorError(idError); return; }
 			if (["main","search"].indexOf(id) !== -1) { showEditorError("该 Agent ID 已被系统保留"); return; }
-			var confirmed = await confirmAgentBrowserChangeIfNeeded({ agentId: id, name: name, defaultBrowserId: "" }, browser);
-			if (!confirmed) return;
 			var submitBtn = document.getElementById("ed-submit");
 			if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "创建中..."; }
 			try {
@@ -2274,12 +2230,8 @@ function getAgentsPageJs(): string {
 					method: "POST",
 					headers: {
 						"content-type": "application/json",
-						...(browser ? {
-							"x-ugk-browser-binding-confirmed": "true",
-							"x-ugk-browser-binding-source": "playground",
-						} : {}),
 					},
-					body: JSON.stringify({ agentId: id, name: name, description: desc, defaultBrowserId: browser || undefined, ...modelPatch }),
+					body: JSON.stringify({ agentId: id, name: name, description: desc, ...modelPatch }),
 				});
 				state.editorMode = null;
 				await apiFetchAgents();
@@ -2300,13 +2252,9 @@ function getAgentsPageJs(): string {
 			if (!agent) return;
 			var name = (document.getElementById("ed-name") || {}).value || "";
 			var desc = (document.getElementById("ed-desc") || {}).value || "";
-			var browser = (document.getElementById("ed-browser") || {}).value || "";
 			var modelPatch = buildEditorModelPatch(true);
 			if (modelPatch === null) return;
 			if (!name.trim()) { showEditorError("名称不能为空"); return; }
-			var browserChanged = String(agent.defaultBrowserId || "").trim() !== String(browser || "").trim();
-			var confirmed = await confirmAgentBrowserChangeIfNeeded(agent, browser);
-			if (!confirmed) return;
 			var submitBtn = document.getElementById("ed-submit");
 			if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "保存中..."; }
 			try {
@@ -2314,12 +2262,8 @@ function getAgentsPageJs(): string {
 					method: "PATCH",
 					headers: {
 						"content-type": "application/json",
-						...(browserChanged ? {
-							"x-ugk-browser-binding-confirmed": "true",
-							"x-ugk-browser-binding-source": "playground",
-						} : {}),
 					},
-					body: JSON.stringify({ name: name, description: desc, defaultBrowserId: browser || null, ...modelPatch }),
+					body: JSON.stringify({ name: name, description: desc, ...modelPatch }),
 				});
 				state.editorMode = null;
 				await apiFetchAgents();
@@ -2466,16 +2410,6 @@ export function renderAgentsPage(): string {
 				</div>
 				<div class="ag-stat-icon">
 					<svg viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-				</div>
-			</div>
-			<div class="ag-stat-card ag-stat-card--violet">
-				<div class="ag-stat-card-body">
-					<div class="ag-stat-label">可用浏览器</div>
-					<div class="ag-stat-num" id="ag-stat-browsers">0</div>
-					<div class="ag-stat-desc">已绑定实例</div>
-				</div>
-				<div class="ag-stat-icon">
-					<svg viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
 				</div>
 			</div>
 		</section>

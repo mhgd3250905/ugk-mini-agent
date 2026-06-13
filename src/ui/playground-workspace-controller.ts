@@ -1,6 +1,6 @@
 export function getPlaygroundWorkspaceControllerScript(): string {
 	return `
-		const WORKSPACE_MODES = new Set(["chat", "assets", "conn", "agents", "browsers", "task"]);
+		const WORKSPACE_MODES = new Set(["chat", "assets", "conn", "agents", "task"]);
 		const workspaceDesktopMediaQuery = window.matchMedia("(min-width: 641px)");
 
 		function normalizeWorkspaceMode(mode) {
@@ -22,9 +22,6 @@ export function getPlaygroundWorkspaceControllerScript(): string {
 			if (mode === "agents") {
 				return agentManagerDialog;
 			}
-			if (mode === "browsers") {
-				return browserWorkbenchDialog;
-			}
 			if (mode === "task") {
 				return taskInboxView;
 			}
@@ -45,7 +42,6 @@ export function getPlaygroundWorkspaceControllerScript(): string {
 			setWorkspaceButtonActive(openAssetLibraryButton, state.workspaceMode === "assets");
 			setWorkspaceButtonActive(openConnManagerButton, state.workspaceMode === "conn");
 			setWorkspaceButtonActive(agentSelectorStatus, state.workspaceMode === "agents");
-			setWorkspaceButtonActive(openBrowserWorkbenchButton, state.workspaceMode === "browsers");
 			setWorkspaceButtonActive(openTaskInboxButton, state.workspaceMode === "task");
 		}
 
@@ -88,7 +84,7 @@ export function getPlaygroundWorkspaceControllerScript(): string {
 		}
 
 		function syncWorkspacePanelPlacement() {
-			for (const mode of ["assets", "conn", "agents", "browsers", "task"]) {
+			for (const mode of ["assets", "conn", "agents", "task"]) {
 				placeWorkspacePanel(mode, getWorkspacePanel(mode));
 			}
 		}
@@ -102,9 +98,6 @@ export function getPlaygroundWorkspaceControllerScript(): string {
 			}
 			if (activeMode !== "agents" && state.agentManagerOpen) {
 				closeAgentManager();
-			}
-			if (activeMode !== "browsers" && state.browserWorkbenchOpen) {
-				closeBrowserWorkbench();
 			}
 			if (activeMode !== "task" && state.taskInboxOpen) {
 				closeTaskInbox();

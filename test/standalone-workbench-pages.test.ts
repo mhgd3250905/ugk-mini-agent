@@ -66,7 +66,7 @@ test("standalone conn page can create team group conn executions", () => {
 	assert.doesNotMatch(response, /run\.status === "failed" && run\.errorText[\s\S]{0,260}Skipped/);
 	assert.match(response, /editor-prompt/);
 	assert.match(response, /editor-profile-id/);
-	assert.match(response, /editor-browser-id/);
+	assert.doesNotMatch(response, /editor-browser-id/);
 	assert.match(response, /editor-model-provider/);
 	assert.match(response, /editor-model-id/);
 });

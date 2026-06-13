@@ -51,8 +51,6 @@ export function makeFakeProfileResolver(snapshotsByProfileId: Record<string, Par
 export interface CapturedSessionInput {
 	runId: string;
 	connId: string;
-	browserId?: string;
-	browserScope?: string;
 	snapshot: ResolvedBackgroundAgentSnapshot;
 	workspaceRootPath?: string;
 }
@@ -64,16 +62,12 @@ export function makeCapturingSessionFactory(responses: string[]) {
 		createSession: async (input: {
 			runId: string;
 			connId: string;
-			browserId?: string;
-			browserScope?: string;
 			snapshot: ResolvedBackgroundAgentSnapshot;
 			workspace?: { rootPath?: string };
 		}) => {
 			captured.push({
 				runId: input.runId,
 				connId: input.connId,
-				browserId: input.browserId,
-				browserScope: input.browserScope,
 				snapshot: input.snapshot,
 				workspaceRootPath: input.workspace?.rootPath,
 			});
@@ -124,10 +118,8 @@ export function makeDiscoveryDispatchPatchJson(itemId = "vendor_1"): string {
 
 export interface CapturedRouteCall {
 	scope: string;
-	browserId: string | undefined;
 }
 
 export interface CapturedCleanupCall {
 	scope: string;
-	options?: { browserId?: string };
 }

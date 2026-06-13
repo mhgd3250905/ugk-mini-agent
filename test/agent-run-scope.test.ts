@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-	createBrowserCleanupScope,
+	createAgentRunScope,
 	runWithScopedAgentEnvironment,
 } from "../src/agent/agent-run-scope.js";
 import { getCurrentAgentScope } from "../src/agent/agent-scope-context.js";
 
 const SCOPE_ENV_KEYS = ["CLAUDE_AGENT_ID", "CLAUDE_HOOK_AGENT_ID", "agent_id"] as const;
 
-test("createBrowserCleanupScope sanitizes conversation ids for browser cleanup", () => {
-	assert.equal(createBrowserCleanupScope("manual:hello/world"), "manual-hello-world");
-	assert.equal(createBrowserCleanupScope("manual:hello/world", "search"), "search-manual-hello-world");
-	assert.equal(createBrowserCleanupScope("!!!"), "conversation");
+test("createAgentRunScope sanitizes conversation ids for scoped agent runs", () => {
+	assert.equal(createAgentRunScope("manual:hello/world"), "manual-hello-world");
+	assert.equal(createAgentRunScope("manual:hello/world", "search"), "search-manual-hello-world");
+	assert.equal(createAgentRunScope("!!!"), "conversation");
 });
 
 test("runWithScopedAgentEnvironment exposes scope without mutating process env", async () => {

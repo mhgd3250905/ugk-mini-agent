@@ -7,7 +7,6 @@ export interface AgentSummary {
 	agentId: string;
 	name: string;
 	description: string;
-	defaultBrowserId?: string;
 	defaultModelProvider?: string;
 	defaultModelId?: string;
 }
@@ -52,7 +51,6 @@ export class AgentServiceRegistry<TService> {
 			agentId: profile.agentId,
 			name: profile.name,
 			description: profile.description,
-			...(profile.defaultBrowserId ? { defaultBrowserId: profile.defaultBrowserId } : {}),
 			...(profile.defaultModelProvider && profile.defaultModelId
 				? { defaultModelProvider: profile.defaultModelProvider, defaultModelId: profile.defaultModelId }
 				: {}),

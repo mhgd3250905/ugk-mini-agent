@@ -347,7 +347,7 @@ test("GET /playground/agents remove and install capture agentId before await", a
 	await app.close();
 });
 
-test("GET /playground/agents defers browser and model catalogs from initial load", async () => {
+test("GET /playground/agents defers model catalogs from initial load", async () => {
 	const app = await buildServer({
 		agentService: createAgentServiceStub(),
 	});
@@ -395,8 +395,8 @@ test("GET /playground/agents loads support catalogs only when create or edit edi
 	const loaderRegion = body.slice(loaderStart, loaderEnd);
 	assert.match(loaderRegion, /supportCatalogsLoaded/);
 	assert.match(loaderRegion, /supportCatalogsLoading/);
-	assert.match(loaderRegion, /fetchJson\("\/v1\/browsers"\)/);
 	assert.match(loaderRegion, /fetchJson\("\/v1\/model-config"\)/);
+	assert.doesNotMatch(loaderRegion, /fetchJson\("\/v1\/browsers"\)/);
 
 	const createStart = body.indexOf("function openCreateEditor()");
 	const createEnd = body.indexOf("function openEditEditor()", createStart);
@@ -432,7 +432,7 @@ test("GET /playground/agents disables editor submit while support catalogs are l
 	assert.match(renderRegion, /supportCatalogsLoading/);
 	assert.match(renderRegion, /ed-submit/);
 	assert.match(renderRegion, /supportCatalogDisabled = supportCatalogsReady \? ["']{2} : ["'] disabled["']/);
-	assert.match(renderRegion, /正在加载浏览器和模型配置/);
+	assert.match(renderRegion, /正在加载模型配置/);
 	await app.close();
 });
 
@@ -457,7 +457,7 @@ test("GET /playground/agents guards create and edit submit when model config is 
 	assert.match(guardRegion, /return false/);
 
 	const modelPatchStart = body.indexOf("function buildEditorModelPatch(isEdit)");
-	const modelPatchEnd = body.indexOf("function getBrowserLabel(", modelPatchStart);
+	const modelPatchEnd = body.indexOf("function renderEditorForm(agent)", modelPatchStart);
 	assert.ok(modelPatchStart >= 0, "buildEditorModelPatch function not found");
 	assert.ok(modelPatchEnd > modelPatchStart, "buildEditorModelPatch region end not found");
 	const modelPatchRegion = body.slice(modelPatchStart, modelPatchEnd);

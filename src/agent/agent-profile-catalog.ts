@@ -30,7 +30,6 @@ export interface CreateAgentProfileInput {
 	agentId: string;
 	name?: string;
 	description?: string;
-	defaultBrowserId?: string;
 	defaultModelProvider?: string;
 	defaultModelId?: string;
 	initialSystemSkillNames?: string[];
@@ -44,7 +43,6 @@ export interface ArchiveAgentProfileResult {
 export interface UpdateAgentProfileInput {
 	name?: string;
 	description?: string;
-	defaultBrowserId?: string | null;
 	defaultModelProvider?: string | null;
 	defaultModelId?: string | null;
 }
@@ -72,20 +70,6 @@ function normalizeAgentName(agentId: string, name: string | undefined): string {
 function normalizeAgentDescription(description: string | undefined): string {
 	const normalized = String(description || "").trim();
 	return normalized || "独立 agent profile。";
-}
-
-function normalizeOptionalBrowserId(browserId: unknown): string | undefined {
-	if (browserId === undefined || browserId === null) {
-		return undefined;
-	}
-	const normalized = String(browserId).trim();
-	if (!normalized) {
-		return undefined;
-	}
-	if (!/^[a-z][a-z0-9-]{0,62}$/.test(normalized)) {
-		throw new Error("defaultBrowserId must start with a lowercase letter and contain only lowercase letters, digits, or hyphens");
-	}
-	return normalized;
 }
 
 export function normalizeOptionalModelSelection(input: {
@@ -203,7 +187,6 @@ export function normalizeAgentProfileInput(input: CreateAgentProfileInput): Agen
 		agentId,
 		name: normalizeAgentName(agentId, input.name),
 		description: normalizeAgentDescription(input.description),
-		...((() => { const id = normalizeOptionalBrowserId(input.defaultBrowserId); return id ? { defaultBrowserId: id } : {}; })()),
 		...modelSelection,
 	};
 }
@@ -563,16 +546,11 @@ export async function updateStoredAgentProfile(
 						}
 					: {};
 			const updatedSummary: AgentProfileSummaryInput = {
-			agentId,
-			name: normalizeAgentName(agentId, input.name ?? currentProfile.name),
-			description: normalizeAgentDescription(input.description ?? currentProfile.description),
-			...(Object.hasOwn(input, "defaultBrowserId")
-				? (() => { const id = normalizeOptionalBrowserId(input.defaultBrowserId); return id ? { defaultBrowserId: id } : {}; })()
-				: currentProfile.defaultBrowserId
-					? { defaultBrowserId: currentProfile.defaultBrowserId }
-					: {}),
-			...nextModelSelection,
-		};
+				agentId,
+				name: normalizeAgentName(agentId, input.name ?? currentProfile.name),
+				description: normalizeAgentDescription(input.description ?? currentProfile.description),
+				...nextModelSelection,
+			};
 		return {
 			catalog: {
 				agents: [

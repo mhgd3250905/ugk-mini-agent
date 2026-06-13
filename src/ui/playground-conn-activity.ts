@@ -964,11 +964,6 @@ export function getConnActivityDialogs(): string {
 								<small class="conn-editor-field-hint">后台任务借用这个 Agent 的规则和技能，不写入它的聊天历史。</small>
 							</label>
 							<label class="conn-editor-field">
-								<span>浏览器</span>
-								<select id="conn-editor-browser-id" name="browserId"></select>
-								<small class="conn-editor-field-hint">不指定时跟随执行 Agent 的默认浏览器。</small>
-							</label>
-							<label class="conn-editor-field">
 								<span>API 源</span>
 								<select id="conn-editor-model-provider" name="modelProvider"></select>
 								<small class="conn-editor-field-hint">后台任务会按这里保存的模型运行，不跟随前台聊天临时切换。</small>

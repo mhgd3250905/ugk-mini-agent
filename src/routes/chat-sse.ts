@@ -28,7 +28,7 @@ export function writeSseEvent<T = ChatStreamEvent>(raw: SseResponse, event: T): 
 	try {
 		raw.write(`data: ${JSON.stringify(event)}\n\n`);
 	} catch {
-		// Browser refresh closes the SSE response, but the agent run should keep working.
+		// Page refresh closes the SSE response, but the agent run should keep working.
 	}
 }
 
@@ -40,7 +40,7 @@ export function writeSseComment(raw: SseResponse, comment: string = "ping"): voi
 	try {
 		raw.write(`: ${comment}\n\n`);
 	} catch {
-		// Browser refresh closes the SSE response, but the agent run should keep working.
+		// Page refresh closes the SSE response, but the agent run should keep working.
 	}
 }
 

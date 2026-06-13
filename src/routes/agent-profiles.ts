@@ -15,21 +15,8 @@ import {
 	updateStoredAgentProfileSkillEnabled,
 } from "../agent/agent-profile-catalog.js";
 import type { ModelConfigStore, ModelSelectionValidator } from "../agent/model-config.js";
-import type { BrowserRegistry } from "../browser/browser-registry.js";
 import { getAppConfig } from "../config.js";
 import { getActiveTeamProfileLocks } from "../team/config-locks.js";
-import {
-	normalizeBrowserBindingAuditValue,
-	recordBrowserBindingAudit,
-	type BrowserBindingAuditChange,
-	type BrowserBindingAuditLog,
-} from "../browser/browser-binding-audit-log.js";
-import {
-	compactBrowserBindingChanges,
-	createBrowserBindingChange,
-	evaluateBrowserBindingWrite,
-	readBrowserBindingRequestContext,
-} from "../browser/browser-binding-policy.js";
 import type {
 	AgentRunStatusListResponseBody,
 	AgentSkillListResponseBody,
@@ -37,13 +24,11 @@ import type {
 	UpdateAgentSkillRequestBody,
 	UpdateAgentSkillResponseBody,
 } from "../types/api.js";
-import { resolveScopedAgentServiceOrSend, sendUnknownAgent, validateBrowserId } from "./agent-route-utils.js";
+import { resolveScopedAgentServiceOrSend, sendUnknownAgent } from "./agent-route-utils.js";
 import { sendBadRequest, sendConflict, sendInternalError, sendNotImplemented, sendNotFound } from "./http-errors.js";
 
 export interface AgentProfileRouteDependencies {
 	agentServiceRegistry?: AgentServiceRegistry<AgentService>;
-	browserRegistry?: BrowserRegistry;
-	browserBindingAuditLog?: BrowserBindingAuditLog;
 	agentTemplateRegistry?: { invalidate(profileId?: string): void };
 	projectRoot?: string;
 	modelConfigStore?: ModelConfigStore;
@@ -62,11 +47,10 @@ export function registerAgentProfileRoutes(app: FastifyInstance, deps: AgentProf
 		return sendNotFound(reply, `Unknown agentId: ${agentId ?? ""}`);
 	}
 
-	function presentAgentSummary(agent: { agentId: string; name: string; description: string; defaultBrowserId?: string; defaultModelProvider?: string; defaultModelId?: string }): {
+	function presentAgentSummary(agent: { agentId: string; name: string; description: string; defaultModelProvider?: string; defaultModelId?: string }): {
 		agentId: string;
 		name: string;
 		description: string;
-		defaultBrowserId?: string;
 		defaultModelProvider?: string;
 		defaultModelId?: string;
 	} {
@@ -74,15 +58,10 @@ export function registerAgentProfileRoutes(app: FastifyInstance, deps: AgentProf
 			agentId: agent.agentId,
 			name: agent.name,
 			description: agent.description,
-			...(agent.defaultBrowserId ? { defaultBrowserId: agent.defaultBrowserId } : {}),
 			...(agent.defaultModelProvider && agent.defaultModelId
 				? { defaultModelProvider: agent.defaultModelProvider, defaultModelId: agent.defaultModelId }
 				: {}),
 		};
-	}
-
-	function sendRunningBrowserBindingChange(reply: FastifyReply, agentId: string): FastifyReply {
-		return sendConflict(reply, `Agent ${agentId} has a running conversation. Stop the current run before changing its default browser.`);
 	}
 
 	function sendRunningModelBindingChange(reply: FastifyReply, agentId: string): FastifyReply {
@@ -156,19 +135,15 @@ export function registerAgentProfileRoutes(app: FastifyInstance, deps: AgentProf
 		"/v1/agents",
 		async (
 			request: FastifyRequest<{
-				Body: { agentId?: string; name?: string; description?: string; defaultBrowserId?: string; defaultModelProvider?: string; defaultModelId?: string; initialSystemSkillNames?: string[] };
+				Body: { agentId?: string; name?: string; description?: string; defaultModelProvider?: string; defaultModelId?: string; initialSystemSkillNames?: string[] };
 			}>,
 			reply,
-		): Promise<{ agent: { agentId: string; name: string; description: string; defaultBrowserId?: string; defaultModelProvider?: string; defaultModelId?: string } } | FastifyReply> => {
+		): Promise<{ agent: { agentId: string; name: string; description: string; defaultModelProvider?: string; defaultModelId?: string } } | FastifyReply> => {
 			if (!deps.projectRoot || !deps.agentServiceRegistry) {
 				return sendNotImplemented(reply, "Agent profile catalog is not available.");
 			}
 			try {
 				const body = request.body ?? {};
-				const browserValidation = validateBrowserId(deps.browserRegistry, reply, body.defaultBrowserId);
-				if (browserValidation) {
-					return browserValidation;
-				}
 				let modelSelection: { defaultModelProvider?: string; defaultModelId?: string } = {};
 				if (body.defaultModelProvider !== undefined || body.defaultModelId !== undefined) {
 					modelSelection = normalizeOptionalModelSelection({
@@ -184,7 +159,6 @@ export function registerAgentProfileRoutes(app: FastifyInstance, deps: AgentProf
 					agentId: body.agentId ?? "",
 					name: body.name,
 					description: body.description,
-					defaultBrowserId: body.defaultBrowserId,
 					...modelSelection,
 					initialSystemSkillNames: body.initialSystemSkillNames,
 				});
@@ -204,10 +178,10 @@ export function registerAgentProfileRoutes(app: FastifyInstance, deps: AgentProf
 		async (
 			request: FastifyRequest<{
 				Params: { agentId?: string };
-				Body: { name?: string; description?: string; defaultBrowserId?: string | null; defaultModelProvider?: string | null; defaultModelId?: string | null };
+				Body: { name?: string; description?: string; defaultModelProvider?: string | null; defaultModelId?: string | null };
 			}>,
 			reply,
-		): Promise<{ agent: { agentId: string; name: string; description: string; defaultBrowserId?: string; defaultModelProvider?: string; defaultModelId?: string } } | FastifyReply> => {
+		): Promise<{ agent: { agentId: string; name: string; description: string; defaultModelProvider?: string; defaultModelId?: string } } | FastifyReply> => {
 			const { agentId } = request.params ?? {};
 			if (!agentId || !deps.projectRoot || !deps.agentServiceRegistry) {
 				return sendUnknownAgent(reply, agentId);
@@ -222,60 +196,6 @@ export function registerAgentProfileRoutes(app: FastifyInstance, deps: AgentProf
 			}
 			try {
 				const body = request.body ?? {};
-				const browserValidation = validateBrowserId(deps.browserRegistry, reply, body.defaultBrowserId);
-				if (browserValidation) {
-					return browserValidation;
-				}
-				const currentProfile = deps.agentServiceRegistry.getProfile(agentId);
-				const auditSource = readBrowserBindingRequestContext(request.headers);
-				let browserBindingChanges: BrowserBindingAuditChange[] = [];
-				if (Object.hasOwn(body, "defaultBrowserId")) {
-					const from = normalizeBrowserBindingAuditValue(currentProfile?.defaultBrowserId);
-					const to = normalizeBrowserBindingAuditValue(body.defaultBrowserId);
-					browserBindingChanges = compactBrowserBindingChanges([
-						createBrowserBindingChange("defaultBrowserId", from, to),
-					]);
-				}
-				const bindingDecision = evaluateBrowserBindingWrite(browserBindingChanges, auditSource);
-				if (!bindingDecision.allowed && bindingDecision.status === "rejected_unconfirmed") {
-					await recordBrowserBindingAudit(deps.browserBindingAuditLog, {
-						kind: "agent_browser_binding",
-						targetId: agentId,
-						targetLabel: currentProfile?.name ?? agentId,
-						source: auditSource.source,
-						confirmedByClient: false,
-						status: bindingDecision.status,
-						changes: browserBindingChanges,
-					});
-					return sendBadRequest(reply, bindingDecision.message);
-				}
-				if (!bindingDecision.allowed && bindingDecision.status === "rejected_non_ui_source") {
-					await recordBrowserBindingAudit(deps.browserBindingAuditLog, {
-						kind: "agent_browser_binding",
-						targetId: agentId,
-						targetLabel: currentProfile?.name ?? agentId,
-						source: auditSource.source,
-						confirmedByClient: auditSource.confirmedByClient,
-						status: bindingDecision.status,
-						changes: browserBindingChanges,
-					});
-					return sendBadRequest(reply, bindingDecision.message);
-				}
-				if (browserBindingChanges.length > 0) {
-					const catalog = await service.getConversationCatalog();
-					if (catalog.conversations.some((conversation) => conversation.running)) {
-						await recordBrowserBindingAudit(deps.browserBindingAuditLog, {
-							kind: "agent_browser_binding",
-							targetId: agentId,
-							targetLabel: currentProfile?.name ?? agentId,
-							source: auditSource.source,
-							confirmedByClient: auditSource.confirmedByClient,
-							status: "rejected_running",
-							changes: browserBindingChanges,
-						});
-						return sendRunningBrowserBindingChange(reply, agentId);
-					}
-				}
 				let modelSelection: { defaultModelProvider?: string; defaultModelId?: string } | undefined;
 				if (hasModelSelectionPatch(body)) {
 					modelSelection = normalizeOptionalModelSelection({
@@ -294,22 +214,10 @@ export function registerAgentProfileRoutes(app: FastifyInstance, deps: AgentProf
 				const profile = await updateStoredAgentProfile(deps.projectRoot, agentId, {
 					name: body.name,
 					description: body.description,
-					...(Object.hasOwn(body, "defaultBrowserId") ? { defaultBrowserId: body.defaultBrowserId } : {}),
 					...(modelSelection !== undefined ? { defaultModelProvider: modelSelection.defaultModelProvider ?? null, defaultModelId: modelSelection.defaultModelId ?? null } : {}),
 				});
 				deps.agentServiceRegistry.updateProfile(profile);
 				deps.agentTemplateRegistry?.invalidate(profile.agentId);
-				if (browserBindingChanges.length > 0) {
-					await recordBrowserBindingAudit(deps.browserBindingAuditLog, {
-						kind: "agent_browser_binding",
-						targetId: profile.agentId,
-						targetLabel: profile.name,
-						source: auditSource.source,
-						confirmedByClient: auditSource.confirmedByClient,
-						status: "succeeded",
-						changes: browserBindingChanges,
-					});
-				}
 				return {
 					agent: presentAgentSummary(profile),
 				};

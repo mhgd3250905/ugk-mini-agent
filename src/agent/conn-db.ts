@@ -189,9 +189,6 @@ export class ConnDatabase {
 		if (userVersion < 7 && !this.hasColumn("conns", "public_site_id")) {
 			db.exec("ALTER TABLE conns ADD COLUMN public_site_id TEXT");
 		}
-		if (userVersion < 8 && !this.hasColumn("conns", "browser_id")) {
-			db.exec("ALTER TABLE conns ADD COLUMN browser_id TEXT");
-		}
 		if (userVersion < 9 && !this.hasColumn("conn_runs", "read_at")) {
 			db.exec("ALTER TABLE conn_runs ADD COLUMN read_at TEXT");
 			db.exec("CREATE INDEX IF NOT EXISTS idx_conn_runs_unread ON conn_runs(conn_id, status, read_at)");
@@ -253,7 +250,6 @@ CREATE TABLE IF NOT EXISTS conns (
 	asset_refs_json TEXT NOT NULL DEFAULT '[]',
 	max_run_ms INTEGER,
 	profile_id TEXT NOT NULL,
-	browser_id TEXT,
 	agent_spec_id TEXT NOT NULL,
 	skill_set_id TEXT NOT NULL,
 	model_policy_id TEXT NOT NULL,

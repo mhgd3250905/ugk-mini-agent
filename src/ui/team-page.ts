@@ -719,12 +719,10 @@ function statusBadge(status) {
 
 function renderRuntimeContext(role, ctx) {
 		if (!ctx) return '';
-		var summary = escapeHtml(role) + ': ' + escapeHtml(ctx.requestedProfileId) + ' \u2192 ' + escapeHtml(ctx.resolvedProfileId) + ' | browser: ' + escapeHtml(ctx.browserId == null ? 'none' : ctx.browserId) + ' | scope: ' + escapeHtml(ctx.browserScope);
+		var summary = escapeHtml(role) + ': ' + escapeHtml(ctx.requestedProfileId) + ' \u2192 ' + escapeHtml(ctx.resolvedProfileId);
 		if (ctx.fallbackUsed) summary += ' (fallback' + (ctx.fallbackReason ? ': ' + escapeHtml(ctx.fallbackReason) : '') + ')';
 		var detailParts = [
 			'<span>' + escapeHtml(role) + ': ' + escapeHtml(ctx.requestedProfileId) + ' \u2192 ' + escapeHtml(ctx.resolvedProfileId) + '</span>',
-			'<span>browser: ' + escapeHtml(ctx.browserId == null ? 'none' : ctx.browserId) + '</span>',
-			'<span>scope: ' + escapeHtml(ctx.browserScope) + '</span>',
 		];
 		if (ctx.fallbackUsed) detailParts.push('<span class="runtime-context-fallback">fallback' + (ctx.fallbackReason ? ': ' + escapeHtml(ctx.fallbackReason) : '') + '</span>');
 		return '<details class="runtime-context-wrap"><summary>' + summary + '</summary><div class="runtime-context runtime-context-detail">' + detailParts.join('') + '</div></details>';

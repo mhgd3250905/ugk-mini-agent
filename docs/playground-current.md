@@ -14,9 +14,8 @@ $BASE_URL/playground
 - 文件上传、文件库、asset 引用和 `send_file` 文件交付
 - Conn 后台任务管理和任务消息页
 - Team Console 入口
-- 可选浏览器连接工作台
 
-用户技能目录默认为空。浏览器自动化、网页检索和企业 IM 通过用户技能或外部扩展按需安装。
+用户技能目录默认为空。网页检索和企业 IM 通过用户技能或外部扩展按需安装。
 
 ## UI 结构
 
@@ -27,7 +26,6 @@ $BASE_URL/playground
 - `src/ui/playground-conversation-*`：会话和历史同步
 - `src/ui/playground-agent-manager.ts`：Agent 管理
 - `src/ui/playground-conn-activity*`：Conn 和任务消息
-- `src/ui/playground-browser-workbench.ts`：浏览器连接工作台
 
 ## 会话
 

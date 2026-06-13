@@ -6,7 +6,6 @@ import {
 	SessionManager,
 	type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
-import { prepareBrowserBoundBashEnvironment } from "../browser/browser-bound-bash.js";
 import { buildRuntimeDependencyEnvironment } from "./runtime-dependencies.js";
 import { createWindowsNativeBashOperations } from "./windows-native-bash-operations.js";
 import {
@@ -30,8 +29,7 @@ export class ProjectBackgroundSessionFactory implements BackgroundAgentSessionFa
 		connId: string;
 		workspace: RunWorkspace;
 		snapshot: ResolvedBackgroundAgentSnapshot;
-		browserId?: string;
-		browserScope?: string;
+		agentRunScope?: string;
 		sessionFile?: string;
 		customTools?: ToolDefinition[];
 	}): Promise<AgentSessionLike> {
@@ -54,12 +52,13 @@ export class ProjectBackgroundSessionFactory implements BackgroundAgentSessionFa
 		await resourceLoader.reload();
 		const settingsManager = createProjectSettingsManager(this.projectRoot);
 		const runtimeDependencyEnv = buildRuntimeDependencyEnvironment(this.projectRoot);
-		const browserEnv = await prepareBrowserBoundBashEnvironment({
-			workspaceRoot: input.workspace.rootPath,
-			browserId: input.browserId,
-			browserScope: input.browserScope,
-			env: { ...process.env, ...runtimeDependencyEnv },
-		});
+		const agentScopeEnv = input.agentRunScope
+			? {
+					CLAUDE_AGENT_ID: input.agentRunScope,
+					CLAUDE_HOOK_AGENT_ID: input.agentRunScope,
+					agent_id: input.agentRunScope,
+				}
+			: {};
 		const mcpTool = createAgentMcpProxyTool({
 			agentId: input.snapshot.agentId ?? input.snapshot.profileId,
 			servers: input.snapshot.mcpServers ?? [],
@@ -82,7 +81,7 @@ export class ProjectBackgroundSessionFactory implements BackgroundAgentSessionFa
 							...context.env,
 							...runtimeDependencyEnv,
 							...getCurrentBackgroundWorkspaceEnvironment(),
-							...browserEnv,
+							...agentScopeEnv,
 						},
 					}),
 				}) as never,

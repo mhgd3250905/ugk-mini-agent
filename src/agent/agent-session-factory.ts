@@ -11,7 +11,6 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@mariozechner/pi-coding-agent";
-import { prepareBrowserBoundBashEnvironment } from "../browser/browser-bound-bash.js";
 import { buildRuntimeDependencyEnvironment } from "./runtime-dependencies.js";
 import { createWindowsNativeBashOperations } from "./windows-native-bash-operations.js";
 import {
@@ -111,7 +110,7 @@ export interface AgentSessionMessageLike {
 }
 
 export interface AgentSessionFactory {
-	createSession(input: { browserId?: string; browserScope?: string; conversationId: string; sessionFile?: string }): Promise<AgentSessionLike>;
+	createSession(input: { agentRunScope?: string; conversationId: string; sessionFile?: string }): Promise<AgentSessionLike>;
 	readSessionMessages?(sessionFile: string): Promise<AgentSessionMessageLike[] | undefined>;
 	readRecentSessionMessages?(
 		sessionFile: string,
@@ -704,12 +703,13 @@ export function createDefaultAgentSessionFactory(
 			await resourceLoader.reload();
 			const settingsManager = createProjectSettingsManager(options.projectRoot);
 			const runtimeDependencyEnv = buildRuntimeDependencyEnvironment(options.projectRoot);
-			const browserEnv = await prepareBrowserBoundBashEnvironment({
-				workspaceRoot: options.projectRoot,
-				browserId: input.browserId,
-				browserScope: input.browserScope,
-				env: { ...process.env, ...runtimeDependencyEnv },
-			});
+			const agentScopeEnv = input.agentRunScope
+				? {
+						CLAUDE_AGENT_ID: input.agentRunScope,
+						CLAUDE_HOOK_AGENT_ID: input.agentRunScope,
+						agent_id: input.agentRunScope,
+					}
+				: {};
 			const mcpServers = options.mcpServerProvider ? await options.mcpServerProvider() : (options.mcpServers ?? []);
 			const mcpTool = createAgentMcpProxyTool({
 				agentId: options.mcpAgentId ?? DEFAULT_AGENT_ID,
@@ -732,7 +732,7 @@ export function createDefaultAgentSessionFactory(
 							env: {
 								...context.env,
 								...runtimeDependencyEnv,
-								...browserEnv,
+								...agentScopeEnv,
 							},
 						}),
 					}) as never,

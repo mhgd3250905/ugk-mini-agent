@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { getAppConfig } from "../config.js";
-import { createBrowserRegistryFromEnv } from "../browser/browser-registry.js";
 import {
 	BackgroundAgentRunner,
 } from "../agent/background-agent-runner.js";
@@ -422,7 +421,6 @@ async function main(): Promise<void> {
 		process.env.NOTIFICATION_BROADCAST_URL?.trim() ||
 			`http://127.0.0.1:${config.port}/v1/internal/notifications/broadcast`,
 	);
-	const browserRegistry = createBrowserRegistryFromEnv();
 	const runner = new BackgroundAgentRunner({
 		runStore,
 		profileResolver: new BackgroundAgentProfileResolver({
@@ -433,7 +431,6 @@ async function main(): Promise<void> {
 			assetStore,
 		}),
 		sessionFactory: new ProjectBackgroundSessionFactory(config.projectRoot),
-		defaultBrowserId: browserRegistry.defaultBrowserId,
 		publicBaseUrl: config.publicBaseUrl,
 		publicDir: resolve(config.projectRoot, "public"),
 	});
