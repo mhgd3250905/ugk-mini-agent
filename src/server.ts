@@ -230,7 +230,7 @@ async function main(): Promise<void> {
 			port: config.port,
 		});
 	} catch (error) {
-		app.log.error(error);
+		console.error(error);
 		process.exitCode = 1;
 	}
 }
@@ -238,5 +238,8 @@ async function main(): Promise<void> {
 const entrypoint = process.argv[1] ? pathToFileURL(process.argv[1]).href : undefined;
 
 if (entrypoint && import.meta.url === entrypoint) {
-	await main();
+	main().catch((error: unknown) => {
+		console.error(error);
+		process.exitCode = 1;
+	});
 }
