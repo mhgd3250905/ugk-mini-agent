@@ -48,12 +48,17 @@ test("GET / renders the public Agent Board first homepage", async () => {
 	assert.match(response.body, /可信 Task 怎么产生/);
 	assert.match(response.body, /亮点在可信交付/);
 	assert.match(response.body, /先看为什么可信，再看怎么上手/);
-	assert.match(response.body, /先读产品定位/);
-	assert.match(response.body, /理解验收机制/);
-	assert.match(response.body, /需要对话时再进 Chat 工作台/);
+	assert.match(response.body, /本机运行后先从根路径进入/);
+	assert.match(response.body, /进入 Team Console/);
+	assert.match(response.body, /进入 Chat 工作台/);
+	assert.match(response.body, /配置 API 源/);
+	assert.match(response.body, /管理 Agent/);
 	assert.match(response.body, /Agent 画板/);
-	assert.match(response.body, /看它解决什么问题/);
-	assert.match(response.body, /看可信 Task 怎么产生/);
+	assert.match(response.body, /href="\/playground"/);
+	assert.match(response.body, /href="\/playground\/team"/);
+	assert.match(response.body, /href="\/playground\/model-sources"/);
+	assert.match(response.body, /href="\/playground\/agents"/);
+	assert.doesNotMatch(response.body, /\$BASE_URL/);
 	assert.match(response.body, /组长 Leader/);
 	assert.match(response.body, /执行员 Worker/);
 	assert.match(response.body, /审核员 Checker/);
@@ -209,4 +214,3 @@ test("POST /playground/reset restores externalized runtime files", async () => {
 		await app.close();
 	}
 });
-

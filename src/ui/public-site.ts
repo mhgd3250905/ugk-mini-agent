@@ -921,11 +921,10 @@ export function renderPublicSitePage(): string {
 					<span>UGK CLAW</span>
 				</a>
 				<div class="nav-links">
-					<a href="#product">产品</a>
-					<a href="#trust-system">可信机制</a>
+					<a href="/playground">Chat</a>
+					<a href="/playground/team">Team Console</a>
+					<a href="/playground/model-sources">API 源</a>
 					<a href="#flow">任务流程</a>
-					<a href="#highlights">亮点</a>
-					<a href="https://github.com/mhgd3250905/ugk-mini-agent">GitHub</a>
 				</div>
 			</div>
 		</nav>
@@ -939,11 +938,11 @@ export function renderPublicSitePage(): string {
 						<strong>UGK CLAW</strong> 把一次 Agent 工作拆成干净的 Task、可复用的 Skill、负责执行的 Worker 和负责验收的 Checker。它不是只让模型回答，而是让结果经过审核后再交付。
 					</p>
 					<div class="cta-row">
-						<a class="button button-primary" href="#product">看它解决什么问题</a>
-						<a class="button" href="#flow">看可信 Task 怎么产生</a>
-						<a class="button" href="https://github.com/mhgd3250905/ugk-mini-agent">查看 GitHub</a>
+						<a class="button button-primary" href="/playground/team">进入 Team Console</a>
+						<a class="button" href="/playground">进入 Chat 工作台</a>
+						<a class="button" href="/playground/model-sources">配置 API 源</a>
 					</div>
-					<p class="cta-note">目标不是堆更多 Agent，而是让每个可复用任务都有边界、有证据、有验收。</p>
+					<p class="cta-note">所有入口都走当前服务的相对路由，不绑定固定端口。</p>
 				</div>
 
 				<div class="hero-art-wrap" aria-label="Agent 画板产品视觉">
@@ -1189,40 +1188,40 @@ export function renderPublicSitePage(): string {
 				<div class="section-head">
 					<p class="kicker">Documentation path</p>
 					<h2 id="docs-title">先看为什么可信，再看怎么上手。</h2>
-					<p>文档不该只把入口列出来。新用户应该先理解 UGK CLAW 为什么要把 Agent 工作拆成 Task、Skill、Worker 和 Checker，再进入 Agent 画板查看任务、证据和审核链路。</p>
+					<p>本机运行后先从根路径进入。这里不展示固定端口，只提供当前服务内的路由跳转。</p>
 				</div>
 				<div class="docs">
-					<a class="doc-link" href="https://github.com/mhgd3250905/ugk-mini-agent/blob/main/README.md">
+					<a class="doc-link" href="/playground/team">
 						<div>
-							<span>01 / product</span>
-							<strong>先读产品定位</strong>
-							<p>理解为什么普通 Agent 对话不能直接进生产，以及 UGK CLAW 如何用可信 Task 交付解决幻觉、漏项和伪造结果。</p>
+							<span>01 / canvas</span>
+							<strong>进入 Team Console</strong>
+							<p>打开 Canvas、Task、Source、Group 和 run 观察器，管理可验收的 Agent 工作流。</p>
 						</div>
-						<em>中文 README</em>
-					</a>
-					<a class="doc-link" href="https://github.com/mhgd3250905/ugk-mini-agent/blob/main/README.md#你该先看什么">
-						<div>
-							<span>02 / board</span>
-							<strong>再看 Agent 画板</strong>
-							<p>从任务、资料、角色、运行状态和证据链路理解产品，而不是先掉进一段漫长的 Agent 对话里。</p>
-						</div>
-						<em>上手路径</em>
-					</a>
-					<a class="doc-link" href="https://github.com/mhgd3250905/ugk-mini-agent/blob/main/README.md#可信-task-交付">
-						<div>
-							<span>03 / acceptance</span>
-							<strong>理解验收机制</strong>
-							<p>看 Task 为什么必须保持干净、Worker 为什么要留痕、Checker 如何把“模型说完成了”变成“结果通过验收”。</p>
-						</div>
-						<em>可信 Task 交付</em>
+						<em>/playground/team</em>
 					</a>
 					<a class="doc-link" href="/playground">
 						<div>
-							<span>04 / conversation</span>
-							<strong>需要对话时再进 Chat 工作台</strong>
-							<p>当你需要和某个 Agent 深聊、管理文件、调整模型或查看后台任务时，再进入传统 Chat 工作台。</p>
+							<span>02 / chat</span>
+							<strong>进入 Chat 工作台</strong>
+							<p>和 Agent 对话、管理文件与资产、查看会话历史和后台任务消息。</p>
 						</div>
-						<em>次级产品入口</em>
+						<em>/playground</em>
+					</a>
+					<a class="doc-link" href="/playground/model-sources">
+						<div>
+							<span>03 / models</span>
+							<strong>配置 API 源</strong>
+							<p>首次启动后先添加模型 provider 和 API key，再运行对话、Task 或后台任务。</p>
+						</div>
+						<em>/playground/model-sources</em>
+					</a>
+					<a class="doc-link" href="/playground/agents">
+						<div>
+							<span>04 / agents</span>
+							<strong>管理 Agent</strong>
+							<p>查看内置 Agent profile，按需要扩展技能目录和运行配置。</p>
+						</div>
+						<em>/playground/agents</em>
 					</a>
 				</div>
 			</section>
