@@ -27,9 +27,9 @@ test("playground initial load defers non-chat panel data", async (t) => {
 	assert.doesNotMatch(initRegion, /syncTaskInboxSummary/);
 	assert.doesNotMatch(initRegion, /syncConnManagerUnreadSummary/);
 
-	// init still loads agent status and runtime summary (first-screen essentials)
+	// init still loads agent status, but defers optional runtime panels.
 	assert.match(initRegion, /loadAgentStatusAndRenderCards/);
-	assert.match(initRegion, /syncRuntimeSummary/);
+	assert.doesNotMatch(initRegion, /syncRuntimeSummary/);
 
 	// openAssetLibrary has lazy gate
 	assert.match(body, /if \(!state\.assetsLoadedOnce\) \{ void loadAssets\(true\); \}/);

@@ -402,69 +402,6 @@ export function getPlaygroundStyles(): string {
 			z-index: 90;
 		}
 
-		.runtime-summary {
-			display: grid;
-			gap: 9px;
-			min-width: 0;
-			margin-top: 10px;
-			padding: 10px 10px 11px;
-			border-top: 1px solid rgba(201, 210, 255, 0.08);
-		}
-
-		.shell[data-home="true"] .runtime-summary {
-			display: none;
-		}
-
-		.runtime-summary-item {
-			position: relative;
-			display: grid;
-			gap: 4px;
-			min-width: 0;
-			padding-left: 9px;
-			color: rgba(238, 244, 255, 0.88);
-			text-align: left;
-			overflow: hidden;
-		}
-
-		.runtime-summary-item::before {
-			content: "";
-			position: absolute;
-			left: 0;
-			top: 2px;
-			bottom: 2px;
-			width: 2px;
-			border-radius: 999px;
-			background: rgba(141, 255, 178, 0.46);
-			pointer-events: none;
-		}
-
-		.runtime-summary-item--browser::before {
-			background: rgba(112, 185, 255, 0.52);
-		}
-
-		.runtime-summary-label {
-			color: rgba(226, 234, 255, 0.44);
-			font-family: var(--font-mono);
-			font-size: 9px;
-			font-weight: 700;
-			line-height: 1;
-			text-transform: uppercase;
-			letter-spacing: 0.08em;
-		}
-
-		.runtime-summary-item strong {
-			display: block;
-			min-width: 0;
-			overflow: hidden;
-			color: rgba(247, 249, 255, 0.94);
-			font-family: var(--font-mono);
-			font-size: 10px;
-			font-weight: 700;
-			line-height: 1.25;
-			text-overflow: ellipsis;
-			white-space: nowrap;
-		}
-
 		.chat-stage[data-workspace-mode="assets"] .landing-screen,
 		.chat-stage[data-workspace-mode="assets"] .stream-layout,
 		.chat-stage[data-workspace-mode="assets"] .command-deck,

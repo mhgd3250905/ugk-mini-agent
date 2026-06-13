@@ -294,16 +294,6 @@ ${input.playgroundScript ?? ""}</script>`;
 					<button class="desktop-rail-settings-trigger" type="button" aria-haspopup="menu">
 						<span>设置</span>
 					</button>
-					<div id="runtime-summary" class="runtime-summary" aria-label="当前运行汇总">
-						<div id="runtime-model-summary" class="runtime-summary-item runtime-summary-item--model">
-							<span class="runtime-summary-label">API 源</span>
-							<strong id="runtime-model-value">读取中</strong>
-						</div>
-						<div id="runtime-browser-summary" class="runtime-summary-item runtime-summary-item--browser">
-							<span class="runtime-summary-label">Chrome</span>
-							<strong id="runtime-browser-value">读取中</strong>
-						</div>
-					</div>
 					<div class="desktop-rail-settings-menu" role="menu" aria-label="桌面设置">
 						<button id="open-model-config-button" class="telemetry-card telemetry-action" type="button" role="menuitem">
 							<span>换源前先验货</span>

@@ -283,10 +283,6 @@ export function getPlaygroundMobileWorkspaceStyles(): string {
 				overflow: hidden;
 			}
 
-			.runtime-summary {
-				display: none;
-			}
-
 			.chat-stage-watermark {
 				display: flex;
 				align-items: center;
