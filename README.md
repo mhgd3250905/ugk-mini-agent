@@ -11,9 +11,9 @@ UGK Mini Agent 是一个面向 Windows 本机部署的轻量 agent runtime。
 - Git for Windows，包含 `Git\bin\bash.exe`
 - Python 3.11 或 3.12
 
-## 默认入口
+## 页面入口
 
-`npm run native:start` 会在终端打印当前服务地址。打开这个地址进入根页，然后通过页面按钮跳转：
+`npm run native:start` 会在终端打印当前服务地址。打开这个地址进入根页，然后通过页面按钮跳转；README 只记录服务内路由，不要求用户记住固定端口：
 
 - 根入口：`/`
 - Chat 工作台：`/playground`

@@ -942,7 +942,7 @@ export function renderPublicSitePage(): string {
 						<a class="button" href="/playground">进入 Chat 工作台</a>
 						<a class="button" href="/playground/model-sources">配置 API 源</a>
 					</div>
-					<p class="cta-note">所有入口都走当前服务的相对路由，不绑定固定端口。</p>
+					<p class="cta-note">所有入口都走当前服务内的相对路由，不需要记住固定端口。</p>
 				</div>
 
 				<div class="hero-art-wrap" aria-label="Agent 画板产品视觉">
@@ -1188,7 +1188,7 @@ export function renderPublicSitePage(): string {
 				<div class="section-head">
 					<p class="kicker">Documentation path</p>
 					<h2 id="docs-title">先看为什么可信，再看怎么上手。</h2>
-					<p>本机运行后先从根路径进入。这里不展示固定端口，只提供当前服务内的路由跳转。</p>
+					<p>本机运行后先打开根路径。这里不展示固定端口，只提供当前服务内的路由跳转。</p>
 				</div>
 				<div class="docs">
 					<a class="doc-link" href="/playground/team">

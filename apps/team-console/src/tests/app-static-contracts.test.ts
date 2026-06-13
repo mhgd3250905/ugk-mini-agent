@@ -864,7 +864,8 @@ describe("Team Console static contracts", () => {
     expect(readme).toContain("Live API");
     expect(readme).toContain("/v1/agents");
     expect(readme).toContain("/v1/agents/status");
-    expect(readme).toContain("$BASE_URL/playground/team");
+    expect(readme).toContain("Team Console / Canvas：`/playground/team`");
+    expect(readme).toContain("不要求用户记住固定端口");
     expect(readme).toContain("由主服务 `/playground/team` 同源路由提供");
     expect(readme).not.toContain("TEAM_CONSOLE_API_TARGET");
     expect(readme).toContain("/playground?view=chat&agentId=<agentId>&embed=team-console");
