@@ -137,10 +137,11 @@ The maintenance script runs `VACUUM` and `PRAGMA wal_checkpoint(TRUNCATE)` by de
 
 Verify:
 
-- App health: `GET http://127.0.0.1:8888/healthz`
-- Runtime health: `GET http://127.0.0.1:8888/v1/debug/runtime`
-- Conn list loads: `GET http://127.0.0.1:8888/v1/conns`
-- Recent run details still load: `GET http://127.0.0.1:8888/v1/conns/:connId/runs`
+- Resolve the current service base URL from `PUBLIC_BASE_URL`, or from `HOST`/`PORT` in `.env.native`.
+- App health: `GET $BASE_URL/healthz`
+- Runtime health: `GET $BASE_URL/v1/debug/runtime`
+- Conn list loads: `GET $BASE_URL/v1/conns`
+- Recent run details still load: `GET $BASE_URL/v1/conns/:connId/runs`
 - Output files for recent runs still open.
 
 Report:

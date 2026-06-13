@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { loadDefaultNativeEnv, resolveNativePort } from "./native-default-env.js";
 
 export interface AppConfig {
 	host: string;
@@ -89,9 +90,10 @@ export function getAppConfig(projectRoot: string = process.cwd()): AppConfig {
 	const connDataDir = join(agentDataDir, "conn");
 	const connDatabasePath = process.env.CONN_DATABASE_PATH?.trim() || join(connDataDir, "conn.sqlite");
 	const backgroundDataDir = join(agentDataDir, "background");
+	const defaultNativeEnv = loadDefaultNativeEnv(projectRoot);
 	return {
-		host: process.env.HOST ?? "127.0.0.1",
-		port: Number(process.env.PORT ?? "8888"),
+		host: process.env.HOST ?? defaultNativeEnv.HOST ?? "127.0.0.1",
+		port: resolveNativePort(process.env, projectRoot),
 		publicBaseUrl: normalizeConfiguredPublicBaseUrl(process.env.PUBLIC_BASE_URL),
 		projectRoot,
 		dataDir,

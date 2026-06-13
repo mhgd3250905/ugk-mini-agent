@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { promisify } from "node:util";
+import { loadDefaultNativeEnv } from "../src/native-default-env.js";
 
 const SKILL_PATH = ".pi/skills/agent-profile-ops/SKILL.md";
 const SCRIPT_PATH = ".pi/skills/agent-profile-ops/scripts/agent_profile_ops.mjs";
@@ -123,7 +124,7 @@ test("agent profile ops dispatch dry-run resolves legacy subagents explicitly", 
 	assert.equal(payload.status, "dry-run");
 });
 
-test("agent profile ops current command falls back to Windows Core port 8888", async () => {
+test("agent profile ops current command falls back to the native default public base URL", async () => {
 	const { stdout } = await execFileAsync(process.execPath, [SCRIPT_PATH, "current"], {
 		cwd: process.cwd(),
 		windowsHide: true,
@@ -136,5 +137,5 @@ test("agent profile ops current command falls back to Windows Core port 8888", a
 	});
 	const payload = JSON.parse(stdout) as { baseUrl: string };
 
-	assert.equal(payload.baseUrl, "http://127.0.0.1:8888");
+	assert.equal(payload.baseUrl, loadDefaultNativeEnv().PUBLIC_BASE_URL);
 });

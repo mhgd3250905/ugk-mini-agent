@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { loadAgentProfilesSync } from "../agent/agent-profile-catalog.js";
+import { resolveNativeLocalBaseUrl } from "../native-default-env.js";
 import { buildTeamTaskFactoryPayload, type TeamTaskFactorySpec } from "./task-factory.js";
 
 interface CliOptions {
@@ -18,15 +19,7 @@ function envValue(value: string | undefined): string | undefined {
 export function resolveTaskFactoryBaseUrl(env: Record<string, string | undefined> = process.env): string {
 	const explicitBaseUrl = envValue(env.TEAM_TASK_FACTORY_BASE_URL);
 	if (explicitBaseUrl) return explicitBaseUrl;
-
-	const publicBaseUrl = envValue(env.PUBLIC_BASE_URL);
-	if (publicBaseUrl) return publicBaseUrl;
-
-	const port = envValue(env.PORT) ?? "8888";
-	const rawHost = envValue(env.HOST) ?? "127.0.0.1";
-	const host = rawHost === "0.0.0.0" || rawHost === "::" ? "127.0.0.1" : rawHost;
-	const formattedHost = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
-	return `http://${formattedHost}:${port}`;
+	return resolveNativeLocalBaseUrl(env);
 }
 
 function parseArgs(argv: string[]): CliOptions {

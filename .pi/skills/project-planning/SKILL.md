@@ -43,7 +43,7 @@ description: 用于 ugk-mini-agent / ugk-claw-core-win Windows Core 项目的快
 
 - 这是 Windows 本机部署版 UGK Mini Agent / UGK CLAW Core
 - 当前主线是：`Fastify 主服务 + Playground + Team Console/Canvas + Conn/Team worker`
-- 默认单端口入口是 `http://127.0.0.1:8888`，Team Console / Canvas 是 `http://127.0.0.1:8888/playground/team`
+- 默认单端口入口来自 `.env.native` / `.env.native.example` 的 `PUBLIC_BASE_URL`、`HOST`、`PORT`；Team Console / Canvas 是 `$BASE_URL/playground/team`
 - 核心入口：
   - `GET /healthz`
   - `GET /playground`

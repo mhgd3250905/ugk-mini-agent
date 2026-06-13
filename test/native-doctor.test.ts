@@ -1,11 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createNativeDoctorReport } from "../scripts/native-doctor-core.mjs";
+import { loadDefaultNativeEnv } from "../src/native-default-env.js";
 
 const projectRoot = "E:\\AII\\ugk-mini-agent";
 type NativeCheck = { name: string; ok: boolean; message: string; required: boolean };
 
 test("native doctor checks the Windows Core local prerequisites", async () => {
+	const defaultNativeEnv = loadDefaultNativeEnv();
 	const report = await createNativeDoctorReport({
 		projectRoot,
 		nodeVersion: "v24.15.0",
@@ -38,7 +40,7 @@ test("native doctor checks the Windows Core local prerequisites", async () => {
 			"root dependencies",
 			"Team Console dependencies",
 			"user skills directory",
-			"server port 8888",
+			`server port ${defaultNativeEnv.PORT}`,
 		],
 	);
 	assert.deepEqual(report.checks.filter((check: NativeCheck) => !check.required), []);

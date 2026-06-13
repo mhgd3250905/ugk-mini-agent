@@ -120,6 +120,6 @@ After create/update, verify with:
 - `GET /v1/team/tasks`
 - `GET /v1/team/tasks/:taskId`
 
-For Team Console UI verification, open `http://127.0.0.1:8888/playground/team`, confirm Live API, create through the iframe conversation using `/team-task`, inspect the JSON preview, explicitly confirm, and then verify the new Task appears on the canvas.
+For Team Console UI verification, open `$BASE_URL/playground/team` using the current service base URL from `PUBLIC_BASE_URL` or `.env.native`, confirm Live API, create through the iframe conversation using `/team-task`, inspect the JSON preview, explicitly confirm, and then verify the new Task appears on the canvas.
 
 For Discovery or split-task, the created Task is only the root. Generated children appear after a future run; run quality, checker verdicts, and final reports are outside this skill.

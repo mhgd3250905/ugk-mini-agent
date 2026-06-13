@@ -51,7 +51,7 @@ runtime/playground/manifest.json
 The browser entry stays:
 
 ```text
-http://127.0.0.1:8888/playground
+$BASE_URL/playground
 ```
 
 ## Fast UI Iteration Workflow
@@ -84,7 +84,7 @@ This refresh-only workflow applies only to files under `runtime/playground/`. If
 If runtime UI files are broken, restore the generated factory copy:
 
 ```bash
-curl -X POST http://127.0.0.1:8888/playground/reset
+curl -X POST "$BASE_URL/playground/reset"
 ```
 
 Then refresh `/playground`.

@@ -1,4 +1,5 @@
 import type { AssetRecord } from "./asset-store.js";
+import { resolveNativeLocalBaseUrl } from "../native-default-env.js";
 
 export interface AgentFileDraft {
 	fileName: string;
@@ -259,7 +260,7 @@ function normalizePublicBaseUrl(publicBaseUrl?: string): string {
 	const configured = String(publicBaseUrl || process.env.PUBLIC_BASE_URL || "").trim();
 	const baseUrl = configured && configured.toLowerCase() !== "auto"
 		? configured
-		: `http://127.0.0.1:${process.env.PORT || "8888"}`;
+		: resolveNativeLocalBaseUrl(process.env, process.cwd());
 	return baseUrl.replace(
 		/\/+$/,
 		"",

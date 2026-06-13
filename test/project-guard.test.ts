@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { getAgentDir } from "@mariozechner/pi-coding-agent";
 import {
 	buildProjectBashSpawnOptions,
@@ -79,6 +79,17 @@ test("current user-facing docs do not point new Windows Core users at legacy por
 	}
 });
 
+test("runtime code and agent skills do not hard-code native service ports", async () => {
+	const forbiddenPorts = ["88" + "88", "99" + "99"];
+	const forbiddenPattern = new RegExp(`127\\.0\\.0\\.1:(?:${forbiddenPorts.join("|")})|\\b(?:${forbiddenPorts.join("|")})\\b`);
+	const paths = await listTextFiles(["src", "scripts", ".pi/skills"]);
+
+	for (const path of paths) {
+		const content = await readFile(path, "utf8");
+		assert.doesNotMatch(content, forbiddenPattern, path);
+	}
+});
+
 test("Windows native agent command execution hides child process windows", async () => {
 	const foregroundFactory = await readFile("src/agent/agent-session-factory.ts", "utf8");
 	const backgroundFactory = await readFile("src/agent/background-agent-session-factory.ts", "utf8");
@@ -93,3 +104,26 @@ test("Windows native agent command execution hides child process windows", async
 	assert.match(runtimeDeps, /windowsHide:\s*true/);
 	assert.match(browserBoundBash, /windowsHide:\s*true/);
 });
+
+async function listTextFiles(roots: string[]): Promise<string[]> {
+	const result: string[] = [];
+	for (const root of roots) {
+		await collectTextFiles(root, result);
+	}
+	return result;
+}
+
+async function collectTextFiles(dir: string, result: string[]): Promise<void> {
+	const entries = await readdir(dir, { withFileTypes: true });
+	for (const entry of entries) {
+		const path = join(dir, entry.name);
+		if (entry.isDirectory()) {
+			if (entry.name === "node_modules") continue;
+			await collectTextFiles(path, result);
+			continue;
+		}
+		if (/\.(?:cjs|js|json|md|mjs|ts|tsx)$/.test(entry.name)) {
+			result.push(path);
+		}
+	}
+}

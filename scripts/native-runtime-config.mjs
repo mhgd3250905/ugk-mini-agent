@@ -1,6 +1,5 @@
 import { delimiter, join } from "node:path";
-
-const DEFAULT_SERVER_PORT = 8888;
+import { loadDefaultNativeEnvSync } from "./native-env.mjs";
 
 function parsePort(value, fallback) {
 	const parsed = Number(value);
@@ -78,10 +77,16 @@ function buildProcessEnv(env, toolsDir) {
 }
 
 export function buildNativeRuntimeConfig(options = {}) {
-	const env = options.env ?? process.env;
 	const projectRoot = options.projectRoot ?? process.cwd();
-	const serverPort = parsePort(env.PORT, DEFAULT_SERVER_PORT);
-	const publicBaseUrl = env.PUBLIC_BASE_URL?.trim() || localBaseUrl(serverPort);
+	const defaultEnv = loadDefaultNativeEnvSync(projectRoot);
+	const inputEnv = options.env ?? process.env;
+	const env = { ...defaultEnv, ...inputEnv };
+	const serverPort = parsePort(env.PORT, parsePort(defaultEnv.PORT, undefined));
+	if (!serverPort) {
+		throw new Error("PORT must be an integer between 1 and 65535");
+	}
+	const explicitPublicBaseUrl = inputEnv.PUBLIC_BASE_URL?.trim();
+	const publicBaseUrl = explicitPublicBaseUrl || (inputEnv.PORT?.trim() ? localBaseUrl(serverPort) : env.PUBLIC_BASE_URL?.trim() || localBaseUrl(serverPort));
 	const command = npmCommand();
 	const dataDir = resolveRuntimeDir(env.UGK_DATA_DIR, join(projectRoot, ".data"));
 	const logDir = resolveRuntimeDir(env.UGK_LOG_DIR, join(projectRoot, "logs", "native"));

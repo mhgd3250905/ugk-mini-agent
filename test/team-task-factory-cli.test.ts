@@ -5,11 +5,11 @@ import { resolveTaskFactoryBaseUrl } from "../src/team/task-factory-cli.js";
 test("task factory CLI defaults to PUBLIC_BASE_URL when present", () => {
 	assert.equal(
 		resolveTaskFactoryBaseUrl({
-			PUBLIC_BASE_URL: "http://127.0.0.1:9999",
+			PUBLIC_BASE_URL: "http://127.0.0.1:7778",
 			HOST: "127.0.0.1",
-			PORT: "8888",
+			PORT: "7779",
 		}),
-		"http://127.0.0.1:9999",
+		"http://127.0.0.1:7778",
 	);
 });
 

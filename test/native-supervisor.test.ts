@@ -1,10 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createNativeSupervisorPlan } from "../scripts/native-supervisor-core.mjs";
+import { loadDefaultNativeEnv } from "../src/native-default-env.js";
 
 type NativeSupervisorStep = { name: string };
 
 test("native supervisor plan initializes runtime deps before starting core processes", () => {
+	const defaultNativeEnv = loadDefaultNativeEnv();
 	const plan = createNativeSupervisorPlan({
 		projectRoot: "E:\\AII\\ugk-mini-agent",
 		env: {
@@ -27,7 +29,7 @@ test("native supervisor plan initializes runtime deps before starting core proce
 	assert.equal(plan.steps[1]?.blocking, true);
 	assert.match(plan.steps[1]?.args.join(" "), /run team-console:build$/);
 	assert.equal(plan.steps[2]?.blocking, false);
-	assert.equal(plan.steps[2]?.env.PORT, "8888");
+	assert.equal(plan.steps[2]?.env.PORT, defaultNativeEnv.PORT);
 	assert.equal("TEAM_CONSOLE_API_TARGET" in (plan.steps[2]?.env ?? {}), false);
 	assert.equal(plan.logDir, "D:\\ugk-logs");
 	assert.match(plan.steps[1]?.logFile ?? "", /D:\\ugk-logs[\\/]ugk-mini-agent-team-console-build\.log$/);

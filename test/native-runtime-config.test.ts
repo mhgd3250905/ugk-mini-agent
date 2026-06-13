@@ -3,19 +3,21 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { buildNativeRuntimeConfig } from "../scripts/native-runtime-config.mjs";
+import { loadDefaultNativeEnv } from "../src/native-default-env.js";
 
 type NativeProcessConfig = { name: string; args: string[] };
 
 test("native runtime config uses Windows Core ports and process list", () => {
+	const defaultNativeEnv = loadDefaultNativeEnv();
 	const config = buildNativeRuntimeConfig({
 		projectRoot: "E:\\AII\\ugk-mini-agent",
 		env: {},
 	});
 
-	assert.equal(config.server.port, 8888);
-	assert.equal(config.teamConsole.url, "http://127.0.0.1:8888/playground/team");
-	assert.equal(config.env.PORT, "8888");
-	assert.equal(config.env.PUBLIC_BASE_URL, "http://127.0.0.1:8888");
+	assert.equal(config.server.port, Number(defaultNativeEnv.PORT));
+	assert.equal(config.teamConsole.url, `${defaultNativeEnv.PUBLIC_BASE_URL}/playground/team`);
+	assert.equal(config.env.PORT, defaultNativeEnv.PORT);
+	assert.equal(config.env.PUBLIC_BASE_URL, defaultNativeEnv.PUBLIC_BASE_URL);
 	assert.equal("TEAM_CONSOLE_API_TARGET" in config.env, false);
 	assert.equal(config.env.TEAM_RUNTIME_ENABLED, "true");
 	assert.equal(config.env.TEAM_USE_MOCK_RUNNER, "false");

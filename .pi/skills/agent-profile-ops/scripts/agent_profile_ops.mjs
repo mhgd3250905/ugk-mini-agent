@@ -67,12 +67,45 @@ function normalizeTarget(value) {
 		.replace(/[\s_-]+/g, "");
 }
 
+function parseNativeEnv(content) {
+	const values = {};
+	for (const line of content.split(/\r?\n/)) {
+		const trimmed = line.trim();
+		if (!trimmed || trimmed.startsWith("#")) continue;
+		const separatorIndex = trimmed.indexOf("=");
+		if (separatorIndex < 0) continue;
+		const key = trimmed.slice(0, separatorIndex).trim();
+		const value = trimmed.slice(separatorIndex + 1).trim();
+		if (key) values[key] = value;
+	}
+	return values;
+}
+
+function loadDefaultNativeEnv() {
+	try {
+		return parseNativeEnv(readFileSync(resolve(".env.native.example"), "utf8"));
+	} catch {
+		return {};
+	}
+}
+
+function localBaseUrlFromEnv(env) {
+	const defaults = loadDefaultNativeEnv();
+	const port = String(env.PORT || defaults.PORT || "").trim();
+	const host = String(env.HOST || defaults.HOST || "127.0.0.1").trim();
+	if (!port) {
+		throw new Error("PORT is not configured");
+	}
+	const urlHost = host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host;
+	return `http://${urlHost}:${port}`;
+}
+
 function resolveBaseUrl(options = {}) {
 	return String(
 		options.baseUrl ||
 			process.env.UGK_INTERNAL_BASE_URL ||
 			process.env.PUBLIC_BASE_URL ||
-			`http://127.0.0.1:${process.env.PORT || "8888"}`,
+			localBaseUrlFromEnv(process.env),
 	).replace(/\/+$/, "");
 }
 
