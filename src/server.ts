@@ -152,7 +152,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
 	const notificationHub = options.notificationHub ?? new NotificationHub();
 	const browserRegistry = options.browserRegistry ?? createBrowserRegistryFromEnv();
 	const browserBindingAuditLog =
-		options.browserBindingAuditLog ?? new JsonlBrowserBindingAuditLog(join(config.projectRoot, ".data", "audit", "browser-bindings.jsonl"));
+		options.browserBindingAuditLog ?? new JsonlBrowserBindingAuditLog(join(config.dataDir, "audit", "browser-bindings.jsonl"));
 	const agentServiceRegistry = options.agentServiceRegistry ?? createDefaultAgentServiceRegistry(assetStore);
 	const agentProfileProjectRoot = options.agentProfileProjectRoot ?? config.projectRoot;
 	const agentTemplateRegistry = options.agentTemplateRegistry ?? new AgentTemplateRegistry({ projectRoot: agentProfileProjectRoot });

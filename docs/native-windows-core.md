@@ -45,3 +45,9 @@ Logs are written to `logs/native/`.
 - `.data/agent/model-settings.json`: runtime model selection
 - `.data/agent/model-providers.json`: user-added model providers and local API keys
 - `.data/team/`: Canvas run state
+
+Optional directory overrides:
+
+- `UGK_DATA_DIR`: runtime data root, defaults to `.data`
+- `UGK_LOG_DIR`: native supervisor log directory, defaults to `logs/native`
+- `UGK_TOOLS_DIR`: portable/local tool cache, defaults to `.data/tools`

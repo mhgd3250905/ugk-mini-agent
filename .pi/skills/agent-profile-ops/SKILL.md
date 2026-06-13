@@ -1,11 +1,11 @@
 ---
 name: agent-profile-ops
-description: Use when the user asks to view, list, create, configure, switch, verify, archive, delete, or reason about independent agent profiles / operation windows in ugk-pi, including Chinese requests like “我有哪些agent”, “有哪些 agent”, “创建 agent”, “切换 agent”, “删除 agent”, “给 search agent 安装技能”, “给其他 agent 安装技能”, or “搜索 Agent 有哪些技能”. Do not use for legacy .pi/agents subagent files unless the user explicitly says subagent.
+description: Use when the user asks to view, list, create, configure, switch, verify, archive, delete, or reason about independent agent profiles / operation windows in ugk-mini-agent / ugk-claw-core-win, including Chinese requests like “我有哪些agent”, “有哪些 agent”, “创建 agent”, “切换 agent”, “删除 agent”, “给 search agent 安装技能”, “给其他 agent 安装技能”, or “搜索 Agent 有哪些技能”. Do not use for legacy .pi/agents subagent files unless the user explicitly says subagent.
 ---
 
 # agent-profile-ops
 
-管理 ugk-pi 的独立 agent profile。你的目标是维护多个独立操作视窗，而不是把主 Agent 改造成调度中心。
+管理 ugk-mini-agent / ugk-claw-core-win 的独立 agent profile。你的目标是维护多个独立操作视窗，而不是把主 Agent 改造成调度中心。
 
 ## 核心原则
 
@@ -19,7 +19,7 @@ description: Use when the user asks to view, list, create, configure, switch, ve
 - 运行中 agent 不允许归档。
 - 涉及 agent profile 创建、配置、安装技能、归档、删除或可能改变用户当前操作视窗的动作时，缺少用户明确确认就只能解释影响并询问下一步；不要自作主张继续执行。
 - **禁止直接编辑 `.data/agents/profiles.json` 或手动搬动 `.data/agents/:agentId` 来创建 / 恢复 / 归档 agent。** 这些文件是持久化存储，不是操作接口；手动改文件会绕过进程内 `AgentServiceRegistry`，导致 `POST /v1/agents` 认为 agent 已存在，但 `GET /v1/agents` 和 scoped chat 路由仍看不到它。
-- 如果发现 `profiles.json` 和 `GET /v1/agents` 不一致，不要继续手改 JSON 补洞；先说明这是“磁盘 catalog 与运行时 registry 分裂”，再建议通过 API 重建 / 归档，或在明确维护窗口内重启 `ugk-pi` 让 registry 重新加载。
+- 如果发现 `profiles.json` 和 `GET /v1/agents` 不一致，不要继续手改 JSON 补洞；先说明这是“磁盘 catalog 与运行时 registry 分裂”，再建议通过 API 重建 / 归档，或在明确维护窗口内重启 Windows Core 主服务让 registry 重新加载。
 
 ## 快速接口
 

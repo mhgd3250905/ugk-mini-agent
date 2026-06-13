@@ -63,6 +63,33 @@ test("getAppConfig does not load local api txt files by default", async () => {
 	}
 });
 
+test("getAppConfig derives runtime paths from UGK_DATA_DIR", () => {
+	const previousDataDir = process.env.UGK_DATA_DIR;
+	const previousTeamDataDir = process.env.TEAM_DATA_DIR;
+	process.env.UGK_DATA_DIR = "D:\\ugk-data";
+	delete process.env.TEAM_DATA_DIR;
+	try {
+		const config = getAppConfig("E:\\AII\\ugk-mini-agent");
+
+		assert.equal(config.dataDir, "D:\\ugk-data");
+		assert.equal(config.agentDataDir, "D:\\ugk-data\\agent");
+		assert.equal(config.agentsDataDir, "D:\\ugk-data\\agents");
+		assert.equal(config.connDatabasePath, "D:\\ugk-data\\agent\\conn\\conn.sqlite");
+		assert.equal(config.teamDataDir, "D:\\ugk-data\\team");
+	} finally {
+		if (previousDataDir === undefined) {
+			delete process.env.UGK_DATA_DIR;
+		} else {
+			process.env.UGK_DATA_DIR = previousDataDir;
+		}
+		if (previousTeamDataDir === undefined) {
+			delete process.env.TEAM_DATA_DIR;
+		} else {
+			process.env.TEAM_DATA_DIR = previousTeamDataDir;
+		}
+	}
+});
+
 test("getAppConfig loads local api txt files only when bootstrap is explicitly enabled", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "ugk-pi-config-"));
 	const apiTxtPath = join(dir, "小米api.txt");

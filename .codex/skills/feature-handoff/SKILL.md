@@ -1,13 +1,13 @@
 ---
 name: feature-handoff
-description: Use this repo-local development skill whenever a coding agent working on the ugk-pi repository finishes a feature, bugfix, refactor, documentation task, deployment task, or is about to hand off to another coding agent. Trigger on requests like "做完后记录", "收尾", "交接", "换 agent 前备份", "下个 agent 接手", or "别忘了补文档". This is for maintaining this repository, not for UGK CLAW Playground runtime agent profiles.
+description: Use this repo-local development skill whenever a coding agent working on the ugk-mini-agent / ugk-claw-core-win repository finishes a feature, bugfix, refactor, documentation task, deployment task, or is about to hand off to another coding agent. Trigger on requests like "做完后记录", "收尾", "交接", "换 agent 前备份", "下个 agent 接手", or "别忘了补文档". This is for maintaining this repository, not for UGK CLAW Playground runtime agent profiles.
 ---
 
 # Feature Handoff
 
 把一次开发任务完成、阶段暂停或换 coding agent 前的现场，整理成下一个维护仓库的 agent 能接住的证据链。
 
-这个技能服务于开发 `ugk-pi` 仓库的 agent。不要把它安装到 `.pi/skills/`，那里是产品运行时 Playground agent 的技能目录。
+这个技能服务于开发 `ugk-mini-agent / ugk-claw-core-win` 仓库的 agent。不要把它安装到 `.pi/skills/`，那里是产品运行时 Playground agent 的技能目录。
 
 ## 何时使用
 
@@ -58,7 +58,7 @@ description: Use this repo-local development skill whenever a coding agent worki
 | 外部行为、接口、运行方式、协作约定变化 | `docs/change-log.md` |
 | Playground UI / 交互变化 | `docs/playground-current.md` 或 `docs/playground-ui-governance-map.md` |
 | Agent / Chat / 会话 / SSE 变化 | `docs/agent-chat-governance-map.md` 或相关运行文档 |
-| Conn / Activity / Feishu / output 变化 | `docs/conn-activity-legacy-governance-map.md` 或 `docs/runtime-assets-conn-feishu.md` |
+| Conn / Activity / output 变化 | `docs/runtime-assets-conn-feishu.md` |
 | 部署 / 服务器 / shared 运行态变化 | `docs/server-ops.md`、云服务器手册或 `docs/handoff-current.md` |
 | 长期接手规则或入口索引变化 | `AGENTS.md` |
 | 未完成任务或后续分批执行 | `.codex/plans/YYYY-MM-DD-<topic>.md` |

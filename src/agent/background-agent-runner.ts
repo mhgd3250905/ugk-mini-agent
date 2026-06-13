@@ -356,7 +356,7 @@ function buildBackgroundPrompt(
 		"- For websites, put a complete folder in ARTIFACT_PUBLIC_DIR with index.html and all local CSS/JS/images.",
 		"- Do not give the user /app, file://, /tmp, work, logs, input, or session paths as final links.",
 		"- The system will scan ARTIFACT_PUBLIC_DIR after you finish. Only files there are considered official deliverables.",
-		"- Do not store cross-run state in /tmp, /app/runtime, or runtime/skills-user.",
+		"- Do not store cross-run state in temporary directories, runtime asset directories, or skill installation directories.",
 		"",
 		"Workspace aliases:",
 		`OUTPUT_DIR=${workspace.outputDir}`,

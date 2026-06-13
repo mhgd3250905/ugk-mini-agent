@@ -205,7 +205,7 @@ test("BackgroundAgentRunner exposes output aliases and public output base url to
 	assert.match(prompt, /CONN_SHARED_DIR=/);
 	assert.match(prompt, /CONN_PUBLIC_DIR=/);
 	assert.match(prompt, /Store durable state shared across runs in:/);
-	assert.match(prompt, /Do not store cross-run state in \/tmp, \/app\/runtime, or runtime\/skills-user/);
+	assert.match(prompt, /Do not store cross-run state in temporary directories, runtime asset directories, or skill installation directories/);
 	assert.match(prompt, /CONN_OUTPUT_BASE_URL=http:\/\/example\.test\/v1\/conns\/[^/]+\/runs\/run-env-contract\/output/);
 	assert.match(prompt, /CONN_PUBLIC_BASE_URL=http:\/\/example\.test\/v1\/conns\/[^/]+\/public/);
 	assert.match(prompt, /SITE_PUBLIC_BASE_URL=http:\/\/example\.test\/v1\/sites\/team-website/);

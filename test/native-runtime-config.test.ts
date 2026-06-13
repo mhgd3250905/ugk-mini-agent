@@ -20,10 +20,30 @@ test("native runtime config uses Windows Core ports and process list", () => {
 	assert.equal(config.env.TEAM_RUNTIME_ENABLED, "true");
 	assert.equal(config.env.TEAM_USE_MOCK_RUNNER, "false");
 	assert.match(String(config.env.Path ?? config.env.PATH), /\\.data\\tools\\git\\bin/);
+	assert.equal(config.env.UGK_DATA_DIR, "E:\\AII\\ugk-mini-agent\\.data");
+	assert.equal(config.env.UGK_LOG_DIR, "E:\\AII\\ugk-mini-agent\\logs\\native");
+	assert.equal(config.env.UGK_TOOLS_DIR, "E:\\AII\\ugk-mini-agent\\.data\\tools");
 	assert.deepEqual(
 		config.processes.map((processConfig: NativeProcessConfig) => processConfig.name),
 		["ugk-mini-agent-server", "ugk-mini-agent-team-worker", "ugk-mini-agent-conn-worker"],
 	);
+});
+
+test("native runtime config honors explicit runtime directories", () => {
+	const config = buildNativeRuntimeConfig({
+		projectRoot: "E:\\AII\\ugk-mini-agent",
+		env: {
+			UGK_DATA_DIR: "D:\\ugk-data",
+			UGK_LOG_DIR: "D:\\ugk-logs",
+			UGK_TOOLS_DIR: "D:\\ugk-tools",
+		},
+	});
+
+	assert.equal(config.env.UGK_DATA_DIR, "D:\\ugk-data");
+	assert.equal(config.env.UGK_LOG_DIR, "D:\\ugk-logs");
+	assert.equal(config.env.UGK_TOOLS_DIR, "D:\\ugk-tools");
+	assert.equal(config.env.UGK_MODEL_SETTINGS_PATH, "D:\\ugk-data\\agent\\model-settings.json");
+	assert.match(String(config.env.Path ?? config.env.PATH), /^D:\\ugk-tools\\git\\bin(?:;|$)/);
 });
 
 test("native runtime config allows explicit server ports while keeping local base URLs aligned", () => {
