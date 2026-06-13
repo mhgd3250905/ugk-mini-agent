@@ -58,17 +58,13 @@ describe("Team Console static contracts", () => {
     expect(mapSource).not.toContain("taskChildBranchNode && taskChildBranchPanel");
   });
 
-  it("vite proxy includes the Team Console API surface and embedded playground route", () => {
+  it("vite config builds Team Console under the main service route", () => {
     const config = readFileSync("vite.config.ts", "utf8");
-    expect(config).toContain('"/v1"');
-    expect(config).toContain('"/playground"');
-    expect(config).toContain('"/assets"');
-    expect(config).toContain('"/runtime"');
-    expect(config).toContain('"/vendor"');
+    expect(config).toContain('base: "/playground/team/"');
+    expect(config).not.toContain("server:");
+    expect(config).not.toContain("proxy:");
+    expect(config).not.toContain("teamApiTarget");
     expect(config).not.toContain("VITE_TEAM_CONSOLE_API_TARGET");
-    expect(config).not.toContain('"/v1/conns"');
-    expect(config).not.toContain('"/v1/activity"');
-    expect(config).toContain("teamApiTarget");
   });
 
   it("keeps atlas content from stretching the app width during node drag", () => {
@@ -868,7 +864,9 @@ describe("Team Console static contracts", () => {
     expect(readme).toContain("Live API");
     expect(readme).toContain("/v1/agents");
     expect(readme).toContain("/v1/agents/status");
-    expect(readme).toContain("TEAM_CONSOLE_API_TARGET=http://127.0.0.1:8888");
+    expect(readme).toContain("http://127.0.0.1:8888/playground/team");
+    expect(readme).toContain("由主服务 `/playground/team` 同源路由提供");
+    expect(readme).not.toContain("TEAM_CONSOLE_API_TARGET");
     expect(readme).toContain("/playground?view=chat&agentId=<agentId>&embed=team-console");
     expect(readme).toContain("Task、Source、Group、Task run 和 Agent profile 的权威数据来自主服务 API");
     expect(readme).not.toContain("5174");
@@ -876,8 +874,9 @@ describe("Team Console static contracts", () => {
 
     const runtimeDoc = readFileSync("../../docs/team-runtime.md", "utf8");
     expect(runtimeDoc).toContain("Team Runtime 是 UGK Mini Agent 的 Canvas Task 执行层");
-    expect(runtimeDoc).toContain("http://127.0.0.1:9999");
+    expect(runtimeDoc).toContain("http://127.0.0.1:8888/playground/team");
     expect(runtimeDoc).toContain("http://127.0.0.1:8888");
+    expect(runtimeDoc).not.toContain("http://127.0.0.1:9999");
     expect(runtimeDoc).toContain("POST /v1/team/tasks/:taskId/runs");
     expect(runtimeDoc).toContain("ARTIFACT_PUBLIC_DIR");
     expect(runtimeDoc).not.toContain("docker compose");

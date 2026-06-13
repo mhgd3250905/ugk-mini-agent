@@ -94,7 +94,6 @@ export async function createNativeDoctorReport(options = {}) {
 		check("Team Console dependencies", await fileExists(join(projectRoot, "apps", "team-console", "node_modules")), "run npm --prefix apps/team-console install"),
 		check("user skills directory", await fileExists(join(projectRoot, "runtime", "skills-user")), "create runtime/skills-user"),
 		check(`server port ${config.server.port}`, await isPortAvailable(config.server.port), "port must be available before native:start"),
-		check(`Team Console port ${config.teamConsole.port}`, await isPortAvailable(config.teamConsole.port), "port must be available before native:start"),
 	];
 
 	return {

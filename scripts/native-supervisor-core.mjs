@@ -41,6 +41,15 @@ export function createNativeSupervisorPlan(options = {}) {
 				blocking: true,
 				logFile: join(logDir, "ugk-mini-agent-runtime-check.log"),
 			},
+			{
+				name: "ugk-mini-agent-team-console-build",
+				command: npmCommand(),
+				args: npmArgs(["run", "team-console:build"]),
+				cwd: projectRoot,
+				env,
+				blocking: true,
+				logFile: join(logDir, "ugk-mini-agent-team-console-build.log"),
+			},
 			...config.processes.map((processConfig) => withRuntimeEnv(processConfig, env, logDir)),
 		],
 	};

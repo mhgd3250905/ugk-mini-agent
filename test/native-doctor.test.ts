@@ -39,7 +39,6 @@ test("native doctor checks the Windows Core local prerequisites", async () => {
 			"Team Console dependencies",
 			"user skills directory",
 			"server port 8888",
-			"Team Console port 9999",
 		],
 	);
 	assert.deepEqual(report.checks.filter((check: NativeCheck) => !check.required), []);

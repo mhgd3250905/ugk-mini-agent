@@ -4,10 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 9999",
     "build": "tsc -b && vite build",
-    "test": "vitest run",
-    "preview": "vite preview --host 127.0.0.1 --port 4174"
+    "test": "vitest run"
   },
   "dependencies": {
     "marked": "^18.0.4",

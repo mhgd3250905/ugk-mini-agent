@@ -2,7 +2,7 @@
 
 UGK Mini Agent 是一个面向 Windows 本机部署的轻量 agent runtime。
 
-默认运行形态是本机 Node.js 多进程：主服务、Team Console、Team worker 和 Conn worker。用户技能目录默认保持为空，按部署需要自行安装扩展技能。
+默认运行形态是本机 Node.js 多进程：主服务、Team worker 和 Conn worker。Team Console 会构建为主服务静态页面，用户技能目录默认保持为空，按部署需要自行安装扩展技能。
 
 ## 环境要求
 
@@ -14,7 +14,7 @@ UGK Mini Agent 是一个面向 Windows 本机部署的轻量 agent runtime。
 ## 默认入口
 
 - 主服务 / API / Playground：`http://127.0.0.1:8888`
-- Team Console / Canvas：`http://127.0.0.1:9999`
+- Team Console / Canvas：`http://127.0.0.1:8888/playground/team`
 
 ## 安装与启动
 
@@ -28,9 +28,10 @@ npm run native:start
 `npm run native:start` 会启动：
 
 - `ugk-mini-agent-server`
-- `ugk-mini-agent-team-console`
 - `ugk-mini-agent-team-worker`
 - `ugk-mini-agent-conn-worker`
+
+启动主服务前会自动执行 `npm run team-console:build`，把 Canvas 前端构建到主服务路由下。
 
 日志写入 `logs/native/`。
 

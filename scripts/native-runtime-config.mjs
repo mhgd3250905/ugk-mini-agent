@@ -1,7 +1,6 @@
 import { delimiter, join } from "node:path";
 
 const DEFAULT_SERVER_PORT = 8888;
-const DEFAULT_TEAM_CONSOLE_PORT = 9999;
 
 function parsePort(value, fallback) {
 	const parsed = Number(value);
@@ -77,9 +76,7 @@ export function buildNativeRuntimeConfig(options = {}) {
 	const env = options.env ?? process.env;
 	const projectRoot = options.projectRoot ?? process.cwd();
 	const serverPort = parsePort(env.PORT, DEFAULT_SERVER_PORT);
-	const teamConsolePort = parsePort(env.TEAM_CONSOLE_PORT, DEFAULT_TEAM_CONSOLE_PORT);
 	const publicBaseUrl = env.PUBLIC_BASE_URL?.trim() || localBaseUrl(serverPort);
-	const teamConsoleApiTarget = env.TEAM_CONSOLE_API_TARGET?.trim() || publicBaseUrl;
 	const command = npmCommand();
 
 	const nativeEnv = {
@@ -87,8 +84,6 @@ export function buildNativeRuntimeConfig(options = {}) {
 		HOST: env.HOST?.trim() || "127.0.0.1",
 		PORT: String(serverPort),
 		PUBLIC_BASE_URL: publicBaseUrl,
-		TEAM_CONSOLE_PORT: String(teamConsolePort),
-		TEAM_CONSOLE_API_TARGET: teamConsoleApiTarget,
 		TEAM_RUNTIME_ENABLED: env.TEAM_RUNTIME_ENABLED?.trim() || "true",
 		TEAM_USE_MOCK_RUNNER: env.TEAM_USE_MOCK_RUNNER?.trim() || "false",
 		FEISHU_ENABLED: "false",
@@ -104,8 +99,7 @@ export function buildNativeRuntimeConfig(options = {}) {
 			url: publicBaseUrl,
 		},
 		teamConsole: {
-			port: teamConsolePort,
-			url: localBaseUrl(teamConsolePort),
+			url: `${publicBaseUrl}/playground/team`,
 		},
 		env: nativeEnv,
 		processes: [
@@ -113,12 +107,6 @@ export function buildNativeRuntimeConfig(options = {}) {
 				name: "ugk-mini-agent-server",
 				command,
 				args: npmArgs(["start"]),
-				cwd: projectRoot,
-			},
-			{
-				name: "ugk-mini-agent-team-console",
-				command,
-				args: npmArgs(["--prefix", "apps/team-console", "run", "dev", "--", "--host", "127.0.0.1", "--port", String(teamConsolePort)]),
 				cwd: projectRoot,
 			},
 			{

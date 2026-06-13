@@ -7,14 +7,12 @@ test("parseNativeEnv reads simple key value pairs and ignores comments", () => {
 		parseNativeEnv([
 			"# comment",
 			"PORT=8888",
-			"TEAM_CONSOLE_PORT=9999",
 			"PUBLIC_BASE_URL=http://127.0.0.1:8888",
 			"EMPTY=",
 			"",
 		].join("\n")),
 		{
 			PORT: "8888",
-			TEAM_CONSOLE_PORT: "9999",
 			PUBLIC_BASE_URL: "http://127.0.0.1:8888",
 			EMPTY: "",
 		},

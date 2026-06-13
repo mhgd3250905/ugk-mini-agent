@@ -18,7 +18,7 @@
 默认入口：
 
 - 主服务 / Playground：`http://127.0.0.1:8888`
-- Team Console / Canvas：`http://127.0.0.1:9999`
+- Team Console / Canvas：`http://127.0.0.1:8888/playground/team`
 
 ## Chat / Agent
 

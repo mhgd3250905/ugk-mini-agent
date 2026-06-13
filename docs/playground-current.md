@@ -67,7 +67,7 @@ Conn 可以执行普通 agent prompt，也可以执行后端已有 Team Group：
 Team Console 固定入口：
 
 ```text
-http://127.0.0.1:9999
+http://127.0.0.1:8888/playground/team
 ```
 
 Playground 只提供入口和 Agent iframe 支撑，Canvas Task 的具体画布交互见 `apps/team-console/README.md` 和 `docs/team-runtime.md`。

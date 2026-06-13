@@ -1,6 +1,6 @@
 # UGK Mini Agent for Windows
 
-This repository is the Windows-native UGK Mini Agent runtime. The default local runtime starts the main agent service, Playground, Team Console, Canvas Task runtime, Team worker, and Conn worker as local Node.js processes.
+This repository is the Windows-native UGK Mini Agent runtime. The default local runtime starts the main agent service, Playground, Canvas Task runtime, Team worker, and Conn worker as local Node.js processes. Team Console is built into static assets and served by the main service.
 
 User skills are installed under `runtime/skills-user/` or an agent profile skill directory. Browser automation, web search, and IM integration can be added as deployment-specific skills.
 
@@ -13,7 +13,7 @@ User skills are installed under `runtime/skills-user/` or an agent profile skill
 ## Default URLs
 
 - Main service, API, Playground: `http://127.0.0.1:8888`
-- Team Console / Canvas: `http://127.0.0.1:9999`
+- Team Console / Canvas: `http://127.0.0.1:8888/playground/team`
 
 ## Setup
 
@@ -31,9 +31,10 @@ Open `http://127.0.0.1:8888/playground/model-sources` after startup and add the 
 `npm run native:start` starts:
 
 - `ugk-mini-agent-server`
-- `ugk-mini-agent-team-console`
 - `ugk-mini-agent-team-worker`
 - `ugk-mini-agent-conn-worker`
+
+Before starting the long-running processes, the supervisor runs `npm run team-console:build` so the Canvas UI is served by the main service.
 
 Logs are written to `logs/native/`.
 

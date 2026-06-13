@@ -15,7 +15,6 @@
     "worker:team": "tsx src/workers/team-worker.ts",
     "test:team": "node --test --test-concurrency=1 --import tsx test/team-*.test.ts",
     "team:task-factory": "tsx src/team/task-factory-cli.ts",
-    "team-console:dev": "npm --prefix apps/team-console run dev",
     "team-console:build": "npm --prefix apps/team-console run build",
     "team-console:test": "npm --prefix apps/team-console run test",
     "code:size": "node scripts/code-size-baseline.mjs"
