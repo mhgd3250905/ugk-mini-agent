@@ -1115,7 +1115,7 @@ function getPlaygroundScript(): string {
 				state.modelConfigSelectedModel = savedSelection.model;
 				renderModelConfigDialog();
 				setModelConfigStatus(isMainAgent ? "已保存到全局默认，新会话生效。" : "已保存到当前 Agent，新会话生效。", "success");
-				void syncContextUsage({ silent: true });
+				void syncContextUsage(state.conversationId, { silent: true });
 			} catch (error) {
 				setModelConfigStatus(error instanceof Error ? error.message : "保存模型源失败", "error");
 			} finally {

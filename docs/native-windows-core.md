@@ -6,6 +6,21 @@
 
 ## 进程拓扑
 
+普通用户优先使用仓库根目录的 `UGK-Mini-Agent-Launcher.cmd`。需要修改端口时，使用 `UGK-Mini-Agent-Set-Port.cmd`。
+
+启动器会：
+
+- 读取当前 `.env.native` 端口；`Set-Port` 入口允许输入新端口。
+- 持久化 `HOST`、`PORT`、`PUBLIC_BASE_URL` 到 `.env.native`。
+- 检测所选端口的监听进程；如被旧服务占用，会自动结束占用进程。
+- 使用 `scripts/native-supervisor.mjs` 拉起 native 运行时，避免误用 `npm run start` 导致模型配置回退。
+
+调试时可直接运行：
+
+```powershell
+node scripts\native-launcher.mjs --port 9999 --dry-run
+```
+
 `npm run native:start` 通过 `scripts/native-supervisor.mjs` 启动 3 个进程：
 
 | 进程 | 入口 | 职责 |

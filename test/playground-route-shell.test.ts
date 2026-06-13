@@ -141,6 +141,7 @@ test("GET /playground returns the test UI html", async () => {
 	assert.match(response.body, /context-usage-meta-item/);
 	assert.match(response.body, /function renderContextUsageBar\(/);
 	assert.match(response.body, /function syncContextUsage\(/);
+	assert.doesNotMatch(response.body, /syncContextUsage\(\{\s*silent:\s*true\s*\}\)/);
 	assert.match(response.body, /function estimateDraftContextTokens\(/);
 	assert.match(response.body, /function buildProjectedContextUsage\(/);
 	assert.match(response.body, /function openContextUsageDialog\(/);
