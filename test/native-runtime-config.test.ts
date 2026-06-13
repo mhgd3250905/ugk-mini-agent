@@ -73,5 +73,10 @@ test("Windows Core bundle starts with an empty user skill directory", async () =
 
 	assert.deepEqual(skillEntries.sort(), [".gitkeep"]);
 	assert.equal(packageJson.scripts["native:doctor"], "node scripts/native-doctor.mjs");
+	assert.equal(packageJson.scripts["native:doctor:win"], "node scripts/native-doctor.mjs --platform win32");
+	assert.equal(packageJson.scripts["native:doctor:mac"], "node scripts/native-doctor.mjs --platform darwin");
+	assert.equal(packageJson.scripts["native:doctor:linux"], "node scripts/native-doctor.mjs --platform linux");
 	assert.equal(packageJson.scripts["native:start"], "node scripts/native-supervisor.mjs");
+	assert.equal(packageJson.scripts["native:start:mac"], "node scripts/native-supervisor.mjs");
+	assert.equal(packageJson.scripts["native:start:linux"], "node scripts/native-supervisor.mjs");
 });
