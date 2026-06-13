@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import { loadAgentProfilesSync } from "../agent/agent-profile-catalog.js";
 import { buildTeamTaskFactoryPayload, type TeamTaskFactorySpec } from "./task-factory.js";
 
@@ -9,9 +10,28 @@ interface CliOptions {
 	help: boolean;
 }
 
+function envValue(value: string | undefined): string | undefined {
+	const trimmed = value?.trim();
+	return trimmed ? trimmed : undefined;
+}
+
+export function resolveTaskFactoryBaseUrl(env: Record<string, string | undefined> = process.env): string {
+	const explicitBaseUrl = envValue(env.TEAM_TASK_FACTORY_BASE_URL);
+	if (explicitBaseUrl) return explicitBaseUrl;
+
+	const publicBaseUrl = envValue(env.PUBLIC_BASE_URL);
+	if (publicBaseUrl) return publicBaseUrl;
+
+	const port = envValue(env.PORT) ?? "8888";
+	const rawHost = envValue(env.HOST) ?? "127.0.0.1";
+	const host = rawHost === "0.0.0.0" || rawHost === "::" ? "127.0.0.1" : rawHost;
+	const formattedHost = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+	return `http://${formattedHost}:${port}`;
+}
+
 function parseArgs(argv: string[]): CliOptions {
 	const options: CliOptions = {
-		baseUrl: process.env.TEAM_TASK_FACTORY_BASE_URL ?? "http://127.0.0.1:8888",
+		baseUrl: resolveTaskFactoryBaseUrl(),
 		apply: false,
 		help: false,
 	};
@@ -40,7 +60,8 @@ function printHelp(): void {
 Options:
   --spec <file>       JSON file containing a factory spec.
   --apply             POST the generated payload to /v1/team/tasks.
-  --base-url <url>    Backend base URL. Defaults to http://127.0.0.1:8888.
+  --base-url <url>    Backend base URL. Defaults to TEAM_TASK_FACTORY_BASE_URL,
+                      PUBLIC_BASE_URL, or HOST/PORT.
   --help              Show this help.
 
 Factory kinds:
@@ -89,7 +110,9 @@ async function main(): Promise<void> {
 	console.log(JSON.stringify({ mode: "apply", warnings: result.warnings, response: created }, null, 2));
 }
 
-main().catch((error) => {
-	console.error(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }, null, 2));
-	process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+	main().catch((error) => {
+		console.error(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }, null, 2));
+		process.exitCode = 1;
+	});
+}
