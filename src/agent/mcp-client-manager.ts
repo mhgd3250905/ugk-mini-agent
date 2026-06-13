@@ -3,6 +3,9 @@ import {
 	StdioClientTransport,
 	getDefaultEnvironment,
 	type CallToolResult,
+	type RequestOptions,
+	SdkError,
+	SdkErrorCode,
 	type StdioServerParameters,
 	type Tool,
 	type Transport,
@@ -48,7 +51,7 @@ export class AgentMcpClientManager {
 		return await this.withClient(server, async ({ client }) => {
 			const result = await withTimeout(
 				server,
-				client.listTools(),
+				client.listTools(undefined, buildRequestOptions(server, signal)),
 				signal,
 			);
 			return result.tools.map(presentTool);
@@ -64,7 +67,7 @@ export class AgentMcpClientManager {
 		return await this.withClient(server, async ({ client }) => {
 			const result = await withTimeout(
 				server,
-				client.callTool({ name: toolName, arguments: args }),
+				client.callTool({ name: toolName, arguments: args }, buildRequestOptions(server, signal)),
 				signal,
 			);
 			return presentCallToolResult(result);
@@ -99,7 +102,7 @@ export class AgentMcpClientManager {
 		const transport = new StdioClientTransport(buildStdioServerParameters(server));
 		this.activeTransports.add(transport);
 		try {
-			await withTimeout(server, client.connect(transport), signal);
+			await withTimeout(server, client.connect(transport, buildRequestOptions(server, signal)), signal);
 			return { client, transport };
 		} catch (error) {
 			this.activeTransports.delete(transport);
@@ -119,6 +122,14 @@ function buildStdioServerParameters(server: AgentMcpServerConfig): StdioServerPa
 			...(server.transport.env ?? {}),
 		},
 		stderr: "pipe",
+	};
+}
+
+function buildRequestOptions(server: AgentMcpServerConfig, signal?: AbortSignal): RequestOptions {
+	return {
+		timeout: server.timeoutMs,
+		maxTotalTimeout: server.timeoutMs,
+		...(signal ? { signal } : {}),
 	};
 }
 
@@ -146,6 +157,11 @@ async function withTimeout<T>(
 		: undefined;
 	try {
 		return await Promise.race(abortPromise ? [promise, timeoutPromise, abortPromise] : [promise, timeoutPromise]);
+	} catch (error) {
+		if (error instanceof SdkError && error.code === SdkErrorCode.RequestTimeout) {
+			throw new Error(`MCP server ${server.serverId} timed out after ${server.timeoutMs}ms`);
+		}
+		throw error;
 	} finally {
 		if (timeout) {
 			clearTimeout(timeout);
