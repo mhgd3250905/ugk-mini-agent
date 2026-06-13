@@ -2,7 +2,7 @@
 
 更新时间：`2026-06-13`
 
-`ugk-claw-core-win` 的模型源是运行态数据。全新安装后没有任何 provider，也没有默认可用 API key。
+`ugk-mini-agent` 的模型源是运行态数据。全新安装后没有任何 provider，也没有默认可用 API key。
 
 ## 用户流程
 

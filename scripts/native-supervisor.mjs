@@ -72,7 +72,7 @@ process.on("SIGTERM", () => {
 	process.exit(143);
 });
 
-console.log("Starting UGK CLAW Core for Windows...");
+console.log("Starting UGK Mini Agent...");
 console.log(`Server: ${plan.config.server.url}`);
 console.log(`Team Console: ${plan.config.teamConsole.url}`);
 console.log(`Logs: ${plan.logDir}`);

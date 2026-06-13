@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues and PRDs for this repo live as GitHub issues in `mhgd3250905/ugk-claw-personal`. Use the `gh` CLI for operations.
+Issues and PRDs for this repo live as GitHub issues in `mhgd3250905/ugk-mini-agent`. Use the `gh` CLI for operations.
 
 ## Conventions
 

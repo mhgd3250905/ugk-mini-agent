@@ -1,6 +1,6 @@
-# UGK CLAW Core for Windows
+# UGK Mini Agent for Windows
 
-This repository is the Windows-native UGK CLAW Core runtime. The default local runtime starts the main agent service, Playground, Team Console, Canvas Task runtime, Team worker, and Conn worker as local Node.js processes.
+This repository is the Windows-native UGK Mini Agent runtime. The default local runtime starts the main agent service, Playground, Team Console, Canvas Task runtime, Team worker, and Conn worker as local Node.js processes.
 
 User skills are installed under `runtime/skills-user/` or an agent profile skill directory. Browser automation, web search, and IM integration can be added as deployment-specific skills.
 
@@ -30,10 +30,10 @@ Open `http://127.0.0.1:8888/playground/model-sources` after startup and add the 
 
 `npm run native:start` starts:
 
-- `ugk-claw-core-win-server`
-- `ugk-claw-core-win-team-console`
-- `ugk-claw-core-win-team-worker`
-- `ugk-claw-core-win-conn-worker`
+- `ugk-mini-agent-server`
+- `ugk-mini-agent-team-console`
+- `ugk-mini-agent-team-worker`
+- `ugk-mini-agent-conn-worker`
 
 Logs are written to `logs/native/`.
 

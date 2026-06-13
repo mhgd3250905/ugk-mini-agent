@@ -8,7 +8,7 @@ type NativeProcessConfig = { name: string; args: string[] };
 
 test("native runtime config uses Windows Core ports and process list", () => {
 	const config = buildNativeRuntimeConfig({
-		projectRoot: "E:\\AII\\ugk-claw-core-win",
+		projectRoot: "E:\\AII\\ugk-mini-agent",
 		env: {},
 	});
 
@@ -22,13 +22,13 @@ test("native runtime config uses Windows Core ports and process list", () => {
 	assert.match(String(config.env.Path ?? config.env.PATH), /\\.data\\tools\\git\\bin/);
 	assert.deepEqual(
 		config.processes.map((processConfig: NativeProcessConfig) => processConfig.name),
-		["ugk-claw-core-win-server", "ugk-claw-core-win-team-console", "ugk-claw-core-win-team-worker", "ugk-claw-core-win-conn-worker"],
+		["ugk-mini-agent-server", "ugk-mini-agent-team-console", "ugk-mini-agent-team-worker", "ugk-mini-agent-conn-worker"],
 	);
 });
 
 test("native runtime config allows explicit ports while keeping local base URLs aligned", () => {
 	const config = buildNativeRuntimeConfig({
-		projectRoot: "E:\\AII\\ugk-claw-core-win",
+		projectRoot: "E:\\AII\\ugk-mini-agent",
 		env: {
 			PORT: "7777",
 			TEAM_CONSOLE_PORT: "7778",
@@ -40,7 +40,7 @@ test("native runtime config allows explicit ports while keeping local base URLs 
 	assert.equal(config.env.PORT, "7777");
 	assert.equal(config.env.PUBLIC_BASE_URL, "http://127.0.0.1:7777");
 	assert.equal(config.env.TEAM_CONSOLE_API_TARGET, "http://127.0.0.1:7777");
-	assert.equal(config.processes.find((processConfig: NativeProcessConfig) => processConfig.name === "ugk-claw-core-win-team-console")?.args.at(-1), "7778");
+	assert.equal(config.processes.find((processConfig: NativeProcessConfig) => processConfig.name === "ugk-mini-agent-team-console")?.args.at(-1), "7778");
 });
 
 test("Windows Core bundle starts with an empty user skill directory", async () => {

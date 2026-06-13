@@ -1683,7 +1683,7 @@ export function getPlaygroundThemeStyles(): string {
 
 export function getPlaygroundThemeControllerScript(): string {
 	return `
-		const PLAYGROUND_THEME_STORAGE_KEY = "ugk-pi:playground-theme";
+		const PLAYGROUND_THEME_STORAGE_KEY = "ugk-mini-agent:playground-theme";
 		const themeToggleButton = document.getElementById("theme-toggle-button");
 		const themeToggleLabel = document.getElementById("theme-toggle-label");
 		const mobileMenuThemeButton = document.getElementById("mobile-menu-theme-button");

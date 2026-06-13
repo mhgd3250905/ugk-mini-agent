@@ -14,7 +14,7 @@ test("GET /playground embeds conversation history restore and message copy contr
 	});
 
 	assert.equal(response.statusCode, 200);
-	assert.match(response.body, /ugk-pi:conversation-history-index/);
+	assert.match(response.body, /ugk-mini-agent:conversation-history-index/);
 	assert.match(response.body, /function getConversationHistoryStorageKey\(conversationId\)\s*\{/);
 	assert.match(response.body, /function restoreConversationHistory\(conversationId\)\s*\{/);
 	assert.match(response.body, /function renderMoreConversationHistory\(\)\s*\{/);

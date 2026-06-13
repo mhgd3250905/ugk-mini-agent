@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createNativeDoctorReport } from "../scripts/native-doctor-core.mjs";
 
-const projectRoot = "E:\\AII\\ugk-claw-core-win";
+const projectRoot = "E:\\AII\\ugk-mini-agent";
 type NativeCheck = { name: string; ok: boolean; message: string; required: boolean };
 
 test("native doctor checks the Windows Core local prerequisites", async () => {

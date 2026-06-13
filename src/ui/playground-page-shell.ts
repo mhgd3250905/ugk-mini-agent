@@ -63,7 +63,7 @@ ${input.playgroundScript ?? ""}</script>`;
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<script>(function(){try{var t=localStorage.getItem("ugk-pi:playground-theme");if(t==="light"){document.documentElement.dataset.theme="light";document.documentElement.style.colorScheme="light"}}catch{}})()</script>
+		<script>(function(){try{var t=localStorage.getItem("ugk-mini-agent:playground-theme");if(t==="light"){document.documentElement.dataset.theme="light";document.documentElement.style.colorScheme="light"}}catch{}})()</script>
 		<title>UGK Claw</title>
 		<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23080c14'/%3E%3Ctext x='32' y='38' text-anchor='middle' font-family='Consolas,monospace' font-size='16' font-weight='700' fill='%23e9f0ff'%3EUGK%3C/text%3E%3C/svg%3E" />
 		<link rel="stylesheet" href="/vendor/flatpickr/flatpickr.min.css" />

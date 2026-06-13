@@ -110,25 +110,25 @@ export function buildNativeRuntimeConfig(options = {}) {
 		env: nativeEnv,
 		processes: [
 			{
-				name: "ugk-claw-core-win-server",
+				name: "ugk-mini-agent-server",
 				command,
 				args: npmArgs(["start"]),
 				cwd: projectRoot,
 			},
 			{
-				name: "ugk-claw-core-win-team-console",
+				name: "ugk-mini-agent-team-console",
 				command,
 				args: npmArgs(["--prefix", "apps/team-console", "run", "dev", "--", "--host", "127.0.0.1", "--port", String(teamConsolePort)]),
 				cwd: projectRoot,
 			},
 			{
-				name: "ugk-claw-core-win-team-worker",
+				name: "ugk-mini-agent-team-worker",
 				command,
 				args: npmArgs(["run", "worker:team"]),
 				cwd: projectRoot,
 			},
 			{
-				name: "ugk-claw-core-win-conn-worker",
+				name: "ugk-mini-agent-conn-worker",
 				command,
 				args: npmArgs(["run", "worker:conn"]),
 				cwd: projectRoot,

@@ -33,13 +33,13 @@ export function createNativeSupervisorPlan(options = {}) {
 		config,
 		steps: [
 			{
-				name: "ugk-claw-core-win-runtime-check",
+				name: "ugk-mini-agent-runtime-check",
 				command: npmCommand(),
 				args: npmArgs(["run", "runtime:check"]),
 				cwd: projectRoot,
 				env,
 				blocking: true,
-				logFile: join(logDir, "ugk-claw-core-win-runtime-check.log"),
+				logFile: join(logDir, "ugk-mini-agent-runtime-check.log"),
 			},
 			...config.processes.map((processConfig) => withRuntimeEnv(processConfig, env, logDir)),
 		],

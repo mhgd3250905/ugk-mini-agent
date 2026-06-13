@@ -1,6 +1,6 @@
-# ugk-claw-core-win
+# ugk-mini-agent
 
-UGK CLAW Windows Core 是一个面向 Windows 本机部署的 agent runtime。
+UGK Mini Agent 是一个面向 Windows 本机部署的轻量 agent runtime。
 
 默认运行形态是本机 Node.js 多进程：主服务、Team Console、Team worker 和 Conn worker。用户技能目录默认保持为空，按部署需要自行安装扩展技能。
 
@@ -27,10 +27,10 @@ npm run native:start
 
 `npm run native:start` 会启动：
 
-- `ugk-claw-core-win-server`
-- `ugk-claw-core-win-team-console`
-- `ugk-claw-core-win-team-worker`
-- `ugk-claw-core-win-conn-worker`
+- `ugk-mini-agent-server`
+- `ugk-mini-agent-team-console`
+- `ugk-mini-agent-team-worker`
+- `ugk-mini-agent-conn-worker`
 
 日志写入 `logs/native/`。
 

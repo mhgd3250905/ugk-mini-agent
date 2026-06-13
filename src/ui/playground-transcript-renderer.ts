@@ -512,7 +512,7 @@ export function getPlaygroundTranscriptRendererScript(): string {
 					}
 					const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 					const title = String(entry?.title || "message").replace(/[\\\\/:*?"<>|\\s]+/g, "-").replace(/^-+|-+$/g, "") || "message";
-					downloadBlob(blob, "ugk-claw-" + title.toLowerCase() + "-" + stamp + ".png");
+					downloadBlob(blob, "ugk-mini-agent-" + title.toLowerCase() + "-" + stamp + ".png");
 				} finally {
 					if (svgUrl.startsWith("blob:")) {
 						URL.revokeObjectURL(svgUrl);

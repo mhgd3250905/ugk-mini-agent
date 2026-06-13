@@ -848,7 +848,7 @@ function getAgentsPageJs(): string {
 			{ id: "custom", label: "自定义" },
 		];
 
-		var ACTIVE_AGENT_KEY = "ugk-pi:active-agent-id";
+		var ACTIVE_AGENT_KEY = "ugk-mini-agent:active-agent-id";
 		var supportCatalogsPromise = null;
 
 		function readActiveAgentId() {
@@ -1470,7 +1470,7 @@ function getAgentsPageJs(): string {
 		function handleSwitch() {
 			var agent = state.agents.find(function(a) { return a.agentId === state.selectedId; });
 			if (!agent || isAgentActive(agent)) return;
-			localStorage.setItem("ugk-pi:active-agent-id", agent.agentId);
+			localStorage.setItem("ugk-mini-agent:active-agent-id", agent.agentId);
 			window.location.href = "/playground";
 		}
 

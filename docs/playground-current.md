@@ -1,6 +1,6 @@
 # Playground
 
-Playground 是 UGK CLAW Windows Core 的主对话界面，默认随主服务运行在：
+Playground 是 UGK Mini Agent 的主对话界面，默认随主服务运行在：
 
 ```text
 http://127.0.0.1:8888/playground

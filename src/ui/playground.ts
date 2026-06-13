@@ -94,12 +94,12 @@ function getPlaygroundScript(): string {
 	return `
 		${getBrowserMarkdownRendererScript()}
 
-		const CONVERSATION_HISTORY_INDEX_KEY = "ugk-pi:conversation-history-index";
+		const CONVERSATION_HISTORY_INDEX_KEY = "ugk-mini-agent:conversation-history-index";
 		const TRANSCRIPT_FOLLOW_THRESHOLD_PX = 120;
 		const MAX_STORED_CONVERSATIONS = 12;
 		const MAX_STORED_MESSAGES_PER_CONVERSATION = 160;
 		const MAX_ARCHIVED_TRANSCRIPTS = 4;
-		const AGENT_SELECTION_STORAGE_KEY = "ugk-pi:active-agent-id";
+		const AGENT_SELECTION_STORAGE_KEY = "ugk-mini-agent:active-agent-id";
 		${getPlaygroundContextUsageConstantsScript()}
 		${getPlaygroundLayoutConstantsScript()}
 		const CONTEXT_STATUS_LABELS = {

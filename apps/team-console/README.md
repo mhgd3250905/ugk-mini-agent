@@ -1,6 +1,6 @@
 # Team Console
 
-Team Console 是 UGK CLAW Windows Core 的 Canvas 前端。它提供 Execution Atlas 画布、Agent 分支、Task/WorkUnit 管理、Discovery 子画布、Source 节点、Typed Task 连接、Control dependency、Group run 和 Canvas Task run 观察器。
+Team Console 是 UGK Mini Agent 的 Canvas 前端。它提供 Execution Atlas 画布、Agent 分支、Task/WorkUnit 管理、Discovery 子画布、Source 节点、Typed Task 连接、Control dependency、Group run 和 Canvas Task run 观察器。
 
 默认入口：
 

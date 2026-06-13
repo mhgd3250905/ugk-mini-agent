@@ -14,7 +14,7 @@ test("playground renders an agent selector for switching operation windows", () 
 	assert.ok(html.indexOf('id="agent-selector-status"') > contextSlotStart);
 	assert.match(html, /class="topbar-agent-label"/);
 	assert.match(html, /aria-label="打开 Agent 页面"/);
-	assert.match(html, /const AGENT_SELECTION_STORAGE_KEY = "ugk-pi:active-agent-id"/);
+	assert.match(html, /const AGENT_SELECTION_STORAGE_KEY = "ugk-mini-agent:active-agent-id"/);
 	assert.match(html, /function readUrlAgentIdHint\(\)/);
 	assert.match(html, /params\.get\("agentId"\)/);
 	assert.match(html, /function isTeamConsoleEmbed\(\)/);

@@ -925,7 +925,7 @@ export function renderPublicSitePage(): string {
 					<a href="#trust-system">可信机制</a>
 					<a href="#flow">任务流程</a>
 					<a href="#highlights">亮点</a>
-					<a href="https://github.com/mhgd3250905/ugk-claw-personal">GitHub</a>
+					<a href="https://github.com/mhgd3250905/ugk-mini-agent">GitHub</a>
 				</div>
 			</div>
 		</nav>
@@ -941,7 +941,7 @@ export function renderPublicSitePage(): string {
 					<div class="cta-row">
 						<a class="button button-primary" href="#product">看它解决什么问题</a>
 						<a class="button" href="#flow">看可信 Task 怎么产生</a>
-						<a class="button" href="https://github.com/mhgd3250905/ugk-claw-personal">查看 GitHub</a>
+						<a class="button" href="https://github.com/mhgd3250905/ugk-mini-agent">查看 GitHub</a>
 					</div>
 					<p class="cta-note">目标不是堆更多 Agent，而是让每个可复用任务都有边界、有证据、有验收。</p>
 				</div>
@@ -1192,7 +1192,7 @@ export function renderPublicSitePage(): string {
 					<p>文档不该只把入口列出来。新用户应该先理解 UGK CLAW 为什么要把 Agent 工作拆成 Task、Skill、Worker 和 Checker，再进入 Agent 画板查看任务、证据和审核链路。</p>
 				</div>
 				<div class="docs">
-					<a class="doc-link" href="https://github.com/mhgd3250905/ugk-claw-personal/blob/main/README.md">
+					<a class="doc-link" href="https://github.com/mhgd3250905/ugk-mini-agent/blob/main/README.md">
 						<div>
 							<span>01 / product</span>
 							<strong>先读产品定位</strong>
@@ -1200,7 +1200,7 @@ export function renderPublicSitePage(): string {
 						</div>
 						<em>中文 README</em>
 					</a>
-					<a class="doc-link" href="https://github.com/mhgd3250905/ugk-claw-personal/blob/main/README.md#你该先看什么">
+					<a class="doc-link" href="https://github.com/mhgd3250905/ugk-mini-agent/blob/main/README.md#你该先看什么">
 						<div>
 							<span>02 / board</span>
 							<strong>再看 Agent 画板</strong>
@@ -1208,7 +1208,7 @@ export function renderPublicSitePage(): string {
 						</div>
 						<em>上手路径</em>
 					</a>
-					<a class="doc-link" href="https://github.com/mhgd3250905/ugk-claw-personal/blob/main/README.md#可信-task-交付">
+					<a class="doc-link" href="https://github.com/mhgd3250905/ugk-mini-agent/blob/main/README.md#可信-task-交付">
 						<div>
 							<span>03 / acceptance</span>
 							<strong>理解验收机制</strong>

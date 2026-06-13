@@ -1,7 +1,7 @@
 export function getPlaygroundConversationHistoryStoreScript(): string {
 	return `
 		function getConversationHistoryStorageKey(conversationId) {
-			return "ugk-pi:conversation-history:" + getCurrentAgentId() + ":" + conversationId;
+			return "ugk-mini-agent:conversation-history:" + getCurrentAgentId() + ":" + conversationId;
 		}
 
 		function getConversationHistoryIndexKey() {

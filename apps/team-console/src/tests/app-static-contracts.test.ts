@@ -875,7 +875,7 @@ describe("Team Console static contracts", () => {
     expect(readme).not.toContain("Docker");
 
     const runtimeDoc = readFileSync("../../docs/team-runtime.md", "utf8");
-    expect(runtimeDoc).toContain("Team Runtime 是 UGK CLAW Windows Core 的 Canvas Task 执行层");
+    expect(runtimeDoc).toContain("Team Runtime 是 UGK Mini Agent 的 Canvas Task 执行层");
     expect(runtimeDoc).toContain("http://127.0.0.1:9999");
     expect(runtimeDoc).toContain("http://127.0.0.1:8888");
     expect(runtimeDoc).toContain("POST /v1/team/tasks/:taskId/runs");

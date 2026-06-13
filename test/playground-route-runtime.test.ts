@@ -98,7 +98,7 @@ test("GET /playground supports persistent dark and light themes", async () => {
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*:root\[data-theme="light"\]\s+\.topbar,[\s\S]*:root\[data-theme="light"\]\s+\.topbar-context-slot\s*\{[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*:root\[data-theme="light"\]\s+\.mobile-topbar-button,[\s\S]*:root\[data-theme="light"\]\s+\.mobile-topbar-button:focus-visible\s*\{[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/);
 	assert.match(response.body, /@media \(max-width: 640px\) \{[\s\S]*:root\[data-theme="light"\]\s+\.topbar-context-slot \.context-usage-shell,[\s\S]*:root\[data-theme="light"\]\s+\.topbar-context-slot \.context-usage-shell\[data-expanded="true"\]\s*\{[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/);
-	assert.match(response.body, /const PLAYGROUND_THEME_STORAGE_KEY = "ugk-pi:playground-theme";/);
+	assert.match(response.body, /const PLAYGROUND_THEME_STORAGE_KEY = "ugk-mini-agent:playground-theme";/);
 	assert.match(response.body, /function applyPlaygroundTheme\(nextTheme\)\s*\{/);
 	assert.match(response.body, /pageRoot\.dataset\.theme = normalized;/);
 	assert.match(response.body, /localStorage\.setItem\(PLAYGROUND_THEME_STORAGE_KEY, normalized\)/);
@@ -974,4 +974,3 @@ test("GET /playground labels timed-out conn runs distinctly in the detail dialog
 	assert.match(response.body, /run_timed_out/);
 	await app.close();
 });
-
