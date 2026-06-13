@@ -5,7 +5,10 @@ import {
 	type AgentSessionEventAdapterState,
 } from "../src/agent/agent-session-event-adapter.js";
 import type { RawAgentSessionEventLike } from "../src/agent/agent-session-factory.js";
+import { loadDefaultNativeEnv } from "../src/native-default-env.js";
 import type { ChatStreamEvent } from "../src/types/api.js";
+
+const TEST_PUBLIC_BASE_URL = loadDefaultNativeEnv().PUBLIC_BASE_URL;
 
 function collectEvents(state: AgentSessionEventAdapterState = {}) {
 	const events: ChatStreamEvent[] = [];
@@ -37,7 +40,7 @@ test("agent session event adapter accumulates text deltas and emits rewritten st
 	assert.deepEqual(events, [
 		{
 			type: "text_delta",
-			textDelta: "see http://127.0.0.1:3000/v1/local-file?path=%2Fapp%2Fruntime%2Freport.html",
+			textDelta: `see ${TEST_PUBLIC_BASE_URL}/v1/local-file?path=%2Fapp%2Fruntime%2Freport.html`,
 		},
 		{
 			type: "text_delta",

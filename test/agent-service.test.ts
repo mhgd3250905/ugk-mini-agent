@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { AgentService } from "../src/agent/agent-service.js";
 import { AgentBusyError } from "../src/agent/agent-errors.js";
 import type { MessageUpdateEventLike } from "../src/agent/agent-session-factory.js";
+import { loadDefaultNativeEnv } from "../src/native-default-env.js";
 import type { ChatStreamEvent } from "../src/types/api.js";
 import {
 	DeferredSession,
@@ -14,6 +15,8 @@ import {
 	createStore,
 	textDelta,
 } from "./agent-service-helpers.js";
+
+const TEST_PUBLIC_BASE_URL = loadDefaultNativeEnv().PUBLIC_BASE_URL;
 
 test("resetConversation clears the persisted conversation state when no run is active", async () => {
 	const store = await createStore();
@@ -717,7 +720,7 @@ test("rewrites supported local artifact paths before returning assistant text to
 
 	assert.equal(
 		result.text,
-		"请打开 http://127.0.0.1:3000/v1/local-file?path=%2Fapp%2Fpublic%2Fzhihu-hot-share.html",
+		`请打开 ${TEST_PUBLIC_BASE_URL}/v1/local-file?path=%2Fapp%2Fpublic%2Fzhihu-hot-share.html`,
 	);
 });
 
@@ -760,11 +763,11 @@ test("rewrites supported local artifact paths in streamed tool output and final 
 		toolCallId: "tool-open-local",
 		toolName: "browser_open",
 		isError: false,
-		result: "准备打开 http://127.0.0.1:3000/v1/local-file?path=%2Fapp%2Fpublic%2Fzhihu-hot-share.html",
+		result: `准备打开 ${TEST_PUBLIC_BASE_URL}/v1/local-file?path=%2Fapp%2Fpublic%2Fzhihu-hot-share.html`,
 	});
 	assert.deepEqual(events[2], {
 		type: "text_delta",
-		textDelta: "现在给你 http://127.0.0.1:3000/v1/local-file?path=%2Fapp%2Fpublic%2Fzhihu-hot-share.html",
+		textDelta: `现在给你 ${TEST_PUBLIC_BASE_URL}/v1/local-file?path=%2Fapp%2Fpublic%2Fzhihu-hot-share.html`,
 	});
 	assert.equal(events[3]?.type, "done");
 	assert.equal(events[3]?.conversationId, "manual:stream-local-artifact");
