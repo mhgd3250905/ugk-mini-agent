@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="Node.js >= 22" src="https://img.shields.io/badge/Node.js-%3E%3D22-339933?style=flat-square&logo=nodedotjs&logoColor=white">
+  <img alt="Node.js 22+" src="https://img.shields.io/badge/Node.js-22%2B-339933?style=flat-square&amp;logo=nodedotjs&amp;logoColor=white">
   <img alt="Windows macOS Linux" src="https://img.shields.io/badge/Windows%20%7C%20macOS%20%7C%20Linux-native-0f766e?style=flat-square">
   <img alt="Local first" src="https://img.shields.io/badge/local--first-agent%20runtime-2563eb?style=flat-square">
 </p>
