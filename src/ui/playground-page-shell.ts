@@ -91,9 +91,9 @@ ${input.playgroundScript ?? ""}</script>`;
 						<strong>后台任务</strong>
 						<span id="conn-manager-unread-badge" class="telemetry-action-badge" hidden>0</span>
 					</button>
-					<a class="telemetry-card telemetry-action" href="/playground/team" data-tooltip-title="Team Runtime" data-tooltip-desc="进入 Team Runtime 独立工作台。">
+					<a class="telemetry-card telemetry-action telemetry-canvas-link" href="/playground/team" data-tooltip-title="画板" data-tooltip-desc="进入画板（Team Runtime）独立工作台。">
 						<span>多 Agent 链路别靠脑补</span>
-						<strong>Team Runtime</strong>
+						<strong>画板</strong>
 					</a>
 					<button id="open-task-inbox-button" class="telemetry-card telemetry-action telemetry-action-with-badge" type="button" aria-pressed="false" data-tooltip-title="消息" data-tooltip-desc="查看后台任务投递的结果。" style="display:none">
 						<span>&#21518;&#21488;&#20219;&#21153;&#32467;&#26524;&#32479;&#19968;&#25910;&#20214;&#31665;</span>
@@ -207,7 +207,7 @@ ${input.playgroundScript ?? ""}</script>`;
 									<path d="M8 10h8M8 14h5" stroke-width="1.8" stroke-linecap="round" />
 								</svg>
 							</span>
-							<span>Team Runtime</span>
+							<span>画板</span>
 						</a>
 						<button id="mobile-menu-task-inbox-button" class="mobile-overflow-menu-item" type="button" role="menuitem" aria-pressed="false">
 							<span class="mobile-overflow-menu-item-icon" aria-hidden="true">

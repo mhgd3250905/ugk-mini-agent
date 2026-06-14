@@ -483,7 +483,7 @@ test("GET /playground returns the test UI html", async () => {
 	assert.match(response.body, /if \(shouldOpenChatViewFromUrl\(\)\) \{[\s\S]*shell\.dataset\.home = "false";[\s\S]*ensureCurrentConversation\(\{ silent: true \}\);/);
 	assert.doesNotMatch(response.body, /window\.open\("\/playground\/conn", "_blank"\)/);
 	assert.doesNotMatch(response.body, /window\.open\("\/playground\/agents", "_blank"\)/);
-	assert.match(response.body, /<a class="telemetry-card telemetry-action" href="\/playground\/team" data-tooltip-title="Team Runtime"/);
+	assert.match(response.body, /<a class="telemetry-card telemetry-action telemetry-canvas-link" href="\/playground\/team" data-tooltip-title="画板"/);
 	assert.match(response.body, /<a href="\/playground\/team" class="mobile-overflow-menu-item" role="menuitem">/);
 	assert.doesNotMatch(response.body, /href="\/playground\/team"[^>]*target="_blank"/);
 	assert.doesNotMatch(response.body, /function loadAssetLibrary\(/);

@@ -2814,6 +2814,90 @@ export function getPlaygroundStyles(): string {
 		.telemetry-action:disabled {
 			cursor: wait;
 		}
+		/* ????????????????????? telemetry-canvas-link????????? telemetry-action??*/
+		.telemetry-canvas-link {
+			position: relative;
+			padding: 0 12px;
+			border: 0;
+			border-radius: 6px;
+			background:
+				linear-gradient(#0b1220, #0b1220) padding-box,
+				linear-gradient(
+					120deg,
+					#ff7188 0%,
+					#ffd166 18%,
+					#8dffb2 38%,
+					#6bb6ff 58%,
+					#b388ff 78%,
+					#ff7188 100%
+				) border-box;
+			border: 1.5px solid transparent;
+			background-size:
+				100% 100%,
+				300% 100%;
+			box-shadow: 0 0 0 1px rgba(107, 182, 255, 0.12);
+			animation: telemetry-canvas-flow 6s linear infinite;
+			transition: transform 200ms ease;
+		}
+
+		.telemetry-canvas-link span {
+			color: rgba(238, 244, 255, 0.62);
+		}
+
+		.telemetry-canvas-link strong {
+			background: linear-gradient(
+				100deg,
+				#ff9ab0 0%,
+				#ffd166 20%,
+				#8dffb2 40%,
+				#7cc2ff 60%,
+				#c4a6ff 80%,
+				#ff9ab0 100%
+			);
+			background-size: 250% 100%;
+			-webkit-background-clip: text;
+			background-clip: text;
+			color: transparent;
+			font-weight: 700;
+			animation: telemetry-canvas-text-flow 8s linear infinite;
+		}
+
+		.telemetry-canvas-link:hover:not(:disabled),
+		.telemetry-canvas-link:focus-visible {
+			background:
+				linear-gradient(#121a2e, #121a2e) padding-box,
+				linear-gradient(
+					120deg,
+					#ff7188 0%,
+					#ffd166 18%,
+					#8dffb2 38%,
+					#6bb6ff 58%,
+					#b388ff 78%,
+					#ff7188 100%
+				) border-box;
+			background-size:
+				100% 100%,
+				300% 100%;
+			box-shadow: 0 0 0 1px rgba(107, 182, 255, 0.24);
+			transform: translateY(-1px);
+		}
+
+		@keyframes telemetry-canvas-flow {
+			0% { background-position: 0% 0%, 0% 0%; }
+			100% { background-position: 0% 0%, -300% 0%; }
+		}
+
+		@keyframes telemetry-canvas-text-flow {
+			0% { background-position: 0% 0%; }
+			100% { background-position: -250% 0%; }
+		}
+
+		@media (prefers-reduced-motion: reduce) {
+			.telemetry-canvas-link,
+			.telemetry-canvas-link strong {
+				animation: none;
+			}
+		}
 
 		.telemetry-action[data-tooltip-title]::after {
 			content: attr(data-tooltip-title) "\\A" attr(data-tooltip-desc);
