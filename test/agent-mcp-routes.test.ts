@@ -107,7 +107,7 @@ test("GET /v1/agents/:agentId/mcp/servers returns an empty scoped MCP catalog", 
 	assert.deepEqual(response.json(), { agentId: "search", servers: [] });
 });
 
-test("agent MCP routes reject non-local requests before reading or executing MCP configuration", async (t) => {
+test("agent MCP routes allow non-local requests to manage MCP configuration", async (t) => {
 	let testCalls = 0;
 	const { app } = await createApp({
 		clientManager: {
@@ -133,10 +133,10 @@ test("agent MCP routes reject non-local requests before reading or executing MCP
 		remoteAddress: "192.168.1.50",
 	});
 
-	assert.equal(response.statusCode, 403);
-	assert.match(response.json().error.message, /local requests only/);
-	assert.equal(testResponse.statusCode, 403);
-	assert.equal(testCalls, 0);
+	assert.equal(response.statusCode, 200);
+	assert.equal(response.json().server.serverId, "qr-ocr");
+	assert.equal(testResponse.statusCode, 200);
+	assert.equal(testCalls, 1);
 });
 
 test("agent MCP routes close the client manager when the app closes", async () => {

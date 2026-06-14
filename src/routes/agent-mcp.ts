@@ -16,7 +16,7 @@ import {
 import { getAppConfig } from "../config.js";
 import { getActiveTeamProfileLocks } from "../team/config-locks.js";
 import { resolveScopedAgentServiceOrSend, sendUnknownAgent } from "./agent-route-utils.js";
-import { sendBadRequest, sendConflict, sendForbidden, sendInternalError, sendNotImplemented, sendNotFound } from "./http-errors.js";
+import { sendBadRequest, sendConflict, sendInternalError, sendNotImplemented, sendNotFound } from "./http-errors.js";
 
 export interface AgentMcpRouteDependencies {
 	projectRoot?: string;
@@ -43,9 +43,6 @@ export function registerAgentMcpRoutes(app: FastifyInstance, deps: AgentMcpRoute
 			request: FastifyRequest<{ Params: AgentMcpRouteParams }>,
 			reply,
 		): Promise<{ agentId: string; servers: AgentMcpServerConfig[] } | FastifyReply> => {
-			if (!resolveLocalRequest(reply, request)) {
-				return reply;
-			}
 			const context = resolveReadContext(deps, reply, request.params.agentId);
 			if (!context) {
 				return reply;
@@ -64,9 +61,6 @@ export function registerAgentMcpRoutes(app: FastifyInstance, deps: AgentMcpRoute
 			request: FastifyRequest<{ Params: AgentMcpRouteParams; Body: CreateAgentMcpServerInput }>,
 			reply,
 		): Promise<{ server: AgentMcpServerConfig } | FastifyReply> => {
-			if (!resolveLocalRequest(reply, request)) {
-				return reply;
-			}
 			const context = await resolveWriteContext(deps, reply, request.params.agentId);
 			if (!context) {
 				return reply;
@@ -87,9 +81,6 @@ export function registerAgentMcpRoutes(app: FastifyInstance, deps: AgentMcpRoute
 			request: FastifyRequest<{ Params: AgentMcpRouteParams; Body: UpdateAgentMcpServerInput }>,
 			reply,
 		): Promise<{ server: AgentMcpServerConfig } | FastifyReply> => {
-			if (!resolveLocalRequest(reply, request)) {
-				return reply;
-			}
 			const context = await resolveWriteContext(deps, reply, request.params.agentId);
 			if (!context) {
 				return reply;
@@ -115,9 +106,6 @@ export function registerAgentMcpRoutes(app: FastifyInstance, deps: AgentMcpRoute
 			request: FastifyRequest<{ Params: AgentMcpRouteParams }>,
 			reply,
 		): Promise<{ deleted: true; agentId: string; serverId: string } | FastifyReply> => {
-			if (!resolveLocalRequest(reply, request)) {
-				return reply;
-			}
 			const context = await resolveWriteContext(deps, reply, request.params.agentId);
 			if (!context) {
 				return reply;
@@ -138,9 +126,6 @@ export function registerAgentMcpRoutes(app: FastifyInstance, deps: AgentMcpRoute
 			request: FastifyRequest<{ Params: AgentMcpRouteParams }>,
 			reply,
 		): Promise<{ result: Awaited<ReturnType<AgentMcpClientManager["testServer"]>> } | FastifyReply> => {
-			if (!resolveLocalRequest(reply, request)) {
-				return reply;
-			}
 			const context = await resolveWriteContext(deps, reply, request.params.agentId);
 			if (!context) {
 				return reply;
@@ -167,9 +152,6 @@ export function registerAgentMcpRoutes(app: FastifyInstance, deps: AgentMcpRoute
 			request: FastifyRequest<{ Params: AgentMcpRouteParams }>,
 			reply,
 		): Promise<{ agentId: string; serverId: string; tools: unknown[]; source: "cache" | "live" } | FastifyReply> => {
-			if (!resolveLocalRequest(reply, request)) {
-				return reply;
-			}
 			const context = resolveReadContext(deps, reply, request.params.agentId);
 			if (!context) {
 				return reply;
@@ -196,23 +178,6 @@ export function registerAgentMcpRoutes(app: FastifyInstance, deps: AgentMcpRoute
 			}
 		},
 	);
-}
-
-function resolveLocalRequest(reply: FastifyReply, request: FastifyRequest): true | undefined {
-	const address = request.ip || request.socket.remoteAddress || "";
-	if (isLocalAddress(address)) {
-		return true;
-	}
-	sendForbidden(reply, "MCP management is available to local requests only.");
-	return undefined;
-}
-
-function isLocalAddress(address: string): boolean {
-	const normalized = address.trim().toLowerCase();
-	return normalized === "127.0.0.1"
-		|| normalized === "::1"
-		|| normalized === "::ffff:127.0.0.1"
-		|| normalized === "localhost";
 }
 
 function resolveReadContext(
