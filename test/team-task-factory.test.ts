@@ -2,7 +2,21 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildTeamTaskFactoryPayload } from "../src/team/task-factory.js";
 
-const context = { availableAgentIds: new Set(["main", "http", "team-checker-agent"]) };
+const context = { availableAgentIds: new Set(["main", "http", "team-checker-agent", "team-worker", "team-checker", "team-dispatcher"]) };
+
+test("task factory defaults Team Task roles to built-in team agents", () => {
+	const result = buildTeamTaskFactoryPayload({
+		kind: "normal",
+		title: "默认职责任务",
+		inputText: "处理输入。",
+		outputContractText: "输出结果。",
+		acceptanceRules: ["结果完整。"],
+	}, context);
+
+	assert.equal(result.payload.leaderAgentId, "main");
+	assert.equal(result.payload.workUnit.workerAgentId, "team-worker");
+	assert.equal(result.payload.workUnit.checkerAgentId, "team-checker");
+});
 
 test("task factory builds a valid worklist producer payload from narrow parameters", () => {
 	const result = buildTeamTaskFactoryPayload({
@@ -74,6 +88,21 @@ test("task factory builds a valid split-task payload with deterministic splitTas
 		autoRun: { enabled: true, concurrency: 3 },
 		collectPolicy: { requireAllItemsSucceeded: true, requireFullCoverage: true },
 	});
+});
+
+test("task factory defaults split-task generated roles to built-in team agents", () => {
+	const result = buildTeamTaskFactoryPayload({
+		kind: "split-task",
+		title: "默认角色分片",
+		worklistDescription: "接收上游 worklist。",
+		dispatchGoal: "逐项处理。",
+	}, context);
+
+	assert.equal(result.payload.leaderAgentId, "main");
+	assert.equal(result.payload.workUnit.workerAgentId, "team-worker");
+	assert.equal(result.payload.workUnit.checkerAgentId, "team-checker");
+	assert.equal(result.payload.splitTaskSpec?.generatedWorkerAgentId, "team-worker");
+	assert.equal(result.payload.splitTaskSpec?.generatedCheckerAgentId, "team-checker");
 });
 
 test("task factory rejects bad parameters before any write can happen", () => {

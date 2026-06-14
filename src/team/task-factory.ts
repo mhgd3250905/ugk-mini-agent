@@ -1,14 +1,15 @@
 import type { CreateTeamCanvasTaskInput, TaskValidationContext } from "./task-validation.js";
 import { validateCreateTaskInput } from "./task-validation.js";
 import type { TeamTaskOutputCheck, TeamWorkUnitDefinition } from "./types.js";
+import { DEFAULT_AGENT_ID, TEAM_CHECKER_AGENT_ID, TEAM_WORKER_AGENT_ID } from "../agent/agent-profile.js";
 
 type TaskFactoryStatus = "drafting" | "ready";
 
 interface TaskFactoryBaseSpec {
 	title: string;
-	leaderAgentId: string;
-	workerAgentId: string;
-	checkerAgentId: string;
+	leaderAgentId?: string;
+	workerAgentId?: string;
+	checkerAgentId?: string;
 	status?: TaskFactoryStatus;
 }
 
@@ -78,6 +79,18 @@ function normalizeStatus(status: TaskFactoryStatus | undefined): TaskFactoryStat
 	return status ?? "ready";
 }
 
+function defaultLeaderAgentId(value: string | undefined): string {
+	return assertNonEmpty(value ?? DEFAULT_AGENT_ID, "leaderAgentId");
+}
+
+function defaultWorkerAgentId(value: string | undefined): string {
+	return assertNonEmpty(value ?? TEAM_WORKER_AGENT_ID, "workerAgentId");
+}
+
+function defaultCheckerAgentId(value: string | undefined): string {
+	return assertNonEmpty(value ?? TEAM_CHECKER_AGENT_ID, "checkerAgentId");
+}
+
 function buildWorkUnit(input: {
 	title: string;
 	inputText: string;
@@ -131,15 +144,15 @@ function defaultSplitTaskRules(): string[] {
 function buildNormalPayload(spec: NormalTaskFactorySpec): CreateTeamCanvasTaskInput {
 	return {
 		title: assertNonEmpty(spec.title, "title"),
-		leaderAgentId: assertNonEmpty(spec.leaderAgentId, "leaderAgentId"),
+		leaderAgentId: defaultLeaderAgentId(spec.leaderAgentId),
 		status: normalizeStatus(spec.status),
 		workUnit: buildWorkUnit({
 			title: assertNonEmpty(spec.title, "title"),
 			inputText: assertNonEmpty(spec.inputText, "inputText"),
 			outputContractText: assertNonEmpty(spec.outputContractText, "outputContractText"),
 			acceptanceRules: assertRules(spec.acceptanceRules, "acceptanceRules"),
-			workerAgentId: assertNonEmpty(spec.workerAgentId, "workerAgentId"),
-			checkerAgentId: assertNonEmpty(spec.checkerAgentId, "checkerAgentId"),
+			workerAgentId: defaultWorkerAgentId(spec.workerAgentId),
+			checkerAgentId: defaultCheckerAgentId(spec.checkerAgentId),
 			inputPorts: spec.inputPorts,
 			outputPorts: spec.outputPorts,
 			outputCheck: spec.outputCheck,
@@ -159,7 +172,7 @@ function buildWorklistProducerPayload(spec: WorklistProducerFactorySpec): Create
 	const acceptanceRules = spec.acceptanceRules?.length ? assertRules(spec.acceptanceRules, "acceptanceRules") : defaultWorklistProducerRules(batchSize);
 	return {
 		title: assertNonEmpty(spec.title, "title"),
-		leaderAgentId: assertNonEmpty(spec.leaderAgentId, "leaderAgentId"),
+		leaderAgentId: defaultLeaderAgentId(spec.leaderAgentId),
 		status: normalizeStatus(spec.status),
 		workUnit: buildWorkUnit({
 			title: assertNonEmpty(spec.title, "title"),
@@ -177,8 +190,8 @@ function buildWorklistProducerPayload(spec: WorklistProducerFactorySpec): Create
 			outputCheck: { type: "worklist" },
 			outputContractText: `Output a team/worklist-1 JSON object with schemaVersion, worklistId, title, and items[]. Each item must include id, title, input, and optional acceptanceHints. Write the JSON file to ${WORKLIST_OUTPUT_PATH}. The final worker output message must be the machine-readable JSON reference ${WORKLIST_OUTPUT_REFERENCE}, not a prose summary.`,
 			acceptanceRules: [...acceptanceRules, ...worklistRuntimeOutputRules()],
-			workerAgentId: assertNonEmpty(spec.workerAgentId, "workerAgentId"),
-			checkerAgentId: assertNonEmpty(spec.checkerAgentId, "checkerAgentId"),
+			workerAgentId: defaultWorkerAgentId(spec.workerAgentId),
+			checkerAgentId: defaultCheckerAgentId(spec.checkerAgentId),
 		}),
 	};
 }
@@ -190,12 +203,12 @@ function buildSplitTaskPayload(spec: SplitTaskFactorySpec): CreateTeamCanvasTask
 	if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 10) {
 		throw new Error("concurrency must be an integer between 1 and 10");
 	}
-	const generatedWorkerAgentId = spec.generatedWorkerAgentId ?? spec.workerAgentId;
-	const generatedCheckerAgentId = spec.generatedCheckerAgentId ?? spec.checkerAgentId;
+	const generatedWorkerAgentId = defaultWorkerAgentId(spec.generatedWorkerAgentId ?? spec.workerAgentId);
+	const generatedCheckerAgentId = defaultCheckerAgentId(spec.generatedCheckerAgentId ?? spec.checkerAgentId);
 	return {
 		canvasKind: "split-task",
 		title: assertNonEmpty(spec.title, "title"),
-		leaderAgentId: assertNonEmpty(spec.leaderAgentId, "leaderAgentId"),
+		leaderAgentId: defaultLeaderAgentId(spec.leaderAgentId),
 		status: normalizeStatus(spec.status),
 		workUnit: buildWorkUnit({
 			title: assertNonEmpty(spec.title, "title"),
@@ -207,16 +220,16 @@ function buildSplitTaskPayload(spec: SplitTaskFactorySpec): CreateTeamCanvasTask
 				? spec.resultDescription.trim()
 				: "Output a team/worklist-results-1 JSON object covering every input worklist item.",
 			acceptanceRules: spec.acceptanceRules?.length ? assertRules(spec.acceptanceRules, "acceptanceRules") : defaultSplitTaskRules(),
-			workerAgentId: assertNonEmpty(spec.workerAgentId, "workerAgentId"),
-			checkerAgentId: assertNonEmpty(spec.checkerAgentId, "checkerAgentId"),
+			workerAgentId: defaultWorkerAgentId(spec.workerAgentId),
+			checkerAgentId: defaultCheckerAgentId(spec.checkerAgentId),
 		}),
 		splitTaskSpec: {
 			schemaVersion: "team/split-task-spec-1",
 			inputPortId,
 			outputPortId,
 			dispatchGoal: assertNonEmpty(spec.dispatchGoal, "dispatchGoal"),
-			generatedWorkerAgentId: assertNonEmpty(generatedWorkerAgentId, "generatedWorkerAgentId"),
-			generatedCheckerAgentId: assertNonEmpty(generatedCheckerAgentId, "generatedCheckerAgentId"),
+			generatedWorkerAgentId,
+			generatedCheckerAgentId,
 			autoRun: { enabled: true, concurrency },
 			collectPolicy: {
 				requireAllItemsSucceeded: spec.requireAllItemsSucceeded ?? true,
