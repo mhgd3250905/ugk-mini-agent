@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDefaultAgentProfiles, resolveAgentProfile } from "../src/agent/agent-profile.js";
@@ -51,6 +51,56 @@ test("ensureAgentProfileRuntime creates private directories and default rules", 
 	await writeFile(join(profile.workspaceDir, ".probe"), "ok", "utf8");
 	await writeFile(join(profile.allowedSkillPaths[0]!, ".probe"), "ok", "utf8");
 	await writeFile(join(profile.allowedSkillPaths[1]!, ".probe"), "ok", "utf8");
+});
+
+test("ensureAgentProfileRuntime creates Team Task agent rules and preinstalls http-access", async () => {
+	const projectRoot = await mkdtemp(join(tmpdir(), "ugk-agent-profile-"));
+	await mkdir(join(projectRoot, ".pi", "skills", "http-access"), { recursive: true });
+	await writeFile(join(projectRoot, ".pi", "skills", "http-access", "SKILL.md"), "---\nname: http-access\n---\n", "utf8");
+	const profiles = createDefaultAgentProfiles(projectRoot);
+	const teamWorker = resolveAgentProfile(profiles, "team-worker");
+	const teamChecker = resolveAgentProfile(profiles, "team-checker");
+	const teamDispatcher = resolveAgentProfile(profiles, "team-dispatcher");
+	assert.ok(teamWorker);
+	assert.ok(teamChecker);
+	assert.ok(teamDispatcher);
+
+	await ensureAgentProfileRuntime(teamWorker);
+	await ensureAgentProfileRuntime(teamChecker);
+	await ensureAgentProfileRuntime(teamDispatcher);
+
+	const workerRules = await readFile(teamWorker.runtimeAgentRulesPath, "utf8");
+	const checkerRules = await readFile(teamChecker.runtimeAgentRulesPath, "utf8");
+	const dispatcherRules = await readFile(teamDispatcher.runtimeAgentRulesPath, "utf8");
+	assert.match(workerRules, /# Team Worker Agent/);
+	assert.match(workerRules, /不替 checker 做验收裁决/);
+	assert.match(workerRules, /http-access/);
+	assert.match(checkerRules, /# Team Checker Agent/);
+	assert.match(checkerRules, /独立验收 worker 输出/);
+	assert.match(checkerRules, /JSON verdict/);
+	assert.match(dispatcherRules, /# Team Dispatcher Agent/);
+	assert.match(dispatcherRules, /Discovery Task/);
+	assert.match(dispatcherRules, /JSON patch/);
+
+	for (const profile of [teamWorker, teamChecker, teamDispatcher]) {
+		const copied = await readFile(join(profile.allowedSkillPaths[0]!, "http-access", "SKILL.md"), "utf8");
+		assert.match(copied, /name: http-access/);
+	}
+});
+
+test("ensureAgentProfileRuntime does not overwrite Team Task agent http-access", async () => {
+	const projectRoot = await mkdtemp(join(tmpdir(), "ugk-agent-profile-"));
+	await mkdir(join(projectRoot, ".pi", "skills", "http-access"), { recursive: true });
+	await writeFile(join(projectRoot, ".pi", "skills", "http-access", "SKILL.md"), "---\nname: http-access\n---\n", "utf8");
+	const teamChecker = resolveAgentProfile(createDefaultAgentProfiles(projectRoot), "team-checker");
+	assert.ok(teamChecker);
+	await ensureAgentProfileRuntime(teamChecker);
+	const targetSkill = join(teamChecker.allowedSkillPaths[0]!, "http-access", "SKILL.md");
+	await writeFile(targetSkill, "custom", "utf8");
+
+	await ensureAgentProfileRuntime(teamChecker);
+
+	assert.equal(await readFile(targetSkill, "utf8"), "custom");
 });
 
 test("ensureAgentProfileRuntime does not overwrite an existing rules file", async () => {

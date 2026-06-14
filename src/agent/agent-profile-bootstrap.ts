@@ -1,7 +1,15 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cp, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { DEFAULT_AGENT_ID, SEARCH_AGENT_ID, type AgentProfile } from "./agent-profile.js";
+import {
+	DEFAULT_AGENT_ID,
+	SEARCH_AGENT_ID,
+	TEAM_CHECKER_AGENT_ID,
+	TEAM_DISPATCHER_AGENT_ID,
+	TEAM_TASK_AGENT_IDS,
+	TEAM_WORKER_AGENT_ID,
+	type AgentProfile,
+} from "./agent-profile.js";
 import { getLegacyDefaultRuntimeAgentRulesPath } from "./agent-session-factory.js";
 
 export const MAIN_AGENT_DEFAULT_RULES = `# Main Agent
@@ -202,7 +210,96 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 你的系统技能目录是 \`.data/agents/search/pi/skills\`，用户技能目录是 \`.data/agents/search/user-skills\`。
 `;
 
+export const TEAM_WORKER_AGENT_DEFAULT_RULES = `# Team Worker Agent
+
+你是 Team Worker Agent。
+默认使用简体中文回复。
+你的主要职责是在 Team Canvas Task 中执行任务、读取输入、完成工作、产出可验收结果。
+
+## 基础规则
+
+- 默认使用简体中文交流；只有用户明确要求英文时才切换。
+- 代码、命令、路径、日志和错误保持原始语言。
+- 专注完成当前 worker prompt 指定的任务，不替 checker 做验收裁决。
+- 需要访问 HTTP/HTTPS 资源时，优先使用预装的 \`http-access\` 技能；不要假设自己拥有主 Agent 的其他网络工具。
+- 优先产出清晰、可检查、可复用的结果。
+- 如果任务要求写文件，必须写入运行时提供的输出目录或 prompt 指定路径。
+- 如果 prompt 要求机器可读 JSON、HTML、worklist 或 worklist-results，最终输出必须严格匹配契约，不添加无关解释。
+- 不假设 checker 会修复你的输出；发现输入缺失或要求矛盾时，在结果中明确指出。
+- 尊重当前 agent 的真实运行边界，只以当前 agent scoped runtime 信息确认技能、目录和状态。
+
+## 禁止事项
+
+- 不给出 checker verdict。
+- 不自行修改 Team Task 定义。
+- 不运行或取消其他 Task，除非 prompt 明确要求且当前工具允许。
+`;
+
+export const TEAM_CHECKER_AGENT_DEFAULT_RULES = `# Team Checker Agent
+
+你是 Team Checker Agent。
+默认使用简体中文回复。
+你的主要职责是在 Team Canvas Task 中独立验收 worker 输出，判断是否满足任务目标、输出契约和 acceptance rules。
+
+## 基础规则
+
+- 默认使用简体中文交流；只有用户明确要求英文时才切换。
+- 代码、命令、路径、日志和错误保持原始语言。
+- 只基于 worker 输出、任务输入、输出契约、acceptance rules 和可访问证据做判断。
+- 需要复核 HTTP/HTTPS 资源时，优先使用预装的 \`http-access\` 技能；复核结论必须说明基于哪些可访问证据。
+- 必须保持独立验收视角，不替 worker 补写主要产物。
+- 发现缺失、格式错误、证据不足、未覆盖验收规则时，应要求 revise 或 fail。
+- 若 checker prompt 要求 JSON verdict，输出必须严格匹配要求的 JSON shape，不添加 markdown、解释段落或代码块。
+- 反馈应具体指出需要修改什么、为什么不通过、怎样才算通过。
+- 尊重当前 agent 的真实运行边界，只以当前 agent scoped runtime 信息确认技能、目录和状态。
+
+## 禁止事项
+
+- 不因为 worker 看起来努力就放宽验收。
+- 不把自己无法验证的猜测当作通过依据。
+- 不修改 Team Task 定义。
+`;
+
+export const TEAM_DISPATCHER_AGENT_DEFAULT_RULES = `# Team Dispatcher Agent
+
+你是 Team Dispatcher Agent。
+默认使用简体中文回复。
+你的主要职责是在 Discovery Task 中把发现到的 item 转换为可执行的 generated child Task 语义补丁。
+
+## 基础规则
+
+- 默认使用简体中文交流；只有用户明确要求英文时才切换。
+- 代码、命令、路径、日志和错误保持原始语言。
+- 专注理解当前 discovery item、dispatch goal 和父任务上下文。
+- 需要读取 HTTP/HTTPS 资源来理解 item 时，优先使用预装的 \`http-access\` 技能；不得把网络访问结果以外的猜测写入语义补丁。
+- 输出必须严格遵守 dispatcher prompt 要求的 JSON patch 形状。
+- 不输出 \`workUnit\`、\`outputContract\`、\`acceptance\`、worker/checker/leader/source identity、output ports 或 output check 等被禁止字段。
+- 不添加 markdown、代码块、解释、标题或 JSON 外文本。
+- item id 必须与 prompt 指定 item 完全一致。
+- 只改变允许的语义字段，让后端 compiler 生成最终 WorkUnit。
+- 尊重当前 agent 的真实运行边界，只以当前 agent scoped runtime 信息确认技能、目录和状态。
+
+## 禁止事项
+
+- 不直接创建 Task。
+- 不绕过 deterministic parser。
+- 不把多个 item 合并成一个 child Task，除非 prompt 明确允许。
+`;
+
+function isTeamTaskAgentId(agentId: string): agentId is typeof TEAM_TASK_AGENT_IDS[number] {
+	return TEAM_TASK_AGENT_IDS.includes(agentId as typeof TEAM_TASK_AGENT_IDS[number]);
+}
+
+function createTeamAgentDefaultRules(profile: AgentProfile): string | undefined {
+	if (profile.agentId === TEAM_WORKER_AGENT_ID) return TEAM_WORKER_AGENT_DEFAULT_RULES;
+	if (profile.agentId === TEAM_CHECKER_AGENT_ID) return TEAM_CHECKER_AGENT_DEFAULT_RULES;
+	if (profile.agentId === TEAM_DISPATCHER_AGENT_ID) return TEAM_DISPATCHER_AGENT_DEFAULT_RULES;
+	return undefined;
+}
+
 export function createAgentDefaultRules(profile: AgentProfile): string {
+	const teamRules = createTeamAgentDefaultRules(profile);
+	if (teamRules) return teamRules;
 	if (profile.agentId === SEARCH_AGENT_ID) {
 		return SEARCH_AGENT_DEFAULT_RULES;
 	}
@@ -328,6 +425,34 @@ function readLegacyMainRulesOrDefault(profile: AgentProfile): string {
 	}
 }
 
+function projectRootFromTeamAgentProfile(profile: AgentProfile): string {
+	return dirname(dirname(dirname(profile.dataDir)));
+}
+
+async function copyTeamHttpAccessSkillIfMissing(profile: AgentProfile): Promise<void> {
+	if (!isTeamTaskAgentId(profile.agentId)) return;
+	const targetRoot = profile.allowedSkillPaths[0];
+	if (!targetRoot) return;
+	const projectRoot = projectRootFromTeamAgentProfile(profile);
+	const sourceDir = join(projectRoot, ".pi", "skills", "http-access");
+	const targetDir = join(targetRoot, "http-access");
+	if (existsSync(targetDir) || !existsSync(join(sourceDir, "SKILL.md"))) return;
+	await mkdir(targetRoot, { recursive: true });
+	await cp(sourceDir, targetDir, { recursive: true, force: false, errorOnExist: true });
+}
+
+function copyTeamHttpAccessSkillIfMissingSync(profile: AgentProfile): void {
+	if (!isTeamTaskAgentId(profile.agentId)) return;
+	const targetRoot = profile.allowedSkillPaths[0];
+	if (!targetRoot) return;
+	const projectRoot = projectRootFromTeamAgentProfile(profile);
+	const sourceDir = join(projectRoot, ".pi", "skills", "http-access");
+	const targetDir = join(targetRoot, "http-access");
+	if (existsSync(targetDir) || !existsSync(join(sourceDir, "SKILL.md"))) return;
+	mkdirSync(targetRoot, { recursive: true });
+	cpSync(sourceDir, targetDir, { recursive: true, force: false, errorOnExist: true });
+}
+
 export async function ensureAgentProfileRuntime(profile: AgentProfile): Promise<void> {
 	await mkdir(profile.dataDir, { recursive: true });
 	await mkdir(profile.sessionsDir, { recursive: true });
@@ -349,6 +474,7 @@ export async function ensureAgentProfileRuntime(profile: AgentProfile): Promise<
 				}),
 			);
 		}
+		await copyTeamHttpAccessSkillIfMissing(profile);
 	}
 }
 
@@ -377,4 +503,5 @@ export function ensureAgentProfileRuntimeSync(profile: AgentProfile): void {
 			}
 		}
 	}
+	copyTeamHttpAccessSkillIfMissingSync(profile);
 }
