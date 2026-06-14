@@ -703,7 +703,7 @@ export function renderPublicSitePage(): string {
 					<a href="#install">快速安装</a>
 					<a href="#features">产品能力</a>
 					<a href="#screenshots">界面预览</a>
-					<a href="#github">GitHub</a>
+					<a href="#github">源码</a>
 				</div>
 			</div>
 		</nav>
@@ -725,6 +725,7 @@ export function renderPublicSitePage(): string {
 					</p>
 					<div class="cta-row">
 						<a class="button button-primary" href="https://github.com/mhgd3250905/ugk-mini-agent" target="_blank" rel="noreferrer">打开 GitHub</a>
+						<a class="button" href="https://gitee.com/ksheng3250905/ugk-mini-agent" target="_blank" rel="noreferrer">打开 Gitee</a>
 						<a class="button" href="#install">查看安装</a>
 					</div>
 					<p class="note">公开官网只提供产品说明、安装方式和源码入口；真实工作台入口请在完成部署后按终端输出访问。</p>
@@ -747,13 +748,13 @@ export function renderPublicSitePage(): string {
 					<span>WINDOWS · MACOS · LINUX</span><span>+</span>
 					<span>MODEL SOURCES</span><span>+</span>
 					<span>AGENT PROFILES</span><span>+</span>
-					<span>GITHUB INSTALLATION</span><span>+</span>
+					<span>GITHUB / GITEE INSTALLATION</span><span>+</span>
 					<span>LOCAL-FIRST AGENT RUNTIME</span><span>+</span>
 					<span>CHAT / TEAM / CONN</span><span>+</span>
 					<span>WINDOWS · MACOS · LINUX</span><span>+</span>
 					<span>MODEL SOURCES</span><span>+</span>
 					<span>AGENT PROFILES</span><span>+</span>
-					<span>GITHUB INSTALLATION</span><span>+</span>
+					<span>GITHUB / GITEE INSTALLATION</span><span>+</span>
 				</div>
 			</section>
 
@@ -791,7 +792,12 @@ npm -v
 python3 --version</pre>
 
 						<p class="command-title">安装项目 <code>clone & install</code></p>
-						<pre class="command-block">git clone https://github.com/mhgd3250905/ugk-mini-agent.git
+						<pre class="command-block"># GitHub
+git clone https://github.com/mhgd3250905/ugk-mini-agent.git
+
+# 或：Gitee 国内镜像
+# git clone https://gitee.com/ksheng3250905/ugk-mini-agent.git
+
 cd ugk-mini-agent
 npm install
 npm --prefix apps/team-console install</pre>
@@ -870,9 +876,9 @@ chmod +x ./UGK-Mini-Agent-Launcher.sh
 
 			<section class="section page" id="github" aria-labelledby="github-title">
 				<div class="section-head">
-					<p class="eyebrow">GitHub</p>
+					<p class="eyebrow">Source</p>
 					<h2 id="github-title">从源码开始使用。</h2>
-					<p>公开首页只保留仓库入口和安装说明。查看源码、提交 issue、部署到自己的机器，都从 GitHub 仓库开始。</p>
+					<p>公开首页只保留仓库入口和安装说明。GitHub 和 Gitee 维护同一套 main 分支与稳定 tag，国内服务器可优先从 Gitee 克隆部署。</p>
 				</div>
 
 				<div class="entries">
@@ -892,9 +898,17 @@ chmod +x ./UGK-Mini-Agent-Launcher.sh
 						</div>
 						<em>README quick start</em>
 					</a>
+					<a class="entry" href="https://gitee.com/ksheng3250905/ugk-mini-agent" target="_blank" rel="noreferrer">
+						<div>
+							<span>03 / China mirror</span>
+							<strong>Gitee 国内镜像</strong>
+							<p>国内网络或阿里云等服务器部署时，可用 Gitee 镜像克隆同一份源码。</p>
+						</div>
+						<em>gitee.com/ksheng3250905/ugk-mini-agent</em>
+					</a>
 					<a class="entry" href="https://github.com/mhgd3250905/ugk-mini-agent/issues" target="_blank" rel="noreferrer">
 						<div>
-							<span>03 / Issues</span>
+							<span>04 / Issues</span>
 							<strong>反馈问题</strong>
 							<p>记录安装问题、运行异常、功能建议和后续平台适配需求。</p>
 						</div>
@@ -902,7 +916,7 @@ chmod +x ./UGK-Mini-Agent-Launcher.sh
 					</a>
 					<a class="entry" href="https://github.com/mhgd3250905/ugk-mini-agent/releases" target="_blank" rel="noreferrer">
 						<div>
-							<span>04 / Releases</span>
+							<span>05 / Releases</span>
 							<strong>版本记录</strong>
 							<p>关注后续稳定版本、部署脚本更新和跨平台运行说明。</p>
 						</div>
@@ -915,7 +929,7 @@ chmod +x ./UGK-Mini-Agent-Launcher.sh
 		<footer class="footer">
 			<div class="page footer-inner">
 				<span><strong>UGK Mini Agent</strong>，本机优先的 Agent Runtime。</span>
-				<span>公开首页只展示说明和 GitHub 入口。</span>
+				<span>公开首页只展示说明和 GitHub / Gitee 入口。</span>
 			</div>
 		</footer>
 	</body>

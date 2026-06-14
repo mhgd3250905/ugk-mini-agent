@@ -56,10 +56,12 @@ test("GET / renders the public product homepage", async () => {
 	assert.match(response.body, /Chat 工作台/);
 	assert.match(response.body, /Team Console/);
 	assert.match(response.body, /GitHub 仓库/);
+	assert.match(response.body, /Gitee 国内镜像/);
 	assert.match(response.body, /快速安装/);
 	assert.match(response.body, /反馈问题/);
 	assert.match(response.body, /版本记录/);
 	assert.match(response.body, /href="https:\/\/github\.com\/mhgd3250905\/ugk-mini-agent"/);
+	assert.match(response.body, /href="https:\/\/gitee\.com\/ksheng3250905\/ugk-mini-agent"/);
 	assert.match(response.body, /href="https:\/\/github\.com\/mhgd3250905\/ugk-mini-agent\/issues"/);
 	assert.match(response.body, /href="https:\/\/github\.com\/mhgd3250905\/ugk-mini-agent\/releases"/);
 	assert.doesNotMatch(response.body, /\$BASE_URL/);
