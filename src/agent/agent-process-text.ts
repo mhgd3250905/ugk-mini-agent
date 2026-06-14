@@ -1,6 +1,12 @@
 import { rewriteUserVisibleLocalArtifactLinks } from "./file-artifacts.js";
 
+export const MAX_FORMATTED_PROCESS_PAYLOAD_CHARS = 64 * 1024;
+
 export function formatProcessPayload(value: unknown): string {
+	return truncateFormattedProcessPayload(formatProcessPayloadUnbounded(value));
+}
+
+function formatProcessPayloadUnbounded(value: unknown): string {
 	if (value === undefined) {
 		return "";
 	}
@@ -13,7 +19,7 @@ export function formatProcessPayload(value: unknown): string {
 	}
 	if (Array.isArray(value)) {
 		return value
-			.map((entry) => formatProcessPayload(entry))
+			.map((entry) => formatProcessPayloadUnbounded(entry))
 			.filter((entry) => entry.length > 0)
 			.join("\n\n");
 	}
@@ -31,6 +37,17 @@ export function formatProcessPayload(value: unknown): string {
 	}
 
 	return rewriteUserVisibleLocalArtifactLinks(normalizeProcessText(String(value)));
+}
+
+function truncateFormattedProcessPayload(text: string): string {
+	if (text.length <= MAX_FORMATTED_PROCESS_PAYLOAD_CHARS) {
+		return text;
+	}
+	return [
+		text.slice(0, MAX_FORMATTED_PROCESS_PAYLOAD_CHARS),
+		"",
+		`[Process payload truncated: kept ${MAX_FORMATTED_PROCESS_PAYLOAD_CHARS} chars of ${text.length}. Full output is stored in session artifacts when persisted.]`,
+	].join("\n");
 }
 
 export function normalizeProcessText(text: string): string {
