@@ -472,7 +472,7 @@ test("POST /mcp/servers/:serverId/test error response never leaks the bearer tok
 	// Simulate a clientManager failure whose raw message happens to include the
 	// bearer token (transport layers sometimes echo request headers). The route
 	// must strip it before returning the error to the caller.
-	const leakedToken = "super-secret-token-1234567890";
+	const leakedToken = "sk_live_short";
 	const { app } = await createApp({
 		clientManager: {
 			async testServer() {

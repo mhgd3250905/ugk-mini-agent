@@ -11,6 +11,7 @@ import {
 	type Tool,
 	type Transport,
 } from "@modelcontextprotocol/client";
+import { redactMcpSensitiveMessage } from "./mcp-redaction.js";
 import type { AgentMcpServerConfig, AgentMcpToolSummary } from "./mcp-server-catalog.js";
 
 export interface AgentMcpServerTestResult {
@@ -160,11 +161,7 @@ function buildRequestOptions(server: AgentMcpServerConfig, signal?: AbortSignal)
  */
 function redactTransportError(server: AgentMcpServerConfig, error: unknown): Error {
 	const rawMessage = error instanceof Error ? error.message : String(error);
-	const redacted = rawMessage
-		// Bearer / Basic / token= / api-key style credentials
-		.replace(/(bearer|basic|token|apikey|api-key|authorization)\s*[:=]?\s*[^\s,;"]+/gi, "$1 [redacted]")
-		// Long base64-ish runs that often show up in echoed Authorization headers
-		.replace(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]");
+	const redacted = redactMcpSensitiveMessage(rawMessage);
 	// Avoid stacking the "MCP server <id>:" prefix if this error was already
 	// sanitized by an outer redactTransportError call.
 	const prefix = `MCP server ${server.serverId}: `;

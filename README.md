@@ -262,7 +262,7 @@ Conn 用来管理后台任务、周期任务和定时任务。它适合把已经
 
 ### Skill 与 MCP
 
-Skill 是项目或用户安装的本地能力包；MCP server 是用户自己添加的运行态工具服务。UGK Mini Agent 不预装你的私有 MCP 路径，也不会自动探测 OCR、浏览器、数据库等外部工具。MCP 的 command、cwd、env 和密钥都只写入本地运行态配置。
+Skill 是项目或用户安装的本地能力包；MCP server 是用户自己添加的运行态工具服务。UGK Mini Agent 不预装你的私有 MCP 路径，也不会自动探测 OCR、浏览器、数据库等外部工具。MCP 可配置本地 stdio transport（command、cwd、env）或远程 HTTP transport（URL、headers/Bearer token）。这些路径、headers 和密钥都只写入本地运行态配置。
 
 ## 本地数据与安全
 
