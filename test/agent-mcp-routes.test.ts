@@ -80,6 +80,21 @@ function serverPayload(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function httpServerPayload(overrides: Record<string, unknown> = {}) {
+	return {
+		serverId: "remote-ocr",
+		name: "Remote OCR",
+		enabled: true,
+		transport: {
+			type: "http",
+			url: "http://example.test/mcp",
+			headers: { Authorization: "Bearer super-secret-token-1234567890" },
+		},
+		timeoutMs: 300000,
+		...overrides,
+	};
+}
+
 test("GET /v1/agents/:agentId/mcp/servers returns an empty scoped MCP catalog", async (t) => {
 	const { app } = await createApp();
 	t.after(() => {
@@ -388,4 +403,110 @@ test("GET /tools without cache rejects locked agents before executing MCP client
 	assert.equal(response.statusCode, 409);
 	assert.match(response.json().error.message, /locked by an active Team run/);
 	assert.equal(listCalls, 0);
+});
+
+// ---------------------------------------------------------------------------
+// HTTP transport
+// ---------------------------------------------------------------------------
+
+test("POST /v1/agents/:agentId/mcp/servers accepts an HTTP transport server and returns its transport fields", async (t) => {
+	const { app } = await createApp();
+	t.after(() => {
+		void app.close();
+	});
+
+	const response = await app.inject({
+		method: "POST",
+		url: "/v1/agents/search/mcp/servers",
+		payload: httpServerPayload(),
+	});
+
+	assert.equal(response.statusCode, 200);
+	const server = response.json().server;
+	assert.equal(server.transport.type, "http");
+	assert.equal(server.transport.url, "http://example.test/mcp");
+	assert.deepEqual(server.transport.headers, { Authorization: "Bearer super-secret-token-1234567890" });
+});
+
+test("GET /v1/agents/:agentId/mcp/servers lists HTTP transport servers alongside stdio servers", async (t) => {
+	const { app } = await createApp();
+	t.after(() => {
+		void app.close();
+	});
+
+	await app.inject({ method: "POST", url: "/v1/agents/search/mcp/servers", payload: serverPayload() });
+	await app.inject({ method: "POST", url: "/v1/agents/search/mcp/servers", payload: httpServerPayload() });
+
+	const response = await app.inject({ method: "GET", url: "/v1/agents/search/mcp/servers" });
+	assert.equal(response.statusCode, 200);
+	const servers = response.json().servers;
+	assert.equal(servers.length, 2);
+	const http = servers.find((s: { serverId: string }) => s.serverId === "remote-ocr");
+	assert.equal(http.transport.type, "http");
+	assert.equal(http.transport.url, "http://example.test/mcp");
+});
+
+test("PATCH /v1/agents/:agentId/mcp/servers/:serverId updates an HTTP transport URL", async (t) => {
+	const { app } = await createApp();
+	t.after(() => {
+		void app.close();
+	});
+
+	await app.inject({ method: "POST", url: "/v1/agents/search/mcp/servers", payload: httpServerPayload() });
+
+	const response = await app.inject({
+		method: "PATCH",
+		url: "/v1/agents/search/mcp/servers/remote-ocr",
+		payload: { transport: { type: "http", url: "http://example.test/v2/mcp" } },
+	});
+
+	assert.equal(response.statusCode, 200);
+	const server = response.json().server;
+	assert.equal(server.transport.type, "http");
+	assert.equal(server.transport.url, "http://example.test/v2/mcp");
+	// headers preserved (patch omitted them)
+	assert.deepEqual(server.transport.headers, { Authorization: "Bearer super-secret-token-1234567890" });
+});
+
+test("POST /mcp/servers/:serverId/test error response never leaks the bearer token from headers", async (t) => {
+	// Simulate a clientManager failure whose raw message happens to include the
+	// bearer token (transport layers sometimes echo request headers). The route
+	// must strip it before returning the error to the caller.
+	const leakedToken = "sk_live_short";
+	const { app } = await createApp({
+		clientManager: {
+			async testServer() {
+				return { ok: false, serverId: "remote-ocr", tools: [], error: `Authorization: Bearer ${leakedToken}` };
+			},
+		},
+	});
+	t.after(() => {
+		void app.close();
+	});
+
+	await app.inject({ method: "POST", url: "/v1/agents/search/mcp/servers", payload: httpServerPayload() });
+	const response = await app.inject({ method: "POST", url: "/v1/agents/search/mcp/servers/remote-ocr/test" });
+
+	assert.equal(response.statusCode, 200);
+	const body = response.json();
+	// The test endpoint returns the result object; ensure the token is redacted.
+	const bodyText = JSON.stringify(body);
+	assert.doesNotMatch(bodyText, new RegExp(leakedToken));
+	assert.match(bodyText, /\[redacted\]/);
+});
+
+test("POST /v1/agents/:agentId/mcp/servers rejects an invalid HTTP transport URL", async (t) => {
+	const { app } = await createApp();
+	t.after(() => {
+		void app.close();
+	});
+
+	const response = await app.inject({
+		method: "POST",
+		url: "/v1/agents/search/mcp/servers",
+		payload: httpServerPayload({ transport: { type: "http", url: "not-a-url" } }),
+	});
+
+	assert.equal(response.statusCode, 400);
+	assert.match(response.json().error.message, /transport.url must be a valid http\(s\) URL/);
 });

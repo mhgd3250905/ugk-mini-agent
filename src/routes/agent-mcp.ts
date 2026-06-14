@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { AgentService } from "../agent/agent-service.js";
 import type { AgentServiceRegistry } from "../agent/agent-service-registry.js";
 import { AgentMcpClientManager } from "../agent/mcp-client-manager.js";
+import { redactMcpSensitiveMessage } from "../agent/mcp-redaction.js";
 import {
 	createAgentMcpServer,
 	deleteAgentMcpServer,
@@ -147,12 +148,13 @@ export function registerAgentMcpRoutes(app: FastifyInstance, deps: AgentMcpRoute
 			try {
 				const server = await findAgentMcpServer(context.projectRoot, context.agentId, request.params.serverId);
 				const result = await clientManager.testServer(server, undefined);
+				const safeError = result.error ? redactMcpSensitiveMessage(result.error) : undefined;
 				await updateAgentMcpServer(context.projectRoot, context.agentId, server.serverId, {
 					lastTestedAt: new Date().toISOString(),
-					lastError: result.ok ? undefined : result.error,
+					lastError: result.ok ? undefined : safeError,
 					cachedTools: result.tools,
 				});
-				return { result };
+				return { result: { ...result, ...(safeError ? { error: safeError } : {}) } };
 			} catch (error) {
 				return sendRouteError(reply, error);
 			}
@@ -271,7 +273,9 @@ async function findAgentMcpServer(
 }
 
 function sendRouteError(reply: FastifyReply, error: unknown): FastifyReply {
-	const message = error instanceof Error ? error.message : String(error);
+	const rawMessage = error instanceof Error ? error.message : String(error);
+	// MCP transports may carry Bearer tokens in headers; never echo those back.
+	const message = redactMcpSensitiveMessage(rawMessage);
 	if (error instanceof AgentMcpCatalogError) {
 		if (error.kind === "conflict") {
 			return sendConflict(reply, message);
@@ -289,9 +293,6 @@ function sendRouteError(reply: FastifyReply, error: unknown): FastifyReply {
 	}
 	if (/not available/.test(message)) {
 		return sendNotImplemented(reply, message);
-	}
-	if (error instanceof Error) {
-		return sendInternalError(reply, error);
 	}
 	return sendInternalError(reply, error);
 }

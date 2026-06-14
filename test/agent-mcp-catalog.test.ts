@@ -33,6 +33,24 @@ function stdioServerInput(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function httpServerInput(overrides: Record<string, unknown> = {}) {
+	return {
+		serverId: "remote-ocr",
+		name: "Remote OCR",
+		description: "Remote HTTP MCP server",
+		enabled: true,
+		transport: {
+			type: "http",
+			url: "http://example.test/mcp",
+			headers: {
+				Authorization: "Bearer <token>",
+			},
+		},
+		timeoutMs: 300000,
+		...overrides,
+	};
+}
+
 test("agent MCP catalog stores servers under the selected custom agent profile", async () => {
 	const projectRoot = await createProjectRoot();
 	await createStoredAgentProfile(projectRoot, { agentId: "ocr", name: "OCR", description: "OCR tools" });
@@ -91,6 +109,9 @@ test("agent MCP catalog updates deletes and filters enabled servers", async () =
 
 	assert.equal(updated.name, "Disabled OCR Updated");
 	assert.equal(updated.timeoutMs, 240000);
+	if (updated.transport.type !== "stdio") {
+		assert.fail("expected stdio transport");
+	}
 	assert.deepEqual(updated.transport.args, ["server.py", "--stdio"]);
 	assert.equal(updated.updatedAt, "2026-06-13T01:00:00.000Z");
 	assert.deepEqual(enabled.map((server) => server.serverId), ["disabled-ocr", "enabled-ocr"]);
@@ -119,6 +140,9 @@ test("agent MCP catalog preserves existing transport env when a patch replaces t
 		transport: { type: "stdio", command: "python", args: ["server.py", "--stdio"], cwd: "E:\\AII\\ugk-qr-scan" },
 	});
 
+	if (updated.transport.type !== "stdio") {
+		assert.fail("expected stdio transport");
+	}
 	assert.deepEqual(updated.transport.env, { MCP_OCR_DEVICE: "gpu" });
 	assert.deepEqual(updated.transport.args, ["server.py", "--stdio"]);
 });
@@ -134,6 +158,40 @@ test("agent MCP catalog serializes concurrent writes for one agent catalog", asy
 
 	const listed = await listAgentMcpServers(projectRoot, "ocr");
 	assert.deepEqual(listed.servers.map((server) => server.serverId), inputs.map((input) => input.serverId).sort());
+});
+
+test("agent MCP catalog stores HTTP transport servers under the selected custom agent profile", async () => {
+	const projectRoot = await createProjectRoot();
+	await createStoredAgentProfile(projectRoot, { agentId: "ocr", name: "OCR", description: "OCR tools" });
+
+	const created = await createAgentMcpServer(projectRoot, "ocr", httpServerInput(), new Date("2026-06-14T00:00:00.000Z"));
+	const listed = await listAgentMcpServers(projectRoot, "ocr");
+
+	assert.equal(created.serverId, "remote-ocr");
+	assert.equal(created.transport.type, "http");
+	if (created.transport.type === "http") {
+		assert.equal(created.transport.url, "http://example.test/mcp");
+		assert.deepEqual(created.transport.headers, { Authorization: "Bearer <token>" });
+	}
+	assert.equal(listed.servers.length, 1);
+	assert.equal(listed.servers[0]?.transport.type, "http");
+});
+
+test("agent MCP catalog preserves existing HTTP headers when a patch omits headers", async () => {
+	const projectRoot = await createProjectRoot();
+	await createStoredAgentProfile(projectRoot, { agentId: "ocr", name: "OCR", description: "OCR tools" });
+
+	await createAgentMcpServer(projectRoot, "ocr", httpServerInput());
+
+	const updated = await updateAgentMcpServer(projectRoot, "ocr", "remote-ocr", {
+		transport: { type: "http", url: "http://example.test/v2/mcp" },
+	});
+
+	assert.equal(updated.transport.type, "http");
+	if (updated.transport.type === "http") {
+		assert.equal(updated.transport.url, "http://example.test/v2/mcp");
+		assert.deepEqual(updated.transport.headers, { Authorization: "Bearer <token>" });
+	}
 });
 
 test("agent MCP catalog rejects malformed input and unknown agents", async () => {
@@ -152,8 +210,8 @@ test("agent MCP catalog rejects malformed input and unknown agents", async () =>
 		/timeoutMs must be between 1000 and 600000/,
 	);
 	await assert.rejects(
-		createAgentMcpServer(projectRoot, "main", stdioServerInput({ transport: { type: "http", url: "http://example.test" } })),
-		/transport.type must be stdio/,
+		createAgentMcpServer(projectRoot, "main", stdioServerInput({ transport: { type: "ws", url: "ws://x" } })),
+		/transport.type must be stdio or http/,
 	);
 	await assert.rejects(
 		createAgentMcpServer(projectRoot, "main", stdioServerInput({ transport: { type: "stdio", command: "", args: [] } })),
@@ -162,5 +220,26 @@ test("agent MCP catalog rejects malformed input and unknown agents", async () =>
 	await assert.rejects(
 		createAgentMcpServer(projectRoot, "main", stdioServerInput({ transport: { type: "stdio", command: "python", args: [], cwd: "relative" } })),
 		/transport.cwd must be an absolute path/,
+	);
+	// HTTP transport validation
+	await assert.rejects(
+		createAgentMcpServer(projectRoot, "main", httpServerInput({ transport: { type: "http", url: "not-a-url" } })),
+		/transport.url must be a valid http\(s\) URL/,
+	);
+	await assert.rejects(
+		createAgentMcpServer(projectRoot, "main", httpServerInput({ transport: { type: "http", url: "ftp://example.test/mcp" } })),
+		/transport.url must be a valid http\(s\) URL/,
+	);
+	await assert.rejects(
+		createAgentMcpServer(projectRoot, "main", httpServerInput({ transport: { type: "http", url: "http://example.test/mcp", headers: "Bearer x" } })),
+		/transport.headers must be an object/,
+	);
+	await assert.rejects(
+		createAgentMcpServer(projectRoot, "main", httpServerInput({ transport: { type: "http", url: "http://example.test/mcp", headers: { "Bad Header!": "x" } } })),
+		/invalid header name/,
+	);
+	await assert.rejects(
+		createAgentMcpServer(projectRoot, "main", httpServerInput({ transport: { type: "http", url: "http://example.test/mcp", headers: { Authorization: 123 } } })),
+		/transport.headers values must be strings/,
 	);
 });

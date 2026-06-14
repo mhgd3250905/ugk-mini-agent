@@ -301,13 +301,19 @@ export interface AgentMcpServerBody {
 	name: string;
 	description?: string;
 	enabled: boolean;
-	transport: {
-		type: "stdio";
-		command: string;
-		args: string[];
-		cwd?: string;
-		env?: Record<string, string>;
-	};
+	transport:
+		| {
+				type: "stdio";
+				command: string;
+				args: string[];
+				cwd?: string;
+				env?: Record<string, string>;
+		  }
+		| {
+				type: "http";
+				url: string;
+				headers?: Record<string, string>;
+		  };
 	timeoutMs: number;
 	createdAt: string;
 	updatedAt: string;

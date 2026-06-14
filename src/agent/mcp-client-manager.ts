@@ -1,6 +1,7 @@
 import {
 	Client,
 	StdioClientTransport,
+	StreamableHTTPClientTransport,
 	getDefaultEnvironment,
 	type CallToolResult,
 	type RequestOptions,
@@ -10,6 +11,7 @@ import {
 	type Tool,
 	type Transport,
 } from "@modelcontextprotocol/client";
+import { redactMcpSensitiveMessage } from "./mcp-redaction.js";
 import type { AgentMcpServerConfig, AgentMcpToolSummary } from "./mcp-server-catalog.js";
 
 export interface AgentMcpServerTestResult {
@@ -42,7 +44,7 @@ export class AgentMcpClientManager {
 				ok: false,
 				serverId: server.serverId,
 				tools: [],
-				error: error instanceof Error ? error.message : String(error),
+				error: redactTransportError(server, error).message,
 			};
 		}
 	}
@@ -88,6 +90,8 @@ export class AgentMcpClientManager {
 		const connected = await this.connect(server, signal);
 		try {
 			return await operation(connected);
+		} catch (error) {
+			throw redactTransportError(server, error);
 		} finally {
 			this.activeTransports.delete(connected.transport);
 			await closeTransport(connected.transport);
@@ -95,11 +99,8 @@ export class AgentMcpClientManager {
 	}
 
 	private async connect(server: AgentMcpServerConfig, signal?: AbortSignal): Promise<ConnectedMcpClient> {
-		if (server.transport.type !== "stdio") {
-			throw new Error(`Unsupported MCP transport: ${(server.transport as { type?: string }).type ?? "unknown"}`);
-		}
 		const client = new Client({ name: "ugk-mini-agent", version: "1.0.0" });
-		const transport = new StdioClientTransport(buildStdioServerParameters(server));
+		const transport = createTransportForServer(server);
 		this.activeTransports.add(transport);
 		try {
 			await withTimeout(server, client.connect(transport, buildRequestOptions(server, signal)), signal);
@@ -107,19 +108,38 @@ export class AgentMcpClientManager {
 		} catch (error) {
 			this.activeTransports.delete(transport);
 			await closeTransport(transport);
-			throw error;
+			throw redactTransportError(server, error);
 		}
 	}
 }
 
+function createTransportForServer(server: AgentMcpServerConfig): Transport {
+	if (server.transport.type === "stdio") {
+		return new StdioClientTransport(buildStdioServerParameters(server));
+	}
+	if (server.transport.type === "http") {
+		const headers = server.transport.headers ?? {};
+		return new StreamableHTTPClientTransport(new URL(server.transport.url), {
+			requestInit: { headers },
+		});
+	}
+	// Defensive: catalog validation should prevent reaching here.
+	throw new Error(`Unsupported MCP transport for server ${server.serverId}`);
+}
+
 function buildStdioServerParameters(server: AgentMcpServerConfig): StdioServerParameters {
+	const transport = server.transport;
+	if (transport.type !== "stdio") {
+		// Unreachable: caller guards on transport.type.
+		throw new Error(`Expected stdio transport for server ${server.serverId}`);
+	}
 	return {
-		command: server.transport.command,
-		args: server.transport.args,
-		...(server.transport.cwd ? { cwd: server.transport.cwd } : {}),
+		command: transport.command,
+		args: transport.args,
+		...(transport.cwd ? { cwd: transport.cwd } : {}),
 		env: {
 			...getDefaultEnvironment(),
-			...(server.transport.env ?? {}),
+			...(transport.env ?? {}),
 		},
 		stderr: "pipe",
 	};
@@ -131,6 +151,24 @@ function buildRequestOptions(server: AgentMcpServerConfig, signal?: AbortSignal)
 		maxTotalTimeout: server.timeoutMs,
 		...(signal ? { signal } : {}),
 	};
+}
+
+/**
+ * Sanitize errors before they reach the API/UI. HTTP MCP servers may carry
+ * Bearer tokens or other secrets in their `headers`; transport-level fetch
+ * errors can echo request headers back. Replace anything that looks like a
+ * credential in the message with `[redacted]`, and never include header values.
+ */
+function redactTransportError(server: AgentMcpServerConfig, error: unknown): Error {
+	const rawMessage = error instanceof Error ? error.message : String(error);
+	const redacted = redactMcpSensitiveMessage(rawMessage);
+	// Avoid stacking the "MCP server <id>:" prefix if this error was already
+	// sanitized by an outer redactTransportError call.
+	const prefix = `MCP server ${server.serverId}: `;
+	if (redacted.startsWith(prefix)) {
+		return new Error(redacted);
+	}
+	return new Error(prefix + redacted);
 }
 
 async function withTimeout<T>(
