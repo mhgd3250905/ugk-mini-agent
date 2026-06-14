@@ -26,9 +26,9 @@ test("native updater restarts through native launcher when user accepts", async 
 	const code = await runNativeUpdate({
 		projectRoot: "E:/repo",
 		updater: successUpdater(),
-		write: (line) => output.push(line),
+		write: (line: string) => output.push(line),
 		ask: async () => "y",
-		launch: async (command, args) => {
+		launch: async (command: string, args: string[]) => {
 			launches.push([command, ...args]);
 			return 0;
 		},
@@ -47,7 +47,7 @@ test("native updater skips restart when user declines", async () => {
 		updater: successUpdater(),
 		write: () => undefined,
 		ask: async () => "n",
-		launch: async (command, args) => {
+		launch: async (command: string, args: string[]) => {
 			launches.push([command, ...args]);
 			return 0;
 		},
@@ -72,9 +72,9 @@ test("native updater prints blocking changes and does not restart", async () => 
 				allowedLocalArtifacts: ["?? .data/session.json"],
 			}),
 		},
-		write: (line) => output.push(line),
+		write: (line: string) => output.push(line),
 		ask: async () => "y",
-		launch: async (command, args) => {
+		launch: async (command: string, args: string[]) => {
 			launches.push([command, ...args]);
 			return 0;
 		},
