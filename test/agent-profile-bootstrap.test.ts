@@ -73,14 +73,18 @@ test("ensureAgentProfileRuntime creates Team Task agent rules and preinstalls ht
 	const checkerRules = await readFile(teamChecker.runtimeAgentRulesPath, "utf8");
 	const dispatcherRules = await readFile(teamDispatcher.runtimeAgentRulesPath, "utf8");
 	assert.match(workerRules, /# Team Worker Agent/);
-	assert.match(workerRules, /不替 checker 做验收裁决/);
+	assert.match(workerRules, /认真理解当前任务/);
+	assert.match(workerRules, /主动想办法完成/);
 	assert.match(workerRules, /http-access/);
+	assert.doesNotMatch(workerRules, /checker|WorkUnit|Team Canvas|Team Task|Canvas Task/);
 	assert.match(checkerRules, /# Team Checker Agent/);
-	assert.match(checkerRules, /独立验收 worker 输出/);
-	assert.match(checkerRules, /JSON verdict/);
+	assert.match(checkerRules, /认真、细致、严格/);
+	assert.match(checkerRules, /待检查内容/);
+	assert.doesNotMatch(checkerRules, /worker|WorkUnit|Team Canvas|Team Task|Canvas Task/);
 	assert.match(dispatcherRules, /# Team Dispatcher Agent/);
-	assert.match(dispatcherRules, /Discovery Task/);
-	assert.match(dispatcherRules, /JSON patch/);
+	assert.match(dispatcherRules, /认真理解当前条目/);
+	assert.match(dispatcherRules, /严格输出当前提示要求的 JSON/);
+	assert.doesNotMatch(dispatcherRules, /generated child|WorkUnit|compiler|Team Canvas|Team Task|Canvas Task/);
 
 	for (const profile of [teamWorker, teamChecker, teamDispatcher]) {
 		const copied = await readFile(join(profile.allowedSkillPaths[0]!, "http-access", "SKILL.md"), "utf8");
