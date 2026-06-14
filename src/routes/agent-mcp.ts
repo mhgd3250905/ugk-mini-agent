@@ -147,12 +147,13 @@ export function registerAgentMcpRoutes(app: FastifyInstance, deps: AgentMcpRoute
 			try {
 				const server = await findAgentMcpServer(context.projectRoot, context.agentId, request.params.serverId);
 				const result = await clientManager.testServer(server, undefined);
+				const safeError = result.error ? redactSensitiveMessage(result.error) : undefined;
 				await updateAgentMcpServer(context.projectRoot, context.agentId, server.serverId, {
 					lastTestedAt: new Date().toISOString(),
-					lastError: result.ok ? undefined : result.error,
+					lastError: result.ok ? undefined : safeError,
 					cachedTools: result.tools,
 				});
-				return { result };
+				return { result: { ...result, ...(safeError ? { error: safeError } : {}) } };
 			} catch (error) {
 				return sendRouteError(reply, error);
 			}
@@ -271,7 +272,9 @@ async function findAgentMcpServer(
 }
 
 function sendRouteError(reply: FastifyReply, error: unknown): FastifyReply {
-	const message = error instanceof Error ? error.message : String(error);
+	const rawMessage = error instanceof Error ? error.message : String(error);
+	// MCP transports may carry Bearer tokens in headers; never echo those back.
+	const message = redactSensitiveMessage(rawMessage);
 	if (error instanceof AgentMcpCatalogError) {
 		if (error.kind === "conflict") {
 			return sendConflict(reply, message);
@@ -290,8 +293,17 @@ function sendRouteError(reply: FastifyReply, error: unknown): FastifyReply {
 	if (/not available/.test(message)) {
 		return sendNotImplemented(reply, message);
 	}
-	if (error instanceof Error) {
-		return sendInternalError(reply, error);
-	}
 	return sendInternalError(reply, error);
+}
+
+/**
+ * Strip anything that looks like a credential from a message before it is sent
+ * to the API/UI. Catalog and client-manager errors should already avoid echoing
+ * headers, but this is a defensive last-mile filter for any path that forwards
+ * raw error messages (4xx bodies).
+ */
+function redactSensitiveMessage(message: string): string {
+	return message
+		.replace(/(bearer|basic|token|apikey|api-key|authorization)\s*[:=]?\s*[^\s,;"]+/gi, "$1 [redacted]")
+		.replace(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]");
 }

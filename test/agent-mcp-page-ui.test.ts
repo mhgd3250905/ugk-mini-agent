@@ -29,3 +29,21 @@ test("Agent management page emits runtime JavaScript that splits MCP args on rea
 	assert.match(page, /argsText\.split\(\/\\r\?\\n\/\)/);
 	assert.doesNotMatch(page, /argsText\.split\(\/\\\\r\?\\\\n\/\)/);
 });
+
+test("Agent management page renders HTTP transport affordances for MCP servers", () => {
+	const page = renderAgentsPage();
+
+	// Transport type selector with stdio + http options.
+	assert.match(page, /id="mcp-transport-type"/);
+	assert.match(page, /<option value="stdio"/);
+	assert.match(page, /<option value="http"/);
+	// HTTP fields container + URL + headers inputs.
+	assert.match(page, /id="mcp-http-fields"/);
+	assert.match(page, /id="mcp-url"/);
+	assert.match(page, /id="mcp-headers"/);
+	assert.match(page, /Authorization: Bearer/);
+	// Headers parser helper exists in the emitted JS.
+	assert.match(page, /function parseMcpHeaders/);
+	// Transport switching toggles field visibility.
+	assert.match(page, /mcp-transport-type/);
+});

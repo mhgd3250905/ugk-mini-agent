@@ -1396,22 +1396,42 @@ function getAgentsPageJs(): string {
 			}
 			var servers = state.mcpByAgentId[agent.agentId] || [];
 			var server = editingId === "__new__" ? null : servers.find(function(item) { return item.serverId === editingId; });
-			var argsText = server && server.transport && Array.isArray(server.transport.args) ? server.transport.args.join("\\n") : "";
-			var envText = server && server.transport && server.transport.env ? Object.entries(server.transport.env).map(function(entry) { return entry[0] + "=" + entry[1]; }).join("\\n") : "";
+			var transportType = server && server.transport ? server.transport.type : "stdio";
+			var url = server && server.transport && server.transport.type === "http" ? server.transport.url : "";
+			var headersText = server && server.transport && server.transport.type === "http" && server.transport.headers ? JSON.stringify(server.transport.headers, null, 2) : "";
+			var argsText = server && server.transport && server.transport.type === "stdio" && Array.isArray(server.transport.args) ? server.transport.args.join("\\n") : "";
+			var envText = server && server.transport && server.transport.type === "stdio" && server.transport.env ? Object.entries(server.transport.env).map(function(entry) { return entry[0] + "=" + entry[1]; }).join("\\n") : "";
 			var actionsDisabled = state.mcpSaving || state.mcpTestingServerId ? " disabled" : "";
 			region.innerHTML =
 				'<div class="ag-mcp-editor">' +
 				'<label class="ag-editor-field"><span>Server ID</span><input id="mcp-server-id" ' + (server ? "disabled " : "") + 'value="' + escapeHtml(server ? server.serverId : "") + '" placeholder="qr-ocr" /></label>' +
 				'<label class="ag-editor-field"><span>名称</span><input id="mcp-name" value="' + escapeHtml(server ? server.name : "") + '" placeholder="QR OCR" /></label>' +
 				'<label class="ag-editor-field ag-editor-field--wide"><span>描述</span><input id="mcp-description" value="' + escapeHtml(server ? (server.description || "") : "") + '" /></label>' +
-				'<label class="ag-editor-field"><span>Command</span><input id="mcp-command" value="' + escapeHtml(server && server.transport ? server.transport.command : "") + '" placeholder="python" /></label>' +
-				'<label class="ag-editor-field"><span>Timeout ms</span><input id="mcp-timeout" type="number" value="' + escapeHtml(String(server ? server.timeoutMs : 120000)) + '" /></label>' +
+				'<label class="ag-editor-field"><span>Transport</span><select id="mcp-transport-type"><option value="stdio"' + (transportType === "stdio" ? " selected" : "") + '>stdio（本机进程）</option><option value="http"' + (transportType === "http" ? " selected" : "") + '>http（远程服务）</option></select></label>' +
+				'<div id="mcp-stdio-fields">' +
+				'<label class="ag-editor-field"><span>Command</span><input id="mcp-command" value="' + escapeHtml(server && server.transport && server.transport.type === "stdio" ? server.transport.command : "") + '" placeholder="python" /></label>' +
 				'<label class="ag-editor-field ag-editor-field--wide"><span>Args</span><textarea id="mcp-args" rows="3" placeholder="每行一个参数">' + escapeHtml(argsText) + '</textarea></label>' +
 				'<label class="ag-editor-field ag-editor-field--wide"><span>Env</span><textarea id="mcp-env" rows="3" placeholder="每行一个 KEY=VALUE">' + escapeHtml(envText) + '</textarea></label>' +
-				'<label class="ag-editor-field ag-editor-field--wide"><span>CWD</span><input id="mcp-cwd" value="' + escapeHtml(server && server.transport ? (server.transport.cwd || "") : "") + '" placeholder="可选，必须是绝对路径" /></label>' +
+				'<label class="ag-editor-field ag-editor-field--wide"><span>CWD</span><input id="mcp-cwd" value="' + escapeHtml(server && server.transport && server.transport.type === "stdio" ? (server.transport.cwd || "") : "") + '" placeholder="可选，必须是绝对路径" /></label>' +
+				'</div>' +
+				'<div id="mcp-http-fields"' + (transportType === "http" ? "" : ' style="display:none"') + '>' +
+				'<label class="ag-editor-field ag-editor-field--wide"><span>URL</span><input id="mcp-url" value="' + escapeHtml(url) + '" placeholder="http://host/mcp 或 https://host/mcp" /></label>' +
+				'<label class="ag-editor-field ag-editor-field--wide"><span>Headers</span><textarea id="mcp-headers" rows="4" placeholder="每行一个 Header: Value，或粘贴 JSON 对象，例如 Authorization: Bearer <token>">' + escapeHtml(headersText) + '</textarea></label>' +
+				'</div>' +
+				'<label class="ag-editor-field"><span>Timeout ms</span><input id="mcp-timeout" type="number" value="' + escapeHtml(String(server ? server.timeoutMs : 120000)) + '" /></label>' +
 				'<label class="ag-editor-field"><span>启用</span><select id="mcp-enabled"><option value="true"' + (!server || server.enabled !== false ? " selected" : "") + '>启用</option><option value="false"' + (server && server.enabled === false ? " selected" : "") + '>停用</option></select></label>' +
 				'<div class="ag-mcp-actions"><button id="ag-btn-save-mcp" class="ag-btn ag-btn--primary" type="button"' + actionsDisabled + '>' + (state.mcpSaving ? "保存中" : "保存 MCP") + '</button><button id="ag-btn-cancel-mcp" class="ag-btn ag-btn--outline" type="button"' + actionsDisabled + '>取消</button></div>' +
 				'</div>';
+			var transportSelect = document.getElementById("mcp-transport-type");
+			if (transportSelect) {
+				transportSelect.addEventListener("change", function() {
+					var isHttp = transportSelect.value === "http";
+					var stdioRegion = document.getElementById("mcp-stdio-fields");
+					var httpRegion = document.getElementById("mcp-http-fields");
+					if (stdioRegion) stdioRegion.style.display = isHttp ? "none" : "";
+					if (httpRegion) httpRegion.style.display = isHttp ? "" : "none";
+				});
+			}
 			document.getElementById("ag-btn-save-mcp").onclick = handleSaveMcpServer;
 			document.getElementById("ag-btn-cancel-mcp").onclick = function() {
 				state.mcpEditingServerId = "";
@@ -1436,7 +1456,7 @@ function getAgentsPageJs(): string {
 			servers.forEach(function(server) {
 				var item = document.createElement("div");
 				item.className = "ag-mcp-item";
-				var command = server.transport ? [server.transport.command].concat(server.transport.args || []).join(" ") : "";
+				var command = server.transport ? (server.transport.type === "http" ? server.transport.url : [server.transport.command].concat(server.transport.args || []).join(" ")) : "";
 				var toolsKey = agentId + "/" + server.serverId;
 				var tools = state.mcpToolsByServerId[toolsKey];
 				item.innerHTML =
@@ -1866,26 +1886,30 @@ function getAgentsPageJs(): string {
 			var serverId = (document.getElementById("mcp-server-id") || {}).value || "";
 			var name = (document.getElementById("mcp-name") || {}).value || "";
 			var description = (document.getElementById("mcp-description") || {}).value || "";
-			var command = (document.getElementById("mcp-command") || {}).value || "";
-			var argsText = (document.getElementById("mcp-args") || {}).value || "";
-			var envText = (document.getElementById("mcp-env") || {}).value || "";
-			var cwd = (document.getElementById("mcp-cwd") || {}).value || "";
+			var transportType = ((document.getElementById("mcp-transport-type") || {}).value || "stdio");
 			var timeoutMs = Number((document.getElementById("mcp-timeout") || {}).value || 120000);
 			var enabled = ((document.getElementById("mcp-enabled") || {}).value || "true") === "true";
-			var args = argsText.split(/\\r?\\n/).map(function(line) { return line.trim(); }).filter(Boolean);
-			var env = parseMcpEnv(envText);
+			var transport;
+			if (transportType === "http") {
+				var httpUrl = ((document.getElementById("mcp-url") || {}).value || "").trim();
+				var headersText = (document.getElementById("mcp-headers") || {}).value || "";
+				var headers = parseMcpHeaders(headersText);
+				transport = { type: "http", url: httpUrl, ...(headers ? { headers: headers } : {}) };
+			} else {
+				var command = (document.getElementById("mcp-command") || {}).value || "";
+				var argsText = (document.getElementById("mcp-args") || {}).value || "";
+				var envText = (document.getElementById("mcp-env") || {}).value || "";
+				var cwd = (document.getElementById("mcp-cwd") || {}).value || "";
+				var args = argsText.split(/\\r?\\n/).map(function(line) { return line.trim(); }).filter(Boolean);
+				var env = parseMcpEnv(envText);
+				transport = { type: "stdio", command: command.trim(), args: args, ...(cwd.trim() ? { cwd: cwd.trim() } : {}), ...(env ? { env: env } : {}) };
+			}
 			return {
 				serverId: serverId.trim(),
 				name: name.trim(),
 				description: description.trim() || undefined,
 				enabled: enabled,
-				transport: {
-					type: "stdio",
-					command: command.trim(),
-					args: args,
-					...(cwd.trim() ? { cwd: cwd.trim() } : {}),
-					...(env ? { env: env } : {}),
-				},
+				transport: transport,
 				timeoutMs: timeoutMs,
 			};
 		}
@@ -1900,6 +1924,29 @@ function getAgentsPageJs(): string {
 				env[key] = line.slice(index + 1);
 			});
 			return Object.keys(env).length ? env : undefined;
+		}
+
+		function parseMcpHeaders(headersText) {
+			var trimmed = (headersText || "").trim();
+			if (!trimmed) return undefined;
+			if (trimmed.charAt(0) === "{") {
+				var parsed;
+				try { parsed = JSON.parse(trimmed); } catch (e) { throw new Error("Headers JSON 解析失败：" + (e && e.message ? e.message : String(e))); }
+				if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) { throw new Error("Headers JSON 必须是对象"); }
+				var jsonHeaders = {};
+				Object.keys(parsed).forEach(function(key) { jsonHeaders[String(key).trim()] = String(parsed[key]); });
+				return Object.keys(jsonHeaders).length ? jsonHeaders : undefined;
+			}
+			var lineHeaders = {};
+			trimmed.split(/\\r?\\n/).map(function(line) { return line.trim(); }).filter(Boolean).forEach(function(line) {
+				var sep = line.indexOf(":");
+				if (sep < 0) sep = line.indexOf("=");
+				if (sep <= 0) return;
+				var key = line.slice(0, sep).trim();
+				if (!key) return;
+				lineHeaders[key] = line.slice(sep + 1).trim();
+			});
+			return Object.keys(lineHeaders).length ? lineHeaders : undefined;
 		}
 
 		async function handleSaveMcpServer() {

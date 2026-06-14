@@ -13,6 +13,14 @@ export interface AgentMcpStdioTransport {
 	env?: Record<string, string>;
 }
 
+export interface AgentMcpHttpTransport {
+	type: "http";
+	url: string;
+	headers?: Record<string, string>;
+}
+
+export type AgentMcpTransport = AgentMcpStdioTransport | AgentMcpHttpTransport;
+
 export interface AgentMcpToolSummary {
 	name: string;
 	description?: string;
@@ -24,7 +32,7 @@ export interface AgentMcpServerConfig {
 	name: string;
 	description?: string;
 	enabled: boolean;
-	transport: AgentMcpStdioTransport;
+	transport: AgentMcpTransport;
 	timeoutMs: number;
 	createdAt: string;
 	updatedAt: string;
@@ -223,7 +231,7 @@ function normalizeStoredServer(value: unknown): AgentMcpServerConfig {
 		name: normalizeName(raw.name),
 		...(normalizeOptionalString(raw.description) ? { description: normalizeOptionalString(raw.description) } : {}),
 		enabled: typeof raw.enabled === "boolean" ? raw.enabled : true,
-		transport: normalizeStdioTransport(raw.transport),
+		transport: normalizeTransport(raw.transport),
 		timeoutMs: normalizeTimeoutMs(raw.timeoutMs),
 		createdAt,
 		updatedAt,
@@ -241,7 +249,7 @@ function normalizeCreateInput(input: CreateAgentMcpServerInput, now: Date): Agen
 		name: normalizeName(input.name),
 		...(description ? { description } : {}),
 		enabled: typeof input.enabled === "boolean" ? input.enabled : true,
-		transport: normalizeStdioTransport(input.transport),
+		transport: normalizeTransport(input.transport),
 		timeoutMs: normalizeTimeoutMs(input.timeoutMs),
 		createdAt: timestamp,
 		updatedAt: timestamp,
@@ -280,11 +288,15 @@ function normalizeUpdateInput(
 	};
 }
 
-function normalizeUpdateTransport(current: AgentMcpServerConfig, value: unknown): AgentMcpStdioTransport {
-	const next = normalizeStdioTransport(value);
+function normalizeUpdateTransport(current: AgentMcpServerConfig, value: unknown): AgentMcpTransport {
+	const next = normalizeTransport(value);
 	const raw = value as Record<string, unknown> | undefined;
-	if (current.transport.env && raw && !Object.hasOwn(raw, "env")) {
+	// Preserve sensitive/optional fields the patch omitted, by transport type.
+	if (next.type === "stdio" && current.transport.type === "stdio" && current.transport.env && raw && !Object.hasOwn(raw, "env")) {
 		return { ...next, env: current.transport.env };
+	}
+	if (next.type === "http" && current.transport.type === "http" && current.transport.headers && raw && !Object.hasOwn(raw, "headers")) {
+		return { ...next, headers: current.transport.headers };
 	}
 	return next;
 }
@@ -333,13 +345,23 @@ function normalizeTimeoutMs(value: unknown): number {
 	return timeout;
 }
 
-function normalizeStdioTransport(value: unknown): AgentMcpStdioTransport {
+function normalizeTransport(value: unknown): AgentMcpTransport {
 	if (!value || typeof value !== "object") {
 		throw new AgentMcpCatalogError("validation", "transport is required");
 	}
 	const raw = value as Record<string, unknown>;
+	if (raw.type === "stdio") {
+		return normalizeStdioTransport(raw);
+	}
+	if (raw.type === "http") {
+		return normalizeHttpTransport(raw);
+	}
+	throw new AgentMcpCatalogError("validation", "transport.type must be stdio or http");
+}
+
+function normalizeStdioTransport(raw: Record<string, unknown>): AgentMcpStdioTransport {
 	if (raw.type !== "stdio") {
-		throw new AgentMcpCatalogError("validation", "transport.type must be stdio");
+		throw new AgentMcpCatalogError("validation", "transport.type must be stdio or http");
 	}
 	const command = String(raw.command || "").trim();
 	if (!command) {
@@ -358,6 +380,54 @@ function normalizeStdioTransport(value: unknown): AgentMcpStdioTransport {
 		...(cwd ? { cwd } : {}),
 		...(env ? { env } : {}),
 	};
+}
+
+function normalizeHttpTransport(raw: Record<string, unknown>): AgentMcpHttpTransport {
+	if (raw.type !== "http") {
+		throw new AgentMcpCatalogError("validation", "transport.type must be stdio or http");
+	}
+	const rawUrl = String(raw.url || "").trim();
+	if (!rawUrl) {
+		throw new AgentMcpCatalogError("validation", "transport.url is required");
+	}
+	let parsedUrl: URL;
+	try {
+		parsedUrl = new URL(rawUrl);
+	} catch {
+		throw new AgentMcpCatalogError("validation", "transport.url must be a valid http(s) URL");
+	}
+	if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+		throw new AgentMcpCatalogError("validation", "transport.url must be a valid http(s) URL");
+	}
+	const headers = normalizeHttpHeaders(raw.headers);
+	return {
+		type: "http",
+		url: rawUrl,
+		...(headers ? { headers } : {}),
+	};
+}
+
+function normalizeHttpHeaders(value: unknown): Record<string, string> | undefined {
+	if (value === undefined || value === null) {
+		return undefined;
+	}
+	if (typeof value !== "object" || Array.isArray(value)) {
+		throw new AgentMcpCatalogError("validation", "transport.headers must be an object of string key/value pairs");
+	}
+	const headers: Record<string, string> = {};
+	for (const [key, rawValue] of Object.entries(value as Record<string, unknown>)) {
+		const name = key.trim();
+		// HTTP header names: token chars per RFC 7230. Allow letters, digits and the
+		// common separators "!#$%&'*+-.^_`|~-" plus "-". Reject anything else.
+		if (!/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/.test(name)) {
+			throw new AgentMcpCatalogError("validation", "transport.headers contains an invalid header name");
+		}
+		if (typeof rawValue !== "string") {
+			throw new AgentMcpCatalogError("validation", "transport.headers values must be strings");
+		}
+		headers[name] = rawValue;
+	}
+	return Object.keys(headers).length > 0 ? headers : undefined;
 }
 
 function normalizeEnv(value: unknown): Record<string, string> | undefined {

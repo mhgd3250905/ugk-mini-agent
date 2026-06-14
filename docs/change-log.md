@@ -1,6 +1,6 @@
 # 更新记录
 
-更新时间：`2026-06-13`
+更新时间：`2026-06-14`
 
 本文件只保留当前 Windows Core 版本之后的高层变更记录。迁移前的旧项目名、Docker 部署、独立 Team Console dev server、旧端口和容器路径相关流水已从本文移除；需要考古时使用 Git 历史：
 
@@ -15,6 +15,15 @@ git show <commit>:docs/change-log.md
 - 单条记录写清日期、主题、影响范围、对应入口和关键验证。
 - 不记录长命令输出、临时排障过程、一次性 UI 微调直播和旧环境运行笔记。
 - 当前运行事实以 `README.md`、`.env.native.example`、平台 native 文档和真实代码为准。
+
+## 2026-06-14 - Agent MCP 支持 HTTP transport
+
+- **主题**: Agent 级 MCP catalog 新增远程 HTTP transport，不再要求用户为公网 MCP（如远程 OCR）写本地 stdio bridge。stdio 行为完全保留。
+- **影响范围**: `src/agent/mcp-server-catalog.ts`（transport union + 校验）、`src/agent/mcp-client-manager.ts`（StreamableHTTPClientTransport + 错误脱敏）、`src/types/api.ts`（body union）、`src/ui/agents-page.ts`（transport 选择 + URL/headers UI）、`src/routes/agent-mcp.ts`（test/错误响应脱敏兜底）、`test/fixtures/mcp-http-server.mjs`（新增 HTTP fixture）。
+- **配置入口**: `/playground/agents` 的 MCP 面板，Transport 选择 `http` 后填写 URL + Headers + timeoutMs；运行态文件仍为 `.data/agent/mcp/servers.json` 与 `.data/agents/<agentId>/mcp/servers.json`。
+- **安全要求**: headers 是敏感运行态配置，仓库示例一律用 `<token>` 占位；client 与 route 层在错误响应里把疑似 Bearer token / 长 base64 串替换为 `[redacted]`；HTTP transport 默认明文，生产建议 HTTPS 或反向代理 + IP 白名单 + token 轮换；MCP 管理 API 本机访问限制不变。
+- **对应文档**: `docs/native-windows-core.md` 的 Agent MCP 章节已补充 stdio / http 双 transport 示例与安全要求。
+- **验证记录**: `node --test --test-concurrency=1 --import tsx test\agent-mcp-catalog.test.ts test\agent-mcp-client-manager.test.ts test\agent-mcp-routes.test.ts test\agent-mcp-page-ui.test.ts test\agent-mcp-tool.test.ts`（41 用例全绿）、`npx tsc --noEmit`、`git diff --check`。
 
 ## 2026-06-14 - macOS/Linux native runtime 入口
 
