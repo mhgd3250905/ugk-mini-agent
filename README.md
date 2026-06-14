@@ -1,4 +1,26 @@
-# UGK Mini Agent
+<p align="center">
+  <img src="imgs/ugk-claw-logo.svg" alt="UGK CLAW" width="860">
+</p>
+
+<h1 align="center">UGK Mini Agent</h1>
+
+<p align="center">
+  本机部署的多 Agent Runtime
+</p>
+
+<p align="center">
+  <img alt="Node.js >= 22" src="https://img.shields.io/badge/Node.js-%3E%3D22-339933?style=flat-square&logo=nodedotjs&logoColor=white">
+  <img alt="Windows macOS Linux" src="https://img.shields.io/badge/Windows%20%7C%20macOS%20%7C%20Linux-native-0f766e?style=flat-square">
+  <img alt="Local first" src="https://img.shields.io/badge/local--first-agent%20runtime-2563eb?style=flat-square">
+</p>
+
+<p align="center">
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#功能预览">功能预览</a> ·
+  <a href="docs/native-windows-core.md">Windows</a> ·
+  <a href="docs/native-macos.md">macOS</a> ·
+  <a href="docs/native-linux.md">Linux</a>
+</p>
 
 UGK Mini Agent 是一个可以在 Windows、macOS 和 Linux 本机运行的轻量 Agent Runtime。它把对话式 Agent、可视化任务画布、后台定时任务、Agent Profile、Skill 和 MCP 管理放在一个本地服务里，适合个人自动化、研究任务拆解、资料整理、周期性巡检和多 Agent 工作流实验。
 

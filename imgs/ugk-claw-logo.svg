@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="250" viewBox="0 0 1200 250" role="img" aria-labelledby="title desc">
+  <title id="title">UGK CLAW</title>
+  <desc id="desc">UGK CLAW ASCII-style project logo</desc>
+  <defs>
+    <linearGradient id="logoText" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#8be9ff"/>
+      <stop offset="45%" stop-color="#c6a6ff"/>
+      <stop offset="100%" stop-color="#72f2b5"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="65%">
+      <stop offset="0%" stop-color="#1f6feb" stop-opacity="0.32"/>
+      <stop offset="55%" stop-color="#0f766e" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#020617" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="softGlow" x="-20%" y="-40%" width="140%" height="180%">
+      <feGaussianBlur stdDeviation="3.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="1200" height="250" rx="24" fill="#020817"/>
+  <rect x="1" y="1" width="1198" height="248" rx="23" fill="none" stroke="#203149"/>
+  <rect width="1200" height="250" rx="24" fill="url(#glow)"/>
+  <g opacity="0.16" stroke="#3b82f6" stroke-width="1">
+    <path d="M0 54H1200M0 98H1200M0 142H1200M0 186H1200"/>
+    <path d="M88 0V250M176 0V250M264 0V250M352 0V250M440 0V250M528 0V250M616 0V250M704 0V250M792 0V250M880 0V250M968 0V250M1056 0V250M1144 0V250"/>
+  </g>
+  <text x="50%" y="42" text-anchor="middle" fill="#94a3b8" font-family="Inter, Segoe UI, sans-serif" font-size="18" letter-spacing="6">LOCAL AGENT RUNTIME</text>
+  <text x="50%" y="75" text-anchor="middle" fill="url(#logoText)" filter="url(#softGlow)" font-family="Consolas, 'SFMono-Regular', 'Liberation Mono', monospace" font-size="25" font-weight="700" xml:space="preserve">
+    <tspan x="50%" dy="0">██╗   ██╗ ██████╗ ██╗  ██╗     ██████╗██╗      █████╗ ██╗    ██╗</tspan>
+    <tspan x="50%" dy="29">██║   ██║██╔════╝ ██║ ██╔╝    ██╔════╝██║     ██╔══██╗██║    ██║</tspan>
+    <tspan x="50%" dy="29">██║   ██║██║  ███╗█████╔╝     ██║     ██║     ███████║██║ █╗ ██║</tspan>
+    <tspan x="50%" dy="29">██║   ██║██║   ██║██╔═██╗     ██║     ██║     ██╔══██║██║███╗██║</tspan>
+    <tspan x="50%" dy="29">╚██████╔╝╚██████╔╝██║  ██╗    ╚██████╗███████╗██║  ██║╚███╔███╔╝</tspan>
+    <tspan x="50%" dy="29"> ╚═════╝  ╚═════╝ ╚═╝  ╚═╝     ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝</tspan>
+  </text>
+</svg>
