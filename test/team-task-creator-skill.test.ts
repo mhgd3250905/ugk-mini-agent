@@ -159,6 +159,11 @@ test("team-task-creator requires active Agent catalog before choosing roles", as
 	assert.match(skill, /GET\s+\/v1\/agents/);
 	assert.match(skill, /active Agent/);
 	assert.match(skill, /Do not guess Agent ids from memory/);
+	assert.match(skill, /team-worker/);
+	assert.match(skill, /team-checker/);
+	assert.match(skill, /team-dispatcher/);
+	assert.match(skill, /http-access/);
+	assert.match(skill, /fallback|退回|不存在/);
 	assert.match(skill, /workerAgentId === checkerAgentId|same-Agent self-checking|同 Agent 自检/);
 });
 
@@ -238,6 +243,9 @@ test("team-task-creator contract reference validates Discovery roles without pla
 	assert.match(reference, /dispatcherAgentId/);
 	assert.match(reference, /generatedWorkerAgentId/);
 	assert.match(reference, /generatedCheckerAgentId/);
+	assert.match(reference, /workerAgentId[\s\S]*team-worker/);
+	assert.match(reference, /checkerAgentId[\s\S]*team-checker/);
+	assert.match(reference, /dispatcherAgentId[\s\S]*team-dispatcher/);
 	assert.match(reference, /must be active Agents/);
 	assert.doesNotMatch(reference, /Vultr|Hetzner|TikTok|Qwen 3\.7 Max|Reddit|HuggingFace/i);
 });
