@@ -64,3 +64,45 @@ test("compactLargeSessionMessages leaves normal messages untouched", async () =>
 	assert.equal(result.changed, false);
 	assert.deepEqual(result.messages, messages);
 });
+
+test("compactLargeSessionMessages compacts oversized nested tool details even when visible content is small", async () => {
+	const oversizedDetails = {
+		run: {
+			events: ["z".repeat(LARGE_SESSION_MESSAGE_TEXT_BYTES + 1024)],
+		},
+	};
+	const saved: Array<{ content: string }> = [];
+
+	const result = await compactLargeSessionMessages({
+		conversationId: "manual:nested",
+		messages: [
+			{
+				role: "toolResult",
+				toolCallId: "tool-nested",
+				toolName: "conn",
+				content: [{ type: "text", text: "status: running" }],
+				details: oversizedDetails,
+				isError: false,
+			} as never,
+		],
+		saveFiles: async (_conversationId, files) => {
+			saved.push(...files.map((file) => ({ content: file.content })));
+			return files.map((file) => ({
+				id: "artifact-nested",
+				assetId: "artifact-nested",
+				reference: "@asset[artifact-nested]",
+				fileName: file.fileName,
+				mimeType: file.mimeType,
+				sizeBytes: Buffer.byteLength(file.content, "utf8"),
+				downloadUrl: "/v1/files/artifact-nested",
+			}));
+		},
+	});
+
+	const compactedMessage = result.messages[0] as { details?: unknown };
+	assert.equal(result.changed, true);
+	assert.equal(saved.length, 1);
+	assert.match(saved[0]?.content ?? "", /tool-nested/);
+	assert.equal(compactedMessage.details, undefined);
+	assert.ok(Buffer.byteLength(JSON.stringify(result.messages[0]), "utf8") < 32 * 1024);
+});

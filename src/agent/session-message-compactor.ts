@@ -89,11 +89,18 @@ function extractOversizedText(message: AgentSessionMessageLike): { text: string;
 		return undefined;
 	}
 	const text = extractMessageLargeText(message);
-	if (!text) {
-		return undefined;
+	if (text) {
+		const bytes = Buffer.byteLength(text, "utf8");
+		if (bytes > LARGE_SESSION_MESSAGE_TEXT_BYTES) {
+			return { text, bytes };
+		}
 	}
-	const bytes = Buffer.byteLength(text, "utf8");
-	return bytes > LARGE_SESSION_MESSAGE_TEXT_BYTES ? { text, bytes } : undefined;
+
+	const serializedMessage = JSON.stringify(message, null, 2);
+	const serializedBytes = Buffer.byteLength(serializedMessage, "utf8");
+	return serializedBytes > LARGE_SESSION_MESSAGE_TEXT_BYTES
+		? { text: serializedMessage, bytes: serializedBytes }
+		: undefined;
 }
 
 function isAlreadyCompacted(message: AgentSessionMessageLike): boolean {
@@ -153,8 +160,10 @@ function buildCompactedMessage(
 			downloadUrl: artifact.downloadUrl,
 			originalBytes,
 		},
-	} as AgentSessionMessageLike & { output?: string };
+	} as AgentSessionMessageLike & { details?: unknown; output?: string; result?: unknown };
+	delete compacted.details;
 	delete compacted.output;
+	delete compacted.result;
 	return compacted;
 }
 
