@@ -76,6 +76,8 @@ npm run native:doctor
 
 ### macOS
 
+默认端口是 `8888`。
+
 ```bash
 git clone https://github.com/mhgd3250905/ugk-mini-agent.git
 cd ugk-mini-agent
@@ -88,10 +90,16 @@ chmod +x UGK-Mini-Agent-Launcher.command UGK-Mini-Agent-Set-Port.command
 ./UGK-Mini-Agent-Launcher.command
 ```
 
-修改端口：
+修改端口有两种方式：
 
 ```bash
 ./UGK-Mini-Agent-Set-Port.command
+```
+
+也可以直接传入端口：
+
+```bash
+./UGK-Mini-Agent-Launcher.command --port <port>
 ```
 
 深度说明见 [macOS native guide](docs/native-macos.md)。
@@ -134,41 +142,56 @@ npm --prefix apps/team-console install
 npm run native:doctor:linux
 ```
 
-本机访问启动：
+默认端口是 `8888`。本机访问启动：
 
 ```bash
 chmod +x UGK-Mini-Agent-Launcher.sh UGK-Mini-Agent-Set-Port.sh
-./UGK-Mini-Agent-Launcher.sh --port 7777
+./UGK-Mini-Agent-Launcher.sh
 ```
 
 服务器公网访问启动：
 
 ```bash
-./UGK-Mini-Agent-Launcher.sh --host 0.0.0.0 --port 7777
+./UGK-Mini-Agent-Launcher.sh --host 0.0.0.0
 ```
 
 然后访问：
 
 ```text
-http://服务器公网IP:7777/
-http://服务器公网IP:7777/playground
-http://服务器公网IP:7777/playground/team
+http://服务器公网IP:8888/
+http://服务器公网IP:8888/playground
+http://服务器公网IP:8888/playground/team
 ```
 
 如果浏览器打不开，先确认：
 
 ```bash
-ss -lntp | grep 7777
+ss -lntp | grep 8888
 ```
 
-能看到 `0.0.0.0:7777` 但外部仍打不开时，通常是云服务器安全组没有放行 TCP `7777`。
+能看到 `0.0.0.0:8888` 但外部仍打不开时，通常是云服务器安全组没有放行 TCP `8888`。
+
+修改端口有两种方式：
+
+```bash
+./UGK-Mini-Agent-Set-Port.sh
+```
+
+也可以直接传入端口：
+
+```bash
+./UGK-Mini-Agent-Launcher.sh --port <port>
+./UGK-Mini-Agent-Launcher.sh --host 0.0.0.0 --port <port>
+```
+
+如果改了端口，浏览器地址、安全组规则和下面的 `PUBLIC_BASE_URL` 都要使用同一个端口。
 
 如果后续 artifact 链接、SSE 回调或前端资源需要公网 URL，编辑 `.env.native`：
 
 ```ini
 HOST=0.0.0.0
-PORT=7777
-PUBLIC_BASE_URL=http://服务器公网IP:7777
+PORT=8888
+PUBLIC_BASE_URL=http://服务器公网IP:8888
 ```
 
 然后用 supervisor 启动：
