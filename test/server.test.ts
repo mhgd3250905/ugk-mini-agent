@@ -164,6 +164,39 @@ test("GET /v1/debug/runtime is registered on the main server", async () => {
 	await app.close();
 });
 
+test("GET /v1/system/update/status is registered on the main server", async () => {
+	const app = await buildServer({
+		agentService: createAgentServiceStub(),
+		systemUpdater: {
+			getStatus: async () => ({
+				ok: true,
+				branch: "main",
+				currentCommit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				currentShortCommit: "aaaaaaa",
+				remoteCommit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				remoteShortCommit: "aaaaaaa",
+				hasUpdates: false,
+				behind: 0,
+				ahead: 0,
+				blockingChanges: [],
+				allowedLocalArtifacts: [],
+			}),
+			applyUpdate: async () => {
+				throw new Error("not used");
+			},
+		},
+	});
+
+	const response = await app.inject({
+		method: "GET",
+		url: "/v1/system/update/status",
+	});
+
+	assert.equal(response.statusCode, 200);
+	assert.equal(response.json().currentShortCommit, "aaaaaaa");
+	await app.close();
+});
+
 test("GET /v1/debug/cleanup is registered on the main server", async () => {
 	const app = await buildServer({
 		agentService: createAgentServiceStub(),

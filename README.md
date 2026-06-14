@@ -245,6 +245,7 @@ npm run native:start:linux
 | API 源 | `/playground/model-sources` | 模型 provider 和 API key 管理 |
 | Agent 管理 | `/playground/agents` | Agent Profile、Skill、MCP 管理 |
 | 后台任务 | `/playground/conn` | Conn 周期任务和运行记录 |
+| 系统更新 | `/playground/update` | Git 克隆部署的一键检查、拉取和依赖安装 |
 
 ## 核心概念
 
@@ -280,6 +281,7 @@ Skill 是项目或用户安装的本地能力包；MCP server 是用户自己添
 
 - 不要把 `.env.native`、`.data/`、`logs/`、API key 或 MCP 私有路径提交到 Git。
 - MCP 管理 API 可从当前服务地址访问；如果绑定 `HOST=0.0.0.0` 或放到公网，必须在反向代理、云防火墙或上游网关加认证和访问控制。
+- 系统更新 API 会执行 `git pull` 和 `npm install`；公网部署时必须限制可访问用户，更新完成后需要重启服务。
 - 对外访问建议显式设置 `PUBLIC_BASE_URL`，避免 artifact 链接继续指向 `127.0.0.1`。
 
 ## 开发者文档

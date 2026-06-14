@@ -38,6 +38,8 @@ import { registerPublicSiteRoutes } from "./routes/public-site.js";
 import { registerRuntimeDebugRoutes } from "./routes/runtime-debug.js";
 import { registerStaticRoutes } from "./routes/static.js";
 import { registerArtifactRoutes } from "./routes/artifacts.js";
+import { registerSystemUpdateRoutes } from "./routes/system-update.js";
+import type { CloneUpdater } from "./system/clone-updater.js";
 
 export interface BuildServerOptions {
 	agentService?: AgentService;
@@ -53,6 +55,7 @@ export interface BuildServerOptions {
 	modelConfigStore?: ModelConfigStore;
 	modelSelectionValidator?: ModelSelectionValidator;
 	modelProviderStore?: ModelProviderStore;
+	systemUpdater?: CloneUpdater;
 }
 
 function createDefaultAssetStore(): AssetStore {
@@ -181,6 +184,10 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
 		projectRoot: agentProfileProjectRoot,
 		agentServiceRegistry,
 		agentTemplateRegistry,
+	});
+	registerSystemUpdateRoutes(app, {
+		projectRoot: config.projectRoot,
+		...(options.systemUpdater ? { updater: options.systemUpdater } : {}),
 	});
 	registerRuntimeDebugRoutes(app, { projectRoot: config.projectRoot });
 	registerCleanupDebugRoutes(app, { database: connDatabase });

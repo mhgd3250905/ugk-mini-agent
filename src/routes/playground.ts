@@ -7,6 +7,7 @@ import { renderInboxPage } from "../ui/inbox-page.js";
 import { renderAgentsPage } from "../ui/agents-page.js";
 import { renderModelSourcesPage } from "../ui/model-sources-page.js";
 import { renderPlaygroundPage } from "../ui/playground.js";
+import { renderUpdatePage } from "../ui/update-page.js";
 import {
 	isPlaygroundExternalizedEnabled,
 	openPlaygroundRuntimeFile,
@@ -76,6 +77,14 @@ export function registerPlaygroundRoute(app: FastifyInstance, options: Playgroun
 		reply.header("pragma", "no-cache");
 		reply.header("expires", "0");
 		return renderModelSourcesPage();
+	});
+
+	app.get("/playground/update", async (_request, reply) => {
+		reply.type("text/html; charset=utf-8");
+		reply.header("cache-control", "no-store, no-cache, must-revalidate");
+		reply.header("pragma", "no-cache");
+		reply.header("expires", "0");
+		return renderUpdatePage();
 	});
 
 	app.get("/playground/team", async (_request, reply) => {

@@ -16,6 +16,14 @@ git show <commit>:docs/change-log.md
 - 不记录长命令输出、临时排障过程、一次性 UI 微调直播和旧环境运行笔记。
 - 当前运行事实以 `README.md`、`.env.native.example`、平台 native 文档和真实代码为准。
 
+## 2026-06-14 - Git 克隆版网页更新器
+
+- **主题**: 新增 `/playground/update`，面向 Git 克隆部署提供网页检查更新、`git pull --ff-only origin main` 和依赖安装入口。
+- **影响范围**: `src/system/clone-updater.ts`、`src/routes/system-update.ts`、`src/ui/update-page.ts`、`src/routes/playground.ts`、`src/server.ts`、`README.md`。
+- **行为说明**: 本地代码改动会阻止自动更新；`.data/`、`logs/`、`node_modules/`、`.env.native` 等运行态产物会保留；更新完成后需要重启服务。
+- **安全要求**: 更新接口会执行 `git` 和 `npm`，公网部署必须依赖反向代理、云防火墙、IP 白名单或上游认证控制访问。
+- **验证建议**: `node --test --test-concurrency=1 --import tsx test\clone-updater.test.ts test\system-update-routes.test.ts test\system-update-page.test.ts test\server.test.ts`、`npx tsc --noEmit`、`git diff --check`。
+
 ## 2026-06-14 - MCP 管理支持公网部署场景
 
 - **主题**: 移除 Agent MCP 管理 API 的本机来源限制，使公网部署、局域网部署和反向代理入口可以直接添加、更新、测试 MCP server。
