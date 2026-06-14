@@ -3203,9 +3203,7 @@ export function App() {
       />
     </section>
   ) : null;
-  const expandedAgentBranchPanel = renderExpandedAgentBranchPanel(
-    expandedAgentBranchMode === "chat" ? "mini" : "full",
-  );
+  const expandedAgentBranchPanel = renderExpandedAgentBranchPanel("mini");
   const maximizedAgentBranchPanel = renderExpandedAgentBranchPanel("full");
 
   const taskBranchPanelItems = expandedTaskBranches.flatMap((branch) => {

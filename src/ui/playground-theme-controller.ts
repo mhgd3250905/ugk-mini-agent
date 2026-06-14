@@ -276,6 +276,41 @@ export function getPlaygroundThemeStyles(): string {
 			color: #172033;
 		}
 
+		/* Light theme overrides for the canvas entry highlight. */
+		:root[data-theme="light"] .telemetry-canvas-link {
+			background:
+				linear-gradient(#ffffff, #ffffff) padding-box,
+				linear-gradient(
+					120deg,
+					#ff7188 0%,
+					#ffd166 18%,
+					#3fbf72 38%,
+					#3b82f6 58%,
+					#8b5cf6 78%,
+					#ff7188 100%
+				) border-box;
+			box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.14);
+		}
+
+		:root[data-theme="light"] .telemetry-canvas-link span {
+			color: #6b7a93;
+		}
+
+		:root[data-theme="light"] .telemetry-canvas-link:hover:not(:disabled),
+		:root[data-theme="light"] .telemetry-canvas-link:focus-visible {
+			background:
+				linear-gradient(#f6f9fe, #f6f9fe) padding-box,
+				linear-gradient(
+					120deg,
+					#ff7188 0%,
+					#ffd166 18%,
+					#3fbf72 38%,
+					#3b82f6 58%,
+					#8b5cf6 78%,
+					#ff7188 100%
+				) border-box;
+		}
+
 		:root[data-theme="light"] .landing-agent-card {
 			border-color: transparent;
 			background: #f6f9fe;
