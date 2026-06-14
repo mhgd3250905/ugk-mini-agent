@@ -16,6 +16,7 @@ import {
 	sendFileToolFinished,
 	textDelta,
 } from "./agent-service-helpers.js";
+import type { AgentSessionLike, RawAgentSessionEventLike } from "../src/agent/agent-session-factory.js";
 
 class PersistingLargeToolResultSession extends FakeSession {
 	constructor(
@@ -51,6 +52,61 @@ class PersistingLargeToolResultSession extends FakeSession {
 		await writeFile(
 			this.sessionFile!,
 			this.messages.map((persistedMessage) => {
+				const message = persistedMessage as typeof persistedMessage & { timestamp?: string | number };
+				return JSON.stringify({
+					type: "message",
+					timestamp: message.timestamp,
+					message,
+				});
+			}).join("\n") + "\n",
+			"utf8",
+		);
+	}
+}
+
+class GetterOnlyLargeToolResultSession implements AgentSessionLike {
+	public prompts: string[] = [];
+	private readonly persistedMessages: NonNullable<AgentSessionLike["messages"]> = [];
+
+	constructor(
+		public readonly sessionFile: string,
+		private readonly oversizedText: string,
+	) {}
+
+	get messages(): NonNullable<AgentSessionLike["messages"]> {
+		return this.persistedMessages;
+	}
+
+	subscribe(_listener: (event: RawAgentSessionEventLike) => void): () => void {
+		return () => {};
+	}
+
+	async prompt(message: string): Promise<void> {
+		this.prompts.push(message);
+		this.persistedMessages.push(
+			{
+				role: "user",
+				content: buildPromptWithAssetContext(message),
+				timestamp: "2026-06-14T00:00:00.000Z",
+			},
+			{
+				role: "toolResult",
+				toolCallId: "tool-large",
+				toolName: "conn",
+				content: [{ type: "text", text: this.oversizedText }],
+				isError: false,
+				timestamp: "2026-06-14T00:00:01.000Z",
+			} as never,
+			{
+				role: "assistant",
+				content: [{ type: "text", text: "large output handled" }],
+				stopReason: "stop",
+				timestamp: "2026-06-14T00:00:02.000Z",
+			},
+		);
+		await writeFile(
+			this.sessionFile,
+			this.persistedMessages.map((persistedMessage) => {
 				const message = persistedMessage as typeof persistedMessage & { timestamp?: string | number };
 				return JSON.stringify({
 					type: "message",
@@ -358,6 +414,30 @@ test("chat compacts oversized persisted tool results into downloadable artifacts
 	assert.ok(Buffer.byteLength(compactedSession, "utf8") < oversizedText.length / 2);
 	assert.match(compactedSession, /Large tool output omitted from session history/);
 	assert.match(compactedSession, /\/v1\/files\/file-1/);
+});
+
+test("chat compacts sessions whose messages property is getter-only", async () => {
+	const store = await createStore();
+	const tempDir = await mkdtemp(join(tmpdir(), "ugk-getter-only-session-"));
+	const sessionFile = join(tempDir, "large.jsonl");
+	const oversizedText = "x".repeat(LARGE_SESSION_MESSAGE_TEXT_BYTES + 1024);
+	const session = new GetterOnlyLargeToolResultSession(sessionFile, oversizedText);
+	const factory = new FakeAgentSessionFactory(() => session);
+	const assetStore = new FakeAssetStore();
+	const service = new AgentService({ conversationStore: store, sessionFactory: factory, assetStore });
+
+	const result = await service.chat({
+		conversationId: "manual:getter-only-session",
+		message: "inspect conn run",
+	});
+
+	const compactedSession = await readFile(sessionFile, "utf8");
+	assert.equal(result.text, "large output handled");
+	assert.equal(assetStore.saved.length, 1);
+	assert.ok(Buffer.byteLength(compactedSession, "utf8") < oversizedText.length / 2);
+	assert.match(compactedSession, /Large tool output omitted from session history/);
+	assert.match(compactedSession, /\/v1\/files\/file-1/);
+	assert.match(JSON.stringify(session.messages), /Large tool output omitted from session history/);
 });
 
 test("getConversationState preserves files delivered by send_file tool results in canonical history", async () => {

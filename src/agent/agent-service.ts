@@ -751,11 +751,11 @@ export class AgentService {
 			return;
 		}
 
-		session.messages = result.messages;
 		await rewriteSessionFileMessages({
 			sessionFile: session.sessionFile,
 			messages: result.messages,
 		});
+		replaceSessionMessagesInPlace(messages, result.messages);
 		console.info(
 			`[session-compaction] conversation=${conversationId} artifacts=${result.artifactCount} originalBytes=${result.originalBytes} compactedBytes=${result.compactedBytes}`,
 		);
@@ -869,6 +869,20 @@ export class AgentService {
 			activeRun.historyMessageCountBeforeRun,
 			activeRun.view,
 		);
+	}
+}
+
+function replaceSessionMessagesInPlace(
+	currentMessages: AgentSessionMessageLike[],
+	nextMessages: readonly AgentSessionMessageLike[],
+): void {
+	try {
+		currentMessages.length = 0;
+		for (const message of nextMessages) {
+			currentMessages.push(message);
+		}
+	} catch {
+		// Persisted history is already compacted; in-memory sync is best-effort for read-only session snapshots.
 	}
 }
 
