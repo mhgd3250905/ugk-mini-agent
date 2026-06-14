@@ -58,9 +58,14 @@ import type { AssetRecord, AssetStoreLike, ChatAttachment } from "./asset-store.
 import type {
 	AgentSessionFactory,
 	AgentSessionLike,
+	AgentSessionMessageLike,
 	RuntimeSkillInfo,
 	RuntimeSkillListResult,
 } from "./agent-session-factory.js";
+import {
+	compactLargeSessionMessages,
+	rewriteSessionFileMessages,
+} from "./session-message-compactor.js";
 import {
 	buildContextUsageSnapshot,
 	type AgentMessageLike,
@@ -412,8 +417,9 @@ export class AgentService {
 	}
 
 	async getRunStatus(conversationId: string): Promise<RunStatusResult> {
-		const running = this.activeRuns.has(conversationId);
-		const messages = await this.getContextMessages(conversationId);
+		const activeRun = this.activeRuns.get(conversationId);
+		const running = Boolean(activeRun);
+		const messages = await this.getRunStatusContextMessages(conversationId, activeRun);
 		const modelContext = this.getDefaultModelContext();
 		const contextUsage = buildContextUsageSnapshot(modelContext, messages);
 
@@ -693,6 +699,14 @@ export class AgentService {
 			throw normalizedError;
 		} finally {
 			unsubscribe();
+			try {
+				await this.compactSessionAfterRun(conversationId, session);
+			} catch (error) {
+				console.error(
+					`[session-compaction] failed conversation=${conversationId} sessionFile=${session.sessionFile ?? ""}`,
+					error,
+				);
+			}
 			if (session.sessionFile) {
 				await this.options.conversationStore.set(conversationId, session.sessionFile, {
 					skillFingerprint,
@@ -716,6 +730,35 @@ export class AgentService {
 			}
 			activeRun.subscribers.clear();
 		}
+	}
+
+	private async compactSessionAfterRun(conversationId: string, session: AgentSessionLike): Promise<void> {
+		if (!session.sessionFile || !this.options.assetStore) {
+			return;
+		}
+		const messages = ((session.messages as AgentSessionMessageLike[] | undefined) ?? []);
+		if (messages.length === 0) {
+			return;
+		}
+
+		const result = await compactLargeSessionMessages({
+			conversationId,
+			messages,
+			saveFiles: async (targetConversationId, files) =>
+				await this.options.assetStore!.saveFiles(targetConversationId, files),
+		});
+		if (!result.changed) {
+			return;
+		}
+
+		session.messages = result.messages;
+		await rewriteSessionFileMessages({
+			sessionFile: session.sessionFile,
+			messages: result.messages,
+		});
+		console.info(
+			`[session-compaction] conversation=${conversationId} artifacts=${result.artifactCount} originalBytes=${result.originalBytes} compactedBytes=${result.compactedBytes}`,
+		);
 	}
 
 	private emitRunEvent(
@@ -762,6 +805,25 @@ export class AgentService {
 			sessionFile: existingConversation?.sessionFile,
 			sessionFactory: this.options.sessionFactory,
 		});
+	}
+
+	private async getRunStatusContextMessages(
+		conversationId: string,
+		activeRun: ActiveRunState | undefined,
+	): Promise<AgentMessageLike[]> {
+		if (activeRun) {
+			return await this.getContextMessages(conversationId);
+		}
+
+		const existingConversation = await this.options.conversationStore.get(conversationId);
+		const stateContext = await resolveConversationStateContext({
+			conversationId,
+			sessionFile: existingConversation?.sessionFile,
+			sessionFactory: this.options.sessionFactory,
+			viewLimit: 1,
+			defaultViewLimit: 1,
+		});
+		return stateContext.contextUsageMessages;
 	}
 
 	private async getConversationStateContext(

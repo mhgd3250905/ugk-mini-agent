@@ -183,6 +183,76 @@ test("getConversationState can hydrate an idle conversation from a recent sessio
 	});
 });
 
+test("getRunStatus estimates idle conversation context from a bounded recent session window", async () => {
+	const store = await createStore();
+	const sessionFile = "E:/sessions/recent-status.jsonl";
+	await store.set("manual:recent-status", sessionFile, {
+		title: "Recent status",
+		preview: "message 200",
+		messageCount: 200,
+	});
+	const factory = new FakeAgentSessionFactory(() => {
+		throw new Error("idle status reads must not create an agent session");
+	});
+	factory.persistedMessages.set(sessionFile, [
+		{
+			role: "assistant",
+			content: [{ type: "text", text: "full history should not be read" }],
+			stopReason: "stop",
+			usage: { totalTokens: 999999 },
+			timestamp: "2026-04-24T00:00:00.000Z",
+		} as never,
+	]);
+	factory.recentMessages.set(sessionFile, {
+		messages: [
+			{
+				role: "assistant",
+				content: [{ type: "text", text: "message 200" }],
+				timestamp: "2026-04-24T01:00:02.000Z",
+			} as never,
+		],
+		contextMessages: [
+			{
+				role: "assistant",
+				content: [{ type: "text", text: "usage anchor" }],
+				stopReason: "stop",
+				usage: { totalTokens: 8192 },
+				timestamp: "2026-04-24T01:00:00.000Z",
+			} as never,
+			{
+				role: "user",
+				content: [{ type: "text", text: "message 199" }],
+				timestamp: "2026-04-24T01:00:01.000Z",
+			} as never,
+			{
+				role: "assistant",
+				content: [{ type: "text", text: "message 200" }],
+				timestamp: "2026-04-24T01:00:02.000Z",
+			} as never,
+		],
+		messageIndexOffset: 199,
+		reachedStart: false,
+	});
+	const service = new AgentService({ conversationStore: store, sessionFactory: factory });
+
+	const status = await service.getRunStatus("manual:recent-status");
+
+	assert.deepEqual(factory.calls, []);
+	assert.deepEqual(factory.readCalls, []);
+	assert.deepEqual(factory.readRecentCalls, [
+		{
+			sessionFile,
+			input: {
+				limit: 1,
+				includeContextUsageAnchor: true,
+			},
+		},
+	]);
+	assert.equal(status.running, false);
+	assert.equal(status.contextUsage.mode, "usage");
+	assert.equal(status.contextUsage.currentTokens, 8198);
+});
+
 test("getConversationHistory returns paged history before a message cursor", async () => {
 	const store = await createStore();
 	const sessionFile = "E:/sessions/paged-history.jsonl";

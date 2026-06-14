@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { AgentService } from "../src/agent/agent-service.js";
+import { LARGE_SESSION_MESSAGE_TEXT_BYTES } from "../src/agent/session-message-compactor.js";
 import { buildPromptWithAssetContext } from "../src/agent/file-artifacts.js";
 import {
 	DeferredSession,
@@ -15,6 +16,52 @@ import {
 	sendFileToolFinished,
 	textDelta,
 } from "./agent-service-helpers.js";
+
+class PersistingLargeToolResultSession extends FakeSession {
+	constructor(
+		sessionFile: string,
+		private readonly oversizedText: string,
+	) {
+		super(sessionFile, []);
+	}
+
+	override async prompt(message: string): Promise<void> {
+		this.prompts.push({ message });
+		this.messages.push(
+			{
+				role: "user",
+				content: buildPromptWithAssetContext(message),
+				timestamp: "2026-06-14T00:00:00.000Z",
+			} as never,
+			{
+				role: "toolResult",
+				toolCallId: "tool-large",
+				toolName: "conn",
+				content: [{ type: "text", text: this.oversizedText }],
+				isError: false,
+				timestamp: "2026-06-14T00:00:01.000Z",
+			} as never,
+			{
+				role: "assistant",
+				content: [{ type: "text", text: "large output handled" }],
+				stopReason: "stop",
+				timestamp: "2026-06-14T00:00:02.000Z",
+			} as never,
+		);
+		await writeFile(
+			this.sessionFile!,
+			this.messages.map((persistedMessage) => {
+				const message = persistedMessage as typeof persistedMessage & { timestamp?: string | number };
+				return JSON.stringify({
+					type: "message",
+					timestamp: message.timestamp,
+					message,
+				});
+			}).join("\n") + "\n",
+			"utf8",
+		);
+	}
+}
 
 test("creates a new conversation, prompts the session, and persists the session file", async () => {
 	const store = await createStore();
@@ -287,6 +334,30 @@ test("chat includes files returned by the send_file tool in the final done event
 	];
 	assert.deepEqual(result.files, expectedFiles);
 	assert.deepEqual(events.find((event) => event.type === "done")?.files, expectedFiles);
+});
+
+test("chat compacts oversized persisted tool results into downloadable artifacts after a run", async () => {
+	const store = await createStore();
+	const tempDir = await mkdtemp(join(tmpdir(), "ugk-large-session-"));
+	const sessionFile = join(tempDir, "large.jsonl");
+	const oversizedText = "x".repeat(LARGE_SESSION_MESSAGE_TEXT_BYTES + 1024);
+	const session = new PersistingLargeToolResultSession(sessionFile, oversizedText);
+	const factory = new FakeAgentSessionFactory(() => session);
+	const assetStore = new FakeAssetStore();
+	const service = new AgentService({ conversationStore: store, sessionFactory: factory, assetStore });
+
+	const result = await service.chat({
+		conversationId: "manual:large-session",
+		message: "inspect conn run",
+	});
+
+	const compactedSession = await readFile(sessionFile, "utf8");
+	assert.equal(result.text, "large output handled");
+	assert.equal(assetStore.saved.length, 1);
+	assert.equal(assetStore.saved[0]?.files[0]?.content, oversizedText);
+	assert.ok(Buffer.byteLength(compactedSession, "utf8") < oversizedText.length / 2);
+	assert.match(compactedSession, /Large tool output omitted from session history/);
+	assert.match(compactedSession, /\/v1\/files\/file-1/);
 });
 
 test("getConversationState preserves files delivered by send_file tool results in canonical history", async () => {
