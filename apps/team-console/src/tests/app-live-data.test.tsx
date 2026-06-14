@@ -214,7 +214,7 @@ describe("App", () => {
       expect(iframe).toHaveAttribute("allow", "clipboard-write; clipboard-read");
       expect(iframe?.getAttribute("src")).toContain("/playground?view=chat&agentId=main");
       expect(iframe?.getAttribute("src")).toContain("embed=team-console");
-      expect(iframe?.getAttribute("src")).toContain("embedMode=full");
+      expect(iframe?.getAttribute("src")).toContain("embedMode=mini");
       expect(iframe?.getAttribute("src")).toContain("teamTaskMode=create");
       expect(iframe?.getAttribute("src")).not.toContain("teamTaskId=");
     });

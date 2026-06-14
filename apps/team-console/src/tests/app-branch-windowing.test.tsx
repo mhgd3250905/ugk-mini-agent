@@ -262,7 +262,7 @@ describe("App", () => {
       // Verify iframe has teamTaskMode=create
       const iframe = container.querySelector(".agent-playground-branch iframe") as HTMLIFrameElement | null;
       expect(iframe?.getAttribute("src")).toContain("teamTaskMode=create");
-      expect(iframe?.getAttribute("src")).toContain("embedMode=full");
+      expect(iframe?.getAttribute("src")).toContain("embedMode=mini");
       expect(iframe?.getAttribute("src")).not.toContain("teamTaskId=");
 
       // Double-click header to maximize
