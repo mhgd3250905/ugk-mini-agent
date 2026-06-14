@@ -2814,7 +2814,7 @@ export function getPlaygroundStyles(): string {
 		.telemetry-action:disabled {
 			cursor: wait;
 		}
-		/* ????????????????????? telemetry-canvas-link????????? telemetry-action??*/
+		/* Highlight the canvas entry while preserving the compact telemetry action layout. */
 		.telemetry-canvas-link {
 			position: relative;
 			padding: 0 12px;
