@@ -162,6 +162,25 @@ ss -lntp | grep 8888
 
 能看到 `0.0.0.0:8888` 但外部仍打不开时，通常是云服务器安全组没有放行 TCP `8888`。
 
+### 更新项目
+
+Git clone 部署的用户可以使用根目录的一键更新脚本：
+
+```powershell
+# Windows
+.\UGK-Mini-Agent-Update.cmd
+```
+
+```bash
+# macOS
+./UGK-Mini-Agent-Update.command
+
+# Linux
+./UGK-Mini-Agent-Update.sh
+```
+
+更新脚本默认更新 `origin/main`，会在依赖文件变化时自动安装依赖。更新完成后会询问是否重启；选择重启时会清理当前端口占用并重新启动服务。
+
 ### 修改端口
 
 默认端口是 `8888`。需要换端口时，可以使用交互式入口：

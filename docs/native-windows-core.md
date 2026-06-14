@@ -15,6 +15,10 @@
 - 检测所选端口的监听进程；如被旧服务占用，会自动结束占用进程。
 - 使用 `scripts/native-supervisor.mjs` 拉起 native 运行时，避免误用 `npm run start` 导致模型配置回退。
 
+## 更新
+
+Git clone 部署后，普通用户优先使用根目录的 `UGK-Mini-Agent-Update.cmd` 更新项目。它默认更新 `origin/main`，必要时安装依赖，并在完成后询问是否重启。选择重启时会复用启动器清理端口占用并重新启动服务。
+
 调试时可直接运行：
 
 ```powershell

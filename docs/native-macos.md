@@ -38,6 +38,16 @@ To choose a port:
 ./UGK-Mini-Agent-Set-Port.command
 ```
 
+## Update
+
+For Git clone deployments, run:
+
+```bash
+./UGK-Mini-Agent-Update.command
+```
+
+The updater uses `origin/main`, installs dependencies when package files changed, then asks whether to restart the service.
+
 ## Runtime Data
 
 Defaults are relative to the project root:
