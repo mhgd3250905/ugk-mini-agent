@@ -53,6 +53,14 @@ Canvas Task 现在已经有明确的职责字段：
 
 它们的 `AGENTS.md` 由运行时自动创建，使用专门的默认规则模板。若文件已经存在，不覆盖用户本地改动。
 
+它们还必须预装主 Agent 的 `http-access` 网络访问技能到各自的系统技能目录：
+
+- `.data/agents/team-worker/pi/skills/http-access/`
+- `.data/agents/team-checker/pi/skills/http-access/`
+- `.data/agents/team-dispatcher/pi/skills/http-access/`
+
+`http-access` 的来源是项目主 Agent 技能目录中的 `.pi/skills/http-access/`。安装逻辑只在目标技能缺失时复制，不覆盖用户对该 Team Agent 技能目录的本地改动。
+
 ## Team Task 默认映射
 
 Task 创建和 factory 默认角色应改为：
@@ -88,6 +96,7 @@ Team Task Creator skill 也要同步更新：
 
 - 默认使用简体中文回复；代码、命令、路径、日志和错误保持原始语言。
 - 专注完成当前 worker prompt 指定的任务，不替 checker 做验收裁决。
+- 需要访问 HTTP/HTTPS 资源时，优先使用预装的 `http-access` 技能；不要假设自己拥有主 Agent 的其他网络工具。
 - 优先产出清晰、可检查、可复用的结果。
 - 如果任务要求写文件，必须写入运行时提供的输出目录或 prompt 指定路径。
 - 如果 prompt 要求机器可读 JSON、HTML、worklist 或 worklist-results，最终输出必须严格匹配契约，不添加无关解释。
@@ -112,6 +121,7 @@ Team Task Creator skill 也要同步更新：
 
 - 默认使用简体中文回复；代码、命令、路径、日志和错误保持原始语言。
 - 只基于 worker 输出、任务输入、输出契约、acceptance rules 和可访问证据做判断。
+- 需要复核 HTTP/HTTPS 资源时，优先使用预装的 `http-access` 技能；复核结论必须说明基于哪些可访问证据。
 - 必须保持独立验收视角，不替 worker 补写主要产物。
 - 发现缺失、格式错误、证据不足、未覆盖验收规则时，应要求 revise 或 fail。
 - 若 checker prompt 要求 JSON verdict，输出必须严格匹配要求的 JSON shape，不添加 markdown、解释段落或代码块。
@@ -136,6 +146,7 @@ Team Task Creator skill 也要同步更新：
 
 - 默认使用简体中文回复；代码、命令、路径、日志和错误保持原始语言。
 - 专注理解当前 discovery item、dispatch goal 和父任务上下文。
+- 需要读取 HTTP/HTTPS 资源来理解 item 时，优先使用预装的 `http-access` 技能；不得把网络访问结果以外的猜测写入语义补丁。
 - 输出必须严格遵守 dispatcher prompt 要求的 JSON patch 形状。
 - 不输出 `workUnit`、`outputContract`、`acceptance`、worker/checker/leader/source identity、output ports 或 output check 等被禁止字段。
 - 不添加 markdown、代码块、解释、标题或 JSON 外文本。
@@ -154,6 +165,7 @@ Team Task Creator skill 也要同步更新：
 - 新增默认 Agent 不写入 `.data/agents/profiles.json`。
 - 用户已有自定义 profile 若使用相同 id，应保留自定义 name/description 覆盖默认摘要。
 - `ensureAgentProfileRuntime` 只在 `AGENTS.md` 不存在时写入默认规则。
+- `ensureAgentProfileRuntime` 为 `team-worker`、`team-checker`、`team-dispatcher` 预装 `http-access`，只复制缺失目录，不覆盖已存在技能。
 - 旧 Task 中的 `main/search` 不自动替换，避免改变历史运行语义。
 
 ## 测试
@@ -163,6 +175,8 @@ Team Task Creator skill 也要同步更新：
 - `createDefaultAgentProfiles` 包含三个 Team Agent。
 - 三个 Team Agent 的目录、规则路径、skill path 隔离正确。
 - `ensureAgentProfileRuntime` 为三个 Team Agent 写入对应默认 `AGENTS.md`。
+- `ensureAgentProfileRuntime` 为三个 Team Agent 复制 `http-access` 到系统技能目录。
+- 已存在 `http-access` 目标技能时不覆盖。
 - 已存在 `AGENTS.md` 时不覆盖。
 
 Team Task 测试：
