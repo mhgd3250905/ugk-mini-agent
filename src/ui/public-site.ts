@@ -4,35 +4,54 @@ export function renderPublicSitePage(): string {
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>UGK CLAW - Agent 画板</title>
+		<title>UGK Mini Agent - 本机部署的 Agent 工作台</title>
 		<meta
 			name="description"
-			content="UGK CLAW 是面向生产环境的 Agent 任务验收与编排工作台。用干净 Task、可复用 Skill、Checker 审核和 Workflow 编排，把 Agent 结果变得可交付。"
+			content="UGK Mini Agent 是一个可本机部署的 Agent 工作台，提供 Chat、Team Console、Conn 后台任务、模型源配置和 Agent Profile 管理。"
 		/>
 		<link rel="icon" href="/ugk-claw-logo.svg" />
 		<style>
+			@font-face {
+				font-family: "Agave";
+				src: url("/fonts/Agave-Regular.ttf") format("truetype");
+				font-weight: 400;
+				font-style: normal;
+				font-display: swap;
+			}
+
+			@font-face {
+				font-family: "Agave";
+				src: url("/fonts/Agave-Bold.ttf") format("truetype");
+				font-weight: 700 900;
+				font-style: normal;
+				font-display: swap;
+			}
+
 			:root {
 				color-scheme: dark;
-				--page: oklch(6.5% 0.018 252);
-				--page-2: oklch(9% 0.02 250);
-				--ink: oklch(97% 0.01 250);
-				--ink-soft: oklch(78% 0.03 252);
-				--ink-muted: oklch(58% 0.03 252);
-				--line: oklch(34% 0.04 252 / 0.52);
-				--line-soft: oklch(34% 0.04 252 / 0.24);
-				--surface: oklch(13% 0.026 250);
-				--surface-2: oklch(16% 0.032 250);
-				--aqua: oklch(81% 0.14 188);
-				--amber: oklch(80% 0.14 74);
-				--green: oklch(83% 0.14 142);
+				--page: #03070d;
+				--page-soft: #07111d;
+				--surface: #0a121f;
+				--surface-strong: #101a2b;
+				--line: rgba(101, 209, 255, 0.22);
+				--line-strong: rgba(101, 209, 255, 0.52);
+				--text: #f3f8ff;
+				--text-soft: #cbd8f0;
+				--text-muted: #8493ad;
+				--brand: #65d1ff;
+				--brand-soft: rgba(101, 209, 255, 0.14);
+				--brand-glow: rgba(101, 209, 255, 0.32);
+				--brand-lavender: #c9d2ff;
+				--brand-mint: #8dffb2;
+				--cyan: #79f7ff;
+				--green: #a7ff79;
 				font-family:
-					"OpenAI Sans",
+					"Agave",
+					"Cascadia Mono",
 					"Microsoft YaHei",
-					"PingFang SC",
-					system-ui,
-					sans-serif;
+					monospace;
 				background: var(--page);
-				color: var(--ink);
+				color: var(--text);
 			}
 
 			* {
@@ -47,9 +66,15 @@ export function renderPublicSitePage(): string {
 				margin: 0;
 				min-width: 320px;
 				background:
-					linear-gradient(180deg, oklch(11% 0.025 250), var(--page) 44rem),
+					linear-gradient(rgba(101, 209, 255, 0.045) 1px, transparent 1px),
+					linear-gradient(90deg, rgba(201, 210, 255, 0.03) 1px, transparent 1px),
+					linear-gradient(180deg, #07111d 0, #03070d 38rem),
 					var(--page);
-				color: var(--ink);
+				background-size:
+					72px 72px,
+					72px 72px,
+					auto;
+				color: var(--text);
 				text-rendering: geometricPrecision;
 			}
 
@@ -62,6 +87,11 @@ export function renderPublicSitePage(): string {
 				max-width: 100%;
 			}
 
+			code,
+			pre {
+				font-family: "Cascadia Mono", Consolas, "SFMono-Regular", monospace;
+			}
+
 			.page {
 				width: min(1160px, calc(100% - 40px));
 				margin: 0 auto;
@@ -71,15 +101,13 @@ export function renderPublicSitePage(): string {
 				position: sticky;
 				top: 0;
 				z-index: 20;
-				border-bottom: 1px solid var(--line-soft);
-				background: oklch(6.5% 0.018 252 / 0.82);
-				backdrop-filter: blur(22px);
+				border-bottom: 1px solid var(--line);
+				background: rgba(3, 7, 13, 0.86);
+				backdrop-filter: blur(16px);
 			}
 
 			.site-nav-inner {
-				width: min(1160px, calc(100% - 40px));
-				height: 58px;
-				margin: 0 auto;
+				height: 62px;
 				display: flex;
 				align-items: center;
 				justify-content: space-between;
@@ -91,612 +119,466 @@ export function renderPublicSitePage(): string {
 				align-items: center;
 				gap: 10px;
 				font-weight: 760;
-				letter-spacing: 0.02em;
+				letter-spacing: 0;
+				text-transform: uppercase;
 			}
 
-			.brand-mark {
-				display: grid;
-				place-items: center;
-				width: 32px;
-				height: 32px;
-				border: 1px solid oklch(81% 0.14 188 / 0.46);
-				border-radius: 7px;
-				color: var(--aqua);
-				background: oklch(81% 0.14 188 / 0.09);
-				font-family: Consolas, "Cascadia Mono", monospace;
-				font-size: 12px;
+			.brand img {
+				width: 34px;
+				height: 34px;
+				border-radius: 8px;
 			}
 
 			.nav-links {
 				display: flex;
 				align-items: center;
-				gap: 2px;
-				color: var(--ink-muted);
-				font-size: 13px;
+				gap: 4px;
+				color: var(--text-muted);
+				font-size: 12px;
+				font-weight: 760;
+				letter-spacing: 0.08em;
+				text-transform: uppercase;
 			}
 
 			.nav-links a {
-				padding: 8px 11px;
+				padding: 8px 10px;
 				border-radius: 7px;
 			}
 
 			.nav-links a:hover {
-				background: oklch(100% 0 0 / 0.055);
-				color: var(--ink);
+				background: rgba(255, 255, 255, 0.06);
+				color: var(--text);
 			}
 
 			.hero {
 				position: relative;
-				padding: clamp(38px, 5vw, 68px) 0 24px;
 				display: grid;
-				grid-template-rows: auto auto;
-				align-items: start;
-				overflow: clip;
+				grid-template-columns: minmax(0, 0.92fr) minmax(360px, 1.08fr);
+				gap: clamp(28px, 5vw, 72px);
+				align-items: center;
+				min-height: calc(100svh - 62px);
+				padding: clamp(42px, 6vw, 78px) 0 clamp(34px, 5vw, 64px);
 			}
 
-			.hero-copy {
-				position: relative;
-				z-index: 2;
-				max-width: 880px;
-				margin: 0 auto;
-				text-align: center;
-			}
-
-			.hero-eyebrow {
-				margin: 0 0 16px;
-				color: var(--aqua);
-				font-family: Consolas, "Cascadia Mono", monospace;
+			.hero::before {
+				content: "[ PRODUCT / LOCAL-FIRST AGENT RUNTIME / WINDOWS + MACOS + LINUX ]";
+				position: absolute;
+				left: 0;
+				top: 18px;
+				color: rgba(101, 209, 255, 0.62);
 				font-size: 12px;
-				letter-spacing: 0.06em;
+				font-weight: 760;
+				letter-spacing: 0.08em;
+			}
+
+			.hero-lockup {
+				display: inline-flex;
+				align-items: center;
+				gap: 16px;
+				margin-bottom: 22px;
+				padding: 10px 14px 10px 10px;
+				border: 1px solid var(--line-strong);
+				background: rgba(101, 209, 255, 0.08);
+			}
+
+			.hero-lockup img {
+				width: 68px;
+				height: 68px;
+				object-fit: contain;
+				background: #03070d;
+				border: 1px solid var(--line);
+			}
+
+			.hero-lockup span {
+				display: block;
+				color: var(--text-muted);
+				font-size: 12px;
+				font-weight: 760;
+				letter-spacing: 0.1em;
 				text-transform: uppercase;
+			}
+
+			.hero-lockup strong {
+				display: block;
+				margin-top: 5px;
+				color: var(--brand);
+				font-size: clamp(22px, 3vw, 36px);
+				line-height: 1;
+				text-transform: uppercase;
+			}
+
+			.eyebrow {
+				margin: 0 0 14px;
+				color: var(--brand);
+				font-size: 13px;
+				font-weight: 760;
+				letter-spacing: 0.08em;
+				text-transform: uppercase;
+			}
+
+			h1,
+			h2,
+			h3,
+			p {
+				letter-spacing: 0;
 			}
 
 			h1 {
 				margin: 0;
-				font-size: clamp(44px, 5.6vw, 88px);
-				line-height: 1.02;
-				letter-spacing: 0;
+				max-width: 760px;
+				font-size: clamp(44px, 5.7vw, 84px);
+				line-height: 1.08;
 				text-wrap: balance;
+				background: linear-gradient(100deg, var(--brand), var(--brand-lavender) 48%, var(--brand-mint));
+				-webkit-background-clip: text;
+				background-clip: text;
+				color: transparent;
+				text-shadow: 0 0 34px var(--brand-glow);
 			}
 
 			.hero-subtitle {
-				max-width: 760px;
-				margin: 18px auto 0;
-				color: var(--ink-soft);
-				font-size: clamp(18px, 1.85vw, 25px);
-				line-height: 1.42;
-			}
-
-			.hero-subtitle strong {
-				color: var(--ink);
-				font-weight: 780;
+				margin: 22px 0 0;
+				max-width: 650px;
+				color: var(--text-soft);
+				font-size: clamp(18px, 2vw, 23px);
+				line-height: 1.55;
 			}
 
 			.cta-row {
-				display: inline-flex;
-				justify-content: center;
+				display: flex;
 				flex-wrap: wrap;
-				gap: 4px;
-				margin-top: 26px;
-				padding: 5px;
-				border: 1px solid var(--line-soft);
-				border-radius: 12px;
-				background: oklch(7.5% 0.019 250 / 0.92);
-			}
-
-			.cta-note {
-				margin: 12px 0 0;
-				color: var(--ink-muted);
-				font-size: 13px;
+				gap: 10px;
+				margin-top: 30px;
 			}
 
 			.button {
 				display: inline-flex;
 				align-items: center;
 				justify-content: center;
-				min-height: 42px;
+				min-height: 44px;
 				padding: 0 18px;
-				border: 0;
-				border-radius: 8px;
-				background: transparent;
-				color: var(--ink-soft);
+				border: 1px solid var(--line-strong);
+				border-radius: 0;
+				background: rgba(10, 15, 13, 0.82);
+				color: var(--text-soft);
 				font-size: 14px;
 				font-weight: 720;
+				letter-spacing: 0.04em;
+				text-transform: uppercase;
 				transition:
 					background 160ms ease,
+					border-color 160ms ease,
 					color 160ms ease,
 					transform 160ms ease;
 			}
 
 			.button:hover {
-				background: oklch(100% 0 0 / 0.055);
-				color: var(--ink);
-			}
-
-			.button:focus-visible {
-				outline: 2px solid oklch(81% 0.14 188 / 0.82);
-				outline-offset: 3px;
-			}
-
-			.button-primary {
-				background: oklch(94% 0.012 245);
-				color: oklch(8% 0.018 250);
-			}
-
-			.button-primary::after {
-				content: "";
-				width: 7px;
-				height: 7px;
-				margin-left: 10px;
-				border-right: 1.5px solid currentColor;
-				border-bottom: 1.5px solid currentColor;
-				transform: rotate(-45deg);
-			}
-
-			.button-primary:hover {
-				background: oklch(98% 0.008 245);
-				color: oklch(8% 0.018 250);
+				border-color: var(--brand);
+				background: rgba(101, 209, 255, 0.12);
+				color: var(--text);
 				transform: translateY(-1px);
 			}
 
-			.hero-art-wrap {
-				position: relative;
-				z-index: 1;
-				width: min(760px, 100%);
-				margin: clamp(22px, 3vw, 34px) auto 0;
+			.button-primary {
+				border-color: var(--brand);
+				background: linear-gradient(135deg, var(--brand), var(--brand-lavender) 52%, var(--brand-mint));
+				color: #050704;
 			}
 
-			.hero-art {
-				display: block;
-				width: 100%;
-				border-radius: 18px;
-				mask-image: linear-gradient(180deg, black 70%, transparent 100%);
-				opacity: 0;
-				animation: artIn 900ms cubic-bezier(0.16, 1, 0.3, 1) 120ms forwards;
+			.button-primary:hover {
+				background: linear-gradient(135deg, #a6e7ff, #dfe4ff 52%, #b8ffc9);
+				color: #050704;
 			}
 
-			.hero-art-note {
-				position: absolute;
-				right: clamp(14px, 4vw, 72px);
-				bottom: clamp(18px, 5vw, 76px);
-				width: min(330px, 42vw);
-				padding: 16px;
-				border: 1px solid var(--line);
-				border-radius: 14px;
-				background: oklch(9% 0.02 250 / 0.74);
-				backdrop-filter: blur(18px);
-				color: var(--ink-soft);
+			.note {
+				margin: 16px 0 0;
+				color: var(--text-muted);
 				font-size: 13px;
-				line-height: 1.6;
+				line-height: 1.7;
 			}
 
-			.hero-art-note strong {
-				display: block;
-				margin-bottom: 7px;
-				color: var(--ink);
-				font-size: 15px;
-			}
-
-			.hero-strip {
-				display: grid;
-				grid-template-columns: repeat(4, minmax(0, 1fr));
-				gap: 1px;
-				margin-top: -18px;
-				border: 1px solid var(--line-soft);
-				border-radius: 16px;
-				background: var(--line-soft);
+			.hero-card {
+				position: relative;
+				border: 1px solid var(--line-strong);
+				border-radius: 0;
+				background: linear-gradient(180deg, rgba(16, 23, 19, 0.94), rgba(3, 5, 3, 0.98));
+				box-shadow: 0 0 0 1px rgba(101, 209, 255, 0.1), 0 34px 90px rgba(0, 0, 0, 0.44);
 				overflow: hidden;
 			}
 
-			.strip-item {
-				min-height: 122px;
-				padding: 18px 20px;
-				background: oklch(8.5% 0.02 250 / 0.96);
+			.hero-card::before {
+				content: "CANVAS.RUNTIME / LIVE SCREENSHOT";
+				display: block;
+				padding: 11px 14px;
+				border-bottom: 1px solid var(--line);
+				color: var(--brand);
+				background: #03070d;
+				font-size: 12px;
+				font-weight: 760;
+				letter-spacing: 0.08em;
 			}
 
-			.strip-item span {
+			.hero-card img {
 				display: block;
-				color: var(--ink-muted);
-				font-family: Consolas, "Cascadia Mono", monospace;
-				font-size: 11px;
+				width: 100%;
+				aspect-ratio: 2 / 1;
+				object-fit: contain;
+				object-position: center;
+				border-bottom: 1px solid var(--line);
+				filter: saturate(1.1) contrast(1.04);
+				background: #03070d;
+			}
+
+			.hero-metrics {
+				display: grid;
+				grid-template-columns: repeat(3, minmax(0, 1fr));
+				gap: 1px;
+				background: var(--line);
+			}
+
+			.metric {
+				min-height: 104px;
+				padding: 18px;
+				background: rgba(10, 15, 13, 0.96);
+			}
+
+			.metric span {
+				display: block;
+				color: var(--text-muted);
+				font-size: 12px;
 				text-transform: uppercase;
+				letter-spacing: 0.08em;
 			}
 
-			.strip-item strong {
+			.metric strong {
 				display: block;
-				margin-top: 18px;
-				font-size: clamp(20px, 1.7vw, 27px);
-				line-height: 1.08;
+				margin-top: 14px;
+				font-size: clamp(20px, 2.4vw, 29px);
+				line-height: 1.05;
 			}
 
-			.strip-item p {
-				margin: 12px 0 0;
-				color: var(--ink-soft);
+			.ticker {
+				border-top: 1px solid var(--line-strong);
+				border-bottom: 1px solid var(--line-strong);
+				background: linear-gradient(90deg, var(--brand), var(--brand-lavender) 48%, var(--brand-mint));
+				color: #050704;
+				overflow: hidden;
+			}
+
+			.ticker-track {
+				width: max-content;
+				display: flex;
+				gap: 26px;
+				padding: 12px 0;
 				font-size: 13px;
-				line-height: 1.55;
+				font-weight: 800;
+				letter-spacing: 0.08em;
+				text-transform: uppercase;
+				animation: tickerMove 28s linear infinite;
+			}
+
+			.ticker-track span {
+				white-space: nowrap;
 			}
 
 			.section {
-				padding: clamp(76px, 9vw, 132px) 0;
-				border-top: 1px solid var(--line-soft);
+				padding: clamp(64px, 8vw, 110px) 0;
+				border-top: 1px solid var(--line);
 			}
 
 			.section-head {
-				max-width: 850px;
-				margin: 0 auto clamp(34px, 5vw, 62px);
-				text-align: center;
-			}
-
-			.kicker {
-				margin: 0 0 14px;
-				color: var(--aqua);
-				font-family: Consolas, "Cascadia Mono", monospace;
-				font-size: 12px;
-				letter-spacing: 0.04em;
+				max-width: 790px;
+				margin-bottom: clamp(28px, 4vw, 46px);
 			}
 
 			h2 {
 				margin: 0;
-				font-size: clamp(38px, 5.6vw, 78px);
-				line-height: 0.98;
-				letter-spacing: 0;
+				font-size: clamp(34px, 4.8vw, 62px);
+				line-height: 1.04;
 				text-wrap: balance;
 			}
 
 			.section-head p {
-				max-width: 760px;
-				margin: 20px auto 0;
-				color: var(--ink-soft);
-				font-size: clamp(17px, 1.7vw, 21px);
-				line-height: 1.66;
-			}
-
-			.product-shot {
-				position: relative;
-				border-radius: 22px;
-				padding: 10px;
-				background:
-					linear-gradient(135deg, oklch(81% 0.14 188 / 0.35), transparent 28%, oklch(80% 0.14 74 / 0.22)),
-					oklch(12% 0.024 250);
-				border: 1px solid var(--line);
-				overflow: hidden;
-			}
-
-			.product-shot img {
-				display: block;
-				width: 100%;
-				border-radius: 14px;
-			}
-
-			.product-caption {
-				display: flex;
-				justify-content: space-between;
-				gap: 16px;
-				padding: 18px 10px 6px;
-				color: var(--ink-soft);
-				font-size: 14px;
-				line-height: 1.55;
-			}
-
-			.product-caption strong {
-				color: var(--ink);
-			}
-
-			.product-caption code {
-				color: var(--green);
-				font-family: Consolas, "Cascadia Mono", monospace;
-			}
-
-			.trust-system {
-				margin-top: 30px;
-			}
-
-			.trust-map {
-				display: grid;
-				grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
-				align-items: stretch;
-				gap: 12px;
-				margin-top: 34px;
-			}
-
-			.trust-node {
-				min-height: 245px;
-				padding: 22px;
-				border: 1px solid var(--line-soft);
-				border-radius: 16px;
-				background:
-					linear-gradient(180deg, oklch(15% 0.03 250), oklch(9% 0.02 250)),
-					var(--surface);
-			}
-
-			.trust-node.is-risk {
-				background:
-					linear-gradient(180deg, oklch(18% 0.045 28 / 0.76), oklch(9% 0.02 250)),
-					var(--surface);
-			}
-
-			.trust-node.is-pass {
-				background:
-					linear-gradient(180deg, oklch(18% 0.05 150 / 0.72), oklch(9% 0.02 250)),
-					var(--surface);
-			}
-
-			.trust-node span,
-			.trust-result span {
-				color: var(--aqua);
-				font-family: Consolas, "Cascadia Mono", monospace;
-				font-size: 12px;
-			}
-
-			.trust-node strong {
-				display: block;
-				margin-top: 34px;
-				font-size: clamp(22px, 2.1vw, 32px);
-				line-height: 1.1;
-			}
-
-			.trust-node p {
-				margin: 14px 0 0;
-				color: var(--ink-soft);
-				line-height: 1.66;
-			}
-
-			.trust-arrow {
-				display: grid;
-				place-items: center;
-				width: 28px;
-				color: var(--ink-muted);
-				font-family: Consolas, "Cascadia Mono", monospace;
-			}
-
-			.trust-result {
-				margin-top: 14px;
-				padding: 22px 24px;
-				border: 1px solid oklch(83% 0.14 142 / 0.28);
-				border-radius: 16px;
-				background: oklch(83% 0.14 142 / 0.08);
-			}
-
-			.trust-result strong {
-				display: block;
-				margin-top: 10px;
-				font-size: clamp(24px, 2.6vw, 40px);
-				line-height: 1.08;
-			}
-
-			.trust-result p {
-				margin: 12px 0 0;
-				color: var(--ink-soft);
-				line-height: 1.66;
-			}
-
-			.definition-grid {
-				display: grid;
-				grid-template-columns: 1.15fr 0.85fr;
-				gap: 1px;
-				margin-bottom: 28px;
-				border: 1px solid var(--line-soft);
-				border-radius: 18px;
-				background: var(--line-soft);
-				overflow: hidden;
-			}
-
-			.definition-card {
-				padding: clamp(22px, 3vw, 34px);
-				background: oklch(10% 0.022 250);
-			}
-
-			.definition-card span,
-			.capability span,
-			.flow-step span {
-				color: var(--aqua);
-				font-family: Consolas, "Cascadia Mono", monospace;
-				font-size: 12px;
-			}
-
-			.definition-card strong {
-				display: block;
-				margin-top: 14px;
-				font-size: clamp(25px, 2.8vw, 42px);
-				line-height: 1.08;
-			}
-
-			.definition-card p {
 				margin: 18px 0 0;
-				color: var(--ink-soft);
-				font-size: clamp(16px, 1.45vw, 19px);
-				line-height: 1.72;
+				color: var(--text-soft);
+				font-size: 18px;
+				line-height: 1.7;
 			}
 
-			.definition-card code {
-				color: var(--green);
-				font-family: Consolas, "Cascadia Mono", monospace;
-			}
-
-			.capability-grid {
+			.grid {
 				display: grid;
 				grid-template-columns: repeat(4, minmax(0, 1fr));
 				gap: 1px;
-				border: 1px solid var(--line-soft);
-				border-radius: 18px;
-				background: var(--line-soft);
+				border: 1px solid var(--line);
+				border-radius: 0;
+				background: var(--line);
 				overflow: hidden;
 			}
 
-			.capability {
-				min-height: 310px;
-				padding: 24px;
-				background:
-					linear-gradient(180deg, oklch(16% 0.032 250), oklch(10% 0.02 250)),
-					var(--surface);
-			}
-
-			.use-case-grid .capability {
-				min-height: 492px;
-				display: grid;
-				grid-template-rows: auto 1fr;
-				padding: 0;
-				overflow: hidden;
-			}
-
-			.capability-visual {
-				position: relative;
-				min-height: 196px;
-				overflow: hidden;
-				background: oklch(8% 0.018 250);
-			}
-
-			.capability-visual::after {
-				content: "";
-				position: absolute;
-				inset: 0;
-				background:
-					linear-gradient(180deg, transparent 44%, oklch(13% 0.026 250) 100%),
-					linear-gradient(90deg, oklch(6.5% 0.018 252 / 0.46), transparent 38%, oklch(6.5% 0.018 252 / 0.38));
-			}
-
-			.capability-visual img {
-				width: 100%;
-				height: 100%;
-				min-height: 196px;
-				display: block;
-				object-fit: cover;
-				object-position: center center;
-			}
-
-			.capability-copy {
-				display: grid;
-				align-content: end;
-				padding: 22px 24px 26px;
-			}
-
-			.capability strong {
-				display: block;
-				margin-top: 42px;
-				font-size: clamp(22px, 2vw, 31px);
-				line-height: 1.1;
-			}
-
-			.use-case-grid .capability strong {
-				margin-top: 28px;
-			}
-
-			.capability p {
-				margin: 16px 0 0;
-				color: var(--ink-soft);
-				line-height: 1.66;
-			}
-
-			.experience-grid {
-				display: grid;
-				grid-template-columns: repeat(3, minmax(0, 1fr));
-				gap: 1px;
-				border: 1px solid var(--line-soft);
-				border-radius: 18px;
-				background: var(--line-soft);
-				overflow: hidden;
-			}
-
-			.experience {
-				min-height: 500px;
-				display: grid;
-				grid-template-rows: auto 1fr;
+			.card,
+			.step,
+			.entry {
 				background: var(--surface);
 			}
 
-			.role-visual {
-				position: relative;
-				min-height: 232px;
-				overflow: hidden;
-				background: oklch(8% 0.018 250);
+			.card {
+				min-height: 250px;
+				padding: 24px;
 			}
 
-			.role-visual::after {
-				content: "";
-				position: absolute;
-				inset: 0;
-				background:
-					linear-gradient(180deg, transparent 46%, oklch(13% 0.026 250) 100%),
-					linear-gradient(90deg, oklch(6.5% 0.018 252 / 0.46), transparent 35%, oklch(6.5% 0.018 252 / 0.42));
-			}
-
-			.role-visual img {
-				width: 100%;
-				height: 100%;
-				min-height: 232px;
-				display: block;
-				object-fit: cover;
-				object-position: center center;
-			}
-
-			.role-copy {
-				display: grid;
-				align-content: end;
-				padding: 24px 26px 28px;
-			}
-
-			.experience span {
-				color: var(--aqua);
-				font-family: Consolas, "Cascadia Mono", monospace;
+			.card span,
+			.step span,
+			.entry span {
+				color: var(--cyan);
 				font-size: 12px;
+				font-weight: 760;
+				text-transform: uppercase;
 			}
 
-			.experience strong {
+			.card strong,
+			.step strong,
+			.entry strong {
 				display: block;
-				margin-top: 14px;
-				font-size: clamp(25px, 2.5vw, 38px);
-				line-height: 1.06;
+				margin-top: 22px;
+				font-size: 24px;
+				line-height: 1.14;
 			}
 
-			.experience p {
+			.card p,
+			.step p,
+			.entry p {
 				margin: 14px 0 0;
-				color: var(--ink-soft);
+				color: var(--text-soft);
 				line-height: 1.68;
 			}
 
-			.flow-steps {
+			.install-layout {
 				display: grid;
-				grid-template-columns: repeat(4, minmax(0, 1fr));
+				grid-template-columns: 0.92fr 1.08fr;
 				gap: 1px;
-				border: 1px solid var(--line-soft);
-				border-radius: 18px;
-				background: var(--line-soft);
+				border: 1px solid var(--line);
+				border-radius: 0;
+				background: var(--line);
 				overflow: hidden;
 			}
 
-			.flow-step {
-				min-height: 260px;
+			.steps {
+				display: grid;
+				gap: 1px;
+				background: var(--line);
+			}
+
+			.step {
 				padding: 24px;
-				background: oklch(10% 0.02 250);
 			}
 
-			.flow-step strong {
-				display: block;
-				margin-top: 34px;
-				font-size: clamp(22px, 2vw, 32px);
-				line-height: 1.08;
+			.command-panel {
+				padding: 24px;
+				background: var(--surface-strong);
 			}
 
-			.flow-step p {
-				margin: 16px 0 0;
-				color: var(--ink-soft);
-				line-height: 1.66;
+			.command-block {
+				margin: 0 0 14px;
+				padding: 16px;
+				border: 1px solid rgba(148, 163, 184, 0.2);
+				border-radius: 0;
+				background: #030503;
+				color: #e6ffd0;
+				font-size: 13px;
+				line-height: 1.7;
+				overflow-x: auto;
+				white-space: pre;
 			}
 
-			.docs {
+			.command-title {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 12px;
+				margin: 0 0 10px;
+				color: var(--text);
+				font-size: 15px;
+				font-weight: 760;
+			}
+
+			.command-title code {
+				color: var(--green);
+				font-size: 12px;
+				font-weight: 500;
+			}
+
+			.screenshot-band {
 				display: grid;
-				grid-template-columns: repeat(4, minmax(0, 1fr));
+				grid-template-columns: 1.2fr 0.8fr;
 				gap: 1px;
-				border: 1px solid var(--line-soft);
-				border-radius: 18px;
-				background: var(--line-soft);
+				border: 1px solid var(--line);
+				border-radius: 0;
+				background: var(--line);
 				overflow: hidden;
 			}
 
-			.doc-link {
+			.shot {
+				background: var(--surface);
+			}
+
+			.shot img {
+				display: block;
+				width: 100%;
+				height: 100%;
+				min-height: 330px;
+				object-fit: cover;
+				object-position: center top;
+			}
+
+			.shot-copy {
+				padding: 26px;
+				background: var(--surface);
+				display: grid;
+				align-content: end;
+			}
+
+			.shot-copy strong {
+				font-size: 28px;
+				line-height: 1.14;
+			}
+
+			.shot-copy p {
+				margin: 16px 0 0;
+				color: var(--text-soft);
+				line-height: 1.68;
+			}
+
+			.mini-shots {
+				display: grid;
+				grid-template-columns: repeat(3, minmax(0, 1fr));
+				gap: 8px;
+				margin-top: 24px;
+			}
+
+			.mini-shots img {
+				display: block;
+				width: 100%;
+				aspect-ratio: 4 / 3;
+				object-fit: cover;
+				object-position: center top;
+				border: 1px solid var(--line);
+				border-radius: 0;
+				background: #030503;
+			}
+
+			.entries {
+				display: grid;
+				grid-template-columns: repeat(4, minmax(0, 1fr));
+				gap: 1px;
+				border: 1px solid var(--line);
+				border-radius: 0;
+				background: var(--line);
+				overflow: hidden;
+			}
+
+			.entry {
 				min-height: 220px;
 				padding: 24px;
-				background: oklch(10% 0.02 250);
 				display: grid;
 				align-content: space-between;
 				transition:
@@ -704,115 +586,76 @@ export function renderPublicSitePage(): string {
 					transform 160ms ease;
 			}
 
-			.doc-link:hover {
-				background: oklch(13% 0.026 250);
+			.entry:hover {
+				background: rgba(101, 209, 255, 0.11);
 				transform: translateY(-2px);
 			}
 
-			.doc-link strong {
+			.entry em {
 				display: block;
-				margin-top: 18px;
-				font-size: clamp(21px, 1.8vw, 28px);
-				line-height: 1.12;
-			}
-
-			.doc-link span {
-				display: block;
-				color: var(--aqua);
-				font-family: Consolas, "Cascadia Mono", monospace;
-				font-size: 12px;
-				text-transform: uppercase;
-			}
-
-			.doc-link p {
-				margin: 18px 0 0;
-				color: var(--ink-soft);
-				font-size: 14px;
-				line-height: 1.68;
-			}
-
-			.doc-link em {
-				display: block;
-				margin-top: 28px;
-				color: var(--ink-muted);
-				font-size: 13px;
+				margin-top: 26px;
+				color: var(--text-muted);
 				font-style: normal;
+				font-size: 13px;
+			}
+
+			.notice {
+				margin-top: 18px;
+				padding: 16px 18px;
+				border: 1px solid rgba(251, 191, 36, 0.34);
+				border-radius: 0;
+				background: rgba(251, 191, 36, 0.08);
+				color: #fde68a;
+				font-size: 14px;
+				line-height: 1.7;
 			}
 
 			.footer {
-				padding: 38px 0 48px;
-				color: var(--ink-muted);
+				padding: 34px 0 44px;
+				color: var(--text-muted);
 				font-size: 13px;
 			}
 
 			.footer-inner {
 				display: flex;
 				justify-content: space-between;
-				gap: 20px;
-				border-top: 1px solid var(--line-soft);
-				padding-top: 22px;
+				gap: 18px;
+				border-top: 1px solid var(--line);
+				padding-top: 20px;
 			}
 
 			.footer strong {
-				color: var(--ink);
+				color: var(--text);
 			}
 
-			@keyframes artIn {
-				from {
-					opacity: 0;
-					transform: translateY(24px) scale(0.985);
+			@media (max-width: 1180px) {
+				.hero,
+				.install-layout,
+				.screenshot-band {
+					grid-template-columns: 1fr;
 				}
-				to {
-					opacity: 1;
-					transform: translateY(0) scale(1);
-				}
-			}
 
-			@media (max-width: 980px) {
 				.hero {
 					min-height: auto;
-					padding-top: 48px;
 				}
 
-				.hero-art-note {
-					position: static;
-					width: auto;
-					margin: -8px 14px 0;
+				.grid,
+				.entries {
+					grid-template-columns: repeat(2, minmax(0, 1fr));
 				}
+			}
 
-				.hero-strip,
-				.definition-grid,
-				.trust-map,
-				.capability-grid,
-				.flow-steps {
-					grid-template-columns: 1fr;
+			@keyframes tickerMove {
+				from {
+					transform: translateX(0);
 				}
-
-				.trust-arrow {
-					width: auto;
-					min-height: 28px;
-					font-size: 0;
-					transform: none;
-				}
-
-				.trust-arrow::before {
-					content: "↓";
-					font-size: 18px;
-				}
-
-				.experience-grid,
-				.docs {
-					grid-template-columns: 1fr;
-				}
-
-				.product-caption {
-					display: grid;
+				to {
+					transform: translateX(-50%);
 				}
 			}
 
 			@media (max-width: 640px) {
-				.page,
-				.site-nav-inner {
+				.page {
 					width: min(100% - 28px, 1160px);
 				}
 
@@ -820,91 +663,27 @@ export function renderPublicSitePage(): string {
 					display: none;
 				}
 
-				.hero {
-					padding-bottom: 24px;
-				}
-
 				h1 {
-					font-size: clamp(44px, 14vw, 60px);
-				}
-
-				.hero-subtitle {
-					font-size: 18px;
+					font-size: clamp(34px, 10vw, 46px);
 				}
 
 				.cta-row {
 					display: grid;
-					grid-template-columns: minmax(0, 1fr);
-					width: 100%;
-					gap: 10px;
-					padding: 0;
-					border: 0;
-					background: transparent;
-				}
-
-				.cta-row .button {
-					width: 100%;
+					grid-template-columns: 1fr;
 				}
 
 				.button {
-					min-height: 48px;
-					border: 1px solid var(--line-soft);
-					background: oklch(9.5% 0.022 250);
+					width: 100%;
 				}
 
-				.button-primary {
-					border-color: oklch(94% 0.012 245);
-					background: oklch(94% 0.012 245);
+				.hero-metrics,
+				.grid,
+				.entries {
+					grid-template-columns: 1fr;
 				}
 
-				.hero-art {
-					border-radius: 12px;
-					aspect-ratio: 16 / 11;
-					object-fit: cover;
-					object-position: center;
-				}
-
-				.hero-strip {
-					margin-top: 12px;
-				}
-
-				.strip-item {
-					min-height: 96px;
-				}
-
-				.product-shot {
-					padding: 6px;
-					border-radius: 16px;
-				}
-
-				.product-shot img {
-					border-radius: 11px;
-				}
-
-				.experience {
-					min-height: 430px;
-				}
-
-				.role-visual,
-				.role-visual img {
-					min-height: 190px;
-				}
-
-				.role-copy {
-					padding: 22px;
-				}
-
-				.use-case-grid .capability {
-					min-height: 430px;
-				}
-
-				.capability-visual,
-				.capability-visual img {
-					min-height: 188px;
-				}
-
-				.capability-copy {
-					padding: 22px;
+				.command-block {
+					font-size: 12px;
 				}
 
 				.footer-inner {
@@ -915,315 +694,219 @@ export function renderPublicSitePage(): string {
 	</head>
 	<body>
 		<nav class="site-nav" aria-label="官网导航">
-			<div class="site-nav-inner">
-				<a class="brand" href="/">
-					<span class="brand-mark">UGK</span>
-					<span>UGK CLAW</span>
+			<div class="page site-nav-inner">
+				<a class="brand" href="/" aria-label="UGK Mini Agent 首页">
+					<img src="/ugk-claw-logo.svg" alt="" />
+					<span>UGK Mini Agent</span>
 				</a>
 				<div class="nav-links">
-					<a href="/playground">Chat</a>
-					<a href="/playground/team">Team Console</a>
-					<a href="/playground/model-sources">API 源</a>
-					<a href="/playground/agents">Agents</a>
-					<a href="#flow">任务流程</a>
+					<a href="#install">快速安装</a>
+					<a href="#features">产品能力</a>
+					<a href="#screenshots">界面预览</a>
+					<a href="#github">GitHub</a>
 				</div>
 			</div>
 		</nav>
 
 		<main>
 			<section class="hero page" aria-labelledby="hero-title">
-				<div class="hero-copy">
-					<p class="hero-eyebrow">Task acceptance / Agent workflow</p>
-					<h1 id="hero-title">让每个 Agent 任务，都可验收</h1>
+				<div>
+					<div class="hero-lockup" aria-label="UGK Mini Agent 产品标识">
+						<img src="/ugk-claw-logo.svg" alt="" />
+						<div>
+							<span>Official project</span>
+							<strong>UGK Mini Agent</strong>
+						</div>
+					</div>
+					<p class="eyebrow">Local-first Agent Runtime</p>
+					<h1 id="hero-title">本机优先的 AI Agent 工作台。</h1>
 					<p class="hero-subtitle">
-						<strong>UGK CLAW</strong> 把一次 Agent 工作拆成干净的 Task、可复用的 Skill、负责执行的 Worker 和负责验收的 Checker。它不是只让模型回答，而是让结果经过审核后再交付。
+						把 Chat、Team Console、Conn 后台任务、模型源配置和 Agent Profile 管理放进同一个本机服务。适合需要私有数据、可控运行环境和跨平台部署的 Agent 使用场景。
 					</p>
 					<div class="cta-row">
-						<a class="button button-primary" href="/playground/team">进入 Team Console</a>
-						<a class="button" href="/playground">进入 Chat 工作台</a>
-						<a class="button" href="/playground/model-sources">配置 API 源</a>
-						<a class="button" href="/playground/agents">管理 Agent</a>
+						<a class="button button-primary" href="https://github.com/mhgd3250905/ugk-mini-agent" target="_blank" rel="noreferrer">打开 GitHub</a>
+						<a class="button" href="#install">查看安装</a>
 					</div>
-					<p class="cta-note">所有入口都走当前服务内的相对路由，不需要记住固定端口。</p>
+					<p class="note">公开官网只提供产品说明、安装方式和源码入口；真实工作台入口请在完成部署后按终端输出访问。</p>
 				</div>
 
-				<div class="hero-art-wrap" aria-label="Agent 画板产品视觉">
-					<img class="hero-art" src="/site-assets/team-canvas-product-hero.png" alt="抽象的 UGK CLAW Agent 画板产品视觉，任务节点、Agent 节点和证据节点连接在同一个工作面上" fetchpriority="high" decoding="async" />
-					<div class="hero-art-note">
-						<strong>概念化产品视觉。</strong>
-						它表达 Agent 画板的工作方式；真实产品界面在下一屏。
-					</div>
-				</div>
-			</section>
-
-			<section class="page hero-strip" aria-label="关键体验">
-				<div class="strip-item"><span>01 / risk</span><strong>结果不默认可信</strong><p>哪怕只有少量幻觉、偷工减料或伪造结果，生产任务也不该直接交付。</p></div>
-				<div class="strip-item"><span>02 / task</span><strong>Task 保持干净</strong><p>一个 Task 是干净会话加完整 Skill，避免冗长对话上下文污染复用结果。</p></div>
-				<div class="strip-item"><span>03 / check</span><strong>Checker 负责验收</strong><p>审核机制把任务要求、运行证据和输出结果放到同一条验收链路里。</p></div>
-				<div class="strip-item"><span>04 / workflow</span><strong>可信任务可编排</strong><p>通过审核的 Task 才适合串联或并联，组成更复杂的 Workflow。</p></div>
-			</section>
-
-			<section class="section page" id="product" aria-labelledby="product-title">
-				<div class="section-head">
-					<p class="kicker">The problem</p>
-					<h2 id="product-title">普通 Agent 对话，不适合直接进生产。</h2>
-					<p>模型再强也会幻觉。更麻烦的是，低成本模型常常不是不会做，而是不稳定、不完全遵从任务，甚至在自动执行时偷工减料。没有验收机制，结果就不能被信任。</p>
-				</div>
-
-				<div class="definition-grid">
-					<div class="definition-card">
-						<span>Core risk</span>
-						<strong>1% 的不可信，也不该进入交付链路。</strong>
-						<p>Agent 直接给出答案并不等于任务完成。生产环境需要知道它是否遵从要求、是否真的执行、结果从哪里来、有没有证据支撑。</p>
-					</div>
-					<div class="definition-card">
-						<span>UGK CLAW answer</span>
-						<strong>Task 执行，Checker 验收，Workflow 编排。</strong>
-						<p>UGK CLAW 用干净 Task 承载可复用 Skill，用 Worker 执行，用 Checker 审核，再把可信 Task 串联或并联成复杂流程。</p>
+				<div class="hero-card" aria-label="产品界面预览">
+					<img src="/site-assets/canvas.png" alt="UGK Mini Agent Team Console 任务画布界面截图" fetchpriority="high" decoding="async" />
+					<div class="hero-metrics">
+						<div class="metric"><span>Team</span><strong>任务画布</strong></div>
+						<div class="metric"><span>Chat</span><strong>多模型对话</strong></div>
+						<div class="metric"><span>Conn</span><strong>后台任务</strong></div>
 					</div>
 				</div>
-
-				<figure class="product-shot">
-					<img src="/site-assets/team-console-hero.png" alt="UGK CLAW Agent 画板真实界面截图" loading="lazy" decoding="async" />
-					<figcaption class="product-caption">
-						<span><strong>Agent 画板</strong> 是当前对外介绍优先展示的真实产品入口，不是概念图。</span>
-						<code>actual product</code>
-					</figcaption>
-				</figure>
 			</section>
 
-			<section class="section page trust-system" id="trust-system" aria-labelledby="trust-system-title">
-				<div class="section-head">
-					<p class="kicker">Trust system</p>
-					<h2 id="trust-system-title">可信交付，不靠模型自觉。</h2>
-					<p>UGK CLAW 把“模型可能会乱来”当成默认前提来设计。它不要求每个模型永远听话，而是用干净 Task、执行记录和 Checker 验收，把不稳定输出拦在交付之前。</p>
-				</div>
-
-				<div class="trust-map" aria-label="可信 Task 交付链路">
-					<article class="trust-node is-risk">
-						<span>risk</span>
-						<strong>污染上下文与幻觉风险</strong>
-						<p>长对话会混入历史偏差；自动任务里模型可能漏做、少做，甚至编造已经完成的结果。</p>
-					</article>
-					<div class="trust-arrow" aria-hidden="true">-&gt;</div>
-					<article class="trust-node">
-						<span>task</span>
-						<strong>干净 Task 承载 Skill</strong>
-						<p>每次执行都从明确边界开始，只带必要资料、完整 Skill 和期望产物。</p>
-					</article>
-					<div class="trust-arrow" aria-hidden="true">-&gt;</div>
-					<article class="trust-node">
-						<span>worker</span>
-						<strong>Worker 执行并留痕</strong>
-						<p>执行过程保留状态、文件、中间产物和错误信息。</p>
-					</article>
-					<div class="trust-arrow" aria-hidden="true">-&gt;</div>
-					<article class="trust-node is-pass">
-						<span>checker</span>
-						<strong>Checker 审核后交付</strong>
-						<p>审核员对照任务要求验收结果，拦截幻觉、漏项、偷工减料和伪造证据。</p>
-					</article>
-				</div>
-
-				<div class="trust-result">
-					<span>result</span>
-					<strong>通过验收的 Task，才进入 Workflow。</strong>
-					<p>一个个可信 Task 可以被串联或并联，承担更复杂任务的一环；这才是可复用 Skill 真正能落地的方式。</p>
+			<section class="ticker" aria-label="产品关键词">
+				<div class="ticker-track">
+					<span>LOCAL-FIRST AGENT RUNTIME</span><span>+</span>
+					<span>CHAT / TEAM / CONN</span><span>+</span>
+					<span>WINDOWS · MACOS · LINUX</span><span>+</span>
+					<span>MODEL SOURCES</span><span>+</span>
+					<span>AGENT PROFILES</span><span>+</span>
+					<span>GITHUB INSTALLATION</span><span>+</span>
+					<span>LOCAL-FIRST AGENT RUNTIME</span><span>+</span>
+					<span>CHAT / TEAM / CONN</span><span>+</span>
+					<span>WINDOWS · MACOS · LINUX</span><span>+</span>
+					<span>MODEL SOURCES</span><span>+</span>
+					<span>AGENT PROFILES</span><span>+</span>
+					<span>GITHUB INSTALLATION</span><span>+</span>
 				</div>
 			</section>
 
-			<section class="section page" id="use-cases" aria-labelledby="use-cases-title">
+			<section class="section page" id="install" aria-labelledby="install-title">
 				<div class="section-head">
-					<p class="kicker">What you can do</p>
-					<h2 id="use-cases-title">从会聊天，变成可交付。</h2>
-					<p>UGK CLAW 的工作重点不是让 Agent 多说几句，而是把任务边界、执行环境、审核标准和编排方式都固定下来。</p>
+					<p class="eyebrow">Quick start</p>
+					<h2 id="install-title">三步完成本机部署。</h2>
+					<p>先检查系统依赖，再安装项目依赖，最后用对应平台的启动脚本启动。启动成功后，终端会打印本机访问地址和运行日志位置。</p>
 				</div>
 
-				<div class="capability-grid use-case-grid">
-					<article class="capability">
-						<div class="capability-visual">
-							<img src="/site-assets/capability-create-task.png" alt="目标被整理成清晰任务卡片的 Agent 画板视觉" loading="lazy" decoding="async" />
+				<div class="install-layout">
+					<div class="steps">
+						<article class="step">
+							<span>Step 1</span>
+							<strong>检查必要配置</strong>
+							<p>需要 Git、Node.js 22 或更高版本、npm，以及 Python 3.11。Linux 服务器还要确认安全组或防火墙已放行你准备对外访问的端口。</p>
+						</article>
+						<article class="step">
+							<span>Step 2</span>
+							<strong>安装依赖</strong>
+							<p>克隆仓库后安装根项目依赖和 Team Console 依赖。首次启动会自动检查并准备运行时 Python 虚拟环境。</p>
+						</article>
+						<article class="step">
+							<span>Step 3</span>
+							<strong>启动服务</strong>
+							<p>按平台使用对应脚本。需要改端口时，在启动命令后追加 <code>--port &lt;端口&gt;</code>；需要公网监听时追加 <code>--host 0.0.0.0</code>。</p>
+						</article>
+					</div>
+
+					<div class="command-panel" aria-label="安装命令">
+						<p class="command-title">检查环境 <code>Git / Node / Python</code></p>
+						<pre class="command-block">git --version
+node -v
+npm -v
+python3 --version</pre>
+
+						<p class="command-title">安装项目 <code>clone & install</code></p>
+						<pre class="command-block">git clone https://github.com/mhgd3250905/ugk-mini-agent.git
+cd ugk-mini-agent
+npm install
+npm --prefix apps/team-console install</pre>
+
+						<p class="command-title">启动服务 <code>Windows / macOS / Linux</code></p>
+						<pre class="command-block"># Windows
+UGK-Mini-Agent-Launcher.cmd
+
+# macOS / Linux
+chmod +x ./UGK-Mini-Agent-Launcher.sh
+./UGK-Mini-Agent-Launcher.sh
+
+# 自定义端口或公网监听
+./UGK-Mini-Agent-Launcher.sh --host 0.0.0.0 --port &lt;端口&gt;</pre>
+
+						<div class="notice">
+							首次使用时先进入“配置 API 源”添加模型 provider 和 API key，再创建或选择 Agent。MCP、FRP、域名和反向代理属于部署方配置，不会写入公开页面。
 						</div>
-						<div class="capability-copy">
-							<span>01 / isolate</span>
-							<strong>把任务隔离出来</strong>
-							<p>Task 不是一条聊天消息，而是一个干净会话，带着完整 Skill、目标、约束、输入和期望产物运行。</p>
-						</div>
-					</article>
-					<article class="capability">
-						<div class="capability-visual">
-							<img src="/site-assets/capability-context-materials.png" alt="文件页面汇入任务资料区的视觉" loading="lazy" decoding="async" />
-						</div>
-						<div class="capability-copy">
-							<span>02 / context</span>
-							<strong>防止上下文污染</strong>
-							<p>复杂能力可以从对话中沉淀成 Skill，但每次执行都回到干净任务环境，减少旧对话对新结果的干扰。</p>
-						</div>
-					</article>
-					<article class="capability">
-						<div class="capability-visual">
-							<img src="/site-assets/capability-role-execute.png" alt="Leader Worker Checker 角色节点协同执行任务的视觉" loading="lazy" decoding="async" />
-						</div>
-						<div class="capability-copy">
-							<span>03 / execute</span>
-							<strong>让 Worker 执行</strong>
-							<p>Worker 按固定 Task 或 Workflow 做具体工作，把资料和中间产物纳入可观察的运行过程。</p>
-						</div>
-					</article>
-					<article class="capability">
-						<div class="capability-visual">
-							<img src="/site-assets/capability-inspect-evidence.png" alt="输出文件和运行证据通过扫描检查的视觉" loading="lazy" decoding="async" />
-						</div>
-						<div class="capability-copy">
-							<span>04 / accept</span>
-							<strong>由 Checker 验收</strong>
-							<p>Checker 对照任务要求检查输出、证据、错误和遗漏，把“模型说完成了”变成“结果通过验收”。</p>
-						</div>
-					</article>
+					</div>
 				</div>
 			</section>
 
-			<section class="section page" id="team-model" aria-labelledby="team-model-title">
+			<section class="section page" id="features" aria-labelledby="features-title">
 				<div class="section-head">
-					<p class="kicker">Team model</p>
-					<h2 id="team-model-title">工作小组不是包装，是验收结构。</h2>
-					<p>Leader、Worker、Checker 的分工，是为了把“执行”和“验收”拆开。便宜模型可以承担部分执行，但结果必须经过独立审核才能进入下一步。</p>
+					<p class="eyebrow">Product</p>
+					<h2 id="features-title">一个轻量但完整的 Agent 运行台。</h2>
+					<p>UGK Mini Agent 把常用 Agent 工作流集中到一个本机服务里：对话、任务画布、后台连接器、模型源、Agent Profile 和运行态文件都可以在本地管理。</p>
 				</div>
 
-				<div class="experience-grid">
-					<article class="experience role-leader">
-						<div class="role-visual">
-							<img src="/site-assets/agent-role-leader.png" alt="组长 Leader 角色视觉，中心调度台把任务和成员连接起来" loading="lazy" decoding="async" />
-						</div>
-						<div class="role-copy">
-							<span>Leader</span>
-							<strong>组长 Leader</strong>
-							<p>拆解目标、澄清边界、组织资料和角色，让任务从一段需求变成可执行的工作单元。</p>
-						</div>
+				<div class="grid">
+					<article class="card">
+						<span>Chat</span>
+						<strong>主 Agent 对话</strong>
+						<p>在浏览器里和 Agent 对话，管理会话、资产、上下文占用和运行状态。</p>
 					</article>
-					<article class="experience role-worker">
-						<div class="role-visual">
-							<img src="/site-assets/agent-role-worker.png" alt="执行员 Worker 角色视觉，机械臂正在处理任务和资料产物" loading="lazy" decoding="async" />
-						</div>
-						<div class="role-copy">
-							<span>Worker</span>
-							<strong>执行员 Worker</strong>
-							<p>在干净 Task 环境里执行 Skill 或 Workflow，尽量减少被历史上下文带偏的概率。</p>
-						</div>
+					<article class="card">
+						<span>Team</span>
+						<strong>任务画布</strong>
+						<p>用 Team Console 组织任务、依赖、分组和执行结果，适合更复杂的工作拆解。</p>
 					</article>
-					<article class="experience role-checker">
-						<div class="role-visual">
-							<img src="/site-assets/agent-role-checker.png" alt="审核员 Checker 角色视觉，放大镜正在检查错误和运行证据" loading="lazy" decoding="async" />
-						</div>
-						<div class="role-copy">
-							<span>Checker</span>
-							<strong>审核员 Checker</strong>
-							<p>检查结果是否满足要求，拦住幻觉、漏项、偷工减料和伪造证据。审核是交付链路的一部分。</p>
-						</div>
+					<article class="card">
+						<span>Conn</span>
+						<strong>后台任务</strong>
+						<p>把外部触发或计划任务交给后台 worker 执行，减少人工盯守。</p>
+					</article>
+					<article class="card">
+						<span>Profiles</span>
+						<strong>多 Agent 配置</strong>
+						<p>为不同用途维护 Agent Profile、模型默认值、技能目录和运行边界。</p>
 					</article>
 				</div>
 			</section>
 
-			<section class="section page" id="flow" aria-labelledby="flow-title">
+			<section class="section page" id="screenshots" aria-labelledby="screenshots-title">
 				<div class="section-head">
-					<p class="kicker">How a task runs</p>
-					<h2 id="flow-title">可信 Task 怎么产生？</h2>
-					<p>一个复杂能力可以从对话里长出来，但真正复用时必须脱离被污染的长上下文。UGK CLAW 把它变成干净 Task，再用 Checker 给结果做验收。</p>
+					<p class="eyebrow">Screenshots</p>
+					<h2 id="screenshots-title">真实产品界面。</h2>
+					<p>官网展示的是当前仓库内置界面截图。对外访客只看到说明和安装指引；真实工作台由部署者按需开放。</p>
 				</div>
 
-				<div class="flow-steps">
-					<article class="flow-step">
-						<span>Step 1</span>
-						<strong>沉淀 Skill</strong>
-						<p>把对话中已经验证过的复杂能力抽取成 Skill，明确输入、步骤、边界和输出标准。</p>
-					</article>
-					<article class="flow-step">
-						<span>Step 2</span>
-						<strong>放进干净 Task</strong>
-						<p>每次执行都从干净会话开始，只带必要资料和 Skill，避免旧上下文污染新任务。</p>
-					</article>
-					<article class="flow-step">
-						<span>Step 3</span>
-						<strong>执行并保留证据</strong>
-						<p>Worker 执行任务，保留运行状态、文件、中间产物和错误信息。</p>
-					</article>
-					<article class="flow-step">
-						<span>Step 4</span>
-						<strong>审核后再编排</strong>
-						<p>Checker 验收通过后，这个可信 Task 才适合串联或并联，承担更复杂 Workflow 的一环。</p>
-					</article>
+				<div class="screenshot-band">
+					<div class="shot">
+						<img src="/site-assets/chat.png" alt="UGK Mini Agent Chat 工作台界面截图" loading="lazy" decoding="async" />
+					</div>
+					<div class="shot-copy">
+						<strong>Team Console 负责把 Agent 工作拆成可观察的任务图。</strong>
+						<p>任务、分组、依赖、运行状态和结果交付都集中在同一个画布里。它适合把一次对话无法稳定完成的工作，拆成更清晰的执行单元。</p>
+						<div class="mini-shots" aria-label="更多产品截图">
+							<img src="/site-assets/conn.png" alt="Conn 后台任务界面截图" loading="lazy" decoding="async" />
+							<img src="/site-assets/model-sources.png" alt="模型源配置界面截图" loading="lazy" decoding="async" />
+							<img src="/site-assets/agent-profile.png" alt="Agent Profile 配置界面截图" loading="lazy" decoding="async" />
+						</div>
+					</div>
 				</div>
 			</section>
 
-			<section class="section page" id="highlights" aria-labelledby="highlights-title">
+			<section class="section page" id="github" aria-labelledby="github-title">
 				<div class="section-head">
-					<p class="kicker">Why it matters</p>
-					<h2 id="highlights-title">亮点在可信交付。</h2>
-					<p>UGK CLAW 的对外价值是让 Agent 工作从“模型回答”变成“可执行、可验收、可复用、可编排”的交付系统。</p>
+					<p class="eyebrow">GitHub</p>
+					<h2 id="github-title">从源码开始使用。</h2>
+					<p>公开首页只保留仓库入口和安装说明。查看源码、提交 issue、部署到自己的机器，都从 GitHub 仓库开始。</p>
 				</div>
 
-				<div class="capability-grid">
-					<article class="capability">
-						<span>visible</span>
-						<strong>过程可观察</strong>
-						<p>任务、资料、角色、状态、产物和证据不再散落在对话里，而是在 Agent 画板上形成可理解的工作图。</p>
-					</article>
-					<article class="capability">
-						<span>controlled</span>
-						<strong>上下文可控</strong>
-						<p>Task 从干净会话启动，带着明确 Skill 和必要资料运行，让复用不再被长对话污染。</p>
-					</article>
-					<article class="capability">
-						<span>auditable</span>
-						<strong>结果可验收</strong>
-						<p>Checker 不是装饰角色，而是把检查标准放进流程，让输出、错误和证据都能被回看。</p>
-					</article>
-					<article class="capability">
-						<span>reusable</span>
-						<strong>Task 可编排</strong>
-						<p>一个个可信 Task 可以像积木一样串联或并联，支撑更复杂的自动化任务。</p>
-					</article>
-				</div>
-			</section>
-
-			<section class="section page" aria-labelledby="docs-title">
-				<div class="section-head">
-					<p class="kicker">Documentation path</p>
-					<h2 id="docs-title">先看为什么可信，再看怎么上手。</h2>
-					<p>本机运行后先打开根路径。这里不展示固定端口，只提供当前服务内的路由跳转。</p>
-				</div>
-				<div class="docs">
-					<a class="doc-link" href="/playground/team">
+				<div class="entries">
+					<a class="entry" href="https://github.com/mhgd3250905/ugk-mini-agent" target="_blank" rel="noreferrer">
 						<div>
-							<span>01 / canvas</span>
-							<strong>进入 Team Console</strong>
-							<p>打开 Canvas、Task、Source、Group 和 run 观察器，管理可验收的 Agent 工作流。</p>
+							<span>01 / Source</span>
+							<strong>GitHub 仓库</strong>
+							<p>获取源码、查看 README、跟随平台安装指南完成本机部署。</p>
 						</div>
-						<em>打开</em>
+						<em>github.com/mhgd3250905/ugk-mini-agent</em>
 					</a>
-					<a class="doc-link" href="/playground">
+					<a class="entry" href="https://github.com/mhgd3250905/ugk-mini-agent#quick-start" target="_blank" rel="noreferrer">
 						<div>
-							<span>02 / chat</span>
-							<strong>进入 Chat 工作台</strong>
-							<p>和 Agent 对话、管理文件与资产、查看会话历史和后台任务消息。</p>
+							<span>02 / Install</span>
+							<strong>快速安装</strong>
+							<p>按 Windows、macOS、Linux 对应说明检查依赖、安装并启动。</p>
 						</div>
-						<em>打开</em>
+						<em>README quick start</em>
 					</a>
-					<a class="doc-link" href="/playground/model-sources">
+					<a class="entry" href="https://github.com/mhgd3250905/ugk-mini-agent/issues" target="_blank" rel="noreferrer">
 						<div>
-							<span>03 / models</span>
-							<strong>配置 API 源</strong>
-							<p>首次启动后先添加模型 provider 和 API key，再运行对话、Task 或后台任务。</p>
+							<span>03 / Issues</span>
+							<strong>反馈问题</strong>
+							<p>记录安装问题、运行异常、功能建议和后续平台适配需求。</p>
 						</div>
-						<em>打开</em>
+						<em>GitHub issues</em>
 					</a>
-					<a class="doc-link" href="/playground/agents">
+					<a class="entry" href="https://github.com/mhgd3250905/ugk-mini-agent/releases" target="_blank" rel="noreferrer">
 						<div>
-							<span>04 / agents</span>
-							<strong>管理 Agent</strong>
-							<p>查看内置 Agent profile，按需要扩展技能目录和运行配置。</p>
+							<span>04 / Releases</span>
+							<strong>版本记录</strong>
+							<p>关注后续稳定版本、部署脚本更新和跨平台运行说明。</p>
 						</div>
-						<em>打开</em>
+						<em>GitHub releases</em>
 					</a>
 				</div>
 			</section>
@@ -1231,8 +914,8 @@ export function renderPublicSitePage(): string {
 
 		<footer class="footer">
 			<div class="page footer-inner">
-				<span><strong>UGK CLAW</strong>，面向生产环境的可信 Agent 任务交付系统。</span>
-				<span>Self-hosted Agent task acceptance and workflow workspace.</span>
+				<span><strong>UGK Mini Agent</strong>，本机优先的 Agent Runtime。</span>
+				<span>公开首页只展示说明和 GitHub 入口。</span>
 			</div>
 		</footer>
 	</body>

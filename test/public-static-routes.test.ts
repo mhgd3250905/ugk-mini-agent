@@ -18,7 +18,7 @@ test("GET /healthz returns ok", async () => {
 	await app.close();
 });
 
-test("GET / renders the public Agent Board first homepage", async () => {
+test("GET / renders the public product homepage", async () => {
 	const app = await buildServer({
 		agentService: createAgentServiceStub(),
 	});
@@ -30,101 +30,86 @@ test("GET / renders the public Agent Board first homepage", async () => {
 
 	assert.equal(response.statusCode, 200);
 	assert.match(response.headers["content-type"] ?? "", /^text\/html/);
-	assert.match(response.body, /UGK CLAW/);
-	assert.match(response.body, /让每个 Agent 任务，都可验收/);
-	assert.match(response.body, /面向生产环境的 Agent 任务验收与编排工作台/);
-	assert.match(response.body, /普通 Agent 对话，不适合直接进生产/);
-	assert.match(response.body, /1% 的不可信/);
-	assert.match(response.body, /Task 执行，Checker 验收，Workflow 编排/);
-	assert.match(response.body, /可信交付，不靠模型自觉/);
-	assert.match(response.body, /污染上下文与幻觉风险/);
-	assert.match(response.body, /干净 Task 承载 Skill/);
-	assert.match(response.body, /Worker 执行并留痕/);
-	assert.match(response.body, /Checker 审核后交付/);
-	assert.match(response.body, /通过验收的 Task，才进入 Workflow/);
-	assert.match(response.body, /从会聊天，变成可交付/);
-	assert.match(response.body, /把任务隔离出来/);
-	assert.match(response.body, /防止上下文污染/);
-	assert.match(response.body, /可信 Task 怎么产生/);
-	assert.match(response.body, /亮点在可信交付/);
-	assert.match(response.body, /先看为什么可信，再看怎么上手/);
-	assert.match(response.body, /本机运行后先打开根路径/);
-	assert.match(response.body, /进入 Team Console/);
-	assert.match(response.body, /进入 Chat 工作台/);
-	assert.match(response.body, /配置 API 源/);
-	assert.match(response.body, /管理 Agent/);
-	assert.match(response.body, /Agent 画板/);
-	assert.match(response.body, /href="\/playground"/);
-	assert.match(response.body, /href="\/playground\/team"/);
-	assert.match(response.body, /href="\/playground\/model-sources"/);
-	assert.match(response.body, /href="\/playground\/agents"/);
+	assert.match(response.body, /UGK Mini Agent/);
+	assert.match(response.body, /本机部署的 Agent 工作台/);
+	assert.match(response.body, /Official project/);
+	assert.match(response.body, /本机优先的 AI Agent 工作台/);
+	assert.doesNotMatch(response.body, /<h1 id="hero-title">UGK Mini Agent<\/h1>/);
+	assert.match(response.body, /\/ugk-claw-logo\.svg/);
+	assert.match(response.body, /把 Chat、Team Console、Conn 后台任务/);
+	assert.match(response.body, /三步完成本机部署/);
+	assert.match(response.body, /检查必要配置/);
+	assert.match(response.body, /安装依赖/);
+	assert.match(response.body, /启动服务/);
+	assert.match(response.body, /Node\.js 22/);
+	assert.match(response.body, /Python 3\.11/);
+	assert.match(response.body, /--port &lt;端口&gt;/);
+	assert.match(response.body, /--host 0\.0\.0\.0/);
+	assert.match(response.body, /MCP、FRP、域名和反向代理属于部署方配置/);
+	assert.match(response.body, /一个轻量但完整的 Agent 运行台/);
+	assert.match(response.body, /主 Agent 对话/);
+	assert.match(response.body, /任务画布/);
+	assert.match(response.body, /后台任务/);
+	assert.match(response.body, /多 Agent 配置/);
+	assert.match(response.body, /真实产品界面/);
+	assert.match(response.body, /从源码开始使用/);
+	assert.match(response.body, /Chat 工作台/);
+	assert.match(response.body, /Team Console/);
+	assert.match(response.body, /GitHub 仓库/);
+	assert.match(response.body, /快速安装/);
+	assert.match(response.body, /反馈问题/);
+	assert.match(response.body, /版本记录/);
+	assert.match(response.body, /href="https:\/\/github\.com\/mhgd3250905\/ugk-mini-agent"/);
+	assert.match(response.body, /href="https:\/\/github\.com\/mhgd3250905\/ugk-mini-agent\/issues"/);
+	assert.match(response.body, /href="https:\/\/github\.com\/mhgd3250905\/ugk-mini-agent\/releases"/);
 	assert.doesNotMatch(response.body, /\$BASE_URL/);
-	assert.match(response.body, /组长 Leader/);
-	assert.match(response.body, /执行员 Worker/);
-	assert.match(response.body, /审核员 Checker/);
-	assert.match(response.body, /拦住幻觉、漏项、偷工减料和伪造证据/);
-	assert.match(response.body, /\/playground/);
+	assert.doesNotMatch(response.body, /href="\/playground/);
+	assert.doesNotMatch(response.body, />打开 \/playground/);
 	assert.doesNotMatch(response.body, /5174 画布/);
 	assert.doesNotMatch(response.body, /5174/);
 	assert.doesNotMatch(response.body, /3000/);
 	assert.doesNotMatch(response.body, /127\.0\.0\.1/);
 	assert.doesNotMatch(response.body, /开发端口/);
 	assert.doesNotMatch(response.body, /本地服务运行后/);
-	assert.match(response.body, /\/site-assets\/team-canvas-product-hero\.png/);
-	assert.match(response.body, /\/site-assets\/team-console-hero\.png/);
-	assert.match(response.body, /\/site-assets\/agent-role-leader\.png/);
-	assert.match(response.body, /\/site-assets\/agent-role-worker\.png/);
-	assert.match(response.body, /\/site-assets\/agent-role-checker\.png/);
-	assert.match(response.body, /\/site-assets\/capability-create-task\.png/);
-	assert.match(response.body, /\/site-assets\/capability-context-materials\.png/);
-	assert.match(response.body, /\/site-assets\/capability-role-execute\.png/);
-	assert.match(response.body, /\/site-assets\/capability-inspect-evidence\.png/);
-	assert.match(response.body, /team-canvas-product-hero\.png[^>]+fetchpriority="high"/);
-	assert.match(response.body, /team-console-hero\.png[^>]+loading="lazy"/);
-	assert.match(response.body, /agent-role-checker\.png[^>]+loading="lazy"/);
+	assert.match(response.body, /\/site-assets\/chat\.png/);
+	assert.match(response.body, /\/site-assets\/canvas\.png/);
+	assert.match(response.body, /\/site-assets\/conn\.png/);
+	assert.match(response.body, /\/site-assets\/model-sources\.png/);
+	assert.match(response.body, /\/site-assets\/agent-profile\.png/);
+	assert.match(response.body, /canvas\.png[^>]+fetchpriority="high"/);
+	assert.match(response.body, /chat\.png[^>]+loading="lazy"/);
 	await app.close();
 });
 
-test("GET /site-assets/:fileName serves only bundled public site assets", async () => {
+test("GET /site-assets/:fileName serves the latest screenshots and bundled fallback assets", async () => {
 	const app = await buildServer({
 		agentService: createAgentServiceStub(),
 	});
 
 	const response = await app.inject({
 		method: "GET",
-		url: "/site-assets/team-canvas-product-hero.png",
+		url: "/site-assets/chat.png",
 	});
 
 	assert.equal(response.statusCode, 200);
 	assert.match(response.headers["content-type"] ?? "", /^image\/png/);
 	assert.ok(response.rawPayload.length > 1000);
 
-	const screenshotResponse = await app.inject({
-		method: "GET",
-		url: "/site-assets/team-console-hero.png",
-	});
-
-	assert.equal(screenshotResponse.statusCode, 200);
-	assert.match(screenshotResponse.headers["content-type"] ?? "", /^image\/png/);
-	assert.ok(screenshotResponse.rawPayload.length > 1000);
-
 	for (const fileName of [
-		"agent-role-leader.png",
-		"agent-role-worker.png",
-		"agent-role-checker.png",
-		"capability-create-task.png",
-		"capability-context-materials.png",
-		"capability-role-execute.png",
-		"capability-inspect-evidence.png",
+		"canvas.png",
+		"conn.png",
+		"model-sources.png",
+		"agent-profile.png",
+		"team-console-hero.png",
 	]) {
-		const roleAssetResponse = await app.inject({
+		const assetResponse = await app.inject({
 			method: "GET",
 			url: `/site-assets/${fileName}`,
 		});
 
-		assert.equal(roleAssetResponse.statusCode, 200);
-		assert.match(roleAssetResponse.headers["content-type"] ?? "", /^image\/png/);
-		assert.ok(roleAssetResponse.rawPayload.length > 1000);
+		assert.equal(assetResponse.statusCode, 200);
+		assert.match(assetResponse.headers["content-type"] ?? "", /^image\/png/);
+		assert.ok(assetResponse.rawPayload.length > 1000);
 	}
 
 	const blockedResponse = await app.inject({

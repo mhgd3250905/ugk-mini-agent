@@ -12,7 +12,10 @@ export interface PublicSiteRouteOptions {
 const PUBLIC_SITE_ASSET_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".svg"]);
 
 export function registerPublicSiteRoutes(app: FastifyInstance, options: PublicSiteRouteOptions): void {
-	const siteAssetsDir = resolve(join(options.projectRoot, "docs", "assets"));
+	const siteAssetsDirs = [
+		resolve(join(options.projectRoot, "imgs")),
+		resolve(join(options.projectRoot, "docs", "assets")),
+	];
 
 	app.get("/", async (_request, reply) => {
 		reply.type("text/html; charset=utf-8");
@@ -22,13 +25,13 @@ export function registerPublicSiteRoutes(app: FastifyInstance, options: PublicSi
 
 	app.get("/site-assets/:fileName", async (request, reply) => {
 		const { fileName } = request.params as { fileName: string };
-		return await sendPublicSiteAsset(reply, siteAssetsDir, fileName);
+		return await sendPublicSiteAsset(reply, siteAssetsDirs, fileName);
 	});
 }
 
 async function sendPublicSiteAsset(
 	reply: FastifyReply,
-	siteAssetsDir: string,
+	siteAssetsDirs: string[],
 	fileName: string,
 ) {
 	const safeFileName = basename(fileName);
@@ -36,25 +39,29 @@ async function sendPublicSiteAsset(
 		return reply.status(404).send();
 	}
 
-	const filePath = resolve(join(siteAssetsDir, safeFileName));
-	if (!isPathInside(filePath, siteAssetsDir)) {
+	if (!PUBLIC_SITE_ASSET_EXTENSIONS.has(extname(safeFileName).toLowerCase())) {
 		return reply.status(404).send();
 	}
 
-	if (!PUBLIC_SITE_ASSET_EXTENSIONS.has(extname(filePath).toLowerCase())) {
-		return reply.status(404).send();
-	}
-
-	try {
-		const fileStat = await stat(filePath);
-		if (!fileStat.isFile()) {
-			return reply.status(404).send();
+	for (const siteAssetsDir of siteAssetsDirs) {
+		const filePath = resolve(join(siteAssetsDir, safeFileName));
+		if (!isPathInside(filePath, siteAssetsDir)) {
+			continue;
 		}
-		reply.type(resolveContentType(filePath));
-		reply.header("content-length", fileStat.size);
-		reply.header("cache-control", "public, max-age=300");
-		return reply.send(createReadStream(filePath));
-	} catch {
-		return reply.status(404).send();
+
+		try {
+			const fileStat = await stat(filePath);
+			if (!fileStat.isFile()) {
+				continue;
+			}
+			reply.type(resolveContentType(filePath));
+			reply.header("content-length", fileStat.size);
+			reply.header("cache-control", "public, max-age=300");
+			return reply.send(createReadStream(filePath));
+		} catch {
+			continue;
+		}
 	}
+
+	return reply.status(404).send();
 }
